@@ -2032,3 +2032,22 @@ Two read sets the pass under-recorded, each found by a page that went stale on `
   dependencies (`d`), so a derived value or a value slot holding it is made again when what its
   handler sends changes (`browser/direct/LetMarkupHandler`); no hole is recorded for it. Conduit's
   `writes/` golden widened by exactly those reads.
+
+### *Amended 2026-10-14:* subscription conflicts
+
+An effectful program records the anchored reads of its subscriptions result,
+including the model values captured by taggers. A key settles subscriptions
+when any of those reads conflicts with its model writes. Initial subscriptions
+always settle. A computed function or an analysis cap conservatively reads ρ;
+a result independent of the model records no reads. These facts are consumed
+by the compiled command host, not by the rendering groups, and do not change
+any existing key or hole verdict.
+
+### *Amended 2026-10-14:* dispatcher access paths
+
+Constructor tests for dispatch keys follow the complete anchored message path:
+constructor arguments, record fields and tuple components. A tag-read marker
+is not a value projection. In particular, `UrlChanged url` followed by a case
+on `url.fragment` tests the fragment, not the outer message. Such paths use
+the normal release record-field names. An event's constructor shortcut applies
+only to constructor-only paths; a record or tuple path uses the value dispatcher.

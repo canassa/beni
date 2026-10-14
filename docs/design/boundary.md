@@ -2074,6 +2074,15 @@ and the SVG root, as built*)*, additive within 1.10:
   known and for a hole's call. `cx.reachesDebug` now also follows the function of each component
   in markup a value makes.
 
+**Version 1.11** (*amended 2026-10-14*, additive, gated on nothing): the compiled
+host contract in `browser-direct.md`'s effects amendment. `programStart(block, args)` evaluates
+init once with the supplied arguments; `programInit` keeps its unit form. `programField(block,
+field, model)` evaluates `subscriptions`, `onUrlRequest`, `onUrlChange` or the document `title`
+against the supplied model in the record's declaration context. `programSettles(key)` reports
+whether subscription reads conflict with that key's writes, conservatively true for unknown
+reads. Effectful init/arm results are their declared model/command pair. Document view shape
+facts describe its record's body, which is compiled without a runtime view call.
+
 #### 9.4.7 Diagnostics
 
 `cx.report(node, message)` reports **`markup_restructured`**, an error, at the markup node's source
