@@ -11,8 +11,8 @@ them. It does not change the beni compiler
 or the thesis.
 
 Current results and the full source-mutant matrix are in [RESULTS.md](RESULTS.md).
-The oracle has 93 fixed verdict fixtures, generator v5, a bounded-exhaustive
-grammar, required negative controls (including `set-exclusive` and `once-live`),
+The oracle has 98 fixed verdict fixtures, generator v5, a bounded-exhaustive
+grammar plus 144 targeted programs, required negative controls (including `set-exclusive` and `once-live`),
 and a falsifier that fails when summary coverage is excessively vacuous.
 `no-scope` is a checker-level probe: typed programs cannot reach an unbound
 live variable. `hiddencopy` changes the interpreter to copy on every write;
@@ -35,6 +35,7 @@ lake exe ownership oracle 20000 17 --cross-check   # also run the per-call check
 lake exe ownership oracle 20000 17 --reinfer       # the per-call checker alone
 lake exe ownership controls 20000 17         # every negative control, generator alone
 lake exe ownership verdict-diff 20000 17 --mutant=borrowed-supply   # verdicts a hole changes
+lake exe ownership enumerate-targeted          # bounded capture/count/join/set/comparison/recursion templates
 lake exe ownership enumerate 2                  # every program of the bounded grammar
 lake exe ownership enumerate 3 --count-only     # size of the next bound (does not check it)
 lake exe ownership oracle 20000 17 --mutant=supply-edge
@@ -48,17 +49,18 @@ lake exe ownership falsify 100000 17         # try to falsify the unproved state
 Counts and seeds are deterministic. Generator v5 is the default: three
 quarters of its programs come from the general generator, 19 of every 33
 of those after generating a table of declarations of their own (RESULTS.md).
-`--generator-version=4` reproduces v4, `--generator-version=3` the v3
-generator, `--generator-version=1` the frozen legacy one. A corrected-rule
+`--generator-version=4` selects the older v4 families, `--generator-version=3` the v3
+families (both use the current declaration table; exact historical streams require
+their historical git revisions), `--generator-version=1` the frozen legacy one. A corrected-rule
 accepted disagreement, ill-typed generated program or execution error fails a
 run and is shrunk into `regressions/`. A negative control succeeds only if it
 finds an accepted disagreement whose shrunk form the corrected checker
 rejects. `scripts/run-mutants.sh` applies source-level checker edits
 (`scripts/mutate.mjs`) and compares every verdict on each seeded stream with
 indices from the unedited build (`ownership source-sweep`). It also enumerates
-the seed-independent grammar (default bound 2), saving per-seed counts, logs
+the seed-independent grammar (default bound 2) and all 144 targeted programs, saving per-seed counts, logs
 and original counterexamples under `regressions/mutant-evidence/`. Run it on
-Linux inside the ownership shell with Node on PATH; `MUTANT_CORES` defaults to
+Linux inside the ownership shell, which supplies Node 24 and taskset; `MUTANT_CORES` defaults to
 `0-7` and refuses more than eight CPUs. `ENUMERATE_BOUND` sets the bound.
 
 Lean **4.29.1** is pinned by `lean-toolchain` and locked nixpkgs; no Mathlib,
@@ -75,6 +77,8 @@ no network, no paid service. The project is outside the Zig gates.
 | `Checker.lean` | the summary-layer checker (default) |
 | `Reinfer.lean` | the frozen per-call re-inference checker (cross-check) |
 | `Library.lean` | map, initialize, foldl, update as ordinary declarations |
+| `Cli.lean` | validates command names, numbers and applicable options before work |
+| `Targeted.lean` | finite products exercising capture consumption, call counts, shape joins, set, comparisons and recursion |
 | `Enumerate.lean` | every typed program of a bounded grammar; independent of random seeds |
 | `Generator.lean` | the general generator: v4's chains of moves, and v5's conditional arms and generated declaration tables |
 | `Oracle.lean`, `OracleLegacy.lean` | template families, generator versions 1–5, campaigns, shrinking, controls, distinct and precision counts |
@@ -128,3 +132,10 @@ focus step, function values below an input path and callbacks with
 function-typed parameters or results are explicit `limit:` rejections.
 Inference depth 200, fixpoint rounds 24, evaluation fuel 100 000 and snapshot
 depth 256 fail explicitly. A finite campaign is neither exhaustive nor a proof.
+
+Commands and flags are validated before work. Inapplicable options (including
+`ci --mutant=...`), unknown modes, malformed numbers, a missing verdict-diff
+mutant and zero-size falsification fail. CI retains original and shrunk
+campaign witnesses plus failing fixture ASTs; failed audits retain the exported
+work directory and logs. `scripts/campaigns.sh` publishes logs only when every
+child succeeds. `nofix1` is an alias of `oncethroughcall`, counted once.

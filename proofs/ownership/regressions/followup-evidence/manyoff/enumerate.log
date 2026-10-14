@@ -1,0 +1,28 @@
+enumerate: accepted disagreement:
+Ownership.Expr.letE
+  0
+  (Ownership.Expr.prim (Ownership.Prim.literal (Ownership.Ty.int)) [Ownership.Atom.int 1])
+  (Ownership.Expr.letE
+    1
+    (Ownership.Expr.prim (Ownership.Prim.literal (Ownership.Ty.int)) [Ownership.Atom.int 2])
+    (Ownership.Expr.letE
+      2
+      (Ownership.Expr.prim
+        (Ownership.Prim.literal (Ownership.Ty.list (Ownership.Ty.int)))
+        [Ownership.Atom.var 0, Ownership.Atom.var 1])
+      (Ownership.Expr.letE
+        3
+        (Ownership.Expr.prim (Ownership.Prim.literal (Ownership.Ty.int)) [Ownership.Atom.int 3])
+        (Ownership.Expr.letE
+          4
+          (Ownership.Expr.letE
+            1040
+            (Ownership.Expr.closure 31 [Ownership.Atom.var 3])
+            (Ownership.Expr.letE
+              1041
+              (Ownership.Expr.closure 30 [])
+              (Ownership.Expr.app
+                (Ownership.Atom.var 1041)
+                [Ownership.Atom.var 2, Ownership.Atom.int 0, Ownership.Atom.var 1040])))
+          (Ownership.Expr.atom (Ownership.Atom.var 4))))))
+enumerate bound=2 enumerated=334 typed=334 accepted=279 changed-verdicts=1 with-write=0 mismatches=1 inconclusive=0 caught=true elapsed-ms=19

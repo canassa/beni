@@ -1,0 +1,60 @@
+seed=20261011 index=87 family=escape-traversal
+AST:
+{ declarations := [],
+  main := Ownership.Expr.letE
+            0
+            (Ownership.Expr.prim (Ownership.Prim.literal (Ownership.Ty.int)) [Ownership.Atom.int 2])
+            (Ownership.Expr.letE
+              1
+              (Ownership.Expr.traverse
+                (Ownership.Source.range)
+                (Ownership.Atom.int 2)
+                (Ownership.Atom.int 0)
+                2
+                3
+                4
+                (Ownership.Expr.letE
+                  5
+                  (Ownership.Expr.prim (Ownership.Prim.shared) [Ownership.Atom.var 0])
+                  (Ownership.Expr.atom (Ownership.Atom.var 4))))
+              (Ownership.Expr.prim (Ownership.Prim.push) [Ownership.Atom.var 0, Ownership.Atom.int 2])) }
+Ownership.Oracle.Outcome.mismatch
+  { reads := [],
+    finalValue := Ownership.Observation.list [Ownership.Observation.int 2, Ownership.Observation.int 2],
+    externalReads := [[Ownership.Observation.list [Ownership.Observation.int 2]],
+                      [Ownership.Observation.list [Ownership.Observation.int 2]],
+                      [Ownership.Observation.list [Ownership.Observation.int 2]],
+                      [Ownership.Observation.list [Ownership.Observation.int 2],
+                       Ownership.Observation.list [Ownership.Observation.int 2]],
+                      [Ownership.Observation.list [Ownership.Observation.int 2],
+                       Ownership.Observation.list [Ownership.Observation.int 2]],
+                      [Ownership.Observation.list [Ownership.Observation.int 2],
+                       Ownership.Observation.list [Ownership.Observation.int 2]],
+                      [Ownership.Observation.list [Ownership.Observation.int 2],
+                       Ownership.Observation.list [Ownership.Observation.int 2]],
+                      [Ownership.Observation.list [Ownership.Observation.int 2],
+                       Ownership.Observation.list [Ownership.Observation.int 2]],
+                      [Ownership.Observation.list [Ownership.Observation.int 2],
+                       Ownership.Observation.list [Ownership.Observation.int 2]],
+                      [Ownership.Observation.list [Ownership.Observation.int 2],
+                       Ownership.Observation.list [Ownership.Observation.int 2]]] }
+  { reads := [],
+    finalValue := Ownership.Observation.list [Ownership.Observation.int 2, Ownership.Observation.int 2],
+    externalReads := [[Ownership.Observation.list [Ownership.Observation.int 2]],
+                      [Ownership.Observation.list [Ownership.Observation.int 2]],
+                      [Ownership.Observation.list [Ownership.Observation.int 2]],
+                      [Ownership.Observation.list [Ownership.Observation.int 2],
+                       Ownership.Observation.list [Ownership.Observation.int 2]],
+                      [Ownership.Observation.list [Ownership.Observation.int 2],
+                       Ownership.Observation.list [Ownership.Observation.int 2]],
+                      [Ownership.Observation.list [Ownership.Observation.int 2],
+                       Ownership.Observation.list [Ownership.Observation.int 2]],
+                      [Ownership.Observation.list [Ownership.Observation.int 2],
+                       Ownership.Observation.list [Ownership.Observation.int 2]],
+                      [Ownership.Observation.list [Ownership.Observation.int 2, Ownership.Observation.int 2],
+                       Ownership.Observation.list [Ownership.Observation.int 2, Ownership.Observation.int 2]],
+                      [Ownership.Observation.list [Ownership.Observation.int 2, Ownership.Observation.int 2],
+                       Ownership.Observation.list [Ownership.Observation.int 2, Ownership.Observation.int 2]],
+                      [Ownership.Observation.list [Ownership.Observation.int 2, Ownership.Observation.int 2],
+                       Ownership.Observation.list [Ownership.Observation.int 2, Ownership.Observation.int 2]]] }
+baseline checker: rejected

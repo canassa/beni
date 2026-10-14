@@ -1,0 +1,5 @@
+warning: Git tree '/home/canassa/tmp/beni-ownership-round6' is dirty
+campaign failure: exit=1, prior log preserved, no done; artifacts=/home/canassa/tmp/ownership-failure-probes.UkB3JF
+audit preflight: exit=1, no IO executed, retained=/home/canassa/.cache/ownership-audit.VyiVtg
+uncaught exception: ./Ownership/Soundness.lean: nested command Lean.Parser.Command.eval is not allowed
+audit failed; retained work and logs: /home/canassa/.cache/ownership-audit.VyiVtg

@@ -1,0 +1,77 @@
+targeted mismatch index=89: Ownership.Oracle.Outcome.mismatch
+  { reads := [Ownership.Observation.list [Ownership.Observation.int (-1)],
+              Ownership.Observation.int 2,
+              Ownership.Observation.list [Ownership.Observation.int (-1)],
+              Ownership.Observation.list [Ownership.Observation.int (-1)]],
+    finalValue := Ownership.Observation.list
+                    [Ownership.Observation.list [Ownership.Observation.int (-1), Ownership.Observation.int 9],
+                     Ownership.Observation.list [Ownership.Observation.int (-1), Ownership.Observation.int 9]],
+    externalReads := [] }
+  { reads := [Ownership.Observation.list [Ownership.Observation.int (-1)],
+              Ownership.Observation.int 2,
+              Ownership.Observation.list [Ownership.Observation.int (-1)],
+              Ownership.Observation.list [Ownership.Observation.int (-1), Ownership.Observation.int 9]],
+    finalValue := Ownership.Observation.list
+                    [Ownership.Observation.list
+                       [Ownership.Observation.int (-1), Ownership.Observation.int 9, Ownership.Observation.int 9],
+                     Ownership.Observation.list
+                       [Ownership.Observation.int (-1), Ownership.Observation.int 9, Ownership.Observation.int 9]],
+    externalReads := [] }
+targeted mismatch index=91: Ownership.Oracle.Outcome.mismatch
+  { reads := [Ownership.Observation.list [Ownership.Observation.int 0],
+              Ownership.Observation.int 2,
+              Ownership.Observation.list [Ownership.Observation.int 0],
+              Ownership.Observation.list [Ownership.Observation.int 0]],
+    finalValue := Ownership.Observation.list
+                    [Ownership.Observation.list [Ownership.Observation.int 0, Ownership.Observation.int 9],
+                     Ownership.Observation.list [Ownership.Observation.int 0, Ownership.Observation.int 9]],
+    externalReads := [] }
+  { reads := [Ownership.Observation.list [Ownership.Observation.int 0],
+              Ownership.Observation.int 2,
+              Ownership.Observation.list [Ownership.Observation.int 0],
+              Ownership.Observation.list [Ownership.Observation.int 0, Ownership.Observation.int 9]],
+    finalValue := Ownership.Observation.list
+                    [Ownership.Observation.list
+                       [Ownership.Observation.int 0, Ownership.Observation.int 9, Ownership.Observation.int 9],
+                     Ownership.Observation.list
+                       [Ownership.Observation.int 0, Ownership.Observation.int 9, Ownership.Observation.int 9]],
+    externalReads := [] }
+targeted mismatch index=93: Ownership.Oracle.Outcome.mismatch
+  { reads := [Ownership.Observation.list [Ownership.Observation.int 1],
+              Ownership.Observation.int 2,
+              Ownership.Observation.list [Ownership.Observation.int 1],
+              Ownership.Observation.list [Ownership.Observation.int 1]],
+    finalValue := Ownership.Observation.list
+                    [Ownership.Observation.list [Ownership.Observation.int 1, Ownership.Observation.int 9],
+                     Ownership.Observation.list [Ownership.Observation.int 1, Ownership.Observation.int 9]],
+    externalReads := [] }
+  { reads := [Ownership.Observation.list [Ownership.Observation.int 1],
+              Ownership.Observation.int 2,
+              Ownership.Observation.list [Ownership.Observation.int 1],
+              Ownership.Observation.list [Ownership.Observation.int 1, Ownership.Observation.int 9]],
+    finalValue := Ownership.Observation.list
+                    [Ownership.Observation.list
+                       [Ownership.Observation.int 1, Ownership.Observation.int 9, Ownership.Observation.int 9],
+                     Ownership.Observation.list
+                       [Ownership.Observation.int 1, Ownership.Observation.int 9, Ownership.Observation.int 9]],
+    externalReads := [] }
+targeted mismatch index=95: Ownership.Oracle.Outcome.mismatch
+  { reads := [Ownership.Observation.list [Ownership.Observation.int 2],
+              Ownership.Observation.int 2,
+              Ownership.Observation.list [Ownership.Observation.int 2],
+              Ownership.Observation.list [Ownership.Observation.int 2]],
+    finalValue := Ownership.Observation.list
+                    [Ownership.Observation.list [Ownership.Observation.int 2, Ownership.Observation.int 9],
+                     Ownership.Observation.list [Ownership.Observation.int 2, Ownership.Observation.int 9]],
+    externalReads := [] }
+  { reads := [Ownership.Observation.list [Ownership.Observation.int 2],
+              Ownership.Observation.int 2,
+              Ownership.Observation.list [Ownership.Observation.int 2],
+              Ownership.Observation.list [Ownership.Observation.int 2, Ownership.Observation.int 9]],
+    finalValue := Ownership.Observation.list
+                    [Ownership.Observation.list
+                       [Ownership.Observation.int 2, Ownership.Observation.int 9, Ownership.Observation.int 9],
+                     Ownership.Observation.list
+                       [Ownership.Observation.int 2, Ownership.Observation.int 9, Ownership.Observation.int 9]],
+    externalReads := [] }
+targeted programs=144 typed=144 accepted=40 changed-verdicts=8 mismatches=4 inconclusive=0 caught=true

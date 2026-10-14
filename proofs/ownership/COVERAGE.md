@@ -1,7 +1,7 @@
 # T1–T59 coverage audit
 
-Round 6 measurements are in [RESULTS.md](RESULTS.md) and its linked logs.
-Older numerical sensitivity measurements below are explicitly historical;
+Current follow-up measurements are in [RESULTS.md](RESULTS.md) and its linked logs.
+Historical numerical sensitivity measurements below are marked as such;
 they do not establish final-head coverage. The executable theorem statements
 still have three `sorry`s, including the step lemma on which the main theorem
 is conditional.
@@ -94,7 +94,7 @@ than new thesis rules (Ch. 3 demand/summary contracts; Ch. 4 inference; Ch. 6
 soundness/derived-contract obligations). No excluded runtime or language-boundary variant is reported as passed. The broadened campaigns reach higher-order-recursion `limit:` rejections,
 reported separately; this does not prove recursive contracts universally derivable.
 
-The original transcribed suite had 78 intended verdict tests (74 transcribed, plus the recursion-in-a-step finding, the three-row T46 variant, and the env-through-a-wrapper fixture with its rejected reverse), checked by both checkers. The final fixed suite has 93 verdict fixtures (RESULTS.md); each independently typechecks.
+The original transcribed suite had 78 intended verdict tests (74 transcribed, plus the recursion-in-a-step finding, the three-row T46 variant, and the env-through-a-wrapper fixture with its rejected reverse), checked by both checkers. The final fixed suite has 98 verdict fixtures (RESULTS.md); each independently typechecks.
 Accepted tests compare the complete Trace, including externally retained roots.
 The traversal escape defect is repaired. Frozen controls demonstrate both
 freshness-only and missing-transfer implementations accept an actual mismatch,
@@ -170,14 +170,14 @@ and shared-fn, plus set-exclusive and once-live; borrowed-supply against the per
 required through its checker-level probe only: no typed program has a live
 variable its environment does not bind, so no generated program can reach
 it, and the probe runs the checker on such a configuration directly.
-All 62 source-level edits in `scripts/mutate.mjs` were tested against
+All 65 unique source-level edits in `scripts/mutate.mjs` were tested against
 independent baseline verdicts, on all three seeded streams and by bounded
 enumeration. RESULTS.md gives the complete matrix, and the arguments and
 search gaps below account for uncaught edits.
 
 **Rows exercised.** `withWrites` counts executions, not which rows a write
 depends on. The checker records row hits in each current campaign log
-(`regressions/campaign-round6-*.log`). A row hit is evidence of execution,
+(`regressions/campaign-followup-*.log`). A row hit is evidence of execution,
 not that a test distinguishes dropping it; the source edits and masking
 arguments below are the sensitivity evidence.
 
@@ -195,9 +195,9 @@ arguments below are the sensitivity evidence.
 ## Equivalent (argued)
 
 The source-level edits not caught by the current generator or enumerator
-(3 × 20000 and bound 2, RESULTS.md), for which we have a masking argument: each argument is ours, not a proof, and each is
+(3 × 20000, bound 2 and all 144 targeted programs, RESULTS.md), for which we have a masking argument: each argument is ours, not a proof, and each is
 backed by the edit's changed verdicts on the same programs
-(`regressions/source-mutants-round6.log`: both newly accepted and newly
+(`regressions/source-mutants-followup.log`: both newly accepted and newly
 rejected programs, with newly accepted executions checked for disagreement).
 
 | Edit | What it weakens | Changed verdicts (+/−; seeds 20261011 / 17 / 271828) | Why no program can tell |
@@ -212,7 +212,7 @@ rejected programs, with newly accepted executions checked for disagreement).
 | `keepsany` | focus keeps exclusivity when the result's paths name *any* parameter path | 0/0; 0/0; 0/0 (no mismatch) | A focus scope has one parameter (the element), so the weakened test only admits a result whose paths hold the element's own arrays rearranged (fields swapped); `keepsShape` still requires the result deep-exclusive and path-separated, and the arrays all came from the replaced element, so none is shared with another position. |
 | `recwrites` | a recursive call's W rows are not demanded at the call | 0/0; 0/0; 0/0 (no mismatch) | **Masked.** A recursive call re-checks that every input path owned at entry is still owned at the call (individually owned, not live later, not another operand's) — the same Unescaped/Dead/Disjoint test the W demand makes; a W on a path not owned at entry is demanded at the outermost caller. With the mask removed too (`recwritesown`) the generator catches it on all three seeds (RESULTS.md). |
 | `symenv` | a callback's own environment is not an "other operand" of its arguments | 0/0; 0/0; 0/0 (no mismatch) | **Masked.** Every supply is re-checked where its call is known (`recheckSupplies` at `callKnown`, against `otherPaths`, which include the callback's capture paths), so an argument the callback's environment also holds loses its owned bit there and the W ⇒ owned edge rejects; `supply-recheck` (required, 3/3) controls that re-check. |
-| `borrowedsupply` (flag `borrowed-supply`) | borrowed source elements dropped from a step's re-check | 18/0; 15/0; 12/0 (no mismatch) | See "Borrowed supply under summaries": the line is live but not observable; its flag is a required control against the per-call checker. |
+| `borrowedsupply` (flag `borrowed-supply`) | borrowed source elements dropped from a step's re-check | 15/0; 18/0; 22/0 (no mismatch) | See "Borrowed supply under summaries": the line is live but not observable; its flag is a required control against the per-call checker. |
 
 ## Gaps
 
@@ -238,8 +238,8 @@ Holes the generator does not reach that are not equivalent:
 | calls, edge once ⇒ ≤1 | counted per slot, many in a step or recursion | `--mutant=calls-edge`, `--mutant=many-off` (a step's single call counted as one) | probes; generator 3/3 |
 | once consumed at a callee's call | a once function actual the callee calls is demanded, with its written captures | `--mutant=once-through-call` | probes; generator 3/3 |
 | guards | cache reused only where every guard answers the same | `--mutant=guard-reuse` | probe; generator 3/3 |
-| xreq, edge xreq ⇒ exclusive | published xreq, and checked at a call that knows the callback | `callback-requires`, `requires-edge` | argued equivalent (hit 106 times, no verdict changed) |
-| supply transfer | a callee's supplies to our input become ours | `transfer-supplies` | argued equivalent (hit 86 times, no verdict changed) |
+| xreq, edge xreq ⇒ exclusive | published xreq, and checked at a call that knows the callback | `callback-requires`, `requires-edge` | argued equivalent (current verdict deltas: 0 on all three seeds and both searches) |
+| supply transfer | a callee's supplies to our input become ours | `transfer-supplies` | argued equivalent (current verdict deltas: 0 on all three seeds and both searches) |
 | need | not a separate row | — | — |
 
 Liveness has its own required control, `--mutant=branch-live` (a
@@ -258,9 +258,9 @@ from the holders a non-consuming traversal re-checks its step's writes and
 supplies against. In the per-call checker it is load-bearing, and the
 generator catches it on all three final seeded streams (control logs and CI).
 Under summaries the line is **live**: the independent source sweep shows
-18, 15 and 12 newly accepted programs per 20000 trials (seeds 20261011, 17,
+15, 18 and 22 newly accepted programs per 20000 trials (seeds 20261011, 17,
 271828), with no newly rejected programs and no trace disagreement. Bound 2
-also has 98 newly accepted programs, all agreeing. A typical one folds
+also has 98 newly accepted programs, all agreeing; the targeted space has no changed verdicts. A typical one folds
 `borrowOrGrow` over three fresh rows: the borrowed row is written once and
 never read again. The line is kept. That no program can distinguish it is
 **argued, not checked**: a
@@ -393,6 +393,12 @@ Besides `Invariant`, the step lemma now assumes, and concludes for its result:
 
 `summary_sound` (and `map_summary_sound`) were restated too:
 
+* **call shape**: the argument and capture counts must match the declaration,
+  and their total must match `e.inputs`. Without these three premises, the
+  same input bound as an argument in the summary but supplied as a capture
+  to `callResult` made clause 1 false. The fixed guard executes that old
+  counterexample; the falsifier now varies the split independently of the
+  naming and checks its arity premises.
 * **clause 3 named only parameters**, so a declaration returning a captured
   list (`capGet`) or its argument published as shared (`publish`) broke it:
   it now covers captures (`inputOrigin`) and admits `shared`/⊤ in `res(q)`;
@@ -497,14 +503,14 @@ hypotheses checked rather than assumed:
   running the accepted programs of a generated campaign, against every published summary
   of the called declaration whose hypotheses the call meets under the
   canonical naming (each canonical origin names the arrays at its path),
-  guards resolved with abstract closures built from the actual ones.
+  guards resolved with abstract closures built from the actual ones. Every alternate split of those concrete inputs into arguments and captures is also checked, with naming derived independently from the declaration. The three explicit length premises exclude wrong splits; a fixed regression executes the review's wrong split and shows the old conclusion failed.
 
 What it found, in order: the review's counterexample (on the earlier
 statement), dishonest closures, ill-typed expressions, `env` paths of known
 function values (`namesAt`), and, on the corrected statement, **the second
 checker defect below**. After the fixes, the current 100 000-configuration runs and every call of
 100 000 generated programs per seed are recorded in RESULTS.md and
-`regressions/falsify-round6-*.log`. Those logs, rather than previous rounds'
+`regressions/falsify-followup-*.log`. Those logs, rather than previous rounds'
 counts, are the current evidence.
 
 Vacuity fails a run if more than 0.5 % of calls are described by no summary
@@ -579,8 +585,10 @@ and the package's own imports; exactly three `sorry`s, all in
 `Soundness.lean`. It then builds everything, fails if any file changed (the
 audit binary included), and runs `audit env` on the built modules: the
 pinned `sorryAx` set and the allowed axioms over every constant, every
-constant replayed through the kernel module by module in a fresh
-environment of its imports (as lean4checker does), and no compiler
+ordinary constant replayed through the kernel module by module in a fresh
+environment of its imports (as lean4checker does), every recursor's complete
+metadata compared with the kernel-regenerated value (including nested
+auxiliaries absent from the higher-level replay metadata), and no compiler
 attribute that swaps in an implementation. The review's payload is refused
 at `audit sources` ("command Lean.Parser.Command.eval is not allowed").
 Historical audit measurement (before the final round 6 additions):
@@ -598,7 +606,7 @@ recursors of nested inductives are regenerated by the kernel rather than
 replayed. An `example` adds no constant, so it also scans every `.lean` file
 under the package, subdirectories included, outside comments, strings and
 character literals: exactly three `sorry` tokens; no `admit`, `axiom`,
-`run_cmd`, `run_elab`, `run_meta`, `elab`, `elab_rules`, `macro`,
+`run_cmd`, `run_tac`, `run_elab`, `run_meta`, `elab`, `elab_rules`, `macro`,
 `macro_rules`, `syntax`, `initialize`, `builtin_initialize`, `#eval` (outside
 this audit file) or `unsafe` as a token; no `native_decide`,
 `skipKernelTC`, `addDecl`, `addAndCompile`, `setEnv`, `modifyEnv`,
@@ -653,3 +661,26 @@ under the default (corrected) config.
    summary in the thesis; the earlier executable checker used an empty summary
    there and accepted an unsound program. This is an implementation defect,
    not a thesis one; both checkers now refuse it as a limit.
+
+### Verification after the sixth independent review
+
+The parser checks command nodes recursively, including `in` and `mutual`,
+and refuses executable `run_tac`/`run_cmd`/`by_elab` syntax before elaboration.
+There is no exemption for ordinary definitions or theorems named `rec_*`.
+Recursor declarations are compared in full against the kernel's regenerated
+`RecursorVal`s using its kernel environment, including nested auxiliaries
+that Lean's higher-level replay metadata does not register. This avoids both
+the broad name skip and the replay API's missing-auxiliary-recursors error.
+
+The main theorem still uses only `invariant_preserved`: the step lemma carries
+the soundness proof. `summary_sound` and `map_summary_sound` are separate
+unproved obligations, not artificially inserted into that dependency chain.
+Three sorries remain; no complete certification is claimed.
+
+The 144-program targeted grammar enumerates its displayed Cartesian products:
+constants -1/0/1/2, both comparison/branch outcomes, 1/2/3 calls of a captured
+once callback, a consumed captured list supplied to a captured writer,
+transitive capture revival, set indices 0/1, and small first-order recursion.
+CI runs it alongside the original size-2 grammar. It is still a small grammar;
+arbitrary declaration tables, type shapes and recursive structures remain
+outside exhaustive coverage. RESULTS.md distinguishes the two searches.

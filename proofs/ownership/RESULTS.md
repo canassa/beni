@@ -1,267 +1,204 @@
-# Round 6 results
+# Results after the sixth independent review
 
-The last Lean runtime change is `83b6dcf` (generator v5, checker, both interpreters,
-falsifier and enumeration). All measurements below use those final runtime
-sources; later commits contain reports and retained evidence. Lean 4.29.1 is
-pinned. Linux runs used the isolated worktree on `dagon` under
-`nix develop .#ownership`, with every descendant pinned to CPUs 0–7. The macOS
-compiler gates used `zorg`, with Node 24 from Nix. Previous rounds' numbers
-remain in git history and explicitly historical passages of COVERAGE.md.
+The prior round-6 results are historical (git revision `6513cfcb1`). They
+counted `nofix1` and `oncethroughcall` twice and missed three new planted edits.
+The current table counts **65 unique source edits**: the historical alias is
+normalized to `oncethroughcall`, and all four sixth-review edits are included.
+The final checker, interpreters, generator and search templates are the sources
+of `1fc806e78`; later commits contain reports and retained evidence. Every
+reported campaign uses those semantic sources. Heavy Linux work ran on `dagon`
+with every descendant pinned to CPUs 0–7. Lean 4.29.1 is pinned.
 
-## Findings addressed
+## Changes per finding
 
-1. **Nested closures and function-typed joins.** `namesAt` follows captures
-   recursively; symbolic captures use the environment row. A mismatched-shape
-   join retains every cell of both alternatives under unknown, so an unknown
-   result used as data cannot hide its captured array. Unknown functions are
-   still refused when called.
-2. **Closure factories and callback vacuity.** Result descriptions name arrays
-   through arbitrarily nested known captures and through symbolic environments.
-   Summary clause 1 admits a called callback's environment writes, demanded at
-   its caller. The unnecessary unique-holder premise is removed. Vacuity is
-   counted per call and fails above 0.5% for non-separation reasons or 5% for
-   separating-input aliasing; these are coverage budgets, not proofs.
-3. **Quote character audit bypass.** The authoritative audit uses Lean's parser,
-   builds its trusted executable before audited elaboration, checks a clean
-   committed export and unchanged source/binary hashes, then replays Ownership
-   and Main constants in the kernel. The ` '"' ` followed by a hidden sorry
-   probe is rejected as four sorries. The in-build audit remains an extra check.
-4. **Missed `setexcl` / `oncelive` holes.** Fixed probes and required controls
-   cover both; generator moves reach both. The source sweep below records their
-   independent baseline verdict differences and concrete disagreements.
-5. **Randomly missed shapes.** A seed-independent bounded grammar enumerates
-   syntax with typed operands, including joins returned as data, nested closures
-   and last-two-result observations. CI uses bound 2; bound 3 is measured below.
-   This is exhaustive only for that grammar, not for the ownership core.
-6. **Crash evidence.** Source sweeps check every newly accepted program without
-   shrinking, flush the first mismatch and save its original AST first. Every
-   seed retains counts, status and logs. A deliberate SIGSEGV after the first
-   mismatch was reported as `CRASH-after-mismatch` on all three seeds (indices
-   321 / 284 / 156, exit 139), retained all originals, and failed the runner.
-   This injection is separate from the source-mutant matrix; real sweeps did
-   not crash.
-7. **Additional defects found while finishing.** Recursive closure agreement
-   excludes mislabelled inner code; recursive closure honesty excludes a falsely
-   many-use inner closure; `WellTyped` checks actual heap values as well as
-   value-side observations (including dead close sources). These premise fixes
-   have build-time regression guards. A real accepted mismatch remained when
-   a higher-order callee called an outer once closure capturing an inner once
-   closure whose array had been revived by `close`. `demandCallbackCaptures`
-   now recursively demands capture writes and roots, forwards symbolic call
-   counts and checks multiplicity. The fixed verdict fixture failed before the
-   fix and passes after it; both search grammars now contain the shape.
+1. **False summary statement:** `summary_sound` and `map_summary_sound` now
+   require argument length = declaration parameter count, capture length =
+   declaration capture count, and canonical input length = their sum. The
+   regression actually evaluates the wrongly split bump call and demonstrates
+   the old conclusion failure. Naming is independent of the split, and the
+   falsifier tries every alternate boundary and checks its arity premises.
+2. **Audit bypass:** command-node restrictions apply throughout the syntax
+   tree, including `in` and `mutual`. `run_tac`, `run_cmd`, `run_meta`,
+   `run_elab` and `by_elab` executable syntax is refused before elaboration.
+   Root audit-file exceptions cannot be impersonated by a nested basename.
+   The preflight injection was rejected before its IO wrote a marker; failure
+   retained the exported work and logs. No `rec_*` name exempts an ordinary
+   declaration. All `RecursorVal` metadata is compared with the kernel's
+   regenerated recursors, including nested auxiliaries missing from Lean's
+   higher-level replay metadata. The full current environment audit passes.
+3. **Main theorem dependency:** agreed: only `invariant_preserved` is in
+   `accepted_traces_agree`'s proof dependency chain. The step lemma carries
+   the proof; the two summary statements remain separate unproved obligations.
+   No artificial dependency or completed certification is claimed.
+4. **Failure exits:** unknown commands/options, malformed numeric inputs,
+   ignored `ci --mutant`, zero falsification and missing verdict-diff mutants
+   fail before work. CI saves original/shrunk campaign witnesses, inconclusive
+   program ASTs and failed fixture ASTs. Campaigns check every child status and
+   publish logs only after all succeed. An injected worker failure returned 1,
+   did not print done and preserved prior logs.
+5. **Evidence/environment/counting:** failed audit directories survive;
+   ownership supplies Node 24 and, on Linux, taskset. The source-mutant runner
+   canonicalizes and deduplicates aliases. Failure probes and the actual
+   source-mutated CI failure retain reproducing artifacts.
+6. **Narrow grammar:** the original size-2 grammar remains 55,966 programs.
+   CI additionally runs all 144 programs of a targeted Cartesian-product
+   grammar: constants -1/0/1/2, both eq/lt outcomes, small first-order recur,
+   captured once call counts 1/2/3, consumed captures, transitive capture
+   revival, both function-join outcomes retained as data and set indices 0/1.
+   The new source edits are exercised in supported shapes, without weakening
+   the checker's documented `limit:` boundaries. This is still a finite small
+   grammar, not exhaustive ownership-language coverage.
 
-## Differential campaigns
+## Campaigns and falsification
 
-20,000 programs per seed, summary checker plus per-call cross-check. Every
-accepted program was executed in both interpreters. Cross-check verdict
-precision differences are reported, not counted as semantic disagreement.
+20,000 generated programs per seed, with the per-call cross-check. All
+accepted executions agree; precision differences are counted separately.
 
-| Seed | Typed | Accepted | Distinct accepted | With write | Aliased write | Limits | Cross-check verdict differences | Mismatches / execution errors |
+| Seed | Typed | Accepted | With write | Aliased write | Limits | Cross-only summary / per-call | Mismatches / execution errors |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| 20261011 | 20000 | 3060 | 1967 | 1749 | 579 | 12 / 0 | 0 / 0 |
+| 17 | 20000 | 3017 | 1905 | 1673 | 564 | 15 / 0 | 0 / 0 |
+| 271828 | 20000 | 3052 | 1957 | 1736 | 546 | 18 / 0 | 0 / 0 |
+
+100,000 configuration samples and calls of 100,000 generated programs per
+seed; the full logs retain hypothesis, nested-capture, aliasing, low-fuel,
+map-certificate and vacuity counts.
+
+| Seed | Accepted configurations | With write | Actual calls | Checked pairs | Alternate splits tried / excluded | Split violations | Vacuity separation / description / other | Violations |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| 20261011 | 20000 | 3064 | 2019 | 1960 | 1701 | 582 | 18 / 0 | 0 / 0 |
-| 17 | 20000 | 3062 | 2001 | 1989 | 1765 | 601 | 16 / 0 | 0 / 0 |
-| 271828 | 20000 | 3123 | 1988 | 1960 | 1714 | 570 | 10 / 0 | 0 / 0 |
+| 20261011 | 66141 | 21248 | 42504 | 55908 | 103978 / 103978 | 0 | 1112 / 0 / 6 | 0 |
+| 17 | 66143 | 21088 | 43013 | 56462 | 105383 / 105383 | 0 | 1182 / 1 / 11 | 0 |
+| 271828 | 66247 | 21002 | 43282 | 57109 | 106103 / 106103 | 0 | 1105 / 0 / 7 | 0 |
 
-Full family counts and summary reuse/hit counts are in
-`regressions/campaign-round6-{20261011,17,271828}.log`.
-`ownership ci` passes 93 verdict fixtures and all fixed control probes,
-one 20,000-program campaign, all required generator controls and bound 2.
-Standalone `controls 20000` passes on seeds 17 and 271828 as well. Optional
-or equivalent controls are reported without being falsely required.
+Alternate boundaries are checked even though they are not real call records;
+the naming follows the declaration, not the proposed split. The concrete
+wrong-split regression meets the old premises and fails clause 1. New arity
+premises exclude every wrong split above. These finite attempts still do not
+cover arbitrary heaps, names or programs and do not prove the statement.
+Vacuity fails above 0.5% for non-separation reasons or 5% for documented
+input-alias separation. Remaining excluded calls are reported, not concealed.
 
-## Source-mutant matrix
+## Unique planted-hole matrix
 
-All 62 planted source edits from the five reviews: 20,000 generated programs
-on each of seeds 20261011, 17 and 271828. The unedited executable supplies
-accepted indices; the mutated executable cannot supply its own baseline.
-Every newly accepted program runs at fuel 100,000. The three baseline
-accepted-index lists and runtime SHA-256 manifest are retained in regressions;
-enumeration baseline hashes are in `enum-baseline-round6.sha256` (the full
-90 MB bound-3 key list remains in the isolated Linux scratch checkout). There are no build failures,
-crashes, or inconclusive executions in this matrix.
+Each generator cell is **mismatches; newly accepted / newly rejected** versus
+accepted indices supplied by the independent unedited executable. The full
+20,000-program stream is visited on every seed, including after a mismatch.
+Each newly accepted program runs at fuel 100,000. Original ASTs, per-seed
+statuses and logs survive in `regressions/followup-evidence/`.
 
-Generator cells are **mismatches; newly accepted / newly rejected** against
-that independent baseline. A positive mismatch count catches a hole. The full
-stream is visited even after its first mismatch. Enumeration cells are
-**caught or miss; newly accepted**, at bounds 2 and 3. Enumeration stops at its
-first witness, so a caught row is a prefix count, not a complete verdict total.
-It has no seed: the same deterministic result applies to all three seeded
-columns and is run once per edit, not three times under fictitious seeds.
-A dash means bound 3 was not run for that edit. Raw counts include visited
-programs and retained witness ASTs in `regressions/mutant-evidence/` and
-`regressions/mutant-evidence-bound3/`.
+Enumeration is seed-independent and is run once per edit: its result applies
+to all three seeded columns. Size-2 cells are **catch/miss; newly accepted**;
+a catch stops at its first witness, so its verdict count is a prefix count.
+Targeted cells are **catch/miss; newly accepted; mismatches**, for the entire
+144-program space. Every source edit is built and exercised by both searches.
+There are no source-mutant build failures, crashes or inconclusive runs.
 
-| Source edit | Generator 20261011 | Generator 17 | Generator 271828 | Enum 2 (all seeds) | Enum 3 (all seeds) | Verdict |
+| Unique source edit | Generator 20261011 | Generator 17 | Generator 271828 | Size 2 (all seeds) | Targeted (all seeds) | Verdict |
 |---|---:|---:|---:|---|---|---|
-| `disjoint` | 63; 109/0 | 64; 98/0 | 64; 115/0 | caught; 1 | — | caught |
-| `borrowedsupply` | 0; 18/0 | 0; 15/0 | 0; 12/0 | miss; 98 | — | argued equivalent |
-| `travexcl` | 31; 34/0 | 35; 37/0 | 29; 32/0 | caught; 5 | — | caught |
-| `manycap` | 5; 10/0 | 5; 17/0 | 6; 11/0 | miss; 0 | — | caught |
-| `copyexcl` | 9; 56/0 | 19; 60/0 | 14; 62/0 | miss; 4 | — | caught |
-| `closesrc` | 53; 76/0 | 53; 69/0 | 58; 90/0 | caught; 11 | — | caught |
-| `keepsshape` | 1; 12/0 | 3; 9/0 | 1; 15/0 | miss; 4 | — | caught |
-| `xres` | 33; 64/0 | 23; 47/0 | 29; 46/0 | miss; 0 | — | caught |
-| `separated` | 625; 709/0 | 595; 657/0 | 626; 685/0 | caught; 1 | — | caught |
-| `dead` | 1711; 2184/0 | 1709; 2155/0 | 1720; 2168/0 | caught; 1 | — | caught |
-| `escape` | 561; 561/0 | 517; 518/0 | 547; 547/0 | caught; 1 | — | caught |
-| `focusexcl` | 622; 813/0 | 612; 763/0 | 641; 812/0 | caught; 7 | — | caught |
-| `once` | 0; 0/0 | 0; 0/0 | 0; 0/0 | miss; 0 | — | argued equivalent |
-| `nestedsep` | 0; 0/0 | 0; 0/0 | 0; 0/0 | miss; 0 | — | argued equivalent |
-| `reqexcloutside` | 0; 0/0 | 0; 0/0 | 0; 0/0 | miss; 0 | — | argued equivalent |
-| `recvalidate` | 0; 0/0 | 0; 0/0 | 0; 0/0 | miss; 0 | — | argued equivalent |
-| `writeout` | 106; 174/0 | 108; 162/0 | 110; 158/0 | miss; 0 | — | caught |
-| `tsupplyexcl` | 33; 64/0 | 23; 47/0 | 29; 46/0 | miss; 0 | — | caught |
-| `escapeowned` | 0; 0/0 | 0; 0/0 | 0; 0/0 | miss; 0 | — | argued equivalent |
-| `guardreuse` | 26; 28/0 | 22; 23/0 | 14; 14/0 | miss; 0 | — | caught |
-| `callbackxres` | 555; 580/0 | 540; 561/0 | 571; 601/0 | miss; 0 | — | caught |
-| `supplyedge` | 30; 50/0 | 26; 46/0 | 19; 51/0 | caught; 66 | — | caught |
-| `supplyrecheck` | 8; 28/0 | 3; 21/0 | 7; 39/0 | miss; 175 | — | caught |
-| `callsedge` | 112; 160/0 | 125; 162/0 | 107; 147/0 | caught; 1 | — | caught |
-| `requiresedge` | 0; 0/0 | 0; 0/0 | 0; 0/0 | miss; 0 | — | argued equivalent |
-| `callbackwrites` | 9; 58/0 | 15; 54/0 | 8; 39/0 | caught; 1 | — | caught |
-| `callbackescapes` | 25; 25/0 | 21; 21/0 | 20; 20/0 | miss; 0 | — | caught |
-| `callbackaliases` | 87; 144/0 | 96; 128/0 | 99; 153/0 | miss; 439 | — | caught |
-| `callbackenv` | 131; 216/0 | 103; 194/0 | 117; 216/0 | caught; 1 | — | caught |
-| `callbackrequires` | 0; 0/0 | 0; 0/0 | 0; 0/0 | miss; 0 | — | argued equivalent |
-| `forwardguards` | 18; 18/0 | 16; 16/0 | 10; 10/0 | miss; 0 | — | caught |
-| `transfersupplies` | 0; 0/0 | 0; 0/0 | 0; 0/0 | miss; 0 | — | argued equivalent |
-| `oncethroughcall` | 100; 121/0 | 117; 133/0 | 105; 135/0 | caught; 1 | caught; 1 | caught |
-| `capturelive` | 101; 120/0 | 90; 103/0 | 90; 114/0 | caught; 1 | — | caught |
-| `copyelems` | 1; 3/0 | 1; 2/0 | 2; 3/0 | caught; 1 | — | caught |
-| `putexcl` | 83; 150/0 | 70; 123/0 | 78; 125/0 | miss; 0 | — | caught |
-| `recwrites` | 0; 0/0 | 0; 0/0 | 0; 0/0 | miss; 0 | — | argued equivalent |
-| `recwritesown` | 19; 79/0 | 16; 85/0 | 27; 94/0 | miss; 0 | — | caught |
-| `keepsany` | 0; 0/0 | 0; 0/0 | 0; 0/0 | miss; 0 | — | argued equivalent |
-| `symenv` | 0; 0/0 | 0; 0/0 | 0; 0/0 | miss; 0 | — | argued equivalent |
-| `branchlive` | 6; 23/0 | 15; 32/0 | 18; 33/0 | caught; 7 | — | caught |
-| `branchclosure` | 36; 42/0 | 31; 37/0 | 38; 42/0 | caught; 1 | — | caught |
-| `sharedroots` | 49; 49/0 | 57; 57/0 | 52; 52/0 | caught; 1 | — | caught |
-| `sharedfn` | 3; 3/0 | 13; 13/0 | 13; 13/0 | miss; 0 | — | caught |
-| `manyoff` | 18; 18/0 | 15; 15/0 | 16; 16/0 | caught; 1 | — | caught |
-| `noscope` | 0; 0/0 | 0; 0/0 | 0; 0/0 | miss; 0 | — | gap |
-| `joinexcl` | 116; 215/0 | 93; 170/0 | 107; 172/0 | miss; 0 | — | caught |
-| `resprov` | 113; 181/0 | 92; 154/0 | 100; 155/0 | caught; 1 | — | caught |
-| `argrecheck2` | 164; 208/0 | 160; 207/0 | 176; 225/0 | miss; 0 | — | caught |
-| `pushexcl` | 12; 12/0 | 19; 20/0 | 10; 11/0 | miss; 0 | — | caught |
-| `nofix1` | 100; 121/0 | 117; 133/0 | 105; 135/0 | caught; 2 | — | caught |
-| `nofix2` | 45; 66/0 | 48; 64/0 | 52; 82/0 | miss; 0 | caught; 17 | caught |
-| `hiddencopy` | 0; 0/0 | 0; 0/0 | 0; 0/0 | miss; 0 | — | gap |
-| `focuscontainer` | 9; 25/0 | 6; 16/0 | 6; 16/0 | caught; 1 | — | caught |
-| `atelem` | 29; 31/0 | 23; 25/0 | 32; 34/0 | caught; 2 | — | caught |
-| `shadowing` | 25; 26/0 | 16; 18/0 | 17; 17/0 | miss; 0 | — | caught |
-| `setexcl` | 13; 14/0 | 21; 22/0 | 23; 26/0 | miss; 0 | caught; 51 | caught |
-| `oncelive` | 13; 13/0 | 9; 9/0 | 15; 15/0 | caught; 1 | — | caught |
-| `envinst` | 96; 160/0 | 78; 138/0 | 89; 139/0 | caught; 1 | — | caught |
-| `keepsep` | 0; 0/0 | 0; 0/0 | 0; 0/0 | miss; 0 | — | gap |
-| `ownedothers` | 5; 15/4 | 2; 7/2 | 1; 11/1 | miss; 0 | — | caught |
-| `joindrops` | 0; 0/0 | 0; 0/0 | 0; 0/0 | miss; 0 | caught; 1 | caught |
+| `disjoint` | 56; 92/0 | 65; 113/0 | 62; 103/0 | caught; 1 | miss; 0; 0 | caught |
+| `borrowedsupply` | 0; 15/0 | 0; 18/0 | 0; 22/0 | miss; 98 | miss; 0; 0 | argued equivalent |
+| `travexcl` | 31; 31/0 | 24; 26/0 | 24; 26/0 | caught; 2 | miss; 0; 0 | caught |
+| `manycap` | 3; 9/0 | 10; 19/0 | 2; 4/0 | miss; 0 | miss; 0; 0 | caught |
+| `copyexcl` | 10; 53/0 | 13; 59/0 | 18; 59/0 | miss; 4 | miss; 0; 0 | caught |
+| `closesrc` | 62; 90/0 | 53; 82/0 | 63; 96/0 | caught; 11 | caught; 8; 8 | caught |
+| `keepsshape` | 3; 13/0 | 3; 12/0 | 1; 12/0 | miss; 4 | miss; 0; 0 | caught |
+| `xres` | 20; 41/0 | 24; 46/0 | 21; 39/0 | miss; 0 | miss; 0; 0 | caught |
+| `separated` | 623; 682/0 | 601; 680/0 | 543; 587/0 | caught; 1 | miss; 0; 0 | caught |
+| `dead` | 1731; 2179/0 | 1653; 2138/0 | 1822; 2303/0 | caught; 1 | caught; 96; 56 | caught |
+| `escape` | 556; 556/0 | 555; 555/0 | 547; 549/0 | caught; 1 | miss; 0; 0 | caught |
+| `focusexcl` | 626; 785/0 | 621; 805/0 | 559; 710/0 | caught; 17 | miss; 0; 0 | caught |
+| `once` | 0; 0/0 | 0; 0/0 | 0; 0/0 | miss; 0 | miss; 0; 0 | argued equivalent |
+| `nestedsep` | 0; 0/0 | 0; 0/0 | 0; 0/0 | miss; 0 | miss; 0; 0 | argued equivalent |
+| `reqexcloutside` | 0; 0/0 | 0; 0/0 | 0; 0/0 | miss; 0 | miss; 0; 0 | argued equivalent |
+| `recvalidate` | 0; 0/0 | 0; 0/0 | 0; 0/0 | miss; 0 | miss; 0; 0 | argued equivalent |
+| `writeout` | 101; 153/0 | 112; 165/0 | 89; 146/0 | miss; 0 | caught; 8; 4 | caught |
+| `tsupplyexcl` | 20; 41/0 | 24; 46/0 | 21; 39/0 | miss; 0 | miss; 0; 0 | caught |
+| `escapeowned` | 0; 0/0 | 0; 0/0 | 0; 0/0 | miss; 0 | miss; 0; 0 | argued equivalent |
+| `guardreuse` | 15; 15/0 | 21; 25/0 | 15; 18/0 | miss; 0 | miss; 0; 0 | caught |
+| `callbackxres` | 574; 592/0 | 553; 579/0 | 492; 504/0 | miss; 0 | miss; 0; 0 | caught |
+| `supplyedge` | 25; 50/0 | 16; 46/0 | 19; 58/0 | caught; 79 | miss; 0; 0 | caught |
+| `supplyrecheck` | 9; 33/0 | 7; 35/0 | 5; 42/0 | miss; 175 | miss; 0; 0 | caught |
+| `callsedge` | 102; 143/0 | 114; 148/0 | 108; 145/0 | caught; 1 | miss; 0; 0 | caught |
+| `requiresedge` | 0; 0/0 | 0; 0/0 | 0; 0/0 | miss; 0 | miss; 0; 0 | argued equivalent |
+| `callbackwrites` | 42; 88/0 | 47; 102/0 | 42; 98/0 | caught; 3 | caught; 4; 4 | caught |
+| `callbackescapes` | 14; 14/0 | 21; 21/0 | 16; 17/0 | miss; 0 | miss; 0; 0 | caught |
+| `callbackaliases` | 71; 112/0 | 86; 132/0 | 81; 131/0 | miss; 439 | miss; 0; 0 | caught |
+| `callbackenv` | 111; 191/0 | 115; 204/0 | 103; 194/0 | caught; 1 | miss; 0; 0 | caught |
+| `callbackrequires` | 0; 0/0 | 0; 0/0 | 0; 0/0 | miss; 0 | miss; 0; 0 | argued equivalent |
+| `forwardguards` | 11; 11/0 | 15; 15/0 | 12; 12/0 | miss; 0 | miss; 0; 0 | caught |
+| `transfersupplies` | 0; 0/0 | 0; 0/0 | 0; 0/0 | miss; 0 | miss; 0; 0 | argued equivalent |
+| `oncethroughcall` | 188; 236/0 | 172; 225/0 | 184; 228/0 | caught; 2 | caught; 16; 16 | caught |
+| `capturelive` | 85; 103/0 | 68; 81/0 | 81; 95/0 | caught; 1 | miss; 0; 0 | caught |
+| `copyelems` | 1; 2/0 | 0; 1/0 | 0; 2/0 | caught; 1 | miss; 0; 0 | caught |
+| `putexcl` | 69; 120/0 | 86; 138/0 | 68; 125/0 | miss; 0 | miss; 0; 0 | caught |
+| `recwrites` | 0; 0/0 | 0; 0/0 | 0; 0/0 | miss; 0 | miss; 0; 0 | argued equivalent |
+| `recwritesown` | 21; 61/0 | 15; 74/0 | 17; 62/0 | miss; 0 | miss; 0; 0 | caught |
+| `keepsany` | 0; 0/0 | 0; 0/0 | 0; 0/0 | miss; 0 | miss; 0; 0 | argued equivalent |
+| `symenv` | 0; 0/0 | 0; 0/0 | 0; 0/0 | miss; 0 | miss; 0; 0 | argued equivalent |
+| `branchlive` | 15; 25/0 | 12; 27/0 | 14; 26/0 | caught; 1 | miss; 0; 0 | caught |
+| `branchclosure` | 25; 28/0 | 33; 34/0 | 28; 35/0 | caught; 24 | miss; 0; 0 | caught |
+| `sharedroots` | 52; 52/0 | 56; 56/0 | 43; 43/0 | caught; 1 | miss; 0; 0 | caught |
+| `sharedfn` | 13; 13/0 | 7; 7/0 | 10; 10/0 | miss; 0 | miss; 0; 0 | caught |
+| `manyoff` | 13; 13/0 | 13; 13/0 | 18; 18/0 | caught; 1 | miss; 0; 0 | caught |
+| `noscope` | 0; 0/0 | 0; 0/0 | 0; 0/0 | miss; 0 | miss; 0; 0 | gap |
+| `joinexcl` | 89; 161/0 | 110; 186/0 | 89; 165/0 | miss; 0 | miss; 0; 0 | caught |
+| `resprov` | 93; 146/0 | 102; 169/0 | 93; 159/0 | caught; 1 | caught; 32; 20 | caught |
+| `argrecheck2` | 143; 172/0 | 147; 186/0 | 176; 214/0 | miss; 0 | caught; 24; 16 | caught |
+| `pushexcl` | 11; 12/0 | 10; 11/0 | 7; 7/0 | miss; 0 | miss; 0; 0 | caught |
+| `nofix2` | 59; 87/0 | 47; 75/0 | 54; 84/0 | miss; 0 | caught; 8; 8 | caught |
+| `hiddencopy` | 0; 0/0 | 0; 0/0 | 0; 0/0 | miss; 0 | miss; 0; 0 | gap |
+| `focuscontainer` | 4; 18/0 | 9; 19/0 | 6; 16/0 | caught; 1 | miss; 0; 0 | caught |
+| `atelem` | 20; 22/0 | 26; 27/0 | 13; 15/0 | caught; 2 | caught; 8; 4 | caught |
+| `shadowing` | 8; 8/0 | 14; 14/0 | 17; 19/0 | miss; 0 | miss; 0; 0 | caught |
+| `setexcl` | 21; 21/0 | 17; 18/0 | 15; 16/0 | miss; 0 | caught; 8; 4 | caught |
+| `oncelive` | 16; 16/0 | 5; 5/0 | 6; 6/0 | caught; 1 | miss; 0; 0 | caught |
+| `envinst` | 91; 165/0 | 107; 190/0 | 90; 173/0 | caught; 1 | caught; 32; 12 | caught |
+| `keepsep` | 0; 0/0 | 0; 0/0 | 0; 0/0 | miss; 0 | miss; 0; 0 | gap |
+| `ownedothers` | 0; 4/2 | 4; 10/0 | 2; 8/2 | miss; 0 | miss; 0; 0 | caught |
+| `joindrops` | 7; 29/0 | 17; 42/0 | 10; 33/0 | miss; 0 | caught; 64; 32 | caught |
+| `capturerecurse` | 33; 33/0 | 20; 20/0 | 18; 18/0 | miss; 0 | caught; 4; 4 | caught |
+| `joinright` | 7; 29/0 | 16; 41/0 | 10; 32/0 | miss; 0 | caught; 32; 12 | caught |
+| `capturecount` | 25; 44/0 | 14; 37/0 | 12; 26/0 | miss; 0 | caught; 8; 8 | caught |
+| `captureconsume` | 11; 24/0 | 9; 21/0 | 15; 30/0 | miss; 0 | caught; 4; 4 | caught |
 
-Generator: 46 edits caught; bound 2: 24 edits caught. Union: 47 caught, 12 argued equivalent, 3 gaps.
+Generator catches 50 unique edits; size 2 catches 23; targeted catches 16. Union: **50 caught, 12 argued equivalent/masked, three search gaps**.
 
-The 12 equivalence/masking arguments and their changed-verdict counts are
-written in [COVERAGE.md](COVERAGE.md#equivalent-argued). They are arguments,
-not Lean proofs. No unchanged verdict is presented as an argument by itself.
-The summary-checker `borrowedsupply` edit changes some verdicts without a
-trace mismatch; the per-call checker still has a required borrowed-supply
-control. `recwritesown` removes the second check masking `recwrites` and is
-caught. `supplyrecheck` removes the check masking `symenv` and is caught.
+The [written masking arguments](COVERAGE.md#equivalent-argued) have current
+changed-verdict counts; a zero delta alone is not an argument. `nofix1` is a
+historical alias and has no additional row. The four sixth-review edits are
+`capturerecurse`, `joinright`, `capturecount` and `captureconsume`.
 
-Remaining gaps:
+Three remaining search gaps:
 
-- **`noscope`:** typed programs cannot have an unbound live variable. CI's
-  checker-level configuration probe reaches it; generated syntax cannot.
-- **`hiddencopy`:** an interpreter-only edit changes no checker verdict, and
-  changed-verdict sweeps do not execute it. The source-mutated fixed probes
-  fail (`hiddencopy-fixtures-round6.log`). Add direct mutation/write-behaviour
-  checks to campaigns to expose it there; do not claim universal equivalence.
-- **`keepsep`:** the current grammars lack a focused list of two-list records
-  whose body duplicates a fresh list across fields. `keepsep-probe.txt` and
-  its corrected/mutated logs show the mutant returning an exclusive result
-  with a repeated physical footprint; the corrected checker drops that
-  certificate. Add that shape and concrete certificate checking to search.
-  This is a certificate counterexample, not a measured trace mismatch.
+- `noscope`: typed syntax cannot produce an unbound live variable; CI's direct
+  checker-configuration probe reaches it.
+- `hiddencopy`: interpreter-only edits change no checker verdict; fixed
+  aliasing probes fail. Direct in-place/write checks are needed in campaigns.
+- `keepsep`: search lacks a focused list of records with two list fields
+  returning one fresh list in both. The written probe shows a false
+  exclusivity certificate, not a measured trace mismatch. Add that type shape
+  and concrete certificate checking to the searches.
 
-## Bounded enumeration
+## Enumeration and final checks
 
-```text
-enumerate bound=2 enumerated=55966 typed=55966 accepted=31680 with-write=10468 mismatches=0 inconclusive=0 caught=false elapsed-ms=1262
-```
+The corrected baseline size-2 and targeted logs are retained alongside the
+matrix. Size 2 is complete for its original displayed grammar; targeted
+search is complete for its displayed template products. The old 20,965,567
+size-3 run belongs to `6513cfcb1` and was **not rerun on this head**; it is
+historical, not current evidence. Targeted enumeration now reaches the
+set-exclusive and shape-join witnesses in CI without that larger run.
 
-```text
-enumerate bound=3 enumerated=20965567 typed=20965567 accepted=7323438 with-write=2713330 mismatches=0 inconclusive=0 caught=false elapsed-ms=1218933
-```
+All 98 fixtures and required generator controls pass on each seeded stream
+(CI supplies seed 20261011; standalone controls supply 17 and 271828). Final
+committed-head Lean build, CI, clean-checkout audit and `zorg build gates`
+results are recorded in the PR reply. Gates have the same four existing
+macOS failures: two stale-path case-folding and two browser-driver cache
+pruning CPU-budget tests. Those tests are unchanged; no gate success is claimed.
 
-Bound 3 includes 20,965,567 programs. Its targeted edits are `joindrops`,
-`setexcl`, `oncethroughcall` and `nofix2`; table results above state what it
-actually catches. The generator's closure-join move calls the unknown join,
-which both checkers refuse; keeping the result as data is why enumeration
-can reach the lost-cells edit. Neither grammar is exhaustive over declarations,
-types, recursion or arbitrary expression depth.
-
-## Attempts to falsify the three unproved statements
-
-100,000 random configurations and calls of 100,000 generated programs per
-seed. Configuration hypotheses are tested; all uncovered configurations
-are refused. Nested and deliberately mislabelled captures are exercised.
-
-| Seed | Accepted configurations | With write | Nested accepted | Mislabelled closures excluded | Uncovered / accepted | Both runs fail at low fuel | Violations |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| 20261011 | 66141 | 21248 | 22793 | 7377 | 10391 / 0 | 1290 | 0 |
-| 17 | 66143 | 21088 | 22579 | 7304 | 10489 / 0 | 1298 | 0 |
-| 271828 | 66247 | 21002 | 22868 | 7203 | 10413 / 0 | 1282 | 0 |
-
-`checked` below counts satisfying summary/call pairs; `calls` and vacuity
-count actual calls once. Separating vacuity means the same array occurs at
-non-aliasing canonical input origins. The guard/other count includes calls
-for which no cached summary's guards match, not a theorem violation.
-
-| Seed | Calls | Checked pairs | Map pairs | Vacuous: separating | Vacuous: description | Vacuous: other | Violations |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| 20261011 | 44111 | 57832 | 4270 | 1315 | 0 | 13 | 0 |
-| 17 | 44328 | 57606 | 4237 | 1290 | 0 | 10 | 0 |
-| 271828 | 43910 | 57619 | 4200 | 1221 | 2 | 7 | 0 |
-
-There are no unique-holder exclusions. Two calls on seed 271828 are
-classified under description by their first candidate summary. Diagnostic
-replay (`vacuity-round6-described.log`) shows another candidate does describe
-each captured array, but no candidate satisfies all hypotheses. The reason
-counts classify the first non-guard exclusion, not every failing candidate. All non-separation exclusions
-remain below 0.5% and separating exclusions below 5%. This is explicitly
-incomplete coverage, not a claim that every accepted call meets the lemma's
-premises. The fixed symbolic-capture and nested-factory cases now have
-meaningful descriptions.
-
-## Proof status and validation
-
-Three `sorry`s remain in Soundness.lean:
-
-- **`invariant_preserved`:** believed true because separating names plus
-  Unescaped/Dead/Disjoint demands protect every live holder and observer;
-  actual values are typed on both sides and captured code and once classes
-  agree recursively. Calls need the summary lemma and scopes need an
-  induction maintaining names and certificates. That induction is unfinished.
-- **`summary_sound`:** believed true because inference computes a validated
-  fixed point of canonical W/E/result rows and rechecks callback guards at
-  calls. Called function environments and nested results are named. The
-  separating-input premise and clause 4's missing invocation model remain
-  explicit limitations; no universal proof is claimed.
-- **`map_summary_sound`:** believed true from summary soundness plus builder
-  put/close contracts: each stored row is exclusive and separated, and close
-  records source provenance. The derived certificate proof is unfinished.
-
-`accepted_traces_agree` is proved conditional on `invariant_preserved` and
-therefore still depends on `sorryAx`. The audit pins exactly those four
-dependent constants; it does not certify ownership soundness.
-
-The Lean build and CI pass on these sources. `scripts/audit.sh` and the four
-requested checks are rerun on the committed report head before push; the
-final immutable head and exit results are recorded in the PR review reply.
-`zorg build gates` has the four known macOS failures: both stale-path
-case-folding tests and both browser-driver cache-pruning CPU-budget tests.
-They are untouched; no gate success is claimed. No compiler/runtime code in
-beni was changed, so no emitted-output hash refresh is needed.
-
-Not completed: the three proofs, summary clause 4, the three search gaps above,
-and unbounded enumeration. The sixth independent review is requested after
-push; PR #65 is not merged.
+Three sorries remain: `invariant_preserved` needs the configuration induction
+from sound separating demands; `summary_sound` needs the induction from
+validated fixed points and callback guards; `map_summary_sound` needs the
+derived certificate proof from summary and builder contracts. Reasons and
+limits are in COVERAGE.md. The main theorem remains conditional on the step
+lemma. Summary clause 4 is unstated. No complete proof, unbounded search,
+arbitrary declaration/type grammar, or merge is claimed.
