@@ -171,8 +171,10 @@
 // document — `location.assign`, `replace` or `reload`, a write to
 // `location.href` — is stopped as it starts and logs `(the host leaves the
 // page for "<url>")`, the address as the fetch log writes one; the address
-// stays and nothing fires. A navigation inside the document (a fragment,
-// `pushState`) runs as the host runs it. Chrome would load the other
+// stays, and no event of the page's fires — Chrome's Navigation API reports
+// the cancel, `navigateerror` with an `AbortError` on `navigation`, which no
+// platform reads. A navigation inside the document (a fragment, `pushState`)
+// runs as the host runs it. Chrome would load the other
 // document, under the driver's feet, and happy-dom, whose window loads
 // nothing, would change only the address. The page's history begins at the
 // page in both: a Chrome target opens at `about:blank`, which the driver
