@@ -8,6 +8,7 @@
     <button id="none">"none"</button>
     <button id="script">"script"</button>
     <button id="load">"load"</button>
+    <button id="reload">"reload"</button>
     <ol></ol>
   </main>
 </body>
@@ -21,6 +22,7 @@
     <button id="none">"none"</button>
     <button id="script">"script"</button>
     <button id="load">"load"</button>
+    <button id="reload">"reload"</button>
     <ol>
       <li>"changed to /a"</li>
     </ol>
@@ -39,6 +41,7 @@
     <button id="none">"none"</button>
     <button id="script">"script"</button>
     <button id="load">"load"</button>
+    <button id="reload">"reload"</button>
     <ol>
       <li>"changed to /a"</li>
       <li>"push refused: CrossOrigin https://example.com/x"</li>
@@ -58,6 +61,7 @@
     <button id="none">"none"</button>
     <button id="script">"script"</button>
     <button id="load">"load"</button>
+    <button id="reload">"reload"</button>
     <ol>
       <li>"changed to /a"</li>
       <li>"push refused: CrossOrigin https://example.com/x"</li>
@@ -78,6 +82,7 @@
     <button id="none">"none"</button>
     <button id="script">"script"</button>
     <button id="load">"load"</button>
+    <button id="reload">"reload"</button>
     <ol>
       <li>"changed to /a"</li>
       <li>"push refused: CrossOrigin https://example.com/x"</li>
@@ -104,6 +109,7 @@
     <button id="none">"none"</button>
     <button id="script">"script"</button>
     <button id="load">"load"</button>
+    <button id="reload">"reload"</button>
     <ol>
       <li>"changed to /a"</li>
       <li>"push refused: CrossOrigin https://example.com/x"</li>
@@ -122,6 +128,12 @@
 -- location
 (location: /r)
 (the DOM did not change)
+-- click #reload
+(the host leaves the page for "/r")
+(the DOM did not change)
+-- location
+(location: /r)
+(the DOM did not change)
 -- back
 <body>
   <main>
@@ -132,6 +144,7 @@
     <button id="none">"none"</button>
     <button id="script">"script"</button>
     <button id="load">"load"</button>
+    <button id="reload">"reload"</button>
     <ol>
       <li>"changed to /a"</li>
       <li>"push refused: CrossOrigin https://example.com/x"</li>

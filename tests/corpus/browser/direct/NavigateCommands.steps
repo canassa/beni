@@ -12,5 +12,7 @@ click #script
 location
 click #load
 location
+click #reload
+location
 back
 location

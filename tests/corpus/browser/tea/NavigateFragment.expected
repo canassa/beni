@@ -1,0 +1,24 @@
+-- load
+<body>
+  <main>
+    <button id="fragment">"fragment"</button>
+    <button id="whole">"whole"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #fragment
+(the DOM did not change)
+-- location
+(location: /_page.html#top)
+(the DOM did not change)
+-- click #fragment
+(the DOM did not change)
+-- location
+(location: /_page.html#top)
+(the DOM did not change)
+-- click #whole
+(the host leaves the page for "/_page.html")
+(the DOM did not change)
+-- location
+(location: /_page.html#top)
+(the DOM did not change)
