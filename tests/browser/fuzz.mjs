@@ -163,6 +163,9 @@ function fuzzSend({ program, value }) {
   if (direct !== undefined) {
     send = () => direct.send(program, value);
   } else {
+    // A page `fuzzInstall` did not see is another document: the program
+    // left the fuzzer's, past the driver's stop (`driver.mjs`, `prelude`).
+    if (globalThis.__beniFuzzMounts === undefined) throw new Error(`the page left its document for ${location.href}`);
     const mount = globalThis.__beniFuzzMounts[program];
     if (mount === undefined) return `the page mounted no program ${program}`;
     if (globalThis.__beniFuzzSend === undefined) return "the page has no guarded send: build it with --fuzz";
