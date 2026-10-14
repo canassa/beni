@@ -4510,17 +4510,44 @@ An untracked `send` or `riskySend` does not wait, and its first run and its answ
 were. A tracked command waits on a page that has no `track` of its name too: what the table holds can
 change during the wait, so the command does not read it first.
 
+*Amended 2026-10-14 (review of PR #97):* **the wait changes the order in which requests start.** An
+untracked command starts its request in its first run. A tracked command starts its request only
+after the wait of point 1. So in one `Cmd.batch`, and among the commands of one `update`, an
+untracked request starts before a tracked one, whatever their order in the batch. elm/http 2.0
+starts the requests of a batch in the batch's order. (f) lists this departure, and
+`browser/tea/HttpTrack` (`#batch`) pins it.
+
 **(d) Failures.** The tracker adds no failure. The request fails as §9.8.12 (b) and (c) say. The
 answer of a failed request also comes after every value the request reported. `Map` and `Set`, which
 hold the table, document no failure for the operations the table uses. A tagger that throws is a
 defect, by §9.8.5 point 4's path, and nothing catches it (`CLAUDE.md` rule 9).
 
-**(e) Rungs and cost.** `send` and `riskySend` suspend, as before; `track` is pure. A program that
-calls neither `track` nor a `send` with a tracker name ships none of this section's code: the table,
-the waits and the chunked read are reached only from a `Just` name or from `track`. The table is
-made by the first listener, so a page that never tracks makes none. A value crosses into the table
-at a type variable, so tracking pins no tag of `Progress` or `Maybe` (§4, *What JavaScript may read
-of a beni value*).
+**(e) Rungs and cost.** `send` and `riskySend` suspend, as before; `track` is pure. **Under
+`--release`**, a program that calls neither `track` nor a `send` with a tracker name ships none of
+this section's code. The optimiser inlines the record literal and folds the command's `Just` arm,
+and the table, the waits and the chunked read go with it. `emit/release/tea/HttpSendUntracked` pins
+it. **A development build ships all of it.** Reachability (`backend.md` §9) keeps a `case` arm whole,
+and the program builds `Just` in other places, so the `Just` arm stays. Measured with one compiler,
+the platforms before this section against the platforms after it, every `.mjs` of the output, brotli
+11 on each file:
+
+| Page | Build | Before (raw / brotli) | After (raw / brotli) |
+|---|---|---|---|
+| `browser/tea/ValueCommands`, an untracked `send` | development | 80 968 / 19 583 | 87 522 / 20 815 |
+| `browser/tea/ValueCommands` | `--release` | 16 986 / 6 437 | 16 992 / 6 457 |
+| `emit/release/tea/HttpSendUntracked`, one `send` | development | 68 949 / 16 563 | 75 507 / 17 795 |
+| `emit/release/tea/HttpSendUntracked` | `--release` | 12 606 / 4 897 | 12 612 / 4 883 |
+
+So an untracked page grows by about 6.5 kB raw (+8.1% for `ValueCommands`) in a development build.
+This section accepts that cost. elm/http 2.0's record carries the tracker, and an arm that a
+development build drops needs a second command form. The table is made by the first listener, so a
+page that never tracks makes none, in both builds. A value crosses into the table at a type
+variable, so tracking pins no tag of `Progress` or `Maybe` (§4, *What JavaScript may read of a beni
+value*). `emit/release/tea/HttpSendTracked` pins it: the `Maybe` of `Receiving` keeps integer tags,
+and the one string tag is the private key of `track`.
+
+*Corrected 2026-10-14 (review of PR #97):* the first text of (e) said that a page that never tracks
+ships none of this code, with no build named. That is true only under `--release`.
 
 **(f) Where this departs from elm/http 2.0, and why.**
 
@@ -4530,18 +4557,31 @@ of a beni value*).
   has no handle on the program that runs it. A table for each program makes every architecture hand
   its program to every body and every listener: a new obligation, and a cost on every command of
   every program. So two programs on one page (`Browser.programs`) that track one name hear each
-  other's requests. A page that mounts one program twice gives each mount its own tracker names. A
-  table for each program is an additive change, if the owner decides on one.
+  other's requests. A page that mounts one program twice gives each mount its own tracker names.
+  *Decided 2026-10-14 (Cesar):* keep one table for the page.
 - **No `Http.cancel`.** In elm/http 2.0 the tracker name also cancels the request. In beni,
   cancellation belongs to the fiber (§9.8.12 (d)): a keyed body over `request` and `Cmd.cancel`
-  cancel it. `send` stays unkeyed, so nothing cancels a `send` but the program's end. A later
-  `cancel` can key a tracked `send` by its name, with the `Concurrent` policy, if a program needs one.
+  cancel it. `send` stays unkeyed, so nothing cancels a `send` but the program's end.
+  *Decided 2026-10-14 (Cesar):* do not add `Http.cancel`. `Cmd.keyed` with `Cmd.cancel` covers the
+  need.
 - **The command keeps elm/http 1.0's name `send`** (§9.8.16 (b)), and its risky form is `riskySend`.
   The direct forms already have elm/http 2.0's names `request` and `riskyRequest` (§9.8.12 (a)).
 - **`track` has no direct form** (§9.8.11 (a)). The direct form of tracking is `request`'s tracker
   function. A fiber that hears the progress of another body's command can be added as `Listen.each`
   over the same listener, when a program needs it.
-- **The values are §9.8.12 (e)'s.** `fetch` reports no upload progress, so `Sending` is coarse.
+- **`Sending` is coarse: 0, then all of the body when the answer's headers arrive.** The values are
+  §9.8.12 (e)'s. `fetch` reports no upload progress, so there is no value between the two, and
+  `fractionSent` is 0 for the whole upload and the server's work, then 1. elm/http 2.0 reads
+  `xhr.upload`'s `progress` events, so its `Sending` grows while the body uploads. Decision H4
+  (`plans/http-and-routing.md`) chose `fetch` for every request. *Decided 2026-10-14 (Cesar):* this
+  section lands with the coarse `Sending`; GitHub issue #100 asks for `XMLHttpRequest` on a tracked
+  request, and so reopens H4.
+- **An empty body reports `Sending 0/0` twice.** These are the two values of §9.8.12 (e), the same
+  for every body, so a program sees one shape for every request. elm/http 2.0 reports no `Sending`
+  for a request without a body, because `XMLHttpRequest` fires no upload event then.
+  `browser/tea/HttpTrackInit` pins it.
+- **A tracked request starts after the untracked requests of its batch** ((c)'s amendment). elm/http
+  2.0 starts them in the batch's order.
 
 **(g) The proof.** `browser/tea/HttpTrack` pins (b) and (c): a subscription that the click's
 `update` declares, a subscription that an answer's `update` declares (in a drain), two declarations
@@ -4550,6 +4590,17 @@ request. Each value comes before its answer, a 204's too, whose null body leaves
 the last value and the answer. The page runs as a development, a release and a `--fiber-page` build
 against one golden. `browser/tea/HttpRequestShape` pins (a)'s credentials: `send` sends
 `same-origin` and `riskySend` sends `include`.
+
+*Amended 2026-10-14 (review of PR #97):* more proofs. `HttpTrack` also pins a `track` that has left
+and hears nothing of a later request of its name (`#again`), the order of (c)'s amendment
+(`#batch`), and a 404 that reports every value before its `BadStatus` (`#missing`). A closed relay
+(§9.8.5) drops a value for a key that has left, so `#again` holds even if the table keeps the old
+listener: the table's delete keeps memory bounded, and no transcript sees it.
+`browser/tea/HttpTrackInit` pins a tracked command from `init`, an empty body's two `Sending 0/0`,
+and a tracked request that times out after its first value. `HttpRequestShape` pins the credentials
+of a tracked `send` (`same-origin`) and a tracked `riskySend` (`include`); with `same-origin` in the
+`Just` arm, it fails. `emit/release/tea/HttpSendUntracked` and `HttpSendTracked` pin (e)'s release
+shapes.
 
 *As built, 2026-10-14* (`platforms/browser/Http.beni`, beni over `Js` with no `foreign`), as
 specified. **Each wait is pinned**: with one taken out, `HttpTrack` fails. Without the render wait,
