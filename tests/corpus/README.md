@@ -261,6 +261,8 @@ page asks for, and an idle page's `frames` reads 0
 each frame `frame` draws, before the clock moves on or the next timer
 fires: the work a timer or a frame set going runs with the clock at its
 time, and may set the next timer (`browser/tea/AdvanceSettlesEachTimer`).
+Each of those settles has its own 1 000-turn cap, so a page that keeps
+work queued forever logs the cap line once per timer and per frame.
 **A step's page is the page once all the work core's
 scheduler queued for the step has run, in both DOMs.** The driver does not
 wait for work a page starts outside that scheduler: a `window.postMessage`,
