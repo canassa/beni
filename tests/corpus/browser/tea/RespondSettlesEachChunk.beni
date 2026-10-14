@@ -1,0 +1,90 @@
+-- A streamed `respond` settles the page before each chunk and before the
+-- end of the body (tests/corpus/README.md, *The page's clock is
+-- virtual*), so the work one chunk set going, and the work that work
+-- queues, runs before the next chunk arrives. Each progress report of the
+-- answer starts 500 fibers, more than core's scheduler runs in one turn
+-- (64); each sends `Mid`, whose update starts one more fiber, which sends
+-- `Done` with the byte count it was started for. A `Done` that arrives
+-- after a later progress report is late, so `late` is 0.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Http
+import Sub
+import Tea
+
+
+type Msg
+    = Go
+    | Progressed Http.Progress
+    | Mid Int
+    | Done Int
+    | Finished (Result Http.Error String)
+
+
+type alias Model =
+    current : Int
+    n : Int
+    late : Int
+    body : String
+
+
+burst : Int → Cmd Msg
+burst k = Cmd.batch (List.map (List.range 1 500) λ_ → Cmd.perform λsend → send (Mid k))
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg m =
+    case msg of
+        Go →
+            ( m
+            , Cmd.perform λsend →
+                send
+                    (Finished
+                        (Http.request
+                            { method = "GET"
+                            , headers = []
+                            , url = "/stream"
+                            , body = Http.emptyBody
+                            , expect = Http.expectString
+                            , timeout = Nothing
+                            , tracker = Just λp → send (Progressed p)
+                            }
+                        )
+                    )
+            )
+
+        Progressed (Http.Receiving r) →
+            ( { m | current = r.received }, burst r.received )
+
+        Progressed _ →
+            ( m, Cmd.none )
+
+        Mid k →
+            ( m, Cmd.perform λsend → send (Done k) )
+
+        Done k →
+            ( { m | n = m.n + 1, late = if k < m.current then m.late + 1 else m.late }, Cmd.none )
+
+        Finished (Ok text) →
+            ( { m | body = text }, Cmd.none )
+
+        Finished (Err _) →
+            ( { m | body = "failed" }, Cmd.none )
+
+
+view : Model → Html Msg
+view m =
+    <main>
+        <p id="result">{"${m.n} done, ${m.late} late, body ${m.body}"}</p>
+        <button id="go" onClick={Go}>go</button>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( { current = 0, n = 0, late = 0, body = "" }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

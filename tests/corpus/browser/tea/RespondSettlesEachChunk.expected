@@ -1,0 +1,17 @@
+-- load
+<body>
+  <main>
+    <p id="result">"0 done, 0 late, body "</p>
+    <button id="go">"go"</button>
+  </main>
+</body>
+-- click #go
+(fetch 1: GET /stream {})
+(the DOM did not change)
+-- respond 1 200 chunks "a" "b" "c"
+<body>
+  <main>
+    <p id="result">"2000 done, 0 late, body abc"</p>
+    <button id="go">"go"</button>
+  </main>
+</body>
