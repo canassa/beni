@@ -191,9 +191,11 @@ set-exclusive and shape-join witnesses in CI without that larger run.
 All 98 fixtures and required generator controls pass on each seeded stream
 (CI supplies seed 20261011; standalone controls supply 17 and 271828). Final
 committed-head Lean build, CI, clean-checkout audit and `zorg build gates`
-results are recorded in the PR reply. Gates have the same four existing
+results are recorded in the PR replies. At `0938cb136`, gates had four existing
 macOS failures: two stale-path case-folding and two browser-driver cache
-pruning CPU-budget tests. Those tests are unchanged; no gate success is claimed.
+pruning CPU-budget tests. The audit-only follow-up run passed the two CPU-budget
+tests and had just the same two case-folding failures (1,297 passed, 15 skipped).
+Those tests and budgets are unchanged; no gate success is claimed.
 
 Three sorries remain: `invariant_preserved` needs the configuration induction
 from sound separating demands; `summary_sound` needs the induction from

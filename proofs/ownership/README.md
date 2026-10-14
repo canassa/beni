@@ -18,6 +18,8 @@ and a falsifier that fails when summary coverage is excessively vacuous.
 live variable. `hiddencopy` changes the interpreter to copy on every write;
 value and in-place results then agree, so fixtures checking the intended
 in-place observations, rather than differential campaigns, expose it.
+The third search gap, `keepsep`, needs a focused list of records with two list
+fields and concrete certificate checking; its written probe is in COVERAGE.md.
 Finite campaigns and the small enumeration grammar are evidence, not proofs.
 
 ## Run

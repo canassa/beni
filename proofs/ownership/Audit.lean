@@ -13,7 +13,9 @@ checkout, and runs it before and after the full build:
   Lean's own parser** (not tokenised by hand) and every command and syntax
   node is checked: only declarations, namespaces, sections, `open`,
   `set_option maxRecDepth`, `mutual`, module docs and `#guard` are allowed
-  as commands (`#eval` only in `Axioms.lean`); no `unsafe` modifier, no
+  as commands (`#eval` only in `Axioms.lean`); `#guard` evaluates compiled
+  terms during elaboration, subject to the source/binary integrity checks;
+  no `unsafe` modifier or expression, no
   attribute but `simp`, no `admit` or `native_decide` tactic, no
   identifier whose any part names a kernel or compiler bypass, no import but
   `Std` and the package's own modules (`Lean` only in the two audit files),
@@ -35,6 +37,7 @@ def pinnedSorries : List Name := [
   `Ownership.Soundness.invariant_preserved,
   `Ownership.Soundness.accepted_traces_agree]
 
+-- Three source sorries; the fourth pinned constant is their dependent main theorem.
 def sorryCount : Nat := 3
 
 def allowedAxioms : List Name := [``propext, ``Classical.choice, ``Quot.sound, ``sorryAx]
@@ -61,7 +64,7 @@ def declarationNodes : List Name := [
   `Lean.Parser.Command.definition, `Lean.Parser.Command.declModifiers,
   `Lean.Parser.Command.openSimple]
 
-def executableTokens := ["run_cmd", "run_tac", "run_elab", "run_meta", "by_elab",
+def executableTokens := ["unsafe", "run_cmd", "run_tac", "run_elab", "run_meta", "by_elab",
   "elab", "elab_rules", "macro", "macro_rules", "initialize", "builtin_initialize"]
 
 /-- Names a part of an identifier may never be. -/
@@ -189,7 +192,10 @@ def main (args : List String) : IO UInt32 := do
   initSearchPath (← findSysroot)
 
   match args with
+  | [] => Audit.checkSources; Audit.checkEnv
   | ["sources"] => Audit.checkSources
   | ["env"] => Audit.checkEnv
-  | _ => Audit.checkSources; Audit.checkEnv
+  | _ =>
+    IO.eprintln "usage: audit [sources|env]"
+    return 2
   pure 0
