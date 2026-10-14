@@ -1,0 +1,43 @@
+{
+  "requestedIntervalUs": 25,
+  "deliveredBetweenSampleUs": {
+    "median": 78,
+    "p25": 77,
+    "p75": 78
+  },
+  "firstStartupDeltaExcludedFromIntervalSummary": true,
+  "liveDirectFunctionHits": [
+    {
+      "function": "tick writer",
+      "name": "q",
+      "column": 6252,
+      "hits": 6,
+      "pages": 20,
+      "hitsPerPage": 0.3
+    },
+    {
+      "function": "control capture",
+      "name": "X",
+      "column": 5100,
+      "hits": 3,
+      "pages": 20,
+      "hitsPerPage": 0.15
+    },
+    {
+      "function": "model update",
+      "name": "A",
+      "column": 6677,
+      "hits": 2,
+      "pages": 20,
+      "hitsPerPage": 0.1
+    },
+    {
+      "function": "guard",
+      "name": "q",
+      "column": 656,
+      "hits": 1,
+      "pages": 20,
+      "hitsPerPage": 0.05
+    }
+  ]
+}
