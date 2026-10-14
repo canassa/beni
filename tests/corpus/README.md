@@ -280,7 +280,9 @@ case, so no fixture forgets one.
 another document — `location.assign`, `replace` or `reload`, a write to
 `location.href`, and so a successful `load` — is stopped as it starts and
 logs `(the host leaves the page for "<url>")`, the address written as the
-fetch log writes one; the address stays and nothing fires
+fetch log writes one; the address stays, and no event of the page's
+fires — Chrome's Navigation API reports the cancel, `navigateerror` with an
+`AbortError` on `navigation`, which no platform reads
 (`browser/direct/NavigateCommands`). A navigation inside the document (a
 fragment, `pushState`) runs as the host runs it. Chrome would load the new
 document, which the driver cannot follow, and happy-dom, whose window
@@ -365,11 +367,16 @@ compares instead of `.expected`. The differences known today:
   Chrome, a colour as `rgb(…)`, and as the page wrote it in happy-dom
   (`browser/tea/BikeWars`: `#222` is `rgb(34, 34, 34)` in Chrome);
 - leaving the page: happy-dom sees only a navigation through `location`,
-  so a form's submission or `window.open(url, "_self")` does nothing
-  there, where Chrome logs `(the host leaves the page for …)`; and for a
-  navigation to a fragment the page makes, Chrome fires `popstate` and
-  happy-dom does not, so a follower of the address hears it in Chrome only
-  (`browser/tea/NavigateFragment` has none);
+  so a form's submission, `window.open(url, "_self")`, a link activated
+  outside the `click` step (a `press`, a script's `a.click()`) and
+  `history.go(0)` do nothing there, where Chrome logs `(the host leaves
+  the page for …)`; for a navigation to a fragment the page makes, Chrome
+  fires `popstate` and happy-dom does not, so a follower of the address
+  hears it in Chrome only (`browser/tea/NavigateFragment` has none); and
+  for an empty fragment (`#`), Chrome adds the `#` to the address and
+  fires `popstate` and `hashchange`, and happy-dom does nothing at all —
+  the `location` step prints the same, since `location.hash` is `""` in
+  both;
 - steps dispatch untrusted events in both DOMs, and `key` types nothing —
   except `press` and the focus events a `focus()` or `blur()` call fires,
   which are trusted as Chrome makes them: Chrome's `press` is its own
