@@ -1,0 +1,17 @@
+-- An inert wrap shares its sibling with code that produces a choice.
+-- Its annotation exposes the type to that code, so no exemption is removed.
+import Carrier exposing (Choice, Kept, Dropped)
+import Node
+
+
+show : Choice → String
+show value =
+    case value of
+        Kept →
+            "kept"
+        Dropped →
+            "dropped"
+
+
+main : Node.Program
+main = Node.print (Carrier.run (Carrier.wrap show) ++ "\n" ++ show Kept)

@@ -6827,9 +6827,12 @@ const Walker = struct {
             if (!try w.returnsOwned(c, s, avs, j, 0, none)) {
                 // Approximate when only an approximate step made it so: a
                 // value from JavaScript, a conservative call's result.
-                w.ro_exact = true;
-                const approx = try w.returnsOwned(c, s, avs, j, 0, none);
-                w.ro_exact = false;
+                const approx = blk: {
+                    const previous = w.ro_exact;
+                    w.ro_exact = true;
+                    defer w.ro_exact = previous;
+                    break :blk try w.returnsOwned(c, s, avs, j, 0, none);
+                };
                 const why = if (approx)
                     try std.fmt.allocPrint(arena, "{s} sends what it returns, and it returns what {s} hands it, which may hold a list the checker cannot place — from JavaScript, or through a call it does not see into (§23.5)", .{ callee.name, callee.name })
                 else

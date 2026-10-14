@@ -1,0 +1,21 @@
+-- A fresh untagged record can carry a nominal cast in one of its fields.
+-- Its target constructors must remain reachable through the result record.
+import Carrier
+import Node
+import Source
+import Target
+
+
+show : Target.Choice → String
+show choice =
+    case choice of
+        Target.Kept →
+            "kept"
+        Target.Dropped →
+            "dropped"
+
+
+main : Node.Program
+main =
+    wrapped = Carrier.box Source.Kept
+    Node.print (show wrapped.value ++ "\n" ++ show Target.Dropped)

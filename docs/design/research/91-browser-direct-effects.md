@@ -7,9 +7,12 @@ mentions `Cmd msg`, but the wrapper only returns the supplied mount in a
 program record. Reach had exempted all command constructors, keeping the
 whole driver. The generic inert-forwarder proof in `Sibling` now removes
 that exemption; it is independent of platform or module names. Unknown
-JavaScript, callback calls and tagged literals stay conservative. Both
-consumer and returned-value fixtures lose the dead arm; producer and
-callback twins retain it. The consumer fixture fails with the fix disabled.
+JavaScript, callback calls and tagged literals stay conservative. The entire
+sibling must contain only inert exports: other code could produce a type
+exposed by their annotations. Whole returned parameters also need matching
+constructor-bearing type structure; nominal casts and casts of returned
+callbacks retain the whole annotation. Both consumer and returned-value
+fixtures lose the dead arm; producer and callback twins retain it. The consumer fixture fails with the fix disabled.
 `backend.md` §9 owns the dated rule and its soundness argument.
 
 The implementation supplies `Tea.element`, `Tea.document` and `Tea.application`
@@ -175,5 +178,12 @@ Native `zorg build gates` has only the four authorized macOS baseline failures:
 two case-folding tests and two browser-driver CPU-budget tests. Run-hash
 recording has only the two existing case-folding failures; it records no hash
 for a failed run. The pending direct suite matches every pinned failure.
+Review follow-ups add executable dev/release checks for nominal casts,
+record-field casts, returned callbacks, callback-argument casts, tagged ABI
+producers and mixed inert/producing siblings. A cross-type identity printed
+`dropped` instead of `kept` with typed-result protection disabled; the
+whole-sibling guard has its own before-fix regression. The tagger probe now
+restores its previous exact-only flag with `defer`, including allocation errors.
+
 The Reach and diagnostic regression fixtures were each run with their fix
 disabled and failed, then restored and passed. No LLVM build was used.

@@ -4115,18 +4115,29 @@ unconditional entry root added in the first effects attempt.
 not evidence that its export builds every type it mentions. Constructor roots
 represent values JavaScript can produce, not values it only receives. A
 foreign export proved to forward its parameters or wrap them in inert, untagged
-arrays/records contributes no signature-based constructor roots, including
-for its result: returning a supplied value does not construct another variant.
-Neither callback arguments nor results are produced by an export that never
-calls the callback. Unknown exports retain the old exemption. This rule applies to every platform, with no module-name exception.
+arrays/records contributes no consumer-side constructor roots. Its result
+and all other types in the annotation remain conservative when the result
+contains a nominal value, unless it returns one whole parameter with
+the same declared constructor-bearing type structure (including function
+types; effect rungs are checked separately). A nominal cast may reuse
+a source tag while producing another type: no allocation does not imply no
+target constructor. Wrapped result fields are conservative too: a returned callback cast can
+produce a nominal value at its input as well as its output. Neither
+callback arguments nor results in consumer positions are produced by an
+export that never calls the callback. Unknown exports retain the old exemption. This rule applies to every platform, with no module-name exception.
 
 The proof is deliberately a closed syntax subset: a direct arrow with plain
 parameters, whose whole expression is parameters, null, and array/record
 literals with plain keys other than `$` and `__proto__`. Calls, property access, assignments,
 spreads, getters, strings, templates, other bindings and unrecognised syntax
-are not a proof. Such an export cannot synthesize a nominal tag, invoke a
+are not a proof. The sibling must consist entirely of such immutable exports;
+unclassified module code or another export retains the whole module’s
+annotation exemptions, since it could produce a type exposed by its sibling.
+Such an export cannot synthesize a nominal tag, invoke a
 callback or change a supplied value; forwarded nominal values were built by
-an already reached producer. In particular, a command returned by a beni
+an already reached producer of the same declared type; a differently typed
+result remains rooted. Named records have no constructors, but their nominal
+fields can, so the result traversal includes them. In particular, a command returned by a beni
 callback is constructed by that callback's reached code, not by the foreign
 export accepting it. This narrows reachability only; JavaScript boundary
 representation and the conservative library/schema/core exemptions remain.

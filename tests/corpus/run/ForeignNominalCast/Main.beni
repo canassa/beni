@@ -1,0 +1,19 @@
+-- An inert identity can reinterpret matching nominal tags. Its result type
+-- differs from its parameter, so target constructors must remain reachable.
+import Carrier
+import Node
+import Source
+import Target
+
+
+show : Target.Choice → String
+show choice =
+    case choice of
+        Target.Kept →
+            "kept"
+        Target.Dropped →
+            "dropped"
+
+
+main : Node.Program
+main = Node.print (show (Carrier.carry Source.Kept) ++ "\n" ++ show Target.Dropped)
