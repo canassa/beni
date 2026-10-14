@@ -8,6 +8,8 @@
     <button id="patch">"patch"</button>
     <button id="delete">"delete"</button>
     <button id="risky">"risky"</button>
+    <button id="send">"send"</button>
+    <button id="riskySend">"riskySend"</button>
     <ol></ol>
   </main>
 </body>
@@ -42,6 +44,8 @@
     <button id="patch">"patch"</button>
     <button id="delete">"delete"</button>
     <button id="risky">"risky"</button>
+    <button id="send">"send"</button>
+    <button id="riskySend">"riskySend"</button>
     <ol>
       <li>"get: ok one"</li>
     </ol>
@@ -57,6 +61,8 @@
     <button id="patch">"patch"</button>
     <button id="delete">"delete"</button>
     <button id="risky">"risky"</button>
+    <button id="send">"send"</button>
+    <button id="riskySend">"riskySend"</button>
     <ol>
       <li>"get: ok one"</li>
       <li>"headers: ok two"</li>
@@ -73,6 +79,8 @@
     <button id="patch">"patch"</button>
     <button id="delete">"delete"</button>
     <button id="risky">"risky"</button>
+    <button id="send">"send"</button>
+    <button id="riskySend">"riskySend"</button>
     <ol>
       <li>"get: ok one"</li>
       <li>"headers: ok two"</li>
@@ -90,6 +98,8 @@
     <button id="patch">"patch"</button>
     <button id="delete">"delete"</button>
     <button id="risky">"risky"</button>
+    <button id="send">"send"</button>
+    <button id="riskySend">"riskySend"</button>
     <ol>
       <li>"get: ok one"</li>
       <li>"headers: ok two"</li>
@@ -108,6 +118,8 @@
     <button id="patch">"patch"</button>
     <button id="delete">"delete"</button>
     <button id="risky">"risky"</button>
+    <button id="send">"send"</button>
+    <button id="riskySend">"riskySend"</button>
     <ol>
       <li>"get: ok one"</li>
       <li>"headers: ok two"</li>
@@ -127,6 +139,8 @@
     <button id="patch">"patch"</button>
     <button id="delete">"delete"</button>
     <button id="risky">"risky"</button>
+    <button id="send">"send"</button>
+    <button id="riskySend">"riskySend"</button>
     <ol>
       <li>"get: ok one"</li>
       <li>"headers: ok two"</li>
@@ -147,6 +161,8 @@
     <button id="patch">"patch"</button>
     <button id="delete">"delete"</button>
     <button id="risky">"risky"</button>
+    <button id="send">"send"</button>
+    <button id="riskySend">"riskySend"</button>
     <ol>
       <li>"get: ok one"</li>
       <li>"headers: ok two"</li>
@@ -155,6 +171,61 @@
       <li>"patch: ok five"</li>
       <li>"delete: ok "</li>
       <li>"risky: ok seven"</li>
+    </ol>
+  </main>
+</body>
+-- click #send
+(fetch 8: PUT /send {"content-type":"text/plain"} "s")
+(the DOM did not change)
+-- click #riskySend
+(fetch 9: PUT /risky-send {"content-type":"text/plain"} "r" credentials:include)
+(the DOM did not change)
+-- respond 8 200 "eight"
+<body>
+  <main>
+    <button id="get">"get"</button>
+    <button id="headers">"headers"</button>
+    <button id="post">"post"</button>
+    <button id="typed">"typed"</button>
+    <button id="patch">"patch"</button>
+    <button id="delete">"delete"</button>
+    <button id="risky">"risky"</button>
+    <button id="send">"send"</button>
+    <button id="riskySend">"riskySend"</button>
+    <ol>
+      <li>"get: ok one"</li>
+      <li>"headers: ok two"</li>
+      <li>"post: ok three"</li>
+      <li>"typed: ok four"</li>
+      <li>"patch: ok five"</li>
+      <li>"delete: ok "</li>
+      <li>"risky: ok seven"</li>
+      <li>"send: ok eight"</li>
+    </ol>
+  </main>
+</body>
+-- respond 9 200 "nine"
+<body>
+  <main>
+    <button id="get">"get"</button>
+    <button id="headers">"headers"</button>
+    <button id="post">"post"</button>
+    <button id="typed">"typed"</button>
+    <button id="patch">"patch"</button>
+    <button id="delete">"delete"</button>
+    <button id="risky">"risky"</button>
+    <button id="send">"send"</button>
+    <button id="riskySend">"riskySend"</button>
+    <ol>
+      <li>"get: ok one"</li>
+      <li>"headers: ok two"</li>
+      <li>"post: ok three"</li>
+      <li>"typed: ok four"</li>
+      <li>"patch: ok five"</li>
+      <li>"delete: ok "</li>
+      <li>"risky: ok seven"</li>
+      <li>"send: ok eight"</li>
+      <li>"riskySend: ok nine"</li>
     </ol>
   </main>
 </body>

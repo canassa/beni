@@ -1705,7 +1705,9 @@ failures as its tag), `browser/direct/InitThrows` (one golden on both platforms)
 2. **The encoders** (§22.3): `String.join` and `Schema.print` escape what they read until Change 5's words
    say they only read; research 79 counts the lines that cause.
 3. **`Http.send` has no tracker and no `riskySend`**: a page that needs either writes a body. To be added
-   when a program needs one.
+   when a program needs one. *(Closed 2026-10-14: `boundary.md` §9.8.19 adds `send`'s `tracker`,
+   `Http.track` and `riskySend`. Both commands take values, as `send` did, so §22.3 holds them as
+   before.)*
 
 ---
 

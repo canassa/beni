@@ -3,8 +3,10 @@
 -- standard ones, so `patch` goes lower-case), headers appended in order and
 -- a name given twice sent once with both values, `stringBody`'s MIME type
 -- as the `Content-Type` unless the program names one, which wins, no body
--- and no `Content-Type` for `emptyBody`, and `riskyRequest`'s
--- credentials. Each answer is shown as it comes.
+-- and no `Content-Type` for `emptyBody`, and the credentials: `include`
+-- for `riskyRequest` and the command `riskySend` (boundary.md §9.8.19),
+-- `same-origin`, which the log leaves out, for the command `send`. Each
+-- answer is shown as it comes.
 import Cmd exposing (Cmd)
 import Html exposing (Html)
 import Http
@@ -92,6 +94,34 @@ work name =
 update : Msg, List String → List String × Cmd Msg
 update msg lines =
     case msg of
+        Send "send" →
+            ( lines
+            , Http.send
+                { method = "PUT"
+                , headers = []
+                , url = "/send"
+                , body = Http.stringBody "text/plain" "s"
+                , expect = Http.expectString
+                , timeout = Nothing
+                , tracker = Nothing
+                }
+                (Got "send" _)
+            )
+
+        Send "riskySend" →
+            ( lines
+            , Http.riskySend
+                { method = "PUT"
+                , headers = []
+                , url = "/risky-send"
+                , body = Http.stringBody "text/plain" "r"
+                , expect = Http.expectString
+                , timeout = Nothing
+                , tracker = Nothing
+                }
+                (Got "riskySend" _)
+            )
+
         Send name →
             ( lines, Cmd.task (work name) (Got name _) )
 
@@ -99,10 +129,15 @@ update msg lines =
             ( lines ++ [ "${name}: ${shown result}" ], Cmd.none )
 
 
+-- One button for each way of sending, in the order the steps click them.
+names : List String
+names = [ "get", "headers", "post", "typed", "patch", "delete", "risky", "send", "riskySend" ]
+
+
 view : List String → Html Msg
 view lines =
     <main>
-        <For each={[ "get", "headers", "post", "typed", "patch", "delete", "risky" ]} keyed={False}>
+        <For each={names} keyed={False}>
             {λname → <button id={name} onClick={Send name}>{name}</button>}
         </For>
         <ol><For each={lines} keyed={False}>{λline → <li>{line}</li>}</For></ol>

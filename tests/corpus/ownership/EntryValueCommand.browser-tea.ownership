@@ -1,10 +1,10 @@
 module EntryValueCommand
   46:33 List.push model.items: accepted param
-  79:33 List.push model.items: accepted param
-  99:5 entry EntryValueCommand.values model.items: rejected platform: the platform's runtime keeps the model it hands update, and skips by identity; the direct row would accept it (§20.2)
-  109:5 entry EntryValueCommand.closure model.items: rejected escaped: at some message the runtime keeps it: a command or a subscription holds it, or update escapes it (§20.4) (approx)
+  80:33 List.push model.items: accepted param
+  100:5 entry EntryValueCommand.values model.items: rejected platform: the platform's runtime keeps the model it hands update, and skips by identity; the direct row would accept it (§20.2)
+  110:5 entry EntryValueCommand.closure model.items: rejected escaped: at some message the runtime keeps it: a command or a subscription holds it, or update escapes it (§20.4) (approx)
   summary joined: π1 R
-  summary values: π2 RA, π2.items RAW, π2.items[*] A; res .0 π2, .0.items π2.items, .0.items[*] ~π2.items[*], .1#Cmd.0 fresh1 shared(Cmd.none)#Cmd.0, .1#Cmd.0[*]#Perform.0◇◇ ~fresh2
+  summary values: π2 RA, π2.items RAW, π2.items[*] A; res .0 π2, .0.items π2.items, .0.items[*] ~π2.items[*], .1#Cmd.0 fresh1 shared(Cmd.none)#Cmd.0, .1#Cmd.0[*]#Perform.0◇◇.headers ~fresh2
   summary ignored: unused
   summary closure: π2 RA, π2.items RAW, π2.items[*] A; res .0 π2, .0.items π2.items, .0.items[*] ~π2.items[*], .1#Cmd.0 fresh1{excl π2.items} shared(Cmd.none)#Cmd.0, .1#Cmd.0[*]#Perform.0◇◇ π2.items
   summary view: π1.items R; res ⟨render⟩ fresh1{lost}

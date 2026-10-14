@@ -12,3 +12,7 @@ respond 4 200 "four"
 respond 5 200 "five"
 respond 6 204 ""
 respond 7 200 "seven"
+click #send
+click #riskySend
+respond 8 200 "eight"
+respond 9 200 "nine"
