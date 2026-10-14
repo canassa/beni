@@ -4,8 +4,10 @@
 -- queues, runs before the next chunk arrives. Each progress report of the
 -- answer starts 500 fibers, more than core's scheduler runs in one turn
 -- (64); each sends `Mid`, whose update starts one more fiber, which sends
--- `Done` with the byte count it was started for. A `Done` that arrives
--- after a later progress report is late, so `late` is 0.
+-- `Done` with the byte count it was started for. `Mid` and `Done` each
+-- cost the scheduler one more hop, so one turn per chunk does not reach
+-- them. A `Done` that arrives after a later progress report is late, so
+-- `late` is 0.
 import Cmd exposing (Cmd)
 import Html exposing (Html)
 import Http
