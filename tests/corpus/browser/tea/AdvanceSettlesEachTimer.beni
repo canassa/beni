@@ -1,0 +1,123 @@
+-- `advance` and `frame` settle the page after each timer they fire and
+-- after each frame they draw, as a step's page settles
+-- (tests/corpus/README.md, *The page's clock is virtual*): the work a
+-- timer or a frame set going runs with the clock at its time, before the
+-- clock moves on. A timer at 10 ms starts 2 000 fibers, more than core's
+-- scheduler runs in one turn (64), and each reads the clock; another timer
+-- is due at 11 ms. Then one frame starts 2 000 more, and a second frame is
+-- drawn 10 ms later. A fiber left for a later turn would read a later
+-- time, so each spread is 0.
+import Browser.Events
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub exposing (Sub)
+import Tea
+import Time
+
+
+type Source
+    = Timer
+    | Frame
+
+
+type Msg
+    = Go
+    | Arm
+    | Burst Source
+    | Drawn Time.Posix
+    | Done Source Int
+
+
+type alias Stats =
+    n : Int
+    lo : Int
+    hi : Int
+
+
+type alias Model =
+    armed : Bool
+    timer : Stats
+    frame : Stats
+
+
+seen : Int, Stats → Stats
+seen t stats =
+    if stats.n == 0 then
+        { n = 1, lo = t, hi = t }
+    else
+        { n = stats.n + 1, lo = min stats.lo t, hi = max stats.hi t }
+
+
+burst : Source → Cmd Msg
+burst source =
+    Cmd.batch
+        (List.map (List.range 1 2000) λ_ →
+            Cmd.perform λsend → send (Done source (Time.toMillis (Time.now ⊤)))
+        )
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg m =
+    case msg of
+        Go →
+            ( m, Cmd.batch [ Cmd.perform work, Cmd.perform idle ] )
+
+        Arm →
+            ( { m | armed = True }, Cmd.none )
+
+        Burst source →
+            ( m, burst source )
+
+        Drawn _ →
+            ( { m | armed = False }, burst Frame )
+
+        Done Timer t →
+            ( { m | timer = seen t m.timer }, Cmd.none )
+
+        Done Frame t →
+            ( { m | frame = seen t m.frame }, Cmd.none )
+
+
+work : Cmd.Send Msg → ⊤
+work send =
+    Time.sleep (Time.millis 10)
+    send (Burst Timer)
+
+
+idle : Cmd.Send Msg → ⊤
+idle _ = Time.sleep (Time.millis 11)
+
+
+subscriptions : Model → Sub Msg
+subscriptions m = if m.armed then Browser.Events.onAnimationFrame Drawn else Sub.none
+
+
+view : Model → Html Msg
+view m =
+    <main>
+        <p id="timer">
+            {"${m.timer.n} fibers at ${m.timer.lo} ms, spread ${m.timer.hi - m.timer.lo}"}
+        </p>
+        <p id="frame">
+            {"${m.frame.n} fibers at ${m.frame.lo} ms, spread ${m.frame.hi - m.frame.lo}"}
+        </p>
+        <button id="go" onClick={Go}>go</button>
+        <button id="arm" onClick={Arm}>arm</button>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init =
+            λ⊤ →
+                ( { armed = False
+                  , timer = { n = 0, lo = 0, hi = 0 }
+                  , frame = { n = 0, lo = 0, hi = 0 }
+                  }
+                , Cmd.none
+                )
+        , update = update
+        , view = view
+        , subscriptions = subscriptions
+        }

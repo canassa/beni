@@ -161,7 +161,9 @@ project) against it, one step per line, `#` for a comment:
     blur <selector>             `.blur()`
     advance <ms> [tasks]        move the page's virtual clock on by `ms`,
                                 firing each timer that comes due, earliest
-                                first, the page settling after each; with
+                                first, the page settling after each as a
+                                step's page settles (*The page's clock is
+                                virtual*), before the next fires; with
                                 `tasks`, `(the timer's task ended)` is
                                 logged as each timer's callback returns,
                                 before any microtask it queued; a callback
@@ -180,7 +182,9 @@ project) against it, one step per line, `#` for a comment:
                                 callback cancels is counted, and does not
                                 run); with `tasks`, `(the frame's
                                 task ended)` is logged as its callbacks
-                                return, before any microtask they queued
+                                return, before any microtask they queued;
+                                the page settles after each frame, as after
+                                a timer, before the clock moves on
     frames                      log `(frames: <n>)`, the frame callbacks
                                 asked for and neither run nor cancelled
     event <window|document|selector> <name> [<n>]
@@ -252,9 +256,12 @@ frames: the driver replaces `requestAnimationFrame` and
 `cancelAnimationFrame` too, in Chrome as in happy-dom, and a callback runs
 only when a `frame` step draws a frame — so a fixture counts the frames a
 page asks for, and an idle page's `frames` reads 0
-(`browser/tea/AnimationFrames`, `boundary.md` §9.8.18 (g)). After each timer the
-page settles — the fibers it resumed run, and may set the next timer —
-before the next fires. **A step's page is the page once all the work core's
+(`browser/tea/AnimationFrames`, `boundary.md` §9.8.18 (g)). `advance` and
+`frame` settle the page, as below, after each timer they fire and after
+each frame `frame` draws, before the clock moves on or the next timer
+fires: the work a timer or a frame set going runs with the clock at its
+time, and may set the next timer (`browser/tea/AdvanceSettlesEachTimer`).
+**A step's page is the page once all the work core's
 scheduler queued for the step has run, in both DOMs.** The driver does not
 wait for work a page starts outside that scheduler: a `window.postMessage`,
 a `BroadcastChannel`, a worker's reply or a `requestIdleCallback`. A page

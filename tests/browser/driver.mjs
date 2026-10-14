@@ -88,7 +88,9 @@
 //   blur <selector>             `.blur()`
 //   advance <ms> [tasks]        move the page's virtual clock on by `ms`,
 //                               firing each timer that comes due, in
-//                               order, the page settling after each; with
+//                               order, the page settling after each as a
+//                               phase's page settles (`settle`), before the
+//                               next fires; with
 //                               `tasks`, `(the timer's task ended)` is logged
 //                               as each timer's callback returns, before any
 //                               microtask it queued
@@ -103,7 +105,9 @@
 //                               it began (one an earlier callback cancels is
 //                               counted, and does not run);
 //                               with `tasks`, `(the frame's task ended)` as
-//                               its callbacks return
+//                               its callbacks return; the page settles after
+//                               each frame, as after a timer, before the
+//                               clock moves on
 //   frames                      log `(frames: <n>)`, the callbacks asked
 //                               for and neither run nor cancelled
 //   event <window|document|selector> <name> [<n>]
@@ -603,7 +607,7 @@ function step(s) {
         dispatchEvent(new ErrorEvent("error", { error, message: error instanceof Error ? error.message : String(error) }));
       }
       if (tasks) globalThis.__beniHarness.log.push("(the timer's task ended)");
-      await new Promise((done) => clock.real(done, 0));
+      await settle();
     }
     clock.now = target;
   };
@@ -616,7 +620,7 @@ function step(s) {
     // before it began run in one task, in the order they were asked for,
     // each handed the frame's time; one asked for while they run is the
     // next frame's. Each frame is logged with its time and the number of
-    // callbacks it ran.
+    // callbacks it ran, and the page settles after it, as after a timer.
     const clock = globalThis.__beniHarness.clock;
     return (async () => {
       for (let n = 0; n < s.count; n++) {
@@ -637,7 +641,7 @@ function step(s) {
         }
         clock.drawing = [];
         if (s.tasks) globalThis.__beniHarness.log.push("(the frame's task ended)");
-        await new Promise((done) => clock.real(done, 0));
+        await settle();
       }
       return null;
     })();
