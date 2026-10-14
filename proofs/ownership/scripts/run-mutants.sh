@@ -91,7 +91,7 @@ for m in "${names[@]}"; do
     set -e
     if [ "$status" -ge 128 ]; then kind=CRASH; bad=1
     elif [ "$status" -eq 0 ] && grep -q 'caught=true' "$d/enumerate.log"; then kind=caught
-    elif [ "$status" -eq 1 ] && grep -q 'caught=false' "$d/enumerate.log"; then kind=miss
+    elif [ "$status" -eq 1 ] && grep -q 'caught=false' "$d/enumerate.log" && grep -q 'inconclusive=0' "$d/enumerate.log"; then kind=miss
     else kind=FAILED; bad=1; fi
     cp "$d/enumerate.log" "$evidence/$m/"
     line="$line enumerate=$kind exit=$status [$(tail -1 "$d/enumerate.log")]"

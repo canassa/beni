@@ -10,9 +10,8 @@ checker accepts in both interpreters: an accepted disagreement is a failure.
 A program is a fixed prelude `let 0 = [1]; let 1 = [2]; let 2 = [0, 1]; let 3 =
 [3]` followed by `bound` or
 fewer bindings, each a right-hand side drawn from the templates below over
-every in-scope operand of the right type, and ends in one of three
-observations: the last binding, the last two bindings as a record, or every
-binding as a record. The declarations are generator v5's fixed table
+every in-scope operand of the right type, and ends in the last binding or every binding as a record
+(with no binding, it observes 0). The declarations are generator v5's fixed table
 (`Generator.decls`), which holds plain list functions, capturing closures, once
 closures, a closure over a closure, a closure beside a once closure, a factory
 of nested closures, a declaration returning either a closure or its function
@@ -130,6 +129,7 @@ structure Counts where
   accepted : Nat := 0
   withWrite : Nat := 0
   mismatches : Nat := 0
+  inconclusive : Nat := 0
   /-- Under a control: programs it accepts that the corrected checker rejects. -/
   changed : Nat := 0
   deriving Repr
@@ -167,7 +167,7 @@ def countOnly (bound : Nat) : IO Nat := do
 def Counts.add (a b : Counts) : Counts :=
   { enumerated := a.enumerated + b.enumerated, typed := a.typed + b.typed,
     accepted := a.accepted + b.accepted, withWrite := a.withWrite + b.withWrite,
-    mismatches := a.mismatches + b.mismatches, changed := a.changed + b.changed }
+    mismatches := a.mismatches + b.mismatches, inconclusive := a.inconclusive + b.inconclusive, changed := a.changed + b.changed }
 
 /-- Where a program sits in the enumeration: its first binding's position
     among the root choices (0 for the prelude alone) and its position in
@@ -215,7 +215,12 @@ def subtree (config : Config) (mode : Mode) (collect : Bool) (stop : IO.Ref Bool
     | .equal =>
       if InPlaceSemantics.writeCount p 20000 > 0 then counts.modify fun c => { c with withWrite := c.withWrite + 1 }
       return true
-    | .inconclusive _ => return true
+    | .inconclusive msg =>
+      counts.modify fun c => { c with inconclusive := c.inconclusive + 1 }
+      IO.println s!"enumerate: execution error task={task} index={i}: {msg}"
+      (← IO.getStdout).flush
+      stop.set true
+      return false
     | _ =>
       counts.modify fun c => { c with mismatches := c.mismatches + 1 }
       found.set (some p)
@@ -257,10 +262,10 @@ def run (bound : Nat) (config : Config := {}) (mode : Mode := .full) (quiet := f
   let elapsed := (← IO.monoMsNow) - start
   if let some p := found then
     IO.println s!"enumerate: accepted disagreement:\n{repr p.main}"
-  let ok := if mode matches .full then found.isNone else found.isSome
+  let ok := total.inconclusive == 0 && (if mode matches .full then found.isNone else found.isSome)
   if !quiet || !ok then
     let changed := if mode matches .full then "" else s!" changed-verdicts={total.changed}"
-    IO.println s!"enumerate bound={bound} enumerated={total.enumerated} typed={total.typed} accepted={total.accepted}{changed} with-write={total.withWrite} mismatches={total.mismatches} caught={found.isSome} elapsed-ms={elapsed}"
+    IO.println s!"enumerate bound={bound} enumerated={total.enumerated} typed={total.typed} accepted={total.accepted}{changed} with-write={total.withWrite} mismatches={total.mismatches} inconclusive={total.inconclusive} caught={found.isSome} elapsed-ms={elapsed}"
   pure (ok, total)
 
 /-- The keys `run` wrote with `acceptedOut`. -/
