@@ -1,0 +1,27 @@
+-- load
+<body>
+  <main>
+    <button id="go">"go"</button>
+    <button id="boom">"boom"</button>
+  </main>
+</body>
+-- click #go
+console.info: body 1 starts
+(the DOM did not change)
+-- click #go
+console.info: body 1 release starts
+(the DOM did not change)
+-- throws click #boom
+(threw: Error: TODO: update threw)
+(the DOM did not change)
+-- timers
+(timers: 2)
+(the DOM did not change)
+-- advance 300
+console.info: body 1 release ends
+(the DOM did not change)
+-- timers
+(timers: 0)
+(the DOM did not change)
+-- advance 1000
+(the DOM did not change)

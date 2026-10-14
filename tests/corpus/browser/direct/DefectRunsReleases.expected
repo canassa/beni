@@ -1,0 +1,35 @@
+-- load
+<body>
+  <main>
+    <p id="shown">"idle"</p>
+    <button id="go">"go"</button>
+  </main>
+</body>
+-- click #go
+<body>
+  <main>
+    <p id="shown">"going"</p>
+    <button id="go">"go"</button>
+  </main>
+</body>
+-- timers
+(timers: 3)
+(the DOM did not change)
+-- throws advance 10
+console.info: first inner released: Cancelled
+console.info: first outer released: Cancelled
+console.info: second released: Cancelled
+console.info: thrower released: Cancelled
+(threw: Error: TODO: body threw)
+<body>
+  <main>
+    <p id="shown">"going"</p>
+    <button id="go">"go"</button>
+  </main>
+  <div style="position:fixed;inset:0;z-index:2147483647;overflow:auto;margin:0;padding:24px;background:#fff;color:#a00;font:14px/1.5 monospace;white-space:pre-wrap">"This program has stopped.\n\nSomething it ran threw an exception, so its state can no longer be trusted and nothing more of it runs. The exception is below, and in the console with its stack.\n\nError: TODO: body threw"</div>
+</body>
+-- timers
+(timers: 0)
+(the DOM did not change)
+-- advance 100
+(the DOM did not change)

@@ -1,0 +1,4 @@
+-- file
+-- throws load
+(threw: Error: Tea.application needs an http or https address, and this page has none: it was opened from a file. Serve it over HTTP, or use Tea.document and Browser.Navigation.currentUrl, whose Nothing such a page can handle.)
+<body></body>

@@ -1,0 +1,21 @@
+-- load
+<body>
+  <main>
+    <button id="start">"start"</button>
+    <button id="break">"break"</button>
+  </main>
+</body>
+-- click #start
+(the DOM did not change)
+-- timers
+(timers: 1)
+(the DOM did not change)
+-- throws click #break
+console.info: released: Cancelled
+(threw: Error: TODO: view threw)
+(the DOM did not change)
+-- timers
+(timers: 0)
+(the DOM did not change)
+-- advance 100
+(the DOM did not change)

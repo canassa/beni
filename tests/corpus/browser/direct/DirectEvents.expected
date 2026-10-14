@@ -1,0 +1,44 @@
+-- load
+<body>
+  <main>
+    <button id="stop">"stop"</button>
+    <ul></ul>
+  </main>
+</body>
+-- key body Enter code:Enter
+<body>
+  <main>
+    <button id="stop">"stop"</button>
+    <ul>
+      <li>"down Enter"</li>
+      <li>"up Enter"</li>
+    </ul>
+  </main>
+</body>
+-- hash "#/active"
+<body>
+  <main>
+    <button id="stop">"stop"</button>
+    <ul>
+      <li>"down Enter"</li>
+      <li>"up Enter"</li>
+      <li>"url /active"</li>
+    </ul>
+  </main>
+</body>
+-- click #stop
+<body>
+  <main>
+    <button id="stop">"stop"</button>
+    <ul>
+      <li>"down Enter"</li>
+      <li>"up Enter"</li>
+      <li>"url /active"</li>
+      <li>"stopped"</li>
+    </ul>
+  </main>
+</body>
+-- key body Escape code:Escape
+(the DOM did not change)
+-- hash "#/done"
+(the DOM did not change)

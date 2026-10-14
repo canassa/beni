@@ -329,6 +329,7 @@ pub const Direct = struct {
         /// its value's instruction and call path, with its read set's
         /// group (`browser-direct.md` §5.4, `cx.programLet`).
         lets: []const Let = &.{},
+        settles: []const bool = &.{},
     };
 
     pub const Let = struct {
@@ -382,7 +383,7 @@ pub const Direct = struct {
         access: []const Access,
     };
 
-    pub const Access = struct { ctor: Ctor, field: u32 };
+    pub const Access = union(enum) { ctor: struct { ctor: Ctor, field: u32 }, record: Symbol, tuple: u32 };
 
     /// A constructor, by its module, its index among that module's
     /// `Bir.ctors`, and its row in that module's interface (`none` when
@@ -2297,6 +2298,9 @@ pub const Lowerer = struct {
 
     fn enterFunction(l: *Lowerer, suspendable: bool) FunctionState {
         const outer: FunctionState = .{ .suspendable = l.suspendable, .markers = l.markers, .join = l.join };
+        // A stack address can be reused by sibling functions. Evidence
+        // names belong to the function that declares them.
+        l.bound_out = null;
         l.suspendable = suspendable;
         l.markers = 0;
         l.function_depth += 1;
@@ -2305,6 +2309,7 @@ pub const Lowerer = struct {
     }
 
     fn leaveFunction(l: *Lowerer, outer: FunctionState) void {
+        l.bound_out = null;
         l.suspendable = outer.suspendable;
         l.markers = outer.markers;
         l.join = outer.join;
@@ -10915,6 +10920,9 @@ pub const Lowerer = struct {
             if (std.mem.eql(u8, field_name, "init")) pc.init = field.value;
             if (std.mem.eql(u8, field_name, "update")) pc.update = field.value;
             if (std.mem.eql(u8, field_name, "view")) pc.view = field.value;
+            if (std.mem.eql(u8, field_name, "subscriptions")) pc.subscriptions = field.value;
+            if (std.mem.eql(u8, field_name, "onUrlRequest")) pc.on_url_request = field.value;
+            if (std.mem.eql(u8, field_name, "onUrlChange")) pc.on_url_change = field.value;
         }
         pc.update_inline = l.in.direct != null and l.updateInlinable(pc.update);
         return pc;
@@ -11158,6 +11166,9 @@ pub const Lowerer = struct {
         // root past the `let`s is named (`Program.view_lets`).
         var at = body;
         while (l.bir.instTag(at) == .let) at = @fromBackingInt(@intCast(l.bir.instData(at).rhs));
+        if (l.program_now) |pc| if (field == pc.view and pc.constructor >= 2) {
+            at = l.documentPart(at, "body") orelse return .{ .function, null };
+        };
         if (l.bir.instTag(at) != .markup) return .{ .function, null };
         const st = l.mk orelse return .{ .function, null };
         const root = st.built.rootAt(at.int()) orelse return .{ .function, null };
@@ -11215,7 +11226,10 @@ pub const Lowerer = struct {
             try l.report(.internal, inst, "The markup lowering `{s}` names program constructors and has no program hook.", .{st.lowering.name});
             return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
         };
+        const saved_shape = l.program_now;
+        l.program_now = pc;
         const view, const view_root = l.programShape(pc.view);
+        l.program_now = saved_shape;
         const update, _ = l.programShape(pc.update);
         const program: beni_markup.Program = .{
             .constructor = pc.constructor,
@@ -11259,7 +11273,7 @@ pub const Lowerer = struct {
 
     /// `cx.programInit`: the program's `init`, evaluated into `block`, as
     /// a function the lowering makes evaluates it.
-    fn programInit(l: *Lowerer, block: beni_markup.Block) Allocator.Error!Node.Index {
+    fn programInit(l: *Lowerer, block: beni_markup.Block, args: []const Node.Index) Allocator.Error!Node.Index {
         const st = l.mk.?;
         const p = st.pos;
         const pc = l.program_now orelse return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
@@ -11299,7 +11313,7 @@ pub const Lowerer = struct {
         defer l.leaveDecl(saved);
         // A function of `⊤` takes no JavaScript argument (`backend.md` §6, *A
         // parameter of type `()`*).
-        const value = if (body) |b| try l.expr(&stmts, b) else try l.call(try l.expr(&stmts, init), &.{}, p);
+        const value = if (body) |b| try l.expr(&stmts, b) else try l.call(try l.expr(&stmts, init), args, p);
         // Bound to a name, which `--release` keeps though nothing reads it
         // when `init` may have an effect — a throw that stops the page, a
         // `Debug.log` — as it keeps any such binding (`backend.md` §9). A
@@ -11309,6 +11323,50 @@ pub const Lowerer = struct {
         if (if (body) |b| l.mayHaveEffect(b) else true) try l.effect_keep.append(l.scratch, stmts.items[stmts.items.len - 1]);
         try st.blocks.items[@backingInt(block)].appendSlice(l.scratch, stmts.items);
         return l.ident(bound, p);
+    }
+
+    fn documentPart(l: *Lowerer, body: Inst.Index, part_name: []const u8) ?Inst.Index {
+        var at = body;
+        while (l.bir.instTag(at) == .let) at = @fromBackingInt(@intCast(l.bir.instData(at).rhs));
+        if (l.bir.instTag(at) != .record) return null;
+        for (l.bir.extraSlice(Bir.inlineRange(l.bir.instData(at)), Bir.Field)) |f| {
+            if (std.mem.eql(u8, l.text(l.bir.symbol(f.name)), part_name)) return f.value;
+        }
+        return null;
+    }
+
+    fn directField(l: *Lowerer, block: beni_markup.Block, field: beni_markup.Context.ProgramField, model: Node.Index) Allocator.Error!Node.Index {
+        const pc = l.program_now.?;
+        const st = l.mk.?;
+        var stmts: StmtList = .empty;
+        const outer = l.enterFunction(false);
+        defer l.leaveFunction(outer);
+        const saved = try l.enterDecl(pc.record_decl);
+        defer l.leaveDecl(saved);
+        const value = if (field == .title) blk: {
+            const function = l.fieldFunction(pc, pc.view) orelse break :blk try l.nullNode(st.pos);
+            const view_saved = try l.enterDecl(function.decl);
+            defer l.leaveDecl(view_saved);
+            try l.bindParam(&stmts, function.params[0], model);
+            const lets = try l.viewLets(function.body);
+            for (lets.groups) |g| try l.letBindings(&stmts, g);
+            const title = l.documentPart(function.body, "title") orelse {
+                try l.report(.view_not_compiled, pc.view.?, "A direct document view must return a record with title and body written in place.", .{});
+                break :blk try l.nullNode(st.pos);
+            };
+            break :blk try l.expr(&stmts, title);
+        } else blk: {
+            const inst = switch (field) {
+                .subscriptions => pc.subscriptions,
+                .onUrlRequest => pc.on_url_request,
+                .onUrlChange => pc.on_url_change,
+                .title => unreachable,
+            } orelse break :blk try l.nullNode(st.pos);
+            const f = try l.expr(&stmts, inst);
+            break :blk if (field == .subscriptions) try l.call(f, &.{model}, st.pos) else f;
+        };
+        try st.blocks.items[@backingInt(block)].appendSlice(l.scratch, stmts.items);
+        return value;
     }
 
     /// `cx.programReport`: `code` at a part of the program's pc.
@@ -12145,6 +12203,7 @@ pub const Lowerer = struct {
         const function = l.fieldFunction(pc, pc.view) orelse return null;
         var at = function.body;
         while (l.bir.instTag(at) == .let) at = @fromBackingInt(@intCast(l.bir.instData(at).rhs));
+        if (pc.constructor >= 2) at = l.documentPart(at, "body") orelse return null;
         return if (l.bir.instTag(at) == .case) at else null;
     }
 
@@ -13053,13 +13112,17 @@ pub const Lowerer = struct {
                 var leads = true;
                 for (step.access, 0..) |a, d| {
                     if (d >= layers.len) return null;
+                    const ctor_access = switch (a) {
+                        .ctor => |c| c,
+                        else => return null,
+                    };
                     const layer = layers[d];
-                    if (!l.sameCtor(layer.ctor, a.ctor)) {
+                    if (!l.sameCtor(layer.ctor, ctor_access.ctor)) {
                         leads = false;
                         break;
                     }
                     const at = layer.at orelse return null;
-                    if (at != a.field) {
+                    if (at != ctor_access.field) {
                         leads = false;
                         break;
                     }
@@ -13302,10 +13365,14 @@ pub const Lowerer = struct {
             if (k + 1 < keys.len) for (steps) |step| {
                 if (!step.named) continue;
                 var subject = msg;
-                for (step.access) |a| {
-                    const rt = l.directCtor(a.ctor) orelse continue;
-                    subject = try l.ctorField(subject, rt[0], a.field, p);
-                }
+                for (step.access) |a| switch (a) {
+                    .ctor => |c| {
+                        const rt = l.directCtor(c.ctor) orelse continue;
+                        subject = try l.ctorField(subject, rt[0], c.field, p);
+                    },
+                    .record => |field| subject = try l.fieldMember(subject, field, p),
+                    .tuple => |i| subject = try l.member(subject, try l.slotName(i), p),
+                };
                 const rt = l.directCtor(step.ctor) orelse continue;
                 const t = try l.ctorIs(subject, rt[0], rt[1], p) orelse continue;
                 condition = if (condition) |c| try l.binary(.logical_and, c, t, p) else t;
@@ -13997,6 +14064,9 @@ const ProgramCall = struct {
     init: ?Inst.Index = null,
     update: ?Inst.Index = null,
     view: ?Inst.Index = null,
+    subscriptions: ?Inst.Index = null,
+    on_url_request: ?Inst.Index = null,
+    on_url_change: ?Inst.Index = null,
     /// The lowering refuses the constructor (`Named.refused`), reported
     /// already: the call is lowered as nothing.
     refused: bool = false,
@@ -14246,7 +14316,21 @@ const markup_vtable: beni_markup.VTable = struct {
     }
 
     fn programInit(impl: *anyopaque, into: M.Block) E!M.Expr {
-        return expr(try lowerer(impl).programInit(into));
+        return expr(try lowerer(impl).programInit(into, &.{}));
+    }
+
+    fn programStart(impl: *anyopaque, into: M.Block, args: []const M.Expr) E!M.Expr {
+        return expr(try lowerer(impl).programInit(into, @ptrCast(args)));
+    }
+
+    fn programField(impl: *anyopaque, into: M.Block, field: M.Context.ProgramField, model: M.Expr) E!M.Expr {
+        return expr(try lowerer(impl).directField(into, field, node(model)));
+    }
+
+    fn programSettles(impl: *anyopaque, key: u32) bool {
+        const pc = lowerer(impl).program_now orelse return true;
+        const d = pc.direct orelse return true;
+        return if (key < d.settles.len) d.settles[key] else true;
     }
 
     fn programReport(impl: *anyopaque, at_: M.Program.Part, code: M.Program.Code, message: []const u8) error{ OutOfMemory, Reported } {
@@ -14536,6 +14620,9 @@ const markup_vtable: beni_markup.VTable = struct {
         .report = report,
         .not_implemented = notImplemented,
         .program_init = programInit,
+        .program_start = programStart,
+        .program_field = programField,
+        .program_settles = programSettles,
         .program_report = programReport,
         .program_keys = programKeys,
         .program_hole = programHole,

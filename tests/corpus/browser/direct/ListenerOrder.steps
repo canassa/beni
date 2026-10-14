@@ -1,0 +1,13 @@
+# 1. The render that subscribes pushes `#/early` after it renders: nobody
+#    has added the listener yet, so no change is heard.
+click #follow
+location
+# 2. The push's answer and the body behind it land before the change.
+click #order
+hash "#/later"
+click #unfollow
+listeners window popstate
+# 3. On and off in one task: the listener is never added.
+flush #on #off
+listeners window popstate
+hash "#/unheard"

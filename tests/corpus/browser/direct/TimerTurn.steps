@@ -1,0 +1,4 @@
+click #start
+# The timer fires: the fiber wakes, sends, and the page renders, all
+# before its callback returns.
+advance 100 tasks

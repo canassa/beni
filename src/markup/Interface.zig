@@ -37,7 +37,7 @@ const std = @import("std");
 /// `programBranchEnter`, `programBranchValue`, `programShowFallback`,
 /// `programNestedEnter`, `programViewStatements`, `programLet`,
 /// `Program.view_lets`).
-pub const version: Version = .{ .major = 1, .minor = 10 };
+pub const version: Version = .{ .major = 1, .minor = 11 };
 
 /// The newest version whose gated feature a tree can use. No minor version
 /// has gated one yet, so every tree requires 1.0 and every lowering of
@@ -976,6 +976,22 @@ pub const Context = struct {
         return cx.vtable.program_init(cx.impl, block);
     }
 
+    /// 1.11: init called with explicit arguments, evaluated once.
+    pub fn programStart(cx: *Context, block: Block, args: []const Expr) Error!Expr {
+        return cx.vtable.program_start(cx.impl, block, args);
+    }
+
+    pub const ProgramField = enum { subscriptions, onUrlRequest, onUrlChange, title };
+
+    /// 1.11: a field evaluated against the current model.
+    pub fn programField(cx: *Context, block: Block, field: ProgramField, model: Expr) Error!Expr {
+        return cx.vtable.program_field(cx.impl, block, field, model);
+    }
+
+    pub fn programSettles(cx: *Context, key: u32) bool {
+        return cx.vtable.program_settles(cx.impl, key);
+    }
+
     /// 1.6, inside `Lowering.program` only: report `code` at a part of the
     /// program's call; the lowering then returns the error.
     pub fn programReport(cx: *Context, part: Program.Part, code: Program.Code, message: []const u8) error{ OutOfMemory, Reported } {
@@ -1379,6 +1395,9 @@ pub const VTable = struct {
     start: *const fn (impl: *anyopaque, key: []const u8, value: []const u8) Error!void,
     report: *const fn (impl: *anyopaque, node: Node.Index, message: []const u8) error{ OutOfMemory, Reported },
     not_implemented: *const fn (impl: *anyopaque, node: Node.Index, message: []const u8) error{ OutOfMemory, Reported },
+    program_start: *const fn (impl: *anyopaque, block: Block, args: []const Expr) Error!Expr,
+    program_field: *const fn (impl: *anyopaque, block: Block, field: Context.ProgramField, model: Expr) Error!Expr,
+    program_settles: *const fn (impl: *anyopaque, key: u32) bool,
     program_init: *const fn (impl: *anyopaque, block: Block) Error!Expr,
     program_report: *const fn (impl: *anyopaque, at: Program.Part, code: Program.Code, message: []const u8) error{ OutOfMemory, Reported },
     program_keys: *const fn (impl: *anyopaque) []const Program.Key,
