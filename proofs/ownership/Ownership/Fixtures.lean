@@ -366,6 +366,18 @@ def probePublishVia : Program := {
     .letE 6 (.closure publish []) <| .letE 7 (.app (v 5) [v 4, v 6]) (.prim .push [v 0, .int 0]) }
 
 open Generator in
+/-- Both wrapper calls have the same canonical container certificates. The
+    shallow input copy prevents the new must-facts from distinguishing them
+    before the forwarded escape guard is consulted. -/
+def probeForwardVia : Program := {
+  declarations := decls
+  main := .letE 0 (.prim (.literal .int) [.int 0]) <| .letE 1 (.prim (.literal tL) [v 0]) <|
+    .letE 10 (.prim .copy [v 1]) <|
+    .letE 2 (.closure mapVia []) <| .letE 3 (.closure identL []) <|
+    .letE 4 (.app (v 2) [v 10, v 3]) <| .letE 5 (.closure mapVia []) <|
+    .letE 6 (.closure publish []) <| .letE 7 (.app (v 5) [v 4, v 6]) (.prim .push [v 0, .int 0]) }
+
+open Generator in
 /-- `applyThenRead xs (capAppend c)`: the once callback pushes its capture and
     returns it, and applyThenRead pushes the result again. The closure is dead
     afterwards, so this is accepted; the summary checker once rejected it by
@@ -604,7 +616,7 @@ def probes : List (String × Program × Mutant × Bool) := [
   ("wrapper returns its argument", probeCallbackAliases, .callbackAliases, false),
   ("map over a captured list", probeCallbackEnv, .callbackEnv, false),
   ("mapVia publishes a row, then the row is pushed", probePublishVia, .callbackEscapes, false),
-  ("mapVia forwards map's guards about its callback", probePublishVia, .forwardGuards, false),
+  ("mapVia forwards map's guards about its callback", probeForwardVia, .forwardGuards, false),
   ("once closure called by a callee, then observed", onceThroughCallee, .onceThroughCall, false),
   ("close returns a once closure's capture, a callee calls it", closeThenOnceThroughCallee, .onceThroughCall, false),
   ("foldl calls a once closure on two rows", onceThroughFold, .manyOff, false),
@@ -795,6 +807,10 @@ def run : IO Bool := do
       IO.FS.writeFile s!"regressions/fixture-{index}-failure.txt"
         s!"{f.id}\nexpected={f.accepted}\nactual={repr verdict}\ntypes={repr typed}\n{repr f.program}\n"
       ok := false
+    if let .ok a := verdict then
+      if let .error problem := Falsify.resultCertificates f.program a then
+        IO.println s!"FIXTURE CERTIFICATE FAILED: {f.id}: {problem}"
+        ok := false
     if verdict.isOk then
       match Oracle.compare f.program with
       | .equal => pure ()
@@ -816,7 +832,7 @@ def run : IO Bool := do
     let caught := Oracle.disagrees p { mutant := some m, reinfer } && !corrected.isOk
     IO.println s!"probe {name} under mutant {m.name}{if reinfer then " (per-call checker)" else ""}: corrected={repr corrected} disagrees={caught}"
     if !caught then
-      IO.println s!"MUTANT NEGATIVE CONTROL FAILED: {m.name}"
+      IO.println s!"MUTANT NEGATIVE CONTROL FAILED: {m.name}: {repr (Oracle.verdictOf p {mutant := some m, reinfer})}"
       ok := false
   -- `no-scope` at the checker: no program reaches it (see `unboundLive`).
   let (correctedAccepts, _) := unboundLive {}
@@ -831,7 +847,8 @@ def run : IO Bool := do
     if (Reinfer.check f.program).isOk != f.accepted then
       IO.println s!"PER-CALL CHECKER VERDICT DIFFERS: {f.id} expected={f.accepted}"
       ok := false
-  IO.println s!"fixtures={all.length} passed={ok}"
+  if !(← Sync.run) then ok := false
+  IO.println s!"fixtures={all.length} sync-fixtures={Sync.fixtures.length} passed={ok}"
   pure ok
 
 end Ownership.Fixtures

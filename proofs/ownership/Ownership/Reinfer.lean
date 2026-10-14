@@ -162,6 +162,14 @@ def primitive (ctx : Context) (site : List Nat) (op : Prim) (args : List Abstrac
   match op, args with
   | .add, _ | .sub, _ | .eq, _ | .lt, _ => pure .scalar
   | .record, xs => pure (.record xs)
+  | .events, [.record [_, events]] => pure events
+  | .owned _, [value, retained] => do
+    demand ctx.config value.cells later retained.cells
+    if !value.deepExclusive || !separatedPaths value.paths then throw "owned result: repeated positions"
+    pure value
+  | .prepend, [v, .list cs elem ex] => do
+    noteRead cs
+    pure (.list (union [fresh] cs) (v.join elem) (ex.deep && storeExclusive ctx [v] later elem.cells))
   | .literal _, xs =>
     pure (.list [fresh] (xs.foldl Abstract.join .bottom) (storeExclusive ctx xs later []))
   | .builder _, [] => pure (.list [fresh] .bottom true)
@@ -263,8 +271,8 @@ def inferExpr (fuel : Nat) (ctx : Context) (env : Env Abstract)
       let input ← abstractAtom env src
       let init ← abstractAtom env initial
       let (roots, rawElement, sourceEx) ← match kind, input with
-        | .range, _ => pure ([], Abstract.scalar, true)
-        | .list, .list cs elem ex => pure (cs, elem, ex)
+        | .range, _ | .model, _ => pure ([], Abstract.scalar, true)
+        | .list, .list cs elem ex => pure (cs, elem, ex.deep)
         | .list, .bottom => pure ([], Abstract.bottom, true)
         | _, _ => throw "abstract traversal"
       noteRead roots

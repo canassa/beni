@@ -176,18 +176,28 @@ partial def tokens (s : String) : List String := Id.run do
   -- Kernel replay: every Ownership constant is sent to the kernel again, in a
   -- fresh environment holding only what the Ownership modules import (Std),
   -- as lean4checker does; `debug.skipKernelTC` cannot have let one through.
-  let base ← importModules #[{ module := `Std }] {}
-  let mut fresh : Std.HashMap Name ConstantInfo := {}
-  for n in sorted do
-    -- The auxiliary recursors of nested inductives (`rec_1`, …) are not
-    -- replayed: the kernel generates them again when it accepts the
-    -- inductive, and every constant that uses them is checked against those.
-    let aux := match n with
-      | .str _ s => s.startsWith "rec_"
-      | _ => false
-    if aux then continue
-    if let some ci := env.find? n then fresh := fresh.insert n ci
-  let _ ← Lean.Environment.replay fresh base
+  -- Match the authoritative audit's module boundaries. Replaying all modules
+  -- together collides Lean-generated private auxiliary names after normalization.
+  let mut replayed := 0
+  for (m, i) in env.header.moduleNames.zipIdx do
+    unless m.toString.startsWith "Ownership" do continue
+    let some data := env.header.moduleData[i]? | continue
+    let base ← importModules data.imports {}
+    let mut fresh : Std.HashMap Name ConstantInfo := {}
+    let mut recursors : Array RecursorVal := #[]
+    for n in sorted do
+      unless (env.getModuleIdxFor? n).map (·.toNat) == some i do continue
+      if let some ci := env.find? n then
+        match ci with
+        | .recInfo r => recursors := recursors.push r
+        | _ => fresh := fresh.insert n ci
+    let rebuilt ← Lean.Environment.replay fresh base
+    for original in recursors do
+      match rebuilt.toKernelEnv.find? original.name with
+      | some (.recInfo regenerated) =>
+        unless regenerated == original do throwError "invalid regenerated recursor {original.name}"
+      | _ => throwError "missing regenerated recursor {original.name}"
+    replayed := replayed + fresh.size + recursors.size
   -- Compiler attributes, read from the environment rather than the text: no
   -- constant may have another implementation swapped in (`implemented_by`,
   -- `extern`, `csimp`) or run at initialisation. A `partial def` is compiled
@@ -202,7 +212,7 @@ partial def tokens (s : String) : List String := Id.run do
     if Lean.Compiler.hasCSimpAttribute env n then throwError "{n} has @[csimp]"
     if Lean.hasInitAttr env n then throwError "{n} runs at initialisation"
   IO.println s!"compiler attributes: none swapped in ({partials} partial definitions through their own _unsafe_rec)"
-  IO.println s!"kernel replay: {fresh.size} constants re-checked"
+  IO.println s!"kernel replay: {replayed} constants re-checked"
   -- The source scan, for what adds no constant (an `example`).
   let mut sorries := 0
   let files ← sources

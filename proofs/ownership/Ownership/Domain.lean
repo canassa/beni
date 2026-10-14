@@ -39,6 +39,19 @@ def aliases (a b : Origin) : Bool :=
 
 def cellOverlap (a b : List Origin) : Bool := a.any fun x => b.any (aliases x)
 
+/-- Deep ownership and separation of the element containers are independent.
+    A tap's captured data may be shared while the list containing taps is unique. -/
+structure Certificate where
+  deep : Bool
+  spine : Bool
+  deriving Repr, BEq, Inhabited
+
+instance : Coe Bool Certificate := ⟨fun b => ⟨b, b⟩⟩
+instance : Coe Certificate Bool := ⟨Certificate.deep⟩
+
+def Certificate.meet (a b : Certificate) : Certificate :=
+  ⟨a.deep && b.deep, a.spine && b.spine⟩
+
 /-- Positions are deliberately merged. `exclusive` carries information that
     provenance sets cannot carry, including separation inside one position.
     `symbolic` is a function-typed input of the declaration being summarised:
@@ -49,7 +62,7 @@ inductive Abstract where
   | bottom
   | scalar
   | record (fields : List Abstract)
-  | list (roots : List Origin) (element : Abstract) (exclusive : Bool)
+  | list (roots : List Origin) (element : Abstract) (exclusive : Certificate)
   | function (roots : List Origin) (alternatives : List (Nat × List Abstract))
   | symbolic (slot : Nat) (type : Ty) (roots env : List Origin)
   deriving Repr, Inhabited
@@ -134,8 +147,8 @@ def Abstract.mapOrigins (f : Path → List Origin → List Origin) (a : Abstract
   | .scalar => .scalar
   | .record xs => .record (xs.attach.zipIdx.map fun (x, i) => x.val.mapOrigins f (path ++ [.field i]))
   | .list cs x ex => .list (f path cs) (x.mapOrigins f (path ++ [.element])) ex
-  | .function cs alts => .function (f path cs) (alts.attach.map fun alt =>
-    (alt.val.1, alt.val.2.attach.zipIdx.map fun (x, i) => x.val.mapOrigins f (path ++ [.capture i])))
+  | .function cs alts => .function (f path cs) ((alts.attach.map fun alt =>
+    (alt.val.1, alt.val.2.attach.zipIdx.map fun (x, i) => x.val.mapOrigins f (path ++ [.capture i]))).eraseDups)
   | .symbolic j t cs es => .symbolic j t (f path cs) (f (path ++ [.env]) es)
 termination_by sizeOf a
 decreasing_by
@@ -151,7 +164,7 @@ def Abstract.join (a b : Abstract) : Abstract :=
   | .bottom, x | x, .bottom => x
   | .scalar, .scalar => .scalar
   | .record xs, .record ys => .record ((xs.attach.zip ys).map (fun (x, y) => x.val.join y))
-  | .list cs x ex, .list ds y ey => .list (union cs ds) (x.join y) (ex && ey)
+  | .list cs x ex, .list ds y ey => .list (union cs ds) (x.join y) (ex.meet ey)
   | .function cs xs, .function ds ys => .function (union cs ds) (union xs ys)
   | .symbolic i t cs es, .symbolic j _ ds fs =>
     if i == j then .symbolic i t (union cs ds) (union es fs) else .list (union [.unknown] (union a.cells b.cells)) .bottom false
@@ -190,6 +203,22 @@ def Abstract.grantExclusive : Abstract → Abstract
   | .record xs => .record (xs.attach.map (fun x => x.val.grantExclusive))
   | .function cs xs => .function cs (xs.attach.map fun alt => (alt.val.1, alt.val.2.attach.map (fun x => x.val.grantExclusive)))
   | x => x
+termination_by a => sizeOf a
+decreasing_by
+  all_goals simp_wf
+  all_goals try have h := List.sizeOf_lt_of_mem x.property
+  all_goals try have h₂ := List.sizeOf_lt_of_mem alt.property
+  all_goals try have h₃ := sndSize alt.val
+  all_goals simp_all +arith
+  all_goals omega
+
+/-- Change only must-facts, preserving the finite provenance shape. -/
+def Abstract.mapCertificates (f : List Origin → Certificate → Certificate) : Abstract → Abstract
+  | .list cs x ex => .list cs (x.mapCertificates f) (f cs ex)
+  | .record xs => .record (xs.attach.map fun x => x.val.mapCertificates f)
+  | .function cs xs => .function cs (xs.attach.map fun alt =>
+      (alt.val.1, alt.val.2.attach.map fun x => x.val.mapCertificates f))
+  | a => a
 termination_by a => sizeOf a
 decreasing_by
   all_goals simp_wf
@@ -251,9 +280,10 @@ def closureCapUses : Expr → Live
 /-- The uses of an expression. `nonzero := false` is the `branch-live`
     control's weakened liveness, which ignores a conditional's nonzero arm;
     one definition, so the control cannot drift from the rule it weakens. -/
-def usesArms (nonzero : Bool) (armClosures : Bool := true) : Expr → Live
+def usesArms (nonzero : Bool) (armClosures : Bool := true) (prependRead : Bool := true) : Expr → Live
   | .atom a => atomUses a
-  | .letE v rhs rest => union (usesArms nonzero armClosures rhs) (removeVars [v] (usesArms nonzero armClosures rest))
+  | .letE v rhs rest => union (usesArms nonzero armClosures prependRead rhs) (removeVars [v] (usesArms nonzero armClosures prependRead rest))
+  | .prim .prepend [x, base] => if prependRead then atomsUses [x, base] else atomUses x
   | .prim .close (x :: _) => atomUses x
   | .prim _ xs | .recur xs => atomsUses xs
   | .closure _ xs => atomsUses xs
@@ -261,16 +291,16 @@ def usesArms (nonzero : Bool) (armClosures : Bool := true) : Expr → Live
   | .branch c a b =>
     -- The `branch-closure` control (`armClosures := false`) drops an arm's
     -- uses that are captures of the closures the arm creates.
-    let ua := usesArms nonzero armClosures a
-    let ub := if nonzero then usesArms nonzero armClosures b else []
+    let ua := usesArms nonzero armClosures prependRead a
+    let ub := if nonzero then usesArms nonzero armClosures prependRead b else []
     let ua := if armClosures then ua else ua.filter fun u => !(closureCapUses a).contains u
     let ub := if armClosures then ub else ub.filter fun u => !(closureCapUses b).contains u
     union (atomUses c) (union ua ub)
   | .traverse _ src init i x acc body =>
-    union (atomsUses [src, init]) (removeVars [i, x, acc] (usesArms nonzero armClosures body))
-  | .focus src i x body => union (atomsUses [src, i]) (removeVars [x] (usesArms nonzero armClosures body))
+    union (atomsUses [src, init]) (removeVars [i, x, acc] (usesArms nonzero armClosures prependRead body))
+  | .focus src i x body => union (atomsUses [src, i]) (removeVars [x] (usesArms nonzero armClosures prependRead body))
 
-def uses (e : Expr) : Live := usesArms true true e
+def uses (e : Expr) : Live := usesArms true true true e
 
 def isPrefix (a b : Path) : Bool := a == b.take a.length
 
@@ -311,6 +341,8 @@ inductive Fact where
   | fresh (q : Path)                 -- the fresh numbers in res(q)
   | shared (q : Path)                -- shared or esc ∈ res(q)
   | top (q : Path)                   -- ⊤ ∈ res(q)
+  | spine (q : Path)                 -- separated element containers
+  | requiresSpine (k : Nat) (p : Path)
   | xres (q : Path)                  -- xres(q)
   | escapesEnv                       -- E on its own environment
   | once                             -- the value may be once
@@ -340,6 +372,7 @@ structure Supply where
   env : List Origin
   owned : List (Nat × Path)
   exclusive : List (Nat × Path)
+  spine : List (Nat × Path) := []
   deriving Repr, BEq, Inhabited
 
 /-- Slot ↦ the actual function value at the call, in the next frame's
@@ -354,6 +387,7 @@ structure Summary where
   writes : List Origin := []
   escapes : List Origin := []
   requiresExclusive : List Origin := []
+  requiresSpine : List Origin := []
   recursive : Bool := false
   /-- W through a supply: cells handed to a callback that writes them. They
       are checked by the supply's owned bit and the call-site edge, and become
@@ -377,6 +411,7 @@ def Summary.join (a b : Summary) : Summary := {
   writes := union a.writes b.writes
   escapes := union a.escapes b.escapes
   requiresExclusive := union a.requiresExclusive b.requiresExclusive
+  requiresSpine := union a.requiresSpine b.requiresSpine
   recursive := a.recursive || b.recursive
   consumes := union a.consumes b.consumes
   supplies := union a.supplies b.supplies

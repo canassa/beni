@@ -750,6 +750,9 @@ def controls (count seed : Nat) (version := 5) (reinfer := false) : IO Bool := d
   let mut ok := true
   let mut rows : List String := []
   for (name, config) in named do
+    if config.mutant.any Mutant.enumeratorRequired then
+      rows := rows ++ [s!"{name}: required through the targeted enumerator (checked by the CLI)"]
+      continue
     if config.mutant == some .borrowedSupply && !reinfer then
       -- Reported separately, never swapped silently: under summaries this
       -- mutant changes verdicts but no program it accepts has been seen to

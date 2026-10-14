@@ -113,6 +113,11 @@ def prim (op : Prim) (vs : List Value) : M Value := do
   | .set, [.list xs, .int i, v] =>
     pure (.list (if i < 0 then xs else xs.set i.toNat v))
   | .push, [.list xs, x] | .put, [.list xs, x] => pure (.list (xs ++ [x]))
+  | .prepend, [x, .list xs] => do
+    read (.list xs)
+    pure (.list (x :: xs))
+  | .events, [.record [_, events]] => pure events
+  | .owned _, [x, _] => pure x
   | .copy, [.list xs] => pure (.list xs)
   | .close, [.list xs] | .close, [.list xs, .list _] => pure (.list xs)
   | _, _ => throw "value primitive shape"
@@ -147,7 +152,7 @@ def eval (depth : Nat) (ds : List Decl) (self : Option (Nat × List Value))
         let input ← atom env src
         let values ← match kind, input with
           | .list, .list xs => do read (.int xs.length); pure xs
-          | .range, .int n => pure ((List.range n.toNat).map (fun i => .int i))
+          | .range, .int n | .model, .int n => pure ((List.range n.toNat).map (fun i => .int i))
           | _, _ => throw "value traversal"
         let mut a ← atom env init
         for (v, n) in values.zipIdx do
@@ -324,6 +329,12 @@ def prim (op : Prim) (vs : List Value) : M Value := do
     writeCounted c (if i < 0 then xs else xs.set i.toNat v)
   | .push, [.ref c, v] => do writeCounted c ((← array c) ++ [v])
   | .put, [.ref c, v] => do write c ((← array c) ++ [v])
+  | .prepend, [x, .ref c] => do
+    let xs ← array c
+    read (.ref c)
+    alloc (x :: xs)
+  | .events, [.record [_, events]] => pure events
+  | .owned _, [x, _] => pure x
   | .copy, [.ref c] => do alloc (← array c)
   | .close, [.ref c] => pure (.ref c)
   | .close, [.ref c, .ref source] => do
@@ -371,7 +382,7 @@ def eval (depth : Nat) (ds : List Decl) (self : Option (Nat × List Value))
             let n := (← array c).length
             read (.int n)
             pure n
-          | .range, .int n => pure n.toNat
+          | .range, .int n | .model, .int n => pure n.toNat
           | _, _ => throw "in-place traversal"
         let mut a ← atom env init
         -- A list source is read as a runtime iterates an array: its length

@@ -1,4 +1,5 @@
 import Ownership.Enumerate
+import Ownership.Sync
 
 namespace Ownership.Targeted
 open Generator (tL tN tR fIL fIR)
@@ -62,7 +63,7 @@ def recursion (n : Int) (steps : Nat) (comparison : Prim) (keep : Bool) : Progra
     These complement the small grammar; they are not all core programs. -/
 def programs : List Program :=
   let ints : List Int := [-1, 0, 1, 2]
-  ints.flatMap (fun n => [1,2,3].map (countBoundary n)) ++
+  Sync.programs ++ ints.flatMap (fun n => [1,2,3].map (countBoundary n)) ++
   ints.flatMap (fun n => [Generator.bump, Generator.identL].map (consumingCapture n)) ++
   ints.map transitiveCapture ++
   ints.flatMap (fun n => ints.flatMap fun c => [Prim.eq, Prim.lt].flatMap fun op => [0,1].map (shapeJoin n c op)) ++
@@ -80,6 +81,10 @@ def run (config : Config := {}) (mode : Enumerate.Mode := .full)
     unless (typesOf p).isOk do throw <| IO.userError s!"ill-typed targeted program {i}"
     if !(Oracle.verdictOf p config).isOk then continue
     accepted := accepted + 1
+    if config.mutant.isNone && !config.oldFreshRule && !config.dropTraversalEscapes && !config.reinfer then
+      if let .ok a := check p config then
+        if let .error problem := Falsify.resultCertificates p a then
+          throw <| IO.userError s!"targeted certificate failure {i}: {problem}"
     keys := keys.push i.toUInt64
     let checkIt := match mode with
       | .full => true

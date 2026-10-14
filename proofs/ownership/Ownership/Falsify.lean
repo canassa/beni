@@ -88,9 +88,21 @@ def coversB (γ : FNaming) (heap : Heap) (a : Abstract) (v : Value) : Option Str
 
 def certifiedB (heap : Heap) (a : Abstract) (v : Value) : Option String :=
   let bad := a.paths.find? fun (q, _) => match a.atPath q with
-    | .list _ _ true => (valuesAt heap v q).any fun w => !nodup (footprint heap depthFuel w)
+    | .list _ _ ex => (valuesAt heap v q).any fun w =>
+      let fp := footprint heap depthFuel w
+      (ex.deep && !nodup fp) || (ex.spine &&
+        (pathsOf heap depthFuel w []).any fun (p, c) =>
+          match p with
+          | .element :: rest => containerPath rest && fp.count c != 1
+          | _ => false)
     | _ => false
   bad.map fun (q, _) => s!"exclusive at {repr q} but the footprint repeats an array"
+
+/-- Check the advertised result certificates against the actual final heap,
+    independently of provenance naming and of observational agreement. -/
+def resultCertificates (p : Program) (accepted : Accepted) : Except String Unit := do
+  let (v, st) ← (InPlaceSemantics.eval 100000 p.declarations none [] p.main).run {fuel := 100000}
+  if let some problem := certifiedB st.heap accepted.result v then throw problem
 
 /-- The closures at field and element paths (`ClosuresDescribed`'s paths). -/
 def closuresAt (heap : Heap) : Nat → Value → Path → List (Path × Value)
@@ -691,6 +703,8 @@ def closureAbs (heap : Heap) (v : Value) (once : Bool) : Abstract × FNaming :=
   | _ => (.bottom, [])
 
 structure CallTally where
+  resultsChecked : Nat := 0
+  resultViolations : Nat := 0
   splitsTried : Nat := 0
   splitsExcluded : Nat := 0
   splitViolations : Nat := 0
@@ -777,6 +791,14 @@ def summaryCampaign (count seed : Nat) (limit : Nat := 5) (checker : Ownership.C
     let ((family, p), next) := (Oracle.generateVersion 5).run state
     state := next
     let .ok acc := check p checker | continue
+    t := { t with resultsChecked := t.resultsChecked + 1 }
+    if let .error problem := resultCertificates p acc then
+      t := { t with resultViolations := t.resultViolations + 1 }
+      IO.FS.createDirAll "regressions"
+      IO.FS.writeFile s!"regressions/falsify-result-{seed}-{index}.txt" s!"{problem}\n{repr p}\n"
+      if shown < limit then
+        shown := shown + 1
+        IO.println s!"FALSE result certificate program {index} family={family}: {problem}"
     let run := loggedCalls p
     let .ok log := run | continue
     for cr in log do

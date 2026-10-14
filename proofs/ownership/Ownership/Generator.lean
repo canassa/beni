@@ -281,7 +281,9 @@ def moves : List (String × Move) := [
     let i ← draw 2
     let j ← if (← draw 4) == 0 then index else pure (Atom.int (Int.ofNat (1 - i)))
     pure [(.prim .at [n, j, ← anyList env], tL),
-      (.focus n (.int (Int.ofNat i)) (sv next 0) (.atom (v next)), tN)]),
+      (.letE (sv next 1) (.focus n (.int (Int.ofNat i)) (sv next 0) (.atom (v next)))
+        (.focus (v (sv next 1)) (.int (Int.ofNat i)) (sv next 2)
+          (.prim .push [v (sv next 2), .int (Int.ofNat i)])), tN)]),
   ("traverse-consume", fun next env => withNested next env fun next n => do
     let (i, x, acc, y, k) := (sv next 0, sv next 1, sv next 2, sv next 3, sv next 4)
     pure [(.traverse .list n (.int 0) i x acc <|
@@ -867,9 +869,10 @@ def copyRepeatEdit : Move := fun next env => do
     callback's escape must reach the caller. -/
 def publishVia : Move := fun next env => do
   let first ← pick [identL, bump] identL
-  pure [(← litList env, tL), (.prim (.literal tL) [v next], tN), (.closure mapVia [], .fn [tN, fLL] tN),
-    (.closure first [], fLL), (.app (v (next + 2)) [v (next + 1), v (next + 3)], tN),
-    (.closure publish [], fLL), (.app (v (next + 2)) [v (next + 4), v (next + 5)], tN),
+  pure [(← litList env, tL), (.prim (.literal tL) [v next], tN),
+    (.prim .copy [v (next + 1)], tN), (.closure mapVia [], .fn [tN, fLL] tN),
+    (.closure first [], fLL), (.app (v (next + 3)) [v (next + 2), v (next + 4)], tN),
+    (.closure publish [], fLL), (.app (v (next + 3)) [v (next + 5), v (next + 6)], tN),
     (.prim .push [v next, ← number env], tL)]
 
 /-- A callee calls an outer closure which calls its captured once closure;

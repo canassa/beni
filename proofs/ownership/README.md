@@ -11,9 +11,15 @@ them. It does not change the beni compiler
 or the thesis.
 
 Current results and the full source-mutant matrix are in [RESULTS.md](RESULTS.md).
-The oracle has 98 fixed verdict fixtures, generator v5, a bounded-exhaustive
-grammar plus 144 targeted programs, required negative controls (including `set-exclusive` and `once-live`),
+The oracle has 98 original and 44 sync verdict fixtures, generator v5, a bounded-exhaustive
+grammar plus 348 targeted programs, required negative controls (including `set-exclusive` and `once-live`),
 and a falsifier that fails when summary coverage is excessively vacuous.
+The sync models branch-local escapes, inductive model/container conditions,
+fold accumulators, markup event slots, constructor callbacks and returns-owned
+tagger obligations. Ten new holes are required through the seed-independent
+targeted enumerator, including the retained-reader-after-append hole. The
+case-lowered withDefault rule also has a required `branch-live` witness.
+`Sync.lean` and DESIGN.md state the projections and their runtime boundaries.
 `no-scope` is a checker-level probe: typed programs cannot reach an unbound
 live variable. `hiddencopy` changes the interpreter to copy on every write;
 value and in-place results then agree, so fixtures checking the intended
@@ -30,7 +36,7 @@ From the repository root:
 nix develop .#ownership
 cd proofs/ownership
 lake build                                   # executable, kernel-checked library, axiom audit
-lake exe ownership ci                        # fixtures and probes, one campaign (≥ 30 % write), every required control caught by the generator
+lake exe ownership ci                        # fixtures and probes, one campaign (≥ 30 % write), every required control caught by the generator or targeted enumerator
 lake exe ownership fixtures
 lake exe ownership oracle 20000 17           # one campaign (summary checker)
 lake exe ownership oracle 20000 17 --cross-check   # also run the per-call checker
@@ -60,7 +66,7 @@ finds an accepted disagreement whose shrunk form the corrected checker
 rejects. `scripts/run-mutants.sh` applies source-level checker edits
 (`scripts/mutate.mjs`) and compares every verdict on each seeded stream with
 indices from the unedited build (`ownership source-sweep`). It also enumerates
-the seed-independent grammar (default bound 2) and all 144 targeted programs, saving per-seed counts, logs
+the seed-independent grammar (default bound 2) and all 348 targeted programs, saving per-seed counts, logs
 and original counterexamples under `regressions/mutant-evidence/`. Run it on
 Linux inside the ownership shell, which supplies Node 24 and taskset; `MUTANT_CORES` defaults to
 `0-7` and refuses more than eight CPUs. `ENUMERATE_BOUND` sets the bound.
@@ -80,6 +86,7 @@ no network, no paid service. The project is outside the Zig gates.
 | `Reinfer.lean` | the frozen per-call re-inference checker (cross-check) |
 | `Library.lean` | map, initialize, foldl, update as ordinary declarations |
 | `Cli.lean` | validates command names, numbers and applicable options before work |
+| `Sync.lean` | Zig-fixture projections for branch, model, fold and Conduit rules, with required holes |
 | `Targeted.lean` | finite products exercising capture consumption, call counts, shape joins, set, comparisons and recursion |
 | `Enumerate.lean` | every typed program of a bounded grammar; independent of random seeds |
 | `Generator.lean` | the general generator: v4's chains of moves, and v5's conditional arms and generated declaration tables |
@@ -127,7 +134,7 @@ fixed in the statement or the checker.
 
 ## Limits
 
-No recursive data types, list views, dictionaries, sets, opaque types, release
+No recursive data types, sum types/early return, list views, dictionaries, sets, opaque types, release
 representations, implicit evidence, effects, fibers, TEA or renderer.
 Mutual recursion, higher-order recursion, recursion inside a traversal or
 focus step, function values below an input path and callbacks with

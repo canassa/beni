@@ -49,6 +49,9 @@ inductive Prim where
   | set -- out of range: unchanged, still a demand
   | push
   | copy
+  | prepend -- front item, base; may share the base's backing array
+  | events -- projection of the event slot of a two-slot markup record
+  | owned (forwarded : Bool := false) -- result, retained callback: an owned-result boundary
   | shared -- declare a program-lifetime root (top-level value)
   | builder (element : Ty)
   | put
@@ -56,7 +59,7 @@ inductive Prim where
   deriving Repr, BEq, Inhabited
 
 inductive Source where
-  | list | range
+  | list | range | model -- a finite sequence of model updates
   deriving Repr, BEq, Inhabited
 
 /-- Strict ANF. Traversal and focus bind only their explicitly named locals. -/
@@ -115,6 +118,10 @@ def primType (p : Prim) (ts : List Ty) : Except String Ty := do
     if t == d then pure t else throw "incorrect at default"
   | .set, [.list t, .int, v] | .push, [.list t, v] =>
     if t == v then pure (.list t) else throw "incorrect stored type"
+  | .prepend, [t, .list u] =>
+    if t == u then pure (.list t) else throw "incorrect prepend element"
+  | .events, [.record [_, events]] => pure events
+  | .owned _, [t, .fn _ _] => pure t
   | .copy, [.list t] => pure (.list t)
   | .shared, [t] => pure t
   | .builder t, [] => pure (.builder t)
@@ -152,7 +159,7 @@ def exprType (ds : List Decl) (self : Decl) (env : Env Ty) : Expr → Except Str
     let t ← atomType env src
     let elem ← match kind, t with
       | .list, .list e => pure e
-      | .range, .int => pure Ty.int
+      | .range, .int | .model, .int => pure Ty.int
       | _, _ => throw "incorrect traversal source"
     let a ← atomType env init
     let b ← exprType ds self ((i, .int) :: (x, elem) :: (acc, a) :: env) body

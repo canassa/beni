@@ -162,9 +162,11 @@ call count of a traversal step (`many-off`). Each required one has a fixed
 probe in `Fixtures.lean` that disagrees under it and is rejected without it
 (`no-scope`'s probe runs the checker on a configuration directly, because no
 typed program reaches it); `ownership ci` requires the probes and that the
-generator alone catch every required hole within its budget.
+generator catch the original required holes within its budget. The later sync
+holes are required through the seed-independent targeted enumerator (below).
 `ownership controls` runs one normal campaign (20000 trials) per hole and
-fails unless each required hole is caught by the generator alone; the holes
+fails unless each original required hole is caught by the generator; the CLI
+also requires the sync controls through the targeted enumerator. The holes
 argued equivalent in COVERAGE.md (`callback-requires`, `requires-edge`,
 `transfer-supplies`) and `no-scope` are reported, not required.
 `borrowed-supply` is reported under summaries (live but never seen to
@@ -211,3 +213,72 @@ row), and either arm of a function-shape join retained as data. CI's small compl
 grammar is supplemented by a bounded targeted grammar covering these shapes,
 set exclusivity, scalar comparisons, and first-order recursion. Source-mutant
 counts refer to unique edits; historical aliases do not add another hole.
+
+## Ownership checker sync boundary
+
+The core distinguishes a list's deep certificate from separation of the direct
+list containers of its elements (including containers under record fields).
+The latter stops before list elements and closure captures. It does not grant a
+permission below that footprint. Captures remain in ordinary alias/liveness
+paths, and a direct container must be separate from every other result position,
+including a captured reference at an earlier field. A shallow copy proves
+neither certificate. Conditions, callback guards, supplies and their rechecks
+carry both facts independently.
+
+A branch checks both arms from the same incoming facts and joins their outgoing
+facts. An escape in a sibling arm is absent at a demand, while an earlier or
+joined escape remains. Summaries still publish the joined escape row.
+
+Traversal first computes a finite provenance shape with demands deferred; such
+a pass cannot accept a program, and its cache is discarded. Only actual fresh
+result provenances discovered by this pass may receive optimistic conditions.
+Cells reachable at entry use their established conditions, never the optimistic
+seed. Starting from those conditions, repeated result meets compute a greatest
+must-invariant. Exhaustion rejects. Proof rounds restore the outer facts; only
+an evaluation under the stable invariant publishes effects. `Source.model` is
+the same iteration semantics over integer-indexed model updates, with the same
+base and preservation obligations. It models finite record/list models, not
+recursive types, an unbounded event protocol, or the actual renderer.
+
+`prepend` is a copying prepend in both interpreters and reads its base. Its
+abstract result conservatively includes the base's backing provenance. The core
+has no offset views with which to execute the runtime's re-cons optimization;
+its fresh-front precision and the backing-array identity claim remain outside
+this model. `withDefault (map ...)` is tested after case lowering to an integer
+branch; eager handlers and a later default read are distinct rejected twins.
+Sum constructors and `?` early return are not modelled by that encoding.
+
+Markup is a positional record of render and event slots. `events` projects only
+the event slot; ordinary alias checks see the complete record. A constructor
+callback is an ordinary zero-capture function constructing a record with all
+its arguments. `owned forwarded [result, retainedCallback]` is the platform
+returns-owned boundary, an identity in both interpreters. It checks the full
+result's ownership, separation and deep certificates, with the callback's cells
+as outside holders even when its calls are unseen. Symbolic captures therefore
+publish demands which an actual cell-free capture satisfies vacuously; a
+callback result is checked using the usual guarded result/supply facts. The
+`forwarded` marker only selects a negative control, never corrected behavior.
+The continuation acts as an adversarial receiver and edits a delivered list.
+This tests the four Conduit ownership rules without modelling HTML parsing,
+events, opaque encoding or platform execution. `Sync.lean` maps the projections
+to their Zig fixtures and enumerates finite products independent of seeds.
+
+Container certificates are checked against concrete final heaps for every
+accepted verdict fixture and every corrected targeted program, in addition to
+the two-interpreter comparison. A new record may capture an earlier element's
+container without writing it; equality of results alone cannot expose that
+false certificate. Prepend and append therefore check both directions: new
+containers against old positions, and old containers against every new path.
+Focus also checks a replacement's opaque captures against retained input
+containers. A selected parameter may move into an opaque slot because its old
+position was removed; an external capture has no such loan. The
+`result-positions` hole falsifies both concrete certificate regressions as
+well as the retained-reader-after-append observational regression.
+
+A preservation proof also requires the old direct containers owned in the
+scope's canonical state. Distinct canonical parameter names do not establish
+separation: a source element can be the same array as an accumulator's earlier
+container. `canonicalOwned` tests those actual aliases before abstraction, and
+its owned set is part of each summary's cache key. The old-container premise
+therefore carries the needed separation across scope/summary instantiation;
+checking only the canonical result's different origin names would not.

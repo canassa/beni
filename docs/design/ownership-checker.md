@@ -2551,28 +2551,29 @@ prepend whose front item was made after its base names no approximate step.
 The owner's process rule (2026-10-12): every checker rule a slice adds or changes is modelled in the Lean oracle
 (`proofs/ownership/`) or listed here, with the soundness risk of leaving it unmodelled. The oracle's language has
 `let`, primitives, closures, calls, recursion, a branch on an integer, traversals and focus (`Syntax.lean`); it
-has no list patterns, no constructors or sum types, no records, no early return and no prepend. No rule below is
-modelled. A later sync round consumes this list, §26.2 first: it is the one rule here that closes a soundness
-hole rather than adding precision.
+has positional records and copying prepend, but no list views, sum constructors, early return, dictionaries,
+effects or platform execution. The sync in `proofs/ownership/Ownership/Sync.lean` models branch-local escapes,
+the inductive model and fold container invariants over finite record/list models, and the four Conduit rules:
+render/event slot projection, carried zero-capture constructor callbacks, unseen taggers with conditionally
+cell-free captures, and forwarding an enclosing callback's owned-result obligation. Each has executable
+accepted/rejected projections and a required enumerator control. The model uses integer branches for the
+`Maybe`/`Result.withDefault (map …)` case rule and numbered, distinct binders for §26.1 (already enforced since
+PR #65). A prepend reads its base and conservatively retains its backing provenance.
+
+This is a core model, not a proof that the Zig walk or lowering implements the rules. `DESIGN.md` specifies
+its boundaries; `RESULTS.md` records the campaigns and holes. The residual gaps below remain explicit.
 
 | Rule | Where | What is unsound if the rule is wrong |
 |---|---|---|
-| A binding resolves by its local index (§26.1) | `Walker.bindLocal`, `resolveRaw` | a later read taken for another binding's, the oracle's own defect. Argued from lowering and asserted at run time; the oracle's fix is the same discipline, a distinct name per binder |
-| `?` returns its `Err` payload (§26.2) | `earlyReturn`, `withEarly` | a caller writes a list a returned `Err` holds |
-| A prepend of a list made after its base (§26.3) | `madeAfter` | a write onto the prepend's result reaches the base through a re-cons the rule took to be impossible |
-| `Result.withDefault (Result.map …)` as two arms (§26.4) | `isMaybeJoin` | the default read on a run where `f` edited it |
-| A prepend reads its base, and its result may share the base's array (§25.2) | `prepended` | slice 5 writing a prepend's base, or a write onto the result reaching a base still read |
-| `Maybe.withDefault (Maybe.map …)` as two arms (§25.4) | `isMaybeJoin`, `joinArm` | as §26.4 |
-| `map` across closed record types (§25.3) | `recordsMayShare` | an identity promise dropped where the result may be its input. *Removed 2026-10-13 with §25.3 (§27.4)* |
-| Ownership words on `foreign` signatures, and the thesis row for a `foreign` with none (§24) | `wordsRow` | a word claiming less than the JavaScript does: a write or an escape the checker does not see |
-| The decoder followed through `Expect` (§24.9) | `carry`, `carriedEnv` | a decoder's captures held past the call that runs it |
-| The entry protocol, its rows and `init` (§20, §22) | `entryCall` | the runtime keeping or reading the model the direct row hands over |
-| Owned sends and navigation commands (§23) | `send_class`, `checkSender` | a payload read after the send gave it up |
-| `Dict.focus`'s destructive read (§20.8) | `assertDictFocus` | two positions of a tree holding one value, both written |
-| Unseen tagger captures are conditionally cell-free (2026-10-14 amendment) | callback `need` checks and inferred self-separation requirements | a retained list donated as owned because callback calls were unseen; interpreting a captured callback result's self-separation as fresh-across-calls instead of requiring an empty capture |
-| Constructor callbacks carried as zero-capture classes (2026-10-14 amendment) | §23.5's constructor row propagated through helper arguments and opaque slots | a constructor argument omitted from the result would hide a list the constructed message retains |
-| Markup render/event opaque slots (2026-10-14 amendment) | markup transfer, row/tagger result instantiation, entry view-message projection | a rendered list incorrectly omitted from general alias checks; a handler capture or fresh message result incorrectly classified as render-only; an unknown/capped value incorrectly treated as having no event slot |
-| Fold accumulator container invariant (2026-10-14 amendment) | callback result instantiation and container conditions | a shared start, escaped accumulator or duplicated result position incorrectly treated as owned across iterations; confusing a container proof with deep ownership of opaque descendants would permit nested alias writes |
+| `?` returns its `Err` payload (§26.2) | `earlyReturn`, `withEarly` | a caller writes a list a returned `Err` holds. The core has neither sum constructors nor early return; a branch does not test `?` lowering. |
+| A prepend of a list made after its base (§26.3) | `madeAfter` | a write onto the prepend's result reaches the base through a re-cons the rule took to be impossible. Copying prepend and conservative backing provenance are modelled; offset views and the re-cons identity optimization are absent, so made-after precision cannot be tested faithfully. |
+| Ownership words on `foreign` signatures, and the thesis row for a `foreign` with none (§24) | `wordsRow` | a word claiming less than the JavaScript does: a write or an escape the checker does not see. The core has no foreign declarations or JavaScript sibling validation. |
+| The decoder followed through `Expect` (§24.9) | `carry`, `carriedEnv` | a decoder's captures held past the call that runs it. No decoder/opaque carrier syntax; captures are tested as ordinary closures only. |
+| The runtime entry protocol and recursive model types (§20, §22) | `entryCall` | Finite record/list model base and preservation invariants are modelled, but the core has no recursive data types, renderer, effects or unbounded event delivery; actual runtime retention and opaque entry rows remain untested |
+| Owned sends and navigation commands (§23) | `send_class`, `checkSender` | The returns-owned boundary and retained-callback obligations are modelled; actual fibers, navigation capabilities and asynchronous delivery have no core semantics, so runtime payload retention remains untested |
+| `Dict.focus`'s destructive read (§20.8) | `assertDictFocus` | two positions of a tree holding one value, both written. List focus is modelled; the core has no tree, keys or dictionary representative separation. |
+| Markup/constructor lowering and opaque carrier encodings | markup transfer and summary blocks | Slots and constructor payload retention are modelled as positional records; HTML syntax, wildcard opaque paths, import serialization and actual row/component lowering are absent. Their encoding must preserve the modelled slots and conservative fallback |
+| Fold dictionary representatives and recursion | fold/focus summaries | Container ownership is modelled for lists and positional records; no dictionary keys, recursive data types, mutual recursion or unknown/coarsened foreign rows exist in the core, so those implementations and their precision backstops still need Zig fixtures |
 
 ### 26.8 Open questions
 

@@ -41,6 +41,16 @@ inductive Mutant where
   | noScope             -- an unbound live variable is read as dead instead of refused
   -- Fifth review.
   | setExclusive        -- `set` keeps a list exclusive whatever it stores
+  | resultPositions   -- ignore retained captures beside written accumulator paths
+  | prependBase       -- forget the base read/possible backing alias
+  | constructorArgs   -- a constructor-like record forgets its payload
+  | eventCapture      -- an event-slot projection forgets handler captures
+  | taggerNeed        -- an owned-result boundary trusts a shared result
+  | captureEmpty      -- a retained callback's nonempty environment is ignored
+  | forwardNeed       -- a callback-produced result is assumed owned
+  | foldInvariant     -- grant separation to every accumulator
+  | modelInvariant    -- grant separation to every model at entry
+  | branchEscapes       -- a branch drops escapes from before the case
   | onceLive            -- liveness drops the capture paths of once closures
   deriving Repr, BEq, Inhabited
 
@@ -49,7 +59,8 @@ def Mutant.all : List Mutant :=
    .closeSource, .keepsShape, .guardReuse, .callbackXres, .supplyEdge, .supplyRecheck,
    .callsEdge, .callbackWrites, .callbackAliases, .callbackEnv, .callbackEscapes,
    .callbackRequires, .requiresEdge, .forwardGuards, .transferSupplies, .onceThroughCall, .branchLive,
-   .branchClosure, .shadowing, .sharedRoots, .sharedFn, .manyOff, .noScope, .setExclusive, .onceLive]
+   .branchClosure, .shadowing, .sharedRoots, .sharedFn, .manyOff, .noScope, .setExclusive, .onceLive, .branchEscapes, .prependBase, .constructorArgs, .eventCapture, .resultPositions,
+   .taggerNeed, .captureEmpty, .forwardNeed, .foldInvariant, .modelInvariant]
 
 def Mutant.name : Mutant → String
   | .disjoint => "disjoint" | .borrowedSupply => "borrowed-supply"
@@ -66,9 +77,22 @@ def Mutant.name : Mutant → String
   | .branchLive => "branch-live" | .branchClosure => "branch-closure"
   | .shadowing => "shadowing" | .sharedRoots => "shared-roots"
   | .sharedFn => "shared-fn" | .manyOff => "many-off" | .noScope => "no-scope"
+  | .resultPositions => "result-positions"
+  | .prependBase => "prepend-base" | .constructorArgs => "constructor-args"
+  | .eventCapture => "event-capture" | .taggerNeed => "tagger-need"
+  | .captureEmpty => "capture-empty" | .forwardNeed => "forward-need"
+  | .foldInvariant => "fold-invariant" | .modelInvariant => "model-invariant"
+  | .branchEscapes => "branch-escapes"
   | .setExclusive => "set-exclusive" | .onceLive => "once-live"
 
 def Mutant.parse (s : String) : Option Mutant := Mutant.all.find? (·.name == s)
+
+/-- The sync grammar, rather than the legacy random generator, must catch
+    these controls. Main enforces every one in CI and `controls`. -/
+def Mutant.enumeratorRequired : Mutant → Bool
+  | .resultPositions | .branchEscapes | .prependBase | .constructorArgs | .eventCapture
+  | .taggerNeed | .captureEmpty | .forwardNeed | .foldInvariant | .modelInvariant => true
+  | _ => false
 
 /-- Mutants the generator need not catch: `callback-requires`, `requires-edge`
     and `transfer-supplies` change no verdict on any generated program and are
@@ -77,7 +101,8 @@ def Mutant.parse (s : String) : Option Mutant := Mutant.all.find? (·.name == s)
     checker-level probe. `ownership controls` reports all four. -/
 def Mutant.generatorOptional : Mutant → Bool
   | .callbackRequires | .requiresEdge | .transferSupplies => true
-  | .noScope => true
+  | .resultPositions | .noScope | .branchEscapes | .prependBase | .constructorArgs | .eventCapture
+  | .taggerNeed | .captureEmpty | .forwardNeed | .foldInvariant | .modelInvariant => true
   | _ => false
 
 /-- Mutants of the summary layer's rows, and `branch-live`, which only the
@@ -86,7 +111,8 @@ def Mutant.summaryRow : Mutant → Bool
   | .guardReuse | .callbackXres | .supplyEdge | .supplyRecheck | .callsEdge | .callbackWrites
   | .callbackAliases | .callbackEnv | .callbackEscapes | .callbackRequires | .requiresEdge
   | .forwardGuards | .transferSupplies | .onceThroughCall | .branchLive | .branchClosure
-  | .shadowing | .sharedRoots | .sharedFn | .manyOff | .noScope | .setExclusive | .onceLive => true
+  | .resultPositions | .prependBase | .constructorArgs | .eventCapture | .taggerNeed | .captureEmpty
+  | .forwardNeed | .foldInvariant | .modelInvariant | .branchEscapes | .shadowing | .sharedRoots | .sharedFn | .manyOff | .noScope | .setExclusive | .onceLive => true
   | _ => false
 
 structure Config where
@@ -95,6 +121,7 @@ structure Config where
   mutant : Option Mutant := none
   /-- Check with the frozen per-call re-inference checker instead (cross-check). -/
   reinfer : Bool := false
+  shapeOnly : Bool := false -- internal provenance pass; never used for acceptance
   inferenceFuel : Nat := 200
   rounds : Nat := 24
   deriving Repr, Inhabited
