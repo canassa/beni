@@ -44,8 +44,9 @@ test "the time report of one corpus fixture has every table and names the fixtur
     var env = try testing.environ.createMap(arena);
     try env.put("BENI_CORPUS_PART", "parse");
     try env.put("BENI_CORPUS_ONLY", fixture);
-    // The walker's own CPU budget is not what this test is about.
-    _ = env.swapRemove("BENI_TEST_BUDGET_MS");
+    // The walker's own budget is not what this test is about; its
+    // instructions count toward this test's.
+    _ = env.swapRemove("BENI_TEST_BUDGET_INSTRUCTIONS");
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │

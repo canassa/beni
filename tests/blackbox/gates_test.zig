@@ -10,7 +10,9 @@
 //! gets this build's local cache (the runner's `cache_dir`) and inherits
 //! its global one (`ZIG_GLOBAL_CACHE_DIR`, the only way `zig build` takes
 //! one), where this build compiled that runner. `BENI_ZIG_EXE` comes from
-//! `build.zig`.
+//! `build.zig`. The child also gets `BENI_GATES_REFUSAL_TEST`, so a gate
+//! that is not refused fails before it builds anything, instead of running
+//! a whole gate (and this test again) inside the test.
 
 const std = @import("std");
 const testing = std.testing;
@@ -27,6 +29,7 @@ fn expectRefused(option: []const u8, named: []const u8) !void {
     try argv.appendSlice(arena, &.{ try testing.environ.getAlloc(arena, "BENI_ZIG_EXE"), "build", "gates", option });
     if (runner.cache_dir.len != 0) try argv.appendSlice(arena, &.{ "--cache-dir", runner.cache_dir });
     var env = try testing.environ.createMap(arena);
+    try env.put("BENI_GATES_REFUSAL_TEST", "1");
 
     const r = try world.spawnAndCaptureIn(arena, testing.io, argv.items, .inherit, world.default_timeout_ms, &env);
 
