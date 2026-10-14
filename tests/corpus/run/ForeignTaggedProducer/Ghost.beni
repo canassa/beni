@@ -1,0 +1,2 @@
+pub message : ⊤ → String
+message ⊤ = "dropped from JavaScript"

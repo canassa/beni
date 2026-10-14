@@ -821,7 +821,7 @@ const Emitter = struct {
     module_uses: std.ArrayList([]const u8) = .empty,
     /// Reachability's roots beside the build's own (`Reach.Input`).
     extra_roots: []const Reach.Node = &.{},
-    forwarding_foreigns: [][]bool = &.{},
+    forwarding_foreigns: [][]Reach.ForeignProof = &.{},
     /// `--release` of an application that does not reach `Debug`: what
     /// JavaScript sees, closed before lowering (§9, *Item 4, taken up*).
     /// Null renames no field and gives no type integer tags.
@@ -1125,7 +1125,7 @@ const Emitter = struct {
     // ---- boundary.md §4, checks 2, 3 and 4 --------------------------------
 
     fn checkSiblings(e: *Emitter) !void {
-        e.forwarding_foreigns = try e.scratch.alloc([]bool, e.graph().count());
+        e.forwarding_foreigns = try e.scratch.alloc([]Reach.ForeignProof, e.graph().count());
         @memset(e.forwarding_foreigns, &.{});
         for (0..e.graph().count()) |i| {
             const m: Graph.Index = @fromBackingInt(@intCast(i));
@@ -1174,14 +1174,22 @@ const Emitter = struct {
             };
 
             const found = try Sibling.scan(e.scratch, bytes);
-            for (found.exports) |export_| if (export_.forwards) {
+            for (found.exports) |export_| if (found.only_inert_exports and export_.forwards) {
+                var occurrences: u32 = 0;
+                for (found.exports) |other| if (std.mem.eql(u8, other.name, export_.name)) {
+                    occurrences += 1;
+                };
+                if (occurrences != 1) continue;
+                const plain = for (declared.items) |entry| {
+                    if (std.mem.eql(u8, entry.name, export_.name)) break entry.evidence == 0;
+                } else false;
                 for (b.decls, 0..) |decl, di| {
                     if (decl.kind == .foreign_value and std.mem.eql(u8, export_.name, e.session.interner.slice(b.symbol(decl.name)))) {
                         if (e.forwarding_foreigns[m.int()].len == 0) {
-                            e.forwarding_foreigns[m.int()] = try e.scratch.alloc(bool, b.decls.len);
-                            @memset(e.forwarding_foreigns[m.int()], false);
+                            e.forwarding_foreigns[m.int()] = try e.scratch.alloc(Reach.ForeignProof, b.decls.len);
+                            @memset(e.forwarding_foreigns[m.int()], .{});
                         }
-                        e.forwarding_foreigns[m.int()][di] = true;
+                        e.forwarding_foreigns[m.int()][di] = .{ .inert = true, .parameter = if (plain) export_.forwarded_parameter else null };
                     }
                 }
             };

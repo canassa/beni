@@ -298,7 +298,7 @@ pub const Input = struct {
     /// through the library and call no worker.
     schema_library: bool = false,
     /// Exports proved to be inert carriers by the sibling scanner.
-    forwarding_foreigns: []const []const bool = &.{},
+    forwarding_foreigns: []const []const ForeignProof = &.{},
 
     fn birOf(in: Input, m: Graph.Index) *const Bir {
         if (m.int() >= in.birs.len) return &Bir.empty;
@@ -516,10 +516,21 @@ fn exempt(in: Input, scratch: Allocator, modules: []Live) Allocator.Error!void {
         const m: Graph.Index = @fromBackingInt(@intCast(@as(u32, @intCast(i))));
         for (in.birOf(m).decls, 0..) |d, index| switch (d.kind) {
             .foreign_value => {
-                const forwards = m.int() < in.forwarding_foreigns.len and
-                    index < in.forwarding_foreigns[m.int()].len and
-                    in.forwarding_foreigns[m.int()][index];
-                if (!forwards) try typesNamed(in, scratch, m, @intCast(index), &work);
+                const proof: ForeignProof = if (m.int() < in.forwarding_foreigns.len and index < in.forwarding_foreigns[m.int()].len)
+                    in.forwarding_foreigns[m.int()][index]
+                else
+                    .{};
+                if (!proof.inert) {
+                    try typesNamed(in, scratch, m, @intCast(index), &work);
+                } else if (!sameForwardedResult(in.birOf(m), d, proof.parameter)) {
+                    var result: std.ArrayList(TypeDecl) = .empty;
+                    try resultTypesNamed(in, scratch, m, @intCast(index), &result);
+                    // A callback cast can reinterpret its parameter too.
+                    // Keep the whole signature when nominal results escape.
+                    if (try hasNominal(in, scratch, result.items)) {
+                        try typesNamed(in, scratch, m, @intCast(index), &work);
+                    } else try work.appendSlice(scratch, result.items);
+                }
             },
             .foreign_type, .vocab_element, .vocab_attribute, .vocab_event, .vocab_markup => try typesNamed(in, scratch, m, @intCast(index), &work),
             else => {},
@@ -541,6 +552,120 @@ fn exempt(in: Input, scratch: Allocator, modules: []Live) Allocator.Error!void {
 }
 
 const TypeDecl = struct { module: Graph.Index, decl: u32 };
+
+pub const ForeignProof = struct { inert: bool = false, parameter: ?u32 = null };
+
+fn hasNominal(in: Input, scratch: Allocator, roots: []const TypeDecl) Allocator.Error!bool {
+    var stack: std.ArrayList(TypeDecl) = .empty;
+    try stack.appendSlice(scratch, roots);
+    var seen: std.ArrayList(TypeDecl) = .empty;
+    while (stack.pop()) |t| {
+        const already = for (seen.items) |old| {
+            if (old.module == t.module and old.decl == t.decl) break true;
+        } else false;
+        if (already) continue;
+        try seen.append(scratch, t);
+        const bir = in.birOf(t.module);
+        if (t.decl >= bir.decls.len) continue;
+        switch (bir.decls[t.decl].kind) {
+            .type => return true,
+            .type_alias => try typesNamed(in, scratch, t.module, t.decl, &stack),
+            else => {},
+        }
+    }
+    return false;
+}
+
+/// Reusing a tag as another nominal type is production even without an
+/// allocation. Only a whole, identically typed parameter avoids result roots.
+fn sameForwardedResult(bir: *const Bir, decl: Bir.Decl, parameter: ?u32) bool {
+    const p = parameter orelse return false;
+    const annotation = decl.annotation.unwrap() orelse return false;
+    if (bir.instTag(annotation) != .type_fn) return false;
+    const data = bir.instData(annotation);
+    const params = bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.lhs))), Bir.Inst.Index);
+    if (p >= params.len) return false;
+    return sameType(bir, params[p], @fromBackingInt(@intCast(data.rhs)), 0);
+}
+
+/// Syntactic type identity is sufficient; aliases with different names and
+/// unsupported forms are conservatively producers. This is not unification.
+fn sameType(bir: *const Bir, left: Bir.Inst.Index, right: Bir.Inst.Index, depth: u32) bool {
+    if (left == right) return true;
+    if (depth >= 32 or bir.instTag(left) != bir.instTag(right)) return false;
+    const a = bir.instData(left);
+    const b = bir.instData(right);
+    switch (bir.instTag(left)) {
+        .type_unit => return true,
+        .type_top => return a.lhs == b.lhs,
+        .ext_type => return a.lhs == b.lhs and a.rhs == b.rhs,
+        .type_var => return a.rhs == b.rhs and bir.symbol(@fromBackingInt(@intCast(a.lhs))) == bir.symbol(@fromBackingInt(@intCast(b.lhs))),
+        .type_fn, .type_app, .type_tuple => {
+            if (bir.instTag(left) == .type_fn and !sameType(bir, @fromBackingInt(@intCast(a.rhs)), @fromBackingInt(@intCast(b.rhs)), depth + 1)) return false;
+            if (bir.instTag(left) == .type_app and !sameType(bir, @fromBackingInt(@intCast(a.lhs)), @fromBackingInt(@intCast(b.lhs)), depth + 1)) return false;
+            const ra = switch (bir.instTag(left)) {
+                .type_fn => bir.subRange(@fromBackingInt(@intCast(a.lhs))),
+                .type_app => bir.subRange(@fromBackingInt(@intCast(a.rhs))),
+                else => Bir.inlineRange(a),
+            };
+            const rb = switch (bir.instTag(right)) {
+                .type_fn => bir.subRange(@fromBackingInt(@intCast(b.lhs))),
+                .type_app => bir.subRange(@fromBackingInt(@intCast(b.rhs))),
+                else => Bir.inlineRange(b),
+            };
+            const xs = bir.extraSlice(ra, Bir.Inst.Index);
+            const ys = bir.extraSlice(rb, Bir.Inst.Index);
+            if (xs.len != ys.len) return false;
+            for (xs, ys) |x, y| if (!sameType(bir, x, y, depth + 1)) return false;
+            return true;
+        },
+        .type_record => {
+            const xs = bir.extraSlice(Bir.inlineRange(a), Bir.Field);
+            const ys = bir.extraSlice(Bir.inlineRange(b), Bir.Field);
+            if (xs.len != ys.len) return false;
+            for (xs, ys) |x, y| if (bir.symbol(x.name) != bir.symbol(y.name) or !sameType(bir, x.value, y.value, depth + 1)) return false;
+            return true;
+        },
+        else => return false,
+    }
+}
+
+fn resultTypesNamed(in: Input, scratch: Allocator, m: Graph.Index, decl: u32, work: *std.ArrayList(TypeDecl)) Allocator.Error!void {
+    const bir = in.birOf(m);
+    const annotation = bir.decls[decl].annotation.unwrap() orelse return;
+    // A function annotation hidden behind an alias is not a typed proof.
+    if (bir.instTag(annotation) != .type_fn) return typesNamed(in, scratch, m, decl, work);
+    var stack: std.ArrayList(Bir.Inst.Index) = .empty;
+    try stack.append(scratch, @fromBackingInt(@intCast(bir.instData(annotation).rhs)));
+    while (stack.pop()) |inst| {
+        const data = bir.instData(inst);
+        switch (bir.instTag(inst)) {
+            .type_top => try work.append(scratch, .{ .module = m, .decl = data.lhs }),
+            .ext_type => {
+                const owner: Graph.Index = @fromBackingInt(@intCast(data.lhs));
+                if (owner.int() >= in.provenance.len) continue;
+                const t = in.provenance[owner.int()].typeDecl(data.rhs) orelse continue;
+                try work.append(scratch, .{ .module = owner, .decl = t.int() });
+            },
+            .type_fn, .type_app, .type_tuple => {
+                const range = switch (bir.instTag(inst)) {
+                    .type_fn => bir.subRange(@fromBackingInt(@intCast(data.lhs))),
+                    .type_app => bir.subRange(@fromBackingInt(@intCast(data.rhs))),
+                    else => Bir.inlineRange(data),
+                };
+                if (bir.instTag(inst) == .type_fn) try stack.append(scratch, @fromBackingInt(@intCast(data.rhs)));
+                if (bir.instTag(inst) == .type_app) try stack.append(scratch, @fromBackingInt(@intCast(data.lhs)));
+                try stack.appendSlice(scratch, bir.extraSlice(range, Bir.Inst.Index));
+            },
+            .type_record, .type_record_ext => {
+                const range = if (bir.instTag(inst) == .type_record) Bir.inlineRange(data) else bir.subRange(@fromBackingInt(@intCast(data.rhs)));
+                if (bir.instTag(inst) == .type_record_ext) try stack.append(scratch, @fromBackingInt(@intCast(data.lhs)));
+                for (bir.extraSlice(range, Bir.Field)) |field| try stack.append(scratch, field.value);
+            },
+            else => {},
+        }
+    }
+}
 
 /// Every type declaration a type reference in declaration `decl`'s
 /// instructions names — its annotation, a type's constructor arguments, an

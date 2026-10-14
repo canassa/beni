@@ -31,7 +31,7 @@
       "entry": "bench/todomvc/out/direct-effects/browser-direct-NoEditing/_main.mjs"
     }
   ],
-  "compiler_sha256": "84a9776f0a6d9fd2f36e7794b2c747c07539e5920462240f5a929f761b98d54b",
+  "compiler_sha256": "c6de2141aab55557a6f020db6774e63ddee9263a045b5b796283345668290c79",
   "compiler_backend": "zorg 0.17.1+zorg.1, native self-hosted, ReleaseSafe compiler; beni --release programs; no LLVM",
   "vanilla": {
     "platform": "vanilla-es6",

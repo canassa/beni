@@ -1,0 +1,21 @@
+-- A returned callback cast reinterprets its input type as well as its result.
+-- Target.Kept arrives as Source.Kept; the source arm must not be dropped.
+import Carrier
+import Node
+import Source
+import Target
+
+
+show : Source.Choice → String
+show value =
+    case value of
+        Source.Kept →
+            "kept"
+        Source.Dropped →
+            "dropped"
+
+
+main : Node.Program
+main =
+    callback = Carrier.carry show
+    Node.print (callback Target.Kept ++ "\n" ++ show Source.Dropped)

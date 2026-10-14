@@ -380,6 +380,17 @@ field names and string tags in every build, and a type of one constructor with o
 its object, where elsewhere a release build represents it by its field (*amended 2026-10-02*;
 `backend.md` §9, *A type of one constructor with one field is its field*).
 
+*Amended 2026-10-14 (inert foreign reachability):* absence of tag construction
+is not permission to forget a differently typed result. A foreign can convert
+between nominal types with matching representations by returning its argument,
+so its annotation constructors remain reachable for nominal result casts
+unless the whole returned parameter
+has the same declared constructor-bearing type structure. This includes returned callbacks and nested nominal
+fields in a result record. Unclassified code anywhere in the same sibling
+retains the types its module annotations expose. Backend §9's forwarding proof changes reachability,
+not these boundary representations: visible tags still use `$` and source strings
+in release; record fields carry no constructor tag.
+
 **A type variable is opaque.** A sibling handed a value at a type variable (`foreign key : k ->
 Key`), and platform code that turns one into a `Js.Value` (`Js.from msg` with `msg : msg`), may
 store it, return it, compare it with `===`, and walk it reflectively — `Basics.eq`'s
