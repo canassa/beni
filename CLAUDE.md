@@ -345,6 +345,23 @@ with its limit and reason (`tests/corpus/README.md`, *Budgets*). Conduit's three
 and `browser/direct/HttpJson` and `HttpJsonBody` (2026-10-14, compiler defect #105) are the only
 ones.
 
+**One test has one count, so the budget has one verdict** (2026-10-14). The
+count is the kernel's hardware count of user-space instructions
+(`perf_event_open`) on **x86-64 Linux**, and every binary the gates run is
+built for one reference CPU, `x86_64_v3+sha`, whatever CPU the host has. A
+count taken anywhere else is a different number: a baseline-CPU build of the
+same commit put six more corpus cases over the budget (most of it the
+run-hash check's SHA-256 in software), and CPU time, the old fallback, passed
+`browser/direct/HttpJson` at 111% of the budget on macOS and failed tests
+there that cost 7% of it. So **`zig build gates` refuses to run where it
+cannot take the count** — another OS or architecture, `perf_event_paranoid`
+above 2, a virtual machine with no PMU (GitHub's hosted x86-64 runners), a
+CPU without the reference's features — and it refuses `-Dtest-budget`,
+`-Dtarget`, `-Dcpu` and `-Doptimize` as it refuses the filters. On such a
+machine the other test steps hold no test to the budget and say so once; the
+gate of a change runs on an x86-64 Linux host. A case's count moves by under
+1% from run to run, with load and with the core count.
+
 **Node runs only on unverified JavaScript.** Each program a test runs has a
 recorded SHA-256 of its emitted output, its expected result and the Node
 version (`tests/corpus/run/*.run-hash`, `tests/blackbox/run-hashes.txt`);
