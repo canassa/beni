@@ -91,12 +91,30 @@ def demandProblem (cfg : Config) (escapes cs later others : List Origin) : Optio
   else none
 
 def demand (cfg : Config) (cs later others : List Origin) : CheckM Unit := do
-  if let some problem := demandProblem cfg (← getFacts).escapes cs later others then throw problem
+  if !cfg.shapeOnly then
+    if let some problem := demandProblem cfg (← getFacts).escapes cs later others then throw problem
   modifyFacts fun s => { s with writes := union s.writes (cs.filter external) }
 
 def individuallyOwned (ctx : Context) (cs : List Origin) : Bool :=
   !cellOverlap (cs.map Origin.base) (ctx.escaped.map Origin.base) &&
   cs.all fun c => unescaped c && (!external c || ctx.owned.any (aliases c))
+
+/-- The roots exposed by records, stopping at list containers and closures.
+    Captures are still present in `paths` for ordinary alias checks. -/
+def containerPath (p : Path) : Bool := p.all fun st => match st with
+  | .field _ => true
+  | _ => false
+
+def containers (a : Abstract) : List (Path × List Origin) :=
+  a.paths.filter fun (p, _) => containerPath p
+
+def storeSpines (ctx : Context) (values : List Abstract) (later other : List Origin) : Bool :=
+  let paths := values.flatMap containers
+  separatedPaths paths && paths.all fun (_, cs) =>
+    individuallyOwned ctx cs && !cellOverlap cs (union later other) &&
+    -- A retained capture or a descendant in a different field is also a holder.
+    values.all fun a => a.paths.all fun (p, ds) =>
+      containerPath p || !cellOverlap cs ds
 
 def storeExclusive (ctx : Context) (values : List Abstract) (later other : List Origin)
     (oldBuilder := false) : Bool :=
@@ -119,8 +137,26 @@ def exclusiveProblem (escapes : List Origin) (a : Abstract) (later other : List 
     else none
   | _ => some "exclusive contents required of a non-list"
 
-def requireExclusive (a : Abstract) (later other : List Origin) : CheckM Unit := do
-  if let some problem := exclusiveProblem (← getFacts).escapes a later other then throw problem
+def spineProblem (escapes : List Origin) (a : Abstract) (later other : List Origin) : Option String :=
+  match a with
+  | .list _ elem ex =>
+    let paths := containers elem
+    if !ex.spine || !separatedPaths paths then some "container contents: positions may share"
+    else if paths.any (fun (_, cs) => cellOverlap (cs.map Origin.base) (escapes.map Origin.base)) then
+      some "container contents: escaped"
+    else if paths.any (fun (_, cs) => cellOverlap cs (union later other)) then
+      some "container contents: outside holder"
+    else none
+  | _ => some "container contents: not a list"
+
+def requireSpine (a : Abstract) (later other : List Origin) (cfg : Config := {}) : CheckM Unit := do
+  if !cfg.shapeOnly then
+    if let some problem := spineProblem (← getFacts).escapes a later other then throw problem
+  modifyFacts fun s => { s with requiresSpine := union s.requiresSpine (a.roots.filter external) }
+
+def requireExclusive (a : Abstract) (later other : List Origin) (cfg : Config := {}) : CheckM Unit := do
+  if !cfg.shapeOnly then
+    if let some problem := exclusiveProblem (← getFacts).escapes a later other then throw problem
   modifyFacts fun s => { s with requiresExclusive := union s.requiresExclusive (a.roots.filter external) }
 
 def canonical (kind : Nat → Path → Origin) (i : Nat) (a : Abstract) : Abstract :=
@@ -212,6 +248,7 @@ def normalized (s : Summary) : Summary :=
            consumes := externalBase s.consumes
            reads := externalBase s.reads
            requiresExclusive := externalBase s.requiresExclusive
+           requiresSpine := externalBase s.requiresSpine
            supplies := s.supplies.map fun sp => { sp with
              args := sp.args.map (·.mapOrigins fun _ cs => externalBase cs)
              env := externalBase sp.env }
@@ -254,7 +291,7 @@ def liveCellsWith (cfg : Config) (env : Env Abstract) (l : Live) : List Origin :
 
 /-- `uses`, or the `branch-live` control's weakened liveness. -/
 def usesWith (cfg : Config) (e : Expr) : Live :=
-  usesArms (!cfg.has .branchLive) (!cfg.has .branchClosure) e
+  usesArms (!cfg.has .branchLive) (!cfg.has .branchClosure) (!cfg.has .prependBase) e
 
 def closureCaps (cfg : Config) (env : Env Abstract) (body : Expr) (bound : List Var) : List (Var × Abstract) :=
   let names := (removeVars bound (usesWith cfg body)).map Prod.fst |>.foldl (fun xs x => union xs [x]) []
@@ -309,11 +346,11 @@ decreasing_by
   all_goals omega
 
 /-- A value of type `t` whose cells and exclusivity are given per path. -/
-def shapeOf (cells : List (Path × List Origin)) (exclusive : List Path) : Ty → Path → Abstract
+def shapeOf (cells : List (Path × List Origin)) (exclusive : List Path) (spines : List Path) : Ty → Path → Abstract
   | .int, _ | .fn _ _, _ => .scalar
-  | .record ts, p => .record (ts.attach.zipIdx.map fun (t, i) => shapeOf cells exclusive t.val (p ++ [.field i]))
+  | .record ts, p => .record (ts.attach.zipIdx.map fun (t, i) => shapeOf cells exclusive spines t.val (p ++ [.field i]))
   | .list t, p | .builder t, p =>
-    .list ((cells.lookup p).getD []) (shapeOf cells exclusive t (p ++ [.element])) (exclusive.contains p)
+    .list ((cells.lookup p).getD []) (shapeOf cells exclusive spines t (p ++ [.element])) ⟨exclusive.contains p, spines.contains p⟩
 termination_by t => sizeOf t
 decreasing_by
   all_goals simp_wf
@@ -332,8 +369,12 @@ def factOf (s : Summary) : Fact → List Nat
   | .shared q => if (s.result.cellsAt q).contains .shared then [1] else []
   | .top q => if (s.result.cellsAt q).any (fun c => match c with
       | .parameter .. | .capture .. | .fresh _ | .shared => false | _ => true) then [1] else []
+  | .requiresSpine k p => if s.requiresSpine.any (·.base == .parameter k p) then [1] else []
+  | .spine q => match s.result.atPath q with
+    | .list _ _ ex => if ex.spine then [1] else []
+    | _ => [1]
   | .xres q => match s.result.atPath q with
-    | .list _ _ ex => if ex then [1] else []
+    | .list _ _ ex => if ex.deep then [1] else []
     | _ => [1]
   | .escapesEnv => if s.escapes.any (fun c => match c with | .capture .. => true | _ => false) then [1] else []
   | .once => []
@@ -341,7 +382,7 @@ def factOf (s : Summary) : Fact → List Nat
 /-- Several alternatives: the class of their join. `xres` must hold of all. -/
 def combineFact (f : Fact) (a b : List Nat) : List Nat :=
   match f with
-  | .xres _ => if a.isEmpty || b.isEmpty then [] else [1]
+  | .xres _ | .spine _ => if a.isEmpty || b.isEmpty then [] else [1]
   | _ => union a b
 
 /-- Note that a checker row was exercised. -/
@@ -349,6 +390,7 @@ def hit (row : String) : CheckM Unit :=
   modify fun s => if s.hits.contains row then s else { s with hits := s.hits ++ [row] }
 
 def factKind : Fact → String
+  | .spine _ => "spine∈res" | .requiresSpine .. => "spine(callback arg)"
   | .writes .. => "W∈use(callback arg)" | .escapes .. => "E∈use(callback arg)"
   | .requires .. => "xreq(callback arg)" | .aliases .. => "callback arg∈res"
   | .env _ => "env∈res" | .fresh _ => "fresh∈res" | .shared _ => "shared∈res"
@@ -365,9 +407,27 @@ def primitive (ctx : Context) (site : List Nat) (op : Prim) (args : List Abstrac
   let fresh := Origin.site site 0
   match op, args with
   | .add, _ | .sub, _ | .eq, _ | .lt, _ => pure .scalar
-  | .record, xs => pure (.record xs)
+  | .record, xs => pure (.record (if ctx.config.has .constructorArgs then
+      xs.map (·.mapOrigins fun _ _ => []) else xs))
+  | .events, [.record [_, events]] =>
+    pure (if ctx.config.has .eventCapture then events.mapOrigins (fun _ _ => []) else events)
+  | .owned forwarded, [value, retained] => do
+    let forged := value.mapOrigins fun _ cs => if cs.isEmpty then [] else [fresh]
+    if (!forwarded && ctx.config.has .taggerNeed) || (forwarded && ctx.config.has .forwardNeed) then return forged
+    let holders := if ctx.config.has .captureEmpty then [] else retained.cells
+    let later := if ctx.config.has .captureEmpty then later.filter (fun c => !retained.cells.any (aliases c)) else later
+    demand ctx.config value.cells later holders
+    if !ctx.config.shapeOnly && (!value.deepExclusive || !separatedPaths value.paths) then throw "owned result: repeated positions"
+    pure (if ctx.config.has .captureEmpty then forged else value)
+  | .prepend, [v, .list cs elem ex] => do
+    noteRead cs
+    pure (.list (union [fresh] cs) (v.join elem)
+      ⟨ex.deep && storeExclusive ctx [v] later elem.cells,
+       ex.spine && storeSpines ctx [v] later elem.cells &&
+         (ctx.config.has .resultPositions ||
+           (containers elem).all (fun (_, old) => individuallyOwned ctx old && !cellOverlap old v.cells))⟩)
   | .literal _, xs =>
-    pure (.list [fresh] (xs.foldl Abstract.join .bottom) (storeExclusive ctx xs later []))
+    pure (.list [fresh] (xs.foldl Abstract.join .bottom) ⟨storeExclusive ctx xs later [], storeSpines ctx xs later []⟩)
   | .builder _, [] => pure (.list [fresh] .bottom true)
   | .shared, [a] => do
     let escaped := if ctx.config.has .sharedRoots then a.roots
@@ -390,7 +450,10 @@ def primitive (ctx : Context) (site : List Nat) (op : Prim) (args : List Abstrac
     let exclusive := ex && storeExclusive ctx [v] later elem.cells (op == .put)
     let exclusive := exclusive || (ctx.config.has .setExclusive && op == .set && ex)
     let stored := if exclusive && op == .put && ctx.config.oldFreshRule then v.grantExclusive else v
-    pure (.list cs (elem.join stored) exclusive)
+    let spine := ex.spine && storeSpines ctx [v] later elem.cells &&
+      (ctx.config.has .resultPositions ||
+        (containers elem).all (fun (_, old) => individuallyOwned ctx old && !cellOverlap old v.cells))
+    pure (.list cs (elem.join stored) ⟨exclusive, spine⟩)
   | .copy, [.list cs elem _] => do
     noteRead cs
     pure (.list [fresh] elem (ctx.config.has .copyExclusive))
@@ -428,7 +491,11 @@ def recheckSupplies (ctx : Context) (s : Summary) (site : List Nat) (args caps :
       -- contents; only holders outside the step or callee are checked.
       (exclusiveProblem escapes ((inst[k]?.getD .bottom).atPath p)
         (inner.cells.flatMap outsideFor) []).isNone
-    { sp with args := inst, env, owned, exclusive }
+    let spine := sp.spine.filter fun (k, p) =>
+      let inner := (sp.args[k]?.getD .bottom).atPath p
+      (spineProblem escapes ((inst[k]?.getD .bottom).atPath p)
+        (inner.cells.flatMap outsideFor) []).isNone
+    { sp with args := inst, env, owned, exclusive, spine }
 
 mutual
 
@@ -456,8 +523,13 @@ def inferExpr (fuel : Nat) (ctx : Context) (env : Env Abstract)
     | .prim op args => primitive ctx site op (← args.mapM (m := Except String) (abstractAtom env)) later
     | .branch c yes no =>
       let _ ← abstractAtom env c
+      let before ← getFacts
       let a ← inferExpr f ctx env yes after (site ++ [0])
+      let left ← getFacts
+      modifyFacts fun _ => if ctx.config.has .branchEscapes then { before with escapes := [] } else before
       let b ← inferExpr f ctx env no after (site ++ [1])
+      let right ← getFacts
+      modifyFacts fun _ => left.join right
       pure (a.join b)
     | .closure id captureAtoms =>
       let d ← ctx.declarations[id]?.toExcept "missing abstract declaration"
@@ -526,16 +598,38 @@ def inferExpr (fuel : Nat) (ctx : Context) (env : Env Abstract)
       let element := if ex then item.grantExclusive else item
       let s ← inferScope f ctx [(x, element)] caps body later
       let consumes := (s.writes ++ s.consumes).any fun c => match c with | .parameter 0 _ => true | _ => false
-      if consumes then requireExclusive input later (capValues.flatMap Abstract.cells)
+      let rootWrites := (s.writes ++ s.consumes).all fun c => match c with
+        | .parameter 0 p => containerPath p
+        | _ => true
+      if consumes then
+        if rootWrites && !ex.deep then requireSpine input later (capValues.flatMap Abstract.cells) ctx.config
+        else requireExclusive input later (capValues.flatMap Abstract.cells) ctx.config
       demand ctx.config cs later (capValues.flatMap Abstract.cells)
       let out ← applyScope ctx s (site ++ [0]) [element] capValues later (fun _ => later) false
-      pure (.list cs (item.join out) (ex && (ctx.config.has .keepsShape || keepsShape s.result)))
+      let keepsContainers := (containers s.result).all fun (p, os) =>
+        (s.result.paths.all fun (q, ds) => p == q || !cellOverlap os ds) &&
+        os.all fun o => match o with
+          | .parameter 0 q => p == q
+          | .fresh _ => true
+          | _ => false
+      let oldContainers := (containers item).flatMap Prod.snd
+      -- A selected parameter can move into an opaque slot: its old position
+      -- was removed. A captured value may instead be a retained *other*
+      -- position, so it must remain separate from all old containers.
+      let avoidsRetained := (s.result.paths.filter fun (p, _) => !containerPath p).all fun (_, os) =>
+        os.all fun o => match o.base with
+          | .parameter 0 _ | .fresh _ => true
+          | .capture .. => !cellOverlap oldContainers (instantiateOrigin (site ++ [0]) [element] capValues o)
+          | _ => false
+      pure (.list cs (item.join out)
+        ⟨ex.deep && (ctx.config.has .keepsShape || keepsShape s.result),
+         ex.spine && (ctx.config.has .keepsShape || (keepsContainers && (ctx.config.has .resultPositions || avoidsRetained)))⟩)
     | .traverse kind src initial i x acc body =>
       let input ← abstractAtom env src
       let init ← abstractAtom env initial
       let (roots, rawElement, sourceEx) ← match kind, input with
-        | .range, _ => pure ([], Abstract.scalar, true)
-        | .list, .list cs elem ex => pure (cs, elem, ex)
+        | .range, _ | .model, _ => pure ([], Abstract.scalar, true)
+        | .list, .list cs elem ex => pure (cs, elem, ex.deep)
         | .list, .bottom => pure ([], Abstract.bottom, true)
         | _, _ => throw "abstract traversal"
       noteRead roots
@@ -548,51 +642,104 @@ def inferExpr (fuel : Nat) (ctx : Context) (env : Env Abstract)
         match c with
         | .position s _ o => if s == site then .position s false o else c
         | c => c
-      let mut current := init
+      let cacheBefore := (← get).cache
+      let ((shape, made), _) ← isolated do
+        let shapeCtx := { ctx with config := { ctx.config with shapeOnly := true } }
+        let mut shape := init
+        let mut made : List Origin := []
+        let mut stable := false
+        for _ in List.range ctx.config.rounds do
+          if !stable then
+            let s ← inferScope f shapeCtx [(i, .scalar), (x, element), (acc, shape)] caps body later
+            let args := [Abstract.scalar, element, shape]
+            let allocations := s.result.cells.filter fun o => match o with | .fresh _ => true | _ => false
+            made := union made (allocations.flatMap (instantiateOrigin (site ++ [2]) args capValues))
+            let next := previous (instantiateValue (site ++ [2]) args capValues false s.result)
+            let joined := shape.join next
+            stable := joined == shape
+            shape := joined
+        if !stable then throw "limit: traversal shape did not converge"
+        pure (shape, made)
+      -- Shape summaries are never eligible to serve an ordinary call.
+      modify fun st => { st with cache := cacheBefore }
+      let initialCells := init.cells.map Origin.base
+      let initialCertificate := fun c => init.paths.foldl (fun cert (p, cs) =>
+        if cs.contains c then match init.atPath p with
+          | .list _ _ ex => cert.meet ex
+          | _ => (false : Certificate)
+        else cert) (true : Certificate)
+      let mut current := shape.mapCertificates fun cs ex =>
+        if cs.isEmpty then ex else
+        let eligible := fun c => made.contains c && !initialCells.contains c.base && unescaped c
+        ⟨ex.deep || cs.all (fun c => eligible c || (initialCells.contains c.base && unescaped c && (initialCertificate c).deep)),
+         ex.spine || cs.all (fun c => eligible c || (initialCells.contains c.base && unescaped c && (initialCertificate c).spine))⟩
+      if (kind != .model && ctx.config.has .foldInvariant) || (kind == .model && ctx.config.has .modelInvariant) then
+        current := current.grantExclusive
+      if ctx.config.has .resultPositions then
+        current := current.mapOrigins fun p cs =>
+          if p.any (fun st => match st with | .capture _ | .env => true | _ => false) then [] else cs
+      let baseFacts ← getFacts
+      let mut proofEscapes := baseFacts.escapes
       let mut done_ := false
       for _ in List.range ctx.config.rounds do
         if !done_ then
-          let beforeEscapes := (← getFacts).escapes
-          let s ← inferScope f ctx [(i, .scalar), (x, element), (acc, current)] caps body later
-          if !ctx.config.has .manyCalls &&
-              (s.writes ++ s.consumes).any (fun c => match c with | .capture .. => true | _ => false) then
-            throw "many calls: traversal step consumes a capture or once closure"
-          let consumes := (s.writes ++ s.consumes).any fun c => match c with | .parameter 1 _ => true | _ => false
-          if consumes then
-            if kind == .list then
-              if !ctx.config.has .traversalExclusive then
-                requireExclusive input later (capValues.flatMap Abstract.cells)
-              demand ctx.config roots later (union current.cells (capValues.flatMap Abstract.cells))
-          -- A borrowed source remains an observer of any accumulator cell drawn
-          -- from it. Exclusive position loans separate past from current slots.
-          -- Live under summaries: it rejects 20–34 programs per 20000 trials
-          -- that the line's removal would accept, none of which has been seen
-          -- to disagree (`ownership verdict-diff --mutant=borrowed-supply`).
-          -- Kept: removing a rule on an argued, unproved equivalence is not
-          -- done here (COVERAGE.md, "Borrowed supply").
-          let retained := union roots (if consumes || ctx.config.has .borrowedSupply then later
-            else union later rawElement.cells)
-          let outsideFor := fun (w : Origin) => match w with
-            | .parameter 1 _ => later
-            | _ => retained
-          let scopeArgs := [Abstract.scalar, element, current]
-          for w in s.writes do
-            demand ctx.config (instantiateOrigin site scopeArgs capValues w) (outsideFor w)
-              (otherPaths scopeArgs capValues w)
-          for req in s.requiresExclusive do
-            let a := match req with
-              | .parameter j p => (scopeArgs[j]?.getD .bottom).atPath p
-              | _ => .bottom
-            requireExclusive a later []
-          noteRead (s.reads.flatMap (instantiateOrigin site scopeArgs capValues))
-          if !ctx.config.dropTraversalEscapes then
-            let escaped := s.escapes.flatMap (instantiateOrigin site scopeArgs capValues)
-            modifyFacts fun facts => { facts with escapes := union facts.escapes (escaped.map Origin.base) }
-          transfer ctx s site scopeArgs capValues outsideFor true
-          let next := previous (instantiateValue (site ++ [2]) scopeArgs capValues false s.result)
-          let joined := current.join next
-          if joined == current && (← getFacts).escapes == beforeEscapes then done_ := true
+          let ((joined, escapeStable), effects) ← isolated do
+            modifyFacts fun _ => { baseFacts with escapes := proofEscapes }
+            let beforeEscapes := (← getFacts).escapes
+            let s ← inferScope f ctx [(i, .scalar), (x, element), (acc, current)] caps body later
+            if !ctx.config.shapeOnly && !ctx.config.has .manyCalls &&
+                (s.writes ++ s.consumes).any (fun c => match c with | .capture .. => true | _ => false) then
+              throw "many calls: traversal step consumes a capture or once closure"
+            let consumes := (s.writes ++ s.consumes).any fun c => match c with | .parameter 1 _ => true | _ => false
+            if consumes then
+              if kind == .list then
+                if !ctx.config.has .traversalExclusive then
+                  requireExclusive input later (capValues.flatMap Abstract.cells) ctx.config
+                demand ctx.config roots later (union current.cells (capValues.flatMap Abstract.cells))
+            -- A borrowed source remains an observer of any accumulator cell drawn
+            -- from it. Exclusive position loans separate past from current slots.
+            -- Live under summaries: it rejects 20–34 programs per 20000 trials
+            -- that the line's removal would accept, none of which has been seen
+            -- to disagree (`ownership verdict-diff --mutant=borrowed-supply`).
+            -- Kept: removing a rule on an argued, unproved equivalence is not
+            -- done here (COVERAGE.md, "Borrowed supply").
+            let retained := union roots (if consumes || ctx.config.has .borrowedSupply then later
+              else union later rawElement.cells)
+            let outsideFor := fun (w : Origin) => match w with
+              | .parameter 1 _ => later
+              | _ => retained
+            let scopeArgs := [Abstract.scalar, element, current]
+            for w in s.writes do
+              demand ctx.config (instantiateOrigin site scopeArgs capValues w) (outsideFor w)
+                (otherPaths scopeArgs capValues w)
+            for req in s.requiresExclusive do
+              let a := match req with
+                | .parameter j p => (scopeArgs[j]?.getD .bottom).atPath p
+                | _ => .bottom
+              requireExclusive a later [] ctx.config
+            for req in s.requiresSpine do
+              let a := match req with
+                | .parameter j p => (scopeArgs[j]?.getD .bottom).atPath p
+                | _ => .bottom
+              requireSpine a later [] ctx.config
+            noteRead (s.reads.flatMap (instantiateOrigin site scopeArgs capValues))
+            if !ctx.config.dropTraversalEscapes then
+              let escaped := s.escapes.flatMap (instantiateOrigin site scopeArgs capValues)
+              modifyFacts fun facts => { facts with escapes := union facts.escapes (escaped.map Origin.base) }
+            transfer ctx s site scopeArgs capValues outsideFor true
+            let next := previous (instantiateValue (site ++ [2]) scopeArgs capValues false s.result)
+            let joined := current.join next
+            let joined := if (kind != .model && ctx.config.has .foldInvariant) ||
+                (kind == .model && ctx.config.has .modelInvariant) then joined.grantExclusive else joined
+            let joined := if ctx.config.has .resultPositions then joined.mapOrigins (fun p cs =>
+              if p.any (fun st => match st with | .capture _ | .env => true | _ => false) then [] else cs)
+              else joined
+            pure (joined, (← getFacts).escapes == beforeEscapes)
+          done_ := joined == current && escapeStable
           current := joined
+          proofEscapes := effects.escapes
+          -- Only the evaluation under the stable invariant publishes effects.
+          if done_ then modifyFacts fun _ => effects
       if !done_ then throw "limit: traversal invariant did not converge"
       pure (current.mapOrigins fun _ cs => cs.map fun c =>
         match c with | .position s _ o => if s == site then o else c | c => c)
@@ -641,7 +788,13 @@ def applyScope (ctx : Context) (s : Summary) (site : List Nat) (args caps : List
       | .parameter i p => (args[i]?.getD .bottom).atPath p
       | .capture i p => (caps[i]?.getD .bottom).atPath p
       | _ => .bottom
-    requireExclusive a later []
+    requireExclusive a later [] ctx.config
+  for x in s.requiresSpine do
+    let a := match x with
+      | .parameter i p => (args[i]?.getD .bottom).atPath p
+      | .capture i p => (caps[i]?.getD .bottom).atPath p
+      | _ => .bottom
+    requireSpine a later [] ctx.config
   noteRead (s.reads.flatMap (instantiateOrigin site args caps))
   modifyFacts fun facts => { facts with escapes := union facts.escapes (s.escapes.flatMap (instantiateOrigin site args caps)) }
   transfer ctx s site args caps outsideFor many
@@ -663,7 +816,13 @@ def applyCall (ctx : Context) (s : Summary) (site : List Nat) (args caps : List 
       | _ => .bottom
     -- Other paths of this same list include its own contents, which the
     -- certificate covers; outside holders were checked at the write.
-    requireExclusive a later []
+    requireExclusive a later [] ctx.config
+  for x in s.requiresSpine do
+    let a := match x with
+      | .parameter i p => (args[i]?.getD .bottom).atPath p
+      | .capture i p => (caps[i]?.getD .bottom).atPath p
+      | _ => .bottom
+    requireSpine a later [] ctx.config
   noteRead (s.reads.flatMap (instantiateOrigin site args caps))
   modifyFacts fun facts => { facts with escapes := union facts.escapes (s.escapes.flatMap (instantiateOrigin site args caps)) }
   pure (instantiateValue site args caps true s.result)
@@ -777,12 +936,16 @@ def checkEdges (fuel : Nat) (ctx : Context) (sp : Supply) (alts : List (Nat × L
       for w in s.writes ++ s.consumes do
         if let .parameter k p := w.base then
           hit "edge W ⇒ owned supply checked"
-          if k < sp.args.length && !sp.owned.contains (k, p) && !ctx.config.has .supplyEdge then
+          if !ctx.config.shapeOnly && k < sp.args.length && !sp.owned.contains (k, p) && !ctx.config.has .supplyEdge then
             throw "supply edge: a callback writes a supply that is not owned"
+      for x in s.requiresSpine do
+        if let .parameter k p := x.base then
+          if !ctx.config.shapeOnly && k < sp.args.length && !sp.spine.contains (k, p) then
+            throw "supply edge: container certificate missing"
       for x in s.requiresExclusive do
         if let .parameter k p := x.base then
           hit "edge xreq ⇒ exclusive supply checked"
-          if k < sp.args.length && !sp.exclusive.contains (k, p) && !ctx.config.has .requiresEdge then
+          if !ctx.config.shapeOnly && k < sp.args.length && !sp.exclusive.contains (k, p) && !ctx.config.has .requiresEdge then
             throw "supply edge: a callback needs a supply exclusive that is not"
 termination_by (fuel, 3)
 decreasing_by all_goals simp_wf; omega
@@ -860,6 +1023,7 @@ def callSymbolic (fuel : Nat) (ctx : Context) (g : Abstract) (args : List Abstra
     let others := fun (k : Nat) => union envCells (args.zipIdx.flatMap fun (a, i) => if i == k then [] else a.cells)
     let mut ownedPaths : List (Nat × Path) := []
     let mut exclusivePaths : List (Nat × Path) := []
+    let mut spinePaths : List (Nat × Path) := []
     for (t, k) in ps.zipIdx do
       let a := args[k]?.getD .bottom
       for p in tyPaths t do
@@ -868,6 +1032,10 @@ def callSymbolic (fuel : Nat) (ctx : Context) (g : Abstract) (args : List Abstra
           ownedPaths := ownedPaths ++ [(k, p)]
         if (exclusiveProblem escapes (a.atPath p) later (others k)).isNone then
           exclusivePaths := exclusivePaths ++ [(k, p)]
+        if (spineProblem escapes (a.atPath p) later (others k)).isNone then
+          spinePaths := spinePaths ++ [(k, p)]
+        if !(← ask f ctx (query (.requiresSpine k p))).isEmpty then
+          modifyFacts fun s => { s with requiresSpine := union s.requiresSpine ((a.atPath p).roots.filter external) }
         if !(← ask f ctx (query (.writes k p))).isEmpty && !ctx.config.has .callbackWrites then
           modifyFacts fun s => { s with consumes := union s.consumes (cs.filter external) }
         if !(← ask f ctx (query (.escapes k p))).isEmpty && !ctx.config.has .callbackEscapes then
@@ -879,11 +1047,12 @@ def callSymbolic (fuel : Nat) (ctx : Context) (g : Abstract) (args : List Abstra
     noteRead (union envCells (args.flatMap Abstract.cells))
     modifyFacts fun s => { s with supplies := union s.supplies [{
       slot, site, state := (state, owned), args, env := envCells,
-      owned := ownedPaths, exclusive := exclusivePaths }] }
+      owned := ownedPaths, exclusive := exclusivePaths, spine := spinePaths }] }
     recordCall slot 1
     hit "callback called through its class"
     let mut cells : List (Path × List Origin) := []
     let mut exclusive : List Path := []
+    let mut spines : List Path := []
     for q in tyPaths r do
       let mut cs : List Origin := []
       for (t, k) in ps.zipIdx do
@@ -895,9 +1064,10 @@ def callSymbolic (fuel : Nat) (ctx : Context) (g : Abstract) (args : List Abstra
       if !(← ask f ctx (query (.shared q))).isEmpty then cs := union cs [.shared]
       if !(← ask f ctx (query (.top q))).isEmpty then cs := union cs [.unknown]
       cells := cells ++ [(q, cs)]
+      if ctx.config.has .callbackXres || !(← ask f ctx (query (.spine q))).isEmpty then spines := spines ++ [q]
       if ctx.config.has .callbackXres || !(← ask f ctx (query (.xres q))).isEmpty then
         exclusive := exclusive ++ [q]
-    pure (shapeOf cells exclusive r [])
+    pure (shapeOf cells exclusive spines r [])
 termination_by (fuel, 7)
 decreasing_by all_goals simp_wf; omega
 
@@ -962,9 +1132,11 @@ structure Accepted where
   deriving Repr, Inhabited
 
 def check (p : Program) (config : Config := {}) : Except String Accepted := do
-  let _ ← (if config.has .shadowing then typesOf p else typecheck p)
-  let ctx : Context := { declarations := p.declarations, config }
-  let (result, st) ← (inferExpr config.inferenceFuel ctx [] p.main [] []).run {}
-  pure { result, facts := st.facts, computed := st.computed, reused := st.reused, cache := st.cache, hits := st.hits }
+  if config.shapeOnly then throw "internal shape pass cannot accept a program"
+  else
+    let _ ← (if config.has .shadowing then typesOf p else typecheck p)
+    let ctx : Context := { declarations := p.declarations, config }
+    let (result, st) ← (inferExpr config.inferenceFuel ctx [] p.main [] []).run {}
+    pure { result, facts := st.facts, computed := st.computed, reused := st.reused, cache := st.cache, hits := st.hits }
 
 end Ownership

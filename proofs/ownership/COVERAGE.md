@@ -6,6 +6,9 @@ they do not establish final-head coverage. The executable theorem statements
 still have three `sorry`s, including the step lemma on which the main theorem
 is conditional.
 
+The earlier sections' source-mutant numbers belong to round 6. The checker-sync
+evidence is the final section and the opening section of RESULTS.md.
+
 The source is `docs/thesis/ownership/ch-soundness.tex`, Table 6.2, including
 all named variants, and fifth-review/response. **This is core coverage, not complete thesis coverage.** The applicable pending
 core examples from the previous audit are now implemented. Exclusions below
@@ -684,3 +687,57 @@ transitive capture revival, set indices 0/1, and small first-order recursion.
 CI runs it alongside the original size-2 grammar. It is still a small grammar;
 arbitrary declaration tables, type shapes and recursive structures remain
 outside exhaustive coverage. RESULTS.md distinguishes the two searches.
+
+## Zig checker sync projections
+
+The projections live in `Ownership/Sync.lean`, independently enumerated over
+four integer values and the displayed boolean/depth products. The original
+144 targeted programs remain; 204 sync programs bring the total to 348.
+Accepted fixtures execute both interpreters. Every sync control is required
+both as a fixed disagreement and through the targeted enumerator in `ci` and
+`controls`; `Mutant.enumeratorRequired` cannot be omitted from the probe table.
+`branch-live`, already required through the generator, also tests withDefault.
+
+| Zig fixture / rule | Core projection and boundary |
+|---|---|
+| `ownership/BranchEscapes`, `BranchSoonEscapes` | `branchEscape`, `branchCall`: sibling escape accepted, earlier/joined escape, callee escape and recursive escape rejected. `shared` is a permanent reader, not an actual fiber. |
+| `build/bad/direct/OwnershipRecursiveChildren`, `OwnershipRecursiveChildrenUpdate` | `invariant .model`, `modelUpdate`: distinct init and fresh replacement accepted; duplicate init, duplicate replacement arm and escaped update rejected. The core uses finite nested lists and records, not recursive types. |
+| `ownership/FoldAccumulators`, browser `SubscriptionTapFold` | `invariant .range`, `badFold`, `taps`, `capturedAfter`: containers of shared opaque callbacks accepted; shared start, escapes, captured readers, duplicate positions, capture after append and nested captured writes rejected. List focus projects the selected container; dictionary keys/tree representatives are outside scope. |
+| `ownership/Prepend`, `MaybeDefault`, `ResultDefault` | Copying prepend reads the base; map/default are exclusive integer-branch arms. Eager edits and a later default read reject. No re-cons backing view, Maybe/Result constructor or early-return lowering is tested. |
+| `build/bad/direct/ConduitArticleErrors`, `ConduitHomeFeedErrors`, `ConduitProfileErrors`, `ConduitProfileFeedErrors`, `ConduitRetainedMarkup`, `ConduitCarriedHandler`, `ConduitWrappedMarkup` | `markup` over render/event positional slots at depths 0–3: render-only projection accepted; general alias and retained event-handler writes rejected. No HTML syntax, component lowering, wildcard opaque carrier or renderer protocol is tested. |
+| `ConduitDirectTagger`, `ConduitIdentityTagger` | `constructor`: zero-capture record constructor carried through a higher-order helper; scalar crosses, list argument retained. No sum-constructor lowering is tested. |
+| `ConduitLambdaTagger`, `ConduitBoundTagger`, `ConduitPassedTagger` | `owned` with an unseen-callback helper or retained captured message: shared list and nonempty capture reject; captured scalar passes. `owned` is an identity runtime boundary with a demand, not an ownership permission. |
+| `ConduitForwardedTagger` | An ordinary helper calls its callback and checks `owned` on its result while retaining the callback. List capture rejects; a fresh result passes and remains distinct across calls. The requirement is carried by ordinary guarded summaries/supplies, not a separate `need` row. |
+
+The soundness statements still have the same three unproved obligations.
+`CertifiedExclusive` and the falsifier now check both deep certificates and
+container certificates: every directly selected element container occurs once
+in the concrete whole-list footprint, while unrelated opaque captures may
+repeat. The proof of the empty builder establishes both. The in-build replay
+uses the authoritative audit's per-module boundaries to avoid Lean-generated
+private-name normalization collisions; no constant or recursor is exempted.
+
+The publishing-wrapper generator move now begins with a shallow input copy.
+The two wrapper calls consequently have identical canonical certificates, so
+the existing forwarded-guard hole cannot hide behind a changed capability
+shape. Historical seeds still require their historical source revisions.
+
+`earlierCapture` adds two certificate-only regressions: append a record whose
+handler captures an earlier position's list, or focus a later position and
+construct that handler in its replacement. Both are legal sharing constructions
+and stay accepted. Before the certificate-transfer fix, their returned lists
+advertised a spine certificate although the earlier container occurred twice
+in the concrete footprint (`regressions/certificate-before-sync.log`). The
+corrected checker loses that certificate, and the concrete final-heap checks
+pass. `result-positions` reintroduces each false certificate, independently of
+its existing observational disagreement probe. Every accepted fixed fixture
+and corrected targeted program now checks concrete certificates.
+
+The third `earlierCapture` variant supplies the earlier container as a fold
+source element. The source and accumulator get distinct canonical parameter
+names even though their actual paths alias. Its old-container owned premise
+must be false; otherwise a new handler can capture the earlier position while
+the result falsely advertises separation. The regression fails its concrete
+certificate check before that premise is enforced
+(`regressions/certificate-canonical-before-sync.log`). The `result-positions`
+certificate probes cover all three variants.

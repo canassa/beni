@@ -1,3 +1,148 @@
+# Ownership checker sync — 2026-10-15
+
+The executable core now models the applicable branch, model, fold and Conduit
+rules from ownership-checker.md §26.7 and the amendments following §28.11.
+There are **98 original + 44 sync verdict fixtures**, **204 sync products**
+plus the original 144 targeted programs (**348 total**). `Sync.lean` and
+COVERAGE.md map these to the Zig fixtures and describe the projections.
+The compiler itself is unchanged.
+
+## Rules and boundaries
+
+- Branch arms start from the same incoming facts; their outgoing escape rows
+  join. Earlier/joined escapes, calls and recursive escapes remain rejected.
+- Model and fold conditions are greatest must-invariants over a finite
+  provenance shape. Established incoming facts are retained; only discovered
+  fresh result allocations receive optimistic facts. Condition rounds restore
+  the outer facts, and an evaluation under the stable invariant publishes the
+  effects. Exhaustion rejects.
+- Container separation is distinct from deep ownership. Fresh tap containers
+  can hold shared opaque callbacks; shared starts, duplicate containers,
+  retained readers (including capture after append), escapes and nested writes
+  through shared captures remain rejected. Empty-start folds and fresh model
+  replacements have accepted/rejected twins.
+- Markup render/event slots are positional records. General aliases see both;
+  event projection sees only the event slot. Constructor callbacks retain
+  their list-bearing arguments through higher-order calls. An explicit
+  returns-owned boundary checks a retained tagger even when its calls are
+  unseen; captured scalar messages pass while list captures fail. Forwarding
+  a callback result carries the ordinary guarded result/supply obligations;
+  fresh results pass and remain distinct across calls.
+- Copying prepend reads its base; its abstract result conservatively includes
+  the base's backing provenance. The withDefault/map rule is tested after
+  integer-case lowering, with eager-handler and later-read rejected twins.
+  Distinct numbered bindings were already enforced by round 6.
+
+The remaining spec rows have explicit reasons: sum/early-return lowering,
+re-cons views and made-after precision, foreign signature words, Expect/opaque
+carriers, actual entry/render/event/fiber/navigation protocols, recursive data
+types, dictionary representatives, wildcard markup encodings and summary-block
+serialization have no corresponding runtime/syntax in this core. The
+projections above do not prove equivalence to Zig lowering or platform code.
+The withdrawn across-record map identity rule was removed as obsolete debt.
+
+## Validation
+
+Lean **4.29.1**, through `nix develop .#ownership`, on macOS. Logs:
+
+- [Full Lean build](regressions/lean-build-sync.log).
+- [`ownership ci` (20,000 trials, default seed 20261011)](regressions/ci-sync.log): passed. The corrected
+  generator campaign had 20,000 typed programs, **2,850 accepted**, **1,789
+  with writes** (62.8%), zero disagreements and zero execution errors.
+  Enumeration bound 2 checked **55,966 typed programs**, accepted 31,680
+  (10,468 with writes), with zero disagreements or inconclusive outcomes.
+  The corrected targeted campaign accepted 112 of 348, with zero disagreements
+  or inconclusive outcomes. Every required original generator control and
+  every required sync enumerator control was caught.
+- [Falsifier](regressions/falsify-sync.log): `ownership falsify 20000 17`
+  reported `clean=true` with the strengthened concrete container predicate.
+- [Authoritative audit](regressions/audit-sync.log): clean exported sources,
+  parser checks, source/binary hashes and module-by-module kernel replay.
+  The three unproved obligations and four sorry-dependent constants remain
+  exactly the pinned set. No new proof hole is introduced.
+- [`zorg build gates`](regressions/zorg-gates-final-sync.log): **1,297 passed,
+  15 skipped, two failed**. Both failures are the known macOS case-folding
+  stale-output tests. No ownership/compiler/runtime production source changed.
+
+The initial compiler gate also found two cache-pruning fixtures whose 5,000
+file setup exceeded macOS's 999 ms CPU fallback, including on a focused quiet
+run ([before](regressions/cache-pruning-before-sync.log)). The bounded-deletion
+fixture now uses 1,153 entries: one more than the 1,024 cap plus the 128-entry
+examination budget, so a full prune to the cap still violates its assertion.
+The recent-entry fixture uses 1,025 to enter pruning. The fixed budget and
+asserted properties are unchanged; all three [focused cases pass](regressions/cache-pruning-sync.log).
+
+## Required holes
+
+Every row below is caught by a fixed accepted-disagreement probe **and** the
+seed-independent targeted enumerator in CI. These are finite products of the
+core templates, not additional random-generator families. Counts are actual
+mutant-only accepted disagreements from the 348-program targeted campaign;
+none was inconclusive.
+
+| New mutant flag | Hole | Disagreements | Caught |
+|---|---|---:|---|
+| `branch-escapes` | Drop a compatible incoming escape at an arm | 3 | yes |
+| `prepend-base` | Forget the base's later read | 4 | yes |
+| `model-invariant` | Trust init/preservation conditions | 8 | yes |
+| `fold-invariant` | Trust accumulator init/preservation conditions | 8 | yes |
+| `result-positions` | Forget retained captures beside written result paths | 4 | yes |
+| `event-capture` | Drop cells from the event projection | 16 | yes |
+| `constructor-args` | Lose a constructor's retained payload | 40 | yes |
+| `tagger-need` | Trust an unseen tagger's result | 8 | yes |
+| `capture-empty` | Treat a nonempty retained capture as cell-free | 4 | yes |
+| `forward-need` | Assume a forwarded callback result owned | 4 | yes |
+
+The existing `branch-live` hole also catches the withDefault case projection
+(three targeted disagreements). Both model/fold flags additionally have fixed
+preservation probes; they cannot pass on a base-case probe alone.
+`Mutant.enumeratorRequired` is checked against the probe table, and both `ci`
+and `controls` run the required enumerator controls. They are not optional
+merely because the older random generator lacks the new syntax.
+
+Concrete result checks found three false certificates before the final fix
+([append/focus](regressions/certificate-before-sync.log),
+[canonical fold inputs](regressions/certificate-canonical-before-sync.log)):
+a new record could capture a container from an earlier retained position.
+All sharing constructions correctly stayed accepted, and both interpreters
+agreed, but the advertised spine certificate was false. Append
+and prepend now check old containers against every new path as well as the
+reverse direction. Focus distinguishes its removed selected parameter from
+external captures that may name retained positions. The `result-positions`
+flag reintroduces all three false certificates; fixed certificate probes catch it.
+Preservation also requires old containers owned in the canonical scope state:
+different source/accumulator parameter names can denote the same actual array.
+All accepted fixed fixtures, corrected targeted programs and accepted programs
+of the falsifier now verify their advertised certificates against concrete heaps.
+
+The first CI run exposed search sensitivity after the domain extension
+([log](regressions/ci-sync-search-gap.log)): the old `keeps-shape` probe still
+caught its hole, but seed 17's random stream did not. The existing element-move
+now edits the moved container, while preserving the surrounding random draws
+and binding counts. [The 20,000-program control campaign](regressions/keeps-shape-sync.log)
+then found seven disagreements, first at index 655. The publishing-wrapper
+move begins from a shallow copy so both calls have identical canonical
+certificates; `forward-guards` is again caught, at index 761 in the seed-17
+checkpoint. The final default-seed CI catches both required holes as well.
+No original required control was downgraded to optional. Historical streams
+require their historical source revisions.
+
+The PR review found no blocking defect. Its `xres` readability suggestion is
+applied as `ex.deep`; the separate spine query is unchanged. The escape mutant
+now drops only incoming escapes, preserving prior calls and uses. The
+[focused control](regressions/branch-escapes-review-sync.log) still catches
+three disagreements among 348 typed programs. The
+[full Lean build](regressions/lean-build-review-final-sync.log) was repeated
+for these review changes. A fresh audit follows in the PR review response.
+All 159 numbered headings of ownership-checker.md are unchanged from master.
+
+The 65-source-edit matrix below is **historical round-6 evidence**, not a new
+source-mutant sweep on this checker. The sync's current evidence is the runtime
+flag campaigns and mandatory enumerator controls above. Finite campaigns and
+kernel replay of conditional statements are not a completed soundness proof.
+
+---
+
 # Results after the sixth independent review
 
 The prior round-6 results are historical (git revision `6513cfcb1`). They

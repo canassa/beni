@@ -1,0 +1,66 @@
+⚠ [5/48] Replayed Ownership.Checker
+warning: Ownership/Checker.lean:778:0: unused termination hints, function is not recursive
+warning: Ownership/Checker.lean:802:0: unused termination hints, function is not recursive
+warning: Ownership/Checker.lean:829:0: unused termination hints, function is not recursive
+⚠ [10/48] Replayed Ownership.Generator
+warning: Ownership/Generator.lean:375:26: unused variable `env`
+
+Note: This linter can be disabled with `set_option linter.unusedVariables false`
+⚠ [17/48] Replayed Ownership.Soundness
+warning: Ownership/Soundness.lean:163:15: unused variable `ex`
+
+Note: This linter can be disabled with `set_option linter.unusedVariables false`
+warning: Ownership/Soundness.lean:418:8: declaration uses `sorry`
+warning: Ownership/Soundness.lean:437:8: declaration uses `sorry`
+warning: Ownership/Soundness.lean:651:8: declaration uses `sorry`
+warning: Ownership/Soundness.lean:676:13: This simp argument is unused:
+  default_no_shape
+
+Hint: Omit it from the simp argument list.
+  simp only [default_n̵o̵_̵s̵h̵a̵p̵e̵,̵ ̵d̵e̵f̵a̵u̵l̵t̵_̵refuses_shadowing, Bool.false_eq_true, if_false] at ok
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+warning: Ownership/Soundness.lean:691:13: This simp argument is unused:
+  default_no_shape
+
+Hint: Omit it from the simp argument list.
+  simp only [default_n̵o̵_̵s̵h̵a̵p̵e̵,̵ ̵d̵e̵f̵a̵u̵l̵t̵_̵refuses_shadowing, Bool.false_eq_true, if_false] at ok
+
+Note: This linter can be disabled with `set_option linter.unusedSimpArgs false`
+⚠ [18/48] Replayed Ownership.Falsify
+warning: Ownership/Falsify.lean:661:22: unused variable `after`
+
+Note: This linter can be disabled with `set_option linter.unusedVariables false`
+invariant_preserved: { tried := 20000,
+  hypothesisFalse := 0,
+  uncovered := 2141,
+  uncoveredAccepted := 0,
+  closureMislabeled := 1418,
+  lowFuel := 5000,
+  lowFuelBothFail := 267,
+  aliased := 3361,
+  aliasedAccepted := 1170,
+  nested := 7199,
+  nestedAccepted := 4514,
+  accepted := 13211,
+  valueOk := 12944,
+  withWrite := 4182,
+  observational := 0,
+  naming := 0,
+  errorClause := 0 }
+summary_sound: { resultsChecked := 2911,
+  resultViolations := 0,
+  splitsTried := 19596,
+  splitsExcluded := 19596,
+  splitViolations := 0,
+  calls := 8520,
+  checked := 10629,
+  vacuous := 195,
+  guardsDiffer := 89,
+  violations := 0,
+  mapChecked := 869,
+  vacuousSeparating := 195,
+  vacuousDescribed := 0,
+  vacuousUnique := 0,
+  vacuousOther := 0 }
+falsify count=20000 seed=17 clean=true

@@ -175,8 +175,11 @@ def Covers (γ : Naming) (heap : Heap) (a : Abstract) (v : Value) : Prop :=
 /-- An exclusive list in `a` certifies the concrete value at its path: that
     value's footprint (with multiplicity) repeats no array. -/
 def CertifiedExclusive (heap : Heap) (a : Abstract) (v : Value) : Prop :=
-  ∀ q cs e w, a.atPath q = .list cs e true → AtPath heap v q w →
-    ∀ n o fp, Represents heap n w o fp → fp.Nodup
+  ∀ q cs e ex w, a.atPath q = .list cs e ex → AtPath heap v q w →
+    ∀ n o fp, Represents heap n w o fp →
+      (ex.deep = true → fp.Nodup) ∧
+      (ex.spine = true → ∀ p c, containerPath p = true →
+        ArrayAt heap w (.element :: p) c → fp.count c = 1)
 
 /-- `a` describes `v`: it names its arrays path by path and its exclusivity
     certificates hold. -/
@@ -275,11 +278,16 @@ theorem builder_alloc_describes (γ : Naming) (s : State) (site : List Nat)
     subst hq
     cases hc
     exact ⟨.site site 0, by simp [namesAt, Abstract.cellsAt, Abstract.paths, union], hsite⟩
-  · intro q cs e w _ h n o fp hr
+  · intro q cs e ex w _ h n o fp hr
     obtain ⟨_, hw⟩ := atPath_empty_ref lookup h
     subst hw
-    rw [represents_empty_ref hr lookup]
-    simp
+    constructor
+    · intro _
+      rw [represents_empty_ref hr lookup]
+      simp
+    · intro _ p c _ child
+      have impossible := (atPath_empty_ref lookup child).1
+      contradiction
   · exact ClosureAgreement.array lookup (by intro x hx; simp at hx)
 
 /-! ## Summary soundness (Lemma 6.7) -/
@@ -347,9 +355,10 @@ def callResult (ds : List Decl) (id : Nat) (args caps : List Value) (fuel : Nat)
     no deliberate hole, no historical old rule and not the per-call checker.
     Under any other configuration the controls show the theorems are false. -/
 def Corrected (c : Config) : Prop :=
-  c.mutant = none ∧ c.oldFreshRule = false ∧ c.dropTraversalEscapes = false ∧ c.reinfer = false
+  c.mutant = none ∧ c.oldFreshRule = false ∧ c.dropTraversalEscapes = false ∧
+    c.reinfer = false ∧ c.shapeOnly = false
 
-theorem corrected_default : Corrected ({} : Config) := ⟨rfl, rfl, rfl, rfl⟩
+theorem corrected_default : Corrected ({} : Config) := ⟨rfl, rfl, rfl, rfl, rfl⟩
 
 /-- A holder of an array: another array whose contents refer to it, or the
     program-lifetime observer (`shared`). Locals of a finished frame are gone. -/
@@ -659,11 +668,13 @@ theorem invariant_preserved (p : Program) (a : Accepted) (ok : check p = .ok a)
       ∃ msg', (InPlaceSemantics.eval fuel p.declarations none (heapEnv env) e).run hs = .error msg') := by
   sorry
 
+theorem default_no_shape : ({} : Config).shapeOnly = false := rfl
+
 theorem check_accepts_main (p : Program) (a : Accepted) (ok : check p = .ok a) :
     ∃ r st', (inferExpr ({} : Config).inferenceFuel { declarations := p.declarations, config := {} }
       [] p.main [] []).run {} = .ok (r, st') ∧ st'.cache = a.cache := by
   unfold check at ok
-  simp only [default_refuses_shadowing, Bool.false_eq_true, if_false] at ok
+  simp only [default_no_shape, default_refuses_shadowing, Bool.false_eq_true, if_false] at ok
   cases ht : typecheck p with
   | error msg => simp [ht, bind, Except.bind] at ok
   | ok _ =>
@@ -678,7 +689,7 @@ theorem check_accepts_main (p : Program) (a : Accepted) (ok : check p = .ok a) :
 theorem check_typed (p : Program) (a : Accepted) (ok : check p = .ok a) (heap : Heap := #[]) :
     WellTyped p.declarations heap [] p.main := by
   unfold check at ok
-  simp only [default_refuses_shadowing, Bool.false_eq_true, if_false] at ok
+  simp only [default_no_shape, default_refuses_shadowing, Bool.false_eq_true, if_false] at ok
   cases ht : typecheck p with
   | error msg => simp [ht, bind, Except.bind] at ok
   | ok t => exact ⟨[], t, typecheck_main p ht, by intro x o w u h; simp at h⟩

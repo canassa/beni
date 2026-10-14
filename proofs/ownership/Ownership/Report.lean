@@ -28,11 +28,13 @@ def originsS (cs : List Origin) : String :=
 def resultRows (a : Abstract) : List String :=
   a.paths.map fun (p, cs) =>
     let ex := match a.atPath p with
-      | .list _ _ ex => if ex then " excl" else ""
+      | .list _ _ ex => if ex.deep then " excl" else if ex.spine then " spine" else ""
       | _ => ""
     s!"res {if p.isEmpty then "ε" else pathS p} = {originsS cs}{ex}"
 
 def factS : Fact → String
+  | .spine q => s!"spine({pathS q})"
+  | .requiresSpine k p => s!"spine(π{k}{pathS p})"
   | .writes k p => s!"W∈use(π{k}{pathS p})"
   | .escapes k p => s!"E∈use(π{k}{pathS p})"
   | .requires k p => s!"xreq(π{k}{pathS p})"
@@ -62,12 +64,14 @@ def supplyS (sp : Supply) : String :=
   let args := sp.args.zipIdx.map fun (a, k) =>
     let owned := sp.owned.filter (·.1 == k) |>.map (fun (_, p) => if p.isEmpty then "ε" else pathS p)
     let excl := sp.exclusive.filter (·.1 == k) |>.map (fun (_, p) => if p.isEmpty then "ε" else pathS p)
-    s!"arg{k} = {originsS a.cells} owned at {owned} excl at {excl}"
+    let spine := sp.spine.filter (·.1 == k) |>.map (fun (_, p) => if p.isEmpty then "ε" else pathS p)
+    s!"arg{k} = {originsS a.cells} owned at {owned} excl at {excl} spine at {spine}"
   s!"supply to slot {sp.slot}: " ++ "; ".intercalate args
 
 def summaryLines (s : Summary) : List String :=
   useRows s ++ resultRows s.result ++
   (if s.requiresExclusive.isEmpty then [] else [s!"xreq {originsS s.requiresExclusive}"]) ++
+  (if s.requiresSpine.isEmpty then [] else [s!"spine-req {originsS s.requiresSpine}"]) ++
   s.calls.map (fun (j, n) => s!"calls slot {j} = {callsS n}") ++
   s.supplies.map supplyS ++
   [s!"guards ({s.guards.length}): " ++ ", ".intercalate (s.guards.map fun g =>

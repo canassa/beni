@@ -41,7 +41,7 @@ def main (args : List String) : IO UInt32 := do
     if !vacuityOk then
       IO.println s!"FALSIFY summary_sound vacuous on too many calls: {otherVacuous} not described, {b.vacuousSeparating} one array at two paths, of {b.calls}"
     let clean := b.calls > 0 && a.hypothesisFalse == 0 && a.observational == 0 && a.errorClause == 0 &&
-      a.naming == 0 && a.uncoveredAccepted == 0 && b.violations == 0 && b.splitViolations == 0 && vacuityOk
+      a.naming == 0 && a.uncoveredAccepted == 0 && b.resultsChecked > 0 && b.resultViolations == 0 && b.violations == 0 && b.splitViolations == 0 && vacuityOk
     IO.println s!"falsify count={count} seed={seed} clean={clean}"
     return (if clean then 0 else 1)
   -- Every typed program of the enumeration grammar up to `bound` bindings
@@ -137,7 +137,11 @@ def main (args : List String) : IO UInt32 := do
     | none => IO.eprintln "verdict-diff needs --mutant="; return 2
     return 0
   if mode == "controls" then
-    return (if ← Oracle.controls count seed version (args.contains "--reinfer") then 0 else 1)
+    if !(← Oracle.controls count seed version (args.contains "--reinfer")) then return 1
+    if !args.contains "--reinfer" then
+      for (hole, _) in Sync.holes do
+        if hole.enumeratorRequired && !(← Targeted.run {mutant := some hole} .control) then return 1
+    return 0
   -- The CI-style check: fixtures, one normal campaign, every negative control.
   if mode == "ci" then
     let budget := positional[0]?.bind String.toNat? |>.getD 20000
@@ -165,7 +169,11 @@ def main (args : List String) : IO UInt32 := do
     let bound := (flagValue args "enumerate-bound").bind String.toNat? |>.getD 2
     let (ok, _) ← Enumerate.run bound
     if !ok then return 1
-    return (if ← Targeted.run then 0 else 1)
+    if !(← Targeted.run) then return 1
+    for (hole, _) in Sync.holes do
+      IO.println s!"CI targeted control {hole.name}"
+      if !(← Targeted.run {mutant := some hole} .control) then return 1
+    return 0
   if mode != "oracle" && mode != "--generator-only" then
     if !(← Fixtures.run) then return 1
   if mode == "fixtures" then return 0

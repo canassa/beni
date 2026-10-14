@@ -460,23 +460,24 @@ test "the driver's cache pruning is bounded however many entries a fuzz sweep le
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // 5 000 entries, all two hours old: a prune that listed and statted the
-    // whole directory, as it did when a sweep left 116 000 and every page
-    // spent 85 million instructions on it, would remove every one.
+    // Just over the 1 024-entry cap plus the 128-entry examination budget:
+    // an unbounded prune to the cap would remove at least 129 entries.
+    // This reaches the same branch without creating thousands of files.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const left = try entriesLeft(&w, 5000, 2 * 3600);
+    const count = 1024 + 128 + 1;
+    const left = try entriesLeft(&w, count, 2 * 3600);
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
     // Some old entries went, but only the few a run looks at.
-    try testing.expect(left < 5000);
-    try testing.expect(left >= 5000 - 128);
+    try testing.expect(left < count);
+    try testing.expect(left >= count - 128);
 }
 
 test "the driver's cache pruning leaves a cache of 1 024 entries or fewer alone" {
@@ -488,5 +489,5 @@ test "the driver's cache pruning leaves a cache of 1 024 entries or fewer alone"
 test "the driver's cache pruning keeps the entries of the last hour" {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
-    try testing.expectEqual(@as(u32, 5000), try entriesLeft(&w, 5000, 60));
+    try testing.expectEqual(@as(u32, 1025), try entriesLeft(&w, 1025, 60));
 }

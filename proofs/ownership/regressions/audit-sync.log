@@ -1,0 +1,3 @@
+audit sources: 28 files parsed, 3 sorry, every command and node allowed
+audit env: 4167 constants, 4 on sorryAx (pinned), 4167 replayed through the kernel module by module, no compiler attribute swapped in (0 partial definitions)
+audit passed: 5647e7e10babb03fccebd78841143da3070cfdb3
