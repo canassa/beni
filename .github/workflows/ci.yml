@@ -18,11 +18,12 @@ on:
 
 permissions: {}
 
+# A newer push to a pull request replaces its older run. Every push to
+# master has a group of its own, because a group keeps only one pending run
+# and would drop the run of a commit between two quick pushes.
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.ref }}
-  # A newer push to a pull request replaces its older run; every push to
-  # master keeps its own verdict.
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ${{ github.event_name == 'pull_request' && format('ci-pr-{0}', github.event.pull_request.number) || format('ci-run-{0}', github.run_id) }}
+  cancel-in-progress: true
 
 jobs:
   tests:
@@ -87,6 +88,8 @@ jobs:
         with:
           primary-key: nix-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.nix', 'flake.lock') }}
 
+      # The key is new for each commit. It exists already only on a re-run,
+      # and then there is nothing to save.
       - name: save the Zig caches
         if: ${{ !cancelled() && github.event_name == 'push' && steps.zig-cache.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
