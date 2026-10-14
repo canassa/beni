@@ -1,0 +1,11 @@
+-- Exercise one scheduler drain inside a host dispatch, so Dom.rendered parks.
+-- Later drains (including defect cleanup) retain the normal direct protocol.
+import Direct
+import Js
+import Task
+
+
+pub install : ⊤ → ⊤
+install ⊤ = Task.onTurn λrun →
+    Task.onTurn λcleanup → cleanup ⊤
+    Direct.send (Js.from run) Js.null

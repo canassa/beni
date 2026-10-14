@@ -297,6 +297,8 @@ pub const Input = struct {
     /// `--schema-library`: a schema's directions run its description
     /// through the library and call no worker.
     schema_library: bool = false,
+    /// Exports proved to be inert carriers by the sibling scanner.
+    forwarding_foreigns: []const []const bool = &.{},
 
     fn birOf(in: Input, m: Graph.Index) *const Bir {
         if (m.int() >= in.birs.len) return &Bir.empty;
@@ -513,7 +515,13 @@ fn exempt(in: Input, scratch: Allocator, modules: []Live) Allocator.Error!void {
     for (0..count) |i| {
         const m: Graph.Index = @fromBackingInt(@intCast(@as(u32, @intCast(i))));
         for (in.birOf(m).decls, 0..) |d, index| switch (d.kind) {
-            .foreign_value, .foreign_type, .vocab_element, .vocab_attribute, .vocab_event, .vocab_markup => try typesNamed(in, scratch, m, @intCast(index), &work),
+            .foreign_value => {
+                const forwards = m.int() < in.forwarding_foreigns.len and
+                    index < in.forwarding_foreigns[m.int()].len and
+                    in.forwarding_foreigns[m.int()][index];
+                if (!forwards) try typesNamed(in, scratch, m, @intCast(index), &work);
+            },
+            .foreign_type, .vocab_element, .vocab_attribute, .vocab_event, .vocab_markup => try typesNamed(in, scratch, m, @intCast(index), &work),
             else => {},
         };
     }

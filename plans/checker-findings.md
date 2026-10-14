@@ -5725,11 +5725,31 @@ Totals:
 
 **Class:** valid-program-rejected. **Status:** open.
 
-The direct platform checks owned message delivery. Fifteen unchanged browser-tea
-pages are rejected through HTTP, random, command and view summaries; the corpus
+The direct platform checks owned message delivery. Sixteen unchanged browser-tea
+pages (including the BikeWars external-source project) are rejected through HTTP, random, command and view summaries; the corpus
 browser-tea originals retain their execution goldens. Direct copies under
 `tests/pending/browser/direct/` preserve the expected behavior and steps;
 `tests/pending/RED` pins each diagnostic. No copy is inserted to bypass checking.
-TodoMVC's rejection prevents measuring its routing build and timed operations.
+The full TodoMVC page remains pending; the smaller no-editing routing and
+sandbox benchmark subjects are accepted and measured. RandomValues remains
+a generator-result summary limit, but its diagnostic is corrected to
+`list_may_be_shared`: approximate supplies did not prove a surviving alias.
+BikeWars additionally exposes top-level captures and trail operands retained
+through helpers; its current errors and existing prepend warnings are pinned.
 The pending fixtures distinguish this remaining limit from the dictionary
 accumulator and model-state invariants fixed by PRs #87 and #88.
+
+## CK-224 — direct's mount-only statement oracle cannot share a throws script (2026-10-14)
+
+**Class:** platform-oracle-boundary. **Status:** open (documented semantics).
+
+`browser/tea/DefectInTurnRender` throws from an unused statement of `view`.
+Direct runs that statement only at mount, as `browser-direct.md`'s S4 notes
+and §8.4 specify; its unchanged script therefore fails `throws press #bad`.
+The direct source is accepted, and this is not an ownership checker limit.
+The unchanged source, script and tea golden are explicitly exercised under
+`tests/pending/browser/direct/DefectInTurnRender.beni`; RED pins `PageFailed`.
+The common paired corpus still proves the defect-stop guarantee through
+`DefectInRender`, `DefectInValueHandler` and `DefectInDerived`, whose throw
+is in a value group. No throws assertion or production semantics was weakened
+to make this phase oracle pass.

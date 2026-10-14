@@ -1,0 +1,22 @@
+-- A foreign returns a supplied nominal value without constructing a variant.
+import Carrier exposing (Choice, Dropped, Kept)
+import Ghost
+import Node
+
+
+choose : ⊤ → Choice
+choose ⊤ = Kept
+
+
+show : Choice → String
+show choice =
+    case choice of
+        Kept →
+            "kept"
+
+        Dropped →
+            Ghost.message ⊤
+
+
+main : Node.Program
+main = Node.print (show (Carrier.carry (choose ⊤)))

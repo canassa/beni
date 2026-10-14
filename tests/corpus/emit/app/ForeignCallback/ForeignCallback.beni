@@ -1,0 +1,22 @@
+-- A callback call is not an inert forwarder; constructor exemption stays conservative.
+import Carrier exposing (Choice, Dropped, Kept)
+import Ghost
+import Node
+
+
+choose : ⊤ → Choice
+choose ⊤ = Kept
+
+
+show : Choice → String
+show choice =
+    case choice of
+        Kept →
+            "kept"
+
+        Dropped →
+            Ghost.message ⊤
+
+
+main : Node.Program
+main = Node.print (show (Carrier.carry choose))

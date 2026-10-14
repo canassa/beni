@@ -1,0 +1,48 @@
+{
+  "node": "v24.19.0",
+  "quality": 11,
+  "rows": [
+    {
+      "variant": "Sandbox",
+      "platform": "browser-tea",
+      "raw": 16391,
+      "brotli": 6169,
+      "entry": "bench/todomvc/out/direct-effects/browser-tea-Sandbox/_main.mjs"
+    },
+    {
+      "variant": "Sandbox",
+      "platform": "browser-direct",
+      "raw": 14647,
+      "brotli": 5344,
+      "entry": "bench/todomvc/out/direct-effects/browser-direct-Sandbox/_main.mjs"
+    },
+    {
+      "variant": "NoEditing",
+      "platform": "browser-tea",
+      "raw": 21757,
+      "brotli": 8258,
+      "entry": "bench/todomvc/out/direct-effects/browser-tea-NoEditing/_main.mjs"
+    },
+    {
+      "variant": "NoEditing",
+      "platform": "browser-direct",
+      "raw": 19136,
+      "brotli": 7026,
+      "entry": "bench/todomvc/out/direct-effects/browser-direct-NoEditing/_main.mjs"
+    }
+  ],
+  "compiler_sha256": "84a9776f0a6d9fd2f36e7794b2c747c07539e5920462240f5a929f761b98d54b",
+  "compiler_backend": "zorg 0.17.1+zorg.1, native self-hosted, ReleaseSafe compiler; beni --release programs; no LLVM",
+  "vanilla": {
+    "platform": "vanilla-es6",
+    "commit": "302b409c2b8510dc634fdd0e481196845109dc97",
+    "raw": 5339,
+    "brotli": 1722,
+    "html_raw": 1055
+  },
+  "empty_direct": {
+    "brotli_before_slice": 316,
+    "brotli_with_unconditional_flush": 347,
+    "brotli_current": 327
+  }
+}

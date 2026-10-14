@@ -2792,6 +2792,18 @@ item 1 is how it comes back.
 
 ### 28.5 What is an error
 
+*Amended 2026-10-14 (tagger diagnostics):* deciding that a callback does not
+return an owned value and deciding that this is proven sharing are separate
+questions. The exact-only diagnostic probe ignores approximate supply rows,
+just as it ignores approximate result rows. A borrowed supply whose `approx`
+bit holds records a loss of precision, not a demonstrated alias. This affects
+only the diagnostic (`list_may_be_shared` rather than `list_still_used`); the
+ordinary ownership proof still checks every supply and refuses the program.
+`Random.generate (Random.list generator n)` exercises this distinction: its
+summary cannot preserve the generator's fresh-list result through the opaque
+generator carrier. `Random.constant` can retain a shared list, so accepting
+every generator instead would be unsound. No ownership verdict is relaxed.
+
 **Every rejected line and every pending line of a reported module is an `error`.** One sentence per kind, each
 against CLAUDE.md rule 7's test — what guarantee does the error buy?
 

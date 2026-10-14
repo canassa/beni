@@ -7210,6 +7210,8 @@ const Walker = struct {
                     for (c.uses) |u| if (u.param == r.prov.a and u.bits & (bit_e | bit_j) != 0 and w.o.overlap(u.path, r.prov.path)) return false;
                     for (s.supply) |e| {
                         if (e.fun != j or e.k != r.prov.a or !w.o.overlap(e.path, r.prov.path)) continue;
+                        // §28.5: an approximate supply is a limit, not proven sharing.
+                        if (w.ro_exact and e.approx) continue;
                         if (!e.owned) return false;
                         if (!try w.provOwned(e.prov, s, avs, j, depth, none)) return false;
                     }

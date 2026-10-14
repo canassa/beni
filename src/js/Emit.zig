@@ -821,6 +821,7 @@ const Emitter = struct {
     module_uses: std.ArrayList([]const u8) = .empty,
     /// Reachability's roots beside the build's own (`Reach.Input`).
     extra_roots: []const Reach.Node = &.{},
+    forwarding_foreigns: [][]bool = &.{},
     /// `--release` of an application that does not reach `Debug`: what
     /// JavaScript sees, closed before lowering (§9, *Item 4, taken up*).
     /// Null renames no field and gives no type integer tags.
@@ -1124,6 +1125,8 @@ const Emitter = struct {
     // ---- boundary.md §4, checks 2, 3 and 4 --------------------------------
 
     fn checkSiblings(e: *Emitter) !void {
+        e.forwarding_foreigns = try e.scratch.alloc([]bool, e.graph().count());
+        @memset(e.forwarding_foreigns, &.{});
         for (0..e.graph().count()) |i| {
             const m: Graph.Index = @fromBackingInt(@intCast(i));
             const file = e.graph().moduleFile(m);
@@ -1171,6 +1174,17 @@ const Emitter = struct {
             };
 
             const found = try Sibling.scan(e.scratch, bytes);
+            for (found.exports) |export_| if (export_.forwards) {
+                for (b.decls, 0..) |decl, di| {
+                    if (decl.kind == .foreign_value and std.mem.eql(u8, export_.name, e.session.interner.slice(b.symbol(decl.name)))) {
+                        if (e.forwarding_foreigns[m.int()].len == 0) {
+                            e.forwarding_foreigns[m.int()] = try e.scratch.alloc(bool, b.decls.len);
+                            @memset(e.forwarding_foreigns[m.int()], false);
+                        }
+                        e.forwarding_foreigns[m.int()][di] = true;
+                    }
+                }
+            };
             try e.compareExports(file, sibling_path, bytes, declared.items, found.exports);
             // The next two faults are the `.js` file's own, so they are
             // reported IN it: path, line, column and an excerpt with the
@@ -1855,7 +1869,6 @@ const Emitter = struct {
         if (entry != null) {
             if (e.suppliedAs("run") != null) try names.append(e.scratch, "run");
             if (e.suppliedAs("start") != null and try e.startData() != null) try names.append(e.scratch, "start");
-            if (e.suppliedAs("flush") != null) try names.append(e.scratch, "flush");
         } else {
             // A build with no entry file (`--library`): the page's own
             // entry mounts the exported program, so the program runtime's
@@ -2788,6 +2801,7 @@ const Emitter = struct {
             .extra_roots = e.extra_roots,
             .plans = e.session.checked.plans,
             .schema_library = e.options.schema_library,
+            .forwarding_foreigns = e.forwarding_foreigns,
         };
         e.schema_graph = .{
             .graph = e.graph(),
