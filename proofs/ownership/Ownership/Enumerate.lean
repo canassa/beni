@@ -10,8 +10,8 @@ checker accepts in both interpreters: an accepted disagreement is a failure.
 A program is a fixed prelude `let 0 = [1]; let 1 = [2]; let 2 = [0, 1]; let 3 =
 [3]` followed by `bound` or
 fewer bindings, each a right-hand side drawn from the templates below over
-every in-scope operand of the right type, and ends in the last binding or every binding as a record
-(with no binding, it observes 0). The declarations are generator v5's fixed table
+every in-scope operand of the right type, and ends in the last binding, the last two bindings as a record, or every
+binding as a record (with no binding, it observes 0). The declarations are generator v5's fixed table
 (`Generator.decls`), which holds plain list functions, capturing closures, once
 closures, a closure over a closure, a closure beside a once closure, a factory
 of nested closures, a declaration returning either a closure or its function
@@ -59,6 +59,8 @@ def choices (env : List (Var × Ty)) (tmp : Nat) : List (Expr × Ty) :=
   ls.map (fun x => (.prim .length [x], Ty.int)) ++
   ls.map (fun x => (.prim .shared [x], tL)) ++
   ls.map (fun x => (.letE t0 (.prim (.builder .int) []) (.prim .close [v t0, x]), tL)) ++
+  ls.map (fun x => (.letE t0 (.prim (.builder .int) [])
+    (.letE t1 (.prim .put [v t0, .int 1]) (.prim .close [v t1, x])), tL)) ++
   (pairs ls).map (fun (x, y) => (.prim (.literal tL) [x, y], tN)) ++
   (pairs ls).map (fun (x, y) => (.prim .record [x, y], tR)) ++
   -- nested lists
@@ -87,6 +89,7 @@ def choices (env : List (Var × Ty)) (tmp : Nat) : List (Expr × Ty) :=
   fil.map (fun f => (.letE t0 (.prim .record [f, .int 0]) (.letE t1 (.prim .shared [v t0]) (.atom (.int 0))), .int)) ++
   -- calls
   fil.map (fun f => (.app f [.int 1], tL)) ++
+  fil.map (fun f => (.letE t0 (.closure Generator.invokeIL []) (.app (v t0) [f]), tL)) ++
   fii.map (fun f => (.app f [.int 1], .int)) ++
   fll.flatMap (fun h => ls.map fun x => (.app h [x], tL)) ++
   fll.flatMap (fun h => ls.map fun x => (.letE t0 (.closure Generator.apply1 []) (.app (v t0) [x, h]), tL)) ++
@@ -121,7 +124,8 @@ def finals (bound : List Var) : List Expr :=
   match bound with
   | [] => [.atom (.int 0)]
   | [x] => [.atom (v x)]
-  | x :: _ => [.atom (v x), .prim .record (bound.reverse.map v)]
+  | [x, y] => [.atom (v x), .prim .record [v y, v x]]
+  | x :: y :: _ => [.atom (v x), .prim .record [v y, v x], .prim .record (bound.reverse.map v)]
 
 structure Counts where
   enumerated : Nat := 0

@@ -558,9 +558,27 @@ def closureJoinedWithInput : Program := {
     .letE 2 (.closure 0 [v 1]) <| .letE 3 (.closure 1 []) <| .letE 4 (.app (v 3) [.int 0, v 0, v 2]) <|
     .letE 5 (.prim .push [v 0, .int 9]) (.prim .record [v 4, v 5]) }
 
+/-- A callee invokes an outer closure, which calls its captured once
+    closure. `close` revives the written array after closure creation; the
+    callee must demand the nested write while that old array is live. -/
+def nestedOnceThroughCallee : Program := {
+  declarations := [
+    { name := "push", parameters := [.int], captures := [.list .int], result := .list .int,
+      body := .prim .push [.var 1, .var 0] },
+    { name := "wrap", parameters := [.int], captures := [.fn [.int] (.list .int)], result := .list .int,
+      body := .app (.var 1) [.var 0] },
+    { name := "invoke", parameters := [.fn [.int] (.list .int)], result := .list .int,
+      body := .app (.var 0) [.int 9] }]
+  main := .letE 0 (.prim (.literal .int) [.int 1]) <|
+    .letE 1 (.closure 0 [.var 0]) <| .letE 2 (.closure 1 [.var 1]) <|
+    .letE 3 (.prim (.builder .int) []) <| .letE 4 (.prim .put [.var 3, .int 1]) <|
+    .letE 5 (.prim .close [.var 4, .var 0]) <| .letE 6 (.closure 2 []) <|
+    .letE 7 (.app (.var 6) [.var 2]) (.prim .record [.var 5, .var 7]) }
+
 /-- Probes: name, program, mutant, and whether the control is meaningful only
     for the per-call checker (see COVERAGE.md, "Borrowed supply"). -/
 def probes : List (String × Program × Mutant × Bool) := [
+  ("a callee invokes a closure calling a captured once closure", nestedOnceThroughCallee, .onceThroughCall, false),
   ("one list set into both slots, then map bump", setBothSlots, .setExclusive, false),
   ("a list captured beside a once closure, pushed, then the closure called", onceCapturedBeside, .onceLive, false),
   ("disjoint", probeDisjoint, .disjoint, false),
@@ -755,6 +773,7 @@ def all : List Fixture := [
   ⟨"shared on a record holding a closure over a list",sharedClosureInRecord,false⟩,
   ⟨"a loop over a non-exclusive source returns an element, then edited",loopPicksElement,false⟩,
   ⟨"a closure joined with a function input stays live",closureJoinedWithInput,false⟩,
+  ⟨"a callee invokes a closure calling a captured once closure",nestedOnceThroughCallee,false⟩,
   ⟨"one list set into both slots, then map bump",setBothSlots,false⟩,
   ⟨"a list captured beside a once closure, pushed, then the closure called",onceCapturedBeside,false⟩ ]
 

@@ -670,6 +670,39 @@ def applyCall (ctx : Context) (s : Summary) (site : List Nat) (args caps : List 
 termination_by (0, 1)
 decreasing_by all_goals simp_wf
 
+/-- The capture writes of a once callback, following captured callbacks it
+    calls. A captured function's synthetic root does not name the arrays that
+    its own captures may write; a callee can call it through another closure.
+    Symbolic captured calls are forwarded to the parent so its caller checks
+    them where their actual code is known. -/
+def demandCallbackCaptures (fuel : Nat) (ctx : Context) (id : Nat) (caps : List Abstract)
+    (site : List Nat) (later : List Origin) : CheckM Unit := do
+  if fuel = 0 then throw "limit: capture demand depth"
+  else
+    let f := fuel - 1
+    let d ← ctx.declarations[id]?.toExcept "summary declaration"
+    let ps := d.parameters.zipIdx.map fun (t, i) => canonical Origin.parameter i (typeShape t)
+    let cs ← classOf f ctx.declarations ctx.config ctx.frames id caps ps
+      (canonicalOwned ctx (d.parameters.map typeShape) caps [])
+    for w in cs.writes ++ cs.consumes do
+      if let .capture .. := w then
+        demand ctx.config (instantiateOrigin site [] caps w) later (otherPaths [] caps w)
+    for (slot, count) in cs.calls do
+      if slot < d.parameters.length || count == 0 then continue
+      let k := slot - d.parameters.length
+      match caps[k]? with
+      | some (.symbolic j ..) => recordCall j count
+      | some (.function roots alts) =>
+        if roots.isEmpty then continue
+        if !ctx.config.has .callsEdge && count ≥ 2 then
+          throw "calls edge: a captured once callback is called many times"
+        demand ctx.config roots later (otherPaths [] caps (.capture k []))
+        for (child, nested) in alts do
+          demandCallbackCaptures f ctx child nested site later
+      | _ => pure ()
+termination_by (fuel, 2)
+decreasing_by all_goals simp_wf; omega
+
 /-- A call of a known declaration: its summary is looked up (or computed once)
     for the canonical inputs, with the actual function values in a new frame;
     then the guards it forwarded, its supplies and its calls are resolved. -/
@@ -726,13 +759,7 @@ def callKnown (fuel : Nat) (ctx : Context) (id : Nat) (actuals caps : List Abstr
           -- creation made them dead, but a value built later may name them
           -- (a `close` returns its source, which is not a use).
           for (id, fcaps) in alts do
-            let fd ← ctx.declarations[id]?.toExcept "summary declaration"
-            let fps := fd.parameters.zipIdx.map fun (t, i) => canonical Origin.parameter i (typeShape t)
-            let cs ← classOf f ctx.declarations ctx.config ctx.frames id fcaps fps
-              (canonicalOwned ctx (fd.parameters.map typeShape) fcaps [])
-            for w in cs.writes ++ cs.consumes do
-              if let .capture .. := w then
-                demand ctx.config (instantiateOrigin site [] fcaps w) later (otherPaths [] fcaps w)
+            demandCallbackCaptures f ctx id fcaps site later
       | _ => pure ()
     applyCall ctx s site actuals caps later
 termination_by (fuel, 2)

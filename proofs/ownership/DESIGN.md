@@ -86,10 +86,27 @@ with the descriptions of its captures recursively, including closures inside
 captured records or arrays. A shallow footprint match is insufficient: a read-only
 abstract callback and a concrete writing callback can have the same footprint.
 Symbolic inputs remain abstract over code, with their behaviour constrained by
-the guards; unknown joins cannot be called. The executable falsifier must check
-this same recursive agreement and deliberately mislabel inner closures as well
+the guards; unknown joins cannot be called. The once/many honesty test must also descend into captures; a once outer
+closure cannot hide a writing inner closure falsely marked as many. The
+executable falsifier must check this same recursive agreement and deliberately mislabel inner closures as well
 as outer ones. This repairs a hypothesis of the unproved soundness statements;
 it does not certify them or change the executable ownership checker.
+
+The step lemma's environment typing applies to both sides: value observations
+and finite expansions of the actual heap values have the same declared types.
+Dead bindings may have stale contents, but their actual shapes and references
+must still be valid. In particular, `close` reads its source without making it
+live; value-side typing alone admitted an integer or dangling reference there
+and made one interpreter fail while the other succeeded. This is a premise on
+valid configurations, not a new language restriction.
+
+Consuming a known once callback demands every capture write it may perform,
+including writes made by called once closures captured inside it. Resolve the
+captured calls recursively; forward calls of symbolic captured inputs into the
+parent's call row, and enforce their multiplicity when the actual code is known.
+A closure's own synthetic root is not a substitute for its written arrays.
+`close` can revive one of those arrays without a syntactic use at creation, so
+the call must check the actual written cells against its continuation.
 
 ## The summary layer (thesis §3.7, §4.4–§4.7)
 

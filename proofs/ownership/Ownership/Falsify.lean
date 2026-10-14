@@ -137,9 +137,9 @@ def correspondsB (heap : Heap) (o : Observation) (w : Value) : Bool :=
 def escapedB (escapes : List Origin) (o : Origin) : Bool :=
   !unescaped o || cellOverlap [o.base] (escapes.map Origin.base)
 
-/-- The function values at the paths `atPath` reaches (fields, elements). -/
+/-- Every function value, including those nested inside captured values. -/
 partial def functionsOf : Abstract → List (List Origin × List (Nat × List Abstract))
-  | .function roots alts => [(roots, alts)]
+  | .function roots alts => [(roots, alts)] ++ alts.flatMap (fun (_, caps) => caps.flatMap functionsOf)
   | .record xs => xs.flatMap functionsOf
   | .list _ x _ => functionsOf x
   | _ => []
@@ -153,6 +153,14 @@ def honestB (decls : List Decl) (a : Abstract) : Bool :=
     | .error _ => false
 
 abbrev Bindings := List (Var × Observation × Value)
+
+/-- `WellTyped` as a test, including actual heap values. Failure to snapshot
+    an actual value does not count as a well-typed input. -/
+def typedB (ds : List Decl) (heap : Heap) (env : Bindings) (types : Env Ty) (e : Expr) : Bool :=
+  (exprType ds (mainDecl e) types e).isOk && env.all fun (x, o, w) =>
+    match types.lookup x with
+    | some u => obsTyped ds o u && (snapshot heap depthFuel w).toOption.any (fun actual => obsTyped ds actual u)
+    | none => true
 
 def projections (o : Observation) (w : Value) (p : Path) : Option (Observation × Value) := do
   pure (← projectObs o p, ← projectVal w p)
@@ -581,10 +589,7 @@ def tryOne (seed : Nat) (t : Tally) (checker : Ownership.Config := {}) : Tally �
     if (why.splitOn "not one of").length > 1 then
       return ({ t with closureMislabeled := t.closureMislabeled + 1 }, none)
     return ({ t with hypothesisFalse := t.hypothesisFalse + 1 }, some s!"hypothesis does not hold by construction: {why}")
-  let typed := (exprType decls (mainDecl e) cfg.types e).isOk &&
-    cfg.env.all fun (x, o, _) => match cfg.types.lookup x with
-      | some u => obsTyped decls o u
-      | none => true
+  let typed := typedB decls cfg.heap cfg.env cfg.types e
   if !typed then
     return ({ t with hypothesisFalse := t.hypothesisFalse + 1 }, some s!"hypothesis does not hold by construction: ill-typed ({repr (exprType decls (mainDecl e) cfg.types e)})")
   if !cfg.aenv.all (fun (_, a) => honestB decls a) then
@@ -838,3 +843,47 @@ def expression : Expr := .letE 2 (.app (.var 0) [.int 9]) (.prim .record [.var 1
   | _, _ => false
 
 end Ownership.Falsify.NestedCaptureRegression
+
+namespace Ownership.Falsify.DeadSourceRegression
+
+/-- A dead source's observation is a list, but its actual value is an int.
+    The old invariant and value-only typing admitted it. `close` succeeds
+    in the value interpreter and fails on the heap side. -/
+def bindings : Bindings := [(0, .list [], .ref 0), (1, .list [], .int 0)]
+def abstractEnv : Env Abstract := [(0, .list [.site [0] 0] .bottom true), (1, .list [.site [1] 0] .bottom false)]
+def naming : FNaming := [(0, [.site [0] 0])]
+def heap : Array (List InPlaceSemantics.Value) := #[[]]
+def expression : Expr := .prim .close [.var 0, .var 1]
+def types : Env Ty := [(0, .builder .int), (1, .list .int)]
+
+#guard (invariantB { fuel := 100 } { fuel := 100, heap } bindings (uses expression) abstractEnv [] naming).isNone
+#guard abstractEnv.all fun (_, a) => honestB [] a
+#guard (exprType [] (Soundness.mainDecl expression) types expression).isOk
+#guard ((inferExpr 200 { declarations := [], config := {} } abstractEnv expression [] []).run {}).isOk
+#guard !typedB [] heap bindings types expression
+#guard ((ValueSemantics.eval 100 [] none (Soundness.valueEnv bindings) expression).run { fuel := 100 }).isOk
+#guard !((InPlaceSemantics.eval 100 [] none (Soundness.heapEnv bindings) expression).run { fuel := 100, heap }).isOk
+
+end Ownership.Falsify.DeadSourceRegression
+
+namespace Ownership.Falsify.NestedClassRegression
+
+/-- The inner code is correct but its once marker is missing. An outer
+    once marker formerly hid this from `HonestClosures`; the captured write
+    could then evade the caller's demand. Honesty now descends into captures. -/
+def cell : Abstract := .list [.site [99] 0] .scalar true
+def inner : Abstract := .function [] [(3, [cell])]
+def outer : Abstract := .function [.site [100] 0] [(11, [inner])]
+def heap : Array (List InPlaceSemantics.Value) := #[[.int 1]]
+def concrete : InPlaceSemantics.Value := .closure 11 [.closure 3 [.ref 0]]
+def observed : Observation := .closure 11 [.closure 3 [.list [.int 1]]]
+def bindings : Bindings := [(0, observed, concrete), (1, .list [.int 1], .ref 0)]
+def abstractEnv : Env Abstract := [(0, outer), (1, cell)]
+def naming : FNaming := [(0, [.site [99] 0])]
+def expression : Expr := .letE 2 (.app (.var 0) [.int 9]) (.prim .record [.var 1, .var 2])
+
+#guard (describesB naming heap outer concrete).isNone
+#guard typedB decls heap bindings [(0, fIL), (1, Generator.tL)] expression
+#guard !honestB decls outer
+
+end Ownership.Falsify.NestedClassRegression

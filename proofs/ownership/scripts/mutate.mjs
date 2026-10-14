@@ -105,8 +105,8 @@ export const mutants = {
   // Undo the once-through-call fixes: both demands (nofix1, as oncethroughcall),
   // or only the written-captures demand (nofix2).
   nofix1: ["Checker.lean", "        if count ≥ 1 && !roots.isEmpty && !ctx.config.has .onceThroughCall then", "        if false then"],
-  nofix2: ["Checker.lean", "              if let .capture .. := w then\n                demand ctx.config (instantiateOrigin site [] fcaps w)",
-    "              if let .capture .. := w then\n                if false then demand ctx.config (instantiateOrigin site [] fcaps w)"],
+  nofix2: ["Checker.lean", "      if let .capture .. := w then\n        demand ctx.config (instantiateOrigin site [] caps w)",
+    "      if let .capture .. := w then\n        if false then demand ctx.config (instantiateOrigin site [] caps w)"],
   // An interpreter hole: the in-place interpreter copies where it should
   // write (it allocates a new array for every set, push and focus write-back).
   hiddencopy: ["Semantics.lean", "  if !(old == xs) then countWrite\n  write c xs", "  if !(old == xs) then countWrite\n  alloc xs"],

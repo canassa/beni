@@ -1,0 +1,12 @@
+none
+true
+Except.ok (Ownership.Ty.record [Ownership.Ty.list (Ownership.Ty.int), Ownership.Ty.list (Ownership.Ty.int)])
+Except.ok (Ownership.Abstract.record
+  [Ownership.Abstract.list [Ownership.Origin.site [99] 0] (Ownership.Abstract.scalar) true,
+   Ownership.Abstract.list [Ownership.Origin.site [99] 0] (Ownership.Abstract.scalar) true])
+Except.ok (Ownership.Observation.record
+  [Ownership.Observation.list [Ownership.Observation.int 1],
+   Ownership.Observation.list [Ownership.Observation.int 1, Ownership.Observation.int 9]])
+Except.ok (Except.ok (Ownership.Observation.record
+   [Ownership.Observation.list [Ownership.Observation.int 1, Ownership.Observation.int 9],
+    Ownership.Observation.list [Ownership.Observation.int 1, Ownership.Observation.int 9]]))

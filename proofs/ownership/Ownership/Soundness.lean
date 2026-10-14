@@ -523,6 +523,20 @@ theorem invariant_observations (h : Invariant vs hs env live aenv escapes γ) :
 def valueEnv (env : List (Var × Observation × Value)) : Env Observation := env.map fun (x, o, _) => (x, o)
 def heapEnv (env : List (Var × Observation × Value)) : Env Value := env.map fun (x, _, w) => (x, w)
 
+/-- Function descriptions nested anywhere in an abstract value. Captures
+    matter as well as fields and elements: an outer once closure must not
+    hide a writing inner closure falsely marked as many. -/
+inductive ContainsFunction : Abstract → List Origin → List (Nat × List Abstract) → Prop where
+  | here (roots : List Origin) (alts : List (Nat × List Abstract)) :
+      ContainsFunction (.function roots alts) roots alts
+  | record {xs : List Abstract} {a : Abstract} {roots : List Origin} {alts : List (Nat × List Abstract)} :
+      a ∈ xs → ContainsFunction a roots alts → ContainsFunction (.record xs) roots alts
+  | list {cs : List Origin} {a : Abstract} {ex : Bool} {roots : List Origin} {alts : List (Nat × List Abstract)} :
+      ContainsFunction a roots alts → ContainsFunction (.list cs a ex) roots alts
+  | capture {cs : List Origin} {xs : List (Nat × List Abstract)} {id : Nat} {caps : List Abstract}
+      {a : Abstract} {roots : List Origin} {alts : List (Nat × List Abstract)} :
+      (id, caps) ∈ xs → a ∈ caps → ContainsFunction a roots alts → ContainsFunction (.function cs xs) roots alts
+
 /-- Every function value `a` describes as not once (no roots) is one the
     checker itself would create as not once: re-creating the closure from its
     abstract captures, in an empty context, gives no roots either. A closure
@@ -530,7 +544,7 @@ def heapEnv (env : List (Var × Observation × Value)) : Env Value := env.map fu
     the once roots that make a call consume it; a description that drops them
     describes a closure the checker would never have built so. -/
 def HonestClosures (decls : List Decl) (a : Abstract) : Prop :=
-  ∀ q roots alts, a.atPath q = .function roots alts → roots = [] →
+  ∀ roots alts, ContainsFunction a roots alts → roots = [] →
     ∀ id caps, (id, caps) ∈ alts → ∃ r st,
       (inferExpr ({} : Config).inferenceFuel { declarations := decls, config := {} }
         (caps.zipIdx.map fun (c, i) => (i, c)) (.closure id ((List.range caps.length).map .var)) [] []).run {} =
@@ -559,12 +573,19 @@ decreasing_by
 /-- The declaration the type checker checks a main expression as. -/
 def mainDecl (e : Expr) : Decl := { name := "main", parameters := [], result := .int, body := e }
 
-/-- `e` is ordinarily typed in a typing of the environment that its values
-    have. The checker's abstract domain assumes it: a branch whose arms have
-    different shapes joins to an unknown list with no element cells. -/
-def WellTyped (ds : List Decl) (env : List (Var × Observation × Value)) (e : Expr) : Prop :=
+/-- An actual heap value has its declared type under a finite, complete
+    expansion. This allows stale contents while excluding malformed shapes
+    and dangling references, including in dead `close` sources. -/
+def ValueTyped (ds : List Decl) (heap : Heap) (w : Value) (u : Ty) : Prop :=
+  ∃ n o fp, Represents heap n w o fp ∧ obsTyped ds o u = true
+
+/-- Both observations and actual heap values have the environment's types.
+    Live correspondence alone is insufficient because `close` reads its
+    source without making it live. -/
+def WellTyped (ds : List Decl) (heap : Heap) (env : List (Var × Observation × Value)) (e : Expr) : Prop :=
   ∃ tenv t, exprType ds (mainDecl e) tenv e = .ok t ∧
-    ∀ x o w u, env.lookup x = some (o, w) → tenv.lookup x = some u → obsTyped ds o u = true
+    ∀ x o w u, env.lookup x = some (o, w) → tenv.lookup x = some u →
+      obsTyped ds o u = true ∧ ValueTyped ds heap w u
 
 theorem typesOf_of_typecheck (p : Program) (h : typecheck p = .ok t) : typesOf p = .ok t := by
   unfold typecheck at h
@@ -621,7 +642,7 @@ theorem invariant_preserved (p : Program) (a : Accepted) (ok : check p = .ok a)
     (vs : ValueSemantics.State) (hs : InPlaceSemantics.State)
     (h : Invariant vs hs env (union (uses e) after) aenv st.facts.escapes γ)
     (honest : ∀ x a, aenv.lookup x = some a → HonestClosures p.declarations a)
-    (typed : WellTyped p.declarations env e)
+    (typed : WellTyped p.declarations hs.heap env e)
     (covered : ∀ x q, (x, q) ∈ union (uses e) after → ∀ o w, env.lookup x = some (o, w) →
       (aenv.lookup x).isSome = true) :
     (∀ v vs', (ValueSemantics.eval fuel p.declarations none (valueEnv env) e).run vs = .ok (v, vs') →
@@ -648,8 +669,8 @@ theorem check_accepts_main (p : Program) (a : Accepted) (ok : check p = .ok a) :
       simp only [pure, Except.pure, Except.ok.injEq] at ok
       exact ⟨r, st', hrun, by rw [← ok]⟩
 
-theorem check_typed (p : Program) (a : Accepted) (ok : check p = .ok a) :
-    WellTyped p.declarations [] p.main := by
+theorem check_typed (p : Program) (a : Accepted) (ok : check p = .ok a) (heap : Heap := #[]) :
+    WellTyped p.declarations heap [] p.main := by
   unfold check at ok
   simp only [default_refuses_shadowing, Bool.false_eq_true, if_false] at ok
   cases ht : typecheck p with

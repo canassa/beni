@@ -1,0 +1,10 @@
+none
+true
+true
+true
+Except.ok (Ownership.Abstract.list
+  [Ownership.Origin.site [0] 0, Ownership.Origin.site [1] 0]
+  (Ownership.Abstract.bottom)
+  true)
+Except.ok (Ownership.Observation.list [])
+Except.error "in-place primitive shape"

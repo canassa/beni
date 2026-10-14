@@ -156,8 +156,8 @@ def main (args : List String) : IO UInt32 := do
     IO.println s!"generator catches every required control within {budget} trials: {caught}"
     if !caught then return 1
     -- Every program of the enumeration grammar up to the bound (Enumerate.lean):
-    -- no accepted one may disagree. Bound 2 (53 597 programs) takes seconds;
-    -- bound 3 (13 108 299) about 25 min on 8 cores and is scripts/campaigns.sh's.
+    -- no accepted one may disagree. Bound 2 has 55 966 programs;
+    -- bound 3 has 20 965 567 and is scripts/campaigns.sh's larger campaign.
     let bound := (flagValue args "enumerate-bound").bind String.toNat? |>.getD 2
     let (ok, _) ← Enumerate.run bound
     return (if ok then 0 else 1)

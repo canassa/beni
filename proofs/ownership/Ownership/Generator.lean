@@ -145,12 +145,14 @@ def decls : List Decl := [
   { name := "mkNested", parameters := [tL], result := fIL,
     body := .letE 1 (.closure capGet [v 0]) (.closure 32 [v 1]) },
   { name := "choose", parameters := [.int, tL, fIL], result := fIL,
-    body := .branch (v 0) (.closure capGet [v 1]) (.atom (v 2)) }]
+    body := .branch (v 0) (.closure capGet [v 1]) (.atom (v 2)) },
+  { name := "invokeIL", parameters := [fIL], result := tL, body := .app (v 0) [.int 9] }]
 
 def capApply := 32
 def readCall := 33
 def mkNested := 34
 def chooseFn := 35
+def invokeIL := 36
 
 abbrev Env := List (Atom × Ty)
 
@@ -861,6 +863,17 @@ def publishVia : Move := fun next env => do
     (.closure publish [], fLL), (.app (v (next + 2)) [v (next + 4), v (next + 5)], tN),
     (.prim .push [v next, ← number env], tL)]
 
+/-- A callee calls an outer closure which calls its captured once closure;
+    `close` revives the leaf array before the call, and a length afterwards
+    observes it. The captured writes must be demanded transitively. -/
+def nestedOnceCallee : Move := fun next _ => do
+  let n := Atom.int (Int.ofNat (1 + (← draw 4)))
+  pure [(.prim (.literal .int) [n], tL), (.closure capPush [v next], fIL),
+    (.closure capApply [v (next + 1)], fIL), (.prim (.builder .int) [], .builder .int),
+    (.prim .put [v (next + 3), n], .builder .int), (.prim .close [v (next + 4), v next], tL),
+    (.closure invokeIL [], .fn [fIL] tL), (.app (v (next + 6)) [v (next + 2)], tL),
+    (.prim .length [v (next + 5)], .int)]
+
 /-- Two fresh rows in a nested list, one list `set` into both slots (or two
     different lists), then `map bump` or `map identL` over it: if both slots
     hold one array, map pushes it twice (fifth review, P4). -/
@@ -949,7 +962,8 @@ def movesFor (table : Table) : List (String × Move) :=
     ("once-in-loop", onceInLoop), ("shared-closure-record", sharedClosureRecord),
     ("loop-picks-element", loopPicksElement), ("publish-via", publishVia),
     ("set-both", setBoth), ("once-beside", onceBeside), ("nested-closure", nestedClosure),
-    ("factory-nested", factoryNested), ("choose-closure", chooseClosure)] ++ gen
+    ("factory-nested", factoryNested), ("choose-closure", chooseClosure),
+    ("nested-once-callee", nestedOnceCallee)] ++ gen
 
 /-- The environment of a body: parameters and captures, and a fresh list
     bound first at their count (so every list move has an operand). -/
