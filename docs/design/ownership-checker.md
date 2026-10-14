@@ -2567,6 +2567,7 @@ hole rather than adding precision.
 | The entry protocol, its rows and `init` (§20, §22) | `entryCall` | the runtime keeping or reading the model the direct row hands over |
 | Owned sends and navigation commands (§23) | `send_class`, `checkSender` | a payload read after the send gave it up |
 | `Dict.focus`'s destructive read (§20.8) | `assertDictFocus` | two positions of a tree holding one value, both written |
+| Unseen tagger captures are conditionally cell-free (2026-10-14 amendment) | callback `need` checks and inferred self-separation requirements | a retained list donated as owned because callback calls were unseen; interpreting a captured callback result's self-separation as fresh-across-calls instead of requiring an empty capture |
 | Constructor callbacks carried as zero-capture classes (2026-10-14 amendment) | §23.5's constructor row propagated through helper arguments and opaque slots | a constructor argument omitted from the result would hide a list the constructed message retains |
 | Markup render/event opaque slots (2026-10-14 amendment) | markup transfer, row/tagger result instantiation, entry view-message projection | a rendered list incorrectly omitted from general alias checks; a handler capture or fresh message result incorrectly classified as render-only; an unknown/capped value incorrectly treated as having no event slot |
 | Fold accumulator container invariant (2026-10-14 amendment) | callback result instantiation and container conditions | a shared start, escaped accumulator or duplicated result position incorrectly treated as owned across iterations; confusing a container proof with deep ownership of opaque descendants would permit nested alias writes |
@@ -3237,3 +3238,44 @@ Their result retains each potentially list-bearing argument under its own
 constructor argument step; they neither read captures nor allocate an unknown
 list. Treating a list-bearing argument as crossing would be unsound, so the
 row retains the existing `holdsList` test and unresolved types stay tracked.
+
+**Unseen taggers.** A callee's `need` holds even when `seen` is false. The
+previous lambda branch skipped it; a lambda returning a global shared list
+could consequently send that list as owned. The finer render projection must
+not expose that hole. Every such tagger now checks its returned provenance.
+
+A generic helper such as Page.slowThreshold captures its `passed` message.
+A returned capture cannot be owned while the tagger keeps it. When its cells
+are symbolic arrivals of the declaration or enclosing frame, the helper may
+therefore publish the conditional requirement that these captures contain no
+tracked cell. This is encoded by the existing separation atom `sep π π`:
+instantiation over two empty abstract values succeeds; a nonempty arrival
+shares with itself and fails. Only parameter/environment arrivals may use
+this encoding, never callback-result arrivals: `sep cb cb` has the different
+fresh-across-calls meaning of §18.2. Concrete retained cells, shared values,
+unknown results and failed requirements remain rejected. After excluding only
+captures proven empty by these requirements, the usual returns-owned proof
+checks every remaining result position and supply.
+
+Thus the generic helper checks for a scalar message, without accepting a list
+kept by its tagger. This does not confer an owned or once permission on a
+callback. Lambda taggers retaining global lists, and helpers supplied a
+list-bearing message, have rejected twins; scalar-message uses remain valid.
+
+When a tagger returns the enclosing declaration's callback result (§18.9),
+its owned-result obligation is published as that callback parameter's `need`,
+using the existing supply/call facts. It is not rejected before its callers
+are known, and it is not assumed owned: each caller must satisfy the normal
+returns-owned check. The requirement conservatively covers the whole callback
+result even when the tagger forwards only a projection. Keyboard.downs'
+Browser.Events callback is this generic forwarding shape; its actual scalar
+message constructors satisfy the requirement.
+
+A concrete callback result whose solved type holds no List needs no owned
+result proof: there is no tracked cell to donate. This uses the existing
+recursive holdsList test, including opaque types, function captures and type
+parameters. Unresolved result types remain tracked. This keeps specialized
+identity taggers on Int and String valid. A work function stored inside a
+traversal callback remains the existing §24.9 slot-inside-lambda limit: its
+result ownership cannot yet be propagated, so HttpFailures remains pending
+with an approximate tagger-result diagnostic after the unseen check is closed.
