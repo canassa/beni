@@ -309,7 +309,9 @@ zig build --list-steps
 Options: `-Dtest-filter=<text>` (tests whose name contains it),
 `-Dcorpus=<text>` (corpus fixtures whose path contains it; matching nothing
 fails), `zig build test-blackbox-<file>` (one black-box file), `-Dllvm` (see
-below), `-Dtest-budget=<millions>` (profiling only). `gates` refuses the filters.
+below), `-Dtest-budget=<millions>` (profiling only). `gates` refuses the filters,
+and it refuses to run on a host that cannot count the budget (*Every test has a
+budget*, below).
 
 **Running the tests.** `zig build gates` takes about 6 s with nothing changed
 and 10 s after an edit under `src/` (quiet machine), so run it whenever you
