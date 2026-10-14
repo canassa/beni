@@ -3184,6 +3184,10 @@ A body that wants progress passes a tracker that sends: `tracker = Just λp -> s
 — the progress messages and the answer leave one body in order, so there is no `track`
 subscription and no tracker string to match.
 
+*Amended 2026-10-14 (§9.8.19):* the direct form keeps its tracker function. The command forms
+`Http.send` and `Http.riskySend` take elm/http 2.0's `tracker : Maybe String`, and the subscription
+`Http.track` hears it. A body that calls `request` itself still passes a function.
+
 **(b) What a request does, in order.** Steps 1–5 run in the calling fiber before anything is sent,
 and each failure is decided by a test of the value, not by catching what the host throws, so every
 one is named precisely and nothing is caught to find it (rule 9):
@@ -3319,7 +3323,9 @@ the `Http` + `Time` page of §9.8.9.
   `task`/`Resolver`/`stringResolver` and its `request`/`Expect`/`expectStringResponse` are one pair
   here: `Expect x a` is Elm's `Resolver x a` under `Expect`'s names (H1). The command form is
   `Cmd.task` over it, and Elm's `tracker` string with `cancel` and `track` is a `Cmd.keyed` key, a
-  `Cmd.cancel`, and a tracker function that sends.
+  `Cmd.cancel`, and a tracker function that sends. *(Amended 2026-10-14: the command forms `send`
+  and `riskySend` take Elm's `tracker` string, and `track` is a subscription, §9.8.19; `cancel`
+  is still a key.)*
 - **`expectJson` and `jsonBody` take a schema** (`schema.md`), not a `Json.Decode.Decoder` or a
   `Json.Encode.Value`: schemas are beni's JSON story, and one schema reads the answer and writes the
   request.
@@ -4215,6 +4221,12 @@ function of its arguments that never waits, so each command is `Now` (§9.8.11 (
 which is `Perform`. Elm has no storage or log commands — a port is its answer — so there is no name to
 mirror but elm/http's.
 
+*Amended 2026-10-14 (§9.8.19; `plans/queue.md` row 82):* `send`'s record has elm/http 2.0's
+`tracker : Maybe String`, and `Http.track` is the subscription that hears it. `riskySend` is `send`
+with `credentials: "include"`. A program that tracks progress or sends cookies to another origin no
+longer writes a body over `request` or `riskyRequest`. A `send` written before this amendment adds
+`tracker = Nothing`.
+
 **(c) The inventory: every constructor that takes a function, and why it stays.** Each constructor of
 `browser`, `browser-tea`, `browser-direct` and core that makes a `Cmd`, a `Sub` or a body:
 
@@ -4230,6 +4242,9 @@ mirror but elm/http's.
 | `Navigation.pushUrl`, `replaceUrl`, `back`, `forward`, `load`, `reload` | values | **new**, §9.8.17 (b): commands over the direct forms |
 | `Storage.save`, `Http.send`, `Log.write` | values | **new**, (b) |
 | `core/Task`'s `spawn`, `scope`, `bracket`, … | functions | not commands: the fiber runtime a body uses |
+
+*Amended 2026-10-14 (§9.8.19):* `Http.riskySend` takes values, as `send` does, and joins the row of
+(b). `Http.track` takes a name and a tag, and joins the row of subscriptions that stay.
 
 No capability is removed: every closure-taking constructor stays, and the three new ones are wrappers a
 program could have written as a body. **A closure that stays cannot keep a model list unnoticed**: the
@@ -4423,6 +4438,130 @@ by a byte, and a page subscribing to `onResize` is byte-identical to before — 
 type of their own, so their tags stay out of `Key`'s table; the `frames` page (a `Tea.element` on
 `onAnimationFrameDelta`) is 3 451 bytes and reaches no fiber, about 65 more than the same page on
 `onResize`, the rest being the listener machinery every `Sub.on` page shares.
+
+#### 9.8.19 Tracked and risky commands: `Http.track` and `Http.riskySend` (2026-10-14)
+
+*Added 2026-10-14.* It closes `plans/queue.md` row 82 (GitHub issue #92) and `ownership-checker.md`
+§22.7 item 3. This section is normative for `browser`'s `Http.send`, `Http.riskySend` and
+`Http.track`. It amends §9.8.12 (a) and its *Where this departs* list, and §9.8.16 (b) and (c), only
+where it says so. The model is elm/http 2.0's `request`, `riskyRequest` and `track` (`Http.elm` and
+`Elm/Kernel/Http.js` at `2.0.0`). (f) lists each departure.
+
+**(a) The API.**
+
+```elm
+pub send :
+      { method : String
+      , headers : List Header
+      , url : String
+      , body : Body
+      , expect : Expect x a
+      , timeout : Maybe Duration
+      , tracker : Maybe String
+      }
+    , (Result x a → msg)
+    → Cmd msg
+pub riskySend : <the same record>, (Result x a → msg) → Cmd msg
+pub track : String, (Progress → msg) → Sub msg
+```
+
+`send`'s record is elm/http 2.0's `request` record: it gains `tracker`. A program that wrote `send`
+before this section adds `tracker = Nothing`. `riskySend` is `send` with `credentials: "include"`, as
+`riskyRequest` is `request` with it (§9.8.12 (b) step 6). Both are `Cmd.task` over the direct form, so
+both are `Perform` (§9.8.11 (b)), and both take values (§9.8.16 (b)).
+
+**(b) What a tracker name does.** With `tracker = Just name`, the request reports its progress to
+the page's `track` subscriptions of `name`. The values and their order are §9.8.12 (e)'s: `Sending`
+with nothing sent, `Sending` with all of it once the answer's headers arrive, then `Receiving` before
+the body and after each chunk. Each `Http.track name tag` subscription that is live when a value is
+reported turns the value into a message through `tag`. With `tracker = Nothing`, the request reports
+nothing and reads its body as text at once, as before.
+
+- **`track` is a `Sub.on` listener** (§9.8.5's amendment), keyed by the name. Declarations of one
+  name share one listener, and each declaration's tagger gets each value, in declaration order
+  (§9.8.5). A program that declares no `track` adds no listener.
+- **The page keeps one table.** For each name, the table holds the listeners of the live `track`
+  subscriptions, in the order they were added. A listener is added when its key arrives (§9.8.5
+  point 1) and is removed when its key leaves (point 3). A name with no listener is not in the table.
+- **A request reports each value to the listeners of its name at that moment.** A value with no
+  listener is dropped. Nothing is kept for a listener that arrives later, as in Elm, whose effect
+  manager forwards a progress event to the subscriptions it has when the event arrives.
+- The table is the page's, as the frame clock of §9.8.18 (b) is. (f) gives the consequence for a
+  page with several programs.
+
+**(c) The order: every value before the answer, and nothing lost to the same `update`.** A tracked
+command keeps the order the direct form's tracker function has, where each `Progress` reaches
+`update` before the answer. Two waits do it:
+
+1. **Before the request starts**, a tracked command waits for the after-render phase of the flush the
+   page has queued, as `Dom.rendered` waits (§9.8.6). Then it yields once (`Task.yieldNow`). That
+   flush settles the subscriptions of the `update` that made the command. The work that adds their
+   listeners (§9.8.5 point 1) is then ahead of the command in the ready queue. So a `track` that the
+   same `update` declares hears the first `Sending`. Both orders occur without the wait. A click's
+   `update` renders before its bodies first run (§9.8.4 rule 4), but the listener is added by queued
+   work behind the body. An `update` in a drain (the message of another body) renders when the drain
+   ends, after the new body has run. In both cases the first `Sending` finds no listener.
+2. **After the answer is read**, a tracked command yields once (`Task.yieldNow`), and then it sends
+   the answer. A listener delivers its values through queued work (§9.8.5 point 2), so the last
+   `Receiving` is still queued when the body has the answer. The yield puts the body behind that
+   delivery.
+
+An untracked `send` or `riskySend` does not wait, and its first run and its answer stay where they
+were. A tracked command waits on a page that has no `track` of its name too: what the table holds can
+change during the wait, so the command does not read it first.
+
+**(d) Failures.** The tracker adds no failure. The request fails as §9.8.12 (b) and (c) say. The
+answer of a failed request also comes after every value the request reported. `Map` and `Set`, which
+hold the table, document no failure for the operations the table uses. A tagger that throws is a
+defect, by §9.8.5 point 4's path, and nothing catches it (`CLAUDE.md` rule 9).
+
+**(e) Rungs and cost.** `send` and `riskySend` suspend, as before; `track` is pure. A program that
+calls neither `track` nor a `send` with a tracker name ships none of this section's code: the table,
+the waits and the chunked read are reached only from a `Just` name or from `track`. The table is
+made by the first listener, so a page that never tracks makes none. A value crosses into the table
+at a type variable, so tracking pins no tag of `Progress` or `Maybe` (§4, *What JavaScript may read
+of a beni value*).
+
+**(f) Where this departs from elm/http 2.0, and why.**
+
+- **One table for the page, not one for each program.** Elm keeps the tracker table in its effect
+  manager, and each `Elm.Main.init` has its own manager. In beni, `Http` sits below every
+  architecture (`browser-tea`, `browser-direct`, any `Browser.hosted` program), and a command body
+  has no handle on the program that runs it. A table for each program makes every architecture hand
+  its program to every body and every listener: a new obligation, and a cost on every command of
+  every program. So two programs on one page (`Browser.programs`) that track one name hear each
+  other's requests. A page that mounts one program twice gives each mount its own tracker names. A
+  table for each program is an additive change, if the owner decides on one.
+- **No `Http.cancel`.** In elm/http 2.0 the tracker name also cancels the request. In beni,
+  cancellation belongs to the fiber (§9.8.12 (d)): a keyed body over `request` and `Cmd.cancel`
+  cancel it. `send` stays unkeyed, so nothing cancels a `send` but the program's end. A later
+  `cancel` can key a tracked `send` by its name, with the `Concurrent` policy, if a program needs one.
+- **The command keeps elm/http 1.0's name `send`** (§9.8.16 (b)), and its risky form is `riskySend`.
+  The direct forms already have elm/http 2.0's names `request` and `riskyRequest` (§9.8.12 (a)).
+- **`track` has no direct form** (§9.8.11 (a)). The direct form of tracking is `request`'s tracker
+  function. A fiber that hears the progress of another body's command can be added as `Listen.each`
+  over the same listener, when a program needs it.
+- **The values are §9.8.12 (e)'s.** `fetch` reports no upload progress, so `Sending` is coarse.
+
+**(g) The proof.** `browser/tea/HttpTrack` pins (b) and (c): a subscription that the click's
+`update` declares, a subscription that an answer's `update` declares (in a drain), two declarations
+of one name, a name that hears nothing, an untracked `send`, a name with no subscription, and a failed
+request. Each value comes before its answer, a 204's too, whose null body leaves no wait between
+the last value and the answer. The page runs as a development, a release and a `--fiber-page` build
+against one golden. `browser/tea/HttpRequestShape` pins (a)'s credentials: `send` sends
+`same-origin` and `riskySend` sends `include`.
+
+*As built, 2026-10-14* (`platforms/browser/Http.beni`, beni over `Js` with no `foreign`), as
+specified. **Each wait is pinned**: with one taken out, `HttpTrack` fails. Without the render wait,
+`#chain`'s first `Sending` is lost; without the first yield, `#upload`'s; without both, both; and
+without the last yield, the 204's last two values come after its answer. **Measured** (`--release`,
+brotli 11, the whole output): `browser/tea/ValueCommands`, whose `send` has no tracker, 16 986 →
+16 992 bytes raw and 6 437 → 6 457 brotli — the same code in another module order, and one dead
+6-byte binding the release optimiser leaves where it folds the untracked arm. The same page with
+`tracker = Just "post"` and an `Http.track` subscription is 20 989 raw and 7 811 brotli: the listener
+machinery every `Sub.on` page shares, the chunked read, the table and the waits. Its `Maybe` keeps
+integer tags. No page of `bench/size.mjs --pages-only` moved by a byte, dev or release, `browser-tea
+http` and `ApiAndRoutes` among them.
 
 ### 9.9 SVG in the `html` vocabulary (2026-10-12)
 
