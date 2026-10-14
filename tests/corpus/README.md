@@ -469,16 +469,20 @@ bytes are what is tested.
 
 Every corpus case is held to the gates' instruction budget (CLAUDE.md, *Every test has a
 budget*), its own and its children's instructions. A case over it is made smaller, split or
-removed. The owner may grant a **large program** its own budget, case by case: a `.budget` file
+removed. The owner may grant a case its own budget, case by case: a **large program**, or a case
+whose cost comes from a **compiler defect with an open issue**, until the case fits 4 300M. The
+grant is a `.budget` file
 (`_expected.budget` in a project) whose first word is the limit in millions of instructions and
-whose rest says why and when it can go. A file without a reason fails the case. Granted so far:
+whose rest says why and when it can go. A file without a reason fails the case. The file sets
+the budget of the page case only: a `browser/direct/` page's `[value fuzz]` case keeps the
+gates' budget, since a grant names the case it was asked for. Granted so far:
 `browser/tea/ConduitReader`, `ConduitEditor` and `ConduitTour` (12 000M, 2026-10-08): the
 RealWorld app, whose release build alone is ~5 800M because of the release optimiser's
-`specialise` phase (research 62 §1.3). `browser/direct/HttpJson` (8 500M) and `HttpJsonBody`
-(8 800M) (2026-10-14, issue #101): small pages, but a `browser/direct/` page is four builds in one
-case, and `Http.expectJson` and `Http.jsonBody` reach the `core/Schema` library interpreter, which
-`specialise` processes in both release builds (issue #105). Their limits are sized for a baseline
-x86-64 build with Node running the pages, and shrink once PR #104 counts on one reference CPU.
+`specialise` phase (research 62 §1.3). `browser/direct/HttpJson` (6 300M) and `HttpJsonBody`
+(6 400M) (2026-10-14, issue #101), for the compiler defect #105: a `browser/direct/` page is four
+builds in one case, and `Http.expectJson` and `Http.jsonBody` reach the `core/Schema` library
+interpreter, which `specialise` processes in both release builds. Their limits are the count with
+Node running the pages plus 10%.
 
 A project may also take its modules from outside the corpus: `_expected.sources` holds a
 repo-relative directory whose `.beni` files are the program, so several scripts can drive one

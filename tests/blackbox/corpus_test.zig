@@ -1347,10 +1347,15 @@ const Case = struct {
 
     /// The case's own budget in millions of instructions, from its
     /// `.budget` file (`_expected.budget` in a project), or null for the
-    /// global one. The owner grants these one by one for large programs
+    /// global one. The owner grants these one by one, for large programs
+    /// and for cases whose cost is a compiler defect with an open issue
     /// (`tests/corpus/README.md`, *Budgets*): the file's first word is the
     /// limit, and the rest of it must say why, so none is added silently.
+    /// It is the page case's: a `browser/direct/` page's value-fuzz case
+    /// (`Fixture.values`) keeps the global budget, since a grant names the
+    /// case it was asked for.
     fn ownBudget(c: Case) !?u64 {
+        if (c.fixture.values) return null;
         if (!c.goldenExists("budget")) return null;
         const text = try Io.Dir.cwd().readFileAlloc(testing.io, try c.goldenPath("budget"), c.arena, .limited(4096));
         var words = std.mem.tokenizeAny(u8, text, " \t\r\n");
