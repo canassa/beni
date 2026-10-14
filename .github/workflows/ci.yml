@@ -1,0 +1,97 @@
+# The tests of the gates (CLAUDE.md rule 4) on every pull request and every
+# push to master, with the Zig and Node that flake.nix pins, so CI and every
+# developer run the same toolchain.
+#
+# CI does not hold the tests to the instruction budget: `-Dtest-budget=0`,
+# the owner's decision of 2026-10-14. The budget stays a local gate,
+# `zig build gates` on an x86-64 Linux host that can count instructions. A
+# GitHub-hosted x86-64 runner cannot: it has no hardware instruction counter,
+# and `perf_event_open` gives ENOENT there, also as root. Its CPU-time
+# fallback failed 3, 55 and 56 tests and cases of one master commit on three
+# runs, and the run with 3 passed both cases that the instruction count fails.
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [master]
+
+permissions: {}
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  # A newer push to a pull request replaces its older run; every push to
+  # master keeps its own verdict.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  tests:
+    name: tests (no budget)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
+        with:
+          diagnostic-endpoint: ""
+
+      # The dev shell's closure: Node 24, the stdenv, and Zig 0.17.0, which
+      # comes from ziglang.org and not from a binary cache. With the store
+      # restored, a run does not download Zig again. The key changes only
+      # with the flake.
+      - name: restore the Nix store
+        id: nix-cache
+        uses: nix-community/cache-nix-action/restore@7df957e333c1e5da7721f60227dbba6d06080569 # v7
+        with:
+          primary-key: nix-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.nix', 'flake.lock') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: dev shell
+        run: nix develop --command true
+
+      # Zig's local and global caches, from master's newest build.
+      - name: restore the Zig caches
+        id: zig-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            .zig-cache
+            ~/.cache/zig
+          key: zig-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock') }}-${{ github.sha }}
+          restore-keys: zig-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock') }}-
+
+      # Zig never prunes its cache, and each run adds to the restored one.
+      # Past 3 GiB, start this run from nothing, so a saved entry stays
+      # near one cold build (1.6 GiB, 273 MiB compressed).
+      - name: bound the Zig caches
+        run: |
+          du -sh .zig-cache ~/.cache/zig 2>/dev/null || true
+          if [ "$(du -sc .zig-cache ~/.cache/zig 2>/dev/null | tail -1 | cut -f1)" -gt $((3 * 1024 * 1024)) ]; then
+            echo "Zig caches over 3 GiB: removed"
+            rm -rf .zig-cache ~/.cache/zig
+          fi
+
+      - name: zig build test test-blackbox fmt-check beni-fmt-check
+        run: nix develop --command zig build test test-blackbox fmt-check beni-fmt-check -Dtest-budget=0
+
+      # Only a push to master saves, also when a test fails, so every pull
+      # request starts from master's newest build and none of them evicts it.
+      - name: save the Nix store
+        if: ${{ !cancelled() && github.event_name == 'push' && steps.nix-cache.outputs.hit-primary-key != 'true' }}
+        uses: nix-community/cache-nix-action/save@7df957e333c1e5da7721f60227dbba6d06080569 # v7
+        with:
+          primary-key: nix-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.nix', 'flake.lock') }}
+
+      - name: save the Zig caches
+        if: ${{ !cancelled() && github.event_name == 'push' && steps.zig-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            .zig-cache
+            ~/.cache/zig
+          key: zig-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock') }}-${{ github.sha }}
