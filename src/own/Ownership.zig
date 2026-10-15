@@ -492,6 +492,8 @@ ctor_ids: std.AutoHashMapUnmanaged(u64, u32) = .empty,
 /// Per module: the summary of each declaration, allocated on first use.
 slots: []?[]Slot = &.{},
 groups: []?Groups = &.{},
+/// Saturated reference counts, allocated once per application module.
+private_reads: []?[]u8 = &.{},
 /// Per module: whether the run reports on it.
 report_for: []bool = &.{},
 builder_id: ?TypeId = null,
@@ -548,6 +550,7 @@ pub fn deinit(o: *Ownership) void {
     for (&o.walk_arenas) |*a| if (a.*) |*x| x.deinit();
     o.in.gpa.free(o.slots);
     o.in.gpa.free(o.groups);
+    o.in.gpa.free(o.private_reads);
     o.in.gpa.free(o.report_for);
     o.in.gpa.free(o.decoded);
     o.in.gpa.free(o.block_state);
@@ -557,6 +560,8 @@ pub fn deinit(o: *Ownership) void {
 /// The report for `targets`, in their order.
 pub fn run(o: *Ownership, targets: []const u32) Allocator.Error![]const ModuleReport {
     try o.seedPaths();
+    o.private_reads = try o.in.gpa.alloc(?[]u8, o.in.birs.len);
+    @memset(o.private_reads, null);
     const arena = o.out.allocator();
     o.report_for = try o.in.gpa.alloc(bool, o.in.birs.len);
     @memset(o.report_for, false);
@@ -4442,7 +4447,10 @@ const Walker = struct {
                 if (decl.kind == .foreign_value) return w.single(.{ .kind = .top, .a = 0 });
                 // What is shared is the cells the definition makes, and
                 // nothing else (thesis §3.10): `Dict.empty` makes none (T51).
-                if (try w.o.ensureSummary(t.m, t.d)) |s| return w.sharedOf(s, t, inst);
+                if (try w.o.ensureSummary(t.m, t.d)) |s| {
+                    if (try w.initializationTransfer(t, s)) return w.instRes(s, .{ .inst = inst, .s = s, .avs = &.{}, .depth = 0 });
+                    return w.sharedOf(s, t, inst);
+                }
                 return w.single(.{ .kind = .shared, .a = t.m, .b = t.d, .ty = w.instTypeOpt(inst) });
             },
             .ctor, .ext_ctor => return (try w.constructorValue(inst)) orelse &.{},
@@ -5311,6 +5319,29 @@ const Walker = struct {
         }
         try w.sight(f, .{ .pending = "it is called where the checker does not know which function runs" }, w.token(inst));
         return w.conservative(inst, args, f, callee, "", false);
+    }
+
+    /// A private binding's only read, executed once during module init
+    /// (ownership-checker.md, initialization-transfer amendment).
+    fn initializationTransfer(w: *Walker, t: Target, s: *const Summary) Allocator.Error!bool {
+        if (t.m != w.m or w.o.in.packages[w.m] != .app or w.frame != 0 or
+            w.decl.params != 0 or w.decl.kind != .value or w.recursive or
+            s.limit != .none or s.coarse) return false;
+        const source = w.bir.decls[t.d];
+        if (source.is_pub or source.params != 0 or source.kind != .value) return false;
+        for (s.res) |r| switch (r.prov.kind) {
+            .fresh, .esc, .shared => {},
+            else => return false,
+        };
+        if (w.o.private_reads[w.m] == null) {
+            const counts = try w.o.keep.allocator().alloc(u8, w.bir.decls.len);
+            @memset(counts, 0);
+            for (w.bir.insts.items(.tag), w.bir.insts.items(.data)) |tag, data| {
+                if (tag == .top) counts[data.lhs] = @min(counts[data.lhs] + 1, 2);
+            }
+            w.o.private_reads[w.m] = counts;
+        }
+        return w.o.private_reads[w.m].?[t.d] == 1;
     }
 
     /// A top-level value's cells, from its definition's summary: each cell

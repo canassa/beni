@@ -1,0 +1,2 @@
+-- CK-223: Sternhalma shares Board.init during setup and later games.
+-- The original application is loaded through _expected.sources without edits.

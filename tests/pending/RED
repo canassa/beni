@@ -111,3 +111,5 @@ tests/pending/browser/direct/DefectInTurnRender.beni PageFailed
 tests/pending/browser/direct/HttpFailures.beni dev: exit=1 codes=list_still_used×1
 
 # Lean bridge: confirmed by the in-place interpreter; checker fixes are deferred.
+# The unchanged external game really shares Board.init; initialization transfer only resolves centralHexagon.
+tests/pending/browser/direct/Sternhalma dev: exit=1 codes=top_level_list_changed×2

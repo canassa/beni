@@ -1,0 +1,18 @@
+module InitializationTransfer
+  12:17 ++ InitializationTransfer.seed: accepted call
+  16:28 List.push InitializationTransfer.consumed: rejected top-level: InitializationTransfer.consumed is a top-level value
+  24:19 ++ InitializationTransfer.twice: rejected top-level: InitializationTransfer.twice is a top-level value
+  36:30 ++ InitializationTransfer.deferredSeed: rejected top-level: InitializationTransfer.deferredSeed is a top-level value
+  44:25 ++ InitializationTransfer.publicSeed: rejected top-level: InitializationTransfer.publicSeed is a top-level value
+  56:7 List.push left: rejected alias: right holds it and is read at 56:5
+  68:14 List.push InitializationTransfer.wrapper.items: rejected top-level: InitializationTransfer.shared is a top-level value
+  82:7 List.push left: accepted call
+  93:15 List.push InitializationTransfer.escapedSeed: rejected escaped: it was given to JavaScript, or kept by a callee (approx)
+  101:18 List.push InitializationTransfer.functionSeed: rejected top-level: InitializationTransfer.functionSeed is a top-level value
+  summary destinationStillShared: res [*] shared(InitializationTransfer.consumed)[*], shared(InitializationTransfer.consumed)
+  summary functionRead: res shared(InitializationTransfer.functionSeed)
+  demands 10: accepted 2 (fresh 0, call 2, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 8
+total 10: accepted 2 (fresh 0, call 2, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 8
+cause escaped 1
+cause top-level 6
+cause alias 1
