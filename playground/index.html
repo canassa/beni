@@ -6,33 +6,34 @@
     <title>beni playground</title>
     <link rel="stylesheet" href="style.css">
     <!--
-      CodeMirror 6 from esm.sh, every package at an exact version
-      (docs/design/playground.md §4.2). The `*` form leaves each module's
-      own imports bare, so this map is the one place a package resolves:
-      each loads once, at the version written here.
+      CodeMirror 6, its 13 modules in the site's own `vendor/`
+      (docs/design/playground.md §4.2): each the ES module its npm package
+      ships, unmodified, at the version `vendor.sh` pins, checked against
+      `vendor/SHA256SUMS`. Each module's imports are bare, so this map is the
+      one place a package resolves, and each loads once.
     -->
     <script type="importmap">
       {
         "imports": {
-          "@codemirror/state": "https://esm.sh/*@codemirror/state@6.7.6",
-          "@codemirror/view": "https://esm.sh/*@codemirror/view@6.43.13",
-          "@codemirror/language": "https://esm.sh/*@codemirror/language@6.12.4",
-          "@codemirror/commands": "https://esm.sh/*@codemirror/commands@6.11.1",
-          "@codemirror/lint": "https://esm.sh/*@codemirror/lint@6.9.7",
-          "@codemirror/autocomplete": "https://esm.sh/*@codemirror/autocomplete@6.20.3",
-          "@codemirror/search": "https://esm.sh/*@codemirror/search@6.7.2",
-          "@lezer/common": "https://esm.sh/*@lezer/common@1.5.3",
-          "@lezer/highlight": "https://esm.sh/*@lezer/highlight@1.2.5",
-          "@marijn/find-cluster-break": "https://esm.sh/*@marijn/find-cluster-break@1.0.4",
-          "crelt": "https://esm.sh/*crelt@1.0.7",
-          "style-mod": "https://esm.sh/*style-mod@4.1.4",
-          "w3c-keyname": "https://esm.sh/*w3c-keyname@2.2.8"
+          "@codemirror/state": "./vendor/codemirror-state.js",
+          "@codemirror/view": "./vendor/codemirror-view.js",
+          "@codemirror/language": "./vendor/codemirror-language.js",
+          "@codemirror/commands": "./vendor/codemirror-commands.js",
+          "@codemirror/lint": "./vendor/codemirror-lint.js",
+          "@codemirror/autocomplete": "./vendor/codemirror-autocomplete.js",
+          "@codemirror/search": "./vendor/codemirror-search.js",
+          "@lezer/common": "./vendor/lezer-common.js",
+          "@lezer/highlight": "./vendor/lezer-highlight.js",
+          "@marijn/find-cluster-break": "./vendor/marijn-find-cluster-break.js",
+          "crelt": "./vendor/crelt.js",
+          "style-mod": "./vendor/style-mod.js",
+          "w3c-keyname": "./vendor/w3c-keyname.js"
         }
       }
     </script>
     <script>
-      // A module of the page that does not load — the editor's CDN is down,
-      // or the site lacks a file — fails before the page's own code runs.
+      // A module of the page that does not load (the site lacks a file, or
+      // the network failed) fails before the page's own code runs.
       // A load error does not bubble, so this listens where it passes on
       // its way down to the script.
       addEventListener(
@@ -40,7 +41,7 @@
         (event) => {
           if (!(event.target instanceof HTMLScriptElement)) return;
           const status = document.getElementById("status");
-          status.textContent = `The page could not load ${event.target.src}: the editor loads from esm.sh, which needs the network.`;
+          status.textContent = `The page could not load ${event.target.src}.`;
           status.className = "error";
         },
         true,

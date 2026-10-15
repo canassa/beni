@@ -1,7 +1,7 @@
 // Drive the playground in a headless Chrome (docs/design/playground.md §4,
 // §5): `zig build test-playground-page`, not a gate. It needs a Chrome,
-// which `nix develop .#browser` puts on PATH, and the network, because the
-// editor loads from a CDN (§4.2).
+// which `nix develop .#browser` puts on PATH, and no network: the editor's
+// modules are files of the site (§4.2).
 //
 //   node tests/browser/playground.mjs <site>
 //
@@ -88,8 +88,14 @@ const waiting = new Map();
 // The newest frame of each page: the sandboxed frame runs in a process of
 // its own, a target the page's session attaches to automatically.
 const frames = new Map();
+// Every URL a page asked for (`Network.requestWillBeSent`).
+const requests = [];
 socket.onmessage = (message) => {
   const m = JSON.parse(message.data);
+  if (m.method === "Network.requestWillBeSent") {
+    requests.push(m.params.request.url);
+    return;
+  }
   if (m.method === "Target.attachedToTarget" && m.params.targetInfo.type === "iframe") {
     frames.set(m.sessionId, m.params.sessionId);
     return;
@@ -113,6 +119,7 @@ async function open(url) {
   const { sessionId } = await send("Target.attachToTarget", { targetId, flatten: true });
   await send("Runtime.enable", {}, sessionId);
   await send("Page.enable", {}, sessionId);
+  await send("Network.enable", {}, sessionId);
   await send("Target.setAutoAttach", { autoAttach: true, waitForDebuggerOnStart: false, flatten: true }, sessionId);
   await send("Page.navigate", { url }, sessionId);
   const evaluate = async (expression, frameSession = sessionId) => {
@@ -166,6 +173,10 @@ check((await page.until(`/Compiler loaded in \\d+ ms/.test(${status}) || ${built
 check((await page.until(built)) !== null, `the first sample builds (${await page.evaluate(status)})`);
 check(await page.evaluate(`document.querySelector(".cm-editor") !== null`), "the editor is CodeMirror");
 check((await page.until(loaded)) !== null, "the first sample's program loads in the frame");
+// The editor's modules are files of the site (§4.2): the page asks no other
+// origin for anything.
+const elsewhere = requests.filter((url) => !url.startsWith(`${origin}/`) && !url.startsWith("blob:") && !url.startsWith("data:"));
+check(requests.some((url) => url.endsWith("/vendor/codemirror-view.js")) && elsewhere.length === 0, `every request stays on the site (${JSON.stringify(elsewhere)})`);
 
 // The counter, in its frame: a click on `+` shows 1.
 const counted = await page.until(`document.querySelector("span")?.textContent === "0" && (document.querySelectorAll("button")[1].click(), true)`, 10_000, true);

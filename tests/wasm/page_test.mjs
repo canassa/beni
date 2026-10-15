@@ -8,7 +8,11 @@
 //       the shareable link gives back every source it was made from
 //   node tests/wasm/page_test.mjs syntax
 //       the grammar names the tokens of each line as the test says
-import { readFileSync } from "node:fs";
+//   node tests/wasm/page_test.mjs vendor
+//       every vendored editor module is the bytes `SHA256SUMS` names, and
+//       `index.html`'s import map names each module and nothing else
+import { createHash } from "node:crypto";
+import { readFileSync, readdirSync } from "node:fs";
 import { rangeOf } from "../../playground/positions.js";
 import { decode, encode, maxSource } from "../../playground/share.js";
 import { copyState, startState, token } from "../../playground/syntax.js";
@@ -169,8 +173,33 @@ if (mode === "positions") {
       at += 1;
     }
   }
+} else if (mode === "vendor") {
+  // Paths are the repository's: `tests/blackbox/playground_page_test.zig`
+  // runs this from the repository root.
+  const vendor = "playground/vendor";
+  const sums = new Map(
+    readFileSync(`${vendor}/SHA256SUMS`, "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => line.split(/\s+/))
+      .map(([sum, file]) => [file, sum]),
+  );
+  const modules = readdirSync(vendor).filter((f) => f.endsWith(".js")).sort();
+  check(sums.size === 13 && modules.length === 13, `13 modules and 13 sums (${modules.length}, ${sums.size})`);
+  for (const file of modules) {
+    const sum = createHash("sha256").update(readFileSync(`${vendor}/${file}`)).digest("hex");
+    check(sums.get(file) === sum, `${file} is the bytes SHA256SUMS names`);
+  }
+  const html = readFileSync("playground/index.html", "utf8");
+  const map = JSON.parse(/<script type="importmap">([\s\S]*?)<\/script>/.exec(html)[1]).imports;
+  const targets = Object.values(map).map((url) => url.replace(/^\.\/vendor\//, "")).sort();
+  check(JSON.stringify(targets) === JSON.stringify(modules), `the import map names each vendored module once: ${JSON.stringify(targets)}`);
+  for (const [name, url] of Object.entries(map)) {
+    check(url.startsWith("./vendor/"), `${name} loads from the site (${url})`);
+    check(readFileSync("playground/vendor/LICENSES.txt", "utf8").includes(`== ${url.slice("./vendor/".length)}: ${name} `), `LICENSES.txt holds ${name}'s licence`);
+  }
 } else {
-  process.stderr.write("usage: node tests/wasm/page_test.mjs (positions <source> <diagnostics.json> <text>… | share | syntax)\n");
+  process.stderr.write("usage: node tests/wasm/page_test.mjs (positions <source> <diagnostics.json> <text>… | share | syntax | vendor)\n");
   process.exit(2);
 }
 process.exitCode = failures === 0 ? 0 : 1;
