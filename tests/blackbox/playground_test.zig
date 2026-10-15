@@ -5,6 +5,7 @@
 //! under Node on the playground's own WASI host (`tests/wasm/beni.mjs`), on
 //! every single-file program the page can be given:
 //!
+//!   - the page's own samples, `playground/samples/<platform>/*.beni`;
 //!   - `tests/corpus/run/*.beni`: built for `node`, in development and with
 //!     `--release` (the printing sample);
 //!   - `tests/corpus/browser/direct/*.beni`: built for `browser-direct`, in
@@ -45,6 +46,8 @@ const Kind = enum {
 };
 
 const directories = [_]struct { path: []const u8, kind: Kind }{
+    .{ .path = "playground/samples/browser-direct", .kind = .page },
+    .{ .path = "playground/samples/node", .kind = .print },
     .{ .path = "tests/corpus/run", .kind = .print },
     .{ .path = "tests/corpus/browser/direct", .kind = .page },
     .{ .path = "tests/corpus/check/bad", .kind = .diagnostics },
