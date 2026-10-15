@@ -2925,13 +2925,32 @@ const Case = struct {
     /// and diagnostics. The `.cached` file holds why the fixture needs it.
     fn ownershipCached(c: Case, flag: []const u8, path: []const u8, checked: world.Result) !void {
         if (!c.goldenExists("cached")) return;
-        const dir = try std.fmt.allocPrint(c.arena, "--cache-dir={s}/ownership-cache-{s}", .{ try c.w.projectPath(), std.fs.path.basename(flag) });
+        const project = try c.w.projectPath();
+        const name = std.fs.path.basename(flag);
+        const dir = try std.fmt.allocPrint(c.arena, "--cache-dir={s}/ownership-cache-{s}", .{ project, name });
+        const trace = try std.fmt.allocPrint(c.arena, "ownership-trace-{s}.json", .{name});
+        const profile = try std.fmt.allocPrint(c.arena, "--self-profile={s}/{s}", .{ project, trace });
         for ([_][]const u8{ "writes", "reads" }) |pass| {
-            const r = try c.w.runWith(&.{ "check", "--diagnostics=json", flag, dir, path }, .{ .raw_diagnostics = true, .cwd = .inherit, .timeout_ms = c.cfg.timeout_ms });
+            const r = try c.w.runWith(&.{ "check", "--diagnostics=json", flag, dir, profile, path }, .{ .raw_diagnostics = true, .cwd = .inherit, .timeout_ms = c.cfg.timeout_ms });
             if (r.exit_code != checked.exit_code or !std.mem.eql(u8, r.stderr, checked.stderr)) {
                 detail("{s}: the check that {s} the cache disagrees with --no-cache (exit {d}, not {d})\n--- stderr ---\n{s}\n", .{ c.fixture.name, pass, r.exit_code, checked.exit_code, r.stderr });
                 return error.CachedCheckDisagrees;
             }
+        }
+        // The second run must have installed every entry, blocks and all: a
+        // miss would leave the reading of the blocks untested.
+        const Event = struct { ph: []const u8, args: struct { cache_hits: ?u64 = null, cache_misses: ?u64 = null } = .{} };
+        const parsed = try std.json.parseFromSlice(struct { traceEvents: []Event }, c.arena, try c.w.read(trace), .{ .ignore_unknown_fields = true });
+        var hits: u64 = 0;
+        var misses: u64 = 0;
+        for (parsed.value.traceEvents) |e| {
+            if (!std.mem.eql(u8, e.ph, "C")) continue;
+            if (e.args.cache_hits) |v| hits = v;
+            if (e.args.cache_misses) |v| misses = v;
+        }
+        if (hits == 0 or misses != 0) {
+            detail("{s}: the check that reads the cache installed {d} entries and missed {d}\n", .{ c.fixture.name, hits, misses });
+            return error.CachedCheckMissed;
         }
     }
 

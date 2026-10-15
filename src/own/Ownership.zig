@@ -890,6 +890,10 @@ fn schemaCtorIndex(o: *Ownership, m: u32, decl: u32, encoded: bool, variant: u32
 /// `schemaCtorIndex` of module `m`'s interface schema constructor `i`, as
 /// an `ext_schema_ctor` names it.
 fn extSchemaCtorIndex(o: *Ownership, m: u32, i: u32) Allocator.Error!?u32 {
+    // A caller that hands provenance but no interfaces would name no
+    // imported schema constructor: safe, as the reader refuses the block,
+    // but every block that names one would quietly never be read.
+    if (std.debug.runtime_safety) std.debug.assert(o.in.interfaces.len >= o.in.provenance.len);
     if (m >= o.in.interfaces.len or m >= o.in.provenance.len) return null;
     const iface = &o.in.interfaces[m];
     if (i >= iface.schema_ctors.len) return null;
@@ -909,6 +913,7 @@ fn extSchemaCtorIndex(o: *Ownership, m: u32, i: u32) Allocator.Error!?u32 {
 /// Per declaration of module `m`, where its schema constructors start after
 /// the BIR's own; one more entry holds the module's total.
 fn schemaCtorBases(o: *Ownership, m: u32) Allocator.Error![]const u32 {
+    std.debug.assert(m < o.in.birs.len);
     if (o.schema_ctor_bases.len == 0) {
         o.schema_ctor_bases = try o.in.gpa.alloc(?[]const u32, o.in.birs.len);
         @memset(o.schema_ctor_bases, null);
