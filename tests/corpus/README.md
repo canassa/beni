@@ -597,6 +597,11 @@ unchanged application; remove them when its builds fit the global budget.
 instruction counter. Measured on the x86-64 Linux reference, the three pages cost 19 699–19 702M and
 the three value-fuzz cases 6 088–6 089M; they are re-granted 21 700M and 6 700M, Tour's fuzz included.
 
+*Amended 2026-10-16 (delegated grant, #206):* `ownership/Conduit`, the RealWorld app's ownership
+report, is granted 4 750M. `dump --stage=ownership` re-checks all of core from source, so the
+case grew with derived codecs' engine code in `core/Schema`: 4 248M on master, 4 317M after, and
+the grant adds 10%. Remove it when the dump installs the checked core's summaries (#214).
+
 A project may also take its modules from outside the corpus: `_expected.sources` holds a
 repo-relative directory whose `.beni` files are the program, so several scripts can drive one
 application (`examples/conduit/src`). Its subdirectories are walked too, and the build is then
