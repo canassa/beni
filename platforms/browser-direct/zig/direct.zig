@@ -1844,6 +1844,7 @@ const Page = struct {
             const params = try pg.a().alloc(m.Name, key.params);
             for (params) |*x| x.* = try cx.fresh("$p");
             const blk = try js.block();
+            // Only send-guarded handlers enter here; queued sends each begin a new epoch.
             try js.expression(blk, try pg.rt("groupProgram", &.{try js.literal(.null)}));
             const visit_before = if (!cx.build.release) blk: {
                 const before = try cx.fresh("$visitBefore");
