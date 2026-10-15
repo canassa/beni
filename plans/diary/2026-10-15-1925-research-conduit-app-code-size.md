@@ -1,8 +1,8 @@
-## 2026-10-15 19:25 CEST — Research 103: why Conduit's own code is big
+## 2026-10-15 19:25 CEST — Research 104: why Conduit's own code is big
 
 **What I did**
 
-Wrote research 103 (`docs/design/research/103-conduit-app-code-size.md`) and
+Wrote research 104 (`docs/design/research/104-conduit-app-code-size.md`) and
 `bench/app-code-size/`. Built Conduit `--release` on master `6508aeb3f` (tea
 31,609 B, direct 38,175 B) and painted every byte of the app's views and
 update/init/requests with the construct that emitted it, then priced each

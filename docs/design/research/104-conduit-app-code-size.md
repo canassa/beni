@@ -1,10 +1,10 @@
-# 103 — Why Conduit's own code is big: views and update, construct by construct
+# 104 — Why Conduit's own code is big: views and update, construct by construct
 
 *2026-10-15. Research only. Beni master `6508aeb3f0915dd48265d65e2190a7f2409d30d8`,
 compiled ReleaseFast (output is the safe build's, rule 5); Node 24.19.0, Terser 5.51.2;
 x86-64 Linux, heavy steps pinned to cores 8–23; azathoth was not used. Read after
 [99](99-direct-bytes.md), [101](101-conduit-byte-floor.md) and
-[102](102-beni-output-size.md). 100–102 exist and no open PR claims 103.
+[102](102-beni-output-size.md). 100–102 exist and PR #153 claims 103.
 Measurements and scripts: [`bench/app-code-size/`](../../../bench/app-code-size/README.md).
 The Solid reference is research 101's adjusted single-chunk RealWorld build (Solid 1.3.3).*
 
