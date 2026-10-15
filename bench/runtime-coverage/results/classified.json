@@ -1,0 +1,1240 @@
+{
+ "Conduit-tea": {
+  "total": 31745,
+  "categories": {
+   "c": {
+    "raw": 5751,
+    "alone": 2075
+   },
+   "a": {
+    "raw": 3712,
+    "alone": 1040
+   }
+  },
+  "labels": {
+   "c: defects, mount errors, list edits and live rows the scripts do not reach": {
+    "raw": 3862,
+    "alone": 1574
+   },
+   "a: template shapes no site of the program makes": {
+    "raw": 151,
+    "alone": 133
+   },
+   "a: controlled-input kinds the program never renders": {
+    "raw": 282,
+    "alone": 209
+   },
+   "a: event options the program never asks for": {
+    "raw": 19,
+    "alone": 79
+   },
+   "a: command kinds and policies the program never builds": {
+    "raw": 1533,
+    "alone": 450
+   },
+   "c: subscriptions and runs the scripts do not change": {
+    "raw": 348,
+    "alone": 164
+   },
+   "c: rule 9: each host failure wrapped and typed": {
+    "raw": 662,
+    "alone": 235
+   },
+   "a: Http: request options never used (form bodies)": {
+    "raw": 113,
+    "alone": 103
+   },
+   "a: Http: request options never used (tracked body, body sizes)": {
+    "raw": 1316,
+    "alone": 404
+   },
+   "a: Http: request options never used (timeouts)": {
+    "raw": 213,
+    "alone": 156
+   },
+   "c: rule 9: each host failure wrapped and typed; external links": {
+    "raw": 567,
+    "alone": 213
+   },
+   "c: after-render work and re-entrant sends the scripts do not make": {
+    "raw": 82,
+    "alone": 171
+   },
+   "c: error: an application opened from a file": {
+    "raw": 230,
+    "alone": 243
+   },
+   "a: subscription kinds the program never makes": {
+    "raw": 85,
+    "alone": 148
+   }
+  },
+  "modules": {
+   "browser/Rt": {
+    "raw": 9568,
+    "deadRaw": 4314,
+    "removableRaw": 452,
+    "shipped": 3489,
+    "dead": 1733,
+    "removable": 166
+   },
+   "browser/Hosted": {
+    "raw": 880,
+    "deadRaw": 327,
+    "removableRaw": 185,
+    "shipped": 408,
+    "dead": 241,
+    "removable": 149
+   },
+   "browser/Cmd": {
+    "raw": 611,
+    "deadRaw": 189,
+    "removableRaw": 189,
+    "shipped": 217,
+    "dead": 141,
+    "removable": 141
+   },
+   "browser/Storage": {
+    "raw": 407,
+    "deadRaw": 175,
+    "removableRaw": 0,
+    "shipped": 237,
+    "dead": 123,
+    "removable": 0
+   },
+   "browser/Http": {
+    "raw": 4399,
+    "deadRaw": 2129,
+    "removableRaw": 1642,
+    "shipped": 1537,
+    "dead": 676,
+    "removable": 504
+   },
+   "browser/Listen": {
+    "raw": 289,
+    "deadRaw": 96,
+    "removableRaw": 0,
+    "shipped": 180,
+    "dead": 93,
+    "removable": 0
+   },
+   "browser/Sub": {
+    "raw": 166,
+    "deadRaw": 0,
+    "removableRaw": 0,
+    "shipped": 116,
+    "dead": 0,
+    "removable": 0
+   },
+   "browser/Browser/Navigation": {
+    "raw": 1688,
+    "deadRaw": 567,
+    "removableRaw": 0,
+    "shipped": 526,
+    "dead": 213,
+    "removable": 0
+   },
+   "html/Html": {
+    "raw": 24,
+    "deadRaw": 0,
+    "removableRaw": 0,
+    "shipped": 97,
+    "dead": 0,
+    "removable": 0
+   },
+   "browser/Browser": {
+    "raw": 567,
+    "deadRaw": 82,
+    "removableRaw": 0,
+    "shipped": 317,
+    "dead": 171,
+    "removable": 0
+   },
+   "browser-tea/Tea": {
+    "raw": 3192,
+    "deadRaw": 1584,
+    "removableRaw": 1244,
+    "shipped": 1024,
+    "dead": 515,
+    "removable": 429
+   }
+  },
+  "removable": {
+   "raw": 3712,
+   "alone": 1040
+  },
+  "dead": {
+   "raw": 9463,
+   "alone": 2997
+  },
+  "shipped": {
+   "raw": 21791,
+   "alone": 7211
+  }
+ },
+ "Conduit-direct": {
+  "total": 38243,
+  "categories": {
+   "c": {
+    "raw": 2633,
+    "alone": 701
+   },
+   "a": {
+    "raw": 4047,
+    "alone": 1042
+   },
+   "b": {
+    "raw": 4089,
+    "alone": 1486
+   },
+   "d": {
+    "raw": 393,
+    "alone": 174
+   }
+  },
+  "labels": {
+   "c: defects, mount errors, list edits and live rows the scripts do not reach": {
+    "raw": 73,
+    "alone": 21
+   },
+   "a: template shapes no site of the program makes": {
+    "raw": 151,
+    "alone": 39
+   },
+   "b: direct: TEA's patch and row runtime shipped on direct": {
+    "raw": 3659,
+    "alone": 1324
+   },
+   "a: command kinds and policies the program never builds": {
+    "raw": 1680,
+    "alone": 354
+   },
+   "c: subscriptions and runs the scripts do not change": {
+    "raw": 475,
+    "alone": 223
+   },
+   "a: subscription kinds the program never makes": {
+    "raw": 85,
+    "alone": 20
+   },
+   "c: rule 9: each host failure wrapped and typed; external links": {
+    "raw": 595,
+    "alone": 41
+   },
+   "c: defects, mount errors, list edits and branches the scripts do not make": {
+    "raw": 780,
+    "alone": 317
+   },
+   "b: direct: template selection run at run time": {
+    "raw": 430,
+    "alone": 123
+   },
+   "a: event options the program never asks for": {
+    "raw": 20,
+    "alone": -25
+   },
+   "a: controlled-input kinds the program never renders": {
+    "raw": 479,
+    "alone": 111
+   },
+   "c: the release file's `flush` export (Browser.flush, the driver)": {
+    "raw": 8,
+    "alone": 14
+   },
+   "d: assertions of the compiler's own tables": {
+    "raw": 393,
+    "alone": 174
+   },
+   "c: rule 9: each host failure wrapped and typed": {
+    "raw": 702,
+    "alone": 151
+   },
+   "a: Http: request options never used (form bodies)": {
+    "raw": 113,
+    "alone": 49
+   },
+   "a: Http: request options never used (tracked body, body sizes)": {
+    "raw": 1306,
+    "alone": 433
+   },
+   "a: Http: request options never used (timeouts)": {
+    "raw": 213,
+    "alone": -36
+   }
+  },
+  "modules": {
+   "browser/Rt": {
+    "raw": 6730,
+    "deadRaw": 3883,
+    "removableRaw": 3810,
+    "shipped": 2435,
+    "dead": 1413,
+    "removable": 1372
+   },
+   "browser/Hosted": {
+    "raw": 880,
+    "deadRaw": 327,
+    "removableRaw": 185,
+    "shipped": 282,
+    "dead": 129,
+    "removable": 16
+   },
+   "browser/Cmd": {
+    "raw": 808,
+    "deadRaw": 244,
+    "removableRaw": 244,
+    "shipped": 137,
+    "dead": 58,
+    "removable": 58
+   },
+   "browser-direct/Tea": {
+    "raw": 2892,
+    "deadRaw": 1573,
+    "removableRaw": 1336,
+    "shipped": 791,
+    "dead": 410,
+    "removable": 311
+   },
+   "browser/Listen": {
+    "raw": 289,
+    "deadRaw": 96,
+    "removableRaw": 0,
+    "shipped": 82,
+    "dead": 52,
+    "removable": 0
+   },
+   "browser/Sub": {
+    "raw": 203,
+    "deadRaw": 0,
+    "removableRaw": 0,
+    "shipped": 23,
+    "dead": 0,
+    "removable": 0
+   },
+   "browser/Browser/Navigation": {
+    "raw": 1750,
+    "deadRaw": 595,
+    "removableRaw": 0,
+    "shipped": 537,
+    "dead": 41,
+    "removable": 0
+   },
+   "browser-direct/Direct": {
+    "raw": 7401,
+    "deadRaw": 2110,
+    "removableRaw": 1322,
+    "shipped": 2513,
+    "dead": 615,
+    "removable": 361
+   },
+   "browser/Storage": {
+    "raw": 412,
+    "deadRaw": 175,
+    "removableRaw": 0,
+    "shipped": 107,
+    "dead": 34,
+    "removable": 0
+   },
+   "browser/Http": {
+    "raw": 4449,
+    "deadRaw": 2159,
+    "removableRaw": 1632,
+    "shipped": 1394,
+    "dead": 554,
+    "removable": 506
+   },
+   "html/Html": {
+    "raw": 24,
+    "deadRaw": 0,
+    "removableRaw": 0,
+    "shipped": 25,
+    "dead": 0,
+    "removable": 0
+   }
+  },
+  "removable": {
+   "raw": 8529,
+   "alone": 2623
+  },
+  "dead": {
+   "raw": 11162,
+   "alone": 3232
+  },
+  "shipped": {
+   "raw": 25838,
+   "alone": 8448
+  }
+ },
+ "TodoMVC-tea": {
+  "total": 8913,
+  "categories": {
+   "c": {
+    "raw": 2749,
+    "alone": 931
+   },
+   "a": {
+    "raw": 291,
+    "alone": 92
+   }
+  },
+  "labels": {
+   "c: defects, mount errors, list edits and live rows the scripts do not reach": {
+    "raw": 2280,
+    "alone": 800
+   },
+   "a: controlled-input kinds the program never renders": {
+    "raw": 167,
+    "alone": 16
+   },
+   "a: event options the program never asks for": {
+    "raw": 38,
+    "alone": 6
+   },
+   "a: Html.map wrappers the program never makes": {
+    "raw": 25,
+    "alone": -18
+   },
+   "a: send callbacks no job of the program calls": {
+    "raw": 51,
+    "alone": 1
+   },
+   "c: subscriptions and runs the scripts do not change": {
+    "raw": 244,
+    "alone": 56
+   },
+   "c: rule 9: each host failure wrapped and typed": {
+    "raw": 178,
+    "alone": 40
+   },
+   "c: rule 9: each host failure wrapped and typed; external links": {
+    "raw": 5,
+    "alone": -37
+   },
+   "c: after-render work and re-entrant sends the scripts do not make": {
+    "raw": 42,
+    "alone": 5
+   },
+   "a: command kinds and policies the program never builds": {
+    "raw": 10,
+    "alone": -5
+   }
+  },
+  "modules": {
+   "browser/Rt": {
+    "raw": 8247,
+    "deadRaw": 2507,
+    "removableRaw": 230,
+    "shipped": 2947,
+    "dead": 865,
+    "removable": 37
+   },
+   "browser/Hosted": {
+    "raw": 707,
+    "deadRaw": 193,
+    "removableRaw": 51,
+    "shipped": 253,
+    "dead": 52,
+    "removable": 1
+   },
+   "browser/Cmd": {
+    "raw": 80,
+    "deadRaw": 0,
+    "removableRaw": 0,
+    "shipped": 16,
+    "dead": 0,
+    "removable": 0
+   },
+   "browser/Storage": {
+    "raw": 369,
+    "deadRaw": 178,
+    "removableRaw": 0,
+    "shipped": 102,
+    "dead": 40,
+    "removable": 0
+   },
+   "browser/Listen": {
+    "raw": 176,
+    "deadRaw": 66,
+    "removableRaw": 0,
+    "shipped": 24,
+    "dead": -7,
+    "removable": 0
+   },
+   "browser/Sub": {
+    "raw": 34,
+    "deadRaw": 0,
+    "removableRaw": 0,
+    "shipped": -15,
+    "dead": 0,
+    "removable": 0
+   },
+   "browser/Browser/Navigation": {
+    "raw": 92,
+    "deadRaw": 5,
+    "removableRaw": 0,
+    "shipped": 35,
+    "dead": -37,
+    "removable": 0
+   },
+   "html/Html": {
+    "raw": 42,
+    "deadRaw": 3,
+    "removableRaw": 0,
+    "shipped": 31,
+    "dead": -7,
+    "removable": 0
+   },
+   "browser/Browser": {
+    "raw": 564,
+    "deadRaw": 42,
+    "removableRaw": 0,
+    "shipped": 197,
+    "dead": 5,
+    "removable": 0
+   },
+   "browser-tea/Tea": {
+    "raw": 867,
+    "deadRaw": 46,
+    "removableRaw": 10,
+    "shipped": 342,
+    "dead": 12,
+    "removable": -5
+   }
+  },
+  "removable": {
+   "raw": 291,
+   "alone": 92
+  },
+  "dead": {
+   "raw": 3040,
+   "alone": 1044
+  },
+  "shipped": {
+   "raw": 11178,
+   "alone": 4069
+  }
+ },
+ "TodoMVC-direct": {
+  "total": 9474,
+  "categories": {
+   "c": {
+    "raw": 2085,
+    "alone": 654
+   },
+   "a": {
+    "raw": 299,
+    "alone": 108
+   },
+   "b": {
+    "raw": 352,
+    "alone": 136
+   },
+   "d": {
+    "raw": 393,
+    "alone": 109
+   }
+  },
+  "labels": {
+   "c: defects, mount errors, list edits and live rows the scripts do not reach": {
+    "raw": 223,
+    "alone": 87
+   },
+   "a: send callbacks no job of the program calls": {
+    "raw": 51,
+    "alone": 39
+   },
+   "c: subscriptions and runs the scripts do not change": {
+    "raw": 345,
+    "alone": 96
+   },
+   "a: command kinds and policies the program never builds": {
+    "raw": 10,
+    "alone": 22
+   },
+   "c: defects, mount errors, list edits and branches the scripts do not make": {
+    "raw": 1326,
+    "alone": 439
+   },
+   "a: event options the program never asks for": {
+    "raw": 46,
+    "alone": -14
+   },
+   "a: Html.map wrappers the program never makes": {
+    "raw": 25,
+    "alone": 11
+   },
+   "a: controlled-input kinds the program never renders": {
+    "raw": 167,
+    "alone": 63
+   },
+   "c: the release file's `flush` export (Browser.flush, the driver)": {
+    "raw": 8,
+    "alone": 21
+   },
+   "b: direct: template selection run at run time": {
+    "raw": 352,
+    "alone": 136
+   },
+   "d: assertions of the compiler's own tables": {
+    "raw": 393,
+    "alone": 109
+   },
+   "c: rule 9: each host failure wrapped and typed": {
+    "raw": 178,
+    "alone": 69
+   },
+   "c: rule 9: each host failure wrapped and typed; external links": {
+    "raw": 5,
+    "alone": -23
+   }
+  },
+  "modules": {
+   "browser/Rt": {
+    "raw": 926,
+    "deadRaw": 220,
+    "removableRaw": 0,
+    "shipped": 250,
+    "dead": 64,
+    "removable": 0
+   },
+   "browser/Hosted": {
+    "raw": 705,
+    "deadRaw": 193,
+    "removableRaw": 51,
+    "shipped": 267,
+    "dead": 87,
+    "removable": 39
+   },
+   "browser/Cmd": {
+    "raw": 106,
+    "deadRaw": 0,
+    "removableRaw": 0,
+    "shipped": 49,
+    "dead": 0,
+    "removable": 0
+   },
+   "browser-direct/Tea": {
+    "raw": 748,
+    "deadRaw": 147,
+    "removableRaw": 10,
+    "shipped": 315,
+    "dead": -6,
+    "removable": 22
+   },
+   "browser-direct/Direct": {
+    "raw": 8954,
+    "deadRaw": 2317,
+    "removableRaw": 983,
+    "shipped": 3080,
+    "dead": 739,
+    "removable": 317
+   },
+   "browser/Storage": {
+    "raw": 369,
+    "deadRaw": 178,
+    "removableRaw": 0,
+    "shipped": 127,
+    "dead": 69,
+    "removable": 0
+   },
+   "browser/Listen": {
+    "raw": 176,
+    "deadRaw": 66,
+    "removableRaw": 0,
+    "shipped": 10,
+    "dead": -6,
+    "removable": 0
+   },
+   "browser/Sub": {
+    "raw": 40,
+    "deadRaw": 0,
+    "removableRaw": 0,
+    "shipped": 8,
+    "dead": 0,
+    "removable": 0
+   },
+   "browser/Browser/Navigation": {
+    "raw": 92,
+    "deadRaw": 5,
+    "removableRaw": 0,
+    "shipped": 58,
+    "dead": -23,
+    "removable": 0
+   },
+   "html/Html": {
+    "raw": 42,
+    "deadRaw": 3,
+    "removableRaw": 0,
+    "shipped": 11,
+    "dead": 22,
+    "removable": 0
+   }
+  },
+  "removable": {
+   "raw": 1044,
+   "alone": 316
+  },
+  "dead": {
+   "raw": 3129,
+   "alone": 980
+  },
+  "shipped": {
+   "raw": 12158,
+   "alone": 4186
+  }
+ },
+ "Sternhalma-tea": {
+  "total": 7746,
+  "categories": {
+   "c": {
+    "raw": 760,
+    "alone": 304
+   },
+   "a": {
+    "raw": 232,
+    "alone": 50
+   }
+  },
+  "labels": {
+   "c: defects, mount errors, list edits and live rows the scripts do not reach": {
+    "raw": 713,
+    "alone": 269
+   },
+   "a: event options the program never asks for": {
+    "raw": 38,
+    "alone": 8
+   },
+   "c: after-render work and re-entrant sends the scripts do not make": {
+    "raw": 47,
+    "alone": 7
+   },
+   "a: command kinds and policies the program never builds": {
+    "raw": 194,
+    "alone": 34
+   }
+  },
+  "modules": {
+   "browser/Rt": {
+    "raw": 3014,
+    "deadRaw": 751,
+    "removableRaw": 38,
+    "shipped": 1053,
+    "dead": 305,
+    "removable": 8
+   },
+   "browser/Cmd": {
+    "raw": 4,
+    "deadRaw": 0,
+    "removableRaw": 0,
+    "shipped": 34,
+    "dead": 0,
+    "removable": 0
+   },
+   "html/Html": {
+    "raw": 24,
+    "deadRaw": 0,
+    "removableRaw": 0,
+    "shipped": 46,
+    "dead": 0,
+    "removable": 0
+   },
+   "browser/Browser": {
+    "raw": 490,
+    "deadRaw": 47,
+    "removableRaw": 0,
+    "shipped": 203,
+    "dead": 7,
+    "removable": 0
+   },
+   "browser/Hosted": {
+    "raw": 47,
+    "deadRaw": 0,
+    "removableRaw": 0,
+    "shipped": 40,
+    "dead": 0,
+    "removable": 0
+   },
+   "browser-tea/Tea": {
+    "raw": 488,
+    "deadRaw": 194,
+    "removableRaw": 194,
+    "shipped": 183,
+    "dead": 34,
+    "removable": 34
+   },
+   "browser/Sub": {
+    "raw": 5,
+    "deadRaw": 0,
+    "removableRaw": 0,
+    "shipped": 22,
+    "dead": 0,
+    "removable": 0
+   }
+  },
+  "removable": {
+   "raw": 232,
+   "alone": 50
+  },
+  "dead": {
+   "raw": 992,
+   "alone": 346
+  },
+  "shipped": {
+   "raw": 4072,
+   "alone": 1438
+  }
+ },
+ "Sternhalma-direct": {
+  "total": 9742,
+  "categories": {
+   "c": {
+    "raw": 544,
+    "alone": 191
+   },
+   "b": {
+    "raw": 726,
+    "alone": 293
+   },
+   "a": {
+    "raw": 296,
+    "alone": 64
+   },
+   "d": {
+    "raw": 338,
+    "alone": 90
+   }
+  },
+  "labels": {
+   "c: defects, mount errors, list edits and live rows the scripts do not reach": {
+    "raw": 208,
+    "alone": 62
+   },
+   "b: direct: TEA's patch and row runtime shipped on direct": {
+    "raw": 277,
+    "alone": 115
+   },
+   "a: command kinds and policies the program never builds": {
+    "raw": 232,
+    "alone": 51
+   },
+   "c: defects, mount errors, list edits and branches the scripts do not make": {
+    "raw": 328,
+    "alone": 149
+   },
+   "a: event options the program never asks for": {
+    "raw": 39,
+    "alone": 13
+   },
+   "b: direct: template selection run at run time": {
+    "raw": 449,
+    "alone": 160
+   },
+   "a: Html.map wrappers the program never makes": {
+    "raw": 25,
+    "alone": 18
+   },
+   "c: the release file's `flush` export (Browser.flush, the driver)": {
+    "raw": 8,
+    "alone": -8
+   },
+   "d: assertions of the compiler's own tables": {
+    "raw": 338,
+    "alone": 90
+   }
+  },
+  "modules": {
+   "browser/Rt": {
+    "raw": 1671,
+    "deadRaw": 485,
+    "removableRaw": 277,
+    "shipped": 543,
+    "dead": 168,
+    "removable": 115
+   },
+   "browser/Cmd": {
+    "raw": 9,
+    "deadRaw": 0,
+    "removableRaw": 0,
+    "shipped": 4,
+    "dead": 0,
+    "removable": 0
+   },
+   "browser-direct/Tea": {
+    "raw": 303,
+    "deadRaw": 232,
+    "removableRaw": 232,
+    "shipped": 82,
+    "dead": 51,
+    "removable": 51
+   },
+   "browser-direct/Direct": {
+    "raw": 4977,
+    "deadRaw": 1187,
+    "removableRaw": 851,
+    "shipped": 1735,
+    "dead": 442,
+    "removable": 287
+   },
+   "html/Html": {
+    "raw": 24,
+    "deadRaw": 0,
+    "removableRaw": 0,
+    "shipped": -8,
+    "dead": 0,
+    "removable": 0
+   }
+  },
+  "removable": {
+   "raw": 1360,
+   "alone": 432
+  },
+  "dead": {
+   "raw": 1904,
+   "alone": 597
+  },
+  "shipped": {
+   "raw": 6984,
+   "alone": 2421
+  }
+ },
+ "BikeWars-tea": {
+  "total": 9262,
+  "categories": {
+   "c": {
+    "raw": 1025,
+    "alone": 374
+   },
+   "a": {
+    "raw": 338,
+    "alone": 60
+   }
+  },
+  "labels": {
+   "c: defects, mount errors, list edits and live rows the scripts do not reach": {
+    "raw": 591,
+    "alone": 186
+   },
+   "a: template shapes no site of the program makes": {
+    "raw": 144,
+    "alone": 72
+   },
+   "c: subscriptions and runs the scripts do not change": {
+    "raw": 352,
+    "alone": 105
+   },
+   "c: after-render work and re-entrant sends the scripts do not make": {
+    "raw": 82,
+    "alone": 38
+   },
+   "a: command kinds and policies the program never builds": {
+    "raw": 194,
+    "alone": 4
+   }
+  },
+  "modules": {
+   "browser/Rt": {
+    "raw": 2605,
+    "deadRaw": 732,
+    "removableRaw": 144,
+    "shipped": 875,
+    "dead": 201,
+    "removable": 72
+   },
+   "browser/Cmd": {
+    "raw": 14,
+    "deadRaw": 0,
+    "removableRaw": 0,
+    "shipped": -15,
+    "dead": 0,
+    "removable": 0
+   },
+   "browser/Hosted": {
+    "raw": 576,
+    "deadRaw": 142,
+    "removableRaw": 0,
+    "shipped": 196,
+    "dead": 46,
+    "removable": 0
+   },
+   "browser/Browser": {
+    "raw": 563,
+    "deadRaw": 82,
+    "removableRaw": 0,
+    "shipped": 197,
+    "dead": 38,
+    "removable": 0
+   },
+   "browser-tea/Tea": {
+    "raw": 1123,
+    "deadRaw": 293,
+    "removableRaw": 194,
+    "shipped": 366,
+    "dead": 28,
+    "removable": 4
+   },
+   "browser/Sub": {
+    "raw": 161,
+    "deadRaw": 9,
+    "removableRaw": 0,
+    "shipped": 73,
+    "dead": 16,
+    "removable": 0
+   },
+   "browser/Browser/Events": {
+    "raw": 558,
+    "deadRaw": 102,
+    "removableRaw": 0,
+    "shipped": 207,
+    "dead": 36,
+    "removable": 0
+   },
+   "html/Html": {
+    "raw": 42,
+    "deadRaw": 3,
+    "removableRaw": 0,
+    "shipped": 20,
+    "dead": 1,
+    "removable": 0
+   }
+  },
+  "removable": {
+   "raw": 338,
+   "alone": 60
+  },
+  "dead": {
+   "raw": 1363,
+   "alone": 401
+  },
+  "shipped": {
+   "raw": 5642,
+   "alone": 1921
+  }
+ },
+ "BikeWars-direct": {
+  "total": 11315,
+  "categories": {
+   "c": {
+    "raw": 985,
+    "alone": 368
+   },
+   "a": {
+    "raw": 387,
+    "alone": 101
+   },
+   "b": {
+    "raw": 604,
+    "alone": 236
+   },
+   "d": {
+    "raw": 393,
+    "alone": 82
+   }
+  },
+  "labels": {
+   "c: defects, mount errors, list edits and live rows the scripts do not reach": {
+    "raw": 173,
+    "alone": 90
+   },
+   "a: template shapes no site of the program makes": {
+    "raw": 155,
+    "alone": 62
+   },
+   "b: direct: TEA's patch and row runtime shipped on direct": {
+    "raw": 266,
+    "alone": 112
+   },
+   "c: subscriptions and runs the scripts do not change": {
+    "raw": 378,
+    "alone": 106
+   },
+   "a: command kinds and policies the program never builds": {
+    "raw": 232,
+    "alone": 51
+   },
+   "c: defects, mount errors, list edits and branches the scripts do not make": {
+    "raw": 426,
+    "alone": 167
+   },
+   "b: direct: template selection run at run time": {
+    "raw": 338,
+    "alone": 136
+   },
+   "c: the release file's `flush` export (Browser.flush, the driver)": {
+    "raw": 8,
+    "alone": 11
+   },
+   "d: assertions of the compiler's own tables": {
+    "raw": 393,
+    "alone": 82
+   }
+  },
+  "modules": {
+   "browser/Rt": {
+    "raw": 1871,
+    "deadRaw": 591,
+    "removableRaw": 421,
+    "shipped": 614,
+    "dead": 191,
+    "removable": 101
+   },
+   "browser/Cmd": {
+    "raw": 9,
+    "deadRaw": 0,
+    "removableRaw": 0,
+    "shipped": 66,
+    "dead": 0,
+    "removable": 0
+   },
+   "browser/Hosted": {
+    "raw": 529,
+    "deadRaw": 142,
+    "removableRaw": 0,
+    "shipped": 103,
+    "dead": 8,
+    "removable": 0
+   },
+   "browser-direct/Tea": {
+    "raw": 984,
+    "deadRaw": 357,
+    "removableRaw": 232,
+    "shipped": 351,
+    "dead": 51,
+    "removable": 51
+   },
+   "browser-direct/Direct": {
+    "raw": 4246,
+    "deadRaw": 1165,
+    "removableRaw": 731,
+    "shipped": 1465,
+    "dead": 359,
+    "removable": 238
+   },
+   "browser/Sub": {
+    "raw": 198,
+    "deadRaw": 9,
+    "removableRaw": 0,
+    "shipped": 111,
+    "dead": -7,
+    "removable": 0
+   },
+   "browser/Browser/Events": {
+    "raw": 558,
+    "deadRaw": 102,
+    "removableRaw": 0,
+    "shipped": 198,
+    "dead": 18,
+    "removable": 0
+   },
+   "html/Html": {
+    "raw": 42,
+    "deadRaw": 3,
+    "removableRaw": 0,
+    "shipped": 46,
+    "dead": 25,
+    "removable": 0
+   }
+  },
+  "removable": {
+   "raw": 1384,
+   "alone": 400
+  },
+  "dead": {
+   "raw": 2369,
+   "alone": 765
+  },
+  "shipped": {
+   "raw": 8437,
+   "alone": 2893
+  }
+ },
+ "Table-tea": {
+  "total": 5365,
+  "categories": {
+   "c": {
+    "raw": 1718,
+    "alone": 640
+   },
+   "a": {
+    "raw": 38,
+    "alone": 12
+   }
+  },
+  "labels": {
+   "c: defects, mount errors, list edits and live rows the scripts do not reach": {
+    "raw": 1718,
+    "alone": 640
+   },
+   "a: event options the program never asks for": {
+    "raw": 38,
+    "alone": 12
+   }
+  },
+  "modules": {
+   "browser/Rt": {
+    "raw": 6596,
+    "deadRaw": 1756,
+    "removableRaw": 38,
+    "shipped": 2577,
+    "dead": 637,
+    "removable": 12
+   }
+  },
+  "removable": {
+   "raw": 38,
+   "alone": 12
+  },
+  "dead": {
+   "raw": 1756,
+   "alone": 637
+  },
+  "shipped": {
+   "raw": 6596,
+   "alone": 2577
+  }
+ },
+ "Table-direct": {
+  "total": 4340,
+  "categories": {
+   "c": {
+    "raw": 1649,
+    "alone": 594
+   },
+   "a": {
+    "raw": 46,
+    "alone": 8
+   }
+  },
+  "labels": {
+   "c: defects, mount errors, list edits and branches the scripts do not make": {
+    "raw": 1649,
+    "alone": 594
+   },
+   "a: event options the program never asks for": {
+    "raw": 46,
+    "alone": 8
+   }
+  },
+  "modules": {
+   "browser-direct/Direct": {
+    "raw": 5097,
+    "deadRaw": 1695,
+    "removableRaw": 46,
+    "shipped": 1841,
+    "dead": 610,
+    "removable": 8
+   }
+  },
+  "removable": {
+   "raw": 46,
+   "alone": 8
+  },
+  "dead": {
+   "raw": 1695,
+   "alone": 610
+  },
+  "shipped": {
+   "raw": 5097,
+   "alone": 1841
+  }
+ }
+}

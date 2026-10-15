@@ -1,0 +1,1752 @@
+{
+ "Conduit-tea": {
+  "total": 31745,
+  "groups": {
+   "core/Basics": {
+    "deadAlone": 133,
+    "units": 3,
+    "raw": 105,
+    "deadRaw": 50,
+    "uncalled": 1,
+    "uncalledRaw": 34,
+    "alone": 155,
+    "aloneUncalled": 149
+   },
+   "unmapped": {
+    "deadAlone": 213,
+    "units": 104,
+    "raw": 2215,
+    "deadRaw": 299,
+    "uncalled": 1,
+    "uncalledRaw": 243,
+    "alone": 473,
+    "aloneUncalled": 122
+   },
+   "core/Task": {
+    "deadAlone": 625,
+    "units": 72,
+    "raw": 4638,
+    "deadRaw": 1878,
+    "uncalled": 15,
+    "uncalledRaw": 1451,
+    "alone": 1661,
+    "aloneUncalled": 506
+   },
+   "browser/Rt": {
+    "deadAlone": 1733,
+    "units": 67,
+    "raw": 9568,
+    "deadRaw": 4314,
+    "uncalled": 7,
+    "uncalledRaw": 1368,
+    "alone": 3489,
+    "aloneUncalled": 566
+   },
+   "core/Maybe": {
+    "deadAlone": 105,
+    "units": 3,
+    "raw": 85,
+    "deadRaw": 35,
+    "uncalled": 1,
+    "uncalledRaw": 35,
+    "alone": 159,
+    "aloneUncalled": 105
+   },
+   "app": {
+    "deadAlone": 2615,
+    "units": 373,
+    "raw": 78104,
+    "deadRaw": 22637,
+    "uncalled": 17,
+    "uncalledRaw": 1959,
+    "alone": 14241,
+    "aloneUncalled": 348
+   },
+   "core/List": {
+    "deadAlone": 1021,
+    "units": 58,
+    "raw": 4730,
+    "deadRaw": 2597,
+    "uncalled": 20,
+    "uncalledRaw": 2335,
+    "alone": 1605,
+    "aloneUncalled": 833
+   },
+   "browser/Hosted": {
+    "deadAlone": 241,
+    "units": 18,
+    "raw": 880,
+    "deadRaw": 327,
+    "uncalled": 5,
+    "uncalledRaw": 279,
+    "alone": 408,
+    "aloneUncalled": 192
+   },
+   "browser/Cmd": {
+    "deadAlone": 141,
+    "units": 9,
+    "raw": 611,
+    "deadRaw": 189,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 217,
+    "aloneUncalled": 0
+   },
+   "core/Result": {
+    "deadAlone": 0,
+    "units": 1,
+    "raw": 44,
+    "deadRaw": 0,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 113,
+    "aloneUncalled": 0
+   },
+   "core/String": {
+    "deadAlone": 207,
+    "units": 16,
+    "raw": 774,
+    "deadRaw": 455,
+    "uncalled": 5,
+    "uncalledRaw": 419,
+    "alone": 419,
+    "aloneUncalled": 289
+   },
+   "core/Schema": {
+    "deadAlone": 2031,
+    "units": 75,
+    "raw": 10148,
+    "deadRaw": 6693,
+    "uncalled": 26,
+    "uncalledRaw": 2914,
+    "alone": 3129,
+    "aloneUncalled": 970
+   },
+   "browser/Storage": {
+    "deadAlone": 123,
+    "units": 5,
+    "raw": 407,
+    "deadRaw": 175,
+    "uncalled": 1,
+    "uncalledRaw": 47,
+    "alone": 237,
+    "aloneUncalled": 112
+   },
+   "core/Url": {
+    "deadAlone": 186,
+    "units": 7,
+    "raw": 931,
+    "deadRaw": 281,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 322,
+    "aloneUncalled": 0
+   },
+   "core/Url/Builder": {
+    "deadAlone": 0,
+    "units": 4,
+    "raw": 162,
+    "deadRaw": 0,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 115,
+    "aloneUncalled": 0
+   },
+   "core/Dict": {
+    "deadAlone": 567,
+    "units": 20,
+    "raw": 3398,
+    "deadRaw": 2428,
+    "uncalled": 10,
+    "uncalledRaw": 2176,
+    "alone": 883,
+    "aloneUncalled": 515
+   },
+   "browser/Http": {
+    "deadAlone": 676,
+    "units": 31,
+    "raw": 4399,
+    "deadRaw": 2129,
+    "uncalled": 6,
+    "uncalledRaw": 1190,
+    "alone": 1537,
+    "aloneUncalled": 413
+   },
+   "core/Url/Parser": {
+    "deadAlone": 195,
+    "units": 14,
+    "raw": 1288,
+    "deadRaw": 408,
+    "uncalled": 2,
+    "uncalledRaw": 279,
+    "alone": 499,
+    "aloneUncalled": 180
+   },
+   "browser/Listen": {
+    "deadAlone": 93,
+    "units": 2,
+    "raw": 289,
+    "deadRaw": 96,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 180,
+    "aloneUncalled": 0
+   },
+   "browser/Sub": {
+    "deadAlone": 0,
+    "units": 4,
+    "raw": 166,
+    "deadRaw": 0,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 116,
+    "aloneUncalled": 0
+   },
+   "browser/Browser/Navigation": {
+    "deadAlone": 213,
+    "units": 16,
+    "raw": 1688,
+    "deadRaw": 567,
+    "uncalled": 2,
+    "uncalledRaw": 314,
+    "alone": 526,
+    "aloneUncalled": 171
+   },
+   "html/Html": {
+    "deadAlone": 0,
+    "units": 1,
+    "raw": 24,
+    "deadRaw": 0,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 97,
+    "aloneUncalled": 0
+   },
+   "browser/Browser": {
+    "deadAlone": 171,
+    "units": 7,
+    "raw": 567,
+    "deadRaw": 82,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 317,
+    "aloneUncalled": 0
+   },
+   "browser-tea/Tea": {
+    "deadAlone": 515,
+    "units": 23,
+    "raw": 3192,
+    "deadRaw": 1584,
+    "uncalled": 3,
+    "uncalledRaw": 226,
+    "alone": 1024,
+    "aloneUncalled": 198
+   },
+   "(platform runtime)": {
+    "deadAlone": 2997,
+    "units": 183,
+    "raw": 21791,
+    "deadRaw": 9463,
+    "uncalled": 24,
+    "uncalledRaw": 3424,
+    "alone": 7211,
+    "aloneUncalled": 1146
+   }
+  }
+ },
+ "Conduit-direct": {
+  "total": 38243,
+  "groups": {
+   "core/Basics": {
+    "deadAlone": 8,
+    "units": 3,
+    "raw": 105,
+    "deadRaw": 50,
+    "uncalled": 1,
+    "uncalledRaw": 34,
+    "alone": 105,
+    "aloneUncalled": -6
+   },
+   "unmapped": {
+    "deadAlone": 124,
+    "units": 104,
+    "raw": 2326,
+    "deadRaw": 315,
+    "uncalled": 3,
+    "uncalledRaw": 265,
+    "alone": 453,
+    "aloneUncalled": 63
+   },
+   "core/Task": {
+    "deadAlone": 530,
+    "units": 70,
+    "raw": 4606,
+    "deadRaw": 1874,
+    "uncalled": 15,
+    "uncalledRaw": 1451,
+    "alone": 1494,
+    "aloneUncalled": 495
+   },
+   "browser/Rt": {
+    "deadAlone": 1413,
+    "units": 36,
+    "raw": 6730,
+    "deadRaw": 3883,
+    "uncalled": 5,
+    "uncalledRaw": 1403,
+    "alone": 2435,
+    "aloneUncalled": 504
+   },
+   "core/List": {
+    "deadAlone": 886,
+    "units": 58,
+    "raw": 4735,
+    "deadRaw": 2597,
+    "uncalled": 20,
+    "uncalledRaw": 2335,
+    "alone": 1468,
+    "aloneUncalled": 792
+   },
+   "browser/Hosted": {
+    "deadAlone": 129,
+    "units": 18,
+    "raw": 880,
+    "deadRaw": 327,
+    "uncalled": 5,
+    "uncalledRaw": 279,
+    "alone": 282,
+    "aloneUncalled": 83
+   },
+   "core/Maybe": {
+    "deadAlone": 58,
+    "units": 3,
+    "raw": 105,
+    "deadRaw": 45,
+    "uncalled": 1,
+    "uncalledRaw": 45,
+    "alone": 47,
+    "aloneUncalled": 45
+   },
+   "core/Dict": {
+    "deadAlone": 499,
+    "units": 20,
+    "raw": 3961,
+    "deadRaw": 2848,
+    "uncalled": 10,
+    "uncalledRaw": 2526,
+    "alone": 812,
+    "aloneUncalled": 467
+   },
+   "browser/Cmd": {
+    "deadAlone": 58,
+    "units": 9,
+    "raw": 808,
+    "deadRaw": 244,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 137,
+    "aloneUncalled": 0
+   },
+   "browser-direct/Tea": {
+    "deadAlone": 410,
+    "units": 19,
+    "raw": 2892,
+    "deadRaw": 1573,
+    "uncalled": 3,
+    "uncalledRaw": 258,
+    "alone": 791,
+    "aloneUncalled": 98
+   },
+   "core/String": {
+    "deadAlone": 158,
+    "units": 16,
+    "raw": 779,
+    "deadRaw": 455,
+    "uncalled": 5,
+    "uncalledRaw": 419,
+    "alone": 295,
+    "aloneUncalled": 201
+   },
+   "core/Url": {
+    "deadAlone": 27,
+    "units": 7,
+    "raw": 1022,
+    "deadRaw": 312,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 365,
+    "aloneUncalled": 0
+   },
+   "browser/Listen": {
+    "deadAlone": 52,
+    "units": 2,
+    "raw": 289,
+    "deadRaw": 96,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 82,
+    "aloneUncalled": 0
+   },
+   "browser/Sub": {
+    "deadAlone": 0,
+    "units": 4,
+    "raw": 203,
+    "deadRaw": 0,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 23,
+    "aloneUncalled": 0
+   },
+   "browser/Browser/Navigation": {
+    "deadAlone": 41,
+    "units": 16,
+    "raw": 1750,
+    "deadRaw": 595,
+    "uncalled": 2,
+    "uncalledRaw": 314,
+    "alone": 537,
+    "aloneUncalled": -5
+   },
+   "browser-direct/Direct": {
+    "deadAlone": 615,
+    "units": 73,
+    "raw": 7401,
+    "deadRaw": 2110,
+    "uncalled": 7,
+    "uncalledRaw": 462,
+    "alone": 2513,
+    "aloneUncalled": 158
+   },
+   "app": {
+    "deadAlone": 2579,
+    "units": 738,
+    "raw": 156989,
+    "deadRaw": 36637,
+    "uncalled": 56,
+    "uncalledRaw": 2899,
+    "alone": 19196,
+    "aloneUncalled": 248
+   },
+   "core/Result": {
+    "deadAlone": 0,
+    "units": 1,
+    "raw": 44,
+    "deadRaw": 0,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 38,
+    "aloneUncalled": 0
+   },
+   "core/Schema": {
+    "deadAlone": 1920,
+    "units": 75,
+    "raw": 10401,
+    "deadRaw": 6868,
+    "uncalled": 26,
+    "uncalledRaw": 2996,
+    "alone": 3094,
+    "aloneUncalled": 871
+   },
+   "browser/Storage": {
+    "deadAlone": 34,
+    "units": 5,
+    "raw": 412,
+    "deadRaw": 175,
+    "uncalled": 1,
+    "uncalledRaw": 47,
+    "alone": 107,
+    "aloneUncalled": 28
+   },
+   "core/Url/Builder": {
+    "deadAlone": 0,
+    "units": 4,
+    "raw": 162,
+    "deadRaw": 0,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 61,
+    "aloneUncalled": 0
+   },
+   "browser/Http": {
+    "deadAlone": 554,
+    "units": 31,
+    "raw": 4449,
+    "deadRaw": 2159,
+    "uncalled": 6,
+    "uncalledRaw": 1182,
+    "alone": 1394,
+    "aloneUncalled": 356
+   },
+   "core/Url/Parser": {
+    "deadAlone": 161,
+    "units": 14,
+    "raw": 1340,
+    "deadRaw": 423,
+    "uncalled": 2,
+    "uncalledRaw": 289,
+    "alone": 413,
+    "aloneUncalled": 44
+   },
+   "html/Html": {
+    "deadAlone": 0,
+    "units": 1,
+    "raw": 24,
+    "deadRaw": 0,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 25,
+    "aloneUncalled": 0
+   },
+   "(platform runtime)": {
+    "deadAlone": 3232,
+    "units": 214,
+    "raw": 25838,
+    "deadRaw": 11162,
+    "uncalled": 29,
+    "uncalledRaw": 3945,
+    "alone": 8448,
+    "aloneUncalled": 1141
+   }
+  }
+ },
+ "TodoMVC-tea": {
+  "total": 8913,
+  "groups": {
+   "core/Task": {
+    "deadAlone": 115,
+    "units": 25,
+    "raw": 959,
+    "deadRaw": 358,
+    "uncalled": 4,
+    "uncalledRaw": 299,
+    "alone": 316,
+    "aloneUncalled": 86
+   },
+   "browser/Rt": {
+    "deadAlone": 865,
+    "units": 59,
+    "raw": 8247,
+    "deadRaw": 2507,
+    "uncalled": 5,
+    "uncalledRaw": 321,
+    "alone": 2947,
+    "aloneUncalled": 64
+   },
+   "unmapped": {
+    "deadAlone": 25,
+    "units": 20,
+    "raw": 633,
+    "deadRaw": 73,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 188,
+    "aloneUncalled": 0
+   },
+   "core/String": {
+    "deadAlone": 12,
+    "units": 7,
+    "raw": 350,
+    "deadRaw": 42,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 128,
+    "aloneUncalled": 0
+   },
+   "core/List": {
+    "deadAlone": 632,
+    "units": 32,
+    "raw": 2499,
+    "deadRaw": 1582,
+    "uncalled": 13,
+    "uncalledRaw": 1462,
+    "alone": 850,
+    "aloneUncalled": 581
+   },
+   "core/Basics": {
+    "deadAlone": 4,
+    "units": 2,
+    "raw": 88,
+    "deadRaw": 52,
+    "uncalled": 1,
+    "uncalledRaw": 35,
+    "alone": 25,
+    "aloneUncalled": -19
+   },
+   "browser/Hosted": {
+    "deadAlone": 52,
+    "units": 12,
+    "raw": 707,
+    "deadRaw": 193,
+    "uncalled": 2,
+    "uncalledRaw": 112,
+    "alone": 253,
+    "aloneUncalled": -18
+   },
+   "browser/Cmd": {
+    "deadAlone": 0,
+    "units": 3,
+    "raw": 80,
+    "deadRaw": 0,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 16,
+    "aloneUncalled": 0
+   },
+   "browser/Storage": {
+    "deadAlone": 40,
+    "units": 4,
+    "raw": 369,
+    "deadRaw": 178,
+    "uncalled": 1,
+    "uncalledRaw": 47,
+    "alone": 102,
+    "aloneUncalled": 0
+   },
+   "core/Maybe": {
+    "deadAlone": -3,
+    "units": 3,
+    "raw": 85,
+    "deadRaw": 10,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 1,
+    "aloneUncalled": 0
+   },
+   "core/Url": {
+    "deadAlone": 27,
+    "units": 3,
+    "raw": 586,
+    "deadRaw": 190,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 171,
+    "aloneUncalled": 0
+   },
+   "browser/Listen": {
+    "deadAlone": -7,
+    "units": 1,
+    "raw": 176,
+    "deadRaw": 66,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 24,
+    "aloneUncalled": 0
+   },
+   "browser/Sub": {
+    "deadAlone": 0,
+    "units": 1,
+    "raw": 34,
+    "deadRaw": 0,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": -15,
+    "aloneUncalled": 0
+   },
+   "browser/Browser/Navigation": {
+    "deadAlone": -37,
+    "units": 2,
+    "raw": 92,
+    "deadRaw": 5,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 35,
+    "aloneUncalled": 0
+   },
+   "html/Html": {
+    "deadAlone": -7,
+    "units": 1,
+    "raw": 42,
+    "deadRaw": 3,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 31,
+    "aloneUncalled": 0
+   },
+   "core/Dict": {
+    "deadAlone": 152,
+    "units": 7,
+    "raw": 1112,
+    "deadRaw": 750,
+    "uncalled": 1,
+    "uncalledRaw": 510,
+    "alone": 265,
+    "aloneUncalled": 61
+   },
+   "browser/Browser": {
+    "deadAlone": 5,
+    "units": 7,
+    "raw": 564,
+    "deadRaw": 42,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 197,
+    "aloneUncalled": 0
+   },
+   "browser-tea/Tea": {
+    "deadAlone": 12,
+    "units": 8,
+    "raw": 867,
+    "deadRaw": 46,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 342,
+    "aloneUncalled": 0
+   },
+   "app": {
+    "deadAlone": 40,
+    "units": 24,
+    "raw": 6028,
+    "deadRaw": 177,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 1997,
+    "aloneUncalled": 0
+   },
+   "(platform runtime)": {
+    "deadAlone": 1044,
+    "units": 98,
+    "raw": 11178,
+    "deadRaw": 3040,
+    "uncalled": 8,
+    "uncalledRaw": 480,
+    "alone": 4069,
+    "aloneUncalled": 148
+   }
+  }
+ },
+ "TodoMVC-direct": {
+  "total": 9474,
+  "groups": {
+   "core/Basics": {
+    "deadAlone": 6,
+    "units": 2,
+    "raw": 84,
+    "deadRaw": 50,
+    "uncalled": 1,
+    "uncalledRaw": 34,
+    "alone": 17,
+    "aloneUncalled": -27
+   },
+   "core/Task": {
+    "deadAlone": 141,
+    "units": 22,
+    "raw": 948,
+    "deadRaw": 354,
+    "uncalled": 4,
+    "uncalledRaw": 299,
+    "alone": 345,
+    "aloneUncalled": 118
+   },
+   "unmapped": {
+    "deadAlone": 39,
+    "units": 20,
+    "raw": 581,
+    "deadRaw": 131,
+    "uncalled": 2,
+    "uncalledRaw": 100,
+    "alone": 148,
+    "aloneUncalled": 32
+   },
+   "core/List": {
+    "deadAlone": 644,
+    "units": 32,
+    "raw": 2425,
+    "deadRaw": 1560,
+    "uncalled": 13,
+    "uncalledRaw": 1433,
+    "alone": 879,
+    "aloneUncalled": 594
+   },
+   "browser/Rt": {
+    "deadAlone": 64,
+    "units": 11,
+    "raw": 926,
+    "deadRaw": 220,
+    "uncalled": 2,
+    "uncalledRaw": 143,
+    "alone": 250,
+    "aloneUncalled": 60
+   },
+   "browser/Hosted": {
+    "deadAlone": 87,
+    "units": 12,
+    "raw": 705,
+    "deadRaw": 193,
+    "uncalled": 2,
+    "uncalledRaw": 112,
+    "alone": 267,
+    "aloneUncalled": -4
+   },
+   "browser/Cmd": {
+    "deadAlone": 0,
+    "units": 3,
+    "raw": 106,
+    "deadRaw": 0,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 49,
+    "aloneUncalled": 0
+   },
+   "core/Dict": {
+    "deadAlone": 202,
+    "units": 8,
+    "raw": 1341,
+    "deadRaw": 945,
+    "uncalled": 1,
+    "uncalledRaw": 627,
+    "alone": 333,
+    "aloneUncalled": 128
+   },
+   "core/Maybe": {
+    "deadAlone": 15,
+    "units": 3,
+    "raw": 85,
+    "deadRaw": 10,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 1,
+    "aloneUncalled": 0
+   },
+   "browser-direct/Tea": {
+    "deadAlone": -6,
+    "units": 6,
+    "raw": 748,
+    "deadRaw": 147,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 315,
+    "aloneUncalled": 0
+   },
+   "core/String": {
+    "deadAlone": 38,
+    "units": 8,
+    "raw": 365,
+    "deadRaw": 42,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 163,
+    "aloneUncalled": 0
+   },
+   "browser-direct/Direct": {
+    "deadAlone": 739,
+    "units": 76,
+    "raw": 8954,
+    "deadRaw": 2317,
+    "uncalled": 5,
+    "uncalledRaw": 226,
+    "alone": 3080,
+    "aloneUncalled": 62
+   },
+   "browser/Storage": {
+    "deadAlone": 69,
+    "units": 4,
+    "raw": 369,
+    "deadRaw": 178,
+    "uncalled": 1,
+    "uncalledRaw": 47,
+    "alone": 127,
+    "aloneUncalled": -6
+   },
+   "core/Url": {
+    "deadAlone": 31,
+    "units": 3,
+    "raw": 586,
+    "deadRaw": 190,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 203,
+    "aloneUncalled": 0
+   },
+   "browser/Listen": {
+    "deadAlone": -6,
+    "units": 1,
+    "raw": 176,
+    "deadRaw": 66,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 10,
+    "aloneUncalled": 0
+   },
+   "browser/Sub": {
+    "deadAlone": 0,
+    "units": 1,
+    "raw": 40,
+    "deadRaw": 0,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 8,
+    "aloneUncalled": 0
+   },
+   "browser/Browser/Navigation": {
+    "deadAlone": -23,
+    "units": 2,
+    "raw": 92,
+    "deadRaw": 5,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 58,
+    "aloneUncalled": 0
+   },
+   "html/Html": {
+    "deadAlone": 22,
+    "units": 1,
+    "raw": 42,
+    "deadRaw": 3,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 11,
+    "aloneUncalled": 0
+   },
+   "app": {
+    "deadAlone": 29,
+    "units": 24,
+    "raw": 7889,
+    "deadRaw": 334,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 2344,
+    "aloneUncalled": 0
+   },
+   "(platform runtime)": {
+    "deadAlone": 980,
+    "units": 117,
+    "raw": 12158,
+    "deadRaw": 3129,
+    "uncalled": 10,
+    "uncalledRaw": 528,
+    "alone": 4186,
+    "aloneUncalled": 137
+   }
+  }
+ },
+ "Sternhalma-tea": {
+  "total": 7746,
+  "groups": {
+   "core/Task": {
+    "deadAlone": 0,
+    "units": 1,
+    "raw": 56,
+    "deadRaw": 0,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 37,
+    "aloneUncalled": 0
+   },
+   "browser/Rt": {
+    "deadAlone": 305,
+    "units": 34,
+    "raw": 3014,
+    "deadRaw": 751,
+    "uncalled": 5,
+    "uncalledRaw": 305,
+    "alone": 1053,
+    "aloneUncalled": 123
+   },
+   "browser/Cmd": {
+    "deadAlone": 0,
+    "units": 1,
+    "raw": 4,
+    "deadRaw": 0,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 34,
+    "aloneUncalled": 0
+   },
+   "unmapped": {
+    "deadAlone": 0,
+    "units": 22,
+    "raw": 554,
+    "deadRaw": 0,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 109,
+    "aloneUncalled": 0
+   },
+   "core/List": {
+    "deadAlone": 889,
+    "units": 58,
+    "raw": 5119,
+    "deadRaw": 2404,
+    "uncalled": 18,
+    "uncalledRaw": 2155,
+    "alone": 1779,
+    "aloneUncalled": 780
+   },
+   "core/Basics": {
+    "deadAlone": 0,
+    "units": 3,
+    "raw": 45,
+    "deadRaw": 0,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 40,
+    "aloneUncalled": 0
+   },
+   "app": {
+    "deadAlone": 306,
+    "units": 67,
+    "raw": 12608,
+    "deadRaw": 1667,
+    "uncalled": 2,
+    "uncalledRaw": 254,
+    "alone": 3387,
+    "aloneUncalled": 78
+   },
+   "core/Dict": {
+    "deadAlone": 31,
+    "units": 9,
+    "raw": 1131,
+    "deadRaw": 58,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 286,
+    "aloneUncalled": 0
+   },
+   "core/Maybe": {
+    "deadAlone": 18,
+    "units": 3,
+    "raw": 85,
+    "deadRaw": 5,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 22,
+    "aloneUncalled": 0
+   },
+   "core/Set": {
+    "deadAlone": 0,
+    "units": 3,
+    "raw": 52,
+    "deadRaw": 0,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 32,
+    "aloneUncalled": 0
+   },
+   "core/Int": {
+    "deadAlone": 4,
+    "units": 1,
+    "raw": 27,
+    "deadRaw": 2,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 58,
+    "aloneUncalled": 0
+   },
+   "html/Html": {
+    "deadAlone": 0,
+    "units": 1,
+    "raw": 24,
+    "deadRaw": 0,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 46,
+    "aloneUncalled": 0
+   },
+   "core/String": {
+    "deadAlone": 0,
+    "units": 2,
+    "raw": 59,
+    "deadRaw": 0,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 25,
+    "aloneUncalled": 0
+   },
+   "browser/Browser": {
+    "deadAlone": 7,
+    "units": 7,
+    "raw": 490,
+    "deadRaw": 47,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 203,
+    "aloneUncalled": 0
+   },
+   "browser/Hosted": {
+    "deadAlone": 0,
+    "units": 1,
+    "raw": 47,
+    "deadRaw": 0,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 40,
+    "aloneUncalled": 0
+   },
+   "browser-tea/Tea": {
+    "deadAlone": 34,
+    "units": 6,
+    "raw": 488,
+    "deadRaw": 194,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 183,
+    "aloneUncalled": 0
+   },
+   "browser/Sub": {
+    "deadAlone": 0,
+    "units": 1,
+    "raw": 5,
+    "deadRaw": 0,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 22,
+    "aloneUncalled": 0
+   },
+   "(platform runtime)": {
+    "deadAlone": 346,
+    "units": 51,
+    "raw": 4072,
+    "deadRaw": 992,
+    "uncalled": 5,
+    "uncalledRaw": 305,
+    "alone": 1438,
+    "aloneUncalled": 123
+   }
+  }
+ },
+ "Sternhalma-direct": {
+  "total": 9742,
+  "groups": {
+   "core/Basics": {
+    "deadAlone": 10,
+    "units": 5,
+    "raw": 126,
+    "deadRaw": 50,
+    "uncalled": 1,
+    "uncalledRaw": 34,
+    "alone": 61,
+    "aloneUncalled": 16
+   },
+   "core/Task": {
+    "deadAlone": 0,
+    "units": 1,
+    "raw": 56,
+    "deadRaw": 0,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 49,
+    "aloneUncalled": 0
+   },
+   "browser/Rt": {
+    "deadAlone": 168,
+    "units": 20,
+    "raw": 1671,
+    "deadRaw": 485,
+    "uncalled": 5,
+    "uncalledRaw": 351,
+    "alone": 543,
+    "aloneUncalled": 136
+   },
+   "unmapped": {
+    "deadAlone": 0,
+    "units": 21,
+    "raw": 517,
+    "deadRaw": 0,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 100,
+    "aloneUncalled": 0
+   },
+   "core/List": {
+    "deadAlone": 893,
+    "units": 58,
+    "raw": 5093,
+    "deadRaw": 2388,
+    "uncalled": 18,
+    "uncalledRaw": 2135,
+    "alone": 1760,
+    "aloneUncalled": 748
+   },
+   "browser/Cmd": {
+    "deadAlone": 0,
+    "units": 1,
+    "raw": 9,
+    "deadRaw": 0,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 4,
+    "aloneUncalled": 0
+   },
+   "core/Dict": {
+    "deadAlone": 19,
+    "units": 8,
+    "raw": 1335,
+    "deadRaw": 63,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 340,
+    "aloneUncalled": 0
+   },
+   "browser-direct/Tea": {
+    "deadAlone": 51,
+    "units": 2,
+    "raw": 303,
+    "deadRaw": 232,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 82,
+    "aloneUncalled": 0
+   },
+   "core/String": {
+    "deadAlone": 0,
+    "units": 2,
+    "raw": 59,
+    "deadRaw": 0,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 45,
+    "aloneUncalled": 0
+   },
+   "browser-direct/Direct": {
+    "deadAlone": 442,
+    "units": 49,
+    "raw": 4977,
+    "deadRaw": 1187,
+    "uncalled": 3,
+    "uncalledRaw": 125,
+    "alone": 1735,
+    "aloneUncalled": 40
+   },
+   "app": {
+    "deadAlone": 361,
+    "units": 78,
+    "raw": 17666,
+    "deadRaw": 3319,
+    "uncalled": 3,
+    "uncalledRaw": 48,
+    "alone": 4243,
+    "aloneUncalled": 0
+   },
+   "core/Maybe": {
+    "deadAlone": -21,
+    "units": 3,
+    "raw": 85,
+    "deadRaw": 5,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 36,
+    "aloneUncalled": 0
+   },
+   "html/Html": {
+    "deadAlone": 0,
+    "units": 1,
+    "raw": 24,
+    "deadRaw": 0,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": -8,
+    "aloneUncalled": 0
+   },
+   "core/Set": {
+    "deadAlone": 0,
+    "units": 3,
+    "raw": 52,
+    "deadRaw": 0,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 14,
+    "aloneUncalled": 0
+   },
+   "core/Int": {
+    "deadAlone": -11,
+    "units": 1,
+    "raw": 27,
+    "deadRaw": 2,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 11,
+    "aloneUncalled": 0
+   },
+   "(platform runtime)": {
+    "deadAlone": 597,
+    "units": 73,
+    "raw": 6984,
+    "deadRaw": 1904,
+    "uncalled": 8,
+    "uncalledRaw": 476,
+    "alone": 2421,
+    "aloneUncalled": 175
+   }
+  }
+ },
+ "BikeWars-tea": {
+  "total": 9262,
+  "groups": {
+   "core/Task": {
+    "deadAlone": 138,
+    "units": 27,
+    "raw": 1110,
+    "deadRaw": 383,
+    "uncalled": 4,
+    "uncalledRaw": 299,
+    "alone": 383,
+    "aloneUncalled": 117
+   },
+   "browser/Rt": {
+    "deadAlone": 201,
+    "units": 30,
+    "raw": 2605,
+    "deadRaw": 732,
+    "uncalled": 6,
+    "uncalledRaw": 385,
+    "alone": 875,
+    "aloneUncalled": 121
+   },
+   "core/Basics": {
+    "deadAlone": 0,
+    "units": 2,
+    "raw": 20,
+    "deadRaw": 0,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": -24,
+    "aloneUncalled": 0
+   },
+   "unmapped": {
+    "deadAlone": 241,
+    "units": 38,
+    "raw": 3201,
+    "deadRaw": 2223,
+    "uncalled": 1,
+    "uncalledRaw": 287,
+    "alone": 445,
+    "aloneUncalled": 88
+   },
+   "core/List": {
+    "deadAlone": 739,
+    "units": 50,
+    "raw": 4017,
+    "deadRaw": 2058,
+    "uncalled": 16,
+    "uncalledRaw": 1861,
+    "alone": 1322,
+    "aloneUncalled": 621
+   },
+   "browser/Cmd": {
+    "deadAlone": 0,
+    "units": 2,
+    "raw": 14,
+    "deadRaw": 0,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": -15,
+    "aloneUncalled": 0
+   },
+   "core/Dict": {
+    "deadAlone": 85,
+    "units": 7,
+    "raw": 1112,
+    "deadRaw": 346,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 276,
+    "aloneUncalled": 0
+   },
+   "core/Maybe": {
+    "deadAlone": 9,
+    "units": 2,
+    "raw": 55,
+    "deadRaw": 4,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 22,
+    "aloneUncalled": 0
+   },
+   "browser/Hosted": {
+    "deadAlone": 46,
+    "units": 9,
+    "raw": 576,
+    "deadRaw": 142,
+    "uncalled": 1,
+    "uncalledRaw": 82,
+    "alone": 196,
+    "aloneUncalled": 19
+   },
+   "browser/Browser": {
+    "deadAlone": 38,
+    "units": 7,
+    "raw": 563,
+    "deadRaw": 82,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 197,
+    "aloneUncalled": 0
+   },
+   "browser-tea/Tea": {
+    "deadAlone": 28,
+    "units": 10,
+    "raw": 1123,
+    "deadRaw": 293,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 366,
+    "aloneUncalled": 0
+   },
+   "app": {
+    "deadAlone": 360,
+    "units": 97,
+    "raw": 12629,
+    "deadRaw": 1482,
+    "uncalled": 7,
+    "uncalledRaw": 443,
+    "alone": 3836,
+    "aloneUncalled": 73
+   },
+   "browser/Sub": {
+    "deadAlone": 16,
+    "units": 3,
+    "raw": 161,
+    "deadRaw": 9,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 73,
+    "aloneUncalled": 0
+   },
+   "browser/Browser/Events": {
+    "deadAlone": 36,
+    "units": 5,
+    "raw": 558,
+    "deadRaw": 102,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 207,
+    "aloneUncalled": 0
+   },
+   "html/Html": {
+    "deadAlone": 1,
+    "units": 1,
+    "raw": 42,
+    "deadRaw": 3,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 20,
+    "aloneUncalled": 0
+   },
+   "core/String": {
+    "deadAlone": -35,
+    "units": 2,
+    "raw": 93,
+    "deadRaw": 11,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 61,
+    "aloneUncalled": 0
+   },
+   "(platform runtime)": {
+    "deadAlone": 401,
+    "units": 67,
+    "raw": 5642,
+    "deadRaw": 1363,
+    "uncalled": 7,
+    "uncalledRaw": 467,
+    "alone": 1921,
+    "aloneUncalled": 141
+   }
+  }
+ },
+ "BikeWars-direct": {
+  "total": 11315,
+  "groups": {
+   "core/Basics": {
+    "deadAlone": 22,
+    "units": 4,
+    "raw": 102,
+    "deadRaw": 50,
+    "uncalled": 1,
+    "uncalledRaw": 34,
+    "alone": 89,
+    "aloneUncalled": 8
+   },
+   "core/Task": {
+    "deadAlone": 162,
+    "units": 25,
+    "raw": 1080,
+    "deadRaw": 379,
+    "uncalled": 4,
+    "uncalledRaw": 299,
+    "alone": 364,
+    "aloneUncalled": 133
+   },
+   "browser/Rt": {
+    "deadAlone": 191,
+    "units": 21,
+    "raw": 1871,
+    "deadRaw": 591,
+    "uncalled": 6,
+    "uncalledRaw": 415,
+    "alone": 614,
+    "aloneUncalled": 126
+   },
+   "unmapped": {
+    "deadAlone": 232,
+    "units": 40,
+    "raw": 3254,
+    "deadRaw": 2223,
+    "uncalled": 1,
+    "uncalledRaw": 287,
+    "alone": 501,
+    "aloneUncalled": 85
+   },
+   "core/List": {
+    "deadAlone": 755,
+    "units": 50,
+    "raw": 4006,
+    "deadRaw": 2055,
+    "uncalled": 16,
+    "uncalledRaw": 1857,
+    "alone": 1317,
+    "aloneUncalled": 667
+   },
+   "browser/Cmd": {
+    "deadAlone": 0,
+    "units": 1,
+    "raw": 9,
+    "deadRaw": 0,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 66,
+    "aloneUncalled": 0
+   },
+   "core/Dict": {
+    "deadAlone": 59,
+    "units": 8,
+    "raw": 1341,
+    "deadRaw": 421,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 346,
+    "aloneUncalled": 0
+   },
+   "core/Maybe": {
+    "deadAlone": -21,
+    "units": 2,
+    "raw": 55,
+    "deadRaw": 4,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 23,
+    "aloneUncalled": 0
+   },
+   "browser/Hosted": {
+    "deadAlone": 8,
+    "units": 8,
+    "raw": 529,
+    "deadRaw": 142,
+    "uncalled": 1,
+    "uncalledRaw": 82,
+    "alone": 103,
+    "aloneUncalled": 72
+   },
+   "browser-direct/Tea": {
+    "deadAlone": 51,
+    "units": 6,
+    "raw": 984,
+    "deadRaw": 357,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 351,
+    "aloneUncalled": 0
+   },
+   "core/String": {
+    "deadAlone": 23,
+    "units": 3,
+    "raw": 108,
+    "deadRaw": 11,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 83,
+    "aloneUncalled": 0
+   },
+   "browser-direct/Direct": {
+    "deadAlone": 359,
+    "units": 42,
+    "raw": 4246,
+    "deadRaw": 1165,
+    "uncalled": 4,
+    "uncalledRaw": 178,
+    "alone": 1465,
+    "aloneUncalled": 44
+   },
+   "app": {
+    "deadAlone": 349,
+    "units": 131,
+    "raw": 16665,
+    "deadRaw": 1750,
+    "uncalled": 11,
+    "uncalledRaw": 514,
+    "alone": 4726,
+    "aloneUncalled": 147
+   },
+   "browser/Sub": {
+    "deadAlone": -7,
+    "units": 3,
+    "raw": 198,
+    "deadRaw": 9,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 111,
+    "aloneUncalled": 0
+   },
+   "browser/Browser/Events": {
+    "deadAlone": 18,
+    "units": 5,
+    "raw": 558,
+    "deadRaw": 102,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 198,
+    "aloneUncalled": 0
+   },
+   "html/Html": {
+    "deadAlone": 25,
+    "units": 1,
+    "raw": 42,
+    "deadRaw": 3,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 46,
+    "aloneUncalled": 0
+   },
+   "(platform runtime)": {
+    "deadAlone": 765,
+    "units": 87,
+    "raw": 8437,
+    "deadRaw": 2369,
+    "uncalled": 11,
+    "uncalledRaw": 675,
+    "alone": 2893,
+    "aloneUncalled": 179
+   }
+  }
+ },
+ "Table-tea": {
+  "total": 5365,
+  "groups": {
+   "browser/Rt": {
+    "deadAlone": 637,
+    "units": 38,
+    "raw": 6596,
+    "deadRaw": 1756,
+    "uncalled": 2,
+    "uncalledRaw": 137,
+    "alone": 2577,
+    "aloneUncalled": 34
+   },
+   "core/Int": {
+    "deadAlone": 17,
+    "units": 1,
+    "raw": 26,
+    "deadRaw": 2,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 10,
+    "aloneUncalled": 0
+   },
+   "unmapped": {
+    "deadAlone": 0,
+    "units": 11,
+    "raw": 170,
+    "deadRaw": 0,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 26,
+    "aloneUncalled": 0
+   },
+   "core/List": {
+    "deadAlone": 137,
+    "units": 27,
+    "raw": 2215,
+    "deadRaw": 403,
+    "uncalled": 2,
+    "uncalledRaw": 199,
+    "alone": 832,
+    "aloneUncalled": 67
+   },
+   "app": {
+    "deadAlone": 38,
+    "units": 20,
+    "raw": 4260,
+    "deadRaw": 153,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 1553,
+    "aloneUncalled": 0
+   },
+   "(platform runtime)": {
+    "deadAlone": 637,
+    "units": 38,
+    "raw": 6596,
+    "deadRaw": 1756,
+    "uncalled": 2,
+    "uncalledRaw": 137,
+    "alone": 2577,
+    "aloneUncalled": 34
+   }
+  }
+ },
+ "Table-direct": {
+  "total": 4340,
+  "groups": {
+   "unmapped": {
+    "deadAlone": 0,
+    "units": 4,
+    "raw": 55,
+    "deadRaw": 0,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 21,
+    "aloneUncalled": 0
+   },
+   "core/List": {
+    "deadAlone": 147,
+    "units": 27,
+    "raw": 2183,
+    "deadRaw": 399,
+    "uncalled": 2,
+    "uncalledRaw": 197,
+    "alone": 837,
+    "aloneUncalled": 71
+   },
+   "browser-direct/Direct": {
+    "deadAlone": 610,
+    "units": 39,
+    "raw": 5097,
+    "deadRaw": 1695,
+    "uncalled": 4,
+    "uncalledRaw": 204,
+    "alone": 1841,
+    "aloneUncalled": 42
+   },
+   "core/Int": {
+    "deadAlone": 0,
+    "units": 1,
+    "raw": 27,
+    "deadRaw": 2,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 12,
+    "aloneUncalled": 0
+   },
+   "app": {
+    "deadAlone": 21,
+    "units": 11,
+    "raw": 3908,
+    "deadRaw": 104,
+    "uncalled": 0,
+    "uncalledRaw": 0,
+    "alone": 1307,
+    "aloneUncalled": 0
+   },
+   "(platform runtime)": {
+    "deadAlone": 610,
+    "units": 39,
+    "raw": 5097,
+    "deadRaw": 1695,
+    "uncalled": 4,
+    "uncalledRaw": 204,
+    "alone": 1841,
+    "aloneUncalled": 42
+   }
+  }
+ }
+}
