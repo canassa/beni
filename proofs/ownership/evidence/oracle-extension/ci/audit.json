@@ -1,0 +1,60 @@
+{
+  "judgeSha256": "b5d02ce151f23cb1dbdf7ce49f9e5c6ff8f0ff707974ad925ac70b2002412b0e",
+  "observation": "Original programs; complete final value, reads and externalReads in both unchanged Lean interpreters. The judge labels the supplied original core minimum under --only; no reduction is used.",
+  "campaign": {
+    "programs": 915,
+    "translated": 462,
+    "skipped": 453,
+    "valueChecked": 462,
+    "leads": 6,
+    "precision": 8,
+    "environment": {
+      "node": "v24.19.0",
+      "compilerSha256": "445fda39e954533502679b8f302e13aecc8d4940d553bceea774dd7eb1b6e1c7",
+      "oracleSha256": "796ee00db19d46e3922274f82fb453b898b42c10cbc584ecc4485e86e9c156b1"
+    },
+    "streams": [
+      {
+        "name": "fixtures-0.jsonl",
+        "programs": 639,
+        "translated": 338,
+        "skipped": 301,
+        "valueChecked": 338,
+        "agreements": 332,
+        "precision": 6,
+        "sha256": "b227d46a01cb4f4596ca7279d45b30a8cfd4b508f44ea694097cc8ec7242544f"
+      },
+      {
+        "name": "enumerate-0.jsonl",
+        "programs": 148,
+        "translated": 92,
+        "skipped": 56,
+        "valueChecked": 92,
+        "sha256": "34763d7f3e83eab586e19ad7f9b5959dcae26fbc0327e45e3ef3cac6f8b8ff0d",
+        "agreements": 91,
+        "leads": 1
+      },
+      {
+        "name": "generator-17.jsonl",
+        "programs": 128,
+        "translated": 32,
+        "skipped": 96,
+        "valueChecked": 32,
+        "sha256": "121e9228d9e26a0e11f09b8632dd7c55a644be1a7e68daf029c9770150ebff39",
+        "agreements": 25,
+        "precision": 2,
+        "leads": 5
+      }
+    ]
+  },
+  "confirmed": 0,
+  "confirmedIds": [],
+  "agreeingOriginalLeads": 6,
+  "originalClusterLeadsStillAccepted": null,
+  "reverse": {
+    "before": 401,
+    "nowAccepted": 0,
+    "stillRefused": 401,
+    "refusalDetailsChanged": 0
+  }
+}

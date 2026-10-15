@@ -1,5 +1,9 @@
 # Ownership result soundness fixes — 2026-10-15
 
+The subsequent [Lean oracle extension campaign](ORACLE-EXTENSION-RESULTS.md)
+adds Result, recursive payloads and initialization projections while retaining
+zero confirmed unsafe leads. The measurements below are the pre-extension fix campaign.
+
 PR #115 is merged. This follow-up changes `src/own/`, with the rules specified
 first in the dated §29 amendment of `docs/design/ownership-checker.md`. Neither
 the type checker nor the Lean checker, generator, translation policy or either

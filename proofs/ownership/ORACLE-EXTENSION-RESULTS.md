@@ -1,0 +1,155 @@
+# Result, recursive payload and initialization oracle — 2026-10-15
+
+The Lean core now models typed Result constructors and elimination, a CPS
+lowering of `?` scoped to its definition, the unbounded recursive type
+`Chain a = End | Link a (Chain a)`, and private initialization transfer with
+retained entry environments. The six §29 rules from PR #124 already had
+corresponding protections in the checker; each now has its own required hole.
+PR #116's initialization condition is projected without depending on that
+still-open compiler PR. The shipping compiler and its ownership policy are
+unchanged.
+
+There are **167 verdict fixtures** (98 original + 69 sync), **472 targeted
+programs**, and **eleven new required holes**. Existing fixture/targeted ids
+are unchanged; 25 verdict fixtures and 124 targeted programs append. The new
+recursive Result fixture exercises optimistic bottom propagation before the
+base arm is discovered. An additional initialization regression prevents a
+nested entry from reusing a spent private-transfer permission to clear a later
+permanent publication.
+
+## Planted holes
+
+Every fixed witness is well typed, refused by the corrected checker, accepted
+under its hole, and disagrees between the value and in-place interpreters.
+The independent finite targeted product must catch every hole too; an error
+or a rejection does not count. Its corrected run accepted 172 of 472 programs,
+with zero disagreements, execution errors or invalid result certificates.
+
+| Hole | Newly accepted targeted programs | Interpreter disagreements |
+|---|---:|---:|
+| `arm-result` | 8 | 7 |
+| `block-result` | 4 | 4 |
+| `capture-read` | 4 | 4 |
+| `fold-loan` | 4 | 4 |
+| `recursive-capture` | 4 | 4 |
+| `callee-capture` | 4 | 4 |
+| `early-err` | 8 | 8 |
+| `recursive-payload` | 12 | 12 |
+| `init-shared` | 8 | 8 |
+| `init-retained` | 8 | 8 |
+| `init-authority` | 4 | 4 |
+
+One changed `arm-result` verdict agrees on its particular executed condition;
+that is not a control catch. All eleven controls have actual disagreements,
+with zero inconclusive executions. The table counts newly accepted programs,
+not every verdict a deliberately damaged liveness analysis can change.
+[Control counters](evidence/oracle-extension/controls.json),
+[replayable fixed cores and both interpreter outcomes](evidence/oracle-extension/hole-witnesses.jsonl.gz),
+and the [complete CI log](evidence/oracle-extension/ci.log.gz) retain the evidence.
+The ten earlier required targeted holes and the existing `branch-live` witness
+also pass: all 22 targeted controls are caught.
+
+## Shipping bridge
+
+| Campaign | Inputs | Translated / value-checked | Skipped | Zig accepts / Lean refuses | Zig refuses / Lean accepts | Confirmed unsafe originals |
+|---|---:|---:|---:|---:|---:|---:|
+| CI bound | 915 | 462 | 453 | **6** | **8** | **0** |
+| Bound 2 + three seeds × 20,000 | 116,605 | 43,180 | 73,425 | **1,725** | **401** | **0** |
+
+| Full stream | Inputs | Translated | Forward leads | Reverse leads | Confirmed unsafe |
+|---|---:|---:|---:|---:|---:|
+| Fixtures / sync / targeted | 639 | 338 | 0 | 6 | 0 |
+| Bound-2 enumeration | 55,966 | 27,769 | 294 | 267 | 0 |
+| Seed 17 | 20,000 | 5,006 | 491 | 37 | 0 |
+| Seed 20261011 | 20,000 | 5,054 | 470 | 43 | 0 |
+| Seed 314159 | 20,000 | 5,013 | 470 | 48 | 0 |
+
+Compared with the post-#124 campaign, the forward and reverse counts are
+unchanged. The expanded fixed set contributes **114 new translated agreements**
+and **35 counted skips**, with no additional whole-program lead in either
+direction. All historical enumeration and generator stream SHA-256 hashes and
+input/translation/skip/value-check counts match exactly; the fixed stream
+changes only by the appended examples. Total full-run agreements rise from
+40,940 to **41,054**.
+
+Every remaining original forward lead was judged with both Lean interpreters,
+comparing the complete final value, reads and external-reader observations.
+**All 1,725 agree.** All six old defect-cluster membership sets have zero
+surviving accepted originals. A replay of all **401 historical reverse sources**
+still refuses each, with **zero changed refusal details**. The judge checks
+original source fidelity and frozen compiler hashes; no historical minimum
+classifies an original. The optional persistent-runtime minimizer was disabled
+for these evidence runs; ordinary `ownership ci` also passed its default bridge.
+
+The bridge emits actual beni `?` for the canonical question lowering and a
+native recursive Chain ADT. Their normalized final values match the oracle.
+Entry/private-root projections remain counted skips because the bridge has no
+runtime entry-delivery model. The emitted direct library still uses persistent
+lists; its execution is not the in-place judge. Agreeing finite traces are
+precision evidence on these inputs, not proofs of global safety.
+
+[CI report](evidence/oracle-extension/ci/report.json) and
+[original-program audit](evidence/oracle-extension/ci/audit.json);
+[full report](evidence/oracle-extension/long/report.json) and
+[original-program audit](evidence/oracle-extension/long/audit.json).
+Compressed sources, verdict evidence and complete interpreter judgments are
+retained beside each report.
+
+## Validation and boundaries
+
+`lake build` passes: 3,253 constants replayed through the kernel, no swapped
+compiler attributes, and exactly the existing three unproved statements. The
+independent `scripts/audit.sh` over committed `544f36d1b` also passes: all
+32 sources parsed, 4,709 constants replayed module by module, only the four
+pinned constants dependent on the three existing unproved statements, no
+swapped attributes and no build-time source changes.
+`ownership ci 20000 17` passes all 167 verdict fixtures, the v5 campaign
+(2,911 accepted, 1,815 writing in place, zero disagreements), every required
+control, all 55,966 bound-2 programs (31,680 accepted, 10,468 writing, zero
+disagreements), all 472 targeted programs and the bounded shipping bridge.
+Expected observations independently pin inner/outer question frames, recursive
+Result errors, successful questions and the recursive Chain consumer.
+
+`zorg build test test-blackbox fmt-check beni-fmt-check -j4` completed with
+**1,302 passed, 15 skipped and only the two documented macOS case-folding
+failures**. Exact `zorg build gates` refuses this Apple Silicon host because
+it cannot count reference x86-64 Linux instructions. The hardware-budget gate
+remains owed on a supported Linux host; no budget or exemption changed.
+
+This is a core model. Arbitrary named/mutually recursive type declarations,
+dictionary representatives, opaque/wildcard compiler encodings, effects,
+rendering and unbounded event delivery remain explicit boundaries. The gap
+list in ownership-checker.md §26.7 removes the newly modelled rules and retains
+those residual boundaries. Private-read proofs deliberately support a narrow
+single-read allocation/alias/capture chain; unsupported graphs stay shared.
+The three soundness statements remain unproved.
+
+## Reproduce
+
+Inside `nix develop .#ownership`, with `LEAN_NUM_THREADS=8`:
+
+```sh
+zorg build
+cp zig-out/bin/beni zig-out/ownership-oracle-ci-beni
+zorg build test test-blackbox fmt-check beni-fmt-check -j4
+cp zig-out/safe/bin/beni zig-out/ownership-oracle-long-beni
+cd proofs/ownership
+lake build
+lake build triage
+lake exe ownership ci 20000 17
+lake exe ownership enumerate-targeted --mutant=init-authority
+# Use fresh, separate output directories for each campaign.
+node scripts/bridge.mjs --ci --no-build --no-minimize \
+  --compiler=../../zig-out/ownership-oracle-ci-beni --out=../../zig-out/ownership-oracle-ci --jobs=8
+node scripts/bridge-fix-audit.mjs ../../zig-out/ownership-oracle-ci \
+  ../../zig-out/ownership-oracle-ci-beni ../../zig-out/ownership-oracle-audit-ci
+node scripts/bridge.mjs --long --no-build --no-minimize \
+  --compiler=../../zig-out/ownership-oracle-long-beni --out=../../zig-out/ownership-oracle-long --jobs=8
+node scripts/bridge-fix-audit.mjs ../../zig-out/ownership-oracle-long \
+  ../../zig-out/ownership-oracle-long-beni ../../zig-out/ownership-oracle-audit-long
+```
+
+The CI evidence used a frozen default `zorg build` compiler; the long evidence
+used the frozen ReleaseSafe compiler from the compiler test steps. Both are the
+unchanged shipping source at `bcf28a6ee`; their exact hashes are in the reports.
+The evidence README records artifact replay commands and the independent audit.

@@ -1,0 +1,121 @@
+{
+  "baseline": {
+    "programs": 472,
+    "typed": 472,
+    "accepted": 172,
+    "mismatches": 0,
+    "inconclusive": 0
+  },
+  "holes": [
+    {
+      "hole": "init-authority",
+      "programs": 472,
+      "typed": 472,
+      "accepted": 176,
+      "changed-verdicts": 4,
+      "mismatches": 4,
+      "inconclusive": 0,
+      "caught": true
+    },
+    {
+      "hole": "early-err",
+      "programs": 472,
+      "typed": 472,
+      "accepted": 180,
+      "changed-verdicts": 8,
+      "mismatches": 8,
+      "inconclusive": 0,
+      "caught": true
+    },
+    {
+      "hole": "recursive-payload",
+      "programs": 472,
+      "typed": 472,
+      "accepted": 184,
+      "changed-verdicts": 12,
+      "mismatches": 12,
+      "inconclusive": 0,
+      "caught": true
+    },
+    {
+      "hole": "init-retained",
+      "programs": 472,
+      "typed": 472,
+      "accepted": 180,
+      "changed-verdicts": 8,
+      "mismatches": 8,
+      "inconclusive": 0,
+      "caught": true
+    },
+    {
+      "hole": "init-shared",
+      "programs": 472,
+      "typed": 472,
+      "accepted": 180,
+      "changed-verdicts": 8,
+      "mismatches": 8,
+      "inconclusive": 0,
+      "caught": true
+    },
+    {
+      "hole": "arm-result",
+      "programs": 472,
+      "typed": 472,
+      "accepted": 180,
+      "changed-verdicts": 8,
+      "mismatches": 7,
+      "inconclusive": 0,
+      "caught": true
+    },
+    {
+      "hole": "block-result",
+      "programs": 472,
+      "typed": 472,
+      "accepted": 176,
+      "changed-verdicts": 4,
+      "mismatches": 4,
+      "inconclusive": 0,
+      "caught": true
+    },
+    {
+      "hole": "capture-read",
+      "programs": 472,
+      "typed": 472,
+      "accepted": 172,
+      "changed-verdicts": 4,
+      "mismatches": 4,
+      "inconclusive": 0,
+      "caught": true
+    },
+    {
+      "hole": "recursive-capture",
+      "programs": 472,
+      "typed": 472,
+      "accepted": 176,
+      "changed-verdicts": 4,
+      "mismatches": 4,
+      "inconclusive": 0,
+      "caught": true
+    },
+    {
+      "hole": "callee-capture",
+      "programs": 472,
+      "typed": 472,
+      "accepted": 176,
+      "changed-verdicts": 4,
+      "mismatches": 4,
+      "inconclusive": 0,
+      "caught": true
+    },
+    {
+      "hole": "fold-loan",
+      "programs": 472,
+      "typed": 472,
+      "accepted": 176,
+      "changed-verdicts": 4,
+      "mismatches": 4,
+      "inconclusive": 0,
+      "caught": true
+    }
+  ]
+}

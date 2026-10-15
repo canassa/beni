@@ -10,7 +10,8 @@ statements three are `sorry` and the main theorem is proved only from one of
 them. It does not change the beni compiler
 or the thesis.
 
-Current results and the full source-mutant matrix are in [RESULTS.md](RESULTS.md).
+Current [Result/recursive-payload/initialization results](ORACLE-EXTENSION-RESULTS.md)
+and the earlier source-mutant matrix are indexed in [RESULTS.md](RESULTS.md).
 The shipping-compiler differential bridge, counted skips, runtime boundary and
 commands are specified in [BRIDGE.md](BRIDGE.md); `ownership ci` includes its bounded run.
 [BRIDGE-RESULTS.md](BRIDGE-RESULTS.md) records the corrected 116,456-input campaign
