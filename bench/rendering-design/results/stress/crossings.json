@@ -1,0 +1,713 @@
+[
+  {
+    "family": "mixed",
+    "mode": "tea",
+    "crossing_n": 3888,
+    "crossing_brotli": 579185,
+    "last_n": 3888,
+    "last_brotli": 579185,
+    "compiler_limited": false
+  },
+  {
+    "family": "mixed",
+    "mode": "direct",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 1152,
+    "last_brotli": 242074,
+    "compiler_limited": true
+  },
+  {
+    "family": "mixed",
+    "mode": "vanilla",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 3888,
+    "last_brotli": 23506,
+    "compiler_limited": false
+  },
+  {
+    "family": "mixed",
+    "mode": "partial",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 3888,
+    "last_brotli": 349231,
+    "compiler_limited": false
+  },
+  {
+    "family": "mixed",
+    "mode": "static",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 3888,
+    "last_brotli": 223429,
+    "compiler_limited": false
+  },
+  {
+    "family": "mixed",
+    "mode": "local",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 3888,
+    "last_brotli": 211255,
+    "compiler_limited": false
+  },
+  {
+    "family": "mixed",
+    "mode": "cells",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 3888,
+    "last_brotli": 373905,
+    "compiler_limited": false
+  },
+  {
+    "family": "list",
+    "mode": "tea",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 336,
+    "last_brotli": 48473,
+    "compiler_limited": false
+  },
+  {
+    "family": "list",
+    "mode": "direct",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 336,
+    "last_brotli": 70207,
+    "compiler_limited": true
+  },
+  {
+    "family": "list",
+    "mode": "vanilla",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 336,
+    "last_brotli": 3516,
+    "compiler_limited": false
+  },
+  {
+    "family": "list",
+    "mode": "partial",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 336,
+    "last_brotli": 29815,
+    "compiler_limited": false
+  },
+  {
+    "family": "list",
+    "mode": "static",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 336,
+    "last_brotli": 21870,
+    "compiler_limited": false
+  },
+  {
+    "family": "list",
+    "mode": "local",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 336,
+    "last_brotli": 16487,
+    "compiler_limited": false
+  },
+  {
+    "family": "list",
+    "mode": "cells",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 336,
+    "last_brotli": 31298,
+    "compiler_limited": false
+  },
+  {
+    "family": "list",
+    "mode": "solid",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 336,
+    "last_brotli": 23775,
+    "compiler_limited": false
+  },
+  {
+    "family": "form",
+    "mode": "tea",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 32,
+    "last_brotli": 6269,
+    "compiler_limited": false
+  },
+  {
+    "family": "form",
+    "mode": "direct",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 32,
+    "last_brotli": 10230,
+    "compiler_limited": false
+  },
+  {
+    "family": "form",
+    "mode": "vanilla",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 32,
+    "last_brotli": 1081,
+    "compiler_limited": false
+  },
+  {
+    "family": "form",
+    "mode": "partial",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 32,
+    "last_brotli": 3986,
+    "compiler_limited": false
+  },
+  {
+    "family": "form",
+    "mode": "static",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 32,
+    "last_brotli": 3356,
+    "compiler_limited": false
+  },
+  {
+    "family": "form",
+    "mode": "local",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 32,
+    "last_brotli": 2742,
+    "compiler_limited": false
+  },
+  {
+    "family": "form",
+    "mode": "cells",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 32,
+    "last_brotli": 4312,
+    "compiler_limited": false
+  },
+  {
+    "family": "form",
+    "mode": "solid",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 32,
+    "last_brotli": 13379,
+    "compiler_limited": false
+  },
+  {
+    "family": "tabs",
+    "mode": "tea",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 32,
+    "last_brotli": 6266,
+    "compiler_limited": false
+  },
+  {
+    "family": "tabs",
+    "mode": "direct",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 32,
+    "last_brotli": 10102,
+    "compiler_limited": false
+  },
+  {
+    "family": "tabs",
+    "mode": "vanilla",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 32,
+    "last_brotli": 1088,
+    "compiler_limited": false
+  },
+  {
+    "family": "tabs",
+    "mode": "partial",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 32,
+    "last_brotli": 3516,
+    "compiler_limited": false
+  },
+  {
+    "family": "tabs",
+    "mode": "static",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 32,
+    "last_brotli": 3330,
+    "compiler_limited": false
+  },
+  {
+    "family": "tabs",
+    "mode": "local",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 32,
+    "last_brotli": 3146,
+    "compiler_limited": false
+  },
+  {
+    "family": "tabs",
+    "mode": "cells",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 32,
+    "last_brotli": 3846,
+    "compiler_limited": false
+  },
+  {
+    "family": "nested",
+    "mode": "tea",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 32,
+    "last_brotli": 6308,
+    "compiler_limited": false
+  },
+  {
+    "family": "nested",
+    "mode": "direct",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 32,
+    "last_brotli": 11923,
+    "compiler_limited": false
+  },
+  {
+    "family": "nested",
+    "mode": "vanilla",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 32,
+    "last_brotli": 994,
+    "compiler_limited": false
+  },
+  {
+    "family": "nested",
+    "mode": "partial",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 32,
+    "last_brotli": 3991,
+    "compiler_limited": false
+  },
+  {
+    "family": "nested",
+    "mode": "static",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 32,
+    "last_brotli": 4024,
+    "compiler_limited": false
+  },
+  {
+    "family": "nested",
+    "mode": "local",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 32,
+    "last_brotli": 3131,
+    "compiler_limited": false
+  },
+  {
+    "family": "nested",
+    "mode": "cells",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 32,
+    "last_brotli": 4261,
+    "compiler_limited": false
+  },
+  {
+    "family": "thread",
+    "mode": "tea",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 32,
+    "last_brotli": 7773,
+    "compiler_limited": false
+  },
+  {
+    "family": "thread",
+    "mode": "direct",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 32,
+    "last_brotli": 12600,
+    "compiler_limited": false
+  },
+  {
+    "family": "thread",
+    "mode": "vanilla",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 32,
+    "last_brotli": 1023,
+    "compiler_limited": false
+  },
+  {
+    "family": "thread",
+    "mode": "partial",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 32,
+    "last_brotli": 6170,
+    "compiler_limited": false
+  },
+  {
+    "family": "thread",
+    "mode": "static",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 32,
+    "last_brotli": 5887,
+    "compiler_limited": false
+  },
+  {
+    "family": "thread",
+    "mode": "local",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 32,
+    "last_brotli": 5165,
+    "compiler_limited": false
+  },
+  {
+    "family": "thread",
+    "mode": "cells",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 32,
+    "last_brotli": 5993,
+    "compiler_limited": false
+  },
+  {
+    "family": "cluster",
+    "mode": "tea",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 32,
+    "last_brotli": 4600,
+    "compiler_limited": false
+  },
+  {
+    "family": "cluster",
+    "mode": "direct",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 32,
+    "last_brotli": 7511,
+    "compiler_limited": false
+  },
+  {
+    "family": "cluster",
+    "mode": "vanilla",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 32,
+    "last_brotli": 912,
+    "compiler_limited": false
+  },
+  {
+    "family": "cluster",
+    "mode": "partial",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 32,
+    "last_brotli": 3006,
+    "compiler_limited": false
+  },
+  {
+    "family": "cluster",
+    "mode": "static",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 32,
+    "last_brotli": 2769,
+    "compiler_limited": false
+  },
+  {
+    "family": "cluster",
+    "mode": "local",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 32,
+    "last_brotli": 2354,
+    "compiler_limited": false
+  },
+  {
+    "family": "cluster",
+    "mode": "cells",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 32,
+    "last_brotli": 3569,
+    "compiler_limited": false
+  },
+  {
+    "family": "table",
+    "mode": "tea",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 32,
+    "last_brotli": 8724,
+    "compiler_limited": false
+  },
+  {
+    "family": "table",
+    "mode": "direct",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 32,
+    "last_brotli": 13760,
+    "compiler_limited": false
+  },
+  {
+    "family": "table",
+    "mode": "vanilla",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 32,
+    "last_brotli": 1949,
+    "compiler_limited": false
+  },
+  {
+    "family": "table",
+    "mode": "partial",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 32,
+    "last_brotli": 6076,
+    "compiler_limited": false
+  },
+  {
+    "family": "table",
+    "mode": "static",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 32,
+    "last_brotli": 5260,
+    "compiler_limited": false
+  },
+  {
+    "family": "table",
+    "mode": "local",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 32,
+    "last_brotli": 4522,
+    "compiler_limited": false
+  },
+  {
+    "family": "table",
+    "mode": "cells",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 32,
+    "last_brotli": 6584,
+    "compiler_limited": false
+  },
+  {
+    "family": "modal",
+    "mode": "tea",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 32,
+    "last_brotli": 6730,
+    "compiler_limited": false
+  },
+  {
+    "family": "modal",
+    "mode": "direct",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 32,
+    "last_brotli": 10897,
+    "compiler_limited": false
+  },
+  {
+    "family": "modal",
+    "mode": "vanilla",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 32,
+    "last_brotli": 1057,
+    "compiler_limited": false
+  },
+  {
+    "family": "modal",
+    "mode": "partial",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 32,
+    "last_brotli": 3845,
+    "compiler_limited": false
+  },
+  {
+    "family": "modal",
+    "mode": "static",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 32,
+    "last_brotli": 3672,
+    "compiler_limited": false
+  },
+  {
+    "family": "modal",
+    "mode": "local",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 32,
+    "last_brotli": 2965,
+    "compiler_limited": false
+  },
+  {
+    "family": "modal",
+    "mode": "cells",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 32,
+    "last_brotli": 4408,
+    "compiler_limited": false
+  },
+  {
+    "family": "filter",
+    "mode": "tea",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 32,
+    "last_brotli": 9732,
+    "compiler_limited": false
+  },
+  {
+    "family": "filter",
+    "mode": "direct",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 32,
+    "last_brotli": 14874,
+    "compiler_limited": false
+  },
+  {
+    "family": "filter",
+    "mode": "vanilla",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 32,
+    "last_brotli": 1984,
+    "compiler_limited": false
+  },
+  {
+    "family": "filter",
+    "mode": "partial",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 32,
+    "last_brotli": 6158,
+    "compiler_limited": false
+  },
+  {
+    "family": "filter",
+    "mode": "static",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 32,
+    "last_brotli": 5383,
+    "compiler_limited": false
+  },
+  {
+    "family": "filter",
+    "mode": "local",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 32,
+    "last_brotli": 4534,
+    "compiler_limited": false
+  },
+  {
+    "family": "filter",
+    "mode": "cells",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 32,
+    "last_brotli": 6783,
+    "compiler_limited": false
+  },
+  {
+    "family": "summary",
+    "mode": "tea",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 32,
+    "last_brotli": 8998,
+    "compiler_limited": false
+  },
+  {
+    "family": "summary",
+    "mode": "direct",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 32,
+    "last_brotli": 14277,
+    "compiler_limited": false
+  },
+  {
+    "family": "summary",
+    "mode": "vanilla",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 32,
+    "last_brotli": 1976,
+    "compiler_limited": false
+  },
+  {
+    "family": "summary",
+    "mode": "partial",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 32,
+    "last_brotli": 6331,
+    "compiler_limited": false
+  },
+  {
+    "family": "summary",
+    "mode": "static",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 32,
+    "last_brotli": 5613,
+    "compiler_limited": false
+  },
+  {
+    "family": "summary",
+    "mode": "local",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 32,
+    "last_brotli": 4771,
+    "compiler_limited": false
+  },
+  {
+    "family": "summary",
+    "mode": "cells",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 32,
+    "last_brotli": 6672,
+    "compiler_limited": false
+  }
+]

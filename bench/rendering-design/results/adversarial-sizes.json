@@ -1,0 +1,1603 @@
+{
+  "protocol": "Whole-response brotli 11, gzip 9. All candidates normalized with Terser 5.51.2 (module, two passes, identifier mangling). Rendering extraction deletes source-map spans owned by core, including inlined spans; unmapped gaps inherit their containing declaration. Extracts are byte attribution artifacts, not executable bundles. Full bundles are executed for validation. Runtime standalone; app incremental in rendering context, not additive independent prices. Compiler release figures also retained.",
+  "observations": [
+    {
+      "name": "adversarial-whole-model-alias",
+      "n": 1,
+      "seed": 17,
+      "shape": "adversarial",
+      "mode": "tea",
+      "sha256": "7e539976eaa6faa7a2272ea0866065cf8207ee25dcac2fdf9199a1fe85126a11",
+      "full": {
+        "raw": 3827,
+        "brotli": 1686,
+        "gzip": 1878
+      },
+      "rendering": {
+        "raw": 3480,
+        "brotli": 1536,
+        "gzip": 1713
+      },
+      "runtime": {
+        "raw": 2492,
+        "brotli": 1115,
+        "gzip": 1239
+      },
+      "app_alone": {
+        "raw": 988,
+        "brotli": 512,
+        "gzip": 557
+      },
+      "app_in_rendering_context": 421,
+      "excluded_core": {
+        "raw": 347,
+        "brotli": 228,
+        "gzip": 240
+      },
+      "origins": {
+        "platforms/browser/Rt": 2492,
+        "core/List": 347,
+        "app/Shape0": 708,
+        "app/Main": 268,
+        "unmapped": 12
+      },
+      "rendering_sha256": "85e120d538da60762b3b2222f136062f2fc743ebaa8363ccb23bc2c0bba12f9f",
+      "compiler_release": {
+        "full": {
+          "raw": 4082,
+          "brotli": 1750,
+          "gzip": 1973
+        },
+        "rendering": {
+          "raw": 3710,
+          "brotli": 1593,
+          "gzip": 1801
+        },
+        "runtime": {
+          "raw": 2629,
+          "brotli": 1129,
+          "gzip": 1277
+        },
+        "app_alone": {
+          "raw": 1081,
+          "brotli": 552,
+          "gzip": 617
+        },
+        "app_in_rendering_context": 464,
+        "excluded_core": {
+          "raw": 372,
+          "brotli": 246,
+          "gzip": 256
+        },
+        "origins": {
+          "platforms/browser/Rt": 2629,
+          "core/List": 372,
+          "app/Shape0": 734,
+          "app/Main": 296,
+          "unmapped": 51
+        },
+        "rendering_sha256": "bb7ca95d6375606b974bcd71566f5d7a4666742cb5a1108ff0cf58800f409a60"
+      }
+    },
+    {
+      "name": "adversarial-whole-model-alias",
+      "n": 1,
+      "seed": 17,
+      "shape": "adversarial",
+      "mode": "direct",
+      "sha256": "bf7e6000ab56f6ec9c82391e8a2b5669e35933df3b6325ee9d81a63127a60ce1",
+      "full": {
+        "raw": 6905,
+        "brotli": 2856,
+        "gzip": 3155
+      },
+      "rendering": {
+        "raw": 6460,
+        "brotli": 2671,
+        "gzip": 2941
+      },
+      "runtime": {
+        "raw": 4835,
+        "brotli": 2011,
+        "gzip": 2212
+      },
+      "app_alone": {
+        "raw": 1625,
+        "brotli": 789,
+        "gzip": 873
+      },
+      "app_in_rendering_context": 660,
+      "excluded_core": {
+        "raw": 445,
+        "brotli": 274,
+        "gzip": 291
+      },
+      "origins": {
+        "core/Basics": 91,
+        "platforms/browser/Rt": 1024,
+        "platforms/browser-direct/Direct": 3811,
+        "core/List": 347,
+        "app/Shape0": 947,
+        "core/String": 7,
+        "app/Main": 669,
+        "unmapped": 9
+      },
+      "rendering_sha256": "8ff3387e4cf7c621bbf7c726f62bc8f3dbc12443890e12c90303d04f14282558",
+      "compiler_release": {
+        "full": {
+          "raw": 7531,
+          "brotli": 3027,
+          "gzip": 3356
+        },
+        "rendering": {
+          "raw": 7036,
+          "brotli": 2809,
+          "gzip": 3119
+        },
+        "runtime": {
+          "raw": 5221,
+          "brotli": 2118,
+          "gzip": 2334
+        },
+        "app_alone": {
+          "raw": 1815,
+          "brotli": 836,
+          "gzip": 939
+        },
+        "app_in_rendering_context": 691,
+        "excluded_core": {
+          "raw": 495,
+          "brotli": 271,
+          "gzip": 312
+        },
+        "origins": {
+          "core/Basics": 92,
+          "platforms/browser/Rt": 1060,
+          "core/String": 21,
+          "platforms/browser-direct/Direct": 4161,
+          "unmapped": 33,
+          "core/List": 382,
+          "app/Shape0": 1049,
+          "app/Main": 733
+        },
+        "rendering_sha256": "3de346b162ad63a5ebe8db1d8759203db2982e40eb07b5a5f87bb9ec9df42c18"
+      }
+    },
+    {
+      "name": "adversarial-whole-model-alias",
+      "n": 1,
+      "seed": 17,
+      "shape": "adversarial",
+      "mode": "partial",
+      "sha256": "bbf35bbbdb2fc3c292746fddcfd6b07566c4dd36b6ff0a38145a9e83f09ab7bd",
+      "full": {
+        "raw": 1417,
+        "brotli": 657,
+        "gzip": 747
+      },
+      "rendering": {
+        "raw": 1417,
+        "brotli": 657,
+        "gzip": 747
+      },
+      "runtime": {
+        "raw": 662,
+        "brotli": 311,
+        "gzip": 375
+      },
+      "app_alone": {
+        "raw": 755,
+        "brotli": 403,
+        "gzip": 448
+      },
+      "app_in_rendering_context": 346,
+      "excluded_core": {
+        "raw": 0,
+        "brotli": 1,
+        "gzip": 20
+      },
+      "origins": {
+        "app/render-runtime.js": 662,
+        "app/App.js": 755
+      },
+      "rendering_sha256": "bbf35bbbdb2fc3c292746fddcfd6b07566c4dd36b6ff0a38145a9e83f09ab7bd",
+      "compiler_release": null
+    },
+    {
+      "name": "adversarial-whole-model-alias",
+      "n": 1,
+      "seed": 17,
+      "shape": "adversarial",
+      "mode": "static",
+      "sha256": "f6aaf6bba3e87c74b4820bc1ef3bc356ee6783612a617900ecda950ea484ddc7",
+      "full": {
+        "raw": 1570,
+        "brotli": 734,
+        "gzip": 833
+      },
+      "rendering": {
+        "raw": 1570,
+        "brotli": 734,
+        "gzip": 833
+      },
+      "runtime": {
+        "raw": 662,
+        "brotli": 311,
+        "gzip": 375
+      },
+      "app_alone": {
+        "raw": 908,
+        "brotli": 477,
+        "gzip": 526
+      },
+      "app_in_rendering_context": 423,
+      "excluded_core": {
+        "raw": 0,
+        "brotli": 1,
+        "gzip": 20
+      },
+      "origins": {
+        "app/render-runtime.js": 662,
+        "app/App.js": 908
+      },
+      "rendering_sha256": "f6aaf6bba3e87c74b4820bc1ef3bc356ee6783612a617900ecda950ea484ddc7",
+      "compiler_release": null
+    },
+    {
+      "name": "adversarial-whole-model-alias",
+      "n": 1,
+      "seed": 17,
+      "shape": "adversarial",
+      "mode": "cells",
+      "sha256": "0a0ca08ac07d2a544a90b05d1c942778df0eb8ea0d0e62f60d462c9c7855cc22",
+      "full": {
+        "raw": 2040,
+        "brotli": 877,
+        "gzip": 992
+      },
+      "rendering": {
+        "raw": 2040,
+        "brotli": 877,
+        "gzip": 992
+      },
+      "runtime": {
+        "raw": 1207,
+        "brotli": 511,
+        "gzip": 594
+      },
+      "app_alone": {
+        "raw": 833,
+        "brotli": 427,
+        "gzip": 477
+      },
+      "app_in_rendering_context": 366,
+      "excluded_core": {
+        "raw": 0,
+        "brotli": 1,
+        "gzip": 20
+      },
+      "origins": {
+        "app/render-runtime.js": 1207,
+        "app/App.js": 833
+      },
+      "rendering_sha256": "0a0ca08ac07d2a544a90b05d1c942778df0eb8ea0d0e62f60d462c9c7855cc22",
+      "compiler_release": null
+    },
+    {
+      "name": "adversarial-whole-model-alias",
+      "n": 1,
+      "seed": 17,
+      "shape": "adversarial",
+      "mode": "local",
+      "sha256": "c2135e60f4db37dc2320baad6823ed8f5707579d6f0d77c9cd08e87e145a65c1",
+      "full": {
+        "raw": 1492,
+        "brotli": 697,
+        "gzip": 795
+      },
+      "rendering": {
+        "raw": 1492,
+        "brotli": 697,
+        "gzip": 795
+      },
+      "runtime": {
+        "raw": 653,
+        "brotli": 313,
+        "gzip": 374
+      },
+      "app_alone": {
+        "raw": 839,
+        "brotli": 442,
+        "gzip": 489
+      },
+      "app_in_rendering_context": 384,
+      "excluded_core": {
+        "raw": 0,
+        "brotli": 1,
+        "gzip": 20
+      },
+      "origins": {
+        "app/render-runtime.js": 653,
+        "app/App.js": 839
+      },
+      "rendering_sha256": "c2135e60f4db37dc2320baad6823ed8f5707579d6f0d77c9cd08e87e145a65c1",
+      "compiler_release": null
+    },
+    {
+      "name": "adversarial-cross-arm-alias",
+      "n": 1,
+      "seed": 17,
+      "shape": "adversarial",
+      "mode": "tea",
+      "sha256": "324baaa292ede4f3889f6d418a71e2a4b71ef3a8701e0ee675b152fb7e327ca1",
+      "full": {
+        "raw": 3970,
+        "brotli": 1737,
+        "gzip": 1935
+      },
+      "rendering": {
+        "raw": 3623,
+        "brotli": 1587,
+        "gzip": 1768
+      },
+      "runtime": {
+        "raw": 2493,
+        "brotli": 1116,
+        "gzip": 1242
+      },
+      "app_alone": {
+        "raw": 1130,
+        "brotli": 550,
+        "gzip": 605
+      },
+      "app_in_rendering_context": 471,
+      "excluded_core": {
+        "raw": 347,
+        "brotli": 227,
+        "gzip": 240
+      },
+      "origins": {
+        "platforms/browser/Rt": 2493,
+        "core/List": 347,
+        "app/Shape0": 844,
+        "app/Main": 274,
+        "unmapped": 12
+      },
+      "rendering_sha256": "7142846aaa2a0100aa4f0b343e3cbf768ddd6b30596235baa6b4bb951ae29854",
+      "compiler_release": {
+        "full": {
+          "raw": 4229,
+          "brotli": 1806,
+          "gzip": 2031
+        },
+        "rendering": {
+          "raw": 3857,
+          "brotli": 1638,
+          "gzip": 1857
+        },
+        "runtime": {
+          "raw": 2630,
+          "brotli": 1126,
+          "gzip": 1278
+        },
+        "app_alone": {
+          "raw": 1227,
+          "brotli": 599,
+          "gzip": 674
+        },
+        "app_in_rendering_context": 512,
+        "excluded_core": {
+          "raw": 372,
+          "brotli": 246,
+          "gzip": 256
+        },
+        "origins": {
+          "platforms/browser/Rt": 2630,
+          "core/List": 372,
+          "app/Shape0": 874,
+          "app/Main": 302,
+          "unmapped": 51
+        },
+        "rendering_sha256": "ee9cf7ed9f06d75cc50cef7eae1061f1efa140753e5f459a657bf6e112f21cb9"
+      }
+    },
+    {
+      "name": "adversarial-cross-arm-alias",
+      "n": 1,
+      "seed": 17,
+      "shape": "adversarial",
+      "mode": "direct",
+      "sha256": "9d7e88537455d105ccd64b2f1a609f7e3f2641c83074f489d4deb14ddb28869a",
+      "full": {
+        "raw": 7302,
+        "brotli": 2924,
+        "gzip": 3247
+      },
+      "rendering": {
+        "raw": 6857,
+        "brotli": 2733,
+        "gzip": 3027
+      },
+      "runtime": {
+        "raw": 4836,
+        "brotli": 2014,
+        "gzip": 2211
+      },
+      "app_alone": {
+        "raw": 2021,
+        "brotli": 847,
+        "gzip": 954
+      },
+      "app_in_rendering_context": 719,
+      "excluded_core": {
+        "raw": 445,
+        "brotli": 274,
+        "gzip": 291
+      },
+      "origins": {
+        "core/Basics": 91,
+        "platforms/browser/Rt": 1024,
+        "platforms/browser-direct/Direct": 3812,
+        "core/List": 347,
+        "app/Shape0": 1150,
+        "core/String": 7,
+        "app/Main": 862,
+        "unmapped": 9
+      },
+      "rendering_sha256": "db9ab91b03cef44b2c07111caa30c96e76d3a2ff8f04981c43d0a20541144927",
+      "compiler_release": {
+        "full": {
+          "raw": 7985,
+          "brotli": 3108,
+          "gzip": 3448
+        },
+        "rendering": {
+          "raw": 7490,
+          "brotli": 2889,
+          "gzip": 3217
+        },
+        "runtime": {
+          "raw": 5221,
+          "brotli": 2118,
+          "gzip": 2334
+        },
+        "app_alone": {
+          "raw": 2269,
+          "brotli": 925,
+          "gzip": 1033
+        },
+        "app_in_rendering_context": 771,
+        "excluded_core": {
+          "raw": 495,
+          "brotli": 271,
+          "gzip": 312
+        },
+        "origins": {
+          "core/Basics": 92,
+          "platforms/browser/Rt": 1060,
+          "core/String": 21,
+          "platforms/browser-direct/Direct": 4161,
+          "unmapped": 33,
+          "core/List": 382,
+          "app/Shape0": 1275,
+          "app/Main": 961
+        },
+        "rendering_sha256": "4700a742e4573f0254433073765f00b266259dea2fa6e7d7947cb80a981f6622"
+      }
+    },
+    {
+      "name": "adversarial-cross-arm-alias",
+      "n": 1,
+      "seed": 17,
+      "shape": "adversarial",
+      "mode": "partial",
+      "sha256": "7db785b2611b934a91d83d5c4eeaddc753fd3b366d628254ed0b43cbccdfa718",
+      "full": {
+        "raw": 1547,
+        "brotli": 677,
+        "gzip": 776
+      },
+      "rendering": {
+        "raw": 1547,
+        "brotli": 677,
+        "gzip": 776
+      },
+      "runtime": {
+        "raw": 662,
+        "brotli": 310,
+        "gzip": 376
+      },
+      "app_alone": {
+        "raw": 885,
+        "brotli": 431,
+        "gzip": 475
+      },
+      "app_in_rendering_context": 367,
+      "excluded_core": {
+        "raw": 0,
+        "brotli": 1,
+        "gzip": 20
+      },
+      "origins": {
+        "app/render-runtime.js": 662,
+        "app/App.js": 885
+      },
+      "rendering_sha256": "7db785b2611b934a91d83d5c4eeaddc753fd3b366d628254ed0b43cbccdfa718",
+      "compiler_release": null
+    },
+    {
+      "name": "adversarial-cross-arm-alias",
+      "n": 1,
+      "seed": 17,
+      "shape": "adversarial",
+      "mode": "static",
+      "sha256": "ba348f5adae392c84c4043217028e02b260e0821581f679fcb5ef805f0c336a9",
+      "full": {
+        "raw": 1725,
+        "brotli": 769,
+        "gzip": 874
+      },
+      "rendering": {
+        "raw": 1725,
+        "brotli": 769,
+        "gzip": 874
+      },
+      "runtime": {
+        "raw": 662,
+        "brotli": 319,
+        "gzip": 375
+      },
+      "app_alone": {
+        "raw": 1063,
+        "brotli": 508,
+        "gzip": 569
+      },
+      "app_in_rendering_context": 450,
+      "excluded_core": {
+        "raw": 0,
+        "brotli": 1,
+        "gzip": 20
+      },
+      "origins": {
+        "app/render-runtime.js": 662,
+        "app/App.js": 1063
+      },
+      "rendering_sha256": "ba348f5adae392c84c4043217028e02b260e0821581f679fcb5ef805f0c336a9",
+      "compiler_release": null
+    },
+    {
+      "name": "adversarial-cross-arm-alias",
+      "n": 1,
+      "seed": 17,
+      "shape": "adversarial",
+      "mode": "cells",
+      "sha256": "2395f1e773a53993995f804e9de9d0d58b22efe8c56569a9530f2c8edf2a08ae",
+      "full": {
+        "raw": 2184,
+        "brotli": 909,
+        "gzip": 1023
+      },
+      "rendering": {
+        "raw": 2184,
+        "brotli": 909,
+        "gzip": 1023
+      },
+      "runtime": {
+        "raw": 1207,
+        "brotli": 511,
+        "gzip": 594
+      },
+      "app_alone": {
+        "raw": 977,
+        "brotli": 458,
+        "gzip": 510
+      },
+      "app_in_rendering_context": 398,
+      "excluded_core": {
+        "raw": 0,
+        "brotli": 1,
+        "gzip": 20
+      },
+      "origins": {
+        "app/render-runtime.js": 1207,
+        "app/App.js": 977
+      },
+      "rendering_sha256": "2395f1e773a53993995f804e9de9d0d58b22efe8c56569a9530f2c8edf2a08ae",
+      "compiler_release": null
+    },
+    {
+      "name": "adversarial-cross-arm-alias",
+      "n": 1,
+      "seed": 17,
+      "shape": "adversarial",
+      "mode": "local",
+      "sha256": "1150036f0367fe18eaaada6ec72c8d2850570027df7c62e37c90afb8415fdac8",
+      "full": {
+        "raw": 1641,
+        "brotli": 729,
+        "gzip": 837
+      },
+      "rendering": {
+        "raw": 1641,
+        "brotli": 729,
+        "gzip": 837
+      },
+      "runtime": {
+        "raw": 653,
+        "brotli": 315,
+        "gzip": 374
+      },
+      "app_alone": {
+        "raw": 988,
+        "brotli": 473,
+        "gzip": 529
+      },
+      "app_in_rendering_context": 414,
+      "excluded_core": {
+        "raw": 0,
+        "brotli": 1,
+        "gzip": 20
+      },
+      "origins": {
+        "app/render-runtime.js": 653,
+        "app/App.js": 988
+      },
+      "rendering_sha256": "1150036f0367fe18eaaada6ec72c8d2850570027df7c62e37c90afb8415fdac8",
+      "compiler_release": null
+    },
+    {
+      "name": "adversarial-event-capture",
+      "n": 1,
+      "seed": 17,
+      "shape": "adversarial",
+      "mode": "tea",
+      "sha256": "b21f55c5a50eb8499f13250f0406f742cab3882e5f8cac9fcf158b4441dbbf8c",
+      "full": {
+        "raw": 3537,
+        "brotli": 1563,
+        "gzip": 1731
+      },
+      "rendering": {
+        "raw": 3537,
+        "brotli": 1563,
+        "gzip": 1731
+      },
+      "runtime": {
+        "raw": 2493,
+        "brotli": 1118,
+        "gzip": 1241
+      },
+      "app_alone": {
+        "raw": 1044,
+        "brotli": 537,
+        "gzip": 579
+      },
+      "app_in_rendering_context": 445,
+      "excluded_core": {
+        "raw": 0,
+        "brotli": 1,
+        "gzip": 20
+      },
+      "origins": {
+        "platforms/browser/Rt": 2493,
+        "unmapped": 27,
+        "app/Shape0": 743,
+        "app/Main": 274
+      },
+      "rendering_sha256": "b21f55c5a50eb8499f13250f0406f742cab3882e5f8cac9fcf158b4441dbbf8c",
+      "compiler_release": {
+        "full": {
+          "raw": 3763,
+          "brotli": 1617,
+          "gzip": 1817
+        },
+        "rendering": {
+          "raw": 3763,
+          "brotli": 1617,
+          "gzip": 1817
+        },
+        "runtime": {
+          "raw": 2630,
+          "brotli": 1126,
+          "gzip": 1278
+        },
+        "app_alone": {
+          "raw": 1133,
+          "brotli": 576,
+          "gzip": 639
+        },
+        "app_in_rendering_context": 491,
+        "excluded_core": {
+          "raw": 0,
+          "brotli": 1,
+          "gzip": 20
+        },
+        "origins": {
+          "platforms/browser/Rt": 2630,
+          "unmapped": 72,
+          "app/Shape0": 759,
+          "app/Main": 302
+        },
+        "rendering_sha256": "6f5b264be23eccfc54ca51fd593be76810038417c2eefd75769f79c202ff8662"
+      }
+    },
+    {
+      "name": "adversarial-event-capture",
+      "n": 1,
+      "seed": 17,
+      "shape": "adversarial",
+      "mode": "direct",
+      "sha256": "9e512a4f2a1f69f0f4f702d4eba40aebf4a79414673704b1f6fdf19b388069f4",
+      "full": {
+        "raw": 6915,
+        "brotli": 2794,
+        "gzip": 3079
+      },
+      "rendering": {
+        "raw": 6817,
+        "brotli": 2741,
+        "gzip": 3016
+      },
+      "runtime": {
+        "raw": 4836,
+        "brotli": 2015,
+        "gzip": 2210
+      },
+      "app_alone": {
+        "raw": 1981,
+        "brotli": 852,
+        "gzip": 953
+      },
+      "app_in_rendering_context": 726,
+      "excluded_core": {
+        "raw": 98,
+        "brotli": 84,
+        "gzip": 106
+      },
+      "origins": {
+        "core/Basics": 91,
+        "platforms/browser/Rt": 1024,
+        "platforms/browser-direct/Direct": 3812,
+        "unmapped": 24,
+        "app/Shape0": 1068,
+        "core/String": 7,
+        "app/Main": 889
+      },
+      "rendering_sha256": "3d77df0b1ebb23b0a1652e573c6c2333f0ffce54b99f37a1ab19abb42ac14d38",
+      "compiler_release": {
+        "full": {
+          "raw": 7542,
+          "brotli": 2947,
+          "gzip": 3275
+        },
+        "rendering": {
+          "raw": 7429,
+          "brotli": 2885,
+          "gzip": 3206
+        },
+        "runtime": {
+          "raw": 5221,
+          "brotli": 2118,
+          "gzip": 2334
+        },
+        "app_alone": {
+          "raw": 2208,
+          "brotli": 911,
+          "gzip": 1032
+        },
+        "app_in_rendering_context": 767,
+        "excluded_core": {
+          "raw": 113,
+          "brotli": 102,
+          "gzip": 117
+        },
+        "origins": {
+          "core/Basics": 92,
+          "platforms/browser/Rt": 1060,
+          "core/String": 21,
+          "platforms/browser-direct/Direct": 4161,
+          "unmapped": 54,
+          "app/Shape0": 1162,
+          "app/Main": 992
+        },
+        "rendering_sha256": "9a9a33d2252b99f8d7d8a875e80c95e44806697766c1061158e91be7152f35e2"
+      }
+    },
+    {
+      "name": "adversarial-event-capture",
+      "n": 1,
+      "seed": 17,
+      "shape": "adversarial",
+      "mode": "partial",
+      "sha256": "3791e0ba8ca1e2dfcd1b7d411b5f3a1a1b57452f07e82ff152d60243cabb708e",
+      "full": {
+        "raw": 1474,
+        "brotli": 638,
+        "gzip": 735
+      },
+      "rendering": {
+        "raw": 1474,
+        "brotli": 638,
+        "gzip": 735
+      },
+      "runtime": {
+        "raw": 662,
+        "brotli": 310,
+        "gzip": 376
+      },
+      "app_alone": {
+        "raw": 812,
+        "brotli": 384,
+        "gzip": 435
+      },
+      "app_in_rendering_context": 328,
+      "excluded_core": {
+        "raw": 0,
+        "brotli": 1,
+        "gzip": 20
+      },
+      "origins": {
+        "app/render-runtime.js": 662,
+        "app/App.js": 812
+      },
+      "rendering_sha256": "3791e0ba8ca1e2dfcd1b7d411b5f3a1a1b57452f07e82ff152d60243cabb708e",
+      "compiler_release": null
+    },
+    {
+      "name": "adversarial-event-capture",
+      "n": 1,
+      "seed": 17,
+      "shape": "adversarial",
+      "mode": "static",
+      "sha256": "2a1e6b08f0d075e3c5c7c0c67939266ef5ec819785a6ce347070633a5fb46fc4",
+      "full": {
+        "raw": 1658,
+        "brotli": 735,
+        "gzip": 838
+      },
+      "rendering": {
+        "raw": 1658,
+        "brotli": 735,
+        "gzip": 838
+      },
+      "runtime": {
+        "raw": 662,
+        "brotli": 310,
+        "gzip": 376
+      },
+      "app_alone": {
+        "raw": 996,
+        "brotli": 483,
+        "gzip": 536
+      },
+      "app_in_rendering_context": 425,
+      "excluded_core": {
+        "raw": 0,
+        "brotli": 1,
+        "gzip": 20
+      },
+      "origins": {
+        "app/render-runtime.js": 662,
+        "app/App.js": 996
+      },
+      "rendering_sha256": "2a1e6b08f0d075e3c5c7c0c67939266ef5ec819785a6ce347070633a5fb46fc4",
+      "compiler_release": null
+    },
+    {
+      "name": "adversarial-event-capture",
+      "n": 1,
+      "seed": 17,
+      "shape": "adversarial",
+      "mode": "cells",
+      "sha256": "ccb94b95fe447a4ff51ee7a5b3b35525ef03944efe3717e4848635fc2a2bdccc",
+      "full": {
+        "raw": 2103,
+        "brotli": 870,
+        "gzip": 982
+      },
+      "rendering": {
+        "raw": 2103,
+        "brotli": 870,
+        "gzip": 982
+      },
+      "runtime": {
+        "raw": 1207,
+        "brotli": 512,
+        "gzip": 594
+      },
+      "app_alone": {
+        "raw": 896,
+        "brotli": 420,
+        "gzip": 469
+      },
+      "app_in_rendering_context": 358,
+      "excluded_core": {
+        "raw": 0,
+        "brotli": 1,
+        "gzip": 20
+      },
+      "origins": {
+        "app/render-runtime.js": 1207,
+        "app/App.js": 896
+      },
+      "rendering_sha256": "ccb94b95fe447a4ff51ee7a5b3b35525ef03944efe3717e4848635fc2a2bdccc",
+      "compiler_release": null
+    },
+    {
+      "name": "adversarial-event-capture",
+      "n": 1,
+      "seed": 17,
+      "shape": "adversarial",
+      "mode": "local",
+      "sha256": "791c59a38b6fb1de0a2a9f157c431e7160bae6ae75548cb5fae729cf702698b2",
+      "full": {
+        "raw": 1574,
+        "brotli": 696,
+        "gzip": 798
+      },
+      "rendering": {
+        "raw": 1574,
+        "brotli": 696,
+        "gzip": 798
+      },
+      "runtime": {
+        "raw": 653,
+        "brotli": 315,
+        "gzip": 375
+      },
+      "app_alone": {
+        "raw": 921,
+        "brotli": 442,
+        "gzip": 494
+      },
+      "app_in_rendering_context": 381,
+      "excluded_core": {
+        "raw": 0,
+        "brotli": 1,
+        "gzip": 20
+      },
+      "origins": {
+        "app/render-runtime.js": 653,
+        "app/App.js": 921
+      },
+      "rendering_sha256": "791c59a38b6fb1de0a2a9f157c431e7160bae6ae75548cb5fae729cf702698b2",
+      "compiler_release": null
+    },
+    {
+      "name": "adversarial-higher-order-capture",
+      "n": 1,
+      "seed": 17,
+      "shape": "adversarial",
+      "mode": "tea",
+      "sha256": "ed7bc4a2a9ea6cd0b91b6adc242563f149ef6226f3d07850bd0bc48f78cc2be4",
+      "full": {
+        "raw": 3808,
+        "brotli": 1655,
+        "gzip": 1828
+      },
+      "rendering": {
+        "raw": 3808,
+        "brotli": 1655,
+        "gzip": 1828
+      },
+      "runtime": {
+        "raw": 2503,
+        "brotli": 1115,
+        "gzip": 1243
+      },
+      "app_alone": {
+        "raw": 1305,
+        "brotli": 625,
+        "gzip": 681
+      },
+      "app_in_rendering_context": 540,
+      "excluded_core": {
+        "raw": 0,
+        "brotli": 1,
+        "gzip": 20
+      },
+      "origins": {
+        "platforms/browser/Rt": 2503,
+        "unmapped": 27,
+        "app/Shape0": 997,
+        "app/Main": 281
+      },
+      "rendering_sha256": "ed7bc4a2a9ea6cd0b91b6adc242563f149ef6226f3d07850bd0bc48f78cc2be4",
+      "compiler_release": {
+        "full": {
+          "raw": 4040,
+          "brotli": 1697,
+          "gzip": 1915
+        },
+        "rendering": {
+          "raw": 4040,
+          "brotli": 1697,
+          "gzip": 1915
+        },
+        "runtime": {
+          "raw": 2639,
+          "brotli": 1138,
+          "gzip": 1287
+        },
+        "app_alone": {
+          "raw": 1401,
+          "brotli": 681,
+          "gzip": 730
+        },
+        "app_in_rendering_context": 559,
+        "excluded_core": {
+          "raw": 0,
+          "brotli": 1,
+          "gzip": 20
+        },
+        "origins": {
+          "platforms/browser/Rt": 2639,
+          "unmapped": 72,
+          "app/Shape0": 1022,
+          "app/Main": 307
+        },
+        "rendering_sha256": "7727debf94808130c40f29fb8c596c49a0cbee6d95051a8046f659290a04598c"
+      }
+    },
+    {
+      "name": "adversarial-higher-order-capture",
+      "n": 1,
+      "seed": 17,
+      "shape": "adversarial",
+      "mode": "direct",
+      "sha256": "b08da6dcd29a9a3dd039dbee9d0ee4e7aad99e5400949a163bdce73343a70ae7",
+      "full": {
+        "raw": 7933,
+        "brotli": 3182,
+        "gzip": 3499
+      },
+      "rendering": {
+        "raw": 7835,
+        "brotli": 3132,
+        "gzip": 3454
+      },
+      "runtime": {
+        "raw": 5697,
+        "brotli": 2341,
+        "gzip": 2572
+      },
+      "app_alone": {
+        "raw": 2138,
+        "brotli": 928,
+        "gzip": 1023
+      },
+      "app_in_rendering_context": 791,
+      "excluded_core": {
+        "raw": 98,
+        "brotli": 84,
+        "gzip": 106
+      },
+      "origins": {
+        "core/Basics": 91,
+        "platforms/browser/Rt": 1673,
+        "platforms/browser-direct/Direct": 4024,
+        "unmapped": 24,
+        "app/Shape0": 1139,
+        "core/String": 7,
+        "app/Main": 975
+      },
+      "rendering_sha256": "355c00adf80e6224cc708eb2d56800aeb9fea3a83b60fd3b3b369e6a62804843",
+      "compiler_release": {
+        "full": {
+          "raw": 8614,
+          "brotli": 3342,
+          "gzip": 3707
+        },
+        "rendering": {
+          "raw": 8501,
+          "brotli": 3292,
+          "gzip": 3650
+        },
+        "runtime": {
+          "raw": 6143,
+          "brotli": 2447,
+          "gzip": 2714
+        },
+        "app_alone": {
+          "raw": 2358,
+          "brotli": 983,
+          "gzip": 1096
+        },
+        "app_in_rendering_context": 845,
+        "excluded_core": {
+          "raw": 113,
+          "brotli": 103,
+          "gzip": 118
+        },
+        "origins": {
+          "core/Basics": 92,
+          "platforms/browser/Rt": 1746,
+          "core/String": 21,
+          "platforms/browser-direct/Direct": 4397,
+          "unmapped": 56,
+          "app/Shape0": 1223,
+          "app/Main": 1079
+        },
+        "rendering_sha256": "5b8e7be672f05e48ab35de3e0abbb548c27906f580e5c7487c781ed0295ff6a0"
+      }
+    },
+    {
+      "name": "adversarial-higher-order-capture",
+      "n": 1,
+      "seed": 17,
+      "shape": "adversarial",
+      "mode": "partial",
+      "sha256": "687440e19a926d475bb190d48c40301762152f91f2acb763994db24cd0e5cc42",
+      "full": {
+        "raw": 2052,
+        "brotli": 787,
+        "gzip": 906
+      },
+      "rendering": {
+        "raw": 2052,
+        "brotli": 787,
+        "gzip": 906
+      },
+      "runtime": {
+        "raw": 947,
+        "brotli": 433,
+        "gzip": 507
+      },
+      "app_alone": {
+        "raw": 1105,
+        "brotli": 440,
+        "gzip": 494
+      },
+      "app_in_rendering_context": 354,
+      "excluded_core": {
+        "raw": 0,
+        "brotli": 1,
+        "gzip": 20
+      },
+      "origins": {
+        "app/render-runtime.js": 947,
+        "app/App.js": 1105
+      },
+      "rendering_sha256": "687440e19a926d475bb190d48c40301762152f91f2acb763994db24cd0e5cc42",
+      "compiler_release": null
+    },
+    {
+      "name": "adversarial-higher-order-capture",
+      "n": 1,
+      "seed": 17,
+      "shape": "adversarial",
+      "mode": "static",
+      "sha256": "621fd57260e59d34e5ea8ff77d0aebc2879002b8982cfcc275cfe68b9e531cac",
+      "full": {
+        "raw": 2236,
+        "brotli": 882,
+        "gzip": 1007
+      },
+      "rendering": {
+        "raw": 2236,
+        "brotli": 882,
+        "gzip": 1007
+      },
+      "runtime": {
+        "raw": 947,
+        "brotli": 433,
+        "gzip": 507
+      },
+      "app_alone": {
+        "raw": 1289,
+        "brotli": 539,
+        "gzip": 598
+      },
+      "app_in_rendering_context": 449,
+      "excluded_core": {
+        "raw": 0,
+        "brotli": 1,
+        "gzip": 20
+      },
+      "origins": {
+        "app/render-runtime.js": 947,
+        "app/App.js": 1289
+      },
+      "rendering_sha256": "621fd57260e59d34e5ea8ff77d0aebc2879002b8982cfcc275cfe68b9e531cac",
+      "compiler_release": null
+    },
+    {
+      "name": "adversarial-higher-order-capture",
+      "n": 1,
+      "seed": 17,
+      "shape": "adversarial",
+      "mode": "cells",
+      "sha256": "a2837740a1adddf677adbf69e8e33ccb92f98d1900c864179d342e6e35c9825d",
+      "full": {
+        "raw": 2681,
+        "brotli": 1014,
+        "gzip": 1150
+      },
+      "rendering": {
+        "raw": 2681,
+        "brotli": 1014,
+        "gzip": 1150
+      },
+      "runtime": {
+        "raw": 1492,
+        "brotli": 629,
+        "gzip": 721
+      },
+      "app_alone": {
+        "raw": 1189,
+        "brotli": 482,
+        "gzip": 532
+      },
+      "app_in_rendering_context": 385,
+      "excluded_core": {
+        "raw": 0,
+        "brotli": 1,
+        "gzip": 20
+      },
+      "origins": {
+        "app/render-runtime.js": 1492,
+        "app/App.js": 1189
+      },
+      "rendering_sha256": "a2837740a1adddf677adbf69e8e33ccb92f98d1900c864179d342e6e35c9825d",
+      "compiler_release": null
+    },
+    {
+      "name": "adversarial-higher-order-capture",
+      "n": 1,
+      "seed": 17,
+      "shape": "adversarial",
+      "mode": "local",
+      "sha256": "908bce557cd4a63c3af017e1125f872afa5a682fbda24c2c8d343d0583f8effd",
+      "full": {
+        "raw": 2152,
+        "brotli": 841,
+        "gzip": 965
+      },
+      "rendering": {
+        "raw": 2152,
+        "brotli": 841,
+        "gzip": 965
+      },
+      "runtime": {
+        "raw": 938,
+        "brotli": 435,
+        "gzip": 507
+      },
+      "app_alone": {
+        "raw": 1214,
+        "brotli": 506,
+        "gzip": 556
+      },
+      "app_in_rendering_context": 406,
+      "excluded_core": {
+        "raw": 0,
+        "brotli": 1,
+        "gzip": 20
+      },
+      "origins": {
+        "app/render-runtime.js": 938,
+        "app/App.js": 1214
+      },
+      "rendering_sha256": "908bce557cd4a63c3af017e1125f872afa5a682fbda24c2c8d343d0583f8effd",
+      "compiler_release": null
+    },
+    {
+      "name": "adversarial-pattern-helper-capture",
+      "n": 1,
+      "seed": 17,
+      "shape": "adversarial",
+      "mode": "tea",
+      "sha256": "b9f2962e1ff60666b600c9278967c1a750eb2be2a647ece1a8c4000505bc4216",
+      "full": {
+        "raw": 3829,
+        "brotli": 1617,
+        "gzip": 1798
+      },
+      "rendering": {
+        "raw": 3829,
+        "brotli": 1617,
+        "gzip": 1798
+      },
+      "runtime": {
+        "raw": 2503,
+        "brotli": 1120,
+        "gzip": 1243
+      },
+      "app_alone": {
+        "raw": 1326,
+        "brotli": 600,
+        "gzip": 648
+      },
+      "app_in_rendering_context": 497,
+      "excluded_core": {
+        "raw": 0,
+        "brotli": 1,
+        "gzip": 20
+      },
+      "origins": {
+        "platforms/browser/Rt": 2503,
+        "unmapped": 27,
+        "app/Shape0": 1018,
+        "app/Main": 281
+      },
+      "rendering_sha256": "b9f2962e1ff60666b600c9278967c1a750eb2be2a647ece1a8c4000505bc4216",
+      "compiler_release": {
+        "full": {
+          "raw": 4066,
+          "brotli": 1662,
+          "gzip": 1884
+        },
+        "rendering": {
+          "raw": 4066,
+          "brotli": 1662,
+          "gzip": 1884
+        },
+        "runtime": {
+          "raw": 2639,
+          "brotli": 1138,
+          "gzip": 1287
+        },
+        "app_alone": {
+          "raw": 1427,
+          "brotli": 630,
+          "gzip": 700
+        },
+        "app_in_rendering_context": 524,
+        "excluded_core": {
+          "raw": 0,
+          "brotli": 1,
+          "gzip": 20
+        },
+        "origins": {
+          "platforms/browser/Rt": 2639,
+          "unmapped": 72,
+          "app/Shape0": 1048,
+          "app/Main": 307
+        },
+        "rendering_sha256": "aa3e41780a3e8cb6a0888f5333e1762c55eee7e7926f35440db3cba8909f9f7a"
+      }
+    },
+    {
+      "name": "adversarial-pattern-helper-capture",
+      "n": 1,
+      "seed": 17,
+      "shape": "adversarial",
+      "mode": "direct",
+      "sha256": "b4eec20e336cb2f728b0f124db8b0613788bee3c3062b287e507e33f4ba72a28",
+      "full": {
+        "raw": 8126,
+        "brotli": 3171,
+        "gzip": 3494
+      },
+      "rendering": {
+        "raw": 8028,
+        "brotli": 3124,
+        "gzip": 3450
+      },
+      "runtime": {
+        "raw": 5700,
+        "brotli": 2337,
+        "gzip": 2575
+      },
+      "app_alone": {
+        "raw": 2328,
+        "brotli": 911,
+        "gzip": 1022
+      },
+      "app_in_rendering_context": 787,
+      "excluded_core": {
+        "raw": 98,
+        "brotli": 84,
+        "gzip": 106
+      },
+      "origins": {
+        "core/Basics": 91,
+        "platforms/browser/Rt": 1673,
+        "platforms/browser-direct/Direct": 4027,
+        "core/String": 7,
+        "unmapped": 24,
+        "app/Shape0": 1325,
+        "app/Main": 979
+      },
+      "rendering_sha256": "659f554bd6f4558d4d660a49daf387b47a5f08228bfc5fbd4e2bda6f67cf5f73",
+      "compiler_release": {
+        "full": {
+          "raw": 8825,
+          "brotli": 3317,
+          "gzip": 3702
+        },
+        "rendering": {
+          "raw": 8712,
+          "brotli": 3270,
+          "gzip": 3644
+        },
+        "runtime": {
+          "raw": 6143,
+          "brotli": 2447,
+          "gzip": 2714
+        },
+        "app_alone": {
+          "raw": 2569,
+          "brotli": 955,
+          "gzip": 1084
+        },
+        "app_in_rendering_context": 823,
+        "excluded_core": {
+          "raw": 113,
+          "brotli": 103,
+          "gzip": 118
+        },
+        "origins": {
+          "core/Basics": 92,
+          "platforms/browser/Rt": 1746,
+          "core/String": 21,
+          "platforms/browser-direct/Direct": 4397,
+          "unmapped": 56,
+          "app/Shape0": 1434,
+          "app/Main": 1079
+        },
+        "rendering_sha256": "a4d64975ba368586de90a48e2a4f7bff2f80e5325e186ffcb56d83d32f7587ab"
+      }
+    },
+    {
+      "name": "adversarial-pattern-helper-capture",
+      "n": 1,
+      "seed": 17,
+      "shape": "adversarial",
+      "mode": "partial",
+      "sha256": "682565e5c0e5bedbc5ceb932d0db4226e3b095b9ad2f04f98691b068d56bf0fe",
+      "full": {
+        "raw": 2338,
+        "brotli": 909,
+        "gzip": 1045
+      },
+      "rendering": {
+        "raw": 2338,
+        "brotli": 909,
+        "gzip": 1045
+      },
+      "runtime": {
+        "raw": 958,
+        "brotli": 439,
+        "gzip": 515
+      },
+      "app_alone": {
+        "raw": 1380,
+        "brotli": 565,
+        "gzip": 634
+      },
+      "app_in_rendering_context": 470,
+      "excluded_core": {
+        "raw": 0,
+        "brotli": 1,
+        "gzip": 20
+      },
+      "origins": {
+        "app/render-runtime.js": 958,
+        "app/App.js": 1380
+      },
+      "rendering_sha256": "682565e5c0e5bedbc5ceb932d0db4226e3b095b9ad2f04f98691b068d56bf0fe",
+      "compiler_release": null
+    },
+    {
+      "name": "adversarial-pattern-helper-capture",
+      "n": 1,
+      "seed": 17,
+      "shape": "adversarial",
+      "mode": "static",
+      "sha256": "6290a83e16118c90de8029fe2796b2b0dbde5f58602cdb1f8a58bed953ca7592",
+      "full": {
+        "raw": 2522,
+        "brotli": 976,
+        "gzip": 1114
+      },
+      "rendering": {
+        "raw": 2522,
+        "brotli": 976,
+        "gzip": 1114
+      },
+      "runtime": {
+        "raw": 958,
+        "brotli": 439,
+        "gzip": 515
+      },
+      "app_alone": {
+        "raw": 1564,
+        "brotli": 629,
+        "gzip": 705
+      },
+      "app_in_rendering_context": 537,
+      "excluded_core": {
+        "raw": 0,
+        "brotli": 1,
+        "gzip": 20
+      },
+      "origins": {
+        "app/render-runtime.js": 958,
+        "app/App.js": 1564
+      },
+      "rendering_sha256": "6290a83e16118c90de8029fe2796b2b0dbde5f58602cdb1f8a58bed953ca7592",
+      "compiler_release": null
+    },
+    {
+      "name": "adversarial-pattern-helper-capture",
+      "n": 1,
+      "seed": 17,
+      "shape": "adversarial",
+      "mode": "cells",
+      "sha256": "2e4ab27e2f059fdd653c75258c30024da1dec882dc542857b876797b44913616",
+      "full": {
+        "raw": 2969,
+        "brotli": 1135,
+        "gzip": 1301
+      },
+      "rendering": {
+        "raw": 2969,
+        "brotli": 1135,
+        "gzip": 1301
+      },
+      "runtime": {
+        "raw": 1507,
+        "brotli": 643,
+        "gzip": 732
+      },
+      "app_alone": {
+        "raw": 1462,
+        "brotli": 601,
+        "gzip": 675
+      },
+      "app_in_rendering_context": 492,
+      "excluded_core": {
+        "raw": 0,
+        "brotli": 1,
+        "gzip": 20
+      },
+      "origins": {
+        "app/render-runtime.js": 1507,
+        "app/App.js": 1462
+      },
+      "rendering_sha256": "2e4ab27e2f059fdd653c75258c30024da1dec882dc542857b876797b44913616",
+      "compiler_release": null
+    },
+    {
+      "name": "adversarial-pattern-helper-capture",
+      "n": 1,
+      "seed": 17,
+      "shape": "adversarial",
+      "mode": "local",
+      "sha256": "a2d38e4a12e54ba848df8e4d180d90aefddb7c9552d7e6ffd25ae34b15e1e435",
+      "full": {
+        "raw": 2438,
+        "brotli": 930,
+        "gzip": 1074
+      },
+      "rendering": {
+        "raw": 2438,
+        "brotli": 930,
+        "gzip": 1074
+      },
+      "runtime": {
+        "raw": 949,
+        "brotli": 440,
+        "gzip": 513
+      },
+      "app_alone": {
+        "raw": 1489,
+        "brotli": 591,
+        "gzip": 661
+      },
+      "app_in_rendering_context": 490,
+      "excluded_core": {
+        "raw": 0,
+        "brotli": 1,
+        "gzip": 20
+      },
+      "origins": {
+        "app/render-runtime.js": 949,
+        "app/App.js": 1489
+      },
+      "rendering_sha256": "a2d38e4a12e54ba848df8e4d180d90aefddb7c9552d7e6ffd25ae34b15e1e435",
+      "compiler_release": null
+    }
+  ]
+}

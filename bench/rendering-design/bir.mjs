@@ -56,6 +56,14 @@ export function dependencies(ir,d,id,env=new Map(),active=new Set()){
   const next=new Map(env);for(const r of rs.slice(0,-1)){const def=d.nodes[r];next.set(localId(def),dependencies(ir,d,refs(def.raw).at(-1),next,active));}
   return dependencies(ir,d,rs.at(-1),next,active);
  }
+ if(n.op==='case'){
+  const input=go(rs[0]),all=[input];
+  for(const branch of rs.slice(1)){const [pat,body]=refs(d.nodes[branch].raw),next=new Map(env);
+   const bind=id=>{const p=d.nodes[id];if(p.op==='pat_var')next.set(localId(p),input);else for(const child of refs(p.raw))bind(child);};bind(pat);
+   all.push(dependencies(ir,d,body,next,active));
+  }
+  return union(all);
+ }
  if(n.op==='lambda'){
   const next=new Map(env);for(const p of rs.slice(0,-1)){const node=d.nodes[p];if(node.op==='pat_var')next.set(localId(node),new Set());}
   return dependencies(ir,d,rs.at(-1),next,active);
@@ -68,7 +76,7 @@ export function dependencies(ir,d,id,env=new Map(),active=new Set()){
    const next=new Map();target.params.forEach((p,i)=>{const param=target.nodes[p];if(param.op==='pat_var')next.set(localId(param),args[i]||new Set());});
    return dependencies(ir,target,target.body,next,new Set([...active,target.id]));
   }
-  return union(args);
+  return union([go(rs[0]),...args]);
  }
  if(n.op==='markup'){
   const tree=markupTree(n.markup),out=[];

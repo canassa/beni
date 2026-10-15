@@ -153,3 +153,52 @@ During development, this broader oracle found an incorrect reconciler integratio
 (new nodes were attached too soon) and an incorrect Solid projection call. Both
 were fixed, all affected prices rebuilt, and the complete final sweep repeated.
 The earlier invalid measurements are not included in these results.
+
+## Size-only stress sweep and HTML report
+
+The follow-up request extends the same catalogue until each strategy/family curve
+actually reaches **512,000 brotli bytes**. It does not increase row population,
+append padding or fill labels with random strings. N counts independently owned
+shape instances. Original N≤32 has three seeds; the larger sweep uses seed 17 on
+a 1.5× grid starting at 64, rounded up to multiples of 16. Each curve stops at its
+own first measured crossing. Vanilla and Solid's shared factories can need many
+more components than compiler-emitted separate factories.
+
+`stress.mjs` checkpoints whole-response measurements in
+`results/stress/observations.jsonl`; `protocol.json` records the compiler and
+measurement-source hashes. It builds each native platform until that curve crosses or encounters a
+recorded resource failure, then measures each active strategy in a separate
+process. Larger prototype points still use real per-component BIR dumps, but
+are not newly checked full-app builds after the native curves have ended. Once every compiler-derived curve has crossed, the shared-factory
+baselines continue independently from the same reproducible app specs. Concurrent
+size workers are memory-bounded; this is neither a speed campaign nor a project
+suite. A failure is retained, never substituted with an extrapolated size.
+
+```sh
+BENI=zig-out/bin/beni node bench/rendering-design/stress.mjs
+node bench/rendering-design/html-report.mjs
+uv run --with matplotlib==3.10.7 --with numpy==2.3.4 python bench/rendering-design/stress-report.py
+node bench/rendering-design/serve-report.mjs
+```
+
+Open **http://127.0.0.1:8765/report.html**. The generated `report.html` is also a
+standalone offline file: no CDN, fetch, framework or external asset is required.
+It includes interactive family/strategy/metric controls, exact point values,
+local slopes, the crossing matrix, all measured results, CSV/JSON downloads,
+conclusions and methodological limits. Incomplete curves are explicitly marked.
+`watch-report.mjs` can refresh it from the isolated azathoth campaign while it
+runs; reload the page to see new checkpoints. `stress-report.py` exports the
+size-only PNG/SVG figures, CSV and interval fits. Neither reads timing data.
+
+The extended sweep found two limits before its first large target crossings:
+`browser-direct` was killed by the kernel at mixed N=1,728 (about 30 GB resident
+memory), tracked in [#203](https://github.com/canassa/beni/issues/203). A separate
+64-child routing-module layout also failed direct under a 16 GiB address-space
+cap; it is not substituted into the flat-source curves. Subsequent compiler
+invocations use that cap and retain failed endpoints in `stopped.jsonl`.
+Terser overflowed the default JavaScript stack on the flat N1,728 TEA output;
+the harness resumes with a 16 MiB V8 stack / 32 MiB OS stack, retaining exactly
+the same minifier and compression options. Protocol amendments record these
+resource changes. Two disjoint family queues share a lock: compiler and source
+generation take it exclusively, minifiers share it. This avoids overlapping
+memory-heavy compiler builds. These are research resource controls, not gates.

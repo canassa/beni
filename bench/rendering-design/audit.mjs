@@ -15,4 +15,4 @@ for(const c of cases){const root=here+'/.out/apps/'+c.name,spec=JSON.parse(fs.re
  }
  rows.push({name:c.name,root_sha256:hash(expected.source),modules,owned_operations:owned,dependency_edges:edges,update_arms:arms});
 }
-fs.writeFileSync(here+'/results/source-audit.json',JSON.stringify({scope:'Recognized generated sandbox roots, fresh instance init, no external/unknown calls or retained model snapshots. Read/write/operation witnesses independently derived from real compiler BIR. This recognizer is intentionally restricted, not a general beni ownership proof.',observations:rows},null,2)+'\n');console.log('Audited',rows.length,'closed source roots');
+fs.writeFileSync(here+'/results/source-audit.json',JSON.stringify({scope:'Admission requires exact equality with generated Main and component source plus a pure-primitive allowlist. Disjoint ownership and absence of retained external snapshots follow from this construction, not general root analysis. Read/write/operation witnesses are derived from real compiler BIR. This is not a general beni ownership proof.',observations:rows},null,2)+'\n');console.log('Audited',rows.length,'closed source roots');

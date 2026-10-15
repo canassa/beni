@@ -1,0 +1,24 @@
+{
+  "updated": "2026-10-15T21:15:13.742Z",
+  "observations": 114,
+  "crossings": [
+    {
+      "family": "mixed",
+      "mode": "tea",
+      "n": 3888,
+      "brotli": 579185
+    }
+  ],
+  "compiler_limited": [
+    {
+      "family": "mixed",
+      "mode": "direct",
+      "n": 1728
+    },
+    {
+      "family": "list",
+      "mode": "direct",
+      "n": 512
+    }
+  ]
+}

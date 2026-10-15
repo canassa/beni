@@ -1,0 +1,22 @@
+import Html exposing (Html)
+
+type Box = Box Int
+pub type alias Model =
+    box : Box
+    saved : Int
+pub type Msg = Increment | Save Int
+pub init : ⊤ → Model
+init ⊤ = { box = Box 0, saved = 99 }
+pub update : Msg, Model → Model
+update msg model =
+    case msg of
+        Increment → { model | box = case model.box of
+            Box value → Box (value + 1)
+          }
+        Save value → { model | saved = value }
+child : Box → Html Msg
+child box =
+    case box of
+        Box value → <div><button id="save" onClick={Save value}>Save</button><output id="countOutput">{value}</output></div>
+pub view : Model → Html Msg
+view model = <section data-shape="adversarial"><button id="increment" onClick={Increment}>Increment</button>{child model.box}<output id="savedOutput">{model.saved}</output></section>

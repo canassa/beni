@@ -6,12 +6,14 @@ Compiler `3cca64d`, built ReleaseFast on azathoth; exact identities are retained
 
 ## 0. Answer
 
-**Bet first on C: instance-local reducers with run-once DOM factories and
-ownership-proved array edit propagation. Keep TEA's source semantics.** The
+**Keep B and C as finalists; the extended sweep does not support choosing C
+from N=32 alone.** The original
 32-component mixed app costs **7.29 kB brotli**, versus **11.82 kB today on TEA,
-17.06 kB on direct, and 3.89 kB handwritten vanilla**. C removes 38% of TEA's
-rendering bytes and 57% of direct's. It still ships 1.88× vanilla: this is a
-promising direction, not the requested vanilla-level result achieved.
+17.06 kB on direct, and 3.89 kB handwritten vanilla**. Direct has 28 broken pages
+(#189). C removes 38% of TEA's rendering bytes here: runtime alone falls
+3.51→1.79 kB, app increment 8.31→5.51 kB. This compares reachable platform
+support with a pure-sandbox prototype, not full platform parity. C still ships
+1.88× vanilla.
 
 The source-derived alternatives lose on bytes: A's message erasure costs
 **8.39 kB**, B's static reactivity **8.13 kB**, and D's explicit cells **8.82 kB**.
@@ -19,10 +21,16 @@ Erasing dispatch is not automatically worth duplicating arm-specific wiring.
 A smaller local dispatcher plus guarded bindings compresses better here. The
 explicit-cell language change has no demonstrated byte justification.
 
-**Speed prevents adoption yet.** At 10,000 rows, C edits in **0.98 ms** of script time versus vanilla’s **0.14 ms** and Solid’s **0.23 ms**. Its reverse takes **78 ms**, near vanilla’s **79 ms** and Solid’s **74 ms**, versus today’s roughly **1,560 ms**. Local routing helps; it does not remove the source reducer’s row traversal.
-The deciding experiment is a complete, equivalent Conduit rendering lowering,
-including editable filtered comment rows and cross-component writes, with a
-proven indexed edit path. Keep today's semantic oracle and typed host boundary.
+The [standalone HTML report](../../../bench/rendering-design/report.html) now
+extends the same catalogue toward **512 kB brotli per curve**, with actual points,
+local slopes, family comparisons and downloadable data. **This sweep is in
+progress.** At mixed N=1,152, B is **69.58 kB**, C **70.23 kB**, A **111.73 kB**,
+D **116.73 kB**, TEA **170.66 kB**, direct **242.07 kB**, vanilla **9.66 kB**.
+The B/C ordering already differs from N32; the larger points use seed 17.
+Direct exhausts host memory at N1,728 before reaching the target
+([#203](https://github.com/canassa/beni/issues/203)); no size is invented for that
+failed build. Other curves continue. The live webpage distinguishes crossings,
+unfinished curves and compiler limits. This follow-up focuses on size only.
 
 ## 1. What was actually generated and proved
 
@@ -38,8 +46,9 @@ Both `browser-tea` and `browser-direct` compile exactly that source.
 The experimental lowerer consumes the real compiler's public BIR. It computes
 writes from reducer result records, reads through expressions/helper arguments,
 and conservative recursive dependencies. No catalogue entry supplies dependency
-sets. A closed-root recognizer checks fresh instance initializers, disjoint
-component ownership and a known pure-call subset. Unknown roots/calls fail.
+sets. Root admission requires byte equality with the generator and a pure-call
+allowlist: component separation comes from construction, not general ownership
+analysis. Outside sources are rejected.
 [Examples](../../../bench/rendering-design/examples/) retain source, BIR,
 read/write witnesses, ownership witnesses and all four outputs.
 
@@ -62,7 +71,9 @@ and other core spans. Exact source-map attribution deletes core spans, including
 inlined ones, then recompresses the rendering response. Full executable bundles,
 not the resulting attribution fragments, are validated. Normalize every candidate
 with Terser 5.51.2; retain original compiler-release prices too. Brotli quality 11;
-raw/gzip, standalone runtime and incremental app prices are in the data.
+raw/gzip and incremental prices are retained. Excluded owned-array helpers cost
+137 B brotli standalone. Reclassifying all unmapped spans in a mixed N32 sample
+changes prices by ≤164 B without changing rank ([sensitivity](../../../bench/rendering-design/results/sensitivity.json)).
 
 ![Mixed growth](../../../bench/rendering-design/results/graphs/mixed-growth.png)
 
@@ -76,10 +87,10 @@ raw/gzip, standalone runtime and incremental app prices are in the data.
 | **C: local** | **2,791** | **158** | **94** | **1,787** |
 | D: cells | 2,928 | 202 | 138 | 1,980 |
 
-An intercept is a fitted quantity, **not the runtime floor**. Mixed curves bend
-when all ten families appear; the upper-range fit is materially flatter. C's
-full-range seed slopes are 150–167 B/shape; TEA's are 243–271. These are seed
-ranges, not confidence intervals. [Full fits](../../../bench/rendering-design/results/fits.md)
+**These slopes measure varied repetitions of ten templates, not new-feature
+cost.** Ranking may change on real applications. An intercept is a fit, not the
+runtime floor. Mixed curves flatten when all families appear. Seed ranges are
+not confidence intervals. [Full fits](../../../bench/rendering-design/results/fits.md)
 include residuals, which are large for the mixed linear approximation.
 
 Per-family slopes, brotli bytes per added varied instance:
@@ -109,44 +120,19 @@ These compiler candidates still emit distinct factories per source module.
 [All family curves](../../../bench/rendering-design/results/graphs/family-growth.png)
 include today's output; Solid appears only for its two actual ports.
 
-## 3. Interactions and correctness
+## 3. Correctness and limits
 
-Median script milliseconds; the [interaction chart](../../../bench/rendering-design/results/graphs/interactions.png)
-and [full summary](../../../bench/rendering-design/results/timing-summary.json) include all directions and IQRs.
-
-| Operation | TEA | Direct | Vanilla | C: local | Solid 2 |
-|---|---:|---:|---:|---:|---:|
-| Edit, 1,000 rows | 0.576 | 0.650 | 0.207 | 0.693 | 0.395 |
-| Edit, 10,000 rows | 1.129 | 1.399 | 0.143 | 0.980 | 0.230 |
-| Select, 10,000 rows | 0.162 | 0.185 | 0.120 | 0.161 | 0.302 |
-| Reverse, 10,000 rows | 1,559 | 1,564 | 78.6 | 78.4 | 74.3 |
-| Mixed N32: counter | 0.657 | 0.607 | 0.347 | 0.347 | — |
-| Mixed N32: submit | 0.406 | 0.377 | 0.388 | 0.399 | — |
-| Mixed N32: modal | 0.575 | 0.758 | 0.756 | 0.412 | — |
-
-The reversal gap is tracked in [#194](https://github.com/canassa/beni/issues/194); its cause has not been profiled.
-For 10k edits, C's IQR is 0.822–1.068 ms versus vanilla's 0.138–0.150.
-For reversal, their IQRs overlap (76.2–78.7 / 78.0–78.9 ms). At 1k rows,
-C's edit point estimate is worse than TEA's; do not claim a universal speedup.
-
-Twelve rotated trials on quiet **azathoth**, Xeon E-2386G, Chromium 153.0.8010.36;
-driver CPUs 0–1/6–7, Chrome 2–5/8–11. Fresh page per trial/candidate, two warm
-cycles, real CDP clicks and trace interval analysis. Tables use script time;
-[raw samples](../../../bench/rendering-design/results/timing.json) also retain
-click-to-commit and rendering intervals. End-to-end timing includes model/list
-work. It is not a separately measured DOM-only cost.
-
-General list permutations use Solid 2 rc.9's actual reconciler. Stable-key edits
-use the inferred journal; selection gets an inferred selector fast path. Compare
-against actual direct and actual Solid, never a naive scanning substitute.
+The original campaign validated behavior before pricing the large extension.
+The stress extension measures bundle size; it does not claim every enormous DOM
+was exercised. Timing artifacts from the earlier campaign remain archived, but
+are outside this size-only follow-up.
 
 **1,422 minified pages were checked; 1,394 passed.** All four directions,
 vanilla, TEA and the 36 Solid pages matched the exercised TEA observations.
 Checks include first/last instances, every instance in mixed N32, rejected inputs,
 batched edits and surviving row identity. Twenty-two separate lifetime probes and sixteen complete large-list
 checks passed. **Direct fails 28 nested-helper/mixed pages**: its visit invariant stops
-dispatch, [#189](https://github.com/canassa/beni/issues/189). Its bytes remain in
-the curves; failed interactions receive no speed result.
+dispatch, [#189](https://github.com/canassa/beni/issues/189); failed interactions receive no speed result.
 
 ## 4. Proof obligations and the hard case
 
@@ -156,12 +142,12 @@ anchor helper reads to the correct instance; prove array uniqueness/no escaping
 snapshots before mutation; prove key stability and operation provenance before
 local DOM edits; and preserve controlled inputs, branch/row disposal and defect
 stop behavior. Exhaustiveness and static types remain the real checker's job.
-Effects retain managed lifetimes and typed host failures at the existing boundary.
+Effects must retain managed lifetimes and typed host failures; these pure apps
+do not demonstrate that extension.
 
 **Hardest: an edited row in a filtered, sorted, recursively nested view whose
 parent derives a summary and whose callback outlives a branch.** A changed field
-can change membership, order, ancestors and callback captures. Direct action
-routing alone proves none of those. Keep general reconciliation and conservative
+can change membership, order, ancestors and callback captures. Keep general reconciliation and conservative
 consumer fallback when the proof is absent. Even a proven DOM edit does not make
 a source `List.map` O(1); skipping that traversal needs a further key/index proof.
 
@@ -181,7 +167,7 @@ and shared state; reuse ownership/edit analysis, controlled inputs and lifetime
 checks. Price A/B specialization per region instead of assuming more static
 analysis always means smaller output. No language change is required for C.
 
-**Conduit planning projection, not a measurement:** applying the observed
+**Conduit planning target, not a prediction:** applying the observed
 0.5–0.67 local/TEA app-growth ratios to research 104's 7.6 kB view account suggests
 **3.8–5.1 kB of view/wiring**, with a **2–3 kB rendering-runtime budget** (1.8 kB
 here, plus unrepresented cases). The older Solid reference is 4.8 kB views and
@@ -190,9 +176,9 @@ bundle total.
 
 **One confirming experiment:** lower complete Conduit with C at six cumulative
 feature stages, retaining its typed host services unchanged. Require equivalent
-DOM/interaction transcripts, no nested-helper defect, rendering view/wiring
-≤5.1 kB and runtime ≤3 kB under the same account, and indexed edits within 15%
-of independent vanilla across repeated pinned trials. Failure rejects this bet.
+DOM/interaction transcripts including alias preservation and changing handler
+payloads, no nested-helper defect, rendering view/wiring
+≤5.1 kB and runtime ≤3 kB under the same account, and continued size advantage over A/D at each stage. Failure rejects this bet.
 
 The limits apply once: this is a finite catalogue of pure sandbox shapes, not a
 feature-complete Conduit port or a general proof of the lowerer. Cross-component

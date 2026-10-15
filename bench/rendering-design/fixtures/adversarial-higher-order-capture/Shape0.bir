@@ -1,0 +1,169 @@
+decl 0: pub alias Model
+  %0 = type_import Basics.Int
+  %1 = type_import Basics.Int
+  %2 = type_record { count : %0, saved : %1 }
+  body %2
+  ctor 0 Model [%0, %1]
+  refs
+    import_type Basics.Int
+  interface alias Model (record constructor)
+
+decl 1: pub type Msg
+  %0 = type_import Basics.Int
+  ctor 1 Increment []
+  ctor 2 Save [%0]
+  refs
+    import_type Basics.Int
+  interface type Msg = Increment | Save
+
+decl 2: pub value init (annotated)
+  %0 = type_unit
+  %1 = type_top 0 (Model)
+  %2 = type_fn [%0] -> %1
+  %3 = pat_unit
+  %4 = int 0
+  %5 = int 99
+  %6 = record { count = %4, saved = %5 }
+  annotation %2
+  params [%3]
+  body %6
+  refs
+    type_top 0 (Model)
+  interface value init (annotated)
+
+decl 3: pub value update (annotated)
+  %0 = type_top 1 (Msg)
+  %1 = type_top 0 (Model)
+  %2 = type_top 0 (Model)
+  %3 = type_fn [%0, %1] -> %2
+  %4 = pat_var local 0 (msg)
+  %5 = pat_var local 1 (model)
+  %6 = local 0 (msg)
+  %7 = ctor 1 (Increment)
+  %8 = pat_ctor %7 []
+  %9 = local 1 (model)
+  %10 = local 1 (model)
+  %11 = field_access %10 .count
+  %12 = int 1
+  %13 = import_value Basics.add
+  %14 = call %13 [%11, %12]
+  %15 = record_update %9 { count = %14 }
+  %16 = branch %8 -> %15
+  %17 = ctor 2 (Save)
+  %18 = pat_var local 2 (value)
+  %19 = pat_ctor %17 [%18]
+  %20 = local 1 (model)
+  %21 = local 2 (value)
+  %22 = record_update %20 { saved = %21 }
+  %23 = branch %19 -> %22
+  %24 = case %6 [%16, %23]
+  annotation %3
+  params [%4, %5]
+  body %24
+  locals
+    0 msg param %4
+    1 model param %5
+    2 value pattern %18
+  refs
+    type_top 1 (Msg)
+    type_top 0 (Model)
+    ctor 1 (Increment)
+    import_value Basics.add
+    ctor 2 (Save)
+  interface value update (annotated)
+
+decl 4: value child (annotated)
+  %0 = type_unit
+  %1 = type_import Basics.Int
+  %2 = type_fn [%0] -> %1
+  %3 = type_import Html.Html
+  %4 = type_top 1 (Msg)
+  %5 = type_app %3 [%4]
+  %6 = type_fn [%2] -> %5
+  %7 = pat_var local 0 (read)
+  %8 = local 0 (read)
+  %9 = unit
+  %10 = call %8 [%9]
+  %11 = ctor 2 (Save)
+  %12 = local 0 (read)
+  %13 = unit
+  %14 = call %12 [%13]
+  %15 = call %11 [%14]
+  %16 = markup
+    element div
+      element output
+        attr id = "countOutput"
+        hole %10
+      element button
+        attr id = "save"
+        attr onClick = %15
+        text "Save"
+  annotation %6
+  params [%7]
+  body %16
+  locals
+    0 read param %7
+  refs
+    import_type Basics.Int
+    import_type Html.Html
+    type_top 1 (Msg)
+    ctor 2 (Save)
+
+decl 5: pub value view (annotated)
+  %0 = type_top 0 (Model)
+  %1 = type_import Html.Html
+  %2 = type_top 1 (Msg)
+  %3 = type_app %1 [%2]
+  %4 = type_fn [%0] -> %3
+  %5 = pat_var local 0 (model)
+  %6 = ctor 1 (Increment)
+  %7 = top 4 (child)
+  %8 = pat_unit
+  %9 = local 0 (model)
+  %10 = field_access %9 .count
+  %11 = lambda [%8] -> %10
+  %12 = call %7 [%11]
+  %13 = local 0 (model)
+  %14 = field_access %13 .saved
+  %15 = markup
+    element section
+      attr data-shape = "adversarial"
+      element button
+        attr id = "increment"
+        attr onClick = %6
+        text "Increment"
+      hole %12
+      element output
+        attr id = "savedOutput"
+        hole %14
+  annotation %4
+  params [%5]
+  body %15
+  locals
+    0 model param %5
+  refs
+    type_top 0 (Model)
+    import_type Html.Html
+    type_top 1 (Msg)
+    ctor 1 (Increment)
+    top 4 (child)
+  interface value view (annotated)
+
+interface
+  alias Model (record constructor)
+  type Msg = Increment | Save
+  value init (annotated)
+  value update (annotated)
+  value view (annotated)
+
+imports
+  import Html exposing (Html)
+  prelude Basics
+  prelude List
+  prelude Maybe
+  prelude Result
+  prelude String
+  prelude Char
+  prelude Debug
+  prelude Int
+  prelude Float
