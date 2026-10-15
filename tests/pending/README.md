@@ -189,7 +189,7 @@ Their original counts and executable Lean twins remain in
 ### Original browser application audit (2026-10-15)
 
 The original unchanged TodoMVC, Bike Wars and Sternhalma audit recorded their
-ownership refusals here. Research 95 now corrects its explanation: TodoMVC's
+ownership refusals here. Research 98 now corrects its explanation: TodoMVC's
 queued-save overlap needs synthetic dispatch; its top-level initial model is a
 second error. Bike Wars' three messages follow from one retained append base.
 Sternhalma's reused board is observable in a second game, not its selection view.
@@ -203,5 +203,5 @@ TodoMVC's save captures encoded text. They are promoted to the paired
 browser-direct corpus. Bike Wars copies the retained base of its one trail
 append, clearing all three ownership errors. Its document view then reaches
 `not_implemented`, so it remains pending as CK-225 without a view workaround.
-Research 95 corrects the original causal/scheduling claims and records the
+Research 98 corrects the original causal/scheduling claims and records the
 unchanged original browser-tea transcripts. No ownership rule was relaxed.
