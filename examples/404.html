@@ -23,25 +23,36 @@
         notFound.hidden = false;
       }
     </script>
+    <!--
+      Every rule is under #not-found, so none of them touches a program
+      that this page runs: the program gets its default page shell's look.
+      #not-found covers the viewport, which gives the page its background.
+    -->
     <style>
-      :root { --bg: #fbfaf7; --fg: #1d1c1a; --accent: #b4381f; }
-      @media (prefers-color-scheme: dark) {
-        :root { --bg: #161513; --fg: #ece9e3; --accent: #f07a5c; }
-      }
-      body {
-        margin: 0;
+      #not-found {
+        --bg: #fbfaf7;
+        --fg: #1d1c1a;
+        --accent: #b4381f;
+        position: fixed;
+        inset: 0;
+        overflow: auto;
         background: var(--bg);
         color: var(--fg);
         font: 16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
       }
-      main { max-width: 46rem; margin: 0 auto; padding: 3rem 1rem; }
-      a { color: var(--accent); }
+      @media (prefers-color-scheme: dark) {
+        #not-found { --bg: #161513; --fg: #ece9e3; --accent: #f07a5c; }
+      }
+      #not-found > div { max-width: 46rem; margin: 0 auto; padding: 3rem 1rem; }
+      #not-found a { color: var(--accent); }
     </style>
   </head>
   <body>
     <main id="not-found" hidden>
-      <h1>Not found</h1>
-      <p>No page has this address. <a href="{{base}}">The beni examples</a> are here.</p>
+      <div>
+        <h1>Not found</h1>
+        <p>No page has this address. <a href="{{base}}">The beni examples</a> are here.</p>
+      </div>
     </main>
   </body>
 </html>
