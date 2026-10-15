@@ -371,7 +371,8 @@ fn walk(kind: Kind) !void {
 
     const cfg = try Config.read(arena);
     // Validate all grants once, before filtering: an orphan must never vanish
-    // merely because no case reads it. The browser part runs in every full gate.
+    // merely because no case reads it. This covers every kind in the whole root;
+    // the browser guard runs it once, since that part runs in every full gate.
     if (kind == .browser) try validateBudgetFiles(arena, &cfg);
     // Another process runs this kind (`corpus_parts.zig`): nothing to do.
     if (!cfg.runs(kind.partOf(.dev)) and !cfg.runs(kind.partOf(.release))) return;
