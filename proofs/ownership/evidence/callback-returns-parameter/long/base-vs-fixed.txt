@@ -1,0 +1,64 @@
+base {
+  programs: 176903,
+  translated: 107163,
+  leads: 1985,
+  precision: 6239,
+  agreements: 98939
+}
+new  {
+  programs: 176903,
+  translated: 107163,
+  leads: 1984,
+  precision: 6239,
+  agreements: 98940
+}
+case gone v6-17-5271 true Dead: an old holder is live after the demand
+case changed seed-20261011-19422 false -> false
+case changed seed-20261011-278 false -> false
+case changed seed-20261011-7412 false -> false
+case changed seed-314159-11817 false -> false
+case changed seed-314159-17333 false -> false
+case changed seed-314159-17739 false -> false
+case changed seed-314159-2858 false -> false
+case changed seed-314159-6684 false -> false
+case changed sync-17 false -> false
+case changed targeted-119 false -> false
+cases changed 14
+fixtures-0.jsonl 0 -> 0 rev 21 -> 21
+enumerate-0.jsonl 307 -> 307 rev 4154 -> 4154
+generator-17.jsonl 520 -> 520 rev 278 -> 278
+generator-20261011.jsonl 499 -> 499 rev 288 -> 288
+generator-314159.jsonl 501 -> 501 rev 286 -> 286
+generator6-17.jsonl 56 -> 55 rev 411 -> 411
+generator6-20261011.jsonl 48 -> 48 rev 394 -> 394
+generator6-314159.jsonl 54 -> 54 rev 407 -> 407
+seed-20261011-19422 lean: container contents: positions may share siteLeads ["main/1/1/1/1/1/1/1/0"] -> ["main/1/1/1/1/1/1/1/0"]
+  + {"row":116,"col":9,"operation":"call Case96326.d43 b19v10","verdict":"accepted","detail":"fresh (Case96326.d43 writes what its callback returns, and the callback returns this argument)","site":"main/1/1/1/1/1/1/1/1/1/1/1/1/0"}
+seed-20261011-278 lean: exclusive contents: positions or nested paths may share siteLeads ["main/1/1/1/1/1/0"] -> ["main/1/1/1/1/1/0"]
+  + {"row":139,"col":9,"operation":"call Case77182.d40 b22v7","verdict":"accepted","detail":"fresh (Case77182.d40 writes what its callback returns, and the callback returns this argument)","site":"main/1/1/1/1/1/1/1/1/1/0"}
+seed-20261011-7412 lean: container contents: positions may share siteLeads ["main/1/1/1/0"] -> ["main/1/1/1/0"]
+  + {"row":110,"col":9,"operation":"call Case84316.d40 b15v6","verdict":"accepted","detail":"fresh (Case84316.d40 writes what its callback returns, and the callback returns this argument)","site":"main/1/1/1/1/1/1/1/1/0"}
+seed-314159-11817 lean: exclusive contents: positions or nested paths may share siteLeads ["main/1/1/1/0"] -> ["main/1/1/1/0"]
+  + {"row":241,"col":9,"operation":"call Case108721.d40 b36v13","verdict":"rejected","detail":"alias: b13v8[*] holds it and is read at 274:5 (Case108721.d40 writes what its callback returns, and the callback returns this argument)","site":"main/1/1/1/1/1/1/1/1/1/1/1/1/1/1/1/0"}
+  + {"row":271,"col":9,"operation":"call Case108721.d40 b42v19","verdict":"rejected","detail":"alias: b41v18 holds it and is read at 274:5 (Case108721.d40 writes what its callback returns, and the callback returns this argument)","site":"main/1/1/1/1/1/1/1/1/1/1/1/1/1/1/1/1/1/1/1/1/1/0"}
+  + {"row":271,"col":9,"operation":"call Case108721.d40 b42v19[*]","verdict":"rejected","detail":"call: b41v18 holds it and is read at 274:5; the callee writes it only through an approximate step (Case108721.d40 writes what its callback returns, and the callback returns this argument) (approx)","site":"main/1/1/1/1/1/1/1/1/1/1/1/1/1/1/1/1/1/1/1/1/1/0"}
+seed-314159-17333 lean: container contents: positions may share siteLeads ["main/1/1/1/1/1/1/1/0"] -> ["main/1/1/1/1/1/1/1/0"]
+  + {"row":177,"col":9,"operation":"call Case114237.d40 b28v12","verdict":"rejected","detail":"alias: b25v9 holds it and is read at 180:5 (Case114237.d40 writes what its callback returns, and the callback returns this argument)","site":"main/1/1/1/1/1/1/1/1/1/1/1/1/1/1/0"}
+seed-314159-17739 lean: Dead: an old holder is live after the demand siteLeads ["main/1/1/1/1/0"] -> ["main/1/1/1/1/0"]
+  + {"row":240,"col":9,"operation":"call Case114643.d40 b45v17","verdict":"accepted","detail":"fresh (Case114643.d40 writes what its callback returns, and the callback returns this argument)","site":"main/1/1/1/1/1/1/1/1/1/1/1/1/1/1/1/1/1/1/1/0"}
+seed-314159-2858 lean: container contents: positions may share siteLeads ["main/1/1/1/1/1/1/1/1/1/1/1/1/1/0"] -> ["main/1/1/1/1/1/1/1/1/1/1/1/1/1/0"]
+  + {"row":172,"col":9,"operation":"call Case99762.d41 b0v0","verdict":"accepted","detail":"fresh (Case99762.d41 writes what its callback returns, and the callback returns this argument)","site":"main/1/1/1/1/1/1/0"}
+seed-314159-6684 lean: container contents: positions may share siteLeads ["main/1/1/1/1/0"] -> ["main/1/1/1/1/0"]
+  + {"row":114,"col":9,"operation":"call Case103588.d40 b16v8","verdict":"accepted","detail":"fresh (Case103588.d40 writes what its callback returns, and the callback returns this argument)","site":"main/1/1/1/1/1/1/1/1/1/1/0"}
+sync-17 lean: container contents: positions may share siteLeads ["main/1/1/1/body"] -> ["main/1/1/1/body"]
+  + {"row":23,"col":5,"operation":"call List.foldl b2v2[*]","verdict":"rejected","detail":"call: Case116.g0 is a top-level value; the callee writes it only through an approximate step (List.foldl writes what its callback returns, and the callback returns this argument) (approx)","site":"main/1/1/1"}
+targeted-119 lean: container contents: positions may share siteLeads ["main/1/1/1/body"] -> ["main/1/1/1/body"]
+  + {"row":23,"col":5,"operation":"call List.foldl b2v2[*]","verdict":"rejected","detail":"call: Case317.g0 is a top-level value; the callee writes it only through an approximate step (List.foldl writes what its callback returns, and the callback returns this argument) (approx)","site":"main/1/1/1"}
+targeted-17 lean: container contents: positions may share siteLeads ["main/1/1/1/body"] -> ["main/1/1/1/body"]
+  + {"row":23,"col":5,"operation":"call List.foldl b2v2[*]","verdict":"rejected","detail":"call: Case215.g0 is a top-level value; the callee writes it only through an approximate step (List.foldl writes what its callback returns, and the callback returns this argument) (approx)","site":"main/1/1/1"}
+targeted-170 lean: container contents: positions may share siteLeads ["main/1/1/1/body"] -> ["main/1/1/1/body"]
+  + {"row":23,"col":5,"operation":"call List.foldl b2v2[*]","verdict":"rejected","detail":"call: Case368.g0 is a top-level value; the callee writes it only through an approximate step (List.foldl writes what its callback returns, and the callback returns this argument) (approx)","site":"main/1/1/1"}
+targeted-68 lean: container contents: positions may share siteLeads ["main/1/1/1/body"] -> ["main/1/1/1/body"]
+  + {"row":23,"col":5,"operation":"call List.foldl b2v2[*]","verdict":"rejected","detail":"call: Case266.g0 is a top-level value; the callee writes it only through an approximate step (List.foldl writes what its callback returns, and the callback returns this argument) (approx)","site":"main/1/1/1"}
+v6-314159-1028 lean: container contents: positions may share siteLeads ["main/1/1/1/1/1/1/1/0"] -> ["main/1/1/1/1/1/1/1/0"]
+  + {"row":101,"col":9,"operation":"call Case157932.d40 b16v9","verdict":"accepted","detail":"fresh (Case157932.d40 writes what its callback returns, and the callback returns this argument)","site":"main/1/1/1/1/1/1/1/1/1/1/1/0"}

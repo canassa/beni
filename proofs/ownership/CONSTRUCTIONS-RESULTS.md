@@ -111,7 +111,7 @@ make that call-site demand when the callback *writes* a supplied parameter;
 the `need` path, where the callee writes what the callback *returns*, does not.
 The red fixture (CK-233 in `plans/checker-findings.md`) is `tests/pending/check/bad/direct/BridgeCallbackReturnsParameter.beni`
 (`exit=0 codes=none`; expected `list_still_used` at the call). The Zig checker
-is not changed in this PR. Its Lean core is
+is not changed in this PR; *fixed and promoted the same day, below*. Its Lean core is
 `regressions/bridge/CallbackReturnsParameter.json`. It surfaced in a v6 stream
 whose result held a function value, so neither C5 nor v6 alone would have
 reached it on these seeds.
@@ -212,3 +212,40 @@ node scripts/bridge-fix-audit.mjs ../../zig-out/c1-long \
   ../../zig-out/ownership-constructions-beni ../../zig-out/c1-audit-long
 node scripts/bridge-mutants.mjs            # all ten controls; name some to run only those
 ```
+
+## CK-233 fixed — 2026-10-15
+
+`ownership-checker.md` §16.4, amended 2026-10-15: wherever a callee relies on
+a callback returning owned (`need`, or a callback-result supply another callback
+writes), a returned parameter's owned supply is followed to the caller — the
+callee's own parameter becomes a call-site demand on the caller's argument,
+another callback's result asks the same of that callback — and `need` is read
+off taken elements too. The red fixture is promoted to
+`tests/corpus/check/bad/direct/BridgeCallbackReturnsParameter.beni`;
+`tests/corpus/ownership/BridgeReturnedParameter.beni` pins the class (a whole
+parameter, a field of one, a second callback, a passed-on function parameter,
+a constructor tagger, a fold's accumulator, `List.map`'s element) with accepted
+twins. Six of its seven rejections were acceptances on master; the fold's was
+already rejected through the callee's own write. `scripts/bridge-known-unsafe.json`
+is empty.
+
+Both campaigns ran on master `927b7dcd4` (`base`) and on the fix, the same
+inputs, one frozen ReleaseSafe compiler each, CPUs 8–23, eight workers:
+
+| Campaign | Inputs | Translated | Forward leads (meaningful) | Reverse leads | Confirmed unsafe |
+|---|---:|---:|---:|---:|---:|
+| CI, fixed | 1,341 | 959 | 6 (1) | 43 | 0 |
+| Long, base | 176,903 | 107,163 | 1,985 (515) | 6,239 | 1 (`v6-17-5271`) |
+| Long, fixed | 176,903 | 107,163 | 1,984 (514) | 6,239 | **0** |
+
+The only forward lead that left is `v6-17-5271`. **No reverse lead moved**: every
+stream's count and every precision pattern's count is unchanged, and no
+program's verdict changed but `v6-17-5271`'s. Fourteen other lead programs
+gained demand lines from the new rule without changing their verdict: in seven
+every new line is accepted (the argument is dead or fresh), and seven gain a
+rejected line in a program the shipping checker already refused for another
+demand. TodoMVC, Sternhalma, Bike Wars and Conduit
+print byte-identical ownership reports, summaries included.
+
+`evidence/callback-returns-parameter/` holds the CI audit, both long audits and
+the base-against-fixed comparison of every lead case.
