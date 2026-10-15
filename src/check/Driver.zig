@@ -28,6 +28,7 @@
 //! (`checkInner`).
 
 const std = @import("std");
+const builtin = @import("builtin");
 const Allocator = std.mem.Allocator;
 const Io = std.Io;
 const Arena = @import("../Arena.zig");
@@ -115,6 +116,9 @@ core_pending: usize = 0,
 failure: ?Error = null,
 
 pub fn go(d: *Driver, scratch: *Arena) Error!void {
+    // A build with no threads walks the DAG serially (fast-compiler.md §10,
+    // *A build with no threads*), as `--jobs=1` does.
+    if (builtin.single_threaded) return d.serial(scratch);
     const jobs = if (d.parallelisable()) @min(d.options.jobs, try d.widthBound(), d.workBound()) else 1;
     if (jobs <= 1) return d.serial(scratch);
     try d.buildSchedule();
