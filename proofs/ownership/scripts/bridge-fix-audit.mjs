@@ -79,8 +79,24 @@ try {
   }
   const clusters = JSON.parse(await readFile(resolve(own, 'evidence/bridge-triage/clusters.json'), 'utf8'));
   const isLong = report.programs === 116456;
+  const baseline = JSON.parse(await readFile(resolve(own,
+    isLong ? 'evidence/bridge-long/report.json' : 'evidence/bridge-ci/report.json'), 'utf8'));
+  // Compare the canonical runs exactly, including skips, rather than letting
+  // a changed translated population explain away a soundness improvement.
+  if (isLong || report.programs === 766) {
+    for (const key of ['programs', 'translated', 'skipped', 'valueChecked']) assert.equal(report[key], baseline[key], key);
+    assert.equal(report.streams.length, baseline.streams.length);
+    for (const stream of report.streams) {
+      const oldStream = baseline.streams.find(s => s.name === stream.name);
+      assert(oldStream);
+      for (const key of ['programs', 'translated', 'skipped', 'valueChecked', 'sha256']) assert.equal(stream[key], oldStream[key], stream.name + ':' + key);
+    }
+  }
+  assert.equal(hash(await readFile(compiler)), report.environment.compilerSha256, 'compiler changed during audit');
   const survivingOriginals = isLong ? Object.fromEntries(Object.entries(clusters).map(([k, ids]) => [k, ids.filter(id => byId.has(id))])) : null;
-  const audit = {campaign: {programs: report.programs, translated: report.translated, skipped: report.skipped,
+  const audit = {judgeSha256: hash(await readFile(resolve(own, '.lake/build/bin/triage'))),
+    observation: 'Original programs; complete final value, reads and externalReads in both unchanged Lean interpreters. The judge labels the supplied original core minimum under --only; no reduction is used.',
+    campaign: {programs: report.programs, translated: report.translated, skipped: report.skipped,
     valueChecked: report.valueChecked, leads: report.leads, precision: report.precision,
     environment: report.environment, streams: report.streams},
     confirmed: confirmed.length, confirmedIds: confirmed, agreeingOriginalLeads: judgments.length - confirmed.length,
