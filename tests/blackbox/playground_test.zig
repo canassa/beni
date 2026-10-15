@@ -6,13 +6,14 @@
 //! every single-file program the page can be given:
 //!
 //!   - the page's own samples, `playground/samples/<platform>/*.beni`;
-//!   - `tests/corpus/run/*.beni`: built for `node`, in development and with
-//!     `--release` (the printing sample);
-//!   - `tests/corpus/browser/direct/*.beni`: built for `browser-direct`, in
-//!     both modes (the platform of the page, `playground.md` §1);
-//!   - `tests/corpus/check/bad/*.beni`: checked, for the diagnostics;
-//!   - `bench/todomvc/apps/beni/*.beni`: built for `browser-direct` in both
-//!     modes, and the two dumps the page shows.
+//!   - `tests/corpus/run/*.beni`: built for `node` as the page builds, with
+//!     the cache and source maps, and with `--release` (the printing sample);
+//!   - `tests/corpus/browser/direct/*.beni`: built for `browser-direct` the
+//!     same three ways (the platform of the page, `playground.md` §1);
+//!   - `tests/corpus/check/bad/*.beni`: checked, for the diagnostics, in
+//!     both renderers (the page reads the JSON);
+//!   - `bench/todomvc/apps/beni/*.beni`: built for `browser-direct` as the
+//!     page builds and with `--release`, and the two dumps the page shows.
 //!
 //! Each command runs with the native threaded compiler too, on a copy of the
 //! same project, and the two must agree on the exit code, both streams and
@@ -79,26 +80,33 @@ fn programs(arena: std.mem.Allocator) ![]const Program {
     return out.items;
 }
 
-/// The commands the page runs on `name`, for a program of `kind`, in
-/// `arena`: the argument lists hold `name`, so none may live on this frame.
+/// The commands run on `name`, for a program of `kind`, in `arena`: the
+/// argument lists hold `name`, so none may live on this frame. The first
+/// build of each kind is the page's own command (`playground/worker.js`):
+/// no cache, no source maps, the diagnostics as JSON, into `out/`. The
+/// others reach what the page does not: the cache, source maps,
+/// `--release`, and the human renderer.
 fn commands(arena: std.mem.Allocator, kind: Kind, name: []const u8) ![]const []const []const u8 {
     const lists: []const []const []const u8 = switch (kind) {
         .print => &.{
-            &.{ "build", "--platform=node", "--out=out" },
+            &.{ "build", "--platform=node", "--no-cache", "--no-source-maps", "--diagnostics=json" },
+            &.{ "build", "--platform=node", "--out=out-maps" },
             &.{ "build", "--platform=node", "--release", "--allow-debug", "--out=out-release" },
         },
         .page => &.{
-            &.{ "build", "--platform=browser-direct", "--out=out" },
+            &.{ "build", "--platform=browser-direct", "--no-cache", "--no-source-maps", "--diagnostics=json" },
+            &.{ "build", "--platform=browser-direct", "--out=out-maps" },
             &.{ "build", "--platform=browser-direct", "--release", "--allow-debug", "--out=out-release" },
         },
         .diagnostics => &.{
             &.{"check"},
+            &.{ "check", "--diagnostics=json" },
         },
         .todomvc => &.{
-            &.{ "build", "--platform=browser-direct", "--out=out" },
+            &.{ "build", "--platform=browser-direct", "--no-cache", "--no-source-maps", "--diagnostics=json" },
             &.{ "build", "--platform=browser-direct", "--release", "--out=out-release" },
-            &.{ "dump", "--stage=types", "--platform=browser-direct" },
-            &.{ "dump", "--stage=ownership", "--platform=browser-direct" },
+            &.{ "dump", "--stage=types", "--platform=browser-direct", "--diagnostics=json" },
+            &.{ "dump", "--stage=ownership", "--platform=browser-direct", "--diagnostics=json" },
         },
     };
     const out = try arena.alloc([]const []const u8, lists.len);
@@ -151,4 +159,45 @@ test "part 6" {
 }
 test "part 7" {
     try runPart(7);
+}
+
+test "the shipped compiler takes the points-to fixpoint in the native compiler's sweeps" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `--release`'s points-to fixpoint (`src/js/Spec.zig`) evaluates its
+    // waiting constraints a word of a bit set at a time, and stops after
+    // `max_pts_sweeps` sweeps. The word was a `usize`, so wasm32 took more
+    // sweeps than x86-64 on these programs: the same bytes only because no
+    // program came near the cap. The word is 64 bits on every target now,
+    // and the sweep count is the native one (`fast-compiler.md` §10).
+    const swept = [_][]const u8{
+        "tests/corpus/browser/direct/KeySubscription.beni",
+        "tests/corpus/browser/direct/LinkGuard.beni",
+        "tests/corpus/browser/direct/LinkOutsideMount.beni",
+        "tests/corpus/browser/direct/ListenerOrder.beni",
+        "tests/corpus/browser/direct/NavigateErrors.beni",
+        "bench/todomvc/apps/beni/Sandbox.beni",
+    };
+    for (swept) |path| {
+        var w = try World.init(testing.allocator, testing.io);
+        defer w.deinit();
+        const other: wasm.Other = .{ .wasm = wasm.wasmPath(w.arena.allocator()) orelse return error.NoWasmCompiler };
+        try wasm.writeRepoFile(&w, path);
+        const name = std.fs.path.basename(path);
+
+        // ┌─────────────────────────────────────┐
+        // │ EXECUTE                             │
+        // └─────────────────────────────────────┘
+        const built = try wasm.expectSameIgnoring(&w, &.{ "build", "--release", "--allow-debug", "--platform=browser-direct", "--no-cache", "--self-profile=profile.json", name }, other, &.{"profile.json"});
+
+        // ┌─────────────────────────────────────┐
+        // │ VERIFY SIDE EFFECTS                 │
+        // └─────────────────────────────────────┘
+        errdefer std.debug.print("in {s}\n", .{path});
+        try testing.expectEqual(@as(u8, 0), built.exit_code);
+        const native = try wasm.profileCounter(&w, "threaded", "profile.json", "spec_points_to_sweeps");
+        try testing.expect(native > 0);
+        try testing.expectEqual(native, try wasm.profileCounter(&w, "other", "profile.json", "spec_points_to_sweeps"));
+    }
 }

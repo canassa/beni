@@ -6429,8 +6429,13 @@ const Pts = struct {
     /// in began, while a guard was in view, each one's object's: each
     /// kills the guards before it once its object is `top` (`Guard.reads`).
     reads: std.ArrayList(u32) = .empty,
-    /// The constraints waiting to be evaluated again, and how many.
-    waiting: std.DynamicBitSetUnmanaged = .{},
+    /// The constraints waiting to be evaluated again, a bit each in 64-bit
+    /// words, and how many. The words are 64 bits on every target, not a
+    /// `usize`: `evaluateWaiting` takes them a word at a time, so the word
+    /// is part of the order of evaluation, and on wasm32 a `usize` word
+    /// gave another order than on x86-64 (`fast-compiler.md` §10, *A build
+    /// with no threads*).
+    waiting: []u64 = &.{},
     waiting_count: u32 = 0,
 
     const StmtRef = struct { module: u32, top: Index };
@@ -6665,8 +6670,10 @@ const Pts = struct {
 
     /// Constraint `c` is evaluated again.
     inline fn reevaluate(p: *Pts, c: u32) void {
-        if (p.waiting.isSet(c)) return;
-        p.waiting.set(c);
+        const word = &p.waiting[c / 64];
+        const bit = @as(u64, 1) << @intCast(c % 64);
+        if (word.* & bit != 0) return;
+        word.* |= bit;
         p.waiting_count += 1;
     }
 
@@ -7339,7 +7346,8 @@ const Pts = struct {
                 p.recording = false;
                 p.full = false;
                 p.evaluating = true;
-                p.waiting = try .initEmpty(a, p.cons.items.len);
+                p.waiting = try a.alloc(u64, std.math.divCeil(usize, p.cons.items.len, 64) catch unreachable);
+                @memset(p.waiting, 0);
                 for (p.cons.items, 0..) |c, i| if (c.woken) p.reevaluate(@intCast(i));
             } else try p.evaluateWaiting();
             // A change the constraints made woke what reads it, so it is in
@@ -7356,20 +7364,22 @@ const Pts = struct {
         }
     }
 
-    /// Every constraint that waits, a word of the set at a time from the
-    /// first: one woken in a word already passed waits for the next sweep.
-    /// The order changes no fact, every transfer function being monotone.
+    /// Every constraint that waits, a 64-bit word of the set at a time from
+    /// the first: one woken in a word already passed waits for the next
+    /// sweep. The order changes no fact, every transfer function being
+    /// monotone, but it changes how many sweeps the fixpoint takes, and
+    /// under `max_pts_sweeps` whether it is reached; so the word is 64 bits
+    /// on every target, and wasm32 sweeps as x86-64 does.
     fn evaluateWaiting(p: *Pts) Allocator.Error!void {
         defer p.cur = none;
-        const words = (p.waiting.bit_length + @bitSizeOf(usize) - 1) / @bitSizeOf(usize);
-        const masks = p.waiting.masks;
+        const masks = p.waiting;
         var w: usize = 0;
-        while (w < words) : (w += 1) {
+        while (w < masks.len) : (w += 1) {
             while (masks[w] != 0) {
                 const bit = @ctz(masks[w]);
                 masks[w] &= masks[w] - 1;
                 p.waiting_count -= 1;
-                try p.evaluate(@intCast(w * @bitSizeOf(usize) + bit));
+                try p.evaluate(@intCast(w * 64 + bit));
             }
         }
     }

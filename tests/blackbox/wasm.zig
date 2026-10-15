@@ -88,6 +88,13 @@ pub const Run = struct { exit_code: u8, stdout: []const u8, stderr: []const u8 }
 /// the exit code, both streams, and every file of the two directories.
 /// Returns the threaded run, for a test that also asserts what it did.
 pub fn expectSame(w: *World, args: []const []const u8, other: Other) !Run {
+    return expectSameIgnoring(w, args, other, &.{});
+}
+
+/// `expectSame`, leaving the files `ignore` names (paths relative to each
+/// side) out of the comparison: a `--self-profile` trace, whose times differ
+/// from run to run.
+pub fn expectSameIgnoring(w: *World, args: []const []const u8, other: Other, ignore: []const []const u8) !Run {
     const arena = w.arena.allocator();
     const threaded = try w.runWith(args, .{
         .raw_diagnostics = true,
@@ -106,8 +113,8 @@ pub fn expectSame(w: *World, args: []const []const u8, other: Other) !Run {
     try testing.expectEqual(threaded.exit_code, theirs.exit_code);
     try testing.expectEqualStrings(threaded.stdout, theirs.stdout);
     try testing.expectEqualStrings(threaded.stderr, theirs.stderr);
-    const ours = try treeOf(w, "threaded");
-    const their_files = try treeOf(w, "other");
+    const ours = try treeOf(w, "threaded", ignore);
+    const their_files = try treeOf(w, "other", ignore);
     if (!sameList(ours, their_files)) {
         for (ours) |path| if (!contains(their_files, path)) std.debug.print("only the threaded compiler wrote {s}\n", .{path});
         for (their_files) |path| if (!contains(ours, path)) std.debug.print("only the compiler with no threads wrote {s}\n", .{path});
@@ -158,13 +165,34 @@ fn sameList(a: []const []const u8, b: []const []const u8) bool {
 }
 
 /// Every file under `side`, as sorted paths relative to it, without the
-/// cache's.
-fn treeOf(w: *World, side: []const u8) ![]const []const u8 {
+/// cache's and without those `ignore` names.
+fn treeOf(w: *World, side: []const u8, ignore: []const []const u8) ![]const []const u8 {
     const all = try w.listFiles(side);
     var kept: std.ArrayList([]const u8) = .empty;
     for (all) |path| {
         if (std.mem.startsWith(u8, path, cache_dir ++ "/")) continue;
+        if (contains(ignore, path)) continue;
         try kept.append(w.arena.allocator(), path);
     }
     return kept.items;
+}
+
+/// Counter `name` of the `--self-profile` trace at `trace` in the project of
+/// `side` (`threaded` or `other`): the value of its `C` event
+/// (`fast-compiler.md` §12, `src/Profile.zig`).
+pub fn profileCounter(w: *World, side: []const u8, trace: []const u8, name: []const u8) !i64 {
+    const arena = w.arena.allocator();
+    const bytes = try w.read(try std.fs.path.join(arena, &.{ side, trace }));
+    const root = try std.json.parseFromSliceLeaky(std.json.Value, arena, bytes, .{});
+    const events = root.object.get("traceEvents") orelse return error.NotATrace;
+    for (events.array.items) |event| {
+        const ph = event.object.get("ph") orelse continue;
+        const event_name = event.object.get("name") orelse continue;
+        if (!std.mem.eql(u8, ph.string, "C") or !std.mem.eql(u8, event_name.string, name)) continue;
+        const args = event.object.get("args") orelse return error.NotATrace;
+        const value = args.object.get(name) orelse return error.NotATrace;
+        return value.integer;
+    }
+    std.debug.print("{s}/{s} has no counter {s}\n", .{ side, trace, name });
+    return error.NoSuchCounter;
 }
