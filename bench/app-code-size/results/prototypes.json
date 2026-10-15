@@ -1,0 +1,113 @@
+{
+  "baseline": {
+    "raw": 129468,
+    "gzip": 37220,
+    "brotli": 31609
+  },
+  "alone": {
+    "guards": {
+      "raw": 127858,
+      "gzip": 36850,
+      "brotli": 31401,
+      "corpus": "matches",
+      "saved": 208
+    },
+    "closures": {
+      "raw": 126483,
+      "gzip": 36698,
+      "brotli": 31399,
+      "corpus": "matches",
+      "saved": 210
+    },
+    "static": {
+      "raw": 128042,
+      "gzip": 36864,
+      "brotli": 31593,
+      "corpus": "matches",
+      "saved": 16
+    },
+    "live": {
+      "raw": 127188,
+      "gzip": 36705,
+      "brotli": 31355,
+      "corpus": "matches",
+      "saved": 254
+    }
+  },
+  "stacked": [
+    {
+      "step": "guards",
+      "raw": 127858,
+      "gzip": 36850,
+      "brotli": 31401,
+      "savedFromBaseline": 208,
+      "corpus": "matches"
+    },
+    {
+      "step": "closures",
+      "raw": 125357,
+      "gzip": 36351,
+      "brotli": 31204,
+      "savedFromBaseline": 405,
+      "corpus": "matches"
+    },
+    {
+      "step": "static",
+      "raw": 123931,
+      "gzip": 36086,
+      "brotli": 31025,
+      "savedFromBaseline": 584,
+      "corpus": "matches"
+    },
+    {
+      "step": "live",
+      "raw": 122001,
+      "gzip": 35689,
+      "brotli": 30748,
+      "savedFromBaseline": 861,
+      "corpus": "matches"
+    }
+  ],
+  "stackPlusTerser": {
+    "raw": 112429,
+    "gzip": 34628,
+    "brotli": 30086
+  },
+  "probes": {
+    "padding-tea": {
+      "fields": {
+        "views": 17,
+        "logic": 64
+      },
+      "before": 31609,
+      "after": 31512,
+      "saved": 97,
+      "corpus": "matches"
+    },
+    "padding-direct": {
+      "fields": {
+        "views": 17,
+        "logic": 64
+      },
+      "before": 38175,
+      "after": 38140,
+      "saved": 35,
+      "corpus": "matches"
+    },
+    "dead-stores-direct": {
+      "dropped": 64,
+      "before": {
+        "raw": 213882,
+        "gzip": 46027,
+        "brotli": 38175
+      },
+      "after": {
+        "raw": 213290,
+        "gzip": 45843,
+        "brotli": 38069
+      },
+      "saved": 106,
+      "corpus": "matches"
+    }
+  }
+}

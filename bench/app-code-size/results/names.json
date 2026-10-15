@@ -1,0 +1,140 @@
+{
+  "tea": {
+    "views": {
+      "field": {
+        "count": 2008,
+        "raw": 4633,
+        "alone": 1203
+      },
+      "record": {
+        "count": 742,
+        "raw": 3543,
+        "alone": 384
+      },
+      "top": {
+        "count": 975,
+        "raw": 1920,
+        "alone": 1076
+      },
+      "local": {
+        "count": 4224,
+        "raw": 5774,
+        "alone": 1494
+      }
+    },
+    "logic": {
+      "field": {
+        "count": 0,
+        "raw": 0,
+        "alone": 0
+      },
+      "record": {
+        "count": 1672,
+        "raw": 2389,
+        "alone": 306
+      },
+      "top": {
+        "count": 834,
+        "raw": 1605,
+        "alone": 739
+      },
+      "local": {
+        "count": 1747,
+        "raw": 1747,
+        "alone": 327
+      }
+    }
+  },
+  "direct": {
+    "views": {
+      "field": {
+        "count": 1956,
+        "raw": 4328,
+        "alone": 1142
+      },
+      "record": {
+        "count": 2551,
+        "raw": 5998,
+        "alone": 423
+      },
+      "top": {
+        "count": 2950,
+        "raw": 5861,
+        "alone": 2702
+      },
+      "local": {
+        "count": 8356,
+        "raw": 10234,
+        "alone": 1358
+      }
+    },
+    "logic": {
+      "field": {
+        "count": 0,
+        "raw": 0,
+        "alone": 0
+      },
+      "record": {
+        "count": 1586,
+        "raw": 2288,
+        "alone": 326
+      },
+      "top": {
+        "count": 842,
+        "raw": 1621,
+        "alone": 664
+      },
+      "local": {
+        "count": 1657,
+        "raw": 1657,
+        "alone": 272
+      }
+    }
+  },
+  "solid": {
+    "views": {
+      "field": {
+        "count": 0,
+        "raw": 0,
+        "alone": 0
+      },
+      "record": {
+        "count": 797,
+        "raw": 6014,
+        "alone": 888
+      },
+      "top": {
+        "count": 420,
+        "raw": 760,
+        "alone": 328
+      },
+      "local": {
+        "count": 1126,
+        "raw": 1250,
+        "alone": 697
+      }
+    },
+    "logic": {
+      "field": {
+        "count": 0,
+        "raw": 0,
+        "alone": 0
+      },
+      "record": {
+        "count": 294,
+        "raw": 2112,
+        "alone": 491
+      },
+      "top": {
+        "count": 85,
+        "raw": 135,
+        "alone": 51
+      },
+      "local": {
+        "count": 567,
+        "raw": 748,
+        "alone": 194
+      }
+    }
+  }
+}

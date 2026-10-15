@@ -1,0 +1,20 @@
+{
+  "date": "2026-10-15T17:02:11.865Z",
+  "commit": "6508aeb3f0915dd48265d65e2190a7f2409d30d8",
+  "node": "v24.19.0",
+  "compilerSha256": "86413e262a6b92d46292faae7223c532ce3e81f007fbbe07bd8a21153d9eb3ea",
+  "subjects": {
+    "tea": {
+      "sha256": "40194505579ac4ebee28f396f98e82fc97c1ff40a343cbed33f3740857c8718b",
+      "raw": 129468,
+      "gzip": 37220,
+      "brotli": 31609
+    },
+    "direct": {
+      "sha256": "6c2f5d4d583cbce6496a88c6d004e5560e90fff0571acd63b2071a7e89b3b522",
+      "raw": 213882,
+      "gzip": 46027,
+      "brotli": 38175
+    }
+  }
+}

@@ -1,0 +1,88 @@
+{
+  "method": "Terser 5 compress {passes:2} + mangle, module, toplevel, input map = release map. Area cost = brotli(all) - brotli(all minus the area units).",
+  "subjects": {
+    "tea": {
+      "before": {
+        "total": 31609,
+        "views": 7602,
+        "viewsRaw": {
+          "markup": 39420,
+          "main": 69
+        },
+        "logic": 4751,
+        "logicRaw": {
+          "requests, routes, helpers": 4779,
+          "view functions": 3290,
+          "update/init": 11902
+        }
+      },
+      "after": {
+        "total": 30447,
+        "views": 7329,
+        "viewsRaw": {
+          "markup": 37875
+        },
+        "logic": 4541,
+        "logicRaw": {
+          "requests, routes, helpers": 3697,
+          "view functions": 3310,
+          "update/init": 12059
+        }
+      },
+      "sizes": {
+        "before": {
+          "raw": 129468,
+          "gzip": 37220,
+          "brotli": 31609
+        },
+        "after": {
+          "raw": 121551,
+          "gzip": 35329,
+          "brotli": 30447
+        }
+      }
+    },
+    "direct": {
+      "before": {
+        "total": 38175,
+        "views": 12798,
+        "viewsRaw": {
+          "markup": 54248,
+          "main": 64467
+        },
+        "logic": 4636,
+        "logicRaw": {
+          "requests, routes, helpers": 4914,
+          "view functions": 2765,
+          "update/init": 11951
+        }
+      },
+      "after": {
+        "total": 35296,
+        "views": 11107,
+        "viewsRaw": {
+          "markup": 49477,
+          "main": 62723
+        },
+        "logic": 4393,
+        "logicRaw": {
+          "requests, routes, helpers": 3791,
+          "view functions": 2779,
+          "update/init": 12082
+        }
+      },
+      "sizes": {
+        "before": {
+          "raw": 213882,
+          "gzip": 46027,
+          "brotli": 38175
+        },
+        "after": {
+          "raw": 199654,
+          "gzip": 41947,
+          "brotli": 35296
+        }
+      }
+    }
+  }
+}

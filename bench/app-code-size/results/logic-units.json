@@ -1,0 +1,1434 @@
+{
+  "tea": [
+    {
+      "unit": "ArticlePage.update",
+      "sub": "update/init",
+      "raw": 2082,
+      "alone": 360
+    },
+    {
+      "unit": "Settings.update",
+      "sub": "update/init",
+      "raw": 1280,
+      "alone": 258
+    },
+    {
+      "unit": "Main.changeRouteTo",
+      "sub": "update/init",
+      "raw": 998,
+      "alone": 165
+    },
+    {
+      "unit": "Main.view",
+      "sub": "view functions",
+      "raw": 524,
+      "alone": 143
+    },
+    {
+      "unit": "Editor.update",
+      "sub": "update/init",
+      "raw": 878,
+      "alone": 142
+    },
+    {
+      "unit": "Main.update",
+      "sub": "update/init",
+      "raw": 834,
+      "alone": 139
+    },
+    {
+      "unit": "Article.list",
+      "sub": "requests, routes, helpers",
+      "raw": 473,
+      "alone": 122
+    },
+    {
+      "unit": "Api.send$s",
+      "sub": "requests, routes, helpers",
+      "raw": 378,
+      "alone": 117
+    },
+    {
+      "unit": "ProfilePage.update",
+      "sub": "update/init",
+      "raw": 871,
+      "alone": 85
+    },
+    {
+      "unit": "Api.errorMessages",
+      "sub": "requests, routes, helpers",
+      "raw": 412,
+      "alone": 82
+    },
+    {
+      "unit": "Feed.update",
+      "sub": "update/init",
+      "raw": 346,
+      "alone": 79
+    },
+    {
+      "unit": "Editor.save",
+      "sub": "update/init",
+      "raw": 349,
+      "alone": 78
+    },
+    {
+      "unit": "Main.viewPage",
+      "sub": "view functions",
+      "raw": 61,
+      "alone": 78
+    },
+    {
+      "unit": "Session.navKey",
+      "sub": "requests, routes, helpers",
+      "raw": 21,
+      "alone": 77
+    },
+    {
+      "unit": "Home.update",
+      "sub": "update/init",
+      "raw": 602,
+      "alone": 73
+    },
+    {
+      "unit": "Route.path",
+      "sub": "requests, routes, helpers",
+      "raw": 318,
+      "alone": 72
+    },
+    {
+      "unit": "ArticlePage.view",
+      "sub": "view functions",
+      "raw": 235,
+      "alone": 65
+    },
+    {
+      "unit": "Home.init",
+      "sub": "update/init",
+      "raw": 123,
+      "alone": 64
+    },
+    {
+      "unit": "Settings.init",
+      "sub": "update/init",
+      "raw": 291,
+      "alone": 62
+    },
+    {
+      "unit": "Register.validate",
+      "sub": "update/init",
+      "raw": 340,
+      "alone": 60
+    },
+    {
+      "unit": "Editor.validate",
+      "sub": "update/init",
+      "raw": 121,
+      "alone": 60
+    },
+    {
+      "unit": "Route.parser",
+      "sub": "requests, routes, helpers",
+      "raw": 301,
+      "alone": 57
+    },
+    {
+      "unit": "Session.fromViewer",
+      "sub": "requests, routes, helpers",
+      "raw": 50,
+      "alone": 52
+    },
+    {
+      "unit": "Author.fromJson",
+      "sub": "requests, routes, helpers",
+      "raw": 157,
+      "alone": 51
+    },
+    {
+      "unit": "Home.viewTabs",
+      "sub": "view functions",
+      "raw": 206,
+      "alone": 51
+    },
+    {
+      "unit": "ProfilePage.init",
+      "sub": "update/init",
+      "raw": 141,
+      "alone": 51
+    },
+    {
+      "unit": "Author.defaultAvatar",
+      "sub": "view functions",
+      "raw": 62,
+      "alone": 48
+    },
+    {
+      "unit": "Home.undefined",
+      "sub": "requests, routes, helpers",
+      "raw": 11,
+      "alone": 48
+    },
+    {
+      "unit": "Home.fetchFeed",
+      "sub": "requests, routes, helpers",
+      "raw": 191,
+      "alone": 47
+    },
+    {
+      "unit": "Editor.updateForm",
+      "sub": "update/init",
+      "raw": 363,
+      "alone": 47
+    },
+    {
+      "unit": "Article.delete",
+      "sub": "requests, routes, helpers",
+      "raw": 40,
+      "alone": 45
+    },
+    {
+      "unit": "Api.logout",
+      "sub": "requests, routes, helpers",
+      "raw": 11,
+      "alone": 44
+    },
+    {
+      "unit": "Article.fromJson",
+      "sub": "requests, routes, helpers",
+      "raw": 89,
+      "alone": 41
+    },
+    {
+      "unit": "Page.undefined",
+      "sub": "requests, routes, helpers",
+      "raw": 189,
+      "alone": 40
+    },
+    {
+      "unit": "Home.view",
+      "sub": "view functions",
+      "raw": 43,
+      "alone": 40
+    },
+    {
+      "unit": "ProfilePage.currentUsername",
+      "sub": "update/init",
+      "raw": 112,
+      "alone": 40
+    },
+    {
+      "unit": "Settings.updateForm",
+      "sub": "update/init",
+      "raw": 90,
+      "alone": 39
+    },
+    {
+      "unit": "Login.validate",
+      "sub": "update/init",
+      "raw": 136,
+      "alone": 39
+    },
+    {
+      "unit": "Article.single",
+      "sub": "requests, routes, helpers",
+      "raw": 28,
+      "alone": 36
+    },
+    {
+      "unit": "Api.storedViewer",
+      "sub": "requests, routes, helpers",
+      "raw": 91,
+      "alone": 35
+    },
+    {
+      "unit": "Api.storeViewer",
+      "sub": "requests, routes, helpers",
+      "raw": 125,
+      "alone": 35
+    },
+    {
+      "unit": "Author.followButton",
+      "sub": "view functions",
+      "raw": 108,
+      "alone": 35
+    },
+    {
+      "unit": "Editor.fields",
+      "sub": "view functions",
+      "raw": 99,
+      "alone": 35
+    },
+    {
+      "unit": "Api.put$s",
+      "sub": "requests, routes, helpers",
+      "raw": 39,
+      "alone": 33
+    },
+    {
+      "unit": "Article.favorite",
+      "sub": "requests, routes, helpers",
+      "raw": 101,
+      "alone": 31
+    },
+    {
+      "unit": "Editor.view",
+      "sub": "view functions",
+      "raw": 217,
+      "alone": 27
+    },
+    {
+      "unit": "Api.viewerFromJson",
+      "sub": "view functions",
+      "raw": 82,
+      "alone": 26
+    },
+    {
+      "unit": "ArticlePage.viewAddComment",
+      "sub": "view functions",
+      "raw": 233,
+      "alone": 25
+    },
+    {
+      "unit": "Page.viewErrors",
+      "sub": "view functions",
+      "raw": 33,
+      "alone": 22
+    },
+    {
+      "unit": "Route.fromUrl",
+      "sub": "requests, routes, helpers",
+      "raw": 88,
+      "alone": 20
+    },
+    {
+      "unit": "Comment.list",
+      "sub": "requests, routes, helpers",
+      "raw": 85,
+      "alone": 19
+    },
+    {
+      "unit": "Author.avatarSrc",
+      "sub": "view functions",
+      "raw": 32,
+      "alone": 14
+    },
+    {
+      "unit": "Comment.post",
+      "sub": "requests, routes, helpers",
+      "raw": 116,
+      "alone": 14
+    },
+    {
+      "unit": "Comment.delete",
+      "sub": "requests, routes, helpers",
+      "raw": 59,
+      "alone": 14
+    },
+    {
+      "unit": "Api.toNullable",
+      "sub": "requests, routes, helpers",
+      "raw": 28,
+      "alone": 10
+    },
+    {
+      "unit": "Route.replaceUrl",
+      "sub": "requests, routes, helpers",
+      "raw": 23,
+      "alone": 10
+    },
+    {
+      "unit": "Article.tags",
+      "sub": "view functions",
+      "raw": 51,
+      "alone": 10
+    },
+    {
+      "unit": "ProfilePage.undefined",
+      "sub": "requests, routes, helpers",
+      "raw": 11,
+      "alone": 10
+    },
+    {
+      "unit": "Session.viewer",
+      "sub": "view functions",
+      "raw": 28,
+      "alone": 9
+    },
+    {
+      "unit": "Author.avatar",
+      "sub": "view functions",
+      "raw": 26,
+      "alone": 9
+    },
+    {
+      "unit": "Author.link",
+      "sub": "view functions",
+      "raw": 20,
+      "alone": 8
+    },
+    {
+      "unit": "Register.updateForm",
+      "sub": "update/init",
+      "raw": 36,
+      "alone": 8
+    },
+    {
+      "unit": "ArticlePage.viewMeta",
+      "sub": "view functions",
+      "raw": 26,
+      "alone": 8
+    },
+    {
+      "unit": "Page.loading",
+      "sub": "view functions",
+      "raw": 5,
+      "alone": 7
+    },
+    {
+      "unit": "Feed.viewPagination",
+      "sub": "view functions",
+      "raw": 61,
+      "alone": 7
+    },
+    {
+      "unit": "Login.view",
+      "sub": "view functions",
+      "raw": 44,
+      "alone": 5
+    },
+    {
+      "unit": "Article.favoriteButton",
+      "sub": "view functions",
+      "raw": 52,
+      "alone": 4
+    },
+    {
+      "unit": "Home.undefined",
+      "sub": "requests, routes, helpers",
+      "raw": 11,
+      "alone": 4
+    },
+    {
+      "unit": "Editor.savingError",
+      "sub": "update/init",
+      "raw": 154,
+      "alone": 3
+    },
+    {
+      "unit": "Page.loadingError",
+      "sub": "view functions",
+      "raw": 20,
+      "alone": 2
+    },
+    {
+      "unit": "Login.updateForm",
+      "sub": "update/init",
+      "raw": 36,
+      "alone": 2
+    },
+    {
+      "unit": "Main.undefined",
+      "sub": "requests, routes, helpers",
+      "raw": 11,
+      "alone": 2
+    },
+    {
+      "unit": "Api.ignored",
+      "sub": "requests, routes, helpers",
+      "raw": 21,
+      "alone": 1
+    },
+    {
+      "unit": "Article.fetch",
+      "sub": "requests, routes, helpers",
+      "raw": 54,
+      "alone": 0
+    },
+    {
+      "unit": "Login.update",
+      "sub": "update/init",
+      "raw": 465,
+      "alone": 0
+    },
+    {
+      "unit": "ArticlePage.init",
+      "sub": "update/init",
+      "raw": 160,
+      "alone": -1
+    },
+    {
+      "unit": "ArticlePage.viewComments",
+      "sub": "view functions",
+      "raw": 143,
+      "alone": -1
+    },
+    {
+      "unit": "Editor.viewForm",
+      "sub": "view functions",
+      "raw": 38,
+      "alone": -1
+    },
+    {
+      "unit": "Api.login",
+      "sub": "requests, routes, helpers",
+      "raw": 112,
+      "alone": -3
+    },
+    {
+      "unit": "Article.body",
+      "sub": "view functions",
+      "raw": 20,
+      "alone": -3
+    },
+    {
+      "unit": "Main.init",
+      "sub": "update/init",
+      "raw": 49,
+      "alone": -3
+    },
+    {
+      "unit": "Session.cred",
+      "sub": "requests, routes, helpers",
+      "raw": 79,
+      "alone": -4
+    },
+    {
+      "unit": "Api.register",
+      "sub": "requests, routes, helpers",
+      "raw": 117,
+      "alone": -4
+    },
+    {
+      "unit": "Main.toSession",
+      "sub": "update/init",
+      "raw": 207,
+      "alone": -4
+    },
+    {
+      "unit": "Api.post$s",
+      "sub": "requests, routes, helpers",
+      "raw": 32,
+      "alone": -6
+    },
+    {
+      "unit": "Article.link",
+      "sub": "view functions",
+      "raw": 26,
+      "alone": -6
+    },
+    {
+      "unit": "Route.href",
+      "sub": "view functions",
+      "raw": 17,
+      "alone": -7
+    },
+    {
+      "unit": "Author.profile",
+      "sub": "requests, routes, helpers",
+      "raw": 79,
+      "alone": -9
+    },
+    {
+      "unit": "Article.tagList",
+      "sub": "requests, routes, helpers",
+      "raw": 20,
+      "alone": -9
+    },
+    {
+      "unit": "Page.frame",
+      "sub": "view functions",
+      "raw": 66,
+      "alone": -9
+    },
+    {
+      "unit": "Main.updateWith",
+      "sub": "update/init",
+      "raw": 39,
+      "alone": -9
+    },
+    {
+      "unit": "Article.formBody",
+      "sub": "view functions",
+      "raw": 56,
+      "alone": -11
+    },
+    {
+      "unit": "Feed.init",
+      "sub": "update/init",
+      "raw": 57,
+      "alone": -11
+    },
+    {
+      "unit": "Author.username",
+      "sub": "requests, routes, helpers",
+      "raw": 20,
+      "alone": -13
+    },
+    {
+      "unit": "Author.follow",
+      "sub": "requests, routes, helpers",
+      "raw": 94,
+      "alone": -14
+    },
+    {
+      "unit": "Page.slowThreshold",
+      "sub": "view functions",
+      "raw": 24,
+      "alone": -14
+    },
+    {
+      "unit": "Page.footer",
+      "sub": "view functions",
+      "raw": 5,
+      "alone": -17
+    },
+    {
+      "unit": "Feed.viewTabs",
+      "sub": "view functions",
+      "raw": 20,
+      "alone": -17
+    },
+    {
+      "unit": "ProfilePage.fetchFeed",
+      "sub": "requests, routes, helpers",
+      "raw": 136,
+      "alone": -17
+    },
+    {
+      "unit": "Author.fetch",
+      "sub": "requests, routes, helpers",
+      "raw": 66,
+      "alone": -20
+    },
+    {
+      "unit": "ProfilePage.view",
+      "sub": "view functions",
+      "raw": 383,
+      "alone": -20
+    },
+    {
+      "unit": "Api.url",
+      "sub": "requests, routes, helpers",
+      "raw": 29,
+      "alone": -21
+    },
+    {
+      "unit": "ProfilePage.undefined",
+      "sub": "requests, routes, helpers",
+      "raw": 11,
+      "alone": -21
+    },
+    {
+      "unit": "Api.fromNullable",
+      "sub": "requests, routes, helpers",
+      "raw": 28,
+      "alone": -24
+    },
+    {
+      "unit": "Article.unfavorite",
+      "sub": "requests, routes, helpers",
+      "raw": 90,
+      "alone": -25
+    },
+    {
+      "unit": "Feed.viewPreview",
+      "sub": "view functions",
+      "raw": 26,
+      "alone": -29
+    },
+    {
+      "unit": "Article.timestamp",
+      "sub": "view functions",
+      "raw": 20,
+      "alone": -31
+    },
+    {
+      "unit": "Author.unfollow",
+      "sub": "requests, routes, helpers",
+      "raw": 83,
+      "alone": -32
+    },
+    {
+      "unit": "Register.update",
+      "sub": "update/init",
+      "raw": 549,
+      "alone": -32
+    },
+    {
+      "unit": "Api.headers",
+      "sub": "requests, routes, helpers",
+      "raw": 40,
+      "alone": -33
+    },
+    {
+      "unit": "Settings.view",
+      "sub": "view functions",
+      "raw": 47,
+      "alone": -33
+    },
+    {
+      "unit": "Api.get$s",
+      "sub": "requests, routes, helpers",
+      "raw": 30,
+      "alone": -38
+    },
+    {
+      "unit": "Article.update",
+      "sub": "update/init",
+      "raw": 87,
+      "alone": -38
+    },
+    {
+      "unit": "ArticlePage.viewComment",
+      "sub": "view functions",
+      "raw": 30,
+      "alone": -38
+    },
+    {
+      "unit": "Comment.fromJson",
+      "sub": "requests, routes, helpers",
+      "raw": 49,
+      "alone": -44
+    },
+    {
+      "unit": "Article.create",
+      "sub": "requests, routes, helpers",
+      "raw": 91,
+      "alone": -47
+    },
+    {
+      "unit": "Register.view",
+      "sub": "view functions",
+      "raw": 47,
+      "alone": -50
+    },
+    {
+      "unit": "Feed.viewArticles",
+      "sub": "view functions",
+      "raw": 20,
+      "alone": -55
+    },
+    {
+      "unit": "Api.delete$s",
+      "sub": "requests, routes, helpers",
+      "raw": 41,
+      "alone": -62
+    },
+    {
+      "unit": "Editor.initEdit",
+      "sub": "update/init",
+      "raw": 106,
+      "alone": -67
+    },
+    {
+      "unit": "Page.navbarLink",
+      "sub": "view functions",
+      "raw": 34,
+      "alone": -79
+    }
+  ],
+  "direct": [
+    {
+      "unit": "ArticlePage.update",
+      "sub": "update/init",
+      "raw": 2082,
+      "alone": 344
+    },
+    {
+      "unit": "Settings.update",
+      "sub": "update/init",
+      "raw": 1290,
+      "alone": 179
+    },
+    {
+      "unit": "Editor.save",
+      "sub": "update/init",
+      "raw": 349,
+      "alone": 129
+    },
+    {
+      "unit": "Feed.update",
+      "sub": "update/init",
+      "raw": 346,
+      "alone": 127
+    },
+    {
+      "unit": "Editor.update",
+      "sub": "update/init",
+      "raw": 878,
+      "alone": 124
+    },
+    {
+      "unit": "Main.changeRouteTo",
+      "sub": "update/init",
+      "raw": 1008,
+      "alone": 117
+    },
+    {
+      "unit": "Api.send$s",
+      "sub": "requests, routes, helpers",
+      "raw": 378,
+      "alone": 86
+    },
+    {
+      "unit": "ProfilePage.init",
+      "sub": "update/init",
+      "raw": 141,
+      "alone": 75
+    },
+    {
+      "unit": "Editor.view",
+      "sub": "view functions",
+      "raw": 241,
+      "alone": 67
+    },
+    {
+      "unit": "Home.update",
+      "sub": "update/init",
+      "raw": 602,
+      "alone": 65
+    },
+    {
+      "unit": "Main.update",
+      "sub": "update/init",
+      "raw": 843,
+      "alone": 64
+    },
+    {
+      "unit": "ProfilePage.view",
+      "sub": "view functions",
+      "raw": 403,
+      "alone": 62
+    },
+    {
+      "unit": "ProfilePage.update",
+      "sub": "update/init",
+      "raw": 871,
+      "alone": 61
+    },
+    {
+      "unit": "Settings.init",
+      "sub": "update/init",
+      "raw": 301,
+      "alone": 57
+    },
+    {
+      "unit": "Api.errorMessages",
+      "sub": "requests, routes, helpers",
+      "raw": 412,
+      "alone": 55
+    },
+    {
+      "unit": "Api.ignored",
+      "sub": "requests, routes, helpers",
+      "raw": 21,
+      "alone": 55
+    },
+    {
+      "unit": "ArticlePage.init",
+      "sub": "update/init",
+      "raw": 160,
+      "alone": 55
+    },
+    {
+      "unit": "Editor.fields",
+      "sub": "view functions",
+      "raw": 99,
+      "alone": 54
+    },
+    {
+      "unit": "Api.login",
+      "sub": "requests, routes, helpers",
+      "raw": 112,
+      "alone": 53
+    },
+    {
+      "unit": "Login.validate",
+      "sub": "update/init",
+      "raw": 136,
+      "alone": 43
+    },
+    {
+      "unit": "Article.list",
+      "sub": "requests, routes, helpers",
+      "raw": 473,
+      "alone": 38
+    },
+    {
+      "unit": "Author.avatarSrc",
+      "sub": "view functions",
+      "raw": 37,
+      "alone": 35
+    },
+    {
+      "unit": "Comment.post",
+      "sub": "requests, routes, helpers",
+      "raw": 126,
+      "alone": 35
+    },
+    {
+      "unit": "Author.fromJson",
+      "sub": "requests, routes, helpers",
+      "raw": 162,
+      "alone": 34
+    },
+    {
+      "unit": "Route.path",
+      "sub": "requests, routes, helpers",
+      "raw": 318,
+      "alone": 33
+    },
+    {
+      "unit": "Author.follow",
+      "sub": "requests, routes, helpers",
+      "raw": 104,
+      "alone": 28
+    },
+    {
+      "unit": "Feed.viewPreview",
+      "sub": "view functions",
+      "raw": 45,
+      "alone": 28
+    },
+    {
+      "unit": "Settings.updateForm",
+      "sub": "update/init",
+      "raw": 90,
+      "alone": 28
+    },
+    {
+      "unit": "Author.unfollow",
+      "sub": "requests, routes, helpers",
+      "raw": 88,
+      "alone": 25
+    },
+    {
+      "unit": "Feed.init",
+      "sub": "update/init",
+      "raw": 57,
+      "alone": 25
+    },
+    {
+      "unit": "Feed.viewTabs",
+      "sub": "view functions",
+      "raw": 39,
+      "alone": 24
+    },
+    {
+      "unit": "Page.frame",
+      "sub": "view functions",
+      "raw": 99,
+      "alone": 23
+    },
+    {
+      "unit": "Register.update",
+      "sub": "update/init",
+      "raw": 549,
+      "alone": 23
+    },
+    {
+      "unit": "Login.update",
+      "sub": "update/init",
+      "raw": 465,
+      "alone": 22
+    },
+    {
+      "unit": "ProfilePage.undefined",
+      "sub": "requests, routes, helpers",
+      "raw": 11,
+      "alone": 22
+    },
+    {
+      "unit": "Article.favorite",
+      "sub": "requests, routes, helpers",
+      "raw": 111,
+      "alone": 21
+    },
+    {
+      "unit": "Author.followButton",
+      "sub": "view functions",
+      "raw": 146,
+      "alone": 20
+    },
+    {
+      "unit": "Feed.viewPagination",
+      "sub": "view functions",
+      "raw": 80,
+      "alone": 20
+    },
+    {
+      "unit": "Editor.updateForm",
+      "sub": "update/init",
+      "raw": 363,
+      "alone": 20
+    },
+    {
+      "unit": "Main.init",
+      "sub": "update/init",
+      "raw": 49,
+      "alone": 20
+    },
+    {
+      "unit": "Route.parser",
+      "sub": "requests, routes, helpers",
+      "raw": 301,
+      "alone": 19
+    },
+    {
+      "unit": "Editor.validate",
+      "sub": "update/init",
+      "raw": 121,
+      "alone": 19
+    },
+    {
+      "unit": "Api.storeViewer",
+      "sub": "requests, routes, helpers",
+      "raw": 123,
+      "alone": 17
+    },
+    {
+      "unit": "Page.undefined",
+      "sub": "requests, routes, helpers",
+      "raw": 189,
+      "alone": 17
+    },
+    {
+      "unit": "Register.validate",
+      "sub": "update/init",
+      "raw": 340,
+      "alone": 15
+    },
+    {
+      "unit": "Article.link",
+      "sub": "view functions",
+      "raw": 46,
+      "alone": 14
+    },
+    {
+      "unit": "Home.view",
+      "sub": "view functions",
+      "raw": 62,
+      "alone": 14
+    },
+    {
+      "unit": "Api.logout",
+      "sub": "requests, routes, helpers",
+      "raw": 11,
+      "alone": 12
+    },
+    {
+      "unit": "Editor.viewForm",
+      "sub": "view functions",
+      "raw": 58,
+      "alone": 12
+    },
+    {
+      "unit": "Main.viewPage",
+      "sub": "view functions",
+      "raw": 61,
+      "alone": 9
+    },
+    {
+      "unit": "ProfilePage.fetchFeed",
+      "sub": "requests, routes, helpers",
+      "raw": 136,
+      "alone": 8
+    },
+    {
+      "unit": "Home.undefined",
+      "sub": "requests, routes, helpers",
+      "raw": 11,
+      "alone": 7
+    },
+    {
+      "unit": "Comment.delete",
+      "sub": "requests, routes, helpers",
+      "raw": 59,
+      "alone": 4
+    },
+    {
+      "unit": "Api.register",
+      "sub": "requests, routes, helpers",
+      "raw": 117,
+      "alone": 3
+    },
+    {
+      "unit": "Page.loadingError",
+      "sub": "view functions",
+      "raw": 40,
+      "alone": 3
+    },
+    {
+      "unit": "Article.fromJson",
+      "sub": "requests, routes, helpers",
+      "raw": 89,
+      "alone": 1
+    },
+    {
+      "unit": "ArticlePage.viewMeta",
+      "sub": "view functions",
+      "raw": 46,
+      "alone": 0
+    },
+    {
+      "unit": "Login.view",
+      "sub": "view functions",
+      "raw": 63,
+      "alone": -2
+    },
+    {
+      "unit": "Main.updateWith",
+      "sub": "update/init",
+      "raw": 39,
+      "alone": -2
+    },
+    {
+      "unit": "Page.navbarLink",
+      "sub": "view functions",
+      "raw": 54,
+      "alone": -3
+    },
+    {
+      "unit": "Session.viewer",
+      "sub": "view functions",
+      "raw": 33,
+      "alone": -4
+    },
+    {
+      "unit": "Article.formBody",
+      "sub": "view functions",
+      "raw": 56,
+      "alone": -4
+    },
+    {
+      "unit": "Route.fromUrl",
+      "sub": "requests, routes, helpers",
+      "raw": 97,
+      "alone": -5
+    },
+    {
+      "unit": "Main.toSession",
+      "sub": "update/init",
+      "raw": 207,
+      "alone": -5
+    },
+    {
+      "unit": "Api.fromNullable",
+      "sub": "requests, routes, helpers",
+      "raw": 33,
+      "alone": -6
+    },
+    {
+      "unit": "Page.loading",
+      "sub": "view functions",
+      "raw": 5,
+      "alone": -6
+    },
+    {
+      "unit": "ArticlePage.view",
+      "sub": "view functions",
+      "raw": 254,
+      "alone": -9
+    },
+    {
+      "unit": "Api.put$s",
+      "sub": "requests, routes, helpers",
+      "raw": 44,
+      "alone": -10
+    },
+    {
+      "unit": "Api.delete$s",
+      "sub": "requests, routes, helpers",
+      "raw": 46,
+      "alone": -10
+    },
+    {
+      "unit": "Article.tags",
+      "sub": "view functions",
+      "raw": 51,
+      "alone": -12
+    },
+    {
+      "unit": "Author.username",
+      "sub": "requests, routes, helpers",
+      "raw": 20,
+      "alone": -13
+    },
+    {
+      "unit": "Session.fromViewer",
+      "sub": "requests, routes, helpers",
+      "raw": 55,
+      "alone": -14
+    },
+    {
+      "unit": "Author.defaultAvatar",
+      "sub": "view functions",
+      "raw": 62,
+      "alone": -14
+    },
+    {
+      "unit": "Session.navKey",
+      "sub": "requests, routes, helpers",
+      "raw": 21,
+      "alone": -15
+    },
+    {
+      "unit": "Article.unfavorite",
+      "sub": "requests, routes, helpers",
+      "raw": 95,
+      "alone": -15
+    },
+    {
+      "unit": "Route.href",
+      "sub": "view functions",
+      "raw": 17,
+      "alone": -16
+    },
+    {
+      "unit": "Article.create",
+      "sub": "requests, routes, helpers",
+      "raw": 101,
+      "alone": -17
+    },
+    {
+      "unit": "Login.updateForm",
+      "sub": "update/init",
+      "raw": 36,
+      "alone": -17
+    },
+    {
+      "unit": "Comment.fromJson",
+      "sub": "requests, routes, helpers",
+      "raw": 49,
+      "alone": -17
+    },
+    {
+      "unit": "Article.update",
+      "sub": "update/init",
+      "raw": 92,
+      "alone": -18
+    },
+    {
+      "unit": "Author.fetch",
+      "sub": "requests, routes, helpers",
+      "raw": 66,
+      "alone": -19
+    },
+    {
+      "unit": "Main.undefined",
+      "sub": "requests, routes, helpers",
+      "raw": 11,
+      "alone": -20
+    },
+    {
+      "unit": "Register.view",
+      "sub": "view functions",
+      "raw": 67,
+      "alone": -21
+    },
+    {
+      "unit": "Api.storedViewer",
+      "sub": "requests, routes, helpers",
+      "raw": 101,
+      "alone": -22
+    },
+    {
+      "unit": "Author.profile",
+      "sub": "requests, routes, helpers",
+      "raw": 79,
+      "alone": -24
+    },
+    {
+      "unit": "ProfilePage.currentUsername",
+      "sub": "update/init",
+      "raw": 112,
+      "alone": -25
+    },
+    {
+      "unit": "Article.fetch",
+      "sub": "requests, routes, helpers",
+      "raw": 54,
+      "alone": -30
+    },
+    {
+      "unit": "Home.init",
+      "sub": "update/init",
+      "raw": 128,
+      "alone": -30
+    },
+    {
+      "unit": "Api.post$s",
+      "sub": "requests, routes, helpers",
+      "raw": 32,
+      "alone": -32
+    },
+    {
+      "unit": "Article.delete",
+      "sub": "requests, routes, helpers",
+      "raw": 40,
+      "alone": -32
+    },
+    {
+      "unit": "Api.url",
+      "sub": "requests, routes, helpers",
+      "raw": 29,
+      "alone": -34
+    },
+    {
+      "unit": "Session.cred",
+      "sub": "requests, routes, helpers",
+      "raw": 93,
+      "alone": -35
+    },
+    {
+      "unit": "Home.undefined",
+      "sub": "requests, routes, helpers",
+      "raw": 11,
+      "alone": -35
+    },
+    {
+      "unit": "Editor.savingError",
+      "sub": "update/init",
+      "raw": 154,
+      "alone": -36
+    },
+    {
+      "unit": "Article.favoriteButton",
+      "sub": "view functions",
+      "raw": 91,
+      "alone": -37
+    },
+    {
+      "unit": "Article.single",
+      "sub": "requests, routes, helpers",
+      "raw": 28,
+      "alone": -38
+    },
+    {
+      "unit": "Settings.view",
+      "sub": "view functions",
+      "raw": 67,
+      "alone": -41
+    },
+    {
+      "unit": "Register.updateForm",
+      "sub": "update/init",
+      "raw": 36,
+      "alone": -41
+    },
+    {
+      "unit": "Api.headers",
+      "sub": "requests, routes, helpers",
+      "raw": 45,
+      "alone": -42
+    },
+    {
+      "unit": "Comment.list",
+      "sub": "requests, routes, helpers",
+      "raw": 85,
+      "alone": -43
+    },
+    {
+      "unit": "Page.slowThreshold",
+      "sub": "view functions",
+      "raw": 24,
+      "alone": -46
+    },
+    {
+      "unit": "ProfilePage.undefined",
+      "sub": "requests, routes, helpers",
+      "raw": 11,
+      "alone": -46
+    },
+    {
+      "unit": "Api.get$s",
+      "sub": "requests, routes, helpers",
+      "raw": 30,
+      "alone": -48
+    },
+    {
+      "unit": "Article.timestamp",
+      "sub": "view functions",
+      "raw": 39,
+      "alone": -52
+    },
+    {
+      "unit": "Article.body",
+      "sub": "view functions",
+      "raw": 39,
+      "alone": -52
+    },
+    {
+      "unit": "Home.fetchFeed",
+      "sub": "requests, routes, helpers",
+      "raw": 191,
+      "alone": -52
+    },
+    {
+      "unit": "Article.tagList",
+      "sub": "requests, routes, helpers",
+      "raw": 39,
+      "alone": -53
+    },
+    {
+      "unit": "Editor.initEdit",
+      "sub": "update/init",
+      "raw": 106,
+      "alone": -55
+    },
+    {
+      "unit": "Feed.viewArticles",
+      "sub": "view functions",
+      "raw": 39,
+      "alone": -56
+    },
+    {
+      "unit": "Author.avatar",
+      "sub": "view functions",
+      "raw": 45,
+      "alone": -60
+    },
+    {
+      "unit": "Author.link",
+      "sub": "view functions",
+      "raw": 39,
+      "alone": -64
+    },
+    {
+      "unit": "ArticlePage.viewComment",
+      "sub": "view functions",
+      "raw": 50,
+      "alone": -65
+    },
+    {
+      "unit": "Route.replaceUrl",
+      "sub": "requests, routes, helpers",
+      "raw": 23,
+      "alone": -73
+    },
+    {
+      "unit": "Page.viewErrors",
+      "sub": "view functions",
+      "raw": 53,
+      "alone": -83
+    },
+    {
+      "unit": "Page.footer",
+      "sub": "view functions",
+      "raw": 34,
+      "alone": -87
+    },
+    {
+      "unit": "Api.viewerFromJson",
+      "sub": "view functions",
+      "raw": 81,
+      "alone": -101
+    },
+    {
+      "unit": "Api.toNullable",
+      "sub": "requests, routes, helpers",
+      "raw": 33,
+      "alone": -103
+    }
+  ]
+}

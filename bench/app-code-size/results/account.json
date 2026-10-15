@@ -1,0 +1,630 @@
+{
+  "method": "brotli 11 with size hint, one response. Bytes painted by construct (classify.mjs); alone = delete one construct; ordered = delete cumulatively in table order; area = full minus full-without-area.",
+  "subjects": {
+    "tea": {
+      "baseline": {
+        "raw": 129468,
+        "gzip": 37220,
+        "brotli": 31609
+      },
+      "areas": {
+        "views": {
+          "raw": 39489,
+          "cost": 7602,
+          "rows": [
+            {
+              "class": "html",
+              "title": "HTML template strings",
+              "raw": 6146,
+              "alone": 1335,
+              "ordered": 1335
+            },
+            {
+              "class": "tdecl",
+              "title": "template constants: the template(…, flags) call and binding",
+              "raw": 711,
+              "alone": 115,
+              "ordered": 117
+            },
+            {
+              "class": "walk",
+              "title": "clone and walk to holes (firstChild/nextSibling)",
+              "raw": 2625,
+              "alone": 368,
+              "ordered": 431
+            },
+            {
+              "class": "slotmk",
+              "title": "slot and text-node creation at mount",
+              "raw": 1010,
+              "alone": 242,
+              "ordered": 258
+            },
+            {
+              "class": "irefs",
+              "title": "instance record: node and slot references",
+              "raw": 1285,
+              "alone": 202,
+              "ordered": 275
+            },
+            {
+              "class": "iinit",
+              "title": "instance record: initial values of kept fields",
+              "raw": 3046,
+              "alone": 384,
+              "ordered": 386
+            },
+            {
+              "class": "kind",
+              "title": "kind objects {m,p,l}: mount function shells",
+              "raw": 2872,
+              "alone": 375,
+              "ordered": 549
+            },
+            {
+              "class": "pshell",
+              "title": "patch function shells and statement syntax (let, if, braces)",
+              "raw": 532,
+              "alone": 58,
+              "ordered": 85
+            },
+            {
+              "class": "hoisted",
+              "title": "hoisted constant blocks {t,v:null} and static kinds",
+              "raw": 1736,
+              "alone": 217,
+              "ordered": 239
+            },
+            {
+              "class": "prologue",
+              "title": "patch prologue: binding inputs from the argument vector",
+              "raw": 612,
+              "alone": 52,
+              "ordered": 109
+            },
+            {
+              "class": "gguard",
+              "title": "group guards: path tests and kept-path stores",
+              "raw": 4654,
+              "alone": 657,
+              "ordered": 747
+            },
+            {
+              "class": "letcache",
+              "title": "view let cache (derived values kept in the instance)",
+              "raw": 387,
+              "alone": 98,
+              "ordered": -18
+            },
+            {
+              "class": "hguard",
+              "title": "hole guards: value tests and kept-value stores",
+              "raw": 2916,
+              "alone": 470,
+              "ordered": 564
+            },
+            {
+              "class": "write",
+              "title": "DOM writes (data, setAttribute, classList, control, safeUrl)",
+              "raw": 1785,
+              "alone": 301,
+              "ordered": 371
+            },
+            {
+              "class": "value",
+              "title": "value expressions (the view's own computations)",
+              "raw": 2257,
+              "alone": 489,
+              "ordered": 645
+            },
+            {
+              "class": "place",
+              "title": "slot placement: childHtml/childMaybe calls",
+              "raw": 503,
+              "alone": 54,
+              "ordered": 53
+            },
+            {
+              "class": "restate",
+              "title": "restate calls and their else branches",
+              "raw": 1346,
+              "alone": 164,
+              "ordered": 160
+            },
+            {
+              "class": "live",
+              "title": "liveness bookkeeping (a.l = …, l:true, w:true)",
+              "raw": 912,
+              "alone": 33,
+              "ordered": 195
+            },
+            {
+              "class": "block",
+              "title": "blocks built per render {t:kind,v:[inputs]}",
+              "raw": 196,
+              "alone": 14,
+              "ordered": 110
+            },
+            {
+              "class": "helper",
+              "title": "helper and component calls (callee and arguments)",
+              "raw": 771,
+              "alone": 308,
+              "ordered": 324
+            },
+            {
+              "class": "msg",
+              "title": "message constructors {$:tag,…}",
+              "raw": 628,
+              "alone": 89,
+              "ordered": 136
+            },
+            {
+              "class": "event",
+              "title": "event wiring ($$click, extractors, $$cx, listen, handler closures)",
+              "raw": 1752,
+              "alone": 256,
+              "ordered": 355
+            },
+            {
+              "class": "row",
+              "title": "list rows: forKeyed/forPosition calls, row objects, key functions",
+              "raw": 736,
+              "alone": 62,
+              "ordered": 107
+            },
+            {
+              "class": "map",
+              "title": "Html.map / taggers",
+              "raw": 20,
+              "alone": 5,
+              "ordered": 54
+            },
+            {
+              "class": "mount",
+              "title": "direct: program mount and host wiring",
+              "raw": 51,
+              "alone": 44,
+              "ordered": 15
+            }
+          ]
+        },
+        "logic": {
+          "raw": 19971,
+          "cost": 4751,
+          "rows": [
+            {
+              "class": "dispatch",
+              "title": "message dispatch: switch/case and tag tests",
+              "raw": 1888,
+              "alone": 322,
+              "ordered": 322
+            },
+            {
+              "class": "spread",
+              "title": "record updates: spreads {...r, f: v}",
+              "raw": 1008,
+              "alone": 160,
+              "ordered": 152
+            },
+            {
+              "class": "tuple",
+              "title": "tuples and records built ({a,b} pairs, new records)",
+              "raw": 2232,
+              "alone": 501,
+              "ordered": 502
+            },
+            {
+              "class": "msg",
+              "title": "message and constructor values {$:tag,…}",
+              "raw": 2590,
+              "alone": 454,
+              "ordered": 479
+            },
+            {
+              "class": "cmd",
+              "title": "commands: Cmd.task/batch/map/none and their thunks",
+              "raw": 874,
+              "alone": 219,
+              "ordered": 219
+            },
+            {
+              "class": "http",
+              "title": "requests: Api/Http/Url.Builder calls and route tables",
+              "raw": 1221,
+              "alone": 293,
+              "ordered": 389
+            },
+            {
+              "class": "string",
+              "title": "strings and string formatting",
+              "raw": 1837,
+              "alone": 550,
+              "ordered": 589
+            },
+            {
+              "class": "list",
+              "title": "List and Maybe/Result library calls",
+              "raw": 598,
+              "alone": 113,
+              "ordered": 197
+            },
+            {
+              "class": "block",
+              "title": "markup blocks and view wrappers {t,v}",
+              "raw": 468,
+              "alone": 179,
+              "ordered": 182
+            },
+            {
+              "class": "bind",
+              "title": "bindings, parameters and returns",
+              "raw": 2138,
+              "alone": 170,
+              "ordered": 213
+            },
+            {
+              "class": "other",
+              "title": "other (control flow, operators, punctuation)",
+              "raw": 5117,
+              "alone": 938,
+              "ordered": 1507
+            }
+          ]
+        }
+      },
+      "subAreaRaw": {
+        "requests, routes, helpers": 4779,
+        "view functions": 3290,
+        "markup": 39420,
+        "update/init": 11902,
+        "main": 69
+      },
+      "appCost": 12403
+    },
+    "direct": {
+      "baseline": {
+        "raw": 213882,
+        "gzip": 46027,
+        "brotli": 38175
+      },
+      "areas": {
+        "views": {
+          "raw": 118715,
+          "cost": 12798,
+          "rows": [
+            {
+              "class": "html",
+              "title": "HTML template strings",
+              "raw": 6146,
+              "alone": 1285,
+              "ordered": 1285
+            },
+            {
+              "class": "tdecl",
+              "title": "template constants: the template(…, flags) call and binding",
+              "raw": 711,
+              "alone": 117,
+              "ordered": 238
+            },
+            {
+              "class": "walk",
+              "title": "clone and walk to holes (firstChild/nextSibling)",
+              "raw": 2625,
+              "alone": 250,
+              "ordered": 281
+            },
+            {
+              "class": "slotmk",
+              "title": "slot and text-node creation at mount",
+              "raw": 1010,
+              "alone": 82,
+              "ordered": 266
+            },
+            {
+              "class": "irefs",
+              "title": "instance record: node and slot references",
+              "raw": 1257,
+              "alone": 189,
+              "ordered": 298
+            },
+            {
+              "class": "iinit",
+              "title": "instance record: initial values of kept fields",
+              "raw": 3293,
+              "alone": 289,
+              "ordered": 405
+            },
+            {
+              "class": "kind",
+              "title": "kind objects {m,p,l}: mount function shells",
+              "raw": 3439,
+              "alone": 441,
+              "ordered": 641
+            },
+            {
+              "class": "pshell",
+              "title": "patch function shells and statement syntax (let, if, braces)",
+              "raw": 1923,
+              "alone": 474,
+              "ordered": 502
+            },
+            {
+              "class": "hoisted",
+              "title": "hoisted constant blocks {t,v:null} and static kinds",
+              "raw": 1704,
+              "alone": 245,
+              "ordered": 258
+            },
+            {
+              "class": "prologue",
+              "title": "patch prologue: binding inputs from the argument vector",
+              "raw": 1263,
+              "alone": 77,
+              "ordered": 160
+            },
+            {
+              "class": "gguard",
+              "title": "group guards: path tests and kept-path stores",
+              "raw": 3590,
+              "alone": 372,
+              "ordered": 325
+            },
+            {
+              "class": "letcache",
+              "title": "view let cache (derived values kept in the instance)",
+              "raw": 387,
+              "alone": 57,
+              "ordered": 16
+            },
+            {
+              "class": "hguard",
+              "title": "hole guards: value tests and kept-value stores",
+              "raw": 2054,
+              "alone": 281,
+              "ordered": 386
+            },
+            {
+              "class": "write",
+              "title": "DOM writes (data, setAttribute, classList, control, safeUrl)",
+              "raw": 1676,
+              "alone": 265,
+              "ordered": 346
+            },
+            {
+              "class": "value",
+              "title": "value expressions (the view's own computations)",
+              "raw": 3167,
+              "alone": 358,
+              "ordered": 490
+            },
+            {
+              "class": "place",
+              "title": "slot placement: childHtml/childMaybe calls",
+              "raw": 494,
+              "alone": -33,
+              "ordered": 118
+            },
+            {
+              "class": "restate",
+              "title": "restate calls and their else branches",
+              "raw": 984,
+              "alone": 183,
+              "ordered": 224
+            },
+            {
+              "class": "live",
+              "title": "liveness bookkeeping (a.l = …, l:true, w:true)",
+              "raw": 864,
+              "alone": 77,
+              "ordered": 141
+            },
+            {
+              "class": "block",
+              "title": "blocks built per render {t:kind,v:[inputs]}",
+              "raw": 153,
+              "alone": -45,
+              "ordered": 1
+            },
+            {
+              "class": "helper",
+              "title": "helper and component calls (callee and arguments)",
+              "raw": 815,
+              "alone": 284,
+              "ordered": 339
+            },
+            {
+              "class": "msg",
+              "title": "message constructors {$:tag,…}",
+              "raw": 755,
+              "alone": 112,
+              "ordered": 159
+            },
+            {
+              "class": "event",
+              "title": "event wiring ($$click, extractors, $$cx, listen, handler closures)",
+              "raw": 2068,
+              "alone": 184,
+              "ordered": 322
+            },
+            {
+              "class": "row",
+              "title": "list rows: forKeyed/forPosition calls, row objects, key functions",
+              "raw": 710,
+              "alone": 55,
+              "ordered": 221
+            },
+            {
+              "class": "map",
+              "title": "Html.map / taggers",
+              "raw": 20,
+              "alone": -38,
+              "ordered": -47
+            },
+            {
+              "class": "dgroup",
+              "title": "direct: group descriptors and templateGroup attachment",
+              "raw": 5587,
+              "alone": 1028,
+              "ordered": 1126
+            },
+            {
+              "class": "dentry",
+              "title": "direct: templatePatch entries and their shells",
+              "raw": 1979,
+              "alone": 104,
+              "ordered": 166
+            },
+            {
+              "class": "dpath",
+              "title": "direct: path IDs (call-site strings)",
+              "raw": 2416,
+              "alone": 796,
+              "ordered": 789
+            },
+            {
+              "class": "dctx",
+              "title": "direct: context capture, templatePlace/Value, templateInputs",
+              "raw": 2795,
+              "alone": 273,
+              "ordered": 465
+            },
+            {
+              "class": "matrix",
+              "title": "direct: consumer matrix (masks per call path)",
+              "raw": 41293,
+              "alone": 1526,
+              "ordered": 1545
+            },
+            {
+              "class": "handler",
+              "title": "direct: per-key handlers (shared update call, root patch, title, commands)",
+              "raw": 7364,
+              "alone": 110,
+              "ordered": 169
+            },
+            {
+              "class": "dispatch",
+              "title": "direct: message dispatcher tree",
+              "raw": 3157,
+              "alone": 376,
+              "ordered": 376
+            },
+            {
+              "class": "rootsel",
+              "title": "direct: root selector and document arms",
+              "raw": 620,
+              "alone": 79,
+              "ordered": 191
+            },
+            {
+              "class": "mount",
+              "title": "direct: program mount and host wiring",
+              "raw": 11522,
+              "alone": 230,
+              "ordered": 451
+            },
+            {
+              "class": "braces",
+              "title": "redundant nested block braces",
+              "raw": 874,
+              "alone": -12,
+              "ordered": 145
+            }
+          ]
+        },
+        "logic": {
+          "raw": 19630,
+          "cost": 4636,
+          "rows": [
+            {
+              "class": "dispatch",
+              "title": "message dispatch: switch/case and tag tests",
+              "raw": 1804,
+              "alone": 220,
+              "ordered": 220
+            },
+            {
+              "class": "spread",
+              "title": "record updates: spreads {...r, f: v}",
+              "raw": 1011,
+              "alone": 154,
+              "ordered": 207
+            },
+            {
+              "class": "tuple",
+              "title": "tuples and records built ({a,b} pairs, new records)",
+              "raw": 2092,
+              "alone": 377,
+              "ordered": 502
+            },
+            {
+              "class": "msg",
+              "title": "message and constructor values {$:tag,…}",
+              "raw": 2457,
+              "alone": 304,
+              "ordered": 398
+            },
+            {
+              "class": "cmd",
+              "title": "commands: Cmd.task/batch/map/none and their thunks",
+              "raw": 874,
+              "alone": 173,
+              "ordered": 216
+            },
+            {
+              "class": "http",
+              "title": "requests: Api/Http/Url.Builder calls and route tables",
+              "raw": 1221,
+              "alone": 240,
+              "ordered": 458
+            },
+            {
+              "class": "string",
+              "title": "strings and string formatting",
+              "raw": 2187,
+              "alone": 568,
+              "ordered": 655
+            },
+            {
+              "class": "list",
+              "title": "List and Maybe/Result library calls",
+              "raw": 584,
+              "alone": 130,
+              "ordered": 227
+            },
+            {
+              "class": "block",
+              "title": "markup blocks and view wrappers {t,v}",
+              "raw": 699,
+              "alone": 73,
+              "ordered": 189
+            },
+            {
+              "class": "bind",
+              "title": "bindings, parameters and returns",
+              "raw": 2006,
+              "alone": 143,
+              "ordered": 168
+            },
+            {
+              "class": "other",
+              "title": "other (control flow, operators, punctuation)",
+              "raw": 4695,
+              "alone": 834,
+              "ordered": 1396
+            }
+          ]
+        }
+      },
+      "subAreaRaw": {
+        "requests, routes, helpers": 4914,
+        "view functions": 2765,
+        "markup": 54248,
+        "update/init": 11951,
+        "main": 64467
+      },
+      "appCost": 17526
+    }
+  }
+}
