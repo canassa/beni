@@ -171,21 +171,78 @@ CodeMirror 6 from a CDN, every package at a pinned version, with a beni grammar 
 keywords, comments, strings, numbers, and the Unicode notation (`language.md` §12.7–§12.10). The
 diagnostics come from `--diagnostics=json` and show at their positions in the editor.
 
+*As built, 2026-10-15.*
+
+- **The packages.** `index.html`'s import map names 13 modules on esm.sh, each at an exact
+  version published before 2026-10-01: `@codemirror/state` 6.7.6, `view` 6.43.13, `language`
+  6.12.4, `commands` 6.11.1, `lint` 6.9.7, `autocomplete` 6.20.3 and `search` 6.7.2;
+  `@lezer/common` 1.5.3 and `@lezer/highlight` 1.2.5; `@marijn/find-cluster-break` 1.0.4,
+  `crelt` 1.0.7, `style-mod` 4.1.4 and `w3c-keyname` 2.2.8. esm.sh's `*` form leaves each
+  module's own imports bare, so the map is the one place a package resolves, and each loads
+  once at the version written there. A second copy of `@codemirror/state` breaks CodeMirror,
+  which is what a CDN that resolves each package's ranges by itself risks.
+- **The grammar** is `playground/syntax.js`, a tokenizer for CodeMirror's `StreamLanguage`
+  with no dependency: line and doc comments, strings with `${…}` and escapes, `\\` lines,
+  character literals, numbers as `language.md` §2.5 writes them (no underscores), the fifteen
+  keywords, `schema` before a type name and `where` before a `name.method`, constructors and
+  types, `.field`, the Unicode operators, `⊤` and `⊥`, and markup. Markup has the three modes of
+  `frontend.md` §9.1: in code, a `<` followed by a letter or `>` opens a tag where an operand
+  may start and is a comparison after a token that ends one (§9.3: a name, a literal, a closing
+  bracket, `?`, a `/>`, a closing tag's `>`); `</` always closes one. In a tag, names are
+  attributes, `--` starts a comment and `{…}` is a hole. Between an element's tags, text is
+  text, a `<` before a letter or `>` always opens a tag, and `{…}` is a hole. It highlights
+  and decides nothing else: the compiler's diagnostics say what is wrong.
+- **Positions.** A span's column counts code points and the editor counts UTF-16 units
+  (`playground/positions.js`): `→` is one of each, a character past U+FFFF one column and two
+  units. A diagnostic in `Main.beni` is a lint mark with its title and message; every
+  diagnostic is also in the list under the editor, and a click on one in `Main.beni` selects
+  its span.
+- **Tab** indents with four spaces: beni refuses a tab character anywhere (`language.md`
+  §2.1).
+
 ### 4.3 The samples (second pull request)
 
 A counter, TodoMVC (`bench/todomvc/apps/beni/Sandbox.beni`) and a `run/`-style program that
 prints. Each `browser-direct` sample is a program that builds for `browser-direct` today, and
 the page says so next to the sample list.
 
+*As built, 2026-10-15.* `playground/samples/index.json` lists each sample's name, platform and
+file. The counter and the printing program are `playground/samples/<platform>/*.beni`, under the
+format gate. TodoMVC is the `Sandbox` variant of the benchmark, with no storage and no routing:
+both need what an opaque-origin frame does not have (`localStorage`, a history of its own).
+`zig build playground` copies it into the site as `samples/browser-direct/TodoMVC.beni`, so it
+is kept once. The page's note says that `browser-direct` is new and that some programs that build
+for `browser-tea` do not build for it yet.
+
 ### 4.4 The tabs (second pull request)
 
 The emitted JavaScript, `beni dump --stage=types` and `beni dump --stage=ownership`, each from
 the same source as the build.
 
+*As built, 2026-10-15.* A dump is a command of its own on a new instance, run only while its
+tab is open: the build runs first for each version of the input, then the open tab's dump.
+Every edit and every change of platform makes a new version, and a result of an older version
+is dropped. Until the new dump arrives, an open dump of the older version is shown dimmed. A
+dump of a program with errors prints what it could, with a line that says the program has
+errors. A defect of the playground (an exception the worker did not foresee) is shown and not
+run again for the same version: the queue waits for the next edit.
+
 ### 4.5 The shareable link (second pull request)
 
 The source, compressed with the browser's `CompressionStream("deflate-raw")` and encoded in
 base64url, in the URL fragment. The fragment never goes to the server.
+
+*As built, 2026-10-15* (`playground/share.js`). The fragment is
+`#platform=<platform>&code=<base64url>`. **Share** writes it into the address and copies the
+address; where the page may not write the clipboard (no clipboard on an insecure page, or no
+permission), the status says that the address bar holds the link. A link opens its source and
+platform, and stays in the address until a person changes the program: an edit, a change of
+platform, or a sample. A fragment whose code is not base64url, not deflate data, not UTF-8, or
+longer than 1 MiB once inflated opens the first sample, and the status of its first build says
+that the link held no program. Each failure is caught by name around the one call that makes it
+(`InvalidCharacterError` from `atob`, `TypeError` from the decompression stream and the fatal
+decoder), and the 1 MiB bound cancels the stream with a reason of its own; anything else goes
+on up.
 
 ## 5. Running the output
 
@@ -224,7 +281,7 @@ default export and a named `stdout`.
 ## 6. Tests: byte identity
 
 Rule 5 says that the single-threaded build and the WebAssembly build write the same bytes as the
-native threaded build. Two kinds of test prove it.
+native threaded build. Items 1 and 4 prove it; items 2 and 3 test the page itself.
 
 1. **In the gates** (`tests/blackbox/wasm_test.zig`, part of `test-blackbox`):
    - a native **single-threaded** compiler (`zig-out/single/bin/beni`, self-hosted ReleaseSafe,
@@ -235,7 +292,18 @@ native threaded build. Two kinds of test prove it.
      `playground/wasi.js`, against the native one, on a printing program and on a program with
      diagnostics. The gates build it with the self-hosted backend (`ReleaseSafe`, about 7 s);
      `-Dllvm` builds it with LLVM, as it does the native compiler.
-2. **Not a gate:** `zig build test-playground` runs the shipped `ReleaseSmall` `.wasm` (§7.1) on
+2. **In the gates**, `tests/blackbox/playground_page_test.zig` runs the page's own modules
+   under Node (`tests/wasm/page_test.mjs`): the editor's range of a diagnostic the real
+   compiler reported after Unicode notation and a character past U+FFFF, the shareable link's
+   round trip for both platforms, and the grammar's names for comments, strings, keywords,
+   notation and markup.
+3. **Not a gate:** `zig build test-playground-page` drives the site in a headless Chrome
+   (`tests/browser/playground.mjs`; `nix develop .#browser`, and the network for the CDN): the
+   first sample builds and loads in the frame, a click in the frame changes the counter,
+   every sample builds and runs, an error is marked on its text in the editor and listed,
+   the Types, Ownership and JavaScript tabs show their output, Share after an edit makes a
+   link that opens the edited source and platform, and a damaged link opens the first sample.
+4. **Not a gate:** `zig build test-playground` runs the shipped `ReleaseSmall` `.wasm` (§7.1) on
    every program of `tests/corpus/run/` and `tests/corpus/browser/direct/`, and on TodoMVC, and
    compares every output file, both streams and the exit code with the native compiler's.
 
@@ -377,6 +445,10 @@ so the page and the editor go on, and the next build replaces the frame. Where a
 the frame in the page's process, a loop in the program also stops the page. A program that
 prints in a loop grows the console only to its last 2 000 pieces of output.
 
+**The editor needs esm.sh.** If a module of the page does not load (the CDN is down, or the
+site lacks a file), the page's own code never runs; a listener in `index.html` then says in the
+status which file did not load. The compiler and the samples are files of the site.
+
 **One browser is tested.** Chrome 153 runs every test of §6 and every measurement of §7. Firefox
 and Safari are not tested: a module from a `blob:` URL in an opaque-origin frame, and 69.2 MiB
 of initial memory per compile, freed when the garbage collector runs, are the parts most likely
@@ -385,7 +457,7 @@ to differ there, the second on a phone with little memory.
 ## 9. Build and deploy
 
 `zig build playground` writes the static site to `zig-out/playground/`: `index.html`, the
-JavaScript of §3 to §5, and `beni.wasm` (`ReleaseSmall`, LLVM). Every URL in it is relative, so
+JavaScript of §3 to §5, the samples of §4.3, and `beni.wasm` (`ReleaseSmall`, LLVM). Every URL in it is relative, so
 the directory works under any path, `/beni/playground/` included. No workflow in this repository
 deploys it: the site build of issue #127 runs the step and copies the directory (§1).
 

@@ -303,6 +303,7 @@ zig build test-run-hashes # re-verify emitted JavaScript under Node and record i
 zig build test-browser    # the browser/ corpus in headless Chrome (nix develop .#browser); not a gate
 zig build playground      # the playground site, beni as ReleaseSmall wasm -> zig-out/playground/ (docs/design/playground.md)
 zig build test-playground # that wasm against the native beni, byte for byte, on the corpus; not a gate, CI runs it
+zig build test-playground-page  # the playground in headless Chrome (nix develop .#browser, network for the CDN); not a gate
 zig build test-time-report  # where the gates' time goes -> plans/test-time-report.md
 zig build coverage        # lines of src/ the black-box tests reach -> zig-out/coverage/
 zig build fuzz            # random sweeps of the byte readers, lexer and parser; not a gate
@@ -357,8 +358,9 @@ value-fuzz case uses `.fuzz-budget`; a page grant never covers fuzz implicitly.
 Conduit's page cases (2026-10-08, paired direct runs extended 2026-10-14, re-granted from
 Linux instruction counts 2026-10-15), its direct value fuzz (2026-10-14), `browser/direct/HttpJson`
 and `HttpJsonBody` (2026-10-14, compiler defect #105), and the paired TodoMVC/Sternhalma pages plus
-Sternhalma's separate value fuzz (2026-10-15) are the only corpus grants. Outside the corpus, the
-two tests of `tests/blackbox/wasm_test.zig` that run the `.wasm` have 6 000M
+Sternhalma's separate value fuzz (2026-10-15), and the paired Bike Wars page
+(2026-10-15, 8 600M; its value fuzz keeps the default) are the only corpus grants. Outside the
+corpus, the two tests of `tests/blackbox/wasm_test.zig` that run the `.wasm` have 6 000M
 (`wasm_budget_millions`): a fixed cost of Node and the self-hosted wasm32 build that no smaller
 input reduces. Jayson Reis decided it on 2026-10-15 (dashboard `wasm-playground-q5`), with
 `zig build test-playground` in CI on every pull request; Cesar's agreement is pending.
