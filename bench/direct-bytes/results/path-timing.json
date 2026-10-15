@@ -1988,5 +1988,11 @@
       ]
     }
   ],
-  "finished": "2026-10-15T11:01:18.220Z"
+  "finished": "2026-10-15T11:01:18.220Z",
+  "variant": "short-path-ids",
+  "subjectVariants": {
+    "browser-tea-release": "unchanged tea",
+    "direct-original": "unchanged direct",
+    "browser-direct-release": "short-path-ids"
+  }
 }

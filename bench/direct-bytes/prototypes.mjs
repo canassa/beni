@@ -6,7 +6,7 @@ const require=createRequire(import.meta.url),acorn=require('../ui/apps/solid1/no
 const root='bench/direct-bytes/results',summary={};
 const walk=(n,f,p=null)=>{if(!n?.type)return;f(n,p);for(const v of Object.values(n)){if(Array.isArray(v))v.forEach(x=>walk(x,f,n));else if(v?.type)walk(v,f,n)}};
 const size=s=>{const b=Buffer.from(s);return {raw:b.length,gzip:gzipSync(b,{level:9}).length,brotli:brotliCompressSync(b,{params:{[constants.BROTLI_PARAM_QUALITY]:11,[constants.BROTLI_PARAM_SIZE_HINT]:b.length}}).length}};
-const apply=(s,edits)=>{for(const e of edits.sort((a,b)=>b.start-a.start))s=s.slice(0,e.start)+e.text+s.slice(e.end);acorn.parse(s,{ecmaVersion:'latest',sourceType:'module'});return s};
+const apply=(s,edits)=>{let end=s.length;for(const e of edits.sort((a,b)=>b.start-a.start)){if(e.end>end)throw Error('Overlapping prototype edits');s=s.slice(0,e.start)+e.text+s.slice(e.end);end=e.start;}acorn.parse(s,{ecmaVersion:'latest',sourceType:'module'});return s};
 for(const app of ['conduit','todomvc','table']){
  const s=gunzipSync(fs.readFileSync(`${root}/${app}-direct-baseline.mjs.gz`)).toString(),base=size(s),ast=acorn.parse(s,{ecmaVersion:'latest',sourceType:'module'}),parents=new Map(),nodes=[];
  walk(ast,(n,p)=>{parents.set(n,p);nodes.push(n)});
@@ -24,6 +24,9 @@ for(const app of ['conduit','todomvc','table']){
  }
  rows.push(trial('u32-masks',limbs));
  const measurements=JSON.parse(fs.readFileSync(`${root}/measurements.json`)).subjects[app].direct;
+ const maskEdits=limbs.filter(e=>!matrices.some(m=>m.start<=e.start&&e.end<=m.end));
+ if(maskEdits.length!==(matrices.length?3:0))throw Error('Unexpected mask read count');
+ for(const e of maskEdits)if(!measurements.declarations.some(d=>d.source?.includes('/browser-direct/Direct.beni')&&['templateWanted','templateAny'].includes(d.original)&&d.start<=e.start&&e.end<=d.end))throw Error('Non-protocol mask read');
  const groupName=measurements.runtimeNames.templateGroup;
  const descriptorNames=new Map(measurements.declarations.filter(d=>/^dg\d/.test(d.original??'')).map(d=>[d.binding,d]));
  const packed=[];
@@ -37,6 +40,7 @@ for(const app of ['conduit','todomvc','table']){
   if(n.type==='MemberExpression'&&!n.computed&&['$$patch','$$restate'].includes(n.property.name))packed.push({start:n.object.end,end:n.end,text:n.property.name==='$$patch'?'[4]':'[5]'});
  }
  const groupDecl=nodes.find(n=>n.type==='VariableDeclarator'&&groupName&&n.id?.name===groupName);
+ if(groupDecl&&nodes.some(n=>n.type==='CallExpression'&&n.callee.name===groupName&&n.arguments.length===2)&&!nodes.some(n=>n.type==='AssignmentExpression'&&n.left.type==='MemberExpression'&&n.left.property.name==='$$restate'&&n.right.type==='Literal'&&n.right.value===null&&groupDecl.start<=n.start&&n.end<=groupDecl.end))throw Error('Specialized group builder must set restate to null');
  // Its implementation's property writes were already collected: replace the
  // whole initializer instead and discard edits nested inside it.
  const packedFlat=groupDecl?packed.filter(e=>!(groupDecl.init.start<=e.start&&e.end<=groupDecl.init.end)):packed;

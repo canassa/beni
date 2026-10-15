@@ -1,4 +1,4 @@
-# 98 — Direct's bytes are mostly entry code, not dense mask data
+# 98 — Direct bundle costs: template entries, masks and runtime
 
 *2026-10-15. Research only: unchanged compiler, platform and application sources.
 Base `7ff72c031`; Node 24.19.0; Apple M2 Pro; Chrome 155.0.8059.80.
@@ -16,8 +16,8 @@ that protocol. This is the unchanged `Sandbox.beni` TodoMVC benchmark, with
 editing but without persistence, and `bench/ui/apps/beni/Main.beni`'s table.
 Neither a no-edit TodoMVC nor an externally minified table substitutes for them.
 
-Removing Conduit's **41,039 raw bytes of mask pairs** saves only **1,598 B
-brotli** in isolation. Removing **20,935 raw bytes of patch entry declarators**
+Stubbing Conduit's **41,039 raw bytes of mask pairs** saves only **1,598 B
+brotli** in isolation. Stubbing **20,935 raw bytes of patch entry declarators**
 saves **3,496 B**. These deletions break execution; they identify costs, not
 available optimisations. Neither number can be added to another independent
 removal. Small reusable entry functions still have distinct bodies, inputs,
@@ -75,7 +75,7 @@ includes its enclosing call syntax.
 
 ## 3. Price each part alone
 
-Cells are **raw source-span bytes / brotli saved by removing that part alone**.
+Cells are **raw source-span bytes / brotli saved by stubbing that part alone**.
 Raw declarator spans include binding names; replacements retain those names.
 A zero means absent, not proven free in all programs.
 
@@ -102,7 +102,7 @@ surviving top-level `template*` declarations, including row/map adapters and
 state. This table does not silently include all Direct command/DOM runtime.
 
 The following **ordered direct-minus-tea** account includes every downloaded
-byte. Negative entries are offsets to the excess, not proposed savings.
+byte. Negative entries are accounting offsets, not causal savings or proposed edits.
 
 | Part, removal order | Conduit | TodoMVC | Table |
 | --- | ---: | ---: | ---: |
@@ -115,6 +115,29 @@ byte. Negative entries are offsets to the excess, not proposed savings.
 | Context / patch runtime | +664 | +497 | 0 |
 | Remaining application, root handlers, core and runtime | +1,616 | +708 | −120 |
 | **Total gap** | **+6,379** | **+566** | **−1,025** |
+
+A second account applies the same stubs in the **reverse** order. Cells below
+are forward/reverse **direct-minus-tea** charges; neither order is a causal
+pairing of equivalent work. The final residual and the total are identical.
+
+| Part | Conduit forward/reverse | TodoMVC forward/reverse | Table forward/reverse |
+| --- | ---: | ---: | ---: |
+| Matrix | 1,598 / 1,550 | 142 / 125 | 0 / 0 |
+| Descriptors | 550 / 836 | 19 / 20 | 0 / 0 |
+| Patch entries | 3,534 / 3,710 | 99 / 123 | 0 / 0 |
+| Restate entries | 163 / 168 | 0 / 0 | 0 / 0 |
+| Factories / preparation | −2,161 / −2,606 | −1,337 / −1,325 | −905 / −905 |
+| Selection runtime | 415 / 409 | 438 / 448 | 0 / 0 |
+| Context / patch runtime | 664 / 696 | 497 / 467 | 0 / 0 |
+
+Conduit's descriptor charge moves by 286 B and patch-entry charge by 176 B
+just from changing order. The matrix stays near 1.6 kB. The factory and residual
+rows partly describe code moved between reusable templates and the mounted
+program: their forward-order net is **−545 B**, reverse-order **−990 B**.
+Neither the −2,161 B factory row nor either net is an identified optimisation.
+The `k/p/t` classification groups source shapes, not causally paired workloads.
+[`audit.json`](../../../bench/direct-bytes/results/audit.json) retains both
+platforms' reverse accounts and asserts the same final residual.
 
 The last row before total is an explicit residual, not an attribution to one
 mechanism. It includes direct's ungrouped root callbacks/row edits and tea's
@@ -196,10 +219,14 @@ brotli ledgers and compressed source snapshots are retained beside the scripts.
 base-36 token, consistently in source-hole IDs, source IDs and every slash
 component of call/producer keys. For example, `"10:101/8:552"` becomes two
 short tokens separated by the same slash. Runtime concatenation and lookups
-remain; there is **no decoder**. The prototype recognizes only protocol-shaped
-string literals. An implementation must operate on typed metadata before
-printing, with input-derived stable numbering; never rename ordinary user
-strings or make IDs depend on worker completion. Keep readable inspection IDs
+remain; there is **no decoder**. The rewrite initially recognizes protocol-shaped string literals; the
+independent audit then requires every match to occupy an actual protocol
+position. All 642 Conduit matches and 22 TodoMVC matches are listed with
+positions, values and reasons in `audit.json`; table has none. An implementation must operate on typed metadata before
+printing, with stable numbering derived from the existing input-assigned module/site IDs;
+never rename ordinary user
+strings or make IDs depend on worker completion. The prototype lexically sorts those existing IDs; it does not reassign compiler
+module indices. Keep readable inspection IDs
 in the unloaded plan/debug output through a separate mapping if needed.
 
 **Complete group records:** replace `dg=[holes,every,capture,once]` plus
@@ -209,7 +236,10 @@ in the unloaded plan/debug output through a separate mapping if needed.
 group: **do not deduplicate equal descriptors**, because operation attachment
 makes their identity load-bearing. The prototype leaves dead `dg=0` and
 `templateGroup=0` stubs, a conservative estimate of what real DCE could emit.
-It removes initialization calls/mutations, but changes arrays with named
+The specialized TodoMVC builder explicitly assigns `$$restate=null`; its
+missing third argument is therefore padded with **null**, not undefined. The
+selection reader tests `operation!==null`, so this exact sentinel is required
+and asserted. It removes initialization calls/mutations, but changes arrays with named
 properties into longer arrays: timing is required before recommending adoption.
 
 **Literal plan:** emit `{key:mask,...,$$templates:new Map()}` directly, instead
@@ -251,7 +281,8 @@ both dictionary kernels return 194,000,000. Raw observations are
 | Full-string dictionary keys | 41.00 | 35.70–51.40 |
 | Dense short dictionary keys | 32.20 | 31.80–35.80 |
 
-These are warmed lookup kernels, not template patch timings. Dictionary keys
+These are warmed lookup kernels, not template patch timings. The dictionary
+ranges touch; their ordering is a hint, not a demonstrated application result. Dictionary keys
 are prebuilt; the experiment excludes call-path construction, ownership, DOM,
 mount and JIT first use. Dense numeric-looking keys also change the engine's
 property representation. A shorter-key kernel is not evidence for a specified
@@ -338,7 +369,38 @@ slowdown nor a speed win. The changed array layout remains a full-harness risk,
 rather than grounds for a claim that these 233 B are free. Raw observations are
 [`group-timing.json`](../../../bench/direct-bytes/results/group-timing.json).
 
+The observed untraced timer values lie on an approximately **0.005 ms grid**.
+Fifteen pages per cell cannot resolve arbitrarily small differences. A
+10,000-replicate paired-round percentile bootstrap of candidate median minus
+original median gives the following descriptive 95% intervals (milliseconds):
+
+| Candidate | Feed | Favorite | Editor |
+| --- | --- | --- | --- |
+| Short IDs | [−0.085, +0.060] | [−0.050, +0.045] | [−0.020, +0.020] |
+| Group arrays | [−0.050, +0.020] | [−0.045, +0.105] | [−0.005, +0.040] |
+
+These intervals include zero. They resample the 15 rotated rounds jointly for
+original/candidate; they do not model timer quantization or establish a chosen
+equivalence margin/minimum detectable effect. No equivalence conclusion follows.
+`intervals.mjs` and `intervals.json` preserve the method, deterministic seed and
+observations used. Explicit `variant` and `subjectVariants` metadata in both
+timing artifacts disambiguates the harness's historical subject labels.
+
 ## 7. Validation and reproduction
+
+`audit.mjs` independently replays attribution from archived sources. It checks
+that executable release code occupies one line, mapped declaration spans and
+category counts agree, descriptors and patch entries pair, and all renamed
+literals occur in matrix/group-hole positions or as direct capture/place/value
+arguments. It checks all three mask reads in each helper-bearing app are inside
+Direct's mapped `templateWanted` body (`templateAny` was inlined). There are no
+mask reads in table. The u32 prototype asserts the same count and ownership;
+both edit applicators reject overlapping spans. A manual source read of
+`templatePlan`, `templateWanted` and `templateAny` confirms that masks are
+copied into the plan and tested via `charAt(key)==="1"`; mask length,
+`indexOf`, enumeration order or string identity is not used for selection.
+This is bounded evidence for these bundles, not a general-purpose JavaScript
+protocol analysis.
 
 The eight executable variants (including baseline) pass **40 differential
 page transcripts**: all Conduit Reader/Editor/Tour scripts, a TodoMVC script
@@ -364,10 +426,12 @@ direnv exec . zorg build test test-blackbox fmt-check beni-fmt-check
 # The safe compiler was frozen for this experiment; BENI may name another one.
 direnv exec . node bench/direct-bytes/measure.mjs
 direnv exec . node bench/direct-bytes/prototypes.mjs
+direnv exec . node bench/direct-bytes/audit.mjs
 direnv exec . node bench/direct-bytes/verify.mjs
 CHROME=/path/to/chrome direnv exec . node bench/direct-bytes/speed.mjs
 CHROME=/path/to/chrome direnv exec . node bench/direct-bytes/timing.mjs > path-timing.json
 CHROME=/path/to/chrome direnv exec . node bench/direct-bytes/timing.mjs inline-group-records > group-timing.json
+node bench/direct-bytes/intervals.mjs
 ```
 
 The archive stores baseline/prototype JavaScript as lossless `.mjs.gz` files;

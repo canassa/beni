@@ -1988,5 +1988,11 @@
       ]
     }
   ],
-  "finished": "2026-10-15T11:05:40.871Z"
+  "finished": "2026-10-15T11:05:40.871Z",
+  "variant": "inline-group-records",
+  "subjectVariants": {
+    "browser-tea-release": "unchanged tea",
+    "direct-original": "unchanged direct",
+    "browser-direct-release": "inline-group-records"
+  }
 }
