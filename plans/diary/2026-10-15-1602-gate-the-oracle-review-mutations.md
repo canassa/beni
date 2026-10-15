@@ -28,5 +28,5 @@ these fixtures existed, though not all by a verdict. View changed
 verdict. Record changed eleven ownership goldens, but only by a lost `R`
 bit in summaries. No verdict pinned the unsafe accept, so a re-bless
 would have hidden the hole. The review's counts (view 1, append 1,
-record 0) are consistent with counting changed verdict lines only. Pin a soundness rule with a
-rejected line, not with a summary bit.
+record 0) are consistent with counting changed verdict lines only.
+Pin a soundness rule with a rejected line, not with a summary bit.
