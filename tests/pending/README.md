@@ -185,3 +185,16 @@ with full diagnostics. Result paths, callback loans, captured recursive results
 and callee-environment disjointness are specified in ownership-checker.md §29.
 Their original counts and executable Lean twins remain in
 [BRIDGE-RESULTS.md](../../proofs/ownership/BRIDGE-RESULTS.md).
+
+### Unchanged applications and real sharing (2026-10-15)
+
+The owner's application audit keeps TodoMVC, BikeWars and Sternhalma under
+`browser/direct/` with their original scripts and expected transcripts. These
+pending entries record unavailable direct builds; they are not all checker
+bugs. TodoMVC retains the model's list in queued persistence work. BikeWars
+appends to a trail it returns and reads again, and reuses its initial bikes.
+Sternhalma reuses `Board.init` during setup and reset. Their refusals remain
+intentional. The private, single-read `centralHexagon` initialization transfer
+is safe and now accepted; Sternhalma's remaining signature has two errors.
+The reduced real-sharing classes are gated under `build/bad/direct/`.
+`browser/tea/QueuedListSnapshot` observes the deferred snapshot distinction.

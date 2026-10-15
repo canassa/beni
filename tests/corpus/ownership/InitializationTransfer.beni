@@ -1,0 +1,101 @@
+-- One strict read transfers fresh allocations; the destination stays shared.
+-- The unsafe twins have a second read, deferred reads, a public seed, aliases
+-- within the transferred value, or a genuinely shared source allocation.
+import Task
+
+
+seed : List Int
+seed = List.range 1 2
+
+
+pub consumed : List Int
+consumed = seed ++ [ 3 ]
+
+
+pub destinationStillShared : Int → List Int
+destinationStillShared n = List.push consumed n
+
+
+twice : List Int
+twice = [ 1 ]
+
+
+pub firstRead : List Int
+firstRead = twice ++ [ 2 ]
+
+
+pub secondRead : List Int
+secondRead = twice
+
+
+deferredSeed : List Int
+deferredSeed = [ 1 ]
+
+
+pub deferred : ⊤ → List Int
+deferred = λ⊤ → deferredSeed ++ [ 2 ]
+
+
+pub publicSeed : List Int
+publicSeed = [ 1 ]
+
+
+pub publicRead : List Int
+publicRead = publicSeed ++ [ 2 ]
+
+
+aliased : (List Int) × (List Int)
+aliased =
+    xs = [ 1 ]
+    ( xs, xs )
+
+
+pub aliasRead : (List Int) × (List Int)
+aliasRead =
+    ( left, right ) = aliased
+    ( List.push left 2, right )
+
+
+shared : List Int
+shared = [ 1 ]
+
+
+wrapper : { items : List Int }
+wrapper = { items = shared }
+
+
+pub sharedRead : List Int
+sharedRead = List.push wrapper.items 2
+
+
+pub keepShared : List Int
+keepShared = shared
+
+
+separated : (List Int) × (List Int)
+separated = ( [ 1 ], [ 2 ] )
+
+
+pub separatedRead : (List Int) × (List Int)
+separatedRead =
+    ( left, right ) = separated
+    ( List.push left 3, right )
+
+
+escapedSeed : List Int
+escapedSeed =
+    xs = [ 1 ]
+    _ = Task.spawn λ⊤ → List.length xs
+    xs
+
+
+pub escapedRead : List Int
+escapedRead = List.push escapedSeed 2
+
+
+functionSeed : List Int
+functionSeed = [ 1 ]
+
+
+pub functionRead : Int → List Int
+functionRead n = List.push functionSeed n

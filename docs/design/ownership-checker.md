@@ -2574,6 +2574,7 @@ its boundaries; `RESULTS.md` records the campaigns and holes. The residual gaps 
 | `Dict.focus`'s destructive read (§20.8) | `assertDictFocus` | two positions of a tree holding one value, both written. List focus is modelled; the core has no tree, keys or dictionary representative separation. |
 | Markup/constructor lowering and opaque carrier encodings | markup transfer and summary blocks | Slots and constructor payload retention are modelled as positional records; HTML syntax, wildcard opaque paths, import serialization and actual row/component lowering are absent. Their encoding must preserve the modelled slots and conservative fallback |
 | Fold dictionary representatives and recursion | fold/focus summaries | Container ownership is modelled for lists and positional records; no dictionary keys, recursive data types, mutual recursion or unknown/coarsened foreign rows exist in the core, so those implementations and their precision backstops still need Zig fixtures |
+| Private single-read initialization transfer (2026-10-15 amendment) | `initializationTransfer`, `sharedOf` | A repeated/deferred read or a retained allocation mistaken for fresh would observe a later mutation. The Lean core has no module initialization or private global bindings; accepted and rejected BIR fixtures cover this boundary. |
 
 ### 26.8 Open questions
 
@@ -3335,3 +3336,27 @@ retains the `Err` payload in the frame result (§26.2). The terminal-result rule
 also applies when that operand is itself a case or block. A nested callback
 result whose ownership cannot be established remains refused; the result-loan
 walk never supplies permission in place of the ordinary returns-owned check.
+### *Amended 2026-10-15 (initialization transfer):* a private value read once
+
+A private, parameterless value may transfer its freshly allocated cells to its
+sole read when that read executes directly in another nonrecursive,
+parameterless initializer of the same application module. The whole module
+must contain exactly one reference to the value. Reads in closures or functions,
+public values, foreign values, recursive initializers, coarsened summaries and
+unknown results receive no permission. The reference count is over BIR value
+instructions, including deferred bodies, not over reachable calls.
+
+The value's ordinary result summary is instantiated at that read, preserving
+allocation identities, result-position aliases, escapes and both exclusivity
+conditions. Shared arrivals stay shared. This transfers only allocations of the
+private initializer; it does not assert that their descendants are exclusive.
+The destination is still a top-level value: later reads of it use the ordinary
+shared-value rule. No initializer is re-executed and no copy is inserted.
+
+**Soundness.** Module initialization executes the consuming expression at most
+once. Privacy and the unique reference leave no other source-level reader of
+the transferred binding. Existing summary escape and separation obligations
+cover retained aliases and repeated result positions. A read in a closure could
+execute repeatedly, so it is excluded even when the closure itself has one
+syntactic occurrence. A later use of the destination must still be rejected.
+The cached ownership block version advances from 4 to 5 with this rule.
