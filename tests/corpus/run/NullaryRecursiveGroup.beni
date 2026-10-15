@@ -1,0 +1,20 @@
+-- A nullary default in one group member must settle the other's dot-call
+-- as a field call before method requirements close (research 96 §3.2).
+import Node exposing (Program)
+import String
+
+
+read x n = if n == 0 then x.f else invoke x (n - 1)
+
+
+invoke x n = if n == 0 then x.g 3 else read x (n - 1)
+
+
+main : Program
+main =
+    record = { f = 7, g = λa → a + 10 }
+    Node.printLines
+        [ String.fromInt (read record 0)
+        , String.fromInt (read record 1)
+        , String.fromInt (invoke record 2)
+        ]

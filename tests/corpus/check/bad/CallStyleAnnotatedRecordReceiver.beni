@@ -1,0 +1,6 @@
+-- An explicit record annotation must not be called unannotated.
+ext : { r | length : Int } → Int
+ext record = record.length
+
+
+answer = ext [ 1 ]

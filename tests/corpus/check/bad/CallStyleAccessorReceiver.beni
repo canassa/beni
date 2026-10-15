@@ -1,0 +1,5 @@
+-- An untyped accessor defaults its element receiver to a record.
+lengths xs = List.map xs .length
+
+
+answer = lengths [ "a" ]
