@@ -622,7 +622,11 @@ fields and no code a writer needs, so it keeps every such walk linear for a few 
 
 The view's keys begin with `$`, so no beni record can have them (a field name is a lower-case
 identifier). That is how `Debug.toString` and the protocol tell a view from a record:
-`Array.isArray(v) || v.$b !== undefined` is "v is a list". The old view's cached `p` and its
+`Array.isArray(v) || v.$b !== undefined` is "v is a list". A host object with a `$b` key never
+holds a position typed `List`, because a sibling returns a list only as a fresh plain array
+(`boundary.md` §4). The one reader that could still meet such an object is `Debug.toString`,
+called on a value of a `foreign` type. S7 states how `Debug` prints a value of a `foreign` type
+before it changes the test, and pins that with a fixture: a host object with a `$b` key, printed. The old view's cached `p` and its
 `$plain` method go, and so do `Js.method`'s two uses in `core/List`.
 
 **Writes.** The writers are `set`, `update`, `swap`, `push`, `pop`, `insertAt`, `removeAt`,
@@ -667,7 +671,11 @@ So it is not part of this amendment. It can be added later on its own measuremen
 **A prepend copies**, as decided on 2026-10-11 (*The claimable head: E1tp*, amended):
 `[ x, …xs ]` and `List.cons` make a fresh array, O(length of `xs`). A prepend is not a demand
 (`ownership-checker.md` §25.2), so it is the same on every platform. The re-cons of a view
-(`b[o − 1] === x` gives the view at `o − 1`, or `b` itself) stays. The trie's re-cons row goes
+(`b[o − 1] === x` gives the view at `o − 1`, or `b` itself) stays. It reads `b[o − 1]`, which is
+outside the view, so it is sound only while `b` is unwritten since the view was made. Invariant 3
+and the checker give exactly that: the view aliases `b`'s cells, so a write to `b` while the view
+is still read is `list_still_used`. S7's fixtures include a re-cons after a `List.copy` of the
+base was written. That write must not reach the view. The trie's re-cons row goes
 with the trie.
 
 **Invariants**, replacing *Invariants* below; the numbering is kept so references still hold:
@@ -686,6 +694,18 @@ with the trie.
 4. **The empty list is plain.** No view is empty.
 5. **A builder is owned** (unchanged).
 6. **Elements are references** (unchanged).
+7. **A list literal is a fresh array at every evaluation** wherever a demand can reach it. This
+   covers `[]`, `[ a, b ]` and every core value that is an empty list. No pass of the emitter,
+   §9's optimiser or `Minify` may hoist, intern or share a constant array literal across
+   evaluations. If one did, one call's in-place write would become every later call's state, and
+   the checker cannot see it: `top_level_list_changed` covers the program's own top-level values,
+   not a literal the emitter hoists. S7 adds an `emit/release/` fixture that pins this.
+8. **No runtime retains a list across a message on an in-place platform.** This covers a platform
+   runtime, the markup runtime, `Debug` and a sibling. A view's `length` is a snapshot, and a
+   later accepted demand may write the array behind a plain list. A runtime that needs a list
+   past the call that handed it over says so in its ownership words (`ownership-checker.md` §24),
+   so the checker counts the retention as a holder. A runtime that compares a retained list by
+   identity is the case `browser`'s `For` skip is (the open question below).
 
 **The reader protocol**, replacing *What a reader of a list may rely on* below. A reader outside
 `core/List` may rely on these:
@@ -770,8 +790,10 @@ There are two ways to answer this, and they cost different things.
   place. Every list then costs the same everywhere, and the harness measures what the browser
   runs. The price:
   - Every program on every platform must pass the checker. How many corpus and `node` programs
-    fail today is unmeasured. `dump --stage=ownership` over the corpus measures it before
-    anything is decided.
+    fail today is unmeasured. `dump --stage=ownership` over the whole corpus, under each platform
+    (a) would cover, is a **hard precondition** of choosing (a). A fixture that fails would force
+    a choice between rewriting the fixture and bending the design, and that choice is the owner's
+    under CLAUDE.md rule 10, made on the measured list, not discovered during S7.
   - `browser`'s markup runtime, which `browser-tea` is layered on, skips a `For` whose list is
     `===` the last one rendered (§15.5, *Identity*). An in-place write keeps that identity, so the
     skip would show a stale page. That runtime must stop deciding "unchanged" by a list's
