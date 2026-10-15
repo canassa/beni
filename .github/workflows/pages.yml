@@ -1,6 +1,8 @@
-# Deploys the example programs to GitHub Pages on every push to master. A
-# pull request that changes the examples or this workflow builds the site
-# and does not deploy it.
+# Deploys the example programs to GitHub Pages on every push to master.
+# Every pull request builds the site and does not deploy it. The build has
+# no paths filter: it reads the compiler, core/, the platforms, the flake,
+# build.zig and build.zig.zon, the playground and the examples, and a list
+# of those paths would miss the next input that is added.
 #
 # Pages takes its site from GitHub Actions (Settings, Pages, Source), so the
 # site is this workflow's artifact, served as it is: no branch, and no
@@ -14,9 +16,6 @@ on:
   push:
     branches: [master]
   pull_request:
-    paths:
-      - examples/**
-      - .github/workflows/pages.yml
 
 permissions: {}
 
