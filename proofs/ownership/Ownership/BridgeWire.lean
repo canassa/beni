@@ -80,6 +80,8 @@ def ty : Nat → Value → Except String Ty
     let (k, xs) ← tag v
     match k, xs with
     | "int", [] => pure .int
+    | "result", [e,a] => pure (.result (← ty n e) (← ty n a))
+    | "chain", [t] => pure (.chain (← ty n t))
     | "list", [t] => pure (.list (← ty n t))
     | "builder", [t] => pure (.builder (← ty n t))
     | "record", [ts] => pure (.record (← (← array ts).mapM (ty n)))
@@ -101,6 +103,11 @@ def atom : Nat → Value → Except String Atom
 def prim (v : Value) : Except String Prim := do
   let (k, xs) ← tag v
   match k, xs with
+  | "ok", [t] => pure (.ok (← ty 256 t))
+  | "err", [t] => pure (.err (← ty 256 t))
+  | "end-chain", [t] => pure (.endChain (← ty 256 t))
+  | "link", [] => pure .link
+  | "private-root", [] => pure .privateRoot
   | "literal", [t] => pure (.literal (← ty 256 t))
   | "builder", [t] => pure (.builder (← ty 256 t))
   | "owned", [.flag b] => pure (.owned b)
@@ -124,6 +131,9 @@ def expr : Nat → Value → Except String Expr
     | "closure", [i,vs] => pure (.closure (← nat i) (← args vs))
     | "app", [f,vs] => pure (.app (← a f) (← args vs))
     | "recur", [vs] => pure (.recur (← args vs))
+    | "entry", [i,r,m,b] => pure (.entry (← expr n i) (← args r) (← nat m) (← expr n b))
+    | "result-case", [s,e,k,x,y] => pure (.resultCase (← a s) (← nat e) (← nat k) (← expr n x) (← expr n y))
+    | "chain-case", [s,h,t,x,y] => pure (.chainCase (← a s) (← nat h) (← nat t) (← expr n x) (← expr n y))
     | "branch", [c,x,y] => pure (.branch (← a c) (← expr n x) (← expr n y))
     | "focus", [s,i,x,b] => pure (.focus (← a s) (← a i) (← nat x) (← expr n b))
     | "traverse", [k,s,z,i,x,acc,b] =>

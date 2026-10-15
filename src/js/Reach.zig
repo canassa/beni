@@ -300,12 +300,12 @@ pub const Input = struct {
     /// Exports proved to be inert carriers by the sibling scanner.
     forwarding_foreigns: []const []const ForeignProof = &.{},
 
-    fn birOf(in: Input, m: Graph.Index) *const Bir {
+    pub fn birOf(in: Input, m: Graph.Index) *const Bir {
         if (m.int() >= in.birs.len) return &Bir.empty;
         return in.birs[m.int()];
     }
 
-    fn dispatchOf(in: Input, m: Graph.Index) *const Dispatch {
+    pub fn dispatchOf(in: Input, m: Graph.Index) *const Dispatch {
         if (m.int() >= in.dispatch.len) return &Dispatch.empty;
         return in.dispatch[m.int()];
     }
@@ -723,6 +723,11 @@ pub const Chain = struct {
     start: u32,
     end: u32,
 };
+
+/// The index of the constructor a guard names when no build reaches it:
+/// the arm of an `if Js.development` the build does not take, and an arm
+/// of `if Js.maySuspend` no body writes (`Guards`).
+pub const never_ctor = std.math.maxInt(u32);
 
 /// How many enclosing guarded arms an edge waits on: the innermost ones.
 /// Dropping the outer conditions keeps more and never less.
@@ -1237,7 +1242,7 @@ pub const Builder = struct {
                 // edge out of it is ever followed.
                 .case => if (g.b.in.interner) |interner| {
                     const case_inst: Bir.Inst.Index = @fromBackingInt(@intCast(@as(u32, @intCast(p))));
-                    const never: Node = .{ .module = g.m, .kind = .ctor, .index = std.math.maxInt(u32) };
+                    const never: Node = .{ .module = g.m, .kind = .ctor, .index = never_ctor };
                     if (JsIntrinsic.droppedArm(g.b.in.graph, g.b.in.interfaces, bir, case_inst, interner, g.b.in.release)) |branch| {
                         try g.guardArm(branch, never, start, @intCast(p));
                         continue;

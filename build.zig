@@ -79,6 +79,9 @@
 //!                                 run/ and browser/direct/ program and on
 //!                                 TodoMVC, against the native compiler,
 //!                                 byte for byte
+//!   zig build test-playground-page  drive the site in a headless Chrome
+//!                                 (`nix develop .#browser`; the editor
+//!                                 loads from a CDN, so it needs the network)
 //! And the cross-language benchmark (docs/design/compare-bench.md §12), which
 //! needs `nix develop .#compare` and is not a gate either:
 //!   zig build compare-gen         write the generated projects
@@ -191,6 +194,7 @@ const blackbox_suites = [_]struct { []const u8, u32 }{
     .{ "tests/blackbox/platform_test.zig", 1 },
     .{ "tests/blackbox/oracle_test.zig", 2 },
     .{ "tests/blackbox/page_fuzz_test.zig", 1 },
+    .{ "tests/blackbox/playground_page_test.zig", 1 },
 };
 
 /// Where `coverage-run` installs the instrumented compiler the suites
@@ -744,12 +748,31 @@ pub fn build(b: *std.Build) void {
     const playground_step = b.step("playground", "Write the playground's static site, with the compiler as ReleaseSmall WebAssembly, into zig-out/playground/");
     playground_step.dependOn(&b.addInstallDirectory(.{ .source_dir = b.path(playground_dir), .install_dir = .prefix, .install_subdir = playground_dir }).step);
     playground_step.dependOn(&shipped_wasm_install.step);
+    // TodoMVC is a sample (§4.3), kept once, where its benchmark keeps it.
+    playground_step.dependOn(&b.addInstallFileWithDir(
+        b.path("bench/todomvc/apps/beni/Sandbox.beni"),
+        .{ .custom = playground_dir ++ "/samples/browser-direct" },
+        "TodoMVC.beni",
+    ).step);
     // That compiler against the native one, on every `run/` and
     // `browser/direct/` program and on TodoMVC (§6). Not a gate: the LLVM
     // compile of the `.wasm` is about a minute and a half on one thread.
     // No budget, as for `test-browser`; takes `-Dcorpus`.
     const test_playground_step = b.step("test-playground", "Run the playground's WebAssembly compiler under Node on every run/ and browser/direct/ program and on TodoMVC, against the native compiler, byte for byte");
     bb.runSharded(test_playground_step, bb.artifact("tests/blackbox/playground_test.zig"), .{ .root = "tests/corpus", .wasm = .shipped, .budget = false }, playground_shards);
+    // The page in a headless Chrome (§6): the samples, the frame, the
+    // diagnostics, the tabs and the link. Not a gate: it needs a Chrome
+    // (`-Dchrome`, else `nix develop .#browser`'s on PATH) and the network,
+    // for the editor's CDN.
+    const page_step = b.step("test-playground-page", "Drive the playground in a headless Chrome: samples, frame, diagnostics, tabs and the shareable link (nix develop .#browser; the editor needs the network)");
+    const page_run = b.addSystemCommand(&.{ "node", "tests/browser/playground.mjs" });
+    page_run.addArg(installPath(b, playground_dir));
+    page_run.setCwd(b.path("."));
+    page_run.setEnvironmentVariable("BENI_CHROME", bb.chrome);
+    page_run.setEnvironmentVariable("BENI_CHROME_PROFILE_DIR", installPath(b, "tmp"));
+    page_run.has_side_effects = true;
+    page_run.step.dependOn(playground_step);
+    page_step.dependOn(&page_run.step);
 
     // ---- Cross-language benchmark (docs/design/compare-bench.md §3, §12). ----
     // The generator is its own target: it imports nothing from `src/`. It
@@ -1351,7 +1374,7 @@ const DebugInfo = enum {
 /// handed to it on the command line (`platformDirectory`). Each run is well
 /// under a second; the maker's compile is what an edit under `src/` adds to
 /// the path of every compiler, which is why its root reaches the checker and
-/// nothing after it.
+/// the reachability edge builder, and nothing after them.
 fn corePack(b: *std.Build, core: Core, sources: []const PlatformSource, id: BuildId) *std.Build.Module {
     const run = b.addRunArtifact(corePackMaker(b));
     run.setName(b.fmt("check {s} for a compiler", .{if (core.extra == null) core.dir else "variant core"}));

@@ -1,5 +1,5 @@
 {
-  "programs": 116456,
+  "programs": 116650,
   "minimumFraction": 0.95,
   "families": {
     "fixture": {
@@ -7,12 +7,12 @@
       "translated": 82
     },
     "sync": {
-      "programs": 44,
-      "translated": 14
+      "programs": 78,
+      "translated": 33
     },
     "targeted": {
-      "programs": 348,
-      "translated": 128
+      "programs": 508,
+      "translated": 228
     },
     "enumerate": {
       "programs": 55966,

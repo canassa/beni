@@ -7,7 +7,9 @@ BSD-3-Clause licence (`LICENSE`). Each Elm module is a beni module of the same
 name, with the same declarations in the same order, the same names, model,
 messages and logic. The only changes are the ones beni's syntax, semantics or
 platform force, and every kind of change is listed below. Nothing was rewritten
-to be more idiomatic, simplified or dropped.
+to be more idiomatic, simplified or dropped. One later repair removes a
+`Debug.log`, so that the game builds with `--release` (*What differs on the
+page*).
 
 **The raw port is frozen.** The commit that adds this file is the raw port, and
 the ownership counts in `docs/design/research/82-external-port-bike-wars.md` are
@@ -155,9 +157,14 @@ These capabilities come from beni's platform, not from a port:
   coordinate the game writes into an SVG attribute therefore reads `20.0`
   (`points="20.0,120.0 …"`, `viewBox="0.0 0.0 400.0 300.0"`). SVG parses both
   as the same number, so the drawing and the game do not change.
-- **Release builds.** `Helpers.toLine` calls `Debug.log` for a diagonal line.
-  As `elm make --optimize` refuses it, `beni build --release` refuses it
-  (`debug_in_release`).
+- **No `Debug.log` in `Helpers.toLine`.** For two trail points that make a
+  diagonal line, the original calls `Debug.log "Line invalid"` and returns
+  `Nothing`. The port returns `Nothing` and logs nothing. A `--release` build
+  refuses any use of `Debug` (`debug_in_release`), as `elm make --optimize`
+  does, and GitHub Pages publishes the game as a `--release` build
+  (`examples/build-pages.mjs`). The message went only to the browser console,
+  so the page does not change. This is a later repair, in its own commit, and
+  not part of the raw port.
 
 ## Behaviour the port keeps
 

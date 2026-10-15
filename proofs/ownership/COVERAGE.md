@@ -758,3 +758,42 @@ Unused explicit capture slots are skipped, and field captures are snapshotted
 without their ancestors and siblings. `regressions/bridge/` and the CI black-box
 self-test cover those contracts and the previously swallowed batch failure.
 No proof statement or shipping ownership rule was weakened.
+
+## Result, recursive payload and initialization coverage — 2026-10-15
+
+The newer executable set has 98 original plus 78 sync verdict fixtures and
+508 targeted programs. The historical 348 programs retain their indices; 160
+new targeted programs append to them. Historical sync fixture indices also
+remain unchanged. Current counts and evidence are in RESULTS.md.
+
+| Rule | Fixture / control | Boundary |
+|---|---|---|
+| Arm and block terminal result reads | `resultRead` / `arm-result`, `block-result` | Old terminal holders stay live across an earlier write; distinct-holder twins pass. Existing mutually exclusive branch twins still pass. |
+| Capture creation reads | `resultRead` / `capture-read` | A later reader closure keeps its captured outer path live. |
+| Recursive capture provenance | `recursiveResult` / `recursive-capture` | Recursive result substitution keeps the canonical environment and its captured write/once obligations. |
+| Callee environment disjointness | `calleeEnvironment` / `callee-capture` | A written argument is checked against the callee's actual captures; a distinct capture passes. |
+| Fold loan lifetime | `feedbackLoan` / `fold-loan` | An accumulator borrowed from a repeated source position must not be treated as an unconditional exclusive loan. |
+| `?` / Result error return | `question`, `twoFrames`, `recursiveQuestion` / `early-err` | Typed sums and actual CPS question lowering; nested operand case, inner-vs-outer definition, recursive Result fixpoint, both runtime arms. Expected values are asserted independently of interpreter equality. The shipping bridge emits actual `?`. |
+| Recursive types | `recursiveData`, `recursiveConsumer` / `recursive-payload` | Unbounded `Chain a = End | Link a (Chain a)`, list-bearing recursive payload retention, distinct payloads, recursive tail consumer. Native recursive ADT in the bridge. Arbitrary/mutually recursive type declarations and dictionary representatives remain outside this projection. |
+| Init transfer and captured locals | `initialization` / `init-shared`, `init-retained` | Init-only local/private roots pass; exported/shared roots and retained direct or helper-returned reader environments fail. Runtime entry projections remain explicit bridge skips. |
+| Init authority lifetime | `initializationRepublished` / `init-authority` | A subsequent module entry cannot clear a new publication using a previous entry's spent private-transfer authority. |
+| Init authority frame | `initializationFrame` / `init-frame` | A callee's summary cannot borrow pending module authority, even when its allocation has the same relative site. The unescaped local-allocation twin passes. |
+| Direct initializer reads | `initializationLoop` and direct-read guards | A free read in a traversal/focus/runtime-entry body is ineligible even with one syntactic occurrence. Repeated stored payloads reject; freshly allocated payloads pass. Direct source operands remain eligible. |
+| Function-valued private sources | `initializationFunctionRoot` | A function-bearing private value stays shared under #116's explicit backstop; a copied returned spine remains writable. |
+
+All twelve new holes are required twice: the fixed typed witness must be refused
+by the corrected checker and accepted with a disagreeing trace under the hole;
+the finite targeted product must independently find an accepted disagreement.
+The counts never treat an interpreter error, a typing error or an ordinary
+rejection as a caught hole. The baseline target campaign checks concrete result
+certificates as well as observations. No additional unproved statement was added.
+
+The bridge's Result-case RHS regression executes the actual emitted program:
+it must bind the inner Err and still return Ok 99. With the tail guard absent
+it returns Err 7, which fails the value check; the restored translator passes.
+`initializationDuplicatedCapture` also rejects a closure returning the same
+captured row in both model fields; the copied-result twin passes. Initialization
+coverage is confined to the Lean model, since entry/private-root programs remain
+explicit shipping-bridge skips. The zero-confirmed count covers the translated
+common subset, not initialization transfer. The historical fixed-stream pin has
+independent source/verdict/order/removal controls in the bridge CI self-test.

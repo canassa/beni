@@ -5940,8 +5940,9 @@ rank drop. None of that closure can be quantified at this boundary. Treat it
 as an already settled outer node, just as when another young node reaches an
 outer root absent from the pool. Its owning boundary still walks and checks
 it normally. Runtime-safety assertions check each newly attached or strictly
-rank-lowered dependency at its mutation site, so an invariant break is detected
-before a younger boundary could quantify it. These checks visit only the new
+rank-lowered dependency root at its mutation site, checking the root postcondition
+before a younger boundary could quantify it. This does not independently prove
+the transitive closure: I15 still rests on construction through `lowerTo`. These checks visit only the new
 or lowered edges, rather than rescanning the growing owner set. Structural
 roots keep the ordinary rank fold. This removes the
 repeated traversal of an outer receiver's accumulating pending dots at each

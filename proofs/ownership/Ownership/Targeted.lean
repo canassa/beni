@@ -63,12 +63,12 @@ def recursion (n : Int) (steps : Nat) (comparison : Prim) (keep : Bool) : Progra
     These complement the small grammar; they are not all core programs. -/
 def programs : List Program :=
   let ints : List Int := [-1, 0, 1, 2]
-  Sync.programs ++ ints.flatMap (fun n => [1,2,3].map (countBoundary n)) ++
+  Sync.legacyPrograms ++ ints.flatMap (fun n => [1,2,3].map (countBoundary n)) ++
   ints.flatMap (fun n => [Generator.bump, Generator.identL].map (consumingCapture n)) ++
   ints.map transitiveCapture ++
   ints.flatMap (fun n => ints.flatMap fun c => [Prim.eq, Prim.lt].flatMap fun op => [0,1].map (shapeJoin n c op)) ++
   ints.flatMap (fun n => [0,1].map (setExclusive n)) ++
-  ints.flatMap (fun n => [0,1,2].flatMap fun steps => [Prim.eq, Prim.lt].flatMap fun op => [false,true].map (recursion n steps op))
+  ints.flatMap (fun n => [0,1,2].flatMap fun steps => [Prim.eq, Prim.lt].flatMap fun op => [false,true].map (recursion n steps op)) ++ Sync.extraPrograms
 
 def run (config : Config := {}) (mode : Enumerate.Mode := .full)
     (acceptedOut : Option System.FilePath := none) : IO Bool := do

@@ -1,0 +1,9 @@
+{
+  "master": "dd38d162e10fb7256ef4604d9bfa8934edfde291",
+  "method": "Both the unmodified master and PR report all six recorded Bike Wars hashes stale on this host. Ran filtered test-run-hashes independently, checked expected runtime transcripts, compared every newly generated hash, then restored all tracked hash files from the index. No existing hash update is retained.",
+  "compiler_mode": "self-hosted ReleaseSafe",
+  "same_generated_hashes": {
+    "_expected.fuzz-run-hash": "fuzz v24.19.0 happy-dom-20.14.5 f9d0479a7a9b0600e988910f524734cc42014ec8c54f03a49d56f9a3c21c3fb1\n",
+    "_expected.run-hash": "dev v24.19.0 happy-dom-20.14.5 09d965fca1f9b9c995edfb0ebbc13d4e134c5bda7a57ac1e41efb2a5566fdcb8\nrelease v24.19.0 happy-dom-20.14.5 8cc7f5d05fda161d1e71931b47866f0fdda6f2c258fd8cfb5c00ca8f154c4989\ndev_fiber v24.19.0 happy-dom-20.14.5 24d065e88fe8545e135b0adcd9aa0d640048a6af65071b56bce30a59cfbd98d2\ntea_dev v24.19.0 happy-dom-20.14.5 c8a89430adfaae5cb9ddaf023ea003227d060c96c98def0b5bc8f142701f7b5f\ntea_release v24.19.0 happy-dom-20.14.5 c51460f3760da5d1645d0a7b1ac97fd04343e85c88412eff98d6696c9707712a\n"
+  }
+}

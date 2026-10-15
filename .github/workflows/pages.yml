@@ -1,0 +1,111 @@
+# Deploys the example programs to GitHub Pages on every push to master.
+# Every pull request builds the site and does not deploy it. The build has
+# no paths filter: it reads the compiler, core/, the platforms, the flake,
+# build.zig and build.zig.zon, the playground and the examples, and a list
+# of those paths would miss the next input that is added.
+#
+# Pages takes its site from GitHub Actions (Settings, Pages, Source), so the
+# site is this workflow's artifact, served as it is: no branch, and no
+# Jekyll to drop the paths that start with "_" (backend.md §2). The site is
+# https://<owner>.github.io/<repository>/: the index at its root and each
+# program under /<name>/, built with the base /<repository>/<name>/
+# (examples/build-pages.mjs).
+name: pages
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+permissions: {}
+
+# Deploys run one at a time, and a newer push replaces a waiting one. A
+# newer push to a pull request cancels its older run.
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('pages-pr-{0}', github.event.pull_request.number) || 'pages-deploy' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    name: build the examples
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # The same pinned installer as ci.yml.
+      - name: nix-installer v3.23.2
+        run: |
+          curl -sSfL -o "$RUNNER_TEMP/nix-installer" \
+            https://github.com/DeterminateSystems/nix-installer/releases/download/v3.23.2/nix-installer-x86_64-linux
+          echo "d3c174b95b948ab1744a9a3507599d030bf31a39033305e8769b51c3134daeff  $RUNNER_TEMP/nix-installer" | sha256sum --check
+      - uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
+        with:
+          source-binary: ${{ runner.temp }}/nix-installer
+          diagnostic-endpoint: ""
+
+      # ci.yml's caches, read only: this workflow saves nothing.
+      - name: restore the Nix store
+        uses: nix-community/cache-nix-action/restore@7df957e333c1e5da7721f60227dbba6d06080569 # v7
+        with:
+          primary-key: nix-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.nix', 'flake.lock') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-${{ runner.arch }}-
+      - name: dev shell
+        run: nix develop --command true
+      - name: restore the Zig caches
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            .zig-cache
+            ~/.cache/zig
+          key: zig-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock') }}-${{ github.sha }}
+          restore-keys: zig-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock') }}-
+
+      - name: zig build
+        run: nix develop --command zig build
+
+      # The playground (issue #128) joins the site when its build step
+      # exists. The step writes a static site to zig-out/playground/, which
+      # the site build copies to /playground/. Until then, the index marks
+      # the playground as coming.
+      - name: zig build playground
+        id: playground
+        run: |
+          steps=$(nix develop --command zig build --list-steps)
+          if grep -q '^  playground ' <<<"$steps"; then
+            nix develop --command zig build playground
+            echo "args=--playground=zig-out/playground" >> "$GITHUB_OUTPUT"
+          else
+            echo "no playground step: the index marks the playground as coming"
+          fi
+
+      - name: build the site
+        env:
+          BASE: /${{ github.event.repository.name }}/
+          PLAYGROUND: ${{ steps.playground.outputs.args }}
+        run: nix develop --command node examples/build-pages.mjs zig-out/bin/beni "$RUNNER_TEMP/site" "$BASE" ${PLAYGROUND:+"$PLAYGROUND"}
+
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: ${{ runner.temp }}/site
+          retention-days: 7
+
+  deploy:
+    name: deploy to GitHub Pages
+    needs: build
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    timeout-minutes: 10
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

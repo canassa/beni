@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Not found · beni examples</title>
+    <!--
+      GitHub Pages answers a path that names no file with this page. Under a
+      program that routes by path, such as /conduit/article/<slug> after a
+      reload, the page runs that program, which reads its route from the
+      address. This page stands in for the program's default page shell,
+      which holds only the entry script and an empty body, so such a
+      program declares no "html" shell (examples/build-pages.mjs checks it
+      and fills in the list of programs).
+    -->
+    <script type="module">
+      const app = {{apps}}.find((path) => location.pathname.startsWith(path));
+      const notFound = document.getElementById("not-found");
+      if (app) {
+        notFound.remove();
+        import(`${app}_main.mjs`);
+      } else {
+        notFound.hidden = false;
+      }
+    </script>
+    <!--
+      Every rule is under #not-found, so none of them touches a program
+      that this page runs: the program gets its default page shell's look.
+      #not-found covers the viewport, which gives the page its background.
+    -->
+    <style>
+      #not-found {
+        --bg: #fbfaf7;
+        --fg: #1d1c1a;
+        --accent: #b4381f;
+        position: fixed;
+        inset: 0;
+        overflow: auto;
+        background: var(--bg);
+        color: var(--fg);
+        font: 16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+      }
+      @media (prefers-color-scheme: dark) {
+        #not-found { --bg: #161513; --fg: #ece9e3; --accent: #f07a5c; }
+      }
+      #not-found > div { max-width: 46rem; margin: 0 auto; padding: 3rem 1rem; }
+      #not-found a { color: var(--accent); }
+    </style>
+  </head>
+  <body>
+    <main id="not-found" hidden>
+      <div>
+        <h1>Not found</h1>
+        <p>No page has this address. <a href="{{base}}">The beni examples</a> are here.</p>
+      </div>
+    </main>
+  </body>
+</html>

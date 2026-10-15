@@ -572,7 +572,9 @@ def obsTyped (ds : List Decl) (o : Observation) (t : Ty) : Bool :=
   | .int _, .int => true
   | .record os, .record ts =>
     os.length == ts.length && (os.attach.zip ts).all fun (o, t) => obsTyped ds o.val t
-  | .list os, .list t | .list os, .builder t => os.attach.all fun o => obsTyped ds o.val t
+  | .record [.int tag, e, a], .result err ok =>
+    if tag == 0 then obsTyped ds e err else tag == 1 && obsTyped ds a ok
+  | .list os, .chain t | .list os, .list t | .list os, .builder t => os.attach.all fun o => obsTyped ds o.val t
   | .closure id caps, .fn ps r =>
     match ds[id]? with
     | some d => d.parameters == ps && d.result == r && caps.length == d.captures.length &&
@@ -582,7 +584,8 @@ def obsTyped (ds : List Decl) (o : Observation) (t : Ty) : Bool :=
 termination_by sizeOf o
 decreasing_by
   all_goals simp_wf
-  all_goals have := List.sizeOf_lt_of_mem o.property
+  all_goals try have := List.sizeOf_lt_of_mem o.property
+  all_goals simp_all +arith
   all_goals omega
 
 /-- The declaration the type checker checks a main expression as. -/

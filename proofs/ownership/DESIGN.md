@@ -9,7 +9,8 @@ closure captures. All primitive operands are atoms. A let binds its entire
 right-hand side before its continuation. Both arms of a conditional are checked.
 Functions are a finite declaration table; closures reference declarations.
 Self recursion uses an explicit recursive call. Mutually recursive declarations
-and recursive data types are outside this first core.
+remain outside the core. Result, recursive Chains and entry initialization are
+specified in the final section below.
 
 Two fuelled interpreters execute the same syntax. The value interpreter allocates
 a new array for each writer; the update interpreter replaces the existing heap
@@ -246,7 +247,8 @@ has no offset views with which to execute the runtime's re-cons optimization;
 its fresh-front precision and the backing-array identity claim remain outside
 this model. `withDefault (map ...)` is tested after case lowering to an integer
 branch; eager handlers and a later default read are distinct rejected twins.
-Sum constructors and `?` early return are not modelled by that encoding.
+That integer encoding does not model sum constructors or `?`; the typed Result
+extension in the final section now models them independently.
 
 Markup is a positional record of render and event slots. `events` projects only
 the event slot; ordinary alias checks see the complete record. A constructor
@@ -282,3 +284,72 @@ container. `canonicalOwned` tests those actual aliases before abstraction, and
 its owned set is part of each summary's cache key. The old-container premise
 therefore carries the needed separation across scope/summary instantiation;
 checking only the canonical result's different origin names would not.
+
+## Result, recursive payloads and entry initialization (2026-10-15)
+
+`Ty.result error success` has typed `ok`/`err` constructors and `resultCase`.
+Both interpreters encode observations as a three-field record: an integer tag
+(0 Err, 1 Ok), error payload and success payload. The inactive field is zero;
+the abstract inactive alternative is bottom. The checker joins reachable arms
+and their effects, with each payload binder confined to its own arm. Abstract
+Result paths use fields 1 and 2. A bottom payload marks an impossible arm;
+a zero-cell list or scalar is inhabited and does not mark an impossible arm.
+
+`Question.Body` lowers a question by evaluating its operand once, then returning
+the complete Err from this definition or running its success continuation. The
+Err constructor's success type is the enclosing definition's, not the operand's.
+Calls remain ordinary expressions: an inner question cannot terminate an outer
+definition. Fixtures assert concrete expected values as well as interpreter
+agreement, including the two-frame case. The bridge recognizes this canonical
+error arm in definition-tail position and emits the real source `?`; other
+eliminations emit Result cases. A matching case in a let RHS cannot return
+from the surrounding definition. Callback bodies start a fresh tail context.
+The bridge normalizes native Result tags back to the three observation fields.
+
+`Ty.chain payload` denotes the unbounded recursive ADT
+`Chain a = End | Link a (Chain a)`. Its type does not contain a depth bound.
+Constructors and exhaustive `chainCase` are typed; a recursive consumer passes
+a tail with the same recursive type. Both interpreters use an array encoding,
+copying the immutable spine at Link and at tail selection. Only payload arrays
+can be written: no list writer accepts a Chain. The abstract domain merges
+payload positions into a list's element shape, preserving their provenance and
+meeting separation certificates. The tail conservatively includes every payload
+position, so a head write with a retained tail can be refused approximately.
+This models recursive payload retention without pretending to model arbitrary
+named/mutually recursive ADTs or the compiler's dictionary trees. The shipping
+bridge uses a native recursive BridgeChain declaration and normalizes its spine
+to the array observation; it never substitutes a mutating JavaScript runtime.
+
+`entry initial retained model body` evaluates initialization once, binds the
+model and runs its body while every other retained entry field stays observable.
+The interpreters retain actual values, including closure environments; the checker
+publishes their cells as escapes. A carried class therefore keeps its instantiated
+captures. An ordinary local used only by init can transfer. `privateRoot` additionally
+marks a closed, unexported top-level initialization binding as shared until entry.
+A source-read proof authorizes its transfer through a single straight chain of
+aliases, records and captures ending in initialization, with no other reads.
+Free reads inside traversal, focus or nested entry bodies, and recursive
+initializer reads, are ineligible even with one syntactic occurrence. Explicit
+closure capture atoms are eager reads in this core; deferred global references
+are not encoded as eager captures. Unsupported graphs remain shared. Already
+escaped cells and function-bearing private initializer results are never eligible.
+Transfer authority belongs only to the module-initializer context, never to
+a callee, traversal/focus summary or runtime-entry body; relative allocation sites in another
+frame cannot name it. It is consumed once at entry, so a subsequent entry cannot clear
+a later publication. Entry removes only the private publication before checking initialization; new
+escapes from initialization stay escapes. Exported/shared roots never transfer.
+Every initializer sees the retained fields and the body's free outer uses as live.
+This projects PR #116's rule and captured-local correction; it is not a renderer,
+scheduler or proof of its still-open compiler implementation. Entry remains an
+explicit counted bridge skip.
+
+Six independent controls weaken the existing §29 rules: `arm-result`,
+`block-result`, `capture-read`, `fold-loan` (granting an unconditional destructive
+position loan and forgetting its source observer), `recursive-capture`, and
+`callee-capture`. Six controls weaken the new rules: `early-err`,
+`recursive-payload`, `init-shared`, `init-retained`, `init-authority`, and `init-frame`. Each must have one fixed
+witness and be caught by the targeted finite product through an accepted
+interpreter disagreement; ordinary refusals, crashes and untyped programs do not
+count. The frozen per-call checker explicitly refuses the new syntax. The three
+existing unproved soundness statements remain unproved; extending the executable
+model does not strengthen their proof status.

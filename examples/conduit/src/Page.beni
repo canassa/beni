@@ -84,7 +84,7 @@ footer : Html msg
 footer =
     <footer>
         <div class="container">
-            <a class="logo-font" href="/">conduit</a>
+            <a class="logo-font" href={Route.href Route.Home}>conduit</a>
             <span class="attribution">
                 An interactive learning project from Thinkster. Code &amp; design licensed under MIT.
             </span>
