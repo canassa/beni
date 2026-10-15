@@ -13,7 +13,11 @@ too. I removed the hook from the `ownership` shell and corrected
 **What I learned.** #173's comment in the `ownership` shell said that Zorg
 reads `ZIG_GLOBAL_CACHE_DIR`. That is wrong. Zorg reads
 `ZORG_GLOBAL_CACHE_DIR`, and its own test keeps it in `~/.cache/zorg` when
-`ZIG_GLOBAL_CACHE_DIR` is set. So the hook did nothing in `ownership`. I
+`ZIG_GLOBAL_CACHE_DIR` is set (Zorg `v0.17.1-zorg.1`,
+`lib/zorg/std/zig.zig:1720`, test "zorg keeps its global cache apart from
+upstream zig"). A probe `build.zig` showed that `b.graph.path(.global_cache,
+…)` is public: `zig build --list-steps` compiled it, and `addCopyFile` took
+the path. So the hook did nothing in `ownership`. I
 wrote the claim without a run of `zorg env`. A review that only checks
 the code against itself does not find an API name that is wrong. Run the
 command, or grep the pinned library, before a comment names an API.

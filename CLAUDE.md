@@ -355,17 +355,18 @@ time a ReleaseFast LLVM beni.
 Never share one between git worktrees: a worktree was handed a stale binary
 built from another worktree's sources (commit `bfc234325`). Zig's GLOBAL cache
 holds the build runner, compiler-rt, the ZIR of Zig's library, each module's
-generated `builtin.zig` and fetched packages, and no file of a worktree. No
-build step may put a file of the worktree into it: in Zig 0.17, that is a path
-with the base `.global_cache`, as in `b.graph.path(.global_cache, …)`. So
-every worktree of beni shares one global cache: every dev shell in `flake.nix`
-that has Zig, and so direnv, sets `ZIG_GLOBAL_CACHE_DIR` to
-`${XDG_CACHE_HOME:-~/.cache}/zig-beni`. In the default `~/.cache/zig`, another
-project's Nix build of Zig 0.17.0 evicted beni's build runner and compiler-rt,
-and the next `zig build` compiled them again for 1 to 3 minutes (#161). The
-shells keep a value that is set already, and CI sets `~/.cache/zig`, the path
-its cache entries hold. Outside a dev shell, set the variable yourself.
-`flake.nix`'s `zigGlobalCache` has the full argument.
+generated `builtin.zig` and fetched packages by their hash, and no file of a
+worktree. No build step may put a file of the worktree into it: in Zig 0.17,
+that is a path with the base `.global_cache`, as in
+`b.graph.path(.global_cache, …)`. So every worktree of beni shares one global
+cache: every dev shell in `flake.nix` that has Zig, and so direnv, sets
+`ZIG_GLOBAL_CACHE_DIR` to `${XDG_CACHE_HOME:-~/.cache}/zig-beni`. In the
+default `~/.cache/zig`, another project's Nix build of Zig 0.17.0 evicted
+beni's build runner and compiler-rt, and the next `zig build` compiled them
+again for 1 to 3 minutes (#161). The shells keep a value that is set already,
+and CI sets `~/.cache/zig`, the path its cache entries hold. Outside a dev
+shell, set the variable yourself. `flake.nix`'s `zigGlobalCache` has the full
+argument.
 
 **Every test has a budget of 4 300 million instructions** (about one second of
 quiet CPU), counted for the test and every process it starts; a test over it
