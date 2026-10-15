@@ -305,7 +305,15 @@ pub const State = struct {
 
     fn localTarget(s: *State, target: Bir.DeclIndex, args: []const Pair, region: Bir.Inst.Index) Allocator.Error!Pair {
         if (target.int() >= s.bir.decls.len or s.bir.decl(target).kind != .schema) return s.errPair();
-        if (s.status[target.int()] == .building) {
+        const status = s.status[target.int()];
+        // A tagged target is its nominal endpoints, whatever its payloads
+        // are, so it is named without being built (`buildAll` builds every
+        // one): a cycle through it is no structural recursion. Built here, a
+        // record schema between two tagged ones that name it — `Expr` holds
+        // `Stmts`, `Stmts` holds `Stmt`, `Stmt` holds `Stmts` — met itself
+        // still building, a false `recursive_alias` in one declaration order.
+        const named_only = status == .building or (status == .pending and s.isTagged(target));
+        if (named_only) {
             const root = s.bir.decl(target).schema_body.unwrap() orelse return s.errPair();
             if (s.findTagged(root) == null) {
                 try s.recursive_aliases.append(s.allocator, region);
@@ -606,6 +614,10 @@ pub const State = struct {
             .null => "Null",
             .list => "List",
         };
+    }
+    fn isTagged(s: *const State, di: Bir.DeclIndex) bool {
+        const root = s.bir.decl(di).schema_body.unwrap() orelse return false;
+        return s.findTagged(root) != null;
     }
     fn findTagged(s: *const State, root: Bir.Inst.Index) ?Bir.Inst.Index {
         var at = root;

@@ -528,7 +528,8 @@ const Gen = struct {
         const params = try g.l.scratch.alloc(NameIndex, g.params);
         for (params, 0..) |*slot, i| slot.* = try g.paramName(@intCast(i));
         const self = try g.local("$self");
-        var body = try g.descNode(g.def.root, params, if (recursive) self else null);
+        const scope: []const Bound = if (recursive) &.{.{ .decl = g.ref.decl, .name = self }} else &.{};
+        var body = try g.descNode(g.def.root, params, scope);
         if (recursive) {
             body = try g.call(try g.core("describedRecursive"), &.{ try g.str(g.l.text(g.schema)), try g.arrowOf(&.{self}, body) });
         }
@@ -642,11 +643,17 @@ const Gen = struct {
         return g.call(desc, args.items);
     }
 
-    /// A node's description: an expression that makes its node. `self` is
-    /// the definition's own reference inside its `describedRecursive`, and
-    /// a generic declaration's parameters are nodes — its root turns each
+    /// A definition whose reference cell is in scope while its body is
+    /// described: `name` is its `describedRecursive` parameter.
+    const Bound = struct { decl: u32, name: NameIndex };
+
+    /// A node's description: an expression that makes its node. `scope`
+    /// holds the definitions whose `describedRecursive` the node is inside,
+    /// outermost first — empty outside a reference cycle — and a reference
+    /// to one of them with the parameters as they are is its cell. A
+    /// generic declaration's parameters are nodes — its root turns each
     /// schema argument into its node (`describedOf`).
-    fn descNode(g: *Gen, n: PNode, params: []const NameIndex, self: ?NameIndex) Allocator.Error!Node.Index {
+    fn descNode(g: *Gen, n: PNode, params: []const NameIndex, scope: []const Bound) Allocator.Error!Node.Index {
         const plan = g.plan;
         switch (SchemaGraph.tag(plan, n)) {
             .primitive => return g.call(try g.core("describedOf"), &.{try g.core(primitiveBuilder(SchemaGraph.lhs(plan, n)))}),
@@ -657,43 +664,28 @@ const Gen = struct {
             },
             .reference => {
                 const t = g.sg.target(g.ref.module, @fromBackingInt(@intCast(SchemaGraph.lhs(plan, n)))) orelse return g.lit(.undefined_lit);
-                const words = SchemaGraph.args(plan, n);
-                if (self) |s| if (t.module == g.ref.module and t.decl == g.ref.decl and isIdentity(plan, words, params.len)) return g.id(s);
-                var args: std.ArrayList(Node.Index) = .empty;
-                for (words) |a| try args.append(g.l.scratch, try g.descNode(@fromBackingInt(@intCast(a)), params, self));
-                const named = try g.id(try schemaName(g.l, t, "description"));
-                if (g.sg.paramCount(t) == 0) return named;
-                return g.call(named, args.items);
+                return g.descRef(t, SchemaGraph.args(plan, n), params, scope);
             },
-            .list => return g.call(try g.core("describedList"), &.{try g.descNode(@fromBackingInt(@intCast(SchemaGraph.lhs(plan, n))), params, self)}),
-            .nullable => return g.call(try g.core("describedNullable"), &.{try g.descNode(@fromBackingInt(@intCast(SchemaGraph.lhs(plan, n))), params, self)}),
+            .list => return g.call(try g.core("describedList"), &.{try g.descNode(@fromBackingInt(@intCast(SchemaGraph.lhs(plan, n))), params, scope)}),
+            .nullable => return g.call(try g.core("describedNullable"), &.{try g.descNode(@fromBackingInt(@intCast(SchemaGraph.lhs(plan, n))), params, scope)}),
             .conversion => {
-                const source = try g.descNode(@fromBackingInt(@intCast(SchemaGraph.lhs(plan, n))), params, self);
+                const source = try g.descNode(@fromBackingInt(@intCast(SchemaGraph.lhs(plan, n))), params, scope);
                 return g.call(try g.core("describedConverted"), &.{ source, try g.id(try g.viaName(SchemaGraph.rhs(plan, n))) });
             },
-            .check, .annotation => return g.descNode(@fromBackingInt(@intCast(SchemaGraph.lhs(plan, n))), params, self),
-            .record => return g.descRecord(n, params, self),
-            .tagged => return g.descTagged(n, params, self),
+            .check, .annotation => return g.descNode(@fromBackingInt(@intCast(SchemaGraph.lhs(plan, n))), params, scope),
+            .record => return g.descRecord(n, params, scope),
+            .tagged => return g.descTagged(n, params, scope),
             // A derived codec's (schema.md §12.10).
-            .codec_ref => {
-                const t = g.sg.codecTarget(g.ref.module, SchemaGraph.lhs(plan, n));
-                const words = SchemaGraph.args(plan, n);
-                if (self) |s| if (t.module == g.ref.module and t.decl == g.ref.decl and isIdentity(plan, words, params.len)) return g.id(s);
-                var args: std.ArrayList(Node.Index) = .empty;
-                for (words) |a| try args.append(g.l.scratch, try g.descNode(@fromBackingInt(@intCast(a)), params, self));
-                const named = try g.id(try schemaName(g.l, t, "description"));
-                if (g.sg.paramCount(t) == 0) return named;
-                return g.call(named, args.items);
-            },
+            .codec_ref => return g.descRef(g.sg.codecTarget(g.ref.module, SchemaGraph.lhs(plan, n)), SchemaGraph.args(plan, n), params, scope),
             .codec_value => return g.call(try g.core("describedOf"), &.{try g.codecValue(n)}),
             .maybe => return g.call(try g.core("describedMaybe"), &.{
-                try g.descNode(@fromBackingInt(@intCast(SchemaGraph.lhs(plan, n))), params, self),
+                try g.descNode(@fromBackingInt(@intCast(SchemaGraph.lhs(plan, n))), params, scope),
                 try g.num(SchemaGraph.rhs(plan, n)),
             }),
             .tuple => {
                 const elems = SchemaGraph.elements(plan, n);
                 var items: std.ArrayList(Node.Index) = .empty;
-                for (elems) |e| try items.append(g.l.scratch, try g.descNode(@fromBackingInt(@intCast(e)), params, self));
+                for (elems) |e| try items.append(g.l.scratch, try g.descNode(@fromBackingInt(@intCast(e)), params, scope));
                 const xs = try g.fresh("$xs");
                 var values: std.ArrayList(Node.Index) = .empty;
                 for (0..elems.len) |i| try values.append(g.l.scratch, try g.indexOf(try g.id(xs), try g.num(@intCast(i))));
@@ -704,8 +696,31 @@ const Gen = struct {
                 const back = try g.arrowOf(&.{t}, try g.l.arrayNode(parts.items, g.p));
                 return g.call(try g.core("describedTuple"), &.{ try g.l.arrayNode(items.items, g.p), there, back });
             },
-            .constructors => return g.descCtors(n, params, self),
+            .constructors => return g.descCtors(n, params, scope),
         }
+    }
+
+    /// A reference to definition `t` — a `schema` declaration's or, by a
+    /// `codec_ref`, a derived codec's — with schema arguments `words`.
+    fn descRef(g: *Gen, t: SchemaGraph.Ref, words: []const u32, params: []const NameIndex, scope: []const Bound) Allocator.Error!Node.Index {
+        if (scope.len != 0 and t.module == g.ref.module and isIdentity(g.plan, words, params.len)) {
+            for (scope) |b| if (b.decl == t.decl) return g.id(b.name);
+            // Another generic member of the cycle, given these
+            // parameters as they are: its body, here, under a cell
+            // of its own. Its factory would make a new cell of
+            // this definition on every call, so a cycle of generic
+            // declarations would describe without end.
+            if (params.len != 0 and g.sg.paramCount(t) == params.len and
+                try g.sg.reaches(g.l.scratch, t.module, t.decl, scope[0].decl))
+            {
+                return g.inlined(t, params, scope);
+            }
+        }
+        var args: std.ArrayList(Node.Index) = .empty;
+        for (words) |a| try args.append(g.l.scratch, try g.descNode(@fromBackingInt(@intCast(a)), params, scope));
+        const named = try g.id(try schemaName(g.l, t, "description"));
+        if (g.sg.paramCount(t) == 0) return named;
+        return g.call(named, args.items);
     }
 
     /// A tuple of `values`: `⊤`'s `null` for none, else §4's object of
@@ -732,14 +747,14 @@ const Gen = struct {
     }
 
     /// `describedConstructors([[name, [nodes], inject, project], …])`.
-    fn descCtors(g: *Gen, n: PNode, params: []const NameIndex, self: ?NameIndex) Allocator.Error!Node.Index {
+    fn descCtors(g: *Gen, n: PNode, params: []const NameIndex, scope: []const Bound) Allocator.Error!Node.Index {
         const plan = g.plan;
         var rows: std.ArrayList(Node.Index) = .empty;
         for (SchemaGraph.ctors(plan, n)) |c| {
             const cc = (try g.codecCtor(n, c)) orelse continue;
             const arg_nodes = SchemaGraph.ctorArgs(plan, c);
             var descs: std.ArrayList(Node.Index) = .empty;
-            for (arg_nodes) |a| try descs.append(g.l.scratch, try g.descNode(@fromBackingInt(@intCast(a)), params, self));
+            for (arg_nodes) |a| try descs.append(g.l.scratch, try g.descNode(@fromBackingInt(@intCast(a)), params, scope));
             const xs = try g.fresh("$xs");
             var built: std.ArrayList(Node.Index) = .empty;
             for (0..arg_nodes.len) |i| try built.append(g.l.scratch, try g.indexOf(try g.id(xs), try g.num(@intCast(i))));
@@ -762,10 +777,29 @@ const Gen = struct {
         return g.call(try g.core("describedConstructors"), &.{try g.l.arrayNode(rows.items, g.p)});
     }
 
+    /// `describedRecursive("T", $self => …)` of declaration `t`'s body,
+    /// described with its own names (its constructors, its `via`s) over
+    /// `params`, inside `scope` and its own cell.
+    fn inlined(g: *Gen, t: SchemaGraph.Ref, params: []const NameIndex, scope: []const Bound) Allocator.Error!Node.Index {
+        const def = g.sg.definition(t.module, t.decl) orelse return g.lit(.undefined_lit);
+        var sub = g.*;
+        sub.ref = t;
+        sub.def = def;
+        sub.codec = g.sg.codecIndex(t.module, t.decl) != null;
+        sub.schema = if (sub.codec) InternPool.WellKnown.codec.symbol() else g.l.bir.symbol(g.l.bir.decls[t.decl].name);
+        sub.params = def.params_end - def.params_start;
+        const self = try g.fresh("$self");
+        const inner = try g.l.scratch.alloc(Bound, scope.len + 1);
+        @memcpy(inner[0..scope.len], scope);
+        inner[scope.len] = .{ .decl = t.decl, .name = self };
+        const body = try sub.descNode(def.root, params, inner);
+        return g.call(try g.core("describedRecursive"), &.{ try g.str(g.l.text(sub.schema)), try g.arrowOf(&.{self}, body) });
+    }
+
     /// `describedRecord([describedField(name, key, optional, node), …], to,
     /// from)`: the mapping between the left-nested product and the record
     /// written out once, for both endpoints.
-    fn descRecord(g: *Gen, n: PNode, params: []const NameIndex, self: ?NameIndex) Allocator.Error!Node.Index {
+    fn descRecord(g: *Gen, n: PNode, params: []const NameIndex, scope: []const Bound) Allocator.Error!Node.Index {
         const fields = SchemaGraph.fields(g.plan, n);
         var fs: std.ArrayList(Node.Index) = .empty;
         for (fields) |f| {
@@ -773,11 +807,11 @@ const Gen = struct {
             // A derived record's `Maybe` field (schema.md §12.4): its key
             // absent is `Nothing`, and its node the `maybe`'s inner one.
             if (SchemaGraph.isMaybeField(g.plan, f)) {
-                const inner = try g.descNode(@fromBackingInt(@intCast(SchemaGraph.lhs(g.plan, f.child))), params, self);
+                const inner = try g.descNode(@fromBackingInt(@intCast(SchemaGraph.lhs(g.plan, f.child))), params, scope);
                 try fs.append(g.l.scratch, try g.call(try g.core("describedMaybeField"), &.{ try g.str(g.l.text(name)), inner, try g.num(SchemaGraph.rhs(g.plan, f.child)) }));
                 continue;
             }
-            const child = try g.descNode(f.child, params, self);
+            const child = try g.descNode(f.child, params, scope);
             try fs.append(g.l.scratch, try g.call(try g.core("describedField"), &.{
                 try g.str(g.l.text(name)),
                 try g.str(SchemaGraph.literal(g.plan, f.external)),
@@ -828,7 +862,7 @@ const Gen = struct {
 
     /// `describedTagged("key", [describedVariant(name, tag, payload,
     /// inject, project), …])`, a nullary variant's payload `null`.
-    fn descTagged(g: *Gen, n: PNode, params: []const NameIndex, self: ?NameIndex) Allocator.Error!Node.Index {
+    fn descTagged(g: *Gen, n: PNode, params: []const NameIndex, scope: []const Bound) Allocator.Error!Node.Index {
         const plan = g.plan;
         const discriminator = SchemaGraph.literal(plan, @fromBackingInt(@intCast(SchemaGraph.lhs(plan, n))));
         var variants: std.ArrayList(Node.Index) = .empty;
@@ -838,7 +872,7 @@ const Gen = struct {
             const v = plan.variants[vi];
             const name = SchemaGraph.symbol(plan, v.name);
             const tag_text = SchemaGraph.literal(plan, v.external);
-            const payload = if (v.payload.unwrap()) |p| try g.descNode(p, params, self) else try g.lit(.null_lit);
+            const payload = if (v.payload.unwrap()) |p| try g.descNode(p, params, scope) else try g.lit(.null_lit);
             const inject, const project = try g.injection(info, @intCast(order), name, v.payload != .none);
             try variants.append(g.l.scratch, try g.call(try g.core("describedVariant"), &.{
                 try g.str(g.l.text(name)),

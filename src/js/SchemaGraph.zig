@@ -853,16 +853,22 @@ fn paramsAt(
 /// its description is then built under `Schema.recursive`. A cycle cannot
 /// cross a module, since modules import in a DAG.
 pub fn recursive(g: SchemaGraph, scratch: Allocator, m: Graph.Index, decl: u32) Allocator.Error!bool {
-    // A depth-first search from `decl` over its module's references: is
-    // `decl` reachable from itself?
+    return g.reaches(scratch, m, decl, decl);
+}
+
+/// Whether declaration `to` of `m` is reachable from declaration `from`'s
+/// references, one reference or more: `from` and `to` are then in one
+/// reference cycle when `to` reaches `from` too.
+pub fn reaches(g: SchemaGraph, scratch: Allocator, m: Graph.Index, from: u32, to: u32) Allocator.Error!bool {
+    // A depth-first search from `from` over its module's references.
     var stack: std.ArrayList(u32) = .empty;
     var visited: std.ArrayList(u32) = .empty;
     const plan = g.planOf(m);
-    try stack.append(scratch, decl);
+    try stack.append(scratch, from);
     var first = true;
     while (stack.pop()) |at| {
         if (!first) {
-            if (at == decl) return true;
+            if (at == to) return true;
             var done = false;
             for (visited.items) |v| done = done or v == at;
             if (done) continue;

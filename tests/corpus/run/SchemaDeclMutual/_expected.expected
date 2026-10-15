@@ -1,0 +1,16 @@
+-- a tagged pair
+Ok Ok {"o":"one","next":[{"e":"more","next":[{"o":"one","next":[{"e":"end"}]}]}]}
+Err decoding Encoded UnknownTag /next/0/next/0/o unknown tag; expected "one"
+equal, not less
+unequal, not less
+-- a ring of three
+Ok Ok {"a":"b","b":{"b":"c","c":{"c":"a","a":{"a":"end"}}}}
+Err decoding Encoded MissingKey /b/c/a/b/b missing key "b"
+-- through a record schema
+Ok Ok {"k":"block","body":{"items":[{"s":"eval","expr":{"k":"num","value":1}},{"s":"nested","inner":{"items":[]}}]}}
+Err decoding Encoded WrongShape /body/items/0/expr/value expected a number
+unequal, less
+-- a generic pair
+Ok Ok {"ping":"value","value":1,"pong":{"pong":"next","ping":{"ping":"value","value":2,"pong":{"pong":"next","ping":{"ping":"end"}}}}}
+Err decoding Encoded WrongShape /pong/ping/value expected a number
+equal, not less
