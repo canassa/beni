@@ -1,0 +1,41 @@
+-- Proposed surface, not accepted by today's compiler.
+-- Action is a typed, deferred DOM callback, not an ordinary eager call.
+-- An action commits its transaction atomically; render runs after commit.
+-- Model snapshots do not escape the owned component.
+import Html exposing (Html, Action)
+
+component Instance
+    card : String, Int, Bool → Html Action
+    card title count left =
+        <article><h3>{title}</h3><output>{count}</output><button onClick={Child left 5}>Child action</button></article>
+
+    branch : Int, Int, Bool → Html Action
+    branch level count left =
+        if level == 0 then card "Leaf" count left else <div class="nested">{branch (level - 1) count left}</div>
+
+    type alias Model =
+        left6797 : Int
+        right6797 : Int
+        expanded6797 : Bool
+
+
+    init : ⊤ → Model
+    init ⊤ = { left6797 = 0, right6797 = 5, expanded6797 = True }
+
+    state model : Model = init ⊤
+
+    action Child (left : Bool) (amount : Int) =
+        transaction
+            let old = model
+            model ←
+                if left then { old | left6797 = old.left6797 + amount } else { old | right6797 = old.right6797 + amount }
+
+    action Collapse =
+        transaction
+            let old = model
+            model ←
+                { old | expanded6797 = not old.expanded6797 }
+
+    view : Html Action
+    view =
+        <section id="s0" data-shape="nested"><h2>nested 17/0 Work</h2><div class="level-0"><button id="s0-collapse" onClick={Collapse}>Collapse</button><p id="s0-total">{model.left6797 + model.right6797}</p><div hidden={not model.expanded6797}>{branch 2 model.left6797 True}{branch 3 model.right6797 False}</div></div></section>

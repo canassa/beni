@@ -1,0 +1,46 @@
+-- Proposed surface, not accepted by today's compiler.
+-- Action is a typed, deferred DOM callback, not an ordinary eager call.
+-- An action commits its transaction atomically; render runs after commit.
+-- Model snapshots do not escape the owned component.
+import Html exposing (Html, Action)
+
+component Instance
+    type alias Model =
+        open7423 : Bool
+        draft7423 : String
+        saved7423 : String
+        visits7423 : Int
+
+
+    init : ⊤ → Model
+    init ⊤ = { open7423 = False, draft7423 = "", saved7423 = "", visits7423 = 0 }
+
+    state model : Model = init ⊤
+
+    action Open =
+        transaction
+            let old = model
+            model ←
+                { old | open7423 = True, draft7423 = old.saved7423, visits7423 = old.visits7423 + 1 }
+
+    action Close =
+        transaction
+            let old = model
+            model ←
+                { old | open7423 = False }
+
+    action Draft (text : String) =
+        transaction
+            let old = model
+            model ←
+                { old | draft7423 = text }
+
+    action Confirm =
+        transaction
+            let old = model
+            model ←
+                { old | open7423 = False, saved7423 = old.draft7423 }
+
+    view : Html Action
+    view =
+        <section id="s0" data-shape="modal"><h2>modal 17/0 Activity</h2><div class="level-0"><button id="s0-open" onClick={Open}>Open</button><output id="s0-saved">{model.saved7423}</output><span>{model.visits7423}</span>{if model.open7423 then <div role="dialog" aria-label="Edit"><h3>Edit 7423</h3><input id="s0-draft" value={model.draft7423} onInput={Draft} /><button id="s0-confirm" onClick={Confirm}>Confirm</button><button id="s0-close" onClick={Close}>Close</button></div> else <></>}</div></section>

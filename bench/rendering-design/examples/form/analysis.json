@@ -1,0 +1,252 @@
+[
+  {
+    "module": "Shape0.bir",
+    "method": "Record-update result paths and view-expression dependencies from compiler BIR; helper argument substitution; recursive calls conservatively depend on argument roots.",
+    "cases": [
+      {
+        "name": "Name",
+        "pat": 9,
+        "body": 25,
+        "params": [
+          8
+        ],
+        "writes": [
+          "name6502",
+          "submitted6502"
+        ],
+        "assignments": [
+          {
+            "path": "name6502",
+            "rhs": 21,
+            "operation": {
+              "kind": "replace"
+            }
+          },
+          {
+            "path": "submitted6502",
+            "rhs": 22,
+            "operation": {
+              "kind": "replace"
+            }
+          }
+        ]
+      },
+      {
+        "name": "Email",
+        "pat": 29,
+        "body": 33,
+        "params": [
+          28
+        ],
+        "writes": [
+          "email6502",
+          "submitted6502"
+        ],
+        "assignments": [
+          {
+            "path": "email6502",
+            "rhs": 31,
+            "operation": {
+              "kind": "replace"
+            }
+          },
+          {
+            "path": "submitted6502",
+            "rhs": 32,
+            "operation": {
+              "kind": "replace"
+            }
+          }
+        ]
+      },
+      {
+        "name": "Submit",
+        "pat": 36,
+        "body": 44,
+        "params": [],
+        "writes": [
+          "attempts6502",
+          "submitted6502"
+        ],
+        "assignments": [
+          {
+            "path": "submitted6502",
+            "rhs": 38,
+            "operation": {
+              "kind": "replace"
+            }
+          },
+          {
+            "path": "attempts6502",
+            "rhs": 43,
+            "operation": {
+              "kind": "replace",
+              "callee": "Basics.add"
+            }
+          }
+        ]
+      },
+      {
+        "name": "Reset",
+        "pat": 47,
+        "body": 52,
+        "params": [],
+        "writes": [
+          "email6502",
+          "name6502",
+          "submitted6502"
+        ],
+        "assignments": [
+          {
+            "path": "name6502",
+            "rhs": 49,
+            "operation": {
+              "kind": "replace"
+            }
+          },
+          {
+            "path": "email6502",
+            "rhs": 50,
+            "operation": {
+              "kind": "replace"
+            }
+          },
+          {
+            "path": "submitted6502",
+            "rhs": 51,
+            "operation": {
+              "kind": "replace"
+            }
+          }
+        ]
+      }
+    ],
+    "holes": [
+      {
+        "position": "%50.0.1.1@value",
+        "expr": 7,
+        "reads": [
+          "name6502"
+        ]
+      },
+      {
+        "position": "%50.0.2.1@value",
+        "expr": 10,
+        "reads": [
+          "email6502"
+        ]
+      },
+      {
+        "position": "%50.0.3.0",
+        "expr": 39,
+        "reads": [
+          "email6502",
+          "name6502"
+        ]
+      },
+      {
+        "position": "%50.0.6@hidden",
+        "expr": 45,
+        "reads": [
+          "submitted6502"
+        ]
+      },
+      {
+        "position": "%50.0.6.1",
+        "expr": 47,
+        "reads": [
+          "name6502"
+        ]
+      },
+      {
+        "position": "%50.0.6.3",
+        "expr": 49,
+        "reads": [
+          "attempts6502"
+        ]
+      }
+    ],
+    "edges": [
+      {
+        "message": "Name",
+        "holes": [
+          "%50.0.1.1@value",
+          "%50.0.3.0",
+          "%50.0.6@hidden",
+          "%50.0.6.1"
+        ]
+      },
+      {
+        "message": "Email",
+        "holes": [
+          "%50.0.2.1@value",
+          "%50.0.3.0",
+          "%50.0.6@hidden"
+        ]
+      },
+      {
+        "message": "Submit",
+        "holes": [
+          "%50.0.6@hidden",
+          "%50.0.6.3"
+        ]
+      },
+      {
+        "message": "Reset",
+        "holes": [
+          "%50.0.1.1@value",
+          "%50.0.2.1@value",
+          "%50.0.3.0",
+          "%50.0.6@hidden",
+          "%50.0.6.1"
+        ]
+      }
+    ],
+    "ownership": [],
+    "emittedFields": {
+      "name6502": "m0",
+      "submitted6502": "m1",
+      "email6502": "m2",
+      "attempts6502": "m3"
+    },
+    "rootPatches": [
+      {
+        "code": "attribute(n5,\"value\",v0.name6502);",
+        "reads": [
+          "name6502"
+        ]
+      },
+      {
+        "code": "attribute(n8,\"value\",v0.email6502);",
+        "reads": [
+          "email6502"
+        ]
+      },
+      {
+        "code": "textValue(n10,(()=>{const z=(core.String_length(v0.name6502)<4);if(z===true){return \"Name too short\"}if(z===false){return (()=>{const z=core.String_contains(v0.email6502,\"@\");if(z===true){return \"Ready\"}if(z===false){return \"Email needs @\"}throw Error('unreachable pattern')})()}throw Error('unreachable pattern')})());",
+        "reads": [
+          "email6502",
+          "name6502"
+        ]
+      },
+      {
+        "code": "attribute(n15,\"hidden\",(!v0.submitted6502));",
+        "reads": [
+          "submitted6502"
+        ]
+      },
+      {
+        "code": "textValue(n17,v0.name6502);",
+        "reads": [
+          "name6502"
+        ]
+      },
+      {
+        "code": "textValue(n19,v0.attempts6502);",
+        "reads": [
+          "attempts6502"
+        ]
+      }
+    ]
+  }
+]

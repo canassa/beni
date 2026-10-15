@@ -1,0 +1,203 @@
+decl 0: pub alias Model
+  %0 = type_import Basics.Bool
+  %1 = type_import String.String
+  %2 = type_import String.String
+  %3 = type_import Basics.Int
+  %4 = type_record { open7423 : %0, draft7423 : %1, saved7423 : %2, visits7423 : %3 }
+  body %4
+  ctor 0 Model [%0, %1, %2, %3]
+  refs
+    import_type Basics.Bool
+    import_type String.String
+    import_type Basics.Int
+  interface alias Model (record constructor)
+
+decl 1: pub type Msg
+  %0 = type_import String.String
+  ctor 1 Open []
+  ctor 2 Close []
+  ctor 3 Draft [%0]
+  ctor 4 Confirm []
+  refs
+    import_type String.String
+  interface type Msg = Open | Close | Draft | Confirm
+
+decl 2: pub value init (annotated)
+  %0 = type_unit
+  %1 = type_top 0 (Model)
+  %2 = type_fn [%0] -> %1
+  %3 = pat_unit
+  %4 = import_ctor Basics.False
+  %5 = string ""
+  %6 = string ""
+  %7 = int 0
+  %8 = record { open7423 = %4, draft7423 = %5, saved7423 = %6, visits7423 = %7 }
+  annotation %2
+  params [%3]
+  body %8
+  refs
+    type_top 0 (Model)
+    import_ctor Basics.False
+  interface value init (annotated)
+
+decl 3: pub value update (annotated)
+  %0 = type_top 1 (Msg)
+  %1 = type_top 0 (Model)
+  %2 = type_top 0 (Model)
+  %3 = type_fn [%0, %1] -> %2
+  %4 = pat_var local 0 (msg)
+  %5 = pat_var local 1 (model)
+  %6 = local 0 (msg)
+  %7 = ctor 1 (Open)
+  %8 = pat_ctor %7 []
+  %9 = local 1 (model)
+  %10 = import_ctor Basics.True
+  %11 = local 1 (model)
+  %12 = field_access %11 .saved7423
+  %13 = local 1 (model)
+  %14 = field_access %13 .visits7423
+  %15 = int 1
+  %16 = import_value Basics.add
+  %17 = call %16 [%14, %15]
+  %18 = record_update %9 { open7423 = %10, draft7423 = %12, visits7423 = %17 }
+  %19 = branch %8 -> %18
+  %20 = ctor 2 (Close)
+  %21 = pat_ctor %20 []
+  %22 = local 1 (model)
+  %23 = import_ctor Basics.False
+  %24 = record_update %22 { open7423 = %23 }
+  %25 = branch %21 -> %24
+  %26 = ctor 3 (Draft)
+  %27 = pat_var local 2 (text)
+  %28 = pat_ctor %26 [%27]
+  %29 = local 1 (model)
+  %30 = local 2 (text)
+  %31 = record_update %29 { draft7423 = %30 }
+  %32 = branch %28 -> %31
+  %33 = ctor 4 (Confirm)
+  %34 = pat_ctor %33 []
+  %35 = local 1 (model)
+  %36 = import_ctor Basics.False
+  %37 = local 1 (model)
+  %38 = field_access %37 .draft7423
+  %39 = record_update %35 { open7423 = %36, saved7423 = %38 }
+  %40 = branch %34 -> %39
+  %41 = case %6 [%19, %25, %32, %40]
+  annotation %3
+  params [%4, %5]
+  body %41
+  locals
+    0 msg param %4
+    1 model param %5
+    2 text pattern %27
+  refs
+    type_top 1 (Msg)
+    type_top 0 (Model)
+    ctor 1 (Open)
+    import_ctor Basics.True
+    import_value Basics.add
+    ctor 2 (Close)
+    import_ctor Basics.False
+    ctor 3 (Draft)
+    ctor 4 (Confirm)
+  interface value update (annotated)
+
+decl 4: pub value view (annotated)
+  %0 = type_top 0 (Model)
+  %1 = type_import Html.Html
+  %2 = type_top 1 (Msg)
+  %3 = type_app %1 [%2]
+  %4 = type_fn [%0] -> %3
+  %5 = pat_var local 0 (model)
+  %6 = ctor 1 (Open)
+  %7 = local 0 (model)
+  %8 = field_access %7 .saved7423
+  %9 = local 0 (model)
+  %10 = field_access %9 .visits7423
+  %11 = local 0 (model)
+  %12 = field_access %11 .open7423
+  %13 = import_ctor Basics.True
+  %14 = pat_ctor %13 []
+  %15 = local 0 (model)
+  %16 = field_access %15 .draft7423
+  %17 = ctor 3 (Draft)
+  %18 = ctor 4 (Confirm)
+  %19 = ctor 2 (Close)
+  %20 = markup
+    element div
+      attr role = "dialog"
+      attr aria-label = "Edit"
+      element h3
+        text "Edit 7423"
+      element input
+        attr id = "s0-draft"
+        attr value = %16
+        attr onInput = %17
+      element button
+        attr id = "s0-confirm"
+        attr onClick = %18
+        text "Confirm"
+      element button
+        attr id = "s0-close"
+        attr onClick = %19
+        text "Close"
+  %21 = branch %14 -> %20
+  %22 = import_ctor Basics.False
+  %23 = pat_ctor %22 []
+  %24 = markup
+    fragment
+  %25 = branch %23 -> %24
+  %26 = case %12 [%21, %25]
+  %27 = markup
+    element section
+      attr id = "s0"
+      attr data-shape = "modal"
+      element h2
+        text "modal 17/0 Activity"
+      element div
+        attr class = "level-0"
+        element button
+          attr id = "s0-open"
+          attr onClick = %6
+          text "Open"
+        element output
+          attr id = "s0-saved"
+          hole %8
+        element span
+          hole %10
+        hole %26
+  annotation %4
+  params [%5]
+  body %27
+  locals
+    0 model param %5
+  refs
+    type_top 0 (Model)
+    import_type Html.Html
+    type_top 1 (Msg)
+    ctor 1 (Open)
+    import_ctor Basics.True
+    ctor 3 (Draft)
+    ctor 4 (Confirm)
+    ctor 2 (Close)
+    import_ctor Basics.False
+  interface value view (annotated)
+
+interface
+  alias Model (record constructor)
+  type Msg = Open | Close | Draft | Confirm
+  value init (annotated)
+  value update (annotated)
+  value view (annotated)
+
+imports
+  import Html exposing (Html)
+  prelude Basics
+  prelude List
+  prelude Maybe
+  prelude Result
+  prelude String
+  prelude Char
+  prelude Debug
+  prelude Int
+  prelude Float

@@ -1,0 +1,432 @@
+decl 0: type Thread
+  %0 = type_import Basics.Int
+  %1 = type_import String.String
+  %2 = type_import Basics.Int
+  %3 = type_import List.List
+  %4 = type_top 0 (Thread)
+  %5 = type_app %3 [%4]
+  ctor 0 Comment [%0, %1, %2, %5]
+  refs
+    import_type Basics.Int
+    import_type String.String
+    import_type List.List
+    type_top 0 (Thread)
+
+decl 1: value vote (annotated)
+  %0 = type_import Basics.Int
+  %1 = type_top 0 (Thread)
+  %2 = type_top 0 (Thread)
+  %3 = type_fn [%0, %1] -> %2
+  %4 = pat_var local 0 (wanted)
+  %5 = pat_var local 1 (tree)
+  %6 = local 1 (tree)
+  %7 = ctor 0 (Comment)
+  %8 = pat_var local 2 (id)
+  %9 = pat_var local 3 (title)
+  %10 = pat_var local 4 (score)
+  %11 = pat_var local 5 (children)
+  %12 = pat_ctor %7 [%8, %9, %10, %11]
+  %13 = ctor 0 (Comment)
+  %14 = local 2 (id)
+  %15 = local 3 (title)
+  %16 = local 2 (id)
+  %17 = local 0 (wanted)
+  %18 = method_call %16 .eq [%17] (==)
+  %19 = import_ctor Basics.True
+  %20 = pat_ctor %19 []
+  %21 = local 4 (score)
+  %22 = int 5
+  %23 = import_value Basics.add
+  %24 = call %23 [%21, %22]
+  %25 = branch %20 -> %24
+  %26 = import_ctor Basics.False
+  %27 = pat_ctor %26 []
+  %28 = local 4 (score)
+  %29 = branch %27 -> %28
+  %30 = case %18 [%25, %29]
+  %31 = qualified List.map
+  %32 = local 5 (children)
+  %33 = pat_var local 6
+  %34 = top 1 (vote)
+  %35 = local 0 (wanted)
+  %36 = local 6
+  %37 = call %34 [%35, %36]
+  %38 = lambda [%33] -> %37
+  %39 = call %31 [%32, %38]
+  %40 = call %13 [%14, %15, %30, %39]
+  %41 = branch %12 -> %40
+  %42 = case %6 [%41]
+  annotation %3
+  params [%4, %5]
+  body %42
+  locals
+    0 wanted param %4
+    1 tree param %5
+    2 id pattern %8
+    3 title pattern %9
+    4 score pattern %10
+    5 children pattern %11
+    6 _ fresh %33
+  refs
+    import_type Basics.Int
+    type_top 0 (Thread)
+    ctor 0 (Comment)
+    import_ctor Basics.True
+    import_value Basics.add
+    import_ctor Basics.False
+    import_value List.map
+    top 1 (vote)
+
+decl 2: value rename (annotated)
+  %0 = type_import Basics.Int
+  %1 = type_import String.String
+  %2 = type_top 0 (Thread)
+  %3 = type_top 0 (Thread)
+  %4 = type_fn [%0, %1, %2] -> %3
+  %5 = pat_var local 0 (wanted)
+  %6 = pat_var local 1 (text)
+  %7 = pat_var local 2 (tree)
+  %8 = local 2 (tree)
+  %9 = ctor 0 (Comment)
+  %10 = pat_var local 3 (id)
+  %11 = pat_var local 4 (title)
+  %12 = pat_var local 5 (score)
+  %13 = pat_var local 6 (children)
+  %14 = pat_ctor %9 [%10, %11, %12, %13]
+  %15 = ctor 0 (Comment)
+  %16 = local 3 (id)
+  %17 = local 3 (id)
+  %18 = local 0 (wanted)
+  %19 = method_call %17 .eq [%18] (==)
+  %20 = import_ctor Basics.True
+  %21 = pat_ctor %20 []
+  %22 = local 1 (text)
+  %23 = branch %21 -> %22
+  %24 = import_ctor Basics.False
+  %25 = pat_ctor %24 []
+  %26 = local 4 (title)
+  %27 = branch %25 -> %26
+  %28 = case %19 [%23, %27]
+  %29 = local 5 (score)
+  %30 = qualified List.map
+  %31 = local 6 (children)
+  %32 = pat_var local 7
+  %33 = top 2 (rename)
+  %34 = local 0 (wanted)
+  %35 = local 1 (text)
+  %36 = local 7
+  %37 = call %33 [%34, %35, %36]
+  %38 = lambda [%32] -> %37
+  %39 = call %30 [%31, %38]
+  %40 = call %15 [%16, %28, %29, %39]
+  %41 = branch %14 -> %40
+  %42 = case %8 [%41]
+  annotation %4
+  params [%5, %6, %7]
+  body %42
+  locals
+    0 wanted param %5
+    1 text param %6
+    2 tree param %7
+    3 id pattern %10
+    4 title pattern %11
+    5 score pattern %12
+    6 children pattern %13
+    7 _ fresh %32
+  refs
+    import_type Basics.Int
+    import_type String.String
+    type_top 0 (Thread)
+    ctor 0 (Comment)
+    import_ctor Basics.True
+    import_ctor Basics.False
+    import_value List.map
+    top 2 (rename)
+
+decl 3: value threadKey (annotated)
+  %0 = type_top 0 (Thread)
+  %1 = type_import Basics.Int
+  %2 = type_fn [%0] -> %1
+  %3 = pat_var local 0 (tree)
+  %4 = local 0 (tree)
+  %5 = ctor 0 (Comment)
+  %6 = pat_var local 1 (id)
+  %7 = pat_wild
+  %8 = pat_wild
+  %9 = pat_wild
+  %10 = pat_ctor %5 [%6, %7, %8, %9]
+  %11 = local 1 (id)
+  %12 = branch %10 -> %11
+  %13 = case %4 [%12]
+  annotation %2
+  params [%3]
+  body %13
+  locals
+    0 tree param %3
+    1 id pattern %6
+  refs
+    type_top 0 (Thread)
+    import_type Basics.Int
+    ctor 0 (Comment)
+
+decl 4: value comment (annotated)
+  %0 = type_top 0 (Thread)
+  %1 = type_import Html.Html
+  %2 = type_top 6 (Msg)
+  %3 = type_app %1 [%2]
+  %4 = type_fn [%0] -> %3
+  %5 = pat_var local 0 (tree)
+  %6 = local 0 (tree)
+  %7 = ctor 0 (Comment)
+  %8 = pat_var local 1 (id)
+  %9 = pat_var local 2 (title)
+  %10 = pat_var local 3 (score)
+  %11 = pat_var local 4 (children)
+  %12 = pat_ctor %7 [%8, %9, %10, %11]
+  %13 = qualified String.fromInt
+  %14 = local 1 (id)
+  %15 = call %13 [%14]
+  %16 = local 2 (title)
+  %17 = local 3 (score)
+  %18 = ctor 2 (Vote)
+  %19 = local 1 (id)
+  %20 = call %18 [%19]
+  %21 = local 2 (title)
+  %22 = pat_var local 5
+  %23 = ctor 3 (Rename)
+  %24 = local 1 (id)
+  %25 = local 5
+  %26 = call %23 [%24, %25]
+  %27 = lambda [%22] -> %26
+  %28 = local 4 (children)
+  %29 = top 3 (threadKey)
+  %30 = pat_var local 6 (child)
+  %31 = top 4 (comment)
+  %32 = local 6 (child)
+  %33 = call %31 [%32]
+  %34 = lambda [%30] -> %33
+  %35 = markup
+    element article
+      attr data-comment = %15
+      element strong
+        hole %16
+      element output
+        hole %17
+      element button
+        attr onClick = %20
+        text "Vote"
+      element input
+        attr value = %21
+        attr onInput = %27
+      element div
+        for each %28 keyed key %29
+          row lambda %34 captures [] inputs []
+  %36 = branch %12 -> %35
+  %37 = case %6 [%36]
+  annotation %4
+  params [%5]
+  body %37
+  locals
+    0 tree param %5
+    1 id pattern %8
+    2 title pattern %9
+    3 score pattern %10
+    4 children pattern %11
+    5 _ fresh %22
+    6 child param %30
+  refs
+    type_top 0 (Thread)
+    import_type Html.Html
+    type_top 6 (Msg)
+    ctor 0 (Comment)
+    import_value String.fromInt
+    ctor 2 (Vote)
+    ctor 3 (Rename)
+    top 3 (threadKey)
+    top 4 (comment)
+
+decl 5: pub alias Model
+  %0 = type_top 0 (Thread)
+  %1 = type_import Basics.Bool
+  %2 = type_record { tree1956 : %0, collapsed1956 : %1 }
+  body %2
+  ctor 1 Model [%0, %1]
+  refs
+    type_top 0 (Thread)
+    import_type Basics.Bool
+  interface alias Model (record constructor)
+
+decl 6: pub type Msg
+  %0 = type_import Basics.Int
+  %1 = type_import Basics.Int
+  %2 = type_import String.String
+  ctor 2 Vote [%0]
+  ctor 3 Rename [%1, %2]
+  ctor 4 Collapse []
+  refs
+    import_type Basics.Int
+    import_type String.String
+  interface type Msg = Vote | Rename | Collapse
+
+decl 7: pub value init (annotated)
+  %0 = type_unit
+  %1 = type_top 5 (Model)
+  %2 = type_fn [%0] -> %1
+  %3 = pat_unit
+  %4 = ctor 0 (Comment)
+  %5 = int 0
+  %6 = string "Root 1956"
+  %7 = int 0
+  %8 = ctor 0 (Comment)
+  %9 = int 1
+  %10 = string "First"
+  %11 = int 0
+  %12 = ctor 0 (Comment)
+  %13 = int 2
+  %14 = string "Nested"
+  %15 = int 0
+  %16 = list []
+  %17 = call %12 [%13, %14, %15, %16]
+  %18 = list [%17]
+  %19 = call %8 [%9, %10, %11, %18]
+  %20 = ctor 0 (Comment)
+  %21 = int 3
+  %22 = string "Second"
+  %23 = int 0
+  %24 = list []
+  %25 = call %20 [%21, %22, %23, %24]
+  %26 = list [%19, %25]
+  %27 = call %4 [%5, %6, %7, %26]
+  %28 = import_ctor Basics.False
+  %29 = record { tree1956 = %27, collapsed1956 = %28 }
+  annotation %2
+  params [%3]
+  body %29
+  refs
+    type_top 5 (Model)
+    ctor 0 (Comment)
+    import_ctor Basics.False
+  interface value init (annotated)
+
+decl 8: pub value update (annotated)
+  %0 = type_top 6 (Msg)
+  %1 = type_top 5 (Model)
+  %2 = type_top 5 (Model)
+  %3 = type_fn [%0, %1] -> %2
+  %4 = pat_var local 0 (msg)
+  %5 = pat_var local 1 (model)
+  %6 = local 0 (msg)
+  %7 = ctor 2 (Vote)
+  %8 = pat_var local 2 (wanted)
+  %9 = pat_ctor %7 [%8]
+  %10 = local 1 (model)
+  %11 = top 1 (vote)
+  %12 = local 2 (wanted)
+  %13 = local 1 (model)
+  %14 = field_access %13 .tree1956
+  %15 = call %11 [%12, %14]
+  %16 = record_update %10 { tree1956 = %15 }
+  %17 = branch %9 -> %16
+  %18 = ctor 3 (Rename)
+  %19 = pat_var local 3 (wanted)
+  %20 = pat_var local 4 (title)
+  %21 = pat_ctor %18 [%19, %20]
+  %22 = local 1 (model)
+  %23 = top 2 (rename)
+  %24 = local 3 (wanted)
+  %25 = local 4 (title)
+  %26 = local 1 (model)
+  %27 = field_access %26 .tree1956
+  %28 = call %23 [%24, %25, %27]
+  %29 = record_update %22 { tree1956 = %28 }
+  %30 = branch %21 -> %29
+  %31 = ctor 4 (Collapse)
+  %32 = pat_ctor %31 []
+  %33 = local 1 (model)
+  %34 = import_value Basics.not
+  %35 = local 1 (model)
+  %36 = field_access %35 .collapsed1956
+  %37 = call %34 [%36]
+  %38 = record_update %33 { collapsed1956 = %37 }
+  %39 = branch %32 -> %38
+  %40 = case %6 [%17, %30, %39]
+  annotation %3
+  params [%4, %5]
+  body %40
+  locals
+    0 msg param %4
+    1 model param %5
+    2 wanted pattern %8
+    3 wanted pattern %19
+    4 title pattern %20
+  refs
+    type_top 6 (Msg)
+    type_top 5 (Model)
+    ctor 2 (Vote)
+    top 1 (vote)
+    ctor 3 (Rename)
+    top 2 (rename)
+    ctor 4 (Collapse)
+    import_value Basics.not
+  interface value update (annotated)
+
+decl 9: pub value view (annotated)
+  %0 = type_top 5 (Model)
+  %1 = type_import Html.Html
+  %2 = type_top 6 (Msg)
+  %3 = type_app %1 [%2]
+  %4 = type_fn [%0] -> %3
+  %5 = pat_var local 0 (model)
+  %6 = ctor 4 (Collapse)
+  %7 = local 0 (model)
+  %8 = field_access %7 .collapsed1956
+  %9 = top 4 (comment)
+  %10 = local 0 (model)
+  %11 = field_access %10 .tree1956
+  %12 = call %9 [%11]
+  %13 = markup
+    element section
+      attr id = "s0"
+      attr data-shape = "thread"
+      element h2
+        text "thread 17/0 Review"
+      element div
+        attr class = "level-0"
+        element button
+          attr id = "s0-collapse"
+          attr onClick = %6
+          text "Collapse"
+        element div
+          attr hidden = %8
+          hole %12
+  annotation %4
+  params [%5]
+  body %13
+  locals
+    0 model param %5
+  refs
+    type_top 5 (Model)
+    import_type Html.Html
+    type_top 6 (Msg)
+    ctor 4 (Collapse)
+    top 4 (comment)
+  interface value view (annotated)
+
+interface
+  alias Model (record constructor)
+  type Msg = Vote | Rename | Collapse
+  value init (annotated)
+  value update (annotated)
+  value view (annotated)
+
+imports
+  import Html exposing (Html)
+  prelude Basics
+  prelude List
+  prelude Maybe
+  prelude Result
+  prelude String
+  prelude Char
+  prelude Debug
+  prelude Int
+  prelude Float

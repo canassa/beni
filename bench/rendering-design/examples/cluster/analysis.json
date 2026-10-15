@@ -1,0 +1,162 @@
+[
+  {
+    "module": "Shape0.bir",
+    "method": "Record-update result paths and view-expression dependencies from compiler BIR; helper argument substitution; recursive calls conservatively depend on argument roots.",
+    "cases": [
+      {
+        "name": "Increment",
+        "pat": 8,
+        "body": 20,
+        "params": [],
+        "writes": [
+          "count7112",
+          "history7112"
+        ],
+        "assignments": [
+          {
+            "path": "count7112",
+            "rhs": 14,
+            "operation": {
+              "kind": "replace",
+              "callee": "Basics.add"
+            }
+          },
+          {
+            "path": "history7112",
+            "rhs": 19,
+            "operation": {
+              "kind": "replace",
+              "callee": "Basics.add"
+            }
+          }
+        ]
+      },
+      {
+        "name": "Toggle",
+        "pat": 23,
+        "body": 34,
+        "params": [],
+        "writes": [
+          "enabled7112",
+          "history7112"
+        ],
+        "assignments": [
+          {
+            "path": "enabled7112",
+            "rhs": 28,
+            "operation": {
+              "kind": "replace",
+              "callee": "Basics.not"
+            }
+          },
+          {
+            "path": "history7112",
+            "rhs": 33,
+            "operation": {
+              "kind": "replace",
+              "callee": "Basics.add"
+            }
+          }
+        ]
+      },
+      {
+        "name": "Reset",
+        "pat": 37,
+        "body": 41,
+        "params": [],
+        "writes": [
+          "count7112",
+          "history7112"
+        ],
+        "assignments": [
+          {
+            "path": "count7112",
+            "rhs": 39,
+            "operation": {
+              "kind": "replace"
+            }
+          },
+          {
+            "path": "history7112",
+            "rhs": 40,
+            "operation": {
+              "kind": "replace"
+            }
+          }
+        ]
+      }
+    ],
+    "holes": [
+      {
+        "position": "%17.0.1.3.0",
+        "expr": 10,
+        "reads": [
+          "count7112"
+        ]
+      },
+      {
+        "position": "%17.0.1.4@hidden",
+        "expr": 14,
+        "reads": [
+          "enabled7112"
+        ]
+      },
+      {
+        "position": "%17.0.1.4.0",
+        "expr": 16,
+        "reads": [
+          "history7112"
+        ]
+      }
+    ],
+    "edges": [
+      {
+        "message": "Increment",
+        "holes": [
+          "%17.0.1.3.0",
+          "%17.0.1.4.0"
+        ]
+      },
+      {
+        "message": "Toggle",
+        "holes": [
+          "%17.0.1.4@hidden",
+          "%17.0.1.4.0"
+        ]
+      },
+      {
+        "message": "Reset",
+        "holes": [
+          "%17.0.1.3.0",
+          "%17.0.1.4.0"
+        ]
+      }
+    ],
+    "ownership": [],
+    "emittedFields": {
+      "count7112": "m0",
+      "history7112": "m1",
+      "enabled7112": "m2"
+    },
+    "rootPatches": [
+      {
+        "code": "textValue(n11,v0.count7112);",
+        "reads": [
+          "count7112"
+        ]
+      },
+      {
+        "code": "attribute(n12,\"hidden\",(!v0.enabled7112));",
+        "reads": [
+          "enabled7112"
+        ]
+      },
+      {
+        "code": "textValue(n13,v0.history7112);",
+        "reads": [
+          "history7112"
+        ]
+      }
+    ]
+  }
+]

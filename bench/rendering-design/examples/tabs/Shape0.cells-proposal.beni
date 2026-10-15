@@ -1,0 +1,39 @@
+-- Proposed surface, not accepted by today's compiler.
+-- Action is a typed, deferred DOM callback, not an ordinary eager call.
+-- An action commits its transaction atomically; render runs after commit.
+-- Model snapshots do not escape the owned component.
+import Html exposing (Html, Action)
+
+component Instance
+    type alias Model =
+        tab1641 : Int
+        unread1641 : Int
+        draft1641 : String
+
+
+    init : ⊤ → Model
+    init ⊤ = { tab1641 = 0, unread1641 = 4, draft1641 = "" }
+
+    state model : Model = init ⊤
+
+    action Choose (tab : Int) =
+        transaction
+            let old = model
+            model ←
+                { old | tab1641 = tab }
+
+    action Read =
+        transaction
+            let old = model
+            model ←
+                { old | unread1641 = 0 }
+
+    action Draft (text : String) =
+        transaction
+            let old = model
+            model ←
+                { old | draft1641 = text }
+
+    view : Html Action
+    view =
+        <section id="s0" data-shape="tabs"><h2>tabs 17/0 Work</h2><div class="level-0"><button id="s0-choose-0" onClick={Choose 0}>Overview</button><button id="s0-choose-1" onClick={Choose 1}>Messages</button><div id="s0-panel">{if model.tab1641 == 0 then <article><h3>Overview</h3><p>{model.unread1641} unread</p><button id="s0-read" onClick={Read}>Read</button></article> else <aside><h3>Compose</h3><input id="s0-draft" value={model.draft1641} onInput={Draft} /><p>{model.draft1641}</p></aside>}</div></div></section>

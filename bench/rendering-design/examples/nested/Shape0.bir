@@ -1,0 +1,284 @@
+decl 0: value card (annotated)
+  %0 = type_import String.String
+  %1 = type_import Basics.Int
+  %2 = type_import Basics.Bool
+  %3 = type_import Html.Html
+  %4 = type_top 3 (Msg)
+  %5 = type_app %3 [%4]
+  %6 = type_fn [%0, %1, %2] -> %5
+  %7 = pat_var local 0 (title)
+  %8 = pat_var local 1 (count)
+  %9 = pat_var local 2 (left)
+  %10 = local 0 (title)
+  %11 = local 1 (count)
+  %12 = ctor 1 (Child)
+  %13 = local 2 (left)
+  %14 = int 5
+  %15 = call %12 [%13, %14]
+  %16 = markup
+    element article
+      element h3
+        hole %10
+      element output
+        hole %11
+      element button
+        attr onClick = %15
+        text "Child action"
+  annotation %6
+  params [%7, %8, %9]
+  body %16
+  locals
+    0 title param %7
+    1 count param %8
+    2 left param %9
+  refs
+    import_type String.String
+    import_type Basics.Int
+    import_type Basics.Bool
+    import_type Html.Html
+    type_top 3 (Msg)
+    ctor 1 (Child)
+
+decl 1: value branch (annotated)
+  %0 = type_import Basics.Int
+  %1 = type_import Basics.Int
+  %2 = type_import Basics.Bool
+  %3 = type_import Html.Html
+  %4 = type_top 3 (Msg)
+  %5 = type_app %3 [%4]
+  %6 = type_fn [%0, %1, %2] -> %5
+  %7 = pat_var local 0 (level)
+  %8 = pat_var local 1 (count)
+  %9 = pat_var local 2 (left)
+  %10 = local 0 (level)
+  %11 = int 0
+  %12 = method_call %10 .eq [%11] (==)
+  %13 = import_ctor Basics.True
+  %14 = pat_ctor %13 []
+  %15 = top 0 (card)
+  %16 = string "Leaf"
+  %17 = local 1 (count)
+  %18 = local 2 (left)
+  %19 = call %15 [%16, %17, %18]
+  %20 = branch %14 -> %19
+  %21 = import_ctor Basics.False
+  %22 = pat_ctor %21 []
+  %23 = top 1 (branch)
+  %24 = local 0 (level)
+  %25 = int 1
+  %26 = import_value Basics.sub
+  %27 = call %26 [%24, %25]
+  %28 = local 1 (count)
+  %29 = local 2 (left)
+  %30 = call %23 [%27, %28, %29]
+  %31 = markup
+    element div
+      attr class = "nested"
+      hole %30
+  %32 = branch %22 -> %31
+  %33 = case %12 [%20, %32]
+  annotation %6
+  params [%7, %8, %9]
+  body %33
+  locals
+    0 level param %7
+    1 count param %8
+    2 left param %9
+  refs
+    import_type Basics.Int
+    import_type Basics.Bool
+    import_type Html.Html
+    type_top 3 (Msg)
+    import_ctor Basics.True
+    top 0 (card)
+    import_ctor Basics.False
+    top 1 (branch)
+    import_value Basics.sub
+
+decl 2: pub alias Model
+  %0 = type_import Basics.Int
+  %1 = type_import Basics.Int
+  %2 = type_import Basics.Bool
+  %3 = type_record { left6797 : %0, right6797 : %1, expanded6797 : %2 }
+  body %3
+  ctor 0 Model [%0, %1, %2]
+  refs
+    import_type Basics.Int
+    import_type Basics.Bool
+  interface alias Model (record constructor)
+
+decl 3: pub type Msg
+  %0 = type_import Basics.Bool
+  %1 = type_import Basics.Int
+  ctor 1 Child [%0, %1]
+  ctor 2 Collapse []
+  refs
+    import_type Basics.Bool
+    import_type Basics.Int
+  interface type Msg = Child | Collapse
+
+decl 4: pub value init (annotated)
+  %0 = type_unit
+  %1 = type_top 2 (Model)
+  %2 = type_fn [%0] -> %1
+  %3 = pat_unit
+  %4 = int 0
+  %5 = int 5
+  %6 = import_ctor Basics.True
+  %7 = record { left6797 = %4, right6797 = %5, expanded6797 = %6 }
+  annotation %2
+  params [%3]
+  body %7
+  refs
+    type_top 2 (Model)
+    import_ctor Basics.True
+  interface value init (annotated)
+
+decl 5: pub value update (annotated)
+  %0 = type_top 3 (Msg)
+  %1 = type_top 2 (Model)
+  %2 = type_top 2 (Model)
+  %3 = type_fn [%0, %1] -> %2
+  %4 = pat_var local 0 (msg)
+  %5 = pat_var local 1 (model)
+  %6 = local 0 (msg)
+  %7 = ctor 1 (Child)
+  %8 = pat_var local 2 (left)
+  %9 = pat_var local 3 (amount)
+  %10 = pat_ctor %7 [%8, %9]
+  %11 = local 2 (left)
+  %12 = import_ctor Basics.True
+  %13 = pat_ctor %12 []
+  %14 = local 1 (model)
+  %15 = local 1 (model)
+  %16 = field_access %15 .left6797
+  %17 = local 3 (amount)
+  %18 = import_value Basics.add
+  %19 = call %18 [%16, %17]
+  %20 = record_update %14 { left6797 = %19 }
+  %21 = branch %13 -> %20
+  %22 = import_ctor Basics.False
+  %23 = pat_ctor %22 []
+  %24 = local 1 (model)
+  %25 = local 1 (model)
+  %26 = field_access %25 .right6797
+  %27 = local 3 (amount)
+  %28 = import_value Basics.add
+  %29 = call %28 [%26, %27]
+  %30 = record_update %24 { right6797 = %29 }
+  %31 = branch %23 -> %30
+  %32 = case %11 [%21, %31]
+  %33 = branch %10 -> %32
+  %34 = ctor 2 (Collapse)
+  %35 = pat_ctor %34 []
+  %36 = local 1 (model)
+  %37 = import_value Basics.not
+  %38 = local 1 (model)
+  %39 = field_access %38 .expanded6797
+  %40 = call %37 [%39]
+  %41 = record_update %36 { expanded6797 = %40 }
+  %42 = branch %35 -> %41
+  %43 = case %6 [%33, %42]
+  annotation %3
+  params [%4, %5]
+  body %43
+  locals
+    0 msg param %4
+    1 model param %5
+    2 left pattern %8
+    3 amount pattern %9
+  refs
+    type_top 3 (Msg)
+    type_top 2 (Model)
+    ctor 1 (Child)
+    import_ctor Basics.True
+    import_value Basics.add
+    import_ctor Basics.False
+    ctor 2 (Collapse)
+    import_value Basics.not
+  interface value update (annotated)
+
+decl 6: pub value view (annotated)
+  %0 = type_top 2 (Model)
+  %1 = type_import Html.Html
+  %2 = type_top 3 (Msg)
+  %3 = type_app %1 [%2]
+  %4 = type_fn [%0] -> %3
+  %5 = pat_var local 0 (model)
+  %6 = ctor 2 (Collapse)
+  %7 = local 0 (model)
+  %8 = field_access %7 .left6797
+  %9 = local 0 (model)
+  %10 = field_access %9 .right6797
+  %11 = import_value Basics.add
+  %12 = call %11 [%8, %10]
+  %13 = import_value Basics.not
+  %14 = local 0 (model)
+  %15 = field_access %14 .expanded6797
+  %16 = call %13 [%15]
+  %17 = top 1 (branch)
+  %18 = int 2
+  %19 = local 0 (model)
+  %20 = field_access %19 .left6797
+  %21 = import_ctor Basics.True
+  %22 = call %17 [%18, %20, %21]
+  %23 = top 1 (branch)
+  %24 = int 3
+  %25 = local 0 (model)
+  %26 = field_access %25 .right6797
+  %27 = import_ctor Basics.False
+  %28 = call %23 [%24, %26, %27]
+  %29 = markup
+    element section
+      attr id = "s0"
+      attr data-shape = "nested"
+      element h2
+        text "nested 17/0 Work"
+      element div
+        attr class = "level-0"
+        element button
+          attr id = "s0-collapse"
+          attr onClick = %6
+          text "Collapse"
+        element p
+          attr id = "s0-total"
+          hole %12
+        element div
+          attr hidden = %16
+          hole %22
+          hole %28
+  annotation %4
+  params [%5]
+  body %29
+  locals
+    0 model param %5
+  refs
+    type_top 2 (Model)
+    import_type Html.Html
+    type_top 3 (Msg)
+    ctor 2 (Collapse)
+    import_value Basics.add
+    import_value Basics.not
+    top 1 (branch)
+    import_ctor Basics.True
+    import_ctor Basics.False
+  interface value view (annotated)
+
+interface
+  alias Model (record constructor)
+  type Msg = Child | Collapse
+  value init (annotated)
+  value update (annotated)
+  value view (annotated)
+
+imports
+  import Html exposing (Html)
+  prelude Basics
+  prelude List
+  prelude Maybe
+  prelude Result
+  prelude String
+  prelude Char
+  prelude Debug
+  prelude Int
+  prelude Float

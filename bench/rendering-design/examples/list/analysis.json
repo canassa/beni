@@ -1,0 +1,258 @@
+[
+  {
+    "module": "Shape0.bir",
+    "method": "Record-update result paths and view-expression dependencies from compiler BIR; helper argument substitution; recursive calls conservatively depend on argument roots.",
+    "cases": [
+      {
+        "name": "Add",
+        "pat": 8,
+        "body": 32,
+        "params": [],
+        "writes": [
+          "next1346",
+          "rows1346"
+        ],
+        "assignments": [
+          {
+            "path": "rows1346",
+            "rhs": 26,
+            "operation": {
+              "kind": "append",
+              "input": "rows1346",
+              "argument": 24,
+              "witness": "call %25 [%11, %24]"
+            }
+          },
+          {
+            "path": "next1346",
+            "rhs": 31,
+            "operation": {
+              "kind": "replace",
+              "callee": "Basics.add"
+            }
+          }
+        ]
+      },
+      {
+        "name": "Remove",
+        "pat": 36,
+        "body": 49,
+        "params": [
+          35
+        ],
+        "writes": [
+          "rows1346",
+          "selected1346"
+        ],
+        "assignments": [
+          {
+            "path": "rows1346",
+            "rhs": 47,
+            "operation": {
+              "kind": "filter",
+              "input": "rows1346",
+              "argument": 46,
+              "witness": "call %38 [%40, %46]"
+            }
+          },
+          {
+            "path": "selected1346",
+            "rhs": 48,
+            "operation": {
+              "kind": "replace"
+            }
+          }
+        ]
+      },
+      {
+        "name": "Edit",
+        "pat": 53,
+        "body": 89,
+        "params": [
+          52
+        ],
+        "writes": [
+          "rows1346"
+        ],
+        "assignments": [
+          {
+            "path": "rows1346",
+            "rhs": 88,
+            "operation": {
+              "kind": "map",
+              "input": "rows1346",
+              "argument": 87,
+              "witness": "call %55 [%57, %87]"
+            }
+          }
+        ]
+      },
+      {
+        "name": "Select",
+        "pat": 93,
+        "body": 96,
+        "params": [
+          92
+        ],
+        "writes": [
+          "selected1346"
+        ],
+        "assignments": [
+          {
+            "path": "selected1346",
+            "rhs": 95,
+            "operation": {
+              "kind": "replace"
+            }
+          }
+        ]
+      },
+      {
+        "name": "Reverse",
+        "pat": 99,
+        "body": 105,
+        "params": [],
+        "writes": [
+          "rows1346"
+        ],
+        "assignments": [
+          {
+            "path": "rows1346",
+            "rhs": 104,
+            "operation": {
+              "kind": "reverse",
+              "input": "rows1346",
+              "argument": null,
+              "witness": "call %101 [%103]"
+            }
+          }
+        ]
+      }
+    ],
+    "holes": [
+      {
+        "position": "%53.0@data-row",
+        "expr": 22,
+        "reads": []
+      },
+      {
+        "position": "%53.0@class",
+        "expr": 36,
+        "reads": [
+          "selected1346"
+        ]
+      },
+      {
+        "position": "%53.0.0.0",
+        "expr": 42,
+        "reads": []
+      },
+      {
+        "position": "%53.0.1.0",
+        "expr": 44,
+        "reads": []
+      },
+      {
+        "position": "%55.0.3.0",
+        "expr": 11,
+        "reads": [
+          "rows1346"
+        ]
+      },
+      {
+        "position": "%55.0.4.0",
+        "expr": 13,
+        "row": 54,
+        "reads": [
+          "rows1346",
+          "selected1346"
+        ],
+        "structural": true
+      }
+    ],
+    "edges": [
+      {
+        "message": "Add",
+        "holes": [
+          "%55.0.3.0",
+          "%55.0.4.0"
+        ]
+      },
+      {
+        "message": "Remove",
+        "holes": [
+          "%53.0@class",
+          "%55.0.3.0",
+          "%55.0.4.0"
+        ]
+      },
+      {
+        "message": "Edit",
+        "holes": [
+          "%55.0.3.0",
+          "%55.0.4.0"
+        ]
+      },
+      {
+        "message": "Select",
+        "holes": [
+          "%53.0@class",
+          "%55.0.4.0"
+        ]
+      },
+      {
+        "message": "Reverse",
+        "holes": [
+          "%55.0.3.0",
+          "%55.0.4.0"
+        ]
+      }
+    ],
+    "ownership": [
+      {
+        "expression": 26,
+        "path": "rows1346",
+        "operation": "List.append",
+        "reason": "fresh init array; same-field transform; no sibling RHS/callback dependency on old array; closed renderer has no retained model snapshots or effects"
+      },
+      {
+        "expression": 47,
+        "path": "rows1346",
+        "operation": "List.filter",
+        "reason": "fresh init array; same-field transform; no sibling RHS/callback dependency on old array; closed renderer has no retained model snapshots or effects"
+      },
+      {
+        "expression": 88,
+        "path": "rows1346",
+        "operation": "List.map",
+        "reason": "fresh init array; same-field transform; no sibling RHS/callback dependency on old array; closed renderer has no retained model snapshots or effects"
+      },
+      {
+        "expression": 104,
+        "path": "rows1346",
+        "operation": "List.reverse",
+        "reason": "fresh init array; same-field transform; no sibling RHS/callback dependency on old array; closed renderer has no retained model snapshots or effects"
+      }
+    ],
+    "emittedFields": {
+      "next1346": "m0",
+      "rows1346": "m1",
+      "selected1346": "m2"
+    },
+    "rootPatches": [
+      {
+        "code": "textValue(n8,core.List_length(v0.rows1346));",
+        "reads": [
+          "rows1346"
+        ]
+      },
+      {
+        "code": "n11.p();",
+        "reads": [
+          "rows1346",
+          "selected1346"
+        ]
+      }
+    ]
+  }
+]

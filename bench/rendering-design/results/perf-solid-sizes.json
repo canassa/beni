@@ -1,0 +1,86 @@
+{
+  "solid": "2.0.0-rc.9",
+  "compiler": "@solidjs/vite-plugin 3.0.0-next.35",
+  "observations": [
+    {
+      "name": "perf-list-1000",
+      "n": 1,
+      "seed": 17,
+      "shape": "list",
+      "mode": "solid",
+      "sha256": "cd451dcf9832444caa36d0ebd62a27ccc83784d65c2ae7d9ac216633f980927b",
+      "full": {
+        "raw": 67679,
+        "brotli": 21912,
+        "gzip": 24094
+      },
+      "rendering": {
+        "raw": 67679,
+        "brotli": 21912,
+        "gzip": 24094
+      },
+      "runtime": {
+        "raw": 65638,
+        "brotli": 21113,
+        "gzip": 23199
+      },
+      "app_alone": {
+        "raw": 2041,
+        "brotli": 914,
+        "gzip": 998
+      },
+      "app_in_rendering_context": 799,
+      "excluded_core": {
+        "raw": 0,
+        "brotli": 1,
+        "gzip": 20
+      },
+      "origins": {
+        "platforms/solid/runtime": 65638,
+        "unmapped": 227,
+        "app/main.jsx": 1814
+      },
+      "rendering_sha256": "cd451dcf9832444caa36d0ebd62a27ccc83784d65c2ae7d9ac216633f980927b"
+    },
+    {
+      "name": "perf-list-10000",
+      "n": 1,
+      "seed": 17,
+      "shape": "list",
+      "mode": "solid",
+      "sha256": "b1bf3a4fa1b4702c7f221f9947c5c0ae27673ea7a702fa50c01aebb7fe24cd48",
+      "full": {
+        "raw": 67679,
+        "brotli": 21871,
+        "gzip": 24094
+      },
+      "rendering": {
+        "raw": 67679,
+        "brotli": 21871,
+        "gzip": 24094
+      },
+      "runtime": {
+        "raw": 65638,
+        "brotli": 21113,
+        "gzip": 23199
+      },
+      "app_alone": {
+        "raw": 2041,
+        "brotli": 914,
+        "gzip": 998
+      },
+      "app_in_rendering_context": 758,
+      "excluded_core": {
+        "raw": 0,
+        "brotli": 1,
+        "gzip": 20
+      },
+      "origins": {
+        "platforms/solid/runtime": 65638,
+        "unmapped": 227,
+        "app/main.jsx": 1814
+      },
+      "rendering_sha256": "b1bf3a4fa1b4702c7f221f9947c5c0ae27673ea7a702fa50c01aebb7fe24cd48"
+    }
+  ]
+}

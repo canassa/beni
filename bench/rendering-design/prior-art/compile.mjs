@@ -1,0 +1,14 @@
+import fs from 'node:fs';import {fileURLToPath} from 'node:url';
+import {compile as vapor} from '@vue/compiler-vapor';
+import {compileSync as marko} from '@marko/compiler';
+const vue='<div><button @click="count++">Increment</button><output>{{ count * 2 }}</output><input v-model="name"><p v-if="name.length < 3">Too short</p></div>';
+const markoSource='<let/count=0/>\n<let/name=""/>\n<div><button onClick(){count++}>Increment</button><output>${count * 2}</output><input value:=name/><if=name.length < 3><p>Too short</p></if></div>';
+fs.writeFileSync(new URL('shared.vue',import.meta.url),vue+'\n');fs.writeFileSync(new URL('shared.marko',import.meta.url),markoSource+'\n');
+const v=vapor(vue,{mode:'module',prefixIdentifiers:true});fs.writeFileSync(new URL('vapor-output.js',import.meta.url),v.code+'\n');
+const m=marko(markoSource,new URL('shared.marko',import.meta.url).pathname,{output:'dom',translator:fileURLToPath(import.meta.resolve('marko/translator')),optimize:true});fs.writeFileSync(new URL('marko-output.js',import.meta.url),m.code+'\n');
+console.log('Compiled shared example through Vue Vapor and Marko 6');
+const {transform}=await import('../node_modules/@solidjs/compiler/index.js');
+const solidSource=`import {createSignal,Show} from 'solid-js';\nexport default function Shared(){const [count,setCount]=createSignal(0),[name,setName]=createSignal('');return <div><button onClick={()=>setCount(n=>n+1)}>Increment</button><output>{count()*2}</output><input value={name()} onInput={e=>setName(e.target.value)}/><Show when={name().length<3}><p>Too short</p></Show></div>}`;
+fs.writeFileSync(new URL('shared.jsx',import.meta.url),solidSource+'\n');
+const solidOutput=transform(solidSource,{filename:'shared.jsx',generate:'dom',moduleName:'@solidjs/web',dev:false});
+fs.writeFileSync(new URL('solid-output.js',import.meta.url),solidOutput.code.trimEnd()+'\n');

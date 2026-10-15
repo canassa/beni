@@ -1,0 +1,196 @@
+[
+  {
+    "module": "Shape0.bir",
+    "method": "Record-update result paths and view-expression dependencies from compiler BIR; helper argument substitution; recursive calls conservatively depend on argument roots.",
+    "cases": [
+      {
+        "name": "Open",
+        "pat": 8,
+        "body": 18,
+        "params": [],
+        "writes": [
+          "draft7423",
+          "open7423",
+          "visits7423"
+        ],
+        "assignments": [
+          {
+            "path": "open7423",
+            "rhs": 10,
+            "operation": {
+              "kind": "replace"
+            }
+          },
+          {
+            "path": "draft7423",
+            "rhs": 12,
+            "operation": {
+              "kind": "replace"
+            }
+          },
+          {
+            "path": "visits7423",
+            "rhs": 17,
+            "operation": {
+              "kind": "replace",
+              "callee": "Basics.add"
+            }
+          }
+        ]
+      },
+      {
+        "name": "Close",
+        "pat": 21,
+        "body": 24,
+        "params": [],
+        "writes": [
+          "open7423"
+        ],
+        "assignments": [
+          {
+            "path": "open7423",
+            "rhs": 23,
+            "operation": {
+              "kind": "replace"
+            }
+          }
+        ]
+      },
+      {
+        "name": "Draft",
+        "pat": 28,
+        "body": 31,
+        "params": [
+          27
+        ],
+        "writes": [
+          "draft7423"
+        ],
+        "assignments": [
+          {
+            "path": "draft7423",
+            "rhs": 30,
+            "operation": {
+              "kind": "replace"
+            }
+          }
+        ]
+      },
+      {
+        "name": "Confirm",
+        "pat": 34,
+        "body": 39,
+        "params": [],
+        "writes": [
+          "open7423",
+          "saved7423"
+        ],
+        "assignments": [
+          {
+            "path": "open7423",
+            "rhs": 36,
+            "operation": {
+              "kind": "replace"
+            }
+          },
+          {
+            "path": "saved7423",
+            "rhs": 38,
+            "operation": {
+              "kind": "replace"
+            }
+          }
+        ]
+      }
+    ],
+    "holes": [
+      {
+        "position": "%20.0.1@value",
+        "expr": 16,
+        "reads": [
+          "draft7423"
+        ]
+      },
+      {
+        "position": "%27.0.1.1.0",
+        "expr": 8,
+        "reads": [
+          "saved7423"
+        ]
+      },
+      {
+        "position": "%27.0.1.2.0",
+        "expr": 10,
+        "reads": [
+          "visits7423"
+        ]
+      },
+      {
+        "position": "%27.0.1.3",
+        "expr": 26,
+        "reads": [
+          "draft7423",
+          "open7423"
+        ]
+      }
+    ],
+    "edges": [
+      {
+        "message": "Open",
+        "holes": [
+          "%20.0.1@value",
+          "%27.0.1.2.0",
+          "%27.0.1.3"
+        ]
+      },
+      {
+        "message": "Close",
+        "holes": [
+          "%27.0.1.3"
+        ]
+      },
+      {
+        "message": "Draft",
+        "holes": [
+          "%20.0.1@value",
+          "%27.0.1.3"
+        ]
+      },
+      {
+        "message": "Confirm",
+        "holes": [
+          "%27.0.1.1.0",
+          "%27.0.1.3"
+        ]
+      }
+    ],
+    "ownership": [],
+    "emittedFields": {
+      "draft7423": "m0",
+      "open7423": "m1",
+      "visits7423": "m2",
+      "saved7423": "m3"
+    },
+    "rootPatches": [
+      {
+        "code": "textValue(n7,v0.saved7423);",
+        "reads": [
+          "saved7423"
+        ]
+      },
+      {
+        "code": "textValue(n9,v0.visits7423);",
+        "reads": [
+          "visits7423"
+        ]
+      },
+      {
+        "code": "n10.p();",
+        "reads": [
+          "draft7423",
+          "open7423"
+        ]
+      }
+    ]
+  }
+]

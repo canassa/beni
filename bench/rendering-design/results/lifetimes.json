@@ -1,0 +1,159 @@
+{
+  "browser": "Chrome/155.0.8059.80",
+  "observations": [
+    {
+      "shape": "list",
+      "mode": "tea",
+      "unchanged": true,
+      "detached": true,
+      "errors": []
+    },
+    {
+      "shape": "list",
+      "mode": "direct",
+      "unchanged": true,
+      "detached": true,
+      "errors": []
+    },
+    {
+      "shape": "list",
+      "mode": "vanilla",
+      "unchanged": true,
+      "detached": true,
+      "errors": []
+    },
+    {
+      "shape": "list",
+      "mode": "partial",
+      "unchanged": true,
+      "detached": true,
+      "errors": []
+    },
+    {
+      "shape": "list",
+      "mode": "static",
+      "unchanged": true,
+      "detached": true,
+      "errors": []
+    },
+    {
+      "shape": "list",
+      "mode": "cells",
+      "unchanged": true,
+      "detached": true,
+      "errors": []
+    },
+    {
+      "shape": "list",
+      "mode": "local",
+      "unchanged": true,
+      "detached": true,
+      "errors": []
+    },
+    {
+      "shape": "list",
+      "mode": "solid",
+      "unchanged": true,
+      "detached": true,
+      "errors": []
+    },
+    {
+      "shape": "modal",
+      "mode": "tea",
+      "unchanged": true,
+      "detached": true,
+      "errors": []
+    },
+    {
+      "shape": "modal",
+      "mode": "direct",
+      "unchanged": true,
+      "detached": true,
+      "errors": []
+    },
+    {
+      "shape": "modal",
+      "mode": "vanilla",
+      "unchanged": true,
+      "detached": true,
+      "errors": []
+    },
+    {
+      "shape": "modal",
+      "mode": "partial",
+      "unchanged": true,
+      "detached": true,
+      "errors": []
+    },
+    {
+      "shape": "modal",
+      "mode": "static",
+      "unchanged": true,
+      "detached": true,
+      "errors": []
+    },
+    {
+      "shape": "modal",
+      "mode": "cells",
+      "unchanged": true,
+      "detached": true,
+      "errors": []
+    },
+    {
+      "shape": "modal",
+      "mode": "local",
+      "unchanged": true,
+      "detached": true,
+      "errors": []
+    },
+    {
+      "shape": "tabs",
+      "mode": "tea",
+      "unchanged": true,
+      "detached": true,
+      "errors": []
+    },
+    {
+      "shape": "tabs",
+      "mode": "direct",
+      "unchanged": true,
+      "detached": true,
+      "errors": []
+    },
+    {
+      "shape": "tabs",
+      "mode": "vanilla",
+      "unchanged": true,
+      "detached": true,
+      "errors": []
+    },
+    {
+      "shape": "tabs",
+      "mode": "partial",
+      "unchanged": true,
+      "detached": true,
+      "errors": []
+    },
+    {
+      "shape": "tabs",
+      "mode": "static",
+      "unchanged": true,
+      "detached": true,
+      "errors": []
+    },
+    {
+      "shape": "tabs",
+      "mode": "cells",
+      "unchanged": true,
+      "detached": true,
+      "errors": []
+    },
+    {
+      "shape": "tabs",
+      "mode": "local",
+      "unchanged": true,
+      "detached": true,
+      "errors": []
+    }
+  ]
+}

@@ -1,0 +1,46 @@
+-- Proposed surface, not accepted by today's compiler.
+-- Action is a typed, deferred DOM callback, not an ordinary eager call.
+-- An action commits its transaction atomically; render runs after commit.
+-- Model snapshots do not escape the owned component.
+import Html exposing (Html, Action)
+
+component Instance
+    type alias Model =
+        name6502 : String
+        email6502 : String
+        submitted6502 : Bool
+        attempts6502 : Int
+
+
+    init : ⊤ → Model
+    init ⊤ = { name6502 = "", email6502 = "", submitted6502 = False, attempts6502 = 0 }
+
+    state model : Model = init ⊤
+
+    action Name (text : String) =
+        transaction
+            let old = model
+            model ←
+                if String.contains text "#" then old else { old | name6502 = text, submitted6502 = False }
+
+    action Email (text : String) =
+        transaction
+            let old = model
+            model ←
+                { old | email6502 = text, submitted6502 = False }
+
+    action Submit =
+        transaction
+            let old = model
+            model ←
+                { old | submitted6502 = True, attempts6502 = old.attempts6502 + 1 }
+
+    action Reset =
+        transaction
+            let old = model
+            model ←
+                { old | name6502 = "", email6502 = "", submitted6502 = False }
+
+    view : Html Action
+    view =
+        <section id="s0" data-shape="form"><h2>form 17/0 People</h2><label>Name<input id="s0-name" value={model.name6502} onInput={Name} /></label><label>Email<input id="s0-email" value={model.email6502} onInput={Email} /></label><p id="s0-validation">{if String.length model.name6502 < 4 then "Name too short" else if String.contains model.email6502 "@" then "Ready" else "Email needs @"}</p><button id="s0-submit" onClick={Submit}>Submit</button><button id="s0-reset" onClick={Reset}>Reset</button><p hidden={not model.submitted6502}>Saved {model.name6502} / {model.attempts6502}</p></section>

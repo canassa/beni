@@ -1,0 +1,320 @@
+[
+  {
+    "module": "Shape0.bir",
+    "method": "Record-update result paths and view-expression dependencies from compiler BIR; helper argument substitution; recursive calls conservatively depend on argument roots.",
+    "cases": [
+      {
+        "name": "Add",
+        "pat": 8,
+        "body": 32,
+        "params": [],
+        "writes": [
+          "next2595",
+          "rows2595"
+        ],
+        "assignments": [
+          {
+            "path": "rows2595",
+            "rhs": 26,
+            "operation": {
+              "kind": "append",
+              "input": "rows2595",
+              "argument": 24,
+              "witness": "call %25 [%11, %24]"
+            }
+          },
+          {
+            "path": "next2595",
+            "rhs": 31,
+            "operation": {
+              "kind": "replace",
+              "callee": "Basics.add"
+            }
+          }
+        ]
+      },
+      {
+        "name": "Remove",
+        "pat": 36,
+        "body": 48,
+        "params": [
+          35
+        ],
+        "writes": [
+          "rows2595"
+        ],
+        "assignments": [
+          {
+            "path": "rows2595",
+            "rhs": 47,
+            "operation": {
+              "kind": "filter",
+              "input": "rows2595",
+              "argument": 46,
+              "witness": "call %38 [%40, %46]"
+            }
+          }
+        ]
+      },
+      {
+        "name": "Edit",
+        "pat": 52,
+        "body": 88,
+        "params": [
+          51
+        ],
+        "writes": [
+          "rows2595"
+        ],
+        "assignments": [
+          {
+            "path": "rows2595",
+            "rhs": 87,
+            "operation": {
+              "kind": "map",
+              "input": "rows2595",
+              "argument": 86,
+              "witness": "call %54 [%56, %86]"
+            }
+          }
+        ]
+      },
+      {
+        "name": "Select",
+        "pat": 92,
+        "body": 95,
+        "params": [
+          91
+        ],
+        "writes": [
+          "selected2595"
+        ],
+        "assignments": [
+          {
+            "path": "selected2595",
+            "rhs": 94,
+            "operation": {
+              "kind": "replace"
+            }
+          }
+        ]
+      },
+      {
+        "name": "Reverse",
+        "pat": 98,
+        "body": 104,
+        "params": [],
+        "writes": [
+          "rows2595"
+        ],
+        "assignments": [
+          {
+            "path": "rows2595",
+            "rhs": 103,
+            "operation": {
+              "kind": "reverse",
+              "input": "rows2595",
+              "argument": null,
+              "witness": "call %100 [%102]"
+            }
+          }
+        ]
+      },
+      {
+        "name": "Query",
+        "pat": 108,
+        "body": 111,
+        "params": [
+          107
+        ],
+        "writes": [
+          "query2595"
+        ],
+        "assignments": [
+          {
+            "path": "query2595",
+            "rhs": 110,
+            "operation": {
+              "kind": "replace"
+            }
+          }
+        ]
+      },
+      {
+        "name": "OnlyDone",
+        "pat": 114,
+        "body": 120,
+        "params": [],
+        "writes": [
+          "onlyDone2595"
+        ],
+        "assignments": [
+          {
+            "path": "onlyDone2595",
+            "rhs": 119,
+            "operation": {
+              "kind": "replace",
+              "callee": "Basics.not"
+            }
+          }
+        ]
+      }
+    ],
+    "holes": [
+      {
+        "position": "%77.0@data-row",
+        "expr": 46,
+        "reads": []
+      },
+      {
+        "position": "%77.0@class",
+        "expr": 60,
+        "reads": [
+          "selected2595"
+        ]
+      },
+      {
+        "position": "%77.0.0.0",
+        "expr": 66,
+        "reads": []
+      },
+      {
+        "position": "%77.0.1.0",
+        "expr": 68,
+        "reads": []
+      },
+      {
+        "position": "%79.0.1.2@value",
+        "expr": 9,
+        "reads": [
+          "query2595"
+        ]
+      },
+      {
+        "position": "%79.0.1.4.0",
+        "expr": 15,
+        "reads": [
+          "rows2595"
+        ]
+      },
+      {
+        "position": "%79.0.1.5.0",
+        "expr": 37,
+        "row": 78,
+        "reads": [
+          "onlyDone2595",
+          "query2595",
+          "rows2595",
+          "selected2595"
+        ],
+        "structural": true
+      }
+    ],
+    "edges": [
+      {
+        "message": "Add",
+        "holes": [
+          "%79.0.1.4.0",
+          "%79.0.1.5.0"
+        ]
+      },
+      {
+        "message": "Remove",
+        "holes": [
+          "%79.0.1.4.0",
+          "%79.0.1.5.0"
+        ]
+      },
+      {
+        "message": "Edit",
+        "holes": [
+          "%79.0.1.4.0",
+          "%79.0.1.5.0"
+        ]
+      },
+      {
+        "message": "Select",
+        "holes": [
+          "%77.0@class",
+          "%79.0.1.5.0"
+        ]
+      },
+      {
+        "message": "Reverse",
+        "holes": [
+          "%79.0.1.4.0",
+          "%79.0.1.5.0"
+        ]
+      },
+      {
+        "message": "Query",
+        "holes": [
+          "%79.0.1.2@value",
+          "%79.0.1.5.0"
+        ]
+      },
+      {
+        "message": "OnlyDone",
+        "holes": [
+          "%79.0.1.5.0"
+        ]
+      }
+    ],
+    "ownership": [
+      {
+        "expression": 26,
+        "path": "rows2595",
+        "operation": "List.append",
+        "reason": "fresh init array; same-field transform; no sibling RHS/callback dependency on old array; closed renderer has no retained model snapshots or effects"
+      },
+      {
+        "expression": 47,
+        "path": "rows2595",
+        "operation": "List.filter",
+        "reason": "fresh init array; same-field transform; no sibling RHS/callback dependency on old array; closed renderer has no retained model snapshots or effects"
+      },
+      {
+        "expression": 87,
+        "path": "rows2595",
+        "operation": "List.map",
+        "reason": "fresh init array; same-field transform; no sibling RHS/callback dependency on old array; closed renderer has no retained model snapshots or effects"
+      },
+      {
+        "expression": 103,
+        "path": "rows2595",
+        "operation": "List.reverse",
+        "reason": "fresh init array; same-field transform; no sibling RHS/callback dependency on old array; closed renderer has no retained model snapshots or effects"
+      }
+    ],
+    "emittedFields": {
+      "next2595": "m0",
+      "rows2595": "m1",
+      "selected2595": "m2",
+      "query2595": "m3",
+      "onlyDone2595": "m4"
+    },
+    "rootPatches": [
+      {
+        "code": "attribute(n8,\"value\",v0.query2595);",
+        "reads": [
+          "query2595"
+        ]
+      },
+      {
+        "code": "textValue(n12,core.List_length(v0.rows2595));",
+        "reads": [
+          "rows2595"
+        ]
+      },
+      {
+        "code": "n15.p();",
+        "reads": [
+          "onlyDone2595",
+          "query2595",
+          "rows2595",
+          "selected2595"
+        ]
+      }
+    ]
+  }
+]

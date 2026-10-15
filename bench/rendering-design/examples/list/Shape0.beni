@@ -1,0 +1,44 @@
+import Html exposing (Html)
+
+type alias Row =
+    id : Int
+    title : String
+    score : Int
+    done : Bool
+
+pub type alias Model =
+    rows1346 : List Row
+    next1346 : Int
+    selected1346 : Int
+
+pub type Msg
+    = Add
+    | Remove Int
+    | Edit Int
+    | Select Int
+    | Reverse
+
+pub init : ⊤ → Model
+init ⊤ = { rows1346 = List.map (List.range 1 20) λi → { id = i, title = "Item " ++ String.fromInt i, score = Int.mod (i * 5) 17, done = False }, next1346 = 21, selected1346 = 0 }
+
+pub update : Msg, Model → Model
+update msg model =
+    case msg of
+        Add →
+            { model | rows1346 = [ …model.rows1346, { id = model.next1346, title = "list 17/0 People " ++ String.fromInt model.next1346, score = 5, done = False } ], next1346 = model.next1346 + 1 }
+
+        Remove wanted →
+            { model | rows1346 = List.filter model.rows1346 λrow → row.id ≠ wanted, selected1346 = 0 }
+
+        Edit wanted →
+            { model | rows1346 = List.map model.rows1346 λrow → if row.id == wanted then { row | title = row.title ++ "!", score = row.score + 5, done = not row.done } else row }
+
+        Select wanted →
+            { model | selected1346 = wanted }
+
+        Reverse →
+            { model | rows1346 = List.reverse model.rows1346 }
+
+pub view : Model → Html Msg
+view model =
+    <section id="s0" data-shape="list"><h2>list 17/0 People</h2><button id="s0-add" onClick={Add}>Add</button><button id="s0-reverse" onClick={Reverse}>Reverse</button><p>{List.length model.rows1346} records</p><ul><For each={model.rows1346} keyed={.id}>{λrow → <li data-row={String.fromInt row.id} class={if model.selected1346 == row.id then "selected" else ""}><button onClick={Select row.id}>{row.title}</button><output>{row.score}</output><button onClick={Edit row.id}>Edit</button><button onClick={Remove row.id}>Remove</button></li>}</For></ul></section>

@@ -1,0 +1,34 @@
+import Html exposing (Html)
+
+card : String, Int, Bool → Html Msg
+card title count left =
+    <article><h3>{title}</h3><output>{count}</output><button onClick={Child left 5}>Child action</button></article>
+
+branch : Int, Int, Bool → Html Msg
+branch level count left =
+    if level == 0 then card "Leaf" count left else <div class="nested">{branch (level - 1) count left}</div>
+
+pub type alias Model =
+    left6797 : Int
+    right6797 : Int
+    expanded6797 : Bool
+
+pub type Msg
+    = Child Bool Int
+    | Collapse
+
+pub init : ⊤ → Model
+init ⊤ = { left6797 = 0, right6797 = 5, expanded6797 = True }
+
+pub update : Msg, Model → Model
+update msg model =
+    case msg of
+        Child left amount →
+            if left then { model | left6797 = model.left6797 + amount } else { model | right6797 = model.right6797 + amount }
+
+        Collapse →
+            { model | expanded6797 = not model.expanded6797 }
+
+pub view : Model → Html Msg
+view model =
+    <section id="s0" data-shape="nested"><h2>nested 17/0 Work</h2><div class="level-0"><button id="s0-collapse" onClick={Collapse}>Collapse</button><p id="s0-total">{model.left6797 + model.right6797}</p><div hidden={not model.expanded6797}>{branch 2 model.left6797 True}{branch 3 model.right6797 False}</div></div></section>

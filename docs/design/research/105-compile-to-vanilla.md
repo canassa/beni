@@ -1,5 +1,7 @@
 # 105 — Compile UI apps to vanilla: preserve instances and edits
 
+**Superseded for issue #172 by [research 106](106-rendering-design.md).** This earlier study did not derive dependency sets from TEA source or measure today’s compiler on the same apps. Its synthetic dispatch curves are not evidence for the rendering-design decision.
+
 *2026-10-15. Research for [issue #172](https://github.com/canassa/beni/issues/172),
 not an adopted language or platform change. Base `f1ab9cc87`; Apple M2 Pro,
 macOS arm64, Node 24.19.0, Terser 5.51.2. Chrome version, source/output hashes,

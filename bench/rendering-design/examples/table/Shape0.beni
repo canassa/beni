@@ -1,0 +1,49 @@
+import Html exposing (Html)
+
+type alias Row =
+    id : Int
+    title : String
+    score : Int
+    done : Bool
+
+pub type alias Model =
+    rows2266 : List Row
+    next2266 : Int
+    selected2266 : Int
+    descending2266 : Bool
+
+pub type Msg
+    = Add
+    | Remove Int
+    | Edit Int
+    | Select Int
+    | Reverse
+    | Sort
+
+pub init : ⊤ → Model
+init ⊤ = { rows2266 = List.map (List.range 1 20) λi → { id = i, title = "Item " ++ String.fromInt i, score = Int.mod (i * 6) 17, done = False }, next2266 = 21, selected2266 = 0, descending2266 = False }
+
+pub update : Msg, Model → Model
+update msg model =
+    case msg of
+        Add →
+            { model | rows2266 = [ …model.rows2266, { id = model.next2266, title = "table 17/0 People " ++ String.fromInt model.next2266, score = 6, done = False } ], next2266 = model.next2266 + 1 }
+
+        Remove wanted →
+            { model | rows2266 = List.filter model.rows2266 λrow → row.id ≠ wanted, selected2266 = 0 }
+
+        Edit wanted →
+            { model | rows2266 = List.map model.rows2266 λrow → if row.id == wanted then { row | title = row.title ++ "!", score = row.score + 6, done = not row.done } else row }
+
+        Select wanted →
+            { model | selected2266 = wanted }
+
+        Reverse →
+            { model | rows2266 = List.reverse model.rows2266 }
+
+        Sort →
+            { model | descending2266 = not model.descending2266 }
+
+pub view : Model → Html Msg
+view model =
+    <section id="s0" data-shape="table"><h2>table 17/0 People</h2><div class="level-0"><button id="s0-add" onClick={Add}>Add</button><button id="s0-reverse" onClick={Reverse}>Reverse</button><p>{List.length model.rows2266} records</p><table><thead><tr><th><button id="s0-sort" onClick={Sort}>Sort</button></th><th>Score</th><th>Actions</th></tr></thead><tbody><For each={if model.descending2266 then List.reverse (List.sortBy model.rows2266 .score) else List.sortBy model.rows2266 .score} keyed={.id}>{λrow → <tr data-row={String.fromInt row.id} class={if model.selected2266 == row.id then "selected" else ""}><td><button onClick={Select row.id}>{row.title}</button></td><td>{row.score}</td><td><button onClick={Edit row.id}>Edit</button><button onClick={Remove row.id}>Remove</button></td></tr>}</For></tbody></table></div></section>
