@@ -46,6 +46,9 @@
       # (commit bfc234325). The GLOBAL one holds what Zig compiles from its
       # own library, the build runner and compiler-rt, with every input
       # file named relative to Zig's library or the global cache itself.
+      # That stays true only while no build step writes a worktree's file
+      # into the global cache: `build.zig` never uses
+      # `b.graph.global_cache_root`, and it must not start to.
       # One global cache serves every worktree of beni and no other
       # project. In the default `~/.cache/zig`, another project's Nix
       # build of Zig 0.17.0 took the build runner's slot: its library

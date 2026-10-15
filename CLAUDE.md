@@ -355,9 +355,10 @@ time a ReleaseFast LLVM beni.
 Never share one between git worktrees: a worktree was handed a stale binary
 built from another worktree's sources (commit `bfc234325`). Zig's GLOBAL cache
 holds only what Zig compiles from its own library (the build runner,
-compiler-rt), so every worktree of beni shares one: every dev shell in
-`flake.nix`, and so direnv, sets `ZIG_GLOBAL_CACHE_DIR` to
-`${XDG_CACHE_HOME:-~/.cache}/zig-beni`. In the default `~/.cache/zig`, another
+compiler-rt), and no build step may write a worktree's file into it (no
+`b.graph.global_cache_root` in `build.zig`). So every worktree of beni shares
+one: every dev shell in `flake.nix`, and so direnv, sets `ZIG_GLOBAL_CACHE_DIR`
+to `${XDG_CACHE_HOME:-~/.cache}/zig-beni`. In the default `~/.cache/zig`, another
 project's Nix build of Zig 0.17.0 evicted beni's build runner, and the next
 `zig build` compiled it again for 1 to 3 minutes (#161). The shells keep a
 value that is set already, and CI sets `~/.cache/zig`, the path its cache
