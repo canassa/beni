@@ -1,4 +1,4 @@
-# research 103: the Reader script up to the feed, then favorite and unfavorite the
+# research 104: the Reader script up to the feed, then favorite and unfavorite the
 # preview from the feed list (no corpus script clicks it), compared with the
 # unchanged bundle by verify-favorite.mjs.
 url "/login"

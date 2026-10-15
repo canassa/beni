@@ -1,4 +1,4 @@
-// Run research 103's executable prototypes over the tea bundle, alone and
+// Run research 104's executable prototypes over the tea bundle, alone and
 // stacked in order, each verified against the three Conduit corpus scripts,
 // and record their sizes (and Terser's on top of the stack).
 //   node bench/app-code-size/prototypes.mjs [results dir]

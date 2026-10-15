@@ -1,6 +1,6 @@
 # Conduit's own code, construct by construct
 
-Research 103's measurements: why Conduit's application code (not core, not
+Research 104's measurements: why Conduit's application code (not core, not
 the platform runtime, not the schemas) is larger in beni's two browser
 platforms than in the Solid reference, and what Solid-like encodings would
 weigh. No compiler, core, platform or application source changes. Nothing

@@ -1,4 +1,4 @@
-// Research 103: build Conduit's --release bundles (plain and mapped) for both platforms,
+// Research 104: build Conduit's --release bundles (plain and mapped) for both platforms,
 // check mapped == plain, and archive them under results/.
 // BENI selects the compiler (default zig-out/bin/beni).
 import fs from 'node:fs';
