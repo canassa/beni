@@ -5,7 +5,8 @@ value-checked programs, and 73,390 explicitly counted skips. Both checkers
 accepted 18,346 programs and refused 21,961; Zig refused 401 that Lean accepted,
 and accepted 2,358 that Lean refused. **201 original programs expose shipping
 ownership-checker defects, confirmed by the in-place interpreter**, in six
-clusters. The other **2,157 original programs are Lean precision leads**: the
+clusters. This confirms the in-place ownership policy against the Lean model;
+the emitted JavaScript still uses persistent lists. The other **2,157 original programs are Lean precision leads**: the
 oracle's value and in-place traces agree. Neither checker was changed or weakened.
 Six minimal beni refusals are pinned under `tests/pending/check/bad/direct/`.
 The emitted direct runtime still uses persistent lists; it cannot judge this
@@ -232,8 +233,11 @@ targeted, bound-2 enumeration and three v5 streams. Every regenerated original
 has the exact retained Lean refusal and translates to the exact retained beni
 source. The complete membership table assigns each diverging original once,
 by its minimal causal pattern rather than by Lean's first rejection message.
-Some originals contain more than one defect; counts are program counts, not
-counts of independent writes.
+This is a **manual causal classification**: the replay checks its coverage and
+disjointness, not a structural predicate for each cluster. Some originals contain
+more than one defect; counts are program counts, not counts of independent writes.
+The function/line citations below refer to the unchanged ownership source at
+commit `2491cb6a4` (the source is identical in this triage commit).
 
 | Minimal Zig pattern | Originals | Pending fixture | Zig rule/protocol at fault |
 |---|---:|---|---|
@@ -241,13 +245,16 @@ counts of independent writes.
 | Return an earlier written capture from a later focus callback | 16 | [BridgeCaptureResult](../../tests/pending/check/bad/direct/BridgeCaptureResult.beni) | `src/own/Ownership.zig:3965`, `:4909`, `:8342`: the returned capture is used in the callback frame, while the earlier demand resolves only uses in its own frame. Its later capture/return does not keep the outer holder live. |
 | Return an old parameter/block result after writing or lending it, including recursive calls | 8 | [BridgeBlockResult](../../tests/pending/check/bad/direct/BridgeBlockResult.beni) | `src/own/Ownership.zig:5040`, `:3168`: `evalLet` evaluates its final result without consuming it; consuming the compound body does not consume its terminal local. The summary can publish `W` and return the old `π` without the internal Dead refusal. |
 | Reuse a borrowed input as a fold's written accumulator | 5 | [BridgeFoldBorrow](../../tests/pending/check/bad/direct/BridgeFoldBorrow.beni) | `src/own/Ownership.zig:7174`, `:7436`, `:7530`: the callback-result guard accepts the item's owned supply without enforcing its taken-container condition/lifetime on the feedback edge. Returning an input can make the next written accumulator alias the retained input or a later input position. |
-| Recursive return of a capture loses the write/once obligation | 1 | [BridgeRecursiveCapture](../../tests/pending/check/bad/direct/BridgeRecursiveCapture.beni) | `src/own/Ownership.zig:6426`, `:4935`: local groups are walked before value bindings; an unresolved environment result instantiates as no cells, so the write through the recursive return contributes no captured write and the closure is not once. A second call mutates the first call's retained seed. |
+| Recursive return of a capture loses the write/once obligation | 1 | [BridgeRecursiveCapture](../../tests/pending/check/bad/direct/BridgeRecursiveCapture.beni) | `src/own/Ownership.zig:6425`, `:4935`: `walkGroup` runs before value bindings; `instProv` turns an unresolved environment result into no cells, so the write through the recursive return contributes no captured write and the closure is not once. A second call mutates the first call's retained seed. |
 | Written argument aliases the callee's returned capture | 1 | [BridgeCaptureOperand](../../tests/pending/check/bad/direct/BridgeCaptureOperand.beni) | `src/own/Ownership.zig:6660`: `callSiteDemandDeep` includes other explicit arguments and paths but omits the callee environment from Disjoint. |
 | **Total** | **201** | **6 fixtures** | **Shipping checker unchanged** |
 
 All six fixtures currently check successfully with no diagnostics under
 `browser-direct`, despite their pinned `list_still_used` refusal. Their `RED`
-signature is `exit=0 codes=none`. The small Lean twins are
+signature is `exit=0 codes=none`. The beni fixtures are **hand-transcribed**
+from the small Lean twins, using readable names and public library calls.
+Their semantic correspondence was reviewed; it is not an automated
+translation-equality check. The Lean twins are
 [regressions/bridge/Triage.json](regressions/bridge/Triage.json); all six diverge.
 For example, the case and block twins return `[1]` by value versus `[1,2]` in
 place; the capture operand returns `[0]` versus `[2]`; the recursive captured
