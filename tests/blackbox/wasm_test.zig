@@ -46,8 +46,10 @@ fn wasmCompiler(w: *World) ![]const u8 {
 /// the self-hosted build's 18 MB code section, and that build's slow start
 /// on the embedded core and platforms. A one-line program costs 92% of
 /// what `run/Adt` costs, so no smaller input reduces it, and under the
-/// gates' 4 300M the margin was 17%. The limit is about 1.7 times the
-/// largest count (3 579M), so an unrelated growth of a fifth still fits.
+/// gates' 4 300M the margin was 17%. The limit is 1.63 times the largest
+/// count (3 681M, the printing program with its profile, 2026-10-15), so an
+/// unrelated growth of a fifth still fits. The grant covers the whole test
+/// body: the `.wasm` run, and the native run and the comparison beside it.
 /// It can go when the gates' `.wasm` is an LLVM build, about a third of the
 /// count. `zig build test-playground`, in CI on every pull request, compares
 /// the shipped `.wasm` on the whole corpus.
@@ -61,6 +63,9 @@ fn withWasmBudget(comptime body: fn () anyerror!void) !void {
     const meter = world.timing.CaseMeter.open();
     defer meter.close();
     const start = meter.read();
+    // Counted on the way out of a failed body too, so that the test's own
+    // sum is right whichever way it ends.
+    errdefer _ = world.timing.cases_spent.fetchAdd(meter.read() -% start, .monotonic);
     try body();
     const spent = meter.read() -% start;
     _ = world.timing.cases_spent.fetchAdd(spent, .monotonic);
@@ -286,6 +291,8 @@ fn buildsPrintingProgram() !void {
     const embedded = try wasm.profileCounter(&w, "other", "profile.json", "embedded_modules");
     try testing.expect(embedded > 0);
     try testing.expectEqual(try wasm.profileCounter(&w, "threaded", "profile.json", "embedded_modules"), embedded);
+    // One module, `Adt`, on purpose: with a refused pack the `.wasm` would
+    // check the core modules it reaches as well.
     try testing.expectEqual(@as(i64, 1), try wasm.profileCounter(&w, "other", "profile.json", "modules_checked"));
 }
 

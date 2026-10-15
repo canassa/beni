@@ -41,10 +41,11 @@ w3c-keyname 2.2.8 index.js
 "
 
 here="$(cd "$(dirname "$0")" && pwd)"
-out="$here/vendor"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
-rm -rf "$out"
+# Written here and moved into place at the end, so that a failed fetch
+# leaves the checked-in directory as it was.
+out="$work/vendor"
 mkdir -p "$out"
 
 {
@@ -64,7 +65,7 @@ echo "$PACKAGES" | while read -r name version entry file; do
   # taken from it.
   integrity="$(curl -sSf "https://registry.npmjs.org/$name/$version" | node -e 'let s="";process.stdin.on("data",(c)=>s+=c).on("end",()=>process.stdout.write(JSON.parse(s).dist.integrity))')"
   curl -sSf -o "$work/$base.tgz" "$tarball"
-  actual="sha512-$(openssl dgst -sha512 -binary "$work/$base.tgz" | base64 -w0)"
+  actual="sha512-$(openssl dgst -sha512 -binary "$work/$base.tgz" | openssl base64 -A)"
   if [ "$actual" != "$integrity" ]; then
     echo "$tarball: SHA-512 $actual, npm records $integrity" >&2
     exit 1
@@ -82,5 +83,9 @@ echo "$PACKAGES" | while read -r name version entry file; do
   } >>"$out/LICENSES.txt"
 done
 
-(cd "$out" && sha256sum ./*.js | sed 's| \./| |' >SHA256SUMS)
-cat "$out/SHA256SUMS"
+# `sha256sum` on Linux, `shasum -a 256` on macOS: the same output.
+if command -v sha256sum >/dev/null; then sum=(sha256sum); else sum=(shasum -a 256); fi
+(cd "$out" && "${sum[@]}" ./*.js | sed 's| \./| |' >SHA256SUMS)
+rm -rf "$here/vendor"
+mv "$out" "$here/vendor"
+cat "$here/vendor/SHA256SUMS"

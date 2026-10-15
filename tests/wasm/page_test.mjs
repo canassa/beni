@@ -216,6 +216,15 @@ if (mode === "positions") {
   const map = JSON.parse(/<script type="importmap">([\s\S]*?)<\/script>/.exec(html)[1]).imports;
   const targets = Object.values(map).map((url) => url.replace(/^\.\/vendor\//, "")).sort();
   check(JSON.stringify(targets) === JSON.stringify(modules), `the import map names each vendored module once: ${JSON.stringify(targets)}`);
+  // Every bare import inside a vendored module is a name the map resolves:
+  // a new pin that adds a dependency fails here, not in a browser.
+  for (const file of modules) {
+    const text = readFileSync(`${vendor}/${file}`, "utf8");
+    for (const [, spec] of text.matchAll(/^(?:import|export)\b[^;]*?\bfrom\s*['"]([^'"]+)['"]/gm)) {
+      if (spec.startsWith(".")) continue;
+      check(Object.hasOwn(map, spec), `${file} imports ${spec}, which the import map resolves`);
+    }
+  }
   for (const [name, url] of Object.entries(map)) {
     check(url.startsWith("./vendor/"), `${name} loads from the site (${url})`);
     // By file: a subpath such as `@codemirror/legacy-modes/mode/elm` is one

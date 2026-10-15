@@ -17,7 +17,8 @@
 //   - `todomvc`: one compile per run of `bench/todomvc/apps/beni/Sandbox.beni`,
 //     opened from a link and then edited by typing a different trailing
 //     comment each run, as the page's worker timed it;
-//   - `print`: the printing sample's compile, and whether its frame printed;
+//   - `print`: the printing sample's compile, and how many lines its frame
+//     printed;
 //   - `depth`: the deepest call `f (f (… 1))` the page compiles before the
 //     compiler runs out of the engine's stack (§8), found by bisection.
 //
@@ -153,14 +154,14 @@ await todo.close();
 // The printing sample.
 const printPage = await open(await linkTo("node", printing));
 const print = await printPage.until(builtMs);
-const printed = (await printPage.until(`document.getElementById("console").textContent.includes("fib 10 = 55") && document.getElementById("console").textContent`)) !== null;
+const printed = (await printPage.until(`document.getElementById("console").textContent.includes("fib 10 = 55") && document.getElementById("console").textContent`)).split("\n").length - 1;
 await printPage.close();
 
 // The deepest call the page compiles.
 async function compiles(n) {
   const program = `import Node exposing (Program)\n\n\nf : Int → Int\nf x =\n    x + 1\n\n\nbig : Int\nbig =\n    ${"f (".repeat(n)}1${")".repeat(n)}\n\n\nmain : Program\nmain =\n    Node.printLines [ String.fromInt big ]\n`;
   const page = await open(await linkTo("node", program));
-  const outcome = await page.until(`(() => { const t = ${status}; return (t.startsWith("Built in") || t.startsWith("The compiler") || /error/.test(t)) && t; })()`);
+  const outcome = await page.until(`(() => { const t = ${status}; return (t.startsWith("Built in") || t.startsWith("The compiler") || t.startsWith("The playground failed") || /error/.test(t)) && t; })()`);
   await page.close();
   return outcome.startsWith("Built in");
 }
