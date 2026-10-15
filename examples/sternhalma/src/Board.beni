@@ -36,9 +36,9 @@ pub type Triangle
 --|     - Central hexagon (radius 4) = 61 cells
 --|     - 6 triangular points (10 cells each) = 60 cells
 --|     Total = 121 cells
-pub init : Board
-init =
-    allCoords = centralHexagon ++ allTriangleCoords
+pub init : ⊤ → Board
+init ⊤ =
+    allCoords = centralHexagon ⊤ ++ allTriangleCoords
     indexed = List.indexedMap allCoords λidx c →
         { index = idx
         , coord = c
@@ -53,8 +53,8 @@ init =
 
 --| Central hexagon of radius 4 (61 cells).
 --|     Generated using cube coordinate constraints.
-centralHexagon : List Coord
-centralHexagon =
+centralHexagon : ⊤ → List Coord
+centralHexagon ⊤ =
     radius = 4
     List.range (-radius) radius
         ▷ List.concatMap λx →

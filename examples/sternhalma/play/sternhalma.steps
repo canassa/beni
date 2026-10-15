@@ -1,8 +1,8 @@
 # Sternhalma, the external port (examples/sternhalma), played by drag and
 # drop on the page driver (tests/corpus/README.md, the `browser/` kind).
-# It is a corpus case held out of the gates: the case costs ~5 000 million
-# instructions against the 4 300 million budget, and a load alone is over
-# it (PORTING.md, *The play script*). Replay it with
+# It runs in the paired direct/tea gates with the owner's explicit page and
+# separate value-fuzz grants (tests/corpus/browser/direct/Sternhalma).
+# Replay the original tea transcript with
 #
 #     beni build --out=out src
 #     node ../../tests/browser/driver.mjs \

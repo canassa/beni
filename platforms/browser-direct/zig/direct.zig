@@ -196,6 +196,7 @@ pub const lowering: m.Lowering = .{
         .{ .name = "show", .arity = 3 },
         .{ .name = "hide", .arity = 2 },
         .{ .name = "restate", .arity = 1 },
+        .{ .name = "restateValue", .arity = 1 },
         .{ .name = "listen", .arity = 3 },
         .{ .name = "control", .arity = 3 },
         .{ .name = "edited", .arity = 1 },
@@ -3921,7 +3922,11 @@ const Page = struct {
     /// its payload, its fallback — and handed to `slot`.
     fn writeValueArm(pg: *Page, blk: m.Block, br: *Branch, j: u32, inst: ?Path, slot: m.Expr, from: m.Expr) m.Error!void {
         const value = try pg.valueArm(blk, br, j, inst, from);
-        try pg.jsb().expression(blk, try pg.rt("childHtml", &.{ slot, value }));
+        const placed = try pg.rt("childHtml", &.{ slot, value });
+        // Stored markup has no captured substitution. Like any value hole,
+        // a branch arm must supply its own placement mask when adopting it.
+        // A computed view root already carries the program's root mask.
+        try pg.jsb().expression(blk, if (br.node == .none) placed else try pg.cx.templateValue(br.node, placed, true));
     }
 
     /// A value arm's markup from `from`, what the branch's one evaluation

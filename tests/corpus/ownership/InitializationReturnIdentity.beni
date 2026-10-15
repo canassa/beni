@@ -1,0 +1,17 @@
+-- Return-type dispatch and fingerprinting require a hidden type identity.
+-- No initializer transfer is allowed to this evidence-driven value.
+import Cmd
+
+
+seed : List a
+seed = []
+
+
+pub dest : List a
+    where
+        a.make : ⊤ → a
+        , a.compare : a, a → Order
+dest =
+    x = a.make ⊤
+    _ = Cmd.cancel x
+    List.push seed x

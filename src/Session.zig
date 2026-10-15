@@ -3027,8 +3027,8 @@ fn sameSpan(a: diagnostic.Span, b: diagnostic.Span) bool {
 }
 
 /// Render `items` on `stderr` in the run's diagnostics format, sorted by the
-/// schema's comparator like every other wave. Returns how many of `items`
-/// were errors.
+/// schema's comparator like every other wave. Returns the error count of
+/// the combined stream.
 ///
 /// **What `run` held back comes with them.** Under `defer_render` — which is
 /// how `build` runs — `run` collected its own wave and rendered nothing, so
@@ -3039,6 +3039,8 @@ fn sameSpan(a: diagnostic.Span, b: diagnostic.Span) bool {
 /// Called exactly once per run, and safe with `items` empty: a run that had
 /// warnings and an emit phase that had nothing still has to print them.
 pub fn renderLate(session: *Session, items: []const LateItem, stderr: *Io.Writer) RunError!u32 {
+    // Build/check return before this phase when the run reports errors;
+    // deferred diagnostics reaching renderLate are warnings, never held errors.
     const held = if (session.options.defer_render) session.diagnostics.items else &.{};
     if (items.len == 0 and held.len == 0) return 0;
     const gpa = session.gpa;
@@ -3081,7 +3083,8 @@ pub fn renderLate(session: *Session, items: []const LateItem, stderr: *Io.Writer
     defer session.late_sources = &.{};
     try session.render(rendered, stderr);
     var errors: u32 = 0;
-    for (rendered[0..items.len]) |d| {
+    // Sorting interleaves held warnings with late errors; count the whole stream.
+    for (rendered) |d| {
         if (d.severity == .@"error") errors += 1;
     }
     return errors;

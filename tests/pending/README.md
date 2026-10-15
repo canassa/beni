@@ -185,3 +185,23 @@ with full diagnostics. Result paths, callback loans, captured recursive results
 and callee-environment disjointness are specified in ownership-checker.md §29.
 Their original counts and executable Lean twins remain in
 [BRIDGE-RESULTS.md](../../proofs/ownership/BRIDGE-RESULTS.md).
+
+### Original browser application audit (2026-10-15)
+
+The original unchanged TodoMVC, Bike Wars and Sternhalma audit recorded their
+ownership refusals here. Research 98 now corrects its explanation: TodoMVC's
+queued-save overlap needs synthetic dispatch; its top-level initial model is a
+second error. Bike Wars' three messages follow from one retained append base.
+Sternhalma's reused board is observable in a second game, not its selection view.
+The reduced refusals remain gated under `build/bad/direct/`; the repaired apps'
+current status follows.
+
+### Browser app ownership repairs (2026-10-15)
+
+TodoMVC and Sternhalma now build their mutable models inside unit functions;
+TodoMVC's save captures encoded text. They are promoted to the paired
+browser-direct corpus. Bike Wars copies the retained base of its one trail
+append, clearing all three ownership errors. Its document view then reaches
+`not_implemented`, so it remains pending as CK-225 without a view workaround.
+Research 98 corrects the original causal/scheduling claims and records the
+unchanged original browser-tea transcripts. No ownership rule was relaxed.

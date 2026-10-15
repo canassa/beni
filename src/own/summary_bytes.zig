@@ -60,8 +60,10 @@ const StepKind = Ownership.StepKind;
 pub const magic = "BENIOWN\x00";
 
 /// Bumped with the rule set (thesis §8.5): a block of another version is
-/// absent, never misread.
-pub const version: u32 = 5;
+/// absent, never misread. In this PR: 5 transferred private initializers,
+/// 6 excluded evidence-driven values, 7 retained entry environments, and
+/// 8 preserves unknown/root entry paths while excluding only known init fields.
+pub const version: u32 = 8;
 
 pub const Error = error{Bad} || Allocator.Error;
 

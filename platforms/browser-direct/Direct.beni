@@ -1686,6 +1686,20 @@ pub restate : V → ⊤
 restate s = Rt.restate s
 
 
+-- Value slots retain blocks; structural For slots retain row items instead
+-- and continue to use their row/edit traversal protocol through `restate`.
+pub restateValue : V → ⊤
+restateValue s =
+    if Js.read templateFallback then
+        if not (Js.isNull (Js.get s "i")) then
+            instance = Js.get s "i"
+            childHtml s (Js.get instance "b")
+        else if not (Js.isNull (Js.get s "u")) then
+            childList s (Js.get s "b")
+    else
+        Rt.restate s
+
+
 --| `Html.text`: the text, as a text hole shows it.
 pub text : V → V
 text s = Rt.text s
@@ -2757,6 +2771,12 @@ templateMount : Js.Ref Bool
 templateMount = Js.ref False
 
 
+-- Scoped by templatePatch, so a retained slot only reads a Boolean. Nested
+-- template patches restore their caller's fallback eligibility on return.
+templateFallback : Js.Ref Bool
+templateFallback = Js.ref False
+
+
 pub templatePlan : V → V
 templatePlan entries =
     plan = Js.object []
@@ -2952,6 +2972,7 @@ templateSelect groups =
             source : String
             source = Js.to (Js.at context 3)
             not (Js.isUndefined (Js.get (Js.at context 0) ("$value/${source}")))
+    Js.write templateFallback (templateFallbackEntered fallback)
     if fallback then
         templateSelectNew groups
     else
@@ -2994,10 +3015,25 @@ templateSelectNew groups =
         else
             operation = if selected then Js.get group "$$patch" else Js.get group "$$restate"
             if not (Js.isNull operation) then
+                if Js.read templateFallback then Js.write wanted True
                 _ = Js.call normal "push" [ operation ]
                 _ = Js.call changed "push" [ operation ]
                 ⊤
     Js.array [ mask, Js.from (Js.read wanted), normal, changed ]
+
+
+-- A stored value's constant producers still lead to dynamic descendants.
+-- Enter their retained slots without evaluating the mount-only producers.
+templateFallbackEntered : Bool → Bool
+templateFallbackEntered fallback =
+    context = Js.read templateContext
+    if not fallback || Js.read templateEffects || Js.isNull context then
+        False
+    else
+        Js.read templateKey < 0
+            || Js.same
+                (Js.call (Js.at context 4) "charAt" [ Js.from (Js.read templateKey) ])
+                (Js.from "1")
 
 
 templateSameInputs : V, V, Int → Bool
@@ -3040,6 +3076,7 @@ templatePatch prepare patch inputs groups rowTemplate = Js.from λinstance value
         else
             captured
     wasMount = Js.read templateMount
+    wasFallback = Js.read templateFallback
     wasRow = Js.read templateRowOwner
     ownsRow = rowTemplate || (not (Js.isNull context) && Js.same (Js.at context 6) (Js.from True))
     if ownsRow then
@@ -3095,6 +3132,7 @@ templatePatch prepare patch inputs groups rowTemplate = Js.from λinstance value
         λ⊤ →
             Js.write templateContext before
             Js.write templateMount wasMount
+            Js.write templateFallback wasFallback
             Js.write templateRowOwner wasRow
 
 

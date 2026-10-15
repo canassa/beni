@@ -2205,7 +2205,7 @@ pub const Gen = struct {
     /// marks).
     fn writeRestateSlot(g: *Gen, b: *const Body, f: *const Fn, into: m.Block, op: Op, s: m.Expr) m.Error!void {
         const js = g.jsb();
-        try js.expression(into, try g.rt("restate", &.{s}));
+        try js.expression(into, try g.rt(if (g.direct and op.what != .for_) "restateValue" else "restate", &.{s}));
         const under = try g.controlsOver(b, op);
         if (under.len == 0) return;
         const then = try js.block();
