@@ -3323,3 +3323,10 @@ summaries cannot bypass the corrected checks. The Lean bridge retains the unchan
 oracle and translation contracts; interpreter-confirmed unsafe accepted originals
 must be zero at the CI bound and the three recorded generator seeds. Reverse leads
 are counted separately from confirmed soundness failures.
+
+`if` lowers to BIR `case` (`Lower.lowerIf`). The `?` form remains BIR `try`:
+its existing transfer consumes the operand at the try site and `earlyReturn`
+retains the `Err` payload in the frame result (§26.2). The terminal-result rule
+also applies when that operand is itself a case or block. A nested callback
+result whose ownership cannot be established remains refused; the result-loan
+walk never supplies permission in place of the ordinary returns-owned check.

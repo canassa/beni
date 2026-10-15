@@ -22,6 +22,17 @@ module BridgeResultPaths
   84:19 List.push ys: pending: <lambda> loses sight of what calls it
   88:13 List.push xs: rejected later-use: xs is read again at 91:20
   100:39 List.push <call>: rejected alias: kept holds it and is read at 102:5
+  108:13 List.push xs: rejected later-use: xs is read again at 109:27
+  116:42 List.push <call>: rejected alias: kept holds it and is read at 119:5
+  125:5 call List.foldl <literal>: accepted fresh (<lambda> writes what List.foldl supplies it)
+  125:5 call List.foldl <literal>[*]: accepted fresh (a returned item is transferred to a later written callback result)
+  126:9 call List.foldl acc: rejected supply: List.foldl hands its parameter 2 what the callback returned before, which may be a list the callback does not own
+  126:82 List.push inner: rejected supply: List.foldl hands its parameter 2 what the callback returned before, which may be a list the callback does not own
+  129:24 call List.foldl <literal>: accepted fresh (<lambda> writes what List.foldl supplies it)
+  130:5 call List.foldl acc: accepted callback-param (List.foldl supplies it owned)
+  130:36 List.push inner: accepted callback-param (List.foldl supplies it owned)
+  140:19 List.push ys: accepted callback-param (decided at its calls)
+  141:5 call <lambda> xs: rejected disjoint: another operand of the same operation reaches it (<lambda> writes π1)
   summary oppositeArm: res fresh1
   summary freshResult: res fresh1
   summary caseProjection: π1 R; res fresh1
@@ -37,10 +48,16 @@ module BridgeResultPaths
   summary callbackCapture: π1 RA; res .0 fresh1{lost}, .0⋆ ~π1, .1 π1
   summary blockArm: π1 RAW, π1[*] RA; res [*] ~π1[*], π1
   summary mutualCapture: res .0 fresh1, .1 fresh1
-  demands 23: accepted 12 (fresh 9, call 0, param 0, callback-param 3, once 0, entry 0; assumed 0), pending 1, rejected 10
-total 23: accepted 12 (fresh 9, call 0, param 0, callback-param 3, once 0, entry 0; assumed 0), pending 1, rejected 10
-cause disjoint 1
-cause later-use 5
-cause alias 1
+  summary earlyResult: res #Err.0 fresh1, #Ok.0⋆ fresh1
+  summary nestedRecursive: res .0 fresh1, .1 fresh1
+  summary nestedLoan: res ~fresh1
+  summary nestedFresh: π1 R, π1[*][*] A; res [*] ~π1[*][*], ~fresh1{lost}
+  summary readerFor: π1 RA; res λ, ◇ π1
+  summary carriedCapture: res .0 fresh1, .1 fresh2{lost}
+  demands 34: accepted 18 (fresh 12, call 0, param 0, callback-param 6, once 0, entry 0; assumed 0), pending 1, rejected 15
+total 34: accepted 18 (fresh 12, call 0, param 0, callback-param 6, once 0, entry 0; assumed 0), pending 1, rejected 15
+cause disjoint 2
+cause later-use 6
+cause alias 2
 cause captured 2
-cause supply 1
+cause supply 3
