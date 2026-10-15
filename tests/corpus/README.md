@@ -101,7 +101,8 @@ build's run hash covers. `.crash` is never blessed: write it by hand.
 A `run/` or `browser/` fixture with a `<name>.compiled-schemas` file
 (`_expected.compiled-schemas` in a project) asserts `schema.md` §6's guarantee,
 *A statically known schema runs compiled*. Every schema it builds is fixed at
-compile time, so its development build must ship no library interpreter:
+compile time, so its development build must ship no library interpreter,
+whichever of the runners and `describe` it calls:
 `_core/Schema.mjs` must declare neither `Schema$run`, which every interpreting
 runner calls, nor `Schema$box`, the one maker of an `Interpreted` schema. A
 `browser/direct/` project's `browser-tea` build is held to it too. The file's

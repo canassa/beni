@@ -1,0 +1,46 @@
+-- emit/app: a compiled schema's runner runs that runner's own worker, and a
+-- build ships only the worker sets its runners call (`docs/design/schema.md`
+-- §6, *Every runner of a statically known schema is compiled*).
+--
+-- `Schema.decode` and `Schema.write` reach `core/Schema`'s `decodeWith` and
+-- `writeWith`, whose compiled arms run `$$decode` and `$$writeValue`: a typed
+-- input whose shape is not tested, a typed output built in canonical key
+-- order, and a host object with no prototype. `Pair` closes its
+-- `$$writeValue` over `writeValueSlot` of its argument when the value is
+-- made. A root's guards are per runner, not per root, so every live root
+-- keeps the worker set of every runner the build calls: `Pair` keeps a
+-- `$$decode` that nothing runs. Nothing parses or prints, so there is no
+-- `$$read`, no `$$write`, no root wrapper and no description, and the
+-- values are `Schema$declared(null, null, null, null, …)` with the trailing
+-- workers left out.
+import Node exposing (Program)
+import Schema
+
+
+schema Point =
+    x : Int
+    label : String optional
+
+
+schema Pair a =
+    left : a
+    right : a
+
+
+main : Program
+main =
+    point = { x = 1, label = Schema.Missing }
+    Node.printLines
+        [ case Schema.decode (Point.schema ⊤) point of
+            Ok p →
+                String.fromInt p.x
+
+            Err _ →
+                "failed"
+        , case Schema.write (Pair.schema (Point.schema ⊤)) { left = point, right = point } of
+            Ok _ →
+                "written"
+
+            Err _ →
+                "failed"
+        ]

@@ -1,0 +1,2 @@
+Only declarations, run by `parse`, `print`, `decode`, `write` and `read`: no
+build of it ships the library interpreter.

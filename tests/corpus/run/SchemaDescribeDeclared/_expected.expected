@@ -1,0 +1,14 @@
+{ id : Int, title as "note-title" optional : String, count : Converted (String), by : Nullable (Float) }
+#0
+  #0 Tree = tagged "node" [ Leaf as "leaf" { label : String } | Branch as "branch" { kids : List (#0) } ]
+{ first : #0, second : List (#0) }
+  #0 Tree = tagged "node" [ Leaf as "leaf" { label : String } | Branch as "branch" { kids : List (#0) } ]
+List (Nullable (#0))
+  #0 Tree = tagged "node" [ Leaf as "leaf" { label : String } | Branch as "branch" { kids : List (#0) } ]
+#0
+  #0 Chain = tagged "k" [ Link as "link" { value : List ({ id : Int, title as "note-title" optional : String, count : Converted (String), by : Nullable (Float) }), rest : #0 } | End as "end" ]
+{ left : #0, right : #1 }
+  #0 Chain = tagged "k" [ Link as "link" { value : Int, rest : #0 } | End as "end" ]
+  #1 Chain = tagged "k" [ Link as "link" { value : Int, rest : #1 } | End as "end" ]
+Converted (String)
+parsed

@@ -1,0 +1,72 @@
+-- decode
+Ok 1; "t"; 1.5; 2.0; done; Present "x"; Null; 3; {"k":[1]}; 12; [1,2]
+Err decoding Encoded InvalidValue /id expected a safe integer
+Err decoding Encoded InvalidValue /id expected a safe integer <- 9007199254740992 | decoding Encoded InvalidValue /exact expected a finite number <- <encoding Encoded PrintFailed / the value holds NaN or an infinity, which JSON has no number for> | decoding Type ConversionFailed /count/digits not a decimal integer: x <- "x" | decoding Encoded InvalidValue /parts/0/n expected a safe integer <- 9007199254740992
+Err decoding Encoded DepthExceeded /parts/0 the depth limit is reached
+Err decoding Encoded InvalidOptions / maxDepth must be from 0 to 1024, not -1
+-- encode
+Ok 1; "t"; 1.5; Missing; NonNull "Bo"; "12"; [1]
+Err encoding Encoded ConversionFailed /count negative <- -1 | encoding Type InvalidValue /parts/0/n expected a safe integer <- 9007199254740992
+-- read
+Ok 1; "t"; 1.5; 2.0; done; Missing; Null; 3; {}; 12; [1]
+Err decoding Encoded UnknownKey /zz unexpected key "zz" <- 0 | decoding Encoded WrongShape /id expected a number <- "1" | decoding Encoded MissingKey /note-title missing key "note-title" <- {"zz":0,"id":"1","score":1.5,"exact":"2","done":1,"tag":2,"__proto__":3,"extra":null,"count":"y","parts":{}} | decoding Encoded WrongShape /exact expected a number <- "2" | decoding Encoded WrongShape /done expected a boolean <- 1 | decoding Encoded WrongShape /tag expected a string <- 2 | decoding Encoded MissingKey /by missing key "by" <- {"zz":0,"id":"1","score":1.5,"exact":"2","done":1,"tag":2,"__proto__":3,"extra":null,"count":"y","parts":{}} | decoding Type ConversionFailed /count/digits not a decimal integer: y <- "y" | decoding Encoded WrongShape /parts expected an array <- {}
+Err decoding Encoded MissingKey /note-title missing key "note-title"
+Err decoding Encoded WrongShape / expected an object
+Err decoding Encoded DepthExceeded /parts/0 the depth limit is reached
+-- write
+Ok {"id":1,"note-title":"t","score":1.5,"exact":2,"done":false,"by":"Bo","__proto__":3,"extra":[true],"count":"12","parts":[{"n":1}]}
+Ok {"id":1,"note-title":"t","score":1.5,"exact":2,"done":false,"tag":"x","by":null,"__proto__":3,"extra":[true],"count":"12","parts":[{"n":1}]}
+Ok <encoding Encoded PrintFailed / the value holds NaN or an infinity, which JSON has no number for>
+Err encoding Encoded PrintFailed /score JSON has no number for NaN or an infinity
+Ok <encoding Encoded PrintFailed / the value holds NaN or an infinity, which JSON has no number for>
+Err encoding Encoded PrintFailed /extra the value holds NaN or an infinity, which JSON has no number for
+Err encoding Type InvalidValue /id expected a safe integer <- 9007199254740992 | encoding Encoded ConversionFailed /count negative <- -2
+-- tagged
+Ok Circle 2.0
+Ok Dot
+Ok encoded Circle NaN
+Ok encoded Dot
+Ok Circle 1.0
+Err decoding Encoded UnknownTag /type unknown tag; expected "circle", "dot"
+Err decoding Encoded UnknownKey /x unexpected key "x" <- 1 | decoding Encoded UnknownKey /y unexpected key "y" <- 2
+Err decoding Encoded MissingKey /type missing key "type"
+Ok <encoding Encoded PrintFailed / the value holds NaN or an infinity, which JSON has no number for>
+Ok {"type":"dot"}
+Ok Red
+Ok Green
+Ok {"is":"green"}
+Ok encoded Green
+-- recursion
+Ok (a ())
+Err decoding Encoded DepthExceeded /kids/0 the depth limit is reached
+Ok {"node":"branch","kids":[{"node":"leaf","label":"a"},{"node":"branch","kids":[]}]}
+Ok (b ())
+Err encoding Type DepthExceeded /kids the depth limit is reached
+Ok encoded
+-- compositions
+Ok 1/2,3
+Err encoding Type InvalidValue /items/0/0 expected a safe integer
+Err decoding Encoded WrongShape /items/1/1 expected a number
+Ok {"items":[[1],[]],"total":2}
+Err decoding Encoded WrongShape /1/n expected a number <- "x" | decoding Encoded UnknownKey /2/m unexpected key "m" <- 2 | decoding Encoded MissingKey /2/n missing key "n" <- {"m":2}
+Ok [{"n":4},{"n":5}]
+Err decoding Encoded InvalidValue /1/n expected a safe integer
+Ok Null
+Ok NonNull [7]
+Ok {"n":8}
+Ok Null
+Ok 12
+Err decoding Type ConversionFailed /digits not a decimal integer: 1x
+Err encoding Encoded ConversionFailed / negative
+Ok 34
+Ok "56"
+-- primitives
+Err decoding Encoded InvalidValue / expected a safe integer
+Err encoding Type InvalidValue / expected a finite number
+Err decoding Encoded InvalidValue / expected a finite number
+Err decoding Encoded WrongShape / expected a string
+Ok <encoding Encoded PrintFailed / the value holds NaN or an infinity, which JSON has no number for>
+Err encoding Encoded PrintFailed / JSON has no number for NaN or an infinity
+Ok Null
+Ok null
+Err decoding Encoded WrongShape / expected null

@@ -5,7 +5,9 @@
 -- `Schema.print (Point.schema ⊤)` reaches `Point`'s root member, and
 -- through `core/Schema`'s `printWith` its encoding worker. Nothing calls
 -- `parseWith` or `nodeOf`, so the value is `Schema$declared(null, null,
--- …$$write, [])`: no description, no decoding worker, no builder. The
+-- …$$write, [])`: no description, no decoding worker, no builder. Nothing
+-- names `Point.print` or `Point.printWith`, and the root wrappers are a node
+-- of their own that only such a use reaches, so neither is written. The
 -- generic `Pair` passed `Point.schema ⊤` closes its encoding worker over
 -- `writeSlot` of its argument once, when the value is made.
 import Node exposing (Program)

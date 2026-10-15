@@ -993,6 +993,11 @@ three reachability nodes and the declaration's own:
 | `M$S$$read`, `M$S$$parse`, `M$S$$parseWith` | the decoding worker and its two root wrappers | `S.parse`, `S.parseWith`, and another decoding worker that names `S` |
 | `M$S$$write`, `M$S$$print`, `M$S$$printWith` | the encoding worker and its two root wrappers | `S.print`, `S.printWith`, and another encoding worker that names `S` |
 
+*(Amended 2026-10-15: `S.schema` became the root member, slice A; the root wrappers became a member
+of their own, beside the worker, #177; four more worker sets, `$$decode`, `$$encode`,
+`$$readValue` and `$$writeValue`, and a description made of nodes rather than builders, #175 — §6,
+*A statically known schema runs compiled*.)*
+
 No node reaches another direction or the description, so a program that only parses ships no
 print, no description and none of the builders (§6, *DCE*). The two tagged endpoints' constructors
 are §4's tagged unions with the variant's name as the tag in both families — a schema endpoint
@@ -1095,40 +1100,90 @@ calls `box`. A compiled maker's worker is made by `parserOf`/`printerOf` when a 
 runs it, in that maker's `Made` arm. So a build ships the list worker only if it makes a compiled
 `list`, and a build that composes and describes schemas without running one ships no worker.
 
-**The guarantee.** A program whose schemas are all statically known, and which runs them with
-`parse`, `print` and their `With` forms, ships no library interpreter. It ships no
-`core/Schema.run` and no `box`. Each of its parses and prints runs compiled workers. The corpus
-checks this on Conduit and on the schema fixtures (§16, *As built — slice A*). A program that
-builds a dynamic schema ships the interpreter, and only its dynamic schemas use it.
+**The guarantee.** A program whose schemas are all statically known ships no library
+interpreter, whichever of `parse`, `print`, `decode`, `encode`, `read`, `write`, their `With` forms
+and `describe` it calls. It ships no `core/Schema.run` and no `box`. Each of its runs is compiled
+workers, and `describe` reads the declarations' descriptions, which are nodes no builder boxed. The
+corpus checks this on Conduit and on the schema fixtures (§16, *As built — slice A*; *As built —
+every runner*). A program that builds a dynamic schema ships the interpreter, and only its dynamic
+schemas use it. *(Amended 2026-10-15, #175: the guarantee covered `parse` and `print` only.)*
 
-**What still reaches the description in this slice.** `decode`, `encode`, `read`, `write`,
-`describe`, `flip`, `typeOnly` and `encodedOnly` need the schema's node. On a compiled schema they
-build the node from the declaration's description (§6's table), which `box` makes. So a program
-that calls one of them ships the interpreter, even with only compiled schemas. `read` and `write`
-cannot borrow the parse and print workers. Those workers trust what `JSON.parse` makes (an own key
-is a key that is not `undefined`), and they write JSON's refusals (a non-finite `Float`). A
-`Value` handed in by the host breaks the first assumption. `write`'s output is not JSON text, so
-the second does not apply. Typed `decode`/`encode` workers, and `read`/`write` workers that make no
-JSON assumption, are a later slice. That slice moves these eight operations out of this paragraph
-and into the guarantee.
+**Every runner of a statically known schema is compiled** *(added 2026-10-15, #175; it replaces
+this slice's paragraph "What still reaches the description in this slice", which listed `decode`,
+`encode`, `read`, `write` and `describe` as building the node from a boxed description)*. A
+declaration emits one worker set per operation, each specialised to its operation's two ends, and
+each a reachability member of its own (`SchemaGraph.Member`):
 
-**What `S.schema` emits.** It is a fourth reachability member of the declaration, *root*, besides
-the description and the two directions. Its value is
-`Schema.declared(describe, parse, print, args)`, a core-private value:
+| Operation | Worker | Input | Output | What changes from `parse`/`print` |
+|---|---|---|---|---|
+| `parse` | `$$read` | host, what `JSON.parse` made | typed | — |
+| `print` | `$$write` | typed | host, for `JSON.stringify` | — |
+| `decode` | `$$decode` | typed Encoded value | typed | a typed input's shape is not tested; a field is read by its name, its path segment is its key |
+| `encode` | `$$encode` | typed | typed Encoded value | as `print`, with a typed output: a record in canonical key order, `Present`/`NonNull`/`Null` kept |
+| `read` | `$$readValue` | host, from anywhere | typed | every key tested with `Object.hasOwn`; the array handed in is never kept |
+| `write` | `$$writeValue` | typed | host, returned to the program | objects made with no prototype, `__proto__` an ordinary key; NaN, an infinity and an unprintable `Value` are written |
+
+The parse and print workers cannot serve the other four. They trust what `JSON.parse` makes: an own
+key is a key whose read is not `undefined`, and a list of primitives may keep the parsed array. A
+`Value` the host hands to `read` breaks both, since it may inherit any key, own one that holds
+`undefined`, and still be written by the host. And they write what `JSON.stringify` takes, refusing
+a non-finite `Float`, where `write`'s output is not JSON text. Every worker answers exactly what
+`run` answers on the same context, as the parse and print workers do (*The specialised path*), so
+the differential corpus holds each to the library. Core's own makers (`list`, `nullable`,
+`converted`, the primitives) need no new code: their workers read the operation's ends from the
+context and serve every operation. `parserIn`/`printerIn` make a worker of the other four
+operations as `parserOf`/`printerOf` make `parse`'s and `print`'s, from the operation's number
+(`decodeMode` … `writeMode`); `parserOf` and `printerOf` keep their one argument, so a program
+that only parses and prints is the program it was. `decodeWith`, `encodeWith`, `readWith` and
+`writeWith` branch on the engine as `parseWith` does; the compiled arm is `compiledRun`,
+`runRoot`'s context with the worker, after `compiledProblem` for `read` and `write` and
+`typedProblem` for `decode` and `encode`, which checks no argument's external form, as
+`rootProblem` checks none when no host value is read or written.
+
+**What `describe` ships** *(added 2026-10-15, #175)*. A declaration's description, `$$description`,
+is the node the builders would box, made directly by core-private `described…` values: no builder,
+no construction check (the checker refused every construction failure already), no `box`. One
+mapping per record and one injection per variant serve both endpoints, where the builders took two.
+`describe` reads a compiled schema's node (`madeNode`) and makes its `Description` with `shapeOf`,
+as for any schema, so the answer is the library's, recursive definitions included: a recursive
+declaration's description is `describedRecursive`, a reference cell like `Schema.recursive`'s, so
+two uses of a nongeneric declaration are one definition and two uses of a generic one are two. A
+program that describes declarations ships those descriptions, `shapeOf`, and nothing of the
+interpreter. The description is not compiled further, to a `Description` constant: `describe` of a
+composition must still walk a compiled maker's children, and reference identity decides the
+definitions, so a constant would have to reproduce cell identity per use for no change in what
+ships beside it.
+
+**What still interprets.** `flip`, `typeOnly` and `encodedOnly` are interpreting builders (the
+table of makers above): a schema they make is dynamic, so its runs, and the program, use the
+interpreter. They take a compiled schema's node from its description, as `describe` does.
+
+**What `S.schema` emits.** It is a reachability member of the declaration, *root*, besides
+the description, the worker sets and the root wrappers. Its value is
+`Schema.declared(describe, parse, print, args, others)`, a core-private value:
 - `describe` is an arrow that answers the description.
-- `parse` and `print` are the declaration's workers. A generic declaration closes them over
-  `readSlot`/`writeSlot` of its arguments, made once per value.
+- `parse` and `print` are the declaration's workers of those operations, and `others` an array of
+  its `decode`, `encode`, `read` and `write` workers, left out when the build runs none of them,
+  so that a program that only parses and prints passes what it passed before they existed. A
+  generic declaration closes each worker over its arguments' slots of that operation (`readSlot`,
+  `writeSlot`, `decodeSlot`, `encodeSlot`, `readValueSlot`, `writeValueSlot`), made once per
+  value.
 - `args` lists the arguments the value reaches.
 
 The root reaches the other members only through guards:
 - the description, only when `core/Schema`'s `nodeOf` survives;
-- the decoding worker, only when `parseWith` or `readSlot` survives;
-- the encoding worker, only when `printWith` or `writeSlot` survives.
+- each operation's worker set, only when that operation's runner (`parseWith`, `printWith`,
+  `decodeWith`, `encodeWith`, `readWith`, `writeWith`) or its slot maker survives.
 
-A member the build left out is written `null` in the value, and nothing reads it. So
-`Http.jsonBody (X.schema ⊤) v` ships `X`'s encoding worker and nothing else of `X`. A
-description refers to another declaration through that declaration's description, not its
-`schema`.
+A member the build left out is written `null` in the value, the trailing ones are left out, and
+nothing reads them. So `Http.jsonBody (X.schema ⊤) v` ships `X`'s encoding worker and nothing else
+of `X`. A description refers to another declaration through that declaration's description, not
+its `schema`, and a generic description takes its arguments' nodes (`describedOf`).
+
+**The root wrappers are a member of their own** *(amended 2026-10-15, #177)*. `S.parse` and
+`S.parseWith` are the `parse` member, `S.print` and `S.printWith` the `print` member; each reaches
+its worker set. Only a use of them reaches them, so a program that runs `S.schema` alone ships
+neither.
 
 **Issues are unchanged.** A compiled schema's root checks are `compiledProblem`'s. The options come
 first, then each dynamic argument's construction failure and opaque Encoded end, in the order the
@@ -1138,7 +1193,9 @@ conversion's target, because `converted` changes only the Type end, and `flip`, 
 move it, is interpreting.
 
 **The forced library path.** Under `--schema-library` a declaration's `S.schema` is its
-description again. So every composition over declarations, and every parse and print of one, runs
+description again, boxed (*amended 2026-10-15, #175*: the description is a node, so `box` makes it
+the `Interpreted` schema it was; a nongeneric declaration's is one constant, and its root wrappers
+run `S.schema`). So every composition over declarations, and every run of one, runs
 through the interpreter, and the differential corpus still compares the two paths. The primitive
 makers are core code, compiled in both builds. A composition of primitives alone is therefore
 compiled under the flag too, and its fixture's hand-written golden is what tests it.
@@ -2472,6 +2529,45 @@ application build (`Input.schemaGuarded`). `S.schema` is the fourth member, `roo
   - workers shared across schemas (slice B);
   - derived schemas (slice C).
 
+**As built — every runner** (2026-10-15, #175 and #177; §6, *Every runner of a statically known
+schema is compiled*, *What `describe` ships*, *The root wrappers are a member of their own*).
+`SchemaGraph.Member` has ten members: the description, the root, the two root wrappers and one
+worker set per operation; `SchemaGraph.Op` names an operation and its ends, and `SchemaLower`
+writes every worker from one generator over them (`Fn.op`). `core/Schema` adds `parserIn`/
+`printerIn`, `compiledRun`, `typedProblem`, four slot makers and the `described…` node makers;
+`recursive`'s cell now builds a node from a node. `EdgePack` is at version 3.
+
+- **The guarantee as a test.** `run/SchemaRunners` runs `decode`, `encode`, `read`, `write` and
+  their `With` forms on records, tagged unions, a recursive union, a generic declaration and the
+  compiled makers, every failure kind among them; `run/SchemaDescribeDeclared` describes
+  declarations, recursive and generic ones included, and parses one. Both carry
+  `.compiled-schemas`, and so do `run/SchemaDeclRecords` and `SchemaDeclTagged`, whose `decode`,
+  `read` and `write` lines shipped the interpreter on master. Every golden is master's
+  interpreter output line for line, and the forced path agrees. `run/SchemaDeclGeneric` covers the
+  four new runners with a schema passed at run time: an opaque argument is refused by `read` and
+  `write` and accepted by `decode` and `encode`, as `rootProblem` does. `emit/app/
+  SchemaRunnerWorkers` pins the worker shapes and that only the runners' worker sets ship;
+  `emit/app/SchemaValuePrintOnly` no longer writes `Point.print`/`printWith`.
+- **Size** (release brotli 11; master `7632518d3`):
+  - Conduit tea and direct: 28 934 and 37 909, byte for byte master's size. `parserOf` and
+    `printerOf` keep their one argument and `declared` its first four, so the release optimiser
+    still inlines the one and drops the constant arguments of the other; a first version that
+    passed the operation to `parserOf` cost Conduit direct +71. Development: −142 tea, −223
+    direct (the root wrappers no build called).
+  - Programs that run declarations by the new runners lose the interpreter:
+    `run/SchemaDeclRecords` 6 928 → 4 637, `SchemaDeclTagged` 6 485 → 3 692, `SchemaRunners`
+    9 364 → 7 250, `SchemaDescribeDeclared` 7 079 → 4 836.
+  - `bench/size.mjs` totals: release gross −8 324, development gross −17 653.
+  - Known cost, #176: programs that build dynamic schemas carry the new runners' compiled arms
+    beside the interpreter, +73 to +114 release (`SchemaDirections` +114, `SchemaTagged` +108).
+- **Speed.** `bench/schema-libraries`' beni rows, the two builds alternated 16 times on core 23:
+  every cell within noise (−2.5% to +1.5%, two outliers +3.5% and +5.8% that earlier runs
+  put at −14% and +0.2%). The new runners against master's interpreter (flat and list valid,
+  median of 8): `read` 1 243 → 210 ns and 565 → 171 µs, `decode` 497 → 54 ns and 323 → 39 µs,
+  `encode` 408 → 65 ns and 343 → 40 µs, `write` 653 → 329 ns and 588 → 290 µs.
+- **Found on the way:** two mutually recursive tagged declarations hit a checker internal error
+  (#196), on master too; the describe fixture leaves mutual recursion to it.
+
 ## Appendix A. Decisions log
 
 ### A.1 — Description plus specialised functions (2026-09-22)
@@ -2891,4 +2987,9 @@ time. §6, *A statically known schema runs compiled*, is the contract.
   printer. That would need no change here.
 - **The guarantee covers `parse` and `print`.** `decode`, `encode`, `read`, `write`, `describe`
   and the endpoint makers still reach the description. They wait for typed workers in a later
-  slice.
+  slice. *(Done 2026-10-15, #175: every runner has a worker set of its own and `describe` reads a
+  description made of nodes, so the guarantee covers them all. The endpoint makers stay
+  interpreting builders. Choices this made, which can be reversed: one worker set per operation
+  rather than one worker that reads its ends from the context — that worker would cost every
+  `parse` a test per key and give up keeping the parsed array; and a description of nodes rather
+  than a `Description` constant, §6, *What `describe` ships*.)*

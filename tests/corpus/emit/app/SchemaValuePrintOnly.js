@@ -1,4 +1,4 @@
-import { Schema$pathAt, Schema$compiledFail, Schema$compiledPrint, Schema$defaultOptions, Schema$declared, Schema$writeSlot, Schema$print } from "./_core/Schema.mjs";
+import { Schema$pathAt, Schema$compiledFail, Schema$declared, Schema$writeSlot, Schema$print } from "./_core/Schema.mjs";
 import { Node$printLines } from "./_platform/Node.mjs";
 const SchemaValuePrintOnly$Point$$write = (c, d, p, k, n, v) => {
   const $before$1 = c.issues.length;
@@ -39,9 +39,7 @@ const SchemaValuePrintOnly$Point$$write = (c, d, p, k, n, v) => {
   $o$7["y"] = $s$5;
   return $o$7;
 };
-const SchemaValuePrintOnly$Point$$printWith = ($o, $t) => Schema$compiledPrint($o, null, SchemaValuePrintOnly$Point$$write, $t);
-const SchemaValuePrintOnly$Point$$print = ($t) => SchemaValuePrintOnly$Point$$printWith(Schema$defaultOptions, $t);
-const SchemaValuePrintOnly$Point$$declared = Schema$declared(null, null, SchemaValuePrintOnly$Point$$write, null);
+const SchemaValuePrintOnly$Point$$declared = Schema$declared(null, null, SchemaValuePrintOnly$Point$$write, null, null);
 const SchemaValuePrintOnly$Point$$schema = ($u$1) => SchemaValuePrintOnly$Point$$declared;
 const SchemaValuePrintOnly$Pair$$write = (c, d, p, k, n, v, $s0) => {
   const $here = Schema$pathAt(p, k, n);
@@ -75,9 +73,7 @@ const SchemaValuePrintOnly$Pair$$write = (c, d, p, k, n, v, $s0) => {
   $o$7["right"] = $s$5;
   return $o$7;
 };
-const SchemaValuePrintOnly$Pair$$printWith = ($s0, $o, $t) => Schema$compiledPrint($o, [$s0], ($c$8, $d$9, $p$10, $k$11, $n$12, $v$13) => SchemaValuePrintOnly$Pair$$write($c$8, $d$9, $p$10, $k$11, $n$12, $v$13, Schema$writeSlot($s0)), $t);
-const SchemaValuePrintOnly$Pair$$print = ($s0, $t) => SchemaValuePrintOnly$Pair$$printWith($s0, Schema$defaultOptions, $t);
-const SchemaValuePrintOnly$Pair$$schema = ($s0) => Schema$declared(null, null, (($w$1) => ($c$2, $d$3, $p$4, $k$5, $n$6, $v$7) => SchemaValuePrintOnly$Pair$$write($c$2, $d$3, $p$4, $k$5, $n$6, $v$7, $w$1))(Schema$writeSlot($s0)), [$s0]);
+const SchemaValuePrintOnly$Pair$$schema = ($s0) => Schema$declared(null, null, (($w$1) => ($c$2, $d$3, $p$4, $k$5, $n$6, $v$7) => SchemaValuePrintOnly$Pair$$write($c$2, $d$3, $p$4, $k$5, $n$6, $v$7, $w$1))(Schema$writeSlot($s0)), [$s0], null);
 const SchemaValuePrintOnly$main = (() => {
   const point$1 = { x: 1, y: 2 };
   const $t$1 = Schema$print(SchemaValuePrintOnly$Point$$schema(null), point$1);
