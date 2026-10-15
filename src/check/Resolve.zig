@@ -172,6 +172,12 @@ pub fn method(s: *Solve, node: Tree.Node) Error!void {
     // A hand-written dot-call's own wanted may become a field call (§11).
     if (s.evidence.get(id).kind == .dot_call) s.evidence.ptr(id).field_ok = true;
     try s.evidence.callees.append(s.cx.gpa, .{ .inst = node.region, .wanted = id });
+    if (s.cx.bir.instTag(node.region) == .field_access) {
+        // Nullary dots are independent of method requirements: joining them
+        // by name would confuse `r.f` with the valid field call `r.f x`.
+        const row = try s.obligations.create(s.cx.gpa, .nullary_dot, node.region, &.{ info.receiver, info.method_type }, id.int(), null);
+        return @import("Decide.zig").begin(s, row);
+    }
     try step(s, id, true);
 }
 
@@ -370,12 +376,25 @@ pub fn unifyWellKnown(s: *Solve, id: WantedId, root: Var) Error!bool {
     // unification could only succeed, silently.
     if (hasWellKnownType(s, w.method, w.method_type, root)) return true;
     const wanted = try wellKnownType(s, w.method, root);
+    if (!try nullaryArity(s, id, wanted)) return false;
     // A clause's declared type against the method's: `.where_clause`,
     // with the clause its message names (static-dispatch-spike.md §10.13).
     const category: Tree.Category = .{ .tag = if (w.kind == .where_clause) .where_clause else .general };
     if (w.kind == .where_clause) s.report.texts.clause = .{ .variable = w.receiver_name, .method = w.method };
     defer s.report.texts.clause = null;
     return try s.unify(wanted, w.method_type, w.origin, category) == .ok;
+}
+
+/// A nullary dot must saturate the method, including a given or a derived
+/// well-known method. Count only the explicit arguments after the receiver.
+pub fn nullaryArity(s: *Solve, id: WantedId, found: Var) Error!bool {
+    const w = s.evidence.get(id);
+    if (w.kind != .dot_call or w.parent != .none or s.cx.bir.instTag(w.origin) != .field_access) return true;
+    const f = Walk.function(s.store(), found) orelse return true;
+    if (f.params.len <= 1) return true;
+    try s.report.tooFewArgs(w.origin, s.report.calleeOf(w.origin), @intCast(f.params.len - 1), 0, f.params[1..]);
+    try reject(s, id, true);
+    return false;
 }
 
 /// **The `number` bridge** (§9.2): a `number` is `Int` or
@@ -504,6 +523,7 @@ pub fn joinTypes(s: *Solve, younger: WantedId, older: WantedId) Error!void {
 fn rigid(s: *Solve, id: WantedId, root: Var, flags: TypeStore.Flags) Error!void {
     const w = s.evidence.get(id);
     if (s.evidence.givenNamed(s.store(), Walk.constraints(flags), w.method)) |given| {
+        if (!try nullaryArity(s, id, given.method_type)) return;
         if (!try s.unifyQuiet(given.method_type, w.method_type, w.origin)) {
             try s.report.methodConstraintMismatch(w.origin, w.origin, w.method, w.method_type, given.method_type);
             return reject(s, id, true);

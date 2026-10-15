@@ -2051,3 +2051,123 @@ is not a value projection. In particular, `UrlChanged url` followed by a case
 on `url.fragment` tests the fragment, not the outer message. Such paths use
 the normal release record-field names. An event's constructor shortcut applies
 only to constructor-only paths; a record or tuple path uses the value dispatcher.
+
+**Nullary methods (2026-10-15).** Static-dispatch-spike.md §1.1's checked-form
+invariant applies here: a resolved `x.m` method is an ordinary zero-argument
+`method_call`, never a field path. Record `x.f` retains its path and identity.
+
+### *Amended 2026-10-15 (the owner):* parameterised template reads survive lowering
+
+A markup producer's summary preserves the reads of each hole/group as terms
+over its parameter roots πᶠᵢ and captured roots. It is not replaced by the
+union of all of the producer's arguments just because its result is markup.
+At a call, §4.2 substitutes the actual arguments, including projections,
+constructed records/tuples, control dependencies and row-item bindings. A
+producer calling another producer composes substitutions. An imported
+producer has the same contract as a local one; the whole-program consumer
+has both checked bodies. Source identity and the call path distinguish two
+uses of the same summary, even when their argument types are equal.
+
+A template's holes retain these facts through lowering. For message key κ,
+instance I and group G, its predicted visit is
+
+`live(I) && eligibleByEdits(I, κ) && (every(G) || conflict(writes(κ), subst(I, reads(G))))`.
+
+Branch selection, list edits and newly mounted instances retain
+browser-direct.md §4.1's ordering and exclusions. A selection change mounts
+the new site once; it does not manufacture a second visit. Group identities
+include the site/call/instance, not just an interned read set: equal reads at
+two sites predict two visits. A renderer's necessary source-order group
+merge retains the union of the merged reads explicitly in its plan. A
+read-set identifier alone is not an instance identifier.
+
+Dynamic markup whose producer cannot be resolved retains an explicit
+fallback boundary and reason in the consumer plan. Its conservative subtree
+cost is stated in browser-direct.md's amendment of the same date. A known
+producer's function, module or return shape is not a fallback reason. The
+consumer cannot broaden write sets, relabel actual visits, or change the
+summary prediction to excuse a less precise lowering. Development verification
+compares the independently predicted and observed visits on every direct
+page, including the paired corpus and fuzz runs.
+
+*Implementation gap found 2026-10-15, before the dependent fix:* the existing
+`DocumentHelperBranch` regression exposes an omitted control dependency:
+`case model of Open n → page "open" n; Closed n → page "closed" n` records
+`page`'s label read as empty on both visits, although switching arms changes
+it. Passing an argument through a call does not discharge the active choice's
+control dependency. In the view walk, a parameter bound under Γ carries that
+Γ with its argument (an `Alt` of one guarded alternative); projections and
+nested calls preserve it by §3.6/§4.2. This corrects the missing read, not the
+message's write set. Literal text written inside a template and reading no
+parameter remains literal. The existing pre-fix runtime golden is the
+regression; the writes dump must pin the tag read as well.
+
+*Producer-entry facts, 2026-10-15:* a template's `For`, `Show` or component
+operation needs the dependencies of that **whole operation**, including its
+row/body captures and event captures, to decide whether to enter it. Its
+`each` hole alone describes only the collection, not those captures. The
+view walk records these producer-entry facts separately from its ordinary
+holes and list-edit facts, per source and call path. Consumers use the entry
+fact to reach the operation, then the existing leaf/row facts within it.
+This neither widens `each` nor changes message writes or the S0 leaf-pair
+statistic. A prefix-only update must enter a helper-owned list even when its
+collection is unchanged; `TemplateOwnedRows` pins this distinction.
+
+*Root entry facts and unbound placements, 2026-10-15:* the whole view result
+also has an anchored read set. It gates entry to a root value producer or
+root branch, independently of the per-hole sets; it is a consumer fact, not
+an extra hole in S0 statistics. Observable debug or effect work still enters
+on every render. An unbound markup value inherits the read mask of the slot
+where it is placed. When that slot is reached, its fallback visits all of
+that value's dynamic groups; otherwise it visits none. Creating the same
+producer both inside the view and outside it must not turn the bound use
+into a fallback. Placement metadata belongs to the mounted instance, never
+to the immutable markup value shared by different placements.
+
+*Path arguments under a choice, 2026-10-15:* `Same(p)` may retain a control
+read set Γ alongside its path. Its value dependencies are `{p} ∪ Γ`; a
+projection keeps Γ and extends `p`, and a tag query reads `tag p ∪ Γ`.
+Substitution substitutes both parts. Binding a helper argument under a choice
+unions that choice into this control set. This preserves path identity,
+including list and row paths: converting a path argument to an unstructured
+alternative would unnecessarily collapse projections and row-edit facts.
+The control set is analysis metadata, not a runtime value or a model write.
+Non-path arguments retain the guarded-alternative rule above.
+
+*Invariant path substitutions, 2026-10-15:* control reads introduced by a
+parameter binding are conditional on that binding varying across alternatives
+at the same producer call path. If every visit binds the same anchored path,
+that parameter does not read the choice: switching from `page "open" model.n`
+to `page "closed" model.n` changes the label, not the numeric input. If visits
+bind different paths, such as `model.left` and `model.right`, the numeric
+input also reads the choice. The walk retains a deferred control root per
+formal parameter/call path, resolves it after all alternatives have been
+walked, and preserves it through derived expressions and nested calls. This
+is a read-summary refinement; it does not change message write sets.
+
+The same discharge applies to an identical closed literal, constructor or
+function with closed captures bound on every alternative. Unknown computed
+values retain the conservative control read: equality of dependency sets is
+not proof that `n + 1` and `n + 2` are the same argument. Function identity is
+not an observable equality in beni; the function and its closed captures must
+agree. This prevents fixed message constructors from acquiring dependencies
+on whichever page happened to pass them to a helper.
+
+*Host-dependent parameter values, 2026-10-15:* a view call whose result is
+opaque to this analysis and whose checked effect is impure carries the read
+`ω`, meaning the host may supply a different value at each render. This read
+propagates through computations and helper parameters like other dependency
+reads, and conflicts with every dispatch, including an empty write set. It
+is not a model write and never widens a key's write set. Pure opaque calls
+retain their argument dependencies. Debug's explicit every-render handling
+is unchanged. Thus passing a clock reading to a pure view helper cannot
+turn the reading into a constant. Only holes depending on `ω` are selected.
+
+### *Dispatcher consumption, 2026-10-15*
+
+The browser-direct consumer may share adjacent keys' identical constructor
+steps in a decision tree. This does not merge keys or their write sets: each
+leaf still selects its original handler and parameter convention. Defaults
+retain source priority and the final fallback is unchanged. Update bodies
+that have no constructor-specialised arm may be shared across handlers;
+the consumer matrix and expected group visits are independent of that choice.

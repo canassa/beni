@@ -1,0 +1,6 @@
+-- A nominal receiver has no such method in its declaring module.
+import Node exposing (Program)
+
+
+main : Program
+main = Node.print [ 1, 2 ].lenght

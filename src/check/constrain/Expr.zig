@@ -169,18 +169,12 @@ pub fn expr(g: *Generator, inst: Bir.Inst.Index, expected: Var, category: Catego
             return g.conj(parts.items);
         },
 
-        .field_access => {
-            const name = bir.symbol(@fromBackingInt(@intCast(data.rhs)));
-            var pairs = [_]TypeStore.Field{.{ .name = name, .value = expected }};
-            const range = try g.cx.store.addFields(&pairs);
-            const ext = try g.freshFlex();
-            const required = try g.fresh(.{ .structure = .{ .record = .{ .fields = range, .ext = ext } } });
-            const target = try g.freshFlex();
-            return g.conj(&.{
-                try expr(g, @fromBackingInt(@intCast(data.lhs)), target, .{ .tag = .general }),
-                try g.equal(required, target, inst, .{ .tag = .field_access, .index = @backingInt(name) }),
-            });
-        },
+        .field_access => return dotCall(g, inst, data, .{
+            .name = @fromBackingInt(@intCast(data.rhs)),
+            .origin = .none,
+            .args_start = @fromBackingInt(0),
+            .args_end = @fromBackingInt(0),
+        }, expected, category),
 
         // A `${…}` string: `String`, and each part an `interpolatable`
         // obligation on its own variable (§4.5).
@@ -250,6 +244,11 @@ pub fn expr(g: *Generator, inst: Bir.Inst.Index, expected: Var, category: Catego
 fn methodCall(g: *Generator, inst: Bir.Inst.Index, data: Bir.Inst.Data, expected: Var, category: Category) Error!Constraint {
     const bir = g.cx.bir;
     const m = bir.extraData(@fromBackingInt(@intCast(data.rhs)), Bir.MethodCall);
+    return dotCall(g, inst, data, m, expected, category);
+}
+
+fn dotCall(g: *Generator, inst: Bir.Inst.Index, data: Bir.Inst.Data, m: Bir.MethodCall, expected: Var, category: Category) Error!Constraint {
+    const bir = g.cx.bir;
     const args = bir.extraSlice(.{ .start = m.args_start, .end = m.args_end }, Bir.Inst.Index);
     const receiver: Bir.Inst.Index = @fromBackingInt(@intCast(data.lhs));
     if (m.origin != .none) return wellKnownCall(g, inst, receiver, args, m.origin, expected, category);

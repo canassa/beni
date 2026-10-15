@@ -346,7 +346,10 @@ fn siteRows(e: *Elaborate) Error!void {
     const bir = e.in.cx.bir;
     var events: std.ArrayList(Event) = .empty;
     defer events.deinit(e.scratch);
-    for (ev.callees.items) |c| try events.append(e.scratch, .{ .inst = c.inst, .what = .{ .callee = c.wanted } });
+    for (ev.callees.items) |c| {
+        if (bir.instTag(c.inst) == .field_access and ev.answer(c.wanted) == .field) continue;
+        try events.append(e.scratch, .{ .inst = c.inst, .what = .{ .callee = c.wanted } });
+    }
     const rows = try e.scratch.dupe(Evidence.InstEvidence, ev.inst_evidence.items);
     defer e.scratch.free(rows);
     std.mem.sort(Evidence.InstEvidence, rows, {}, instLessThan);

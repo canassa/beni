@@ -69,6 +69,8 @@ pub const Kind = enum(u8) {
     /// `e?`: `vars` = the subject, the target's result (the owner), the
     /// instruction's value.
     @"try",
+    /// `x.m`: receiver decides; method type is dependent; index is WantedId.
+    nullary_dot,
     /// A markup hole (checker-v2.md §25.4): `vars` = the part, the root's
     /// message variable. `index` is the hole's record.
     renderable,
@@ -145,7 +147,7 @@ pub const Row = struct {
     /// How many of `vars` decide the row: binding one readies it.
     pub fn deciding(r: Row) u32 {
         return switch (r.kind) {
-            .tuple_index, .interpolatable, .equatable => 1,
+            .tuple_index, .interpolatable, .equatable, .nullary_dot => 1,
             .@"try" => 2,
             .renderable, .handler, .attr_form, .row, .key, .item => 1,
         };
@@ -154,7 +156,7 @@ pub const Row = struct {
     /// The slot of the owner (§4.5).
     pub fn owner(r: Row) u32 {
         return switch (r.kind) {
-            .tuple_index, .interpolatable, .equatable => 0,
+            .tuple_index, .interpolatable, .equatable, .nullary_dot => 0,
             .@"try" => 1,
             .renderable, .handler, .attr_form, .row, .key, .item => 0,
         };
@@ -163,7 +165,7 @@ pub const Row = struct {
     /// The slots lowered to the owner's rank.
     pub fn dependants(r: Row) []const u2 {
         return switch (r.kind) {
-            .tuple_index => &.{1},
+            .tuple_index, .nullary_dot => &.{1},
             .interpolatable, .equatable => &.{},
             .@"try" => &.{ 0, 2 },
             // What a decision unifies with the owner: the root's message

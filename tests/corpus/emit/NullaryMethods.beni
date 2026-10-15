@@ -1,0 +1,11 @@
+-- Resolved nullary methods emit ordinary calls; record fields stay reads.
+pub length : List Int → Int
+length xs = xs.length
+
+
+pub copied : { r | trail : List Int } → List Int
+copied current = current.trail.copy
+
+
+pub field : { r | f : Int } → Int
+field x = x.f

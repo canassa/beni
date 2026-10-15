@@ -608,6 +608,16 @@ const Mod = struct {
         m.setNode(node, m.ir.tag(from), d.lhs, d.rhs);
     }
 
+    /// `copyNode` for a fold: `node`, a decided `cond`, `&&` or `||`, is
+    /// the operand `from` it keeps, position included. The kept code is
+    /// what runs, so a map names where it was written and not the test
+    /// that decided it; a call kept this way is also the site a copy into
+    /// it takes (`Copy.site`; `backend.md` §11.2, item 6).
+    fn foldTo(m: *Mod, node: Index, from: Index) void {
+        m.copyNode(node, from);
+        m.ir.nodes.items(.pos)[node.int()] = m.ir.pos(from);
+    }
+
     /// Append `words` to `extra`, keeping the IR's view of it current.
     fn append(m: *Mod, gpa: Allocator, words: []const u32) Allocator.Error!u32 {
         const at: u32 = @intCast(m.extra.items.len);
@@ -2899,7 +2909,7 @@ const Spec = struct {
                 // Fact 5's second case: the branch the test takes is the
                 // read it tested.
                 if (s.decided_conds.get(.{ .module = m.index, .node = node.int() })) |b| {
-                    m.copyNode(node, b);
+                    m.foldTo(node, b);
                     m.memo[node.int()] = m.memo[b.int()];
                     try JsIr.pushOperand(s.arena, &stack, node);
                     any = true;
@@ -2916,7 +2926,7 @@ const Spec = struct {
                         .bot, .unknown => null,
                     };
                     if (taken) |b| {
-                        m.copyNode(node, b);
+                        m.foldTo(node, b);
                         m.memo[node.int()] = m.memo[b.int()];
                         try JsIr.pushOperand(s.arena, &stack, node);
                         any = true;
@@ -2940,7 +2950,7 @@ const Spec = struct {
                     else
                         null;
                     if (kept) |k| {
-                        m.copyNode(node, k);
+                        m.foldTo(node, k);
                         m.memo[node.int()] = m.memo[k.int()];
                         try JsIr.pushOperand(s.arena, &stack, node);
                         any = true;
@@ -3705,7 +3715,7 @@ const Spec = struct {
                 } else false;
                 if (!exposes) return false;
                 var stmts: std.ArrayList(u32) = .empty;
-                const e = try s.bodyAt(m, top, small, args, &stmts) orelse return false;
+                const e = try s.bodyAt(m, top, small, args, &stmts, ir.pos(v)) orelse return false;
                 const ret = try m.addNode(s.gpa, .return_stmt, ir.pos(stmt), e.int(), 0);
                 try stmts.append(s.arena, ret.int());
                 try work.replaceRange(s.arena, i, 1, stmts.items);
@@ -3755,7 +3765,7 @@ const Spec = struct {
                         const args = try s.arena.dupe(Index, ir.extraSlice(ir.subRange(@fromBackingInt(@intCast(ir.data(v).rhs))), Index));
                         if (args.len != small.params.len) return false;
                         var stmts: std.ArrayList(u32) = .empty;
-                        const e = try s.bodyAt(m, top, small, args, &stmts) orelse return false;
+                        const e = try s.bodyAt(m, top, small, args, &stmts, ir.pos(v)) orelse return false;
                         m.setData(stmt, d.lhs, e.int());
                         try stmts.append(s.arena, stmt.int());
                         try work.replaceRange(s.arena, i, 1, stmts.items);
@@ -3905,7 +3915,8 @@ const Spec = struct {
         } else s.copied_modules[module] = true;
     }
 
-    fn bodyAt(s: *Spec, m: *Mod, top: Index, small: Small, args: []const Index, stmts: *std.ArrayList(u32)) Allocator.Error!?Index {
+    /// `site` is the call's position (`Copy.site`).
+    fn bodyAt(s: *Spec, m: *Mod, top: Index, small: Small, args: []const Index, stmts: *std.ArrayList(u32), site: u32) Allocator.Error!?Index {
         s.noteCopy(small.module, small.owner);
         const fm = &s.mods[small.module];
         const cross = small.module != m.index;
@@ -3914,6 +3925,7 @@ const Spec = struct {
             .src = fm,
             .dst = m,
             .cross = cross,
+            .site = site,
             .renamed = try s.arena.alloc(u32, fm.ir.names.len),
             .subst = try s.arena.alloc(Node.OptionalIndex, fm.ir.names.len),
         };
@@ -4666,6 +4678,7 @@ const Spec = struct {
             .src = fm,
             .dst = m,
             .cross = cross,
+            .site = m.ir.pos(call),
             .renamed = try s.arena.alloc(u32, fm.ir.names.len),
             .subst = try s.arena.alloc(Node.OptionalIndex, fm.ir.names.len),
         };
@@ -4935,6 +4948,7 @@ const Spec = struct {
             .src = fm,
             .dst = m,
             .cross = cross,
+            .site = m.ir.pos(call),
             .renamed = try s.arena.alloc(u32, fm.ir.names.len),
             .subst = try s.arena.alloc(Node.OptionalIndex, fm.ir.names.len),
         };
@@ -5700,6 +5714,7 @@ const Spec = struct {
             .src = fm,
             .dst = cm,
             .cross = cross,
+            .site = cm.ir.pos(site.call),
             .renamed = try s.arena.alloc(u32, fm.ir.names.len),
             .subst = try s.arena.alloc(Node.OptionalIndex, fm.ir.names.len),
         };
@@ -5801,6 +5816,12 @@ const Spec = struct {
         src: *Mod,
         dst: *Mod,
         cross: bool,
+        /// Across modules, the position of the call the copy replaces, in
+        /// the destination's source: a position is an offset into ONE
+        /// module's source, so the copy's nodes cannot keep theirs, and
+        /// a release map sends them to the call (`backend.md` §11.2, item
+        /// 2). Only a map reads a position.
+        site: u32 = Node.no_pos,
         /// A declared name of the source, and its new name.
         renamed: []u32,
         /// A parameter of the source, and the argument (a node of the
@@ -5856,7 +5877,7 @@ const Spec = struct {
         }
 
         fn node(c: *Copy, from: Index, tag: Node.Tag, lhs: u32, rhs: u32) Allocator.Error!Index {
-            const pos: u32 = if (c.cross) Node.no_pos else c.src.ir.pos(from);
+            const pos: u32 = if (c.cross) c.site else c.src.ir.pos(from);
             return c.dst.addNode(c.gpa(), tag, pos, lhs, rhs);
         }
 

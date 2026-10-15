@@ -83,7 +83,7 @@ pub const Input = struct {
     scratch: *Arena,
     patterns: *Arena,
     graph: *const Graph,
-    artifacts: *const Artifacts,
+    artifacts: *Artifacts,
     interfaces: []Interface,
     provenance: []const Interface.Provenance,
     interner: *const InternPool.Global,
@@ -116,7 +116,7 @@ pub const Input = struct {
 pub fn check(in: Input) Error!Check.Counters {
     const gpa = in.gpa;
     const file = in.graph.moduleFile(in.module);
-    const bir = in.artifacts.bir(file);
+    const bir = in.artifacts.birMut(file);
     const token = if (in.profile) |p| p.begin() else null;
     defer if (in.profile) |p| p.end(in.tid, token.?, .check, file.int(), 0);
     const quiet = in.quiet or in.graph.isPoisoned(in.module);
@@ -301,6 +301,13 @@ pub fn check(in: Input) Error!Check.Counters {
     const p5_token = if (in.profile) |p| p.begin() else null;
     try eager.build(&solver);
     if (in.profile) |p| p.end(in.tid, p5_token.?, .derived, file.int(), 0);
+    // The session-owned, resolved BIR is the checked copy; the frontend
+    // artifact was serialized before name resolution. Session.run frees
+    // and reloads all artifacts on every run (Artifacts.resize), including
+    // a dependency edit in the same Session. Retag only after solving has
+    // returned every borrowed extraSlice, before effect planning or any
+    // later pass can mistake a call for a field path.
+    try @import("Nullary.zig").checked(gpa, bir, &solver.evidence);
     // Every group, nested check and derived context has recorded its
     // edges: the summaries now (§14.4), before P6 and P8 read them.
     const effects_token = if (in.profile) |p| p.begin() else null;

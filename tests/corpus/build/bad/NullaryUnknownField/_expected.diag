@@ -1,0 +1,1 @@
+[{"code":"missing_field","severity":"error","span":{"file":"Main.beni","start":{"line":6,"col":38},"end":{"line":6,"col":45}},"title":"MISSING FIELD","message":"This record does not have an `absent` field:\n\n    { present : String }\n\nBut I need a record like:\n\n    { r | absent : String }\n\nHint: this looks like a typo. Maybe `absent` should be `present`?\n"}]

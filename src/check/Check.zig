@@ -299,7 +299,7 @@ pub fn run(
     io: Io,
     scratch: *Arena,
     graph: *const Graph,
-    artifacts: *const Artifacts,
+    artifacts: *Artifacts,
     interfaces: []Interface,
     provenance: []const Interface.Provenance,
     interner: *const InternPool.Global,

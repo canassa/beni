@@ -1,0 +1,35 @@
+diff --git a/src/js/Emit.zig b/src/js/Emit.zig
+index 9a4660419..12fd4f8e0 100644
+--- a/src/js/Emit.zig
++++ b/src/js/Emit.zig
+@@ -4324,10 +4324,16 @@ const Emitter = struct {
+         };
+
+         for (h.order) |p| switch (p) {
+-            .module => |i| if (slots[i].text) |text| try appendJoined(scratch, &out, text, true),
++            .module => |i| if (slots[i].text) |text| {
++                const start = out.items.len;
++                try appendJoined(scratch, &out, text, true);
++                std.debug.print("PART\t{d}\t{d}\t{s}\n", .{ start, out.items.len, e.session.store.path(e.graph().moduleFile(@fromBackingInt(i))) });
++            },
+             .file => |x| if (printed[x]) |pr| {
+                 const f = &h.files[x];
++                const start = out.items.len;
+                 try appendJoined(scratch, &out, pr.body, false);
++                std.debug.print("PART\t{d}\t{d}\t{s}\n", .{ start, out.items.len, f.origin });
+                 var aliased: std.ArrayList(JsIr.Name) = .empty;
+                 for (f.uses.items) |u| {
+                     const binding = f.read.exportBinding(u.name).?;
+@@ -4347,6 +4353,12 @@ const Emitter = struct {
+             },
+         };
+
++        var names = e.globals.map.iterator();
++        while (names.next()) |item| {
++            const k = item.key_ptr.*;
++            var buf: [8]u8 = undefined;
++            std.debug.print("MAP\t{s}\t{s}\t{s}\t{d}\n", .{ Rename.spell(item.value_ptr.*, &buf), e.session.interner.slice(@fromBackingInt(k.module)), e.session.interner.slice(@fromBackingInt(k.base)), k.tag });
++        }
+         // The entry file's calls, by the names the bindings have here.
+         const runtime: ?*HandFile = if (h.runtime) |x| &h.files[x] else null;
+         // `main` is a declaration of an emitted module, so the table has it.

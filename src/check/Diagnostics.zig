@@ -205,7 +205,7 @@ pub const Reporter = struct {
             return;
         }
         // `xs.length` and `f(a, b)` (language.md §12.5).
-        if (try CallStyle.mismatchHint(r, w, region, category, actual)) {
+        if (try CallStyle.mismatchHint(r, w, category, region, expected, actual)) {
             try r.emit(.type_mismatch, region, &out);
             return;
         }
@@ -775,7 +775,7 @@ pub const Reporter = struct {
             w.writeByte('\n') catch return error.OutOfMemory;
         }
         // `f(a, b)`: one tuple where the arguments go (language.md §12.5).
-        if (!try CallStyle.tupleCallHint(r, w, region, arity)) w.writeAll(
+        if (!try CallStyle.nullaryArgsHint(r, w, region) and !try CallStyle.tupleCallHint(r, w, region, arity)) w.writeAll(
             \\
             \\Hint: every call supplies every argument. To make a function out of this one,
             \\write the missing argument as `_`: `f a _` is `λx → f a x`.

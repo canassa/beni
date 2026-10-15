@@ -61,7 +61,10 @@ pub const NodeList = std.MultiArrayList(Node);
 
 pub const Node = struct {
     tag: Tag,
-    /// Byte offset into the module's source, or `no_pos`.
+    /// Byte offset into the module's source, or `no_pos`. Only the
+    /// printer's source-map marks read it (`backend.md` §11): no pass
+    /// decides anything by it, so a moved position changes a map and no
+    /// emitted byte.
     pos: u32,
     data: Data,
 

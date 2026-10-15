@@ -1367,13 +1367,13 @@ const Case = struct {
     /// and for cases whose cost is a compiler defect with an open issue
     /// (`tests/corpus/README.md`, *Budgets*): the file's first word is the
     /// limit, and the rest of it must say why, so none is added silently.
-    /// It is the page case's: a `browser/direct/` page's value-fuzz case
-    /// (`Fixture.values`) keeps the global budget, since a grant names the
-    /// case it was asked for.
+    /// A `.budget` is the page case's. A separately granted value-fuzz case
+    /// (`Fixture.values`) uses `.fuzz-budget`, so page grants never cover it
+    /// implicitly (owner's Conduit grants, 2026-10-14).
     fn ownBudget(c: Case) !?u64 {
-        if (c.fixture.values) return null;
-        if (!c.goldenExists("budget")) return null;
-        const text = try Io.Dir.cwd().readFileAlloc(testing.io, try c.goldenPath("budget"), c.arena, .limited(4096));
+        const ext = if (c.fixture.values) "fuzz-budget" else "budget";
+        if (!c.goldenExists(ext)) return null;
+        const text = try Io.Dir.cwd().readFileAlloc(testing.io, try c.goldenPath(ext), c.arena, .limited(4096));
         var words = std.mem.tokenizeAny(u8, text, " \t\r\n");
         const first = words.next() orelse return error.BudgetFileEmpty;
         const millions = std.fmt.parseUnsigned(u64, first, 10) catch return error.BudgetNotANumber;
@@ -2290,6 +2290,10 @@ const Case = struct {
         const bless = c.bless and !tea and (std.mem.eql(u8, golden, "chrome-expected") or
             (!chrome and (pass == .dev or !std.mem.eql(u8, golden, "expected"))));
         const out = pageOut(pass);
+        if (!tea and c.goldenExists("plan")) {
+            const plan = try c.w.read(try std.fmt.allocPrint(c.arena, "{s}/_direct-plan.json", .{out}));
+            try c.expectGoldenMaybeBless("plan", plan, c.bless and pass == .dev);
+        }
         return c.checkedPlan(.{
             .pass = pass,
             .golden = golden,

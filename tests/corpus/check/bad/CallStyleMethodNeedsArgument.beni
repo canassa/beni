@@ -1,0 +1,9 @@
+-- check/bad: the accepted 2026-10-15 nullary rule makes `xs.length` a
+-- call. `xs.take` still needs an argument; the error names the saturated
+-- method form and its explicit placeholder alternative.
+count : List Int → Int
+count xs = xs.length
+
+
+firstTwo : List Int → List Int
+firstTwo xs = xs.take
