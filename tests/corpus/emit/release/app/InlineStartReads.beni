@@ -1,0 +1,50 @@
+-- emit: a top-level value whose making does nothing, read once while the
+-- module starts, is made where it is read (`backend.md` §9, *Slice 10 — a
+-- value read once at start-up*). `inc` and `dec` are written inside
+-- `steps`, and `steps`, with them, in `table`'s call. `units` is read
+-- once, but inside a function, which would make it on every call; `marks`
+-- is read twice. Both stay where they are.
+import Node exposing (Program)
+
+
+inc : Int → Int
+inc n = n + 1
+
+
+dec : Int → Int
+dec n = n - 1
+
+
+steps : List (Int → Int)
+steps = [ inc, dec ]
+
+
+table : List (Int → Int)
+table = List.reverse steps
+
+
+units : List String
+units = [ "px", "em" ]
+
+
+marks : List String
+marks = [ "<", ">" ]
+
+
+size : Int → String
+size n = String.join (List.map units λu → String.fromInt n ++ u) " "
+
+
+wrap : String → String
+wrap s = String.join marks s
+
+
+main : Program
+main =
+    Node.printLines
+        [ String.fromInt (List.foldl table 3 λf acc → f acc)
+        , size 2
+        , size 4
+        , wrap "a"
+        , String.join (List.reverse marks) "b"
+        ]

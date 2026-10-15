@@ -425,6 +425,9 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error!Stats {
     // Last, so that slice 8, which writes a call through a property in
     // only with every argument, has seen them all.
     try s.trimArguments();
+    // Slice 10, after every fact: a value made at start-up and read once
+    // there is made where it is read; reachability drops its declaration.
+    if (try s.inlineReads()) _ = try s.prune();
     try s.finish();
     s.stats.copied = s.copied[0..@min(s.copied.len, in.globals)];
     s.stats.copied_modules = s.copied_modules;
@@ -4975,6 +4978,167 @@ const Spec = struct {
         };
         const e = try c.expr(small.ret, 0);
         m.copyNode(call, e);
+        return true;
+    }
+
+    // ---- Slice 10: a value read once at start-up ---------------------------
+
+    /// Where a module's start-up reads a whole-program name: the node, and
+    /// the top-level statement (by its place in the body) it stands in.
+    const StartRead = struct { module: u32, top: u32, node: Index };
+
+    /// `backend.md` §9, *Slice 10 — a value read once at start-up*: a
+    /// top-level `const` whose initialiser only makes a value (`inert`),
+    /// whose name the whole program mentions once, in a later top-level
+    /// statement of its own module, where the module's start-up evaluates
+    /// that mention exactly once — under no function and no loop — is
+    /// written there, and not written at all. The value is still made
+    /// once, by the same expression, before anything can see it: the one
+    /// mention is the only way to it. Run last, after every fact is spent
+    /// (a copy's nodes are in no fact). True when any was written.
+    fn inlineReads(s: *Spec) Allocator.Error!bool {
+        if (s.in.fresh == .none) return false;
+        try s.inlineScan();
+        const n = s.globals;
+        const refs = s.io_refs[0..n];
+        const assigned = try s.arena.alloc(bool, n);
+        for (assigned, s.io_assigned[0..n]) |*a, k| a.* = k != 0;
+        // Every name mentioned once whose one mention a module's start-up
+        // evaluates once: that mention.
+        const sites = try s.arena.alloc(?StartRead, n);
+        @memset(sites, null);
+        for (s.mods, 0..) |*m, mi| try s.startReads(m, @intCast(mi), refs, sites);
+        var any = false;
+        for (s.mods, 0..) |*m, mi| {
+            const body = try s.arena.dupe(Index, m.ir.extraSlice(m.ir.body, Index));
+            for (body, 0..) |stmt, ti| {
+                if (m.ir.tag(stmt) != .const_decl) continue;
+                const g = m.globalOf(@fromBackingInt(@intCast(m.ir.data(stmt).lhs))) orelse continue;
+                if (g >= n or refs[g] != 1 or assigned[g] or isRoot(s.in, g)) continue;
+                const decl = s.decl[g] orelse continue;
+                if (decl.module != mi or decl.stmt != stmt) continue;
+                const at = sites[g] orelse continue;
+                if (at.module != mi or at.top <= ti) continue;
+                const value: Index = @fromBackingInt(@intCast(m.ir.data(stmt).rhs));
+                if (!inert(m.ir, value)) continue;
+                // A name the value reads as it is made holds the same value
+                // when it is made later: nothing assigns it.
+                if (!try s.immutableNames(m, value, stmt, assigned)) continue;
+                if (try s.writeRead(m, @intCast(mi), g, value, at.node)) any = true;
+            }
+        }
+        return any;
+    }
+
+    /// The names module `m` mentions once in the whole program (`refs`),
+    /// each with that mention, when the module's start-up evaluates it
+    /// exactly once: in a top-level statement, under no function (an
+    /// arrow, a `function`) and no loop, and neither an assignment's target
+    /// nor a statement of its own.
+    fn startReads(s: *Spec, m: *Mod, mi: u32, refs: []const u32, out: []?StartRead) Allocator.Error!void {
+        var stack: std.ArrayList(Index) = .empty;
+        var once: std.ArrayList(bool) = .empty;
+        var children = try s.takeStack();
+        defer s.giveStack(&children);
+        const ir = m.ir;
+        for (ir.extraSlice(ir.body, Index), 0..) |top, ti| {
+            stack.clearRetainingCapacity();
+            once.clearRetainingCapacity();
+            try stack.append(s.arena, top);
+            try once.append(s.arena, true);
+            while (stack.pop()) |node| {
+                const here = once.pop().?;
+                const t = ir.tag(node);
+                if (t == .ident) {
+                    if (!here) continue;
+                    const g = m.globalOf(@fromBackingInt(@intCast(ir.data(node).lhs))) orelse continue;
+                    if (g < refs.len and refs[g] == 1) out[g] = .{ .module = mi, .top = @intCast(ti), .node = node };
+                    continue;
+                }
+                children.clearRetainingCapacity();
+                try pushChildren(s.arena, ir, node, &children);
+                const repeats = switch (t) {
+                    .arrow, .func_decl, .gen_decl, .while_true, .for_of => true,
+                    else => false,
+                };
+                const d = ir.data(node);
+                for (children.items) |c| {
+                    var below = here and !repeats;
+                    if (t == .assign_stmt and c.int() == d.lhs) below = false;
+                    if (t == .expr_stmt and ir.tag(c) == .ident) below = false;
+                    if ((t == .call or t == .new_call) and c.int() == d.lhs) below = false;
+                    try stack.append(s.arena, c);
+                    try once.append(s.arena, below);
+                }
+            }
+        }
+    }
+
+    /// Write top-level value `value` of module `m`, declared as whole-program
+    /// name `g`, at its one read `site`: a copy whose every local is new,
+    /// so that none meets a name of the statement it now stands in. False
+    /// when the value is too big or too deep to copy.
+    fn writeRead(s: *Spec, m: *Mod, mi: u32, g: u32, value: Index, site: Index) Allocator.Error!bool {
+        const ir = m.ir;
+        // Every local the value names — each is bound inside it, since a
+        // top-level value stands in no function — and how big it is.
+        const locals = try s.arena.alloc(bool, ir.names.len);
+        @memset(locals, false);
+        var stack: std.ArrayList(Index) = .empty;
+        var depths: std.ArrayList(u32) = .empty;
+        var children = try s.takeStack();
+        defer s.giveStack(&children);
+        try stack.append(s.arena, value);
+        try depths.append(s.arena, 0);
+        var nodes: u32 = 0;
+        while (stack.pop()) |node| {
+            const depth = depths.pop().?;
+            nodes += 1;
+            if (nodes > max_inline_nodes or depth > max_inline_depth) return false;
+            const d = ir.data(node);
+            const named: []const u32 = switch (ir.tag(node)) {
+                .ident, .const_decl, .let_decl, .func_decl, .gen_decl, .for_of, .while_true, .block_stmt, .break_stmt, .continue_stmt => &.{d.lhs},
+                .try_stmt => &.{@backingInt(ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.Try).catch_name)},
+                else => &.{},
+            };
+            for (named) |x| {
+                const local: NameIndex = @fromBackingInt(@intCast(x));
+                const i = local.unwrap() orelse continue;
+                if (i < locals.len and m.globalOf(local) == null) locals[i] = true;
+            }
+            const func: ?ExtraIndex = switch (ir.tag(node)) {
+                .arrow => @fromBackingInt(@intCast(d.lhs)),
+                .func_decl, .gen_decl => @fromBackingInt(@intCast(d.rhs)),
+                else => null,
+            };
+            if (func) |record| for (ir.extraSlice(ir.extraData(record, JsIr.Func).params(), NameIndex)) |p| {
+                const i = p.unwrap() orelse continue;
+                if (i < locals.len and m.globalOf(p) == null) locals[i] = true;
+            };
+            children.clearRetainingCapacity();
+            try pushChildren(s.arena, ir, node, &children);
+            for (children.items) |c| {
+                try stack.append(s.arena, c);
+                try depths.append(s.arena, depth + 1);
+            }
+        }
+        var c: Copy = .{
+            .s = s,
+            .src = m,
+            .dst = m,
+            .cross = false,
+            .renamed = try s.arena.alloc(u32, ir.names.len),
+            .subst = try s.arena.alloc(Node.OptionalIndex, ir.names.len),
+        };
+        @memset(c.renamed, none);
+        @memset(c.subst, .none);
+        for (locals, 0..) |is_local, i| if (is_local) try c.fresh(@intCast(i), false);
+        s.noteCopy(mi, g);
+        const e = try c.expr(value, 0);
+        m.foldTo(site, e);
+        // The table lowering handed the printer names the copy's root; the
+        // root is now `site`.
+        if (m.tables) |t| if (std.mem.indexOfScalar(Index, t.unobserved.items, e) != null) try t.unobserved.append(s.arena, site);
         return true;
     }
 

@@ -1,0 +1,53 @@
+-- Top-level values read once while the module starts, which `--release`
+-- makes where they are read (`backend.md` §9, *Slice 10 — a value read once
+-- at start-up*), print what the development build prints. `shout` and
+-- `whisper` are functions read once, by `table`, which `--release` writes
+-- inside it. `first` and `second` are read once by `sum` too, but each logs
+-- as it is made: written where `sum` reads them they would log after
+-- `between`, and in the other order.
+import Node exposing (Program)
+
+
+type alias Voice =
+    name : String
+    say : String → String
+
+
+shout : String → String
+shout s = String.toUpper s ++ "!"
+
+
+whisper : String → String
+whisper s = String.toLower s ++ "…"
+
+
+first : Int
+first = Debug.log "first" 1
+
+
+between : Int
+between = Debug.log "between" 2
+
+
+second : Int
+second = Debug.log "second" 3
+
+
+table : List (String → String)
+table = [ shout, whisper ]
+
+
+voices : List Voice
+voices = List.indexedMap table λi say → { name = String.fromInt i, say = say }
+
+
+sum : Int
+sum = second + first
+
+
+main : Program
+main =
+    Node.printLines
+        (List.map voices (λv → v.name ++ " " ++ v.say "Beni")
+            ++ [ String.fromInt (sum * 10 + between) ]
+        )

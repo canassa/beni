@@ -4275,7 +4275,8 @@ shortening (`true` → `!0` makes brotli output *larger*), `if_return`, `collaps
 constant evaluation, sequence joining, comparison and switch rewriting. (*2026-10-02*: `if_return`
 was measured again, and stays out — §8, *In place, when nothing captures*. Inlining a function
 called from one place is built, for a runtime written in beni — *A function called once is written
-where it is called*, below.)
+where it is called*, below. *2026-10-15*: so is a top-level value read once at start-up, for
+direct's template protocol — *Whole-program specialisation*, slice 10.)
 
 **Emission order matters and is free.** Declarations are emitted in module-grouped reachability
 order and names are stable across builds; a size-sorted order costs up to 7% of compressed bytes at
@@ -6991,6 +6992,47 @@ With `List` in beni the case now fits the budget, 161 million under it, with no 
 
 Each step's output is byte for byte as before: every file `bench/size.mjs` builds, in both
 builds, and every release run hash.
+
+**Slice 10 — a value read once at start-up** (*added 2026-10-15*; research 102 §6.1 item 2,
+`Spec.inlineReads`). A top-level binding whose value is made at start-up and read once, also at
+start-up, is written where it is read and not declared at all: direct's patch functions and
+template protocol rows, each a `const` read once by the consumer table of its module, are the
+case it exists for — `Qf(Vt,Wt,null)` becomes `Qf([…],(a,b)=>{…},null)`. It runs last, after
+`trimArguments`, because a copy's nodes are in no fact, and `prune` then drops each declaration
+nothing names any more. **A binding qualifies only when every one of these holds**, and each is
+there for the guarantee beside it:
+
+| Condition | Why |
+|---|---|
+| it is a top-level `const` of the program's own lowering (no hand-written file's binding, no `let`, no `function`) | a `let` may be assigned; a `function` is hoisted, and may be called before its statement |
+| its initialiser is **inert** (`Spec.inert`): a function, a literal, a name, or an array, object or template of those | making it calls nothing, reads no property and so cannot fail, suspend, log or see a change: moving it moves no effect and no evaluation that can fail (`language.md` §6). `Debug.log`, `Debug.todo` and anything else are calls: never moved |
+| every name it reads as it is made (outside a function in it) is assigned nowhere in the program (`immutableNames`) | made later, it reads what it read: the name was initialised at the binding (its statement came first) and holds one value from then on. A name a function in it reads is a binding the closure keeps whatever the moment it is made |
+| the whole program mentions its name exactly once, and nothing the pass cannot see names it (`Input.escaping`, the entry's call; a library's exports) | that mention is the only way to the value, so whoever saw the object before sees the same one object now (rule 8): field identity is untouched, and nothing between the binding and the read can tell it was not made yet |
+| the mention stands in a **later top-level statement of the same module** | the read runs after the binding, in the order the module runs its statements; across modules the order of two module bodies is the import graph's, a question this slice does not open: of the 436 reads research 102's prototype took in Conduit, 31 map to two sources, several of them the shared constant constructors no source owns, and none is a patch |
+| the mention runs **exactly once** while the module starts: under no function (an arrow, a `function`), no loop (`while`, `for…of`), not an assignment's target, not a statement of its own, and not a callee | a read inside a function would make the value on every call — a new object, a new closure each time, and identity per call (rule 8); in a loop, once per iteration. A callee would become a function called where it is made: measured on Conduit, that wrote 35 more brotli bytes on direct and 2 on tea, so it stays a call of the name |
+
+**How it is written.** The value is copied to the read (`Spec.Copy`) and the read node becomes the
+copy's root; every local the value declares gets a new name, since a local's `NameIndex` is
+shared by every top-level declaration of the module (`localName` restarts per declaration, §9 item
+1) and the value now stands in another one. The tables lowering handed the optimiser follow the
+copy. The read keeps the value's own position, so a release map (§11.2) sends the written
+function to its definition. A development build is unchanged, since this pass runs under
+`--release` only.
+
+Measured (release, brotli, the one file): Conduit **31 745 → 31 471** on `browser-tea`
+(−274; research 102's prototype −180) and **38 243 → 36 456** on `browser-direct` (−1 787;
+prototype −1 577), its three corpus scripts identical on both; `bench/size.mjs`'s release total
+723 980 → **723 908** — 61 programs smaller, 39 larger, 382 equal, no program's raw bytes larger:
+every larger brotli figure is a renaming of fewer raw bytes, mostly a function written into a
+declaration that mentions more whole-program names, whose locals then step around them
+(`run/SchemaDeclKeys` +87, the most); `bench/corpus` (`--library`) 19 092 → 19 054; development
+output byte for byte as before. Speed: nothing that runs after start-up changes; every value is
+made once, at start-up, as before. Fixtures: `emit/release/app/InlineStartReads` (two functions
+written into a list, the list into a call; a list read once inside a function and one read twice
+stay), `run/InlineStartReads` (two logged values read once by a third still log in their order,
+before the value read between them — red with the inert test removed), and the goldens it moved:
+`emit/release/split/HolesPage`, `app/DeadArms`, `SpecFieldNames`, `SpecTrailingArguments`,
+`tea/HttpSendTracked`, `HttpSendUntracked`.
 
 **Amended 2026-10-02 — fact 3 is order-free** (research 52 §3.3 and §4.5, slices 0–2; this
 corrects the worklist note's *the order is kept on purpose* and its *Checked* bullet).
