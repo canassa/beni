@@ -90,6 +90,15 @@ test "each playground sample's CSS is next to its source, and TodoMVC's is todom
     try expectPageTestIn(&w, .inherit, &.{"samples"});
 }
 
+test "every tab of the playground page controls a panel the page has" {
+    // `page.js`'s `select()` shows the panel a tab's `aria-controls` names;
+    // a renamed panel id would make it throw. The Chrome test clicks every
+    // tab; this checks the ids in the gates.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try expectPageTestIn(&w, .inherit, &.{"tabs"});
+}
+
 test "the playground's grammar names comments, strings, keywords, notation and markup" {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
