@@ -1,7 +1,7 @@
 // Drive the playground in a headless Chrome (docs/design/playground.md §4,
 // §5): `zig build test-playground-page`, not a gate. It needs a Chrome,
-// which `nix develop .#browser` puts on PATH, and the network, because the
-// editor loads from a CDN (§4.2).
+// which `nix develop .#browser` puts on PATH, and no network: the editor's
+// modules are files of the site (§4.2).
 //
 //   node tests/browser/playground.mjs <site>
 //
@@ -88,8 +88,14 @@ const waiting = new Map();
 // The newest frame of each page: the sandboxed frame runs in a process of
 // its own, a target the page's session attaches to automatically.
 const frames = new Map();
+// Every URL a page asked for (`Network.requestWillBeSent`).
+const requests = [];
 socket.onmessage = (message) => {
   const m = JSON.parse(message.data);
+  if (m.method === "Network.requestWillBeSent") {
+    requests.push(m.params.request.url);
+    return;
+  }
   if (m.method === "Target.attachedToTarget" && m.params.targetInfo.type === "iframe") {
     frames.set(m.sessionId, m.params.sessionId);
     return;
@@ -113,6 +119,7 @@ async function open(url) {
   const { sessionId } = await send("Target.attachToTarget", { targetId, flatten: true });
   await send("Runtime.enable", {}, sessionId);
   await send("Page.enable", {}, sessionId);
+  await send("Network.enable", {}, sessionId);
   await send("Target.setAutoAttach", { autoAttach: true, waitForDebuggerOnStart: false, flatten: true }, sessionId);
   await send("Page.navigate", { url }, sessionId);
   const evaluate = async (expression, frameSession = sessionId) => {
@@ -166,6 +173,10 @@ check((await page.until(`/Compiler loaded in \\d+ ms/.test(${status}) || ${built
 check((await page.until(built)) !== null, `the first sample builds (${await page.evaluate(status)})`);
 check(await page.evaluate(`document.querySelector(".cm-editor") !== null`), "the editor is CodeMirror");
 check((await page.until(loaded)) !== null, "the first sample's program loads in the frame");
+// The editor's modules are files of the site (§4.2): the page asks no other
+// origin for anything.
+const elsewhere = requests.filter((url) => !url.startsWith(`${origin}/`) && !url.startsWith("blob:") && !url.startsWith("data:"));
+check(requests.some((url) => url.endsWith("/vendor/codemirror-view.js")) && elsewhere.length === 0, `every request stays on the site (${JSON.stringify(elsewhere)})`);
 
 // The counter, in its frame: a click on `+` shows 1.
 const counted = await page.until(`document.querySelector("span")?.textContent === "0" && (document.querySelectorAll("button")[1].click(), true)`, 10_000, true);
@@ -192,6 +203,14 @@ check((await wrong.until(`/^1 error/.test(${status}) && (${status})`)) !== null,
 check((await wrong.until(`document.querySelector(".cm-lintRange-error")?.textContent === "missing"`, 10_000)) !== null, "the error is marked on `missing` in the editor");
 check((await wrong.evaluate(`document.querySelector(".diagnostic")?.textContent ?? ""`)).startsWith("NAMING ERROR — Main.beni:5:"), "the error is listed with its place");
 
+// beni's grammar in the editor: the Elm mode with beni's tokens (§4.2).
+const notation = "-- every token of beni's own\nimport Html exposing (Html)\n\n\npub schema Person =\n    name : String\n\n\nf : Int, Int → Int × Int\nf a b = ( a, b )\n\n\nview : ⊤ → Html msg\nview _ = <p class=\"x\">{\"a ≠ b ≤ c ≥ d ▷ e ◁ f … g ← h λ ⊥\"}</p>\n";
+const highlighted = await pageWith("browser-direct", notation);
+await highlighted.until(`document.querySelector(".cm-editor") !== null && document.querySelector(".cm-content")?.textContent.includes("schema")`, 20_000);
+for (const piece of ["→", "×", "⊤", "pub", "schema", "<p", "class"]) {
+  check(await highlighted.evaluate(`[...document.querySelectorAll("#editor .cm-line span")].some((s) => s.textContent === ${JSON.stringify(piece)} && s.className !== "")`), `the editor highlights ${piece}`);
+}
+
 // The dumps and the emitted JavaScript.
 const program = "import Node exposing (Program)\n\n\ndouble : Int → Int\ndouble n = n * 2\n\n\nmain : Program\nmain = Node.printLines [ String.fromInt (double 21) ]\n";
 const tabs = await pageWith("node", program);
@@ -202,7 +221,10 @@ check((await tabs.until(`document.getElementById("types-text").textContent.inclu
 await tabs.evaluate(click("ownership"));
 check((await tabs.until(`document.getElementById("ownership-text").textContent.includes("summary double:")`, 20_000)) !== null, "the Ownership tab shows the report");
 await tabs.evaluate(click("javascript"));
-check((await tabs.evaluate(`document.getElementById("code").textContent`)).includes("double"), "the JavaScript tab shows the emitted module");
+check((await tabs.until(`document.querySelector("#code .cm-content")?.textContent.includes("double")`, 10_000)) !== null, "the JavaScript tab shows the emitted module");
+// Highlighted by the JavaScript grammar: a keyword of the module is in an
+// element of its own with a highlight class.
+check(await tabs.evaluate(`[...document.querySelectorAll("#code .cm-line span")].some((s) => s.textContent === "import" && s.className !== "")`), "the JavaScript tab highlights the emitted module");
 
 // A dump refreshes after an edit while its tab is open.
 await tabs.evaluate(click("types"));

@@ -1821,6 +1821,26 @@ build, so each guard tests `builtin.single_threaded` before the code that spawns
 code is not compiled into the single-threaded binary. A new place that starts a thread needs the
 same guard; the single-threaded build in the gates fails to compile without it.
 
+*Amended 2026-10-15, after review.* Two cases compile and fail only when they run.
+`Io.concurrent` and `Io.Group` compile in a single-threaded build and fail at run time with no
+thread to give (`beni serve` is refused for that reason). A wait on an `Io.Condition` or a futex
+is `unreachable` in a single-threaded `Io.Threaded` (Zig 0.17, `std/Io/Threaded.zig`), so a pool
+whose calling thread waits before its own work is done traps there. The emit pool never waits
+with no threads, because no spawned thread is busy. A new pool needs a test in
+`wasm_test.zig`, not only a compile.
+
+**The word size is part of the argument too** (amended 2026-10-15, after review). The argument
+above covers threads and `--jobs`. A wasm32 build also has a 32-bit `usize`, and an order that
+follows the width of a `usize` word is a second way to differ. `src/js/Spec.zig`'s points-to
+fixpoint had one: it evaluated its waiting constraints a `usize` word of a bit set at a time,
+and a constraint woken in a word already passed waited for the next sweep. On wasm32 it took
+more sweeps than on x86-64 (99 against 89 on `browser/direct/KeySubscription`), and under
+`max_pts_sweeps` whether the fixpoint is reached may depend on the order; the bytes were the
+same only because no program came near the cap. The set is in 64-bit words on every target
+now, so the native count did not move, and `zig build test-playground` checks that the shipped
+`.wasm` takes the native compiler's sweep count on six programs. Every other format and every
+order that reaches output was audited for a `usize` that would differ (`playground.md` §2.1).
+
 ## 11. What we are deliberately not doing
 
 | Not doing | Why |

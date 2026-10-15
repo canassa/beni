@@ -80,8 +80,7 @@
 //!                                 TodoMVC, against the native compiler,
 //!                                 byte for byte
 //!   zig build test-playground-page  drive the site in a headless Chrome
-//!                                 (`nix develop .#browser`; the editor
-//!                                 loads from a CDN, so it needs the network)
+//!                                 (`nix develop .#browser`)
 //! And the cross-language benchmark (docs/design/compare-bench.md §12), which
 //! needs `nix develop .#compare` and is not a gate either:
 //!   zig build compare-gen         write the generated projects
@@ -746,7 +745,9 @@ pub fn build(b: *std.Build) void {
     // beside it. Every URL in it is relative, so the site build of issue
     // #127 copies the directory to `/beni/playground/` as it is (§9).
     const playground_step = b.step("playground", "Write the playground's static site, with the compiler as ReleaseSmall WebAssembly, into zig-out/playground/");
-    playground_step.dependOn(&b.addInstallDirectory(.{ .source_dir = b.path(playground_dir), .install_dir = .prefix, .install_subdir = playground_dir }).step);
+    // `vendor.sh`, which fetches the editor's modules again, is not part of
+    // the site.
+    playground_step.dependOn(&b.addInstallDirectory(.{ .source_dir = b.path(playground_dir), .install_dir = .prefix, .install_subdir = playground_dir, .exclude_extensions = &.{".sh"} }).step);
     playground_step.dependOn(&shipped_wasm_install.step);
     // TodoMVC is a sample (§4.3), kept once, where its benchmark keeps it.
     playground_step.dependOn(&b.addInstallFileWithDir(
@@ -762,9 +763,9 @@ pub fn build(b: *std.Build) void {
     bb.runSharded(test_playground_step, bb.artifact("tests/blackbox/playground_test.zig"), .{ .root = "tests/corpus", .wasm = .shipped, .budget = false }, playground_shards);
     // The page in a headless Chrome (§6): the samples, the frame, the
     // diagnostics, the tabs and the link. Not a gate: it needs a Chrome
-    // (`-Dchrome`, else `nix develop .#browser`'s on PATH) and the network,
-    // for the editor's CDN.
-    const page_step = b.step("test-playground-page", "Drive the playground in a headless Chrome: samples, frame, diagnostics, tabs and the shareable link (nix develop .#browser; the editor needs the network)");
+    // (`-Dchrome`, else `nix develop .#browser`'s on PATH). The editor's
+    // modules are files of the site, so it needs no network.
+    const page_step = b.step("test-playground-page", "Drive the playground in a headless Chrome: samples, frame, diagnostics, tabs and the shareable link (nix develop .#browser)");
     const page_run = b.addSystemCommand(&.{ "node", "tests/browser/playground.mjs" });
     page_run.addArg(installPath(b, playground_dir));
     page_run.setCwd(b.path("."));

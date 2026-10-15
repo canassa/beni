@@ -8,7 +8,11 @@
 //       the shareable link gives back every source it was made from
 //   node tests/wasm/page_test.mjs syntax
 //       the grammar names the tokens of each line as the test says
-import { readFileSync } from "node:fs";
+//   node tests/wasm/page_test.mjs vendor
+//       every vendored editor module is the bytes `SHA256SUMS` names, and
+//       `index.html`'s import map names each module and nothing else
+import { createHash } from "node:crypto";
+import { readFileSync, readdirSync } from "node:fs";
 import { rangeOf } from "../../playground/positions.js";
 import { decode, encode, maxSource } from "../../playground/share.js";
 import { copyState, startState, token } from "../../playground/syntax.js";
@@ -31,7 +35,8 @@ function tokenize(lines) {
   return out;
 }
 
-/// The part of CodeMirror's `StringStream` the grammar uses, over one line.
+/// The part of CodeMirror's `StringStream` the grammar and the Elm mode it
+/// extends use, over one line, as `@codemirror/language` defines them.
 class Stream {
   constructor(string) {
     this.string = string;
@@ -47,10 +52,23 @@ class Stream {
   next() {
     return this.pos < this.string.length ? this.string.charAt(this.pos++) : undefined;
   }
-  eat(ch) {
-    if (this.string.charAt(this.pos) !== ch) return undefined;
+  eat(match) {
+    const ch = this.string.charAt(this.pos);
+    const ok = typeof match === "string" ? ch === match : ch !== "" && (match instanceof RegExp ? match.test(ch) : match(ch));
+    if (!ok) return undefined;
     this.pos += 1;
     return ch;
+  }
+  eatWhile(match) {
+    const start = this.pos;
+    while (this.eat(match) !== undefined);
+    return this.pos > start;
+  }
+  skipTo(ch) {
+    const found = this.string.indexOf(ch, this.pos);
+    if (found === -1) return undefined;
+    this.pos = found;
+    return true;
   }
   eatSpace() {
     const start = this.pos;
@@ -123,9 +141,9 @@ if (mode === "positions") {
   const cases = [
     [["-- a comment"], [["-- a comment", "lineComment"]]],
     [["--| a doc comment"], [["--| a doc comment", "docComment"]]],
-    [["case kind of"], [["case", "keyword"], ["kind", "variableName"], ["of", "keyword"]]],
-    [["type alias Model ="], [["type", "keyword"], ["alias", "keyword"], ["Model", "typeName"], ["=", "operator"]]],
-    [['"a${b}c"'], [['"', "string"], ["a", "string"], ["${", "meta"], ["b", "variableName"], ["}", "meta"], ['c"', "string"]]],
+    [["case kind of"], [["case", "keyword"], ["kind", "variable"], ["of", "keyword"]]],
+    [["type alias Model ="], [["type", "keyword"], ["alias", "keyword"], ["Model", "type"], ["=", "operator"]]],
+    [['"a${b}c"'], [['"', "string"], ["a", "string"], ["${", "meta"], ["b", "variable"], ["}", "meta"], ['c"', "string"]]],
     [['"tab\\tend"'], [['"', "string"], ["tab", "string"], ["\\t", "escape"], ['end"', "string"]]],
     [["x = 'a'"], [["'a'", "string"]]],
     [["n = 0x1F + 2.5e3"], [["0x1F", "number"], ["+", "operator"], ["2.5e3", "number"]]],
@@ -133,32 +151,40 @@ if (mode === "positions") {
     [["λx → x ▷ g"], [["λ", "operator"], ["▷", "operator"]]],
     [["b = True ≠ False"], [["True", "bool"], ["≠", "operator"], ["False", "bool"]]],
     [["u = ⊤"], [["⊤", "atom"]]],
-    [["v = model.todos"], [["model", "variableName"], [".todos", "propertyName"]]],
+    [["v = model.todos"], [["model", "variable"], [".todos", "propertyName"]]],
     [["    \\\\raw ${x} text"], [["\\\\raw ${x} text", "string"]]],
     // A comparison after an operand, markup where an operand may start.
-    [["less = a <b"], [["a", "variableName"], ["<", "operator"], ["b", "variableName"]]],
+    [["less = a <b"], [["a", "variable"], ["<", "operator"], ["b", "variable"]]],
     [
       ['    <button onClick={Increment}>-</button>'],
-      [["<button", "tagName"], ["onClick", "attributeName"], ["=", "operator"], ["{", "brace"], ["Increment", "typeName"], ["}", "brace"], [">", "tagName"], ["-", "content"], ["</button", "tagName"], [">", "tagName"]],
+      [["<button", "tagName"], ["onClick", "attributeName"], ["=", "operator"], ["{", "brace"], ["Increment", "type"], ["}", "brace"], [">", "tagName"], ["-", "content"], ["</button", "tagName"], [">", "tagName"]],
     ],
-    [['    <span>{count}</span>'], [["<span", "tagName"], [">", "tagName"], ["{", "brace"], ["count", "variableName"], ["}", "brace"], ["</span", "tagName"]]],
+    [['    <span>{count}</span>'], [["<span", "tagName"], [">", "tagName"], ["{", "brace"], ["count", "variable"], ["}", "brace"], ["</span", "tagName"]]],
     // Children are text: an inline element after text is a tag, and an
     // apostrophe or a `--` in text is text (frontend.md §9.3).
     [["<p>Hello <b>world</b> -- don't</p>"], [["Hello ", "content"], ["<b", "tagName"], ["world", "content"], ["</b", "tagName"], [" -- don't", "content"], ["</p", "tagName"]]],
     [["<>", "    <li>one</li>", "</>"], [["<", "tagName"], [">", "tagName"], ["<li", "tagName"], ["one", "content"], ["</li", "tagName"], ["</", "tagName"]]],
-    [["<hr /> < limit"], [["<hr", "tagName"], ["/>", "tagName"], ["<", "operator"], ["limit", "variableName"]]],
-    [["<input -- a comment", "    value={v} />"], [["<input", "tagName"], ["-- a comment", "lineComment"], ["value", "attributeName"], ["v", "variableName"], ["/>", "tagName"]]],
+    [["<hr /> < limit"], [["<hr", "tagName"], ["/>", "tagName"], ["<", "operator"], ["limit", "variable"]]],
+    [["<input -- a comment", "    value={v} />"], [["<input", "tagName"], ["-- a comment", "lineComment"], ["value", "attributeName"], ["v", "variable"], ["/>", "tagName"]]],
     [["let x = 1 in <div />"], [["in", "keyword"], ["<div", "tagName"]]],
-    [["ok = f x? <y"], [["?", "operator"], ["<", "operator"], ["y", "variableName"]]],
+    [["ok = f x? <y"], [["?", "operator"], ["<", "operator"], ["y", "variable"]]],
     // §2.5: no underscores; `schema` and `where` are keywords only where
     // they start their forms.
-    [["n = 1_000"], [["1", "number"], ["_000", "variableName"]]],
-    [["schema Person ="], [["schema", "keyword"], ["Person", "typeName"]]],
-    [["where = 1"], [["where", "variableName"]]],
-    [["sort : List a → List a where a.compare : a, a → Order"], [["where", "keyword"], ["a", "variableName"], [".compare", "propertyName"]]],
+    [["n = 1_000"], [["1", "number"], ["_", "keyword"]]],
+    [["schema Person ="], [["schema", "keyword"], ["Person", "type"]]],
+    [["where = 1"], [["where", "def"]]],
+    [["sort : List a → List a where a.compare : a, a → Order"], [["where", "keyword"], ["a", "variable"], [".compare", "propertyName"]]],
     // A string does not go on to the next line, and an interpolation's
     // state does.
-    [['s = "open', "next = 1"], [['"', "string"], ["open", "string"], ["next", "variableName"], ["1", "number"]]],
+    [['s = "open', "next = 1"], [['"', "string"], ["open", "string"], ["next", "def"], ["1", "number"]]],
+      // The Elm mode's own names: a name at the start of a line is a
+    // definition, and Elm's `module` and `port` are names in beni.
+    [["update : Msg, Model → Model"], [["update", "def"], [":", "operator"], ["Msg", "type"], [",", "punctuation"], ["Model", "type"], ["→", "operator"]]],
+    [["x = module port"], [["module", "variable"], ["port", "variable"]]],
+    // beni's keywords that Elm lacks, and the rest of the notation.
+    [["pub foreign opaque"], [["pub", "keyword"], ["foreign", "keyword"], ["opaque", "keyword"]]],
+    [["t = a ≠ b ≤ c ≥ d ◁ e ← f … g × h ⊥"], [["≠", "operator"], ["≤", "operator"], ["≥", "operator"], ["◁", "operator"], ["←", "operator"], ["…", "operator"], ["×", "operator"], ["⊥", "atom"]]],
+    [["r = { x = 1 }"], [["{", "brace"], ["x", "variable"], ["}", "brace"]]],
   ];
   for (const [lines, expected] of cases) {
     const got = tokenize(lines);
@@ -169,8 +195,45 @@ if (mode === "positions") {
       at += 1;
     }
   }
+} else if (mode === "vendor") {
+  // Paths are the repository's: `tests/blackbox/playground_page_test.zig`
+  // runs this from the repository root.
+  const vendor = "playground/vendor";
+  const sums = new Map(
+    readFileSync(`${vendor}/SHA256SUMS`, "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => line.split(/\s+/))
+      .map(([sum, file]) => [file, sum]),
+  );
+  const modules = readdirSync(vendor).filter((f) => f.endsWith(".js")).sort();
+  check(modules.length > 0 && sums.size === modules.length, `a sum for each module (${modules.length} modules, ${sums.size} sums)`);
+  for (const file of modules) {
+    const sum = createHash("sha256").update(readFileSync(`${vendor}/${file}`)).digest("hex");
+    check(sums.get(file) === sum, `${file} is the bytes SHA256SUMS names`);
+  }
+  const html = readFileSync("playground/index.html", "utf8");
+  const map = JSON.parse(/<script type="importmap">([\s\S]*?)<\/script>/.exec(html)[1]).imports;
+  const targets = Object.values(map).map((url) => url.replace(/^\.\/vendor\//, "")).sort();
+  check(JSON.stringify(targets) === JSON.stringify(modules), `the import map names each vendored module once: ${JSON.stringify(targets)}`);
+  // Every bare import inside a vendored module is a name the map resolves:
+  // a new pin that adds a dependency fails here, not in a browser.
+  for (const file of modules) {
+    const text = readFileSync(`${vendor}/${file}`, "utf8");
+    for (const [, spec] of text.matchAll(/^(?:import|export)\b[^;]*?\bfrom\s*['"]([^'"]+)['"]/gm)) {
+      if (spec.startsWith(".")) continue;
+      check(Object.hasOwn(map, spec), `${file} imports ${spec}, which the import map resolves`);
+    }
+  }
+  for (const [name, url] of Object.entries(map)) {
+    check(url.startsWith("./vendor/"), `${name} loads from the site (${url})`);
+    // By file: a subpath such as `@codemirror/legacy-modes/mode/elm` is one
+    // file of its package.
+    const file = url.slice("./vendor/".length);
+    check(readFileSync("playground/vendor/LICENSES.txt", "utf8").includes(`== ${file}: ${name.split("/").slice(0, name.startsWith("@") ? 2 : 1).join("/")} `), `LICENSES.txt holds ${name}'s licence`);
+  }
 } else {
-  process.stderr.write("usage: node tests/wasm/page_test.mjs (positions <source> <diagnostics.json> <text>… | share | syntax)\n");
+  process.stderr.write("usage: node tests/wasm/page_test.mjs (positions <source> <diagnostics.json> <text>… | share | syntax | vendor)\n");
   process.exit(2);
 }
 process.exitCode = failures === 0 ? 0 : 1;

@@ -55,6 +55,39 @@ test "version prints the version and the build id on stdout and nothing else" {
     try testing.expectEqualStrings(r.stdout, again.stdout);
 }
 
+test "stdout and stderr redirected to a file keep what the shell wrote there first" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `{ echo first; beni …; } > file` opens the file once: the shell
+    // writes its line, and beni writes after it. Until 2026-10-15 beni
+    // wrote both streams at a file position of its own, from 0, so its
+    // output overwrote the shell's line (`playground.md` §2.4). They are
+    // streams now.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const script =
+        \\{ echo first; "$0" version; } > out.txt
+        \\{ echo first >&2; "$0" no-such-command; } 2> err.txt
+        \\exit 0
+    ;
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try world.spawnAndCapture(w.arena.allocator(), w.gpa, w.io, &.{ "/bin/sh", "-c", script, w.exe }, .{ .dir = w.tmp.dir }, world.default_timeout_ms);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    const out = try w.read("out.txt");
+    try testing.expect(std.mem.startsWith(u8, out, "first\n" ++ expected_version_prefix));
+    try testing.expectEqual("first\n".len + expected_version_prefix.len + 33, out.len);
+    const err = try w.read("err.txt");
+    try testing.expectEqualStrings("first\nbeni: unknown subcommand 'no-such-command'; run 'beni help' for usage\n", err);
+}
+
 test "layout declaration bodies have byte-identical AST and BIR dumps to braces" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │

@@ -23,6 +23,14 @@ The owner, Cesar Canassa, opened issue #128 and took its three open questions on
 The first answer to the platform question read "browser-tea only — just browser-direct". It
 contradicted itself, so it was asked again; the decision above is the second answer.
 
+*Amended 2026-10-15.* After an adversarial review, Jayson Reis took two more decisions on the
+dashboard at 12:36 UTC:
+
+| Question | Decision |
+|---|---|
+| `wasm-playground-q5`: the two `.wasm` gate tests cost a fixed 74% of the budget | **A budget of their own, and `test-playground` in CI on every pull request** (§6). The budget was granted by Cesar on 2026-10-15 (dashboard question `wasm-playground-q7`). |
+| `wasm-playground-q6`: the editor's 13 modules from esm.sh run in the shared `canassa.github.io` origin with no integrity check | **Vendor the 13 files** in the repository, each with a checksum, and a script that fetches them again (§4.2). This replaces the "from a CDN" part of the editor decision above; CodeMirror 6 and the pinned versions stay. |
+
 The work lands in two pull requests:
 
 1. The WebAssembly target, the single-threaded path with byte-identical output, and a minimal
@@ -48,7 +56,18 @@ layer, and each one is code that only the page runs.
 The binary is the same compiler as the native one. `build.zig`'s `compiler` makes it, with the
 same embedded `core/`, the same embedded platforms (`embedPlatforms`, with their markup lowerings
 compiled in) and the same checked core (`corePack`). The core pack is a byte format of 32-bit
-words, so the pack that the host's maker writes is correct on wasm32 (§6 proves it).
+words: its container and every payload write `u32` and `u16` fields with explicit little-endian
+`writeInt`, and `frontend/artifact_bytes.zig`'s `widthFor` refuses a field wider than 32 bits at
+compile time. So the pack that the host's maker writes is correct on wasm32. A byte comparison
+cannot show that alone, because a refused pack makes the compiler check `core/` again and gives
+the same bytes; the profile's counters show it, and a gate test asserts them (§6).
+
+*Amended 2026-10-15, after review:* "the same compiler" holds for threads by `fast-compiler.md`
+§10, and for the word size because the one order that followed a `usize`, `src/js/Spec.zig`'s
+points-to sweeps, now uses 64-bit words on every target (§10, *The word size*). A review of
+`src/` for a 32-bit `usize` found no other: no unordered map whose order reaches output is keyed
+by a `usize` or a pointer, and every reader of a format widens its bounds to 64 bits
+(`src/cache/type_body.zig` since this amendment).
 
 ### 2.2 No threads
 
@@ -156,31 +175,56 @@ compiled.
 
 ### 4.2 The editor (second pull request)
 
-CodeMirror 6 from a CDN, every package at a pinned version, with a beni grammar for highlighting:
+CodeMirror 6, every package at a pinned version, with a beni grammar for highlighting:
 keywords, comments, strings, numbers, and the Unicode notation (`language.md` §12.7–§12.10). The
 diagnostics come from `--diagnostics=json` and show at their positions in the editor.
 
 *As built, 2026-10-15.*
 
-- **The packages.** `index.html`'s import map names 13 modules on esm.sh, each at an exact
-  version published before 2026-10-01: `@codemirror/state` 6.7.6, `view` 6.43.13, `language`
-  6.12.4, `commands` 6.11.1, `lint` 6.9.7, `autocomplete` 6.20.3 and `search` 6.7.2;
-  `@lezer/common` 1.5.3 and `@lezer/highlight` 1.2.5; `@marijn/find-cluster-break` 1.0.4,
-  `crelt` 1.0.7, `style-mod` 4.1.4 and `w3c-keyname` 2.2.8. esm.sh's `*` form leaves each
-  module's own imports bare, so the map is the one place a package resolves, and each loads
-  once at the version written there. A second copy of `@codemirror/state` breaks CodeMirror,
-  which is what a CDN that resolves each package's ranges by itself risks.
-- **The grammar** is `playground/syntax.js`, a tokenizer for CodeMirror's `StreamLanguage`
-  with no dependency: line and doc comments, strings with `${…}` and escapes, `\\` lines,
-  character literals, numbers as `language.md` §2.5 writes them (no underscores), the fifteen
-  keywords, `schema` before a type name and `where` before a `name.method`, constructors and
-  types, `.field`, the Unicode operators, `⊤` and `⊥`, and markup. Markup has the three modes of
-  `frontend.md` §9.1: in code, a `<` followed by a letter or `>` opens a tag where an operand
-  may start and is a comparison after a token that ends one (§9.3: a name, a literal, a closing
-  bracket, `?`, a `/>`, a closing tag's `>`); `</` always closes one. In a tag, names are
-  attributes, `--` starts a comment and `{…}` is a hole. Between an element's tags, text is
-  text, a `<` before a letter or `>` always opens a tag, and `{…}` is a hole. It highlights
-  and decides nothing else: the compiler's diagnostics say what is wrong.
+- **The packages.** `index.html`'s import map names 13 modules, each at an exact version
+  published before 2026-10-01: `@codemirror/state` 6.7.6, `view` 6.43.13, `language` 6.12.4,
+  `commands` 6.11.1, `lint` 6.9.7, `autocomplete` 6.20.3 and `search` 6.7.2; `@lezer/common`
+  1.5.3 and `@lezer/highlight` 1.2.5; `@marijn/find-cluster-break` 1.0.4, `crelt` 1.0.7,
+  `style-mod` 4.1.4 and `w3c-keyname` 2.2.8. Each module's own imports are bare, so the map is
+  the one place a package resolves, and each loads once at the version written there. A second
+  copy of `@codemirror/state` breaks CodeMirror.
+- **They are files of the site** (*amended 2026-10-15*, Jayson Reis's decision on
+  `wasm-playground-q6`; they came from esm.sh until then). The page runs in
+  `canassa.github.io`, which every Pages site of its owner shares (§5), so code from a third
+  party there could read the other sites' storage; esm.sh rebuilds its output, so an
+  `integrity` hash in the import map could not pin it. `playground/vendor/` holds each
+  package's own ES module from its npm tarball, unmodified (the editor's first 13 modules,
+  1 131 174 bytes, not minified);
+  `vendor/SHA256SUMS` names each file's SHA-256, and `vendor/LICENSES.txt` each file's source
+  URL and the package's MIT licence, which the site ships. `playground/vendor.sh` fetches them
+  again: it checks each tarball against npm's recorded SHA-512, and the same pins give the
+  same bytes. A gate test (§6) checks every file against `SHA256SUMS` and the import map against
+  the files, and the Chrome test checks that the page asks no other origin for anything.
+- **The grammar** is `playground/syntax.js`, a tokenizer for CodeMirror's `StreamLanguage`.
+  *Amended 2026-10-15, at Jayson Reis's request:* it is CodeMirror's Elm mode
+  (`@codemirror/legacy-modes`, `mode/elm`, vendored) with beni's rules in front of it. The Elm
+  mode reads what beni writes as Elm does: names, a name at the start of a line as a
+  definition, types and constructors, numbers, character literals, the ASCII operators and the
+  brackets. beni's rules take what Elm does not know or reads otherwise: strings with `${…}`
+  and escapes, `\\` lines, line and doc comments (beni has no `{-` block comment, so a `{` is
+  always a brace), the Unicode notation (`→ ← ≠ ≤ ≥ ▷ ◁ … ×` and `λ` as operators, `⊤` and `⊥`
+  as atoms), `True` and `False`, beni's keywords (`pub`, `opaque` and `foreign` are keywords;
+  Elm's `module` and `port` are names; `schema` is a keyword before a type name and `where`
+  before a `name.method`), `.field`, and markup. The Elm mode calls an operator a keyword and
+  a bracket a builtin; the file names them as beni's grammar did before. Markup has the three
+  modes of `frontend.md` §9.1: in code, a `<` followed by a letter or `>` opens a tag where an
+  operand may start and is a comparison after a token that ends one (§9.3: a name, a literal, a
+  closing bracket, `?`, a `/>`, a closing tag's `>`); `</` always closes one. In a tag, names
+  are attributes, `--` starts a comment and `{…}` is a hole. Between an element's tags, text
+  is text, a `<` before a letter or `>` always opens a tag, and `{…}` is a hole. It
+  highlights and decides nothing else: the compiler's diagnostics say what is wrong.
+- **The emitted JavaScript** (*added 2026-10-15*, at Jayson Reis's request) is a read-only
+  CodeMirror view with CodeMirror's JavaScript grammar (`@codemirror/lang-javascript`, on
+  `@lezer/javascript` and `@lezer/lr`, vendored). One highlight style colours both views.
+  *Rejected: Prism.js*, which Jayson named "if there is better use it": the editor is
+  CodeMirror already (q2), whose own Elm mode and JavaScript grammar give the same result with
+  one library, one highlight style and no second highlighter to vendor and keep in step.
+- **The vendored files**, after these two: 17 modules, 1 308 650 bytes, not minified.
 - **Positions.** A span's column counts code points and the editor counts UTF-16 units
   (`playground/positions.js`): `→` is one of each, a character past U+FFFF one column and two
   units. A diagnostic in `Main.beni` is a lint mark with its title and message; every
@@ -214,7 +258,9 @@ Every edit and every change of platform makes a new version, and a result of an 
 is dropped. Until the new dump arrives, an open dump of the older version is shown dimmed. A
 dump of a program with errors prints what it could, with a line that says the program has
 errors. A defect of the playground (an exception the worker did not foresee) is shown and not
-run again for the same version: the queue waits for the next edit.
+run again for the version it failed on; a newer version, from an edit made while it ran, is
+compiled. *Amended 2026-10-15, after review:* the page marked the newest version as failed, so
+an edit made during the failed run waited for one more edit.
 
 ### 4.5 The shareable link (second pull request)
 
@@ -241,7 +287,8 @@ The compiled program runs in an `<iframe sandbox="allow-scripts">`, **without
 other site of the user. Without `allow-same-origin` the frame has an opaque origin of its own.
 
 A blob URL that the parent page makes belongs to the parent's origin, and the frame cannot load
-it. So the parent sends the emitted files to the frame with `postMessage`, and the frame's own
+it. So the parent writes the emitted files into the frame's `srcdoc`, as JSON in a
+`<script type="application/json">` element with every `<` escaped, and the frame's own
 bootstrap script (`playground/frame.js`, inlined in the frame's `srcdoc`):
 
 1. makes a blob URL for each module in the frame's own origin, dependencies first, after it
@@ -253,6 +300,9 @@ bootstrap script (`playground/frame.js`, inlined in the frame's `srcdoc`):
 The frame sends an uncaught error and an unhandled rejection to the parent from its `error` and
 `unhandledrejection` listeners. A listener is not a `catch` (rule 9). beni's own defect screen
 shows inside the frame.
+
+*Amended 2026-10-15, after review:* this section said the parent sends the files with
+`postMessage`; the code has always written them into `srcdoc`, and the text above now says so.
 
 A relative specifier is found by the import forms that the compiler writes and that
 `boundary.md` §4's checks accept for a sibling: `import … from "./…"`, `export … from "./…"` and
@@ -280,14 +330,16 @@ native threaded build. Items 1 and 4 prove it; items 2 and 3 test the page itsel
 2. **In the gates**, `tests/blackbox/playground_page_test.zig` runs the page's own modules
    under Node (`tests/wasm/page_test.mjs`): the editor's range of a diagnostic the real
    compiler reported after Unicode notation and a character past U+FFFF, the shareable link's
-   round trip for both platforms, and the grammar's names for comments, strings, keywords,
-   notation and markup.
+   round trip for both platforms, the grammar's names for comments, strings, keywords,
+   notation and markup, and the vendored editor modules against their checksums and the import
+   map (§4.2).
 3. **Not a gate:** `zig build test-playground-page` drives the site in a headless Chrome
-   (`tests/browser/playground.mjs`; `nix develop .#browser`, and the network for the CDN): the
-   first sample builds and loads in the frame, a click in the frame changes the counter,
-   every sample builds and runs, an error is marked on its text in the editor and listed,
-   the Types, Ownership and JavaScript tabs show their output, Share after an edit makes a
-   link that opens the edited source and platform, and a damaged link opens the first sample.
+   (`tests/browser/playground.mjs`, `nix develop .#browser`; no network, since the editor's
+   modules are files of the site): every request stays on the site, the first sample builds
+   and loads in the frame, a click in the frame changes the counter, every sample builds and
+   runs, an error is marked on its text in the editor and listed, the Types, Ownership and
+   JavaScript tabs show their output, Share after an edit makes a link that opens the edited
+   source and platform, and a damaged link opens the first sample.
 4. **Not a gate:** `zig build test-playground` runs the shipped `ReleaseSmall` `.wasm` (§7.1) on
    every program of `tests/corpus/run/` and `tests/corpus/browser/direct/`, and on TodoMVC, and
    compares every output file, both streams and the exit code with the native compiler's.
@@ -308,6 +360,29 @@ budget of a test is 4.3 billion. So the gates run the self-hosted `.wasm` on the
 the budget, and the native single-threaded compiler on everything else, because it runs the same
 guarded code at native speed. The shipped binary is proven by `test-playground`.
 
+*Amended 2026-10-15, after review.*
+
+- **The two `.wasm` gate tests have a budget of their own**, 6 000M (`wasm_test.zig`'s
+  `wasm_budget_millions`). Most of their cost is fixed: Node, V8's compile of the self-hosted
+  build's 18 MB code section, and that build's start on the embedded core and platforms. A
+  one-line program costs 92% of what `run/Adt` costs, so no smaller input reduces it, and under
+  the gates' 4 300M the margin was 17%. Jayson Reis decided the grant on 2026-10-15 (dashboard
+  question `wasm-playground-q5`), with `test-playground` in CI; the budget was granted by Cesar on 2026-10-15 (dashboard question `wasm-playground-q7`).
+- **`test-playground` runs in CI on every pull request**: the `playground` job of `ci.yml`,
+  which the `check` guard needs, so a byte of difference blocks a merge.
+- **The printing-program test asserts the profile's counters** (`--self-profile`): the `.wasm`
+  loaded the embedded checked core (`embedded_modules` as the native compiler's, above 0) and
+  checked one module (§2.1).
+- **`test-playground` runs the page's own commands**: each `run/`, `browser/direct/` and sample
+  program is built as the page builds it (no cache, no source maps, JSON diagnostics), with the
+  cache and source maps, and with `--release`; each `check/bad/` program is checked in both
+  renderers; the TodoMVC dumps take `--diagnostics=json`. On 2026-10-15 that was 786 programs and
+  2 118 commands.
+- **The sweep test.** `test-playground` builds six `browser-direct` programs with `--release` and
+  `--self-profile` on both compilers and asserts the same `spec_points_to_sweeps`
+  (`fast-compiler.md` §10, *The word size*). It failed on the old code (89 against 99 on
+  `KeySubscription`) and passes now.
+
 *Why Node runs the `.wasm` with `--liftoff-only`.* V8 compiles a hot function a second time with
 TurboFan, on background threads. For one short compile that costs more than it saves: the
 `ReleaseSmall` build of a printing program cost 2.6 billion instructions with tiering and 1.0
@@ -326,12 +401,16 @@ Both builds by LLVM, from the same sources. The `ReleaseFast` build keeps its DW
 
 | Build | Raw bytes | gzip -9 | brotli -q 11 | Code section | Data section |
 |---|---:|---:|---:|---:|---:|
-| `ReleaseSmall` (shipped) | 8 556 880 | 2 984 174 | 2 146 575 | 4 301 790 | 4 247 601 |
-| `ReleaseFast`, no debug sections | 13 354 953 | 4 068 454 | 2 708 121 | 9 103 696 | 4 245 381 |
+| `ReleaseSmall` (shipped), first measurement | 8 556 880 | 2 984 174 | 2 146 575 | 4 301 790 | 4 247 601 |
+| `ReleaseFast`, no debug sections, first measurement | 13 354 953 | 4 068 454 | 2 708 121 | 9 103 696 | 4 245 381 |
+| `ReleaseSmall` (shipped), 2026-10-15 after the review | 8 742 821 | 3 046 882 | 2 185 033 | 4 341 791 | 4 393 553 |
+
+The first two rows are from the first pull request's sources. The size grows with `master`: the
+third row is the same build after a merge of `master` and the review's fixes, measured again.
 
 The data section is half of the shipped file: the embedded `core/`, the platforms and the
-checked core (§2.1). The module asks for 1 107 pages (69.2 MiB) of initial memory, most of it
-the 65 MiB stack of §2.3, and sets no maximum.
+checked core (§2.1). The module asks for 1 107 pages (69.2 MiB) of initial memory, 1 108 after
+the review, most of it the 65 MiB stack of §2.3, and sets no maximum.
 
 Speed in Node 24.19, with one `WebAssembly.Module` and 12 compiles of TodoMVC
 (`bench/todomvc/apps/beni/Sandbox.beni`, 298 lines) on new instances, as the page does, two
@@ -367,6 +446,26 @@ output read back.
 In each load the counter's frame loaded its program, and the printing sample's frame printed
 its 11 lines to the page.
 
+*Measured again on 2026-10-15, after the review*, on the page that ships: the second pull
+request's editor, its vendored modules (§4.2) and a merge of `master`. The table above came from
+the first pull request's page, whose text area the script drove, and the script no longer ran on
+the editor; it now opens each program from a link that `share.js` makes and types as a person
+does. Each scenario opens a page of its own, so each first compile includes V8's first tier-up.
+Chrome 153.0.8010.36, three runs, 10 TodoMVC compiles in each:
+
+| | Run 1 | Run 2 | Run 3 |
+|---|---:|---:|---:|
+| Compiler loaded (fetch and `WebAssembly.compile`) | 60 ms | 82 ms | 71 ms |
+| Editor on the page, from the start of the navigation | 238 ms | 507 ms | 467 ms |
+| First compile (the counter sample) | 173 ms | 165 ms | 168 ms |
+| The counter built, from the start of the navigation | 760 ms | 1 011 ms | 979 ms |
+| TodoMVC, first compile on its own page | 226 ms | 217 ms | 214 ms |
+| TodoMVC, median of 10 (edits typed in the page) | 38 ms | 37 ms | 36 ms |
+| TodoMVC, fastest of 10 | 33 ms | 33 ms | 32 ms |
+| The printing sample, first compile on its own page | 99 ms | 95 ms | 98 ms |
+
+In each run the printing sample's frame printed its lines.
+
 ### 7.3 The cost in the gates
 
 The tests of §6 in `zig build gates`, in instructions (the budget's unit, 4 300 million a
@@ -374,6 +473,12 @@ test): the WebAssembly compiler on a printing program, 3 579 million; on the dia
 2 700 million; the native compiler with no threads, 927 to 2 568 million a test. The
 self-hosted `.wasm` and the native compiler with no threads each add one compile of the
 compiler to the gates, in seconds, on cores the rest of the gates leave free.
+
+*Measured again on 2026-10-15, after the review and a merge of `master`*, each test twice: the
+WebAssembly compiler on a printing program 3 676M and 3 681M (it now writes a `--self-profile`
+trace too, §6), on the diagnostics 2 670M and 2 743M, both counted on the grant's own meter
+(§6); the native compiler with no threads 932M to 2 770M a test, and 2M for the `serve`
+refusal.
 
 ## 8. Known limits
 
@@ -385,7 +490,9 @@ expression `Parse.max_depth` (4096) levels deep and refuses a deeper one with
 stack".
 
 Measured in Chrome 153 (§7.2), in the page's worker: a call `f (f (… 1))` 606 levels deep
-compiles, and 607 levels run out of stack. The native compiler builds the same shape 4 000
+compiles, and 607 levels run out of stack. *Measured again on 2026-10-15, after the review*, on
+the page that ships: 790 levels compile and 791 run out of stack, in three runs of
+`bench/playground/chrome.mjs`; the compiler's frames changed with `master` in between. The native compiler builds the same shape 4 000
 levels deep (`abuse_test.zig`). Three page loads gave the same depth. A program a person
 writes rarely nests a few hundred levels; a long operator chain does, because the parser
 nests one level per operator (`x + x + … + x`).
@@ -397,9 +504,10 @@ so the page and the editor go on, and the next build replaces the frame. Where a
 the frame in the page's process, a loop in the program also stops the page. A program that
 prints in a loop grows the console only to its last 2 000 pieces of output.
 
-**The editor needs esm.sh.** If a module of the page does not load (the CDN is down, or the
-site lacks a file), the page's own code never runs; a listener in `index.html` then says in the
-status which file did not load. The compiler and the samples are files of the site.
+**A module that does not load stops the page.** If a module of the page does not load (the
+site lacks a file, or the network failed), the page's own code never runs; a listener in
+`index.html` then says in the status which file did not load. Every file the page loads is a
+file of the site (§4.2).
 
 **One browser is tested.** Chrome 153 runs every test of §6 and every measurement of §7. Firefox
 and Safari are not tested: a module from a `blob:` URL in an opaque-origin frame, and 69.2 MiB

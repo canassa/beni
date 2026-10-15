@@ -13,12 +13,19 @@ const testing = std.testing;
 /// `node tests/wasm/page_test.mjs <args>` in the world's project; fails the
 /// test, with the script's report, unless it exits 0.
 fn expectPageTest(w: *World, args: []const []const u8) !void {
+    return expectPageTestIn(w, .{ .dir = w.tmp.dir }, args);
+}
+
+/// `expectPageTest` with the working directory `cwd`: `.inherit` is the
+/// repository root, where the test runs.
+fn expectPageTestIn(w: *World, cwd: std.process.Child.Cwd, args: []const []const u8) !void {
     const arena = w.arena.allocator();
     const script = try std.Io.Dir.cwd().realPathFileAlloc(w.io, "tests/wasm/page_test.mjs", arena);
+    const node = w.node_exe orelse return error.NodeNotOnPath;
     var argv: std.ArrayList([]const u8) = .empty;
-    try argv.append(arena, script);
+    try argv.appendSlice(arena, &.{ node, script });
     try argv.appendSlice(arena, args);
-    const r = try w.runNode(argv.items);
+    const r = try world.spawnAndCapture(arena, w.gpa, w.io, argv.items, cwd, world.default_timeout_ms);
     if (r.exit_code != 0 or r.term != .exited) {
         std.debug.print("page_test.mjs {s} exited {d}\n--- stderr ---\n{s}\n", .{ args[0], r.exit_code, r.stderr });
         return error.PageTestFailed;
@@ -60,4 +67,21 @@ test "the playground's grammar names comments, strings, keywords, notation and m
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try expectPageTest(&w, &.{"syntax"});
+}
+
+test "the editor's vendored modules are the bytes their checksums name, and the page loads them from the site" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // The 13 CodeMirror modules are files of the site, not a CDN's
+    // (`playground.md` §4.2): the page runs in an origin every Pages site of
+    // its owner shares. `playground/vendor.sh` fetches them; this checks what
+    // is checked in.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE AND VERIFY                      │
+    // └─────────────────────────────────────────┘
+    try expectPageTestIn(&w, .inherit, &.{"vendor"});
 }

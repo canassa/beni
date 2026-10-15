@@ -1,36 +1,49 @@
-// A small beni grammar for the playground's editor (docs/design/playground.md
-// §4.2): a tokenizer for CodeMirror's `StreamLanguage`, for highlighting
-// only. The compiler's diagnostics, not this file, say what is wrong.
+// The beni grammar of the playground's editor (docs/design/playground.md
+// §4.2): CodeMirror's Elm mode (`@codemirror/legacy-modes`, `mode/elm`,
+// vendored), with beni's own tokens in front of it. For highlighting only:
+// the compiler's diagnostics, not this file, say what is wrong.
 //
-// It follows language.md §2: line comments (`--`, `--|`, `--!`), strings
-// with `${…}` interpolation, `\\` multiline lines, character literals,
-// numbers (§2.5: no underscores), the fifteen keywords, the contextual
-// `schema` (before a type name) and `where` (before a `name.method`), and
-// the Unicode notation (§12.7–§12.10). Markup follows frontend.md §9.1 and
-// §9.3, in three modes:
-//   - in code, a `<` followed by a letter or `>` opens a tag where an
-//     operand may start, and is a comparison after a token that ends one;
-//     `</` always closes one;
-//   - in a tag, names are attributes, `{…}` is a hole of code, and `>` or
-//     `/>` ends it;
-//   - between an element's tags (its children), text is text, `<` before a
-//     letter or `>` always opens a tag, `</` closes the element, and `{…}`
-//     is a hole of code.
+// The Elm mode reads what beni writes as Elm does: names, a name at the start
+// of a line as a definition, types and constructors, numbers, character
+// literals, the ASCII operators and the brackets. In front of it, beni's
+// rules (language.md §2) take what Elm does not know or reads otherwise:
+//   - strings with `${…}` interpolation and escapes, and `\\` multiline lines;
+//   - line comments, `--|` and `--!` as doc comments (beni has no `{-` block
+//     comment, so a `{` is always a brace);
+//   - the Unicode notation (§12.7–§12.10): `→ ← ≠ ≤ ≥ ▷ ◁ … ×` and `λ` as
+//     operators, `⊤` and `⊥` as atoms, `True` and `False` as booleans;
+//   - beni's keywords: `pub`, `opaque` and `foreign` are keywords, `module`
+//     and `port` are names, `schema` is a keyword before a type name and
+//     `where` before a `name.method`;
+//   - markup, after frontend.md §9.1 and §9.3, in three modes: in code, a
+//     `<` followed by a letter or `>` opens a tag where an operand may start,
+//     and is a comparison after a token that ends one; `</` always closes
+//     one. In a tag, names are attributes, `{…}` is a hole of code, and `>`
+//     or `/>` ends it. Between an element's tags (its children), text is
+//     text, `<` before a letter or `>` always opens a tag, `</` closes the
+//     element, and `{…}` is a hole of code.
+// The Elm mode calls an operator a keyword and a bracket a builtin; this file
+// names them as beni's grammar always did.
 //
-// It depends on nothing: `token(stream, state)` reads a stream with the
-// `StringStream` methods it uses, so a test can drive it without CodeMirror.
+// It imports the vendored Elm mode by its path and nothing else, so a test
+// can drive `token(stream, state)` with a stream that has the
+// `StringStream` methods it uses, without CodeMirror.
+import { elm } from "./vendor/codemirror-legacy-modes-elm.js";
 
 const keywords = new Set([
   "if", "then", "else", "case", "of", "let", "in", "type", "alias", "pub",
   "opaque", "import", "as", "exposing", "foreign",
 ]);
 
-const operator = /^(?:→|←|≠|≤|≥|▷|◁|…|×|λ|\+\+|==|&&|\|\||\/\/|[-+*/^<>=|?:\\])/;
+// Elm's keywords that are names in beni.
+const elmOnlyKeywords = new Set(["module", "port", "where"]);
+
+const notation = /^(?:→|←|≠|≤|≥|▷|◁|…|×|λ)/;
 
 /// A new tokenizer state.
 export function startState() {
   return {
-    // What the tokenizer is inside, innermost last: `{ kind: "string" }`;
+    // What beni's rules are inside, innermost last: `{ kind: "string" }`;
     // `{ kind: "code", depth }` for an interpolation or a markup hole;
     // `{ kind: "tag", closing }` for the inside of a tag; and
     // `{ kind: "children" }` for an element's content.
@@ -38,11 +51,13 @@ export function startState() {
     // Whether the last token can end an operand, so that a `<` after it is
     // a comparison and not markup (frontend.md §9.3).
     endsOperand: false,
+    // The Elm mode's own state.
+    elm: elm.startState(),
   };
 }
 
 export function copyState(state) {
-  return { stack: state.stack.map((frame) => ({ ...frame })), endsOperand: state.endsOperand };
+  return { stack: state.stack.map((frame) => ({ ...frame })), endsOperand: state.endsOperand, elm: elm.copyState(state.elm) };
 }
 
 const top = (state) => state.stack[state.stack.length - 1];
@@ -66,16 +81,9 @@ export function token(stream, state) {
     state.stack.push({ kind: "string" });
     return "string";
   }
-  if (stream.match(/^'(?:\\(?:u\{[0-9a-fA-F]+\}|.)|[^'\\])'/)) {
-    state.endsOperand = true;
-    return "string";
-  }
-  if (stream.match(/^(?:0x[0-9A-Fa-f]+|[0-9]+(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?)/)) {
-    state.endsOperand = true;
-    return "number";
-  }
   if (frame !== undefined && frame.kind === "code") {
-    if (stream.eat("{")) {
+    if (stream.peek() === "{") {
+      stream.next();
       frame.depth += 1;
       state.endsOperand = false;
       return "brace";
@@ -96,37 +104,64 @@ export function token(stream, state) {
     }
   }
   if (openTag(stream, state, !state.endsOperand)) return "tagName";
-  if (stream.match(/^schema(?=\s+[A-Z])/) || stream.match(/^where(?=\s+[a-z]\w*\.)/)) {
+  if (stream.match(notation)) {
     state.endsOperand = false;
-    return "keyword";
-  }
-  if (stream.match(/^[a-z_][A-Za-z0-9_]*/)) {
-    const keyword = keywords.has(stream.current());
-    state.endsOperand = !keyword;
-    return keyword ? "keyword" : "variableName";
-  }
-  if (stream.match(/^[A-Z][A-Za-z0-9_]*/)) {
-    state.endsOperand = true;
-    const word = stream.current();
-    return word === "True" || word === "False" ? "bool" : "typeName";
-  }
-  if (stream.match(/^\.[a-z][A-Za-z0-9_]*/)) {
-    state.endsOperand = true;
-    return "propertyName";
+    return "operator";
   }
   if (stream.match(/^(?:⊤|⊥)/)) {
     state.endsOperand = true;
     return "atom";
   }
-  if (stream.match(operator)) {
-    // `?` ends an operand (§9.3); every other operator expects one.
-    state.endsOperand = stream.current() === "?";
-    return "operator";
+  if (stream.match(/^(?:True|False)\b/)) {
+    state.endsOperand = true;
+    return "bool";
   }
-  const ch = stream.next();
-  state.endsOperand = ch === ")" || ch === "]" || ch === "}";
-  if (ch === "{") return "brace";
-  return ch === "(" || ch === ")" || ch === "[" || ch === "]" || ch === "}" ? "paren" : "punctuation";
+  if (stream.match(/^schema(?=\s+[A-Z])/) || stream.match(/^where(?=\s+[a-z]\w*\.)/)) {
+    state.endsOperand = false;
+    return "keyword";
+  }
+  const word = stream.match(/^[a-z][A-Za-z0-9_]*/, false);
+  if (word && keywords.has(word[0])) {
+    stream.match(word[0]);
+    state.endsOperand = false;
+    return "keyword";
+  }
+  if (word && elmOnlyKeywords.has(word[0])) {
+    stream.match(word[0]);
+    state.endsOperand = true;
+    return stream.start === 0 ? "def" : "variable";
+  }
+  if (stream.match(/^\.[a-z][A-Za-z0-9_]*/)) {
+    state.endsOperand = true;
+    return "propertyName";
+  }
+  // No `{-` block comment in beni: the Elm mode would start one.
+  if (stream.peek() === "{") {
+    stream.next();
+    state.endsOperand = false;
+    return "brace";
+  }
+  return elmToken(stream, state);
+}
+
+/// The Elm mode's token, named as beni's grammar names it.
+function elmToken(stream, state) {
+  const name = elm.token(stream, state.elm);
+  const text = stream.current();
+  if (name === "builtin") {
+    state.endsOperand = text === ")" || text === "]" || text === "}";
+    if (text === "(" || text === ")") return "paren";
+    if (text === "[" || text === "]") return "squareBracket";
+    if (text === "{" || text === "}") return "brace";
+    return "punctuation";
+  }
+  if (name === "keyword") {
+    // A run of Elm's symbol characters, or `_`.
+    state.endsOperand = text === "?";
+    return text === "_" ? "keyword" : "operator";
+  }
+  state.endsOperand = name === "variable" || name === "def" || name === "type" || name === "number" || name === "string";
+  return name;
 }
 
 /// A tag's start, when the stream is at one: `</name` or `</>` always, and

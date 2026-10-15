@@ -13,8 +13,9 @@
 //!     `tests/wasm/beni.mjs` on the playground's own WASI host. Its
 //!     self-hosted build spends about 3 billion instructions on a small
 //!     program, so it runs the two smallest scenarios, each a test of its
-//!     own; `zig build test-playground` runs the shipped `.wasm` on the
-//!     corpus.
+//!     own with a budget of its own (`wasm_budget_millions`); `zig build
+//!     test-playground`, in CI on every pull request, runs the shipped
+//!     `.wasm` on the corpus.
 //!
 //! The threaded compiler runs with `--jobs=8`, and so does the other: a
 //! build with no threads takes it as 1 (§10), and the flag must change
@@ -36,6 +37,46 @@ fn single(w: *World) ![]const u8 {
 /// The WebAssembly compiler; every run of this file has one.
 fn wasmCompiler(w: *World) ![]const u8 {
     return wasm.wasmPath(w.arena.allocator()) orelse error.NoWasmCompiler;
+}
+
+/// The budget of the two tests that run the `.wasm`, in millions of
+/// instructions: a grant of their own (CLAUDE.md, *Every test has a
+/// budget*), decided by Jayson Reis on 2026-10-15 (dashboard question
+/// `wasm-playground-q5`) and granted by Cesar on 2026-10-15 (dashboard
+/// question `wasm-playground-q7`). Most of their cost is fixed: Node, V8's compile of
+/// the self-hosted build's 18 MB code section, and that build's slow start
+/// on the embedded core and platforms. A one-line program costs 92% of
+/// what `run/Adt` costs, so no smaller input reduces it, and under the
+/// gates' 4 300M the margin was 17%. The limit is 1.63 times the largest
+/// count (3 681M, the printing program with its profile, 2026-10-15), so an
+/// unrelated growth of a fifth still fits. The grant covers the whole test
+/// body: the `.wasm` run, and the native run and the comparison beside it.
+/// It can go when the gates' `.wasm` is an LLVM build, about a third of the
+/// count. `zig build test-playground`, in CI on every pull request, compares
+/// the shipped `.wasm` on the whole corpus.
+const wasm_budget_millions = 6_000;
+
+/// Run `body` held to `wasm_budget_millions` instead of the gates' budget:
+/// what it spends, its children included, is counted on a meter of its own
+/// and left out of the test's sum, as the corpus walker does for a case
+/// with a `.budget` file (`tests/corpus/README.md`, *Budgets*).
+fn withWasmBudget(comptime body: fn () anyerror!void) !void {
+    const meter = world.timing.CaseMeter.open();
+    defer meter.close();
+    const start = meter.read();
+    // Counted on the way out of a failed body too, so that the test's own
+    // sum is right whichever way it ends.
+    errdefer _ = world.timing.cases_spent.fetchAdd(meter.read() -% start, .monotonic);
+    try body();
+    const spent = meter.read() -% start;
+    _ = world.timing.cases_spent.fetchAdd(spent, .monotonic);
+    const limit = world.timing.caseLimit(wasm_budget_millions);
+    if (world.timing.budget_unit != .none and spent > limit) {
+        std.debug.print("FAIL: {d} {s}, over the .wasm tests' own budget of {d}\n", .{
+            world.timing.describe(spent).value, world.timing.describe(spent).unit, world.timing.describe(limit).value,
+        });
+        return error.OverBudget;
+    }
 }
 
 /// A project of four clean modules in `app/`, over three directories, so the
@@ -220,6 +261,10 @@ test "a build with no threads walks a tree as deep as the parser allows on its m
 }
 
 test "the WebAssembly compiler builds a printing program as the native compiler does" {
+    try withWasmBudget(buildsPrintingProgram);
+}
+
+fn buildsPrintingProgram() !void {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
@@ -234,11 +279,29 @@ test "the WebAssembly compiler builds a printing program as the native compiler 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE AND VERIFY                      │
     // └─────────────────────────────────────────┘
-    const built = try wasm.expectSame(&w, &.{ "build", "--jobs=8", "--platform=node", "Adt.beni" }, other);
+    const built = try wasm.expectSameIgnoring(&w, &.{ "build", "--jobs=8", "--platform=node", "--self-profile=profile.json", "Adt.beni" }, other, &.{"profile.json"});
     try testing.expectEqual(@as(u8, 0), built.exit_code);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    // The `.wasm` loads the checked core it embeds, as the native compiler
+    // does (`playground.md` §2.1). A pack it refused would cost a check of
+    // every core module it reaches and change no output byte, so only the
+    // profile's counters can show it.
+    const embedded = try wasm.profileCounter(&w, "other", "profile.json", "embedded_modules");
+    try testing.expect(embedded > 0);
+    try testing.expectEqual(try wasm.profileCounter(&w, "threaded", "profile.json", "embedded_modules"), embedded);
+    // One module, `Adt`, on purpose: with a refused pack the `.wasm` would
+    // check the core modules it reaches as well.
+    try testing.expectEqual(@as(i64, 1), try wasm.profileCounter(&w, "other", "profile.json", "modules_checked"));
 }
 
 test "the WebAssembly compiler reports diagnostics as the native compiler does" {
+    try withWasmBudget(reportsDiagnostics);
+}
+
+fn reportsDiagnostics() !void {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
