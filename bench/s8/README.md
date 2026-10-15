@@ -59,9 +59,10 @@ the stopwatch. `apps-setup-stall.json` records that live state; its raw capture
 with the Nix hook prefix is kept separately. The corrected whole app grid
 started with zero retained observations. No earlier phase was repeated.
 
-Linux gates exit zero. Native Chrome exits one: Sternhalma's 4,989-line
+Linux gates exit zero. Native Chrome exits one: Sternhalma's 4,988-line
 expected/actual transcript differs only in six-significant-digit CSS pixel
-serialization. `chrome-sternhalma-diagnosis.json` records the comparison method
+serialization under the stated narrow normalization, consistent with an
+oracle mismatch. A separate full tea-only golden replay was not run. `chrome-sternhalma-diagnosis.json` records the comparison method
 and hashes, while `chrome-tests.log` remains the unedited failure. No golden was
 blessed. The full V3 campaigns remain owed.
 
@@ -79,3 +80,23 @@ node bench/s8/provenance.mjs
 The older `todo-sizes.json` omits brotli's input-size hint.
 `todo-release-bytes.json` consistently reprices and archives the exact five
 timed Todo files with the hint, checking their hashes against timing metadata.
+
+
+Review adds read-only diagnostics on the same retained observations:
+
+    node bench/s8/audit.mjs --review
+    node bench/s8/review-analysis.mjs
+
+review-audit.json checks per-page sample membership, the actual JFB command
+log order, chronological table/Todo/app order and both Conduit modes.
+review-analysis.json retains all nine endpoints by page and separates the
+default census from supplemental apps. Sweep rotation uses only two positions,
+repeated for every cell; it is not a balanced design across all five/six available positions.
+The original manifest describes the measurement/report commit, while review
+validation separately hashes the updated analysis scripts.
+
+The review changed analysis code, so the full Linux gate was run again and
+passed; review-validation.json records its 39.59-second run and the two analysis
+script hashes. Native Chrome and the comparisons were not repeated.
+Commit 95d875e7b preserves the original measurement/report files corresponding
+to source-manifest.json; subsequent changes are read-only analysis and docs.

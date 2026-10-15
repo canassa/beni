@@ -25,4 +25,45 @@ for(const b of builds.apps.filter(b=>b.app==='table'&&b.status===0))assert.equal
 for(const b of builds.apps.filter(b=>b.app==='conduit'&&b.status===0))assert.equal(con.sources[`browser-${b.platform}-release`],b.sha256,'Conduit timed/byte executable differs');
 assert.equal(read('artifact-verification.json').compilerSha256,builds.compilerSha256);
 for(const b of builds.apps.filter(b=>b.status===0)){assert.equal(b.parts.reduce((s,p)=>s+p.orderedBrotli,0),b.size.brotli);assert(b.parts.find(p=>p.part==='core').rawSpans>0);assert(b.parts.find(p=>p.part==='runtime').rawSpans>0);}
-fs.writeFileSync(`${root}/audit.json`,JSON.stringify({passed:true,counts,method:'Counts and completeness only; behavioral evidence is in harness postconditions and the test logs.'},null,2)+'\n');console.log(counts);
+
+// Review assertions operate only on retained rows/logs; they add no samples.
+const cells=(rows,keys)=>{const out=new Map();for(const row of rows){const key=JSON.stringify(keys.map(k=>row[k]));if(!out.has(key))out.set(key,[]);out.get(key).push(row);}return out;};
+const rotate=(xs,n)=>xs.slice(n%xs.length).concat(xs.slice(0,n%xs.length));
+const recordedOrder=(rows,keys,subjects,iteration)=>{
+ const groups=cells(rows,keys);
+ for(const [key,values]of groups)assert.deepEqual(values.map(x=>x.subject),rotate(subjects,values[0][iteration]),key);
+ return groups.size;
+};
+const orderChecks={};
+orderChecks.tableIterations=recordedOrder(table.samples,['benchmark','iteration'],['beni-release','beni-direct-release','p3','vanillajs','solid1','solid2'],'iteration');
+orderChecks.todoRounds=recordedOrder(td.rows,['n','op','mode','sample'],['browser-tea-Sandbox','browser-direct-Sandbox','browser-tea-NoEditing','browser-direct-NoEditing','vanilla-es6'],'sample');
+orderChecks.appRounds=recordedOrder(apps.rows,['app','operation','sample'],['tea','direct'],'sample');
+const p3Sweeps=new Set(['holes','rows','depth','live','burst','stream']);
+orderChecks.sweepPages=0;
+const sweepCells=cells(sw.samples,['sweep','op','param']);
+assert.equal(sweepCells.size,sw.sweeps.reduce((n,s)=>n+s.params.length*s.ops.length,0));
+for(const [key,values]of sweepCells){
+ const pages=cells(values,['page']);
+ assert.deepEqual([...pages.values()].map(xs=>xs[0].page),[0,1],key);
+ const available=['beni-release','beni-direct-release','solid2','solid1',...(p3Sweeps.has(values[0].sweep)?['p3']:[]),'vanillajs'];
+ for(const page of pages.values()){
+  assert.deepEqual([...new Set(page.map(x=>x.subject))],rotate(available,page[0].page),key);
+  const perSubject=cells(page,['subject']),n=values[0].sweep==='stream'?1:12;
+  for(const rows of perSubject.values())assert.deepEqual(rows.map(x=>x.sample),Array.from({length:n},(_,i)=>i),key);
+  orderChecks.sweepPages+=perSubject.size;
+ }
+}
+assert.equal(sw.samples.length,10188);
+const operations=['01_run1k','02_replace1k','03_update10th1k_x16','04_select1k','05_swap1k','06_remove-one-1k','07_create10k','08_create1k-after1k_x2','09_clear1k_x8','21_ready-memory','22_run-memory','25_run-clear-memory','40_'];
+orderChecks.jfbInvocations=0;
+for(const [round,label]of ['jfb','jfb-1','jfb-2','jfb-3'].entries()){
+ const log=fs.readFileSync(root+'/'+label+'.log','utf8');
+ const actual=[...log.matchAll(/^\$ node dist\/benchmarkRunner\.js .* --count 5 --benchmark (\S+) --framework keyed\/(\S+)$/gm)].map(m=>[m[1],m[2]]);
+ const start=rotate(['vanillajs','solid','beni-tea','beni-direct'],round);
+ const expected=operations.flatMap((op,i)=>rotate(start,i).map(subject=>[op,subject]));
+ assert.deepEqual(actual,expected,label+' operation order');
+ orderChecks.jfbInvocations+=actual.length;
+}
+for(const row of con.rows)for(const subject of row.subjects)for(const tracing of [false,true])for(const position of [0,1])assert.equal(subject.raw.filter(x=>x.tracing===tracing&&x.position===position).length,10);
+const auditFile=process.argv.includes('--review')?'review-audit.json':'audit.json';
+fs.writeFileSync(root+'/'+auditFile,JSON.stringify({passed:true,counts,orderChecks,method:'Counts, two sweep pages with twelve ordinary observations each, and chronological row/log order. App position is inferred from retained append order; Conduit has explicit positions. Behavioral evidence remains in harness postconditions and test logs.'},null,2)+'\n');console.log({counts,orderChecks});

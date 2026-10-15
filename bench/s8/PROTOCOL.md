@@ -1,6 +1,7 @@
-# Fixed measurement plan
+# Initial plan and dated amendments
 
-Recorded before timing on 2026-10-15. Source: master 6c327a9f1.
+The initial plan was recorded before timing on 2026-10-15; dated amendments
+below were appended during the run. Source: master 6c327a9f1.
 No compiler, core, platform or application edits. No selective retries or added
 samples after observing results. Build failures are findings. About two hours
 of measurement-host time; stop with incomplete cells explicit if exhausted.
@@ -50,7 +51,7 @@ cell costs about 80–90 seconds. The owner was asked whether to finish the
 fixed batch (projecting roughly 2¾ hours total) or stop near two hours with
 incomplete cells explicit. No sample count is increased in either case.
 
-## Budget cap, decided before comparative results were inspected
+## Superseded budget cap: operator note at 13:59 CEST
 
 At 13:59 CEST, with round 0 still on its third candidate, cap JFB at **two
 complete rotated rounds**: 10 ordinary CPU observations, 30 select observations,
@@ -64,8 +65,8 @@ The original shell had already parsed its four-round loop. Its parent shell
 was paused while round 0's child continued normally, then removed only after
 round 0's meta.json confirmed completion. `time.sh --after-round-0` continues
 with round 1 and all remaining scenarios. No Chrome or running benchmark was
-interrupted by this scheduling change. The final `time.sh` reproduces the two
-retained rounds from scratch.
+interrupted by this scheduling change. The then-current two-round script is historical; the later owner instruction
+restores the original four-round plan.
 
 ## Build-barrier correction and clean plan
 
@@ -144,3 +145,21 @@ pages per cell. No timed full-app observation was rerun, dropped or retained
 from the stalled setup. JFB, table, sweeps, criterion-6 Todo and Conduit are
 already complete and are not repeated. `apps-and-post.log` records this final
 continuation through artifact verification and the post-timing checks.
+
+
+## Script history and review reanalysis
+
+The historical cap section names the then-current --after-round-0 option.
+That script revision is not retained as an exact source snapshot. The final
+committed time.sh is a reproducer for the restored four-round plan and accepts
+--after-first-jfb; it is not claimed to be every intermediate scheduling
+script as run. Actual valid JFB commands are retained in each round log and
+the review audit checks all 208 in their recorded order. The initial claim
+about what the operator had inspected when capping is a run note, not an
+independently verifiable preregistration; it has no effect on final counts.
+
+Review diagnostics recompute page medians, distinguish the default census
+from extra apps, and check chronological order from existing rows/logs. They
+do not launch a browser or change any raw observations. The original source
+manifest/provenance identifies the initial measurement/report commit; the
+review validation records hashes for the later analysis scripts separately.
