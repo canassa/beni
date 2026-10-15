@@ -1,3 +1,0 @@
-# The call writes `xs`, which the result record reads after it. The column is
-# open: the fix decides whether the refusal is the call or its argument.
-list_still_used 17:*

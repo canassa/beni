@@ -5918,3 +5918,13 @@ where the callee writes what the callback *returns*, does not. Pending:
 `tests/pending/check/bad/direct/BridgeCallbackReturnsParameter.beni` (`list_still_used` at the
 call). The shipping checker is left unchanged by the PR that found it
 ([the report](../proofs/ownership/CONSTRUCTIONS-RESULTS.md)).
+
+**Fixed 2026-10-15:** wherever a callee relies on a callback's result being owned — `need`, or a
+callback-result supply another callback writes — a returned parameter's owned supply is followed to
+the caller: the callee's own parameter becomes a call-site demand on the caller's argument, another
+callback's result asks the same of that callback (ownership-checker.md §16.4, amended 2026-10-15).
+The class had two more shapes on the same path: the supply-edge walk followed only *taken* item
+supplies, so `chain xs identity λl → List.push l 3` wrote `xs`; and `need` was read off only
+untaken callback results, so a callee writing an element of `List.map rows f` never asked `f` to
+return owned. Promoted `tests/corpus/check/bad/direct/BridgeCallbackReturnsParameter.beni` with a
+full diagnostic; `ownership/BridgeReturnedParameter` covers the class and accepted twins.
