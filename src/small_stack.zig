@@ -8,7 +8,8 @@
 //! survives on that stack, and a walk that regressed into recursion overflows
 //! it and takes the test process down with it.
 //!
-//! For tests only.
+//! For tests only, so it needs no guard for a build with no threads
+//! (fast-compiler.md §10): no test binary is built single-threaded.
 
 const std = @import("std");
 

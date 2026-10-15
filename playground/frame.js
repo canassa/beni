@@ -12,13 +12,16 @@
 "use strict";
 (() => {
   const post = (kind, text) => parent.postMessage({ beni: kind, text }, "*");
-  const describe = (value) => (value instanceof Error ? (value.stack ?? String(value)) : String(value));
+  // A value as text, for any value: `String` throws on an object with no
+  // prototype.
+  const show = (value) => (typeof value === "object" && value !== null && typeof value.toString !== "function" ? Object.prototype.toString.call(value) : String(value));
+  const describe = (value) => (value instanceof Error ? (value.stack ?? show(value)) : show(value));
   addEventListener("error", (event) => post("error", event.error === undefined ? event.message : describe(event.error)));
   addEventListener("unhandledrejection", (event) => post("error", describe(event.reason)));
   for (const level of ["log", "info", "warn", "error"]) {
     const original = console[level].bind(console);
     console[level] = (...values) => {
-      post("console", values.map(String).join(" "));
+      post("console", values.map(show).join(" "));
       original(...values);
     };
   }
@@ -31,8 +34,9 @@
   const shims = {
     "node:process": [
       'const write = (text) => parent.postMessage({ beni: "stdout", text: String(text) }, "*");',
+      "export const stdout = { write };",
       "export default {",
-      "  stdout: { write },",
+      "  stdout,",
       '  set exitCode(code) { parent.postMessage({ beni: "exit", text: String(code) }, "*"); },',
       "};",
     ].join("\n"),
@@ -67,15 +71,19 @@
   };
 
   // The import forms the compiler writes, one per line: `import … from
-  // "…"`, `export … from "…"` and `import "…"` (playground.md §5).
+  // "…"`, `export … from "…"` and `import "…"` (playground.md §5). A
+  // dynamic `import("./…")` of a module the build wrote cannot be rewritten
+  // here, so a file with one is refused by name, not loaded wrongly.
   const fromClause = /^((?:import|export)\b[^\n]*?\bfrom\s*)(["'])([^"'\n]+)\2/gm;
   const bareImport = /^(import\s*)(["'])([^"'\n]+)\2/gm;
+  const dynamicImport = /\bimport\s*\(\s*["']\.\.?\//;
 
   // The blob URL of the file at `path`, made after those of its imports.
   function url(path) {
     if (urls.has(path)) return urls.get(path);
     if (!Object.hasOwn(files, path)) throw new Error(`the build wrote no ${path}`);
     if (visiting.has(path)) throw new Error(`an import cycle through ${path}`);
+    if (dynamicImport.test(files[path])) throw new Error(`${path} imports a module dynamically, which the playground does not load (playground.md §5)`);
     visiting.add(path);
     const text = files[path]
       .replace(fromClause, (_, head, quote, spec) => `${head}${quote}${target(path, spec)}${quote}`)

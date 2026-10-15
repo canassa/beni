@@ -85,7 +85,12 @@ pub fn main(init: std.process.Init) u8 {
             if (build.watch) return beni.devloop.Watch.run(gpa, io, stdout, stderr, sessionOptions(build.common), build, null);
             return beni.build.Command.run(gpa, io, stdout, stderr, sessionOptions(build.common), build);
         },
-        .serve => |serve| return beni.devloop.Serve.run(gpa, io, stdout, stderr, sessionOptions(serve.build.common), serve),
+        .serve => |serve| {
+            // `serve` answers requests while it builds, which takes a second
+            // thread (fast-compiler.md §10, *A build with no threads*).
+            if (builtin.single_threaded) return fail(stderr, "beni: serve needs threads, and this beni is built with none", .{});
+            return beni.devloop.Serve.run(gpa, io, stdout, stderr, sessionOptions(serve.build.common), serve);
+        },
         .new => |new| return beni.devloop.New.run(io, stdout, stderr, new),
         .check => |check| return beni.check.Command.run(gpa, io, stdout, stderr, sessionOptions(check.common), check),
         .fmt => |fmt| {
@@ -117,9 +122,7 @@ fn sessionOptions(common: Cli.Common) Session.Options {
     // than it has cores without the flag becoming a way to hang the tool.
     const jobs: u32 = @min(common.jobs orelse cpus, cpus *| 4);
     return .{
-        // A build with no threads has one worker, whatever `--jobs` says
-        // (fast-compiler.md §10, *A build with no threads*).
-        .jobs = if (builtin.single_threaded) 1 else @max(jobs, 1),
+        .jobs = @max(jobs, 1),
         // With no `--jobs`, the CPU count is only a ceiling, and the pools
         // are sized by how much source there is to work on.
         .size_by_work = common.jobs == null,

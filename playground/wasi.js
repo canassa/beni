@@ -13,21 +13,24 @@
 //     Zig's standard library takes as the working directory;
 //   - stdin is empty; stdout and stderr are captured; a positional read or
 //     write on them is `ESPIPE`, as for a pipe;
-//   - every function the module imports exists; one with no meaning in
-//     memory returns `ENOSYS`;
+//   - every function of WASI preview 1 exists, so a module that imports one
+//     more still links; one with no meaning in memory (links, sockets,
+//     signals, `poll_oneoff`) returns `ENOSYS`;
 //   - no `catch` in a call: a JavaScript exception in one goes out of
 //     `_start`;
 //   - `proc_exit` throws an `Exit`, which `run` catches by `instanceof`;
 //   - a trap of the module (`WebAssembly.RuntimeError`: a safety check, an
-//     overflow of its own stack) and an exhausted engine stack (`RangeError`)
-//     end that compile: `run` returns them as `crash`, with what the
-//     compiler wrote to stderr before it, and the next compile makes a new
-//     instance. Anything else is a defect of the host and goes on up.
+//     overflow of its own stack) and an exhausted engine stack
+//     (`isStackExhausted`) end that compile: `run` returns them as `crash`,
+//     with what the compiler wrote to stderr before it, and the next compile
+//     makes a new instance. Anything else is a defect of the host and goes
+//     on up.
 
 // `errno` (WASI preview 1, `wasi_snapshot_preview1.witx`).
 const SUCCESS = 0;
 const EBADF = 8;
 const EEXIST = 20;
+const EFBIG = 22;
 const EINVAL = 28;
 const EISDIR = 31;
 const ENOENT = 44;
@@ -62,8 +65,9 @@ const FST_ATIM_NOW = 2;
 const FST_MTIM = 4;
 const FST_MTIM_NOW = 8;
 
-// `rights`: every right, on every descriptor. The compiler asks for what it
-// needs and the shim checks nothing against them.
+// `rights`: every file and path right (bits 0 to 28; bit 29,
+// `sock_accept`, is a socket's), on every descriptor. The compiler asks for
+// what it needs and the shim checks nothing against them.
 const ALL_RIGHTS = 0x1fffffffn;
 // A terminal's rights: no seek and no tell, which is what makes a
 // descriptor a stream to Zig's standard library.
@@ -72,7 +76,14 @@ const STREAM_RIGHTS = ALL_RIGHTS & ~(0x4n | 0x20n);
 const PREOPEN_FD = 3;
 const PREOPEN_NAME = ".";
 
+// The largest file in memory: a position or a size past it is `EFBIG`, so
+// no request of the module can make the host allocate a typed array it
+// cannot have (a `RangeError` of the host, not of the module).
+const MAX_FILE = 2 ** 30;
+
 const encoder = new TextEncoder();
+// Fatal: the compiler writes UTF-8 paths, so a path that is not is a defect
+// of the compiler, and its `TypeError` goes out of `_start` as one.
 const decoder = new TextDecoder("utf-8", { fatal: true });
 
 /// What `proc_exit` throws: the module asked to stop with `code`.
@@ -80,6 +91,15 @@ export class Exit {
   constructor(code) {
     this.code = code;
   }
+}
+
+/// Whether `e` is the engine's own stack running out (playground.md §8):
+/// V8's and JavaScriptCore's `RangeError` "Maximum call stack size
+/// exceeded", SpiderMonkey's `InternalError` "too much recursion". Any other
+/// `RangeError` is not this.
+export function isStackExhausted(e) {
+  if (e instanceof RangeError) return /^Maximum call stack size exceeded/.test(e.message);
+  return e instanceof Error && e.name === "InternalError" && /too much recursion/.test(e.message);
 }
 
 let nextIno = 1n;
@@ -102,7 +122,7 @@ export class File {
   /// Make room for `size` bytes, at least doubling, and zero what grows.
   reserve(size) {
     if (size <= this.data.length) return;
-    const grown = new Uint8Array(Math.max(size, this.data.length * 2, 256));
+    const grown = new Uint8Array(Math.max(size, Math.min(this.data.length * 2, MAX_FILE), 256));
     grown.set(this.data.subarray(0, this.size));
     this.data = grown;
   }
@@ -232,6 +252,8 @@ export class Wasi {
     if (base === undefined) return EBADF;
     if (!(base.node instanceof Directory)) return ENOTDIR;
     if (path.startsWith("/")) return ENOTCAPABLE;
+    // `name/` names a directory.
+    const directory = path.endsWith("/");
     const names = path.split("/").filter((n) => n !== "" && n !== ".");
     const stack = [base.node];
     for (const name of names.slice(0, -1)) {
@@ -252,7 +274,9 @@ export class Wasi {
     }
     if (last === "." || last === "..") return { parent: null, name: null, node: stack[stack.length - 1] };
     const parent = stack[stack.length - 1];
-    return { parent, name: last, node: parent.entries.get(last) };
+    const node = parent.entries.get(last);
+    if (directory && node instanceof File) return ENOTDIR;
+    return { parent, name: last, node };
   }
 
   open(node, options) {
@@ -289,6 +313,7 @@ export class Wasi {
       return total;
     }
     let at = position ?? (d.append ? d.node.size : d.position);
+    if (at + chunks.reduce((sum, c) => sum + c.length, 0) > MAX_FILE) return null;
     for (const chunk of chunks) {
       d.node.writeAt(at, chunk);
       at += chunk.length;
@@ -423,6 +448,7 @@ export class Wasi {
         const d = fileOf(fd);
         if (typeof d === "number") return d;
         if (!(d.node instanceof File)) return EINVAL;
+        if (size > BigInt(MAX_FILE)) return EFBIG;
         d.node.truncate(Number(size));
         return SUCCESS;
       },
@@ -437,7 +463,9 @@ export class Wasi {
         if (typeof d === "number") return d;
         if (d.node instanceof Directory) return EISDIR;
         if (d.stream === "stdin") return EBADF;
-        wasi.view().setUint32(written, wasi.write(d, wasi.buffers(iovs, count), null), true);
+        const n = wasi.write(d, wasi.buffers(iovs, count), null);
+        if (n === null) return EFBIG;
+        wasi.view().setUint32(written, n, true);
         return SUCCESS;
       },
       fd_pwrite(fd, iovs, count, offset, written) {
@@ -445,7 +473,10 @@ export class Wasi {
         if (typeof d === "number") return d;
         if (d.stream !== null) return ESPIPE;
         if (d.node instanceof Directory) return EISDIR;
-        wasi.view().setUint32(written, wasi.write(d, wasi.buffers(iovs, count), Number(offset)), true);
+        if (offset < 0n || offset > BigInt(MAX_FILE)) return EFBIG;
+        const n = wasi.write(d, wasi.buffers(iovs, count), Number(offset));
+        if (n === null) return EFBIG;
+        wasi.view().setUint32(written, n, true);
         return SUCCESS;
       },
       fd_read(fd, iovs, count, read) {
@@ -461,7 +492,9 @@ export class Wasi {
         if (typeof d === "number") return d;
         if (d.stream !== null) return ESPIPE;
         if (d.node instanceof Directory) return EISDIR;
-        wasi.view().setUint32(read, wasi.read(d, wasi.buffers(iovs, count), Number(offset)), true);
+        if (offset < 0n) return EINVAL;
+        const at = offset > BigInt(MAX_FILE) ? MAX_FILE : Number(offset);
+        wasi.view().setUint32(read, wasi.read(d, wasi.buffers(iovs, count), at), true);
         return SUCCESS;
       },
       fd_seek(fd, offset, whence, result) {
@@ -472,7 +505,7 @@ export class Wasi {
         const from = whence === WHENCE_SET ? 0 : whence === WHENCE_CUR ? d.position : whence === WHENCE_END ? d.node.size : null;
         if (from === null) return EINVAL;
         const position = from + Number(offset);
-        if (position < 0) return EINVAL;
+        if (position < 0 || position > MAX_FILE) return EINVAL;
         d.position = position;
         wasi.view().setBigUint64(result, BigInt(position), true);
         return SUCCESS;
@@ -599,7 +632,45 @@ export class Wasi {
         to.parent.mtim = from.parent.mtim;
         return SUCCESS;
       },
-      // No links in memory.
+      fd_advise(fd) {
+        // Advice is a hint, and memory takes none.
+        return wasi.fds.has(fd) ? SUCCESS : EBADF;
+      },
+      fd_allocate(fd, offset, length) {
+        const d = fileOf(fd);
+        if (typeof d === "number") return d;
+        if (!(d.node instanceof File)) return EINVAL;
+        const end = offset + length;
+        if (end > BigInt(MAX_FILE)) return EFBIG;
+        if (Number(end) > d.node.size) d.node.truncate(Number(end));
+        return SUCCESS;
+      },
+      fd_fdstat_set_rights(fd) {
+        return wasi.fds.has(fd) ? SUCCESS : EBADF;
+      },
+      fd_renumber(from, to) {
+        const d = fileOf(from);
+        if (typeof d === "number" || !wasi.fds.has(to)) return EBADF;
+        wasi.fds.set(to, d);
+        wasi.fds.delete(from);
+        return SUCCESS;
+      },
+      proc_raise() {
+        return ENOSYS;
+      },
+      // No sockets and no links in memory.
+      sock_accept() {
+        return ENOSYS;
+      },
+      sock_recv() {
+        return ENOSYS;
+      },
+      sock_send() {
+        return ENOSYS;
+      },
+      sock_shutdown() {
+        return ENOSYS;
+      },
       path_link() {
         return ENOSYS;
       },
@@ -660,7 +731,7 @@ export async function run(module, args, root) {
     instance.exports._start();
   } catch (e) {
     if (e instanceof Exit) code = e.code;
-    else if (e instanceof WebAssembly.RuntimeError || e instanceof RangeError) {
+    else if (e instanceof WebAssembly.RuntimeError || isStackExhausted(e)) {
       code = null;
       crash = e;
     } else throw e;

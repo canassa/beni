@@ -4,11 +4,13 @@
 // The worker compiles `beni.wasm` once to a `WebAssembly.Module` and runs
 // each compile on a new instance with a new file system (§3, rule 1). A
 // request is `{ id, platform, source }`; the answer is
-// `{ kind: "result", id, code, crash, stdout, stderr, files, ms }`, where
-// `files` maps each path under `out/` to its text. An exception the worker
+// `{ kind: "result", id, code, crash, crashKind, stdout, stderr, files, ms }`,
+// where `crashKind` is `stack` or `trap` (§3, rule 7) and `files` maps each
+// path the build wrote under `out/`, its default output directory, to its
+// text. An exception the worker
 // did not foresee is not caught: the `error` and `unhandledrejection`
 // listeners send it to the page as `{ kind: "defect", message }`.
-import { directoryOf, filesOf, run } from "./wasi.js";
+import { directoryOf, filesOf, isStackExhausted, run } from "./wasi.js";
 
 const decoder = new TextDecoder();
 
@@ -45,6 +47,7 @@ self.addEventListener("message", async ({ data }) => {
     id: data.id,
     code: result.code,
     crash: result.crash === null ? null : String(result.crash),
+    crashKind: result.crash === null ? null : isStackExhausted(result.crash) ? "stack" : "trap",
     stdout: decoder.decode(result.stdout),
     stderr: decoder.decode(result.stderr),
     files,
