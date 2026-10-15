@@ -45,13 +45,15 @@
       # handed a worktree a binary built from another worktree's sources
       # (commit bfc234325). The GLOBAL one holds the build runner,
       # compiler-rt, the ZIR of Zig's library, the generated `builtin.zig`
-      # of each module and fetched packages, with every input file named
-      # relative to Zig's library or the global cache itself. That stays
-      # true only while no build step puts a file of the worktree into the
-      # global cache. In Zig 0.17 a step names a path there with the base
-      # `.global_cache`, as in `b.graph.path(.global_cache, …)`. beni's
-      # build has no such path (`git grep global_cache -- '*.zig'`), and it
-      # must not get one that holds a file of the worktree.
+      # of each module and fetched packages by their hash, with every
+      # input file named relative to Zig's library or the global cache
+      # itself. That stays true only while no build step puts a file of
+      # the worktree into the global cache. In Zig 0.17 a step names a
+      # path there with the base `.global_cache`, as in
+      # `b.graph.path(.global_cache, …)`. beni's build has no such path,
+      # and it must not get one that holds a file of the worktree.
+      # `git grep global_cache -- '*.zig'` finds that name. A path made in
+      # another way needs a reviewer's eye.
       # One global cache serves every worktree of beni and no other
       # project. In the default `~/.cache/zig`, another project's Nix
       # build of Zig 0.17.0 took the slots of the build runner and
@@ -64,9 +66,11 @@
       # cache, so leave the shell before you build another Zig project.
       # The shells with Zig run this: `default`, and `browser`, `coverage`
       # and `compare` through `inputsFrom`; direnv's `use flake` runs
-      # `default`'s. `ownership` has Zorg and no Zig. Zorg reads
-      # ZORG_GLOBAL_CACHE_DIR, not this variable, and its own default is
-      # `~/.cache/zorg`, which the eviction of #161 does not reach (#197).
+      # `default`'s. `ownership` puts Zorg, a fork of Zig, on PATH and no
+      # Zig. Zorg reads ZORG_GLOBAL_CACHE_DIR, not this variable, and its
+      # own default is `~/.cache/zorg`. Its version string carries `+zorg`,
+      # so its entries and Zig 0.17.0's never share a slot, even in one
+      # directory (#197).
       zigGlobalCache = ''
         export ZIG_GLOBAL_CACHE_DIR="''${ZIG_GLOBAL_CACHE_DIR:-''${XDG_CACHE_HOME:-$HOME/.cache}/zig-beni}"
       '';
