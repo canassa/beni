@@ -1,0 +1,28 @@
+-- A late lowering error must fail even when earlier warnings sort before it.
+-- frontend.md §1: exit 1 for any error; the complete diagnostic list is golden.
+import Cmd
+import Html exposing (Html)
+import Sub
+import Tea
+
+
+values : List Int
+values = List.foldr [ 1, 2 ] [] λx acc → [ x, …acc ]
+
+
+page : Int → Html ⊤
+page _ = <p>{List.length values}</p>
+
+
+view : Int → Tea.Document ⊤
+view model = { title = "warning then error", body = page model }
+
+
+main : Tea.Program
+main =
+    Tea.document
+        { init = λ⊤ → ( 0, Cmd.none )
+        , update = λ_ model → ( model, Cmd.none )
+        , subscriptions = λ_ → Sub.none
+        , view = λmodel → view model
+        }
