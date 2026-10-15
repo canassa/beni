@@ -326,8 +326,14 @@ captures. An ordinary local used only by init can transfer. `privateRoot` additi
 marks a closed, unexported top-level initialization binding as shared until entry.
 A source-read proof authorizes its transfer through a single straight chain of
 aliases, records and captures ending in initialization, with no other reads.
-Unsupported graphs remain shared. Already escaped cells are never eligible.
-Transfer authority is consumed once at entry, so a nested entry cannot clear
+Free reads inside traversal, focus or nested entry bodies, and recursive
+initializer reads, are ineligible even with one syntactic occurrence. Explicit
+closure capture atoms are eager reads in this core; deferred global references
+are not encoded as eager captures. Unsupported graphs remain shared. Already
+escaped cells and function-bearing private initializer results are never eligible.
+Transfer authority belongs only to the module-initializer context, never to
+a callee, traversal/focus summary or runtime-entry body; relative allocation sites in another
+frame cannot name it. It is consumed once at entry, so a subsequent entry cannot clear
 a later publication. Entry removes only the private publication before checking initialization; new
 escapes from initialization stay escapes. Exported/shared roots never transfer.
 Every initializer sees the retained fields and the body's free outer uses as live.
@@ -338,8 +344,8 @@ explicit counted bridge skip.
 Six independent controls weaken the existing §29 rules: `arm-result`,
 `block-result`, `capture-read`, `fold-loan` (granting an unconditional destructive
 position loan and forgetting its source observer), `recursive-capture`, and
-`callee-capture`. Five controls weaken the new rules: `early-err`,
-`recursive-payload`, `init-shared`, `init-retained`, and `init-authority`. Each must have one fixed
+`callee-capture`. Six controls weaken the new rules: `early-err`,
+`recursive-payload`, `init-shared`, `init-retained`, `init-authority`, and `init-frame`. Each must have one fixed
 witness and be caught by the targeted finite product through an accepted
 interpreter disagreement; ordinary refusals, crashes and untyped programs do not
 count. The frozen per-call checker explicitly refuses the new syntax. The three

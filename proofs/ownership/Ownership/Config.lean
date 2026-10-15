@@ -9,6 +9,7 @@ inductive Mutant where
   | earlyErr -- an Err constructor drops its payload provenance
   | recursivePayload -- Link drops its recursive payload provenance
   | initRetained -- an entry omits other retained fields
+  | initFrame -- a callee borrows the module initializer's transfer authority
   | initAuthority -- a nested entry reuses spent private-transfer authority
   | initShared -- an entry transfers exported/shared initialization cells
   | armResult          -- terminal arm reads are omitted from enclosing liveness
@@ -66,7 +67,7 @@ inductive Mutant where
   deriving Repr, BEq, Inhabited
 
 def Mutant.all : List Mutant :=
-  [.initAuthority, .earlyErr, .recursivePayload, .initRetained, .initShared, .armResult, .blockResult, .captureRead, .foldLoan, .recursiveCapture, .calleeCapture, .disjoint, .borrowedSupply, .traversalExclusive, .manyCalls, .copyExclusive,
+  [.initFrame, .initAuthority, .earlyErr, .recursivePayload, .initRetained, .initShared, .armResult, .blockResult, .captureRead, .foldLoan, .recursiveCapture, .calleeCapture, .disjoint, .borrowedSupply, .traversalExclusive, .manyCalls, .copyExclusive,
    .closeSource, .keepsShape, .guardReuse, .callbackXres, .supplyEdge, .supplyRecheck,
    .callsEdge, .callbackWrites, .callbackAliases, .callbackEnv, .callbackEscapes,
    .callbackRequires, .requiresEdge, .forwardGuards, .transferSupplies, .onceThroughCall, .branchLive,
@@ -74,6 +75,7 @@ def Mutant.all : List Mutant :=
    .taggerNeed, .captureEmpty, .forwardNeed, .foldInvariant, .modelInvariant]
 
 def Mutant.name : Mutant → String
+  | .initFrame => "init-frame"
   | .initAuthority => "init-authority"
   | .earlyErr => "early-err" | .recursivePayload => "recursive-payload"
   | .initRetained => "init-retained" | .initShared => "init-shared"
@@ -107,6 +109,7 @@ def Mutant.parse (s : String) : Option Mutant := Mutant.all.find? (·.name == s)
 /-- The sync grammar, rather than the legacy random generator, must catch
     these controls. Main enforces every one in CI and `controls`. -/
 def Mutant.enumeratorRequired : Mutant → Bool
+  | .initFrame => true
   | .initAuthority => true
   | .earlyErr | .recursivePayload | .initRetained | .initShared => true
   | .armResult | .blockResult | .captureRead | .foldLoan | .recursiveCapture | .calleeCapture => true
@@ -120,6 +123,7 @@ def Mutant.enumeratorRequired : Mutant → Bool
     `no-scope` cannot be reached by a typed program and is required through its
     checker-level probe. `ownership controls` reports all four. -/
 def Mutant.generatorOptional : Mutant → Bool
+  | .initFrame => true
   | .initAuthority => true
   | .earlyErr | .recursivePayload | .initRetained | .initShared => true
   | .armResult | .blockResult | .captureRead | .foldLoan | .recursiveCapture | .calleeCapture => true
@@ -131,6 +135,7 @@ def Mutant.generatorOptional : Mutant → Bool
 /-- Mutants of the summary layer's rows, and `branch-live`, which only the
     summary checker implements: inert in the per-call checker. -/
 def Mutant.summaryRow : Mutant → Bool
+  | .initFrame => true
   | .initAuthority => true
   | .earlyErr | .recursivePayload | .initRetained | .initShared => true
   | .armResult | .blockResult | .captureRead | .foldLoan | .recursiveCapture | .calleeCapture => true

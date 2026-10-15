@@ -338,13 +338,51 @@ def recursiveQuestion (n : Int) : Program := {
   main := .letE 0 (lit n) <| .letE 1 (.closure 0 []) (.app (v 1) [.int 2, v 0]) }
 
 /-- After a private initialization transfers, a later publication remains
-    permanent. A nested entry cannot spend the old transfer authority again. -/
+    permanent. A subsequent entry cannot spend the old authority again. -/
 def initializationRepublished (n : Int) : Program := {
   declarations := [get]
   main := .letE 0 (lit n) <| .letE 1 (.prim .privateRoot [v 0]) <|
     .letE 2 (.closure 0 [v 1]) <|
-    .entry (.app (v 2) [.int 0]) [] 3 <|
-      .letE 4 (.prim .shared [v 3]) (.entry (.atom (v 3)) [] 5 (push (v 5))) }
+    .letE 3 (.entry (.app (v 2) [.int 0]) [] 4 (.atom (v 4))) <|
+      .letE 5 (.prim .shared [v 3]) (.entry (.atom (v 3)) [] 6 (push (v 6))) }
+
+/-- The review's repeated initializer read: two positions retain the same
+    private row. Removing publication never grants an exclusive certificate.
+    Reading the row to create a fresh payload on each iteration is safe. -/
+def initializationLoopEntry (n : Int) (fresh : Bool) : Expr :=
+  .entry
+    (.letE 2 (.prim (.literal l) []) <|
+      .traverse .range (.int 2) (v 2) 3 4 5 <|
+        if fresh then .letE 6 (.prim .length [v 1]) <|
+          .letE 9 (.prim (.literal .int) [v 6]) (.prim .push [v 5, v 9])
+        else .prim .push [v 5, v 1]) [] 7 <|
+    .focus (v 7) (.int 0) 8 (.prim .push [v 8, .int n])
+
+def initializationLoop (n : Int) (fresh := false) : Program := {
+  main := .letE 0 (lit n) <| .letE 1 (.prim .privateRoot [v 0]) (initializationLoopEntry n fresh) }
+
+/-- PR #116 excludes a function-valued private initializer from transfer.
+    Its environment remains shared; copying the returned list still creates
+    a fresh model spine that the entry may edit. -/
+def initializationFunctionRoot (n : Int) (copied := false) : Program := {
+  declarations := [get]
+  main := .letE 0 (lit n) <| .letE 1 (.closure 0 [v 0]) <|
+    .letE 2 (.prim .privateRoot [v 1]) <|
+    .entry (if copied then .letE 3 (.app (v 2) [.int 0]) (.prim .copy [v 3])
+      else .app (v 2) [.int 0]) [] 4 (push (v 4)) }
+
+/-- A callee's local allocation has the same relative site as the module's
+    private root. It must never borrow the module's pending transfer authority
+    while its summary is solved or reused. The safe twin has no publication. -/
+def initializationFrame (n : Int) (safe := false) : Program := {
+  declarations := [{
+    name := "calleeEntry", parameters := [.int], captures := [.int], result := l
+    body := .letE 2 (lit n) <|
+      .letE 3 (if safe then .atom (.int 0) else .prim .shared [v 2]) <|
+        .entry (.atom (v 2)) [] 4 (.prim .push [v 4, v 1])}]
+  main := .letE 0 (lit n) <| .letE 1 (.prim .privateRoot [v 0]) <|
+    .letE 2 (.closure 0 [.int n]) <|
+      .entry (.atom (v 1)) [] 3 (.app (v 2) [.int 0]) }
 
 /-- Finite products, independent of seeds. These are not fixed probes alone. -/
 def legacyPrograms : List Program := [-1, 0, 1, 2].flatMap fun n =>
@@ -405,6 +443,12 @@ def legacyFixtures : List (String × Program × Bool) := [
   ("Forwarded callback fresh across calls", ownedFresh 1, true)]
 
 def extraFixtures : List (String × Program × Bool) := [
+  ("Init callee cannot borrow module authority", initializationFrame 1, false),
+  ("Init callee without a publication", initializationFrame 1 true, true),
+  ("Init function-valued source stays shared", initializationFunctionRoot 9, false),
+  ("Init copied function result", initializationFunctionRoot 9 true, true),
+  ("Init repeated read is not a private transfer", initializationLoop 9, false),
+  ("Init fresh payload after repeated read", initializationLoop 9 true, true),
   ("Init transfer authority consumed", initializationRepublished 1, false),
   ("Question recursive result", recursiveQuestion 1, true),
   ("Question two frames", twoFrames 1, true),
@@ -426,7 +470,7 @@ def extraFixtures : List (String × Program × Bool) := [
   ("Fold loan feedback", feedbackLoan 1, false)]
 
 def extraPrograms : List Program := [-1, 0, 1, 2].flatMap fun n =>
-  [initializationRepublished n, recursiveQuestion n, twoFrames n, question n, question n true, question n false true,
+  [initializationFrame n, initializationFrame n true, initializationFunctionRoot n, initializationFunctionRoot n true, initializationLoop n, initializationLoop n true, initializationRepublished n, recursiveQuestion n, twoFrames n, question n, question n true, question n false true,
    initialization n, initialization n true, initialization n false true,
    initialization n false false true, initialization n true false true,
    initialization n false false true true] ++
@@ -439,6 +483,7 @@ def programs := legacyPrograms ++ extraPrograms
 def fixtures := legacyFixtures ++ extraFixtures
 
 def holes : List (Mutant × Program) := [
+  (.initFrame, initializationFrame 1),
   (.initAuthority, initializationRepublished 1),
   (.earlyErr, question 1), (.recursivePayload, recursiveData 1 2),
   (.initRetained, initialization 1 false false true), (.initShared, initialization 1 false true),
@@ -459,6 +504,16 @@ def run : IO Bool := do
   for hole in Mutant.all.filter Mutant.enumeratorRequired do
     if (holes.filter fun (m, _) => m == hole).length != 1 then
       IO.println s!"SYNC CONTROL COVERAGE FAILED: {hole.name}"
+      ok := false
+  let directSource := Expr.traverse .list (v 1) (.int 0) 2 3 4 (.atom (v 4))
+  if readCount 1 directSource != 1 then
+    IO.println "SYNC PRIVATE DIRECT SOURCE FAILED"
+    ok := false
+  for fresh in [false, true] do
+    let eligible := privateToInit 1 (initializationLoopEntry 9 fresh)
+    IO.println s!"sync private initializer direct-read fresh={fresh}: eligible={eligible}"
+    if eligible then
+      IO.println s!"SYNC PRIVATE DIRECT-READ FAILED: fresh={fresh}"
       ok := false
   if (check (modelUpdate 1) {rounds := 0}).isOk then
     IO.println "SYNC EXHAUSTION FAILED: partial model proof accepted"

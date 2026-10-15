@@ -21,6 +21,7 @@ structure Context where
   bridgeRoot : String := "main"
   declarations : List Decl
   config : Config
+  moduleInitializer : Bool := true
   privateTransfer : Bool := false
   owned : List Origin := []
   escaped : List Origin := []
@@ -321,6 +322,14 @@ def usesWith (cfg : Config) (e : Expr) (resultRead : Bool := true) : Live :=
     let ua := if cfg.has .branchClosure then ua.filter (fun u => !(closureCapUses a).contains u) else ua
     let ub := if cfg.has .branchClosure then ub.filter (fun u => !(closureCapUses b).contains u) else ub
     union (atomUses c) (union ua ub)
+  | .resultCase input err ok a b => union (atomUses input)
+      (union (removeVars [err] (usesWith cfg a (resultRead && !cfg.has .armResult)))
+        (removeVars [ok] (usesWith cfg b (resultRead && !cfg.has .armResult))))
+  | .chainCase input head tail a b => union (atomUses input)
+      (union (usesWith cfg a (resultRead && !cfg.has .armResult))
+        (removeVars [head, tail] (usesWith cfg b (resultRead && !cfg.has .armResult))))
+  | .entry initial retained model body => union (usesWith cfg initial)
+      (union (atomsUses retained) (removeVars [model] (usesWith cfg body resultRead)))
   | .closure _ xs => if cfg.has .captureRead then [] else atomsUses xs
   | .traverse _ src init i x acc body =>
     union (atomsUses [src, init]) (removeVars [i, x, acc] (usesWith cfg body))
@@ -449,10 +458,11 @@ def primitive (ctx : Context) (site : List Nat) (op : Prim) (args : List Abstrac
   | .ok _, [a] => pure (.record [.scalar, .bottom, a])
   | .err _, [e] => pure (.record [.scalar, if ctx.config.has .earlyErr then e.mapOrigins (fun _ _ => []) else e, .bottom])
   | .privateRoot, [a] => do
-    if ctx.bridgeRoot != "main" then throw "private root outside main initialization"
+    if !ctx.moduleInitializer then throw "private root outside main initialization"
     let escapes := (← getFacts).escapes
     let eligible := a.cells.filter fun c => unescaped c && !cellOverlap [c] escapes
-    if ctx.privateTransfer then modify fun st => {st with privateCells := union st.privateCells eligible}
+    if ctx.privateTransfer && !hasFunction a then
+      modify fun st => {st with privateCells := union st.privateCells eligible}
     modifyFacts fun s => {s with escapes := union s.escapes a.cells}
     pure a
   | .endChain _, [] => pure (.list [fresh] .bottom true)
@@ -551,8 +561,9 @@ def recheckSupplies (ctx : Context) (s : Summary) (site : List Nat) (args caps :
         (inner.cells.flatMap outsideFor) []).isNone
     { sp with args := inst, env, owned, exclusive, spine }
 
-/-- Count actual source reads, including captures, rather than distinct paths.
-    A use below a callback/traversal cannot authorize a private transfer. -/
+/-- Count source reads, including eager capture atoms, rather than distinct
+    paths. Two also means ineligible: a free read in a deferred body or a
+    recursive initializer cannot authorize a direct private transfer. -/
 def atomReadCount (v : Var) (a : Atom) : Nat :=
   match a with
   | .var n => if n == v then 1 else 0
@@ -561,14 +572,18 @@ def atomReadCount (v : Var) (a : Atom) : Nat :=
 
 def readCount (v : Var) : Expr → Nat
   | .atom a => atomReadCount v a
-  | .prim _ xs | .closure _ xs | .recur xs => (xs.map (atomReadCount v)).sum
+  | .prim _ xs | .closure _ xs => (xs.map (atomReadCount v)).sum
+  | .recur xs => if (xs.map (atomReadCount v)).sum == 0 then 0 else 2
   | .app a xs => atomReadCount v a + (xs.map (atomReadCount v)).sum
   | .letE _ a b => readCount v a + readCount v b
   | .branch c a b => atomReadCount v c + readCount v a + readCount v b
   | .resultCase a _ _ x y | .chainCase a _ _ x y => atomReadCount v a + readCount v x + readCount v y
-  | .entry initial retained _ body => readCount v initial + (retained.map (atomReadCount v)).sum + readCount v body
-  | .traverse _ a z _ _ _ b => atomReadCount v a + atomReadCount v z + readCount v b
-  | .focus a i _ b => atomReadCount v a + atomReadCount v i + readCount v b
+  | .entry initial retained _ body => readCount v initial + (retained.map (atomReadCount v)).sum +
+      (if readCount v body == 0 then 0 else 2)
+  | .traverse _ a z _ _ _ b => atomReadCount v a + atomReadCount v z +
+      (if readCount v b == 0 then 0 else 2)
+  | .focus a i _ b => atomReadCount v a + atomReadCount v i +
+      (if readCount v b == 0 then 0 else 2)
 
 /-- A deliberately narrow private-read proof: one straight allocation/alias/
     capture chain ends in the single initializer. Everything else stays shared. -/
@@ -578,8 +593,10 @@ def privateToInit (v : Var) : Expr → Bool
   | .letE n rhs rest =>
     if readCount v rhs == 0 then privateToInit v rest
     else readCount v rhs == 1 && readCount v rest == 0 &&
-      (match rhs with | .atom _ | .closure .. | .prim .record _ => true | _ => false) &&
-      privateToInit n rest
+      match rhs with
+      | .entry .. => privateToInit v rhs
+      | .atom _ | .closure .. | .prim .record _ => privateToInit n rest
+      | _ => false
   | _ => false
 
 mutual
@@ -610,10 +627,12 @@ def inferExpr (fuel : Nat) (ctx : Context) (env : Env Abstract)
           (removeVars [v] after) (site ++ [1])
     | .prim op args => primitive ctx site op (← args.mapM (m := Except String) (abstractAtom env)) later
     | .entry initial retained model body =>
-      let privateCells := (← get).privateCells
+      let pendingPrivate := (← get).privateCells
+      let privateCells := if ctx.moduleInitializer || ctx.config.has .initFrame then pendingPrivate else []
       -- Transfer authority is single-use. A nested entry cannot clear a
       -- new escape of the model produced by this initialization.
-      if !ctx.config.has .initAuthority then modify fun st => {st with privateCells := []}
+      if ctx.moduleInitializer && !ctx.config.has .initAuthority then
+        modify fun st => {st with privateCells := []}
       modifyFacts fun s => {s with escapes := s.escapes.filter fun c => !privateCells.contains c}
       let ctx := {ctx with escaped := ctx.escaped.filter fun c => !privateCells.contains c}
       let initialAfter := union after (union (atomsUses retained) (removeVars [model] (usesWith ctx.config body)))
@@ -625,7 +644,7 @@ def inferExpr (fuel : Nat) (ctx : Context) (env : Env Abstract)
       let kept ← retained.mapM (m := Except String) (abstractAtom env)
       if !ctx.config.has .initRetained then
         modifyFacts fun s => {s with escapes := union s.escapes (kept.flatMap Abstract.cells)}
-      inferExpr f ctx ((model, a) :: env) body after (site ++ [1])
+      inferExpr f {ctx with moduleInitializer := false} ((model, a) :: env) body after (site ++ [1])
     | .resultCase input err ok onError onSuccess =>
       let value ← abstractAtom env input
       if value == .bottom then return .bottom
@@ -890,6 +909,7 @@ def inferScope (fuel : Nat) (parent : Context) (args caps : List (Var × Abstrac
   let own := canonicalOwned parent av cv later
   let ctx := { parent with
     owned := own, recursiveSummary := {}, recursiveCaptures := es.map Prod.snd, inScope := true,
+    moduleInitializer := false,
     pinned := [] }
   let (result, facts) ← isolated (inferExpr fuel ctx (ps ++ es) body [] [])
   pure (normalized { facts with result })
@@ -1230,7 +1250,8 @@ def summarise (fuel : Nat) (parent : Context) (id : Nat) (inputs : List Abstract
           return entry.summary
     let ps := inputs.take n
     let es := inputs.drop n
-    let base : Context := { bridgeRoot := s!"d{id}", declarations := parent.declarations, config := parent.config,
+    let base : Context := { bridgeRoot := s!"d{id}", moduleInitializer := false,
+                            declarations := parent.declarations, config := parent.config,
                             owned, frames }
     let mut candidate : Summary := {}
     let mut done_ := false

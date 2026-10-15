@@ -2566,7 +2566,7 @@ PR #65). A prepend reads its base and conservatively retains its backing provena
 
 The §29 rules have separate required planted holes for arm results, block results, capture creation reads,
 conditional fold loans, recursive capture substitution and callee-environment disjointness. The initialization
-projection has shared-root, retained-field and spent-transfer-authority holes; Result/`?` and recursive payload retention each have one.
+projection has shared-root, retained-field, transfer-frame and spent-transfer-authority holes; Result/`?` and recursive payload retention each have one.
 Every hole must admit a typed interpreter disagreement which the corrected checker refuses, both as a fixed
 fixture and through the seed-independent targeted enumeration. The bridge translates Result cases and the
 canonical question lowering to actual beni `case` and `?`, and recursive Chains to a native recursive ADT;

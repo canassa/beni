@@ -761,8 +761,8 @@ No proof statement or shipping ownership rule was weakened.
 
 ## Result, recursive payload and initialization coverage — 2026-10-15
 
-The newer executable set has 98 original plus 69 sync verdict fixtures and
-472 targeted programs. The historical 348 programs retain their indices; 124
+The newer executable set has 98 original plus 75 sync verdict fixtures and
+496 targeted programs. The historical 348 programs retain their indices; 148
 new targeted programs append to them. Historical sync fixture indices also
 remain unchanged. Current counts and evidence are in RESULTS.md.
 
@@ -776,9 +776,12 @@ remain unchanged. Current counts and evidence are in RESULTS.md.
 | `?` / Result error return | `question`, `twoFrames`, `recursiveQuestion` / `early-err` | Typed sums and actual CPS question lowering; nested operand case, inner-vs-outer definition, recursive Result fixpoint, both runtime arms. Expected values are asserted independently of interpreter equality. The shipping bridge emits actual `?`. |
 | Recursive types | `recursiveData`, `recursiveConsumer` / `recursive-payload` | Unbounded `Chain a = End | Link a (Chain a)`, list-bearing recursive payload retention, distinct payloads, recursive tail consumer. Native recursive ADT in the bridge. Arbitrary/mutually recursive type declarations and dictionary representatives remain outside this projection. |
 | Init transfer and captured locals | `initialization` / `init-shared`, `init-retained` | Init-only local/private roots pass; exported/shared roots and retained direct or helper-returned reader environments fail. Runtime entry projections remain explicit bridge skips. |
-| Init authority lifetime | `initializationRepublished` / `init-authority` | A nested entry cannot clear a new permanent publication using a previous entry's spent private-transfer authority. |
+| Init authority lifetime | `initializationRepublished` / `init-authority` | A subsequent module entry cannot clear a new publication using a previous entry's spent private-transfer authority. |
+| Init authority frame | `initializationFrame` / `init-frame` | A callee's summary cannot borrow pending module authority, even when its allocation has the same relative site. The unescaped local-allocation twin passes. |
+| Direct initializer reads | `initializationLoop` and direct-read guards | A free read in a traversal/focus/runtime-entry body is ineligible even with one syntactic occurrence. Repeated stored payloads reject; freshly allocated payloads pass. Direct source operands remain eligible. |
+| Function-valued private sources | `initializationFunctionRoot` | A function-bearing private value stays shared under #116's explicit backstop; a copied returned spine remains writable. |
 
-All eleven new holes are required twice: the fixed typed witness must be refused
+All twelve new holes are required twice: the fixed typed witness must be refused
 by the corrected checker and accepted with a disagreeing trace under the hole;
 the finite targeted product must independently find an accepted disagreement.
 The counts never treat an interpreter error, a typing error or an ordinary

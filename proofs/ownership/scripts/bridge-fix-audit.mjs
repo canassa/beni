@@ -80,14 +80,14 @@ try {
     }
   }
   const clusters = JSON.parse(await readFile(resolve(own, 'evidence/bridge-triage/clusters.json'), 'utf8'));
-  const isLong = report.programs === 116456 || report.programs === 116605;
+  const isLong = report.programs === 116456 || report.programs === 116635;
   const baseline = JSON.parse(await readFile(resolve(own,
     isLong ? 'evidence/bridge-long/report.json' : 'evidence/bridge-ci/report.json'), 'utf8'));
-  // The extended fixed set appends 25 verdict fixtures and 124 targeted
+  // The extended fixed set appends 31 verdict fixtures and 148 targeted
   // programs. Historical generator/enumeration streams must remain byte exact;
   // fixed ids keep their original meaning, with extension ids appended.
-  if (report.programs === 116605 || report.programs === 915) {
-    assert.equal(report.programs, baseline.programs + 149);
+  if (report.programs === 116635 || report.programs === 945) {
+    assert.equal(report.programs, baseline.programs + 179);
     for (const oldStream of baseline.streams.filter(s => !s.name.startsWith('fixtures-'))) {
       const stream = report.streams.find(s => s.name === oldStream.name);
       assert(stream);
