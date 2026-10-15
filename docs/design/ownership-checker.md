@@ -897,6 +897,33 @@ value holds closures or top-level functions, or of a function parameter — whos
    *Amended 2026-10-13 (§27):* no core function has an identity promise now, and `filter`'s result is
    `{fresh₁}`; arms joined path-insensitively — `if c then [ 0 ] else xs` — are what still names two.
 
+*Amended 2026-10-15 (CK-233, returned parameters are the caller's):* item 5 asks whether a supply is
+owned, and a supply of the callee's own parameter `πᵢ.q″` is owned only in the callee's frame — its holder
+there is dead after the callback's call, but the cell is the caller's argument. So wherever the callee
+**relies** on an actual returning owned — `need` (item 4), or an owned supply of provenance `cb_j′` that
+another callback writes (the supply edge) — each entry `(q′, π_k.q, d)` of the actual's `res` at or above
+the written path is the cell the callee supplied at `π_k.q`, and every owned supply entry there is followed
+to the caller:
+
+- provenance `πᵢ.q″` of the callee: a **call-site demand** on `aᵢ` at `q″`, extended by the rest of `q`
+  below the supply's path and by the rest of the written path below `q′`, exactly as the supply edge demands
+  for a callback that writes its parameter (item 4); approximate when the supply or the result entry is;
+- provenance `cb_j′`: the same question asked of the actual for πⱼ′, at the path its result is written at,
+  to the instantiation depth;
+- `fresh_k`: nothing — made during the call, no caller holds it.
+
+`need` does not say which path of the result the callee writes, so its demands are **deep** (every cell at
+or below, as a send's, §23.2) and cover every result entry, not only those at ε; the supply edge's are deep
+when the written use is (`bit_d`). The rule covers every class item 5 is asked of: a lambda's, a top-level
+function's, a constructor handed as a tagger (§23.5), a function slot (§24.9), and the class of a tagger
+whose calls are not seen. `need` itself (§16.2) is read off through taken elements: a demand on an element
+taken from a list (§18.5) whose cell is what πⱼ returned — the first item of `List.map rows f`, matched by a
+pattern — writes πⱼ's result, so `need` is `owned`; before, only an untaken callback result counted, and a
+callee that pushed onto that element asked nothing of `f`. It replaces §29's narrower result-loan walk, which followed only *taken* item
+supplies: an untaken parameter supply was trusted, so `pushReturned xs identity`, whose callee pushes onto
+what `identity` returns, wrote `xs` while the caller still read it. A demand is placed only where ownership
+is relied on — a rejected `need` or a borrowed supply is reported as before, with no second line.
+
 A call whose callee has no summary is §6.1's conservative call, unchanged (§15 decision 2).
 
 ### 16.5 Function values
