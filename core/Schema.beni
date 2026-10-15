@@ -328,11 +328,12 @@ type Engine
     | Compiled Workers
 
 
--- A compiled schema: what it was made of, for the node an operation that
--- needs one asks `nodeOf` for; its decoding and encoding workers, `null`
--- where the build calls none; and the `Interpreted` schemas its workers run
--- through the library — a generic declaration's arguments — a host array in
--- the order its value reaches them.
+-- A compiled schema: what it was made of (`Made`); a declaration's decoding
+-- and encoding workers, `null` where the build calls none, and `null` for
+-- every other maker, whose workers `parserOf` and `printerOf` make when one
+-- runs; and the `Interpreted` schemas its workers run through the library —
+-- a generic declaration's arguments — a host array in the order its value
+-- reaches them.
 type alias Workers =
     made : Made
     parse : Js.Value
@@ -340,14 +341,15 @@ type alias Workers =
     args : Js.Value
 
 
--- What a compiled schema was made of. A declaration's is a function of no
--- argument that answers its description.
+-- What a compiled schema was made of: what `nodeOf` builds its node from
+-- and `parserOf` and `printerOf` its workers. A declaration's is a function
+-- of no argument that answers its description.
 type Made
     = MadeDeclared Js.Value
     | MadePrimitive PrimitiveKind
-    | MadeList Js.Value
-    | MadeNullable Js.Value
-    | MadeConverted Js.Value Pair
+    | MadeList Workers
+    | MadeNullable Workers
+    | MadeConverted Workers Pair
 
 
 type alias Analysis =
@@ -520,13 +522,13 @@ madeNode origin =
             NPrim p
 
         MadeList child →
-            NList (nodeOf (fromHost child))
+            NList (madeNode child.made)
 
         MadeNullable child →
-            NNullable (nodeOf (fromHost child))
+            NNullable (madeNode child.made)
 
         MadeConverted source p →
-            NConverted (nodeOf (fromHost source)) p.there p.back
+            NConverted (madeNode source.made) p.there p.back
 
 
 -- The two sides of a schema.
@@ -638,10 +640,7 @@ value = primitive ValueKind
 
 
 primitive : PrimitiveKind → Schema e a
-primitive p =
-    worker : Context, Int, Path, Js.Value, Js.Value, Js.Value → Js.Value
-    worker c depth parent input output v = prim c p depth (pathAt parent input output) v
-    compiled (MadePrimitive p) (toHost worker) (toHost worker) (Js.array [])
+primitive p = compiled (MadePrimitive p) Js.null Js.null (Js.array [])
 
 
 -- ---- Lists and nullability -----------------------------------------------
@@ -651,7 +650,7 @@ pub list : Schema e a → Schema (List e) (List a)
 list child =
     case (boxOf child).engine of
         Compiled w →
-            compiled (MadeList (toHost child)) (listWorker w.parse) (listWorker w.print) w.args
+            compiled (MadeList w) Js.null Js.null w.args
 
         Interpreted →
             box (NList (nodeOf child))
@@ -662,14 +661,60 @@ pub nullable : Schema e a → Schema (Nullable e) (Nullable a)
 nullable child =
     case (boxOf child).engine of
         Compiled w →
-            compiled
-                (MadeNullable (toHost child))
-                (nullableWorker w.parse)
-                (nullableWorker w.print)
-                w.args
+            compiled (MadeNullable w) Js.null Js.null w.args
 
         Interpreted →
             box (NNullable (nodeOf child))
+
+
+-- A compiled schema's decoding worker. A declaration's is its own; the
+-- others' are made here, when a root or a slot is about to run one, so a
+-- build that only composes and describes schemas keeps none of them.
+parserOf : Workers → Js.Value
+parserOf w =
+    case w.made of
+        MadeDeclared _ →
+            w.parse
+
+        MadePrimitive p →
+            primitiveWorker p
+
+        MadeList child →
+            listWorker (parserOf child)
+
+        MadeNullable child →
+            nullableWorker (parserOf child)
+
+        MadeConverted source p →
+            forwardWorker (parserOf source) (cast p)
+
+
+-- A compiled schema's encoding worker, as `parserOf`.
+printerOf : Workers → Js.Value
+printerOf w =
+    case w.made of
+        MadeDeclared _ →
+            w.print
+
+        MadePrimitive p →
+            primitiveWorker p
+
+        MadeList child →
+            listWorker (printerOf child)
+
+        MadeNullable child →
+            nullableWorker (printerOf child)
+
+        MadeConverted source p →
+            backwardWorker (printerOf source) (cast p)
+
+
+-- `prim`, in either direction: the context says which.
+primitiveWorker : PrimitiveKind → Js.Value
+primitiveWorker p =
+    worker : Context, Int, Path, Js.Value, Js.Value, Js.Value → Js.Value
+    worker c depth parent input output v = prim c p depth (pathAt parent input output) v
+    toHost worker
 
 
 -- `listOf` over a compiled child's worker, in either direction: the context
@@ -1028,11 +1073,7 @@ converted source c =
     p = cast c
     case (boxOf source).engine of
         Compiled w →
-            compiled
-                (MadeConverted (toHost source) p)
-                (forwardWorker w.parse c)
-                (backwardWorker w.print c)
-                w.args
+            compiled (MadeConverted w p) Js.null Js.null w.args
 
         Interpreted →
             box (NConverted (nodeOf source) p.there p.back)
@@ -2250,7 +2291,7 @@ pub parseWith : borrowed Schema e a, Options, String → unknown Result (List Is
 parseWith s o text =
     case (boxOf s).engine of
         Compiled w →
-            compiledParse o w.args w.parse text
+            compiledParse o w.args (parserOf w) text
 
         Interpreted →
             case rootProblem s o Decoding encodedSide True typeSide False of
@@ -2282,7 +2323,7 @@ pub printWith : borrowed Schema e a, Options, aliased a → fresh Result (List I
 printWith s o v =
     case (boxOf s).engine of
         Compiled w →
-            compiledPrint o w.args w.print v
+            compiledPrint o w.args (printerOf w) v
 
         Interpreted →
             case rootProblem s o Encoding typeSide False encodedSide True of
@@ -2432,7 +2473,7 @@ readSlot : Schema e a → Js.Value
 readSlot s =
     case (boxOf s).engine of
         Compiled w →
-            w.parse
+            parserOf w
 
         Interpreted →
             n = nodeOf s
@@ -2448,7 +2489,7 @@ writeSlot : Schema e a → Js.Value
 writeSlot s =
     case (boxOf s).engine of
         Compiled w →
-            w.print
+            printerOf w
 
         Interpreted →
             n = nodeOf s

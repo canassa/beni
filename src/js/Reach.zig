@@ -327,22 +327,28 @@ pub const Input = struct {
         return null;
     }
 
-    /// `core/Schema`'s `Interpreted`, the one constructor of `core` that
-    /// guards (`schema.md` §6, *A statically known schema runs compiled*):
-    /// only `core/Schema`'s `box`, which every interpreting builder calls,
-    /// spells it; the compiler writes none, no sibling or `foreign` names
-    /// its core-private type, and no schema's endpoint can name it. Null
-    /// without an interner or a `core/Schema`, and then it is exempt like
-    /// the rest of core.
-    pub fn schemaInterpreted(in: Input) ?Node {
+    /// `core/Schema`'s two core-private types whose constructors no core
+    /// exemption covers (`schema.md` §6, *A statically known schema runs
+    /// compiled*; `backend.md` §9, amended 2026-10-15): `Engine`, whose
+    /// `Interpreted` only `box` builds — every interpreting builder calls
+    /// it — and whose `Compiled` only the compiled makers do; and `Made`,
+    /// what a compiled schema was made of. The compiler writes none of
+    /// them, no sibling or `foreign` names either type, and no schema's
+    /// endpoint can, so an arm on one survives only where `core/Schema`'s
+    /// own code that builds it does. Null without an interner or a
+    /// `core/Schema`, and then they are exempt like the rest of core.
+    pub fn schemaGuarded(in: Input) ?SchemaGuarded {
         const interner = in.interner orelse return null;
-        const symbol = interner.find("Interpreted") orelse return null;
         const m = in.graph.lookup(.core, InternPool.WellKnown.Schema.symbol()) orelse return null;
         const bir = in.birOf(m);
-        for (bir.ctors, 0..) |c, i| {
-            if (bir.symbol(c.name) == symbol) return .{ .module = m, .kind = .ctor, .index = @intCast(i) };
+        var out: SchemaGuarded = .{ .module = m };
+        for (SchemaGuarded.types, &out.decls) |name, *slot| {
+            const symbol = interner.find(name) orelse continue;
+            for (bir.decls, 0..) |d, i| {
+                if (d.kind == .type and bir.symbol(d.name) == symbol) slot.* = @intCast(i);
+            }
         }
-        return null;
+        return out;
     }
 
     /// §9's root set.
@@ -523,11 +529,14 @@ fn exempt(in: Input, scratch: Allocator, modules: []Live) Allocator.Error!void {
         const m: Graph.Index = @fromBackingInt(@intCast(@as(u32, @intCast(i))));
         if (all or in.store.package(in.graph.moduleFile(m)) == .core) live.ctors.setAll();
     }
-    // A library's callers may call a builder, so only an application build
-    // leaves `Interpreted` to its builders.
-    if (!in.library) if (in.schemaInterpreted()) |node| {
-        const ctors = &modules[node.module.int()].ctors;
-        if (node.index < ctors.bit_length) ctors.unset(node.index);
+    // A library's callers may call any builder, so only an application
+    // build leaves `core/Schema`'s `Engine` and `Made` to the code that
+    // builds them.
+    if (!in.library) if (in.schemaGuarded()) |sg| {
+        const ctors = &modules[sg.module.int()].ctors;
+        for (0..ctors.bit_length) |c| {
+            if (sg.has(in, .{ .module = sg.module, .kind = .ctor, .index = @intCast(c) })) ctors.unset(c);
+        }
     };
     if (all) return;
 
@@ -578,6 +587,25 @@ fn exempt(in: Input, scratch: Allocator, modules: []Live) Allocator.Error!void {
 const TypeDecl = struct { module: Graph.Index, decl: u32 };
 
 pub const ForeignProof = struct { inert: bool = false, parameter: ?u32 = null };
+
+/// `Input.schemaGuarded`'s answer: `core/Schema`, and the declarations of
+/// the types `types` names in it, where it has them.
+pub const SchemaGuarded = struct {
+    module: Graph.Index,
+    decls: [types.len]?u32 = @splat(null),
+
+    pub const types = [_][]const u8{ "Engine", "Made" };
+
+    /// Whether `node` is a constructor of one of the two types.
+    pub fn has(sg: SchemaGuarded, in: Input, node: Node) bool {
+        if (node.kind != .ctor or node.module != sg.module) return false;
+        const ctors = in.birOf(sg.module).ctors;
+        if (node.index >= ctors.len) return false;
+        const owner = ctors[node.index].decl.int();
+        for (sg.decls) |d| if (d != null and d.? == owner) return true;
+        return false;
+    }
+};
 
 fn hasNominal(in: Input, scratch: Allocator, roots: []const TypeDecl) Allocator.Error!bool {
     var stack: std.ArrayList(TypeDecl) = .empty;
@@ -839,9 +867,9 @@ pub const Builder = struct {
     /// `List.append`, which a `++` on lists calls in place of
     /// `Basics.append` (`Dispatch.appends`).
     list_append: ?Node = null,
-    /// `core/Schema`'s `Interpreted` (`Input.schemaInterpreted`), the one core
-    /// constructor that guards.
-    schema_interpreted: ?Node = null,
+    /// `core/Schema`'s `Engine` and `Made` (`Input.schemaGuarded`), the core
+    /// constructors that guard.
+    schema_guarded: ?SchemaGuarded = null,
     /// The shared walk's output for one node, cleared and refilled per
     /// node: a caller-owned buffer, so the whole module's edges cost one
     /// allocation.
@@ -865,7 +893,7 @@ pub const Builder = struct {
             .list_close = in.coreDecl(.List, .close),
             .list_cons = in.coreDecl(.List, .cons),
             .list_append = in.coreDecl(.List, .append),
-            .schema_interpreted = in.schemaInterpreted(),
+            .schema_guarded = in.schemaGuarded(),
         };
     }
 
@@ -1424,8 +1452,8 @@ pub const Builder = struct {
             if (owner.int() >= in.graph.count()) return null;
             const node: Node = .{ .module = owner, .kind = .ctor, .index = index };
             if (in.store.package(in.graph.moduleFile(owner)) == .core) {
-                const interpreted = g.b.schema_interpreted orelse return null;
-                return if (std.meta.eql(node, interpreted)) node else null;
+                const guarded = g.b.schema_guarded orelse return null;
+                return if (guarded.has(in, node)) node else null;
             }
             return node;
         }

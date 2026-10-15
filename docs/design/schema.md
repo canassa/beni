@@ -1087,10 +1087,13 @@ dynamic argument through the library on the parent's context, as before.
 workers under `compiledParse` and `compiledPrint`, the same root code a declaration's `S.parse`
 runs. So a compiled schema stays compiled wherever it goes: through a variable, a record field, a
 helper of the program, or `Http.jsonBody`. Nothing has to see it at the call. The compiler decides
-the rest when it builds. `Interpreted` is the one constructor of `core` that reachability does not
-exempt (`backend.md` §9, *A `case` arm on a constructor nothing builds*, amended). Every arm that
-runs the interpreter is an `Interpreted` arm, so it survives only in a build that reaches a
-builder that calls `box`.
+the rest when it builds. The constructors of `Engine` and of `Made` are the only constructors of
+`core` that reachability does not exempt (`backend.md` §9, *A `case` arm on a constructor nothing
+builds*, amended). `Made` records what a compiled schema was made of. Every arm that runs the
+interpreter is an `Interpreted` arm, so it survives only in a build that reaches a builder that
+calls `box`. A compiled maker's worker is made by `parserOf`/`printerOf` when a root or a slot
+runs it, in that maker's `Made` arm. So a build ships the list worker only if it makes a compiled
+`list`, and a build that composes and describes schemas without running one ships no worker.
 
 **The guarantee.** A program whose schemas are all statically known, and which runs them with
 `parse`, `print` and their `With` forms, ships no library interpreter. It ships no
