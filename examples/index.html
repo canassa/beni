@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Programs written in beni and compiled to JavaScript, running in the browser.">
+    <title>beni examples</title>
+    <style>
+      :root {
+        --bg: #fbfaf7;
+        --fg: #1d1c1a;
+        --muted: #66625b;
+        --card: #ffffff;
+        --line: #e4e0d8;
+        --accent: #b4381f;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #161513;
+          --fg: #ece9e3;
+          --muted: #a29d94;
+          --card: #1f1e1b;
+          --line: #34322e;
+          --accent: #f07a5c;
+        }
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font: 16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+      }
+      main { max-width: 46rem; margin: 0 auto; padding: 3rem 1rem 4rem; }
+      h1 { font-size: 2rem; margin: 0 0 0.5rem; letter-spacing: -0.01em; }
+      p { margin: 0 0 1rem; }
+      .lede { color: var(--muted); margin-bottom: 2rem; }
+      a { color: var(--accent); }
+      ul { list-style: none; padding: 0; margin: 0; display: grid; gap: 1rem; }
+      li {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        padding: 1.1rem 1.25rem;
+      }
+      h2 { font-size: 1.2rem; margin: 0 0 0.35rem; }
+      h2 a { text-decoration: none; }
+      h2 a:hover { text-decoration: underline; }
+      .meta { color: var(--muted); font-size: 0.9rem; margin: 0.5rem 0 0; }
+      code { font: 0.9em ui-monospace, "SFMono-Regular", Menlo, monospace; }
+      footer { color: var(--muted); font-size: 0.9rem; margin-top: 2.5rem; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>beni examples</h1>
+      <p class="lede">
+        Elm programs ported to <a href="https://github.com/canassa/beni">beni</a>
+        and compiled to JavaScript for the <code>browser-tea</code> platform.
+        Each page runs the compiler's output as it is. No bundler and no
+        framework are added.
+      </p>
+      <ul>
+        <li>
+          <h2><a href="./sternhalma/">Sternhalma</a></h2>
+          <p>Chinese Checkers for two, three, four or six players, by Lucas (rvcas).</p>
+          <p class="meta">
+            Release build (<code>beni build --release</code>).
+            <a href="https://github.com/canassa/beni/tree/master/examples/sternhalma">Source</a> ·
+            <a href="https://github.com/rvcas/sternhalma">Original</a> ·
+            <a href="./sternhalma/LICENSE.txt">Licence (BSD-3-Clause)</a>
+          </p>
+        </li>
+        <li>
+          <h2><a href="./bike-wars/">Bike Wars</a></h2>
+          <p>A two-player light-cycle game on one keyboard, by Ossi Hanhinen.</p>
+          <p class="meta">
+            Development build: the port keeps the original's <code>Debug.log</code>,
+            and a release build refuses <code>Debug</code>.
+            <a href="https://github.com/canassa/beni/tree/master/examples/bike-wars">Source</a> ·
+            <a href="https://github.com/ohanhi/bike-wars">Original</a> ·
+            <a href="./bike-wars/LICENSE.txt">Licence (BSD-3-Clause)</a> ·
+            <a href="https://github.com/canassa/beni/tree/master/examples/bike-wars/licenses">Package licences</a>
+          </p>
+        </li>
+      </ul>
+      <footer>
+        Built from <code>canassa/beni</code> master
+        <a href="https://github.com/canassa/beni/commit/{{commit}}"><code>{{short}}</code></a>
+        on {{date}}.
+      </footer>
+    </main>
+  </body>
+</html>
