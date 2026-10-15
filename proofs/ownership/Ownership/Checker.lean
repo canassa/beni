@@ -586,7 +586,10 @@ def readCount (v : Var) : Expr → Nat
       (if readCount v b == 0 then 0 else 2)
 
 /-- A deliberately narrow private-read proof: one straight allocation/alias/
-    capture chain ends in the single initializer. Everything else stays shared. -/
+    capture chain ends in the single initializer; ineligible sources stay shared.
+    Eligibility only removes the publication escape. It does not upgrade
+    exclusivity or bound reads inside an eagerly captured closure: ordinary
+    Dead, separation and summary obligations still reject retained aliases. -/
 def privateToInit (v : Var) : Expr → Bool
   | .entry initial retained _ body => readCount v initial == 1 &&
       (retained.map (atomReadCount v)).sum == 0 && readCount v body == 0
