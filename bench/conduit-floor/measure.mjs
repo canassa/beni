@@ -6,8 +6,9 @@ import {createHash} from 'node:crypto';
 import {createRequire} from 'node:module';
 import {brotliCompressSync,gzipSync,gunzipSync,constants} from 'node:zlib';
 const require=createRequire(import.meta.url);
-const acorn=require('../ui/apps/solid1/node_modules/acorn');
-const {TraceMap,eachMapping}=require('../ui/apps/solid1/node_modules/@jridgewell/trace-mapping');
+let acorn,TraceMap,eachMapping;
+try{acorn=require('../ui/apps/solid1/node_modules/acorn');({TraceMap,eachMapping}=require('../ui/apps/solid1/node_modules/@jridgewell/trace-mapping'));}
+catch(error){if(error.code!=='MODULE_NOT_FOUND')throw error;throw Error('Missing analysis dependencies: run npm ci in bench/ui/apps/solid1.',{cause:error});}
 const out='bench/conduit-floor/results',work='zig-out/conduit-floor';
 export const size=s=>{const b=Buffer.from(s);return {raw:b.length,gzip:gzipSync(b,{level:9}).length,brotli:brotliCompressSync(b,{params:{[constants.BROTLI_PARAM_QUALITY]:11,[constants.BROTLI_PARAM_SIZE_HINT]:b.length}}).length}};
 const hash=s=>createHash('sha256').update(s).digest('hex');
@@ -45,7 +46,10 @@ for(const [subject,files] of Object.entries(manifest.subjects)){
  for(const file of files){
   const s=gunzipSync(fs.readFileSync(`${out}/${subject}--${file}.gz`)).toString(),map=new TraceMap(JSON.parse(gunzipSync(fs.readFileSync(`${out}/${subject}--${file}.map.gz`))));
   const lines=[0];for(let i=0;i<s.length;i++)if(s[i]==='\n')lines.push(i+1);
-  const mappings=[];eachMapping(map,m=>{if(m.source)mappings.push({offset:lines[m.generatedLine-1]+m.generatedColumn,source:m.source,part:category(m.source)})});
+  const segments=[];eachMapping(map,m=>segments.push({offset:lines[m.generatedLine-1]+m.generatedColumn,source:m.source,part:m.source?category(m.source):'unmapped'}));
+  const mappings=segments.filter(m=>m.source),mapCoverage={runtime:0,markdown:0,app:0,unmapped:Buffer.byteLength(s.slice(0,segments[0]?.offset??s.length))};
+  for(let i=0;i<segments.length;i++)mapCoverage[segments[i].part]+=Buffer.byteLength(s.slice(segments[i].offset,segments[i+1]?.offset??s.length));
+  if(Object.values(mapCoverage).reduce((a,b)=>a+b,0)!==Buffer.byteLength(s))throw Error('Source-map coverage does not reconcile');
   const ast=acorn.parse(s,{ecmaVersion:'latest',sourceType:'module'}),candidates=[];
   walk(ast,n=>{
    let target;
@@ -65,12 +69,13 @@ for(const [subject,files] of Object.entries(manifest.subjects)){
    parts.push({part,rawSpans:ns.reduce((n,e)=>n+Buffer.byteLength(s.slice(e.start,e.end)),0),brotli:prev-after.brotli,aloneSaved:baseline.brotli-size(apply(s,ns)).brotli});prev=after.brotli;
   }
   parts.push({part:'app and startup',rawSpans:baseline.raw-parts.reduce((n,p)=>n+p.rawSpans,0),brotli:prev});
-  records.push({file,sha256:hash(s),...baseline,parts,spans});
+  records.push({file,sha256:hash(s),...baseline,mapCoverage,parts,spans});
  }
  const sum=key=>records.reduce((n,r)=>n+r[key],0);
  const concatenated=files.map(f=>gunzipSync(fs.readFileSync(`${out}/${subject}--${f}.gz`))).reduce((a,b)=>Buffer.concat([a,b]),Buffer.alloc(0));
  const parts=['runtime','markdown','app and startup'].map(part=>({part,brotli:records.reduce((n,r)=>n+r.parts.find(p=>p.part===part).brotli,0)}));
- result.subjects[subject]={raw:sum('raw'),gzip:sum('gzip'),brotli:sum('brotli'),concatenatedDiagnostic:size(concatenated),parts,files:records};
+ const mapCoverage=Object.fromEntries(['runtime','markdown','app','unmapped'].map(key=>[key,records.reduce((n,r)=>n+r.mapCoverage[key],0)]));
+ result.subjects[subject]={raw:sum('raw'),gzip:sum('gzip'),brotli:sum('brotli'),concatenatedDiagnostic:size(concatenated),mapCoverage,parts,files:records};
  console.log(subject,sum('brotli'),parts);
 }
 fs.writeFileSync(`${out}/sizes.json`,JSON.stringify(result,null,2)+'\n');

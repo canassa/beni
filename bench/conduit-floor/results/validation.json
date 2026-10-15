@@ -15,5 +15,11 @@
   "archivedFilesVerifiedAgainstBuild": 26,
   "compilerCorePlatformAppDiff": "",
   "referenceSmoke": "20 Chrome cells: startup succeeds; stock Solid favorite throws undefined slug; adjusted favorites request API successfully; limited probe, not full conformance.",
-  "compilerSha256Verified": true
+  "compilerSha256Verified": true,
+  "reviewFollowup": {
+    "cleanReferenceRebuildMatchesArchivedResponses": 26,
+    "probesReplayWithoutReferenceNodeModules": true,
+    "matrixEncodingBitComparisons": 32107,
+    "selectionRuntimeAttributionAsserted": true
+  }
 }

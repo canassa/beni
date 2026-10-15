@@ -12,18 +12,20 @@ for(const [name,ref] of Object.entries(refs)){
  for(const file of ['package.json',...ref.editedFiles])run('git',['restore',file],cwd);
  for(const file of ['package.json','package-lock.json'])fs.copyFileSync(`bench/conduit-floor/references/${name}/${file}`,path.join(cwd,file));
  run('npm',['ci','--ignore-scripts','--no-audit','--no-fund'],cwd);
+ const clean=dir=>{if(!fs.existsSync(dir))return;for(const e of fs.readdirSync(dir,{withFileTypes:true})){const f=path.join(dir,e.name);if(e.isDirectory())clean(f);else if(/\.(m?js)(\.map)?$/.test(e.name))fs.unlinkSync(f);}};
+ const build=flags=>{clean(path.join(cwd,ref.output));run('npm',['run','build',...flags],cwd);};
  const save=label=>{const dst=path.join(work,`${name}-${label}`);fs.rmSync(dst,{recursive:true,force:true});fs.cpSync(path.join(cwd,ref.output),dst,{recursive:true});};
- run('npm',['run','build'],cwd);save('stock');
- if(name==='solid'){run('npm',['run','build','--','--sourcemap'],cwd);save('stock-mapped');}
+ build([]);save('stock');
+ if(name==='solid'){build(['--','--sourcemap']);save('stock-mapped');}
  for(const edit of ref.adjustments){
   const file=path.join(cwd,edit.file),source=fs.readFileSync(file,'utf8');
   if(!source.includes(edit.before))throw Error(`Missing exact adjustment: ${edit.file}`);
   fs.writeFileSync(file,source.replace(edit.before,edit.after));
  }
- run('npm',['run','build'],cwd);save('paragraphs');
- if(name==='solid'){run('npm',['run','build','--','--sourcemap'],cwd);save('paragraphs-mapped');}
+ build([]);save('paragraphs');
+ if(name==='solid'){build(['--','--sourcemap']);save('paragraphs-mapped');}
  if(name==='solid'){
-  run('npm',['run','build','--','--inlineDynamicImports'],cwd);save('paragraphs-single');
-  run('npm',['run','build','--','--inlineDynamicImports','--sourcemap'],cwd);save('paragraphs-single-mapped');
+  build(['--','--inlineDynamicImports']);save('paragraphs-single');
+  build(['--','--inlineDynamicImports','--sourcemap']);save('paragraphs-single-mapped');
  }
 }

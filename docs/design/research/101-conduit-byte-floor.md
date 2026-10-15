@@ -15,19 +15,22 @@ complete beni feature set**. An established Solid Conduit is **23,902 B** brotli
 in its stock production build. Making its article body match beni's paragraph
 renderer and fixing its broken favorite callback gives **16,270 B** over all
 nine production chunks, or **13,085 B** in a real one-chunk production build.
-Modern-browser, paragraph-only vanilla Web Components is **11,684 B**, but
-lacks several features beni implements. It is useful context, not a full-parity
-floor. The source audit below is essential to interpreting these numbers.
+The vanilla build is secondary context only (§1–§2), excluded from this
+headline reference band because its smaller result omits several beni features.
+The source audit below is essential to interpreting these numbers.
 
 Beni tea is **31,389 B**, direct **37,970 B**. Direct's same-app excess is
 **6,581 B / 20.97%**. Relative to the adjusted single-chunk Solid reference,
-direct carries **24,885 B** more and tea **18,304 B** more, before pricing
-remaining feature/guarantee differences. Those are download differences, not
+direct carries **24,885 B** more and tea **18,304 B** more. **Solid lacks article
+follow/favorite controls, correct personal-feed pagination, and beni's response
+validation/typed host failures**; profile page limits also differ. These are
+unpriced feature/guarantee differences. Those are download differences, not
 optimisation budgets. Removing direct's entire tea-relative excess would still
 leave a much larger bundle than the reference.
 
-**The 20% is not an inherent price of precise static updates. It is a price of
-this workload and this representation.** Report 99's table app is smaller under
+**There is no demonstrated inherent 20% floor for precise static updates.**
+This workload and representation pay identifiable protocol costs, but a smaller
+full equivalent has not been built. Report 99's table app is smaller under
 direct than tea. But the new evidence also rejects a tempting simplification:
 deleting all recognized patch-entry environment prologues saves only **90 B**.
 Replacing array loads with human-looking lexical names cannot explain or recover
@@ -35,9 +38,9 @@ Replacing array loads with human-looking lexical names cannot explain or recover
 
 The evidence points to **shared lexical template factories plus precomputed,
 shared ordered operation selections**, retaining captures, restates, row
-ownership and a fallback. A **1–3 kB net saving is a planning hypothesis** for
-that redesign, not a measured executable result or acceptance promise. A
-measured deletion of matrix, descriptors, selection runtime and prologues
+ownership and a fallback. A successful redesign might save **0–2 kB net**, a conditional planning envelope, not a
+measured executable result or acceptance promise. It can also make bytes worse.
+A measured deletion of matrix, descriptors, selection runtime and prologues
 together frees only **2,600 B before replacement code**. Getting another large
 saving would require changing the patch bodies, preparation and instance
 representation too. There is no evidence here for recovering all 6,581 B,
@@ -53,14 +56,16 @@ The references are established implementations, not new golfed demonstrations:
   says `npm install`, then `npm run build`. The heading says production;
   the following sentence calls it development, but the actual command is
   `rollup -c --environment production` and enables Terser. We ran that command
-  with its upstream npm lock (line endings normalized to LF), resolving Solid **1.3.3** and its matching JSX
-  compiler. This is **not Solid 2**, the separate speed reference in this repo.
+  with its upstream npm lock (line endings normalized to LF), resolving Solid
+  **1.3.3** and its matching JSX compiler. This is **not Solid 2**, the separate speed reference in this repo.
 - [Vanilla JS Web Components RealWorld](https://github.com/gothinkster/web-components-realworld-example-app/tree/8408c72d1d62c4d67416b1d6b28d1deb6c521af9),
   `8408c72d1d62c4d67416b1d6b28d1deb6c521af9` (2021-11-13), from
   the RealWorld project's own organization. Its readme documents yarn/start;
   its package's production script is `npm run build`, invoking
   `webpack --config webpack.config.prod.js` with `mode: 'production'`.
-  We used that script. Its upstream yarn lock and the npm lock actually used
+  We used that script. Both locks resolve webpack **4.43.0**, Babel core
+  **7.9.0**, preset-env **7.9.5** and babel-loader **8.1.0**. Its upstream yarn
+  lock and the npm lock actually used
   are committed under `bench/conduit-floor/references/vanilla/`.
 
 Vanilla's Git dependency is fetched over HTTPS as an archive of the **same
@@ -99,7 +104,8 @@ trees above and the emitted code in `results/excerpts.json`.
 
 The adjusted Solid builds replace Markdown with the same blank-line paragraph
 behavior and change `makeFavorite(slug)` / `unmakeFavorite(slug)` to
-`makeFavorite(article.slug)` / `unmakeFavorite(article.slug)`. The second change
+`makeFavorite(article.slug)` / `unmakeFavorite(article.slug)`. This matches the body-rendering behavior, not its compilation cost: beni
+still emits its own paragraph/markup machinery. The second change
 restores an intended feature rather than deleting it. The exact two source edits
 are in `references.json`; the stock result preserves the bug. Against the
 paragraph-only trial before that fix, the fix costs 35 B across chunks / 21 B
@@ -131,7 +137,9 @@ excluded. Vanilla's emitted map-trailer comment remains part of its JS response.
 Each HTTP response is compressed **separately**, then summed. Cross-file
 compression is not available to a browser. All beni releases here have one
 file. For transparency, the last column also gives research harnesses'
-concatenated-input diagnostic for the split references; it is not a download.
+concatenated-input diagnostic for the split references; it is not a download. These are compressed response bodies, excluding HTTP
+headers and per-request overhead, at quality 11; a server using a lower brotli
+quality will send a different number of bytes.
 
 | Production build | JS files | Raw | Gzip 9 | Brotli 11 transfer | Concatenated br diagnostic |
 |---|---:|---:|---:|---:|---:|
@@ -146,6 +154,8 @@ concatenated-input diagnostic for the split references; it is not a download.
 The single-chunk Solid variant is a real Rollup build with
 `--inlineDynamicImports`, not concatenated module text. It gives up lazy page
 loading; the all-route byte saving is not a first-page latency recommendation.
+The single-chunk build is the closer bundling match to beni; the split number
+shows the cost of the upstream lazy-loading configuration over all routes.
 Both reference build scripts still perform their own production minification.
 
 Runtime/application splitting follows research 97's **ordered removal
@@ -164,7 +174,7 @@ App-owned routers/helpers are app code. Beni's generated schema parsers and DOM
 factories are charged to app sources. This is broader than "rendering runtime"
 and cannot be read as a comparison of UI runtimes alone.
 
-| Build | Runtime charge | Markdown charge | App/startup residual | Total br |
+| Build | Deps/bootstrap or beni core/platform charge¹ | Markdown charge | App/startup residual | Total br |
 |---|---:|---:|---:|---:|
 | Solid stock | 5,698 | 7,357 | 10,847 | 23,902 |
 | Solid paragraphs + favorite fix | 5,718 | 0 | 10,552 | 16,270 |
@@ -173,6 +183,32 @@ and cannot be read as a comparison of UI runtimes alone.
 | Vanilla modern / paragraphs | 3,203 | 0 | 8,481 | 11,684 |
 | Beni tea | 15,509 | 0 | 15,880 | 31,389 |
 | Beni direct | 16,748 | 0 | 21,222 | 37,970 |
+
+¹ This is a dependency-surface accounting convention, **not a UI-runtime-only
+comparison**. App-owned routing remains app code. The runtime charge changes
+by 20 B between stock and adjusted Solid even though mapped runtime segment
+bytes are identical: whole-file compression interactions change the charge.
+
+Mapped generated-segment coverage, counted in raw UTF-8 bytes, is recorded in
+`sizes.json`. Segments with no source (and initial gaps) are unassigned:
+
+| Build | Unassigned raw B | Fraction of response bytes |
+|---|---:|---:|
+| Solid stock | 5,367 | 7.28% |
+| Solid adjusted, split | 6,066 | 12.47% |
+| Solid adjusted, single | 0 | 0.00% |
+| Vanilla stock | 44,967 | 19.97% |
+| Vanilla adjusted | 754 | 1.25% |
+| Beni tea | 2,505 | 1.99% |
+| Beni direct | 2,615 | 1.25% |
+
+Coverage measures source-map segments, not proof that each token has the right
+provenance or a compressed-byte allocation. Uniform mapped origins are still
+required before stubbing a whole AST node; mixed nodes and stub syntax also
+remain in the app/startup residual. The large stock-vanilla unassigned fraction
+makes that split especially approximate. `probe.mjs` independently asserts
+that every selected `Direct.beni` selection helper falls inside a runtime
+accounting span, so the probe and broad account agree on that boundary.
 
 The **6,581 B tea/direct difference** charges **1,239 B to runtime** and
 **5,342 B to app/startup** in this convention. Most of the difference lives
@@ -291,7 +327,10 @@ not their sum. Research 99's executable short-ID and complete-group-record
 trials saved 589 and 233 B on its older baseline; those historical savings
 must not be added to these deletions or promised on current master.
 
-The 90 B prologue result is particularly useful. There are only 1,565 raw
+The 90 B prologue result is particularly useful. Dangling later references
+remain, so even this deletion is not a measured lexical rewrite. Compression
+non-additivity prevents calling it a rigorous upper bound on a different
+re-encoding; it is a cost-location probe. There are only 1,565 raw
 bytes in those statements, and their repeated shape already compresses well.
 The expensive distinction is how groups are selected, shared and connected
 to live state, not whether the local code looks human-written.
@@ -328,16 +367,34 @@ dispatch should reach these entries directly rather than reconstructing the
 same source-string/call-path selection and scanning group descriptors on first
 use. Unknown value roots retain the current conservative path.
 
-**Estimate:** budget **1–3 kB net** (about 3–8% of direct's current bundle)
-for an initial successful redesign, leaving roughly **35–37 kB**. The lower
-portion assumes some of the 2.6 kB combined protocol deletion can be replaced
-with a smaller static dispatch/list representation. The upper portion also
-assumes useful reductions in entry wiring, instance fields and preparation;
-it is much less supported. This range is an engineering target inferred from
-measured costs, **not a measured candidate or a statistical confidence interval**.
-It is falsified if the necessary lists, factories and fallback retain those
-bytes. A lexical rewrite alone earns no forecast beyond the 90 B probe.
+**Estimate:** the measured combined deletion locates a **2,600 B gross
+protocol budget before replacement code**. The new data encodings below do not
+support a positive 1 kB lower bound. For a successful redesign, use **0–2 kB net**
+(0–5% of direct) only as a conditional planning envelope, leaving roughly
+**36–38 kB**. It is not a forecast or measured candidate; unsuccessful designs
+can grow the file. Saving over 2.6 kB would require further savings outside this
+protocol budget, which have not been priced and are not included in this range.
+A lexical rewrite alone earns no forecast beyond the small 90 B deletion probe.
 
+An information-preserving encoding check now prices all **331 masks × 97 keys**
+(**1,706 set bits**) in the whole direct bundle. It verifies every bit against
+the original before recompression:
+
+| Matrix representation | Literal raw / br | Whole-bundle br | Saving |
+|---|---:|---:|---:|
+| Existing source/binary-string pairs | 41,039 / 1,588 | 37,970 | 0 |
+| Source/sorted key-index lists | 13,445 / 1,496 | 37,864 | **106** |
+| Source dictionary + per-key source-index lists | 13,629 / 1,936 | 38,228 | **−258** |
+
+These changed formats are **not executable variants or complete AOT group
+plans**: they retain the same source-selection information, but still need
+readers, group ordering, call/row context and restate/capture handling. Existing
+selection runtime is left in place, so no removal is credited. A true AOT plan
+might subsume more metadata, but simple inversion is larger and sparse lists
+recover only 106 B before any reader change. This is evidence against assuming
+that ordered-list emission automatically buys a kilobyte. No entropy lower
+bound or available net optimization is established. `encodings.json` and the
+archived probe bundles preserve the experiment.
 Costs and conditions:
 
 - Lexical group closures allocate per live template instance, where today's
@@ -392,5 +449,6 @@ Local `zorg build test test-blackbox fmt-check beni-fmt-check` completed with
 **1,329 passed, 15 skipped and the two documented macOS case-folding failures**
 in `build_test`. The hardware-budget gate remains owed on supported x86-64
 Linux; macOS cannot issue that verdict. No compiler, core, platform, application,
-test-budget or run-hash file was changed. The new JS research scripts also pass
-Node syntax checks. These observations do not waive the known host failures.
+test-budget or run-hash file was changed. Beni's Conduit behavior is covered by its own paired corpus in those
+constituent checks; it is not included in the 20 reference smoke cells. The new
+JS research scripts also pass Node syntax checks. These observations do not waive the known host failures.
