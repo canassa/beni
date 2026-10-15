@@ -73,15 +73,15 @@ const SchemaPrintOnly$Shape$$write = (c, d, p, k, n, v) => {
 const SchemaPrintOnly$Shape$$printWith = ($o, $t) => Schema$compiledPrint($o, [], SchemaPrintOnly$Shape$$write, $t);
 const SchemaPrintOnly$Shape$$print = ($t) => SchemaPrintOnly$Shape$$printWith(Schema$defaultOptions, $t);
 const SchemaPrintOnly$main = (() => {
-  const $t$14 = SchemaPrintOnly$Shape$$print({ $: "Square", a: { side: 2 } });
-  let $t$15;
-  if ($t$14.$ === "Ok") {
-    const text$1 = $t$14.a;
-    $t$15 = text$1;
+  const $t$1 = SchemaPrintOnly$Shape$$print({ $: "Square", a: { side: 2 } });
+  let $t$2;
+  if ($t$1.$ === "Ok") {
+    const text$1 = $t$1.a;
+    $t$2 = text$1;
   } else {
-    $t$15 = "failed";
+    $t$2 = "failed";
   }
-  return Node$printLines([$t$15]);
+  return Node$printLines([$t$2]);
 })();
 export { SchemaPrintOnly$main };
 //# sourceMappingURL=SchemaPrintOnly.mjs.map

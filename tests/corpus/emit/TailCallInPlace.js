@@ -19,9 +19,9 @@ const TailCallInPlace$swap = (a$1, b$2, n$3) => {
 };
 const TailCallInPlace$logged = (a$1, b$2) => {
   while (!(a$1 <= 0)) {
-    const $t$2 = a$1 - 1;
+    const $t$1 = a$1 - 1;
     b$2 = String$length(String$fromInt(a$1)) + b$2;
-    a$1 = $t$2;
+    a$1 = $t$1;
   }
   return b$2;
 };

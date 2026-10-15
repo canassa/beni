@@ -6,97 +6,97 @@ const DomTemplates$k3 = { m: (v$1, cx$2) => {
 }, p: (i$4, v$5) => {
 } };
 const DomTemplates$b3 = { t: DomTemplates$k3, v: null };
-const DomTemplates$p19 = (i$6, v$7) => {
-  const $in$8 = v$7[0];
-  const x$9 = $in$8.name;
-  if (x$9 !== i$6.g0_0) {
-    i$6.g0_0 = x$9;
-    i$6.x0.data = x$9;
+const DomTemplates$p19 = (i$1, v$2) => {
+  const $in$3 = v$2[0];
+  const x$4 = $in$3.name;
+  if (x$4 !== i$1.g0_0) {
+    i$1.g0_0 = x$4;
+    i$1.x0.data = x$4;
   }
-  const x$10 = $in$8.count;
-  if (x$10 !== i$6.g1_0) {
-    i$6.g1_0 = x$10;
-    i$6.x1.data = x$10;
+  const x$5 = $in$3.count;
+  if (x$5 !== i$1.g1_0) {
+    i$1.g1_0 = x$5;
+    i$1.x1.data = x$5;
   }
-  const x$11 = $in$8.more;
-  if (x$11 !== i$6.g2_0) {
-    i$6.g2_0 = x$11;
-    i$6.x2.data = x$11;
+  const x$6 = $in$3.more;
+  if (x$6 !== i$1.g2_0) {
+    i$1.g2_0 = x$6;
+    i$1.x2.data = x$6;
   }
 };
 const DomTemplates$t19 = Rt$template("<p>Hello <!>, you have <!> items and <!> more.", 0);
-const DomTemplates$k19 = { m: (v$12, cx$13) => {
-  const r$14 = DomTemplates$t19();
-  const w$15 = r$14.firstChild.nextSibling;
-  const w$16 = w$15.nextSibling.nextSibling;
-  const w$17 = w$16.nextSibling.nextSibling;
-  const x$18 = Rt$insertText(r$14, w$15, "");
-  const x$19 = Rt$insertText(r$14, w$16, "");
-  const x$20 = Rt$insertText(r$14, w$17, "");
-  const i$21 = { s: r$14, q: null, e: r$14, x0: x$18, x1: x$19, x2: x$20, g0_0: NaN, g1_0: NaN, g2_0: NaN };
-  DomTemplates$p19(i$21, v$12);
-  return i$21;
+const DomTemplates$k19 = { m: (v$7, cx$8) => {
+  const r$9 = DomTemplates$t19();
+  const w$10 = r$9.firstChild.nextSibling;
+  const w$11 = w$10.nextSibling.nextSibling;
+  const w$12 = w$11.nextSibling.nextSibling;
+  const x$13 = Rt$insertText(r$9, w$10, "");
+  const x$14 = Rt$insertText(r$9, w$11, "");
+  const x$15 = Rt$insertText(r$9, w$12, "");
+  const i$16 = { s: r$9, q: null, e: r$9, x0: x$13, x1: x$14, x2: x$15, g0_0: NaN, g1_0: NaN, g2_0: NaN };
+  DomTemplates$p19(i$16, v$7);
+  return i$16;
 }, p: DomTemplates$p19 };
-const DomTemplates$p32 = (i$22, v$23) => {
-  const $in$24 = v$23[0];
-  const x$25 = $in$24.id;
-  if (x$25 !== i$22.g0_0) {
-    i$22.g0_0 = x$25;
-    i$22.w2.data = x$25;
+const DomTemplates$p32 = (i$1, v$2) => {
+  const $in$3 = v$2[0];
+  const x$4 = $in$3.id;
+  if (x$4 !== i$1.g0_0) {
+    i$1.g0_0 = x$4;
+    i$1.w2.data = x$4;
   }
-  const x$26 = $in$24.label;
-  if (x$26 !== i$22.g1_0) {
-    i$22.g1_0 = x$26;
-    i$22.w5.data = x$26;
+  const x$5 = $in$3.label;
+  if (x$5 !== i$1.g1_0) {
+    i$1.g1_0 = x$5;
+    i$1.w5.data = x$5;
   }
 };
 const DomTemplates$t32 = Rt$template("<tr><td class=col-md-1> </td><td class=col-md-4><a> ", 0);
-const DomTemplates$k32 = { m: (v$27, cx$28) => {
-  const r$29 = DomTemplates$t32();
-  const w$30 = r$29.firstChild;
-  const w$31 = w$30.firstChild;
-  const w$32 = w$30.nextSibling;
-  const w$33 = w$32.firstChild;
-  const w$34 = w$33.firstChild;
-  const i$35 = { s: r$29, q: null, e: r$29, w2: w$31, w5: w$34, g0_0: NaN, g1_0: NaN };
-  DomTemplates$p32(i$35, v$27);
-  return i$35;
+const DomTemplates$k32 = { m: (v$6, cx$7) => {
+  const r$8 = DomTemplates$t32();
+  const w$9 = r$8.firstChild;
+  const w$10 = w$9.firstChild;
+  const w$11 = w$9.nextSibling;
+  const w$12 = w$11.firstChild;
+  const w$13 = w$12.firstChild;
+  const i$14 = { s: r$8, q: null, e: r$8, w2: w$10, w5: w$13, g0_0: NaN, g1_0: NaN };
+  DomTemplates$p32(i$14, v$6);
+  return i$14;
 }, p: DomTemplates$p32 };
-const DomTemplates$p51 = (i$36, v$37) => {
-  const $in$38 = v$37[0];
-  const x$39 = $in$38.id;
-  if (x$39 !== i$36.g0_0) {
-    i$36.g0_0 = x$39;
-    i$36.w0.setAttribute("id", x$39);
+const DomTemplates$p51 = (i$1, v$2) => {
+  const $in$3 = v$2[0];
+  const x$4 = $in$3.id;
+  if (x$4 !== i$1.g0_0) {
+    i$1.g0_0 = x$4;
+    i$1.w0.setAttribute("id", x$4);
   }
-  const x$40 = $in$38.title;
-  if (x$40 !== i$36.g1_0) {
-    i$36.g1_0 = x$40;
-    i$36.w0.setAttribute("title", x$40);
+  const x$5 = $in$3.title;
+  if (x$5 !== i$1.g1_0) {
+    i$1.g1_0 = x$5;
+    i$1.w0.setAttribute("title", x$5);
   }
-  const x$41 = $in$38.off;
-  if (x$41 !== i$36.g2_0) {
-    i$36.g2_0 = x$41;
-    Rt$attr(i$36.w0, "hidden", x$41 ? "" : null);
+  const x$6 = $in$3.off;
+  if (x$6 !== i$1.g2_0) {
+    i$1.g2_0 = x$6;
+    Rt$attr(i$1.w0, "hidden", x$6 ? "" : null);
   }
-  const x$42 = $in$38.tab;
-  if (x$42 !== i$36.g3_0) {
-    i$36.g3_0 = x$42;
-    i$36.w0.setAttribute("tabindex", x$42);
+  const x$7 = $in$3.tab;
+  if (x$7 !== i$1.g3_0) {
+    i$1.g3_0 = x$7;
+    i$1.w0.setAttribute("tabindex", x$7);
   }
 };
 const DomTemplates$t51 = Rt$template("<div aria-label=static><input disabled type=text>", 0);
-const DomTemplates$k51 = { m: (v$43, cx$44) => {
-  const r$45 = DomTemplates$t51();
-  const i$46 = { s: r$45, q: null, e: r$45, w0: r$45, g0_0: NaN, g1_0: NaN, g2_0: NaN, g3_0: NaN };
-  DomTemplates$p51(i$46, v$43);
-  return i$46;
+const DomTemplates$k51 = { m: (v$8, cx$9) => {
+  const r$10 = DomTemplates$t51();
+  const i$11 = { s: r$10, q: null, e: r$10, w0: r$10, g0_0: NaN, g1_0: NaN, g2_0: NaN, g3_0: NaN };
+  DomTemplates$p51(i$11, v$8);
+  return i$11;
 }, p: DomTemplates$p51 };
 const DomTemplates$t55 = Rt$template("<!>", 0);
-const DomTemplates$k55 = { m: (v$47, cx$48) => {
-  const r$49 = DomTemplates$t55();
-  return { s: r$49, q: null, e: r$49 };
-}, p: (i$50, v$51) => {
+const DomTemplates$k55 = { m: (v$1, cx$2) => {
+  const r$3 = DomTemplates$t55();
+  return { s: r$3, q: null, e: r$3 };
+}, p: (i$4, v$5) => {
 } };
 const DomTemplates$b55 = { t: DomTemplates$k55, v: null };
 const DomTemplates$static = DomTemplates$b3;

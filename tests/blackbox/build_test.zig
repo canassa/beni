@@ -4888,6 +4888,72 @@ test "a platform whose manifest names a runtime file that is not there is refuse
     try testing.expect(!w.exists("out"));
 }
 
+test "a declaration's compiler-made names do not depend on which declarations before it survive" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `backend.md` §4, *A compiler-made name is numbered within its
+    // top-level declaration* (Cesar's decision, 2026-10-15): the counter
+    // behind `$p$N` restarts at 1 for each top-level declaration. `first`
+    // and `second` each destructure a tuple parameter, which makes a `$p`
+    // name. One program keeps `first`, the other drops it. With one counter
+    // per module, `second`'s parameter was `$p$2` in the first program and
+    // `$p$1` in the second.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const module =
+        \\import Node exposing (Program)
+        \\
+        \\
+        \\first : Int × Int → Int
+        \\first ( a, b ) =
+        \\    a + b
+        \\
+        \\
+        \\second : Int × Int → Int
+        \\second ( c, d ) =
+        \\    c * d
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\
+    ;
+    try w.write("both/Main.beni", module ++ "    Node.print (String.fromInt (first ( 1, 2 ) + second ( 3, 4 )))\n");
+    try w.write("one/Main.beni", module ++ "    Node.print (String.fromInt (second ( 3, 4 )))\n");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    try expectBuilt(try w.run(&.{ "build", "--platform=node", "--no-source-maps", "--root=both", "--out=both-out", "both/Main.beni" }));
+    try expectBuilt(try w.run(&.{ "build", "--platform=node", "--no-source-maps", "--root=one", "--out=one-out", "one/Main.beni" }));
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    const both = try w.read("both-out/Main.mjs");
+    const one = try w.read("one-out/Main.mjs");
+    try testing.expect(std.mem.indexOf(u8, both, "const Main$first = ") != null);
+    try testing.expect(std.mem.indexOf(u8, one, "const Main$first = ") == null);
+    const second_both = try statementOf(both, "const Main$second = ");
+    const second_one = try statementOf(one, "const Main$second = ");
+    try testing.expectEqualStrings(second_one, second_both);
+    try testing.expect(std.mem.indexOf(u8, second_one, "$p$1") != null);
+}
+
+/// The top-level statement of `text` that starts with `head`: its first
+/// line and every line after it that is indented or closes it.
+fn statementOf(text: []const u8, head: []const u8) ![]const u8 {
+    const start = std.mem.indexOf(u8, text, head) orelse return error.NoStatement;
+    var end = std.mem.indexOfScalarPos(u8, text, start, '\n') orelse text.len;
+    while (end + 1 < text.len) {
+        const c = text[end + 1];
+        if (c != ' ' and c != '}' and c != ')' and c != ']') break;
+        end = std.mem.indexOfScalarPos(u8, text, end + 1, '\n') orelse text.len;
+    }
+    return text[start..end];
+}
+
 /// A build that succeeded: exit 0 and NOTHING on either stream.
 ///
 /// `frontend.md` §1 gives stdout to the product and stderr to diagnostics

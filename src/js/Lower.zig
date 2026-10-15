@@ -753,7 +753,11 @@ pub const Lowerer = struct {
     /// at all, so its name is invented — and inventing it twice would bind
     /// one name in the parameter list and read another in the body.
     local_names: []JsIr.NameIndex = &.{},
-    /// Counter behind every compiler-made name in this module.
+    /// Counter behind every compiler-made name of the top-level declaration
+    /// being lowered: it restarts at 1 for each (`restartNames`), and one
+    /// count runs through the declaration and every function nested in it
+    /// (`backend.md` §4, *A compiler-made name is numbered within its
+    /// top-level declaration*).
     next_tag: u32 = 1,
     /// Which of §9.1's primitive comparators this module has needed as a
     /// VALUE. A `primitive` target in evidence position is a function and
@@ -1069,7 +1073,15 @@ pub const Lowerer = struct {
         return l.b.intern(n);
     }
 
-    /// A fresh compiler-made name from `base`, unique in this module.
+    /// The first compiler-made name of a top-level declaration about to be
+    /// lowered is numbered 1, whatever the module lowered before it: what a
+    /// declaration prints does not depend on which others survived.
+    pub fn restartNames(l: *Lowerer) void {
+        l.next_tag = 1;
+    }
+
+    /// A fresh compiler-made name from `base`, unique in the top-level
+    /// declaration being lowered.
     pub fn fresh(l: *Lowerer, base: Symbol) !JsIr.NameIndex {
         const tag = l.next_tag;
         l.next_tag += 1;
@@ -1815,6 +1827,7 @@ pub const Lowerer = struct {
     fn declarationAs(l: *Lowerer, out: *StmtList, index: u32, variant: Variant) !void {
         const d = l.bir.decls[index];
         const body = d.body.unwrap() orelse return;
+        l.restartNames();
         l.locals = l.bir.declLocals(d);
         l.decl_index = index;
         l.read_locals = null;
@@ -5382,6 +5395,7 @@ pub const Lowerer = struct {
             if (!l.liveDerived(@intCast(index))) continue;
             const base = try l.derivedBase(row.kind, row.shape);
             l.derived_row = @intCast(index);
+            l.restartNames();
             const made = (try l.derivedArrow(row, base, l.isLeaf(@intCast(index)))) orelse continue;
             const bound = try l.synthesisedName(base);
             try list.append(l.scratch, .{
@@ -5395,9 +5409,18 @@ pub const Lowerer = struct {
             // precede the `compare` that indexes it (§8.5).
             if (try l.orderTable(row)) |table| try tables.append(l.scratch, table);
         }
-        if (l.needs.compare_char) try list.append(l.scratch, .{ .base = "compare$char", .node = try l.compareCharDecl() });
-        if (l.needs.compare_prim) try list.append(l.scratch, .{ .base = "compare$prim", .node = try l.comparePrimDecl() });
-        if (l.needs.eq_prim) try list.append(l.scratch, .{ .base = "eq$prim", .node = try l.eqPrimDecl() });
+        if (l.needs.compare_char) {
+            l.restartNames();
+            try list.append(l.scratch, .{ .base = "compare$char", .node = try l.compareCharDecl() });
+        }
+        if (l.needs.compare_prim) {
+            l.restartNames();
+            try list.append(l.scratch, .{ .base = "compare$prim", .node = try l.comparePrimDecl() });
+        }
+        if (l.needs.eq_prim) {
+            l.restartNames();
+            try list.append(l.scratch, .{ .base = "eq$prim", .node = try l.eqPrimDecl() });
+        }
         std.mem.sort(Synth, tables.items, {}, Synth.before);
         std.mem.sort(Synth, list.items, {}, Synth.before);
         const out = try l.scratch.alloc(Node.Index, tables.items.len + list.items.len);

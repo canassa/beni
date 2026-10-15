@@ -102,6 +102,17 @@ function solid(code) {
   return list.sort();
 }
 
+// The top-level statements of a module beni printed: each starts at the
+// first column, and the lines of its body are indented or close it.
+function statements(code) {
+  const out = [];
+  for (const line of code.split("\n")) {
+    if (line !== "" && !" })]".includes(line[0])) out.push(line);
+    else if (out.length !== 0) out[out.length - 1] += `\n${line}`;
+  }
+  return out;
+}
+
 function beni(code) {
   const templates = new Map();
   // `template` is the markup runtime's export (`$markup$template`), or the
@@ -110,7 +121,13 @@ function beni(code) {
   for (const m of code.matchAll(/const ([\w$]+) = (?:\$markup|[A-Z]\w*)\$template\(("(?:[^"\\]|\\.)*"), (\d+)\);/g)) {
     templates.set(m[1], { html: JSON.parse(m[2]), flag: m[3] });
   }
-  return entries(code, templates, /const (r\$\d+) = ([\w$]+)\(\);/g, /const (w\$\d+) = ([rw]\$\d+)((?:\.(?:firstChild|nextSibling))+);/g).sort();
+  // Clones and walks are compiler-made names, numbered within their
+  // top-level declaration (backend.md §4, *A compiler-made name is numbered
+  // within its top-level declaration*): two declarations can both hold
+  // `r$1`, so each is read on its own.
+  return statements(code)
+    .flatMap((s) => entries(s, templates, /const (r\$\d+) = ([\w$]+)\(\);/g, /const (w\$\d+) = ([rw]\$\d+)((?:\.(?:firstChild|nextSibling))+);/g))
+    .sort();
 }
 
 const sha256 = (bytes) => createHash("sha256").update(bytes).digest("hex");

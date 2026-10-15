@@ -158,10 +158,25 @@ pub fn declaration(l: *Lowerer, out: *Stmts, decl: u32) !void {
         .params = def.params_end - def.params_start,
         .p = if (def.token < l.in.token_starts.len) l.in.token_starts[def.token] else no_pos,
     };
-    if (l.liveDecl(decl)) try g.vias(out);
-    if (l.liveSchema(ref, .description)) try g.description(out);
-    if (l.liveSchema(ref, .read)) try g.direction(out, .read);
-    if (l.liveSchema(ref, .write)) try g.direction(out, .write);
+    // Each part is a top-level declaration of its own, and its
+    // compiler-made names count from 1 (`backend.md` §4, *A compiler-made
+    // name is numbered within its top-level declaration*).
+    if (l.liveDecl(decl)) {
+        l.restartNames();
+        try g.vias(out);
+    }
+    if (l.liveSchema(ref, .description)) {
+        l.restartNames();
+        try g.description(out);
+    }
+    if (l.liveSchema(ref, .read)) {
+        l.restartNames();
+        try g.direction(out, .read);
+    }
+    if (l.liveSchema(ref, .write)) {
+        l.restartNames();
+        try g.direction(out, .write);
+    }
 }
 
 const Dir = enum { read, write };
