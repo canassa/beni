@@ -1475,10 +1475,20 @@ holds them.
 - **A node names its module by package and dotted name**, never by `Graph.Index`. An index depends on
   which modules a build holds: the maker's graph holds all of core, and a program's graph holds the
   modules it imports. A build resolves each name with `Graph.find`. A target in a module that the
-  build does not hold is dropped. The builder does the same, because it cannot name such a module:
-  only the edges that no instruction names (`String.compare` and `core/List`'s helpers) reach outside
-  a module's imports. A row that is out of shape, of another version, or that guards an edge on a
-  module the build does not hold, is not used, and the build builds that module's lists.
+  build does not hold is dropped. A module's edges reach four kinds of target: what its
+  instructions and dispatch table name, which is always in a module it imports; `String.compare`
+  and `core/List`'s helpers, which lowering calls with no reference of the module's own;
+  `Task.andThen` and `Task.isWaiting`, which a body that may suspend calls; and the `core/Schema`
+  values that a schema member's code calls. The last three can name a core module that the module
+  does not import. The builder finds each of them by name in the build's graph and adds no edge
+  when that module is not there, so the drop gives the same lists. *Amended the same day, after
+  review:* this holds only because **the maker's graph holds every module that a build's graph can
+  hold**. `Session.isLazy` is false in a run that makes a pack, so each maker run reads every core
+  module and every module of its chain, and core's rows come from the run that holds core alone. A
+  change that makes the maker's graph smaller must change this rule too.
+- **A row that cannot be used is not used.** Another version, a length or an order that does not fit
+  the module, a node out of its module's range, a chain out of the row's, or a guard on a module
+  that the build does not hold: the build builds that module's lists.
 - **Which modules read a row.** A module that `Session.packCovers` and whose key the run computed.
   The lookup is by key, so it is the same whether the run installed the module from the pack or
   checked it. `--core-root` and a platform read from a directory read no row, as for entries.
