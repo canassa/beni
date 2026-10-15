@@ -7,7 +7,9 @@
 // The compiler runs in `worker.js`, one command at a time. Every edit, and a
 // change of platform, makes a new version of the input; a result of an older
 // version is dropped, and the newest version is compiled once the worker is
-// free. A dump runs only while its tab is open.
+// free. A dump runs only while its tab is open. A defect of the playground
+// stops the queue until the next edit, so a failure that repeats is shown
+// once and not retried without end.
 import { createEditor, markDiagnostics, replaceText, reveal, textOf } from "./editor.js";
 import { decode, encode } from "./share.js";
 
@@ -39,6 +41,9 @@ let version = 0;
 const shown = { build: -1, types: -1, ownership: -1 };
 let running = null;
 let ready = false;
+// A note for the status of the next build (a damaged link), so that the
+// build does not hide it.
+let notice = "";
 // The editor, made once the first source is known.
 let editor = null;
 let timer = 0;
@@ -83,8 +88,12 @@ function pump() {
   if (command === "build") setStatus("Compiling…");
 }
 
-function edited() {
+// A new version of the input. A person's change also clears the fragment:
+// the address holds a program only while the editor holds it.
+function edited(byUser) {
   version += 1;
+  if (byUser && location.hash !== "") history.replaceState(null, "", location.pathname + location.search);
+  for (const pane of [$("types-text"), $("ownership-text")]) pane.classList.add("stale");
   clearTimeout(timer);
   timer = setTimeout(() => {
     timer = 0;
@@ -188,12 +197,14 @@ function showBuild(result) {
     setStatus(`${errors} ${errors === 1 ? "error" : "errors"} (${ms})`, "error");
     return;
   }
-  setStatus(list.length === 0 ? `Built in ${ms}` : `Built in ${ms}, with warnings`, "ok");
+  setStatus(`${list.length === 0 ? `Built in ${ms}` : `Built in ${ms}, with warnings`}${notice}`, "ok");
+  notice = "";
   runProgram(result.files);
 }
 
 function showDump(result) {
   const view = $(`${result.command}-text`);
+  view.classList.remove("stale");
   if (result.crash !== null) {
     view.textContent = `${result.stderr}${result.crash}\n`;
     return;
@@ -209,16 +220,26 @@ worker.addEventListener("message", ({ data }) => {
     pump();
     return;
   }
-  running = null;
   if (data.kind === "defect") {
+    // The command failed in the host: it is not run again for this version.
+    shown[running] = version;
+    running = null;
     setStatus("The playground failed", "error");
     diagnosticsView.replaceChildren(preOf(data.message));
-  } else if (data.id === version) {
-    shown[data.command] = data.id;
-    if (data.command === "build") showBuild(data);
-    else showDump(data);
+    return;
   }
-  pump();
+  running = null;
+  try {
+    if (data.id === version) {
+      shown[data.command] = data.id;
+      if (data.command === "build") showBuild(data);
+      else showDump(data);
+    }
+  } finally {
+    // Not a catch: an exception above still reaches the page's listeners,
+    // and the queue still moves on.
+    pump();
+  }
 });
 
 // What the program in the frame prints, logs and throws.
@@ -248,18 +269,26 @@ fileList.addEventListener("change", () => {
   code.textContent = emitted[fileList.value] ?? "";
 });
 
-platform.addEventListener("change", edited);
+platform.addEventListener("change", () => edited(true));
 
 // The samples (§4.3): `samples/index.json` lists each one's name, platform
 // and file.
 const samples = JSON.parse(await text("samples/index.json"));
 sampleList.replaceChildren(...samples.map((s, i) => new Option(s.name, String(i))), new Option("(shared)", "shared"));
 
+// The newest sample asked for: a slower fetch of an older one is dropped.
+let sampleAsked = 0;
+
 async function loadSample(index) {
+  const asked = ++sampleAsked;
   const sample = samples[index];
+  const source = await text(sample.path);
+  if (asked !== sampleAsked) return;
   platform.value = sample.platform;
-  replaceText(editor, await text(sample.path));
-  history.replaceState(null, "", location.pathname + location.search);
+  replaceText(editor, source);
+  // Also when the text did not change: the platform may have. Choosing a
+  // sample is a person's change.
+  edited(true);
 }
 
 sampleList.addEventListener("change", () => {
@@ -271,6 +300,11 @@ $("share").addEventListener("click", async () => {
   const fragment = await encode(platform.value, textOf(editor));
   history.replaceState(null, "", `#${fragment}`);
   sampleList.value = "shared";
+  // Only a secure page has a clipboard to write.
+  if (navigator.clipboard === undefined) {
+    setStatus("The address bar holds the link", "ok");
+    return;
+  }
   await navigator.clipboard.writeText(location.href).then(
     () => setStatus("Link copied", "ok"),
     (e) => {
@@ -288,8 +322,11 @@ if (shared !== null) {
   if ([...platform.options].some((o) => o.value === shared.platform)) platform.value = shared.platform;
   sampleList.value = "shared";
   replaceText(editor, shared.source);
+  // Also when the source is empty, which changes nothing in the editor. The
+  // link stays in the address until a person changes the program.
+  edited(false);
 } else {
-  if (location.hash !== "") setStatus("The link holds no program", "error");
+  if (location.hash !== "") notice = " (the link held no program, so this is the first sample)";
   sampleList.value = "0";
   await loadSample(0);
 }

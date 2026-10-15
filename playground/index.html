@@ -30,6 +30,22 @@
         }
       }
     </script>
+    <script>
+      // A module of the page that does not load — the editor's CDN is down,
+      // or the site lacks a file — fails before the page's own code runs.
+      // A load error does not bubble, so this listens where it passes on
+      // its way down to the script.
+      addEventListener(
+        "error",
+        (event) => {
+          if (!(event.target instanceof HTMLScriptElement)) return;
+          const status = document.getElementById("status");
+          status.textContent = `The page could not load ${event.target.src}: the editor loads from esm.sh, which needs the network.`;
+          status.className = "error";
+        },
+        true,
+      );
+    </script>
     <script type="module" src="page.js"></script>
   </head>
   <body>

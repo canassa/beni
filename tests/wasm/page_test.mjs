@@ -10,7 +10,7 @@
 //       the grammar names the tokens of each line as the test says
 import { readFileSync } from "node:fs";
 import { rangeOf } from "../../playground/positions.js";
-import { decode, encode } from "../../playground/share.js";
+import { decode, encode, maxSource } from "../../playground/share.js";
 import { copyState, startState, token } from "../../playground/syntax.js";
 
 /// The tokens of `lines`, as `[text, name]`, with the state carried from
@@ -110,6 +110,11 @@ if (mode === "positions") {
     }
   }
   check((await decode("#platform=node&code=@@@@")) === null, "a code that is not base64url is no program");
+  const huge = await encode("node", "x".repeat(maxSource + 1));
+  check(huge.length < 10_000, `a long source compresses to a short link (${huge.length} bytes)`);
+  check((await decode(huge)) === null, "a link that inflates past maxSource is no program");
+  const largest = "y".repeat(maxSource);
+  check((await decode(await encode("node", largest)))?.source === largest, "a link of exactly maxSource opens");
   check((await decode("#platform=node")) === null, "a fragment with no code is no program");
   check((await decode("")) === null, "no fragment is no program");
 } else if (mode === "syntax") {
@@ -134,9 +139,23 @@ if (mode === "positions") {
     [["less = a <b"], [["a", "variableName"], ["<", "operator"], ["b", "variableName"]]],
     [
       ['    <button onClick={Increment}>-</button>'],
-      [["<button", "tagName"], ["onClick", "attributeName"], ["=", "operator"], ["{", "brace"], ["Increment", "typeName"], ["}", "brace"], [">", "tagName"], ["-", "operator"], ["</button", "tagName"], [">", "tagName"]],
+      [["<button", "tagName"], ["onClick", "attributeName"], ["=", "operator"], ["{", "brace"], ["Increment", "typeName"], ["}", "brace"], [">", "tagName"], ["-", "content"], ["</button", "tagName"], [">", "tagName"]],
     ],
-    [['    <span>{count}</span>'], [["<span", "tagName"], [">", "tagName"], ["count", "variableName"], ["</span", "tagName"]]],
+    [['    <span>{count}</span>'], [["<span", "tagName"], [">", "tagName"], ["{", "brace"], ["count", "variableName"], ["}", "brace"], ["</span", "tagName"]]],
+    // Children are text: an inline element after text is a tag, and an
+    // apostrophe or a `--` in text is text (frontend.md §9.3).
+    [["<p>Hello <b>world</b> -- don't</p>"], [["Hello ", "content"], ["<b", "tagName"], ["world", "content"], ["</b", "tagName"], [" -- don't", "content"], ["</p", "tagName"]]],
+    [["<>", "    <li>one</li>", "</>"], [["<", "tagName"], [">", "tagName"], ["<li", "tagName"], ["one", "content"], ["</li", "tagName"], ["</", "tagName"]]],
+    [["<hr /> < limit"], [["<hr", "tagName"], ["/>", "tagName"], ["<", "operator"], ["limit", "variableName"]]],
+    [["<input -- a comment", "    value={v} />"], [["<input", "tagName"], ["-- a comment", "lineComment"], ["value", "attributeName"], ["v", "variableName"], ["/>", "tagName"]]],
+    [["let x = 1 in <div />"], [["in", "keyword"], ["<div", "tagName"]]],
+    [["ok = f x? <y"], [["?", "operator"], ["<", "operator"], ["y", "variableName"]]],
+    // §2.5: no underscores; `schema` and `where` are keywords only where
+    // they start their forms.
+    [["n = 1_000"], [["1", "number"], ["_000", "variableName"]]],
+    [["schema Person ="], [["schema", "keyword"], ["Person", "typeName"]]],
+    [["where = 1"], [["where", "variableName"]]],
+    [["sort : List a → List a where a.compare : a, a → Order"], [["where", "keyword"], ["a", "variableName"], [".compare", "propertyName"]]],
     // A string does not go on to the next line, and an interpolation's
     // state does.
     [['s = "open', "next = 1"], [['"', "string"], ["open", "string"], ["next", "variableName"], ["1", "number"]]],

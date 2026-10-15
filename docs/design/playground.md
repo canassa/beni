@@ -172,11 +172,15 @@ diagnostics come from `--diagnostics=json` and show at their positions in the ed
   which is what a CDN that resolves each package's ranges by itself risks.
 - **The grammar** is `playground/syntax.js`, a tokenizer for CodeMirror's `StreamLanguage`
   with no dependency: line and doc comments, strings with `${…}` and escapes, `\\` lines,
-  character literals, numbers, the fifteen keywords and `schema` and `where`, constructors and
-  types, `.field`, the Unicode operators, `⊤` and `⊥`, and markup tags, attributes and holes. A
-  `<` followed by a letter is a tag where an operand may start and a comparison after a token
-  that ends one, as `frontend.md` §9.3 decides; `</` is always a tag. It highlights and
-  decides nothing else: the compiler's diagnostics say what is wrong.
+  character literals, numbers as `language.md` §2.5 writes them (no underscores), the fifteen
+  keywords, `schema` before a type name and `where` before a `name.method`, constructors and
+  types, `.field`, the Unicode operators, `⊤` and `⊥`, and markup. Markup has the three modes of
+  `frontend.md` §9.1: in code, a `<` followed by a letter or `>` opens a tag where an operand
+  may start and is a comparison after a token that ends one (§9.3: a name, a literal, a closing
+  bracket, `?`, a `/>`, a closing tag's `>`); `</` always closes one. In a tag, names are
+  attributes, `--` starts a comment and `{…}` is a hole. Between an element's tags, text is
+  text, a `<` before a letter or `>` always opens a tag, and `{…}` is a hole. It highlights
+  and decides nothing else: the compiler's diagnostics say what is wrong.
 - **Positions.** A span's column counts code points and the editor counts UTF-16 units
   (`playground/positions.js`): `→` is one of each, a character past U+FFFF one column and two
   units. A diagnostic in `Main.beni` is a lint mark with its title and message; every
@@ -207,8 +211,10 @@ the same source as the build.
 *As built, 2026-10-15.* A dump is a command of its own on a new instance, run only while its
 tab is open: the build runs first for each version of the input, then the open tab's dump.
 Every edit and every change of platform makes a new version, and a result of an older version
-is dropped. A dump of a program with errors prints what it could, with a line that says the
-program has errors.
+is dropped. Until the new dump arrives, an open dump of the older version is shown dimmed. A
+dump of a program with errors prints what it could, with a line that says the program has
+errors. A defect of the playground (an exception the worker did not foresee) is shown and not
+run again for the same version: the queue waits for the next edit.
 
 ### 4.5 The shareable link (second pull request)
 
@@ -217,11 +223,15 @@ base64url, in the URL fragment. The fragment never goes to the server.
 
 *As built, 2026-10-15* (`playground/share.js`). The fragment is
 `#platform=<platform>&code=<base64url>`. **Share** writes it into the address and copies the
-address; where the page may not write the clipboard, the status says that the address bar holds
-the link. A link opens its source and platform. A fragment whose code is not base64url, or not
-deflate data, opens the first sample, and the status says the link holds no program; the two
-errors are caught by name (`InvalidCharacterError`, `TypeError`). Choosing a sample clears the
-fragment.
+address; where the page may not write the clipboard (no clipboard on an insecure page, or no
+permission), the status says that the address bar holds the link. A link opens its source and
+platform, and stays in the address until a person changes the program: an edit, a change of
+platform, or a sample. A fragment whose code is not base64url, not deflate data, not UTF-8, or
+longer than 1 MiB once inflated opens the first sample, and the status of its first build says
+that the link held no program. Each failure is caught by name around the one call that makes it
+(`InvalidCharacterError` from `atob`, `TypeError` from the decompression stream and the fatal
+decoder), and the 1 MiB bound cancels the stream with a reason of its own; anything else goes
+on up.
 
 ## 5. Running the output
 
@@ -386,6 +396,10 @@ its own (Chrome isolates sandboxed frames; the page tests attach to it as a sepa
 so the page and the editor go on, and the next build replaces the frame. Where a browser keeps
 the frame in the page's process, a loop in the program also stops the page. A program that
 prints in a loop grows the console only to its last 2 000 pieces of output.
+
+**The editor needs esm.sh.** If a module of the page does not load (the CDN is down, or the
+site lacks a file), the page's own code never runs; a listener in `index.html` then says in the
+status which file did not load. The compiler and the samples are files of the site.
 
 **One browser is tested.** Chrome 153 runs every test of §6 and every measurement of §7. Firefox
 and Safari are not tested: a module from a `blob:` URL in an opaque-origin frame, and 69.2 MiB

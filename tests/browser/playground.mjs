@@ -140,16 +140,24 @@ async function open(url) {
     await evaluate(`document.querySelector(".cm-content").focus()`);
     await send("Input.insertText", { text }, sessionId);
   };
-  return { targetId, evaluate, until, type };
+  // Move the editor's cursor to the end of the text, with Ctrl+End.
+  const toEnd = async () => {
+    await evaluate(`document.querySelector(".cm-content").focus()`);
+    for (const type of ["rawKeyDown", "keyUp"]) {
+      await send("Input.dispatchKeyEvent", { type, key: "End", code: "End", windowsVirtualKeyCode: 35, modifiers: 2 }, sessionId);
+    }
+  };
+  return { targetId, evaluate, until, type, toEnd };
 }
 
 /// A page opened from a link to `source` on `platform`, which the page's own
 /// `share.js` makes.
 const pageWith = async (platform, source) => open(`${origin}/#${await encode(platform, source)}`);
 
-const status = `document.getElementById("status").textContent`;
+// Empty while the page is still loading.
+const status = `(document.getElementById("status")?.textContent ?? "")`;
 const built = `(${status}).startsWith("Built in") && (${status})`;
-const loaded = `document.getElementById("frame").dataset.loaded === "true"`;
+const loaded = `document.getElementById("frame")?.dataset.loaded === "true"`;
 const editorText = `[...document.querySelectorAll(".cm-content .cm-line")].map((l) => l.textContent).join("\\n")`;
 const click = (tab) => `document.querySelector('[data-tab="${tab}"]').click()`;
 
@@ -172,6 +180,9 @@ for (const [value, name] of samples.filter(([v]) => v !== "shared")) {
     check((await page.until(`document.getElementById("console").textContent.includes("fib 10 = 55")`, 10_000)) !== null, `sample ${name} prints`);
   } else {
     check((await page.until(loaded, 10_000)) !== null, `sample ${name} loads in the frame`);
+    // Mounted, not only imported: the page's markup is in the frame.
+    const mounted = name === "TodoMVC" ? `document.querySelector("input") !== null` : `document.querySelectorAll("button").length === 2`;
+    check((await page.until(mounted, 10_000, true)) !== null, `sample ${name} mounts its markup`);
   }
 }
 
@@ -189,24 +200,34 @@ check((await tabs.until(`document.getElementById("console").textContent.includes
 await tabs.evaluate(click("types"));
 check((await tabs.until(`document.getElementById("types-text").textContent.includes("double : Int → Int")`, 20_000)) !== null, "the Types tab shows the types");
 await tabs.evaluate(click("ownership"));
-check((await tabs.until(`document.getElementById("ownership-text").textContent.includes("total")`, 20_000)) !== null, "the Ownership tab shows the report");
+check((await tabs.until(`document.getElementById("ownership-text").textContent.includes("summary double:")`, 20_000)) !== null, "the Ownership tab shows the report");
 await tabs.evaluate(click("javascript"));
 check((await tabs.evaluate(`document.getElementById("code").textContent`)).includes("double"), "the JavaScript tab shows the emitted module");
+
+// A dump refreshes after an edit while its tab is open.
+await tabs.evaluate(click("types"));
+check(await tabs.evaluate(`location.hash.includes("code=")`), "a link stays in the address until an edit");
+await tabs.toEnd();
+await tabs.type("\ntriple : Int → Int\ntriple n = n * 3\n");
+check((await tabs.until(`location.hash === ""`, 5_000)) !== null, "an edit clears the link from the address");
+check((await tabs.until(`document.getElementById("types-text").textContent.includes("triple : Int → Int") && !document.getElementById("types-text").classList.contains("stale")`, 20_000)) !== null, "the open Types tab shows the edited program's types");
 await tabs.evaluate(click("result"));
 
 // The Share button, after an edit: the link holds the edited source.
 await tabs.evaluate(`document.getElementById("status").textContent = ""`);
 await tabs.type("-- edited → 😀\n");
 check((await tabs.until(built)) !== null, `the edited program builds (${await tabs.evaluate(status)})`);
+const edited = await tabs.evaluate(editorText);
+check(edited.includes("-- edited → 😀") && edited.includes("triple"), "the edits are in the editor");
 await tabs.evaluate(`document.getElementById("share").click()`);
 const link = await tabs.until(`location.hash.includes("code=") && document.getElementById("sample").value === "shared" && location.href`, 10_000);
 check(link !== null, "Share puts the source in the address");
 const second = await open(link);
 check((await second.until(built)) !== null, `the shared link builds (${await second.evaluate(status)})`);
-check((await second.evaluate(editorText)) === `-- edited → 😀\n${program}`, "the shared link opens the edited source");
+check((await second.evaluate(editorText)) === edited, "the shared link opens the edited source");
 check((await second.evaluate(`document.getElementById("platform").value`)) === "node", "the shared link opens the same platform");
 const damaged = await open(`${origin}/#platform=node&code=@@@@`);
-check((await damaged.until(built, 30_000)) !== null, `a damaged link builds the first sample (${await damaged.evaluate(status)})`);
+check((await damaged.until(`(${built}) && (${status}).includes("the link held no program")`, 30_000)) !== null, `a damaged link builds the first sample and says so (${await damaged.evaluate(status)})`);
 check(
   (await damaged.evaluate(`document.getElementById("sample").value`)) === "0" && (await damaged.evaluate(editorText)).startsWith("-- A counter"),
   "a damaged link opens the first sample",

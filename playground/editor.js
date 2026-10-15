@@ -2,7 +2,7 @@
 // from a CDN, each package at the version `index.html`'s import map pins,
 // with beni's grammar (`syntax.js`) and the compiler's diagnostics as lint
 // marks at their positions (`positions.js`).
-import { EditorSelection, EditorState } from "@codemirror/state";
+import { EditorSelection, EditorState, Transaction } from "@codemirror/state";
 import {
   EditorView,
   drawSelection,
@@ -43,7 +43,9 @@ const theme = EditorView.theme({
   "&.cm-focused": { outline: "none" },
 });
 
-/// An editor in `parent` holding `text`; `changed()` runs after each edit.
+/// An editor in `parent` holding `text`; `changed(byUser)` runs after each
+/// change of the text, with `byUser` true when a person made it (typing,
+/// pasting, undo) and false when the page did (`replaceText`).
 export function createEditor(parent, text, changed) {
   return new EditorView({
     parent,
@@ -68,7 +70,7 @@ export function createEditor(parent, text, changed) {
         lintGutter(),
         keymap.of([...closeBracketsKeymap, ...defaultKeymap, ...searchKeymap, ...historyKeymap, indentWithTab]),
         EditorView.updateListener.of((update) => {
-          if (update.docChanged) changed();
+          if (update.docChanged) changed(update.transactions.some((tr) => tr.annotation(Transaction.userEvent) !== undefined));
         }),
         theme,
       ],

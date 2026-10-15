@@ -231,6 +231,11 @@ iframe {
   min-height: 0;
 }
 
+/* A dump of an older version of the input, until the new one arrives. */
+.stale {
+  opacity: 0.5;
+}
+
 @media (max-width: 720px) {
   main {
     grid-template-columns: 1fr;
