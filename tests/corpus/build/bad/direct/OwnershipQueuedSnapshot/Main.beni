@@ -1,0 +1,46 @@
+-- TodoMVC's persistence shape: a deferred command reads the same list that
+-- update installs in the model. Only two synthetic sends in one task reach
+-- this schedule; native listeners drain the queued command before later input.
+-- Value semantics gives the commands snapshots of lengths 1 and 2. An
+-- in-place append would make the first command observe length 2 instead.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+
+
+type alias Model =
+    items : List Int
+    seen : String
+
+
+type Msg
+    = Add
+    | Saw Int
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        Add →
+            items = List.push model.items 1
+            ( { model | items = items }
+            , Cmd.perform λsend → send (Saw (List.length items))
+            )
+
+        Saw n →
+            ( { model | seen = model.seen ++ String.fromInt n }, Cmd.none )
+
+
+view : Model → Html Msg
+view model = <button onClick={Add}>{model.seen}</button>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( { items = [], seen = "" }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

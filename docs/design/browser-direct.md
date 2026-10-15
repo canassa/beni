@@ -3220,6 +3220,18 @@ visit set. This also composes through `Maybe`, markup lists and `Html.map`.
 Precise templates continue to select only their substituted reads. Adopting
 an unbound block at a value-row boundary retains its unbound classification.
 
+Branch value arms install their own placement mask when adopting stored markup,
+just as ordinary value holes do; a computed view root uses the root mask. An
+entered fallback also traverses retained slots beneath mount-only producers:
+the producer is not evaluated again, but its dynamic descendants receive their
+predicted visits even when they have no every-render effects. A quiet placement
+enters none of that subtree. `browser/direct/StoredBranchPlacement` pins both
+the quiet write and a selected fallback retaining the same block and list.
+Such retained-slot operations make the template entry necessary even when
+none of its own dynamic groups is selected. Fallback eligibility is computed
+once per template patch and restored across nested patches; restating each
+retained slot reads that Boolean rather than looking up its fallback again.
+
 *Oracle independence, 2026-10-15:* expected template visits are recomputed
 from the immutable analysis masks, never copied from the execution cache's
 selection bits or operation lists. A negative probe corrupts only that cache

@@ -550,14 +550,18 @@ defect with an open issue**, until the case fits 4 300M. The grant is a `.budget
 whose rest says why and when it can go. A file without a reason fails the case. The file sets
 the budget of the page case only. A separately granted `[value fuzz]` case uses
 `.fuzz-budget` (`_expected.fuzz-budget` in a project); without that file it keeps the
-gates' budget. A page grant never extends to fuzz implicitly. Granted so far:
+gates' budget. A page grant never extends to fuzz implicitly. A `.budget` or `.fuzz-budget` without a
+matching case fails the corpus inventory check, even outside a run filter. Granted so far:
 `browser/tea/ConduitReader`, `ConduitEditor` and `ConduitTour` (12 000M, 2026-10-08): the
 RealWorld app, whose release build alone is ~5 800M because of the release optimiser's
 `specialise` phase (research 62 §1.3). `browser/direct/HttpJson` (6 300M) and `HttpJsonBody`
 (6 400M) (2026-10-14, issue #101), for the compiler defect #105: a `browser/direct/` page is four
 builds in one case, and `Http.expectJson` and `Http.jsonBody` reach the `core/Schema` library
 interpreter, which `specialise` processes in both release builds. Their limits are the count with
-Node running the pages plus 10%.
+Node running the pages plus 10%. On 2026-10-15 the owner also granted the large
+paired TodoMVC page 6 300M (measured 5 711M), the paired Sternhalma page 10 000M
+(measured 9 031M), and Sternhalma's separate value fuzz 12 600M (measured 11 387M).
+TodoMVC's value fuzz retains the default budget.
 
 *Amended 2026-10-14 (the owner, Conduit paired runs):* the three direct Conduit
 page cases are granted 15 300M for four platform/build comparisons and fresh Node
@@ -565,6 +569,10 @@ runs (3.17–3.23 s in the CPU fallback, plus 10%). Reader and Editor's separate
 value-fuzz cases are granted 4 900M (1.01–1.02 s with the fuzzer running, plus
 10%). Tour value fuzz keeps the global budget. These grants name the large
 unchanged application; remove them when its builds fit the global budget.
+
+*Amended 2026-10-15 (the owner):* those grants were sized from CPU time on a host without an
+instruction counter. Measured on the x86-64 Linux reference, the three pages cost 19 699–19 702M and
+the three value-fuzz cases 6 088–6 089M; they are re-granted 21 700M and 6 700M, Tour's fuzz included.
 
 A project may also take its modules from outside the corpus: `_expected.sources` holds a
 repo-relative directory whose `.beni` files are the program, so several scripts can drive one

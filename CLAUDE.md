@@ -351,9 +351,10 @@ one by one; the owner may grant a large program its own budget, or a case whose 
 a compiler defect with an open issue, until the case fits 4 300M: a `.budget` file beside the case
 with its limit and reason (`tests/corpus/README.md`, *Budgets*). A separately granted
 value-fuzz case uses `.fuzz-budget`; a page grant never covers fuzz implicitly.
-Conduit's page cases (2026-10-08, paired direct runs extended 2026-10-14), its direct
-Reader/Editor value fuzz (2026-10-14), and `browser/direct/HttpJson` and `HttpJsonBody`
-(2026-10-14, compiler defect #105) are the only grants.
+Conduit's page cases (2026-10-08, paired direct runs extended 2026-10-14, re-granted from
+Linux instruction counts 2026-10-15), its direct value fuzz (2026-10-14), `browser/direct/HttpJson`
+and `HttpJsonBody` (2026-10-14, compiler defect #105), and the paired TodoMVC/Sternhalma pages plus
+Sternhalma's separate value fuzz (2026-10-15) are the only grants.
 
 **The budget has one unit and one reference build** (2026-10-14). The count
 is the kernel's hardware count of user-space instructions (`perf_event_open`)

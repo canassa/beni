@@ -624,3 +624,31 @@ test "direct visit verification catches an omitted child patch through its live 
 test "direct visit verification rejects extra groups from a cached selection" {
     try visitMutation(.cache);
 }
+
+test "corpus: an orphan page budget fails before compiling any case" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("corpus/browser/Misspelled.budget", "5000 no matching page\n");
+    const r = try walker(&w, "");
+    try expectExit(1, r);
+    try expectReported(r, "Misspelled.budget has no matching case");
+}
+
+test "corpus: a fuzz budget beside a tea page has no matching value-fuzz case" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("corpus/browser/tea/Page.beni", "");
+    try w.write("corpus/browser/tea/Page.fuzz-budget", "5000 tea has no value fuzz\n");
+    const r = try walker(&w, "");
+    try expectExit(1, r);
+    try expectReported(r, "Page.fuzz-budget has no matching case");
+}
+
+test "corpus: a budget under an unknown corpus kind has no matching case" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("corpus/unknown/Project/_expected.budget", "5000 no such corpus kind\n");
+    const r = try walker(&w, "");
+    try expectExit(1, r);
+    try expectReported(r, "_expected.budget has no matching case");
+}

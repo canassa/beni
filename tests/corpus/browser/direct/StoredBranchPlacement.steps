@@ -1,0 +1,6 @@
+click main>button:nth-of-type(3)
+click main>button:nth-child(1)
+click main>button:nth-child(2)
+click main>button:nth-child(1)
+click main>button:nth-child(2)
+click main>button:nth-child(1)

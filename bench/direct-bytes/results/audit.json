@@ -1,0 +1,4204 @@
+{
+  "conduit-tea": {
+    "reverse": [
+      {
+        "part": "context and patch runtime",
+        "saved": 0
+      },
+      {
+        "part": "selection runtime",
+        "saved": 0
+      },
+      {
+        "part": "template factories and preparation",
+        "saved": 7195
+      },
+      {
+        "part": "restate entry functions",
+        "saved": 0
+      },
+      {
+        "part": "patch entry functions",
+        "saved": 0
+      },
+      {
+        "part": "group descriptors",
+        "saved": 0
+      },
+      {
+        "part": "consumer matrix",
+        "saved": 0
+      }
+    ],
+    "residualBrotli": 24194,
+    "literalAudit": [],
+    "maskReadCount": 0,
+    "sourceMapDeclarationCount": 922
+  },
+  "conduit-direct": {
+    "reverse": [
+      {
+        "part": "context and patch runtime",
+        "saved": 696
+      },
+      {
+        "part": "selection runtime",
+        "saved": 409
+      },
+      {
+        "part": "template factories and preparation",
+        "saved": 4589
+      },
+      {
+        "part": "restate entry functions",
+        "saved": 168
+      },
+      {
+        "part": "patch entry functions",
+        "saved": 3710
+      },
+      {
+        "part": "group descriptors",
+        "saved": 836
+      },
+      {
+        "part": "consumer matrix",
+        "saved": 1550
+      }
+    ],
+    "residualBrotli": 25810,
+    "literalAudit": [
+      {
+        "start": 60440,
+        "end": 60447,
+        "value": "3:360",
+        "reason": "group source holes"
+      },
+      {
+        "start": 60560,
+        "end": 60567,
+        "value": "3:365",
+        "reason": "group source holes"
+      },
+      {
+        "start": 60898,
+        "end": 60905,
+        "value": "3:393",
+        "reason": "group source holes"
+      },
+      {
+        "start": 60906,
+        "end": 60913,
+        "value": "3:403",
+        "reason": "group source holes"
+      },
+      {
+        "start": 61611,
+        "end": 61618,
+        "value": "3:461",
+        "reason": "group source holes"
+      },
+      {
+        "start": 62193,
+        "end": 62200,
+        "value": "3:500",
+        "reason": "group source holes"
+      },
+      {
+        "start": 65326,
+        "end": 65333,
+        "value": "3:358",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 65366,
+        "end": 65373,
+        "value": "3:386",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 65460,
+        "end": 65467,
+        "value": "3:438",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 65511,
+        "end": 65518,
+        "value": "3:477",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 65560,
+        "end": 65567,
+        "value": "1:749",
+        "reason": "group source holes"
+      },
+      {
+        "start": 65833,
+        "end": 65840,
+        "value": "1:798",
+        "reason": "group source holes"
+      },
+      {
+        "start": 66091,
+        "end": 66108,
+        "value": "$producer/1:775",
+        "reason": "group source holes"
+      },
+      {
+        "start": 66217,
+        "end": 66224,
+        "value": "1:795",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 66272,
+        "end": 66279,
+        "value": "1:795",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 66547,
+        "end": 66554,
+        "value": "1:858",
+        "reason": "group source holes"
+      },
+      {
+        "start": 66849,
+        "end": 66866,
+        "value": "$producer/1:833",
+        "reason": "group source holes"
+      },
+      {
+        "start": 66960,
+        "end": 66967,
+        "value": "1:850",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 67015,
+        "end": 67022,
+        "value": "1:850",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 67282,
+        "end": 67289,
+        "value": "1:898",
+        "reason": "group source holes"
+      },
+      {
+        "start": 67557,
+        "end": 67564,
+        "value": "1:922",
+        "reason": "group source holes"
+      },
+      {
+        "start": 68008,
+        "end": 68015,
+        "value": "1:939",
+        "reason": "group source holes"
+      },
+      {
+        "start": 68291,
+        "end": 68298,
+        "value": "1:963",
+        "reason": "group source holes"
+      },
+      {
+        "start": 68742,
+        "end": 68749,
+        "value": "1:998",
+        "reason": "group source holes"
+      },
+      {
+        "start": 68910,
+        "end": 68918,
+        "value": "1:1009",
+        "reason": "group source holes"
+      },
+      {
+        "start": 68989,
+        "end": 68998,
+        "value": "/1:1009",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 69009,
+        "end": 69018,
+        "value": "/1:1009",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 76891,
+        "end": 76898,
+        "value": "1:741",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 76931,
+        "end": 76938,
+        "value": "1:765",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 76971,
+        "end": 76978,
+        "value": "1:823",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 77027,
+        "end": 77034,
+        "value": "1:896",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 77063,
+        "end": 77070,
+        "value": "1:937",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 77108,
+        "end": 77115,
+        "value": "1:991",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 77323,
+        "end": 77331,
+        "value": "10:357",
+        "reason": "group source holes"
+      },
+      {
+        "start": 77513,
+        "end": 77521,
+        "value": "10:393",
+        "reason": "group source holes"
+      },
+      {
+        "start": 77670,
+        "end": 77678,
+        "value": "10:400",
+        "reason": "group source holes"
+      },
+      {
+        "start": 78068,
+        "end": 78076,
+        "value": "10:152",
+        "reason": "group source holes"
+      },
+      {
+        "start": 78213,
+        "end": 78221,
+        "value": "10:173",
+        "reason": "group source holes"
+      },
+      {
+        "start": 78296,
+        "end": 78305,
+        "value": "/10:173",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 78321,
+        "end": 78330,
+        "value": "/10:173",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 78383,
+        "end": 78391,
+        "value": "10:198",
+        "reason": "group source holes"
+      },
+      {
+        "start": 78392,
+        "end": 78400,
+        "value": "10:208",
+        "reason": "group source holes"
+      },
+      {
+        "start": 78401,
+        "end": 78409,
+        "value": "10:285",
+        "reason": "group source holes"
+      },
+      {
+        "start": 78484,
+        "end": 78493,
+        "value": "/10:198",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 78509,
+        "end": 78518,
+        "value": "/10:198",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 78565,
+        "end": 78574,
+        "value": "/10:208",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 78590,
+        "end": 78599,
+        "value": "/10:208",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 78643,
+        "end": 78652,
+        "value": "/10:285",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 78668,
+        "end": 78677,
+        "value": "/10:285",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 78752,
+        "end": 78760,
+        "value": "10:220",
+        "reason": "group source holes"
+      },
+      {
+        "start": 78942,
+        "end": 78950,
+        "value": "10:253",
+        "reason": "group source holes"
+      },
+      {
+        "start": 78951,
+        "end": 78959,
+        "value": "10:273",
+        "reason": "group source holes"
+      },
+      {
+        "start": 79127,
+        "end": 79135,
+        "value": "10:264",
+        "reason": "group source holes"
+      },
+      {
+        "start": 79222,
+        "end": 79231,
+        "value": "/10:264",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 79247,
+        "end": 79256,
+        "value": "/10:264",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 79900,
+        "end": 79908,
+        "value": "10:302",
+        "reason": "group source holes"
+      },
+      {
+        "start": 79909,
+        "end": 79917,
+        "value": "10:312",
+        "reason": "group source holes"
+      },
+      {
+        "start": 79992,
+        "end": 80001,
+        "value": "/10:302",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 80017,
+        "end": 80026,
+        "value": "/10:302",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 80069,
+        "end": 80078,
+        "value": "/10:312",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 80094,
+        "end": 80103,
+        "value": "/10:312",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 80438,
+        "end": 80446,
+        "value": "10:183",
+        "reason": "group source holes"
+      },
+      {
+        "start": 80525,
+        "end": 80534,
+        "value": "/10:183",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 80611,
+        "end": 80619,
+        "value": "10:195",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 80651,
+        "end": 80659,
+        "value": "10:299",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 80677,
+        "end": 80686,
+        "value": "/10:183",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 81492,
+        "end": 81499,
+        "value": "10:95",
+        "reason": "group source holes"
+      },
+      {
+        "start": 81591,
+        "end": 81599,
+        "value": "/10:95",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 81615,
+        "end": 81623,
+        "value": "/10:95",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 81652,
+        "end": 81660,
+        "value": "10:127",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 81694,
+        "end": 81702,
+        "value": "10:101",
+        "reason": "group source holes"
+      },
+      {
+        "start": 81781,
+        "end": 81790,
+        "value": "/10:101",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 81809,
+        "end": 81818,
+        "value": "/10:101",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 81860,
+        "end": 81868,
+        "value": "10:106",
+        "reason": "group source holes"
+      },
+      {
+        "start": 81920,
+        "end": 81929,
+        "value": "/10:106",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 81941,
+        "end": 81950,
+        "value": "/10:106",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 82460,
+        "end": 82468,
+        "value": "10:519",
+        "reason": "group source holes"
+      },
+      {
+        "start": 82719,
+        "end": 82737,
+        "value": "$producer/10:500",
+        "reason": "group source holes"
+      },
+      {
+        "start": 82831,
+        "end": 82839,
+        "value": "10:516",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 82887,
+        "end": 82895,
+        "value": "10:516",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 83484,
+        "end": 83492,
+        "value": "10:588",
+        "reason": "group source holes"
+      },
+      {
+        "start": 84055,
+        "end": 84063,
+        "value": "10:355",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 84151,
+        "end": 84158,
+        "value": "10:86",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 84214,
+        "end": 84222,
+        "value": "10:490",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 84260,
+        "end": 84268,
+        "value": "10:580",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 84398,
+        "end": 84405,
+        "value": "6:379",
+        "reason": "group source holes"
+      },
+      {
+        "start": 84507,
+        "end": 84514,
+        "value": "6:390",
+        "reason": "group source holes"
+      },
+      {
+        "start": 84612,
+        "end": 84619,
+        "value": "6:406",
+        "reason": "group source holes"
+      },
+      {
+        "start": 84706,
+        "end": 84714,
+        "value": "/6:406",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 84730,
+        "end": 84738,
+        "value": "/6:406",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 85161,
+        "end": 85168,
+        "value": "6:434",
+        "reason": "group source holes"
+      },
+      {
+        "start": 85169,
+        "end": 85176,
+        "value": "6:446",
+        "reason": "group source holes"
+      },
+      {
+        "start": 85177,
+        "end": 85184,
+        "value": "6:467",
+        "reason": "group source holes"
+      },
+      {
+        "start": 85361,
+        "end": 85369,
+        "value": "/6:446",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 85385,
+        "end": 85393,
+        "value": "/6:446",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 85423,
+        "end": 85431,
+        "value": "/6:467",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 85447,
+        "end": 85455,
+        "value": "/6:467",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 85504,
+        "end": 85511,
+        "value": "6:473",
+        "reason": "group source holes"
+      },
+      {
+        "start": 85598,
+        "end": 85606,
+        "value": "/6:473",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 85622,
+        "end": 85630,
+        "value": "/6:473",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 85758,
+        "end": 85765,
+        "value": "6:483",
+        "reason": "group source holes"
+      },
+      {
+        "start": 85844,
+        "end": 85852,
+        "value": "/6:483",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 85971,
+        "end": 85979,
+        "value": "/6:483",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 86021,
+        "end": 86028,
+        "value": "6:519",
+        "reason": "group source holes"
+      },
+      {
+        "start": 86148,
+        "end": 86156,
+        "value": "/6:519",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 86172,
+        "end": 86180,
+        "value": "/6:519",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 86422,
+        "end": 86429,
+        "value": "6:373",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 87185,
+        "end": 87192,
+        "value": "6:282",
+        "reason": "group source holes"
+      },
+      {
+        "start": 87279,
+        "end": 87287,
+        "value": "/6:282",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 87303,
+        "end": 87311,
+        "value": "/6:282",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 87494,
+        "end": 87511,
+        "value": "$producer/6:318",
+        "reason": "group source holes"
+      },
+      {
+        "start": 87886,
+        "end": 87893,
+        "value": "6:289",
+        "reason": "group source holes"
+      },
+      {
+        "start": 87969,
+        "end": 87977,
+        "value": "/6:289",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 88014,
+        "end": 88021,
+        "value": "6:308",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 88029,
+        "end": 88037,
+        "value": "/6:289",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 88365,
+        "end": 88372,
+        "value": "6:596",
+        "reason": "group source holes"
+      },
+      {
+        "start": 88552,
+        "end": 88559,
+        "value": "6:629",
+        "reason": "group source holes"
+      },
+      {
+        "start": 88560,
+        "end": 88567,
+        "value": "6:655",
+        "reason": "group source holes"
+      },
+      {
+        "start": 89326,
+        "end": 89343,
+        "value": "$producer/6:575",
+        "reason": "group source holes"
+      },
+      {
+        "start": 89482,
+        "end": 89489,
+        "value": "6:594",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 89543,
+        "end": 89550,
+        "value": "6:594",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 89922,
+        "end": 89929,
+        "value": "6:751",
+        "reason": "group source holes"
+      },
+      {
+        "start": 90213,
+        "end": 90220,
+        "value": "6:788",
+        "reason": "group source holes"
+      },
+      {
+        "start": 90663,
+        "end": 90680,
+        "value": "$producer/6:717",
+        "reason": "group source holes"
+      },
+      {
+        "start": 90802,
+        "end": 90809,
+        "value": "6:740",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 90881,
+        "end": 90888,
+        "value": "6:740",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 91640,
+        "end": 91647,
+        "value": "6:414",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 91680,
+        "end": 91687,
+        "value": "6:279",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 91758,
+        "end": 91765,
+        "value": "6:565",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 91801,
+        "end": 91808,
+        "value": "6:698",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 91952,
+        "end": 91959,
+        "value": "7:884",
+        "reason": "group source holes"
+      },
+      {
+        "start": 91960,
+        "end": 91967,
+        "value": "7:909",
+        "reason": "group source holes"
+      },
+      {
+        "start": 92586,
+        "end": 92603,
+        "value": "$producer/7:860",
+        "reason": "group source holes"
+      },
+      {
+        "start": 92703,
+        "end": 92710,
+        "value": "7:877",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 92760,
+        "end": 92767,
+        "value": "7:877",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 93307,
+        "end": 93314,
+        "value": "7:526",
+        "reason": "group source holes"
+      },
+      {
+        "start": 93387,
+        "end": 93395,
+        "value": "/7:526",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 93420,
+        "end": 93428,
+        "value": "/7:526",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 93558,
+        "end": 93565,
+        "value": "7:634",
+        "reason": "group source holes"
+      },
+      {
+        "start": 93670,
+        "end": 93678,
+        "value": "/7:634",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 93694,
+        "end": 93702,
+        "value": "/7:634",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 93938,
+        "end": 93945,
+        "value": "7:642",
+        "reason": "group source holes"
+      },
+      {
+        "start": 93946,
+        "end": 93953,
+        "value": "7:651",
+        "reason": "group source holes"
+      },
+      {
+        "start": 94024,
+        "end": 94032,
+        "value": "/7:642",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 94083,
+        "end": 94091,
+        "value": "/7:642",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 94130,
+        "end": 94138,
+        "value": "/7:651",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 94154,
+        "end": 94162,
+        "value": "/7:651",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 94598,
+        "end": 94605,
+        "value": "7:617",
+        "reason": "group source holes"
+      },
+      {
+        "start": 94692,
+        "end": 94700,
+        "value": "/7:617",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 94810,
+        "end": 94817,
+        "value": "7:625",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 94875,
+        "end": 94883,
+        "value": "/7:617",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 95013,
+        "end": 95020,
+        "value": "7:707",
+        "reason": "group source holes"
+      },
+      {
+        "start": 95093,
+        "end": 95101,
+        "value": "/7:707",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 95209,
+        "end": 95216,
+        "value": "7:850",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 95274,
+        "end": 95282,
+        "value": "/7:707",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 96808,
+        "end": 96815,
+        "value": "7:517",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 97101,
+        "end": 97110,
+        "value": "15:1094",
+        "reason": "group source holes"
+      },
+      {
+        "start": 97346,
+        "end": 97355,
+        "value": "15:1137",
+        "reason": "group source holes"
+      },
+      {
+        "start": 97603,
+        "end": 97612,
+        "value": "15:1185",
+        "reason": "group source holes"
+      },
+      {
+        "start": 97846,
+        "end": 97855,
+        "value": "15:1228",
+        "reason": "group source holes"
+      },
+      {
+        "start": 98089,
+        "end": 98098,
+        "value": "15:1276",
+        "reason": "group source holes"
+      },
+      {
+        "start": 100063,
+        "end": 100071,
+        "value": "15:950",
+        "reason": "group source holes"
+      },
+      {
+        "start": 100391,
+        "end": 100409,
+        "value": "$producer/15:928",
+        "reason": "group source holes"
+      },
+      {
+        "start": 100511,
+        "end": 100519,
+        "value": "15:946",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 100567,
+        "end": 100575,
+        "value": "15:946",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 100839,
+        "end": 100847,
+        "value": "15:978",
+        "reason": "group source holes"
+      },
+      {
+        "start": 100928,
+        "end": 100937,
+        "value": "/15:978",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 101050,
+        "end": 101059,
+        "value": "15:1047",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 101139,
+        "end": 101148,
+        "value": "/15:978",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 103864,
+        "end": 103872,
+        "value": "15:869",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 103954,
+        "end": 103961,
+        "value": "8:693",
+        "reason": "group source holes"
+      },
+      {
+        "start": 104281,
+        "end": 104298,
+        "value": "$producer/8:672",
+        "reason": "group source holes"
+      },
+      {
+        "start": 104392,
+        "end": 104399,
+        "value": "8:689",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 104447,
+        "end": 104454,
+        "value": "8:689",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 104720,
+        "end": 104727,
+        "value": "8:487",
+        "reason": "group source holes"
+      },
+      {
+        "start": 104864,
+        "end": 104871,
+        "value": "8:503",
+        "reason": "group source holes"
+      },
+      {
+        "start": 104958,
+        "end": 104966,
+        "value": "/8:503",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 104982,
+        "end": 104990,
+        "value": "/8:503",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 105017,
+        "end": 105024,
+        "value": "8:662",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 105178,
+        "end": 105185,
+        "value": "8:552",
+        "reason": "group source holes"
+      },
+      {
+        "start": 105425,
+        "end": 105432,
+        "value": "8:601",
+        "reason": "group source holes"
+      },
+      {
+        "start": 107612,
+        "end": 107619,
+        "value": "8:427",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 107698,
+        "end": 107706,
+        "value": "12:572",
+        "reason": "group source holes"
+      },
+      {
+        "start": 107843,
+        "end": 107851,
+        "value": "12:620",
+        "reason": "group source holes"
+      },
+      {
+        "start": 108171,
+        "end": 108189,
+        "value": "$producer/12:598",
+        "reason": "group source holes"
+      },
+      {
+        "start": 108291,
+        "end": 108299,
+        "value": "12:616",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 108347,
+        "end": 108355,
+        "value": "12:616",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 108534,
+        "end": 108542,
+        "value": "12:691",
+        "reason": "group source holes"
+      },
+      {
+        "start": 108796,
+        "end": 108804,
+        "value": "12:735",
+        "reason": "group source holes"
+      },
+      {
+        "start": 109044,
+        "end": 109052,
+        "value": "12:784",
+        "reason": "group source holes"
+      },
+      {
+        "start": 111831,
+        "end": 111839,
+        "value": "12:512",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 111919,
+        "end": 111927,
+        "value": "11:765",
+        "reason": "group source holes"
+      },
+      {
+        "start": 112014,
+        "end": 112023,
+        "value": "/11:765",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 112039,
+        "end": 112048,
+        "value": "/11:765",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 112091,
+        "end": 112099,
+        "value": "11:808",
+        "reason": "group source holes"
+      },
+      {
+        "start": 112100,
+        "end": 112108,
+        "value": "11:820",
+        "reason": "group source holes"
+      },
+      {
+        "start": 112109,
+        "end": 112117,
+        "value": "11:831",
+        "reason": "group source holes"
+      },
+      {
+        "start": 112235,
+        "end": 112244,
+        "value": "/11:808",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 112260,
+        "end": 112269,
+        "value": "/11:808",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 112472,
+        "end": 112480,
+        "value": "11:842",
+        "reason": "group source holes"
+      },
+      {
+        "start": 112568,
+        "end": 112577,
+        "value": "/11:842",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 112704,
+        "end": 112713,
+        "value": "/11:842",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 112843,
+        "end": 112851,
+        "value": "11:933",
+        "reason": "group source holes"
+      },
+      {
+        "start": 113037,
+        "end": 113046,
+        "value": "/11:933",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 113062,
+        "end": 113071,
+        "value": "/11:933",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 113111,
+        "end": 113119,
+        "value": "11:966",
+        "reason": "group source holes"
+      },
+      {
+        "start": 113120,
+        "end": 113128,
+        "value": "11:975",
+        "reason": "group source holes"
+      },
+      {
+        "start": 113199,
+        "end": 113208,
+        "value": "/11:966",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 113273,
+        "end": 113282,
+        "value": "/11:966",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 113321,
+        "end": 113330,
+        "value": "/11:975",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 113346,
+        "end": 113355,
+        "value": "/11:975",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 113778,
+        "end": 113786,
+        "value": "11:916",
+        "reason": "group source holes"
+      },
+      {
+        "start": 113862,
+        "end": 113871,
+        "value": "/11:916",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 113981,
+        "end": 113989,
+        "value": "11:924",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 114047,
+        "end": 114056,
+        "value": "/11:916",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 116739,
+        "end": 116747,
+        "value": "11:756",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 120400,
+        "end": 120408,
+        "value": "2:1327",
+        "reason": "group source holes"
+      },
+      {
+        "start": 120570,
+        "end": 120578,
+        "value": "2:1348",
+        "reason": "group source holes"
+      },
+      {
+        "start": 120579,
+        "end": 120587,
+        "value": "2:1358",
+        "reason": "group source holes"
+      },
+      {
+        "start": 120588,
+        "end": 120596,
+        "value": "2:1390",
+        "reason": "group source holes"
+      },
+      {
+        "start": 121578,
+        "end": 121586,
+        "value": "2:1409",
+        "reason": "group source holes"
+      },
+      {
+        "start": 121752,
+        "end": 121761,
+        "value": "/2:1409",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 121777,
+        "end": 121786,
+        "value": "/2:1409",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 121830,
+        "end": 121838,
+        "value": "2:1425",
+        "reason": "group source holes"
+      },
+      {
+        "start": 121948,
+        "end": 121956,
+        "value": "2:1431",
+        "reason": "group source holes"
+      },
+      {
+        "start": 122122,
+        "end": 122131,
+        "value": "/2:1431",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 122147,
+        "end": 122156,
+        "value": "/2:1431",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 122796,
+        "end": 122804,
+        "value": "2:1223",
+        "reason": "group source holes"
+      },
+      {
+        "start": 122805,
+        "end": 122813,
+        "value": "2:1233",
+        "reason": "group source holes"
+      },
+      {
+        "start": 122814,
+        "end": 122822,
+        "value": "2:1253",
+        "reason": "group source holes"
+      },
+      {
+        "start": 122997,
+        "end": 123006,
+        "value": "/2:1233",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 123022,
+        "end": 123031,
+        "value": "/2:1233",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 123061,
+        "end": 123070,
+        "value": "/2:1253",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 123086,
+        "end": 123095,
+        "value": "/2:1253",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 123144,
+        "end": 123152,
+        "value": "2:1259",
+        "reason": "group source holes"
+      },
+      {
+        "start": 123239,
+        "end": 123248,
+        "value": "/2:1259",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 123264,
+        "end": 123273,
+        "value": "/2:1259",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 123401,
+        "end": 123409,
+        "value": "2:1269",
+        "reason": "group source holes"
+      },
+      {
+        "start": 123490,
+        "end": 123499,
+        "value": "/2:1269",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 123583,
+        "end": 123591,
+        "value": "2:1316",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 123618,
+        "end": 123626,
+        "value": "2:1405",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 123654,
+        "end": 123663,
+        "value": "/2:1269",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 124593,
+        "end": 124601,
+        "value": "2:1636",
+        "reason": "group source holes"
+      },
+      {
+        "start": 124704,
+        "end": 124712,
+        "value": "2:1641",
+        "reason": "group source holes"
+      },
+      {
+        "start": 124713,
+        "end": 124721,
+        "value": "2:1682",
+        "reason": "group source holes"
+      },
+      {
+        "start": 125006,
+        "end": 125014,
+        "value": "2:1666",
+        "reason": "group source holes"
+      },
+      {
+        "start": 125101,
+        "end": 125110,
+        "value": "/2:1666",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 125126,
+        "end": 125135,
+        "value": "/2:1666",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 125948,
+        "end": 125956,
+        "value": "2:1708",
+        "reason": "group source holes"
+      },
+      {
+        "start": 125957,
+        "end": 125965,
+        "value": "2:1720",
+        "reason": "group source holes"
+      },
+      {
+        "start": 125966,
+        "end": 125974,
+        "value": "2:1728",
+        "reason": "group source holes"
+      },
+      {
+        "start": 125975,
+        "end": 125983,
+        "value": "2:1740",
+        "reason": "group source holes"
+      },
+      {
+        "start": 126668,
+        "end": 126676,
+        "value": "2:1795",
+        "reason": "group source holes"
+      },
+      {
+        "start": 126777,
+        "end": 126785,
+        "value": "2:1822",
+        "reason": "group source holes"
+      },
+      {
+        "start": 126786,
+        "end": 126794,
+        "value": "2:1834",
+        "reason": "group source holes"
+      },
+      {
+        "start": 126795,
+        "end": 126803,
+        "value": "2:1860",
+        "reason": "group source holes"
+      },
+      {
+        "start": 126804,
+        "end": 126812,
+        "value": "2:1872",
+        "reason": "group source holes"
+      },
+      {
+        "start": 127021,
+        "end": 127030,
+        "value": "/2:1834",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 127046,
+        "end": 127055,
+        "value": "/2:1834",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 127200,
+        "end": 127208,
+        "value": "2:1847",
+        "reason": "group source holes"
+      },
+      {
+        "start": 127318,
+        "end": 127326,
+        "value": "2:1881",
+        "reason": "group source holes"
+      },
+      {
+        "start": 127413,
+        "end": 127422,
+        "value": "/2:1881",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 127438,
+        "end": 127447,
+        "value": "/2:1881",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 128049,
+        "end": 128057,
+        "value": "2:1887",
+        "reason": "group source holes"
+      },
+      {
+        "start": 128165,
+        "end": 128174,
+        "value": "/2:1887",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 128255,
+        "end": 128263,
+        "value": "2:1904",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 128315,
+        "end": 128324,
+        "value": "/2:1887",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 129363,
+        "end": 129371,
+        "value": "2:1479",
+        "reason": "group source holes"
+      },
+      {
+        "start": 129500,
+        "end": 129509,
+        "value": "/2:1479",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 129525,
+        "end": 129534,
+        "value": "/2:1479",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 129652,
+        "end": 129660,
+        "value": "2:1580",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 129783,
+        "end": 129791,
+        "value": "2:1580",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 129821,
+        "end": 129829,
+        "value": "2:1702",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 129863,
+        "end": 129881,
+        "value": "$producer/2:1488",
+        "reason": "group source holes"
+      },
+      {
+        "start": 130498,
+        "end": 130506,
+        "value": "2:1008",
+        "reason": "group source holes"
+      },
+      {
+        "start": 130608,
+        "end": 130616,
+        "value": "2:1016",
+        "reason": "group source holes"
+      },
+      {
+        "start": 130617,
+        "end": 130625,
+        "value": "2:1096",
+        "reason": "group source holes"
+      },
+      {
+        "start": 130717,
+        "end": 130726,
+        "value": "/2:1016",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 130742,
+        "end": 130751,
+        "value": "/2:1016",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 130789,
+        "end": 130798,
+        "value": "/2:1096",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 130814,
+        "end": 130823,
+        "value": "/2:1096",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 130874,
+        "end": 130882,
+        "value": "2:1022",
+        "reason": "group source holes"
+      },
+      {
+        "start": 130969,
+        "end": 130978,
+        "value": "/2:1022",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 130994,
+        "end": 131003,
+        "value": "/2:1022",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 131046,
+        "end": 131054,
+        "value": "2:1064",
+        "reason": "group source holes"
+      },
+      {
+        "start": 131147,
+        "end": 131156,
+        "value": "/2:1064",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 131172,
+        "end": 131181,
+        "value": "/2:1064",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 131221,
+        "end": 131229,
+        "value": "2:1070",
+        "reason": "group source holes"
+      },
+      {
+        "start": 131316,
+        "end": 131325,
+        "value": "/2:1070",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 131341,
+        "end": 131350,
+        "value": "/2:1070",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 131390,
+        "end": 131398,
+        "value": "2:1123",
+        "reason": "group source holes"
+      },
+      {
+        "start": 131502,
+        "end": 131511,
+        "value": "/2:1123",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 131527,
+        "end": 131536,
+        "value": "/2:1123",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 131649,
+        "end": 131657,
+        "value": "2:1476",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 135083,
+        "end": 135091,
+        "value": "2:1212",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 135134,
+        "end": 135142,
+        "value": "2:1770",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 135318,
+        "end": 135325,
+        "value": "2:978",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 135436,
+        "end": 135444,
+        "value": "5:1179",
+        "reason": "group source holes"
+      },
+      {
+        "start": 135764,
+        "end": 135782,
+        "value": "$producer/5:1158",
+        "reason": "group source holes"
+      },
+      {
+        "start": 135876,
+        "end": 135884,
+        "value": "5:1175",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 135932,
+        "end": 135940,
+        "value": "5:1175",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 136147,
+        "end": 136155,
+        "value": "5:1227",
+        "reason": "group source holes"
+      },
+      {
+        "start": 136269,
+        "end": 136277,
+        "value": "5:1260",
+        "reason": "group source holes"
+      },
+      {
+        "start": 136526,
+        "end": 136534,
+        "value": "5:1303",
+        "reason": "group source holes"
+      },
+      {
+        "start": 136775,
+        "end": 136783,
+        "value": "5:1351",
+        "reason": "group source holes"
+      },
+      {
+        "start": 137030,
+        "end": 137038,
+        "value": "5:1394",
+        "reason": "group source holes"
+      },
+      {
+        "start": 137285,
+        "end": 137293,
+        "value": "5:1419",
+        "reason": "group source holes"
+      },
+      {
+        "start": 139218,
+        "end": 139226,
+        "value": "5:1030",
+        "reason": "group source holes"
+      },
+      {
+        "start": 139312,
+        "end": 139321,
+        "value": "/5:1030",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 139657,
+        "end": 139666,
+        "value": "/5:1030",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 142275,
+        "end": 142283,
+        "value": "5:1145",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 142482,
+        "end": 142489,
+        "value": "5:994",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 145497,
+        "end": 145511,
+        "value": "$call/2:1016",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 145614,
+        "end": 145635,
+        "value": "$call/2:1016/2:1259",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 145738,
+        "end": 145759,
+        "value": "1:749/2:1016/2:1259",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 145862,
+        "end": 145876,
+        "value": "$call/2:1096",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 145979,
+        "end": 146000,
+        "value": "$call/2:1096/2:1259",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 146103,
+        "end": 146124,
+        "value": "1:749/2:1096/2:1259",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 146227,
+        "end": 146241,
+        "value": "$call/2:1123",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 146344,
+        "end": 146365,
+        "value": "$call/2:1123/2:1881",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 146468,
+        "end": 146489,
+        "value": "1:749/2:1123/2:1881",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 146592,
+        "end": 146605,
+        "value": "$call/7:617",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 146708,
+        "end": 146727,
+        "value": "$call/7:617/7:642",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 146830,
+        "end": 146855,
+        "value": "$call/7:617/7:642/6:289",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 146958,
+        "end": 146989,
+        "value": "$call/7:617/7:642/6:289/6:473",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 147092,
+        "end": 147123,
+        "value": "1:749/7:617/7:642/6:289/6:473",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 147226,
+        "end": 147240,
+        "value": "$call/11:916",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 147343,
+        "end": 147364,
+        "value": "$call/11:916/11:966",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 147467,
+        "end": 147494,
+        "value": "$call/11:916/11:966/6:289",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 147597,
+        "end": 147630,
+        "value": "$call/11:916/11:966/6:289/6:473",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 147733,
+        "end": 147766,
+        "value": "1:749/11:916/11:966/6:289/6:473",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 147869,
+        "end": 147883,
+        "value": "$call/2:1064",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 147986,
+        "end": 148000,
+        "value": "1:775/2:1064",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 148103,
+        "end": 148117,
+        "value": "1:798/2:1064",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 148220,
+        "end": 148234,
+        "value": "$call/2:1070",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 148337,
+        "end": 148351,
+        "value": "1:833/2:1070",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 148454,
+        "end": 148485,
+        "value": "$call/7:617/7:642/6:289/6:406",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 148588,
+        "end": 148619,
+        "value": "1:833/7:617/7:642/6:289/6:406",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 148722,
+        "end": 148755,
+        "value": "$call/11:916/11:966/6:289/6:406",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 148858,
+        "end": 148891,
+        "value": "1:833/11:916/11:966/6:289/6:406",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 148994,
+        "end": 149008,
+        "value": "1:858/2:1070",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 149111,
+        "end": 149142,
+        "value": "1:858/7:617/7:642/6:289/6:406",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 149245,
+        "end": 149278,
+        "value": "1:858/11:916/11:966/6:289/6:406",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 149381,
+        "end": 149402,
+        "value": "$call/2:1016/2:1269",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 149505,
+        "end": 149533,
+        "value": "$call/2:1016/2:1269/2:1431",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 149636,
+        "end": 149664,
+        "value": "1:898/2:1016/2:1269/2:1431",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 149767,
+        "end": 149788,
+        "value": "$call/2:1096/2:1269",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 149891,
+        "end": 149919,
+        "value": "$call/2:1096/2:1269/2:1431",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 150022,
+        "end": 150050,
+        "value": "1:898/2:1096/2:1269/2:1431",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 150153,
+        "end": 150184,
+        "value": "$call/7:617/7:642/6:289/6:483",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 150287,
+        "end": 150318,
+        "value": "1:898/7:617/7:642/6:289/6:483",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 150421,
+        "end": 150454,
+        "value": "$call/11:916/11:966/6:289/6:483",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 150557,
+        "end": 150590,
+        "value": "1:898/11:916/11:966/6:289/6:483",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 150693,
+        "end": 150721,
+        "value": "1:922/2:1016/2:1269/2:1431",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 150824,
+        "end": 150852,
+        "value": "1:922/2:1096/2:1269/2:1431",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 150955,
+        "end": 150986,
+        "value": "1:922/7:617/7:642/6:289/6:483",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 151089,
+        "end": 151122,
+        "value": "1:922/11:916/11:966/6:289/6:483",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 151225,
+        "end": 151253,
+        "value": "1:939/2:1016/2:1269/2:1431",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 151356,
+        "end": 151384,
+        "value": "1:939/2:1096/2:1269/2:1431",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 151487,
+        "end": 151518,
+        "value": "1:939/7:617/7:642/6:289/6:483",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 151621,
+        "end": 151654,
+        "value": "1:939/11:916/11:966/6:289/6:483",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 151757,
+        "end": 151785,
+        "value": "1:963/2:1016/2:1269/2:1431",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 151888,
+        "end": 151916,
+        "value": "1:963/2:1096/2:1269/2:1431",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 152019,
+        "end": 152050,
+        "value": "1:963/7:617/7:642/6:289/6:483",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 152153,
+        "end": 152186,
+        "value": "1:963/11:916/11:966/6:289/6:483",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 152289,
+        "end": 152320,
+        "value": "$call/7:617/7:642/6:289/6:519",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 152423,
+        "end": 152454,
+        "value": "1:998/7:617/7:642/6:289/6:519",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 152557,
+        "end": 152590,
+        "value": "$call/11:916/11:966/6:289/6:519",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 152693,
+        "end": 152726,
+        "value": "1:998/11:916/11:966/6:289/6:519",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 152829,
+        "end": 152861,
+        "value": "1:1009/7:617/7:642/6:289/6:519",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 152964,
+        "end": 152998,
+        "value": "1:1009/11:916/11:966/6:289/6:519",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 153101,
+        "end": 153109,
+        "value": "2:1008",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 153212,
+        "end": 153220,
+        "value": "2:1016",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 153323,
+        "end": 153331,
+        "value": "2:1022",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 153434,
+        "end": 153442,
+        "value": "2:1064",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 153545,
+        "end": 153553,
+        "value": "2:1070",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 153656,
+        "end": 153664,
+        "value": "2:1096",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 153767,
+        "end": 153775,
+        "value": "2:1123",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 153878,
+        "end": 153893,
+        "value": "2:1223/2:1016",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 153996,
+        "end": 154011,
+        "value": "2:1223/2:1096",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 154114,
+        "end": 154129,
+        "value": "2:1233/2:1016",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 154232,
+        "end": 154247,
+        "value": "2:1233/2:1096",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 154350,
+        "end": 154365,
+        "value": "2:1253/2:1016",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 154468,
+        "end": 154483,
+        "value": "2:1253/2:1096",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 154586,
+        "end": 154601,
+        "value": "2:1259/2:1016",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 154704,
+        "end": 154719,
+        "value": "2:1259/2:1096",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 154822,
+        "end": 154837,
+        "value": "2:1269/2:1016",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 154940,
+        "end": 154955,
+        "value": "2:1269/2:1096",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 155058,
+        "end": 155080,
+        "value": "2:1327/2:1016/2:1269",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 155183,
+        "end": 155205,
+        "value": "2:1327/2:1096/2:1269",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 155308,
+        "end": 155330,
+        "value": "2:1348/2:1016/2:1269",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 155433,
+        "end": 155455,
+        "value": "2:1348/2:1096/2:1269",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 155558,
+        "end": 155580,
+        "value": "2:1358/2:1016/2:1269",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 155683,
+        "end": 155705,
+        "value": "2:1358/2:1096/2:1269",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 155808,
+        "end": 155830,
+        "value": "2:1390/2:1016/2:1269",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 155933,
+        "end": 155955,
+        "value": "2:1390/2:1096/2:1269",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 156058,
+        "end": 156080,
+        "value": "2:1409/2:1016/2:1269",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 156183,
+        "end": 156205,
+        "value": "2:1409/2:1096/2:1269",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 156308,
+        "end": 156330,
+        "value": "2:1425/2:1016/2:1269",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 156433,
+        "end": 156455,
+        "value": "2:1425/2:1096/2:1269",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 156558,
+        "end": 156580,
+        "value": "2:1431/2:1016/2:1269",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 156683,
+        "end": 156705,
+        "value": "2:1431/2:1096/2:1269",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 156808,
+        "end": 156823,
+        "value": "2:1479/2:1123",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 156926,
+        "end": 156941,
+        "value": "2:1488/2:1123",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 157044,
+        "end": 157065,
+        "value": "$call/2:1123/2:1479",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 157168,
+        "end": 157190,
+        "value": "2:1631/2:1123/2:1479",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 157293,
+        "end": 157315,
+        "value": "2:1636/2:1123/2:1479",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 157418,
+        "end": 157440,
+        "value": "2:1641/2:1123/2:1479",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 157543,
+        "end": 157565,
+        "value": "2:1666/2:1123/2:1479",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 157668,
+        "end": 157690,
+        "value": "2:1682/2:1123/2:1479",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 157793,
+        "end": 157815,
+        "value": "2:1708/2:1123/2:1479",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 157918,
+        "end": 157940,
+        "value": "2:1720/2:1123/2:1479",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 158043,
+        "end": 158065,
+        "value": "2:1728/2:1123/2:1479",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 158168,
+        "end": 158190,
+        "value": "2:1740/2:1123/2:1479",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 158293,
+        "end": 158308,
+        "value": "2:1795/2:1123",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 158411,
+        "end": 158426,
+        "value": "2:1822/2:1123",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 158529,
+        "end": 158544,
+        "value": "2:1834/2:1123",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 158647,
+        "end": 158662,
+        "value": "2:1847/2:1123",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 158765,
+        "end": 158780,
+        "value": "2:1860/2:1123",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 158883,
+        "end": 158898,
+        "value": "2:1872/2:1123",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 159001,
+        "end": 159016,
+        "value": "2:1881/2:1123",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 159119,
+        "end": 159134,
+        "value": "2:1887/2:1123",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 159237,
+        "end": 159258,
+        "value": "$call/2:1016/2:1233",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 159361,
+        "end": 159382,
+        "value": "3:360/2:1016/2:1233",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 159485,
+        "end": 159506,
+        "value": "$call/2:1096/2:1233",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 159609,
+        "end": 159630,
+        "value": "3:360/2:1096/2:1233",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 159733,
+        "end": 159761,
+        "value": "$call/2:1123/2:1479/2:1666",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 159864,
+        "end": 159892,
+        "value": "3:360/2:1123/2:1479/2:1666",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 159995,
+        "end": 160016,
+        "value": "$call/2:1123/2:1834",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 160119,
+        "end": 160140,
+        "value": "3:360/2:1123/2:1834",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 160243,
+        "end": 160274,
+        "value": "$call/7:617/7:642/6:289/6:446",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 160377,
+        "end": 160408,
+        "value": "3:360/7:617/7:642/6:289/6:446",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 160511,
+        "end": 160524,
+        "value": "$call/10:95",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 160627,
+        "end": 160647,
+        "value": "$call/10:95/10:183",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 160750,
+        "end": 160777,
+        "value": "$call/10:95/10:183/10:264",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 160880,
+        "end": 160907,
+        "value": "3:360/10:95/10:183/10:264",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 161010,
+        "end": 161024,
+        "value": "$call/11:808",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 161127,
+        "end": 161141,
+        "value": "3:360/11:808",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 161244,
+        "end": 161277,
+        "value": "$call/11:916/11:966/6:289/6:446",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 161380,
+        "end": 161413,
+        "value": "3:360/11:916/11:966/6:289/6:446",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 161516,
+        "end": 161537,
+        "value": "3:365/2:1016/2:1233",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 161640,
+        "end": 161661,
+        "value": "3:365/2:1096/2:1233",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 161764,
+        "end": 161792,
+        "value": "3:365/2:1123/2:1479/2:1666",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 161895,
+        "end": 161916,
+        "value": "3:365/2:1123/2:1834",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 162019,
+        "end": 162050,
+        "value": "3:365/7:617/7:642/6:289/6:446",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 162153,
+        "end": 162180,
+        "value": "3:365/10:95/10:183/10:264",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 162283,
+        "end": 162297,
+        "value": "3:365/11:808",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 162400,
+        "end": 162433,
+        "value": "3:365/11:916/11:966/6:289/6:446",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 162536,
+        "end": 162557,
+        "value": "$call/2:1016/2:1253",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 162660,
+        "end": 162681,
+        "value": "3:393/2:1016/2:1253",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 162784,
+        "end": 162805,
+        "value": "$call/2:1096/2:1253",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 162908,
+        "end": 162929,
+        "value": "3:393/2:1096/2:1253",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 163032,
+        "end": 163063,
+        "value": "$call/7:617/7:642/6:289/6:467",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 163166,
+        "end": 163197,
+        "value": "3:393/7:617/7:642/6:289/6:467",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 163300,
+        "end": 163333,
+        "value": "$call/11:916/11:966/6:289/6:467",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 163436,
+        "end": 163469,
+        "value": "3:393/11:916/11:966/6:289/6:467",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 163572,
+        "end": 163593,
+        "value": "3:403/2:1016/2:1253",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 163696,
+        "end": 163717,
+        "value": "3:403/2:1096/2:1253",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 163820,
+        "end": 163851,
+        "value": "3:403/7:617/7:642/6:289/6:467",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 163954,
+        "end": 163987,
+        "value": "3:403/11:916/11:966/6:289/6:467",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 164090,
+        "end": 164118,
+        "value": "$call/2:1016/2:1269/2:1409",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 164221,
+        "end": 164249,
+        "value": "3:461/2:1016/2:1269/2:1409",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 164352,
+        "end": 164380,
+        "value": "$call/2:1096/2:1269/2:1409",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 164483,
+        "end": 164511,
+        "value": "3:461/2:1096/2:1269/2:1409",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 164614,
+        "end": 164628,
+        "value": "$call/11:842",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 164731,
+        "end": 164745,
+        "value": "3:461/11:842",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 164848,
+        "end": 164876,
+        "value": "3:500/2:1016/2:1269/2:1409",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 164979,
+        "end": 165007,
+        "value": "3:500/2:1096/2:1269/2:1409",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 165110,
+        "end": 165124,
+        "value": "3:500/11:842",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 165227,
+        "end": 165235,
+        "value": "5:1030",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 165338,
+        "end": 165352,
+        "value": "$call/5:1030",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 165455,
+        "end": 165470,
+        "value": "5:1158/5:1030",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 165573,
+        "end": 165588,
+        "value": "5:1179/5:1030",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 165691,
+        "end": 165706,
+        "value": "5:1227/5:1030",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 165809,
+        "end": 165824,
+        "value": "5:1260/5:1030",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 165927,
+        "end": 165942,
+        "value": "5:1303/5:1030",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 166045,
+        "end": 166060,
+        "value": "5:1341/5:1030",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 166163,
+        "end": 166178,
+        "value": "5:1351/5:1030",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 166281,
+        "end": 166296,
+        "value": "5:1394/5:1030",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 166399,
+        "end": 166414,
+        "value": "5:1419/5:1030",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 166517,
+        "end": 166536,
+        "value": "6:282/7:617/7:642",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 166639,
+        "end": 166660,
+        "value": "6:282/11:916/11:966",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 166763,
+        "end": 166782,
+        "value": "6:289/7:617/7:642",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 166885,
+        "end": 166906,
+        "value": "6:289/11:916/11:966",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 167009,
+        "end": 167034,
+        "value": "6:318/7:617/7:642/6:289",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 167137,
+        "end": 167164,
+        "value": "6:318/11:916/11:966/6:289",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 167267,
+        "end": 167292,
+        "value": "6:379/7:617/7:642/6:289",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 167395,
+        "end": 167422,
+        "value": "6:379/11:916/11:966/6:289",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 167525,
+        "end": 167550,
+        "value": "6:390/7:617/7:642/6:289",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 167653,
+        "end": 167680,
+        "value": "6:390/11:916/11:966/6:289",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 167783,
+        "end": 167808,
+        "value": "6:406/7:617/7:642/6:289",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 167911,
+        "end": 167938,
+        "value": "6:406/11:916/11:966/6:289",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 168041,
+        "end": 168066,
+        "value": "6:434/7:617/7:642/6:289",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 168169,
+        "end": 168196,
+        "value": "6:434/11:916/11:966/6:289",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 168299,
+        "end": 168324,
+        "value": "6:446/7:617/7:642/6:289",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 168427,
+        "end": 168454,
+        "value": "6:446/11:916/11:966/6:289",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 168557,
+        "end": 168582,
+        "value": "6:467/7:617/7:642/6:289",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 168685,
+        "end": 168712,
+        "value": "6:467/11:916/11:966/6:289",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 168815,
+        "end": 168840,
+        "value": "6:473/7:617/7:642/6:289",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 168943,
+        "end": 168970,
+        "value": "6:473/11:916/11:966/6:289",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 169073,
+        "end": 169098,
+        "value": "6:483/7:617/7:642/6:289",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 169201,
+        "end": 169228,
+        "value": "6:483/11:916/11:966/6:289",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 169331,
+        "end": 169356,
+        "value": "6:519/7:617/7:642/6:289",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 169459,
+        "end": 169486,
+        "value": "6:519/11:916/11:966/6:289",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 169589,
+        "end": 169608,
+        "value": "$call/7:617/7:651",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 169711,
+        "end": 169730,
+        "value": "6:575/7:617/7:651",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 169833,
+        "end": 169854,
+        "value": "$call/11:916/11:975",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 169957,
+        "end": 169978,
+        "value": "6:575/11:916/11:975",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 170081,
+        "end": 170100,
+        "value": "6:596/7:617/7:651",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 170203,
+        "end": 170224,
+        "value": "6:596/11:916/11:975",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 170327,
+        "end": 170346,
+        "value": "6:629/7:617/7:651",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 170449,
+        "end": 170470,
+        "value": "6:629/11:916/11:975",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 170573,
+        "end": 170592,
+        "value": "6:655/7:617/7:651",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 170695,
+        "end": 170716,
+        "value": "6:655/11:916/11:975",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 170819,
+        "end": 170838,
+        "value": "$call/7:617/7:634",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 170941,
+        "end": 170960,
+        "value": "6:717/7:617/7:634",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 171063,
+        "end": 171084,
+        "value": "$call/11:916/11:933",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 171187,
+        "end": 171208,
+        "value": "6:717/11:916/11:933",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 171311,
+        "end": 171330,
+        "value": "6:751/7:617/7:634",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 171433,
+        "end": 171454,
+        "value": "6:751/11:916/11:933",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 171557,
+        "end": 171576,
+        "value": "6:788/7:617/7:634",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 171679,
+        "end": 171700,
+        "value": "6:788/11:916/11:933",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 171803,
+        "end": 171810,
+        "value": "7:526",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 171913,
+        "end": 171920,
+        "value": "7:617",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 172023,
+        "end": 172036,
+        "value": "7:634/7:617",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 172139,
+        "end": 172152,
+        "value": "7:642/7:617",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 172255,
+        "end": 172268,
+        "value": "7:651/7:617",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 172371,
+        "end": 172378,
+        "value": "7:707",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 172481,
+        "end": 172494,
+        "value": "$call/7:707",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 172597,
+        "end": 172610,
+        "value": "7:860/7:707",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 172713,
+        "end": 172726,
+        "value": "7:884/7:707",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 172829,
+        "end": 172842,
+        "value": "7:909/7:707",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 172945,
+        "end": 172952,
+        "value": "8:487",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 173055,
+        "end": 173062,
+        "value": "8:503",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 173165,
+        "end": 173172,
+        "value": "8:552",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 173275,
+        "end": 173282,
+        "value": "8:601",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 173385,
+        "end": 173398,
+        "value": "$call/8:503",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 173501,
+        "end": 173514,
+        "value": "8:672/8:503",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 173617,
+        "end": 173630,
+        "value": "8:693/8:503",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 173733,
+        "end": 173740,
+        "value": "9:187",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 173843,
+        "end": 173850,
+        "value": "10:95",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 173953,
+        "end": 173961,
+        "value": "10:101",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 174064,
+        "end": 174072,
+        "value": "10:106",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 174175,
+        "end": 174189,
+        "value": "10:152/10:95",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 174292,
+        "end": 174306,
+        "value": "10:173/10:95",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 174409,
+        "end": 174423,
+        "value": "10:183/10:95",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 174526,
+        "end": 174547,
+        "value": "10:198/10:95/10:183",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 174650,
+        "end": 174671,
+        "value": "10:208/10:95/10:183",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 174774,
+        "end": 174795,
+        "value": "10:220/10:95/10:183",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 174898,
+        "end": 174919,
+        "value": "10:253/10:95/10:183",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 175022,
+        "end": 175043,
+        "value": "10:264/10:95/10:183",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 175146,
+        "end": 175167,
+        "value": "10:273/10:95/10:183",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 175270,
+        "end": 175291,
+        "value": "10:285/10:95/10:183",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 175394,
+        "end": 175415,
+        "value": "10:302/10:95/10:183",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 175518,
+        "end": 175539,
+        "value": "10:312/10:95/10:183",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 175642,
+        "end": 175662,
+        "value": "$call/10:95/10:173",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 175765,
+        "end": 175786,
+        "value": "10:357/10:95/10:173",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 175889,
+        "end": 175916,
+        "value": "$call/10:95/10:183/10:198",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 176019,
+        "end": 176047,
+        "value": "10:357/10:95/10:183/10:198",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 176150,
+        "end": 176177,
+        "value": "$call/10:95/10:183/10:208",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 176280,
+        "end": 176308,
+        "value": "10:357/10:95/10:183/10:208",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 176411,
+        "end": 176438,
+        "value": "$call/10:95/10:183/10:285",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 176541,
+        "end": 176569,
+        "value": "10:357/10:95/10:183/10:285",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 176672,
+        "end": 176699,
+        "value": "$call/10:95/10:183/10:302",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 176802,
+        "end": 176830,
+        "value": "10:357/10:95/10:183/10:302",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 176933,
+        "end": 176960,
+        "value": "$call/10:95/10:183/10:312",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 177063,
+        "end": 177091,
+        "value": "10:357/10:95/10:183/10:312",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 177194,
+        "end": 177215,
+        "value": "10:393/10:95/10:173",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 177318,
+        "end": 177346,
+        "value": "10:393/10:95/10:183/10:198",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 177449,
+        "end": 177477,
+        "value": "10:393/10:95/10:183/10:208",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 177580,
+        "end": 177608,
+        "value": "10:393/10:95/10:183/10:285",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 177711,
+        "end": 177739,
+        "value": "10:393/10:95/10:183/10:302",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 177842,
+        "end": 177870,
+        "value": "10:393/10:95/10:183/10:312",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 177973,
+        "end": 177994,
+        "value": "10:400/10:95/10:173",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 178097,
+        "end": 178125,
+        "value": "10:400/10:95/10:183/10:198",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 178228,
+        "end": 178256,
+        "value": "10:400/10:95/10:183/10:208",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 178359,
+        "end": 178387,
+        "value": "10:400/10:95/10:183/10:285",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 178490,
+        "end": 178518,
+        "value": "10:400/10:95/10:183/10:302",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 178621,
+        "end": 178649,
+        "value": "10:400/10:95/10:183/10:312",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 178752,
+        "end": 178766,
+        "value": "$call/2:1022",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 178869,
+        "end": 178884,
+        "value": "10:500/2:1022",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 178987,
+        "end": 179012,
+        "value": "$call/7:617/7:642/6:282",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 179115,
+        "end": 179141,
+        "value": "10:500/7:617/7:642/6:282",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 179244,
+        "end": 179258,
+        "value": "$call/11:765",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 179361,
+        "end": 179376,
+        "value": "10:500/11:765",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 179479,
+        "end": 179506,
+        "value": "$call/11:916/11:966/6:282",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 179609,
+        "end": 179637,
+        "value": "10:500/11:916/11:966/6:282",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 179740,
+        "end": 179755,
+        "value": "10:519/2:1022",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 179858,
+        "end": 179884,
+        "value": "10:519/7:617/7:642/6:282",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 179987,
+        "end": 180002,
+        "value": "10:519/11:765",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 180105,
+        "end": 180133,
+        "value": "10:519/11:916/11:966/6:282",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 180236,
+        "end": 180244,
+        "value": "10:588",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 180347,
+        "end": 180362,
+        "value": "10:588/2:1123",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 180465,
+        "end": 180479,
+        "value": "10:588/7:617",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 180582,
+        "end": 180596,
+        "value": "10:588/7:707",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 180699,
+        "end": 180714,
+        "value": "10:588/11:916",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 180817,
+        "end": 180831,
+        "value": "$call/15:978",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 180934,
+        "end": 180949,
+        "value": "10:588/15:978",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 181052,
+        "end": 181060,
+        "value": "11:765",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 181163,
+        "end": 181171,
+        "value": "11:808",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 181274,
+        "end": 181282,
+        "value": "11:820",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 181385,
+        "end": 181393,
+        "value": "11:831",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 181496,
+        "end": 181504,
+        "value": "11:842",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 181607,
+        "end": 181615,
+        "value": "11:916",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 181718,
+        "end": 181733,
+        "value": "11:933/11:916",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 181836,
+        "end": 181851,
+        "value": "11:966/11:916",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 181954,
+        "end": 181969,
+        "value": "11:975/11:916",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 182072,
+        "end": 182080,
+        "value": "12:572",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 182183,
+        "end": 182191,
+        "value": "12:598",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 182294,
+        "end": 182302,
+        "value": "12:620",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 182405,
+        "end": 182413,
+        "value": "12:691",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 182516,
+        "end": 182524,
+        "value": "12:735",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 182627,
+        "end": 182635,
+        "value": "12:784",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 182738,
+        "end": 182746,
+        "value": "15:928",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 182849,
+        "end": 182857,
+        "value": "15:950",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 182960,
+        "end": 182968,
+        "value": "15:978",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 183071,
+        "end": 183087,
+        "value": "15:1094/15:978",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 183190,
+        "end": 183206,
+        "value": "15:1137/15:978",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 183309,
+        "end": 183325,
+        "value": "15:1175/15:978",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 183428,
+        "end": 183444,
+        "value": "15:1185/15:978",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 183547,
+        "end": 183563,
+        "value": "15:1228/15:978",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 183666,
+        "end": 183682,
+        "value": "15:1276/15:978",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 183785,
+        "end": 183803,
+        "value": "$producer/15:928",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 183906,
+        "end": 183935,
+        "value": "$producer/6:717/7:617/7:634",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 184038,
+        "end": 184074,
+        "value": "$producer/10:500/7:617/7:642/6:282",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 184177,
+        "end": 184218,
+        "value": "$producer/1:833/7:617/7:642/6:289/6:406",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 184321,
+        "end": 184356,
+        "value": "$producer/6:318/7:617/7:642/6:289",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 184459,
+        "end": 184488,
+        "value": "$producer/6:575/7:617/7:651",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 184591,
+        "end": 184614,
+        "value": "$producer/7:860/7:707",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 184717,
+        "end": 184740,
+        "value": "$producer/8:672/8:503",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 184843,
+        "end": 184861,
+        "value": "$producer/12:598",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 184964,
+        "end": 184989,
+        "value": "$producer/10:500/11:765",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 185092,
+        "end": 185123,
+        "value": "$producer/6:717/11:916/11:933",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 185226,
+        "end": 185264,
+        "value": "$producer/10:500/11:916/11:966/6:282",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 185367,
+        "end": 185410,
+        "value": "$producer/1:833/11:916/11:966/6:289/6:406",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 185513,
+        "end": 185550,
+        "value": "$producer/6:318/11:916/11:966/6:289",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 185653,
+        "end": 185684,
+        "value": "$producer/6:575/11:916/11:975",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 185787,
+        "end": 185812,
+        "value": "$producer/10:500/2:1022",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 185915,
+        "end": 185939,
+        "value": "$producer/1:775/2:1064",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 186042,
+        "end": 186066,
+        "value": "$producer/1:833/2:1070",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 186169,
+        "end": 186194,
+        "value": "$producer/2:1488/2:1123",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 186297,
+        "end": 186322,
+        "value": "$producer/5:1158/5:1030",
+        "reason": "consumer matrix"
+      }
+    ],
+    "maskReadCount": 3,
+    "sourceMapDeclarationCount": 1310
+  },
+  "todomvc-tea": {
+    "reverse": [
+      {
+        "part": "context and patch runtime",
+        "saved": 0
+      },
+      {
+        "part": "selection runtime",
+        "saved": 0
+      },
+      {
+        "part": "template factories and preparation",
+        "saved": 1464
+      },
+      {
+        "part": "restate entry functions",
+        "saved": 0
+      },
+      {
+        "part": "patch entry functions",
+        "saved": 0
+      },
+      {
+        "part": "group descriptors",
+        "saved": 0
+      },
+      {
+        "part": "consumer matrix",
+        "saved": 0
+      }
+    ],
+    "residualBrotli": 4705,
+    "literalAudit": [],
+    "maskReadCount": 0,
+    "sourceMapDeclarationCount": 112
+  },
+  "todomvc-direct": {
+    "reverse": [
+      {
+        "part": "context and patch runtime",
+        "saved": 467
+      },
+      {
+        "part": "selection runtime",
+        "saved": 448
+      },
+      {
+        "part": "template factories and preparation",
+        "saved": 139
+      },
+      {
+        "part": "restate entry functions",
+        "saved": 0
+      },
+      {
+        "part": "patch entry functions",
+        "saved": 123
+      },
+      {
+        "part": "group descriptors",
+        "saved": 20
+      },
+      {
+        "part": "consumer matrix",
+        "saved": 125
+      }
+    ],
+    "residualBrotli": 5413,
+    "literalAudit": [
+      {
+        "start": 9533,
+        "end": 9541,
+        "value": "/0:917",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 12057,
+        "end": 12064,
+        "value": "0:585",
+        "reason": "group source holes"
+      },
+      {
+        "start": 15311,
+        "end": 15319,
+        "value": "/0:917",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 15370,
+        "end": 15377,
+        "value": "0:573",
+        "reason": "direct protocol capture/place/value argument"
+      },
+      {
+        "start": 16035,
+        "end": 16048,
+        "value": "$call/0:917",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 16065,
+        "end": 16078,
+        "value": "0:585/0:917",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 16095,
+        "end": 16102,
+        "value": "0:682",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 16119,
+        "end": 16126,
+        "value": "0:711",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 16143,
+        "end": 16150,
+        "value": "0:737",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 16167,
+        "end": 16174,
+        "value": "0:781",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 16191,
+        "end": 16198,
+        "value": "0:808",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 16215,
+        "end": 16222,
+        "value": "0:857",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 16239,
+        "end": 16246,
+        "value": "0:888",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 16263,
+        "end": 16270,
+        "value": "0:917",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 16287,
+        "end": 16294,
+        "value": "0:952",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 16311,
+        "end": 16318,
+        "value": "0:973",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 16335,
+        "end": 16342,
+        "value": "0:980",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 16359,
+        "end": 16367,
+        "value": "0:1019",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 16384,
+        "end": 16392,
+        "value": "0:1062",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 16409,
+        "end": 16417,
+        "value": "0:1105",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 16434,
+        "end": 16442,
+        "value": "0:1153",
+        "reason": "consumer matrix"
+      },
+      {
+        "start": 16459,
+        "end": 16476,
+        "value": "$producer/0:781",
+        "reason": "consumer matrix"
+      }
+    ],
+    "maskReadCount": 3,
+    "sourceMapDeclarationCount": 138
+  },
+  "table-tea": {
+    "reverse": [
+      {
+        "part": "context and patch runtime",
+        "saved": 0
+      },
+      {
+        "part": "selection runtime",
+        "saved": 0
+      },
+      {
+        "part": "template factories and preparation",
+        "saved": 905
+      },
+      {
+        "part": "restate entry functions",
+        "saved": 0
+      },
+      {
+        "part": "patch entry functions",
+        "saved": 0
+      },
+      {
+        "part": "group descriptors",
+        "saved": 0
+      },
+      {
+        "part": "consumer matrix",
+        "saved": 0
+      }
+    ],
+    "residualBrotli": 4460,
+    "literalAudit": [],
+    "maskReadCount": 0,
+    "sourceMapDeclarationCount": 94
+  },
+  "table-direct": {
+    "reverse": [
+      {
+        "part": "context and patch runtime",
+        "saved": 0
+      },
+      {
+        "part": "selection runtime",
+        "saved": 0
+      },
+      {
+        "part": "template factories and preparation",
+        "saved": 0
+      },
+      {
+        "part": "restate entry functions",
+        "saved": 0
+      },
+      {
+        "part": "patch entry functions",
+        "saved": 0
+      },
+      {
+        "part": "group descriptors",
+        "saved": 0
+      },
+      {
+        "part": "consumer matrix",
+        "saved": 0
+      }
+    ],
+    "residualBrotli": 4340,
+    "literalAudit": [],
+    "maskReadCount": 0,
+    "sourceMapDeclarationCount": 81
+  }
+}

@@ -1,0 +1,915 @@
+{
+  "historical_baseline_commit": "aaf5d8f9c",
+  "historical_baseline": [
+    {
+      "app": "TodoMVC",
+      "platform": "browser-direct",
+      "release": false,
+      "allow_debug": false,
+      "exit": 1,
+      "diagnostics": [
+        {
+          "code": "list_may_be_shared",
+          "severity": "error",
+          "span": {
+            "file": "tests/corpus/browser/tea/TodoMVC.beni",
+            "start": {
+              "line": 363,
+              "col": 5
+            },
+            "end": {
+              "line": 363,
+              "col": 16
+            }
+          },
+          "title": "LIST MAY BE SHARED",
+          "message": "`update` changes `model.todos` in place, and the checker cannot show that\nnothing else still holds the list.\n\n363|    Tea.element\n        ^^^^^^^^^^^ the runtime hands `update` the model here\n\nCompute what a command or a subscription needs from the list before it is made,\nso that it keeps that value and not the list; or hand it a copy, made with\n`List.copy`.\n\nThis is a limit of the checker, not proof of sharing: at some message the\nruntime keeps it: a command or a subscription holds it, or update escapes it."
+        }
+      ]
+    },
+    {
+      "app": "TodoMVC",
+      "platform": "browser-direct",
+      "release": true,
+      "allow_debug": true,
+      "exit": 1,
+      "diagnostics": [
+        {
+          "code": "list_may_be_shared",
+          "severity": "error",
+          "span": {
+            "file": "tests/corpus/browser/tea/TodoMVC.beni",
+            "start": {
+              "line": 363,
+              "col": 5
+            },
+            "end": {
+              "line": 363,
+              "col": 16
+            }
+          },
+          "title": "LIST MAY BE SHARED",
+          "message": "`update` changes `model.todos` in place, and the checker cannot show that\nnothing else still holds the list.\n\n363|    Tea.element\n        ^^^^^^^^^^^ the runtime hands `update` the model here\n\nCompute what a command or a subscription needs from the list before it is made,\nso that it keeps that value and not the list; or hand it a copy, made with\n`List.copy`.\n\nThis is a limit of the checker, not proof of sharing: at some message the\nruntime keeps it: a command or a subscription holds it, or update escapes it."
+        }
+      ]
+    },
+    {
+      "app": "TodoMVC",
+      "platform": "browser-tea",
+      "release": false,
+      "allow_debug": false,
+      "exit": 0,
+      "diagnostics": [],
+      "script_exit": 0,
+      "transcript_matches": true,
+      "golden": "tests/corpus/browser/tea/TodoMVC.expected",
+      "steps": "tests/corpus/browser/tea/TodoMVC.steps"
+    },
+    {
+      "app": "TodoMVC",
+      "platform": "browser-tea",
+      "release": true,
+      "allow_debug": true,
+      "exit": 0,
+      "diagnostics": [],
+      "script_exit": 0,
+      "transcript_matches": true,
+      "golden": "tests/corpus/browser/tea/TodoMVC.expected",
+      "steps": "tests/corpus/browser/tea/TodoMVC.steps"
+    },
+    {
+      "app": "BikeWars",
+      "platform": "browser-direct",
+      "release": false,
+      "allow_debug": false,
+      "exit": 1,
+      "diagnostics": [
+        {
+          "code": "list_still_used",
+          "severity": "error",
+          "span": {
+            "file": "examples/bike-wars/src/Bike.beni",
+            "start": {
+              "line": 91,
+              "col": 55
+            },
+            "end": {
+              "line": 91,
+              "col": 83
+            }
+          },
+          "title": "LIST CHANGED WHILE STILL IN USE",
+          "message": "`current.trail ++ other.trail` adds to the end of `current.trail` itself, but\n`current.trail` is read again afterwards.\n\n91|        ( weapon, explosion ) = Weapon.shoot current (current.trail ++ other.trail)\n                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the list is changed in place here\n92|        ( { current | weapon = weapon }, explosion )\n               ^^^^^^^ and `current.trail` is read here, after the change\n\nIf the list were changed in place, `current.trail` would see the change when it\nis read on line 92.\n\nTo change a copy and leave `current.trail` as it was, copy it there:\n\n91|        ( weapon, explosion ) = Weapon.shoot current (List.copy current.trail ++ other.trail)\n\nThis is sharing the checker can see: `current.trail` is read on line 92, after\nthe change."
+        },
+        {
+          "code": "list_still_used",
+          "severity": "error",
+          "span": {
+            "file": "examples/bike-wars/src/Game.beni",
+            "start": {
+              "line": 136,
+              "col": 39
+            },
+            "end": {
+              "line": 136,
+              "col": 86
+            }
+          },
+          "title": "LIST CHANGED WHILE STILL IN USE",
+          "message": "`Bike.shoot` changes a list it is handed in place, but `red.trail` still holds\nthe old list and is read afterwards.\n\n135|            { red, green } = model.bikes\n                  ^^^ `red.trail` keeps the list here\n136|            ( redUpdated, redShot ) = Bike.shoot key { current = red, other = green }\n                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the list is changed in place here\n137|            ( greenUpdated, greenShot ) = Bike.shoot key { current = green, other = red }\n                                                                                        ^^^ and `red.trail` is read here, after the change\n\nIf the list were changed in place, `red.trail` would see the change when it is\nread on line 137.\n\nOr, if `red.trail` only needs the list as it was, read it before line 136.\n\nCopy the list with `List.copy` before it is changed, so the change cannot reach\nanything else that holds it.\n\nThis is sharing the checker can see: `red.trail` is read on line 137, after the\nchange."
+        },
+        {
+          "code": "prepend_in_loop",
+          "severity": "warning",
+          "span": {
+            "file": "examples/bike-wars/src/Helpers.beni",
+            "start": {
+              "line": 36,
+              "col": 35
+            },
+            "end": {
+              "line": 36,
+              "col": 39
+            }
+          },
+          "title": "PREPEND IN LOOP",
+          "message": "This puts elements in front of `acc`, the accumulator this `List.foldr` hands\nback to its callback, so it happens at every step:\n\n    [ (\u2026), \u2026acc ]\n\nA list is an array, so every step copies the whole accumulator, and the loop\ntakes time that grows with the square of the list's length. Add at the end\ninstead, which takes the same short time at every step:\n\n    [ \u2026acc, (\u2026) ]\n\n`List.foldr` hands over the last element first, so to keep the order write\nthe loop as `List.foldl`, which hands over the first element first.\n\nIf the prepend is meant \u2014 the list stays short \u2014 give the new list a name\nfirst, and this warning goes."
+        },
+        {
+          "code": "prepend_in_loop",
+          "severity": "warning",
+          "span": {
+            "file": "examples/bike-wars/src/Helpers.beni",
+            "start": {
+              "line": 51,
+              "col": 39
+            },
+            "end": {
+              "line": 51,
+              "col": 43
+            }
+          },
+          "title": "PREPEND IN LOOP",
+          "message": "This puts elements in front of `acc`, which this function hands back to\nitself, so it happens at every step of a loop:\n\n    [ (\u2026), \u2026acc ]\n\nA list is an array, so every step copies the whole accumulator, and the loop\ntakes time that grows with the square of the list's length. Add at the end\ninstead, which takes the same short time at every step:\n\n    [ \u2026acc, (\u2026) ]\n\nThat keeps the elements in the order they arrive, so the `List.reverse` that\nput a prepended result back in order is no longer needed.\n\nIf the prepend is meant \u2014 the list stays short \u2014 give the new list a name\nfirst, and this warning goes."
+        },
+        {
+          "code": "top_level_list_changed",
+          "severity": "error",
+          "span": {
+            "file": "examples/bike-wars/src/Main.beni",
+            "start": {
+              "line": 12,
+              "col": 5
+            },
+            "end": {
+              "line": 12,
+              "col": 17
+            }
+          },
+          "title": "TOP-LEVEL LIST CHANGED",
+          "message": "`update` changes `model.bikes.green.trail` and `model.bikes.red.trail` in place,\nbut when the program starts each is `Game.initBikes`, a top-level value.\n\n12|    Tea.document\n       ^^^^^^^^^^^^ the runtime hands `update` the model here\n\n`Game.initBikes` is defined in examples/bike-wars/src/Game.beni:\n\n54|initBikes =\n   ^^^^^^^^^ the top-level list is defined here\n\nA top-level value is shared by every part of the program and never changes:\nchanged in place, it would change for every part that reads it.\n\nBuild `Game.initBikes` where the program starts, so that its lists are new ones,\nor copy each list it holds there with `List.copy`.\n\nThis is the language's rule for top-level values, whether or not anything else\nreads the list."
+        }
+      ]
+    },
+    {
+      "app": "BikeWars",
+      "platform": "browser-direct",
+      "release": true,
+      "allow_debug": true,
+      "exit": 1,
+      "diagnostics": [
+        {
+          "code": "list_still_used",
+          "severity": "error",
+          "span": {
+            "file": "examples/bike-wars/src/Bike.beni",
+            "start": {
+              "line": 91,
+              "col": 55
+            },
+            "end": {
+              "line": 91,
+              "col": 83
+            }
+          },
+          "title": "LIST CHANGED WHILE STILL IN USE",
+          "message": "`current.trail ++ other.trail` adds to the end of `current.trail` itself, but\n`current.trail` is read again afterwards.\n\n91|        ( weapon, explosion ) = Weapon.shoot current (current.trail ++ other.trail)\n                                                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the list is changed in place here\n92|        ( { current | weapon = weapon }, explosion )\n               ^^^^^^^ and `current.trail` is read here, after the change\n\nIf the list were changed in place, `current.trail` would see the change when it\nis read on line 92.\n\nTo change a copy and leave `current.trail` as it was, copy it there:\n\n91|        ( weapon, explosion ) = Weapon.shoot current (List.copy current.trail ++ other.trail)\n\nThis is sharing the checker can see: `current.trail` is read on line 92, after\nthe change."
+        },
+        {
+          "code": "list_still_used",
+          "severity": "error",
+          "span": {
+            "file": "examples/bike-wars/src/Game.beni",
+            "start": {
+              "line": 136,
+              "col": 39
+            },
+            "end": {
+              "line": 136,
+              "col": 86
+            }
+          },
+          "title": "LIST CHANGED WHILE STILL IN USE",
+          "message": "`Bike.shoot` changes a list it is handed in place, but `red.trail` still holds\nthe old list and is read afterwards.\n\n135|            { red, green } = model.bikes\n                  ^^^ `red.trail` keeps the list here\n136|            ( redUpdated, redShot ) = Bike.shoot key { current = red, other = green }\n                                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the list is changed in place here\n137|            ( greenUpdated, greenShot ) = Bike.shoot key { current = green, other = red }\n                                                                                        ^^^ and `red.trail` is read here, after the change\n\nIf the list were changed in place, `red.trail` would see the change when it is\nread on line 137.\n\nOr, if `red.trail` only needs the list as it was, read it before line 136.\n\nCopy the list with `List.copy` before it is changed, so the change cannot reach\nanything else that holds it.\n\nThis is sharing the checker can see: `red.trail` is read on line 137, after the\nchange."
+        },
+        {
+          "code": "prepend_in_loop",
+          "severity": "warning",
+          "span": {
+            "file": "examples/bike-wars/src/Helpers.beni",
+            "start": {
+              "line": 36,
+              "col": 35
+            },
+            "end": {
+              "line": 36,
+              "col": 39
+            }
+          },
+          "title": "PREPEND IN LOOP",
+          "message": "This puts elements in front of `acc`, the accumulator this `List.foldr` hands\nback to its callback, so it happens at every step:\n\n    [ (\u2026), \u2026acc ]\n\nA list is an array, so every step copies the whole accumulator, and the loop\ntakes time that grows with the square of the list's length. Add at the end\ninstead, which takes the same short time at every step:\n\n    [ \u2026acc, (\u2026) ]\n\n`List.foldr` hands over the last element first, so to keep the order write\nthe loop as `List.foldl`, which hands over the first element first.\n\nIf the prepend is meant \u2014 the list stays short \u2014 give the new list a name\nfirst, and this warning goes."
+        },
+        {
+          "code": "prepend_in_loop",
+          "severity": "warning",
+          "span": {
+            "file": "examples/bike-wars/src/Helpers.beni",
+            "start": {
+              "line": 51,
+              "col": 39
+            },
+            "end": {
+              "line": 51,
+              "col": 43
+            }
+          },
+          "title": "PREPEND IN LOOP",
+          "message": "This puts elements in front of `acc`, which this function hands back to\nitself, so it happens at every step of a loop:\n\n    [ (\u2026), \u2026acc ]\n\nA list is an array, so every step copies the whole accumulator, and the loop\ntakes time that grows with the square of the list's length. Add at the end\ninstead, which takes the same short time at every step:\n\n    [ \u2026acc, (\u2026) ]\n\nThat keeps the elements in the order they arrive, so the `List.reverse` that\nput a prepended result back in order is no longer needed.\n\nIf the prepend is meant \u2014 the list stays short \u2014 give the new list a name\nfirst, and this warning goes."
+        },
+        {
+          "code": "top_level_list_changed",
+          "severity": "error",
+          "span": {
+            "file": "examples/bike-wars/src/Main.beni",
+            "start": {
+              "line": 12,
+              "col": 5
+            },
+            "end": {
+              "line": 12,
+              "col": 17
+            }
+          },
+          "title": "TOP-LEVEL LIST CHANGED",
+          "message": "`update` changes `model.bikes.green.trail` and `model.bikes.red.trail` in place,\nbut when the program starts each is `Game.initBikes`, a top-level value.\n\n12|    Tea.document\n       ^^^^^^^^^^^^ the runtime hands `update` the model here\n\n`Game.initBikes` is defined in examples/bike-wars/src/Game.beni:\n\n54|initBikes =\n   ^^^^^^^^^ the top-level list is defined here\n\nA top-level value is shared by every part of the program and never changes:\nchanged in place, it would change for every part that reads it.\n\nBuild `Game.initBikes` where the program starts, so that its lists are new ones,\nor copy each list it holds there with `List.copy`.\n\nThis is the language's rule for top-level values, whether or not anything else\nreads the list."
+        }
+      ]
+    },
+    {
+      "app": "BikeWars",
+      "platform": "browser-tea",
+      "release": false,
+      "allow_debug": false,
+      "exit": 0,
+      "diagnostics": [
+        {
+          "code": "prepend_in_loop",
+          "severity": "warning",
+          "span": {
+            "file": "examples/bike-wars/src/Helpers.beni",
+            "start": {
+              "line": 36,
+              "col": 35
+            },
+            "end": {
+              "line": 36,
+              "col": 39
+            }
+          },
+          "title": "PREPEND IN LOOP",
+          "message": "This puts elements in front of `acc`, the accumulator this `List.foldr` hands\nback to its callback, so it happens at every step:\n\n    [ (\u2026), \u2026acc ]\n\nA list is an array, so every step copies the whole accumulator, and the loop\ntakes time that grows with the square of the list's length. Add at the end\ninstead, which takes the same short time at every step:\n\n    [ \u2026acc, (\u2026) ]\n\n`List.foldr` hands over the last element first, so to keep the order write\nthe loop as `List.foldl`, which hands over the first element first.\n\nIf the prepend is meant \u2014 the list stays short \u2014 give the new list a name\nfirst, and this warning goes."
+        },
+        {
+          "code": "prepend_in_loop",
+          "severity": "warning",
+          "span": {
+            "file": "examples/bike-wars/src/Helpers.beni",
+            "start": {
+              "line": 51,
+              "col": 39
+            },
+            "end": {
+              "line": 51,
+              "col": 43
+            }
+          },
+          "title": "PREPEND IN LOOP",
+          "message": "This puts elements in front of `acc`, which this function hands back to\nitself, so it happens at every step of a loop:\n\n    [ (\u2026), \u2026acc ]\n\nA list is an array, so every step copies the whole accumulator, and the loop\ntakes time that grows with the square of the list's length. Add at the end\ninstead, which takes the same short time at every step:\n\n    [ \u2026acc, (\u2026) ]\n\nThat keeps the elements in the order they arrive, so the `List.reverse` that\nput a prepended result back in order is no longer needed.\n\nIf the prepend is meant \u2014 the list stays short \u2014 give the new list a name\nfirst, and this warning goes."
+        }
+      ],
+      "script_exit": 0,
+      "transcript_matches": true,
+      "golden": "tests/corpus/browser/tea/BikeWars/_expected.expected",
+      "steps": "tests/corpus/browser/tea/BikeWars/_expected.steps"
+    },
+    {
+      "app": "BikeWars",
+      "platform": "browser-tea",
+      "release": true,
+      "allow_debug": true,
+      "exit": 0,
+      "diagnostics": [
+        {
+          "code": "prepend_in_loop",
+          "severity": "warning",
+          "span": {
+            "file": "examples/bike-wars/src/Helpers.beni",
+            "start": {
+              "line": 36,
+              "col": 35
+            },
+            "end": {
+              "line": 36,
+              "col": 39
+            }
+          },
+          "title": "PREPEND IN LOOP",
+          "message": "This puts elements in front of `acc`, the accumulator this `List.foldr` hands\nback to its callback, so it happens at every step:\n\n    [ (\u2026), \u2026acc ]\n\nA list is an array, so every step copies the whole accumulator, and the loop\ntakes time that grows with the square of the list's length. Add at the end\ninstead, which takes the same short time at every step:\n\n    [ \u2026acc, (\u2026) ]\n\n`List.foldr` hands over the last element first, so to keep the order write\nthe loop as `List.foldl`, which hands over the first element first.\n\nIf the prepend is meant \u2014 the list stays short \u2014 give the new list a name\nfirst, and this warning goes."
+        },
+        {
+          "code": "prepend_in_loop",
+          "severity": "warning",
+          "span": {
+            "file": "examples/bike-wars/src/Helpers.beni",
+            "start": {
+              "line": 51,
+              "col": 39
+            },
+            "end": {
+              "line": 51,
+              "col": 43
+            }
+          },
+          "title": "PREPEND IN LOOP",
+          "message": "This puts elements in front of `acc`, which this function hands back to\nitself, so it happens at every step of a loop:\n\n    [ (\u2026), \u2026acc ]\n\nA list is an array, so every step copies the whole accumulator, and the loop\ntakes time that grows with the square of the list's length. Add at the end\ninstead, which takes the same short time at every step:\n\n    [ \u2026acc, (\u2026) ]\n\nThat keeps the elements in the order they arrive, so the `List.reverse` that\nput a prepended result back in order is no longer needed.\n\nIf the prepend is meant \u2014 the list stays short \u2014 give the new list a name\nfirst, and this warning goes."
+        }
+      ],
+      "script_exit": 0,
+      "transcript_matches": true,
+      "golden": "tests/corpus/browser/tea/BikeWars/_expected.expected",
+      "steps": "tests/corpus/browser/tea/BikeWars/_expected.steps"
+    },
+    {
+      "app": "Sternhalma",
+      "platform": "browser-direct",
+      "release": false,
+      "allow_debug": false,
+      "exit": 1,
+      "diagnostics": [
+        {
+          "code": "top_level_list_changed",
+          "severity": "error",
+          "span": {
+            "file": "examples/sternhalma/src/Main.beni",
+            "start": {
+              "line": 17,
+              "col": 5
+            },
+            "end": {
+              "line": 17,
+              "col": 17
+            }
+          },
+          "title": "TOP-LEVEL LIST CHANGED",
+          "message": "`update` changes `model#Playing.0.board.cells` in place, but when the program\nstarts it is `Board.init`, a top-level value.\n\n17|    Tea.document\n       ^^^^^^^^^^^^ the runtime hands `update` the model here\n\n`Board.init` is defined in examples/sternhalma/src/Board.beni:\n\n40|init =\n   ^^^^ the top-level list is defined here\n\nA top-level value is shared by every part of the program and never changes:\nchanged in place, it would change for every part that reads it.\n\nBuild `Board.init` where the program starts, so that its lists are new ones, or\ncopy each list it holds there with `List.copy`.\n\nThis is the language's rule for top-level values, whether or not anything else\nreads the list."
+        },
+        {
+          "code": "top_level_list_changed",
+          "severity": "error",
+          "span": {
+            "file": "examples/sternhalma/src/Main.beni",
+            "start": {
+              "line": 101,
+              "col": 5
+            },
+            "end": {
+              "line": 101,
+              "col": 87
+            }
+          },
+          "title": "TOP-LEVEL LIST CHANGED",
+          "message": "`List.foldl` changes `board.cells` in place, but it is `Board.init`, a top-level\nvalue.\n\n101|    List.foldl playerIds board \u03bbplayerId b \u2192 placePlayerPieces totalPlayers playerId b\n        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the list is changed in place here\n\n`Board.init` is defined in examples/sternhalma/src/Board.beni:\n\n40|init =\n   ^^^^ the top-level list is defined here\n\nA top-level value is shared by every part of the program and never changes:\nchanged in place, it would change for every part that reads it.\n\nBuild `Board.init` where the program starts, so that its lists are new ones, or\ncopy each list it holds there with `List.copy`.\n\nThis is the language's rule for top-level values, whether or not anything else\nreads the list."
+        }
+      ]
+    },
+    {
+      "app": "Sternhalma",
+      "platform": "browser-direct",
+      "release": true,
+      "allow_debug": true,
+      "exit": 1,
+      "diagnostics": [
+        {
+          "code": "top_level_list_changed",
+          "severity": "error",
+          "span": {
+            "file": "examples/sternhalma/src/Main.beni",
+            "start": {
+              "line": 17,
+              "col": 5
+            },
+            "end": {
+              "line": 17,
+              "col": 17
+            }
+          },
+          "title": "TOP-LEVEL LIST CHANGED",
+          "message": "`update` changes `model#Playing.0.board.cells` in place, but when the program\nstarts it is `Board.init`, a top-level value.\n\n17|    Tea.document\n       ^^^^^^^^^^^^ the runtime hands `update` the model here\n\n`Board.init` is defined in examples/sternhalma/src/Board.beni:\n\n40|init =\n   ^^^^ the top-level list is defined here\n\nA top-level value is shared by every part of the program and never changes:\nchanged in place, it would change for every part that reads it.\n\nBuild `Board.init` where the program starts, so that its lists are new ones, or\ncopy each list it holds there with `List.copy`.\n\nThis is the language's rule for top-level values, whether or not anything else\nreads the list."
+        },
+        {
+          "code": "top_level_list_changed",
+          "severity": "error",
+          "span": {
+            "file": "examples/sternhalma/src/Main.beni",
+            "start": {
+              "line": 101,
+              "col": 5
+            },
+            "end": {
+              "line": 101,
+              "col": 87
+            }
+          },
+          "title": "TOP-LEVEL LIST CHANGED",
+          "message": "`List.foldl` changes `board.cells` in place, but it is `Board.init`, a top-level\nvalue.\n\n101|    List.foldl playerIds board \u03bbplayerId b \u2192 placePlayerPieces totalPlayers playerId b\n        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the list is changed in place here\n\n`Board.init` is defined in examples/sternhalma/src/Board.beni:\n\n40|init =\n   ^^^^ the top-level list is defined here\n\nA top-level value is shared by every part of the program and never changes:\nchanged in place, it would change for every part that reads it.\n\nBuild `Board.init` where the program starts, so that its lists are new ones, or\ncopy each list it holds there with `List.copy`.\n\nThis is the language's rule for top-level values, whether or not anything else\nreads the list."
+        }
+      ]
+    },
+    {
+      "app": "Sternhalma",
+      "platform": "browser-tea",
+      "release": false,
+      "allow_debug": false,
+      "exit": 0,
+      "diagnostics": [],
+      "script_exit": 0,
+      "transcript_matches": true,
+      "golden": "examples/sternhalma/play/sternhalma.expected",
+      "steps": "examples/sternhalma/play/sternhalma.steps"
+    },
+    {
+      "app": "Sternhalma",
+      "platform": "browser-tea",
+      "release": true,
+      "allow_debug": true,
+      "exit": 0,
+      "diagnostics": [],
+      "script_exit": 0,
+      "transcript_matches": true,
+      "golden": "examples/sternhalma/play/sternhalma.expected",
+      "steps": "examples/sternhalma/play/sternhalma.steps"
+    }
+  ],
+  "audit_corrections": {
+    "todo_native_input": "Queued nonsuspending Cmd.do runs as a microtask after each native listener. Only synthetic sends in one task can overlap the saves; only intermediate cross-tab storage events differ.",
+    "todo_init": "The original init lambda returns a shared top-level value, as ownership-checker.md \u00a722.2 explicitly requires. No checker rule added.",
+    "bike": "All three ownership errors follow from the append at Bike.beni:91; copying only current.trail clears them all.",
+    "sternhalma": "The selection screen ignores occupants; a second game reveals retained pieces. Board.init and centralHexagon now build inside unit functions."
+  },
+  "todo_save_only_probe": {
+    "source": "TodoMVC at aaf5d8f9c with only save encoding moved before Cmd.do",
+    "source_sha256": "dff162a4230a8b2ca95398cd7770b81d950885daa7a46d8a6d9dca86c6b9aae1",
+    "exit": 1,
+    "diagnostics": [
+      {
+        "code": "top_level_list_changed",
+        "severity": "error",
+        "span": {
+          "file": "zig-out/pr116/TodoInitProbe.beni",
+          "start": {
+            "line": 365,
+            "col": 5
+          },
+          "end": {
+            "line": 365,
+            "col": 16
+          }
+        },
+        "title": "TOP-LEVEL LIST CHANGED",
+        "message": "`update` changes `model.todos` in place, but when the program starts it is\n`init`, a top-level value.\n\n365|    Tea.element\n        ^^^^^^^^^^^ the runtime hands `update` the model here\n\n114|init =\n    ^^^^ the top-level list is defined here\n\nA top-level value is shared by every part of the program and never changes:\nchanged in place, it would change for every part that reads it.\n\nBuild the value inside a function, so that each call makes fresh lists:\n\n    init \u22a4 = \u2026\n\nCall that function where the model is made. Wrapping `init` in `\u03bb\u22a4 \u2192 init` still\nreturns the same shared value.\n\nThis is the language's rule for top-level values, whether or not anything else\nreads the list. `init` builds its model; a top-level value it returns is still\nshared (ownership-checker.md \u00a722.2)."
+      }
+    ]
+  },
+  "repaired_builds": [
+    {
+      "app": "TodoMVC",
+      "platform": "browser-direct",
+      "release": false,
+      "allow_debug": false,
+      "exit": 0,
+      "diagnostics": [],
+      "output_written": true,
+      "script_exit": 0,
+      "transcript_matches": true,
+      "golden": "tests/corpus/browser/tea/TodoMVC.expected",
+      "steps": "tests/corpus/browser/tea/TodoMVC.steps",
+      "golden_sha256": "b06c0f8c1fe8f79d4e98b455d5921f69f467140854383c242f208f2ed4188667"
+    },
+    {
+      "app": "TodoMVC",
+      "platform": "browser-direct",
+      "release": true,
+      "allow_debug": true,
+      "exit": 0,
+      "diagnostics": [],
+      "output_written": true,
+      "script_exit": 0,
+      "transcript_matches": true,
+      "golden": "tests/corpus/browser/tea/TodoMVC.expected",
+      "steps": "tests/corpus/browser/tea/TodoMVC.steps",
+      "golden_sha256": "b06c0f8c1fe8f79d4e98b455d5921f69f467140854383c242f208f2ed4188667"
+    },
+    {
+      "app": "TodoMVC",
+      "platform": "browser-tea",
+      "release": false,
+      "allow_debug": false,
+      "exit": 0,
+      "diagnostics": [],
+      "output_written": true,
+      "script_exit": 0,
+      "transcript_matches": true,
+      "golden": "tests/corpus/browser/tea/TodoMVC.expected",
+      "steps": "tests/corpus/browser/tea/TodoMVC.steps",
+      "golden_sha256": "b06c0f8c1fe8f79d4e98b455d5921f69f467140854383c242f208f2ed4188667"
+    },
+    {
+      "app": "TodoMVC",
+      "platform": "browser-tea",
+      "release": true,
+      "allow_debug": true,
+      "exit": 0,
+      "diagnostics": [],
+      "output_written": true,
+      "script_exit": 0,
+      "transcript_matches": true,
+      "golden": "tests/corpus/browser/tea/TodoMVC.expected",
+      "steps": "tests/corpus/browser/tea/TodoMVC.steps",
+      "golden_sha256": "b06c0f8c1fe8f79d4e98b455d5921f69f467140854383c242f208f2ed4188667"
+    },
+    {
+      "app": "BikeWars",
+      "platform": "browser-direct",
+      "release": false,
+      "allow_debug": false,
+      "exit": 1,
+      "diagnostics": [
+        {
+          "code": "prepend_in_loop",
+          "severity": "warning",
+          "span": {
+            "file": "examples/bike-wars/src/Helpers.beni",
+            "start": {
+              "line": 36,
+              "col": 35
+            },
+            "end": {
+              "line": 36,
+              "col": 39
+            }
+          },
+          "title": "PREPEND IN LOOP",
+          "message": "This puts elements in front of `acc`, the accumulator this `List.foldr` hands\nback to its callback, so it happens at every step:\n\n    [ (\u2026), \u2026acc ]\n\nA list is an array, so every step copies the whole accumulator, and the loop\ntakes time that grows with the square of the list's length. Add at the end\ninstead, which takes the same short time at every step:\n\n    [ \u2026acc, (\u2026) ]\n\n`List.foldr` hands over the last element first, so to keep the order write\nthe loop as `List.foldl`, which hands over the first element first.\n\nIf the prepend is meant \u2014 the list stays short \u2014 give the new list a name\nfirst, and this warning goes."
+        },
+        {
+          "code": "prepend_in_loop",
+          "severity": "warning",
+          "span": {
+            "file": "examples/bike-wars/src/Helpers.beni",
+            "start": {
+              "line": 51,
+              "col": 39
+            },
+            "end": {
+              "line": 51,
+              "col": 43
+            }
+          },
+          "title": "PREPEND IN LOOP",
+          "message": "This puts elements in front of `acc`, which this function hands back to\nitself, so it happens at every step of a loop:\n\n    [ (\u2026), \u2026acc ]\n\nA list is an array, so every step copies the whole accumulator, and the loop\ntakes time that grows with the square of the list's length. Add at the end\ninstead, which takes the same short time at every step:\n\n    [ \u2026acc, (\u2026) ]\n\nThat keeps the elements in the order they arrive, so the `List.reverse` that\nput a prepended result back in order is no longer needed.\n\nIf the prepend is meant \u2014 the list stays short \u2014 give the new list a name\nfirst, and this warning goes."
+        },
+        {
+          "code": "not_implemented",
+          "severity": "error",
+          "span": {
+            "file": "examples/bike-wars/src/Main.beni",
+            "start": {
+              "line": 16,
+              "col": 13
+            },
+            "end": {
+              "line": 16,
+              "col": 14
+            }
+          },
+          "title": "NOT IMPLEMENTED YET",
+          "message": "`browser-direct` compiles a `view` whose body is markup written in place, or an\n`if` or a `case`, after any `let`s, and this one's is neither: its body computes\nits markup otherwise \u2014 a helper's call \u2014 which no slice of\n`docs/design/browser-direct.md` \u00a714 compiles as a `view`'s body. Write the body\nas markup that holds it, `<>{\u2026}</>`, where \u00a79.2 compiles a helper written in\nplace; or build this program with `--platform=browser-tea`, which renders any\n`view`."
+        }
+      ],
+      "output_written": false
+    },
+    {
+      "app": "BikeWars",
+      "platform": "browser-direct",
+      "release": true,
+      "allow_debug": true,
+      "exit": 1,
+      "diagnostics": [
+        {
+          "code": "prepend_in_loop",
+          "severity": "warning",
+          "span": {
+            "file": "examples/bike-wars/src/Helpers.beni",
+            "start": {
+              "line": 36,
+              "col": 35
+            },
+            "end": {
+              "line": 36,
+              "col": 39
+            }
+          },
+          "title": "PREPEND IN LOOP",
+          "message": "This puts elements in front of `acc`, the accumulator this `List.foldr` hands\nback to its callback, so it happens at every step:\n\n    [ (\u2026), \u2026acc ]\n\nA list is an array, so every step copies the whole accumulator, and the loop\ntakes time that grows with the square of the list's length. Add at the end\ninstead, which takes the same short time at every step:\n\n    [ \u2026acc, (\u2026) ]\n\n`List.foldr` hands over the last element first, so to keep the order write\nthe loop as `List.foldl`, which hands over the first element first.\n\nIf the prepend is meant \u2014 the list stays short \u2014 give the new list a name\nfirst, and this warning goes."
+        },
+        {
+          "code": "prepend_in_loop",
+          "severity": "warning",
+          "span": {
+            "file": "examples/bike-wars/src/Helpers.beni",
+            "start": {
+              "line": 51,
+              "col": 39
+            },
+            "end": {
+              "line": 51,
+              "col": 43
+            }
+          },
+          "title": "PREPEND IN LOOP",
+          "message": "This puts elements in front of `acc`, which this function hands back to\nitself, so it happens at every step of a loop:\n\n    [ (\u2026), \u2026acc ]\n\nA list is an array, so every step copies the whole accumulator, and the loop\ntakes time that grows with the square of the list's length. Add at the end\ninstead, which takes the same short time at every step:\n\n    [ \u2026acc, (\u2026) ]\n\nThat keeps the elements in the order they arrive, so the `List.reverse` that\nput a prepended result back in order is no longer needed.\n\nIf the prepend is meant \u2014 the list stays short \u2014 give the new list a name\nfirst, and this warning goes."
+        },
+        {
+          "code": "not_implemented",
+          "severity": "error",
+          "span": {
+            "file": "examples/bike-wars/src/Main.beni",
+            "start": {
+              "line": 16,
+              "col": 13
+            },
+            "end": {
+              "line": 16,
+              "col": 14
+            }
+          },
+          "title": "NOT IMPLEMENTED YET",
+          "message": "`browser-direct` compiles a `view` whose body is markup written in place, or an\n`if` or a `case`, after any `let`s, and this one's is neither: its body computes\nits markup otherwise \u2014 a helper's call \u2014 which no slice of\n`docs/design/browser-direct.md` \u00a714 compiles as a `view`'s body. Write the body\nas markup that holds it, `<>{\u2026}</>`, where \u00a79.2 compiles a helper written in\nplace; or build this program with `--platform=browser-tea`, which renders any\n`view`."
+        }
+      ],
+      "output_written": false
+    },
+    {
+      "app": "BikeWars",
+      "platform": "browser-tea",
+      "release": false,
+      "allow_debug": false,
+      "exit": 0,
+      "diagnostics": [
+        {
+          "code": "prepend_in_loop",
+          "severity": "warning",
+          "span": {
+            "file": "examples/bike-wars/src/Helpers.beni",
+            "start": {
+              "line": 36,
+              "col": 35
+            },
+            "end": {
+              "line": 36,
+              "col": 39
+            }
+          },
+          "title": "PREPEND IN LOOP",
+          "message": "This puts elements in front of `acc`, the accumulator this `List.foldr` hands\nback to its callback, so it happens at every step:\n\n    [ (\u2026), \u2026acc ]\n\nA list is an array, so every step copies the whole accumulator, and the loop\ntakes time that grows with the square of the list's length. Add at the end\ninstead, which takes the same short time at every step:\n\n    [ \u2026acc, (\u2026) ]\n\n`List.foldr` hands over the last element first, so to keep the order write\nthe loop as `List.foldl`, which hands over the first element first.\n\nIf the prepend is meant \u2014 the list stays short \u2014 give the new list a name\nfirst, and this warning goes."
+        },
+        {
+          "code": "prepend_in_loop",
+          "severity": "warning",
+          "span": {
+            "file": "examples/bike-wars/src/Helpers.beni",
+            "start": {
+              "line": 51,
+              "col": 39
+            },
+            "end": {
+              "line": 51,
+              "col": 43
+            }
+          },
+          "title": "PREPEND IN LOOP",
+          "message": "This puts elements in front of `acc`, which this function hands back to\nitself, so it happens at every step of a loop:\n\n    [ (\u2026), \u2026acc ]\n\nA list is an array, so every step copies the whole accumulator, and the loop\ntakes time that grows with the square of the list's length. Add at the end\ninstead, which takes the same short time at every step:\n\n    [ \u2026acc, (\u2026) ]\n\nThat keeps the elements in the order they arrive, so the `List.reverse` that\nput a prepended result back in order is no longer needed.\n\nIf the prepend is meant \u2014 the list stays short \u2014 give the new list a name\nfirst, and this warning goes."
+        }
+      ],
+      "output_written": true,
+      "script_exit": 0,
+      "transcript_matches": true,
+      "golden": "tests/corpus/browser/tea/BikeWars/_expected.expected",
+      "steps": "tests/corpus/browser/tea/BikeWars/_expected.steps",
+      "golden_sha256": "2d9094f46b6e49d3e818858fdbf2ccd5de35dd14c119ca6dbef321c2c71fed96"
+    },
+    {
+      "app": "BikeWars",
+      "platform": "browser-tea",
+      "release": true,
+      "allow_debug": true,
+      "exit": 0,
+      "diagnostics": [
+        {
+          "code": "prepend_in_loop",
+          "severity": "warning",
+          "span": {
+            "file": "examples/bike-wars/src/Helpers.beni",
+            "start": {
+              "line": 36,
+              "col": 35
+            },
+            "end": {
+              "line": 36,
+              "col": 39
+            }
+          },
+          "title": "PREPEND IN LOOP",
+          "message": "This puts elements in front of `acc`, the accumulator this `List.foldr` hands\nback to its callback, so it happens at every step:\n\n    [ (\u2026), \u2026acc ]\n\nA list is an array, so every step copies the whole accumulator, and the loop\ntakes time that grows with the square of the list's length. Add at the end\ninstead, which takes the same short time at every step:\n\n    [ \u2026acc, (\u2026) ]\n\n`List.foldr` hands over the last element first, so to keep the order write\nthe loop as `List.foldl`, which hands over the first element first.\n\nIf the prepend is meant \u2014 the list stays short \u2014 give the new list a name\nfirst, and this warning goes."
+        },
+        {
+          "code": "prepend_in_loop",
+          "severity": "warning",
+          "span": {
+            "file": "examples/bike-wars/src/Helpers.beni",
+            "start": {
+              "line": 51,
+              "col": 39
+            },
+            "end": {
+              "line": 51,
+              "col": 43
+            }
+          },
+          "title": "PREPEND IN LOOP",
+          "message": "This puts elements in front of `acc`, which this function hands back to\nitself, so it happens at every step of a loop:\n\n    [ (\u2026), \u2026acc ]\n\nA list is an array, so every step copies the whole accumulator, and the loop\ntakes time that grows with the square of the list's length. Add at the end\ninstead, which takes the same short time at every step:\n\n    [ \u2026acc, (\u2026) ]\n\nThat keeps the elements in the order they arrive, so the `List.reverse` that\nput a prepended result back in order is no longer needed.\n\nIf the prepend is meant \u2014 the list stays short \u2014 give the new list a name\nfirst, and this warning goes."
+        }
+      ],
+      "output_written": true,
+      "script_exit": 0,
+      "transcript_matches": true,
+      "golden": "tests/corpus/browser/tea/BikeWars/_expected.expected",
+      "steps": "tests/corpus/browser/tea/BikeWars/_expected.steps",
+      "golden_sha256": "2d9094f46b6e49d3e818858fdbf2ccd5de35dd14c119ca6dbef321c2c71fed96"
+    },
+    {
+      "app": "Sternhalma",
+      "platform": "browser-direct",
+      "release": false,
+      "allow_debug": false,
+      "exit": 0,
+      "diagnostics": [],
+      "output_written": true,
+      "script_exit": 0,
+      "transcript_matches": true,
+      "golden": "examples/sternhalma/play/sternhalma.expected",
+      "steps": "examples/sternhalma/play/sternhalma.steps",
+      "golden_sha256": "8e8174c5dd6ba7561439e598749d8451a74dd1e98fcd2c4593457b1c9fbc5477"
+    },
+    {
+      "app": "Sternhalma",
+      "platform": "browser-direct",
+      "release": true,
+      "allow_debug": true,
+      "exit": 0,
+      "diagnostics": [],
+      "output_written": true,
+      "script_exit": 0,
+      "transcript_matches": true,
+      "golden": "examples/sternhalma/play/sternhalma.expected",
+      "steps": "examples/sternhalma/play/sternhalma.steps",
+      "golden_sha256": "8e8174c5dd6ba7561439e598749d8451a74dd1e98fcd2c4593457b1c9fbc5477"
+    },
+    {
+      "app": "Sternhalma",
+      "platform": "browser-tea",
+      "release": false,
+      "allow_debug": false,
+      "exit": 0,
+      "diagnostics": [],
+      "output_written": true,
+      "script_exit": 0,
+      "transcript_matches": true,
+      "golden": "examples/sternhalma/play/sternhalma.expected",
+      "steps": "examples/sternhalma/play/sternhalma.steps",
+      "golden_sha256": "8e8174c5dd6ba7561439e598749d8451a74dd1e98fcd2c4593457b1c9fbc5477"
+    },
+    {
+      "app": "Sternhalma",
+      "platform": "browser-tea",
+      "release": true,
+      "allow_debug": true,
+      "exit": 0,
+      "diagnostics": [],
+      "output_written": true,
+      "script_exit": 0,
+      "transcript_matches": true,
+      "golden": "examples/sternhalma/play/sternhalma.expected",
+      "steps": "examples/sternhalma/play/sternhalma.steps",
+      "golden_sha256": "8e8174c5dd6ba7561439e598749d8451a74dd1e98fcd2c4593457b1c9fbc5477"
+    }
+  ],
+  "original_tea_golden_sha256": {
+    "tests/corpus/browser/tea/TodoMVC.expected": "b06c0f8c1fe8f79d4e98b455d5921f69f467140854383c242f208f2ed4188667",
+    "tests/corpus/browser/tea/BikeWars/_expected.expected": "2d9094f46b6e49d3e818858fdbf2ccd5de35dd14c119ca6dbef321c2c71fed96",
+    "examples/sternhalma/play/sternhalma.expected": "8e8174c5dd6ba7561439e598749d8451a74dd1e98fcd2c4593457b1c9fbc5477"
+  },
+  "notes": [
+    "Paired direct corpus runs use the existing --no-comments normalization against one golden per app. The separate original browser-tea goldens above are byte-identical.",
+    "BikeWars keeps not_implemented and two prepend warnings; no output is written or executed.",
+    "A pre-existing diagnostic counter counted only the late-error prefix after sorting held warnings into it. The complete-stream counter now returns exit 1; its minimal golden fails with the fix set aside and passes restored."
+  ],
+  "linux_budget_findings": [
+    {
+      "case": "browser/direct/TodoMVC.beni",
+      "millions": 5711,
+      "default": 4300
+    },
+    {
+      "case": "browser/direct/Sternhalma",
+      "millions": 9031,
+      "default": 4300
+    },
+    {
+      "case": "browser/direct/Sternhalma [value fuzz]",
+      "millions": 11387,
+      "default": 4300
+    }
+  ],
+  "linux_budget_grants": {
+    "owner_approved": "2026-10-15",
+    "TodoMVC_paired_page_millions": 6300,
+    "Sternhalma_paired_page_millions": 10000,
+    "Sternhalma_value_fuzz_millions": 12600,
+    "TodoMVC_value_fuzz_millions": 4300,
+    "policy": "Page and value-fuzz grants are separate; no checker or comparison relaxed."
+  },
+  "captured_local_review": {
+    "date": "2026-10-15",
+    "base": "134d24ab96c5b57f1917ed67af3b931a30a16add",
+    "includes_merged_pr": 124,
+    "rejected_fixtures": [
+      "OwnershipInitCapturedTop",
+      "OwnershipInitCapturedLiteral",
+      "OwnershipInitCapturedCarried",
+      "OwnershipInitCapturedRecord"
+    ],
+    "positive_fixture": "EntryInitCaptureOnly",
+    "todo_and_stern_paired_pass_without_initialization_transfer": true,
+    "ownership_block_version": 8,
+    "orphan_budget_regressions": [
+      "missing page",
+      "tea page has no value fuzz",
+      "unknown corpus kind"
+    ],
+    "reported_pair_ownership_refused_before_fix": false,
+    "reported_pair_ownership_refused_after_fix": true
+  },
+  "historical_app_repair_validation": {
+    "host": "x86_64-linux",
+    "test_run_hashes_exit": 0,
+    "gates_exit": 0,
+    "macos_known_case_folding_failures": 2,
+    "original_tea_goldens_changed": false,
+    "additional_ownership_rule_changes": false
+  },
+  "review_final_validation": {
+    "host": "x86_64-linux",
+    "test_run_hashes_exit": 0,
+    "gates_exit": 0,
+    "macos_constituents": {
+      "passed": 1303,
+      "skipped": 15,
+      "known_case_folding_failures": 2
+    },
+    "source_and_fixture_checksums_match": true,
+    "original_tea_goldens_changed": false,
+    "new_budget_grants": false,
+    "rebased_master": "2f397d7b671e672f34a0b85b8b9abd02baec8b33"
+  }
+}

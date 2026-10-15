@@ -1,0 +1,7 @@
+module InitializationLimit
+  78:5 call InitializationLimit.overWide <literal>: accepted fresh (InitializationLimit.overWide writes π1)
+  147:8 List.push InitializationLimit.seed: rejected limit: it came from a callee whose summary is past the checker's limits (approx)
+  summary overWide: π1 RAEw, π10 RAEw, π11 RAEw, π12 RAEw, π13 RAEw, π14 RAEw, π15 RAEw, π16 RAEw, π17 RAEw, π18 RAEw, π19 RAEw, π2 RAEw, π20 RAEw, π21 RAEw, π22 RAEw, π23 RAEw, π24 RAEw, π25 RAEw, π26 RAEw, π27 RAEw, π28 RAEw, π29 RAEw, π3 RAEw, π30 RAEw, π31 RAEw, π32 RAEw, π33 RAEw, π34 RAEw, π35 RAEw, π36 RAEw, π37 RAEw, π38 RAEw, π39 RAEw, π4 RAEw, π40 RAEw, π41 RAEw, π42 RAEw, π43 RAEw, π44 RAEw, π45 RAEw, π46 RAEw, π47 RAEw, π48 RAEw, π49 RAEw, π5 RAEw, π50 RAEw, π51 RAEw, π52 RAEw, π53 RAEw, π54 RAEw, π55 RAEw, π56 RAEw, π57 RAEw, π58 RAEw, π59 RAEw, π6 RAEw, π60 RAEw, π61 RAEw, π62 RAEw, π63 RAEw, π64 RAEw, π65 RAEw, π7 RAEw, π8 RAEw, π9 RAEw; res ~⊤{lost}; limit width
+  demands 2: accepted 1 (fresh 1, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+total 2: accepted 1 (fresh 1, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+cause limit 1

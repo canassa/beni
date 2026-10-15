@@ -1,0 +1,7 @@
+-- A recursive consumer is not a once-at-module-load transfer site.
+seed : List Int
+seed = [ 1 ]
+
+
+pub dest : Int → List Int
+dest n = if n == 0 then List.push seed 2 else dest (n - 1)

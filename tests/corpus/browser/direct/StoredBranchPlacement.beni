@@ -1,0 +1,49 @@
+-- A stored branch value adopts the branch mask, including its nested list
+-- templates. An unrelated write visits none; replacing the model with itself
+-- enters the fallback and visits the retained buttons once, without remounting.
+import Html exposing (Html)
+import List
+import String
+import Tea
+
+
+type Msg
+    = Inc
+    | Toggle
+    | Replace Model
+
+
+type alias Model =
+    open : Bool
+    n : Int
+
+
+button : Int → Html Msg
+button n = <button onClick={Toggle}>{String.fromInt n}</button>
+
+
+choices : Html Msg
+choices = <section>{List.map [ 1, 2 ] button}</section>
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Inc →
+            { model | n = model.n + 1 }
+        Toggle →
+            { model | open = not model.open }
+        Replace replacement →
+            replacement
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button onClick={Inc}>inc</button><button onClick={Toggle}>toggle</button><p>{model.n}</p><button onClick={Replace model}>replace</button>
+        {if model.open then choices else <p>closed</p>}
+    </main>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → { open = True, n = 0 }, update = update, view = view }
