@@ -1,0 +1,2 @@
+Only the cache entry carries the block that names a schema constructor:
+writing it crashed (issue #156).

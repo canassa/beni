@@ -2879,6 +2879,7 @@ const Case = struct {
                 const checked = try c.compiler(&.{ "check", "--diagnostics=json", flag, path });
                 const r = try c.compiler(&.{ "dump", "--stage=ownership", flag, path });
                 try expectExit(0, r);
+                try c.ownershipCached(flag, path, checked);
                 // `ownership-checker.md` §28.10, the dump against the build:
                 // on a platform that edits lists in place `check` fails
                 // exactly when the report has a rejected or pending line,
@@ -2915,6 +2916,23 @@ const Case = struct {
         const r = try c.compiler(&.{ "dump", "--stage=ownership", path });
         try expectExit(0, r);
         try c.expectGolden("ownership", r.stdout);
+    }
+
+    /// An ownership fixture with a `.cached` file is also checked with a cache
+    /// directory of its own, twice: the first run writes every module's cache
+    /// entry and its summary block (`ownership-checker.md` §28.4), the second
+    /// installs them. Each must agree with the `--no-cache` check, exit code
+    /// and diagnostics. The `.cached` file holds why the fixture needs it.
+    fn ownershipCached(c: Case, flag: []const u8, path: []const u8, checked: world.Result) !void {
+        if (!c.goldenExists("cached")) return;
+        const dir = try std.fmt.allocPrint(c.arena, "--cache-dir={s}/ownership-cache-{s}", .{ try c.w.projectPath(), std.fs.path.basename(flag) });
+        for ([_][]const u8{ "writes", "reads" }) |pass| {
+            const r = try c.w.runWith(&.{ "check", "--diagnostics=json", flag, dir, path }, .{ .raw_diagnostics = true, .cwd = .inherit, .timeout_ms = c.cfg.timeout_ms });
+            if (r.exit_code != checked.exit_code or !std.mem.eql(u8, r.stderr, checked.stderr)) {
+                detail("{s}: the check that {s} the cache disagrees with --no-cache (exit {d}, not {d})\n--- stderr ---\n{s}\n", .{ c.fixture.name, pass, r.exit_code, checked.exit_code, r.stderr });
+                return error.CachedCheckDisagrees;
+            }
+        }
     }
 
     /// The write sets of a program (`write-sets.md` §8.1): the fixture must

@@ -1,0 +1,32 @@
+-- ownership (project): a tagged schema's constructors in a summary block
+-- (`ownership-checker.md` §28.4). `children` and `grow` match `Tree.Branch`,
+-- so their summaries name the path through that constructor's payload, and
+-- the block that carries them must name the constructor.
+import Schema
+
+
+pub schema Tree tagged "t" of
+    Leaf as "leaf"
+        value : Int
+    Branch as "branch"
+        children : List Tree
+
+
+pub children : Tree.Type → List Tree.Type
+children t =
+    case t of
+        Tree.Leaf _ →
+            []
+
+        Tree.Branch r →
+            r.children
+
+
+pub grow : Tree.Type → List Tree.Type
+grow t =
+    case t of
+        Tree.Leaf r →
+            [ Tree.Leaf r ]
+
+        Tree.Branch r →
+            List.push r.children (Tree.Leaf { value = 0 })
