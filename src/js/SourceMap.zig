@@ -109,6 +109,8 @@ pub const Input = struct {
     /// `Marks.names`, and how a name becomes text.
     names: []const InternPool.Symbol,
     name_text: NameText,
+    /// `Joined.end_line`: a release map's (backend.md §11.2).
+    end_line: bool = false,
 };
 
 /// The map's bytes, a JSON object and a newline, from `gpa`. Everything
@@ -123,6 +125,7 @@ pub fn write(gpa: Allocator, scratch: Allocator, in: Input) Allocator.Error![]u8
         .generated = in.generated,
         .sources = &.{.{ .url = in.source_url, .text = in.source, .line_starts = in.line_starts }},
         .stretches = &.{.{ .start = 0, .source = 0, .mappings = in.mappings, .names = names }},
+        .end_line = in.end_line,
     });
 }
 
@@ -162,6 +165,15 @@ pub const Joined = struct {
     /// Ascending by `start`; the first need not start at 0, and bytes
     /// before it are unmapped.
     stretches: []const Stretch,
+    /// End `mappings` with `;` when its last segment has fewer than five
+    /// fields. Node's reader (`node:module`'s `SourceMap`, which
+    /// `--enable-source-maps` uses) ends a segment only at a `,` or a `;`,
+    /// and at the end of the string reads the fields that are not there
+    /// as zero deltas: a one-field segment repeats the segment before it,
+    /// and a four-field one takes the name before it. A release map sets
+    /// it (backend.md §11.2, *The join*); a development map does not, and
+    /// keeps its bytes.
+    end_line: bool = false,
 };
 
 /// The map of a file joined from stretches (backend.md §11.2): one entry in
@@ -236,6 +248,9 @@ fn encodeMappings(
             try e.segment(s.source, source.*.?.position(m.source), name);
         }
     }
+    // `Joined.end_line`: the `;` is the end of the line the last segment
+    // is on, which the comment line follows.
+    if (in.end_line and e.segment_on_line and !e.named) try out.append(scratch, ';');
 }
 
 /// `encodeMappings`' cursor and the previous segment's fields, which the
@@ -257,6 +272,8 @@ const Encoder = struct {
     segment_on_line: bool = false,
     /// Whether the line's last segment maps somewhere.
     mapped: bool = false,
+    /// Whether the last segment has all five fields.
+    named: bool = false,
 
     /// Move the cursor to byte `target`, writing a `;` for every line it
     /// passes the end of.
@@ -341,6 +358,7 @@ const Encoder = struct {
         }
         e.segment_on_line = true;
         e.mapped = true;
+        e.named = name != Mapping.no_name;
     }
 
     /// A one-field segment at byte `at`: what follows maps nowhere. Only
@@ -354,6 +372,7 @@ const Encoder = struct {
         vlqAssumeCapacity(e.out, @as(i64, e.column) - e.prev_column);
         e.prev_column = e.column;
         e.mapped = false;
+        e.named = false;
     }
 };
 
@@ -854,4 +873,39 @@ test "a mark the guard's space separates from its token moves past the space" {
     try testing.expectEqual(@as(usize, 2), marks.list.items.len);
     marks.dropPast(8);
     try testing.expectEqual(@as(usize, 1), marks.list.items.len);
+}
+
+test "a release map whose last segment is short ends its line" {
+    // `node:module`'s `SourceMap` ends a segment only at a `,` or a `;`; at
+    // the end of the string it reads the missing fields as zero deltas
+    // (`Joined.end_line`). A one-field or a four-field segment last gets a
+    // `;`, a five-field one does not, and a development map is as before.
+    var a: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer a.deinit();
+    const arena = a.allocator();
+    const source: Source = .{ .url = "A.beni", .text = "abc", .line_starts = &.{0} };
+    const glue = try writeJoined(arena, arena, .{
+        .file = "m.mjs",
+        .generated = "ab;run(m);\n",
+        .sources = &.{source},
+        .stretches = &.{
+            .{ .start = 0, .source = 0, .mappings = &.{.{ .generated = 0, .source = 0 }} },
+            .{ .start = 3, .source = Stretch.unmapped },
+        },
+        .end_line = true,
+    });
+    try testing.expect(std.mem.endsWith(u8, glue, "\"mappings\":\"AAAA,G;\"}\n"));
+    const one: []const Stretch = &.{.{ .start = 0, .source = 0, .names = &.{"f"}, .mappings = &.{
+        .{ .generated = 0, .source = 0, .name = 0 },
+        .{ .generated = 1, .source = 1 },
+    } }};
+    const short = try writeJoined(arena, arena, .{ .file = "m.mjs", .generated = "ab\n", .sources = &.{source}, .stretches = one, .end_line = true });
+    try testing.expect(std.mem.endsWith(u8, short, "\"mappings\":\"AAAAA,CAAC;\"}\n"));
+    const development = try writeJoined(arena, arena, .{ .file = "m.mjs", .generated = "ab\n", .sources = &.{source}, .stretches = one });
+    try testing.expect(std.mem.endsWith(u8, development, "\"mappings\":\"AAAAA,CAAC\"}\n"));
+    const last_named: []const Stretch = &.{.{ .start = 0, .source = 0, .names = &.{"f"}, .mappings = &.{
+        .{ .generated = 0, .source = 0, .name = 0 },
+    } }};
+    const named = try writeJoined(arena, arena, .{ .file = "m.mjs", .generated = "ab\n", .sources = &.{source}, .stretches = last_named, .end_line = true });
+    try testing.expect(std.mem.endsWith(u8, named, "\"mappings\":\"AAAAA\"}\n"));
 }

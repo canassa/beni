@@ -4237,12 +4237,16 @@ test "a development build maps a crash in a case arm back to the beni line and c
 /// its `|` and looked up at the `|`, or at its start when it has none,
 /// since a short name alone is rarely unique. A segment that starts before
 /// the needle's spot says by how many columns: a name in `names` belongs to
-/// a binding only at the binding's own column. With `run` as the second
-/// argument the module itself runs under `--enable-source-maps`.
+/// a binding only at the binding's own column. Each spot is also looked up
+/// with Node's own reader, `node:module`'s `SourceMap`, which is what
+/// `--enable-source-maps` uses, and a line says where it disagrees. With
+/// `run` as the second argument the module itself runs under
+/// `--enable-source-maps`.
 ///
 /// usage: node check-release-map.mjs <module.mjs> run|no <needle>...
 const check_release_map_script =
     \\import { readFileSync } from "node:fs";
+    \\import { SourceMap } from "node:module";
     \\import { spawnSync } from "node:child_process";
     \\import { basename } from "node:path";
     \\import { fileURLToPath, pathToFileURL } from "node:url";
@@ -4288,6 +4292,7 @@ const check_release_map_script =
     \\  lines.push(segments);
     \\}
     \\
+    \\const nodeMap = new SourceMap(map);
     \\for (const needle of needles) {
     \\  const bar = needle.indexOf("|");
     \\  const text = needle.replace("|", "");
@@ -4299,6 +4304,10 @@ const check_release_map_script =
     \\  const where = hit && hit.source !== null ? `${basename(map.sources[hit.source])}:${hit.line + 1}:${hit.sourceColumn + 1}` : "unmapped";
     \\  const early = hit && hit.column < column ? ` (${column - hit.column} before)` : "";
     \\  console.log(`${needle} -> ${where}${hit?.name ? " " + hit.name : ""}${early}`);
+    \\  const n = nodeMap.findEntry(line, column);
+    \\  const nodeWhere = n.originalSource ? `${basename(n.originalSource)}:${n.originalLine + 1}:${n.originalColumn + 1}` : "unmapped";
+    \\  const nodeName = n.originalSource && n.name ? " " + n.name : "";
+    \\  if (`${nodeWhere}${nodeName}` !== `${where}${hit?.name && where !== "unmapped" ? " " + hit.name : ""}`) console.log(`  node:module reads ${nodeWhere}${nodeName}`);
     \\}
     \\
     \\if (run === "run") {
@@ -4321,10 +4330,15 @@ test "a release build maps the one hoisted file back to each module's beni sourc
     // renamed local, `total`'s `rest` an initialiser the optimiser writes
     // at its one use, every top-level function's first byte carries its beni
     // name, and `Debug.todo` is a body copied from `core/Debug` to its call,
-    // so it maps to the call. The runtime's `process.stdout` is hand-written
-    // and the entry's `run(main)` the link step's: both unmapped. So is the
-    // runtime's `import` at the top, before the first stretch, which is
-    // where a file §9 declines to hoist is imported too. Under
+    // so it maps to the call. `report` is written with `countDown` in it, a loop
+    // whose variable the printer declares in a `for` head (item 4). The
+    // runtime's `process.stdout` is hand-written and the entry's
+    // `run(main)` the link step's: both unmapped, under Node's own reader
+    // too, for which the map's last segment must end with its line. So is
+    // the runtime's `import` at the top, before the first stretch, which is
+    // where a file §9 declines to hoist is imported too. A module with no
+    // mark (`core/Debug`, whose `todo` is copied to its call) is no source
+    // of the map. Under
     // Node's `--enable-source-maps`, the crash names `describe` at the call,
     // as the development build does (§11.1). `--allow-debug` is the hidden
     // flag that lets a release build reach `Debug`, for the crash.
@@ -4367,9 +4381,25 @@ test "a release build maps the one hoisted file back to each module's beni sourc
         \\            x + total rest
         \\
         \\
+        \\countDown : Int, Int → Int
+        \\countDown i acc =
+        \\    if i ≥ 0 then
+        \\        countDown (i - 1) (acc + i * 3)
+        \\
+        \\    else
+        \\        acc
+        \\
+        \\
+        \\report : Int → String
+        \\report n =
+        \\    sum =
+        \\        countDown n 0
+        \\    String.fromInt sum
+        \\
+        \\
         \\main : Program
         \\main =
-        \\    Node.printLines [ describe (Go 21), describe (Go 5), String.fromInt (total [ 1, 2, 3 ]), describe Stop ]
+        \\    Node.printLines [ describe (Go 21), describe (Go 5), String.fromInt (total [ 1, 2, 3 ]), report 4, report 9, describe Stop ]
         \\
     );
     try w.write("check-release-map.mjs", check_release_map_script);
@@ -4394,9 +4424,13 @@ test "a release build maps the one hoisted file back to each module's beni sourc
         "s=|a=>a.length",
         "s(n(a))",
         "s(|n(a))",
+        "t=|b=>{let d=0",
+        "for(let c=b",
+        "for(let |c=b",
+        "let |d=0",
         "import process",
         "process.stdout",
-        "u(t)",
+        "v(u)",
     });
 
     // ┌─────────────────────────────────────────┐
@@ -4406,9 +4440,7 @@ test "a release build maps the one hoisted file back to each module's beni sourc
     try testing.expectEqualStrings(
         \\version 3, file _main.mjs
         \\source beni:///core/String.beni: embedded
-        \\source beni:///core/Debug.beni: embedded
         \\source beni:///core/List.beni: embedded
-        \\source beni:///platforms/node/Node.beni: embedded
         \\source ../src/Main.beni: its text
         \\q=|a=>{ -> Main.beni:24:13 spread
         \\let b=a*7919 -> Main.beni:22:5
@@ -4421,11 +4453,15 @@ test "a release build maps the one hoisted file back to each module's beni sourc
         \\s=|a=>a.length -> Main.beni:29:5 total
         \\s(n(a)) -> Main.beni:34:17
         \\s(|n(a)) -> Main.beni:33:14
+        \\t=|b=>{let d=0 -> Main.beni:50:5 report
+        \\for(let c=b -> Main.beni:49:9
+        \\for(let |c=b -> Main.beni:49:9 i
+        \\let |d=0 -> Main.beni:49:9 acc
         \\import process -> unmapped
         \\process.stdout -> unmapped
-        \\u(t) -> unmapped
+        \\v(u) -> unmapped
         \\frame describe Main.beni:17:13
-        \\frame <anonymous> Main.beni:39:94
+        \\frame <anonymous> Main.beni:55:114
         \\exit 1
         \\
     , checked.stdout);
@@ -4524,7 +4560,9 @@ test "a release library build writes a map beside every module" {
     // in development. The platform's runtime is hand-written, compacted
     // and unmapped. In `Lib.mjs`: two exported functions carry their beni
     // names at their first byte, a renamed local its own, and two calls in
-    // `label` map to their first tokens.
+    // `label` map to their first tokens. The `export` is covered by the
+    // last segment, which has no name: Node's own reader takes the name
+    // before it unless the map ends the line (§11.2, *The join*).
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("Lib.beni",
@@ -4550,7 +4588,7 @@ test "a release library build writes a map beside every module" {
     // └─────────────────────────────────────────┘
     const built = try w.runWith(&.{ "build", "--platform=node", "--release", "--library", "--source-maps", "--out=lib", "Lib.beni" }, .{ .raw_diagnostics = true });
     try expectBuilt(built);
-    const checked = try w.runNode(&.{ "check-release-map.mjs", "lib/Lib.mjs", "no", "d=|a=>", "let |b", "b+b*3", "e=|f=>", "a(|c(f", "b(d(f))" });
+    const checked = try w.runNode(&.{ "check-release-map.mjs", "lib/Lib.mjs", "no", "d=|a=>", "let |b", "b+b*3", "e=|f=>", "a(|c(f", "b(d(f))", "export{" });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
@@ -4565,6 +4603,7 @@ test "a release library build writes a map beside every module" {
         \\e=|f=> -> Lib.beni:13:5 label
         \\a(|c(f -> Lib.beni:13:18
         \\b(d(f)) -> Lib.beni:13:36
+        \\export{ -> Lib.beni:13:59 (6 before)
         \\
     , checked.stdout);
 
