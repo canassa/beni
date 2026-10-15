@@ -2198,7 +2198,9 @@ Every other identity test stays: the test on a record, a constructor, a closure,
 or a scalar. Only lists are written in place (§11.12), and a value of any other kind that is
 `===` the last one was not rebuilt, so it still holds the same lists. The checker rejects a write
 to a list while a holder of it is read afterwards. What the change costs is measured on research
-29's harness (`backend.md` §15.5, amended the same day).
+29's harness (`backend.md` §15.5, amended the same day). Records could be assigned in place one
+day, under `browser-direct.md`'s condition C4 (`ownership-checker.md` §30.7, O6). Before that
+happens, this paragraph is amended for records first.
 
 ### 11.12 Identity: an untouched field keeps its identity
 

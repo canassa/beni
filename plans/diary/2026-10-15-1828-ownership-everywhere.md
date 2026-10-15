@@ -38,7 +38,9 @@ code. It is stacked on PR #148.
 - **`browser-tea`'s own `Tea.application` has 2 `need` lines.** Under §28.7 they would fail the
   build of beni itself.
 - **A crash.** `summary_bytes.write` indexes `packages[none]` on four `SchemaDecl*` run projects
-  when a cache is written. ReleaseFast gets `SIGSEGV`, and Debug gets a bounds panic.
+  when a cache is written. ReleaseFast gets `SIGSEGV`, and Debug gets a bounds panic. **Still open:**
+  whether `browser-direct` can reach it today. A minimal schema program there does not crash. O0
+  checks this first, and if it can, the fix lands on its own branch at once.
 - **The writer-as-value worry was already handled** by §16.5. `apply List.push xs` is a checked
   demand, and `{ f = List.push }` is pending, which is an error.
 - **The pass's cost now lands everywhere**: Conduit on `browser-tea` +74 %, Bike Wars +28 %,
