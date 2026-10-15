@@ -596,6 +596,26 @@ a workaround is equally at fault.
 
 ## Operational
 
+### Work is tracked in GitHub issues
+
+The owner, 2026-10-15: **every piece of work has a GitHub issue** (`canassa/beni`) —
+a slice, a defect, a research question, a follow-up a review leaves behind. The
+issue list is the one place to see what is open, who is on it and what is
+waiting.
+
+- **Before starting**, find the issue or open one (`gh issue create`): what is
+  wrong or wanted, the evidence (file:line, measurements, the report it comes
+  from) and what "done" means. A defect found mid-task gets its own issue
+  instead of a note that scrolls away.
+- **While working**, label it `in progress` and say who (a person, or which
+  agent) in a comment; remove the label if the work stops unfinished.
+- **The PR names its issue** — `Closes #N` when it finishes it, `Part of #N`
+  when it doesn't — so merging closes it.
+- **Debt a PR leaves on purpose** (a review finding declined for later, a
+  measurement owed, a pending fixture) gets an issue, linked from the PR.
+- An issue for a decision that is the owner's says so in its title or first
+  line.
+
 ### Work lands through pull requests
 
 The owner, 2026-10-08: **all work is carried through pull requests on GitHub**
@@ -606,7 +626,8 @@ The owner, 2026-10-08: **all work is carried through pull requests on GitHub**
    on a host that cannot count the budget, *Every test has a budget* says
    what to do instead); a branch that rebased past a run-hash change
    re-records its hashes first.
-2. Open the PR with `gh pr create`. The body says what changes and why, the
+2. Open the PR with `gh pr create`. The body names its issue (`Closes #N` or
+   `Part of #N`), says what changes and why, the
    measurements a claim rests on, any known debt accepted on purpose, and
    anything the reviewer should look at twice.
 3. **The Claude Code Review workflow** (`.github/workflows/claude-code-review.yml`)
