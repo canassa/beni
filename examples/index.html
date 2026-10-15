@@ -47,6 +47,16 @@
       h2 a { text-decoration: none; }
       h2 a:hover { text-decoration: underline; }
       .meta { color: var(--muted); font-size: 0.9rem; margin: 0.5rem 0 0; }
+      .tag {
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        color: var(--muted);
+        font-size: 0.75rem;
+        font-weight: normal;
+        margin-left: 0.4rem;
+        padding: 0.1rem 0.5rem;
+        vertical-align: middle;
+      }
       code { font: 0.9em ui-monospace, "SFMono-Regular", Menlo, monospace; }
       footer { color: var(--muted); font-size: 0.9rem; margin-top: 2.5rem; }
     </style>
@@ -55,17 +65,16 @@
     <main>
       <h1>beni examples</h1>
       <p class="lede">
-        Elm programs ported to <a href="https://github.com/canassa/beni">beni</a>
+        Programs written in <a href="https://github.com/canassa/beni">beni</a>
         and compiled to JavaScript for the <code>browser-tea</code> platform.
-        Each page runs the compiler's output as it is. No bundler and no
-        framework are added.
+        Each page runs the compiler's <code>--release</code> output as it is.
+        No bundler and no framework are added.
       </p>
       <ul>
         <li>
           <h2><a href="./sternhalma/">Sternhalma</a></h2>
           <p>Chinese Checkers for two, three, four or six players, by Lucas (rvcas).</p>
           <p class="meta">
-            Release build (<code>beni build --release</code>).
             <a href="https://github.com/canassa/beni/tree/master/examples/sternhalma">Source</a> ·
             <a href="https://github.com/rvcas/sternhalma">Original</a> ·
             <a href="./sternhalma/LICENSE.txt">Licence (BSD-3-Clause)</a>
@@ -75,12 +84,34 @@
           <h2><a href="./bike-wars/">Bike Wars</a></h2>
           <p>A two-player light-cycle game on one keyboard, by Ossi Hanhinen.</p>
           <p class="meta">
-            Development build: the port keeps the original's <code>Debug.log</code>,
-            and a release build refuses <code>Debug</code>.
+            The port leaves out the original's one <code>Debug.log</code>, because
+            a release build refuses <code>Debug</code>.
             <a href="https://github.com/canassa/beni/tree/master/examples/bike-wars">Source</a> ·
             <a href="https://github.com/ohanhi/bike-wars">Original</a> ·
             <a href="./bike-wars/LICENSE.txt">Licence (BSD-3-Clause)</a> ·
             <a href="https://github.com/canassa/beni/tree/master/examples/bike-wars/licenses">Package licences</a>
+          </p>
+        </li>
+        <li>
+          <h2><a href="./conduit/">Conduit</a></h2>
+          <p>
+            The <a href="https://github.com/gothinkster/realworld">RealWorld</a> example app,
+            a Medium clone with a feed, articles, comments, profiles and an editor,
+            written the way elm-spa-example writes it.
+          </p>
+          <p class="meta">
+            It talks to a public demo API, <code>https://api.realworld.show</code>,
+            which the RealWorld project runs. Accounts and articles made there are
+            public, and the API can be down. The example has no stylesheet, so the
+            page shows plain HTML.
+            <a href="https://github.com/canassa/beni/tree/master/examples/conduit">Source</a>
+          </p>
+        </li>
+        <li>
+          <h2>{{playground}}</h2>
+          <p>Write beni and run it in the page, with the compiler built to WebAssembly.</p>
+          <p class="meta">
+            <a href="https://github.com/canassa/beni/issues/128">Issue #128</a>
           </p>
         </li>
       </ul>

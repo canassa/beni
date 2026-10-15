@@ -1,16 +1,13 @@
-# Publishes the example programs to the gh-pages branch, under /examples/,
-# on every push to master. A pull request that changes the examples or this
-# workflow builds the site and does not publish it.
+# Deploys the example programs to GitHub Pages on every push to master. A
+# pull request that changes the examples or this workflow builds the site
+# and does not deploy it.
 #
-# The publish job writes only /examples/ and /.nojekyll on gh-pages; every
-# other path there, /index.html too, stays as it is. /.nojekyll turns off
-# Jekyll, which leaves out every path that starts with "_", and a beni build
-# writes _main.mjs, _core/ and _platform/ (backend.md §2).
-#
-# GitHub Pages serves the branch only after a repository admin selects it:
-# Settings, Pages, "Deploy from a branch", gh-pages, / (root). The site is
-# then https://<owner>.github.io/<repository>/, so each program is built
-# under the base /<repository>/examples/<name>/ (examples/build-pages.mjs).
+# Pages takes its site from GitHub Actions (Settings, Pages, Source), so the
+# site is this workflow's artifact, served as it is: no branch, and no
+# Jekyll to drop the paths that start with "_" (backend.md §2). The site is
+# https://<owner>.github.io/<repository>/: the index at its root and each
+# program under /<name>/, built with the base /<repository>/<name>/
+# (examples/build-pages.mjs).
 name: pages
 
 on:
@@ -20,14 +17,13 @@ on:
     paths:
       - examples/**
       - .github/workflows/pages.yml
-  workflow_dispatch:
 
 permissions: {}
 
-# Publishes run one at a time, and a newer push replaces a waiting one. A
+# Deploys run one at a time, and a newer push replaces a waiting one. A
 # newer push to a pull request cancels its older run.
 concurrency:
-  group: ${{ github.event_name == 'pull_request' && format('pages-pr-{0}', github.event.pull_request.number) || 'pages-publish' }}
+  group: ${{ github.event_name == 'pull_request' && format('pages-pr-{0}', github.event.pull_request.number) || 'pages-deploy' }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
@@ -73,59 +69,44 @@ jobs:
       - name: zig build
         run: nix develop --command zig build
 
+      # The playground (issue #128) joins the site when its build step
+      # exists. The step writes a static site to zig-out/playground/, which
+      # the site build copies to /playground/. Until then, the index marks
+      # the playground as coming.
+      - name: zig build playground
+        id: playground
+        run: |
+          steps=$(nix develop --command zig build --list-steps)
+          if grep -q '^  playground ' <<<"$steps"; then
+            nix develop --command zig build playground
+            echo "args=--playground=zig-out/playground" >> "$GITHUB_OUTPUT"
+          else
+            echo "no playground step: the index marks the playground as coming"
+          fi
+
       - name: build the site
         env:
-          BASE: /${{ github.event.repository.name }}/examples/
-        run: nix develop --command node examples/build-pages.mjs zig-out/bin/beni "$RUNNER_TEMP/site/examples" "$BASE"
+          BASE: /${{ github.event.repository.name }}/
+          PLAYGROUND: ${{ steps.playground.outputs.args }}
+        run: nix develop --command node examples/build-pages.mjs zig-out/bin/beni "$RUNNER_TEMP/site" "$BASE" ${PLAYGROUND:+"$PLAYGROUND"}
 
-      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
         with:
-          name: pages-examples
           path: ${{ runner.temp }}/site
-          if-no-files-found: error
           retention-days: 7
 
-  publish:
-    name: publish to gh-pages
+  deploy:
+    name: deploy to GitHub Pages
     needs: build
-    if: ${{ github.event_name != 'pull_request' && github.ref == 'refs/heads/master' }}
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/master' }}
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     timeout-minutes: 10
     steps:
-      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          name: pages-examples
-          path: ${{ runner.temp }}/site
-
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          ref: gh-pages
-          path: pages
-          persist-credentials: false
-
-      - name: replace /examples/
-        run: |
-          rsync -a --delete "$RUNNER_TEMP/site/examples/" pages/examples/
-          touch pages/.nojekyll
-
-      # The token reaches only the push, as a header; it is never written
-      # to pages/.git.
-      - name: commit and push
-        working-directory: pages
-        env:
-          TOKEN: ${{ github.token }}
-        run: |
-          git add -A
-          if git diff --cached --quiet; then
-            echo "gh-pages already has these files"
-            exit 0
-          fi
-          git -c user.name='github-actions[bot]' \
-              -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
-              commit -q \
-              -m "🚀 publish the examples of ${GITHUB_SHA:0:9}" \
-              -m "Built from $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/commit/$GITHUB_SHA by $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID."
-          auth=$(printf 'x-access-token:%s' "$TOKEN" | base64 -w0)
-          git -c http.https://github.com/.extraheader="AUTHORIZATION: basic $auth" push origin HEAD:gh-pages
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

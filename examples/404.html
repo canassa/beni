@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Not found · beni examples</title>
+    <!--
+      GitHub Pages answers a path that names no file with this page. Under a
+      program that routes by path, such as /conduit/article/<slug> after a
+      reload, the page runs that program, which reads its route from the
+      address. examples/build-pages.mjs fills in the list of programs.
+    -->
+    <script type="module">
+      const app = {{apps}}.find((path) => location.pathname.startsWith(path));
+      const notFound = document.getElementById("not-found");
+      if (app) {
+        notFound.remove();
+        import(`${app}_main.mjs`);
+      } else {
+        notFound.hidden = false;
+      }
+    </script>
+    <style>
+      :root { --bg: #fbfaf7; --fg: #1d1c1a; --accent: #b4381f; }
+      @media (prefers-color-scheme: dark) {
+        :root { --bg: #161513; --fg: #ece9e3; --accent: #f07a5c; }
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font: 16px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif;
+      }
+      main { max-width: 46rem; margin: 0 auto; padding: 3rem 1rem; }
+      a { color: var(--accent); }
+    </style>
+  </head>
+  <body>
+    <main id="not-found" hidden>
+      <h1>Not found</h1>
+      <p>No page has this address. <a href="{{base}}">The beni examples</a> are here.</p>
+    </main>
+  </body>
+</html>
