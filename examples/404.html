@@ -8,7 +8,10 @@
       GitHub Pages answers a path that names no file with this page. Under a
       program that routes by path, such as /conduit/article/<slug> after a
       reload, the page runs that program, which reads its route from the
-      address. examples/build-pages.mjs fills in the list of programs.
+      address. This page stands in for the program's default page shell,
+      which holds only the entry script and an empty body, so such a
+      program declares no "html" shell (examples/build-pages.mjs checks it
+      and fills in the list of programs).
     -->
     <script type="module">
       const app = {{apps}}.find((path) => location.pathname.startsWith(path));

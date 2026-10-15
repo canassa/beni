@@ -72,7 +72,7 @@ mkdirSync(out, { recursive: true });
 
 const work = mkdtempSync(join(tmpdir(), "beni-pages-"));
 try {
-  for (const { name, deploy } of programs) {
+  for (const { name, deploy, routesByPath } of programs) {
     const source = join(here, name);
     const copy = join(work, name);
     cpSync(source, copy, {
@@ -81,6 +81,12 @@ try {
     });
     const manifestPath = join(copy, "beni.json");
     const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
+    // 404.html stands in for the page of a program that routes by path, so
+    // that page must be the default shell: the entry script and an empty
+    // body. A shell of the program's own would hold more.
+    if (routesByPath && manifest.html !== undefined) {
+      throw new Error(`${name}: 404.html stands in for its page, so it cannot declare an "html" shell`);
+    }
     manifest.build.base = `${base}${name}/`;
     writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
     if (deploy) {
