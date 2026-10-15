@@ -2,9 +2,10 @@
 
 *2026-10-15. Draft PR #98, unchanged Conduit sources. Before: `ff82485e5`;
 measured compiler SHA-256 `5be2212c013adae893c701ed83e42c86ef4bc618fc24e58968163d28fd73e033`.
-The finished compiler is rebased onto `d9ae082e0`; the rebase changes no compiler,
+The profiled compiler is rebased onto `d9ae082e0`; that rebase changes no compiler,
 platform or core source. Its Conduit bundles are byte-identical to the measured
-fixed bundles. Full source fingerprints and raw observations accompany this report.*
+fixed bundles. A later rebase and review follow-up are recorded separately below.
+Full source fingerprints and raw observations accompany this report.*
 
 ## 0. Finding
 
@@ -186,6 +187,14 @@ to contain the *whole* tuple-match update, including unrelated routes, followed
 by a copy of the document selector. It now calls the shared update and selector
 under the current handler's substitution. The selector closes over the current
 model, not its mount-time value.
+
+| Work for `EnteredTitle` | Tea | Direct before | Direct fixed |
+| --- | --- | --- | --- |
+| Update body | Shared `Main.update`, then `Editor.update` | Whole tuple update copied into this key | Shared `update$46` call, then `Editor.update` |
+| Root view selection | Shared application view | Selector copied into this key | Shared `$chooseRoot$81` call |
+| Hole selection | Template value comparisons during view patch | Predicted per-key template mask | Same predicted per-key template mask |
+
+The following exact excerpts expose those calls with readable development names.
 
 **Tea: one arm of the shared update**
 
@@ -405,6 +414,30 @@ The frozen compiler was checked sequentially, with no compiler rebuild during a 
 - `zorg build test-browser -Dcorpus=browser/direct -Dchrome=… -j1`: passes, including paired pages and value fuzz in real Chrome.
 
 No budget or coverage was weakened. The two known tests are `stale path same file under case folding not removed` and `stale path equal under case folding but another removed`. Hosted Linux CI and review results are recorded separately in the PR; a hosted run with budgets disabled is not the hardware gate.
+
+*Review and second rebase, 2026-10-15:* master advanced to `2f397d7b6` while
+profiling. The rebase preserves both the nullary-method amendment and the
+parameterised-read amendment, and every diary entry. The review follow-up adds
+scope/count assertions and paired/fuzz `RootSelectorDerived`. The computed-root
+path has no cached derived slots: leading view lets execute inside the shared
+selector. `directArm` binds a destructured model before selecting the arm; branch
+guards are absent from the language. `Writes.keyTree` emits depth-first keys,
+so interleaved prefixes and an empty-path catch-all in the middle cannot arise.
+
+After that follow-up, both unfiltered native and LLVM test/blackbox/format
+runs pass 1,315 tests, skip 15 and fail only the same two known macOS cases.
+The full direct Chrome corpus passes again. The full rebased hash replay has
+552 passes and the same two known failures; the added derived-root case's
+focused `zorg build test-run-hashes` passes. `post-review-validation.json`
+retains these final commands separately from the original frozen batch.
+The hardware-budget gate is still owed.
+
+The final ReleaseSafe LLVM compiler emits **byte-identical Conduit tea/direct
+release bundles and all 57 direct sweep programs** compared with the profiled
+compiler. A fresh S0 run is byte-identical too. The hashes, compiler fingerprint
+and every program comparison are `post-review-rebase.json` / `post-review-s0.json`
+in the archive. The profiles and timings therefore still describe the served
+programs after rebase; no second timing batch is substituted.
 
 The PR remains draft and unmerged. This work does not withdraw report 87's
 older threshold misses or claim the outstanding full V3 campaign has run.
