@@ -1,0 +1,1 @@
+[{"code":"type_mismatch","severity":"error","span":{"file":"tests/corpus/check/bad/CallStyleAnnotatedRecordReceiver.beni","start":{"line":6,"col":14},"end":{"line":6,"col":15}},"title":"TYPE MISMATCH","message":"The 1st argument to `ext` is not what I expect:\n\nThis argument is:\n\n    List a\n\nBut `ext` needs the 1st argument to be:\n\n    { r | length : Int }\n"}]
