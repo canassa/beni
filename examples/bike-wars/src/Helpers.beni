@@ -66,7 +66,6 @@ toLine vecA vecB =
     else if a.y == b.y then
         Just (Horizontal ( vecA, vecB ))
     else
-        _ = Debug.log "Line invalid" ( a, b )
         Nothing
 
 

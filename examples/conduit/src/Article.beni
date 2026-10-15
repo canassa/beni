@@ -28,8 +28,22 @@ pub schema ArticleEnvelope =
     article : ArticleJson
 
 
+--| An article in a list: the RealWorld spec leaves its body out
+--| (`MultipleArticlesResponse`), as elm-spa-example's preview decoder does.
+pub schema ArticlePreviewJson =
+    slug : String
+    title : String
+    description : String
+    tagList : List String
+    createdAt : String
+    updatedAt : String
+    favorited : Bool
+    favoritesCount : Int
+    author : Author.ProfileJson
+
+
 pub schema ArticleList =
-    articles : List ArticleJson
+    articles : List ArticlePreviewJson
     articlesCount : Int
 
 
@@ -50,6 +64,7 @@ pub type alias Article =
     slug : String
     title : String
     description : String
+    -- `""` for an article read from a list (`fromPreviewJson`).
     body : String
     tags : List String
     createdAt : String
@@ -64,6 +79,22 @@ fromJson maybeCred json =
     , title = json.title
     , description = json.description
     , body = json.body
+    , tags = json.tagList
+    , createdAt = json.createdAt
+    , favorited = json.favorited
+    , favoritesCount = json.favoritesCount
+    , author = Author.fromJson maybeCred json.author
+    }
+
+
+-- An article from a list has an empty body. No view of a list reads the
+-- body, and the article page and the editor fetch the article again.
+fromPreviewJson : Maybe Cred, ArticlePreviewJson.Type → Article
+fromPreviewJson maybeCred json =
+    { slug = json.slug
+    , title = json.title
+    , description = json.description
+    , body = ""
     , tags = json.tagList
     , createdAt = json.createdAt
     , favorited = json.favorited
@@ -181,7 +212,9 @@ list maybeCred source page =
             FavoritedBy name →
                 Api.url [ "articles" ] ([ Url.Builder.string "favorited" name ] ++ paging)
     Result.map (Api.get address maybeCred ArticleList.parse) λjson →
-        { articles = List.map json.articles (fromJson maybeCred _), total = json.articlesCount }
+        { articles = List.map json.articles (fromPreviewJson maybeCred _)
+        , total = json.articlesCount
+        }
 
 
 pub tags : ⊤ → Result Api.Error (List String)

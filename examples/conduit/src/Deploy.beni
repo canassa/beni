@@ -1,0 +1,18 @@
+--! Where this build of Conduit is served, and where its API is. These are
+--! the defaults: the app at the root of its origin, with the API at `/api`
+--! on the same origin, as `beni serve` and the corpus pages serve it. The
+--! GitHub Pages build (`examples/build-pages.mjs`) writes this module again
+--! in its copy of the project, with the path the site serves the app under
+--! and a public demo API.
+
+--| The path the app is served under, with no `/` at the end: `""` at the
+--| root of the origin. A route's address starts with it, and an address
+--| that does not start with it is no route.
+pub basePath : String
+basePath = ""
+
+
+--| The origin the API is at, with no `/` at the end: `""` for the page's
+--| own origin.
+pub apiOrigin : String
+apiOrigin = ""
