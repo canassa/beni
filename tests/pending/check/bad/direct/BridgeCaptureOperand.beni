@@ -1,0 +1,10 @@
+-- CK-231: a written argument aliases the callee environment.
+-- Confirmed by the in-place interpreter; see proofs/ownership/BRIDGE-RESULTS.md.
+-- The shipping checker accepts every demand. The expected refusal is pinned below.
+-- Position remains open until the checker fix chooses its diagnostic site.
+pub run ⊤ =
+    xs = [ 0 ]
+    change ys =
+        replaced = List.set ys 0 2
+        xs
+    change xs

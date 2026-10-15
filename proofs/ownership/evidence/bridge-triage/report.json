@@ -1,0 +1,26 @@
+{
+  "inputEvidenceSha256": "0859b70e50fc10af0e1e018157262ba62ef09f5a4f1fbf2e6c9c8ccfd10b5fc9",
+  "originals": 2358,
+  "confirmed": 201,
+  "leanImprecise": 2157,
+  "verdicts": {
+    "confirmed": "confirmed by the in-place interpreter",
+    "agrees": "Lean precision lead"
+  },
+  "clusters": {
+    "RecursiveCapture": 1,
+    "FoldFeedback": 5,
+    "CaseResult": 170,
+    "CaptureResult": 16,
+    "BlockResult": 8,
+    "CaptureOperand": 1
+  },
+  "minima": {
+    "diverge": 220,
+    "erasedOriginalDivergence": 94,
+    "introducedDivergence": 113
+  },
+  "observation": "The complete Lean Trace: finalValue, reads and externalReads. Execution/type errors are fatal.",
+  "originalReplay": "Existing fixture/targeted/enumerate-2/v5 seeded streams regenerated; each original Lean refusal and emitted beni source match the retained campaign exactly.",
+  "proofStatus": "Neither checker nor interpreter changed. Three existing unproved soundness statements remain."
+}

@@ -595,7 +595,7 @@ fn fixturesOf(arena: std.mem.Allocator, cfg: *const Config, kind: Kind) ![]const
             fixture.release = true;
         }
     }
-    if (kind == .build_bad) {
+    if (kind == .build_bad or kind == .check_bad) {
         const direct_dir = try std.fs.path.join(arena, &.{ kind_dir, "direct" });
         const start = fixtures.items.len;
         try collect(arena, direct_dir, false, false, &fixtures, true);

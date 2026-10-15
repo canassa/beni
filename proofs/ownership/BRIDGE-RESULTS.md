@@ -3,10 +3,13 @@
 The corrected bridge covered **116,456 inputs**: 43,066 translated and
 value-checked programs, and 73,390 explicitly counted skips. Both checkers
 accepted 18,346 programs and refused 21,961; Zig refused 401 that Lean accepted,
-and accepted 2,358 that Lean refused. **No shipping runtime defect was confirmed.**
-All 2,358 program leads have typed minima and matching real runtime observations;
-1,167 additional site-only leads cannot build directly because of other refusals.
-Neither ownership policy was changed. No shipping-defect pending fixture was added.
+and accepted 2,358 that Lean refused. **201 original programs expose shipping
+ownership-checker defects, confirmed by the in-place interpreter**, in six
+clusters. The other **2,157 original programs are Lean precision leads**: the
+oracle's value and in-place traces agree. Neither checker was changed or weakened.
+Six minimal beni refusals are pinned under `tests/pending/check/bad/direct/`.
+The emitted direct runtime still uses persistent lists; it cannot judge this
+in-place guarantee. There are also 1,167 site-only leads blocked by other refusals.
 
 The preliminary run and its minima are superseded: its translator could erase
 unused explicit captures. The corrected translator snapshots capture atoms into
@@ -190,8 +193,9 @@ The final one-step frontiers contain these counted translation/observation skips
 These counts describe the final frontier, not historical search rounds. Retained
 typed proposals reproduce them with `scripts/bridge-frontier.mjs`.
 
-One representative per class is linked below; all executions agree. The complete
-bundle contains every case, including those with the same minimum.
+The following historical representatives compare the two persistent JavaScript
+runs only. They do not establish in-place safety. The oracle triage below
+supersedes their `unconfirmed` statuses; the original bundle is retained unchanged.
 
 | Class | Case | Minimal source | Result / reads / shared of both runs |
 |---|---|---|---|
@@ -213,6 +217,97 @@ node scripts/bridge-evidence.mjs case evidence/bridge-long seed-314159-9019 orig
 node scripts/bridge-evidence.mjs case evidence/bridge-long seed-314159-9019 core > core.json
 ```
 
+## Oracle triage: confirmed by the in-place interpreter
+
+[Triage summary](evidence/bridge-triage/report.json),
+[complete judgments](evidence/bridge-triage/judgments.json.gz) and
+[cluster membership](evidence/bridge-triage/clusters.json) retain every lead's
+original and minimum, both complete traces and the replayable core. The judge
+runs `ValueSemantics.run` **and** `InPlaceSemantics.run`, regardless of the
+ownership verdict, comparing final values, reads and permanent outside-reader
+observations. Typing or execution errors fail the run. No lead failed execution.
+
+The original programs are regenerated from the oracle's existing fixture,
+targeted, bound-2 enumeration and three v5 streams. Every regenerated original
+has the exact retained Lean refusal and translates to the exact retained beni
+source. The complete membership table assigns each diverging original once,
+by its minimal causal pattern rather than by Lean's first rejection message.
+Some originals contain more than one defect; counts are program counts, not
+counts of independent writes.
+
+| Minimal Zig pattern | Originals | Pending fixture | Zig rule/protocol at fault |
+|---|---:|---|---|
+| Return an old value through a case arm after an eager write | 170 | [BridgeCaseResult](../../tests/pending/check/bad/direct/BridgeCaseResult.beni) | `src/own/Ownership.zig:5235`: `evalCase` evaluates arm results without consuming their variable paths; `refPath` cannot recover that use from the compound case. Dead misses the later arm read. |
+| Return an earlier written capture from a later focus callback | 16 | [BridgeCaptureResult](../../tests/pending/check/bad/direct/BridgeCaptureResult.beni) | `src/own/Ownership.zig:3965`, `:4909`, `:8342`: the returned capture is used in the callback frame, while the earlier demand resolves only uses in its own frame. Its later capture/return does not keep the outer holder live. |
+| Return an old parameter/block result after writing or lending it, including recursive calls | 8 | [BridgeBlockResult](../../tests/pending/check/bad/direct/BridgeBlockResult.beni) | `src/own/Ownership.zig:5040`, `:3168`: `evalLet` evaluates its final result without consuming it; consuming the compound body does not consume its terminal local. The summary can publish `W` and return the old `π` without the internal Dead refusal. |
+| Reuse a borrowed input as a fold's written accumulator | 5 | [BridgeFoldBorrow](../../tests/pending/check/bad/direct/BridgeFoldBorrow.beni) | `src/own/Ownership.zig:7174`, `:7436`, `:7530`: the callback-result guard accepts the item's owned supply without enforcing its taken-container condition/lifetime on the feedback edge. Returning an input can make the next written accumulator alias the retained input or a later input position. |
+| Recursive return of a capture loses the write/once obligation | 1 | [BridgeRecursiveCapture](../../tests/pending/check/bad/direct/BridgeRecursiveCapture.beni) | `src/own/Ownership.zig:6426`, `:4935`: local groups are walked before value bindings; an unresolved environment result instantiates as no cells, so the write through the recursive return contributes no captured write and the closure is not once. A second call mutates the first call's retained seed. |
+| Written argument aliases the callee's returned capture | 1 | [BridgeCaptureOperand](../../tests/pending/check/bad/direct/BridgeCaptureOperand.beni) | `src/own/Ownership.zig:6660`: `callSiteDemandDeep` includes other explicit arguments and paths but omits the callee environment from Disjoint. |
+| **Total** | **201** | **6 fixtures** | **Shipping checker unchanged** |
+
+All six fixtures currently check successfully with no diagnostics under
+`browser-direct`, despite their pinned `list_still_used` refusal. Their `RED`
+signature is `exit=0 codes=none`. The small Lean twins are
+[regressions/bridge/Triage.json](regressions/bridge/Triage.json); all six diverge.
+For example, the case and block twins return `[1]` by value versus `[1,2]` in
+place; the capture operand returns `[0]` versus `[2]`; the recursive captured
+seed returns `[0,1]` versus `[0,1,1]`. The fold twin's final result agrees but
+its third item read is `[1]` versus `[1,9]`: comparing final values alone misses it.
+The recursive block variant `seed-17-15713` returns `[2]` versus `[2,2]`.
+
+The old reducer preserved persistent-runtime agreement, which cannot preserve
+an in-place witness. Of the 2,358 old minima, 220 diverge: **94 erase an original
+divergence and 113 introduce one**. These 113 changed programs are additional
+unsafe minimized witnesses, not confirmations of their nondiverging originals.
+They are recorded separately; the headline partition remains **201 + 2,157 =
+2,358 original leads**. The six new witnesses were minimized by pattern and
+confirmed in both Lean interpreters, rather than selected from the old minima.
+No claim of a global or exhaustive minimum is made.
+
+The 2,157 agreeing originals remain Lean precision leads for their executed
+inputs, including 1,385 explicit model limits. Agreement on these finite
+executions does not prove safety for other inputs or establish completeness.
+
+To reproduce from the repository root:
+
+```sh
+nix develop .#ownership -c sh -c 'cd proofs/ownership && node scripts/bridge-triage.mjs'
+zorg build test-pending -j1 -Dcorpus=check/bad/direct/Bridge
+```
+
+## The 401 Zig-refuses / Lean-accepts leads: top five patterns
+
+A fresh dump replay of **all 18,747 translated Lean-accepted programs** using
+the campaign compiler recovers exactly **401** Zig refusals/pending verdicts.
+[Complete per-program sources and refusals](evidence/bridge-triage/precision.json.gz)
+retain the evidence. This is a precision-direction comparison, not evidence
+that Lean acceptance proves safety.
+
+| Pattern | Programs assigned | What Zig loses |
+|---|---:|---|
+| `once` through a wrapper capturing another closure | 272 | A captured closure's single-use consumer is no longer known. |
+| Returned writer closure remains pending (`it is returned`) | 95 | The summary loses the consumer of a closure returned by a helper. |
+| Callback result `need` | 18 | A callback result, especially a captured result, cannot be shown owned where the caller edits it. |
+| Nested focus `exclusive` | 11 | Independence of containers produced by initialize/constructor wrappers is not recovered for a later nested update. |
+| Initialize-produced leaf `exclusive` (`push`/`set`) | 5 | Fresh per-call inner lists are still treated as possibly sharing. |
+| **Total** | **401** | |
+
+Assignment follows the table order. `seed-20261011-11679` has both `need` and
+nested-focus failures and is counted under `need`; nested focus occurs in 12
+programs before that deduplication. The leaf group has three `push` and three
+`set` occurrences across five programs. The older `precisionPatterns` counts
+**415 demand lines**, including two nested-update demands per call, and must not
+be read as program counts.
+
+Given the retained raw campaign on azathoth, reproduce its precision replay with:
+
+```sh
+node scripts/bridge-precision.mjs RAW-CAMPAIGN-DIR ORIGINAL-COMPILER precision.json.gz
+```
+
+The script verifies the original compiler and stream SHA-256 hashes before
+replaying; it changes neither checker and does not execute JavaScript.
+
 ## Opt-in Zig holes
 
 The baseline and all three source edits were built in the same clean detached
@@ -233,9 +328,10 @@ new program/site and its outcome; each subdirectory includes complete source and
 runtime evidence. All three are permissive holes. A stricter-policy source
 mutant is not included; ordinary precision differences are measured.
 
-The runtime confirmation caught **none** of these holes. The actual emitted
-browser-direct library still calls persistent list functions. Matching runs are
-therefore unconfirmed leads, not evidence that an in-place guarantee holds.
+The historical persistent-runtime comparison caught **none** of these holes. The actual emitted
+browser-direct library still calls persistent list functions. Matching JavaScript runs
+therefore cannot judge the in-place guarantee. The oracle triage above supplies
+that judge for the original baseline leads.
 The bridge never substitutes a handwritten mutating runtime.
 
 ## Validation and limits
@@ -272,3 +368,20 @@ The corrected raw artifacts remain on `azathoth` under
 The final controls are `zig-out/ownership-bridge-mutants/`; full CI is
 `zig-out/bridge-ci-faithful-full.log`. `bridge-gates-faithful-linux.log` records
 the Linux gates. All builds use real pinned Zorg, not the handoff's old alias.
+
+### This triage's validation (2026-10-15)
+
+- `lake build` and unfiltered `lake exe ownership ci` passed. The final source
+  scan still finds exactly three `sorry` declarations and the pinned four
+  `sorryAx` dependencies; neither interpreter nor checker changed.
+- The full original/minimum replay and all six minimal Lean twins passed.
+- Unfiltered Linux `zorg build gates -j8` passed in a fresh source snapshot.
+- Unfiltered macOS `zorg build gates -j1`: **1,297 passed, 15 skipped, the same
+  two known case-folding failures**. No new gate failure or budget exemption.
+- All six new pending refusals are red for the intended `exit=0 codes=none`
+  signature. The full pending run also exposes an unrelated existing stale
+  `ValueCommands` signature (`missing_field`, not its recorded
+  `list_may_be_shared`); that fixture and signature were left unchanged.
+- The only Zig change is teaching the corpus walker to use `browser-direct`
+  for `check/bad/direct/`, as it already does for `build/bad/direct/`. This lets
+  pending enforcement fixtures pin diagnostic codes without requiring a page.

@@ -5782,3 +5782,65 @@ supply facts. Scalar result types need no list-ownership check. HttpFailures
 stays pending for its function slots inside List.map callbacks, with one
 approximate diagnostic rather than its former render-only entry rejection.
 No application code or ownership verdict was relaxed to bypass that limit.
+
+## CK-226 — a case result loses the old list's later use (2026-10-15)
+
+Ownership soundness: 170 original Lean bridge leads, confirmed by the in-place
+interpreter. `src/own/Ownership.zig:5235` evaluates arm results but does not
+consume their variable paths. An eager `List.push xs 2` followed by a case that
+returns `xs` checks and would return the mutated version. Pending refusal:
+`tests/pending/check/bad/direct/BridgeCaseResult.beni` (`list_still_used`).
+
+## CK-227 — a later callback return loses an outer captured holder (2026-10-15)
+
+Ownership soundness: 16 original leads, confirmed by the in-place interpreter.
+`src/own/Ownership.zig:3965` / `:4909` record the return in the callback frame;
+`:8342` resolves the earlier write against uses in its own frame only. Returning
+`xs` from a later `List.update` callback does not keep `xs` live before an
+earlier mutation. Pending: `check/bad/direct/BridgeCaptureResult.beni` under
+`tests/pending/`, requiring `list_still_used`.
+
+## CK-228 — a block result loses its old parameter's later use (2026-10-15)
+
+Ownership soundness: eight original leads, including recursive and higher-order
+calls, confirmed by the in-place interpreter. `src/own/Ownership.zig:5040`
+evaluates a block's final expression without consuming its terminal local;
+`:3168` consumes the compound body, which has no variable path. A function may
+write or lend a parameter then return the old version, while its summary only
+publishes the write and the alias. Pending refusal:
+`tests/pending/check/bad/direct/BridgeBlockResult.beni` (`list_still_used`).
+
+## CK-229 — a fold feeds a borrowed input back as its owned accumulator (2026-10-15)
+
+Ownership soundness: five original leads, confirmed by the in-place interpreter.
+`src/own/Ownership.zig:7174` checks callback-result ownership through `provOwned`
+(`:7436`) and `returnsOwned` (`:7530`), without discharging the input's taken
+container condition/lifetime on the feedback edge. A callback can return an
+input, then mutate it as the next accumulator while the source or a later input
+position still observes it. The minimal witness differs in an intermediate item
+read even when its final value agrees. Pending refusal:
+`tests/pending/check/bad/direct/BridgeFoldBorrow.beni` (`list_still_used`).
+
+## CK-230 — recursive capture results hide the once obligation (2026-10-15)
+
+Ownership soundness: one original lead (`fixture-24`), confirmed by the in-place
+interpreter. Local groups are walked before value bindings. An unresolved
+captured result becomes no cells at `src/own/Ownership.zig:6426`; the recursive
+return's write contributes no captured cell to `env_writes` (`:4935`) and no
+once requirement. Reusing the closure mutates its retained seed. Pending:
+`tests/pending/check/bad/direct/BridgeRecursiveCapture.beni` (`list_still_used`).
+
+## CK-231 — call-site Disjoint omits the callee's environment (2026-10-15)
+
+Ownership soundness: one original lead (`seed-314159-9019`), confirmed by the
+in-place interpreter. `src/own/Ownership.zig:6660` compares a written argument
+with other explicit arguments and paths, but not the callee environment. A
+closure can write its argument then return a capture of that same list's old
+version. Pending: `tests/pending/check/bad/direct/BridgeCaptureOperand.beni`
+(`list_still_used`).
+
+The six bridge findings deliberately leave the shipping checker unchanged.
+[The report](../proofs/ownership/BRIDGE-RESULTS.md) contains the full disjoint
+membership lists, original/minimum traces, Lean precision counts and the
+reverse-direction precision summary. Their primary cluster counts sum to 201
+original programs; they are not 201 independent rules.

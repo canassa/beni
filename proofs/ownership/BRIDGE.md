@@ -3,7 +3,11 @@
 The bridge exports the existing fixtures, bounded enumeration grammar and seeded
 v5 generator into the shipping compiler. It changes neither ownership policy.
 A Lean rejection is a lead, not a proof of a compiler defect. A confirmed
-shipping defect requires a real runtime disagreement and a red pending fixture.
+shipping ownership defect requires divergence between the oracle's own value
+and in-place interpreters, plus a red pending refusal fixture. The emitted
+direct library still uses persistent lists and cannot confirm in-place safety.
+The post-campaign replay is `node scripts/bridge-triage.mjs`;
+[BRIDGE-RESULTS.md](BRIDGE-RESULTS.md) records its original-program partition.
 
 ## Run
 
@@ -116,7 +120,7 @@ The dump parser rejects unfamiliar lines. Browser-direct `check` diagnostics
 must match exactly the dump's deduplicated rejected/pending source spans, with
 no unexpected diagnostic code or abnormal exit.
 
-## Runtime boundary and minimization
+## Runtime boundary and historical minimization
 
 Every translated program is built as part of a browser-tea batch and its
 normalized final value is compared with Lean, including agreements and precision
@@ -141,12 +145,14 @@ The harness does not substitute a handwritten mutating runtime to manufacture
 confirmation. Runtime disagreements, should they occur, remain real compiler
 outputs and require investigation.
 
-Greedy reduction tries the oracle's typed one-step reductions over the main
+The historical greedy reduction, used by `bridge.mjs`, tries the oracle's typed one-step reductions over the main
 expression and reachable declaration bodies, including numeric reductions.
 Every retained step preserves the Lean rejection class and full Zig acceptance,
 and preserves or strengthens the original runtime outcome (a confirmed mismatch cannot become unconfirmed).
-The result is a one-step minimum under that relation, not a global minimum or
-a minimization of declaration signatures. Reduction candidates use 5,000
+The result is a one-step minimum under that persistent-runtime relation, not a global minimum or
+a minimization of declaration signatures. This relation does **not** preserve
+in-place divergences: the triage judges originals and minima separately, and
+its headline counts always use originals. Reduction candidates use 5,000
 interpreter steps; exhausted candidates are excluded. Ordinary compiler
 rejections of a candidate are counted and retained separately, and excluded
 from the minimum claim; abnormal compiler exits fail the run. Original and
