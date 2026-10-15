@@ -168,6 +168,24 @@ pub fn create(s: *Solve, name: Symbol, receiver: Var, method_type: Var, origin: 
 /// receiver is known, else riding on it.
 pub fn method(s: *Solve, node: Tree.Node) Error!void {
     const info = s.tree.extraData(node.a, Tree.Method);
+    // A known record has no nullary methods. Keep recursive frames on the
+    // full path: their rows carry canonical pessimism and hint provenance.
+    // An unproved or rejected receiver also needs step's ordinary checks.
+    if (s.cx.bir.instTag(node.region) == .field_access and s.recursive_frames == 0 and s.resolver.steps < step_budget - 1) {
+        const st = s.store();
+        const root, const content = st.resolved(info.receiver);
+        const record = content == .structure and (content.structure == .record or content.structure == .empty_record);
+        if (record and st.proved(root) and !s.evidence.isRejected(root, .{ .method = info.name, .derives = isWellKnownName(info.name) })) {
+            if (Walk.function(st, info.method_type)) |f| {
+                if (std.debug.runtime_safety) try Walk.assertProved(st, &s.stacks, s.cx.gpa, root);
+                // Charge the same step and sequence slots as the wanted and
+                // its nullary obligation, without storing either row.
+                s.resolver.steps += 1;
+                s.obligations.seq += 2;
+                return Instances.fieldRead(s, info.receiver, info.name, f.result, node.region);
+            }
+        }
+    }
     const id = try create(s, info.name, info.receiver, info.method_type, node.region, @fromBackingInt(@intCast(info.kind)), .none);
     // A hand-written dot-call's own wanted may become a field call (§11).
     if (s.evidence.get(id).kind == .dot_call) s.evidence.ptr(id).field_ok = true;
