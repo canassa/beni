@@ -1712,6 +1712,42 @@ the index. The order is the one the corpus harness's paths already produced — 
 byte-identical wherever the project lives* builds one project from three directories on either
 side of `core` and at two depths, and compares every file both builds write.
 
+### A build with no threads
+
+*2026-10-15, for the playground ([`playground.md`](playground.md) §2.2).* A WebAssembly page has
+no threads, so the compiler that runs in it is a single-threaded build
+(`builtin.single_threaded`). In that build the compiler starts no thread, and each place that
+starts one does this:
+
+| Where | Threaded build | Single-threaded build |
+|---|---|---|
+| `Session.runWave`, the per-file pool | one thread per worker | each worker on the calling thread, in worker order; the first claims every file |
+| `resolve/Resolve.zig`, the resolution DAG | `--jobs` threads | the serial walk of `--jobs=1` |
+| `check/Driver.zig`, the check DAG | `--jobs` threads | the serial walk of `--jobs=1` |
+| `js/Emit.zig`, the emit pool | up to `--jobs - 1` more threads | none: the calling thread takes every item |
+| `Session.runCheckOnBigStack`, `build/Command.zig`'s emit, `own/Enforce.zig`'s pass, `main.zig`'s dumps | one thread with a `Check.stack_size` stack | a call on the calling thread |
+
+The command line also sets `--jobs` to 1 in this build, whatever the flag says, so every pool has
+one worker. `--jobs` is a performance setting and the output does not depend on it, so this
+refuses nothing (rule 7).
+
+**The output is byte-identical**, by the argument of this section: each serial walk is the walk
+`--jobs=1` makes, and the determinism test proves that `--jobs=1` and `--jobs=8` write the same
+bytes. The only difference from a threaded `--jobs=1` run is the stack. The work that ran on a
+thread with `Check.stack_size` (64 MiB) now runs on the main stack, so the executable's stack is
+`Check.stack_size` plus 1 MiB for the frames under the walks (`build.zig`'s
+`no_threads_stack_size`; on Linux, Zig's start code raises the stack limit to it).
+
+**The tests.** `tests/blackbox/wasm_test.zig` builds programs with a native single-threaded
+compiler and with the threaded one and compares every output byte, a tree `Parse.max_depth`
+levels deep included, and the WebAssembly compiler against the native one
+([`playground.md`](playground.md) §6).
+
+**A guard is a comptime branch.** `std.Thread.spawn` is a compile error in a single-threaded
+build, so each guard tests `builtin.single_threaded` before the code that spawns, and the threaded
+code is not compiled into the single-threaded binary. A new place that starts a thread needs the
+same guard; the single-threaded build in the gates fails to compile without it.
+
 ## 11. What we are deliberately not doing
 
 | Not doing | Why |
