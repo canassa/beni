@@ -7088,7 +7088,9 @@ the whole `run/` and `browser/` corpus's release pass is their differential test
    and `x || false` are `x`** — the literal decides nothing and evaluates nothing, so the operator
    is truthy exactly when `x` is — when neither node is referred to from anywhere else. It is what
    specialisation leaves where it folds `!c.all` to `true` in a compiled schema reader's
-   `if (f === c.fail && !c.all)`, and an `||` arm folded to `false`. Conduit: −136 brotli tea,
+   `if (f === c.fail && !c.all)`, and an `||` arm folded to `false`. An operand of `&&`/`||` is a
+   test position only when that operator itself is referred to from nowhere else, for this
+   rewrite and for the flag test above. Conduit: −136 brotli tea,
    −68 direct. Fixture: `emit/release/app/SchemaReaderTest`.
 2. **No result where the result is `()`**: §4's *A `()` result is not written*, with its fixture
    `emit/release/core/UnitResults`.
