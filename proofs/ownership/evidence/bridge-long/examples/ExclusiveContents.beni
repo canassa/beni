@@ -1,0 +1,37 @@
+pub bridgeRead value = value
+
+
+pub run ⊤ =
+    -- bridge-start main
+    b0v0 =
+        -- bridge-start main/0
+        [  ]
+        -- bridge-end main/0
+    -- bridge-start main/1
+    b1v2 =
+        -- bridge-start main/1/0
+        [ b0v0 ]
+        -- bridge-end main/1/0
+    -- bridge-start main/1/1
+    b2v4 =
+        -- bridge-start main/1/1/0
+        [ b0v0 ]
+        -- bridge-end main/1/1/0
+    -- bridge-start main/1/1/1
+    List.foldl (b1v2) (0) (λitem4 acc5 →
+        -- bridge-start main/1/1/1/body
+        b6v1053 =
+            -- bridge-start main/1/1/1/body/0
+            List.push (item4) (0)
+            -- bridge-end main/1/1/1/body/0
+        -- bridge-start main/1/1/1/body/1
+        bridgeRead (
+            List.length (b6v1053)
+        )
+        -- bridge-end main/1/1/1/body/1
+        -- bridge-end main/1/1/1/body
+    )
+    -- bridge-end main/1/1/1
+    -- bridge-end main/1/1
+    -- bridge-end main/1
+    -- bridge-end main

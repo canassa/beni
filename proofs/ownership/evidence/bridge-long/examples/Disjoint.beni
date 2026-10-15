@@ -1,0 +1,32 @@
+pub bridgeRead value = value
+
+
+pub run ⊤ =
+    -- bridge-start main
+    b0v0 =
+        -- bridge-start main/0
+        [  ]
+        -- bridge-end main/0
+    -- bridge-start main/1
+    b1v2 =
+        -- bridge-start main/1/0
+        (
+            captured3 = b0v0
+            (λc2v0 →
+                -- bridge-start d40
+                b5v3 =
+                    -- bridge-start d40/0
+                    List.set (c2v0) (0) (0)
+                    -- bridge-end d40/0
+                -- bridge-start d40/1
+                captured3
+                -- bridge-end d40/1
+                -- bridge-end d40
+            )
+        )
+        -- bridge-end main/1/0
+    -- bridge-start main/1/1
+    b1v2 (b0v0)
+    -- bridge-end main/1/1
+    -- bridge-end main/1
+    -- bridge-end main

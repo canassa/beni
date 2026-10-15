@@ -1,0 +1,45 @@
+pub bridgeRead value = value
+
+
+pub run ⊤ =
+    -- bridge-start main
+    b0v0 =
+        -- bridge-start main/0
+        [  ]
+        -- bridge-end main/0
+    -- bridge-start main/1
+    b1v1 =
+        -- bridge-start main/1/0
+        (
+            captured3 = b0v0
+            rec4 c2v0 =
+                -- bridge-start d0
+                if c2v0 == 0 then
+                    -- bridge-start d0/0
+                    captured3
+                    -- bridge-end d0/0
+                else
+                    -- bridge-start d0/1
+                    b5v2 =
+                        -- bridge-start d0/1/0
+                        (c2v0 - 0)
+                        -- bridge-end d0/1/0
+                    -- bridge-start d0/1/1
+                    b6v3 =
+                        -- bridge-start d0/1/1/0
+                        rec4 (b5v2)
+                        -- bridge-end d0/1/1/0
+                    -- bridge-start d0/1/1/1
+                    List.push (b6v3) (c2v0)
+                    -- bridge-end d0/1/1/1
+                    -- bridge-end d0/1/1
+                    -- bridge-end d0/1
+                -- bridge-end d0
+            rec4
+        )
+        -- bridge-end main/1/0
+    -- bridge-start main/1/1
+    b1v1 (0)
+    -- bridge-end main/1/1
+    -- bridge-end main/1
+    -- bridge-end main

@@ -1,0 +1,58 @@
+pub bridgeRead value = value
+
+
+d40 p40v0 p40v1 p40v2 =
+    -- bridge-start d40
+    b1v4 =
+        -- bridge-start d40/0
+        if 0 < p40v0 then 1 else 0
+        -- bridge-end d40/0
+    -- bridge-start d40/1
+    if b1v4 == 0 then
+        -- bridge-start d40/1/0
+        0
+        -- bridge-end d40/1/0
+    else
+        -- bridge-start d40/1/1
+        b2v5 =
+            -- bridge-start d40/1/1/0
+            (p40v0 - 0)
+            -- bridge-end d40/1/1/0
+        -- bridge-start d40/1/1/1
+        b3v6 =
+            -- bridge-start d40/1/1/1/0
+            d40 (b2v5) (p40v1) (p40v2)
+            -- bridge-end d40/1/1/1/0
+        -- bridge-start d40/1/1/1/1
+        bridgeRead (
+            List.length (p40v1)
+        )
+        -- bridge-end d40/1/1/1/1
+        -- bridge-end d40/1/1/1
+        -- bridge-end d40/1/1
+    -- bridge-end d40/1
+    -- bridge-end d40
+
+
+pub run ⊤ =
+    -- bridge-start main
+    b0v6 =
+        -- bridge-start main/0
+        d40
+        -- bridge-end main/0
+    -- bridge-start main/1
+    b4v7 =
+        -- bridge-start main/1/0
+        [  ]
+        -- bridge-end main/1/0
+    -- bridge-start main/1/1
+    b5v8 =
+        -- bridge-start main/1/1/0
+        [  ]
+        -- bridge-end main/1/1/0
+    -- bridge-start main/1/1/1
+    b0v6 (0) (b4v7) (b5v8)
+    -- bridge-end main/1/1/1
+    -- bridge-end main/1/1
+    -- bridge-end main/1
+    -- bridge-end main

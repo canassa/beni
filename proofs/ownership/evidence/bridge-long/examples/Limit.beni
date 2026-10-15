@@ -1,0 +1,44 @@
+pub bridgeRead value = value
+
+
+d0 p0v0 p0v1 =
+    -- bridge-start d0
+    if p0v0 == 0 then
+        -- bridge-start d0/0
+        p0v1 (0)
+        -- bridge-end d0/0
+    else
+        -- bridge-start d0/1
+        b1v2 =
+            -- bridge-start d0/1/0
+            (p0v0 - 0)
+            -- bridge-end d0/1/0
+        -- bridge-start d0/1/1
+        d0 (b1v2) (p0v1)
+        -- bridge-end d0/1/1
+        -- bridge-end d0/1
+    -- bridge-end d0
+
+
+d1 p1v0 =
+    -- bridge-start d1
+    p1v0
+    -- bridge-end d1
+
+
+pub run ⊤ =
+    -- bridge-start main
+    b0v0 =
+        -- bridge-start main/0
+        d0
+        -- bridge-end main/0
+    -- bridge-start main/1
+    b2v1 =
+        -- bridge-start main/1/0
+        d1
+        -- bridge-end main/1/0
+    -- bridge-start main/1/1
+    b0v0 (0) (b2v1)
+    -- bridge-end main/1/1
+    -- bridge-end main/1
+    -- bridge-end main

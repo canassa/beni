@@ -1,0 +1,43 @@
+pub bridgeRead value = value
+
+
+d2 p2v0 =
+    -- bridge-start d2
+    List.push (p2v0) (0)
+    -- bridge-end d2
+
+
+pub run ⊤ =
+    -- bridge-start main
+    b0v1 =
+        -- bridge-start main/0
+        [  ]
+        -- bridge-end main/0
+    -- bridge-start main/1
+    b1v2 =
+        -- bridge-start main/1/0
+        [ b0v1 ]
+        -- bridge-end main/1/0
+    -- bridge-start main/1/1
+    b2v4 =
+        -- bridge-start main/1/1/0
+        [ b0v1 ]
+        -- bridge-end main/1/1/0
+    -- bridge-start main/1/1/1
+    b3v1050 =
+        -- bridge-start main/1/1/1/0
+        List.update
+        -- bridge-end main/1/1/1/0
+    -- bridge-start main/1/1/1/1
+    b4v1051 =
+        -- bridge-start main/1/1/1/1/0
+        d2
+        -- bridge-end main/1/1/1/1/0
+    -- bridge-start main/1/1/1/1/1
+    b3v1050 (b1v2) (0) (b4v1051)
+    -- bridge-end main/1/1/1/1/1
+    -- bridge-end main/1/1/1/1
+    -- bridge-end main/1/1/1
+    -- bridge-end main/1/1
+    -- bridge-end main/1
+    -- bridge-end main

@@ -1,0 +1,143 @@
+{
+  "programs": 1127,
+  "translated": 1127,
+  "skipped": 0,
+  "valueChecked": 1127,
+  "agreements": 1126,
+  "precision": 1,
+  "leads": 0,
+  "sites": {
+    "agreement": 244,
+    "precision": 0,
+    "lead": 0,
+    "unknown": 68,
+    "extra": 0,
+    "pending": 1,
+    "ambiguousAgreement": 67,
+    "ambiguousPrecision": 1
+  },
+  "skipReasons": {},
+  "constructs": {
+    "let": {
+      "translated": 6078,
+      "skipped": 0
+    },
+    "literal": {
+      "translated": 2673,
+      "skipped": 0
+    },
+    "closure": {
+      "translated": 2525,
+      "skipped": 0
+    },
+    "length": {
+      "translated": 803,
+      "skipped": 0
+    },
+    "push": {
+      "translated": 186,
+      "skipped": 0
+    },
+    "app": {
+      "translated": 1302,
+      "skipped": 0
+    },
+    "atom": {
+      "translated": 975,
+      "skipped": 0
+    },
+    "record": {
+      "translated": 425,
+      "skipped": 0
+    },
+    "branch": {
+      "translated": 451,
+      "skipped": 0
+    },
+    "set": {
+      "translated": 56,
+      "skipped": 0
+    },
+    "copy": {
+      "translated": 26,
+      "skipped": 0
+    },
+    "at": {
+      "translated": 18,
+      "skipped": 0
+    },
+    "focus": {
+      "translated": 24,
+      "skipped": 0
+    },
+    "traverse-list": {
+      "translated": 9,
+      "skipped": 0
+    },
+    "builder": {
+      "translated": 1,
+      "skipped": 0
+    },
+    "put": {
+      "translated": 1,
+      "skipped": 0
+    },
+    "close": {
+      "translated": 1,
+      "skipped": 0
+    },
+    "add": {
+      "translated": 2,
+      "skipped": 0
+    }
+  },
+  "families": {
+    "enumerate": {
+      "programs": 480,
+      "translated": 480,
+      "skipped": 0,
+      "agreements": 480
+    },
+    "captures": {
+      "programs": 640,
+      "translated": 640,
+      "skipped": 0,
+      "agreements": 640
+    },
+    "declarations": {
+      "programs": 6,
+      "translated": 6,
+      "skipped": 0,
+      "agreements": 5,
+      "precision": 1
+    },
+    "general": {
+      "programs": 1,
+      "translated": 1,
+      "skipped": 0,
+      "agreements": 1
+    }
+  },
+  "precisionPatterns": {
+    "List.push: it is returned": 1
+  },
+  "cases": [],
+  "jobs": 8,
+  "environment": {
+    "node": "v24.19.0",
+    "compilerSha256": "b9da551416f16a1679856c6780f1f25a125a0dc784ffff378aa4c8d433a9c690",
+    "oracleSha256": "edcc23e0af72bd388018a43c01ef34e5e00ecd854b1a51704c5a9c26422968e5"
+  },
+  "streams": [
+    {
+      "name": "bridge-duplicate-sites.jsonl",
+      "programs": 1127,
+      "translated": 1127,
+      "skipped": 0,
+      "valueChecked": 1127,
+      "agreements": 1126,
+      "precision": 1,
+      "sha256": "122678438ae51eb0e9c40e86c2d8364d79d1aa05e7ac20777ad60f1dda4088fb"
+    }
+  ]
+}

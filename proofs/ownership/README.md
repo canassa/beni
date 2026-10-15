@@ -13,6 +13,8 @@ or the thesis.
 Current results and the full source-mutant matrix are in [RESULTS.md](RESULTS.md).
 The shipping-compiler differential bridge, counted skips, runtime boundary and
 commands are specified in [BRIDGE.md](BRIDGE.md); `ownership ci` includes its bounded run.
+[BRIDGE-RESULTS.md](BRIDGE-RESULTS.md) records the corrected 116,456-input campaign
+and contains links to every verdict lead, typed minimum and real runtime outcome.
 The oracle has 98 original and 44 sync verdict fixtures, generator v5, a bounded-exhaustive
 grammar plus 348 targeted programs, required negative controls (including `set-exclusive` and `once-live`),
 and a falsifier that fails when summary coverage is excessively vacuous.

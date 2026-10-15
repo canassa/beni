@@ -1,5 +1,10 @@
 # Ownership checker sync — 2026-10-15
 
+The shipping differential bridge is recorded separately in
+[BRIDGE-RESULTS.md](BRIDGE-RESULTS.md): 116,456 inputs, 43,066 translated/value-checked,
+73,390 counted skips, 2,358 unconfirmed program verdict leads with typed minima,
+and three caught Zig source controls. Both checkers' ownership policies are unchanged.
+
 The executable core now models the applicable branch, model, fold and Conduit
 rules from ownership-checker.md §26.7 and the amendments following §28.11.
 There are **98 original + 44 sync verdict fixtures**, **204 sync products**
