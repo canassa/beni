@@ -21,6 +21,10 @@ beni version
 The compiler is one binary with the core library and the platforms inside it; copy
 `zig-out/bin/beni` anywhere on your `PATH` and the clone is no longer needed.
 
+The shell keeps Zig's global cache for beni in `~/.cache/zig-beni` (or under
+`$XDG_CACHE_HOME`), apart from the `~/.cache/zig` of other projects. You can delete it at any
+time; the next build fills it again.
+
 ## 2. Make a project
 
 ```sh

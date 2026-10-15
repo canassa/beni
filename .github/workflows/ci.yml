@@ -72,6 +72,18 @@ jobs:
         id: dev-shell
         run: nix develop --profile "$RUNNER_TEMP/dev-shell" --command true
 
+      # The dev shell puts Zig's global cache in `~/.cache/zig-beni` unless
+      # ZIG_GLOBAL_CACHE_DIR is set already (flake.nix, `zigGlobalCache`).
+      # A runner has one Zig, so nothing evicts its build runner. Here the
+      # global cache stays `~/.cache/zig`: the path that the cache steps
+      # restore and save, so the entries that master saved still restore.
+      # If the shell stops keeping the value, this step fails. Without it
+      # the job saves a directory that Zig does not use.
+      - name: Zig's global cache
+        run: |
+          echo "ZIG_GLOBAL_CACHE_DIR=$HOME/.cache/zig" >> "$GITHUB_ENV"
+          ZIG_GLOBAL_CACHE_DIR=$HOME/.cache/zig nix develop --command zig env | grep -F ".global_cache_dir = \"$HOME/.cache/zig\""
+
       # Zig's local and global caches, from master's newest build.
       - name: restore the Zig caches
         id: zig-cache
@@ -162,6 +174,12 @@ jobs:
 
       - name: dev shell
         run: nix develop --command true
+
+      # As in `tests`: the global cache stays `~/.cache/zig`.
+      - name: Zig's global cache
+        run: |
+          echo "ZIG_GLOBAL_CACHE_DIR=$HOME/.cache/zig" >> "$GITHUB_ENV"
+          ZIG_GLOBAL_CACHE_DIR=$HOME/.cache/zig nix develop --command zig env | grep -F ".global_cache_dir = \"$HOME/.cache/zig\""
 
       - name: restore the Zig caches
         id: zig-cache

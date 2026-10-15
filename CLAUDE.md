@@ -349,9 +349,20 @@ atomics, recursion depth), before a release, or when the owner asks.
 runs (the native one and the `wasm32-wasi` one, `playground.md` §6) with LLVM:
 three LLVM ReleaseSafe compiles, which run in parallel and each hold an LLVM
 compile's memory, so check `free -g` first. `test-perf` and `bench` always
-time a ReleaseFast LLVM beni. Never share one
-Zig cache between git worktrees: a worktree was handed a stale
-binary built from another worktree's sources.
+time a ReleaseFast LLVM beni.
+
+**Zig's two caches.** Each worktree keeps its own LOCAL cache, `.zig-cache`.
+Never share one between git worktrees: a worktree was handed a stale binary
+built from another worktree's sources (commit `bfc234325`). Zig's GLOBAL cache
+holds only what Zig compiles from its own library (the build runner,
+compiler-rt), so every worktree of beni shares one: every dev shell in
+`flake.nix`, and so direnv, sets `ZIG_GLOBAL_CACHE_DIR` to
+`${XDG_CACHE_HOME:-~/.cache}/zig-beni`. In the default `~/.cache/zig`, another
+project's Nix build of Zig 0.17.0 evicted beni's build runner, and the next
+`zig build` compiled it again for 1 to 3 minutes (#161). The shells keep a
+value that is set already, and CI sets `~/.cache/zig`, the path its cache
+entries hold. Outside a dev shell, set the variable yourself.
+`flake.nix`'s `zigGlobalCache` has the full argument.
 
 **Every test has a budget of 4 300 million instructions** (about one second of
 quiet CPU), counted for the test and every process it starts; a test over it
