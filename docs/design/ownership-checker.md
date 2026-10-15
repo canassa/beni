@@ -3762,6 +3762,21 @@ behaviour changes.
 
   *Accepted when:* the four `SchemaDecl*` projects check under enforcement with a cache, and the script
   reproduces §30.2's table.
+
+  *As built (2026-10-15, issue #156).* The crash could be reached on `browser-direct`, so its fix landed
+  first, in #195 (§28.4's amendment of the same date). The flag is **`--ownership-everywhere`**. It is
+  on `Cli.Common`, so `check`, `build` and `dump --stage=ownership` all take it, and no usage text lists it.
+  It does what the patch did:
+  - every chain enforces, and every chain reports its platforms to the maker;
+  - every platform module counts as in place for §20.2's rows;
+  - the name table also gives the direct row to `browser`'s `Browser.program` and `page`'s `Page.sandbox`.
+
+  The checked core is read as built: its blocks were made under the ordinary rows, and the patch read
+  them that way too. A key that told the flag's entries apart would also miss every module of the
+  checked core, which more than doubles the cost, so the flag does not change the key. Instead, a
+  cache's entries go to its `ownership-everywhere/` subdirectory. That keeps blocks made under the
+  flag's rows away from an ordinary run. The script is `bench/ownership-everywhere.mjs`, and its first
+  run is in `bench/README.md`.
 - **O1 — the corpus, by the owner's rule-10 decision on §30.2's list.**
   - *Builds:* causes 1–3, which are real, take their fix from the message (`List.copy`, or the top-level
     value made a function) wherever the fixture tests something other than persistence. A fixture that
