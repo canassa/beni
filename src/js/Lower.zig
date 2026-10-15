@@ -13517,7 +13517,9 @@ pub const Lowerer = struct {
     /// the final unconditional fallback (2026-10-15 amendment).
     fn directDispatch(l: *Lowerer, block: beni_markup.Block, msg: Node.Index, handlers: []const JsIr.NameIndex) Allocator.Error!void {
         var stmts: StmtList = .empty;
-        const count = @min(l.directKeys().len, handlers.len);
+        // The platform allocates one handler for every analysis key.
+        const count = l.directKeys().len;
+        std.debug.assert(handlers.len == count);
         if (count > 0) {
             try l.dispatchKeys(&stmts, msg, handlers, 0, count - 1, 0);
             try l.dispatchLeaf(&stmts, msg, handlers, count - 1);

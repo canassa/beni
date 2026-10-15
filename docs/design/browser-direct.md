@@ -3346,3 +3346,21 @@ The complete report-87 sweeps have no slower-side disjoint-IQR before/after
 case; this does not discharge their older threshold misses. The Linux hardware
 budget gate remains owed; the local native/LLVM suites retain only the two
 known macOS case-folding failures.
+
+*Sharing eligibility clarified, 2026-10-15:* multi-key updates stay inline
+when their first parameter is a variable and the body cases directly on it,
+with constructor arms whose fields are variables, wildcards or unit, and
+variable/wildcard defaults. Nested field patterns, tuple/derived scrutinees
+and other bodies use the shared update. The model parameter is bound before
+arm selection and may be an irrefutable destructuring pattern. Branch guards
+are not part of the language. This code-sharing choice does not relax the
+per-hole precision rule or introduce a dynamic-markup fallback.
+
+For the computed-root selector specifically, `no_root` has no cached derived
+slots: the leading view `let`s are evaluated inside the selector. Its external
+bindings are program-scoped, and it is declared before the handler or mount
+block requesting it is appended. Debug assertions pin the absence of row,
+arm, shared-call and handler-instance contexts. The value dispatcher asserts
+one handler per analysis key; only the actual final key is unconditional.
+The analysis builds keys depth-first, so a prefix cannot be interleaved with
+another prefix or followed by a second root catch-all.

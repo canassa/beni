@@ -3735,9 +3735,14 @@ const Page = struct {
     fn chooseArm(pg: *Page, blk: m.Block, br: *Branch, inst: ?Path) m.Error!Chosen {
         const cx = pg.cx;
         const js = pg.jsb();
-        // A computed root is identical code in mount and every selected
-        // handler. Share the selector, not its result or substitution.
+        // A computed root reads the program-scope model; its leading view
+        // lets are local to the selector (no_root has no cached let slots).
+        // enterOp never imports a handler's message or local lets.
+        // The declaration precedes the handler/mount blocks being built.
+        // Share the selector, not its result or current substitution.
         if (br.node == .none and !br.show) {
+            std.debug.assert(pg.no_root and pg.let_slots.len == 0 and br.ctx == 0 and inst == null);
+            std.debug.assert(br.site.row == null and br.site.arm == null and br.site.shared == null);
             if (br.choose == null) {
                 const body = try js.block();
                 pg.atNode(br.node);
