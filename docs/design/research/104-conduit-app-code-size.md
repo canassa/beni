@@ -14,8 +14,11 @@ The Solid reference is research 101's adjusted single-chunk RealWorld build (Sol
 page and once to re-check it on every render, with the bookkeeping that
 re-checking needs kept as fields of an instance record. Solid writes a
 component once and lets a few accessor callbacks re-run.** The HTML is not the
-problem (beni's strings cost 1.3 kB, Solid's 1.1 kB), nor are walks, writes,
-events or component calls, which cost about what Solid's do. Two groups make the
+problem (beni's strings cost 1.3 kB, Solid's 1.1 kB), nor are walks, writes
+and events, which cost about what Solid's do. Calls of helpers and components
+cost less in beni (485 B against 1,035, since a call has no prop getters), but
+only because the kind each helper call makes is counted under scaffolding.
+Two groups make the
 whole tea gap: **re-render bookkeeping** (guards, kept values, restates, liveness)
 and **kind scaffolding** (a mount function, a patch function and an instance record per
 markup site). On direct, a third group comes on top and outweighs both: the
@@ -34,7 +37,10 @@ cost (§1). Schemas are left out, as asked. On this master the areas cost:
 
 These are research 102's two areas on the current master, priced by deleting
 bytes rather than stubbing units, which is why they differ slightly from 102's
-7.4 / 12.4 kB and 5.1 kB (§1.2).
+7.4 / 12.4 kB and 5.1 kB (§1.2). The rows do not add up: each is priced with
+everything else in place, and deleting both areas together costs 50 B more
+than the sum on tea and 92 B more on direct (Solid: 103 B), which is
+compression context, not a missing construct.
 
 **The causes, ranked by bytes** (ordered account, §3–§4; "gap" is beni minus
 Solid's equivalent construct):
@@ -54,12 +60,14 @@ components (its *views* row) and its pages do less (101 §1's feature table), so
 the logic gap is a range, not a figure.
 
 **Two things are not causes.** *Minification*: Terser takes 273 B from tea's
-views and 210 B from its update/init/requests (−4%); the suspected weaker
-minification of update code is real but small (§5.2). *Repetition*: brotli
-already prices repeated shapes almost to nothing. Sharing every identical
-template cloner and static kind saves 16 B alone (§6.1), and a view's own
-generated units cost little at the margin: the feed preview's 2,549 raw bytes
-take only 298 B out of the response when deleted alone (§6.3). The bytes are in
+views and 210 B from its update/init/requests (about 4%); the suspected weaker
+minification of update code is real but small (§5.2). *Repetition, as such*:
+brotli prices a shape that the bundle repeats almost to nothing. Sharing every
+identical template cloner and static kind saves 16 B alone (§6.1; 179 B once
+the other kinds no longer share their shape, so what is cheap depends on what
+else is there), and a view's own generated units cost little at the margin:
+the feed preview's 2,549 raw bytes take only 298 B out of the response when
+deleted alone (§6.3). The bytes are in
 what *differs* from site to site: field names like `g3_2`, two- and three-letter
 top-level names (975 references in tea's views cost 1,076 B, Solid's 420 cost
 328 B), and per-site shapes (§5.1).
@@ -68,13 +76,13 @@ top-level names (975 references in tea's views cost 1,076 B, Solid's 420 cost
 bundle, each kept only if Conduit's three corpus scripts still produce the
 golden transcript, were stacked (§6.1):
 
-| Executable rewrite of every tea view | alone | stacked | bundle |
-|---|---:|---:|---:|
-| one test per hole (drop the hole test nested in a group test, and its field) | −208 | −208 | 31,401 |
-| kept values, nodes and slots as closure locals, one shared `p` | −210 | −405 | 31,204 |
-| one cloner per distinct template, one factory for static kinds | −16 | −584 | 31,025 |
-| static liveness (Conduit has no live markup: no restates, no `l`) | −254 | −861 | 30,748 |
-| … then Terser | | −1,523 | 30,086 |
+| Executable rewrite of every tea view | alone | its step in the stack | stacked | bundle |
+|---|---:|---:|---:|---:|
+| one test per hole (drop the hole test nested in a group test, and its field) | −208 | −208 | −208 | 31,401 |
+| kept values, nodes and slots as closure locals, one shared `p` | −210 | −197 | −405 | 31,204 |
+| one cloner per distinct template, one factory for static kinds | −16 | −179 | −584 | 31,025 |
+| static liveness (Conduit has no live markup: no restates, no `l`) | −254 | −277 | −861 | 30,748 |
+| … then Terser | | −662 | −1,523 | 30,086 |
 
 That is **−0.86 kB, 11% of tea's views**, at the same semantics, plus Terser's
 0.66 kB on top. It leaves tea's views near 6.7 kB against Solid's 4.8 kB. The
@@ -85,8 +93,9 @@ message is a value with a tag, built in the view and dispatched in `update`.
 Closing that needs knowing, at compile time, which paths no message can write.
 That is direct's write-set analysis, whose current encoding costs more than it
 removes (§3.2). A one-off hand-written Solid-style preview, by contrast, made
-the bundle **165 B larger** (§6.3): a unique encoding pays its first-instance
-price, so a redesign must be priced applied to every view, never one view at a time.
+the bundle **165 B larger** (§6.3). One rewrite proves little, but its
+mechanism (a unique encoding pays its first-instance price) suggests pricing a
+redesign applied to every view, not one view at a time.
 
 ## 1. Method
 
@@ -615,7 +624,7 @@ release map as its input map so units keep their owners (`terser.mjs`):
 | update / init / requests | 4,751 → 4,541 (**−210**) | 4,636 → 4,393 (**−243**) |
 | whole bundle | 31,609 → 30,447 | 38,175 → 35,296 |
 
-The update code minifies like the rest: 4–5%. On direct's views most of the
+The update code minifies like the rest: about 4%. On direct's views most of the
 1.7 kB is 102's top-level single-use inlining (the descriptors and entries are
 each read once), which PR #150 is building. Minification explains none of the
 gap to Solid's update code.
@@ -634,16 +643,23 @@ favourites and unfavourites an article from the feed list, something no
 corpus script clicks, with a transcript equal to the unchanged bundle's
 (`verify-favorite.mjs`).
 
-| Rewrite | What it changes | alone | stacked |
-|---|---|---:|---:|
-| `proto-guards.mjs`: one test per hole | a hole test nested in a group test (`if (v !== a.a3) { a.a3 = v; w.data = v }`) becomes the write alone when its body is a text, `setAttribute` or class write; its kept field goes from the record. 50 tests, 36 fields. Slot placements keep their argument tests (a helper call is skipped, `language.md` §11.6) | −208 | −208 |
-| `proto-closures.mjs`: closures instead of records | 44 kinds: kept values, node references and slots become locals of `m`; `p` becomes a closure `u` over them; the record keeps `s`, `q`, `e`; every kind's `p` is one shared `(a,b)=>a.u(a,b)`. The same tests and writes in the same order | −210 | −405 |
-| `proto-static.mjs`: share what is static | 23 duplicate `template(…)` cloners bound once (§15.2 allows a shared string); 24 static kinds made by one factory, still one kind per site | −16 | −584 |
-| `proto-live.mjs`: static liveness | Conduit has no live markup (no every-render value; a controlled input is not live since 2026-10-08), so 93 restate `else`s, 35 `a.l=` stores and 32 `l:true` go | −254 | **−861** |
-| Terser on the stack | | | −1,523 |
+| Rewrite | What it changes | alone | its step | stacked |
+|---|---|---:|---:|---:|
+| `proto-guards.mjs`: one test per hole | a hole test nested in a group test (`if (v !== a.a3) { a.a3 = v; w.data = v }`) becomes the write alone when its body is a text, `setAttribute` or class write; its kept field goes from the record. 50 tests, 36 fields. Slot placements keep their argument tests (a helper call is skipped, `language.md` §11.6) | −208 | −208 | −208 |
+| `proto-closures.mjs`: closures instead of records | 44 kinds: kept values, node references and slots become locals of `m`; `p` becomes a closure `u` over them; the record keeps `s`, `q`, `e`; every kind's `p` is one shared `(a,b)=>a.u(a,b)`. The same tests and writes in the same order | −210 | −197 | −405 |
+| `proto-static.mjs`: share what is static | 23 duplicate `template(…)` cloners bound once (§15.2 allows a shared string); 24 static kinds made by one factory, still one kind per site | −16 | −179 | −584 |
+| `proto-live.mjs`: static liveness | Conduit has no live markup (no every-render value; a controlled input is not live since 2026-10-08), so 93 restate `else`s, 35 `a.l=` stores and 32 `l:true` go | −254 | −277 | **−861** |
+| Terser on the stack | | | −662 | −1,523 |
 
-**−861 B is 11% of tea's views**, and none of it changes what the page does. The
-first and fourth are what a lowering with a little more knowledge would emit:
+**−861 B is 11% of tea's views**, and none of it changes what the page does.
+The steps interact. Sharing static kinds saves 16 B alone but 179 B after the
+closure rewrite: in the original bundle the static kinds repeat the shape of
+the 45 kinds with a patch (`{m:…{…return{s:c,q:null,e:c…}}…}`), so brotli
+already has them almost for free; once those kinds take the closure form, the
+static kinds are the only ones left in the old shape and become expensive
+until they are shared too. The same is true of liveness (−254 alone, −277
+stacked). The order is the one a lowering would take; another order would
+split the same total differently. The first and fourth are what a lowering with a little more knowledge would emit:
 a write of an unchanged value is a no-op for these properties, and liveness is
 a whole-program fact (`backend.md` §15.4 marks every kind whose slots may hold
 an unknown kind as possibly live). The second is research 101's "shared lexical
@@ -694,8 +710,10 @@ patch, template, summary fragment, empty kind and `Article.link`) cost **298 B**
 because they repeat shapes that the other 68 kinds already taught the compressor.
 The hand rewrite's 1,625 raw bytes cost **522 B** alone, because nothing else
 in the bundle looks like them. Solid's own `ArticlePreview` costs 257 B alone
-in Solid's bundle. A new encoding is priced correctly only when every view
-uses it: one view at a time, every redesign looks like a loss.
+in Solid's bundle. This is one rewrite of one view, but the mechanism it
+shows (298 B against 522 B for the same job) suggests that a new encoding
+priced one view at a time will look worse than it is, so it should be priced
+applied to every view, as §6.1's rewrites are.
 
 ## 7. Why each construct is there, and what Solid does instead
 
@@ -728,10 +746,12 @@ uses it: one view at a time, every redesign looks like a loss.
 3. **The update code's excess (about 2.8 kB over Solid's logic) is the
    architecture and the features**: messages as values, pairs and spreads, nested
    pages, typed failures and their messages, client validation, a real router.
-   Minification takes 4–5% of it.
-4. **Brotli prices difference, not volume.** Repeated shapes are nearly free;
-   per-site names and codes are not. Any redesign must be priced applied to all
-   views at once (§6.3), and timed against Solid 2 before it is proposed (rule 8).
+   Minification takes about 4% of it.
+4. **Brotli prices difference, not volume.** A shape the bundle repeats is
+   nearly free, and stops being free when the shapes around it change (§6.1);
+   per-site names and codes are never free. §6.3 suggests pricing any redesign
+   applied to all views at once, and timing it against Solid 2 before it is
+   proposed (rule 8).
 
 ## 9. Reproduction
 
