@@ -93,8 +93,8 @@ in memory: `playground/wasi.js`, an ES module with no dependency. The page and t
 load the same file.
 
 *Rejected: `@bjorn3/browser_wasi_shim` from a CDN.* It works, but then the tests run one host and
-the page another, and the compiler's path in the page depends on a CDN. The compiler imports 34
-WASI functions, about 20 of which a build calls, so the shim is small.
+the page another, and the compiler's path in the page depends on a CDN. On 2026-10-15 the
+compiler imported 34 WASI functions, and a build called about 20 of them, so the shim is small.
 
 The rules:
 
@@ -106,22 +106,34 @@ The rules:
    finds `Main.beni` and writes `out/`.
 3. **Standard input is empty. Standard output and standard error are captured** as bytes. A
    positional read or write on them returns `ESPIPE`, as POSIX does for a pipe.
-4. **Every function the module imports exists.** One that the compiler needs and that has a
-   meaning in memory is implemented: files and directories, reads and writes at a position or at
-   the cursor, seeks, `stat`, directory listings, create, rename, unlink, remove, truncate, the
-   clocks and `random_get`. One that has no meaning here (links, `poll_oneoff`) returns
-   `ENOSYS`, and so does a call with arguments the shim does not implement.
+4. **Every function of WASI preview 1 exists**, so a later Zig that imports one more still
+   links. One that has a meaning in memory is implemented: files and directories, reads and
+   writes at a position or at the cursor, seeks, `stat`, directory listings, create, rename,
+   unlink, remove, truncate, allocate, renumber, the clocks and `random_get`. One that has no
+   meaning here (links, sockets, `proc_raise`, `poll_oneoff`) returns `ENOSYS`. Three inputs are
+   ignored on purpose: the lookup flags (there are no links to follow), the rights (the shim
+   gives every file and path right and checks none), and `fd_advise`'s advice.
+   A position or a size past 1 GiB is `EFBIG` or `EINVAL`, so no request of the module makes the
+   host allocate an array it cannot have.
 5. **An error the shim did not foresee is a defect** (CLAUDE.md rule 9). The functions of the
    shim have no `catch`. A JavaScript exception inside a WASI call goes out of `_start`.
 6. **`proc_exit` throws an `Exit` object** with the exit code. `run` catches `Exit` by
    `instanceof`.
 7. **Two failures of the module end that compile, and only those two.** A trap
    (`WebAssembly.RuntimeError`: a failed safety check, an overflow of the shadow stack) and an
-   exhausted engine stack (`RangeError`, §8). `run` catches each by `instanceof` and returns it
-   as the compile's `crash`, with what the compiler wrote to stderr before it; the page shows
-   it as a crash of the compiler, and the next compile makes a new instance (rule 1), so
-   nothing of the failed one remains. Every other exception goes on up: in the page, the
-   worker's `error` listener reports it as a defect of the playground.
+   exhausted engine stack (§8): V8's and JavaScriptCore's `RangeError` "Maximum call stack size
+   exceeded", or SpiderMonkey's `InternalError` "too much recursion" (`isStackExhausted`). No
+   other `RangeError` is one of them. `run` returns the failure as the compile's `crash`, with
+   what the compiler wrote to stderr before it; the page shows it as a crash of the compiler,
+   and the next compile makes a new instance (rule 1), so nothing of the failed one remains.
+   Every other exception goes on up: in the page, the worker's `error` listener reports it as a
+   defect of the playground.
+
+*Amended 2026-10-15, after review:* rule 4 said that a call with arguments the shim does not
+implement returns `ENOSYS`; the shim never did, and the rule now names the inputs it ignores.
+Rule 7 caught every `RangeError`, so a `RangeError` of the host would have read as an
+exhausted stack; it now matches the engines' stack messages, and rule 4's bound keeps the host
+from making one.
 
 ## 4. The page
 
@@ -137,6 +149,8 @@ The rules:
 - the emitted JavaScript, file by file.
 
 The compiler runs in a Web Worker (`playground/worker.js`), so a compile does not stop the page.
+The worker gives no `--out`, so a build writes `out/`, its default, and the worker reads the
+emitted files from there.
 A compile that starts while another runs waits for it, and only the newest waiting source is
 compiled.
 
@@ -185,8 +199,12 @@ shows inside the frame.
 
 A relative specifier is found by the import forms that the compiler writes and that
 `boundary.md` §4's checks accept for a sibling: `import … from "./…"`, `export … from "./…"` and
-`import "./…"`. The emitted module graph has no cycle (a beni import cycle is an error), so
-"dependencies first" is always possible.
+`import "./…"`, each on one line. The emitted module graph has no cycle (a beni import cycle is
+an error), so "dependencies first" is always possible; a cycle through hand-written siblings
+fails in the frame by name. A dynamic `import("./…")` cannot be rewritten this way: today no
+build writes one, and a file with one is refused by name, so code splitting (`backend.md` §10)
+will need an import map or another loader here. The `node:process` stand-in gives both the
+default export and a named `stdout`.
 
 ## 6. Tests: byte identity
 
@@ -207,6 +225,12 @@ native threaded build. Two kinds of test prove it.
    compares every output file, both streams and the exit code with the native compiler's.
 
 A test compares every file of the output tree and both streams byte for byte, and the exit code.
+It does not compare the persistent cache's directory, `.beni-cache/`, whose keys name the
+compiler that wrote them, and it does not compare empty directories. The Node driver writes
+back each file a run made or changed and deletes each file a run removed, so the other copy
+holds what the run left. No test reads a cache that the compiler with no threads wrote: the
+native one shares the threaded one's build id (`fast-compiler.md` §10), so the byte-identity
+tests are what keeps their entries the same.
 
 *Why the gates do not run the shipped binary.* The LLVM build of the `.wasm` is about 90 s of
 single-threaded compile after each edit under `src/` (§7.1), about nine times the gates' time.
@@ -238,7 +262,8 @@ Both builds by LLVM, from the same sources. The `ReleaseFast` build keeps its DW
 | `ReleaseFast`, no debug sections | 13 354 953 | 4 068 454 | 2 708 121 | 9 103 696 | 4 245 381 |
 
 The data section is half of the shipped file: the embedded `core/`, the platforms and the
-checked core (§2.1).
+checked core (§2.1). The module asks for 1 107 pages (69.2 MiB) of initial memory, most of it
+the 65 MiB stack of §2.3, and sets no maximum.
 
 Speed in Node 24.19, with one `WebAssembly.Module` and 12 compiles of TodoMVC
 (`bench/todomvc/apps/beni/Sandbox.beni`, 298 lines) on new instances, as the page does, two
@@ -296,6 +321,18 @@ compiles, and 607 levels run out of stack. The native compiler builds the same s
 levels deep (`abuse_test.zig`). Three page loads gave the same depth. A program a person
 writes rarely nests a few hundred levels; a long operator chain does, because the parser
 nests one level per operator (`x + x + … + x`).
+
+**A program that does not stop holds its frame.** The compiled program runs in the output frame,
+not in the worker, and nothing bounds its time. In Chrome the sandboxed frame has a process of
+its own (Chrome isolates sandboxed frames; the page tests attach to it as a separate target),
+so the page and the editor go on, and the next build replaces the frame. Where a browser keeps
+the frame in the page's process, a loop in the program also stops the page. A program that
+prints in a loop grows the console only to its last 2 000 pieces of output.
+
+**One browser is tested.** Chrome 153 runs every test of §6 and every measurement of §7. Firefox
+and Safari are not tested: a module from a `blob:` URL in an opaque-origin frame, and 69.2 MiB
+of initial memory per compile, freed when the garbage collector runs, are the parts most likely
+to differ there, the second on a phone with little memory.
 
 ## 9. Build and deploy
 

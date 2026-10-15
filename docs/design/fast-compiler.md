@@ -1744,9 +1744,10 @@ starts one does this:
 | `js/Emit.zig`, the emit pool | up to `--jobs - 1` more threads | none: the calling thread takes every item |
 | `Session.runCheckOnBigStack`, `build/Command.zig`'s emit, `own/Enforce.zig`'s pass, `main.zig`'s dumps | one thread with a `Check.stack_size` stack | a call on the calling thread |
 
-The command line also sets `--jobs` to 1 in this build, whatever the flag says, so every pool has
-one worker. `--jobs` is a performance setting and the output does not depend on it, so this
-refuses nothing (rule 7).
+`Session.init` also sets the worker count to 1 in this build, whatever `--jobs` says, so every
+pool has one worker. `--jobs` is a performance setting and the output does not depend on it, so
+this refuses nothing (rule 7). `beni serve` is the one command such a build refuses, with exit 2:
+it answers requests on one thread while it builds on another.
 
 **The output is byte-identical**, by the argument of this section: each serial walk is the walk
 `--jobs=1` makes, and the determinism test proves that `--jobs=1` and `--jobs=8` write the same
@@ -1759,6 +1760,12 @@ thread with `Check.stack_size` (64 MiB) now runs on the main stack, so the execu
 compiler and with the threaded one and compares every output byte, a tree `Parse.max_depth`
 levels deep included, and the WebAssembly compiler against the native one
 ([`playground.md`](playground.md) §6).
+
+**The build id does not say how many threads.** The native compiler with no threads has the
+threaded compiler's id (the id hashes the target, the mode, the backend and the sources), so
+each would read the other's cache entries. Their output is the same bytes by the argument
+above, and the byte-identity tests are the guard of that. The WebAssembly compiler has an id of
+its own, because its target differs.
 
 **A guard is a comptime branch.** `std.Thread.spawn` is a compile error in a single-threaded
 build, so each guard tests `builtin.single_threaded` before the code that spawns, and the threaded
