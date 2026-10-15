@@ -238,7 +238,7 @@ pub fn methodSignatureMismatch(
     Render.writeVar(w, r.cx(), &namer, wanted, .top) catch return error.OutOfMemory;
     try signatureExplanation(r, w, module, type_name, method, found, "the type the call wants");
     // `xs.length ()` (language.md §12.5).
-    try CallStyle.unitMethodHint(r, w, region, module, method, found);
+    try CallStyle.unitMethodHint(r, w, region, method, found);
     try r.emit(.type_mismatch, region, &out);
 }
 

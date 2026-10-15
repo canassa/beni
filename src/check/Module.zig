@@ -302,8 +302,11 @@ pub fn check(in: Input) Error!Check.Counters {
     try eager.build(&solver);
     if (in.profile) |p| p.end(in.tid, p5_token.?, .derived, file.int(), 0);
     // The session-owned, resolved BIR is the checked copy; the frontend
-    // artifact was serialized before name resolution. Retag before any
-    // effect planning or later pass can mistake a call for a field path.
+    // artifact was serialized before name resolution. Session.run frees
+    // and reloads all artifacts on every run (Artifacts.resize), including
+    // a dependency edit in the same Session. Retag only after solving has
+    // returned every borrowed extraSlice, before effect planning or any
+    // later pass can mistake a call for a field path.
     try @import("Nullary.zig").checked(gpa, bir, &solver.evidence);
     // Every group, nested check and derived context has recorded its
     // edges: the summaries now (§14.4), before P6 and P8 read them.

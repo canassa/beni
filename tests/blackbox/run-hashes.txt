@@ -82,6 +82,8 @@ cache_test.test.a constrained function constant rewritten as a block keeps its i
 cache_test.test.a constrained function constant rewritten as a lambda keeps its importer's cached calling convention #0 2066d02e6f6d56d8cd48aad10f5c179fb970b72bff5c8d280efd6338d8d74481
 cache_test.test.a constrained function constant rewritten with parameters keeps its importer's cached calling convention #0 294311688a8513991ad950e0277243a2d4825bc0c23fd4bc59936a6a4f076b1e
 cache_test.test.a custom eq's private body edit stops at the firewall, and the cached importer uses the new body #0 bc24c0955dde779ab2d8434c59e7eff2ca6edcedecac59c949539b3760f15040
+cache_test.test.a dependency type edit redecides a cached nullary dot as a field and back #0 1f2b61d380d330b07f0ea0e23f55858a93b1d4220071ba3dac4ca3a3ab8cd7dc
+cache_test.test.a dependency type edit redecides a cached nullary dot as a field and back #1 4c2a99f6aa41521cf5df2bab0705387e9d56f99dd240160fb2a8e502d42cbbff
 cache_test.test.a moved derived context rebuilds evidence as a cold build: a function payload added #0 9843707957ae318f9c8015871177a3ec3dc6c37510348a791d2016da99aab0e0
 cache_test.test.a moved derived context rebuilds evidence as a cold build: a parameter dropped from every payload #0 39b1da70040d8b0a6bbb63a43ab51f7ed8e36d88dd027ea8cc0536804440ca83
 cache_test.test.a moved derived context rebuilds evidence as a cold build: a payload's eq changes its where clause #0 a7aedf736affb8d44f11c7e073442dc3ccae6f6ea7cf9afbfb5377605ea07cba

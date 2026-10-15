@@ -19,6 +19,7 @@ pub fn checked(gpa: std.mem.Allocator, bir: *Bir, evidence: *const Evidence) std
 
 /// Cache entries store dispatch against the original frontend BIR. Replay the
 /// rewrite from their callee sites before releasing the checked module.
+/// `Elaborate.siteRows` omits field-read callees, so these sites are calls.
 pub fn cached(gpa: std.mem.Allocator, bir: *Bir, dispatch: *const Dispatch) std.mem.Allocator.Error!void {
     var calls: std.ArrayList(Bir.Inst.Index) = .empty;
     defer calls.deinit(gpa);
@@ -29,6 +30,9 @@ pub fn cached(gpa: std.mem.Allocator, bir: *Bir, dispatch: *const Dispatch) std.
     try rewrite(gpa, bir, calls.items);
 }
 
+// The caller has finished solving (or loading) the module: no borrowed
+// `extraSlice` survives this boundary. Bir.extra is gpa-owned on both the
+// lowered and artifact-loader paths, as Bir.deinit's ownership requires.
 fn rewrite(gpa: std.mem.Allocator, bir: *Bir, calls: []const Bir.Inst.Index) std.mem.Allocator.Error!void {
     if (calls.len == 0) return;
     const old_len = bir.extra.len;

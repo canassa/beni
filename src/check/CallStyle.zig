@@ -154,7 +154,7 @@ pub fn nullaryArgsHint(r: *Reporter, w: *std.Io.Writer, region: Bir.Inst.Index) 
 /// §12.5's second row: `xs.length ()`, a method call whose one argument is
 /// `()`, of a method that takes none. Appended to the method's signature
 /// mismatch, which is what such a call meets.
-pub fn unitMethodHint(r: *Reporter, w: *std.Io.Writer, region: Bir.Inst.Index, module: Graph.Index, method: Symbol, found: Var) Error!void {
+pub fn unitMethodHint(r: *Reporter, w: *std.Io.Writer, region: Bir.Inst.Index, method: Symbol, found: Var) Error!void {
     const bir = r.env.bir;
     if (region.int() >= bir.insts.len or bir.instTag(region) != .method_call) return;
     const m = bir.extraData(@fromBackingInt(@intCast(bir.instData(region).rhs)), Bir.MethodCall);
@@ -162,7 +162,6 @@ pub fn unitMethodHint(r: *Reporter, w: *std.Io.Writer, region: Bir.Inst.Index, m
     const args = bir.extraSlice(.{ .start = m.args_start, .end = m.args_end }, Bir.Inst.Index);
     if (args.len != 1 or bir.instTag(args[0]) != .unit) return;
     if (r.env.store.paramCount(found) != 1) return;
-    _ = module;
     w.writeAll("\nHint: this nullary method needs no extra argument. Write `") catch return error.OutOfMemory;
     writeArg(r, w, @fromBackingInt(@intCast(bir.instData(region).lhs))) catch return error.OutOfMemory;
     w.print(".{s}`.\n", .{r.env.interner.slice(method)}) catch return error.OutOfMemory;

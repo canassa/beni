@@ -5270,3 +5270,43 @@ test "a cached nullary method is rewritten to a call while record fields stay re
     try expectSameTree(&w, arena, "cold", "warm");
     try w.expectProgram("warm/_main.mjs", .{ .stdout = "2\n" });
 }
+
+test "a dependency type edit redecides a cached nullary dot as a field and back" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const nominal = "pub value : List Int\nvalue = [ 1, 2 ]\n";
+    try w.write("src/Leaf.beni", nominal);
+    try w.write("src/Main.beni",
+        \\import Leaf
+        \\import Node
+        \\
+        \\
+        \\main : Node.Program
+        \\main = Node.print (String.fromInt Leaf.value.length)
+        \\
+    );
+    const cold = try w.run(&.{ "build", "--platform=node", "--out=cold", "--cache-dir=cache", "src" });
+    try testing.expectEqual(@as(u8, 0), cold.exit_code);
+    try testing.expectEqualStrings("", cold.stderr);
+
+    try w.write("src/Leaf.beni", "pub value : { length : Int }\nvalue = { length = 4 }\n");
+    const field = try w.run(&.{ "build", "--platform=node", "--out=field", "--cache-dir=cache", "src" });
+    try testing.expectEqual(@as(u8, 0), field.exit_code);
+    try testing.expectEqualStrings("", field.stderr);
+    const oracle = try w.run(&.{ "build", "--platform=node", "--out=oracle", "--no-cache", "src" });
+    try testing.expectEqual(@as(u8, 0), oracle.exit_code);
+    try testing.expectEqualStrings("", oracle.stderr);
+    try expectSameTree(&w, arena, "oracle", "field");
+    try w.expectProgram("field/_main.mjs", .{ .stdout = "4\n" });
+
+    try w.write("src/Leaf.beni", nominal);
+    const restored = try runCounted(&w, arena, &.{ "build", "--platform=node", "--out=restored", "--cache-dir=cache", "src" }, "restored.json");
+    try testing.expectEqual(@as(u8, 0), restored.result.exit_code);
+    try testing.expectEqualStrings("", restored.result.stderr);
+    try testing.expectEqual(@as(u64, 0), restored.counters.checked);
+    try expectSameTree(&w, arena, "cold", "restored");
+    try w.expectProgram("restored/_main.mjs", .{ .stdout = "2\n" });
+}

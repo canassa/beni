@@ -5905,3 +5905,13 @@ before effect planning. P6 omits field-read sites; check-cache hits replay the
 retag from non-field callee sites. Frontend serialization precedes resolution
 and checking, and therefore retains the original `field_access` instructions.
 Check-cache entry v11 discards entries written before this rule.
+
+The checked copy here is the session-owned resolved artifact: `Session.run`
+first calls `Artifacts.resize`, which frees every previous artifact, and reloads
+or lowers fresh frontend BIR before resolution and checking. This also holds
+for a subsequent run on the same `Session`. Frontend cache serialization happens
+before resolution. A future daemon retaining per-file artifacts across runs
+must retain pristine frontend BIR separately; rechecking a destructively resolved
+or checked artifact is outside this boundary. The nullary rewrite runs after
+solving has returned all borrowed `extraSlice`s; both lowered and loaded BIR
+own their `extra` buffer through the session allocator.
