@@ -1,0 +1,26 @@
+-- The nullary call's method may need evidence whose methods take arguments.
+-- Those evidence requirements are not themselves nullary calls.
+import Node exposing (Program)
+
+
+type Box
+    = Box Int
+
+
+type Wrapped a
+    = Wrapped a
+
+
+render : Box, Int → String
+render (Box n) extra = String.fromInt (n + extra)
+
+
+show : Wrapped a → String
+    where a.render : a, Int → String
+show (Wrapped item) = item.render 0
+
+
+main : Program
+main =
+    xs = [ 3, 1, 2 ]
+    Node.printLines [ String.join (List.map xs.sort String.fromInt) ",", (Wrapped (Box 7)).show ]

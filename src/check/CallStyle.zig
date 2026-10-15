@@ -1,8 +1,8 @@
 //! Call-style diagnostics (`language.md` §12.5, `checker-v2.md` §29.4): the
 //! places where a habit from JavaScript or Elm meets a beni call.
 //!
-//! Four hints on codes that already exist — `xs.length` and `xs.length ()`
-//! naming the function the author reached for, `f(a, b)` naming the
+//! Hints on existing codes explain a helper's record default, an extra
+//! unit argument after a nullary method, `f(a, b)` naming the
 //! space-separated call, and a core or platform call written in Elm's
 //! argument order printed in beni's — and one warning,
 //! `suspicious_argument_order`, for the functions whose Elm-ordered call
@@ -104,7 +104,7 @@ fn writeCallee(r: *const Reporter, w: *std.Io.Writer, module: Graph.Index, value
     try w.writeAll(r.env.interner.slice(value));
 }
 
-// ---- `xs.length` and `xs.length ()` ----------------------------------------
+// ---- Nullary methods and record defaults ----------------------------------------
 
 /// The value a dot on a value of type `actual` reached for: a `pub` value
 /// named `field` of the module declaring `actual`'s type, whose first
@@ -136,38 +136,19 @@ fn reachedFunction(r: *Reporter, actual: Var, field: Symbol) ?Reached {
     return .{ .module = entry.module, .module_name = entry.module_name, .params = params.len };
 }
 
-/// §12.5's first row: `xs.length` on a value whose type is not a record,
-/// where `length` is a function of the type's module.
-fn fieldHint(r: *Reporter, w: *std.Io.Writer, region: Bir.Inst.Index, category: Category, actual: Var) Error!bool {
-    if (category.tag != .field_access or category.index == Category.no_field) return false;
+/// A bare nullary dot cannot partially apply a method.
+pub fn nullaryArgsHint(r: *Reporter, w: *std.Io.Writer, region: Bir.Inst.Index) Error!bool {
     const bir = r.env.bir;
     if (region.int() >= bir.insts.len or bir.instTag(region) != .field_access) return false;
-    const field: Symbol = @fromBackingInt(@intCast(category.index));
-    const reached = reachedFunction(r, actual, field) orelse return false;
-    try writeReachedHint(r, w, reached, field, @fromBackingInt(@intCast(bir.instData(region).lhs)));
-    return true;
-}
-
-/// The hint's text, shared by `xs.length` and `xs.length ()`.
-fn writeReachedHint(r: *Reporter, w: *std.Io.Writer, reached: Reached, field: Symbol, receiver: Bir.Inst.Index) Error!void {
-    const module_text = r.env.interner.slice(reached.module_name);
-    const field_text = r.env.interner.slice(field);
-    if (reached.params == 1) {
-        w.print("\nHint: `{s}` is a function of `{s}`, not a field. Write `{s}.{s} ", .{ field_text, module_text, module_text, field_text }) catch return error.OutOfMemory;
-        writeArg(r, w, receiver) catch return error.OutOfMemory;
-        w.writeAll(
-            \\` — a method
-            \\call needs its other arguments, `x.m a`, so one that takes none is written as a
-            \\call.
-            \\
-        ) catch return error.OutOfMemory;
-        return;
-    }
-    w.print("\nHint: `{s}` is a function of `{s}`, not a field, and it takes {d} more argument{s}: write them after it, `", .{
-        field_text, module_text, reached.params - 1, if (reached.params == 2) "" else "s",
-    }) catch return error.OutOfMemory;
+    const data = bir.instData(region);
+    const name = r.env.interner.slice(bir.symbol(@fromBackingInt(@intCast(data.rhs))));
+    const receiver: Bir.Inst.Index = @fromBackingInt(@intCast(data.lhs));
+    w.writeAll("\nHint: supply the missing arguments after the method, `") catch return error.OutOfMemory;
     writeArg(r, w, receiver) catch return error.OutOfMemory;
-    w.print(".{s} …`.\n", .{field_text}) catch return error.OutOfMemory;
+    w.print(".{s} argument`, or use placeholders, `", .{name}) catch return error.OutOfMemory;
+    writeArg(r, w, receiver) catch return error.OutOfMemory;
+    w.print(".{s} _`. Every call is saturated.\n", .{name}) catch return error.OutOfMemory;
+    return true;
 }
 
 /// §12.5's second row: `xs.length ()`, a method call whose one argument is
@@ -181,8 +162,10 @@ pub fn unitMethodHint(r: *Reporter, w: *std.Io.Writer, region: Bir.Inst.Index, m
     const args = bir.extraSlice(.{ .start = m.args_start, .end = m.args_end }, Bir.Inst.Index);
     if (args.len != 1 or bir.instTag(args[0]) != .unit) return;
     if (r.env.store.paramCount(found) != 1) return;
-    const reached: Reached = .{ .module = module, .module_name = r.env.graph.moduleName(module), .params = 1 };
-    try writeReachedHint(r, w, reached, method, @fromBackingInt(@intCast(bir.instData(region).lhs)));
+    _ = module;
+    w.writeAll("\nHint: this nullary method needs no extra argument. Write `") catch return error.OutOfMemory;
+    writeArg(r, w, @fromBackingInt(@intCast(bir.instData(region).lhs))) catch return error.OutOfMemory;
+    w.print(".{s}`.\n", .{r.env.interner.slice(method)}) catch return error.OutOfMemory;
 }
 
 // ---- `f(a, b)` --------------------------------------------------------------
@@ -417,10 +400,32 @@ fn nextPermutation(xs: []u8) bool {
     return true;
 }
 
+/// A helper defaulted its unknown receiver to a record at generalisation.
+/// Only suggest a method when the nominal argument actually provides it.
+fn helperHint(r: *Reporter, w: *std.Io.Writer, category: Category, expected: Var, actual: Var) Error!bool {
+    if (category.tag != .call_arg) return false;
+    const rec = switch (r.env.store.resolvedContent(expected)) {
+        .structure => |flat| switch (flat) {
+            .record => |rec| rec,
+            else => return false,
+        },
+        else => return false,
+    };
+    for (Walk.recordFields(r.env.store, rec)) |field| {
+        const reached = reachedFunction(r, actual, field.name) orelse continue;
+        if (reached.params != 1) continue;
+        const name = r.env.interner.slice(field.name);
+        const module = r.env.interner.slice(reached.module_name);
+        w.print("\nHint: an unannotated helper such as `size xs = xs.{s}` infers a record\nreceiver. Annotate the helper's receiver to call the method, or write\n`{s}.{s} xs` inside it.\n", .{ name, module, name }) catch return error.OutOfMemory;
+        return true;
+    }
+    return false;
+}
+
 /// The hints a `type_mismatch` may carry, before the general ones. True
 /// when one was written.
-pub fn mismatchHint(r: *Reporter, w: *std.Io.Writer, region: Bir.Inst.Index, category: Category, actual: Var) Error!bool {
-    if (try fieldHint(r, w, region, category, actual)) return true;
+pub fn mismatchHint(r: *Reporter, w: *std.Io.Writer, category: Category, expected: Var, actual: Var) Error!bool {
+    if (try helperHint(r, w, category, expected, actual)) return true;
     if (category.tag == .call_arg) {
         if (category.owner.unwrap()) |call| {
             if (call.int() < r.env.bir.insts.len and r.env.bir.instTag(call) == .call) {

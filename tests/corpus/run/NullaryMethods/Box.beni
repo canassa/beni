@@ -1,0 +1,6 @@
+pub type Box
+    = Box Int
+
+
+pub amount : Box → Int
+amount (Box n) = n

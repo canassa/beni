@@ -5242,3 +5242,31 @@ test "a markup module installed from the cache replays its warning, and an edit 
     try testing.expectEqual(@as(u64, 1), warm.counters.checked);
     try testing.expectEqual(@as(u64, 1), warm.counters.misses);
 }
+
+test "a cached nullary method is rewritten to a call while record fields stay reads" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Main.beni",
+        \\import Node
+        \\
+        \\
+        \\main : Node.Program
+        \\main =
+        \\    current = { trail = [ 1, 2 ] }
+        \\    Node.print (String.fromInt current.trail.copy.reverse.length)
+        \\
+    );
+    const cold = try runCounted(&w, arena, &.{ "build", "--platform=node", "--out=cold", "--cache-dir=cache", "src" }, "cold.json");
+    try testing.expectEqual(@as(u8, 0), cold.result.exit_code);
+    try testing.expectEqualStrings("", cold.result.stderr);
+    const warm = try runCounted(&w, arena, &.{ "build", "--platform=node", "--out=warm", "--cache-dir=cache", "src" }, "warm.json");
+    try testing.expectEqual(@as(u8, 0), warm.result.exit_code);
+    try testing.expectEqualStrings("", warm.result.stderr);
+    try testing.expectEqual(@as(u64, 0), warm.counters.checked);
+    try testing.expect(warm.counters.hits > 0);
+    try expectSameTree(&w, arena, "cold", "warm");
+    try w.expectProgram("warm/_main.mjs", .{ .stdout = "2\n" });
+}

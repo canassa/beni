@@ -77,6 +77,7 @@ build_test.test.modules import each other through ESM, and the program runs #0 d
 build_test.test.names several emit workers invent for one type agree, and the build is byte-identical at every --jobs #0 4b6e4be2b17a2073ad109b9ab8dd51297adfbafeeffe7ee82f8b8e0c811af282
 build_test.test.names several emit workers invent for one type agree, and the build is byte-identical at every --jobs #1 a9d36c39170a7a2c6af166b9287141943e5f936d3a34af770fbb448bbfaf1cb2
 cache_test.test.a cache hit installs the published derived contexts and runs no fixpoint #0 080f4865249b5953a840ccc2ef9fde6d6908791fe3193c6a74c8941047e70a4a
+cache_test.test.a cached nullary method is rewritten to a call while record fields stay reads #0 006647c8d4d2a6faaf0b053f031a5c1692379935d5a2e32f8828b0a389659735
 cache_test.test.a constrained function constant rewritten as a block keeps its importer's cached calling convention #0 00648438c52c66f4b05c1f37499e7518b0ae5b50c3fa7882f3c3be518f83fe5d
 cache_test.test.a constrained function constant rewritten as a lambda keeps its importer's cached calling convention #0 2066d02e6f6d56d8cd48aad10f5c179fb970b72bff5c8d280efd6338d8d74481
 cache_test.test.a constrained function constant rewritten with parameters keeps its importer's cached calling convention #0 294311688a8513991ad950e0277243a2d4825bc0c23fd4bc59936a6a4f076b1e

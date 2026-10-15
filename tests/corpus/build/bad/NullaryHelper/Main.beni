@@ -1,0 +1,10 @@
+-- The helper defaults to a record receiver before its caller checks.
+import Node exposing (Program)
+import String
+
+
+size xs = xs.length
+
+
+main : Program
+main = Node.print (String.fromInt (size [ 1, 2 ]))
