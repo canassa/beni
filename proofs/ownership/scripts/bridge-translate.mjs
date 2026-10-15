@@ -78,6 +78,7 @@ export function translate(ds, main) {
   const ind = (s, n = 4) => s.split('\n').map(x => ' '.repeat(n) + x).join('\n');
   function closure(id, caps, env, key) {
     const d = ds[id];
+    if(caps.some((_,i)=>!uses(d[4],d[1].length+i))) fail('unused-capture-slot');
     if (d[5] === 'identity-map') fail('identity-preserving-close');
     if (d[5]) return `List.${d[5]}`;
     if (!caps.length) {
@@ -93,13 +94,16 @@ export function translate(ds, main) {
     }
     const prefix = `c${serial++}v`, ps = d[1].map((_, i) => prefix + i);
     const denv = new Map(ps.map((p, i) => [i, p]));
-    caps.forEach((a, i) => denv.set(ps.length + i, atom(a, env)));
+    const captured=caps.map(()=>`captured${serial++}`);
+    const bindings=caps.map((a,i)=>`${captured[i]} = ${atom(a,env)}`);
+    captured.forEach((n,i)=>denv.set(ps.length+i,n));
     // Local named functions are needed only for recursive closures.
     let recursive = false; walk(d[4], e => { if (e[0] === 'recur') recursive = true; });
     const local = `rec${serial++}`;
     const body = emit(d[4], denv, `d${id}`, { id, local, caps, env: denv });
-    return recursive ? `(\n${ind(`${local} ${ps.join(' ') || '⊤'} =\n${ind(body)}\n${local}`)}\n)`
+    const fn=recursive ? `${local} ${ps.join(' ') || '⊤'} =\n${ind(body)}\n${local}`
       : `(λ${ps.join(' ') || '⊤'} →\n${ind(body)}\n)`;
+    return `(\n${ind([...bindings,fn].join('\n'))}\n)`;
   }
   function emit(e, env, key, self = null) {
     return mark(key, emitRaw(e, env, key, self));

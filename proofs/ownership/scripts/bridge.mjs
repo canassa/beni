@@ -2,7 +2,7 @@
 import { readFile, writeFile, mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
 import { createInterface } from 'node:readline';
-import { createReadStream } from 'node:fs';
+import { createReadStream, writeFileSync } from 'node:fs';
 import { resolve, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { availableParallelism } from 'node:os';
@@ -26,6 +26,10 @@ const compiler = resolve(options.compiler ?? resolve(root, 'zig-out/bin/beni'));
 const out = resolve(options.out ?? resolve(root, 'zig-out/ownership-bridge'));
 await mkdir(out, { recursive: true });
 await rm(resolve(out,'report.json'),{force:true});
+await rm(resolve(out,'failure.json'),{force:true});
+process.on('uncaughtExceptionMonitor',error=>{
+  try { writeFileSync(resolve(out,'failure.json'),JSON.stringify({message:error.message,stack:error.stack},null,2)); } catch {}
+});
 function run(command, args, cwd = root, timeout = 120000) {
   return new Promise((yes, no) => {
     const child = spawn(command, args, { cwd, env: { ...process.env, LEAN_NUM_THREADS: String(jobs) }, stdio: ['ignore','pipe','pipe'] });
@@ -55,6 +59,7 @@ else {
     }
   }
 }
+if(options.ci) await must(process.execPath,[resolve(own,'scripts/bridge-selftest.mjs'),`--input=${inputs[0]}`,`--compiler=${compiler}`]);
 const total = { programs: 0, translated: 0, skipped: 0, valueChecked: 0, agreements: 0, precision: 0, leads: 0,
   sites: { agreement: 0, precision: 0, lead: 0, unknown: 0, extra: 0, pending: 0 },
   skipReasons: {}, constructs: {}, families: {}, precisionPatterns: {}, cases: [], jobs,
@@ -68,6 +73,7 @@ const reductionCache = new Map();
 const normalizer = `const normalize=x=>{if(typeof x==='function')throw Error('unobservable function');if(x&&typeof x.$plain==='function')x=x.$plain();if(Array.isArray(x))return x.map(normalize);if(x&&typeof x==='object')return Object.fromEntries(Object.entries(x).sort(([a],[b])=>a<b?-1:a>b?1:0).map(([k,v])=>[k,normalize(v)]));return x};`;
 let batch = [], number = 0;
 const queue = new Set();
+let firstFailure;
 async function confirmation(p, dir) {
   const result = {};
   for (const platform of ['browser-tea','browser-direct']) {
@@ -108,6 +114,7 @@ async function checkValues(programs, dir) {
     throw Error(`value fidelity failed: ${dir}/value-error.json`);
   }
   total.valueChecked+=programs.length;
+  for(const p of programs) p.stream.valueChecked++;
 }
 // Greedy one-step minimum under the oracle's existing reduction relation.
 // Every retained step rechecks both ownership verdicts and real execution.
@@ -165,6 +172,10 @@ async function minimize(original, dir, outcome) {
       }
       if(!checked.runtime) continue;
       const result=checked.runtime;
+      if(!['unconfirmed','confirmed'].includes(result.status)) {
+        await writeFile(resolve(dir,'reduction-runtime-error.json'),JSON.stringify({record,ds,source:translation.source,result},null,2));
+        throw Error(`reduction runtime failure: ${dir}/reduction-runtime-error.json`);
+      }
       if (result.status !== 'confirmed' && !(runtime.status === 'unconfirmed' && result.status === 'unconfirmed')) continue;
       best=p; runtime=result; changed=true; rounds++; break;
     }
@@ -239,7 +250,7 @@ async function checkBatch(programs, n) {
     }
     const zig = demands.every(d=>d.verdict === 'accepted'), lean = p.record[5];
     const category = zig === lean ? 'agreements' : lean ? 'precision' : 'leads';
-    total[category]++; bump(total.families[p.record[1]], category);
+    total[category]++; bump(total.families[p.record[1]], category); bump(p.stream,category);
     if (category === 'precision') for (const d of demands.filter(d=>d.verdict !== 'accepted')) bump(total.precisionPatterns, `${d.operation.split(' ')[0]}: ${d.detail.split(':')[0]}`);
     if (category === 'leads' || siteLeads.length) {
       const evidence = resolve(out,'cases',p.record[2]); await mkdir(evidence,{recursive:true});
@@ -258,21 +269,26 @@ async function checkBatch(programs, n) {
   await rm(dir,{recursive:true});
 }
 async function flush() {
+  if(firstFailure) throw firstFailure;
   if (!batch.length) return;
   const data = batch; batch = []; const n = number++;
-  const task = checkBatch(data,n); queue.add(task); task.finally(()=>queue.delete(task)).catch(()=>{});
+  const task = checkBatch(data,n); queue.add(task);
+  task.then(()=>queue.delete(task),error=>{firstFailure??=error;queue.delete(task);});
   if (queue.size >= jobs) await Promise.race(queue);
+  if(firstFailure) throw firstFailure;
 }
 for (const input of inputs) {
   tables.clear();
-  const before=total.programs, hash=createHash('sha256'), stream=createReadStream(input);
+  const stats={name:basename(input),programs:0,translated:0,skipped:0,valueChecked:0}; total.streams.push(stats);
+  const hash=createHash('sha256'), stream=createReadStream(input);
   stream.on('data',chunk=>hash.update(chunk));
   const lines = createInterface({input:stream, crlfDelay:Infinity});
   for await (const line of lines) {
+    if(firstFailure) throw firstFailure;
     const record = JSON.parse(line);
     if (record[0] === 'table') { tables.set(record[1],record[2]); continue; }
     if (record[0] !== 'program' || record.length !== 14 || typeof record[13] !== 'string') throw Error('bad or obsolete bridge record');
-    total.programs++; total.families[record[1]] ??= {programs:0,translated:0,skipped:0}; bump(total.families[record[1]],'programs');
+    total.programs++; stats.programs++; total.families[record[1]] ??= {programs:0,translated:0,skipped:0}; bump(total.families[record[1]],'programs');
     const ds = tables.get(record[3]); if (!ds) throw Error('missing declaration table');
     const counts = constructs(ds,record[4]);
     let translation;
@@ -285,28 +301,43 @@ for (const input of inputs) {
     }
     catch (e) {
       if (!(e instanceof Skip)) throw e;
-      total.skipped++; bump(total.skipReasons,e.reason); bump(total.families[record[1]],'skipped');
+      total.skipped++; stats.skipped++; bump(total.skipReasons,e.reason); bump(total.families[record[1]],'skipped');
       for (const [k,n] of Object.entries(counts)) { total.constructs[k] ??= {translated:0,skipped:0}; total.constructs[k].skipped += n; }
       continue;
     }
-    total.translated++; bump(total.families[record[1]],'translated');
+    total.translated++; stats.translated++; bump(total.families[record[1]],'translated');
     for (const [k,n] of Object.entries(counts)) { total.constructs[k] ??= {translated:0,skipped:0}; total.constructs[k].translated += n; }
-    batch.push({record,ds,translation,module:`Case${total.programs}`});
+    batch.push({record,ds,translation,stream:stats,module:`Case${total.programs}`});
     if (batch.length >= 32) await flush();
   }
-  total.streams.push({name:basename(input),sha256:hash.digest('hex'),programs:total.programs-before});
+  stats.sha256=hash.digest('hex');
 }
 await flush(); await Promise.all(queue);
+if(firstFailure) throw firstFailure;
+if(total.streams.some(s=>s.valueChecked!==s.translated) || total.valueChecked!==total.translated || total.agreements+total.precision+total.leads!==total.translated ||
+  total.cases.filter(c=>c.programLead).length!==total.leads ||
+  total.cases.reduce((n,c)=>n+c.siteLeads.length,0)!==total.sites.lead) throw Error('incomplete bridge accounting');
 total.cases.sort((a,b)=>a.id<b.id?-1:a.id>b.id?1:0);
 if(options.ci) {
   // Pinned CI stream floors make new skips an explicit, reviewable change.
   for(const [family,floor] of Object.entries({fixture:82,sync:14,targeted:128,enumerate:92,
-    general:1,declarations:9,'branch-traversal':3,'fresh-tower':2,captures:4,
+    general:1,declarations:6,'branch-traversal':3,'fresh-tower':2,captures:4,
     'once-many-wrappers':3,'indexed-chain':5,'recursive-higher-order-limit':5,
     recursion:1,'fresh-nested':2})) {
     if((total.families[family]?.translated??0)<floor) throw Error(`CI translation coverage fell below ${family} floor ${floor}`);
   }
   if(total.translated*4<total.programs) throw Error('CI translation coverage fell below 25%');
+}
+if(!options.input && !options.ci && !options.suite && Number(options.count??20000)===20000 &&
+  Number(options.bound??2)===2 && String(options.seeds??'17,20261011,314159')==='17,20261011,314159') {
+  const baseline=JSON.parse(await readFile(resolve(own,'bridge-coverage.json'),'utf8'));
+  if(total.programs!==baseline.programs) throw Error('long stream changed: review bridge coverage baseline');
+  for(const [family,recorded] of Object.entries(baseline.families)) {
+    const current=total.families[family];
+    if(!current || current.programs!==recorded.programs || current.translated<Math.ceil(recorded.translated*baseline.minimumFraction)) {
+      throw Error(`long translation coverage regressed: ${family}`);
+    }
+  }
 }
 await writeFile(resolve(out,'report.json'),JSON.stringify(total,null,2)+'\n');
 console.log(JSON.stringify({...total,cases:total.cases.length},null,2));

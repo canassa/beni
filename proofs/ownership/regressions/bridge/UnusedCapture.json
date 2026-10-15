@@ -1,0 +1,1 @@
+[[["plain40",[["list",["int"]]],[["list",["int"]]],["list",["int"]],["prim",["set"],[["var",0],["int","0"],["int","0"]]],""]],["let",0,["prim",["literal",["int"]],[]],["let",2,["closure",0,[["var",0]]],["app",["var",2],[["var",0]]]]]]
