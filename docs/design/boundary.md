@@ -340,6 +340,17 @@ a sibling that follows the idiom reads a trie with a head exactly as it read one
 in-place writes, head and tail, are `core/List.js`'s alone; a sibling that wrote a list it was given
 would now corrupt versions at either end.
 
+*Amended 2026-10-15 (the owner: `List` is a plain array; `backend.md` §4, *The representation: a plain
+array*; built by `browser-direct.md`'s S7).* There are two forms, plain and view, and no trie. `$plain()` is
+withdrawn. A sibling reads a plain list in place, and a view as `xs.$b[xs.$o + i]` for
+`0 ≤ i < xs.length`; `xs.$b.slice(xs.$o)` gives it an array of its own. The idiom becomes
+`Array.isArray(xs) ? xs : xs.$b` from offset `Array.isArray(xs) ? 0 : xs.$o`. `$b` and `$o` are the
+protocol's two names, and only a view has them, so `Debug.toString` recognises a list by
+`Array.isArray(v) || v.$b !== undefined`. On an in-place platform, beni may later write in place a
+list it handed a sibling. So a sibling that **keeps** a list past the call must say so in its
+signature's ownership words (`ownership-checker.md` §24), or the checker would take it as
+`borrowed`. A sibling still never writes a list it was given.
+
 **What a sibling returns.** A `List` result is either **a fresh plain array that nothing else holds
 and that the sibling never touches again** — `s.split(sep)`, `Array.from(s)`, an array it built — or
 **a `List` it was given**, unchanged. An array the *host* owns is never returned as it is: a DOM
@@ -630,7 +641,8 @@ fresh variable, as `Js.from`'s argument is). The list, its pairs and its keys ar
 one. `pure`: making an object changes nothing an observer can see. Passed as a value, `Js.js`'s
 `object` builds the same object from a list of pairs. Its first use is `core/List`'s view and trie
 headers, whose `$plain` and `length` a reader of a list relies on by name (`backend.md` §4, *What a
-reader of a list may rely on*).
+reader of a list may rely on*). *Amended 2026-10-15:* with the trie withdrawn, its use there is the view header
+`{ $b, $o, length }` alone (`backend.md` §4, *The representation: a plain array*).
 
 **`method : sync (Value → a) → Value`** (pure, 2026-10-02, the owner's decision on research 50 §7)
 is a function JavaScript calls as a method: `Js.method λself → body` is `function () { const self
@@ -638,7 +650,9 @@ is a function JavaScript calls as a method: `Js.method λself → body` is `func
 — anything else is refused (`internal`), as a non-literal argument list is — and is printed as a
 `function` expression, never an arrow, whose `this` is not the receiver's, and always with a block
 body; it takes no argument but its receiver. `sync`: JavaScript calls it and waits for nothing, so
-a body that may suspend is `sync_boundary`. `pure`: making a function changes nothing. Its one use
+a body that may suspend is `sync_boundary`. `pure`: making a function changes nothing. *(Amended 2026-10-15: with `$plain()` withdrawn,
+`core/List` no longer uses it (`backend.md` §4, *The representation: a plain array*). S7 decides
+whether `Js` keeps it.)* Its one use
 is a field of a `Js.object` that a reader calls by name — a list header's `$plain`, which the
 protocol makes a field and not a prototype method (`backend.md` §4, *What a reader of a list may
 rely on*) — and the optimiser keeps every object holding one whole, since the method reads and
@@ -2393,7 +2407,9 @@ alike" is about values, not storage.** A `List` is a plain array, a view or a tr
 and the same two numbers as a pattern's `rest` were two keys, and a `Restart` keyed by one let a
 body keyed by the other finish (a silent wrong answer). The walk now reads a list in any form as its
 elements (`$plain()`, the one fact a reader outside `core/List.js` may use besides `length` and
-`Array.isArray`); `browser/tea/ListKeyRestart` pins it. **One case is still open, and is the same
+`Array.isArray`); `browser/tea/ListKeyRestart` pins it. *Amended 2026-10-15:* once
+`browser-direct.md`'s S7 lands there is no trie and no `$plain()`, and the walk reads a view through
+`$b`/`$o` (`backend.md` §4, *The representation: a plain array*). **One case is still open, and is the same
 fingerprint's:** a key whose type compares by its own `compare` rather than by its representation —
 a `Dict` or a `Set` (a tree whose shape depends on insertion order), or a program's type with a
 hand-written `compare` — is matched by what it stores, so two equal sets built in different orders

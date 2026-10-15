@@ -102,7 +102,9 @@ read per field step, an element read per tuple or constructor step, an element r
 step — and say `M@p` is **undefined** when a step cannot be followed (the tag at a constructor
 step is another constructor; a list index is out of range). Say `p` is **changed** in `(M, M')`
 when `M'@p` and `M@p` are not the **same value**: not `===`, with the one exception `backend.md`
-§4 (*Identity*) grants list views and trie headers, where `same(a, b)` is the test; a path that
+§4 (*Identity*) grants list views and trie headers, where `same(a, b)` is the test; (*amended
+2026-10-15*: views only once the trie is withdrawn, `backend.md` §4, *The representation: a plain
+array*) a path that
 is defined in one and undefined in the other is changed, and so is every path below a changed
 path whose step cannot be followed. Then for every changed `p`:
 

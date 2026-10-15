@@ -400,7 +400,10 @@ includes most of item 7, so the low end is slightly optimistic.
   constructor would be shorter. Hidden-class stability and the `NaN` first-compare
   sentinel are why they exist, so no change without a mount benchmark.
 - **`List`'s trie (0.67 kB) and `Dict` (0.88 kB).** These are representation
-  decisions the owner took for O(1) access and push. A smaller internal map
+  decisions the owner took for O(1) access and push. *Note, 2026-10-15: the owner
+  has since withdrawn the trie: `List` is a plain array edited in place where the ownership
+  checker proves it unshared (`backend.md` §4, *The representation: a plain array*;
+  `browser-direct.md`'s S7). This row's 0.67 kB leaves every bundle once S7 lands.* A smaller internal map
   for platform bookkeeping (Tea's keyed jobs) would let `Dict` drop out of
   programs that never use it. That is worth pricing on a page without one.
 

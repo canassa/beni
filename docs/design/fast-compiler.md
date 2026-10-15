@@ -1908,6 +1908,10 @@ that the wrong order costs a 30,000-line refactor (01 §7).
    unreliable here. *Decided 2026-10-01 by the owner, after research 38 and 46 measured both on
    beni's own output:* one array-backed `List` — a plain array until written, a 32-way trie with a
    claimable tail after — and no cons list (`backend.md` §4, *Lists are arrays*; `language.md` §6.8).
+   *Amended 2026-10-15, the owner:* the trie is withdrawn. A `List` is a plain array, edited in
+   place where the ownership checker proves it unshared, and a persistent sequence may return only
+   as a separate type the developer chooses (`backend.md` §4, *The representation: a plain
+   array*).
 3. **How fine is too fine for Layer 2?** Zig found `AnalUnit` granularity needed a major refactor to
    avoid over-analysis when a type doubles as a namespace (01 §7). Start at the four kinds in §8.2
    and resist adding more without a measurement that demands it.

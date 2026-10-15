@@ -842,7 +842,9 @@ emitted JavaScript that reads and makes lists under the sibling protocol.
   caller handed in as a host value is never adopted, because the host may
   still write it.
 - **Encoding (print, write).** A list is read through the protocol —
-  `Array.isArray(xs) ? xs : xs.$plain()` — and walked by index. When the
+  `Array.isArray(xs) ? xs : xs.$plain()` — and walked by index. *Amended 2026-10-15:*
+  once `browser-direct.md`'s S7 lands, a view is read as `xs.$b` from `xs.$o` and there is no
+  `$plain()` and no trie (`backend.md` §4, *The representation: a plain array*). When the
   encoded elements are the elements themselves, the plain array may be given
   to `JSON.stringify` as it is; otherwise the worker builds the external
   array.
