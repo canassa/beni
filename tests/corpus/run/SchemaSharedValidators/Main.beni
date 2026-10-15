@@ -1,0 +1,106 @@
+-- Validators shared across schemas answer what the branch they replace
+-- answers (`schema.md` §6, *Validators shared across schemas*). This
+-- program parses enough required fields of every primitive with a helper —
+-- strings, integers, booleans, floats and finite floats — and enough
+-- records that a `--release` build shares each field helper, the depth
+-- bound and the missing key (`SchemaShare`); its development build writes
+-- every branch in place. The corpus runs both against this one golden, so
+-- every issue below is made once by a shared helper and once in place:
+-- the key absent, past the depth bound, not the primitive, an unsafe
+-- integer, a number that is not finite; under `FirstError` the first only,
+-- under `AllErrors` each in field order, with the failing input reported;
+-- a renamed key named as the input names it; a key `Object.prototype`
+-- holds, which no helper reads, beside the ones a helper does.
+import Node
+import Schema
+import Show
+
+
+schema Row =
+    name : String as "row-name"
+    note : String
+    tag : String
+    code : String
+    count : Int as "row-count"
+    size : Int
+    rank : Int
+    step : Int
+    on : Bool
+    seen : Bool
+    open : Bool
+    done : Bool
+    x : Float
+    y : Float
+    z : Float
+    w : Float
+    a : FiniteFloat
+    b : FiniteFloat
+    c : FiniteFloat
+    d : FiniteFloat
+    ctor : String as "constructor"
+
+
+schema Pair =
+    left : Row
+    right : Row
+
+
+all : Schema.Options
+all = { errors = Schema.AllErrors, unknownKeys = Schema.Ignore, maxDepth = 512, reportInput = True }
+
+
+depth : Int → Schema.Options
+depth n =
+    { errors = Schema.FirstError, unknownKeys = Schema.Ignore, maxDepth = n, reportInput = False }
+
+
+good : String
+good =
+    "\"row-name\":\"n\",\"note\":\"o\",\"tag\":\"t\",\"code\":\"c\",\"row-count\":1,\"size\":2,\"rank\":3,\"step\":4,\"on\":true,\"seen\":false,\"open\":true,\"done\":false,\"x\":1.5,\"y\":2,\"z\":3,\"w\":4,\"a\":1,\"b\":2,\"c\":3,\"d\":4,\"constructor\":\"k\""
+
+
+showRow : Row.Type → String
+showRow r =
+    String.join
+        [ r.name
+        , String.fromInt (r.count + r.size + r.rank + r.step)
+        , if r.on && not r.seen then "on" else "off"
+        , String.fromFloat (r.x + r.a)
+        , r.ctor
+        ]
+        " "
+
+
+row : String → String
+row text = Show.result (Row.parse text) showRow
+
+
+rowAll : String → String
+rowAll text = Show.result (Row.parseWith all text) showRow
+
+
+main : Node.Program
+main =
+    Node.printLines
+        [ row ("{" ++ good ++ "}")
+        , row "{}"
+        , row ("{" ++ good ++ ",\"row-name\":1}")
+        , row ("{" ++ good ++ ",\"row-count\":\"1\"}")
+        , row ("{" ++ good ++ ",\"size\":1.5}")
+        , row ("{" ++ good ++ ",\"rank\":9007199254740992}")
+        , row ("{" ++ good ++ ",\"on\":0}")
+        , row ("{" ++ good ++ ",\"x\":null}")
+        , row ("{" ++ good ++ ",\"a\":1e999}")
+        , row ("{" ++ good ++ ",\"b\":\"2\"}")
+        , row ("{" ++ good ++ ",\"constructor\":1}")
+        , rowAll
+            "{\"row-name\":1,\"note\":\"o\",\"code\":null,\"row-count\":\"1\",\"size\":1.5,\"step\":4,\"on\":0,\"seen\":false,\"done\":null,\"x\":\"1\",\"y\":2,\"z\":3,\"w\":4,\"a\":\"q\",\"b\":true,\"c\":3,\"d\":4}"
+        , Show.result (Pair.parse ("{\"left\":{" ++ good ++ "},\"right\":{" ++ good ++ "}}")) λp →
+            showRow p.left ++ " / " ++ showRow p.right
+        , Show.result (Pair.parse ("{\"left\":{" ++ good ++ "},\"right\":{\"note\":1}}")) λp →
+            showRow p.left
+        , Show.result
+            (Pair.parseWith (depth 1) ("{\"left\":{" ++ good ++ "},\"right\":{" ++ good ++ "}}"))
+            λp → showRow p.left
+        , Show.result (Pair.parseWith (depth 0) "{\"left\":{},\"right\":{}}") λp → showRow p.left
+        ]

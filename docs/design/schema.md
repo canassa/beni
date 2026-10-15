@@ -1218,9 +1218,49 @@ the source they wrote before. The typed errors are unchanged. `jsonBody`'s `Unpr
 issue list, the list the library makes.
 
 **What this leaves to later slices.** Workers that several schemas share, written once only where
-that makes the bundle smaller, are slice B. Schemas derived from a type (§12) are slice C. §12.8
-already says that the value passed through evidence is the callee's specialised worker, and that
-is this section's `Compiled`.
+that makes the bundle smaller, are slice B (*Validators shared across schemas*, below). Schemas
+derived from a type (§12) are slice C. §12.8 already says that the value passed through evidence
+is the callee's specialised worker, and that is this section's `Compiled`.
+
+**Validators shared across schemas** *(added 2026-10-15, slice B, #192; the owner: "be careful,
+the goal is to save bytes, don't share if it increases the bundle size")*. A `--release` build
+may call a `core/Schema` helper in place of a failure branch its workers would write again and
+again. A development build writes every branch in place.
+
+- **What is shared: the cold half of a branch, never the success path.** The worker keeps every
+  test in place. A shared helper runs only after a test failed, and it makes the issue that the
+  replaced branch would have made, in `prim`'s order. It makes a known issue and interprets
+  nothing, as *The specialised path* allows. A helper that also ran the tests on the success path
+  was measured and refused: it saved more (Conduit −297/−220 brotli), but it slowed every decode
+  by 2–3%.
+- **The helpers.**
+  - `compiledDeep` is the depth bound, before a descent.
+  - `compiledMissing` is a missing key, with its message made from the key.
+  - `badString`, `badInt`, `badBool`, `badFloat` and `badFinite` cover one required field of a
+    JSON object (`parse`) that is read by value and whose value is that primitive. The worker
+    writes `const x = v[key]` and then one condition: absent, or past the bound, or failing the
+    primitive's tests. It calls the helper only when the condition holds.
+- **When a helper is shared.** A helper costs its own definition once and saves a little at
+  every call. `--release` cannot take a call back, because the helper is another module's value
+  and the inliner does not reach into it. So a helper is shared only when the build's live
+  worker sets call it at least *threshold* times:
+  - 4 for a field helper;
+  - 24 for the depth bound and the missing key, which are also shared whenever any field helper
+    is, since a field helper calls them.
+
+  Calls are counted after reachability, over the worker sets that survived
+  (`SchemaShare.decide`). The helpers chosen become roots of a second walk over the same edge
+  lists. Every number is input-derived, so the choice is deterministic (CLAUDE.md rule 5).
+- **How the thresholds were chosen.** In release brotli on Conduit and every `run/Schema*`
+  program:
+  - a field helper wins from 4 calls and loses at 3;
+  - the depth bound and the missing key win from 16 calls and lose at 12.
+
+  24 leaves the latter a margin. At these thresholds no measured program grows.
+- **What was measured and refused** (§16, *As built — slice B*):
+  - `badField`, for a required field of any other value: it took Conduit a further −39/−55, and
+    cost a program with 12 such calls +113;
+  - a helper running the tests on the success path, as above.
 
 ## 7. Effects
 
@@ -2568,6 +2608,49 @@ writes every worker from one generator over them (`Fn.op`). `core/Schema` adds `
 - **Found on the way:** two mutually recursive tagged declarations hit a checker internal error
   (#196), on master too; the describe fixture leaves mutual recursion to it.
 
+**As built — slice B** (2026-10-15, #192; §6, *Validators shared across schemas*).
+- **Implementation.**
+  - `SchemaShare` counts each helper's calls over the live worker sets and decides what a
+    `--release` build shares.
+  - `Emit.shareValidators` roots the shared helpers and takes the walk again. `withShareRoots`
+    keeps them through the walk that refines the runtime's roots.
+  - `SchemaLower.failText` and `decodeRecord` call a helper wherever `Share.on` says so.
+  - `core/Schema` adds `compiledDeep`, `compiledMissing` and the five `bad…` helpers.
+- **The guarantee as a test.** `run/SchemaSharedValidators` parses enough required fields of each
+  primitive, and enough records, that its release build shares every helper. Its development
+  build shares none. Both builds run against one golden, which equals master's interpreter output
+  line for line. It covers every issue a helper makes:
+  - absent, past the depth bound, not the primitive, an unsafe integer, a non-finite number;
+  - each under `FirstError` and under `AllErrors` with the input reported;
+  - a renamed key;
+  - a prototype key, which no helper reads.
+
+  `emit/release/app/SchemaSharedValidators` pins the shape:
+  - four strings share `badString`;
+  - the one integer under the threshold keeps its tests and issues in place;
+  - specialisation folds the root's depth tests, the helper's included.
+- **Size** (release brotli 11, against #204's head):
+  - Conduit tea 28 934 → **28 749** (−185); direct, its `.mjs` files, 33 954 → **33 818**
+    (−136).
+  - `run/SchemaDeclKeys` −73, `SchemaRunners` −73, `SchemaSharedValidators` −236. No measured
+    program grows.
+  - `bench/size.mjs` release gross −412 brotli and −15 640 raw. Its development column does not
+    move.
+- **Speed.** `bench/schema-libraries`' beni rows, the two builds interleaved in one process 60 and
+  80 rounds on an idle core (a batch of each per round, the ratio's median): every cell within
+  −1.8% to +1.7%, and the second run within −1.2% to +1.0%. **No slowdown.** The success path is
+  the code it was.
+- **Refused, with numbers.**
+  - *Helpers that run the tests too* (`readString` …, one call per field). Conduit −297 tea,
+    −220 direct. But the decode cells were +1–3% slower over 20 alternated builds, and +5–7% when
+    the helper also read the key, `v[key]` becoming a load by a key the function does not know.
+  - *`badField`*, for a required field whose value has no primitive helper. At 16 calls it took
+    Conduit −224/−191, against −185/−136 without it. At 12 calls it cost `run/SchemaRunners` +113
+    against −82 without it. The calls that decide it are close to where it starts losing, so it
+    is not shared.
+  - *One `compiledFixed` with a table of every fixed failure.* The table ships whole, so a program
+    with one or two fields grew: `SchemaTypeConstructorArgument` +87, `SchemaDeclDepth` +56.
+
 ## Appendix A. Decisions log
 
 ### A.1 — Description plus specialised functions (2026-09-22)
@@ -2993,3 +3076,10 @@ time. §6, *A statically known schema runs compiled*, is the contract.
   rather than one worker that reads its ends from the context — that worker would cost every
   `parse` a test per key and give up keeping the parsed array; and a description of nodes rather
   than a `Description` constant, §6, *What `describe` ships*.)*
+- **Shared validators are cold halves, counted per build** (slice B, 2026-10-15, #192; §6,
+  *Validators shared across schemas*). A release build shares a failure branch's issue-making half
+  only when its live workers call it at least a measured number of times. The tests stay in
+  place, so no shared helper is on the success path. *Reversal:* lower or raise a threshold
+  (`SchemaShare.Helper.threshold`) when a measurement shows that a program grows or that a
+  saving is left on the table. Share a whole-field reader only if V8 stops charging a call
+  for it.
