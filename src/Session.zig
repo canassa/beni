@@ -538,8 +538,16 @@ pub const Worker = struct {
     }
 };
 
-pub fn init(gpa: Allocator, io: Io, options: Options) Allocator.Error!Session {
-    std.debug.assert(options.jobs >= 1);
+pub fn init(gpa: Allocator, io: Io, asked: Options) Allocator.Error!Session {
+    std.debug.assert(asked.jobs >= 1);
+    // A build with no threads has one worker, whatever it was asked for
+    // (fast-compiler.md §10, *A build with no threads*): more would cost
+    // their interners and arenas and claim no file.
+    const options = if (builtin.single_threaded) one: {
+        var one = asked;
+        one.jobs = 1;
+        break :one one;
+    } else asked;
     var session: Session = .{
         .gpa = gpa,
         .io = io,

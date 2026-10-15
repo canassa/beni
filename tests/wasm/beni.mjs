@@ -6,14 +6,15 @@
 // It loads every file under the working directory into the host's file
 // system in memory, runs `beni <arg>…` on it, writes the two streams to
 // this process's own, writes every file the run made or changed back to
-// the working directory, and exits with the command's exit code. So it is
+// the working directory, deletes every file the run removed, and exits
+// with the command's exit code. So it is
 // a stand-in for the native `beni` that a black-box test runs in the same
 // way, and compares byte for byte (`tests/blackbox/wasm_test.zig`).
 //
 // `--liftoff-only`: V8 compiles hot functions again with TurboFan, on
 // background threads, which costs more than it saves in one short run
 // (playground.md §6).
-import { mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { directoryOf, filesOf, run } from "../../playground/wasi.js";
 
@@ -37,12 +38,14 @@ const before = readTree(".");
 const module = await WebAssembly.compile(readFileSync(wasmPath));
 const result = await run(module, ["beni", ...args], directoryOf(before));
 
-for (const [path, bytes] of filesOf(result.root)) {
+const after = filesOf(result.root);
+for (const [path, bytes] of after) {
   const old = before.get(path);
   if (old !== undefined && Buffer.compare(old, bytes) === 0) continue;
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, bytes);
 }
+for (const path of before.keys()) if (!after.has(path)) rmSync(path);
 process.stdout.write(result.stdout);
 process.stderr.write(result.stderr);
 // A crash fails the run as a crash: Node prints it and exits 1.

@@ -257,3 +257,27 @@ test "the WebAssembly compiler reports diagnostics as the native compiler does" 
     try testing.expectEqual(@as(u8, 1), checked.exit_code);
     try testing.expect(std.mem.indexOf(u8, checked.stderr, "\"type_mismatch\"") != null);
 }
+
+test "a build with no threads refuses serve, which answers requests while it builds" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `serve` builds on one thread and answers HTTP on another; with no
+    // threads it says so before it opens a port (fast-compiler.md §10).
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const exe = try single(&w);
+    try w.write("Main.beni", project[0].bytes);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.runWith(&.{ "serve", "--platform=node", "--port=0", "Main.beni" }, .{ .raw_diagnostics = true, .exe = exe });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 2), r.exit_code);
+    try testing.expectEqualStrings("beni: serve needs threads, and this beni is built with none\n", r.stderr);
+    try testing.expectEqualStrings("", r.stdout);
+}

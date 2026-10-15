@@ -27,12 +27,14 @@ pub const driver = "tests/wasm/beni.mjs";
 const cache_dir = ".beni-cache";
 
 /// How a native compiler with no threads is started on Linux: from
-/// `/bin/sh`, with the soft stack limit of a login shell, 8 MiB, and no
-/// hard limit. The test runner raises its own limit to 256 MiB and every
-/// child inherits it, so without this a compiler that declares too small a
-/// main stack would still pass. With it, Zig's start code raises the limit
+/// `/bin/sh`, with the soft stack limit of a login shell, 8 MiB. The hard
+/// limit stays the one the test inherits (unlimited where the gates run).
+/// The test runner raises its own soft limit to 256 MiB and every child
+/// inherits it, so without this a compiler that declares too small a main
+/// stack would still pass. With it, Zig's start code raises the soft limit
 /// to the stack the executable declares, as it does for a user
-/// (`fast-compiler.md` §10, *A build with no threads*).
+/// (`fast-compiler.md` §10, *A build with no threads*); a hard limit under
+/// that stack would fail the test for a reason that is not the compiler's.
 const shell_stack = "ulimit -S -s 8192 && exec \"$0\" \"$@\"";
 
 /// The native compiler with no threads, by absolute path, when the run has
@@ -106,7 +108,11 @@ pub fn expectSame(w: *World, args: []const []const u8, other: Other) !Run {
     try testing.expectEqualStrings(threaded.stderr, theirs.stderr);
     const ours = try treeOf(w, "threaded");
     const their_files = try treeOf(w, "other");
-    try testing.expectEqual(ours.len, their_files.len);
+    if (!sameList(ours, their_files)) {
+        for (ours) |path| if (!contains(their_files, path)) std.debug.print("only the threaded compiler wrote {s}\n", .{path});
+        for (their_files) |path| if (!contains(ours, path)) std.debug.print("only the compiler with no threads wrote {s}\n", .{path});
+        return error.DifferentFiles;
+    }
     for (ours, their_files) |a, b| {
         try testing.expectEqualStrings(a, b);
         const left = try w.read(try std.fs.path.join(arena, &.{ "threaded", a }));
@@ -138,6 +144,17 @@ fn runWasm(w: *World, wasm: []const u8, args: []const []const u8) !world.Result 
     try argv.appendSlice(arena, &.{ node, "--liftoff-only", script, wasm });
     try argv.appendSlice(arena, args);
     return world.spawnAndCapture(arena, w.gpa, w.io, argv.items, .{ .path = try w.projectSubPath(arena, "other") }, world.default_timeout_ms);
+}
+
+fn contains(paths: []const []const u8, path: []const u8) bool {
+    for (paths) |p| if (std.mem.eql(u8, p, path)) return true;
+    return false;
+}
+
+fn sameList(a: []const []const u8, b: []const []const u8) bool {
+    if (a.len != b.len) return false;
+    for (a, b) |x, y| if (!std.mem.eql(u8, x, y)) return false;
+    return true;
 }
 
 /// Every file under `side`, as sorted paths relative to it, without the

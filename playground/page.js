@@ -92,7 +92,12 @@ function edited() {
   }, 300);
 }
 
+// The console keeps the last `consoleLines` pieces of output: a program
+// that prints in a loop does not grow the page without end (§8).
+const consoleLines = 2000;
+
 function append(line, kind = "") {
+  if (output.childElementCount >= consoleLines) output.firstElementChild.remove();
   const span = document.createElement("span");
   span.textContent = line;
   if (kind !== "") span.className = kind;
@@ -162,10 +167,10 @@ function showDiagnostics(list) {
 
 function showBuild(result) {
   if (result.crash !== null) {
-    const stack = result.crash.startsWith("RangeError");
-    setStatus(stack ? "The compiler ran out of stack" : "The compiler crashed", "error");
+    setStatus(result.crashKind === "stack" ? "The compiler ran out of stack" : "The compiler crashed", "error");
     markDiagnostics(editor, []);
-    diagnosticsView.replaceChildren(preOf(`${result.stderr}${result.crash}\n`));
+    diagnosticsView.replaceChildren(preOf(`${result.stderr}${result.crash}
+`));
     return;
   }
   const ms = `${Math.round(result.ms)} ms`;
