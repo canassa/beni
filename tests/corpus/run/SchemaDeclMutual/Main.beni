@@ -1,0 +1,139 @@
+-- Schema declarations that name each other (`schema.md` §2: a schema may
+-- refer to another of its module), through their compiled `parse` and
+-- `print` (§6): a tagged pair, a ring of three, a cycle through a record
+-- schema, and a generic pair that hands its parameter round. Each parses
+-- several levels down, fails with the path into the cycle, prints back, and
+-- compares, so every endpoint derives `eq` and `compare` over the cycle
+-- (checker-v2.md §11.5, one unit of the fixpoint). The corpus also builds it
+-- with every root through the library, whose descriptions of the generic
+-- pair must close the cycle rather than make a new one per reference.
+import Node
+import Schema
+import Show
+
+
+pub schema Odd tagged "o" of
+    OddOne as "one"
+        next : List Even
+
+
+pub schema Even tagged "e" of
+    EvenMore as "more"
+        next : List Odd
+    EvenEnd as "end"
+
+
+pub schema A tagged "a" of
+    AToB as "b"
+        b : B
+    AEnd as "end"
+
+
+pub schema B tagged "b" of
+    BToC as "c"
+        c : C
+
+
+pub schema C tagged "c" of
+    CToA as "a"
+        a : A
+
+
+pub schema Expr tagged "k" of
+    Num as "num"
+        value : Int
+    Block as "block"
+        body : Stmts
+
+
+pub schema Stmts =
+    items : List Stmt
+
+
+pub schema Stmt tagged "s" of
+    Eval as "eval"
+        expr : Expr
+    Nested as "nested"
+        inner : Stmts
+
+
+pub schema Ping a tagged "ping" of
+    PingValue as "value"
+        value : a
+        pong : Pong a
+    PingEnd as "end"
+
+
+pub schema Pong a tagged "pong" of
+    PongNext as "next"
+        ping : Ping a
+
+
+odd : String → String
+odd text = Show.result (Odd.parse text) λo → Show.result (Odd.print o) λs → s
+
+
+ring : String → String
+ring text = Show.result (A.parse text) λa → Show.result (A.print a) λs → s
+
+
+expr : String → String
+expr text = Show.result (Expr.parse text) λx → Show.result (Expr.print x) λs → s
+
+
+ping : String → String
+ping text = Show.result (Schema.parse (Ping.schema Schema.int) text) λp →
+    Show.result (Schema.print (Ping.schema Schema.int) p) λs → s
+
+
+compared : Result (List Schema.Issue) a, Result (List Schema.Issue) a → String
+    where
+        a.eq : a, a → Bool
+        , a.compare : a, a → Order
+compared r s =
+    case r of
+        Ok x →
+            case s of
+                Ok y →
+                    (if x == y then "equal" else "unequal")
+                        ++ (if x < y then ", less" else ", not less")
+
+                Err _ →
+                    "failed"
+
+        Err _ →
+            "failed"
+
+
+main : Node.Program
+main =
+    oddDeep =
+        "{\"o\":\"one\",\"next\":[{\"e\":\"more\",\"next\":[{\"o\":\"one\",\"next\":[{\"e\":\"end\"}]}]}]}"
+    oddShallow = "{\"o\":\"one\",\"next\":[{\"e\":\"end\"}]}"
+    pingDeep =
+        "{\"ping\":\"value\",\"value\":1,\"pong\":{\"pong\":\"next\",\"ping\":{\"ping\":\"value\",\"value\":2,\"pong\":{\"pong\":\"next\",\"ping\":{\"ping\":\"end\"}}}}}"
+    Node.printLines
+        [ "-- a tagged pair"
+        , odd oddDeep
+        , odd "{\"o\":\"one\",\"next\":[{\"e\":\"more\",\"next\":[{\"o\":\"two\"}]}]}"
+        , compared (Odd.parse oddDeep) (Odd.parse oddDeep)
+        , compared (Odd.parse oddShallow) (Odd.parse oddDeep)
+        , "-- a ring of three"
+        , ring "{\"a\":\"b\",\"b\":{\"b\":\"c\",\"c\":{\"c\":\"a\",\"a\":{\"a\":\"end\"}}}}"
+        , ring "{\"a\":\"b\",\"b\":{\"b\":\"c\",\"c\":{\"c\":\"a\",\"a\":{\"a\":\"b\",\"b\":{}}}}}"
+        , "-- through a record schema"
+        , expr
+            "{\"k\":\"block\",\"body\":{\"items\":[{\"s\":\"eval\",\"expr\":{\"k\":\"num\",\"value\":1}},{\"s\":\"nested\",\"inner\":{\"items\":[]}}]}}"
+        , expr
+            "{\"k\":\"block\",\"body\":{\"items\":[{\"s\":\"eval\",\"expr\":{\"k\":\"num\",\"value\":\"1\"}}]}}"
+        , compared
+            (Expr.parse "{\"k\":\"num\",\"value\":1}")
+            (Expr.parse "{\"k\":\"num\",\"value\":2}")
+        , "-- a generic pair"
+        , ping pingDeep
+        , ping
+            "{\"ping\":\"value\",\"value\":1,\"pong\":{\"pong\":\"next\",\"ping\":{\"ping\":\"value\",\"value\":true}}}"
+        , compared
+            (Schema.parse (Ping.schema Schema.int) pingDeep)
+            (Schema.parse (Ping.schema Schema.int) pingDeep)
+        ]
