@@ -1,0 +1,36 @@
+-- emit/release/app: a release build shares a validator only from the
+-- number of calls at which it makes the program smaller (`schema.md` §6,
+-- *Validators shared across schemas*; `SchemaShare`).
+--
+-- `User` reads four required strings, so the build shares `badString`: each
+-- string field keeps its read and its tests in place, as one condition, and
+-- calls the helper only when one fails. Once a field helper is shared the
+-- depth bound's and the missing key's helpers are paid for, and the
+-- integer field's missing key calls the latter. One integer is under the
+-- four calls `badInt` needs, so its type tests and their issues stay
+-- written in place. The root is read at depth 0, so specialisation folds
+-- every depth test of this worker away, the helper's included.
+import Node exposing (Program)
+
+
+schema User =
+    name : String as "user-name"
+    email : String
+    bio : String
+    city : String
+    age : Int
+
+
+main : Program
+main =
+    Node.printLines
+        [ case
+            User.parse
+                "{\"user-name\":\"a\",\"email\":\"b\",\"bio\":\"c\",\"city\":\"d\",\"age\":1}"
+          of
+            Ok u →
+                u.name ++ String.fromInt u.age
+
+            Err _ →
+                "failed"
+        ]

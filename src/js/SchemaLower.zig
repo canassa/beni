@@ -28,6 +28,7 @@ const Interface = @import("../resolve/Interface.zig");
 const InternPool = @import("../InternPool.zig");
 const SchemaPlan = @import("../check/SchemaPlan.zig");
 const SchemaGraph = @import("SchemaGraph.zig");
+const SchemaShare = @import("SchemaShare.zig");
 
 const Node = JsIr.Node;
 const NameIndex = JsIr.NameIndex;
@@ -985,8 +986,25 @@ const Fn = struct {
         });
     }
 
+    /// A failure with a literal message: the depth bound and a missing key
+    /// named as the input names it call their shared helper where the build
+    /// shares it (`SchemaShare`), and the rest `compiledFail` (`schema.md`
+    /// §6, *Validators shared across schemas*).
     fn failText(w: *Fn, at: At, code: Code, message: []const u8, input: Node.Index, written: bool) !Node.Index {
-        return w.fail(at, code, try w.g.str(message), input, written);
+        const g = w.g;
+        if (!written) {
+            const shared: ?SchemaShare.Helper = if (code == .depth_exceeded and std.mem.eql(u8, message, depth_message))
+                .deep
+            else if (code == .missing_key and at.k == .text and missingMessage(at.k.text, message))
+                .missing
+            else
+                null;
+            if (shared) |h| if (g.sg.share.on(h)) {
+                const path = try w.pathArgs(at);
+                return g.call(try g.core(h.coreName()), &.{ try g.id(w.c), path[0], path[1], path[2], input });
+            };
+        }
+        return w.fail(at, code, try g.str(message), input, written);
     }
 
     /// `c.fail`.
@@ -1312,6 +1330,42 @@ const Fn = struct {
             const at = w.childAt(.{ .text = key }, .{ .text = name });
             const value = try g.fresh("$f");
             slot.* = value;
+            // A required primitive field of a JSON object, where the build
+            // shares its failure branch (`SchemaShare`): the key read and
+            // every test written here, as one condition, and one call that
+            // makes the issue of the test that failed — absent, past the
+            // depth bound, or not the primitive — made only when one did.
+            if (SchemaShare.fieldCall(g.sg.share, g.plan, w.op, f, key)) |h| {
+                const parent: [3]Node.Index = switch (at.parent) {
+                    .own => .{ try g.id(w.ps.pp), try g.id(w.ps.pk), try g.id(w.ps.pn) },
+                    .path => |here| .{ try g.id(here), try g.lit(.null_lit), try g.lit(.null_lit) },
+                };
+                const x = try g.fresh("$x");
+                try g.letDecl(out, value);
+                try g.constDecl(out, x, try g.indexOf(try g.id(v), try g.str(key)));
+                const typeof_x = try g.l.unary(.type_of, try g.id(x), g.p);
+                const wrong = switch (h) {
+                    .string => try g.bin(.strict_ne, typeof_x, try g.str("string")),
+                    .bool => try g.bin(.strict_ne, typeof_x, try g.str("boolean")),
+                    .float => try g.bin(.strict_ne, typeof_x, try g.str("number")),
+                    // `Number.isSafeInteger` and `Number.isFinite` answer
+                    // false for anything that is not a number.
+                    .int => try g.not(try g.globalCall("Number", "isSafeInteger", &.{try g.id(x)})),
+                    .finite => try g.not(try g.globalCall("Number", "isFinite", &.{try g.id(x)})),
+                    .deep, .missing => unreachable,
+                };
+                const absent_or_deep = try g.bin(.logical_or, try g.bin(.strict_eq, try g.id(x), try g.lit(.undefined_lit)), try g.id(deep));
+                var bad: Stmts = .empty;
+                try g.assign(&bad, value, try g.call(try g.core(h.coreName()), &.{
+                    try g.id(w.c), parent[0],   parent[1],      parent[2],
+                    try g.id(v),   try g.id(x), try g.str(key), try g.id(deep),
+                }));
+                var good: Stmts = .empty;
+                try g.assign(&good, value, try g.id(x));
+                try g.ifElse(out, try g.bin(.logical_or, absent_or_deep, wrong), bad.items, good.items);
+                try w.stopOnFailure(out, value);
+                continue;
+            }
             try g.letDecl(out, value);
             // Present: read it one level down (`descend`). The own-key test
             // is `readsByValue`'s.
@@ -1801,6 +1855,16 @@ const Fn = struct {
     }
 };
 
+/// The depth bound's message, which `compiledDeep` fixes.
+const depth_message = "the depth limit is reached";
+
+/// Whether `message` is `missing key "<key>"`, as `compiledMissing` makes it.
+fn missingMessage(key: []const u8, message: []const u8) bool {
+    const head = "missing key \"";
+    return message.len == head.len + key.len + 1 and std.mem.startsWith(u8, message, head) and
+        std.mem.eql(u8, message[head.len..][0..key.len], key) and message[message.len - 1] == '"';
+}
+
 fn isComposite(plan: *const SchemaPlan, n: PNode) bool {
     return switch (SchemaGraph.tag(plan, n)) {
         .record, .list, .tagged => true,
@@ -1841,21 +1905,4 @@ fn primitiveBuilder(kind: u32) []const u8 {
     };
 }
 
-/// Whether an object `JSON.parse` made answers a read of `key` it does not
-/// own: the names `Object.prototype` holds.
-fn isPrototypeKey(key: []const u8) bool {
-    const inherited = [_][]const u8{
-        "__proto__",            "__defineGetter__", "__defineSetter__", "__lookupGetter__",
-        "__lookupSetter__",     "constructor",      "hasOwnProperty",   "isPrototypeOf",
-        "propertyIsEnumerable", "toLocaleString",   "toString",         "valueOf",
-    };
-    for (inherited) |name| if (std.mem.eql(u8, name, key)) return true;
-    return false;
-}
-
-test "a key Object.prototype holds is read as an own key, and no other" {
-    try std.testing.expect(isPrototypeKey("toString"));
-    try std.testing.expect(isPrototypeKey("__proto__"));
-    try std.testing.expect(!isPrototypeKey("user-id"));
-    try std.testing.expect(!isPrototypeKey("toJSON"));
-}
+const isPrototypeKey = SchemaShare.isPrototypeKey;

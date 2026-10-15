@@ -2827,6 +2827,144 @@ compiledFail c parent input output code message v written =
     failAt c (pathAt parent input output) (fromHost (Js.at issueCodes code)) message v written
 
 
+-- ---- Validators shared across schemas ------------------------------------
+-- What a worker calls in place of a branch it would otherwise write, where
+-- the build shares it (`schema.md` §6, *Validators shared across schemas*;
+-- `SchemaShare`). Each answers what the branch answers, issue for issue.
+
+-- The depth bound, reached before a descent into the value its parent read
+-- at `input`: `compiledFail` with the code and message fixed.
+compiledDeep : Context, Path, Js.Value, Js.Value, Js.Value → Js.Value
+compiledDeep c parent input output v =
+    compiledFail c parent input output 5 "the depth limit is reached" v False
+
+
+-- A missing key, its message made from the key the input names it by.
+compiledMissing : Context, Path, Js.Value, Js.Value, Js.Value → Js.Value
+compiledMissing c parent input output v =
+    compiledFail c parent input output 1 "missing key \"${stringOf input}\"" v False
+
+
+-- Why a required field of an object `JSON.parse` made failed its read, as
+-- the branch the worker would write reports it: the key absent (its value
+-- `x` is `undefined`, `SchemaLower`'s `readsByValue`), the depth bound, then
+-- the primitive's own tests, in `prim`'s order. The worker writes the tests
+-- in place, one condition on the success path, and calls this only when one
+-- failed, so the shared part is the cold one: a helper that makes a known
+-- issue, interpreting nothing. The key is both segments of the path: what a
+-- decoding failure reports is the input's.
+badString : Context, Path, Js.Value, Js.Value, Js.Value, Js.Value, String, Bool → Js.Value
+badString c p k n v x external deep =
+    if Js.isUndefined x then
+        compiledMissing c (pathAt p k n) (Js.from external) (Js.from external) v
+    else if deep then
+        compiledDeep c (pathAt p k n) (Js.from external) (Js.from external) x
+    else
+        compiledFail
+            c
+            (pathAt p k n)
+            (Js.from external)
+            (Js.from external)
+            0
+            "expected a string"
+            x
+            False
+
+
+badBool : Context, Path, Js.Value, Js.Value, Js.Value, Js.Value, String, Bool → Js.Value
+badBool c p k n v x external deep =
+    if Js.isUndefined x then
+        compiledMissing c (pathAt p k n) (Js.from external) (Js.from external) v
+    else if deep then
+        compiledDeep c (pathAt p k n) (Js.from external) (Js.from external) x
+    else
+        compiledFail
+            c
+            (pathAt p k n)
+            (Js.from external)
+            (Js.from external)
+            0
+            "expected a boolean"
+            x
+            False
+
+
+badFloat : Context, Path, Js.Value, Js.Value, Js.Value, Js.Value, String, Bool → Js.Value
+badFloat c p k n v x external deep =
+    if Js.isUndefined x then
+        compiledMissing c (pathAt p k n) (Js.from external) (Js.from external) v
+    else if deep then
+        compiledDeep c (pathAt p k n) (Js.from external) (Js.from external) x
+    else
+        compiledFail
+            c
+            (pathAt p k n)
+            (Js.from external)
+            (Js.from external)
+            0
+            "expected a number"
+            x
+            False
+
+
+-- An `Int` and a `FiniteFloat` fail one of two tests: not a number at all,
+-- or a number out of range.
+badInt : Context, Path, Js.Value, Js.Value, Js.Value, Js.Value, String, Bool → Js.Value
+badInt c p k n v x external deep =
+    if Js.isUndefined x then
+        compiledMissing c (pathAt p k n) (Js.from external) (Js.from external) v
+    else if deep then
+        compiledDeep c (pathAt p k n) (Js.from external) (Js.from external) x
+    else if isType x "number" then
+        compiledFail
+            c
+            (pathAt p k n)
+            (Js.from external)
+            (Js.from external)
+            4
+            "expected a safe integer"
+            x
+            False
+    else
+        compiledFail
+            c
+            (pathAt p k n)
+            (Js.from external)
+            (Js.from external)
+            0
+            "expected a number"
+            x
+            False
+
+
+badFinite : Context, Path, Js.Value, Js.Value, Js.Value, Js.Value, String, Bool → Js.Value
+badFinite c p k n v x external deep =
+    if Js.isUndefined x then
+        compiledMissing c (pathAt p k n) (Js.from external) (Js.from external) v
+    else if deep then
+        compiledDeep c (pathAt p k n) (Js.from external) (Js.from external) x
+    else if isType x "number" then
+        compiledFail
+            c
+            (pathAt p k n)
+            (Js.from external)
+            (Js.from external)
+            4
+            "expected a finite number"
+            x
+            False
+    else
+        compiledFail
+            c
+            (pathAt p k n)
+            (Js.from external)
+            (Js.from external)
+            0
+            "expected a number"
+            x
+            False
+
+
 -- `IssueCode`'s constructors, a host array in declaration order.
 issueCodes : Js.Value
 issueCodes =

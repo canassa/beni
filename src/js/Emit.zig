@@ -93,6 +93,7 @@ const Profile = @import("../Profile.zig");
 const Reach = @import("Reach.zig");
 const EdgePack = @import("EdgePack.zig");
 const SchemaGraph = @import("SchemaGraph.zig");
+const SchemaShare = @import("SchemaShare.zig");
 const Spec = @import("Spec.zig");
 const Sibling = @import("Sibling.zig");
 const Minify = @import("Minify.zig");
@@ -350,6 +351,7 @@ pub fn run(
     // declares: every module that would import one it lacks says so.
     if (e.graph().lookup(.core, InternPool.WellKnown.List.symbol())) |list| e.core_private = Lower.corePrivateDeclared(e.bir(list));
     try e.eliminate(entry);
+    try e.shareValidators();
 
     // `boundary.md` §9.2: a markup primitive that survives needs the markup
     // runtime of a lowering, and a chain that names none has nothing to
@@ -823,6 +825,10 @@ const Emitter = struct {
     module_uses: std.ArrayList([]const u8) = .empty,
     /// Reachability's roots beside the build's own (`Reach.Input`).
     extra_roots: []const Reach.Node = &.{},
+    /// The validators the build shares across its schemas, as roots
+    /// (`SchemaShare`): decided after the first walk, kept by every walk
+    /// after it (`withShareRoots`).
+    share_roots: []const Reach.Node = &.{},
     /// What every walk of the build reads (`walk`): the input `eliminate`
     /// built the edge lists from, and the lists, in the workers' `edges`
     /// arenas. A walk from other roots reads the same lists (§9,
@@ -2390,6 +2396,32 @@ const Emitter = struct {
     /// for a constructor nothing builds (`backend.md` §9): a fuzzer sends
     /// messages the program itself never makes, of its message type and of
     /// every type the payloads name, and both platforms must run the arms.
+    /// `roots`, and the shared validators' (`share_roots`).
+    fn withShareRoots(e: *Emitter, roots: []const Reach.Node) ![]const Reach.Node {
+        if (e.share_roots.len == 0) return roots;
+        var out: std.ArrayList(Reach.Node) = .empty;
+        try out.appendSlice(e.scratch, roots);
+        try out.appendSlice(e.scratch, e.share_roots);
+        return out.items;
+    }
+
+    /// Which validators the build shares (`SchemaShare.decide`), from the
+    /// workers the first walk kept; the helpers it shares become roots, and
+    /// the walk is taken again over the same edge lists. Sharing adds
+    /// `core/Schema` values and nothing that reaches a worker, so the
+    /// decision the second walk would make is the first's.
+    fn shareValidators(e: *Emitter) !void {
+        const sg = if (e.schema_graph) |*g| g else return;
+        // A size optimisation, priced on what ships: a development build
+        // writes every branch in place, as it did.
+        if (e.options.schema_library or !e.options.release) return;
+        sg.share = try SchemaShare.decide(e.scratch, sg, &e.live);
+        e.share_roots = try SchemaShare.roots(e.scratch, sg, sg.share);
+        if (e.share_roots.len == 0) return;
+        e.extra_roots = try e.withShareRoots(e.extra_roots);
+        try e.walk();
+    }
+
     fn withFuzzRoots(e: *Emitter, roots: []const Reach.Node) ![]const Reach.Node {
         if (!e.options.fuzz) return roots;
         var out: std.ArrayList(Reach.Node) = .empty;
@@ -3293,7 +3325,7 @@ const Emitter = struct {
             }
             if (refined or e.runtime_module == null or !lowered_clean) break;
             refined = true;
-            const precise = try e.withFuzzRoots(try e.preciseRuntimeRoots(entry));
+            const precise = try e.withShareRoots(try e.withFuzzRoots(try e.preciseRuntimeRoots(entry)));
             if (sameNodes(precise, e.extra_roots) and !skipped) break;
             e.extra_roots = precise;
             for (slots) |*slot| slot.deinit(e.gpa);

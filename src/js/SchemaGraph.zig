@@ -16,6 +16,7 @@ const Graph = @import("../resolve/Graph.zig");
 const Interface = @import("../resolve/Interface.zig");
 const InternPool = @import("../InternPool.zig");
 const SchemaPlan = @import("../check/SchemaPlan.zig");
+const SchemaShare = @import("SchemaShare.zig");
 
 const SchemaGraph = @This();
 
@@ -26,6 +27,9 @@ birs: []const *const Bir,
 interfaces: []const Interface,
 provenance: []const Interface.Provenance,
 interner: *const InternPool.Global,
+/// The validators this build shares across its schemas (`SchemaShare`),
+/// decided once reachability has run and read by every module's lowering.
+share: SchemaShare.Share = .{},
 
 /// The nodes one declaration emits besides its `via`s, and their order in
 /// a module's member table (`Reach`'s `schema` kind is
@@ -176,11 +180,13 @@ pub const Ref = struct { module: Graph.Index, decl: u32 };
 /// `core/Schema`'s core-private values the specialised path calls: in no
 /// interface, exported by `core/Schema` when they survive.
 pub const compiled_values = [_][]const u8{
-    "compiledParse",   "compiledPrint",  "compiledFail",    "compiledForward",   "compiledBackward",
-    "belowBackward",   "readSlot",       "writeSlot",       "pathAt",            "printableWithin",
-    "declared",        "decodeSlot",     "encodeSlot",      "readValueSlot",     "writeValueSlot",
-    "box",             "describedOf",    "describedList",   "describedNullable", "describedConverted",
-    "describedRecord", "describedField", "describedTagged", "describedVariant",  "describedRecursive",
+    "compiledParse",   "compiledPrint",   "compiledFail",    "compiledForward",   "compiledBackward",
+    "belowBackward",   "readSlot",        "writeSlot",       "pathAt",            "printableWithin",
+    "declared",        "decodeSlot",      "encodeSlot",      "readValueSlot",     "writeValueSlot",
+    "box",             "describedOf",     "describedList",   "describedNullable", "describedConverted",
+    "describedRecord", "describedField",  "describedTagged", "describedVariant",  "describedRecursive",
+    "compiledDeep",    "compiledMissing", "badString",       "badInt",            "badBool",
+    "badFloat",        "badFinite",
 };
 
 pub fn isCompiledValue(text: []const u8) bool {
@@ -238,7 +244,13 @@ pub fn coreNeeds(g: SchemaGraph, scratch: Allocator, r: Ref, member: Member, lib
             // Under `--schema-library` no worker is written.
             if (library) return;
             const op = member.op().?;
-            try out.appendSlice(scratch, &.{ "compiledFail", "pathAt" });
+            try out.append(scratch, "pathAt");
+            // `compiledFail`, for any failure branch: the depth bound and a
+            // missing key call it too where the build does not share their
+            // helpers (`SchemaShare`), which are roots of their own when it
+            // does.
+            const failures = failureHelpers(plan, nodes.items, op);
+            if (failures.deep or failures.missing or failures.generic) try out.append(scratch, "compiledFail");
             // A generic declaration's root closes this operation's worker
             // over its arguments' slots, once this worker set survives.
             if (params != 0) try out.append(scratch, op.slot());
@@ -253,6 +265,37 @@ pub fn coreNeeds(g: SchemaGraph, scratch: Allocator, r: Ref, member: Member, lib
             };
         },
     }
+}
+
+/// The failure helpers a worker of operation `op` over `nodes` calls
+/// (`SchemaLower`'s `failText`): `compiledDeep` for the depth bound before
+/// every descent, `compiledMissing` for a missing key, and `compiledFail`
+/// for the rest — a shape or number test, an unknown key or tag, and what
+/// `print` refuses to write.
+pub const FailureHelpers = struct { deep: bool = false, missing: bool = false, generic: bool = false };
+
+pub fn failureHelpers(plan: *const SchemaPlan, nodes: []const SchemaPlan.NodeIndex, op: Op) FailureHelpers {
+    var f: FailureHelpers = .{};
+    for (nodes) |n| switch (tag(plan, n)) {
+        .record, .tagged => {
+            f.deep = true;
+            if (op.hostIn()) {
+                f.missing = true;
+                f.generic = true;
+            }
+        },
+        .list => {
+            f.deep = true;
+            f.generic = f.generic or op.hostIn();
+        },
+        .primitive => switch (std.enums.fromInt(SchemaPlan.Primitive, lhs(plan, n)) orelse .value) {
+            .int, .finite_float => f.generic = true,
+            .string, .bool, .null, .float => f.generic = f.generic or op.hostIn() or (op == .print and lhs(plan, n) == @backingInt(SchemaPlan.Primitive.float)),
+            .value => f.generic = f.generic or op == .print,
+        },
+        else => {},
+    };
+    return f;
 }
 
 /// The schema members member `member` of `r` reaches directly: a root
