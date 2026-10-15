@@ -747,6 +747,10 @@ const Spec = struct {
     /// Slice 8: `soleCalls`, for the pass in progress, made when a call
     /// first asks for it; null until then.
     sole: ?[]const bool = null,
+    /// Slice 8: per fact-3 site, whether a body written in during the pass
+    /// in progress may use the function the site makes. The copy's nodes
+    /// are newer than the facts, so `soleCalls` cannot see that use.
+    copied_sites: []bool = &.{},
     stats: Stats = .{},
     /// Slice 9: `smallTable`, for the pass in progress.
     cf_smalls: []?Small = &.{},
@@ -4902,6 +4906,11 @@ const Spec = struct {
         const asked = try s.arena.alloc(bool, by_site.len);
         @memset(asked, false);
         s.sole = null;
+        s.copied_sites = &.{};
+        if (resolve) {
+            s.copied_sites = try s.arena.alloc(bool, s.pts.sites.items.len);
+            @memset(s.copied_sites, false);
+        }
         // Every call of one, in module order.
         var any = false;
         for (s.mods, 0..) |*m, mi| {
@@ -4966,6 +4975,8 @@ const Spec = struct {
             var holds: std.DynamicBitSetUnmanaged = try .initEmpty(s.arena, ir.nodes.len);
             for (ir.extraSlice(ir.body, Index)) |top| {
                 for (try s.preorder(m, top)) |node| {
+                    // A node past `vals` is a copy this pass made; its uses
+                    // are marked in `copied_sites` (`noteCopiedSites`).
                     const i = node.int();
                     const tag = ir.tag(node);
                     // A key's node is what its value is, and only holds it.
@@ -4991,6 +5002,24 @@ const Spec = struct {
         return sole;
     }
 
+    /// Mark in `copied_sites` every function site a node of `small`'s body
+    /// may be: once the body is copied, each of them may have a use
+    /// `soleCalls` does not count.
+    fn noteCopiedSites(s: *Spec, small: Small) Allocator.Error!void {
+        const ir = s.mods[small.module].ir;
+        const vals = s.pts.vals[small.module];
+        var stack = try s.takeStack();
+        defer s.giveStack(&stack);
+        try JsIr.pushOperand(s.arena, &stack, small.ret);
+        while (JsIr.popOperand(&stack)) |node| {
+            const i = node.int();
+            if (i < vals.len and !vals[i].top) for (vals[i].sites) |site| {
+                if (s.pts.sites.items[site].kind == .func) s.copied_sites[site] = true;
+            };
+            try pushChildren(s.arena, ir, node, &stack);
+        }
+    }
+
     /// `iife`: the callee is the function the call makes, written in the
     /// same statement, so no size model applies — the function's own text
     /// goes with the call — and nothing is copied out of another statement.
@@ -5000,6 +5029,8 @@ const Spec = struct {
         // An argument past the parameters is evaluated by the call and read
         // by nothing: one that does nothing (`inert`) goes with the call —
         // `app.init(null)` of a function lowered with no parameter for `⊤`.
+        // A function called where it is made keeps the exact match: its
+        // own text goes with the call, and no argument may be left over.
         if (passed.len < small.params.len or (iife and passed.len != small.params.len)) return false;
         for (passed[small.params.len..]) |a| if (!inert(m.ir, a)) return false;
         const args = passed[0..small.params.len];
@@ -5040,9 +5071,10 @@ const Spec = struct {
             if (inlined > call_cost) {
                 if (small.site == none) return false;
                 if (s.sole == null) s.sole = try s.soleCalls();
-                if (!s.sole.?[small.site]) return false;
+                if (!s.sole.?[small.site] or s.copied_sites[small.site]) return false;
             }
             s.noteCopy(small.module, small.owner);
+            if (s.copied_sites.len != 0) try s.noteCopiedSites(small);
         }
 
         // Names the body mentions of the whole program, as the caller

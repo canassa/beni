@@ -5,6 +5,9 @@
 --
 -- - `quiet`'s lambda only makes a record, so its unread call goes, and so
 --   does the unread binding `unused` of another such call;
+-- - `captured`'s lambda only makes a record of a name it captures, `base`,
+--   so its unread call goes too, and `base` is logged once, where it is
+--   bound;
 -- - `noisy`'s lambda logs, so its unread call and the unread binding
 --   `heard` of one stay, and log where they stood;
 -- - `quiet` handed a logged `⊤` keeps the call: its argument does
@@ -20,6 +23,7 @@ type alias Count =
 
 type alias App =
     quiet : ⊤ → Count
+    captured : ⊤ → Count
     noisy : ⊤ → Count
     step : Int → Count
 
@@ -35,21 +39,25 @@ run app =
     first = ignored (app.quiet ⊤)
     second = ignored (app.noisy ⊤)
     third = ignored (app.quiet (Debug.log "unit" ⊤))
+    fourth = ignored (app.captured ⊤)
     before = Debug.log "before" 1
     stepped = (app.step (Debug.log "argument" 2)).count
     after = Debug.log "after" 3
     [ first
     , second
     , third
+    , fourth
     , String.fromInt (before + stepped + after)
     ]
 
 
 main : Program
 main =
+    base = Debug.log "base" 5
     Node.printLines
         (run
             { quiet = λ⊤ → { count = 0 }
+            , captured = λ⊤ → { count = base }
             , noisy = λ⊤ → Debug.log "noisy" { count = 1 }
             , step = λk → { count = k * 10 }
             }
