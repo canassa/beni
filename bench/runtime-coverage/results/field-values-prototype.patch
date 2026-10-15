@@ -1,0 +1,215 @@
+diff --git a/src/js/Spec.zig b/src/js/Spec.zig
+index 0310c8b58..77de57a1e 100644
+--- a/src/js/Spec.zig
++++ b/src/js/Spec.zig
+@@ -1742,6 +1742,10 @@ const Spec = struct {
+                 if ((op == .strict_eq or op == .strict_ne) and l.state != .bot and r.state != .bot) if (try s.identity(m, b.left, b.right, l, r)) |same| {
+                     break :blk try s.boolean(if (op == .strict_eq) same else !same);
+                 };
++                // Slice 10: a constructor's field against a literal it never holds.
++                if ((op == .strict_eq or op == .strict_ne) and l.state != .bot and r.state != .bot) if (try s.fieldTest(m, b.left, b.right, l, r)) |same| {
++                    break :blk try s.boolean(if (op == .strict_eq) same else !same);
++                };
+                 const v = try s.binary(op, l, r);
+                 break :blk if (op != .logical_and and op != .logical_or and v.state == .top) .{ .state = .nonnull, .truth = v.truth } else v;
+             },
+@@ -1891,6 +1895,100 @@ const Spec = struct {
+         return if (out.state == .lit) out else null;
+     }
+ 
++    /// At most this many literals in a field's value set (`fieldValues`):
++    /// a constructor's tag, or a field that holds a nullary constructor.
++    const max_field_values = 16;
++
++    /// Slice 10 (research 103): the literals field `p` of a constructor
++    /// value may hold, read as `x.p` — or as a local bound once, by its
++    /// declaration alone, to such a read — when every object `x` may be is
++    /// an object literal of the program with a tag `$` and `p` in it, no
++    /// code of the program writes `$` or `p` on them or on anything it
++    /// cannot see, and each one's `p` is a literal or never made: a beni
++    /// value is immutable and no hand-written file writes one (`tagValue`'s
++    /// argument, for every field). `out` holds the set; false when it is
++    /// not known. The chain is safe to evaluate (`Pts.safeChain`), so a
++    /// test it decides may go with it. An empty set is a read that never
++    /// runs with an object: fact 3's ⊥ at the fixpoint.
++    fn fieldValues(s: *Spec, m: *Mod, node: Index, out: *std.ArrayList(u32)) Allocator.Error!bool {
++        if (!s.pts.ok) return false;
++        const ir = m.ir;
++        const field = switch (ir.tag(node)) {
++            .member => node,
++            .ident => try s.localInit(m, @fromBackingInt(@intCast(ir.data(node).lhs))) orelse return false,
++            else => return false,
++        };
++        if (ir.tag(field) != .member) return false;
++        const d = ir.data(field);
++        const id = s.pts.propId(m.index, @fromBackingInt(@intCast(d.rhs)));
++        const tag = s.in.tag_prop;
++        if (id == none or tag == none) return false;
++        const p = &s.pts;
++        const unseen_writes = p.unknown_any or std.mem.indexOfScalar(u32, p.unknown_props.items, id) != null or std.mem.indexOfScalar(u32, p.unknown_props.items, tag) != null;
++        const obj = try p.safeChain(m.index, s.cur_top, @fromBackingInt(@intCast(d.lhs))) orelse return false;
++        if (obj.top or obj.prim or obj.nullish()) return false;
++        out.clearRetainingCapacity();
++        for (obj.sites) |site| {
++            try s.readsSite(site);
++            const st = &p.sites.items[site];
++            if (st.kind != .object or st.prog_any) return false;
++            if (st.escaped and unseen_writes) return false;
++            if (std.mem.indexOfScalar(u32, st.prog_props.items, id) != null) return false;
++            if (std.mem.indexOfScalar(u32, st.prog_props.items, tag) != null) return false;
++            if (site >= s.spread_sites.len or s.spread_sites[site]) return false;
++            const tp = p.findProp(site, tag) orelse return false;
++            if (!tp.init) return false;
++            const pr = p.findProp(site, id) orelse return false;
++            if (!pr.init) return false;
++            const v = s.prop_lat.get(.{ .site = site, .prop = id }) orelse return false;
++            switch (v.state) {
++                .bot => continue,
++                .lit => {},
++                else => return false,
++            }
++            if (std.mem.indexOfScalar(u32, out.items, v.lit) != null) continue;
++            if (out.items.len == max_field_values) return false;
++            try out.append(s.arena, v.lit);
++        }
++        return true;
++    }
++
++    /// The initialiser of local `n` of the top-level statement being
++    /// walked, when one declaration declares it and nothing assigns it.
++    fn localInit(s: *Spec, m: *Mod, n: NameIndex) Allocator.Error!?Index {
++        if (m.globalOf(n) != null) return null;
++        const i = n.unwrap() orelse return null;
++        if (i >= m.stamp.len or m.stamp[i] != s.current or m.decls[i] != 1 or m.assigned[i]) return null;
++        for (try s.preorder(m, s.cur_top)) |node| switch (m.ir.tag(node)) {
++            .const_decl, .let_decl => if (m.ir.data(node).lhs == n.int()) {
++                const r: Node.OptionalIndex = @fromBackingInt(@intCast(m.ir.data(node).rhs));
++                return r.unwrap();
++            },
++            else => {},
++        };
++        return null;
++    }
++
++    /// Slice 10: `x.p === v` (or `!==`, either way round) with `v` a
++    /// literal, decided by `fieldValues`: false when no value the field may
++    /// hold is `v`, true when it holds only `v`. Null when not decided.
++    fn fieldTest(s: *Spec, m: *Mod, left: Index, right: Index, l: Lat, r: Lat) Allocator.Error!?bool {
++        if ((l.state == .lit) == (r.state == .lit)) return null;
++        const lit, const other, const ov = if (l.state == .lit) .{ s.litOf(l), right, r } else .{ s.litOf(r), left, l };
++        if (ov.state == .bot) return null;
++        var set: std.ArrayList(u32) = .empty;
++        if (!try s.fieldValues(m, other, &set)) return null;
++        if (set.items.len == 0) return null;
++        var all_differ = true;
++        for (set.items) |v| {
++            const same = strictEquals(lit, s.lits.items[v]) orelse return null;
++            if (same) all_differ = false;
++        }
++        if (all_differ) return false;
++        if (set.items.len == 1) return true;
++        return null;
++    }
++
+     /// The join of what is written to property `id` of every object `obj`
+     /// may be: ⊤ unless each is a program object literal that nothing
+     /// unseen holds, none written under an unknown key or copied from by a
+@@ -3226,7 +3324,7 @@ const Spec = struct {
+         // Then this one.
+         var changed = false;
+         for (items) |raw| {
+-            if (try s.decided(m, @fromBackingInt(@intCast(raw))) != null or try s.deadWrite(m, @fromBackingInt(@intCast(raw))) or literalStmt(m.ir, @fromBackingInt(@intCast(raw)))) changed = true;
++            if (try s.decided(m, @fromBackingInt(@intCast(raw))) != null or try s.deadWrite(m, @fromBackingInt(@intCast(raw))) or literalStmt(m.ir, @fromBackingInt(@intCast(raw))) or try s.droppedSwitch(m, @fromBackingInt(@intCast(raw)))) changed = true;
+         }
+         if (!changed) {
+             // What follows a statement that cannot complete, when it may go.
+@@ -3243,6 +3341,8 @@ const Spec = struct {
+             // of a value folded where nothing reads it (a function written
+             // in whose last `return` folded to `null`).
+             if (literalStmt(m.ir, stmt)) continue;
++            // Slice 10: a `switch` none of whose clauses a value enters.
++            if (try s.droppedSwitch(m, stmt)) continue;
+             // Fact 3: a write of a property no reachable read reaches is not
+             // written, nor one of a variable nothing reads; its value is
+             // still evaluated when it may do something.
+@@ -3491,6 +3591,72 @@ const Spec = struct {
+         return .{ .arm = arm, .test_kept = test_node };
+     }
+ 
++    /// Slice 10: the clauses of a `switch` on a constructor's field that
++    /// none of the field's values selects, dropped (`fieldValues`) — a
++    /// `case` whose literal the field never holds, and `default` when every
++    /// value it may hold has a `case`. A clause the one before it may fall
++    /// into stays. The discriminant is a chain safe to evaluate, so a
++    /// `switch` left with no clause does nothing and goes with its list
++    /// (`foldList`, `droppedSwitch`). True when a clause went.
++    fn pruneCases(s: *Spec, m: *Mod, stmt: Index) Allocator.Error!bool {
++        const ir = m.ir;
++        const d = ir.data(stmt);
++        var set: std.ArrayList(u32) = .empty;
++        if (!try s.fieldValues(m, @fromBackingInt(@intCast(d.lhs)), &set)) return false;
++        const cases = try s.arena.dupe(Index, ir.extraSlice(ir.subRange(@fromBackingInt(@intCast(d.rhs))), Index));
++        // Every label a literal, or nothing is decided.
++        const labels = try s.arena.alloc(?Lit, cases.len);
++        for (cases, labels) |c, *label| {
++            const t: Node.OptionalIndex = @fromBackingInt(@intCast(ir.data(c).lhs));
++            label.* = if (t.unwrap()) |test_node| switch (ir.tag(test_node)) {
++                .true_lit => .{ .kind = .true_lit },
++                .false_lit => .{ .kind = .false_lit },
++                .null_lit => .{ .kind = .null_lit },
++                .undefined_lit => .{ .kind = .undefined_lit },
++                .number => .{ .kind = .number, .bytes = ir.bytes(test_node) },
++                .string => .{ .kind = .string, .bytes = ir.bytes(test_node) },
++                else => return false,
++            } else null;
++        }
++        // Which clauses a value enters: a `case` when some value may equal
++        // its literal; `default` when some value equals no literal for sure.
++        const entered = try s.arena.alloc(bool, cases.len);
++        @memset(entered, false);
++        for (labels, entered) |label, *e| if (label) |l| for (set.items) |v| {
++            if (strictEquals(l, s.lits.items[v]) orelse true) e.* = true;
++        };
++        for (set.items) |v| {
++            const matched = for (labels) |label| {
++                if (label) |l| if (strictEquals(l, s.lits.items[v]) orelse false) break true;
++            } else false;
++            if (matched) continue;
++            for (labels, entered) |label, *e| if (label == null) {
++                e.* = true;
++            };
++        }
++        // A clause stays when it is entered, or when the clause before it
++        // stays and may complete into it.
++        var kept: std.ArrayList(u32) = .empty;
++        var live_before = false;
++        for (cases, entered) |c, e| {
++            const live = e or live_before;
++            if (live) try kept.append(s.arena, c.int());
++            live_before = live and completesList(ir, ir.subRange(@fromBackingInt(@intCast(ir.data(c).rhs))), 0);
++        }
++        if (kept.items.len == cases.len) return false;
++        try s.setList(m, d.rhs, kept.items);
++        return true;
++    }
++
++    /// A `switch` with no clause — what `pruneCases` leaves when no value
++    /// enters any — whose discriminant does nothing when evaluated.
++    fn droppedSwitch(s: *Spec, m: *Mod, stmt: Index) Allocator.Error!bool {
++        const ir = m.ir;
++        if (ir.tag(stmt) != .switch_stmt) return false;
++        if (ir.subRange(@fromBackingInt(@intCast(ir.data(stmt).rhs))).len() != 0) return false;
++        return s.effectFreeTest(m, @fromBackingInt(@intCast(ir.data(stmt).lhs)), 0);
++    }
++
+     /// Whether an arm's statements may join the list around it: no name it
+     /// declares at its own level is declared anywhere else in the
+     /// declaration, so nothing in the list can come to mean it.
+@@ -3554,6 +3720,7 @@ const Spec = struct {
+                 for (cases) |c| {
+                     if (try s.foldBelow(m, c, depth + 1)) any = true;
+                 }
++                if (try s.pruneCases(m, stmt)) any = true;
+             },
+             // The three ranges are the record's words 0–1, 2–3 and 4–5,
+             // the first two as an `if`'s are.

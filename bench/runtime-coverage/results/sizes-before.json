@@ -1,0 +1,52 @@
+{
+ "Conduit-tea": {
+  "raw": 129252,
+  "gzip": 36996,
+  "brotli": 31497
+ },
+ "Conduit-direct": {
+  "raw": 211559,
+  "gzip": 43790,
+  "brotli": 36502
+ },
+ "TodoMVC-tea": {
+  "raw": 23958,
+  "gzip": 9957,
+  "brotli": 8907
+ },
+ "TodoMVC-direct": {
+  "raw": 26866,
+  "gzip": 10498,
+  "brotli": 9414
+ },
+ "Sternhalma-tea": {
+  "raw": 24146,
+  "gzip": 8792,
+  "brotli": 7728
+ },
+ "Sternhalma-direct": {
+  "raw": 32217,
+  "gzip": 10961,
+  "brotli": 9620
+ },
+ "BikeWars-tea": {
+  "raw": 28411,
+  "gzip": 10596,
+  "brotli": 9254
+ },
+ "BikeWars-direct": {
+  "raw": 35459,
+  "gzip": 12697,
+  "brotli": 11120
+ },
+ "Table-tea": {
+  "raw": 13395,
+  "gzip": 5936,
+  "brotli": 5354
+ },
+ "Table-direct": {
+  "raw": 11377,
+  "gzip": 4774,
+  "brotli": 4331
+ }
+}
