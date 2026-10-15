@@ -355,8 +355,9 @@ each sample has a look of its own.
   second marker, each with a comment: a dark scheme, a gutter and a shorter heading at phone
   width, and a darker placeholder, because the package's placeholder is 2.85:1 on white. The site
   ships `samples/LICENSES.txt`, as `vendor/LICENSES.txt` does for the editor: the credit, the
-  package's tarball and its SHA-512, the list of changes, and the licence's text. A gate test
-  (§6) checks the part between the markers against the SHA-256 of the package's `index.css`.
+  package's tarball and its SHA-512, the list of changes, and the licence's text. The page's note
+  links to both files. A gate test (§6) checks the part between the markers against the SHA-256
+  of the package's `index.css`, and that the page links to both files.
 - **Not built: a list of allowed style sheet URLs** (item 3 of the issue, optional). The frame
   already loads what its CSS names: an `@import url(…)`, a `url(…)` in a property, a `@font-face`
   source. The sandbox does not stop such a load. Only a `Content-Security-Policy` in the frame

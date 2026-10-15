@@ -100,6 +100,10 @@ h1 {
   font-size: 13px;
 }
 
+#note a {
+  color: inherit;
+}
+
 button {
   font: inherit;
 }

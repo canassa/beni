@@ -152,6 +152,9 @@ if (mode === "positions") {
   check(plain === (await encode("node", "main = 1\n", "")) && !plain.includes("css="), `a link with an empty CSS pane has no css (${plain})`);
   check((await decode(plain))?.css === "", "a link with no css opens an empty CSS pane");
   check((await decode(`#${plain}&css=@@@@`)) === null, "a css that is not base64url is no program");
+  // `encode` never makes an empty `css=`: one is a damaged link, as an
+  // empty `code=` is.
+  check((await decode(`#${plain}&css=`)) === null && (await decode("#platform=node&code=")) === null, "an empty css= is no program, as an empty code= is");
   check((await decode(`#${plain}&css=AAAA`)) === null, "a css that is not deflate data is no program");
   const hugeCss = await encode("node", "main = 1\n", "x".repeat(maxSource + 1));
   check((await decode(hugeCss)) === null, "a css that inflates past maxSource is no program");
@@ -233,6 +236,7 @@ if (mode === "positions") {
     check(sums.get(file) === sum, `${file} is the bytes SHA256SUMS names`);
   }
   const html = readFileSync("playground/index.html", "utf8");
+  check(html.includes('href="vendor/LICENSES.txt"'), "the page links to vendor/LICENSES.txt");
   const map = JSON.parse(/<script type="importmap">([\s\S]*?)<\/script>/.exec(html)[1]).imports;
   const targets = Object.values(map).map((url) => url.replace(/^\.\/vendor\//, "")).sort();
   check(JSON.stringify(targets) === JSON.stringify(modules), `the import map names each vendored module once: ${JSON.stringify(targets)}`);
@@ -301,6 +305,7 @@ if (mode === "positions") {
   const notices = readFileSync("playground/samples/LICENSES.txt", "utf8");
   check(notices.includes("== browser-direct/TodoMVC.css: todomvc-app-css 2.4.3 (CC-BY-4.0)"), "samples/LICENSES.txt names TodoMVC.css's source and licence");
   check(notices.includes("Copyright (c) Sindre Sorhus") && notices.includes("Attribution 4.0 International Public License"), "samples/LICENSES.txt holds the credit and the licence's text");
+  check(readFileSync("playground/index.html", "utf8").includes('href="samples/LICENSES.txt"'), "the page links to samples/LICENSES.txt");
 } else {
   process.stderr.write("usage: node tests/wasm/page_test.mjs (positions <source> <diagnostics.json> <text>… | share | srcdoc | samples | syntax | vendor)\n");
   process.exit(2);
