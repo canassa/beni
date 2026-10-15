@@ -3237,6 +3237,12 @@ pub get : { url : String, expect : Expect x a } → Result x a           -- susp
 pub post : { url : String, body : Body, expect : Expect x a } → Result x a   -- suspends
 ```
 
+*Amended 2026-10-15 (`schema.md` §12.10, A.12; issue #193):* `expectJson` takes no schema. It is
+`expectJson : Expect Error a where a.codec : ⊤ → Codec a`, whose schema the compiler derives from
+the type the request's answer is used at, as `Json.decode`'s is. The schema-taking form above is
+renamed `expectSchema : Schema e a → Expect Error a`; what each reads, sends and fails with is
+unchanged. `jsonBody` keeps its schema argument.
+
 `get` is `request` with `"GET"`, no headers, `emptyBody`, no timeout and no tracker; `post` the
 same with `"POST"` and its body — Elm's two, and there is no `put` or `delete`, as Elm has none:
 those are `request` with their method. **The command form** is `Cmd.task`, `Cmd.keyed` and
