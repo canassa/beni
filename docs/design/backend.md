@@ -4210,7 +4210,11 @@ over-elimination, which is the failure this pass has to fear.
   the null program, O(declarations) at scale, against a re-check that the firewall may skip
   entirely. *Amended 2026-10-15:* the same split holds inside one build. A build that walks two
   times (§15.1, *The runtime module*) builds the edge lists once and walks them two times. On
-  `browser/tea/ApiItems` the edge lists cost 62 million instructions and a walk 1.5 million. §8.2's `emit` unit is invalidated by "a change to `decl_val`, or to any representation
+  `browser/tea/ApiItems` the edge lists cost 62 million instructions and a walk 1.5 million.
+  *Amended 2026-10-15, later the same day:* the modules the binary carries do not build their lists
+  at all. The checked core holds them, keyed by the module key and the two options they depend on
+  (`fast-compiler.md` §8, *The checked core, embedded*), and a build reads them. On ApiItems the
+  lists then cost 6 million instructions, for the program's own module and the reads. §8.2's `emit` unit is invalidated by "a change to `decl_val`, or to any representation
   decision it depends on"; **a change to liveness is one more such input**, and a declaration whose
   liveness flipped is an `emit` unit to redo whether or not its own bytes would differ.
 
@@ -7821,8 +7825,10 @@ text (§15.3, §15.6) are compiled; and the differential oracle has a harness (�
   module (research 70). When it leaves one of them out, the second lowering always follows and
   lowers every module again. Thus the first lowering only records what each module uses of the
   runtime module: it prints nothing and makes no source map, and each module is printed once.
-  `--self-profile` counts this: `edge_lists` is the number of modules of the graph, `reach_walks`
-  is 2, and `modules_printed` is the number of modules written. *Measured* in instructions per
+  `--self-profile` counts this: `edge_lists` is the number of modules of the graph (with
+  `edge_lists_embedded`, since the checked core carries the lists of the embedded modules: §9,
+  *Incrementality (M4) and chunking (§10)*),
+  `reach_walks` is 2, and `modules_printed` is the number of modules written. *Measured* in instructions per
   build (`perf stat -e instructions:u`, the gates' ReleaseSafe compiler): `browser/tea/ApiItems`
   629 → 545 million in development (−13.5 %) and 1 818 → 1 756 million under `--release`;
   `browser/direct/AfterRenderFocus` 584 → 489 million (−16.2 %) and 716 → 652 million. A build with

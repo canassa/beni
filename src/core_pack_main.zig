@@ -12,8 +12,9 @@
 //! carry the result — and then, for each platform that compiler carries,
 //! every module of that platform's chain exactly as `beni check
 //! --platform=<name>` would. It writes each core and platform file's
-//! front-end artifact and each core and platform module's cache entry into
-//! one blob (`cache/Pack.zig`), which that compiler embeds as `core_pack`.
+//! front-end artifact, each core and platform module's cache entry, and
+//! each such module's reachability edge lists (`js/EdgePack.zig`) into one
+//! blob (`cache/Pack.zig`), which that compiler embeds as `core_pack`.
 //!
 //! **The platforms are the target compiler's, not this program's.** Each
 //! `<name> <root> <dir>` triple is one row of the table that compiler embeds
@@ -38,8 +39,9 @@
 //!
 //! A program of its own, and not a hidden command of `beni`, because it is
 //! on the path of every build of beni after an edit under `src/`: this root
-//! reaches the front end and the checker and not the backend, the formatter
-//! or the development loop, so it compiles in about half the time.
+//! reaches the front end, the checker and the reachability edge builder
+//! (`js/Reach.zig`), and not lowering, printing, the formatter or the
+//! development loop, so it compiles in about half the time.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -48,6 +50,8 @@ const beni = @import("beni");
 const Session = beni.Session;
 const Pack = beni.cache.Pack;
 const platform = beni.platform;
+const EdgePack = beni.js.EdgePack;
+const Reach = beni.js.Reach;
 
 pub fn main(init: std.process.Init) u8 {
     const gpa = init.gpa;
@@ -154,6 +158,7 @@ fn check(
         _ = fail(stderr, "{s} does not check", .{what});
         return error.Reported;
     }
+    try addEdges(gpa, &session, writer, made);
 
     // Every core and platform file and module of the run, or no pack.
     const blob = try writer.write(gpa);
@@ -179,8 +184,43 @@ fn check(
             _ = fail(stderr, "checking {s}, the module '{s}' left no cache entry", .{ what, session.store.path(session.graph.moduleFile(m)) });
             return error.Reported;
         }
+        for (EdgePack.every_options) |options| {
+            if (pack.find(.edges, EdgePack.key(session.keys.of(m), options)) == null) {
+                _ = fail(stderr, "checking {s}, the module '{s}' left no edge lists", .{ what, session.store.path(session.graph.moduleFile(m)) });
+                return error.Reported;
+            }
+        }
     }
     return blob;
+}
+
+/// Every core and platform module's reachability edge lists, one row per
+/// option they depend on (`js/EdgePack.zig`; `fast-compiler.md` §8, *The
+/// checked core, embedded*). A module whose rows an earlier run made, under
+/// the same keys, is not built again: core's are made once, by the first.
+fn addEdges(
+    gpa: Allocator,
+    session: *const Session,
+    writer: *Pack.Writer,
+    made: []const u8,
+) error{OutOfMemory}!void {
+    var arena_state: std.heap.ArenaAllocator = .init(gpa);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const earlier = Pack.Pack.init(made);
+    for (EdgePack.every_options) |options| {
+        const in = try EdgePack.input(arena, session, options);
+        var builder: Reach.Builder = .init(in, arena);
+        for (0..session.graph.count()) |i| {
+            const m: @TypeOf(session.graph).Index = @fromBackingInt(@intCast(i));
+            if (session.graph.modulePackage(m) == .app or !session.keys.isCacheable(m)) continue;
+            const key = EdgePack.key(session.keys.of(m), options);
+            if (earlier.find(.edges, key) != null) continue;
+            const bytes = try EdgePack.encode(gpa, try builder.module(m), &session.graph, &session.interner);
+            defer gpa.free(bytes);
+            try writer.add(gpa, .edges, key, bytes);
+        }
+    }
 }
 
 /// The row of `build.zig`'s platform table for the platform `name`, whose
