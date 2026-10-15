@@ -225,6 +225,9 @@ diagnostics come from `--diagnostics=json` and show at their positions in the ed
   CodeMirror already (q2), whose own Elm mode and JavaScript grammar give the same result with
   one library, one highlight style and no second highlighter to vendor and keep in step.
 - **The vendored files**, after these two: 17 modules, 1 308 650 bytes, not minified.
+  *Amended 2026-10-15, issue #143:* the CSS pane (§4.6) adds `@codemirror/lang-css` 6.3.1 and
+  `@lezer/css` 1.3.8, both published before 2026-10-01, the same way: 19 modules, 1 344 418
+  bytes. `vendor.sh` fetched the 17 earlier files again with the same bytes.
 - **Positions.** A span's column counts code points and the editor counts UTF-16 units
   (`playground/positions.js`): `→` is one of each, a character past U+FFFF one column and two
   units. A diagnostic in `Main.beni` is a lint mark with its title and message; every
@@ -246,6 +249,9 @@ both need what an opaque-origin frame does not have (`localStorage`, a history o
 `zig build playground` copies it into the site as `samples/browser-direct/TodoMVC.beni`, so it
 is kept once. The page's note says that `browser-direct` is new and that some programs that build
 for `browser-tea` do not build for it yet.
+
+*Amended 2026-10-15, issue #143:* a sample can have a CSS file next to its `.beni`, which opens in
+the CSS pane with it (§4.6, *The samples' CSS*).
 
 ### 4.4 The tabs (second pull request)
 
@@ -279,6 +285,89 @@ that the link held no program. Each failure is caught by name around the one cal
 decoder), and the 1 MiB bound cancels the stream with a reason of its own; anything else goes
 on up.
 
+*Amended 2026-10-15, issue #143:* the link also holds the CSS pane, as `&css=<base64url>` after
+`code` (§4.6, *The link*).
+
+### 4.6 The program's CSS
+
+*Added 2026-10-15*, for issue #143 by the owner, Cesar Canassa: a program brings its own CSS, and
+each sample has a look of its own.
+
+- **The pane.** The source pane has two tabs, `Main.beni` and `style.css`. Each tab is a
+  CodeMirror view, and the page shows one of them. The `style.css` view has CodeMirror's CSS
+  grammar (`@codemirror/lang-css`, vendored as §4.2 says), the same highlight style and theme as
+  the beni view, and a two-space indent. A click on a diagnostic shows the `Main.beni` tab first.
+- **The compiler does not read the CSS.** A build is the same command on the same input as
+  before (§4.1), and it writes the same files.
+- **The frame.** When the pane holds text, the frame's `srcdoc` holds that text as a JSON string
+  in a `<script id="beni-css" type="application/json">` element, with every `<` escaped as the
+  files are (§5). `frame.js` adds a `<style>` element with that text at the end of the frame's
+  `<head>`, before it imports `_main.mjs`. So the CSS applies before the program mounts. The text
+  reaches the frame unchanged: a script sets the element's text, and no HTML parser reads it, so
+  a `</style>` in the CSS cannot end the element early. *Rejected: the CSS written into a
+  `<style>` element of the `srcdoc`.* Then a `</style` in a comment or a string ends the element,
+  and an escape of it changes the CSS.
+- **An empty pane gives today's frame.** With no text in the pane, the `srcdoc` has no
+  `beni-css` element, and the frame has no `<style>` element. `playground/srcdoc.js` makes the
+  `srcdoc`; a gate test (§6) compares what it makes for an empty pane with the document of §5
+  before this section, byte for byte, and the Chrome test finds no style sheet in the frame.
+- **When the CSS changes.** A person's edit of the CSS restyles the running program and does not
+  restart it: the counter keeps its value and TodoMVC its todos. The page sends the pane's text
+  to the frame with `postMessage({ beniCss })`, and `frame.js` puts it in its `<style>` element.
+  It adds the element if the frame has none, and it removes the element when the pane is empty,
+  so an emptied pane gives the frame no style sheet again. The frame takes this message only
+  from its parent window, and the sandbox stays as §5 says. A CSS edit makes no new version
+  (§4.4): no build, and no dump runs again.
+
+  An edit of the beni source, a change of platform and a sample are as before: a build, and a
+  new frame that gets the pane's text in its `srcdoc`. So the CSS reloads with the program on
+  every compile. A message that the page sends before a new frame listens is lost. So the frame
+  posts `ready` when it listens, and the page sends the text again if it changed after the
+  `srcdoc` was made. If the program has errors, the frame keeps the last program that built, and
+  a CSS edit restyles that program.
+
+  *Rejected: a build and a new frame for each CSS edit*, the first version of this section. It
+  restarted the program, so a person who typed CSS lost the counter's value and the todos.
+- **The link.** The fragment is `#platform=<platform>&code=<base64url>&css=<base64url>`. `css` is
+  made as `code` is (§4.5), and the fragment has it only when the pane holds text. So a link made
+  before this section opens as it did, with an empty pane. A `css` that is not base64url, not
+  deflate data, not UTF-8, or longer than 1 MiB once inflated makes the link hold no program, as
+  a bad `code` does.
+- **The samples' CSS.** `samples/index.json` gives a sample an optional `css`: the path of its
+  CSS file, next to its `.beni`. A sample with no `css` opens with an empty pane. The counter and
+  TodoMVC have one. The printing sample has none: it draws nothing in the frame, and its output
+  is the page's console, which the page's own style sheet styles.
+- **The samples' look.** Each sample's CSS gives:
+  - a system font stack, so no font comes from another site;
+  - text with a contrast of 4.5:1 or more on its background, and large text (24 px, or 18.66 px
+    and bold) 3:1 or more, as WCAG 2.2 AA asks, in both schemes;
+  - a light and a dark scheme, chosen by `prefers-color-scheme`; the frame's root sets
+    `color-scheme` to the same scheme, so the browser's own controls follow it;
+  - a layout with no horizontal scroll from a 320 px wide frame up.
+
+  The samples look alike: the counter has TodoMVC's typeface, page colour, card, shadow and
+  accent, in both schemes. Their beni source does not change: the CSS uses the elements and
+  class names that the programs have.
+- **TodoMVC's CSS** is `todomvc-app-css` 2.4.3's `index.css`, by Sindre Sorhus, under CC-BY-4.0.
+  That licence allows a copy and a changed copy, with credit, a link to the licence, and a note
+  of the changes. `samples/browser-direct/TodoMVC.css` holds the file unmodified between two
+  marker comments, after a comment that gives the credit. The playground's changes follow the
+  second marker, each with a comment: a dark scheme, a gutter and a shorter heading at phone
+  width, and a darker placeholder, because the package's placeholder is 2.85:1 on white. The site
+  ships `samples/LICENSES.txt`, as `vendor/LICENSES.txt` does for the editor: the credit, the
+  package's tarball and its SHA-512, the list of changes, and the licence's text. A gate test
+  (§6) checks the part between the markers against the SHA-256 of the package's `index.css`.
+- **Not built: a list of allowed style sheet URLs** (item 3 of the issue, optional). The frame
+  already loads what its CSS names: an `@import url(…)`, a `url(…)` in a property, a `@font-face`
+  source. The sandbox does not stop such a load. Only a `Content-Security-Policy` in the frame
+  can, and a policy changes the frame of every program, also with an empty pane. So a list of
+  allowed `<link>` URLs would restrict nothing, and the sandbox stays as §5 says. A style sheet
+  from another site, for example from Google Fonts, goes on the first line of the pane:
+  `@import url("https://fonts.googleapis.com/css2?family=Inter&display=swap");`. The Chrome test
+  (§6) checks that an `@import` from another origin applies in the frame. A link from someone
+  else can therefore make the reader's browser load from another site, but its program already
+  can: `browser-direct` has `Http`, and markup has `<img src>`.
+
 ## 5. Running the output
 
 The compiled program runs in an `<iframe sandbox="allow-scripts">`, **without
@@ -303,6 +392,12 @@ shows inside the frame.
 
 *Amended 2026-10-15, after review:* this section said the parent sends the files with
 `postMessage`; the code has always written them into `srcdoc`, and the text above now says so.
+
+*Amended 2026-10-15, issue #143:* when the CSS pane holds text, the `srcdoc` also holds it, and
+the bootstrap adds it as a `<style>` element before step 3 (§4.6, *The frame*).
+`playground/srcdoc.js` makes the `srcdoc`. The bootstrap also takes a new CSS text from its
+parent window by `postMessage` and replaces the `<style>` element's text with it (§4.6, *When
+the CSS changes*).
 
 A relative specifier is found by the import forms that the compiler writes and that
 `boundary.md` §4's checks accept for a sibling: `import … from "./…"`, `export … from "./…"` and
@@ -343,6 +438,19 @@ native threaded build. Items 1 and 4 prove it; items 2 and 3 test the page itsel
 4. **Not a gate:** `zig build test-playground` runs the shipped `ReleaseSmall` `.wasm` (§7.1) on
    every program of `tests/corpus/run/` and `tests/corpus/browser/direct/`, and on TodoMVC, and
    compares every output file, both streams and the exit code with the native compiler's.
+
+*Amended 2026-10-15, issue #143* (§4.6). Item 2 also checks: the link's round trip with CSS, a
+link with no `css` (an empty pane), and a bad `css` (no program); the `srcdoc` for an empty pane,
+byte for byte, and a CSS with `</style>` and `</script>` in it, which reaches the frame
+unchanged; each sample's files; and TodoMVC's copy of `todomvc-app-css` against the package's
+hash, with its notice in `samples/LICENSES.txt`. The vendored-module check covers the two CSS
+modules with no change. Item 3 also checks: each styled sample's CSS reaches the frame (a
+computed style of a known element), in the light and the dark scheme; each styled sample's text
+has the contrast §4.6 gives, in both schemes; no styled sample scrolls sideways in a 320 px wide
+frame; the frame of a program with an empty pane has no style sheet; an edit in the CSS pane
+reaches the frame and the program keeps its state, an emptied pane removes the style sheet, and
+an edit of the source restarts the program with the CSS; the CSS pane highlights CSS; a link restores the source, the CSS and the
+platform; and an `@import` from another origin applies in the frame.
 
 A test compares every file of the output tree and both streams byte for byte, and the exit code.
 It does not compare the persistent cache's directory, `.beni-cache/`, whose keys name the

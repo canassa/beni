@@ -1,0 +1,132 @@
+/* The counter's look (docs/design/playground.md §4.6): TodoMVC's typeface,
+   page colour, card, shadow and accent, in a light and a dark scheme. */
+
+:root {
+  color-scheme: light;
+  --page: #f5f5f5;
+  --card: #ffffff;
+  --text: #111111;
+  --button: #484848;
+  --line: #e6e6e6;
+  --accent: #b83f45;
+  --focus: #cf7d7d;
+  --shadow: 0 2px 4px 0 rgba(0, 0, 0, 0.2), 0 25px 50px 0 rgba(0, 0, 0, 0.1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --page: #161618;
+    --card: #222226;
+    --text: #ececef;
+    --button: #d6d6da;
+    --line: #3a3a40;
+    --accent: #e8767c;
+    --shadow: 0 2px 4px 0 rgba(0, 0, 0, 0.5), 0 25px 50px 0 rgba(0, 0, 0, 0.4);
+  }
+}
+
+html {
+  background: var(--page);
+  color: var(--text);
+  font: 300 16px/1.4 "Helvetica Neue", Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  display: grid;
+  place-items: center;
+  box-sizing: border-box;
+  min-height: 100vh;
+  margin: 0;
+  padding: 24px 12px;
+}
+
+/* The card: the count between its two buttons. */
+main {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding: 24px 32px;
+  background: var(--card);
+  box-shadow: var(--shadow);
+}
+
+/* The count, as TodoMVC's heading. */
+span {
+  min-width: 3ch;
+  color: var(--accent);
+  font-size: 72px;
+  font-weight: 200;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+  text-align: center;
+}
+
+button {
+  width: 56px;
+  height: 56px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: none;
+  color: var(--button);
+  font: inherit;
+  font-size: 0;
+  line-height: 1;
+  cursor: pointer;
+  transition: border-color 0.2s, color 0.2s;
+}
+
+/* The program's "-" is a hyphen, shorter than "+": each button shows a
+   minus or a plus sign of one width, and keeps its own text for a screen
+   reader. The second `content` hides the sign from one, where a browser
+   reads it. */
+button::before {
+  font-size: 32px;
+}
+
+button:first-child::before {
+  content: "\2212";
+  content: "\2212" / "";
+}
+
+button:last-child::before {
+  content: "+";
+  content: "+" / "";
+}
+
+button:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* TodoMVC's focus ring. */
+button:focus-visible {
+  outline: 0;
+  box-shadow: 0 0 2px 2px var(--focus);
+}
+
+button:active {
+  transform: translateY(1px);
+}
+
+@media (max-width: 360px) {
+  main {
+    gap: 12px;
+    padding: 16px;
+  }
+
+  span {
+    font-size: 56px;
+  }
+
+  button {
+    width: 48px;
+    height: 48px;
+  }
+
+  button::before {
+    font-size: 28px;
+  }
+}

@@ -121,7 +121,7 @@ async function open(url) {
   };
   // Type `text` at the end of the editor's text, as a person does.
   const typeAtEnd = async (text) => {
-    await evaluate(`document.querySelector(".cm-content").focus()`);
+    await evaluate(`document.querySelector("#editor .cm-content").focus()`);
     for (const type of ["rawKeyDown", "keyUp"]) {
       await send("Input.dispatchKeyEvent", { type, key: "End", code: "End", windowsVirtualKeyCode: 35, modifiers: 2 }, sessionId);
     }

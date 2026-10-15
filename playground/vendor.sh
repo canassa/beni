@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Regenerates playground/vendor/: the modules of CodeMirror 6 the
-# playground's editor and its view of the emitted JavaScript load
+# playground's editors (beni and CSS) and its view of the emitted JavaScript
+# load
 # (docs/design/playground.md §4.2), each the ES module its npm package ships,
 # unmodified, at the version pinned below.
 # Jayson Reis decided on 2026-10-15 (dashboard question `wasm-playground-q6`)
@@ -38,6 +39,8 @@ w3c-keyname 2.2.8 index.js
 @codemirror/lang-javascript 6.2.5 dist/index.js
 @lezer/javascript 1.5.5 dist/index.js
 @lezer/lr 1.4.10 dist/index.js
+@codemirror/lang-css 6.3.1 dist/index.js
+@lezer/css 1.3.8 dist/index.js
 "
 
 here="$(cd "$(dirname "$0")" && pwd)"

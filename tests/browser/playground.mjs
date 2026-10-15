@@ -12,13 +12,22 @@
 //   - the first sample builds, its program mounts in the frame, and a click
 //     in the frame changes it;
 //   - every sample builds, and the printing one prints;
+//   - each styled sample's CSS reaches the frame, in the light and the dark
+//     scheme, with the contrast §4.6 gives, and no sideways scroll in a
+//     320 px wide frame;
 //   - a program with an error marks it in the editor and lists it;
 //   - the Types and Ownership tabs show their dumps;
-//   - a shared link opens the same source and platform, and a damaged one
-//     says so.
+//   - an empty CSS pane gives the frame no style sheet, an edit in the CSS
+//     pane reaches the frame, the pane highlights CSS, and an `@import` from
+//     another origin applies in the frame;
+//   - a shared link opens the same source, CSS and platform, and a damaged
+//     one says so.
 // Each failed check prints a line; the exit code is the number of them.
+// With `BENI_PLAYGROUND_SCREENSHOTS=<dir>`, it also saves a screenshot of
+// each styled sample's frame in each scheme, at a desktop and a phone
+// width, and of the page with the CSS pane open, into <dir>.
 import { spawn } from "node:child_process";
-import { accessSync, constants, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
+import { accessSync, constants, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { delimiter, extname, join, normalize, resolve } from "node:path";
@@ -64,6 +73,16 @@ const server = createServer((req, res) => {
 });
 await new Promise((listening) => server.listen(0, "127.0.0.1", listening));
 const origin = `http://127.0.0.1:${server.address().port}`;
+// Another origin, with one style sheet: what an `@import` in the CSS pane
+// loads (playground.md §4.6).
+const elsewhereServer = createServer((req, res) => {
+  res.writeHead(req.url === "/imported.css" ? 200 : 404, { "content-type": "text/css" });
+  res.end(req.url === "/imported.css" ? "html { background-color: rgb(4, 5, 6); }\n" : "");
+});
+await new Promise((listening) => elsewhereServer.listen(0, "127.0.0.1", listening));
+const elsewhereOrigin = `http://127.0.0.1:${elsewhereServer.address().port}`;
+const screenshots = process.env.BENI_PLAYGROUND_SCREENSHOTS;
+if (screenshots) mkdirSync(screenshots, { recursive: true });
 
 const profiles = process.env.BENI_CHROME_PROFILE_DIR || tmpdir();
 mkdirSync(profiles, { recursive: true });
@@ -142,30 +161,168 @@ async function open(url) {
       await new Promise((later) => setTimeout(later, 25));
     }
   };
-  // Type `text` at the editor's cursor, as a user does.
-  const type = async (text) => {
-    await evaluate(`document.querySelector(".cm-content").focus()`);
+  // Type `text` at the cursor of the editor `editor` (`#editor`, the
+  // source, or `#css-editor`), as a user does.
+  const type = async (text, editor = "#editor") => {
+    await evaluate(`document.querySelector("${editor} .cm-content").focus()`);
     await send("Input.insertText", { text }, sessionId);
   };
   // Move the editor's cursor to the end of the text, with Ctrl+End.
-  const toEnd = async () => {
-    await evaluate(`document.querySelector(".cm-content").focus()`);
+  const toEnd = async (editor = "#editor") => {
+    await evaluate(`document.querySelector("${editor} .cm-content").focus()`);
     for (const type of ["rawKeyDown", "keyUp"]) {
       await send("Input.dispatchKeyEvent", { type, key: "End", code: "End", windowsVirtualKeyCode: 35, modifiers: 2 }, sessionId);
     }
   };
-  return { targetId, evaluate, until, type, toEnd };
+  // Select all of the editor's text and delete it, with Ctrl+A and
+  // Backspace.
+  const clear = async (editor) => {
+    await evaluate(`document.querySelector("${editor} .cm-content").focus()`);
+    for (const type of ["rawKeyDown", "keyUp"]) {
+      await send("Input.dispatchKeyEvent", { type, key: "a", code: "KeyA", windowsVirtualKeyCode: 65, modifiers: 2 }, sessionId);
+    }
+    for (const type of ["rawKeyDown", "keyUp"]) {
+      await send("Input.dispatchKeyEvent", { type, key: "Backspace", code: "Backspace", windowsVirtualKeyCode: 8 }, sessionId);
+    }
+  };
+  // The value of `expression` in the page's newest frame.
+  const inFrame = (expression) => evaluate(expression, frames.get(sessionId));
+  // The colour scheme the page and its frame prefer: `light` or `dark`.
+  const scheme = async (value) => {
+    const features = [{ name: "prefers-color-scheme", value }];
+    await send("Emulation.setEmulatedMedia", { features }, sessionId);
+    await send("Emulation.setEmulatedMedia", { features }, frames.get(sessionId));
+  };
+  // The page's size, or its own size again with no arguments.
+  const size = async (width, height, deviceScaleFactor = 1) => {
+    if (width === undefined) await send("Emulation.clearDeviceMetricsOverride", {}, sessionId);
+    else await send("Emulation.setDeviceMetricsOverride", { width, height, deviceScaleFactor, mobile: false }, sessionId);
+  };
+  // A PNG of the page, or of the part of it that `selector` covers, into
+  // `screenshots`.
+  const screenshot = async (file, selector = null) => {
+    const clip = selector === null ? undefined : { ...(await evaluate(`JSON.parse(JSON.stringify(document.querySelector(${JSON.stringify(selector)}).getBoundingClientRect()))`)), scale: 1 };
+    const { data } = await send("Page.captureScreenshot", { format: "png", clip }, sessionId);
+    writeFileSync(join(screenshots, file), Buffer.from(data, "base64"));
+  };
+  return { targetId, evaluate, until, type, toEnd, clear, inFrame, scheme, size, screenshot };
 }
 
-/// A page opened from a link to `source` on `platform`, which the page's own
-/// `share.js` makes.
-const pageWith = async (platform, source) => open(`${origin}/#${await encode(platform, source)}`);
+/// A page opened from a link to `source` and `css` on `platform`, which the
+/// page's own `share.js` makes.
+const pageWith = async (platform, source, css = "") => open(`${origin}/#${await encode(platform, source, css)}`);
 
 // Empty while the page is still loading.
 const status = `(document.getElementById("status")?.textContent ?? "")`;
 const built = `(${status}).startsWith("Built in") && (${status})`;
 const loaded = `document.getElementById("frame")?.dataset.loaded === "true"`;
-const editorText = `[...document.querySelectorAll(".cm-content .cm-line")].map((l) => l.textContent).join("\\n")`;
+const textOf = (editor) => `[...document.querySelectorAll("${editor} .cm-content .cm-line")].map((l) => l.textContent).join("\\n")`;
+const editorText = textOf("#editor");
+const cssText = textOf("#css-editor");
+const showCss = `document.querySelector('[data-file="css-editor"]').click()`;
+// The frame's style sheets: none for a program with an empty CSS pane.
+const unstyled = `document.styleSheets.length === 0 && document.querySelector("style") === null`;
+const later = (ms) => new Promise((done) => setTimeout(done, ms));
+
+// The text of the elements `checks` names whose contrast on their
+// background is under what WCAG 2.2 AA asks (playground.md §4.6): 4.5:1,
+// and 3:1 for large text (24 px, or 18.66 px and bold) and for a control's
+// glyph (`ui`). Run in the frame. The background is every background from
+// the root down to `on` (the element itself unless given), each laid over
+// the one under it; an element with none is skipped as not shown.
+const lowContrast = `((checks) => {
+  const rgba = (text) => {
+    const [r, g, b, a = 1] = /rgba?\\(([^)]*)\\)/.exec(text)[1].split(/[\\s,\\/]+/).filter(Boolean).map(Number);
+    return [r, g, b, a];
+  };
+  const over = ([r, g, b, a], under) => [r * a + under[0] * (1 - a), g * a + under[1] * (1 - a), b * a + under[2] * (1 - a)];
+  const channel = (c) => ((c /= 255) <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+  const luminance = ([r, g, b]) => 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b);
+  const low = [];
+  for (const { text, pseudo = null, on = null, ui = false } of checks) {
+    const element = document.querySelector(text);
+    if (element === null) {
+      low.push({ text, missing: true });
+      continue;
+    }
+    const layers = [];
+    for (let e = on === null ? element : document.querySelector(on); e !== null; e = e.parentElement) layers.unshift(getComputedStyle(e).backgroundColor);
+    const background = layers.reduce((under, layer) => over(rgba(layer), under), [255, 255, 255]);
+    const style = getComputedStyle(element, pseudo);
+    const [lighter, darker] = [luminance(over(rgba(style.color), background)), luminance(background)].sort((a, b) => b - a);
+    const ratio = (lighter + 0.05) / (darker + 0.05);
+    const size = parseFloat(style.fontSize);
+    const large = size >= 24 || (size >= 18.66 && Number(style.fontWeight) >= 700);
+    const least = ui || large ? 3 : 4.5;
+    if (ratio < least) low.push({ text, pseudo, ratio: Number(ratio.toFixed(2)), least });
+  }
+  return low;
+})`;
+
+// Each styled sample's look (playground.md §4.6): a computed style its CSS
+// sets, in each scheme; the text whose contrast is checked; and, for
+// TodoMVC, the todos that show every kind of text.
+const looks = {
+  Counter: {
+    known: `getComputedStyle(document.querySelector("span")).color + " on " + getComputedStyle(document.documentElement).backgroundColor`,
+    light: "rgb(184, 63, 69) on rgb(245, 245, 245)",
+    dark: "rgb(232, 118, 124) on rgb(22, 22, 24)",
+    texts: [{ text: "span" }, { text: "button", pseudo: "::before" }],
+  },
+  TodoMVC: {
+    known: `getComputedStyle(document.querySelector(".todoapp h1")).color + " on " + getComputedStyle(document.body).backgroundColor`,
+    light: "rgb(184, 63, 69) on rgb(245, 245, 245)",
+    dark: "rgb(232, 118, 124) on rgb(22, 22, 24)",
+    // Two todos, the first completed, typed and clicked as a person does.
+    prepare: [
+      `(() => { const input = document.querySelector(".new-todo"); input.value = "Write the spec"; input.dispatchEvent(new Event("input", { bubbles: true })); input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })); return true; })()`,
+      `document.querySelectorAll(".todo-list li").length === 1 && (() => { const input = document.querySelector(".new-todo"); input.value = "Style the samples"; input.dispatchEvent(new Event("input", { bubbles: true })); input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true })); return true; })()`,
+      `document.querySelectorAll(".todo-list li").length === 2 && (document.querySelector(".todo-list .toggle").click(), true)`,
+      `document.querySelector(".todo-list li.completed") !== null && document.querySelector(".clear-completed:not([hidden])") !== null`,
+    ],
+    texts: [
+      // The heading sits above the card, on the page.
+      { text: ".todoapp h1", on: "body" },
+      { text: ".new-todo", pseudo: "::placeholder" },
+      { text: ".todo-list li:not(.completed) label" },
+      { text: ".todo-list li.completed label" },
+      { text: ".todo-count" },
+      { text: ".filters a" },
+      { text: ".clear-completed" },
+      { text: ".toggle-all + label", pseudo: "::before", ui: true },
+    ],
+  },
+};
+
+/// The checks of §4.6 on the sample `name` that `page` shows, and its
+/// screenshots when they are asked for.
+async function checkLook(page, name, look) {
+  for (const step of look.prepare ?? []) {
+    check((await page.until(step, 10_000, true)) !== null, `${name}: ${step.slice(0, 80)}…`);
+  }
+  for (const value of ["light", "dark"]) {
+    await page.scheme(value);
+    check((await page.until(`${look.known} === ${JSON.stringify(look[value])}`, 10_000, true)) !== null, `${name}'s CSS reaches the frame, ${value} (${await page.inFrame(look.known)})`);
+    // Past the samples' colour transitions (0.4 s at most).
+    await later(600);
+    const low = await page.inFrame(`${lowContrast}(${JSON.stringify(look.texts)})`);
+    check(low.length === 0, `${name}: every text has the contrast WCAG 2.2 AA asks, ${value} ${JSON.stringify(low)}`);
+    if (screenshots) {
+      await page.size(1280, 800);
+      await later(300);
+      await page.screenshot(`${name}-${value}-desktop.png`, "#frame");
+      await page.size(390, 1400, 2);
+      await later(300);
+      await page.screenshot(`${name}-${value}-phone.png`, "#frame");
+      await page.size();
+    }
+  }
+  await page.scheme("light");
+  await page.size(320, 900);
+  const scroll = `innerWidth + " " + document.documentElement.scrollWidth`;
+  check((await page.until(`innerWidth <= 320 && document.documentElement.scrollWidth <= innerWidth`, 5_000, true)) !== null, `${name}: no sideways scroll in a 320 px wide frame (width and scroll width ${await page.inFrame(scroll)})`);
+  await page.size();
+}
 const click = (tab) => `document.querySelector('[data-tab="${tab}"]').click()`;
 
 const page = await open(`${origin}/`);
@@ -194,7 +351,24 @@ for (const [value, name] of samples.filter(([v]) => v !== "shared")) {
     // Mounted, not only imported: the page's markup is in the frame.
     const mounted = name === "TodoMVC" ? `document.querySelector("input") !== null` : `document.querySelectorAll("button").length === 2`;
     check((await page.until(mounted, 10_000, true)) !== null, `sample ${name} mounts its markup`);
+    check(looks[name] !== undefined, `sample ${name} has a look to check`);
+    if (looks[name] !== undefined) await checkLook(page, name, looks[name]);
   }
+}
+if (screenshots) {
+  // The page with the CSS pane open, on TodoMVC.
+  await page.evaluate(`(() => { document.getElementById("status").textContent = ""; const s = document.getElementById("sample"); s.value = "1"; s.dispatchEvent(new Event("change")); })()`);
+  await page.until(built);
+  await page.until(loaded, 10_000);
+  await page.evaluate(showCss);
+  for (const value of ["light", "dark"]) {
+    await page.scheme(value);
+    await page.size(1440, 900);
+    await later(600);
+    await page.screenshot(`page-css-pane-${value}.png`);
+    await page.size();
+  }
+  await page.scheme("light");
 }
 
 // An error, marked in the editor and listed.
@@ -202,6 +376,10 @@ const wrong = await pageWith("node", "import Node exposing (Program)\n\n\nmain :
 check((await wrong.until(`/^1 error/.test(${status}) && (${status})`)) !== null, `an error is reported (${await wrong.evaluate(status)})`);
 check((await wrong.until(`document.querySelector(".cm-lintRange-error")?.textContent === "missing"`, 10_000)) !== null, "the error is marked on `missing` in the editor");
 check((await wrong.evaluate(`document.querySelector(".diagnostic")?.textContent ?? ""`)).startsWith("NAMING ERROR — Main.beni:5:"), "the error is listed with its place");
+// From the CSS pane, a click on the error shows the source (§4.6).
+await wrong.evaluate(showCss);
+await wrong.evaluate(`document.querySelector(".diagnostic").click()`);
+check(await wrong.evaluate(`!document.getElementById("editor").hidden && document.getElementById("css-editor").hidden`), "a click on a diagnostic shows the source's tab");
 
 // beni's grammar in the editor: the Elm mode with beni's tokens (§4.2).
 const notation = "-- every token of beni's own\nimport Html exposing (Html)\n\n\npub schema Person =\n    name : String\n\n\nf : Int, Int → Int × Int\nf a b = ( a, b )\n\n\nview : ⊤ → Html msg\nview _ = <p class=\"x\">{\"a ≠ b ≤ c ≥ d ▷ e ◁ f … g ← h λ ⊥\"}</p>\n";
@@ -211,11 +389,62 @@ for (const piece of ["→", "×", "⊤", "pub", "schema", "<p", "class"]) {
   check(await highlighted.evaluate(`[...document.querySelectorAll("#editor .cm-line span")].some((s) => s.textContent === ${JSON.stringify(piece)} && s.className !== "")`), `the editor highlights ${piece}`);
 }
 
+// The CSS pane (§4.6). A program with an empty pane: its frame has no style
+// sheet. An edit in the pane restyles the running program, `</style>` and
+// all, and does not restart it; an edit of the source does.
+const counter = await (await fetch(`${origin}/samples/browser-direct/Counter.beni`)).text();
+const bare = await pageWith("browser-direct", counter);
+check((await bare.until(built)) !== null && (await bare.until(loaded, 10_000)) !== null, `a counter with no CSS builds and loads (${await bare.evaluate(status)})`);
+check((await bare.until(`document.querySelectorAll("button").length === 2 && ${unstyled}`, 10_000, true)) !== null, "an empty CSS pane gives the frame no style sheet");
+check((await bare.evaluate(cssText)) === "", "a link with no CSS opens an empty CSS pane");
+await bare.evaluate(showCss);
+check(await bare.evaluate(`!document.getElementById("css-editor").hidden && document.getElementById("editor").hidden`), "the style.css tab shows the CSS editor");
+// The counter at 1, a state that a restart loses.
+const bumped = await bare.until(`document.querySelector("span")?.textContent === "0" && (document.querySelectorAll("button")[1].click(), true)`, 10_000, true);
+check(bumped !== null && (await bare.until(`document.querySelector("span")?.textContent === "1"`, 10_000, true)) !== null, "the counter with no CSS counts to 1");
+await bare.evaluate(`document.getElementById("status").textContent = ""`);
+const edge = "/* </style></script> */\nmain {\n  outline: 3px solid rgb(1, 2, 3);\n}\n";
+const outlined = `document.querySelector("main") !== null && getComputedStyle(document.querySelector("main")).outlineColor === "rgb(1, 2, 3)"`;
+const kept = `document.querySelector("span")?.textContent === "1"`;
+await bare.type(edge, "#css-editor");
+check((await bare.until(`location.hash === ""`, 5_000)) !== null, "an edit of the CSS clears the link from the address");
+check((await bare.until(`${outlined} && ${kept} && document.querySelectorAll("style").length === 1`, 10_000, true)) !== null, "an edit of the CSS restyles the running program, past a </style> in it, and the program keeps its state");
+// Past the compile's 300 ms wait: no build ran.
+await later(600);
+check((await bare.evaluate(status)) === "", `an edit of the CSS builds nothing (status ${JSON.stringify(await bare.evaluate(status))})`);
+check(await bare.evaluate(`[...document.querySelectorAll("#css-editor .cm-line span")].some((s) => s.textContent === "outline" && s.className !== "")`), "the CSS pane highlights CSS");
+await bare.clear("#css-editor");
+check((await bare.until(`${unstyled} && ${kept}`, 10_000, true)) !== null, "an emptied CSS pane removes the style sheet from the running program");
+await bare.type(edge, "#css-editor");
+check((await bare.until(`${outlined} && ${kept}`, 10_000, true)) !== null, "the CSS comes back to the running program");
+// An edit of the source restarts the program, with the CSS.
+await bare.evaluate(`document.querySelector('[data-file="editor"]').click()`);
+await bare.toEnd();
+await bare.type("-- restyled\n");
+check((await bare.until(built)) !== null, `an edit of the source builds the program (${await bare.evaluate(status)})`);
+check((await bare.until(loaded, 10_000)) !== null && (await bare.until(`${outlined} && document.querySelector("span")?.textContent === "0"`, 10_000, true)) !== null, "an edit of the source restarts the program, with the CSS");
+// Share: the link holds the source and the CSS.
+await bare.evaluate(`document.getElementById("share").click()`);
+const styledLink = await bare.until(`location.hash.includes("css=") && location.href`, 10_000);
+check(styledLink !== null, "Share puts the CSS in the address");
+const styled = await open(styledLink);
+check((await styled.until(built)) !== null, `a link with CSS builds (${await styled.evaluate(status)})`);
+check((await styled.evaluate(editorText)) === (await bare.evaluate(editorText)), "the link opens the source");
+check((await styled.evaluate(cssText)) === edge, `the link opens the CSS (${JSON.stringify(await styled.evaluate(cssText))})`);
+check((await styled.evaluate(`document.getElementById("platform").value`)) === "browser-direct", "the link opens the platform");
+check((await styled.until(`document.querySelector("main") !== null && getComputedStyle(document.querySelector("main")).outlineColor === "rgb(1, 2, 3)"`, 10_000, true)) !== null, "the link's CSS reaches the frame");
+// No list of allowed style sheets (§4.6): the frame loads an `@import` from
+// another origin as it is.
+const imported = await pageWith("browser-direct", counter, `@import url("${elsewhereOrigin}/imported.css");\n`);
+check((await imported.until(built)) !== null, `a CSS with an @import builds (${await imported.evaluate(status)})`);
+check((await imported.until(`getComputedStyle(document.documentElement).backgroundColor === "rgb(4, 5, 6)"`, 10_000, true)) !== null, "an @import from another origin applies in the frame");
+
 // The dumps and the emitted JavaScript.
 const program = "import Node exposing (Program)\n\n\ndouble : Int → Int\ndouble n = n * 2\n\n\nmain : Program\nmain = Node.printLines [ String.fromInt (double 21) ]\n";
 const tabs = await pageWith("node", program);
 check((await tabs.until(built)) !== null, `a linked program builds (${await tabs.evaluate(status)})`);
 check((await tabs.until(`document.getElementById("console").textContent.includes("42")`, 10_000)) !== null, "the linked program runs");
+check((await tabs.until(unstyled, 10_000, true)) !== null, "a printing program with an empty CSS pane has no style sheet in its frame");
 await tabs.evaluate(click("types"));
 check((await tabs.until(`document.getElementById("types-text").textContent.includes("double : Int → Int")`, 20_000)) !== null, "the Types tab shows the types");
 await tabs.evaluate(click("ownership"));
@@ -260,6 +489,7 @@ const exited = new Promise((done) => browser.on("exit", done));
 browser.kill();
 await exited;
 server.close();
+elsewhereServer.close();
 rmSync(profile, { recursive: true, force: true });
 process.stdout.write(`${failures} failed\n`);
 process.exitCode = failures === 0 ? 0 : 1;

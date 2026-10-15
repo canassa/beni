@@ -5,16 +5,22 @@
 //   node tests/wasm/page_test.mjs positions <source> <diagnostics.json> <text>…
 //       each diagnostic's range in <source> holds the <text> of its place
 //   node tests/wasm/page_test.mjs share
-//       the shareable link gives back every source it was made from
+//       the shareable link gives back every source and CSS it was made from
+//   node tests/wasm/page_test.mjs srcdoc
+//       the output frame's document, with and without the CSS pane's text
+//   node tests/wasm/page_test.mjs samples
+//       each sample's files, and TodoMVC's copy of todomvc-app-css
 //   node tests/wasm/page_test.mjs syntax
 //       the grammar names the tokens of each line as the test says
 //   node tests/wasm/page_test.mjs vendor
 //       every vendored editor module is the bytes `SHA256SUMS` names, and
 //       `index.html`'s import map names each module and nothing else
 import { createHash } from "node:crypto";
-import { readFileSync, readdirSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { dirname } from "node:path";
 import { rangeOf } from "../../playground/positions.js";
 import { decode, encode, maxSource } from "../../playground/share.js";
+import { srcdoc } from "../../playground/srcdoc.js";
 import { copyState, startState, token } from "../../playground/syntax.js";
 
 /// The tokens of `lines`, as `[text, name]`, with the state carried from
@@ -135,6 +141,20 @@ if (mode === "positions") {
   check((await decode(await encode("node", largest)))?.source === largest, "a link of exactly maxSource opens");
   check((await decode("#platform=node")) === null, "a fragment with no code is no program");
   check((await decode("")) === null, "no fragment is no program");
+  // The CSS pane (playground.md §4.6): carried as the source is, and only
+  // when it holds text, so a link made before the pane opens as it did.
+  const styles = ["body { color: #111; }\n", "/* → 😀 */ a::after { content: \"⊤\"; }\n", "p{}".repeat(50_000)];
+  for (const css of styles) {
+    const back = await decode(`#${await encode("browser-direct", "main = 1\n", css)}`);
+    check(back !== null && back.source === "main = 1\n" && back.css === css && back.platform === "browser-direct", `CSS ${JSON.stringify(css.slice(0, 40))} round trip`);
+  }
+  const plain = await encode("node", "main = 1\n");
+  check(plain === (await encode("node", "main = 1\n", "")) && !plain.includes("css="), `a link with an empty CSS pane has no css (${plain})`);
+  check((await decode(plain))?.css === "", "a link with no css opens an empty CSS pane");
+  check((await decode(`#${plain}&css=@@@@`)) === null, "a css that is not base64url is no program");
+  check((await decode(`#${plain}&css=AAAA`)) === null, "a css that is not deflate data is no program");
+  const hugeCss = await encode("node", "main = 1\n", "x".repeat(maxSource + 1));
+  check((await decode(hugeCss)) === null, "a css that inflates past maxSource is no program");
 } else if (mode === "syntax") {
   // Lines, and the name the grammar gives each piece of them (null for
   // none), in order; a piece not listed is not checked.
@@ -232,8 +252,57 @@ if (mode === "positions") {
     const file = url.slice("./vendor/".length);
     check(readFileSync("playground/vendor/LICENSES.txt", "utf8").includes(`== ${file}: ${name.split("/").slice(0, name.startsWith("@") ? 2 : 1).join("/")} `), `LICENSES.txt holds ${name}'s licence`);
   }
+} else if (mode === "srcdoc") {
+  // The output frame's document (playground.md §5, §4.6). A file and a CSS
+  // with every sequence that could end a `<script>` or `<style>` early.
+  const script = "/* frame.js */";
+  const files = { "_main.mjs": 'import "./Main.mjs";\n', "Main.mjs": 'export const a = "</script><!-- <script>";\n' };
+  // The document as `page.js` wrote it before the CSS pane, byte for byte.
+  const before = [
+    '<!doctype html><html><head><meta charset="utf-8">',
+    `<script id="beni-files" type="application/json">${JSON.stringify(files).replaceAll("<", "\\u003c")}</script>`,
+    `<script>${script}</script>`,
+    "</head><body></body></html>",
+  ].join("");
+  check(srcdoc(files, "", script) === before, `an empty CSS pane gives the document of before the pane: ${srcdoc(files, "", script)}`);
+  const css = "/* </style></script><!-- */ main::before { content: \"</style>\"; }\n";
+  const doc = srcdoc(files, css, script);
+  const element = /<script id="beni-css" type="application\/json">([^<]*)<\/script>/.exec(doc);
+  check(element !== null && JSON.parse(element[1]) === css, `the CSS is in the document as JSON, unchanged: ${doc}`);
+  // Only the three elements' own ends: nothing in a file or the CSS ends one.
+  check(doc.split("</script>").length - 1 === 3 && !doc.includes("</style") && !doc.includes("<!--"), `no text of a file or the CSS ends an element: ${doc}`);
+  check(doc.includes('id="beni-css"') && doc.indexOf('id="beni-css"') < doc.indexOf(`<script>${script}`), "the CSS comes before the bootstrap that reads it");
+} else if (mode === "samples") {
+  // Paths are the repository's, as for `vendor`. A sample's files are next
+  // to each other (playground.md §4.3, §4.6); TodoMVC's `.beni` is the
+  // benchmark's, which `zig build playground` copies in.
+  const samples = JSON.parse(readFileSync("playground/samples/index.json", "utf8"));
+  for (const sample of samples) {
+    const beni = sample.name === "TodoMVC" ? "bench/todomvc/apps/beni/Sandbox.beni" : `playground/${sample.path}`;
+    check(existsSync(beni), `${sample.name}: ${beni} exists`);
+    if (sample.css === undefined) continue;
+    check(existsSync(`playground/${sample.css}`), `${sample.name}: playground/${sample.css} exists`);
+    check(dirname(sample.css) === dirname(sample.path) && sample.css.endsWith(".css"), `${sample.name}: its CSS is next to its .beni`);
+    // No sample loads anything from another site: an image is a `data:` URL.
+    const text = readFileSync(`playground/${sample.css}`, "utf8");
+    check(!/@import/i.test(text), `${sample.name}: its CSS imports no style sheet`);
+    for (const [, url] of text.matchAll(/url\(\s*['"]?([^'")\s]*)/gi)) check(url.startsWith("data:"), `${sample.name}: url(${url.slice(0, 40)}…) is a data: URL`);
+  }
+  check(samples.filter((s) => s.platform === "browser-direct").every((s) => s.css !== undefined), "every sample that draws in the frame has a CSS file");
+  // TodoMVC's look is todomvc-app-css 2.4.3's `index.css`, unmodified
+  // between the two markers: the SHA-256 of the file in the package's
+  // tarball (`samples/LICENSES.txt` names the tarball and its SHA-512).
+  const todomvc = readFileSync("playground/samples/browser-direct/TodoMVC.css", "utf8");
+  const start = "/* ==== todomvc-app-css 2.4.3, index.css, unmodified ==== */\n";
+  const end = "/* ==== end of todomvc-app-css 2.4.3 ==== */\n";
+  const upstream = todomvc.includes(start) && todomvc.includes(end) ? todomvc.slice(todomvc.indexOf(start) + start.length, todomvc.indexOf(end)) : "";
+  const sum = createHash("sha256").update(upstream).digest("hex");
+  check(sum === "c7dd5d13d38d0c85b746c0859b837f212754486779e0a9076d092396dfae7746", `TodoMVC.css holds todomvc-app-css 2.4.3's index.css unmodified (SHA-256 ${sum})`);
+  const notices = readFileSync("playground/samples/LICENSES.txt", "utf8");
+  check(notices.includes("== browser-direct/TodoMVC.css: todomvc-app-css 2.4.3 (CC-BY-4.0)"), "samples/LICENSES.txt names TodoMVC.css's source and licence");
+  check(notices.includes("Copyright (c) Sindre Sorhus") && notices.includes("Attribution 4.0 International Public License"), "samples/LICENSES.txt holds the credit and the licence's text");
 } else {
-  process.stderr.write("usage: node tests/wasm/page_test.mjs (positions <source> <diagnostics.json> <text>… | share | syntax | vendor)\n");
+  process.stderr.write("usage: node tests/wasm/page_test.mjs (positions <source> <diagnostics.json> <text>… | share | srcdoc | samples | syntax | vendor)\n");
   process.exit(2);
 }
 process.exitCode = failures === 0 ? 0 : 1;

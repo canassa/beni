@@ -31,7 +31,9 @@
           "@codemirror/legacy-modes/mode/elm": "./vendor/codemirror-legacy-modes-elm.js",
           "@codemirror/lang-javascript": "./vendor/codemirror-lang-javascript.js",
           "@lezer/javascript": "./vendor/lezer-javascript.js",
-          "@lezer/lr": "./vendor/lezer-lr.js"
+          "@lezer/lr": "./vendor/lezer-lr.js",
+          "@codemirror/lang-css": "./vendor/codemirror-lang-css.js",
+          "@lezer/css": "./vendor/lezer-css.js"
         }
       }
     </script>
@@ -76,7 +78,12 @@
     </p>
     <main>
       <section class="pane" aria-label="Source">
-        <div id="editor"></div>
+        <nav class="tabs" role="tablist" aria-label="Files">
+          <button role="tab" data-file="editor" aria-selected="true">Main.beni</button>
+          <button role="tab" data-file="css-editor" aria-selected="false">style.css</button>
+        </nav>
+        <div id="editor" class="editor" role="tabpanel" aria-label="Main.beni"></div>
+        <div id="css-editor" class="editor" role="tabpanel" aria-label="style.css" hidden></div>
         <div id="diagnostics" aria-label="Diagnostics"></div>
       </section>
       <section class="pane" aria-label="Output">
