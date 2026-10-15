@@ -181,16 +181,17 @@ pub const Ref = struct { module: Graph.Index, decl: u32 };
 /// `core/Schema`'s core-private values the specialised path calls: in no
 /// interface, exported by `core/Schema` when they survive.
 pub const compiled_values = [_][]const u8{
-    "compiledParse",   "compiledPrint",   "compiledFail",    "compiledForward",   "compiledBackward",
-    "belowBackward",   "readSlot",        "writeSlot",       "pathAt",            "printableWithin",
-    "declared",        "decodeSlot",      "encodeSlot",      "readValueSlot",     "writeValueSlot",
-    "box",             "describedOf",     "describedList",   "describedNullable", "describedConverted",
-    "describedRecord", "describedField",  "describedTagged", "describedVariant",  "describedRecursive",
-    "compiledDeep",    "compiledMissing", "badString",       "badInt",            "badBool",
+    "compiledParse",   "compiledPrint",       "compiledFail",    "compiledForward",   "compiledBackward",
+    "belowBackward",   "readSlot",            "writeSlot",       "pathAt",            "printableWithin",
+    "declared",        "decodeSlot",          "encodeSlot",      "readValueSlot",     "writeValueSlot",
+    "box",             "describedOf",         "describedList",   "describedNullable", "describedConverted",
+    "describedRecord", "describedField",      "describedTagged", "describedVariant",  "describedRecursive",
+    "compiledDeep",    "compiledMissing",     "badString",       "badInt",            "badBool",
     "badFloat",        "badFinite",
     // A derived codec's (schema.md §12.10).
-    "describedHost",   "describedTuple",  "describedConstructors", "describedMaybe", "describedMaybeField",
-    "derivedChar",     "derivedInt32",    "derivedNever",          "hostWorker",
+              "describedHost",   "describedTuple",    "describedConstructors",
+    "describedMaybe",  "describedMaybeField", "derivedChar",     "derivedInt32",      "derivedNever",
+    "hostWorker",
 };
 
 pub fn isCompiledValue(text: []const u8) bool {

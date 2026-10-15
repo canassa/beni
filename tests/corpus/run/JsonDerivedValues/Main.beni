@@ -1,0 +1,112 @@
+-- A derived codec run on host values (`schema.md` §12.10): `Json.decodeValue`
+-- and `encodeValue` run its compiled `read` and `write` workers, and
+-- `Schema.decode` and `encode` of a `Codec` — whose Encoded end is a `Value`
+-- — read and write it as `read` and `write` do, testing every shape: a
+-- `5` is not the record, and a string is not the `Level`, whatever the
+-- operation. A record holds a `Maybe`, a tuple, constructors and a type
+-- whose module's `codec` is an erased compiled schema; `encodeValue` writes
+-- objects with no prototype, which print as any object does. Both paths, as
+-- `JsonDerivedTable`; every schema is compiled, so the development build
+-- ships no interpreter.
+import Json
+import Lib exposing (Level)
+import Node
+import Schema exposing (Issue, Value)
+import Show
+
+
+type Shape
+    = Dot
+    | Circle Float
+    | Rect Int Int
+
+
+type alias Doc =
+    name : String
+    nick : Maybe String
+    pair : Int × String
+    shape : Shape
+    level : Level
+
+
+parsed : String → Result (List Issue) Value
+parsed text = Schema.parse Schema.value text
+
+
+fromValue : String → Result (List Issue) Doc
+fromValue text = Result.andThen (parsed text) λv → Json.decodeValue v
+
+
+decoded : String → Result (List Issue) Doc
+decoded text = Result.andThen (parsed text) λv → Schema.decode (Schema.derived ⊤) v
+
+
+level : String → Result (List Issue) Level
+level text = Result.andThen (parsed text) λv → Schema.decode (Lib.codec ⊤) v
+
+
+shape : Shape → String
+shape s =
+    case s of
+        Dot →
+            "Dot"
+
+        Circle r →
+            "Circle " ++ String.fromFloat r
+
+        Rect w h →
+            "Rect " ++ String.fromInt w ++ " " ++ String.fromInt h
+
+
+doc : Doc → String
+doc d =
+    ( n, s ) = d.pair
+    d.name
+        ++ " "
+        ++ Maybe.withDefault d.nick "-"
+        ++ " ("
+        ++ String.fromInt n
+        ++ ","
+        ++ s
+        ++ ") "
+        ++ shape d.shape
+        ++ " L"
+        ++ String.fromInt (Lib.levelOf d.level)
+
+
+sample : Result (List Issue) Doc
+sample =
+    fromValue
+        "{\"name\":\"n\",\"nick\":\"k\",\"pair\":[1,\"a\"],\"shape\":{\"Rect\":[2,3]},\"level\":3}"
+
+
+main : Node.Program
+main =
+    Node.printLines
+        [ "-- decodeValue"
+        , Show.result sample doc
+        , Show.result
+            (fromValue "{\"name\":\"n\",\"pair\":[1,\"a\"],\"shape\":\"Dot\",\"level\":0}")
+            doc
+        , Show.result (fromValue "{\"name\":\"n\",\"pair\":[1],\"shape\":\"Dot\",\"level\":0}") doc
+        , Show.result
+            (fromValue "{\"name\":\"n\",\"pair\":[1,\"a\"],\"shape\":\"Circle\",\"level\":0}")
+            doc
+        , Show.result
+            (fromValue "{\"name\":\"n\",\"pair\":[1,\"a\"],\"shape\":\"Dot\",\"level\":12}")
+            doc
+        , Show.result (fromValue "5") doc
+        , "-- encodeValue"
+        , Show.value (Result.andThen sample λd → Json.encodeValue d)
+        , Show.value
+            (Result.andThen sample λd → Json.encodeValue { d | nick = Nothing, shape = Circle 1.5 })
+        , "-- Schema.decode and encode of a Codec"
+        , Show.result
+            (decoded "{\"name\":\"n\",\"pair\":[1,\"a\"],\"shape\":\"Dot\",\"level\":4}")
+            doc
+        , Show.result (decoded "5") doc
+        , Show.result (decoded "{\"name\":\"n\",\"pair\":\"x\",\"shape\":\"Dot\",\"level\":4}") doc
+        , Show.result (level "7") λl → String.fromInt (Lib.levelOf l)
+        , Show.result (level "\"7\"") λl → String.fromInt (Lib.levelOf l)
+        , Show.value (Result.andThen sample λd → Schema.encode (Schema.derived ⊤) d)
+        ]

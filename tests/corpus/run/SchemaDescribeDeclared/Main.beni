@@ -97,6 +97,15 @@ shape s =
         Schema.Invalid message →
             "Invalid \"" ++ message ++ "\""
 
+        Schema.TupleOf items →
+            "( " ++ String.join (List.map items shape) ", " ++ " )"
+
+        Schema.ConstructorsOf ctors →
+            "constructors [ " ++ String.join (List.map ctors λc → c.name) " | " ++ " ]"
+
+        Schema.MaybeOf child →
+            "Maybe (" ++ shape child ++ ")"
+
 
 field : FieldShape → String
 field f =
@@ -153,6 +162,15 @@ primitive k =
 
         Schema.ValueKind →
             "Value"
+
+        Schema.CharKind →
+            "Char"
+
+        Schema.Int32Kind →
+            "Int32"
+
+        Schema.NeverKind →
+            "⊥"
 
 
 definition : Definition → String
