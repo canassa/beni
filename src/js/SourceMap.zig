@@ -272,7 +272,9 @@ const Encoder = struct {
     segment_on_line: bool = false,
     /// Whether the line's last segment maps somewhere.
     mapped: bool = false,
-    /// Whether the last segment has all five fields.
+    /// Whether the last segment has all five fields. A segment has five
+    /// exactly when it has a name, so this is set from the name; a
+    /// five-field segment with no name would need its own flag.
     named: bool = false,
 
     /// Move the cursor to byte `target`, writing a `;` for every line it
