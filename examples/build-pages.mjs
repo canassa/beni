@@ -4,7 +4,9 @@
 //
 // usage: node examples/build-pages.mjs <beni> <out> <base> [--playground=<dir>]
 //   <beni>  the compiler to run
-//   <out>   the directory to write; it is emptied first
+//   <out>   the directory to write; it is emptied first, so it must be
+//           missing, empty, or a site this script wrote (it holds the
+//           marker file .beni-pages-site), and must not hold the repository
 //   <base>  the URL path <out> is served under, from "/" to a final "/";
 //           on GitHub Pages, canassa/beni's is /beni/
 //   --playground=<dir>
@@ -21,9 +23,9 @@
 // shell*). The base has no flag, so each program is built from a copy whose
 // beni.json says <base><name>/. The checked-in examples do not change.
 import { execFileSync } from "node:child_process";
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 
 // Each program is a --release build.
@@ -67,8 +69,29 @@ pub apiOrigin : String
 apiOrigin = ${beniString(apiOrigin)}
 `;
 
+// What a site build leaves in <out>, so that a later run knows the
+// directory is its own. upload-pages-artifact leaves out files whose names
+// start with ".", so the marker is not published.
+const marker = ".beni-pages-site";
+const refuse = (why) => {
+  console.error(`build-pages: refusing ${out}: ${why}`);
+  process.exit(2);
+};
+if (existsSync(out)) {
+  const real = realpathSync(out);
+  const toRepo = relative(real, realpathSync(git("rev-parse", "--show-toplevel")));
+  if (toRepo === "" || !(toRepo === ".." || toRepo.startsWith(`..${sep}`) || isAbsolute(toRepo))) {
+    refuse("it holds the repository");
+  }
+  if (!statSync(real).isDirectory()) refuse("it is not a directory");
+  if (readdirSync(real).length > 0 && !existsSync(join(real, marker))) {
+    refuse(`it is not empty and has no ${marker}, so no site build wrote it`);
+  }
+}
+
 rmSync(out, { recursive: true, force: true });
 mkdirSync(out, { recursive: true });
+writeFileSync(join(out, marker), "Written by examples/build-pages.mjs, which empties this directory on its next run.\n");
 
 const work = mkdtempSync(join(tmpdir(), "beni-pages-"));
 try {
