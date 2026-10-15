@@ -1691,12 +1691,18 @@ expected answer.
 
 ## 12. Schemas derived from a type
 
-*Added 2026-10-02; specified, not built* (A.8, A.10). This is the zero-ceremony end of the
+*Added 2026-10-02* (A.8, A.10); *built 2026-10-15* (A.12, §12.10's *As built*), except `Dict`
+and `Set` (#205). This is the zero-ceremony end of the
 feature: `Json.decode text` returns a value of whatever type the program uses it at, and the
 compiler derives the schema from that type. It is checked by the same engine, with the same issues,
 the same specialisation, the same differential tests and the same `--release` behaviour as a
 declared schema. When the JSON does not look like the type, a declared schema (§2, §11) remains
 the tool.
+
+*Amended 2026-10-15 (A.12):* §12.10 settles what the sections below leave to the build, and
+amends §12.2's container rows, §12.8's *Where it is emitted* and *The interface*, and A.11's
+`Http` paragraph. A derived schema is statically known (§6, *A statically known schema runs
+compiled*): it compiles to parse and print workers and never reaches the library interpreter.
 
 ### 12.1 What Roc does, from primary sources
 
@@ -1915,7 +1921,7 @@ summarize : String → String
 summarize text =
     case Json.decode text of
         Ok article → article.title ++ " by " ++ article.author ++ ", " ++ String.fromInt article.views
-                        ++ " views: " ++ String.join ", " article.tags
+                        ++ " views: " ++ String.join article.tags ", "
         Err issues → Schema.formatIssues issues
 ```
 
@@ -1982,8 +1988,8 @@ A use whose variable reaches a rigid annotation variable with no `where` is the 
   - each custom-type wire form, with a payload record;
   - `Maybe` and nested `Maybe` in fields, elements and the root;
   - `Presence` and `Nullable`;
-  - `Dict String v` and a `Dict` with non-string keys;
-  - a `Set` duplicate;
+  - `Dict String v` and a `Dict` with non-string keys (#205);
+  - a `Set` duplicate (#205);
   - a recursive `Tree a` at the depth bound and one past it;
   - a safe integer one past 2⁵³;
   - an opaque type through its module's `pub codec`;
@@ -1999,6 +2005,140 @@ A use whose variable reaches a rigid annotation variable with no `where` is the 
 - **`dispatch/`:** the dispatch site and its evidence; a closed inferred row in
   `dump --stage=types`.
 - **`emit/`:** a derived record worker without interpretation; DCE of an unused derived codec.
+
+### 12.10 The build, specified (2026-10-15)
+
+*Added 2026-10-15 (A.12), before the build.* What §12.2–§12.9 leave open, decided against the
+code of slice A (§6, *A statically known schema runs compiled*). Each item amends the section it
+names.
+
+**A derived codec is a definition of the using module, keyed by its concrete type.** This amends
+§12.8's *Where it is emitted* and *The interface*. A use whose receiver is a type derives a
+*codec definition* in the module that holds the use. The definition is a resolved schema plan,
+written in §4's plan vocabulary with the node kinds below, and the module's plan carries it beside
+its declarations. Its key is the receiver's type with every type variable replaced by a numbered
+*slot*. Two uses with one key share one definition. A slot is a parameter of the definition, as a
+generic declaration's parameter is, and the use passes the variable's own `codec` evidence for
+it. So:
+- a `List { name : String, age : Int }` is one definition whose workers check the string and the
+  safe integer in place, the code a declaration of that record would compile to;
+- `Tree a` under a forwarding `where a.codec` is one definition with one slot;
+- a nominal type inside the receiver (`Shape` in a record field) is a definition of its own, so a
+  recursive type has a worker that calls itself under the depth bound. Its key is the type with
+  its arguments, `Tree Int` and `Tree String` being two definitions.
+
+The reason is speed and the checker's order. A definition per concrete type lets every primitive
+and every record below a nominal boundary be written in place, which is what makes a derived
+schema as fast and as small as the declared one (§12.8, *Specialisation*). An evidence
+parameter per position, as derived `eq` has, would call a closure per field. And a codec decided
+where it is used needs nothing from the type's module but its constructors, which the interface
+already carries for a type that is not opaque. So no derivability property is published, and
+checking a module never depends on what its importers decode. What it costs: two modules that
+decode one type each emit its workers.
+
+**The table answers core's containers.** This amends §12.2 step 2 for core. `core/List`,
+`Maybe`, `Int32` and `Basics` do not import `Schema`, so the containers are rows of the
+compiler's table and not core `pub codec` values. Each row is a plan node: `List a` is `list`,
+`Maybe a` is `maybe` (§12.4), `Schema.Nullable a` is `nullable`, `Int32` is a primitive, and
+`Schema.Presence a` is an optional field (§12.4). `Dict` and `Set` are §12.2's rows, built with
+a `compare` slot, the key's or the element's, that the use passes as evidence beside the codec
+slots. `Dict k v` is an object only when `k` is `String`; any other key, an opaque over `String`
+included, is an array of pairs. *Amended 2026-10-15, as built:* `Dict` and `Set` are not built
+in this slice and are tracked by issue #205. A derived type that holds one is `no_derived_codec`,
+"which a derived codec does not read yet (issue #205)", whose hint is a `List` of pairs or a
+declared schema.
+
+**A module's `pub codec` inside a derived type takes no evidence.** At the receiver itself the
+module rule is §12.2's step 2, with whatever `where` the method declares. Below it, a type whose
+module declares `codec` is a plan leaf that runs that value, which must need no evidence. A
+`pub codec : ⊤ → Codec (Box a) where a.codec : …` met inside a record is `no_derived_codec`, with
+"its module's `codec` needs evidence, so it is used only where it is the decoded type itself"
+as the reason. A tagged schema's `Message.Type` is §12.2's step 0, a reference to the
+declaration's own workers. Its `Message.Encoded` is `no_derived_codec`.
+
+**`Maybe` of a type variable.** §12.4 decides at compile time whether the inner type accepts
+`null`. A slot's type is not known there, so a `Maybe a` whose `a` is a slot reads `null` as
+`Nothing`, in a field and outside one. Encoding `Just x` whose `x` writes `null` is then an
+`InvalidValue` issue at that value, "the value inside `Just` writes null, which reads back as
+`Nothing`", and never a value that reads back different. A concrete inner type follows §12.4
+exactly.
+
+**When the closing rule runs.** A `codec` wanted whose receiver is a type waits until its
+top-level declaration's boundary. It waits until the last default of §8.1's step 3 has run, so a
+field read on a decoded value has made its record by then. The boundary then closes each record
+row of the receiver that is still open, whose variable is young, and that no member's type
+reaches. Then it derives. A row a member's type reaches is `no_derived_codec`, "an extensible
+record". A variable an inner `let` generalised is `derived_codec_needs_type`, whose hint is to
+annotate the `let`. A field whose type is still a variable that no member's type reaches is
+`derived_codec_needs_type`. One that a member's type reaches is promoted into the declaration's
+`where`, which is forwarding (§12.5, route 3).
+
+**The node kinds the plan gains.** Each has a compiled worker and a library builder. The
+differential corpus holds the two to one answer.
+
+| Node | Decodes | Encodes |
+|---|---|---|
+| `tuple` *n* | an array of exactly *n* elements, else `WrongShape` "expected an array of *n* elements"; element *i* one level down at `Index i` | an array |
+| `constructors` | a string naming a nullary constructor; an object of one own key naming one that takes arguments, its one argument one level down at `Field name`, or its *n* arguments an array of exactly *n* at `Field name`, each at `Field name, Index i`. Anything else is `WrongShape` "expected a constructor: a string, or an object with one key". A name no constructor has is `UnknownTag` at the value, "unknown constructor \"X\"; expected …" with every name quoted in declaration order. A nullary name given as an object, or a name that takes arguments given as a string, is `WrongShape` "the constructor X …" | the same form |
+| `maybe` | `null` as `Nothing`, anything else the inner node in `Just` (§12.4) | `Nothing` as `null` |
+| `codec` | the module's `codec` value, through its own workers | likewise |
+| `dict`, `set` (#205, not built) | as the `Dict`/`Set` rows above; a repeated key or element is `InvalidValue` at its index, "a repeated key", "a repeated element" | the dictionary's pairs in key order, the set's elements in order |
+| primitive `char` | a string of one scalar value, else `WrongShape`, or `InvalidValue` "expected one character" | the string |
+| primitive `int32` | a safe integer from −2³¹ to 2³¹ − 1, else `InvalidValue` "expected a 32-bit integer" | the number |
+| primitive `never` | nothing: `WrongShape` "expected nothing: ⊥ has no value" | (unreachable) |
+
+A record field of type `Maybe a` is the `maybe` node in field position. Its key may be absent,
+and encoding `Nothing` leaves the key out. `⊤` is `tuple 0`. `Value` is the `value` primitive.
+The description (`describe`) gains `TupleOf`, `ConstructorsOf` and `MaybeOf` shapes and the
+three primitive kinds.
+
+**What a definition emits** follows §6, *The specialised path*, and *A statically known schema
+runs compiled*. A definition has the four members of a declaration: description, decoding,
+encoding and root. Its value is `Schema.declared`'s, and its bindings are named
+`<Module>$$codec<k>$$<member>`, where *k* is its place among the module's definitions in key
+order. The use's evidence is a function of `⊤` answering that value. Under `--schema-library` the
+value is the description, so the differential corpus runs a derived schema through the
+interpreter as it runs a declared one. **A call of `Json.decode`, `encode`, `decodeWith` or
+`encodeWith` whose evidence is a definition is the definition's own `parse`, `print`,
+`parseWith` or `printWith`**, written where the call is, so a derived schema ships what a
+declaration's `S.parse` ships and no more. `decodeValue` and `encodeValue` run `Schema.read` and
+`Schema.write`, which reach the description until #175's workers land, as A.11 says.
+
+**`Http.expectJson` is inferred** (amends A.11's *`Http`'s API is unchanged* and
+`boundary.md` §9.8.12 (a)). The owner asked for it in #193. It is now `expectJson : Expect Error a
+where a.codec : ⊤ → Codec a`, a constant whose type is fixed by the request it is given to, as
+`Json.decode`'s is. The schema-taking form is renamed `expectSchema : Schema e a → Expect Error
+a`. Its behaviour, its `Accept` default and its `BadBody` are unchanged. `jsonBody` keeps its
+schema argument.
+
+**As built (2026-10-15).** Everything above is built, `Dict` and `Set` aside (#205):
+- `src/check/Codec.zig` waits, closes and derives at the boundary, and numbers a module's
+  definitions in key order. A use's evidence is a `codec` term of the dispatch table. The
+  definitions are virtual declarations of the module's plan, past its last declaration. They
+  cross the plan sidecar (format v3) and the dispatch sidecar (v12).
+- `src/js/SchemaLower.zig` emits a definition as it emits a declaration. `src/js/Lower.zig`
+  writes a `Json` call whose evidence is a definition as that definition's own member.
+  `src/js/Reach.zig` keeps only the members a build reaches.
+- `core/Json` is new. `core/Schema` gains the three shapes, the three primitive kinds, `Codec`,
+  `derived`, `structural` and `erased`. It also gains the library builders and engine nodes of
+  the new kinds, which `--schema-library` runs.
+- The `run/JsonDerived*` fixtures run both paths and both builds. Each has a
+  `.compiled-schemas` list, the guarantee that no derived schema reaches the interpreter.
+  `run/JsonDerivedArticle` is Roc's article test. `ordering_test` runs it reversed and checks
+  the closed row of `dump --stage=types`. `iface_test` builds a program of derived codecs at
+  `--jobs=1` and `--jobs=8` through the three round trips.
+- Measured on an eight-field record, the shape of report 34's flat user with one optional
+  field, the declared schema and the derived codec compile to the same workers. In a
+  `--release` build of each alone, brotli is 1 085 bytes declared and 1 086 derived; the derived
+  one writes its fields in name order. Median parse is 754 ns declared and 759 ns derived, and
+  print 546 and 538 ns. A 1 000-element list parses in 508 and 498 µs (Node 24, one pinned
+  core, 15 interleaved samples of a development build).
+- A derived `Maybe` field costs about 9 brotli bytes more than `optional`, for its `null` check.
+
+**`Schema.structural`, not `Schema.derived`, is the hint.** §12.2 says an opaque type's module
+"may derive it there by writing `pub codec () = Schema.derived ()`". By the module rule that call
+finds the very `codec` it defines, and calls itself. `no_derived_codec`'s hint for an opaque type
+names `Schema.structural`, which skips the module rule for the outermost type.
 
 ## 13. Suspending conversions
 
@@ -3088,3 +3228,23 @@ time. §6, *A statically known schema runs compiled*, is the contract.
   (`SchemaShare.Helper.threshold`) when a measurement shows that a program grows or that a
   saving is left on the table. Share a whole-field reader only if V8 stops charging a call
   for it.
+
+### A.12 — Derived codecs, as built (2026-10-15)
+
+Issue #193, slice C of the owner's 2026-10-15 design: §12 is built, and a derived schema compiles
+like a declared one (A.11). §12.10 records what the build decided. These are its reversible
+choices:
+- **A definition per concrete type, in the using module.** *Reversal:* emit a nominal type's
+  codec in its declaring module with one slot per type parameter. Each slot is then a closure
+  call where a primitive is now checked in place.
+- **Containers in the compiler's table, not as core `pub codec` values.** *Reversal:* give core a
+  module that imports `Schema` and the containers, and let the module rule find it.
+- **Nested module codecs take no evidence.** *Reversal:* give a definition body terms of its own,
+  as derived `eq` has, so a nested `pub codec` can take its `where`.
+- **`Http.expectJson` takes no schema, and `expectSchema` does.** *Reversal:* keep `expectJson`'s
+  argument and add an inferred form under another name.
+- **`Dict` and `Set` deferred to #205.** Their rows need a `compare` slot beside the codec slots,
+  and a repeated key's issue. Until then a derived type that holds one is `no_derived_codec`.
+- **A nested type's module `codec` must be of that type.** By the module rule, a module's one
+  `codec` is the method of every type it declares. Inside a derived type, a type whose module's
+  `codec` has another type is `no_derived_codec`, as the receiver's method check is at the root.
