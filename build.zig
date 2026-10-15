@@ -1257,7 +1257,7 @@ const DebugInfo = enum {
 /// handed to it on the command line (`platformDirectory`). Each run is well
 /// under a second; the maker's compile is what an edit under `src/` adds to
 /// the path of every compiler, which is why its root reaches the checker and
-/// nothing after it.
+/// the reachability edge builder, and nothing after them.
 fn corePack(b: *std.Build, core: Core, sources: []const PlatformSource, id: BuildId) *std.Build.Module {
     const run = b.addRunArtifact(corePackMaker(b));
     run.setName(b.fmt("check {s} for a compiler", .{if (core.extra == null) core.dir else "variant core"}));

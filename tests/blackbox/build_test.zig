@@ -5530,8 +5530,10 @@ test "a page build makes each module's edge lists once and prints each module on
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
     // Every module of the graph is checked here or installed from the
-    // embedded core, and each has its edge lists made once.
-    const modules = counters.embedded_modules + counters.modules_checked;
+    // embedded core. Each module the binary carries reads its edge lists
+    // from the checked core, and each other module has its lists made
+    // once (`fast-compiler.md` §8, *The checked core, embedded*, amended
+    // 2026-10-15).
     // A development build writes a source map beside every module it
     // printed, and nothing else ends in `.mjs.map`.
     var maps: u64 = 0;
@@ -5542,7 +5544,8 @@ test "a page build makes each module's edge lists once and prints each module on
     try testing.expectEqualDeep(EmitCounters{
         .embedded_modules = counters.embedded_modules,
         .modules_checked = counters.modules_checked,
-        .edge_lists = modules,
+        .edge_lists = counters.modules_checked,
+        .edge_lists_embedded = counters.embedded_modules,
         .reach_walks = 2,
         .modules_lowered = counters.modules_lowered,
         .modules_printed = maps,
@@ -5553,10 +5556,132 @@ test "a page build makes each module's edge lists once and prints each module on
     try testing.expect(counters.modules_lowered > maps);
 }
 
+test "a program builds the same with the edge lists the binary carries as with lists it builds" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // A build reads the edge lists of the modules the binary carries from
+    // the checked core, keyed by the module key and `--release` and
+    // `--schema-library` (`fast-compiler.md` §8, *The checked core,
+    // embedded*, amended 2026-10-15). A core read through `--core-root`
+    // installs nothing from it, so the same program then builds every
+    // module's lists. The two trees must be the same, in development and
+    // under `--release`: a row that differs from the list a build would
+    // make is an input its key does not cover. `run/ReleaseEverything`
+    // reaches `Dict`, `List` and `String` and their patterns and derived
+    // comparisons. Source maps name the core's path, which `--core-root`
+    // moves, so neither build writes them.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.copyTreeInto("core", "mycore", "_");
+    try copyFixture(&w, "tests/corpus/run/ReleaseEverything.beni", "Main.beni");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try expectSameWithBuiltEdges(&w, "--platform=node", "dev", &.{"Main.beni"});
+    try expectSameWithBuiltEdges(&w, "--platform=node", "release", &.{ "--release", "Main.beni" });
+}
+
+test "a program that suspends builds the same with the edge lists the binary carries as with lists it builds" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // The previous test for a suspendable body, a node of its own in an
+    // edge list: `run/SuspendLoopClosure` sleeps in a loop, so it reaches
+    // `Task` and the bodies of `core` that may suspend.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.copyTreeInto("core", "mycore", "_");
+    try copyFixture(&w, "tests/corpus/run/SuspendLoopClosure.beni", "Main.beni");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try expectSameWithBuiltEdges(&w, "--platform=node", "dev", &.{"Main.beni"});
+}
+
+test "a page builds the same with the edge lists the binary carries as with lists it builds" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // The previous test for the platform modules: a `browser-tea` page
+    // reaches `browser`'s runtime module, `Http`, the markup vocabulary
+    // and core's `Schema`, whose rows are keyed by a chain with markup.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.copyTreeInto("core", "mycore", "_");
+    try copyFixture(&w, "tests/corpus/browser/tea/ApiItems.beni", "Main.beni");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try expectSameWithBuiltEdges(&w, "--platform=browser-tea", "page", &.{"Main.beni"});
+}
+
+/// One fixture of the corpus, copied into the project at `to`.
+fn copyFixture(w: *World, from: []const u8, to: []const u8) !void {
+    const bytes = try std.Io.Dir.cwd().readFileAlloc(w.io, from, w.arena.allocator(), .limited(1 << 20));
+    try w.write(to, bytes);
+}
+
+/// Build `args` for `platform` into `<out>-embedded`, and again with the
+/// project's copy of core under `--core-root` into `<out>-built`, and
+/// expect two builds that succeed with the same diagnostics and the same
+/// tree: every module's edge lists read from the checked core in the first
+/// and built in the second.
+fn expectSameWithBuiltEdges(w: *World, platform: []const u8, out: []const u8, args: []const []const u8) !void {
+    const arena = w.arena.allocator();
+    var dirs: [2][]const u8 = undefined;
+    var stderrs: [2][]const u8 = undefined;
+    for ([_][]const u8{ "embedded", "built" }, &dirs, &stderrs) |how, *dir, *stderr| {
+        dir.* = try std.fmt.allocPrint(arena, "{s}-{s}", .{ out, how });
+        var argv: std.ArrayList([]const u8) = .empty;
+        try argv.appendSlice(arena, &.{ "build", platform, "--no-cache", "--no-source-maps", "--self-profile=trace.json" });
+        try argv.append(arena, try std.fmt.allocPrint(arena, "--out={s}", .{dir.*}));
+        if (std.mem.eql(u8, how, "built")) try argv.append(arena, "--core-root=mycore");
+        try argv.appendSlice(arena, args);
+        const r = try w.runWith(argv.items, .{ .raw_diagnostics = true });
+        try testing.expectEqual(@as(u8, 0), r.exit_code);
+        try testing.expectEqualStrings("", r.stdout);
+        stderr.* = r.stderr;
+        const counters = try emitCounters(w);
+        if (std.mem.eql(u8, how, "embedded")) {
+            try testing.expect(counters.edge_lists_embedded != 0);
+        } else {
+            try testing.expectEqual(@as(u64, 0), counters.edge_lists_embedded);
+        }
+    }
+    try testing.expectEqualStrings(stderrs[0], stderrs[1]);
+    const want = try w.listFiles(dirs[0]);
+    const got = try w.listFiles(dirs[1]);
+    try testing.expect(want.len > 1);
+    try testing.expectEqual(want.len, got.len);
+    for (want, got) |a, b| {
+        try testing.expectEqualStrings(a, b);
+        const want_bytes = try w.read(try std.fs.path.join(arena, &.{ dirs[0], a }));
+        const got_bytes = try w.read(try std.fs.path.join(arena, &.{ dirs[1], b }));
+        testing.expectEqualStrings(want_bytes, got_bytes) catch |err| {
+            std.debug.print("{s} differs between {s} and {s}\n", .{ a, dirs[0], dirs[1] });
+            return err;
+        };
+    }
+}
+
 const EmitCounters = struct {
     embedded_modules: u64 = 0,
     modules_checked: u64 = 0,
     edge_lists: u64 = 0,
+    edge_lists_embedded: u64 = 0,
     reach_walks: u64 = 0,
     modules_lowered: u64 = 0,
     modules_printed: u64 = 0,
@@ -5572,6 +5697,7 @@ fn emitCounters(w: *World) !EmitCounters {
             embedded_modules: ?u64 = null,
             modules_checked: ?u64 = null,
             edge_lists: ?u64 = null,
+            edge_lists_embedded: ?u64 = null,
             reach_walks: ?u64 = null,
             modules_lowered: ?u64 = null,
             modules_printed: ?u64 = null,

@@ -91,6 +91,7 @@ const DebugShape = @import("DebugShape.zig");
 const Arena = @import("../Arena.zig");
 const Profile = @import("../Profile.zig");
 const Reach = @import("Reach.zig");
+const EdgePack = @import("EdgePack.zig");
 const SchemaGraph = @import("SchemaGraph.zig");
 const Spec = @import("Spec.zig");
 const Sibling = @import("Sibling.zig");
@@ -2870,12 +2871,10 @@ const Emitter = struct {
         const count = e.graph().count();
         const birs = try e.scratch.alloc(*const Bir, count);
         const tables = try e.scratch.alloc(*const Dispatch, count);
-        var insts: usize = 0;
         for (birs, tables, 0..) |*b, *d, i| {
             const m: Graph.Index = @fromBackingInt(@intCast(@as(u32, @intCast(i))));
             b.* = e.bir(m);
             d.* = e.dispatchOf(m);
-            insts += b.*.insts.len;
         }
         const in: Reach.Input = .{
             .graph = e.graph(),
@@ -2903,15 +2902,33 @@ const Emitter = struct {
             .provenance = e.session.resolution.provenance,
             .interner = &e.session.interner,
         };
+        // A module the binary carries has its edge lists in the checked
+        // core, under its module key and the two options they depend on
+        // (`EdgePack`; `fast-compiler.md` §8, *The checked core, embedded*).
+        const rows = try e.scratch.alloc(?[]const u8, count);
+        const options: EdgePack.Options = .{ .release = e.options.release, .schema_library = e.options.schema_library };
+        var built_insts: usize = 0;
+        for (rows, birs, 0..) |*row, b, i| {
+            const m: Graph.Index = @fromBackingInt(@intCast(@as(u32, @intCast(i))));
+            row.* = null;
+            if (e.session.packCovers(e.graph().moduleFile(m)) and e.session.keys.isCacheable(m)) {
+                row.* = e.session.pack.find(.edges, EdgePack.key(e.session.keys.of(m), options));
+            }
+            if (row.* == null) built_insts += b.insts.len;
+        }
         // Every module's edges on the workers, each into its own slot and
-        // its worker's `edges` arena, then the walk here.
+        // its worker's `edges` arena — read from its row, or built — then
+        // the walk here.
         const edges = try e.scratch.alloc(Reach.ModuleEdges, count);
+        const read = try e.scratch.alloc(bool, count);
         const builders = try e.scratch.alloc(Reach.Builder, e.pool.workers.len);
         for (builders, e.pool.workers) |*b, *w| b.* = .init(in, w.edges.allocator());
         const all = try e.scratch.alloc(u32, count);
         for (all, 0..) |*slot, i| slot.* = @intCast(i);
-        try e.pool.run(all, EdgeTask{ .edges = edges, .builders = builders }, EdgeTask.build, e.wanted(insts, insts_per_edge_builder));
-        e.session.profile.addCounter(.edge_lists, count);
+        try e.pool.run(all, EdgeTask{ .edges = edges, .builders = builders, .rows = rows, .read = read, .in = in }, EdgeTask.build, e.wanted(built_insts, insts_per_edge_builder));
+        const from_pack: u64 = @intCast(std.mem.count(bool, read, &.{true}));
+        e.session.profile.addCounter(.edge_lists, count - from_pack);
+        e.session.profile.addCounter(.edge_lists_embedded, from_pack);
         e.reach = in;
         e.edges = edges;
         e.live = try Reach.walk(e.scratch, in, edges);
@@ -2944,8 +2961,21 @@ const Emitter = struct {
     const EdgeTask = struct {
         edges: []Reach.ModuleEdges,
         builders: []Reach.Builder,
+        /// Per module, its row in the checked core, and whether the row was
+        /// read: a row that cannot be used leaves the module to be built.
+        rows: []const ?[]const u8,
+        read: []bool,
+        in: Reach.Input,
 
         fn build(t: EdgeTask, w: *Worker, i: u32) Allocator.Error!void {
+            t.read[i] = false;
+            if (t.rows[i]) |bytes| {
+                if (try EdgePack.decode(w.edges.allocator(), bytes, t.in)) |edges| {
+                    t.edges[i] = edges;
+                    t.read[i] = true;
+                    return;
+                }
+            }
             t.edges[i] = try t.builders[w.tid].module(@fromBackingInt(@intCast(i)));
         }
     };

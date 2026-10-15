@@ -25,10 +25,12 @@
 //! version: u32                  `version`
 //! count: u32                    rows
 //! rows[count], sorted by (kind, key):
-//!   kind: u8, 3 zero bytes      `Dir.Kind`: 0 an entry, 1 a front-end artifact
+//!   kind: u8, 3 zero bytes      0 an entry, 1 a front-end artifact (`Dir.Kind`'s
+//!                               numbers), 2 a module's edge lists
 //!   key: [16]u8
 //!   offset: u32, len: u32       into the blob, from its first byte
-//! the payloads, in row order
+//! the payloads, in row order; two `edges` rows with the same bytes share
+//! one payload
 //! ```
 //!
 //! Little-endian by definition, like every byte format of the cache, and
@@ -37,16 +39,23 @@
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
-const Dir = @import("Dir.zig");
 const Key = @import("Key.zig");
 
 pub const magic = "BENIPACK";
-pub const version: u32 = 1;
+/// 2: the `edges` kind.
+pub const version: u32 = 2;
 
 const header_len = magic.len + 4 + 4;
 const row_len = 4 + 16 + 4 + 4;
 
-pub const Kind = Dir.Kind;
+/// A row's kind. The first two are `Dir.Kind`'s, with its numbers; `edges`
+/// is a module's reachability edge lists (`js/EdgePack.zig`), which no
+/// cache directory holds.
+pub const Kind = enum(u8) {
+    entry = 0,
+    frontend = 1,
+    edges = 2,
+};
 
 /// A pack, validated. `empty` holds no row and finds nothing.
 pub const Pack = struct {
@@ -70,7 +79,7 @@ pub const Pack = struct {
         var previous: ?Row = null;
         for (0..count) |i| {
             const row = pack.rowAt(@intCast(i));
-            if (row.kind > @backingInt(Kind.frontend)) return empty;
+            if (row.kind > @backingInt(Kind.edges)) return empty;
             if (@as(u64, row.offset) + row.len > bytes.len or row.offset < table_end) return empty;
             if (previous) |p| if (!p.lessThan(row)) return empty;
             previous = row;
@@ -187,21 +196,45 @@ pub const Writer = struct {
             try unique.append(gpa, p);
         }
 
+        // Each distinct edge-list payload once, in the order of the first
+        // row that holds it: the edge lists of one module under two options
+        // are often the same bytes. Entries and front-end artifacts are one
+        // per key and are not compared.
+        var offsets: std.StringHashMapUnmanaged(u32) = .empty;
+        defer offsets.deinit(gpa);
+        try offsets.ensureTotalCapacity(gpa, @intCast(unique.items.len));
+        var payloads: std.ArrayList([]const u8) = .empty;
+        defer payloads.deinit(gpa);
+        const at = try gpa.alloc(u32, unique.items.len);
+        defer gpa.free(at);
+        var offset: usize = header_len + unique.items.len * row_len;
+        for (unique.items, at) |p, *slot| {
+            if (p.kind == .edges) {
+                const gop = offsets.getOrPutAssumeCapacity(p.bytes);
+                if (gop.found_existing) {
+                    slot.* = gop.value_ptr.*;
+                    continue;
+                }
+                gop.value_ptr.* = @intCast(offset);
+            }
+            slot.* = @intCast(offset);
+            try payloads.append(gpa, p.bytes);
+            offset += p.bytes.len;
+        }
+
         var out: std.ArrayList(u8) = .empty;
         errdefer out.deinit(gpa);
         try out.appendSlice(gpa, magic);
         try appendU32(gpa, &out, version);
         try appendU32(gpa, &out, @intCast(unique.items.len));
-        var offset: usize = header_len + unique.items.len * row_len;
-        for (unique.items) |p| {
+        for (unique.items, at) |p, row_offset| {
             try out.append(gpa, @backingInt(p.kind));
             try out.appendNTimes(gpa, 0, 3);
             try out.appendSlice(gpa, &p.key);
-            try appendU32(gpa, &out, @intCast(offset));
+            try appendU32(gpa, &out, row_offset);
             try appendU32(gpa, &out, @intCast(p.bytes.len));
-            offset += p.bytes.len;
         }
-        for (unique.items) |p| try out.appendSlice(gpa, p.bytes);
+        for (payloads.items) |bytes| try out.appendSlice(gpa, bytes);
         return out.toOwnedSlice(gpa);
     }
 };
@@ -217,6 +250,31 @@ fn appendU32(gpa: Allocator, out: *std.ArrayList(u8), value: u32) Allocator.Erro
 // ---------------------------------------------------------------------------
 
 const testing = std.testing;
+
+test "two edge-list rows with the same bytes share one payload, and other kinds never do" {
+    var w: Writer = .{};
+    defer w.deinit(testing.allocator);
+    const a: Key.Key = @splat(0x11);
+    const b: Key.Key = @splat(0x22);
+    try w.add(testing.allocator, .edges, a, "lists");
+    try w.add(testing.allocator, .edges, b, "lists");
+    try w.add(testing.allocator, .entry, a, "lists");
+    try w.add(testing.allocator, .frontend, a, "lists");
+    const blob = try w.write(testing.allocator);
+    defer testing.allocator.free(blob);
+
+    const pack = Pack.init(blob);
+    try testing.expectEqual(@as(u32, 4), pack.count);
+    try testing.expectEqualStrings("lists", pack.find(.edges, a).?);
+    try testing.expectEqualStrings("lists", pack.find(.edges, b).?);
+    try testing.expectEqual(pack.find(.edges, a).?.ptr, pack.find(.edges, b).?.ptr);
+    try testing.expectEqualStrings("lists", pack.find(.entry, a).?);
+    try testing.expectEqualStrings("lists", pack.find(.frontend, a).?);
+    try testing.expect(pack.find(.entry, a).?.ptr != pack.find(.frontend, a).?.ptr);
+    // The header, four rows, and three payloads: the two edge rows' one,
+    // the entry's and the front-end artifact's.
+    try testing.expectEqual(@as(usize, header_len + 4 * row_len + 3 * "lists".len), blob.len);
+}
 
 test "a pack finds what was written under each kind and key, and nothing else" {
     var w: Writer = .{};
