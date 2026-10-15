@@ -48,7 +48,18 @@ layer, and each one is code that only the page runs.
 The binary is the same compiler as the native one. `build.zig`'s `compiler` makes it, with the
 same embedded `core/`, the same embedded platforms (`embedPlatforms`, with their markup lowerings
 compiled in) and the same checked core (`corePack`). The core pack is a byte format of 32-bit
-words, so the pack that the host's maker writes is correct on wasm32 (§6 proves it).
+words: its container and every payload write `u32` and `u16` fields with explicit little-endian
+`writeInt`, and `frontend/artifact_bytes.zig`'s `widthFor` refuses a field wider than 32 bits at
+compile time. So the pack that the host's maker writes is correct on wasm32. A byte comparison
+cannot show that alone, because a refused pack makes the compiler check `core/` again and gives
+the same bytes; the profile's counters show it, and a gate test asserts them (§6).
+
+*Amended 2026-10-15, after review:* "the same compiler" holds for threads by `fast-compiler.md`
+§10, and for the word size because the one order that followed a `usize`, `src/js/Spec.zig`'s
+points-to sweeps, now uses 64-bit words on every target (§10, *The word size*). A review of
+`src/` for a 32-bit `usize` found no other: no unordered map whose order reaches output is keyed
+by a `usize` or a pointer, and every reader of a format widens its bounds to 64 bits
+(`src/cache/type_body.zig` since this amendment).
 
 ### 2.2 No threads
 
@@ -184,7 +195,8 @@ The compiled program runs in an `<iframe sandbox="allow-scripts">`, **without
 other site of the user. Without `allow-same-origin` the frame has an opaque origin of its own.
 
 A blob URL that the parent page makes belongs to the parent's origin, and the frame cannot load
-it. So the parent sends the emitted files to the frame with `postMessage`, and the frame's own
+it. So the parent writes the emitted files into the frame's `srcdoc`, as JSON in a
+`<script type="application/json">` element with every `<` escaped, and the frame's own
 bootstrap script (`playground/frame.js`, inlined in the frame's `srcdoc`):
 
 1. makes a blob URL for each module in the frame's own origin, dependencies first, after it
@@ -196,6 +208,9 @@ bootstrap script (`playground/frame.js`, inlined in the frame's `srcdoc`):
 The frame sends an uncaught error and an unhandled rejection to the parent from its `error` and
 `unhandledrejection` listeners. A listener is not a `catch` (rule 9). beni's own defect screen
 shows inside the frame.
+
+*Amended 2026-10-15, after review:* this section said the parent sends the files with
+`postMessage`; the code has always written them into `srcdoc`, and the text above now says so.
 
 A relative specifier is found by the import forms that the compiler writes and that
 `boundary.md` §4's checks accept for a sibling: `import … from "./…"`, `export … from "./…"` and
@@ -240,6 +255,29 @@ budget of a test is 4.3 billion. So the gates run the self-hosted `.wasm` on the
 the budget, and the native single-threaded compiler on everything else, because it runs the same
 guarded code at native speed. The shipped binary is proven by `test-playground`.
 
+*Amended 2026-10-15, after review.*
+
+- **The two `.wasm` gate tests have a budget of their own**, 6 000M (`wasm_test.zig`'s
+  `wasm_budget_millions`). Most of their cost is fixed: Node, V8's compile of the self-hosted
+  build's 18 MB code section, and that build's start on the embedded core and platforms. A
+  one-line program costs 92% of what `run/Adt` costs, so no smaller input reduces it, and under
+  the gates' 4 300M the margin was 17%. Jayson Reis decided the grant on 2026-10-15 (dashboard
+  question `wasm-playground-q5`), with `test-playground` in CI; Cesar's agreement is pending.
+- **`test-playground` runs in CI on every pull request**: the `playground` job of `ci.yml`,
+  which the `check` guard needs, so a byte of difference blocks a merge.
+- **The printing-program test asserts the profile's counters** (`--self-profile`): the `.wasm`
+  loaded the embedded checked core (`embedded_modules` as the native compiler's, above 0) and
+  checked one module (§2.1).
+- **`test-playground` runs the page's own commands**: each `run/`, `browser/direct/` and sample
+  program is built as the page builds it (no cache, no source maps, JSON diagnostics), with the
+  cache and source maps, and with `--release`; each `check/bad/` program is checked in both
+  renderers; the TodoMVC dumps take `--diagnostics=json`. On 2026-10-15 that was 786 programs and
+  2 118 commands.
+- **The sweep test.** `test-playground` builds six `browser-direct` programs with `--release` and
+  `--self-profile` on both compilers and asserts the same `spec_points_to_sweeps`
+  (`fast-compiler.md` §10, *The word size*). It failed on the old code (89 against 99 on
+  `KeySubscription`) and passes now.
+
 *Why Node runs the `.wasm` with `--liftoff-only`.* V8 compiles a hot function a second time with
 TurboFan, on background threads. For one short compile that costs more than it saves: the
 `ReleaseSmall` build of a printing program cost 2.6 billion instructions with tiering and 1.0
@@ -258,12 +296,16 @@ Both builds by LLVM, from the same sources. The `ReleaseFast` build keeps its DW
 
 | Build | Raw bytes | gzip -9 | brotli -q 11 | Code section | Data section |
 |---|---:|---:|---:|---:|---:|
-| `ReleaseSmall` (shipped) | 8 556 880 | 2 984 174 | 2 146 575 | 4 301 790 | 4 247 601 |
-| `ReleaseFast`, no debug sections | 13 354 953 | 4 068 454 | 2 708 121 | 9 103 696 | 4 245 381 |
+| `ReleaseSmall` (shipped), first measurement | 8 556 880 | 2 984 174 | 2 146 575 | 4 301 790 | 4 247 601 |
+| `ReleaseFast`, no debug sections, first measurement | 13 354 953 | 4 068 454 | 2 708 121 | 9 103 696 | 4 245 381 |
+| `ReleaseSmall` (shipped), 2026-10-15 after the review | 8 742 821 | 3 046 882 | 2 185 033 | 4 341 791 | 4 393 553 |
+
+The first two rows are from the first pull request's sources. The size grows with `master`: the
+third row is the same build after a merge of `master` and the review's fixes, measured again.
 
 The data section is half of the shipped file: the embedded `core/`, the platforms and the
-checked core (§2.1). The module asks for 1 107 pages (69.2 MiB) of initial memory, most of it
-the 65 MiB stack of §2.3, and sets no maximum.
+checked core (§2.1). The module asks for 1 107 pages (69.2 MiB) of initial memory, 1 108 after
+the review, most of it the 65 MiB stack of §2.3, and sets no maximum.
 
 Speed in Node 24.19, with one `WebAssembly.Module` and 12 compiles of TodoMVC
 (`bench/todomvc/apps/beni/Sandbox.beni`, 298 lines) on new instances, as the page does, two
@@ -306,6 +348,12 @@ test): the WebAssembly compiler on a printing program, 3 579 million; on the dia
 2 700 million; the native compiler with no threads, 927 to 2 568 million a test. The
 self-hosted `.wasm` and the native compiler with no threads each add one compile of the
 compiler to the gates, in seconds, on cores the rest of the gates leave free.
+
+*Measured again on 2026-10-15, after the review and a merge of `master`*, each test twice: the
+WebAssembly compiler on a printing program 3 676M and 3 681M (it now writes a `--self-profile`
+trace too, §6), on the diagnostics 2 670M and 2 743M, both counted on the grant's own meter
+(§6); the native compiler with no threads 932M to 2 770M a test, and 2M for the `serve`
+refusal.
 
 ## 8. Known limits
 
