@@ -42,7 +42,7 @@ assert(translated && skipped,'fixture export must have a translated and a skippe
 const dir=await mkdtemp(resolve(root,'zig-out/bridge-failure-control-'));
 let passed=false;
 try {
-  for(const name of ['UnusedCapture','CaptureField','ResultCaseNonTail']) {
+  for(const name of ['UnusedCapture','CaptureField','ResultCaseNonTail','ChainCaseNonTailEnd','ChainCaseNonTailLink']) {
     const [ds,main]=JSON.parse(await readFile(resolve(root,`proofs/ownership/regressions/bridge/${name}.json`),'utf8'));
     const wire=resolve(dir,`${name}.json`),exported=resolve(dir,`${name}.jsonl`);
     // Removing the fresh prefix is an ordinary oracle reduction and exports
@@ -66,7 +66,7 @@ try {
       await writeFile(driver,`import {${name}$run as run} from ${JSON.stringify(resolve(target,`${name}.mjs`))};console.log(JSON.stringify(run()));\n`);
       const ran=spawnSync(process.execPath,[driver],{encoding:'utf8'});
       assert.equal(ran.status,0,ran.stderr);
-      if (name === 'ResultCaseNonTail') {
+      if (name === 'ResultCaseNonTail' || name.startsWith('ChainCaseNonTail')) {
         assert.deepEqual(record[11], {f0: 1, f1: 0, f2: 99});
         assert.deepEqual(JSON.parse(ran.stdout), {$: 'Ok', a: 99});
       } else assert.deepEqual(JSON.parse(ran.stdout),record[11]);

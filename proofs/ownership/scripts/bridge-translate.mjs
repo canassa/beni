@@ -128,9 +128,9 @@ export function translate(ds, main) {
       }
       case 'chain-case': {
         chainUsed = true;
-        const next = new Map(env), head = `head${serial++}`, tail = `tail${serial++}`;
-        next.set(e[2], head); next.set(e[3], tail);
-        return `case ${a(e[1])} of\n    BridgeEnd →\n${ind(emit(e[4], env, key + '/0', self, tail), 8)}\n    BridgeLink ${head} ${tail} →\n${ind(emit(e[5], next, key + '/1', self, tail), 8)}`;
+        const next = new Map(env), head = `head${serial++}`, tailVar = `tail${serial++}`;
+        next.set(e[2], head); next.set(e[3], tailVar);
+        return `case ${a(e[1])} of\n    BridgeEnd →\n${ind(emit(e[4], env, key + '/0', self, tail), 8)}\n    BridgeLink ${head} ${tailVar} →\n${ind(emit(e[5], next, key + '/1', self, tail), 8)}`;
       }
       case 'atom': return a(e[1]);
       case 'let': {
