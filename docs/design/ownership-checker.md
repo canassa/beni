@@ -3468,10 +3468,11 @@ a callee's result is. `bump n = List.set xs 0 n` is rejected `top-level`
 acceptance is sound in place. After the write, no source-level reader of `xs`
 is left that could see it: the module names `xs` once, and that one read runs
 once. A second read anywhere in the module, a read in a lambda or a local
-function, a `pub` on `xs`, or a write to `main`'s own list in a function makes
-the write `top-level` again. `InitializationTransfer` pins each of these, and
-`branchRead` (accepted) and `functionRead` (rejected) are the two halves of
-this case. §26.7 records that the oracle models the rule.
+function, or a `pub` on `xs` makes the write `top-level` again, and the
+destination stays shared, so a function that writes it is `top-level` too
+(`destinationStillShared`). `InitializationTransfer` has a case for each of
+these, and `issueRead` (accepted) and `functionRead` (rejected) are the two
+halves of this one. §26.7 records that the oracle models the rule.
 
 ## 29. Result liveness and ownership across calls (2026-10-15)
 
