@@ -6755,3 +6755,11 @@ cancel, GitHub keeps every job whose `if` is true, so the guard of a
 cancelled run still runs and fails. `needs:` sees only the jobs of one
 workflow; another workflow joins through `on: workflow_call` and a job
 in `ci.yml` that calls it with `uses:`.
+
+PR #119 showed the cancel: the older run's `tests` was cancelled, and
+its `check` ran and failed in 2 s. The automatic review stopped after
+two or three turns and posted nothing, so I asked `@claude` for a pass.
+It found no defect. On its advice, the comment now says two more
+things. A called workflow sees its caller's event, so `claude.yml`
+cannot join. A `paths:` filter on the CI trigger leaves a skipped pull
+request waiting for `check` forever.
