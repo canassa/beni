@@ -363,6 +363,13 @@ one by one; the owner may grant a large program its own budget, or a case whose 
 a compiler defect with an open issue, until the case fits 4 300M: a `.budget` file beside the case
 with its limit and reason (`tests/corpus/README.md`, *Budgets*). A separately granted
 value-fuzz case uses `.fuzz-budget`; a page grant never covers fuzz implicitly.
+**The owner delegated these grants (2026-10-15): don't ask, set them.** A large program's corpus
+case, or one whose cost comes from a compiler defect with an open issue, gets a `.budget` (or
+`.fuzz-budget`) of its count on the x86-64 Linux reference plus about 10% — never a CPU-time
+estimate — with the reason, a removal condition and an issue that tracks bringing it down; a
+grant the count has fallen below is lowered the same way. This covers corpus cases only: an
+ordinary test is still shrunk, and a case that got slower because of a defect is a defect to fix,
+not a grant to raise (rule 10).
 Conduit's page cases (2026-10-08, paired direct runs extended 2026-10-14, re-granted from
 Linux instruction counts 2026-10-15), its direct value fuzz (2026-10-14), `browser/direct/HttpJson`
 and `HttpJsonBody` (2026-10-14, compiler defect #105), and the paired TodoMVC/Sternhalma pages plus
