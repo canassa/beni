@@ -23,7 +23,13 @@ separate value fuzz 11,387M, over the default 4,300M each. Requested explicit
 case grants of 6,300M / 10,000M / 12,600M. The owner explicitly granted all
 three; added the measured limits and separate `.fuzz-budget` support so a page
 grant never implicitly covers fuzz. Full Linux hash recording and exact gates
-passed, with the source/fixture checksums matching this worktree.
+passed, with the source/fixture checksums matching this worktree. Pushed
+`2249cd5de` to #116 and requested Claude review. Answered all four minor notes;
+the focused evidence pass accepted the version/wording explanations, withdrew
+the memo/allocation notes and reported no open findings. The block versions were
+4→5 for initialization transfer, then 5→6 for the evidence-parameter restriction.
+The review traced code and checked diffs; it did not independently run the gates
+or browser scripts. The PR remains open and unmerged.
 
 **What I learned**
 
