@@ -4,7 +4,7 @@
 -- in place — which would change the top-level list for every part of the
 -- program that reads it. The message shows where the runtime hands
 -- `update` the model and where, in `Seeds.beni`, the list is defined, and
--- writes the fix, `List.copy Seeds.seed`.
+-- explains that `init ⊤` must build the model with fresh lists.
 import Html exposing (Html)
 import Seeds
 import Tea

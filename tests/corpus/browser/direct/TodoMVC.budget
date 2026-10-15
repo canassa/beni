@@ -1,0 +1,4 @@
+6300 Explicit owner grant on 2026-10-15 for this large browser application's paired page.
+Measured 5711M x86-64 Linux reference instructions with Node executing the comparisons;
+the limit allows about 10% headroom. The paired page builds dev/release on both platforms.
+This grant applies only to this case. Remove when it fits the default 4,300M budget.

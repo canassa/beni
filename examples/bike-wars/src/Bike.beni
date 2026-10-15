@@ -88,7 +88,7 @@ update diff explosions { current, other } =
 pub shoot : Key, { current : Bike, other : Bike } → Bike × Maybe Explosion
 shoot key { current, other } =
     if key == current.controls.up then
-        ( weapon, explosion ) = Weapon.shoot current (current.trail ++ other.trail)
+        ( weapon, explosion ) = Weapon.shoot current (List.copy current.trail ++ other.trail)
         ( { current | weapon = weapon }, explosion )
     else
         ( current, Nothing )
