@@ -22,7 +22,13 @@ NOTE=… node bench/output-size/proto.mjs jsonbody zig-out/proto/jsonbody/src   
 node bench/output-size/price.mjs             # guarantee and component groups, alone
 node bench/output-size/edits.mjs             # bundle-edit prototypes, priced and run
 node bench/output-size/verify.mjs <tea|direct> <bundle.mjs> [label]
+node bench/output-size/transforms.mjs <bundle.mjs>...   # items 4 and 8, one transform at a time
 ```
+
+`transforms.mjs` (2026-10-15, after item 2 landed as `backend.md` §9's slice
+10) prices the quote choice and the local transforms of items 4 and 8 on a
+bundle as the compiler now writes it; `backend.md` §9's *Explicitly not
+built* records the figures and why none was taken.
 
 (`minify.json` and `ablate.json` were written with `OUT=bench/output-size/results/…`.)
 

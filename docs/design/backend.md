@@ -4201,6 +4201,28 @@ called from one place is built, for a runtime written in beni — *A function ca
 where it is called*, below. *2026-10-15*: so is a top-level value read once at start-up, for
 direct's template protocol — *Whole-program specialisation*, slice 10.)
 
+*Re-measured 2026-10-15* (research 102 §6.1 items 4 and 8, after slice 10;
+`bench/output-size/transforms.mjs`): each transform alone on Conduit's release bundles (31 471
+`browser-tea`, 36 456 `browser-direct` brotli), the delta on each. Terser's own `conditionals`
+(−153 / −141) and `booleans` (−103 / −56) are gains on Terser's reprint of the bundle; written
+into beni's spelling, the same rewrites do not keep them, and none is taken:
+
+| Transform | tea | direct | |
+|---|--:|--:|---|
+| a string in the quote that needs fewer escapes (item 8) | +12 | +124 | the compiler's build agrees; `bench/size.mjs` −183 (90 programs smaller, 79 larger), the two `browser-tea` apps +16 and +12 |
+| `true`/`false` → `!0`/`!1`, emitted code only | +76 | +43 | the whole bundle, hand-written files too: −18 / −33, which needs `Minify` to spell one token as two |
+| `undefined` → `void 0` | −30 | +43 | |
+| `if (c) e` → `c && e` | +64 | +119 | |
+| `if (c) e1; else e2` → `c ? e1 : e2` | +47 | +6 | |
+| `if (c) x = a; else x = b` → `x = c ? a : b` | −49 | +51 | |
+| `if (c) return a; return b` → `return c ? a : b` | −21 | +75 | `if_return` |
+| `let x = B.a; B = x` → `B = B.a` | +61 | +85 | `collapse_vars`' commonest shape here |
+| adjacent top-level `const`s of the one file joined | −26 | +61 | `join_vars` |
+| short names from an alphabet ranked by the bundle's letter frequency | +79 | +194 | item 2's emission order stands |
+| a local steps around only the whole-program names its own scope mentions | −66 | +60 | `bench/size.mjs` −1 815 and every empty page smaller, but the two `browser-tea` apps +31 and +24 |
+
+Nothing taken, so nothing was timed.
+
 **Emission order matters and is free.** Declarations are emitted in module-grouped reachability
 order and names are stable across builds; a size-sorted order costs up to 7% of compressed bytes at
 identical raw size.
