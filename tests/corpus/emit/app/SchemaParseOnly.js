@@ -121,7 +121,7 @@ const SchemaParseOnly$User$$read$4 = (c, d, p, k, n, v) => {
   }
   return v;
 };
-const SchemaParseOnly$User$$parseWith = ($o, $t) => Schema$compiledParse($o, [], SchemaParseOnly$User$$read, $t);
+const SchemaParseOnly$User$$parseWith = ($o, $t) => Schema$compiledParse($o, null, SchemaParseOnly$User$$read, $t);
 const SchemaParseOnly$User$$parse = ($t) => SchemaParseOnly$User$$parseWith(Schema$defaultOptions, $t);
 const SchemaParseOnly$main = (() => {
   const $t$1 = SchemaParseOnly$User$$parse("{\"user-name\":\"a\",\"age\":\"3\",\"scores\":[1]}");

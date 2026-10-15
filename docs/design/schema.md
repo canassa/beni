@@ -2410,6 +2410,64 @@ their constructors), over core-private values of `core/Schema.beni` (`compiledPa
   bundle row through `bundle.mjs`, startup, and the many-schema code-size curve §6 asks for before
   any parity claim.
 
+**As built — slice A** (2026-10-15; §6, *A statically known schema runs compiled*; A.11). The rule is
+built for `parse`, `print` and their `With` forms. `core/Schema` has a private `Engine`, made of
+`Interpreted` and `Compiled Workers`, and a private `Made`. `declared` is a core-private value
+that the code of a declaration's `S.schema` calls. `parserOf` and `printerOf` make a compiled
+maker's worker from its `Made`. `Reach` exempts no constructor of `Engine` or `Made` in an
+application build (`Input.schemaGuarded`). `S.schema` is the fourth member, `root`
+(`SchemaGraph.Member`), with guarded edges to the other three (`root_guards`).
+
+- **The guarantee is a corpus check.** A `.compiled-schemas`
+  file marks a `run/` or `browser/` fixture (`tests/corpus/README.md`). The fixture's development
+  build must then ship no `Schema$run` and no `Schema$box`. Eighteen fixtures carry the marker:
+  - Conduit's six pages, tea and direct, together with each direct page's tea build;
+  - `run/SchemaDeclConversions`, `SchemaDeclDepth`, `SchemaDeclKeys`, `SchemaDeclModules` and the
+    new `SchemaComposed`;
+  - `browser/tea/HttpJson`, `HttpJsonBody`, `ApiItems`, `ApiLogin` and the new `HttpJsonList`;
+  - `browser/direct/HttpJson` and `HttpJsonBody`.
+
+  The check went red when `Schema.string` was put back on `box`.
+- **Typed issues through the compiled path.** `run/SchemaComposed` exercises `list`, `nullable`,
+  `converted`, a list of lists, a generic declaration given a composition, and a primitive at the
+  root. It covers each kind of failure: `AllErrors`, `Reject`, the depth bound, invalid options,
+  malformed JSON, a conversion's moved issues, and a print failure. Its golden equals the master
+  interpreter's output line for line. `browser/tea/HttpJsonList` sends and reads
+  `Schema.list (Note.schema ⊤)`. It pins `UnprintableBody` with `PrintFailed` at `1.stars` and
+  `BadBody` with `MissingKey` at `1.note-title`. The earlier `HttpJson` and `HttpJsonBody` goldens
+  did not move. They now run compiled.
+- **Size** (release brotli 11 of `_main.mjs`, against master `927b7dcd4`):
+  - Conduit tea goes from 31 497 to **28 893** (−2 604). Conduit direct goes from 36 502 to
+    **33 906** (−2 596).
+  - `bench/size.mjs` totals: release gross −3 360 and development gross −5 442.
+    `bench/size-apps/ApiAndRoutes` is −2 004 release.
+  - The `run/SchemaDecl*` fixtures that build only compiled schemas are −2 kB each.
+  - A program that builds dynamic schemas pays for the compiled machinery beside the interpreter:
+    +115 to +700 release, for example `SchemaDirections` +675. Its primitives are compiled
+    schemas, so `parseWith`'s `Compiled` arm survives in it.
+- **Speed.** A declaration's workers and its `S.parse`/`S.print` are the code they were.
+  `compiledProblem` skips the argument checks for a root with no argument (`null`), so
+  `bench/schema-libraries`' declaration rows run the same JavaScript. An interleaved A/B on a host
+  at load 12–19 moved those cells by ±10% both ways and showed no trend. The path `Http` takes is
+  `Schema.parseWith (X.schema ⊤)` and `Schema.printWith`, which were the library and are now the
+  workers. On that path the same harness measured 7–65% faster on every cell except the two
+  unknown-key decodes, which stayed level: for example flat decode 2 167 → 1 514 ns and typeahead
+  encode 11 864 → 4 197 ns.
+- **A defect on the way, fixed.** A release build writes a function called from one place where
+  it is called (`backend.md` §9). It did this to `belowBackward` once `backwardWorker` became its
+  one caller. A `--library` build then exported a name that its file never declared. This
+  happened in `bench/schema-libraries`' `--schema-library` build. `core/Schema`'s core-private
+  values are now `named`, as `core/List`'s already were. `build_test`'s *keeps every core/Schema
+  value it exports* failed before the fix.
+- **Left for later slices:**
+  - typed `decode`/`encode` workers, and `read`/`write` workers that make no JSON assumption, so
+    that those operations, `describe` and the endpoint makers stop reaching the description (#175);
+  - a declaration's `S.print`/`S.printWith` wrappers ship with its encoding worker even where only
+    `S.schema` is used (#177);
+  - the compiled path's +0.1–0.7 kB in programs that also build dynamic schemas (#176);
+  - workers shared across schemas (slice B);
+  - derived schemas (slice C).
+
 ## Appendix A. Decisions log
 
 ### A.1 — Description plus specialised functions (2026-09-22)

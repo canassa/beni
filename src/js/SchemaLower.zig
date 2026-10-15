@@ -486,7 +486,7 @@ const Gen = struct {
         const reached = try g.sg.reachedParams(g.l.scratch, g.ref);
         var checked: std.ArrayList(Node.Index) = .empty;
         for (reached) |i| try checked.append(g.l.scratch, try g.id(params[i]));
-        slots[3] = try g.l.arrayNode(checked.items, g.p);
+        slots[3] = if (params.len == 0) try g.lit(.null_lit) else try g.l.arrayNode(checked.items, g.p);
         const value = try g.call(try g.core("declared"), &slots);
         if (params.len == 0) {
             const constant = try g.own("declared");
@@ -728,7 +728,7 @@ const Gen = struct {
             };
             break :blk try g.call(try g.core(if (dir == .read) "compiledParse" else "compiledPrint"), &.{
                 try g.id(options),
-                try g.l.arrayNode(checked.items, g.p),
+                if (params.len == 0) try g.lit(.null_lit) else try g.l.arrayNode(checked.items, g.p),
                 worker,
                 try g.id(input),
             });

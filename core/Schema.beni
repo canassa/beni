@@ -333,7 +333,7 @@ type Engine
 -- every other maker, whose workers `parserOf` and `printerOf` make when one
 -- runs; and the `Interpreted` schemas its workers run through the library —
 -- a generic declaration's arguments — a host array in the order its value
--- reaches them.
+-- reaches them, or `null` when there are none.
 type alias Workers =
     made : Made
     parse : Js.Value
@@ -462,8 +462,9 @@ compiled origin parsing printing args =
 -- A `schema` declaration's `schema` (`schema.md` §6, *A statically known
 -- schema runs compiled*): a function of no argument answering its
 -- description, its decoding and encoding workers — each `null` where the
--- build calls none — and the schema arguments its value reaches. Called by
--- the code a declaration compiles to, never by a program.
+-- build calls none — and the schema arguments its value reaches, `null`
+-- for a nongeneric one. Called by the code a declaration compiles to, never
+-- by a program.
 declared : Js.Value, Js.Value, Js.Value, Js.Value → Schema e a
 declared description parsing printing args =
     compiled (MadeDeclared description) parsing printing (interpretedIn args)
@@ -471,23 +472,30 @@ declared description parsing printing args =
 
 -- The `Interpreted` schemas among `args` and behind its compiled ones, in
 -- order: what a compiled root checks before it reads (`compiledProblem`).
+-- `null`, which stands for no arguments, stays `null`.
 interpretedIn : Js.Value → Js.Value
 interpretedIn args =
-    out = Js.array []
-    _ =
-        Js.call args "forEach"
-            [ toHost λa →
-                s : Schema Js.Value Js.Value
-                s = fromHost a
-                case (boxOf s).engine of
-                    Compiled w →
-                        _ = Js.call w.args "forEach" [ toHost λx → push out x ]
-                        ⊤
+    if Js.isNull args then
+        args
+    else
+        out = Js.array []
+        _ =
+            Js.call args "forEach"
+                [ toHost λa →
+                    s : Schema Js.Value Js.Value
+                    s = fromHost a
+                    case (boxOf s).engine of
+                        Compiled w →
+                            if Js.isNull w.args then
+                                ⊤
+                            else
+                                _ = Js.call w.args "forEach" [ toHost λx → push out x ]
+                                ⊤
 
-                    Interpreted →
-                        push out a
-            ]
-    out
+                        Interpreted →
+                            push out a
+                ]
+        out
 
 
 pair : Js.Value, Js.Value → Pair
@@ -640,7 +648,7 @@ value = primitive ValueKind
 
 
 primitive : PrimitiveKind → Schema e a
-primitive p = compiled (MadePrimitive p) Js.null Js.null (Js.array [])
+primitive p = compiled (MadePrimitive p) Js.null Js.null Js.null
 
 
 -- ---- Lists and nullability -----------------------------------------------
@@ -2417,19 +2425,22 @@ compiledProblem o dir src args =
             Just issues
 
         Nothing →
-            -- A nongeneric declaration's root has no argument: no array is
-            -- made for it.
-            dynamic = if lengthOf args == 0 then args else interpretedIn args
-            n = lengthOf dynamic
-            case argumentProblem dynamic 0 n of
-                Just problem →
-                    Just (rootIssue dir (endpointOf src) InvalidSchema problem)
+            -- `null`: a root with no schema argument, such as a nongeneric
+            -- declaration's, which has nothing more to check.
+            if Js.isNull args then
+                Nothing
+            else
+                dynamic = interpretedIn args
+                n = lengthOf dynamic
+                case argumentProblem dynamic 0 n of
+                    Just problem →
+                        Just (rootIssue dir (endpointOf src) InvalidSchema problem)
 
-                Nothing →
-                    if argumentOpaque dynamic 0 n then
-                        Just (opaqueIssue dir encodedSide)
-                    else
-                        Nothing
+                    Nothing →
+                        if argumentOpaque dynamic 0 n then
+                            Just (opaqueIssue dir encodedSide)
+                        else
+                            Nothing
 
 
 -- Each argument of `interpretedIn`'s answer is `Interpreted`; the arms say
