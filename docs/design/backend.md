@@ -6974,8 +6974,11 @@ declaration that mentions more whole-program names, whose locals then step aroun
 output byte for byte as before. Speed: nothing that runs after start-up changes; every value is
 made once, at start-up, as before. Fixtures: `emit/release/app/InlineStartReads` (two functions
 written into a list, the list into a call; a list read once inside a function and one read twice
-stay), `run/InlineStartReads` (two logged values read once by a third still log in their order,
-before the value read between them — red with the inert test removed), and the goldens it moved:
+stay), `emit/release/direct/MapKind` (`Html.map`'s kind, whose two functions are written into it,
+the patch with no `return` at its ends because lowering listed its result unread — red when the
+copy's root does not follow it into that list), `run/InlineStartReads` (two logged values read
+once by a third still log in their order, before the value read between them — red with the
+inert test removed), and the goldens it moved:
 `emit/release/split/HolesPage`, `app/DeadArms`, `SpecFieldNames`, `SpecTrailingArguments`,
 `tea/HttpSendTracked`, `HttpSendUntracked`.
 
