@@ -1,0 +1,90 @@
+{
+  "tea.mjs": {
+    "baseline": {
+      "raw": 129778,
+      "gzip": 37252,
+      "brotli": 31745
+    },
+    "variants": {
+      "terser-default": {
+        "raw": 121551,
+        "gzip": 35329,
+        "brotli": 30447
+      },
+      "terser-compress-only": {
+        "raw": 121400,
+        "gzip": 35927,
+        "brotli": 30945
+      },
+      "terser-mangle-only": {
+        "raw": 129457,
+        "gzip": 36492,
+        "brotli": 31085
+      },
+      "terser-whitespace-only": {
+        "raw": 129287,
+        "gzip": 37222,
+        "brotli": 31599
+      },
+      "terser-unsafe": {
+        "raw": 120639,
+        "gzip": 35141,
+        "brotli": 30319
+      },
+      "terser-mangle-props": {
+        "raw": 119397,
+        "gzip": 35117,
+        "brotli": 30286
+      },
+      "esbuild": {
+        "raw": 123527,
+        "gzip": 37453,
+        "brotli": 32084
+      }
+    }
+  },
+  "direct.mjs": {
+    "baseline": {
+      "raw": 214199,
+      "gzip": 46063,
+      "brotli": 38243
+    },
+    "variants": {
+      "terser-default": {
+        "raw": 199654,
+        "gzip": 41947,
+        "brotli": 35296
+      },
+      "terser-compress-only": {
+        "raw": 199490,
+        "gzip": 42437,
+        "brotli": 35687
+      },
+      "terser-mangle-only": {
+        "raw": 213992,
+        "gzip": 45534,
+        "brotli": 37906
+      },
+      "terser-whitespace-only": {
+        "raw": 213706,
+        "gzip": 46043,
+        "brotli": 38203
+      },
+      "terser-unsafe": {
+        "raw": 198089,
+        "gzip": 41799,
+        "brotli": 35126
+      },
+      "terser-mangle-props": {
+        "raw": 197438,
+        "gzip": 41770,
+        "brotli": 35173
+      },
+      "esbuild": {
+        "raw": 204754,
+        "gzip": 46167,
+        "brotli": 38594
+      }
+    }
+  }
+}

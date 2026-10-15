@@ -1,0 +1,352 @@
+{
+  "tea": {
+    "baseline": 31745,
+    "rows": {
+      "core/Schema, all": {
+        "units": 75,
+        "raw": 10148,
+        "alone": 3129
+      },
+      "core/Schema interpreter only (absent from the jsonbody prototype)": {
+        "units": 50,
+        "raw": 7187,
+        "alone": 2267
+      },
+      "app schema readers ($$read)": {
+        "units": 17,
+        "raw": 16290,
+        "alone": 1778
+      },
+      "app schema printers ($$write)": {
+        "units": 2,
+        "raw": 528,
+        "alone": 156
+      },
+      "app schema descriptions ($$description)": {
+        "units": 5,
+        "raw": 1706,
+        "alone": 415
+      },
+      "Http, all": {
+        "units": 31,
+        "raw": 4399,
+        "alone": 1537
+      },
+      "Http request checks: method, headers (no TypeError from fetch)": {
+        "units": 7,
+        "raw": 1001,
+        "alone": 488
+      },
+      "Http streamed body with progress (Http.track)": {
+        "units": 7,
+        "raw": 1393,
+        "alone": 464
+      },
+      "core/Task, all (fiber runtime)": {
+        "units": 72,
+        "raw": 4638,
+        "alone": 1661
+      },
+      "Defect teardown: Task shutdown/teardown + Rt stop": {
+        "units": 21,
+        "raw": 1205,
+        "alone": 509
+      },
+      "core/Dict, all": {
+        "units": 20,
+        "raw": 3398,
+        "alone": 883
+      },
+      "core/Dict removal (remove, moveRed*, removeMin…)": {
+        "units": 8,
+        "raw": 2011,
+        "alone": 452
+      },
+      "core/List trie (trie*, putLeaf, pushedLeaves…)": {
+        "units": 12,
+        "raw": 1603,
+        "alone": 672
+      },
+      "core/List, all": {
+        "units": 58,
+        "raw": 4730,
+        "alone": 1605
+      },
+      "Navigation, all": {
+        "units": 16,
+        "raw": 1688,
+        "alone": 526
+      },
+      "Url + Url.Parser + Url.Builder": {
+        "units": 25,
+        "raw": 2381,
+        "alone": 792
+      },
+      "Rt keyed rows (forKeyed, trimmed, reconcile)": {
+        "units": 12,
+        "raw": 5217,
+        "alone": 2012
+      }
+    }
+  },
+  "direct": {
+    "baseline": 38243,
+    "rows": {
+      "core/Schema, all": {
+        "units": 75,
+        "raw": 10401,
+        "alone": 3094
+      },
+      "core/Schema interpreter only (absent from the jsonbody prototype)": {
+        "units": 50,
+        "raw": 7311,
+        "alone": 2243
+      },
+      "app schema readers ($$read)": {
+        "units": 17,
+        "raw": 16290,
+        "alone": 1737
+      },
+      "app schema printers ($$write)": {
+        "units": 2,
+        "raw": 528,
+        "alone": 137
+      },
+      "app schema descriptions ($$description)": {
+        "units": 5,
+        "raw": 1706,
+        "alone": 252
+      },
+      "Http, all": {
+        "units": 31,
+        "raw": 4449,
+        "alone": 1394
+      },
+      "Http request checks: method, headers (no TypeError from fetch)": {
+        "units": 7,
+        "raw": 1041,
+        "alone": 380
+      },
+      "Http streamed body with progress (Http.track)": {
+        "units": 7,
+        "raw": 1390,
+        "alone": 436
+      },
+      "core/Task, all (fiber runtime)": {
+        "units": 70,
+        "raw": 4606,
+        "alone": 1494
+      },
+      "Defect teardown: Task shutdown/teardown + Rt stop": {
+        "units": 18,
+        "raw": 1093,
+        "alone": 275
+      },
+      "core/Dict, all": {
+        "units": 20,
+        "raw": 3961,
+        "alone": 812
+      },
+      "core/Dict removal (remove, moveRed*, removeMin…)": {
+        "units": 8,
+        "raw": 2359,
+        "alone": 398
+      },
+      "core/List trie (trie*, putLeaf, pushedLeaves…)": {
+        "units": 12,
+        "raw": 1603,
+        "alone": 565
+      },
+      "core/List, all": {
+        "units": 58,
+        "raw": 4735,
+        "alone": 1468
+      },
+      "Navigation, all": {
+        "units": 16,
+        "raw": 1750,
+        "alone": 537
+      },
+      "Url + Url.Parser + Url.Builder": {
+        "units": 25,
+        "raw": 2524,
+        "alone": 697
+      },
+      "Rt keyed rows (forKeyed, trimmed, reconcile)": {
+        "units": 7,
+        "raw": 4509,
+        "alone": 1643
+      }
+    }
+  },
+  "jsonbody tea": {
+    "baseline": 29522,
+    "rows": {
+      "core/Schema, all": {
+        "units": 25,
+        "raw": 3195,
+        "alone": 964
+      },
+      "app schema readers ($$read)": {
+        "units": 17,
+        "raw": 15468,
+        "alone": 1490
+      },
+      "app schema printers ($$write)": {
+        "units": 13,
+        "raw": 5024,
+        "alone": 601
+      },
+      "app schema descriptions ($$description)": {
+        "units": 0,
+        "raw": 0,
+        "alone": 0
+      },
+      "Http, all": {
+        "units": 30,
+        "raw": 4307,
+        "alone": 1386
+      },
+      "Http request checks: method, headers (no TypeError from fetch)": {
+        "units": 7,
+        "raw": 1001,
+        "alone": 402
+      },
+      "Http streamed body with progress (Http.track)": {
+        "units": 7,
+        "raw": 1393,
+        "alone": 420
+      },
+      "core/Task, all (fiber runtime)": {
+        "units": 72,
+        "raw": 4638,
+        "alone": 1540
+      },
+      "Defect teardown: Task shutdown/teardown + Rt stop": {
+        "units": 21,
+        "raw": 1205,
+        "alone": 412
+      },
+      "core/Dict, all": {
+        "units": 20,
+        "raw": 3398,
+        "alone": 804
+      },
+      "core/Dict removal (remove, moveRed*, removeMin…)": {
+        "units": 8,
+        "raw": 2011,
+        "alone": 420
+      },
+      "core/List trie (trie*, putLeaf, pushedLeaves…)": {
+        "units": 12,
+        "raw": 1603,
+        "alone": 634
+      },
+      "core/List, all": {
+        "units": 58,
+        "raw": 4730,
+        "alone": 1505
+      },
+      "Navigation, all": {
+        "units": 16,
+        "raw": 1688,
+        "alone": 484
+      },
+      "Url + Url.Parser + Url.Builder": {
+        "units": 25,
+        "raw": 2381,
+        "alone": 759
+      },
+      "Rt keyed rows (forKeyed, trimmed, reconcile)": {
+        "units": 12,
+        "raw": 5217,
+        "alone": 1996
+      }
+    }
+  },
+  "jsonbody direct": {
+    "baseline": 36055,
+    "rows": {
+      "core/Schema, all": {
+        "units": 25,
+        "raw": 3324,
+        "alone": 950
+      },
+      "app schema readers ($$read)": {
+        "units": 17,
+        "raw": 15468,
+        "alone": 1435
+      },
+      "app schema printers ($$write)": {
+        "units": 13,
+        "raw": 5024,
+        "alone": 464
+      },
+      "app schema descriptions ($$description)": {
+        "units": 0,
+        "raw": 0,
+        "alone": 0
+      },
+      "Http, all": {
+        "units": 30,
+        "raw": 4357,
+        "alone": 1343
+      },
+      "Http request checks: method, headers (no TypeError from fetch)": {
+        "units": 7,
+        "raw": 1041,
+        "alone": 398
+      },
+      "Http streamed body with progress (Http.track)": {
+        "units": 7,
+        "raw": 1390,
+        "alone": 368
+      },
+      "core/Task, all (fiber runtime)": {
+        "units": 70,
+        "raw": 4606,
+        "alone": 1475
+      },
+      "Defect teardown: Task shutdown/teardown + Rt stop": {
+        "units": 18,
+        "raw": 1093,
+        "alone": 320
+      },
+      "core/Dict, all": {
+        "units": 20,
+        "raw": 3961,
+        "alone": 764
+      },
+      "core/Dict removal (remove, moveRed*, removeMin…)": {
+        "units": 8,
+        "raw": 2359,
+        "alone": 399
+      },
+      "core/List trie (trie*, putLeaf, pushedLeaves…)": {
+        "units": 12,
+        "raw": 1603,
+        "alone": 559
+      },
+      "core/List, all": {
+        "units": 58,
+        "raw": 4735,
+        "alone": 1485
+      },
+      "Navigation, all": {
+        "units": 16,
+        "raw": 1750,
+        "alone": 487
+      },
+      "Url + Url.Parser + Url.Builder": {
+        "units": 25,
+        "raw": 2524,
+        "alone": 748
+      },
+      "Rt keyed rows (forKeyed, trimmed, reconcile)": {
+        "units": 7,
+        "raw": 4509,
+        "alone": 1655
+      }
+    }
+  }
+}

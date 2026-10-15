@@ -1,0 +1,358 @@
+{
+ "file": "../../zig-out/output-size/tea.mjs",
+ "topLevel": 930,
+ "gone": 154,
+ "goneRaw": 29039,
+ "unreferenced": 0,
+ "stubUnreferencedSaves": 0,
+ "bySource": {
+  "app/Article.beni": {
+   "count": 9,
+   "raw": 3978
+  },
+  "platforms/browser/Rt.beni": {
+   "count": 7,
+   "raw": 2739
+  },
+  "app/Api.beni": {
+   "count": 7,
+   "raw": 2616
+  },
+  "app/ArticlePage.beni": {
+   "count": 3,
+   "raw": 2477
+  },
+  "core/Schema.beni": {
+   "count": 17,
+   "raw": 1914
+  },
+  "core/List.beni": {
+   "count": 17,
+   "raw": 1778
+  },
+  "app/Settings.beni": {
+   "count": 3,
+   "raw": 1618
+  },
+  "platforms/browser/Http.beni": {
+   "count": 11,
+   "raw": 1466
+  },
+  "app/Editor.beni": {
+   "count": 3,
+   "raw": 1333
+  },
+  "app/ProfilePage.beni": {
+   "count": 2,
+   "raw": 1254
+  },
+  "core/Task.beni": {
+   "count": 10,
+   "raw": 1037
+  },
+  "app/Register.beni": {
+   "count": 3,
+   "raw": 936
+  },
+  "app/Home.beni": {
+   "count": 3,
+   "raw": 768
+  },
+  "core/Dict.beni": {
+   "count": 5,
+   "raw": 670
+  },
+  "app/Login.beni": {
+   "count": 3,
+   "raw": 645
+  },
+  "core/Url/Parser.beni": {
+   "count": 7,
+   "raw": 596
+  },
+  "platforms/browser-tea/Tea.beni": {
+   "count": 7,
+   "raw": 582
+  },
+  "platforms/browser/Browser/Navigation.beni": {
+   "count": 4,
+   "raw": 549
+  },
+  "app/Route.beni": {
+   "count": 1,
+   "raw": 318
+  },
+  "platforms/browser/Listen.beni": {
+   "count": 2,
+   "raw": 289
+  },
+  "platforms/browser/Storage.beni": {
+   "count": 3,
+   "raw": 272
+  },
+  "app/Comment.beni": {
+   "count": 3,
+   "raw": 260
+  },
+  "platforms/browser/Hosted.beni": {
+   "count": 5,
+   "raw": 259
+  },
+  "core/String.beni": {
+   "count": 3,
+   "raw": 153
+  },
+  "core/Url.beni": {
+   "count": 1,
+   "raw": 137
+  },
+  "unmapped": {
+   "count": 8,
+   "raw": 126
+  },
+  "core/Url/Builder.beni": {
+   "count": 1,
+   "raw": 75
+  },
+  "app/Author.beni": {
+   "count": 1,
+   "raw": 66
+  },
+  "core/Maybe.beni": {
+   "count": 2,
+   "raw": 62
+  },
+  "app/Session.beni": {
+   "count": 1,
+   "raw": 28
+  },
+  "core/Basics.beni": {
+   "count": 1,
+   "raw": 21
+  },
+  "platforms/browser/Sub.beni": {
+   "count": 1,
+   "raw": 17
+  }
+ },
+ "names": {
+  "core/Basics.beni": [
+   "a"
+  ],
+  "unmapped": [
+   "d",
+   "cg",
+   "bi",
+   "ci",
+   "di",
+   "fi",
+   "gi",
+   "hi"
+  ],
+  "core/Task.beni": [
+   "L",
+   "Z",
+   "ba",
+   "ga",
+   "ha",
+   "ia",
+   "ka",
+   "ma",
+   "pa",
+   "wa"
+  ],
+  "platforms/browser/Rt.beni": [
+   "xa",
+   "za",
+   "Da",
+   "bb",
+   "mb",
+   "Hb",
+   "Ib"
+  ],
+  "core/Maybe.beni": [
+   "Lb",
+   "Mb"
+  ],
+  "app/Session.beni": [
+   "Pb"
+  ],
+  "core/List.beni": [
+   "Tb",
+   "bc",
+   "kc",
+   "pc",
+   "rc",
+   "tc",
+   "uc",
+   "wc",
+   "Bc",
+   "Dc",
+   "Hc",
+   "Ic",
+   "Kc",
+   "Mc",
+   "Oc",
+   "Qc",
+   "Tc"
+  ],
+  "platforms/browser/Hosted.beni": [
+   "cd",
+   "fd",
+   "hd",
+   "nd",
+   "od"
+  ],
+  "core/String.beni": [
+   "Cd",
+   "Nd",
+   "Od"
+  ],
+  "core/Schema.beni": [
+   "$d",
+   "de",
+   "ee",
+   "he",
+   "ke",
+   "He",
+   "Je",
+   "We",
+   "Ye",
+   "_e",
+   "af",
+   "bf",
+   "df",
+   "ff",
+   "hf",
+   "jf",
+   "mf"
+  ],
+  "platforms/browser/Storage.beni": [
+   "tf",
+   "uf",
+   "vf"
+  ],
+  "core/Url.beni": [
+   "xf"
+  ],
+  "core/Url/Builder.beni": [
+   "Ff"
+  ],
+  "core/Dict.beni": [
+   "Mf",
+   "Sf",
+   "Uf",
+   "Xf",
+   "ag"
+  ],
+  "platforms/browser/Http.beni": [
+   "mg",
+   "og",
+   "vg",
+   "yg",
+   "Ag",
+   "Cg",
+   "Eg",
+   "Hg",
+   "Kg",
+   "Lg",
+   "Ng"
+  ],
+  "app/Api.beni": [
+   "Rg",
+   "Sg",
+   "nf",
+   "_g",
+   "ch",
+   "lh",
+   "mh"
+  ],
+  "core/Url/Parser.beni": [
+   "oh",
+   "th",
+   "uh",
+   "vh",
+   "xh",
+   "Ah",
+   "Bh"
+  ],
+  "platforms/browser/Listen.beni": [
+   "Ch",
+   "Eh"
+  ],
+  "platforms/browser/Sub.beni": [
+   "Ih"
+  ],
+  "platforms/browser/Browser/Navigation.beni": [
+   "Oh",
+   "Wh",
+   "Yh",
+   "Dh"
+  ],
+  "app/Route.beni": [
+   "ki"
+  ],
+  "app/Author.beni": [
+   "Ki"
+  ],
+  "app/Article.beni": [
+   "kj",
+   "lj",
+   "xj",
+   "Cj",
+   "Ej",
+   "Fj",
+   "Hj",
+   "Jj",
+   "Mj"
+  ],
+  "app/Home.beni": [
+   "bm",
+   "cm",
+   "dm"
+  ],
+  "app/Settings.beni": [
+   "Am",
+   "Cm",
+   "Dm"
+  ],
+  "app/Login.beni": [
+   "Om",
+   "Qm",
+   "Rm"
+  ],
+  "app/Register.beni": [
+   "Zm",
+   "_m",
+   "an"
+  ],
+  "app/ProfilePage.beni": [
+   "yn",
+   "zn"
+  ],
+  "app/Comment.beni": [
+   "In",
+   "Jn",
+   "Kn"
+  ],
+  "app/ArticlePage.beni": [
+   "Ko",
+   "Lo",
+   "Mo"
+  ],
+  "app/Editor.beni": [
+   "dp",
+   "gp",
+   "jp"
+  ],
+  "platforms/browser-tea/Tea.beni": [
+   "zp",
+   "Ap",
+   "Ip",
+   "Jp",
+   "Kp",
+   "Op",
+   "Pp"
+  ]
+ }
+}

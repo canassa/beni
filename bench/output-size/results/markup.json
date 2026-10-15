@@ -1,0 +1,99 @@
+{
+  "tea": {
+    "rows": [
+      {
+        "group": "t: HTML templates",
+        "units": 79,
+        "raw": 6857,
+        "alone": 1462,
+        "ordered": 1462
+      },
+      {
+        "group": "k: mount factories (clone, walk, wire)",
+        "units": 69,
+        "raw": 12647,
+        "alone": 1989,
+        "ordered": 1849
+      },
+      {
+        "group": "p: patch functions",
+        "units": 45,
+        "raw": 19500,
+        "alone": 3881,
+        "ordered": 3990
+      },
+      {
+        "group": "b: shared",
+        "units": 26,
+        "raw": 416,
+        "alone": 190,
+        "ordered": 45
+      }
+    ],
+    "htmlStrings": {
+      "count": 79,
+      "raw": 6146
+    }
+  },
+  "direct": {
+    "rows": [
+      {
+        "group": "t: HTML templates",
+        "units": 79,
+        "raw": 6857,
+        "alone": 1403,
+        "ordered": 1403
+      },
+      {
+        "group": "k: mount factories (clone, walk, wire)",
+        "units": 79,
+        "raw": 14542,
+        "alone": 2117,
+        "ordered": 2104
+      },
+      {
+        "group": "p: patch functions",
+        "units": 55,
+        "raw": 5582,
+        "alone": 998,
+        "ordered": 1051
+      },
+      {
+        "group": "b: shared",
+        "units": 24,
+        "raw": 384,
+        "alone": 23,
+        "ordered": 147
+      },
+      {
+        "group": "dg: group descriptors",
+        "units": 147,
+        "raw": 4857,
+        "alone": 548,
+        "ordered": 581
+      },
+      {
+        "group": "dp: patch entries",
+        "units": 147,
+        "raw": 21042,
+        "alone": 3508,
+        "ordered": 3816
+      },
+      {
+        "group": "dr: restate entries",
+        "units": 57,
+        "raw": 984,
+        "alone": 66,
+        "ordered": 386
+      }
+    ],
+    "htmlStrings": {
+      "count": 79,
+      "raw": 6146
+    }
+  },
+  "solidHtmlStrings": {
+    "count": 47,
+    "raw": 5840
+  }
+}

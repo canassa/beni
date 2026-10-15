@@ -1,0 +1,69 @@
+{
+  "note": "saved = brotli bytes saved against the unchanged release bundle; stack = jsonbody (source change) + top-level single-use inlining. Every variant was run through ConduitEditor, ConduitReader and ConduitTour.",
+  "tea": {
+    "baseline": 31745,
+    "andtrue": {
+      "brotli": 31607,
+      "saved": 138,
+      "corpusScripts": "all three match the golden"
+    },
+    "inline": {
+      "brotli": 31565,
+      "saved": 180,
+      "corpusScripts": "all three match the golden"
+    },
+    "schema": {
+      "brotli": 30773,
+      "saved": 972,
+      "corpusScripts": "all three match the golden"
+    },
+    "quotes": {
+      "brotli": 31622,
+      "saved": 123,
+      "corpusScripts": "all three match the golden"
+    },
+    "jsonbody": {
+      "brotli": 29522,
+      "saved": 2223,
+      "corpusScripts": "all three match the golden"
+    },
+    "stack": {
+      "brotli": 29369,
+      "saved": 2376,
+      "corpusScripts": "all three match the golden"
+    }
+  },
+  "direct": {
+    "baseline": 38243,
+    "andtrue": {
+      "brotli": 38212,
+      "saved": 31,
+      "corpusScripts": "all three match the golden"
+    },
+    "inline": {
+      "brotli": 36666,
+      "saved": 1577,
+      "corpusScripts": "all three match the golden"
+    },
+    "schema": {
+      "brotli": 37444,
+      "saved": 799,
+      "corpusScripts": "all three match the golden"
+    },
+    "quotes": {
+      "brotli": 38261,
+      "saved": -18,
+      "corpusScripts": "all three match the golden"
+    },
+    "jsonbody": {
+      "brotli": 36055,
+      "saved": 2188,
+      "corpusScripts": "all three match the golden"
+    },
+    "stack": {
+      "brotli": 34509,
+      "saved": 3734,
+      "corpusScripts": "all three match the golden"
+    }
+  }
+}

@@ -1,0 +1,739 @@
+{
+ "file": "../../zig-out/output-size/direct.mjs",
+ "topLevel": 1325,
+ "gone": 511,
+ "goneRaw": 58336,
+ "unreferenced": 0,
+ "stubUnreferencedSaves": 0,
+ "bySource": {
+  "app/ArticlePage.beni": {
+   "count": 76,
+   "raw": 8693
+  },
+  "app/Article.beni": {
+   "count": 38,
+   "raw": 5961
+  },
+  "app/Settings.beni": {
+   "count": 32,
+   "raw": 3684
+  },
+  "app/Editor.beni": {
+   "count": 33,
+   "raw": 3580
+  },
+  "app/Page.beni": {
+   "count": 47,
+   "raw": 3431
+  },
+  "app/Feed.beni": {
+   "count": 46,
+   "raw": 3371
+  },
+  "platforms/browser/Rt.beni": {
+   "count": 7,
+   "raw": 3238
+  },
+  "app/Home.beni": {
+   "count": 24,
+   "raw": 2729
+  },
+  "app/Api.beni": {
+   "count": 7,
+   "raw": 2621
+  },
+  "app/ProfilePage.beni": {
+   "count": 19,
+   "raw": 2484
+  },
+  "app/Register.beni": {
+   "count": 23,
+   "raw": 2307
+  },
+  "core/Schema.beni": {
+   "count": 17,
+   "raw": 1981
+  },
+  "app/Login.beni": {
+   "count": 22,
+   "raw": 1936
+  },
+  "core/List.beni": {
+   "count": 17,
+   "raw": 1783
+  },
+  "platforms/browser-direct/Tea.beni": {
+   "count": 5,
+   "raw": 1560
+  },
+  "platforms/browser/Http.beni": {
+   "count": 11,
+   "raw": 1477
+  },
+  "platforms/browser-direct/Direct.beni": {
+   "count": 14,
+   "raw": 1383
+  },
+  "app/Author.beni": {
+   "count": 15,
+   "raw": 1062
+  },
+  "core/Task.beni": {
+   "count": 10,
+   "raw": 1036
+  },
+  "core/Dict.beni": {
+   "count": 4,
+   "raw": 716
+  },
+  "core/Url/Parser.beni": {
+   "count": 7,
+   "raw": 628
+  },
+  "platforms/browser/Browser/Navigation.beni": {
+   "count": 4,
+   "raw": 601
+  },
+  "app/Route.beni": {
+   "count": 1,
+   "raw": 318
+  },
+  "platforms/browser/Listen.beni": {
+   "count": 2,
+   "raw": 289
+  },
+  "platforms/browser/Storage.beni": {
+   "count": 3,
+   "raw": 277
+  },
+  "app/Comment.beni": {
+   "count": 3,
+   "raw": 270
+  },
+  "platforms/browser/Hosted.beni": {
+   "count": 4,
+   "raw": 212
+  },
+  "core/String.beni": {
+   "count": 3,
+   "raw": 153
+  },
+  "unmapped": {
+   "count": 9,
+   "raw": 146
+  },
+  "core/Url.beni": {
+   "count": 1,
+   "raw": 137
+  },
+  "core/Maybe.beni": {
+   "count": 2,
+   "raw": 77
+  },
+  "core/Url/Builder.beni": {
+   "count": 1,
+   "raw": 75
+  },
+  "app/Main.beni": {
+   "count": 1,
+   "raw": 49
+  },
+  "app/Session.beni": {
+   "count": 1,
+   "raw": 33
+  },
+  "core/Basics.beni": {
+   "count": 1,
+   "raw": 21
+  },
+  "platforms/browser/Sub.beni": {
+   "count": 1,
+   "raw": 17
+  }
+ },
+ "names": {
+  "core/Basics.beni": [
+   "a"
+  ],
+  "unmapped": [
+   "d",
+   "kd",
+   "Lh",
+   "jj",
+   "kj",
+   "lj",
+   "nj",
+   "oj",
+   "pj"
+  ],
+  "core/Task.beni": [
+   "K",
+   "Y",
+   "_",
+   "ea",
+   "fa",
+   "ga",
+   "ia",
+   "ka",
+   "na",
+   "ua"
+  ],
+  "platforms/browser/Rt.beni": [
+   "va",
+   "xa",
+   "Ba",
+   "Sa",
+   "$a",
+   "_a",
+   "cb"
+  ],
+  "core/List.beni": [
+   "eb",
+   "ob",
+   "xb",
+   "Cb",
+   "Eb",
+   "Gb",
+   "Hb",
+   "Jb",
+   "Ob",
+   "Qb",
+   "Ub",
+   "Vb",
+   "Xb",
+   "Zb",
+   "_b",
+   "bc",
+   "ec"
+  ],
+  "platforms/browser/Hosted.beni": [
+   "pc",
+   "sc",
+   "uc",
+   "Ac"
+  ],
+  "core/Maybe.beni": [
+   "Ec",
+   "Fc"
+  ],
+  "core/Dict.beni": [
+   "Pc",
+   "Rc",
+   "Uc",
+   "_c"
+  ],
+  "platforms/browser-direct/Tea.beni": [
+   "sd",
+   "td",
+   "Ad",
+   "Ed",
+   "Fd"
+  ],
+  "core/String.beni": [
+   "Jd",
+   "Td",
+   "Ud"
+  ],
+  "core/Url.beni": [
+   "Xd"
+  ],
+  "platforms/browser/Listen.beni": [
+   "ce",
+   "ee"
+  ],
+  "platforms/browser/Sub.beni": [
+   "ie"
+  ],
+  "platforms/browser/Browser/Navigation.beni": [
+   "oe",
+   "we",
+   "ye",
+   "de"
+  ],
+  "platforms/browser-direct/Direct.beni": [
+   "Ne",
+   "We",
+   "Ye",
+   "bf",
+   "cf",
+   "xf",
+   "yf",
+   "zf",
+   "Af",
+   "Cf",
+   "Df",
+   "Hf",
+   "Rf",
+   "Tf"
+  ],
+  "app/Session.beni": [
+   "Yf"
+  ],
+  "core/Schema.beni": [
+   "kg",
+   "pg",
+   "qg",
+   "tg",
+   "wg",
+   "Tg",
+   "Vg",
+   "gh",
+   "ih",
+   "lh",
+   "mh",
+   "nh",
+   "ph",
+   "rh",
+   "th",
+   "uh",
+   "xh"
+  ],
+  "platforms/browser/Storage.beni": [
+   "Eh",
+   "Fh",
+   "Gh"
+  ],
+  "core/Url/Builder.beni": [
+   "Ih"
+  ],
+  "platforms/browser/Http.beni": [
+   "Vh",
+   "Xh",
+   "ci",
+   "fi",
+   "hi",
+   "ji",
+   "li",
+   "oi",
+   "ri",
+   "si",
+   "ui"
+  ],
+  "app/Api.beni": [
+   "yi",
+   "zi",
+   "yh",
+   "Ii",
+   "Li",
+   "Ui",
+   "Vi"
+  ],
+  "core/Url/Parser.beni": [
+   "Xi",
+   "aj",
+   "bj",
+   "cj",
+   "ej",
+   "hj",
+   "ij"
+  ],
+  "app/Route.beni": [
+   "sj"
+  ],
+  "app/Author.beni": [
+   "wj",
+   "xj",
+   "yj",
+   "zj",
+   "Ej",
+   "Fj",
+   "Nj",
+   "Oj",
+   "Pj",
+   "Qj",
+   "Uj",
+   "Vj",
+   "Wj",
+   "Xj",
+   "ek"
+  ],
+  "app/Article.beni": [
+   "mk",
+   "nk",
+   "rk",
+   "sk",
+   "wk",
+   "xk",
+   "yk",
+   "Ck",
+   "Dk",
+   "Hk",
+   "Ik",
+   "Jk",
+   "Nk",
+   "Ok",
+   "Pk",
+   "Qk",
+   "Rk",
+   "Sk",
+   "Wk",
+   "Xk",
+   "Yk",
+   "Zk",
+   "$k",
+   "_k",
+   "dl",
+   "el",
+   "fl",
+   "gl",
+   "hl",
+   "ll",
+   "ml",
+   "yl",
+   "Dl",
+   "Fl",
+   "Gl",
+   "Il",
+   "Kl",
+   "Nl"
+  ],
+  "app/Page.beni": [
+   "$l",
+   "_l",
+   "bm",
+   "cm",
+   "dm",
+   "em",
+   "im",
+   "jm",
+   "km",
+   "lm",
+   "nm",
+   "om",
+   "pm",
+   "qm",
+   "rm",
+   "sm",
+   "tm",
+   "um",
+   "vm",
+   "wm",
+   "xm",
+   "Bm",
+   "Cm",
+   "Dm",
+   "Hm",
+   "Im",
+   "Jm",
+   "Nm",
+   "Om",
+   "Sm",
+   "Tm",
+   "Um",
+   "Vm",
+   "Wm",
+   "Xm",
+   "Ym",
+   "Zm",
+   "_m",
+   "gn",
+   "hn",
+   "mn",
+   "nn",
+   "on",
+   "pn",
+   "qn",
+   "xn",
+   "yn"
+  ],
+  "app/Feed.beni": [
+   "Kn",
+   "Ln",
+   "Mn",
+   "Nn",
+   "On",
+   "Pn",
+   "Qn",
+   "Un",
+   "Vn",
+   "Wn",
+   "Xn",
+   "Yn",
+   "Zn",
+   "bo",
+   "co",
+   "eo",
+   "fo",
+   "go",
+   "ho",
+   "lo",
+   "mo",
+   "no",
+   "ro",
+   "so",
+   "uo",
+   "yo",
+   "zo",
+   "Ao",
+   "Eo",
+   "Fo",
+   "Go",
+   "Ho",
+   "Io",
+   "Jo",
+   "No",
+   "Oo",
+   "Po",
+   "Wo",
+   "Xo",
+   "Yo",
+   "Zo",
+   "$o",
+   "_o",
+   "dp",
+   "ep",
+   "fp"
+  ],
+  "app/Home.beni": [
+   "wp",
+   "xp",
+   "yp",
+   "zp",
+   "Dp",
+   "Ep",
+   "Fp",
+   "Pp",
+   "Qp",
+   "Rp",
+   "Vp",
+   "Wp",
+   "Xp",
+   "Yp",
+   "Zp",
+   "$p",
+   "cq",
+   "dq",
+   "eq",
+   "iq",
+   "jq",
+   "kq",
+   "rq",
+   "sq"
+  ],
+  "app/Settings.beni": [
+   "Cq",
+   "Dq",
+   "Eq",
+   "Fq",
+   "Gq",
+   "Hq",
+   "Iq",
+   "Jq",
+   "Kq",
+   "Lq",
+   "Mq",
+   "Nq",
+   "Oq",
+   "Pq",
+   "Qq",
+   "Rq",
+   "Sq",
+   "Tq",
+   "Uq",
+   "Vq",
+   "Wq",
+   "Xq",
+   "_q",
+   "ar",
+   "er",
+   "fr",
+   "gr",
+   "nr",
+   "or",
+   "pr",
+   "ur",
+   "wr"
+  ],
+  "app/Login.beni": [
+   "Br",
+   "Cr",
+   "Gr",
+   "Hr",
+   "Ir",
+   "Mr",
+   "Nr",
+   "Or",
+   "Pr",
+   "Qr",
+   "Rr",
+   "Sr",
+   "Tr",
+   "Ur",
+   "Vr",
+   "Wr",
+   "Xr",
+   "Yr",
+   "Zr",
+   "$r",
+   "cs",
+   "es"
+  ],
+  "app/Register.beni": [
+   "js",
+   "ks",
+   "ls",
+   "ms",
+   "qs",
+   "rs",
+   "ss",
+   "ts",
+   "us",
+   "vs",
+   "ws",
+   "xs",
+   "ys",
+   "zs",
+   "As",
+   "Bs",
+   "Cs",
+   "Ds",
+   "Es",
+   "Fs",
+   "Gs",
+   "Ks",
+   "Ms"
+  ],
+  "app/ProfilePage.beni": [
+   "Qs",
+   "Rs",
+   "Ss",
+   "Ts",
+   "Us",
+   "Vs",
+   "Zs",
+   "$s",
+   "_s",
+   "dt",
+   "et",
+   "ft",
+   "gt",
+   "ht",
+   "it",
+   "mt",
+   "nt",
+   "ot",
+   "At"
+  ],
+  "app/Comment.beni": [
+   "Kt",
+   "Lt",
+   "Mt"
+  ],
+  "app/ArticlePage.beni": [
+   "Vt",
+   "Wt",
+   "Xt",
+   "Yt",
+   "Zt",
+   "$t",
+   "cu",
+   "du",
+   "eu",
+   "fu",
+   "gu",
+   "hu",
+   "iu",
+   "ju",
+   "nu",
+   "ou",
+   "pu",
+   "qu",
+   "ru",
+   "su",
+   "wu",
+   "xu",
+   "yu",
+   "Cu",
+   "Du",
+   "Eu",
+   "Fu",
+   "Gu",
+   "Hu",
+   "Iu",
+   "Ju",
+   "Ku",
+   "Lu",
+   "Mu",
+   "Qu",
+   "Ru",
+   "Vu",
+   "Wu",
+   "Xu",
+   "Yu",
+   "Zu",
+   "$u",
+   "_u",
+   "av",
+   "bv",
+   "cv",
+   "dv",
+   "ev",
+   "lv",
+   "mv",
+   "nv",
+   "uv",
+   "vv",
+   "wv",
+   "xv",
+   "yv",
+   "Av",
+   "Hv",
+   "Iv",
+   "Jv",
+   "Kv",
+   "Mv",
+   "Nv",
+   "Ov",
+   "Pv",
+   "Qv",
+   "Rv",
+   "Sv",
+   "Tv",
+   "Uv",
+   "Vv",
+   "Wv",
+   "Xv",
+   "Yv",
+   "aw",
+   "bw"
+  ],
+  "app/Editor.beni": [
+   "ew",
+   "fw",
+   "jw",
+   "kw",
+   "lw",
+   "mw",
+   "nw",
+   "ow",
+   "pw",
+   "qw",
+   "rw",
+   "sw",
+   "tw",
+   "uw",
+   "vw",
+   "ww",
+   "xw",
+   "yw",
+   "zw",
+   "Aw",
+   "Bw",
+   "Cw",
+   "Dw",
+   "Ew",
+   "Fw",
+   "Gw",
+   "Hw",
+   "Rw",
+   "Sw",
+   "Uw",
+   "_w",
+   "cx",
+   "fx"
+  ],
+  "app/Main.beni": [
+   "zx"
+  ]
+ }
+}

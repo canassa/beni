@@ -1,0 +1,11 @@
+{
+  "name": "bench-output-size",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "@jridgewell/trace-mapping": "0.3.31",
+    "acorn": "8.19.0",
+    "esbuild": "0.28.2",
+    "terser": "5.51.2"
+  }
+}
