@@ -13,3 +13,11 @@ explains the subjects, units, limits and generating commands (§6).
 Run commands from the repository root with `direnv exec .`. Counts use
 instrumented copies; bytes and timings use clean output. The CPU fallback
 records CPU spending and scales grant ratios; it does not count instructions.
+
+The 2026-10-15 artifacts measure parameterised helper templates against the
+exact research-94 compiler binary and current browser-tea. [Research 95](../../../docs/design/research/95-parameterised-markup-templates.md)
+records the general rule, corpus-wide visit invariant, precise/fallback shapes,
+validation and remaining cost. `counts.json` adds predicted versus actual
+instance/group counts and template work counters; timing remains uninstrumented.
+Use `BASELINE_BENI=<research-94 compiler>` for `measure.mjs`, then
+`time.mjs --baseline=browser-direct-before-release --samples=15`.

@@ -9247,3 +9247,14 @@ section says `view init`: `Rt`'s `mount` calls `program.init()`, and a hosted mo
 `init` that answers `null`. The two `emit/release/split/` pages pin the shape: the empty page's
 release bundle, which reads no model, drops the call with the record (444 brotli bytes against 443),
 and `HolesPage` writes `init:()=>({…})` and `a.init()` (+6 raw bytes).
+
+### *Amended 2026-10-15:* a parameterised-template consumer plan
+
+A whole-program markup lowering may request the additive interface 1.13
+parameterised-template protocol. Its build writes `_direct-plan.json` at
+the output root, a reserved engine name, beside the entry/shell. Format 1
+records source sites, call-path read groups, key conflicts and every explicit
+fallback reason. It is inspection data and the entry does not import it.
+It participates in the output manifest, collision and stale-file rules like
+any emitted file. The platform's JavaScript byte measurements count emitted
+JavaScript; this unrequested inspection data is reported separately.

@@ -1,0 +1,9 @@
+click #quiet
+focus #inc
+click #inc
+click #switch
+click #inc
+click #quiet
+click #shared
+click #switch
+click #shared

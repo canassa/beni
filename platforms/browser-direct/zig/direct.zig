@@ -81,8 +81,31 @@ const dom = @import("platform_browser").dom;
 
 pub const lowering: m.Lowering = .{
     .name = "direct",
-    .targets = .{ .major = 1, .minor = 12 },
+    .targets = .{ .major = 1, .minor = 13 },
+    .parameterised_templates = true,
     .runtime = &.{
+        .{ .name = "visitBegin", .arity = 2 },
+        .{ .name = "visitRow", .arity = 1 },
+        .{ .name = "templateRowPush", .arity = 1 },
+        .{ .name = "templateRowPop", .arity = 1 },
+        .{ .name = "visitScope", .arity = 2 },
+        .{ .name = "visitObserve", .arity = 2 },
+        .{ .name = "visitEnd", .arity = 1 },
+        .{ .name = "visitFactory", .arity = 1 },
+        .{ .name = "groupProgram", .arity = 1 },
+        .{ .name = "groupOnce", .arity = 2 },
+        .{ .name = "templateObserve", .arity = 2 },
+        .{ .name = "templatePlan", .arity = 1 },
+        .{ .name = "templateProgram", .arity = 2 },
+        .{ .name = "templateEnd", .arity = 1 },
+        .{ .name = "templateCapture", .arity = 2 },
+        .{ .name = "templateInputs", .arity = 2 },
+        .{ .name = "templateValue", .arity = 2 },
+        .{ .name = "templatePlace", .arity = 2 },
+        .{ .name = "templateRow", .arity = 1 },
+        .{ .name = "templatePatch", .arity = 5 },
+        .{ .name = "templateRestate", .arity = 2 },
+        .{ .name = "templateGroup", .arity = 3 },
         // `(f, x)`: the dispatch guard (§4.3), which a listener body, the
         // dispatcher and the mount enter program code through.
         .{ .name = "send", .arity = 2 },
@@ -442,6 +465,7 @@ fn refuse(cx: *m.Context, n: m.Node.Index, what: []const u8, slice: []const u8, 
 /// One group of a site's writes (§5.3): the ops that share a read set,
 /// merged so that an element's attributes are written in source order.
 const Group = struct {
+    visit_id: u32 = 0,
     /// Its ops, in source order.
     ops: std.ArrayList(u32) = .empty,
     /// No key ever calls it: written at mount, or at a row's `make`, never
@@ -731,6 +755,8 @@ const Page = struct {
     dispatch: ?m.Name = null,
     constructor: u32 = 0,
     host: ?m.Name = null,
+    template_plan: ?m.Name = null,
+    visit_next: u32 = 0,
     /// Every list, outermost first.
     lists: std.ArrayList(*List) = .empty,
     keys: []const m.Program.Key = &.{},
@@ -1290,7 +1316,7 @@ const Page = struct {
         try pg.mountSite(blk, s, .{ .base = r });
         try js.@"return"(blk, try pg.ident(r));
         s.make = try cx.fresh("$make");
-        try js.constant(pg.body, s.make.?, try js.arrow(&.{ c, bodies }, blk));
+        try js.constant(pg.body, s.make.?, try pg.factory(try js.arrow(&.{ c, bodies }, blk)));
     }
 
     /// A shared call made where its op stands: its arguments as a function
@@ -1380,10 +1406,20 @@ const Page = struct {
     /// conflicts with the key's writes.
     fn sharedVisits(pg: *Page, blk: m.Block, k: ?u32) m.Error!void {
         const js = pg.jsb();
-        for (pg.shareds.items) |sh| for (sh.calls.items) |c| for (sh.site.groups.items) |*gr| {
-            const name = gr.name orelse continue;
-            if (k) |key| if (!try pg.sharedCalls(c, gr, key)) continue;
-            try js.expression(blk, try js.call(try pg.ident(name), &.{try pg.ident(c.inst.?)}));
+        for (pg.shareds.items) |sh| for (sh.calls.items) |c| {
+            if (!pg.cx.build.release) {
+                var groups: std.ArrayList(m.Expr) = .empty;
+                for (sh.site.groups.items) |gr| {
+                    const wanted = gr.name != null and (if (k) |key| try pg.sharedCalls(c, &gr, key) else true);
+                    try groups.append(pg.a(), try js.array(&.{ try pg.num(gr.visit_id), try js.literal(if (wanted) .true else .false) }));
+                }
+                try js.expression(blk, try pg.rt("visitScope", &.{ try pg.ident(c.inst.?), try js.array(groups.items) }));
+            }
+            for (sh.site.groups.items) |*gr| {
+                const name = gr.name orelse continue;
+                if (k) |key| if (!try pg.sharedCalls(c, gr, key)) continue;
+                try js.expression(blk, try js.call(try pg.ident(name), &.{try pg.ident(c.inst.?)}));
+            }
         };
     }
 
@@ -1486,15 +1522,10 @@ const Page = struct {
         };
     }
 
-    /// A value slot whose read set the pass does not record — a component's
-    /// call, a whole `For` — which every key calls: correct, at the value
-    /// path's cost (S4's amendment, item 1, as built).
-    fn unknownValue(pg: *const Page, op: dom.Op) bool {
-        return switch (op.what) {
-            .component => pg.value_calls.contains(op.node),
-            .for_ => pg.value_fors.contains(op.node),
-            else => false,
-        };
+    /// An unresolved producer entry is an explicit value fallback. Resolved
+    /// component and whole-list entries use the same analysis as other holes.
+    fn unknownValue(pg: *const Page, s: *const Site, k: usize) bool {
+        return pg.isValue(s.ops()[k]) and s.facts[k].group == std.math.maxInt(u32);
     }
 
     /// The values of the enclosing markup a value slot's markup is made of,
@@ -1550,7 +1581,8 @@ const Page = struct {
         var v = try pg.valueBlock(s, op);
         const how = valueKind(op);
         if (how[1] == 1) v = try cx.maybe(v);
-        try pg.jsb().expression(blk, try pg.rt(how[0], &.{ slot, v }));
+        const placed = try pg.rt(how[0], &.{ slot, v });
+        try pg.jsb().expression(blk, if (op.what == .for_) placed else try cx.templateValue(op.node, placed, true));
     }
 
     /// `Direct.edited(el)` for each controlled element of site `s` that the
@@ -1703,8 +1735,8 @@ const Page = struct {
         // by every key, and so is each list around it (S4, as built).
         for (pg.sites.items) |s| {
             const list = s.enclosingList() orelse continue;
-            for (s.ops(), 0..) |op, k| {
-                if (pg.unknownValue(op)) list.unknown = true;
+            for (s.ops(), 0..) |_, k| {
+                if (pg.unknownValue(s, k)) list.unknown = true;
                 if (k < s.facts.len and s.facts[k].group == std.math.maxInt(u32) and !s.facts[k].static) list.unknown = true;
             }
             for (s.branches) |maybe| if (maybe) |br| if (br.facts.group == std.math.maxInt(u32) or br.every) {
@@ -1788,6 +1820,10 @@ const Page = struct {
             try js.constant(pg.body, n, try pg.branchObject(br, null));
         };
 
+        if (pg.has_values) {
+            pg.template_plan = try cx.fresh("$templatePlan");
+            try js.constant(pg.body, pg.template_plan.?, try cx.templatePlan());
+        }
         // `patchAll`, for a key that may change everything (§4.1).
         const keys = pg.keys;
         var all: ?m.Name = null;
@@ -1808,6 +1844,12 @@ const Page = struct {
             const params = try pg.a().alloc(m.Name, key.params);
             for (params) |*x| x.* = try cx.fresh("$p");
             const blk = try js.block();
+            try js.expression(blk, try pg.rt("groupProgram", &.{try js.literal(.null)}));
+            const visit_before = if (!cx.build.release) blk: {
+                const before = try cx.fresh("$visitBefore");
+                try js.constant(blk, before, try pg.rt("visitBegin", &.{ if (pg.template_plan) |plan_| try pg.ident(plan_) else try pg.ident(pg.at_root), try pg.num(@intCast(k)) }));
+                break :blk before;
+            } else null;
             try pg.evaluateIndices(blk, @intCast(k), params);
             // An update's closures capture its incoming model, even after the
             // handler installs the replacement. Give them an immutable binding.
@@ -1824,11 +1866,17 @@ const Page = struct {
                 result = try pg.ident(pair);
             }
             try js.assign(blk, try pg.ident(pg.model), if (pg.constructor != 0) try js.member(result, "a") else result);
+            const template_before = if (pg.template_plan) |template_plan| blk: {
+                const before = try cx.fresh("$templateBefore");
+                try js.constant(blk, before, try pg.rt("templateProgram", &.{ try pg.ident(template_plan), try pg.num(@intCast(k)) }));
+                break :blk before;
+            } else null;
             // Step 2: the view's derived values its writes conflict with
             // (§5.4; S4's amendment, item 4).
             try pg.deriveLets(blk, @intCast(k));
             // Step 3: the branches, the lists, the groups (§4.1).
             const v: Visit = .{ .key = @intCast(k) };
+            try pg.visitScope(blk, v, rs, null);
             if (key.star) {
                 for (rs.branches) |maybe| if (maybe) |br| {
                     _ = try pg.visitBranch(blk, v, br, null);
@@ -1846,6 +1894,8 @@ const Page = struct {
                 try js.expression(blk, try pg.rt("commands", &.{ try pg.ident(pg.host.?), try js.member(result, "b") }));
                 if (cx.programSettles(@intCast(k))) try pg.settle(blk);
             }
+            if (template_before) |before| try js.expression(blk, try pg.rt("templateEnd", &.{try pg.ident(before)}));
+            if (visit_before) |before| try js.expression(blk, try pg.rt("visitEnd", &.{try pg.ident(before)}));
             h.* = try pg.handlerName(@intCast(k));
             try js.constant(pg.body, h.*, try js.arrow(params, blk));
         }
@@ -1881,6 +1931,11 @@ const Page = struct {
         // §8.4, §5.4), then every group once, every list's rows and every
         // branch's arm, in source order, a group no key calls written in
         // place (§5.1); then the rows the template holds, adopted (K3).
+        const template_before = if (pg.template_plan) |template_plan| blk: {
+            const before = try cx.fresh("$templateBefore");
+            try js.constant(pg.body, before, try pg.rt("templateProgram", &.{ try pg.ident(template_plan), try js.number("-1") }));
+            break :blk before;
+        } else null;
         if (pg.view_lets) {
             const inner = try js.block();
             try cx.programViewEnter(inner, try pg.ident(pg.model));
@@ -1908,7 +1963,12 @@ const Page = struct {
             try pg.settle(pg.body);
         }
         if (!cx.build.release) try pg.writeVerify();
+        if (template_before) |before| try js.expression(pg.body, try pg.rt("templateEnd", &.{try pg.ident(before)}));
         return js.arrow(&.{ pg.at_root, pg.t }, pg.body);
+    }
+
+    fn factory(pg: *Page, make: m.Expr) m.Error!m.Expr {
+        return if (pg.cx.build.release) make else pg.rt("visitFactory", &.{make});
     }
 
     fn settle(pg: *Page, blk: m.Block) m.Error!void {
@@ -2109,13 +2169,10 @@ const Page = struct {
         const tree = pg.tree;
         const count: usize = if (found) |arms| arms.len else 2;
         const br = try pg.a().create(Branch);
-        // A `view` whose body is the branch (`Node.Index.none`): no hole
-        // holds its value, so the pass records no read set for it — every
-        // key chooses its arm again — and the compiler says whether it may
-        // print or have an effect (S4's review, item 7).
+        // Root producer entry has its own whole-result read fact.
         const at_root: ?m.Program.Branch = if (op.node == .none) pg.cx.programBranch(.none) else null;
         const facts: m.Program.HoleFacts = if (at_root != null)
-            .{ .group = std.math.maxInt(u32), .static = false, .bake = null }
+            pg.cx.programHole(.{ .node = .none })
         else
             try pg.holeFacts(s, op.ctx, .{ .node = op.node });
         br.* = .{
@@ -2131,7 +2188,7 @@ const Page = struct {
             .checks = try pg.a().alloc(?m.Name, count),
             .statements = try pg.a().alloc(bool, count),
             .where = facts.where,
-            .every = if (at_root) |x| x.effect else pg.tree.everyRender(if (found == null) tree.show(op.node).when else tree.hole(op.node).value),
+            .every = if (at_root) |x| x.effect or x.debug else pg.tree.everyRender(if (found == null) tree.show(op.node).when else tree.hole(op.node).value),
             .loud = if (at_root) |x| x.debug or x.effect else false,
         };
         @memset(br.arms, null);
@@ -2405,22 +2462,20 @@ const Page = struct {
             // A value slot (S4's amendment, item 1): a hole's read set is
             // the pass's, as any hole's; a component's call or a whole
             // `For` has none the pass records, and every key calls it.
-            const unknown = pg.unknownValue(op);
             const ref_: ?m.Program.HoleRef = switch (op.what) {
                 .placeholder, .text => .{ .node = op.node },
-                .html, .helper => if (pg.isValue(op)) .{ .node = op.node } else null,
+                .html, .helper, .component, .for_ => if (pg.isValue(op)) .{ .node = op.node } else null,
                 .attribute => |x| if (x.constant) null else .{ .item = x.index },
                 .toggle => |x| .{ .item = x.index },
                 .style => |x| .{ .item = x.index },
                 else => null,
             };
-            f.* = if (unknown)
-                .{ .group = std.math.maxInt(u32), .static = false, .bake = null }
-            else if (ref_) |r|
+            f.* = if (ref_) |r|
                 try pg.holeFacts(s, op.ctx, r)
             else
                 .{ .group = std.math.maxInt(u32), .static = true, .bake = null };
-            if ((op.what == .event or op.what == .for_ or isBranchOp(s, @intCast(k))) and !unknown) {
+            const unknown = pg.unknownValue(s, k);
+            if ((op.what == .event or (op.what == .for_ and !pg.isValue(op)) or isBranchOp(s, @intCast(k))) and !unknown) {
                 key.* = event_key;
                 continue;
             }
@@ -2488,7 +2543,8 @@ const Page = struct {
             const r = find(parent, @intCast(k));
             if (at_root[r] == std.math.maxInt(u32)) {
                 at_root[r] = @intCast(s.groups.items.len);
-                try s.groups.append(pg.a(), .{ .static = true, .every = false, .ctx = all[k].ctx });
+                try s.groups.append(pg.a(), .{ .static = true, .every = false, .ctx = all[k].ctx, .visit_id = pg.visit_next });
+                pg.visit_next += 1;
             }
             const gr = &s.groups.items[at_root[r]];
             s.group_of[k] = at_root[r];
@@ -2714,6 +2770,17 @@ const Page = struct {
         return values.items;
     }
 
+    fn rowOwner(pg: *Page, site: *const Site, instance: Path) m.Error!?Path {
+        var at: *const Site = site;
+        var row = instance;
+        while (at.row == null) {
+            if (!at.hasUp()) return null;
+            at = at.outer() orelse return null;
+            row = try pg.dot(row, "u");
+        }
+        return row;
+    }
+
     /// `() => { <view's parameter bound to the model>; <values>; <writes> }`
     /// for the view's root; `(r) => { … }` for a row, its item `r.it`.
     fn groupFunction(pg: *Page, s: *Site, gr: *const Group) m.Error!m.Expr {
@@ -2724,7 +2791,14 @@ const Page = struct {
             return js.arrow(&.{}, blk);
         }
         const r = try pg.cx.fresh("$r");
+        const row_before = if (!pg.cx.build.release) row_blk: {
+            const owner = try pg.rowOwner(s, .{ .base = r }) orelse break :row_blk null;
+            const before = try pg.cx.fresh("$rowBefore");
+            try js.constant(blk, before, try pg.rt("templateRowPush", &.{try pg.path(owner)}));
+            break :row_blk before;
+        } else null;
         try pg.groupBody(blk, s, gr, false, .{ .base = r });
+        if (row_before) |before| try js.expression(blk, try pg.rt("templateRowPop", &.{try pg.ident(before)}));
         return js.arrow(&.{r}, blk);
     }
 
@@ -2734,6 +2808,7 @@ const Page = struct {
     fn groupBody(pg: *Page, blk: m.Block, s: *Site, gr: *const Group, once: bool, inst: ?Path) m.Error!void {
         const cx = pg.cx;
         const js = pg.jsb();
+        if (!once and !cx.build.release) try js.expression(blk, try pg.rt("visitObserve", &.{ if (inst) |instance| try pg.path(instance) else try pg.ident(pg.at_root), try pg.num(gr.visit_id) }));
         try pg.enterOp(blk, s, gr.ctx, inst, null, null, try pg.groupValues(s, gr), null);
         defer pg.leave();
         // A value slot's write may change what it shows whatever it was
@@ -3059,7 +3134,7 @@ const Page = struct {
         try pg.mountSite(blk, s, ri);
         try js.@"return"(blk, try pg.ident(r));
         s.make = try cx.fresh("$make");
-        try js.constant(pg.body, s.make.?, try js.arrow(if (list.first_t == null) &.{ it, desc, position } else &.{ it, desc, position, e }, blk));
+        try js.constant(pg.body, s.make.?, try pg.factory(try js.arrow(if (list.first_t == null) &.{ it, desc, position } else &.{ it, desc, position, e }, blk)));
     }
 
     /// A list's listener for each bubbling event its rows handle, on its
@@ -3444,23 +3519,20 @@ const Page = struct {
             if (maybe != null) break false;
         } else true;
         if (whole) if (list.patch_fn) |w| return pg.ident(w);
-        if (no_lists) {
-            var called: ?m.Name = null;
+        if (no_lists and pg.cx.build.release) {
             var count: u32 = 0;
             var live: u32 = 0;
             for (s.groups.items) |gr| {
-                const name = gr.name orelse continue;
+                if (gr.name == null) continue;
                 live += 1;
                 const yes = whole or gr.every or for (gr.sets.items) |set| {
                     if (std.mem.indexOfScalar(u32, groups, set) != null) break true;
                 } else false;
                 if (yes) {
                     count += 1;
-                    called = name;
                 }
             }
             if (count == live) if (list.patch_fn) |w| return pg.ident(w);
-            if (count == 1) return pg.ident(called.?);
         }
         const r = try pg.cx.fresh("$r");
         const body = try js.block();
@@ -3769,11 +3841,27 @@ const Page = struct {
         }
     }
 
+    /// Expected groups come from analysis sets, before generating any of
+    /// this structural scope's group calls. Row/branch eligibility is the
+    /// enclosing traversal's decision, never inferred from observations.
+    fn visitScope(pg: *Page, blk: m.Block, v: Visit, s: *const Site, inst: ?Path) m.Error!void {
+        if (pg.cx.build.release) return;
+        const js = pg.jsb();
+        if (inst) |instance| if (try pg.rowOwner(s, instance)) |owner| try js.expression(blk, try pg.rt("visitRow", &.{try pg.path(owner)}));
+        var groups: std.ArrayList(m.Expr) = .empty;
+        for (s.groups.items) |gr| {
+            const expected = gr.name != null and pg.calledGroup(v, gr);
+            try groups.append(pg.a(), try js.array(&.{ try pg.num(gr.visit_id), try js.literal(if (expected) .true else .false) }));
+        }
+        try js.expression(blk, try pg.rt("visitScope", &.{ if (inst) |instance| try pg.path(instance) else try pg.ident(pg.at_root), try js.array(groups.items) }));
+    }
+
     /// A site's visit (§4.1 step 3): its branches, then its lists' scripts
     /// and its groups — the groups first for a row (`groups_first`), as S2
     /// wrote them. Whether it wrote anything.
     fn visitSite(pg: *Page, blk: m.Block, v: Visit, s: *Site, inst: ?Path, groups_first: bool) m.Error!bool {
         const js = pg.jsb();
+        if (s != pg.root_site) try pg.visitScope(blk, v, s, inst);
         var wrote = false;
         for (s.branches) |maybe| if (maybe) |br| {
             if (try pg.visitBranch(blk, v, br, inst)) wrote = true;
@@ -3783,7 +3871,11 @@ const Page = struct {
                 for (s.groups.items) |gr| {
                     const name = gr.name orelse continue;
                     if (!pg.calledGroup(v, gr)) continue;
-                    try js.expression(blk, try js.call(try pg.ident(name), if (inst) |i| &.{try pg.path(i)} else &.{}));
+                    if (inst) |instance| {
+                        const entered = try js.block();
+                        try js.expression(entered, try js.call(try pg.ident(name), &.{try pg.path(instance)}));
+                        try js.@"if"(blk, try pg.rt("groupOnce", &.{ try pg.path(instance), try pg.num(gr.visit_id) }), entered, null);
+                    } else try js.expression(blk, try js.call(try pg.ident(name), &.{}));
                     wrote = true;
                 }
             } else for (s.lists) |maybe| if (maybe) |list| {
@@ -3889,7 +3981,7 @@ const Page = struct {
         try pg.mountSite(blk, s, ri);
         try js.@"return"(blk, try pg.ident(r));
         s.make = br.makes[s.arm_k].?;
-        try js.constant(pg.body, s.make.?, try js.arrow(&.{ u, bs, av }, blk));
+        try js.constant(pg.body, s.make.?, try pg.factory(try js.arrow(&.{ u, bs, av }, blk)));
     }
 
     /// `make(u, b)` of a value arm: a slot where its branch's arms go, and

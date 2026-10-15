@@ -41,7 +41,8 @@ const ops = [
   {name:'favorite', script:'Reader', target:'click .banner>.container>.article-meta>span>button:nth-child(2)', event:'click'},
   {name:'editor keystroke', script:'Editor', target:'input #title " "', event:'input'}
 ];
-const subjects=['browser-tea-release','browser-direct-release'];
+const baseline = arg('baseline', '');
+const subjects=['browser-tea-release', ...(baseline ? [baseline] : []), 'browser-direct-release'];
 const server=createServer((req,res)=>{
   res.setHeader('Cross-Origin-Opener-Policy','same-origin');res.setHeader('Cross-Origin-Embedder-Policy','require-corp');
   if (req.url==='/') {res.setHeader('Content-Type','text/html');res.end('<!doctype html><html><body></body></html>');return;}
@@ -52,7 +53,7 @@ const server=createServer((req,res)=>{
 await new Promise(done=>server.listen(0,'127.0.0.1',done));
 const origin=`http://127.0.0.1:${server.address().port}`;
 const browser=await launch({chrome:arg('chrome','/Applications/Google Chrome.app/Contents/MacOS/Google Chrome')});
-const results={date:new Date().toISOString(),node:process.version,chrome:browser.version,cpu:cpus()[0].model,load:loadavg(),samples,sources:Object.fromEntries(subjects.map(s=>[s,createHash('sha256').update(readFileSync(join(work,s,'_main.mjs'))).digest('hex')])),method:'Fresh page per sample; alternating release platforms; corpus scripted API and virtual clock; real CDP clicks and Input.insertText. Capture to eight microtasks untraced, and trace script union. Setup outside timing; transcript/property checks after. No CSS.',rows:[]};
+const results={date:new Date().toISOString(),node:process.version,chrome:browser.version,cpu:cpus()[0].model,load:loadavg(),samples,sources:Object.fromEntries(subjects.map(s=>[s,createHash('sha256').update(readFileSync(join(work,s,'_main.mjs'))).digest('hex')])),method:'Fresh page per sample; rotated release platforms; corpus scripted API and virtual clock; real CDP clicks and Input.insertText. Capture to eight microtasks untraced, and trace script union. Setup outside timing; transcript/property checks after. No CSS.',rows:[]};
 const call=(fn,arg)=>`__s6Page.${fn}(${arg===undefined?'':JSON.stringify(arg)})`;
 function union(events) {
   const from=events.find(e=>e.name==='s6-start')?.ts,to=events.find(e=>e.name==='s6-end')?.ts;
@@ -67,7 +68,9 @@ try {
     const collected=Object.fromEntries(subjects.map(s=>[s,[]]));
     let oracle=null;
     for (let sample=0;sample<samples;sample++) {
-      for (const subject of sample%2 ? [...subjects].reverse() : subjects) {
+      const shift = sample % subjects.length;
+      const order = [...subjects.slice(shift), ...subjects.slice(0, shift)];
+      for (const subject of sample%2 ? order.reverse() : order) {
         for (const tracing of [false,true]) {
           const page=await browser.newPage(origin+'/');
           try {

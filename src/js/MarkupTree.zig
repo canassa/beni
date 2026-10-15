@@ -47,6 +47,7 @@ pub const Input = struct {
     /// that keeps a grouped root's value from being skipped (language.md
     /// §11.11, made precise 2026-10-04). Null: no call is exempt.
     debug_module: ?u32 = null,
+    parameterised_templates: bool = false,
 };
 
 /// How an `==` or `/=` compares (language.md §11.9, *a selector*).
@@ -156,6 +157,7 @@ pub const ComponentSource = struct {
     callee: Inst.Index,
     /// The written props, as `Bir.MarkupItem` records.
     props: Bir.SubRange,
+    children_token: ?u32 = null,
 };
 
 pub const Built = struct {
@@ -389,6 +391,10 @@ const Builder = struct {
         return null;
     }
 
+    fn groupedRoot(b: *const Builder, kind: m.Root.Kind) bool {
+        return kind == .expression or (b.in.parameterised_templates and kind == .row_markup);
+    }
+
     /// Every markup instruction of a surviving declaration, ascending, and
     /// which of them are the bodies of rows compiled in place.
     fn findRoots(b: *Builder) !void {
@@ -546,6 +552,7 @@ const Builder = struct {
                 }
                 const props: m.Range = .{ .start = props_start, .len = @as(u32, @intCast(b.props.items.len)) - props_start };
                 var children_value: ?m.Value.Index = null;
+                var children_token: ?u32 = null;
                 var children_nodes: m.Range = .{ .start = 0, .len = 0 };
                 switch (c.children_form) {
                     .absent => {},
@@ -553,13 +560,15 @@ const Builder = struct {
                         const records = bir_.extraSlice(.{ .start = c.children_start, .end = c.children_end }, Bir.ExtraIndex);
                         for (records) |r| {
                             if (bir_.markupKind(r) != .hole) continue;
-                            children_value = try b.value(.{ .inst = bir_.extraData(r, Bir.MarkupHole).value });
+                            const child_hole = bir_.extraData(r, Bir.MarkupHole);
+                            children_value = try b.value(.{ .inst = child_hole.value });
+                            children_token = child_hole.token;
                         }
                     },
                     .fragment => children_nodes = try b.childList(c.children_start, c.children_end),
                 }
                 try b.components.append(b.arena, .{ .props = props, .spread = spread, .children = children_value, .children_nodes = children_nodes, .impure = b.callImpure(c.callee.int(), c.callee.int()) });
-                try b.component_sources.append(b.arena, .{ .callee = c.callee, .props = .{ .start = c.props_start, .end = c.props_end } });
+                try b.component_sources.append(b.arena, .{ .callee = c.callee, .props = .{ .start = c.props_start, .end = c.props_end }, .children_token = children_token });
                 return b.addNode(.component, b.components.items.len - 1, c.token);
             },
             .@"for", .show => {
@@ -1003,7 +1012,7 @@ const Builder = struct {
         for (b.roots, 0..) |*root, ri| {
             const inst = b.root_insts.items[ri];
             root_decls[ri] = if (inst == none) none else (b.declOf(inst) orelse none);
-            if (root.kind != .expression or root_decls[ri] == none) continue;
+            if (!b.groupedRoot(root.kind) or root_decls[ri] == none) continue;
             var ok = true;
             for (0..root.values.len) |k| {
                 const v = root.values.start + k;
@@ -1067,7 +1076,7 @@ const Builder = struct {
 
         // What each value reads, through the `let`s its own root took.
         for (b.roots, 0..) |root, ri| {
-            if (root.kind != .expression or root_decls[ri] == none) continue;
+            if (!b.groupedRoot(root.kind) or root_decls[ri] == none) continue;
             const decl = root_decls[ri];
             for (0..root.values.len) |k| {
                 const v = root.values.start + k;
@@ -1103,7 +1112,7 @@ const Builder = struct {
         var let_reads: std.ArrayList(m.Range) = .empty;
         var moved_lets: std.ArrayList(MovedLet) = .empty;
         for (b.roots, 0..) |*root, ri| {
-            if (root.kind != .expression or root_decls[ri] == none) continue;
+            if (!b.groupedRoot(root.kind) or root_decls[ri] == none) continue;
             var distinct: std.ArrayList(Read) = .empty;
             var locals: std.ArrayList(u32) = .empty;
             var position: std.AutoHashMapUnmanaged([2 + Bir.max_input_links]u32, u32) = .empty;

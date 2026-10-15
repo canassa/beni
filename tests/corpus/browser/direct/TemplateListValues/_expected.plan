@@ -1,0 +1,108 @@
+{
+  "format": 1,
+  "unbound_values_fallback": "Each placement gates entry by its slot read mask; entered unbound values visit every dynamic group. Bound uses retain parameter substitution.",
+  "programs": [
+    {
+      "module": 1,
+      "inst": 71,
+      "keys": [
+        {
+          "name": "First",
+          "params": 0,
+          "star": false
+        },
+        {
+          "name": "Label",
+          "params": 0,
+          "star": false
+        },
+        {
+          "name": "Quiet",
+          "params": 0,
+          "star": false
+        }
+      ],
+      "holes": [
+        {
+          "module": 0,
+          "token": 18,
+          "group": 1,
+          "bake": null,
+          "where": "Helpers.beni:5:14",
+          "rows": [],
+          "path": [
+            4294967436,
+            45
+          ]
+        },
+        {
+          "module": 0,
+          "token": 39,
+          "group": 0,
+          "bake": "a",
+          "where": "Helpers.beni:9:18",
+          "rows": [],
+          "path": [
+            4294967436
+          ]
+        },
+        {
+          "module": 0,
+          "token": 45,
+          "group": 1,
+          "bake": null,
+          "where": "Helpers.beni:9:32",
+          "rows": [],
+          "path": [
+            4294967436
+          ]
+        },
+        {
+          "module": 1,
+          "token": 140,
+          "group": 2,
+          "bake": null,
+          "where": "Main.beni:35:9",
+          "rows": [],
+          "path": []
+        }
+      ],
+      "producer_edges": [],
+      "groups": 4,
+      "conflicts": [
+        false,
+        true,
+        false,
+        true,
+        false,
+        false,
+        true,
+        true,
+        false,
+        true,
+        true,
+        false
+      ],
+      "sites": [
+        {
+          "module": 0,
+          "token": 15,
+          "mode": "fallback",
+          "reason": "List Html uses value reconciliation without a row edit plan"
+        },
+        {
+          "module": 0,
+          "token": 37,
+          "mode": "fallback",
+          "reason": "List Html uses value reconciliation without a row edit plan"
+        },
+        {
+          "module": 1,
+          "token": 82,
+          "mode": "parameterised",
+          "reason": ""
+        }
+      ]
+    }
+  ]
+}
