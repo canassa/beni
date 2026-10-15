@@ -65,6 +65,7 @@ pub const Inputs = struct {
             .platform_names = i.platform_names,
             .in_place = i.in_place,
             .blocks = i.blocks,
+            .entry_everywhere = session.options.ownership_everywhere,
             .profile = &session.profile,
         };
     }
@@ -107,7 +108,7 @@ pub fn inputs(gpa: Allocator, session: *const Session, cached: []const ?CacheEnt
         const layer = session.file_layers[f.int()];
         if (layer >= chain.layers.len) continue;
         out.platform_names[i] = chain.layers[layer].name;
-        out.in_place[i] = chain.layers[layer].manifest.lists == .@"in-place";
+        out.in_place[i] = session.options.ownership_everywhere or chain.layers[layer].manifest.lists == .@"in-place";
     }
     return out;
 }
@@ -133,7 +134,7 @@ pub fn run(session: *Session, cached: []const ?CacheEntry.Loaded) Allocator.Erro
     var o = Ownership.init(ins.input(gpa, session));
     defer o.deinit();
 
-    const chain_in_place = if (session.options.chain) |c| c.inPlace() else false;
+    const chain_in_place = if (session.options.chain) |c| session.options.ownership_everywhere or c.inPlace() else false;
     const making_pack = session.options.pack_out != null;
     var targets: std.ArrayList(u32) = .empty;
     defer targets.deinit(gpa);

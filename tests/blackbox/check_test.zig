@@ -1170,3 +1170,65 @@ test "ownership words: browser-tea and browser-direct carry none" {
     try expectSurface("browser-tea", &.{ "dump", "--stage=ownership", "--platform=browser-tea", "platforms/browser-tea" });
     try expectSurface("browser-direct", &.{ "dump", "--stage=ownership", "--platform=browser-direct", "platforms/browser-direct" });
 }
+
+// ---------------------------------------------------------------------------
+// `--ownership-everywhere` (ownership-checker.md §30.7, slice O0): the hidden
+// flag that enforces on every platform until enforcement is the language's
+// ---------------------------------------------------------------------------
+
+test "ownership everywhere: a node program that writes a top-level list is refused only under the flag" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\import Node
+        \\
+        \\
+        \\xs : List Int
+        \\xs = [ 1, 2, 3 ]
+        \\
+        \\
+        \\main : Node.Program
+        \\main = Node.printLines [ String.fromInt (bump 9) ]
+        \\
+        \\
+        \\bump : Int → Int
+        \\bump n = List.length (List.set xs 0 n)
+        \\
+    );
+    const plain = try w.run(&.{ "check", "--platform=node", "--cache-dir=c", "Main.beni" });
+    try testing.expectEqual(@as(u8, 0), plain.exit_code);
+    const forced = try w.run(&.{ "check", "--platform=node", "--ownership-everywhere", "--cache-dir=c", "Main.beni" });
+    try testing.expectEqual(@as(u8, 1), forced.exit_code);
+    try testing.expectEqual(@as(usize, 1), forced.diagnostics.len);
+    try testing.expectEqual(diagnostic.Code.top_level_list_changed, forced.diagnostics[0].code);
+    // Its entries are kept apart from an ordinary run's, whose rows differ.
+    try testing.expect(w.exists("c/ownership-everywhere"));
+    const again = try w.run(&.{ "check", "--platform=node", "--cache-dir=c", "Main.beni" });
+    try testing.expectEqual(@as(u8, 0), again.exit_code);
+}
+
+test "ownership everywhere: Page.sandbox gets the direct entry row" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    // `update` writes its model in place. With no row that is a function
+    // stored in a record, pending (§16.5); the direct row owns the model
+    // (§20.3), so the write is accepted at the entry.
+    try w.write("Main.beni",
+        \\import Page
+        \\
+        \\
+        \\update : ⊤, List Int → List Int
+        \\update _ xs = List.push xs 1
+        \\
+        \\
+        \\main : Page.Program
+        \\main = Page.sandbox { init = λ⊤ → [], update = update, view = λxs → Page.text (String.fromInt (List.length xs)) }
+        \\
+    );
+    const main = try std.fs.path.join(w.arena.allocator(), &.{ try w.projectPath(), "Main.beni" });
+    const page = "--platform=tests/platforms/page";
+    const checked = try w.runWith(&.{ "check", page, "--ownership-everywhere", "--no-cache", main }, .{ .cwd = .inherit });
+    try testing.expectEqual(@as(u8, 0), checked.exit_code);
+    const report = try w.runWith(&.{ "dump", "--stage=ownership", page, "--ownership-everywhere", main }, .{ .raw_diagnostics = true, .cwd = .inherit });
+    try testing.expect(std.mem.indexOf(u8, report.stdout, "entry Main.update model: accepted entry") != null);
+}

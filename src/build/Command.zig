@@ -63,6 +63,10 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
         return fail(stderr, "beni: cannot write '{s}': {t}", .{ f.path, f.err });
     };
     defer if (cache) |*c| c.close();
+    if (cache) |*c| if (build.common.ownership_everywhere) c.into("ownership-everywhere", &cache_failure) catch {
+        const f = cache_failure.?;
+        return fail(stderr, "beni: cannot write '{s}': {t}", .{ f.path, f.err });
+    };
     if (cache) |*c| options.cache = c;
 
     // What lives for the whole build: the platform chain, the reachability

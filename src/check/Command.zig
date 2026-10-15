@@ -62,6 +62,10 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
         return fail(stderr, "beni: cannot write '{s}': {t}", .{ f.path, f.err });
     };
     defer if (cache) |*c| c.close();
+    if (cache) |*c| if (check.common.ownership_everywhere) c.into("ownership-everywhere", &cache_failure) catch {
+        const f = cache_failure.?;
+        return fail(stderr, "beni: cannot write '{s}': {t}", .{ f.path, f.err });
+    };
     if (cache) |*c| options.cache = c;
     // With a platform there is a SECOND wave of diagnostics — §4's checks
     // run after `run` returns — and two renders on one stream are two JSON

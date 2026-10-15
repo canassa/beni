@@ -125,6 +125,12 @@ pub const Input = struct {
     /// not check, which the pass reads in place of a walk. Shorter, or null,
     /// for a module with none.
     blocks: []const ?[]const u8 = &.{},
+    /// `--ownership-everywhere` (§30.7 O0, hidden and test-only): the name
+    /// table of §20.2 also gives the direct row to `browser`'s
+    /// `Browser.program` and the test platform `page`'s `Page.sandbox`.
+    /// With `in_place` true for every platform module, as that flag makes
+    /// it, `browser-tea`'s `Tea.*` get the direct row already.
+    entry_everywhere: bool = false,
     /// §28.3: a checked module is read by another module through its block,
     /// written and read back, as an installed one is — so that the verdicts
     /// are the ones a build that installed it would give, and the block's
@@ -5592,6 +5598,10 @@ const Walker = struct {
             if (std.mem.eql(u8, pkg, "browser-tea")) return .template;
         }
         if (!in_place and std.mem.eql(u8, pkg, "browser") and std.mem.eql(u8, module, "Browser") and std.mem.eql(u8, name, "program")) return .template;
+        if (w.o.in.entry_everywhere) {
+            if (std.mem.eql(u8, pkg, "browser") and std.mem.eql(u8, module, "Browser") and std.mem.eql(u8, name, "program")) return .direct;
+            if (std.mem.eql(u8, pkg, "page") and std.mem.eql(u8, module, "Page") and std.mem.eql(u8, name, "sandbox")) return .direct;
+        }
         return null;
     }
 
