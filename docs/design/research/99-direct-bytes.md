@@ -1,4 +1,4 @@
-# 98 — Direct bundle costs: template entries, masks and runtime
+# 99 — Direct bundle costs: template entries, masks and runtime
 
 *2026-10-15. Research only: unchanged compiler, platform and application sources.
 Base `7ff72c031`; Node 24.19.0; Apple M2 Pro; Chrome 155.0.8059.80.
