@@ -59,6 +59,22 @@ pub nestedCallbacksDead ⊤ =
     chain xs identity λl → List.push l 3
 
 
+-- Two callbacks deep: `h` writes what `g` returned, which is what `f`
+-- returned, which is `p`.
+chain3 p f g h = h (g (f p))
+
+
+pub deeperChain ⊤ =
+    xs = [ 1 ]
+    r = chain3 xs identity identity λl → List.push l 3
+    { grown = r, old = xs }
+
+
+pub deeperChainDead ⊤ =
+    xs = [ 1 ]
+    chain3 xs identity identity λl → List.push l 3
+
+
 -- Passed on through a caller's own function parameter.
 wrap p f = pushReturned p f
 
