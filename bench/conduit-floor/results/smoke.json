@@ -1,0 +1,357 @@
+{
+  "chrome": "Chrome/155.0.8059.80",
+  "warning": "Limited route startup with fixture fetch responses, no CSS, no performance or full parity claim.",
+  "rows": [
+    {
+      "subject": "solid-stock",
+      "route": "home",
+      "visible": true,
+      "text": "conduitHomeSign inSign upconduitA place to share your knowledge.Global FeedauthorThu Jan 01 2026Floor titledescriptionRead more...floor123Popular Tagsfloor",
+      "requests": [
+        "/api/tags",
+        "/api/articles?limit=10&offset=0"
+      ],
+      "errors": [],
+      "inputs": []
+    },
+    {
+      "subject": "solid-stock",
+      "route": "article",
+      "visible": true,
+      "text": "conduitHomeSign inSign upFloor titleauthorThu Jan 01 2026first paragraph\nsecond paragraph\nfloorSign in or sign up to add comments on this article.",
+      "requests": [
+        "/api/tags",
+        "/api/articles/floor-article",
+        "/api/articles/floor-article/comments"
+      ],
+      "errors": [],
+      "inputs": []
+    },
+    {
+      "subject": "solid-stock",
+      "route": "editor",
+      "visible": true,
+      "text": "conduitHome New Post SettingsfloorPublish Article",
+      "requests": [
+        "/api/tags",
+        "/api/user"
+      ],
+      "errors": [],
+      "inputs": [
+        {
+          "tag": "INPUT",
+          "placeholder": "Article Title",
+          "value": ""
+        },
+        {
+          "tag": "INPUT",
+          "placeholder": "What's this article about?",
+          "value": ""
+        },
+        {
+          "tag": "TEXTAREA",
+          "placeholder": "Write your article (in markdown)",
+          "value": ""
+        },
+        {
+          "tag": "INPUT",
+          "placeholder": "Enter tags",
+          "value": ""
+        }
+      ]
+    },
+    {
+      "subject": "solid-stock",
+      "route": "favorite",
+      "visible": true,
+      "text": "conduitHome New Post SettingsfloorconduitA place to share your knowledge.Your FeedGlobal FeedauthorThu Jan 01 2026 1Floor titledescriptionRead more...floor123Popular Tagsfloor",
+      "requests": [
+        "/api/tags",
+        "/api/user",
+        "/api/articles/feed?limit=10&offset=0"
+      ],
+      "errors": [
+        "Uncaught ReferenceError: slug is not defined"
+      ],
+      "inputs": []
+    },
+    {
+      "subject": "solid-paragraphs",
+      "route": "home",
+      "visible": true,
+      "text": "conduitHomeSign inSign upconduitA place to share your knowledge.Global FeedauthorThu Jan 01 2026Floor titledescriptionRead more...floor123Popular Tagsfloor",
+      "requests": [
+        "/api/tags",
+        "/api/articles?limit=10&offset=0"
+      ],
+      "errors": [],
+      "inputs": []
+    },
+    {
+      "subject": "solid-paragraphs",
+      "route": "article",
+      "visible": true,
+      "text": "conduitHomeSign inSign upFloor titleauthorThu Jan 01 2026first paragraphsecond paragraphfloorSign in or sign up to add comments on this article.",
+      "requests": [
+        "/api/tags",
+        "/api/articles/floor-article",
+        "/api/articles/floor-article/comments"
+      ],
+      "errors": [],
+      "inputs": []
+    },
+    {
+      "subject": "solid-paragraphs",
+      "route": "editor",
+      "visible": true,
+      "text": "conduitHome New Post SettingsfloorPublish Article",
+      "requests": [
+        "/api/tags",
+        "/api/user"
+      ],
+      "errors": [],
+      "inputs": [
+        {
+          "tag": "INPUT",
+          "placeholder": "Article Title",
+          "value": ""
+        },
+        {
+          "tag": "INPUT",
+          "placeholder": "What's this article about?",
+          "value": ""
+        },
+        {
+          "tag": "TEXTAREA",
+          "placeholder": "Write your article (in markdown)",
+          "value": ""
+        },
+        {
+          "tag": "INPUT",
+          "placeholder": "Enter tags",
+          "value": ""
+        }
+      ]
+    },
+    {
+      "subject": "solid-paragraphs",
+      "route": "favorite",
+      "visible": true,
+      "text": "conduitHome New Post SettingsfloorconduitA place to share your knowledge.Your FeedGlobal FeedauthorThu Jan 01 2026 2Floor titledescriptionRead more...floor123Popular Tagsfloor",
+      "requests": [
+        "/api/tags",
+        "/api/user",
+        "/api/articles/feed?limit=10&offset=0",
+        "/api/articles/floor-article/favorite"
+      ],
+      "errors": [],
+      "inputs": []
+    },
+    {
+      "subject": "solid-paragraphs-single",
+      "route": "home",
+      "visible": true,
+      "text": "conduitHomeSign inSign upconduitA place to share your knowledge.Global FeedauthorThu Jan 01 2026Floor titledescriptionRead more...floor123Popular Tagsfloor",
+      "requests": [
+        "/api/tags",
+        "/api/articles?limit=10&offset=0"
+      ],
+      "errors": [],
+      "inputs": []
+    },
+    {
+      "subject": "solid-paragraphs-single",
+      "route": "article",
+      "visible": true,
+      "text": "conduitHomeSign inSign upFloor titleauthorThu Jan 01 2026first paragraphsecond paragraphfloorSign in or sign up to add comments on this article.",
+      "requests": [
+        "/api/tags",
+        "/api/articles/floor-article",
+        "/api/articles/floor-article/comments"
+      ],
+      "errors": [],
+      "inputs": []
+    },
+    {
+      "subject": "solid-paragraphs-single",
+      "route": "editor",
+      "visible": true,
+      "text": "conduitHome New Post SettingsfloorPublish Article",
+      "requests": [
+        "/api/tags",
+        "/api/user"
+      ],
+      "errors": [],
+      "inputs": [
+        {
+          "tag": "INPUT",
+          "placeholder": "Article Title",
+          "value": ""
+        },
+        {
+          "tag": "INPUT",
+          "placeholder": "What's this article about?",
+          "value": ""
+        },
+        {
+          "tag": "TEXTAREA",
+          "placeholder": "Write your article (in markdown)",
+          "value": ""
+        },
+        {
+          "tag": "INPUT",
+          "placeholder": "Enter tags",
+          "value": ""
+        }
+      ]
+    },
+    {
+      "subject": "solid-paragraphs-single",
+      "route": "favorite",
+      "visible": true,
+      "text": "conduitHome New Post SettingsfloorconduitA place to share your knowledge.Your FeedGlobal FeedauthorThu Jan 01 2026 2Floor titledescriptionRead more...floor123Popular Tagsfloor",
+      "requests": [
+        "/api/tags",
+        "/api/user",
+        "/api/articles/feed?limit=10&offset=0",
+        "/api/articles/floor-article/favorite"
+      ],
+      "errors": [],
+      "inputs": []
+    },
+    {
+      "subject": "vanilla-stock",
+      "route": "home",
+      "visible": true,
+      "text": "\n         \n            \n                conduit\n                \n                    \n                        Home\n                    \n                    \n                        Sign in\n                    \n                    \n                        Sign up\n                    \n                \n            \n        \n\n        \n            \n            \n                \n                    conduit\n                    A place to share your knowledge.\n                \n            \n        \n            \n                \n                    \n                        \n                            \n                                \n                                    \n                                \n                                \n                                    Global Feed\n                                \n                            \n                        \n                        \n\n    \n        \n            \n        \n        \n            author\n            Thu January 1 2026\n        \n        \n             1\n        \n    \n    \n        Floor title\n        description\n        Read more...\n        \n            \n                \n                floor\n                \n                \n        \n    \n\n        \n                    \n                    \n                        \n            \n                Popular Tags\n                floor\n            \n        \n                    \n                \n                \n                    \n                            1\n                        \n                            2\n                        \n                \n            \n        \n\n           \n                \n                    conduit\n                    \n                      An interactive learning project from Thinkster. Code & design licensed under MIT.\n                    \n                \n            \n        ",
+      "requests": [
+        "/api/tags",
+        "/api//articles?limit=10&offset=0"
+      ],
+      "errors": [],
+      "inputs": []
+    },
+    {
+      "subject": "vanilla-stock",
+      "route": "article",
+      "visible": true,
+      "text": "\n         \n            \n                conduit\n                \n                    \n                        Home\n                    \n                    \n                        Sign in\n                    \n                    \n                        Sign up\n                    \n                \n            \n        \n\n              \n                \n                  \n                    \n                \n                      \n                        Floor title\n                      \n                \n                      \n                        \n                            \n                        \n                        \n                          author\n                          Thu January 1 2026\n                        \n\n                \n                        Follow author\n               \n                \n            Favorite Post (1)\n        \n\n                      \n                \n                    \n                  \n\n                \n                  \n                \n                    \n                      first paragraph\n\nsecond paragraph\n                    \n                \n                    \n                \n                    \n                \n                      \n                        \n\n\nSign in\n or \nsign up\n to add comments on this article.\n\n\n\n\n\n                        \n            \n        \n                      \n                \n                    \n                \n                  \n                \n                \n        \n           \n                \n                    conduit\n                    \n                      An interactive learning project from Thinkster. Code & design licensed under MIT.\n                    \n                \n            \n        ",
+      "requests": [
+        "/api/articles/floor-article/comments",
+        "/api//articles/floor-article"
+      ],
+      "errors": [],
+      "inputs": []
+    },
+    {
+      "subject": "vanilla-stock",
+      "route": "editor",
+      "visible": true,
+      "text": "\n         \n            \n                conduit\n                \n                    \n                        Home\n                    \n                    \n                    \n                 New Post Settingsfloor\n            \n        \n\n\n  \n    \n      \n      \n        \n          \n            \n                \n            \n            \n                \n            \n            \n                \n            \n            \n                \n            \n            \n                Publish Article\n            \n          \n        \n      \n\n    \n  \n\n        \n           \n                \n                    conduit\n                    \n                      An interactive learning project from Thinkster. Code & design licensed under MIT.\n                    \n                \n            \n        ",
+      "requests": [],
+      "errors": [],
+      "inputs": [
+        {
+          "tag": "INPUT",
+          "placeholder": "Article Title",
+          "value": ""
+        },
+        {
+          "tag": "INPUT",
+          "placeholder": "What's this article about?",
+          "value": ""
+        },
+        {
+          "tag": "TEXTAREA",
+          "placeholder": "Write your article (in markdown)",
+          "value": ""
+        },
+        {
+          "tag": "INPUT",
+          "placeholder": "Enter tags",
+          "value": ""
+        }
+      ]
+    },
+    {
+      "subject": "vanilla-stock",
+      "route": "favorite",
+      "visible": true,
+      "text": "\n         \n            \n                conduit\n                \n                    \n                        Home\n                    \n                    \n                    \n                 New Post Settingsfloor\n            \n        \n\n        \n            \n            \n                \n                    conduit\n                    A place to share your knowledge.\n                \n            \n        \n            \n                \n                    \n                        \n                            \n                                \n                                    Your Feed\n                                \n                                \n                                    Global Feed\n                                \n                            \n                        \n                        \n\n    \n        \n            \n        \n        \n            author\n            Thu January 1 2026\n        \n        \n             2\n        \n    \n    \n        Floor title\n        description\n        Read more...\n        \n            \n                \n                floor\n                \n                \n        \n    \n\n        \n                    \n                    \n                        \n            \n                Popular Tags\n                floor\n            \n        \n                    \n                \n                \n                    \n                            1\n                        \n                            2\n                        \n                \n            \n        \n\n           \n                \n                    conduit\n                    \n                      An interactive learning project from Thinkster. Code & design licensed under MIT.\n                    \n                \n            \n        ",
+      "requests": [
+        "/api/tags",
+        "/api//articles/feed?limit=10&offset=0",
+        "/api//articles/floor-article/favorite"
+      ],
+      "errors": [],
+      "inputs": []
+    },
+    {
+      "subject": "vanilla-paragraphs",
+      "route": "home",
+      "visible": true,
+      "text": "\n         \n            \n                conduit\n                \n                    \n                        Home\n                    \n                    \n                        Sign in\n                    \n                    \n                        Sign up\n                    \n                \n            \n        \n\n        \n            \n            \n                \n                    conduit\n                    A place to share your knowledge.\n                \n            \n        \n            \n                \n                    \n                        \n                            \n                                \n                                    \n                                \n                                \n                                    Global Feed\n                                \n                            \n                        \n                        \n\n    \n        \n            \n        \n        \n            author\n            Thu January 1 2026\n        \n        \n             1\n        \n    \n    \n        Floor title\n        description\n        Read more...\n        \n            \n                \n                floor\n                \n                \n        \n    \n\n        \n                    \n                    \n                        \n            \n                Popular Tags\n                floor\n            \n        \n                    \n                \n                \n                    \n                            1\n                        \n                            2\n                        \n                \n            \n        \n\n           \n                \n                    conduit\n                    \n                      An interactive learning project from Thinkster. Code & design licensed under MIT.\n                    \n                \n            \n        ",
+      "requests": [
+        "/api/tags",
+        "/api//articles?limit=10&offset=0"
+      ],
+      "errors": [],
+      "inputs": []
+    },
+    {
+      "subject": "vanilla-paragraphs",
+      "route": "article",
+      "visible": true,
+      "text": "\n         \n            \n                conduit\n                \n                    \n                        Home\n                    \n                    \n                        Sign in\n                    \n                    \n                        Sign up\n                    \n                \n            \n        \n\n              \n                \n                  \n                    \n                \n                      \n                        Floor title\n                      \n                \n                      \n                        \n                            \n                        \n                        \n                          author\n                          Thu January 1 2026\n                        \n\n                \n                        Follow author\n               \n                \n            Favorite Post (1)\n        \n\n                      \n                \n                    \n                  \n\n                \n                  \n                \n                    \n                      first paragraphsecond paragraph\n                    \n                \n                    \n                \n                    \n                \n                      \n                        \n\n\nSign in\n or \nsign up\n to add comments on this article.\n\n\n\n\n\n                        \n            \n        \n                      \n                \n                    \n                \n                  \n                \n                \n        \n           \n                \n                    conduit\n                    \n                      An interactive learning project from Thinkster. Code & design licensed under MIT.\n                    \n                \n            \n        ",
+      "requests": [
+        "/api/articles/floor-article/comments",
+        "/api//articles/floor-article"
+      ],
+      "errors": [],
+      "inputs": []
+    },
+    {
+      "subject": "vanilla-paragraphs",
+      "route": "editor",
+      "visible": true,
+      "text": "\n         \n            \n                conduit\n                \n                    \n                        Home\n                    \n                    \n                    \n                 New Post Settingsfloor\n            \n        \n\n\n  \n    \n      \n      \n        \n          \n            \n                \n            \n            \n                \n            \n            \n                \n            \n            \n                \n            \n            \n                Publish Article\n            \n          \n        \n      \n\n    \n  \n\n        \n           \n                \n                    conduit\n                    \n                      An interactive learning project from Thinkster. Code & design licensed under MIT.\n                    \n                \n            \n        ",
+      "requests": [],
+      "errors": [],
+      "inputs": [
+        {
+          "tag": "INPUT",
+          "placeholder": "Article Title",
+          "value": ""
+        },
+        {
+          "tag": "INPUT",
+          "placeholder": "What's this article about?",
+          "value": ""
+        },
+        {
+          "tag": "TEXTAREA",
+          "placeholder": "Write your article (in markdown)",
+          "value": ""
+        },
+        {
+          "tag": "INPUT",
+          "placeholder": "Enter tags",
+          "value": ""
+        }
+      ]
+    },
+    {
+      "subject": "vanilla-paragraphs",
+      "route": "favorite",
+      "visible": true,
+      "text": "\n         \n            \n                conduit\n                \n                    \n                        Home\n                    \n                    \n                    \n                 New Post Settingsfloor\n            \n        \n\n        \n            \n            \n                \n                    conduit\n                    A place to share your knowledge.\n                \n            \n        \n            \n                \n                    \n                        \n                            \n                                \n                                    Your Feed\n                                \n                                \n                                    Global Feed\n                                \n                            \n                        \n                        \n\n    \n        \n            \n        \n        \n            author\n            Thu January 1 2026\n        \n        \n             2\n        \n    \n    \n        Floor title\n        description\n        Read more...\n        \n            \n                \n                floor\n                \n                \n        \n    \n\n        \n                    \n                    \n                        \n            \n                Popular Tags\n                floor\n            \n        \n                    \n                \n                \n                    \n                            1\n                        \n                            2\n                        \n                \n            \n        \n\n           \n                \n                    conduit\n                    \n                      An interactive learning project from Thinkster. Code & design licensed under MIT.\n                    \n                \n            \n        ",
+      "requests": [
+        "/api/tags",
+        "/api//articles/feed?limit=10&offset=0",
+        "/api//articles/floor-article/favorite"
+      ],
+      "errors": [],
+      "inputs": []
+    }
+  ]
+}
