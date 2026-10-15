@@ -3041,52 +3041,103 @@ test "a _manifest.txt that cannot be written is reported by its own path" {
     try testing.expectEqual(@as(usize, 0), (try w.listFiles("out")).len);
 }
 
-test "--release builds and runs with no map, and --release --source-maps exits 2" {
+test "--release writes a map only when asked, and asking changes no byte of the code" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // `backend.md` §2, §11: `--release` is accepted and writes no map —
-    // release maps are not built yet — so asking for them in a release
-    // build exits 2 on the source-map line and writes nothing.
+    // `backend.md` §2, §11.2: `--release` alone writes no map and no
+    // comment line, and `--no-source-maps` says so. `--source-maps` writes
+    // the same code: each file it maps has one comment line more and a map
+    // beside it, and every other file is byte for byte the same. Both
+    // layouts: an application is one scope-hoisted file, a library one
+    // file per module. The maps do not depend on `--jobs` (rule 5).
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
+    try w.write("Aid.beni",
+        \\import String
+        \\
+        \\
+        \\pub label : Int → String
+        \\label n =
+        \\    doubled =
+        \\        n * 2
+        \\    "n = " ++ String.fromInt (doubled + doubled)
+        \\
+    );
     try w.write("Main.beni",
+        \\import Aid
         \\import Node exposing (Program)
         \\
         \\
         \\main : Program
         \\main =
-        \\    Node.print "x"
+        \\    Node.printLines [ Aid.label 1, Aid.label 20 ]
         \\
     );
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const r = try w.runWith(&.{ "build", "--platform=node", "--release", "--out=out", "Main.beni" }, .{ .raw_diagnostics = true });
-    const both = try w.runWith(
-        &.{ "build", "--platform=node", "--release", "--source-maps", "--out=maps", "Main.beni" },
-        .{ .raw_diagnostics = true },
-    );
+    const plain = try w.runWith(&.{ "build", "--platform=node", "--release", "--out=plain", "Main.beni", "Aid.beni" }, .{ .raw_diagnostics = true });
+    const stated = try w.runWith(&.{ "build", "--platform=node", "--release", "--no-source-maps", "--out=stated", "Main.beni", "Aid.beni" }, .{ .raw_diagnostics = true });
+    const many = try w.runWith(&.{ "build", "--platform=node", "--release", "--source-maps", "--jobs=8", "--out=mapped", "Main.beni", "Aid.beni" }, .{ .raw_diagnostics = true });
+    const one = try w.runWith(&.{ "build", "--platform=node", "--release", "--source-maps", "--jobs=1", "--out=one", "Main.beni", "Aid.beni" }, .{ .raw_diagnostics = true });
+    const lib = try w.runWith(&.{ "build", "--platform=node", "--release", "--library", "--out=lib", "Aid.beni" }, .{ .raw_diagnostics = true });
+    const lib_mapped = try w.runWith(&.{ "build", "--platform=node", "--release", "--library", "--source-maps", "--out=lib-mapped", "Aid.beni" }, .{ .raw_diagnostics = true });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    try expectBuilt(r);
-    try w.expectProgram(world.entry_file, .{ .stdout = "x\n" });
-    for (try w.listFiles("out")) |path| try testing.expect(!std.mem.endsWith(u8, path, ".map"));
-    try testing.expect(std.mem.indexOf(u8, try w.read("out/_main.mjs"), "sourceMappingURL") == null);
-
-    try testing.expectEqual(@as(u8, 2), both.exit_code);
-    try testing.expectEqualStrings(
-        "beni: --source-maps is not implemented for --release yet; a release build writes no .map file\n",
-        both.stderr,
-    );
+    for ([_]world.Result{ plain, stated, many, one, lib, lib_mapped }) |r| try expectBuilt(r);
+    try w.expectProgram("plain/_main.mjs", .{ .stdout = "n = 4\nn = 80\n" });
+    try w.expectProgram("mapped/_main.mjs", .{ .stdout = "n = 4\nn = 80\n" });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY SIDE EFFECTS                     │
     // └─────────────────────────────────────────┘
-    try testing.expect(!w.exists("maps"));
+    for ([_][]const u8{ "plain", "lib" }) |dir| for (try w.listFiles(dir)) |path| {
+        try testing.expect(!std.mem.endsWith(u8, path, ".map"));
+        const bytes = try w.read(try std.fmt.allocPrint(w.arena.allocator(), "{s}/{s}", .{ dir, path }));
+        try testing.expect(std.mem.indexOf(u8, bytes, "sourceMappingURL") == null);
+    };
+    try expectSameTree(&w, "plain", "stated");
+    // The application's one map is the hoisted file's; the library's, one
+    // per emitted module.
+    try testing.expectEqual(@as(usize, 1), try expectMappedTree(&w, "plain", "mapped"));
+    try testing.expect(try expectMappedTree(&w, "lib", "lib-mapped") >= 2);
+    try expectSameTree(&w, "mapped", "one");
+}
+
+/// `mapped_dir` is `plain_dir` built with `--source-maps` (`backend.md`
+/// §11.2): the same files, a mapped one with its comment line after its
+/// last byte and its map beside it, and nothing else. The manifest, which
+/// lists the maps too, is the one file that differs otherwise. Returns how
+/// many maps there are.
+fn expectMappedTree(w: *World, plain_dir: []const u8, mapped_dir: []const u8) !usize {
+    const arena = w.arena.allocator();
+    const plain = try treeOf(w, plain_dir);
+    const mapped = try treeOf(w, mapped_dir);
+    var maps: usize = 0;
+    for (mapped) |name| {
+        if (!std.mem.endsWith(u8, name, ".map")) continue;
+        maps += 1;
+        var beside = false;
+        for (plain) |p| beside = beside or std.mem.eql(u8, p, name[0 .. name.len - ".map".len]);
+        try testing.expect(beside);
+    }
+    try testing.expectEqual(plain.len + maps, mapped.len);
+    for (plain) |name| {
+        if (std.mem.eql(u8, name, "_manifest.txt")) continue;
+        const a = try w.read(try std.fmt.allocPrint(arena, "{s}/{s}", .{ plain_dir, name }));
+        const b = try w.read(try std.fmt.allocPrint(arena, "{s}/{s}", .{ mapped_dir, name }));
+        if (!w.exists(try std.fmt.allocPrint(arena, "{s}/{s}.map", .{ mapped_dir, name }))) {
+            try testing.expectEqualStrings(a, b);
+            continue;
+        }
+        const comment = try std.fmt.allocPrint(arena, "//# sourceMappingURL={s}.map\n", .{std.fs.path.basenamePosix(name)});
+        try testing.expectEqualStrings(try std.mem.concat(arena, u8, &.{ a, comment }), b);
+    }
+    return maps;
 }
 
 test "a release application is one file with no import or export; --library keeps every module and export" {
@@ -4178,6 +4229,283 @@ test "a development build maps a crash in a case arm back to the beni line and c
     }
     const core_map = try w.read("out/_core/String.mjs.map");
     try testing.expect(std.mem.startsWith(u8, core_map, "{\"version\":3,\"file\":\"String.mjs\",\"sources\":[\"beni:///core/String.beni\"],\"sourcesContent\":[\""));
+}
+
+/// `check_map_script` for a release map (`backend.md` §11.2): any number
+/// of sources, each said to be its file's text or embedded, and one-field
+/// segments, which print `unmapped`. A needle is found by its text without
+/// its `|` and looked up at the `|`, or at its start when it has none,
+/// since a short name alone is rarely unique. A segment that starts before
+/// the needle's spot says by how many columns: a name in `names` belongs to
+/// a binding only at the binding's own column. With `run` as the second
+/// argument the module itself runs under `--enable-source-maps`.
+///
+/// usage: node check-release-map.mjs <module.mjs> run|no <needle>...
+const check_release_map_script =
+    \\import { readFileSync } from "node:fs";
+    \\import { spawnSync } from "node:child_process";
+    \\import { basename } from "node:path";
+    \\import { fileURLToPath, pathToFileURL } from "node:url";
+    \\
+    \\const [modulePath, run, ...needles] = process.argv.slice(2);
+    \\const code = readFileSync(modulePath, "utf8");
+    \\const comment = /\n\/\/# sourceMappingURL=([^\n]+)\n$/.exec(code);
+    \\if (!comment) throw new Error("no sourceMappingURL line at the end of " + modulePath);
+    \\const mapUrl = new URL(comment[1], pathToFileURL(modulePath));
+    \\const map = JSON.parse(readFileSync(mapUrl, "utf8"));
+    \\console.log(`version ${map.version}, file ${map.file}`);
+    \\map.sources.forEach((s, i) => {
+    \\  const url = new URL(s, mapUrl);
+    \\  const text = url.protocol === "file:" ? readFileSync(fileURLToPath(url), "utf8") : null;
+    \\  console.log(`source ${s}: ${text === null ? "embedded" : text === map.sourcesContent[i] ? "its text" : "not its text"}`);
+    \\});
+    \\
+    \\const digits = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    \\const lines = [];
+    \\const state = [0, 0, 0, 0, 0];
+    \\for (const line of map.mappings.split(";")) {
+    \\  const segments = [];
+    \\  state[0] = 0;
+    \\  for (const text of line ? line.split(",") : []) {
+    \\    const fields = [];
+    \\    let value = 0, shift = 0;
+    \\    for (const ch of text) {
+    \\      const d = digits.indexOf(ch);
+    \\      if (d < 0) throw new Error("not a base64 digit: " + ch);
+    \\      value += (d & 31) << shift;
+    \\      if (d & 32) { shift += 5; continue; }
+    \\      fields.push(value & 1 ? -(value >>> 1) : value >>> 1);
+    \\      value = 0; shift = 0;
+    \\    }
+    \\    if (![1, 4, 5].includes(fields.length)) throw new Error("a segment of " + fields.length + " fields: " + text);
+    \\    fields.forEach((delta, i) => { state[i] += delta; });
+    \\    const prev = segments[segments.length - 1];
+    \\    if (prev && prev.column >= state[0]) throw new Error("segments out of order at column " + state[0]);
+    \\    segments.push(fields.length === 1
+    \\      ? { column: state[0], source: null }
+    \\      : { column: state[0], source: state[1], line: state[2], sourceColumn: state[3], name: fields.length === 5 ? map.names[state[4]] : null });
+    \\  }
+    \\  lines.push(segments);
+    \\}
+    \\
+    \\for (const needle of needles) {
+    \\  const bar = needle.indexOf("|");
+    \\  const text = needle.replace("|", "");
+    \\  const found = code.indexOf(text);
+    \\  if (found < 0) throw new Error("not in the module: " + text);
+    \\  const before = code.slice(0, found + Math.max(bar, 0)).split("\n");
+    \\  const line = before.length - 1, column = before[line].length;
+    \\  const hit = (lines[line] ?? []).filter((s) => s.column <= column).pop();
+    \\  const where = hit && hit.source !== null ? `${basename(map.sources[hit.source])}:${hit.line + 1}:${hit.sourceColumn + 1}` : "unmapped";
+    \\  const early = hit && hit.column < column ? ` (${column - hit.column} before)` : "";
+    \\  console.log(`${needle} -> ${where}${hit?.name ? " " + hit.name : ""}${early}`);
+    \\}
+    \\
+    \\if (run === "run") {
+    \\  const r = spawnSync(process.execPath, ["--enable-source-maps", modulePath], { encoding: "utf8" });
+    \\  for (const frame of r.stderr.matchAll(/^\s+at (\S+) \((?:.*\/)?([^\/]+\.beni:\d+:\d+)\)$/gm)) {
+    \\    console.log(`frame ${frame[1]} ${frame[2]}`);
+    \\  }
+    \\  console.log(`exit ${r.status}`);
+    \\}
+    \\
+;
+
+test "a release build maps the one hoisted file back to each module's beni source" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `backend.md` §11.2: an application's release build is one file, and
+    // its one map has a source per module the file holds. Each spot below
+    // is one rule of *What the marks survive*: `spread`'s `doubled` is a
+    // renamed local, `total`'s `rest` an initialiser the optimiser writes
+    // at its one use, every top-level function's first byte carries its beni
+    // name, and `Debug.todo` is a body copied from `core/Debug` to its call,
+    // so it maps to the call. The runtime's `process.stdout` is hand-written
+    // and the entry's `run(main)` the link step's: both unmapped. Under
+    // Node's `--enable-source-maps`, the crash names `describe` at the call,
+    // as the development build does (§11.1). `--allow-debug` is the hidden
+    // flag that lets a release build reach `Debug`, for the crash.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Main.beni",
+        \\import Node exposing (Program)
+        \\import String
+        \\
+        \\
+        \\type Step
+        \\    = Go Int
+        \\    | Stop
+        \\
+        \\
+        \\describe : Step → String
+        \\describe step =
+        \\    case step of
+        \\        Go n →
+        \\            String.fromInt (spread n)
+        \\
+        \\        Stop →
+        \\            Debug.todo "stop is not done"
+        \\
+        \\
+        \\spread : Int → Int
+        \\spread n =
+        \\    doubled =
+        \\        n * 7919
+        \\    doubled + doubled * 3
+        \\
+        \\
+        \\total : List Int → Int
+        \\total xs =
+        \\    case xs of
+        \\        [] →
+        \\            0
+        \\
+        \\        [ x, …rest ] →
+        \\            x + total rest
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.printLines [ describe (Go 21), describe (Go 5), String.fromInt (total [ 1, 2, 3 ]), describe Stop ]
+        \\
+    );
+    try w.write("check-release-map.mjs", check_release_map_script);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const built = try w.runWith(&.{ "build", "--platform=node", "--release", "--allow-debug", "--source-maps", "--out=out", "src" }, .{ .raw_diagnostics = true });
+    try expectBuilt(built);
+    const checked = try w.runNode(&.{
+        "check-release-map.mjs",
+        "out/_main.mjs",
+        "run",
+        "q=|a=>{",
+        "let b=a*7919",
+        "let |b=a*7919",
+        "b=|a*7919",
+        "b+b*3",
+        "r=|b=>{if",
+        "return a(q(",
+        "throw new Error",
+        "s=|a=>a.length",
+        "s(n(a))",
+        "s(|n(a))",
+        "process.stdout",
+        "u(t)",
+    });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqualStrings("", checked.stderr);
+    try testing.expectEqualStrings(
+        \\version 3, file _main.mjs
+        \\source beni:///core/String.beni: embedded
+        \\source beni:///core/Debug.beni: embedded
+        \\source beni:///core/List.beni: embedded
+        \\source beni:///platforms/node/Node.beni: embedded
+        \\source ../src/Main.beni: its text
+        \\q=|a=>{ -> Main.beni:24:13 spread
+        \\let b=a*7919 -> Main.beni:22:5
+        \\let |b=a*7919 -> Main.beni:22:5 doubled
+        \\b=|a*7919 -> Main.beni:23:9
+        \\b+b*3 -> Main.beni:24:5
+        \\r=|b=>{if -> Main.beni:12:5 describe
+        \\return a(q( -> Main.beni:14:13
+        \\throw new Error -> Main.beni:17:13
+        \\s=|a=>a.length -> Main.beni:29:5 total
+        \\s(n(a)) -> Main.beni:34:17
+        \\s(|n(a)) -> Main.beni:33:14
+        \\process.stdout -> unmapped
+        \\u(t) -> unmapped
+        \\frame describe Main.beni:17:13
+        \\frame <anonymous> Main.beni:39:94
+        \\exit 1
+        \\
+    , checked.stdout);
+    try testing.expectEqual(@as(u8, 0), checked.exit_code);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    // One file and one map: the hoisted file holds every module.
+    try testing.expectEqualDeep(@as([]const []const u8, &.{ "_main.mjs", "_main.mjs.map", "_manifest.txt" }), try w.listFiles("out"));
+}
+
+test "a release library build writes a map beside every module" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `backend.md` §11.2: a `--library` release build is one file per
+    // module (§9), and each module lowered from beni gets its own map, as
+    // in development. The platform's runtime is hand-written, compacted
+    // and unmapped. In `Lib.mjs`: two exported functions carry their beni
+    // names at their first byte, a renamed local its own, and two calls in
+    // `label` map to their first tokens.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Lib.beni",
+        \\import String
+        \\
+        \\
+        \\pub spread : Int → Int
+        \\spread n =
+        \\    doubled =
+        \\        n * 7919
+        \\    doubled + doubled * 3
+        \\
+        \\
+        \\pub label : List Int → String
+        \\label xs =
+        \\    String.join (List.map xs (λx → String.fromInt (spread x))) ", "
+        \\
+    );
+    try w.write("check-release-map.mjs", check_release_map_script);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const built = try w.runWith(&.{ "build", "--platform=node", "--release", "--library", "--source-maps", "--out=lib", "Lib.beni" }, .{ .raw_diagnostics = true });
+    try expectBuilt(built);
+    const checked = try w.runNode(&.{ "check-release-map.mjs", "lib/Lib.mjs", "no", "d=|a=>", "let |b", "b+b*3", "e=|f=>", "a(|c(f", "b(d(f))" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqualStrings("", checked.stderr);
+    try testing.expectEqualStrings(
+        \\version 3, file Lib.mjs
+        \\source ../Lib.beni: its text
+        \\d=|a=> -> Lib.beni:8:13 spread
+        \\let |b -> Lib.beni:6:5 doubled
+        \\b+b*3 -> Lib.beni:8:5
+        \\e=|f=> -> Lib.beni:13:5 label
+        \\a(|c(f -> Lib.beni:13:18
+        \\b(d(f)) -> Lib.beni:13:36
+        \\
+    , checked.stdout);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    // A map beside every module lowered from beni, core's included, and
+    // none beside the hand-written runtime.
+    const files = try w.listFiles("lib");
+    var maps: usize = 0;
+    for (files) |path| {
+        const is_module = std.mem.endsWith(u8, path, ".mjs") and !std.mem.endsWith(u8, path, ".foreign.mjs") and !std.mem.endsWith(u8, path, "_derived.mjs");
+        const map = try std.fmt.allocPrint(w.arena.allocator(), "{s}.map", .{path});
+        var has_map = false;
+        for (files) |other| has_map = has_map or std.mem.eql(u8, other, map);
+        try testing.expectEqual(is_module, has_map);
+        maps += @intFromBool(has_map);
+    }
+    try testing.expect(maps >= 2);
+    try testing.expect(w.exists("lib/_platform/runtime.foreign.mjs"));
+    const core_map = try w.read("lib/_core/List.mjs.map");
+    try testing.expect(std.mem.startsWith(u8, core_map, "{\"version\":3,\"file\":\"List.mjs\",\"sources\":[\"beni:///core/List.beni\"],\"sourcesContent\":[\""));
 }
 
 test "--no-source-maps writes no map and no comment, and contradicting it is refused" {
