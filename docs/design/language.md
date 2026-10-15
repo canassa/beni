@@ -1034,7 +1034,26 @@ gets worse:
   amortised O(1) a step. Now each step's `rest` is a view, and a push onto a view makes it plain
   first, so a step is O(n). *Instead:* keep the list and a read index (`List.get q i`, then
   `i + 1`), and drop the read part with `List.drop` when it is more than half. Writing through a
-  view would restore O(1) and is a possible later change (`backend.md` §4).
+  view would restore O(1) and is a possible later change (`backend.md` §4). For example:
+
+      type alias Queue a = { items : List a, next : Int }
+
+      push : Queue a, a → Queue a
+      push q x = { q | items = List.push q.items x }
+
+      pop : Queue a → Maybe (a × Queue a)
+      pop q =
+          case List.get q.items q.next of
+              Nothing → Nothing
+              Just x →
+                  if 2 * (q.next + 1) > List.length q.items then
+                      Just ( x, { items = List.drop q.items (q.next + 1), next = 0 } )
+                  else
+                      Just ( x, { q | next = q.next + 1 } )
+
+  `pop` reads in O(1). It drops the read part only when that part is more than half the list.
+  The next `push` after a drop writes to a view, so it copies the unread elements, which are
+  fewer than the elements read since the last drop. A step therefore costs amortised O(1).
 - **Every write, on a platform that does not edit in place**: a building loop is O(n²) there. That
   is the open question in `backend.md` §4.
 
