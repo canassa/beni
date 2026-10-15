@@ -4438,6 +4438,83 @@ test "a release build maps the one hoisted file back to each module's beni sourc
     try testing.expectEqualDeep(@as([]const []const u8, &.{ "_main.mjs", "_main.mjs.map", "_manifest.txt" }), try w.listFiles("out"));
 }
 
+test "a branch that specialisation decides maps to the code it keeps" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `backend.md` §11.2, item 6. `crash 500` takes its `then` branch, and
+    // whole-program specialisation writes the call it keeps in place of
+    // the `if`. That call maps to its own line, 14:9, as the development
+    // build's `crash` frame does, and not to the test's `>` at 13:10. The
+    // call to `Aid.twice` is a body copied from another module, so it maps
+    // to its call, in UTF-16 columns after `é😀`. `Aid` keeps no mark of
+    // its own, so it is no source of the map.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Aid.beni",
+        \\pub twice : Int → Int
+        \\twice n =
+        \\    n * 2
+        \\
+        \\
+        \\pub boom : Int → Int
+        \\boom n =
+        \\    Debug.todo "boom é😀"
+        \\
+    );
+    try w.write("src/Main.beni",
+        \\import Aid
+        \\import Node exposing (Program)
+        \\import String
+        \\
+        \\
+        \\label : Int → String
+        \\label n =
+        \\    "é😀 " ++ String.fromInt (Aid.twice n) ++ " ✓"
+        \\
+        \\
+        \\crash : Int → Int
+        \\crash n =
+        \\    if n > 100 then
+        \\        Aid.boom n
+        \\
+        \\    else
+        \\        n
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.printLines [ label 1, "😀😀" ++ label 2, String.fromInt (crash 500) ]
+        \\
+    );
+    try w.write("check-release-map.mjs", check_release_map_script);
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const built = try w.runWith(&.{ "build", "--platform=node", "--release", "--allow-debug", "--source-maps", "--out=out", "src" }, .{ .raw_diagnostics = true });
+    try expectBuilt(built);
+    const checked = try w.runNode(&.{ "check-release-map.mjs", "out/_main.mjs", "run", "a(|b())", "a(|b*2)" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqualStrings("", checked.stderr);
+    try testing.expectEqualStrings(
+        \\version 3, file _main.mjs
+        \\source beni:///core/String.beni: embedded
+        \\source beni:///core/Debug.beni: embedded
+        \\source ../src/Main.beni: its text
+        \\a(|b()) -> Main.beni:14:9
+        \\a(|b*2) -> Main.beni:8:41
+        \\frame todo Debug.beni:43:15
+        \\frame <anonymous> Main.beni:14:9
+        \\exit 1
+        \\
+    , checked.stdout);
+    try testing.expectEqual(@as(u8, 0), checked.exit_code);
+}
+
 test "a release library build writes a map beside every module" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │

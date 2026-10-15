@@ -608,6 +608,16 @@ const Mod = struct {
         m.setNode(node, m.ir.tag(from), d.lhs, d.rhs);
     }
 
+    /// `copyNode` for a fold: `node`, a decided `cond`, `&&` or `||`, is
+    /// the operand `from` it keeps, position included. The kept code is
+    /// what runs, so a map names where it was written and not the test
+    /// that decided it; a call kept this way is also the site a copy into
+    /// it takes (`Copy.site`; `backend.md` §11.2, item 6).
+    fn foldTo(m: *Mod, node: Index, from: Index) void {
+        m.copyNode(node, from);
+        m.ir.nodes.items(.pos)[node.int()] = m.ir.pos(from);
+    }
+
     /// Append `words` to `extra`, keeping the IR's view of it current.
     fn append(m: *Mod, gpa: Allocator, words: []const u32) Allocator.Error!u32 {
         const at: u32 = @intCast(m.extra.items.len);
@@ -2899,7 +2909,7 @@ const Spec = struct {
                 // Fact 5's second case: the branch the test takes is the
                 // read it tested.
                 if (s.decided_conds.get(.{ .module = m.index, .node = node.int() })) |b| {
-                    m.copyNode(node, b);
+                    m.foldTo(node, b);
                     m.memo[node.int()] = m.memo[b.int()];
                     try JsIr.pushOperand(s.arena, &stack, node);
                     any = true;
@@ -2916,7 +2926,7 @@ const Spec = struct {
                         .bot, .unknown => null,
                     };
                     if (taken) |b| {
-                        m.copyNode(node, b);
+                        m.foldTo(node, b);
                         m.memo[node.int()] = m.memo[b.int()];
                         try JsIr.pushOperand(s.arena, &stack, node);
                         any = true;
@@ -2940,7 +2950,7 @@ const Spec = struct {
                     else
                         null;
                     if (kept) |k| {
-                        m.copyNode(node, k);
+                        m.foldTo(node, k);
                         m.memo[node.int()] = m.memo[k.int()];
                         try JsIr.pushOperand(s.arena, &stack, node);
                         any = true;
