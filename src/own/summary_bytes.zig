@@ -9,7 +9,8 @@
 //! - a **module** by its package and dotted name, through the table at the
 //!   block's head;
 //! - a **declaration** by its index in its module's BIR, a **constructor** by
-//!   its module and its index in that module's constructor table — both
+//!   its module and its index in that module's constructor table (the
+//!   BIR's constructors, then its tagged schemas', `Ownership.schemaCtorIndex`) — both
 //!   functions of the module's source, which the module's key covers;
 //! - a **path** step by step, a field by its name;
 //! - every other number (a parameter, a fresh number, a lambda's local) as
@@ -64,7 +65,8 @@ pub const magic = "BENIOWN\x00";
 /// 6 excluded evidence-driven values, 7 retained entry environments, and
 /// 8 preserves unknown/root entry paths while excluding only known init fields.
 /// 9 reads `need` through taken elements (§16.4 item 5, amended 2026-10-15).
-pub const version: u32 = 9;
+/// 10 names a tagged schema's constructors after the BIR's own.
+pub const version: u32 = 10;
 
 pub const Error = error{Bad} || Allocator.Error;
 
@@ -579,7 +581,7 @@ pub fn read(o: *Ownership, arena: Allocator, bytes: []const u8, m: u32) Error!Bl
                     const cm = try r.module();
                     const ci = try r.int();
                     const k = try r.byte();
-                    if (k >= 64 or !o.hasCtor(cm, ci)) return error.Bad;
+                    if (k >= 64 or !try o.hasCtor(cm, ci)) return error.Bad;
                     break :blk (try o.ctorId(cm, ci)) *% 64 +% k;
                 },
                 .elem, .env, .any, .markup_render, .markup_event => 0,

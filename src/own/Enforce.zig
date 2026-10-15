@@ -52,6 +52,7 @@ pub const Inputs = struct {
             .graph = &session.graph,
             .birs = i.birs,
             .provenance = session.resolution.provenance,
+            .interfaces = session.resolution.interfaces,
             .dispatch = session.checked.dispatch,
             .modules = session.checked.modules,
             .types = &session.checked.types,
