@@ -184,9 +184,11 @@ hole on master; this PR's private initialization transfer also made `m = initial
 reach it. Neither is an allocation by the init body. The dated §22.2 amendment
 now keeps every other entry field's environment live against runtime writes,
 including instantiated bindings of helper-returned closures. Both reported
-programs and a carried-view twin are rejected fixtures. The init-only capture
-and body-allocation positives remain accepted; block version 7 invalidates older
-proofs. This is a soundness fix, not a new acceptance rule.
+programs and a carried-view twin are rejected fixtures. A helper-returned entry
+record updated at its use is also refused. The init-only capture
+and body-allocation positives remain accepted. Block version 7 first added entry environments; version 8
+also preserves root/wildcard entries when excluding the known init subtree,
+invalidating both older proofs. This is a soundness fix, not a new acceptance rule.
 
 Rebased onto master including #124 (`134d24ab9`). Both reported refusals fail
 their tests when the capture fix is set aside. TodoMVC and Sternhalma's paired

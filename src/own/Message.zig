@@ -306,7 +306,7 @@ pub fn build(a: Allocator, src: Src, m: u32, lines: []const Demand) Allocator.Er
             try w(&out, a, "Build the value inside `init ⊤`, so that each call makes fresh lists:\n\n    init ⊤ = …\n\nCall that function where the model is made. Wrapping `{s}` in `λ⊤ → {s}` still returns the same shared value.\n\n", .{ top, top })
         else {
             const whole = if (d.top) |t| t[2] == 1 else false;
-            var copy = if (whole) top else d.base;
+            var copy = if (whole or d.base.len == 0) top else d.base;
             // Report paths qualify this module, but its own name is not an
             // import alias that the suggested source expression can use.
             const prefix = try std.fmt.allocPrint(a, "{s}.", .{src.vtable.module_name(src.ctx, m)});
