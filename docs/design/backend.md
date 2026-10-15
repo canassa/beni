@@ -6782,8 +6782,10 @@ fact 3 finds at the call:
   | each of those functions is an arrow or a `function` whose body is empty or one `return` of an `inert` value: a function, a literal, a name, or an object, array or template of those | the body calls nothing, reads no property and writes nothing, so it cannot throw, loop, suspend, log or change a value; binding a parameter does nothing, since a `JsIr` parameter is a plain name |
   | every argument does nothing in turn, to a depth of 8 calls | the call evaluates its arguments first |
 
-  Such a call makes a new value and does nothing else, so when nothing reads that value nothing can
-  tell that it was not made: `language.md` §6's order loses no effect, and no reachable code holds
+  A name the value reads cannot throw either, by the invariant every other drop of an `inert`
+  value already rests on: emitted code does not read a binding before its declaration has run
+  (`cyclic_value` refuses a value that needs itself). Such a call makes a new value and does nothing else, so when nothing reads that
+  value nothing can tell that it was not made: `language.md` §6's order loses no effect, and no reachable code holds
   the object (rule 8). It goes like any other argument that does nothing: `start`'s unread
   `app.init ⊤`, and `Navigation.key ⊤`, whose result an application's `init` does not read.
 - **A function used once is written in with no size model** (`Spec.soleCalls`). Slice 8 writes a
@@ -6801,7 +6803,11 @@ fact 3 finds at the call:
   parameter for its `⊤`; `trimArguments` drops such an argument only after slice 8 has run. The
   rewrite is slice 8's, with slice 8's rules for the arguments that stay: atoms, or one read once
   and first. The uses are counted in one walk of the program, made at most once per pass and only
-  when the size model has refused a call through a property.
+  when the size model has refused a call through a property. A body slice 8 has already written in
+  during that pass is newer than the facts, so the walk cannot see the uses in it: every function
+  site a node of a copied body may be is marked, and a marked function is not used once. A wrong
+  count only costs bytes — the rewrite is slice 8's, sound at any size, and a key or a binding
+  goes only when nothing reads it.
 
 Neither rule changes a development build.
 
@@ -6850,7 +6856,8 @@ lambda; `start`'s and `step`'s lambdas, each used once, written at their calls, 
 an inert `null`; a `label` whose body calls `String.repeat` written in, but its unread call kept;
 a lambda called twice and one also handed to `List.map` left to the size model) — red against
 the compiler before; `run/SpecializeRecordLambda` (an unread call and an unread binding of a
-lambda that only makes a value go, one whose lambda logs and one handed a logged `⊤` stay and log
+lambda that only makes a value go, a lambda that makes a record of a name it captures among them;
+one whose lambda logs and one handed a logged `⊤` stay and log
 where they stood, and a lambda used once evaluates its logged argument once, between its
 neighbours) — red with `makesOnly` accepting any body: the release build loses the `noisy` and
 `unit` lines. Goldens moved: `emit/release/tea/HttpSendTracked` and `HttpSendUntracked` (the
