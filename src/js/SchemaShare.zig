@@ -98,7 +98,7 @@ pub fn fieldHelper(plan: *const SchemaPlan, op: Op, f: SchemaPlan.Field, key: []
         .bool => .bool,
         .float => .float,
         .finite_float => .finite,
-        .null, .value => null,
+        .null, .value, .char, .int32, .never => null,
     };
 }
 
@@ -156,12 +156,15 @@ fn count(scratch: Allocator, sg: *const SchemaGraph, live: *const Reach.Result, 
     for (0..sg.graph.count()) |mi| {
         const m: Graph.Index = @fromBackingInt(@intCast(@as(u32, @intCast(mi))));
         const plan = sg.planOf(m);
-        for (plan.definitions) |*d| {
+        // The declarations' definitions, then the derived codecs' (schema.md
+        // §12.10), whose `decode` and `encode` write no worker of their own.
+        for ([_][]const SchemaPlan.Definition{ plan.definitions, plan.codecs }) |defs| for (defs) |*d| {
             const decl = @backingInt(d.decl);
             var nodes: std.ArrayList(PNode) = .empty;
             var walked = false;
             for ([_]Op{ .parse, .print, .decode, .encode, .read, .write }) |op| {
                 if (!live.schema(m, decl, SchemaGraph.Member.worker(op))) continue;
+                if (sg.hostAliased(.{ .module = m, .decl = decl }, SchemaGraph.Member.worker(op)) != null) continue;
                 if (!walked) {
                     try SchemaGraph.subtree(plan, scratch, d.root, &nodes);
                     walked = true;
@@ -186,10 +189,23 @@ fn count(scratch: Allocator, sg: *const SchemaGraph, live: *const Reach.Result, 
                         }
                         if (op.hostIn()) out[@backingInt(Helper.missing)] += 1;
                     },
+                    // A derived codec's: the depth bound before each
+                    // element, and before a constructor's arguments.
+                    .tuple => if (!fields) {
+                        out[@backingInt(Helper.deep)] += @intCast(SchemaGraph.elements(plan, n).len);
+                    },
+                    .constructors => if (!fields) {
+                        for (SchemaGraph.ctors(plan, n)) |c| {
+                            const arity = SchemaGraph.ctorArgs(plan, c).len;
+                            if (arity == 0) continue;
+                            out[@backingInt(Helper.deep)] += 1;
+                            if (arity > 1) out[@backingInt(Helper.deep)] += @intCast(arity);
+                        }
+                    },
                     else => {},
                 };
             }
-        }
+        };
     }
 }
 

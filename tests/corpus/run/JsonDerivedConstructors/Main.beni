@@ -1,0 +1,151 @@
+-- A custom type's derived codec, in Roc's wire form (`schema.md` §12.3):
+-- a nullary constructor is its name as a string, one argument
+-- `{"Circle": v}`, several `{"Rect": [w, h]}`, a payload record the one
+-- argument. A string naming a constructor that takes arguments, an object
+-- naming one that takes none, an object of two keys and a name no
+-- constructor has each fail at the value, and an argument's failure is at
+-- the constructor's name, then the index: `FirstError` stops at the first,
+-- `AllErrors` reports each. A recursive `Tree a` reads through its own
+-- definition under the depth bound: at the bound, and one past it. Both
+-- paths, as `JsonDerivedTable`.
+import Json
+import Node
+import Schema exposing (Issue)
+import Show
+
+
+type Shape
+    = Dot
+    | Circle Float
+    | Rect Int Int
+    | Labelled { label : String, size : Maybe Int }
+
+
+type Tree a
+    = Leaf
+    | Node (Tree a) a (Tree a)
+
+
+all : Schema.Options
+all =
+    { errors = Schema.AllErrors, unknownKeys = Schema.Ignore, maxDepth = 512, reportInput = False }
+
+
+bounded : Int → Schema.Options
+bounded depth =
+    { errors = Schema.FirstError
+    , unknownKeys = Schema.Ignore
+    , maxDepth = depth
+    , reportInput = False
+    }
+
+
+shapes : String → Result (List Issue) (List Shape)
+shapes text = Json.decode text
+
+
+shapesAll : String → Result (List Issue) (List Shape)
+shapesAll text = Json.decodeWith all text
+
+
+tree : Int, String → Result (List Issue) (Tree Int)
+tree depth text = Json.decodeWith (bounded depth) text
+
+
+shape : Shape → String
+shape s =
+    case s of
+        Dot →
+            "Dot"
+
+        Circle r →
+            "Circle " ++ String.fromFloat r
+
+        Rect w h →
+            "Rect " ++ String.fromInt w ++ " " ++ String.fromInt h
+
+        Labelled r →
+            "Labelled "
+                ++ r.label
+                ++ (case r.size of
+                       Just n →
+                           " " ++ String.fromInt n
+
+                       Nothing →
+                           ""
+                   )
+
+
+showShapes : List Shape → String
+showShapes xs = String.join (List.map xs shape) ", "
+
+
+showTree : Tree Int → String
+showTree t =
+    case t of
+        Leaf →
+            "."
+
+        Node l x r →
+            "(" ++ showTree l ++ String.fromInt x ++ showTree r ++ ")"
+
+
+-- A chain `n` nodes deep: each node is two levels of the value, the
+-- constructor's object and its arguments' array.
+chain : Int → String
+chain n =
+    if n == 0 then
+        "\"Leaf\""
+    else
+        "{\"Node\":[\"Leaf\"," ++ String.fromInt n ++ "," ++ chain (n - 1) ++ "]}"
+
+
+printed : Result (List Issue) String → String
+printed r = Show.result r λs → s
+
+
+main : Node.Program
+main =
+    Node.printLines
+        [ "-- decode"
+        , Show.result
+            (shapes
+                "[\"Dot\",{\"Circle\":1.5},{\"Rect\":[2,3]},{\"Labelled\":{\"label\":\"L\",\"size\":4}},{\"Labelled\":{\"label\":\"M\"}}]"
+            )
+            showShapes
+        , Show.result (shapes "[\"Circle\"]") showShapes
+        , Show.result (shapes "[{\"Dot\":1}]") showShapes
+        , Show.result (shapes "[{\"Circle\":1,\"Dot\":2}]") showShapes
+        , Show.result (shapes "[\"Square\"]") showShapes
+        , Show.result (shapes "[{\"Square\":1}]") showShapes
+        , Show.result (shapes "[7]") showShapes
+        , Show.result (shapes "[{\"Rect\":[2]}]") showShapes
+        , Show.result (shapes "[{\"Rect\":[\"a\",\"b\"]}]") showShapes
+        , Show.result (shapes "[{\"Labelled\":{\"size\":1}}]") showShapes
+        , "-- decode, every error"
+        , Show.result
+            (shapesAll
+                "[{\"Rect\":[\"a\",\"b\"]},{\"Labelled\":{\"label\":1,\"size\":\"s\"}},\"Nope\"]"
+            )
+            showShapes
+        , "-- a recursive type under the depth bound"
+        , Show.result (tree 512 (chain 3)) showTree
+        , Show.result (tree 6 (chain 3)) showTree
+        , Show.result (tree 5 (chain 3)) showTree
+        , "-- encode"
+        , printed
+            (Json.encode
+                [ Dot
+                , Circle 2.5
+                , Rect 1 2
+                , Labelled { label = "q", size = Nothing }
+                , Labelled { label = "r", size = Just 5 }
+                ]
+            )
+        , printed (Json.encode sampleTree)
+        , printed (Json.encodeWith all [ Circle (0 / 0), Rect 9007199254740992 1 ])
+        ]
+
+
+sampleTree : Tree Int
+sampleTree = Node (Node Leaf 1 Leaf) 2 Leaf

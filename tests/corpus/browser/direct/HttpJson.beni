@@ -1,4 +1,4 @@
--- `expectJson` reads the answer with a schema (boundary.md §9.8.12 (a),
+-- `expectSchema` reads the answer with a schema (boundary.md §9.8.12 (a),
 -- (b)): it sends `Accept: application/json` and parses a 2xx body — a
 -- record decoded, a renamed key read; a body that is not JSON is `BadBody`
 -- with a `ParseFailed` issue, one missing a field `BadBody` with
@@ -70,7 +70,7 @@ update msg lines =
         Run name →
             ( lines
             , Cmd.task
-                (λ⊤ → Http.get { url = "/${name}", expect = Http.expectJson (Note.schema ⊤) })
+                (λ⊤ → Http.get { url = "/${name}", expect = Http.expectSchema (Note.schema ⊤) })
                 λr → Got name (shown r)
             )
 

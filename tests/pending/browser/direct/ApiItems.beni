@@ -2,7 +2,7 @@
 -- The milestone's acceptance page (plans/http-and-routing.md, *Order*),
 -- its list half: a `GET` that carries a bearer token in its
 -- `Authorization` header and reads a JSON list through a schema
--- (boundary.md §9.8.12, `expectJson` over `Schema.list`). Asked for
+-- (boundary.md §9.8.12, `expectSchema` over `Schema.list`). Asked for
 -- again, the list is a 401, which is `BadStatus`: the items are emptied
 -- and the failure is shown, not a crash. Signing in is `ApiLogin` and
 -- routing `Routes`.
@@ -38,7 +38,7 @@ loadItems token =
                 , headers = [ Http.header "Authorization" "Bearer ${token}" ]
                 , url = "/api/items"
                 , body = Http.emptyBody
-                , expect = Http.expectJson (Schema.list (Item.schema ⊤))
+                , expect = Http.expectSchema (Schema.list (Item.schema ⊤))
                 , timeout = Nothing
                 , tracker = Nothing
                 }

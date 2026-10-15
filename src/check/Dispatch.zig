@@ -132,6 +132,11 @@ pub const Term = union(enum(u8)) {
     identity: Range,
     /// Literal identity text: a run of `text`. Only an `identity`'s part.
     text: Range,
+    /// A derived codec this module emits (schema.md §12.10): its index in
+    /// the module's schema plan's `codecs`, and the evidence of its slots,
+    /// each a `codec` term. Its value is a function of `⊤` answering the
+    /// codec's schema.
+    codec: CodecUse,
 
     /// `k` is a `u32` since dispatch format 4: a derived row
     /// can have more than 65 535 context entries or positions.
@@ -145,6 +150,7 @@ pub const Term = union(enum(u8)) {
         kind: Derived.Kind,
         args: Range = .empty,
     };
+    pub const CodecUse = struct { index: u32, args: Range = .empty };
 
     /// The range of `args` this term's own arguments occupy, or empty.
     pub fn argsOf(t: Term) Range {
@@ -153,6 +159,7 @@ pub const Term = union(enum(u8)) {
             .ext => |u| u.args,
             .derived => |u| u.args,
             .ext_derived => |u| u.args,
+            .codec => |u| u.args,
             .identity => |r| r,
             else => .empty,
         };
@@ -727,6 +734,9 @@ pub fn requirementCount(d: *const Dispatch, t: Term, interfaces: []const Interfa
         .ext_derived => |u| publishedCount(interfaces, types, interner, u.type, u.kind),
         // An identity's parts are its own, and say their count.
         .identity => |r| r.len,
+        // A derived codec's slots are its own arguments, one per
+        // parameter of its plan definition (schema.md §12.10).
+        .codec => |u| u.args.len,
         .param, .primitive, .undetermined, .field, .text => 0,
     };
 }
@@ -968,7 +978,7 @@ const I7 = struct {
                 },
                 .primitive, .field, .param => return site.evidence.len == 0,
                 // Never a callee: an `err` SITE becomes no term at all.
-                .undetermined, .identity, .text => return false,
+                .undetermined, .identity, .text, .codec => return false,
             }
         }
         if (wants_callee) return false;

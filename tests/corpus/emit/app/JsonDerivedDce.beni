@@ -1,0 +1,36 @@
+-- emit/app: a derived codec compiles as a declaration does, and only what
+-- the program reaches ships (`schema.md` §12.8, §12.10; `backend.md` §9).
+--
+--   - `title` decodes an `Entry`: its definition is a decoding worker that
+--     checks each field in place — no description, no `core/Schema`
+--     builder, no interpreter — and the call of `Json.decode` is the
+--     definition's own `parse`, as a declaration's `S.parse` is.
+--   - Nothing prints, so `Entry`'s encoding worker is gone.
+--   - `unused` decodes another record and nothing calls it: it and its
+--     definition are gone entire.
+import Json
+import Node exposing (Program)
+import Schema exposing (Issue)
+
+
+type alias Entry =
+    title : String
+    rank : Int
+
+
+title : String → String
+title text =
+    case Json.decode text of
+        Ok entry →
+            entry.title ++ String.fromInt entry.rank
+
+        Err _ →
+            ""
+
+
+unused : String → Result (List Issue) { other : Bool }
+unused text = Json.decode text
+
+
+main : Program
+main = Node.printLines [ title "{\"title\":\"t\",\"rank\":1}" ]

@@ -52,6 +52,7 @@ const CtorEq = @import("CtorEq.zig");
 const Graph = @import("../resolve/Graph.zig");
 const Interface = @import("../resolve/Interface.zig");
 const InternPool = @import("../InternPool.zig");
+const SourceStore = @import("../SourceStore.zig");
 const JsIr = @import("JsIr.zig");
 const Reach = @import("Reach.zig");
 const Fields = @import("Fields.zig");
@@ -1389,6 +1390,88 @@ pub const Lowerer = struct {
         return l.binary(.strict_eq, subject, try l.tagLiteral(rep, tag, p), p);
     }
 
+    /// A derived codec's constructor (`schema.md` §12.10): constructor
+    /// `order` of a nominal type, as this module builds, tests and reads it
+    /// (§4's representation, integer tags under `--release` included).
+    pub const CodecCtor = struct { rep: CtorRep, tag: Symbol, key: NullaryKey };
+
+    /// Constructor `order` of type `type_name` of module `module_name`, or
+    /// null when this build cannot name it (a corrupt plan).
+    pub fn codecCtor(l: *Lowerer, package: SourceStore.Package, module_name: Symbol, type_name: Symbol, order: u32) !?CodecCtor {
+        const module = l.in.graph.find(package, module_name) orelse return null;
+        if (module == l.in.module) {
+            for (l.bir.decls) |d| {
+                if (d.kind != .type or l.bir.symbol(d.name) != type_name) continue;
+                if (d.ctors_start + order >= d.ctors_end) return null;
+                const index = d.ctors_start + order;
+                return .{ .rep = l.ctorRepLocal(index), .tag = l.bir.symbol(l.bir.ctors[index].name), .key = .{ .ext = false, .module = 0, .ctor = index } };
+            }
+            return null;
+        }
+        if (module.int() >= l.in.interfaces.len) return null;
+        const iface = &l.in.interfaces[module.int()];
+        const ti = iface.findType(l.interner.global, type_name) orelse return null;
+        const t = iface.types[@backingInt(ti)];
+        if (t.ctors_start + order >= t.ctors_end) return null;
+        const index = t.ctors_start + order;
+        return .{ .rep = l.ctorRepExternal(module, index), .tag = iface.symbols[@backingInt(iface.ctors[index].name)], .key = .{ .ext = true, .module = module.int(), .ctor = index } };
+    }
+
+    /// `cc` applied to `args`: a padded nullary one is the module constant
+    /// every use of it shares, as `nullaryConstant` names it.
+    pub fn codecCtorValue(l: *Lowerer, cc: CodecCtor, args: []const Node.Index, p: u32) !Node.Index {
+        if (args.len == 0 and cc.rep == .tagged) {
+            const slot = try l.nullary.getOrPut(l.scratch, cc.key);
+            if (!slot.found_existing) {
+                const base = if (cc.key.ext) blk: {
+                    const path = l.text(l.in.graph.moduleName(@fromBackingInt(@intCast(cc.key.module))));
+                    const out = try std.fmt.allocPrint(l.scratch, "{s}${s}", .{ path, l.text(cc.tag) });
+                    for (out[0..path.len]) |*c| {
+                        if (c.* == '.') c.* = '$';
+                    }
+                    break :blk out;
+                } else l.text(cc.tag);
+                slot.value_ptr.* = .{ .base = base, .name = try l.synthesisedName(base), .rep = cc.rep, .tag = cc.tag };
+            }
+            return l.ident(slot.value_ptr.name, p);
+        }
+        return l.ctorValue(cc.rep, cc.tag, args, p);
+    }
+
+    /// Whether `v` is `cc`, or null when it always is (the one constructor
+    /// of an unboxed type).
+    pub fn codecCtorTest(l: *Lowerer, cc: CodecCtor, v: Node.Index, p: u32) !?Node.Index {
+        const subject = switch (cc.rep) {
+            .tagged => try l.member(v, l.well.tag, p),
+            .bare_tag => v,
+            .unboxed, .record => return null,
+            .boolean => |b| return try l.binary(.strict_eq, v, try l.add(if (b) .true_lit else .false_lit, p, Node.Data.unused, Node.Data.unused), p),
+        };
+        return try l.binary(.strict_eq, subject, try l.tagLiteral(cc.rep, cc.tag, p), p);
+    }
+
+    /// Argument `i` of the constructor `v` is.
+    pub fn codecCtorArg(l: *Lowerer, cc: CodecCtor, v: Node.Index, i: u32, p: u32) !Node.Index {
+        if (cc.rep == .unboxed) return v;
+        return l.member(v, try l.slotName(i), p);
+    }
+
+    /// Value `name` of module `module_name` in value position: this
+    /// module's declaration, or another's interface value, imported.
+    pub fn valueNamed(l: *Lowerer, package: SourceStore.Package, module_name: Symbol, value_name: Symbol, p: u32) !Node.Index {
+        const module = l.in.graph.find(package, module_name) orelse return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+        if (module == l.in.module) {
+            for (l.bir.decls, 0..) |d, i| {
+                if (d.kind.isValue() and l.bir.symbol(d.name) == value_name) return l.ident(try l.topName(@intCast(i)), p);
+            }
+            return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+        }
+        if (module.int() >= l.in.interfaces.len) return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+        const value = l.in.interfaces[module.int()].findValue(l.interner.global, value_name) orelse return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+        try l.need(module, @backingInt(value));
+        return l.ident(try l.externalName(module, @backingInt(value)), p);
+    }
+
     /// A schema declaration's `via` expression, lowered as the body of
     /// that declaration: its lambdas' locals are the declaration's.
     pub fn schemaViaExpr(l: *Lowerer, decl: u32, inst: Inst.Index) !Node.Index {
@@ -1654,7 +1737,7 @@ pub const Lowerer = struct {
         try l.declaration(&part, index);
         // Fewer nodes than this cannot be over either budget, and
         // measuring is a walk of every node: most declarations skip it.
-        if (l.b.nodes.len - nodes >= JsIr.nesting.could_exceed) try l.refuseTooDeep(part.items, index);
+        if (index < l.bir.decls.len and l.b.nodes.len - nodes >= JsIr.nesting.could_exceed) try l.refuseTooDeep(part.items, index);
         return part.items;
     }
 
@@ -1724,7 +1807,12 @@ pub const Lowerer = struct {
     /// `M$eq` to a derived function as a value (§9.2), and a value read
     /// before its `const` is initialised is the same dead-zone throw.
     fn emissionOrder(l: *Lowerer) ![]const u32 {
-        const count: u32 = @intCast(l.bir.decls.len);
+        // The module's derived codecs (`schema.md` §12.10) are virtual
+        // declarations after the last, ordered with the rest: a constant
+        // that decodes at load reads a codec's value, and a codec's
+        // description reads its module's `codec` values.
+        const decls: u32 = @intCast(l.bir.decls.len);
+        const count: u32 = decls + l.codecCount();
         const state = try l.scratch.alloc(u8, count);
         @memset(state, 0); // 0 = unvisited, 1 = on stack, 2 = done
         var order: std.ArrayList(u32) = .empty;
@@ -1740,14 +1828,18 @@ pub const Lowerer = struct {
             // a §9 reachability edge, so the survivors come out in the same
             // relative order they have today and the temporal dead zone
             // stays closed. `requireLive` is the proof, not this loop.
-            if (!l.liveDecl(@intCast(root)) and !l.liveTwin(@intCast(root)) and !(l.bir.decls[root].kind == .schema and l.liveSchemaAny(@intCast(root)))) continue;
+            if (root >= decls) {
+                if (!l.liveSchemaAny(@intCast(root))) continue;
+            } else if (!l.liveDecl(@intCast(root)) and !l.liveTwin(@intCast(root)) and !(l.bir.decls[root].kind == .schema and l.liveSchemaAny(@intCast(root)))) continue;
             if (state[root] != 0) continue;
             try stack.append(l.scratch, .{ .decl = @intCast(root), .next = 0, .tops = try l.siteTops(@intCast(root)) });
             state[root] = 1;
             while (stack.items.len != 0) {
                 const frame = &stack.items[stack.items.len - 1];
-                const d = l.bir.decls[frame.decl];
-                const refs = l.bir.refs[d.refs_start..d.refs_end];
+                const refs = if (frame.decl < decls) blk: {
+                    const d = l.bir.decls[frame.decl];
+                    break :blk l.bir.refs[d.refs_start..d.refs_end];
+                } else &.{};
                 // Found ONCE per frame, not once per edge: `siteTops` is a
                 // binary search plus a walk of the run it finds, and a
                 // declaration with s sites would otherwise pay for it s
@@ -1784,6 +1876,11 @@ pub const Lowerer = struct {
     /// run beside it. `Edges.termsEdges` visits each term once, so a table
     /// that shares terms costs its distinct terms (checker-v2.md §13.1).
     fn siteTops(l: *Lowerer, decl: u32) ![]const u32 {
+        if (decl >= l.bir.decls.len) {
+            var codec_out: std.ArrayList(u32) = .empty;
+            try l.codecTops(decl, &codec_out);
+            return codec_out.items;
+        }
         const d = l.bir.decls[decl];
         var roots: std.ArrayList(Dispatch.TermIndex) = .empty;
         defer roots.deinit(l.scratch);
@@ -1803,9 +1900,46 @@ pub const Lowerer = struct {
         try Edges.termsEdges(&edges, l.scratch, l.in.dispatch, roots.items, true);
         for (edges.items) |edge| switch (edge) {
             .top => |t| try out.append(l.scratch, t),
+            .codec => |k| try out.append(l.scratch, @intCast(l.bir.decls.len + k)),
             else => {},
         };
         return out.items;
+    }
+
+    /// How many derived codecs this module emits (`schema.md` §12.10).
+    fn codecCount(l: *const Lowerer) u32 {
+        const sg = l.in.schemas orelse return 0;
+        return @intCast(sg.planOf(l.in.module).codecs.len);
+    }
+
+    /// What a derived codec's bindings read at load: the definitions and
+    /// `schema` declarations of this module its description names, and the
+    /// module `codec` values of this module it applies.
+    fn codecTops(l: *Lowerer, decl: u32, out: *std.ArrayList(u32)) !void {
+        const sg = l.in.schemas orelse return;
+        const def = sg.definition(l.in.module, decl) orelse return;
+        const plan = sg.planOf(l.in.module);
+        var nodes: std.ArrayList(SchemaPlan.NodeIndex) = .empty;
+        try SchemaGraph.subtree(plan, l.scratch, def.root, &nodes);
+        for (nodes.items) |n| switch (SchemaGraph.tag(plan, n)) {
+            .reference => {
+                const t = sg.target(l.in.module, @fromBackingInt(@intCast(SchemaGraph.lhs(plan, n)))) orelse continue;
+                if (t.module == l.in.module) try out.append(l.scratch, t.decl);
+            },
+            .codec_ref => {
+                const t = sg.codecTarget(l.in.module, SchemaGraph.lhs(plan, n));
+                if (t.decl != decl) try out.append(l.scratch, t.decl);
+            },
+            .codec_value => {
+                const target = plan.value_targets[SchemaGraph.lhs(plan, n)];
+                if (l.in.graph.find(target.package, SchemaGraph.symbol(plan, target.module)) != l.in.module) continue;
+                const value_name = SchemaGraph.symbol(plan, target.name);
+                for (l.bir.decls, 0..) |d, i| {
+                    if (d.kind.isValue() and l.bir.symbol(d.name) == value_name) try out.append(l.scratch, @intCast(i));
+                }
+            },
+            else => {},
+        };
     }
 
     fn schemaTops(l: *Lowerer, decl: u32, out: *std.ArrayList(u32)) !void {
@@ -1829,6 +1963,8 @@ pub const Lowerer = struct {
     }
 
     fn declaration(l: *Lowerer, out: *StmtList, index: u32) !void {
+        // A derived codec (`schema.md` §12.10): a virtual declaration.
+        if (index >= l.bir.decls.len) return SchemaLower.declaration(l, out, index);
         const d = l.bir.decls[index];
         switch (d.kind) {
             .value => {},
@@ -5177,7 +5313,7 @@ pub const Lowerer = struct {
                             if (use.index >= n or rank[use.index] == infinite) break false;
                             deepest = @max(deepest, rank[use.index]);
                         },
-                        .param, .ext_derived, .field, .identity, .text => break false,
+                        .param, .ext_derived, .field, .identity, .text, .codec => break false,
                     }
                 } else true;
                 if (!ok or deepest + 1 > leaf_rank_limit) continue;
@@ -5272,6 +5408,20 @@ pub const Lowerer = struct {
             // A type's identity (`static-dispatch-spike.md` §8.6): its text,
             // a parameter's value joined in with `+`.
             .identity, .text => return l.identityValue(i, p),
+            // A derived codec (`schema.md` §12.10): a function of `⊤`
+            // answering its schema — its `schema` binding itself, or, for a
+            // codec of slots, an arrow that hands it each slot's schema.
+            .codec => |use| {
+                const schema_name = try SchemaLower.codecSchemaName(l, use.index);
+                const args = l.in.dispatch.argsAt(use.args);
+                if (args.len == 0) return l.ident(schema_name, p);
+                const values = try l.termValues(args, kind, p);
+                const schemas = try l.scratch.alloc(Node.Index, values.len);
+                for (values, schemas) |v, *s| s.* = try l.call(v, &.{try l.nullNode(p)}, p);
+                const u = try l.fresh(l.well.param);
+                const stmts = [_]Node.Index{try l.returnStmt(try l.call(try l.ident(schema_name, p), schemas, p), p)};
+                return l.arrowOf(&.{u}, &stmts, p);
+            },
         }
     }
 
@@ -6461,7 +6611,7 @@ pub const Lowerer = struct {
                 }
                 return try l.derivedPartCall(part, .eq, left, right, p);
             },
-            .field, .identity, .text => {
+            .field, .identity, .text, .codec => {
                 try l.reportDispatchBug(region, field_inside_derived);
                 return null;
             },
@@ -6522,7 +6672,7 @@ pub const Lowerer = struct {
                 }
                 return try l.derivedPartCall(part, .compare, left, right, p);
             },
-            .field, .identity, .text => {
+            .field, .identity, .text, .codec => {
                 try l.reportDispatchBug(region, field_inside_derived);
                 return null;
             },
@@ -7235,7 +7385,7 @@ pub const Lowerer = struct {
             },
             // Never a callee: an `err` site becomes no term at all, and an
             // identity is only ever a root.
-            .undetermined, .identity, .text => {
+            .undetermined, .identity, .text, .codec => {
                 try l.reportDispatchBug(inst, no_callee_site);
                 return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
             },
@@ -7430,7 +7580,7 @@ pub const Lowerer = struct {
                 try l.reportDispatchBug(inst, field_without_receiver);
                 return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
             },
-            .undetermined, .identity, .text => {
+            .undetermined, .identity, .text, .codec => {
                 try l.reportDispatchBug(inst, no_callee_site);
                 return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
             },
@@ -7739,6 +7889,22 @@ pub const Lowerer = struct {
             args[0] = typed.descriptor;
             @memcpy(args[1..], values);
             return l.suspension(out, inst, try l.call(typed.callee, args, p));
+        };
+
+        // A `Json` call whose evidence is a derived codec of this module is
+        // the codec's own `parse` or `print` (`schema.md` §12.10): what a
+        // declaration's `S.parse` is, with no `Json` or `Schema.parse` in
+        // between. The reference itself has nothing to evaluate.
+        if (l.in.schemas != null) if (SchemaGraph.jsonCall(l.in.graph, l.in.interfaces, l.bir, l.in.dispatch, l.interner.global, inst)) |json| {
+            const written = try l.exprList(out, l.bir.subRange(@fromBackingInt(@intCast(d.rhs))));
+            l.region = inst;
+            const member_name = try SchemaLower.codecMemberName(l, json.codec, json.member, json.suffix);
+            const slots = l.in.dispatch.argsOfTerm(json.term);
+            const args = try l.scratch.alloc(Node.Index, slots.len + written.len);
+            const values = try l.termValues(slots, null, p);
+            for (values, args[0..slots.len]) |v, *a| a.* = try l.call(v, &.{try l.nullNode(p)}, p);
+            @memcpy(args[slots.len..], written);
+            return l.suspension(out, inst, try l.call(try l.ident(member_name, p), args, p));
         };
 
         // Everything else is one direct n-ary call (`backend.md` §6). The

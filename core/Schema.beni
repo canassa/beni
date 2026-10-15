@@ -184,9 +184,14 @@ pub type Shape
     | EncodedOnly Shape
     | Reference Int
     | Invalid String
+    | TupleOf (List Shape)
+    | ConstructorsOf (List ConstructorShape)
+    | MaybeOf Shape
 
 
---| The primitive schemas.
+--| The primitive schemas. `CharKind`, `Int32Kind` and `NeverKind` are a
+--| derived schema's (`schema.md` §12.10): a string of one character, a
+--| 32-bit integer, and nothing at all.
 pub type PrimitiveKind
     = StringKind
     | BoolKind
@@ -195,6 +200,9 @@ pub type PrimitiveKind
     | FiniteFloatKind
     | NullKind
     | ValueKind
+    | CharKind
+    | Int32Kind
+    | NeverKind
 
 
 --| A record field: its declared name, which the Type endpoint reads and
@@ -212,6 +220,19 @@ pub type alias VariantShape =
     name : String
     tag : String
     payload : Maybe Shape
+
+
+--| A constructor of a derived schema's custom type (`schema.md` §12.3): its
+--| name, which is its wire form, and its arguments.
+pub type alias ConstructorShape =
+    name : String
+    arguments : List Shape
+
+
+--| A schema whose Encoded endpoint is the untyped host value: what a type's
+--| `codec` method answers (`schema.md` §12.2).
+pub type alias Codec a =
+    Schema Value a
 
 
 -- ---- Options -------------------------------------------------------------
@@ -245,6 +266,9 @@ defaultOptions =
 -- `Js.Value` the engine only hands to those functions, never reads; and the
 -- engine's own sequences — a record's fields, a union's variants, the
 -- issues of a run — are host arrays, made and read through `Js`.
+-- `NHost` is a schema whose Encoded end is a host value whatever the
+-- operation (`erased`, a derived codec): `decode` reads it as `read` does
+-- and `encode` writes it as `write` does (`schema.md` §12.10).
 
 type Node
     = NPrim PrimitiveKind
@@ -257,16 +281,34 @@ type Node
     | NProjected Int Node
     | NRef Cell
     | NBroken String
+    | NTuple Js.Value Pair
+    | NCtors Js.Value
+    | NMaybe Node Int
+    | NHost Node
 
 
 -- A record's field: `key` is what the Encoded endpoint reads and writes,
 -- `name` what the Type endpoint does. A record's are a host array of these.
+-- `lenient` is a derived record's `Maybe` field (`schema.md` §12.4): its
+-- key may be absent, which is `Nothing`, and its node is an `NMaybe`.
 type alias FieldNode =
     name : String
     key : String
     renamed : Bool
     optional : Bool
+    lenient : Bool
     node : Node
+
+
+-- A derived custom type's constructor (`schema.md` §12.3): its name, which
+-- is its wire form, its arguments' nodes, a host array, and how the typed
+-- value is made from a host array of its arguments (`inject`) and taken
+-- apart into one, or `null` when it is another constructor (`project`).
+type alias CtorNode =
+    name : String
+    nodes : Js.Value
+    inject : Js.Value
+    project : Js.Value
 
 
 -- A record's mappings, from each endpoint's product to its record and back.
@@ -345,12 +387,14 @@ type alias Workers =
 -- and `parserOf` and `printerOf` its workers. A declaration's is a function
 -- of no argument that answers its description, and its workers of the
 -- operations other than `parse` and `print`, a host array (`declared`).
+-- `MadeErased` is `erased`'s: the same schema, its Encoded end a host value.
 type Made
     = MadeDeclared Js.Value Js.Value
     | MadePrimitive PrimitiveKind
     | MadeList Workers
     | MadeNullable Workers
     | MadeConverted Workers Pair
+    | MadeErased Workers
 
 
 type alias Analysis =
@@ -540,6 +584,9 @@ madeNode origin =
 
         MadeConverted source p →
             NConverted (madeNode source.made) p.there p.back
+
+        MadeErased source →
+            NHost (madeNode source.made)
 
 
 -- ---- A declaration's description ------------------------------------------
@@ -745,6 +792,120 @@ nullable child =
             box (NNullable (nodeOf child))
 
 
+-- ---- Schemas derived from a type -----------------------------------------
+-- What a type's `codec` is (`schema.md` §12). The compiler derives one from
+-- a type and compiles it as it compiles a declaration; the `described…`
+-- values below make its description's nodes, which `describe` and the
+-- library path read (§12.10). None but `Codec`, `erased`, `derived` and
+-- `structural` is `pub`: the code a derived codec compiles to calls the
+-- rest.
+
+--| A schema's Encoded endpoint forgotten: the same schema, as the `Codec`
+--| a type's `codec` method answers. A validated type's module writes
+--| `pub codec ⊤ = Schema.erased (Schema.converted Schema.string toUserId)`.
+--| Its Encoded end is a `Value`, so `decode` reads it as `read` does and
+--| `encode` writes it as `write` does.
+pub erased : Schema e a → Codec a
+erased s =
+    case (boxOf s).engine of
+        Compiled w →
+            compiled (MadeErased w) w.parse w.print w.args
+
+        Interpreted →
+            box (NHost (nodeOf s))
+
+
+--| The schema of a type, derived from its shape (`schema.md` §12.2): its
+--| module's `codec` when it declares one, else its records, tuples and
+--| constructors read as JSON. `Page.schema (Schema.derived ⊤)` composes it.
+pub derived : ⊤ → Codec a
+    where a.codec : ⊤ → Codec a
+derived u = a.codec u
+
+
+--| `derived` for a type's own module, which reads its shape even where the
+--| module declares `codec`: an opaque type's module writes `pub codec ⊤ =
+--| Schema.structural ⊤`, which `derived` there would answer with itself
+--| (`schema.md` §12.2, §12.10). Accepted only in the type's own module.
+pub structural : ⊤ → Codec a
+    where a.codec : ⊤ → Codec a
+structural u = a.codec u
+
+
+-- A derived codec's description: its node, its Encoded end a host value
+-- (`NHost`).
+describedHost : Node → Node
+describedHost n = NHost n
+
+
+-- A derived tuple: its elements' nodes, a host array, and how the typed
+-- tuple is made from a host array of its values (`there`) and taken apart
+-- into one (`back`). `⊤` is the tuple of none.
+describedTuple : Js.Value, Js.Value, Js.Value → Node
+describedTuple items there back = NTuple items (pair there back)
+
+
+-- A derived custom type's constructors (`schema.md` §12.3): a host array of
+-- `[name, nodes, inject, project]`, one per constructor in declaration
+-- order.
+describedConstructors : Js.Value → Node
+describedConstructors ctors =
+    cs = Js.array []
+    Js.each ctors λk →
+        c : CtorNode
+        c =
+            { name = stringOf (Js.at k 0)
+            , nodes = Js.at k 1
+            , inject = Js.at k 2
+            , project = Js.at k 3
+            }
+        push cs (toHost c)
+    NCtors cs
+
+
+-- A derived `Maybe` outside a record field (`schema.md` §12.4): `null` is
+-- `Nothing`. `mode` has bit 1 when the inner node reads `null` itself,
+-- and bit 2 when a `null` the inner node writes is refused (§12.10).
+describedMaybe : Node, Int → Node
+describedMaybe n mode = NMaybe n mode
+
+
+-- A derived record's `Maybe` field (`schema.md` §12.4, §12.10): its key
+-- absent is `Nothing`, and present it is `describedMaybe n mode`'s answer.
+describedMaybeField : String, Node, Int → Js.Value
+describedMaybeField name n mode =
+    f : FieldNode
+    f =
+        { name = name
+        , key = name
+        , renamed = False
+        , optional = True
+        , lenient = True
+        , node = NMaybe n mode
+        }
+    toHost f
+
+
+-- A string of exactly one character.
+derivedChar : Schema Char Char
+derivedChar = primitive CharKind
+
+
+-- A safe integer from −2³¹ to 2³¹ − 1.
+derivedInt32 : Schema e a
+derivedInt32 = primitive Int32Kind
+
+
+-- Nothing: `⊥` has no value.
+derivedNever : Schema ⊥ ⊥
+derivedNever = primitive NeverKind
+
+
+-- The `i`th of a host array of nodes.
+nodeAt : Js.Value, Int → Node
+nodeAt xs i = fromHost (Js.at xs i)
+
+
 -- A compiled schema's `parse` worker. A declaration's is its own; the
 -- others' are made here, when a root or a slot is about to run one, so a
 -- build that only composes and describes schemas keeps none of them.
@@ -766,6 +927,9 @@ parserOf w =
         MadeConverted source p →
             forwardWorker (parserOf source) (cast p)
 
+        MadeErased source →
+            parserOf source
+
 
 -- A compiled schema's `print` worker, as `parserOf`.
 printerOf : Workers → Js.Value
@@ -785,6 +949,9 @@ printerOf w =
 
         MadeConverted source p →
             backwardWorker (printerOf source) (cast p)
+
+        MadeErased source →
+            printerOf source
 
 
 -- The operations a compiled schema runs besides `parse` and `print`, by
@@ -836,6 +1003,12 @@ parserIn w mode =
         MadeConverted source p →
             forwardWorker (parserIn source mode) (cast p)
 
+        MadeErased source →
+            if mode == decodeMode then
+                hostWorker (parserIn source readMode)
+            else
+                parserIn source mode
+
 
 -- A compiled schema's worker of encoding operation `mode`.
 printerIn : Workers, Int → Js.Value
@@ -855,6 +1028,30 @@ printerIn w mode =
 
         MadeConverted source p →
             backwardWorker (printerIn source mode) (cast p)
+
+        MadeErased source →
+            if mode == encodeMode then
+                hostWorker (printerIn source writeMode)
+            else
+                printerIn source mode
+
+
+-- `NHost` over a compiled worker: the worker of `read` or `write`, run on
+-- the context with its Encoded end a host value (`hostEnds`).
+hostWorker : Js.Value → Js.Value
+hostWorker inner =
+    worker : Context, Int, Path, Js.Value, Js.Value, Js.Value → Js.Value
+    worker c depth parent input output v =
+        Js.apply inner [ toHost (hostEnds c), Js.from depth, parent, input, output, v ]
+    toHost worker
+
+
+-- The context with its Encoded end a host value: `decode` becomes `read`
+-- and `encode` becomes `write` (`NHost`). The issues are the same array,
+-- so a failure below is the caller's `c.fail`.
+hostEnds : Context → Context
+hostEnds c =
+    { c | sh = c.sh || c.src == encodedSide, dh = c.dh || c.dst == encodedSide }
 
 
 -- `prim`, in either direction: the context says which.
@@ -958,7 +1155,7 @@ fieldsOf fs = cast fs
 
 fieldNode : String, String, Bool, Bool, Node → FieldNode
 fieldNode name k renamed isOptional n =
-    { name = name, key = k, renamed = renamed, optional = isOptional, node = n }
+    { name = name, key = k, renamed = renamed, optional = isOptional, lenient = False, node = n }
 
 
 withField : Fields pe pa, String, Schema e a, Bool → Fields qe qa
@@ -1026,7 +1223,7 @@ key fs external =
                 fieldsBox
                     (appended
                         (Js.call b.fields "slice" [ Js.from 0, Js.from (n - 1) ])
-                        (toHost (fieldNode last.name external True last.optional last.node))
+                        (toHost { last | key = external, renamed = True })
                     )
                     b.problem
 
@@ -1390,6 +1587,46 @@ problemIn n seen =
         NPrim _ →
             Nothing
 
+        NTuple items _ →
+            problemInNodes items seen 0 (lengthOf items)
+
+        NCtors cs →
+            problemInCtors cs seen 0 (lengthOf cs)
+
+        NMaybe child _ →
+            problemIn child seen
+
+        NHost inner →
+            problemIn inner seen
+
+
+problemInNodes : Js.Value, Js.Value, Int, Int → Maybe String
+problemInNodes items seen i n =
+    if i ≥ n then
+        Nothing
+    else
+        case problemIn (nodeAt items i) seen of
+            Nothing →
+                problemInNodes items seen (i + 1) n
+
+            found →
+                found
+
+
+problemInCtors : Js.Value, Js.Value, Int, Int → Maybe String
+problemInCtors cs seen i n =
+    if i ≥ n then
+        Nothing
+    else
+        k : CtorNode
+        k = fromHost (Js.at cs i)
+        case problemInNodes k.nodes seen 0 (lengthOf k.nodes) of
+            Nothing →
+                problemInCtors cs seen (i + 1) n
+
+            found →
+                found
+
 
 problemInFields : Js.Value, Js.Value, Int, Int → Maybe String
 problemInFields fs seen i n =
@@ -1465,8 +1702,35 @@ opaqueIn n side seen =
                     Just body →
                         opaqueIn body side seen
 
+        NTuple items _ →
+            opaqueNodes items side seen 0 (lengthOf items)
+
+        NCtors cs →
+            opaqueCtors cs side seen 0 (lengthOf cs)
+
+        NMaybe child _ →
+            opaqueIn child side seen
+
+        NHost inner →
+            opaqueIn inner side seen
+
         _ →
             False
+
+
+opaqueNodes : Js.Value, Int, Js.Value, Int, Int → Bool
+opaqueNodes items side seen i n =
+    i < n && (opaqueIn (nodeAt items i) side seen || opaqueNodes items side seen (i + 1) n)
+
+
+opaqueCtors : Js.Value, Int, Js.Value, Int, Int → Bool
+opaqueCtors cs side seen i n =
+    if i ≥ n then
+        False
+    else
+        k : CtorNode
+        k = fromHost (Js.at cs i)
+        opaqueNodes k.nodes side seen 0 (lengthOf k.nodes) || opaqueCtors cs side seen (i + 1) n
 
 
 opaqueField : Js.Value, Int, Js.Value, Int, Int → Bool
@@ -1884,6 +2148,261 @@ run c n depth path active v =
         NBroken problem →
             failAt c path InvalidSchema problem v False
 
+        NTuple items p →
+            arity = lengthOf items
+            if c.sh && not (isArray v && lengthOf v == arity) then
+                failAt c path WrongShape (elementsMessage arity) v False
+            else
+                tupleOf c items p depth path v
+
+        NCtors cs →
+            if c.sh then
+                ctorFromHost c cs depth path v
+            else
+                ctorFromTyped c cs depth path v
+
+        NMaybe child mode →
+            if c.sh then
+                if Js.isNull v && Js.bitAnd mode 1 == 0 then
+                    nothingOut c
+                else
+                    justOut c mode (run c child depth path active v) path v
+            else
+                case maybeOf v of
+                    Nothing →
+                        nothingOut c
+
+                    Just a →
+                        justOut c mode (run c child depth path active a) path a
+
+        NHost inner →
+            run (hostEnds c) inner depth path active v
+
+
+-- ---- Derived nodes (`schema.md` §12.3, §12.10) ---------------------------
+
+elementsMessage : Int → String
+elementsMessage n = "expected an array of ${String.fromInt n} elements"
+
+
+-- A tuple's elements, each one level down, then the tuple: a host array
+-- outside, the typed tuple inside.
+tupleOf : Context, Js.Value, Pair, Int, Path, Js.Value → Js.Value
+tupleOf c items p depth path v =
+    before = issueCount c
+    xs = if c.sh then v else Js.apply p.back [ v ]
+    out = Js.array []
+    if elementsFrom c items depth path xs out 0 (lengthOf items) then
+        c.fail
+    else if issueCount c > before then
+        c.fail
+    else if c.dh then
+        out
+    else
+        Js.apply p.there [ out ]
+
+
+-- Element `i` on of a fixed number, each by its own node at `Index i`, one
+-- level down from `depth`. True when they stop at a failure.
+elementsFrom : Context, Js.Value, Int, Path, Js.Value, Js.Value, Int, Int → Bool
+elementsFrom c items depth path xs out i n =
+    if i ≥ n then
+        False
+    else
+        here = step path (Js.from i) (Js.from i)
+        item = Js.at xs i
+        x =
+            if depth ≥ c.max then
+                failAt c here DepthExceeded "the depth limit is reached" item False
+            else
+                run c (nodeAt items i) (depth + 1) here NoneActive item
+        if Js.same x c.fail then
+            if c.all then
+                elementsFrom c items depth path xs out (i + 1) n
+            else
+                True
+        else
+            _ = Js.call out "push" [ x ]
+            elementsFrom c items depth path xs out (i + 1) n
+
+
+ctorMessage : String
+ctorMessage = "expected a constructor: a string, or an object with one key"
+
+
+-- A constructor read from its wire form: a nullary one's name, or an object
+-- whose one key is the name of one that takes arguments.
+ctorFromHost : Context, Js.Value, Int, Path, Js.Value → Js.Value
+ctorFromHost c cs depth path v =
+    if isType v "string" then
+        name = stringOf v
+        case ctorNamed cs name 0 (lengthOf cs) of
+            Nothing →
+                failAt c path UnknownTag (unknownCtor cs name) v False
+
+            Just k →
+                if lengthOf k.nodes == 0 then
+                    ctorOut c k (Js.array [])
+                else
+                    failAt
+                        c
+                        path
+                        WrongShape
+                        "the constructor ${name} takes arguments, so it is an object with the key \"${name}\""
+                        v
+                        False
+    else if isObject v then
+        keys = Js.call (Js.global "Object") "keys" [ v ]
+        if lengthOf keys ≠ 1 then
+            failAt c path WrongShape ctorMessage v False
+        else
+            name = stringOf (Js.at keys 0)
+            case ctorNamed cs name 0 (lengthOf cs) of
+                Nothing →
+                    failAt c path UnknownTag (unknownCtor cs name) v False
+
+                Just k →
+                    if lengthOf k.nodes == 0 then
+                        failAt
+                            c
+                            path
+                            WrongShape
+                            "the constructor ${name} takes no arguments, so it is the string \"${name}\""
+                            v
+                            False
+                    else
+                        payload = Js.get v name
+                        ctorArgs c k depth path payload payload
+    else
+        failAt c path WrongShape ctorMessage v False
+
+
+-- A typed constructor's arguments, each run, then the constructor again.
+ctorFromTyped : Context, Js.Value, Int, Path, Js.Value → Js.Value
+ctorFromTyped c cs depth path v =
+    case ctorOf cs v 0 (lengthOf cs) of
+        Nothing →
+            failAt c path InvalidSchema "no constructor takes the value" v False
+
+        Just found →
+            ( k, args ) = found
+            if lengthOf k.nodes == 0 then
+                ctorOut c k args
+            else
+                ctorArgs c k depth path (if lengthOf k.nodes == 1 then Js.at args 0 else args) v
+
+
+-- The arguments of `k`, read at its name one level down: the argument
+-- itself, or an array of exactly as many as it takes. `input` is what the
+-- depth bound's issue holds: the payload read, or the constructor written.
+ctorArgs : Context, CtorNode, Int, Path, Js.Value, Js.Value → Js.Value
+ctorArgs c k depth path payload input =
+    here = step path (Js.from k.name) (Js.from k.name)
+    n = lengthOf k.nodes
+    if depth ≥ c.max then
+        failAt c here DepthExceeded "the depth limit is reached" input False
+    else if n == 1 then
+        x = run c (nodeAt k.nodes 0) (depth + 1) here NoneActive payload
+        if Js.same x c.fail then
+            c.fail
+        else
+            ctorOut c k (Js.array [ x ])
+    else if c.sh && not (isArray payload && lengthOf payload == n) then
+        failAt c here WrongShape (elementsMessage n) payload False
+    else
+        before = issueCount c
+        out = Js.array []
+        if elementsFrom c k.nodes (depth + 1) here payload out 0 n then
+            c.fail
+        else if issueCount c > before then
+            c.fail
+        else
+            ctorOut c k out
+
+
+-- A constructor of `args` written: its name, or an object of its name
+-- outside; the constructor applied inside.
+ctorOut : Context, CtorNode, Js.Value → Js.Value
+ctorOut c k args =
+    if c.dh then
+        n = lengthOf k.nodes
+        if n == 0 then
+            Js.from k.name
+        else
+            o = newObject Nothing
+            Js.set o k.name (if n == 1 then Js.at args 0 else args)
+            o
+    else
+        Js.apply k.inject [ args ]
+
+
+ctorNamed : Js.Value, String, Int, Int → Maybe CtorNode
+ctorNamed cs name i n =
+    if i ≥ n then
+        Nothing
+    else
+        k : CtorNode
+        k = fromHost (Js.at cs i)
+        if k.name == name then
+            Just k
+        else
+            ctorNamed cs name (i + 1) n
+
+
+-- The constructor a typed value is, and its arguments.
+ctorOf : Js.Value, Js.Value, Int, Int → Maybe (CtorNode × Js.Value)
+ctorOf cs v i n =
+    if i ≥ n then
+        Nothing
+    else
+        k : CtorNode
+        k = fromHost (Js.at cs i)
+        args = Js.apply k.project [ v ]
+        if Js.isNull args then
+            ctorOf cs v (i + 1) n
+        else
+            Just ( k, args )
+
+
+unknownCtor : Js.Value, String → String
+unknownCtor cs name =
+    names = Js.call (Js.call cs "map" [ toHost quotedCtor ]) "join" [ Js.from ", " ]
+    "unknown constructor \"${name}\"; expected ${stringOf names}"
+
+
+quotedCtor : Js.Value → String
+quotedCtor k =
+    c : CtorNode
+    c = fromHost k
+    "\"${c.name}\""
+
+
+nothingOut : Context → Js.Value
+nothingOut c =
+    if c.dh then
+        Js.null
+    else
+        toHost Nothing
+
+
+justOut : Context, Int, Js.Value, Path, Js.Value → Js.Value
+justOut c mode x path input =
+    if Js.same x c.fail then
+        c.fail
+    else if c.dh then
+        if Js.bitAnd mode 2 ≠ 0 && Js.isNull x then
+            failAt
+                c
+                path
+                InvalidValue
+                "the value inside Just writes null, which reads back as Nothing"
+                input
+                True
+        else
+            x
+    else
+        toHost (Just x)
+
 
 nullOut : Context → Js.Value
 nullOut c =
@@ -1973,6 +2492,25 @@ prim c p depth path v =
                         v
             else
                 v
+
+        CharKind →
+            if not (isType v "string") then
+                failAt c path WrongShape "expected a string" v False
+            else if lengthOf (Js.call (Js.global "Array") "from" [ v ]) == 1 then
+                v
+            else
+                failAt c path InvalidValue "expected one character" v False
+
+        Int32Kind →
+            if not (isType v "number") then
+                failAt c path WrongShape "expected a number" v False
+            else if Js.bitOr (intOf v) 0 == intOf v then
+                v
+            else
+                failAt c path InvalidValue "expected a 32-bit integer" v False
+
+        NeverKind →
+            failAt c path WrongShape "expected nothing: ⊥ has no value" v False
 
 
 -- Whether a host value prints as JSON as it is: 0 when it does, 1 when it
@@ -2184,10 +2722,19 @@ fieldsFrom c fs i n depth path v values out =
                 -- (`plans/core-in-beni.md`, the schema engine).
                 if Js.to (Js.call (Js.global "Object") "hasOwn" [ v, Js.from inName ]) then
                     descend c f depth here (Js.get v inName)
+                else if f.lenient then
+                    toHost Nothing
                 else if f.optional then
                     toHost Missing
                 else
                     failAt c here MissingKey "missing key \"${inName}\"" v False
+            else if f.lenient then
+                case maybeOf (Js.at values i) of
+                    Nothing →
+                        Js.at values i
+
+                    Just _ →
+                        descend c f depth here (Js.at values i)
             else if f.optional then
                 case presenceOf (Js.at values i) of
                     Missing →
@@ -2207,6 +2754,13 @@ fieldsFrom c fs i n depth path v values out =
                 Js.to (Js.call out "push" [ x ])
             else if not f.optional then
                 Js.set out outName x
+            else if f.lenient then
+                case maybeOf (Js.at values i) of
+                    Nothing →
+                        ⊤
+
+                    Just _ →
+                        Js.set out outName x
             else
                 case presenceOf x of
                     Present a →
@@ -2226,7 +2780,7 @@ descend c f depth here x =
             failAt c here DepthExceeded "the depth limit is reached" x False
         else
             run c f.node (depth + 1) here NoneActive x
-    if f.optional && not (Js.same y c.fail) then
+    if f.optional && not f.lenient && not (Js.same y c.fail) then
         toHost (Present y)
     else
         y
@@ -3114,3 +3668,26 @@ shapeOf ids definitions n =
 
         NBroken problem →
             Invalid problem
+
+        NTuple items _ →
+            TupleOf (shapesOf ids definitions items)
+
+        NCtors cs →
+            ConstructorsOf
+                (List.map (ctorList cs) λk →
+                    { name = k.name, arguments = shapesOf ids definitions k.nodes }
+                )
+
+        NMaybe child _ →
+            MaybeOf (shapeOf ids definitions child)
+
+        NHost inner →
+            shapeOf ids definitions inner
+
+
+shapesOf : Js.Value, Js.Value, Js.Value → List Shape
+shapesOf ids definitions items = List.map (fromHost items) λx → shapeOf ids definitions (fromHost x)
+
+
+ctorList : Js.Value → List CtorNode
+ctorList cs = fromHost cs

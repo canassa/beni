@@ -311,6 +311,14 @@ pub const Input = struct {
         return in.dispatch[m.int()];
     }
 
+    /// How many schema definitions module `m` has members for: its
+    /// declarations, then its derived codecs, each a virtual declaration
+    /// after the last (`SchemaPlan.codecs`, schema.md §12.10).
+    pub fn schemaSlots(in: Input, m: Graph.Index) usize {
+        const codecs = if (m.int() < in.plans.len) in.plans[m.int()].codecs.len else 0;
+        return in.birOf(m).decls.len + codecs;
+    }
+
     /// A named value of a core module, as a node: how `Lower.coreValue`
     /// reaches `String.compare` and `List`'s values, resolved once. The
     /// declaration is found in the module's own `Bir` rather than through
@@ -457,7 +465,7 @@ pub fn walk(scratch: Allocator, in: Input, edges: []const ModuleEdges) Allocator
             .decls = try .initEmpty(scratch, in.birOf(m).decls.len),
             .derived = try .initEmpty(scratch, in.dispatchOf(m).derived.len),
             .twins = try .initEmpty(scratch, in.birOf(m).decls.len),
-            .schemas = try .initEmpty(scratch, in.birOf(m).decls.len * SchemaGraph.Member.count),
+            .schemas = try .initEmpty(scratch, in.schemaSlots(m) * SchemaGraph.Member.count),
             .ctors = try .initEmpty(scratch, in.birOf(m).ctors.len),
         };
     }
@@ -957,7 +965,16 @@ pub const Builder = struct {
                     break :blk 0;
                 } else guards.at(position);
                 nodes.clearRetainingCapacity();
-                try b.resolve(m, edge, &nodes);
+                // A `Json` call written as its derived codec's own `parse` or
+                // `print` names that member, not the codec's value.
+                const json_member: ?SchemaGraph.Member = if (edge == .codec and position != Edges.no_position) blk: {
+                    const interner = b.in.interner orelse break :blk null;
+                    const call = SchemaGraph.jsonCall(b.in.graph, b.in.interfaces, bir, dispatch, interner, @fromBackingInt(@intCast(position))) orelse break :blk null;
+                    break :blk if (call.codec == edge.codec) call.member else null;
+                } else null;
+                if (json_member) |member| {
+                    try nodes.append(b.scratch, schemaNode(.{ .module = m, .decl = @intCast(bir.decls.len + edge.codec) }, member));
+                } else try b.resolve(m, edge, &nodes);
                 // A use that always takes its target's suspendable body
                 // (`yes`) writes no name of the direct one: `effectEdges`
                 // adds the edge to the body it does write. So a declaration
@@ -979,15 +996,19 @@ pub const Builder = struct {
         decl_at[bir.decls.len] = @intCast(decl_targets.items.len);
 
         // A schema declaration's three members (`schema.md` §6).
-        const schema_at = try b.scratch.alloc(u32, bir.decls.len * SchemaGraph.Member.count + 1);
+        // A derived codec's (schema.md §12.10) are a virtual declaration's
+        // after the last.
+        const slots = b.in.schemaSlots(m);
+        const schema_at = try b.scratch.alloc(u32, slots * SchemaGraph.Member.count + 1);
         var schema_targets: std.ArrayList(Target) = .empty;
-        for (bir.decls, 0..) |d, i| {
+        for (0..slots) |i| {
+            const is_schema = i >= bir.decls.len or bir.decls[i].kind == .schema;
             inline for (0..SchemaGraph.Member.count) |k| {
                 schema_at[i * SchemaGraph.Member.count + k] = @intCast(schema_targets.items.len);
-                if (d.kind == .schema) try b.memberEdges(m, @intCast(i), @fromBackingInt(@intCast(k)), &guards, &schema_targets);
+                if (is_schema) try b.memberEdges(m, @intCast(i), @fromBackingInt(@intCast(k)), &guards, &schema_targets);
             }
         }
-        schema_at[bir.decls.len * SchemaGraph.Member.count] = @intCast(schema_targets.items.len);
+        schema_at[slots * SchemaGraph.Member.count] = @intCast(schema_targets.items.len);
 
         // A declaration's suspendable body (§16.2) reaches what its direct
         // one does, and the suspendable bodies its `poly` answers choose.
@@ -1047,6 +1068,10 @@ pub const Builder = struct {
                 if (dispatch.isListAppend(@fromBackingInt(@intCast(i)))) {
                     marks[d.lhs] = true;
                 } else if (JsIntrinsic.of(b.in.graph, b.in.interfaces, bir, @fromBackingInt(@intCast(d.lhs)), interner) != null) {
+                    marks[d.lhs] = true;
+                } else if (SchemaGraph.jsonCall(b.in.graph, b.in.interfaces, bir, dispatch, interner, @fromBackingInt(@intCast(i))) != null) {
+                    // A derived codec's own `parse` or `print` (schema.md
+                    // §12.10): `Json`'s function is not called.
                     marks[d.lhs] = true;
                 } else if (Operator.of(b.in.graph, b.in.interfaces, bir, m, @fromBackingInt(@intCast(d.lhs)), interner)) |which| {
                     // An operator is written in place when the call passes
@@ -1235,6 +1260,10 @@ pub const Builder = struct {
         var targets: std.ArrayList(struct { SchemaGraph.Ref, SchemaGraph.Member }) = .empty;
         try sg.memberTargets(b.scratch, ref, member, b.in.schema_library, &targets);
         for (targets.items) |t| try out.append(b.scratch, .{ .node = schemaNode(t[0], t[1]) });
+        // A derived codec's (schema.md §12.10): the constructors its
+        // decoding worker and its description build, so a `case` on them
+        // keeps its arms, and the module `codec` values it runs.
+        if (member != .root) try b.codecEdges(m, ref, member, out);
         var names: std.ArrayList([]const u8) = .empty;
         try sg.coreNeeds(b.scratch, ref, member, b.in.schema_library, &names);
         const core = b.in.graph.lookup(.core, InternPool.WellKnown.Schema.symbol()) orelse return;
@@ -1247,6 +1276,70 @@ pub const Builder = struct {
                 break;
             }
         }
+    }
+
+    /// What a derived codec's member reaches besides schemas and
+    /// `core/Schema`: each constructor a `constructors` node builds (its
+    /// decoding worker and its description's injections), and each module
+    /// `codec` a `codec_value` node runs.
+    fn codecEdges(b: *Builder, m: Graph.Index, ref: SchemaGraph.Ref, member: SchemaGraph.Member, out: *std.ArrayList(Target)) Allocator.Error!void {
+        const sg = b.schemaGraph() orelse return;
+        if (sg.codecIndex(m, ref.decl) == null) return;
+        // The description and the worker sets: the root wrappers and an
+        // aliased `decode` or `encode` reach a worker set that has these.
+        switch (member) {
+            .root, .parse, .print => return,
+            else => if (sg.hostAliased(ref, member) != null) return,
+        }
+        const d = sg.definition(m, ref.decl) orelse return;
+        const plan = sg.planOf(m);
+        var nodes: std.ArrayList(SchemaPlan.NodeIndex) = .empty;
+        try SchemaGraph.subtree(plan, b.scratch, d.root, &nodes);
+        for (nodes.items) |n| switch (SchemaGraph.tag(plan, n)) {
+            .constructors => {
+                // Under `--schema-library` the directions run the
+                // description, whose injections build them.
+                if (!b.in.schema_library) if (member.op()) |op| if (!op.decoding()) continue;
+                const target = plan.type_targets[SchemaGraph.lhs(plan, n)];
+                for (SchemaGraph.ctors(plan, n)) |c| {
+                    if (try b.codecCtorNode(sg, plan, target, plan.codec_ctors[c].order)) |node| try out.append(b.scratch, .{ .node = node });
+                }
+            },
+            .codec_value => {
+                const target = plan.value_targets[SchemaGraph.lhs(plan, n)];
+                const owner = b.in.graph.find(target.package, SchemaGraph.symbol(plan, target.module)) orelse continue;
+                const name = SchemaGraph.symbol(plan, target.name);
+                if (owner == m) {
+                    const bir = b.in.birOf(m);
+                    for (bir.decls, 0..) |decl, i| {
+                        if (decl.kind.isValue() and bir.symbol(decl.name) == name) try out.append(b.scratch, .{ .node = .{ .module = m, .kind = .decl, .index = @intCast(i) } });
+                    }
+                } else if (owner.int() < b.in.interfaces.len) {
+                    const value = b.in.interfaces[owner.int()].findValue(sg.interner, name) orelse continue;
+                    var found: std.ArrayList(Node) = .empty;
+                    try b.extValue(&found, owner, @backingInt(value));
+                    for (found.items) |node| try out.append(b.scratch, .{ .node = node });
+                }
+            },
+            else => {},
+        };
+    }
+
+    /// The node of constructor `order` of the type `target` names, in its
+    /// declaring module's numbering; null for core's, which no build
+    /// eliminates, and for a type the build cannot find.
+    fn codecCtorNode(b: *Builder, sg: SchemaGraph, plan: *const SchemaPlan, target: SchemaPlan.TypeTarget, order: u32) Allocator.Error!?Node {
+        const owner = b.in.graph.find(target.package, SchemaGraph.symbol(plan, target.module)) orelse return null;
+        if (b.in.store.package(b.in.graph.moduleFile(owner)) == .core) return null;
+        const name = SchemaGraph.symbol(plan, target.name);
+        const bir = b.in.birOf(owner);
+        for (bir.decls) |decl| {
+            if (decl.kind != .type or bir.symbol(decl.name) != name) continue;
+            if (decl.ctors_start + order >= decl.ctors_end) return null;
+            return .{ .module = owner, .kind = .ctor, .index = decl.ctors_start + order };
+        }
+        _ = sg;
+        return null;
     }
 
     /// The node of `core/Schema`'s value declaration `name`, or null when
@@ -1603,6 +1696,9 @@ pub const Builder = struct {
             },
             // `undetermined` is `===` in place (`Lower.partEq`): no edge.
             .undetermined => {},
+            // A derived codec's value: its root member, as `S.schema`'s
+            // (schema.md §12.10).
+            .codec => |index| try out.append(b.scratch, schemaNode(.{ .module = m, .decl = @intCast(b.in.birOf(m).decls.len + index) }, .root)),
         }
     }
 

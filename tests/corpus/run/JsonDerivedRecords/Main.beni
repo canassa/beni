@@ -1,0 +1,167 @@
+-- Records, tuples and the three absences of a derived codec (`schema.md`
+-- §12.3, §12.4): a record is an object keyed by its field names, written
+-- in name order; a tuple an array of exactly its arity. A `Maybe` field
+-- may be absent or `null`, which is `Nothing`, and writes no key for
+-- `Nothing`; a `Maybe (Maybe Int)` field tells all three apart; outside a
+-- field a `Maybe` is `null` or its value. `Presence` is the exact field
+-- form and `Nullable` the exact `null`. Unknown keys are ignored by
+-- default and reported under `Reject`, each at its own path; `AllErrors`
+-- visits every field. Both paths, as `JsonDerivedTable`.
+import Json
+import Node
+import Schema exposing (Issue, Missing, NonNull, Null, Nullable, Present, Presence)
+import Show
+
+
+type alias Inner =
+    label : String
+    count : Int
+
+
+type alias Doc =
+    name : String
+    nick : Maybe String
+    deep : Maybe (Maybe Int)
+    seen : Presence Int
+    nulled : Nullable Bool
+    inner : Inner
+    pair : Int × String
+    triple : Bool × Float × List Int
+    scores : List (Maybe Int)
+
+
+strict : Schema.Options
+strict =
+    { errors = Schema.AllErrors, unknownKeys = Schema.Reject, maxDepth = 512, reportInput = False }
+
+
+doc : String → Result (List Issue) Doc
+doc text = Json.decode text
+
+
+docAll : String → Result (List Issue) Doc
+docAll text = Json.decodeWith strict text
+
+
+root : String → Result (List Issue) (Maybe Inner)
+root text = Json.decode text
+
+
+maybe : Maybe a, (a → String) → String
+maybe m show =
+    case m of
+        Just a →
+            "Just " ++ show a
+
+        Nothing →
+            "Nothing"
+
+
+presence : Presence a, (a → String) → String
+presence p show =
+    case p of
+        Missing →
+            "Missing"
+
+        Present a →
+            "Present " ++ show a
+
+
+nullable : Nullable a, (a → String) → String
+nullable n show =
+    case n of
+        Null →
+            "Null"
+
+        NonNull a →
+            "NonNull " ++ show a
+
+
+inner : Inner → String
+inner i = i.label ++ "×" ++ String.fromInt i.count
+
+
+showDoc : Doc → String
+showDoc d =
+    String.join
+        [ d.name
+        , maybe d.nick λs → s
+        , maybe d.deep λm → "(" ++ maybe m String.fromInt ++ ")"
+        , presence d.seen String.fromInt
+        , nullable d.nulled λb → if b then "True" else "False"
+        , inner d.inner
+        , pair d.pair
+        , triple d.triple
+        , "[" ++ String.join (List.map d.scores λm → maybe m String.fromInt) "," ++ "]"
+        ]
+        "; "
+
+
+pair : Int × String → String
+pair ( n, s ) = String.fromInt n ++ "," ++ s
+
+
+triple : Bool × Float × List Int → String
+triple ( b, f, xs ) =
+    (if b then "T" else "F") ++ "," ++ String.fromFloat f ++ "," ++ String.fromInt (List.length xs)
+
+
+base : String
+base =
+    "\"name\":\"n\",\"nulled\":null,\"inner\":{\"label\":\"l\",\"count\":2},\"pair\":[1,\"a\"],\"triple\":[true,1.5,[1,2]],\"scores\":[1,null,3]"
+
+
+sample : Doc
+sample =
+    { name = "n"
+    , nick = Nothing
+    , deep = Just Nothing
+    , seen = Missing
+    , nulled = NonNull False
+    , inner = { label = "l", count = 2 }
+    , pair = ( 7, "b" )
+    , triple = ( False, 0.5, [] )
+    , scores = [ Just 1, Nothing ]
+    }
+
+
+printed : Result (List Issue) String → String
+printed r = Show.result r λs → s
+
+
+main : Node.Program
+main =
+    Node.printLines
+        [ "-- decode"
+        , Show.result (doc ("{" ++ base ++ "}")) showDoc
+        , Show.result (doc ("{" ++ base ++ ",\"nick\":null,\"deep\":null,\"seen\":0}")) showDoc
+        , Show.result (doc ("{" ++ base ++ ",\"nick\":\"k\",\"deep\":3,\"extra\":true}")) showDoc
+        , Show.result (doc "{\"name\":\"n\"}") showDoc
+        , Show.result (doc ("{" ++ base ++ ",\"pair\":[1]}")) showDoc
+        , Show.result (doc ("{" ++ base ++ ",\"nick\":1}")) showDoc
+        , "-- decode, every error, unknown keys refused"
+        , Show.result (docAll ("{\"zzz\":1," ++ base ++ "}")) showDoc
+        , Show.result
+            (docAll
+                "{\"name\":1,\"nick\":2,\"deep\":\"x\",\"seen\":null,\"nulled\":1,\"inner\":{\"count\":\"c\",\"more\":0},\"pair\":[\"a\",1],\"triple\":[1,2,3,4],\"scores\":[true]}"
+            )
+            showDoc
+        , "-- a Maybe at the root"
+        , Show.result (root "null") λm → maybe m inner
+        , Show.result (root "{\"label\":\"r\",\"count\":1}") λm → maybe m inner
+        , Show.result (root "1") λm → maybe m inner
+        , "-- encode"
+        , printed (Json.encode sample)
+        , printed
+            (Json.encode
+                { sample | nick = Just "k", deep = Nothing, seen = Present 4, nulled = Null }
+            )
+        , printed (Json.encode { sample | deep = Just (Just 9) })
+        , printed
+            (Json.encodeWith strict
+                { sample
+                    | inner = { label = "x", count = 9007199254740992 }
+                    , scores = [ Just 9007199254740992 ]
+                }
+            )
+        ]

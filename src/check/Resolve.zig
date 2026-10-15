@@ -59,6 +59,7 @@ const Tree = @import("constrain/Tree.zig");
 const Schemes = @import("Schemes.zig");
 const EnvFile = @import("Env.zig");
 const Retained = @import("Retained.zig");
+const Codec = @import("Codec.zig");
 
 const Var = TypeStore.Var;
 const Symbol = InternPool.Symbol;
@@ -253,7 +254,10 @@ pub fn step(s: *Solve, id: WantedId, immediate: bool) Error!void {
             return attach(s, id, root, flags);
         },
         .rigid => |flags| return rigid(s, id, root, flags),
+        // A derived codec waits for its declaration's boundary, where its
+        // records are closed (`Codec.zig`, schema.md §12.5).
         .structure => |flat| {
+            if (Codec.isCodec(w.method)) return Codec.wait(s, id);
             // §3.2's table on a primitive whose method type already IS
             // `root, root -> Bool|Order` (a derived shape's position, a
             // plain method's requirement readied at the element): the
@@ -648,6 +652,16 @@ pub fn position(s: *Solve, parent: WantedId, receiver: Var) Error!WantedId {
     return id;
 }
 
+/// Whether a wanted `id` descends from was rejected: its failure is said.
+fn ancestorRejected(s: *const Solve, id: WantedId) bool {
+    var at = s.evidence.get(id).parent;
+    while (at.unwrap()) |p| {
+        if (s.evidence.get(p).state.rejected()) return true;
+        at = s.evidence.get(p).parent;
+    }
+    return false;
+}
+
 /// The root of `id`'s lineage: the wanted a use raised.
 pub fn lineageRoot(s: *const Solve, id: WantedId) WantedId {
     var at = id;
@@ -807,7 +821,13 @@ pub fn close(s: *Solve, members: []const u32) Error!void {
                 continue;
             }
             s.report.at(if (w.decl == Evidence.Wanted.no_decl) null else w.decl);
-            try s.report.undeterminedMethodReceiver(w.origin, w.method, flags.kind);
+            // A decoded type, or a field of one, nothing in the declaration
+            // says (schema.md §12.7).
+            if (Codec.isCodec(w.method)) {
+                // A requirement of a method that was refused has that
+                // refusal for its message.
+                if (!ancestorRejected(s, id)) try Codec.needsType(s, id);
+            } else try s.report.undeterminedMethodReceiver(w.origin, w.method, flags.kind);
             s.evidence.ptr(id).state = .failed;
         }
     }

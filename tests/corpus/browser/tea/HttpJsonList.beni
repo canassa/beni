@@ -1,4 +1,4 @@
--- `jsonBody` and `expectJson` given a composition of a declaration,
+-- `jsonBody` and `expectSchema` given a composition of a declaration,
 -- `Schema.list (Note.schema ⊤)`, which runs compiled (`schema.md` §6, *A
 -- statically known schema runs compiled*; boundary.md §9.8.12, amended
 -- 2026-10-15). The typed failures are the library's, carried through the
@@ -102,7 +102,7 @@ update msg lines =
 
         Load name →
             ( lines
-            , Cmd.task (λ⊤ → Http.get { url = "/${name}", expect = Http.expectJson notes }) λr →
+            , Cmd.task (λ⊤ → Http.get { url = "/${name}", expect = Http.expectSchema notes }) λr →
                 Got name (read r)
             )
 

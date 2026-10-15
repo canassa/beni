@@ -3,7 +3,7 @@
 -- The milestone's acceptance page (plans/http-and-routing.md, *Order*):
 -- an application that routes (boundary.md §9.8.13) and talks to an API
 -- through schemas (§9.8.12). Started at `/login`, it posts the credentials
--- as JSON (`jsonBody`) and reads a bearer token back (`expectJson`, the
+-- as JSON (`jsonBody`) and reads a bearer token back (`expectSchema`, the
 -- key renamed); with the token it pushes `/items`, and the push, come back
 -- through `onUrlChange`, lists the items with a `GET` that carries the
 -- token in its `Authorization` header and reads a JSON list. Clicked to
@@ -83,7 +83,7 @@ loadItems token =
                 , headers = [ Http.header "Authorization" "Bearer ${token}" ]
                 , url = "/api/items"
                 , body = Http.emptyBody
-                , expect = Http.expectJson (Schema.list (Item.schema ⊤))
+                , expect = Http.expectSchema (Schema.list (Item.schema ⊤))
                 , timeout = Nothing
                 , tracker = Nothing
                 }
@@ -134,7 +134,7 @@ update msg model =
                             , body =
                                 Http.jsonBody (Credentials.schema ⊤)
                                     { user = "ada", password = "lovelace" }
-                            , expect = Http.expectJson (Session.schema ⊤)
+                            , expect = Http.expectSchema (Session.schema ⊤)
                             }
                         )
                         .token

@@ -183,6 +183,9 @@ evidence: Evidence = .{},
 /// The resolver's own tables (§9): one owner, `Resolve.zig`.
 resolver: Resolve.State = .{},
 field_dots: std.ArrayList(@import("Dot.zig").Pending) = .empty,
+/// The `codec` wanteds waiting for their boundary, and the derived codecs
+/// this module made (`Codec.zig`, schema.md §12.10).
+codecs: @import("Codec.zig").State = .{},
 /// The module's derived contexts (§11.2): set by `Module` in P1.
 contexts: Contexts = undefined,
 /// The module's own report. A fixpoint resolves under a quiet one, and a
@@ -265,6 +268,7 @@ pub fn deinit(s: *Solve) void {
     s.evidence.deinit(gpa);
     s.resolver.deinit(gpa);
     s.field_dots.deinit(gpa);
+    s.codecs.deinit(gpa);
 }
 
 pub fn store(s: *const Solve) *TypeStore {

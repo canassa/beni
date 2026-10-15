@@ -415,6 +415,15 @@ fn imported(in: *Instantiate, module: Graph.Index, which: Imported, index: u32) 
     return v;
 }
 
+/// Constructor `index` of `module`'s type — this module's `Bir` constructor
+/// or another's interface constructor — instantiated fresh at the frame's
+/// rank: `args → T params`, or `T params` for a nullary one. What a derived
+/// codec reads a nominal type's payloads from (`Codec.zig`).
+pub fn ctorType(in: *Instantiate, module: Graph.Index, index: u32, region: Bir.Inst.Index) Error!?Var {
+    if (module == in.cx.module) return in.ownCtor(index, region);
+    return in.importedCtor(module, index);
+}
+
 /// A constructor of another module, from its interface's `arg_terms`.
 fn importedCtor(in: *Instantiate, module: Graph.Index, index: u32) Error!?Var {
     const cx = in.cx;

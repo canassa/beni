@@ -1,0 +1,12 @@
+module JsonDerived
+  decl point evidence=0 arity=1 convention=plain
+  decl points evidence=1 arity=1 convention=function
+    requirement 0 quantified=0 var=a method=codec
+  decl pair evidence=0 arity=1 convention=plain
+  site 14
+    evidence codec 1
+  site 33
+    evidence codec 0
+      param 0
+  site 47
+    evidence codec 1

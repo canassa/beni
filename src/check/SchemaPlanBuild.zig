@@ -14,6 +14,7 @@ const SchemaPlan = @import("SchemaPlan.zig");
 const Schemes = @import("Schemes.zig");
 const TypeStore = @import("TypeStore.zig");
 const Types = @import("Types.zig");
+const Codec = @import("Codec.zig");
 
 const Symbol = InternPool.Symbol;
 const Var = TypeStore.Var;
@@ -34,6 +35,8 @@ pub fn build(
     properties: []const [2]u8,
     /// The reader the writer takes each alias's body from (`Schemes.Writer.bodies`).
     bodies: *Types.Builder,
+    /// The module's derived codecs (`Codec.zig`, schema.md §12.10).
+    codecs: *const Codec.State,
 ) Allocator.Error!SchemaPlan {
     var b: Builder = .{
         .gpa = gpa,
@@ -45,6 +48,10 @@ pub fn build(
         .schemas = schemas,
     };
     defer b.deinit();
+    defer b.codec_defs.deinit(gpa);
+    defer b.codec_ctors.deinit(gpa);
+    defer b.type_targets.deinit(gpa);
+    defer b.value_targets.deinit(gpa);
 
     for (bir.decls, 0..) |decl, decl_i| {
         if (decl.kind != .schema) continue;
@@ -61,6 +68,39 @@ pub fn build(
             .root = root,
             .token = decl.name_token,
         });
+    }
+    // The derived codecs, in key order: each a definition at a virtual
+    // declaration after the last.
+    {
+        const by_place = try gpa.alloc(u32, codecs.defs.items.len);
+        defer gpa.free(by_place);
+        for (codecs.order, 0..) |place, def| by_place[place] = @intCast(def);
+        for (by_place, 0..) |def, place| {
+            const d = codecs.defs.items[def];
+            if (d.failed or d.root == Codec.none) {
+                b.poisoned = true;
+                continue;
+            }
+            var t: CodecWriter = .{ .b = &b, .c = codecs, .types = types, .token = d.token };
+            const root = try t.node(d.root);
+            const codec_symbol = try b.symbolIndex(InternPool.WellKnown.codec.symbol());
+            const params_start: u32 = @intCast(b.extra.items.len);
+            for (0..d.slots) |_| try b.extra.append(gpa, @backingInt(codec_symbol));
+            try b.codec_defs.append(gpa, .{
+                .name = codec_symbol,
+                .decl = @fromBackingInt(@intCast(bir.decls.len + place)),
+                .params_start = params_start,
+                .params_end = @intCast(b.extra.items.len),
+                .root = root,
+                .type_ref = @fromBackingInt(@intCast(0)),
+                .encoded_ref = @fromBackingInt(@intCast(0)),
+                .program_term = @fromBackingInt(@intCast(0)),
+                .encoded_term = @fromBackingInt(@intCast(0)),
+                .token = d.token,
+                .program_properties = 0,
+                .encoded_properties = 0,
+            });
+        }
     }
     if (b.poisoned) return SchemaPlan.empty;
 
@@ -110,8 +150,150 @@ pub fn build(
     plan.literals = try b.literals.toOwnedSlice(gpa);
     plan.schema_targets = try b.schema_targets.toOwnedSlice(gpa);
     plan.ctor_targets = try b.ctor_targets.toOwnedSlice(gpa);
+    plan.codecs = try b.codec_defs.toOwnedSlice(gpa);
+    plan.codec_ctors = try b.codec_ctors.toOwnedSlice(gpa);
+    plan.type_targets = try b.type_targets.toOwnedSlice(gpa);
+    plan.value_targets = try b.value_targets.toOwnedSlice(gpa);
     return plan;
 }
+
+/// One derived codec's nodes (`Codec.Node`) written as plan nodes, each
+/// after its children (the plan's edges point backward).
+const CodecWriter = struct {
+    b: *Builder,
+    c: *const Codec.State,
+    types: *const Types,
+    token: u32,
+
+    fn node(w: *CodecWriter, index: u32) Allocator.Error!SchemaPlan.NodeIndex {
+        const b = w.b;
+        const gpa = b.gpa;
+        const n = w.c.nodes.items[index];
+        const words = w.c.words.items;
+        switch (n.tag) {
+            .prim => return b.appendNode(.{ .tag = .primitive, .lhs = n.a, .rhs = 0, .token = w.token }),
+            .param => return b.appendNode(.{ .tag = .parameter, .lhs = n.a, .rhs = 0, .token = w.token }),
+            .list => {
+                const child = try w.node(n.a);
+                return b.appendNode(.{ .tag = .list, .lhs = @backingInt(child), .rhs = 0, .token = w.token });
+            },
+            .nullable => {
+                const child = try w.node(n.a);
+                return b.appendNode(.{ .tag = .nullable, .lhs = @backingInt(child), .rhs = 0, .token = w.token });
+            },
+            .maybe => {
+                const child = try w.node(n.a);
+                return b.appendNode(.{ .tag = .maybe, .lhs = @backingInt(child), .rhs = n.b, .token = w.token });
+            },
+            .tuple => {
+                const items = try gpa.alloc(u32, n.b);
+                defer gpa.free(items);
+                for (items, words[n.a..][0..n.b]) |*item, child| item.* = @backingInt(try w.node(child));
+                return b.appendNode(.{ .tag = .tuple, .lhs = try b.range(items), .rhs = 0, .token = w.token });
+            },
+            .record => {
+                const fields = try gpa.alloc(SchemaPlan.Field, n.b);
+                defer gpa.free(fields);
+                for (fields, 0..) |*f, i| {
+                    const at = n.a + i * 3;
+                    const name: InternPool.Symbol = @fromBackingInt(@intCast(words[at]));
+                    const child = try w.node(words[at + 1]);
+                    const form: Codec.FieldForm = @fromBackingInt(@intCast(words[at + 2]));
+                    const maybe_field = w.c.nodes.items[words[at + 1]].tag == .maybe and w.c.nodes.items[words[at + 1]].b & SchemaPlan.Maybe.field != 0;
+                    f.* = .{
+                        .name = try b.symbolIndex(name),
+                        .external = try b.literal(b.interner.slice(name)),
+                        .child = child,
+                        .optional = form == .presence or maybe_field,
+                        .token = w.token,
+                    };
+                }
+                const start: u32 = @intCast(b.fields.items.len);
+                try b.fields.appendSlice(gpa, fields);
+                return b.appendNode(.{ .tag = .record, .lhs = start, .rhs = @intCast(b.fields.items.len), .token = w.token });
+            },
+            .ctors => {
+                const type_id: Types.TypeId = @fromBackingInt(@intCast(n.a));
+                const entry = w.types.entry(type_id);
+                const target = try w.typeTarget(entry.package, entry.module_name, entry.name);
+                const count = words[n.b];
+                var at = n.b + 1;
+                const rows = try gpa.alloc(u32, count);
+                defer gpa.free(rows);
+                for (rows) |*row| {
+                    const name: InternPool.Symbol = @fromBackingInt(@intCast(words[at]));
+                    const order = words[at + 1];
+                    const argc = words[at + 2];
+                    const args = try gpa.alloc(u32, argc);
+                    defer gpa.free(args);
+                    for (args, words[at + 3 ..][0..argc]) |*arg, child| arg.* = @backingInt(try w.node(child));
+                    at += 3 + argc;
+                    row.* = @intCast(b.codec_ctors.items.len);
+                    try b.codec_ctors.append(gpa, .{ .name = try b.symbolIndex(name), .order = order, .args = try b.range(args) });
+                }
+                return b.appendNode(.{ .tag = .constructors, .lhs = target, .rhs = try b.range(rows), .token = w.token });
+            },
+            .def_ref => {
+                const argc = words[n.b];
+                const args = try gpa.alloc(u32, argc);
+                defer gpa.free(args);
+                for (args, words[n.b + 1 ..][0..argc]) |*arg, slot| {
+                    arg.* = @backingInt(try b.appendNode(.{ .tag = .parameter, .lhs = slot, .rhs = 0, .token = w.token }));
+                }
+                return b.appendNode(.{ .tag = .codec_ref, .lhs = w.c.order[n.a], .rhs = try b.range(args), .token = w.token });
+            },
+            .value => {
+                const type_id: Types.TypeId = @fromBackingInt(@intCast(n.b));
+                const entry = w.types.entry(type_id);
+                const target: SchemaPlan.ValueTarget = .{
+                    .package = entry.package,
+                    .module = try b.symbolIndex(entry.module_name),
+                    .name = try b.symbolIndex(InternPool.WellKnown.codec.symbol()),
+                };
+                const at: u32 = for (b.value_targets.items, 0..) |seen, i| {
+                    if (seen.package == target.package and seen.module == target.module and seen.name == target.name) break @intCast(i);
+                } else blk: {
+                    try b.value_targets.append(gpa, target);
+                    break :blk @intCast(b.value_targets.items.len - 1);
+                };
+                return b.appendNode(.{ .tag = .codec_value, .lhs = at, .rhs = 0, .token = w.token });
+            },
+            .schema_ref => {
+                const type_id: Types.TypeId = @fromBackingInt(@intCast(n.a));
+                const entry = w.types.entry(type_id);
+                // `Message.Type`'s schema is `Message`.
+                const text = b.interner.slice(entry.name);
+                const base = if (std.mem.endsWith(u8, text, ".Type")) text[0 .. text.len - ".Type".len] else text;
+                const schema = b.interner.find(base) orelse {
+                    b.poisoned = true;
+                    return b.appendNode(.{ .tag = .primitive, .lhs = @backingInt(SchemaPlan.Primitive.value), .rhs = 0, .token = w.token });
+                };
+                const target: SchemaPlan.SchemaTarget = .{
+                    .package = entry.package,
+                    .module = try b.symbolIndex(entry.module_name),
+                    .schema = try b.symbolIndex(schema),
+                };
+                const at: u32 = for (b.schema_targets.items, 0..) |seen, i| {
+                    if (seen.package == target.package and seen.module == target.module and seen.schema == target.schema) break @intCast(i);
+                } else blk: {
+                    try b.schema_targets.append(gpa, target);
+                    break :blk @intCast(b.schema_targets.items.len - 1);
+                };
+                return b.appendNode(.{ .tag = .reference, .lhs = at, .rhs = try b.range(&.{}), .token = w.token });
+            },
+        }
+    }
+
+    fn typeTarget(w: *CodecWriter, package: @import("../SourceStore.zig").Package, module: InternPool.Symbol, name: InternPool.Symbol) Allocator.Error!u32 {
+        const b = w.b;
+        const target: SchemaPlan.TypeTarget = .{ .package = package, .module = try b.symbolIndex(module), .name = try b.symbolIndex(name) };
+        for (b.type_targets.items, 0..) |seen, i| {
+            if (seen.package == target.package and seen.module == target.module and seen.name == target.name) return @intCast(i);
+        }
+        try b.type_targets.append(b.gpa, target);
+        return @intCast(b.type_targets.items.len - 1);
+    }
+};
 
 const PendingDefinition = struct {
     name: SchemaPlan.SymbolIndex,
@@ -142,6 +324,10 @@ const Builder = struct {
     symbols: std.ArrayList(Symbol) = .empty,
     schema_targets: std.ArrayList(SchemaPlan.SchemaTarget) = .empty,
     ctor_targets: std.ArrayList(SchemaPlan.CtorTarget) = .empty,
+    codec_defs: std.ArrayList(SchemaPlan.Definition) = .empty,
+    codec_ctors: std.ArrayList(SchemaPlan.CodecCtor) = .empty,
+    type_targets: std.ArrayList(SchemaPlan.TypeTarget) = .empty,
+    value_targets: std.ArrayList(SchemaPlan.ValueTarget) = .empty,
     poisoned: bool = false,
 
     fn deinit(b: *Builder) void {

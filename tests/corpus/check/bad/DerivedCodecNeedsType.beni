@@ -1,0 +1,44 @@
+-- check/bad: `derived_codec_needs_type` (`schema.md` §12.7, §12.10): a
+-- decoded type, or a part of one, that nothing in the declaration says, so
+-- there is nothing to read it as — said once per `Json` call, at the call.
+-- `fieldUnknown` reads `meta` and does nothing with it that says its type;
+-- `rootUnknown` never looks at what it decoded; `numberUnknown` encodes a
+-- literal that could be an `Int` or a `Float`, which JSON reads
+-- differently. `nameOnly` is the closing rule's other side and checks: its
+-- record is closed at the one field it reads, `name : String`.
+import Json
+import Schema exposing (Issue)
+
+
+fieldUnknown : String → String
+fieldUnknown text =
+    case Json.decode text of
+        Ok record →
+            if record.meta == record.meta then record.name else ""
+
+        Err _ →
+            ""
+
+
+rootUnknown : String → Bool
+rootUnknown text =
+    case Json.decode text of
+        Ok _ →
+            True
+
+        Err _ →
+            False
+
+
+numberUnknown : Result (List Issue) String
+numberUnknown = Json.encode 42
+
+
+nameOnly : String → String
+nameOnly text =
+    case Json.decode text of
+        Ok record →
+            record.name
+
+        Err _ →
+            ""

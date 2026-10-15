@@ -1,0 +1,59 @@
+--! JSON read into the type the program uses, and written from it
+--! (`docs/design/schema.md` §12).
+--!
+--! `Json.decode text` answers a value of whatever type the program uses it
+--! at: an annotation says which, or, without one, what the declaration reads
+--! of it. The compiler derives the schema from that type — its records, its
+--! tuples, its constructors, its `Maybe` fields — and checks the text
+--! against it before any field is touched, with the issues, the options and
+--! the speed of a declared schema.
+--!
+--!     summarize : String → String
+--!     summarize text =
+--!         case Json.decode text of
+--!             Ok article →
+--!                 "${article.title} by ${article.author}"
+--!
+--!             Err issues →
+--!                 "not an article"
+--!
+--! When the JSON does not look like the type — a renamed key, a default, a
+--! conversion — a `schema` declaration is the tool (§2, §11).
+
+import Schema exposing (Codec, Issue, Options, Value)
+
+
+--| The text read as the type the program uses it at.
+pub decode : String → Result (List Issue) a
+    where a.codec : ⊤ → Codec a
+decode text = Schema.parse (a.codec ⊤) text
+
+
+--| `decode` with options: `AllErrors`, `Reject`, a depth bound.
+pub decodeWith : Options, String → Result (List Issue) a
+    where a.codec : ⊤ → Codec a
+decodeWith options text = Schema.parseWith (a.codec ⊤) options text
+
+
+--| The value written as JSON text.
+pub encode : a → Result (List Issue) String
+    where a.codec : ⊤ → Codec a
+encode value = Schema.print (a.codec ⊤) value
+
+
+--| `encode` with options.
+pub encodeWith : Options, a → Result (List Issue) String
+    where a.codec : ⊤ → Codec a
+encodeWith options value = Schema.printWith (a.codec ⊤) options value
+
+
+--| A host value, already parsed, read as the type.
+pub decodeValue : Value → Result (List Issue) a
+    where a.codec : ⊤ → Codec a
+decodeValue value = Schema.read (a.codec ⊤) value
+
+
+--| The value written as a host value, not yet printed.
+pub encodeValue : a → Result (List Issue) Value
+    where a.codec : ⊤ → Codec a
+encodeValue value = Schema.write (a.codec ⊤) value

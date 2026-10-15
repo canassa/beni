@@ -2058,6 +2058,10 @@ const Case = struct {
             var lines = std.mem.splitScalar(u8, text, '\n');
             while (lines.next()) |line| {
                 if (std.mem.startsWith(u8, line, "schema ") or std.mem.startsWith(u8, line, "pub schema ")) return true;
+                // A schema derived from a type (`schema.md` §12.8): its
+                // fixtures run both paths, as a declaration's do.
+                if (std.mem.startsWith(u8, line, "import Json")) return true;
+                if (std.mem.indexOf(u8, line, "Schema.derived") != null or std.mem.indexOf(u8, line, "Schema.structural") != null) return true;
             }
         }
         return false;
