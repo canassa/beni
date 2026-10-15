@@ -79,6 +79,9 @@
 //!                                 run/ and browser/direct/ program and on
 //!                                 TodoMVC, against the native compiler,
 //!                                 byte for byte
+//!   zig build test-playground-page  drive the site in a headless Chrome
+//!                                 (`nix develop .#browser`; the editor
+//!                                 loads from a CDN, so it needs the network)
 //! And the cross-language benchmark (docs/design/compare-bench.md §12), which
 //! needs `nix develop .#compare` and is not a gate either:
 //!   zig build compare-gen         write the generated projects
