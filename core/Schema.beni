@@ -813,7 +813,11 @@ writeMode = 3
 -- A compiled schema's worker of decoding operation `mode`, as `parserOf`
 -- makes its `parse` worker. Not `parserOf` with one more argument: that
 -- would cost every program that only parses and prints its inlined
--- `parserOf`.
+-- `parserOf` (Conduit direct +71 brotli, `schema.md` §16, *As built — every
+-- runner*). The duplication, here and in the four slot makers, is the price
+-- of that, paid only by a program that runs the other four operations or
+-- builds a dynamic schema (#176); merging them back must keep Conduit's
+-- bytes.
 parserIn : Workers, Int → Js.Value
 parserIn w mode =
     case w.made of

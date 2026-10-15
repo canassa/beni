@@ -1,11 +1,14 @@
 -- decode
 Ok 1; "t"; 1.5; 2.0; done; Present "x"; Null; 3; {"k":[1]}; 12; [1,2]
+Err decoding Encoded InvalidValue /__proto__ expected a safe integer
 Err decoding Encoded InvalidValue /id expected a safe integer
 Err decoding Encoded InvalidValue /id expected a safe integer <- 9007199254740992 | decoding Encoded InvalidValue /exact expected a finite number <- <encoding Encoded PrintFailed / the value holds NaN or an infinity, which JSON has no number for> | decoding Type ConversionFailed /count/digits not a decimal integer: x <- "x" | decoding Encoded InvalidValue /parts/0/n expected a safe integer <- 9007199254740992
 Err decoding Encoded DepthExceeded /parts/0 the depth limit is reached
 Err decoding Encoded InvalidOptions / maxDepth must be from 0 to 1024, not -1
 -- encode
 Ok 1; "t"; 1.5; Missing; NonNull "Bo"; "12"; [1]
+Err encoding Type InvalidValue /proto expected a safe integer
+Err encoding Type InvalidValue /proto expected a safe integer
 Err encoding Encoded ConversionFailed /count negative <- -1 | encoding Type InvalidValue /parts/0/n expected a safe integer <- 9007199254740992
 -- read
 Ok 1; "t"; 1.5; 2.0; done; Missing; Null; 3; {}; 12; [1]
