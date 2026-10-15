@@ -561,7 +561,8 @@ interpreter, which `specialise` processes in both release builds. Their limits a
 Node running the pages plus 10%. On 2026-10-15 the owner also granted the large
 paired TodoMVC page 6 300M (measured 5 711M), the paired Sternhalma page 10 000M
 (measured 9 031M), and Sternhalma's separate value fuzz 12 600M (measured 11 387M).
-TodoMVC's value fuzz retains the default budget.
+TodoMVC's value fuzz retains the default budget. Outside the corpus, the two `.wasm` tests of
+`tests/blackbox/wasm_test.zig` have a grant of their own (CLAUDE.md, *Every test has a budget*).
 
 *Amended 2026-10-14 (the owner, Conduit paired runs):* the three direct Conduit
 page cases are granted 15 300M for four platform/build comparisons and fresh Node

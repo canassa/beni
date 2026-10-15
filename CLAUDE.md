@@ -302,7 +302,7 @@ zig build test-perf       # timing scenarios on a ReleaseFast beni; not a gate
 zig build test-run-hashes # re-verify emitted JavaScript under Node and record its hashes
 zig build test-browser    # the browser/ corpus in headless Chrome (nix develop .#browser); not a gate
 zig build playground      # the playground site, beni as ReleaseSmall wasm -> zig-out/playground/ (docs/design/playground.md)
-zig build test-playground # that wasm against the native beni, byte for byte, on run/ and browser/direct/; not a gate
+zig build test-playground # that wasm against the native beni, byte for byte, on the corpus; not a gate, CI runs it
 zig build test-time-report  # where the gates' time goes -> plans/test-time-report.md
 zig build coverage        # lines of src/ the black-box tests reach -> zig-out/coverage/
 zig build fuzz            # random sweeps of the byte readers, lexer and parser; not a gate
@@ -336,7 +336,11 @@ get: about 70 s of single-threaded compile after an edit, which no flag
 shortens. Run `zig build gates -Dllvm` when a change could make the two code
 generators disagree (safety checks, undefined-behaviour-shaped code, layouts,
 atomics, recursion depth), before a release, or when the owner asks.
-`test-perf` and `bench` always time a ReleaseFast LLVM beni. Never share one
+`-Dllvm` also builds the two compilers with no threads that `wasm_test.zig`
+runs (the native one and the `wasm32-wasi` one, `playground.md` §6) with LLVM:
+three LLVM ReleaseSafe compiles, which run in parallel and each hold an LLVM
+compile's memory, so check `free -g` first. `test-perf` and `bench` always
+time a ReleaseFast LLVM beni. Never share one
 Zig cache between git worktrees: a worktree was handed a stale
 binary built from another worktree's sources.
 
@@ -353,7 +357,11 @@ value-fuzz case uses `.fuzz-budget`; a page grant never covers fuzz implicitly.
 Conduit's page cases (2026-10-08, paired direct runs extended 2026-10-14, re-granted from
 Linux instruction counts 2026-10-15), its direct value fuzz (2026-10-14), `browser/direct/HttpJson`
 and `HttpJsonBody` (2026-10-14, compiler defect #105), and the paired TodoMVC/Sternhalma pages plus
-Sternhalma's separate value fuzz (2026-10-15) are the only grants.
+Sternhalma's separate value fuzz (2026-10-15) are the only corpus grants. Outside the corpus, the
+two tests of `tests/blackbox/wasm_test.zig` that run the `.wasm` have 6 000M
+(`wasm_budget_millions`): a fixed cost of Node and the self-hosted wasm32 build that no smaller
+input reduces. Jayson Reis decided it on 2026-10-15 (dashboard `wasm-playground-q5`), with
+`zig build test-playground` in CI on every pull request; Cesar's agreement is pending.
 
 **The budget has one unit and one reference build** (2026-10-14). The count
 is the kernel's hardware count of user-space instructions (`perf_event_open`)

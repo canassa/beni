@@ -123,6 +123,81 @@ jobs:
             ~/.cache/zig
           key: zig-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock') }}-${{ github.sha }}
 
+  # The playground's shipped compiler against the native one, byte for
+  # byte, on the corpus (docs/design/playground.md §6): `zig build
+  # test-playground`. Jayson Reis decided on 2026-10-15 (dashboard question
+  # `wasm-playground-q5`) that it runs on every pull request, beside the two
+  # `.wasm` gate tests' budget of their own (CLAUDE.md, *Every test has a
+  # budget*). It compiles the LLVM ReleaseSmall `.wasm` and the native
+  # ReleaseSafe compiler, and `check` needs it, so a difference blocks a
+  # merge. Its Zig caches are its own (`zig-playground-`), first filled from
+  # the `tests` job's, so the two jobs never save one key.
+  playground:
+    name: playground (wasm against native)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: nix-installer v3.23.2
+        run: |
+          curl -sSfL -o "$RUNNER_TEMP/nix-installer" \
+            https://github.com/DeterminateSystems/nix-installer/releases/download/v3.23.2/nix-installer-x86_64-linux
+          echo "d3c174b95b948ab1744a9a3507599d030bf31a39033305e8769b51c3134daeff  $RUNNER_TEMP/nix-installer" | sha256sum --check
+      - uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
+        with:
+          source-binary: ${{ runner.temp }}/nix-installer
+          diagnostic-endpoint: ""
+
+      # The `tests` job saves the store; this job only restores it.
+      - name: restore the Nix store
+        uses: nix-community/cache-nix-action/restore@7df957e333c1e5da7721f60227dbba6d06080569 # v7
+        with:
+          primary-key: nix-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.nix', 'flake.lock') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: dev shell
+        run: nix develop --command true
+
+      - name: restore the Zig caches
+        id: zig-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            .zig-cache
+            ~/.cache/zig
+          key: zig-playground-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock') }}-${{ github.sha }}
+          restore-keys: |
+            zig-playground-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock') }}-
+            zig-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock') }}-
+
+      # As in `tests`: a master run that restores more than 3 GiB starts
+      # from nothing.
+      - name: bound the Zig caches
+        if: ${{ github.event_name == 'push' }}
+        run: |
+          du -sh .zig-cache ~/.cache/zig 2>/dev/null || true
+          if [ "$(du -sc .zig-cache ~/.cache/zig 2>/dev/null | tail -1 | cut -f1)" -gt $((3 * 1024 * 1024)) ]; then
+            echo "Zig caches over 3 GiB: removed"
+            rm -rf .zig-cache ~/.cache/zig
+          fi
+
+      - name: zig build test-playground
+        run: nix develop --command zig build test-playground
+
+      - name: save the Zig caches
+        if: ${{ !cancelled() && github.event_name == 'push' && steps.zig-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            .zig-cache
+            ~/.cache/zig
+          key: zig-playground-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock') }}-${{ github.sha }}
+
   # The guard: the one check the rule on master requires, so the rule
   # stays correct when a job here is added, renamed or split. It passes
   # only when every job in `needs:` succeeded. No other job in any
@@ -142,7 +217,7 @@ jobs:
   check:
     name: check
     if: always()
-    needs: [tests]
+    needs: [tests, playground]
     runs-on: ubuntu-24.04
     permissions:
       contents: read
