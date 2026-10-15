@@ -7825,8 +7825,10 @@ text (§15.3, §15.6) are compiled; and the differential oracle has a harness (�
   module (research 70). When it leaves one of them out, the second lowering always follows and
   lowers every module again. Thus the first lowering only records what each module uses of the
   runtime module: it prints nothing and makes no source map, and each module is printed once.
-  `--self-profile` counts this: `edge_lists` is the number of modules of the graph, `reach_walks`
-  is 2, and `modules_printed` is the number of modules written. *Measured* in instructions per
+  `--self-profile` counts this: `edge_lists` is the number of modules of the graph (with
+  `edge_lists_embedded`, since the checked core carries the lists of the embedded modules: §9,
+  *Incrementality (M4) and chunking (§10)*),
+  `reach_walks` is 2, and `modules_printed` is the number of modules written. *Measured* in instructions per
   build (`perf stat -e instructions:u`, the gates' ReleaseSafe compiler): `browser/tea/ApiItems`
   629 → 545 million in development (−13.5 %) and 1 818 → 1 756 million under `--release`;
   `browser/direct/AfterRenderFocus` 584 → 489 million (−16.2 %) and 716 → 652 million. A build with
