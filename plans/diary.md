@@ -6763,3 +6763,14 @@ It found no defect. On its advice, the comment now says two more
 things. A called workflow sees its caller's event, so `claude.yml`
 cannot join. A `paths:` filter on the CI trigger leaves a skipped pull
 request waiting for `check` forever.
+
+The adversarial review found the guard correct and the PR in conflict
+with master in this file. I rebased on `ac65b18ce`, put my entries after
+the newest one, and cut the guard comment from 28 to 16 lines. The new
+comment also says that no other job may be named `check`, and that a
+timed-out `tests` reads `cancelled`. `direnv exec` refused the
+`.envrc` of this worktree, so I ran `zig build gates` through
+`nix develop --command`. The *Troubleshooting required status checks*
+table of the GitHub docs names both cases: a job skipped after a failed
+dependency does not block a merge, and a workflow skipped by a filter
+leaves its check pending.
