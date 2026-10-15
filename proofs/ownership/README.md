@@ -14,7 +14,9 @@ Current results and the full source-mutant matrix are in [RESULTS.md](RESULTS.md
 The shipping-compiler differential bridge, counted skips, runtime boundary and
 commands are specified in [BRIDGE.md](BRIDGE.md); `ownership ci` includes its bounded run.
 [BRIDGE-RESULTS.md](BRIDGE-RESULTS.md) records the corrected 116,456-input campaign
-and contains links to every verdict lead, typed minimum and real runtime outcome.
+and the oracle triage: 201 original divergences in six Zig defect clusters and
+2,157 Lean precision leads. Every original and old minimum has both interpreter
+traces in `evidence/bridge-triage/`; the persistent emitted runtime is not the judge.
 The oracle has 98 original and 44 sync verdict fixtures, generator v5, a bounded-exhaustive
 grammar plus 348 targeted programs, required negative controls (including `set-exclusive` and `once-live`),
 and a falsifier that fails when summary coverage is excessively vacuous.
@@ -42,6 +44,7 @@ cd proofs/ownership
 lake build                                   # executable, kernel-checked library, axiom audit
 lake exe ownership ci                        # fixtures and probes, one campaign (≥ 30 % write), every required control caught by the generator or targeted enumerator
 lake exe ownership fixtures
+node scripts/bridge-triage.mjs                # original leads and minima in both Lean interpreters
 lake exe ownership oracle 20000 17           # one campaign (summary checker)
 lake exe ownership oracle 20000 17 --cross-check   # also run the per-call checker
 lake exe ownership oracle 20000 17 --reinfer       # the per-call checker alone
@@ -103,6 +106,7 @@ macOS requires `zorg` on PATH).
 | `Soundness.lean` | the bridge to concrete heaps and the soundness statements |
 | `Falsify.lean` | executes the unproved statements on concrete configurations (`ownership falsify`) |
 | `Report.lean` | printing summaries |
+| `Triage.lean` | replay original leads and minima through both interpreters, including complete traces |
 | `Bridge.lean`, `BridgeWire.lean` | existing-stream export, typed reducer and data-only wire decoder |
 | `scripts/bridge*.mjs` | public-source translation, shipping verdict/runtime comparison and isolated Zig controls |
 

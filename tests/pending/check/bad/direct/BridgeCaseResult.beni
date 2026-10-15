@@ -1,0 +1,8 @@
+-- CK-226: a case arm returns the old version after an eager write.
+-- Confirmed by the in-place interpreter; see proofs/ownership/BRIDGE-RESULTS.md.
+-- The shipping checker accepts every demand. The expected refusal is pinned below.
+-- Position remains open until the checker fix chooses its diagnostic site.
+pub run ⊤ =
+    xs = [ 1 ]
+    grown = List.push xs 2
+    if True then xs else grown
