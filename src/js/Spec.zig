@@ -744,6 +744,9 @@ const Spec = struct {
     narrow: std.ArrayList(NameIndex) = .empty,
     /// What `srList` does to each statement list it reaches.
     list_mode: enum { scalars, constructors, self_assign, iife } = .scalars,
+    /// Slice 8: `soleCalls`, for the pass in progress, made when a call
+    /// first asks for it; null until then.
+    sole: ?[]const bool = null,
     stats: Stats = .{},
     /// Slice 9: `smallTable`, for the pass in progress.
     cf_smalls: []?Small = &.{},
@@ -1994,13 +1997,43 @@ const Spec = struct {
     }
 
     /// Whether evaluating argument `a` can do nothing but make its value, so
-    /// that it may go with the parameter it is passed to: `inert`, or a
-    /// name or a chain of reads through objects the program made, none of
-    /// which may run a getter or throw (`Pts.safeChain`).
+    /// that it may go with the parameter it is passed to: `inert`, a name
+    /// or a chain of reads through objects the program made, none of which
+    /// may run a getter or throw (`Pts.safeChain`), or a call of functions
+    /// that only make a value (`pureCall`).
     fn effectFree(s: *Spec, m: *Mod, a: Index) Allocator.Error!bool {
+        return s.effectFreeAt(m, a, 0);
+    }
+
+    fn effectFreeAt(s: *Spec, m: *Mod, a: Index, depth: u32) Allocator.Error!bool {
         if (inert(m.ir, a)) return true;
         if (!s.pts.ok) return false;
+        if (m.ir.tag(a) == .call) return s.pureCall(m, a, depth);
         return try s.pts.safeChain(m.index, s.cur_top, a) != null;
+    }
+
+    /// `backend.md` §9, *A call of a function that only makes a value*: a
+    /// call does nothing but make its value when its callee is a chain that
+    /// can neither throw nor run a getter (`Pts.safeChain`), that fact 3
+    /// says may be only functions of the program — never `null`,
+    /// `undefined`, a primitive or a host value — each of which only makes
+    /// its value (`makesOnly`), and when every argument does nothing in
+    /// turn. Such a call cannot throw, loop, log or write: its one
+    /// observable is the value, so a call whose value nothing reads may go.
+    fn pureCall(s: *Spec, m: *Mod, call: Index, depth: u32) Allocator.Error!bool {
+        if (depth >= max_pure_depth) return false;
+        const ir = m.ir;
+        const d = ir.data(call);
+        const v = try s.pts.safeChain(m.index, s.cur_top, @fromBackingInt(@intCast(d.lhs))) orelse return false;
+        if (v.top or v.prim or v.nullish() or v.sites.len == 0) return false;
+        for (v.sites) |site| {
+            const st = &s.pts.sites.items[site];
+            if (st.kind != .func or !makesOnly(s.mods[st.module].ir, st.node)) return false;
+        }
+        for (ir.extraSlice(ir.subRange(@fromBackingInt(@intCast(d.rhs))), Index)) |arg| {
+            if (!try s.effectFreeAt(m, arg, depth + 1)) return false;
+        }
+        return true;
     }
 
     /// Facts 5 and 6: whether `left === right`, from what each side may be,
@@ -3252,8 +3285,9 @@ const Spec = struct {
             if (try s.deadWrite(m, stmt)) {
                 const value: Index = @fromBackingInt(@intCast(m.ir.data(stmt).rhs));
                 // A read of a program object's property does nothing
-                // either: no getter, no throw (`Pts.safeChain`).
-                if (inert(m.ir, value) or (s.pts.ok and try s.pts.safeChain(m.index, s.cur_top, value) != null)) continue;
+                // either: no getter, no throw (`Pts.safeChain`); nor does a
+                // call of functions that only make a value (`pureCall`).
+                if (try s.effectFree(m, value)) continue;
                 m.setNode(stmt, .expr_stmt, value.int(), 0);
                 try out.append(s.arena, raw);
                 continue;
@@ -4467,6 +4501,10 @@ const Spec = struct {
         /// Per parameter: read, and only ever as the object of a property
         /// read — `e` inspects it (slice 9).
         inspects: []bool,
+        /// The fact-3 site of a function reached through a property, or
+        /// `none`: when the program's one use of it is one call
+        /// (`soleCalls`), the size model is not asked.
+        site: u32 = none,
     };
 
     /// `backend.md` §9, *Slice 8*: a call of a top-level function whose
@@ -4863,6 +4901,7 @@ const Spec = struct {
         const by_site = try s.arena.alloc(?Small, if (resolve) s.pts.sites.items.len else 0);
         const asked = try s.arena.alloc(bool, by_site.len);
         @memset(asked, false);
+        s.sole = null;
         // Every call of one, in module order.
         var any = false;
         for (s.mods, 0..) |*m, mi| {
@@ -4882,7 +4921,10 @@ const Spec = struct {
                                 const site = v.sites[0];
                                 const st = s.pts.sites.items[site];
                                 if (st.kind == .func and !st.escaped and try s.pts.safeChain(@intCast(mi), top, callee) != null) {
-                                    if (!asked[site]) by_site[site] = try s.smallOf(st.module, st.node, null, false);
+                                    if (!asked[site]) {
+                                        by_site[site] = try s.smallOf(st.module, st.node, null, false);
+                                        if (by_site[site]) |*small| small.site = site;
+                                    }
                                     asked[site] = true;
                                     if (by_site[site]) |small| try calls.append(s.arena, .{ .top = top, .call = node, .small = small });
                                 }
@@ -4899,16 +4941,72 @@ const Spec = struct {
         return any;
     }
 
+    /// `backend.md` §9, *Slice 8*, amended (*a function used once*): per
+    /// fact-3 site, whether the function it makes is used by exactly one
+    /// call of the program and nothing else — the callee of one call node
+    /// may be it, it does not escape, and every other node that may be it
+    /// only holds it: the function itself, a key's value in an object
+    /// literal, or a binding's initialiser. Once that call holds the body,
+    /// nothing reads the key or the binding, and the function goes with
+    /// them, so the size model, which prices the call against the body
+    /// alone, is not asked.
+    fn soleCalls(s: *Spec) Allocator.Error![]const bool {
+        const n = s.pts.sites.items.len;
+        const calls = try s.arena.alloc(u32, n);
+        @memset(calls, 0);
+        const other = try s.arena.alloc(bool, n);
+        @memset(other, false);
+        for (s.mods, 0..) |*m, mi| {
+            const ir = m.ir;
+            const vals = s.pts.vals[mi];
+            // Per node: the callee of a call, or a place that only holds
+            // the value it is — set by the node's parent, which a preorder
+            // meets first.
+            var callee: std.DynamicBitSetUnmanaged = try .initEmpty(s.arena, ir.nodes.len);
+            var holds: std.DynamicBitSetUnmanaged = try .initEmpty(s.arena, ir.nodes.len);
+            for (ir.extraSlice(ir.body, Index)) |top| {
+                for (try s.preorder(m, top)) |node| {
+                    const i = node.int();
+                    const tag = ir.tag(node);
+                    // A key's node is what its value is, and only holds it.
+                    if (i < vals.len and !vals[i].top and tag != .property) for (vals[i].sites) |site| {
+                        if (s.pts.sites.items[site].kind != .func) continue;
+                        if (callee.isSet(i)) {
+                            calls[site] += 1;
+                        } else if (!holds.isSet(i)) other[site] = true;
+                    };
+                    const d = ir.data(node);
+                    switch (tag) {
+                        .call => callee.set(d.lhs),
+                        .property => holds.set(d.rhs),
+                        .const_decl => holds.set(d.rhs),
+                        .let_decl => if ((@as(Node.OptionalIndex, @fromBackingInt(@intCast(d.rhs)))).unwrap()) |v| holds.set(v.int()),
+                        else => {},
+                    }
+                }
+            }
+        }
+        const sole = try s.arena.alloc(bool, n);
+        for (sole, calls, other, s.pts.sites.items) |*x, c, o, st| x.* = c == 1 and !o and !st.escaped;
+        return sole;
+    }
+
     /// `iife`: the callee is the function the call makes, written in the
     /// same statement, so no size model applies — the function's own text
     /// goes with the call — and nothing is copied out of another statement.
     fn inlineSmallAt(s: *Spec, m: *Mod, mi: u32, top: Index, call: Index, small: Small, iife: bool) Allocator.Error!bool {
         const fm = &s.mods[small.module];
-        const args = try s.arena.dupe(Index, m.ir.extraSlice(m.ir.subRange(@fromBackingInt(@intCast(m.ir.data(call).rhs))), Index));
-        if (args.len != small.params.len) return false;
+        const passed = try s.arena.dupe(Index, m.ir.extraSlice(m.ir.subRange(@fromBackingInt(@intCast(m.ir.data(call).rhs))), Index));
+        // An argument past the parameters is evaluated by the call and read
+        // by nothing: one that does nothing (`inert`) goes with the call —
+        // `app.init(null)` of a function lowered with no parameter for `⊤`.
+        if (passed.len < small.params.len or (iife and passed.len != small.params.len)) return false;
+        for (passed[small.params.len..]) |a| if (!inert(m.ir, a)) return false;
+        const args = passed[0..small.params.len];
         // Arguments: atoms, or one non-atom read once and first.
         // The callee, the brackets and the commas.
-        var call_cost: u32 = 3 + @as(u32, @intCast(if (args.len > 0) args.len - 1 else 0));
+        var call_cost: u32 = 3 + @as(u32, @intCast(if (passed.len > 0) passed.len - 1 else 0));
+        for (passed[small.params.len..]) |a| call_cost += nodeCount(m.ir, a, &s.pts, mi);
         var inlined: u32 = small.cost;
         var non_atoms: u32 = 0;
         for (args, 0..) |a, i| {
@@ -4939,7 +5037,11 @@ const Spec = struct {
             }
         };
         if (!iife) {
-            if (inlined > call_cost) return false;
+            if (inlined > call_cost) {
+                if (small.site == none) return false;
+                if (s.sole == null) s.sole = try s.soleCalls();
+                if (!s.sole.?[small.site]) return false;
+            }
             s.noteCopy(small.module, small.owner);
         }
 
@@ -8884,6 +8986,29 @@ fn literalStmt(ir: *const JsIr, stmt: Index) bool {
         .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit => true,
         else => false,
     };
+}
+
+/// How deep `pureCall` follows a call that is an argument of a call.
+const max_pure_depth = 8;
+
+/// Whether calling function `node` — an arrow of any kind, or a `function`
+/// declaration — does nothing but make its value: its body is empty, or
+/// one `return` whose value, when it has one, is `inert`. A `JsIr`
+/// function's parameters are plain names, with no pattern and no default
+/// but `arrow_depth`'s literal `0`, so binding them does nothing either.
+/// A generator's call makes an object without running its body, and is
+/// not asked about here.
+fn makesOnly(ir: *const JsIr, node: Index) bool {
+    const record: ExtraIndex = switch (ir.tag(node)) {
+        .arrow => @fromBackingInt(@intCast(ir.data(node).lhs)),
+        .func_decl => @fromBackingInt(@intCast(ir.data(node).rhs)),
+        else => return false,
+    };
+    const body = ir.extraSlice(ir.extraData(record, JsIr.Func).body(), Index);
+    if (body.len == 0) return true;
+    if (body.len != 1 or ir.tag(body[0]) != .return_stmt) return false;
+    const value: Node.OptionalIndex = @fromBackingInt(@intCast(ir.data(body[0]).lhs));
+    return if (value.unwrap()) |e| inert(ir, e) else true;
 }
 
 fn inert(ir: *const JsIr, root: Index) bool {
