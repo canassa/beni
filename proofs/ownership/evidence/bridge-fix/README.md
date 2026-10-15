@@ -24,3 +24,10 @@ sources/verdicts, including site-only leads. Its `audit.json` and
 leads: none diverges. Exact stream SHA-256 hashes and coverage match the old
 campaign. All six original cluster membership sets have zero surviving
 program-level acceptances, and the 401 reverse refusals are unchanged.
+
+`historical-minima.json.gz` separately records enforcement of all 220 historical
+minima marked divergent in `../bridge-triage/judgments.json.gz`. Every one is
+refused with ownership diagnostics by the frozen fix compiler. Their input
+sources are `minimum.source` entries of `../bridge-long/evidence.json.gz`,
+materialized by `bridge-evidence.mjs case ../bridge-long ID source`. They are
+changed programs, not additional confirmations of their original inputs.

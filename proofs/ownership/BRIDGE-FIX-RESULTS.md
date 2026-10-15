@@ -55,6 +55,13 @@ static rule's obligation to protect all paths and later uses.
 | Seed 20261011, 20,000 inputs | 5,054 | 493 → 470 | 13 → 0 |
 | Seed 314159, 20,000 inputs | 5,013 | 501 → 470 | 14 → 0 |
 
+A separate supplementary replay also refuses all **220** historical minima
+whose interpreter traces diverged, using only ownership diagnostics. These
+include changed programs whose original agreed, so they are not added to the
+headline original-program counts. Their sources are retained in the baseline
+bundle, and the [replay diagnostics](evidence/bridge-fix/historical-minima.json.gz)
+are recorded separately.
+
 All **401 reverse leads remain refused: 0 moved**, and their complete refusal
 details are unchanged. The full run's total reverse count also stays 401, so
 there are no new reverse-direction program leads.
@@ -73,7 +80,9 @@ whole-population browser-tea value checking, paired direct executions, coverage
 floors, counted skips and failure accounting remain active. No minimum is used
 to classify an original as safe or unsafe. The audit checks original-source
 fidelity through the Lean wire reader and requires exact baseline stream hashes
-and input/translated/skipped/value-checked counts. It uses a frozen compiler
+and input/translated/skipped/value-checked counts for the canonical CI (766)
+and long (116,456) populations. Custom population sizes still run the judge
+and reverse replay, but do not assert baseline equality. It uses a frozen compiler
 binary whose SHA-256 is checked before and after the audit.
 
 [Complete before/after interpreter judgments and reverse-lead replays](evidence/bridge-fix/README.md)
