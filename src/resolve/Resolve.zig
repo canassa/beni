@@ -39,6 +39,7 @@
 //! not one per name in the loop.
 
 const std = @import("std");
+const builtin = @import("builtin");
 const Allocator = std.mem.Allocator;
 const Io = std.Io;
 const diagnostic = @import("diagnostic");
@@ -247,7 +248,9 @@ const Schedule = struct {
     failure: ?Allocator.Error = null,
 
     fn go(s: *Schedule, parallel: Parallel) Allocator.Error!void {
-        const jobs = try s.threadCount(parallel);
+        // A build with no threads resolves serially (fast-compiler.md §10,
+        // *A build with no threads*), as `--jobs=1` does.
+        const jobs = if (builtin.single_threaded) 1 else try s.threadCount(parallel);
         if (jobs <= 1) {
             var pass = s.template;
             defer pass.tables.deinit(s.gpa);

@@ -106,7 +106,7 @@ fn writeCallee(r: *const Reporter, w: *std.Io.Writer, module: Graph.Index, value
 
 // ---- Nullary methods and record defaults ----------------------------------------
 
-/// The value a dot on a value of type `actual` reached for: a `pub` value
+/// The value a dot on a value of type `actual` reached for: a visible value
 /// named `field` of the module declaring `actual`'s type, whose first
 /// parameter is that type — what `x.field` would call were it applied
 /// (static-dispatch-spike.md §1.2). Its parameter count, with the module.
@@ -122,7 +122,27 @@ fn reachedFunction(r: *Reporter, actual: Var, field: Symbol) ?Reached {
     };
     if (app.type == .none) return null;
     const entry = r.env.types.entry(app.type);
-    if (entry.module == r.env.module or entry.module.int() >= r.env.interfaces.len) return null;
+    if (entry.module == r.env.module) {
+        // Top-level value names are unique within a module; privacy does
+        // not restrict calls from that same module (spike §1.2).
+        for (r.env.bir.decls, 0..) |decl, d| {
+            if (!decl.kind.isValue() or r.env.bir.symbol(decl.name) != field) continue;
+            const scheme = r.env.decl_scheme[d].unwrap() orelse return null;
+            const func = Walk.function(r.env.store, scheme) orelse return null;
+            if (func.params.len == 0) return null;
+            const first = switch (r.env.store.resolvedContent(func.params[0])) {
+                .structure => |flat| switch (flat) {
+                    .app => |a| a,
+                    else => return null,
+                },
+                else => return null,
+            };
+            if (first.type != app.type) return null;
+            return .{ .module = entry.module, .module_name = entry.module_name, .params = func.params.len };
+        }
+        return null;
+    }
+    if (entry.module.int() >= r.env.interfaces.len) return null;
     const iface = r.env.iface(entry.module);
     const value = iface.findValue(r.env.interner, field) orelse return null;
     const body = iface.term(iface.scheme(iface.values[@backingInt(value)].scheme).body);
@@ -401,30 +421,136 @@ fn nextPermutation(xs: []u8) bool {
 
 /// A helper defaulted its unknown receiver to a record at generalisation.
 /// Only suggest a method when the nominal argument actually provides it.
-fn helperHint(r: *Reporter, w: *std.Io.Writer, category: Category, expected: Var, actual: Var) Error!bool {
+fn helperHint(r: *Reporter, w: *std.Io.Writer, original: Category, region: Bir.Inst.Index, expected: Var, actual: Var) Error!bool {
+    const bir = r.env.bir;
+    var category = original;
+    if (category.tag == .list_entry) {
+        // Bidirectional checking can report the literal's element before
+        // the enclosing helper call. Recover that call from its argument.
+        outer: for (bir.insts.items(.tag), 0..) |tag, i| {
+            if (tag != .call) continue;
+            const at: Bir.Inst.Index = @fromBackingInt(@intCast(i));
+            const args = bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(bir.instData(at).rhs))), Bir.Inst.Index);
+            for (args, 0..) |arg, n| {
+                if (bir.instTag(arg) != .list) continue;
+                const elements = bir.extraSlice(Bir.inlineRange(bir.instData(arg)), Bir.Inst.Index);
+                for (elements) |element| {
+                    if (element != region) continue;
+                    category = .{ .tag = .call_arg, .owner = at.toOptional(), .index = @intCast(n + 1) };
+                    break :outer;
+                }
+            }
+        }
+    }
     if (category.tag != .call_arg) return false;
-    const rec = switch (r.env.store.resolvedContent(expected)) {
-        .structure => |flat| switch (flat) {
-            .record => |rec| rec,
-            else => return false,
+    const call = category.owner.unwrap() orelse return false;
+    if (bir.instTag(call) != .call or category.index == 0) return false;
+    const callee: Bir.Inst.Index = @fromBackingInt(@intCast(bir.instData(call).lhs));
+    const data = bir.instData(callee);
+    var params: []const Bir.Inst.Index = undefined;
+    var locals_base: u32 = undefined;
+    var body: Bir.Inst.OptionalIndex = .none;
+    switch (bir.instTag(callee)) {
+        .top => {
+            const decl = bir.decls[data.lhs];
+            if (decl.annotation != .none) return false;
+            params = bir.extraSlice(.{ .start = decl.params_start, .end = decl.params_end }, Bir.Inst.Index);
+            locals_base = decl.locals_start;
+            body = decl.body;
+        },
+        .local => {
+            var found: ?Bir.LetDef = null;
+            for (bir.decls) |decl| {
+                if (decl.locals_start != r.env.locals_base) continue;
+                for (decl.inst_start.int()..decl.inst_end.int()) |i| {
+                    const inst: Bir.Inst.Index = @fromBackingInt(@intCast(i));
+                    if (bir.instTag(inst) != .let_def) continue;
+                    const def = bir.extraData(@fromBackingInt(@intCast(bir.instData(inst).lhs)), Bir.LetDef);
+                    if (def.local == data.lhs) {
+                        found = def;
+                        body = @fromBackingInt(@intCast(bir.instData(inst).rhs));
+                    }
+                }
+            }
+            const def = found orelse return false;
+            if (def.annotation != .none) return false;
+            params = bir.extraSlice(.{ .start = def.params_start, .end = def.params_end }, Bir.Inst.Index);
+            locals_base = r.env.locals_base;
         },
         else => return false,
-    };
-    for (Walk.recordFields(r.env.store, rec)) |field| {
-        const reached = reachedFunction(r, actual, field.name) orelse continue;
-        if (reached.params != 1) continue;
-        const name = r.env.interner.slice(field.name);
-        const module = r.env.interner.slice(reached.module_name);
-        w.print("\nHint: an unannotated helper such as `size xs = xs.{s}` infers a record\nreceiver. Annotate the helper's receiver to call the method, or write\n`{s}.{s} xs` inside it.\n", .{ name, module, name }) catch return error.OutOfMemory;
-        return true;
     }
-    return false;
+    // `helper = λxs → …` binds its parameters on the lambda rather
+    // than on the declaration, at both top-level and local bindings.
+    if (params.len == 0) {
+        const lambda = body.unwrap() orelse return false;
+        if (bir.instTag(lambda) != .lambda) return false;
+        params = bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(bir.instData(lambda).lhs))), Bir.Inst.Index);
+    }
+    if (category.index > params.len) return false;
+    const param = params[category.index - 1];
+    if (bir.instTag(param) != .pat_var) return false;
+    const symbol = bir.locals[locals_base + bir.instData(param).lhs].name.unwrap() orelse return false;
+    const parameter = r.env.interner.slice(bir.symbols[symbol]);
+    var match = helperMethod(r, expected, actual, 8) orelse return false;
+    match.nested = match.nested or original.tag == .list_entry;
+    const name = r.env.interner.slice(match.field);
+    if (match.nested) {
+        w.print("\nHint: unannotated helper `{s}` infers record receivers for elements of\nparameter `{s}`. Annotate the element type to call the method, or use\n`", .{ r.calleeOf(call).name, parameter }) catch return error.OutOfMemory;
+    } else {
+        w.print("\nHint: unannotated helper `{s}` infers a record receiver for parameter\n`{s}`. Annotate the helper's receiver to call the method, or write\n`", .{ r.calleeOf(call).name, parameter }) catch return error.OutOfMemory;
+    }
+    if (match.reached.module != r.env.module)
+        w.print("{s}.", .{r.env.interner.slice(match.reached.module_name)}) catch return error.OutOfMemory;
+    if (match.nested) {
+        w.print("{s}` on each element inside it.\n", .{name}) catch return error.OutOfMemory;
+    } else {
+        w.print("{s} {s}` inside it.\n", .{ name, parameter }) catch return error.OutOfMemory;
+    }
+    return true;
+}
+
+const HelperMethod = struct { field: Symbol, reached: Reached, nested: bool = false };
+
+/// Read-only, bounded descent also recognises a record accessor passed to
+/// `List.map`: the mismatch is on the list, while its elements need a method.
+fn helperMethod(r: *Reporter, expected: Var, actual: Var, depth: u32) ?HelperMethod {
+    if (depth == 0) return null;
+    const flat = switch (r.env.store.resolvedContent(expected)) {
+        .structure => |flat| flat,
+        else => return null,
+    };
+    switch (flat) {
+        .record => |rec| {
+            for (Walk.recordFields(r.env.store, rec)) |field| {
+                const reached = reachedFunction(r, actual, field.name) orelse continue;
+                if (reached.params == 1) return .{ .field = field.name, .reached = reached };
+            }
+        },
+        .app => |app| {
+            const other = switch (r.env.store.resolvedContent(actual)) {
+                .structure => |s| switch (s) {
+                    .app => |a| a,
+                    else => return null,
+                },
+                else => return null,
+            };
+            if (app.type != other.type) return null;
+            const xs = Walk.positions(r.env.store, expected);
+            const ys = Walk.positions(r.env.store, actual);
+            if (xs.len != ys.len) return null;
+            for (xs, ys) |x, y| {
+                if (helperMethod(r, x, y, depth - 1)) |m| return .{ .field = m.field, .reached = m.reached, .nested = true };
+            }
+        },
+        else => {},
+    }
+    return null;
 }
 
 /// The hints a `type_mismatch` may carry, before the general ones. True
 /// when one was written.
-pub fn mismatchHint(r: *Reporter, w: *std.Io.Writer, category: Category, expected: Var, actual: Var) Error!bool {
-    if (try helperHint(r, w, category, expected, actual)) return true;
+pub fn mismatchHint(r: *Reporter, w: *std.Io.Writer, category: Category, region: Bir.Inst.Index, expected: Var, actual: Var) Error!bool {
+    if (try helperHint(r, w, category, region, expected, actual)) return true;
     if (category.tag == .call_arg) {
         if (category.owner.unwrap()) |call| {
             if (call.int() < r.env.bir.insts.len and r.env.bir.instTag(call) == .call) {

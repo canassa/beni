@@ -684,7 +684,7 @@ owner accepted research 96). `x.m` reads a field when `x` is a record and calls
 unknown, defer; if still unknown at generalisation, infer a record field,
 unchanged. Thus `size xs = xs.length` infers a record receiver; using it on a
 list reports a mismatch with a hint to annotate the helper or use `List.length`.
-Missing members report `unknown_field` on records, `unknown_method` on nominal
+Missing members report `missing_field` on records, `unknown_method` on nominal
 types; private methods and missing arguments retain the ordinary call errors.
 `xs.length`, `s.trim`, `xs.copy` and `xs.reverse.length` are saturated calls.
 Each dot in `a.b.copy` resolves independently. `.m` lowers to a lambda whose

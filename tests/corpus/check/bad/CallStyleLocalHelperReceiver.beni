@@ -1,0 +1,4 @@
+-- Research 96 §3.2: a lambda helper defaults before its later use.
+answer =
+    helper = λitems → items.length
+    helper [ 1 ]

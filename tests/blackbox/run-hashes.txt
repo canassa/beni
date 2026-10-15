@@ -34,9 +34,10 @@ blackbox_test.test.evidence nested past a thousand levels is the user's eq at th
 build_id_test.test.a core read with --core-root and the embedded core share a cache, and each builds with its own #0 868e89fb4701a60d80c05b15749ccc5bd580770b2108edfa86bb978c767db2af
 build_id_test.test.a core read with --core-root and the embedded core share a cache, and each builds with its own #1 88a3f71f483eb2814941ea9ae0ba5bafaf7bfe5b7b09d26dfe365d4fce78242a
 build_id_test.test.two compilers that differ only in their embedded core share a cache and each builds its own program #0 a3692dda89a021c229b843a0e0ea6ca2e1f8d1ef1d5ed68a466daacb9a327e37
-build_test.test.--release builds and runs with no map, and --release --source-maps exits 2 #0 01120bf841884cc7a9ce51eb80a6548036145c0c020bb39e6e00ccb51fd85f53
 build_test.test.--release refuses a build that reaches Debug; the same program builds and logs without the flag #0 25a4aa5dc9defc629996b720535152cf62e5c8cc76b456055d17a0cc209a388b
 build_test.test.--release refuses a build that reaches Debug; the same program builds and logs without the flag #1 2be7572568481e02028bd6e6057100cbebd0a876cfe878bfa556f7ab6a3cfb02
+build_test.test.--release writes a map only when asked, and asking changes no byte of the code #0 0c8bd0587c661cb3e8790e7f97faeed5cd657da47a4076f02b0d85e2d0e62f81
+build_test.test.--release writes a map only when asked, and asking changes no byte of the code #1 dcba63314bb5370e2c9f823dc119c00e57a0f8e3ffb2b3aa1e7d64c680d9b4f2
 build_test.test.Debug.todo compiles as anything and crashes with its message when reached #0 717b1f9a140435dd30fc71f5a2a91aa3f772e7c40a1025c5d54d9945777f88ff
 build_test.test.a --core-root core without a core-private List value the emitter calls is refused where a module needs it #0 696cde132e411ca93a74b4a7fe267bf54ab09eb5ac70f8861411f4f7f2221d2f
 build_test.test.a Debug call that reachability drops does not refuse the release build #0 01120bf841884cc7a9ce51eb80a6548036145c0c020bb39e6e00ccb51fd85f53
@@ -123,7 +124,9 @@ external_platform_test.test.an external platform's markup lowering compiles a vi
 iface_test.test.a build whose evidence crosses modules is byte-identical through all three round trips, and runs #0 9b05879acd3b1f79fa41d27961a862ec9d6c6229614be52abe9c14cce07ab7f3
 ordering_test.test.a dispatch cycle through an annotated eq written above its caller, reversed, prints the same #0 dfb2886e531e54098955dbd9b96903f87c76d012c3b4946a91bc390b04477028
 ordering_test.test.a let helper at two types calls an own method written below it, reversed, and prints the same #0 2fa0d52adb5c5569326239b448fca866c22cb56b5b0f723dc935ca1d5376334b
+ordering_test.test.a recursive group's nullary read and dot-call print the same reversed #0 9d7fc588798c54a7f0d939055ddde1e948a6d3fec702c83981b811ae0f4c36df
 ordering_test.test.an annotated recursive group calls an own method written below it, reversed, and prints the same #0 9e900da9c467842f29912d50daa299a416023c8feb248b72c53d6c89977fd8c9
+ordering_test.test.nullary methods and record defaults print the same reversed #0 a0ea34accab729992101f9ce6e652dc61f50f3ff098113613f5cb75d1ede41e6
 page_fuzz_test.test.a build that misses one hole's write is caught, at the message that shows it, and shrunk to it #0 af996a90f929924e1fdf75e0fd5c96dbbe04b29bd38ea4ce2bfe1f08610b1663
 page_fuzz_test.test.a keyed list that misses a change is caught, its element the list #0 1109bb8634b38ac4d55a1fe18406d131e82197ef0a235109f45a5651d7b570b0
 page_fuzz_test.test.a missed attribute write is caught at the message that changes the attribute #0 e9f3f8d76d47a8e04d3c28bc20933709999630e5a14803c2b0dd115db164ff61
@@ -131,9 +134,9 @@ page_fuzz_test.test.a missed title write is caught though the body is the same #
 page_fuzz_test.test.a missed write of a controlled input's value is caught #0 4ce664ab0a61077e807016819bce110bb6d64c6b53f815502b013cb7287450d9
 page_fuzz_test.test.a page that stopped hands nothing to the next: a message that throws in update replays #0 6a7f154524ccc1a6e6e7134956009aea0b09f5d9084d66db6ff1ca392e60888c
 page_fuzz_test.test.two development builds of one program agree on every seed, messages and events alike #0 3115c3e0db2fe2e09a5a5f51071e06874587d12292e1806ac24cb36f784b7c33
-page_fuzz_test.test.verify: a key map left holding a removed row's key is caught #0 087898ec69de45e88e36cda0ff3c709350958ffffd7dcf8fd445a5301beefa9e
-page_fuzz_test.test.verify: a removed row left in the page is caught though one row remains #0 ae39da871f3ff7361e40d806a77e9e7eefba6fe08cc1fd61c4759a52daae8087
-page_fuzz_test.test.verify: a row of a derived list left showing a stale item is caught, its item a list of 1 500 #0 c47961bbe12d5114268026feb7a2f4faf6ab3abdd2e285f45d8b95182c8b7f8a
-page_fuzz_test.test.verify: a selector left holding its old probe is caught though every row is right #0 caf0d1940144afccc4d445a11e14bc293e116f183c88db73360cd02b52350b49
+page_fuzz_test.test.verify: a key map left holding a removed row's key is caught #0 bf42c0566e4a5b84b02d26e36c48578728a69950aca2d2d74a16b5a5c43a69d5
+page_fuzz_test.test.verify: a removed row left in the page is caught though one row remains #0 b01a7ecff48953a42f952568f22dec121754df3b5255b26e00213f575bc75528
+page_fuzz_test.test.verify: a row of a derived list left showing a stale item is caught, its item a list of 1 500 #0 fe63e120bfe51d727869cdb75a85db101288d82fef86759313b2008557b36888
+page_fuzz_test.test.verify: a selector left holding its old probe is caught though every row is right #0 b273c2043073f8007d1fb990508de31c7b11e56606c5c8417fe0ccdfc1329141
 page_fuzz_test.test.view events alone never reach the broken hole: no button makes the count negative #0 3aaea88c640fa2757d63e2b52e749b3cdc960ee031b0a0a13a5491f874153610
 platform_test.test.a platform layered on another builds a program with its base's program and runtime #0 d3c3b675c884dee767371dda2b18c2e2ea00b5786b4b65cd3ff84ee8132906bb

@@ -5783,6 +5783,13 @@ stays pending for its function slots inside List.map callbacks, with one
 approximate diagnostic rather than its former render-only entry rejection.
 No application code or ownership verdict was relaxed to bypass that limit.
 
+*Amended 2026-10-14 (document helpers):* CK-225's lowering is implemented.
+A compiled document choice holds one complete helper result, reads body and
+title from it, and lets the markup kind retain focus across source arms.
+The unchanged Conduit scripts and value fuzz match browser-tea. The built
+value path visits groups beyond the write-set prediction (criterion 7); this
+is a lowering/analysis cost disagreement, not an ownership exception.
+
 ## CK-226 — a case result loses the old list's later use (2026-10-15)
 
 Ownership soundness: 170 original Lean bridge leads, confirmed by the in-place

@@ -129,7 +129,9 @@ pub const Phase = enum {
     finish,
     /// Reachability elimination, once per build (`backend.md` §9): the
     /// declaration graph and the walk over it, inside `emit` and before a
-    /// byte is lowered. Its own row because it is the pass that decides how
+    /// byte is lowered. A build with a runtime module has a second, the
+    /// walk alone from the roots its first lowering found (§15.1, *The
+    /// runtime module*). Its own row because it is the pass that decides how
     /// much work `emit` then does — a build whose `emit` grew wants to know
     /// whether this grew with it or in spite of it — and because §9's
     /// throughput acceptance is stated about the two together.
@@ -267,6 +269,16 @@ pub const Counter = enum {
     spec_passes_capped,
     spec_init_capped,
     spec_inline_capped,
+    /// Reachability and lowering (`backend.md` §9, §15.1): the modules whose
+    /// edge lists were built, the walks over them, the lowerings of a module
+    /// and the modules printed. A build builds each module's edge lists
+    /// once, whatever number of walks it makes; a build with a runtime
+    /// module walks twice and lowers some modules twice, and prints each
+    /// module once (§15.1, *The runtime module*).
+    edge_lists,
+    reach_walks,
+    modules_lowered,
+    modules_printed,
 
     pub const count = @typeInfo(Counter).@"enum".field_names.len;
 };
@@ -287,17 +299,17 @@ pub const Event = struct {
 /// One worker's event buffer. Only that worker writes it, which is what
 /// makes recording lock-free — but "no lock" is not "no contention": at 32
 /// bytes two workers' buffers shared a cache line, so every `record` on one
-/// core invalidated the other's line. Padded to a whole line so the
-/// independence is real and not just formal.
+/// core invalidated the other's line. Aligned to a whole line, which pads
+/// its size to one on every target, so the independence is real and not
+/// just formal. (It was padded by hand, by a sum that took `dropped` for a
+/// `usize`: on wasm32 a `usize` is 4 bytes and the sum came out short.)
 pub const ThreadBuffer = struct {
-    events: []Event,
+    events: []Event align(cache_line),
     len: usize = 0,
     dropped: u64 = 0,
-    _pad: [cache_line - (@sizeOf([]Event) + 2 * @sizeOf(usize)) % cache_line]u8 = undefined,
 };
 
-/// `std.atomic.cache_line` is the target's line size; naming it here keeps
-/// the padding expression readable.
+/// `std.atomic.cache_line` is the target's line size.
 const cache_line = std.atomic.cache_line;
 
 comptime {

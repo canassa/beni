@@ -2094,6 +2094,26 @@ whether subscription reads conflict with that key's writes, conservatively true 
 reads. Effectful init/arm results are their declared model/command pair. Document view shape
 facts describe its record's body, which is compiled without a runtime view call.
 
+**Version 1.12** (*amended 2026-10-14*, additive): `Program.document_branch`
+marks a document view whose body returns a helper-computed document directly
+or from a branch. `programBranchChoose` keeps the complete taken document
+at index 1; body and title share it. The view itself is compiled in place,
+and helper-returned markup uses the existing value path. See browser-direct.md's
+dated document-helper amendment.
+
+**Version 1.13** (*amended 2026-10-15*, additive): parameterised templates
+retain their call's analysis context across function/module boundaries.
+`templatePlan()` supplies the program's hole identities, call paths and
+per-key conflicts; `templateHoles(refs)` supplies a template group's source
+identities independently of its callers. `templateCapture(root)` captures the
+current substitution path with the template's inputs. `templateScope(active)`
+scopes code generation of an outlined template (returning the previous state),
+so a reusable body never bakes in the first caller's path. The platform owns
+the resulting template instances and runtime protocol; the engine owns source
+identity and analysis facts. `templateValue(node, expression, placement)` either retains a producer call's source path or scopes its placement mask. The lowering opts in with `parameterised_templates`;
+the engine then emits backend.md's `_direct-plan.json` consumer plan. browser-direct.md and write-sets.md's amendment
+of the same date own selection and verification.
+
 #### 9.4.7 Diagnostics
 
 `cx.report(node, message)` reports **`markup_restructured`**, an error, at the markup node's source

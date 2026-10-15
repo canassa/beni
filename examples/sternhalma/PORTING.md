@@ -199,24 +199,21 @@ board, purple's step, and red's multi-jump — (4,-5) over (3,-5) and then over
 development and a `--release` build; the replay command is in the script's
 header.
 
-**It is not a corpus case, because no case of this program fits the test
-budget.** A `browser/tea/` case builds the program twice (development
-608 million instructions, release 1 219 million, on the ReleaseSafe beni the
-gates run), loads both builds in happy-dom and fuzzes one against the other.
-This script costs about 5 000 million instructions against the budget of
-4 300 million, and a script of one click still costs 4 592 million: a load
-of the 121-cell board is about 264 million on each page, over Node and
-happy-dom's 546 million. Shrinking the script cannot bring it under, and
-splitting it multiplies the builds. The case moves into
-`tests/corpus/browser/tea/Sternhalma/` (`_expected.sources` holding
-`examples/sternhalma/src`) when the owner grants it a budget of its own, as
-Conduit's cases have, or when the cost falls under the budget.
+The original port was held out because its tea-only replay cost about 5 000M
+instructions against the default 4 300M; even one click cost 4 592M, so reducing
+the script did not solve the cost of loading the board.
 
-Until then nothing in the gates replays it, so the transcript records what
-the frozen port did on the commit that added it. A change to this directory,
-to the page driver, or to the `dom` lowering or the `browser` runtime that
-reaches this page replays it with the command above, in the same change, and
-re-records the transcript only when the difference is explained.
+**Promoted on 2026-10-15.** `tests/corpus/browser/direct/Sternhalma/` now points
+at `examples/sternhalma/src` and runs the original script on both browser-direct
+and browser-tea, development and release, against one golden. The fresh-board
+repair changes no transcript. The paired page measured 9 031M instructions and
+its separate value fuzz 11 387M. The owner explicitly granted 10 000M and
+12 600M respectively; the `.budget` and `.fuzz-budget` files keep those grants
+separate and state when they can be removed. The gates now replay this case.
+
+The original `play/sternhalma.expected` remains byte-identical. The command
+above is also available for a manual replay; transcript changes still require
+an explained behavior change.
 
 ## Not ported
 

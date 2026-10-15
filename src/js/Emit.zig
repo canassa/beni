@@ -269,8 +269,8 @@ pub const Options = struct {
     fuzz: bool = false,
     /// §11: a `.mjs.map` beside every module this build emits, and the
     /// `//# sourceMappingURL=` line that names it. On by default in a
-    /// development build; `Cli` never sets it with `release`, which has no
-    /// maps yet.
+    /// development build; under `release` only when asked for, and then
+    /// the one scope-hoisted file has one map of its own (§11.2).
     source_maps: bool = false,
 };
 
@@ -384,6 +384,7 @@ pub fn run(
     }
     // §2's page shell, beside the entry file, in either layout.
     if (entry != null) try e.emitShell();
+    try e.emitDirectPlan();
     // §2's rule 2, with everything produced and nothing written yet.
     try e.checkOutputPaths();
     if (e.diagnostics.items.len != 0) return e.nothingWritten(gpa);
@@ -821,6 +822,12 @@ const Emitter = struct {
     module_uses: std.ArrayList([]const u8) = .empty,
     /// Reachability's roots beside the build's own (`Reach.Input`).
     extra_roots: []const Reach.Node = &.{},
+    /// What every walk of the build reads (`walk`): the input `eliminate`
+    /// built the edge lists from, and the lists, in the workers' `edges`
+    /// arenas. A walk from other roots reads the same lists (§9,
+    /// *Incrementality (M4) and chunking (§10)*).
+    reach: Reach.Input = undefined,
+    edges: []const Reach.ModuleEdges = &.{},
     forwarding_foreigns: [][]Reach.ForeignProof = &.{},
     /// `--release` of an application that does not reach `Debug`: what
     /// JavaScript sees, closed before lowering (§9, *Item 4, taken up*).
@@ -840,6 +847,9 @@ const Emitter = struct {
     /// Whether this build is one scope-hoisted file (§9, *One scope-hoisted
     /// file under `--release`*), decided after lowering.
     hoisted: bool = false,
+    /// §11: where the output tree is, in a build with maps. The hoisted
+    /// file's map is placed against it at the join (§11.2).
+    map_root: ?MapRoot = null,
     /// The host globals a hoisted hand-written file binds as written, which
     /// emitted code may not then write bare (`bareBlocked`).
     bare_blocked: []const []const u8 = &.{},
@@ -2471,17 +2481,34 @@ const Emitter = struct {
                 } else false;
             }
             out.settles = settles;
+            out.view_capped = prog.view_capped;
+            const sites = try a.alloc(Lower.Direct.Site, prog.sites.len);
+            for (prog.sites, sites) |site_, *to| to.* = .{
+                .module = site_.module,
+                .token = site_.token,
+                .fallback = if (site_.class != .value) "" else switch (site_.why) {
+                    .list => "List Html uses value reconciliation without a row edit plan",
+                    .recursive => "recursive producer beyond the finite summary",
+                    .none => "unresolved markup value producer",
+                },
+            };
+            out.sites = sites;
 
             // The holes, by read set: equal sets are one group — and, since
             // version 1.8, equal bound depths (a row's own read and the
             // whole list's are two groups).
             var groups: std.ArrayList([]const u32) = .empty;
             var group_bounds: std.ArrayList([]const u8) = .empty;
-            const holes = try a.alloc(Lower.Direct.Hole, prog.vholes.len);
-            const group_of = try a.alloc(u32, prog.vholes.len);
+            // Producer entry sets participate in row edits as consumer facts,
+            // while the public S0 dump continues to count only leaf holes.
+            var consumers = prog.*;
+            consumers.vholes = try std.mem.concat(a, Writes.Hole, &.{ prog.vholes, prog.vedges });
+            const all_holes = try a.alloc(Lower.Direct.Hole, consumers.vholes.len);
+            const holes = all_holes[0..prog.vholes.len];
+            const group_of = try a.alloc(u32, consumers.vholes.len);
             const rho = [_]u32{Writes.rho_path};
             const unbound = [_]u8{0};
-            for (prog.vholes, holes, group_of) |h, *o, *go| {
+            for (consumers.vholes, all_holes, group_of) |h, *o, *go| {
                 const reads: []const u32 = if (prog.view_capped) &rho else h.reads;
                 const bounds: []const u8 = if (prog.view_capped) &unbound else h.bound;
                 const group: u32 = for (groups.items, group_bounds.items, 0..) |g, gb, gi| {
@@ -2503,6 +2530,7 @@ const Emitter = struct {
                     .path = try a.dupe(u64, h.path),
                 };
             }
+            out.edges = all_holes[prog.vholes.len..];
             // Version 1.10: each `let`'s read set, a group as a hole's is.
             const lets = try a.alloc(Lower.Direct.Let, prog.vlets.len);
             for (prog.vlets, lets) |h, *o| {
@@ -2518,6 +2546,16 @@ const Emitter = struct {
                 o.* = .{ .module = h.module, .inst = h.token, .path = try a.dupe(u64, h.path), .group = group };
             }
             out.lets = lets;
+            const entry_reads: []const u32 = if (prog.view_capped) &rho else prog.view_reads;
+            const entry_bounds = try a.alloc(u8, entry_reads.len);
+            @memset(entry_bounds, 0);
+            out.root_group = for (groups.items, group_bounds.items, 0..) |g, gb, gi| {
+                if (std.mem.eql(u32, g, entry_reads) and std.mem.eql(u8, gb, entry_bounds)) break @intCast(gi);
+            } else grp: {
+                try groups.append(a, entry_reads);
+                try group_bounds.append(a, entry_bounds);
+                break :grp @intCast(groups.items.len - 1);
+            };
             const conflicts = try a.alloc(bool, groups.items.len * keys.len);
             for (groups.items, 0..) |g, gi| for (key_writes, 0..) |kw, ki| {
                 conflicts[gi * keys.len + ki] = for (g) |r| {
@@ -2525,7 +2563,7 @@ const Emitter = struct {
                 } else false;
             };
             // Version 1.8: the lists, and K3's per-row texts.
-            var lists: DirectLists = .{ .e = e, .w = w, .prog = prog, .key_writes = key_writes, .group_of = group_of, .holes = holes, .conflicts = conflicts, .keys = keys.len };
+            var lists: DirectLists = .{ .e = e, .w = w, .prog = &consumers, .key_writes = key_writes, .group_of = group_of, .holes = all_holes, .conflicts = conflicts, .keys = keys.len };
             try lists.build();
             std.mem.sort(Lower.Direct.Hole, holes, {}, struct {
                 fn less(_: void, x: Lower.Direct.Hole, y: Lower.Direct.Hole) bool {
@@ -2538,8 +2576,51 @@ const Emitter = struct {
             out.lists = lists.out.items;
             out.indices = lists.indices.items;
         }
-        e.direct = .{ .programs = programs };
+        var roots: std.ArrayList(Lower.Direct.Site) = .empty;
+        for (birs, 0..) |bir_, mi| {
+            const m: Graph.Index = @fromBackingInt(@intCast(mi));
+            if (e.graph().modulePackage(m) != .app) continue;
+            for (bir_.decls, 0..) |decl, di| {
+                if (!e.live.decl(m, di)) continue;
+                for (decl.inst_start.int()..decl.inst_end.int()) |inst| {
+                    if (bir_.instTag(@fromBackingInt(@intCast(inst))) != .markup) continue;
+                    try roots.append(a, .{ .module = @intCast(mi), .token = bir_.insts.items(.main_token)[inst] });
+                }
+            }
+        }
+        e.direct = .{ .programs = programs, .source_roots = roots.items };
         if (!e.options.release) try e.debugReach();
+    }
+
+    fn emitDirectPlan(e: *Emitter) !void {
+        const d = e.direct orelse return;
+        const lowering_name = e.options.platform.lowering orelse return;
+        const lowering = findLowering(lowering_name) orelse return;
+        if (!lowering.parameterised_templates) return;
+        const Site = struct { module: u32, token: u32, mode: []const u8, reason: []const u8 };
+        const Program = struct {
+            module: u32,
+            inst: u32,
+            keys: []const beni_markup.Program.Key,
+            holes: []const Lower.Direct.Hole,
+            producer_edges: []const Lower.Direct.Hole,
+            groups: u32,
+            conflicts: []const bool,
+            sites: []const Site,
+        };
+        const programs = try e.scratch.alloc(Program, d.programs.len);
+        for (d.programs, programs) |program_, *to| {
+            const sites = try e.scratch.alloc(Site, d.source_roots.len);
+            for (d.source_roots, sites) |root_, *site_| {
+                const reason = if (program_.view_capped) "analysis view cap" else for (program_.sites) |known| {
+                    if (known.module == root_.module and known.token == root_.token) break known.fallback;
+                } else "producer not resolved by the view walk (for example markup stored in the model)";
+                site_.* = .{ .module = root_.module, .token = root_.token, .mode = if (reason.len == 0) "parameterised" else "fallback", .reason = reason };
+            }
+            to.* = .{ .module = program_.module, .inst = program_.inst, .keys = program_.keys, .holes = program_.holes, .producer_edges = program_.edges, .groups = program_.groups, .conflicts = program_.calls, .sites = sites };
+        }
+        const text = try std.json.Stringify.valueAlloc(e.gpa, .{ .format = @as(u32, 1), .unbound_values_fallback = "Each placement gates entry by its slot read mask; entered unbound values visit every dynamic group. Bound uses retain parameter substitution.", .programs = programs }, .{ .whitespace = .indent_2 });
+        try e.produceOwned("_direct-plan.json", text, try e.manifestPath());
     }
 
     /// A constructor id of the write-set pass, as `Lower.Direct.Ctor`.
@@ -2780,6 +2861,9 @@ const Emitter = struct {
         e.field_table = try Fields.assign(e.scratch, counts, &boundary.pinned, &plain);
     }
 
+    /// §9's elimination: every module's edge lists, on the workers, then
+    /// the walk from the build's roots. Once per build; a second walk reads
+    /// the same lists (`walk`).
     fn eliminate(e: *Emitter, entry: ?Entry) !void {
         const token = e.session.profile.begin();
         defer e.session.profile.end(0, token, .eliminate, Profile.Event.no_file, 0);
@@ -2820,15 +2904,40 @@ const Emitter = struct {
             .interner = &e.session.interner,
         };
         // Every module's edges on the workers, each into its own slot and
-        // its worker's `kept` arena, then the walk here.
+        // its worker's `edges` arena, then the walk here.
         const edges = try e.scratch.alloc(Reach.ModuleEdges, count);
         const builders = try e.scratch.alloc(Reach.Builder, e.pool.workers.len);
-        for (builders, e.pool.workers) |*b, *w| b.* = .init(in, w.kept.allocator());
+        for (builders, e.pool.workers) |*b, *w| b.* = .init(in, w.edges.allocator());
         const all = try e.scratch.alloc(u32, count);
         for (all, 0..) |*slot, i| slot.* = @intCast(i);
         try e.pool.run(all, EdgeTask{ .edges = edges, .builders = builders }, EdgeTask.build, e.wanted(insts, insts_per_edge_builder));
+        e.session.profile.addCounter(.edge_lists, count);
+        e.reach = in;
+        e.edges = edges;
         e.live = try Reach.walk(e.scratch, in, edges);
-        for (e.pool.workers) |*w| w.kept.reset(.retain_capacity);
+        e.session.profile.addCounter(.reach_walks, 1);
+    }
+
+    /// The walk again, from `extra_roots` as they are now, over the edge
+    /// lists `eliminate` built. An edge list is a function of its module's
+    /// `Bir` and dispatch table and of the build's options, and the roots
+    /// are the walk's alone (`Reach.Builder` reads none of them), so a
+    /// second walk from other roots has nothing to rebuild (§9,
+    /// *Incrementality (M4) and chunking (§10)*; §15.1, *The runtime
+    /// module*).
+    fn walk(e: *Emitter) !void {
+        const token = e.session.profile.begin();
+        defer e.session.profile.end(0, token, .eliminate, Profile.Event.no_file, 0);
+        var in = e.reach;
+        in.extra_roots = e.extra_roots;
+        e.live = try Reach.walk(e.scratch, in, e.edges);
+        e.session.profile.addCounter(.reach_walks, 1);
+    }
+
+    /// No walk is left to read the edge lists.
+    fn dropEdges(e: *Emitter) void {
+        e.edges = &.{};
+        for (e.pool.workers) |*w| w.edges.reset(.free_all);
     }
 
     /// One module's reachability edges (`Reach.Builder.module`).
@@ -3056,7 +3165,8 @@ const Emitter = struct {
         if (lowering) |lw| if (lw.program != null) try e.buildDirect();
 
         // §11: where the output tree is, absolutely, for the source URLs.
-        const maps: ?MapRoot = if (e.options.source_maps and !e.options.release) try e.mapRoot() else null;
+        const maps: ?MapRoot = if (e.options.source_maps) try e.mapRoot() else null;
+        e.map_root = maps;
 
         var slots: []ModuleSlot = &.{};
         var todo: std.ArrayList(u32) = .empty;
@@ -3116,8 +3226,13 @@ const Emitter = struct {
             // The last write to the session's pool until every module is
             // lowered: from here on the workers only read it.
             try Lower.internFixedNames(e.gpa, &e.session.interner);
-            const context: Task = .{ .e = e, .slots = slots, .entry = entry };
+            // A first lowering that left a module out is followed by a
+            // second that lowers every module again: it only has to tell the
+            // build what it uses of the runtime module, and a module's bytes
+            // come from the second.
+            const context: Task = .{ .e = e, .slots = slots, .entry = entry, .lower_only = !refined and skipped };
             try e.pool.run(todo.items, context, Task.lower, e.wanted(insts, insts_per_emitter));
+            e.countLowered(slots, todo.items);
 
             // What the lowerings report beyond their trees, in module order,
             // whatever order the workers finished in.
@@ -3152,8 +3267,9 @@ const Emitter = struct {
             if (sameNodes(precise, e.extra_roots) and !skipped) break;
             e.extra_roots = precise;
             for (slots) |*slot| slot.deinit(e.gpa);
-            try e.eliminate(entry);
+            try e.walk();
         }
+        e.dropEdges();
         defer for (slots) |*slot| slot.deinit(e.gpa);
         const context: Task = .{ .e = e, .slots = slots, .entry = entry };
 
@@ -3207,7 +3323,11 @@ const Emitter = struct {
                 };
                 std.mem.sort(u32, printed.items, {}, std.sort.asc(u32));
             }
-            try e.pool.run(if (hoist != null) printed.items else todo.items, context, Task.print, e.wanted(insts, insts_per_emitter));
+            const print_items = if (hoist != null) printed.items else todo.items;
+            try e.pool.run(print_items, context, Task.print, e.wanted(insts, insts_per_emitter));
+            for (print_items) |i| {
+                if (slots[i].text != null) e.session.profile.addCounter(.modules_printed, 1);
+            }
         }
 
         // Diagnostics and files in module order, whatever order the workers
@@ -3298,6 +3418,11 @@ const Emitter = struct {
         source_url: []const u8 = "",
         /// The map's bytes, gpa-owned until `produceOwned` takes them.
         map: ?[]u8 = null,
+        /// A hoisted build with maps (§11.2, *The join*): the module's marks
+        /// and the text of its `names`, kept until the one file is joined.
+        /// In the printing worker's `kept` arena.
+        marks: []const SourceMap.Mapping = &.{},
+        mark_names: []const []const u8 = &.{},
 
         fn deinit(slot: *ModuleSlot, gpa: Allocator) void {
             if (slot.lowered) |*lowered| lowered.deinit(gpa);
@@ -3308,11 +3433,24 @@ const Emitter = struct {
         }
     };
 
+    /// `modules_lowered` and `modules_printed` for one round of `Task.lower`:
+    /// a development build prints in the same round.
+    fn countLowered(e: *Emitter, slots: []const ModuleSlot, todo: []const u32) void {
+        e.session.profile.addCounter(.modules_lowered, todo.len);
+        for (todo) |i| {
+            if (slots[i].text != null) e.session.profile.addCounter(.modules_printed, 1);
+        }
+    }
+
     /// What a worker runs per module.
     const Task = struct {
         e: *Emitter,
         slots: []ModuleSlot,
         entry: ?Entry,
+        /// A first lowering that a second will follow (`emitModules`): what
+        /// the module uses of the runtime module is all it is for, so it
+        /// stops there, and nothing of it is printed.
+        lower_only: bool = false,
 
         /// `Bir` → `JsIr`, and in a development build straight on to the
         /// bytes. Under `--release`, the plan and the module's whole-program
@@ -3367,6 +3505,13 @@ const Emitter = struct {
                 .value = try w.kept.allocator().dupe(u8, pair.value),
             };
             slot.start = start;
+            if (t.lower_only) {
+                lowered.deinit(e.gpa);
+                slot.lowered = null;
+                slot.overlay.deinit(e.gpa);
+                slot.overlay = .init(&e.session.interner);
+                return;
+            }
             if (!e.options.release) {
                 const names: Print.Names = .fromOverlay(&slot.overlay);
                 var marks: SourceMap.Marks = .init(scratch);
@@ -3442,7 +3587,13 @@ const Emitter = struct {
             if (lowered.diagnostics.len != 0) return;
             const scratch = w.module.allocator();
             var renamer = try Rename.begin(scratch, &lowered.ir, &e.globals);
-            slot.text = try Print.print(e.gpa, scratch, &lowered.ir, .fromOverlay(&slot.overlay), .{
+            const names: Print.Names = .fromOverlay(&slot.overlay);
+            // §11.2: the marks of a module with a map. A hoisted module's
+            // bytes are a piece of the one file, which has the comment line
+            // and the map; the join rebases these marks into it.
+            var marks: SourceMap.Marks = .init(scratch);
+            const mapped = slot.map_file.len != 0;
+            slot.text = try Print.print(e.gpa, scratch, &lowered.ir, names, .{
                 .plan = &slot.plan,
                 .unobserved = slot.unobserved,
                 .rename = &renamer,
@@ -3452,8 +3603,32 @@ const Emitter = struct {
                 .bare_globals = true,
                 .bare_blocked = e.bare_blocked,
                 .fields = if (e.field_table) |*table| table else null,
+                .marks = if (mapped) &marks else null,
+                .footer = if (mapped and !e.hoisted) slot.map_footer else "",
             });
             slot.rename_failure = renamer.failure;
+            if (!mapped) return;
+            const file = e.graph().moduleFile(@fromBackingInt(@intCast(i)));
+            if (e.hoisted) {
+                const kept = w.kept.allocator();
+                slot.marks = try kept.dupe(SourceMap.Mapping, marks.list.items);
+                const texts = try kept.alloc([]const u8, marks.names.items.len);
+                for (texts, marks.names.items) |*text, symbol| text.* = try kept.dupe(u8, names.text(symbol));
+                slot.mark_names = texts;
+                return;
+            }
+            const store = &e.session.store;
+            slot.map = try SourceMap.write(e.gpa, scratch, .{
+                .file = std.fs.path.basenamePosix(slot.map_file[0 .. slot.map_file.len - ".map".len]),
+                .source_url = slot.source_url,
+                .source = store.bytes(file),
+                .line_starts = store.lineStarts(file),
+                .generated = slot.text.?,
+                .mappings = marks.list.items,
+                .names = marks.names.items,
+                .name_text = names.forMap(),
+                .end_line = true,
+            });
         }
     };
 
@@ -4251,10 +4426,19 @@ const Emitter = struct {
             .module => {},
         };
 
+        // §11.2, *The join*: each module's marks become a stretch of the
+        // one file's map, and everything else the file holds is unmapped.
+        var stretches: std.ArrayList(SourceMap.Stretch) = .empty;
+        var sources: std.ArrayList(SourceMap.Source) = .empty;
+        const mapped = e.map_root != null;
         for (h.order) |p| switch (p) {
-            .module => |i| if (slots[i].text) |text| try appendJoined(scratch, &out, text, true),
+            .module => |i| if (slots[i].text) |text| {
+                if (mapped) try e.mapStretch(&stretches, &sources, &slots[i], i, out.items.len);
+                try appendJoined(scratch, &out, text, true);
+            },
             .file => |x| if (printed[x]) |pr| {
                 const f = &h.files[x];
+                if (mapped) try stretches.append(scratch, .{ .start = @intCast(out.items.len), .source = SourceMap.Stretch.unmapped });
                 try appendJoined(scratch, &out, pr.body, false);
                 var aliased: std.ArrayList(JsIr.Name) = .empty;
                 for (f.uses.items) |u| {
@@ -4276,6 +4460,7 @@ const Emitter = struct {
         };
 
         // The entry file's calls, by the names the bindings have here.
+        if (mapped) try stretches.append(scratch, .{ .start = @intCast(out.items.len), .source = SourceMap.Stretch.unmapped });
         const runtime: ?*HandFile = if (h.runtime) |x| &h.files[x] else null;
         // `main` is a declaration of an emitted module, so the table has it.
         const main_name = e.entryName(h.entry) orelse unreachable;
@@ -4312,7 +4497,48 @@ const Emitter = struct {
         // One line, the pieces joined with no newline between them
         // (`appendJoined`), and a newline at the end of the file.
         if (out.items.len != 0 and out.items[out.items.len - 1] != '\n') try out.append(scratch, '\n');
+        if (mapped) {
+            const entry = e.options.platform.entry;
+            try out.print(scratch, "//# sourceMappingURL={s}.map\n", .{std.fs.path.basenamePosix(entry)});
+            const map = try SourceMap.writeJoined(e.gpa, scratch, .{
+                .file = std.fs.path.basenamePosix(entry),
+                .generated = out.items,
+                .sources = sources.items,
+                .stretches = stretches.items,
+                .end_line = true,
+            });
+            try e.produceOwned(try std.fmt.allocPrint(scratch, "{s}.map", .{entry}), map, try e.manifestPath());
+        }
         try e.produce(e.options.platform.entry, out.items, try e.manifestPath());
+    }
+
+    /// §11.2, *The join*: the stretch of the one file that module `i`'s
+    /// bytes take from `start`, and its source, named from the entry
+    /// file's map. A module with no mark maps nothing, so its bytes are
+    /// an unmapped stretch and its text is not in the map.
+    fn mapStretch(
+        e: *Emitter,
+        stretches: *std.ArrayList(SourceMap.Stretch),
+        sources: *std.ArrayList(SourceMap.Source),
+        slot: *const ModuleSlot,
+        i: u32,
+        start: usize,
+    ) Allocator.Error!void {
+        if (slot.marks.len == 0) return stretches.append(e.scratch, .{ .start = @intCast(start), .source = SourceMap.Stretch.unmapped });
+        const store = &e.session.store;
+        const file = e.graph().moduleFile(@fromBackingInt(@intCast(i)));
+        const map_file = try std.fmt.allocPrint(e.scratch, "{s}.map", .{e.options.platform.entry});
+        try sources.append(e.scratch, .{
+            .url = try e.sourceUrl(e.map_root.?, map_file, file),
+            .text = store.bytes(file),
+            .line_starts = store.lineStarts(file),
+        });
+        try stretches.append(e.scratch, .{
+            .start = @intCast(start),
+            .source = @intCast(sources.items.len - 1),
+            .mappings = slot.marks,
+            .names = slot.mark_names,
+        });
     }
 
     /// Append one piece of the one file without the newline it ends with,
@@ -4448,9 +4674,12 @@ const Emitter = struct {
         /// One item's working memory, reset before the next: nothing a
         /// module builds on the way to its bytes outlives it.
         module: Arena = .init(std.heap.page_allocator),
-        /// What one round hands a later one: the reachability edges until
-        /// the walk, and under `--release` what lowering hands printing.
+        /// What one round hands a later one: what a lowering reports beyond
+        /// its tree, and under `--release` what lowering hands printing.
         kept: Arena = .init(std.heap.page_allocator),
+        /// The reachability edges this worker built, until the build's
+        /// last walk (`Emitter.walk`).
+        edges: Arena = .init(std.heap.page_allocator),
         failure: ?Allocator.Error = null,
     };
 
@@ -4498,11 +4727,12 @@ const Emitter = struct {
             p.quit = true;
             p.start.broadcast(p.io);
             p.mutex.unlock(p.io);
-            for (p.threads.items) |t| t.join();
+            if (!@import("builtin").single_threaded) for (p.threads.items) |t| t.join();
             p.threads.deinit(p.gpa);
             for (p.workers) |*w| {
                 w.module.deinit();
                 w.kept.deinit();
+                w.edges.deinit();
             }
             p.gpa.free(p.workers);
         }
@@ -4530,7 +4760,10 @@ const Emitter = struct {
             // for the rounds after; a round that wants fewer still wakes
             // them all, and the extra ones find nothing to claim.
             const threads = @min(want, p.workers.len) -| 1;
-            if (!p.spawn_failed and p.threads.items.len < threads) {
+            // A build with no threads spawns none, and the calling thread
+            // takes every item (fast-compiler.md §10, *A build with no
+            // threads*).
+            if (!@import("builtin").single_threaded and !p.spawn_failed and p.threads.items.len < threads) {
                 try p.threads.ensureTotalCapacity(p.gpa, p.workers.len - 1);
                 for (p.workers[1 + p.threads.items.len .. 1 + threads]) |*w| {
                     const t = std.Thread.spawn(.{ .stack_size = Session.check_stack_size }, loop, .{ p, w, p.round }) catch {
@@ -5075,16 +5308,19 @@ const Emitter = struct {
     /// `beni:///` and its store path (`beni:///core/List.beni`). Either way
     /// the map carries the text, so nothing is fetched.
     fn planMap(e: *Emitter, slot: *ModuleSlot, root: MapRoot, path: []const u8, file: SourceStore.Index) Allocator.Error!void {
-        const store = &e.session.store;
         slot.map_file = try std.fmt.allocPrint(e.scratch, "{s}.map", .{path});
         slot.map_footer = try std.fmt.allocPrint(e.scratch, "//# sourceMappingURL={s}.map\n", .{std.fs.path.basenamePosix(path)});
-        if (store.isEmbedded(file)) {
-            slot.source_url = try std.fmt.allocPrint(e.scratch, "beni:///{s}", .{store.path(file)});
-            return;
-        }
-        const map_path = try SourceMap.absolute(e.scratch, root.cwd, try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ e.options.out_dir, slot.map_file }));
+        slot.source_url = try e.sourceUrl(root, slot.map_file, file);
+    }
+
+    /// The URL of `file` in the map at `map_file`, a path in the output
+    /// tree (§11.1's `sources`).
+    fn sourceUrl(e: *Emitter, root: MapRoot, map_file: []const u8, file: SourceStore.Index) Allocator.Error![]const u8 {
+        const store = &e.session.store;
+        if (store.isEmbedded(file)) return std.fmt.allocPrint(e.scratch, "beni:///{s}", .{store.path(file)});
+        const map_path = try SourceMap.absolute(e.scratch, root.cwd, try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ e.options.out_dir, map_file }));
         const source_path = try SourceMap.absolute(e.scratch, root.cwd, store.path(file));
-        slot.source_url = try SourceMap.relativeUrl(e.scratch, map_path, source_path);
+        return SourceMap.relativeUrl(e.scratch, map_path, source_path);
     }
 
     fn produceOwned(e: *Emitter, relative_path: []const u8, bytes: []u8, origin: []const u8) Allocator.Error!void {

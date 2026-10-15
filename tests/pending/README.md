@@ -146,7 +146,7 @@ promoted it), `050cd2d` with the fix reads GREEN through the same harness. The n
 
 ### Direct effects ownership summaries (CK-223, 2026-10-14)
 
-Fifteen `browser/direct/` fixtures keep the original browser-tea source and
+The direct ownership fixtures keep the original browser-tea source and
 correct transcript. HTTP wrappers, generated lists, reentrant command sends
 and model/view captures expose conservative ownership summaries. Their direct
 build diagnostic is pinned in `RED`; the browser-tea corpus originals remain
@@ -166,6 +166,18 @@ HttpFailures retains one approximate diagnostic for work functions stored
 inside its traversal callback. The unseen-tagger check now exposes this
 existing slot limit after the render-only rejection is removed.
 
+External-source projects carry a comment-only `AAFinding.beni`: its first
+`-- CK-NN:` line identifies the finding and makes the corpus walker discover
+the project. `_expected.sources` supplies the real application sources; the
+metadata module does not modify those sources.
+
+*Amended 2026-10-14:* the document-helper lowering now accepts Conduit's
+unchanged application. Reader, Editor and Tour move together to the paired
+`tests/corpus/browser/direct/` corpus, with their external sources, scripts
+and existing budget grants. Both platforms use one golden captured with the
+paired driver's existing comment-sentinel normalization. CK-225 is resolved;
+the built-platform criterion-7 finding is separate and remains recorded.
+
 ### Ownership bridge soundness leads (2026-10-15)
 
 The six `Bridge*.beni` refusals were promoted to `tests/corpus/check/bad/direct/`
@@ -173,3 +185,23 @@ with full diagnostics. Result paths, callback loans, captured recursive results
 and callee-environment disjointness are specified in ownership-checker.md §29.
 Their original counts and executable Lean twins remain in
 [BRIDGE-RESULTS.md](../../proofs/ownership/BRIDGE-RESULTS.md).
+
+### Original browser application audit (2026-10-15)
+
+The original unchanged TodoMVC, Bike Wars and Sternhalma audit recorded their
+ownership refusals here. Research 98 now corrects its explanation: TodoMVC's
+queued-save overlap needs synthetic dispatch; its top-level initial model is a
+second error. Bike Wars' three messages follow from one retained append base.
+Sternhalma's reused board is observable in a second game, not its selection view.
+The reduced refusals remain gated under `build/bad/direct/`; the repaired apps'
+current status follows.
+
+### Browser app ownership repairs (2026-10-15)
+
+TodoMVC and Sternhalma now build their mutable models inside unit functions;
+TodoMVC's save captures encoded text. They are promoted to the paired
+browser-direct corpus. Bike Wars copies the retained base of its one trail
+append, clearing all three ownership errors. Its document view then reaches
+`not_implemented`, so it remains pending as CK-225 without a view workaround.
+Research 98 corrects the original causal/scheduling claims and records the
+unchanged original browser-tea transcripts. No ownership rule was relaxed.

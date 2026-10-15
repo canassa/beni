@@ -1,0 +1,153 @@
+{
+  "format": 1,
+  "unbound_values_fallback": "Each placement gates entry by its slot read mask; entered unbound values visit every dynamic group. Bound uses retain parameter substitution.",
+  "programs": [
+    {
+      "module": 1,
+      "inst": 65,
+      "keys": [
+        {
+          "name": "Left",
+          "params": 0,
+          "star": false
+        },
+        {
+          "name": "Right",
+          "params": 0,
+          "star": false
+        },
+        {
+          "name": "Quiet",
+          "params": 0,
+          "star": false
+        }
+      ],
+      "holes": [
+        {
+          "module": 0,
+          "token": 20,
+          "group": 0,
+          "bake": "a",
+          "where": "Helpers.beni:5:20",
+          "rows": [],
+          "path": [
+            4294967432,
+            48
+          ]
+        },
+        {
+          "module": 0,
+          "token": 20,
+          "group": 0,
+          "bake": "b",
+          "where": "Helpers.beni:5:20",
+          "rows": [],
+          "path": [
+            4294967441,
+            48
+          ]
+        },
+        {
+          "module": 0,
+          "token": 26,
+          "group": 1,
+          "bake": "0",
+          "where": "Helpers.beni:5:34",
+          "rows": [],
+          "path": [
+            4294967432,
+            48
+          ]
+        },
+        {
+          "module": 0,
+          "token": 26,
+          "group": 2,
+          "bake": "10",
+          "where": "Helpers.beni:5:34",
+          "rows": [],
+          "path": [
+            4294967441,
+            48
+          ]
+        },
+        {
+          "module": 0,
+          "token": 48,
+          "group": 1,
+          "bake": null,
+          "where": "Helpers.beni:9:26",
+          "rows": [],
+          "path": [
+            4294967432
+          ]
+        },
+        {
+          "module": 0,
+          "token": 48,
+          "group": 2,
+          "bake": null,
+          "where": "Helpers.beni:9:26",
+          "rows": [],
+          "path": [
+            4294967441
+          ]
+        },
+        {
+          "module": 1,
+          "token": 136,
+          "group": 1,
+          "bake": null,
+          "where": "Main.beni:36:9",
+          "rows": [],
+          "path": []
+        },
+        {
+          "module": 1,
+          "token": 145,
+          "group": 2,
+          "bake": null,
+          "where": "Main.beni:37:9",
+          "rows": [],
+          "path": []
+        }
+      ],
+      "producer_edges": [],
+      "groups": 4,
+      "conflicts": [
+        false,
+        false,
+        false,
+        true,
+        false,
+        false,
+        false,
+        true,
+        false,
+        true,
+        true,
+        false
+      ],
+      "sites": [
+        {
+          "module": 0,
+          "token": 18,
+          "mode": "parameterised",
+          "reason": ""
+        },
+        {
+          "module": 0,
+          "token": 45,
+          "mode": "parameterised",
+          "reason": ""
+        },
+        {
+          "module": 1,
+          "token": 78,
+          "mode": "parameterised",
+          "reason": ""
+        }
+      ]
+    }
+  ]
+}

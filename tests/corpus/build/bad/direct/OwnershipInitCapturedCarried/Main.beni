@@ -1,0 +1,21 @@
+-- A helper-returned view keeps the same model as init, through a carried class.
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    items : List Int
+
+
+viewOf : Model → (Model → Html ⊤)
+viewOf m = λ_ → <button onClick={⊤}>{List.length m.items}</button>
+
+
+main : Tea.Program
+main =
+    m = { items = [ 7 ] }
+    Tea.sandbox
+        { init = λ⊤ → m
+        , update = λ_ model → { model | items = List.push model.items 8 }
+        , view = viewOf m
+        }

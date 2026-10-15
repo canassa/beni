@@ -107,7 +107,8 @@ item, a language gap and not a codegen one — was built on 2026-09-19.
 items 1, 2, 3 and 5: local dead bindings and single-use inlining
 (`src/js/Opt.zig`), two namespaces of short names (`src/js/Rename.zig`),
 compact printing and joined `const` runs (`src/js/Print.zig`). The flag is no
-longer refused; `--release --source-maps` still is. `bench/corpus` fell 126 436 → 55 593
+longer refused, and since 2026-10-15 neither is `--release --source-maps`
+(`backend.md` §11.2). `bench/corpus` fell 126 436 → 55 593
 raw and 21 840 → **15 017** brotli (−31%), `run/Dictionaries` 7 008 → 5 860
 (−16%), the floor 835 → 789. **Development output did not move by one byte**,
 which is what makes an `emit/` golden that changes a finding. The whole `run/`
@@ -255,7 +256,9 @@ the on-disk cache and interface firewall; remaining incrementality work and the
 daemon are still ahead ([`queue.md`](plans/queue.md), M4 rows). M5 is source
 maps, code splitting and LSP. **Development source maps have landed** (2026-10-01,
 `backend.md` §11.1, `src/js/SourceMap.zig`): a `.mjs.map` beside every emitted module, on by
-default, `--no-source-maps` to drop them; release maps, code splitting and LSP have not started.
+default, `--no-source-maps` to drop them. **Release maps have landed** (2026-10-15, `backend.md`
+§11.2): `--release --source-maps` writes one map for the hoisted file, or one per module under
+`--library`; hand-written JavaScript stays unmapped. Code splitting and LSP have not started.
 
 ## Effects, and what blocked them
 
@@ -298,6 +301,8 @@ zig build test-pending    # red fixtures of open findings (tests/pending/); not 
 zig build test-perf       # timing scenarios on a ReleaseFast beni; not a gate
 zig build test-run-hashes # re-verify emitted JavaScript under Node and record its hashes
 zig build test-browser    # the browser/ corpus in headless Chrome (nix develop .#browser); not a gate
+zig build playground      # the playground site, beni as ReleaseSmall wasm -> zig-out/playground/ (docs/design/playground.md)
+zig build test-playground # that wasm against the native beni, byte for byte, on run/ and browser/direct/; not a gate
 zig build test-time-report  # where the gates' time goes -> plans/test-time-report.md
 zig build coverage        # lines of src/ the black-box tests reach -> zig-out/coverage/
 zig build fuzz            # random sweeps of the byte readers, lexer and parser; not a gate
@@ -343,9 +348,12 @@ for a "does not recurse" claim, one test per branch, or deletion when another
 test reaches the branch — never an exemption the owner has not granted. Corpus cases are budgeted
 one by one; the owner may grant a large program its own budget, or a case whose cost comes from
 a compiler defect with an open issue, until the case fits 4 300M: a `.budget` file beside the case
-with its limit and reason (`tests/corpus/README.md`, *Budgets*). Conduit's three cases (2026-10-08)
-and `browser/direct/HttpJson` and `HttpJsonBody` (2026-10-14, compiler defect #105) are the only
-ones.
+with its limit and reason (`tests/corpus/README.md`, *Budgets*). A separately granted
+value-fuzz case uses `.fuzz-budget`; a page grant never covers fuzz implicitly.
+Conduit's page cases (2026-10-08, paired direct runs extended 2026-10-14, re-granted from
+Linux instruction counts 2026-10-15), its direct value fuzz (2026-10-14), `browser/direct/HttpJson`
+and `HttpJsonBody` (2026-10-14, compiler defect #105), and the paired TodoMVC/Sternhalma pages plus
+Sternhalma's separate value fuzz (2026-10-15) are the only grants.
 
 **The budget has one unit and one reference build** (2026-10-14). The count
 is the kernel's hardware count of user-space instructions (`perf_event_open`)

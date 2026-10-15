@@ -1,0 +1,64 @@
+-- Helper-returned documents share their body/title evaluation, including
+-- same-variant payload changes and switching to another arm.
+import Cmd exposing (Cmd)
+import Debug
+import Sub
+import Tea
+
+
+type Model
+    = Open Int
+    | Closed Int
+
+
+type Msg
+    = Inc
+    | Switch
+
+
+page : String, Int → Tea.Document Msg
+page label n =
+    _ = Debug.log "document" n
+    { title = "${label} ${String.fromInt n}"
+    , body =
+        <div>
+            <button id="inc" onClick={Inc}>{n}</button>
+            <button id="switch" onClick={Switch}>{label}</button>
+        </div>
+    }
+
+
+view : Model → Tea.Document Msg
+view model =
+    case model of
+        Open n →
+            _ = Debug.log "open arm" n
+            page "open" n
+        Closed n →
+            _ = Debug.log "closed arm" n
+            page "closed" n
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    next =
+        case ( msg, model ) of
+            ( Inc, Open n ) →
+                Open (n + 1)
+            ( Inc, Closed n ) →
+                Closed (n + 1)
+            ( Switch, Open n ) →
+                Closed n
+            ( Switch, Closed n ) →
+                Open n
+    ( next, Cmd.none )
+
+
+main : Tea.Program
+main =
+    Tea.document
+        { init = λ⊤ → ( Open 0, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

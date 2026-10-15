@@ -8,6 +8,7 @@
 //! It also builds the pass's `Input` from a session, for the dump as well.
 
 const std = @import("std");
+const builtin = @import("builtin");
 const Allocator = std.mem.Allocator;
 const diagnostic = @import("diagnostic");
 const Session = @import("../Session.zig");
@@ -230,6 +231,12 @@ fn onBigStack(o: *Ownership, targets: []const u32) Allocator.Error![]const Owner
         }
     };
     var runner: Runner = .{ .o = o, .targets = targets };
+    // A build with no threads runs it here: its main stack is sized for it
+    // (fast-compiler.md §10, *A build with no threads*).
+    if (builtin.single_threaded) {
+        Runner.go(&runner);
+        return runner.result;
+    }
     // The pass walks expression trees by recursion, as the checker does. With
     // no thread to be had it runs here, as `main.onBigStack` does: the stack
     // is then the caller's, which every supported target makes large enough

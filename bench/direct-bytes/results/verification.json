@@ -1,0 +1,242 @@
+[
+  {
+    "app": "conduit",
+    "trial": "baseline",
+    "script": "tests/corpus/browser/direct/ConduitReader/_expected.steps",
+    "transcriptSha256": "36e46485d0571f1414ba7a6f1585854ba5485e0858dacaa69d442697368afa6c"
+  },
+  {
+    "app": "conduit",
+    "trial": "baseline",
+    "script": "tests/corpus/browser/direct/ConduitEditor/_expected.steps",
+    "transcriptSha256": "eefe25309f46c115af00c76897bd8246eb2469fa6e7f3c7ec0b2b427b24c4321"
+  },
+  {
+    "app": "conduit",
+    "trial": "baseline",
+    "script": "tests/corpus/browser/direct/ConduitTour/_expected.steps",
+    "transcriptSha256": "3cdd1ca684a73bdaf4fa9f160b166ce2b5a68a6f9fdb6fbb8296c297c03bd46e"
+  },
+  {
+    "app": "conduit",
+    "trial": "trim-mask-zeroes",
+    "script": "tests/corpus/browser/direct/ConduitReader/_expected.steps",
+    "transcriptSha256": "36e46485d0571f1414ba7a6f1585854ba5485e0858dacaa69d442697368afa6c"
+  },
+  {
+    "app": "conduit",
+    "trial": "trim-mask-zeroes",
+    "script": "tests/corpus/browser/direct/ConduitEditor/_expected.steps",
+    "transcriptSha256": "eefe25309f46c115af00c76897bd8246eb2469fa6e7f3c7ec0b2b427b24c4321"
+  },
+  {
+    "app": "conduit",
+    "trial": "trim-mask-zeroes",
+    "script": "tests/corpus/browser/direct/ConduitTour/_expected.steps",
+    "transcriptSha256": "3cdd1ca684a73bdaf4fa9f160b166ce2b5a68a6f9fdb6fbb8296c297c03bd46e"
+  },
+  {
+    "app": "conduit",
+    "trial": "short-path-ids",
+    "script": "tests/corpus/browser/direct/ConduitReader/_expected.steps",
+    "transcriptSha256": "36e46485d0571f1414ba7a6f1585854ba5485e0858dacaa69d442697368afa6c"
+  },
+  {
+    "app": "conduit",
+    "trial": "short-path-ids",
+    "script": "tests/corpus/browser/direct/ConduitEditor/_expected.steps",
+    "transcriptSha256": "eefe25309f46c115af00c76897bd8246eb2469fa6e7f3c7ec0b2b427b24c4321"
+  },
+  {
+    "app": "conduit",
+    "trial": "short-path-ids",
+    "script": "tests/corpus/browser/direct/ConduitTour/_expected.steps",
+    "transcriptSha256": "3cdd1ca684a73bdaf4fa9f160b166ce2b5a68a6f9fdb6fbb8296c297c03bd46e"
+  },
+  {
+    "app": "conduit",
+    "trial": "paths-and-zeroes",
+    "script": "tests/corpus/browser/direct/ConduitReader/_expected.steps",
+    "transcriptSha256": "36e46485d0571f1414ba7a6f1585854ba5485e0858dacaa69d442697368afa6c"
+  },
+  {
+    "app": "conduit",
+    "trial": "paths-and-zeroes",
+    "script": "tests/corpus/browser/direct/ConduitEditor/_expected.steps",
+    "transcriptSha256": "eefe25309f46c115af00c76897bd8246eb2469fa6e7f3c7ec0b2b427b24c4321"
+  },
+  {
+    "app": "conduit",
+    "trial": "paths-and-zeroes",
+    "script": "tests/corpus/browser/direct/ConduitTour/_expected.steps",
+    "transcriptSha256": "3cdd1ca684a73bdaf4fa9f160b166ce2b5a68a6f9fdb6fbb8296c297c03bd46e"
+  },
+  {
+    "app": "conduit",
+    "trial": "short-protocol-fields",
+    "script": "tests/corpus/browser/direct/ConduitReader/_expected.steps",
+    "transcriptSha256": "36e46485d0571f1414ba7a6f1585854ba5485e0858dacaa69d442697368afa6c"
+  },
+  {
+    "app": "conduit",
+    "trial": "short-protocol-fields",
+    "script": "tests/corpus/browser/direct/ConduitEditor/_expected.steps",
+    "transcriptSha256": "eefe25309f46c115af00c76897bd8246eb2469fa6e7f3c7ec0b2b427b24c4321"
+  },
+  {
+    "app": "conduit",
+    "trial": "short-protocol-fields",
+    "script": "tests/corpus/browser/direct/ConduitTour/_expected.steps",
+    "transcriptSha256": "3cdd1ca684a73bdaf4fa9f160b166ce2b5a68a6f9fdb6fbb8296c297c03bd46e"
+  },
+  {
+    "app": "conduit",
+    "trial": "u32-masks",
+    "script": "tests/corpus/browser/direct/ConduitReader/_expected.steps",
+    "transcriptSha256": "36e46485d0571f1414ba7a6f1585854ba5485e0858dacaa69d442697368afa6c"
+  },
+  {
+    "app": "conduit",
+    "trial": "u32-masks",
+    "script": "tests/corpus/browser/direct/ConduitEditor/_expected.steps",
+    "transcriptSha256": "eefe25309f46c115af00c76897bd8246eb2469fa6e7f3c7ec0b2b427b24c4321"
+  },
+  {
+    "app": "conduit",
+    "trial": "u32-masks",
+    "script": "tests/corpus/browser/direct/ConduitTour/_expected.steps",
+    "transcriptSha256": "3cdd1ca684a73bdaf4fa9f160b166ce2b5a68a6f9fdb6fbb8296c297c03bd46e"
+  },
+  {
+    "app": "conduit",
+    "trial": "literal-plan",
+    "script": "tests/corpus/browser/direct/ConduitReader/_expected.steps",
+    "transcriptSha256": "36e46485d0571f1414ba7a6f1585854ba5485e0858dacaa69d442697368afa6c"
+  },
+  {
+    "app": "conduit",
+    "trial": "literal-plan",
+    "script": "tests/corpus/browser/direct/ConduitEditor/_expected.steps",
+    "transcriptSha256": "eefe25309f46c115af00c76897bd8246eb2469fa6e7f3c7ec0b2b427b24c4321"
+  },
+  {
+    "app": "conduit",
+    "trial": "literal-plan",
+    "script": "tests/corpus/browser/direct/ConduitTour/_expected.steps",
+    "transcriptSha256": "3cdd1ca684a73bdaf4fa9f160b166ce2b5a68a6f9fdb6fbb8296c297c03bd46e"
+  },
+  {
+    "app": "conduit",
+    "trial": "inline-group-records",
+    "script": "tests/corpus/browser/direct/ConduitReader/_expected.steps",
+    "transcriptSha256": "36e46485d0571f1414ba7a6f1585854ba5485e0858dacaa69d442697368afa6c"
+  },
+  {
+    "app": "conduit",
+    "trial": "inline-group-records",
+    "script": "tests/corpus/browser/direct/ConduitEditor/_expected.steps",
+    "transcriptSha256": "eefe25309f46c115af00c76897bd8246eb2469fa6e7f3c7ec0b2b427b24c4321"
+  },
+  {
+    "app": "conduit",
+    "trial": "inline-group-records",
+    "script": "tests/corpus/browser/direct/ConduitTour/_expected.steps",
+    "transcriptSha256": "3cdd1ca684a73bdaf4fa9f160b166ce2b5a68a6f9fdb6fbb8296c297c03bd46e"
+  },
+  {
+    "app": "todomvc",
+    "trial": "baseline",
+    "script": "zig-out/direct-bytes/verify/todomvc.steps",
+    "transcriptSha256": "932689835eb6386a4c2792974e84fcbec4c5e01fb470a0ba37acfcce247faf58"
+  },
+  {
+    "app": "todomvc",
+    "trial": "trim-mask-zeroes",
+    "script": "zig-out/direct-bytes/verify/todomvc.steps",
+    "transcriptSha256": "932689835eb6386a4c2792974e84fcbec4c5e01fb470a0ba37acfcce247faf58"
+  },
+  {
+    "app": "todomvc",
+    "trial": "short-path-ids",
+    "script": "zig-out/direct-bytes/verify/todomvc.steps",
+    "transcriptSha256": "932689835eb6386a4c2792974e84fcbec4c5e01fb470a0ba37acfcce247faf58"
+  },
+  {
+    "app": "todomvc",
+    "trial": "paths-and-zeroes",
+    "script": "zig-out/direct-bytes/verify/todomvc.steps",
+    "transcriptSha256": "932689835eb6386a4c2792974e84fcbec4c5e01fb470a0ba37acfcce247faf58"
+  },
+  {
+    "app": "todomvc",
+    "trial": "short-protocol-fields",
+    "script": "zig-out/direct-bytes/verify/todomvc.steps",
+    "transcriptSha256": "932689835eb6386a4c2792974e84fcbec4c5e01fb470a0ba37acfcce247faf58"
+  },
+  {
+    "app": "todomvc",
+    "trial": "u32-masks",
+    "script": "zig-out/direct-bytes/verify/todomvc.steps",
+    "transcriptSha256": "932689835eb6386a4c2792974e84fcbec4c5e01fb470a0ba37acfcce247faf58"
+  },
+  {
+    "app": "todomvc",
+    "trial": "literal-plan",
+    "script": "zig-out/direct-bytes/verify/todomvc.steps",
+    "transcriptSha256": "932689835eb6386a4c2792974e84fcbec4c5e01fb470a0ba37acfcce247faf58"
+  },
+  {
+    "app": "todomvc",
+    "trial": "inline-group-records",
+    "script": "zig-out/direct-bytes/verify/todomvc.steps",
+    "transcriptSha256": "932689835eb6386a4c2792974e84fcbec4c5e01fb470a0ba37acfcce247faf58"
+  },
+  {
+    "app": "table",
+    "trial": "baseline",
+    "script": "zig-out/direct-bytes/verify/table.steps",
+    "transcriptSha256": "8e18dc00f777c1fdc4da00cd8d490f03bddb65b088ad46fe2c319a1327dadaa3"
+  },
+  {
+    "app": "table",
+    "trial": "trim-mask-zeroes",
+    "script": "zig-out/direct-bytes/verify/table.steps",
+    "transcriptSha256": "8e18dc00f777c1fdc4da00cd8d490f03bddb65b088ad46fe2c319a1327dadaa3"
+  },
+  {
+    "app": "table",
+    "trial": "short-path-ids",
+    "script": "zig-out/direct-bytes/verify/table.steps",
+    "transcriptSha256": "8e18dc00f777c1fdc4da00cd8d490f03bddb65b088ad46fe2c319a1327dadaa3"
+  },
+  {
+    "app": "table",
+    "trial": "paths-and-zeroes",
+    "script": "zig-out/direct-bytes/verify/table.steps",
+    "transcriptSha256": "8e18dc00f777c1fdc4da00cd8d490f03bddb65b088ad46fe2c319a1327dadaa3"
+  },
+  {
+    "app": "table",
+    "trial": "short-protocol-fields",
+    "script": "zig-out/direct-bytes/verify/table.steps",
+    "transcriptSha256": "8e18dc00f777c1fdc4da00cd8d490f03bddb65b088ad46fe2c319a1327dadaa3"
+  },
+  {
+    "app": "table",
+    "trial": "u32-masks",
+    "script": "zig-out/direct-bytes/verify/table.steps",
+    "transcriptSha256": "8e18dc00f777c1fdc4da00cd8d490f03bddb65b088ad46fe2c319a1327dadaa3"
+  },
+  {
+    "app": "table",
+    "trial": "literal-plan",
+    "script": "zig-out/direct-bytes/verify/table.steps",
+    "transcriptSha256": "8e18dc00f777c1fdc4da00cd8d490f03bddb65b088ad46fe2c319a1327dadaa3"
+  },
+  {
+    "app": "table",
+    "trial": "inline-group-records",
+    "script": "zig-out/direct-bytes/verify/table.steps",
+    "transcriptSha256": "8e18dc00f777c1fdc4da00cd8d490f03bddb65b088ad46fe2c319a1327dadaa3"
+  }
+]

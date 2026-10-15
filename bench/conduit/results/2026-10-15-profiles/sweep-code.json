@@ -1,0 +1,693 @@
+{
+  "terser": "5.51.2",
+  "method": "As-served SHA-256 first. Changed files additionally minified with Terser compress/mangle/module and compared byte-for-byte; brotli 11. Unchanged files are identical before normalization.",
+  "rows": [
+    {
+      "page": "depth/1",
+      "before": "95c5050dacda646cc10e86584607c0e65bba7b8c37794c5fc04962a53a512689",
+      "after": "95c5050dacda646cc10e86584607c0e65bba7b8c37794c5fc04962a53a512689",
+      "rawBefore": 1112,
+      "rawAfter": 1112,
+      "same": true,
+      "normalizedEqual": true,
+      "normalizedBefore": null,
+      "normalizedAfter": null
+    },
+    {
+      "page": "depth/128",
+      "before": "3e09fc9b939cd662f83b490ece89f75be29056f52a238ff86a212ba39c0d9ddf",
+      "after": "3e09fc9b939cd662f83b490ece89f75be29056f52a238ff86a212ba39c0d9ddf",
+      "rawBefore": 41400,
+      "rawAfter": 41400,
+      "same": true,
+      "normalizedEqual": true,
+      "normalizedBefore": null,
+      "normalizedAfter": null
+    },
+    {
+      "page": "depth/16",
+      "before": "e418b28b00ebfac8f7b0445bf50151eef9a07059f8b2409062f0163a1eb2a0d4",
+      "after": "e418b28b00ebfac8f7b0445bf50151eef9a07059f8b2409062f0163a1eb2a0d4",
+      "rawBefore": 3543,
+      "rawAfter": 3543,
+      "same": true,
+      "normalizedEqual": true,
+      "normalizedBefore": null,
+      "normalizedAfter": null
+    },
+    {
+      "page": "depth/2",
+      "before": "26873709806da919b1fb08663d517337f8612e5e81a79ac2a48423695cbad637",
+      "after": "26873709806da919b1fb08663d517337f8612e5e81a79ac2a48423695cbad637",
+      "rawBefore": 1217,
+      "rawAfter": 1217,
+      "same": true,
+      "normalizedEqual": true,
+      "normalizedBefore": null,
+      "normalizedAfter": null
+    },
+    {
+      "page": "depth/32",
+      "before": "afa9469d48157c83bcafc0dac41a9fe5c9f748d5da4445f190d3b85bd87d266a",
+      "after": "afa9469d48157c83bcafc0dac41a9fe5c9f748d5da4445f190d3b85bd87d266a",
+      "rawBefore": 7350,
+      "rawAfter": 7350,
+      "same": true,
+      "normalizedEqual": true,
+      "normalizedBefore": null,
+      "normalizedAfter": null
+    },
+    {
+      "page": "depth/4",
+      "before": "8a4c5aab306d336c90dd35bee9478e5cf4212a38d9d87965f35186f747bd1b7c",
+      "after": "8a4c5aab306d336c90dd35bee9478e5cf4212a38d9d87965f35186f747bd1b7c",
+      "rawBefore": 1427,
+      "rawAfter": 1427,
+      "same": true,
+      "normalizedEqual": true,
+      "normalizedBefore": null,
+      "normalizedAfter": null
+    },
+    {
+      "page": "depth/64",
+      "before": "135bac414a905f8e58851c94996102436036c586ac5df93da2d8a0aade017a69",
+      "after": "135bac414a905f8e58851c94996102436036c586ac5df93da2d8a0aade017a69",
+      "rawBefore": 16603,
+      "rawAfter": 16603,
+      "same": true,
+      "normalizedEqual": true,
+      "normalizedBefore": null,
+      "normalizedAfter": null
+    },
+    {
+      "page": "depth/8",
+      "before": "c32c3352f87029a2e14f3e5210fa503d5e6e2717e04552c4ac89a8ae62883210",
+      "after": "c32c3352f87029a2e14f3e5210fa503d5e6e2717e04552c4ac89a8ae62883210",
+      "rawBefore": 1897,
+      "rawAfter": 1897,
+      "same": true,
+      "normalizedEqual": true,
+      "normalizedBefore": null,
+      "normalizedAfter": null
+    },
+    {
+      "page": "derived/100",
+      "before": "b4188e268408fb388a2f2a2d393fa33d4a562e60078e50ec9bf9aeaaaad79f2d",
+      "after": "b4188e268408fb388a2f2a2d393fa33d4a562e60078e50ec9bf9aeaaaad79f2d",
+      "rawBefore": 3319,
+      "rawAfter": 3319,
+      "same": true,
+      "normalizedEqual": true,
+      "normalizedBefore": null,
+      "normalizedAfter": null
+    },
+    {
+      "page": "derived/1000",
+      "before": "beb9cf31860d110ab4497bace0cb311b4ff91387fac71eedcb9b0e26ee7525eb",
+      "after": "beb9cf31860d110ab4497bace0cb311b4ff91387fac71eedcb9b0e26ee7525eb",
+      "rawBefore": 3321,
+      "rawAfter": 3321,
+      "same": true,
+      "normalizedEqual": true,
+      "normalizedBefore": null,
+      "normalizedAfter": null
+    },
+    {
+      "page": "derived/10000",
+      "before": "1d58327e76595e4198f5c77a62c7c8ae525189c3adc17f1aff0e569301430b23",
+      "after": "1d58327e76595e4198f5c77a62c7c8ae525189c3adc17f1aff0e569301430b23",
+      "rawBefore": 3323,
+      "rawAfter": 3323,
+      "same": true,
+      "normalizedEqual": true,
+      "normalizedBefore": null,
+      "normalizedAfter": null
+    },
+    {
+      "page": "derived/100000",
+      "before": "60f4a069054adca221a08ac84439d59f61cf5d15fe3147bdb4c77aee8d584331",
+      "after": "60f4a069054adca221a08ac84439d59f61cf5d15fe3147bdb4c77aee8d584331",
+      "rawBefore": 3325,
+      "rawAfter": 3325,
+      "same": true,
+      "normalizedEqual": true,
+      "normalizedBefore": null,
+      "normalizedAfter": null
+    },
+    {
+      "page": "derived/300",
+      "before": "791d4253b2c8b82c0e3ae35a787231ad0a23902f9790db618b5c0b4df461ca19",
+      "after": "791d4253b2c8b82c0e3ae35a787231ad0a23902f9790db618b5c0b4df461ca19",
+      "rawBefore": 3319,
+      "rawAfter": 3319,
+      "same": true,
+      "normalizedEqual": true,
+      "normalizedBefore": null,
+      "normalizedAfter": null
+    },
+    {
+      "page": "derived/3000",
+      "before": "53f947b769b491243bee59372de71659a7f78da15769c4da4b7d0f85ad1c2241",
+      "after": "53f947b769b491243bee59372de71659a7f78da15769c4da4b7d0f85ad1c2241",
+      "rawBefore": 3321,
+      "rawAfter": 3321,
+      "same": true,
+      "normalizedEqual": true,
+      "normalizedBefore": null,
+      "normalizedAfter": null
+    },
+    {
+      "page": "derived/30000",
+      "before": "58276a02ff706900c5d6b3481252efd3af68512ad79d48ee74eff658a2a862d3",
+      "after": "58276a02ff706900c5d6b3481252efd3af68512ad79d48ee74eff658a2a862d3",
+      "rawBefore": 3323,
+      "rawAfter": 3323,
+      "same": true,
+      "normalizedEqual": true,
+      "normalizedBefore": null,
+      "normalizedAfter": null
+    },
+    {
+      "page": "filtered/100",
+      "before": "ecc89f1ca455ad6e23987ac7910ecc1e511700d35dca0f9c6bd96e7c6493912c",
+      "after": "ecc89f1ca455ad6e23987ac7910ecc1e511700d35dca0f9c6bd96e7c6493912c",
+      "rawBefore": 5849,
+      "rawAfter": 5849,
+      "same": true,
+      "normalizedEqual": true,
+      "normalizedBefore": null,
+      "normalizedAfter": null
+    },
+    {
+      "page": "filtered/1000",
+      "before": "acabfad03fd451c16cc70504387054aab02c0914e3b76745697adc16626a242c",
+      "after": "acabfad03fd451c16cc70504387054aab02c0914e3b76745697adc16626a242c",
+      "rawBefore": 5852,
+      "rawAfter": 5852,
+      "same": true,
+      "normalizedEqual": true,
+      "normalizedBefore": null,
+      "normalizedAfter": null
+    },
+    {
+      "page": "helperRows/100",
+      "before": "2b5875246284b86ab17bfd769723ff33825579dde4f4434d9fb478fdadcbf7e5",
+      "after": "2b5875246284b86ab17bfd769723ff33825579dde4f4434d9fb478fdadcbf7e5",
+      "rawBefore": 4645,
+      "rawAfter": 4645,
+      "same": true,
+      "normalizedEqual": true,
+      "normalizedBefore": null,
+      "normalizedAfter": null
+    },
+    {
+      "page": "helperRows/1000",
+      "before": "1334275a775b2eced9c650631ec9a21083978003ea61a5ee27e727314b7712c5",
+      "after": "1334275a775b2eced9c650631ec9a21083978003ea61a5ee27e727314b7712c5",
+      "rawBefore": 4647,
+      "rawAfter": 4647,
+      "same": true,
+      "normalizedEqual": true,
+      "normalizedBefore": null,
+      "normalizedAfter": null
+    },
+    {
+      "page": "helperRows/10000",
+      "before": "3bd80fc6d4cfaebad89dca1593c5d635e642185829cf1a97f151fd7e097647b1",
+      "after": "3bd80fc6d4cfaebad89dca1593c5d635e642185829cf1a97f151fd7e097647b1",
+      "rawBefore": 4649,
+      "rawAfter": 4649,
+      "same": true,
+      "normalizedEqual": true,
+      "normalizedBefore": null,
+      "normalizedAfter": null
+    },
+    {
+      "page": "helperRows/300",
+      "before": "fba79303020e6dea911ea2a71335962a44550bbda8fae99c449dc45202f33ecd",
+      "after": "fba79303020e6dea911ea2a71335962a44550bbda8fae99c449dc45202f33ecd",
+      "rawBefore": 4645,
+      "rawAfter": 4645,
+      "same": true,
+      "normalizedEqual": true,
+      "normalizedBefore": null,
+      "normalizedAfter": null
+    },
+    {
+      "page": "helperRows/3000",
+      "before": "33e3464535a1263d6bd3e5b20f6fe5615b6707f3b9d76ae1d99a84a9b5295eac",
+      "after": "33e3464535a1263d6bd3e5b20f6fe5615b6707f3b9d76ae1d99a84a9b5295eac",
+      "rawBefore": 4647,
+      "rawAfter": 4647,
+      "same": true,
+      "normalizedEqual": true,
+      "normalizedBefore": null,
+      "normalizedAfter": null
+    },
+    {
+      "page": "holes/10",
+      "before": "61e9eeab7c1d09d85cd13ad86e977708ca4a855929ea7d8dfcf2f8821116c43c",
+      "after": "61e9eeab7c1d09d85cd13ad86e977708ca4a855929ea7d8dfcf2f8821116c43c",
+      "rawBefore": 1139,
+      "rawAfter": 1139,
+      "same": true,
+      "normalizedEqual": true,
+      "normalizedBefore": null,
+      "normalizedAfter": null
+    },
+    {
+      "page": "holes/100",
+      "before": "41c280e63027cf6993ecdf2adea296a28f398e6b58d822887404fb52adfa6a46",
+      "after": "41c280e63027cf6993ecdf2adea296a28f398e6b58d822887404fb52adfa6a46",
+      "rawBefore": 2360,
+      "rawAfter": 2360,
+      "same": true,
+      "normalizedEqual": true,
+      "normalizedBefore": null,
+      "normalizedAfter": null
+    },
+    {
+      "page": "holes/1000",
+      "before": "b2e3d4ff926c4dbe792f2f3130380244c45a7ff5adaccb57e0f84ce3a8852ff7",
+      "after": "b2e3d4ff926c4dbe792f2f3130380244c45a7ff5adaccb57e0f84ce3a8852ff7",
+      "rawBefore": 14570,
+      "rawAfter": 14570,
+      "same": true,
+      "normalizedEqual": true,
+      "normalizedBefore": null,
+      "normalizedAfter": null
+    },
+    {
+      "page": "holes/10000",
+      "before": "87b05b5ec0aea172eb5d1e0c49ed73f88c2ec19bcd39034b56c5ec892f74d099",
+      "after": "87b05b5ec0aea172eb5d1e0c49ed73f88c2ec19bcd39034b56c5ec892f74d099",
+      "rawBefore": 136670,
+      "rawAfter": 136670,
+      "same": true,
+      "normalizedEqual": true,
+      "normalizedBefore": null,
+      "normalizedAfter": null
+    },
+    {
+      "page": "holes/30",
+      "before": "0344f724de7454bb14f866496262f5d45b7297155c096cf99a8bced143156777",
+      "after": "0344f724de7454bb14f866496262f5d45b7297155c096cf99a8bced143156777",
+      "rawBefore": 1406,
+      "rawAfter": 1406,
+      "same": true,
+      "normalizedEqual": true,
+      "normalizedBefore": null,
+      "normalizedAfter": null
+    },
+    {
+      "page": "holes/300",
+      "before": "7ef610ab3a17e13ddb339ee09e34ebe136e8ef76c44cc2c6e566131f57c0091f",
+      "after": "7ef610ab3a17e13ddb339ee09e34ebe136e8ef76c44cc2c6e566131f57c0091f",
+      "rawBefore": 5069,
+      "rawAfter": 5069,
+      "same": true,
+      "normalizedEqual": true,
+      "normalizedBefore": null,
+      "normalizedAfter": null
+    },
+    {
+      "page": "holes/3000",
+      "before": "47175b30ec19fde8064a1bc6b75f7ef7398e7f434dfe79d471d8d6a58d444ccb",
+      "after": "47175b30ec19fde8064a1bc6b75f7ef7398e7f434dfe79d471d8d6a58d444ccb",
+      "rawBefore": 41699,
+      "rawAfter": 41699,
+      "same": true,
+      "normalizedEqual": true,
+      "normalizedBefore": null,
+      "normalizedAfter": null
+    },
+    {
+      "page": "live/100",
+      "before": "e5d90a1d6f11c2f2676669144c3d2adb3815d7cab170bdac66056b42ecc6609d",
+      "after": "aa8de096be4d0a72735d11229e8b0cb4fae65276d1748ef214575ae2067c93c0",
+      "rawBefore": 7056,
+      "rawAfter": 7063,
+      "same": false,
+      "normalizedEqual": true,
+      "normalizedBefore": {
+        "raw": 6602,
+        "brotli": 2735
+      },
+      "normalizedAfter": {
+        "raw": 6602,
+        "brotli": 2735
+      }
+    },
+    {
+      "page": "live/1000",
+      "before": "6b71c2ba93dbd8f66f21cd33870f584b586af4088e9f2e24675abe08503e869b",
+      "after": "3b812148fe2055738413fa1c20b18b473ee4d09c95f16a4ed37e9ea1c2fa9f4b",
+      "rawBefore": 7058,
+      "rawAfter": 7065,
+      "same": false,
+      "normalizedEqual": true,
+      "normalizedBefore": {
+        "raw": 6602,
+        "brotli": 2735
+      },
+      "normalizedAfter": {
+        "raw": 6602,
+        "brotli": 2735
+      }
+    },
+    {
+      "page": "live/10000",
+      "before": "69673d738e553e6e9d4e50ed97e3343c0927d9be050341a58443477959f1d33f",
+      "after": "d6a0200ab55a362be8f155168852b74c3994584c8f8f63e7b67712bf959108bc",
+      "rawBefore": 7060,
+      "rawAfter": 7067,
+      "same": false,
+      "normalizedEqual": true,
+      "normalizedBefore": {
+        "raw": 6602,
+        "brotli": 2734
+      },
+      "normalizedAfter": {
+        "raw": 6602,
+        "brotli": 2734
+      }
+    },
+    {
+      "page": "live/300",
+      "before": "fdbe76ca05490974a02094743d681d9ced60a13b343b99f58f2e2d1652aeecaa",
+      "after": "d25bf13f257c4b39d7226a0fa221a1e5a9d8e2a34e0dd7e0f7cbf03afe148be2",
+      "rawBefore": 7056,
+      "rawAfter": 7063,
+      "same": false,
+      "normalizedEqual": true,
+      "normalizedBefore": {
+        "raw": 6602,
+        "brotli": 2735
+      },
+      "normalizedAfter": {
+        "raw": 6602,
+        "brotli": 2735
+      }
+    },
+    {
+      "page": "live/3000",
+      "before": "6832ad4aaa635d1f488ca3a267c635ed93b2cfe58a0bee14f8843fc6efe40955",
+      "after": "0b3da34d7982087fafffee36446429c3c35db455b9cfe8be28e19e8404f8678c",
+      "rawBefore": 7058,
+      "rawAfter": 7065,
+      "same": false,
+      "normalizedEqual": true,
+      "normalizedBefore": {
+        "raw": 6602,
+        "brotli": 2735
+      },
+      "normalizedAfter": {
+        "raw": 6602,
+        "brotli": 2735
+      }
+    },
+    {
+      "page": "rows/10",
+      "before": "cb28b460385524683f5b72741123212b89a2786e11dd6ac5690044c2a6103448",
+      "after": "cb28b460385524683f5b72741123212b89a2786e11dd6ac5690044c2a6103448",
+      "rawBefore": 6744,
+      "rawAfter": 6744,
+      "same": true,
+      "normalizedEqual": true,
+      "normalizedBefore": null,
+      "normalizedAfter": null
+    },
+    {
+      "page": "rows/100",
+      "before": "2e8ad2185e64c3bded762752979451ec3d336072899449227f377be43a8086ce",
+      "after": "2e8ad2185e64c3bded762752979451ec3d336072899449227f377be43a8086ce",
+      "rawBefore": 6759,
+      "rawAfter": 6759,
+      "same": true,
+      "normalizedEqual": true,
+      "normalizedBefore": null,
+      "normalizedAfter": null
+    },
+    {
+      "page": "rows/1000",
+      "before": "d1f97475283a1ac607eed412a433bb89844a460c3143826c8cf140534257d3ec",
+      "after": "d1f97475283a1ac607eed412a433bb89844a460c3143826c8cf140534257d3ec",
+      "rawBefore": 6774,
+      "rawAfter": 6774,
+      "same": true,
+      "normalizedEqual": true,
+      "normalizedBefore": null,
+      "normalizedAfter": null
+    },
+    {
+      "page": "rows/10000",
+      "before": "6ee5e1ad40d2a8a56e490d40839df71fa86fed87de10afe513a7259985699698",
+      "after": "6ee5e1ad40d2a8a56e490d40839df71fa86fed87de10afe513a7259985699698",
+      "rawBefore": 6789,
+      "rawAfter": 6789,
+      "same": true,
+      "normalizedEqual": true,
+      "normalizedBefore": null,
+      "normalizedAfter": null
+    },
+    {
+      "page": "rows/30",
+      "before": "e4e0aa1299b6c5e32237f61c3086695e8a1c91b729b4333c0ab551579e202270",
+      "after": "e4e0aa1299b6c5e32237f61c3086695e8a1c91b729b4333c0ab551579e202270",
+      "rawBefore": 6757,
+      "rawAfter": 6757,
+      "same": true,
+      "normalizedEqual": true,
+      "normalizedBefore": null,
+      "normalizedAfter": null
+    },
+    {
+      "page": "rows/300",
+      "before": "421c5e2de687c883f3af916dd1178ffd0e2d8fd60cb7e647594a1d773a21723b",
+      "after": "421c5e2de687c883f3af916dd1178ffd0e2d8fd60cb7e647594a1d773a21723b",
+      "rawBefore": 6772,
+      "rawAfter": 6772,
+      "same": true,
+      "normalizedEqual": true,
+      "normalizedBefore": null,
+      "normalizedAfter": null
+    },
+    {
+      "page": "rows/3000",
+      "before": "2ae51167d4602456262d5866b5cfc6c276c822157cb24aac03b2c16e7e7d2670",
+      "after": "2ae51167d4602456262d5866b5cfc6c276c822157cb24aac03b2c16e7e7d2670",
+      "rawBefore": 6787,
+      "rawAfter": 6787,
+      "same": true,
+      "normalizedEqual": true,
+      "normalizedBefore": null,
+      "normalizedAfter": null
+    },
+    {
+      "page": "rows/30000",
+      "before": "a238b06331e2f2736bafaf610a6ea990a11f648e2a0fa5c9d44e7d55831c3f42",
+      "after": "a238b06331e2f2736bafaf610a6ea990a11f648e2a0fa5c9d44e7d55831c3f42",
+      "rawBefore": 6802,
+      "rawAfter": 6802,
+      "same": true,
+      "normalizedEqual": true,
+      "normalizedBefore": null,
+      "normalizedAfter": null
+    },
+    {
+      "page": "tree/10",
+      "before": "7544ee252c35c0fa2e65ab5b2ac34cd1f1ba8625a25f2d5a9809cf2a81a64193",
+      "after": "02962092dd35f10d4cd93a5e4fb932d371577ccef696a577531403abe58786eb",
+      "rawBefore": 6140,
+      "rawAfter": 6147,
+      "same": false,
+      "normalizedEqual": true,
+      "normalizedBefore": {
+        "raw": 5720,
+        "brotli": 2372
+      },
+      "normalizedAfter": {
+        "raw": 5720,
+        "brotli": 2372
+      }
+    },
+    {
+      "page": "tree/12",
+      "before": "452c6728cbf142fac76481cb7172e30818a736ac1feb9821ae4a3bd25a47f2ae",
+      "after": "5bd0838e08c32b899d125ebdba8e1e5df39d1db63956b590566b58bad3f5d44b",
+      "rawBefore": 6140,
+      "rawAfter": 6147,
+      "same": false,
+      "normalizedEqual": true,
+      "normalizedBefore": {
+        "raw": 5720,
+        "brotli": 2374
+      },
+      "normalizedAfter": {
+        "raw": 5720,
+        "brotli": 2374
+      }
+    },
+    {
+      "page": "tree/4",
+      "before": "f276d70c4e70d6e73e9ce6758f0cc9ded9858aba3331de252385e7644fad48b5",
+      "after": "de93a9a030cbea2a59fdf116ec5bb17e763eb35e7eb27a8e5bc7daaba58b93a0",
+      "rawBefore": 6139,
+      "rawAfter": 6146,
+      "same": false,
+      "normalizedEqual": true,
+      "normalizedBefore": {
+        "raw": 5719,
+        "brotli": 2373
+      },
+      "normalizedAfter": {
+        "raw": 5719,
+        "brotli": 2373
+      }
+    },
+    {
+      "page": "tree/6",
+      "before": "6b408b368db8eebee4d89c992f8a83face21e0124797da87c82d31d35609e63c",
+      "after": "691b1119c113a86dde5bf017cb69f858c3683e32756bb7f82f080b64673e1edc",
+      "rawBefore": 6139,
+      "rawAfter": 6146,
+      "same": false,
+      "normalizedEqual": true,
+      "normalizedBefore": {
+        "raw": 5719,
+        "brotli": 2373
+      },
+      "normalizedAfter": {
+        "raw": 5719,
+        "brotli": 2373
+      }
+    },
+    {
+      "page": "tree/8",
+      "before": "308a283487755984ff8429b17104eb7231a85df71b0f204e4fdf91e51eacbc9f",
+      "after": "e42b387a6fa63ff37658bec0f33b0d8ddd91af605362e59e24166661c4987d7e",
+      "rawBefore": 6139,
+      "rawAfter": 6146,
+      "same": false,
+      "normalizedEqual": true,
+      "normalizedBefore": {
+        "raw": 5719,
+        "brotli": 2373
+      },
+      "normalizedAfter": {
+        "raw": 5719,
+        "brotli": 2373
+      }
+    },
+    {
+      "page": "width/1024",
+      "before": "3c84869c5541123757983ea6734f638f21bccc055224eeccca96f6625449d783",
+      "after": "3c84869c5541123757983ea6734f638f21bccc055224eeccca96f6625449d783",
+      "rawBefore": 20772,
+      "rawAfter": 20772,
+      "same": true,
+      "normalizedEqual": true,
+      "normalizedBefore": null,
+      "normalizedAfter": null
+    },
+    {
+      "page": "width/128",
+      "before": "40e588c9be7b0c7f4dfac55014159d0d1a331fd4d810b8262e69b5dc359be619",
+      "after": "40e588c9be7b0c7f4dfac55014159d0d1a331fd4d810b8262e69b5dc359be619",
+      "rawBefore": 3267,
+      "rawAfter": 3267,
+      "same": true,
+      "normalizedEqual": true,
+      "normalizedBefore": null,
+      "normalizedAfter": null
+    },
+    {
+      "page": "width/16",
+      "before": "1b5c3e6daa68932e50219743921a9f0d407883b4dc749b54473c220c2675444a",
+      "after": "1b5c3e6daa68932e50219743921a9f0d407883b4dc749b54473c220c2675444a",
+      "rawBefore": 1336,
+      "rawAfter": 1336,
+      "same": true,
+      "normalizedEqual": true,
+      "normalizedBefore": null,
+      "normalizedAfter": null
+    },
+    {
+      "page": "width/17",
+      "before": "6185a6337d9160bf763642c54772a72b070b1710f74ed751210d3dbbf59fb520",
+      "after": "6185a6337d9160bf763642c54772a72b070b1710f74ed751210d3dbbf59fb520",
+      "rawBefore": 1350,
+      "rawAfter": 1350,
+      "same": true,
+      "normalizedEqual": true,
+      "normalizedBefore": null,
+      "normalizedAfter": null
+    },
+    {
+      "page": "width/20",
+      "before": "09dbfbf06a61e3edb451c4f50028218665a97bd24a5af17edef948109136b8b7",
+      "after": "09dbfbf06a61e3edb451c4f50028218665a97bd24a5af17edef948109136b8b7",
+      "rawBefore": 1307,
+      "rawAfter": 1307,
+      "same": true,
+      "normalizedEqual": true,
+      "normalizedBefore": null,
+      "normalizedAfter": null
+    },
+    {
+      "page": "width/256",
+      "before": "847a2995ae3b84114a05ba6b7982c27194392dc369767d1253f782c6ec51fdd0",
+      "after": "847a2995ae3b84114a05ba6b7982c27194392dc369767d1253f782c6ec51fdd0",
+      "rawBefore": 5809,
+      "rawAfter": 5809,
+      "same": true,
+      "normalizedEqual": true,
+      "normalizedBefore": null,
+      "normalizedAfter": null
+    },
+    {
+      "page": "width/32",
+      "before": "bbf16365fa399af90ad79375674737e115af8b66c8465d84f19ab62ee008e50c",
+      "after": "bbf16365fa399af90ad79375674737e115af8b66c8465d84f19ab62ee008e50c",
+      "rawBefore": 1585,
+      "rawAfter": 1585,
+      "same": true,
+      "normalizedEqual": true,
+      "normalizedBefore": null,
+      "normalizedAfter": null
+    },
+    {
+      "page": "width/4",
+      "before": "f85616023c5f1a7940679158f5e02521ad818fc46ab1d76890cd0d9083afbc9c",
+      "after": "f85616023c5f1a7940679158f5e02521ad818fc46ab1d76890cd0d9083afbc9c",
+      "rawBefore": 1089,
+      "rawAfter": 1089,
+      "same": true,
+      "normalizedEqual": true,
+      "normalizedBefore": null,
+      "normalizedAfter": null
+    },
+    {
+      "page": "width/64",
+      "before": "e790b076fc96f578d198dc687a5dee3507620fb4f7c2e157cd9ba337f16c7f63",
+      "after": "e790b076fc96f578d198dc687a5dee3507620fb4f7c2e157cd9ba337f16c7f63",
+      "rawBefore": 2077,
+      "rawAfter": 2077,
+      "same": true,
+      "normalizedEqual": true,
+      "normalizedBefore": null,
+      "normalizedAfter": null
+    },
+    {
+      "page": "width/8",
+      "before": "865386ff7028ac669c9672adf6792cd9d8f3c3bdda8cbfc8e6ca8fa76476d828",
+      "after": "865386ff7028ac669c9672adf6792cd9d8f3c3bdda8cbfc8e6ca8fa76476d828",
+      "rawBefore": 1161,
+      "rawAfter": 1161,
+      "same": true,
+      "normalizedEqual": true,
+      "normalizedBefore": null,
+      "normalizedAfter": null
+    }
+  ]
+}

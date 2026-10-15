@@ -1446,6 +1446,21 @@ platform read from a directory…*).
 **What it does not do.** No emitted byte is in the pack: `emit`, and under `--release` the
 specialiser, run for every module as they always did.
 
+*Amended 2026-10-15, Jayson's decision on issue #94 (the dashboard's question `emit-cache-q1`):
+**the emit phase's work on the embedded modules goes into the pack too**, made by the maker when
+beni is built, in two steps.* First, each embedded module's reachability edge lists (`backend.md`
+§9, *Incrementality (M4) and chunking (§10)*). They do not depend on what a program uses, so they
+are one row per module and per option that changes them (`--release`, `--schema-library`). On
+`browser/tea/ApiItems` they are 62 million of a development build's 545 million instructions, and
+on `run/Dictionaries` 32 of 180 million. Second, the lowered output of each declaration, with a
+spec of its own first. Lowered output depends on the live set, so its unit is a declaration and not
+a module, and the step that joins the live declarations, their imports and their source maps is
+new. The cost is accepted: the maker then reaches the backend, so an edit under `src/js/` runs it
+again before beni compiles. *Rejected: a cache in the cache directory, keyed on the module key and
+the live set.* It makes a warm rebuild and the development loop faster, and not a cold build or a
+test, because each test has a new project directory. Each step brings its spec. Until the first
+step lands, the paragraph above stands.
+
 **Measured** (2026-10-02, master `bec44d00` against the same tree with the checked core; instructions,
 user space, because the machine's load moved wall time by 2× between runs). **Output: not one byte
 moved** — every `run/` and `browser/` program's run hash matched, development and release, with no
@@ -1660,7 +1675,9 @@ consequently has no source maps at all (03 §4).
 development build is not shipped, so a map's size is disk and not page weight, and the browser-first
 rule makes an unmapped debugger the first thing a user hits. Recorded in the print pass as specified;
 the line/column conversion is one forward scan of the printed bytes after it, not a tree walk.
-Release maps, and the join-time rebasing they need, remain M5.
+Release maps, and the join-time rebasing they need, remain M5. *Amended 2026-10-15:* release
+maps are built, with that rebasing, per [`backend.md`](backend.md) §11.2; they are written only
+when `--source-maps` asks for them, which keeps "off by default" for a release build.
 
 ## 10. Parallelism — and where not to use it
 
@@ -1711,6 +1728,49 @@ the index. The order is the one the corpus harness's paths already produced — 
 `Main.beni` sorts before `core/` — so no golden moved. `build_test.zig`'s *a build is
 byte-identical wherever the project lives* builds one project from three directories on either
 side of `core` and at two depths, and compares every file both builds write.
+
+### A build with no threads
+
+*2026-10-15, for the playground ([`playground.md`](playground.md) §2.2).* A WebAssembly page has
+no threads, so the compiler that runs in it is a single-threaded build
+(`builtin.single_threaded`). In that build the compiler starts no thread, and each place that
+starts one does this:
+
+| Where | Threaded build | Single-threaded build |
+|---|---|---|
+| `Session.runWave`, the per-file pool | one thread per worker | each worker on the calling thread, in worker order; the first claims every file |
+| `resolve/Resolve.zig`, the resolution DAG | `--jobs` threads | the serial walk of `--jobs=1` |
+| `check/Driver.zig`, the check DAG | `--jobs` threads | the serial walk of `--jobs=1` |
+| `js/Emit.zig`, the emit pool | up to `--jobs - 1` more threads | none: the calling thread takes every item |
+| `Session.runCheckOnBigStack`, `build/Command.zig`'s emit, `own/Enforce.zig`'s pass, `main.zig`'s dumps | one thread with a `Check.stack_size` stack | a call on the calling thread |
+
+`Session.init` also sets the worker count to 1 in this build, whatever `--jobs` says, so every
+pool has one worker. `--jobs` is a performance setting and the output does not depend on it, so
+this refuses nothing (rule 7). `beni serve` is the one command such a build refuses, with exit 2:
+it answers requests on one thread while it builds on another.
+
+**The output is byte-identical**, by the argument of this section: each serial walk is the walk
+`--jobs=1` makes, and the determinism test proves that `--jobs=1` and `--jobs=8` write the same
+bytes. The only difference from a threaded `--jobs=1` run is the stack. The work that ran on a
+thread with `Check.stack_size` (64 MiB) now runs on the main stack, so the executable's stack is
+`Check.stack_size` plus 1 MiB for the frames under the walks (`build.zig`'s
+`no_threads_stack_size`; on Linux, Zig's start code raises the stack limit to it).
+
+**The tests.** `tests/blackbox/wasm_test.zig` builds programs with a native single-threaded
+compiler and with the threaded one and compares every output byte, a tree `Parse.max_depth`
+levels deep included, and the WebAssembly compiler against the native one
+([`playground.md`](playground.md) §6).
+
+**The build id does not say how many threads.** The native compiler with no threads has the
+threaded compiler's id (the id hashes the target, the mode, the backend and the sources), so
+each would read the other's cache entries. Their output is the same bytes by the argument
+above, and the byte-identity tests are the guard of that. The WebAssembly compiler has an id of
+its own, because its target differs.
+
+**A guard is a comptime branch.** `std.Thread.spawn` is a compile error in a single-threaded
+build, so each guard tests `builtin.single_threaded` before the code that spawns, and the threaded
+code is not compiled into the single-threaded binary. A new place that starts a thread needs the
+same guard; the single-threaded build in the gates fails to compile without it.
 
 ## 11. What we are deliberately not doing
 

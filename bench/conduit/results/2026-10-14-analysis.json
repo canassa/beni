@@ -1,0 +1,3972 @@
+{
+  "programs": 99,
+  "bounded": {
+    "n": 97,
+    "bounded": 96,
+    "share": 98.96907216494846,
+    "fires": false
+  },
+  "static": {
+    "rows": [
+      {
+        "program": "AfterRenderFocus.beni AfterRenderFocus.main",
+        "set": "corpus",
+        "ctors": 5,
+        "star": 0,
+        "share": 0,
+        "starKeys": []
+      },
+      {
+        "program": "AnimationFrameStops.beni AnimationFrameStops.main",
+        "set": "corpus",
+        "ctors": 1,
+        "star": 1,
+        "share": 100,
+        "starKeys": [
+          "(any)"
+        ]
+      },
+      {
+        "program": "AnimationFrames.beni AnimationFrames.main",
+        "set": "corpus",
+        "ctors": 4,
+        "star": 0,
+        "share": 0,
+        "starKeys": []
+      },
+      {
+        "program": "ApiItems.beni ApiItems.main",
+        "set": "corpus",
+        "ctors": 2,
+        "star": 0,
+        "share": 0,
+        "starKeys": []
+      },
+      {
+        "program": "ApiLogin.beni ApiLogin.main",
+        "set": "corpus",
+        "ctors": 3,
+        "star": 0,
+        "share": 0,
+        "starKeys": []
+      },
+      {
+        "program": "ApplicationNotHttp.beni ApplicationNotHttp.main",
+        "set": "corpus",
+        "ctors": 1,
+        "star": 0,
+        "share": 0,
+        "starKeys": []
+      },
+      {
+        "program": "ClockStops.beni ClockStops.main",
+        "set": "corpus",
+        "ctors": 2,
+        "star": 0,
+        "share": 0,
+        "starKeys": []
+      },
+      {
+        "program": "Counters Main.main",
+        "set": "corpus",
+        "ctors": 4,
+        "star": 0,
+        "share": 0,
+        "starKeys": []
+      },
+      {
+        "program": "DebouncedSearch.beni DebouncedSearch.main",
+        "set": "corpus",
+        "ctors": 2,
+        "star": 0,
+        "share": 0,
+        "starKeys": []
+      },
+      {
+        "program": "DefectAfterRender.beni DefectAfterRender.main",
+        "set": "corpus",
+        "ctors": 2,
+        "star": 2,
+        "share": 100,
+        "starKeys": [
+          "After",
+          "Inc"
+        ]
+      },
+      {
+        "program": "DefectEveryProgram.beni DefectEveryProgram.first",
+        "set": "corpus",
+        "ctors": 1,
+        "star": 1,
+        "share": 100,
+        "starKeys": [
+          "(any)"
+        ]
+      },
+      {
+        "program": "DefectEveryProgram.beni DefectEveryProgram.second",
+        "set": "corpus",
+        "ctors": 1,
+        "star": 1,
+        "share": 100,
+        "starKeys": [
+          "(any)"
+        ]
+      },
+      {
+        "program": "DefectInFiber.beni DefectInFiber.main",
+        "set": "corpus",
+        "ctors": 3,
+        "star": 3,
+        "share": 100,
+        "starKeys": [
+          "Go",
+          "Inc",
+          "Late"
+        ]
+      },
+      {
+        "program": "DefectInRender.beni DefectInRender.main",
+        "set": "corpus",
+        "ctors": 3,
+        "star": 0,
+        "share": 0,
+        "starKeys": []
+      },
+      {
+        "program": "DefectInTurnRender.beni DefectInTurnRender.main",
+        "set": "corpus",
+        "ctors": 3,
+        "star": 0,
+        "share": 0,
+        "starKeys": []
+      },
+      {
+        "program": "DefectInUpdate.beni DefectInUpdate.main",
+        "set": "corpus",
+        "ctors": 3,
+        "star": 1,
+        "share": 33.333333333333336,
+        "starKeys": [
+          "Boom"
+        ]
+      },
+      {
+        "program": "DefectInViewReleases.beni DefectInViewReleases.main",
+        "set": "corpus",
+        "ctors": 3,
+        "star": 1,
+        "share": 33.333333333333336,
+        "starKeys": [
+          "Break"
+        ]
+      },
+      {
+        "program": "DefectQueuedDropped.beni DefectQueuedDropped.main",
+        "set": "corpus",
+        "ctors": 3,
+        "star": 2,
+        "share": 66.66666666666667,
+        "starKeys": [
+          "Ping",
+          "Then"
+        ]
+      },
+      {
+        "program": "DefectReleaseRunning.beni DefectReleaseRunning.main",
+        "set": "corpus",
+        "ctors": 2,
+        "star": 2,
+        "share": 100,
+        "starKeys": [
+          "Go",
+          "Boom"
+        ]
+      },
+      {
+        "program": "DefectReleaseSuspends.beni DefectReleaseSuspends.main",
+        "set": "corpus",
+        "ctors": 2,
+        "star": 1,
+        "share": 50,
+        "starKeys": [
+          "Boom"
+        ]
+      },
+      {
+        "program": "DefectReleaseThrows.beni DefectReleaseThrows.main",
+        "set": "corpus",
+        "ctors": 2,
+        "star": 1,
+        "share": 50,
+        "starKeys": [
+          "Boom"
+        ]
+      },
+      {
+        "program": "DefectReleasesHost.beni DefectReleasesHost.main",
+        "set": "corpus",
+        "ctors": 6,
+        "star": 1,
+        "share": 16.666666666666668,
+        "starKeys": [
+          "Boom"
+        ]
+      },
+      {
+        "program": "DefectRunsReleases.beni DefectRunsReleases.main",
+        "set": "corpus",
+        "ctors": 2,
+        "star": 2,
+        "share": 100,
+        "starKeys": [
+          "Go",
+          "Late"
+        ]
+      },
+      {
+        "program": "DirectEvents.beni DirectEvents.main",
+        "set": "corpus",
+        "ctors": 2,
+        "star": 2,
+        "share": 100,
+        "starKeys": [
+          "Saw",
+          "Stop"
+        ]
+      },
+      {
+        "program": "DocumentTitle.beni DocumentTitle.main",
+        "set": "corpus",
+        "ctors": 1,
+        "star": 1,
+        "share": 100,
+        "starKeys": [
+          "(any)"
+        ]
+      },
+      {
+        "program": "FlushLatched.beni FlushLatched.main",
+        "set": "corpus",
+        "ctors": 3,
+        "star": 2,
+        "share": 66.66666666666667,
+        "starKeys": [
+          "FromUpdate",
+          "Bump"
+        ]
+      },
+      {
+        "program": "FocusInFlush.beni FocusInFlush.main",
+        "set": "corpus",
+        "ctors": 2,
+        "star": 0,
+        "share": 0,
+        "starKeys": []
+      },
+      {
+        "program": "HttpCancel.beni HttpCancel.main",
+        "set": "corpus",
+        "ctors": 3,
+        "star": 1,
+        "share": 33.333333333333336,
+        "starKeys": [
+          "Found#1 · Ok",
+          "Found#1 · Err"
+        ]
+      },
+      {
+        "program": "HttpDefect Main.main",
+        "set": "corpus",
+        "ctors": 4,
+        "star": 2,
+        "share": 50,
+        "starKeys": [
+          "Got · Ok",
+          "Got · Err · NetworkError",
+          "Got · Err · _",
+          "Inc"
+        ]
+      },
+      {
+        "program": "HttpFailures.beni HttpFailures.main",
+        "set": "corpus",
+        "ctors": 2,
+        "star": 1,
+        "share": 50,
+        "starKeys": [
+          "Got#1 · Ok",
+          "Got#1 · Err · BadUrl",
+          "Got#1 · Err · BadRequest",
+          "Got#1 · Err · Timeout",
+          "Got#1 · Err · NetworkError",
+          "Got#1 · Err · BadStatus",
+          "Got#1 · Err · BadBody"
+        ]
+      },
+      {
+        "program": "HttpJson.beni HttpJson.main",
+        "set": "corpus",
+        "ctors": 2,
+        "star": 1,
+        "share": 50,
+        "starKeys": [
+          "Got"
+        ]
+      },
+      {
+        "program": "HttpJsonBody.beni HttpJsonBody.main",
+        "set": "corpus",
+        "ctors": 2,
+        "star": 1,
+        "share": 50,
+        "starKeys": [
+          "Got"
+        ]
+      },
+      {
+        "program": "HttpMultipart.beni HttpMultipart.main",
+        "set": "corpus",
+        "ctors": 2,
+        "star": 1,
+        "share": 50,
+        "starKeys": [
+          "Got · Ok",
+          "Got · Err · BadRequest · MultipartContentType",
+          "Got · Err · BadRequest · _",
+          "Got · Err · _"
+        ]
+      },
+      {
+        "program": "HttpProgress.beni HttpProgress.main",
+        "set": "corpus",
+        "ctors": 3,
+        "star": 2,
+        "share": 66.66666666666667,
+        "starKeys": [
+          "Progressed · Sending",
+          "Progressed · Receiving",
+          "Done · Ok",
+          "Done · Err"
+        ]
+      },
+      {
+        "program": "HttpRequestShape.beni HttpRequestShape.main",
+        "set": "corpus",
+        "ctors": 2,
+        "star": 1,
+        "share": 50,
+        "starKeys": [
+          "Got#1 · Ok",
+          "Got#1 · Err"
+        ]
+      },
+      {
+        "program": "HttpResponseMeta.beni HttpResponseMeta.main",
+        "set": "corpus",
+        "ctors": 2,
+        "star": 1,
+        "share": 50,
+        "starKeys": [
+          "Got"
+        ]
+      },
+      {
+        "program": "HttpResults.beni HttpResults.main",
+        "set": "corpus",
+        "ctors": 2,
+        "star": 1,
+        "share": 50,
+        "starKeys": [
+          "Got#1 · Ok",
+          "Got#1 · Err · BadUrl",
+          "Got#1 · Err · _"
+        ]
+      },
+      {
+        "program": "HttpTrack.beni HttpTrack.main",
+        "set": "corpus",
+        "ctors": 11,
+        "star": 0,
+        "share": 0,
+        "starKeys": []
+      },
+      {
+        "program": "HttpTrackInit.beni HttpTrackInit.main",
+        "set": "corpus",
+        "ctors": 3,
+        "star": 2,
+        "share": 66.66666666666667,
+        "starKeys": [
+          "Progressed#1 · Sending",
+          "Progressed#1 · Receiving",
+          "Answered#1 · Ok",
+          "Answered#1 · Err · Timeout",
+          "Answered#1 · Err · _"
+        ]
+      },
+      {
+        "program": "KeyEvents.beni KeyEvents.main",
+        "set": "corpus",
+        "ctors": 3,
+        "star": 0,
+        "share": 0,
+        "starKeys": []
+      },
+      {
+        "program": "KeyOrder.beni KeyOrder.main",
+        "set": "corpus",
+        "ctors": 1,
+        "star": 0,
+        "share": 0,
+        "starKeys": []
+      },
+      {
+        "program": "KeySubscription.beni KeySubscription.main",
+        "set": "corpus",
+        "ctors": 2,
+        "star": 0,
+        "share": 0,
+        "starKeys": []
+      },
+      {
+        "program": "LatestTagger.beni LatestTagger.main",
+        "set": "corpus",
+        "ctors": 3,
+        "star": 0,
+        "share": 0,
+        "starKeys": []
+      },
+      {
+        "program": "LinkGuard.beni LinkGuard.main",
+        "set": "corpus",
+        "ctors": 2,
+        "star": 2,
+        "share": 100,
+        "starKeys": [
+          "Requested · Internal",
+          "Requested · External",
+          "Handled"
+        ]
+      },
+      {
+        "program": "LinkOutsideMount.beni LinkOutsideMount.shell",
+        "set": "corpus",
+        "ctors": 1,
+        "star": 0,
+        "share": 0,
+        "starKeys": []
+      },
+      {
+        "program": "LinkOutsideMount.beni LinkOutsideMount.mounted",
+        "set": "corpus",
+        "ctors": 1,
+        "star": 1,
+        "share": 100,
+        "starKeys": [
+          "Internal",
+          "External"
+        ]
+      },
+      {
+        "program": "ListKeyRestart.beni ListKeyRestart.main",
+        "set": "corpus",
+        "ctors": 2,
+        "star": 2,
+        "share": 100,
+        "starKeys": [
+          "Short",
+          "Long"
+        ]
+      },
+      {
+        "program": "ListenerOrder.beni ListenerOrder.main",
+        "set": "corpus",
+        "ctors": 7,
+        "star": 0,
+        "share": 0,
+        "starKeys": []
+      },
+      {
+        "program": "LogLevels.beni LogLevels.main",
+        "set": "corpus",
+        "ctors": 1,
+        "star": 1,
+        "share": 100,
+        "starKeys": [
+          "(any)"
+        ]
+      },
+      {
+        "program": "MountedPrograms.beni MountedPrograms.shell",
+        "set": "corpus",
+        "ctors": 1,
+        "star": 1,
+        "share": 100,
+        "starKeys": [
+          "(any)"
+        ]
+      },
+      {
+        "program": "MountedPrograms.beni MountedPrograms.counter",
+        "set": "corpus",
+        "ctors": 1,
+        "star": 1,
+        "share": 100,
+        "starKeys": [
+          "(any)"
+        ]
+      },
+      {
+        "program": "MountedPrograms.beni MountedPrograms.namer",
+        "set": "corpus",
+        "ctors": 1,
+        "star": 1,
+        "share": 100,
+        "starKeys": [
+          "(any)"
+        ]
+      },
+      {
+        "program": "NavigateCommands.beni NavigateCommands.main",
+        "set": "corpus",
+        "ctors": 7,
+        "star": 0,
+        "share": 0,
+        "starKeys": []
+      },
+      {
+        "program": "NavigateErrors.beni NavigateErrors.main",
+        "set": "corpus",
+        "ctors": 3,
+        "star": 2,
+        "share": 66.66666666666667,
+        "starKeys": [
+          "Done#1 · Ok",
+          "Done#1 · Err · BadUrl",
+          "Done#1 · Err · CrossOrigin",
+          "Done#1 · Err · Throttled",
+          "Changed"
+        ]
+      },
+      {
+        "program": "NavigatePush.beni NavigatePush.main",
+        "set": "corpus",
+        "ctors": 6,
+        "star": 0,
+        "share": 0,
+        "starKeys": []
+      },
+      {
+        "program": "OwnedByProgram.beni OwnedByProgram.main",
+        "set": "corpus",
+        "ctors": 2,
+        "star": 2,
+        "share": 100,
+        "starKeys": [
+          "Go",
+          "Kick"
+        ]
+      },
+      {
+        "program": "Policies.beni Policies.main",
+        "set": "corpus",
+        "ctors": 2,
+        "star": 1,
+        "share": 50,
+        "starKeys": [
+          "Run"
+        ]
+      },
+      {
+        "program": "RaceTwoServices.beni RaceTwoServices.main",
+        "set": "corpus",
+        "ctors": 2,
+        "star": 1,
+        "share": 50,
+        "starKeys": [
+          "Got · Ok",
+          "Got · Err"
+        ]
+      },
+      {
+        "program": "RandomValues.beni RandomValues.main",
+        "set": "corpus",
+        "ctors": 3,
+        "star": 2,
+        "share": 66.66666666666667,
+        "starKeys": [
+          "Rolled",
+          "Draw"
+        ]
+      },
+      {
+        "program": "ReentrantSend.beni ReentrantSend.main",
+        "set": "corpus",
+        "ctors": 4,
+        "star": 0,
+        "share": 0,
+        "starKeys": []
+      },
+      {
+        "program": "RetryRequest.beni RetryRequest.main",
+        "set": "corpus",
+        "ctors": 1,
+        "star": 0,
+        "share": 0,
+        "starKeys": []
+      },
+      {
+        "program": "Router.beni Router.main",
+        "set": "corpus",
+        "ctors": 3,
+        "star": 0,
+        "share": 0,
+        "starKeys": []
+      },
+      {
+        "program": "Routes.beni Routes.main",
+        "set": "corpus",
+        "ctors": 3,
+        "star": 0,
+        "share": 0,
+        "starKeys": []
+      },
+      {
+        "program": "SettlesManyFibers.beni SettlesManyFibers.main",
+        "set": "corpus",
+        "ctors": 2,
+        "star": 1,
+        "share": 50,
+        "starKeys": [
+          "Done"
+        ]
+      },
+      {
+        "program": "SleepBeyondTimerLimit.beni SleepBeyondTimerLimit.main",
+        "set": "corpus",
+        "ctors": 1,
+        "star": 1,
+        "share": 100,
+        "starKeys": [
+          "(any)"
+        ]
+      },
+      {
+        "program": "StorageBasics.beni StorageBasics.main",
+        "set": "corpus",
+        "ctors": 3,
+        "star": 3,
+        "share": 100,
+        "starKeys": [
+          "Save",
+          "Forget",
+          "SaveSession"
+        ]
+      },
+      {
+        "program": "StorageFaults Main.main",
+        "set": "corpus",
+        "ctors": 7,
+        "star": 5,
+        "share": 71.42857142857143,
+        "starKeys": [
+          "Quota",
+          "Blocked",
+          "Broken",
+          "Inc",
+          "NotSaved · QuotaExceeded",
+          "NotSaved · Unavailable"
+        ]
+      },
+      {
+        "program": "SubscriptionTapAppend.beni SubscriptionTapAppend.main",
+        "set": "corpus",
+        "ctors": 1,
+        "star": 0,
+        "share": 0,
+        "starKeys": []
+      },
+      {
+        "program": "SubscriptionTapFold.beni SubscriptionTapFold.main",
+        "set": "corpus",
+        "ctors": 1,
+        "star": 0,
+        "share": 0,
+        "starKeys": []
+      },
+      {
+        "program": "SyncCommandOrder.beni SyncCommandOrder.main",
+        "set": "corpus",
+        "ctors": 2,
+        "star": 1,
+        "share": 50,
+        "starKeys": [
+          "Sent#0 · True",
+          "Sent#0 · False"
+        ]
+      },
+      {
+        "program": "SyncKeyedPolicies.beni SyncKeyedPolicies.main",
+        "set": "corpus",
+        "ctors": 5,
+        "star": 4,
+        "share": 80,
+        "starKeys": [
+          "Twice#1 · Restart · True",
+          "Twice#1 · Restart · False",
+          "Twice#1 · Ignore · True",
+          "Twice#1 · Ignore · False",
+          "Twice#1 · Queue · True",
+          "Twice#1 · Queue · False",
+          "Twice#1 · Concurrent · True",
+          "Twice#1 · Concurrent · False",
+          "Cancelled · True",
+          "Cancelled · False",
+          "Sleep",
+          "Replace · True",
+          "Replace · False"
+        ]
+      },
+      {
+        "program": "SyncSpawnOwned.beni SyncSpawnOwned.main",
+        "set": "corpus",
+        "ctors": 2,
+        "star": 0,
+        "share": 0,
+        "starKeys": []
+      },
+      {
+        "program": "TimeoutAroundRequest.beni TimeoutAroundRequest.main",
+        "set": "corpus",
+        "ctors": 1,
+        "star": 1,
+        "share": 100,
+        "starKeys": [
+          "Got · Nothing",
+          "Got · Just · Ok",
+          "Got · Just · Err"
+        ]
+      },
+      {
+        "program": "TimerTurn.beni TimerTurn.main",
+        "set": "corpus",
+        "ctors": 2,
+        "star": 2,
+        "share": 100,
+        "starKeys": [
+          "Start",
+          "Woke"
+        ]
+      },
+      {
+        "program": "TodoMVC.beni TodoMVC.main",
+        "set": "corpus",
+        "ctors": 11,
+        "star": 0,
+        "share": 0,
+        "starKeys": []
+      },
+      {
+        "program": "TupleKeyRestart.beni TupleKeyRestart.main",
+        "set": "corpus",
+        "ctors": 2,
+        "star": 2,
+        "share": 100,
+        "starKeys": [
+          "ByTuple",
+          "ByRecord"
+        ]
+      },
+      {
+        "program": "TwoPrograms Main.main[0]",
+        "set": "corpus",
+        "ctors": 3,
+        "star": 0,
+        "share": 0,
+        "starKeys": []
+      },
+      {
+        "program": "TwoPrograms Main.main[1]",
+        "set": "corpus",
+        "ctors": 1,
+        "star": 1,
+        "share": 100,
+        "starKeys": [
+          "(any)"
+        ]
+      },
+      {
+        "program": "TypedInput.beni TypedInput.main",
+        "set": "corpus",
+        "ctors": 1,
+        "star": 0,
+        "share": 0,
+        "starKeys": []
+      },
+      {
+        "program": "TypedKeys Main.main",
+        "set": "corpus",
+        "ctors": 5,
+        "star": 0,
+        "share": 0,
+        "starKeys": []
+      },
+      {
+        "program": "UrlAddress.beni UrlAddress.main",
+        "set": "corpus",
+        "ctors": 1,
+        "star": 1,
+        "share": 100,
+        "starKeys": [
+          "(any)"
+        ]
+      },
+      {
+        "program": "ValueCommands.beni ValueCommands.main",
+        "set": "corpus",
+        "ctors": 6,
+        "star": 0,
+        "share": 0,
+        "starKeys": []
+      },
+      {
+        "program": "ValueKeyRestart.beni ValueKeyRestart.main",
+        "set": "corpus",
+        "ctors": 3,
+        "star": 3,
+        "share": 100,
+        "starKeys": [
+          "BySet",
+          "ByDict",
+          "ByBag"
+        ]
+      },
+      {
+        "program": "ValuePath Main.main",
+        "set": "corpus",
+        "ctors": 7,
+        "star": 0,
+        "share": 0,
+        "starKeys": []
+      },
+      {
+        "program": "WindowEvents.beni WindowEvents.main",
+        "set": "corpus",
+        "ctors": 3,
+        "star": 0,
+        "share": 0,
+        "starKeys": []
+      },
+      {
+        "program": "bench/ui/apps/beni Main.main",
+        "set": "table",
+        "ctors": 8,
+        "star": 0,
+        "share": 0,
+        "starKeys": []
+      },
+      {
+        "program": "bench/todomvc/apps/beni NoEditing.main",
+        "set": "todomvc",
+        "ctors": 8,
+        "star": 0,
+        "share": 0,
+        "starKeys": []
+      },
+      {
+        "program": "bench/todomvc/apps/beni NoRouting.main",
+        "set": "todomvc",
+        "ctors": 12,
+        "star": 0,
+        "share": 0,
+        "starKeys": []
+      },
+      {
+        "program": "bench/todomvc/apps/beni NoStorage.main",
+        "set": "todomvc",
+        "ctors": 11,
+        "star": 0,
+        "share": 0,
+        "starKeys": []
+      },
+      {
+        "program": "bench/todomvc/apps/beni Sandbox.main",
+        "set": "todomvc",
+        "ctors": 11,
+        "star": 0,
+        "share": 0,
+        "starKeys": []
+      },
+      {
+        "program": "examples/conduit/src Main.main",
+        "set": "conduit",
+        "ctors": 75,
+        "star": 1,
+        "share": 1.3333333333333333,
+        "starKeys": [
+          "ChangedUrl"
+        ]
+      }
+    ],
+    "over": [
+      {
+        "program": "AnimationFrameStops.beni AnimationFrameStops.main",
+        "set": "corpus",
+        "ctors": 1,
+        "star": 1,
+        "share": 100,
+        "starKeys": [
+          "(any)"
+        ]
+      },
+      {
+        "program": "DefectAfterRender.beni DefectAfterRender.main",
+        "set": "corpus",
+        "ctors": 2,
+        "star": 2,
+        "share": 100,
+        "starKeys": [
+          "After",
+          "Inc"
+        ]
+      },
+      {
+        "program": "DefectEveryProgram.beni DefectEveryProgram.first",
+        "set": "corpus",
+        "ctors": 1,
+        "star": 1,
+        "share": 100,
+        "starKeys": [
+          "(any)"
+        ]
+      },
+      {
+        "program": "DefectEveryProgram.beni DefectEveryProgram.second",
+        "set": "corpus",
+        "ctors": 1,
+        "star": 1,
+        "share": 100,
+        "starKeys": [
+          "(any)"
+        ]
+      },
+      {
+        "program": "DefectInFiber.beni DefectInFiber.main",
+        "set": "corpus",
+        "ctors": 3,
+        "star": 3,
+        "share": 100,
+        "starKeys": [
+          "Go",
+          "Inc",
+          "Late"
+        ]
+      },
+      {
+        "program": "DefectInUpdate.beni DefectInUpdate.main",
+        "set": "corpus",
+        "ctors": 3,
+        "star": 1,
+        "share": 33.333333333333336,
+        "starKeys": [
+          "Boom"
+        ]
+      },
+      {
+        "program": "DefectInViewReleases.beni DefectInViewReleases.main",
+        "set": "corpus",
+        "ctors": 3,
+        "star": 1,
+        "share": 33.333333333333336,
+        "starKeys": [
+          "Break"
+        ]
+      },
+      {
+        "program": "DefectQueuedDropped.beni DefectQueuedDropped.main",
+        "set": "corpus",
+        "ctors": 3,
+        "star": 2,
+        "share": 66.66666666666667,
+        "starKeys": [
+          "Ping",
+          "Then"
+        ]
+      },
+      {
+        "program": "DefectReleaseRunning.beni DefectReleaseRunning.main",
+        "set": "corpus",
+        "ctors": 2,
+        "star": 2,
+        "share": 100,
+        "starKeys": [
+          "Go",
+          "Boom"
+        ]
+      },
+      {
+        "program": "DefectReleaseSuspends.beni DefectReleaseSuspends.main",
+        "set": "corpus",
+        "ctors": 2,
+        "star": 1,
+        "share": 50,
+        "starKeys": [
+          "Boom"
+        ]
+      },
+      {
+        "program": "DefectReleaseThrows.beni DefectReleaseThrows.main",
+        "set": "corpus",
+        "ctors": 2,
+        "star": 1,
+        "share": 50,
+        "starKeys": [
+          "Boom"
+        ]
+      },
+      {
+        "program": "DefectReleasesHost.beni DefectReleasesHost.main",
+        "set": "corpus",
+        "ctors": 6,
+        "star": 1,
+        "share": 16.666666666666668,
+        "starKeys": [
+          "Boom"
+        ]
+      },
+      {
+        "program": "DefectRunsReleases.beni DefectRunsReleases.main",
+        "set": "corpus",
+        "ctors": 2,
+        "star": 2,
+        "share": 100,
+        "starKeys": [
+          "Go",
+          "Late"
+        ]
+      },
+      {
+        "program": "DirectEvents.beni DirectEvents.main",
+        "set": "corpus",
+        "ctors": 2,
+        "star": 2,
+        "share": 100,
+        "starKeys": [
+          "Saw",
+          "Stop"
+        ]
+      },
+      {
+        "program": "DocumentTitle.beni DocumentTitle.main",
+        "set": "corpus",
+        "ctors": 1,
+        "star": 1,
+        "share": 100,
+        "starKeys": [
+          "(any)"
+        ]
+      },
+      {
+        "program": "FlushLatched.beni FlushLatched.main",
+        "set": "corpus",
+        "ctors": 3,
+        "star": 2,
+        "share": 66.66666666666667,
+        "starKeys": [
+          "FromUpdate",
+          "Bump"
+        ]
+      },
+      {
+        "program": "HttpCancel.beni HttpCancel.main",
+        "set": "corpus",
+        "ctors": 3,
+        "star": 1,
+        "share": 33.333333333333336,
+        "starKeys": [
+          "Found#1 · Ok",
+          "Found#1 · Err"
+        ]
+      },
+      {
+        "program": "HttpDefect Main.main",
+        "set": "corpus",
+        "ctors": 4,
+        "star": 2,
+        "share": 50,
+        "starKeys": [
+          "Got · Ok",
+          "Got · Err · NetworkError",
+          "Got · Err · _",
+          "Inc"
+        ]
+      },
+      {
+        "program": "HttpFailures.beni HttpFailures.main",
+        "set": "corpus",
+        "ctors": 2,
+        "star": 1,
+        "share": 50,
+        "starKeys": [
+          "Got#1 · Ok",
+          "Got#1 · Err · BadUrl",
+          "Got#1 · Err · BadRequest",
+          "Got#1 · Err · Timeout",
+          "Got#1 · Err · NetworkError",
+          "Got#1 · Err · BadStatus",
+          "Got#1 · Err · BadBody"
+        ]
+      },
+      {
+        "program": "HttpJson.beni HttpJson.main",
+        "set": "corpus",
+        "ctors": 2,
+        "star": 1,
+        "share": 50,
+        "starKeys": [
+          "Got"
+        ]
+      },
+      {
+        "program": "HttpJsonBody.beni HttpJsonBody.main",
+        "set": "corpus",
+        "ctors": 2,
+        "star": 1,
+        "share": 50,
+        "starKeys": [
+          "Got"
+        ]
+      },
+      {
+        "program": "HttpMultipart.beni HttpMultipart.main",
+        "set": "corpus",
+        "ctors": 2,
+        "star": 1,
+        "share": 50,
+        "starKeys": [
+          "Got · Ok",
+          "Got · Err · BadRequest · MultipartContentType",
+          "Got · Err · BadRequest · _",
+          "Got · Err · _"
+        ]
+      },
+      {
+        "program": "HttpProgress.beni HttpProgress.main",
+        "set": "corpus",
+        "ctors": 3,
+        "star": 2,
+        "share": 66.66666666666667,
+        "starKeys": [
+          "Progressed · Sending",
+          "Progressed · Receiving",
+          "Done · Ok",
+          "Done · Err"
+        ]
+      },
+      {
+        "program": "HttpRequestShape.beni HttpRequestShape.main",
+        "set": "corpus",
+        "ctors": 2,
+        "star": 1,
+        "share": 50,
+        "starKeys": [
+          "Got#1 · Ok",
+          "Got#1 · Err"
+        ]
+      },
+      {
+        "program": "HttpResponseMeta.beni HttpResponseMeta.main",
+        "set": "corpus",
+        "ctors": 2,
+        "star": 1,
+        "share": 50,
+        "starKeys": [
+          "Got"
+        ]
+      },
+      {
+        "program": "HttpResults.beni HttpResults.main",
+        "set": "corpus",
+        "ctors": 2,
+        "star": 1,
+        "share": 50,
+        "starKeys": [
+          "Got#1 · Ok",
+          "Got#1 · Err · BadUrl",
+          "Got#1 · Err · _"
+        ]
+      },
+      {
+        "program": "HttpTrackInit.beni HttpTrackInit.main",
+        "set": "corpus",
+        "ctors": 3,
+        "star": 2,
+        "share": 66.66666666666667,
+        "starKeys": [
+          "Progressed#1 · Sending",
+          "Progressed#1 · Receiving",
+          "Answered#1 · Ok",
+          "Answered#1 · Err · Timeout",
+          "Answered#1 · Err · _"
+        ]
+      },
+      {
+        "program": "LinkGuard.beni LinkGuard.main",
+        "set": "corpus",
+        "ctors": 2,
+        "star": 2,
+        "share": 100,
+        "starKeys": [
+          "Requested · Internal",
+          "Requested · External",
+          "Handled"
+        ]
+      },
+      {
+        "program": "LinkOutsideMount.beni LinkOutsideMount.mounted",
+        "set": "corpus",
+        "ctors": 1,
+        "star": 1,
+        "share": 100,
+        "starKeys": [
+          "Internal",
+          "External"
+        ]
+      },
+      {
+        "program": "ListKeyRestart.beni ListKeyRestart.main",
+        "set": "corpus",
+        "ctors": 2,
+        "star": 2,
+        "share": 100,
+        "starKeys": [
+          "Short",
+          "Long"
+        ]
+      },
+      {
+        "program": "LogLevels.beni LogLevels.main",
+        "set": "corpus",
+        "ctors": 1,
+        "star": 1,
+        "share": 100,
+        "starKeys": [
+          "(any)"
+        ]
+      },
+      {
+        "program": "MountedPrograms.beni MountedPrograms.shell",
+        "set": "corpus",
+        "ctors": 1,
+        "star": 1,
+        "share": 100,
+        "starKeys": [
+          "(any)"
+        ]
+      },
+      {
+        "program": "MountedPrograms.beni MountedPrograms.counter",
+        "set": "corpus",
+        "ctors": 1,
+        "star": 1,
+        "share": 100,
+        "starKeys": [
+          "(any)"
+        ]
+      },
+      {
+        "program": "MountedPrograms.beni MountedPrograms.namer",
+        "set": "corpus",
+        "ctors": 1,
+        "star": 1,
+        "share": 100,
+        "starKeys": [
+          "(any)"
+        ]
+      },
+      {
+        "program": "NavigateErrors.beni NavigateErrors.main",
+        "set": "corpus",
+        "ctors": 3,
+        "star": 2,
+        "share": 66.66666666666667,
+        "starKeys": [
+          "Done#1 · Ok",
+          "Done#1 · Err · BadUrl",
+          "Done#1 · Err · CrossOrigin",
+          "Done#1 · Err · Throttled",
+          "Changed"
+        ]
+      },
+      {
+        "program": "OwnedByProgram.beni OwnedByProgram.main",
+        "set": "corpus",
+        "ctors": 2,
+        "star": 2,
+        "share": 100,
+        "starKeys": [
+          "Go",
+          "Kick"
+        ]
+      },
+      {
+        "program": "Policies.beni Policies.main",
+        "set": "corpus",
+        "ctors": 2,
+        "star": 1,
+        "share": 50,
+        "starKeys": [
+          "Run"
+        ]
+      },
+      {
+        "program": "RaceTwoServices.beni RaceTwoServices.main",
+        "set": "corpus",
+        "ctors": 2,
+        "star": 1,
+        "share": 50,
+        "starKeys": [
+          "Got · Ok",
+          "Got · Err"
+        ]
+      },
+      {
+        "program": "RandomValues.beni RandomValues.main",
+        "set": "corpus",
+        "ctors": 3,
+        "star": 2,
+        "share": 66.66666666666667,
+        "starKeys": [
+          "Rolled",
+          "Draw"
+        ]
+      },
+      {
+        "program": "SettlesManyFibers.beni SettlesManyFibers.main",
+        "set": "corpus",
+        "ctors": 2,
+        "star": 1,
+        "share": 50,
+        "starKeys": [
+          "Done"
+        ]
+      },
+      {
+        "program": "SleepBeyondTimerLimit.beni SleepBeyondTimerLimit.main",
+        "set": "corpus",
+        "ctors": 1,
+        "star": 1,
+        "share": 100,
+        "starKeys": [
+          "(any)"
+        ]
+      },
+      {
+        "program": "StorageBasics.beni StorageBasics.main",
+        "set": "corpus",
+        "ctors": 3,
+        "star": 3,
+        "share": 100,
+        "starKeys": [
+          "Save",
+          "Forget",
+          "SaveSession"
+        ]
+      },
+      {
+        "program": "StorageFaults Main.main",
+        "set": "corpus",
+        "ctors": 7,
+        "star": 5,
+        "share": 71.42857142857143,
+        "starKeys": [
+          "Quota",
+          "Blocked",
+          "Broken",
+          "Inc",
+          "NotSaved · QuotaExceeded",
+          "NotSaved · Unavailable"
+        ]
+      },
+      {
+        "program": "SyncCommandOrder.beni SyncCommandOrder.main",
+        "set": "corpus",
+        "ctors": 2,
+        "star": 1,
+        "share": 50,
+        "starKeys": [
+          "Sent#0 · True",
+          "Sent#0 · False"
+        ]
+      },
+      {
+        "program": "SyncKeyedPolicies.beni SyncKeyedPolicies.main",
+        "set": "corpus",
+        "ctors": 5,
+        "star": 4,
+        "share": 80,
+        "starKeys": [
+          "Twice#1 · Restart · True",
+          "Twice#1 · Restart · False",
+          "Twice#1 · Ignore · True",
+          "Twice#1 · Ignore · False",
+          "Twice#1 · Queue · True",
+          "Twice#1 · Queue · False",
+          "Twice#1 · Concurrent · True",
+          "Twice#1 · Concurrent · False",
+          "Cancelled · True",
+          "Cancelled · False",
+          "Sleep",
+          "Replace · True",
+          "Replace · False"
+        ]
+      },
+      {
+        "program": "TimeoutAroundRequest.beni TimeoutAroundRequest.main",
+        "set": "corpus",
+        "ctors": 1,
+        "star": 1,
+        "share": 100,
+        "starKeys": [
+          "Got · Nothing",
+          "Got · Just · Ok",
+          "Got · Just · Err"
+        ]
+      },
+      {
+        "program": "TimerTurn.beni TimerTurn.main",
+        "set": "corpus",
+        "ctors": 2,
+        "star": 2,
+        "share": 100,
+        "starKeys": [
+          "Start",
+          "Woke"
+        ]
+      },
+      {
+        "program": "TupleKeyRestart.beni TupleKeyRestart.main",
+        "set": "corpus",
+        "ctors": 2,
+        "star": 2,
+        "share": 100,
+        "starKeys": [
+          "ByTuple",
+          "ByRecord"
+        ]
+      },
+      {
+        "program": "TwoPrograms Main.main[1]",
+        "set": "corpus",
+        "ctors": 1,
+        "star": 1,
+        "share": 100,
+        "starKeys": [
+          "(any)"
+        ]
+      },
+      {
+        "program": "UrlAddress.beni UrlAddress.main",
+        "set": "corpus",
+        "ctors": 1,
+        "star": 1,
+        "share": 100,
+        "starKeys": [
+          "(any)"
+        ]
+      },
+      {
+        "program": "ValueKeyRestart.beni ValueKeyRestart.main",
+        "set": "corpus",
+        "ctors": 3,
+        "star": 3,
+        "share": 100,
+        "starKeys": [
+          "BySet",
+          "ByDict",
+          "ByBag"
+        ]
+      }
+    ],
+    "fires": true,
+    "conduit": {
+      "program": "examples/conduit/src Main.main",
+      "set": "conduit",
+      "ctors": 75,
+      "star": 1,
+      "share": 1.3333333333333333,
+      "starKeys": [
+        "ChangedUrl"
+      ]
+    }
+  },
+  "dynamic": {
+    "scripts": [
+      {
+        "script": "ConduitReader",
+        "dispatches": 18,
+        "star": 2,
+        "unmatched": 0,
+        "share": 11.11111111111111,
+        "keys": {
+          "ChangedUrl": 2,
+          "GotHomeMsg · CompletedFeedLoad · Ok": 2,
+          "GotLoginMsg · EnteredEmail": 1,
+          "GotLoginMsg · EnteredPassword": 1,
+          "GotLoginMsg · SubmittedForm": 1,
+          "GotLoginMsg · CompletedLogin · Ok": 1,
+          "GotHomeMsg · CompletedTagsLoad · Ok": 1,
+          "GotHomeMsg · ClickedTab": 1,
+          "ClickedLink · Internal": 1,
+          "GotArticleMsg · CompletedLoadArticle · Ok": 1,
+          "GotArticleMsg · CompletedLoadComments · Ok": 1,
+          "GotArticleMsg · ClickedFavorite": 1,
+          "GotArticleMsg · CompletedFavoriteChange · Ok": 1,
+          "GotArticleMsg · EnteredCommentText": 1,
+          "GotArticleMsg · ClickedPostComment": 1,
+          "GotArticleMsg · CompletedPostComment · Ok": 1
+        }
+      },
+      {
+        "script": "ConduitEditor",
+        "dispatches": 12,
+        "star": 1,
+        "unmatched": 0,
+        "share": 8.333333333333334,
+        "keys": {
+          "GotEditorMsg · EnteredTitle": 3,
+          "GotEditorMsg · ClickedSave": 3,
+          "GotEditorMsg · CompletedArticleLoad#1 · Ok": 1,
+          "GotEditorMsg · CompletedEdit · Err": 1,
+          "GotEditorMsg · CompletedEdit · Ok": 1,
+          "ChangedUrl": 1,
+          "GotArticleMsg · CompletedLoadArticle · Ok": 1,
+          "GotArticleMsg · CompletedLoadComments · Ok": 1
+        }
+      },
+      {
+        "script": "ConduitTour",
+        "dispatches": 32,
+        "star": 6,
+        "unmatched": 0,
+        "share": 18.75,
+        "keys": {
+          "ChangedUrl": 6,
+          "GotHomeMsg · CompletedFeedLoad · Ok": 4,
+          "ClickedLink · Internal": 4,
+          "GotHomeMsg · CompletedTagsLoad · Ok": 3,
+          "GotProfileMsg · CompletedFeedLoad#1 · Ok": 2,
+          "GotRegisterMsg · SubmittedForm": 2,
+          "GotHomeMsg · ClickedFeedPage": 1,
+          "GotHomeMsg · ClickedTag": 1,
+          "GotProfileMsg · CompletedAuthorLoad#1 · Ok": 1,
+          "GotProfileMsg · ClickedTab": 1,
+          "GotSettingsMsg · CompletedFormLoad · Ok": 1,
+          "GotSettingsMsg · EnteredBio": 1,
+          "GotSettingsMsg · SubmittedForm": 1,
+          "GotSettingsMsg · CompletedSave · Ok": 1,
+          "GotRegisterMsg · EnteredUsername": 1,
+          "GotRegisterMsg · EnteredEmail": 1,
+          "GotRegisterMsg · EnteredPassword": 1
+        }
+      }
+    ],
+    "dispatches": 62,
+    "star": 9,
+    "share": 14.516129032258064,
+    "fires": true
+  },
+  "roots": {
+    "rows": [
+      {
+        "program": "AfterRenderFocus.beni AfterRenderFocus.main",
+        "set": "corpus",
+        "sites": 5,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "AnimationFrameStops.beni AnimationFrameStops.main",
+        "set": "corpus",
+        "sites": 1,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "AnimationFrames.beni AnimationFrames.main",
+        "set": "corpus",
+        "sites": 1,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "ApiItems.beni ApiItems.main",
+        "set": "corpus",
+        "sites": 3,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "ApiLogin.beni ApiLogin.main",
+        "set": "corpus",
+        "sites": 2,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "ApplicationNotHttp.beni ApplicationNotHttp.main",
+        "set": "corpus",
+        "sites": 1,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "ClockStops.beni ClockStops.main",
+        "set": "corpus",
+        "sites": 1,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "Counters Main.main",
+        "set": "corpus",
+        "sites": 2,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "DebouncedSearch.beni DebouncedSearch.main",
+        "set": "corpus",
+        "sites": 2,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "DefectAfterRender.beni DefectAfterRender.main",
+        "set": "corpus",
+        "sites": 1,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "DefectEveryProgram.beni DefectEveryProgram.first",
+        "set": "corpus",
+        "sites": 1,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "DefectEveryProgram.beni DefectEveryProgram.second",
+        "set": "corpus",
+        "sites": 1,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "DefectInFiber.beni DefectInFiber.main",
+        "set": "corpus",
+        "sites": 1,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "DefectInRender.beni DefectInRender.main",
+        "set": "corpus",
+        "sites": 1,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "DefectInTurnRender.beni DefectInTurnRender.main",
+        "set": "corpus",
+        "sites": 1,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "DefectInUpdate.beni DefectInUpdate.main",
+        "set": "corpus",
+        "sites": 1,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "DefectInViewReleases.beni DefectInViewReleases.main",
+        "set": "corpus",
+        "sites": 1,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "DefectQueuedDropped.beni DefectQueuedDropped.main",
+        "set": "corpus",
+        "sites": 1,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "DefectReleaseRunning.beni DefectReleaseRunning.main",
+        "set": "corpus",
+        "sites": 1,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "DefectReleaseSuspends.beni DefectReleaseSuspends.main",
+        "set": "corpus",
+        "sites": 1,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "DefectReleaseThrows.beni DefectReleaseThrows.main",
+        "set": "corpus",
+        "sites": 1,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "DefectReleasesHost.beni DefectReleasesHost.main",
+        "set": "corpus",
+        "sites": 2,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "DefectRunsReleases.beni DefectRunsReleases.main",
+        "set": "corpus",
+        "sites": 1,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "DirectEvents.beni DirectEvents.main",
+        "set": "corpus",
+        "sites": 2,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "DocumentTitle.beni DocumentTitle.main",
+        "set": "corpus",
+        "sites": 1,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "FlushLatched.beni FlushLatched.main",
+        "set": "corpus",
+        "sites": 1,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "FocusInFlush.beni FocusInFlush.main",
+        "set": "corpus",
+        "sites": 3,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "HttpCancel.beni HttpCancel.main",
+        "set": "corpus",
+        "sites": 2,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "HttpDefect Main.main",
+        "set": "corpus",
+        "sites": 2,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "HttpFailures.beni HttpFailures.main",
+        "set": "corpus",
+        "sites": 3,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "HttpJson.beni HttpJson.main",
+        "set": "corpus",
+        "sites": 3,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "HttpJsonBody.beni HttpJsonBody.main",
+        "set": "corpus",
+        "sites": 2,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "HttpMultipart.beni HttpMultipart.main",
+        "set": "corpus",
+        "sites": 2,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "HttpProgress.beni HttpProgress.main",
+        "set": "corpus",
+        "sites": 2,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "HttpRequestShape.beni HttpRequestShape.main",
+        "set": "corpus",
+        "sites": 3,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "HttpResponseMeta.beni HttpResponseMeta.main",
+        "set": "corpus",
+        "sites": 2,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "HttpResults.beni HttpResults.main",
+        "set": "corpus",
+        "sites": 2,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "HttpTrack.beni HttpTrack.main",
+        "set": "corpus",
+        "sites": 2,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "HttpTrackInit.beni HttpTrackInit.main",
+        "set": "corpus",
+        "sites": 2,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "KeyEvents.beni KeyEvents.main",
+        "set": "corpus",
+        "sites": 2,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "KeyOrder.beni KeyOrder.main",
+        "set": "corpus",
+        "sites": 1,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "KeySubscription.beni KeySubscription.main",
+        "set": "corpus",
+        "sites": 2,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "LatestTagger.beni LatestTagger.main",
+        "set": "corpus",
+        "sites": 2,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "LinkGuard.beni LinkGuard.main",
+        "set": "corpus",
+        "sites": 2,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "LinkOutsideMount.beni LinkOutsideMount.shell",
+        "set": "corpus",
+        "sites": 1,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "LinkOutsideMount.beni LinkOutsideMount.mounted",
+        "set": "corpus",
+        "sites": 2,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "ListKeyRestart.beni ListKeyRestart.main",
+        "set": "corpus",
+        "sites": 1,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "ListenerOrder.beni ListenerOrder.main",
+        "set": "corpus",
+        "sites": 2,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "LogLevels.beni LogLevels.main",
+        "set": "corpus",
+        "sites": 1,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "MountedPrograms.beni MountedPrograms.shell",
+        "set": "corpus",
+        "sites": 1,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "MountedPrograms.beni MountedPrograms.counter",
+        "set": "corpus",
+        "sites": 1,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "MountedPrograms.beni MountedPrograms.namer",
+        "set": "corpus",
+        "sites": 1,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "NavigateCommands.beni NavigateCommands.main",
+        "set": "corpus",
+        "sites": 2,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "NavigateErrors.beni NavigateErrors.main",
+        "set": "corpus",
+        "sites": 2,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "NavigatePush.beni NavigatePush.main",
+        "set": "corpus",
+        "sites": 2,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "OwnedByProgram.beni OwnedByProgram.main",
+        "set": "corpus",
+        "sites": 1,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "Policies.beni Policies.main",
+        "set": "corpus",
+        "sites": 1,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "RaceTwoServices.beni RaceTwoServices.main",
+        "set": "corpus",
+        "sites": 1,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "RandomValues.beni RandomValues.main",
+        "set": "corpus",
+        "sites": 2,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "ReentrantSend.beni ReentrantSend.main",
+        "set": "corpus",
+        "sites": 1,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "RetryRequest.beni RetryRequest.main",
+        "set": "corpus",
+        "sites": 1,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "Router.beni Router.main",
+        "set": "corpus",
+        "sites": 2,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "Routes.beni Routes.main",
+        "set": "corpus",
+        "sites": 5,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "SettlesManyFibers.beni SettlesManyFibers.main",
+        "set": "corpus",
+        "sites": 1,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "SleepBeyondTimerLimit.beni SleepBeyondTimerLimit.main",
+        "set": "corpus",
+        "sites": 1,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "StorageBasics.beni StorageBasics.main",
+        "set": "corpus",
+        "sites": 2,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "StorageFaults Main.main",
+        "set": "corpus",
+        "sites": 2,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "SubscriptionTapAppend.beni SubscriptionTapAppend.main",
+        "set": "corpus",
+        "sites": 1,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "SubscriptionTapFold.beni SubscriptionTapFold.main",
+        "set": "corpus",
+        "sites": 1,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "SyncCommandOrder.beni SyncCommandOrder.main",
+        "set": "corpus",
+        "sites": 1,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "SyncKeyedPolicies.beni SyncKeyedPolicies.main",
+        "set": "corpus",
+        "sites": 1,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "SyncSpawnOwned.beni SyncSpawnOwned.main",
+        "set": "corpus",
+        "sites": 1,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "TimeoutAroundRequest.beni TimeoutAroundRequest.main",
+        "set": "corpus",
+        "sites": 1,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "TimerTurn.beni TimerTurn.main",
+        "set": "corpus",
+        "sites": 1,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "TodoMVC.beni TodoMVC.main",
+        "set": "corpus",
+        "sites": 4,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "TupleKeyRestart.beni TupleKeyRestart.main",
+        "set": "corpus",
+        "sites": 1,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "TwoPrograms Main.main[0]",
+        "set": "corpus",
+        "sites": 1,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "TwoPrograms Main.main[1]",
+        "set": "corpus",
+        "sites": 1,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "TypedInput.beni TypedInput.main",
+        "set": "corpus",
+        "sites": 2,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "TypedKeys Main.main",
+        "set": "corpus",
+        "sites": 1,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "UrlAddress.beni UrlAddress.main",
+        "set": "corpus",
+        "sites": 3,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "ValueCommands.beni ValueCommands.main",
+        "set": "corpus",
+        "sites": 3,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "ValueKeyRestart.beni ValueKeyRestart.main",
+        "set": "corpus",
+        "sites": 1,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "ValuePath Main.main",
+        "set": "corpus",
+        "sites": 7,
+        "value": 2,
+        "share": 28.571428571428573
+      },
+      {
+        "program": "WindowEvents.beni WindowEvents.main",
+        "set": "corpus",
+        "sites": 1,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "bench/ui/apps/beni Main.main",
+        "set": "table",
+        "sites": 3,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "bench/todomvc/apps/beni NoEditing.main",
+        "set": "todomvc",
+        "sites": 2,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "bench/todomvc/apps/beni NoRouting.main",
+        "set": "todomvc",
+        "sites": 4,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "bench/todomvc/apps/beni NoStorage.main",
+        "set": "todomvc",
+        "sites": 4,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "bench/todomvc/apps/beni Sandbox.main",
+        "set": "todomvc",
+        "sites": 4,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "examples/conduit/src Main.main",
+        "set": "conduit",
+        "sites": 79,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "examples/conduit/src Pages.home",
+        "set": "page",
+        "sites": 32,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "examples/conduit/src Pages.feed",
+        "set": "page",
+        "sites": 17,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "examples/conduit/src Pages.article",
+        "set": "page",
+        "sites": 29,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "examples/conduit/src Pages.editor",
+        "set": "page",
+        "sites": 7,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "examples/conduit/src Pages.login",
+        "set": "page",
+        "sites": 3,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "examples/conduit/src Pages.register",
+        "set": "page",
+        "sites": 2,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "examples/conduit/src Pages.settings",
+        "set": "page",
+        "sites": 7,
+        "value": 0,
+        "share": 0
+      },
+      {
+        "program": "examples/conduit/src Pages.profile",
+        "set": "page",
+        "sites": 32,
+        "value": 0,
+        "share": 0
+      }
+    ],
+    "over": [
+      {
+        "program": "ValuePath Main.main",
+        "set": "corpus",
+        "sites": 7,
+        "value": 2,
+        "share": 28.571428571428573
+      }
+    ],
+    "fires": true
+  },
+  "pairs": {
+    "programs": 74,
+    "excluded": [
+      "AnimationFrameStops.beni AnimationFrameStops.main",
+      "DefectAfterRender.beni DefectAfterRender.main",
+      "DefectEveryProgram.beni DefectEveryProgram.first",
+      "DefectEveryProgram.beni DefectEveryProgram.second",
+      "DefectInFiber.beni DefectInFiber.main",
+      "DefectReleaseRunning.beni DefectReleaseRunning.main",
+      "DefectRunsReleases.beni DefectRunsReleases.main",
+      "DirectEvents.beni DirectEvents.main",
+      "DocumentTitle.beni DocumentTitle.main",
+      "LinkGuard.beni LinkGuard.main",
+      "LinkOutsideMount.beni LinkOutsideMount.mounted",
+      "ListKeyRestart.beni ListKeyRestart.main",
+      "LogLevels.beni LogLevels.main",
+      "MountedPrograms.beni MountedPrograms.shell",
+      "MountedPrograms.beni MountedPrograms.counter",
+      "MountedPrograms.beni MountedPrograms.namer",
+      "OwnedByProgram.beni OwnedByProgram.main",
+      "SleepBeyondTimerLimit.beni SleepBeyondTimerLimit.main",
+      "StorageBasics.beni StorageBasics.main",
+      "TimeoutAroundRequest.beni TimeoutAroundRequest.main",
+      "TimerTurn.beni TimerTurn.main",
+      "TupleKeyRestart.beni TupleKeyRestart.main",
+      "TwoPrograms Main.main[1]",
+      "UrlAddress.beni UrlAddress.main",
+      "ValueKeyRestart.beni ValueKeyRestart.main"
+    ],
+    "largest": {
+      "program": "examples/conduit/src Main.main",
+      "set": "conduit",
+      "keys": 96,
+      "pairs": 667,
+      "groups": 106,
+      "ratio": 6.947916666666667
+    },
+    "lowerMedian": {
+      "program": "DefectInRender.beni DefectInRender.main",
+      "set": "corpus",
+      "keys": 3,
+      "pairs": 1,
+      "groups": 1,
+      "ratio": 0.3333333333333333
+    },
+    "upperMedian": {
+      "program": "DefectInTurnRender.beni DefectInTurnRender.main",
+      "set": "corpus",
+      "keys": 3,
+      "pairs": 1,
+      "groups": 1,
+      "ratio": 0.3333333333333333
+    },
+    "limitLower": 0.6666666666666666,
+    "limitUpper": 0.6666666666666666,
+    "fires": true,
+    "slope": 1.547576838326847,
+    "series": [
+      {
+        "program": "ApplicationNotHttp.beni ApplicationNotHttp.main",
+        "set": "corpus",
+        "keys": 1,
+        "pairs": 0,
+        "groups": 1,
+        "ratio": 0
+      },
+      {
+        "program": "DefectQueuedDropped.beni DefectQueuedDropped.main",
+        "set": "corpus",
+        "keys": 1,
+        "pairs": 0,
+        "groups": 1,
+        "ratio": 0
+      },
+      {
+        "program": "DefectReleaseSuspends.beni DefectReleaseSuspends.main",
+        "set": "corpus",
+        "keys": 1,
+        "pairs": 0,
+        "groups": 0,
+        "ratio": 0
+      },
+      {
+        "program": "DefectReleaseThrows.beni DefectReleaseThrows.main",
+        "set": "corpus",
+        "keys": 1,
+        "pairs": 0,
+        "groups": 0,
+        "ratio": 0
+      },
+      {
+        "program": "FlushLatched.beni FlushLatched.main",
+        "set": "corpus",
+        "keys": 1,
+        "pairs": 0,
+        "groups": 0,
+        "ratio": 0
+      },
+      {
+        "program": "HttpFailures.beni HttpFailures.main",
+        "set": "corpus",
+        "keys": 1,
+        "pairs": 0,
+        "groups": 2,
+        "ratio": 0
+      },
+      {
+        "program": "HttpJson.beni HttpJson.main",
+        "set": "corpus",
+        "keys": 1,
+        "pairs": 0,
+        "groups": 2,
+        "ratio": 0
+      },
+      {
+        "program": "HttpJsonBody.beni HttpJsonBody.main",
+        "set": "corpus",
+        "keys": 1,
+        "pairs": 0,
+        "groups": 2,
+        "ratio": 0
+      },
+      {
+        "program": "HttpMultipart.beni HttpMultipart.main",
+        "set": "corpus",
+        "keys": 1,
+        "pairs": 0,
+        "groups": 2,
+        "ratio": 0
+      },
+      {
+        "program": "HttpProgress.beni HttpProgress.main",
+        "set": "corpus",
+        "keys": 1,
+        "pairs": 0,
+        "groups": 2,
+        "ratio": 0
+      },
+      {
+        "program": "HttpRequestShape.beni HttpRequestShape.main",
+        "set": "corpus",
+        "keys": 1,
+        "pairs": 0,
+        "groups": 2,
+        "ratio": 0
+      },
+      {
+        "program": "HttpResponseMeta.beni HttpResponseMeta.main",
+        "set": "corpus",
+        "keys": 1,
+        "pairs": 0,
+        "groups": 2,
+        "ratio": 0
+      },
+      {
+        "program": "HttpResults.beni HttpResults.main",
+        "set": "corpus",
+        "keys": 1,
+        "pairs": 0,
+        "groups": 2,
+        "ratio": 0
+      },
+      {
+        "program": "HttpTrackInit.beni HttpTrackInit.main",
+        "set": "corpus",
+        "keys": 1,
+        "pairs": 0,
+        "groups": 2,
+        "ratio": 0
+      },
+      {
+        "program": "KeyOrder.beni KeyOrder.main",
+        "set": "corpus",
+        "keys": 1,
+        "pairs": 1,
+        "groups": 1,
+        "ratio": 1
+      },
+      {
+        "program": "LinkOutsideMount.beni LinkOutsideMount.shell",
+        "set": "corpus",
+        "keys": 1,
+        "pairs": 0,
+        "groups": 0,
+        "ratio": 0
+      },
+      {
+        "program": "NavigateErrors.beni NavigateErrors.main",
+        "set": "corpus",
+        "keys": 1,
+        "pairs": 0,
+        "groups": 2,
+        "ratio": 0
+      },
+      {
+        "program": "Policies.beni Policies.main",
+        "set": "corpus",
+        "keys": 1,
+        "pairs": 0,
+        "groups": 0,
+        "ratio": 0
+      },
+      {
+        "program": "RaceTwoServices.beni RaceTwoServices.main",
+        "set": "corpus",
+        "keys": 1,
+        "pairs": 0,
+        "groups": 1,
+        "ratio": 0
+      },
+      {
+        "program": "RandomValues.beni RandomValues.main",
+        "set": "corpus",
+        "keys": 1,
+        "pairs": 0,
+        "groups": 1,
+        "ratio": 0
+      },
+      {
+        "program": "SettlesManyFibers.beni SettlesManyFibers.main",
+        "set": "corpus",
+        "keys": 1,
+        "pairs": 0,
+        "groups": 1,
+        "ratio": 0
+      },
+      {
+        "program": "SubscriptionTapAppend.beni SubscriptionTapAppend.main",
+        "set": "corpus",
+        "keys": 1,
+        "pairs": 0,
+        "groups": 1,
+        "ratio": 0
+      },
+      {
+        "program": "SubscriptionTapFold.beni SubscriptionTapFold.main",
+        "set": "corpus",
+        "keys": 1,
+        "pairs": 0,
+        "groups": 1,
+        "ratio": 0
+      },
+      {
+        "program": "SyncKeyedPolicies.beni SyncKeyedPolicies.main",
+        "set": "corpus",
+        "keys": 1,
+        "pairs": 0,
+        "groups": 0,
+        "ratio": 0
+      },
+      {
+        "program": "TypedInput.beni TypedInput.main",
+        "set": "corpus",
+        "keys": 1,
+        "pairs": 3,
+        "groups": 3,
+        "ratio": 3
+      },
+      {
+        "program": "ClockStops.beni ClockStops.main",
+        "set": "corpus",
+        "keys": 2,
+        "pairs": 1,
+        "groups": 1,
+        "ratio": 0.5
+      },
+      {
+        "program": "DebouncedSearch.beni DebouncedSearch.main",
+        "set": "corpus",
+        "keys": 2,
+        "pairs": 3,
+        "groups": 3,
+        "ratio": 1.5
+      },
+      {
+        "program": "DefectInUpdate.beni DefectInUpdate.main",
+        "set": "corpus",
+        "keys": 2,
+        "pairs": 2,
+        "groups": 2,
+        "ratio": 1
+      },
+      {
+        "program": "DefectInViewReleases.beni DefectInViewReleases.main",
+        "set": "corpus",
+        "keys": 2,
+        "pairs": 0,
+        "groups": 0,
+        "ratio": 0
+      },
+      {
+        "program": "FocusInFlush.beni FocusInFlush.main",
+        "set": "corpus",
+        "keys": 2,
+        "pairs": 3,
+        "groups": 2,
+        "ratio": 1.5
+      },
+      {
+        "program": "HttpCancel.beni HttpCancel.main",
+        "set": "corpus",
+        "keys": 2,
+        "pairs": 0,
+        "groups": 2,
+        "ratio": 0
+      },
+      {
+        "program": "HttpDefect Main.main",
+        "set": "corpus",
+        "keys": 2,
+        "pairs": 0,
+        "groups": 2,
+        "ratio": 0
+      },
+      {
+        "program": "KeySubscription.beni KeySubscription.main",
+        "set": "corpus",
+        "keys": 2,
+        "pairs": 2,
+        "groups": 2,
+        "ratio": 1
+      },
+      {
+        "program": "RetryRequest.beni RetryRequest.main",
+        "set": "corpus",
+        "keys": 2,
+        "pairs": 2,
+        "groups": 1,
+        "ratio": 1
+      },
+      {
+        "program": "StorageFaults Main.main",
+        "set": "corpus",
+        "keys": 2,
+        "pairs": 0,
+        "groups": 2,
+        "ratio": 0
+      },
+      {
+        "program": "SyncCommandOrder.beni SyncCommandOrder.main",
+        "set": "corpus",
+        "keys": 2,
+        "pairs": 0,
+        "groups": 1,
+        "ratio": 0
+      },
+      {
+        "program": "DefectInRender.beni DefectInRender.main",
+        "set": "corpus",
+        "keys": 3,
+        "pairs": 1,
+        "groups": 1,
+        "ratio": 0.3333333333333333
+      },
+      {
+        "program": "DefectInTurnRender.beni DefectInTurnRender.main",
+        "set": "corpus",
+        "keys": 3,
+        "pairs": 1,
+        "groups": 1,
+        "ratio": 0.3333333333333333
+      },
+      {
+        "program": "KeyEvents.beni KeyEvents.main",
+        "set": "corpus",
+        "keys": 3,
+        "pairs": 5,
+        "groups": 4,
+        "ratio": 1.6666666666666667
+      },
+      {
+        "program": "LatestTagger.beni LatestTagger.main",
+        "set": "corpus",
+        "keys": 3,
+        "pairs": 4,
+        "groups": 2,
+        "ratio": 1.3333333333333333
+      },
+      {
+        "program": "SyncSpawnOwned.beni SyncSpawnOwned.main",
+        "set": "corpus",
+        "keys": 3,
+        "pairs": 0,
+        "groups": 0,
+        "ratio": 0
+      },
+      {
+        "program": "TwoPrograms Main.main[0]",
+        "set": "corpus",
+        "keys": 3,
+        "pairs": 3,
+        "groups": 3,
+        "ratio": 1
+      },
+      {
+        "program": "WindowEvents.beni WindowEvents.main",
+        "set": "corpus",
+        "keys": 3,
+        "pairs": 2,
+        "groups": 2,
+        "ratio": 0.6666666666666666
+      },
+      {
+        "program": "AnimationFrames.beni AnimationFrames.main",
+        "set": "corpus",
+        "keys": 4,
+        "pairs": 4,
+        "groups": 4,
+        "ratio": 1
+      },
+      {
+        "program": "ApiItems.beni ApiItems.main",
+        "set": "corpus",
+        "keys": 4,
+        "pairs": 12,
+        "groups": 4,
+        "ratio": 3
+      },
+      {
+        "program": "Counters Main.main",
+        "set": "corpus",
+        "keys": 4,
+        "pairs": 12,
+        "groups": 4,
+        "ratio": 3
+      },
+      {
+        "program": "ReentrantSend.beni ReentrantSend.main",
+        "set": "corpus",
+        "keys": 4,
+        "pairs": 1,
+        "groups": 1,
+        "ratio": 0.25
+      },
+      {
+        "program": "Router.beni Router.main",
+        "set": "corpus",
+        "keys": 4,
+        "pairs": 5,
+        "groups": 3,
+        "ratio": 1.25
+      },
+      {
+        "program": "Routes.beni Routes.main",
+        "set": "corpus",
+        "keys": 4,
+        "pairs": 5,
+        "groups": 3,
+        "ratio": 1.25
+      },
+      {
+        "program": "AfterRenderFocus.beni AfterRenderFocus.main",
+        "set": "corpus",
+        "keys": 5,
+        "pairs": 3,
+        "groups": 3,
+        "ratio": 0.6
+      },
+      {
+        "program": "DefectReleasesHost.beni DefectReleasesHost.main",
+        "set": "corpus",
+        "keys": 5,
+        "pairs": 8,
+        "groups": 2,
+        "ratio": 1.6
+      },
+      {
+        "program": "TypedKeys Main.main",
+        "set": "corpus",
+        "keys": 5,
+        "pairs": 1,
+        "groups": 1,
+        "ratio": 0.2
+      },
+      {
+        "program": "ValueCommands.beni ValueCommands.main",
+        "set": "corpus",
+        "keys": 7,
+        "pairs": 8,
+        "groups": 4,
+        "ratio": 1.1428571428571428
+      },
+      {
+        "program": "ValuePath Main.main",
+        "set": "corpus",
+        "keys": 7,
+        "pairs": 22,
+        "groups": 15,
+        "ratio": 3.142857142857143
+      },
+      {
+        "program": "bench/ui/apps/beni Main.main",
+        "set": "table",
+        "keys": 8,
+        "pairs": 27,
+        "groups": 4,
+        "ratio": 3.375
+      },
+      {
+        "program": "ApiLogin.beni ApiLogin.main",
+        "set": "corpus",
+        "keys": 9,
+        "pairs": 16,
+        "groups": 2,
+        "ratio": 1.7777777777777777
+      },
+      {
+        "program": "bench/todomvc/apps/beni NoEditing.main",
+        "set": "todomvc",
+        "keys": 9,
+        "pairs": 28,
+        "groups": 6,
+        "ratio": 3.111111111111111
+      },
+      {
+        "program": "ListenerOrder.beni ListenerOrder.main",
+        "set": "corpus",
+        "keys": 9,
+        "pairs": 10,
+        "groups": 2,
+        "ratio": 1.1111111111111112
+      },
+      {
+        "program": "NavigateCommands.beni NavigateCommands.main",
+        "set": "corpus",
+        "keys": 9,
+        "pairs": 8,
+        "groups": 2,
+        "ratio": 0.8888888888888888
+      },
+      {
+        "program": "NavigatePush.beni NavigatePush.main",
+        "set": "corpus",
+        "keys": 9,
+        "pairs": 10,
+        "groups": 2,
+        "ratio": 1.1111111111111112
+      },
+      {
+        "program": "examples/conduit/src Pages.feed",
+        "set": "page",
+        "keys": 10,
+        "pairs": 40,
+        "groups": 22,
+        "ratio": 4
+      },
+      {
+        "program": "bench/todomvc/apps/beni Sandbox.main",
+        "set": "todomvc",
+        "keys": 11,
+        "pairs": 47,
+        "groups": 8,
+        "ratio": 4.2727272727272725
+      },
+      {
+        "program": "examples/conduit/src Pages.login",
+        "set": "page",
+        "keys": 11,
+        "pairs": 23,
+        "groups": 5,
+        "ratio": 2.090909090909091
+      },
+      {
+        "program": "bench/todomvc/apps/beni NoRouting.main",
+        "set": "todomvc",
+        "keys": 12,
+        "pairs": 47,
+        "groups": 8,
+        "ratio": 3.9166666666666665
+      },
+      {
+        "program": "bench/todomvc/apps/beni NoStorage.main",
+        "set": "todomvc",
+        "keys": 12,
+        "pairs": 51,
+        "groups": 8,
+        "ratio": 4.25
+      },
+      {
+        "program": "examples/conduit/src Pages.register",
+        "set": "page",
+        "keys": 12,
+        "pairs": 17,
+        "groups": 5,
+        "ratio": 1.4166666666666667
+      },
+      {
+        "program": "TodoMVC.beni TodoMVC.main",
+        "set": "corpus",
+        "keys": 12,
+        "pairs": 51,
+        "groups": 8,
+        "ratio": 4.25
+      },
+      {
+        "program": "examples/conduit/src Pages.editor",
+        "set": "page",
+        "keys": 13,
+        "pairs": 50,
+        "groups": 7,
+        "ratio": 3.8461538461538463
+      },
+      {
+        "program": "examples/conduit/src Pages.home",
+        "set": "page",
+        "keys": 13,
+        "pairs": 135,
+        "groups": 35,
+        "ratio": 10.384615384615385
+      },
+      {
+        "program": "HttpTrack.beni HttpTrack.main",
+        "set": "corpus",
+        "keys": 14,
+        "pairs": 10,
+        "groups": 2,
+        "ratio": 0.7142857142857143
+      },
+      {
+        "program": "examples/conduit/src Pages.settings",
+        "set": "page",
+        "keys": 17,
+        "pairs": 43,
+        "groups": 8,
+        "ratio": 2.5294117647058822
+      },
+      {
+        "program": "examples/conduit/src Pages.profile",
+        "set": "page",
+        "keys": 22,
+        "pairs": 174,
+        "groups": 39,
+        "ratio": 7.909090909090909
+      },
+      {
+        "program": "examples/conduit/src Pages.article",
+        "set": "page",
+        "keys": 50,
+        "pairs": 285,
+        "groups": 36,
+        "ratio": 5.7
+      },
+      {
+        "program": "examples/conduit/src Main.main",
+        "set": "conduit",
+        "keys": 96,
+        "pairs": 667,
+        "groups": 106,
+        "ratio": 6.947916666666667
+      }
+    ]
+  },
+  "trie": {
+    "rows": [
+      {
+        "program": "table",
+        "ships": [
+          "fromPlain",
+          "triePushed"
+        ],
+        "bytes": 5365
+      },
+      {
+        "program": "table-no-prepend",
+        "ships": [
+          "fromPlain",
+          "triePushed"
+        ],
+        "bytes": 5401
+      },
+      {
+        "program": "table-no-writer",
+        "ships": [],
+        "bytes": 4742
+      },
+      {
+        "program": "set-only",
+        "ships": [
+          "fromPlain",
+          "trieSet"
+        ],
+        "bytes": 2310
+      },
+      {
+        "program": "set-by-indexedMap",
+        "ships": [],
+        "bytes": 1729
+      }
+    ],
+    "fires": true
+  },
+  "carriers": [
+    {
+      "program": "AfterRenderFocus.beni AfterRenderFocus.main",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "AnimationFrameStops.beni AnimationFrameStops.main",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "AnimationFrames.beni AnimationFrames.main",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "ApiItems.beni ApiItems.main",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "ApiLogin.beni ApiLogin.main",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "ApplicationNotHttp.beni ApplicationNotHttp.main",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "ClockStops.beni ClockStops.main",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "Counters Main.main",
+      "carriers": "no"
+    },
+    {
+      "program": "DebouncedSearch.beni DebouncedSearch.main",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "DefectAfterRender.beni DefectAfterRender.main",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "DefectEveryProgram.beni DefectEveryProgram.first",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "DefectEveryProgram.beni DefectEveryProgram.second",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "DefectInFiber.beni DefectInFiber.main",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "DefectInRender.beni DefectInRender.main",
+      "carriers": "no"
+    },
+    {
+      "program": "DefectInTurnRender.beni DefectInTurnRender.main",
+      "carriers": "no"
+    },
+    {
+      "program": "DefectInUpdate.beni DefectInUpdate.main",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "DefectInViewReleases.beni DefectInViewReleases.main",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "DefectQueuedDropped.beni DefectQueuedDropped.main",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "DefectReleaseRunning.beni DefectReleaseRunning.main",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "DefectReleaseSuspends.beni DefectReleaseSuspends.main",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "DefectReleaseThrows.beni DefectReleaseThrows.main",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "DefectReleasesHost.beni DefectReleasesHost.main",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "DefectRunsReleases.beni DefectRunsReleases.main",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "DirectEvents.beni DirectEvents.main",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "DocumentTitle.beni DocumentTitle.main",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "FlushLatched.beni FlushLatched.main",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "FocusInFlush.beni FocusInFlush.main",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "HttpCancel.beni HttpCancel.main",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "HttpDefect Main.main",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "HttpFailures.beni HttpFailures.main",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "HttpJson.beni HttpJson.main",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "HttpJsonBody.beni HttpJsonBody.main",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "HttpMultipart.beni HttpMultipart.main",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "HttpProgress.beni HttpProgress.main",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "HttpRequestShape.beni HttpRequestShape.main",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "HttpResponseMeta.beni HttpResponseMeta.main",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "HttpResults.beni HttpResults.main",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "HttpTrack.beni HttpTrack.main",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "HttpTrackInit.beni HttpTrackInit.main",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "KeyEvents.beni KeyEvents.main",
+      "carriers": "no"
+    },
+    {
+      "program": "KeyOrder.beni KeyOrder.main",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "KeySubscription.beni KeySubscription.main",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "LatestTagger.beni LatestTagger.main",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "LinkGuard.beni LinkGuard.main",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "LinkOutsideMount.beni LinkOutsideMount.shell",
+      "carriers": "no"
+    },
+    {
+      "program": "LinkOutsideMount.beni LinkOutsideMount.mounted",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "ListKeyRestart.beni ListKeyRestart.main",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "ListenerOrder.beni ListenerOrder.main",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "LogLevels.beni LogLevels.main",
+      "carriers": "no"
+    },
+    {
+      "program": "MountedPrograms.beni MountedPrograms.shell",
+      "carriers": "no"
+    },
+    {
+      "program": "MountedPrograms.beni MountedPrograms.counter",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "MountedPrograms.beni MountedPrograms.namer",
+      "carriers": "no"
+    },
+    {
+      "program": "NavigateCommands.beni NavigateCommands.main",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "NavigateErrors.beni NavigateErrors.main",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "NavigatePush.beni NavigatePush.main",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "OwnedByProgram.beni OwnedByProgram.main",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "Policies.beni Policies.main",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "RaceTwoServices.beni RaceTwoServices.main",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "RandomValues.beni RandomValues.main",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "ReentrantSend.beni ReentrantSend.main",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "RetryRequest.beni RetryRequest.main",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "Router.beni Router.main",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "Routes.beni Routes.main",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "SettlesManyFibers.beni SettlesManyFibers.main",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "SleepBeyondTimerLimit.beni SleepBeyondTimerLimit.main",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "StorageBasics.beni StorageBasics.main",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "StorageFaults Main.main",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "SubscriptionTapAppend.beni SubscriptionTapAppend.main",
+      "carriers": "no"
+    },
+    {
+      "program": "SubscriptionTapFold.beni SubscriptionTapFold.main",
+      "carriers": "no"
+    },
+    {
+      "program": "SyncCommandOrder.beni SyncCommandOrder.main",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "SyncKeyedPolicies.beni SyncKeyedPolicies.main",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "SyncSpawnOwned.beni SyncSpawnOwned.main",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "TimeoutAroundRequest.beni TimeoutAroundRequest.main",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "TimerTurn.beni TimerTurn.main",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "TodoMVC.beni TodoMVC.main",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "TupleKeyRestart.beni TupleKeyRestart.main",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "TwoPrograms Main.main[0]",
+      "carriers": "yes: msg whole"
+    },
+    {
+      "program": "TwoPrograms Main.main[1]",
+      "carriers": "no"
+    },
+    {
+      "program": "TypedInput.beni TypedInput.main",
+      "carriers": "no"
+    },
+    {
+      "program": "TypedKeys Main.main",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "UrlAddress.beni UrlAddress.main",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "ValueCommands.beni ValueCommands.main",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "ValueKeyRestart.beni ValueKeyRestart.main",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "ValuePath Main.main",
+      "carriers": "no"
+    },
+    {
+      "program": "WindowEvents.beni WindowEvents.main",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "bench/ui/apps/beni Main.main",
+      "carriers": "no"
+    },
+    {
+      "program": "bench/todomvc/apps/beni NoEditing.main",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "bench/todomvc/apps/beni NoRouting.main",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "bench/todomvc/apps/beni NoStorage.main",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "bench/todomvc/apps/beni Sandbox.main",
+      "carriers": "no"
+    },
+    {
+      "program": "examples/conduit/src Main.main",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "examples/conduit/src Pages.home",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "examples/conduit/src Pages.feed",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "examples/conduit/src Pages.article",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "examples/conduit/src Pages.editor",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "examples/conduit/src Pages.login",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "examples/conduit/src Pages.register",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "examples/conduit/src Pages.settings",
+      "carriers": "yes: commands"
+    },
+    {
+      "program": "examples/conduit/src Pages.profile",
+      "carriers": "yes: commands"
+    }
+  ],
+  "lists": [
+    {
+      "program": "AfterRenderFocus.beni AfterRenderFocus.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "<none>"
+    },
+    {
+      "program": "AnimationFrameStops.beni AnimationFrameStops.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "(any)"
+    },
+    {
+      "program": "AnimationFrames.beni AnimationFrames.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "<none>"
+    },
+    {
+      "program": "ApiItems.beni ApiItems.main",
+      "reconciled": 1,
+      "keyed": 1,
+      "patchAll": "<none>"
+    },
+    {
+      "program": "ApiLogin.beni ApiLogin.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "<none>"
+    },
+    {
+      "program": "ApplicationNotHttp.beni ApplicationNotHttp.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "<none>"
+    },
+    {
+      "program": "ClockStops.beni ClockStops.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "<none>"
+    },
+    {
+      "program": "Counters Main.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "<none>"
+    },
+    {
+      "program": "DebouncedSearch.beni DebouncedSearch.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "<none>"
+    },
+    {
+      "program": "DefectAfterRender.beni DefectAfterRender.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "After; Inc"
+    },
+    {
+      "program": "DefectEveryProgram.beni DefectEveryProgram.first",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "(any)"
+    },
+    {
+      "program": "DefectEveryProgram.beni DefectEveryProgram.second",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "(any)"
+    },
+    {
+      "program": "DefectInFiber.beni DefectInFiber.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "Go; Inc; Late"
+    },
+    {
+      "program": "DefectInRender.beni DefectInRender.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "<none>"
+    },
+    {
+      "program": "DefectInTurnRender.beni DefectInTurnRender.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "<none>"
+    },
+    {
+      "program": "DefectInUpdate.beni DefectInUpdate.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "Boom"
+    },
+    {
+      "program": "DefectInViewReleases.beni DefectInViewReleases.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "Break"
+    },
+    {
+      "program": "DefectQueuedDropped.beni DefectQueuedDropped.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "Ping; Then"
+    },
+    {
+      "program": "DefectReleaseRunning.beni DefectReleaseRunning.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "Go; Boom"
+    },
+    {
+      "program": "DefectReleaseSuspends.beni DefectReleaseSuspends.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "Boom"
+    },
+    {
+      "program": "DefectReleaseThrows.beni DefectReleaseThrows.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "Boom"
+    },
+    {
+      "program": "DefectReleasesHost.beni DefectReleasesHost.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "Boom"
+    },
+    {
+      "program": "DefectRunsReleases.beni DefectRunsReleases.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "Go; Late"
+    },
+    {
+      "program": "DirectEvents.beni DirectEvents.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "Saw; Stop"
+    },
+    {
+      "program": "DocumentTitle.beni DocumentTitle.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "(any)"
+    },
+    {
+      "program": "FlushLatched.beni FlushLatched.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "FromUpdate; Bump"
+    },
+    {
+      "program": "FocusInFlush.beni FocusInFlush.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "<none>"
+    },
+    {
+      "program": "HttpCancel.beni HttpCancel.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "Found#1 · Ok; Found#1 · Err"
+    },
+    {
+      "program": "HttpDefect Main.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "Got · Ok; Got · Err · NetworkError; Got · Err · _; Inc"
+    },
+    {
+      "program": "HttpFailures.beni HttpFailures.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "Got#1 · Ok; Got#1 · Err · BadUrl; Got#1 · Err · BadRequest; Got#1 · Err · Timeout; Got#1 · Err · NetworkError; Got#1 · Err · BadStatus; Got#1 · Err · BadBody"
+    },
+    {
+      "program": "HttpJson.beni HttpJson.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "Got"
+    },
+    {
+      "program": "HttpJsonBody.beni HttpJsonBody.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "Got"
+    },
+    {
+      "program": "HttpMultipart.beni HttpMultipart.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "Got · Ok; Got · Err · BadRequest · MultipartContentType; Got · Err · BadRequest · _; Got · Err · _"
+    },
+    {
+      "program": "HttpProgress.beni HttpProgress.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "Progressed · Sending; Progressed · Receiving; Done · Ok; Done · Err"
+    },
+    {
+      "program": "HttpRequestShape.beni HttpRequestShape.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "Got#1 · Ok; Got#1 · Err"
+    },
+    {
+      "program": "HttpResponseMeta.beni HttpResponseMeta.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "Got"
+    },
+    {
+      "program": "HttpResults.beni HttpResults.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "Got#1 · Ok; Got#1 · Err · BadUrl; Got#1 · Err · _"
+    },
+    {
+      "program": "HttpTrack.beni HttpTrack.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "<none>"
+    },
+    {
+      "program": "HttpTrackInit.beni HttpTrackInit.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "Progressed#1 · Sending; Progressed#1 · Receiving; Answered#1 · Ok; Answered#1 · Err · Timeout; Answered#1 · Err · _"
+    },
+    {
+      "program": "KeyEvents.beni KeyEvents.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "<none>"
+    },
+    {
+      "program": "KeyOrder.beni KeyOrder.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "<none>"
+    },
+    {
+      "program": "KeySubscription.beni KeySubscription.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "<none>"
+    },
+    {
+      "program": "LatestTagger.beni LatestTagger.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "<none>"
+    },
+    {
+      "program": "LinkGuard.beni LinkGuard.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "Requested · Internal; Requested · External; Handled"
+    },
+    {
+      "program": "LinkOutsideMount.beni LinkOutsideMount.shell",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "<none>"
+    },
+    {
+      "program": "LinkOutsideMount.beni LinkOutsideMount.mounted",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "Internal; External"
+    },
+    {
+      "program": "ListKeyRestart.beni ListKeyRestart.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "Short; Long"
+    },
+    {
+      "program": "ListenerOrder.beni ListenerOrder.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "<none>"
+    },
+    {
+      "program": "LogLevels.beni LogLevels.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "(any)"
+    },
+    {
+      "program": "MountedPrograms.beni MountedPrograms.shell",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "(any)"
+    },
+    {
+      "program": "MountedPrograms.beni MountedPrograms.counter",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "(any)"
+    },
+    {
+      "program": "MountedPrograms.beni MountedPrograms.namer",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "(any)"
+    },
+    {
+      "program": "NavigateCommands.beni NavigateCommands.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "<none>"
+    },
+    {
+      "program": "NavigateErrors.beni NavigateErrors.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "Done#1 · Ok; Done#1 · Err · BadUrl; Done#1 · Err · CrossOrigin; Done#1 · Err · Throttled; Changed"
+    },
+    {
+      "program": "NavigatePush.beni NavigatePush.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "<none>"
+    },
+    {
+      "program": "OwnedByProgram.beni OwnedByProgram.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "Go; Kick"
+    },
+    {
+      "program": "Policies.beni Policies.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "Run"
+    },
+    {
+      "program": "RaceTwoServices.beni RaceTwoServices.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "Got · Ok; Got · Err"
+    },
+    {
+      "program": "RandomValues.beni RandomValues.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "Rolled; Draw"
+    },
+    {
+      "program": "ReentrantSend.beni ReentrantSend.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "<none>"
+    },
+    {
+      "program": "RetryRequest.beni RetryRequest.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "<none>"
+    },
+    {
+      "program": "Router.beni Router.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "<none>"
+    },
+    {
+      "program": "Routes.beni Routes.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "<none>"
+    },
+    {
+      "program": "SettlesManyFibers.beni SettlesManyFibers.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "Done"
+    },
+    {
+      "program": "SleepBeyondTimerLimit.beni SleepBeyondTimerLimit.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "(any)"
+    },
+    {
+      "program": "StorageBasics.beni StorageBasics.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "Save; Forget; SaveSession"
+    },
+    {
+      "program": "StorageFaults Main.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "Quota; Blocked; Broken; Inc; NotSaved · QuotaExceeded; NotSaved · Unavailable"
+    },
+    {
+      "program": "SubscriptionTapAppend.beni SubscriptionTapAppend.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "<none>"
+    },
+    {
+      "program": "SubscriptionTapFold.beni SubscriptionTapFold.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "<none>"
+    },
+    {
+      "program": "SyncCommandOrder.beni SyncCommandOrder.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "Sent#0 · True; Sent#0 · False"
+    },
+    {
+      "program": "SyncKeyedPolicies.beni SyncKeyedPolicies.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "Twice#1 · Restart · True; Twice#1 · Restart · False; Twice#1 · Ignore · True; Twice#1 · Ignore · False; Twice#1 · Queue · True; Twice#1 · Queue · False; Twice#1 · Concurrent · True; Twice#1 · Concurrent · False; Cancelled · True; Cancelled · False; Sleep; Replace · True; Replace · False"
+    },
+    {
+      "program": "SyncSpawnOwned.beni SyncSpawnOwned.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "<none>"
+    },
+    {
+      "program": "TimeoutAroundRequest.beni TimeoutAroundRequest.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "Got · Nothing; Got · Just · Ok; Got · Just · Err"
+    },
+    {
+      "program": "TimerTurn.beni TimerTurn.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "Start; Woke"
+    },
+    {
+      "program": "TodoMVC.beni TodoMVC.main",
+      "reconciled": 1,
+      "keyed": 1,
+      "patchAll": "<none>"
+    },
+    {
+      "program": "TupleKeyRestart.beni TupleKeyRestart.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "ByTuple; ByRecord"
+    },
+    {
+      "program": "TwoPrograms Main.main[0]",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "<none>"
+    },
+    {
+      "program": "TwoPrograms Main.main[1]",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "(any)"
+    },
+    {
+      "program": "TypedInput.beni TypedInput.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "<none>"
+    },
+    {
+      "program": "TypedKeys Main.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "<none>"
+    },
+    {
+      "program": "UrlAddress.beni UrlAddress.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "(any)"
+    },
+    {
+      "program": "ValueCommands.beni ValueCommands.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "<none>"
+    },
+    {
+      "program": "ValueKeyRestart.beni ValueKeyRestart.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "BySet; ByDict; ByBag"
+    },
+    {
+      "program": "ValuePath Main.main",
+      "reconciled": 0,
+      "keyed": 1,
+      "patchAll": "<none>"
+    },
+    {
+      "program": "WindowEvents.beni WindowEvents.main",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "<none>"
+    },
+    {
+      "program": "bench/ui/apps/beni Main.main",
+      "reconciled": 1,
+      "keyed": 1,
+      "patchAll": "<none>"
+    },
+    {
+      "program": "bench/todomvc/apps/beni NoEditing.main",
+      "reconciled": 1,
+      "keyed": 1,
+      "patchAll": "<none>"
+    },
+    {
+      "program": "bench/todomvc/apps/beni NoRouting.main",
+      "reconciled": 1,
+      "keyed": 1,
+      "patchAll": "<none>"
+    },
+    {
+      "program": "bench/todomvc/apps/beni NoStorage.main",
+      "reconciled": 1,
+      "keyed": 1,
+      "patchAll": "<none>"
+    },
+    {
+      "program": "bench/todomvc/apps/beni Sandbox.main",
+      "reconciled": 1,
+      "keyed": 1,
+      "patchAll": "<none>"
+    },
+    {
+      "program": "examples/conduit/src Main.main",
+      "reconciled": 2,
+      "keyed": 2,
+      "patchAll": "ChangedUrl"
+    },
+    {
+      "program": "examples/conduit/src Pages.home",
+      "reconciled": 1,
+      "keyed": 1,
+      "patchAll": "<none>"
+    },
+    {
+      "program": "examples/conduit/src Pages.feed",
+      "reconciled": 0,
+      "keyed": 1,
+      "patchAll": "<none>"
+    },
+    {
+      "program": "examples/conduit/src Pages.article",
+      "reconciled": 1,
+      "keyed": 1,
+      "patchAll": "<none>"
+    },
+    {
+      "program": "examples/conduit/src Pages.editor",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "<none>"
+    },
+    {
+      "program": "examples/conduit/src Pages.login",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "<none>"
+    },
+    {
+      "program": "examples/conduit/src Pages.register",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "<none>"
+    },
+    {
+      "program": "examples/conduit/src Pages.settings",
+      "reconciled": 0,
+      "keyed": 0,
+      "patchAll": "<none>"
+    },
+    {
+      "program": "examples/conduit/src Pages.profile",
+      "reconciled": 1,
+      "keyed": 1,
+      "patchAll": "<none>"
+    }
+  ]
+}

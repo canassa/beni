@@ -1,0 +1,42 @@
+{
+  "platform": "aarch64-macos",
+  "toolchain": "zorg 0.17.1+zorg.1, Node 24.19.0",
+  "base": "df04ca2dbe8a0c46eafe817fb67aefd775121a6e",
+  "gate": {
+    "command": "zorg build gates",
+    "status": "refused",
+    "reason": "Hardware instruction budget requires an appropriate x86-64 Linux host. That gate remains owed."
+  },
+  "native": {
+    "command": "zorg build test test-blackbox fmt-check beni-fmt-check",
+    "passed": 1304,
+    "skipped": 15,
+    "failed": 2,
+    "budgetChecked": false
+  },
+  "llvm": {
+    "command": "zorg build test test-blackbox fmt-check beni-fmt-check -Dllvm",
+    "passed": 1304,
+    "skipped": 15,
+    "failed": 2,
+    "budgetChecked": false
+  },
+  "hashReplay": {
+    "command": "zorg build test-run-hashes",
+    "passed": 546,
+    "failed": 2,
+    "handMerged": false
+  },
+  "knownFailures": [
+    "a stale path that is the same file as a written one under case folding is not removed",
+    "a stale path equal to a written one under case folding but another file is removed"
+  ],
+  "chrome": {
+    "templates": "paired dev/release transcript and value fuzz passed",
+    "conduit": "paired dev/release transcript and value fuzz passed",
+    "version": "155.0.8059.80"
+  },
+  "budgetChanges": [],
+  "applicationChanges": [],
+  "fullSecondV3Campaign": "still owed"
+}

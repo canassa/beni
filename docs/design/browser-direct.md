@@ -958,7 +958,11 @@ screen exists in development only (`Js.development`); in release a defect is log
 stops. **Source maps**: a development build writes a `.mjs.map` beside every module as today
 (`backend.md` §11.1); a hole's write is positioned at its hole (`cx.at`, `boundary.md` §9.4.3) and
 an arm's statements at the arm, so a defect's stack names the hole or the arm in the source.
-Release maps are not started, as before.
+Release maps are not started, as before. *Amended 2026-10-15:* release maps are built
+(`backend.md` §11.2): `--release --source-maps` writes one map for the scope-hoisted file, and
+hand-written runtime JavaScript stays unmapped. A check of the 166 `browser/direct/` programs found
+each release map valid and each file unchanged but for its comment line; no fixture pins a hole's
+position in a release map yet.
 
 ## 9. Composition
 
@@ -2999,3 +3003,376 @@ cannot run on direct: the document view's branches return helper-computed
 documents, and the program hook reports `not_implemented` at Main.beni:257:18.
 Their unchanged scripts, sources, goldens and budgets remain pending with that
 lowering diagnostic. No source wrapping or copied list bypasses the gap.
+
+
+### *Amended 2026-10-14 (Conduit validation):* preserve the ownership blocker
+
+The original Conduit application currently fails direct's ownership enforcement:
+`Main.update` cannot prove that view-event payloads do not retain the nested
+`errors` lists in Article, Home's loaded feed, Profile, and Profile's loaded
+feed. The ownership dump marks all four rejections as approximate `payload`,
+not demonstrated sharing. The three unchanged Reader, Editor and Tour projects
+are exercised under `tests/pending/browser/direct/`, with `list_may_be_shared`
+pinned and their original sources, budgets, scripts and browser-tea goldens
+preserved. No copied lists or modified application subject bypass this check.
+
+This blocks Conduit's direct transcripts, timed messages, bundle bytes and the
+built-platform comparison of S0's dispatch counts; analysis and browser-tea
+counts can still be reported, but are not substitutes for those measurements.
+Independent paired pages exercise nested message keys, same-variant rebuilding
+and an opaque update's `*` path while this checker limit remains open. The S5
+timing deferral does not defer ownership or transcript guarantees.
+
+### *Amended 2026-10-14 (document helper branches):* keep the complete arm result
+
+A document view may return a helper-computed document directly or from a branch.
+The compiled view binds its model, outer bindings, decision and taken arm in
+place; it does not call the view at runtime. A helper-returned document stays
+a value: its body uses the existing markup value path, with its own listeners
+and the mount's value dispatcher. The complete document is evaluated once per
+choice and held in one value slot. Source branch changes do not tear down that
+slot: the returned markup kind owns its lifecycle, so another arm returning
+the same helper kind retains focus, as it does on browser-tea. Both body and title read that result, including
+a same-variant rebuild; writing the title must not call the helpers again.
+A document arm is a value computation: its bindings and statements run once
+with the value. Outer view statements retain the mount-only rule of §8.4.
+The verify check may evaluate a quiet choice again but must not repeat effects.
+
+The additive interface 1.12 exposes `Program.document_branch`: a document
+choice is represented by one value arm, `[0, document]`, including a helper
+call with no source branch. The lowering reads
+its body for the value slot and its title after the page writes. This extends
+1.11's document shape facts. Analysis counts remain the independent prediction;
+the built value path and visits must be counted against them at criterion 7.
+A disagreement is a finding to explain, not permission to alter those counts.
+
+### *Amended 2026-10-14 (Conduit built measurements):* criterion 7 fires
+
+The unchanged Reader, Editor and Tour now run on direct and browser-tea in
+development/release against one golden per paired case, with value fuzz.
+The document-helper lowering shares each complete helper result between body
+and title, and preserves markup-kind identity across source arms. Research 94
+records its implementation, validation, raw measurements and remaining Chrome
+harness boundary.
+
+The S0 analysis still predicts 96/97 bounded keys, 667 bounded pairs over
+106 groups and zero value roots. Actual `patchAll` calls agree: Reader 2/18,
+Editor 1/12, Tour 6/32. But a key with no writes, `ClickedLink · Internal`,
+enters 5–24 value-kind group comparisons instead of its predicted zero.
+A root document choice evaluates shared helpers as values on every handler;
+the analysis predicts selective visits to their sites. This is the mechanism
+behind criterion 7, which fires. No count or threshold is adjusted to hide it.
+
+Direct Conduit is 32,411 B brotli versus tea's 31,389. Its feed-tab, favorite
+and editor-keystroke medians are 0.465/0.435/0.480 ms versus
+0.370/0.305/0.420 ms in one rotated Chrome batch; traced orderings agree.
+The empty direct page remains 327 B. **S6 stops on criterion 7**; the second
+full V3 campaign and slice acceptance remain owed. The focused helper and
+nested/opaque-key regressions do not replace that campaign.
+
+### *Amended 2026-10-15 (document-helper review):* shape and synchronous lifetime
+
+A whole-document `case` is distinct from a record whose `body` is a `case`.
+The latter retains the existing compiled arm sites; the complete-document
+value slot applies only to the former and to a direct document helper call.
+Whole-document cases previously failed record-only body extraction.
+
+A helper may run synchronous effects (including logging); helper and arm
+statements run once with the chosen value, and the quiet verify check excludes
+them. A helper that may suspend is refused transitively by the existing `sync`
+view boundary of `Tea.document` and `Tea.application`, before lowering. Body
+mount/visit populates or replaces the complete-document slot before title reads
+it. A throw unwinds that guarded mount/handler and cannot reach the later title
+write. The mismatch measured in research 94 is §4.1 step 3(d) and §5.2's
+selective shared-site visit protocol, not permission to broaden the prediction.
+
+### *Amended 2026-10-15 (the owner):* parameterised markup templates and visit verification
+
+A function returning markup does not erase the markup's read information.
+Its markup roots compile to **parameterised templates**: a template, its
+instance slots and groups, and each group's reads relative to the function's
+parameters and captures (`write-sets.md`, the amendment of the same date).
+A call supplies values and substitutes their anchored paths for those roots.
+The handler selects groups using that substitution and its write set, before
+entering a group's value comparisons. Comparing every group and discovering
+that nothing changed is not a selective visit.
+
+This rule composes through calls, including imported functions, `let`s and
+`case` results. Distinct call sites retain distinct substitutions and instance
+storage even when they share one emitted template. A helper in a `For` row
+uses that row's instance and the list's edit/selector rules; it does not turn
+a changed field of one row into a visit of every helper in the list. A branch
+retains its existing liveness and mount-once rule: a newly mounted instance is
+initialised, not visited again by the dispatch which mounted it. Reusing a
+kind across source arms preserves that instance, but replaces the arguments
+and message captures before any later event. A complete document's title and
+body still come from one evaluation; synchronous statements retain their
+source order and count, and suspension remains a checker error.
+
+An unchanged instance receives no group calls (apart from declared
+every-render effects). Changed instances receive only groups whose substituted
+reads conflict. Shared code is independent of a caller's substitution: masks
+or specialised entry points belong to the call, not to the template globally.
+The size gate of §5.2 still decides whether code is shared; no application or
+module name participates in that decision.
+
+**A real markup value has an explicit fallback.** Markup stored in the model,
+an unresolved function value, a list of markup values without a resolved
+producer, and recursive production beyond the finite summary have no precise
+producer substitution. They retain kind/identity patching, cost O(groups in
+the reached value subtree), plus O(rows) for reconciliation where necessary.
+The compiler must identify that boundary and its reason in the direct plan;
+it must not report the subtree as precisely compiled. A statically resolved
+helper is not such a boundary merely because it returns through a function,
+a record, another module, or a `case`. Analysis caps are reported boundaries,
+not a licence to silently drop read information.
+
+**Verify the visits, as well as the resulting DOM.** Every development direct
+page checks each completed handler separately, including queued handlers and
+`*`, before the next handler starts. A visit identity comprises the source
+site, call path, group and live instance; two rows or two calls are distinct.
+The analysis predicts the visit set from the key's writes and substituted
+reads, restricted by the branch and row liveness/edit rules. Mount writes,
+selector work, teardown and ordinary event capture refresh are separate from
+group visits. Every-render groups are explicitly predicted; a documented
+value fallback is predicted as a fallback subtree, with its actual groups
+still observed. An undeclared fallback fails verification.
+
+Actual group entry records an observation before the group's value/identity
+comparisons. The independent expected walk uses the analysis's read facts
+and live instance inventory, not the handler's emitted group-call list or
+an observed trace. Missing and extra visits, and duplicate visits of the same
+instance/group, are compiler defects. The check must not evaluate user holes,
+helpers, selectors or effects again. It is enabled for every direct corpus
+page in the gates and its paired value fuzz, without fixture opt-in; release
+output contains neither the oracle nor its observations. Synthetic cases
+cover composed helpers, rows, choices, distinct call substitutions and the
+explicit value fallback. A negative probe must remove and add a group call
+and observe both defects, so checking the prediction against itself cannot
+pass. Criterion 7 compares these built visits with the analysis unchanged.
+
+*Consumer-plan clarification, 2026-10-15:* a build using parameterised
+templates writes `_direct-plan.json` beside its entry. It lists source
+sites, precise versus fallback classification and reasons, call-path read
+groups and their per-key conflicts. This is a build artifact, not page code
+or a UI warning, and is not loaded by the page. Dynamic values therefore
+have an inspectable declared cost boundary. Entering an unknown template
+path without such a boundary is a verify-mode compiler defect. A library
+can publish parameterised templates without knowing its eventual callers.
+
+The independent expected walk retains live template instances across
+handlers, not only patch calls that happened. Structural row/branch protocols
+publish their eligible instance scopes; they do not derive eligibility from
+observed group calls. Newly mounted instances are recorded with the dispatch
+which initialised them and excluded from that dispatch's visits. Removed
+instances are discarded when their retained DOM boundary is disconnected.
+
+*Unbound placement clarification, 2026-10-15:* markup created outside the
+active view walk has no parameter substitution. Its declared fallback is
+attached at each placement: the slot's analysis mask decides entry, and an
+entered fallback visits every dynamic group of that value. A quiet message
+which cannot reach the slot visits none. The build plan states this rule as
+well as each source root's classification; a producer may have both bound
+and unbound uses. The whole view result's anchored read set similarly gates
+root helper or branch entry. This entry fact does not count as a leaf hole
+in S0. Debug and effect work preserves its every-render rule.
+
+*Overlapping row traversals found 2026-10-15:* structural reconciliation can
+patch a surviving row whole before the same handler's read-set walk reaches
+it again. Both see the final model. Their group visits are a union: each
+live instance/group executes once per dispatch, including every-render work.
+The compiler coalesces those call sites with a dispatch stamp per row group;
+it does not remove observations or accept repeated entries in the verifier.
+The stamp costs one sparse array cell per emitted group used by that live
+instance. New rows still initialise once, outside the visit set.
+
+*Selected entry points, 2026-10-15:* a template's selected groups are cached
+as an ordered list of group entry functions per program, call substitution
+and message key. Patching invokes that list; it does not scan every group's
+identity or mask test on every changed instance. Constructing a selection
+costs O(template groups) once per key/substitution. Ordinary patches cost
+O(selected groups), plus event-capture refresh when arguments change and
+restates of slots that can contain every-render work. Mount initialises all
+groups once. A declared dynamic fallback constructs its selection at the
+placement and retains its stated O(value groups) cost.
+
+Preparing a changed template also reads its argument vector and maintains
+its cached local derivations in source order: O(arguments + local derivation
+checks). Those checks compare their own input paths and evaluate a derivation
+only when necessary. Group entry functions receive the prepared environment;
+they do not close over locals belonging to another emitted function. The
+release optimiser removes unused environment reads in each group entry.
+
+*Mapped row ownership, 2026-10-15:* a value-row producer marks only its
+returned block as the physical row boundary. `Html.map` preserves that
+boundary with a row-scope token before mounting or patching its inner kind;
+nested maps inherit the same token. The expected inventory therefore knows
+which row is eligible even when an inner helper patch is missing. A kind
+switch creates a fresh boundary. No DOM nodes are added. Metadata is attached
+only to compiler-owned argument arrays; runtime primitives such as
+`Html.text`, whose payload is a string, retain their native representation.
+
+*Entered fallback identity, 2026-10-15:* a conservative `*` key can reach a
+stored markup value while preserving that very block object. Once its slot
+is selected, a value fallback still enters its groups; block identity selects
+patch versus replacement, and does not silently bypass the declared fallback
+visit set. This also composes through `Maybe`, markup lists and `Html.map`.
+Precise templates continue to select only their substituted reads. Adopting
+an unbound block at a value-row boundary retains its unbound classification.
+
+Branch value arms install their own placement mask when adopting stored markup,
+just as ordinary value holes do; a computed view root uses the root mask. An
+entered fallback also traverses retained slots beneath mount-only producers:
+the producer is not evaluated again, but its dynamic descendants receive their
+predicted visits even when they have no every-render effects. A quiet placement
+enters none of that subtree. `browser/direct/StoredBranchPlacement` pins both
+the quiet write and a selected fallback retaining the same block and list.
+Such retained-slot operations make the template entry necessary even when
+none of its own dynamic groups is selected. Fallback eligibility is computed
+once per template patch and restored across nested patches; restating each
+retained slot reads that Boolean rather than looking up its fallback again.
+
+*Oracle independence, 2026-10-15:* expected template visits are recomputed
+from the immutable analysis masks, never copied from the execution cache's
+selection bits or operation lists. A negative probe corrupts only that cache
+so an unchanged title group enters: the DOM remains correct, but verification
+must reject the extra group. Instances born in this dispatch contribute mount
+initialisation, not predicted visits; a second entry is therefore an error.
+
+*Component argument boundary, 2026-10-15:* component props, including markup
+children, are evaluated in the caller's substitution, in their existing
+field order. Only entry to the component's function extends its call path.
+A child helper must retain the same substitution whether passed as a named
+prop or written between the component tags. Moving argument evaluation into
+the callee's template scope is a lowering defect, detected even on a quiet
+message by the independent instance inventory.
+
+*Volatile helper arguments, 2026-10-15:* parameter substitution retains the
+analysis's host read `ω` for opaque impure results, such as a clock reading.
+A pure helper hole receiving that value is selected on every render, even
+when the message writes no model path. This is the same every-render cost
+as the equivalent inline expression, and is visible in the consumer plan.
+
+*Fragment children, 2026-10-15:* a fragment passed between component tags is
+an outlined template over its enclosing root's input environment. Its own
+holes use the caller's read facts and retain their individual selections;
+its helper calls extend the caller's path, never the receiving component's.
+Kinds and entry functions have names unique to the fragment, even when two
+fragments share an enclosing root. Preparing the fragment retains the stated
+O(arguments + local derivation checks) cost of that input environment.
+
+*List values and structural precision, 2026-10-15:* a helper called inside a
+`List Html` retains its hole's parameter read facts. That list still uses
+value reconciliation rather than a `For` row edit plan: O(list values) on an
+entered list slot, and O(template groups) to construct a value-root selection
+on each patch. The consumer plan declares this list-value fallback even when
+individual helper holes have exact masks. `TemplateListValues` pins the paired
+behavior, hole selection invariant and fallback classification. This is not
+a claim that structural list edits have become precise.
+
+### *As built 2026-10-15:* helper group precision is verified; costs remain
+
+Research 95 records the general parameterised-template lowering and its
+composition/fallback fixtures. Every development direct corpus handler now
+checks actual group entries against independent analysis masks and live
+instances. Missing, duplicate, omitted-child and corrupted-cache probes prove
+the oracle rejects disagreements; release omits it.
+
+On the unchanged Conduit scripts, criterion 7 no longer fires: all 62
+handler visits match prediction, including zero for all five empty-write
+Internal messages. `patchAll` is exactly the nine ChangedUrl dispatches.
+The S0 campaign has 96/97 bounded keys, 79 sites, no value roots and 782 leaf
+pairs over 114 groups; parameter choice reads explain the increase from
+667/106 without broadening message writes. The empty page stays 327 B.
+
+This does not accept S6's performance. Direct release grows from 32,411 to
+37,908 B brotli (tea 31,389); in the same fresh Chrome batch its feed-tab,
+favorite and editor-input medians are 0.400/0.360/0.380 ms, against old direct
+0.380/0.330/0.365 and tea 0.305/0.270/0.340. Context capture, argument preparation,
+selection lookup/construction and emitted entry functions add costs outside
+the now-correct group visits. Research 95 retains the probes and raw samples.
+No timing/size tuning follows the measurement. Prior S0 tripwires and the
+second full V3 campaign remain open; focused helper coverage does not replace
+that campaign. The PR remains draft and unmerged.
+
+*Review/rebase follow-up, 2026-10-15:* research 95's final batch is on master
+`df04ca2db`, with new mixed literal/path, conditional-list, Maybe Html and
+volatile-row probes. The latter found and fixed a shared row-effect-fact bug:
+the ordinary DOM lowering must receive every-render facts even for ungrouped
+rows (backend.md's dated amendment). All helper and Conduit paired Chrome
+scripts and value fuzz pass with master's driver fixes.
+
+Criterion 7 remains met on all 62 dispatches; Conduit's 782/114 leaf facts and
+9/62 star dispatches are unchanged in the now-102-program S0 series. Final
+direct size is 38,030 B brotli, versus old direct 32,411 and tea 31,389. Final
+feed/favorite/editor medians are direct 0.395/0.315/0.365 ms, old direct
+0.390/0.325/0.340, tea 0.295/0.250/0.315. The report gives min/max and raw
+samples: direct before/after spreads overlap; tea is faster in both measured
+modes. There is no speed acceptance or threshold change.
+
+Master's new instruction-budget gate now refuses this macOS host. Native and
+LLVM unfiltered local test/format steps have only the two known case-folding
+failures; the hardware-budget gate is still owed on a suitable x86-64 Linux
+host. This supersedes the earlier CPU-fallback validation as a current gate
+claim, preserving the historical measurements and diary entries.
+
+### *Measured dispatch and shared update bodies, 2026-10-15*
+
+A value-message dispatcher shares the named constructor prefixes of adjacent
+analysis keys. It tests a prefix once before descending to its children;
+leaf handler arguments, key order, default priority and the final fallback
+remain unchanged. This is a decision tree over the existing analysis, not a
+new message classification or a change to group selection.
+
+When an update cannot be specialised to a constructor arm, compile its body
+once and call it from the handlers. Do not duplicate its entire decision tree
+in every leaf. A specialisable arm remains eligible for in-place lowering.
+Neither sharing changes evaluation order, incoming-model capture, commands,
+write sets or the visits = prediction invariant. CPU profiles, source columns
+and compression accounting must distinguish dispatch, the selected handler,
+shared template machinery and host work; sampled native time stays unassigned.
+
+*Shared root selector, 2026-10-15:* the computed root branch's selector is
+one function per mounted program, closing over the current model and the
+program's derived slots. Each selected handler calls it once at the same
+point, inside that handler's template substitution. It returns the existing
+arm-and-input array; mount, same-arm patch, title and commands retain their
+order. This shares code and V8 compilation, never a computed document or a
+previous handler's lexical inputs. Instance-dependent row/arm selectors keep
+their existing scope.
+
+*A single key, 2026-10-15:* a one-key program has no update duplication to
+share and retains its existing inline update. This also keeps static-page
+consumption and the small-program floor unchanged.
+
+*As measured, 2026-10-15:* [research 97](research/97-conduit-dispatch-profiles.md)
+finds first-use compilation of repeated unspecialisable update and computed-root
+selector bodies behind most of the excess sampled dispatcher time. Sharing
+those bodies changes Conduit's feed/favorite/editor medians from
+0.425/0.4075/0.450 ms to 0.340/0.340/0.3725 ms on the same machine; tea is
+0.3175/0.3475/0.4175 ms, with overlapping IQRs. Raw source falls 361,594 to
+209,384 B; as-served brotli falls only 38,030 to 37,768 B, still 6,379 B above
+tea. Parameterised template entries, consumer masks and their runtime remain
+priced costs. All 62 dispatches match prediction and criterion 7 does not fire.
+The complete report-87 sweeps have no slower-side disjoint-IQR before/after
+case; this does not discharge their older threshold misses. The Linux hardware
+budget gate remains owed; the local native/LLVM suites retain only the two
+known macOS case-folding failures.
+
+*Sharing eligibility clarified, 2026-10-15:* multi-key updates stay inline
+when their first parameter is a variable and the body cases directly on it,
+with constructor arms whose fields are variables, wildcards or unit, and
+variable/wildcard defaults. Nested field patterns, tuple/derived scrutinees
+and other bodies use the shared update. The model parameter is bound before
+arm selection and may be an irrefutable destructuring pattern. Branch guards
+are not part of the language. This code-sharing choice does not relax the
+per-hole precision rule or introduce a dynamic-markup fallback.
+
+For the computed-root selector specifically, `no_root` has no cached derived
+slots: the leading view `let`s are evaluated inside the selector. Its external
+bindings are program-scoped, and it is declared before the handler or mount
+block requesting it is appended. Debug assertions pin the absence of row,
+arm, shared-call and handler-instance contexts. The value dispatcher asserts
+one handler per analysis key; only the actual final key is unconditional.
+The analysis builds keys depth-first, so a prefix cannot be interleaved with
+another prefix or followed by a second root catch-all.

@@ -1,0 +1,9 @@
+-- load
+<body>
+  <button>""</button>
+</body>
+-- click button 2
+(the step's task ended)
+<body>
+  <button>"12"</button>
+</body>

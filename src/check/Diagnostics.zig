@@ -205,7 +205,7 @@ pub const Reporter = struct {
             return;
         }
         // `xs.length` and `f(a, b)` (language.md §12.5).
-        if (try CallStyle.mismatchHint(r, w, category, expected, actual)) {
+        if (try CallStyle.mismatchHint(r, w, category, region, expected, actual)) {
             try r.emit(.type_mismatch, region, &out);
             return;
         }

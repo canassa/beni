@@ -1639,6 +1639,28 @@ or any other cause is the same line on every platform.
 `init` is in sight at a constructor with a row, as §20.6 says of the other fields: a lambda's demands on
 its own parameters are decided at the entry, and no `value … pending` line is printed for it.
 
+### *Amended 2026-10-15 (init captures):* arrivals are not allocations
+
+The cells an `init` body allocates are fresh. Returning a captured local does
+not allocate its cells again. Such cells can transfer into the initial model
+only when no other retained holder can read them. In particular, the environments
+of `update`, `view`, subscriptions and the other entry callbacks remain live
+across runtime calls and must be disjoint from each model path edited in place.
+The entry's disjointness check includes every non-`init` field of its record,
+with closures expanded into their captures, alongside the other model paths.
+A helper-returned closure retains its instantiated bindings and callback values
+as well; carrying its class across a call does not erase its environment.
+Only a path known to start with the `init` field is excluded: root and wildcard
+entries may contain other callbacks and remain retained.
+Ordinary Dead and escape obligations still cover holders outside that record.
+
+Thus `init = λ⊤ → m` with `view = λ_ → …m.items…` cannot authorize editing
+`model.items`, whether `m` was a local literal or arrived through a private
+single-read top-level initializer. A local used only by `init` can still transfer;
+a literal allocated inside `init` remains fresh. This narrows §22.2's allocation
+claim and adds no permission. Cached ownership blocks advance to version 8 so
+an older entry proof cannot survive the corrected rule.
+
 ### 22.3 Commands that take values
 
 Nothing in the checker changes for them: what a command holds escapes at the constructor's call (§20.4
@@ -2585,6 +2607,7 @@ its boundaries; `RESULTS.md` records the campaigns and holes. The residual gaps 
 | `Dict.focus`'s destructive read (§20.8) | `assertDictFocus` | two positions of a tree holding one value, both written. List focus is modelled; the core has no tree, keys or dictionary representative separation. |
 | Markup/constructor lowering and opaque carrier encodings | markup transfer and summary blocks | Slots and constructor payload retention are modelled as positional records; HTML syntax, wildcard opaque paths, import serialization and actual row/component lowering are absent. Their encoding must preserve the modelled slots and conservative fallback |
 | Fold dictionary representatives and recursion | fold/focus summaries | Container ownership is modelled for lists and positional records; no dictionary keys, mutually recursive declarations or unknown/coarsened foreign rows exist in the core, so those implementations and their precision backstops still need Zig fixtures |
+| Hidden-evidence initialization and suspension | `initializationTransfer`, dispatch identities/requirements | Private single-read transfer, captured-local exclusion and retained initialization environments are modelled. The core has no hidden evidence parameters, suspension or coarsened foreign summaries; their eligibility guards remain compiler-fixture boundaries. |
 
 ### 26.8 Open questions
 
@@ -2843,6 +2866,14 @@ against CLAUDE.md rule 7's test — what guarantee does the error buy?
 **Acceptances are not errors**, including one that rests on a callee with no summary (`assumed`, §15 decision 2): a
 writing function value that reaches such a callee is pending where it gets there (§16.5), so the obligation is
 reported once, at that place.
+
+*Diagnostic guidance, 2026-10-15.* At an entry, a `top-level` refusal recommends
+building the value inside `init ⊤ = …` and cites §22.2: returning a top-level
+value from `init`, even through a lambda, keeps that value shared. Outside an
+entry, recommend making the top-level value a function, or changing a copy with
+`List.copy <name>` (§4.2). These are the existing position rules, not a checker
+limit or a new permission. A still-used base keeps the local copy suggestion,
+including `List.copy a ++ b` for an append whose base remains live.
 
 **One diagnostic per root cause.** Lines of one module with the same position, verdict, cause and detail are one
 diagnostic, listing every base — the entry's lines for several model paths that one top-level list or one view
@@ -3298,6 +3329,50 @@ with an approximate tagger-result diagnostic after the unseen check is closed.
 invariant applies here: a resolved `x.m` method is an ordinary zero-argument
 `method_call`, never a field path. In particular `current.trail.copy` applies
 `copy`'s fresh-result summary; record `x.f` retains its field path and identity.
+
+### *Amended 2026-10-15 (initialization transfer):* a private value read once
+
+A private, parameterless value may transfer its freshly allocated cells to its
+sole read when that read executes directly in another nonrecursive,
+parameterless initializer of the same application module. The whole module
+must contain exactly one reference to the value. Reads in closures or functions,
+public values, foreign values, recursive initializers, coarsened summaries,
+evidence-parameterized values and unknown results receive no permission. The reference count is over BIR value
+instructions, including deferred bodies, not over reachable calls.
+
+The value's ordinary result summary is instantiated at that read, preserving
+allocation identities, result-position aliases, escapes and both exclusivity
+conditions. Shared arrivals stay shared. This transfers only allocations of the
+private initializer; it does not assert that their descendants are exclusive.
+The destination is still a top-level value: later reads of it use the ordinary
+shared-value rule. No initializer is re-executed and no copy is inserted.
+
+**Soundness.** Module initialization executes the consuming expression at most
+once. Privacy and the unique reference leave no other source-level reader of
+the transferred binding. Existing summary escape and separation obligations
+cover retained aliases and repeated result positions. A read in a closure could
+execute repeatedly, so it is excluded even when the closure itself has one
+syntactic occurrence. A later use of the destination must still be rejected.
+The cached ownership block version advances from 4 to 6 with this rule and its
+reviewed evidence guard.
+
+
+*Review clarification, 2026-10-15.* Ordinary top-level values cannot suspend
+(`transparent-effects-proposal.md` §15.2 item 7); delayed work in a lambda is
+not executed by initialization, and its reads get a nonzero ownership frame.
+A parameterless value carrying explicit or inferred `where` evidence, or a
+hidden identity parameter, can instead be evaluated at its uses. Neither the
+source nor the consumer may have such hidden parameters. Their presence is
+read from the solved dispatch table, not merely the source annotation.
+An explicit-evidence pop of a private polymorphic empty list pins this guard.
+
+Known private expression names lower through `resolveValue` to `.top`, also
+inside schema `via` expressions and markup holes; schema namespace references
+name schema declarations, which are ineligible sources. A private value cannot
+be a public static-dispatch member; function-valued result provenances are also
+ineligible for this transfer. The new schema and markup second-read twins pin
+the ordinary-value path. Ownership currently walks modules serially; its lazy
+reference-count memo would need synchronization before parallelizing that walk.
 
 ## 29. Result liveness and ownership across calls (2026-10-15)
 

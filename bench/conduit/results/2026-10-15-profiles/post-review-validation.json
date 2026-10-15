@@ -1,0 +1,30 @@
+{
+  "master": "2f397d7b6",
+  "native": {
+    "command": "zorg build test test-blackbox fmt-check beni-fmt-check -j1",
+    "passed": 1315,
+    "skipped": 15,
+    "knownFailed": 2
+  },
+  "llvm": {
+    "command": "zorg build test test-blackbox fmt-check beni-fmt-check -Dllvm -j1",
+    "passed": 1315,
+    "skipped": 15,
+    "knownFailed": 2
+  },
+  "fullHashes": {
+    "command": "zorg build test-run-hashes -j1",
+    "passed": 552,
+    "knownFailed": 2
+  },
+  "addedCaseHashes": {
+    "command": "zorg build test-run-hashes -Dcorpus=RootSelectorDerived -j1",
+    "result": "pass"
+  },
+  "chrome": {
+    "command": "zorg build test-browser -Dcorpus=browser/direct -Dchrome=/Applications/Google Chrome.app/Contents/MacOS/Google Chrome -j1",
+    "result": "pass"
+  },
+  "hardwareGate": "zorg build gates refuses aarch64-macos; supported Linux PMU gate remains owed",
+  "ci": "See PR #98 for final hosted Linux CI; its budget-disabled configuration is separate from hardware-gate validation."
+}

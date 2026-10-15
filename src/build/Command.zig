@@ -22,6 +22,7 @@
 //! diagnostics.
 
 const std = @import("std");
+const builtin = @import("builtin");
 const Allocator = std.mem.Allocator;
 const Io = std.Io;
 const Cli = @import("../Cli.zig");
@@ -192,6 +193,9 @@ fn emitOnBigStack(gpa: Allocator, arena: Allocator, session: *Session, options: 
         }
     };
     var runner: Runner = .{ .gpa = gpa, .arena = arena, .session = session, .options = options };
+    // A build with no threads emits here: its main stack is sized for it
+    // (fast-compiler.md §10, *A build with no threads*).
+    if (builtin.single_threaded) return Emit.run(gpa, arena, session, options, &session.io_failure);
     const thread = std.Thread.spawn(.{ .stack_size = Session.check_stack_size }, Runner.go, .{&runner}) catch {
         // No thread to be had: emit here and hope the trees are shallow,
         // which they are for everything but the pathological inputs.

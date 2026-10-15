@@ -517,6 +517,12 @@ pub const Gen = struct {
     fn block(g: *Gen, nodes: []const m.Node.Index, site: u32, sub: ?m.Node.Index) m.Error!m.Expr {
         const n = try g.names(site, sub);
         var b = try g.plan(nodes, site);
+        if (g.direct and sub != null and b.ops.items.len != 0) {
+            for (g.tree.roots, 0..) |source_root, ri| {
+                const index: m.Root.Index = @fromBackingInt(@intCast(ri));
+                if (source_root.site.inst == site and g.cx.grouped(index)) return g.groupedBody(&b, n, source_root, index);
+            }
+        }
         const kind = g.cx.hoisted(n.kind) orelse try g.hoistKind(&b, n);
         if (b.operands.items.len == 0) {
             const hoisted = g.cx.hoisted(n.block) orelse try g.cx.hoist(n.block, try g.jsb().object(&.{
@@ -554,15 +560,19 @@ pub const Gen = struct {
     /// The block a grouped root evaluates to: its kind, hoisted once per
     /// site, and its inputs.
     fn groupedBlock(g: *Gen, r: m.Root, index: m.Root.Index) m.Error!m.Expr {
-        const js = g.jsb();
         const n = try g.names(r.site.inst, null);
         var b = try g.plan(&.{r.node}, r.site.inst);
         // Markup that writes nothing is one hoisted block, as before.
         if (b.ops.items.len == 0) return g.block(&.{r.node}, r.site.inst, null);
-        const kind = g.cx.hoisted(n.kind) orelse try g.hoistGroupedKind(&b, n, r, index);
+        return g.groupedBody(&b, n, r, index);
+    }
+
+    fn groupedBody(g: *Gen, b: *Body, n: Names, r: m.Root, index: m.Root.Index) m.Error!m.Expr {
+        const js = g.jsb();
+        const kind = g.cx.hoisted(n.kind) orelse try g.hoistGroupedKind(b, n, r, index);
         // A root with no input is one hoisted block; a slot handed it again
         // patches it again only when its kind is live (`Rt.patch`).
-        if (r.inputs.len == 0) {
+        if (r.inputs.len == 0 and !g.direct) {
             if (g.cx.hoisted(n.block)) |h| return g.ident(h);
             return g.ident(try g.cx.hoist(n.block, try js.object(&.{
                 .{ .key = "t", .value = try g.ident(kind) },
@@ -571,9 +581,11 @@ pub const Gen = struct {
         }
         const values = try g.a().alloc(m.Expr, r.inputs.len);
         for (values, 0..) |*v, k| v.* = try g.cx.value(r.inputs.at(@intCast(k)));
+        const input_array = try js.array(values);
+        const supplied = if (g.direct) try g.rt("templateInputs", &.{ input_array, try g.cx.templateCapture(index) }) else input_array;
         return js.object(&.{
             .{ .key = "t", .value = try g.ident(kind) },
-            .{ .key = "v", .value = try js.array(values) },
+            .{ .key = "v", .value = supplied },
         });
     }
 
@@ -718,6 +730,10 @@ pub const Gen = struct {
     }
 
     fn hoistGroupedKind(g: *Gen, b: *Body, n: Names, r: m.Root, index: m.Root.Index) m.Error!m.Name {
+        const was_template = if (g.direct) g.cx.templateScope(true) else false;
+        defer if (g.direct) {
+            _ = g.cx.templateScope(was_template);
+        };
         const js = g.jsb();
         const a_ = g.a();
         const ops = b.ops.items;
@@ -761,7 +777,10 @@ pub const Gen = struct {
         const parent = try a_.alloc(u32, ops.len);
         var by_key: std.StringHashMapUnmanaged(u32) = .empty;
         for (parent, 0..) |*x, k| {
-            const key = try std.fmt.allocPrint(a_, "{}:{any}", .{ op_every[k], op_reads[k] });
+            const key = if (g.direct and ops[k].what == .event)
+                try std.fmt.allocPrint(a_, "event:{d}", .{k})
+            else
+                try std.fmt.allocPrint(a_, "{}:{any}", .{ op_every[k], op_reads[k] });
             const gop = try by_key.getOrPut(a_, key);
             if (!gop.found_existing) gop.value_ptr.* = @intCast(k);
             x.* = gop.value_ptr.*;
@@ -835,6 +854,8 @@ pub const Gen = struct {
             try js.constant(pblock, x.*, try js.index(try g.ident(pv), try g.num(@intCast(k))));
         }
         try g.cx.bindInputs(index, inputs);
+        var environment_names: std.ArrayList(m.Name) = .empty;
+        try environment_names.appendSlice(a_, inputs);
         var patch: Fn = .{ .block = pblock, .v = null, .i = i, .grouped = true };
         var fields: std.ArrayList(m.Property) = .empty;
         const undef = try js.literal(.undefined);
@@ -869,18 +890,22 @@ pub const Gen = struct {
             const name = try g.cx.fresh("let");
             try js.constant(pblock, name, try g.member(try g.ident(i), kept));
             try g.cx.bindLet(index, @intCast(k), name);
+            try environment_names.append(a_, name);
         }
         const direct = try a_.alloc(?m.Name, ops.len);
         @memset(direct, null);
         patch.direct = direct;
+        var template_groups: std.ArrayList(m.Expr) = .empty;
         for (groups.items, 0..) |gr, gi| {
+            const capture_only = g.direct and gr.ops.items.len == 1 and ops[gr.ops.items[0]].what == .event;
+            const entry = if (g.direct) try js.block() else pblock;
             const then = try js.block();
             var condition: ?m.Expr = null;
             // A group that reads one path reads it once, into a name; an
             // op that writes exactly that path writes the name, untested.
             const one: ?m.Name = if (!gr.every and gr.reads.items.len == 1) blk: {
                 const x = try g.cx.fresh("x");
-                try js.constant(pblock, x, try g.cx.value(r.reads.at(gr.reads.items[0])));
+                try js.constant(entry, x, try g.cx.value(r.reads.at(gr.reads.items[0])));
                 break :blk x;
             } else null;
             var skip: std.ArrayList(m.Value.Index) = .empty;
@@ -937,13 +962,53 @@ pub const Gen = struct {
                 try g.writeRestateSlot(b, &patch, otherwise, ops[k], try g.fieldOf(&patch, "c{d}", .{k}));
                 restates = true;
             };
-            if (condition) |c| try js.@"if"(pblock, c, then, if (restates) otherwise else null) else try js.nested(pblock, then);
+            // A selected producer must propagate its call substitution even
+            // when the parent's input identity comparison happens to be equal.
+            // Its children's masks decide which holes are reached.
+            if (g.direct and restates) condition = null;
+            if (condition) |c| try js.@"if"(entry, c, then, if (restates) otherwise else null) else try js.nested(entry, then);
+            if (g.direct) {
+                var refs: std.ArrayList(m.Program.HoleRef) = .empty;
+                var captures = false;
+                for (gr.ops.items) |k| switch (ops[k].what) {
+                    .placeholder, .text, .html, .helper, .for_, .show, .component => try refs.append(a_, .{ .node = ops[k].node }),
+                    .attribute => |x| if (!x.constant) {
+                        try refs.append(a_, .{ .item = x.index });
+                    },
+                    .toggle => |x| try refs.append(a_, .{ .item = x.index }),
+                    .style => |x| try refs.append(a_, .{ .item = x.index }),
+                    .event => captures = true,
+                };
+                const desc = try js.array(&.{ try g.cx.templateHoles(refs.items), try js.literal(if (gr.every) .true else .false), try js.literal(if (captures) .true else .false), try js.literal(if (!gr.every and gr.reads.items.len == 0) .true else .false) });
+                const descriptor = try g.cx.hoist(try g.print("dg{s}_{d}", .{ n.kind[1..], gi }), desc);
+                const group = try g.ident(descriptor);
+                const visited = try js.block();
+                for (environment_names.items, 0..) |local, at_| try js.constant(visited, local, try js.index(try g.ident(pv), try g.num(@intCast(at_))));
+                if (!capture_only and !g.cx.build.release) try js.expression(visited, try g.rt("templateObserve", &.{ try g.ident(i), group }));
+                try js.nested(visited, entry);
+                const entry_fn = try g.cx.hoist(try g.print("dp{s}_{d}", .{ n.kind[1..], gi }), try js.arrow(&.{ i, pv }, visited));
+                const restate_fn = if (restates) try g.cx.hoist(try g.print("dr{s}_{d}", .{ n.kind[1..], gi }), try js.arrow(&.{ i, pv }, otherwise)) else null;
+                try template_groups.append(a_, try g.rt("templateGroup", &.{ group, try g.ident(entry_fn), if (restate_fn) |fn_| try g.ident(fn_) else try g.nul() }));
+            }
         }
         const self = try g.selfLive(b, true);
-        patch.block = pblock;
+        const tail = if (g.direct) try js.block() else pblock;
+        if (g.direct) for (environment_names.items, 0..) |local, at_| try js.constant(tail, local, try js.index(try g.ident(pv), try g.num(@intCast(at_))));
+        patch.block = tail;
         try g.writeLive(b, &patch, self);
         g.cx.unbindInputs(index);
-        const p_name = try g.cx.hoist(try g.print("p{d}", .{r.site.inst}), try js.arrow(&.{ i, pv }, pblock));
+        const inner = try js.arrow(&.{ i, pv }, tail);
+        const patcher = if (g.direct) parametric: {
+            if (r.lets.len == 0) {
+                try js.@"return"(pblock, try g.ident(pv));
+            } else {
+                const environment = try a_.alloc(m.Expr, environment_names.items.len);
+                for (environment, environment_names.items) |*value_, local| value_.* = try g.ident(local);
+                try js.@"return"(pblock, try js.array(environment));
+            }
+            break :parametric try g.rt("templatePatch", &.{ try js.arrow(&.{ i, pv }, pblock), inner, try g.num(r.inputs.len), try js.array(template_groups.items), try js.literal(if (r.kind == .row_markup) .true else .false) });
+        } else inner;
+        const p_name = try g.cx.hoist(try g.print("p{s}", .{n.kind[1..]}), patcher);
 
         // `m`: the clone and what only it writes, the instance, then `p`.
         const t = try g.template(b, n.template);
@@ -1047,7 +1112,36 @@ pub const Gen = struct {
         const position = try g.cx.fresh("position");
         const reads: ?m.Name = if (row.arity == 2) position else null;
         switch (row.kind) {
-            .markup => {
+            .markup => if (g.direct and g.cx.grouped(row.body)) {
+                const body = g.tree.root(row.body);
+                var b = try g.plan(&.{body.node}, body.site.inst);
+                const cx = try g.cx.fresh("cx");
+                const make_block = try js.block();
+                const made = try g.cx.fresh("block");
+                try js.constant(make_block, made, try g.cx.rowTemplate(make_block, f.row, item, reads));
+                try js.@"return"(make_block, try js.call(try g.member(try g.member(try g.ident(made), "t"), "m"), &.{ try g.member(try g.ident(made), "v"), try g.ident(cx) }));
+                try props.append(g.a(), .{ .key = "m", .value = try js.arrow(&.{ item, position, cx }, make_block) });
+                const i = try g.cx.fresh("i");
+                const patch_block = try js.block();
+                const updated = try g.cx.fresh("block");
+                try js.constant(patch_block, updated, try g.cx.rowTemplate(patch_block, f.row, item, reads));
+                try js.expression(patch_block, try js.call(try g.member(try g.member(try g.ident(updated), "t"), "p"), &.{ try g.ident(i), try g.member(try g.ident(updated), "v") }));
+                try props.append(g.a(), .{ .key = "p", .value = try js.arrow(&.{ i, item, position }, patch_block) });
+                const self = try g.selfLive(&b, true);
+                const slots = for (b.ops.items) |op| {
+                    if (op.slotted()) break true;
+                } else false;
+                if (self or slots) try props.append(g.a(), .{ .key = "l", .value = try js.literal(.true) });
+                if (self) {
+                    try props.append(g.a(), .{ .key = "e", .value = try js.literal(.true) });
+                } else if (slots) {
+                    const root_names = try g.names(body.site.inst, null);
+                    const kind = g.cx.hoisted(root_names.kind).?;
+                    const restate = try js.block();
+                    try js.expression(restate, try g.rt("templateRestate", &.{ try g.ident(i), try g.ident(kind) }));
+                    try props.append(g.a(), .{ .key = "r", .value = try js.arrow(&.{i}, restate) });
+                }
+            } else {
                 const body = g.tree.root(row.body);
                 var b = try g.plan(&.{body.node}, body.site.inst);
                 const t = try g.template(&b, try g.print("t{d}", .{body.site.inst}));
@@ -1120,7 +1214,8 @@ pub const Gen = struct {
                 else
                     try g.cx.call(try g.cx.value(row.function.?), &.{try g.ident(item)});
                 try js.@"return"(body, result);
-                try props.append(g.a(), .{ .key = "b", .value = try js.arrow(&.{ item, position }, body) });
+                const producer = try js.arrow(&.{ item, position }, body);
+                try props.append(g.a(), .{ .key = "b", .value = if (g.direct) try g.rt("templateRow", &.{producer}) else producer });
             },
             else => unreachable,
         }
@@ -1898,13 +1993,13 @@ pub const Gen = struct {
                 try g.mountEvent(f, x, try g.read(b, f, x.handler));
                 try fields.append(a_, .{ .key = try g.print("a{d}", .{k}), .value = try g.read(b, f, x.handler) });
             },
-            .html => |x| try js.expression(f.block, try g.slotWrite(b, f, x.kind, try g.ident(f.slots[k].?), x.value)),
+            .html => |x| try js.expression(f.block, try g.slotWrite(b, f, op.node, x.kind, try g.ident(f.slots[k].?), x.value)),
             .helper => |x| {
                 for (x.args, 0..) |p, j| {
                     if (g.constantOperand(b, p)) continue;
                     try fields.append(a_, .{ .key = try g.print("a{d}_{d}", .{ k, j }), .value = try g.read(b, f, p) });
                 }
-                try js.expression(f.block, try g.rt("childHtml", &.{ try g.ident(f.slots[k].?), try g.helperCall(b, f, x.callee, x.args) }));
+                try js.expression(f.block, try g.placement(op.node, try g.rt("childHtml", &.{ try g.ident(f.slots[k].?), try g.helperCall(b, f, x.callee, x.args, op.node) })));
             },
             .component => |x| {
                 for (x.props, 0..) |p, j| {
@@ -1912,7 +2007,7 @@ pub const Gen = struct {
                     try fields.append(a_, .{ .key = try g.print("a{d}_{d}", .{ k, j }), .value = try g.read(b, f, p) });
                 }
                 if (x.children) |ch| try fields.append(a_, .{ .key = try g.print("a{d}c", .{k}), .value = try g.read(b, f, ch) });
-                try js.expression(f.block, try g.rt("childHtml", &.{ try g.ident(f.slots[k].?), try g.componentCall(b, f, op.node, x.thunk, x.children) }));
+                try js.expression(f.block, try g.placement(op.node, try g.rt("childHtml", &.{ try g.ident(f.slots[k].?), try g.componentCall(b, f, op.node, x.thunk, x.children) })));
             },
             .for_ => |x| try js.expression(f.block, try g.forCall(b, f, x.mode, try g.ident(f.slots[k].?), x.each, x.key, x.row, x.inputs)),
             .show => |x| {
@@ -2110,7 +2205,7 @@ pub const Gen = struct {
     /// marks).
     fn writeRestateSlot(g: *Gen, b: *const Body, f: *const Fn, into: m.Block, op: Op, s: m.Expr) m.Error!void {
         const js = g.jsb();
-        try js.expression(into, try g.rt("restate", &.{s}));
+        try js.expression(into, try g.rt(if (g.direct and op.what != .for_) "restateValue" else "restate", &.{s}));
         const under = try g.controlsOver(b, op);
         if (under.len == 0) return;
         const then = try js.block();
@@ -2214,7 +2309,7 @@ pub const Gen = struct {
                     const facts = g.tree.eventFacts(x.item.event);
                     try g.guarded(b, f, x.handler, k, try g.node(f, x.t), .{ .property = try g.print("$${s}", .{g.tree.string(facts.dom_name)}) });
                 },
-                .html => |x| try js.expression(f.block, try g.slotWrite(b, f, x.kind, try g.fieldOf(f, "c{d}", .{k}), x.value)),
+                .html => |x| try js.expression(f.block, try g.slotWrite(b, f, op.node, x.kind, try g.fieldOf(f, "c{d}", .{k}), x.value)),
                 .helper => |x| {
                     // A component's skip, for a plain function: the call is
                     // made only when an argument changed (§11.6). A
@@ -2228,8 +2323,8 @@ pub const Gen = struct {
                         changed = if (changed) |c| try js.binary(.logical_or, c, test_) else test_;
                         try js.assign(then, try g.fieldOf(f, "a{d}_{d}", .{ k, j }), try g.read(b, f, p));
                     }
-                    try js.expression(then, try g.rt("childHtml", &.{ try g.fieldOf(f, "c{d}", .{k}), try g.helperCall(b, f, x.callee, x.args) }));
-                    try g.callOrRestate(f, k, changed, then, x.impure);
+                    try js.expression(then, try g.placement(op.node, try g.rt("childHtml", &.{ try g.fieldOf(f, "c{d}", .{k}), try g.helperCall(b, f, x.callee, x.args, op.node) })));
+                    if (g.direct) try js.nested(f.block, then) else try g.callOrRestate(f, k, changed, then, x.impure);
                 },
                 .component => |x| {
                     var changed: ?m.Expr = null;
@@ -2245,8 +2340,8 @@ pub const Gen = struct {
                         changed = if (changed) |c| try js.binary(.logical_or, c, test_) else test_;
                         try js.assign(then, try g.fieldOf(f, "a{d}c", .{k}), try g.read(b, f, ch));
                     }
-                    try js.expression(then, try g.rt("childHtml", &.{ try g.fieldOf(f, "c{d}", .{k}), try g.componentCall(b, f, op.node, x.thunk, x.children) }));
-                    try g.callOrRestate(f, k, changed, then, x.impure);
+                    try js.expression(then, try g.placement(op.node, try g.rt("childHtml", &.{ try g.fieldOf(f, "c{d}", .{k}), try g.componentCall(b, f, op.node, x.thunk, x.children) })));
+                    if (g.direct) try js.nested(f.block, then) else try g.callOrRestate(f, k, changed, then, x.impure);
                 },
                 .for_ => |x| try js.expression(f.block, try g.forCall(b, f, x.mode, try g.fieldOf(f, "c{d}", .{k}), x.each, x.key, x.row, x.inputs)),
                 .show => |x| {
@@ -2442,13 +2537,18 @@ pub const Gen = struct {
         };
     }
 
-    fn slotWrite(g: *Gen, b: *const Body, f: *Fn, kind: m.HoleKind, s: m.Expr, v: u32) m.Error!m.Expr {
-        return switch (kind) {
+    fn placement(g: *Gen, site_node: m.Node.Index, value: m.Expr) m.Error!m.Expr {
+        return if (g.direct) g.cx.templateValue(site_node, value, true) else value;
+    }
+
+    fn slotWrite(g: *Gen, b: *const Body, f: *Fn, site_node: m.Node.Index, kind: m.HoleKind, s: m.Expr, v: u32) m.Error!m.Expr {
+        const placed = try switch (kind) {
             .html => g.rt("childHtml", &.{ s, try g.read(b, f, v) }),
             .maybe_html => g.rt("childMaybe", &.{ s, try g.cx.maybe(try g.read(b, f, v)) }),
             .list_html => g.rt("childList", &.{ s, try g.read(b, f, v) }),
             else => unreachable,
         };
+        return if (g.direct) g.cx.templateValue(site_node, placed, true) else placed;
     }
 
     /// The component's block: through its call made where the markup is
@@ -2476,10 +2576,11 @@ pub const Gen = struct {
     }
 
     /// A helper's call: its callee named where it is, its arguments read.
-    fn helperCall(g: *Gen, b: *const Body, f: *Fn, callee: m.Value.Index, args: []const u32) m.Error!m.Expr {
+    fn helperCall(g: *Gen, b: *const Body, f: *Fn, callee: m.Value.Index, args: []const u32, call_node: m.Node.Index) m.Error!m.Expr {
         const values = try g.a().alloc(m.Expr, args.len);
         for (values, args) |*v, p| v.* = try g.read(b, f, p);
-        return g.cx.call(try g.cx.value(callee), values);
+        const called = try g.cx.call(try g.cx.value(callee), values);
+        return if (g.direct) g.cx.templateValue(call_node, called, false) else called;
     }
 
     fn forCall(g: *Gen, b: *const Body, f: *Fn, mode: m.For.Mode, s: m.Expr, each: u32, key: ?u32, row: u32, inputs: ?u32) m.Error!m.Expr {

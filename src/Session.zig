@@ -35,6 +35,7 @@
 //! the product still does not depend on `--jobs`.
 
 const std = @import("std");
+const builtin = @import("builtin");
 const Allocator = std.mem.Allocator;
 const Io = std.Io;
 const diagnostic = @import("diagnostic");
@@ -537,8 +538,16 @@ pub const Worker = struct {
     }
 };
 
-pub fn init(gpa: Allocator, io: Io, options: Options) Allocator.Error!Session {
-    std.debug.assert(options.jobs >= 1);
+pub fn init(gpa: Allocator, io: Io, asked: Options) Allocator.Error!Session {
+    std.debug.assert(asked.jobs >= 1);
+    // A build with no threads has one worker, whatever it was asked for
+    // (fast-compiler.md §10, *A build with no threads*): more would cost
+    // their interners and arenas and claim no file.
+    const options = if (builtin.single_threaded) one: {
+        var one = asked;
+        one.jobs = 1;
+        break :one one;
+    } else asked;
     var session: Session = .{
         .gpa = gpa,
         .io = io,
@@ -749,7 +758,12 @@ fn runWave(session: *Session, files: []const SourceStore.Index, phases: Phases) 
     const gpa = session.gpa;
     session.wave = files;
     defer session.wave = &.{};
-    {
+    if (builtin.single_threaded) {
+        // A build with no threads runs every worker here, one after another
+        // (fast-compiler.md §10, *A build with no threads*): the first one
+        // claims every file, as the one worker of `--jobs=1` does.
+        for (session.workers) |*worker| workerMain(session, worker, phases);
+    } else {
         var threads: std.ArrayList(std.Thread) = .empty;
         defer threads.deinit(gpa);
         try threads.ensureTotalCapacity(gpa, session.workers.len);
@@ -2515,6 +2529,12 @@ fn runCheckOnBigStack(session: *Session, quiet: []const bool, cached: []?CacheEn
         }
     };
     var runner: Runner = .{ .session = session, .quiet = quiet, .cached = cached, .cutoff = cutoff };
+    // A build with no threads checks here: its main stack is sized for it
+    // (fast-compiler.md §10, *A build with no threads*).
+    if (builtin.single_threaded) {
+        Runner.go(&runner);
+        return runner.result;
+    }
     const thread = try std.Thread.spawn(.{ .stack_size = check_stack_size }, Runner.go, .{&runner});
     thread.join();
     return runner.result;
@@ -3007,8 +3027,8 @@ fn sameSpan(a: diagnostic.Span, b: diagnostic.Span) bool {
 }
 
 /// Render `items` on `stderr` in the run's diagnostics format, sorted by the
-/// schema's comparator like every other wave. Returns how many of `items`
-/// were errors.
+/// schema's comparator like every other wave. Returns the error count of
+/// the combined stream.
 ///
 /// **What `run` held back comes with them.** Under `defer_render` — which is
 /// how `build` runs — `run` collected its own wave and rendered nothing, so
@@ -3019,6 +3039,8 @@ fn sameSpan(a: diagnostic.Span, b: diagnostic.Span) bool {
 /// Called exactly once per run, and safe with `items` empty: a run that had
 /// warnings and an emit phase that had nothing still has to print them.
 pub fn renderLate(session: *Session, items: []const LateItem, stderr: *Io.Writer) RunError!u32 {
+    // Build/check return before this phase when the run reports errors;
+    // deferred diagnostics reaching renderLate are warnings, never held errors.
     const held = if (session.options.defer_render) session.diagnostics.items else &.{};
     if (items.len == 0 and held.len == 0) return 0;
     const gpa = session.gpa;
@@ -3061,7 +3083,8 @@ pub fn renderLate(session: *Session, items: []const LateItem, stderr: *Io.Writer
     defer session.late_sources = &.{};
     try session.render(rendered, stderr);
     var errors: u32 = 0;
-    for (rendered[0..items.len]) |d| {
+    // Sorting interleaves held warnings with late errors; count the whole stream.
+    for (rendered) |d| {
         if (d.severity == .@"error") errors += 1;
     }
     return errors;

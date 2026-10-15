@@ -48,6 +48,11 @@ Five facts make this cheaper in beni than in any language surveyed:
 
 **What it costs, plainly** (§3, §4.1):
 
+Measured in PR #126's independent review (2026-10-15; machine not recorded):
+field-dense synthetic code, 63k lines with `--jobs=1`, checks 41% slower
+(284 → 401 ms); the 100k-line bench corpus moves 0.31 → 0.32 s.
+Recorded without optimisation in the follow-up.
+
 - `x.m` no longer tells a reader whether it is a free read or a call. The call may allocate (`.copy`,
   `.reverse`), take O(n) time, be impure, or suspend.
 - An unannotated `size xs = xs.length` still infers a record type, `{ r | length : a } → a`. A call

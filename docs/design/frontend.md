@@ -557,6 +557,12 @@ byte-identical AST/BIR dumps; formatting always selects layout where available.
 runs the corpus at `--jobs=1` and `--jobs=8`, twice each, and byte-compares every stream and
 output file.
 
+*Note, 2026-10-15.* The sentence above is out of date for a threaded build: since a deep tree
+crashed the 8 MiB main stack, `--jobs=1` runs its one worker on a thread with
+`Check.stack_size` (`Session.run`, step 2). Only a build with no threads runs the per-file phase
+on the calling thread, with a main stack of that size (`fast-compiler.md` §10, *A build with no
+threads*).
+
 **Step 2 gains a hit path with the front-end artifacts** (`fast-compiler.md` §8), and it is the whole of their
 shape: the worker reads the file's bytes, hashes them into the file key, and — if the artifact is on
 disk and validates — installs the loaded `Bir`, token spans, line-start table and rendered front-end
@@ -1630,6 +1636,9 @@ not canonical, or does not parse, fails the step with its path; so does an exemp
 single file that does not exist or is canonical. The exemption list is one glob per line (`**` and
 `*`, matched against the repository-relative path), then `--` and a reason; blank lines and lines
 that begin `--` are ignored. `zig build beni-fmt-check` runs the step alone.
+
+*Amended 2026-10-15:* the walk covers `playground/` too, for the playground's samples
+(`playground.md` §4.3).
 
 ### 11.7 The formatter, and the order of work
 

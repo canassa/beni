@@ -82,7 +82,9 @@ decode text =
 
 
 save : List Todo → Cmd Msg
-save todos = Cmd.do λ⊤ → saved (Storage.set Local key (encode todos))
+save todos =
+    text = encode todos
+    Cmd.do λ⊤ → saved (Storage.set Local key text)
 
 
 -- A todo list too big for the quota, or storage the browser withholds,
@@ -108,8 +110,8 @@ filterOf url =
 
 -- ---- The program -----------------------------------------------------------
 
-init : Model × Cmd Msg
-init =
+init : ⊤ → Model × Cmd Msg
+init ⊤ =
     todos =
         case Storage.get Local key of
             Just text →
@@ -361,7 +363,7 @@ view model =
 main : Tea.Program
 main =
     Tea.element
-        { init = λ⊤ → init
+        { init = init
         , update = update
         , view = view
         , subscriptions = λ_ → Browser.Navigation.onUrlChange UrlChanged

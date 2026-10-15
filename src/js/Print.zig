@@ -79,7 +79,7 @@ pub const Names = struct {
         }.f };
     }
 
-    fn text(names: Names, symbol: InternPool.Symbol) []const u8 {
+    pub fn text(names: Names, symbol: InternPool.Symbol) []const u8 {
         return names.lookup(names.context, symbol);
     }
 
@@ -433,10 +433,12 @@ const Printer = struct {
 
     /// `index`'s entry in the map's `names`, numbered the first time it is
     /// asked for, or `no_name` for a name printed as written or a temporary
-    /// the lowering invented (`$t`), which has no beni name to give.
+    /// the lowering invented (`$t`), which has no beni name to give. Under
+    /// `--release` no binding is printed as written: a local's short name
+    /// gets its beni name too (`backend.md` §11.2, item 5).
     fn mapName(p: *Printer, marks: *SourceMap.Marks, index: JsIr.NameIndex) Allocator.Error!u32 {
         const n = p.ir.name(index);
-        if (n.module == .none and n.tag == JsIr.Name.no_tag) return SourceMap.Mapping.no_name;
+        if (p.rename == null and n.module == .none and n.tag == JsIr.Name.no_tag) return SourceMap.Mapping.no_name;
         if (std.mem.startsWith(u8, p.names.text(n.base), "$")) return SourceMap.Mapping.no_name;
         if (p.map_names.len == 0) {
             p.map_names = try p.spelled.alloc(u32, p.ir.names.len);
@@ -470,7 +472,7 @@ const Printer = struct {
     fn push(p: *Printer, text: []const u8) Allocator.Error!void {
         if (text.len == 0) return;
         if (p.compact) {
-            if (merges(p.last, text[0])) try p.joiner.push(" ");
+            if (merges(p.last, text[0])) try p.space();
             p.last = text[text.len - 1];
         }
         try p.joiner.push(text);
@@ -479,7 +481,7 @@ const Printer = struct {
     fn pushOwned(p: *Printer, text: []const u8) Allocator.Error!void {
         if (text.len == 0) return;
         if (p.compact) {
-            if (merges(p.last, text[0])) try p.joiner.push(" ");
+            if (merges(p.last, text[0])) try p.space();
             p.last = text[text.len - 1];
         }
         try p.joiner.pushOwned(text);
@@ -495,7 +497,14 @@ const Printer = struct {
     /// printing `one| two`. A string literal is one token however many pieces
     /// it takes to write.
     fn openToken(p: *Printer, first: u8) Allocator.Error!void {
-        if (p.compact and merges(p.last, first)) try p.joiner.push(" ");
+        if (p.compact and merges(p.last, first)) try p.space();
+    }
+
+    /// The adjacency guard's space. A mark recorded at this byte is for the
+    /// token after it, and steps over it (`backend.md` §11.2, item 3).
+    fn space(p: *Printer) Allocator.Error!void {
+        if (p.marks) |marks| marks.skipSpace(p.joiner.length);
+        try p.joiner.push(" ");
     }
 
     /// A piece of a token already opened: tracked, never separated.
@@ -534,6 +543,8 @@ const Printer = struct {
             const last = p.joiner.pieces.pop().?;
             p.joiner.length -= last.len;
             p.last = p.lastByte();
+            // A mark after the `;` was for a node that printed nothing.
+            if (p.marks) |marks| marks.dropPast(p.joiner.length);
         }
         p.semicolon = 0;
         try p.push("}");
@@ -812,8 +823,9 @@ const Printer = struct {
 
     /// `for(let n=a;c;update)body`, `forHead`'s answer.
     fn forLoop(p: *Printer, decl: Index, loop: Index, shape: BreakShape, level: u32) Allocator.Error!void {
-        _ = loop;
         try p.indent(level);
+        // `for` maps where the loop's `while` would.
+        try p.mark(loop);
         try p.push("for(let ");
         try p.declarator(decl, level);
         try p.push(";");
@@ -986,13 +998,14 @@ const Printer = struct {
     /// `constRun` over the declarations of `list` from `from` on, but for
     /// `skip`'s (a `for` head's).
     fn constRunSkip(p: *Printer, list: []const Index, from: usize, skip: usize, level: u32) Allocator.Error!void {
-        const any = for (list[from..], from..) |node, i| {
+        const first: ?Index = for (list[from..], from..) |node, i| {
             if (i == skip or p.plan.isDropped(node)) continue;
-            if (!isDeclaration(p.ir.tag(node))) break false;
-            break true;
-        } else false;
-        if (!any) return;
+            if (!isDeclaration(p.ir.tag(node))) break null;
+            break node;
+        } else null;
+        const opening = first orelse return;
         try p.indent(level);
+        try p.mark(opening);
         try p.push("let");
         var written: usize = 0;
         for (list[from..], from..) |node, i| {
@@ -1024,6 +1037,9 @@ const Printer = struct {
     /// (`constRun`), where the keyword changes nothing V8 does.
     fn topConstRun(p: *Printer, list: []const Index, from: usize) Allocator.Error!usize {
         const kind = p.ir.tag(list[from]);
+        // The keyword maps where its first member's would (`backend.md`
+        // §11.2, item 4).
+        try p.mark(list[from]);
         try p.push(if (kind == .const_decl) "const" else "let");
         var last = from;
         var i = from;
@@ -1046,13 +1062,18 @@ const Printer = struct {
     }
 
     /// `name=value`, or a `let`'s `name` alone when it has no value.
+    /// It records what a `const` statement does in a map (`backend.md`
+    /// §11.2, item 4): its name, and the function's name on an arrow.
     fn declarator(p: *Printer, node: Index, level: u32) Allocator.Error!void {
         const d = p.ir.data(node);
+        try p.markName(node, @fromBackingInt(@intCast(d.lhs)));
         try p.name(@fromBackingInt(@intCast(d.lhs)), .binding);
         const value: Node.OptionalIndex = @fromBackingInt(@intCast(d.rhs));
         const v = value.unwrap() orelse return;
         try p.push("=");
+        if (p.ir.tag(v) == .arrow) try p.nameFunction(@fromBackingInt(@intCast(d.lhs)));
         try p.expression(v, 0, level);
+        p.function_name = SourceMap.Mapping.no_name;
     }
 
     /// Print the run of declarations starting at `from` as one, and return
@@ -1065,6 +1086,7 @@ const Printer = struct {
     /// 2026-10-02; §9 item 5 used to join the two kinds apart).
     fn constRun(p: *Printer, list: []const Index, from: usize, level: u32) Allocator.Error!usize {
         try p.indent(level);
+        try p.mark(list[from]);
         try p.push("let");
         var last = from;
         var i = from;
@@ -3512,6 +3534,46 @@ test "the joiner allocates once and blits, borrowed and owned pieces alike" {
 // spaces go**. Each test is one of the adjacencies §9 lists, plus the two the
 // implementation found: a multi-piece token, and a `switch` label.
 // ---------------------------------------------------------------------------
+
+test "compact: a mark goes past the guard's space, and with the `;` a block's end takes back" {
+    // `backend.md` §11.2, *What the marks survive*, item 3. `g` is a
+    // statement at source byte 50, `t` a declaration at 60, and the `if`
+    // at 70 has empty arms and a test that only compares, so under
+    // `--release` it prints nothing (§9, *Compact statements*, item 9). Its
+    // mark lands after `g`'s `;`, which `closeBlock` then takes back: the
+    // mark goes with it, or it maps the bytes after the `}` to the `if`.
+    // `t`'s name follows `let`, so the adjacency guard puts a space before
+    // it; the name's mark is on the name, not on the space.
+    const gpa = testing.allocator;
+    var f = try Fixture.init(gpa);
+    defer f.deinit();
+    const call = try f.b.addNode(.{ .tag = .expr_stmt, .pos = 50, .data = .{ .lhs = (try f.ident("g")).int(), .rhs = 0 } });
+    const empty = try f.b.addRange(&.{});
+    const branches = try f.b.addRecord(JsIr.If{ .then_start = empty.start, .then_end = empty.end, .else_start = empty.start, .else_end = empty.end });
+    const same = try f.binary(.strict_eq, try f.ident("a"), try f.ident("b"));
+    const if_stmt = try f.b.addNode(.{ .tag = .if_stmt, .pos = 70, .data = .{ .lhs = same.int(), .rhs = @backingInt(branches) } });
+    const local = try f.b.addNode(.{ .tag = .const_decl, .pos = 60, .data = .{ .lhs = @backingInt(try f.name("t")), .rhs = (try f.number("1")).int() } });
+    const arrow = try f.func(&.{ try f.name("a"), try f.name("b") }, &.{ local, call, if_stmt });
+    var statements: std.ArrayList(Index) = .empty;
+    defer statements.deinit(gpa);
+    try f.constDecl(&statements, "f", arrow);
+    const body = try f.b.addRange(statements.items);
+    var ir = try f.b.toOwned(body);
+    defer ir.deinit(gpa);
+
+    var scratch: Arena = .init(gpa);
+    defer scratch.deinit();
+    var marks: SourceMap.Marks = .init(scratch.allocator());
+    const text = try print(gpa, scratch.allocator(), &ir, .fromLocal(&f.interner), .{ .compact = true, .marks = &marks });
+    defer gpa.free(text);
+    try testing.expectEqualStrings("const f=(a,b)=>{let t=1;g};\n", text);
+    // The run's keyword maps where its first member does (item 4).
+    try testing.expectEqual(@as(usize, 3), marks.list.items.len);
+    try testing.expectEqual(SourceMap.Mapping{ .generated = @intCast(std.mem.indexOf(u8, text, "let").?), .source = 60 }, marks.list.items[0]);
+    try testing.expectEqual(@as(u32, @intCast(std.mem.indexOf(u8, text, "t=").?)), marks.list.items[1].generated);
+    try testing.expectEqual(@as(u32, 60), marks.list.items[1].source);
+    try testing.expectEqual(SourceMap.Mapping{ .generated = @intCast(std.mem.indexOf(u8, text, "g}").?), .source = 50 }, marks.list.items[2]);
+}
 
 test "compact: a binary minus before a negation keeps one space and nothing else does" {
     // `a - -b` closing up to `a--b` is a decrement, which is the one

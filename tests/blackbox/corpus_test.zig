@@ -370,6 +370,10 @@ fn walk(kind: Kind) !void {
     const arena = arena_state.allocator();
 
     const cfg = try Config.read(arena);
+    // Validate all grants once, before filtering: an orphan must never vanish
+    // merely because no case reads it. This covers every kind in the whole root;
+    // the browser guard runs it once, since that part runs in every full gate.
+    if (kind == .browser) try validateBudgetFiles(arena, &cfg);
     // Another process runs this kind (`corpus_parts.zig`): nothing to do.
     if (!cfg.runs(kind.partOf(.dev)) and !cfg.runs(kind.partOf(.release))) return;
     // Recording run hashes is about the kinds that run programs alone.
@@ -452,6 +456,36 @@ fn walk(kind: Kind) !void {
 /// The Chrome `BENI_BROWSER=chrome` runs every page in, while a walk of
 /// `browser/` has it open.
 var chrome_endpoint: ?[]const u8 = null;
+
+/// Every budget file must name an actual case, including a separate value-fuzz
+/// case. Compare against the complete inventory, before any run filters.
+fn validateBudgetFiles(arena: std.mem.Allocator, cfg: *const Config) !void {
+    var allowed: std.StringHashMapUnmanaged(void) = .empty;
+    for (std.enums.values(Kind)) |kind| {
+        for (try fixturesOf(arena, cfg, kind)) |fixture| {
+            const ext = if (fixture.values) "fuzz-budget" else "budget";
+            try allowed.put(arena, try fixtureGoldenPath(arena, fixture, ext), {});
+        }
+    }
+    var dir = try Io.Dir.cwd().openDir(testing.io, cfg.root, .{ .iterate = true });
+    defer dir.close(testing.io);
+    var it = try dir.walk(arena);
+    defer it.deinit();
+    while (try it.next(testing.io)) |entry| {
+        if (entry.kind == .directory) continue;
+        if (!std.mem.endsWith(u8, entry.path, ".budget") and !std.mem.endsWith(u8, entry.path, ".fuzz-budget")) continue;
+        const path = try std.fs.path.join(arena, &.{ cfg.root, entry.path });
+        if (allowed.contains(path)) continue;
+        std.debug.print("orphan corpus budget: {s} has no matching case\n", .{path});
+        return error.OrphanCorpusBudget;
+    }
+}
+
+fn fixtureGoldenPath(arena: std.mem.Allocator, fixture: Fixture, ext: []const u8) ![]const u8 {
+    if (fixture.project) return std.fmt.allocPrint(arena, "{s}/{s}/_expected.{s}", .{ fixture.dir, fixture.name, ext });
+    const stem = fixture.name[0 .. fixture.name.len - ".beni".len];
+    return std.fmt.allocPrint(arena, "{s}/{s}.{s}", .{ fixture.dir, stem, ext });
+}
 
 /// Whether `text` is in the path of any fixture of any kind under the root.
 fn anyFixtureMatches(arena: std.mem.Allocator, cfg: *const Config, text: []const u8) !bool {
@@ -1326,11 +1360,7 @@ const Case = struct {
     /// `<dir>/<stem>.<ext>` next to the fixture, or
     /// `<dir>/<project>/_expected.<ext>` inside a project (checker.md §3).
     fn goldenPath(c: Case, ext: []const u8) ![]const u8 {
-        if (c.fixture.project) {
-            return std.fmt.allocPrint(c.arena, "{s}/{s}/_expected.{s}", .{ c.fixture.dir, c.fixture.name, ext });
-        }
-        const stem = c.fixture.name[0 .. c.fixture.name.len - ".beni".len];
-        return std.fmt.allocPrint(c.arena, "{s}/{s}.{s}", .{ c.fixture.dir, stem, ext });
+        return fixtureGoldenPath(c.arena, c.fixture, ext);
     }
 
     fn run(c: Case) !void {
@@ -1367,13 +1397,13 @@ const Case = struct {
     /// and for cases whose cost is a compiler defect with an open issue
     /// (`tests/corpus/README.md`, *Budgets*): the file's first word is the
     /// limit, and the rest of it must say why, so none is added silently.
-    /// It is the page case's: a `browser/direct/` page's value-fuzz case
-    /// (`Fixture.values`) keeps the global budget, since a grant names the
-    /// case it was asked for.
+    /// A `.budget` is the page case's. A separately granted value-fuzz case
+    /// (`Fixture.values`) uses `.fuzz-budget`, so page grants never cover it
+    /// implicitly (owner's Conduit grants, 2026-10-14).
     fn ownBudget(c: Case) !?u64 {
-        if (c.fixture.values) return null;
-        if (!c.goldenExists("budget")) return null;
-        const text = try Io.Dir.cwd().readFileAlloc(testing.io, try c.goldenPath("budget"), c.arena, .limited(4096));
+        const ext = if (c.fixture.values) "fuzz-budget" else "budget";
+        if (!c.goldenExists(ext)) return null;
+        const text = try Io.Dir.cwd().readFileAlloc(testing.io, try c.goldenPath(ext), c.arena, .limited(4096));
         var words = std.mem.tokenizeAny(u8, text, " \t\r\n");
         const first = words.next() orelse return error.BudgetFileEmpty;
         const millions = std.fmt.parseUnsigned(u64, first, 10) catch return error.BudgetNotANumber;
@@ -2290,6 +2320,10 @@ const Case = struct {
         const bless = c.bless and !tea and (std.mem.eql(u8, golden, "chrome-expected") or
             (!chrome and (pass == .dev or !std.mem.eql(u8, golden, "expected"))));
         const out = pageOut(pass);
+        if (!tea and c.goldenExists("plan")) {
+            const plan = try c.w.read(try std.fmt.allocPrint(c.arena, "{s}/_direct-plan.json", .{out}));
+            try c.expectGoldenMaybeBless("plan", plan, c.bless and pass == .dev);
+        }
         return c.checkedPlan(.{
             .pass = pass,
             .golden = golden,

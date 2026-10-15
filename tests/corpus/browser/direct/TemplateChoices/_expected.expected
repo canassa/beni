@@ -1,0 +1,69 @@
+-- load
+<body>
+  <main>
+    <button id="switch">"open"</button>
+    <button id="inc">"0"</button>
+    <button id="quiet">"quiet"</button>
+    <button id="shared">"8"</button>
+  </main>
+</body>
+-- click #quiet
+(the DOM did not change)
+-- focus #inc
+<body>
+  <main>
+    <button id="switch">"open"</button>
+    <button id="inc" :focus>"0"</button>
+    <button id="quiet">"quiet"</button>
+    <button id="shared">"8"</button>
+  </main>
+</body>
+-- click #inc
+<body>
+  <main>
+    <button id="switch">"open"</button>
+    <button id="inc" :focus>"1"</button>
+    <button id="quiet">"quiet"</button>
+    <button id="shared">"8"</button>
+  </main>
+</body>
+-- click #switch
+<body>
+  <main>
+    <button id="switch">"closed"</button>
+    <button id="inc" :focus>"100"</button>
+    <button id="quiet">"quiet"</button>
+    <button id="shared">"8"</button>
+  </main>
+</body>
+-- click #inc
+(the DOM did not change)
+-- click #quiet
+(the DOM did not change)
+-- click #shared
+<body>
+  <main>
+    <button id="switch">"closed"</button>
+    <button id="inc" :focus>"100"</button>
+    <button id="quiet">"quiet"</button>
+    <button id="shared">"9"</button>
+  </main>
+</body>
+-- click #switch
+<body>
+  <main>
+    <button id="switch">"open"</button>
+    <button id="inc" :focus>"2"</button>
+    <button id="quiet">"quiet"</button>
+    <button id="shared">"9"</button>
+  </main>
+</body>
+-- click #shared
+<body>
+  <main>
+    <button id="switch">"open"</button>
+    <button id="inc" :focus>"2"</button>
+    <button id="quiet">"quiet"</button>
+    <button id="shared">"10"</button>
+  </main>
+</body>
