@@ -11,6 +11,8 @@ them. It does not change the beni compiler
 or the thesis.
 
 Current results and the full source-mutant matrix are in [RESULTS.md](RESULTS.md).
+The shipping-compiler differential bridge, counted skips, runtime boundary and
+commands are specified in [BRIDGE.md](BRIDGE.md); `ownership ci` includes its bounded run.
 The oracle has 98 original and 44 sync verdict fixtures, generator v5, a bounded-exhaustive
 grammar plus 348 targeted programs, required negative controls (including `set-exclusive` and `once-live`),
 and a falsifier that fails when summary coverage is excessively vacuous.
@@ -72,7 +74,8 @@ Linux inside the ownership shell, which supplies Node 24 and taskset; `MUTANT_CO
 `0-7` and refuses more than eight CPUs. `ENUMERATE_BOUND` sets the bound.
 
 Lean **4.29.1** is pinned by `lean-toolchain` and locked nixpkgs; no Mathlib,
-no network, no paid service. The project is outside the Zig gates.
+no network, no paid service. The Lean project is outside the Zig gates. The bridge invokes `zorg build`;
+keep `zorg` on PATH inside the ownership shell.
 
 ## Modules
 
@@ -97,6 +100,8 @@ no network, no paid service. The project is outside the Zig gates.
 | `Soundness.lean` | the bridge to concrete heaps and the soundness statements |
 | `Falsify.lean` | executes the unproved statements on concrete configurations (`ownership falsify`) |
 | `Report.lean` | printing summaries |
+| `Bridge.lean`, `BridgeWire.lean` | existing-stream export, typed reducer and data-only wire decoder |
+| `scripts/bridge*.mjs` | public-source translation, shipping verdict/runtime comparison and isolated Zig controls |
 
 [DESIGN.md](DESIGN.md) specifies the boundary and the summary layer;
 [COVERAGE.md](COVERAGE.md) audits T1–T59, says what is and is not tested,

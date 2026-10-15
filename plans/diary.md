@@ -6621,3 +6621,32 @@ and expose both. Roc's zero-argument `()` followed from parens-and-commas and di
 hidden cost on beni's side is that ownership, write sets and the markup tree all read `field_access`
 chains as paths. If one of them read `current.trail.copy` as a path, the motivating line would be
 refused as an alias.
+||||||| parent of 36d780f0b (✅ bridge Lean ownership programs to the shipping compiler)
+
+## 2026-10-15 01:50 CEST — Ownership differential bridge in progress
+
+**What I did**
+
+Started the Lean-to-beni bridge in the isolated `ownership-differential-bridge`
+worktree: specified the translation, exported existing streams with observational
+checker breadcrumbs, translated the common subset, compared ownership dump and
+browser-direct enforcement, added real runtime observations and reduction, and
+prepared three opt-in compiler source mutations. An initial fixture experiment
+translated 244 of 490 programs and found ten program-level Zig-accepts/Lean-rejects
+leads; all ten agreed under real runtimes on their final values. These preliminary
+counts predate added read observations and translation refinements. Started the
+long bound-2/three-seed run on an isolated Linux snapshot pinned to CPUs 0–7.
+The user requested a restart prompt while that run was processing enumeration.
+Detailed handoff is in this worktree's ignored `zig-out/ownership-bridge-handoff.md`.
+No PR or task commit yet; final CI, audit, gates and source-mutation runs remain.
+
+**What I learned**
+
+The real checker reports multiple obligations at one source span and deduplicates
+its enforcement diagnostics there; comparison must group source sites. Lean
+aborts on its first failure, and canonical summary failures cannot be imputed
+to unrelated concrete demands. Private builders, identity-preserving close and
+abstract event/model protocols require explicit skips. Runtime confirmation
+needs read snapshots as well as final values. Do not rebuild the oracle binary
+while a campaign is spawning its reducer. macOS archive resource forks must be
+excluded from a Linux source snapshot: the Lean audit correctly rejects them.

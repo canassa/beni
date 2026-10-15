@@ -5,6 +5,7 @@ import Ownership.Report
 import Ownership.Falsify
 import Ownership.Enumerate
 import Ownership.Cli
+import Ownership.Bridge
 import Ownership.Targeted
 
 open Ownership
@@ -19,6 +20,13 @@ def main (args : List String) : IO UInt32 := do
   let count := positional[0]?.bind String.toNat? |>.getD 1000
   let seed := positional[1]?.bind String.toNat? |>.getD 20261011
   let version := (flagValue args "generator-version").bind String.toNat? |>.getD 5
+  if mode == "bridge-reduce" then
+    Bridge.reduceFile ((flagValue args "input").getD "") ((flagValue args "out").getD "")
+    return 0
+  if mode == "bridge-export" then
+    Bridge.writeExport ((flagValue args "out").getD "bridge.jsonl") ((flagValue args "suite").getD "fixtures") count seed
+      (((flagValue args "enumerate-bound").bind String.toNat?).getD 2)
+    return 0
   let mutant ← match flagValue args "mutant" with
     | none => pure none
     | some name => match Mutant.parse name with
@@ -173,6 +181,11 @@ def main (args : List String) : IO UInt32 := do
     for (hole, _) in Sync.holes do
       IO.println s!"CI targeted control {hole.name}"
       if !(← Targeted.run {mutant := some hole} .control) then return 1
+    let bridge ← IO.Process.output { cmd := "node", args := #["scripts/bridge.mjs", "--ci"] }
+    IO.print bridge.stdout
+    if bridge.exitCode != 0 then
+      IO.eprint bridge.stderr
+      return 1
     return 0
   if mode != "oracle" && mode != "--generator-only" then
     if !(← Fixtures.run) then return 1

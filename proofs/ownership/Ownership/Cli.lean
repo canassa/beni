@@ -2,7 +2,7 @@ import Ownership.Config
 
 namespace Ownership.Cli
 
-def modes := ["all", "oracle", "fixtures", "controls", "reasons", "ci", "summaries",
+def modes := ["bridge-reduce", "bridge-export", "all", "oracle", "fixtures", "controls", "reasons", "ci", "summaries",
   "verdict-diff", "falsify", "accepted", "enumerate", "enumerate-targeted", "source-sweep"]
 
 /-- Reject inputs that would otherwise silently select defaults or ignore work. -/
@@ -12,7 +12,7 @@ def validate (args : List String) : Except String (String × List String) := do
   unless modes.contains mode do throw s!"unknown command {raw}; commands: {modes}"
   let rest := args.drop 1
   let pos := rest.filter (!·.startsWith "--")
-  let maxPos := if ["fixtures", "summaries", "enumerate-targeted"].contains mode then 0 else if mode == "enumerate" then 1 else 2
+  let maxPos := if ["bridge-reduce", "fixtures", "summaries", "enumerate-targeted"].contains mode then 0 else if mode == "enumerate" then 1 else 2
   if pos.length > maxPos then throw s!"too many arguments for {mode}"
   for p in pos do unless p.toNat?.isSome do throw s!"invalid natural number {p}"
   if (pos[0]?.bind String.toNat?) == some 0 && !["source-sweep", "accepted", "enumerate"].contains mode then
@@ -28,6 +28,8 @@ def validate (args : List String) : Except String (String × List String) := do
     (if general || ["falsify", "enumerate", "enumerate-targeted", "verdict-diff"].contains mode then ["mutant"] else []) ++
     (if ["enumerate", "enumerate-targeted"].contains mode then ["accepted-out", "skip-accepted"] else []) ++
     (if mode == "ci" then ["enumerate-bound"] else []) ++
+    (if mode == "bridge-reduce" then ["input", "out"] else []) ++
+    (if mode == "bridge-export" then ["enumerate-bound", "out", "suite"] else []) ++
     (if mode == "source-sweep" then ["baseline-accepted"] else []) ++
     (if mode == "summaries" then ["fixture"] else []) ++
     (if mode == "reasons" then ["family"] else [])
@@ -43,8 +45,12 @@ def validate (args : List String) : Except String (String × List String) := do
     if value.isEmpty then throw s!"empty option {flag}"
     if name == "generator-version" && !["1", "3", "4", "5"].contains value then
       throw s!"unsupported generator version {value}"
-    if name == "enumerate-bound" then
+    if name == "enumerate-bound" && mode == "ci" then
       unless value.toNat?.any (· ≥ 2) do throw "CI enumeration bound must be at least 2"
+    if name == "enumerate-bound" && mode == "bridge-export" && value.toNat?.isNone then
+      throw "bridge enumeration bound must be a natural number"
+    if name == "suite" && !["fixtures", "enumerate", "generator"].contains value then
+      throw s!"unknown bridge suite {value}"
   if mode == "verdict-diff" && !seen.contains "--mutant" then throw "verdict-diff needs --mutant="
   if mode == "source-sweep" && !seen.contains "--baseline-accepted" then throw "source-sweep needs --baseline-accepted="
   if rest.contains "--count-only" && rest.length != 1 + pos.length then
