@@ -25,17 +25,17 @@ was saturating the four cores and read 784 ms where the real number was
 LLVM ReleaseSafe, `--jobs=1 --no-cache`, identical inputs, medians of 12 runs
 per compiler across all six execution orders twice after warming:
 
-| Checking, ms | Before #126 (`134d24ab9`) | Master (`2c4e2aee0`) | Follow-up (`36a879521`) |
+| Checking, ms | Before #126 (`134d24ab9`) | Master (`2c4e2aee0`) | Follow-up (`b9e227f9a`) |
 |---|---:|---:|---:|
-| Annotated 63k | 46.91 | 69.94 | 33.56 |
-| Unannotated 63k | 45.75 | 145.05 | 40.10 |
-| Same generated 100k | 66.21 | 68.34 | 67.53 |
-| Updated bench/corpus | 6.29 | 7.04 | 6.75 |
-| 100k plus TaskBoard | 67.48 | 67.92 | 68.77 |
+| Annotated 63k | 47.68 | 62.43 | 34.16 |
+| Unannotated 63k | 46.43 | 146.02 | 40.90 |
+| Same generated 100k | 67.20 | 68.28 | 67.63 |
+| Updated bench/corpus | 6.47 | 6.58 | 6.89 |
+| 100k plus TaskBoard | 66.56 | 68.02 | 68.50 |
 
-The synthetic net overhead is removed: 158.0%/105.7% recovery also includes
+The synthetic net overhead is removed: 191.6%/105.5% recovery also includes
 savings on ordinary field unification that predates #126. The follow-up is
-28.5%/12.3% faster than pre-#126. Corpus ranges overlap; their tiny differences
+28.4%/11.9% faster than pre-#126. Corpus ranges overlap; their tiny differences
 do not establish a precise recovery fraction. TaskBoard adds 34 unannotated
 record callbacks: an untimed counter confirms all 40 accesses start flexible.
 The pending-read scaling test fails on master at 3.82 and passes here at 1.42

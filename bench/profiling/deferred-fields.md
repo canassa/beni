@@ -8,8 +8,13 @@ zorg 0.17.1+zorg.1. All timing binaries are **LLVM ReleaseSafe**
 | Compiler | Revision |
 |---|---|
 | Immediately before #126 | `134d24ab96c5b57f1917ed67af3b931a30a16add` |
-| Current master at measurement start | `2c4e2aee0a5be57606da36ee7c667ca46c6de427` |
-| This follow-up, including #135 | `36a8795219f297c78cefedc15d84678b6b100e7a` |
+| Master including merged #135 | `d10749f70a2060230c99cd196d70c15c2666eb9b` |
+| This follow-up, including #135 | `b9e227f9aeda9d793c7bed46d627984448d70133` |
+
+The measured master already includes #135 (`dd38d162e`); its subsequent
+`d10749f70` update and the final feature-branch merge change documentation only.
+Rebuilds produced identical compiler SHA-256 values, retained with the samples.
+The recovery column therefore measures the **remaining** net overhead after #135.
 
 ## Identical inputs and method
 
@@ -47,48 +52,48 @@ Medians of 12 runs per compiler, total checking spans, milliseconds:
 
 | Input | Before #126 | Master | Follow-up | Added cost removed |
 |---|---:|---:|---:|---:|
-| Annotated 63k | 46.91 | 69.94 | **33.56** | 158.0% |
-| Unannotated 63k | 45.75 | 145.05 | **40.10** | 105.7% |
-| Same generated 100k | 66.21 | 68.34 | 67.53 | noisy |
-| Updated bench/corpus | 6.29 | 7.04 | 6.75 | noisy |
-| 100k plus TaskBoard | 67.48 | 67.92 | 68.77 | noisy |
+| Annotated 63k | 47.68 | 62.43 | **34.16** | 191.6% |
+| Unannotated 63k | 46.43 | 146.02 | **40.90** | 105.5% |
+| Same generated 100k | 67.20 | 68.28 | 67.63 | noisy |
+| Updated bench/corpus | 6.47 | 6.58 | 6.89 | noisy |
+| 100k plus TaskBoard | 66.56 | 68.02 | 68.50 | noisy |
 
 Recovery is `(master − follow-up) / (master − before)`, calculated from
 unrounded medians. Above 100% means the net added cost is gone **and** the
 ordinary field-read shortcut saves work that predates #126. It does not mean
-that deferral itself costs nothing. The annotated case is 28.5% faster than
-before #126; the unannotated case is 12.3% faster. Both beat the requested
+that deferral itself costs nothing. The annotated case is 28.4% faster than
+before #126; the unannotated case is 11.9% faster. Both beat the requested
 "no more than about 10% slower than before #126" target. Versus master the
-checking reductions are 52.0% and 72.4% respectively.
+checking reductions are 45.3% and 72.0% respectively.
 
 Do not infer precise corpus recovery from a sub-millisecond denominator.
-The original 100k check ranges overlap: before 63.72–71.33 ms, master 64.34–70.37 ms, follow-up 63.85–73.15 ms.
+The original 100k check ranges overlap: before 60.98–71.40 ms, master 66.91–72.70 ms, follow-up 65.25–75.03 ms.
 The other corpus inputs also overlap. Their follow-up medians are
-2.0% (original 100k), 7.4% (realistic corpus) and
-1.9% (enriched 100k) above pre-#126. These inputs verify broader
+0.6% (original 100k), 6.6% (realistic corpus) and
+2.9% (enriched 100k) above pre-#126. These inputs verify broader
 throughput rather than establish a precise field-dense recovery fraction.
 
 Whole-process wall medians, including loading and the frontend, milliseconds:
 
 | Input | Before #126 | Master | Follow-up |
 |---|---:|---:|---:|
-| Annotated 63k | 79.89 | 103.01 | 66.24 |
-| Unannotated 63k | 76.43 | 176.71 | 70.97 |
-| Same generated 100k | 349.93 | 346.79 | 341.53 |
-| Updated bench/corpus | 38.24 | 37.73 | 39.86 |
-| 100k plus TaskBoard | 350.89 | 348.27 | 343.86 |
+| Annotated 63k | 81.89 | 96.85 | 69.25 |
+| Unannotated 63k | 78.93 | 178.39 | 73.51 |
+| Same generated 100k | 341.64 | 346.65 | 347.45 |
+| Updated bench/corpus | 39.51 | 39.67 | 41.33 |
+| 100k plus TaskBoard | 322.82 | 336.13 | 331.24 |
 
 Selected checker phases (independent medians; this partial table does not sum
 to total checking), milliseconds:
 
 | Input/compiler | Constrain | Solve | Effects |
 |---|---:|---:|---:|
-| Annotated, before #126 | 9.79 | 31.67 | 0.84 |
-| Annotated, master | 12.21 | 47.96 | 4.07 |
-| Annotated, follow-up | 9.86 | 18.19 | 0.88 |
-| Unannotated, before #126 | 9.66 | 30.98 | 0.99 |
-| Unannotated, master | 11.92 | 123.74 | 4.23 |
-| Unannotated, follow-up | 9.87 | 24.70 | 1.10 |
+| Annotated, before #126 | 9.89 | 31.85 | 0.84 |
+| Annotated, master | 12.29 | 40.75 | 4.00 |
+| Annotated, follow-up | 9.97 | 18.21 | 0.91 |
+| Unannotated, before #126 | 9.79 | 31.19 | 0.98 |
+| Unannotated, master | 12.03 | 124.29 | 4.23 |
+| Unannotated, follow-up | 9.92 | 25.04 | 1.11 |
 
 ## What changed and why it preserves results
 
@@ -108,8 +113,10 @@ Owned walks enumerate actual live dependants rather than three slots per row,
 including self placeholders. Rank adjustment treats a non-generalised escaped
 flex/rigid root as settled at a younger boundary: I15 already lowered its owned
 closure on attachment and every strict rank drop, and none of that closure can
-be quantified there. New/strictly lowered edges are asserted at attachment and merge in safe builds,
-before any younger boundary could quantify them. This checks only the changed
+be quantified there. New/strictly lowered dependency roots are asserted at attachment and merge in
+safe builds, before a younger boundary could quantify them. These check root
+postconditions, not an independent proof of the whole closure; the construction
+invariant through `lowerTo` remains the basis of the shortcut. This checks only the changed
 edges rather than rescanning the growing set. Its own boundary still walks it
 and checks the invariant.
 Structural roots retain ordinary rank adjustment. This removes repeated walks
@@ -130,8 +137,10 @@ including its invariant check at 253/1,116, on the 504k-line unannotated input.
 The [retained earlier report](nullary-overhead.md) also cross-checks the actual
 63k timing input. This motivated the dependency-walk change.
 
-Final native sampling uses the same follow-up sources and LLVM ReleaseSafe,
-with stripping disabled solely for symbols. `sample PID 5 1 -file OUTPUT`
+Native sampling uses the reviewed checker at `36a879521` and LLVM ReleaseSafe.
+The later master update leaves every `src/check` file unchanged; the timing
+comparison above was freshly collected on that updated base. The profile binary
+disables stripping solely for symbols. `sample PID 5 1 -file OUTPUT`
 covers successful complete runs. Inputs use `field-dense.py 32000
 [--unannotated]`: 2,016,000 lines and 1,920,000 reads. The extra independent
 functions give enough samples for the faster compiler; each function retains
@@ -167,7 +176,7 @@ regression to justify weakening that guarantee.
 ## Regression evidence and validation
 
 The new black-box `test-perf` scenario doubles reads on one unknown receiver
-from 4,000 to 8,000. With the test copied to current master, the **actual
+from 4,000 to 8,000. With the test copied to the earlier master baseline `2c4e2aee0`, the **actual
 ReleaseFast test fails**: 140/536 ms child CPU, ratio **3.82**, above 2.5.
 On the final follow-up it passes: 7/10 ms, ratio **1.42**. These are the
 harness's CPU best-of-three scaling measurements, separate from the LLVM
@@ -202,14 +211,24 @@ receiver fixture pins the same single naming error. A separate cold/warm cache
 replay at jobs 1/8 under both compilers emits identical files and returns 14 in
 Node on all four runs. The replay JSON retains each file's fingerprint.
 
-The 467 development, 467 release and 1,469 browser recorded output
-hashes all match, with no stale hashes. No existing golden or run hash changes.
+The 467 development, 467 release and 1,469 previously verified browser hashes
+match. Six newly promoted Bike Wars runs have stale records on this host on
+unmodified master too. Independent re-recording on master and the PR verifies
+the same runtime transcripts and produces identical hashes for all six. The
+tracked hashes were restored: no existing golden or hash update is retained.
 The Linux instruction-budget gate remains owed before merge: this Mac cannot
-count it. #135 and the follow-up remain unmerged.
+count it. #135 has since been merged by the owner; this follow-up remains unmerged.
 
 - [Every timing sample, input fingerprint and recovery calculation](../results/2026-10-15-deferred-fields-three-way-safe.json)
-- [Final native profile counts and sample fingerprints](../results/2026-10-15-deferred-fields-profile.json)
+- [Reviewed checker profile counts and sample fingerprints](../results/2026-10-15-deferred-fields-profile.json)
 
 - [Successful dump comparisons](../results/2026-10-15-deferred-fields-dumps.json)
 - [Late dispatch/cache replay](../results/2026-10-15-deferred-late-replay.json)
 - [Untimed callback receiver counts](../results/2026-10-15-deferred-field-receivers.json)
+
+The final optional review question is measured too: both late-dot sites are
+created at rank 2; site 9 resolves first at rank 3, then site 7 at rank 2, with
+owner rank 1 throughout. The isolated frame-counter patch and trace are retained.
+
+- [Nested decision-frame counter](../results/2026-10-15-deferred-field-frames.json)
+- [Bike Wars master/PR output comparison](../results/2026-10-15-bikewars-baseline-comparison.json)

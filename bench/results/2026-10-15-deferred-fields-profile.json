@@ -35,5 +35,6 @@
       },
       "sample_sha256": "87f0c9c4f9b0fd56db5647f2e064b52f46e8e56b03c0b1dc16cb3ac88edbbd8c"
     }
-  }
+  },
+  "note": "Profile collected before updating the branch onto the merged parent. Every src/check file is unchanged by that update; final timings are freshly measured on the updated base."
 }
