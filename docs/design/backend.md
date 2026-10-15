@@ -7638,7 +7638,8 @@ instructions and the bytes after it.
   the frames of the crash, and it pins the `sources`: a module with no mark is not one.
 - *a branch that specialisation decides maps to the code it keeps* is item 6: `crash 500` keeps
   `Aid.boom n`, and the call and the crash frame map to 14:9, the line the development build
-  names, and not to the test.
+  names, and not to the test. A second program keeps `Aid.bad n` from `n > 100 && Aid.bad n`; it
+  maps to 8:16 and not to the `&&`, which holds the `&&`/`||` fold site.
 - *a release library build writes a map beside every module* builds `--release --library
   --source-maps` (the multi-file layout), pins named spots of `Lib.mjs`, and checks a map beside
   each module lowered from beni, core's included, and none beside the hand-written runtime.
