@@ -2400,15 +2400,24 @@ compiler-made names; add the master reproduction as a fixture."* So:
   one: the markup lowerings' `x`, `item` and `value` print as `$x$4`, `$item$2` and `$value$3`. A
   beni name cannot start with `$` (`language.md` §2.4), so no user's local (`<source name>$<n>`),
   no declaration and no module-qualified name can be one of them.
-- **One name source per top-level declaration.** Every compiler-made name of a declaration that
-  carries a number comes from `fresh` and its one counter, which restarts at 1 for each top-level
-  declaration (the rule above). Two compiler-made names of one declaration therefore never meet.
+- **One name source per top-level declaration.** Every name `fresh` makes comes from its one
+  counter, which restarts at 1 for each top-level declaration (the rule above), and so does
+  `joinAround`'s `$k$<n>`. Two of them in one declaration therefore never meet. *Corrected the same
+  day, after review:* not every numbered `$` name comes from that counter. The positional names
+  below are written by their position; the labels `$j$<d>$<b>` and `$c$<d>` are labels, which
+  JavaScript keeps apart from variables; and under `--release` the specialiser makes its own names
+  above the module's highest number (`Spec.freshLocal`, `Spec.Copy.fresh`), so it never takes one
+  that is there.
 - **The positional names keep their own shape, and no hint can take it.** `$m$<k>` (an evidence
-  parameter), `$in$<i>` (a loop slot) and `$l<inst>$<k>` (a `let`'s evidence) are written by their
-  position, not by the counter. `fresh` refuses the hints that would print as one of them — `m`,
-  `in`, and `l` followed by digits — as an internal error: a lowering that asks for one is a bug of
-  the compiler, which carries every lowering. The `dom` lowering's patch inputs, which asked for
-  `in`, now ask for `input`.
+  parameter), `$in$<i>` (a loop slot), `$l<inst>$<k>` (a `let`'s evidence) and `$o$<i>` (an
+  intermediate `Order` inside a derived `compare`, `Lowerer.orderName`) are written by their
+  position, not by the counter. `fresh` refuses the hints that would print as one of the first
+  three — `m`, `in`, and `l` followed by digits — as an internal error: a lowering that asks for one
+  is a bug of the compiler, which carries every lowering. The `dom` lowering's patch inputs, which
+  asked for `in`, now ask for `input`. *Corrected the same day, after review:* `fresh` does not yet
+  refuse `o`. Nothing meets `$o$<i>` today: only a schema part asks for `$o`, and a derived function
+  is a top-level declaration of its own, which holds no schema or markup lowering. Closing the gap
+  (respell `$o$<i>`, or refuse `o`) changes development output, so it is its own change.
 - **Fixtures:** the page that throws on master (`view` the first declaration of its module that
   makes a compiler name) and the page that per-declaration numbers made throw (`helper` before
   `view`) are `tests/corpus/browser/dom/NameMeetsLocal` and `NameMeetsLocalAfterHelper`.
@@ -2428,7 +2437,12 @@ Node verifies again. *Corrected the same day, after review:* a source map's `nam
 get shorter, because two names of one text that were two indices are now one. Each mapping still
 names the same text at the same source position. *And with the `$` in front:* a development build of
 a page also spells the markup lowerings' compiler-made names with it (`x$4` is `$x$4`, the `dom`
-patch inputs' `$in$2` is `$input$2`). A release build renames every local, so it does not change.
+patch inputs' `$in$2` is `$input$2`). A release build renames every local, so its JavaScript does
+not change. *Corrected the same day, after review:* its source map does. A name whose base starts
+with `$` gets no `names` entry in a map (§11.1: "a temporary the lowering invented … has none"; §11.2),
+so the markup lowerings' compiler-made names lose the hint they carried there, in development and in
+release maps, and a segment that then repeats the source position before it goes too. A lookup still
+gives the same source position at every segment, and no dropped name was a user's.
 
 ### A parameter of type `()`
 

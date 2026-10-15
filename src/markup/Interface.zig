@@ -845,7 +845,9 @@ pub const Context = struct {
         cx.vtable.at(cx.impl, node);
     }
 
-    /// A local name, unique in the module.
+    /// A local name, `$<hint>$<n>`, unique in the top-level declaration
+    /// being lowered (`backend.md` §4). A hint that would print as a
+    /// positional name — `m`, `in`, `l` and digits — is refused.
     pub fn fresh(cx: *Context, hint: []const u8) Error!Name {
         return cx.vtable.fresh(cx.impl, hint);
     }
