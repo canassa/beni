@@ -193,23 +193,38 @@ diagnostics come from `--diagnostics=json` and show at their positions in the ed
   `canassa.github.io`, which every Pages site of its owner shares (§5), so code from a third
   party there could read the other sites' storage; esm.sh rebuilds its output, so an
   `integrity` hash in the import map could not pin it. `playground/vendor/` holds each
-  package's own ES module from its npm tarball, unmodified (1 131 174 bytes, not minified);
+  package's own ES module from its npm tarball, unmodified (the editor's first 13 modules,
+  1 131 174 bytes, not minified);
   `vendor/SHA256SUMS` names each file's SHA-256, and `vendor/LICENSES.txt` each file's source
   URL and the package's MIT licence, which the site ships. `playground/vendor.sh` fetches them
   again: it checks each tarball against npm's recorded SHA-512, and the same pins give the
   same bytes. A gate test (§6) checks every file against `SHA256SUMS` and the import map against
   the files, and the Chrome test checks that the page asks no other origin for anything.
-- **The grammar** is `playground/syntax.js`, a tokenizer for CodeMirror's `StreamLanguage`
-  with no dependency: line and doc comments, strings with `${…}` and escapes, `\\` lines,
-  character literals, numbers as `language.md` §2.5 writes them (no underscores), the fifteen
-  keywords, `schema` before a type name and `where` before a `name.method`, constructors and
-  types, `.field`, the Unicode operators, `⊤` and `⊥`, and markup. Markup has the three modes of
-  `frontend.md` §9.1: in code, a `<` followed by a letter or `>` opens a tag where an operand
-  may start and is a comparison after a token that ends one (§9.3: a name, a literal, a closing
-  bracket, `?`, a `/>`, a closing tag's `>`); `</` always closes one. In a tag, names are
-  attributes, `--` starts a comment and `{…}` is a hole. Between an element's tags, text is
-  text, a `<` before a letter or `>` always opens a tag, and `{…}` is a hole. It highlights
-  and decides nothing else: the compiler's diagnostics say what is wrong.
+- **The grammar** is `playground/syntax.js`, a tokenizer for CodeMirror's `StreamLanguage`.
+  *Amended 2026-10-15, at Jayson Reis's request:* it is CodeMirror's Elm mode
+  (`@codemirror/legacy-modes`, `mode/elm`, vendored) with beni's rules in front of it. The Elm
+  mode reads what beni writes as Elm does: names, a name at the start of a line as a
+  definition, types and constructors, numbers, character literals, the ASCII operators and the
+  brackets. beni's rules take what Elm does not know or reads otherwise: strings with `${…}`
+  and escapes, `\\` lines, line and doc comments (beni has no `{-` block comment, so a `{` is
+  always a brace), the Unicode notation (`→ ← ≠ ≤ ≥ ▷ ◁ … ×` and `λ` as operators, `⊤` and `⊥`
+  as atoms), `True` and `False`, beni's keywords (`pub`, `opaque` and `foreign` are keywords;
+  Elm's `module` and `port` are names; `schema` is a keyword before a type name and `where`
+  before a `name.method`), `.field`, and markup. The Elm mode calls an operator a keyword and
+  a bracket a builtin; the file names them as beni's grammar did before. Markup has the three
+  modes of `frontend.md` §9.1: in code, a `<` followed by a letter or `>` opens a tag where an
+  operand may start and is a comparison after a token that ends one (§9.3: a name, a literal, a
+  closing bracket, `?`, a `/>`, a closing tag's `>`); `</` always closes one. In a tag, names
+  are attributes, `--` starts a comment and `{…}` is a hole. Between an element's tags, text
+  is text, a `<` before a letter or `>` always opens a tag, and `{…}` is a hole. It
+  highlights and decides nothing else: the compiler's diagnostics say what is wrong.
+- **The emitted JavaScript** (*added 2026-10-15*, at Jayson Reis's request) is a read-only
+  CodeMirror view with CodeMirror's JavaScript grammar (`@codemirror/lang-javascript`, on
+  `@lezer/javascript` and `@lezer/lr`, vendored). One highlight style colours both views.
+  *Rejected: Prism.js*, which Jayson named "if there is better use it": the editor is
+  CodeMirror already (q2), whose own Elm mode and JavaScript grammar give the same result with
+  one library, one highlight style and no second highlighter to vendor and keep in step.
+- **The vendored files**, after these two: 17 modules, 1 308 650 bytes, not minified.
 - **Positions.** A span's column counts code points and the editor counts UTF-16 units
   (`playground/positions.js`): `→` is one of each, a character past U+FFFF one column and two
   units. A diagnostic in `Main.beni` is a lint mark with its title and message; every
