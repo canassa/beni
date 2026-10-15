@@ -100,3 +100,16 @@ passed; review-validation.json records its 39.59-second run and the two analysis
 script hashes. Native Chrome and the comparisons were not repeated.
 Commit 95d875e7b preserves the original measurement/report files corresponding
 to source-manifest.json; subsequent changes are read-only analysis and docs.
+
+
+The committed audit.json is the original count/hash audit from commit
+95d875e7b and predates the new order assertions. The committed review-audit.json
+was produced by node bench/s8/audit.mjs --review. The current script executes
+all assertions with either invocation; the flag changes only the destination.
+Use --review to reproduce the enhanced checks without overwriting the
+historical audit.json.
+
+measurementEvidenceCommit in review-analysis.mjs deliberately names the
+immutable original evidence commit, 95d875e7b. Recording the current checkout
+instead would identify a later analysis revision. The script's self-hash and
+review-validation.json identify the analysis code separately.
