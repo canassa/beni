@@ -246,6 +246,7 @@ main =
     Node.printLines
         [ "-- decode"
         , Show.result (Schema.decode noteSchema encoded) showNote
+        , Show.result (Schema.decode noteSchema { encoded | proto = 9007199254740992 }) showNote
         , Show.result
             (Schema.decode noteSchema
                 { encoded
@@ -270,6 +271,8 @@ main =
         , Show.result (Schema.decodeWith noteSchema (depth (-1)) encoded) showNote
         , "-- encode"
         , Show.result (Schema.encode noteSchema note) showEncodedNote
+        , Show.result (Schema.encode noteSchema { note | proto = 9007199254740992 }) showEncodedNote
+        , Show.value (Schema.write noteSchema { note | proto = 9007199254740992 })
         , Show.result
             (Schema.encodeWith noteSchema all
                 { note | score = 0 / 0, count = -1, parts = [ { n = 9007199254740992 } ] }
