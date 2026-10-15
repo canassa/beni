@@ -1,13 +1,19 @@
 {
-  "updated": "2026-10-15T23:29:46.182Z",
-  "observations": 838,
-  "native_builds": 188,
+  "updated": "2026-10-15T23:51:12.806Z",
+  "observations": 884,
+  "native_builds": 192,
   "crossings": [
     {
       "family": "filter",
       "mode": "tea",
       "n": 3264,
       "brotli": 523981
+    },
+    {
+      "family": "form",
+      "mode": "tea",
+      "n": 4256,
+      "brotli": 527585
     },
     {
       "family": "list",

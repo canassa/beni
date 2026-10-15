@@ -112,22 +112,22 @@ not confidence intervals. [Full stress fits](../../../bench/rendering-design/res
 retain residuals; the original N≤32 calibration remains archived.
 
 Current common-window family slopes, brotli bytes per added varied instance,
-seed 17. **N432–1,728** for every column except direct (**N84–336**, censored)
-and Solid (**N972–3,888**, two ports). Windows differ between strategies; compare
+seed 17. **N648–2,592** except direct (**N84–336**, censored), D
+(**N432–1,728**) and Solid (**N1,064–4,256**, two ports). Windows differ between strategies; compare
 shapes within a column. The live report advances these windows as data arrives.
 
 | Shape | TEA | Direct | A | B | C | D | Vanilla | Solid |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| Keyed list | 132 | 185 | 78 | 55 | 41 | 78 | 5.2 | 5.2 |
-| Form | 124 | 152 | 72 | 49 | 38 | 65 | 5.3 | 5.1 |
-| Tabs | 121 | 141 | 56 | 52 | 48 | 58 | 5.3 | — |
-| Nested helpers | 130 | 195 | 60 | 57 | 45 | 62 | 5.2 | — |
-| Recursive thread | 104 | 160 | 74 | 73 | 55 | 76 | 5.2 | — |
-| Counter/toggle | 88 | 101 | 55 | 41 | 34 | 52 | 5.3 | — |
-| Sortable table | 157 | 215 | 89 | 62 | 45 | 81 | 5.2 | — |
-| Modal | 128 | 164 | 70 | 54 | 44 | 68 | 5.2 | — |
-| Filter | 165 | 212 | 89 | 63 | 44 | 86 | 5.3 | — |
-| Derived summary | 164 | 222 | 92 | 66 | 50 | 85 | 5.2 | — |
+| Keyed list | 134 | 185 | 77 | 54 | 41 | 78 | 5.2 | 5.2 |
+| Form | 123 | 152 | 71 | 49 | 38 | 65 | 5.3 | 5.1 |
+| Tabs | 121 | 141 | 54 | 52 | 47 | 58 | 5.2 | — |
+| Nested helpers | 134 | 195 | 60 | 58 | 45 | 62 | 5.1 | — |
+| Recursive thread | 106 | 160 | 75 | 75 | 55 | 76 | 5.2 | — |
+| Counter/toggle | 88 | 101 | 54 | 40 | 33 | 52 | 5.2 | — |
+| Sortable table | 157 | 215 | 87 | 61 | 46 | 81 | 5.1 | — |
+| Modal | 129 | 164 | 69 | 52 | 44 | 68 | 5.0 | — |
+| Filter | 162 | 212 | 89 | 62 | 45 | 86 | 5.2 | — |
+| Derived summary | 167 | 222 | 92 | 66 | 50 | 85 | 5.2 | — |
 
 ![Slope matrix](../../../bench/rendering-design/results/stress/graphs/family-slopes.png)
 

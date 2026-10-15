@@ -1,7 +1,7 @@
 {
-  "verified_at": "2026-10-15T23:29:47.601Z",
-  "observations": 329,
-  "native_builds": 75,
+  "verified_at": "2026-10-15T23:50:56.500Z",
+  "observations": 346,
+  "native_builds": 76,
   "scope": "Compiler and minified JavaScript SHA-256 and raw length with source-map URL trailers removed, disjoint raw byte accounting, and source spec identity. No size fits or compression results are recomputed; no project suites.",
   "crossings": [
     {
@@ -39,6 +39,12 @@
       "mode": "vanilla",
       "n": 100352,
       "brotli": 525739
+    },
+    {
+      "family": "form",
+      "mode": "tea",
+      "n": 4256,
+      "brotli": 527585
     }
   ],
   "compiler_limited": [

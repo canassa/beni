@@ -239,3 +239,10 @@ hold all slots while waiting for extra slots. Brotli/gzip options and byte
 strings are identical; `results/stress/parallel-compression-check.json` records
 exact agreement of all seven account fields on the actual 9.34 MB N3,888 TEA
 bundle. This changes measurement throughput only, not application timings.
+
+Immutable compiler-pinned BIR dumps are hard-linked from the source-hash cache
+into larger apps instead of rewriting every unchanged prefix module. Existing
+per-app dumps must byte-match the cache; cross-device links fall back to copies.
+`results/stress/bir-link-check.json` retains exact source, chunk and witness
+agreement for all four lowerings through 32 linked dumps. This reduces filesystem
+I/O without changing the generated programs.

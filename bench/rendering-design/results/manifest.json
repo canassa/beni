@@ -1,5 +1,5 @@
 {
-  "created": "2026-10-15T23:30:47.149Z",
+  "created": "2026-10-15T23:51:52.161Z",
   "node": "v24.19.0",
   "byte_observations": 1438,
   "validated_pages": 1422,
@@ -78,8 +78,8 @@
     },
     {
       "path": "dump-bir.mjs",
-      "bytes": 1128,
-      "sha256": "2adb11e23eb1625387fc3c802b2ad57e3ba4147352e12944dd0e161e08dba6c6"
+      "bytes": 1501,
+      "sha256": "979d6022450df54249ea763ccbdf29cfa39f13c4620227d9e8b7bcef2a6f20ff"
     },
     {
       "path": "examples.mjs",
@@ -743,8 +743,8 @@
     },
     {
       "path": "README.md",
-      "bytes": 15587,
-      "sha256": "87144399716bb6d5a54bbb0d00a861f41d477f6e8382adc6fba13ea95de0cbbd"
+      "bytes": 16030,
+      "sha256": "6fb8270430e554de29f104c0f17e65d893488da004913c94c640420021aec57d"
     },
     {
       "path": "reconcile.js",
@@ -758,8 +758,8 @@
     },
     {
       "path": "report.html",
-      "bytes": 824078,
-      "sha256": "a01133bc5033f934c01cbc638ceb724dde4ee60a955eccf80ba40c27b7199cb7"
+      "bytes": 841769,
+      "sha256": "4907d05732e4c79319e1ba680fc3070e3ac16c18fff3b1cfcfce8b33773d5b97"
     },
     {
       "path": "report.py",
@@ -918,8 +918,13 @@
     },
     {
       "path": "results/stress-report-data.json",
-      "bytes": 1093212,
-      "sha256": "aad413662db09bc14b25ae4a28a20eb71451243bd8c697fc56cab710810b86bb"
+      "bytes": 1117121,
+      "sha256": "78e03abacadd7172a4772471b2573dad780d0fb4d294dec6950a16aa206cfc96"
+    },
+    {
+      "path": "results/stress/bir-link-check.json",
+      "bytes": 787,
+      "sha256": "1da521061db8784acb3325b6df31007d576fba5390648c919bf136f0128dee8e"
     },
     {
       "path": "results/stress/compiler-limits.md",
@@ -933,13 +938,13 @@
     },
     {
       "path": "results/stress/crossings.json",
-      "bytes": 14526,
-      "sha256": "6752e2ce51b507a4274399d94973126bd0565a87d6d0b3b402dc7bda79942d3f"
+      "bytes": 14532,
+      "sha256": "aa9f37fd4a97ddb9fbdb29cf0ba8f59de22d309b25a961d4813a51cadf66cec1"
     },
     {
       "path": "results/stress/crossings.md",
-      "bytes": 4128,
-      "sha256": "fe410aef8a61d5740e6098a4226f910bc08257c9252b9800d5249d268a12bea5"
+      "bytes": 4136,
+      "sha256": "6573db4c4f2c3b46a9570642ca5c20a92425d5064f477609302d4486dd59e1ab"
     },
     {
       "path": "results/stress/direct-single-thread-probe.json",
@@ -953,38 +958,38 @@
     },
     {
       "path": "results/stress/family-fits.json",
-      "bytes": 16507,
-      "sha256": "84e8fe9feeb9770d39bd01b808fb324d88a0193a93f0c8d3b6011e4e7f217c17"
+      "bytes": 16492,
+      "sha256": "5a067d8c79b47969823b737db0ca8c43f89fa38f891173f799c080aaf6771f11"
     },
     {
       "path": "results/stress/family-fits.md",
-      "bytes": 1356,
-      "sha256": "714251e9f6702fe078486aae57099d349f592cc0419fe37a07f1d2db940c6835"
+      "bytes": 1357,
+      "sha256": "58055cdfd4fa9550569927d321280336047584a30b133bd3d16531e5b2a82d20"
     },
     {
       "path": "results/stress/fits.json",
-      "bytes": 52454,
-      "sha256": "27785b081b42ab605917625540589e10524d33cd509fd16e2fe4485a50eea689"
+      "bytes": 52453,
+      "sha256": "f7bc1e8792e21accd067944ab47bad0e6dccd595c4e9cb5c67e0571c0aa8b12b"
     },
     {
       "path": "results/stress/graphs/family-growth.png",
-      "bytes": 519104,
-      "sha256": "67f449846b9ae5ce2cb5cf6b0feeb7e97a3db1ff7cc3b30b22ea60b3a223d414"
+      "bytes": 552129,
+      "sha256": "a4e14dccd1bcc4aa337bfc61e74d644f31b673120b436bdef6b120af7b01b4f4"
     },
     {
       "path": "results/stress/graphs/family-growth.svg",
-      "bytes": 481696,
-      "sha256": "c1204dd3bb9fee8934d5749e0562e1635dfc31496ea3fa930b4bc4b504abb083"
+      "bytes": 492500,
+      "sha256": "506035fc63ed44fe9a4b0a8a7203aead22099b6671f4d08a5a137e34bd367fef"
     },
     {
       "path": "results/stress/graphs/family-slopes.png",
-      "bytes": 152310,
-      "sha256": "6d92438c408e03820c5eadd81bf1217574b9062ad27c5c0143318163e52da384"
+      "bytes": 151374,
+      "sha256": "9ffd8550bfe081843aa0da3a3046e7780280bd1292c3a76559d1cfcea2ead41d"
     },
     {
       "path": "results/stress/graphs/family-slopes.svg",
-      "bytes": 116106,
-      "sha256": "31b02af7d8523b92e0c0e401c3efa833e6c0d887413e284de536ac058e8e08a7"
+      "bytes": 116192,
+      "sha256": "4119c8d728796632b4b568d2f29962791398d5ffc326ff6ce0f250138bd35449"
     },
     {
       "path": "results/stress/graphs/marginal-growth.png",
@@ -1018,28 +1023,28 @@
     },
     {
       "path": "results/stress/integrity-primary.json",
-      "bytes": 1379,
-      "sha256": "db08b5be52d4c4b6b49c7c5ad0ba38b2d18fe5d2c615eb5325873d0b3fb1650a"
+      "bytes": 1477,
+      "sha256": "bfdb70059f89a659dfecfa111752be4cfede3e3f0ad8b9fd9908f162b799876b"
     },
     {
       "path": "results/stress/integrity-secondary.json",
       "bytes": 1188,
-      "sha256": "b6bb6cb3d9cc29f64c074dabf149c6ba2ab6e828b2cd541e648e0806a7d2560b"
+      "sha256": "c4c2103511dae03065f8f81dac4856937d1be1ec3382b6d5b39f1841a2f31795"
     },
     {
       "path": "results/stress/integrity-tertiary.json",
       "bytes": 889,
-      "sha256": "cab736c5a6624bead0856740324fe3dc573a7a3956d689e0da54e32b1139cd09"
+      "sha256": "e413cd859474c9c309d7143720a27108ec4d7306aff74c9d7aa4fb0e2b33ac29"
     },
     {
       "path": "results/stress/native-builds.jsonl",
-      "bytes": 84066,
-      "sha256": "aea30bc8f6011b82a92cb2540ea21a21a0006db8f43580141753574f39e38e94"
+      "bytes": 85874,
+      "sha256": "7dc9cca84b8f22f4c51071cc4373d1f9bf147eb9bd13e265260609c7644c2449"
     },
     {
       "path": "results/stress/observations.jsonl",
-      "bytes": 671308,
-      "sha256": "963e4ed2f90dc1121bb0dfb0467d8800fa27025232b112b6235430827c83b4d4"
+      "bytes": 707872,
+      "sha256": "d168ee668dc0aaddc644ae134f932ee5e31381046f181bb84871faa141098957"
     },
     {
       "path": "results/stress/parallel-compression-check.json",
@@ -1048,8 +1053,8 @@
     },
     {
       "path": "results/stress/progress.json",
-      "bytes": 2462,
-      "sha256": "467b658e681f605a474efd3584ed535509164586d7e11adaef06b0d6db4dafff"
+      "bytes": 2560,
+      "sha256": "68c9bbfd7763850a38653ac5e03c35c0dfa54200f6697057d7ac3fab8b09b694"
     },
     {
       "path": "results/stress/protocol-pilot.json",
@@ -1058,13 +1063,13 @@
     },
     {
       "path": "results/stress/protocol.json",
-      "bytes": 26451,
-      "sha256": "eedeaa3eca209de514715136ff341f9c92248ef1bb779662146174324a09d4a9"
+      "bytes": 27847,
+      "sha256": "2b77e9462eb8f298baffe2525b5280b72d5e2561284f7030f43992fbb15562a5"
     },
     {
       "path": "results/stress/sizes.csv",
-      "bytes": 264056,
-      "sha256": "0533305eac1ec11b4f77a36d7bd81892673c2175f068d77c7e657881be32ba82"
+      "bytes": 269855,
+      "sha256": "41264331d750e91fce5e3bde71a2e7daa9bec07c397508384c531433abc498de"
     },
     {
       "path": "results/stress/source-generation-check.json",

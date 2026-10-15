@@ -85,8 +85,8 @@
     "mode": "vanilla",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 42752,
-    "last_brotli": 218968,
+    "last_n": 64128,
+    "last_brotli": 328859,
     "compiler_limited": false
   },
   {
@@ -130,17 +130,17 @@
     "mode": "solid",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 42752,
-    "last_brotli": 241454,
+    "last_n": 64128,
+    "last_brotli": 352659,
     "compiler_limited": false
   },
   {
     "family": "form",
     "mode": "tea",
-    "crossing_n": null,
-    "crossing_brotli": null,
-    "last_n": 3888,
-    "last_brotli": 480984,
+    "crossing_n": 4256,
+    "crossing_brotli": 527585,
+    "last_n": 4256,
+    "last_brotli": 527585,
     "compiler_limited": false
   },
   {
@@ -157,8 +157,8 @@
     "mode": "vanilla",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 3888,
-    "last_brotli": 20890,
+    "last_n": 4256,
+    "last_brotli": 22788,
     "compiler_limited": false
   },
   {
@@ -175,8 +175,8 @@
     "mode": "static",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 3888,
-    "last_brotli": 195199,
+    "last_n": 4256,
+    "last_brotli": 212911,
     "compiler_limited": false
   },
   {
@@ -184,8 +184,8 @@
     "mode": "local",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 3888,
-    "last_brotli": 148890,
+    "last_n": 4256,
+    "last_brotli": 162552,
     "compiler_limited": false
   },
   {
@@ -193,8 +193,8 @@
     "mode": "cells",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 3888,
-    "last_brotli": 261045,
+    "last_n": 4256,
+    "last_brotli": 284821,
     "compiler_limited": false
   },
   {
@@ -202,8 +202,8 @@
     "mode": "solid",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 3888,
-    "last_brotli": 33376,
+    "last_n": 4256,
+    "last_brotli": 35338,
     "compiler_limited": false
   },
   {
@@ -211,8 +211,8 @@
     "mode": "tea",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 1728,
-    "last_brotli": 209495,
+    "last_n": 2592,
+    "last_brotli": 316591,
     "compiler_limited": false
   },
   {
@@ -229,8 +229,8 @@
     "mode": "vanilla",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 1728,
-    "last_brotli": 10011,
+    "last_n": 2592,
+    "last_brotli": 14520,
     "compiler_limited": false
   },
   {
@@ -238,8 +238,8 @@
     "mode": "partial",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 1728,
-    "last_brotli": 100193,
+    "last_n": 2592,
+    "last_brotli": 146005,
     "compiler_limited": false
   },
   {
@@ -247,8 +247,8 @@
     "mode": "static",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 1728,
-    "last_brotli": 91103,
+    "last_n": 2592,
+    "last_brotli": 136600,
     "compiler_limited": false
   },
   {
@@ -256,8 +256,8 @@
     "mode": "local",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 1728,
-    "last_brotli": 84480,
+    "last_n": 2592,
+    "last_brotli": 124155,
     "compiler_limited": false
   },
   {
@@ -265,8 +265,8 @@
     "mode": "cells",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 1728,
-    "last_brotli": 101572,
+    "last_n": 2592,
+    "last_brotli": 150371,
     "compiler_limited": false
   },
   {
@@ -292,8 +292,8 @@
     "mode": "vanilla",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 3888,
-    "last_brotli": 20844,
+    "last_n": 5840,
+    "last_brotli": 30555,
     "compiler_limited": false
   },
   {
@@ -301,8 +301,8 @@
     "mode": "partial",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 3888,
-    "last_brotli": 238841,
+    "last_n": 5840,
+    "last_brotli": 352775,
     "compiler_limited": false
   },
   {
@@ -310,8 +310,8 @@
     "mode": "static",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 3888,
-    "last_brotli": 229686,
+    "last_n": 5840,
+    "last_brotli": 342379,
     "compiler_limited": false
   },
   {
@@ -319,8 +319,8 @@
     "mode": "local",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 3888,
-    "last_brotli": 176306,
+    "last_n": 5840,
+    "last_brotli": 263531,
     "compiler_limited": false
   },
   {
@@ -328,8 +328,8 @@
     "mode": "cells",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 3888,
-    "last_brotli": 249296,
+    "last_n": 5840,
+    "last_brotli": 368414,
     "compiler_limited": false
   },
   {
@@ -337,8 +337,8 @@
     "mode": "tea",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 1728,
-    "last_brotli": 185470,
+    "last_n": 2592,
+    "last_brotli": 279046,
     "compiler_limited": false
   },
   {
@@ -355,8 +355,8 @@
     "mode": "vanilla",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 1728,
-    "last_brotli": 9948,
+    "last_n": 2592,
+    "last_brotli": 14425,
     "compiler_limited": false
   },
   {
@@ -364,8 +364,8 @@
     "mode": "partial",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 1728,
-    "last_brotli": 132884,
+    "last_n": 2592,
+    "last_brotli": 199808,
     "compiler_limited": false
   },
   {
@@ -373,8 +373,8 @@
     "mode": "static",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 1728,
-    "last_brotli": 129605,
+    "last_n": 2592,
+    "last_brotli": 196796,
     "compiler_limited": false
   },
   {
@@ -382,8 +382,8 @@
     "mode": "local",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 1728,
-    "last_brotli": 101728,
+    "last_n": 2592,
+    "last_brotli": 149601,
     "compiler_limited": false
   },
   {
@@ -391,8 +391,8 @@
     "mode": "cells",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 1728,
-    "last_brotli": 136812,
+    "last_n": 2592,
+    "last_brotli": 200238,
     "compiler_limited": false
   },
   {
@@ -400,8 +400,8 @@
     "mode": "tea",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 3888,
-    "last_brotli": 336094,
+    "last_n": 5840,
+    "last_brotli": 498054,
     "compiler_limited": false
   },
   {
@@ -418,8 +418,8 @@
     "mode": "vanilla",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 3888,
-    "last_brotli": 20976,
+    "last_n": 5840,
+    "last_brotli": 30748,
     "compiler_limited": false
   },
   {
@@ -427,8 +427,8 @@
     "mode": "partial",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 3888,
-    "last_brotli": 213237,
+    "last_n": 5840,
+    "last_brotli": 319763,
     "compiler_limited": false
   },
   {
@@ -436,8 +436,8 @@
     "mode": "static",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 3888,
-    "last_brotli": 156408,
+    "last_n": 5840,
+    "last_brotli": 235568,
     "compiler_limited": false
   },
   {
@@ -445,8 +445,8 @@
     "mode": "local",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 3888,
-    "last_brotli": 131376,
+    "last_n": 5840,
+    "last_brotli": 196550,
     "compiler_limited": false
   },
   {
@@ -454,8 +454,8 @@
     "mode": "cells",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 3888,
-    "last_brotli": 205607,
+    "last_n": 5840,
+    "last_brotli": 311949,
     "compiler_limited": false
   },
   {
@@ -463,8 +463,8 @@
     "mode": "tea",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 1728,
-    "last_brotli": 275099,
+    "last_n": 2592,
+    "last_brotli": 411674,
     "compiler_limited": false
   },
   {
@@ -481,8 +481,8 @@
     "mode": "vanilla",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 1728,
-    "last_brotli": 10856,
+    "last_n": 2592,
+    "last_brotli": 15256,
     "compiler_limited": false
   },
   {
@@ -490,8 +490,8 @@
     "mode": "partial",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 1728,
-    "last_brotli": 157036,
+    "last_n": 2592,
+    "last_brotli": 231374,
     "compiler_limited": false
   },
   {
@@ -499,8 +499,8 @@
     "mode": "static",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 1728,
-    "last_brotli": 109501,
+    "last_n": 2592,
+    "last_brotli": 161893,
     "compiler_limited": false
   },
   {
@@ -508,8 +508,8 @@
     "mode": "local",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 1728,
-    "last_brotli": 81120,
+    "last_n": 2592,
+    "last_brotli": 120767,
     "compiler_limited": false
   },
   {
@@ -607,8 +607,8 @@
     "mode": "vanilla",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 3264,
-    "last_brotli": 18805,
+    "last_n": 4896,
+    "last_brotli": 26941,
     "compiler_limited": false
   },
   {
@@ -616,8 +616,8 @@
     "mode": "partial",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 3264,
-    "last_brotli": 295111,
+    "last_n": 4896,
+    "last_brotli": 438435,
     "compiler_limited": false
   },
   {
@@ -625,8 +625,8 @@
     "mode": "static",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 3264,
-    "last_brotli": 206950,
+    "last_n": 4896,
+    "last_brotli": 307517,
     "compiler_limited": false
   },
   {
@@ -634,8 +634,8 @@
     "mode": "local",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 3264,
-    "last_brotli": 148208,
+    "last_n": 4896,
+    "last_brotli": 220659,
     "compiler_limited": false
   },
   {
@@ -643,8 +643,8 @@
     "mode": "cells",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 3264,
-    "last_brotli": 287978,
+    "last_n": 4896,
+    "last_brotli": 428269,
     "compiler_limited": false
   },
   {
@@ -670,8 +670,8 @@
     "mode": "vanilla",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 3168,
-    "last_brotli": 18209,
+    "last_n": 4752,
+    "last_brotli": 26161,
     "compiler_limited": false
   },
   {
@@ -679,8 +679,8 @@
     "mode": "partial",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 3168,
-    "last_brotli": 294092,
+    "last_n": 4752,
+    "last_brotli": 437079,
     "compiler_limited": false
   },
   {
@@ -688,8 +688,8 @@
     "mode": "static",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 3168,
-    "last_brotli": 215100,
+    "last_n": 4752,
+    "last_brotli": 317964,
     "compiler_limited": false
   },
   {
@@ -697,8 +697,8 @@
     "mode": "local",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 3168,
-    "last_brotli": 162141,
+    "last_n": 4752,
+    "last_brotli": 241228,
     "compiler_limited": false
   },
   {
@@ -706,8 +706,8 @@
     "mode": "cells",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 3168,
-    "last_brotli": 273398,
+    "last_n": 4752,
+    "last_brotli": 405661,
     "compiler_limited": false
   }
 ]

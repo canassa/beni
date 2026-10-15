@@ -1,0 +1,25 @@
+{
+  "date": "2026-10-15T23:46:49.301Z",
+  "name": "mixed-17-32",
+  "modules": 32,
+  "unchanged": true,
+  "checks": [
+    {
+      "mode": "partial",
+      "sha256": "585557252683ed2ec1a43f17e2b9b82e32e079d1123f8c9f8391ab083085b96e"
+    },
+    {
+      "mode": "static",
+      "sha256": "967a093a17d160f2fb116dc62132cfd3b35c67c0b95017779cc426be5bab8ce1"
+    },
+    {
+      "mode": "local",
+      "sha256": "29050b6e70305a308be800e1c6149895ba30ab62ab3a1a64ef7767a12a9d51c0"
+    },
+    {
+      "mode": "cells",
+      "sha256": "53b86a4876729d98cdd7e50a736b8f268b131e300eeb82801462cc674a9aab0c"
+    }
+  ],
+  "scope": "Hard-linked compiler dumps produce exactly the same source, chunks and witnesses for all four lowerings as their original per-app files. No emitted-code or pricing change."
+}
