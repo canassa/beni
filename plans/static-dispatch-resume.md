@@ -5,7 +5,7 @@ and reviewed. S8a (measure) is partway: the S6b-header correction, M1a and M1b a
 committed in `3984d2d`. Owed: the remaining S8a rows, then S8b (report 19).
 
 Read in this order: `CLAUDE.md`, `plans/static-dispatch-s8-brief.md` (the procedure;
-its "Manager decisions" block is binding), the last four entries of `plans/diary.md`,
+its "Manager decisions" block is binding), the last four entries of `plans/diary/`,
 the last three entries of `plans/static-dispatch-spike-results.md` (the format to
 append in), `bench/README.md` (measurement discipline).
 
