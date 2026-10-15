@@ -353,7 +353,8 @@ value-fuzz case uses `.fuzz-budget`; a page grant never covers fuzz implicitly.
 Conduit's page cases (2026-10-08, paired direct runs extended 2026-10-14, re-granted from
 Linux instruction counts 2026-10-15), its direct value fuzz (2026-10-14), `browser/direct/HttpJson`
 and `HttpJsonBody` (2026-10-14, compiler defect #105), and the paired TodoMVC/Sternhalma pages plus
-Sternhalma's separate value fuzz (2026-10-15) are the only grants.
+Sternhalma's separate value fuzz (2026-10-15), and the paired Bike Wars page
+(2026-10-15, 8 600M; its value fuzz keeps the default) are the only grants.
 
 **The budget has one unit and one reference build** (2026-10-14). The count
 is the kernel's hardware count of user-space instructions (`perf_event_open`)
