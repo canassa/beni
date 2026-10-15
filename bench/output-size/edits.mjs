@@ -20,13 +20,19 @@ for (const p of ['tea', 'direct']) {
   node('schema-outline.mjs', base, `${W}/${p}.schema.mjs`);
   node('quotes.mjs', base, `${W}/${p}.quotes.mjs`);
   fs.writeFileSync(`${W}/${p}.jsonbody.mjs`, readGz(`${R}/proto-jsonbody-${p}.mjs.gz`));
-  node('inline-toplevel.mjs', `${W}/${p}.jsonbody.mjs`, `${W}/${p}.stack.mjs`);
+  // The prototype helper maps an unprintable value to the empty body; put back
+  // Http.jsonBody's typed `Unprintable issues` (tag 3, as the baseline builds it).
+  const helper = /(=\(a,b\)=>\{let c=a\(b\);return c\.\$===0\?\{\$:1,a:"application\/json",b:c\.a\}:)[\w$]+\}/;
+  const jb = fs.readFileSync(`${W}/${p}.jsonbody.mjs`, 'utf8');
+  if (!helper.test(jb)) throw Error('jsonText helper not found');
+  fs.writeFileSync(`${W}/${p}.jsontyped.mjs`, jb.replace(helper, (m, head) => `${head}{$:3,a:c.a,b:null}}`));
+  node('inline-toplevel.mjs', `${W}/${p}.jsontyped.mjs`, `${W}/${p}.stack.mjs`);
   const b = br(s);
   out[p] = {baseline: b};
-  for (const v of ['andtrue', 'inline', 'schema', 'quotes', 'jsonbody', 'stack']) {
+  for (const v of ['andtrue', 'inline', 'schema', 'quotes', 'jsonbody', 'jsontyped', 'stack']) {
     const f = `${W}/${p}.${v}.mjs`, r = verify(p, f, `edit-${v}`);
     out[p][v] = {brotli: br(fs.readFileSync(f, 'utf8')), saved: b - br(fs.readFileSync(f, 'utf8')), corpusScripts: r.status === 0 ? 'all three match the golden' : r.stdout};
     console.log(p, v, out[p][v].saved, out[p][v].corpusScripts);
   }
 }
-fs.writeFileSync(`${R}/edits.json`, JSON.stringify({note: 'saved = brotli bytes saved against the unchanged release bundle; stack = jsonbody (source change) + top-level single-use inlining. Every variant was run through ConduitEditor, ConduitReader and ConduitTour.', ...out}, null, 2) + '\n');
+fs.writeFileSync(`${R}/edits.json`, JSON.stringify({note: 'saved = brotli bytes saved against the unchanged release bundle; jsontyped = jsonbody with the typed Unprintable error put back; stack = jsontyped + top-level single-use inlining. Every variant was run through ConduitEditor, ConduitReader and ConduitTour.', ...out}, null, 2) + '\n');

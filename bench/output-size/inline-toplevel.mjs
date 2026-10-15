@@ -2,7 +2,8 @@
 // its initialiser is pure to evaluate (a function, or an array or object
 // literal of literals and functions) and its one read is evaluated once, at
 // module initialisation: in a LATER top-level initialiser and not under any
-// function. Evaluation count, order of effects and identity are unchanged:
+// function, loop, class body or accessor (anything that may run it twice or
+// later). Evaluation count, order of effects and identity are unchanged:
 // the value is still created exactly once, by the same expression, before
 // anything can observe it. References are resolved with scopes (beni's
 // release locals reuse short names that also name top-level bindings).
@@ -55,7 +56,7 @@ for (let round = 0; round < 6; round++) {
       }
       return;
     }
-    let inner = scopes, fn = underFn;
+    let inner = scopes, fn = underFn || /^(For|ForIn|ForOf|While|DoWhile)Statement$|^Class(Body|Declaration|Expression)$|^(MethodDefinition|PropertyDefinition|StaticBlock)$/.test(n.type) || (n.type === 'Property' && n.kind !== 'init');
     if (/Function/.test(n.type)) {
       fn = true;
       const names = n.params.flatMap(p => patternNames(p));
