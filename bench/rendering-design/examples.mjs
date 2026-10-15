@@ -1,12 +1,12 @@
 import fs from 'node:fs';import {shapes} from './catalogue.mjs';import {prototype} from './prototype.mjs';
 const here=import.meta.dirname;
-for(const shape of shapes){const name=shape+'-17-1',root=here+'/out/apps/'+name,out=here+'/examples/'+shape;fs.mkdirSync(out,{recursive:true});for(const file of ['Main.beni','Shape0.beni','Shape0.bir'])fs.copyFileSync(root+'/'+file,out+'/'+file);
+for(const shape of shapes){const name=shape+'-17-1',root=here+'/.out/apps/'+name,out=here+'/examples/'+shape;fs.mkdirSync(out,{recursive:true});for(const file of ['Main.beni','Shape0.beni','Shape0.bir'])fs.copyFileSync(root+'/'+file,out+'/'+file+(file.endsWith('.beni')?'.txt':''));
  const source=fs.readFileSync(root+'/Shape0.beni','utf8'),before=source.slice(0,source.indexOf('pub type Msg')),init=source.slice(source.indexOf('pub init'),source.indexOf('pub update')),arms=source.slice(source.indexOf('    case msg of\n')+16,source.indexOf('pub view')).trimEnd().split(/\n\n(?=        \w)/);
  const signatures=Object.fromEntries(source.slice(source.indexOf('pub type Msg'),source.indexOf('pub init')).split(/\n\s*[=|] /).slice(1).map(x=>{const [name,...types]=x.trim().split(/\s+/);return [name,types]}));
  const declarations=(before.replace('import Html exposing (Html)\n','').replaceAll('pub ','')+'\n'+init.replaceAll('pub ','')).trim();
  const actionSource=arms.map(arm=>{const [head,...body]=arm.trimStart().split('\n'),[name,...params]=head.replace(' →','').split(' ');return 'action '+name+params.map((p,i)=>' ('+p+' : '+signatures[name][i]+')').join('')+' =\n    transaction\n        let old = model\n        model ←\n'+body.join('\n').replace(/\bmodel\b/g,'old').split('\n').map(l=>l.slice(0)).join('\n')}).join('\n\n');
  const view=source.slice(source.indexOf('pub view')).replace('pub view : Model → Html Msg\nview model =','view : Html Action\nview =');
  const proposal='-- Proposed surface, not accepted by today\'s compiler.\n-- Action is a typed, deferred DOM callback, not an ordinary eager call.\n-- An action commits its transaction atomically; render runs after commit.\n-- Model snapshots do not escape the owned component.\nimport Html exposing (Html, Action)\n\ncomponent Instance\n'+(declarations+'\n\nstate model : Model = init ⊤\n\n'+actionSource+'\n\n'+view).replaceAll('Html Msg','Html Action').split('\n').map(l=>l?'    '+l:'').join('\n')+'\n';
- fs.writeFileSync(out+'/Shape0.cells-proposal.beni',proposal.trimEnd()+'\n');
+ fs.writeFileSync(out+'/Shape0.cells-proposal.beni.txt',proposal.trimEnd()+'\n');
  for(const mode of ['partial','static','cells','local']){const p=prototype(root,mode);fs.writeFileSync(out+'/'+mode+'.js',p.source.replace("'../../../core.mjs'","'../../core.mjs'"));if(mode==='partial')fs.writeFileSync(out+'/analysis.json',JSON.stringify(p.witnesses,null,2)+'\n')}
 }

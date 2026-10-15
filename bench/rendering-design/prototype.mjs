@@ -40,6 +40,6 @@ export function prototype(root,mode){
  const [support,app]=source.split('// APP-BEGIN');return {source,witnesses,chunks:{'render-runtime.js':support,'App.js':app}};
 }
 if(process.argv[1]===import.meta.filename){
- const name=process.argv[2]||'list-17-1',root=import.meta.dirname+'/out/apps/'+name;
- for(const mode of ['partial','static','cells','local']){const {source,witnesses}=prototype(root,mode),out=import.meta.dirname+'/out/prototypes/'+name;fs.mkdirSync(out,{recursive:true});fs.writeFileSync(out+'/'+mode+'.js',source);fs.writeFileSync(out+'/analysis.json',JSON.stringify(witnesses,null,2));console.log(name,mode,source.length);}
+ const name=process.argv[2]||'list-17-1',root=import.meta.dirname+'/.out/apps/'+name;
+ for(const mode of ['partial','static','cells','local']){const {source,witnesses}=prototype(root,mode),out=import.meta.dirname+'/.out/prototypes/'+name;fs.mkdirSync(out,{recursive:true});fs.writeFileSync(out+'/'+mode+'.js',source);fs.writeFileSync(out+'/analysis.json',JSON.stringify(witnesses,null,2));console.log(name,mode,source.length);}
 }

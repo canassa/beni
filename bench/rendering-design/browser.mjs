@@ -5,7 +5,7 @@ export async function openBrowser(){
  const server=http.createServer((req,res)=>{const u=new URL(req.url,'http://localhost');if(u.pathname==='/page'){res.setHeader('Content-Type','text/html');res.end(`<html><body><script type="module" src="${u.searchParams.get('script')}"></script></body></html>`);return;}const file=path.resolve(here,'.'+u.pathname);if(!file.startsWith(here+'/')||!fs.existsSync(file)){res.writeHead(404);res.end();return;}res.setHeader('Content-Type',/\.(m?js)$/.test(file)?'text/javascript':'application/json');res.end(fs.readFileSync(file));});
  await new Promise(r=>server.listen(0,'127.0.0.1',r));
  const browser=await launch({chrome:process.env.CHROME||'/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',taskset:process.env.CHROME_CPU||null});
- return {browser,page:(name,mode)=>browser.newPage(`http://127.0.0.1:${server.address().port}/page?script=/out/${mode==='solid'?'solid':'measured'}/${name}/${mode}.js`),close:async()=>{await browser.close();server.close();}};
+ return {browser,page:(name,mode)=>browser.newPage(`http://127.0.0.1:${server.address().port}/page?script=/.out/${mode==='solid'?'solid':'measured'}/${name}/${mode}.js`),close:async()=>{await browser.close();server.close();}};
 }
 export const actions={
  list:[['click','[id$="-add"]'],['click','[data-row="1"] button',0],['click','[data-row="1"] button',1],['click','[id$="-reverse"]'],['click','[data-row="2"] button',2]],

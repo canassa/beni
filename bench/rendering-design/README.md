@@ -42,7 +42,7 @@ stop guard, and keyed identity. They differ in executed state/update machinery:
 - **C / `local`:** retains reducers/messages, routes events through instance
   closures and patches that component's binding list. No language change.
 - **D / `cells`:** lowers arms to owned cell writes; dynamically tracks root
-  binding reads. `examples/*/Shape0.cells-proposal.beni` shows the proposed surface.
+  binding reads. `examples/*/Shape0.cells-proposal.beni.txt` shows the proposed surface.
   It is a design sketch, not a feature accepted by today's compiler.
 
 The common array edit journal is inferred from actual List operations. It does
@@ -85,13 +85,16 @@ The actual compiler was built in an isolated azathoth worktree at the commit in
 `results/today-protocol.json` using `nix develop .#browser -c zig build
 -Doptimize=ReleaseFast`. No gate was run. The attempted ordinary build on the Mac
 was killed in `build_id`; all retained today builds use the fresh Linux compiler.
-The compiler, source, BIR and bundle identities are retained. `out/` and
+The compiler, source, BIR and bundle identities are retained. `.out/` and
 `node_modules/` are disposable, ignored products; examples preserve readable
-source, BIR, ideal output and full dependency witnesses for each shape.
+source, BIR, ideal output and full dependency witnesses for each shape. Source snapshots use `.beni.txt`: they
+are archived generator inputs, including a proposed language, not canonical
+repository source. Disposable projects live in `.out/`, outside the formatter's
+source walk. Historical Chrome traces retain their original `/out/` URL paths.
 
 For timing, generate the two extra apps with `node perf-generate.mjs` (from this
 directory), then run build-today, measure and solid with
-`CASES_FILE=/out/perf-cases.json RESULT_PREFIX=perf-`. Copy generated output to the
+`CASES_FILE=/.out/perf-cases.json RESULT_PREFIX=perf-`. Copy generated output to the
 same path in the isolated Linux checkout, then, with no other campaign running:
 
 ```sh
@@ -134,7 +137,7 @@ Validation executes all 1,422 minified pages. Every shape's messages are exercis
 on first/last instances; every instance is driven for mixed N32. Compare initial,
 transition and final DOM to today's TEA, including controlled values, batched list
 edits and surviving keyed row identity. Separate probes cover detached row/branch
-callbacks. Full DOM transcripts are disposable `out/validation/`; their hashes,
+callbacks. Full DOM transcripts are disposable `.out/validation/`; their hashes,
 counts, bundle hashes and errors are retained. Direct fails 28 pages in the nested
 helper path, filed as [#189](https://github.com/canassa/beni/issues/189); its bytes
 remain plotted but failed operations are not reported as fast timings. The three selected mixed-app timing actions pass on direct; they do not exercise its failing nested action.

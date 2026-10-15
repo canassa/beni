@@ -23,17 +23,17 @@ export function account(code,map,kind){
  return {full:size(code),rendering:size(render),runtime:size(runtime),app_alone:size(app),app_in_rendering_context:size(render).brotli-size(runtime).brotli,excluded_core:size(chunks.core.join('')),origins,rendering_sha256:hash(render),render};
 }
 if(process.argv[1]===import.meta.filename){
-const cases=JSON.parse(fs.readFileSync(here+(process.env.CASES_FILE||'/out/cases.json')));
+const cases=JSON.parse(fs.readFileSync(here+(process.env.CASES_FILE||'/.out/cases.json')));
 const resultFile=here+'/results/'+(process.env.RESULT_PREFIX||'')+'sizes.json';
 const modes=process.env.MODES?.split(',')||['tea','direct','vanilla','partial','static','cells','local'];
 const rows=process.env.MODES&&fs.existsSync(resultFile)?JSON.parse(fs.readFileSync(resultFile)).observations.filter(r=>!modes.includes(r.mode)):[];fs.mkdirSync(here+'/results',{recursive:true});
 for(const c of cases){
- const appRoot=here+'/out/apps/'+c.name,spec=JSON.parse(fs.readFileSync(appRoot+'/spec.json'));
+ const appRoot=here+'/.out/apps/'+c.name,spec=JSON.parse(fs.readFileSync(appRoot+'/spec.json'));
  for(const mode of modes){
   let output,rawRelease=null,kind,analysis=null;
-  const dest=here+'/out/measured/'+c.name;fs.mkdirSync(dest,{recursive:true});
+  const dest=here+'/.out/measured/'+c.name;fs.mkdirSync(dest,{recursive:true});
   if(mode==='tea'||mode==='direct'){
-   const root=here+'/out/today/'+c.name+'/'+mode,source=fs.readFileSync(root+'/_main.mjs','utf8').replace(/\/\/# sourceMappingURL=.*\n?$/,''),map=JSON.parse(fs.readFileSync(root+'/_main.mjs.map'));
+   const root=here+'/.out/today/'+c.name+'/'+mode,source=fs.readFileSync(root+'/_main.mjs','utf8').replace(/\/\/# sourceMappingURL=.*\n?$/,''),map=JSON.parse(fs.readFileSync(root+'/_main.mjs.map'));
    rawRelease=account(source,map,'today');delete rawRelease.render;
    output=await minify({'bundle.js':source},{module:true,compress:{passes:2},mangle:true,format:{comments:false},sourceMap:{content:map,asObject:true}});kind='today';
   }else{

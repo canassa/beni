@@ -3,8 +3,8 @@
 import fs from 'node:fs';import {createHash} from 'node:crypto';import {application} from './catalogue.mjs';import {parseBir,analyse} from './bir.mjs';import {ownership} from './ownership.mjs';
 const here=import.meta.dirname,hash=s=>createHash('sha256').update(s).digest('hex');
 const pure=new Set(['Basics.add','Basics.sub','Basics.mul','Basics.append','Basics.and','Basics.or','Basics.not','List.map','List.range','List.append','List.filter','List.reverse','List.length','List.foldl','List.sortBy','String.fromInt','String.contains','String.length','Int.mod']);
-const cases=JSON.parse(fs.readFileSync(here+'/out/cases.json')),rows=[];
-for(const c of cases){const root=here+'/out/apps/'+c.name,spec=JSON.parse(fs.readFileSync(root+'/spec.json')),expected=application(spec.n,spec.seed,spec.onlyShape,spec.population);
+const cases=JSON.parse(fs.readFileSync(here+'/.out/cases.json')),rows=[];
+for(const c of cases){const root=here+'/.out/apps/'+c.name,spec=JSON.parse(fs.readFileSync(root+'/spec.json')),expected=application(spec.n,spec.seed,spec.onlyShape,spec.population);
  // The recognized source root is a sandbox of disjoint component models. It
  // never exports/stores old models, shares arrays between instances, or runs effects.
  if(fs.readFileSync(root+'/Main.beni','utf8')!==expected.source)throw Error('Unrecognized app root '+c.name);
