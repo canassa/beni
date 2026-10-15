@@ -1050,8 +1050,7 @@ hostWorker inner =
 -- and `encode` becomes `write` (`NHost`). The issues are the same array,
 -- so a failure below is the caller's `c.fail`.
 hostEnds : Context → Context
-hostEnds c =
-    { c | sh = c.sh || c.src == encodedSide, dh = c.dh || c.dst == encodedSide }
+hostEnds c = { c | sh = c.sh || c.src == encodedSide, dh = c.dh || c.dst == encodedSide }
 
 
 -- `prim`, in either direction: the context says which.
