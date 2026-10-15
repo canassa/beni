@@ -10,3 +10,6 @@ import Ownership.BuilderProof
 import Ownership.KernelChecks
 import Ownership.Report
 import Ownership.Soundness
+import Ownership.StatementChecks.ConstructionFuel
+import Ownership.StatementChecks.SummaryObservers
+import Ownership.StatementChecks.ViewLinks
