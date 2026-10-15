@@ -20,6 +20,11 @@
 // program ships, which is the runtime file whole and the mount. They sit
 // after the program lines and outside the totals, which are Node programs.
 //
+// **The `app` lines** are the applications under `examples/`, each built
+// whole as it ships, from its own `beni.json`, dev and `--release`. Their
+// release build takes no `--allow-debug`, so they are production bytes.
+// They follow the `fibers` lines, outside the totals too.
+//
 // **The floor, and what it means now that §9 exists.** It is still an EMPTY
 // program — a `main` that is `Node.done` — built in the same run and
 // reported as the `floor` line, with every program's bytes given NET of it.
@@ -110,7 +115,7 @@ const usage = `usage: node bench/size.mjs [options]
   --corpus=<path>     a corpus root; repeatable
                       (default: tests/corpus/run and bench/corpus)
   --dev-only          skip the --release column (halves the run)
-  --pages-only        only the page and fibers lines: no floor, no corpus, no total
+  --pages-only        only the page, fibers and app lines: no floor, no corpus, no total
   --keep              leave the temporary build trees on disk
   --help              print this
 
@@ -642,6 +647,49 @@ function measureFiberProgram(options, beni, work, spec) {
   };
 }
 
+/// The `app` lines: every application under `examples/` (a directory with a
+/// `beni.json`), built whole as it ships. A copy of the directory is built
+/// with the project's own manifest, so with the platform it names, in
+/// development and with `--release`, as `examples/build-pages.mjs` builds it
+/// for GitHub Pages. The release build takes no `--allow-debug`: a program
+/// that reaches `Debug` has no release bytes (`debug_in_release`), and the
+/// script fails. Bike Wars had none while `Helpers.toLine` called
+/// `Debug.log` (issue #158).
+function exampleApps() {
+  return readdirSync("examples", { withFileTypes: true })
+    .filter((entry) => entry.isDirectory() && statSync(join("examples", entry.name, "beni.json"), { throwIfNoEntry: false }) !== undefined)
+    .map((entry) => entry.name)
+    .sort();
+}
+
+function measureApp(options, beni, work, name) {
+  const projectDir = join(work, `__app_${name.replace(/[^\w]/g, "_")}`);
+  cpSync(join("examples", name), projectDir, { recursive: true });
+  const platform = JSON.parse(readFileSync(join(projectDir, "beni.json"), "utf8")).build.platform;
+  const build = (out, flags) => {
+    rmSync(join(projectDir, out), { recursive: true, force: true });
+    const run = runBeni(beni, ["build", "--no-cache", ...flags, `--out=${out}`], projectDir);
+    if (run.status !== 0) {
+      process.stderr.write(`bench/size.mjs: the ${name} application did not build ${flags.join(" ")}\n${run.stdout ?? ""}${run.stderr ?? ""}\n`);
+    }
+    return run.status === 0;
+  };
+  if (!build("out", [])) return null;
+  const measured = measureTree(join(projectDir, "out"));
+  let release = {};
+  if (options.release) {
+    if (!build("out-release", ["--release"])) return null;
+    const tree = measureTree(join(projectDir, "out-release"));
+    release = {
+      release_files: tree.files,
+      release_raw_bytes: tree.raw_bytes,
+      release_gzip_bytes: tree.gzip_bytes,
+      release_brotli_bytes: tree.brotli_bytes,
+    };
+  }
+  return { app: true, platform, name, ...measured, ...release };
+}
+
 function main() {
   const options = parseArgs(process.argv.slice(2));
   const beni = resolve(options.beni);
@@ -659,6 +707,11 @@ function main() {
     }
     for (const spec of fiberPrograms) {
       const line = measureFiberProgram(options, beni, work, spec);
+      if (line === null) failed = true;
+      else console.log(JSON.stringify(line));
+    }
+    for (const name of exampleApps()) {
+      const line = measureApp(options, beni, work, name);
       if (line === null) failed = true;
       else console.log(JSON.stringify(line));
     }
@@ -909,6 +962,11 @@ function main() {
   }
   for (const spec of fiberPrograms) {
     const line = measureFiberProgram(options, beni, work, spec);
+    if (line === null) failed = true;
+    else lines.push(JSON.stringify(line));
+  }
+  for (const name of exampleApps()) {
+    const line = measureApp(options, beni, work, name);
     if (line === null) failed = true;
     else lines.push(JSON.stringify(line));
   }
