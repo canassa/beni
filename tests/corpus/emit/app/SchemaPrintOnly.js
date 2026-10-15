@@ -70,7 +70,7 @@ const SchemaPrintOnly$Shape$$write = (c, d, p, k, n, v) => {
       }
   }
 };
-const SchemaPrintOnly$Shape$$printWith = ($o, $t) => Schema$compiledPrint($o, [], SchemaPrintOnly$Shape$$write, $t);
+const SchemaPrintOnly$Shape$$printWith = ($o, $t) => Schema$compiledPrint($o, null, SchemaPrintOnly$Shape$$write, $t);
 const SchemaPrintOnly$Shape$$print = ($t) => SchemaPrintOnly$Shape$$printWith(Schema$defaultOptions, $t);
 const SchemaPrintOnly$main = (() => {
   const $t$1 = SchemaPrintOnly$Shape$$print({ $: "Square", a: { side: 2 } });

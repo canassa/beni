@@ -39,9 +39,9 @@ const SchemaValuePrintOnly$Point$$write = (c, d, p, k, n, v) => {
   $o$7["y"] = $s$5;
   return $o$7;
 };
-const SchemaValuePrintOnly$Point$$printWith = ($o, $t) => Schema$compiledPrint($o, [], SchemaValuePrintOnly$Point$$write, $t);
+const SchemaValuePrintOnly$Point$$printWith = ($o, $t) => Schema$compiledPrint($o, null, SchemaValuePrintOnly$Point$$write, $t);
 const SchemaValuePrintOnly$Point$$print = ($t) => SchemaValuePrintOnly$Point$$printWith(Schema$defaultOptions, $t);
-const SchemaValuePrintOnly$Point$$declared = Schema$declared(null, null, SchemaValuePrintOnly$Point$$write, []);
+const SchemaValuePrintOnly$Point$$declared = Schema$declared(null, null, SchemaValuePrintOnly$Point$$write, null);
 const SchemaValuePrintOnly$Point$$schema = ($u$1) => SchemaValuePrintOnly$Point$$declared;
 const SchemaValuePrintOnly$Pair$$write = (c, d, p, k, n, v, $s0) => {
   const $here = Schema$pathAt(p, k, n);
