@@ -4210,7 +4210,11 @@ over-elimination, which is the failure this pass has to fear.
   the null program, O(declarations) at scale, against a re-check that the firewall may skip
   entirely. *Amended 2026-10-15:* the same split holds inside one build. A build that walks two
   times (§15.1, *The runtime module*) builds the edge lists once and walks them two times. On
-  `browser/tea/ApiItems` the edge lists cost 62 million instructions and a walk 1.5 million. §8.2's `emit` unit is invalidated by "a change to `decl_val`, or to any representation
+  `browser/tea/ApiItems` the edge lists cost 62 million instructions and a walk 1.5 million.
+  *Amended 2026-10-15, later the same day:* the modules the binary carries do not build their lists
+  at all. The checked core holds them, keyed by the module key and the two options they depend on
+  (`fast-compiler.md` §8, *The checked core, embedded*), and a build reads them. On ApiItems the
+  lists then cost 6 million instructions, for the program's own module and the reads. §8.2's `emit` unit is invalidated by "a change to `decl_val`, or to any representation
   decision it depends on"; **a change to liveness is one more such input**, and a declaration whose
   liveness flipped is an `emit` unit to redo whether or not its own bytes would differ.
 
