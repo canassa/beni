@@ -53,8 +53,8 @@ Five facts make this cheaper in beni than in any language surveyed:
 - An unannotated `size xs = xs.length` still infers a record type, `{ r | length : a } → a`. A call
   `size [1, 2]` is then an error at the call site, which needs a good hint. Lean refuses the same
   program with "type is not known" (§2.1).
-- Six post-check passes that today assume `field_access` means a path must see the resolved form.
-  Missing one is a silent wrong answer, not an error. The mitigation is a single retag after checking
+- Every post-check consumer that today assumes `field_access` means a path (§3.4 lists them) must see
+  the resolved form. Missing one is a silent wrong answer, not an error. The mitigation is a single retag after checking
   (§3.4).
 - A record type alias (`Url`, `Model`) still has no methods, as today for `x.m a`.
 
@@ -212,6 +212,18 @@ immediately; it would now be resolved at the default instead. That changes *when
 the amended rule exists precisely so that the two give the same answer. The implementing slice should
 run the whole corpus and the ordering tests to confirm that no verdict moves.
 
+**Two shapes the implementing slice must test by name.**
+
+- *A `let`-bound helper generalised before its use.* In `helper = λx → x.length` followed by
+  `helper myList`, `x` is unknown when the `let` is generalised. So the default fires there, and
+  `helper` takes a record. The call is then an error, the same error today's field access gives. It
+  is not a regression, but it is where a user will expect the method, and it is the main case for
+  the hint below.
+- *A recursive group whose members fix each other's receivers.* The invariant "defaults run before
+  the group's other open wanteds close" must become a declaration-permutation scenario in
+  `ordering_test.zig`, not just a note: two members, one reading `x.f` and one calling `x.g a`, in
+  both orders.
+
 **The new failure, and its message.** `size xs = xs.length` with no annotation infers
 `{ r | length : a } → a`, and `size [1, 2]` fails at the call. `CallStyle.fieldHint` already knows how
 to say *`length` is a function of `List`*. The message should add the cause: *`size` reads `length`
@@ -240,8 +252,10 @@ treated as **paths** by:
 - `src/writes/Writes.zig` (`projField`, `isPathExpr`, `writeExpr`);
 - `src/js/MarkupTree.zig` (six path walks);
 - `src/js/Lower.zig`;
-- `src/check/constrain/Decl.zig`;
-- the diagnostics.
+- `src/check/constrain/Decl.zig`, which walks a `field_access`'s operand when it collects a
+  declaration's references (a retagged call is walked as `method_call` already is);
+- the diagnostics: `Diagnostics.zig` names a `field_access` region as a field, and after the retag a
+  method's region is named as a call, with the wording `x.m a` already gets.
 
 If `current.trail.copy` reached ownership as a path, the checker would treat the copy as an **alias**
 of `current.trail`, the opposite of what `copy` is for. The motivating line would be refused with
@@ -278,7 +292,9 @@ golden.
 - **Pipes**: `e ▷ x.m` is already `x.m e` (`lowerApplication`), and that is unchanged.
 - **The accessor `.m`**: its lowering is `λr → r.m`, so it follows the same rule.
   `List.map words .length` becomes `String.length` per element. That falls out of the rule; the spec
-  should say so on purpose.
+  should say so on purpose. Where nothing fixes the element type, as in an unannotated
+  `lengths xs = List.map xs .length`, the default makes `.length` a field reader, so `lengths` takes
+  a list of records. `lengths [ "a" ]` is then §3.2's generalisation error, at the call.
 - **Today's spelling breaks under precedence.** `current.trail ▷ List.copy ++ other.trail` parses as
   `current.trail ▷ (List.copy ++ other.trail)`, because `▷` binds loosest. The prefix form is the only
   status-quo spelling that works.
@@ -294,13 +310,20 @@ golden.
     generalisation hint of §3.2, and the second points at `xs.length`.
 - **Interfaces.** No change. A nullary dot never promotes into a `where` clause, so no new interface
   term appears. An annotated `where a.length : a → Int` is an ordinary method requirement.
-- **Caching.** The dispatch table gains sites, so the cache entry's version goes up.
+- **Caching.** The frontend artifact (tokens, AST, and the BIR as lowered) does not change, because
+  parsing and lowering still produce `field_access` exactly as today. The checked output does change:
+  the dispatch table gains a site for each nullary method, and the retag (§3.4) is applied to the
+  checked copy of the BIR. So the check-cache entry's version goes up and the frontend artifact's
+  does not.
 - **The interface firewall.** It already makes a dependent depend on `M`'s `pub` value set for
   `x.m a`. Adding `pub length` to `M` can only turn an error into a call, never change a field read,
   because a receiver of `M`'s type was never a record.
 - **Effects.** A nullary method is a call, so `Effects.zig` infers its rung from the callee as for any
-  call. A dot may now suspend, which a field read never did. Readers of `view` code lose the guarantee
-  that `a.b.c` is free. That is the cost §4.1 accepts.
+  call. A dot may now suspend, which a field read never did. Markup holes need no new rule: a nullary
+  method in a hole is a call in a hole. Whatever already governs `List.length xs` there (the `sync`
+  boundary and `must_not_suspend`, `transparent-effects-proposal.md` §15) governs `xs.length`, with
+  the same message. What readers of `view` code lose is the guarantee, from the spelling alone, that
+  `a.b.c` is free. That is the cost §4.1 accepts.
 - **The module-rule namespace** (§11's first limit): nullary methods make it slightly more visible.
   `n.toString` has no home, because `Int` is declared in `Basics`, which has no `toString`; the
   function is `String.fromInt`. That is the same limit `language.md` §12.4 records for `n.mod 2`.
@@ -327,10 +350,13 @@ is read.
   `model.items` keeps its identity. Rule 8 makes field identity load-bearing, so a reader can no longer
   tell from the spelling that a hole's value is the model's own. Swift, Kotlin, .NET and Scala answer
   this with a convention, and so should core: a nullary method should be cheap and pure, with
-  `copy`/`reverse` the documented exceptions. A rule would encode taste (rule 7).
+  `copy`/`reverse` the documented exceptions. A rule would encode taste (rule 7). The compiler gets
+  a safeguard rather than a convention: after the retag a nullary method is a call, and no pass
+  (write sets, the markup tree, the release optimiser) may treat it as an identity-preserving read
+  of the path it is called on.
 - **The generalisation default.** Unannotated helpers reading a method infer record types (§3.2). The
   call-site hint has to be good.
-- **Six passes must see the retagged node** (§3.4).
+- **Every path-walking pass must see the retagged node** (§3.4).
 - **Record aliases have no nullary methods.**
 
 **Precedent.** Lean 4 (the closest), Koka, Nim, D, Haskell virtual fields, and the uniform access
@@ -378,6 +404,8 @@ in beni's lexer (`language.md` §2.2).
 - **The syntax is unfamiliar.** It is OCaml's object-send symbol, and no mainstream language uses it
   for this.
 - **It reads as noise in the cases that matter most**, such as `xs#length`.
+- **`#` is free today**, and no design document reserves it: attributes, schemas and markup use
+  none. But taking it for this spends one of the few ASCII punctuation marks beni has not used.
 - **It needs a lexer token, a formatter rule and a diagnostic for `x.m` where `x#m` was meant.** That
   diagnostic is §12.5's hint again, now pointing at `#`.
 
@@ -400,8 +428,10 @@ total = List.copy current.trail ++ other.trail
   first and function first by the method's arity.
 - **Pipes do not rescue it.** `current.trail ▷ List.copy ++ other.trail` parses wrongly (§3.5).
 - **The ownership checker's own fix text** (`src/own/Message.zig`) has to print the prefix form.
-- **A frequency fact the change would be measured against.** `List.length` appears 525 times in the
-  repository's `.beni` files, `String.length` 114, `List.reverse` 95 and `List.copy` 23.
+- **A frequency fact the change would be measured against.** `List.length` appears 525 times,
+  `String.length` 114, `List.reverse` 95 and `List.copy` 23. These are whole-word matches,
+  `grep -rhoE '\bList\.length\b' --include=*.beni core platforms tests bench examples | wc -l`, with
+  `references/` excluded. A per-line count over a different tree gives smaller numbers.
 
 **Precedent.** Gleam, Elm, and Roc with `()`.
 
@@ -438,7 +468,7 @@ the owner asked for, with the ownership summary of `copy` applied to it.
 - `x.m` stops telling a reader that it is free.
 - An unannotated helper reading a method silently infers a record type and fails at its caller.
 - Record aliases still get no nullary methods.
-- Every path-walking pass must see the retagged call, and a missed one is a silent wrong answer. That
+- Every path-walking consumer must see the retagged call, and a missed one is a silent wrong answer. That
   is why the retag, rather than a lookup in every pass, is part of the recommendation.
 
 **The spec work it needs**, in order (rule 1):
