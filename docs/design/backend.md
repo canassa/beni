@@ -2352,6 +2352,49 @@ checker at every site, and never something the backend has to discover.
 codegen helper would be neither that nor beni. Dropping the adapter makes that easier to keep, not
 harder — it was the one helper this section had ever needed.
 
+### A compiler-made name is numbered within its top-level declaration
+
+*Added 2026-10-15, Cesar's decision (the dashboard's question `emit-cache-q3`, issue #94): "count
+from 1 in each function — restart at 1 for each top-level declaration; one count within it,
+including its nested functions." It replaces Jayson's earlier answer to `emit-cache-q2`, which he
+said was not a decision.*
+
+A name the compiler makes — `$t$3`, `$p$2`, `$k$5`, and every other base `Lowerer.fresh` takes —
+carries a number, and the number keeps two such names of one base apart. Until this change one
+counter ran through the whole module. The numbers inside a declaration then depended on which
+declarations before it survived elimination (§9) and on how many names those made, so one
+declaration printed differently from one program to the next.
+
+**The rule.** The counter restarts at 1 for each top-level declaration that the lowering writes,
+and one count runs through that declaration and through every function nested in it. The
+top-level declarations are, each on its own:
+
+- a declaration's body, and its suspendable body (transparent-effects-proposal.md §16.2);
+- a schema declaration's `via`s, its description, and each of its two directions, each as it
+  survived (`schema.md` §6);
+- each derived function and each primitive comparator (§9.1).
+
+**Why two declarations may hold one name.** No compiler-made name is declared at module scope:
+each is a parameter, a `const` or a `let` inside the function of the declaration that made it. So
+two top-level declarations that both hold `$t$1` hold two bindings in two scopes. A body lowered
+inside another declaration (§9's *A function called once is written where it is called*) is lowered
+in that declaration's count, so names inside one top-level declaration never repeat. The release
+optimiser already counts uses per top-level declaration and keys a substitution by its use site
+(§9 item 1), because a local's own number (`localName`) has always restarted per declaration.
+
+**Why.** The second step of the checked core's emit work (`fast-compiler.md` §8, *The checked core,
+embedded*) stores the printed text of each embedded declaration once, for every program. With one
+counter per module that text was not fixed. The same rule keeps one edit from renumbering every
+later declaration of its module, which is what §2's warm rebuild wants: one edit rewrites one
+declaration's text. *Rejected:* keep the module-wide counter and let the cache store each
+declaration with holes for the numbers, filled while it joins the declarations of a build. That
+changes no byte, but every build then renumbers and moves every source-map column that a longer
+number pushes to the right.
+
+**What changes.** Only the numbers of compiler-made names, once, in every emitted module that holds
+one after its first top-level declaration: every `emit/` golden and run hash that holds one, which
+Node verifies again.
+
 ### A parameter of type `()`
 
 *Added 2026-10-02 (research 47 §6 item 7).* `f () = …` compiled to `($p) => …`: a parameter that
