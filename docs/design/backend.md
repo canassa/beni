@@ -79,7 +79,7 @@ beni build [options] <entry>...      compile to JavaScript
 | `--release` | dead bindings out, short names, compact printing, joined `const`s (§9); **refuses a build that reaches `Debug`**; later chunks (§10), integer tags, maps off | off |
 | `--library` | no `main` is required and no entry file is written; every name the root package's modules export is a reachability root (§9) | off |
 | `--out=<dir>` | output directory | `out/` |
-| `--source-maps` | a `.mjs.map` beside every emitted module (§11.1), or beside every file a release build lowers from beni (§11.2); `--no-source-maps` writes none | on in dev; off with `--release`, which writes maps only when the flag is given |
+| `--source-maps` | a `.mjs.map` beside every emitted module (§11.1), or beside every file a release build lowers from beni (§11.2); a map embeds the beni source text (`sourcesContent`); `--no-source-maps` writes none | on in dev; off with `--release`, which writes maps only when the flag is given |
 
 *Amended 2026-10-01: development source maps are built (§11.1).* A development build writes a map
 beside every module by default; `--source-maps` states that default and `--no-source-maps` turns
@@ -7501,7 +7501,10 @@ printing (`src/js/Print.zig`), and `Emitter.linkHoisted` (`src/js/Emit.zig`).
 - **The one scope-hoisted file** (§9, *One scope-hoisted file under `--release`*): one map,
   `<entry>.map` beside the entry file (`_main.mjs.map`). Its `sources` has one entry for each
   emitted module that the file holds, in the order of the file. The modules that the file does not
-  hold have no entry.
+  hold have no entry. A module that records no mark has no entry either, and its bytes are an
+  unmapped stretch. Its text would only add to the map: a
+  body copied out of `core/Debug` maps to its call, so `Debug.beni` often has nothing that maps to
+  it.
 - **No map:** the entry file of the multi-file layout and `_core/_derived.mjs`, for §11.1's reason
   (no beni line wrote them), and each hand-written file that the build writes as a file of its own
   (below).
@@ -7555,6 +7558,13 @@ order. Each release pass changes the printed bytes, and each has a rule.
    as a module's top-level name. A temporary that the lowering invented (`$t…`) still has no entry.
    A named function's first mapping carries its name, as in §11.1, so a stack frame under Node's
    `--enable-source-maps` names the beni function and not its short name.
+6. **Decided branches** (§9, *Whole-program specialisation*): specialisation writes the operand that a decided `cond`, `&&` or `||` keeps in place of
+   the node (`Spec.foldTo`). The node takes the kept operand's position too. The kept code is what
+   runs, so it maps to where it was written and not to the test that decided it. A call kept this
+   way is then the site of a copy into it (item 2). Before this rule, `if n > 100 then Aid.boom n`
+   with `n` known to be 500 mapped the copied `Aid.boom` to the `>`, and the crash frame named the
+   test's line. A node that an inline writes in place of a call keeps the call's position: the
+   call is where the inlined code runs.
 
 **The join.** The printer prints each module of the hoisted file on its own, with marks relative
 to the module's own bytes (§9). The link step joins the pieces, and the map follows the join:
@@ -7567,13 +7577,23 @@ to the module's own bytes (§9). The link step joins the pieces, and the map fol
 - the `names` of the stretches are joined in stretch order, and each mark's index moves by the
   count of names before its stretch. No name is shared between two stretches;
 - a mark at or past the end of its stretch records nothing (the join removes a module's last
-  newline, and nothing maps to it).
+  newline, and nothing maps to it);
+- when the last segment has fewer than five fields, `mappings` ends with `;`, in every release map
+  of either layout (`SourceMap.Joined.end_line`). Node's reader (`node:module`'s `SourceMap`, which
+  `--enable-source-maps` uses) ends a segment only at a `,` or a `;`. At the end of the string it
+  reads the missing fields as zero deltas: a one-field segment repeats the one before it, so the
+  link step's glue, the hoisted file's last stretch, mapped to the last beni line; and a four-field
+  segment takes the name before it, which is the last segment of nearly every module map. The `;`
+  closes the code's line, which the comment line follows. A development map ends as §11.1 has it;
+  the same reading gives its last segment a name it does not have, which is a §11.1 defect and not
+  this section's.
 
 The encoder runs once, over the joined bytes. This is §11's "per-file chunks rebased once at join
 time", and §10's chunks will use it for each chunk file.
 
 **Format.** As §11.1, with two additions: more than one entry in `sources` (the hoisted file), and
-the one-field segment. `sourcesContent` always carries each source's text. A release map is
+the one-field segment. `sourcesContent` always carries each source's text, and `beni help` says so
+on the `--source-maps` line. A release map is
 written only when the user asks for it, and a map without the text shows an empty file. The user
 who ships the map ships the source; the user who does not want that does not give the flag, or
 does not deploy the `.map` files. The `sources` URLs follow §11.1: a disk source is relative to the
@@ -7586,19 +7606,23 @@ are open, so what a page pays is the comment line: about 35 bytes before compres
 **Determinism** (rule 5) as §11.1: the marks are in print order, the stretches in the order of the
 file, and `names` in first-use order in each stretch. `--jobs` changes no byte of a map.
 
-**Cost**, measured 2026-10-15: a ReleaseFast LLVM beni, a whole cold `beni build --no-cache`,
-the median of 11 and of 21 runs interleaved with the build without the flag. Other builds ran on
-the machine (load 7–15), so a time is ± a few milliseconds.
+**Cost**, measured 2026-10-15. Instructions: user-space instructions (`perf_event_open`) of a
+whole cold `beni build --no-cache --jobs=1` with the ReleaseSafe beni the gates run, the median of
+5 runs, which differ by under 0.001%. Time: a ReleaseFast LLVM beni, the median of 11 and of 21
+runs interleaved with the build without the flag; other builds ran on the machine (load 7–15), so
+a time is ± a few milliseconds, as large as the effect.
 
-| Build | Time without → with maps | Code bytes | Map bytes | Of which `sourcesContent` |
-|---|---|---|---|---|
-| `bench/corpus`, `--release --library`, 27 maps | 59.0 → 60.2 ms; `--jobs=1` 67.2 → 69.6 and 69.9 → 73.7 ms | 72 950 + 985 (the comment lines) | 305 375 | 234 180 (77%) |
-| `examples/conduit`, `--release`, one map of 40 sources | 171.5 → 172.7 and 174.7 → 177.5 ms; `--jobs=1` 189.0 → 193.1 and 192.7 → 197.6 ms | 125 961 + 35 | 770 677 | 639 806 (83%) |
-| `examples/sternhalma`, `--release`, `--jobs=1` | 51.4 → 52.6 ms | 24 154 + 35 | 455 799 | 411 256 (90%) |
+| Build | Instructions without → with maps | Time without → with maps | Code bytes | Map bytes | Of which `sourcesContent` |
+|---|---|---|---|---|---|
+| `bench/corpus`, `--release --library`, 27 maps | 1 784.29 M → 1 832.99 M, **+2.73%** | 59.0 → 60.2 ms; `--jobs=1` 67.2 → 69.6 and 69.9 → 73.7 ms | 72 950 + 985 (the comment lines) | 305 483 | 234 180 (77%) |
+| `examples/conduit`, `--release`, one map of 38 sources | 5 165.53 M → 5 273.57 M, **+2.09%** | 171.5 → 172.7 and 174.7 → 177.5 ms; `--jobs=1` 189.0 → 193.1 and 192.7 → 197.6 ms | 125 961 + 35 | 765 823 | 634 824 (83%) |
+| `examples/sternhalma`, `--release`, one map of 19 sources | 1 270.52 M → 1 315.42 M, **+3.53%** | `--jobs=1` 51.4 → 52.6 ms | 24 154 + 35 | 455 904 | 411 256 (90%) |
 
-So a release map costs 1–5 ms of a build, 2–5%. Most of its bytes are the sources' text. The
-mappings average 5.5 bytes a segment (conduit: 88 036 bytes for 15 747 segments; 1 933 `names`
-in 14 435 bytes). The page pays the comment line only.
+So a release map costs about 1–5% of a build: +2.1% to +3.5% of its instructions, 1–5 ms of its
+time. Most of its bytes are the sources' text. The mappings average 5.5 bytes a segment (conduit:
+88 038 bytes for 15 747 segments; 1 933 `names` in 14 435 bytes). The page pays the comment line
+only. The times were taken before a module with no mark lost its entry in `sources`; the
+instructions and the bytes after it.
 
 **Tests.** `build_test`:
 
@@ -7606,9 +7630,15 @@ in 14 435 bytes). The page pays the comment line only.
   application under `--release --source-maps` (with the hidden `--allow-debug`, for a crash),
   decodes `_main.mjs.map` with a VLQ reader written from the format, and pins where named spots of
   the one file map: calls, an inlined initialiser, a renamed local with its beni name, a run's
-  keyword, each function's first byte with its name, the copied `Debug.todo`, and two unmapped
-  stretches (the runtime's and the link step's). A segment that starts before its spot fails it.
-  It runs the program under Node's `--enable-source-maps` and pins the frames of the crash.
+  keyword, each function's first byte with its name, the copied `Debug.todo`, a `for` head's
+  keyword and its variables' beni names, and three unmapped stretches (the file's start, the
+  runtime's and the link step's, the last one the map's last segment). A segment that starts
+  before its spot fails it, and so does a spot that Node's own reader (`node:module`'s
+  `SourceMap`) reads differently. It runs the program under Node's `--enable-source-maps` and pins
+  the frames of the crash, and it pins the `sources`: a module with no mark is not one.
+- *a branch that specialisation decides maps to the code it keeps* is item 6: `crash 500` keeps
+  `Aid.boom n`, and the call and the crash frame map to 14:9, the line the development build
+  names, and not to the test.
 - *a release library build writes a map beside every module* builds `--release --library
   --source-maps` (the multi-file layout), pins named spots of `Lib.mjs`, and checks a map beside
   each module lowered from beni, core's included, and none beside the hand-written runtime.
@@ -7619,7 +7649,9 @@ in 14 435 bytes). The page pays the comment line only.
 
 Unit tests hold the rules a program does not reach on purpose: `Print`'s *compact: a mark goes
 past the guard's space, and with the `;` a block's end takes back*, and `SourceMap`'s join
-tests. Each black-box claim above was checked red by a revert of its rule.
+tests. Each black-box claim above was checked red by a revert of its rule: the call site of a
+copy, the guard's space, a run's keyword, a decided branch's position, the last `;` and a module
+with no mark.
 
 **The flags.** `--release --source-maps` writes the maps. `--release` alone writes none, and
 `--release --no-source-maps` says so. Both flags together exit 2, as in development.
