@@ -2104,6 +2104,29 @@ interpreter as it runs a declared one. **A call of `Json.decode`, `encode`, `dec
 declaration's `S.parse` ships and no more. `decodeValue` and `encodeValue` run `Schema.read` and
 `Schema.write`, which reach the description until #175's workers land, as A.11 says.
 
+*Amended 2026-10-16, after #175 and slice B (#204, #208).* A definition has the members of a
+declaration (§6, *Every runner of a statically known schema is compiled*): the description, a
+worker set per operation, the root and the two root wrappers, and its description is made of
+nodes by core-private `described…` values (`describedTuple`, `describedConstructors`,
+`describedMaybe`, `describedMaybeField`). `decodeValue` and `encodeValue` therefore run the
+definition's compiled `read` and `write` workers, and `run/JsonDerivedValues` carries the
+`.compiled-schemas` guarantee for them. A derived record compiles to the same code as the
+equivalent declaration, shared validators included: their `--release` output is byte-identical
+(*As built* below).
+
+**A `Codec`'s Encoded end is a host value, whatever the operation** *(added 2026-10-16)*.
+`Codec a` is `Schema Value a`, so the input of `Schema.decode` of a `Codec` is a `Value` the
+program got from anywhere, and the output of `encode` is one. A typed input's shape is not
+tested (§6), and a `Value` is not typed, so a `Codec`'s `decode` reads its input as `read` does
+and its `encode` writes as `write` does: `Schema.decode (Schema.derived ⊤) 5` is `WrongShape`
+"expected an object", where trusting the input would read a number as a record. The engine
+node is `NHost`: it makes the context's Encoded end a host value (`hostEnds`). A definition's
+description is `describedHost` of its node, so the library path agrees; `Schema.erased` of an
+interpreted schema is `NHost` of its node, and of a compiled one `MadeErased`, whose `decode`
+and `encode` workers are its `read` and `write` ones run on that context (`hostWorker`). A
+definition writes no `decode` or `encode` worker set: its root's `decode` and `encode` are
+`hostWorker` of its `read` and `write` workers (`SchemaGraph.hostAliased`).
+
 **`Http.expectJson` is inferred** (amends A.11's *`Http`'s API is unchanged* and
 `boundary.md` §9.8.12 (a)). The owner asked for it in #193. It is now `expectJson : Expect Error a
 where a.codec : ⊤ → Codec a`, a constant whose type is fixed by the request it is given to, as
@@ -2134,6 +2157,10 @@ schema argument.
   print 546 and 538 ns. A 1 000-element list parses in 508 and 498 µs (Node 24, one pinned
   core, 15 interleaved samples of a development build).
 - A derived `Maybe` field costs about 9 brotli bytes more than `optional`, for its `null` check.
+- Rebased on #175's runners and slice B's shared validators (2026-10-16): the eight-field record
+  is still 1 085 against 1 086 brotli. A five-field record of four strings and an integer, the
+  shape `emit/release/app/SchemaSharedValidators` shares `badString` at, is byte-identical
+  declared and derived in `--release` (986 brotli each, the shared helper in both).
 
 **`Schema.structural`, not `Schema.derived`, is the hint.** §12.2 says an opaque type's module
 "may derive it there by writing `pub codec () = Schema.derived ()`". By the module rule that call

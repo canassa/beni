@@ -1,0 +1,17 @@
+-- decodeValue
+Ok n k (1,a) Rect 2 3 L3
+Ok n - (1,a) Dot L0
+Err decoding Encoded WrongShape /pair expected an array of 2 elements
+Err decoding Encoded WrongShape /shape the constructor Circle takes arguments, so it is an object with the key "Circle"
+Err decoding Type ConversionFailed /level a level is from 0 to 9
+Err decoding Encoded WrongShape / expected an object
+-- encodeValue
+Ok {"level":3,"name":"n","nick":"k","pair":[1,"a"],"shape":{"Rect":[2,3]}}
+Ok {"level":3,"name":"n","pair":[1,"a"],"shape":{"Circle":1.5}}
+-- Schema.decode and encode of a Codec
+Ok n - (1,a) Dot L4
+Err decoding Encoded WrongShape / expected an object
+Err decoding Encoded WrongShape /pair expected an array of 2 elements
+Ok 7
+Err decoding Encoded WrongShape / expected a number
+Ok {"level":3,"name":"n","nick":"k","pair":[1,"a"],"shape":{"Rect":[2,3]}}
