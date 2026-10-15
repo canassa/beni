@@ -1,0 +1,12 @@
+-- Nullary copy is a call with a fresh result, even after a field chain.
+-- The plain field path retains its alias: returning it after the edit fails.
+type alias Model =
+    trail : List Int
+
+
+pub copied : Model, Model → List Int × List Int
+copied current other = ( current.trail.copy ++ other.trail, current.trail )
+
+
+pub kept : Model, Model → List Int × List Int
+kept current other = ( current.trail ++ other.trail, current.trail )

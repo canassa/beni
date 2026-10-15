@@ -1,0 +1,1 @@
+[{"code":"kind_mismatch","severity":"error","span":{"file":"Main.beni","start":{"line":8,"col":38},"end":{"line":8,"col":42}},"title":"TYPE MISMATCH","message":"This is not a record with an `abs` field:\n\nIt is:\n\n    number\n\nBut I need a record like:\n\n    { r | abs : Int }\n\nOne of those has to be a number — an `Int` or a `Float` — and it is not.\n"}]

@@ -315,6 +315,7 @@ pub fn install(d: *Driver, m: Graph.Index, loaded: *CacheEntry.Loaded) Error!voi
     d.dispatch[m.int()].deinit(gpa);
     d.dispatch[m.int()] = loaded.sidecar.table;
     loaded.sidecar.table = .empty;
+    try @import("Nullary.zig").cached(gpa, d.artifacts.birMut(d.graph.moduleFile(m)), &d.dispatch[m.int()]);
     d.plans[m.int()].deinit(gpa);
     d.plans[m.int()] = loaded.plan;
     loaded.plan = .empty;

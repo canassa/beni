@@ -1,0 +1,32 @@
+-- Missing arguments remain errors for nominal, primitive, derived and given
+-- methods. No bare dot silently produces a partially applied function.
+import Node exposing (Program)
+
+
+type Box
+    = Box Int
+
+
+more : Box, Int → Int
+more (Box a) b = a + b
+
+
+own : Box → Int
+own x = x.more
+
+
+primitive : Int → Bool
+primitive x = x.eq
+
+
+derived : Int × Int → Order
+derived x = x.compare
+
+
+given : a → Int
+    where a.more : a, Int → Int
+given x = x.more
+
+
+main : Program
+main = Node.print "unreachable"

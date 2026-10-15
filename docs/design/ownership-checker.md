@@ -3283,6 +3283,11 @@ traversal callback remains the existing §24.9 slot-inside-lambda limit: its
 result ownership cannot yet be propagated, so HttpFailures remains pending
 with an approximate tagger-result diagnostic after the unseen check is closed.
 
+**Nullary methods (2026-10-15).** Static-dispatch-spike.md §1.1's checked-form
+invariant applies here: a resolved `x.m` method is an ordinary zero-argument
+`method_call`, never a field path. In particular `current.trail.copy` applies
+`copy`'s fresh-result summary; record `x.f` retains its field path and identity.
+
 ## 29. Result liveness and ownership across calls (2026-10-15)
 
 Every expression that forwards a result consumes that result in its own evaluation

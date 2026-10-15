@@ -1,0 +1,19 @@
+-- A call hidden behind a dot still parks and resumes like its prefix form.
+import Io
+import Node exposing (Program)
+
+
+type Clock
+    = Clock Int
+
+
+wake : Clock → Int
+wake (Clock n) =
+    Io.sleep 1
+    n
+
+
+main : Program
+main = Io.run λ⊤ →
+    value = (Clock 7).wake
+    Node.printLines [ String.fromInt value ]

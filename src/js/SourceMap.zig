@@ -68,6 +68,22 @@ pub const Marks = struct {
         }
         try m.list.append(m.allocator, .{ .generated = at, .source = source, .name = name });
     }
+
+    /// The compact printer's adjacency guard is about to write a space at
+    /// byte `space`. A mark recorded there is for the token after the
+    /// space, so it moves past it (backend.md §11.2, *What the marks
+    /// survive*, item 3).
+    pub fn skipSpace(m: *Marks, space: usize) void {
+        if (m.list.items.len == 0) return;
+        const last = &m.list.items[m.list.items.len - 1];
+        if (last.generated == space) last.generated += 1;
+    }
+
+    /// The printer took its bytes back to `length` (a `;` before a `}`). A
+    /// mark past it was for a node that printed nothing.
+    pub fn dropPast(m: *Marks, length: usize) void {
+        while (m.list.items.len != 0 and m.list.items[m.list.items.len - 1].generated > length) m.list.items.len -= 1;
+    }
 };
 
 /// How a `Mapping.name` becomes text: `Print.Names`, without the import.
@@ -93,25 +109,102 @@ pub const Input = struct {
     /// `Marks.names`, and how a name becomes text.
     names: []const InternPool.Symbol,
     name_text: NameText,
+    /// `Joined.end_line`: a release map's (backend.md §11.2).
+    end_line: bool = false,
 };
 
 /// The map's bytes, a JSON object and a newline, from `gpa`. Everything
-/// else comes from `scratch`.
+/// else comes from `scratch`. One module, one source: a development build's
+/// map, and a release build's in the multi-file layout (backend.md §11.1,
+/// §11.2).
 pub fn write(gpa: Allocator, scratch: Allocator, in: Input) Allocator.Error![]u8 {
+    const names = try scratch.alloc([]const u8, in.names.len);
+    for (names, in.names) |*text, symbol| text.* = in.name_text.lookup(in.name_text.context, symbol);
+    return writeJoined(gpa, scratch, .{
+        .file = in.file,
+        .generated = in.generated,
+        .sources = &.{.{ .url = in.source_url, .text = in.source, .line_starts = in.line_starts }},
+        .stretches = &.{.{ .start = 0, .source = 0, .mappings = in.mappings, .names = names }},
+        .end_line = in.end_line,
+    });
+}
+
+/// One entry of a map's `sources`: a `.beni` module.
+pub const Source = struct {
+    /// Its URL relative to the map (`../src/Main.beni`).
+    url: []const u8,
+    /// Its text, for `sourcesContent`.
+    text: []const u8,
+    /// Its line table: `line_starts[l]` is the byte offset of 0-based line
+    /// `l`.
+    line_starts: []const u32,
+};
+
+/// A stretch of the generated file, from `start` to the next stretch's
+/// (backend.md §11.2, *The join*): one module of a scope-hoisted file, or
+/// bytes no beni line wrote.
+pub const Stretch = struct {
+    /// Byte offset into the generated file.
+    start: u32,
+    /// Index into `Joined.sources`, or `unmapped`.
+    source: u32,
+    /// Relative to `start`, in generated order.
+    mappings: []const Mapping = &.{},
+    /// The stretch's names, by `Mapping.name`.
+    names: []const []const u8 = &.{},
+
+    pub const unmapped = std.math.maxInt(u32);
+};
+
+pub const Joined = struct {
+    /// The generated file's name, as the map's `file` (`_main.mjs`).
+    file: []const u8,
+    /// The printed file.
+    generated: []const u8,
+    sources: []const Source,
+    /// Ascending by `start`; the first need not start at 0, and bytes
+    /// before it are unmapped.
+    stretches: []const Stretch,
+    /// End `mappings` with `;` when its last segment has fewer than five
+    /// fields. Node's reader (`node:module`'s `SourceMap`, which
+    /// `--enable-source-maps` uses) ends a segment only at a `,` or a `;`,
+    /// and at the end of the string reads the fields that are not there
+    /// as zero deltas: a one-field segment repeats the segment before it,
+    /// and a four-field one takes the name before it. A release map sets
+    /// it (backend.md §11.2, *The join*); a development map does not, and
+    /// keeps its bytes.
+    end_line: bool = false,
+};
+
+/// The map of a file joined from stretches (backend.md §11.2): one entry in
+/// `sources` per module, each stretch's marks moved by its start, its names
+/// numbered after the stretches' before it, and a one-field segment where
+/// an unmapped stretch begins after a mapped one on its line.
+pub fn writeJoined(gpa: Allocator, scratch: Allocator, in: Joined) Allocator.Error![]u8 {
     var out: std.ArrayList(u8) = .empty;
-    try out.ensureTotalCapacity(scratch, 128 + in.source.len + in.mappings.len * 6);
+    var reserve: usize = 128;
+    for (in.sources) |s| reserve += s.url.len + s.text.len + 4;
+    for (in.stretches) |s| reserve += s.mappings.len * 6;
+    try out.ensureTotalCapacity(scratch, reserve);
     try out.appendSlice(scratch, "{\"version\":3,\"file\":");
     try jsonString(scratch, &out, in.file);
     try out.appendSlice(scratch, ",\"sources\":[");
-    try jsonString(scratch, &out, in.source_url);
-    try out.appendSlice(scratch, "],\"sourcesContent\":[");
-    try jsonString(scratch, &out, in.source);
-    try out.appendSlice(scratch, "],\"names\":[");
-
-    for (in.names, 0..) |symbol, i| {
+    for (in.sources, 0..) |s, i| {
         if (i != 0) try out.append(scratch, ',');
-        try jsonString(scratch, &out, in.name_text.lookup(in.name_text.context, symbol));
+        try jsonString(scratch, &out, s.url);
     }
+    try out.appendSlice(scratch, "],\"sourcesContent\":[");
+    for (in.sources, 0..) |s, i| {
+        if (i != 0) try out.append(scratch, ',');
+        try jsonString(scratch, &out, s.text);
+    }
+    try out.appendSlice(scratch, "],\"names\":[");
+    var first = true;
+    for (in.stretches) |s| for (s.names) |text| {
+        if (!first) try out.append(scratch, ',');
+        first = false;
+        try jsonString(scratch, &out, text);
+    };
     try out.appendSlice(scratch, "],\"mappings\":\"");
     try encodeMappings(scratch, &out, in);
     try out.appendSlice(scratch, "\"}\n");
@@ -119,32 +212,86 @@ pub fn write(gpa: Allocator, scratch: Allocator, in: Input) Allocator.Error![]u8
 }
 
 /// The `mappings` string: `;` between generated lines, `,` between
-/// segments, each segment the VLQ deltas of generated column, source index
-/// (always 0: one source per map), source line, source column and, when
-/// there is one, name index.
+/// segments, each segment the VLQ deltas of generated column, source index,
+/// source line, source column and, when there is one, name index — or, for
+/// an unmapped stretch, the generated column alone.
 fn encodeMappings(
     scratch: Allocator,
     out: *std.ArrayList(u8),
-    in: Input,
+    in: Joined,
 ) Allocator.Error!void {
-    // The generated cursor: byte offset and UTF-16 column.
-    var at: usize = 0;
-    var column: u32 = 0;
+    var e: Encoder = .{ .out = out, .scratch = scratch, .generated = in.generated };
+    const lines = try scratch.alloc(?SourceLines, in.sources.len);
+    @memset(lines, null);
+    var name_base: u32 = 0;
+    for (in.stretches, 0..) |s, k| {
+        const last = k + 1 == in.stretches.len;
+        const end: usize = if (last) in.generated.len else in.stretches[k + 1].start;
+        defer name_base += @intCast(s.names.len);
+        // An unmapped stretch, or the bytes of a mapped one before its
+        // first mark: what the segment before them says is not about them.
+        const first: usize = if (s.source == Stretch.unmapped or s.mappings.len == 0)
+            end
+        else
+            @as(usize, s.start) + s.mappings[0].generated;
+        if (first > s.start and s.start < end) try e.unmapped(s.start);
+        if (s.source == Stretch.unmapped) continue;
+        const source = &lines[s.source];
+        if (source.* == null) source.* = try .init(scratch, in.sources[s.source].text, in.sources[s.source].line_starts);
+        for (s.mappings) |m| {
+            const target = @as(usize, s.start) + m.generated;
+            // The join drops a module's last newline, and nothing maps to
+            // what it leaves past the stretch.
+            if (!last and target >= end) break;
+            try e.advance(@min(target, in.generated.len));
+            const name = if (m.name == Mapping.no_name) Mapping.no_name else m.name + name_base;
+            try e.segment(s.source, source.*.?.position(m.source), name);
+        }
+    }
+    // `Joined.end_line`: the `;` is the end of the line the last segment
+    // is on, which the comment line follows.
+    if (in.end_line and e.segment_on_line and !e.named) try out.append(scratch, ';');
+}
+
+/// `encodeMappings`' cursor and the previous segment's fields, which the
+/// next one's deltas are against.
+const Encoder = struct {
+    out: *std.ArrayList(u8),
+    scratch: Allocator,
+    generated: []const u8,
+    /// The generated cursor: byte offset and UTF-16 column.
+    at: usize = 0,
+    column: u32 = 0,
     // What the previous segment wrote, for the deltas. The column resets per
     // generated line; the rest run across the whole file.
-    var prev_column: i64 = 0;
-    var prev_source_line: i64 = 0;
-    var prev_source_column: i64 = 0;
-    var prev_name: i64 = 0;
-    var lines: SourceLines = try .init(scratch, in.source, in.line_starts);
-    var segment_on_line = false;
-    for (in.mappings) |m| {
-        const target = @min(@as(usize, m.generated), in.generated.len);
+    prev_column: i64 = 0,
+    prev_source: i64 = 0,
+    prev_source_line: i64 = 0,
+    prev_source_column: i64 = 0,
+    prev_name: i64 = 0,
+    segment_on_line: bool = false,
+    /// Whether the line's last segment maps somewhere.
+    mapped: bool = false,
+    /// Whether the last segment has all five fields. A segment has five
+    /// exactly when it has a name, so this is set from the name; a
+    /// five-field segment with no name would need its own flag.
+    named: bool = false,
+
+    /// Move the cursor to byte `target`, writing a `;` for every line it
+    /// passes the end of.
+    fn advance(e: *Encoder, target: usize) Allocator.Error!void {
+        const generated = e.generated;
+        var at = e.at;
+        var column = e.column;
+        defer {
+            e.at = at;
+            e.column = column;
+        }
         while (at < target) {
             // Sixteen bytes at a time while they are plain ASCII on one line,
             // which is nearly all of a printed module.
             if (use_blocks and target - at >= block) {
-                const v: Block = in.generated[at..][0..block].*;
+                const v: Block = generated[at..][0..block].*;
                 const special = (v >= @as(Block, @splat(0x80))) | (v == @as(Block, @splat('\n'))) | (v == @as(Block, @splat('\r')));
                 if (!@reduce(.Or, special)) {
                     at += block;
@@ -154,57 +301,82 @@ fn encodeMappings(
             }
             // Eight at a time in one word where the vectors would loop.
             if (!use_blocks and target - at >= word) {
-                const x = loadWord(in.generated, at);
+                const x = loadWord(generated, at);
                 if (x & highs == 0 and !hasByte(x, '\n') and !hasByte(x, '\r')) {
                     at += word;
                     column += word;
                     continue;
                 }
             }
-            const c = in.generated[at];
+            const c = generated[at];
             if (c < 0x80) {
                 at += 1;
-                if (c == '\n' or (c == '\r' and (at >= in.generated.len or in.generated[at] != '\n'))) {
-                    try out.append(scratch, ';');
+                if (c == '\n' or (c == '\r' and (at >= generated.len or generated[at] != '\n'))) {
+                    try e.newLine();
                     column = 0;
-                    prev_column = 0;
-                    segment_on_line = false;
                 } else column += 1;
                 continue;
             }
             // U+2028 and U+2029 end a line in JavaScript.
-            if (c == 0xE2 and at + 2 < in.generated.len and in.generated[at + 1] == 0x80 and
-                (in.generated[at + 2] == 0xA8 or in.generated[at + 2] == 0xA9))
+            if (c == 0xE2 and at + 2 < generated.len and generated[at + 1] == 0x80 and
+                (generated[at + 2] == 0xA8 or generated[at + 2] == 0xA9))
             {
                 at += 3;
-                try out.append(scratch, ';');
+                try e.newLine();
                 column = 0;
-                prev_column = 0;
-                segment_on_line = false;
                 continue;
             }
             column += utf16Units(c);
             at += 1;
         }
-        const s = lines.position(m.source);
-        if (segment_on_line and s.line == prev_source_line and s.column == prev_source_column and m.name == Mapping.no_name) continue;
-        // One capacity check per segment: a comma and five fields.
-        try out.ensureUnusedCapacity(scratch, 1 + 5 * max_vlq_digits);
-        if (segment_on_line) out.appendAssumeCapacity(',');
-        vlqAssumeCapacity(out, @as(i64, column) - prev_column);
-        prev_column = column;
-        vlqAssumeCapacity(out, 0);
-        vlqAssumeCapacity(out, s.line - prev_source_line);
-        prev_source_line = s.line;
-        vlqAssumeCapacity(out, s.column - prev_source_column);
-        prev_source_column = s.column;
-        if (m.name != Mapping.no_name) {
-            vlqAssumeCapacity(out, @as(i64, m.name) - prev_name);
-            prev_name = m.name;
-        }
-        segment_on_line = true;
     }
-}
+
+    fn newLine(e: *Encoder) Allocator.Error!void {
+        try e.out.append(e.scratch, ';');
+        e.prev_column = 0;
+        e.segment_on_line = false;
+        e.mapped = false;
+    }
+
+    /// A segment at the cursor mapping to `s` in source `source`, or none
+    /// when it would repeat the one before it on the line.
+    fn segment(e: *Encoder, source: u32, s: Position, name: u32) Allocator.Error!void {
+        if (e.segment_on_line and e.mapped and source == e.prev_source and s.line == e.prev_source_line and
+            s.column == e.prev_source_column and name == Mapping.no_name) return;
+        // One capacity check per segment: a comma and five fields.
+        try e.out.ensureUnusedCapacity(e.scratch, 1 + 5 * max_vlq_digits);
+        if (e.segment_on_line) e.out.appendAssumeCapacity(',');
+        vlqAssumeCapacity(e.out, @as(i64, e.column) - e.prev_column);
+        e.prev_column = e.column;
+        vlqAssumeCapacity(e.out, @as(i64, source) - e.prev_source);
+        e.prev_source = source;
+        vlqAssumeCapacity(e.out, s.line - e.prev_source_line);
+        e.prev_source_line = s.line;
+        vlqAssumeCapacity(e.out, s.column - e.prev_source_column);
+        e.prev_source_column = s.column;
+        if (name != Mapping.no_name) {
+            vlqAssumeCapacity(e.out, @as(i64, name) - e.prev_name);
+            e.prev_name = name;
+        }
+        e.segment_on_line = true;
+        e.mapped = true;
+        e.named = name != Mapping.no_name;
+    }
+
+    /// A one-field segment at byte `at`: what follows maps nowhere. Only
+    /// after a mapped segment on the same line, since a line starts
+    /// unmapped.
+    fn unmapped(e: *Encoder, at: usize) Allocator.Error!void {
+        try e.advance(@min(at, e.generated.len));
+        if (!e.segment_on_line or !e.mapped) return;
+        try e.out.ensureUnusedCapacity(e.scratch, 1 + max_vlq_digits);
+        e.out.appendAssumeCapacity(',');
+        vlqAssumeCapacity(e.out, @as(i64, e.column) - e.prev_column);
+        e.prev_column = e.column;
+        e.mapped = false;
+        e.named = false;
+    }
+};
 
 const block = 16;
 const Block = @Vector(block, u8);
@@ -634,4 +806,108 @@ test "a source column is right whatever order the marks on its line come in" {
         .name_text = .{ .context = undefined, .lookup = nothing },
     });
     try testing.expect(std.mem.endsWith(u8, text, "\"mappings\":\"AAAK,CAAJ\"}\n"));
+}
+
+test "a joined map moves each stretch's marks, numbers its names after the ones before, and leaves the rest unmapped" {
+    // `backend.md` §11.2, *The join*. Generated: `ab;` from the first source,
+    // `HAND;` that no beni line wrote, `cd` from the second. The first
+    // stretch's mark at its end marks the stretch after it and records
+    // nothing; the third's first mark is not at its start, but what comes
+    // before it is already unmapped, so no segment is needed there.
+    var a: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer a.deinit();
+    const arena = a.allocator();
+    const text = try writeJoined(arena, arena, .{
+        .file = "_main.mjs",
+        .generated = "ab;HAND;cd\n",
+        .sources = &.{
+            .{ .url = "A.beni", .text = "x = 1", .line_starts = &.{0} },
+            .{ .url = "B.beni", .text = "\nlet y", .line_starts = &.{ 0, 1 } },
+        },
+        .stretches = &.{
+            .{ .start = 0, .source = 0, .names = &.{"x"}, .mappings = &.{
+                .{ .generated = 0, .source = 0, .name = 0 },
+                .{ .generated = 1, .source = 2 },
+                .{ .generated = 3, .source = 4 },
+            } },
+            .{ .start = 3, .source = Stretch.unmapped },
+            .{ .start = 8, .source = 1, .names = &.{"y"}, .mappings = &.{
+                .{ .generated = 1, .source = 4, .name = 0 },
+            } },
+        },
+    });
+    try testing.expectEqualStrings(
+        "{\"version\":3,\"file\":\"_main.mjs\",\"sources\":[\"A.beni\",\"B.beni\"],\"sourcesContent\":[\"x = 1\",\"\\nlet y\"],\"names\":[\"x\",\"y\"],\"mappings\":\"AAAAA,CAAE,E,MCCCC\"}\n",
+        text,
+    );
+}
+
+test "a mapped stretch whose first mark is past its start begins unmapped" {
+    // The bytes before the first mark of a module are not about the
+    // module before it: `;` and the column of `b`'s stretch get a
+    // one-field segment, and `c` maps.
+    var a: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer a.deinit();
+    const arena = a.allocator();
+    const text = try writeJoined(arena, arena, .{
+        .file = "m.mjs",
+        .generated = "a;bc",
+        .sources = &.{.{ .url = "A.beni", .text = "abc", .line_starts = &.{0} }},
+        .stretches = &.{
+            .{ .start = 0, .source = 0, .mappings = &.{.{ .generated = 0, .source = 0 }} },
+            .{ .start = 2, .source = 0, .mappings = &.{.{ .generated = 1, .source = 2 }} },
+        },
+    });
+    try testing.expect(std.mem.endsWith(u8, text, "\"mappings\":\"AAAA,E,CAAE\"}\n"));
+}
+
+test "a mark the guard's space separates from its token moves past the space" {
+    var a: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer a.deinit();
+    var marks: Marks = .init(a.allocator());
+    try marks.add(3, 10, Mapping.no_name);
+    marks.skipSpace(2);
+    try testing.expectEqual(@as(u32, 3), marks.list.items[0].generated);
+    marks.skipSpace(3);
+    try testing.expectEqual(@as(u32, 4), marks.list.items[0].generated);
+    try marks.add(9, 11, Mapping.no_name);
+    marks.dropPast(9);
+    try testing.expectEqual(@as(usize, 2), marks.list.items.len);
+    marks.dropPast(8);
+    try testing.expectEqual(@as(usize, 1), marks.list.items.len);
+}
+
+test "a release map whose last segment is short ends its line" {
+    // `node:module`'s `SourceMap` ends a segment only at a `,` or a `;`; at
+    // the end of the string it reads the missing fields as zero deltas
+    // (`Joined.end_line`). A one-field or a four-field segment last gets a
+    // `;`, a five-field one does not, and a development map is as before.
+    var a: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer a.deinit();
+    const arena = a.allocator();
+    const source: Source = .{ .url = "A.beni", .text = "abc", .line_starts = &.{0} };
+    const glue = try writeJoined(arena, arena, .{
+        .file = "m.mjs",
+        .generated = "ab;run(m);\n",
+        .sources = &.{source},
+        .stretches = &.{
+            .{ .start = 0, .source = 0, .mappings = &.{.{ .generated = 0, .source = 0 }} },
+            .{ .start = 3, .source = Stretch.unmapped },
+        },
+        .end_line = true,
+    });
+    try testing.expect(std.mem.endsWith(u8, glue, "\"mappings\":\"AAAA,G;\"}\n"));
+    const one: []const Stretch = &.{.{ .start = 0, .source = 0, .names = &.{"f"}, .mappings = &.{
+        .{ .generated = 0, .source = 0, .name = 0 },
+        .{ .generated = 1, .source = 1 },
+    } }};
+    const short = try writeJoined(arena, arena, .{ .file = "m.mjs", .generated = "ab\n", .sources = &.{source}, .stretches = one, .end_line = true });
+    try testing.expect(std.mem.endsWith(u8, short, "\"mappings\":\"AAAAA,CAAC;\"}\n"));
+    const development = try writeJoined(arena, arena, .{ .file = "m.mjs", .generated = "ab\n", .sources = &.{source}, .stretches = one });
+    try testing.expect(std.mem.endsWith(u8, development, "\"mappings\":\"AAAAA,CAAC\"}\n"));
+    const last_named: []const Stretch = &.{.{ .start = 0, .source = 0, .names = &.{"f"}, .mappings = &.{
+        .{ .generated = 0, .source = 0, .name = 0 },
+    } }};
+    const named = try writeJoined(arena, arena, .{ .file = "m.mjs", .generated = "ab\n", .sources = &.{source}, .stretches = last_named, .end_line = true });
+    try testing.expect(std.mem.endsWith(u8, named, "\"mappings\":\"AAAAA\"}\n"));
 }

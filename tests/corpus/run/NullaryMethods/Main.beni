@@ -1,0 +1,58 @@
+-- Nullary dots resolve from receiver types; record reads and function fields
+-- keep their old meanings, including helpers generalised without annotations.
+import Box exposing (Box)
+import Node exposing (Program)
+import String
+
+
+size xs = xs.length
+
+
+field r = r.f
+
+
+applied : { r | f : Int → Int } → Int
+applied r =
+    f = r.f
+    r.f (f 1)
+
+
+annotated : List Int → Int
+annotated xs = xs.length
+
+
+poly : a → Int
+    where a.length : a → Int
+poly xs = xs.length
+
+
+-- A defaulted field makes an outstanding dot-call a field call before
+-- the group's remaining method requirements would otherwise be promoted.
+mixed r = if r.marker then r.f 1 else 0
+
+
+late : List Int → Int
+late xs = (λx → x.length) xs
+
+
+main : Program
+main =
+    xs = [ 1, 2, 3 ]
+    s = "  hello  "
+    a = { b = xs }
+    Node.printLines
+        [ String.fromInt xs.length
+        , s.trim
+        , String.fromInt xs.copy.length
+        , String.fromInt (Box.Box 7).amount
+        , String.fromInt a.b.copy.length
+        , String.fromInt xs.reverse.length
+        , String.fromInt (size { length = 8 })
+        , String.fromInt ((field { f = λn → n + 1 }) 4)
+        , String.fromInt (applied { f = λn → n + 2 })
+        , String.fromInt (annotated xs)
+        , String.fromInt (poly xs)
+        , String.join (List.map [ " a ", " b " ] .trim) ","
+        , String.fromInt (mixed { marker = True, f = λn → n + 3 })
+        , String.fromInt (late xs)
+        ]

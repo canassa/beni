@@ -1446,6 +1446,21 @@ platform read from a directory…*).
 **What it does not do.** No emitted byte is in the pack: `emit`, and under `--release` the
 specialiser, run for every module as they always did.
 
+*Amended 2026-10-15, Jayson's decision on issue #94 (the dashboard's question `emit-cache-q1`):
+**the emit phase's work on the embedded modules goes into the pack too**, made by the maker when
+beni is built, in two steps.* First, each embedded module's reachability edge lists (`backend.md`
+§9, *Incrementality (M4) and chunking (§10)*). They do not depend on what a program uses, so they
+are one row per module and per option that changes them (`--release`, `--schema-library`). On
+`browser/tea/ApiItems` they are 62 million of a development build's 545 million instructions, and
+on `run/Dictionaries` 32 of 180 million. Second, the lowered output of each declaration, with a
+spec of its own first. Lowered output depends on the live set, so its unit is a declaration and not
+a module, and the step that joins the live declarations, their imports and their source maps is
+new. The cost is accepted: the maker then reaches the backend, so an edit under `src/js/` runs it
+again before beni compiles. *Rejected: a cache in the cache directory, keyed on the module key and
+the live set.* It makes a warm rebuild and the development loop faster, and not a cold build or a
+test, because each test has a new project directory. Each step brings its spec. Until the first
+step lands, the paragraph above stands.
+
 **Measured** (2026-10-02, master `bec44d00` against the same tree with the checked core; instructions,
 user space, because the machine's load moved wall time by 2× between runs). **Output: not one byte
 moved** — every `run/` and `browser/` program's run hash matched, development and release, with no
@@ -1660,7 +1675,9 @@ consequently has no source maps at all (03 §4).
 development build is not shipped, so a map's size is disk and not page weight, and the browser-first
 rule makes an unmapped debugger the first thing a user hits. Recorded in the print pass as specified;
 the line/column conversion is one forward scan of the printed bytes after it, not a tree walk.
-Release maps, and the join-time rebasing they need, remain M5.
+Release maps, and the join-time rebasing they need, remain M5. *Amended 2026-10-15:* release
+maps are built, with that rebasing, per [`backend.md`](backend.md) §11.2; they are written only
+when `--source-maps` asks for them, which keeps "off by default" for a release build.
 
 ## 10. Parallelism — and where not to use it
 

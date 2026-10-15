@@ -34,9 +34,10 @@ blackbox_test.test.evidence nested past a thousand levels is the user's eq at th
 build_id_test.test.a core read with --core-root and the embedded core share a cache, and each builds with its own #0 868e89fb4701a60d80c05b15749ccc5bd580770b2108edfa86bb978c767db2af
 build_id_test.test.a core read with --core-root and the embedded core share a cache, and each builds with its own #1 88a3f71f483eb2814941ea9ae0ba5bafaf7bfe5b7b09d26dfe365d4fce78242a
 build_id_test.test.two compilers that differ only in their embedded core share a cache and each builds its own program #0 a3692dda89a021c229b843a0e0ea6ca2e1f8d1ef1d5ed68a466daacb9a327e37
-build_test.test.--release builds and runs with no map, and --release --source-maps exits 2 #0 01120bf841884cc7a9ce51eb80a6548036145c0c020bb39e6e00ccb51fd85f53
 build_test.test.--release refuses a build that reaches Debug; the same program builds and logs without the flag #0 25a4aa5dc9defc629996b720535152cf62e5c8cc76b456055d17a0cc209a388b
 build_test.test.--release refuses a build that reaches Debug; the same program builds and logs without the flag #1 2be7572568481e02028bd6e6057100cbebd0a876cfe878bfa556f7ab6a3cfb02
+build_test.test.--release writes a map only when asked, and asking changes no byte of the code #0 0c8bd0587c661cb3e8790e7f97faeed5cd657da47a4076f02b0d85e2d0e62f81
+build_test.test.--release writes a map only when asked, and asking changes no byte of the code #1 dcba63314bb5370e2c9f823dc119c00e57a0f8e3ffb2b3aa1e7d64c680d9b4f2
 build_test.test.Debug.todo compiles as anything and crashes with its message when reached #0 717b1f9a140435dd30fc71f5a2a91aa3f772e7c40a1025c5d54d9945777f88ff
 build_test.test.a --core-root core without a core-private List value the emitter calls is refused where a module needs it #0 696cde132e411ca93a74b4a7fe267bf54ab09eb5ac70f8861411f4f7f2221d2f
 build_test.test.a Debug call that reachability drops does not refuse the release build #0 01120bf841884cc7a9ce51eb80a6548036145c0c020bb39e6e00ccb51fd85f53
@@ -77,10 +78,13 @@ build_test.test.modules import each other through ESM, and the program runs #0 d
 build_test.test.names several emit workers invent for one type agree, and the build is byte-identical at every --jobs #0 4b6e4be2b17a2073ad109b9ab8dd51297adfbafeeffe7ee82f8b8e0c811af282
 build_test.test.names several emit workers invent for one type agree, and the build is byte-identical at every --jobs #1 a9d36c39170a7a2c6af166b9287141943e5f936d3a34af770fbb448bbfaf1cb2
 cache_test.test.a cache hit installs the published derived contexts and runs no fixpoint #0 080f4865249b5953a840ccc2ef9fde6d6908791fe3193c6a74c8941047e70a4a
+cache_test.test.a cached nullary method is rewritten to a call while record fields stay reads #0 006647c8d4d2a6faaf0b053f031a5c1692379935d5a2e32f8828b0a389659735
 cache_test.test.a constrained function constant rewritten as a block keeps its importer's cached calling convention #0 00648438c52c66f4b05c1f37499e7518b0ae5b50c3fa7882f3c3be518f83fe5d
 cache_test.test.a constrained function constant rewritten as a lambda keeps its importer's cached calling convention #0 2066d02e6f6d56d8cd48aad10f5c179fb970b72bff5c8d280efd6338d8d74481
 cache_test.test.a constrained function constant rewritten with parameters keeps its importer's cached calling convention #0 294311688a8513991ad950e0277243a2d4825bc0c23fd4bc59936a6a4f076b1e
 cache_test.test.a custom eq's private body edit stops at the firewall, and the cached importer uses the new body #0 bc24c0955dde779ab2d8434c59e7eff2ca6edcedecac59c949539b3760f15040
+cache_test.test.a dependency type edit redecides a cached nullary dot as a field and back #0 1f2b61d380d330b07f0ea0e23f55858a93b1d4220071ba3dac4ca3a3ab8cd7dc
+cache_test.test.a dependency type edit redecides a cached nullary dot as a field and back #1 4c2a99f6aa41521cf5df2bab0705387e9d56f99dd240160fb2a8e502d42cbbff
 cache_test.test.a moved derived context rebuilds evidence as a cold build: a function payload added #0 9843707957ae318f9c8015871177a3ec3dc6c37510348a791d2016da99aab0e0
 cache_test.test.a moved derived context rebuilds evidence as a cold build: a parameter dropped from every payload #0 39b1da70040d8b0a6bbb63a43ab51f7ed8e36d88dd027ea8cc0536804440ca83
 cache_test.test.a moved derived context rebuilds evidence as a cold build: a payload's eq changes its where clause #0 a7aedf736affb8d44f11c7e073442dc3ccae6f6ea7cf9afbfb5377605ea07cba

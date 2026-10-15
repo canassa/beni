@@ -1,0 +1,1 @@
+[{"code":"unknown_method","severity":"error","span":{"file":"Main.beni","start":{"line":6,"col":27},"end":{"line":6,"col":34}},"title":"UNKNOWN METHOD","message":"`List` has no method called `lenght`.\n\nI resolve `x.lenght` in the module that declares `x`'s type. That module is\n`List`, and it has no `pub` value called `lenght`.\n\nHint: did you mean `length`?\n"}]
