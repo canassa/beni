@@ -101,7 +101,6 @@ tests/pending/browser/direct/RandomValues.beni dev: exit=1 codes=list_may_be_sha
 tests/pending/browser/direct/ReentrantSend.beni dev: exit=1 codes=list_may_be_shared×1
 tests/pending/browser/direct/TimeoutAroundRequest.beni dev: exit=1 codes=list_may_be_shared×1
 tests/pending/browser/direct/ValueCommands.beni dev: exit=1 codes=list_may_be_shared×1
-tests/pending/browser/direct/BikeWars dev: exit=1 codes=not_implemented×1,prepend_in_loop×2
 # Direct executes an unused view statement at mount, not on every message (documented S4 oracle boundary).
 tests/pending/browser/direct/DefectInTurnRender.beni PageFailed
 

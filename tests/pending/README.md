@@ -201,7 +201,10 @@ current status follows.
 TodoMVC and Sternhalma now build their mutable models inside unit functions;
 TodoMVC's save captures encoded text. They are promoted to the paired
 browser-direct corpus. Bike Wars copies the retained base of its one trail
-append, clearing all three ownership errors. Its document view then reaches
-`not_implemented`, so it remains pending as CK-225 without a view workaround.
+append, clearing all three ownership errors. The helper-document lowering now
+builds Bike Wars on both platforms against one unchanged play transcript, with
+separate value fuzz. The owner granted the paired page 8,600M instructions
+after its 7,784M x86-64 Linux measurement; value fuzz measured 4,225M and
+retains the default 4,300M budget. No app source or browser-tea golden changed.
 Research 98 corrects the original causal/scheduling claims and records the
 unchanged original browser-tea transcripts. No ownership rule was relaxed.
