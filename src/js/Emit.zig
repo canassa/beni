@@ -269,8 +269,8 @@ pub const Options = struct {
     fuzz: bool = false,
     /// §11: a `.mjs.map` beside every module this build emits, and the
     /// `//# sourceMappingURL=` line that names it. On by default in a
-    /// development build; `Cli` never sets it with `release`, which has no
-    /// maps yet.
+    /// development build; under `release` only when asked for, and then
+    /// the one scope-hoisted file has one map of its own (§11.2).
     source_maps: bool = false,
 };
 
@@ -840,6 +840,9 @@ const Emitter = struct {
     /// Whether this build is one scope-hoisted file (§9, *One scope-hoisted
     /// file under `--release`*), decided after lowering.
     hoisted: bool = false,
+    /// §11: where the output tree is, in a build with maps. The hoisted
+    /// file's map is placed against it at the join (§11.2).
+    map_root: ?MapRoot = null,
     /// The host globals a hoisted hand-written file binds as written, which
     /// emitted code may not then write bare (`bareBlocked`).
     bare_blocked: []const []const u8 = &.{},
@@ -3056,7 +3059,8 @@ const Emitter = struct {
         if (lowering) |lw| if (lw.program != null) try e.buildDirect();
 
         // §11: where the output tree is, absolutely, for the source URLs.
-        const maps: ?MapRoot = if (e.options.source_maps and !e.options.release) try e.mapRoot() else null;
+        const maps: ?MapRoot = if (e.options.source_maps) try e.mapRoot() else null;
+        e.map_root = maps;
 
         var slots: []ModuleSlot = &.{};
         var todo: std.ArrayList(u32) = .empty;
@@ -3298,6 +3302,11 @@ const Emitter = struct {
         source_url: []const u8 = "",
         /// The map's bytes, gpa-owned until `produceOwned` takes them.
         map: ?[]u8 = null,
+        /// A hoisted build with maps (§11.2, *The join*): the module's marks
+        /// and the text of its `names`, kept until the one file is joined.
+        /// In the printing worker's `kept` arena.
+        marks: []const SourceMap.Mapping = &.{},
+        mark_names: []const []const u8 = &.{},
 
         fn deinit(slot: *ModuleSlot, gpa: Allocator) void {
             if (slot.lowered) |*lowered| lowered.deinit(gpa);
@@ -3442,7 +3451,13 @@ const Emitter = struct {
             if (lowered.diagnostics.len != 0) return;
             const scratch = w.module.allocator();
             var renamer = try Rename.begin(scratch, &lowered.ir, &e.globals);
-            slot.text = try Print.print(e.gpa, scratch, &lowered.ir, .fromOverlay(&slot.overlay), .{
+            const names: Print.Names = .fromOverlay(&slot.overlay);
+            // §11.2: the marks of a module with a map. A hoisted module's
+            // bytes are a piece of the one file, which has the comment line
+            // and the map; the join rebases these marks into it.
+            var marks: SourceMap.Marks = .init(scratch);
+            const mapped = slot.map_file.len != 0;
+            slot.text = try Print.print(e.gpa, scratch, &lowered.ir, names, .{
                 .plan = &slot.plan,
                 .unobserved = slot.unobserved,
                 .rename = &renamer,
@@ -3452,8 +3467,31 @@ const Emitter = struct {
                 .bare_globals = true,
                 .bare_blocked = e.bare_blocked,
                 .fields = if (e.field_table) |*table| table else null,
+                .marks = if (mapped) &marks else null,
+                .footer = if (mapped and !e.hoisted) slot.map_footer else "",
             });
             slot.rename_failure = renamer.failure;
+            if (!mapped) return;
+            const file = e.graph().moduleFile(@fromBackingInt(@intCast(i)));
+            if (e.hoisted) {
+                const kept = w.kept.allocator();
+                slot.marks = try kept.dupe(SourceMap.Mapping, marks.list.items);
+                const texts = try kept.alloc([]const u8, marks.names.items.len);
+                for (texts, marks.names.items) |*text, symbol| text.* = try kept.dupe(u8, names.text(symbol));
+                slot.mark_names = texts;
+                return;
+            }
+            const store = &e.session.store;
+            slot.map = try SourceMap.write(e.gpa, scratch, .{
+                .file = std.fs.path.basenamePosix(slot.map_file[0 .. slot.map_file.len - ".map".len]),
+                .source_url = slot.source_url,
+                .source = store.bytes(file),
+                .line_starts = store.lineStarts(file),
+                .generated = slot.text.?,
+                .mappings = marks.list.items,
+                .names = marks.names.items,
+                .name_text = names.forMap(),
+            });
         }
     };
 
@@ -4251,10 +4289,19 @@ const Emitter = struct {
             .module => {},
         };
 
+        // §11.2, *The join*: each module's marks become a stretch of the
+        // one file's map, and everything else the file holds is unmapped.
+        var stretches: std.ArrayList(SourceMap.Stretch) = .empty;
+        var sources: std.ArrayList(SourceMap.Source) = .empty;
+        const mapped = e.map_root != null;
         for (h.order) |p| switch (p) {
-            .module => |i| if (slots[i].text) |text| try appendJoined(scratch, &out, text, true),
+            .module => |i| if (slots[i].text) |text| {
+                if (mapped) try e.mapStretch(&stretches, &sources, &slots[i], i, out.items.len);
+                try appendJoined(scratch, &out, text, true);
+            },
             .file => |x| if (printed[x]) |pr| {
                 const f = &h.files[x];
+                if (mapped) try stretches.append(scratch, .{ .start = @intCast(out.items.len), .source = SourceMap.Stretch.unmapped });
                 try appendJoined(scratch, &out, pr.body, false);
                 var aliased: std.ArrayList(JsIr.Name) = .empty;
                 for (f.uses.items) |u| {
@@ -4276,6 +4323,7 @@ const Emitter = struct {
         };
 
         // The entry file's calls, by the names the bindings have here.
+        if (mapped) try stretches.append(scratch, .{ .start = @intCast(out.items.len), .source = SourceMap.Stretch.unmapped });
         const runtime: ?*HandFile = if (h.runtime) |x| &h.files[x] else null;
         // `main` is a declaration of an emitted module, so the table has it.
         const main_name = e.entryName(h.entry) orelse unreachable;
@@ -4312,7 +4360,45 @@ const Emitter = struct {
         // One line, the pieces joined with no newline between them
         // (`appendJoined`), and a newline at the end of the file.
         if (out.items.len != 0 and out.items[out.items.len - 1] != '\n') try out.append(scratch, '\n');
+        if (mapped) {
+            const entry = e.options.platform.entry;
+            try out.print(scratch, "//# sourceMappingURL={s}.map\n", .{std.fs.path.basenamePosix(entry)});
+            const map = try SourceMap.writeJoined(e.gpa, scratch, .{
+                .file = std.fs.path.basenamePosix(entry),
+                .generated = out.items,
+                .sources = sources.items,
+                .stretches = stretches.items,
+            });
+            try e.produceOwned(try std.fmt.allocPrint(scratch, "{s}.map", .{entry}), map, try e.manifestPath());
+        }
         try e.produce(e.options.platform.entry, out.items, try e.manifestPath());
+    }
+
+    /// §11.2, *The join*: the stretch of the one file that module `i`'s
+    /// bytes take from `start`, and its source, named from the entry
+    /// file's map.
+    fn mapStretch(
+        e: *Emitter,
+        stretches: *std.ArrayList(SourceMap.Stretch),
+        sources: *std.ArrayList(SourceMap.Source),
+        slot: *const ModuleSlot,
+        i: u32,
+        start: usize,
+    ) Allocator.Error!void {
+        const store = &e.session.store;
+        const file = e.graph().moduleFile(@fromBackingInt(@intCast(i)));
+        const map_file = try std.fmt.allocPrint(e.scratch, "{s}.map", .{e.options.platform.entry});
+        try sources.append(e.scratch, .{
+            .url = try e.sourceUrl(e.map_root.?, map_file, file),
+            .text = store.bytes(file),
+            .line_starts = store.lineStarts(file),
+        });
+        try stretches.append(e.scratch, .{
+            .start = @intCast(start),
+            .source = @intCast(sources.items.len - 1),
+            .mappings = slot.marks,
+            .names = slot.mark_names,
+        });
     }
 
     /// Append one piece of the one file without the newline it ends with,
@@ -5075,16 +5161,19 @@ const Emitter = struct {
     /// `beni:///` and its store path (`beni:///core/List.beni`). Either way
     /// the map carries the text, so nothing is fetched.
     fn planMap(e: *Emitter, slot: *ModuleSlot, root: MapRoot, path: []const u8, file: SourceStore.Index) Allocator.Error!void {
-        const store = &e.session.store;
         slot.map_file = try std.fmt.allocPrint(e.scratch, "{s}.map", .{path});
         slot.map_footer = try std.fmt.allocPrint(e.scratch, "//# sourceMappingURL={s}.map\n", .{std.fs.path.basenamePosix(path)});
-        if (store.isEmbedded(file)) {
-            slot.source_url = try std.fmt.allocPrint(e.scratch, "beni:///{s}", .{store.path(file)});
-            return;
-        }
-        const map_path = try SourceMap.absolute(e.scratch, root.cwd, try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ e.options.out_dir, slot.map_file }));
+        slot.source_url = try e.sourceUrl(root, slot.map_file, file);
+    }
+
+    /// The URL of `file` in the map at `map_file`, a path in the output
+    /// tree (§11.1's `sources`).
+    fn sourceUrl(e: *Emitter, root: MapRoot, map_file: []const u8, file: SourceStore.Index) Allocator.Error![]const u8 {
+        const store = &e.session.store;
+        if (store.isEmbedded(file)) return std.fmt.allocPrint(e.scratch, "beni:///{s}", .{store.path(file)});
+        const map_path = try SourceMap.absolute(e.scratch, root.cwd, try std.fmt.allocPrint(e.scratch, "{s}/{s}", .{ e.options.out_dir, map_file }));
         const source_path = try SourceMap.absolute(e.scratch, root.cwd, store.path(file));
-        slot.source_url = try SourceMap.relativeUrl(e.scratch, map_path, source_path);
+        return SourceMap.relativeUrl(e.scratch, map_path, source_path);
     }
 
     fn produceOwned(e: *Emitter, relative_path: []const u8, bytes: []u8, origin: []const u8) Allocator.Error!void {

@@ -56,7 +56,7 @@ pub const usage =
     \\                            unless beni.json's "build" names it, as it does the paths)
     \\  --out=<dir>               output directory (default: beni.json's "build" "out", else out)
     \\  --library                 no `main` is required and no entry file is written; every exported name is a reachability root
-    \\  --source-maps             a .map beside every emitted module (the default; not with --release yet)
+    \\  --source-maps             a .map beside every emitted module (the default, but not with --release)
     \\  --no-source-maps          write no .map files
     \\  --release                 dead bindings out, short names, compact printing, joined consts
     \\  --watch                   keep running: rebuild whenever an input changes, until Ctrl-C
@@ -264,14 +264,15 @@ pub const Build = struct {
     /// package's modules export.
     ///
     /// **It was never in `--source-maps`' company**: that one was refused
-    /// while it was not implemented (and still is with `--release`), and
+    /// while it was not implemented (with `--release` until §11.2), and
     /// this one landed with §9 and did something the day it landed.
     library: bool = false,
     /// `--release` (backend.md §2, §9): local dead bindings out, short
     /// names, compact printing and joined `const` runs. It takes no value,
     /// composes with `--library`, `--out` and `--jobs`, and **implies
     /// nothing** but one thing — elimination is always on — and that is
-    /// that it writes no source maps (§11.1: release maps are not built).
+    /// that it writes no source maps unless `--source-maps` asks for them
+    /// (§11.2).
     release: bool = false,
     /// `--allow-debug` — **hidden**, and hidden for exactly
     /// `--roundtrip-interfaces`' reason: it is diagnostic surface, not
@@ -317,8 +318,8 @@ pub const Build = struct {
     base: []const u8 = default_base,
     /// `backend.md` §11: a `.mjs.map` beside every emitted module. On by
     /// default in a development build, `--no-source-maps` turns it off;
-    /// never on with `release`, which `finishBuild` refuses with
-    /// `--source-maps` rather than accept and write nothing.
+    /// off by default with `release`, and `--source-maps` turns it on
+    /// (§11.2).
     source_maps: bool = true,
     paths: []const []const u8,
 };
@@ -822,16 +823,11 @@ fn parseBuild(gpa: Allocator, args: []const [:0]const u8, defaults: Defaults) Al
 }
 
 /// What `build` and `serve` share once their flags are scanned: the
-/// `--source-maps` refusals, then the project's defaults under the command
+/// `--source-maps` contradiction, then the project's defaults under the command
 /// line's values (`frontend.md` §10.1), then the two requirements.
 fn finishBuild(gpa: Allocator, s: *Scanner(BuildSpecific), defaults: Defaults, command: []const u8) Allocator.Error!Result {
-    // Source maps are written by a development build (backend.md §2, §11)
-    // and not yet by a `--release` one, so the pair is refused rather than
-    // accepted while writing no `.map`: a flag that is accepted and does
-    // nothing sends a user looking for a file a silent build never wrote.
-    if (s.specific.source_maps == true and s.specific.release) {
-        return .{ .usage = .init("beni: --source-maps is not implemented for --release yet; a release build writes no .map file", .{}) };
-    }
+    // Source maps are a development build's default and a `--release`
+    // build's choice (backend.md §2, §11.2).
     if (s.specific.contradicts) {
         return .{ .usage = .init("beni: --source-maps and --no-source-maps contradict each other", .{}) };
     }
@@ -1312,7 +1308,7 @@ test "build: the platform is required, --release is accepted, and maps are on in
     try expectUsage("beni: option '--platform' needs a value: --platform=<name>", &.{ "build", "--platform", "src" });
     try expectUsage("beni: option '--out' needs a value: --out=<dir>", &.{ "build", "--platform=node", "--out=", "src" });
     // `--release` is accepted and reaches the command, and it takes no
-    // value (backend.md §2). It writes no maps (§11).
+    // value (backend.md §2). It writes no maps unless asked (§11.2).
     try expectCommand(
         .{ .build = .{ .platform = "node", .release = true, .source_maps = false, .paths = &.{"src"} } },
         &.{ "build", "--platform=node", "--release", "src" },
@@ -1336,12 +1332,10 @@ test "build: the platform is required, --release is accepted, and maps are on in
         .{ .build = .{ .platform = "node", .release = true, .source_maps = false, .paths = &.{"src"} } },
         &.{ "build", "--platform=node", "--release", "--no-source-maps", "src" },
     );
-    // A release build has no maps yet, so asking for them is refused — and
-    // before the platform is missed: the pair is wrong whatever else the
-    // line says.
-    try expectUsage(
-        "beni: --source-maps is not implemented for --release yet; a release build writes no .map file",
-        &.{ "build", "--release", "--source-maps", "src" },
+    // A release build writes maps when asked for them (§11.2).
+    try expectCommand(
+        .{ .build = .{ .platform = "node", .release = true, .paths = &.{"src"} } },
+        &.{ "build", "--platform=node", "--release", "--source-maps", "src" },
     );
     try expectUsage(
         "beni: --source-maps and --no-source-maps contradict each other",
