@@ -61,7 +61,8 @@ else {
 }
 if(options.ci) await must(process.execPath,[resolve(own,'scripts/bridge-selftest.mjs'),`--input=${inputs[0]}`,`--compiler=${compiler}`]);
 const total = { programs: 0, translated: 0, skipped: 0, valueChecked: 0, agreements: 0, precision: 0, leads: 0,
-  sites: { agreement: 0, precision: 0, lead: 0, unknown: 0, extra: 0, pending: 0 },
+  sites: { agreement: 0, precision: 0, lead: 0, unknown: 0, extra: 0, pending: 0,
+    ambiguousAgreement:0,ambiguousPrecision:0 },
   skipReasons: {}, constructs: {}, families: {}, precisionPatterns: {}, cases: [], jobs,
   environment:{node:process.version,compilerSha256:createHash('sha256').update(await readFile(compiler)).digest('hex'),
     oracleSha256:createHash('sha256').update(await readFile(resolve(own,'.lake/build/bin/ownership'))).digest('hex')},streams:[] };
@@ -120,9 +121,11 @@ async function checkValues(programs, dir) {
 // Every retained step rechecks both ownership verdicts and real execution.
 async function minimize(original, dir, outcome) {
   let best = original, runtime = outcome, attempts = 0, rounds = 0, compilerRejected = 0;
+  let skippedCandidates={};
   const reasonClass=original.record[8].split(':')[0];
   const input = resolve(dir, 'reduce-input.json'), output = resolve(dir, 'reductions.jsonl');
   for (;;) {
+    skippedCandidates={};
     await writeFile(input,JSON.stringify([best.ds,best.record[4]]));
     await must(resolve(own,'.lake/build/bin/ownership'),['bridge-reduce',`--input=${input}`,`--out=${output}`],own);
     const rows=(await readFile(output,'utf8')).split('\n').filter(Boolean).map(x=>JSON.parse(x));
@@ -142,10 +145,11 @@ async function minimize(original, dir, outcome) {
       if(record[8].split(':')[0]!==reasonClass) continue;
       let translation;
       try {
-        if (record[13]) continue;
-        if (JSON.stringify(record[12]).includes('"fn"') || record[11] === null) continue;
+        if (record[13]) throw new Skip(record[13]);
+        if (JSON.stringify(record[12]).includes('"fn"')) throw new Skip('function-valued-observation');
+        if (record[11] === null) throw new Skip('lean-value-execution-limit');
         translation=translate(ds,record[4]);
-      } catch(e) { if(e instanceof Skip) continue; throw e; }
+      } catch(e) { if(e instanceof Skip) {bump(skippedCandidates,e.reason);continue;} throw e; }
       const p={...best,record,ds,translation,module:'Minimal',path:resolve(dir,'Minimal.beni')};
       await writeFile(p.path,translation.source); attempts++;
       const cacheKey=createHash('sha256').update(JSON.stringify([translation.source,record[11]])).digest('hex');
@@ -186,7 +190,9 @@ async function minimize(original, dir, outcome) {
   const final={...best,module:'Minimal',path};
   runtime=await confirmation(final,dir);
   await writeFile(resolve(dir,'minimal-core.json'),JSON.stringify([best.ds,best.record[4]]));
-  return {runtime,attempts,rounds,compilerRejected,minimum:'one-step under Oracle.reductions over main and reachable declaration bodies; same rejection class; 5000-step evaluation budget; compiler-rejected candidates excluded',lean:best.record[8]};
+  return {runtime,attempts,rounds,compilerRejected,skippedCandidates,skipCountScope:'final one-step frontier',
+    reasonChanged:best.record[8]!==original.record[8],limitLead:reasonClass==='limit',
+    minimum:'one-step under Oracle.reductions over main and reachable declaration bodies; same rejection class; 5000-step evaluation budget; compiler-rejected candidates excluded',lean:best.record[8]};
 }
 function parseDump(text, programs) {
   const byModule = new Map(programs.map(p => [p.module, []])); let current = null;
@@ -228,6 +234,8 @@ async function checkBatch(programs, n) {
   await checkValues(programs,dir);
   for (const p of programs) {
     const demands = reports.get(p.module), visited = new Set(p.record[6]), failed = p.record[7];
+    const multiplicity=new Map();
+    for(const m of p.translation.markers) multiplicity.set(m.key,(multiplicity.get(m.key)??0)+1);
     const groups=new Map();
     for (const d of demands) {
       d.site=siteAt(p.translation.markers,d.row);
@@ -240,9 +248,14 @@ async function checkBatch(programs, n) {
     for(const [site,ds] of groups) {
       // A declaration is checked under canonical summary assumptions. Its
       // failed inference is not a concrete call-site verdict in Zig.
-      const lean=site===failed && site.startsWith('main') ? false :
+      let lean=site===failed && site.startsWith('main') ? false :
         visited.has(site) && (site.startsWith('main') || p.record[5]) ? true : null;
       const zig=ds.every(d=>d.verdict==='accepted');
+      if(lean!==null && multiplicity.get(site)>1) {
+        if(!lean) throw Error('ambiguous main-site failure');
+        total.sites[zig?'ambiguousAgreement':'ambiguousPrecision']++;
+        lean=null;
+      }
       if(lean===null)total.sites.unknown++;
       else if(lean===zig)total.sites.agreement++;
       else if(lean)total.sites.precision++;
