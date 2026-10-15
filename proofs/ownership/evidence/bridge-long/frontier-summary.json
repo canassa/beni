@@ -1,0 +1,10 @@
+{
+  "minima": 2358,
+  "skippedCandidates": {
+    "unused-capture-slot": 17,
+    "function-valued-observation": 12,
+    "numeric-audit-execution-limit": 1399
+  },
+  "reasonChanged": 18,
+  "limitLeads": 1385
+}

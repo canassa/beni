@@ -1,0 +1,58 @@
+pub bridgeRead value = value
+
+
+d9 p9v0 p9v1 =
+    -- bridge-start d9
+    b5v2 =
+        -- bridge-start d9/0
+        bridgeRead (
+            List.length (p9v1)
+        )
+        -- bridge-end d9/0
+    -- bridge-start d9/1
+    if b5v2 == 0 then
+        -- bridge-start d9/1/0
+        p9v0
+        -- bridge-end d9/1/0
+    else
+        -- bridge-start d9/1/1
+        List.push (p9v1) (0)
+        -- bridge-end d9/1/1
+    -- bridge-end d9/1
+    -- bridge-end d9
+
+
+pub run ⊤ =
+    -- bridge-start main
+    b0v0 =
+        -- bridge-start main/0
+        [  ]
+        -- bridge-end main/0
+    -- bridge-start main/1
+    b1v1 =
+        -- bridge-start main/1/0
+        [  ]
+        -- bridge-end main/1/0
+    -- bridge-start main/1/1
+    b2v4 =
+        -- bridge-start main/1/1/0
+        [ b1v1 ]
+        -- bridge-end main/1/1/0
+    -- bridge-start main/1/1/1
+    b3v1050 =
+        -- bridge-start main/1/1/1/0
+        List.foldl
+        -- bridge-end main/1/1/1/0
+    -- bridge-start main/1/1/1/1
+    b4v1051 =
+        -- bridge-start main/1/1/1/1/0
+        d9
+        -- bridge-end main/1/1/1/1/0
+    -- bridge-start main/1/1/1/1/1
+    b3v1050 (b2v4) (b0v0) (b4v1051)
+    -- bridge-end main/1/1/1/1/1
+    -- bridge-end main/1/1/1/1
+    -- bridge-end main/1/1/1
+    -- bridge-end main/1/1
+    -- bridge-end main/1
+    -- bridge-end main

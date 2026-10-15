@@ -1,0 +1,13 @@
+{
+  "programs": 116456,
+  "translated": 43066,
+  "valueChecked": 43066,
+  "cases": 3525,
+  "programLeads": 2358,
+  "siteOnlyLeads": 1167,
+  "confirmed": 0,
+  "allSourceAndTableHashesVerified": true,
+  "allProgramLeadsHaveTypedMinimaAndPairedRuns": true,
+  "allRejectionClassesPreserved": true,
+  "evidenceSha256": "0859b70e50fc10af0e1e018157262ba62ef09f5a4f1fbf2e6c9c8ccfd10b5fc9"
+}

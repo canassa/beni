@@ -1,0 +1,137 @@
+{
+  "derivation": "Eligibility replayed from SHA-256-verified input streams. Complete disjoint-batch value/verdict accounting establishes a value check for every translated program; per-stream value coverage is inferred where the original report lacks counters.",
+  "streams": [
+    {
+      "name": "fixtures-0.jsonl",
+      "programs": 490,
+      "translated": 224,
+      "skipped": 266,
+      "leanAccepted": 68,
+      "leanRejected": 156
+    },
+    {
+      "name": "enumerate-0.jsonl",
+      "programs": 55966,
+      "translated": 27769,
+      "skipped": 28197,
+      "leanAccepted": 13560,
+      "leanRejected": 14209
+    },
+    {
+      "name": "generator-17.jsonl",
+      "programs": 20000,
+      "translated": 5006,
+      "skipped": 14994,
+      "leanAccepted": 1731,
+      "leanRejected": 3275
+    },
+    {
+      "name": "generator-20261011.jsonl",
+      "programs": 20000,
+      "translated": 5054,
+      "skipped": 14946,
+      "leanAccepted": 1728,
+      "leanRejected": 3326
+    },
+    {
+      "name": "generator-314159.jsonl",
+      "programs": 20000,
+      "translated": 5013,
+      "skipped": 14987,
+      "leanAccepted": 1660,
+      "leanRejected": 3353
+    }
+  ],
+  "verdicts": {
+    "bothAccept": 18346,
+    "leanAcceptZigRefuse": 401,
+    "leanRefuseZigAccept": 2358,
+    "bothRefuse": 21961
+  },
+  "families": {
+    "fixture": {
+      "leanAccepted": 20,
+      "leanRejected": 62,
+      "bothAccept": 18,
+      "bothRefuse": 58
+    },
+    "sync": {
+      "leanAccepted": 4,
+      "leanRejected": 10,
+      "bothAccept": 4,
+      "bothRefuse": 9
+    },
+    "targeted": {
+      "leanAccepted": 44,
+      "leanRejected": 84,
+      "bothAccept": 40,
+      "bothRefuse": 80
+    },
+    "enumerate": {
+      "leanAccepted": 13560,
+      "leanRejected": 14209,
+      "bothAccept": 13293,
+      "bothRefuse": 13374
+    },
+    "branch-traversal": {
+      "leanAccepted": 678,
+      "leanRejected": 722,
+      "bothAccept": 678,
+      "bothRefuse": 722
+    },
+    "declarations": {
+      "leanAccepted": 450,
+      "leanRejected": 1623,
+      "bothAccept": 437,
+      "bothRefuse": 1519
+    },
+    "fresh-tower": {
+      "leanAccepted": 661,
+      "leanRejected": 707,
+      "bothAccept": 661,
+      "bothRefuse": 707
+    },
+    "general": {
+      "leanAccepted": 1005,
+      "leanRejected": 1637,
+      "bothAccept": 984,
+      "bothRefuse": 1577
+    },
+    "captures": {
+      "leanAccepted": 640,
+      "leanRejected": 697,
+      "bothAccept": 640,
+      "bothRefuse": 697
+    },
+    "once-many-wrappers": {
+      "leanAccepted": 435,
+      "leanRejected": 605,
+      "bothAccept": 341,
+      "bothRefuse": 605
+    },
+    "indexed-chain": {
+      "leanAccepted": 404,
+      "leanRejected": 693,
+      "bothAccept": 404,
+      "bothRefuse": 693
+    },
+    "recursive-higher-order-limit": {
+      "leanAccepted": 0,
+      "leanRejected": 1350,
+      "bothAccept": 0,
+      "bothRefuse": 0
+    },
+    "recursion": {
+      "leanAccepted": 379,
+      "leanRejected": 992,
+      "bothAccept": 379,
+      "bothRefuse": 992
+    },
+    "fresh-nested": {
+      "leanAccepted": 467,
+      "leanRejected": 928,
+      "bothAccept": 467,
+      "bothRefuse": 928
+    }
+  }
+}

@@ -741,3 +741,20 @@ the result falsely advertises separation. The regression fails its concrete
 certificate check before that premise is enforced
 (`regressions/certificate-canonical-before-sync.log`). The `result-positions`
 certificate probes cover all three variants.
+
+## Shipping compiler differential bridge
+
+[BRIDGE.md](BRIDGE.md) specifies the public-source translation and observation
+boundary; [BRIDGE-RESULTS.md](BRIDGE-RESULTS.md) gives corrected per-construct and
+per-family coverage for all fixed programs, bound 2, and 20,000 programs at each
+of three seeds. Every translated program has a real browser-tea value check.
+Direct library output remains persistent, so the 2,358 paired runtime agreements
+do not confirm an in-place guarantee. Repeated closure-body keys, canonical
+declaration failures and unvisited sites are unknown; source expressions with
+multiple obligations are grouped. Typed minima preserve the rejection class,
+and final-frontier skips and full-message changes are counted and retained.
+
+Unused explicit capture slots are skipped, and field captures are snapshotted
+without their ancestors and siblings. `regressions/bridge/` and the CI black-box
+self-test cover those contracts and the previously swallowed batch failure.
+No proof statement or shipping ownership rule was weakened.

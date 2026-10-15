@@ -1,0 +1,19 @@
+pub bridgeRead value = value
+
+
+pub run ⊤ =
+    -- bridge-start main
+    b0v1 =
+        -- bridge-start main/0
+        [  ]
+        -- bridge-end main/0
+    -- bridge-start main/1
+    b1v4 =
+        -- bridge-start main/1/0
+        List.push (b0v1) (0)
+        -- bridge-end main/1/0
+    -- bridge-start main/1/1
+    b0v1
+    -- bridge-end main/1/1
+    -- bridge-end main/1
+    -- bridge-end main

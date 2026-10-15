@@ -1,0 +1,1085 @@
+[
+  {
+    "hole": "dead",
+    "caught": true,
+    "added": [
+      {
+        "id": "enum-1-106",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "enum-1-110",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "enum-1-114",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "fixture-10",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "fixture-11",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "fixture-12",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "fixture-15",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "fixture-18",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "fixture-23",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "fixture-37",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "fixture-40",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "fixture-41",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "fixture-42",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "fixture-43",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "fixture-46",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "fixture-47",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "fixture-48",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "fixture-51",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "fixture-53",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "fixture-55",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "fixture-61",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "fixture-64",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "fixture-90",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "seed-17-102",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "seed-17-103",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "seed-17-108",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "seed-17-116",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "seed-17-117",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "seed-17-38",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "seed-17-43",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "seed-17-6",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "seed-17-62",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "seed-17-88",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "seed-17-95",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "sync-12",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "sync-19",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "sync-32",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "sync-38",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "sync-8",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-111",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-114",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-12",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-121",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-134",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-137",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-140",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-143",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-145",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-162",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-165",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-172",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-185",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-188",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-19",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-191",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-194",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-196",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-301",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-303",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-305",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-307",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-309",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-311",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-313",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-315",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-317",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-319",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-32",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-321",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-323",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-325",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-327",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-329",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-331",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-333",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-335",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-337",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-339",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-341",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-343",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-345",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-347",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-35",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-38",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-41",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-43",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-60",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-63",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-70",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-83",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-86",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-89",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-9",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-92",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-94",
+        "runtime": "unconfirmed"
+      }
+    ],
+    "addedSites": [
+      {
+        "id": "fixture-10",
+        "site": "main/1/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "fixture-11",
+        "site": "main/1/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "fixture-12",
+        "site": "main/1/1/1/1/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "fixture-15",
+        "site": "main/1/1/1/1/1/1/1/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "fixture-18",
+        "site": "main/1/1/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "fixture-23",
+        "site": "main/1/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "fixture-37",
+        "site": "main/1/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "fixture-41",
+        "site": "main/1/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "fixture-45",
+        "site": "main/1/1/1/0",
+        "runtime": "blocked-by-other-refusals"
+      },
+      {
+        "id": "fixture-46",
+        "site": "main/1/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "fixture-47",
+        "site": "main/1/1/1/1/1/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "fixture-48",
+        "site": "main/1/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "fixture-5",
+        "site": "main/1/1/1/1/1/1/0",
+        "runtime": "blocked-by-other-refusals"
+      },
+      {
+        "id": "fixture-51",
+        "site": "main/1/1/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "fixture-55",
+        "site": "main/1/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "fixture-61",
+        "site": "main/1/1/1/1/1/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "fixture-64",
+        "site": "main/1/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "fixture-90",
+        "site": "main/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "fixture-97",
+        "site": "main/1/1/1/1/0",
+        "runtime": "blocked-by-other-refusals"
+      },
+      {
+        "id": "seed-17-103",
+        "site": "main/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "seed-17-108",
+        "site": "main/1/1/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "seed-17-116",
+        "site": "main/1/1/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "seed-17-117",
+        "site": "main/1/1/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "seed-17-30",
+        "site": "main/1/1/1/1/1/0/0",
+        "runtime": "blocked-by-other-refusals"
+      },
+      {
+        "id": "seed-17-6",
+        "site": "main/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "seed-17-62",
+        "site": "main/1/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "seed-17-88",
+        "site": "main/1/1/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "seed-17-9",
+        "site": "main/1/1/1/1/1/0",
+        "runtime": "blocked-by-other-refusals"
+      },
+      {
+        "id": "sync-12",
+        "site": "main/1/1/0/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "sync-19",
+        "site": "main/1/1/1/body/0/body/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "sync-32",
+        "site": "main/1/1/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "sync-38",
+        "site": "main/1/1/1/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "sync-8",
+        "site": "main/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-111",
+        "site": "main/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-114",
+        "site": "main/1/1/0/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-12",
+        "site": "main/1/1/0/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-121",
+        "site": "main/1/1/1/body/0/body/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-134",
+        "site": "main/1/1/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-137",
+        "site": "main/1/1/1/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-140",
+        "site": "main/1/1/1/1/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-143",
+        "site": "main/1/1/1/1/1/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-145",
+        "site": "main/1/1/1/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-162",
+        "site": "main/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-165",
+        "site": "main/1/1/0/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-172",
+        "site": "main/1/1/1/body/0/body/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-185",
+        "site": "main/1/1/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-188",
+        "site": "main/1/1/1/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-19",
+        "site": "main/1/1/1/body/0/body/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-191",
+        "site": "main/1/1/1/1/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-194",
+        "site": "main/1/1/1/1/1/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-196",
+        "site": "main/1/1/1/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-301",
+        "site": "main/1/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-303",
+        "site": "main/1/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-305",
+        "site": "main/1/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-307",
+        "site": "main/1/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-309",
+        "site": "main/1/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-311",
+        "site": "main/1/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-313",
+        "site": "main/1/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-315",
+        "site": "main/1/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-317",
+        "site": "main/1/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-319",
+        "site": "main/1/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-32",
+        "site": "main/1/1/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-321",
+        "site": "main/1/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-323",
+        "site": "main/1/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-325",
+        "site": "main/1/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-327",
+        "site": "main/1/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-329",
+        "site": "main/1/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-331",
+        "site": "main/1/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-333",
+        "site": "main/1/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-335",
+        "site": "main/1/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-337",
+        "site": "main/1/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-339",
+        "site": "main/1/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-341",
+        "site": "main/1/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-343",
+        "site": "main/1/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-345",
+        "site": "main/1/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-347",
+        "site": "main/1/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-35",
+        "site": "main/1/1/1/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-38",
+        "site": "main/1/1/1/1/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-41",
+        "site": "main/1/1/1/1/1/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-43",
+        "site": "main/1/1/1/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-60",
+        "site": "main/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-63",
+        "site": "main/1/1/0/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-70",
+        "site": "main/1/1/1/body/0/body/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-83",
+        "site": "main/1/1/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-86",
+        "site": "main/1/1/1/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-89",
+        "site": "main/1/1/1/1/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-9",
+        "site": "main/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-92",
+        "site": "main/1/1/1/1/1/1/0",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-94",
+        "site": "main/1/1/1/1/0",
+        "runtime": "unconfirmed"
+      }
+    ],
+    "confirmed": 0,
+    "sites": {
+      "agreement": 247,
+      "precision": 8,
+      "lead": 114,
+      "unknown": 231,
+      "extra": 0,
+      "pending": 6
+    },
+    "errors": []
+  },
+  {
+    "hole": "disjoint",
+    "caught": true,
+    "added": [
+      {
+        "id": "enum-1-118",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "enum-1-122",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "enum-1-126",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "enum-1-128",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "enum-1-129",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "enum-1-131",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "enum-1-132",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "fixture-16",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "fixture-17",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "fixture-36",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "fixture-49",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "fixture-67",
+        "runtime": "unconfirmed"
+      }
+    ],
+    "addedSites": [
+      {
+        "id": "enum-1-118",
+        "site": "main/1/1/1/1/0/1",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "enum-1-122",
+        "site": "main/1/1/1/1/0/1",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "enum-1-126",
+        "site": "main/1/1/1/1/0/1",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "enum-1-128",
+        "site": "main/1/1/1/1/0/1/1",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "enum-1-129",
+        "site": "main/1/1/1/1/0/1/1",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "enum-1-131",
+        "site": "main/1/1/1/1/0/1/1",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "enum-1-132",
+        "site": "main/1/1/1/1/0/1/1",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "enum-1-133",
+        "site": "main/1/1/1/1/0",
+        "runtime": "blocked-by-other-refusals"
+      },
+      {
+        "id": "enum-1-134",
+        "site": "main/1/1/1/1/0",
+        "runtime": "blocked-by-other-refusals"
+      },
+      {
+        "id": "enum-1-135",
+        "site": "main/1/1/1/1/0",
+        "runtime": "blocked-by-other-refusals"
+      },
+      {
+        "id": "fixture-16",
+        "site": "main/1/1/1",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "fixture-17",
+        "site": "main/1/1/1",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "fixture-36",
+        "site": "main/1/1/1",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "fixture-44",
+        "site": "main/1/1/1/1",
+        "runtime": "blocked-by-other-refusals"
+      },
+      {
+        "id": "fixture-49",
+        "site": "main/1/1/1",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "fixture-54",
+        "site": "main/1/1/1/1",
+        "runtime": "blocked-by-other-refusals"
+      },
+      {
+        "id": "fixture-62",
+        "site": "main/1/1/1/1",
+        "runtime": "blocked-by-other-refusals"
+      },
+      {
+        "id": "fixture-67",
+        "site": "main/1/1/1",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "fixture-68",
+        "site": "main/1/1/1/1",
+        "runtime": "blocked-by-other-refusals"
+      },
+      {
+        "id": "fixture-83",
+        "site": "main/1/1/1",
+        "runtime": "blocked-by-other-refusals"
+      }
+    ],
+    "confirmed": 0,
+    "sites": {
+      "agreement": 316,
+      "precision": 8,
+      "lead": 45,
+      "unknown": 231,
+      "extra": 0,
+      "pending": 6
+    },
+    "errors": []
+  },
+  {
+    "hole": "shared",
+    "caught": true,
+    "added": [
+      {
+        "id": "fixture-39",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "fixture-50",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "fixture-66",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "fixture-89",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "sync-17",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-119",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-17",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-170",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "targeted-68",
+        "runtime": "unconfirmed"
+      }
+    ],
+    "addedSites": [
+      {
+        "id": "fixture-39",
+        "site": "main/1/1",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "fixture-50",
+        "site": "main/1/1",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "fixture-66",
+        "site": "main/1/1",
+        "runtime": "unconfirmed"
+      },
+      {
+        "id": "fixture-89",
+        "site": "main/1/1/1/0",
+        "runtime": "unconfirmed"
+      }
+    ],
+    "confirmed": 0,
+    "sites": {
+      "agreement": 332,
+      "precision": 8,
+      "lead": 29,
+      "unknown": 231,
+      "extra": 0,
+      "pending": 6
+    },
+    "errors": []
+  }
+]

@@ -1,0 +1,299 @@
+{
+  "programs": 766,
+  "translated": 348,
+  "skipped": 418,
+  "valueChecked": 348,
+  "agreements": 316,
+  "precision": 8,
+  "leads": 24,
+  "sites": {
+    "agreement": 332,
+    "precision": 8,
+    "lead": 29,
+    "unknown": 231,
+    "extra": 0,
+    "pending": 6
+  },
+  "skipReasons": {
+    "private-builder": 22,
+    "function-valued-observation": 263,
+    "conditional-shared-publication": 31,
+    "identity-preserving-close": 19,
+    "dynamic-shared-root": 11,
+    "ill-typed-core": 4,
+    "shared-function-observation": 1,
+    "model-entry-protocol": 20,
+    "abstract-event-boundary": 21,
+    "abstract-owned-boundary": 20,
+    "late-shared-publication": 3,
+    "unused-capture-slot": 3
+  },
+  "constructs": {
+    "let": {
+      "translated": 1958,
+      "skipped": 4848
+    },
+    "literal": {
+      "translated": 825,
+      "skipped": 1595
+    },
+    "closure": {
+      "translated": 340,
+      "skipped": 1078
+    },
+    "push": {
+      "translated": 306,
+      "skipped": 659
+    },
+    "app": {
+      "translated": 341,
+      "skipped": 818
+    },
+    "record": {
+      "translated": 213,
+      "skipped": 483
+    },
+    "builder": {
+      "translated": 17,
+      "skipped": 103
+    },
+    "put": {
+      "translated": 17,
+      "skipped": 92
+    },
+    "close": {
+      "translated": 17,
+      "skipped": 103
+    },
+    "atom": {
+      "translated": 338,
+      "skipped": 651
+    },
+    "branch": {
+      "translated": 97,
+      "skipped": 192
+    },
+    "eq": {
+      "translated": 24,
+      "skipped": 33
+    },
+    "traverse-list": {
+      "translated": 35,
+      "skipped": 114
+    },
+    "focus": {
+      "translated": 93,
+      "skipped": 195
+    },
+    "traverse-range": {
+      "translated": 45,
+      "skipped": 58
+    },
+    "set": {
+      "translated": 18,
+      "skipped": 57
+    },
+    "shared": {
+      "translated": 14,
+      "skipped": 95
+    },
+    "length": {
+      "translated": 66,
+      "skipped": 235
+    },
+    "sub": {
+      "translated": 13,
+      "skipped": 25
+    },
+    "at": {
+      "translated": 26,
+      "skipped": 91
+    },
+    "copy": {
+      "translated": 12,
+      "skipped": 58
+    },
+    "recur": {
+      "translated": 58,
+      "skipped": 28
+    },
+    "add": {
+      "translated": 53,
+      "skipped": 33
+    },
+    "traverse-model": {
+      "translated": 0,
+      "skipped": 25
+    },
+    "prepend": {
+      "translated": 10,
+      "skipped": 0
+    },
+    "events": {
+      "translated": 0,
+      "skipped": 38
+    },
+    "owned": {
+      "translated": 0,
+      "skipped": 43
+    },
+    "lt": {
+      "translated": 25,
+      "skipped": 57
+    }
+  },
+  "families": {
+    "fixture": {
+      "programs": 98,
+      "translated": 82,
+      "skipped": 16,
+      "agreements": 72,
+      "leads": 8,
+      "precision": 2
+    },
+    "sync": {
+      "programs": 44,
+      "translated": 14,
+      "skipped": 30,
+      "agreements": 12,
+      "leads": 2
+    },
+    "targeted": {
+      "programs": 348,
+      "translated": 128,
+      "skipped": 220,
+      "agreements": 116,
+      "leads": 8,
+      "precision": 4
+    },
+    "enumerate": {
+      "programs": 148,
+      "translated": 92,
+      "skipped": 56,
+      "agreements": 91,
+      "leads": 1
+    },
+    "general": {
+      "programs": 36,
+      "translated": 1,
+      "skipped": 35,
+      "agreements": 1
+    },
+    "declarations": {
+      "programs": 55,
+      "translated": 6,
+      "skipped": 49,
+      "agreements": 6
+    },
+    "identity-map": {
+      "programs": 3,
+      "translated": 0,
+      "skipped": 3
+    },
+    "library-pipeline": {
+      "programs": 3,
+      "translated": 0,
+      "skipped": 3
+    },
+    "branch-traversal": {
+      "programs": 3,
+      "translated": 3,
+      "skipped": 0,
+      "agreements": 3
+    },
+    "fresh-tower": {
+      "programs": 2,
+      "translated": 2,
+      "skipped": 0,
+      "agreements": 2
+    },
+    "captures": {
+      "programs": 4,
+      "translated": 4,
+      "skipped": 0,
+      "agreements": 4
+    },
+    "once-many-wrappers": {
+      "programs": 3,
+      "translated": 3,
+      "skipped": 0,
+      "agreements": 1,
+      "precision": 2
+    },
+    "indexed-chain": {
+      "programs": 7,
+      "translated": 5,
+      "skipped": 2,
+      "agreements": 5
+    },
+    "recursive-higher-order-limit": {
+      "programs": 5,
+      "translated": 5,
+      "skipped": 0,
+      "leads": 5
+    },
+    "recursion": {
+      "programs": 1,
+      "translated": 1,
+      "skipped": 0,
+      "agreements": 1
+    },
+    "fresh-nested": {
+      "programs": 2,
+      "translated": 2,
+      "skipped": 0,
+      "agreements": 2
+    },
+    "escape-traversal": {
+      "programs": 4,
+      "translated": 0,
+      "skipped": 4
+    }
+  },
+  "precisionPatterns": {
+    "List.push: once": 5,
+    "List.push: it is returned": 2,
+    "value: need": 1
+  },
+  "cases": 35,
+  "jobs": 8,
+  "environment": {
+    "node": "v24.19.0",
+    "compilerSha256": "268a02582ad28f3cab05021eb2fc95ad26f433c33aad696798435b2bb8c66293",
+    "oracleSha256": "edcc23e0af72bd388018a43c01ef34e5e00ecd854b1a51704c5a9c26422968e5"
+  },
+  "streams": [
+    {
+      "name": "fixtures-0.jsonl",
+      "programs": 490,
+      "translated": 224,
+      "skipped": 266,
+      "valueChecked": 224,
+      "sha256": "27c16813417690b56c0968697dd32017542fc5c352ce0c8fcab050fe8b580c3a",
+      "agreements": 200,
+      "leads": 18,
+      "precision": 6
+    },
+    {
+      "name": "enumerate-0.jsonl",
+      "programs": 148,
+      "translated": 92,
+      "skipped": 56,
+      "valueChecked": 92,
+      "agreements": 91,
+      "sha256": "34763d7f3e83eab586e19ad7f9b5959dcae26fbc0327e45e3ef3cac6f8b8ff0d",
+      "leads": 1
+    },
+    {
+      "name": "generator-17.jsonl",
+      "programs": 128,
+      "translated": 32,
+      "skipped": 96,
+      "valueChecked": 32,
+      "sha256": "121e9228d9e26a0e11f09b8632dd7c55a644be1a7e68daf029c9770150ebff39",
+      "agreements": 25,
+      "leads": 5,
+      "precision": 2
+    }
+  ]
+}

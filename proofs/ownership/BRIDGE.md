@@ -94,6 +94,10 @@ Successful main sites before a later abort remain comparable. Shape-only visits
 are excluded. A failed canonical declaration summary is unknown at the
 corresponding concrete writer: its assumptions are not a failed concrete call.
 Declaration successes are compared only when the whole Lean check succeeds.
+When multiple emitted closure bodies share a declaration key, a visited success
+cannot identify which instance was checked: that group is unknown. The
+`ambiguousAgreement` and `ambiguousPrecision` counters say which formerly
+comparable groups were censored this way; they are subsets of `unknown`.
 Unvisited sites are unknown. Site precision can include a successful main site
 preceding a different Lean failure; it is not a global precision ordering. Site counts range over Zig demand groups; extra
 unmapped Zig obligations and pending lines have separate counts. Whole-program
@@ -149,6 +153,11 @@ from the minimum claim; abnormal compiler exits fail the run. Original and
 final rejection messages are retained. Intermediate probes with identical
 source and expected value are shared; originals and final minima run afresh.
 Both original and minimized outcomes are retained.
+`skippedCandidates` counts translation/observation skips in the final one-step
+frontier, the candidates relevant to the minimum claim, not earlier search
+rounds. The retained typed proposals let `scripts/bridge-frontier.mjs` recover
+the same accounting. `reasonChanged` flags a different full message, and
+`limitLead` flags the intentionally broad `limit` class.
 
 ## Source controls
 
@@ -167,6 +176,7 @@ control; the precision direction is counted in ordinary comparisons.
 The report distinguishes verdict catches from runtime disagreements, and reports
 misses without changing either checker or inventing a runtime. The live Zig
 sources and their cache are never edited or shared with mutant worktrees.
+These controls establish detectability on the bounded CI stream only.
 
 Finite campaigns cover a common subset. They prove neither checker sound nor
 the two checkers equivalent. The executable Lean model still has three unproved
