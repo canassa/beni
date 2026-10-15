@@ -958,7 +958,11 @@ screen exists in development only (`Js.development`); in release a defect is log
 stops. **Source maps**: a development build writes a `.mjs.map` beside every module as today
 (`backend.md` §11.1); a hole's write is positioned at its hole (`cx.at`, `boundary.md` §9.4.3) and
 an arm's statements at the arm, so a defect's stack names the hole or the arm in the source.
-Release maps are not started, as before.
+Release maps are not started, as before. *Amended 2026-10-15:* release maps are built
+(`backend.md` §11.2): `--release --source-maps` writes one map for the scope-hoisted file, and
+hand-written runtime JavaScript stays unmapped. A check of the 166 `browser/direct/` programs found
+each release map valid and each file unchanged but for its comment line; no fixture pins a hole's
+position in a release map yet.
 
 ## 9. Composition
 
