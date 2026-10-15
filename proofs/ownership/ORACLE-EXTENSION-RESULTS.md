@@ -9,20 +9,21 @@ PR #116's initialization condition is projected without depending on that
 still-open compiler PR. The shipping compiler and its ownership policy are
 unchanged.
 
-There are **167 verdict fixtures** (98 original + 69 sync), **472 targeted
-programs**, and **eleven new required holes**. Existing fixture/targeted ids
-are unchanged; 25 verdict fixtures and 124 targeted programs append. The new
+There are **173 verdict fixtures** (98 original + 75 sync), **496 targeted
+programs**, and **twelve new required holes**. Historical fixture/targeted ids
+are unchanged; 31 verdict fixtures and 148 targeted programs append. The new
 recursive Result fixture exercises optimistic bottom propagation before the
 base arm is discovered. An additional initialization regression prevents a
-nested entry from reusing a spent private-transfer permission to clear a later
-permanent publication.
+subsequent module entry from reusing a spent private-transfer permission to clear
+a later permanent publication. A callee cannot borrow the pending permission
+while solving or reusing its summary, even at a colliding relative allocation site.
 
 ## Planted holes
 
 Every fixed witness is well typed, refused by the corrected checker, accepted
 under its hole, and disagrees between the value and in-place interpreters.
 The independent finite targeted product must catch every hole too; an error
-or a rejection does not count. Its corrected run accepted 172 of 472 programs,
+or a rejection does not count. Its corrected run accepted 184 of 496 programs,
 with zero disagreements, execution errors or invalid result certificates.
 
 | Hole | Newly accepted targeted programs | Interpreter disagreements |
@@ -35,30 +36,32 @@ with zero disagreements, execution errors or invalid result certificates.
 | `callee-capture` | 4 | 4 |
 | `early-err` | 8 | 8 |
 | `recursive-payload` | 12 | 12 |
-| `init-shared` | 8 | 8 |
+| `init-shared` | 16 | 12 |
 | `init-retained` | 8 | 8 |
 | `init-authority` | 4 | 4 |
+| `init-frame` | 4 | 4 |
 
 One changed `arm-result` verdict agrees on its particular executed condition;
-that is not a control catch. All eleven controls have actual disagreements,
+four `init-shared` verdicts also agree (the function-source backstop). None of
+those agreeing executions counts as a control catch. All twelve controls have actual disagreements,
 with zero inconclusive executions. The table counts newly accepted programs,
 not every verdict a deliberately damaged liveness analysis can change.
 [Control counters](evidence/oracle-extension/controls.json),
 [replayable fixed cores and both interpreter outcomes](evidence/oracle-extension/hole-witnesses.jsonl.gz),
 and the [complete CI log](evidence/oracle-extension/ci.log.gz) retain the evidence.
 The ten earlier required targeted holes and the existing `branch-live` witness
-also pass: all 22 targeted controls are caught.
+also pass: all 23 targeted controls are caught.
 
 ## Shipping bridge
 
 | Campaign | Inputs | Translated / value-checked | Skipped | Zig accepts / Lean refuses | Zig refuses / Lean accepts | Confirmed unsafe originals |
 |---|---:|---:|---:|---:|---:|---:|
-| CI bound | 915 | 462 | 453 | **6** | **8** | **0** |
-| Bound 2 + three seeds × 20,000 | 116,605 | 43,180 | 73,425 | **1,725** | **401** | **0** |
+| CI bound | 945 | 462 | 483 | **6** | **8** | **0** |
+| Bound 2 + three seeds × 20,000 | 116,635 | 43,180 | 73,455 | **1,725** | **401** | **0** |
 
 | Full stream | Inputs | Translated | Forward leads | Reverse leads | Confirmed unsafe |
 |---|---:|---:|---:|---:|---:|
-| Fixtures / sync / targeted | 639 | 338 | 0 | 6 | 0 |
+| Fixtures / sync / targeted | 669 | 338 | 0 | 6 | 0 |
 | Bound-2 enumeration | 55,966 | 27,769 | 294 | 267 | 0 |
 | Seed 17 | 20,000 | 5,006 | 491 | 37 | 0 |
 | Seed 20261011 | 20,000 | 5,054 | 470 | 43 | 0 |
@@ -66,7 +69,7 @@ also pass: all 22 targeted controls are caught.
 
 Compared with the post-#124 campaign, the forward and reverse counts are
 unchanged. The expanded fixed set contributes **114 new translated agreements**
-and **35 counted skips**, with no additional whole-program lead in either
+and **65 counted skips**, with no additional whole-program lead in either
 direction. All historical enumeration and generator stream SHA-256 hashes and
 input/translation/skip/value-check counts match exactly; the fixed stream
 changes only by the appended examples. Total full-run agreements rise from
@@ -95,18 +98,44 @@ precision evidence on these inputs, not proofs of global safety.
 Compressed sources, verdict evidence and complete interpreter judgments are
 retained beside each report.
 
+## Review follow-up
+
+The explicit review found that a syntactically unique read in a traversal body
+could qualify for transfer. The duplicated-model scenario was already refused
+by separation checking (`container contents: positions may share`); private
+publication removal never upgrades a certificate. The source-read eligibility
+contract nevertheless needed its direct-initializer boundary enforced. Free
+reads in traversal, focus and runtime-entry bodies, and recursive initializer
+reads, now stay ineligible. A direct source operand still counts once. Both
+new policy guards fail with the read-count fix set aside and pass restored.
+The repeated-payload initializer rejects; reading the shared source to allocate
+fresh payloads passes. Explicit capture atoms are eager in this core; deferred
+global references are not represented as eager captures.
+
+Function-bearing private initializers also remain shared under #116's explicit
+backstop. Its refusal fixture fails with that guard set aside; a copied returned
+spine passes. Pending transfer authority belongs only to the module-initializer
+context: callees and runtime-entry bodies cannot borrow it. The new `init-frame`
+hole admits four actual interpreter disagreements if that boundary is removed.
+Finally, the liveness controls now propagate through Result cases, Chain cases
+and entry expressions. Shadowing is already rejected before the corrected walk.
+
+The before-fix probes, source-rule-removal failures and restored fixture log are
+retained in `evidence/oracle-extension/review-*.log.gz`. The review response is
+on [PR #132](https://github.com/canassa/beni/pull/132#issuecomment-6190721943).
+
 ## Validation and boundaries
 
-`lake build` passes: 3,253 constants replayed through the kernel, no swapped
+`lake build` passes: 3,258 constants replayed through the kernel, no swapped
 compiler attributes, and exactly the existing three unproved statements. The
-independent `scripts/audit.sh` over committed `544f36d1b` also passes: all
-32 sources parsed, 4,709 constants replayed module by module, only the four
+independent `scripts/audit.sh` over committed `bd580027d` also passes: all
+32 sources parsed, 4,718 constants replayed module by module, only the four
 pinned constants dependent on the three existing unproved statements, no
 swapped attributes and no build-time source changes.
-`ownership ci 20000 17` passes all 167 verdict fixtures, the v5 campaign
+`ownership ci 20000 17` passes all 173 verdict fixtures, the v5 campaign
 (2,911 accepted, 1,815 writing in place, zero disagreements), every required
 control, all 55,966 bound-2 programs (31,680 accepted, 10,468 writing, zero
-disagreements), all 472 targeted programs and the bounded shipping bridge.
+disagreements), all 496 targeted programs and the bounded shipping bridge.
 Expected observations independently pin inner/outer question frames, recursive
 Result errors, successful questions and the recursive Chain consumer.
 
@@ -130,7 +159,7 @@ Inside `nix develop .#ownership`, with `LEAN_NUM_THREADS=8`:
 
 ```sh
 zorg build
-cp zig-out/bin/beni zig-out/ownership-oracle-ci-beni
+cp zig-out/bin/beni zig-out/ownership-oracle-reviewed-ci-beni
 zorg build test test-blackbox fmt-check beni-fmt-check -j4
 cp zig-out/safe/bin/beni zig-out/ownership-oracle-long-beni
 cd proofs/ownership
@@ -140,13 +169,13 @@ lake exe ownership ci 20000 17
 lake exe ownership enumerate-targeted --mutant=init-authority
 # Use fresh, separate output directories for each campaign.
 node scripts/bridge.mjs --ci --no-build --no-minimize \
-  --compiler=../../zig-out/ownership-oracle-ci-beni --out=../../zig-out/ownership-oracle-ci --jobs=8
-node scripts/bridge-fix-audit.mjs ../../zig-out/ownership-oracle-ci \
-  ../../zig-out/ownership-oracle-ci-beni ../../zig-out/ownership-oracle-audit-ci
+  --compiler=../../zig-out/ownership-oracle-reviewed-ci-beni --out=../../zig-out/ownership-oracle-reviewed-ci --jobs=8
+node scripts/bridge-fix-audit.mjs ../../zig-out/ownership-oracle-reviewed-ci \
+  ../../zig-out/ownership-oracle-reviewed-ci-beni ../../zig-out/ownership-oracle-reviewed-audit-ci
 node scripts/bridge.mjs --long --no-build --no-minimize \
-  --compiler=../../zig-out/ownership-oracle-long-beni --out=../../zig-out/ownership-oracle-long --jobs=8
-node scripts/bridge-fix-audit.mjs ../../zig-out/ownership-oracle-long \
-  ../../zig-out/ownership-oracle-long-beni ../../zig-out/ownership-oracle-audit-long
+  --compiler=../../zig-out/ownership-oracle-long-beni --out=../../zig-out/ownership-oracle-reviewed-long --jobs=8
+node scripts/bridge-fix-audit.mjs ../../zig-out/ownership-oracle-reviewed-long \
+  ../../zig-out/ownership-oracle-long-beni ../../zig-out/ownership-oracle-reviewed-audit-long
 ```
 
 The CI evidence used a frozen default `zorg build` compiler; the long evidence

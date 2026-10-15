@@ -1,7 +1,7 @@
 # Lean oracle extension evidence — 2026-10-15
 
 `../../ORACLE-EXTENSION-RESULTS.md` reports the model boundary and measurements.
-The implementation is `544f36d1b`; the unchanged shipping compiler sources are
+The implementation is `bd580027d`; the unchanged shipping compiler sources are
 `bcf28a6ee`. PR #116's initialization contract was read through `5310d3619`;
 this branch does not carry its compiler changes.
 
@@ -19,17 +19,20 @@ CI's six program leads also agree. These are finite observations, not proofs.
 The recorded compilers are frozen per campaign and checked before/after audit.
 The bridge uses at most eight workers, one thread per compiler child.
 
-`controls.json` records the corrected 472-program targeted run and all eleven
+`controls.json` records the corrected 496-program targeted run and all twelve
 new hole counts. `hole-witnesses.jsonl.gz` retains each fixed typed core and its
 full interpreter outcome; the corrected checker refuses every one and its named
 hole accepts a disagreeing execution. The actual fixture constructors and
-required-hole table are in `Ownership/Sync.lean` (`Sync.holes`). The complete
-`ci.log.gz` includes all 22 targeted controls, the seeded controls, fixtures,
+required-hole table are in `Ownership/Sync.lean` (`Sync.holes`). The source-rule
+removal failures and restored results are retained in
+`review-*.log.gz`; the source-read and function-valued guard failures were
+checked with each fix set aside. The complete
+`ci.log.gz` includes all 23 targeted controls, the seeded controls, fixtures,
 enumeration and the normal CI bridge.
 
-`build.log.gz` records the in-build source/axiom/kernel audit (3,253 constants).
-`clean-audit.log.gz` records `scripts/audit.sh` over committed `544f36d1b`:
-32 parsed sources, 4,709 constants replayed, the same four pinned constants
+`build.log.gz` records the in-build source/axiom/kernel audit (3,258 constants).
+`clean-audit.log.gz` records `scripts/audit.sh` over committed `bd580027d`:
+32 parsed sources, 4,718 constants replayed, the same four pinned constants
 on the three unproved statements, no swapped attributes and no changed source.
 `fixtures.log.gz` retains every fixed verdict and hole result.
 `compiler-checks.log.gz` records the macOS constituents: 1,302 passed, 15 skipped

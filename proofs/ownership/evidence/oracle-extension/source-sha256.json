@@ -1,5 +1,5 @@
 {
-  "implementation": "544f36d1b",
+  "implementation": "bd580027d",
   "shippingCompiler": "bcf28a6ee",
   "leanSources": {
     "Audit.lean": "27be1e2ab0bc1be7753a3914c00c0bb9f90418e816a2d455e99fe58ab4430ab3",
@@ -9,9 +9,9 @@
     "Ownership/Bridge.lean": "0868d058999204bf9d8bd43183152164b4ca1a2b19391eb7a56d5f8e71c1119a",
     "Ownership/BridgeWire.lean": "a621e4b4c44a4d6e1d109f83a71a947026c093a1d76c859ccaebf947ed026eda",
     "Ownership/BuilderProof.lean": "eb0ed3235b003b1cb8953b353633bea1c2e2ce7cec6a3729c37a376835c86552",
-    "Ownership/Checker.lean": "97cdf87312d6fb695ad7b5eab270ea99af8f13f3ed7d0f919c5d12676e1619b9",
+    "Ownership/Checker.lean": "fd44598aa4c9f6ea7a7133ac52b41ddfac38cb176e8d58849ab34860c7b75475",
     "Ownership/Cli.lean": "efc866a5449ce3ee996894059d187867af50c641aaf540751a3dc6e2e33d6162",
-    "Ownership/Config.lean": "e884474979c6cd18adba2390fba99e783400135a1f8c5851746aacb933537b07",
+    "Ownership/Config.lean": "10a4cb0f5338bd226202be8ce3e8f41a1baf0e2600339c375876f787db19248f",
     "Ownership/Domain.lean": "f012638d66e1a591131fa5203337977513096bcee7ffc676cecc015c0471e4df",
     "Ownership/Enumerate.lean": "e50cae8c9d4da4564d8c1d3b418d76f9b1c59324fab5f4b4470ab08bfc37e3b9",
     "Ownership/Falsify.lean": "5b7dda8e033118f19e5cec0a821fd971221c3c3e3b0059137d2dde6aa91a42d6",
@@ -29,7 +29,7 @@
     "Ownership/Semantics.lean": "96f576b783d751d403f6161e6be8e5bd25fc069f80e2b5b538174404d251a073",
     "Ownership/Smoke.lean": "8c2b3f609c9a00ac17b5bb3af608a28034fa3600ff2a92e4c7cd095e00a6fefa",
     "Ownership/Soundness.lean": "1a60cea526e58c065f3ac784e53b5ee8255e4acb0552d9c2f6dbc5fc0de8fdd0",
-    "Ownership/Sync.lean": "da76e74286d57ecd31db61e3f1ec56436e2a294e0c547fce0c0a4136cf883a61",
+    "Ownership/Sync.lean": "bc46e80cef54bd1693582a440cc52f7af8cf19ba151844f4caf119ef3edc0eca",
     "Ownership/Syntax.lean": "b40a7dcee376b92a03b2a193ab7e2e33f9ebc1e4709ecd4300dfced0a42c1ee0",
     "Ownership/Targeted.lean": "b4406e379bb62b71324c6b5b2a94961973ce695de6684d9129b0d2cf9d1014d9",
     "Ownership.lean": "1b287daa2386bd83c7bcc1f133ce2facbdb436c20bc46fe12464baa77126fa65",

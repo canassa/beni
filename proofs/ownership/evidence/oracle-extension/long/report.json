@@ -1,7 +1,7 @@
 {
-  "programs": 116605,
+  "programs": 116635,
   "translated": 43180,
-  "skipped": 73425,
+  "skipped": 73455,
   "valueChecked": 43180,
   "agreements": 41054,
   "precision": 401,
@@ -19,7 +19,7 @@
   "skipReasons": {
     "private-builder": 3569,
     "function-valued-observation": 60672,
-    "conditional-shared-publication": 1426,
+    "conditional-shared-publication": 1421,
     "identity-preserving-close": 4538,
     "dynamic-shared-root": 298,
     "ill-typed-core": 762,
@@ -27,9 +27,9 @@
     "model-entry-protocol": 20,
     "abstract-event-boundary": 21,
     "abstract-owned-boundary": 20,
+    "primitive-private-root": 40,
+    "late-shared-publication": 1734,
     "runtime-entry-protocol": 20,
-    "primitive-private-root": 10,
-    "late-shared-publication": 1729,
     "shared-field-root": 40,
     "unused-capture-slot": 210,
     "list-traversal-index": 72
@@ -37,23 +37,23 @@
   "constructs": {
     "let": {
       "translated": 346280,
-      "skipped": 1508691
+      "skipped": 1508821
     },
     "literal": {
       "translated": 167847,
-      "skipped": 494562
+      "skipped": 494617
     },
     "closure": {
       "translated": 57158,
-      "skipped": 336863
+      "skipped": 336883
     },
     "push": {
       "translated": 41481,
-      "skipped": 204688
+      "skipped": 204728
     },
     "app": {
       "translated": 52154,
-      "skipped": 284898
+      "skipped": 284918
     },
     "record": {
       "translated": 27160,
@@ -73,7 +73,7 @@
     },
     "atom": {
       "translated": 47174,
-      "skipped": 139757
+      "skipped": 139797
     },
     "branch": {
       "translated": 12525,
@@ -89,11 +89,11 @@
     },
     "focus": {
       "translated": 17543,
-      "skipped": 70591
+      "skipped": 70601
     },
     "traverse-range": {
       "translated": 3954,
-      "skipped": 11604
+      "skipped": 11614
     },
     "set": {
       "translated": 7622,
@@ -101,11 +101,11 @@
     },
     "shared": {
       "translated": 1708,
-      "skipped": 22216
+      "skipped": 22221
     },
     "length": {
       "translated": 23857,
-      "skipped": 103156
+      "skipped": 103161
     },
     "sub": {
       "translated": 3393,
@@ -117,7 +117,7 @@
     },
     "copy": {
       "translated": 4632,
-      "skipped": 23542
+      "skipped": 23547
     },
     "recur": {
       "translated": 3389,
@@ -145,11 +145,11 @@
     },
     "private-root": {
       "translated": 0,
-      "skipped": 15
+      "skipped": 45
     },
     "entry": {
       "translated": 0,
-      "skipped": 40
+      "skipped": 80
     },
     "err": {
       "translated": 55,
@@ -189,15 +189,15 @@
       "precision": 2
     },
     "sync": {
-      "programs": 69,
+      "programs": 75,
       "translated": 32,
-      "skipped": 37,
+      "skipped": 43,
       "agreements": 32
     },
     "targeted": {
-      "programs": 472,
+      "programs": 496,
       "translated": 224,
-      "skipped": 248,
+      "skipped": 272,
       "agreements": 220,
       "precision": 4
     },
@@ -291,8 +291,8 @@
     }
   },
   "precisionPatterns": {
-    "value: need": 18,
     "List.push: once": 272,
+    "value: need": 18,
     "List.push: it is returned": 95,
     "List.update: exclusive": 24,
     "List.set: exclusive": 3,
@@ -304,18 +304,18 @@
   "environment": {
     "node": "v24.19.0",
     "compilerSha256": "c23f2dc23ab98802e8ef575128e4073a898e3187cd88eb951e881ddcfe69e3b4",
-    "oracleSha256": "796ee00db19d46e3922274f82fb453b898b42c10cbc584ecc4485e86e9c156b1"
+    "oracleSha256": "d75fdde02421e1f0184b2a6219397a36ccb451de5656e94b6961caad59c183b6"
   },
   "streams": [
     {
       "name": "fixtures-0.jsonl",
-      "programs": 639,
+      "programs": 669,
       "translated": 338,
-      "skipped": 301,
+      "skipped": 331,
       "valueChecked": 338,
       "agreements": 332,
       "precision": 6,
-      "sha256": "b227d46a01cb4f4596ca7279d45b30a8cfd4b508f44ea694097cc8ec7242544f"
+      "sha256": "2e6e1056d75c79bcc4e2101ce2a6fb773677407670506a282de9fe5dc210c900"
     },
     {
       "name": "enumerate-0.jsonl",

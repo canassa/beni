@@ -27,8 +27,9 @@ tagger obligations. Twenty-two holes are required through the seed-independent
 targeted enumerator, including the retained-reader-after-append hole. The
 case-lowered withDefault rule also has a required `branch-live` witness.
 The §29 result/capture/fold/callee rules have six independent required holes. Six further holes cover
-Err payloads, recursive payloads, shared initialization, retained entry captures and repeated transfer authority. Result and Chain
-fixtures cross the shipping bridge; entry projections remain counted skips. `Sync.lean` and DESIGN.md
+Err payloads, recursive payloads, shared initialization, retained entry captures,
+repeated transfer authority and its frame boundary. Result and Chain fixtures
+cross the shipping bridge; entry projections remain counted skips. `Sync.lean` and DESIGN.md
 state the projections and their runtime boundaries.
 `no-scope` is a checker-level probe: typed programs cannot reach an unbound
 live variable. `hiddencopy` changes the interpreter to copy on every write;
