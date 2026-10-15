@@ -7,9 +7,10 @@ import {brotliCompressSync,gzipSync,constants} from 'node:zlib';
 const require=createRequire(import.meta.url);
 const acorn=require('../ui/apps/solid1/node_modules/acorn');
 const {TraceMap,originalPositionFor}=require('../ui/apps/solid1/node_modules/@jridgewell/trace-mapping');
-// S8_APPS (comma-separated keys of `apps`) and S8_RESULTS (a directory) measure a
-// later build without a change to the batch's own results.
-const beni=process.env.BENI??'zig-out/bin/beni',dir=process.env.S8_RESULTS??'bench/s8/results',only=process.env.S8_APPS?.split(',');
+// S8_APPS (comma-separated keys of `apps`, such as `bike`, not directory names) and
+// S8_RESULTS (a directory) measure a later build without a change to the batch's own
+// results. An empty variable is the same as no variable.
+const beni=process.env.BENI??'zig-out/bin/beni',dir=process.env.S8_RESULTS||'bench/s8/results',only=process.env.S8_APPS?process.env.S8_APPS.split(','):undefined;
 fs.mkdirSync(dir,{recursive:true});
 const size=s=>{const b=Buffer.from(s);return {raw:b.length,brotli:brotliCompressSync(b,{params:{[constants.BROTLI_PARAM_QUALITY]:11,[constants.BROTLI_PARAM_SIZE_HINT]:b.length}}).length}};
 const apps={conduit:'examples/conduit/src',todomvc:'tests/corpus/browser/direct/TodoMVC.beni',sternhalma:'examples/sternhalma/src',bike:'examples/bike-wars/src',table:'bench/ui/apps/beni/Main.beni'};
