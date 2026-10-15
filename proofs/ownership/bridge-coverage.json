@@ -1,0 +1,74 @@
+{
+  "programs": 116456,
+  "minimumFraction": 0.95,
+  "families": {
+    "fixture": {
+      "programs": 98,
+      "translated": 82
+    },
+    "sync": {
+      "programs": 44,
+      "translated": 14
+    },
+    "targeted": {
+      "programs": 348,
+      "translated": 128
+    },
+    "enumerate": {
+      "programs": 55966,
+      "translated": 27769
+    },
+    "general": {
+      "programs": 18984,
+      "translated": 2642
+    },
+    "declarations": {
+      "programs": 26040,
+      "translated": 2073
+    },
+    "identity-map": {
+      "programs": 1308,
+      "translated": 0
+    },
+    "library-pipeline": {
+      "programs": 1355,
+      "translated": 0
+    },
+    "branch-traversal": {
+      "programs": 1400,
+      "translated": 1400
+    },
+    "fresh-tower": {
+      "programs": 1368,
+      "translated": 1368
+    },
+    "captures": {
+      "programs": 1337,
+      "translated": 1337
+    },
+    "once-many-wrappers": {
+      "programs": 1384,
+      "translated": 1040
+    },
+    "indexed-chain": {
+      "programs": 1347,
+      "translated": 1097
+    },
+    "recursive-higher-order-limit": {
+      "programs": 1350,
+      "translated": 1350
+    },
+    "recursion": {
+      "programs": 1371,
+      "translated": 1371
+    },
+    "fresh-nested": {
+      "programs": 1395,
+      "translated": 1395
+    },
+    "escape-traversal": {
+      "programs": 1361,
+      "translated": 0
+    }
+  }
+}

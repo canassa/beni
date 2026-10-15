@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Opt-in shipping-checker negative controls. The live checkout is never edited.
-import { mkdtempSync, readFileSync, writeFileSync, rmSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync, rmSync, mkdirSync, existsSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -19,9 +19,9 @@ try {
   // worktree add requires an absent target; mkdtemp reserves the unique name.
   rmSync(work,{recursive:true}); must('git',['worktree','add','--detach',work,'HEAD']); attached=true;
   const source=resolve(work,'src/own/Ownership.zig'), original=readFileSync(source,'utf8');
-  must('zorg',['build','-j8']);
+  must('zorg',['build','-j8'],work);
   const baselineOut=resolve(dest,'baseline');
-  const baselineRun=run(process.execPath,[resolve(root,'proofs/ownership/scripts/bridge.mjs'),'--ci',`--out=${baselineOut}`,'--jobs=8','--no-build']);
+  const baselineRun=run(process.execPath,[resolve(root,'proofs/ownership/scripts/bridge.mjs'),'--ci',`--out=${baselineOut}`,`--compiler=${work}/zig-out/bin/beni`,'--jobs=8','--no-build']);
   writeFileSync(resolve(dest,'baseline.log'),baselineRun.stdout+baselineRun.stderr);
   if(baselineRun.status) throw Error('unmodified compiler baseline failed');
   const baseline=JSON.parse(readFileSync(resolve(baselineOut,'report.json'),'utf8'));
@@ -36,8 +36,16 @@ try {
     const out=resolve(dest,name);
     const checked=run(process.execPath,[resolve(root,'proofs/ownership/scripts/bridge.mjs'),'--ci',`--out=${out}`,`--compiler=${work}/zig-out/bin/beni`,'--jobs=8','--no-build']);
     writeFileSync(resolve(dest,`${name}.log`),checked.stdout+checked.stderr);
-    if(![0,1].includes(checked.status)) throw Error(`bridge execution failed for ${name}: ${checked.stderr}`);
-    const report=JSON.parse(readFileSync(resolve(out,'report.json'),'utf8'));
+    const reportPath=resolve(out,'report.json');
+    if(![0,1].includes(checked.status) || !existsSync(reportPath)) {
+      const failurePath=resolve(out,'failure.json');
+      const failure=existsSync(failurePath)?JSON.parse(readFileSync(failurePath,'utf8')):{message:checked.stderr};
+      const caught=/^dump\/enforcement mismatch:/.test(failure.message);
+      summary.push({hole:name,caught,caughtBySelfCheck:caught,failure});
+      console.log(`Zig hole ${name}: ${caught?'caught by dump/enforcement self-check':'ERROR'}`);
+      continue;
+    }
+    const report=JSON.parse(readFileSync(reportPath,'utf8'));
     const confirmed=report.cases.filter(c=>c.runtime.status==='confirmed');
     const added=report.cases.filter(c=>c.programLead && !baselineLeads.has(c.id));
     const addedSites=report.cases.flatMap(c=>c.siteLeads.filter(s=>!baselineSites.has(`${c.id}:${s}`)).map(site=>({id:c.id,site,runtime:c.runtime.status})));
