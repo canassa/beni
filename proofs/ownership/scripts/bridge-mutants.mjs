@@ -58,5 +58,11 @@ try {
   writeFileSync(resolve(dest,'report.json'),JSON.stringify(summary,null,2)+'\n');
   if(summary.some(s=>!s.caught)) process.exitCode=1;
 } finally {
-  if(attached) must('git',['worktree','remove','--force',work]);
+  if(attached) try {
+    const removed=run('git',['worktree','remove','--force',work]);
+    if(removed.status) throw Error(removed.stderr+removed.stdout);
+  } catch(error) {
+    console.error(`mutant cleanup failed (${work}): ${error.message}`);
+    process.exitCode=1;
+  }
 }
