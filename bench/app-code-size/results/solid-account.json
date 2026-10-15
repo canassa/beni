@@ -1,0 +1,120 @@
+{
+  "baseline": {
+    "raw": 48078,
+    "gzip": 14534,
+    "brotli": 13085
+  },
+  "areas": {
+    "views": {
+      "raw": 22602,
+      "cost": 4825,
+      "rows": [
+        {
+          "class": "html",
+          "title": "HTML template strings",
+          "raw": 5840,
+          "alone": 1132,
+          "ordered": 1132
+        },
+        {
+          "class": "tdecl",
+          "title": "template constants: template(…) call and binding",
+          "raw": 188,
+          "alone": 9,
+          "ordered": 8
+        },
+        {
+          "class": "walk",
+          "title": "clone and walk (cloneNode, firstChild/nextSibling)",
+          "raw": 2516,
+          "alone": 380,
+          "ordered": 437
+        },
+        {
+          "class": "insert",
+          "title": "insert(parent, accessor, marker) calls",
+          "raw": 1551,
+          "alone": 288,
+          "ordered": 283
+        },
+        {
+          "class": "effect",
+          "title": "render effects and their previous-value objects",
+          "raw": 1827,
+          "alone": 395,
+          "ordered": 417
+        },
+        {
+          "class": "write",
+          "title": "DOM writes (setAttribute, className, classList, textContent, value)",
+          "raw": 1059,
+          "alone": 268,
+          "ordered": 308
+        },
+        {
+          "class": "component",
+          "title": "component calls createComponent(C, {props}) and prop getters",
+          "raw": 3076,
+          "alone": 513,
+          "ordered": 576
+        },
+        {
+          "class": "control",
+          "title": "control flow components (For, Show, Suspense, Switch/Match)",
+          "raw": 1902,
+          "alone": 286,
+          "ordered": 382
+        },
+        {
+          "class": "event",
+          "title": "event wiring ($$click, $$clickData, addEventListener, delegateEvents) and handlers",
+          "raw": 2219,
+          "alone": 515,
+          "ordered": 547
+        },
+        {
+          "class": "state",
+          "title": "store/router access (useStore, createStore, setters, actions called)",
+          "raw": 256,
+          "alone": 44,
+          "ordered": 77
+        },
+        {
+          "class": "other",
+          "title": "other (component shells, expressions, punctuation)",
+          "raw": 2168,
+          "alone": 521,
+          "ordered": 658
+        }
+      ]
+    },
+    "logic": {
+      "raw": 7138,
+      "cost": 1944,
+      "rows": [
+        {
+          "class": "http",
+          "title": "HTTP agent: fetch wrapper and endpoint table",
+          "raw": 1693,
+          "alone": 514,
+          "ordered": 514
+        },
+        {
+          "class": "state",
+          "title": "stores and actions (createStore, setters, resources)",
+          "raw": 4111,
+          "alone": 1029,
+          "ordered": 1060
+        },
+        {
+          "class": "router",
+          "title": "hash router, lazy pages and startup",
+          "raw": 1334,
+          "alone": 322,
+          "ordered": 370
+        }
+      ]
+    }
+  },
+  "appCost": 6872
+}

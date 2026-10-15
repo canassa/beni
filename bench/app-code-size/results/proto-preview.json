@@ -1,0 +1,29 @@
+{
+  "before": {
+    "raw": 129468,
+    "gzip": 37220,
+    "brotli": 31609
+  },
+  "after": {
+    "raw": 128536,
+    "gzip": 37212,
+    "brotli": 31774
+  },
+  "saved": -165,
+  "handRaw": 1630,
+  "removedUnits": [
+    "Wk",
+    "Uk",
+    "Vk",
+    "Qk",
+    "Ok",
+    "Pk",
+    "Tk",
+    "Sk",
+    "Rk",
+    "Mj",
+    "jj",
+    "hj",
+    "ij"
+  ]
+}
