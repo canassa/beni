@@ -1,0 +1,61 @@
+-- ownership: a record update reads its old record (thesis §3.8, the
+-- holder rule; `evalRecordUpdate` uses its base for every field it keeps).
+-- `{ r | b = 2 }` copies `r.a`, so a list stored in `r` is still held by
+-- `r` at the update: pushing onto that list before the update is rejected,
+-- `alias`, `r.a` named as the holder (`pushThenUpdate`). The same holds
+-- when the record arrives as a parameter (`ofParam`), when the update
+-- keeps the field through a nested record (`nested`), and when the update
+-- runs in a branch (`inBranch`). In place, the updated record would carry
+-- the pushed list. An update that replaces the field holding the list
+-- does not keep it, so the push is accepted (`replaced`). The holder is
+-- the update itself, read after the write; the record built from it is
+-- born later and holds nothing at the push. Without the update counting
+-- as a use of `r`, every rejection here turns into an accept; before this
+-- fixture the gates saw that only as a lost `R` bit in other fixtures'
+-- summaries, and no verdict pinned it (the ownership oracle's adversarial
+-- review, 2026-10-15).
+pub pushThenUpdate : ⊤ → { p : List Int, q : List Int }
+pushThenUpdate ⊤ =
+    xs = [ 1, 2, 3 ]
+    r = { a = xs, b = 1 }
+    ys = List.push xs 9
+    r2 = { r | b = 2 }
+    { p = r2.a, q = ys }
+
+
+pub ofParam : List Int, Int → { a : List Int, b : Int } × List Int
+ofParam xs n =
+    r = { a = xs, b = n }
+    ys = List.push xs 9
+    ( { r | b = 2 }, ys )
+
+
+pub nested : ⊤ → { p : List Int, q : List Int }
+nested ⊤ =
+    xs = [ 1, 2, 3 ]
+    r = { inner = { a = xs }, b = 1 }
+    ys = List.push xs 9
+    r2 = { r | b = 2 }
+    { p = r2.inner.a, q = ys }
+
+
+pub inBranch : Bool → { p : List Int, q : List Int }
+inBranch flag =
+    xs = [ 1, 2, 3 ]
+    r = { a = xs, b = 1 }
+    ys = List.push xs 9
+    r2 =
+        if flag then
+            { r | b = 2 }
+        else
+            { a = [], b = 0 }
+    { p = r2.a, q = ys }
+
+
+pub replaced : ⊤ → { p : List Int, q : List Int }
+replaced ⊤ =
+    xs = [ 1, 2, 3 ]
+    r = { a = xs, b = 1 }
+    ys = List.push xs 9
+    r2 = { r | a = [] }
+    { p = r2.a, q = ys }
