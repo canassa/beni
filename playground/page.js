@@ -80,12 +80,13 @@ function selectedTab() {
   return document.querySelector("[data-tab][aria-selected=true]").dataset.tab;
 }
 
-// Show the tab `tab` of its tab list, and its panel, and hide the others.
+// Show the tab `tab` of its tab list, and the panel it controls, and hide
+// the others.
 function select(tab) {
   for (const other of tab.parentElement.querySelectorAll("[role=tab]")) {
     const selected = other === tab;
     other.setAttribute("aria-selected", String(selected));
-    $(other.dataset.tab ?? other.dataset.file).hidden = !selected;
+    $(other.getAttribute("aria-controls")).hidden = !selected;
   }
 }
 
@@ -230,7 +231,8 @@ function restyle() {
 
 // An edit of the CSS. A person's clears the link from the address, as an
 // edit of the source does, and restyles the running program. The page's
-// own (a sample, a link) is followed by a build, whose frame gets the CSS.
+// own (a sample, a link) does neither: a build follows it, whose new frame
+// gets the CSS. So code that replaces the CSS must also start a build.
 function cssEdited(byUser) {
   if (!byUser) return;
   if (location.hash !== "") history.replaceState(null, "", location.pathname + location.search);

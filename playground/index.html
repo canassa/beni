@@ -74,13 +74,14 @@
     </header>
     <p id="note">
       <code>browser-direct</code> is new. The samples here build for it today; some programs that build
-      for <code>browser-tea</code> do not build for it yet.
+      for <code>browser-tea</code> do not build for it yet. Licences of third-party files:
+      <a href="vendor/LICENSES.txt">the editor</a>, <a href="samples/LICENSES.txt">the samples</a>.
     </p>
     <main>
       <section class="pane" aria-label="Source">
         <nav class="tabs" role="tablist" aria-label="Files">
-          <button role="tab" data-file="editor" aria-selected="true">Main.beni</button>
-          <button role="tab" data-file="css-editor" aria-selected="false">style.css</button>
+          <button role="tab" data-file="editor" aria-controls="editor" aria-selected="true">Main.beni</button>
+          <button role="tab" data-file="css-editor" aria-controls="css-editor" aria-selected="false">style.css</button>
         </nav>
         <div id="editor" class="editor" role="tabpanel" aria-label="Main.beni"></div>
         <div id="css-editor" class="editor" role="tabpanel" aria-label="style.css" hidden></div>
@@ -88,10 +89,10 @@
       </section>
       <section class="pane" aria-label="Output">
         <nav class="tabs" role="tablist">
-          <button role="tab" data-tab="result" aria-selected="true">Result</button>
-          <button role="tab" data-tab="javascript" aria-selected="false">JavaScript</button>
-          <button role="tab" data-tab="types" aria-selected="false">Types</button>
-          <button role="tab" data-tab="ownership" aria-selected="false">Ownership</button>
+          <button role="tab" data-tab="result" aria-controls="result" aria-selected="true">Result</button>
+          <button role="tab" data-tab="javascript" aria-controls="javascript" aria-selected="false">JavaScript</button>
+          <button role="tab" data-tab="types" aria-controls="types" aria-selected="false">Types</button>
+          <button role="tab" data-tab="ownership" aria-controls="ownership" aria-selected="false">Ownership</button>
         </nav>
         <div id="result" role="tabpanel">
           <iframe id="frame" sandbox="allow-scripts" title="The compiled program"></iframe>
