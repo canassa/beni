@@ -3303,3 +3303,46 @@ LLVM unfiltered local test/format steps have only the two known case-folding
 failures; the hardware-budget gate is still owed on a suitable x86-64 Linux
 host. This supersedes the earlier CPU-fallback validation as a current gate
 claim, preserving the historical measurements and diary entries.
+
+### *Measured dispatch and shared update bodies, 2026-10-15*
+
+A value-message dispatcher shares the named constructor prefixes of adjacent
+analysis keys. It tests a prefix once before descending to its children;
+leaf handler arguments, key order, default priority and the final fallback
+remain unchanged. This is a decision tree over the existing analysis, not a
+new message classification or a change to group selection.
+
+When an update cannot be specialised to a constructor arm, compile its body
+once and call it from the handlers. Do not duplicate its entire decision tree
+in every leaf. A specialisable arm remains eligible for in-place lowering.
+Neither sharing changes evaluation order, incoming-model capture, commands,
+write sets or the visits = prediction invariant. CPU profiles, source columns
+and compression accounting must distinguish dispatch, the selected handler,
+shared template machinery and host work; sampled native time stays unassigned.
+
+*Shared root selector, 2026-10-15:* the computed root branch's selector is
+one function per mounted program, closing over the current model and the
+program's derived slots. Each selected handler calls it once at the same
+point, inside that handler's template substitution. It returns the existing
+arm-and-input array; mount, same-arm patch, title and commands retain their
+order. This shares code and V8 compilation, never a computed document or a
+previous handler's lexical inputs. Instance-dependent row/arm selectors keep
+their existing scope.
+
+*A single key, 2026-10-15:* a one-key program has no update duplication to
+share and retains its existing inline update. This also keeps static-page
+consumption and the small-program floor unchanged.
+
+*As measured, 2026-10-15:* [research 97](research/97-conduit-dispatch-profiles.md)
+finds first-use compilation of repeated unspecialisable update and computed-root
+selector bodies behind most of the excess sampled dispatcher time. Sharing
+those bodies changes Conduit's feed/favorite/editor medians from
+0.425/0.4075/0.450 ms to 0.340/0.340/0.3725 ms on the same machine; tea is
+0.3175/0.3475/0.4175 ms, with overlapping IQRs. Raw source falls 361,594 to
+209,384 B; as-served brotli falls only 38,030 to 37,768 B, still 6,379 B above
+tea. Parameterised template entries, consumer masks and their runtime remain
+priced costs. All 62 dispatches match prediction and criterion 7 does not fire.
+The complete report-87 sweeps have no slower-side disjoint-IQR before/after
+case; this does not discharge their older threshold misses. The Linux hardware
+budget gate remains owed; the local native/LLVM suites retain only the two
+known macOS case-folding failures.

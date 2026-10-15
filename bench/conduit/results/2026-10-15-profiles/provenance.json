@@ -1,0 +1,40 @@
+{
+  "compilerSha256": "c605026b529c7e80611cb70dadcb148c9e29897b87c6ab586d05a6c1e0417f40",
+  "compilerBaseCommit": "b8e375be392ab854aac2d93a3a70103cc3ba29d9",
+  "compilerBeforeSha256": null,
+  "compilerSourceDiffSha256": "6910e5a5f5136b3af50b2ebe29de4486d7f858cd5b8660e30f058d688f509b2b",
+  "rebaseMaster": "d9ae082e0",
+  "beforeCommit": "ff82485e5",
+  "profileFilesPerPack": 270,
+  "timingSourceSha256": {
+    "browser-tea-release": "262ea8b11c0d83a24afe54e228ee0de088a6b417d7c4c34feee7cae86000743e",
+    "browser-direct-start-release": "138720197b12cbeccc6ea5275029d5a2e48fac9010a967c5085ca43a1a24db67",
+    "browser-direct-release": "be3e354a67f1d1c0291592bdd31c0269aa36dad1a4b3a901fc918fd10ba661ee"
+  },
+  "uncompressedPackSha256": {
+    "cpu": "fe33f19c64412a05550f2f18a99bf24dc74bfd8d5d0f1f96d7fdaa71df4675e1",
+    "allocations": "1795f05749e767d651bd1c8a3d92a2c84e4677dbf48f35629d79e3542b94448b"
+  },
+  "archiveFilesSha256": {
+    "after-direct.tsv": "9c76b0b97cfadb09c6e605628d72112885f3fa92ee1a50915d65de7ff43d16b7",
+    "after-tea.tsv": "0d5fdebf8083d5ce806552aba6fbdf6d4913f9c77ea0349a48f3155dbb550871",
+    "after.mjs.gz": "f4df9eca68deb1cf681b0b950c34f5b7ef427257ef1e0b902f1039b49dfc4cc2",
+    "allocation-attribution.json": "caf85bc8716a5f81c377740481596d96aee1825133f9a2f2690d5654179c4073",
+    "allocations.json.gz": "51ce472fbaff5a68292e9c5d79282daf950b9d37cd50b117fe33d5d7a2d8eacb",
+    "before-direct.tsv": "719dc91aac03f80a6baa485e76c09cc0bc4b45de5851a3bc03041f2e2856aa87",
+    "before-tea.tsv": "0d5fdebf8083d5ce806552aba6fbdf6d4913f9c77ea0349a48f3155dbb550871",
+    "before.mjs.gz": "3a29e05f218025fc99ee59cea5e1488b4a35ec8c89bff2a8a2427f302015ace1",
+    "code-excerpts.json": "f49b33084779c14c754468f4b3652d7fcc81413056411af3c79ed11fe73de092",
+    "counts.json": "66017f8ef7544b60c6db0416904840743a3d312db660a80a562de4f73bf2c764",
+    "cpu-attribution.json": "c812a0ea0b5f90e07a6b58069d77ed5b974092187629c488cba63a32ef773da6",
+    "cpu.json.gz": "567db7594779fadb21a378319412ee21687b90a3aaaa7547b21b4c6015af8274",
+    "floor.jsonl": "d74913993ef1043f9d4ffa636cae5162059bbc2490dd22081f7891b9e46543a8",
+    "s0.json": "fa90be654d9142490afbc59b06b8a49904a1619ce5dda5a3d40f6436530c2fb8",
+    "sweep-code.json": "8f5eac376281fb3f1eeb2d56ef9d321bb98b0b16eaebb70d29d098a03af7ab66",
+    "sweeps.json": "aaf76eeb5067be53a3dab7fa0b3689553cdb1c644645dee468b2b185aafb6344",
+    "tea.mjs.gz": "99cf0a9183f904fb9955d0fde4902bc3d376c028f534aba0a356299589f92705",
+    "timing.json": "bc2d030fd30b5f2e47532fd25ee4928777d7d53fcb93ae793deae6c1ed5ad4a4",
+    "touched-controls.json": "dc9021494d76807108169fe375667c5a06a4dc90a71f6d7dfc614ab76ab94753",
+    "validation.json": "46246ee48cc92785879ef36f06018950e7c4ffeb5fe106cbb51d4a4b1063f5e3"
+  }
+}

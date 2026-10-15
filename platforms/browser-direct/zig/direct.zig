@@ -610,6 +610,7 @@ const Site = struct {
 /// for a branch of the view's root and a field `b<op>` of the instance it
 /// is in otherwise, and per arm a site, or a value slot (`value`).
 const Branch = struct {
+    choose: ?m.Name = null,
     node: m.Node.Index,
     site: *Site,
     op: u32,
@@ -3734,6 +3735,27 @@ const Page = struct {
     fn chooseArm(pg: *Page, blk: m.Block, br: *Branch, inst: ?Path) m.Error!Chosen {
         const cx = pg.cx;
         const js = pg.jsb();
+        // A computed root is identical code in mount and every selected
+        // handler. Share the selector, not its result or substitution.
+        if (br.node == .none and !br.show) {
+            if (br.choose == null) {
+                const body = try js.block();
+                pg.atNode(br.node);
+                const value = value: {
+                    try pg.enterOp(body, br.site, br.ctx, null, null, null, try pg.branchValues(br), null);
+                    defer pg.leave();
+                    break :value try cx.programBranchChoose(body, br.node);
+                };
+                try js.@"return"(body, value);
+                br.choose = try cx.fresh("$chooseRoot");
+                try js.constant(pg.body, br.choose.?, try js.arrow(&.{}, body));
+            }
+            const av = try cx.fresh("$a");
+            const n = try cx.fresh("$n");
+            try js.constant(blk, av, try js.call(try pg.ident(br.choose.?), &.{}));
+            try js.constant(blk, n, try js.index(try pg.ident(av), try pg.num(0)));
+            return .{ .n = n, .a = av };
+        }
         pg.atNode(br.node);
         try pg.enterOp(blk, br.site, br.ctx, inst, null, null, try pg.branchValues(br), null);
         defer pg.leave();

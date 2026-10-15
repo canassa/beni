@@ -179,6 +179,7 @@ const ValueSlot$main = Tea$sandbox(($root$1, $t$2) => {
       return;
     }
     $hPick$65($msg$68.a);
+    return;
   };
   $root$1.$$root = $dispatch$67;
   {

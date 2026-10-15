@@ -10936,7 +10936,7 @@ pub const Lowerer = struct {
             if (std.mem.eql(u8, field_name, "onUrlRequest")) pc.on_url_request = field.value;
             if (std.mem.eql(u8, field_name, "onUrlChange")) pc.on_url_change = field.value;
         }
-        pc.update_inline = l.in.direct != null and l.updateInlinable(pc.update);
+        pc.update_inline = l.in.direct != null and l.updateInlinable(pc.update, if (pc.direct) |d| d.keys.len > 1 else false);
         return pc;
     }
 
@@ -10944,21 +10944,47 @@ pub const Lowerer = struct {
     /// can be written from in place (version 1.7): a top-level function of
     /// this module of two parameters that takes no evidence, or a lambda of
     /// two written in the record.
-    fn updateInlinable(l: *Lowerer, field: ?Inst.Index) bool {
+    fn updateInlinable(l: *Lowerer, field: ?Inst.Index, share: bool) bool {
         const f = field orelse return false;
         const d = l.bir.instData(f);
         switch (l.bir.instTag(f)) {
-            .lambda => return l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.lhs))), Inst.Index).len == 2,
+            .lambda => {
+                const params = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.lhs))), Inst.Index);
+                return params.len == 2 and (!share or l.updateArmShape(params, @fromBackingInt(@intCast(d.rhs))));
+            },
             .top => {
                 if (d.lhs >= l.bir.decls.len) return false;
                 const decl = l.bir.decls[d.lhs];
                 if (decl.kind != .value or decl.params != 2 or decl.body.unwrap() == null) return false;
                 if (Convention.ofDecl(l.in.dispatch, l.bir, d.lhs).evidence != 0) return false;
                 if (l.in.dispatch.effectDecl(d.lhs).twin) return false;
-                return l.paramsOf(d.lhs).len == 2;
+                return l.paramsOf(d.lhs).len == 2 and (!share or l.updateArmShape(l.paramsOf(d.lhs), l.bodyOf(d.lhs)));
             },
             else => return false,
         }
+    }
+
+    /// Only consume a body that `specialisedArm` can split. A tuple
+    /// scrutinee, derived scrutinee or nested parameter pattern otherwise
+    /// copies the complete update into every handler.
+    fn updateArmShape(l: *Lowerer, params: []const Inst.Index, body: Inst.Index) bool {
+        if (params.len != 2 or l.bir.instTag(params[0]) != .pat_var or l.bir.instTag(body) != .case) return false;
+        const data = l.bir.instData(body);
+        const subject: Inst.Index = @fromBackingInt(@intCast(data.lhs));
+        if (l.bir.instTag(subject) != .local or l.bir.instData(subject).lhs != l.bir.instData(params[0]).lhs) return false;
+        for (l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(data.rhs))), Inst.Index)) |branch| {
+            if (l.bir.instTag(branch) != .branch) return false;
+            const pattern: Inst.Index = @fromBackingInt(@intCast(l.bir.instData(branch).lhs));
+            switch (l.bir.instTag(pattern)) {
+                .pat_ctor => for (l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(l.bir.instData(pattern).rhs))), Inst.Index)) |sub| switch (l.bir.instTag(sub)) {
+                    .pat_var, .pat_wild, .pat_unit => {},
+                    else => return false,
+                },
+                .pat_wild, .pat_var => {},
+                else => return false,
+            }
+        }
+        return true;
     }
 
     /// The `view` and `update` declarations the hook consumes: a function
@@ -13487,21 +13513,43 @@ pub const Lowerer = struct {
         return .{ .value = @fromBackingInt(@intCast(value.int())) };
     }
 
-    /// `cx.programDispatch`: each key's test along its steps, in the order
-    /// of the keys, and its handler called with what it takes — the fields
-    /// of a key of one named constructor, the message otherwise; the last
-    /// key is tested by nothing.
+    /// Share adjacent keys' constructor prefixes; preserve priority and
+    /// the final unconditional fallback (2026-10-15 amendment).
     fn directDispatch(l: *Lowerer, block: beni_markup.Block, msg: Node.Index, handlers: []const JsIr.NameIndex) Allocator.Error!void {
-        const st = l.mk.?;
-        const p = st.pos;
         var stmts: StmtList = .empty;
-        const keys = l.directKeys();
-        for (keys, 0..) |key, k| {
-            if (k >= handlers.len) break;
+        const count = @min(l.directKeys().len, handlers.len);
+        if (count > 0) {
+            try l.dispatchKeys(&stmts, msg, handlers, 0, count - 1, 0);
+            try l.dispatchLeaf(&stmts, msg, handlers, count - 1);
+        }
+        try l.mk.?.blocks.items[@backingInt(block)].appendSlice(l.scratch, stmts.items);
+    }
+
+    fn sameDispatchStep(a: Direct.Step, b: Direct.Step) bool {
+        if (a.named != b.named or !std.meta.eql(a.ctor, b.ctor) or a.access.len != b.access.len) return false;
+        for (a.access, b.access) |x, y| if (!std.meta.eql(x, y)) return false;
+        return true;
+    }
+
+    fn dispatchKeys(l: *Lowerer, out: *StmtList, msg: Node.Index, handlers: []const JsIr.NameIndex, lo: usize, hi: usize, depth: usize) Allocator.Error!void {
+        const p = l.mk.?.pos;
+        var k = lo;
+        while (k < hi) {
             const steps = l.directSteps(@intCast(k));
+            if (depth >= steps.len) {
+                try l.dispatchLeaf(out, msg, handlers, k);
+                return;
+            }
+            const step = steps[depth];
+            var end = k + 1;
+            while (end < hi) : (end += 1) {
+                const next = l.directSteps(@intCast(end));
+                if (next.len <= depth or !sameDispatchStep(step, next[depth])) break;
+            }
+            var inner: StmtList = .empty;
+            try l.dispatchKeys(&inner, msg, handlers, k, end, depth + 1);
             var condition: ?Node.Index = null;
-            if (k + 1 < keys.len) for (steps) |step| {
-                if (!step.named) continue;
+            if (step.named) {
                 var subject = msg;
                 for (step.access) |a| switch (a) {
                     .ctor => |c| {
@@ -13511,23 +13559,25 @@ pub const Lowerer = struct {
                     .record => |field| subject = try l.fieldMember(subject, field, p),
                     .tuple => |i| subject = try l.member(subject, try l.slotName(i), p),
                 };
-                const rt = l.directCtor(step.ctor) orelse continue;
-                const t = try l.ctorIs(subject, rt[0], rt[1], p) orelse continue;
-                condition = if (condition) |c| try l.binary(.logical_and, c, t, p) else t;
-            };
-            const args = try l.scratch.alloc(Node.Index, key.params);
-            const fields: ?struct { CtorRep, Symbol } = if (steps.len == 1 and steps[0].named) l.directCtor(steps[0].ctor) else null;
-            for (args, 0..) |*a, i| a.* = if (fields) |rt| try l.ctorField(msg, rt[0], @intCast(i), p) else msg;
-            const call_ = try l.call(try l.ident(handlers[k], p), args, p);
-            const stmt = try l.add(.expr_stmt, p, call_.int(), Node.Data.unused);
-            if (condition) |c| {
-                try l.ifStatement(&stmts, c, &.{ stmt, try l.add(.return_stmt, p, @backingInt(Node.OptionalIndex.none), Node.Data.unused) }, p);
-            } else {
-                try stmts.append(l.scratch, stmt);
-                break;
+                if (l.directCtor(step.ctor)) |rt| condition = try l.ctorIs(subject, rt[0], rt[1], p);
             }
+            if (condition) |c| {
+                try l.ifStatement(out, c, inner.items, p);
+            } else try out.appendSlice(l.scratch, inner.items);
+            k = end;
         }
-        try st.blocks.items[@backingInt(block)].appendSlice(l.scratch, stmts.items);
+    }
+
+    fn dispatchLeaf(l: *Lowerer, out: *StmtList, msg: Node.Index, handlers: []const JsIr.NameIndex, k: usize) Allocator.Error!void {
+        const p = l.mk.?.pos;
+        const key = l.directKeys()[k];
+        const steps = l.directSteps(@intCast(k));
+        const args = try l.scratch.alloc(Node.Index, key.params);
+        const fields: ?struct { CtorRep, Symbol } = if (steps.len == 1 and steps[0].named) l.directCtor(steps[0].ctor) else null;
+        for (args, 0..) |*a, i| a.* = if (fields) |rt| try l.ctorField(msg, rt[0], @intCast(i), p) else msg;
+        const called = try l.call(try l.ident(handlers[k], p), args, p);
+        try out.append(l.scratch, try l.add(.expr_stmt, p, called.int(), Node.Data.unused));
+        try out.append(l.scratch, try l.add(.return_stmt, p, @backingInt(Node.OptionalIndex.none), Node.Data.unused));
     }
 
     /// A markup root that is a value — outside the `view` a program is

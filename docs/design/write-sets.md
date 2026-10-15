@@ -2162,3 +2162,12 @@ is not a model write and never widens a key's write set. Pure opaque calls
 retain their argument dependencies. Debug's explicit every-render handling
 is unchanged. Thus passing a clock reading to a pure view helper cannot
 turn the reading into a constant. Only holes depending on `ω` are selected.
+
+### *Dispatcher consumption, 2026-10-15*
+
+The browser-direct consumer may share adjacent keys' identical constructor
+steps in a decision tree. This does not merge keys or their write sets: each
+leaf still selects its original handler and parameter convention. Defaults
+retain source priority and the final fallback is unchanged. Update bodies
+that have no constructor-specialised arm may be shared across handlers;
+the consumer matrix and expected group visits are independent of that choice.
