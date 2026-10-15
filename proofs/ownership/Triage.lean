@@ -28,12 +28,17 @@ def judge (out : IO.FS.Handle) (id phase : String) (p : Program) : IO Unit := do
     | .ok t => pure t | .error e => throw (IO.userError s!"{id}: {e}")
   let a ← match ValueSemantics.run p with
     | .ok t => pure t | .error e => throw (IO.userError s!"{id} value: {e}")
-  let b ← match InPlaceSemantics.run p with
-    | .ok t => pure t | .error e => throw (IO.userError s!"{id} in-place: {e}")
+  -- A value run that finishes and an in-place run that fails (a construction
+  -- whose later spread is its own growing base) is a divergence, as in
+  -- `Oracle.compare`.
+  let (diverges, inPlace) := match InPlaceSemantics.run p with
+    | .ok b => (a != b, traceJson b)
+    | .error e => (true, "{\"error\":" ++ Bridge.quote e ++ "}")
   let reason := match check p with | .ok _ => "" | .error e => e
   out.putStrLn ("{\"id\":" ++ Bridge.quote id ++ ",\"phase\":" ++ Bridge.quote phase ++
-    ",\"diverges\":" ++ toString (a != b) ++ ",\"lean\":" ++ Bridge.quote reason ++
-    ",\"value\":" ++ traceJson a ++ ",\"inPlace\":" ++ traceJson b ++
+    ",\"diverges\":" ++ toString diverges ++ ",\"lean\":" ++ Bridge.quote reason ++
+    ",\"writes\":" ++ toString (InPlaceSemantics.writeCount p) ++
+    ",\"value\":" ++ traceJson a ++ ",\"inPlace\":" ++ inPlace ++
     ",\"core\":" ++ Bridge.arr [Bridge.arr (p.declarations.map Bridge.decl), Bridge.expr p.main] ++ "}")
 
 def main (args : List String) : IO Unit := do
@@ -72,6 +77,11 @@ def main (args : List String) : IO Unit := do
       let ((_, p), next) := (Oracle.generateVersion 5).run state
       state := next
       emit s!"seed-{seed}-{i}" p
+    let mut state6 := seed
+    for i in List.range 20000 do
+      let ((_, p), next) := (Oracle.generateVersion 6).run state6
+      state6 := next
+      emit s!"v6-{seed}-{i}" p
   unless (← seen.get).size == ids.size do throw (IO.userError "missing original leads")
   out.flush
   IO.println s!"judged {ids.size} originals and minima"

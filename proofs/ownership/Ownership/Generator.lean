@@ -483,6 +483,10 @@ def handedOver (callee : Var → Option Nat) : Expr → List Var
       (match body with | .atom b => (atomRoot b).toList | _ => [])
   | .traverse _ src init _ _ _ _ => (atomRoot src).toList ++ (atomRoot init).toList
   | .prim (.literal (.list _)) args => args.filterMap atomRoot
+  -- A construction writes its base and stores its items (v6 only).
+  | .prim (.construct spreads) args =>
+    ((args.zip spreads).zipIdx.filter fun ((_, spread), i) => !spread || i == spreads.idxOf true).filterMap
+      fun ((a, _), _) => atomRoot a
   | .app f args =>
     let positions := match atomRoot f >>= callee with
       | some d => if d < decls.length then handedArguments d else List.range args.length
@@ -1160,8 +1164,9 @@ def generatedTable : Gen Table := do
 
 /-- Generator v5's general families: 1–12 moves, including conditionals over
     moves; with `declarations`, after a generated table the moves may call. -/
-def generalV5 (declarations : Bool) : Gen (List String × Program) := do
-  let t ← if declarations then generatedTable else pure []
+def generalV5 (declarations : Bool) (extra : List (String × Move) := [])
+    (table : Gen Table := generatedTable) : Gen (List String × Program) := do
+  let t ← if declarations then table else pure []
   -- With a table, chains are shorter (1–6 moves): the table is what the
   -- family is for, and a long chain mostly adds unrelated rejections.
   let length ← draw (if declarations then 6 else 12)
@@ -1188,7 +1193,103 @@ def generalV5 (declarations : Bool) : Gen (List String × Program) := do
       next := next + more.length
       bs := bs ++ more
     return ([], wrap (next - bs.length) bs (← finishV5 env))
-  let (names, rest) ← chainWith (movesFor t) true fin (length + 1) 1 [(.var 0, tL)]
+  let (names, rest) ← chainWith (movesFor t ++ extra) true fin (length + 1) 1 [(.var 0, tL)]
   return (names, { declarations := decls ++ t.map Prod.snd, main := .letE 0 first rest })
+
+/-! ## Generator v6: constructions, views and record updates (2026-10-15)
+
+v5 never draws these, so its streams are unchanged. v6 adds them to the main
+chain's moves and adds a declaration kind that appends onto a parameter. A
+construction's other operand is often its base itself, an alias, a view of it
+or a copy, and a view is often followed by a write of it or of its source. -/
+
+/-- A spread operand for a construction over `base`, bound first if new. -/
+def spreadOperand (next : Nat) (env : Env) (base : Atom) : Gen (List (Expr × Ty) × Atom) := do
+  match ← draw 6 with
+  | 0 => pure ([], base)
+  | 1 => do pure ([], ← anyList env)
+  | 2 => pure ([(.prim (.view true) [base], tL)], v next)
+  | 3 => pure ([(.prim .copy [base], tL)], v next)
+  | _ => do pure ([(← litList env, tL)], v next)
+
+def constructionMoves : List (String × Move) := [
+  ("append", fun next env => do
+    let a ← anyList env
+    let (bs, b) ← spreadOperand next env a
+    pure (bs ++ [(.prim (.construct [true, true]) [a, b], tL)])),
+  ("append-chain", fun next env => do
+    let a ← anyList env
+    let (bs, b) ← spreadOperand next env a
+    let (cs, c) ← spreadOperand (next + bs.length) env a
+    pure (bs ++ cs ++ [(.prim (.construct [true, true, true]) [a, b, c], tL)])),
+  ("spread-items", fun next env => do
+    let a ← anyList env
+    let (bs, b) ← spreadOperand next env a
+    let (shape, args) ← match ← draw 4 with
+      | 0 => do pure ([true, false], [a, ← number env])
+      | 1 => do pure ([false, true, false], [← number env, a, ← number env])
+      | 2 => do pure ([true, false, true], [a, ← number env, b])
+      | _ => do pure ([false, true, true, false], [← number env, a, b, ← number env])
+    pure (bs ++ [(.prim (.construct shape) args, tL)])),
+  ("nested-append", fun next env => withNested next env fun next n => do
+    match ← draw 3 with
+    | 0 => do pure [(.prim (.construct [true, false]) [n, ← anyList env], tN)]
+    | 1 => do
+      let m ← match ← nestedOrNew env with | some m => pure m | none => pure n
+      pure [(.prim (.construct [true, true]) [n, m], tN)]
+    | _ => do pure [(.prim (.literal tL) [← anyList env], tN), (.prim (.construct [true, true]) [n, v next], tN)]),
+  ("view", fun next env => do
+    let a ← anyList env
+    let front := (← draw 3) != 0
+    let r := v next
+    let after : List (Expr × Ty) ← match ← draw 5 with
+      | 0 => do pure [(.prim .push [a, ← number env], tL)]
+      | 1 => do pure [(.prim .set [r, ← index, ← number env], tL)]
+      | 2 => do pure [(.prim .push [r, ← number env], tL)]
+      | 3 => do pure [(.prim .at [r, ← index, .int 0], .int)]
+      | _ => pure []
+    pure ((.prim (.view front) [a], tL) :: after)),
+  ("nested-view", fun next env => withNested next env fun next n => do
+    let x := sv next 0
+    let target ← pick [n, v next] n
+    pure [(.prim (.view ((← draw 2) == 0)) [n], tN),
+      (.focus target (.int 0) x (.prim .push [v x, ← number env]), tN)]),
+  ("record-update", fun next env => do
+    let rs := ofTy env tR
+    let (bs, r) ← if rs.isEmpty then do pure ([(.prim .record [← anyList env, ← anyList env], tR)], v next)
+      else do pure ([], ← pickRecent rs)
+    let fields ← if (← draw 2) == 0 then do pure [Atom.field r 0, ← anyList env]
+      else do pure [← anyList env, Atom.field r 1]
+    pure (bs ++ [(.prim .record fields, tR)]))]
+
+/-- Appends onto its first parameter (a flat or nested list) in place: from a
+    second list parameter, a fresh list or items around it. -/
+def constructDecl (name : String) : Gen Decl := do
+  let nested := (← draw 3) == 0
+  let p0 := if nested then tN else tL
+  let ps := [p0, tL]
+  let env := bodyEnv ps
+  let first ← litList env
+  let w : Expr ← if nested then
+      match ← draw 2 with
+      | 0 => pure (.prim (.construct [true, false]) [v 0, v 1])
+      | _ => pure (.prim (.construct [false, true, false]) [v 1, v 0, v 2])
+    else
+      match ← draw 4 with
+      | 0 => pure (.prim (.construct [true, true]) [v 0, v 1])
+      | 1 => pure (.prim (.construct [true, true]) [v 0, v 2])
+      | 2 => do pure (.prim (.construct [true, false, true]) [v 0, ← number env, v 1])
+      | _ => do pure (.prim (.construct [false, true, false]) [← number env, v 0, ← number env])
+  let r ← pick [p0, p0, .int] p0
+  return { name, parameters := ps, result := r,
+           body := .letE 2 first (.letE 3 w (if r == .int then .prim .length [v 3] else .atom (v 3))) }
+
+/-- v5's table, then with probability 1/2 a declaration that constructs. -/
+def generatedTableV6 : Gen Table := do
+  let t ← generatedTable
+  if (← draw 2) == 0 then
+    let i := decls.length + t.length
+    return t ++ [(i, ← constructDecl s!"writer-construct{i}")]
+  return t
 
 end Ownership.Generator

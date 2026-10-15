@@ -64,6 +64,9 @@ inductive Mutant where
   | modelInvariant    -- grant separation to every model at entry
   | branchEscapes       -- a branch drops escapes from before the case
   | onceLive            -- liveness drops the capture paths of once closures
+  -- Constructions and views (the oracle review, 2026-10-15).
+  | constructDisjoint   -- a construction's Disjoint ignores its other operands
+  | viewAlias           -- a list pattern's spread binding forgets its source
   deriving Repr, BEq, Inhabited
 
 def Mutant.all : List Mutant :=
@@ -72,7 +75,7 @@ def Mutant.all : List Mutant :=
    .callsEdge, .callbackWrites, .callbackAliases, .callbackEnv, .callbackEscapes,
    .callbackRequires, .requiresEdge, .forwardGuards, .transferSupplies, .onceThroughCall, .branchLive,
    .branchClosure, .shadowing, .sharedRoots, .sharedFn, .manyOff, .noScope, .setExclusive, .onceLive, .branchEscapes, .prependBase, .constructorArgs, .eventCapture, .resultPositions,
-   .taggerNeed, .captureEmpty, .forwardNeed, .foldInvariant, .modelInvariant]
+   .taggerNeed, .captureEmpty, .forwardNeed, .foldInvariant, .modelInvariant, .constructDisjoint, .viewAlias]
 
 def Mutant.name : Mutant → String
   | .initFrame => "init-frame"
@@ -103,6 +106,7 @@ def Mutant.name : Mutant → String
   | .foldInvariant => "fold-invariant" | .modelInvariant => "model-invariant"
   | .branchEscapes => "branch-escapes"
   | .setExclusive => "set-exclusive" | .onceLive => "once-live"
+  | .constructDisjoint => "construct-disjoint" | .viewAlias => "view-alias"
 
 def Mutant.parse (s : String) : Option Mutant := Mutant.all.find? (·.name == s)
 
@@ -110,6 +114,7 @@ def Mutant.parse (s : String) : Option Mutant := Mutant.all.find? (·.name == s)
     these controls. Main enforces every one in CI and `controls`. -/
 def Mutant.enumeratorRequired : Mutant → Bool
   | .initFrame => true
+  | .constructDisjoint | .viewAlias => true
   | .initAuthority => true
   | .earlyErr | .recursivePayload | .initRetained | .initShared => true
   | .armResult | .blockResult | .captureRead | .foldLoan | .recursiveCapture | .calleeCapture => true
@@ -124,6 +129,7 @@ def Mutant.enumeratorRequired : Mutant → Bool
     checker-level probe. `ownership controls` reports all four. -/
 def Mutant.generatorOptional : Mutant → Bool
   | .initFrame => true
+  | .constructDisjoint | .viewAlias => true
   | .initAuthority => true
   | .earlyErr | .recursivePayload | .initRetained | .initShared => true
   | .armResult | .blockResult | .captureRead | .foldLoan | .recursiveCapture | .calleeCapture => true
@@ -136,6 +142,7 @@ def Mutant.generatorOptional : Mutant → Bool
     summary checker implements: inert in the per-call checker. -/
 def Mutant.summaryRow : Mutant → Bool
   | .initFrame => true
+  | .constructDisjoint | .viewAlias => true
   | .initAuthority => true
   | .earlyErr | .recursivePayload | .initRetained | .initShared => true
   | .armResult | .blockResult | .captureRead | .foldLoan | .recursiveCapture | .calleeCapture => true

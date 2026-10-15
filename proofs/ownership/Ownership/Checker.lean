@@ -527,6 +527,37 @@ def primitive (ctx : Context) (site : List Nat) (op : Prim) (args : List Abstrac
     -- callback must allocate; no representation-based specialization here.
     if ctx.config.has .closeSource then pure (.list cs elem ex)
     else pure (.list (union cs ds) (elem.join old) ex)
+  | .construct spreads, avs =>
+    -- §3.2/§5: one demand on the base's cells, after every operand is
+    -- evaluated. Disjoint covers every other operand path: the items, each
+    -- later spread (`xs ++ xs` included) and the base's own contents.
+    let b := spreads.idxOf true
+    match avs[b]? with
+    | some (.list cs elem ex) => do
+      let operands := ((avs.zip spreads).zipIdx.filter (·.2 != b)).map (·.1)
+      let stored := operands.map fun (a, spread) =>
+        if spread then (match a with | .list _ e _ => e | x => x) else a
+      let others := operands.foldl (fun os (a, _) => union os a.cells) elem.cells
+      demand ctx.config cs later (if ctx.config.has .constructDisjoint then elem.cells else others)
+      for (a, spread) in operands do
+        if spread then noteRead a.roots
+      -- A spread stores every position of its operand: its own certificate.
+      let spreadCertificate := operands.foldl (fun (k : Certificate) (a, spread) =>
+        if !spread then k else match a with
+          | .list _ _ e => k.meet e
+          | _ => k.meet false) true
+      let exclusive := ex.deep && spreadCertificate.deep && storeExclusive ctx stored later elem.cells
+      let spine := ex.spine && spreadCertificate.spine && storeSpines ctx stored later elem.cells &&
+        (ctx.config.has .resultPositions ||
+          (containers elem).all (fun (_, old) => individuallyOwned ctx old &&
+            !cellOverlap old (stored.foldl (fun cs a => union cs a.cells) [])))
+      pure (.list cs (stored.foldl Abstract.join elem) ⟨exclusive, spine⟩)
+    | _ => if avs.any (· == .bottom) then pure .bottom else throw "abstract construction shape"
+  | .view _, [.list cs elem ex] => do
+    -- A view shares its source's array (§5, *Views*); an empty source gives
+    -- a fresh `[]`. The `view-alias` control forgets the sharing.
+    noteRead cs
+    pure (.list (if ctx.config.has .viewAlias then [fresh] else union cs [fresh]) elem ex)
   | _, _ =>
     if args.any (· == .bottom) then pure .bottom else throw s!"abstract primitive shape: {repr op}"
 

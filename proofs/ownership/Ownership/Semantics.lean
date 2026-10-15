@@ -125,6 +125,15 @@ def prim (op : Prim) (vs : List Value) : M Value := do
   | .owned _, [x, _] => pure x
   | .copy, [.list xs] => pure (.list xs)
   | .close, [.list xs] | .close, [.list xs, .list _] => pure (.list xs)
+  | .construct spreads, vs => do
+    let mut out : List Value := []
+    for (v, spread) in vs.zip spreads do
+      if spread then
+        let .list xs := v | throw "value construction operand"
+        out := out ++ xs
+      else out := out ++ [v]
+    pure (.list out)
+  | .view front, [.list xs] => pure (.list (if front then xs.drop 1 else xs.dropLast))
   | _, _ => throw "value primitive shape"
 
 def eval (depth : Nat) (ds : List Decl) (self : Option (Nat × List Value))
@@ -256,6 +265,11 @@ structure State where
       interpreter itself. -/
   logCalls : Bool := false
   calls : Array CallRecord := #[]
+  /-- Views (`Prim.view`): `(view, source, front)`. A view is a heap array of
+      its own whose contents are kept equal to its source's suffix (`front`)
+      or prefix at every write, so every reader below is unchanged. A write to
+      either side is seen by the other: the most aliased in-place lowering. -/
+  links : List (Nat × Nat × Bool) := []
 abbrev M := StateT State (Except String)
 
 def countWrite : M Unit := modify fun s => { s with writes := s.writes + 1 }
@@ -286,13 +300,50 @@ def write (c : Nat) (xs : List Value) : M Value := do
   modify fun s => { s with heap := s.heap.set! c xs }
   pure (.ref c)
 
+/-- What a view of `source` holds: all but its first element, or all but its
+    last. A view is made only of a nonempty list, and no writer shortens one. -/
+def viewOf (front : Bool) (source : List Value) : List Value :=
+  if front then source.drop 1 else source.dropLast
+
+/-- After a write through a view, write its source to match, up to the
+    array no view is made of; that array is returned. -/
+def spliceUp : Nat → Nat → M Nat
+  | 0, _ => throw "view chain exhausted fuel"
+  | n + 1, c => do
+    match (← get).links.find? (·.1 == c) with
+    | none => pure c
+    | some (_, source, front) =>
+      let base ← array source
+      let xs ← array c
+      let _ ← write source (if front then base.take 1 ++ xs else xs ++ base.drop (base.length - 1))
+      spliceUp n source
+
+/-- Refresh every view of `c`, and theirs, from what `c` now holds. -/
+def refreshDown : Nat → Nat → M Unit
+  | 0, _ => throw "view chain exhausted fuel"
+  | n + 1, c => do
+    for (view, source, front) in (← get).links do
+      if source == c then
+        let _ ← write view (viewOf front (← array c))
+        refreshDown n view
+
+/-- A write that every view of the array, and every array it is a view of,
+    sees. Without views it is exactly `write`. -/
+def writeLinked (c : Nat) (xs : List Value) : M Value := do
+  let r ← write c xs
+  let s ← get
+  if s.links.isEmpty then return r
+  let root ← spliceUp (s.heap.size + 1) c
+  refreshDown (s.heap.size + 1) root
+  pure r
+
 /-- A program-level write (`set`, `push`, focus write-back), counted only
     when it changes the array: an out-of-range `set` or a focus that stores
     the same element back is not an in-place write anyone could see. -/
 def writeCounted (c : Nat) (xs : List Value) : M Value := do
   let old ← array c
   if !(old == xs) then countWrite
-  write c xs
+  writeLinked c xs
 
 def snapshot (heap : Array (List Value)) : Nat → Value → Except String Observation
   | 0, _ => throw "snapshot exhausted depth (possibly cyclic heap)"
@@ -365,6 +416,43 @@ def prim (op : Prim) (vs : List Value) : M Value := do
     -- Dedicated, unobserved identity shortcut; both branches contain the same
     -- callback results. No ordinary user identity operation exists in this core.
     if (← array c) == (← array source) then pure (.ref source) else pure (.ref c)
+  | .construct spreads, vs => do
+    -- From the base, left to right (§3.2, thesis Change 1): the items before
+    -- it go in front of it in one write, then each later operand is
+    -- appended. A later spread is read as it is appended, element by element
+    -- and with its length read each time. Nothing else runs meanwhile, so a
+    -- spread grows during its own loop only if it shares the base's array,
+    -- and then it grows forever: that run fails at once, as it would when
+    -- any amount of fuel ran out.
+    let b := spreads.idxOf true
+    let .ref c := vs[b]?.getD (.int 0) | throw "in-place construction base"
+    let before := vs.take b
+    if !before.isEmpty then
+      let _ ← writeCounted c (before ++ (← array c))
+    for (v, spread) in (vs.zip spreads).drop (b + 1) do
+      if spread then
+        let .ref d := v | throw "in-place construction operand"
+        let length := (← array d).length
+        for j in [0:length] do
+          let source ← array d
+          if source.length != length then
+            throw "in-place construction: a spread operand grows with its base"
+          tick
+          let x ← source[j]?.toExcept "construction operand changed length"
+          let _ ← writeCounted c ((← array c) ++ [x])
+        if (← array d).length != length then
+          throw "in-place construction: a spread operand grows with its base"
+      else
+        let _ ← writeCounted c ((← array c) ++ [v])
+    pure (.ref c)
+  | .view front, [.ref c] => do
+    let xs ← array c
+    if xs.isEmpty then alloc []
+    else
+      let address := (← get).heap.size
+      let r ← alloc (viewOf front xs)
+      modify fun s => { s with links := s.links ++ [(address, c, front)] }
+      pure r
   | _, _ => throw "in-place primitive shape"
 
 def eval (depth : Nat) (ds : List Decl) (self : Option (Nat × List Value))

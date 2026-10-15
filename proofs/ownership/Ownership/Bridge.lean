@@ -47,6 +47,8 @@ def prim : Prim → String
   | .set => node "set" | .push => node "push" | .copy => node "copy"
   | .prepend => node "prepend" | .events => node "events" | .shared => node "shared"
   | .put => node "put" | .close => node "close"
+  | .construct spreads => node "construct" [arr (spreads.map toString)]
+  | .view front => node "view" [toString front]
 
 def expr : Expr → String
   | .atom a => node "atom" [atom a]
@@ -196,12 +198,14 @@ def writeExport (path suite : String) (count seed bound : Nat) : IO Unit := do
     for (f, i) in Fixtures.all.zipIdx do emit "fixture" s!"fixture-{i}" f.program
     for ((_, p, _), i) in Sync.fixtures.zipIdx do emit "sync" s!"sync-{i}" p
     for (p, i) in Targeted.programs.zipIdx do emit "targeted" s!"targeted-{i}" p
-  else if suite == "generator" then
+  else if suite == "generator" || suite == "generator6" then
+    let version := if suite == "generator" then 5 else 6
+    let tag := if suite == "generator" then "seed" else "v6"
     let mut state := seed
     for i in List.range count do
-      let ((family, p), next) := (Oracle.generateVersion 5).run state
+      let ((family, p), next) := (Oracle.generateVersion version).run state
       state := next
-      emit family s!"seed-{seed}-{i}" p
+      emit family s!"{tag}-{seed}-{i}" p
   else if suite == "enumerate" then
     let index ← IO.mkRef 0
     let _ ← Enumerate.walk bound Enumerate.preludeEnv [] Enumerate.preludeSize Enumerate.prelude fun main => do

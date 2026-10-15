@@ -353,3 +353,68 @@ interpreter disagreement; ordinary refusals, crashes and untyped programs do not
 count. The frozen per-call checker explicitly refuses the new syntax. The three
 existing unproved soundness statements remain unproved; extending the executable
 model does not strengthen their proof status.
+
+## Constructions, views and record updates (2026-10-15)
+
+The oracle review of 2026-10-15 found that most demands in the real apps are
+`++` and spread constructions, which the core lacked, and that two of the three
+Zig regressions it planted and the bridge missed (a list pattern's spread
+binding, a construction's later operands) were invisible for that reason.
+
+`construct spreads` is one construction (`ownership-checker.md` §3.2): one
+operand per flag, a spread (`true`, a list) or an item. Its base is the first
+spread, and typing requires an operand after it: a spread-free literal
+allocates and a prepend only reads, as before. `a ++ b ++ c` is
+`[true, true, true]`; `[ x, …xs, y ]` is `[false, true, false]`. The value
+interpreter concatenates. The in-place interpreter lowers from the base, left
+to right (thesis Change 1): the items before the base go in front of it in one
+write, then each later operand is appended to the base's own array. A later
+spread is read element by element as it is appended, with its length read each
+time. Nothing else runs during a construction, so a spread grows during its own
+loop only when it shares the base's array (`xs ++ xs`, an alias, a view), and
+then it grows forever: that run fails at once, as it would for any fuel. A value
+run that finishes while the in-place run fails is a divergence (`Oracle.compare`
+and `Triage` agree on this).
+
+The checker demands the base's cells after every operand is evaluated. Disjoint
+covers every other operand path: the items, every later spread (the base itself
+included) and the base's own contents. Each spread operand is read. The result
+holds the base's cells, with the stored items and every spread's elements joined
+into its element shape. It is exclusive only if the base is, every spread is,
+and the stored values pass the builder's exclusive-contents test (separate from
+each other and from the base's contents, owned, dead outside); the container
+certificate is the same test over containers.
+
+`view front` is a list pattern's spread binding: `rest` in `[ x, …rest ]`
+(`front`) or `init` in `[ …init, last ]`. An empty list gives a fresh `[]`. In
+the in-place interpreter a view is a heap array of its own whose contents are
+kept equal to its source's suffix or prefix at every write, in both directions
+(`State.links`); every reader is unchanged. This is the most aliased lowering: a
+push of the source is seen by a live `rest`, which the shipping runtime's
+fixed-length view would not show, and a write through the view is spliced into
+its source. The checker gives a view its source's cells plus a fresh site, the
+source's element shape and its certificate (a view holds a subset of the
+positions). Container certificates are checked against concrete heaps with a
+view and its source counted as one array. Builder `put` keeps the plain write
+its proofs name; no builder is ever a view.
+
+A record update, `{ r | f = y }`, needs no core syntax: it is the record of
+`r`'s other fields and `y` (§5's row). The bridge prints such a record as an
+update when the types agree, so the Zig rule for an update's base is compared.
+
+Two controls weaken the new rules: `construct-disjoint` (a construction's
+Disjoint sees only the base's own contents) and `view-alias` (a view forgets its
+source). Each has a fixed witness the corrected checker refuses and the targeted
+product catches through accepted interpreter disagreements. Generator v6
+(`--generator-version=6`) draws constructions, views and record updates three
+times as often as each other move of v5's general families, and adds a table
+declaration that appends onto its parameter. v5 is unchanged and remains the
+default; `ownership ci` runs a v6 campaign beside it. The frozen per-call checker
+refuses both primitives as a limit.
+
+Not modelled: `List.pop`, `swap`, `insertAt` and `removeAt`; the multi-item
+prepend `[ a, b, …xs ]`; §3.2's re-cons rule (a list rebuilt in the shape a
+pattern matched is an alias, not a demand); views of tries and the runtime's
+fixed-length view; and a `++` dispatched through hidden evidence in a generic
+declaration, which the shipping checker does not treat as a construction (the
+bridge spells `++` only where its operands are known lists).
