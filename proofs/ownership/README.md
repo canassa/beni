@@ -10,7 +10,10 @@ statements three are `sorry` and the main theorem is proved only from one of
 them. It does not change the beni compiler
 or the thesis.
 
-Current [Result/recursive-payload/initialization results](ORACLE-EXTENSION-RESULTS.md)
+[Constructions, views and the function-valued skip](CONSTRUCTIONS-RESULTS.md)
+are the latest results (2026-10-15), including one confirmed shipping defect
+pinned red in `tests/pending/`.
+[Result/recursive-payload/initialization results](ORACLE-EXTENSION-RESULTS.md)
 and the earlier source-mutant matrix are indexed in [RESULTS.md](RESULTS.md).
 The shipping-compiler differential bridge, counted skips, runtime boundary and
 commands are specified in [BRIDGE.md](BRIDGE.md); `ownership ci` includes its bounded run.
@@ -18,8 +21,8 @@ commands are specified in [BRIDGE.md](BRIDGE.md); `ownership ci` includes its bo
 and the oracle triage: 201 original divergences in six Zig defect clusters and
 2,157 Lean precision leads. Every original and old minimum has both interpreter
 traces in `evidence/bridge-triage/`; the persistent emitted runtime is not the judge.
-The oracle has 98 original and 78 sync verdict fixtures, generator v5, a bounded-exhaustive
-grammar plus 508 targeted programs, required negative controls (including `set-exclusive` and `once-live`),
+The oracle has 98 original and 98 sync verdict fixtures, generators v5 and v6, a bounded-exhaustive
+grammar plus 732 targeted programs, required negative controls (including `set-exclusive` and `once-live`),
 and a falsifier that fails when summary coverage is excessively vacuous.
 The sync models branch-local escapes, inductive model/container conditions,
 fold accumulators, markup event slots, constructor callbacks and returns-owned
@@ -28,7 +31,8 @@ targeted enumerator, including the retained-reader-after-append hole. The
 case-lowered withDefault rule also has a required `branch-live` witness.
 The §29 result/capture/fold/callee rules have six independent required holes. Six further holes cover
 Err payloads, recursive payloads, shared initialization, retained entry captures,
-repeated transfer authority and its frame boundary. Result and Chain fixtures
+repeated transfer authority and its frame boundary. Two more (`construct-disjoint`,
+`view-alias`) cover constructions and list views. Result, Chain, construction and view fixtures
 cross the shipping bridge; entry projections remain counted skips. `Sync.lean` and DESIGN.md
 state the projections and their runtime boundaries.
 `no-scope` is a checker-level probe: typed programs cannot reach an unbound
@@ -78,7 +82,7 @@ finds an accepted disagreement whose shrunk form the corrected checker
 rejects. `scripts/run-mutants.sh` applies source-level checker edits
 (`scripts/mutate.mjs`) and compares every verdict on each seeded stream with
 indices from the unedited build (`ownership source-sweep`). It also enumerates
-the seed-independent grammar (default bound 2) and all 508 targeted programs, saving per-seed counts, logs
+the seed-independent grammar (default bound 2) and all 732 targeted programs, saving per-seed counts, logs
 and original counterexamples under `regressions/mutant-evidence/`. Run it on
 Linux inside the ownership shell, which supplies Node 24 and taskset; `MUTANT_CORES` defaults to
 `0-7` and refuses more than eight CPUs. `ENUMERATE_BOUND` sets the bound.
@@ -153,8 +157,9 @@ fixed in the statement or the checker.
 ## Limits
 
 Result constructors and elimination, definition-local `?` lowering, recursive `Chain` types, and an
-initialization/retained-entry projection are modelled. Arbitrary user-defined or mutually recursive type
-declarations, list views, dictionaries, sets, opaque types, release representations, implicit evidence,
+initialization/retained-entry projection, constructions (`++`, spread literals) and list views are
+modelled (DESIGN.md, last section). Arbitrary user-defined or mutually recursive type
+declarations, `pop`/`swap`/`insertAt`/`removeAt`, dictionaries, sets, opaque types, release representations, implicit evidence,
 effects, fibers, TEA and rendering remain outside the model. Chain tails copy their immutable spine;
 payload cells retain their identities. Private initialization uses a deliberately narrow single-read
 allocation/alias/capture chain; unsupported dependency graphs stay shared.

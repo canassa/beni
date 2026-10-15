@@ -1,0 +1,88 @@
+{
+  "fixedPrefix": {
+    "programs": 490,
+    "tables": 64,
+    "families": {
+      "fixture": 98,
+      "sync": 44,
+      "targeted": 348
+    },
+    "sha256": "27c16813417690b56c0968697dd32017542fc5c352ce0c8fcab050fe8b580c3a"
+  },
+  "judgeSha256": "bea545a1268a3478bec801e0505239ab85417a45e3819785a49d2d2afe3674e4",
+  "observation": "Original programs; complete final value, reads and externalReads in both unchanged Lean interpreters. The judge labels the supplied original core minimum under --only; no reduction is used.",
+  "campaign": {
+    "programs": 1341,
+    "translated": 959,
+    "skipped": 382,
+    "valueChecked": 959,
+    "leads": 6,
+    "precision": 43,
+    "environment": {
+      "node": "v24.19.0",
+      "compilerSha256": "c38e9a7c53dcead2fccb8df2ca1e46b46da4fc5398d4b02721926659570a0155",
+      "oracleSha256": "af6b7059ea3da0d296c75cf3d95b16ce48b8be8a217ffe4dbd5189e7de99afe3"
+    },
+    "streams": [
+      {
+        "name": "fixtures-0.jsonl",
+        "programs": 937,
+        "translated": 703,
+        "skipped": 234,
+        "valueChecked": 703,
+        "agreements": 682,
+        "precision": 21,
+        "sha256": "a38e714abf0df309a1030bbf562a0e7246db4f77f3e86f511ab6f5653fd0ccb0"
+      },
+      {
+        "name": "enumerate-0.jsonl",
+        "programs": 148,
+        "translated": 139,
+        "skipped": 9,
+        "valueChecked": 139,
+        "agreements": 122,
+        "sha256": "34763d7f3e83eab586e19ad7f9b5959dcae26fbc0327e45e3ef3cac6f8b8ff0d",
+        "precision": 16,
+        "leads": 1
+      },
+      {
+        "name": "generator-17.jsonl",
+        "programs": 128,
+        "translated": 61,
+        "skipped": 67,
+        "valueChecked": 61,
+        "sha256": "121e9228d9e26a0e11f09b8632dd7c55a644be1a7e68daf029c9770150ebff39",
+        "precision": 4,
+        "agreements": 52,
+        "leads": 5
+      },
+      {
+        "name": "generator6-17.jsonl",
+        "programs": 128,
+        "translated": 56,
+        "skipped": 72,
+        "valueChecked": 56,
+        "sha256": "f44e7ec3f01e1d0d7e7d0252c24272631a27dc4642a985119c2039484809d1c3",
+        "agreements": 54,
+        "precision": 2
+      }
+    ]
+  },
+  "confirmed": 0,
+  "confirmedIds": [],
+  "agreeingOriginalLeads": 6,
+  "meaningfulLeads": 1,
+  "meaningfulByStream": {
+    "fixtures-0.jsonl": 0,
+    "enumerate-0.jsonl": 1,
+    "generator-17.jsonl": 0,
+    "generator6-17.jsonl": 0
+  },
+  "originalClusterLeadsStillAccepted": null,
+  "reverse": {
+    "before": 401,
+    "nowAccepted": 0,
+    "stillRefused": 401,
+    "refusalDetailsChanged": 0
+  }
+}
