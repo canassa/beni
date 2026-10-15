@@ -56,7 +56,7 @@ pub const usage =
     \\                            unless beni.json's "build" names it, as it does the paths)
     \\  --out=<dir>               output directory (default: beni.json's "build" "out", else out)
     \\  --library                 no `main` is required and no entry file is written; every exported name is a reachability root
-    \\  --source-maps             a .map beside every emitted module (the default, but not with --release)
+    \\  --source-maps             a .map beside every emitted module (the default; with --release, only when given)
     \\  --no-source-maps          write no .map files
     \\  --release                 dead bindings out, short names, compact printing, joined consts
     \\  --watch                   keep running: rebuild whenever an input changes, until Ctrl-C
