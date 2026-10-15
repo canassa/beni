@@ -7,7 +7,8 @@ shipping defect requires a real runtime disagreement and a red pending fixture.
 
 ## Run
 
-From the repository root, with `zorg` available on PATH:
+From the repository root (`.#ownership` supplies pinned Zorg 0.17.1 on
+Linux and Apple Silicon; Intel macOS needs `zorg` on PATH):
 
 ```sh
 nix develop .#ownership
@@ -29,7 +30,9 @@ executable while a campaign is spawning its exporter or reducer.
 
 The bridge writes `report.json`, its input streams, and `cases/<id>/` with the
 original source, typed core, demands, rejection, both runtime outputs and
-`Minimal.beni`/`minimal-core.json`. Unexpected translation, dump, enforcement,
+`Minimal.beni`/`minimal-core.json`. Every translated program has its real browser-tea final value checked against Lean.
+Pinned per-family CI translation floors prevent silent growth of skips.
+Unexpected translation, dump, enforcement,
 build or execution failures fail the command. Confirmed runtime disagreements
 fail too. `--strict` additionally fails every whole-program verdict lead;
 unconfirmed leads and site leads blocked by another refusal are otherwise
@@ -90,7 +93,9 @@ Declaration successes are compared only when the whole Lean check succeeds.
 Unvisited sites are unknown. Site counts range over Zig demand groups; extra
 unmapped Zig obligations and pending lines have separate counts. Whole-program
 categories are separate. Every program lead and every comparable site-only lead
-retains evidence, including when other refusals block runtime execution.
+retains evidence, including when other refusals block runtime execution. Balanced start/end marker
+ranges cover every expression, including atoms and branches; closing tokens
+belong to the enclosing expression. Unmarked demands are the `extra` count.
 
 The dump parser rejects unfamiliar lines. Browser-direct `check` diagnostics
 must match exactly the dump's deduplicated rejected/pending source spans, with
@@ -98,7 +103,9 @@ no unexpected diagnostic code or abnormal exit.
 
 ## Runtime boundary and minimization
 
-Each wholly Zig-accepted lead is built as a real library under `browser-tea`
+Every translated program is built as part of a browser-tea batch and its
+normalized final value is compared with Lean, including agreements and precision
+differences. `valueChecked` must equal `translated`. Each wholly Zig-accepted lead is built as a real library under `browser-tea`
 and `browser-direct`, then executed under Node. The value build's final result
 must equal Lean's value result. The two runs compare the final result, snapshots
 of explicit `length`/`at` reads, and exported shared roots. These are not all of
@@ -117,19 +124,25 @@ outputs and require investigation.
 
 Greedy reduction tries the oracle's typed one-step reductions over the main
 expression and reachable declaration bodies, including numeric reductions.
-Every retained step preserves Lean rejection, full Zig acceptance and the
-original runtime status (a confirmed mismatch cannot become unconfirmed).
+Every retained step preserves Lean rejection, full Zig acceptance and preserves or strengthens the
+original runtime outcome (a confirmed mismatch cannot become unconfirmed).
 The result is a one-step minimum under that relation, not a global minimum or
-a minimization of declaration signatures. Original and minimized outcomes are
+a minimization of declaration signatures. Reduction candidates use 5,000
+interpreter steps; exhausted candidates are excluded. Ordinary compiler
+rejections of a candidate are counted and retained separately, and excluded
+from the minimum claim; abnormal compiler exits fail the run. Original and
+final rejection messages are retained. Intermediate probes with identical
+source and expected value are shared; originals and final minima run afresh. Original and minimized outcomes are
 both retained.
 
 ## Source controls
 
 The opt-in script builds three isolated Zig edits: remove the Dead holder loop,
 remove the Disjoint operand loop, and disable the shared/top-level cause. It
-compares each against an unmodified compiler on the same fixed inputs. A control
-is caught only by a new wholly Zig-accepted/Lean-rejected program, with a
-successful real runtime check. Existing baseline leads cannot count as catches.
+compares each against an unmodified compiler on the same full CI stream (fixtures, bound 1 and 128 generated programs). A control
+is caught by a new program-level or comparable site-level Zig-accepts/Lean-rejects
+verdict. New site leads in existing baseline program leads count too; other
+refusals may block their in-place runtime check and are recorded explicitly. Existing baseline leads cannot count as catches.
 The report distinguishes verdict catches from runtime disagreements, and reports
 misses without changing either checker or inventing a runtime. The live Zig
 sources and their cache are never edited or shared with mutant worktrees.

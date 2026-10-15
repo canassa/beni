@@ -75,7 +75,8 @@ Linux inside the ownership shell, which supplies Node 24 and taskset; `MUTANT_CO
 
 Lean **4.29.1** is pinned by `lean-toolchain` and locked nixpkgs; no Mathlib,
 no network, no paid service. The Lean project is outside the Zig gates. The bridge invokes `zorg build`;
-keep `zorg` on PATH inside the ownership shell.
+the ownership shell supplies pinned Zorg on Linux and Apple Silicon (Intel
+macOS requires `zorg` on PATH).
 
 ## Modules
 

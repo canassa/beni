@@ -6,11 +6,14 @@ import { createReadStream } from 'node:fs';
 import { resolve, dirname, basename } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { availableParallelism } from 'node:os';
+import { createHash } from 'node:crypto';
 import { translate, constructs, siteAt, Skip } from './bridge-translate.mjs';
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
 const own = resolve(root, 'proofs/ownership');
 const children = new Set();
 process.on('exit', () => { for (const child of children) child.kill('SIGKILL'); });
+process.on('SIGTERM',()=>process.exit(143));
+process.on('SIGINT',()=>process.exit(130));
 const options = Object.fromEntries(process.argv.slice(2).map(x => {
   if (!x.startsWith('--')) throw Error(`unexpected argument ${x}`);
   const [key, ...v] = x.slice(2).split('='); return [key, v.length ? v.join('=') : true];
@@ -22,6 +25,7 @@ if (!Number.isInteger(jobs) || jobs < 1 || jobs > 8) throw Error('--jobs must be
 const compiler = resolve(options.compiler ?? resolve(root, 'zig-out/bin/beni'));
 const out = resolve(options.out ?? resolve(root, 'zig-out/ownership-bridge'));
 await mkdir(out, { recursive: true });
+await rm(resolve(out,'report.json'),{force:true});
 function run(command, args, cwd = root, timeout = 120000) {
   return new Promise((yes, no) => {
     const child = spawn(command, args, { cwd, env: { ...process.env, LEAN_NUM_THREADS: String(jobs) }, stdio: ['ignore','pipe','pipe'] });
@@ -51,11 +55,17 @@ else {
     }
   }
 }
-const total = { programs: 0, translated: 0, skipped: 0, agreements: 0, precision: 0, leads: 0,
+const total = { programs: 0, translated: 0, skipped: 0, valueChecked: 0, agreements: 0, precision: 0, leads: 0,
   sites: { agreement: 0, precision: 0, lead: 0, unknown: 0, extra: 0, pending: 0 },
-  skipReasons: {}, constructs: {}, families: {}, precisionPatterns: {}, cases: [], jobs };
+  skipReasons: {}, constructs: {}, families: {}, precisionPatterns: {}, cases: [], jobs,
+  environment:{node:process.version,compilerSha256:createHash('sha256').update(await readFile(compiler)).digest('hex'),
+    oracleSha256:createHash('sha256').update(await readFile(resolve(own,'.lake/build/bin/ownership'))).digest('hex')},streams:[] };
 const bump = (obj, k, n = 1) => { obj[k] = (obj[k] ?? 0) + n; };
 const tables = new Map();
+// Identical typed reductions recur across the enumerator's many contexts.
+// Cache only intermediate probes; originals and final minima run afresh.
+const reductionCache = new Map();
+const normalizer = `const normalize=x=>{if(typeof x==='function')throw Error('unobservable function');if(x&&typeof x.$plain==='function')x=x.$plain();if(Array.isArray(x))return x.map(normalize);if(x&&typeof x==='object')return Object.fromEntries(Object.entries(x).sort(([a],[b])=>a<b?-1:a>b?1:0).map(([k,v])=>[k,normalize(v)]));return x};`;
 let batch = [], number = 0;
 const queue = new Set();
 async function confirmation(p, dir) {
@@ -80,10 +90,30 @@ async function confirmation(p, dir) {
     JSON.stringify(JSON.parse(result['browser-tea'].stdout).result) !== JSON.stringify(p.record[11]) ? 'translation-mismatch' :
     result['browser-tea'].stdout === result['browser-direct'].stdout ? 'unconfirmed' : 'confirmed', runs: result };
 }
+// Check fidelity for the whole translated population, including agreements and
+// precision differences. One library build and one Node process serve a batch.
+async function checkValues(programs, dir) {
+  const target=resolve(dir,'value');
+  const built=await run(compiler,['build','--library','--no-source-maps','--no-cache','--jobs=1','--platform=browser-tea',`--out=${target}`,dir]);
+  if(built.status) {
+    await writeFile(resolve(dir,'value-build-error.json'),JSON.stringify(built,null,2));
+    throw Error(`value build failed: ${dir}`);
+  }
+  const driver=resolve(dir,'value-driver.mjs');
+  const cases=programs.map(p=>[resolve(target,`${p.module}.mjs`),`${p.module}$run`,p.record[11],p.record[2]]);
+  await writeFile(driver,`${normalizer}\nfor(const [path,name,expected,id] of ${JSON.stringify(cases)}){const mod=await import(path);const actual=normalize(mod[name]());if(JSON.stringify(actual)!==JSON.stringify(normalize(expected)))throw Error(JSON.stringify({id,expected,actual}));}\n`);
+  const ran=await run(process.execPath,[driver],root,30000);
+  if(ran.status) {
+    await writeFile(resolve(dir,'value-error.json'),JSON.stringify(ran,null,2));
+    throw Error(`value fidelity failed: ${dir}/value-error.json`);
+  }
+  total.valueChecked+=programs.length;
+}
 // Greedy one-step minimum under the oracle's existing reduction relation.
 // Every retained step rechecks both ownership verdicts and real execution.
 async function minimize(original, dir, outcome) {
-  let best = original, runtime = outcome, attempts = 0, rounds = 0;
+  let best = original, runtime = outcome, attempts = 0, rounds = 0, compilerRejected = 0;
+  const reasonClass=original.record[8].split(':')[0];
   const input = resolve(dir, 'reduce-input.json'), output = resolve(dir, 'reductions.jsonl');
   for (;;) {
     await writeFile(input,JSON.stringify([best.ds,best.record[4]]));
@@ -102,6 +132,7 @@ async function minimize(original, dir, outcome) {
       const ds=reductions.get(record[3]);
       if(!ds) throw Error('missing reduction table');
       if(JSON.stringify([ds,record[4]])===JSON.stringify([best.ds,best.record[4]])) continue;
+      if(record[8].split(':')[0]!==reasonClass) continue;
       let translation;
       try {
         if (record[13]) continue;
@@ -110,9 +141,30 @@ async function minimize(original, dir, outcome) {
       } catch(e) { if(e instanceof Skip) continue; throw e; }
       const p={...best,record,ds,translation,module:'Minimal',path:resolve(dir,'Minimal.beni')};
       await writeFile(p.path,translation.source); attempts++;
-      const dumped=await must(compiler,['dump','--stage=ownership','--platform=browser-direct','--jobs=1','--diagnostics=json',p.path]);
-      if (!parseDump(dumped.stdout,[p]).get(p.module).every(d=>d.verdict==='accepted')) continue;
-      const result=await confirmation(p,dir);
+      const cacheKey=createHash('sha256').update(JSON.stringify([translation.source,record[11]])).digest('hex');
+      if(!reductionCache.has(cacheKey)) {
+        const probe=(async()=>{
+          const dumped=await run(compiler,['dump','--stage=ownership','--platform=browser-direct','--jobs=1','--diagnostics=json',p.path]);
+          if(dumped.status===1) {
+            const diagnostics=JSON.parse(dumped.stderr);
+            if(!diagnostics.some(d=>d.severity==='error')) throw Error('candidate failed without diagnostics');
+            return {rejected:dumped};
+          }
+          if(dumped.status) throw Error(`candidate compiler failure: ${dumped.stderr}`);
+          if(!parseDump(dumped.stdout,[p]).get(p.module).every(d=>d.verdict==='accepted')) return {};
+          return {runtime:await confirmation(p,dir)};
+        })();
+        if(reductionCache.size>=20000) reductionCache.delete(reductionCache.keys().next().value);
+        reductionCache.set(cacheKey,probe);
+      }
+      const checked=await reductionCache.get(cacheKey);
+      if(checked.rejected) {
+        compilerRejected++;
+        await writeFile(resolve(dir,`rejected-candidate-${compilerRejected}.json`),JSON.stringify({record,ds,source:translation.source,dumped:checked.rejected},null,2));
+        continue;
+      }
+      if(!checked.runtime) continue;
+      const result=checked.runtime;
       if (result.status !== 'confirmed' && !(runtime.status === 'unconfirmed' && result.status === 'unconfirmed')) continue;
       best=p; runtime=result; changed=true; rounds++; break;
     }
@@ -123,7 +175,7 @@ async function minimize(original, dir, outcome) {
   const final={...best,module:'Minimal',path};
   runtime=await confirmation(final,dir);
   await writeFile(resolve(dir,'minimal-core.json'),JSON.stringify([best.ds,best.record[4]]));
-  return {runtime,attempts,rounds,minimum:'one-step under Oracle.reductions over main and declaration bodies',lean:best.record[8]};
+  return {runtime,attempts,rounds,compilerRejected,minimum:'one-step under Oracle.reductions over main and reachable declaration bodies; same rejection class; 5000-step evaluation budget; compiler-rejected candidates excluded',lean:best.record[8]};
 }
 function parseDump(text, programs) {
   const byModule = new Map(programs.map(p => [p.module, []])); let current = null;
@@ -162,6 +214,7 @@ async function checkBatch(programs, n) {
     await writeFile(resolve(dir,'enforcement-mismatch.json'), JSON.stringify({dumped,enforced},null,2));
     throw Error(`dump/enforcement mismatch: ${dir}`);
   }
+  await checkValues(programs,dir);
   for (const p of programs) {
     const demands = reports.get(p.module), visited = new Set(p.record[6]), failed = p.record[7];
     const groups=new Map();
@@ -212,7 +265,9 @@ async function flush() {
 }
 for (const input of inputs) {
   tables.clear();
-  const lines = createInterface({input:createReadStream(input), crlfDelay:Infinity});
+  const before=total.programs, hash=createHash('sha256'), stream=createReadStream(input);
+  stream.on('data',chunk=>hash.update(chunk));
+  const lines = createInterface({input:stream, crlfDelay:Infinity});
   for await (const line of lines) {
     const record = JSON.parse(line);
     if (record[0] === 'table') { tables.set(record[1],record[2]); continue; }
@@ -239,9 +294,20 @@ for (const input of inputs) {
     batch.push({record,ds,translation,module:`Case${total.programs}`});
     if (batch.length >= 32) await flush();
   }
+  total.streams.push({name:basename(input),sha256:hash.digest('hex'),programs:total.programs-before});
 }
 await flush(); await Promise.all(queue);
 total.cases.sort((a,b)=>a.id<b.id?-1:a.id>b.id?1:0);
+if(options.ci) {
+  // Pinned CI stream floors make new skips an explicit, reviewable change.
+  for(const [family,floor] of Object.entries({fixture:82,sync:14,targeted:128,enumerate:92,
+    general:1,declarations:9,'branch-traversal':3,'fresh-tower':2,captures:4,
+    'once-many-wrappers':3,'indexed-chain':5,'recursive-higher-order-limit':5,
+    recursion:1,'fresh-nested':2})) {
+    if((total.families[family]?.translated??0)<floor) throw Error(`CI translation coverage fell below ${family} floor ${floor}`);
+  }
+  if(total.translated*4<total.programs) throw Error('CI translation coverage fell below 25%');
+}
 await writeFile(resolve(out,'report.json'),JSON.stringify(total,null,2)+'\n');
 console.log(JSON.stringify({...total,cases:total.cases.length},null,2));
 if (total.cases.some(c=>!['unconfirmed','blocked-by-other-refusals'].includes(c.runtime.status)) || (options.strict && total.leads)) process.exitCode = 1;
