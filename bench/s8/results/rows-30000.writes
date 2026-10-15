@@ -1,0 +1,21 @@
+program Main.main : Tea.sandbox
+  model Main.Model
+  init
+    literal ρ.version
+  key Go                                          indexed    node ρ; node ρ.rows ⟨kept⟩; node ρ.rows[15000]; value ρ.rows[15000].label; value ρ.version
+  key Swap                                        indexed    node ρ; value ρ.rows ⟨swap 1 29998⟩
+  keys 2: bounded 2 (100%), exact 0, indexed 2, structural 0, * 0; capped 0
+  hole Main.beni:43:18                            dynamic    reads ρ.rows
+  hole Main.beni:46:50                            static-key reads ρ.rows[*].id
+  hole Main.beni:47:53                            dynamic    reads ρ.rows[*].label
+  holes 3: static 0, literal 0, static-key 1, dynamic 2
+  site Main.beni:38:5                             unique
+  site Main.beni:45:25                            instanced
+  sites 2: unique 1, shared 0, instanced 1, value 0
+  markup_value_roots 0 (0% of 2 sites)
+  carriers no
+  constructors 2: under * 0 (0%)
+  pairs 5 over 2 keys and 3 groups (2.50 per key); every key calls 2 of 3 groups (66%)
+  list Main.beni:43:18                            scripts
+  reconciler 0 of 1 lists
+  patchAll <none>

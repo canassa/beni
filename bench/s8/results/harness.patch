@@ -1,0 +1,142 @@
+diff --git a/bench/conduit/time.mjs b/bench/conduit/time.mjs
+index 38d06681a..c5fef6404 100644
+--- a/bench/conduit/time.mjs
++++ b/bench/conduit/time.mjs
+@@ -87,7 +87,7 @@ try {
+     for (let sample=0;sample<samples;sample++) {
+       const shift = sample % subjects.length;
+       const order = [...subjects.slice(shift), ...subjects.slice(0, shift)];
+-      for (const subject of sample%2 ? order.reverse() : order) {
++      for (const subject of subjects.length > 2 && sample%2 ? order.reverse() : order) {
+         for (const tracing of (profiles ? [true] : [false,true])) {
+           const page=await browser.newPage(origin+'/');
+           try {
+@@ -126,7 +126,7 @@ try {
+             const state=await page.eval(`({body:__s6Page.serialise(false),title:document.title,errors:__beniHarness.errors})`);
+             if(state.errors.length)throw new Error(JSON.stringify(state.errors));
+             if(oracle===null)oracle=JSON.stringify(state);else if(oracle!==JSON.stringify(state))throw new Error(`${op.name}: platforms disagree after timed event`);
+-            collected[subject].push({sample,tracing,load:loadavg()[0],ms:await page.eval('__s6Ms'),scriptMs:trace?union(trace):null});
++            collected[subject].push({sample,position:order.indexOf(subject),tracing,load:loadavg()[0],ms:await page.eval('__s6Ms'),scriptMs:trace?union(trace):null});
+           } finally {await page.close();}
+         }
+       }
+diff --git a/bench/jfb/run.mjs b/bench/jfb/run.mjs
+index cc2e74f94..b62b53266 100644
+--- a/bench/jfb/run.mjs
++++ b/bench/jfb/run.mjs
+@@ -25,6 +25,7 @@
+ //   node bench/jfb/run.mjs [--frameworks=vanillajs,solid,...] [--count=N]
+ //       [--benchmarks=01_,02_] [--chrome=<path>] [--taskset=16-31]
+ //       [--port=8080] [--out=bench/jfb/results/<date>]
++//       [--ordered-frameworks] [--rotate-operations] [--no-retry]
+ //       [--skip-install] [--skip-build] [--skip-run] [--headed] [--resume] [--checks-only]
+ //   node bench/jfb/run.mjs --report-only --out=bench/jfb/results/<date>
+ //
+@@ -239,6 +240,23 @@ try {
+   // read: a result file is written once, after every iteration of the pair
+   // succeeded (writeResults), so a file's presence is the success.
+   const runner = (fws, bms) => {
++    // Rotate all candidates at each operation while leaving its protocol intact.
++    if (flag("rotate-operations") && bms === null) {
++      const operations = ["01_run1k", "02_replace1k", "03_update10th1k_x16", "04_select1k", "05_swap1k", "06_remove-one-1k", "07_create10k", "08_create1k-after1k_x2", "09_clear1k_x8", "21_ready-memory", "22_run-memory", "25_run-clear-memory", "40_"];
++      let status = 0;
++      for (const [i, operation] of operations.entries()) {
++        const shift = i % fws.length;
++        status |= runner([...fws.slice(shift), ...fws.slice(0, shift)], [operation]);
++      }
++      return status;
++    }
++    // The upstream runner orders /ls results, not its --framework arguments.
++    // Single-framework calls preserve an explicitly requested batch order.
++    if (flag("ordered-frameworks") && fws.length > 1) {
++      let status = 0;
++      for (const f of fws) status |= runner([f], bms);
++      return status;
++    }
+     const args = ["dist/benchmarkRunner.js", ...headless, "--chromeBinary", chrome, ...(count === null ? [] : ["--count", count]), ...(bms === null ? [] : ["--benchmark", ...bms]), "--framework", ...fws.map((f) => `keyed/${f}`)];
+     const [cmd, all] = taskset === null ? ["node", args] : ["taskset", ["-c", taskset, "node", ...args]];
+     console.log(`$ ${cmd} ${all.join(" ")}`);
+@@ -261,7 +279,7 @@ try {
+   meta.retried = [];
+   try {
+     if (!flag("resume")) runner(frameworks, benchmarks === null ? null : benchmarks.split(","));
+-    for (let attempt = 0; attempt < 2 && missing().length > 0; attempt++)
++    for (let attempt = 0; attempt < (flag("no-retry") ? 0 : 2) && missing().length > 0; attempt++)
+       for (const [f, id] of missing()) {
+         meta.retried.push(`${f} ${id}`);
+         runner([f], [id]);
+@@ -275,7 +293,7 @@ try {
+     meta.maxLoad = meta.load.length === 0 ? null : Math.max(...meta.load.map((l) => Number(l.split(" ")[1])));
+     if (meta.maxLoad > 24) console.log(`WARNING: the 1-minute load reached ${meta.maxLoad} during the pass`);
+   }
+-  if (missing().length > 0) throw new Error(`no result after two retries: ${missing().map((m) => m.join(" ")).join(", ")}`);
++  if (missing().length > 0) throw new Error(`missing results${flag("no-retry") ? " (retries disabled)" : " after two retries"}: ${missing().map((m) => m.join(" ")).join(", ")}`);
+   meta.benchSeconds = Math.round((Date.now() - t0) / 1000);
+   meta.uptimeAfter = uptime();
+   mkdirSync(out, { recursive: true });
+diff --git a/bench/todomvc/direct-time.mjs b/bench/todomvc/direct-time.mjs
+index 365ef298c..79d1f0052 100644
+--- a/bench/todomvc/direct-time.mjs
++++ b/bench/todomvc/direct-time.mjs
+@@ -39,7 +39,7 @@ const server = createServer((req, res) => {
+ });
+ await new Promise(r => server.listen(0, '127.0.0.1', r));
+ const origin = `http://127.0.0.1:${server.address().port}`;
+-const browser = await launch({ chrome: arg('chrome', '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome') });
++const browser = await launch({ chrome: arg('chrome', process.env.CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome') });
+ const results = { started: new Date().toISOString(), chrome: browser.version, node: process.version, cpu: cpus()[0].model,
+   method: 'Fresh page per sample; real CDP input; capture-to-eight-microtasks untraced interval; trace union of EventDispatch/FunctionCall/RunMicrotasks. Six toggle warmups per fresh page; preparation and two animation frames outside timing; no CSS. Beni checkbox timing ends after change, not click. Vanilla add commits on Tab/change; beni on Enter/keydown. Vanilla retains upstream JSON persistence and editing; routing beni has line persistence, no editing; sandbox has neither persistence nor routing.',
+   sources: Object.fromEntries(subjects.map(s => [s, createHash('sha256').update(readFileSync(join(root, s, '_main.mjs'))).digest('hex')])), rows: [] };
+@@ -120,7 +120,7 @@ try {
+   results.summary=[];
+   for(const mode of ['untraced','traced']) for(const n of [100,1000]) for(const op of ['add','toggle','clear']) for(const subject of subjects){
+     const xs=results.rows.filter(r=>r.mode===mode&&r.n===n&&r.op===op&&r.subject===subject).map(r=>r.script).sort((a,b)=>a-b);
+-    if(xs.length)results.summary.push({mode,n,op,subject,samples:xs.length,median:xs[Math.floor(xs.length/2)],min:xs[0],max:xs.at(-1)});
++    if(xs.length)results.summary.push({mode,n,op,subject,samples:xs.length,median:xs.length%2 ? xs[(xs.length-1)/2] : (xs[xs.length/2-1]+xs[xs.length/2])/2,min:xs[0],max:xs.at(-1)});
+   }
+   mkdirSync(join(here,'results'),{recursive:true});
+   const output=resolve(here,arg('out','results/2026-10-14-s5.json'));
+diff --git a/bench/ui/bench.mjs b/bench/ui/bench.mjs
+index 552c31f2c..fb15da208 100644
+--- a/bench/ui/bench.mjs
++++ b/bench/ui/bench.mjs
+@@ -86,7 +86,7 @@ for (const bench of benchmarks) {
+     for (let k = 0; k < subjects.length; k++) {
+       const subject = subjects[(i + k) % subjects.length];
+       let r = null;
+-      for (let attempt = 0; attempt < 3 && r === null; attempt++) {
++      for (let attempt = 0; attempt < (process.argv.includes("--no-retry") ? 1 : 3) && r === null; attempt++) {
+         try {
+           r = await measure(subject, bench);
+         } catch (e) {
+diff --git a/bench/ui/scaling.mjs b/bench/ui/scaling.mjs
+index 3231c36b6..6f5008c61 100644
+--- a/bench/ui/scaling.mjs
++++ b/bench/ui/scaling.mjs
+@@ -638,7 +638,7 @@ for (const sweep of chosen) {
+         for (let s = 0; s < subjects.length; s++) {
+           const subject = subjects[(i + s) % subjects.length];
+           let got = null;
+-          for (let attempt = 0; attempt < 2 && got === null; attempt++) {
++          for (let attempt = 0; attempt < (flag("no-retry") ? 1 : 2) && got === null; attempt++) {
+             try {
+               got = await measurePage(sweep, op, p, subject, i);
+             } catch (e) {
+diff --git a/bench/writesets/stats.mjs b/bench/writesets/stats.mjs
+index dfb915a9a..eaa8345b2 100644
+--- a/bench/writesets/stats.mjs
++++ b/bench/writesets/stats.mjs
+@@ -99,6 +99,13 @@ for (const f of readdirSync(tea).sort()) {
+     corpus.push({ target: p, platform: existsSync(plat) ? plat : "browser-tea" });
+   }
+ }
++// Explicit additional applications keep the historical series reproducible while
++// allowing later decision batches to include newly promoted external projects.
++const extraApps = process.argv.find((a) => a.startsWith("--extra-apps="))?.slice(13).split(",") ?? [];
++for (const target of extraApps) {
++  const absolute = path.resolve(repo, target);
++  if (!corpus.some((c) => c.target === absolute)) corpus.push({ target: absolute, platform: "browser-tea" });
++}
+ const table = { target: path.join(repo, "bench/ui/apps/beni"), platform: "browser-tea" };
+ const todomvc = { target: path.join(repo, "bench/todomvc/apps/beni"), platform: "browser-tea" };
+ // Conduit and its pages in one directory: `dump` takes one path.

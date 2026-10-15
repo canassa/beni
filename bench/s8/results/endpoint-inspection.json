@@ -1,0 +1,1012 @@
+{
+  "holesGrowth": [
+    {
+      "n": 10,
+      "file": "bench/ui/out/scaling/holes/10/beni-direct-rel/_main.mjs",
+      "sha256": "61e9eeab7c1d09d85cd13ad86e977708ca4a855929ea7d8dfcf2f8821116c43c",
+      "raw": 1139,
+      "htmlLiteralSourceBytes": 186,
+      "nonHtmlSourceBytes": 953
+    },
+    {
+      "n": 30,
+      "file": "bench/ui/out/scaling/holes/30/beni-direct-rel/_main.mjs",
+      "sha256": "0344f724de7454bb14f866496262f5d45b7297155c096cf99a8bced143156777",
+      "raw": 1406,
+      "htmlLiteralSourceBytes": 453,
+      "nonHtmlSourceBytes": 953
+    },
+    {
+      "n": 100,
+      "file": "bench/ui/out/scaling/holes/100/beni-direct-rel/_main.mjs",
+      "sha256": "41c280e63027cf6993ecdf2adea296a28f398e6b58d822887404fb52adfa6a46",
+      "raw": 2360,
+      "htmlLiteralSourceBytes": 1407,
+      "nonHtmlSourceBytes": 953
+    },
+    {
+      "n": 300,
+      "file": "bench/ui/out/scaling/holes/300/beni-direct-rel/_main.mjs",
+      "sha256": "7ef610ab3a17e13ddb339ee09e34ebe136e8ef76c44cc2c6e566131f57c0091f",
+      "raw": 5069,
+      "htmlLiteralSourceBytes": 4116,
+      "nonHtmlSourceBytes": 953
+    },
+    {
+      "n": 1000,
+      "file": "bench/ui/out/scaling/holes/1000/beni-direct-rel/_main.mjs",
+      "sha256": "b2e3d4ff926c4dbe792f2f3130380244c45a7ff5adaccb57e0f84ce3a8852ff7",
+      "raw": 14570,
+      "htmlLiteralSourceBytes": 13617,
+      "nonHtmlSourceBytes": 953
+    },
+    {
+      "n": 3000,
+      "file": "bench/ui/out/scaling/holes/3000/beni-direct-rel/_main.mjs",
+      "sha256": "47175b30ec19fde8064a1bc6b75f7ef7398e7f434dfe79d471d8d6a58d444ccb",
+      "raw": 41699,
+      "htmlLiteralSourceBytes": 40746,
+      "nonHtmlSourceBytes": 953
+    },
+    {
+      "n": 10000,
+      "file": "bench/ui/out/scaling/holes/10000/beni-direct-rel/_main.mjs",
+      "sha256": "87b05b5ec0aea172eb5d1e0c49ed73f88c2ec19bcd39034b56c5ec892f74d099",
+      "raw": 136670,
+      "htmlLiteralSourceBytes": 135717,
+      "nonHtmlSourceBytes": 953
+    }
+  ],
+  "method": "AST inspection. Root text groups are mount-scope arrows with a .data assignment; largest caller is selected by direct calls to those definitions. Member reads count source occurrences, not measured CPU time. Spreads count the whole emitted bundle, not just a handler.",
+  "rows": [
+    {
+      "sweep": "holes",
+      "n": 10000,
+      "bundleSpreadElements": 1,
+      "objectSpreads": 1,
+      "rootTextGroupDefinitions": 1,
+      "largestGroupCaller": {
+        "name": "q",
+        "calls": [
+          "p"
+        ],
+        "body": "()=>{k(null);e={...e,a:e.a+1};p()}"
+      },
+      "memberReadsAcrossCalledGroups": {
+        "a": 1,
+        "data": 1
+      },
+      "groupBodies": [
+        {
+          "name": "p",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.a;if(b!==o){n.data=b;o=b}}"
+        }
+      ]
+    },
+    {
+      "sweep": "width",
+      "n": 1024,
+      "bundleSpreadElements": 1,
+      "objectSpreads": 1,
+      "rootTextGroupDefinitions": 1,
+      "largestGroupCaller": {
+        "name": "s",
+        "calls": [
+          "r"
+        ],
+        "body": "()=>{k(null);e={...e,a:e.a+1};r()}"
+      },
+      "memberReadsAcrossCalledGroups": {
+        "a": 1,
+        "data": 1
+      },
+      "groupBodies": [
+        {
+          "name": "r",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.a;if(b!==q){p.data=b;q=b}}"
+        }
+      ]
+    },
+    {
+      "sweep": "depth",
+      "n": 128,
+      "bundleSpreadElements": 129,
+      "objectSpreads": 129,
+      "rootTextGroupDefinitions": 121,
+      "largestGroupCaller": {
+        "name": "Kk",
+        "calls": [
+          "xi",
+          "yi",
+          "zi",
+          "Ai",
+          "Bi",
+          "Ci",
+          "Di",
+          "Ei",
+          "Fi",
+          "Gi",
+          "Hi",
+          "Ii",
+          "Ji",
+          "Ki",
+          "Li",
+          "Mi",
+          "Ni",
+          "Oi",
+          "Pi",
+          "Qi",
+          "Ri",
+          "Si",
+          "Ti",
+          "Ui",
+          "Vi",
+          "Wi",
+          "Xi",
+          "Yi",
+          "Zi",
+          "$i",
+          "_i",
+          "aj",
+          "bj",
+          "cj",
+          "dj",
+          "ej",
+          "fj",
+          "gj",
+          "hj",
+          "ij",
+          "jj",
+          "kj",
+          "lj",
+          "mj",
+          "nj",
+          "oj",
+          "pj",
+          "qj",
+          "rj",
+          "sj",
+          "tj",
+          "uj",
+          "vj",
+          "wj",
+          "xj",
+          "yj",
+          "zj",
+          "Aj",
+          "Bj",
+          "Cj",
+          "Dj",
+          "Ej",
+          "Fj",
+          "Gj",
+          "Hj",
+          "Ij",
+          "Jj",
+          "Kj",
+          "Lj",
+          "Mj",
+          "Nj",
+          "Oj",
+          "Pj",
+          "Qj",
+          "Rj",
+          "Sj",
+          "Tj",
+          "Uj",
+          "Vj",
+          "Wj",
+          "Xj",
+          "Yj",
+          "Zj",
+          "$j",
+          "_j",
+          "ak",
+          "bk",
+          "ck",
+          "dk",
+          "ek",
+          "fk",
+          "gk",
+          "hk",
+          "ik",
+          "jk",
+          "kk",
+          "lk",
+          "mk",
+          "nk",
+          "ok",
+          "pk",
+          "qk",
+          "rk",
+          "sk",
+          "tk",
+          "uk",
+          "vk",
+          "wk",
+          "xk",
+          "yk",
+          "zk",
+          "Ak",
+          "Bk",
+          "Ck",
+          "Dk",
+          "Ek",
+          "Fk",
+          "Gk",
+          "Hk",
+          "Ik",
+          "Jk"
+        ],
+        "body": "()=>{k(null);e={...e,c:Zd(e.c)};xi();yi();zi();Ai();Bi();Ci();Di();Ei();Fi();Gi();Hi();Ii();Ji();Ki();Li();Mi();Ni();Oi();Pi();Qi();Ri();Si();Ti();Ui();Vi();Wi();Xi();Yi();Zi();$i();_i();aj();bj();cj();dj();ej();fj();gj();hj();ij();jj();kj();lj();mj();nj();oj();pj();qj();rj();sj();tj();uj();vj();wj();xj();yj();zj();Aj();Bj();Cj();Dj();Ej();Fj();Gj();Hj();Ij();Jj();Kj();Lj();Mj();Nj();Oj();Pj();Qj();Rj();Sj();Tj();Uj();Vj();Wj();Xj();Yj();Zj();$j();_j();ak();bk();ck();dk();ek();fk();gk();hk();ik();jk();kk();lk();mk();nk();ok();pk();qk();rk();sk();tk();uk();vk();wk();xk();yk();zk();Ak();Bk();Ck();Dk();Ek();Fk();Gk();Hk();Ik();Jk()}"
+      },
+      "memberReadsAcrossCalledGroups": {
+        "c": 121,
+        "b": 121,
+        "a": 8107,
+        "data": 122,
+        "d": 1
+      },
+      "groupBodies": [
+        {
+          "name": "xi",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,n=b.a.a.a.a.a.a.a.b;if(n!==jg){u.data=n;jg=n}}"
+        },
+        {
+          "name": "yi",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,o=b.a.a.a.a.a.a.a.a.b;if(o!==kg){x.data=o;kg=o}}"
+        },
+        {
+          "name": "zi",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,p=b.a.a.a.a.a.a.a.a.a.b;if(p!==lg){A.data=p;lg=p}}"
+        },
+        {
+          "name": "Ai",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,q=b.a.a.a.a.a.a.a.a.a.a.b;if(q!==mg){D.data=q;mg=q}}"
+        },
+        {
+          "name": "Bi",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,r=b.a.a.a.a.a.a.a.a.a.a.a.b;if(r!==ng){G.data=r;ng=r}}"
+        },
+        {
+          "name": "Ci",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,s=b.a.a.a.a.a.a.a.a.a.a.a.a.b;if(s!==og){J.data=s;og=s}}"
+        },
+        {
+          "name": "Di",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,t=b.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(t!==pg){M.data=t;pg=t}}"
+        },
+        {
+          "name": "Ei",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,u=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(u!==qg){P.data=u;qg=u}}"
+        },
+        {
+          "name": "Fi",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,v=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(v!==rg){S.data=v;rg=v}}"
+        },
+        {
+          "name": "Gi",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,w=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(w!==sg){V.data=w;sg=w}}"
+        },
+        {
+          "name": "Hi",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,x=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(x!==tg){Y.data=x;tg=x}}"
+        },
+        {
+          "name": "Ii",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,y=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(y!==ug){_.data=y;ug=y}}"
+        },
+        {
+          "name": "Ji",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,z=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(z!==vg){ca.data=z;vg=z}}"
+        },
+        {
+          "name": "Ki",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,A=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(A!==wg){fa.data=A;wg=A}}"
+        },
+        {
+          "name": "Li",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,B=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(B!==xg){ia.data=B;xg=B}}"
+        },
+        {
+          "name": "Mi",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,C=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(C!==yg){la.data=C;yg=C}}"
+        },
+        {
+          "name": "Ni",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,D=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(D!==zg){oa.data=D;zg=D}}"
+        },
+        {
+          "name": "Oi",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,E=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(E!==Ag){ra.data=E;Ag=E}}"
+        },
+        {
+          "name": "Pi",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,F=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(F!==Bg){ua.data=F;Bg=F}}"
+        },
+        {
+          "name": "Qi",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,G=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(G!==Cg){xa.data=G;Cg=G}}"
+        },
+        {
+          "name": "Ri",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,H=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(H!==Dg){Aa.data=H;Dg=H}}"
+        },
+        {
+          "name": "Si",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,I=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(I!==Eg){Da.data=I;Eg=I}}"
+        },
+        {
+          "name": "Ti",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,J=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(J!==Fg){Ga.data=J;Fg=J}}"
+        },
+        {
+          "name": "Ui",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,K=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(K!==Gg){Ja.data=K;Gg=K}}"
+        },
+        {
+          "name": "Vi",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,L=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(L!==Hg){Ma.data=L;Hg=L}}"
+        },
+        {
+          "name": "Wi",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,M=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(M!==Ig){Pa.data=M;Ig=M}}"
+        },
+        {
+          "name": "Xi",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,N=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(N!==Jg){Sa.data=N;Jg=N}}"
+        },
+        {
+          "name": "Yi",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,O=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(O!==Kg){Va.data=O;Kg=O}}"
+        },
+        {
+          "name": "Zi",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,P=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(P!==Lg){Ya.data=P;Lg=P}}"
+        },
+        {
+          "name": "$i",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,Q=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(Q!==Mg){_a.data=Q;Mg=Q}}"
+        },
+        {
+          "name": "_i",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,R=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(R!==Ng){cb.data=R;Ng=R}}"
+        },
+        {
+          "name": "aj",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,S=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(S!==Og){fb.data=S;Og=S}}"
+        },
+        {
+          "name": "bj",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,T=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(T!==Pg){ib.data=T;Pg=T}}"
+        },
+        {
+          "name": "cj",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,U=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(U!==Qg){lb.data=U;Qg=U}}"
+        },
+        {
+          "name": "dj",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,V=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(V!==Rg){ob.data=V;Rg=V}}"
+        },
+        {
+          "name": "ej",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,W=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(W!==Sg){rb.data=W;Sg=W}}"
+        },
+        {
+          "name": "fj",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,X=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(X!==Tg){ub.data=X;Tg=X}}"
+        },
+        {
+          "name": "gj",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,Y=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(Y!==Ug){xb.data=Y;Ug=Y}}"
+        },
+        {
+          "name": "hj",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,Z=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(Z!==Vg){Ab.data=Z;Vg=Z}}"
+        },
+        {
+          "name": "ij",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,$=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if($!==Wg){Db.data=$;Wg=$}}"
+        },
+        {
+          "name": "jj",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,_=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(_!==Xg){Hb.data=_;Xg=_}}"
+        },
+        {
+          "name": "kj",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,aa=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(aa!==Yg){Kb.data=aa;Yg=aa}}"
+        },
+        {
+          "name": "lj",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,ba=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(ba!==Zg){Nb.data=ba;Zg=ba}}"
+        },
+        {
+          "name": "mj",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,ca=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(ca!==$g){Qb.data=ca;$g=ca}}"
+        },
+        {
+          "name": "nj",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,da=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(da!==_g){Tb.data=da;_g=da}}"
+        },
+        {
+          "name": "oj",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,ea=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(ea!==ah){Wb.data=ea;ah=ea}}"
+        },
+        {
+          "name": "pj",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,fa=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(fa!==bh){Zb.data=fa;bh=fa}}"
+        },
+        {
+          "name": "qj",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,ga=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(ga!==ch){ac.data=ga;ch=ga}}"
+        },
+        {
+          "name": "rj",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,ha=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(ha!==dh){dc.data=ha;dh=ha}}"
+        },
+        {
+          "name": "sj",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,ia=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(ia!==eh){gc.data=ia;eh=ia}}"
+        },
+        {
+          "name": "tj",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,ja=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(ja!==fh){jc.data=ja;fh=ja}}"
+        },
+        {
+          "name": "uj",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,ka=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(ka!==gh){mc.data=ka;gh=ka}}"
+        },
+        {
+          "name": "vj",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,la=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(la!==hh){pc.data=la;hh=la}}"
+        },
+        {
+          "name": "wj",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,ma=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(ma!==ih){sc.data=ma;ih=ma}}"
+        },
+        {
+          "name": "xj",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,na=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(na!==jh){vc.data=na;jh=na}}"
+        },
+        {
+          "name": "yj",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,oa=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(oa!==kh){yc.data=oa;kh=oa}}"
+        },
+        {
+          "name": "zj",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,pa=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(pa!==lh){Bc.data=pa;lh=pa}}"
+        },
+        {
+          "name": "Aj",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,qa=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(qa!==mh){Ec.data=qa;mh=qa}}"
+        },
+        {
+          "name": "Bj",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,ra=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(ra!==nh){Hc.data=ra;nh=ra}}"
+        },
+        {
+          "name": "Cj",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,sa=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(sa!==oh){Kc.data=sa;oh=sa}}"
+        },
+        {
+          "name": "Dj",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,ta=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(ta!==ph){Nc.data=ta;ph=ta}}"
+        },
+        {
+          "name": "Ej",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,ua=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(ua!==qh){Qc.data=ua;qh=ua}}"
+        },
+        {
+          "name": "Fj",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,va=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(va!==rh){Tc.data=va;rh=va}}"
+        },
+        {
+          "name": "Gj",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,wa=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(wa!==sh){Wc.data=wa;sh=wa}}"
+        },
+        {
+          "name": "Hj",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,xa=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(xa!==th){Zc.data=xa;th=xa}}"
+        },
+        {
+          "name": "Ij",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,ya=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(ya!==uh){ad.data=ya;uh=ya}}"
+        },
+        {
+          "name": "Jj",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,za=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(za!==vh){dd.data=za;vh=za}}"
+        },
+        {
+          "name": "Kj",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,Aa=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(Aa!==wh){gd.data=Aa;wh=Aa}}"
+        },
+        {
+          "name": "Lj",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,Ba=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(Ba!==xh){jd.data=Ba;xh=Ba}}"
+        },
+        {
+          "name": "Mj",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,Ca=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(Ca!==yh){md.data=Ca;yh=Ca}}"
+        },
+        {
+          "name": "Nj",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,Da=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(Da!==zh){pd.data=Da;zh=Da}}"
+        },
+        {
+          "name": "Oj",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,Ea=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(Ea!==Ah){sd.data=Ea;Ah=Ea}}"
+        },
+        {
+          "name": "Pj",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,Fa=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(Fa!==Bh){vd.data=Fa;Bh=Fa}}"
+        },
+        {
+          "name": "Qj",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,Ga=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(Ga!==Ch){yd.data=Ga;Ch=Ga}}"
+        },
+        {
+          "name": "Rj",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,Ha=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(Ha!==Dh){Bd.data=Ha;Dh=Ha}}"
+        },
+        {
+          "name": "Sj",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,Ia=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(Ia!==Eh){Ed.data=Ia;Eh=Ia}}"
+        },
+        {
+          "name": "Tj",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,Ja=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(Ja!==Fh){Hd.data=Ja;Fh=Ja}}"
+        },
+        {
+          "name": "Uj",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,Ka=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(Ka!==Gh){Kd.data=Ka;Gh=Ka}}"
+        },
+        {
+          "name": "Vj",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,La=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(La!==Hh){Nd.data=La;Hh=La}}"
+        },
+        {
+          "name": "Wj",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,Ma=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(Ma!==Ih){Qd.data=Ma;Ih=Ma}}"
+        },
+        {
+          "name": "Xj",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,Na=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(Na!==Jh){Td.data=Na;Jh=Na}}"
+        },
+        {
+          "name": "Yj",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,Oa=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(Oa!==Kh){Wd.data=Oa;Kh=Oa}}"
+        },
+        {
+          "name": "Zj",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,Pa=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(Pa!==Lh){_d.data=Pa;Lh=Pa}}"
+        },
+        {
+          "name": "$j",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,Qa=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(Qa!==Mh){ce.data=Qa;Mh=Qa}}"
+        },
+        {
+          "name": "_j",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,Ra=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(Ra!==Nh){fe.data=Ra;Nh=Ra}}"
+        },
+        {
+          "name": "ak",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,Sa=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(Sa!==Oh){ie.data=Sa;Oh=Sa}}"
+        },
+        {
+          "name": "bk",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,Ta=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(Ta!==Ph){le.data=Ta;Ph=Ta}}"
+        },
+        {
+          "name": "ck",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,Ua=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(Ua!==Qh){oe.data=Ua;Qh=Ua}}"
+        },
+        {
+          "name": "dk",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,Va=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(Va!==Rh){re.data=Va;Rh=Va}}"
+        },
+        {
+          "name": "ek",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,Wa=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(Wa!==Sh){ue.data=Wa;Sh=Wa}}"
+        },
+        {
+          "name": "fk",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,Xa=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(Xa!==Th){xe.data=Xa;Th=Xa}}"
+        },
+        {
+          "name": "gk",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,Ya=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(Ya!==Uh){Ae.data=Ya;Uh=Ya}}"
+        },
+        {
+          "name": "hk",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,Za=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(Za!==Vh){De.data=Za;Vh=Za}}"
+        },
+        {
+          "name": "ik",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,$a=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if($a!==Wh){Ge.data=$a;Wh=$a}}"
+        },
+        {
+          "name": "jk",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,_a=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(_a!==Xh){Je.data=_a;Xh=_a}}"
+        },
+        {
+          "name": "kk",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,ab=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(ab!==Yh){Me.data=ab;Yh=ab}}"
+        },
+        {
+          "name": "lk",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,bb=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(bb!==Zh){Pe.data=bb;Zh=bb}}"
+        },
+        {
+          "name": "mk",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,cb=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(cb!==$h){Se.data=cb;$h=cb}}"
+        },
+        {
+          "name": "nk",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,db=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(db!==_h){Ve.data=db;_h=db}}"
+        },
+        {
+          "name": "ok",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,eb=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(eb!==ai){Ye.data=eb;ai=eb}}"
+        },
+        {
+          "name": "pk",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,fb=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(fb!==bi){_e.data=fb;bi=fb}}"
+        },
+        {
+          "name": "qk",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,gb=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(gb!==ci){cf.data=gb;ci=gb}}"
+        },
+        {
+          "name": "rk",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,hb=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(hb!==di){ff.data=hb;di=hb}}"
+        },
+        {
+          "name": "sk",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,ib=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(ib!==ei){jf.data=ib;ei=ib}}"
+        },
+        {
+          "name": "tk",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,jb=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(jb!==fi){mf.data=jb;fi=jb}}"
+        },
+        {
+          "name": "uk",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,kb=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(kb!==gi){pf.data=kb;gi=kb}}"
+        },
+        {
+          "name": "vk",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,lb=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(lb!==hi){sf.data=lb;hi=lb}}"
+        },
+        {
+          "name": "wk",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,mb=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(mb!==ii){vf.data=mb;ii=mb}}"
+        },
+        {
+          "name": "xk",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,nb=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(nb!==ji){yf.data=nb;ji=nb}}"
+        },
+        {
+          "name": "yk",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,ob=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(ob!==ki){Bf.data=ob;ki=ob}}"
+        },
+        {
+          "name": "zk",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,pb=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(pb!==li){Ef.data=pb;li=pb}}"
+        },
+        {
+          "name": "Ak",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,qb=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(qb!==mi){Hf.data=qb;mi=qb}}"
+        },
+        {
+          "name": "Bk",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,rb=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(rb!==ni){Kf.data=rb;ni=rb}}"
+        },
+        {
+          "name": "Ck",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,sb=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(sb!==oi){Nf.data=sb;oi=sb}}"
+        },
+        {
+          "name": "Dk",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,tb=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(tb!==pi){Qf.data=tb;pi=tb}}"
+        },
+        {
+          "name": "Ek",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,ub=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(ub!==qi){Tf.data=ub;qi=ub}}"
+        },
+        {
+          "name": "Fk",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,vb=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(vb!==ri){Wf.data=vb;ri=vb}}"
+        },
+        {
+          "name": "Gk",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,wb=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(wb!==si){Zf.data=wb;si=wb}}"
+        },
+        {
+          "name": "Hk",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,xb=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(xb!==ti){ag.data=xb;ti=xb}}"
+        },
+        {
+          "name": "Ik",
+          "dataWrites": 1,
+          "body": "()=>{let b=e.c,yb=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.b;if(yb!==ui){dg.data=yb;ui=yb}}"
+        },
+        {
+          "name": "Jk",
+          "dataWrites": 2,
+          "body": "()=>{let b=e.c,yb=b.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a.a,zb=yb.b,Ab=yb.d;if(zb!==vi){gg.data=zb;vi=zb}if(Ab!==wi){ig.data=Ab;wi=Ab}}"
+        }
+      ]
+    },
+    {
+      "sweep": "rows",
+      "n": 30000,
+      "bundleSpreadElements": 3,
+      "objectSpreads": 3,
+      "rootTextGroupDefinitions": 2,
+      "largestGroupCaller": {
+        "name": "n",
+        "calls": [
+          "l",
+          "m"
+        ],
+        "body": "a=>{let d=e.cloneNode(true),f=d.firstChild,k={e:d,it:a,w2:f.firstChild,w5:f.nextSibling.firstChild.firstChild,s0:w,s1:w};l(k);m(k);return k}"
+      },
+      "memberReadsAcrossCalledGroups": {
+        "it": 2,
+        "b": 1,
+        "s0": 2,
+        "data": 2,
+        "w2": 1,
+        "c": 1,
+        "s1": 2,
+        "w5": 1
+      },
+      "groupBodies": [
+        {
+          "name": "l",
+          "dataWrites": 1,
+          "body": "a=>{let b=a.it,c=b.b;if(c!==a.s0){a.w2.data=c;a.s0=c}}"
+        },
+        {
+          "name": "m",
+          "dataWrites": 1,
+          "body": "a=>{let b=a.it,c=b.c;if(c!==a.s1){a.w5.data=c;a.s1=c}}"
+        }
+      ]
+    },
+    {
+      "sweep": "live",
+      "n": 10000,
+      "bundleSpreadElements": 3,
+      "objectSpreads": 3,
+      "rootTextGroupDefinitions": 2,
+      "largestGroupCaller": {
+        "name": "v",
+        "calls": [
+          "s"
+        ],
+        "body": "a=>{let d=e.cloneNode(true),f=d.firstChild,g=f.firstChild,n={e:d,it:a,l:0,w2:g,w5:f.nextSibling.firstChild.firstChild,s0:m,s2:m};d.$r=n;g.$input=t;r(n);s(n);return n}"
+      },
+      "memberReadsAcrossCalledGroups": {
+        "it": 1,
+        "c": 1,
+        "s2": 2,
+        "data": 1,
+        "w5": 1
+      },
+      "groupBodies": [
+        {
+          "name": "s",
+          "dataWrites": 1,
+          "body": "a=>{let b=a.it,c=b.c;if(c!==a.s2){a.w5.data=c;a.s2=c}}"
+        }
+      ]
+    },
+    {
+      "sweep": "derived",
+      "n": 100000,
+      "bundleSpreadElements": 1,
+      "objectSpreads": 1,
+      "rootTextGroupDefinitions": 2,
+      "largestGroupCaller": {
+        "name": "u",
+        "calls": [
+          "p"
+        ],
+        "body": "()=>{M(null);d={...d,a:d.a+1};p()}"
+      },
+      "memberReadsAcrossCalledGroups": {
+        "a": 1,
+        "data": 1
+      },
+      "groupBodies": [
+        {
+          "name": "p",
+          "dataWrites": 1,
+          "body": "()=>{let a=d.a;if(a!==o){k.data=a;o=a}}"
+        }
+      ]
+    },
+    {
+      "sweep": "helperRows",
+      "n": 10000,
+      "bundleSpreadElements": 1,
+      "objectSpreads": 1,
+      "rootTextGroupDefinitions": 3,
+      "largestGroupCaller": {
+        "name": "s",
+        "calls": [
+          "q",
+          "r"
+        ],
+        "body": "a=>{let d=e.cloneNode(true),f=d.firstChild,m={e:d,it:a,w2:f.firstChild,w5:f.nextSibling.firstChild.firstChild,s0:i,s1:i};q(m);r(m);return m}"
+      },
+      "memberReadsAcrossCalledGroups": {
+        "it": 2,
+        "c": 2,
+        "s0": 2,
+        "data": 2,
+        "w2": 1,
+        "s1": 2,
+        "w5": 1
+      },
+      "groupBodies": [
+        {
+          "name": "q",
+          "dataWrites": 1,
+          "body": "a=>{let b=a.it,c=b.c;if(c!==a.s0){a.w2.data=c;a.s0=c}}"
+        },
+        {
+          "name": "r",
+          "dataWrites": 1,
+          "body": "a=>{let b=a.it,c=b.c;if(c!==a.s1){a.w5.data=c;a.s1=c}}"
+        }
+      ]
+    },
+    {
+      "sweep": "tree",
+      "n": 12,
+      "bundleSpreadElements": 1,
+      "objectSpreads": 1,
+      "rootTextGroupDefinitions": 1,
+      "largestGroupCaller": {
+        "name": "p",
+        "calls": [
+          "m"
+        ],
+        "body": "()=>{K(null);d={...d,a:d.a+1};let b=P(o,0);m();Q(b)}"
+      },
+      "memberReadsAcrossCalledGroups": {
+        "a": 1,
+        "data": 1
+      },
+      "groupBodies": [
+        {
+          "name": "m",
+          "dataWrites": 1,
+          "body": "()=>{let a=d.a;if(a!==l){i.data=a;l=a}}"
+        }
+      ]
+    }
+  ]
+}

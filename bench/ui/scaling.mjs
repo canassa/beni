@@ -638,7 +638,7 @@ for (const sweep of chosen) {
         for (let s = 0; s < subjects.length; s++) {
           const subject = subjects[(i + s) % subjects.length];
           let got = null;
-          for (let attempt = 0; attempt < 2 && got === null; attempt++) {
+          for (let attempt = 0; attempt < (flag("no-retry") ? 1 : 2) && got === null; attempt++) {
             try {
               got = await measurePage(sweep, op, p, subject, i);
             } catch (e) {

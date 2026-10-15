@@ -1,0 +1,17 @@
+import fs from 'node:fs';
+import {execFileSync} from 'node:child_process';
+import {createHash} from 'node:crypto';
+import {hostname,cpus,release,totalmem,freemem} from 'node:os';
+const sha=p=>createHash('sha256').update(fs.readFileSync(p)).digest('hex');
+const cmd=(c,args=[])=>execFileSync(c,args,{encoding:'utf8'}).trim();
+const read=p=>fs.existsSync(p)?fs.readFileSync(p,'utf8').trim():null;
+const zorgPath=cmd('sh',['-c','command -v zorg']);
+const packages={};
+for(const p of ['bench/ui/apps/solid1/node_modules/solid-js/package.json','bench/ui/apps/solid2/node_modules/solid-js/package.json','bench/jfb/work/frameworks/keyed/solid/node_modules/solid-js/package.json'])packages[p]=JSON.parse(fs.readFileSync(p)).version;
+const paths=['src','core','platforms','examples','bench/ui','bench/jfb','bench/todomvc','bench/conduit','bench/writesets','bench/s8'];
+const files=[...new Set([...cmd('git',['ls-files','--',...paths]).split('\n'),...fs.readdirSync('bench/s8').filter(p=>/\.(mjs|sh|md)$/.test(p)).map(p=>'bench/s8/'+p)])].filter(p=>fs.statSync(p).isFile());
+const manifest=Object.fromEntries(files.map(p=>[p,sha(p)]));
+fs.writeFileSync('bench/s8/results/source-manifest.json',JSON.stringify(manifest,null,2)+'\n');
+fs.writeFileSync('bench/s8/results/harness.patch',cmd('git',['diff','--','bench/jfb/run.mjs','bench/ui/bench.mjs','bench/ui/scaling.mjs','bench/todomvc/direct-time.mjs','bench/writesets/stats.mjs','bench/conduit/time.mjs'])+'\n');
+const result={recorded:new Date().toISOString(),host:hostname(),kernel:release(),memory:{totalBytes:totalmem(),freeBytesAtCapture:freemem()},commit:cmd('git',['rev-parse','HEAD']),measuredSourceCommit:JSON.parse(fs.readFileSync('bench/s8/results/app-builds.json')).commit,node:process.version,compilerSha256:sha(process.env.BENI),beni:cmd(process.env.BENI,['version']),zorg:cmd('zorg',['version']),chrome:cmd(process.env.S8_CHROME,['--version']),chromePath:process.env.S8_CHROME,chromeWrapperSha256:sha(process.env.S8_CHROME),zorgPath,zorgSha256:sha(zorgPath),nodeExecutable:process.execPath,nodeSha256:sha(process.execPath),npm:cmd('npm',['--version']),flakeLock:sha('flake.lock'),cpu:cpus()[0].model,cpus:cpus().length,affinity:{harness:'0-1,6-7',chrome:'2-5,8-11'},isolated:read('/sys/devices/system/cpu/isolated'),governors:Array.from({length:cpus().length},(_,i)=>({cpu:i,governor:read(`/sys/devices/system/cpu/cpu${i}/cpufreq/scaling_governor`),preference:read(`/sys/devices/system/cpu/cpu${i}/cpufreq/energy_performance_preference`),siblings:read(`/sys/devices/system/cpu/cpu${i}/topology/thread_siblings_list`)})),packages,submodules:cmd('git',['submodule','status']),status:cmd('git',['status','--short']),manifestSha256:sha('bench/s8/results/source-manifest.json')};
+fs.writeFileSync('bench/s8/results/provenance.json',JSON.stringify(result,null,2)+'\n');

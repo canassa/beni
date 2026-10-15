@@ -1,0 +1,15 @@
+{
+  "passed": true,
+  "counts": {
+    "table": 1080,
+    "sweeps": 10188,
+    "todo": 600,
+    "apps": 200,
+    "conduit": 240,
+    "jfb": 60,
+    "jfb-1": 60,
+    "jfb-2": 60,
+    "jfb-3": 60
+  },
+  "method": "Counts and completeness only; behavioral evidence is in harness postconditions and the test logs."
+}

@@ -1,0 +1,62 @@
+[
+  {
+    "platform": "tea",
+    "mode": "development",
+    "args": [
+      "build",
+      "--platform=browser-tea",
+      "--no-cache",
+      "--out=zig-out/s8/bike-tea-development",
+      "examples/bike-wars/src"
+    ],
+    "status": 0,
+    "stdout": "",
+    "stderr": "-- PREPEND IN LOOP ------------------- examples/bike-wars/src/Helpers.beni:36:35\n\nThis puts elements in front of `acc`, the accumulator this `List.foldr` hands\nback to its callback, so it happens at every step:\n\n    [ (…), …acc ]\n\nA list is an array, so every step copies the whole accumulator, and the loop\ntakes time that grows with the square of the list's length. Add at the end\ninstead, which takes the same short time at every step:\n\n    [ …acc, (…) ]\n\n`List.foldr` hands over the last element first, so to keep the order write\nthe loop as `List.foldl`, which hands over the first element first.\n\nIf the prepend is meant — the list stays short — give the new list a name\nfirst, and this warning goes.\n\n36|                [ [ start, end ], …acc ]\n                                     ^^^^\n\n-- PREPEND IN LOOP ------------------- examples/bike-wars/src/Helpers.beni:51:39\n\nThis puts elements in front of `acc`, which this function hands back to\nitself, so it happens at every step of a loop:\n\n    [ (…), …acc ]\n\nA list is an array, so every step copies the whole accumulator, and the loop\ntakes time that grows with the square of the list's length. Add at the end\ninstead, which takes the same short time at every step:\n\n    [ …acc, (…) ]\n\nThat keeps the elements in the order they arrive, so the `List.reverse` that\nput a prepended result back in order is no longer needed.\n\nIf the prepend is meant — the list stays short — give the new list a name\nfirst, and this warning goes.\n\n51|                recurse [ toLine a b, …acc ] [ b, …tail ]\n                                         ^^^^\n"
+  },
+  {
+    "platform": "tea",
+    "mode": "test-only-release",
+    "args": [
+      "build",
+      "--platform=browser-tea",
+      "--no-cache",
+      "--out=zig-out/s8/bike-tea-test-only-release",
+      "--release",
+      "--allow-debug",
+      "examples/bike-wars/src"
+    ],
+    "status": 0,
+    "stdout": "",
+    "stderr": "-- PREPEND IN LOOP ------------------- examples/bike-wars/src/Helpers.beni:36:35\n\nThis puts elements in front of `acc`, the accumulator this `List.foldr` hands\nback to its callback, so it happens at every step:\n\n    [ (…), …acc ]\n\nA list is an array, so every step copies the whole accumulator, and the loop\ntakes time that grows with the square of the list's length. Add at the end\ninstead, which takes the same short time at every step:\n\n    [ …acc, (…) ]\n\n`List.foldr` hands over the last element first, so to keep the order write\nthe loop as `List.foldl`, which hands over the first element first.\n\nIf the prepend is meant — the list stays short — give the new list a name\nfirst, and this warning goes.\n\n36|                [ [ start, end ], …acc ]\n                                     ^^^^\n\n-- PREPEND IN LOOP ------------------- examples/bike-wars/src/Helpers.beni:51:39\n\nThis puts elements in front of `acc`, which this function hands back to\nitself, so it happens at every step of a loop:\n\n    [ (…), …acc ]\n\nA list is an array, so every step copies the whole accumulator, and the loop\ntakes time that grows with the square of the list's length. Add at the end\ninstead, which takes the same short time at every step:\n\n    [ …acc, (…) ]\n\nThat keeps the elements in the order they arrive, so the `List.reverse` that\nput a prepended result back in order is no longer needed.\n\nIf the prepend is meant — the list stays short — give the new list a name\nfirst, and this warning goes.\n\n51|                recurse [ toLine a b, …acc ] [ b, …tail ]\n                                         ^^^^\n"
+  },
+  {
+    "platform": "direct",
+    "mode": "development",
+    "args": [
+      "build",
+      "--platform=browser-direct",
+      "--no-cache",
+      "--out=zig-out/s8/bike-direct-development",
+      "examples/bike-wars/src"
+    ],
+    "status": 0,
+    "stdout": "",
+    "stderr": "-- PREPEND IN LOOP ------------------- examples/bike-wars/src/Helpers.beni:36:35\n\nThis puts elements in front of `acc`, the accumulator this `List.foldr` hands\nback to its callback, so it happens at every step:\n\n    [ (…), …acc ]\n\nA list is an array, so every step copies the whole accumulator, and the loop\ntakes time that grows with the square of the list's length. Add at the end\ninstead, which takes the same short time at every step:\n\n    [ …acc, (…) ]\n\n`List.foldr` hands over the last element first, so to keep the order write\nthe loop as `List.foldl`, which hands over the first element first.\n\nIf the prepend is meant — the list stays short — give the new list a name\nfirst, and this warning goes.\n\n36|                [ [ start, end ], …acc ]\n                                     ^^^^\n\n-- PREPEND IN LOOP ------------------- examples/bike-wars/src/Helpers.beni:51:39\n\nThis puts elements in front of `acc`, which this function hands back to\nitself, so it happens at every step of a loop:\n\n    [ (…), …acc ]\n\nA list is an array, so every step copies the whole accumulator, and the loop\ntakes time that grows with the square of the list's length. Add at the end\ninstead, which takes the same short time at every step:\n\n    [ …acc, (…) ]\n\nThat keeps the elements in the order they arrive, so the `List.reverse` that\nput a prepended result back in order is no longer needed.\n\nIf the prepend is meant — the list stays short — give the new list a name\nfirst, and this warning goes.\n\n51|                recurse [ toLine a b, …acc ] [ b, …tail ]\n                                         ^^^^\n"
+  },
+  {
+    "platform": "direct",
+    "mode": "test-only-release",
+    "args": [
+      "build",
+      "--platform=browser-direct",
+      "--no-cache",
+      "--out=zig-out/s8/bike-direct-test-only-release",
+      "--release",
+      "--allow-debug",
+      "examples/bike-wars/src"
+    ],
+    "status": 0,
+    "stdout": "",
+    "stderr": "-- PREPEND IN LOOP ------------------- examples/bike-wars/src/Helpers.beni:36:35\n\nThis puts elements in front of `acc`, the accumulator this `List.foldr` hands\nback to its callback, so it happens at every step:\n\n    [ (…), …acc ]\n\nA list is an array, so every step copies the whole accumulator, and the loop\ntakes time that grows with the square of the list's length. Add at the end\ninstead, which takes the same short time at every step:\n\n    [ …acc, (…) ]\n\n`List.foldr` hands over the last element first, so to keep the order write\nthe loop as `List.foldl`, which hands over the first element first.\n\nIf the prepend is meant — the list stays short — give the new list a name\nfirst, and this warning goes.\n\n36|                [ [ start, end ], …acc ]\n                                     ^^^^\n\n-- PREPEND IN LOOP ------------------- examples/bike-wars/src/Helpers.beni:51:39\n\nThis puts elements in front of `acc`, which this function hands back to\nitself, so it happens at every step of a loop:\n\n    [ (…), …acc ]\n\nA list is an array, so every step copies the whole accumulator, and the loop\ntakes time that grows with the square of the list's length. Add at the end\ninstead, which takes the same short time at every step:\n\n    [ …acc, (…) ]\n\nThat keeps the elements in the order they arrive, so the `List.reverse` that\nput a prepended result back in order is no longer needed.\n\nIf the prepend is meant — the list stays short — give the new list a name\nfirst, and this warning goes.\n\n51|                recurse [ toLine a b, …acc ] [ b, …tail ]\n                                         ^^^^\n"
+  }
+]

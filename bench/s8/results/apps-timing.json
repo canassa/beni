@@ -1,0 +1,1669 @@
+{
+  "started": "2026-10-15T15:16:00.065Z",
+  "chrome": "Chrome/153.0.8010.36",
+  "samples": 20,
+  "method": "20 fresh pages per platform/message. Capture to eight microtasks after final event; unthrottled real CDP input. Driver prelude/virtual clock, no CSS, no forced GC. Setup outside timing. TodoMVC seeds 100 todos, six toggle warmups; Sternhalma measures native selection/reset, not synthetic drag. DOM/title/property/error transcript comparison after each timed message.",
+  "builds": [
+    {
+      "app": "conduit",
+      "platform": "tea",
+      "sha256": "262ea8b11c0d83a24afe54e228ee0de088a6b417d7c4c34feee7cae86000743e",
+      "status": 0
+    },
+    {
+      "app": "conduit",
+      "platform": "direct",
+      "sha256": "597cdac8bd2b0568360862f8f2f4dbbd4e03d20ef7d373000ed5f11f2c6a4399",
+      "status": 0
+    },
+    {
+      "app": "todomvc",
+      "platform": "tea",
+      "sha256": "dea9abdf44bef542ec62b97123388045fdb479700469d00b0ef34b79131668a2",
+      "status": 0
+    },
+    {
+      "app": "todomvc",
+      "platform": "direct",
+      "sha256": "a1bdc0175cd3221ae46286c3809ef6340fac8728a6010303401a9a127457df3b",
+      "status": 0
+    },
+    {
+      "app": "sternhalma",
+      "platform": "tea",
+      "sha256": "761bbedd4db723251666666dea58a6343f124ad559c357177f00172f355071aa",
+      "status": 0
+    },
+    {
+      "app": "sternhalma",
+      "platform": "direct",
+      "sha256": "8f93fcbc923db18bdce90108118f6a6719ca8e9f24c0816b01352d2517f19631",
+      "status": 0
+    },
+    {
+      "app": "bike",
+      "platform": "tea",
+      "status": 1
+    },
+    {
+      "app": "bike",
+      "platform": "direct",
+      "status": 1
+    },
+    {
+      "app": "table",
+      "platform": "tea",
+      "sha256": "2e78eb63b806a6fd0a1478747afc12e1846179e963573c527b219bd0e8a3aea4",
+      "status": 0
+    },
+    {
+      "app": "table",
+      "platform": "direct",
+      "sha256": "fc2ae97fcdcfd1dda590c5b54c87a061ebe1dc4779ba46b94dd7ce7c227a2ce7",
+      "status": 0
+    }
+  ],
+  "rows": [
+    {
+      "app": "todomvc",
+      "operation": "add at 100",
+      "subject": "tea",
+      "sample": 0,
+      "ms": 0.8399999141693115,
+      "load": 0.12
+    },
+    {
+      "app": "todomvc",
+      "operation": "add at 100",
+      "subject": "direct",
+      "sample": 0,
+      "ms": 0.8649998903274536,
+      "load": 0.59
+    },
+    {
+      "app": "todomvc",
+      "operation": "add at 100",
+      "subject": "direct",
+      "sample": 1,
+      "ms": 0.8550000190734863,
+      "load": 0.59
+    },
+    {
+      "app": "todomvc",
+      "operation": "add at 100",
+      "subject": "tea",
+      "sample": 1,
+      "ms": 0.6699999570846558,
+      "load": 0.59
+    },
+    {
+      "app": "todomvc",
+      "operation": "add at 100",
+      "subject": "tea",
+      "sample": 2,
+      "ms": 0.6599999666213989,
+      "load": 0.59
+    },
+    {
+      "app": "todomvc",
+      "operation": "add at 100",
+      "subject": "direct",
+      "sample": 2,
+      "ms": 0.6599999666213989,
+      "load": 0.59
+    },
+    {
+      "app": "todomvc",
+      "operation": "add at 100",
+      "subject": "direct",
+      "sample": 3,
+      "ms": 0.6800000667572021,
+      "load": 0.59
+    },
+    {
+      "app": "todomvc",
+      "operation": "add at 100",
+      "subject": "tea",
+      "sample": 3,
+      "ms": 0.7100000381469727,
+      "load": 0.59
+    },
+    {
+      "app": "todomvc",
+      "operation": "add at 100",
+      "subject": "tea",
+      "sample": 4,
+      "ms": 0.7400000095367432,
+      "load": 0.59
+    },
+    {
+      "app": "todomvc",
+      "operation": "add at 100",
+      "subject": "direct",
+      "sample": 4,
+      "ms": 0.8700000047683716,
+      "load": 0.59
+    },
+    {
+      "app": "todomvc",
+      "operation": "add at 100",
+      "subject": "direct",
+      "sample": 5,
+      "ms": 0.7099999189376831,
+      "load": 0.59
+    },
+    {
+      "app": "todomvc",
+      "operation": "add at 100",
+      "subject": "tea",
+      "sample": 5,
+      "ms": 0.6800000667572021,
+      "load": 0.59
+    },
+    {
+      "app": "todomvc",
+      "operation": "add at 100",
+      "subject": "tea",
+      "sample": 6,
+      "ms": 0.7949999570846558,
+      "load": 0.59
+    },
+    {
+      "app": "todomvc",
+      "operation": "add at 100",
+      "subject": "direct",
+      "sample": 6,
+      "ms": 0.6649999618530273,
+      "load": 0.59
+    },
+    {
+      "app": "todomvc",
+      "operation": "add at 100",
+      "subject": "direct",
+      "sample": 7,
+      "ms": 0.6749999523162842,
+      "load": 0.59
+    },
+    {
+      "app": "todomvc",
+      "operation": "add at 100",
+      "subject": "tea",
+      "sample": 7,
+      "ms": 0.7849999666213989,
+      "load": 0.59
+    },
+    {
+      "app": "todomvc",
+      "operation": "add at 100",
+      "subject": "tea",
+      "sample": 8,
+      "ms": 0.690000057220459,
+      "load": 0.59
+    },
+    {
+      "app": "todomvc",
+      "operation": "add at 100",
+      "subject": "direct",
+      "sample": 8,
+      "ms": 0.6299999952316284,
+      "load": 0.59
+    },
+    {
+      "app": "todomvc",
+      "operation": "add at 100",
+      "subject": "direct",
+      "sample": 9,
+      "ms": 0.6800000667572021,
+      "load": 0.59
+    },
+    {
+      "app": "todomvc",
+      "operation": "add at 100",
+      "subject": "tea",
+      "sample": 9,
+      "ms": 0.6150000095367432,
+      "load": 0.59
+    },
+    {
+      "app": "todomvc",
+      "operation": "add at 100",
+      "subject": "tea",
+      "sample": 10,
+      "ms": 0.6150000095367432,
+      "load": 0.59
+    },
+    {
+      "app": "todomvc",
+      "operation": "add at 100",
+      "subject": "direct",
+      "sample": 10,
+      "ms": 0.6100000143051147,
+      "load": 0.59
+    },
+    {
+      "app": "todomvc",
+      "operation": "add at 100",
+      "subject": "direct",
+      "sample": 11,
+      "ms": 0.6750000715255737,
+      "load": 0.59
+    },
+    {
+      "app": "todomvc",
+      "operation": "add at 100",
+      "subject": "tea",
+      "sample": 11,
+      "ms": 0.7699999809265137,
+      "load": 0.59
+    },
+    {
+      "app": "todomvc",
+      "operation": "add at 100",
+      "subject": "tea",
+      "sample": 12,
+      "ms": 0.7100000381469727,
+      "load": 0.59
+    },
+    {
+      "app": "todomvc",
+      "operation": "add at 100",
+      "subject": "direct",
+      "sample": 12,
+      "ms": 0.6499999761581421,
+      "load": 0.59
+    },
+    {
+      "app": "todomvc",
+      "operation": "add at 100",
+      "subject": "direct",
+      "sample": 13,
+      "ms": 0.7099999189376831,
+      "load": 0.59
+    },
+    {
+      "app": "todomvc",
+      "operation": "add at 100",
+      "subject": "tea",
+      "sample": 13,
+      "ms": 0.6299999952316284,
+      "load": 0.59
+    },
+    {
+      "app": "todomvc",
+      "operation": "add at 100",
+      "subject": "tea",
+      "sample": 14,
+      "ms": 0.6650000810623169,
+      "load": 0.59
+    },
+    {
+      "app": "todomvc",
+      "operation": "add at 100",
+      "subject": "direct",
+      "sample": 14,
+      "ms": 0.6099998950958252,
+      "load": 0.59
+    },
+    {
+      "app": "todomvc",
+      "operation": "add at 100",
+      "subject": "direct",
+      "sample": 15,
+      "ms": 1.0699999332427979,
+      "load": 0.59
+    },
+    {
+      "app": "todomvc",
+      "operation": "add at 100",
+      "subject": "tea",
+      "sample": 15,
+      "ms": 0.6749999523162842,
+      "load": 0.59
+    },
+    {
+      "app": "todomvc",
+      "operation": "add at 100",
+      "subject": "tea",
+      "sample": 16,
+      "ms": 0.6649999618530273,
+      "load": 0.59
+    },
+    {
+      "app": "todomvc",
+      "operation": "add at 100",
+      "subject": "direct",
+      "sample": 16,
+      "ms": 0.7350000143051147,
+      "load": 0.59
+    },
+    {
+      "app": "todomvc",
+      "operation": "add at 100",
+      "subject": "direct",
+      "sample": 17,
+      "ms": 0.6349999904632568,
+      "load": 0.59
+    },
+    {
+      "app": "todomvc",
+      "operation": "add at 100",
+      "subject": "tea",
+      "sample": 17,
+      "ms": 0.8799999952316284,
+      "load": 0.59
+    },
+    {
+      "app": "todomvc",
+      "operation": "add at 100",
+      "subject": "tea",
+      "sample": 18,
+      "ms": 0.6499999761581421,
+      "load": 0.59
+    },
+    {
+      "app": "todomvc",
+      "operation": "add at 100",
+      "subject": "direct",
+      "sample": 18,
+      "ms": 0.6100000143051147,
+      "load": 0.59
+    },
+    {
+      "app": "todomvc",
+      "operation": "add at 100",
+      "subject": "direct",
+      "sample": 19,
+      "ms": 0.684999942779541,
+      "load": 0.59
+    },
+    {
+      "app": "todomvc",
+      "operation": "add at 100",
+      "subject": "tea",
+      "sample": 19,
+      "ms": 0.7000000476837158,
+      "load": 0.59
+    },
+    {
+      "app": "todomvc",
+      "operation": "toggle at 100",
+      "subject": "tea",
+      "sample": 0,
+      "ms": 0.3450000286102295,
+      "load": 0.59
+    },
+    {
+      "app": "todomvc",
+      "operation": "toggle at 100",
+      "subject": "direct",
+      "sample": 0,
+      "ms": 0.3450000286102295,
+      "load": 0.59
+    },
+    {
+      "app": "todomvc",
+      "operation": "toggle at 100",
+      "subject": "direct",
+      "sample": 1,
+      "ms": 0.3250000476837158,
+      "load": 0.59
+    },
+    {
+      "app": "todomvc",
+      "operation": "toggle at 100",
+      "subject": "tea",
+      "sample": 1,
+      "ms": 0.42500007152557373,
+      "load": 0.59
+    },
+    {
+      "app": "todomvc",
+      "operation": "toggle at 100",
+      "subject": "tea",
+      "sample": 2,
+      "ms": 0.5950000286102295,
+      "load": 0.59
+    },
+    {
+      "app": "todomvc",
+      "operation": "toggle at 100",
+      "subject": "direct",
+      "sample": 2,
+      "ms": 0.5099999904632568,
+      "load": 0.59
+    },
+    {
+      "app": "todomvc",
+      "operation": "toggle at 100",
+      "subject": "direct",
+      "sample": 3,
+      "ms": 0.375,
+      "load": 0.59
+    },
+    {
+      "app": "todomvc",
+      "operation": "toggle at 100",
+      "subject": "tea",
+      "sample": 3,
+      "ms": 0.3500000238418579,
+      "load": 0.59
+    },
+    {
+      "app": "todomvc",
+      "operation": "toggle at 100",
+      "subject": "tea",
+      "sample": 4,
+      "ms": 0.38499999046325684,
+      "load": 0.59
+    },
+    {
+      "app": "todomvc",
+      "operation": "toggle at 100",
+      "subject": "direct",
+      "sample": 4,
+      "ms": 0.3500000238418579,
+      "load": 0.59
+    },
+    {
+      "app": "todomvc",
+      "operation": "toggle at 100",
+      "subject": "direct",
+      "sample": 5,
+      "ms": 0.3250000476837158,
+      "load": 0.59
+    },
+    {
+      "app": "todomvc",
+      "operation": "toggle at 100",
+      "subject": "tea",
+      "sample": 5,
+      "ms": 0.47499990463256836,
+      "load": 0.59
+    },
+    {
+      "app": "todomvc",
+      "operation": "toggle at 100",
+      "subject": "tea",
+      "sample": 6,
+      "ms": 0.3999999761581421,
+      "load": 0.59
+    },
+    {
+      "app": "todomvc",
+      "operation": "toggle at 100",
+      "subject": "direct",
+      "sample": 6,
+      "ms": 0.3250000476837158,
+      "load": 0.59
+    },
+    {
+      "app": "todomvc",
+      "operation": "toggle at 100",
+      "subject": "direct",
+      "sample": 7,
+      "ms": 0.3500000238418579,
+      "load": 0.59
+    },
+    {
+      "app": "todomvc",
+      "operation": "toggle at 100",
+      "subject": "tea",
+      "sample": 7,
+      "ms": 0.31999993324279785,
+      "load": 0.59
+    },
+    {
+      "app": "todomvc",
+      "operation": "toggle at 100",
+      "subject": "tea",
+      "sample": 8,
+      "ms": 0.375,
+      "load": 0.59
+    },
+    {
+      "app": "todomvc",
+      "operation": "toggle at 100",
+      "subject": "direct",
+      "sample": 8,
+      "ms": 0.33500003814697266,
+      "load": 0.86
+    },
+    {
+      "app": "todomvc",
+      "operation": "toggle at 100",
+      "subject": "direct",
+      "sample": 9,
+      "ms": 0.3450000286102295,
+      "load": 0.86
+    },
+    {
+      "app": "todomvc",
+      "operation": "toggle at 100",
+      "subject": "tea",
+      "sample": 9,
+      "ms": 0.375,
+      "load": 0.86
+    },
+    {
+      "app": "todomvc",
+      "operation": "toggle at 100",
+      "subject": "tea",
+      "sample": 10,
+      "ms": 0.34999990463256836,
+      "load": 0.86
+    },
+    {
+      "app": "todomvc",
+      "operation": "toggle at 100",
+      "subject": "direct",
+      "sample": 10,
+      "ms": 0.5200001001358032,
+      "load": 0.86
+    },
+    {
+      "app": "todomvc",
+      "operation": "toggle at 100",
+      "subject": "direct",
+      "sample": 11,
+      "ms": 0.3349999189376831,
+      "load": 0.86
+    },
+    {
+      "app": "todomvc",
+      "operation": "toggle at 100",
+      "subject": "tea",
+      "sample": 11,
+      "ms": 0.40500009059906006,
+      "load": 0.86
+    },
+    {
+      "app": "todomvc",
+      "operation": "toggle at 100",
+      "subject": "tea",
+      "sample": 12,
+      "ms": 0.375,
+      "load": 0.86
+    },
+    {
+      "app": "todomvc",
+      "operation": "toggle at 100",
+      "subject": "direct",
+      "sample": 12,
+      "ms": 0.34499990940093994,
+      "load": 0.86
+    },
+    {
+      "app": "todomvc",
+      "operation": "toggle at 100",
+      "subject": "direct",
+      "sample": 13,
+      "ms": 0.4249999523162842,
+      "load": 0.86
+    },
+    {
+      "app": "todomvc",
+      "operation": "toggle at 100",
+      "subject": "tea",
+      "sample": 13,
+      "ms": 0.45500004291534424,
+      "load": 0.86
+    },
+    {
+      "app": "todomvc",
+      "operation": "toggle at 100",
+      "subject": "tea",
+      "sample": 14,
+      "ms": 0.38499999046325684,
+      "load": 0.86
+    },
+    {
+      "app": "todomvc",
+      "operation": "toggle at 100",
+      "subject": "direct",
+      "sample": 14,
+      "ms": 0.3200000524520874,
+      "load": 0.86
+    },
+    {
+      "app": "todomvc",
+      "operation": "toggle at 100",
+      "subject": "direct",
+      "sample": 15,
+      "ms": 0.41499996185302734,
+      "load": 0.86
+    },
+    {
+      "app": "todomvc",
+      "operation": "toggle at 100",
+      "subject": "tea",
+      "sample": 15,
+      "ms": 0.5250000953674316,
+      "load": 0.86
+    },
+    {
+      "app": "todomvc",
+      "operation": "toggle at 100",
+      "subject": "tea",
+      "sample": 16,
+      "ms": 0.3500000238418579,
+      "load": 0.86
+    },
+    {
+      "app": "todomvc",
+      "operation": "toggle at 100",
+      "subject": "direct",
+      "sample": 16,
+      "ms": 0.39499998092651367,
+      "load": 0.86
+    },
+    {
+      "app": "todomvc",
+      "operation": "toggle at 100",
+      "subject": "direct",
+      "sample": 17,
+      "ms": 0.38499999046325684,
+      "load": 0.86
+    },
+    {
+      "app": "todomvc",
+      "operation": "toggle at 100",
+      "subject": "tea",
+      "sample": 17,
+      "ms": 0.3799999952316284,
+      "load": 0.86
+    },
+    {
+      "app": "todomvc",
+      "operation": "toggle at 100",
+      "subject": "tea",
+      "sample": 18,
+      "ms": 0.43000006675720215,
+      "load": 0.86
+    },
+    {
+      "app": "todomvc",
+      "operation": "toggle at 100",
+      "subject": "direct",
+      "sample": 18,
+      "ms": 0.31999993324279785,
+      "load": 0.86
+    },
+    {
+      "app": "todomvc",
+      "operation": "toggle at 100",
+      "subject": "direct",
+      "sample": 19,
+      "ms": 0.36500000953674316,
+      "load": 0.86
+    },
+    {
+      "app": "todomvc",
+      "operation": "toggle at 100",
+      "subject": "tea",
+      "sample": 19,
+      "ms": 0.4099999666213989,
+      "load": 0.86
+    },
+    {
+      "app": "todomvc",
+      "operation": "clear at 100",
+      "subject": "tea",
+      "sample": 0,
+      "ms": 0.7399998903274536,
+      "load": 0.86
+    },
+    {
+      "app": "todomvc",
+      "operation": "clear at 100",
+      "subject": "direct",
+      "sample": 0,
+      "ms": 0.9200000762939453,
+      "load": 0.86
+    },
+    {
+      "app": "todomvc",
+      "operation": "clear at 100",
+      "subject": "direct",
+      "sample": 1,
+      "ms": 0.7750000953674316,
+      "load": 0.86
+    },
+    {
+      "app": "todomvc",
+      "operation": "clear at 100",
+      "subject": "tea",
+      "sample": 1,
+      "ms": 0.8049999475479126,
+      "load": 0.86
+    },
+    {
+      "app": "todomvc",
+      "operation": "clear at 100",
+      "subject": "tea",
+      "sample": 2,
+      "ms": 0.9100000858306885,
+      "load": 0.86
+    },
+    {
+      "app": "todomvc",
+      "operation": "clear at 100",
+      "subject": "direct",
+      "sample": 2,
+      "ms": 0.7749999761581421,
+      "load": 0.86
+    },
+    {
+      "app": "todomvc",
+      "operation": "clear at 100",
+      "subject": "direct",
+      "sample": 3,
+      "ms": 1.040000081062317,
+      "load": 0.86
+    },
+    {
+      "app": "todomvc",
+      "operation": "clear at 100",
+      "subject": "tea",
+      "sample": 3,
+      "ms": 0.7549999952316284,
+      "load": 0.86
+    },
+    {
+      "app": "todomvc",
+      "operation": "clear at 100",
+      "subject": "tea",
+      "sample": 4,
+      "ms": 0.7649999856948853,
+      "load": 0.86
+    },
+    {
+      "app": "todomvc",
+      "operation": "clear at 100",
+      "subject": "direct",
+      "sample": 4,
+      "ms": 0.75,
+      "load": 0.86
+    },
+    {
+      "app": "todomvc",
+      "operation": "clear at 100",
+      "subject": "direct",
+      "sample": 5,
+      "ms": 0.8899999856948853,
+      "load": 0.86
+    },
+    {
+      "app": "todomvc",
+      "operation": "clear at 100",
+      "subject": "tea",
+      "sample": 5,
+      "ms": 0.8199999332427979,
+      "load": 0.86
+    },
+    {
+      "app": "todomvc",
+      "operation": "clear at 100",
+      "subject": "tea",
+      "sample": 6,
+      "ms": 0.815000057220459,
+      "load": 0.86
+    },
+    {
+      "app": "todomvc",
+      "operation": "clear at 100",
+      "subject": "direct",
+      "sample": 6,
+      "ms": 0.8600000143051147,
+      "load": 0.86
+    },
+    {
+      "app": "todomvc",
+      "operation": "clear at 100",
+      "subject": "direct",
+      "sample": 7,
+      "ms": 0.7599999904632568,
+      "load": 0.86
+    },
+    {
+      "app": "todomvc",
+      "operation": "clear at 100",
+      "subject": "tea",
+      "sample": 7,
+      "ms": 0.8050000667572021,
+      "load": 0.86
+    },
+    {
+      "app": "todomvc",
+      "operation": "clear at 100",
+      "subject": "tea",
+      "sample": 8,
+      "ms": 0.7599999904632568,
+      "load": 0.86
+    },
+    {
+      "app": "todomvc",
+      "operation": "clear at 100",
+      "subject": "direct",
+      "sample": 8,
+      "ms": 0.8999999761581421,
+      "load": 0.86
+    },
+    {
+      "app": "todomvc",
+      "operation": "clear at 100",
+      "subject": "direct",
+      "sample": 9,
+      "ms": 0.7900000810623169,
+      "load": 0.86
+    },
+    {
+      "app": "todomvc",
+      "operation": "clear at 100",
+      "subject": "tea",
+      "sample": 9,
+      "ms": 0.7749999761581421,
+      "load": 0.86
+    },
+    {
+      "app": "todomvc",
+      "operation": "clear at 100",
+      "subject": "tea",
+      "sample": 10,
+      "ms": 0.7699999809265137,
+      "load": 0.86
+    },
+    {
+      "app": "todomvc",
+      "operation": "clear at 100",
+      "subject": "direct",
+      "sample": 10,
+      "ms": 0.7599999904632568,
+      "load": 0.86
+    },
+    {
+      "app": "todomvc",
+      "operation": "clear at 100",
+      "subject": "direct",
+      "sample": 11,
+      "ms": 0.7900000810623169,
+      "load": 0.86
+    },
+    {
+      "app": "todomvc",
+      "operation": "clear at 100",
+      "subject": "tea",
+      "sample": 11,
+      "ms": 0.7749999761581421,
+      "load": 0.86
+    },
+    {
+      "app": "todomvc",
+      "operation": "clear at 100",
+      "subject": "tea",
+      "sample": 12,
+      "ms": 0.7549999952316284,
+      "load": 0.86
+    },
+    {
+      "app": "todomvc",
+      "operation": "clear at 100",
+      "subject": "direct",
+      "sample": 12,
+      "ms": 0.7599999904632568,
+      "load": 0.86
+    },
+    {
+      "app": "todomvc",
+      "operation": "clear at 100",
+      "subject": "direct",
+      "sample": 13,
+      "ms": 0.7599999904632568,
+      "load": 0.86
+    },
+    {
+      "app": "todomvc",
+      "operation": "clear at 100",
+      "subject": "tea",
+      "sample": 13,
+      "ms": 0.7749999761581421,
+      "load": 0.86
+    },
+    {
+      "app": "todomvc",
+      "operation": "clear at 100",
+      "subject": "tea",
+      "sample": 14,
+      "ms": 0.809999942779541,
+      "load": 0.86
+    },
+    {
+      "app": "todomvc",
+      "operation": "clear at 100",
+      "subject": "direct",
+      "sample": 14,
+      "ms": 0.7699999809265137,
+      "load": 0.86
+    },
+    {
+      "app": "todomvc",
+      "operation": "clear at 100",
+      "subject": "direct",
+      "sample": 15,
+      "ms": 0.934999942779541,
+      "load": 0.86
+    },
+    {
+      "app": "todomvc",
+      "operation": "clear at 100",
+      "subject": "tea",
+      "sample": 15,
+      "ms": 0.7900000810623169,
+      "load": 0.86
+    },
+    {
+      "app": "todomvc",
+      "operation": "clear at 100",
+      "subject": "tea",
+      "sample": 16,
+      "ms": 0.8500000238418579,
+      "load": 0.86
+    },
+    {
+      "app": "todomvc",
+      "operation": "clear at 100",
+      "subject": "direct",
+      "sample": 16,
+      "ms": 0.8149999380111694,
+      "load": 0.86
+    },
+    {
+      "app": "todomvc",
+      "operation": "clear at 100",
+      "subject": "direct",
+      "sample": 17,
+      "ms": 0.7450000047683716,
+      "load": 0.86
+    },
+    {
+      "app": "todomvc",
+      "operation": "clear at 100",
+      "subject": "tea",
+      "sample": 17,
+      "ms": 0.8299999237060547,
+      "load": 1.2
+    },
+    {
+      "app": "todomvc",
+      "operation": "clear at 100",
+      "subject": "tea",
+      "sample": 18,
+      "ms": 0.7749999761581421,
+      "load": 1.2
+    },
+    {
+      "app": "todomvc",
+      "operation": "clear at 100",
+      "subject": "direct",
+      "sample": 18,
+      "ms": 0.8949999809265137,
+      "load": 1.2
+    },
+    {
+      "app": "todomvc",
+      "operation": "clear at 100",
+      "subject": "direct",
+      "sample": 19,
+      "ms": 0.7849999666213989,
+      "load": 1.2
+    },
+    {
+      "app": "todomvc",
+      "operation": "clear at 100",
+      "subject": "tea",
+      "sample": 19,
+      "ms": 0.7599999904632568,
+      "load": 1.2
+    },
+    {
+      "app": "sternhalma",
+      "operation": "choose two players",
+      "subject": "tea",
+      "sample": 0,
+      "ms": 5.134999990463257,
+      "load": 1.2
+    },
+    {
+      "app": "sternhalma",
+      "operation": "choose two players",
+      "subject": "direct",
+      "sample": 0,
+      "ms": 5.675000071525574,
+      "load": 1.2
+    },
+    {
+      "app": "sternhalma",
+      "operation": "choose two players",
+      "subject": "direct",
+      "sample": 1,
+      "ms": 4.704999923706055,
+      "load": 1.2
+    },
+    {
+      "app": "sternhalma",
+      "operation": "choose two players",
+      "subject": "tea",
+      "sample": 1,
+      "ms": 8.349999904632568,
+      "load": 1.2
+    },
+    {
+      "app": "sternhalma",
+      "operation": "choose two players",
+      "subject": "tea",
+      "sample": 2,
+      "ms": 8.259999990463257,
+      "load": 1.2
+    },
+    {
+      "app": "sternhalma",
+      "operation": "choose two players",
+      "subject": "direct",
+      "sample": 2,
+      "ms": 4.840000033378601,
+      "load": 1.2
+    },
+    {
+      "app": "sternhalma",
+      "operation": "choose two players",
+      "subject": "direct",
+      "sample": 3,
+      "ms": 4.605000019073486,
+      "load": 1.2
+    },
+    {
+      "app": "sternhalma",
+      "operation": "choose two players",
+      "subject": "tea",
+      "sample": 3,
+      "ms": 8.144999980926514,
+      "load": 1.2
+    },
+    {
+      "app": "sternhalma",
+      "operation": "choose two players",
+      "subject": "tea",
+      "sample": 4,
+      "ms": 8.144999980926514,
+      "load": 1.2
+    },
+    {
+      "app": "sternhalma",
+      "operation": "choose two players",
+      "subject": "direct",
+      "sample": 4,
+      "ms": 4.715000033378601,
+      "load": 1.2
+    },
+    {
+      "app": "sternhalma",
+      "operation": "choose two players",
+      "subject": "direct",
+      "sample": 5,
+      "ms": 6.009999990463257,
+      "load": 1.2
+    },
+    {
+      "app": "sternhalma",
+      "operation": "choose two players",
+      "subject": "tea",
+      "sample": 5,
+      "ms": 5.5,
+      "load": 1.2
+    },
+    {
+      "app": "sternhalma",
+      "operation": "choose two players",
+      "subject": "tea",
+      "sample": 6,
+      "ms": 8.179999947547913,
+      "load": 1.2
+    },
+    {
+      "app": "sternhalma",
+      "operation": "choose two players",
+      "subject": "direct",
+      "sample": 6,
+      "ms": 4.929999947547913,
+      "load": 1.2
+    },
+    {
+      "app": "sternhalma",
+      "operation": "choose two players",
+      "subject": "direct",
+      "sample": 7,
+      "ms": 6.060000061988831,
+      "load": 1.2
+    },
+    {
+      "app": "sternhalma",
+      "operation": "choose two players",
+      "subject": "tea",
+      "sample": 7,
+      "ms": 5.1549999713897705,
+      "load": 1.2
+    },
+    {
+      "app": "sternhalma",
+      "operation": "choose two players",
+      "subject": "tea",
+      "sample": 8,
+      "ms": 8.274999976158142,
+      "load": 1.2
+    },
+    {
+      "app": "sternhalma",
+      "operation": "choose two players",
+      "subject": "direct",
+      "sample": 8,
+      "ms": 4.760000109672546,
+      "load": 1.2
+    },
+    {
+      "app": "sternhalma",
+      "operation": "choose two players",
+      "subject": "direct",
+      "sample": 9,
+      "ms": 4.865000009536743,
+      "load": 1.2
+    },
+    {
+      "app": "sternhalma",
+      "operation": "choose two players",
+      "subject": "tea",
+      "sample": 9,
+      "ms": 8.480000019073486,
+      "load": 1.2
+    },
+    {
+      "app": "sternhalma",
+      "operation": "choose two players",
+      "subject": "tea",
+      "sample": 10,
+      "ms": 8.475000023841858,
+      "load": 1.2
+    },
+    {
+      "app": "sternhalma",
+      "operation": "choose two players",
+      "subject": "direct",
+      "sample": 10,
+      "ms": 4.680000066757202,
+      "load": 1.2
+    },
+    {
+      "app": "sternhalma",
+      "operation": "choose two players",
+      "subject": "direct",
+      "sample": 11,
+      "ms": 5.495000004768372,
+      "load": 1.2
+    },
+    {
+      "app": "sternhalma",
+      "operation": "choose two players",
+      "subject": "tea",
+      "sample": 11,
+      "ms": 8.079999923706055,
+      "load": 1.2
+    },
+    {
+      "app": "sternhalma",
+      "operation": "choose two players",
+      "subject": "tea",
+      "sample": 12,
+      "ms": 5.039999961853027,
+      "load": 1.2
+    },
+    {
+      "app": "sternhalma",
+      "operation": "choose two players",
+      "subject": "direct",
+      "sample": 12,
+      "ms": 5.379999995231628,
+      "load": 1.2
+    },
+    {
+      "app": "sternhalma",
+      "operation": "choose two players",
+      "subject": "direct",
+      "sample": 13,
+      "ms": 4.674999952316284,
+      "load": 1.2
+    },
+    {
+      "app": "sternhalma",
+      "operation": "choose two players",
+      "subject": "tea",
+      "sample": 13,
+      "ms": 8.230000019073486,
+      "load": 1.2
+    },
+    {
+      "app": "sternhalma",
+      "operation": "choose two players",
+      "subject": "tea",
+      "sample": 14,
+      "ms": 4.914999961853027,
+      "load": 1.2
+    },
+    {
+      "app": "sternhalma",
+      "operation": "choose two players",
+      "subject": "direct",
+      "sample": 14,
+      "ms": 8.059999942779541,
+      "load": 1.2
+    },
+    {
+      "app": "sternhalma",
+      "operation": "choose two players",
+      "subject": "direct",
+      "sample": 15,
+      "ms": 4.634999990463257,
+      "load": 1.2
+    },
+    {
+      "app": "sternhalma",
+      "operation": "choose two players",
+      "subject": "tea",
+      "sample": 15,
+      "ms": 8.019999980926514,
+      "load": 1.2
+    },
+    {
+      "app": "sternhalma",
+      "operation": "choose two players",
+      "subject": "tea",
+      "sample": 16,
+      "ms": 8.159999966621399,
+      "load": 1.2
+    },
+    {
+      "app": "sternhalma",
+      "operation": "choose two players",
+      "subject": "direct",
+      "sample": 16,
+      "ms": 4.889999985694885,
+      "load": 1.2
+    },
+    {
+      "app": "sternhalma",
+      "operation": "choose two players",
+      "subject": "direct",
+      "sample": 17,
+      "ms": 4.825000047683716,
+      "load": 1.2
+    },
+    {
+      "app": "sternhalma",
+      "operation": "choose two players",
+      "subject": "tea",
+      "sample": 17,
+      "ms": 8.305000066757202,
+      "load": 1.2
+    },
+    {
+      "app": "sternhalma",
+      "operation": "choose two players",
+      "subject": "tea",
+      "sample": 18,
+      "ms": 8.014999985694885,
+      "load": 1.2
+    },
+    {
+      "app": "sternhalma",
+      "operation": "choose two players",
+      "subject": "direct",
+      "sample": 18,
+      "ms": 4.794999957084656,
+      "load": 1.2
+    },
+    {
+      "app": "sternhalma",
+      "operation": "choose two players",
+      "subject": "direct",
+      "sample": 19,
+      "ms": 4.605000019073486,
+      "load": 1.2
+    },
+    {
+      "app": "sternhalma",
+      "operation": "choose two players",
+      "subject": "tea",
+      "sample": 19,
+      "ms": 5.459999918937683,
+      "load": 1.2
+    },
+    {
+      "app": "sternhalma",
+      "operation": "new game",
+      "subject": "tea",
+      "sample": 0,
+      "ms": 2.3899999856948853,
+      "load": 1.2
+    },
+    {
+      "app": "sternhalma",
+      "operation": "new game",
+      "subject": "direct",
+      "sample": 0,
+      "ms": 4.290000081062317,
+      "load": 1.2
+    },
+    {
+      "app": "sternhalma",
+      "operation": "new game",
+      "subject": "direct",
+      "sample": 1,
+      "ms": 4.225000023841858,
+      "load": 1.2
+    },
+    {
+      "app": "sternhalma",
+      "operation": "new game",
+      "subject": "tea",
+      "sample": 1,
+      "ms": 5.064999938011169,
+      "load": 1.2
+    },
+    {
+      "app": "sternhalma",
+      "operation": "new game",
+      "subject": "tea",
+      "sample": 2,
+      "ms": 2.4700000286102295,
+      "load": 1.2
+    },
+    {
+      "app": "sternhalma",
+      "operation": "new game",
+      "subject": "direct",
+      "sample": 2,
+      "ms": 2.659999966621399,
+      "load": 1.2
+    },
+    {
+      "app": "sternhalma",
+      "operation": "new game",
+      "subject": "direct",
+      "sample": 3,
+      "ms": 4.370000004768372,
+      "load": 1.2
+    },
+    {
+      "app": "sternhalma",
+      "operation": "new game",
+      "subject": "tea",
+      "sample": 3,
+      "ms": 2.4950000047683716,
+      "load": 1.2
+    },
+    {
+      "app": "sternhalma",
+      "operation": "new game",
+      "subject": "tea",
+      "sample": 4,
+      "ms": 3.2350000143051147,
+      "load": 1.2
+    },
+    {
+      "app": "sternhalma",
+      "operation": "new game",
+      "subject": "direct",
+      "sample": 4,
+      "ms": 5.939999938011169,
+      "load": 1.2
+    },
+    {
+      "app": "sternhalma",
+      "operation": "new game",
+      "subject": "direct",
+      "sample": 5,
+      "ms": 4.2850000858306885,
+      "load": 1.2
+    },
+    {
+      "app": "sternhalma",
+      "operation": "new game",
+      "subject": "tea",
+      "sample": 5,
+      "ms": 2.9800000190734863,
+      "load": 1.2
+    },
+    {
+      "app": "sternhalma",
+      "operation": "new game",
+      "subject": "tea",
+      "sample": 6,
+      "ms": 2.4350000619888306,
+      "load": 1.2
+    },
+    {
+      "app": "sternhalma",
+      "operation": "new game",
+      "subject": "direct",
+      "sample": 6,
+      "ms": 2.7100000381469727,
+      "load": 1.2
+    },
+    {
+      "app": "sternhalma",
+      "operation": "new game",
+      "subject": "direct",
+      "sample": 7,
+      "ms": 4.784999966621399,
+      "load": 1.2
+    },
+    {
+      "app": "sternhalma",
+      "operation": "new game",
+      "subject": "tea",
+      "sample": 7,
+      "ms": 3.090000033378601,
+      "load": 1.2
+    },
+    {
+      "app": "sternhalma",
+      "operation": "new game",
+      "subject": "tea",
+      "sample": 8,
+      "ms": 3.1449999809265137,
+      "load": 1.2
+    },
+    {
+      "app": "sternhalma",
+      "operation": "new game",
+      "subject": "direct",
+      "sample": 8,
+      "ms": 4.2799999713897705,
+      "load": 1.26
+    },
+    {
+      "app": "sternhalma",
+      "operation": "new game",
+      "subject": "direct",
+      "sample": 9,
+      "ms": 5.795000076293945,
+      "load": 1.26
+    },
+    {
+      "app": "sternhalma",
+      "operation": "new game",
+      "subject": "tea",
+      "sample": 9,
+      "ms": 3.3450000286102295,
+      "load": 1.26
+    },
+    {
+      "app": "sternhalma",
+      "operation": "new game",
+      "subject": "tea",
+      "sample": 10,
+      "ms": 2.8299999237060547,
+      "load": 1.26
+    },
+    {
+      "app": "sternhalma",
+      "operation": "new game",
+      "subject": "direct",
+      "sample": 10,
+      "ms": 4.389999985694885,
+      "load": 1.26
+    },
+    {
+      "app": "sternhalma",
+      "operation": "new game",
+      "subject": "direct",
+      "sample": 11,
+      "ms": 5.799999952316284,
+      "load": 1.26
+    },
+    {
+      "app": "sternhalma",
+      "operation": "new game",
+      "subject": "tea",
+      "sample": 11,
+      "ms": 3.4450000524520874,
+      "load": 1.26
+    },
+    {
+      "app": "sternhalma",
+      "operation": "new game",
+      "subject": "tea",
+      "sample": 12,
+      "ms": 5.019999980926514,
+      "load": 1.26
+    },
+    {
+      "app": "sternhalma",
+      "operation": "new game",
+      "subject": "direct",
+      "sample": 12,
+      "ms": 4.340000033378601,
+      "load": 1.26
+    },
+    {
+      "app": "sternhalma",
+      "operation": "new game",
+      "subject": "direct",
+      "sample": 13,
+      "ms": 4.350000023841858,
+      "load": 1.26
+    },
+    {
+      "app": "sternhalma",
+      "operation": "new game",
+      "subject": "tea",
+      "sample": 13,
+      "ms": 3.315000057220459,
+      "load": 1.26
+    },
+    {
+      "app": "sternhalma",
+      "operation": "new game",
+      "subject": "tea",
+      "sample": 14,
+      "ms": 3.125,
+      "load": 1.26
+    },
+    {
+      "app": "sternhalma",
+      "operation": "new game",
+      "subject": "direct",
+      "sample": 14,
+      "ms": 4.424999952316284,
+      "load": 1.26
+    },
+    {
+      "app": "sternhalma",
+      "operation": "new game",
+      "subject": "direct",
+      "sample": 15,
+      "ms": 4.490000009536743,
+      "load": 1.26
+    },
+    {
+      "app": "sternhalma",
+      "operation": "new game",
+      "subject": "tea",
+      "sample": 15,
+      "ms": 2.434999942779541,
+      "load": 1.26
+    },
+    {
+      "app": "sternhalma",
+      "operation": "new game",
+      "subject": "tea",
+      "sample": 16,
+      "ms": 2.5199999809265137,
+      "load": 1.26
+    },
+    {
+      "app": "sternhalma",
+      "operation": "new game",
+      "subject": "direct",
+      "sample": 16,
+      "ms": 2.7549999952316284,
+      "load": 1.26
+    },
+    {
+      "app": "sternhalma",
+      "operation": "new game",
+      "subject": "direct",
+      "sample": 17,
+      "ms": 4.179999947547913,
+      "load": 1.26
+    },
+    {
+      "app": "sternhalma",
+      "operation": "new game",
+      "subject": "tea",
+      "sample": 17,
+      "ms": 2.399999976158142,
+      "load": 1.26
+    },
+    {
+      "app": "sternhalma",
+      "operation": "new game",
+      "subject": "tea",
+      "sample": 18,
+      "ms": 2.465000033378601,
+      "load": 1.26
+    },
+    {
+      "app": "sternhalma",
+      "operation": "new game",
+      "subject": "direct",
+      "sample": 18,
+      "ms": 4.119999885559082,
+      "load": 1.26
+    },
+    {
+      "app": "sternhalma",
+      "operation": "new game",
+      "subject": "direct",
+      "sample": 19,
+      "ms": 4.360000014305115,
+      "load": 1.26
+    },
+    {
+      "app": "sternhalma",
+      "operation": "new game",
+      "subject": "tea",
+      "sample": 19,
+      "ms": 5.25,
+      "load": 1.26
+    }
+  ],
+  "finished": "2026-10-15T15:16:17.177Z"
+}

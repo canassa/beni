@@ -1,0 +1,74 @@
+[
+  {
+    sweep: 'holes',
+    n: 10000,
+    bundleSpreadElements: 1,
+    rootTextGroupDefinitions: 1,
+    caller: 'q',
+    calls: 1,
+    memberReadsAcrossCalledGroups: { a: 1, data: 1 }
+  },
+  {
+    sweep: 'width',
+    n: 1024,
+    bundleSpreadElements: 1,
+    rootTextGroupDefinitions: 1,
+    caller: 's',
+    calls: 1,
+    memberReadsAcrossCalledGroups: { a: 1, data: 1 }
+  },
+  {
+    sweep: 'depth',
+    n: 128,
+    bundleSpreadElements: 129,
+    rootTextGroupDefinitions: 121,
+    caller: 'Kk',
+    calls: 121,
+    memberReadsAcrossCalledGroups: { c: 121, b: 121, a: 8107, data: 122, d: 1 }
+  },
+  {
+    sweep: 'rows',
+    n: 30000,
+    bundleSpreadElements: 3,
+    rootTextGroupDefinitions: 2,
+    caller: 'n',
+    calls: 2,
+    memberReadsAcrossCalledGroups: { it: 2, b: 1, s0: 2, data: 2, w2: 1, c: 1, s1: 2, w5: 1 }
+  },
+  {
+    sweep: 'live',
+    n: 10000,
+    bundleSpreadElements: 3,
+    rootTextGroupDefinitions: 2,
+    caller: 'v',
+    calls: 1,
+    memberReadsAcrossCalledGroups: { it: 1, c: 1, s2: 2, data: 1, w5: 1 }
+  },
+  {
+    sweep: 'derived',
+    n: 100000,
+    bundleSpreadElements: 1,
+    rootTextGroupDefinitions: 2,
+    caller: 'u',
+    calls: 1,
+    memberReadsAcrossCalledGroups: { a: 1, data: 1 }
+  },
+  {
+    sweep: 'helperRows',
+    n: 10000,
+    bundleSpreadElements: 1,
+    rootTextGroupDefinitions: 3,
+    caller: 's',
+    calls: 2,
+    memberReadsAcrossCalledGroups: { it: 2, c: 2, s0: 2, data: 2, w2: 1, s1: 2, w5: 1 }
+  },
+  {
+    sweep: 'tree',
+    n: 12,
+    bundleSpreadElements: 1,
+    rootTextGroupDefinitions: 1,
+    caller: 'p',
+    calls: 1,
+    memberReadsAcrossCalledGroups: { a: 1, data: 1 }
+  }
+]

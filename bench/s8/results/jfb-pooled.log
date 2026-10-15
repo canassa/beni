@@ -1,0 +1,222 @@
+$ (bench/jfb/work/webdriver-ts) node dist/createResultJS.js
+args {
+  _: [
+    '/nix/store/i1rgc6zsrxbxgfz97vbczz7cxcg71p5s-nodejs-slim-24.19.0/bin/node',
+    '/home/canassa/src/github.com/canassa/beni/bench/jfb/work/webdriver-ts/dist/createResultJS.js'
+  ],
+  runner: 'puppeteer',
+  '$0': 'dist/createResultJS.js'
+}
+WARNING: for frameworks/keyed/beni-direct and benchmark 01_run1k count was 20. We expected 15
+WARNING: for frameworks/keyed/beni-direct and benchmark 01_run1k count was 20. We expected 15
+WARNING: for frameworks/keyed/beni-direct and benchmark 01_run1k count was 20. We expected 15
+WARNING: for frameworks/keyed/beni-direct and benchmark 02_replace1k count was 20. We expected 15
+WARNING: for frameworks/keyed/beni-direct and benchmark 02_replace1k count was 20. We expected 15
+WARNING: for frameworks/keyed/beni-direct and benchmark 02_replace1k count was 20. We expected 15
+WARNING: for frameworks/keyed/beni-direct and benchmark 03_update10th1k_x16 count was 20. We expected 15
+WARNING: for frameworks/keyed/beni-direct and benchmark 03_update10th1k_x16 count was 20. We expected 15
+WARNING: for frameworks/keyed/beni-direct and benchmark 03_update10th1k_x16 count was 20. We expected 15
+WARNING: for frameworks/keyed/beni-direct and benchmark 04_select1k count was 60. We expected 25
+WARNING: for frameworks/keyed/beni-direct and benchmark 04_select1k count was 60. We expected 25
+WARNING: for frameworks/keyed/beni-direct and benchmark 04_select1k count was 60. We expected 25
+WARNING: for frameworks/keyed/beni-direct and benchmark 05_swap1k count was 20. We expected 15
+WARNING: for frameworks/keyed/beni-direct and benchmark 05_swap1k count was 20. We expected 15
+WARNING: for frameworks/keyed/beni-direct and benchmark 05_swap1k count was 20. We expected 15
+WARNING: for frameworks/keyed/beni-direct and benchmark 06_remove-one-1k count was 20. We expected 15
+WARNING: for frameworks/keyed/beni-direct and benchmark 06_remove-one-1k count was 20. We expected 15
+WARNING: for frameworks/keyed/beni-direct and benchmark 06_remove-one-1k count was 20. We expected 15
+WARNING: for frameworks/keyed/beni-direct and benchmark 07_create10k count was 20. We expected 15
+WARNING: for frameworks/keyed/beni-direct and benchmark 07_create10k count was 20. We expected 15
+WARNING: for frameworks/keyed/beni-direct and benchmark 07_create10k count was 20. We expected 15
+WARNING: for frameworks/keyed/beni-direct and benchmark 08_create1k-after1k_x2 count was 20. We expected 15
+WARNING: for frameworks/keyed/beni-direct and benchmark 08_create1k-after1k_x2 count was 20. We expected 15
+WARNING: for frameworks/keyed/beni-direct and benchmark 08_create1k-after1k_x2 count was 20. We expected 15
+WARNING: for frameworks/keyed/beni-direct and benchmark 09_clear1k_x8 count was 20. We expected 15
+WARNING: for frameworks/keyed/beni-direct and benchmark 09_clear1k_x8 count was 20. We expected 15
+WARNING: for frameworks/keyed/beni-direct and benchmark 09_clear1k_x8 count was 20. We expected 15
+WARNING: for frameworks/keyed/beni-direct and benchmark 21_ready-memory count was 20. We expected 1
+WARNING: for frameworks/keyed/beni-direct and benchmark 22_run-memory count was 20. We expected 1
+WARNING: for frameworks/keyed/beni-direct and benchmark 25_run-clear-memory count was 20. We expected 1
+WARNING: for frameworks/keyed/beni-direct and benchmark 41_size-uncompressed count was 4. We expected 1
+WARNING: for frameworks/keyed/beni-direct and benchmark 42_size-compressed count was 4. We expected 1
+WARNING: for frameworks/keyed/beni-direct and benchmark 43_first-paint count was 4. We expected 1
+WARNING: for frameworks/keyed/beni-tea and benchmark 01_run1k count was 20. We expected 15
+WARNING: for frameworks/keyed/beni-tea and benchmark 01_run1k count was 20. We expected 15
+WARNING: for frameworks/keyed/beni-tea and benchmark 01_run1k count was 20. We expected 15
+WARNING: for frameworks/keyed/beni-tea and benchmark 02_replace1k count was 20. We expected 15
+WARNING: for frameworks/keyed/beni-tea and benchmark 02_replace1k count was 20. We expected 15
+WARNING: for frameworks/keyed/beni-tea and benchmark 02_replace1k count was 20. We expected 15
+WARNING: for frameworks/keyed/beni-tea and benchmark 03_update10th1k_x16 count was 20. We expected 15
+WARNING: for frameworks/keyed/beni-tea and benchmark 03_update10th1k_x16 count was 20. We expected 15
+WARNING: for frameworks/keyed/beni-tea and benchmark 03_update10th1k_x16 count was 20. We expected 15
+WARNING: for frameworks/keyed/beni-tea and benchmark 04_select1k count was 60. We expected 25
+WARNING: for frameworks/keyed/beni-tea and benchmark 04_select1k count was 60. We expected 25
+WARNING: for frameworks/keyed/beni-tea and benchmark 04_select1k count was 60. We expected 25
+WARNING: for frameworks/keyed/beni-tea and benchmark 05_swap1k count was 20. We expected 15
+WARNING: for frameworks/keyed/beni-tea and benchmark 05_swap1k count was 20. We expected 15
+WARNING: for frameworks/keyed/beni-tea and benchmark 05_swap1k count was 20. We expected 15
+WARNING: for frameworks/keyed/beni-tea and benchmark 06_remove-one-1k count was 20. We expected 15
+WARNING: for frameworks/keyed/beni-tea and benchmark 06_remove-one-1k count was 20. We expected 15
+WARNING: for frameworks/keyed/beni-tea and benchmark 06_remove-one-1k count was 20. We expected 15
+WARNING: for frameworks/keyed/beni-tea and benchmark 07_create10k count was 20. We expected 15
+WARNING: for frameworks/keyed/beni-tea and benchmark 07_create10k count was 20. We expected 15
+WARNING: for frameworks/keyed/beni-tea and benchmark 07_create10k count was 20. We expected 15
+WARNING: for frameworks/keyed/beni-tea and benchmark 08_create1k-after1k_x2 count was 20. We expected 15
+WARNING: for frameworks/keyed/beni-tea and benchmark 08_create1k-after1k_x2 count was 20. We expected 15
+WARNING: for frameworks/keyed/beni-tea and benchmark 08_create1k-after1k_x2 count was 20. We expected 15
+WARNING: for frameworks/keyed/beni-tea and benchmark 09_clear1k_x8 count was 20. We expected 15
+WARNING: for frameworks/keyed/beni-tea and benchmark 09_clear1k_x8 count was 20. We expected 15
+WARNING: for frameworks/keyed/beni-tea and benchmark 09_clear1k_x8 count was 20. We expected 15
+WARNING: for frameworks/keyed/beni-tea and benchmark 21_ready-memory count was 20. We expected 1
+WARNING: for frameworks/keyed/beni-tea and benchmark 22_run-memory count was 20. We expected 1
+WARNING: for frameworks/keyed/beni-tea and benchmark 25_run-clear-memory count was 20. We expected 1
+WARNING: for frameworks/keyed/beni-tea and benchmark 41_size-uncompressed count was 4. We expected 1
+WARNING: for frameworks/keyed/beni-tea and benchmark 42_size-compressed count was 4. We expected 1
+WARNING: for frameworks/keyed/beni-tea and benchmark 43_first-paint count was 4. We expected 1
+MISSING FILE ./results/elm-v0.19.1-6-keyed_01_run1k.json
+MISSING FILE ./results/elm-v0.19.1-6-keyed_02_replace1k.json
+MISSING FILE ./results/elm-v0.19.1-6-keyed_03_update10th1k_x16.json
+MISSING FILE ./results/elm-v0.19.1-6-keyed_04_select1k.json
+MISSING FILE ./results/elm-v0.19.1-6-keyed_05_swap1k.json
+MISSING FILE ./results/elm-v0.19.1-6-keyed_06_remove-one-1k.json
+MISSING FILE ./results/elm-v0.19.1-6-keyed_07_create10k.json
+MISSING FILE ./results/elm-v0.19.1-6-keyed_08_create1k-after1k_x2.json
+MISSING FILE ./results/elm-v0.19.1-6-keyed_09_clear1k_x8.json
+MISSING FILE ./results/elm-v0.19.1-6-keyed_21_ready-memory.json
+MISSING FILE ./results/elm-v0.19.1-6-keyed_22_run-memory.json
+MISSING FILE ./results/elm-v0.19.1-6-keyed_25_run-clear-memory.json
+MISSING FILE ./results/elm-v0.19.1-6-keyed_41_size-uncompressed.json
+MISSING FILE ./results/elm-v0.19.1-6-keyed_42_size-compressed.json
+MISSING FILE ./results/elm-v0.19.1-6-keyed_43_first-paint.json
+MISSING FILE ./results/react-hooks-v19.2.0-keyed_01_run1k.json
+MISSING FILE ./results/react-hooks-v19.2.0-keyed_02_replace1k.json
+MISSING FILE ./results/react-hooks-v19.2.0-keyed_03_update10th1k_x16.json
+MISSING FILE ./results/react-hooks-v19.2.0-keyed_04_select1k.json
+MISSING FILE ./results/react-hooks-v19.2.0-keyed_05_swap1k.json
+MISSING FILE ./results/react-hooks-v19.2.0-keyed_06_remove-one-1k.json
+MISSING FILE ./results/react-hooks-v19.2.0-keyed_07_create10k.json
+MISSING FILE ./results/react-hooks-v19.2.0-keyed_08_create1k-after1k_x2.json
+MISSING FILE ./results/react-hooks-v19.2.0-keyed_09_clear1k_x8.json
+MISSING FILE ./results/react-hooks-v19.2.0-keyed_21_ready-memory.json
+MISSING FILE ./results/react-hooks-v19.2.0-keyed_22_run-memory.json
+MISSING FILE ./results/react-hooks-v19.2.0-keyed_25_run-clear-memory.json
+MISSING FILE ./results/react-hooks-v19.2.0-keyed_41_size-uncompressed.json
+MISSING FILE ./results/react-hooks-v19.2.0-keyed_42_size-compressed.json
+MISSING FILE ./results/react-hooks-v19.2.0-keyed_43_first-paint.json
+WARNING: for frameworks/keyed/solid and benchmark 01_run1k count was 20. We expected 15
+WARNING: for frameworks/keyed/solid and benchmark 01_run1k count was 20. We expected 15
+WARNING: for frameworks/keyed/solid and benchmark 01_run1k count was 20. We expected 15
+WARNING: for frameworks/keyed/solid and benchmark 02_replace1k count was 20. We expected 15
+WARNING: for frameworks/keyed/solid and benchmark 02_replace1k count was 20. We expected 15
+WARNING: for frameworks/keyed/solid and benchmark 02_replace1k count was 20. We expected 15
+WARNING: for frameworks/keyed/solid and benchmark 03_update10th1k_x16 count was 20. We expected 15
+WARNING: for frameworks/keyed/solid and benchmark 03_update10th1k_x16 count was 20. We expected 15
+WARNING: for frameworks/keyed/solid and benchmark 03_update10th1k_x16 count was 20. We expected 15
+WARNING: for frameworks/keyed/solid and benchmark 04_select1k count was 60. We expected 25
+WARNING: for frameworks/keyed/solid and benchmark 04_select1k count was 60. We expected 25
+WARNING: for frameworks/keyed/solid and benchmark 04_select1k count was 60. We expected 25
+WARNING: for frameworks/keyed/solid and benchmark 05_swap1k count was 20. We expected 15
+WARNING: for frameworks/keyed/solid and benchmark 05_swap1k count was 20. We expected 15
+WARNING: for frameworks/keyed/solid and benchmark 05_swap1k count was 20. We expected 15
+WARNING: for frameworks/keyed/solid and benchmark 06_remove-one-1k count was 20. We expected 15
+WARNING: for frameworks/keyed/solid and benchmark 06_remove-one-1k count was 20. We expected 15
+WARNING: for frameworks/keyed/solid and benchmark 06_remove-one-1k count was 20. We expected 15
+WARNING: for frameworks/keyed/solid and benchmark 07_create10k count was 20. We expected 15
+WARNING: for frameworks/keyed/solid and benchmark 07_create10k count was 20. We expected 15
+WARNING: for frameworks/keyed/solid and benchmark 07_create10k count was 20. We expected 15
+WARNING: for frameworks/keyed/solid and benchmark 08_create1k-after1k_x2 count was 20. We expected 15
+WARNING: for frameworks/keyed/solid and benchmark 08_create1k-after1k_x2 count was 20. We expected 15
+WARNING: for frameworks/keyed/solid and benchmark 08_create1k-after1k_x2 count was 20. We expected 15
+WARNING: for frameworks/keyed/solid and benchmark 09_clear1k_x8 count was 20. We expected 15
+WARNING: for frameworks/keyed/solid and benchmark 09_clear1k_x8 count was 20. We expected 15
+WARNING: for frameworks/keyed/solid and benchmark 09_clear1k_x8 count was 20. We expected 15
+WARNING: for frameworks/keyed/solid and benchmark 21_ready-memory count was 20. We expected 1
+WARNING: for frameworks/keyed/solid and benchmark 22_run-memory count was 20. We expected 1
+WARNING: for frameworks/keyed/solid and benchmark 25_run-clear-memory count was 20. We expected 1
+WARNING: for frameworks/keyed/solid and benchmark 41_size-uncompressed count was 4. We expected 1
+WARNING: for frameworks/keyed/solid and benchmark 42_size-compressed count was 4. We expected 1
+WARNING: for frameworks/keyed/solid and benchmark 43_first-paint count was 4. We expected 1
+MISSING FILE ./results/svelte-v5.42.1-keyed_01_run1k.json
+MISSING FILE ./results/svelte-v5.42.1-keyed_02_replace1k.json
+MISSING FILE ./results/svelte-v5.42.1-keyed_03_update10th1k_x16.json
+MISSING FILE ./results/svelte-v5.42.1-keyed_04_select1k.json
+MISSING FILE ./results/svelte-v5.42.1-keyed_05_swap1k.json
+MISSING FILE ./results/svelte-v5.42.1-keyed_06_remove-one-1k.json
+MISSING FILE ./results/svelte-v5.42.1-keyed_07_create10k.json
+MISSING FILE ./results/svelte-v5.42.1-keyed_08_create1k-after1k_x2.json
+MISSING FILE ./results/svelte-v5.42.1-keyed_09_clear1k_x8.json
+MISSING FILE ./results/svelte-v5.42.1-keyed_21_ready-memory.json
+MISSING FILE ./results/svelte-v5.42.1-keyed_22_run-memory.json
+MISSING FILE ./results/svelte-v5.42.1-keyed_25_run-clear-memory.json
+MISSING FILE ./results/svelte-v5.42.1-keyed_41_size-uncompressed.json
+MISSING FILE ./results/svelte-v5.42.1-keyed_42_size-compressed.json
+MISSING FILE ./results/svelte-v5.42.1-keyed_43_first-paint.json
+WARNING: for frameworks/keyed/vanillajs and benchmark 01_run1k count was 20. We expected 15
+WARNING: for frameworks/keyed/vanillajs and benchmark 01_run1k count was 20. We expected 15
+WARNING: for frameworks/keyed/vanillajs and benchmark 01_run1k count was 20. We expected 15
+WARNING: for frameworks/keyed/vanillajs and benchmark 02_replace1k count was 20. We expected 15
+WARNING: for frameworks/keyed/vanillajs and benchmark 02_replace1k count was 20. We expected 15
+WARNING: for frameworks/keyed/vanillajs and benchmark 02_replace1k count was 20. We expected 15
+WARNING: for frameworks/keyed/vanillajs and benchmark 03_update10th1k_x16 count was 20. We expected 15
+WARNING: for frameworks/keyed/vanillajs and benchmark 03_update10th1k_x16 count was 20. We expected 15
+WARNING: for frameworks/keyed/vanillajs and benchmark 03_update10th1k_x16 count was 20. We expected 15
+WARNING: for frameworks/keyed/vanillajs and benchmark 04_select1k count was 60. We expected 25
+WARNING: for frameworks/keyed/vanillajs and benchmark 04_select1k count was 60. We expected 25
+WARNING: for frameworks/keyed/vanillajs and benchmark 04_select1k count was 60. We expected 25
+WARNING: for frameworks/keyed/vanillajs and benchmark 05_swap1k count was 20. We expected 15
+WARNING: for frameworks/keyed/vanillajs and benchmark 05_swap1k count was 20. We expected 15
+WARNING: for frameworks/keyed/vanillajs and benchmark 05_swap1k count was 20. We expected 15
+WARNING: for frameworks/keyed/vanillajs and benchmark 06_remove-one-1k count was 20. We expected 15
+WARNING: for frameworks/keyed/vanillajs and benchmark 06_remove-one-1k count was 20. We expected 15
+WARNING: for frameworks/keyed/vanillajs and benchmark 06_remove-one-1k count was 20. We expected 15
+WARNING: for frameworks/keyed/vanillajs and benchmark 07_create10k count was 20. We expected 15
+WARNING: for frameworks/keyed/vanillajs and benchmark 07_create10k count was 20. We expected 15
+WARNING: for frameworks/keyed/vanillajs and benchmark 07_create10k count was 20. We expected 15
+WARNING: for frameworks/keyed/vanillajs and benchmark 08_create1k-after1k_x2 count was 20. We expected 15
+WARNING: for frameworks/keyed/vanillajs and benchmark 08_create1k-after1k_x2 count was 20. We expected 15
+WARNING: for frameworks/keyed/vanillajs and benchmark 08_create1k-after1k_x2 count was 20. We expected 15
+WARNING: for frameworks/keyed/vanillajs and benchmark 09_clear1k_x8 count was 20. We expected 15
+WARNING: for frameworks/keyed/vanillajs and benchmark 09_clear1k_x8 count was 20. We expected 15
+WARNING: for frameworks/keyed/vanillajs and benchmark 09_clear1k_x8 count was 20. We expected 15
+WARNING: for frameworks/keyed/vanillajs and benchmark 21_ready-memory count was 20. We expected 1
+WARNING: for frameworks/keyed/vanillajs and benchmark 22_run-memory count was 20. We expected 1
+WARNING: for frameworks/keyed/vanillajs and benchmark 25_run-clear-memory count was 20. We expected 1
+WARNING: for frameworks/keyed/vanillajs and benchmark 41_size-uncompressed count was 4. We expected 1
+WARNING: for frameworks/keyed/vanillajs and benchmark 42_size-compressed count was 4. We expected 1
+WARNING: for frameworks/keyed/vanillajs and benchmark 43_first-paint count was 4. We expected 1
+MISSING FILE ./results/vue-v3.5.39-keyed_01_run1k.json
+MISSING FILE ./results/vue-v3.5.39-keyed_02_replace1k.json
+MISSING FILE ./results/vue-v3.5.39-keyed_03_update10th1k_x16.json
+MISSING FILE ./results/vue-v3.5.39-keyed_04_select1k.json
+MISSING FILE ./results/vue-v3.5.39-keyed_05_swap1k.json
+MISSING FILE ./results/vue-v3.5.39-keyed_06_remove-one-1k.json
+MISSING FILE ./results/vue-v3.5.39-keyed_07_create10k.json
+MISSING FILE ./results/vue-v3.5.39-keyed_08_create1k-after1k_x2.json
+MISSING FILE ./results/vue-v3.5.39-keyed_09_clear1k_x8.json
+MISSING FILE ./results/vue-v3.5.39-keyed_21_ready-memory.json
+MISSING FILE ./results/vue-v3.5.39-keyed_22_run-memory.json
+MISSING FILE ./results/vue-v3.5.39-keyed_25_run-clear-memory.json
+MISSING FILE ./results/vue-v3.5.39-keyed_41_size-uncompressed.json
+MISSING FILE ./results/vue-v3.5.39-keyed_42_size-compressed.json
+MISSING FILE ./results/vue-v3.5.39-keyed_43_first-paint.json
+$ (bench/jfb/work/webdriver-ts-results) npm run build
+
+> webdriver-ts-results@0.1.0 build
+> tsc && vite build
+
+vite v8.0.3 building client environment for production...
+[2Ktransforming...✓ 3206 modules transformed.
+rendering chunks...
+computing gzip size...
+dist/index.html                      1.05 kB │ gzip:   0.55 kB
+dist/llms.txt                        2.90 kB │ gzip:   1.15 kB
+dist/sitemap.xml                     8.49 kB │ gzip:   0.76 kB
+dist/overview.html                  27.63 kB │ gzip:   3.75 kB
+dist/overview-Dm1aet4E.css           8.43 kB │ gzip:   2.32 kB
+dist/results-CryYEdz_.css           11.54 kB │ gzip:   3.01 kB
+dist/rolldown-runtime-B0RaHEnr.js    0.55 kB │ gzip:   0.35 kB
+dist/BoxPlotTable-Bdn7Vuc9.js        2.67 kB │ gzip:   1.10 kB
+dist/chartjs-Dv0rr1hW.js           167.31 kB │ gzip:  57.10 kB
+dist/results-iaqGn3nK.js           623.08 kB │ gzip: 205.63 kB
+
+✓ built in 310ms

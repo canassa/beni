@@ -1,0 +1,117 @@
+beni 0.1.0-m1 7445da00731bab8c2bf686c8b48bf033
+f9e888160795ca471f5
+af3e0494dbad405fd55ef5abe87127040d31468d27e6566d8a49854b8c37b0d9  /home/canassa/src/github.com/canassa/beni/zig-out/beni-s8-frozen
+041cd529569dea7d4379d42943bbebc05233c880914e47bd5397abbcb69eecd0  flake.lock
+0.17.1+zorg.1
+v24.19.0
+Chromium 153.0.8010.36 
+Architecture:                            x86_64
+CPU op-mode(s):                          32-bit, 64-bit
+Address sizes:                           39 bits physical, 48 bits virtual
+Byte Order:                              Little Endian
+CPU(s):                                  12
+On-line CPU(s) list:                     0-11
+Vendor ID:                               GenuineIntel
+Model name:                              Intel(R) Xeon(R) E-2386G CPU @ 3.50GHz
+CPU family:                              6
+Model:                                   167
+Thread(s) per core:                      2
+Core(s) per socket:                      6
+Socket(s):                               1
+Stepping:                                1
+Microcode version:                       0x66
+CPU(s) scaling MHz:                      42%
+CPU max MHz:                             5100.0000
+CPU min MHz:                             800.0000
+BogoMIPS:                                7008.00
+Flags:                                   fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush dts acpi mmx fxsr sse sse2 ss ht tm pbe syscall nx pdpe1gb rdtscp lm constant_tsc art arch_perfmon pebs bts rep_good nopl xtopology nonstop_tsc cpuid aperfmperf tsc_known_freq pni pclmulqdq dtes64 monitor ds_cpl vmx smx est tm2 ssse3 sdbg fma cx16 xtpr pdcm pcid sse4_1 sse4_2 x2apic movbe popcnt tsc_deadline_timer aes xsave avx f16c rdrand lahf_lm abm 3dnowprefetch cpuid_fault epb ssbd ibrs ibpb stibp ibrs_enhanced tpr_shadow flexpriority ept vpid ept_ad fsgsbase tsc_adjust bmi1 avx2 smep bmi2 erms invpcid mpx avx512f avx512dq rdseed adx smap avx512ifma clflushopt intel_pt avx512cd sha_ni avx512bw avx512vl xsaveopt xsavec xgetbv1 xsaves dtherm ida arat pln pts hwp hwp_notify hwp_act_window hwp_epp hwp_pkg_req vnmi avx512vbmi umip pku ospke avx512_vbmi2 gfni vaes vpclmulqdq avx512_vnni avx512_bitalg avx512_vpopcntdq rdpid fsrm md_clear flush_l1d arch_capabilities
+Virtualization:                          VT-x
+L1d cache:                               288 KiB (6 instances)
+L1i cache:                               192 KiB (6 instances)
+L2 cache:                                3 MiB (6 instances)
+L3 cache:                                12 MiB (1 instance)
+NUMA node(s):                            1
+NUMA node0 CPU(s):                       0-11
+Vulnerability Gather data sampling:      Mitigation; Microcode
+Vulnerability Ghostwrite:                Not affected
+Vulnerability Indirect target selection: Mitigation; Aligned branch/return thunks
+Vulnerability Itlb multihit:             Not affected
+Vulnerability L1tf:                      Not affected
+Vulnerability Mds:                       Not affected
+Vulnerability Meltdown:                  Not affected
+Vulnerability Mmio stale data:           Mitigation; Clear CPU buffers; SMT vulnerable
+Vulnerability Old microcode:             Not affected
+Vulnerability Reg file data sampling:    Not affected
+Vulnerability Retbleed:                  Mitigation; Enhanced IBRS
+Vulnerability Spec rstack overflow:      Not affected
+Vulnerability Spec store bypass:         Mitigation; Speculative Store Bypass disabled via prctl
+Vulnerability Spectre v1:                Mitigation; usercopy/swapgs barriers and __user pointer sanitization
+Vulnerability Spectre v2:                Mitigation; Enhanced / Automatic IBRS; IBPB conditional; PBRSB-eIBRS SW sequence; BHI SW loop, KVM SW loop
+Vulnerability Srbds:                     Not affected
+Vulnerability Tsa:                       Not affected
+Vulnerability Tsx async abort:           Not affected
+Vulnerability Vmscape:                   Not affected
+ 14:16:15  up 10 days 12:59,  0 users,  load average: 0.42, 0.45, 0.48
+
+powersave
+powersave
+powersave
+powersave
+powersave
+powersave
+powersave
+powersave
+powersave
+powersave
+powersave
+powersave
+balance_performance
+balance_performance
+balance_performance
+balance_performance
+balance_performance
+balance_performance
+balance_performance
+balance_performance
+balance_performance
+balance_performance
+balance_performance
+balance_performance
+    PID COMMAND         %CPU
+3343405 bash            44.2
+3343393 sshd-session     0.3
+ 736861 chromium         0.2
+   1065 .fail2ban-serve  0.0
+3339613 z_wr_iss         0.0
+3341967 z_wr_iss         0.0
+3340635 z_wr_iss         0.0
+3342680 z_wr_iss         0.0
+ 736895 chromium         0.0
+3343031 z_wr_iss         0.0
+3343070 z_wr_iss         0.0
+3343050 z_wr_iss         0.0
+1159065 kworker/6:0-mm_  0.0
+ 736898 chromium         0.0
+-0fba0b8e649909613cfce0999b149cd08f4a4987 references/ajv
+-03b1f015d9b7c5af5dac2caed1aeedefaf705ab3 references/arktype
+-e2e99ba9fc1751ab032d37eb96b5c02d8c761839 references/closure-compiler
+-e97e4290ec544bdade3c368ceae156baf54fab57 references/dom-expressions
+-3d59ae6d5f9ff3e52cb6ed4a9f325320580218d5 references/effect
+-73975c9819efb4af2f3c6c1b44fa53f8c5742574 references/egg
+-1bd5b36915a38335195ca7792fe3995f53d84d5e references/elm
+-1d28cd625b3ce07be6dfad51660bea6de2c905f2 references/elm-browser
+-65cea00afa0de03d7dda0487d964a305fc3d58e3 references/elm-core
+-79d31f5889930aa5d0d8e874a0807076d5c16891 references/elm-virtual-dom
+-6aa2ed4cc403cf68d7c31ee4dd14724372fea664 references/fast-json-stringify
+-c35096f55daffde5d17ca878a965345db410abf5 references/ghc
+-bcdab016b4118cd921ea873f990d2be42d1c3a88 references/graal
+ 44f20790ba5ce71f5e782dc1b19a25cc9c628dbc references/js-framework-benchmark (44f20790)
+-b05bc1f7066a5298bbae9b438bbf6942015536df references/llvm-project
+-936011ca7acd41461bf9ed806c94c9b1a621a288 references/mlton
+-f083385b5b6d2c6b039c70e6813c004daea92c08 references/roc
+-be46a04de7235607e83658627e82b0b3d30003d9 references/solid
+-5177875a4854e5cf2c49d0b8f938704ca79205ae references/typebox
+-78124b0523b4e989aedb64fe4cd4e1fd59c44a2d references/typia
+-5016198907beb383f5a6d8bbcb4c7f1586d7c6a3 references/valibot
+-d84959d9e23799c4688836fbab90d3b9518fe60a references/zig
+-59bbc03e10c636b9eb3c393dfeb552819774ec21 references/zod

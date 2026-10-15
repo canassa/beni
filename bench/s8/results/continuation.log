@@ -1,0 +1,3 @@
+warning: Git tree '/home/canassa/src/github.com/canassa/beni' is dirty
+beni: zig 0.17.0 · node v24.19.0
+bash: line 1: 3338581 Killed                     bash bench/s8/time.sh --after-round-0

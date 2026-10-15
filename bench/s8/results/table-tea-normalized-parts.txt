@@ -1,0 +1,9 @@
+8/table-tea/_main.mjs: minified 12791 B, brotli 11 5206 B
+
+| part | alone raw | alone br | leave-one-out br | peel br |
+|---|--:|--:|--:|--:|
+| core | 2435 | 1096 | 743 | 743 |
+| runtime | 6622 | 2792 | 2249 | 2302 |
+| app | 4381 | 1733 | 1417 | 1503 |
+| what is left (start-up statements) | | | | 658 |
+| **sum** | | 5621 | 4409 | 5206 |

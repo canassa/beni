@@ -1,0 +1,5718 @@
+{
+  "started": "2026-10-15T15:10:02.922Z",
+  "chrome": "Chrome/153.0.8010.36",
+  "node": "v24.19.0",
+  "cpu": "Intel(R) Xeon(R) E-2386G CPU @ 3.50GHz",
+  "method": "Fresh page per sample; real CDP input; capture-to-eight-microtasks untraced interval; trace union of EventDispatch/FunctionCall/RunMicrotasks. Six toggle warmups per fresh page; preparation and two animation frames outside timing; no CSS. Beni checkbox timing ends after change, not click. Vanilla add commits on Tab/change; beni on Enter/keydown. Vanilla retains upstream JSON persistence and editing; routing beni has line persistence, no editing; sandbox has neither persistence nor routing.",
+  "sources": {
+    "browser-tea-Sandbox": "d26dda4527651589d4699404ba74e3dcc8fcc362c9d5f1102c27cc4f95053451",
+    "browser-direct-Sandbox": "b063db6cfc771db699ad76863b66c7470bee1311ff021656fb3a32512528441c",
+    "browser-tea-NoEditing": "669beb8f9c65180d123f5c7d0c4a1359580a22f5edfc42df1ca4c124068a80c1",
+    "browser-direct-NoEditing": "9da42eae9d5b8330bede25f755abe2dade89cb9c981a657803ea3ba2f2799a65",
+    "vanilla-es6": "b2540ce43968d958528c2069a6fcf2ebf5da6acdda8b908e7766878141356388"
+  },
+  "rows": [
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 100,
+      "op": "add",
+      "sample": 0,
+      "mode": "untraced",
+      "script": 0.9099999666213989,
+      "load": 0.54
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 100,
+      "op": "add",
+      "sample": 0,
+      "mode": "untraced",
+      "script": 0.4950000047683716,
+      "load": 0.54
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 100,
+      "op": "add",
+      "sample": 0,
+      "mode": "untraced",
+      "script": 2.1299999952316284,
+      "load": 0.54
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 100,
+      "op": "add",
+      "sample": 0,
+      "mode": "untraced",
+      "script": 0.9050000905990601,
+      "load": 0.54
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 100,
+      "op": "add",
+      "sample": 0,
+      "mode": "untraced",
+      "script": 2.4749999046325684,
+      "load": 0.54
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 100,
+      "op": "add",
+      "sample": 1,
+      "mode": "untraced",
+      "script": 0.5399999618530273,
+      "load": 0.54
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 100,
+      "op": "add",
+      "sample": 1,
+      "mode": "untraced",
+      "script": 1.3149999380111694,
+      "load": 0.54
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 100,
+      "op": "add",
+      "sample": 1,
+      "mode": "untraced",
+      "script": 1.665000081062317,
+      "load": 0.54
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 100,
+      "op": "add",
+      "sample": 1,
+      "mode": "untraced",
+      "script": 2.274999976158142,
+      "load": 0.54
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 100,
+      "op": "add",
+      "sample": 1,
+      "mode": "untraced",
+      "script": 0.7649999856948853,
+      "load": 0.54
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 100,
+      "op": "add",
+      "sample": 2,
+      "mode": "untraced",
+      "script": 1.2549999952316284,
+      "load": 0.54
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 100,
+      "op": "add",
+      "sample": 2,
+      "mode": "untraced",
+      "script": 0.9900000095367432,
+      "load": 0.54
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 100,
+      "op": "add",
+      "sample": 2,
+      "mode": "untraced",
+      "script": 1.875,
+      "load": 0.54
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 100,
+      "op": "add",
+      "sample": 2,
+      "mode": "untraced",
+      "script": 0.5999999046325684,
+      "load": 0.54
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 100,
+      "op": "add",
+      "sample": 2,
+      "mode": "untraced",
+      "script": 0.7099999189376831,
+      "load": 0.54
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 100,
+      "op": "add",
+      "sample": 3,
+      "mode": "untraced",
+      "script": 1.3550000190734863,
+      "load": 0.54
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 100,
+      "op": "add",
+      "sample": 3,
+      "mode": "untraced",
+      "script": 3.0500000715255737,
+      "load": 0.54
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 100,
+      "op": "add",
+      "sample": 3,
+      "mode": "untraced",
+      "script": 0.5,
+      "load": 0.54
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 100,
+      "op": "add",
+      "sample": 3,
+      "mode": "untraced",
+      "script": 0.4049999713897705,
+      "load": 0.54
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 100,
+      "op": "add",
+      "sample": 3,
+      "mode": "untraced",
+      "script": 1.875,
+      "load": 0.54
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 100,
+      "op": "add",
+      "sample": 4,
+      "mode": "untraced",
+      "script": 2.6399999856948853,
+      "load": 0.57
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 100,
+      "op": "add",
+      "sample": 4,
+      "mode": "untraced",
+      "script": 0.9100000858306885,
+      "load": 0.57
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 100,
+      "op": "add",
+      "sample": 4,
+      "mode": "untraced",
+      "script": 0.8500000238418579,
+      "load": 0.57
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 100,
+      "op": "add",
+      "sample": 4,
+      "mode": "untraced",
+      "script": 2.0850000381469727,
+      "load": 0.57
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 100,
+      "op": "add",
+      "sample": 4,
+      "mode": "untraced",
+      "script": 1.3000000715255737,
+      "load": 0.57
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 100,
+      "op": "add",
+      "sample": 5,
+      "mode": "untraced",
+      "script": 0.6949999332427979,
+      "load": 0.57
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 100,
+      "op": "add",
+      "sample": 5,
+      "mode": "untraced",
+      "script": 0.5500000715255737,
+      "load": 0.57
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 100,
+      "op": "add",
+      "sample": 5,
+      "mode": "untraced",
+      "script": 1.959999918937683,
+      "load": 0.57
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 100,
+      "op": "add",
+      "sample": 5,
+      "mode": "untraced",
+      "script": 1.5950000286102295,
+      "load": 0.57
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 100,
+      "op": "add",
+      "sample": 5,
+      "mode": "untraced",
+      "script": 3.0449999570846558,
+      "load": 0.57
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 100,
+      "op": "add",
+      "sample": 6,
+      "mode": "untraced",
+      "script": 0.6050000190734863,
+      "load": 0.57
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 100,
+      "op": "add",
+      "sample": 6,
+      "mode": "untraced",
+      "script": 1.8300000429153442,
+      "load": 0.57
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 100,
+      "op": "add",
+      "sample": 6,
+      "mode": "untraced",
+      "script": 1.159999966621399,
+      "load": 0.57
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 100,
+      "op": "add",
+      "sample": 6,
+      "mode": "untraced",
+      "script": 1.9850000143051147,
+      "load": 0.57
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 100,
+      "op": "add",
+      "sample": 6,
+      "mode": "untraced",
+      "script": 0.8849999904632568,
+      "load": 0.57
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 100,
+      "op": "add",
+      "sample": 7,
+      "mode": "untraced",
+      "script": 1.2400000095367432,
+      "load": 0.57
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 100,
+      "op": "add",
+      "sample": 7,
+      "mode": "untraced",
+      "script": 1.0499999523162842,
+      "load": 0.57
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 100,
+      "op": "add",
+      "sample": 7,
+      "mode": "untraced",
+      "script": 1.934999942779541,
+      "load": 0.57
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 100,
+      "op": "add",
+      "sample": 7,
+      "mode": "untraced",
+      "script": 1.024999976158142,
+      "load": 0.57
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 100,
+      "op": "add",
+      "sample": 7,
+      "mode": "untraced",
+      "script": 0.5799999237060547,
+      "load": 0.57
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 100,
+      "op": "add",
+      "sample": 8,
+      "mode": "untraced",
+      "script": 0.9900000095367432,
+      "load": 0.57
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 100,
+      "op": "add",
+      "sample": 8,
+      "mode": "untraced",
+      "script": 2.1449999809265137,
+      "load": 0.57
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 100,
+      "op": "add",
+      "sample": 8,
+      "mode": "untraced",
+      "script": 0.6349999904632568,
+      "load": 0.57
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 100,
+      "op": "add",
+      "sample": 8,
+      "mode": "untraced",
+      "script": 0.5449999570846558,
+      "load": 0.57
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 100,
+      "op": "add",
+      "sample": 8,
+      "mode": "untraced",
+      "script": 1.0700000524520874,
+      "load": 0.57
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 100,
+      "op": "add",
+      "sample": 9,
+      "mode": "untraced",
+      "script": 3.0700000524520874,
+      "load": 0.57
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 100,
+      "op": "add",
+      "sample": 9,
+      "mode": "untraced",
+      "script": 0.809999942779541,
+      "load": 0.57
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 100,
+      "op": "add",
+      "sample": 9,
+      "mode": "untraced",
+      "script": 0.6349999904632568,
+      "load": 0.57
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 100,
+      "op": "add",
+      "sample": 9,
+      "mode": "untraced",
+      "script": 1.0700000524520874,
+      "load": 0.57
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 100,
+      "op": "add",
+      "sample": 9,
+      "mode": "untraced",
+      "script": 1.2949999570846558,
+      "load": 0.57
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 100,
+      "op": "add",
+      "sample": 10,
+      "mode": "untraced",
+      "script": 0.8500000238418579,
+      "load": 0.57
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 100,
+      "op": "add",
+      "sample": 10,
+      "mode": "untraced",
+      "script": 0.625,
+      "load": 0.57
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 100,
+      "op": "add",
+      "sample": 10,
+      "mode": "untraced",
+      "script": 1.5250000953674316,
+      "load": 0.57
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 100,
+      "op": "add",
+      "sample": 10,
+      "mode": "untraced",
+      "script": 1.0499999523162842,
+      "load": 0.57
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 100,
+      "op": "add",
+      "sample": 10,
+      "mode": "untraced",
+      "script": 2.15500009059906,
+      "load": 0.57
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 100,
+      "op": "add",
+      "sample": 11,
+      "mode": "untraced",
+      "script": 0.3799999952316284,
+      "load": 0.57
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 100,
+      "op": "add",
+      "sample": 11,
+      "mode": "untraced",
+      "script": 1.6449999809265137,
+      "load": 0.57
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 100,
+      "op": "add",
+      "sample": 11,
+      "mode": "untraced",
+      "script": 0.8249999284744263,
+      "load": 0.57
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 100,
+      "op": "add",
+      "sample": 11,
+      "mode": "untraced",
+      "script": 3.1049998998641968,
+      "load": 0.57
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 100,
+      "op": "add",
+      "sample": 11,
+      "mode": "untraced",
+      "script": 0.6100000143051147,
+      "load": 0.57
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 100,
+      "op": "add",
+      "sample": 12,
+      "mode": "untraced",
+      "script": 1.3299999237060547,
+      "load": 0.57
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 100,
+      "op": "add",
+      "sample": 12,
+      "mode": "untraced",
+      "script": 1.3199999332427979,
+      "load": 0.57
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 100,
+      "op": "add",
+      "sample": 12,
+      "mode": "untraced",
+      "script": 1.4900000095367432,
+      "load": 0.57
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 100,
+      "op": "add",
+      "sample": 12,
+      "mode": "untraced",
+      "script": 0.8799999952316284,
+      "load": 0.57
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 100,
+      "op": "add",
+      "sample": 12,
+      "mode": "untraced",
+      "script": 0.6399999856948853,
+      "load": 0.57
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 100,
+      "op": "add",
+      "sample": 13,
+      "mode": "untraced",
+      "script": 0.9450000524520874,
+      "load": 0.61
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 100,
+      "op": "add",
+      "sample": 13,
+      "mode": "untraced",
+      "script": 2.1100000143051147,
+      "load": 0.61
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 100,
+      "op": "add",
+      "sample": 13,
+      "mode": "untraced",
+      "script": 0.8300000429153442,
+      "load": 0.61
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 100,
+      "op": "add",
+      "sample": 13,
+      "mode": "untraced",
+      "script": 0.7799999713897705,
+      "load": 0.61
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 100,
+      "op": "add",
+      "sample": 13,
+      "mode": "untraced",
+      "script": 2.3249999284744263,
+      "load": 0.61
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 100,
+      "op": "add",
+      "sample": 14,
+      "mode": "untraced",
+      "script": 1.9199999570846558,
+      "load": 0.61
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 100,
+      "op": "add",
+      "sample": 14,
+      "mode": "untraced",
+      "script": 0.4799998998641968,
+      "load": 0.61
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 100,
+      "op": "add",
+      "sample": 14,
+      "mode": "untraced",
+      "script": 0.5550000667572021,
+      "load": 0.61
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 100,
+      "op": "add",
+      "sample": 14,
+      "mode": "untraced",
+      "script": 1.6050000190734863,
+      "load": 0.61
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 100,
+      "op": "add",
+      "sample": 14,
+      "mode": "untraced",
+      "script": 1.9049999713897705,
+      "load": 0.61
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 100,
+      "op": "add",
+      "sample": 15,
+      "mode": "untraced",
+      "script": 0.7599999904632568,
+      "load": 0.61
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 100,
+      "op": "add",
+      "sample": 15,
+      "mode": "untraced",
+      "script": 0.6799999475479126,
+      "load": 0.61
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 100,
+      "op": "add",
+      "sample": 15,
+      "mode": "untraced",
+      "script": 1.21999990940094,
+      "load": 0.61
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 100,
+      "op": "add",
+      "sample": 15,
+      "mode": "untraced",
+      "script": 0.9549999237060547,
+      "load": 0.61
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 100,
+      "op": "add",
+      "sample": 15,
+      "mode": "untraced",
+      "script": 1.340000033378601,
+      "load": 0.61
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 100,
+      "op": "add",
+      "sample": 16,
+      "mode": "untraced",
+      "script": 0.7000000476837158,
+      "load": 0.61
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 100,
+      "op": "add",
+      "sample": 16,
+      "mode": "untraced",
+      "script": 1.3949999809265137,
+      "load": 0.61
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 100,
+      "op": "add",
+      "sample": 16,
+      "mode": "untraced",
+      "script": 1.3450000286102295,
+      "load": 0.61
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 100,
+      "op": "add",
+      "sample": 16,
+      "mode": "untraced",
+      "script": 1.8300000429153442,
+      "load": 0.61
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 100,
+      "op": "add",
+      "sample": 16,
+      "mode": "untraced",
+      "script": 0.6800000667572021,
+      "load": 0.61
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 100,
+      "op": "add",
+      "sample": 17,
+      "mode": "untraced",
+      "script": 2.8049999475479126,
+      "load": 0.61
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 100,
+      "op": "add",
+      "sample": 17,
+      "mode": "untraced",
+      "script": 1.5399999618530273,
+      "load": 0.61
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 100,
+      "op": "add",
+      "sample": 17,
+      "mode": "untraced",
+      "script": 2.715000033378601,
+      "load": 0.61
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 100,
+      "op": "add",
+      "sample": 17,
+      "mode": "untraced",
+      "script": 0.6500000953674316,
+      "load": 0.61
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 100,
+      "op": "add",
+      "sample": 17,
+      "mode": "untraced",
+      "script": 0.6649999618530273,
+      "load": 0.61
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 100,
+      "op": "add",
+      "sample": 18,
+      "mode": "untraced",
+      "script": 1.1200000047683716,
+      "load": 0.61
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 100,
+      "op": "add",
+      "sample": 18,
+      "mode": "untraced",
+      "script": 1.8550000190734863,
+      "load": 0.61
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 100,
+      "op": "add",
+      "sample": 18,
+      "mode": "untraced",
+      "script": 0.6100000143051147,
+      "load": 0.61
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 100,
+      "op": "add",
+      "sample": 18,
+      "mode": "untraced",
+      "script": 0.48500001430511475,
+      "load": 0.61
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 100,
+      "op": "add",
+      "sample": 18,
+      "mode": "untraced",
+      "script": 2.0399999618530273,
+      "load": 0.61
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 100,
+      "op": "add",
+      "sample": 19,
+      "mode": "untraced",
+      "script": 2.75,
+      "load": 0.61
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 100,
+      "op": "add",
+      "sample": 19,
+      "mode": "untraced",
+      "script": 0.5999999046325684,
+      "load": 0.61
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 100,
+      "op": "add",
+      "sample": 19,
+      "mode": "untraced",
+      "script": 0.6549999713897705,
+      "load": 0.61
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 100,
+      "op": "add",
+      "sample": 19,
+      "mode": "untraced",
+      "script": 1.0149999856948853,
+      "load": 0.61
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 100,
+      "op": "add",
+      "sample": 19,
+      "mode": "untraced",
+      "script": 1.4749999046325684,
+      "load": 0.61
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 100,
+      "op": "toggle",
+      "sample": 0,
+      "mode": "untraced",
+      "script": 0.6100000143051147,
+      "load": 0.61
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 100,
+      "op": "toggle",
+      "sample": 0,
+      "mode": "untraced",
+      "script": 0.33500003814697266,
+      "load": 0.61
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 100,
+      "op": "toggle",
+      "sample": 0,
+      "mode": "untraced",
+      "script": 0.4450000524520874,
+      "load": 0.61
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 100,
+      "op": "toggle",
+      "sample": 0,
+      "mode": "untraced",
+      "script": 0.8500000238418579,
+      "load": 0.61
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 100,
+      "op": "toggle",
+      "sample": 0,
+      "mode": "untraced",
+      "script": 0.6550000905990601,
+      "load": 0.61
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 100,
+      "op": "toggle",
+      "sample": 1,
+      "mode": "untraced",
+      "script": 0.31999993324279785,
+      "load": 0.61
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 100,
+      "op": "toggle",
+      "sample": 1,
+      "mode": "untraced",
+      "script": 0.7649999856948853,
+      "load": 0.61
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 100,
+      "op": "toggle",
+      "sample": 1,
+      "mode": "untraced",
+      "script": 1.03000009059906,
+      "load": 0.61
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 100,
+      "op": "toggle",
+      "sample": 1,
+      "mode": "untraced",
+      "script": 0.5349999666213989,
+      "load": 0.61
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 100,
+      "op": "toggle",
+      "sample": 1,
+      "mode": "untraced",
+      "script": 0.5799999237060547,
+      "load": 0.61
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 100,
+      "op": "toggle",
+      "sample": 2,
+      "mode": "untraced",
+      "script": 0.5649999380111694,
+      "load": 0.61
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 100,
+      "op": "toggle",
+      "sample": 2,
+      "mode": "untraced",
+      "script": 0.8250000476837158,
+      "load": 0.8
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 100,
+      "op": "toggle",
+      "sample": 2,
+      "mode": "untraced",
+      "script": 0.35500001907348633,
+      "load": 0.8
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 100,
+      "op": "toggle",
+      "sample": 2,
+      "mode": "untraced",
+      "script": 0.35500001907348633,
+      "load": 0.8
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 100,
+      "op": "toggle",
+      "sample": 2,
+      "mode": "untraced",
+      "script": 0.38499999046325684,
+      "load": 0.8
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 100,
+      "op": "toggle",
+      "sample": 3,
+      "mode": "untraced",
+      "script": 0.5499999523162842,
+      "load": 0.8
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 100,
+      "op": "toggle",
+      "sample": 3,
+      "mode": "untraced",
+      "script": 0.31499993801116943,
+      "load": 0.8
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 100,
+      "op": "toggle",
+      "sample": 3,
+      "mode": "untraced",
+      "script": 0.5049999952316284,
+      "load": 0.8
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 100,
+      "op": "toggle",
+      "sample": 3,
+      "mode": "untraced",
+      "script": 0.43000006675720215,
+      "load": 0.8
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 100,
+      "op": "toggle",
+      "sample": 3,
+      "mode": "untraced",
+      "script": 3.965000033378601,
+      "load": 0.8
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 100,
+      "op": "toggle",
+      "sample": 4,
+      "mode": "untraced",
+      "script": 0.28999996185302734,
+      "load": 0.8
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 100,
+      "op": "toggle",
+      "sample": 4,
+      "mode": "untraced",
+      "script": 0.42500007152557373,
+      "load": 0.8
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 100,
+      "op": "toggle",
+      "sample": 4,
+      "mode": "untraced",
+      "script": 0.39499998092651367,
+      "load": 0.8
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 100,
+      "op": "toggle",
+      "sample": 4,
+      "mode": "untraced",
+      "script": 0.6449999809265137,
+      "load": 0.8
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 100,
+      "op": "toggle",
+      "sample": 4,
+      "mode": "untraced",
+      "script": 0.8999999761581421,
+      "load": 0.8
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 100,
+      "op": "toggle",
+      "sample": 5,
+      "mode": "untraced",
+      "script": 0.48000001907348633,
+      "load": 0.8
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 100,
+      "op": "toggle",
+      "sample": 5,
+      "mode": "untraced",
+      "script": 0.30000007152557373,
+      "load": 0.8
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 100,
+      "op": "toggle",
+      "sample": 5,
+      "mode": "untraced",
+      "script": 0.9249999523162842,
+      "load": 0.8
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 100,
+      "op": "toggle",
+      "sample": 5,
+      "mode": "untraced",
+      "script": 0.4950000047683716,
+      "load": 0.8
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 100,
+      "op": "toggle",
+      "sample": 5,
+      "mode": "untraced",
+      "script": 0.7250000238418579,
+      "load": 0.8
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 100,
+      "op": "toggle",
+      "sample": 6,
+      "mode": "untraced",
+      "script": 0.3250000476837158,
+      "load": 0.8
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 100,
+      "op": "toggle",
+      "sample": 6,
+      "mode": "untraced",
+      "script": 0.8849999904632568,
+      "load": 0.8
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 100,
+      "op": "toggle",
+      "sample": 6,
+      "mode": "untraced",
+      "script": 3.8949999809265137,
+      "load": 0.8
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 100,
+      "op": "toggle",
+      "sample": 6,
+      "mode": "untraced",
+      "script": 0.5549999475479126,
+      "load": 0.8
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 100,
+      "op": "toggle",
+      "sample": 6,
+      "mode": "untraced",
+      "script": 0.8300000429153442,
+      "load": 0.8
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 100,
+      "op": "toggle",
+      "sample": 7,
+      "mode": "untraced",
+      "script": 0.6749999523162842,
+      "load": 0.8
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 100,
+      "op": "toggle",
+      "sample": 7,
+      "mode": "untraced",
+      "script": 0.7350000143051147,
+      "load": 0.8
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 100,
+      "op": "toggle",
+      "sample": 7,
+      "mode": "untraced",
+      "script": 0.5249999761581421,
+      "load": 0.8
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 100,
+      "op": "toggle",
+      "sample": 7,
+      "mode": "untraced",
+      "script": 0.7899999618530273,
+      "load": 0.8
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 100,
+      "op": "toggle",
+      "sample": 7,
+      "mode": "untraced",
+      "script": 0.44999992847442627,
+      "load": 0.8
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 100,
+      "op": "toggle",
+      "sample": 8,
+      "mode": "untraced",
+      "script": 0.4700000286102295,
+      "load": 0.8
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 100,
+      "op": "toggle",
+      "sample": 8,
+      "mode": "untraced",
+      "script": 0.31000006198883057,
+      "load": 0.8
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 100,
+      "op": "toggle",
+      "sample": 8,
+      "mode": "untraced",
+      "script": 0.39499998092651367,
+      "load": 0.8
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 100,
+      "op": "toggle",
+      "sample": 8,
+      "mode": "untraced",
+      "script": 0.6699999570846558,
+      "load": 0.8
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 100,
+      "op": "toggle",
+      "sample": 8,
+      "mode": "untraced",
+      "script": 4.075000047683716,
+      "load": 0.8
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 100,
+      "op": "toggle",
+      "sample": 9,
+      "mode": "untraced",
+      "script": 0.309999942779541,
+      "load": 0.8
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 100,
+      "op": "toggle",
+      "sample": 9,
+      "mode": "untraced",
+      "script": 0.38999998569488525,
+      "load": 0.8
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 100,
+      "op": "toggle",
+      "sample": 9,
+      "mode": "untraced",
+      "script": 0.375,
+      "load": 0.8
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 100,
+      "op": "toggle",
+      "sample": 9,
+      "mode": "untraced",
+      "script": 1.0549999475479126,
+      "load": 0.8
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 100,
+      "op": "toggle",
+      "sample": 9,
+      "mode": "untraced",
+      "script": 0.7350000143051147,
+      "load": 0.8
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 100,
+      "op": "toggle",
+      "sample": 10,
+      "mode": "untraced",
+      "script": 0.375,
+      "load": 0.8
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 100,
+      "op": "toggle",
+      "sample": 10,
+      "mode": "untraced",
+      "script": 0.6950000524520874,
+      "load": 0.8
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 100,
+      "op": "toggle",
+      "sample": 10,
+      "mode": "untraced",
+      "script": 0.7100000381469727,
+      "load": 0.8
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 100,
+      "op": "toggle",
+      "sample": 10,
+      "mode": "untraced",
+      "script": 1.0099999904632568,
+      "load": 0.8
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 100,
+      "op": "toggle",
+      "sample": 10,
+      "mode": "untraced",
+      "script": 0.6150000095367432,
+      "load": 0.8
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 100,
+      "op": "toggle",
+      "sample": 11,
+      "mode": "untraced",
+      "script": 0.2900000810623169,
+      "load": 0.8
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 100,
+      "op": "toggle",
+      "sample": 11,
+      "mode": "untraced",
+      "script": 1.165000081062317,
+      "load": 0.8
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 100,
+      "op": "toggle",
+      "sample": 11,
+      "mode": "untraced",
+      "script": 0.7549999952316284,
+      "load": 0.8
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 100,
+      "op": "toggle",
+      "sample": 11,
+      "mode": "untraced",
+      "script": 0.3799999952316284,
+      "load": 0.9
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 100,
+      "op": "toggle",
+      "sample": 11,
+      "mode": "untraced",
+      "script": 0.7100000381469727,
+      "load": 0.9
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 100,
+      "op": "toggle",
+      "sample": 12,
+      "mode": "untraced",
+      "script": 0.434999942779541,
+      "load": 0.9
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 100,
+      "op": "toggle",
+      "sample": 12,
+      "mode": "untraced",
+      "script": 0.6800000667572021,
+      "load": 0.9
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 100,
+      "op": "toggle",
+      "sample": 12,
+      "mode": "untraced",
+      "script": 0.5399999618530273,
+      "load": 0.9
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 100,
+      "op": "toggle",
+      "sample": 12,
+      "mode": "untraced",
+      "script": 0.3349999189376831,
+      "load": 0.9
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 100,
+      "op": "toggle",
+      "sample": 12,
+      "mode": "untraced",
+      "script": 0.33000004291534424,
+      "load": 0.9
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 100,
+      "op": "toggle",
+      "sample": 13,
+      "mode": "untraced",
+      "script": 0.3999999761581421,
+      "load": 0.9
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 100,
+      "op": "toggle",
+      "sample": 13,
+      "mode": "untraced",
+      "script": 0.28999996185302734,
+      "load": 0.9
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 100,
+      "op": "toggle",
+      "sample": 13,
+      "mode": "untraced",
+      "script": 0.3549998998641968,
+      "load": 0.9
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 100,
+      "op": "toggle",
+      "sample": 13,
+      "mode": "untraced",
+      "script": 0.3200000524520874,
+      "load": 0.9
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 100,
+      "op": "toggle",
+      "sample": 13,
+      "mode": "untraced",
+      "script": 0.8899999856948853,
+      "load": 0.9
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 100,
+      "op": "toggle",
+      "sample": 14,
+      "mode": "untraced",
+      "script": 0.3200000524520874,
+      "load": 0.9
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 100,
+      "op": "toggle",
+      "sample": 14,
+      "mode": "untraced",
+      "script": 0.315000057220459,
+      "load": 0.9
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 100,
+      "op": "toggle",
+      "sample": 14,
+      "mode": "untraced",
+      "script": 0.6550000905990601,
+      "load": 0.9
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 100,
+      "op": "toggle",
+      "sample": 14,
+      "mode": "untraced",
+      "script": 0.9749999046325684,
+      "load": 0.9
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 100,
+      "op": "toggle",
+      "sample": 14,
+      "mode": "untraced",
+      "script": 0.6200000047683716,
+      "load": 0.9
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 100,
+      "op": "toggle",
+      "sample": 15,
+      "mode": "untraced",
+      "script": 0.35500001907348633,
+      "load": 0.9
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 100,
+      "op": "toggle",
+      "sample": 15,
+      "mode": "untraced",
+      "script": 0.4549999237060547,
+      "load": 0.9
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 100,
+      "op": "toggle",
+      "sample": 15,
+      "mode": "untraced",
+      "script": 0.4200000762939453,
+      "load": 0.9
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 100,
+      "op": "toggle",
+      "sample": 15,
+      "mode": "untraced",
+      "script": 0.7999999523162842,
+      "load": 0.9
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 100,
+      "op": "toggle",
+      "sample": 15,
+      "mode": "untraced",
+      "script": 0.5,
+      "load": 0.9
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 100,
+      "op": "toggle",
+      "sample": 16,
+      "mode": "untraced",
+      "script": 0.5,
+      "load": 0.9
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 100,
+      "op": "toggle",
+      "sample": 16,
+      "mode": "untraced",
+      "script": 3.7200000286102295,
+      "load": 0.9
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 100,
+      "op": "toggle",
+      "sample": 16,
+      "mode": "untraced",
+      "script": 0.7849999666213989,
+      "load": 0.9
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 100,
+      "op": "toggle",
+      "sample": 16,
+      "mode": "untraced",
+      "script": 0.7250000238418579,
+      "load": 0.9
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 100,
+      "op": "toggle",
+      "sample": 16,
+      "mode": "untraced",
+      "script": 0.33500003814697266,
+      "load": 0.9
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 100,
+      "op": "toggle",
+      "sample": 17,
+      "mode": "untraced",
+      "script": 0.8650000095367432,
+      "load": 0.9
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 100,
+      "op": "toggle",
+      "sample": 17,
+      "mode": "untraced",
+      "script": 0.9450000524520874,
+      "load": 0.9
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 100,
+      "op": "toggle",
+      "sample": 17,
+      "mode": "untraced",
+      "script": 0.434999942779541,
+      "load": 0.9
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 100,
+      "op": "toggle",
+      "sample": 17,
+      "mode": "untraced",
+      "script": 0.3450000286102295,
+      "load": 0.9
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 100,
+      "op": "toggle",
+      "sample": 17,
+      "mode": "untraced",
+      "script": 0.31000006198883057,
+      "load": 0.9
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 100,
+      "op": "toggle",
+      "sample": 18,
+      "mode": "untraced",
+      "script": 0.7249999046325684,
+      "load": 0.9
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 100,
+      "op": "toggle",
+      "sample": 18,
+      "mode": "untraced",
+      "script": 0.6550000905990601,
+      "load": 0.9
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 100,
+      "op": "toggle",
+      "sample": 18,
+      "mode": "untraced",
+      "script": 0.5250000953674316,
+      "load": 0.9
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 100,
+      "op": "toggle",
+      "sample": 18,
+      "mode": "untraced",
+      "script": 0.6549999713897705,
+      "load": 0.9
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 100,
+      "op": "toggle",
+      "sample": 18,
+      "mode": "untraced",
+      "script": 1.190000057220459,
+      "load": 0.9
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 100,
+      "op": "toggle",
+      "sample": 19,
+      "mode": "untraced",
+      "script": 0.3400000333786011,
+      "load": 0.9
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 100,
+      "op": "toggle",
+      "sample": 19,
+      "mode": "untraced",
+      "script": 0.35500001907348633,
+      "load": 0.9
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 100,
+      "op": "toggle",
+      "sample": 19,
+      "mode": "untraced",
+      "script": 0.6200000047683716,
+      "load": 0.9
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 100,
+      "op": "toggle",
+      "sample": 19,
+      "mode": "untraced",
+      "script": 0.4549999237060547,
+      "load": 0.9
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 100,
+      "op": "toggle",
+      "sample": 19,
+      "mode": "untraced",
+      "script": 0.8700000047683716,
+      "load": 0.9
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 100,
+      "op": "clear",
+      "sample": 0,
+      "mode": "untraced",
+      "script": 1.9900000095367432,
+      "load": 0.9
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 100,
+      "op": "clear",
+      "sample": 0,
+      "mode": "untraced",
+      "script": 2.034999966621399,
+      "load": 0.9
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 100,
+      "op": "clear",
+      "sample": 0,
+      "mode": "untraced",
+      "script": 1.4899998903274536,
+      "load": 0.9
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 100,
+      "op": "clear",
+      "sample": 0,
+      "mode": "untraced",
+      "script": 2.194999933242798,
+      "load": 0.9
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 100,
+      "op": "clear",
+      "sample": 0,
+      "mode": "untraced",
+      "script": 1.5399999618530273,
+      "load": 0.9
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 100,
+      "op": "clear",
+      "sample": 1,
+      "mode": "untraced",
+      "script": 0.940000057220459,
+      "load": 0.98
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 100,
+      "op": "clear",
+      "sample": 1,
+      "mode": "untraced",
+      "script": 1.8050000667572021,
+      "load": 0.98
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 100,
+      "op": "clear",
+      "sample": 1,
+      "mode": "untraced",
+      "script": 1.7950000762939453,
+      "load": 0.98
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 100,
+      "op": "clear",
+      "sample": 1,
+      "mode": "untraced",
+      "script": 1.7949999570846558,
+      "load": 0.98
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 100,
+      "op": "clear",
+      "sample": 1,
+      "mode": "untraced",
+      "script": 0.7300000190734863,
+      "load": 0.98
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 100,
+      "op": "clear",
+      "sample": 2,
+      "mode": "untraced",
+      "script": 1.4350000619888306,
+      "load": 0.98
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 100,
+      "op": "clear",
+      "sample": 2,
+      "mode": "untraced",
+      "script": 1.0100001096725464,
+      "load": 0.98
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 100,
+      "op": "clear",
+      "sample": 2,
+      "mode": "untraced",
+      "script": 2.3850001096725464,
+      "load": 0.98
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 100,
+      "op": "clear",
+      "sample": 2,
+      "mode": "untraced",
+      "script": 0.8350000381469727,
+      "load": 0.98
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 100,
+      "op": "clear",
+      "sample": 2,
+      "mode": "untraced",
+      "script": 1.0699999332427979,
+      "load": 0.98
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 100,
+      "op": "clear",
+      "sample": 3,
+      "mode": "untraced",
+      "script": 1.0350000858306885,
+      "load": 0.98
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 100,
+      "op": "clear",
+      "sample": 3,
+      "mode": "untraced",
+      "script": 1.024999976158142,
+      "load": 0.98
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 100,
+      "op": "clear",
+      "sample": 3,
+      "mode": "untraced",
+      "script": 0.7249999046325684,
+      "load": 0.98
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 100,
+      "op": "clear",
+      "sample": 3,
+      "mode": "untraced",
+      "script": 1.4300000667572021,
+      "load": 0.98
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 100,
+      "op": "clear",
+      "sample": 3,
+      "mode": "untraced",
+      "script": 1.8000000715255737,
+      "load": 0.98
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 100,
+      "op": "clear",
+      "sample": 4,
+      "mode": "untraced",
+      "script": 2.0549999475479126,
+      "load": 0.98
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 100,
+      "op": "clear",
+      "sample": 4,
+      "mode": "untraced",
+      "script": 0.6999999284744263,
+      "load": 0.98
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 100,
+      "op": "clear",
+      "sample": 4,
+      "mode": "untraced",
+      "script": 1.9550000429153442,
+      "load": 0.98
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 100,
+      "op": "clear",
+      "sample": 4,
+      "mode": "untraced",
+      "script": 1.715000033378601,
+      "load": 0.98
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 100,
+      "op": "clear",
+      "sample": 4,
+      "mode": "untraced",
+      "script": 1.1299999952316284,
+      "load": 0.98
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 100,
+      "op": "clear",
+      "sample": 5,
+      "mode": "untraced",
+      "script": 0.6999999284744263,
+      "load": 0.98
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 100,
+      "op": "clear",
+      "sample": 5,
+      "mode": "untraced",
+      "script": 1.225000023841858,
+      "load": 0.98
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 100,
+      "op": "clear",
+      "sample": 5,
+      "mode": "untraced",
+      "script": 1.1200000047683716,
+      "load": 0.98
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 100,
+      "op": "clear",
+      "sample": 5,
+      "mode": "untraced",
+      "script": 1.1200000047683716,
+      "load": 0.98
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 100,
+      "op": "clear",
+      "sample": 5,
+      "mode": "untraced",
+      "script": 1.0499999523162842,
+      "load": 0.98
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 100,
+      "op": "clear",
+      "sample": 6,
+      "mode": "untraced",
+      "script": 1.0200001001358032,
+      "load": 0.98
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 100,
+      "op": "clear",
+      "sample": 6,
+      "mode": "untraced",
+      "script": 2.6449999809265137,
+      "load": 0.98
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 100,
+      "op": "clear",
+      "sample": 6,
+      "mode": "untraced",
+      "script": 1.6700000762939453,
+      "load": 0.98
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 100,
+      "op": "clear",
+      "sample": 6,
+      "mode": "untraced",
+      "script": 1.4900000095367432,
+      "load": 0.98
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 100,
+      "op": "clear",
+      "sample": 6,
+      "mode": "untraced",
+      "script": 0.8300000429153442,
+      "load": 0.98
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 100,
+      "op": "clear",
+      "sample": 7,
+      "mode": "untraced",
+      "script": 0.9000000953674316,
+      "load": 0.98
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 100,
+      "op": "clear",
+      "sample": 7,
+      "mode": "untraced",
+      "script": 1.7149999141693115,
+      "load": 0.98
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 100,
+      "op": "clear",
+      "sample": 7,
+      "mode": "untraced",
+      "script": 2.149999976158142,
+      "load": 0.98
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 100,
+      "op": "clear",
+      "sample": 7,
+      "mode": "untraced",
+      "script": 0.8349999189376831,
+      "load": 0.98
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 100,
+      "op": "clear",
+      "sample": 7,
+      "mode": "untraced",
+      "script": 1.7200000286102295,
+      "load": 0.98
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 100,
+      "op": "clear",
+      "sample": 8,
+      "mode": "untraced",
+      "script": 1,
+      "load": 0.98
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 100,
+      "op": "clear",
+      "sample": 8,
+      "mode": "untraced",
+      "script": 1.1699999570846558,
+      "load": 0.98
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 100,
+      "op": "clear",
+      "sample": 8,
+      "mode": "untraced",
+      "script": 1.2300000190734863,
+      "load": 0.98
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 100,
+      "op": "clear",
+      "sample": 8,
+      "mode": "untraced",
+      "script": 1.5399999618530273,
+      "load": 0.98
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 100,
+      "op": "clear",
+      "sample": 8,
+      "mode": "untraced",
+      "script": 1.8799999952316284,
+      "load": 0.98
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 100,
+      "op": "clear",
+      "sample": 9,
+      "mode": "untraced",
+      "script": 1.034999966621399,
+      "load": 0.98
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 100,
+      "op": "clear",
+      "sample": 9,
+      "mode": "untraced",
+      "script": 1.159999966621399,
+      "load": 0.98
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 100,
+      "op": "clear",
+      "sample": 9,
+      "mode": "untraced",
+      "script": 1.0399999618530273,
+      "load": 0.98
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 100,
+      "op": "clear",
+      "sample": 9,
+      "mode": "untraced",
+      "script": 1.9950000047683716,
+      "load": 0.98
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 100,
+      "op": "clear",
+      "sample": 9,
+      "mode": "untraced",
+      "script": 1.380000114440918,
+      "load": 0.98
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 100,
+      "op": "clear",
+      "sample": 10,
+      "mode": "untraced",
+      "script": 1.0549999475479126,
+      "load": 1.07
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 100,
+      "op": "clear",
+      "sample": 10,
+      "mode": "untraced",
+      "script": 0.9850000143051147,
+      "load": 1.07
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 100,
+      "op": "clear",
+      "sample": 10,
+      "mode": "untraced",
+      "script": 1.1150000095367432,
+      "load": 1.07
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 100,
+      "op": "clear",
+      "sample": 10,
+      "mode": "untraced",
+      "script": 1.0299999713897705,
+      "load": 1.07
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 100,
+      "op": "clear",
+      "sample": 10,
+      "mode": "untraced",
+      "script": 2.415000081062317,
+      "load": 1.07
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 100,
+      "op": "clear",
+      "sample": 11,
+      "mode": "untraced",
+      "script": 1.2649999856948853,
+      "load": 1.07
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 100,
+      "op": "clear",
+      "sample": 11,
+      "mode": "untraced",
+      "script": 1.5,
+      "load": 1.07
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 100,
+      "op": "clear",
+      "sample": 11,
+      "mode": "untraced",
+      "script": 1.9200000762939453,
+      "load": 1.07
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 100,
+      "op": "clear",
+      "sample": 11,
+      "mode": "untraced",
+      "script": 1.0149999856948853,
+      "load": 1.07
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 100,
+      "op": "clear",
+      "sample": 11,
+      "mode": "untraced",
+      "script": 0.7849999666213989,
+      "load": 1.07
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 100,
+      "op": "clear",
+      "sample": 12,
+      "mode": "untraced",
+      "script": 1.8849999904632568,
+      "load": 1.07
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 100,
+      "op": "clear",
+      "sample": 12,
+      "mode": "untraced",
+      "script": 1.5799999237060547,
+      "load": 1.07
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 100,
+      "op": "clear",
+      "sample": 12,
+      "mode": "untraced",
+      "script": 1.024999976158142,
+      "load": 1.07
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 100,
+      "op": "clear",
+      "sample": 12,
+      "mode": "untraced",
+      "script": 1.340000033378601,
+      "load": 1.07
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 100,
+      "op": "clear",
+      "sample": 12,
+      "mode": "untraced",
+      "script": 0.940000057220459,
+      "load": 1.07
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 100,
+      "op": "clear",
+      "sample": 13,
+      "mode": "untraced",
+      "script": 0.8200000524520874,
+      "load": 1.07
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 100,
+      "op": "clear",
+      "sample": 13,
+      "mode": "untraced",
+      "script": 1.9300000667572021,
+      "load": 1.07
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 100,
+      "op": "clear",
+      "sample": 13,
+      "mode": "untraced",
+      "script": 0.8700000047683716,
+      "load": 1.07
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 100,
+      "op": "clear",
+      "sample": 13,
+      "mode": "untraced",
+      "script": 1.0049999952316284,
+      "load": 1.07
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 100,
+      "op": "clear",
+      "sample": 13,
+      "mode": "untraced",
+      "script": 1.2999999523162842,
+      "load": 1.07
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 100,
+      "op": "clear",
+      "sample": 14,
+      "mode": "untraced",
+      "script": 1.3899999856948853,
+      "load": 1.07
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 100,
+      "op": "clear",
+      "sample": 14,
+      "mode": "untraced",
+      "script": 1.6949999332427979,
+      "load": 1.07
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 100,
+      "op": "clear",
+      "sample": 14,
+      "mode": "untraced",
+      "script": 0.6949999332427979,
+      "load": 1.07
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 100,
+      "op": "clear",
+      "sample": 14,
+      "mode": "untraced",
+      "script": 1.5799999237060547,
+      "load": 1.07
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 100,
+      "op": "clear",
+      "sample": 14,
+      "mode": "untraced",
+      "script": 0.8100000619888306,
+      "load": 1.07
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 100,
+      "op": "clear",
+      "sample": 15,
+      "mode": "untraced",
+      "script": 0.7450000047683716,
+      "load": 1.07
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 100,
+      "op": "clear",
+      "sample": 15,
+      "mode": "untraced",
+      "script": 1.8649998903274536,
+      "load": 1.07
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 100,
+      "op": "clear",
+      "sample": 15,
+      "mode": "untraced",
+      "script": 0.8899999856948853,
+      "load": 1.07
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 100,
+      "op": "clear",
+      "sample": 15,
+      "mode": "untraced",
+      "script": 1.409999966621399,
+      "load": 1.07
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 100,
+      "op": "clear",
+      "sample": 15,
+      "mode": "untraced",
+      "script": 1.9950000047683716,
+      "load": 1.07
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 100,
+      "op": "clear",
+      "sample": 16,
+      "mode": "untraced",
+      "script": 1.9649999141693115,
+      "load": 1.07
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 100,
+      "op": "clear",
+      "sample": 16,
+      "mode": "untraced",
+      "script": 0.9649999141693115,
+      "load": 1.07
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 100,
+      "op": "clear",
+      "sample": 16,
+      "mode": "untraced",
+      "script": 2.1699999570846558,
+      "load": 1.07
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 100,
+      "op": "clear",
+      "sample": 16,
+      "mode": "untraced",
+      "script": 1.684999942779541,
+      "load": 1.07
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 100,
+      "op": "clear",
+      "sample": 16,
+      "mode": "untraced",
+      "script": 0.9099999666213989,
+      "load": 1.07
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 100,
+      "op": "clear",
+      "sample": 17,
+      "mode": "untraced",
+      "script": 1.7050000429153442,
+      "load": 1.07
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 100,
+      "op": "clear",
+      "sample": 17,
+      "mode": "untraced",
+      "script": 1.7999999523162842,
+      "load": 1.07
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 100,
+      "op": "clear",
+      "sample": 17,
+      "mode": "untraced",
+      "script": 1.8949999809265137,
+      "load": 1.07
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 100,
+      "op": "clear",
+      "sample": 17,
+      "mode": "untraced",
+      "script": 0.6800000667572021,
+      "load": 1.07
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 100,
+      "op": "clear",
+      "sample": 17,
+      "mode": "untraced",
+      "script": 0.6399999856948853,
+      "load": 1.07
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 100,
+      "op": "clear",
+      "sample": 18,
+      "mode": "untraced",
+      "script": 2,
+      "load": 1.07
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 100,
+      "op": "clear",
+      "sample": 18,
+      "mode": "untraced",
+      "script": 1.0799999237060547,
+      "load": 1.07
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 100,
+      "op": "clear",
+      "sample": 18,
+      "mode": "untraced",
+      "script": 0.684999942779541,
+      "load": 1.07
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 100,
+      "op": "clear",
+      "sample": 18,
+      "mode": "untraced",
+      "script": 0.9750000238418579,
+      "load": 1.07
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 100,
+      "op": "clear",
+      "sample": 18,
+      "mode": "untraced",
+      "script": 1.9700000286102295,
+      "load": 1.07
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 100,
+      "op": "clear",
+      "sample": 19,
+      "mode": "untraced",
+      "script": 2.1600000858306885,
+      "load": 0.98
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 100,
+      "op": "clear",
+      "sample": 19,
+      "mode": "untraced",
+      "script": 1.0049999952316284,
+      "load": 0.98
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 100,
+      "op": "clear",
+      "sample": 19,
+      "mode": "untraced",
+      "script": 1.6899999380111694,
+      "load": 0.98
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 100,
+      "op": "clear",
+      "sample": 19,
+      "mode": "untraced",
+      "script": 1.0099999904632568,
+      "load": 0.98
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 100,
+      "op": "clear",
+      "sample": 19,
+      "mode": "untraced",
+      "script": 1.284999966621399,
+      "load": 0.98
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 1000,
+      "op": "add",
+      "sample": 0,
+      "mode": "untraced",
+      "script": 0.6449999809265137,
+      "load": 0.98
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 1000,
+      "op": "add",
+      "sample": 0,
+      "mode": "untraced",
+      "script": 0.7450000047683716,
+      "load": 0.98
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 1000,
+      "op": "add",
+      "sample": 0,
+      "mode": "untraced",
+      "script": 0.9750000238418579,
+      "load": 0.98
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 1000,
+      "op": "add",
+      "sample": 0,
+      "mode": "untraced",
+      "script": 1.21999990940094,
+      "load": 0.98
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 1000,
+      "op": "add",
+      "sample": 0,
+      "mode": "untraced",
+      "script": 10.455000042915344,
+      "load": 0.98
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 1000,
+      "op": "add",
+      "sample": 1,
+      "mode": "untraced",
+      "script": 0.7250000238418579,
+      "load": 0.98
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 1000,
+      "op": "add",
+      "sample": 1,
+      "mode": "untraced",
+      "script": 1.040000081062317,
+      "load": 0.98
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 1000,
+      "op": "add",
+      "sample": 1,
+      "mode": "untraced",
+      "script": 1.2300000190734863,
+      "load": 0.98
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 1000,
+      "op": "add",
+      "sample": 1,
+      "mode": "untraced",
+      "script": 9.550000071525574,
+      "load": 0.98
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 1000,
+      "op": "add",
+      "sample": 1,
+      "mode": "untraced",
+      "script": 0.5950000286102295,
+      "load": 0.98
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 1000,
+      "op": "add",
+      "sample": 2,
+      "mode": "untraced",
+      "script": 0.9600000381469727,
+      "load": 0.98
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 1000,
+      "op": "add",
+      "sample": 2,
+      "mode": "untraced",
+      "script": 1.284999966621399,
+      "load": 0.98
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 1000,
+      "op": "add",
+      "sample": 2,
+      "mode": "untraced",
+      "script": 9.745000004768372,
+      "load": 0.98
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 1000,
+      "op": "add",
+      "sample": 2,
+      "mode": "untraced",
+      "script": 0.5199999809265137,
+      "load": 0.98
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 1000,
+      "op": "add",
+      "sample": 2,
+      "mode": "untraced",
+      "script": 0.6050000190734863,
+      "load": 0.98
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 1000,
+      "op": "add",
+      "sample": 3,
+      "mode": "untraced",
+      "script": 1.1449999809265137,
+      "load": 0.98
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 1000,
+      "op": "add",
+      "sample": 3,
+      "mode": "untraced",
+      "script": 9.715000033378601,
+      "load": 0.98
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 1000,
+      "op": "add",
+      "sample": 3,
+      "mode": "untraced",
+      "script": 0.5850000381469727,
+      "load": 0.98
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 1000,
+      "op": "add",
+      "sample": 3,
+      "mode": "untraced",
+      "script": 0.5299999713897705,
+      "load": 0.98
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 1000,
+      "op": "add",
+      "sample": 3,
+      "mode": "untraced",
+      "script": 1.0299999713897705,
+      "load": 0.98
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 1000,
+      "op": "add",
+      "sample": 4,
+      "mode": "untraced",
+      "script": 9.549999952316284,
+      "load": 0.98
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 1000,
+      "op": "add",
+      "sample": 4,
+      "mode": "untraced",
+      "script": 0.6050000190734863,
+      "load": 0.98
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 1000,
+      "op": "add",
+      "sample": 4,
+      "mode": "untraced",
+      "script": 0.7049999237060547,
+      "load": 0.98
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 1000,
+      "op": "add",
+      "sample": 4,
+      "mode": "untraced",
+      "script": 1.0950000286102295,
+      "load": 1.46
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 1000,
+      "op": "add",
+      "sample": 4,
+      "mode": "untraced",
+      "script": 1.1299999952316284,
+      "load": 1.46
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 1000,
+      "op": "add",
+      "sample": 5,
+      "mode": "untraced",
+      "script": 0.5449999570846558,
+      "load": 1.46
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 1000,
+      "op": "add",
+      "sample": 5,
+      "mode": "untraced",
+      "script": 0.7300000190734863,
+      "load": 1.46
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 1000,
+      "op": "add",
+      "sample": 5,
+      "mode": "untraced",
+      "script": 1.0399999618530273,
+      "load": 1.46
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 1000,
+      "op": "add",
+      "sample": 5,
+      "mode": "untraced",
+      "script": 1.5,
+      "load": 1.46
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 1000,
+      "op": "add",
+      "sample": 5,
+      "mode": "untraced",
+      "script": 9.449999928474426,
+      "load": 1.46
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 1000,
+      "op": "add",
+      "sample": 6,
+      "mode": "untraced",
+      "script": 0.7150000333786011,
+      "load": 1.46
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 1000,
+      "op": "add",
+      "sample": 6,
+      "mode": "untraced",
+      "script": 1.1349999904632568,
+      "load": 1.46
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 1000,
+      "op": "add",
+      "sample": 6,
+      "mode": "untraced",
+      "script": 1.0099999904632568,
+      "load": 1.46
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 1000,
+      "op": "add",
+      "sample": 6,
+      "mode": "untraced",
+      "script": 9.590000033378601,
+      "load": 1.46
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 1000,
+      "op": "add",
+      "sample": 6,
+      "mode": "untraced",
+      "script": 0.5199999809265137,
+      "load": 1.46
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 1000,
+      "op": "add",
+      "sample": 7,
+      "mode": "untraced",
+      "script": 1.034999966621399,
+      "load": 1.46
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 1000,
+      "op": "add",
+      "sample": 7,
+      "mode": "untraced",
+      "script": 1.2549999952316284,
+      "load": 1.46
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 1000,
+      "op": "add",
+      "sample": 7,
+      "mode": "untraced",
+      "script": 9.419999957084656,
+      "load": 1.46
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 1000,
+      "op": "add",
+      "sample": 7,
+      "mode": "untraced",
+      "script": 0.6150000095367432,
+      "load": 1.46
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 1000,
+      "op": "add",
+      "sample": 7,
+      "mode": "untraced",
+      "script": 0.5149999856948853,
+      "load": 1.46
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 1000,
+      "op": "add",
+      "sample": 8,
+      "mode": "untraced",
+      "script": 0.9900000095367432,
+      "load": 1.46
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 1000,
+      "op": "add",
+      "sample": 8,
+      "mode": "untraced",
+      "script": 9.569999933242798,
+      "load": 1.46
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 1000,
+      "op": "add",
+      "sample": 8,
+      "mode": "untraced",
+      "script": 0.6050000190734863,
+      "load": 1.46
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 1000,
+      "op": "add",
+      "sample": 8,
+      "mode": "untraced",
+      "script": 0.7050000429153442,
+      "load": 1.46
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 1000,
+      "op": "add",
+      "sample": 8,
+      "mode": "untraced",
+      "script": 1.0299999713897705,
+      "load": 1.46
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 1000,
+      "op": "add",
+      "sample": 9,
+      "mode": "untraced",
+      "script": 9.549999952316284,
+      "load": 1.46
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 1000,
+      "op": "add",
+      "sample": 9,
+      "mode": "untraced",
+      "script": 0.6599999666213989,
+      "load": 1.46
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 1000,
+      "op": "add",
+      "sample": 9,
+      "mode": "untraced",
+      "script": 0.7400000095367432,
+      "load": 1.46
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 1000,
+      "op": "add",
+      "sample": 9,
+      "mode": "untraced",
+      "script": 1.1899999380111694,
+      "load": 1.46
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 1000,
+      "op": "add",
+      "sample": 9,
+      "mode": "untraced",
+      "script": 1.065000057220459,
+      "load": 1.67
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 1000,
+      "op": "add",
+      "sample": 10,
+      "mode": "untraced",
+      "script": 0.5549999475479126,
+      "load": 1.67
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 1000,
+      "op": "add",
+      "sample": 10,
+      "mode": "untraced",
+      "script": 0.684999942779541,
+      "load": 1.67
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 1000,
+      "op": "add",
+      "sample": 10,
+      "mode": "untraced",
+      "script": 0.9650000333786011,
+      "load": 1.67
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 1000,
+      "op": "add",
+      "sample": 10,
+      "mode": "untraced",
+      "script": 1.190000057220459,
+      "load": 1.67
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 1000,
+      "op": "add",
+      "sample": 10,
+      "mode": "untraced",
+      "script": 9.674999952316284,
+      "load": 1.67
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 1000,
+      "op": "add",
+      "sample": 11,
+      "mode": "untraced",
+      "script": 0.7350000143051147,
+      "load": 1.67
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 1000,
+      "op": "add",
+      "sample": 11,
+      "mode": "untraced",
+      "script": 0.940000057220459,
+      "load": 1.67
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 1000,
+      "op": "add",
+      "sample": 11,
+      "mode": "untraced",
+      "script": 1.2049999237060547,
+      "load": 1.67
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 1000,
+      "op": "add",
+      "sample": 11,
+      "mode": "untraced",
+      "script": 9.790000081062317,
+      "load": 1.67
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 1000,
+      "op": "add",
+      "sample": 11,
+      "mode": "untraced",
+      "script": 0.6150000095367432,
+      "load": 1.67
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 1000,
+      "op": "add",
+      "sample": 12,
+      "mode": "untraced",
+      "script": 1.1799999475479126,
+      "load": 1.67
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 1000,
+      "op": "add",
+      "sample": 12,
+      "mode": "untraced",
+      "script": 1.1949999332427979,
+      "load": 1.67
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 1000,
+      "op": "add",
+      "sample": 12,
+      "mode": "untraced",
+      "script": 9.585000038146973,
+      "load": 1.67
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 1000,
+      "op": "add",
+      "sample": 12,
+      "mode": "untraced",
+      "script": 0.7149999141693115,
+      "load": 1.67
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 1000,
+      "op": "add",
+      "sample": 12,
+      "mode": "untraced",
+      "script": 0.6799999475479126,
+      "load": 1.67
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 1000,
+      "op": "add",
+      "sample": 13,
+      "mode": "untraced",
+      "script": 0.9900000095367432,
+      "load": 1.67
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 1000,
+      "op": "add",
+      "sample": 13,
+      "mode": "untraced",
+      "script": 9.550000071525574,
+      "load": 1.67
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 1000,
+      "op": "add",
+      "sample": 13,
+      "mode": "untraced",
+      "script": 0.8400000333786011,
+      "load": 1.67
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 1000,
+      "op": "add",
+      "sample": 13,
+      "mode": "untraced",
+      "script": 0.6999999284744263,
+      "load": 1.67
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 1000,
+      "op": "add",
+      "sample": 13,
+      "mode": "untraced",
+      "script": 1.5550000667572021,
+      "load": 1.67
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 1000,
+      "op": "add",
+      "sample": 14,
+      "mode": "untraced",
+      "script": 9.829999923706055,
+      "load": 1.67
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 1000,
+      "op": "add",
+      "sample": 14,
+      "mode": "untraced",
+      "script": 0.5150001049041748,
+      "load": 1.67
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 1000,
+      "op": "add",
+      "sample": 14,
+      "mode": "untraced",
+      "script": 0.6899999380111694,
+      "load": 1.67
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 1000,
+      "op": "add",
+      "sample": 14,
+      "mode": "untraced",
+      "script": 1.0149999856948853,
+      "load": 1.67
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 1000,
+      "op": "add",
+      "sample": 14,
+      "mode": "untraced",
+      "script": 0.9950000047683716,
+      "load": 1.67
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 1000,
+      "op": "add",
+      "sample": 15,
+      "mode": "untraced",
+      "script": 0.6299999952316284,
+      "load": 1.61
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 1000,
+      "op": "add",
+      "sample": 15,
+      "mode": "untraced",
+      "script": 0.5699999332427979,
+      "load": 1.61
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 1000,
+      "op": "add",
+      "sample": 15,
+      "mode": "untraced",
+      "script": 1.3100000619888306,
+      "load": 1.61
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 1000,
+      "op": "add",
+      "sample": 15,
+      "mode": "untraced",
+      "script": 0.9850000143051147,
+      "load": 1.61
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 1000,
+      "op": "add",
+      "sample": 15,
+      "mode": "untraced",
+      "script": 9.505000114440918,
+      "load": 1.61
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 1000,
+      "op": "add",
+      "sample": 16,
+      "mode": "untraced",
+      "script": 0.6999999284744263,
+      "load": 1.61
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 1000,
+      "op": "add",
+      "sample": 16,
+      "mode": "untraced",
+      "script": 1.184999942779541,
+      "load": 1.61
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 1000,
+      "op": "add",
+      "sample": 16,
+      "mode": "untraced",
+      "script": 0.9600000381469727,
+      "load": 1.61
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 1000,
+      "op": "add",
+      "sample": 16,
+      "mode": "untraced",
+      "script": 9.554999947547913,
+      "load": 1.61
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 1000,
+      "op": "add",
+      "sample": 16,
+      "mode": "untraced",
+      "script": 0.5299999713897705,
+      "load": 1.61
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 1000,
+      "op": "add",
+      "sample": 17,
+      "mode": "untraced",
+      "script": 1.149999976158142,
+      "load": 1.61
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 1000,
+      "op": "add",
+      "sample": 17,
+      "mode": "untraced",
+      "script": 0.9700000286102295,
+      "load": 1.61
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 1000,
+      "op": "add",
+      "sample": 17,
+      "mode": "untraced",
+      "script": 10.06499993801117,
+      "load": 1.61
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 1000,
+      "op": "add",
+      "sample": 17,
+      "mode": "untraced",
+      "script": 0.625,
+      "load": 1.61
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 1000,
+      "op": "add",
+      "sample": 17,
+      "mode": "untraced",
+      "script": 0.7250000238418579,
+      "load": 1.61
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 1000,
+      "op": "add",
+      "sample": 18,
+      "mode": "untraced",
+      "script": 1.149999976158142,
+      "load": 1.61
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 1000,
+      "op": "add",
+      "sample": 18,
+      "mode": "untraced",
+      "script": 9.539999961853027,
+      "load": 1.61
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 1000,
+      "op": "add",
+      "sample": 18,
+      "mode": "untraced",
+      "script": 0.5700000524520874,
+      "load": 1.61
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 1000,
+      "op": "add",
+      "sample": 18,
+      "mode": "untraced",
+      "script": 0.7100000381469727,
+      "load": 1.61
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 1000,
+      "op": "add",
+      "sample": 18,
+      "mode": "untraced",
+      "script": 1.2050000429153442,
+      "load": 1.61
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 1000,
+      "op": "add",
+      "sample": 19,
+      "mode": "untraced",
+      "script": 9.555000066757202,
+      "load": 1.61
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 1000,
+      "op": "add",
+      "sample": 19,
+      "mode": "untraced",
+      "script": 0.6150000095367432,
+      "load": 1.61
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 1000,
+      "op": "add",
+      "sample": 19,
+      "mode": "untraced",
+      "script": 0.7350000143051147,
+      "load": 1.61
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 1000,
+      "op": "add",
+      "sample": 19,
+      "mode": "untraced",
+      "script": 1.059999942779541,
+      "load": 1.61
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 1000,
+      "op": "add",
+      "sample": 19,
+      "mode": "untraced",
+      "script": 1.059999942779541,
+      "load": 1.61
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 0,
+      "mode": "untraced",
+      "script": 0.3799999952316284,
+      "load": 1.61
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 0,
+      "mode": "untraced",
+      "script": 0.4049999713897705,
+      "load": 1.56
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 0,
+      "mode": "untraced",
+      "script": 0.5600000619888306,
+      "load": 1.56
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 0,
+      "mode": "untraced",
+      "script": 0.6200000047683716,
+      "load": 1.56
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 0,
+      "mode": "untraced",
+      "script": 0.8600000143051147,
+      "load": 1.56
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 1,
+      "mode": "untraced",
+      "script": 0.565000057220459,
+      "load": 1.56
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 1,
+      "mode": "untraced",
+      "script": 0.5500000715255737,
+      "load": 1.56
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 1,
+      "mode": "untraced",
+      "script": 0.7250000238418579,
+      "load": 1.56
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 1,
+      "mode": "untraced",
+      "script": 1.21999990940094,
+      "load": 1.56
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 1,
+      "mode": "untraced",
+      "script": 0.41499996185302734,
+      "load": 1.56
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 2,
+      "mode": "untraced",
+      "script": 0.8049999475479126,
+      "load": 1.56
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 2,
+      "mode": "untraced",
+      "script": 0.4650000333786011,
+      "load": 1.56
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 2,
+      "mode": "untraced",
+      "script": 1.2350000143051147,
+      "load": 1.56
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 2,
+      "mode": "untraced",
+      "script": 0.4049999713897705,
+      "load": 1.56
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 2,
+      "mode": "untraced",
+      "script": 0.43999993801116943,
+      "load": 1.56
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 3,
+      "mode": "untraced",
+      "script": 0.5900000333786011,
+      "load": 1.56
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 3,
+      "mode": "untraced",
+      "script": 0.9800000190734863,
+      "load": 1.56
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 3,
+      "mode": "untraced",
+      "script": 0.39499998092651367,
+      "load": 1.56
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 3,
+      "mode": "untraced",
+      "script": 0.4950000047683716,
+      "load": 1.56
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 3,
+      "mode": "untraced",
+      "script": 0.5250000953674316,
+      "load": 1.56
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 4,
+      "mode": "untraced",
+      "script": 1.149999976158142,
+      "load": 1.56
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 4,
+      "mode": "untraced",
+      "script": 0.4450000524520874,
+      "load": 1.56
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 4,
+      "mode": "untraced",
+      "script": 0.36500000953674316,
+      "load": 1.56
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 4,
+      "mode": "untraced",
+      "script": 0.5549999475479126,
+      "load": 1.56
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 4,
+      "mode": "untraced",
+      "script": 0.7249999046325684,
+      "load": 1.56
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 5,
+      "mode": "untraced",
+      "script": 0.39499998092651367,
+      "load": 1.56
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 5,
+      "mode": "untraced",
+      "script": 0.38499999046325684,
+      "load": 1.56
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 5,
+      "mode": "untraced",
+      "script": 0.6700000762939453,
+      "load": 1.56
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 5,
+      "mode": "untraced",
+      "script": 0.6899999380111694,
+      "load": 1.56
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 5,
+      "mode": "untraced",
+      "script": 0.9249999523162842,
+      "load": 1.52
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 6,
+      "mode": "untraced",
+      "script": 0.38499999046325684,
+      "load": 1.52
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 6,
+      "mode": "untraced",
+      "script": 0.6400001049041748,
+      "load": 1.52
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 6,
+      "mode": "untraced",
+      "script": 0.5199999809265137,
+      "load": 1.52
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 6,
+      "mode": "untraced",
+      "script": 1.149999976158142,
+      "load": 1.52
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 6,
+      "mode": "untraced",
+      "script": 0.3999999761581421,
+      "load": 1.52
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 7,
+      "mode": "untraced",
+      "script": 0.6200000047683716,
+      "load": 1.52
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 7,
+      "mode": "untraced",
+      "script": 0.6899999380111694,
+      "load": 1.52
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 7,
+      "mode": "untraced",
+      "script": 0.9850000143051147,
+      "load": 1.52
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 7,
+      "mode": "untraced",
+      "script": 0.5700000524520874,
+      "load": 1.52
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 7,
+      "mode": "untraced",
+      "script": 0.43000006675720215,
+      "load": 1.52
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 8,
+      "mode": "untraced",
+      "script": 0.6100000143051147,
+      "load": 1.52
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 8,
+      "mode": "untraced",
+      "script": 0.9450000524520874,
+      "load": 1.52
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 8,
+      "mode": "untraced",
+      "script": 0.40000009536743164,
+      "load": 1.52
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 8,
+      "mode": "untraced",
+      "script": 0.43500006198883057,
+      "load": 1.52
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 8,
+      "mode": "untraced",
+      "script": 0.5449999570846558,
+      "load": 1.52
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 9,
+      "mode": "untraced",
+      "script": 1.159999966621399,
+      "load": 1.52
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 9,
+      "mode": "untraced",
+      "script": 0.4700000286102295,
+      "load": 1.52
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 9,
+      "mode": "untraced",
+      "script": 0.46000003814697266,
+      "load": 1.52
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 9,
+      "mode": "untraced",
+      "script": 0.6999999284744263,
+      "load": 1.52
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 9,
+      "mode": "untraced",
+      "script": 0.5849999189376831,
+      "load": 1.52
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 10,
+      "mode": "untraced",
+      "script": 0.4750000238418579,
+      "load": 1.52
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 10,
+      "mode": "untraced",
+      "script": 0.42500007152557373,
+      "load": 1.52
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 10,
+      "mode": "untraced",
+      "script": 0.630000114440918,
+      "load": 1.52
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 10,
+      "mode": "untraced",
+      "script": 0.5900000333786011,
+      "load": 1.52
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 10,
+      "mode": "untraced",
+      "script": 0.875,
+      "load": 1.52
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 11,
+      "mode": "untraced",
+      "script": 0.5500000715255737,
+      "load": 1.52
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 11,
+      "mode": "untraced",
+      "script": 0.6800000667572021,
+      "load": 1.64
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 11,
+      "mode": "untraced",
+      "script": 0.5600000619888306,
+      "load": 1.64
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 11,
+      "mode": "untraced",
+      "script": 0.8599998950958252,
+      "load": 1.64
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 11,
+      "mode": "untraced",
+      "script": 0.5399999618530273,
+      "load": 1.64
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 12,
+      "mode": "untraced",
+      "script": 0.7899999618530273,
+      "load": 1.64
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 12,
+      "mode": "untraced",
+      "script": 0.4950000047683716,
+      "load": 1.64
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 12,
+      "mode": "untraced",
+      "script": 0.9449999332427979,
+      "load": 1.64
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 12,
+      "mode": "untraced",
+      "script": 0.5,
+      "load": 1.64
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 12,
+      "mode": "untraced",
+      "script": 0.3799999952316284,
+      "load": 1.64
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 13,
+      "mode": "untraced",
+      "script": 0.4700000286102295,
+      "load": 1.64
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 13,
+      "mode": "untraced",
+      "script": 0.8650000095367432,
+      "load": 1.64
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 13,
+      "mode": "untraced",
+      "script": 0.5949999094009399,
+      "load": 1.64
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 13,
+      "mode": "untraced",
+      "script": 0.41499996185302734,
+      "load": 1.64
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 13,
+      "mode": "untraced",
+      "script": 0.6599999666213989,
+      "load": 1.64
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 14,
+      "mode": "untraced",
+      "script": 0.8600000143051147,
+      "load": 1.64
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 14,
+      "mode": "untraced",
+      "script": 0.505000114440918,
+      "load": 1.64
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 14,
+      "mode": "untraced",
+      "script": 0.5049999952316284,
+      "load": 1.64
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 14,
+      "mode": "untraced",
+      "script": 0.5549999475479126,
+      "load": 1.64
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 14,
+      "mode": "untraced",
+      "script": 0.4950000047683716,
+      "load": 1.64
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 15,
+      "mode": "untraced",
+      "script": 0.4500000476837158,
+      "load": 1.64
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 15,
+      "mode": "untraced",
+      "script": 0.3799999952316284,
+      "load": 1.64
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 15,
+      "mode": "untraced",
+      "script": 0.6399999856948853,
+      "load": 1.64
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 15,
+      "mode": "untraced",
+      "script": 0.505000114440918,
+      "load": 1.64
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 15,
+      "mode": "untraced",
+      "script": 1.0199999809265137,
+      "load": 1.64
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 16,
+      "mode": "untraced",
+      "script": 0.38999998569488525,
+      "load": 1.64
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 16,
+      "mode": "untraced",
+      "script": 0.6800000667572021,
+      "load": 1.64
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 16,
+      "mode": "untraced",
+      "script": 0.7100000381469727,
+      "load": 1.64
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 16,
+      "mode": "untraced",
+      "script": 0.8900001049041748,
+      "load": 1.67
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 16,
+      "mode": "untraced",
+      "script": 0.3700000047683716,
+      "load": 1.67
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 17,
+      "mode": "untraced",
+      "script": 0.809999942779541,
+      "load": 1.67
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 17,
+      "mode": "untraced",
+      "script": 0.6349999904632568,
+      "load": 1.67
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 17,
+      "mode": "untraced",
+      "script": 0.8999999761581421,
+      "load": 1.67
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 17,
+      "mode": "untraced",
+      "script": 0.4650000333786011,
+      "load": 1.67
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 17,
+      "mode": "untraced",
+      "script": 0.4450000524520874,
+      "load": 1.67
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 18,
+      "mode": "untraced",
+      "script": 0.48000001907348633,
+      "load": 1.67
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 18,
+      "mode": "untraced",
+      "script": 1.0500000715255737,
+      "load": 1.67
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 18,
+      "mode": "untraced",
+      "script": 0.4450000524520874,
+      "load": 1.67
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 18,
+      "mode": "untraced",
+      "script": 0.3700000047683716,
+      "load": 1.67
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 18,
+      "mode": "untraced",
+      "script": 0.559999942779541,
+      "load": 1.67
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 19,
+      "mode": "untraced",
+      "script": 0.8999999761581421,
+      "load": 1.67
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 19,
+      "mode": "untraced",
+      "script": 0.43999993801116943,
+      "load": 1.67
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 19,
+      "mode": "untraced",
+      "script": 0.38999998569488525,
+      "load": 1.67
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 19,
+      "mode": "untraced",
+      "script": 0.6599999666213989,
+      "load": 1.67
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 1000,
+      "op": "toggle",
+      "sample": 19,
+      "mode": "untraced",
+      "script": 0.6600000858306885,
+      "load": 1.67
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 1000,
+      "op": "clear",
+      "sample": 0,
+      "mode": "untraced",
+      "script": 3.299999952316284,
+      "load": 1.67
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 1000,
+      "op": "clear",
+      "sample": 0,
+      "mode": "untraced",
+      "script": 3.0700000524520874,
+      "load": 1.67
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 1000,
+      "op": "clear",
+      "sample": 0,
+      "mode": "untraced",
+      "script": 3.284999966621399,
+      "load": 1.67
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 1000,
+      "op": "clear",
+      "sample": 0,
+      "mode": "untraced",
+      "script": 3.4600000381469727,
+      "load": 1.67
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 1000,
+      "op": "clear",
+      "sample": 0,
+      "mode": "untraced",
+      "script": 7.144999980926514,
+      "load": 1.67
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 1000,
+      "op": "clear",
+      "sample": 1,
+      "mode": "untraced",
+      "script": 3.2450000047683716,
+      "load": 1.67
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 1000,
+      "op": "clear",
+      "sample": 1,
+      "mode": "untraced",
+      "script": 3.5449999570846558,
+      "load": 1.67
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 1000,
+      "op": "clear",
+      "sample": 1,
+      "mode": "untraced",
+      "script": 3.4550000429153442,
+      "load": 1.67
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 1000,
+      "op": "clear",
+      "sample": 1,
+      "mode": "untraced",
+      "script": 7.649999976158142,
+      "load": 1.67
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 1000,
+      "op": "clear",
+      "sample": 1,
+      "mode": "untraced",
+      "script": 3.299999952316284,
+      "load": 1.69
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 1000,
+      "op": "clear",
+      "sample": 2,
+      "mode": "untraced",
+      "script": 3.2649999856948853,
+      "load": 1.69
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 1000,
+      "op": "clear",
+      "sample": 2,
+      "mode": "untraced",
+      "script": 4.139999985694885,
+      "load": 1.69
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 1000,
+      "op": "clear",
+      "sample": 2,
+      "mode": "untraced",
+      "script": 7.584999918937683,
+      "load": 1.69
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 1000,
+      "op": "clear",
+      "sample": 2,
+      "mode": "untraced",
+      "script": 3.3600000143051147,
+      "load": 1.69
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 1000,
+      "op": "clear",
+      "sample": 2,
+      "mode": "untraced",
+      "script": 3.2899999618530273,
+      "load": 1.69
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 1000,
+      "op": "clear",
+      "sample": 3,
+      "mode": "untraced",
+      "script": 3.3950001001358032,
+      "load": 1.69
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 1000,
+      "op": "clear",
+      "sample": 3,
+      "mode": "untraced",
+      "script": 7.625,
+      "load": 1.69
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 1000,
+      "op": "clear",
+      "sample": 3,
+      "mode": "untraced",
+      "script": 4.455000042915344,
+      "load": 1.69
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 1000,
+      "op": "clear",
+      "sample": 3,
+      "mode": "untraced",
+      "script": 3.2200000286102295,
+      "load": 1.69
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 1000,
+      "op": "clear",
+      "sample": 3,
+      "mode": "untraced",
+      "script": 3.590000033378601,
+      "load": 1.69
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 1000,
+      "op": "clear",
+      "sample": 4,
+      "mode": "untraced",
+      "script": 7.895000100135803,
+      "load": 1.69
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 1000,
+      "op": "clear",
+      "sample": 4,
+      "mode": "untraced",
+      "script": 3.375,
+      "load": 1.69
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 1000,
+      "op": "clear",
+      "sample": 4,
+      "mode": "untraced",
+      "script": 3.7300000190734863,
+      "load": 1.69
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 1000,
+      "op": "clear",
+      "sample": 4,
+      "mode": "untraced",
+      "script": 3.840000033378601,
+      "load": 1.69
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 1000,
+      "op": "clear",
+      "sample": 4,
+      "mode": "untraced",
+      "script": 2.799999952316284,
+      "load": 1.69
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 1000,
+      "op": "clear",
+      "sample": 5,
+      "mode": "untraced",
+      "script": 3.6050000190734863,
+      "load": 1.69
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 1000,
+      "op": "clear",
+      "sample": 5,
+      "mode": "untraced",
+      "script": 4.25,
+      "load": 1.69
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 1000,
+      "op": "clear",
+      "sample": 5,
+      "mode": "untraced",
+      "script": 3.2699999809265137,
+      "load": 1.69
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 1000,
+      "op": "clear",
+      "sample": 5,
+      "mode": "untraced",
+      "script": 3.149999976158142,
+      "load": 1.69
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 1000,
+      "op": "clear",
+      "sample": 5,
+      "mode": "untraced",
+      "script": 7.549999952316284,
+      "load": 1.69
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 1000,
+      "op": "clear",
+      "sample": 6,
+      "mode": "untraced",
+      "script": 3.2350000143051147,
+      "load": 1.69
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 1000,
+      "op": "clear",
+      "sample": 6,
+      "mode": "untraced",
+      "script": 3.740000009536743,
+      "load": 1.69
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 1000,
+      "op": "clear",
+      "sample": 6,
+      "mode": "untraced",
+      "script": 4.514999985694885,
+      "load": 1.69
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 1000,
+      "op": "clear",
+      "sample": 6,
+      "mode": "untraced",
+      "script": 8.304999947547913,
+      "load": 1.8
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 1000,
+      "op": "clear",
+      "sample": 6,
+      "mode": "untraced",
+      "script": 3.34499990940094,
+      "load": 1.8
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 1000,
+      "op": "clear",
+      "sample": 7,
+      "mode": "untraced",
+      "script": 3.284999966621399,
+      "load": 1.8
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 1000,
+      "op": "clear",
+      "sample": 7,
+      "mode": "untraced",
+      "script": 3.2100000381469727,
+      "load": 1.8
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 1000,
+      "op": "clear",
+      "sample": 7,
+      "mode": "untraced",
+      "script": 7.4049999713897705,
+      "load": 1.8
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 1000,
+      "op": "clear",
+      "sample": 7,
+      "mode": "untraced",
+      "script": 3.509999990463257,
+      "load": 1.8
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 1000,
+      "op": "clear",
+      "sample": 7,
+      "mode": "untraced",
+      "script": 3.1799999475479126,
+      "load": 1.8
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 1000,
+      "op": "clear",
+      "sample": 8,
+      "mode": "untraced",
+      "script": 3.240000009536743,
+      "load": 1.8
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 1000,
+      "op": "clear",
+      "sample": 8,
+      "mode": "untraced",
+      "script": 7.240000009536743,
+      "load": 1.8
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 1000,
+      "op": "clear",
+      "sample": 8,
+      "mode": "untraced",
+      "script": 3.325000047683716,
+      "load": 1.8
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 1000,
+      "op": "clear",
+      "sample": 8,
+      "mode": "untraced",
+      "script": 3.215000033378601,
+      "load": 1.8
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 1000,
+      "op": "clear",
+      "sample": 8,
+      "mode": "untraced",
+      "script": 3.284999966621399,
+      "load": 1.8
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 1000,
+      "op": "clear",
+      "sample": 9,
+      "mode": "untraced",
+      "script": 7.169999957084656,
+      "load": 1.8
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 1000,
+      "op": "clear",
+      "sample": 9,
+      "mode": "untraced",
+      "script": 3.369999885559082,
+      "load": 1.8
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 1000,
+      "op": "clear",
+      "sample": 9,
+      "mode": "untraced",
+      "script": 3.2350000143051147,
+      "load": 1.8
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 1000,
+      "op": "clear",
+      "sample": 9,
+      "mode": "untraced",
+      "script": 3.2950000762939453,
+      "load": 1.8
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 1000,
+      "op": "clear",
+      "sample": 9,
+      "mode": "untraced",
+      "script": 3.2350000143051147,
+      "load": 1.8
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 1000,
+      "op": "clear",
+      "sample": 10,
+      "mode": "untraced",
+      "script": 3.450000047683716,
+      "load": 1.8
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 1000,
+      "op": "clear",
+      "sample": 10,
+      "mode": "untraced",
+      "script": 3.9700000286102295,
+      "load": 1.8
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 1000,
+      "op": "clear",
+      "sample": 10,
+      "mode": "untraced",
+      "script": 3.609999895095825,
+      "load": 1.8
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 1000,
+      "op": "clear",
+      "sample": 10,
+      "mode": "untraced",
+      "script": 3.149999976158142,
+      "load": 1.8
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 1000,
+      "op": "clear",
+      "sample": 10,
+      "mode": "untraced",
+      "script": 7.179999947547913,
+      "load": 1.8
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 1000,
+      "op": "clear",
+      "sample": 11,
+      "mode": "untraced",
+      "script": 3.5950000286102295,
+      "load": 1.8
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 1000,
+      "op": "clear",
+      "sample": 11,
+      "mode": "untraced",
+      "script": 3.475000023841858,
+      "load": 1.8
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 1000,
+      "op": "clear",
+      "sample": 11,
+      "mode": "untraced",
+      "script": 3.165000081062317,
+      "load": 1.97
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 1000,
+      "op": "clear",
+      "sample": 11,
+      "mode": "untraced",
+      "script": 7.644999980926514,
+      "load": 1.97
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 1000,
+      "op": "clear",
+      "sample": 11,
+      "mode": "untraced",
+      "script": 3.3799999952316284,
+      "load": 1.97
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 1000,
+      "op": "clear",
+      "sample": 12,
+      "mode": "untraced",
+      "script": 4.504999995231628,
+      "load": 1.97
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 1000,
+      "op": "clear",
+      "sample": 12,
+      "mode": "untraced",
+      "script": 3.1799999475479126,
+      "load": 1.97
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 1000,
+      "op": "clear",
+      "sample": 12,
+      "mode": "untraced",
+      "script": 7.559999942779541,
+      "load": 1.97
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 1000,
+      "op": "clear",
+      "sample": 12,
+      "mode": "untraced",
+      "script": 3.4950000047683716,
+      "load": 1.97
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 1000,
+      "op": "clear",
+      "sample": 12,
+      "mode": "untraced",
+      "script": 3.7100000381469727,
+      "load": 1.97
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 1000,
+      "op": "clear",
+      "sample": 13,
+      "mode": "untraced",
+      "script": 4.370000004768372,
+      "load": 1.97
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 1000,
+      "op": "clear",
+      "sample": 13,
+      "mode": "untraced",
+      "script": 7.329999923706055,
+      "load": 1.97
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 1000,
+      "op": "clear",
+      "sample": 13,
+      "mode": "untraced",
+      "script": 3.4700000286102295,
+      "load": 1.97
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 1000,
+      "op": "clear",
+      "sample": 13,
+      "mode": "untraced",
+      "script": 3.1700000762939453,
+      "load": 1.97
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 1000,
+      "op": "clear",
+      "sample": 13,
+      "mode": "untraced",
+      "script": 3.75,
+      "load": 1.97
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 1000,
+      "op": "clear",
+      "sample": 14,
+      "mode": "untraced",
+      "script": 7.724999904632568,
+      "load": 1.97
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 1000,
+      "op": "clear",
+      "sample": 14,
+      "mode": "untraced",
+      "script": 3.600000023841858,
+      "load": 1.97
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 1000,
+      "op": "clear",
+      "sample": 14,
+      "mode": "untraced",
+      "script": 3.325000047683716,
+      "load": 1.97
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 1000,
+      "op": "clear",
+      "sample": 14,
+      "mode": "untraced",
+      "script": 3.3949999809265137,
+      "load": 1.97
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 1000,
+      "op": "clear",
+      "sample": 14,
+      "mode": "untraced",
+      "script": 3.259999990463257,
+      "load": 1.97
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 1000,
+      "op": "clear",
+      "sample": 15,
+      "mode": "untraced",
+      "script": 3.3949999809265137,
+      "load": 1.97
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 1000,
+      "op": "clear",
+      "sample": 15,
+      "mode": "untraced",
+      "script": 3.2450000047683716,
+      "load": 1.97
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 1000,
+      "op": "clear",
+      "sample": 15,
+      "mode": "untraced",
+      "script": 3.7049999237060547,
+      "load": 1.97
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 1000,
+      "op": "clear",
+      "sample": 15,
+      "mode": "untraced",
+      "script": 3.2049999237060547,
+      "load": 1.97
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 1000,
+      "op": "clear",
+      "sample": 15,
+      "mode": "untraced",
+      "script": 8.090000033378601,
+      "load": 1.97
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 1000,
+      "op": "clear",
+      "sample": 16,
+      "mode": "untraced",
+      "script": 3.2649999856948853,
+      "load": 1.97
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 1000,
+      "op": "clear",
+      "sample": 16,
+      "mode": "untraced",
+      "script": 3.4149999618530273,
+      "load": 1.9
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 1000,
+      "op": "clear",
+      "sample": 16,
+      "mode": "untraced",
+      "script": 3.4550000429153442,
+      "load": 1.9
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 1000,
+      "op": "clear",
+      "sample": 16,
+      "mode": "untraced",
+      "script": 7.379999995231628,
+      "load": 1.9
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 1000,
+      "op": "clear",
+      "sample": 16,
+      "mode": "untraced",
+      "script": 3.3600000143051147,
+      "load": 1.9
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 1000,
+      "op": "clear",
+      "sample": 17,
+      "mode": "untraced",
+      "script": 4.040000081062317,
+      "load": 1.9
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 1000,
+      "op": "clear",
+      "sample": 17,
+      "mode": "untraced",
+      "script": 3.569999933242798,
+      "load": 1.9
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 1000,
+      "op": "clear",
+      "sample": 17,
+      "mode": "untraced",
+      "script": 7.294999957084656,
+      "load": 1.9
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 1000,
+      "op": "clear",
+      "sample": 17,
+      "mode": "untraced",
+      "script": 4.174999952316284,
+      "load": 1.9
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 1000,
+      "op": "clear",
+      "sample": 17,
+      "mode": "untraced",
+      "script": 3.2100000381469727,
+      "load": 1.9
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 1000,
+      "op": "clear",
+      "sample": 18,
+      "mode": "untraced",
+      "script": 3.415000081062317,
+      "load": 1.9
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 1000,
+      "op": "clear",
+      "sample": 18,
+      "mode": "untraced",
+      "script": 7.28000009059906,
+      "load": 1.9
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 1000,
+      "op": "clear",
+      "sample": 18,
+      "mode": "untraced",
+      "script": 4.159999966621399,
+      "load": 1.9
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 1000,
+      "op": "clear",
+      "sample": 18,
+      "mode": "untraced",
+      "script": 3.490000009536743,
+      "load": 1.9
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 1000,
+      "op": "clear",
+      "sample": 18,
+      "mode": "untraced",
+      "script": 3.6100000143051147,
+      "load": 1.9
+    },
+    {
+      "subject": "vanilla-es6",
+      "n": 1000,
+      "op": "clear",
+      "sample": 19,
+      "mode": "untraced",
+      "script": 7.5,
+      "load": 1.9
+    },
+    {
+      "subject": "browser-tea-Sandbox",
+      "n": 1000,
+      "op": "clear",
+      "sample": 19,
+      "mode": "untraced",
+      "script": 3.4600000381469727,
+      "load": 1.9
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "n": 1000,
+      "op": "clear",
+      "sample": 19,
+      "mode": "untraced",
+      "script": 3.25,
+      "load": 1.9
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "n": 1000,
+      "op": "clear",
+      "sample": 19,
+      "mode": "untraced",
+      "script": 3.3600000143051147,
+      "load": 1.9
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "n": 1000,
+      "op": "clear",
+      "sample": 19,
+      "mode": "untraced",
+      "script": 3.259999990463257,
+      "load": 1.9
+    }
+  ],
+  "summary": [
+    {
+      "mode": "untraced",
+      "n": 100,
+      "op": "add",
+      "subject": "browser-tea-Sandbox",
+      "samples": 20,
+      "median": 0.7274999618530273,
+      "min": 0.4799998998641968,
+      "max": 1.024999976158142
+    },
+    {
+      "mode": "untraced",
+      "n": 100,
+      "op": "add",
+      "subject": "browser-direct-Sandbox",
+      "samples": 20,
+      "median": 0.6150000095367432,
+      "min": 0.3799999952316284,
+      "max": 0.8500000238418579
+    },
+    {
+      "mode": "untraced",
+      "n": 100,
+      "op": "add",
+      "subject": "browser-tea-NoEditing",
+      "samples": 20,
+      "median": 1.565000057220459,
+      "min": 1.0149999856948853,
+      "max": 2.8049999475479126
+    },
+    {
+      "mode": "untraced",
+      "n": 100,
+      "op": "add",
+      "subject": "browser-direct-NoEditing",
+      "samples": 20,
+      "median": 1.2274999618530273,
+      "min": 0.8249999284744263,
+      "max": 1.9049999713897705
+    },
+    {
+      "mode": "untraced",
+      "n": 100,
+      "op": "add",
+      "subject": "vanilla-es6",
+      "samples": 20,
+      "median": 2.150000035762787,
+      "min": 1.340000033378601,
+      "max": 3.1049998998641968
+    },
+    {
+      "mode": "untraced",
+      "n": 100,
+      "op": "toggle",
+      "subject": "browser-tea-Sandbox",
+      "samples": 20,
+      "median": 0.39249998331069946,
+      "min": 0.315000057220459,
+      "max": 0.8300000429153442
+    },
+    {
+      "mode": "untraced",
+      "n": 100,
+      "op": "toggle",
+      "subject": "browser-direct-Sandbox",
+      "samples": 20,
+      "median": 0.38999998569488525,
+      "min": 0.2900000810623169,
+      "max": 0.6950000524520874
+    },
+    {
+      "mode": "untraced",
+      "n": 100,
+      "op": "toggle",
+      "subject": "browser-tea-NoEditing",
+      "samples": 20,
+      "median": 0.875,
+      "min": 0.4200000762939453,
+      "max": 4.075000047683716
+    },
+    {
+      "mode": "untraced",
+      "n": 100,
+      "op": "toggle",
+      "subject": "browser-direct-NoEditing",
+      "samples": 20,
+      "median": 0.7699999809265137,
+      "min": 0.3999999761581421,
+      "max": 3.8949999809265137
+    },
+    {
+      "mode": "untraced",
+      "n": 100,
+      "op": "toggle",
+      "subject": "vanilla-es6",
+      "samples": 20,
+      "median": 0.4674999713897705,
+      "min": 0.28999996185302734,
+      "max": 0.7250000238418579
+    },
+    {
+      "mode": "untraced",
+      "n": 100,
+      "op": "clear",
+      "subject": "browser-tea-Sandbox",
+      "samples": 20,
+      "median": 0.8349999785423279,
+      "min": 0.6800000667572021,
+      "max": 1.9900000095367432
+    },
+    {
+      "mode": "untraced",
+      "n": 100,
+      "op": "clear",
+      "subject": "browser-direct-Sandbox",
+      "samples": 20,
+      "median": 1.1474999785423279,
+      "min": 0.6399999856948853,
+      "max": 2.034999966621399
+    },
+    {
+      "mode": "untraced",
+      "n": 100,
+      "op": "clear",
+      "subject": "browser-tea-NoEditing",
+      "samples": 20,
+      "median": 1.5399999618530273,
+      "min": 0.8899999856948853,
+      "max": 2.6449999809265137
+    },
+    {
+      "mode": "untraced",
+      "n": 100,
+      "op": "clear",
+      "subject": "browser-direct-NoEditing",
+      "samples": 20,
+      "median": 1.3950000405311584,
+      "min": 0.8100000619888306,
+      "max": 2.194999933242798
+    },
+    {
+      "mode": "untraced",
+      "n": 100,
+      "op": "clear",
+      "subject": "vanilla-es6",
+      "samples": 20,
+      "median": 1.6124999523162842,
+      "min": 1.0149999856948853,
+      "max": 2.415000081062317
+    },
+    {
+      "mode": "untraced",
+      "n": 1000,
+      "op": "add",
+      "subject": "browser-tea-Sandbox",
+      "samples": 20,
+      "median": 0.6050000190734863,
+      "min": 0.5150001049041748,
+      "max": 0.8400000333786011
+    },
+    {
+      "mode": "untraced",
+      "n": 1000,
+      "op": "add",
+      "subject": "browser-direct-Sandbox",
+      "samples": 20,
+      "median": 0.7049999833106995,
+      "min": 0.5149999856948853,
+      "max": 0.7450000047683716
+    },
+    {
+      "mode": "untraced",
+      "n": 1000,
+      "op": "add",
+      "subject": "browser-tea-NoEditing",
+      "samples": 20,
+      "median": 1.050000011920929,
+      "min": 0.940000057220459,
+      "max": 1.5550000667572021
+    },
+    {
+      "mode": "untraced",
+      "n": 1000,
+      "op": "add",
+      "subject": "browser-direct-NoEditing",
+      "samples": 20,
+      "median": 1.137499988079071,
+      "min": 0.9600000381469727,
+      "max": 1.5
+    },
+    {
+      "mode": "untraced",
+      "n": 1000,
+      "op": "add",
+      "subject": "vanilla-es6",
+      "samples": 20,
+      "median": 9.5625,
+      "min": 9.419999957084656,
+      "max": 10.455000042915344
+    },
+    {
+      "mode": "untraced",
+      "n": 1000,
+      "op": "toggle",
+      "subject": "browser-tea-Sandbox",
+      "samples": 20,
+      "median": 0.4450000524520874,
+      "min": 0.3700000047683716,
+      "max": 0.5949999094009399
+    },
+    {
+      "mode": "untraced",
+      "n": 1000,
+      "op": "toggle",
+      "subject": "browser-direct-Sandbox",
+      "samples": 20,
+      "median": 0.42000001668930054,
+      "min": 0.36500000953674316,
+      "max": 0.565000057220459
+    },
+    {
+      "mode": "untraced",
+      "n": 1000,
+      "op": "toggle",
+      "subject": "browser-tea-NoEditing",
+      "samples": 20,
+      "median": 0.64000004529953,
+      "min": 0.5250000953674316,
+      "max": 0.809999942779541
+    },
+    {
+      "mode": "untraced",
+      "n": 1000,
+      "op": "toggle",
+      "subject": "browser-direct-NoEditing",
+      "samples": 20,
+      "median": 0.5900000333786011,
+      "min": 0.4650000333786011,
+      "max": 0.7250000238418579
+    },
+    {
+      "mode": "untraced",
+      "n": 1000,
+      "op": "toggle",
+      "subject": "vanilla-es6",
+      "samples": 20,
+      "median": 0.9449999928474426,
+      "min": 0.8599998950958252,
+      "max": 1.2350000143051147
+    },
+    {
+      "mode": "untraced",
+      "n": 1000,
+      "op": "clear",
+      "subject": "browser-tea-Sandbox",
+      "samples": 20,
+      "median": 3.4225000143051147,
+      "min": 3.299999952316284,
+      "max": 4.455000042915344
+    },
+    {
+      "mode": "untraced",
+      "n": 1000,
+      "op": "clear",
+      "subject": "browser-direct-Sandbox",
+      "samples": 20,
+      "median": 3.247500002384186,
+      "min": 3.0700000524520874,
+      "max": 4.25
+    },
+    {
+      "mode": "untraced",
+      "n": 1000,
+      "op": "clear",
+      "subject": "browser-tea-NoEditing",
+      "samples": 20,
+      "median": 3.509999990463257,
+      "min": 3.2649999856948853,
+      "max": 4.504999995231628
+    },
+    {
+      "mode": "untraced",
+      "n": 1000,
+      "op": "clear",
+      "subject": "browser-direct-NoEditing",
+      "samples": 20,
+      "median": 3.259999990463257,
+      "min": 2.799999952316284,
+      "max": 4.514999985694885
+    },
+    {
+      "mode": "untraced",
+      "n": 1000,
+      "op": "clear",
+      "subject": "vanilla-es6",
+      "samples": 20,
+      "median": 7.524999976158142,
+      "min": 7.144999980926514,
+      "max": 8.304999947547913
+    }
+  ]
+}

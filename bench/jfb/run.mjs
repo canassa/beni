@@ -25,6 +25,7 @@
 //   node bench/jfb/run.mjs [--frameworks=vanillajs,solid,...] [--count=N]
 //       [--benchmarks=01_,02_] [--chrome=<path>] [--taskset=16-31]
 //       [--port=8080] [--out=bench/jfb/results/<date>]
+//       [--ordered-frameworks] [--rotate-operations] [--no-retry]
 //       [--skip-install] [--skip-build] [--skip-run] [--headed] [--resume] [--checks-only]
 //   node bench/jfb/run.mjs --report-only --out=bench/jfb/results/<date>
 //
@@ -239,6 +240,23 @@ try {
   // read: a result file is written once, after every iteration of the pair
   // succeeded (writeResults), so a file's presence is the success.
   const runner = (fws, bms) => {
+    // Rotate all candidates at each operation while leaving its protocol intact.
+    if (flag("rotate-operations") && bms === null) {
+      const operations = ["01_run1k", "02_replace1k", "03_update10th1k_x16", "04_select1k", "05_swap1k", "06_remove-one-1k", "07_create10k", "08_create1k-after1k_x2", "09_clear1k_x8", "21_ready-memory", "22_run-memory", "25_run-clear-memory", "40_"];
+      let status = 0;
+      for (const [i, operation] of operations.entries()) {
+        const shift = i % fws.length;
+        status |= runner([...fws.slice(shift), ...fws.slice(0, shift)], [operation]);
+      }
+      return status;
+    }
+    // The upstream runner orders /ls results, not its --framework arguments.
+    // Single-framework calls preserve an explicitly requested batch order.
+    if (flag("ordered-frameworks") && fws.length > 1) {
+      let status = 0;
+      for (const f of fws) status |= runner([f], bms);
+      return status;
+    }
     const args = ["dist/benchmarkRunner.js", ...headless, "--chromeBinary", chrome, ...(count === null ? [] : ["--count", count]), ...(bms === null ? [] : ["--benchmark", ...bms]), "--framework", ...fws.map((f) => `keyed/${f}`)];
     const [cmd, all] = taskset === null ? ["node", args] : ["taskset", ["-c", taskset, "node", ...args]];
     console.log(`$ ${cmd} ${all.join(" ")}`);
@@ -261,7 +279,7 @@ try {
   meta.retried = [];
   try {
     if (!flag("resume")) runner(frameworks, benchmarks === null ? null : benchmarks.split(","));
-    for (let attempt = 0; attempt < 2 && missing().length > 0; attempt++)
+    for (let attempt = 0; attempt < (flag("no-retry") ? 0 : 2) && missing().length > 0; attempt++)
       for (const [f, id] of missing()) {
         meta.retried.push(`${f} ${id}`);
         runner([f], [id]);
@@ -275,7 +293,7 @@ try {
     meta.maxLoad = meta.load.length === 0 ? null : Math.max(...meta.load.map((l) => Number(l.split(" ")[1])));
     if (meta.maxLoad > 24) console.log(`WARNING: the 1-minute load reached ${meta.maxLoad} during the pass`);
   }
-  if (missing().length > 0) throw new Error(`no result after two retries: ${missing().map((m) => m.join(" ")).join(", ")}`);
+  if (missing().length > 0) throw new Error(`missing results${flag("no-retry") ? " (retries disabled)" : " after two retries"}: ${missing().map((m) => m.join(" ")).join(", ")}`);
   meta.benchSeconds = Math.round((Date.now() - t0) / 1000);
   meta.uptimeAfter = uptime();
   mkdirSync(out, { recursive: true });
