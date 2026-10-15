@@ -4322,7 +4322,9 @@ test "a release build maps the one hoisted file back to each module's beni sourc
     // at its one use, every top-level function's first byte carries its beni
     // name, and `Debug.todo` is a body copied from `core/Debug` to its call,
     // so it maps to the call. The runtime's `process.stdout` is hand-written
-    // and the entry's `run(main)` the link step's: both unmapped. Under
+    // and the entry's `run(main)` the link step's: both unmapped. So is the
+    // runtime's `import` at the top, before the first stretch, which is
+    // where a file §9 declines to hoist is imported too. Under
     // Node's `--enable-source-maps`, the crash names `describe` at the call,
     // as the development build does (§11.1). `--allow-debug` is the hidden
     // flag that lets a release build reach `Debug`, for the crash.
@@ -4392,6 +4394,7 @@ test "a release build maps the one hoisted file back to each module's beni sourc
         "s=|a=>a.length",
         "s(n(a))",
         "s(|n(a))",
+        "import process",
         "process.stdout",
         "u(t)",
     });
@@ -4418,6 +4421,7 @@ test "a release build maps the one hoisted file back to each module's beni sourc
         \\s=|a=>a.length -> Main.beni:29:5 total
         \\s(n(a)) -> Main.beni:34:17
         \\s(|n(a)) -> Main.beni:33:14
+        \\import process -> unmapped
         \\process.stdout -> unmapped
         \\u(t) -> unmapped
         \\frame describe Main.beni:17:13
