@@ -145,7 +145,12 @@ jobs:
   # workflow, give it `on: workflow_call` in place of its own triggers,
   # call it from a job here with `uses: ./.github/workflows/<file>.yml`
   # and the `permissions:` and `secrets:` it needs, and add that job to
-  # `needs:`.
+  # `needs:`. A workflow that answers another event, such as `claude.yml`
+  # on a comment, cannot join: a called workflow sees its caller's event.
+  #
+  # The rule waits for `check` on every pull request, so this workflow
+  # runs on every pull request. A `paths:` filter on its trigger leaves a
+  # pull request that the filter skips waiting for `check` forever.
   check:
     name: check
     if: always()
