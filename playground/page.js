@@ -8,8 +8,8 @@
 // change of platform, makes a new version of the input; a result of an older
 // version is dropped, and the newest version is compiled once the worker is
 // free. A dump runs only while its tab is open. A defect of the playground
-// stops the queue until the next edit, so a failure that repeats is shown
-// once and not retried without end.
+// is not run again for the version it failed on, so a failure that repeats
+// is shown once and not retried without end; a newer version still runs.
 import { createEditor, markDiagnostics, replaceText, reveal, textOf } from "./editor.js";
 import { decode, encode } from "./share.js";
 
@@ -36,10 +36,11 @@ const worker = new Worker(new URL("worker.js", import.meta.url), { type: "module
 const frameScript = text("frame.js");
 
 // The input's version, the version each command's shown result is of, and
-// the command the worker runs.
+// the command the worker runs, with the version it was posted for.
 let version = 0;
 const shown = { build: -1, types: -1, ownership: -1 };
 let running = null;
+let runningVersion = -1;
 let ready = false;
 // A note for the status of the next build (a damaged link), so that the
 // build does not hide it.
@@ -84,6 +85,7 @@ function pump() {
   const command = nextCommand();
   if (command === null) return;
   running = command;
+  runningVersion = version;
   worker.postMessage({ id: version, command, platform: platform.value, source: textOf(editor) });
   if (command === "build") setStatus("Compiling…");
 }
@@ -217,15 +219,23 @@ worker.addEventListener("message", ({ data }) => {
   if (data.kind === "ready") {
     ready = true;
     setStatus(`Compiler loaded in ${Math.round(data.ms)} ms`);
+    // For a measurement (`bench/playground/chrome.mjs`): the status moves on
+    // at once.
+    document.documentElement.dataset.compilerLoadedMs = String(Math.round(data.ms));
     pump();
     return;
   }
   if (data.kind === "defect") {
-    // The command failed in the host: it is not run again for this version.
-    shown[running] = version;
+    // The command failed in the host: it is not run again for the version
+    // it was posted for. A defect carries no id; an edit while it ran made
+    // a newer version, which is compiled.
+    shown[running] = runningVersion;
     running = null;
     setStatus("The playground failed", "error");
     diagnosticsView.replaceChildren(preOf(data.message));
+    // Runs only a newer version, if an edit made one: the failed one is
+    // shown.
+    pump();
     return;
   }
   running = null;
