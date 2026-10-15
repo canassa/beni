@@ -1,0 +1,488 @@
+{
+  "chrome": "Chrome/155.0.8059.80",
+  "iterations": 2000000,
+  "warmups": 5,
+  "scope": "lookup kernels only; no application speed or parity claim",
+  "samples": [
+    {
+      "round": 0,
+      "name": "strings",
+      "ms": 5.299999997019768,
+      "check": 106259
+    },
+    {
+      "round": 0,
+      "name": "limbs",
+      "ms": 4.5,
+      "check": 106259
+    },
+    {
+      "round": 0,
+      "name": "longKeys",
+      "ms": 41,
+      "check": 194000000
+    },
+    {
+      "round": 0,
+      "name": "shortKeys",
+      "ms": 32.70000000298023,
+      "check": 194000000
+    },
+    {
+      "round": 1,
+      "name": "shortKeys",
+      "ms": 32.20000000298023,
+      "check": 194000000
+    },
+    {
+      "round": 1,
+      "name": "longKeys",
+      "ms": 40.5,
+      "check": 194000000
+    },
+    {
+      "round": 1,
+      "name": "limbs",
+      "ms": 4.5999999940395355,
+      "check": 106259
+    },
+    {
+      "round": 1,
+      "name": "strings",
+      "ms": 5.300000004470348,
+      "check": 106259
+    },
+    {
+      "round": 2,
+      "name": "strings",
+      "ms": 5.199999995529652,
+      "check": 106259
+    },
+    {
+      "round": 2,
+      "name": "limbs",
+      "ms": 4.4000000059604645,
+      "check": 106259
+    },
+    {
+      "round": 2,
+      "name": "longKeys",
+      "ms": 35.69999999552965,
+      "check": 194000000
+    },
+    {
+      "round": 2,
+      "name": "shortKeys",
+      "ms": 31.899999998509884,
+      "check": 194000000
+    },
+    {
+      "round": 3,
+      "name": "shortKeys",
+      "ms": 32,
+      "check": 194000000
+    },
+    {
+      "round": 3,
+      "name": "longKeys",
+      "ms": 41,
+      "check": 194000000
+    },
+    {
+      "round": 3,
+      "name": "limbs",
+      "ms": 4.4000000059604645,
+      "check": 106259
+    },
+    {
+      "round": 3,
+      "name": "strings",
+      "ms": 5.0999999940395355,
+      "check": 106259
+    },
+    {
+      "round": 4,
+      "name": "strings",
+      "ms": 5.4000000059604645,
+      "check": 106259
+    },
+    {
+      "round": 4,
+      "name": "limbs",
+      "ms": 4.399999998509884,
+      "check": 106259
+    },
+    {
+      "round": 4,
+      "name": "longKeys",
+      "ms": 36.899999998509884,
+      "check": 194000000
+    },
+    {
+      "round": 4,
+      "name": "shortKeys",
+      "ms": 32.20000000298023,
+      "check": 194000000
+    },
+    {
+      "round": 5,
+      "name": "shortKeys",
+      "ms": 32.599999994039536,
+      "check": 194000000
+    },
+    {
+      "round": 5,
+      "name": "longKeys",
+      "ms": 39,
+      "check": 194000000
+    },
+    {
+      "round": 5,
+      "name": "limbs",
+      "ms": 4.5,
+      "check": 106259
+    },
+    {
+      "round": 5,
+      "name": "strings",
+      "ms": 5.200000002980232,
+      "check": 106259
+    },
+    {
+      "round": 6,
+      "name": "strings",
+      "ms": 5.399999998509884,
+      "check": 106259
+    },
+    {
+      "round": 6,
+      "name": "limbs",
+      "ms": 4.399999998509884,
+      "check": 106259
+    },
+    {
+      "round": 6,
+      "name": "longKeys",
+      "ms": 38.600000001490116,
+      "check": 194000000
+    },
+    {
+      "round": 6,
+      "name": "shortKeys",
+      "ms": 32.100000001490116,
+      "check": 194000000
+    },
+    {
+      "round": 7,
+      "name": "shortKeys",
+      "ms": 32.399999998509884,
+      "check": 194000000
+    },
+    {
+      "round": 7,
+      "name": "longKeys",
+      "ms": 51.399999998509884,
+      "check": 194000000
+    },
+    {
+      "round": 7,
+      "name": "limbs",
+      "ms": 4.4000000059604645,
+      "check": 106259
+    },
+    {
+      "round": 7,
+      "name": "strings",
+      "ms": 5.199999995529652,
+      "check": 106259
+    },
+    {
+      "round": 8,
+      "name": "strings",
+      "ms": 5.300000004470348,
+      "check": 106259
+    },
+    {
+      "round": 8,
+      "name": "limbs",
+      "ms": 4.399999998509884,
+      "check": 106259
+    },
+    {
+      "round": 8,
+      "name": "longKeys",
+      "ms": 41.29999999701977,
+      "check": 194000000
+    },
+    {
+      "round": 8,
+      "name": "shortKeys",
+      "ms": 32.30000000447035,
+      "check": 194000000
+    },
+    {
+      "round": 9,
+      "name": "shortKeys",
+      "ms": 31.900000005960464,
+      "check": 194000000
+    },
+    {
+      "round": 9,
+      "name": "longKeys",
+      "ms": 41.599999994039536,
+      "check": 194000000
+    },
+    {
+      "round": 9,
+      "name": "limbs",
+      "ms": 4.600000001490116,
+      "check": 106259
+    },
+    {
+      "round": 9,
+      "name": "strings",
+      "ms": 5.399999998509884,
+      "check": 106259
+    },
+    {
+      "round": 10,
+      "name": "strings",
+      "ms": 5.300000004470348,
+      "check": 106259
+    },
+    {
+      "round": 10,
+      "name": "limbs",
+      "ms": 4.299999997019768,
+      "check": 106259
+    },
+    {
+      "round": 10,
+      "name": "longKeys",
+      "ms": 36.70000000298023,
+      "check": 194000000
+    },
+    {
+      "round": 10,
+      "name": "shortKeys",
+      "ms": 35.79999999701977,
+      "check": 194000000
+    },
+    {
+      "round": 11,
+      "name": "shortKeys",
+      "ms": 31.80000000447035,
+      "check": 194000000
+    },
+    {
+      "round": 11,
+      "name": "longKeys",
+      "ms": 41.399999998509884,
+      "check": 194000000
+    },
+    {
+      "round": 11,
+      "name": "limbs",
+      "ms": 4.5,
+      "check": 106259
+    },
+    {
+      "round": 11,
+      "name": "strings",
+      "ms": 5.100000001490116,
+      "check": 106259
+    },
+    {
+      "round": 12,
+      "name": "strings",
+      "ms": 5.299999997019768,
+      "check": 106259
+    },
+    {
+      "round": 12,
+      "name": "limbs",
+      "ms": 4.5,
+      "check": 106259
+    },
+    {
+      "round": 12,
+      "name": "longKeys",
+      "ms": 42.600000001490116,
+      "check": 194000000
+    },
+    {
+      "round": 12,
+      "name": "shortKeys",
+      "ms": 32.19999999552965,
+      "check": 194000000
+    },
+    {
+      "round": 13,
+      "name": "shortKeys",
+      "ms": 31.900000005960464,
+      "check": 194000000
+    },
+    {
+      "round": 13,
+      "name": "longKeys",
+      "ms": 37.5,
+      "check": 194000000
+    },
+    {
+      "round": 13,
+      "name": "limbs",
+      "ms": 4.5,
+      "check": 106259
+    },
+    {
+      "round": 13,
+      "name": "strings",
+      "ms": 5.199999995529652,
+      "check": 106259
+    },
+    {
+      "round": 14,
+      "name": "strings",
+      "ms": 5.200000002980232,
+      "check": 106259
+    },
+    {
+      "round": 14,
+      "name": "limbs",
+      "ms": 4.5,
+      "check": 106259
+    },
+    {
+      "round": 14,
+      "name": "longKeys",
+      "ms": 43.69999999552965,
+      "check": 194000000
+    },
+    {
+      "round": 14,
+      "name": "shortKeys",
+      "ms": 32.80000000447035,
+      "check": 194000000
+    },
+    {
+      "round": 15,
+      "name": "shortKeys",
+      "ms": 32.19999999552965,
+      "check": 194000000
+    },
+    {
+      "round": 15,
+      "name": "longKeys",
+      "ms": 49.399999998509884,
+      "check": 194000000
+    },
+    {
+      "round": 15,
+      "name": "limbs",
+      "ms": 4.4000000059604645,
+      "check": 106259
+    },
+    {
+      "round": 15,
+      "name": "strings",
+      "ms": 5.299999997019768,
+      "check": 106259
+    },
+    {
+      "round": 16,
+      "name": "strings",
+      "ms": 5,
+      "check": 106259
+    },
+    {
+      "round": 16,
+      "name": "limbs",
+      "ms": 4.399999998509884,
+      "check": 106259
+    },
+    {
+      "round": 16,
+      "name": "longKeys",
+      "ms": 42.899999998509884,
+      "check": 194000000
+    },
+    {
+      "round": 16,
+      "name": "shortKeys",
+      "ms": 33.80000000447035,
+      "check": 194000000
+    },
+    {
+      "round": 17,
+      "name": "shortKeys",
+      "ms": 32.100000001490116,
+      "check": 194000000
+    },
+    {
+      "round": 17,
+      "name": "longKeys",
+      "ms": 39.5,
+      "check": 194000000
+    },
+    {
+      "round": 17,
+      "name": "limbs",
+      "ms": 4.5999999940395355,
+      "check": 106259
+    },
+    {
+      "round": 17,
+      "name": "strings",
+      "ms": 5.300000004470348,
+      "check": 106259
+    },
+    {
+      "round": 18,
+      "name": "strings",
+      "ms": 5.5,
+      "check": 106259
+    },
+    {
+      "round": 18,
+      "name": "limbs",
+      "ms": 4.799999997019768,
+      "check": 106259
+    },
+    {
+      "round": 18,
+      "name": "longKeys",
+      "ms": 37.70000000298023,
+      "check": 194000000
+    },
+    {
+      "round": 18,
+      "name": "shortKeys",
+      "ms": 33.69999999552965,
+      "check": 194000000
+    },
+    {
+      "round": 19,
+      "name": "shortKeys",
+      "ms": 32.400000005960464,
+      "check": 194000000
+    },
+    {
+      "round": 19,
+      "name": "longKeys",
+      "ms": 44,
+      "check": 194000000
+    },
+    {
+      "round": 19,
+      "name": "limbs",
+      "ms": 4.5,
+      "check": 106259
+    },
+    {
+      "round": 19,
+      "name": "strings",
+      "ms": 5.5999999940395355,
+      "check": 106259
+    }
+  ]
+}
