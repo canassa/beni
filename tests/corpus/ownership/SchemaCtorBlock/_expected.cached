@@ -1,0 +1,2 @@
+A tagged schema's constructor in a summary block: the check that writes
+cache entries crashed writing it (issue #156).
