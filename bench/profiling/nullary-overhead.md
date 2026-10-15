@@ -47,9 +47,11 @@ Checking time, medians of 12 runs per compiler, milliseconds:
 |---|---:|---:|---:|---:|---:|---:|
 | Annotated field file | 50.44 | 76.03 | 65.21 | 25.59 | 14.77 | **42.3%** |
 | Unannotated field file | 49.38 | 153.05 | 152.95 | 103.66 | 103.56 | **~0%** |
-| Generated 100k corpus | 68.32 | 70.85 | 70.18 | 2.53 | 1.87 | 26.4% arithmetically; noisy |
+| Generated 100k corpus | 68.32 | 70.85 | 70.18 | 2.53 | 1.87 | noisy |
 
 Recovery is `(master − PR) / (master − before)`, using the unrounded medians.
+The corpus gives 26.4% arithmetically, but the table marks it noisy because
+that small-denominator ratio is not a reliable recovery estimate.
 The annotated file regressed 50.7% on master and is still **29.3% slower than
 before #126** with this fix: 57.7% of the added checking cost remains. On the
 unannotated file, the PR remains **209.7% slower** than before #126.
@@ -86,8 +88,10 @@ the temporary debug output is not replaced by the JSON diagnostic renderer.
 | Unannotated field file | 0 | 60,000 | 0 | 60,000 |
 | Generated 100k corpus | 357 | 0 | 83 | 274 |
 
-The remaining 1,000 annotated reads are the first read of each function:
-the record has not yet acquired its cycle proof. In the unannotated file,
+The remaining 1,000 annotated reads are known records without a current cycle
+proof, as counted directly. That these are the first read in each function is
+inferred from the generated shape and one-per-function count, rather than
+recorded with a per-site counter. In the unannotated file,
 1,000 boundary defaults make receivers records and wake the other 59,000
 reads. They all allocated both a wanted and an obligation before that point.
 There are no recursive-frame, budget-edge or nominal receivers in these cases.
@@ -102,9 +106,18 @@ counts inclusive stacks once per function, excluding repeated recursive frames.
 |---|---:|---:|
 | Module checker samples | 474 | 1,116 |
 | Rank adjustment | 73 (15.4%) | **618 (55.4%)** |
-| Rank invariant check (subset of rank adjustment) | 7 (1.5%) | **253 (22.7%)** |
+| Rank invariant check (subset of rank adjustment) | 7 (small sample) | **253 (22.7%)** |
 | Obligation attachment | 0 | 33 (3.0%) |
 | Ready-queue draining | 6 (1.3%) | 192 (17.2%) |
+
+These percentages describe the **504k-line profile inputs**, not precise shares
+of the 63k-line timing inputs. Scaling increases independent function count;
+the 60 reads per function/boundary shape stays fixed. A profile of the actual
+63k-line unannotated input also finds rank adjustment dominant: **46 of 99**
+checker samples, including **20** in its invariant check; ready-queue draining
+has **17**. Those small counts establish only a qualitative cross-check.
+The annotated profile's seven invariant-check samples likewise establish a
+small share, not a precise 1.5% estimate.
 
 Thus the deferred rows' **traversal and rank/default bookkeeping**, not only
 their allocation, are the important remaining cost. Each local binding creates
@@ -125,6 +138,11 @@ becomes a record read. Phase medians expose the remaining cost:
 | Unannotated / constraint generation | 10.26 | 12.88 | 12.85 |
 | Unannotated / solving | 32.81 | 128.97 | 129.01 |
 | Unannotated / effects | 1.08 | 4.76 | 4.85 |
+
+This phase table is deliberately partial and **does not sum to total checking**:
+other checker passes are unlisted, and independent medians are not additive.
+The PR recovers about half of the added solving time (8.85 of 17.76 ms), but
+only about 17% of the added effects time (0.65 of 3.81 ms).
 
 The known-record fast path does not remove these generated method types or
 effect edges. Ordinary field unification is also still necessary: its presence
