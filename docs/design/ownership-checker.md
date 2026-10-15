@@ -2885,7 +2885,7 @@ nothing by a session's id:
   2026-10-15 (issue #156):* that table is the BIR's constructors, then each tagged schema's (`schema.md`
   §4), in declaration order, its `Type` family's variants before its `Encoded` family's. A pattern on a
   schema's constructor, local or imported, names it there. It had been given an id with no module, which
-  no block can name, and writing the block crashed;
+  no block can name, and writing the block crashed. Block version 10;
 - a **path** step by step (§4.1), a field by its name, a constructor step by its constructor and argument;
 - a **local** of a carried lambda (§24.9) by its index in the declaration, as BIR numbers it.
 
