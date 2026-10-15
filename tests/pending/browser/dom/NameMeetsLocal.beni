@@ -1,0 +1,35 @@
+-- CK-232: a compiler-made name of the `dom` lowering is not a local's.
+-- From the review of PR #129 (emit-cache), finding 1: the lowering asks
+-- `fresh` for the plain word `x` and prints `x$4`, the same text as the
+-- user's fourth local `x` of `view` (`localName`). The patch function then
+-- reads the user's `x$4` before its `const`, and the page throws a
+-- ReferenceError when it renders. Red on master too: `view` is the
+-- module's first declaration that makes a compiler name, so the
+-- module-wide counter also starts at 1 there. The owner decides how the
+-- two kinds of name stay apart (dashboard question `emit-cache-q4`); the
+-- fix moves this page to tests/corpus/browser/dom/ with its transcript.
+import Browser
+import Html exposing (Html)
+
+
+view : Int, Int, Maybe Int → Html msg
+view a1 a2 m =
+    <p>
+        {case m of
+            x →
+                String.fromInt (Maybe.withDefault x 0)
+        }
+    </p>
+
+
+update : ⊤, Int → Int
+update msg model = model
+
+
+main : Browser.Program
+main =
+    Browser.program
+        { init = λ⊤ → 7
+        , update = update
+        , view = λmodel → view 0 0 (Just model)
+        }
