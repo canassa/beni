@@ -1152,6 +1152,16 @@ fn fieldTextLess(interner: *const InternPool.Global, a: TypeStore.Field, b: Type
     return std.mem.lessThan(u8, interner.slice(a.name), interner.slice(b.name));
 }
 
+/// A nullary record read, shared by immediate resolution and deferred defaults.
+/// Keep the required record first so missing-field diagnostics stay identical.
+pub fn fieldRead(s: *Solve, receiver: Var, name: InternPool.Symbol, result: Var, origin: Bir.Inst.Index) Error!void {
+    var pair = [_]TypeStore.Field{.{ .name = name, .value = result }};
+    const fields = try s.store().addFields(&pair);
+    const ext = try s.fresh(.{ .flex = .{} });
+    const required = try s.fresh(.{ .structure = .{ .record = .{ .fields = fields, .ext = ext } } });
+    _ = try s.unify(required, receiver, origin, .{ .tag = .field_access, .index = @backingInt(name) });
+}
+
 /// `x.m a` on a record known at the call: `(x.m) a`, the ordinary field and
 /// arity diagnostics.
 pub fn fieldCall(s: *Solve, id: WantedId, root: Var) Error!void {
@@ -1163,11 +1173,7 @@ pub fn fieldCall(s: *Solve, id: WantedId, root: Var) Error!void {
     defer s.cx.scratch.free(rest);
     const result = f.result;
     if (s.cx.bir.instTag(origin) == .field_access) {
-        var pair = [_]TypeStore.Field{.{ .name = w.method, .value = result }};
-        const fields = try st.addFields(&pair);
-        const ext = try s.fresh(.{ .flex = .{} });
-        const required = try s.fresh(.{ .structure = .{ .record = .{ .fields = fields, .ext = ext } } });
-        _ = try s.unify(required, w.receiver, origin, .{ .tag = .field_access, .index = @backingInt(w.method) });
+        try fieldRead(s, w.receiver, w.method, result, origin);
         Resolve.answer(s, id, .field);
         return;
     }

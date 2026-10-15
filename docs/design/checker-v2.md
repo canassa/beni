@@ -5894,7 +5894,17 @@ Resolved methods are retagged as zero-argument `method_call` instructions on
 the checked BIR before downstream consumers; record paths remain unchanged.
 This invariant also applies when loading a check-cache entry.
 
-The implementation uses a `nullary_dot` obligation (§4.5): its receiver is
+A nullary dot whose receiver is already a record can use the ordinary open-record
+field unification directly, without allocating a wanted, callee site or obligation.
+The fast path is restricted to a receiver already proved acyclic in the current
+store epoch, outside recursive frames, with no rejection for that method; otherwise
+it takes the full resolution path below. It preserves the resolver step-budget
+charge (falling back at the limit) and creation sequence. Recursive frames keep
+the rows that canonical pessimism and its diagnostic provenance inspect (§10.7).
+Both paths use the same field unification and diagnostic category. This changes
+neither the flexible-receiver default nor checked BIR or published output.
+
+The deferred implementation uses a `nullary_dot` obligation (§4.5): its receiver is
 its deciding owner, its method type a dependant, and its index names an ordinary
 callee wanted. Keeping these obligations independent of the name-keyed method
 sets preserves reading and calling the same function field at different arities.
