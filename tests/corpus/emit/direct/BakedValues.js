@@ -1,8 +1,8 @@
 import { Tea$sandbox } from "./_platform/Tea.mjs";
 import { Direct$unset, Direct$visitObserve, Direct$groupProgram, Direct$visitBegin, Direct$visitScope, Direct$visitEnd, Direct$on, Direct$wrong, Direct$same, Direct$safeUrl, Direct$verify } from "./_platform/Direct.mjs";
 const BakedValues$main = Tea$sandbox(($root$1, $t$2) => {
-  const init$3 = { below: 0 - 42, count: 7, empty: "", huge: 9007199254740993, link: "javascript:alert(1)", n: 0, ratio: 1.5, special: "a<b & \"c\" 'd' >", tab: 3 };
-  let $model$4 = init$3;
+  const $init$3 = { below: 0 - 42, count: 7, empty: "", huge: 9007199254740993, link: "javascript:alert(1)", n: 0, ratio: 1.5, special: "a<b & \"c\" 'd' >", tab: 3 };
+  let $model$4 = $init$3;
   $t$2.innerHTML = "<main><button id=inc> </button><p id=count>7</p><p id=below>-42</p><p id=huge> </p><p id=ratio> </p><p id=special title=\"a&lt;b &amp; &quot;c&quot; 'd' >\">a&lt;b &amp; \"c\" 'd' ></p><p id=empty title> </p><span id=tab tabindex=3>tab</span><a id=link href>link";
   const $r$5 = $t$2.content;
   const $w$6 = $r$5.firstChild;

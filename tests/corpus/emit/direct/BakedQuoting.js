@@ -1,8 +1,8 @@
 import { Tea$sandbox } from "./_platform/Tea.mjs";
 import { Direct$unset, Direct$visitObserve, Direct$groupProgram, Direct$visitBegin, Direct$visitScope, Direct$visitEnd, Direct$on, Direct$wrong, Direct$same, Direct$verify } from "./_platform/Direct.mjs";
 const BakedQuoting$main = Tea$sandbox(($root$1, $t$2) => {
-  const init$3 = { bt: "a`b", cr: "a\rb", dq: "a\"b", eq: "a=b", ff: "a\fb", gt: "a>b", lf: "a\nb", lt: "a<b", n: 0, slash: "a/", sp: "a b", sq: "a'b", tabbed: "a\tb" };
-  let $model$4 = init$3;
+  const $init$3 = { bt: "a`b", cr: "a\rb", dq: "a\"b", eq: "a=b", ff: "a\fb", gt: "a>b", lf: "a\nb", lt: "a<b", n: 0, slash: "a/", sp: "a b", sq: "a'b", tabbed: "a\tb" };
+  let $model$4 = $init$3;
   $t$2.innerHTML = "<main><button id=inc> </button><p id=ws data-ff=\"a\fb\"data-tab=\"a\tb\"data-lf=\"a\nb\"data-cr=\"a&#13;b\"data-sp=\"a b\"data-gt=\"a>b\"data-eq=\"a=b\"data-bt=\"a`b\"data-sq=\"a'b\"data-dq=\"a&quot;b\"data-lt=\"a&lt;b\"data-slash=\"a/\">ws";
   const $r$5 = $t$2.content;
   const $w$6 = $r$5.firstChild;

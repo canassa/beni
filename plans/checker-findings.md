@@ -5899,3 +5899,8 @@ two kinds of name stay apart (dashboard question `emit-cache-q4`). Pending:
 `tests/pending/browser/dom/NameMeetsLocal.beni` (red on master too) and
 `NameMeetsLocalAfterHelper.beni` (red with per-declaration numbers),
 `PageFailed`.
+
+**Fixed 2026-10-15:** every compiler-made name has a `$` in front (Cesar's
+decision on `emit-cache-q4`; `backend.md` §4, *A `$` in front of every
+compiler-made name*). Promoted to `tests/corpus/browser/dom/NameMeetsLocal`
+and `NameMeetsLocalAfterHelper`, which render.

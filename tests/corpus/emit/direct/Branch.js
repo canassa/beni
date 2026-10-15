@@ -3,8 +3,8 @@ import { Direct$armTemplate, Direct$visitObserve, Direct$unset, Direct$visitFact
 import { Basics$append } from "./_core/Basics.mjs";
 const Branch$Closed = { $: "Closed", a: null };
 const Branch$main = Tea$sandbox(($root$1, $t$2) => {
-  const init$3 = { $: "Open", a: "ada" };
-  let $model$4 = init$3;
+  const $init$3 = { $: "Open", a: "ada" };
+  let $model$4 = $init$3;
   $t$2.innerHTML = "<p> ";
   const $T$5 = Direct$armTemplate($t$2, 0);
   $t$2.innerHTML = "<p>closed";

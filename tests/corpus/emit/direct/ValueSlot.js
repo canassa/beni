@@ -4,102 +4,102 @@ import { List$map, List$push } from "./_core/List.mjs";
 import { Maybe$map } from "./_core/Maybe.mjs";
 const ValueSlot$Add = { $: "Add", a: null };
 const ValueSlot$dg65_0 = [[], false, true, true];
-const ValueSlot$dp65_0 = (i$20, v$21) => {
-  const $in$22 = v$21[0];
+const ValueSlot$dp65_0 = ($i$20, $v$21) => {
+  const $input$22 = $v$21[0];
   {
-    if (i$20.g0 === undefined) {
-      i$20.g0 = true;
-      if (ValueSlot$Add !== i$20.a0) {
-        i$20.a0 = ValueSlot$Add;
-        i$20.w0.$$click = ValueSlot$Add;
+    if ($i$20.g0 === undefined) {
+      $i$20.g0 = true;
+      if (ValueSlot$Add !== $i$20.a0) {
+        $i$20.a0 = ValueSlot$Add;
+        $i$20.w0.$$click = ValueSlot$Add;
       }
     }
   }
 };
 const ValueSlot$dg65_1 = [["0:143"], false, false, false];
-const ValueSlot$dp65_1 = (i$20, v$21) => {
-  const $in$22 = v$21[0];
-  Direct$templateObserve(i$20, ValueSlot$dg65_1);
+const ValueSlot$dp65_1 = ($i$20, $v$21) => {
+  const $input$22 = $v$21[0];
+  Direct$templateObserve($i$20, ValueSlot$dg65_1);
   {
-    const x$23 = $in$22;
-    if (x$23 !== i$20.g1_0) {
-      i$20.g1_0 = x$23;
-      i$20.w1.data = x$23;
+    const $x$23 = $input$22;
+    if ($x$23 !== $i$20.g1_0) {
+      $i$20.g1_0 = $x$23;
+      $i$20.w1.data = $x$23;
     }
   }
 };
-const ValueSlot$p65 = Direct$templatePatch((i$20, v$21) => {
-  const $in$22 = v$21[0];
-  return v$21;
-}, (i$20, v$21) => {
-  const $in$22 = v$21[0];
+const ValueSlot$p65 = Direct$templatePatch(($i$20, $v$21) => {
+  const $input$22 = $v$21[0];
+  return $v$21;
+}, ($i$20, $v$21) => {
+  const $input$22 = $v$21[0];
 }, 1, [Direct$templateGroup(ValueSlot$dg65_0, ValueSlot$dp65_0, null), Direct$templateGroup(ValueSlot$dg65_1, ValueSlot$dp65_1, null)], false);
 const ValueSlot$t65 = Direct$template("<li> ", 0);
-const ValueSlot$k65 = { m: (v$24, cx$25) => {
-  const r$26 = ValueSlot$t65();
-  const w$27 = r$26.firstChild;
-  Direct$listen(r$26, "click", 0);
-  if (cx$25 !== null) {
-    r$26.$$cx = cx$25;
+const ValueSlot$k65 = { m: ($v$24, $cx$25) => {
+  const $r$26 = ValueSlot$t65();
+  const $w$27 = $r$26.firstChild;
+  Direct$listen($r$26, "click", 0);
+  if ($cx$25 !== null) {
+    $r$26.$$cx = $cx$25;
   }
-  const i$28 = { s: r$26, q: null, e: r$26, w0: r$26, w1: w$27, a0: undefined, g0: undefined, g1_0: NaN };
-  ValueSlot$p65(i$28, v$24);
-  return i$28;
+  const $i$28 = { s: $r$26, q: null, e: $r$26, w0: $r$26, w1: $w$27, a0: undefined, g0: undefined, g1_0: NaN };
+  ValueSlot$p65($i$28, $v$24);
+  return $i$28;
 }, p: ValueSlot$p65 };
 const ValueSlot$dg84_0 = [[], false, true, false];
-const ValueSlot$dp84_0 = (i$37, v$38) => {
-  const $in$39 = v$38[0];
-  const $in$40 = v$38[1];
+const ValueSlot$dp84_0 = ($i$37, $v$38) => {
+  const $input$39 = $v$38[0];
+  const $input$40 = $v$38[1];
   {
-    const x$41 = $in$39.id;
-    if (x$41 !== i$37.g0_0) {
-      i$37.g0_0 = x$41;
-      const $t$42 = { $: "Pick", a: $in$39.id };
-      if ($t$42 !== i$37.a0) {
-        i$37.a0 = $t$42;
-        i$37.w0.$$click = $t$42;
+    const $x$41 = $input$39.id;
+    if ($x$41 !== $i$37.g0_0) {
+      $i$37.g0_0 = $x$41;
+      const $t$42 = { $: "Pick", a: $input$39.id };
+      if ($t$42 !== $i$37.a0) {
+        $i$37.a0 = $t$42;
+        $i$37.w0.$$click = $t$42;
       }
     }
   }
 };
 const ValueSlot$dg84_1 = [["0:197"], false, false, false];
-const ValueSlot$dp84_1 = (i$37, v$38) => {
-  const $in$39 = v$38[0];
-  const $in$40 = v$38[1];
-  Direct$templateObserve(i$37, ValueSlot$dg84_1);
+const ValueSlot$dp84_1 = ($i$37, $v$38) => {
+  const $input$39 = $v$38[0];
+  const $input$40 = $v$38[1];
+  Direct$templateObserve($i$37, ValueSlot$dg84_1);
   {
-    const x$43 = $in$40;
-    if (x$43 !== i$37.g1_0) {
-      i$37.g1_0 = x$43;
-      i$37.w1.data = x$43;
+    const $x$43 = $input$40;
+    if ($x$43 !== $i$37.g1_0) {
+      $i$37.g1_0 = $x$43;
+      $i$37.w1.data = $x$43;
     }
   }
 };
-const ValueSlot$p84 = Direct$templatePatch((i$37, v$38) => {
-  const $in$39 = v$38[0];
-  const $in$40 = v$38[1];
-  return v$38;
-}, (i$37, v$38) => {
-  const $in$39 = v$38[0];
-  const $in$40 = v$38[1];
+const ValueSlot$p84 = Direct$templatePatch(($i$37, $v$38) => {
+  const $input$39 = $v$38[0];
+  const $input$40 = $v$38[1];
+  return $v$38;
+}, ($i$37, $v$38) => {
+  const $input$39 = $v$38[0];
+  const $input$40 = $v$38[1];
 }, 2, [Direct$templateGroup(ValueSlot$dg84_0, ValueSlot$dp84_0, null), Direct$templateGroup(ValueSlot$dg84_1, ValueSlot$dp84_1, null)], false);
 const ValueSlot$t84 = Direct$template("<b> ", 0);
-const ValueSlot$k84 = { m: (v$44, cx$45) => {
-  const r$46 = ValueSlot$t84();
-  const w$47 = r$46.firstChild;
-  Direct$listen(r$46, "click", 0);
-  if (cx$45 !== null) {
-    r$46.$$cx = cx$45;
+const ValueSlot$k84 = { m: ($v$44, $cx$45) => {
+  const $r$46 = ValueSlot$t84();
+  const $w$47 = $r$46.firstChild;
+  Direct$listen($r$46, "click", 0);
+  if ($cx$45 !== null) {
+    $r$46.$$cx = $cx$45;
   }
-  const i$48 = { s: r$46, q: null, e: r$46, w0: r$46, w1: w$47, a0: undefined, g0_0: NaN, g1_0: NaN };
-  ValueSlot$p84(i$48, v$44);
-  return i$48;
+  const $i$48 = { s: $r$46, q: null, e: $r$46, w0: $r$46, w1: $w$47, a0: undefined, g0_0: NaN, g1_0: NaN };
+  ValueSlot$p84($i$48, $v$44);
+  return $i$48;
 }, p: ValueSlot$p84 };
 const ValueSlot$main = Tea$sandbox(($root$1, $t$2) => {
   const $t$4 = ["a"];
   const $t$5 = [{ id: 1, note: { $: "Just", a: "x" } }];
-  const init$6 = { names: $t$4, picked: 0, rows: $t$5, ticks: 0 };
-  let $model$7 = init$6;
+  const $init$6 = { names: $t$4, picked: 0, rows: $t$5, ticks: 0 };
+  let $model$7 = $init$6;
   $t$2.innerHTML = "<li>";
   const $T$8 = $t$2.content.firstChild;
   $t$2.innerHTML = "<main><button> </button><ul></ul><ol>";

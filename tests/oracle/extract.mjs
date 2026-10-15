@@ -124,9 +124,10 @@ function beni(code) {
   // Clones and walks are compiler-made names, numbered within their
   // top-level declaration (backend.md §4, *A compiler-made name is numbered
   // within its top-level declaration*): two declarations can both hold
-  // `r$1`, so each is read on its own.
+  // `$r$1`, so each is read on its own. A compiler-made name has a `$` in
+  // front (*A `$` in front of every compiler-made name*).
   return statements(code)
-    .flatMap((s) => entries(s, templates, /const (r\$\d+) = ([\w$]+)\(\);/g, /const (w\$\d+) = ([rw]\$\d+)((?:\.(?:firstChild|nextSibling))+);/g))
+    .flatMap((s) => entries(s, templates, /const (\$r\$\d+) = ([\w$]+)\(\);/g, /const (\$w\$\d+) = (\$[rw]\$\d+)((?:\.(?:firstChild|nextSibling))+);/g))
     .sort();
 }
 

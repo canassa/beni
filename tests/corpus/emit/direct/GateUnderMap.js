@@ -1,8 +1,8 @@
 import { Tea$sandbox } from "./_platform/Tea.mjs";
 import { Direct$unset, Direct$visitObserve, Direct$groupProgram, Direct$visitBegin, Direct$visitScope, Direct$visitEnd, Direct$on, Direct$wrong, Direct$same, Direct$verify } from "./_platform/Direct.mjs";
 const GateUnderMap$main = Tea$sandbox(($root$1, $t$2) => {
-  const init$3 = { a: "a", b: "b", c: "c" };
-  let $model$4 = init$3;
+  const $init$3 = { a: "a", b: "b", c: "c" };
+  let $model$4 = $init$3;
   $t$2.innerHTML = "<main><button>set</button><span class=\"chip chip-large chip-outlined chip-with-a-long-class-list\"><b> </b><i> </i><u> </u><em> </em></span><div><span class=\"chip chip-large chip-outlined chip-with-a-long-class-list\"><b> </b><i> </i><u> </u><em> ";
   const $r$5 = $t$2.content;
   const $w$6 = $r$5.firstChild;

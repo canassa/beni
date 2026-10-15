@@ -2,8 +2,8 @@ import { Tea$sandbox } from "./_platform/Tea.mjs";
 import { Direct$unset, Direct$visitObserve, Direct$safeUrl, Direct$groupProgram, Direct$visitBegin, Direct$visitScope, Direct$visitEnd, Direct$on, Direct$wrong, Direct$same, Direct$verify } from "./_platform/Direct.mjs";
 import { String$fromInt } from "./_core/String.mjs";
 const ConstantWriteOnce$main = Tea$sandbox(($root$1, $t$2) => {
-  const init$3 = 0;
-  let $model$4 = init$3;
+  const $init$3 = 0;
+  let $model$4 = $init$3;
   $t$2.innerHTML = "<main><button>inc</button><a>link";
   const $r$5 = $t$2.content;
   const $w$6 = $r$5.firstChild;

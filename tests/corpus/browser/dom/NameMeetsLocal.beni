@@ -1,0 +1,34 @@
+-- A compiler-made name is never a user's local (backend.md §4, *A `$` in
+-- front of every compiler-made name*; CK-232). The `dom` lowering makes a
+-- name from the plain word `x` for the hole's value, and `view`'s fourth
+-- local is the user's `x`. Before the `$` prefix both printed `x$4`, and
+-- the patch function read the user's `x$4` before its `const`: a
+-- ReferenceError when the page rendered. This is the form master had:
+-- `view` is the first declaration of its module that makes a compiler
+-- name, so even a module-wide count started at 1 there. The page renders
+-- the 7 that `init` gives it.
+import Browser
+import Html exposing (Html)
+
+
+view : Int, Int, Maybe Int → Html msg
+view a1 a2 m =
+    <p>
+        {case m of
+            x →
+                String.fromInt (Maybe.withDefault x 0)
+        }
+    </p>
+
+
+update : ⊤, Int → Int
+update msg model = model
+
+
+main : Browser.Program
+main =
+    Browser.program
+        { init = λ⊤ → 7
+        , update = update
+        , view = λmodel → view 0 0 (Just model)
+        }

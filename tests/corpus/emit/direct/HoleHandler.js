@@ -2,8 +2,8 @@ import { Tea$sandbox } from "./_platform/Tea.mjs";
 import { Direct$unset, Direct$visitObserve, Direct$groupProgram, Direct$visitBegin, Direct$visitScope, Direct$visitEnd, Direct$on, Direct$wrong, Direct$same, Direct$verify } from "./_platform/Direct.mjs";
 import { String$fromInt } from "./_core/String.mjs";
 const HoleHandler$main = Tea$sandbox(($root$1, $t$2) => {
-  const init$3 = { fixed: 7, tick: 0, title: "Holes" };
-  let $model$4 = init$3;
+  const $init$3 = { fixed: 7, tick: 0, title: "Holes" };
+  let $model$4 = $init$3;
   $t$2.innerHTML = "<main><h1>Holes</h1><p> </p><button>tick</button><p> ";
   const $r$5 = $t$2.content;
   const $w$6 = $r$5.firstChild;

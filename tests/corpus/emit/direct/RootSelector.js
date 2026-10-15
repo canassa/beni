@@ -1,8 +1,8 @@
 import { Tea$sandbox } from "./_platform/Tea.mjs";
 import { Direct$armTemplate, Direct$visitObserve, Direct$unset, Direct$listenRow, Direct$visitFactory, Direct$branch, Direct$groupProgram, Direct$visitBegin, Direct$visitScope, Direct$arm, Direct$visitEnd, Direct$groupOnce, Direct$wrong, Direct$same, Direct$verify } from "./_platform/Direct.mjs";
 const RootSelector$main = Tea$sandbox(($root$1, $t$2) => {
-  const init$3 = { n: 0, open: true };
-  let $model$4 = init$3;
+  const $init$3 = { n: 0, open: true };
+  let $model$4 = $init$3;
   $t$2.innerHTML = "<main><button>toggle</button><button>inc</button><p> ";
   const $T$5 = Direct$armTemplate($t$2, 0);
   $t$2.innerHTML = "<main><button>toggle</button><button>quiet</button><p>closed";

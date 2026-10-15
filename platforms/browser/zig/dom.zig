@@ -850,7 +850,7 @@ pub const Gen = struct {
         const pblock = try js.block();
         const inputs = try a_.alloc(m.Name, r.inputs.len);
         for (inputs, 0..) |*x, k| {
-            x.* = try g.cx.fresh("in");
+            x.* = try g.cx.fresh("input");
             try js.constant(pblock, x.*, try js.index(try g.ident(pv), try g.num(@intCast(k))));
         }
         try g.cx.bindInputs(index, inputs);

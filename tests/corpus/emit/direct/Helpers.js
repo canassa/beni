@@ -1,8 +1,8 @@
 import { Tea$sandbox } from "./_platform/Tea.mjs";
 import { Direct$insertText, Direct$unset, Direct$visitObserve, Direct$listenRow, Direct$visitFactory, Direct$groupProgram, Direct$visitBegin, Direct$visitScope, Direct$visitEnd, Direct$wrong, Direct$same, Direct$verify } from "./_platform/Direct.mjs";
 const Helpers$main = Tea$sandbox(($root$1, $t$2) => {
-  const init$6 = { a: 0, b: 0, c: 0, name: "beni" };
-  let $model$7 = init$6;
+  const $init$6 = { a: 0, b: 0, c: 0, name: "beni" };
+  let $model$7 = $init$6;
   $t$2.innerHTML = "<div class=cell><span> </span><b> </b><i> ";
   const $T$8 = $t$2.content.firstChild;
   $t$2.innerHTML = "<main><h1>Hello, </h1><button id=run type=button>Create 1,000 rows</button><button id=add type=button>Append 1,000 rows</button><!><!><!>";

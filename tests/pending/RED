@@ -107,8 +107,3 @@ tests/pending/browser/direct/DefectInTurnRender.beni PageFailed
 
 # HttpFailures: work function slots inside a traversal callback remain unmodelled.
 tests/pending/browser/direct/HttpFailures.beni dev: exit=1 codes=list_still_used×1
-# CK-232 (2026-10-15), from the review of PR #129: a compiler-made name
-# of the `dom` lowering meets a user's local of the same text; the page
-# throws a ReferenceError. The fix waits for the owner (`emit-cache-q4`).
-tests/pending/browser/dom/NameMeetsLocal.beni PageFailed
-tests/pending/browser/dom/NameMeetsLocalAfterHelper.beni PageFailed

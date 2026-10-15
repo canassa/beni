@@ -2,8 +2,8 @@ import { Tea$sandbox } from "./_platform/Tea.mjs";
 import { Direct$unset, Direct$visitObserve, Direct$groupProgram, Direct$visitBegin, Direct$visitScope, Direct$visitEnd, Direct$on, Direct$wrong, Direct$same, Direct$verify } from "./_platform/Direct.mjs";
 import { List$push, List$sum } from "./_core/List.mjs";
 const DerivedValue$main = Tea$sandbox(($root$1, $t$2) => {
-  const init$3 = { items: [1, 2], ticks: 0 };
-  let $model$4 = init$3;
+  const $init$3 = { items: [1, 2], ticks: 0 };
+  let $model$4 = $init$3;
   let $d$5 = Direct$unset;
   $t$2.innerHTML = "<main><button>tick</button><button>add</button><p> </p><p> ";
   const $r$6 = $t$2.content;

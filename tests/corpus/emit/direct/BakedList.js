@@ -3,8 +3,8 @@ import { Direct$visitFactory, Direct$unset, Direct$groupProgram, Direct$visitBeg
 import { String$fromInt } from "./_core/String.mjs";
 import { List$push } from "./_core/List.mjs";
 const BakedList$main = Tea$sandbox(($root$1, $t$2) => {
-  const init$5 = { menu: [{ href: "#home", id: 1, label: "Home" }, { href: "#faq", id: 22, label: "Q&A <faq>" }, { href: "javascript:alert(1)", id: 0 - 3, label: "\"Quoted\"" }], opened: [] };
-  let $model$6 = init$5;
+  const $init$5 = { menu: [{ href: "#home", id: 1, label: "Home" }, { href: "#faq", id: 22, label: "Q&A <faq>" }, { href: "javascript:alert(1)", id: 0 - 3, label: "\"Quoted\"" }], opened: [] };
+  let $model$6 = $init$5;
   $t$2.innerHTML = "<li> </li>";
   const $T$7 = $t$2.content.firstChild;
   $t$2.innerHTML = "<main><ul id=menu><li><b>1</b><a href=#home title=Home>Home</a></li><li><b>22</b><a href=#faq title=\"Q&amp;A &lt;faq>\">Q&amp;A &lt;faq></a></li><li><b>-3</b><a href title=\"&quot;Quoted&quot;\">\"Quoted\"</a></li></ul><ol id=opened></ol></main>";

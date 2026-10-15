@@ -555,6 +555,17 @@ pub fn internFixedNames(gpa: Allocator, global: *InternPool.Global) Allocator.Er
     try global.moveBytesForSafety(gpa);
 }
 
+/// Whether `text`, a compiler-made name's base, would print with its number
+/// as a positional name: `$m` (`$m$<k>`, an evidence parameter), `$in`
+/// (`$in$<i>`, a loop slot) or `$l` and digits (`$l<inst>$<k>`, a `let`'s
+/// evidence).
+fn positionalBase(text: []const u8) bool {
+    if (std.mem.eql(u8, text, "$m") or std.mem.eql(u8, text, "$in")) return true;
+    if (text.len < 3 or !std.mem.startsWith(u8, text, "$l")) return false;
+    for (text[2..]) |c| if (!std.ascii.isDigit(c)) return false;
+    return true;
+}
+
 /// The compiler's own identifiers, interned once per module. They all start
 /// with `$`, which beni's identifier syntax cannot produce, so no source
 /// name can collide with one.
@@ -1081,11 +1092,31 @@ pub const Lowerer = struct {
     }
 
     /// A fresh compiler-made name from `base`, unique in the top-level
-    /// declaration being lowered.
+    /// declaration being lowered: `$<base>$<n>`, with a `$` in front when
+    /// `base` has none (`backend.md` §4, *A `$` in front of every
+    /// compiler-made name*). No beni name starts with `$`, so no local,
+    /// declaration or module-qualified name can be one of these.
     pub fn fresh(l: *Lowerer, base: Symbol) !JsIr.NameIndex {
+        const spelled = try l.compilerBase(base);
         const tag = l.next_tag;
         l.next_tag += 1;
-        return l.name(.{ .module = .none, .base = base, .tag = tag });
+        return l.name(.{ .module = .none, .base = spelled, .tag = tag });
+    }
+
+    /// `base` as the base of a compiler-made name: itself when it starts
+    /// with `$`, `$<base>` otherwise. A base that would print as a
+    /// positional name — `$m$<k>`, `$in$<i>`, `$l<inst>$<k>` — is refused:
+    /// a lowering that asks for one is a bug of the compiler.
+    fn compilerBase(l: *Lowerer, base: Symbol) !Symbol {
+        const written = l.text(base);
+        const spelled = if (written.len != 0 and written[0] == '$') base else try l.interner.getOrPut(l.gpa, try std.fmt.allocPrint(l.scratch, "${s}", .{written}));
+        if (positionalBase(l.text(spelled))) try l.report(
+            .internal,
+            l.region,
+            "A lowering asked for the compiler-made name `{s}`, which a positional name owns (`docs/design/backend.md` §4).",
+            .{l.text(spelled)},
+        );
+        return spelled;
     }
 
     pub fn ident(l: *Lowerer, n: JsIr.NameIndex, p: u32) !Node.Index {

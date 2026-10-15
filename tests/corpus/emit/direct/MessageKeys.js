@@ -5,8 +5,8 @@ import { Html$targetValue } from "./_platform/_html/Html.mjs";
 const MessageKeys$A = { $: "A", a: null };
 const MessageKeys$Clicked = { $: "Clicked", a: null };
 const MessageKeys$main = Tea$sandbox(($root$1, $t$2) => {
-  const init$3 = { clicks: 0, sub: 0, text: "" };
-  let $model$4 = init$3;
+  const $init$3 = { clicks: 0, sub: 0, text: "" };
+  let $model$4 = $init$3;
   $t$2.innerHTML = "<main><input id=in><p id=text> </p><p id=clicks> </p><button id=click>click</button><button id=a>a</button><button id=b>b</button><p id=sub> ";
   const $r$5 = $t$2.content;
   const $w$6 = $r$5.firstChild;

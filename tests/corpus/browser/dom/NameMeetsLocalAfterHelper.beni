@@ -1,0 +1,36 @@
+-- `NameMeetsLocal` with `helper` before `view` (backend.md §4, *A
+-- compiler-made name is numbered within its top-level declaration* and
+-- *A `$` in front of every compiler-made name*; CK-232). `helper` makes
+-- one compiler name, so with a module-wide count `view`'s names started
+-- at 2 and missed the user's `x$4`; counted from 1 in each declaration,
+-- they met it until compiler-made names got their `$`. The page renders
+-- the 7 that `init` gives it.
+import Browser
+import Html exposing (Html)
+
+
+helper : Int × Int → Int
+helper ( a, b ) = a + b
+
+
+view : Int, Int, Maybe Int → Html msg
+view a1 a2 m =
+    <p>
+        {case m of
+            x →
+                String.fromInt (Maybe.withDefault x 0)
+        }
+    </p>
+
+
+update : ⊤, Int → Int
+update msg model = model
+
+
+main : Browser.Program
+main =
+    Browser.program
+        { init = λ⊤ → helper ( 3, 4 )
+        , update = update
+        , view = λmodel → view 0 0 (Just model)
+        }
