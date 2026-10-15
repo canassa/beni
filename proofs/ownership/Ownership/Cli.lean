@@ -43,13 +43,13 @@ def validate (args : List String) : Except String (String × List String) := do
       throw s!"unsupported option {flag} for {mode}"
     let value := (flag.drop (name.length + 3)).toString
     if value.isEmpty then throw s!"empty option {flag}"
-    if name == "generator-version" && !["1", "3", "4", "5"].contains value then
+    if name == "generator-version" && !["1", "3", "4", "5", "6"].contains value then
       throw s!"unsupported generator version {value}"
     if name == "enumerate-bound" && mode == "ci" then
       unless value.toNat?.any (· ≥ 2) do throw "CI enumeration bound must be at least 2"
     if name == "enumerate-bound" && mode == "bridge-export" && value.toNat?.isNone then
       throw "bridge enumeration bound must be a natural number"
-    if name == "suite" && !["fixtures", "enumerate", "generator"].contains value then
+    if name == "suite" && !["fixtures", "enumerate", "generator", "generator6"].contains value then
       throw s!"unknown bridge suite {value}"
   if mode == "verdict-diff" && !seen.contains "--mutant" then throw "verdict-diff needs --mutant="
   if mode == "source-sweep" && !seen.contains "--baseline-accepted" then throw "source-sweep needs --baseline-accepted="

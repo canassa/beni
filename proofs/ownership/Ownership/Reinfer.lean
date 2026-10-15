@@ -161,6 +161,7 @@ def primitive (ctx : Context) (site : List Nat) (op : Prim) (args : List Abstrac
   let fresh := Origin.site site 0
   match op, args with
   | .add, _ | .sub, _ | .eq, _ | .lt, _ => pure .scalar
+  | .construct _, _ | .view _, _ => throw "limit: construction or view in frozen per-call checker"
   | .record, xs => pure (.record xs)
   | .events, [.record [_, events]] => pure events
   | .owned _, [value, retained] => do

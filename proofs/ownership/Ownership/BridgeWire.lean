@@ -116,6 +116,9 @@ def prim (v : Value) : Except String Prim := do
   | "set", [] => pure .set | "push", [] => pure .push | "copy", [] => pure .copy
   | "prepend", [] => pure .prepend | "events", [] => pure .events | "shared", [] => pure .shared
   | "put", [] => pure .put | "close", [] => pure .close
+  | "construct", [vs] => pure (.construct (← (← array vs).mapM fun
+      | .flag b => pure b | _ => throw "expected wire flag"))
+  | "view", [.flag b] => pure (.view b)
   | _, _ => throw "unknown wire primitive"
 
 def expr : Nat → Value → Except String Expr

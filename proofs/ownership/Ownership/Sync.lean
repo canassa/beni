@@ -403,6 +403,69 @@ def initializationDuplicatedCapture (n : Int) (copied := false) : Program := {
       .entry (.app (v 2) [.int 0]) [] 3 <|
         .letE 4 (push (.field (v 3) 0)) (.prim .record [v 4, .field (v 3) 1]) }
 
+/-- Constructions (`ownership-checker.md` §3.2): the base `xs = [n, n+1]` is
+    appended onto in place. `operand`: 0 itself (`xs ++ xs`), 1 an alias of
+    it, 2 a view of it, 3 a copy, 4 a fresh literal, 5 items around a fresh
+    spread (`[ 5, …xs, 6, …ys ]`). `later`: 0 nothing, 1 the base is read
+    after, 2 the other operand is read after. -/
+def construction (n : Int) (operand later : Nat) : Program :=
+  let other : Expr := match operand with
+    | 0 => .prim (.literal .int) []
+    | 1 => .atom (v 0)
+    | 2 => .prim (.view true) [v 0]
+    | 3 => .prim .copy [v 0]
+    | _ => .prim (.literal .int) [.int 7]
+  let (shape, args) := match operand with
+    | 0 => ([true, true], [v 0, v 0])
+    | 5 => ([false, true, false, true], [.int 5, v 0, .int 6, v 1])
+    | _ => ([true, true], [v 0, v 1])
+  { main := .letE 0 (.prim (.literal .int) [.int n, .int (n+1)]) <| .letE 1 other <|
+      .letE 2 (.prim (.construct shape) args) <|
+      match later with
+      | 1 => .prim .record [v 2, v 0]
+      | 2 => .prim .record [v 2, v 1]
+      | _ => .atom (v 2) }
+
+/-- A construction over a nested list stores a list, by item or by spread;
+    an edit of the stored list through the result needs it dead outside. -/
+def nestedConstruction (n : Int) (shared spread : Bool) (duplicate := false) : Program := {
+  main := .letE 0 (lit n) <| .letE 1 (.prim (.literal l) [v 0]) <| .letE 2 (lit (n+1)) <|
+    -- `duplicate`: the spread operand holds one list twice, so the result's
+    -- positions 1 and 2 share it even after the operand is dead.
+    .letE 3 (.prim (.literal l) (if duplicate then [v 2, v 2] else [v 2])) <|
+    .letE 4 (if spread then .prim (.construct [true, true]) [v 1, v 3]
+      else .prim (.construct [true, false]) [v 1, v 2]) <|
+    .letE 5 (.focus (v 4) (.int 1) 6 (push (v 6))) <|
+    if shared then .prim .record [.int 0, v 2] else .prim .record [v 5, .int 0] }
+
+/-- A view (`[ x, …rest ]` binds `rest`; `[ …init, last ]` binds `init`)
+    shares its source's array. `write`: 0 push the source, 1 set the view,
+    2 push the view, 3 set the source, 4 nothing. `later`: 0 the view is
+    read after, 1 the source is read after, 2 neither. -/
+def viewAlias (n : Int) (front : Bool) (write later : Nat) : Program := {
+  main := .letE 0 (.prim (.literal .int) [.int n, .int (n+1), .int (n+2)]) <|
+    .letE 1 (.prim (.view front) [v 0]) <|
+    .letE 2 (match write with
+      | 0 => push (v 0)
+      | 1 => .prim .set [v 1, .int 0, .int 9]
+      | 2 => push (v 1)
+      | 3 => .prim .set [v 0, .int 1, .int 9]
+      | _ => .atom (v 0)) <|
+    match later with
+    | 0 => .prim .record [v 2, v 1]
+    | 1 => .prim .record [v 2, v 0]
+    | _ => .atom (v 2) }
+
+/-- A record update, `{ r | f1 = 2 }`, is a record of `r`'s other fields: the
+    shipping bridge prints it as an update. `after`: the update comes after
+    the push of the list `r` holds; `readList`: the result's list is read. -/
+def recordUpdate (n : Int) (after readList : Bool) : Program :=
+  let update : Expr := .prim .record [.field (v 1) 0, .int 2]
+  let result : Expr := .prim .record [.field (v 3) (if readList then 0 else 1), v 2]
+  { main := .letE 0 (lit n) <| .letE 1 (.prim .record [v 0, .int 1]) <|
+      if after then .letE 2 (push (v 0)) (.letE 3 update result)
+      else .letE 3 update (.letE 2 (push (v 0)) result) }
+
 /-- Finite products, independent of seeds. These are not fixed probes alone. -/
 def legacyPrograms : List Program := [-1, 0, 1, 2].flatMap fun n =>
   [branchEscape n, branchEscape n true, branchEscape n false true, branchCall n, branchCall n true,
@@ -489,7 +552,28 @@ def extraFixtures : List (String × Program × Bool) := [
   ("Recursive captured result", recursiveResult 1, false),
   ("Callee capture disjointness", calleeEnvironment 1, false),
   ("Callee distinct environment", calleeEnvironment 1 true, true),
-  ("Fold loan feedback", feedbackLoan 1, false)]
+  ("Fold loan feedback", feedbackLoan 1, false),
+  ("Construction self append", construction 1 0 0, false),
+  ("Construction alias operand", construction 1 1 0, false),
+  ("Construction view operand", construction 1 2 0, false),
+  ("Construction copied operand", construction 1 3 0, true),
+  ("Construction fresh operand read after", construction 1 4 2, true),
+  ("Construction base read after", construction 1 4 1, false),
+  ("Construction items around the base", construction 1 5 0, true),
+  ("Construction stores a live list", nestedConstruction 1 true false, false),
+  ("Construction stores a dead list", nestedConstruction 1 false false, true),
+  ("Construction spreads a live nested list", nestedConstruction 1 true true, false),
+  ("Construction spreads a dead nested list", nestedConstruction 1 false true, true),
+  ("Construction spreads a list holding one list twice", nestedConstruction 1 false true true, false),
+  ("View: source written while the view is live", viewAlias 1 true 0 0, false),
+  ("View: view written while the source is live", viewAlias 1 true 1 1, false),
+  ("View: view written, source dead", viewAlias 1 true 2 2, true),
+  ("View: source written, view dead", viewAlias 1 true 0 2, true),
+  ("Init view: written while the source is live", viewAlias 1 false 1 1, false),
+  ("Init view: source written while the view is live", viewAlias 1 false 3 0, false),
+  ("Record update after a write keeps the base live", recordUpdate 1 true true, false),
+  ("Record update before a write, other field read", recordUpdate 1 false false, true),
+  ("Record update before a write, list read", recordUpdate 1 false true, false)]
 
 def extraPrograms : List Program := [-1, 0, 1, 2].flatMap fun n =>
   [ordinaryResultCase n, initializationDuplicatedCapture n, initializationDuplicatedCapture n true, initializationFrame n, initializationFrame n true, initializationFunctionRoot n, initializationFunctionRoot n true, initializationLoop n, initializationLoop n true, initializationRepublished n, recursiveQuestion n, twoFrames n, question n, question n true, question n false true,
@@ -500,7 +584,16 @@ def extraPrograms : List Program := [-1, 0, 1, 2].flatMap fun n =>
   [resultRead n 0, resultRead n 0 true, resultRead n 1, resultRead n 1 true,
    resultRead n 2, resultRead n 2 true, recursiveResult n, calleeEnvironment n, calleeEnvironment n true, feedbackLoan n]
 
-def programs := legacyPrograms ++ extraPrograms
+/-- The construction, view and record-update products (the oracle review,
+    2026-10-15). Appended after every earlier product, so no targeted id moves. -/
+def constructionPrograms : List Program := [-1, 0, 1, 2].flatMap fun n =>
+  [0,1,2,3,4,5].flatMap (fun operand => [0,1,2].map (construction n operand)) ++
+  [false, true].flatMap (fun shared => [false, true].map (nestedConstruction n shared)) ++
+  [false, true].map (fun shared => nestedConstruction n shared true true) ++
+  [true, false].flatMap (fun front => [0,1,2,3,4].flatMap fun write => [0,1,2].map (viewAlias n front write)) ++
+  [false, true].flatMap (fun after => [false, true].map (recordUpdate n after))
+
+def programs := legacyPrograms ++ extraPrograms ++ constructionPrograms
 
 def fixtures := legacyFixtures ++ extraFixtures
 
@@ -516,7 +609,8 @@ def holes : List (Mutant × Program) := [
   (.resultPositions, capturedAfter 1), (.prependBase, prepend 1 true),
   (.foldInvariant, invariant 1 .range true), (.modelInvariant, invariant 1 .model true),
   (.constructorArgs, constructor 1 true), (.eventCapture, markup 1 true),
-  (.taggerNeed, owned 1 0), (.captureEmpty, owned 1 1), (.forwardNeed, owned 1 2)]
+  (.taggerNeed, owned 1 0), (.captureEmpty, owned 1 1), (.forwardNeed, owned 1 2),
+  (.constructDisjoint, construction 1 0 0), (.viewAlias, viewAlias 1 true 0 0)]
 
 def preservationProbes : List (Mutant × Program) := [
   (.modelInvariant, modelUpdate 1 true), (.foldInvariant, badFold 1 3)]

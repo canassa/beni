@@ -56,6 +56,15 @@ inductive Prim where
   | push
   | copy
   | prepend -- front item, base; may share the base's backing array
+  /-- A construction (`ownership-checker.md` §3.2): one operand per flag, a
+      spread (`true`, a list) or an item (`false`). Its base is the first
+      spread, which it consumes and writes in place; a later spread is read
+      while the base grows. `a ++ b ++ c` is `[true, true, true]`. -/
+  | construct (spreads : List Bool)
+  /-- A list pattern's spread binding (§5, *Views*): `front` is the `rest`
+      of `[ x, …rest ]`, otherwise the `init` of `[ …init, last ]`. It is a
+      view sharing its source's array; an empty source gives a fresh `[]`. -/
+  | view (front : Bool)
   | events -- projection of the event slot of a two-slot markup record
   | owned (forwarded : Bool := false) -- result, retained callback: an owned-result boundary
   | shared -- declare a program-lifetime root (top-level value)
@@ -133,6 +142,18 @@ def primType (p : Prim) (ts : List Ty) : Except String Ty := do
     if t == v then pure (.list t) else throw "incorrect stored type"
   | .prepend, [t, .list u] =>
     if t == u then pure (.list t) else throw "incorrect prepend element"
+  | .construct spreads, ts => do
+    -- A demand: a base (the first spread) with an operand after it. A
+    -- spread-free literal allocates and a prepend only reads (§3.2).
+    if spreads.length != ts.length then throw "construction shape"
+    let b := spreads.idxOf true
+    if b + 1 ≥ spreads.length then throw "construction without a base and a later operand"
+    let .list t := ts[b]?.getD .int | throw "construction base is not a list"
+    for (u, spread) in ts.zip spreads do
+      if spread && u != .list t then throw "incorrect spread operand"
+      if !spread && u != t then throw "incorrect construction item"
+    pure (.list t)
+  | .view _, [.list t] => pure (.list t)
   | .events, [.record [_, events]] => pure events
   | .owned _, [t, .fn _ _] => pure t
   | .copy, [.list t] => pure (.list t)

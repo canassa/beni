@@ -86,23 +86,33 @@ def coversB (γ : FNaming) (heap : Heap) (a : Abstract) (v : Value) : Option Str
   | some (q, c) => some s!"array {c} at {repr q} not named by {repr (namesAt a q)} (it is named {repr (originsOf γ c)})"
   | none => none
 
-def certifiedB (heap : Heap) (a : Abstract) (v : Value) : Option String :=
+/-- `canon` names the storage an array number uses: a view (`Prim.view`) and
+    its source are one array, though two heap entries. -/
+def certifiedB (heap : Heap) (a : Abstract) (v : Value) (canon : Nat → Nat := id) : Option String :=
   let bad := a.paths.find? fun (q, _) => match a.atPath q with
     | .list _ _ ex => (valuesAt heap v q).any fun w =>
-      let fp := footprint heap depthFuel w
+      let fp := (footprint heap depthFuel w).map canon
       (ex.deep && !nodup fp) || (ex.spine &&
         (pathsOf heap depthFuel w []).any fun (p, c) =>
           match p with
-          | .element :: rest => containerPath rest && fp.count c != 1
+          | .element :: rest => containerPath rest && fp.count (canon c) != 1
           | _ => false)
     | _ => false
   bad.map fun (q, _) => s!"exclusive at {repr q} but the footprint repeats an array"
+
+/-- The array a view chain ends in. -/
+def viewRoot (links : List (Nat × Nat × Bool)) : Nat → Nat → Nat
+  | 0, c => c
+  | n + 1, c => match links.find? (·.1 == c) with
+    | some (_, source, _) => viewRoot links n source
+    | none => c
 
 /-- Check the advertised result certificates against the actual final heap,
     independently of provenance naming and of observational agreement. -/
 def resultCertificates (p : Program) (accepted : Accepted) : Except String Unit := do
   let (v, st) ← (InPlaceSemantics.eval 100000 p.declarations none [] p.main).run {fuel := 100000}
-  if let some problem := certifiedB st.heap accepted.result v then throw problem
+  if let some problem := certifiedB st.heap accepted.result v (viewRoot st.links (st.links.length + 1)) then
+    throw problem
 
 /-- The closures at field and element paths (`ClosuresDescribed`'s paths). -/
 def closuresAt (heap : Heap) : Nat → Value → Path → List (Path × Value)

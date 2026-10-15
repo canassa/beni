@@ -162,6 +162,13 @@ def main (args : List String) : IO UInt32 := do
       IO.println s!"CI FAILED: only {r.counts.withWrites} of {r.counts.accepted} accepted programs write in place (< 30 %)"
       return 1
     IO.println s!"writes: {r.counts.withWrites} of {r.counts.accepted} accepted programs write in place"
+    -- Generator v6: constructions, views and record updates. No accepted
+    -- program may disagree, and some accepted programs must write.
+    let r6 ← Oracle.runWith { count := budget / 4, seed, version := 6, quiet := true, keepEvidence := true }
+    if !r6.ok || r6.counts.withWrites == 0 then
+      IO.println s!"CI FAILED: generator v6 ok={r6.ok} writes={r6.counts.withWrites}"
+      return 1
+    IO.println s!"v6 writes: {r6.counts.withWrites} of {r6.counts.accepted} accepted programs write in place"
     -- Every required control is required twice: through its fixed probe
     -- (`Fixtures.run` above), and through the generator alone within the
     -- budget (`Oracle.controls`; the stream is deterministic, so this is as
