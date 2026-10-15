@@ -1461,6 +1461,55 @@ the live set.* It makes a warm rebuild and the development loop faster, and not 
 test, because each test has a new project directory. Each step brings its spec. Until the first
 step lands, the paragraph above stands.
 
+*Amended 2026-10-15, the first step:* **the pack holds each embedded module's reachability edge
+lists** (`src/js/EdgePack.zig`; `backend.md` §9, *Incrementality (M4) and chunking (§10)*). The
+rows are a third kind, `edges`, beside entries and front-end artifacts, and no cache directory
+holds them.
+
+- **The key.** An edge list is a function of the module's check and of two build options:
+  `--release` (which arm of an `if Js.development` its walk drops) and `--schema-library` (what a
+  schema member's workers call). The module key is the whole input of the check. So a row's key is
+  SipHash-1-3 over `"BENIEDGE"`, a format version, the module key and one byte of the two options.
+  The maker writes four rows per module, one per combination, and the pack stores the bytes of two
+  rows with the same content once.
+- **A node names its module by package and dotted name**, never by `Graph.Index`. An index depends on
+  which modules a build holds: the maker's graph holds all of core, and a program's graph holds the
+  modules it imports. A build resolves each name with `Graph.find`. A target in a module that the
+  build does not hold is dropped. A module's edges reach four kinds of target: what its
+  instructions and dispatch table name, which is always in a module it imports; `String.compare`
+  and `core/List`'s helpers, which lowering calls with no reference of the module's own;
+  `Task.andThen` and `Task.isWaiting`, which a body that may suspend calls; and the `core/Schema`
+  values that a schema member's code calls. The last three can name a core module that the module
+  does not import. The builder finds each of them by name in the build's graph and adds no edge
+  when that module is not there, so the drop gives the same lists. *Amended the same day, after
+  review:* this holds only because **the maker's graph holds every module that a build's graph can
+  hold**. `Session.isLazy` is false in a run that makes a pack, so each maker run reads every core
+  module and every module of its chain, and core's rows come from the run that holds core alone. A
+  change that makes the maker's graph smaller must change this rule too.
+- **A row that cannot be used is not used.** Another version, a length or an order that does not fit
+  the module, a node out of its module's range, a chain out of the row's, or a guard on a module
+  that the build does not hold: the build builds that module's lists.
+- **Which modules read a row.** A module that `Session.packCovers` and whose key the run computed.
+  The lookup is by key, so it is the same whether the run installed the module from the pack or
+  checked it. `--core-root` and a platform read from a directory read no row, as for entries.
+- **The maker** builds each module's lists in the first run that holds the module, after the check,
+  for each of the four options. A later run skips a module whose rows an earlier run made. It
+  refuses a pack that does not have the four rows of every core and platform module. Its root now
+  reaches `js/Reach.zig` and what that file imports, and not lowering or printing.
+- **What it costs.** Measured on 2026-10-15: the maker went from 4 622 to 5 137 million
+  instructions (+11 %), and the pack from 3 197 676 to 3 379 459 bytes (+5.7 %).
+- **What a build saves.** Instructions per development build, `perf stat` on the gates' ReleaseSafe
+  compiler: `run/Dictionaries` 180 → 152 million (−16 %), `run/Adt` 143 → 116 million (−19 %),
+  `browser/tea/ApiItems` 545 → 489 million (−10 %), `browser/direct/AfterRenderFocus` 489 → 431
+  million (−12 %), and `bench/corpus` as one `--library` build 420 → 391 million (−7 %). Under
+  `--release`, ApiItems 1 756 → 1 700 million. No output changes by one byte: every run hash of
+  the gates matched.
+- **What holds it.** `--self-profile` counts `edge_lists_embedded`, the modules that read a row,
+  beside `edge_lists`, the modules that built their lists. `tests/blackbox/build_test.zig` builds a
+  node program (development and `--release`), a program that suspends and a `browser-tea` page
+  two times each: with the embedded core, and with a copy of it under `--core-root`, which builds
+  every list. The two trees must be the same.
+
 **Measured** (2026-10-02, master `bec44d00` against the same tree with the checked core; instructions,
 user space, because the machine's load moved wall time by 2× between runs). **Output: not one byte
 moved** — every `run/` and `browser/` program's run hash matched, development and release, with no

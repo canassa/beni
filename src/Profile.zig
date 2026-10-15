@@ -276,6 +276,10 @@ pub const Counter = enum {
     /// module walks twice and lowers some modules twice, and prints each
     /// module once (§15.1, *The runtime module*).
     edge_lists,
+    /// Modules whose edge lists were read from the checked core instead
+    /// (`fast-compiler.md` §8, *The checked core, embedded*): `edge_lists +
+    /// edge_lists_embedded` is every module of the graph.
+    edge_lists_embedded,
     reach_walks,
     modules_lowered,
     modules_printed,
