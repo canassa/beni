@@ -1,30 +1,30 @@
 {
-  "programs": 116650,
+  "programs": 176903,
   "minimumFraction": 0.95,
   "families": {
     "fixture": {
       "programs": 98,
-      "translated": 82
+      "translated": 85
     },
     "sync": {
-      "programs": 78,
-      "translated": 33
+      "programs": 99,
+      "translated": 62
     },
     "targeted": {
-      "programs": 508,
-      "translated": 228
+      "programs": 740,
+      "translated": 556
     },
     "enumerate": {
       "programs": 55966,
-      "translated": 27769
+      "translated": 48391
     },
     "general": {
       "programs": 18984,
-      "translated": 2642
+      "translated": 6769
     },
     "declarations": {
       "programs": 26040,
-      "translated": 2073
+      "translated": 11869
     },
     "identity-map": {
       "programs": 1308,
@@ -69,6 +69,14 @@
     "escape-traversal": {
       "programs": 1361,
       "translated": 0
+    },
+    "constructions": {
+      "programs": 29921,
+      "translated": 13020
+    },
+    "construct-declarations": {
+      "programs": 30079,
+      "translated": 16053
     }
   }
 }

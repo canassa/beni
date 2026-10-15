@@ -20,21 +20,23 @@ export LEAN_NUM_THREADS=8
 cd proofs/ownership
 lake build
 node scripts/bridge.mjs --ci                  # also run by ownership ci
-node scripts/bridge.mjs --long --jobs=8        # all fixtures, bound 2, 20k × 3 seeds
-node scripts/bridge-mutants.mjs               # opt-in, isolated Zig source edits
+node scripts/bridge.mjs --long --jobs=8        # all fixtures, bound 2, 20k × 3 seeds of v5 and of v6
+node scripts/bridge-mutants.mjs [control…]    # opt-in, isolated Zig source edits
 ```
 
 `--no-build` uses an existing compiler; `--compiler=/absolute/path` selects it.
 `--input=...jsonl` replays an export. `--out=...` isolates artifacts. The default
-long seeds are 17, 20261011 and 314159. CI uses all 684 fixed programs,
-enumeration bound 1, and 128 generated programs at seed 17. Runs use at most eight
+long seeds are 17, 20261011 and 314159. CI uses all 937 fixed programs,
+enumeration bound 1, and 128 programs of each generator (v5, `generator`, and v6,
+`generator6`: constructions, views and record updates) at seed 17. Runs use at most eight
 workers, with each compiler child on one thread. On Linux pin the parent with
 `taskset -c 0-7` to bound its entire process tree. Never rebuild the oracle
 executable while a campaign is spawning its exporter or reducer.
 
-The expanded long campaign has 116,650 inputs: the historical generator and
-enumeration streams are byte-identical, and the fixed set appends 34 verdict
-fixtures and 160 targeted programs.
+The long campaign has 176,903 inputs (2026-10-15): the historical v5 generator
+and enumeration streams are byte-identical to the 116,650-input campaign's, the
+fixed set appends 21 sync fixtures and 232 targeted programs, and three v6
+streams of 20,000 add constructions, views and record updates.
 
 The original 490 fixed programs are independently pinned by reconstructing their
 exact historical stream, restoring declaration-table ids and preserving raw
@@ -65,7 +67,13 @@ Recursive closures use named local functions. Helpers retain saturated arity;
 nullary core functions receive unit. Lists, `List.set`, `List.push`, `List.copy`,
 `List.update` and total indexed reads use the public core operations. A read
 uses `case List.get` with an already evaluated default. Prepend copies with
-`[ item, …base ]`. List traversals with unused indices use `List.foldl`; range
+`[ item, …base ]`. A construction is spelled, in turn, as a `++` chain, `List.append`
+or a spread literal when every operand is a spread, and as a literal otherwise
+(`[ x, …xs, y, …ys ]`); a `++` is written only in the main body, since in an
+unannotated declaration or lambda it would be generic, dispatched through evidence
+and no construction. A view is `case xs of [ _, …v ] → v; [] → []` (or
+`[ …v, _ ]`). A record whose fields are a typed record's other fields is printed
+as an update, `{ r | f1 = y }`. List traversals with unused indices use `List.foldl`; range
 traversals fold over `List.range 0 (n-1)`. Ordinary library initialize, fold and
 update declarations, and map across different representations, are recognized
 by their exact typed bodies and use their public counterparts.
@@ -85,8 +93,10 @@ use public operations; arbitrary builder/put/close trees are explicit skips.
 Identity-preserving close is skipped: shipping `List.map` always allocates.
 Model loops are not TEA entry invariants. Abstract `events` and `owned`
 projections are not the browser event/returns-owned protocols. These constructs,
-used list traversal indices, ill-typed inputs, empty records, function-valued
-results and interpreter limits have counted skips.
+used list traversal indices, ill-typed inputs, empty records and interpreter
+limits have counted skips. Function-valued results are translated (2026-10-15):
+both sides observe a function as `"<function>"`, which keeps the verdict comparison
+and hides nothing a final-value check could see of a closure.
 
 Shared roots are hoisted only from an unconditional allocation-only prefix with
 literal/record dependencies. Computed, dynamic, late or conditional publication
@@ -186,17 +196,19 @@ the same accounting. `reasonChanged` flags a different full message, and
 
 ## Source controls
 
-The opt-in script builds its baseline and three Zig edits in the same clean,
-detached worktree: remove the Dead holder loop,
-remove the Disjoint operand loop, and disable the shared/top-level cause. It
+The opt-in script builds its baseline and the Zig edits in the same clean,
+detached worktree: three blunt ones (remove the Dead holder loop, remove the
+Disjoint operand loop, disable the shared/top-level cause) and seven targeted
+ones, each removing one rule (2026-10-15; `CONSTRUCTIONS-RESULTS.md`). It
 compares each against an unmodified compiler on the same full CI stream
-(fixtures, bound 1 and 128 generated programs). A control is caught by a new program-level or comparable site-level Zig-accepts/Lean-rejects
+(fixtures, bound 1 and 128 programs of each generator), without the
+persistent-runtime reduction. A control is caught by a new program-level or comparable site-level Zig-accepts/Lean-rejects
 verdict. New site leads in existing baseline program leads count too; other
 refusals may block their in-place runtime check and are recorded explicitly.
 Existing baseline leads cannot count as catches.
 A dump/enforcement disagreement is a separate self-check catch; another runner
-failure is an error, and does not suppress the remaining controls. All three
-source controls make Zig more permissive. There is no stricter-policy source
+failure is an error, and does not suppress the remaining controls. Every
+source control makes Zig more permissive. There is no stricter-policy source
 control; the precision direction is counted in ordinary comparisons.
 The report distinguishes verdict catches from runtime disagreements, and reports
 misses without changing either checker or inventing a runtime. The live Zig
@@ -243,6 +255,9 @@ long audit requires every one of the six original confirmed clusters to have
 ceased to be a program-level acceptance. The compressed judgments retain the
 core programs, complete traces, old/new reverse refusals and compiler hashes.
 
-The exact baseline comparison applies to canonical CI (766 inputs) and long
-(116,456 inputs) populations. A custom-sized campaign is still judged and has
-its reverse leads replayed, but makes no baseline-equality claim.
+For the canonical CI and long campaigns the audit pins the original 490 fixed
+programs, and requires every historical v5 generator and enumeration stream to
+have the program count and SHA-256 of the 116,650-input campaign (its
+translation counts change with the translator). It also reports the meaningful
+lead count: the leads whose in-place run writes a list. A custom-sized campaign
+is still judged and has its reverse leads replayed, but makes no baseline claim.

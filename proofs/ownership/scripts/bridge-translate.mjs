@@ -35,8 +35,91 @@ export function constructs(ds, main) {
   };
   scan(main); return counts;
 }
+// The core's ordinary types, per body (binders are unique in a body: the core
+// refuses shadowing). Only the record-update spelling needs them.
+const same = (a, b) => a !== undefined && b !== undefined && JSON.stringify(a) === JSON.stringify(b);
+function atomType(a, types) {
+  if (a[0] === 'int') return ['int'];
+  if (a[0] === 'var') return types.get(a[1]);
+  const r = atomType(a[1], types);
+  return r?.[0] === 'record' ? r[1][a[2]] : undefined;
+}
+function exprType(e, types, ds, self) {
+  const at = a => atomType(a, types), sub = x => exprType(x, types, ds, self);
+  const elem = t => t?.[0] === 'list' || t?.[0] === 'builder' || t?.[0] === 'chain' ? t[1] : undefined;
+  switch (e[0]) {
+    case 'atom': return at(e[1]);
+    case 'let': types.set(e[1], sub(e[2])); return sub(e[3]);
+    case 'closure': return ['fn', ds[e[1]][1], ds[e[1]][3]];
+    case 'app': return at(e[1])?.[2];
+    case 'recur': return self === null ? undefined : ds[self][3];
+    case 'entry': types.set(e[3], sub(e[1])); return sub(e[4]);
+    case 'result-case': {
+      const t = at(e[1]); types.set(e[2], t?.[1]); types.set(e[3], t?.[2]);
+      const left = sub(e[4]); sub(e[5]); return left;
+    }
+    case 'chain-case': {
+      const t = at(e[1]); types.set(e[2], elem(t)); types.set(e[3], t);
+      const left = sub(e[4]); sub(e[5]); return left;
+    }
+    case 'branch': { const left = sub(e[2]); sub(e[3]); return left; }
+    case 'traverse': {
+      types.set(e[4], ['int']); types.set(e[5], e[1] === 'list' ? elem(at(e[2])) : ['int']);
+      types.set(e[6], at(e[3])); sub(e[7]); return at(e[3]);
+    }
+    case 'focus': types.set(e[3], elem(at(e[1]))); sub(e[4]); return at(e[1]);
+    case 'prim': {
+      const op = e[1], xs = e[2].map(at);
+      switch (op[0]) {
+        case 'ok': return ['result', op[1], xs[0]];
+        case 'err': return ['result', xs[0], op[1]];
+        case 'end-chain': return ['chain', op[1]];
+        case 'link': return xs[1];
+        case 'add': case 'sub': case 'eq': case 'lt': case 'length': return ['int'];
+        case 'record': return ['record', xs];
+        case 'literal': return ['list', op[1]];
+        case 'at': return elem(xs[0]);
+        case 'prepend': return xs[1];
+        case 'events': return xs[0]?.[1]?.[1];
+        case 'builder': return ['builder', op[1]];
+        case 'close': return ['list', elem(xs[0])];
+        case 'construct': return xs[op[1].indexOf(true)];
+        default: return xs[0];
+      }
+    }
+    default: return undefined;
+  }
+}
 export function translate(ds, main) {
-  let serial = 0, chainUsed = false;
+  let serial = 0, chainUsed = false, spelling = 0;
+  const bodyTypes = new Map();
+  const typesOf = self => {
+    const key = self ? self.id : 'main';
+    if (!bodyTypes.has(key)) {
+      const types = new Map();
+      if (self) {
+        const d = ds[self.id];
+        [...d[1], ...d[2]].forEach((t, i) => types.set(i, t));
+        exprType(d[4], types, ds, self.id);
+      } else exprType(main, types, ds, null);
+      bodyTypes.set(key, types);
+    }
+    return bodyTypes.get(key);
+  };
+  // `{ r | fj = x }` for a record of `r`'s other fields, when the types say
+  // the update is the same record (§5's record-update row).
+  const recordUpdate = (xs, self) => {
+    const types = typesOf(self);
+    for (const [i, x] of xs.entries()) {
+      if (x[0] !== 'field' || x[1][0] !== 'var' || x[2] !== i) continue;
+      const base = x[1][1], t = types.get(base);
+      if (t?.[0] !== 'record' || t[1].length !== xs.length) continue;
+      const replaced = xs.map((y, j) => !(y[0] === 'field' && y[1][0] === 'var' && y[1][1] === base && y[2] === j));
+      if (!replaced.some(Boolean)) continue;
+      if (xs.every((y, j) => !replaced[j] || same(atomType(y, types), t[1][j]))) return {base, replaced};
+    }
+    return null;
+  };
   const defs = new Map(), building = new Set(), hoisted = new Set(), globals = [];
   const bindings = new Map();
   for (let e = main; e[0] === 'let'; e = e[3]) bindings.set(e[1], e[2]);
@@ -153,9 +236,34 @@ export function translate(ds, main) {
         else if (op === 'literal') text = `[ ${aa.join(', ')} ]`;
         else if (op === 'record') {
           if (!aa.length) fail('empty-record-representation');
-          text = `{ ${aa.map((x, i) => `f${i} = ${x}`).join(', ')} }`;
+          const update = recordUpdate(xs, self);
+          text = update
+            ? `{ ${name(env, update.base)} | ${aa.flatMap((x, i) => update.replaced[i] ? [`f${i} = ${x}`] : []).join(', ')} }`
+            : `{ ${aa.map((x, i) => `f${i} = ${x}`).join(', ')} }`;
         }
         else if (op === 'prepend') text = `[ ${aa[0]}, …${aa[1]} ]`;
+        else if (op === 'construct') {
+          // One construction (§3.2), spelled three ways in turn when every
+          // operand is a spread: a `++` chain, `List.append`, a literal. A
+          // `++` stays in the main body: in a declaration or lambda whose
+          // parameters are unannotated, `++` on them is generic, dispatched
+          // through evidence, and not a construction at all, while the core's
+          // construction is always a list write.
+          const spreads = e[1][1], operand = x => x.includes('.') ? `(${x})` : x;
+          const style = spreads.every(Boolean) ? spelling++ % 3 : 2;
+          if (style === 0 && self) text = spreads.length === 2 ? `List.append ${args(xs)}` :
+            `[ ${aa.map(x => `…${operand(x)}`).join(', ')} ]`;
+          else if (style === 0) text = aa.map(operand).join(' ++ ');
+          else if (style === 1 && aa.length === 2) text = `List.append ${args(xs)}`;
+          else text = `[ ${aa.map((x, i) => spreads[i] ? `…${operand(x)}` : x).join(', ')} ]`;
+        }
+        else if (op === 'view') {
+          // A list pattern's spread binding: `rest` of `[ _, …rest ]`, or
+          // `init` of `[ …init, _ ]`; an empty list matches `[]`.
+          const bound = `view${serial++}`;
+          const pattern = e[1][1] ? `[ _, …${bound} ]` : `[ …${bound}, _ ]`;
+          text = `case ${aa[0]} of\n    ${pattern} →\n        ${bound}\n    [] →\n        []`;
+        }
         else if (op === 'shared') {
           if (key.startsWith('d')) fail('dynamic-shared-root');
           if (xs[0][0] !== 'var' || !hoisted.has(xs[0][1])) fail('dynamic-shared-root');
