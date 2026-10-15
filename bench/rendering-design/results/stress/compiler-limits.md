@@ -43,3 +43,7 @@ in `failures.jsonl`; `stopped.jsonl` records the input and compiler hashes.
 The harness now recognizes both diagnostic spellings (`OutOfMemory` and
 `out of memory`). This only changes failure handling, not emitted output or
 size accounting. Other strategies continue from the same source specification.
+
+The modal TEA build subsequently reached the same cap at N4,112. Failure
+handling recorded it automatically, and its other curves continued. This is
+a compiler-resource endpoint, not a missing or extrapolated bundle price.

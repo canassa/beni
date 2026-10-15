@@ -26,7 +26,7 @@ same-size application comparisons; the fixed-N comparison above is.
 
 **The full family sweep is still in progress.** Direct exhausts host memory at
 mixed N1,728 before the target ([#203](https://github.com/canassa/beni/issues/203));
-Nested TEA also reaches the later 16 GiB cap at N3,888. No size is assigned to failed builds. The webpage distinguishes crossings,
+Nested and modal TEA reach the later 16 GiB cap at N3,888 and N4,112. No size is assigned to failed builds. The webpage distinguishes crossings,
 unfinished curves and compiler limits. This follow-up measures size only.
 
 For the original three-seed mixed N32 sample, C costs **7.29 kB**, versus
@@ -112,22 +112,22 @@ not confidence intervals. [Full stress fits](../../../bench/rendering-design/res
 retain residuals; the original N≤32 calibration remains archived.
 
 Current common-window family slopes, brotli bytes per added varied instance,
-seed 17. **N288–1,152** for every column except direct (**N84–336**, censored)
+seed 17. **N432–1,728** for every column except direct (**N84–336**, censored)
 and Solid (**N972–3,888**, two ports). Windows differ between strategies; compare
 shapes within a column. The live report advances these windows as data arrives.
 
 | Shape | TEA | Direct | A | B | C | D | Vanilla | Solid |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| Keyed list | 132 | 185 | 78 | 55 | 41 | 79 | 5.3 | 5.2 |
-| Form | 124 | 152 | 72 | 50 | 38 | 66 | 5.3 | 5.1 |
-| Tabs | 123 | 141 | 58 | 52 | 48 | 57 | 5.2 | — |
-| Nested helpers | 130 | 195 | 60 | 58 | 45 | 62 | 5.2 | — |
-| Recursive thread | 103 | 160 | 76 | 72 | 58 | 76 | 5.2 | — |
-| Counter/toggle | 85 | 101 | 55 | 40 | 34 | 53 | 5.3 | — |
-| Sortable table | 161 | 215 | 90 | 62 | 45 | 82 | 5.3 | — |
-| Modal | 126 | 164 | 70 | 55 | 43 | 66 | 5.2 | — |
-| Filter | 160 | 212 | 90 | 63 | 44 | 85 | 5.3 | — |
-| Derived summary | 159 | 222 | 93 | 67 | 50 | 83 | 5.2 | — |
+| Keyed list | 132 | 185 | 78 | 55 | 41 | 78 | 5.2 | 5.2 |
+| Form | 124 | 152 | 72 | 49 | 38 | 65 | 5.3 | 5.1 |
+| Tabs | 121 | 141 | 56 | 52 | 48 | 58 | 5.3 | — |
+| Nested helpers | 130 | 195 | 60 | 57 | 45 | 62 | 5.2 | — |
+| Recursive thread | 104 | 160 | 74 | 73 | 55 | 76 | 5.2 | — |
+| Counter/toggle | 88 | 101 | 55 | 41 | 34 | 52 | 5.3 | — |
+| Sortable table | 157 | 215 | 89 | 62 | 45 | 81 | 5.2 | — |
+| Modal | 128 | 164 | 70 | 54 | 44 | 68 | 5.2 | — |
+| Filter | 165 | 212 | 89 | 63 | 44 | 86 | 5.3 | — |
+| Derived summary | 164 | 222 | 92 | 66 | 50 | 85 | 5.2 | — |
 
 ![Slope matrix](../../../bench/rendering-design/results/stress/graphs/family-slopes.png)
 

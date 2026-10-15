@@ -1,5 +1,6 @@
 import fs from 'node:fs';import {createHash} from 'node:crypto';import {brotliCompressSync,gzipSync,constants} from 'node:zlib';import {minify} from 'terser';
 import {units} from './provenance.mjs';import {prototype} from './prototype.mjs';import {vanilla} from './vanilla.mjs';
+import {execFileSync} from 'node:child_process';
 const here=import.meta.dirname;
 export const hash=s=>createHash('sha256').update(s).digest('hex');
 export const size=s=>{const b=Buffer.from(s);return {raw:b.length,brotli:brotliCompressSync(b,{params:{[constants.BROTLI_PARAM_QUALITY]:11,[constants.BROTLI_PARAM_SIZE_HINT]:b.length}}).length,gzip:gzipSync(b,{level:9}).length}};
@@ -22,8 +23,17 @@ export function account(code,map,kind){
  const runtime=chunks.runtime.join(''),app=chunks.app.join(''),render=renderParts.join('');
  // Compress each identical byte string once within this account. This matters
  // when core is empty and full/rendering are identical; prices do not change.
- const prices=new Map(),price=text=>{if(!prices.has(text))prices.set(text,size(text));return prices.get(text)};
- return {full:price(code),rendering:price(render),runtime:price(runtime),app_alone:price(app),app_in_rendering_context:price(render).brotli-price(runtime).brotli,excluded_core:price(chunks.core.join('')),origins,rendering_sha256:hash(render),render};
+ const core=chunks.core.join(''),inputs=[...new Set([code,render,runtime,app,core])],prices=new Map();
+ // Never wait for an extra slot while holding a worker reservation: if the
+ // pool is full, retain serial compression. This avoids nested-pool deadlock.
+ if(process.env.RESEARCH_LOCK&&inputs.filter(s=>s.length>=1048576).length>=2){
+  try{const result=JSON.parse(execFileSync(process.execPath,[here+'/resource-run.mjs','--try=1','--memory-mib=1024','--cpu=1','--',process.execPath,here+'/compression-batch.mjs'],{input:JSON.stringify(inputs),encoding:'utf8',maxBuffer:1024*1024}));
+   if(result.length!==inputs.length)throw Error('Incomplete compression batch');
+   inputs.forEach((text,index)=>prices.set(text,result[index]));
+  }catch(e){if(e.status!==75)throw e}
+ }
+ const price=text=>{if(!prices.has(text))prices.set(text,size(text));return prices.get(text)};
+ return {full:price(code),rendering:price(render),runtime:price(runtime),app_alone:price(app),app_in_rendering_context:price(render).brotli-price(runtime).brotli,excluded_core:price(core),origins,rendering_sha256:hash(render),render};
 }
 if(process.argv[1]===import.meta.filename){
 const cases=JSON.parse(fs.readFileSync(here+(process.env.CASES_FILE||'/.out/cases.json')));

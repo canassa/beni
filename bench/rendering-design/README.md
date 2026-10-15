@@ -231,3 +231,11 @@ its enforced address-space cap remains 16 GiB. These are scheduling limits,
 not measured application costs or repository gates. Repeated identical byte
 strings are compressed only once within each account; a seven-strategy check
 retains exact equality of every price and attribution field.
+
+Large accounts can borrow one additional CPU slot and 1 GiB for two independent
+compression jobs. The parent's thread is parked while they run. Admission is
+nonblocking: a full pool uses the original serial path, so workers cannot
+hold all slots while waiting for extra slots. Brotli/gzip options and byte
+strings are identical; `results/stress/parallel-compression-check.json` records
+exact agreement of all seven account fields on the actual 9.34 MB N3,888 TEA
+bundle. This changes measurement throughput only, not application timings.

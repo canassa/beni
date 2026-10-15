@@ -16,15 +16,16 @@
     "vanilla.js": "f00333faa59134e0e120265ff17dc4868905dfff50db6f55b68adde2e439c21a",
     "stress-generate.mjs": "705d7a6fdc3b6a75f0ec6ca6e335fc843e73d85de91d8a7bff195d65521ebe97",
     "stress-worker.mjs": "ac48674ddc3626f3bb90a493f8f4aa8aab46290e3a1a8b9743b0814d6b815717",
-    "measure.mjs": "ff491f163d23efed602671e72635f04ec2b56b354f9d57206e955fde8295bd30",
+    "measure.mjs": "d4f09efb992c489bccacd1edead9f305a7e10ede67742c144b2d4a8a1c0f7da6",
+    "compression-batch.mjs": "348975757435dc6f5801e4a0cc2a58adbfb5b1ee2c045ce985c7ad96be17dce1",
     "provenance.mjs": "e24055892ba759997c2b1927031b48be01a34dfba27457528aa615f8b69d7cf0",
     "solid.mjs": "bc4c38168432677be1d7fb12e3765f835ba9eecbb263e70e652b2dfc24c1b46e",
     "solid.jsx": "02ac2cb9c4358c704bbae33f66c674522c466d59bbeb99001927b395123dfc21",
     "package-lock.json": "a7ae5e60efc695ed0b21f7d470d868765a49e98333a2438a34cd1f7dc913f909",
     "build-today.mjs": "c39a746c6c7766e82db797fdfc596066a62dd79db6cd1e65dee325106308b0d4",
     "dump-bir.mjs": "2adb11e23eb1625387fc3c802b2ad57e3ba4147352e12944dd0e161e08dba6c6",
-    "resource-run.mjs": "0a99546075226a3cd3d2be9cef5050a9faf1c0f5ac6d82084f1c43e29646f9d7",
-    "stress.mjs": "142cd0ddecb3759a6d2633824296bd264eb235fecee74ddf8e17e8dd693d6618"
+    "resource-run.mjs": "df1302160608ba271f040e003d07e560e1840370ecba80084b0f0d16b8fe753e",
+    "stress.mjs": "519dd867f63899e1bcbe37c5e40a9c84a1fc3c735a77ab55f0d5c53d13f4f36a"
   },
   "compiler_sha256": "0291b420028819837b7fc33c269f8c71240fbd3dff73b93b63965ba236221f7a",
   "node": "v24.19.0",
@@ -86,6 +87,10 @@
     {
       "date": "2026-10-15T23:15:48.861370+00:00",
       "change": "Recognize both OutOfMemory and out of memory diagnostics when recording native compiler resource failures. Nested TEA N3888 hit the same 16 GiB cap. Output generation, measurement and compression unchanged."
+    },
+    {
+      "date": "2026-10-15T23:23:57.324118+00:00",
+      "change": "Large byte accounts opportunistically borrow one CPU slot and 1024 MiB for two simultaneous compression jobs, with immediate serial fallback if unavailable. Exact seven-field agreement on prior actual N3888 TEA output, rendering raw 9344577 / brotli 579185 / gzip 1179325. Same strings and compression options; emitted output unchanged. Nonblocking full-pool admission verified."
     }
   ],
   "compiler_address_space_limit_bytes": 17179869184,
@@ -121,15 +126,16 @@
       "vanilla.js": "f00333faa59134e0e120265ff17dc4868905dfff50db6f55b68adde2e439c21a",
       "stress-generate.mjs": "705d7a6fdc3b6a75f0ec6ca6e335fc843e73d85de91d8a7bff195d65521ebe97",
       "stress-worker.mjs": "ac48674ddc3626f3bb90a493f8f4aa8aab46290e3a1a8b9743b0814d6b815717",
-      "measure.mjs": "ff491f163d23efed602671e72635f04ec2b56b354f9d57206e955fde8295bd30",
+      "measure.mjs": "d4f09efb992c489bccacd1edead9f305a7e10ede67742c144b2d4a8a1c0f7da6",
+      "compression-batch.mjs": "348975757435dc6f5801e4a0cc2a58adbfb5b1ee2c045ce985c7ad96be17dce1",
       "provenance.mjs": "e24055892ba759997c2b1927031b48be01a34dfba27457528aa615f8b69d7cf0",
       "solid.mjs": "bc4c38168432677be1d7fb12e3765f835ba9eecbb263e70e652b2dfc24c1b46e",
       "solid.jsx": "02ac2cb9c4358c704bbae33f66c674522c466d59bbeb99001927b395123dfc21",
       "package-lock.json": "a7ae5e60efc695ed0b21f7d470d868765a49e98333a2438a34cd1f7dc913f909",
       "build-today.mjs": "c39a746c6c7766e82db797fdfc596066a62dd79db6cd1e65dee325106308b0d4",
       "dump-bir.mjs": "2adb11e23eb1625387fc3c802b2ad57e3ba4147352e12944dd0e161e08dba6c6",
-      "resource-run.mjs": "0a99546075226a3cd3d2be9cef5050a9faf1c0f5ac6d82084f1c43e29646f9d7",
-      "stress.mjs": "142cd0ddecb3759a6d2633824296bd264eb235fecee74ddf8e17e8dd693d6618"
+      "resource-run.mjs": "df1302160608ba271f040e003d07e560e1840370ecba80084b0f0d16b8fe753e",
+      "stress.mjs": "519dd867f63899e1bcbe37c5e40a9c84a1fc3c735a77ab55f0d5c53d13f4f36a"
     },
     "compiler_sha256": "0291b420028819837b7fc33c269f8c71240fbd3dff73b93b63965ba236221f7a",
     "node": "v24.19.0",
@@ -178,6 +184,10 @@
       {
         "date": "2026-10-15T23:15:48.865721+00:00",
         "change": "Recognize both OutOfMemory and out of memory diagnostics when recording native compiler resource failures. Nested TEA N3888 hit the same 16 GiB cap. Output generation, measurement and compression unchanged."
+      },
+      {
+        "date": "2026-10-15T23:23:57.335309+00:00",
+        "change": "Large byte accounts opportunistically borrow one CPU slot and 1024 MiB for two simultaneous compression jobs, with immediate serial fallback if unavailable. Exact seven-field agreement on prior actual N3888 TEA output, rendering raw 9344577 / brotli 579185 / gzip 1179325. Same strings and compression options; emitted output unchanged. Nonblocking full-pool admission verified."
       }
     ],
     "initial_scope": "Unchanged ten-shape catalogue. Three original seeds through N32; seed 17 extended on a 1.5x grid with extra measured points near 512 kB. Each strategy stops at its first measured rendering response >=512000 brotli bytes. No padding. Later points for shared-factory baselines need no additional candidate or today output once those curves crossed. Every point requiring BIR builds real TEA; direct builds stop once their measured curve crosses; all sources remain reproducible. Lines join measured points, never extrapolate. Native curves are not rebuilt after their measured crossing or terminal resource failure. Larger prototype points consume real per-component BIR dumps without another full-app build.",
@@ -207,15 +217,16 @@
       "vanilla.js": "f00333faa59134e0e120265ff17dc4868905dfff50db6f55b68adde2e439c21a",
       "stress-generate.mjs": "705d7a6fdc3b6a75f0ec6ca6e335fc843e73d85de91d8a7bff195d65521ebe97",
       "stress-worker.mjs": "ac48674ddc3626f3bb90a493f8f4aa8aab46290e3a1a8b9743b0814d6b815717",
-      "measure.mjs": "ff491f163d23efed602671e72635f04ec2b56b354f9d57206e955fde8295bd30",
+      "measure.mjs": "d4f09efb992c489bccacd1edead9f305a7e10ede67742c144b2d4a8a1c0f7da6",
+      "compression-batch.mjs": "348975757435dc6f5801e4a0cc2a58adbfb5b1ee2c045ce985c7ad96be17dce1",
       "provenance.mjs": "e24055892ba759997c2b1927031b48be01a34dfba27457528aa615f8b69d7cf0",
       "solid.mjs": "bc4c38168432677be1d7fb12e3765f835ba9eecbb263e70e652b2dfc24c1b46e",
       "solid.jsx": "02ac2cb9c4358c704bbae33f66c674522c466d59bbeb99001927b395123dfc21",
       "package-lock.json": "a7ae5e60efc695ed0b21f7d470d868765a49e98333a2438a34cd1f7dc913f909",
       "build-today.mjs": "c39a746c6c7766e82db797fdfc596066a62dd79db6cd1e65dee325106308b0d4",
       "dump-bir.mjs": "2adb11e23eb1625387fc3c802b2ad57e3ba4147352e12944dd0e161e08dba6c6",
-      "resource-run.mjs": "0a99546075226a3cd3d2be9cef5050a9faf1c0f5ac6d82084f1c43e29646f9d7",
-      "stress.mjs": "142cd0ddecb3759a6d2633824296bd264eb235fecee74ddf8e17e8dd693d6618"
+      "resource-run.mjs": "df1302160608ba271f040e003d07e560e1840370ecba80084b0f0d16b8fe753e",
+      "stress.mjs": "519dd867f63899e1bcbe37c5e40a9c84a1fc3c735a77ab55f0d5c53d13f4f36a"
     },
     "compiler_sha256": "0291b420028819837b7fc33c269f8c71240fbd3dff73b93b63965ba236221f7a",
     "node": "v24.19.0",
@@ -281,6 +292,10 @@
       {
         "date": "2026-10-15T23:15:48.868104+00:00",
         "change": "Recognize both OutOfMemory and out of memory diagnostics when recording native compiler resource failures. Nested TEA N3888 hit the same 16 GiB cap. Output generation, measurement and compression unchanged."
+      },
+      {
+        "date": "2026-10-15T23:23:57.344237+00:00",
+        "change": "Large byte accounts opportunistically borrow one CPU slot and 1024 MiB for two simultaneous compression jobs, with immediate serial fallback if unavailable. Exact seven-field agreement on prior actual N3888 TEA output, rendering raw 9344577 / brotli 579185 / gzip 1179325. Same strings and compression options; emitted output unchanged. Nonblocking full-pool admission verified."
       }
     ],
     "compiler_address_space_limit_bytes": 17179869184,

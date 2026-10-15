@@ -18,16 +18,16 @@ try{
  while(!claimed&&!stopping){
   let fd;
   try{fd=fs.openSync(lock,'wx');fs.writeFileSync(fd,String(process.pid));}
-  catch(e){if(e.code!=='EEXIST')throw e;try{const owner=Number(fs.readFileSync(lock,'utf8'));if(!alive(owner)&&Date.now()-fs.statSync(lock).mtimeMs>30000)fs.unlinkSync(lock)}catch{}await sleep(250);continue}
+  catch(e){if(e.code!=='EEXIST')throw e;if(options.try==='1'){process.exitCode=75;break}try{const owner=Number(fs.readFileSync(lock,'utf8'));if(!alive(owner)&&Date.now()-fs.statSync(lock).mtimeMs>30000)fs.unlinkSync(lock)}catch{}await sleep(250);continue}
   try{
    let usedMemory=0,usedCpu=0;
    for(const file of fs.readdirSync(root).filter(x=>x.endsWith('.json'))){const path=root+'/'+file,r=JSON.parse(fs.readFileSync(path));if(!alive(r.pid)&&!alive(r.child||-1)){fs.unlinkSync(path);continue}usedMemory+=r.memory;usedCpu+=r.cpu}
    if(usedMemory+memory<=memoryBudget&&usedCpu+cpu<=cpuBudget){writeLease({pid:process.pid,memory,cpu,command:args.slice(split+1)});claimed=true}
   }finally{fs.closeSync(fd);fs.unlinkSync(lock)}
-  if(!claimed)await sleep(500);
+  if(!claimed){if(options.try==='1'){process.exitCode=75;break}await sleep(500)}
  }
  if(stopping)process.exitCode=143;
- else{
+ else if(claimed){
   child=spawn(args[split+1],args.slice(split+2),{stdio:'inherit'});
   writeLease({pid:process.pid,child:child.pid,memory,cpu,command:args.slice(split+1)});
   const result=await new Promise((resolve,reject)=>{child.on('error',reject);child.on('exit',(code,signal)=>resolve({code,signal}))});

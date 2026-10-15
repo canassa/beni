@@ -166,8 +166,8 @@
     "mode": "partial",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 3888,
-    "last_brotli": 279185,
+    "last_n": 4256,
+    "last_brotli": 305974,
     "compiler_limited": false
   },
   {
@@ -211,8 +211,8 @@
     "mode": "tea",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 1152,
-    "last_brotli": 141710,
+    "last_n": 1728,
+    "last_brotli": 209495,
     "compiler_limited": false
   },
   {
@@ -229,8 +229,8 @@
     "mode": "vanilla",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 1152,
-    "last_brotli": 6979,
+    "last_n": 1728,
+    "last_brotli": 10011,
     "compiler_limited": false
   },
   {
@@ -247,8 +247,8 @@
     "mode": "static",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 1152,
-    "last_brotli": 61223,
+    "last_n": 1728,
+    "last_brotli": 91103,
     "compiler_limited": false
   },
   {
@@ -256,8 +256,8 @@
     "mode": "local",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 1152,
-    "last_brotli": 57349,
+    "last_n": 1728,
+    "last_brotli": 84480,
     "compiler_limited": false
   },
   {
@@ -265,8 +265,8 @@
     "mode": "cells",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 1152,
-    "last_brotli": 68368,
+    "last_n": 1728,
+    "last_brotli": 101572,
     "compiler_limited": false
   },
   {
@@ -292,8 +292,8 @@
     "mode": "vanilla",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 2592,
-    "last_brotli": 14218,
+    "last_n": 3888,
+    "last_brotli": 20844,
     "compiler_limited": false
   },
   {
@@ -301,8 +301,8 @@
     "mode": "partial",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 2592,
-    "last_brotli": 159010,
+    "last_n": 3888,
+    "last_brotli": 238841,
     "compiler_limited": false
   },
   {
@@ -310,8 +310,8 @@
     "mode": "static",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 2592,
-    "last_brotli": 154345,
+    "last_n": 3888,
+    "last_brotli": 229686,
     "compiler_limited": false
   },
   {
@@ -319,8 +319,8 @@
     "mode": "local",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 2592,
-    "last_brotli": 118315,
+    "last_n": 3888,
+    "last_brotli": 176306,
     "compiler_limited": false
   },
   {
@@ -328,8 +328,8 @@
     "mode": "cells",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 2592,
-    "last_brotli": 163542,
+    "last_n": 3888,
+    "last_brotli": 249296,
     "compiler_limited": false
   },
   {
@@ -337,8 +337,8 @@
     "mode": "tea",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 1152,
-    "last_brotli": 124781,
+    "last_n": 1728,
+    "last_brotli": 185470,
     "compiler_limited": false
   },
   {
@@ -355,8 +355,8 @@
     "mode": "vanilla",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 1152,
-    "last_brotli": 6926,
+    "last_n": 1728,
+    "last_brotli": 9948,
     "compiler_limited": false
   },
   {
@@ -364,8 +364,8 @@
     "mode": "partial",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 1152,
-    "last_brotli": 92097,
+    "last_n": 1728,
+    "last_brotli": 132884,
     "compiler_limited": false
   },
   {
@@ -373,8 +373,8 @@
     "mode": "static",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 1152,
-    "last_brotli": 87213,
+    "last_n": 1728,
+    "last_brotli": 129605,
     "compiler_limited": false
   },
   {
@@ -382,8 +382,8 @@
     "mode": "local",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 1152,
-    "last_brotli": 70169,
+    "last_n": 1728,
+    "last_brotli": 101728,
     "compiler_limited": false
   },
   {
@@ -391,8 +391,8 @@
     "mode": "cells",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 1152,
-    "last_brotli": 93265,
+    "last_n": 1728,
+    "last_brotli": 136812,
     "compiler_limited": false
   },
   {
@@ -400,8 +400,8 @@
     "mode": "tea",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 2592,
-    "last_brotli": 227224,
+    "last_n": 3888,
+    "last_brotli": 336094,
     "compiler_limited": false
   },
   {
@@ -418,8 +418,8 @@
     "mode": "vanilla",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 2592,
-    "last_brotli": 14415,
+    "last_n": 3888,
+    "last_brotli": 20976,
     "compiler_limited": false
   },
   {
@@ -427,8 +427,8 @@
     "mode": "partial",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 2592,
-    "last_brotli": 142106,
+    "last_n": 3888,
+    "last_brotli": 213237,
     "compiler_limited": false
   },
   {
@@ -436,8 +436,8 @@
     "mode": "static",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 2592,
-    "last_brotli": 106410,
+    "last_n": 3888,
+    "last_brotli": 156408,
     "compiler_limited": false
   },
   {
@@ -445,8 +445,8 @@
     "mode": "local",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 2592,
-    "last_brotli": 87761,
+    "last_n": 3888,
+    "last_brotli": 131376,
     "compiler_limited": false
   },
   {
@@ -454,8 +454,8 @@
     "mode": "cells",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 2592,
-    "last_brotli": 139991,
+    "last_n": 3888,
+    "last_brotli": 205607,
     "compiler_limited": false
   },
   {
@@ -463,8 +463,8 @@
     "mode": "tea",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 1152,
-    "last_brotli": 188291,
+    "last_n": 1728,
+    "last_brotli": 275099,
     "compiler_limited": false
   },
   {
@@ -481,8 +481,8 @@
     "mode": "vanilla",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 1152,
-    "last_brotli": 7894,
+    "last_n": 1728,
+    "last_brotli": 10856,
     "compiler_limited": false
   },
   {
@@ -490,8 +490,8 @@
     "mode": "partial",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 1152,
-    "last_brotli": 106829,
+    "last_n": 1728,
+    "last_brotli": 157036,
     "compiler_limited": false
   },
   {
@@ -499,8 +499,8 @@
     "mode": "static",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 1152,
-    "last_brotli": 74268,
+    "last_n": 1728,
+    "last_brotli": 109501,
     "compiler_limited": false
   },
   {
@@ -508,8 +508,8 @@
     "mode": "local",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 1152,
-    "last_brotli": 55088,
+    "last_n": 1728,
+    "last_brotli": 81120,
     "compiler_limited": false
   },
   {
@@ -517,8 +517,8 @@
     "mode": "cells",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 1152,
-    "last_brotli": 99749,
+    "last_n": 1728,
+    "last_brotli": 145669,
     "compiler_limited": false
   },
   {
@@ -528,7 +528,7 @@
     "crossing_brotli": null,
     "last_n": 3888,
     "last_brotli": 497705,
-    "compiler_limited": false
+    "compiler_limited": true
   },
   {
     "family": "modal",
@@ -544,8 +544,8 @@
     "mode": "vanilla",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 3888,
-    "last_brotli": 20761,
+    "last_n": 4112,
+    "last_brotli": 21902,
     "compiler_limited": false
   },
   {
@@ -553,8 +553,8 @@
     "mode": "partial",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 3888,
-    "last_brotli": 270332,
+    "last_n": 4112,
+    "last_brotli": 286156,
     "compiler_limited": false
   },
   {
@@ -562,8 +562,8 @@
     "mode": "static",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 3888,
-    "last_brotli": 208635,
+    "last_n": 4112,
+    "last_brotli": 219458,
     "compiler_limited": false
   },
   {
@@ -571,8 +571,8 @@
     "mode": "local",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 3888,
-    "last_brotli": 173129,
+    "last_n": 4112,
+    "last_brotli": 183985,
     "compiler_limited": false
   },
   {
@@ -580,8 +580,8 @@
     "mode": "cells",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 3888,
-    "last_brotli": 282416,
+    "last_n": 4112,
+    "last_brotli": 299691,
     "compiler_limited": false
   },
   {
@@ -650,10 +650,10 @@
   {
     "family": "summary",
     "mode": "tea",
-    "crossing_n": null,
-    "crossing_brotli": null,
-    "last_n": 2592,
-    "last_brotli": 431030,
+    "crossing_n": 3168,
+    "crossing_brotli": 517173,
+    "last_n": 3168,
+    "last_brotli": 517173,
     "compiler_limited": false
   },
   {
@@ -670,8 +670,8 @@
     "mode": "vanilla",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 2592,
-    "last_brotli": 15335,
+    "last_n": 3168,
+    "last_brotli": 18209,
     "compiler_limited": false
   },
   {
@@ -679,8 +679,8 @@
     "mode": "partial",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 2592,
-    "last_brotli": 242207,
+    "last_n": 3168,
+    "last_brotli": 294092,
     "compiler_limited": false
   },
   {
@@ -688,8 +688,8 @@
     "mode": "static",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 2592,
-    "last_brotli": 176704,
+    "last_n": 3168,
+    "last_brotli": 215100,
     "compiler_limited": false
   },
   {
@@ -697,8 +697,8 @@
     "mode": "local",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 2592,
-    "last_brotli": 132975,
+    "last_n": 3168,
+    "last_brotli": 162141,
     "compiler_limited": false
   },
   {
@@ -706,8 +706,8 @@
     "mode": "cells",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 2592,
-    "last_brotli": 223850,
+    "last_n": 3168,
+    "last_brotli": 273398,
     "compiler_limited": false
   }
 ]

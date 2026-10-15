@@ -1,7 +1,7 @@
 {
-  "updated": "2026-10-15T23:16:18.325Z",
-  "observations": 798,
-  "native_builds": 184,
+  "updated": "2026-10-15T23:29:46.182Z",
+  "observations": 838,
+  "native_builds": 188,
   "crossings": [
     {
       "family": "filter",
@@ -74,6 +74,12 @@
       "mode": "vanilla",
       "n": 100352,
       "brotli": 525739
+    },
+    {
+      "family": "summary",
+      "mode": "tea",
+      "n": 3168,
+      "brotli": 517173
     }
   ],
   "compiler_limited": [
@@ -136,6 +142,11 @@
       "family": "modal",
       "mode": "direct",
       "n": 1728
+    },
+    {
+      "family": "modal",
+      "mode": "tea",
+      "n": 4112
     }
   ]
 }

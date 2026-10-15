@@ -1,7 +1,7 @@
 {
-  "verified_at": "2026-10-15T23:14:35.360Z",
-  "observations": 317,
-  "native_builds": 73,
+  "verified_at": "2026-10-15T23:29:47.601Z",
+  "observations": 329,
+  "native_builds": 75,
   "scope": "Compiler and minified JavaScript SHA-256 and raw length with source-map URL trailers removed, disjoint raw byte accounting, and source spec identity. No size fits or compression results are recomputed; no project suites.",
   "crossings": [
     {
@@ -61,6 +61,11 @@
       "family": "cluster",
       "mode": "direct",
       "n": 1728
+    },
+    {
+      "family": "nested",
+      "mode": "tea",
+      "n": 3888
     }
   ]
 }
