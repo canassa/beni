@@ -2445,14 +2445,18 @@ application build (`Input.schemaGuarded`). `S.schema` is the fourth member, `roo
   - A program that builds dynamic schemas pays for the compiled machinery beside the interpreter:
     +115 to +700 release, for example `SchemaDirections` +675. Its primitives are compiled
     schemas, so `parseWith`'s `Compiled` arm survives in it.
-- **Speed.** A declaration's workers and its `S.parse`/`S.print` are the code they were.
-  `compiledProblem` skips the argument checks for a root with no argument (`null`), so
-  `bench/schema-libraries`' declaration rows run the same JavaScript. An interleaved A/B on a host
-  at load 12–19 moved those cells by ±10% both ways and showed no trend. The path `Http` takes is
-  `Schema.parseWith (X.schema ⊤)` and `Schema.printWith`, which were the library and are now the
-  workers. On that path the same harness measured 7–65% faster on every cell except the two
-  unknown-key decodes, which stayed level: for example flat decode 2 167 → 1 514 ns and typeahead
-  encode 11 864 → 4 197 ns.
+- **Speed** (`bench/schema-libraries`' rows, as `quick.mjs` children, alternating the two builds
+  ten times; the median of each cell's per-child medians; Node 24; `taskset -c 23`; load 6–8). A
+  declaration's workers and its `S.parse`/`S.print` are the code they were. `compiledProblem`
+  skips the argument checks for a root with no argument (`null`), so the declaration rows run the
+  same JavaScript, and the release `failAt` is the same text. Every cell of those rows was within
+  ±3%, except flat `unknown_key` (+9%) and `missing_key` (+54%). On a rerun of `flat` alone, 16
+  alternations, every flat cell was 1–6% faster, `missing_key` included (1 680 → 1 578 ns). The
+  path `Http` takes is `Schema.parseWith (X.schema ⊤)` and `Schema.printWith`, which were the
+  library and are now the workers. On that path the same harness measured 10–64% faster on every
+  cell except three: the two unknown-key decodes stayed level, and flat `missing_key` was the same
+  outlier as above. Examples: flat encode 2 731 → 1 300 ns, list decode 1 707 → 1 046 µs,
+  typeahead encode 14 071 → 5 106 ns.
 - **A defect on the way, fixed.** A release build writes a function called from one place where
   it is called (`backend.md` §9). It did this to `belowBackward` once `backwardWorker` became its
   one caller. A `--library` build then exported a name that its file never declared. This
