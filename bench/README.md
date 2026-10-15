@@ -31,7 +31,7 @@ orders twice after one warm-up triple:
 |---|---:|---:|---:|---:|
 | Annotated 63k-line field file | 50.44 | 76.03 | 65.21 | **42.3%** |
 | Unannotated 63k-line field file | 49.38 | 153.05 | 152.95 | **~0%** |
-| Generated 100k corpus | 68.32 | 70.85 | 70.18 | 26.4% arithmetic; noisy |
+| Generated 100k corpus | 68.32 | 70.85 | 70.18 | noisy |
 
 Recovery is `(master − PR) / (master − before)`. The known-record fix still
 leaves 57.7% of the added checking cost, and the PR is 29.3% slower than before
@@ -39,7 +39,7 @@ leaves 57.7% of the added checking cost, and the PR is 29.3% slower than before
 cannot establish a precise recovery fraction.
 
 The unannotated file proves that deferred receivers remain expensive: all 60,000
-reads still allocate both rows. The LLVM ReleaseSafe profile puts 55.4% of its
+reads still allocate both rows. The LLVM ReleaseSafe profile, scaled to 504k lines, puts 55.4% of its
 checker samples in rank adjustment, including 22.7% in the safety invariant
 check. This is mainly dependency traversal and boundary bookkeeping, not just
 row allocation. Known-record reads also still generate method arrows and effect

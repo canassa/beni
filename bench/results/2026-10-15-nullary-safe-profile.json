@@ -30,5 +30,16 @@
       "check.Effects.run": 20,
       "check.Walk.assertProved": 29
     }
+  },
+  "timing_size_cross_check": {
+    "input": "unannotated 1000 functions / 63000 lines",
+    "method": "same native profiler binary; sample at 1 ms up to 1 s or process exit; small counts are qualitative",
+    "inclusive_samples": {
+      "check.Module.check": 99,
+      "check.Generalize.adjustRanks": 46,
+      "check.Generalize.assertOwnedWithin": 20,
+      "check.Decide.attach": 5,
+      "check.Decide.drain": 17
+    }
   }
 }
