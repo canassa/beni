@@ -1203,6 +1203,15 @@ pub const Builder = struct {
             for (SchemaGraph.root_guards) |pick| {
                 const target = schemaNode(ref, pick[0]);
                 const guard = b.coreSchemaDecl(pick[1]) orelse {
+                    // A guard `core/Schema` does not declare is a rename
+                    // `root_guards` missed: the edge below stays sound, but
+                    // every root would keep every member, so a checked
+                    // build says so rather than lose the elimination quietly.
+                    if (std.debug.runtime_safety and b.in.interner != null and
+                        b.in.graph.lookup(.core, InternPool.WellKnown.Schema.symbol()) != null)
+                    {
+                        std.debug.panic("SchemaGraph.root_guards names `{s}`, which core/Schema does not declare", .{pick[1]});
+                    }
                     try out.append(b.scratch, .{ .node = target });
                     continue;
                 };
