@@ -1,0 +1,65 @@
+{
+  "solid": {
+    "repository": "https://github.com/solidjs/solid-realworld.git",
+    "commit": "f6e77ecd652bf32f0dc9238f291313fd1af7e98b",
+    "output": "public",
+    "editedFiles": [
+      "src/pages/Article/Article.js",
+      "src/components/ArticleList.js"
+    ],
+    "adjustments": [
+      {
+        "file": "src/pages/Article/Article.js",
+        "before": "import marked from \"marked\";",
+        "after": ""
+      },
+      {
+        "file": "src/pages/Article/Article.js",
+        "before": "<div innerHTML={article() && marked(article()?.body, { sanitize: true })} />",
+        "after": "<div>{article() && article().body.split(\"\\n\\n\").map(para => <p>{para}</p>)}</div>"
+      },
+      {
+        "file": "src/components/ArticleList.js",
+        "before": "article.favorited ? unmakeFavorite(slug) : makeFavorite(slug);",
+        "after": "article.favorited ? unmakeFavorite(article.slug) : makeFavorite(article.slug);"
+      }
+    ]
+  },
+  "vanilla": {
+    "repository": "https://github.com/gothinkster/web-components-realworld-example-app.git",
+    "commit": "8408c72d1d62c4d67416b1d6b28d1deb6c521af9",
+    "output": "dist",
+    "editedFiles": [
+      "app/index.js",
+      "webpack.config.prod.js",
+      "app/pages/article-preview.comp.js"
+    ],
+    "adjustments": [
+      {
+        "file": "app/index.js",
+        "before": "import \"@webcomponents/webcomponentsjs/webcomponents-lite\";",
+        "after": ""
+      },
+      {
+        "file": "webpack.config.prod.js",
+        "before": "entry: ['whatwg-fetch', './app/index.js']",
+        "after": "entry: ['./app/index.js']"
+      },
+      {
+        "file": "webpack.config.prod.js",
+        "before": "presets: ['@babel/preset-env']",
+        "after": "presets: [['@babel/preset-env', {targets: {chrome: '120'}}]]"
+      },
+      {
+        "file": "app/pages/article-preview.comp.js",
+        "before": "var markdown = require(\"markdown\").markdown;",
+        "after": ""
+      },
+      {
+        "file": "app/pages/article-preview.comp.js",
+        "before": "this.$articleBody.innerHTML = markdown.toHTML(this.article.body);",
+        "after": "this.$articleBody.replaceChildren(...this.article.body.split(\"\\n\\n\").map(text => { const p = document.createElement(\"p\"); p.textContent = text; return p; }));"
+      }
+    ]
+  }
+}

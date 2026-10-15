@@ -1,0 +1,113 @@
+{
+  "date": "2026-10-15T12:49:41.201Z",
+  "commit": "2c4e2aee0a5be57606da36ee7c667ca46c6de427",
+  "node": "v24.19.0",
+  "compilerSha256": "0edebc3b8afe3ac2da91f443a8b41fa01d7952ad58586c267cb69372e3fa59ee",
+  "references": {
+    "solid": {
+      "repository": "https://github.com/solidjs/solid-realworld.git",
+      "commit": "f6e77ecd652bf32f0dc9238f291313fd1af7e98b",
+      "output": "public",
+      "editedFiles": [
+        "src/pages/Article/Article.js",
+        "src/components/ArticleList.js"
+      ],
+      "adjustments": [
+        {
+          "file": "src/pages/Article/Article.js",
+          "before": "import marked from \"marked\";",
+          "after": ""
+        },
+        {
+          "file": "src/pages/Article/Article.js",
+          "before": "<div innerHTML={article() && marked(article()?.body, { sanitize: true })} />",
+          "after": "<div>{article() && article().body.split(\"\\n\\n\").map(para => <p>{para}</p>)}</div>"
+        },
+        {
+          "file": "src/components/ArticleList.js",
+          "before": "article.favorited ? unmakeFavorite(slug) : makeFavorite(slug);",
+          "after": "article.favorited ? unmakeFavorite(article.slug) : makeFavorite(article.slug);"
+        }
+      ]
+    },
+    "vanilla": {
+      "repository": "https://github.com/gothinkster/web-components-realworld-example-app.git",
+      "commit": "8408c72d1d62c4d67416b1d6b28d1deb6c521af9",
+      "output": "dist",
+      "editedFiles": [
+        "app/index.js",
+        "webpack.config.prod.js",
+        "app/pages/article-preview.comp.js"
+      ],
+      "adjustments": [
+        {
+          "file": "app/index.js",
+          "before": "import \"@webcomponents/webcomponentsjs/webcomponents-lite\";",
+          "after": ""
+        },
+        {
+          "file": "webpack.config.prod.js",
+          "before": "entry: ['whatwg-fetch', './app/index.js']",
+          "after": "entry: ['./app/index.js']"
+        },
+        {
+          "file": "webpack.config.prod.js",
+          "before": "presets: ['@babel/preset-env']",
+          "after": "presets: [['@babel/preset-env', {targets: {chrome: '120'}}]]"
+        },
+        {
+          "file": "app/pages/article-preview.comp.js",
+          "before": "var markdown = require(\"markdown\").markdown;",
+          "after": ""
+        },
+        {
+          "file": "app/pages/article-preview.comp.js",
+          "before": "this.$articleBody.innerHTML = markdown.toHTML(this.article.body);",
+          "after": "this.$articleBody.replaceChildren(...this.article.body.split(\"\\n\\n\").map(text => { const p = document.createElement(\"p\"); p.textContent = text; return p; }));"
+        }
+      ]
+    }
+  },
+  "subjects": {
+    "solid-stock": [
+      "Article-b4cff4df.js",
+      "ArticleList-b28d2f61.js",
+      "Auth-2cf6a37c.js",
+      "Editor-ffe0814e.js",
+      "Home-5fb94a3a.js",
+      "ListErrors-084f6649.js",
+      "Profile-f07d7d5d.js",
+      "Settings-884d2bf1.js",
+      "index.js"
+    ],
+    "solid-paragraphs": [
+      "Article-7c2fc8a0.js",
+      "ArticleList-f84ec163.js",
+      "Auth-f59f1987.js",
+      "Editor-21c6d20b.js",
+      "Home-c0e72259.js",
+      "ListErrors-d8ff7f5d.js",
+      "Profile-f1080556.js",
+      "Settings-7525edd4.js",
+      "index.js"
+    ],
+    "solid-paragraphs-single": [
+      "index.js"
+    ],
+    "vanilla-stock": [
+      "1.bundle.js",
+      "2.bundle.js",
+      "bundle.js"
+    ],
+    "vanilla-paragraphs": [
+      "1.bundle.js",
+      "bundle.js"
+    ],
+    "beni-tea": [
+      "_main.mjs"
+    ],
+    "beni-direct": [
+      "_main.mjs"
+    ]
+  }
+}

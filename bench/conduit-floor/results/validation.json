@@ -1,0 +1,19 @@
+{
+  "host": "Apple M2 Pro, Darwin arm64",
+  "node": "v24.19.0",
+  "npm": "11.17.0",
+  "zorg": "0.17.1+zorg.1",
+  "sourceBase": "2c4e2aee0a5be57606da36ee7c667ca46c6de427",
+  "command": "zorg build test test-blackbox fmt-check beni-fmt-check",
+  "result": {
+    "passed": 1329,
+    "skipped": 15,
+    "failed": 2,
+    "reason": "Two previously documented macOS case-folding failures in build_test; instruction-budget gate owed on supported x86-64 Linux."
+  },
+  "scriptSyntax": "Four new scripts pass node --check",
+  "archivedFilesVerifiedAgainstBuild": 26,
+  "compilerCorePlatformAppDiff": "",
+  "referenceSmoke": "20 Chrome cells: startup succeeds; stock Solid favorite throws undefined slug; adjusted favorites request API successfully; limited probe, not full conformance.",
+  "compilerSha256Verified": true
+}
