@@ -115,9 +115,10 @@ const Reach = @This();
 /// reached when a surviving body builds one, and what a guarded edge waits
 /// on (`backend.md` §9, *A `case` arm on a constructor nothing builds*). It
 /// emits nothing and has no edges of its own.
-/// `schema` is one of a schema declaration's three members (`SchemaGraph.Member`),
-/// by `decl * Member.count + member`: its description, its decoding worker
-/// and its encoding worker, each reached by its own uses (`schema.md` §6).
+/// `schema` is one of a schema declaration's members (`SchemaGraph.Member`),
+/// by `decl * Member.count + member`: its description, its root value, its
+/// root wrappers and one worker set per operation, each reached by its own
+/// uses (`schema.md` §6).
 pub const Kind = enum(u8) { decl, derived, twin, ctor, schema };
 
 /// One node of the graph: a declaration of a module, or one of its derived
@@ -386,10 +387,11 @@ pub const Input = struct {
             const bir = in.birOf(m);
             for (bir.interface) |index| {
                 const d = bir.decl(index);
-                // A `pub schema` exports all three of its members.
+                // A `pub schema` exports every member another program can
+                // name (`SchemaGraph.Member.exported`).
                 if (d.kind == .schema) {
-                    inline for (0..SchemaGraph.Member.count) |k| {
-                        try out.append(scratch, schemaNode(.{ .module = m, .decl = index.int() }, @fromBackingInt(@intCast(k))));
+                    for (SchemaGraph.Member.exported) |member| {
+                        try out.append(scratch, schemaNode(.{ .module = m, .decl = index.int() }, member));
                     }
                     continue;
                 }
@@ -1153,10 +1155,10 @@ pub const Builder = struct {
         };
     }
 
-    /// The schema members declaration `d` names: `S.schema` the
-    /// description, `S.parse` and `S.parseWith` the decoding worker,
-    /// `S.print` and `S.printWith` the encoding one — guarded where they
-    /// stand, like any reference.
+    /// The schema members declaration `d` names: `S.schema` the root,
+    /// `S.parse` and `S.parseWith` the decoding wrappers, `S.print` and
+    /// `S.printWith` the encoding ones — guarded where they stand, like any
+    /// reference.
     fn memberUses(b: *Builder, m: Graph.Index, bir: *const Bir, d: Bir.Decl, guards: *const Guards, out: *std.ArrayList(Target)) Allocator.Error!void {
         const start = @min(d.inst_start.int(), bir.insts.len);
         const end = @min(d.inst_end.int(), bir.insts.len);
@@ -1176,8 +1178,8 @@ pub const Builder = struct {
             } else continue;
             const member: SchemaGraph.Member = switch (kind) {
                 .schema => .root,
-                .parse, .parse_with => .read,
-                .print, .print_with => .write,
+                .parse, .parse_with => .parse,
+                .print, .print_with => .print,
                 .type, .encoded => continue,
             };
             try out.append(b.scratch, .{ .node = schemaNode(ref, member), .chain = guards.at(@intCast(p)) });
@@ -1223,7 +1225,11 @@ pub const Builder = struct {
                 try out.append(b.scratch, .{ .node = target, .chain = chain });
             }
         }
-        if (member != .root and (member == .description or !b.in.schema_library) and try sg.hasVia(b.scratch, ref)) {
+        // The `via`s: what the description and every worker set call, and
+        // under `--schema-library`, where no worker is written, only the
+        // description.
+        const calls_vias = member == .description or (member.op() != null and !b.in.schema_library);
+        if (calls_vias and try sg.hasVia(b.scratch, ref)) {
             try out.append(b.scratch, .{ .node = .{ .module = m, .kind = .decl, .index = decl } });
         }
         var targets: std.ArrayList(struct { SchemaGraph.Ref, SchemaGraph.Member }) = .empty;

@@ -18,7 +18,7 @@ Err encoding Type InvalidValue /age expected a safe integer
 Err encoding Encoded PrintFailed /h JSON has no number for NaN or an infinity
 Err encoding Type InvalidValue /weight expected a finite number
 Err encoding Type InvalidValue /age expected a safe integer <- 9007199254740992 | encoding Encoded PrintFailed /h JSON has no number for NaN or an infinity <- <encoding Encoded PrintFailed / the value holds NaN or an infinity, which JSON has no number for> | encoding Type InvalidValue /weight expected a finite number <- <encoding Encoded PrintFailed / the value holds NaN or an infinity, which JSON has no number for>
--- the description, through the library
+-- decode, write and read
 Ok Di
 Ok {"name":"Di","best":true}
 Ok Ed

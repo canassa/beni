@@ -27,34 +27,147 @@ interfaces: []const Interface,
 provenance: []const Interface.Provenance,
 interner: *const InternPool.Global,
 
-/// The four nodes one declaration emits besides its `via`s, and their
-/// order in a module's member table (`Reach`'s `schema` kind is
-/// `decl * members + member`). `root` is `S.schema`'s value, a compiled
-/// schema (`schema.md` §6, *A statically known schema runs compiled*): it
-/// reaches the other three only through guards, the description on
-/// `core/Schema`'s `nodeOf`, each direction on a `core/Schema` value that
-/// runs a compiled schema's worker of that direction (`root_guards`).
-pub const Member = enum(u2) {
+/// The nodes one declaration emits besides its `via`s, and their order in
+/// a module's member table (`Reach`'s `schema` kind is
+/// `decl * members + member`):
+/// - `description`, `$$description`;
+/// - one worker set per operation a compiled schema runs (`schema.md` §6,
+///   *Every runner of a statically known schema is compiled*): `read` and
+///   `write`, the `parse` and `print` workers (`$$read`, `$$write`, named
+///   before the other four existed), and `decode`, `encode`, `read_value`
+///   and `write_value`, the workers of `Schema.decode`, `encode`, `read`
+///   and `write`;
+/// - `root`, `S.schema`'s value, a compiled schema. It reaches the
+///   description and each worker set only through guards: the description
+///   on `core/Schema`'s `nodeOf`, a worker set on a `core/Schema` value that
+///   runs a compiled schema's worker of that operation (`root_guards`);
+/// - `parse` and `print`, the root wrappers `S.parse`/`S.parseWith` and
+///   `S.print`/`S.printWith`, which only those members reach, so a build
+///   that runs `S.schema` alone ships none of them.
+pub const Member = enum(u4) {
     description = 0,
     read = 1,
     write = 2,
     root = 3,
+    parse = 4,
+    print = 5,
+    decode = 6,
+    encode = 7,
+    read_value = 8,
+    write_value = 9,
 
-    pub const count = 4;
+    pub const count = 10;
+
+    /// The members a `pub schema` exports from a `--library` build: what
+    /// another program can name. The other four worker sets are reached
+    /// only through a root's guards.
+    pub const exported = [_]Member{ .description, .read, .write, .root, .parse, .print };
+
+    /// The worker set of operation `op`.
+    pub fn worker(o: Op) Member {
+        return switch (o) {
+            .parse => .read,
+            .print => .write,
+            .decode => .decode,
+            .encode => .encode,
+            .read => .read_value,
+            .write => .write_value,
+        };
+    }
+
+    /// The operation whose worker set this member is, if it is one.
+    pub fn op(m: Member) ?Op {
+        return switch (m) {
+            .read => .parse,
+            .write => .print,
+            .decode => .decode,
+            .encode => .encode,
+            .read_value => .read,
+            .write_value => .write,
+            .description, .root, .parse, .print => null,
+        };
+    }
+};
+
+/// An operation a compiled schema runs (`core/Schema`'s `parseMode` …
+/// `writeMode`; `declared` takes the last four in this order). Its ends:
+/// whether it decodes (Encoded to Type), whether its input and its output
+/// are host values, and whether the host value is JSON's (`parse` reads
+/// what `JSON.parse` made, `print` writes what `JSON.stringify` takes).
+pub const Op = enum(u3) {
+    parse = 0,
+    print = 1,
+    decode = 2,
+    encode = 3,
+    read = 4,
+    write = 5,
+
+    pub fn decoding(o: Op) bool {
+        return switch (o) {
+            .parse, .decode, .read => true,
+            .print, .encode, .write => false,
+        };
+    }
+
+    pub fn hostIn(o: Op) bool {
+        return o == .parse or o == .read;
+    }
+
+    pub fn hostOut(o: Op) bool {
+        return o == .print or o == .write;
+    }
+
+    pub fn json(o: Op) bool {
+        return o == .parse or o == .print;
+    }
+
+    /// The core-private value that makes a schema argument this
+    /// operation's slot.
+    pub fn slot(o: Op) []const u8 {
+        return switch (o) {
+            .parse => "readSlot",
+            .print => "writeSlot",
+            .decode => "decodeSlot",
+            .encode => "encodeSlot",
+            .read => "readValueSlot",
+            .write => "writeValueSlot",
+        };
+    }
+
+    /// The suffix of its workers' names: `$$read`, `$$read$7`.
+    pub fn workerSuffix(o: Op) []const u8 {
+        return switch (o) {
+            .parse => "read",
+            .print => "write",
+            .decode => "decode",
+            .encode => "encode",
+            .read => "readValue",
+            .write => "writeValue",
+        };
+    }
 };
 
 /// The `core/Schema` declarations whose survival lets a root reach each of
 /// the other members, any one of them enough: `nodeOf`, the one reader of
-/// a compiled schema's description; `parseWith` and `readSlot`, which run
-/// a compiled schema's decoding worker; `printWith` and `writeSlot`, its
-/// encoding one. Every other value that touches a worker — `list`,
-/// `nullable`, `converted` — only passes it on to one of these.
+/// a compiled schema's description; for each operation, its runner
+/// (`parseWith` …) and its slot maker (`readSlot` …), which run a compiled
+/// schema's worker of that operation. Every other value that touches a
+/// worker — `list`, `nullable`, `converted` — only passes it on to one of
+/// these.
 pub const root_guards = [_]struct { Member, []const u8 }{
     .{ .description, "nodeOf" },
     .{ .read, "parseWith" },
     .{ .read, "readSlot" },
     .{ .write, "printWith" },
     .{ .write, "writeSlot" },
+    .{ .decode, "decodeWith" },
+    .{ .decode, "decodeSlot" },
+    .{ .encode, "encodeWith" },
+    .{ .encode, "encodeSlot" },
+    .{ .read_value, "readWith" },
+    .{ .read_value, "readValueSlot" },
+    .{ .write_value, "writeWith" },
+    .{ .write_value, "writeValueSlot" },
 };
 
 /// A schema declaration of some module.
@@ -63,9 +176,11 @@ pub const Ref = struct { module: Graph.Index, decl: u32 };
 /// `core/Schema`'s core-private values the specialised path calls: in no
 /// interface, exported by `core/Schema` when they survive.
 pub const compiled_values = [_][]const u8{
-    "compiledParse", "compiledPrint", "compiledFail", "compiledForward", "compiledBackward",
-    "belowBackward", "readSlot",      "writeSlot",    "pathAt",          "printableWithin",
-    "declared",
+    "compiledParse",   "compiledPrint",  "compiledFail",    "compiledForward",   "compiledBackward",
+    "belowBackward",   "readSlot",       "writeSlot",       "pathAt",            "printableWithin",
+    "declared",        "decodeSlot",     "encodeSlot",      "readValueSlot",     "writeValueSlot",
+    "box",             "describedOf",    "describedList",   "describedNullable", "describedConverted",
+    "describedRecord", "describedField", "describedTagged", "describedVariant",  "describedRecursive",
 };
 
 pub fn isCompiledValue(text: []const u8) bool {
@@ -84,10 +199,13 @@ pub fn coreNeeds(g: SchemaGraph, scratch: Allocator, r: Ref, member: Member, lib
     try subtree(plan, scratch, d.root, &nodes);
     const params = d.params_end - d.params_start;
     switch (member) {
-        // Under `--schema-library` the root is its description.
-        .root => if (!library) try out.append(scratch, "declared"),
+        // Under `--schema-library` the root is its description, boxed.
+        .root => try out.append(scratch, if (library) "box" else "declared"),
         .description => {
-            if (try g.recursive(scratch, r.module, r.decl)) try out.append(scratch, "recursive");
+            // `describedOf` makes a primitive's node, and a generic root's
+            // description of each argument's node.
+            try out.append(scratch, "describedOf");
+            if (try g.recursive(scratch, r.module, r.decl)) try out.append(scratch, "describedRecursive");
             for (nodes.items) |n| switch (tag(plan, n)) {
                 .primitive => try out.append(scratch, switch (std.enums.fromInt(SchemaPlan.Primitive, lhs(plan, n)) orelse .value) {
                     .string => "string",
@@ -98,56 +216,59 @@ pub fn coreNeeds(g: SchemaGraph, scratch: Allocator, r: Ref, member: Member, lib
                     .null => "null",
                     .value => "value",
                 }),
-                .list => try out.append(scratch, "list"),
-                .nullable => try out.append(scratch, "nullable"),
-                .conversion => try out.append(scratch, "converted"),
-                .record => {
-                    try out.appendSlice(scratch, &.{ "record", "fields", "mapping" });
-                    for (fields(plan, n)) |f| {
-                        try out.append(scratch, if (f.optional) "optional" else "field");
-                        const name = g.interner.slice(symbol(plan, f.name));
-                        if (!std.mem.eql(u8, name, literal(plan, f.external))) try out.append(scratch, "key");
-                    }
-                },
-                .tagged => {
-                    try out.appendSlice(scratch, &.{ "tagged", "injection" });
-                    for (variants(plan, n)) |vi| {
-                        if (vi >= plan.variants.len) continue;
-                        try out.append(scratch, if (plan.variants[vi].payload == .none) "nullary" else "variant");
-                    }
-                },
+                .list => try out.append(scratch, "describedList"),
+                .nullable => try out.append(scratch, "describedNullable"),
+                .conversion => try out.append(scratch, "describedConverted"),
+                .record => try out.appendSlice(scratch, &.{ "describedRecord", "describedField" }),
+                .tagged => try out.appendSlice(scratch, &.{ "describedTagged", "describedVariant" }),
                 .parameter, .reference, .check, .annotation => {},
             };
         },
-        .read, .write => {
+        // The root wrappers: `S.parse`/`S.parseWith`, `S.print`/`S.printWith`.
+        .parse, .print => {
             try out.append(scratch, "defaultOptions");
             if (library) {
-                try out.append(scratch, if (member == .read) "parseWith" else "printWith");
+                try out.append(scratch, if (member == .parse) "parseWith" else "printWith");
                 return;
             }
-            try out.appendSlice(scratch, &.{ if (member == .read) "compiledParse" else "compiledPrint", "compiledFail", "pathAt" });
-            if (params != 0) try out.append(scratch, if (member == .read) "readSlot" else "writeSlot");
+            try out.append(scratch, if (member == .parse) "compiledParse" else "compiledPrint");
+            if (params != 0) try out.append(scratch, if (member == .parse) "readSlot" else "writeSlot");
+        },
+        .read, .write, .decode, .encode, .read_value, .write_value => {
+            // Under `--schema-library` no worker is written.
+            if (library) return;
+            const op = member.op().?;
+            try out.appendSlice(scratch, &.{ "compiledFail", "pathAt" });
+            // A generic declaration's root closes this operation's worker
+            // over its arguments' slots, once this worker set survives.
+            if (params != 0) try out.append(scratch, op.slot());
             for (nodes.items) |n| switch (tag(plan, n)) {
-                .conversion => if (member == .read) {
+                .conversion => if (op.decoding()) {
                     try out.append(scratch, "compiledForward");
                 } else {
                     try out.appendSlice(scratch, &.{ "compiledBackward", "belowBackward" });
                 },
-                .primitive => if (member == .write and lhs(plan, n) == @backingInt(SchemaPlan.Primitive.value)) try out.append(scratch, "printableWithin"),
+                .primitive => if (op == .print and lhs(plan, n) == @backingInt(SchemaPlan.Primitive.value)) try out.append(scratch, "printableWithin"),
                 else => {},
             };
         },
     }
 }
 
-/// The schema declarations member `member` of `r` reaches directly: the
-/// same member of every definition its value references. Under
-/// `--schema-library` a direction reaches the description instead.
+/// The schema members member `member` of `r` reaches directly: a root
+/// wrapper its own worker set, and a worker set or the description the same
+/// member of every definition its value references. Under
+/// `--schema-library` a root wrapper reaches the root, the boxed description, and a
+/// worker set nothing, since none is written.
 pub fn memberTargets(g: SchemaGraph, scratch: Allocator, r: Ref, member: Member, library: bool, out: *std.ArrayList(struct { Ref, Member })) Allocator.Error!void {
-    if (member == .root) return;
-    if (member != .description and library) {
-        try out.append(scratch, .{ r, .description });
-        return;
+    switch (member) {
+        .root => return,
+        .parse, .print => {
+            try out.append(scratch, .{ r, if (library) .root else if (member == .parse) .read else .write });
+            return;
+        },
+        .description => {},
+        .read, .write, .decode, .encode, .read_value, .write_value => if (library) return,
     }
     const d = g.definition(r.module, r.decl) orelse return;
     const plan = g.planOf(r.module);

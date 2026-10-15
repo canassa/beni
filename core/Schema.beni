@@ -296,8 +296,8 @@ type alias VariantNode =
 
 
 -- A recursive schema's definition. `state` is 0 unbuilt, 1 building and 2
--- built; the function that builds the body is given a schema of this very
--- cell, so a reference is resolved by identity.
+-- built; the function that builds the body is given the reference to this
+-- very cell, a node, so a reference is resolved by identity.
 type alias Cell =
     name : String
     build : Js.Value
@@ -328,8 +328,8 @@ type Engine
     | Compiled Workers
 
 
--- A compiled schema: what it was made of (`Made`); a declaration's decoding
--- and encoding workers, `null` where the build calls none, and `null` for
+-- A compiled schema: what it was made of (`Made`); a declaration's `parse`
+-- and `print` workers, `null` where the build calls none, and `null` for
 -- every other maker, whose workers `parserOf` and `printerOf` make when one
 -- runs; and the `Interpreted` schemas its workers run through the library —
 -- a generic declaration's arguments — a host array in the order its value
@@ -343,9 +343,10 @@ type alias Workers =
 
 -- What a compiled schema was made of: what `nodeOf` builds its node from
 -- and `parserOf` and `printerOf` its workers. A declaration's is a function
--- of no argument that answers its description.
+-- of no argument that answers its description, and its workers of the
+-- operations other than `parse` and `print`, a host array (`declared`).
 type Made
-    = MadeDeclared Js.Value
+    = MadeDeclared Js.Value Js.Value
     | MadePrimitive PrimitiveKind
     | MadeList Workers
     | MadeNullable Workers
@@ -461,13 +462,15 @@ compiled origin parsing printing args =
 
 -- A `schema` declaration's `schema` (`schema.md` §6, *A statically known
 -- schema runs compiled*): a function of no argument answering its
--- description, its decoding and encoding workers — each `null` where the
--- build calls none — and the schema arguments its value reaches, `null`
--- for a nongeneric one. Called by the code a declaration compiles to, never
--- by a program.
-declared : Js.Value, Js.Value, Js.Value, Js.Value → Schema e a
-declared description parsing printing args =
-    compiled (MadeDeclared description) parsing printing (interpretedIn args)
+-- description, its `parse` and `print` workers, the schema arguments its
+-- value reaches — `null` for a nongeneric one — and its other workers, a
+-- host array of the `decode`, `encode`, `read` and `write` ones. A worker
+-- the build runs none of is `null`, the array's trailing ones are left out,
+-- and the array is `null` when it would hold none. Called by the code a
+-- declaration compiles to, never by a program.
+declared : Js.Value, Js.Value, Js.Value, Js.Value, Js.Value → Schema e a
+declared description parsing printing args others =
+    compiled (MadeDeclared description others) parsing printing (interpretedIn args)
 
 
 -- The `Interpreted` schemas among `args` and behind its compiled ones, in
@@ -518,13 +521,13 @@ nodeOf s =
 
 
 -- A compiled schema's node, for an operation that needs one: `describe`,
--- `decode`, `flip`, a builder given it as a child. A declaration's is its
--- description's.
+-- `flip`, a builder given it as a child. A declaration's is its
+-- description, which is a node.
 madeNode : Made → Node
 madeNode origin =
     case origin of
-        MadeDeclared description →
-            nodeOf (fromHost (Js.apply description []))
+        MadeDeclared description _ →
+            fromHost (Js.apply description [])
 
         MadePrimitive p →
             NPrim p
@@ -537,6 +540,73 @@ madeNode origin =
 
         MadeConverted source p →
             NConverted (madeNode source.made) p.there p.back
+
+
+-- ---- A declaration's description ------------------------------------------
+-- What the code of a declaration's `$$description` calls (`schema.md` §6,
+-- *What `describe` ships*): the node each builder would box, made directly.
+-- The checker has already refused every construction failure a builder
+-- tests for, so none is tested here, and no node is boxed: a build that
+-- describes declarations, or hands one to `flip` or a builder, does not on
+-- that account build an `Interpreted` schema. None of these is `pub`.
+
+-- A schema's node: a primitive's, or a schema argument's.
+describedOf : Schema e a → Node
+describedOf s = nodeOf s
+
+
+describedList : Node → Node
+describedList child = NList child
+
+
+describedNullable : Node → Node
+describedNullable child = NNullable child
+
+
+describedConverted : Node, Conversion b a → Node
+describedConverted source c =
+    p : Pair
+    p = cast c
+    NConverted source p.there p.back
+
+
+-- A record: its fields, a host array of `describedField`s, and the mapping
+-- from a product to the record and back, which both endpoints share.
+describedRecord : Js.Value, Js.Value, Js.Value → Node
+describedRecord fs to from = NRecord fs { toE = to, fromE = from, toA = to, fromA = from }
+
+
+describedField : String, String, Bool, Node → Js.Value
+describedField name external isOptional n =
+    toHost (fieldNode name external (name ≠ external) isOptional n)
+
+
+-- A tagged union: its discriminator and its variants, a host array of
+-- `describedVariant`s.
+describedTagged : String, Js.Value → Node
+describedTagged discriminator vs = NTagged discriminator vs
+
+
+-- A variant: its payload's node, or `null` for a nullary one, and the
+-- injection both endpoints share.
+describedVariant : String, String, Js.Value, Js.Value, Js.Value → Js.Value
+describedVariant name tag payload inject project =
+    v : VariantNode
+    v =
+        { name = name
+        , tag = tag
+        , payload = if Js.isNull payload then Nothing else Just (fromHost payload)
+        , injE = pair inject project
+        , injA = pair inject project
+        , problem = Nothing
+        }
+    toHost v
+
+
+-- A declaration in a reference cycle: `build` is given the reference to it
+-- and answers its body (`recursive`).
+describedRecursive : String, Js.Value → Node
+describedRecursive name build = NRef (cellOf name build)
 
 
 -- The two sides of a schema.
@@ -675,13 +745,13 @@ nullable child =
             box (NNullable (nodeOf child))
 
 
--- A compiled schema's decoding worker. A declaration's is its own; the
+-- A compiled schema's `parse` worker. A declaration's is its own; the
 -- others' are made here, when a root or a slot is about to run one, so a
 -- build that only composes and describes schemas keeps none of them.
 parserOf : Workers → Js.Value
 parserOf w =
     case w.made of
-        MadeDeclared _ →
+        MadeDeclared _ _ →
             w.parse
 
         MadePrimitive p →
@@ -697,11 +767,11 @@ parserOf w =
             forwardWorker (parserOf source) (cast p)
 
 
--- A compiled schema's encoding worker, as `parserOf`.
+-- A compiled schema's `print` worker, as `parserOf`.
 printerOf : Workers → Js.Value
 printerOf w =
     case w.made of
-        MadeDeclared _ →
+        MadeDeclared _ _ →
             w.print
 
         MadePrimitive p →
@@ -715,6 +785,72 @@ printerOf w =
 
         MadeConverted source p →
             backwardWorker (printerOf source) (cast p)
+
+
+-- The operations a compiled schema runs besides `parse` and `print`, by
+-- their place in a declaration's array of the other workers (`declared`).
+-- `decode` and `read` decode, from the Encoded endpoint to the Type, and
+-- `encode` and `write` encode. A declaration's worker is specialised to its
+-- operation's two ends (`schema.md` §6, *Every runner of a statically known
+-- schema is compiled*); the workers core makes for its own makers read the
+-- ends from the context and serve every operation.
+decodeMode : Int
+decodeMode = 0
+
+
+encodeMode : Int
+encodeMode = 1
+
+
+readMode : Int
+readMode = 2
+
+
+writeMode : Int
+writeMode = 3
+
+
+-- A compiled schema's worker of decoding operation `mode`, as `parserOf`
+-- makes its `parse` worker. Not `parserOf` with one more argument: that
+-- would cost every program that only parses and prints its inlined
+-- `parserOf`.
+parserIn : Workers, Int → Js.Value
+parserIn w mode =
+    case w.made of
+        MadeDeclared _ others →
+            Js.at others mode
+
+        MadePrimitive p →
+            primitiveWorker p
+
+        MadeList child →
+            listWorker (parserIn child mode)
+
+        MadeNullable child →
+            nullableWorker (parserIn child mode)
+
+        MadeConverted source p →
+            forwardWorker (parserIn source mode) (cast p)
+
+
+-- A compiled schema's worker of encoding operation `mode`.
+printerIn : Workers, Int → Js.Value
+printerIn w mode =
+    case w.made of
+        MadeDeclared _ others →
+            Js.at others mode
+
+        MadePrimitive p →
+            primitiveWorker p
+
+        MadeList child →
+            listWorker (printerIn child mode)
+
+        MadeNullable child →
+            nullableWorker (printerIn child mode)
+
+        MadeConverted source p →
+            backwardWorker (printerIn source mode) (cast p)
 
 
 -- `prim`, in either direction: the context says which.
@@ -1142,7 +1278,15 @@ issueAt path message =
 --| built with one name are still two.
 pub recursive : String, sync (Schema e a → Schema e a) → Schema e a
 recursive name body =
-    box (NRef { name = name, build = toHost body, state = Js.ref 0, body = Js.ref Nothing })
+    built : Node → Node
+    built self = nodeOf (body (box self))
+    box (NRef (cellOf name (toHost built)))
+
+
+-- A recursive schema's definition, unbuilt: `build` is given the reference
+-- to it, a node, and answers its body's node.
+cellOf : String, Js.Value → Cell
+cellOf name build = { name = name, build = build, state = Js.ref 0, body = Js.ref Nothing }
 
 
 -- A reference's body, built the first time it is needed; `Nothing` while it
@@ -1158,9 +1302,8 @@ resolve cell =
 
         _ →
             Js.write cell.state 1
-            built : Schema Js.Value Js.Value
-            built = fromHost (Js.apply cell.build [ toHost (box (NRef cell)) ])
-            n = nodeOf built
+            n : Node
+            n = fromHost (Js.apply cell.build [ toHost (NRef cell) ])
             Js.write cell.body (Just n)
             Js.write cell.state 2
             Just n
@@ -2254,7 +2397,22 @@ decode schema input = decodeWith schema defaultOptions input
 
 --| `decode` with options.
 pub decodeWith : Schema e a, Options, e → Result (List Issue) a
-decodeWith s o v = runRoot s o Decoding encodedSide False typeSide False (toHost v)
+decodeWith s o v =
+    case (boxOf s).engine of
+        Compiled w →
+            compiledRun
+                o
+                w.args
+                (parserIn w decodeMode)
+                Decoding
+                encodedSide
+                False
+                typeSide
+                False
+                (toHost v)
+
+        Interpreted →
+            runRoot s o Decoding encodedSide False typeSide False (toHost v)
 
 
 --| A Type value converted to the Encoded.
@@ -2264,7 +2422,22 @@ encode schema input = encodeWith schema defaultOptions input
 
 --| `encode` with options.
 pub encodeWith : Schema e a, Options, a → Result (List Issue) e
-encodeWith s o v = runRoot s o Encoding typeSide False encodedSide False (toHost v)
+encodeWith s o v =
+    case (boxOf s).engine of
+        Compiled w →
+            compiledRun
+                o
+                w.args
+                (printerIn w encodeMode)
+                Encoding
+                typeSide
+                False
+                encodedSide
+                False
+                (toHost v)
+
+        Interpreted →
+            runRoot s o Encoding typeSide False encodedSide False (toHost v)
 
 
 --| A host value read as the Encoded endpoint's external form, to the Type.
@@ -2274,7 +2447,22 @@ read schema input = readWith schema defaultOptions input
 
 --| `read` with options.
 pub readWith : Schema e a, Options, Value → Result (List Issue) a
-readWith s o v = runRoot s o Decoding encodedSide True typeSide False (toHost v)
+readWith s o v =
+    case (boxOf s).engine of
+        Compiled w →
+            compiledRun
+                o
+                w.args
+                (parserIn w readMode)
+                Decoding
+                encodedSide
+                True
+                typeSide
+                False
+                (toHost v)
+
+        Interpreted →
+            runRoot s o Decoding encodedSide True typeSide False (toHost v)
 
 
 --| A Type value written as the Encoded endpoint's external form.
@@ -2284,7 +2472,22 @@ write schema input = writeWith schema defaultOptions input
 
 --| `write` with options.
 pub writeWith : Schema e a, Options, a → Result (List Issue) Value
-writeWith s o v = runRoot s o Encoding typeSide False encodedSide True (toHost v)
+writeWith s o v =
+    case (boxOf s).engine of
+        Compiled w →
+            compiledRun
+                o
+                w.args
+                (printerIn w writeMode)
+                Encoding
+                typeSide
+                False
+                encodedSide
+                True
+                (toHost v)
+
+        Interpreted →
+            runRoot s o Encoding typeSide False encodedSide True (toHost v)
 
 
 --| JSON text read to the Type.
@@ -2413,11 +2616,63 @@ compiledPrint o args worker v =
                 Ok (stringOf (Js.call (Js.global "JSON") "stringify" [ x ]))
 
 
+-- A compiled `decodeWith`, `encodeWith`, `readWith` or `writeWith`: the
+-- root's checks, the context of `runRoot`'s operation — `src` and `dst` its
+-- endpoints, `sh` and `dh` whether each is a host value — then `worker`,
+-- which is specialised to those ends.
+compiledRun :
+      Options
+    , Js.Value
+    , Js.Value
+    , Direction
+    , Int
+    , Bool
+    , Int
+    , Bool
+    , Js.Value
+    → Result (List Issue) b
+compiledRun o args worker dir src sh dst dh v =
+    case
+        if sh || dh then
+            compiledProblem o dir src args
+        else
+            typedProblem o dir src args
+    of
+        Just issues →
+            Err issues
+
+        Nothing →
+            c = context o dir src sh dst dh False
+            finish c (Js.apply worker [ toHost c, Js.from 0, atRoot, Js.null, Js.null, v ])
+
+
+-- `compiledProblem` for `decode` and `encode`, which read and write no host
+-- value, so that `rootProblem` checks no external form for them: the
+-- options, then each schema argument's construction failure.
+typedProblem : Options, Direction, Int, Js.Value → Maybe (List Issue)
+typedProblem o dir src args =
+    case optionsProblem o dir src of
+        Just issues →
+            Just issues
+
+        Nothing →
+            if Js.isNull args then
+                Nothing
+            else
+                dynamic = interpretedIn args
+                case argumentProblem dynamic 0 (lengthOf dynamic) of
+                    Just problem →
+                        Just (rootIssue dir (endpointOf src) InvalidSchema problem)
+
+                    Nothing →
+                        Nothing
+
+
 -- `rootProblem`, for a declaration whose own nodes cannot fail to be built
 -- or hide an external form: the options, then each schema argument's
 -- construction failure, then an argument whose host end has no external
--- form. `parse` reads a host value and `print` writes one, and either way
--- the host end is the Encoded endpoint.
+-- form. `parse` and `read` read a host value, `print` and `write` write one,
+-- and either way the host end is the Encoded endpoint.
 compiledProblem : Options, Direction, Int, Js.Value → Maybe (List Issue)
 compiledProblem o dir src args =
     case optionsProblem o dir src of
@@ -2480,8 +2735,10 @@ argumentOpaque args i n =
                 opaqueAt (analyse s) encodedSide || argumentOpaque args (i + 1) n
 
 
--- A schema argument as a decoding worker: the library engine, on the
--- context the specialised parent made.
+-- A schema argument as a `parse` worker: its own compiled worker, or the
+-- library engine on the context the specialised parent made. One slot
+-- maker per operation, so that a build which runs one operation keeps no
+-- other's workers (`SchemaGraph.root_guards`).
 readSlot : Schema e a → Js.Value
 readSlot s =
     case (boxOf s).engine of
@@ -2489,14 +2746,10 @@ readSlot s =
             parserOf w
 
         Interpreted →
-            n = nodeOf s
-            slot : Context, Int, Path, Js.Value, Js.Value, Js.Value → Js.Value
-            slot c depth parent input output v =
-                run c n depth (pathAt parent input output) NoneActive v
-            toHost slot
+            interpretedSlot s
 
 
--- A schema argument as an encoding worker: the library engine writes the
+-- A schema argument as a `print` worker: the library engine writes the
 -- host value, as an encoding worker does.
 writeSlot : Schema e a → Js.Value
 writeSlot s =
@@ -2505,11 +2758,61 @@ writeSlot s =
             printerOf w
 
         Interpreted →
-            n = nodeOf s
-            slot : Context, Int, Path, Js.Value, Js.Value, Js.Value → Js.Value
-            slot c depth parent input output v =
-                run c n depth (pathAt parent input output) NoneActive v
-            toHost slot
+            interpretedSlot s
+
+
+-- A schema argument as a `decode` worker.
+decodeSlot : Schema e a → Js.Value
+decodeSlot s =
+    case (boxOf s).engine of
+        Compiled w →
+            parserIn w decodeMode
+
+        Interpreted →
+            interpretedSlot s
+
+
+-- A schema argument as an `encode` worker.
+encodeSlot : Schema e a → Js.Value
+encodeSlot s =
+    case (boxOf s).engine of
+        Compiled w →
+            printerIn w encodeMode
+
+        Interpreted →
+            interpretedSlot s
+
+
+-- A schema argument as a `read` worker.
+readValueSlot : Schema e a → Js.Value
+readValueSlot s =
+    case (boxOf s).engine of
+        Compiled w →
+            parserIn w readMode
+
+        Interpreted →
+            interpretedSlot s
+
+
+-- A schema argument as a `write` worker.
+writeValueSlot : Schema e a → Js.Value
+writeValueSlot s =
+    case (boxOf s).engine of
+        Compiled w →
+            printerIn w writeMode
+
+        Interpreted →
+            interpretedSlot s
+
+
+-- The library engine as a worker of any operation: `run` reads the ends
+-- from the context.
+interpretedSlot : Schema e a → Js.Value
+interpretedSlot s =
+    n = nodeOf s
+    slot : Context, Int, Path, Js.Value, Js.Value, Js.Value → Js.Value
+    slot c depth parent input output v = run c n depth (pathAt parent input output) NoneActive v
+    toHost slot
 
 
 -- An issue with code `code`, its number in `IssueCode`'s declaration order,
