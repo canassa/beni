@@ -27,3 +27,8 @@ The `2026-10-15-rebased-*` files are the final post-review batch on master
 first 2026-10-15 batch for the final PR measurements; both batches are retained.
 Master's hardware-budget gate now refuses this macOS host; research 95 §7
 separates the local native/LLVM suites from the still-owed Linux budget gate.
+
+The [2026-10-15 profile archive](2026-10-15-profiles/README.md) and
+[research 97](../../../docs/design/research/97-conduit-dispatch-profiles.md)
+retain Chrome CPU/heap profiles, code and compressed-byte attribution,
+shared-code before/after measurements and the full report-87 sweeps.

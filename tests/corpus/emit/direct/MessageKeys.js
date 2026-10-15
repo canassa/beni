@@ -110,11 +110,14 @@ const MessageKeys$main = Tea$sandbox(($root$1, $t$2) => {
       $hClicked$32();
       return;
     }
-    if ($msg$53.$ === "Nested" && $msg$53.a.$ === "A") {
-      $hNested$A$36($msg$53);
-      return;
+    if ($msg$53.$ === "Nested") {
+      if ($msg$53.a.$ === "A") {
+        $hNested$A$36($msg$53);
+        return;
+      }
     }
     $hNested$B$40($msg$53);
+    return;
   };
   {
     const $l$43 = ($e$41) => {

@@ -56,7 +56,7 @@ import { execSync, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { loadavg } from "node:os";
+import { cpus, loadavg } from "node:os";
 import * as depth from "./apps/scaling/depth.mjs";
 import * as derived from "./apps/scaling/derived.mjs";
 import * as filtered from "./apps/scaling/filtered.mjs";
@@ -446,6 +446,10 @@ const analyseOne = (events) => {
   return { ...r, gc: unionMs(events, isGc, r.tsStart, r.tsEnd), gcEvents: events.filter((e) => isGc(e) && e.ph === "X" && +e.ts >= r.tsStart && +e.ts <= r.tsEnd).length };
 };
 
+// A missing stylesheet silently changes layout and invalidates the comparison.
+for (const file of ["currentStyle.css", "main.css", "bootstrap/dist/css/bootstrap.min.css"]) {
+  if (!existsSync(join(root, "out/css", file))) throw new Error("Run node build.mjs first: missing benchmark stylesheet " + file);
+}
 const browser = await launch({ chrome: arg("chrome", undefined), taskset: arg("taskset", null) });
 const allSubjects = [...programs.entries()].flatMap(([dir, { sweep }]) => subjectsOf(sweep, dir));
 const { server, origin } = await serve(allSubjects);
@@ -457,7 +461,7 @@ const result = {
   beni: spawnSync(beniExe, ["version"], { encoding: "utf8" }).stdout.trim(),
   commit: git("rev-parse HEAD"),
   dirty: git("status --porcelain") !== "",
-  cpu: execSync("grep -m1 'model name' /proc/cpuinfo").toString().split(":")[1].trim(),
+  cpu: cpus()[0].model,
   taskset: arg("taskset", null),
   throttle: THROTTLE,
   settings,

@@ -1,0 +1,4095 @@
+{
+  "date": "2026-10-15T08:56:20.630Z",
+  "node": "v24.19.0",
+  "compilerSha256": "c605026b529c7e80611cb70dadcb148c9e29897b87c6ab586d05a6c1e0417f40",
+  "compilerBaseCommit": "b8e375be392ab854aac2d93a3a70103cc3ba29d9",
+  "bytes": [
+    {
+      "platform": "browser-tea",
+      "release": false,
+      "raw": 428763,
+      "brotli11": 68879
+    },
+    {
+      "platform": "browser-tea",
+      "release": true,
+      "raw": 125961,
+      "brotli11": 31389
+    },
+    {
+      "platform": "browser-direct",
+      "release": false,
+      "raw": 663546,
+      "brotli11": 84852
+    },
+    {
+      "platform": "browser-direct",
+      "release": true,
+      "raw": 209384,
+      "brotli11": 37768
+    }
+  ],
+  "scripts": [
+    {
+      "script": "Reader",
+      "dispatches": 18,
+      "patchAll": 2,
+      "rows": [
+        {
+          "handler": "$hGotLoginMsg$EnteredEmail$212",
+          "groups": [
+            "Login.mjs:141:3"
+          ],
+          "actualGroups": [
+            [
+              [
+                "10:101"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "8:552"
+              ],
+              false,
+              false,
+              false
+            ]
+          ],
+          "work": {
+            "templatePatch": 2,
+            "templateCapture": 4,
+            "templateSelect": 2,
+            "templateSelectNew": 2,
+            "templateSameInputs": 2
+          },
+          "patchAll": 0,
+          "predictedGroups": 2,
+          "visitedGroups": 2,
+          "comparisonGroups": 1
+        },
+        {
+          "handler": "$hGotLoginMsg$EnteredPassword$220",
+          "groups": [
+            "Login.mjs:168:5"
+          ],
+          "actualGroups": [
+            [
+              [
+                "10:101"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "8:601"
+              ],
+              false,
+              false,
+              false
+            ]
+          ],
+          "work": {
+            "templatePatch": 2,
+            "templateCapture": 4,
+            "templateSelect": 2,
+            "templateSelectNew": 2,
+            "templateSameInputs": 2
+          },
+          "patchAll": 0,
+          "predictedGroups": 2,
+          "visitedGroups": 2,
+          "comparisonGroups": 1
+        },
+        {
+          "handler": "$hGotLoginMsg$SubmittedForm$204",
+          "groups": [],
+          "actualGroups": [
+            [
+              [
+                "10:101"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "8:503"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "$producer/8:672"
+              ],
+              false,
+              false,
+              false
+            ]
+          ],
+          "work": {
+            "templatePatch": 3,
+            "templateCapture": 7,
+            "templateSelect": 3,
+            "templateSelectNew": 3,
+            "templateSameInputs": 3
+          },
+          "patchAll": 0,
+          "predictedGroups": 3,
+          "visitedGroups": 3,
+          "comparisonGroups": 0
+        },
+        {
+          "handler": "$hGotLoginMsg$CompletedLogin$Ok$236",
+          "groups": [
+            "Page.mjs:29:0",
+            "Page.mjs:49:1",
+            "Page.mjs:68:2",
+            "Page.mjs:29:0",
+            "Page.mjs:49:1",
+            "Page.mjs:68:2",
+            "Page.mjs:29:0",
+            "Page.mjs:49:1",
+            "Page.mjs:68:2",
+            "Page.mjs:167:1",
+            "Page.mjs:186:2",
+            "Author.mjs:16:0",
+            "Author.mjs:29:1"
+          ],
+          "actualGroups": [
+            [
+              [
+                "10:95"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:183"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:101"
+              ],
+              false,
+              false,
+              false
+            ]
+          ],
+          "work": {
+            "templatePatch": 8,
+            "templateCapture": 22,
+            "templateSelect": 8,
+            "templateSelectNew": 8,
+            "templateSameInputs": 8
+          },
+          "patchAll": 0,
+          "predictedGroups": 3,
+          "visitedGroups": 3,
+          "comparisonGroups": 13
+        },
+        {
+          "handler": "$hChangedUrl$100",
+          "groups": [
+            "Page.mjs:29:0",
+            "Page.mjs:29:0",
+            "Page.mjs:29:0",
+            "Page.mjs:29:0",
+            "Page.mjs:167:1",
+            "Page.mjs:186:2",
+            "Author.mjs:29:1"
+          ],
+          "actualGroups": [
+            [
+              [
+                "10:95"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:173"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:357"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:183"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:198",
+                "10:208",
+                "10:285"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:357"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:357"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:357"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:220"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:253",
+                "10:273"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:264"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "3:365"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:101"
+              ],
+              false,
+              false,
+              false
+            ]
+          ],
+          "work": {
+            "templatePatch": 9,
+            "templateCapture": 31,
+            "templateSelect": 9,
+            "templateSelectNew": 9,
+            "templateSameInputs": 9
+          },
+          "patchAll": 1,
+          "predictedGroups": 13,
+          "visitedGroups": 13,
+          "comparisonGroups": 7
+        },
+        {
+          "handler": "$hGotHomeMsg$CompletedFeedLoad$Ok$332",
+          "groups": [
+            "Feed.mjs:475:0",
+            "Feed.mjs:491:1",
+            "Feed.mjs:512:2",
+            "Feed.mjs:475:0",
+            "Feed.mjs:491:1",
+            "Feed.mjs:512:2"
+          ],
+          "actualGroups": [
+            [
+              [
+                "10:101"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "7:617"
+              ],
+              false,
+              false,
+              false
+            ]
+          ],
+          "work": {
+            "templatePatch": 7,
+            "templateCapture": 21,
+            "templateSelect": 7,
+            "templateSelectNew": 6,
+            "templateSameInputs": 7
+          },
+          "patchAll": 0,
+          "predictedGroups": 2,
+          "visitedGroups": 2,
+          "comparisonGroups": 6
+        },
+        {
+          "handler": "$hGotHomeMsg$CompletedTagsLoad$Ok$348",
+          "groups": [
+            "Home.mjs:26:0",
+            "Home.mjs:42:1",
+            "Home.mjs:26:0",
+            "Home.mjs:42:1"
+          ],
+          "actualGroups": [
+            [
+              [
+                "10:101"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "7:707"
+              ],
+              false,
+              false,
+              false
+            ]
+          ],
+          "work": {
+            "templatePatch": 5,
+            "templateCapture": 9,
+            "templateSelect": 5,
+            "templateSelectNew": 4,
+            "templateSameInputs": 5
+          },
+          "patchAll": 0,
+          "predictedGroups": 2,
+          "visitedGroups": 2,
+          "comparisonGroups": 4
+        },
+        {
+          "handler": "$hGotHomeMsg$ClickedTab$316",
+          "groups": [
+            "Feed.mjs:475:0",
+            "Feed.mjs:491:1",
+            "Feed.mjs:512:2",
+            "Feed.mjs:475:0",
+            "Feed.mjs:491:1",
+            "Feed.mjs:512:2"
+          ],
+          "actualGroups": [
+            [
+              [
+                "10:101"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "7:617"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "7:634"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "$producer/6:717"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "6:751"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "6:788"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "6:751"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "6:788"
+              ],
+              false,
+              false,
+              false
+            ]
+          ],
+          "work": {
+            "templatePatch": 6,
+            "templateCapture": 12,
+            "templateSelect": 6,
+            "templateSelectNew": 5,
+            "templateSameInputs": 6
+          },
+          "patchAll": 0,
+          "predictedGroups": 8,
+          "visitedGroups": 8,
+          "comparisonGroups": 6
+        },
+        {
+          "handler": "$hGotHomeMsg$CompletedFeedLoad$Ok$332",
+          "groups": [
+            "Feed.mjs:475:0",
+            "Feed.mjs:491:1",
+            "Feed.mjs:512:2",
+            "Feed.mjs:475:0",
+            "Feed.mjs:491:1",
+            "Feed.mjs:512:2",
+            "Author.mjs:16:0",
+            "Author.mjs:29:1",
+            "Author.mjs:61:0",
+            "Article.mjs:19:0",
+            "Article.mjs:245:0",
+            "Article.mjs:262:1",
+            "Article.mjs:276:2",
+            "Article.mjs:315:0",
+            "Feed.mjs:21:0",
+            "Feed.mjs:33:1",
+            "Article.mjs:109:0"
+          ],
+          "actualGroups": [
+            [
+              [
+                "10:101"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "7:617"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "7:634"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "$producer/6:717"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "6:751"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "6:788"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "6:751"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "6:788"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "7:642",
+                "7:651"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "6:282"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "6:289"
+              ],
+              false,
+              false,
+              false
+            ]
+          ],
+          "work": {
+            "templatePatch": 17,
+            "templateCapture": 45,
+            "templateSelect": 17,
+            "templateSelectNew": 10,
+            "templateSameInputs": 17
+          },
+          "patchAll": 0,
+          "predictedGroups": 11,
+          "visitedGroups": 11,
+          "comparisonGroups": 17
+        },
+        {
+          "handler": "$hClickedLink$Internal$84",
+          "groups": [],
+          "actualGroups": [],
+          "work": {
+            "templatePatch": 1,
+            "templateCapture": 2,
+            "templateSelect": 1,
+            "templateSelectNew": 1,
+            "templateSameInputs": 1
+          },
+          "patchAll": 0,
+          "predictedGroups": 0,
+          "visitedGroups": 0,
+          "comparisonGroups": 0
+        },
+        {
+          "handler": "$hChangedUrl$100",
+          "groups": [
+            "Page.mjs:29:0",
+            "Page.mjs:29:0",
+            "Page.mjs:29:0",
+            "Page.mjs:29:0",
+            "Page.mjs:167:1",
+            "Page.mjs:186:2",
+            "Author.mjs:29:1"
+          ],
+          "actualGroups": [
+            [
+              [
+                "10:95"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:173"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:357"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:183"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:198",
+                "10:208",
+                "10:285"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:357"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:357"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:357"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:220"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:253",
+                "10:273"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:264"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "3:365"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:101"
+              ],
+              false,
+              false,
+              false
+            ]
+          ],
+          "work": {
+            "templatePatch": 8,
+            "templateCapture": 24,
+            "templateSelect": 8,
+            "templateSelectNew": 0,
+            "templateSameInputs": 8
+          },
+          "patchAll": 1,
+          "predictedGroups": 13,
+          "visitedGroups": 13,
+          "comparisonGroups": 7
+        },
+        {
+          "handler": "$hGotArticleMsg$CompletedLoadArticle$Ok$572",
+          "groups": [
+            "ArticlePage.mjs:800:0",
+            "Author.mjs:16:0",
+            "Author.mjs:29:1",
+            "Author.mjs:61:0",
+            "Article.mjs:19:0",
+            "Author.mjs:158:0",
+            "Author.mjs:171:1",
+            "Article.mjs:245:0",
+            "Article.mjs:262:1",
+            "Article.mjs:276:2",
+            "Author.mjs:16:0",
+            "Author.mjs:29:1",
+            "Author.mjs:61:0",
+            "Article.mjs:19:0",
+            "Author.mjs:158:0",
+            "Author.mjs:171:1",
+            "Article.mjs:245:0",
+            "Article.mjs:262:1",
+            "Article.mjs:276:2",
+            "Article.mjs:45:0",
+            "Article.mjs:45:0",
+            "Article.mjs:109:0"
+          ],
+          "actualGroups": [
+            [
+              [
+                "10:101"
+              ],
+              false,
+              false,
+              false
+            ]
+          ],
+          "work": {
+            "templatePatch": 21,
+            "templateCapture": 59,
+            "templateSelect": 21,
+            "templateSelectNew": 20,
+            "templateSameInputs": 21
+          },
+          "patchAll": 0,
+          "predictedGroups": 1,
+          "visitedGroups": 1,
+          "comparisonGroups": 22
+        },
+        {
+          "handler": "$hGotArticleMsg$CompletedLoadComments$Ok$588",
+          "groups": [
+            "ArticlePage.mjs:332:0",
+            "ArticlePage.mjs:352:1",
+            "ArticlePage.mjs:367:2",
+            "Author.mjs:16:0",
+            "Author.mjs:29:1"
+          ],
+          "actualGroups": [
+            [
+              [
+                "10:101"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "2:1123"
+              ],
+              false,
+              false,
+              false
+            ]
+          ],
+          "work": {
+            "templatePatch": 5,
+            "templateCapture": 13,
+            "templateSelect": 5,
+            "templateSelectNew": 5,
+            "templateSameInputs": 5
+          },
+          "patchAll": 0,
+          "predictedGroups": 2,
+          "visitedGroups": 2,
+          "comparisonGroups": 5
+        },
+        {
+          "handler": "$hGotArticleMsg$ClickedFavorite$556",
+          "groups": [],
+          "actualGroups": [],
+          "work": {
+            "templatePatch": 1,
+            "templateCapture": 2,
+            "templateSelect": 1,
+            "templateSelectNew": 1,
+            "templateSameInputs": 1
+          },
+          "patchAll": 0,
+          "predictedGroups": 0,
+          "visitedGroups": 0,
+          "comparisonGroups": 0
+        },
+        {
+          "handler": "$hGotArticleMsg$CompletedFavoriteChange$Ok$604",
+          "groups": [
+            "ArticlePage.mjs:800:0",
+            "Author.mjs:29:1",
+            "Author.mjs:61:0",
+            "Article.mjs:19:0",
+            "Author.mjs:158:0",
+            "Author.mjs:171:1",
+            "Article.mjs:174:0",
+            "Article.mjs:191:1",
+            "Article.mjs:205:2",
+            "Author.mjs:29:1",
+            "Author.mjs:61:0",
+            "Article.mjs:19:0",
+            "Author.mjs:158:0",
+            "Author.mjs:171:1",
+            "Article.mjs:174:0",
+            "Article.mjs:191:1",
+            "Article.mjs:205:2"
+          ],
+          "actualGroups": [
+            [
+              [
+                "10:101"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "2:1008"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "2:1016",
+                "2:1096"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "2:1223",
+                "2:1233",
+                "2:1253"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "3:365"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "3:393",
+                "3:403"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "2:1259"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "1:749"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "2:1269"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "2:1409"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "3:500"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "2:1431"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "2:1223",
+                "2:1233",
+                "2:1253"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "3:365"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "3:393",
+                "3:403"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "2:1259"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "1:749"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "2:1269"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "2:1409"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "3:500"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "2:1431"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "2:1064"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "$producer/1:775"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "2:1070"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "$producer/1:833"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "2:1123"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "2:1479"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "$producer/2:1488"
+              ],
+              false,
+              false,
+              false
+            ]
+          ],
+          "work": {
+            "templatePatch": 20,
+            "templateCapture": 58,
+            "templateSelect": 20,
+            "templateSelectNew": 20,
+            "templateSameInputs": 20
+          },
+          "patchAll": 0,
+          "predictedGroups": 28,
+          "visitedGroups": 28,
+          "comparisonGroups": 17
+        },
+        {
+          "handler": "$hGotArticleMsg$EnteredCommentText$652",
+          "groups": [
+            "ArticlePage.mjs:332:0",
+            "ArticlePage.mjs:352:1"
+          ],
+          "actualGroups": [
+            [
+              [
+                "10:101"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "2:1123"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "2:1479"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "2:1636"
+              ],
+              false,
+              false,
+              false
+            ]
+          ],
+          "work": {
+            "templatePatch": 4,
+            "templateCapture": 10,
+            "templateSelect": 4,
+            "templateSelectNew": 4,
+            "templateSameInputs": 4
+          },
+          "patchAll": 0,
+          "predictedGroups": 4,
+          "visitedGroups": 4,
+          "comparisonGroups": 2
+        },
+        {
+          "handler": "$hGotArticleMsg$ClickedPostComment$660",
+          "groups": [
+            "ArticlePage.mjs:332:0",
+            "ArticlePage.mjs:352:1",
+            "ArticlePage.mjs:367:2"
+          ],
+          "actualGroups": [
+            [
+              [
+                "10:101"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "2:1123"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "2:1479"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "2:1636"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "2:1641",
+                "2:1682"
+              ],
+              false,
+              false,
+              false
+            ]
+          ],
+          "work": {
+            "templatePatch": 4,
+            "templateCapture": 10,
+            "templateSelect": 4,
+            "templateSelectNew": 4,
+            "templateSameInputs": 4
+          },
+          "patchAll": 0,
+          "predictedGroups": 5,
+          "visitedGroups": 5,
+          "comparisonGroups": 3
+        },
+        {
+          "handler": "$hGotArticleMsg$CompletedPostComment$Ok$668",
+          "groups": [
+            "ArticlePage.mjs:332:0",
+            "ArticlePage.mjs:352:1",
+            "ArticlePage.mjs:367:2",
+            "ArticlePage.mjs:498:0",
+            "Author.mjs:16:0",
+            "Author.mjs:29:1",
+            "Article.mjs:19:0",
+            "ArticlePage.mjs:586:0"
+          ],
+          "actualGroups": [
+            [
+              [
+                "10:101"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "2:1123"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "2:1479"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "2:1636"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "2:1641",
+                "2:1682"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "$producer/2:1488"
+              ],
+              false,
+              false,
+              false
+            ]
+          ],
+          "work": {
+            "templatePatch": 8,
+            "templateCapture": 20,
+            "templateSelect": 8,
+            "templateSelectNew": 8,
+            "templateSameInputs": 8
+          },
+          "patchAll": 0,
+          "predictedGroups": 6,
+          "visitedGroups": 6,
+          "comparisonGroups": 8
+        }
+      ]
+    },
+    {
+      "script": "Editor",
+      "dispatches": 12,
+      "patchAll": 1,
+      "rows": [
+        {
+          "handler": "$hGotEditorMsg$CompletedArticleLoad$1$Ok$828",
+          "groups": [
+            "Editor.mjs:85:1",
+            "Editor.mjs:105:2",
+            "Editor.mjs:121:3",
+            "Editor.mjs:156:5",
+            "Editor.mjs:191:7",
+            "Editor.mjs:226:9",
+            "Editor.mjs:261:11"
+          ],
+          "actualGroups": [
+            [
+              [
+                "10:101"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "5:1030"
+              ],
+              false,
+              false,
+              false
+            ]
+          ],
+          "work": {
+            "templatePatch": 3,
+            "templateCapture": 7,
+            "templateSelect": 3,
+            "templateSelectNew": 3,
+            "templateSameInputs": 3
+          },
+          "patchAll": 0,
+          "predictedGroups": 2,
+          "visitedGroups": 2,
+          "comparisonGroups": 7
+        },
+        {
+          "handler": "$hGotEditorMsg$EnteredTitle$756",
+          "groups": [
+            "Editor.mjs:85:1",
+            "Editor.mjs:121:3"
+          ],
+          "actualGroups": [
+            [
+              [
+                "10:101"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "5:1030"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "5:1260"
+              ],
+              false,
+              false,
+              false
+            ]
+          ],
+          "work": {
+            "templatePatch": 3,
+            "templateCapture": 7,
+            "templateSelect": 3,
+            "templateSelectNew": 3,
+            "templateSameInputs": 3
+          },
+          "patchAll": 0,
+          "predictedGroups": 3,
+          "visitedGroups": 3,
+          "comparisonGroups": 2
+        },
+        {
+          "handler": "$hGotEditorMsg$ClickedSave$748",
+          "groups": [
+            "Editor.mjs:19:0",
+            "Editor.mjs:85:1",
+            "Editor.mjs:105:2",
+            "Editor.mjs:121:3",
+            "Editor.mjs:156:5",
+            "Editor.mjs:191:7",
+            "Editor.mjs:226:9",
+            "Editor.mjs:261:11"
+          ],
+          "actualGroups": [
+            [
+              [
+                "10:101"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "5:1030"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "$producer/5:1158"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "5:1227"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "5:1260"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "5:1303"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "5:1351"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "5:1394"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "5:1419"
+              ],
+              false,
+              false,
+              false
+            ]
+          ],
+          "work": {
+            "templatePatch": 4,
+            "templateCapture": 8,
+            "templateSelect": 4,
+            "templateSelectNew": 4,
+            "templateSameInputs": 4
+          },
+          "patchAll": 0,
+          "predictedGroups": 9,
+          "visitedGroups": 9,
+          "comparisonGroups": 8
+        },
+        {
+          "handler": "$hGotEditorMsg$EnteredTitle$756",
+          "groups": [
+            "Editor.mjs:85:1",
+            "Editor.mjs:121:3"
+          ],
+          "actualGroups": [
+            [
+              [
+                "10:101"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "5:1030"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "5:1260"
+              ],
+              false,
+              false,
+              false
+            ]
+          ],
+          "work": {
+            "templatePatch": 3,
+            "templateCapture": 7,
+            "templateSelect": 3,
+            "templateSelectNew": 0,
+            "templateSameInputs": 3
+          },
+          "patchAll": 0,
+          "predictedGroups": 3,
+          "visitedGroups": 3,
+          "comparisonGroups": 2
+        },
+        {
+          "handler": "$hGotEditorMsg$ClickedSave$748",
+          "groups": [
+            "Editor.mjs:85:1",
+            "Editor.mjs:105:2",
+            "Editor.mjs:121:3",
+            "Editor.mjs:156:5",
+            "Editor.mjs:191:7",
+            "Editor.mjs:226:9",
+            "Editor.mjs:261:11"
+          ],
+          "actualGroups": [
+            [
+              [
+                "10:101"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "5:1030"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "$producer/5:1158"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "5:1227"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "5:1260"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "5:1303"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "5:1351"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "5:1394"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "5:1419"
+              ],
+              false,
+              false,
+              false
+            ]
+          ],
+          "work": {
+            "templatePatch": 3,
+            "templateCapture": 7,
+            "templateSelect": 3,
+            "templateSelectNew": 0,
+            "templateSameInputs": 3
+          },
+          "patchAll": 0,
+          "predictedGroups": 9,
+          "visitedGroups": 9,
+          "comparisonGroups": 7
+        },
+        {
+          "handler": "$hGotEditorMsg$CompletedEdit$Err$812",
+          "groups": [
+            "Editor.mjs:19:0",
+            "Editor.mjs:85:1",
+            "Editor.mjs:105:2",
+            "Editor.mjs:121:3",
+            "Editor.mjs:156:5",
+            "Editor.mjs:191:7",
+            "Editor.mjs:226:9",
+            "Editor.mjs:261:11"
+          ],
+          "actualGroups": [
+            [
+              [
+                "10:101"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "5:1030"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "$producer/5:1158"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "5:1227"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "5:1260"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "5:1303"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "5:1351"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "5:1394"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "5:1419"
+              ],
+              false,
+              false,
+              false
+            ]
+          ],
+          "work": {
+            "templatePatch": 4,
+            "templateCapture": 8,
+            "templateSelect": 4,
+            "templateSelectNew": 4,
+            "templateSameInputs": 4
+          },
+          "patchAll": 0,
+          "predictedGroups": 9,
+          "visitedGroups": 9,
+          "comparisonGroups": 8
+        },
+        {
+          "handler": "$hGotEditorMsg$EnteredTitle$756",
+          "groups": [
+            "Editor.mjs:85:1",
+            "Editor.mjs:121:3"
+          ],
+          "actualGroups": [
+            [
+              [
+                "10:101"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "5:1030"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "5:1260"
+              ],
+              false,
+              false,
+              false
+            ]
+          ],
+          "work": {
+            "templatePatch": 3,
+            "templateCapture": 7,
+            "templateSelect": 3,
+            "templateSelectNew": 0,
+            "templateSameInputs": 3
+          },
+          "patchAll": 0,
+          "predictedGroups": 3,
+          "visitedGroups": 3,
+          "comparisonGroups": 2
+        },
+        {
+          "handler": "$hGotEditorMsg$ClickedSave$748",
+          "groups": [
+            "Editor.mjs:85:1",
+            "Editor.mjs:105:2",
+            "Editor.mjs:121:3",
+            "Editor.mjs:156:5",
+            "Editor.mjs:191:7",
+            "Editor.mjs:226:9",
+            "Editor.mjs:261:11"
+          ],
+          "actualGroups": [
+            [
+              [
+                "10:101"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "5:1030"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "$producer/5:1158"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "5:1227"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "5:1260"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "5:1303"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "5:1351"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "5:1394"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "5:1419"
+              ],
+              false,
+              false,
+              false
+            ]
+          ],
+          "work": {
+            "templatePatch": 3,
+            "templateCapture": 7,
+            "templateSelect": 3,
+            "templateSelectNew": 0,
+            "templateSameInputs": 3
+          },
+          "patchAll": 0,
+          "predictedGroups": 9,
+          "visitedGroups": 9,
+          "comparisonGroups": 7
+        },
+        {
+          "handler": "$hGotEditorMsg$CompletedEdit$Ok$804",
+          "groups": [],
+          "actualGroups": [],
+          "work": {
+            "templatePatch": 1,
+            "templateCapture": 2,
+            "templateSelect": 1,
+            "templateSelectNew": 1,
+            "templateSameInputs": 1
+          },
+          "patchAll": 0,
+          "predictedGroups": 0,
+          "visitedGroups": 0,
+          "comparisonGroups": 0
+        },
+        {
+          "handler": "$hChangedUrl$100",
+          "groups": [
+            "Page.mjs:29:0",
+            "Page.mjs:29:0",
+            "Page.mjs:29:0",
+            "Page.mjs:29:0",
+            "Page.mjs:167:1",
+            "Page.mjs:186:2",
+            "Author.mjs:29:1"
+          ],
+          "actualGroups": [
+            [
+              [
+                "10:95"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:173"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:357"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:183"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:198",
+                "10:208",
+                "10:285"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:357"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:357"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:357"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:220"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:253",
+                "10:273"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:264"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "3:365"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:101"
+              ],
+              false,
+              false,
+              false
+            ]
+          ],
+          "work": {
+            "templatePatch": 8,
+            "templateCapture": 24,
+            "templateSelect": 8,
+            "templateSelectNew": 8,
+            "templateSameInputs": 8
+          },
+          "patchAll": 1,
+          "predictedGroups": 13,
+          "visitedGroups": 13,
+          "comparisonGroups": 7
+        },
+        {
+          "handler": "$hGotArticleMsg$CompletedLoadArticle$Ok$572",
+          "groups": [
+            "ArticlePage.mjs:800:0",
+            "Author.mjs:16:0",
+            "Author.mjs:29:1",
+            "Author.mjs:61:0",
+            "Article.mjs:19:0",
+            "ArticlePage.mjs:28:0",
+            "ArticlePage.mjs:66:2",
+            "Author.mjs:16:0",
+            "Author.mjs:29:1",
+            "Author.mjs:61:0",
+            "Article.mjs:19:0",
+            "ArticlePage.mjs:28:0",
+            "ArticlePage.mjs:66:2",
+            "Article.mjs:45:0",
+            "Article.mjs:109:0",
+            "Article.mjs:109:0"
+          ],
+          "actualGroups": [
+            [
+              [
+                "10:101"
+              ],
+              false,
+              false,
+              false
+            ]
+          ],
+          "work": {
+            "templatePatch": 17,
+            "templateCapture": 47,
+            "templateSelect": 17,
+            "templateSelectNew": 16,
+            "templateSameInputs": 17
+          },
+          "patchAll": 0,
+          "predictedGroups": 1,
+          "visitedGroups": 1,
+          "comparisonGroups": 16
+        },
+        {
+          "handler": "$hGotArticleMsg$CompletedLoadComments$Ok$588",
+          "groups": [
+            "ArticlePage.mjs:332:0",
+            "ArticlePage.mjs:352:1",
+            "ArticlePage.mjs:367:2",
+            "Author.mjs:16:0",
+            "Author.mjs:29:1"
+          ],
+          "actualGroups": [
+            [
+              [
+                "10:101"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "2:1123"
+              ],
+              false,
+              false,
+              false
+            ]
+          ],
+          "work": {
+            "templatePatch": 5,
+            "templateCapture": 13,
+            "templateSelect": 5,
+            "templateSelectNew": 5,
+            "templateSameInputs": 5
+          },
+          "patchAll": 0,
+          "predictedGroups": 2,
+          "visitedGroups": 2,
+          "comparisonGroups": 5
+        }
+      ]
+    },
+    {
+      "script": "Tour",
+      "dispatches": 32,
+      "patchAll": 6,
+      "rows": [
+        {
+          "handler": "$hGotHomeMsg$CompletedFeedLoad$Ok$332",
+          "groups": [
+            "Feed.mjs:475:0",
+            "Feed.mjs:491:1",
+            "Feed.mjs:512:2",
+            "Feed.mjs:475:0",
+            "Feed.mjs:491:1",
+            "Feed.mjs:512:2",
+            "Feed.mjs:337:0",
+            "Feed.mjs:356:1",
+            "Feed.mjs:377:2",
+            "Feed.mjs:337:0",
+            "Feed.mjs:356:1",
+            "Feed.mjs:377:2",
+            "Feed.mjs:337:0",
+            "Feed.mjs:356:1",
+            "Feed.mjs:377:2"
+          ],
+          "actualGroups": [
+            [
+              [
+                "10:101"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "7:617"
+              ],
+              false,
+              false,
+              false
+            ]
+          ],
+          "work": {
+            "templatePatch": 11,
+            "templateCapture": 25,
+            "templateSelect": 11,
+            "templateSelectNew": 8,
+            "templateSameInputs": 11
+          },
+          "patchAll": 0,
+          "predictedGroups": 2,
+          "visitedGroups": 2,
+          "comparisonGroups": 15
+        },
+        {
+          "handler": "$hGotHomeMsg$CompletedTagsLoad$Ok$348",
+          "groups": [
+            "Home.mjs:26:0",
+            "Home.mjs:42:1",
+            "Home.mjs:26:0",
+            "Home.mjs:42:1"
+          ],
+          "actualGroups": [
+            [
+              [
+                "10:101"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "7:707"
+              ],
+              false,
+              false,
+              false
+            ]
+          ],
+          "work": {
+            "templatePatch": 5,
+            "templateCapture": 9,
+            "templateSelect": 5,
+            "templateSelectNew": 4,
+            "templateSameInputs": 5
+          },
+          "patchAll": 0,
+          "predictedGroups": 2,
+          "visitedGroups": 2,
+          "comparisonGroups": 4
+        },
+        {
+          "handler": "$hGotHomeMsg$ClickedFeedPage$324",
+          "groups": [],
+          "actualGroups": [],
+          "work": {
+            "templatePatch": 1,
+            "templateCapture": 2,
+            "templateSelect": 1,
+            "templateSelectNew": 1,
+            "templateSameInputs": 1
+          },
+          "patchAll": 0,
+          "predictedGroups": 0,
+          "visitedGroups": 0,
+          "comparisonGroups": 0
+        },
+        {
+          "handler": "$hGotHomeMsg$ClickedTag$308",
+          "groups": [
+            "Feed.mjs:475:0",
+            "Feed.mjs:491:1",
+            "Feed.mjs:512:2",
+            "Feed.mjs:475:0",
+            "Feed.mjs:491:1",
+            "Feed.mjs:512:2",
+            "Feed.mjs:475:0",
+            "Feed.mjs:491:1",
+            "Feed.mjs:512:2"
+          ],
+          "actualGroups": [
+            [
+              [
+                "10:101"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "7:617"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "7:634"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "$producer/6:717"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "6:751"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "6:788"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "6:751"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "6:788"
+              ],
+              false,
+              false,
+              false
+            ]
+          ],
+          "work": {
+            "templatePatch": 7,
+            "templateCapture": 13,
+            "templateSelect": 7,
+            "templateSelectNew": 5,
+            "templateSameInputs": 7
+          },
+          "patchAll": 0,
+          "predictedGroups": 8,
+          "visitedGroups": 8,
+          "comparisonGroups": 9
+        },
+        {
+          "handler": "$hGotHomeMsg$CompletedFeedLoad$Ok$332",
+          "groups": [
+            "Feed.mjs:475:0",
+            "Feed.mjs:491:1",
+            "Feed.mjs:512:2",
+            "Feed.mjs:475:0",
+            "Feed.mjs:491:1",
+            "Feed.mjs:512:2",
+            "Feed.mjs:475:0",
+            "Feed.mjs:491:1",
+            "Feed.mjs:512:2"
+          ],
+          "actualGroups": [
+            [
+              [
+                "10:101"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "7:617"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "7:634"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "$producer/6:717"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "6:751"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "6:788"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "6:751"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "6:788"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "6:751"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "6:788"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "7:642",
+                "7:651"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "6:282"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "6:289"
+              ],
+              false,
+              false,
+              false
+            ]
+          ],
+          "work": {
+            "templatePatch": 8,
+            "templateCapture": 22,
+            "templateSelect": 8,
+            "templateSelectNew": 0,
+            "templateSameInputs": 8
+          },
+          "patchAll": 0,
+          "predictedGroups": 13,
+          "visitedGroups": 13,
+          "comparisonGroups": 9
+        },
+        {
+          "handler": "$hClickedLink$Internal$84",
+          "groups": [],
+          "actualGroups": [],
+          "work": {
+            "templatePatch": 1,
+            "templateCapture": 2,
+            "templateSelect": 1,
+            "templateSelectNew": 1,
+            "templateSameInputs": 1
+          },
+          "patchAll": 0,
+          "predictedGroups": 0,
+          "visitedGroups": 0,
+          "comparisonGroups": 0
+        },
+        {
+          "handler": "$hChangedUrl$100",
+          "groups": [
+            "Page.mjs:29:0",
+            "Page.mjs:29:0",
+            "Page.mjs:29:0",
+            "Page.mjs:29:0",
+            "Page.mjs:167:1",
+            "Page.mjs:186:2",
+            "Author.mjs:29:1"
+          ],
+          "actualGroups": [
+            [
+              [
+                "10:95"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:173"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:357"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:183"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:198",
+                "10:208",
+                "10:285"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:357"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:357"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:357"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:220"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:253",
+                "10:273"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:264"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "3:365"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:101"
+              ],
+              false,
+              false,
+              false
+            ]
+          ],
+          "work": {
+            "templatePatch": 8,
+            "templateCapture": 24,
+            "templateSelect": 8,
+            "templateSelectNew": 8,
+            "templateSameInputs": 8
+          },
+          "patchAll": 1,
+          "predictedGroups": 13,
+          "visitedGroups": 13,
+          "comparisonGroups": 7
+        },
+        {
+          "handler": "$hGotProfileMsg$CompletedAuthorLoad$1$Ok$468",
+          "groups": [
+            "Author.mjs:16:0",
+            "Author.mjs:29:1"
+          ],
+          "actualGroups": [
+            [
+              [
+                "10:101"
+              ],
+              false,
+              false,
+              false
+            ]
+          ],
+          "work": {
+            "templatePatch": 3,
+            "templateCapture": 13,
+            "templateSelect": 3,
+            "templateSelectNew": 3,
+            "templateSameInputs": 3
+          },
+          "patchAll": 0,
+          "predictedGroups": 1,
+          "visitedGroups": 1,
+          "comparisonGroups": 2
+        },
+        {
+          "handler": "$hGotProfileMsg$CompletedFeedLoad$1$Ok$484",
+          "groups": [
+            "Feed.mjs:475:0",
+            "Feed.mjs:491:1",
+            "Feed.mjs:512:2",
+            "Feed.mjs:475:0",
+            "Feed.mjs:491:1",
+            "Feed.mjs:512:2"
+          ],
+          "actualGroups": [
+            [
+              [
+                "10:101"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "11:916"
+              ],
+              false,
+              false,
+              false
+            ]
+          ],
+          "work": {
+            "templatePatch": 7,
+            "templateCapture": 21,
+            "templateSelect": 7,
+            "templateSelectNew": 6,
+            "templateSameInputs": 7
+          },
+          "patchAll": 0,
+          "predictedGroups": 2,
+          "visitedGroups": 2,
+          "comparisonGroups": 6
+        },
+        {
+          "handler": "$hGotProfileMsg$ClickedTab$436",
+          "groups": [
+            "Feed.mjs:475:0",
+            "Feed.mjs:491:1",
+            "Feed.mjs:512:2",
+            "Feed.mjs:475:0",
+            "Feed.mjs:491:1",
+            "Feed.mjs:512:2"
+          ],
+          "actualGroups": [
+            [
+              [
+                "10:101"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "11:916"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "11:933"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "$producer/6:717"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "6:751"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "6:788"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "6:751"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "6:788"
+              ],
+              false,
+              false,
+              false
+            ]
+          ],
+          "work": {
+            "templatePatch": 6,
+            "templateCapture": 12,
+            "templateSelect": 6,
+            "templateSelectNew": 5,
+            "templateSameInputs": 6
+          },
+          "patchAll": 0,
+          "predictedGroups": 8,
+          "visitedGroups": 8,
+          "comparisonGroups": 6
+        },
+        {
+          "handler": "$hGotProfileMsg$CompletedFeedLoad$1$Ok$484",
+          "groups": [
+            "Feed.mjs:475:0",
+            "Feed.mjs:491:1",
+            "Feed.mjs:512:2",
+            "Feed.mjs:475:0",
+            "Feed.mjs:491:1",
+            "Feed.mjs:512:2"
+          ],
+          "actualGroups": [
+            [
+              [
+                "10:101"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "11:916"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "11:933"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "$producer/6:717"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "6:751"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "6:788"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "6:751"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "6:788"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "11:966",
+                "11:975"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "6:282"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "6:289"
+              ],
+              false,
+              false,
+              false
+            ]
+          ],
+          "work": {
+            "templatePatch": 7,
+            "templateCapture": 21,
+            "templateSelect": 7,
+            "templateSelectNew": 0,
+            "templateSameInputs": 7
+          },
+          "patchAll": 0,
+          "predictedGroups": 11,
+          "visitedGroups": 11,
+          "comparisonGroups": 6
+        },
+        {
+          "handler": "$hClickedLink$Internal$84",
+          "groups": [],
+          "actualGroups": [],
+          "work": {
+            "templatePatch": 1,
+            "templateCapture": 2,
+            "templateSelect": 1,
+            "templateSelectNew": 0,
+            "templateSameInputs": 1
+          },
+          "patchAll": 0,
+          "predictedGroups": 0,
+          "visitedGroups": 0,
+          "comparisonGroups": 0
+        },
+        {
+          "handler": "$hChangedUrl$100",
+          "groups": [
+            "Page.mjs:29:0",
+            "Page.mjs:29:0",
+            "Page.mjs:29:0",
+            "Page.mjs:29:0",
+            "Page.mjs:167:1",
+            "Page.mjs:186:2",
+            "Author.mjs:29:1"
+          ],
+          "actualGroups": [
+            [
+              [
+                "10:95"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:173"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:357"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:183"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:198",
+                "10:208",
+                "10:285"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:357"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:357"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:357"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:220"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:253",
+                "10:273"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:264"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "3:365"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:101"
+              ],
+              false,
+              false,
+              false
+            ]
+          ],
+          "work": {
+            "templatePatch": 9,
+            "templateCapture": 27,
+            "templateSelect": 9,
+            "templateSelectNew": 1,
+            "templateSameInputs": 9
+          },
+          "patchAll": 1,
+          "predictedGroups": 13,
+          "visitedGroups": 13,
+          "comparisonGroups": 7
+        },
+        {
+          "handler": "$hGotSettingsMsg$CompletedFormLoad$Ok$108",
+          "groups": [
+            "Settings.mjs:43:1",
+            "Settings.mjs:70:3",
+            "Settings.mjs:97:5",
+            "Settings.mjs:124:7",
+            "Settings.mjs:151:9"
+          ],
+          "actualGroups": [
+            [
+              [
+                "10:101"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "15:978"
+              ],
+              false,
+              false,
+              false
+            ]
+          ],
+          "work": {
+            "templatePatch": 3,
+            "templateCapture": 7,
+            "templateSelect": 3,
+            "templateSelectNew": 3,
+            "templateSameInputs": 3
+          },
+          "patchAll": 0,
+          "predictedGroups": 2,
+          "visitedGroups": 2,
+          "comparisonGroups": 5
+        },
+        {
+          "handler": "$hGotSettingsMsg$EnteredBio$156",
+          "groups": [
+            "Settings.mjs:97:5"
+          ],
+          "actualGroups": [
+            [
+              [
+                "10:101"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "15:978"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "15:1185"
+              ],
+              false,
+              false,
+              false
+            ]
+          ],
+          "work": {
+            "templatePatch": 3,
+            "templateCapture": 7,
+            "templateSelect": 3,
+            "templateSelectNew": 3,
+            "templateSameInputs": 3
+          },
+          "patchAll": 0,
+          "predictedGroups": 3,
+          "visitedGroups": 3,
+          "comparisonGroups": 1
+        },
+        {
+          "handler": "$hGotSettingsMsg$SubmittedForm$124",
+          "groups": [],
+          "actualGroups": [
+            [
+              [
+                "10:101"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "$producer/15:928"
+              ],
+              false,
+              false,
+              false
+            ]
+          ],
+          "work": {
+            "templatePatch": 2,
+            "templateCapture": 4,
+            "templateSelect": 2,
+            "templateSelectNew": 2,
+            "templateSameInputs": 2
+          },
+          "patchAll": 0,
+          "predictedGroups": 2,
+          "visitedGroups": 2,
+          "comparisonGroups": 0
+        },
+        {
+          "handler": "$hGotSettingsMsg$CompletedSave$Ok$180",
+          "groups": [
+            "Page.mjs:29:0",
+            "Page.mjs:29:0",
+            "Page.mjs:29:0",
+            "Page.mjs:167:1",
+            "Page.mjs:186:2",
+            "Author.mjs:29:1"
+          ],
+          "actualGroups": [
+            [
+              [
+                "10:95"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:183"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:198",
+                "10:208",
+                "10:285"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:357"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:357"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:357"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:220"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:253",
+                "10:273"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:264"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "3:365"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:101"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "15:978"
+              ],
+              false,
+              false,
+              false
+            ]
+          ],
+          "work": {
+            "templatePatch": 9,
+            "templateCapture": 25,
+            "templateSelect": 9,
+            "templateSelectNew": 9,
+            "templateSameInputs": 9
+          },
+          "patchAll": 0,
+          "predictedGroups": 12,
+          "visitedGroups": 12,
+          "comparisonGroups": 6
+        },
+        {
+          "handler": "$hChangedUrl$100",
+          "groups": [
+            "Page.mjs:29:0",
+            "Page.mjs:29:0",
+            "Page.mjs:29:0",
+            "Page.mjs:29:0",
+            "Page.mjs:167:1",
+            "Page.mjs:186:2",
+            "Author.mjs:29:1"
+          ],
+          "actualGroups": [
+            [
+              [
+                "10:95"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:173"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:357"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:183"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:198",
+                "10:208",
+                "10:285"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:357"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:357"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:357"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:220"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:253",
+                "10:273"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:264"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "3:365"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:101"
+              ],
+              false,
+              false,
+              false
+            ]
+          ],
+          "work": {
+            "templatePatch": 9,
+            "templateCapture": 31,
+            "templateSelect": 9,
+            "templateSelectNew": 1,
+            "templateSameInputs": 9
+          },
+          "patchAll": 1,
+          "predictedGroups": 13,
+          "visitedGroups": 13,
+          "comparisonGroups": 7
+        },
+        {
+          "handler": "$hGotHomeMsg$CompletedFeedLoad$Ok$332",
+          "groups": [
+            "Feed.mjs:475:0",
+            "Feed.mjs:491:1",
+            "Feed.mjs:512:2",
+            "Feed.mjs:475:0",
+            "Feed.mjs:491:1",
+            "Feed.mjs:512:2"
+          ],
+          "actualGroups": [
+            [
+              [
+                "10:101"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "7:617"
+              ],
+              false,
+              false,
+              false
+            ]
+          ],
+          "work": {
+            "templatePatch": 7,
+            "templateCapture": 21,
+            "templateSelect": 7,
+            "templateSelectNew": 0,
+            "templateSameInputs": 7
+          },
+          "patchAll": 0,
+          "predictedGroups": 2,
+          "visitedGroups": 2,
+          "comparisonGroups": 6
+        },
+        {
+          "handler": "$hGotHomeMsg$CompletedTagsLoad$Ok$348",
+          "groups": [],
+          "actualGroups": [
+            [
+              [
+                "10:101"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "7:707"
+              ],
+              false,
+              false,
+              false
+            ]
+          ],
+          "work": {
+            "templatePatch": 3,
+            "templateCapture": 7,
+            "templateSelect": 3,
+            "templateSelectNew": 0,
+            "templateSameInputs": 3
+          },
+          "patchAll": 0,
+          "predictedGroups": 2,
+          "visitedGroups": 2,
+          "comparisonGroups": 0
+        },
+        {
+          "handler": "$hClickedLink$Internal$84",
+          "groups": [],
+          "actualGroups": [],
+          "work": {
+            "templatePatch": 1,
+            "templateCapture": 2,
+            "templateSelect": 1,
+            "templateSelectNew": 0,
+            "templateSameInputs": 1
+          },
+          "patchAll": 0,
+          "predictedGroups": 0,
+          "visitedGroups": 0,
+          "comparisonGroups": 0
+        },
+        {
+          "handler": "$hChangedUrl$100",
+          "groups": [
+            "Page.mjs:29:0",
+            "Page.mjs:29:0",
+            "Page.mjs:49:1",
+            "Page.mjs:68:2",
+            "Page.mjs:29:0",
+            "Page.mjs:49:1",
+            "Page.mjs:68:2"
+          ],
+          "actualGroups": [
+            [
+              [
+                "10:95"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:173"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:357"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:183"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:101"
+              ],
+              false,
+              false,
+              false
+            ]
+          ],
+          "work": {
+            "templatePatch": 6,
+            "templateCapture": 18,
+            "templateSelect": 6,
+            "templateSelectNew": 3,
+            "templateSameInputs": 6
+          },
+          "patchAll": 1,
+          "predictedGroups": 5,
+          "visitedGroups": 5,
+          "comparisonGroups": 7
+        },
+        {
+          "handler": "$hChangedUrl$100",
+          "groups": [
+            "Page.mjs:29:0",
+            "Page.mjs:29:0",
+            "Page.mjs:29:0"
+          ],
+          "actualGroups": [
+            [
+              [
+                "10:95"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:173"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:357"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:183"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:302",
+                "10:312"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:357"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:357"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:101"
+              ],
+              false,
+              false,
+              false
+            ]
+          ],
+          "work": {
+            "templatePatch": 7,
+            "templateCapture": 25,
+            "templateSelect": 7,
+            "templateSelectNew": 0,
+            "templateSameInputs": 7
+          },
+          "patchAll": 1,
+          "predictedGroups": 8,
+          "visitedGroups": 8,
+          "comparisonGroups": 3
+        },
+        {
+          "handler": "$hGotHomeMsg$CompletedFeedLoad$Ok$332",
+          "groups": [
+            "Feed.mjs:475:0",
+            "Feed.mjs:491:1",
+            "Feed.mjs:512:2"
+          ],
+          "actualGroups": [
+            [
+              [
+                "10:101"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "7:617"
+              ],
+              false,
+              false,
+              false
+            ]
+          ],
+          "work": {
+            "templatePatch": 6,
+            "templateCapture": 20,
+            "templateSelect": 6,
+            "templateSelectNew": 0,
+            "templateSameInputs": 6
+          },
+          "patchAll": 0,
+          "predictedGroups": 2,
+          "visitedGroups": 2,
+          "comparisonGroups": 3
+        },
+        {
+          "handler": "$hGotHomeMsg$CompletedTagsLoad$Ok$348",
+          "groups": [],
+          "actualGroups": [
+            [
+              [
+                "10:101"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "7:707"
+              ],
+              false,
+              false,
+              false
+            ]
+          ],
+          "work": {
+            "templatePatch": 3,
+            "templateCapture": 7,
+            "templateSelect": 3,
+            "templateSelectNew": 0,
+            "templateSameInputs": 3
+          },
+          "patchAll": 0,
+          "predictedGroups": 2,
+          "visitedGroups": 2,
+          "comparisonGroups": 0
+        },
+        {
+          "handler": "$hClickedLink$Internal$84",
+          "groups": [],
+          "actualGroups": [],
+          "work": {
+            "templatePatch": 1,
+            "templateCapture": 2,
+            "templateSelect": 1,
+            "templateSelectNew": 0,
+            "templateSameInputs": 1
+          },
+          "patchAll": 0,
+          "predictedGroups": 0,
+          "visitedGroups": 0,
+          "comparisonGroups": 0
+        },
+        {
+          "handler": "$hChangedUrl$100",
+          "groups": [
+            "Page.mjs:29:0",
+            "Page.mjs:29:0",
+            "Page.mjs:29:0",
+            "Register.mjs:108:3",
+            "Register.mjs:135:5",
+            "Register.mjs:162:7"
+          ],
+          "actualGroups": [
+            [
+              [
+                "10:95"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:173"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:357"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:183"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:302",
+                "10:312"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:357"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:357"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "10:101"
+              ],
+              false,
+              false,
+              false
+            ]
+          ],
+          "work": {
+            "templatePatch": 7,
+            "templateCapture": 19,
+            "templateSelect": 7,
+            "templateSelectNew": 1,
+            "templateSameInputs": 7
+          },
+          "patchAll": 1,
+          "predictedGroups": 8,
+          "visitedGroups": 8,
+          "comparisonGroups": 6
+        },
+        {
+          "handler": "$hGotRegisterMsg$SubmittedForm$252",
+          "groups": [
+            "Register.mjs:34:0",
+            "Register.mjs:34:0",
+            "Register.mjs:34:0"
+          ],
+          "actualGroups": [
+            [
+              [
+                "10:101"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "$producer/12:598"
+              ],
+              false,
+              false,
+              false
+            ]
+          ],
+          "work": {
+            "templatePatch": 5,
+            "templateCapture": 7,
+            "templateSelect": 5,
+            "templateSelectNew": 3,
+            "templateSameInputs": 5
+          },
+          "patchAll": 0,
+          "predictedGroups": 2,
+          "visitedGroups": 2,
+          "comparisonGroups": 3
+        },
+        {
+          "handler": "$hGotRegisterMsg$EnteredUsername$260",
+          "groups": [
+            "Register.mjs:108:3"
+          ],
+          "actualGroups": [
+            [
+              [
+                "10:101"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "12:691"
+              ],
+              false,
+              false,
+              false
+            ]
+          ],
+          "work": {
+            "templatePatch": 2,
+            "templateCapture": 4,
+            "templateSelect": 2,
+            "templateSelectNew": 2,
+            "templateSameInputs": 2
+          },
+          "patchAll": 0,
+          "predictedGroups": 2,
+          "visitedGroups": 2,
+          "comparisonGroups": 1
+        },
+        {
+          "handler": "$hGotRegisterMsg$EnteredEmail$268",
+          "groups": [
+            "Register.mjs:135:5"
+          ],
+          "actualGroups": [
+            [
+              [
+                "10:101"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "12:735"
+              ],
+              false,
+              false,
+              false
+            ]
+          ],
+          "work": {
+            "templatePatch": 2,
+            "templateCapture": 4,
+            "templateSelect": 2,
+            "templateSelectNew": 2,
+            "templateSameInputs": 2
+          },
+          "patchAll": 0,
+          "predictedGroups": 2,
+          "visitedGroups": 2,
+          "comparisonGroups": 1
+        },
+        {
+          "handler": "$hGotRegisterMsg$EnteredPassword$276",
+          "groups": [
+            "Register.mjs:162:7"
+          ],
+          "actualGroups": [
+            [
+              [
+                "10:101"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "12:784"
+              ],
+              false,
+              false,
+              false
+            ]
+          ],
+          "work": {
+            "templatePatch": 2,
+            "templateCapture": 4,
+            "templateSelect": 2,
+            "templateSelectNew": 2,
+            "templateSameInputs": 2
+          },
+          "patchAll": 0,
+          "predictedGroups": 2,
+          "visitedGroups": 2,
+          "comparisonGroups": 1
+        },
+        {
+          "handler": "$hGotRegisterMsg$SubmittedForm$252",
+          "groups": [
+            "Register.mjs:34:0"
+          ],
+          "actualGroups": [
+            [
+              [
+                "10:101"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "$producer/12:598"
+              ],
+              false,
+              false,
+              false
+            ],
+            [
+              [
+                "12:620"
+              ],
+              false,
+              false,
+              false
+            ]
+          ],
+          "work": {
+            "templatePatch": 3,
+            "templateCapture": 5,
+            "templateSelect": 3,
+            "templateSelectNew": 0,
+            "templateSameInputs": 3
+          },
+          "patchAll": 0,
+          "predictedGroups": 3,
+          "visitedGroups": 3,
+          "comparisonGroups": 1
+        }
+      ]
+    }
+  ],
+  "compilerBeforeSha256": null,
+  "compilerSourceDiffSha256": "6910e5a5f5136b3af50b2ebe29de4486d7f858cd5b8660e30f058d688f509b2b",
+  "analysis": "program Main.main : Tea.application\n  model Main.Model\n  init\n    literal <none>\n  key ClickedLink · Internal                      exact      ∅\n  key ClickedLink · External                      exact      ∅\n  key ChangedUrl                                  *          value ρ\n  key GotSettingsMsg · CompletedFormLoad · Ok     exact      node ρ; node ρ.Settings#0; value ρ.Settings#0.status\n  key GotSettingsMsg · CompletedFormLoad · Err    exact      node ρ; node ρ.Settings#0; value ρ.Settings#0.status\n  key GotSettingsMsg · SubmittedForm              indexed    node ρ; node ρ.Settings#0; value ρ.Settings#0.problems ⟨replaced⟩\n  key GotSettingsMsg · EnteredEmail               exact      node ρ; node ρ.Settings#0; node ρ.Settings#0.status; node ρ.Settings#0.status.Loaded#0; value ρ.Settings#0.status.Loaded#0.email\n  key GotSettingsMsg · EnteredUsername            exact      node ρ; node ρ.Settings#0; node ρ.Settings#0.status; node ρ.Settings#0.status.Loaded#0; value ρ.Settings#0.status.Loaded#0.username\n  key GotSettingsMsg · EnteredPassword            exact      node ρ; node ρ.Settings#0; node ρ.Settings#0.status; node ρ.Settings#0.status.Loaded#0; value ρ.Settings#0.status.Loaded#0.password\n  key GotSettingsMsg · EnteredBio                 exact      node ρ; node ρ.Settings#0; node ρ.Settings#0.status; node ρ.Settings#0.status.Loaded#0; value ρ.Settings#0.status.Loaded#0.bio\n  key GotSettingsMsg · EnteredAvatar              exact      node ρ; node ρ.Settings#0; node ρ.Settings#0.status; node ρ.Settings#0.status.Loaded#0; value ρ.Settings#0.status.Loaded#0.avatar\n  key GotSettingsMsg · CompletedSave · Err        exact      node ρ; node ρ.Settings#0; value ρ.Settings#0.problems\n  key GotSettingsMsg · CompletedSave · Ok         exact      node ρ; node ρ.Settings#0; value ρ.Settings#0.session\n  key GotSettingsMsg · RouteRefused               exact      node ρ\n  key GotSettingsMsg · PassedSlowLoadThreshold    exact      node ρ; node ρ.Settings#0; value ρ.Settings#0.status\n  key GotLoginMsg · SubmittedForm                 indexed    node ρ; node ρ.Login#0; value ρ.Login#0.problems ⟨replaced⟩\n  key GotLoginMsg · EnteredEmail                  exact      node ρ; node ρ.Login#0; node ρ.Login#0.form; value ρ.Login#0.form.email\n  key GotLoginMsg · EnteredPassword               exact      node ρ; node ρ.Login#0; node ρ.Login#0.form; value ρ.Login#0.form.password\n  key GotLoginMsg · CompletedLogin · Err          exact      node ρ; node ρ.Login#0; value ρ.Login#0.problems\n  key GotLoginMsg · CompletedLogin · Ok           exact      node ρ; node ρ.Login#0; value ρ.Login#0.session\n  key GotLoginMsg · RouteRefused                  exact      node ρ\n  key GotRegisterMsg · SubmittedForm              indexed    node ρ; node ρ.Register#0; value ρ.Register#0.problems ⟨replaced⟩\n  key GotRegisterMsg · EnteredUsername            exact      node ρ; node ρ.Register#0; node ρ.Register#0.form; value ρ.Register#0.form.username\n  key GotRegisterMsg · EnteredEmail               exact      node ρ; node ρ.Register#0; node ρ.Register#0.form; value ρ.Register#0.form.email\n  key GotRegisterMsg · EnteredPassword            exact      node ρ; node ρ.Register#0; node ρ.Register#0.form; value ρ.Register#0.form.password\n  key GotRegisterMsg · CompletedRegister · Err    exact      node ρ; node ρ.Register#0; value ρ.Register#0.problems\n  key GotRegisterMsg · CompletedRegister · Ok     exact      node ρ; node ρ.Register#0; value ρ.Register#0.session\n  key GotRegisterMsg · RouteRefused               exact      node ρ\n  key GotHomeMsg · ClickedTag                     exact      node ρ; node ρ.Home#0; value ρ.Home#0.feedPage; value ρ.Home#0.feedTab\n  key GotHomeMsg · ClickedTab                     exact      node ρ; node ρ.Home#0; value ρ.Home#0.feedPage; value ρ.Home#0.feedTab\n  key GotHomeMsg · ClickedFeedPage                exact      node ρ; node ρ.Home#0; value ρ.Home#0.feedPage\n  key GotHomeMsg · CompletedFeedLoad · Ok         exact      node ρ; node ρ.Home#0; value ρ.Home#0.feed\n  key GotHomeMsg · CompletedFeedLoad · Err        exact      node ρ; node ρ.Home#0; value ρ.Home#0.feed\n  key GotHomeMsg · CompletedTagsLoad · Ok         exact      node ρ; node ρ.Home#0; value ρ.Home#0.tags\n  key GotHomeMsg · CompletedTagsLoad · Err        exact      node ρ; node ρ.Home#0; value ρ.Home#0.tags\n  key GotHomeMsg · GotFeedMsg · ClickedDismissErrors\n                                                  indexed    node ρ; node ρ.Home#0; node ρ.Home#0.feed; node ρ.Home#0.feed.Loaded#0; node ρ.Home#0.feed.Loaded#0.Model#0; value ρ.Home#0.feed.Loaded#0.Model#0.errors ⟨clear⟩\n  key GotHomeMsg · GotFeedMsg · ClickedFavorite   exact      node ρ; node ρ.Home#0; node ρ.Home#0.feed; node ρ.Home#0.feed.Loaded#0\n  key GotHomeMsg · GotFeedMsg · ClickedUnfavorite\n                                                  exact      node ρ; node ρ.Home#0; node ρ.Home#0.feed; node ρ.Home#0.feed.Loaded#0\n  key GotHomeMsg · GotFeedMsg · CompletedFavorite · Ok\n                                                  structural node ρ; node ρ.Home#0; node ρ.Home#0.feed; node ρ.Home#0.feed.Loaded#0; node ρ.Home#0.feed.Loaded#0.Model#0; node ρ.Home#0.feed.Loaded#0.Model#0.articles ⟨kept⟩; value ρ.Home#0.feed.Loaded#0.Model#0.articles[*]\n  key GotHomeMsg · GotFeedMsg · CompletedFavorite · Err\n                                                  indexed    node ρ; node ρ.Home#0; node ρ.Home#0.feed; node ρ.Home#0.feed.Loaded#0; node ρ.Home#0.feed.Loaded#0.Model#0; value ρ.Home#0.feed.Loaded#0.Model#0.errors ⟨append⟩\n  key GotHomeMsg · PassedSlowLoadThreshold        exact      node ρ; node ρ.Home#0; value ρ.Home#0.feed; value ρ.Home#0.tags\n  key GotProfileMsg · ClickedDismissErrors        indexed    node ρ; node ρ.Profile#1; value ρ.Profile#1.errors ⟨clear⟩\n  key GotProfileMsg · ClickedUnfollow             exact      node ρ\n  key GotProfileMsg · ClickedFollow               exact      node ρ\n  key GotProfileMsg · ClickedTab                  exact      node ρ; node ρ.Profile#1; value ρ.Profile#1.feedPage; value ρ.Profile#1.feedTab\n  key GotProfileMsg · ClickedFeedPage             exact      node ρ; node ρ.Profile#1; value ρ.Profile#1.feedPage\n  key GotProfileMsg · CompletedFollowChange · Ok  exact      node ρ; node ρ.Profile#1; value ρ.Profile#1.author\n  key GotProfileMsg · CompletedFollowChange · Err\n                                                  indexed    node ρ; node ρ.Profile#1; value ρ.Profile#1.errors ⟨append⟩\n  key GotProfileMsg · CompletedAuthorLoad#1 · Ok  exact      node ρ; node ρ.Profile#1; value ρ.Profile#1.author\n  key GotProfileMsg · CompletedAuthorLoad#1 · Err\n                                                  exact      node ρ; node ρ.Profile#1; value ρ.Profile#1.author\n  key GotProfileMsg · CompletedFeedLoad#1 · Ok    exact      node ρ; node ρ.Profile#1; value ρ.Profile#1.feed\n  key GotProfileMsg · CompletedFeedLoad#1 · Err   exact      node ρ; node ρ.Profile#1; value ρ.Profile#1.feed\n  key GotProfileMsg · GotFeedMsg · ClickedDismissErrors\n                                                  indexed    node ρ; node ρ.Profile#1; node ρ.Profile#1.feed; node ρ.Profile#1.feed.Loaded#0; node ρ.Profile#1.feed.Loaded#0.Model#0; value ρ.Profile#1.feed.Loaded#0.Model#0.errors ⟨clear⟩\n  key GotProfileMsg · GotFeedMsg · ClickedFavorite\n                                                  exact      node ρ; node ρ.Profile#1; node ρ.Profile#1.feed; node ρ.Profile#1.feed.Loaded#0\n  key GotProfileMsg · GotFeedMsg · ClickedUnfavorite\n                                                  exact      node ρ; node ρ.Profile#1; node ρ.Profile#1.feed; node ρ.Profile#1.feed.Loaded#0\n  key GotProfileMsg · GotFeedMsg · CompletedFavorite · Ok\n                                                  structural node ρ; node ρ.Profile#1; node ρ.Profile#1.feed; node ρ.Profile#1.feed.Loaded#0; node ρ.Profile#1.feed.Loaded#0.Model#0; node ρ.Profile#1.feed.Loaded#0.Model#0.articles ⟨kept⟩; value ρ.Profile#1.feed.Loaded#0.Model#0.articles[*]\n  key GotProfileMsg · GotFeedMsg · CompletedFavorite · Err\n                                                  indexed    node ρ; node ρ.Profile#1; node ρ.Profile#1.feed; node ρ.Profile#1.feed.Loaded#0; node ρ.Profile#1.feed.Loaded#0.Model#0; value ρ.Profile#1.feed.Loaded#0.Model#0.errors ⟨append⟩\n  key GotProfileMsg · PassedSlowLoadThreshold     exact      node ρ; node ρ.Profile#1; value ρ.Profile#1.author; value ρ.Profile#1.feed\n  key GotArticleMsg · ClickedDismissErrors        indexed    node ρ; node ρ.Article#0; value ρ.Article#0.errors ⟨clear⟩\n  key GotArticleMsg · ClickedFavorite             exact      node ρ\n  key GotArticleMsg · ClickedUnfavorite           exact      node ρ\n  key GotArticleMsg · CompletedLoadArticle · Ok   exact      node ρ; node ρ.Article#0; value ρ.Article#0.article\n  key GotArticleMsg · CompletedLoadArticle · Err  exact      node ρ; node ρ.Article#0; value ρ.Article#0.article\n  key GotArticleMsg · CompletedLoadComments · Ok  exact      node ρ; node ρ.Article#0; value ρ.Article#0.comments\n  key GotArticleMsg · CompletedLoadComments · Err\n                                                  exact      node ρ; node ρ.Article#0; value ρ.Article#0.comments\n  key GotArticleMsg · CompletedFavoriteChange · Ok\n                                                  exact      node ρ; node ρ.Article#0; value ρ.Article#0.article\n  key GotArticleMsg · CompletedFavoriteChange · Err\n                                                  indexed    node ρ; node ρ.Article#0; value ρ.Article#0.errors ⟨append⟩\n  key GotArticleMsg · ClickedUnfollow             exact      node ρ\n  key GotArticleMsg · ClickedFollow               exact      node ρ\n  key GotArticleMsg · CompletedFollowChange · Ok  exact      node ρ; node ρ.Article#0; node ρ.Article#0.article; node ρ.Article#0.article.Loaded#0; value ρ.Article#0.article.Loaded#0.author\n  key GotArticleMsg · CompletedFollowChange · Err\n                                                  indexed    node ρ; node ρ.Article#0; value ρ.Article#0.errors ⟨append⟩\n  key GotArticleMsg · EnteredCommentText          exact      node ρ; node ρ.Article#0; node ρ.Article#0.comments; node ρ.Article#0.comments.Loaded#0; node ρ.Article#0.comments.Loaded#0.0; value ρ.Article#0.comments.Loaded#0.0.Editing#0\n  key GotArticleMsg · ClickedPostComment          exact      node ρ; node ρ.Article#0; node ρ.Article#0.comments; node ρ.Article#0.comments.Loaded#0; value ρ.Article#0.comments.Loaded#0.0\n  key GotArticleMsg · CompletedPostComment · Ok   indexed    node ρ; node ρ.Article#0; node ρ.Article#0.comments; node ρ.Article#0.comments.Loaded#0; value ρ.Article#0.comments.Loaded#0.0; value ρ.Article#0.comments.Loaded#0.1 ⟨prepend⟩\n  key GotArticleMsg · CompletedPostComment · Err  indexed    node ρ; node ρ.Article#0; node ρ.Article#0.comments; node ρ.Article#0.comments.Loaded#0; value ρ.Article#0.comments.Loaded#0.0; value ρ.Article#0.errors ⟨append⟩\n  key GotArticleMsg · ClickedDeleteComment        exact      node ρ\n  key GotArticleMsg · CompletedDeleteComment#1 · Ok\n                                                  structural node ρ; node ρ.Article#0; node ρ.Article#0.comments; node ρ.Article#0.comments.Loaded#0; value ρ.Article#0.comments.Loaded#0.1 ⟨removeSome⟩\n  key GotArticleMsg · CompletedDeleteComment#1 · Err\n                                                  indexed    node ρ; node ρ.Article#0; value ρ.Article#0.errors ⟨append⟩\n  key GotArticleMsg · ClickedDeleteArticle        exact      node ρ\n  key GotArticleMsg · CompletedDeleteArticle · Ok\n                                                  exact      node ρ\n  key GotArticleMsg · CompletedDeleteArticle · Err\n                                                  indexed    node ρ; node ρ.Article#0; value ρ.Article#0.errors ⟨append⟩\n  key GotArticleMsg · PassedSlowLoadThreshold     exact      node ρ; node ρ.Article#0; value ρ.Article#0.article; value ρ.Article#0.comments\n  key GotArticleMsg · RouteRefused                exact      node ρ\n  key GotEditorMsg · ClickedSave                  exact      node ρ; node ρ.Editor#1; value ρ.Editor#1.status; value ρ.Editor#1.status.Editing#1; value ρ.Editor#1.status.EditingNew#0\n  key GotEditorMsg · EnteredTitle                 exact      node ρ; node ρ.Editor#1; node ρ.Editor#1.status; node ρ.Editor#1.status.Saving#1; value ρ.Editor#1.status.Saving#1.title; node ρ.Editor#1.status.Editing#2; value ρ.Editor#1.status.Editing#2.title; node ρ.Editor#1.status.EditingNew#1; value ρ.Editor#1.status.EditingNew#1.title; node ρ.Editor#1.status.Creating#0; value ρ.Editor#1.status.Creating#0.title\n  key GotEditorMsg · EnteredDescription           exact      node ρ; node ρ.Editor#1; node ρ.Editor#1.status; node ρ.Editor#1.status.Saving#1; value ρ.Editor#1.status.Saving#1.description; node ρ.Editor#1.status.Editing#2; value ρ.Editor#1.status.Editing#2.description; node ρ.Editor#1.status.EditingNew#1; value ρ.Editor#1.status.EditingNew#1.description; node ρ.Editor#1.status.Creating#0; value ρ.Editor#1.status.Creating#0.description\n  key GotEditorMsg · EnteredTags                  exact      node ρ; node ρ.Editor#1; node ρ.Editor#1.status; node ρ.Editor#1.status.Saving#1; value ρ.Editor#1.status.Saving#1.tags; node ρ.Editor#1.status.Editing#2; value ρ.Editor#1.status.Editing#2.tags; node ρ.Editor#1.status.EditingNew#1; value ρ.Editor#1.status.EditingNew#1.tags; node ρ.Editor#1.status.Creating#0; value ρ.Editor#1.status.Creating#0.tags\n  key GotEditorMsg · EnteredBody                  exact      node ρ; node ρ.Editor#1; node ρ.Editor#1.status; node ρ.Editor#1.status.Saving#1; value ρ.Editor#1.status.Saving#1.body; node ρ.Editor#1.status.Editing#2; value ρ.Editor#1.status.Editing#2.body; node ρ.Editor#1.status.EditingNew#1; value ρ.Editor#1.status.EditingNew#1.body; node ρ.Editor#1.status.Creating#0; value ρ.Editor#1.status.Creating#0.body\n  key GotEditorMsg · CompletedCreate · Ok         exact      node ρ\n  key GotEditorMsg · CompletedCreate · Err        exact      node ρ; node ρ.Editor#1; value ρ.Editor#1.status\n  key GotEditorMsg · CompletedEdit · Ok           exact      node ρ\n  key GotEditorMsg · CompletedEdit · Err          exact      node ρ; node ρ.Editor#1; value ρ.Editor#1.status\n  key GotEditorMsg · CompletedArticleLoad#1 · Err\n                                                  exact      node ρ; node ρ.Editor#1; value ρ.Editor#1.status\n  key GotEditorMsg · CompletedArticleLoad#1 · Ok  exact      node ρ; node ρ.Editor#1; value ρ.Editor#1.status\n  key GotEditorMsg · PassedSlowLoadThreshold      exact      node ρ; node ρ.Editor#1; value ρ.Editor#1.status\n  key GotEditorMsg · RouteRefused                 exact      node ρ\n  key RouteRefused                                exact      ∅\n  keys 97: bounded 96 (98%), exact 77, indexed 16, structural 3, * 1; capped 0\n  summary Url.Parser.firstMatch (cap I)\n  hole Article.beni:199:36                        dynamic    reads ρ.Home#0.feed.Loaded#0.Model#0.articles[*].createdAt; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].createdAt; ρ.Article#0.article.Loaded#0.createdAt; ρ.Article#0.comments.Loaded#0.1[*].createdAt\n  hole Article.beni:209:10                        dynamic    reads ρ.Article#0.article.Loaded#0.body\n  hole Article.beni:209:76                        dynamic    reads ρ.Article#0.article.Loaded#0.body\n  hole Article.beni:216:10                        dynamic    reads ρ.Home#0.feed.Loaded#0.Model#0.articles[*].tags; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].tags; ρ.Article#0.article.Loaded#0.tags\n  hole Article.beni:217:66                        dynamic    reads ρ.Home#0.feed.Loaded#0.Model#0.articles[*].tags[*]; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].tags[*]; ρ.Article#0.article.Loaded#0.tags[*]\n  hole Article.beni:226:17                        static     reads ∅\n  hole Article.beni:228:13                        dynamic    reads ρ.Home#0.feed.Loaded#0.Model#0.articles[*].favoritesCount; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].favoritesCount; ρ.Article#0.article.Loaded#0.favoritesCount\n  hole Article.beni:231:17                        static     reads ∅\n  hole Article.beni:233:13                        dynamic    reads ρ.Home#0.feed.Loaded#0.Model#0.articles[*].favoritesCount; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].favoritesCount; ρ.Article#0.article.Loaded#0.favoritesCount\n  hole Article.beni:239:29                        dynamic    reads tag ρ; tag ρ.Home#0.feed; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].slug; tag ρ.Profile#1.author; tag ρ.Profile#1.feed; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].slug\n  hole Article.beni:239:76                        dynamic    reads tag ρ; tag ρ.Home#0.feed; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].description; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].tags; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].tags[*]; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].title; tag ρ.Profile#1.author; tag ρ.Profile#1.feed; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].description; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].tags; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].tags[*]; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].title\n  hole ArticlePage.beni:224:33                    dynamic    reads ρ.Article#0.article.Loaded#0.title\n  hole ArticlePage.beni:225:29                    dynamic    reads tag ρ; tag ρ.Article#0.article; tag ρ.Article#0.article.Loaded#0.author; ρ.Article#0.article.Loaded#0.author.IsViewer#0.image; ρ.Article#0.article.Loaded#0.author.IsViewer#0.image.Just#0; ρ.Article#0.article.Loaded#0.author.IsViewer#0.username; ρ.Article#0.article.Loaded#0.author.IsFollowing#0.image; ρ.Article#0.article.Loaded#0.author.IsFollowing#0.image.Just#0; ρ.Article#0.article.Loaded#0.author.IsFollowing#0.username; ρ.Article#0.article.Loaded#0.author.IsNotFollowing#0.image; ρ.Article#0.article.Loaded#0.author.IsNotFollowing#0.image.Just#0; ρ.Article#0.article.Loaded#0.author.IsNotFollowing#0.username; ρ.Article#0.article.Loaded#0.createdAt; tag ρ.Article#0.article.Loaded#0.favorited; ρ.Article#0.article.Loaded#0.favoritesCount; ρ.Article#0.article.Loaded#0.slug; tag ρ.Article#0.session; ρ.Article#0.session.LoggedIn#1; ρ.Article#0.session.LoggedIn#1.cred\n  hole ArticlePage.beni:226:29                    dynamic    reads ρ.Article#0.errors; ρ.Article#0.errors[*]\n  hole ArticlePage.beni:232:33                    dynamic    reads ρ.Article#0.article.Loaded#0.body\n  hole ArticlePage.beni:233:33                    dynamic    reads ρ.Article#0.article.Loaded#0.tags; ρ.Article#0.article.Loaded#0.tags[*]\n  hole ArticlePage.beni:237:54                    dynamic    reads tag ρ; tag ρ.Article#0.article; tag ρ.Article#0.article.Loaded#0.author; ρ.Article#0.article.Loaded#0.author.IsViewer#0.image; ρ.Article#0.article.Loaded#0.author.IsViewer#0.image.Just#0; ρ.Article#0.article.Loaded#0.author.IsViewer#0.username; ρ.Article#0.article.Loaded#0.author.IsFollowing#0.image; ρ.Article#0.article.Loaded#0.author.IsFollowing#0.image.Just#0; ρ.Article#0.article.Loaded#0.author.IsFollowing#0.username; ρ.Article#0.article.Loaded#0.author.IsNotFollowing#0.image; ρ.Article#0.article.Loaded#0.author.IsNotFollowing#0.image.Just#0; ρ.Article#0.article.Loaded#0.author.IsNotFollowing#0.username; ρ.Article#0.article.Loaded#0.createdAt; tag ρ.Article#0.article.Loaded#0.favorited; ρ.Article#0.article.Loaded#0.favoritesCount; ρ.Article#0.article.Loaded#0.slug; tag ρ.Article#0.session; ρ.Article#0.session.LoggedIn#1; ρ.Article#0.session.LoggedIn#1.cred\n  hole ArticlePage.beni:240:33                    dynamic    reads tag ρ; tag ρ.Article#0.article; ρ.Article#0.article.Loaded#0.slug; tag ρ.Article#0.comments; ρ.Article#0.comments.Loaded#0.0; ρ.Article#0.comments.Loaded#0.0.Editing#0; ρ.Article#0.comments.Loaded#0.0.Sending#0; ρ.Article#0.comments.Loaded#0.1; ρ.Article#0.comments.Loaded#0.1[*].author.IsViewer#0.image; ρ.Article#0.comments.Loaded#0.1[*].author.IsViewer#0.username; ρ.Article#0.comments.Loaded#0.1[*].author.IsFollowing#0.image; ρ.Article#0.comments.Loaded#0.1[*].author.IsFollowing#0.username; ρ.Article#0.comments.Loaded#0.1[*].author.IsNotFollowing#0.image; ρ.Article#0.comments.Loaded#0.1[*].author.IsNotFollowing#0.username; ρ.Article#0.comments.Loaded#0.1[*].body; ρ.Article#0.comments.Loaded#0.1[*].createdAt; ρ.Article#0.comments.Loaded#0.1[*].id; ρ.Article#0.session; ρ.Article#0.session.LoggedIn#1; ρ.Article#0.session.LoggedIn#1.cred; ρ.Article#0.session.LoggedIn#1.image.Just#0\n  hole ArticlePage.beni:262:12                    dynamic    reads tag ρ; tag ρ.Article#0.article; tag ρ.Article#0.article.Loaded#0.author; ρ.Article#0.article.Loaded#0.author.IsViewer#0.username; ρ.Article#0.article.Loaded#0.author.IsFollowing#0.username; ρ.Article#0.article.Loaded#0.author.IsNotFollowing#0.username\n  hole ArticlePage.beni:262:51                    dynamic    reads tag ρ; tag ρ.Article#0.article; tag ρ.Article#0.article.Loaded#0.author; ρ.Article#0.article.Loaded#0.author.IsViewer#0.image; ρ.Article#0.article.Loaded#0.author.IsViewer#0.image.Just#0; ρ.Article#0.article.Loaded#0.author.IsFollowing#0.image; ρ.Article#0.article.Loaded#0.author.IsFollowing#0.image.Just#0; ρ.Article#0.article.Loaded#0.author.IsNotFollowing#0.image; ρ.Article#0.article.Loaded#0.author.IsNotFollowing#0.image.Just#0\n  hole ArticlePage.beni:264:13                    dynamic    reads tag ρ; tag ρ.Article#0.article; tag ρ.Article#0.article.Loaded#0.author; ρ.Article#0.article.Loaded#0.author.IsViewer#0.username; ρ.Article#0.article.Loaded#0.author.IsFollowing#0.username; ρ.Article#0.article.Loaded#0.author.IsNotFollowing#0.username\n  hole ArticlePage.beni:265:13                    dynamic    reads ρ.Article#0.article.Loaded#0.createdAt\n  hole ArticlePage.beni:267:9                     dynamic    reads tag ρ; tag ρ.Article#0.article; tag ρ.Article#0.article.Loaded#0.author; ρ.Article#0.article.Loaded#0.author.IsViewer#0.username; ρ.Article#0.article.Loaded#0.author.IsFollowing#0.username; ρ.Article#0.article.Loaded#0.author.IsNotFollowing#0.username; tag ρ.Article#0.article.Loaded#0.favorited; ρ.Article#0.article.Loaded#0.favoritesCount; ρ.Article#0.article.Loaded#0.slug; tag ρ.Article#0.session; ρ.Article#0.session.LoggedIn#1; ρ.Article#0.session.LoggedIn#1.cred\n  hole ArticlePage.beni:285:21                    dynamic    reads tag ρ; tag ρ.Article#0.article; tag ρ.Article#0.article.Loaded#0.author; ρ.Article#0.article.Loaded#0.slug\n  hole ArticlePage.beni:288:21                    literal    reads ∅\n  hole ArticlePage.beni:290:17                    literal    reads ∅\n  hole ArticlePage.beni:296:21                    literal    reads ∅\n  hole ArticlePage.beni:302:17                    dynamic    reads tag ρ; tag ρ.Article#0.article; tag ρ.Article#0.article.Loaded#0.author; ρ.Article#0.article.Loaded#0.author.IsViewer#0.username; ρ.Article#0.article.Loaded#0.author.IsFollowing#0.username; ρ.Article#0.article.Loaded#0.author.IsNotFollowing#0.username; tag ρ.Article#0.session; ρ.Article#0.session.LoggedIn#1.cred\n  hole ArticlePage.beni:307:17                    static     reads ∅\n  hole ArticlePage.beni:308:17                    dynamic    reads tag ρ; tag ρ.Article#0.article; tag ρ.Article#0.article.Loaded#0.author; tag ρ.Article#0.article.Loaded#0.favorited; ρ.Article#0.article.Loaded#0.favoritesCount; ρ.Article#0.article.Loaded#0.slug; tag ρ.Article#0.session; ρ.Article#0.session.LoggedIn#1.cred\n  hole ArticlePage.beni:322:17                    dynamic    reads tag ρ; tag ρ.Article#0.article; ρ.Article#0.article.Loaded#0.slug; tag ρ.Article#0.comments; ρ.Article#0.comments.Loaded#0.0; ρ.Article#0.comments.Loaded#0.0.Editing#0; ρ.Article#0.comments.Loaded#0.0.Sending#0; ρ.Article#0.session; ρ.Article#0.session.LoggedIn#1; ρ.Article#0.session.LoggedIn#1.image.Just#0\n  hole ArticlePage.beni:323:18                    dynamic    reads ρ.Article#0.comments.Loaded#0.1\n  hole ArticlePage.beni:359:25                    static     reads ∅\n  hole ArticlePage.beni:360:25                    dynamic    reads tag ρ.Article#0.comments.Loaded#0.0; ρ.Article#0.comments.Loaded#0.0.Editing#0; ρ.Article#0.comments.Loaded#0.0.Sending#0\n  hole ArticlePage.beni:361:25                    dynamic    reads tag ρ.Article#0.comments.Loaded#0.0\n  hole ArticlePage.beni:366:21                    dynamic    reads tag ρ.Article#0.session.LoggedIn#1.image; ρ.Article#0.session.LoggedIn#1.image.Just#0\n  hole ArticlePage.beni:367:60                    dynamic    reads tag ρ.Article#0.comments.Loaded#0.0\n  hole ArticlePage.beni:373:20                    dynamic    reads tag ρ; tag ρ.Article#0.article; tag ρ.Article#0.comments; tag ρ.Article#0.session\n  hole ArticlePage.beni:374:17                    literal    reads ∅\n  hole ArticlePage.beni:375:20                    dynamic    reads tag ρ; tag ρ.Article#0.article; tag ρ.Article#0.comments; tag ρ.Article#0.session\n  hole ArticlePage.beni:376:17                    literal    reads ∅\n  hole ArticlePage.beni:384:54                    dynamic    reads ρ.Article#0.comments.Loaded#0.1[*].body\n  hole ArticlePage.beni:386:39                    dynamic    reads tag ρ; tag ρ.Article#0.article; tag ρ.Article#0.comments; tag ρ.Article#0.comments.Loaded#0.1[*].author; ρ.Article#0.comments.Loaded#0.1[*].author.IsViewer#0.username; ρ.Article#0.comments.Loaded#0.1[*].author.IsFollowing#0.username; ρ.Article#0.comments.Loaded#0.1[*].author.IsNotFollowing#0.username\n  hole ArticlePage.beni:387:17                    dynamic    reads tag ρ; tag ρ.Article#0.article; tag ρ.Article#0.comments; tag ρ.Article#0.comments.Loaded#0.1[*].author; ρ.Article#0.comments.Loaded#0.1[*].author.IsViewer#0.image; ρ.Article#0.comments.Loaded#0.1[*].author.IsFollowing#0.image; ρ.Article#0.comments.Loaded#0.1[*].author.IsNotFollowing#0.image\n  hole ArticlePage.beni:389:13                    literal    reads ∅\n  hole ArticlePage.beni:390:39                    dynamic    reads tag ρ; tag ρ.Article#0.article; tag ρ.Article#0.comments; tag ρ.Article#0.comments.Loaded#0.1[*].author; ρ.Article#0.comments.Loaded#0.1[*].author.IsViewer#0.username; ρ.Article#0.comments.Loaded#0.1[*].author.IsFollowing#0.username; ρ.Article#0.comments.Loaded#0.1[*].author.IsNotFollowing#0.username\n  hole ArticlePage.beni:391:17                    dynamic    reads tag ρ.Article#0.comments.Loaded#0.1[*].author; ρ.Article#0.comments.Loaded#0.1[*].author.IsViewer#0.username; ρ.Article#0.comments.Loaded#0.1[*].author.IsFollowing#0.username; ρ.Article#0.comments.Loaded#0.1[*].author.IsNotFollowing#0.username\n  hole ArticlePage.beni:393:13                    dynamic    reads ρ.Article#0.comments.Loaded#0.1[*].createdAt\n  hole ArticlePage.beni:394:13                    dynamic    reads tag ρ; tag ρ.Article#0.article; ρ.Article#0.article.Loaded#0.slug; tag ρ.Article#0.comments; tag ρ.Article#0.comments.Loaded#0.1[*].author; ρ.Article#0.comments.Loaded#0.1[*].id; tag ρ.Article#0.session; ρ.Article#0.session.LoggedIn#1; ρ.Article#0.session.LoggedIn#1.cred\n  hole Author.beni:119:25                         static     reads ∅\n  hole Author.beni:119:37                         dynamic    reads tag ρ; tag ρ.Redirect#0; tag ρ.Redirect#0.LoggedIn#1.image; ρ.Redirect#0.LoggedIn#1.image.Just#0; tag ρ.NotFound#0; tag ρ.NotFound#0.LoggedIn#1.image; ρ.NotFound#0.LoggedIn#1.image.Just#0; tag ρ.Home#0.feed; tag ρ.Home#0.feed.Loaded#0.Model#0.articles[*].author; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].author.IsViewer#0; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].author.IsFollowing#0; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].author.IsNotFollowing#0; tag ρ.Home#0.session; tag ρ.Home#0.session.LoggedIn#1.image; ρ.Home#0.session.LoggedIn#1.image.Just#0; tag ρ.Settings#0.session; tag ρ.Settings#0.session.LoggedIn#1.image; ρ.Settings#0.session.LoggedIn#1.image.Just#0; tag ρ.Login#0.session; tag ρ.Login#0.session.LoggedIn#1.image; ρ.Login#0.session.LoggedIn#1.image.Just#0; tag ρ.Register#0.session; tag ρ.Register#0.session.LoggedIn#1.image; ρ.Register#0.session.LoggedIn#1.image.Just#0; tag ρ.Profile#1.author; tag ρ.Profile#1.author.Loaded#0; ρ.Profile#1.author.Loaded#0.IsViewer#0.image; ρ.Profile#1.author.Loaded#0.IsViewer#0.image.Just#0; ρ.Profile#1.author.Loaded#0.IsFollowing#0.image; ρ.Profile#1.author.Loaded#0.IsFollowing#0.image.Just#0; ρ.Profile#1.author.Loaded#0.IsNotFollowing#0.image; ρ.Profile#1.author.Loaded#0.IsNotFollowing#0.image.Just#0; tag ρ.Profile#1.feed; tag ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].author; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].author.IsViewer#0; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].author.IsFollowing#0; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].author.IsNotFollowing#0; tag ρ.Profile#1.session; tag ρ.Profile#1.session.LoggedIn#1.image; ρ.Profile#1.session.LoggedIn#1.image.Just#0; tag ρ.Article#0.article; tag ρ.Article#0.article.Loaded#0.author; ρ.Article#0.article.Loaded#0.author.IsViewer#0.image; ρ.Article#0.article.Loaded#0.author.IsViewer#0.image.Just#0; ρ.Article#0.article.Loaded#0.author.IsFollowing#0.image; ρ.Article#0.article.Loaded#0.author.IsFollowing#0.image.Just#0; ρ.Article#0.article.Loaded#0.author.IsNotFollowing#0.image; ρ.Article#0.article.Loaded#0.author.IsNotFollowing#0.image.Just#0; tag ρ.Article#0.comments; tag ρ.Article#0.comments.Loaded#0.1[*].author; ρ.Article#0.comments.Loaded#0.1[*].author.IsViewer#0.image; ρ.Article#0.comments.Loaded#0.1[*].author.IsFollowing#0.image; ρ.Article#0.comments.Loaded#0.1[*].author.IsNotFollowing#0.image; tag ρ.Article#0.session; tag ρ.Article#0.session.LoggedIn#1.image; ρ.Article#0.session.LoggedIn#1.image.Just#0; tag ρ.Editor#0; tag ρ.Editor#1.session; tag ρ.Editor#1.session.LoggedIn#1.image; ρ.Editor#1.session.LoggedIn#1.image.Just#0\n  hole Author.beni:125:23                         dynamic    reads tag ρ; tag ρ.Home#0.feed; tag ρ.Home#0.feed.Loaded#0.Model#0.articles[*].author; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].author.IsViewer#0; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].author.IsFollowing#0; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].author.IsNotFollowing#0; tag ρ.Profile#1.author; tag ρ.Profile#1.feed; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].author; tag ρ.Article#0.article; tag ρ.Article#0.article.Loaded#0.author; ρ.Article#0.article.Loaded#0.author.IsViewer#0.username; ρ.Article#0.article.Loaded#0.author.IsFollowing#0.username; ρ.Article#0.article.Loaded#0.author.IsNotFollowing#0.username\n  hole Author.beni:125:62                         dynamic    reads tag ρ.Home#0.feed.Loaded#0.Model#0.articles[*].author; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].author.IsViewer#0; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].author.IsFollowing#0; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].author.IsNotFollowing#0; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].author; tag ρ.Article#0.article.Loaded#0.author; ρ.Article#0.article.Loaded#0.author.IsViewer#0.username; ρ.Article#0.article.Loaded#0.author.IsFollowing#0.username; ρ.Article#0.article.Loaded#0.author.IsNotFollowing#0.username\n  hole Author.beni:139:17                         dynamic    reads ρ.Profile#1.author.Loaded#0.IsFollowing#0.username; ρ.Article#0.article.Loaded#0.author.IsFollowing#0.username\n  hole Author.beni:145:17                         dynamic    reads ρ.Profile#1.author.Loaded#0.IsNotFollowing#0.username; ρ.Article#0.article.Loaded#0.author.IsNotFollowing#0.username\n  hole Editor.beni:269:21                         dynamic    reads tag ρ; tag ρ.Editor#0; tag ρ.Editor#1.session; ρ.Editor#1.session.LoggedIn#1.cred; tag ρ.Editor#1.status; ρ.Editor#1.status.Saving#1; ρ.Editor#1.status.Saving#1.body; ρ.Editor#1.status.Saving#1.description; ρ.Editor#1.status.Saving#1.tags; ρ.Editor#1.status.Saving#1.title; ρ.Editor#1.status.Editing#1; ρ.Editor#1.status.Editing#1[*].InvalidEntry#1; ρ.Editor#1.status.Editing#1[*].ServerError#0; ρ.Editor#1.status.Editing#2; ρ.Editor#1.status.Editing#2.body; ρ.Editor#1.status.Editing#2.description; ρ.Editor#1.status.Editing#2.tags; ρ.Editor#1.status.Editing#2.title; ρ.Editor#1.status.EditingNew#0; ρ.Editor#1.status.EditingNew#0[*].InvalidEntry#1; ρ.Editor#1.status.EditingNew#0[*].ServerError#0; ρ.Editor#1.status.EditingNew#1; ρ.Editor#1.status.EditingNew#1.body; ρ.Editor#1.status.EditingNew#1.description; ρ.Editor#1.status.EditingNew#1.tags; ρ.Editor#1.status.EditingNew#1.title; ρ.Editor#1.status.Creating#0; ρ.Editor#1.status.Creating#0.body; ρ.Editor#1.status.Creating#0.description; ρ.Editor#1.status.Creating#0.tags; ρ.Editor#1.status.Creating#0.title\n  hole Editor.beni:301:14                         dynamic    reads tag ρ; tag ρ.Editor#0; tag ρ.Editor#1.status; ρ.Editor#1.status.Editing#1; ρ.Editor#1.status.EditingNew#0\n  hole Editor.beni:304:25                         dynamic    reads tag ρ; tag ρ.Editor#0; tag ρ.Editor#1.status; tag ρ.Editor#1.status.Editing#1[*]; ρ.Editor#1.status.Editing#1[*].InvalidEntry#1; ρ.Editor#1.status.Editing#1[*].ServerError#0; tag ρ.Editor#1.status.EditingNew#0[*]; ρ.Editor#1.status.EditingNew#0[*].InvalidEntry#1; ρ.Editor#1.status.EditingNew#0[*].ServerError#0\n  hole Editor.beni:316:23                         dynamic    reads tag ρ; tag ρ.Editor#0; tag ρ.Editor#1.status\n  hole Editor.beni:322:25                         dynamic    reads tag ρ; tag ρ.Editor#0; tag ρ.Editor#1.status; ρ.Editor#1.status.Saving#1.title; ρ.Editor#1.status.Editing#2.title; ρ.Editor#1.status.EditingNew#1.title; ρ.Editor#1.status.Creating#0.title\n  hole Editor.beni:331:25                         dynamic    reads tag ρ; tag ρ.Editor#0; tag ρ.Editor#1.status; ρ.Editor#1.status.Saving#1.description; ρ.Editor#1.status.Editing#2.description; ρ.Editor#1.status.EditingNew#1.description; ρ.Editor#1.status.Creating#0.description\n  hole Editor.beni:339:25                         static     reads ∅\n  hole Editor.beni:341:25                         dynamic    reads tag ρ; tag ρ.Editor#0; tag ρ.Editor#1.status; ρ.Editor#1.status.Saving#1.body; ρ.Editor#1.status.Editing#2.body; ρ.Editor#1.status.EditingNew#1.body; ρ.Editor#1.status.Creating#0.body\n  hole Editor.beni:350:25                         dynamic    reads tag ρ; tag ρ.Editor#0; tag ρ.Editor#1.status; ρ.Editor#1.status.Saving#1.tags; ρ.Editor#1.status.Editing#2.tags; ρ.Editor#1.status.EditingNew#1.tags; ρ.Editor#1.status.Creating#0.tags\n  hole Editor.beni:354:70                         dynamic    reads tag ρ; tag ρ.Editor#0; tag ρ.Editor#1.status\n  hole Feed.beni:76:9                             dynamic    reads ρ.Home#0.feed.Loaded#0.Model#0.errors; ρ.Home#0.feed.Loaded#0.Model#0.errors[*]; ρ.Profile#1.feed.Loaded#0.Model#0.errors; ρ.Profile#1.feed.Loaded#0.Model#0.errors[*]\n  hole Feed.beni:77:9                             dynamic    reads tag ρ; tag ρ.Home#0.feed; ρ.Home#0.feed.Loaded#0.Model#0.articles; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].author.IsViewer#0; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].author.IsFollowing#0; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].author.IsNotFollowing#0; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].createdAt; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].description; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].favoritesCount; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].slug; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].tags; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].tags[*]; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].title; tag ρ.Home#0.feed.Loaded#0.Model#0.session; ρ.Home#0.feed.Loaded#0.Model#0.session.LoggedIn#1; ρ.Home#0.feed.Loaded#0.Model#0.session.LoggedIn#1.cred; tag ρ.Profile#1.author; tag ρ.Profile#1.feed; ρ.Profile#1.feed.Loaded#0.Model#0.articles; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].author; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].author.IsViewer#0; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].author.IsFollowing#0; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].author.IsNotFollowing#0; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].createdAt; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].description; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].favoritesCount; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].slug; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].tags; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].tags[*]; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].title; tag ρ.Profile#1.feed.Loaded#0.Model#0.session; ρ.Profile#1.feed.Loaded#0.Model#0.session.LoggedIn#1; ρ.Profile#1.feed.Loaded#0.Model#0.session.LoggedIn#1.cred\n  hole Feed.beni:81:18                            dynamic    reads ρ.Home#0.feed.Loaded#0.Model#0.articles; ρ.Profile#1.feed.Loaded#0.Model#0.articles\n  hole Feed.beni:94:17                            dynamic    reads ρ.Home#0.feed.Loaded#0.Model#0.articles[*].title; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].title\n  hole Feed.beni:95:16                            dynamic    reads ρ.Home#0.feed.Loaded#0.Model#0.articles[*].description; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].description\n  hole Feed.beni:97:13                            dynamic    reads ρ.Home#0.feed.Loaded#0.Model#0.articles[*].tags; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].tags[*]; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].tags; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].tags[*]\n  hole Feed.beni:101:16                           dynamic    reads tag ρ; tag ρ.Home#0.feed; tag ρ.Home#0.feed.Loaded#0.Model#0.articles[*].author; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].author.IsViewer#0; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].author.IsFollowing#0; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].author.IsNotFollowing#0; tag ρ.Profile#1.author; tag ρ.Profile#1.feed; tag ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].author; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].author.IsViewer#0; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].author.IsFollowing#0; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].author.IsNotFollowing#0\n  hole Feed.beni:102:17                           dynamic    reads tag ρ; tag ρ.Home#0.feed; tag ρ.Home#0.feed.Loaded#0.Model#0.articles[*].author; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].author.IsViewer#0; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].author.IsFollowing#0; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].author.IsNotFollowing#0; tag ρ.Profile#1.author; tag ρ.Profile#1.feed; tag ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].author; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].author.IsViewer#0; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].author.IsFollowing#0; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].author.IsNotFollowing#0\n  hole Feed.beni:105:17                           dynamic    reads tag ρ; tag ρ.Home#0.feed; tag ρ.Home#0.feed.Loaded#0.Model#0.articles[*].author; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].author.IsViewer#0; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].author.IsFollowing#0; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].author.IsNotFollowing#0; tag ρ.Profile#1.author; tag ρ.Profile#1.feed; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].author\n  hole Feed.beni:106:17                           dynamic    reads ρ.Home#0.feed.Loaded#0.Model#0.articles[*].createdAt; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].createdAt\n  hole Feed.beni:108:13                           dynamic    reads tag ρ; tag ρ.Home#0.feed; tag ρ.Home#0.feed.Loaded#0.Model#0.articles[*].favorited; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].favoritesCount; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].slug; tag ρ.Home#0.feed.Loaded#0.Model#0.session; ρ.Home#0.feed.Loaded#0.Model#0.session.LoggedIn#1; ρ.Home#0.feed.Loaded#0.Model#0.session.LoggedIn#1.cred; tag ρ.Profile#1.author; tag ρ.Profile#1.feed; tag ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].favorited; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].favoritesCount; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].slug; tag ρ.Profile#1.feed.Loaded#0.Model#0.session; ρ.Profile#1.feed.Loaded#0.Model#0.session.LoggedIn#1; ρ.Profile#1.feed.Loaded#0.Model#0.session.LoggedIn#1.cred\n  hole Feed.beni:120:9                            dynamic    reads tag ρ; tag ρ.Home#0.feed; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].description; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].slug; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].tags; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].tags[*]; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].title; tag ρ.Profile#1.author; tag ρ.Profile#1.feed; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].description; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].slug; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].tags; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].tags[*]; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].title\n  hole Feed.beni:130:14                           dynamic    reads ρ.Home#0.feed.Loaded#0.Model#0.total; ρ.Profile#1.feed.Loaded#0.Model#0.total\n  hole Feed.beni:132:25                           dynamic    reads ρ.Home#0.feed.Loaded#0.Model#0.page; ρ.Home#0.feed.Loaded#0.Model#0.total; ρ.Profile#1.feed.Loaded#0.Model#0.page; ρ.Profile#1.feed.Loaded#0.Model#0.total\n  hole Feed.beni:135:29                           dynamic    reads ρ.Home#0.feed.Loaded#0.Model#0.total; ρ.Profile#1.feed.Loaded#0.Model#0.total\n  hole Feed.beni:142:29                           dynamic    reads ρ.Home#0.feed.Loaded#0.Model#0.total; ρ.Profile#1.feed.Loaded#0.Model#0.total\n  hole Feed.beni:158:14                           dynamic    reads tag ρ; tag ρ.Home#0.feed; ρ.Home#0.feedTab; ρ.Home#0.feedTab.TagFeed#0; tag ρ.Home#0.session; ρ.Home#0.session.LoggedIn#1; ρ.Home#0.session.LoggedIn#1.cred; tag ρ.Profile#1.author; tag ρ.Profile#1.feed; ρ.Profile#1.feedTab\n  hole Feed.beni:162:29                           dynamic    reads tag ρ; tag ρ.Home#0.feed; ρ.Home#0.feedTab; ρ.Home#0.feedTab.TagFeed#0; tag ρ.Home#0.session; ρ.Home#0.session.LoggedIn#1; ρ.Home#0.session.LoggedIn#1.cred; tag ρ.Profile#1.author; tag ρ.Profile#1.feed; ρ.Profile#1.feedTab\n  hole Feed.beni:169:29                           dynamic    reads tag ρ; tag ρ.Home#0.feed; ρ.Home#0.feedTab; ρ.Home#0.feedTab.TagFeed#0; tag ρ.Home#0.session; ρ.Home#0.session.LoggedIn#1; ρ.Home#0.session.LoggedIn#1.cred; tag ρ.Profile#1.author; tag ρ.Profile#1.feed; ρ.Profile#1.feedTab\n  hole Home.beni:154:13                           dynamic    reads tag ρ.Home#0.session\n  hole Home.beni:169:25                           dynamic    reads tag ρ; tag ρ.Home#0.feed; ρ.Home#0.feed.Loaded#0.Model#0; ρ.Home#0.feed.Loaded#0.Model#0.articles; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].author.IsViewer#0; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].author.IsFollowing#0; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].author.IsNotFollowing#0; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].createdAt; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].description; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].favoritesCount; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].slug; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].tags; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].tags[*]; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].title; ρ.Home#0.feed.Loaded#0.Model#0.errors; ρ.Home#0.feed.Loaded#0.Model#0.errors[*]; ρ.Home#0.feed.Loaded#0.Model#0.page; ρ.Home#0.feed.Loaded#0.Model#0.session.LoggedIn#1; ρ.Home#0.feed.Loaded#0.Model#0.session.LoggedIn#1.cred; ρ.Home#0.feed.Loaded#0.Model#0.total; ρ.Home#0.feedTab; ρ.Home#0.feedTab.TagFeed#0; tag ρ.Home#0.session; ρ.Home#0.session.LoggedIn#1; ρ.Home#0.session.LoggedIn#1.cred\n  hole Home.beni:172:37                           dynamic    reads tag ρ; tag ρ.Home#0.feed; ρ.Home#0.feedTab; ρ.Home#0.feedTab.TagFeed#0; tag ρ.Home#0.session; ρ.Home#0.session.LoggedIn#1; ρ.Home#0.session.LoggedIn#1.cred\n  hole Home.beni:173:37                           dynamic    reads tag ρ; tag ρ.Home#0.feed; ρ.Home#0.feed.Loaded#0.Model#0.articles; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].author.IsViewer#0; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].author.IsFollowing#0; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].author.IsNotFollowing#0; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].createdAt; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].description; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].favoritesCount; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].slug; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].tags; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].tags[*]; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].title; ρ.Home#0.feed.Loaded#0.Model#0.errors; ρ.Home#0.feed.Loaded#0.Model#0.errors[*]; tag ρ.Home#0.feed.Loaded#0.Model#0.session; ρ.Home#0.feed.Loaded#0.Model#0.session.LoggedIn#1; ρ.Home#0.feed.Loaded#0.Model#0.session.LoggedIn#1.cred\n  hole Home.beni:174:37                           dynamic    reads ρ.Home#0.feed.Loaded#0.Model#0; ρ.Home#0.feed.Loaded#0.Model#0.page; ρ.Home#0.feed.Loaded#0.Model#0.total\n  hole Home.beni:190:29                           dynamic    reads tag ρ.Home#0.tags; ρ.Home#0.tags.Loaded#0; ρ.Home#0.tags.Loaded#0[*]\n  hole Home.beni:234:10                           dynamic    reads ρ.Home#0.tags.Loaded#0\n  hole Home.beni:238:21                           dynamic    reads ρ.Home#0.tags.Loaded#0[*]\n  hole Home.beni:245:21                           dynamic    reads ρ.Home#0.tags.Loaded#0[*]\n  hole Login.beni:118:32                          dynamic    reads tag ρ\n  hole Login.beni:120:25                          dynamic    reads ρ.Login#0.problems; ρ.Login#0.problems[*].InvalidEntry#1; ρ.Login#0.problems[*].ServerError#0\n  hole Login.beni:127:37                          dynamic    reads ρ.Login#0.form.email\n  hole Login.beni:137:37                          dynamic    reads ρ.Login#0.form.password\n  hole Login.beni:153:10                          dynamic    reads ρ.Login#0.problems\n  hole Login.beni:156:21                          dynamic    reads tag ρ.Login#0.problems[*]; ρ.Login#0.problems[*].InvalidEntry#1; ρ.Login#0.problems[*].ServerError#0\n  hole Main.beni:57:58                            static     reads ∅\n  hole Page.beni:31:13                            dynamic    reads tag ρ; ρ.Redirect#0; ρ.Redirect#0.LoggedIn#1; ρ.Redirect#0.LoggedIn#1.cred.username; ρ.Redirect#0.LoggedIn#1.image.Just#0; ρ.NotFound#0; ρ.NotFound#0.LoggedIn#1; ρ.NotFound#0.LoggedIn#1.cred.username; ρ.NotFound#0.LoggedIn#1.image.Just#0; ρ.Home#0.session; ρ.Home#0.session.LoggedIn#1; ρ.Home#0.session.LoggedIn#1.cred.username; ρ.Home#0.session.LoggedIn#1.image.Just#0; ρ.Settings#0.session; ρ.Settings#0.session.LoggedIn#1; ρ.Settings#0.session.LoggedIn#1.cred.username; ρ.Settings#0.session.LoggedIn#1.image.Just#0; ρ.Login#0.session; ρ.Login#0.session.LoggedIn#1; ρ.Login#0.session.LoggedIn#1.cred.username; ρ.Login#0.session.LoggedIn#1.image.Just#0; ρ.Register#0.session; ρ.Register#0.session.LoggedIn#1; ρ.Register#0.session.LoggedIn#1.cred.username; ρ.Register#0.session.LoggedIn#1.image.Just#0; ρ.Profile#0; ρ.Profile#1.session; ρ.Profile#1.session.LoggedIn#1; ρ.Profile#1.session.LoggedIn#1.cred.username; ρ.Profile#1.session.LoggedIn#1.image.Just#0; ρ.Article#0.session; ρ.Article#0.session.LoggedIn#1; ρ.Article#0.session.LoggedIn#1.cred.username; ρ.Article#0.session.LoggedIn#1.image.Just#0; tag ρ.Editor#0; ρ.Editor#1.session; ρ.Editor#1.session.LoggedIn#1; ρ.Editor#1.session.LoggedIn#1.cred.username; ρ.Editor#1.session.LoggedIn#1.image.Just#0\n  hole Page.beni:32:13                            dynamic    reads tag ρ; tag ρ.Home#0.feed; ρ.Home#0.feed.Loaded#0.Model#0; ρ.Home#0.feed.Loaded#0.Model#0.articles; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].author.IsViewer#0; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].author.IsFollowing#0; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].author.IsNotFollowing#0; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].createdAt; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].description; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].favoritesCount; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].slug; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].tags; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].tags[*]; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].title; ρ.Home#0.feed.Loaded#0.Model#0.errors; ρ.Home#0.feed.Loaded#0.Model#0.errors[*]; ρ.Home#0.feed.Loaded#0.Model#0.page; ρ.Home#0.feed.Loaded#0.Model#0.session.LoggedIn#1; ρ.Home#0.feed.Loaded#0.Model#0.session.LoggedIn#1.cred; ρ.Home#0.feed.Loaded#0.Model#0.total; ρ.Home#0.feedTab; ρ.Home#0.feedTab.TagFeed#0; tag ρ.Home#0.session; ρ.Home#0.session.LoggedIn#1; ρ.Home#0.session.LoggedIn#1.cred; tag ρ.Home#0.tags; ρ.Home#0.tags.Loaded#0; ρ.Home#0.tags.Loaded#0[*]; ρ.Settings#0.problems; ρ.Settings#0.problems[*].InvalidEntry#1; ρ.Settings#0.problems[*].ServerError#0; tag ρ.Settings#0.session; ρ.Settings#0.session.LoggedIn#1; ρ.Settings#0.session.LoggedIn#1.cred; tag ρ.Settings#0.status; ρ.Settings#0.status.Loaded#0; ρ.Settings#0.status.Loaded#0.avatar; ρ.Settings#0.status.Loaded#0.bio; ρ.Settings#0.status.Loaded#0.email; ρ.Settings#0.status.Loaded#0.password; ρ.Settings#0.status.Loaded#0.username; ρ.Login#0; ρ.Login#0.form.email; ρ.Login#0.form.password; ρ.Login#0.problems; ρ.Login#0.problems[*].InvalidEntry#1; ρ.Login#0.problems[*].ServerError#0; ρ.Register#0; ρ.Register#0.form.email; ρ.Register#0.form.password; ρ.Register#0.form.username; ρ.Register#0.problems; ρ.Register#0.problems[*].InvalidEntry#1; ρ.Register#0.problems[*].ServerError#0; tag ρ.Profile#1.author; tag ρ.Profile#1.author.Loaded#0; ρ.Profile#1.author.Loaded#0.IsViewer#0.bio; ρ.Profile#1.author.Loaded#0.IsViewer#0.bio.Just#0; ρ.Profile#1.author.Loaded#0.IsViewer#0.image; ρ.Profile#1.author.Loaded#0.IsViewer#0.image.Just#0; ρ.Profile#1.author.Loaded#0.IsViewer#0.username; ρ.Profile#1.author.Loaded#0.IsFollowing#0.bio; ρ.Profile#1.author.Loaded#0.IsFollowing#0.bio.Just#0; ρ.Profile#1.author.Loaded#0.IsFollowing#0.image; ρ.Profile#1.author.Loaded#0.IsFollowing#0.image.Just#0; ρ.Profile#1.author.Loaded#0.IsFollowing#0.username; ρ.Profile#1.author.Loaded#0.IsNotFollowing#0.bio; ρ.Profile#1.author.Loaded#0.IsNotFollowing#0.bio.Just#0; ρ.Profile#1.author.Loaded#0.IsNotFollowing#0.image; ρ.Profile#1.author.Loaded#0.IsNotFollowing#0.image.Just#0; ρ.Profile#1.author.Loaded#0.IsNotFollowing#0.username; ρ.Profile#1.errors; ρ.Profile#1.errors[*]; tag ρ.Profile#1.feed; ρ.Profile#1.feed.Loaded#0.Model#0; ρ.Profile#1.feed.Loaded#0.Model#0.articles; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].author; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].author.IsViewer#0; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].author.IsFollowing#0; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].author.IsNotFollowing#0; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].createdAt; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].description; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].favoritesCount; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].slug; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].tags; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].tags[*]; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].title; ρ.Profile#1.feed.Loaded#0.Model#0.errors; ρ.Profile#1.feed.Loaded#0.Model#0.errors[*]; ρ.Profile#1.feed.Loaded#0.Model#0.page; ρ.Profile#1.feed.Loaded#0.Model#0.session.LoggedIn#1; ρ.Profile#1.feed.Loaded#0.Model#0.session.LoggedIn#1.cred; ρ.Profile#1.feed.Loaded#0.Model#0.total; ρ.Profile#1.feedTab; tag ρ.Profile#1.session; ρ.Profile#1.session.LoggedIn#1; ρ.Profile#1.session.LoggedIn#1.cred; tag ρ.Article#0.article; tag ρ.Article#0.article.Loaded#0.author; ρ.Article#0.article.Loaded#0.author.IsViewer#0.image; ρ.Article#0.article.Loaded#0.author.IsViewer#0.image.Just#0; ρ.Article#0.article.Loaded#0.author.IsViewer#0.username; ρ.Article#0.article.Loaded#0.author.IsFollowing#0.image; ρ.Article#0.article.Loaded#0.author.IsFollowing#0.image.Just#0; ρ.Article#0.article.Loaded#0.author.IsFollowing#0.username; ρ.Article#0.article.Loaded#0.author.IsNotFollowing#0.image; ρ.Article#0.article.Loaded#0.author.IsNotFollowing#0.image.Just#0; ρ.Article#0.article.Loaded#0.author.IsNotFollowing#0.username; ρ.Article#0.article.Loaded#0.body; ρ.Article#0.article.Loaded#0.createdAt; tag ρ.Article#0.article.Loaded#0.favorited; ρ.Article#0.article.Loaded#0.favoritesCount; ρ.Article#0.article.Loaded#0.slug; ρ.Article#0.article.Loaded#0.tags; ρ.Article#0.article.Loaded#0.tags[*]; ρ.Article#0.article.Loaded#0.title; tag ρ.Article#0.comments; ρ.Article#0.comments.Loaded#0.0; ρ.Article#0.comments.Loaded#0.0.Editing#0; ρ.Article#0.comments.Loaded#0.0.Sending#0; ρ.Article#0.comments.Loaded#0.1; ρ.Article#0.comments.Loaded#0.1[*].author.IsViewer#0.image; ρ.Article#0.comments.Loaded#0.1[*].author.IsViewer#0.username; ρ.Article#0.comments.Loaded#0.1[*].author.IsFollowing#0.image; ρ.Article#0.comments.Loaded#0.1[*].author.IsFollowing#0.username; ρ.Article#0.comments.Loaded#0.1[*].author.IsNotFollowing#0.image; ρ.Article#0.comments.Loaded#0.1[*].author.IsNotFollowing#0.username; ρ.Article#0.comments.Loaded#0.1[*].body; ρ.Article#0.comments.Loaded#0.1[*].createdAt; ρ.Article#0.comments.Loaded#0.1[*].id; ρ.Article#0.errors; ρ.Article#0.errors[*]; ρ.Article#0.session; ρ.Article#0.session.LoggedIn#1; ρ.Article#0.session.LoggedIn#1.cred; ρ.Article#0.session.LoggedIn#1.image.Just#0; tag ρ.Editor#0; tag ρ.Editor#1.session; ρ.Editor#1.session.LoggedIn#1; ρ.Editor#1.session.LoggedIn#1.cred; tag ρ.Editor#1.status; ρ.Editor#1.status.Saving#1; ρ.Editor#1.status.Saving#1.body; ρ.Editor#1.status.Saving#1.description; ρ.Editor#1.status.Saving#1.tags; ρ.Editor#1.status.Saving#1.title; ρ.Editor#1.status.Editing#1; ρ.Editor#1.status.Editing#1[*].InvalidEntry#1; ρ.Editor#1.status.Editing#1[*].ServerError#0; ρ.Editor#1.status.Editing#2; ρ.Editor#1.status.Editing#2.body; ρ.Editor#1.status.Editing#2.description; ρ.Editor#1.status.Editing#2.tags; ρ.Editor#1.status.Editing#2.title; ρ.Editor#1.status.EditingNew#0; ρ.Editor#1.status.EditingNew#0[*].InvalidEntry#1; ρ.Editor#1.status.EditingNew#0[*].ServerError#0; ρ.Editor#1.status.EditingNew#1; ρ.Editor#1.status.EditingNew#1.body; ρ.Editor#1.status.EditingNew#1.description; ρ.Editor#1.status.EditingNew#1.tags; ρ.Editor#1.status.EditingNew#1.title; ρ.Editor#1.status.Creating#0; ρ.Editor#1.status.Creating#0.body; ρ.Editor#1.status.Creating#0.description; ρ.Editor#1.status.Creating#0.tags; ρ.Editor#1.status.Creating#0.title\n  hole Page.beni:33:13                            static     reads ∅\n  hole Page.beni:42:37                            static     reads ∅\n  hole Page.beni:44:17                            dynamic    reads tag ρ; ρ.Profile#0; tag ρ.Editor#0\n  hole Page.beni:45:17                            dynamic    reads tag ρ; ρ.Redirect#0; ρ.Redirect#0.LoggedIn#1; ρ.Redirect#0.LoggedIn#1.cred.username; ρ.Redirect#0.LoggedIn#1.image.Just#0; ρ.NotFound#0; ρ.NotFound#0.LoggedIn#1; ρ.NotFound#0.LoggedIn#1.cred.username; ρ.NotFound#0.LoggedIn#1.image.Just#0; ρ.Home#0.session; ρ.Home#0.session.LoggedIn#1; ρ.Home#0.session.LoggedIn#1.cred.username; ρ.Home#0.session.LoggedIn#1.image.Just#0; ρ.Settings#0.session; ρ.Settings#0.session.LoggedIn#1; ρ.Settings#0.session.LoggedIn#1.cred.username; ρ.Settings#0.session.LoggedIn#1.image.Just#0; ρ.Login#0.session; ρ.Login#0.session.LoggedIn#1; ρ.Login#0.session.LoggedIn#1.cred.username; ρ.Login#0.session.LoggedIn#1.image.Just#0; ρ.Register#0.session; ρ.Register#0.session.LoggedIn#1; ρ.Register#0.session.LoggedIn#1.cred.username; ρ.Register#0.session.LoggedIn#1.image.Just#0; ρ.Profile#0; ρ.Profile#1.session; ρ.Profile#1.session.LoggedIn#1; ρ.Profile#1.session.LoggedIn#1.cred.username; ρ.Profile#1.session.LoggedIn#1.image.Just#0; ρ.Article#0.session; ρ.Article#0.session.LoggedIn#1; ρ.Article#0.session.LoggedIn#1.cred.username; ρ.Article#0.session.LoggedIn#1.image.Just#0; tag ρ.Editor#0; ρ.Editor#1.session; ρ.Editor#1.session.LoggedIn#1; ρ.Editor#1.session.LoggedIn#1.cred.username; ρ.Editor#1.session.LoggedIn#1.image.Just#0\n  hole Page.beni:49:29                            dynamic    reads tag ρ; tag ρ.Redirect#0; tag ρ.NotFound#0; tag ρ.Home#0.session; tag ρ.Settings#0.session; tag ρ.Login#0.session; tag ρ.Register#0.session; ρ.Profile#0; tag ρ.Profile#1.session; tag ρ.Article#0.session; tag ρ.Editor#0; tag ρ.Editor#1.session\n  hole Page.beni:50:29                            dynamic    reads tag ρ; tag ρ.Redirect#0; tag ρ.NotFound#0; tag ρ.Home#0.session; tag ρ.Settings#0.session; tag ρ.Login#0.session; tag ρ.Register#0.session; ρ.Profile#0; tag ρ.Profile#1.session; tag ρ.Article#0.session; tag ρ.Editor#0; tag ρ.Editor#1.session\n  hole Page.beni:52:33                            dynamic    reads tag ρ; ρ.Redirect#0.LoggedIn#1.cred.username; ρ.NotFound#0.LoggedIn#1.cred.username; ρ.Home#0.session.LoggedIn#1.cred.username; ρ.Settings#0.session.LoggedIn#1.cred.username; ρ.Login#0.session.LoggedIn#1.cred.username; ρ.Register#0.session.LoggedIn#1.cred.username; ρ.Profile#0; ρ.Profile#1.session.LoggedIn#1.cred.username; ρ.Article#0.session.LoggedIn#1.cred.username; tag ρ.Editor#0; ρ.Editor#1.session.LoggedIn#1.cred.username\n  hole Page.beni:57:53                            dynamic    reads tag ρ; tag ρ.Redirect#0; ρ.Redirect#0.LoggedIn#1.cred.username; tag ρ.NotFound#0; ρ.NotFound#0.LoggedIn#1.cred.username; tag ρ.Home#0.session; ρ.Home#0.session.LoggedIn#1.cred.username; tag ρ.Settings#0.session; ρ.Settings#0.session.LoggedIn#1.cred.username; tag ρ.Login#0.session; ρ.Login#0.session.LoggedIn#1.cred.username; tag ρ.Register#0.session; ρ.Register#0.session.LoggedIn#1.cred.username; tag ρ.Profile#1.session; ρ.Profile#1.session.LoggedIn#1.cred.username; tag ρ.Article#0.session; ρ.Article#0.session.LoggedIn#1.cred.username; tag ρ.Editor#0; tag ρ.Editor#1.session; ρ.Editor#1.session.LoggedIn#1.cred.username\n  hole Page.beni:58:37                            dynamic    reads tag ρ; tag ρ.Redirect#0; tag ρ.Redirect#0.LoggedIn#1.image; ρ.Redirect#0.LoggedIn#1.image.Just#0; tag ρ.NotFound#0; tag ρ.NotFound#0.LoggedIn#1.image; ρ.NotFound#0.LoggedIn#1.image.Just#0; tag ρ.Home#0.session; tag ρ.Home#0.session.LoggedIn#1.image; ρ.Home#0.session.LoggedIn#1.image.Just#0; tag ρ.Settings#0.session; tag ρ.Settings#0.session.LoggedIn#1.image; ρ.Settings#0.session.LoggedIn#1.image.Just#0; tag ρ.Login#0.session; tag ρ.Login#0.session.LoggedIn#1.image; ρ.Login#0.session.LoggedIn#1.image.Just#0; tag ρ.Register#0.session; tag ρ.Register#0.session.LoggedIn#1.image; ρ.Register#0.session.LoggedIn#1.image.Just#0; tag ρ.Profile#1.session; tag ρ.Profile#1.session.LoggedIn#1.image; ρ.Profile#1.session.LoggedIn#1.image.Just#0; tag ρ.Article#0.session; tag ρ.Article#0.session.LoggedIn#1.image; ρ.Article#0.session.LoggedIn#1.image.Just#0; tag ρ.Editor#0; tag ρ.Editor#1.session; tag ρ.Editor#1.session.LoggedIn#1.image; ρ.Editor#1.session.LoggedIn#1.image.Just#0\n  hole Page.beni:59:37                            dynamic    reads ρ.Redirect#0.LoggedIn#1.cred.username; ρ.NotFound#0.LoggedIn#1.cred.username; ρ.Home#0.session.LoggedIn#1.cred.username; ρ.Settings#0.session.LoggedIn#1.cred.username; ρ.Login#0.session.LoggedIn#1.cred.username; ρ.Register#0.session.LoggedIn#1.cred.username; ρ.Profile#1.session.LoggedIn#1.cred.username; ρ.Article#0.session.LoggedIn#1.cred.username; ρ.Editor#1.session.LoggedIn#1.cred.username\n  hole Page.beni:62:29                            dynamic    reads tag ρ; tag ρ.Redirect#0; tag ρ.NotFound#0; tag ρ.Home#0.session; tag ρ.Settings#0.session; tag ρ.Login#0.session; tag ρ.Register#0.session; ρ.Profile#0; tag ρ.Profile#1.session; tag ρ.Article#0.session; tag ρ.Editor#0; tag ρ.Editor#1.session\n  hole Page.beni:67:29                            dynamic    reads tag ρ; tag ρ.Redirect#0; tag ρ.NotFound#0; tag ρ.Home#0.session; tag ρ.Settings#0.session; tag ρ.Login#0.session; tag ρ.Register#0.session; ρ.Profile#0; tag ρ.Profile#1.session; tag ρ.Article#0.session; tag ρ.Editor#0; tag ρ.Editor#1.session\n  hole Page.beni:68:29                            dynamic    reads tag ρ; tag ρ.Redirect#0; tag ρ.NotFound#0; tag ρ.Home#0.session; tag ρ.Settings#0.session; tag ρ.Login#0.session; tag ρ.Register#0.session; ρ.Profile#0; tag ρ.Profile#1.session; tag ρ.Article#0.session; tag ρ.Editor#0; tag ρ.Editor#1.session\n  hole Page.beni:78:9                             dynamic    reads tag ρ; tag ρ.Redirect#0; tag ρ.NotFound#0; tag ρ.Home#0.session; tag ρ.Settings#0.session; tag ρ.Login#0.session; tag ρ.Register#0.session; ρ.Profile#0; tag ρ.Profile#1.session; tag ρ.Article#0.session; tag ρ.Editor#0; tag ρ.Editor#1.session\n  hole Page.beni:79:29                            static     reads ∅\n  hole Page.beni:79:53                            static     reads ∅\n  hole Page.beni:102:14                           dynamic    reads ρ.Home#0.feed.Loaded#0.Model#0.errors; ρ.Profile#1.errors; ρ.Profile#1.feed.Loaded#0.Model#0.errors; ρ.Article#0.errors\n  hole Page.beni:102:59                           dynamic    reads ρ.Home#0.feed.Loaded#0.Model#0.errors[*]; ρ.Profile#1.errors[*]; ρ.Profile#1.feed.Loaded#0.Model#0.errors[*]; ρ.Article#0.errors[*]\n  hole Page.beni:114:48                           dynamic    reads tag ρ; tag ρ.Profile#1.author; tag ρ.Article#0.article\n  hole ProfilePage.beni:220:9                     dynamic    reads ρ.Profile#1.errors; ρ.Profile#1.errors[*]\n  hole ProfilePage.beni:225:25                    dynamic    reads tag ρ; tag ρ.Profile#1.author; tag ρ.Profile#1.author.Loaded#0; ρ.Profile#1.author.Loaded#0.IsViewer#0.image; ρ.Profile#1.author.Loaded#0.IsViewer#0.image.Just#0; ρ.Profile#1.author.Loaded#0.IsFollowing#0.image; ρ.Profile#1.author.Loaded#0.IsFollowing#0.image.Just#0; ρ.Profile#1.author.Loaded#0.IsNotFollowing#0.image; ρ.Profile#1.author.Loaded#0.IsNotFollowing#0.image.Just#0\n  hole ProfilePage.beni:226:29                    dynamic    reads tag ρ.Profile#1.author.Loaded#0; ρ.Profile#1.author.Loaded#0.IsViewer#0.username; ρ.Profile#1.author.Loaded#0.IsFollowing#0.username; ρ.Profile#1.author.Loaded#0.IsNotFollowing#0.username\n  hole ProfilePage.beni:227:28                    dynamic    reads tag ρ.Profile#1.author.Loaded#0; ρ.Profile#1.author.Loaded#0.IsViewer#0.bio; ρ.Profile#1.author.Loaded#0.IsViewer#0.bio.Just#0; ρ.Profile#1.author.Loaded#0.IsFollowing#0.bio; ρ.Profile#1.author.Loaded#0.IsFollowing#0.bio.Just#0; ρ.Profile#1.author.Loaded#0.IsNotFollowing#0.bio; ρ.Profile#1.author.Loaded#0.IsNotFollowing#0.bio.Just#0\n  hole ProfilePage.beni:228:25                    dynamic    reads tag ρ; tag ρ.Profile#1.author; tag ρ.Profile#1.author.Loaded#0; ρ.Profile#1.author.Loaded#0.IsViewer#0.username; ρ.Profile#1.author.Loaded#0.IsFollowing#0.username; ρ.Profile#1.author.Loaded#0.IsNotFollowing#0.username; tag ρ.Profile#1.session; ρ.Profile#1.session.LoggedIn#1; ρ.Profile#1.session.LoggedIn#1.cred\n  hole ProfilePage.beni:245:21                    dynamic    reads tag ρ; tag ρ.Profile#1.author; tag ρ.Profile#1.feed; ρ.Profile#1.feed.Loaded#0.Model#0; ρ.Profile#1.feed.Loaded#0.Model#0.articles; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].author; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].author.IsViewer#0; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].author.IsFollowing#0; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].author.IsNotFollowing#0; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].createdAt; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].description; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].favoritesCount; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].slug; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].tags; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].tags[*]; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].title; ρ.Profile#1.feed.Loaded#0.Model#0.errors; ρ.Profile#1.feed.Loaded#0.Model#0.errors[*]; ρ.Profile#1.feed.Loaded#0.Model#0.page; ρ.Profile#1.feed.Loaded#0.Model#0.session.LoggedIn#1; ρ.Profile#1.feed.Loaded#0.Model#0.session.LoggedIn#1.cred; ρ.Profile#1.feed.Loaded#0.Model#0.total; ρ.Profile#1.feedTab\n  hole ProfilePage.beni:248:33                    dynamic    reads tag ρ; tag ρ.Profile#1.author; tag ρ.Profile#1.feed; ρ.Profile#1.feedTab\n  hole ProfilePage.beni:259:33                    dynamic    reads tag ρ; tag ρ.Profile#1.author; tag ρ.Profile#1.feed; ρ.Profile#1.feed.Loaded#0.Model#0.articles; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].author; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].author.IsViewer#0; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].author.IsFollowing#0; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].author.IsNotFollowing#0; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].createdAt; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].description; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].favoritesCount; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].slug; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].tags; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].tags[*]; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].title; ρ.Profile#1.feed.Loaded#0.Model#0.errors; ρ.Profile#1.feed.Loaded#0.Model#0.errors[*]; tag ρ.Profile#1.feed.Loaded#0.Model#0.session; ρ.Profile#1.feed.Loaded#0.Model#0.session.LoggedIn#1; ρ.Profile#1.feed.Loaded#0.Model#0.session.LoggedIn#1.cred\n  hole ProfilePage.beni:260:33                    dynamic    reads ρ.Profile#1.feed.Loaded#0.Model#0; ρ.Profile#1.feed.Loaded#0.Model#0.page; ρ.Profile#1.feed.Loaded#0.Model#0.total\n  hole Register.beni:145:32                       dynamic    reads tag ρ\n  hole Register.beni:148:30                       dynamic    reads ρ.Register#0.problems\n  hole Register.beni:151:41                       dynamic    reads tag ρ.Register#0.problems[*]; ρ.Register#0.problems[*].InvalidEntry#1; ρ.Register#0.problems[*].ServerError#0\n  hole Register.beni:168:37                       dynamic    reads ρ.Register#0.form.username\n  hole Register.beni:177:37                       dynamic    reads ρ.Register#0.form.email\n  hole Register.beni:187:37                       dynamic    reads ρ.Register#0.form.password\n  hole Settings.beni:222:30                       dynamic    reads ρ.Settings#0.problems\n  hole Settings.beni:225:41                       dynamic    reads tag ρ.Settings#0.problems[*]; ρ.Settings#0.problems[*].InvalidEntry#1; ρ.Settings#0.problems[*].ServerError#0\n  hole Settings.beni:236:25                       dynamic    reads tag ρ; tag ρ.Settings#0.session; ρ.Settings#0.session.LoggedIn#1; ρ.Settings#0.session.LoggedIn#1.cred; tag ρ.Settings#0.status; ρ.Settings#0.status.Loaded#0; ρ.Settings#0.status.Loaded#0.avatar; ρ.Settings#0.status.Loaded#0.bio; ρ.Settings#0.status.Loaded#0.email; ρ.Settings#0.status.Loaded#0.password; ρ.Settings#0.status.Loaded#0.username\n  hole Settings.beni:270:21                       dynamic    reads ρ.Settings#0.status.Loaded#0.avatar\n  hole Settings.beni:279:21                       dynamic    reads ρ.Settings#0.status.Loaded#0.username\n  hole Settings.beni:287:21                       static     reads ∅\n  hole Settings.beni:289:21                       dynamic    reads ρ.Settings#0.status.Loaded#0.bio\n  hole Settings.beni:298:21                       dynamic    reads ρ.Settings#0.status.Loaded#0.email\n  hole Settings.beni:308:21                       dynamic    reads ρ.Settings#0.status.Loaded#0.password\n  holes 145: static 12, literal 6, static-key 0, dynamic 127\n  site Article.beni:199:17                        instanced\n  site Article.beni:208:5                         unique\n  site Article.beni:209:73                        instanced\n  site Article.beni:215:5                         instanced\n  site Article.beni:217:21                        instanced\n  site Article.beni:226:9                         instanced\n  site Article.beni:231:9                         instanced\n  site Article.beni:239:5                         instanced\n  site ArticlePage.beni:221:17                    unique\n  site ArticlePage.beni:248:44                    unique\n  site ArticlePage.beni:261:5                     shared     2 calls\n  site ArticlePage.beni:272:17                    unique\n  site ArticlePage.beni:282:13                    shared     2 calls\n  site ArticlePage.beni:301:13                    shared     2 calls\n  site ArticlePage.beni:321:13                    unique\n  site ArticlePage.beni:329:13                    unique\n  site ArticlePage.beni:349:13                    unique\n  site ArticlePage.beni:372:13                    unique\n  site ArticlePage.beni:383:5                     instanced\n  site ArticlePage.beni:396:21                    instanced\n  site ArticlePage.beni:404:21                    instanced\n  site Author.beni:119:20                         instanced\n  site Author.beni:125:5                          instanced\n  site Author.beni:134:13                         unique\n  site Author.beni:137:13                         shared     3 calls\n  site Author.beni:143:13                         shared     3 calls\n  site Editor.beni:259:17                         unique\n  site Editor.beni:265:5                          shared     2 calls\n  site Editor.beni:271:29                         unique\n  site Editor.beni:277:29                         unique\n  site Editor.beni:299:5                          shared     8 calls\n  site Editor.beni:303:21                         instanced\n  site Feed.beni:75:5                             shared     2 calls\n  site Feed.beni:78:13                            unique\n  site Feed.beni:80:13                            shared     2 calls\n  site Feed.beni:93:9                             instanced\n  site Feed.beni:99:5                             instanced\n  site Feed.beni:117:21                           instanced\n  site Feed.beni:129:9                            shared     2 calls\n  site Feed.beni:132:21                           instanced\n  site Feed.beni:149:9                            unique\n  site Feed.beni:156:5                            shared     2 calls\n  site Feed.beni:160:21                           instanced\n  site Home.beni:153:9                            unique\n  site Home.beni:156:21                           unique\n  site Home.beni:159:21                           unique\n  site Home.beni:171:33                           unique\n  site Home.beni:178:33                           unique\n  site Home.beni:195:37                           unique\n  site Home.beni:233:5                            unique\n  site Home.beni:236:17                           instanced\n  site Login.beni:112:9                           unique\n  site Login.beni:152:5                           unique\n  site Login.beni:155:17                          instanced\n  site Main.beni:51:66                            unique\n  site Main.beni:57:21                            unique\n  site Page.beni:30:9                             shared     10 calls\n  site Page.beni:40:5                             shared     10 calls\n  site Page.beni:48:25                            shared     10 calls\n  site Page.beni:66:25                            shared     10 calls\n  site Page.beni:78:5                             shared     60 calls\n  site Page.beni:85:5                             unique\n  site Page.beni:99:9                             unique\n  site Page.beni:101:9                            shared     4 calls\n  site Page.beni:102:56                           instanced\n  site Page.beni:110:11                           unique\n  site Page.beni:114:21                           shared     7 calls\n  site ProfilePage.beni:206:17                    unique\n  site ProfilePage.beni:219:5                     unique\n  site ProfilePage.beni:236:33                    unique\n  site ProfilePage.beni:247:29                    unique\n  site ProfilePage.beni:264:29                    unique\n  site Register.beni:139:9                        unique\n  site Register.beni:150:37                       instanced\n  site Settings.beni:216:9                        unique\n  site Settings.beni:224:37                       instanced\n  site Settings.beni:241:33                       unique\n  site Settings.beni:252:41                       unique\n  site Settings.beni:263:5                        unique\n  sites 79: unique 38, shared 18, instanced 23, value 0\n  markup_value_roots 0 (0% of 79 sites)\n  carriers yes: commands\n  constructors 75: under * 1 (1%)\n  pairs 782 over 96 keys and 114 groups (8.15 per key); every key calls 0 of 114 groups (0%)\n  list Article.beni:209:10                        positional ChangedUrl *; GotArticleMsg · CompletedLoadArticle · Ok derived; GotArticleMsg · CompletedLoadArticle · Err derived; GotArticleMsg · CompletedFavoriteChange · Ok derived; GotArticleMsg · PassedSlowLoadThreshold derived\n  list Article.beni:216:10                        positional ChangedUrl *; GotHomeMsg · CompletedFeedLoad · Ok derived; GotHomeMsg · CompletedFeedLoad · Err derived; GotHomeMsg · GotFeedMsg · CompletedFavorite · Ok derived; GotHomeMsg · PassedSlowLoadThreshold derived; GotProfileMsg · CompletedFeedLoad#1 · Ok derived; GotProfileMsg · CompletedFeedLoad#1 · Err derived; GotProfileMsg · GotFeedMsg · CompletedFavorite · Ok derived; GotProfileMsg · PassedSlowLoadThreshold derived; GotArticleMsg · CompletedLoadArticle · Ok derived; GotArticleMsg · CompletedLoadArticle · Err derived; GotArticleMsg · CompletedFavoriteChange · Ok derived; GotArticleMsg · PassedSlowLoadThreshold derived\n  list ArticlePage.beni:323:18                    reconciler ChangedUrl *; GotArticleMsg · CompletedLoadComments · Ok value ρ.Article#0.comments; GotArticleMsg · CompletedLoadComments · Err value ρ.Article#0.comments; GotArticleMsg · PassedSlowLoadThreshold value ρ.Article#0.comments\n  list Editor.beni:301:14                         positional ChangedUrl *; GotEditorMsg · ClickedSave derived; GotEditorMsg · CompletedCreate · Err derived; GotEditorMsg · CompletedEdit · Err derived; GotEditorMsg · CompletedArticleLoad#1 · Err derived; GotEditorMsg · CompletedArticleLoad#1 · Ok derived; GotEditorMsg · PassedSlowLoadThreshold derived\n  list Feed.beni:81:18                            reconciler ChangedUrl *; GotHomeMsg · CompletedFeedLoad · Ok derived; GotHomeMsg · CompletedFeedLoad · Err derived; GotHomeMsg · GotFeedMsg · CompletedFavorite · Ok derived; GotHomeMsg · PassedSlowLoadThreshold derived; GotProfileMsg · CompletedFeedLoad#1 · Ok derived; GotProfileMsg · CompletedFeedLoad#1 · Err derived; GotProfileMsg · GotFeedMsg · CompletedFavorite · Ok derived; GotProfileMsg · PassedSlowLoadThreshold derived\n  list Feed.beni:130:14                           positional ChangedUrl *; GotHomeMsg · CompletedFeedLoad · Ok derived; GotHomeMsg · CompletedFeedLoad · Err derived; GotHomeMsg · PassedSlowLoadThreshold derived; GotProfileMsg · CompletedFeedLoad#1 · Ok derived; GotProfileMsg · CompletedFeedLoad#1 · Err derived; GotProfileMsg · PassedSlowLoadThreshold derived\n  list Feed.beni:158:14                           positional ChangedUrl *; GotHomeMsg · ClickedTag derived; GotHomeMsg · ClickedTab derived; GotHomeMsg · CompletedFeedLoad · Ok derived; GotHomeMsg · CompletedFeedLoad · Err derived; GotHomeMsg · PassedSlowLoadThreshold derived; GotProfileMsg · ClickedTab derived; GotProfileMsg · CompletedFollowChange · Ok derived; GotProfileMsg · CompletedAuthorLoad#1 · Ok derived; GotProfileMsg · CompletedAuthorLoad#1 · Err derived; GotProfileMsg · CompletedFeedLoad#1 · Ok derived; GotProfileMsg · CompletedFeedLoad#1 · Err derived; GotProfileMsg · PassedSlowLoadThreshold derived\n  list Home.beni:234:10                           positional ChangedUrl *; GotHomeMsg · CompletedTagsLoad · Ok value ρ.Home#0.tags; GotHomeMsg · CompletedTagsLoad · Err value ρ.Home#0.tags; GotHomeMsg · PassedSlowLoadThreshold value ρ.Home#0.tags\n  list Login.beni:153:10                          positional ChangedUrl *; GotLoginMsg · SubmittedForm ⟨replaced⟩; GotLoginMsg · CompletedLogin · Err ⟨value⟩\n  list Page.beni:102:14                           positional ChangedUrl *; GotHomeMsg · CompletedFeedLoad · Ok derived; GotHomeMsg · CompletedFeedLoad · Err derived; GotHomeMsg · GotFeedMsg · ClickedDismissErrors derived; GotHomeMsg · GotFeedMsg · CompletedFavorite · Err derived; GotHomeMsg · PassedSlowLoadThreshold derived; GotProfileMsg · ClickedDismissErrors derived; GotProfileMsg · CompletedFollowChange · Err derived; GotProfileMsg · CompletedFeedLoad#1 · Ok derived; GotProfileMsg · CompletedFeedLoad#1 · Err derived; GotProfileMsg · GotFeedMsg · ClickedDismissErrors derived; GotProfileMsg · GotFeedMsg · CompletedFavorite · Err derived; GotProfileMsg · PassedSlowLoadThreshold derived; GotArticleMsg · ClickedDismissErrors derived; GotArticleMsg · CompletedFavoriteChange · Err derived; GotArticleMsg · CompletedFollowChange · Err derived; GotArticleMsg · CompletedPostComment · Err derived; GotArticleMsg · CompletedDeleteComment#1 · Err derived; GotArticleMsg · CompletedDeleteArticle · Err derived\n  list Register.beni:148:30                       positional ChangedUrl *; GotRegisterMsg · SubmittedForm ⟨replaced⟩; GotRegisterMsg · CompletedRegister · Err ⟨value⟩\n  list Settings.beni:222:30                       positional ChangedUrl *; GotSettingsMsg · SubmittedForm ⟨replaced⟩; GotSettingsMsg · CompletedSave · Err ⟨value⟩\n  reconciler 2 of 2 lists\n  patchAll ChangedUrl\n",
+  "groupProbes": 64,
+  "handlers": 97,
+  "criterion7": {
+    "zeroWriteHandler": [
+      {
+        "handler": "$hClickedLink$Internal$84",
+        "groups": [],
+        "actualGroups": [],
+        "work": {
+          "templatePatch": 1,
+          "templateCapture": 2,
+          "templateSelect": 1,
+          "templateSelectNew": 1,
+          "templateSameInputs": 1
+        },
+        "patchAll": 0,
+        "predictedGroups": 0,
+        "visitedGroups": 0,
+        "comparisonGroups": 0
+      },
+      {
+        "handler": "$hClickedLink$Internal$84",
+        "groups": [],
+        "actualGroups": [],
+        "work": {
+          "templatePatch": 1,
+          "templateCapture": 2,
+          "templateSelect": 1,
+          "templateSelectNew": 1,
+          "templateSameInputs": 1
+        },
+        "patchAll": 0,
+        "predictedGroups": 0,
+        "visitedGroups": 0,
+        "comparisonGroups": 0
+      },
+      {
+        "handler": "$hClickedLink$Internal$84",
+        "groups": [],
+        "actualGroups": [],
+        "work": {
+          "templatePatch": 1,
+          "templateCapture": 2,
+          "templateSelect": 1,
+          "templateSelectNew": 0,
+          "templateSameInputs": 1
+        },
+        "patchAll": 0,
+        "predictedGroups": 0,
+        "visitedGroups": 0,
+        "comparisonGroups": 0
+      },
+      {
+        "handler": "$hClickedLink$Internal$84",
+        "groups": [],
+        "actualGroups": [],
+        "work": {
+          "templatePatch": 1,
+          "templateCapture": 2,
+          "templateSelect": 1,
+          "templateSelectNew": 0,
+          "templateSameInputs": 1
+        },
+        "patchAll": 0,
+        "predictedGroups": 0,
+        "visitedGroups": 0,
+        "comparisonGroups": 0
+      },
+      {
+        "handler": "$hClickedLink$Internal$84",
+        "groups": [],
+        "actualGroups": [],
+        "work": {
+          "templatePatch": 1,
+          "templateCapture": 2,
+          "templateSelect": 1,
+          "templateSelectNew": 0,
+          "templateSameInputs": 1
+        },
+        "patchAll": 0,
+        "predictedGroups": 0,
+        "visitedGroups": 0,
+        "comparisonGroups": 0
+      }
+    ],
+    "allHandlersVerified": true,
+    "patchAllMatchesKeys": true,
+    "fires": false,
+    "mechanism": "The analysis gates root producer entry and substitutes call paths into parameterised template group masks. Actual group entry is observed before comparisons and verified against the analysis for every handler; unbound values inherit their placement mask. patchAll remains the star-key path."
+  }
+}
