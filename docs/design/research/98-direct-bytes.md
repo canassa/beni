@@ -27,7 +27,7 @@ The cheapest promising executable rewrite is **shorter compiler-owned path
 IDs**: **589 B** on Conduit and **68 B** on TodoMVC, with the same group
 selections. Building group records as complete array literals instead of
 mutating separate descriptors saves **233/19 B**, but changes object layout
-and needs application timing before adoption. No measured encoding here
+and needs broader application validation before adoption. No measured encoding here
 removes the entire gap. Packing the masks into u32 limbs actually **adds 50 B**
 on Conduit. Do not select an encoding by its raw size.
 
@@ -266,8 +266,9 @@ Ranked next steps, with runtime acceptance conditions:
    verify the visit oracle and paired value fuzz. Application timing follows below.
 2. **Literal complete group records — 233/19/0 B.** Keep all existing entries,
    selections, capture refresh and restates. Emitter plus runtime-layout change.
-   Measure mount and warmed patch under Chrome; reject a reproducible slowdown.
-   Currently a measured-size candidate, **not speed accepted**.
+   The targeted Chrome timing below has overlapping spreads; check mount and
+   warmed patch across the full UI harness before acceptance. Reject a
+   reproducible slowdown. This is **not full speed acceptance**.
 3. **Literal plan objects — 53/7/0 B.** Remove temporary arrays/population loop;
    emitter change. Check mount, first selection and object lookup shape before
    accepting. Do not spend a hot-path regression on a 53 B saving.
@@ -319,6 +320,24 @@ This is the best-supported byte candidate to implement and then gate against
 Solid 2 with the full UI harness. Raw observations, hashes and host load are in
 [`path-timing.json`](../../../bench/direct-bytes/results/path-timing.json).
 
+The complete group-record prototype received a separate batch with the same
+protocol and sample count. Its `browser-direct-release` label means **complete
+group records**, not short IDs. Do not compare absolute latencies across the
+two batches as if load had been fixed.
+
+| Message | Tea ms | Original ms | Group arrays ms | Original / group-array ranges ms |
+| --- | ---: | ---: | ---: | --- |
+| Feed tab | 0.340 | 0.360 | 0.355 | 0.290–0.545 / 0.310–0.560 |
+| Favorite | 0.280 | 0.310 | 0.325 | 0.225–0.435 / 0.220–0.430 |
+| Editor input | 0.305 | 0.285 | 0.300 | 0.250–0.345 / 0.260–0.345 |
+
+Traced original/group-array medians are 0.651/0.637, 0.573/0.574 and
+0.545/0.543 ms. All transcripts agree. The two higher untraced medians remain
+inside overlapping spreads; this single batch establishes neither a reproducible
+slowdown nor a speed win. The changed array layout remains a full-harness risk,
+rather than grounds for a claim that these 233 B are free. Raw observations are
+[`group-timing.json`](../../../bench/direct-bytes/results/group-timing.json).
+
 ## 7. Validation and reproduction
 
 The eight executable variants (including baseline) pass **40 differential
@@ -348,6 +367,7 @@ direnv exec . node bench/direct-bytes/prototypes.mjs
 direnv exec . node bench/direct-bytes/verify.mjs
 CHROME=/path/to/chrome direnv exec . node bench/direct-bytes/speed.mjs
 CHROME=/path/to/chrome direnv exec . node bench/direct-bytes/timing.mjs > path-timing.json
+CHROME=/path/to/chrome direnv exec . node bench/direct-bytes/timing.mjs inline-group-records > group-timing.json
 ```
 
 The archive stores baseline/prototype JavaScript as lossless `.mjs.gz` files;

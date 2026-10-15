@@ -3,7 +3,9 @@ import fs from 'node:fs';
 import {gunzipSync} from 'node:zlib';
 import {execFileSync} from 'node:child_process';
 const work='zig-out/direct-bytes-timing';
-for(const [subject,artifact]of [['browser-tea-release','conduit-tea-baseline'],['direct-original','conduit-direct-baseline'],['browser-direct-release','conduit-direct-short-path-ids']]){
+const variant=process.argv[2]??'short-path-ids';
+if(!['short-path-ids','inline-group-records'].includes(variant))throw Error('Unknown timing variant');
+for(const [subject,artifact]of [['browser-tea-release','conduit-tea-baseline'],['direct-original','conduit-direct-baseline'],['browser-direct-release',`conduit-direct-${variant}`]]){
  fs.mkdirSync(`${work}/${subject}`,{recursive:true});
  fs.writeFileSync(`${work}/${subject}/_main.mjs`,gunzipSync(fs.readFileSync(`bench/direct-bytes/results/${artifact}.mjs.gz`)));
 }
