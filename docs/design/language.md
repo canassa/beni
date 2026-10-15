@@ -47,7 +47,9 @@ day, not built: `List` is array-backed and is beni's only sequence type. The syn
 with `List.push`. §6.8 is the surface, `backend.md` §4 *Lists are arrays* the representation.
 *Amended 2026-10-01, the owner (W35, E1tp):* a list's trie has a claimable head as well as a
 claimable tail, so `[ x, ...xs ]` is amortised O(1) like `List.push` and no longer a copy; it
-grows at either end.
+grows at either end. *Amended 2026-10-15, the owner:* the trie is withdrawn. A `List` is a plain
+array edited in place where the ownership checker proves it unshared (§6.8, *A list is a plain
+array*).
 
 **Brackets and a spread, and no `::`.** Decided by the owner on 2026-10-01 (W35's second
 amendment), specified and built the same day on today's cons cells: `::` leaves the language, as an
@@ -983,6 +985,63 @@ costs below hold. And by the manager's decision O6 (on the owner's delegation, r
 ys` on two lists calls `List.append` and costs what `[ ...xs, ...ys ]` does; only a `++` over
 `appendable` keeps `Basics.append`'s O(length of both).*
 
+**A list is a plain array** (*amended 2026-10-15, the owner; specified, not built*). The owner's
+decision, verbatim: "I want the trie gone from the bundle. It might be included later as custom
+data structure (like Vector) if the developer want. List is regular array." `backend.md` §4, *The
+representation: a plain array*, is the contract. It is built by `browser-direct.md`'s slice S7,
+and until S7 lands the costs further down this section hold. Once it lands, a list is a
+JavaScript array. A pattern's `rest`, `List.tail` and `List.drop` are a read-only O(1) view of
+one. A write edits the array in place where the ownership checker proves that nothing reads the
+old list again. Where the checker cannot prove that, the write is a compile error on a platform
+that edits in place, and the program asks for an explicit `List.copy`. On a platform that does not
+edit in place, the write copies. Which platforms edit in place is open with the owner
+(`backend.md` §4, the same subsection). The table gives each operation's cost before and after.
+*n* is the length of the list read or written, *m* the length of the other operand, *k* the
+length of the result.
+
+| Operation | Before: E1tp, as of 2026-10-11 | After, on an in-place platform (accepted, edited in place) | After, on any other platform (copies) |
+|---|---|---|---|
+| `length`, `isEmpty` | O(1) | O(1) | O(1) |
+| `head`, `last`, `get`, an indexed read | O(1); O(log₃₂ n) on a trie | **O(1)** | **O(1)** |
+| pattern `[ x, …rest ]`, `List.tail`, `List.drop` | O(1) view; on a trie O(1) and at most 31 copied | O(1) view | O(1) view |
+| pattern `[ …init, last ]`, `[ a, …mid, z ]` | O(1) | O(1) | O(1) |
+| `set`, `update` | a copy up to 256; above, O(log₃₂ n) after one O(n) conversion | **O(1)**, the slot written | **O(n)**, a copy |
+| `swap` | two `set`s | **O(1)** | O(n) |
+| `push`, `[ …xs, x ]` | a copy below 32; above, amortised O(1) | **amortised O(1)** | **O(n)**, a copy |
+| `pop` | as `set` | **O(1)** | O(n) |
+| `insertAt`, `removeAt` | O(n), a fresh array | O(n), one `splice`, no allocation | O(n) |
+| `[ …a, …b ]`, `a ++ b` on lists, `List.append` | O(m) when `a` is a trie or long and `b` short; otherwise O(n + m) | **O(m) amortised**, `a` extended | O(n + m) |
+| `[ …a, x, …b ]`, `[ x, …a, y ]` | the sum of its calls | `a` extended, O(m + k); items before the base move it, O(n) | O(n + m) |
+| `[ x, …xs ]`, `List.cons` | O(n), a copy (2026-10-11) | O(n), a copy (not a demand) | O(n) |
+| a write to a `rest`, `tail` or `drop` view | as on a trie or plain list | O(length of the view): the view is made plain, then written | O(length of the view) |
+| `map`, `filter`, `concat`, `reverse`, the sorts, `slice`, `take` | O(n) or O(n log n), fresh | unchanged | unchanged |
+| a walk by a reader (`For`, `==`, a sibling, `Debug`) | O(n); a trie flattened once per version, cached | O(n), never a flatten | O(n) |
+| `List.copy` | O(n) | O(n) | O(n) |
+| bytes, a program that writes | the trie's write and read halves, about 0.6 kB brotli (research 102 §2: 672 B tea, 565 B direct on Conduit) | none of the trie | none of the trie |
+
+**What gets worse, and what to write instead.** Every row that relied on **structural sharing**
+gets worse:
+
+- **Keeping an old version beside a new one.** Examples are an undo stack of whole lists, a
+  history for time travel, a snapshot taken before an edit, and backtracking search that keeps
+  each step's list. Under E1tp each version cost O(1) amortised or O(log₃₂ n), sharing the rest.
+  Now, on an in-place platform, writing a list that is still read later is `list_still_used`,
+  and the fix is `List.copy`, **O(n) per version**. On any other platform every write already
+  copies. *Instead:* keep the edits rather than the versions (undo by applying the inverse
+  edit). Keep one list and an index into it. Or copy explicitly where a snapshot is really
+  wanted, so the cost is written where it is paid.
+- **A queue: push at the end and take from the front by matching.** E1tp's prefix removal made it
+  amortised O(1) a step. Now each step's `rest` is a view, and a push onto a view makes it plain
+  first, so a step is O(n). *Instead:* keep the list and a read index (`List.get q i`, then
+  `i + 1`), and drop the read part with `List.drop` when it is more than half. Writing through a
+  view would restore O(1) and is a possible later change (`backend.md` §4).
+- **Every write, on a platform that does not edit in place**: a building loop is O(n²) there. That
+  is the open question in `backend.md` §4.
+
+A persistent sequence may come back only as **a separate type the developer chooses**, such as a
+`Vector` with its own module and costs. It is never `List`'s representation (`backend.md` §4,
+*What is not done*).
+
 **The syntax, and what each form costs.** *Restated 2026-10-01 in the bracket spelling* (*The list
 syntax*, below); the costs are the array's, after the flip.
 
@@ -1190,6 +1249,9 @@ million elements — and is what an indexed read costs on a list that has been w
 Every function walks a list of any length without growing the stack, and `sortWith` recurses to a
 depth of log₂ n. The costs are written into each function's doc comment in `core/List.beni`, and
 `checker.md` Appendix B's inventory lists the signatures.
+*Amended 2026-10-15:* once `browser-direct.md`'s S7 lands, the costs in this table are replaced
+by §6.8's *A list is a plain array*: no thresholds, O(1) reads, and writes that are O(1) in place
+or O(n) copies.
 
 **What an operation returns unchanged.** A function whose result would equal its input returns the
 input itself wherever `backend.md` §4, *Identity*, says so — `set` of the value already there, `swap
@@ -2129,6 +2191,10 @@ a pattern's tail is not a view but a smaller header over the same structure; the
 it wherever the match shares that structure, and does not hold for the tail that goes past the
 list's claimable head — each match copies a new head there, so two such tails are equal and not one
 value (`backend.md` §4, *Identity*). The first tail of a list built by `List.push` is of that kind.
+*Amended 2026-10-15:* with the trie withdrawn (§6.8, *A list is a plain array*), every
+pattern's tail is a view, so the promise holds for every tail again. On an in-place platform, a
+list written in place is the same object as before it was written, which no program can observe
+(the W27 amendment `browser-direct.md` §15 Q4 decided).
 
 **A nullary constructor is one value** (*amended 2026-09-29*, research 39 §10.3): every use of a
 nullary constructor that a module writes is the same value, so `button "run" Run` gives its hole an

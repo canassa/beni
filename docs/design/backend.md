@@ -555,7 +555,10 @@ literals and `x :: rest` patterns stay (the pattern is an O(1) view), programs b
 *Amended 2026-10-01 again, the owner (W35's E1tp amendment):* the representation is **E1tp**, E1t
 below plus a claimable head (research 46 §11), so `[ x, ...xs ]` is amortised O(1) as `push` is.
 *The claimable head: E1tp*, below, says what it adds; where the E1t text of this subsection says
-otherwise, an amendment marked *E1tp* beside it wins. This subsection is the normative contract for the representation, for the runtime that `core/List.js`
+otherwise, an amendment marked *E1tp* beside it wins. *Amended 2026-10-15, the owner:* **the trie is withdrawn, and a `List` is a plain JavaScript
+array** edited in place where the ownership checker proves it unshared. *The representation: a
+plain array*, below, says how. Once `browser-direct.md`'s S7 lands, it wins over every E1t and
+E1tp text of this subsection. This subsection is the normative contract for the representation, for the runtime that `core/List.js`
 provides, for the invariants every writer of JavaScript keeps, and for the identities a platform may
 rely on. The rest of the contract lives where each part belongs, once:
 
@@ -582,7 +585,216 @@ prototype this contract follows is `bench/arrays/ports/first-tail.js` (the runti
 `bench/arrays/lists/claim-prepend-test.mjs` (3.04 million checks on old versions, research 46
 §11.2); `first-tail.js` stays the record of E1t.
 
+#### The representation: a plain array (the owner, 2026-10-15)
+
+*Added 2026-10-15; specified, not built. It is built by `browser-direct.md` §14's slice S7, as
+amended the same day (`browser-direct.md`, the last amendment, *`List` is a plain array; S7
+replaces its representation*), and until S7 lands the subsections after this one describe what
+the compiler emits. Once it lands, this subsection is the representation and wins wherever the
+text after it disagrees. Those subsections are kept as the record of E1t and E1tp as built.*
+
+The owner's decision, 2026-10-15, verbatim: **"I want the trie gone from the bundle. It might be
+included later as custom data structure (like Vector) if the developer want. List is regular
+array."**
+
+The ownership checker ([`ownership-checker.md`](ownership-checker.md)) exists so that a `List` can
+be a plain JavaScript array edited in place. Without it, the persistent list (E1tp) would be the
+right representation, and it would stay. With it, the trie only keeps lists persistent, and
+the checker already proves that no program on an in-place platform reads an old version after a
+write. So the trie is withdrawn. It is not kept as a fallback for when that proof is missing.
+
+**The forms.** A `List` value is one of two forms. The trie is gone:
+
+| Form | JavaScript | Which lists have it |
+|---|---|---|
+| **plain** | a JavaScript array; the elements are `a[0] … a[a.length − 1]` | every list except a view: `[]`, a literal, every result that builds, every result of a writer, a decoder's result, a sibling's result |
+| **view** | `{ $b, $o, length }`: the elements `$b[$o] … $b[$b.length − 1]` of a plain array `$b`, a suffix, `1 ≤ $o`, `length === $b.length − $o`, never empty | what a pattern's `rest` binds outside a scalarised loop, `List.tail`, `List.drop`. **Read-only**: nothing writes through a view (below) |
+
+A view is the one form that is not an array, and it is kept for one reason: **recursion over a
+list's suffix stays O(n).** §8's *Scalar views* turns a *tail-recursive* `[ x, …rest ]` walk into
+an index loop with no view at all. But a walk that is not one of those loops still needs an O(1)
+`rest`. That covers non-tail recursion (`x + sum rest`), mutual recursion, a `rest` passed to
+another function or returned, a `rest` captured by a closure, a `List.tail` and a `List.drop`.
+Without a view, each of those steps copies the suffix. A walk of n elements then copies
+n − 1 + n − 2 + … elements: **O(n²)** where the cons list and E1tp were O(n). A view is three
+fields and no code a writer needs, so it keeps every such walk linear for a few dozen bytes. A
+`rest` that is never read whole costs nothing; §7 already binds no unread tail.
+
+The view's keys begin with `$`, so no beni record can have them (a field name is a lower-case
+identifier). That is how `Debug.toString` and the protocol tell a view from a record:
+`Array.isArray(v) || v.$b !== undefined` is "v is a list". The old view's cached `p` and its
+`$plain` method go, and so do `Js.method`'s two uses in `core/List`.
+
+**Writes.** The writers are `set`, `update`, `swap`, `push`, `pop`, `insertAt`, `removeAt`,
+`List.append`, and every construction with something after its first spread (`[ …xs, x ]`,
+`[ …a, …b ]`, a `++` chain on lists; `ownership-checker.md` §3.1–§3.2). Each one is a **demand**,
+and what it does depends on the platform:
+
+- **On an in-place platform** (`"lists": "in-place"`, `ownership-checker.md` §28.2), every demand
+  in a program that builds is one the checker accepted. Any other demand is already a compile
+  error: `list_still_used`, `top_level_list_changed`, `view_changes_model` or
+  `list_may_be_shared` (§28.5). An accepted demand **edits its base's array in place and returns
+  that array**:
+  - `set`/`update`: `a[i] = v`.
+  - `swap`: two stores.
+  - `push`: `a.push(v)`.
+  - `pop`: `a.pop()`.
+  - `insertAt`/`removeAt`: one `splice`.
+  - a construction: the base extended from left to right, by `ownership-checker.md` §3.3's order.
+    The items are evaluated first, then the base is written. Items before the base
+    (`[ x, …xs, y ]`) go in front of it.
+
+  There is no reference count, no run-time ownership test, and no copy the program did not write
+  (research 42's R0, taken statically). **An unsafe edit is never turned into a silent copy**:
+  the owner's standing rule, `ownership-checker.md` §28.1. Where a program needs an old version,
+  it writes `List.copy`, O(n), and the checker's message offers exactly that fix.
+- **On any other platform**, the checker does not run (§28.3), so no write can be proved
+  unshared. Every writer and every construction **copies its base and writes the copy**: O(n)
+  per write, where E1tp was amortised O(1) or O(log₃₂ n). *This is the open question below.*
+
+**A view is never written.** A demand whose base is a view first makes a plain array of the
+view's elements, O(length of the view), and then writes it as above. This is not a
+sharing fallback. On an in-place platform the checker has already proved that nothing else
+reads the list; the copy is only the price of a form that has no room of its own. A
+`List.push rest y` on the `rest` of a match therefore costs O(n). The queue idiom (push at the
+end, match at the front), which E1tp's prefix removal kept amortised O(1), is O(n) a step (the
+cost table in `language.md` §6.8). Writing through a view would make it amortised O(1) again:
+the view is a suffix, so its end is its base's end. That is sound by the same ownership argument,
+because a pattern's `rest` aliases its scrutinee's cells (`ownership-checker.md` §4). But it rests
+on view aliasing, which the Lean oracle does not yet model (`browser-direct.md`'s S7 condition C2).
+So it is not part of this amendment. It can be added later on its own measurement.
+
+**A prepend copies**, as decided on 2026-10-11 (*The claimable head: E1tp*, amended):
+`[ x, …xs ]` and `List.cons` make a fresh array, O(length of `xs`). A prepend is not a demand
+(`ownership-checker.md` §25.2), so it is the same on every platform. The re-cons of a view
+(`b[o − 1] === x` gives the view at `o − 1`, or `b` itself) stays. The trie's re-cons row goes
+with the trie.
+
+**Invariants**, replacing *Invariants* below; the numbering is kept so references still hold:
+
+1. **A published array is written only at an accepted demand on an in-place platform**, and only
+   through the list that demand names. Nothing else writes a published array: not a sibling, not a
+   platform runtime, not the markup runtime, not `Debug`, not the derived-comparison engine. On
+   a platform that is not in-place, nothing published is ever written. A demand never extends an
+   array past its end except through `push`, `insertAt` at `length`, or a construction: an
+   out-of-range `set`, `update`, `swap`, `insertAt` or `removeAt` returns its input unchanged,
+   and `pop` of `[]` returns `[]`. The old claim and cache exceptions go with the trie.
+2. *Withdrawn with the trie.*
+3. **A view's backing array is plain**, and while a view of it is live, nothing writes it. The
+   checker guarantees this: a pattern's `rest`, `tail` and `drop` alias their list's cells, so a
+   write to the base while the view is read later is `list_still_used`.
+4. **The empty list is plain.** No view is empty.
+5. **A builder is owned** (unchanged).
+6. **Elements are references** (unchanged).
+
+**The reader protocol**, replacing *What a reader of a list may rely on* below. A reader outside
+`core/List` may rely on these:
+
+1. **`xs.length`** is the number of elements, in both forms.
+2. **`Array.isArray(xs)`** is true exactly for the plain form, whose elements are
+   `xs[0 … length − 1]`.
+3. Otherwise `xs` is a view, and its elements are **`xs.$b[xs.$o + i]`** for `0 ≤ i < length`.
+   A reader indexes it in place. If a reader needs an array of its own, `xs.$b.slice(xs.$o)` is
+   that array. It is the reader's copy, and `core/List` does not cache it.
+
+The idiom is `const a = Array.isArray(xs) ? xs : xs.$b, o = Array.isArray(xs) ? 0 : xs.$o;`,
+then an index loop from `o`. `$plain()` is withdrawn. No reader may write either form (invariant
+1). What a sibling may return as a list is unchanged: a fresh plain array, or a list it was
+given.
+
+**The runtime.** `core/List` keeps:
+
+- `cons`;
+- `append` and `concat`, which build fresh arrays;
+- the readers;
+- `view`, `base` and `offset`: `base`/`offset` of a plain list are `(xs, 0)` and of a view
+  `($b, $o)`;
+- `unsafeGet`, which is O(1) in both forms;
+- the builder;
+- the in-place writers, which are core-private and which the emitter names at an accepted demand
+  by well-known symbol, as it names `List.cons`;
+- the copying writers, which are the public functions on a platform that is not in-place.
+
+It loses every `trie*` function, `fromPlain`, the tree and header shapes, `triePlain`,
+`viewPlain`, the two thresholds and every reader's form test for a trie. **Nothing of the trie
+is in any bundle.** Research 102 §2 priced that part at 672 B brotli on `browser-tea`'s Conduit
+and 565 B on `browser-direct`'s. Research 87's direct table app paid 594 B, leave-one-out, for
+*List representation, append and indexed get*. The trie is most of that.
+`bench/arrays/lists/claim-test.mjs` and `claim-prepend-test.mjs` test the trie's claims and
+retire with it. `run/ListForms` and `browser/dom/ForForms` lose their trie inputs and keep their
+view inputs.
+
+**Identity.** On an in-place platform a writer returns **its input array itself**, edited. So
+a written list is the same object as before. Nobody can observe that, because the checker has
+proved that no holder of the old list reads it again. W27's amendment for in-place update
+(`browser-direct.md` §15, Q4, decided 2026-10-09; `language.md` §11.12 still has to be written)
+says the same for lists. On any other platform, a writer that writes returns a fresh array. Both
+kinds of platform keep the promises that stay in *Identity* below: the input itself when there is
+nothing to write, element identity, a view the same list as another view at the same offset. The
+trie-header bullets of that section are withdrawn.
+
+**`--release`.** The read/write split now has nothing to split: no write code is larger than a
+store or a `push`. The demand is a **barrier** to §9's optimiser (thesis §9.6, A5). Item 1 may
+not move a read of the base, or of anything that aliases it, across the demand. It may not
+inline a single-use binding of the old list past it either, and it may not drop the demand as
+an unused pure call. The demand's result is the same array, so dropping the call would lose the
+write.
+
+**What is not done.**
+
+- **No persistent structure behind `List`.** The trie and anything like it (RRB, a finger tree,
+  a fat array with version stamps) may return only as a **separate type the developer chooses**,
+  such as a `Vector`, with its own module, its own costs and no implicit conversion. It is never
+  `List`'s representation and never a fallback the compiler picks. Whether core or a package
+  ships one is a later decision. The owner's sentence above is its whole scope.
+- **No run-time ownership.** Research 42's reference counts are still not taken: ownership is
+  static or it is a compile error.
+- **No write through a view**, yet (above).
+
+**Open, the owner's: what a write costs where lists are not edited in place.** Today only
+`browser-direct` declares `"lists": "in-place"`. `browser-tea`, `browser`, `html`, `node` and the
+test platforms do not, so with no trie every write there copies its base. Concretely:
+
+- A loop that builds a list with `List.push` or `[ …acc, x ]` is **O(n²)** there.
+  At 10 000 elements it copies about 50 million element references. E1tp did the same build in
+  amortised O(1) per element.
+- A `List.set` on a long list is O(n) where it was O(log₃₂ n).
+- `node` is the platform every `run/` fixture runs on. A fixture that builds a few thousand
+  elements by pushing could go over the 4 300-million-instruction test budget (CLAUDE.md,
+  *Building*) for a cost the browser never pays.
+
+There are two ways to answer this, and they cost different things.
+
+- **(a) Edit in place everywhere.** Make the property the language's rule, not a platform's: the
+  checker runs in every `check` and `build`, and every platform lowers an accepted demand in
+  place. Every list then costs the same everywhere, and the harness measures what the browser
+  runs. The price:
+  - Every program on every platform must pass the checker. How many corpus and `node` programs
+    fail today is unmeasured. `dump --stage=ownership` over the corpus measures it before
+    anything is decided.
+  - `browser`'s markup runtime, which `browser-tea` is layered on, skips a `For` whose list is
+    `===` the last one rendered (§15.5, *Identity*). An in-place write keeps that identity, so the
+    skip would show a stale page. That runtime must stop deciding "unchanged" by a list's
+    identity before an in-place write reaches it. This is `browser-direct.md` §7.4's first rule,
+    which direct already keeps.
+  - The entry rows of `ownership-checker.md` §20.2 must exist for each platform's program
+    constructors.
+- **(b) Copy where nothing is proved.** Keep in-place a platform property, and accept O(n) copies
+  on `browser-tea` until S8 retires it, and on `node`. A `browser-tea` list is the size of a UI,
+  and its renderer already walks it, so O(n) per message changes its order of cost only for
+  programs that build long lists in a loop. `node`, though, would run quadratic builds that the
+  browser does not.
+
+*Recommendation:* **(a) for `node`, `html` and the test platforms, landed with S7, so that no
+platform the gates run ever runs the quadratic build; (b) for `browser-tea` and `browser` until
+S8.** If S8 keeps `browser-direct`, the question closes with `browser-tea`'s deletion. If it keeps
+`browser-tea` instead, (a) applies to it too, once its identity skips are removed. This is not
+decided here. The owner decides it before S7's lowering lands, because it decides which platforms
+the copying writers serve.
+
 #### The representation: E1t
+
+*Superseded 2026-10-15 by *The representation: a plain array* (above), once S7 lands; kept as the record.*
 
 The representation is the one research 38 §17.2 calls **E1t**: *E1* — §16's adaptive array, a plain
 JavaScript array until something writes to it, plus the O(1) view an `x :: rest` pattern makes —
@@ -607,6 +819,8 @@ function of `core/List`, every sibling and every platform runtime accept all thr
 the identities of *Identity* below, can tell them apart.
 
 #### The claimable head: E1tp
+
+*Superseded 2026-10-15 by *The representation: a plain array* (above), once S7 lands; kept as the record.*
 
 *Added 2026-10-01, the owner's E1tp amendment of W35* (research 46 §11; the prototype is
 `bench/arrays/ports/first-tail-prepend.js`). Under E1t, `[ x, ...xs ]` copied `xs`, so Elm-shaped
@@ -726,6 +940,8 @@ both). The sibling grows by **429 bytes brotli**, 3 468 → 3 897 on the whole s
 
 #### Invariants
 
+*Superseded 2026-10-15 by *The representation: a plain array* (above), once S7 lands; kept as the record.*
+
 Every piece of JavaScript that touches a list — `core/List.js`, the emitted code, a sibling, a
 platform runtime, the derived-comparison engine — keeps these. A list is **published** from the
 moment any code other than the operation creating it can reach it.
@@ -789,6 +1005,8 @@ a proof, and nothing in this contract depends on them.
 
 #### What a reader of a list may rely on: the protocol
 
+*Superseded 2026-10-15 by *The representation: a plain array* (above), once S7 lands; kept as the record.*
+
 Code that reads a list without being `core/List.js` — a sibling, a platform runtime, the markup
 runtime, the derived-comparison engine, `Debug` — may rely on exactly three things, and on no field
 name of a view or a trie:
@@ -830,6 +1048,8 @@ version's count — and caches the array as E1t's did. Neither claim is a reader
 `core/List.js` writes a head or a tail.
 
 #### The runtime: `core/List.js`
+
+*Superseded 2026-10-15 by *The representation: a plain array* (above), once S7 lands; kept as the record.*
 
 *Amended 2026-10-02, the owner's decision on research 50 §7 (`plans/core-in-beni.md` step 3):*
 **the runtime is beni, in `core/List.beni`.** Every row of the table below is a declaration with a
@@ -937,6 +1157,10 @@ reaches for `String.compare` alone.)*
 
 #### Identity: what an operation returns unchanged
 
+*Amended 2026-10-15 (*The representation: a plain array*, above):* the trie-header bullets below
+are withdrawn with the trie. On an in-place platform, a writer that writes returns its input array
+itself, edited. The rest stands.
+
 `language.md` §11.12 promises that a value a program does not rebuild keeps its identity, and the
 markup runtime skips work on `===` (§15.5, §15.8). For lists that promise is these guarantees, which
 research 38 §7 measured for the ports this runtime is built from, and which `core/List` documents as
@@ -996,6 +1220,11 @@ guarantees on each function:
 
 #### What the emitter writes for list syntax
 
+*Amended 2026-10-15 (*The representation: a plain array*, above):* on an in-place platform, a
+construction or a `++` chain on lists at an accepted demand extends its base in place, its items
+evaluated first (`ownership-checker.md` §3.3). Elsewhere it is a fresh array, O(length of both).
+`[ e, …t ]` is an O(n) copy on every platform.
+
 | beni | JavaScript |
 |---|---|
 | `[]` | `[]`, a fresh empty array at each use. Two `[]`s are not promised to be one value, as the cons list's `{$:0}` was not |
@@ -1022,6 +1251,8 @@ so `[ ...xs, x ]` is `List.push xs x` in cost — and is a fresh plain concatena
 emitted calls do not change.
 
 #### `--release`, the hoisted file and the read/write split
+
+*Superseded 2026-10-15 by *The representation: a plain array* (above), once S7 lands; kept as the record.*
 
 - **The list primitives are `pure` `foreign`s** (`boundary.md` §4's rung), so §9 item 1 treats a
   call of one as it treats any pure call: an unused `view` or `unsafeGet` binding is dropped in
@@ -1057,6 +1288,8 @@ emitted calls do not change.
   commented with its reason.
 
 #### What is not done
+
+*Superseded 2026-10-15 by *The representation: a plain array* (above), once S7 lands; kept as the record.*
 
 - **No front buffer** (research 38 §17.2's E2): prepending is O(n), and no measured array-first
   program prepends. *Withdrawn 2026-10-01 by the owner's E1tp amendment:* the claimable head is
@@ -2195,7 +2428,9 @@ the list, the pairs and the keys exist only as syntax — no array, no tuple and
 **A key is never renamed**: §9's short names rename bindings, never a property name, and *Item 4,
 taken up*'s field renaming renames a beni record's fields by the record's type, which an object
 from `Js.object` does not have; so `{length:a,h:b,…,$plain:f}` is what every build writes, and the
-one call site of one header form is one hidden class, as the hand-written literal was. The checker
+one call site of one header form is one hidden class, as the hand-written literal was. *Amended
+2026-10-15:* with the trie withdrawn (§4, *The representation: a plain array*), the one header
+left is the view's `{$b:…,$o:…,length:…}`. The checker
 refuses a malformed field list first (`invalid_js_object`); `Lower` still answers `internal` to
 one, which no checked module reaches. Passed as a value, it is the sibling's
 `Object.fromEntries`-shaped function over the pairs. Fixtures: `emit/core/JsObject` and
@@ -2674,6 +2909,11 @@ right-hand side is pure, since 2026-09-30; one that may be impure is kept (§9 i
 `run/CaseSingleConstructorScrutinee` and `abuse_wide_test.zig`'s development build are the tests.
 
 ### List patterns over arrays
+
+*Amended 2026-10-15 (§4, *The representation: a plain array*):* a list is a plain array or a
+view, so every trie case below (`List$view` of a trie, the trie's re-cons, a trie header per
+tail) is withdrawn with the trie once S7 lands. `List$view` of a plain list or of a view is a
+view, O(1), as before.
 
 *Added 2026-10-01; specified, not built* (§4, *Lists are arrays*; `plans/list-arrays.md`). *Built
 2026-10-01 with the plan's second slice, R5 aside (its third): `js/Decision.zig` gained only names
@@ -3704,6 +3944,11 @@ What is **not** a cons step, spelled out because the new syntax makes it easy to
   ordinary returned value, as `x :: rest` was.
 
 ### Scalar views
+
+*Amended 2026-10-15 (§4, *The representation: a plain array*):* `base` of a list is the list
+itself or a view's `$b`, so no flatten is left to do. The trie cases below are withdrawn with the
+trie once S7 lands. This rule is one of the two reasons the view form is kept: it removes the
+view from tail-recursive walks, and the runtime view serves every other walk.
 
 *Added 2026-10-01; specified, not built* (`plans/list-arrays.md`'s third slice). *Built
 2026-10-02, with these departures, each reversible:* the rule is not applied in a suspendable body
@@ -8582,6 +8827,12 @@ patches as `childHtml`. A body is always a block in interface version 1.0 — a 
 so the one allocation per render is not worth a pair.
 
 #### `For` over arrays
+
+*Amended 2026-10-15 (§4, *The representation: a plain array*):* once S7 lands, a runtime walks a
+plain list in place and a view over `$b` from `$o`, with no copy. The trie bullet and the
+`$chunks()` proposal are withdrawn, and `same`'s trie case goes. A platform runtime that skips by
+a list's identity cannot run where lists are edited in place. §4's open question says when that
+matters.
 
 *Added 2026-10-01; specified, not built* (§4, *Lists are arrays*). Every loop of the markup
 runtimes over a list — `forKeyed`, `forPosition`, `trimmed`, `childList`, `classes`' and `styles`'

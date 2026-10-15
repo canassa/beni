@@ -620,7 +620,9 @@ the dump's `reconciler` line (§11) names the keys that reach it, so a surprise 
 merge and the reconciler read the whole list once through the protocol (`Array.isArray(xs) ? xs
 : xs.$plain()`) — O(n) for a trie whose header is new, which it is after any write to it, and
 which is the cost of the idiom (the walk is O(n) anyway). A plain list, which §7.2's rule keeps
-UI lists, costs nothing to read.
+UI lists, costs nothing to read. *Amended 2026-10-15:* once S7 lands there is no trie and no `$plain()`.
+A plain list is read in place and a view over its `$b` from `$o`, with no copy (`backend.md` §4,
+*The representation: a plain array*). `get` is O(1) on every list.
 
 The index κ is **handler-evaluable** by definition (`write-sets.md` §2.3): the handler has the
 payload and the old model, so `insts[id]` is one array read. A row hole that reads the row's
@@ -709,6 +711,11 @@ gap. The rest of that gap is the copy, §7.4.
 
 ### 7.2 `List`: the representation stays, the idioms are compiled
 
+*Amended 2026-10-15 (the owner):* the representation no longer stays. S7 replaces it with a plain
+array (the last amendment of this document, *`List` is a plain array; S7 replaces its
+representation*; `backend.md` §4, *The representation: a plain array*). This section is kept as the
+record of E1tp.
+
 `List` is the owner's decided one sequence type, array-backed, E1tp (`backend.md` §4, *Lists are
 arrays*): a plain array until written, a view for a pattern's `rest`, a 32-way trie with a
 claimable head and tail past the thresholds (`push` at 32, `set` at 256, `cons` at 32). This
@@ -757,6 +764,11 @@ page record is owned, and the `Con` stays a two-field object — V8's cost for i
 nanoseconds.
 
 ### 7.4 In-place update, where the path is owned
+
+*Amended 2026-10-15 (the owner):* for lists, the ownership checker decides, and every accepted
+demand is in place. The "plain at run time; a trie is written through `set` as before" fallback
+below is withdrawn with the trie. The owned-path condition stays the rule for record
+assignment, under condition C4 (the last amendment of this document).
 
 The last slice of the model half (S7), specified here so that every earlier slice keeps it
 possible. The write set of key κ is also the list of assignments an in-place update would make:
@@ -1198,12 +1210,12 @@ true for the criterion to be met, not that it is.
 | **static-heavy** (holes 10 / 10 000, width ≤ 256, helper rows, helper tree) | ≤ 1.15× (P3 by hand: 1.18 / 1.04, with a flush this design drops; the floor is the one DOM write) | holes: the HTML + ≤ 300 B at any N (P3: 394 / 442); 0 B per static hole | §4.1, §5.1; S1 |
 | **width 1 024** | ≤ 1.3× until S7, then ≤ 1.15×; before S7 V8's dictionary cliff stays (research 59 §2) | ≤ 2 B per field | S1, then §7.4 at S7 |
 | **depth 128** | ≤ 1.3× until S7 (P3: 1.29), then ≤ 1.15× | ≤ 4 B per level | S4, then §7.4 at S7 |
-| **long keyed list, one edit** (rows 30 000) | ≤ 1.3× until S7 (P3: 1.31, 0.03 ms of it `List.update` on a trie); ≤ 1.15× after S7 **only if** the list is container-owned and plain (§7.4) — the rows sweep's is; a list that is a trie keeps the path copy and the 1.3× | ~1.5 kB (P3: 1 643) | §6.2; S2, then S7 |
+| **long keyed list, one edit** (rows 30 000) | ≤ 1.3× until S7 (P3: 1.31, 0.03 ms of it `List.update` on a trie); ≤ 1.15× after S7 **only if** the list is container-owned and plain (§7.4) — the rows sweep's is; a list that is a trie keeps the path copy and the 1.3× (*amended 2026-10-15*: the exception is withdrawn with the trie, and every accepted edit is a store after S7) | ~1.5 kB (P3: 1 643) | §6.2; S2, then S7 |
 | **swap** (rows 30 000) | ≤ 1.15× and no slower than P3 until S7, then ≤ 1.0× (P3: 0.98 in research 60, 1.12 in research 67's batch; the rest is the model's `List.swap`, §7.4) — *amended 2026-10-10, the owner* | the same page | §6.2; S2, then S7 |
 | **live rows 10 000** | ≤ 1.15× (P3: 1.25 at a 5 µs clock, with the flush) | ≤ 1.1 kB | §8.1; S4 |
 | **derived 100 000** | flat, ≤ 1.15× | ≤ 1 kB | §5.4; S4 |
 | **bursts and stream** | **the K = 1 ratio at every K**: ≤ 1.15× for all K, and the stream not worse than K = 1. With no batching, K messages cost K times the per-message path (guard, arm, spread, compares, write), so the ratio to vanilla is the one-message ratio; the 13 % win at K = 1 000 was the batching this design deletes, and before S7 every message also pays a model spread vanilla's `tick++` does not | — | §4.3; S1 |
-| **the table app** | every operation ≤ 1.2×; `select` ≤ 1.0× (the selector kept); `swap` ≤ 1.2× with the exact edit from `List.swap` or the index guards (`write-sets.md` §10.4); **and no operation slower than P3** (below) | ≤ 2× vanilla = 2 830 B: P3's own module 2 243 + core ≈ 400 → **≈ 2 650 [estimate]**, a 6 % margin on an estimate, and the ≈ 400 holds only if the trie's write half is not reached (§7.2: the S0 stats gate measures it; *amended 2026-10-11*: the building-loop rule this leaned on is withdrawn, and the table app keeps the trie out by building its rows with `[ …acc, x ]`) | §6; S3 |
+| **the table app** | every operation ≤ 1.2×; `select` ≤ 1.0× (the selector kept); `swap` ≤ 1.2× with the exact edit from `List.swap` or the index guards (`write-sets.md` §10.4); **and no operation slower than P3** (below) | ≤ 2× vanilla = 2 830 B: P3's own module 2 243 + core ≈ 400 → **≈ 2 650 [estimate]**, a 6 % margin on an estimate, and the ≈ 400 holds only if the trie's write half is not reached (*amended 2026-10-15*: moot after S7, when no bundle has a trie; core's share is re-measured then) (§7.2: the S0 stats gate measures it; *amended 2026-10-11*: the building-loop rule this leaned on is withdrawn, and the table app keeps the trie out by building its rows with `[ …acc, x ]`) | §6; S3 |
 | **TodoMVC** (`bench/todomvc/apps/beni/`, at **100 todos and 1 000 todos**: add one, toggle one, clear completed) | the three messages ≤ 1.2× vanilla TodoMVC at 100 todos; at 1 000, toggle-one is O(n) through the reconciler (§6.2, a `For` over a filtered list) where vanilla is O(1), so the target there is ≤ 1.3× and the measurement says what the derived-`each` precision §6.2 allows would buy | the **routing build** (the corpus page, no editing: today 10 053 B) ≤ 2× vanilla TodoMVC and below Svelte 4's 4 246 (tastejs's, persistence included) — **which depends on Q5** (§15): with the routing subscription on the fiber kernel, 1 948 B of it is the kernel (research 51 §0.2) and the target is out of reach; the sandbox build (today 5 317) is reported beside it | §6.3, §10.1; S5 |
 | **Conduit** | every key's handler bounded but `ChangedUrl`; a page message ≤ the frame's one DOM write + the page's groups | ≤ 0.7× today's 30 842 brotli, **if** the (key, group) pair count and the shared-site gate (§5.2) hold the handlers linear; the S0 stats gate gives the count | §4, §5.2; S0 for the counts, S6 for the bytes |
 
@@ -1254,7 +1266,8 @@ criterion 5's bars hold as written.
      — with the test that pairs ÷ keys on the largest program is no more than **2×** its
      value on the median one;
    - the trie's write half shipping under a `set`-only program when §13's estimates assumed
-     not.
+     not. *Amended 2026-10-15:* from S7 on, any trie code in any bundle (the last
+     amendment of this document).
 
    Each is the design failing on a real shape, found before a line of the lowering is written:
    the Imba failure (O(view) per event) and the size blow-up, caught at S0 instead of S6.
@@ -1355,6 +1368,9 @@ measured on both platforms, P3, vanilla and Solid 1 in one batch. The slices are
 - **S6 — Conduit.** Nested keys and same-variant rebuilds through the handlers, `patchAll` for
   the `*` key, the three Conduit scripts on both platforms, bytes and the three timed messages,
   the S0 numbers re-measured on the built platform; the second V3 campaign. *Kill criterion 7.*
+- *Amended 2026-10-15 (the owner): S7 is rewritten as "replace `core/List`'s representation", with
+  the independent review's conditions C1–C5 (the last amendment of this document). The bullet
+  below is kept as written.*
 - **S7 — in-place update.** *Q4 answered before it starts.* The ownership analysis (§7.4, §11
   item 4) with container and element ownership apart, the assignments in the handlers, the
   width, depth and rows criteria at 1.15×, `backend.md` §15.8's identity fixtures extended with
@@ -1418,7 +1434,8 @@ not a question, and is reported under §16.
   over without its own program lowering. *Recommendation*: accept for `browser-direct`; `browser`
   stays the base for a library-style architecture while both exist, and S8 decides.
 
-**Reported, not asked** (rule 10): `List`'s thresholds and the trie's ~500 B for a program that
+*Amended 2026-10-15: the paragraph's first sentence is closed by the owner's decision that the
+trie goes; see the last amendment of this document.* **Reported, not asked** (rule 10): `List`'s thresholds and the trie's ~500 B for a program that
 prepends to, or sets into, a long list outside a loop (§7.2) are measured at S0 and in S2/S3 and
 reported in B1; nothing here changes them. And the one refusal (`view_not_compiled`, §11.1):
 reported with its count from the dump, because it has no fallback and is expected never to fire
@@ -3376,3 +3393,133 @@ arm, shared-call and handler-instance contexts. The value dispatcher asserts
 one handler per analysis key; only the actual final key is unconditional.
 The analysis builds keys depth-first, so a prefix cannot be interleaved with
 another prefix or followed by a second root catch-all.
+
+### *Amended 2026-10-15 (the owner):* `List` is a plain array; S7 replaces its representation
+
+The owner, 2026-10-15, verbatim: **"I want the trie gone from the bundle. It might be included
+later as custom data structure (like Vector) if the developer want. List is regular array."**
+The representation is `backend.md` §4, *The representation: a plain array*. The costs, before and
+after, are `language.md` §6.8, *A list is a plain array*. This amendment rewrites S7's scope
+(§14), §7.2's premise, §7.4's fallback, and the rows of §13 that assumed a trie. The text they
+replace is kept.
+
+**§7.2's premise is reversed.** "The representation stays" held while `List` was E1tp. From S7 on,
+the representation is what this platform changes. `List` is a plain array with a read-only O(1)
+view for a pattern's `rest`, and it has no trie, no thresholds, no claimable ends and no
+`$plain()`. §7.2's bullets that price a trie (a walk that flattens a written trie, a `set` that
+path-copies past 256, the write half's ~500 B) stop applying once S7 lands. A walk is O(n) with
+no flatten. An accepted `set` is a store. No program ships trie code.
+
+**§7.4's fallback is withdrawn.** "On a container-owned, **plain** (`Array.isArray` at run time; a
+trie is written through `set` as before) list" becomes simply "on a list": every accepted list
+demand edits its array in place. The ownership checker (`ownership-checker.md`), not §7.4's
+write-set condition, decides **list** writes. §7.4's owned-path analysis remains the rule for
+**record** assignments only (C4 below). The two rules of §7.4 that keep the page right stand
+unchanged.
+
+**S7 — replace `core/List`'s representation** (*rewrites §14's S7*; the old bullet is kept above).
+S7 is no longer "in-place update where it can be proved". It replaces the representation:
+
+1. **The representation.** `core/List` becomes plain arrays and views:
+   - every `trie*` function, `fromPlain`, the header and tree shapes, `triePlain`, `viewPlain`,
+     `$plain`, the thresholds and every reader's trie test are deleted;
+   - the reader protocol becomes `length`, `Array.isArray` and a view's `$b`/`$o`;
+   - every sibling, platform runtime, `Debug.toString` and the derived comparison follow the new
+     protocol (`boundary.md` §4, amended);
+   - `bench/arrays/lists/claim*-test.mjs` retire.
+2. **In place where accepted.** On an in-place platform, every accepted demand edits in place:
+   `set`, `update`, `swap`, `push`, `pop`, `insertAt`, `removeAt`, `List.append`, every
+   construction and every `++` chain on lists (`ownership-checker.md` §3, §13.4). The emitter
+   names the core-private in-place writers by well-known symbol. A demand is an optimiser barrier
+   (thesis A5). Elsewhere, the public writers copy.
+3. **The platform question answered first.** Which platforms copy is the owner's open question
+   in `backend.md` §4. S7's lowering does not land until it is answered, because the answer
+   decides whether the copying writers serve `node` and the gates.
+4. **Record assignment** (§7.4's owned paths): built in this slice only under C4.
+5. **A writer used as a value.** `ownership-checker.md` §3.1 says a writer passed as a value and
+   called through a local is no demand. On an in-place platform it would then copy, which is a
+   copy the program did not write. S7 specifies one of two answers before it lowers. Either a
+   call through such a value is a demand (§16.5's function-value summaries carry the write) and
+   the value is the in-place writer, or the value is refused with the checker's message. A
+   silent copy is not an answer.
+
+**S7's preconditions and deliverables**, from the independent review of the ownership oracle and
+its bridge (2026-10-15; verdict "proceed, with conditions"). That review found:
+
+- 55% of the real apps' demands are `++` and spread constructions, which the Lean oracle does
+  not model;
+- three of six plausible permissive mutations of `src/own/Ownership.zig` go undetected: views,
+  append and the record-update base;
+- nothing checks the emitted in-place code itself.
+
+The conditions are the review's. Their fallbacks are amended where the trie's removal leaves no
+fallback:
+
+- **C1 — constructions are checked before they are lowered in place. A precondition, and no
+  longer optional.** `append`/construction goes into the Lean core and the bridge's translator,
+  with value and in-place semantics. An in-place append extends the base. Failing that, a
+  Zig-side differential harness on constructions. Either one must catch the review's `append`
+  mutation (`SelfAppend` `xs ++ xs`, `SelfSpread` `[ …xs, 4, …xs ]`). The review's fallback was
+  to lower only `set`/`push`/`update`/`swap` in place and keep `++` copying. With E1tp that
+  cost nothing, because a copying `[ …acc, x ]` still pushed onto a trie in amortised O(1).
+  **With no trie, a copying construction makes every `[ …acc, x ]` building loop O(n²)**: the
+  table app's `buildFrom` (§13), TodoMVC's `model.todos ++ …`, and Conduit's 14 construction
+  demands. So the trie's removal and the in-place lowering of constructions land together, and
+  C1 is met before either does. `swap`, `insertAt`, `removeAt` and `pop` join the core as
+  primitives, as the review's remedy 1 asks.
+- **C2 — views are modelled before they are relied on.** List patterns and views go into the Lean
+  core and the translator. A view is an offset over its base's array, and the review's `view`
+  mutation (`ViewAlias`, `ViewAliasRest`) must be caught. Until then, and whatever happens with
+  the Lean core, those witnesses and the record-update witness (`RecordUpdate2`) become gated
+  fixtures under `tests/corpus/ownership/` in S7's first commit, red against each mutation. Views
+  are read-only in this design (`backend.md` §4), so a write through a view is never emitted. But
+  the checker's view aliasing is what makes it sound to write a base while a `rest` is dead, and
+  that is what C2 checks.
+- **C3 — the emitted code is tested, not only the verdicts.** This is `ownership-checker.md`
+  §13.4's plan. Every accepted program in the corpus and the bridge is built with the real
+  in-place lowering and run against value semantics (`browser-tea`, or the copying writers),
+  with thesis §12.2's stale-read sanitiser. The lowering fixtures the review lists are S7
+  deliverables:
+  - an out-of-range `set`/`update`/`swap`/`insertAt`/`removeAt` that leaves the array unchanged,
+    never extended;
+  - a write to a view, which is made plain first and never written through;
+  - items before the base in a construction (`[ x, …xs, y ]`);
+  - a prepend's base never written in place;
+  - a demand as an optimiser barrier under `--release`.
+
+  The trie fallback fixtures the review also asked for are moot: there is no trie.
+- **C4 — record assignment has its own check.** §7.4's owned-path record assignments are outside
+  both the ownership checker and the oracle. Before one is emitted they get:
+  - a specification check of their own;
+  - a generated differential, value semantics against assignment in place, under the
+    sanitiser;
+  - fixtures for two holders of one model record: a stored `msg` payload, a captured
+    `model.form` and a `For` item.
+
+  Until then, S7 lowers lists in place and keeps the arm's record spreads. The width and depth
+  criteria wait on C4. The rows and swap criteria do not.
+- **C5 — the bridge's function-valued skip is removed and re-baselined.** Functions are normalised
+  to `"<function>"` on both sides. The review measured translated programs going from 43 185 to
+  77 837, with 102 new leads and none diverging. The six mutations become the bridge's opt-in
+  controls, and `ownership-checker.md` §26.7 gains the unmodelled writers and constructions and
+  says that the bridge's "0 confirmed" covers the modelled writers only (the review's remedies 2,
+  3 and 7).
+
+The width, depth, rows and swap criteria keep their S7 bars. **W27's amendment** (Q4, decided
+2026-10-09) is written into `language.md` §11.12 before S7's lowering lands. It has been decided
+but not yet written.
+
+**§13's rows that assumed a trie** (amended; the rows above are kept as written):
+
+- **Long keyed list, one edit**: "a list that is a trie keeps the path copy and the 1.3×" is
+  withdrawn. After S7 every accepted `List.update` on the rows is a store, and the criterion is
+  ≤ 1.15× with no exception.
+- **The table app's bytes**: "the ≈ 400 holds only if the trie's write half is not reached" is
+  moot: no program reaches a trie. Core's share is re-measured at S7 with `size-parts.mjs`.
+- **Kill criterion 1's last item** (the trie's write half shipping under a `set`-only program):
+  S0 measured it (research 65). From S7 on, any trie code in any bundle is the fail condition:
+  `size-parts.mjs` must find no `trie*` part in any corpus, table, TodoMVC or Conduit bundle.
+- **The P3 comparison**: "P3 with its trie and its loop removed is about 2 900 B" stays the
+  bar. The generated page now has no trie either.
+- **§15's "Reported, not asked"** line on the thresholds and the trie's ~500 B is closed: both are
+  gone.

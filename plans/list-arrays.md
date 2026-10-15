@@ -34,6 +34,16 @@ loops that prepend. Contract: `backend.md` §4, *The claimable head: E1tp*, amen
 before and after (prepend loops slower is expected; anything else slower is a finding), and
 `node lists/claim-prepend-test.mjs core` still intact on old versions.
 
+*Amended 2026-10-15, the owner:* **"I want the trie gone from the bundle. It might be included
+later as custom data structure (like Vector) if the developer want. List is regular array."** E1tp
+is withdrawn. A `List` is a plain array with a read-only view for a pattern's `rest`, and it is
+edited in place where the ownership checker proves it unshared. Contract: `backend.md` §4, *The
+representation: a plain array*. Costs before and after: `language.md` §6.8, *A list is a plain
+array*. The work: `browser-direct.md`'s S7, rewritten as "replace `core/List`'s representation".
+This plan's slices 4 and 5 that measure or reorder the trie (`$chunks()`, the trie's read half,
+`core/List.js`'s order) are moot for the trie, and the claim sweeps retire with it. The plan is
+kept as the record of how the array-backed list was built.
+
 ---
 
 ## 1. Decisions

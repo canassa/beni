@@ -312,6 +312,13 @@ its kill criterion (design §13) stops and reports; it does not bend the design 
 | **S7** — in-place update (M3, M4's cliff) | the ownership analysis and the assignments in handlers; the identity fixtures extended with design §7.4's two rules | width, depth and rows at ≤ 1.15× | todo; needs Q4 |
 | **S8** — the decision | one batch of everything on both platforms, P3, vanilla and Solid 1; one report | the owner keeps one platform and the other is deleted | todo |
 
+*Amended 2026-10-15 (the owner): S7 is now "replace `core/List`'s representation". `List` becomes a
+plain array edited in place where the ownership checker accepts the write, and the trie leaves every
+bundle. Its preconditions and deliverables are the independent oracle review's C1–C5, and record
+assignment waits on C4 (design, the last amendment, *`List` is a plain array; S7 replaces its
+representation*). The owner's open platform question in `backend.md` §4 is answered before S7's
+lowering lands. The row above is kept as written.*
+
 **Shared and not shared** (design §12.1): the compiler, its analyses, `core`, `html`, `browser`'s
 capability modules and the defect teardown, the corpus driver and the bench harness are one copy;
 the `direct` lowering, its `Rt` and its `Tea` (the command driver copied, ~300 lines) are the

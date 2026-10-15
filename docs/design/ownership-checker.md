@@ -668,6 +668,15 @@ in place with the stale-read sanitiser of thesis §12.2, and the verdicts and tr
 (`proofs/ownership/`, the `Oracle`) are compared with the compiler's on the generated programs of
 thesis §12.1 — the differential test against the oracle.
 
+*Amended 2026-10-15 (the owner):* "the trie goes" is now the decision itself, not a consequence of
+this slice. `List` is a plain array (`backend.md` §4, *The representation: a plain array*), the
+trie leaves every bundle, and `browser-direct.md`'s S7 is rewritten as "replace `core/List`'s
+representation". S7 carries the conditions C1–C5 of the independent review of this checker's
+oracle and bridge (`browser-direct.md`, its last amendment). One of them changes this section:
+C1 makes the oracle's model of constructions a precondition of the trie's removal, not an
+option. Without a trie, a construction that keeps copying makes every `[ …acc, x ]` building
+loop O(n²).
+
 ---
 
 ## 14. Open questions for the manager
@@ -2760,6 +2769,12 @@ it; `browser-tea`, `browser`, `html` and `node` do not, and `tests/platforms/*` 
 
 The entry rows of §20.2 read the same property, of the package that declares the program constructor (§20.2's
 amendment).
+
+*Amended 2026-10-15 (the owner's decision that `List` is a plain array; `backend.md` §4, *The representation: a
+plain array*):* with no trie, a platform that is not in-place has no cheap write. There, every writer and every
+construction copies its base, O(n). Whether the property should stay a platform's, or become the language's so
+that the checker runs and lists are edited in place on every platform, is open with the owner. The question and
+the recommendation are in `backend.md` §4, in the same subsection.
 
 ### 28.3 When the pass runs
 

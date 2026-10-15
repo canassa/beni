@@ -256,6 +256,10 @@ silently invalidate a map.
 | **sum** | | 5555 | 3098 | 4102 |
 
 
+*Note, 2026-10-15: the owner has since withdrawn the trie (`backend.md` §4, *The representation: a
+plain array*; `browser-direct.md`'s S7). Once S7 lands, the persistent part of the first row's
+594 B leaves the bundle, and `List.append` extends the base in place where the checker accepts it.*
+
 The table's generic `List.append` row builder still reaches List's persistent representation;
 this is visible in the archived bundle's `t`/`sa` path, not inferred from an old report's bytes.
 The general rank-correct reconciler/row-patch part costs **607 B** in context; delegation/listeners
