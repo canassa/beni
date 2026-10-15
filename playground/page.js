@@ -5,13 +5,14 @@
 // `ownership` dumps, the samples and the shareable link.
 //
 // The compiler runs in `worker.js`, one command at a time. Every edit of the
-// source or the CSS, and a change of platform, makes a new version of the
-// input; a result of an older version is dropped, and the newest version is
-// compiled once the worker is free. A dump runs only while its tab is open.
-// The compiler never reads the CSS: a new frame gets it (§4.6). A defect of
-// the playground is not run again for the version it failed on, so a
-// failure that repeats is shown once and not retried without end; a newer
-// version still runs.
+// source, and a change of platform, makes a new version of the input; a
+// result of an older version is dropped, and the newest version is compiled
+// once the worker is free. A dump runs only while its tab is open. The
+// compiler never reads the CSS: a new frame gets it in its document, and an
+// edit of it goes to the running frame, which does not restart (§4.6). A
+// defect of the playground is not run again for the version it failed on,
+// so a failure that repeats is shown once and not retried without end; a
+// newer version still runs.
 import { createCodeView, createEditor, markDiagnostics, replaceText, reveal, showCode, textOf } from "./editor.js";
 import { decode, encode } from "./share.js";
 import { srcdoc } from "./srcdoc.js";
@@ -53,6 +54,8 @@ let notice = "";
 // known.
 let editor = null;
 let cssEditor = null;
+// The CSS the newest frame got in its document (§4.6).
+let srcdocCss = "";
 let timer = 0;
 let emitted = {};
 
@@ -144,16 +147,15 @@ function showFiles(files) {
   showCode(code, emitted[fileList.value] ?? "");
 }
 
-// A new frame with `files` and the CSS pane's text (§4.6), which is the
-// CSS of the version these files were built from: an edit of it makes a
-// newer version, whose build drops this one.
+// A new frame with `files` and the CSS pane's text (§4.6).
 async function runProgram(files) {
   const script = await frameScript;
   const fresh = document.createElement("iframe");
   fresh.id = "frame";
   fresh.title = frame.title;
   fresh.setAttribute("sandbox", "allow-scripts");
-  fresh.srcdoc = srcdoc(files, textOf(cssEditor), script);
+  srcdocCss = textOf(cssEditor);
+  fresh.srcdoc = srcdoc(files, srcdocCss, script);
   output.replaceChildren();
   frame.replaceWith(fresh);
   frame = fresh;
@@ -219,6 +221,22 @@ function showBuild(result) {
   runProgram(result.files);
 }
 
+// The CSS pane's text to the running frame, which restyles its program and
+// does not restart it (§4.6). Its origin is opaque, so the target is `*`;
+// the text is the page's own.
+function restyle() {
+  frame.contentWindow.postMessage({ beniCss: textOf(cssEditor) }, "*");
+}
+
+// An edit of the CSS. A person's clears the link from the address, as an
+// edit of the source does, and restyles the running program. The page's
+// own (a sample, a link) is followed by a build, whose frame gets the CSS.
+function cssEdited(byUser) {
+  if (!byUser) return;
+  if (location.hash !== "") history.replaceState(null, "", location.pathname + location.search);
+  restyle();
+}
+
 function showDump(result) {
   const view = $(`${result.command}-text`);
   view.classList.remove("stale");
@@ -277,6 +295,9 @@ addEventListener("message", (event) => {
   else if (kind === "exit" && line !== "0") append(`exit code ${line}\n`, "error");
   // The entry module and every module it imports loaded.
   else if (kind === "loaded") frame.dataset.loaded = "true";
+  // The frame listens: a CSS edit since its document was made, whose
+  // message came too early, goes again.
+  else if (kind === "ready" && textOf(cssEditor) !== srcdocCss) restyle();
 });
 
 for (const tab of document.querySelectorAll("[data-tab]")) {
@@ -345,7 +366,7 @@ $("share").addEventListener("click", async () => {
 
 const shared = await decode(location.hash);
 editor = createEditor($("editor"), "", edited);
-cssEditor = createEditor($("css-editor"), "", edited, "css");
+cssEditor = createEditor($("css-editor"), "", cssEdited, "css");
 if (shared !== null) {
   if ([...platform.options].some((o) => o.value === shared.platform)) platform.value = shared.platform;
   sampleList.value = "shared";

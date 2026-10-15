@@ -4,7 +4,8 @@
 // `<iframe sandbox="allow-scripts">`; the frame has an opaque origin of its
 // own, so a blob URL the page made would not load here.
 //
-// It adds the CSS, if there is any, as a `<style>` element (§4.6). Then it
+// It adds the CSS, if there is any, as a `<style>` element, and replaces
+// it with each new CSS the page sends (§4.6). Then it
 // makes a blob URL in the frame's own origin for each module, dependencies
 // first, with each relative import specifier replaced by the blob URL of the
 // file it names and `node:process` and `node:fs/promises` by small modules
@@ -95,15 +96,31 @@
     return urls.get(path);
   }
 
-  // The CSS pane's text, when it holds any (playground.md §4.6), before the
-  // program mounts. A script sets the `<style>` element's text and no HTML
-  // parser reads it, so a `</style>` in the CSS ends nothing.
-  const css = document.getElementById("beni-css");
-  if (css !== null) {
-    const style = document.createElement("style");
-    style.textContent = JSON.parse(css.textContent);
-    document.head.append(style);
-  }
+  // The CSS pane's text (playground.md §4.6): from the document, before the
+  // program mounts, and then each new text the page sends, which restyles
+  // the program and does not restart it. A script sets the `<style>`
+  // element's text and no HTML parser reads it, so a `</style>` in the CSS
+  // ends nothing. An empty text removes the element.
+  let style = null;
+  const restyle = (css) => {
+    if (css === "") {
+      style?.remove();
+      style = null;
+      return;
+    }
+    if (style === null) {
+      style = document.createElement("style");
+      document.head.append(style);
+    }
+    style.textContent = css;
+  };
+  const initial = document.getElementById("beni-css");
+  if (initial !== null) restyle(JSON.parse(initial.textContent));
+  addEventListener("message", (event) => {
+    if (event.source === parent && typeof event.data?.beniCss === "string") restyle(event.data.beniCss);
+  });
+  // The page sends the text again if it changed before this frame listened.
+  post("ready", "");
 
   import(url("_main.mjs")).then(() => post("loaded", ""));
 })();

@@ -311,13 +311,23 @@ each sample has a look of its own.
   `beni-css` element, and the frame has no `<style>` element. `playground/srcdoc.js` makes the
   `srcdoc`; a gate test (§6) compares what it makes for an empty pane with the document of §5
   before this section, byte for byte, and the Chrome test finds no style sheet in the frame.
-- **When the CSS changes.** An edit of the CSS is an edit of the program: a new version (§4.4),
-  a build, and a new frame with the program and the CSS. So the CSS reloads with the program on
-  every compile, and a frame never shows the CSS of one version with the program of another. If
-  the program has errors, the frame keeps the last program that built, with its CSS, as after an
-  edit of the beni source. An open dump tab runs again for the new version and shows the same
-  text. *Rejected: a CSS edit that reloads the frame with the last build's files and no build.*
-  It saves one build, about 35 ms for TodoMVC (§7.2), and it is a second path into the frame.
+- **When the CSS changes.** A person's edit of the CSS restyles the running program and does not
+  restart it: the counter keeps its value and TodoMVC its todos. The page sends the pane's text
+  to the frame with `postMessage({ beniCss })`, and `frame.js` puts it in its `<style>` element.
+  It adds the element if the frame has none, and it removes the element when the pane is empty,
+  so an emptied pane gives the frame no style sheet again. The frame takes this message only
+  from its parent window, and the sandbox stays as §5 says. A CSS edit makes no new version
+  (§4.4): no build, and no dump runs again.
+
+  An edit of the beni source, a change of platform and a sample are as before: a build, and a
+  new frame that gets the pane's text in its `srcdoc`. So the CSS reloads with the program on
+  every compile. A message that the page sends before a new frame listens is lost. So the frame
+  posts `ready` when it listens, and the page sends the text again if it changed after the
+  `srcdoc` was made. If the program has errors, the frame keeps the last program that built, and
+  a CSS edit restyles that program.
+
+  *Rejected: a build and a new frame for each CSS edit*, the first version of this section. It
+  restarted the program, so a person who typed CSS lost the counter's value and the todos.
 - **The link.** The fragment is `#platform=<platform>&code=<base64url>&css=<base64url>`. `css` is
   made as `code` is (§4.5), and the fragment has it only when the pane holds text. So a link made
   before this section opens as it did, with an empty pane. A `css` that is not base64url, not
@@ -385,7 +395,9 @@ shows inside the frame.
 
 *Amended 2026-10-15, issue #143:* when the CSS pane holds text, the `srcdoc` also holds it, and
 the bootstrap adds it as a `<style>` element before step 3 (§4.6, *The frame*).
-`playground/srcdoc.js` makes the `srcdoc`.
+`playground/srcdoc.js` makes the `srcdoc`. The bootstrap also takes a new CSS text from its
+parent window by `postMessage` and replaces the `<style>` element's text with it (§4.6, *When
+the CSS changes*).
 
 A relative specifier is found by the import forms that the compiler writes and that
 `boundary.md` §4's checks accept for a sibling: `import … from "./…"`, `export … from "./…"` and
@@ -436,7 +448,8 @@ modules with no change. Item 3 also checks: each styled sample's CSS reaches the
 computed style of a known element), in the light and the dark scheme; each styled sample's text
 has the contrast §4.6 gives, in both schemes; no styled sample scrolls sideways in a 320 px wide
 frame; the frame of a program with an empty pane has no style sheet; an edit in the CSS pane
-reaches the frame; the CSS pane highlights CSS; a link restores the source, the CSS and the
+reaches the frame and the program keeps its state, an emptied pane removes the style sheet, and
+an edit of the source restarts the program with the CSS; the CSS pane highlights CSS; a link restores the source, the CSS and the
 platform; and an `@import` from another origin applies in the frame.
 
 A test compares every file of the output tree and both streams byte for byte, and the exit code.

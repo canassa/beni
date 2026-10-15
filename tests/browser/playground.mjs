@@ -174,6 +174,17 @@ async function open(url) {
       await send("Input.dispatchKeyEvent", { type, key: "End", code: "End", windowsVirtualKeyCode: 35, modifiers: 2 }, sessionId);
     }
   };
+  // Select all of the editor's text and delete it, with Ctrl+A and
+  // Backspace.
+  const clear = async (editor) => {
+    await evaluate(`document.querySelector("${editor} .cm-content").focus()`);
+    for (const type of ["rawKeyDown", "keyUp"]) {
+      await send("Input.dispatchKeyEvent", { type, key: "a", code: "KeyA", windowsVirtualKeyCode: 65, modifiers: 2 }, sessionId);
+    }
+    for (const type of ["rawKeyDown", "keyUp"]) {
+      await send("Input.dispatchKeyEvent", { type, key: "Backspace", code: "Backspace", windowsVirtualKeyCode: 8 }, sessionId);
+    }
+  };
   // The value of `expression` in the page's newest frame.
   const inFrame = (expression) => evaluate(expression, frames.get(sessionId));
   // The colour scheme the page and its frame prefer: `light` or `dark`.
@@ -194,7 +205,7 @@ async function open(url) {
     const { data } = await send("Page.captureScreenshot", { format: "png", clip }, sessionId);
     writeFileSync(join(screenshots, file), Buffer.from(data, "base64"));
   };
-  return { targetId, evaluate, until, type, toEnd, inFrame, scheme, size, screenshot };
+  return { targetId, evaluate, until, type, toEnd, clear, inFrame, scheme, size, screenshot };
 }
 
 /// A page opened from a link to `source` and `css` on `platform`, which the
@@ -379,7 +390,8 @@ for (const piece of ["→", "×", "⊤", "pub", "schema", "<p", "class"]) {
 }
 
 // The CSS pane (§4.6). A program with an empty pane: its frame has no style
-// sheet. An edit in the pane reaches the frame, `</style>` and all.
+// sheet. An edit in the pane restyles the running program, `</style>` and
+// all, and does not restart it; an edit of the source does.
 const counter = await (await fetch(`${origin}/samples/browser-direct/Counter.beni`)).text();
 const bare = await pageWith("browser-direct", counter);
 check((await bare.until(built)) !== null && (await bare.until(loaded, 10_000)) !== null, `a counter with no CSS builds and loads (${await bare.evaluate(status)})`);
@@ -387,13 +399,30 @@ check((await bare.until(`document.querySelectorAll("button").length === 2 && ${u
 check((await bare.evaluate(cssText)) === "", "a link with no CSS opens an empty CSS pane");
 await bare.evaluate(showCss);
 check(await bare.evaluate(`!document.getElementById("css-editor").hidden && document.getElementById("editor").hidden`), "the style.css tab shows the CSS editor");
+// The counter at 1, a state that a restart loses.
+const bumped = await bare.until(`document.querySelector("span")?.textContent === "0" && (document.querySelectorAll("button")[1].click(), true)`, 10_000, true);
+check(bumped !== null && (await bare.until(`document.querySelector("span")?.textContent === "1"`, 10_000, true)) !== null, "the counter with no CSS counts to 1");
 await bare.evaluate(`document.getElementById("status").textContent = ""`);
 const edge = "/* </style></script> */\nmain {\n  outline: 3px solid rgb(1, 2, 3);\n}\n";
+const outlined = `document.querySelector("main") !== null && getComputedStyle(document.querySelector("main")).outlineColor === "rgb(1, 2, 3)"`;
+const kept = `document.querySelector("span")?.textContent === "1"`;
 await bare.type(edge, "#css-editor");
 check((await bare.until(`location.hash === ""`, 5_000)) !== null, "an edit of the CSS clears the link from the address");
-check((await bare.until(built)) !== null, `an edit of the CSS builds the program (${await bare.evaluate(status)})`);
-check((await bare.until(`document.querySelector("main") !== null && getComputedStyle(document.querySelector("main")).outlineColor === "rgb(1, 2, 3)"`, 10_000, true)) !== null, "an edit of the CSS reaches the frame, past a </style> in it");
+check((await bare.until(`${outlined} && ${kept} && document.querySelectorAll("style").length === 1`, 10_000, true)) !== null, "an edit of the CSS restyles the running program, past a </style> in it, and the program keeps its state");
+// Past the compile's 300 ms wait: no build ran.
+await later(600);
+check((await bare.evaluate(status)) === "", `an edit of the CSS builds nothing (status ${JSON.stringify(await bare.evaluate(status))})`);
 check(await bare.evaluate(`[...document.querySelectorAll("#css-editor .cm-line span")].some((s) => s.textContent === "outline" && s.className !== "")`), "the CSS pane highlights CSS");
+await bare.clear("#css-editor");
+check((await bare.until(`${unstyled} && ${kept}`, 10_000, true)) !== null, "an emptied CSS pane removes the style sheet from the running program");
+await bare.type(edge, "#css-editor");
+check((await bare.until(`${outlined} && ${kept}`, 10_000, true)) !== null, "the CSS comes back to the running program");
+// An edit of the source restarts the program, with the CSS.
+await bare.evaluate(`document.querySelector('[data-file="editor"]').click()`);
+await bare.toEnd();
+await bare.type("-- restyled\n");
+check((await bare.until(built)) !== null, `an edit of the source builds the program (${await bare.evaluate(status)})`);
+check((await bare.until(loaded, 10_000)) !== null && (await bare.until(`${outlined} && document.querySelector("span")?.textContent === "0"`, 10_000, true)) !== null, "an edit of the source restarts the program, with the CSS");
 // Share: the link holds the source and the CSS.
 await bare.evaluate(`document.getElementById("share").click()`);
 const styledLink = await bare.until(`location.hash.includes("css=") && location.href`, 10_000);
