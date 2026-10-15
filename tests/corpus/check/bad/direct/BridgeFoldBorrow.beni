@@ -1,7 +1,5 @@
--- CK-229: a fold borrows an input as its next written accumulator.
+-- a fold borrows an input as its next written accumulator.
 -- Confirmed by the in-place interpreter; see proofs/ownership/BRIDGE-RESULTS.md.
--- The shipping checker accepts every demand. The expected refusal is pinned below.
--- Position remains open until the checker fix chooses its diagnostic site.
 step item acc = if List.length acc == 0 then item else List.push acc 9
 
 

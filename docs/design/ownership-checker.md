@@ -3282,3 +3282,44 @@ identity taggers on Int and String valid. A work function stored inside a
 traversal callback remains the existing §24.9 slot-inside-lambda limit: its
 result ownership cannot yet be propagated, so HttpFailures remains pending
 with an approximate tagger-result diagnostic after the unseen check is closed.
+
+## 29. Result liveness and ownership across calls (2026-10-15)
+
+Every expression that forwards a result consumes that result in its own evaluation
+context. This includes every case/if arm, a block's terminal expression, a function
+or callback body, and early returns. A compound expression cannot hide a terminal
+variable path from Dead. Arm uses retain their branch contexts, so mutually
+exclusive arms do not keep each other's values live. A write's newly returned
+version is transferable; reading an old holder after the write remains sharing.
+
+Captures are read at the enclosing consumer of a closure as well as in its body.
+A later callback returning an outer value therefore keeps that holder live across
+earlier writes. Named closures still resolve captures when invoked, including
+bindings declared after their definitions. A closure's own permitted once transfer
+is excluded only from its own capture demand, never from an earlier unrelated write.
+
+Recursive summary instantiation preserves symbolic environment provenance in the
+frame being summarized. An environment not yet bound is not the empty abstract
+value. A write through a recursive captured result contributes the captured write
+and the once obligation; callers must discharge both. Missing provenance remains
+conservative, never proof that a result contains no cell.
+
+Disjointness at a call includes the callee's environment alongside every explicit
+argument and every other argument path. A written argument cannot alias a capture
+which the callee may read or return, even if the closure's last invocation is this
+call. This applies equally to direct local calls and calls through carried classes.
+
+A callback result supplied to a later invocation must establish ownership for its
+whole lifetime on that feedback edge. An owned destructive item supply is a loan
+from its container, conditional on that container's exclusivity and the absence of
+retained readers. It does not establish ownership of an accumulator that outlives
+the item invocation. Returns-owned checks preserve the taken-container condition
+and separation from retained inputs and later item positions. Both fold directions
+and nested callback results obey this rule; fresh or transferred owned accumulators
+continue to satisfy the existing invariant. No new permission is introduced.
+
+Ownership summary blocks advance version when these rules land, so cached older
+summaries cannot bypass the corrected checks. The Lean bridge retains the unchanged
+oracle and translation contracts; interpreter-confirmed unsafe accepted originals
+must be zero at the CI bound and the three recorded generator seeds. Reverse leads
+are counted separately from confirmed soundness failures.

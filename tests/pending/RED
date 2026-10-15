@@ -115,9 +115,3 @@ tests/pending/browser/direct/ConduitTour dev: exit=1 codes=not_implemented×1
 tests/pending/browser/direct/HttpFailures.beni dev: exit=1 codes=list_still_used×1
 
 # Lean bridge: confirmed by the in-place interpreter; checker fixes are deferred.
-tests/pending/check/bad/direct/BridgeCaseResult.beni exit=0 codes=none
-tests/pending/check/bad/direct/BridgeCaptureResult.beni exit=0 codes=none
-tests/pending/check/bad/direct/BridgeBlockResult.beni exit=0 codes=none
-tests/pending/check/bad/direct/BridgeFoldBorrow.beni exit=0 codes=none
-tests/pending/check/bad/direct/BridgeRecursiveCapture.beni exit=0 codes=none
-tests/pending/check/bad/direct/BridgeCaptureOperand.beni exit=0 codes=none
