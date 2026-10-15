@@ -24,7 +24,7 @@ const leads = report.cases.filter(c => c.programLead);
 assert.equal(leads.length, report.leads);
 const work = await mkdtemp(resolve(campaign, 'audit-'));
 try {
-  const inputs = [];
+  const inputs = [], originalSources = new Map();
   for (const c of leads) {
     const e = JSON.parse(await readFile(resolve(campaign, 'cases', c.id, 'evidence.json'), 'utf8'));
     assert.equal(e.id, c.id);
@@ -33,8 +33,9 @@ try {
     const dir = resolve(campaign, 'cases', c.id);
     const sources = (await readdir(dir)).filter(n => n.endsWith('.beni') && n !== 'Minimal.beni');
     assert.equal(sources.length, 1);
-    assert.equal(await readFile(resolve(dir, sources[0]), 'utf8'),
-      translate(e.declarations, e.record[4]).source, 'original source fidelity');
+    const source = await readFile(resolve(dir, sources[0]), 'utf8');
+    assert.equal(source, translate(e.declarations, e.record[4]).source, 'original source fidelity');
+    originalSources.set(c.id, source);
     inputs.push(c.id + '\t' + JSON.stringify([e.declarations, e.record[4]]));
   }
   const input = resolve(work, 'originals.tsv'), judged = resolve(work, 'judgments.jsonl');
@@ -47,6 +48,7 @@ try {
   for (const row of judgments) {
     assert(byId.has(row.id) && !seen.has(row.id)); seen.add(row.id);
     assert.equal(row.lean, byId.get(row.id).lean);
+    assert.equal(translate(...row.core).source, originalSources.get(row.id), 'judge core source fidelity');
     assert.equal(row.diverges, JSON.stringify(row.value) !== JSON.stringify(row.inPlace));
   }
   const confirmed = judgments.filter(r => r.diverges).map(r => r.id);
