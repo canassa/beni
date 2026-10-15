@@ -4484,7 +4484,11 @@ test "a branch that specialisation decides maps to the code it keeps" {
     // build's `crash` frame does, and not to the test's `>` at 13:10. The
     // call to `Aid.twice` is a body copied from another module, so it maps
     // to its call, in UTF-16 columns after `é😀`. `Aid` keeps no mark of
-    // its own, so it is no source of the map.
+    // its own, so it is no source of the map. `and/` is the same for `&&`:
+    // `check 500` keeps `Aid.bad n`, which maps to 8:16 and not to the
+    // `&&` at 8:13. It is a program of its own because a second
+    // `Debug.todo` call would stop `todo` being copied to either call, and
+    // only a copy shows the position a fold leaves.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.write("src/Aid.beni",
@@ -4523,6 +4527,39 @@ test "a branch that specialisation decides maps to the code it keeps" {
         \\    Node.printLines [ label 1, "😀😀" ++ label 2, String.fromInt (crash 500) ]
         \\
     );
+    try w.write("and/Aid.beni",
+        \\pub bad : Int → Bool
+        \\bad n =
+        \\    Debug.todo "bad"
+        \\
+        \\
+        \\pub boom : Int → Int
+        \\boom n =
+        \\    Debug.todo "boom"
+        \\
+    );
+    try w.write("and/Main.beni",
+        \\import Aid
+        \\import Node exposing (Program)
+        \\import String
+        \\
+        \\
+        \\check : Int → Bool
+        \\check n =
+        \\    n > 100 && Aid.bad n
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.printLines
+        \\        [ if check 500 then
+        \\            "y"
+        \\
+        \\          else
+        \\            "n"
+        \\        ]
+        \\
+    );
     try w.write("check-release-map.mjs", check_release_map_script);
 
     // ┌─────────────────────────────────────────┐
@@ -4531,6 +4568,9 @@ test "a branch that specialisation decides maps to the code it keeps" {
     const built = try w.runWith(&.{ "build", "--platform=node", "--release", "--allow-debug", "--source-maps", "--out=out", "src" }, .{ .raw_diagnostics = true });
     try expectBuilt(built);
     const checked = try w.runNode(&.{ "check-release-map.mjs", "out/_main.mjs", "run", "a(|b())", "a(|b*2)" });
+    const and_built = try w.runWith(&.{ "build", "--platform=node", "--release", "--allow-debug", "--source-maps", "--out=and-out", "and" }, .{ .raw_diagnostics = true });
+    try expectBuilt(and_built);
+    const and_checked = try w.runNode(&.{ "check-release-map.mjs", "and-out/_main.mjs", "no", "a()?\"y\"" });
 
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
@@ -4549,6 +4589,14 @@ test "a branch that specialisation decides maps to the code it keeps" {
         \\
     , checked.stdout);
     try testing.expectEqual(@as(u8, 0), checked.exit_code);
+    try testing.expectEqualStrings("", and_checked.stderr);
+    try testing.expectEqualStrings(
+        \\version 3, file _main.mjs
+        \\source beni:///core/Debug.beni: embedded
+        \\source ../and/Main.beni: its text
+        \\a()?"y" -> Main.beni:8:16
+        \\
+    , and_checked.stdout);
 }
 
 test "a release library build writes a map beside every module" {
