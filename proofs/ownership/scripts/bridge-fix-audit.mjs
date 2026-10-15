@@ -141,8 +141,13 @@ try {
   // its defect is fixed (it is no longer a lead) or the stream changes, the
   // pin is stale and must be removed with its fixture's promotion.
   const judgedIds = new Set(judgments.map(r => r.id));
+  // A generator id (`<prefix>-<seed>-<index>`) is exported when its stream is
+  // and its index is within that stream's count; an enumerated id
+  // (`enum-<bound>-<index>`) when its bound is the campaign's (2 long, 1 CI);
+  // a fixed program's whenever the fixed stream is.
   const exported = id => report.streams.some(s => s.name === streamOf(id) &&
-    !(/^(seed|v6)-/.test(id) && Number(id.split('-').at(-1)) >= s.programs));
+    !(s.name.startsWith('generator') && Number(id.split('-').at(-1)) >= s.programs) &&
+    !(id.startsWith('enum-') && id.split('-')[1] !== (isLong ? '2' : '1')));
   const stale = Object.keys(known).filter(id => exported(id) && !(judgedIds.has(id) && confirmed.includes(id)));
   assert.equal(stale.length, 0, `stale known-unsafe pins: ${stale.join(', ')}`);
   if (confirmed.length) console.log(`confirmed unsafe: ${confirmed.join(', ')} (pinned: ${confirmed.filter(id => Object.hasOwn(known, id)).join(', ') || 'none'})`);

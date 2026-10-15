@@ -2624,14 +2624,14 @@ entry projections remain counted skips because the bridge does not implement run
 This is a core model, not a proof that the Zig walk or lowering implements the rules. `DESIGN.md` specifies
 its boundaries; `RESULTS.md` records the campaigns and holes. The residual gaps below remain explicit.
 
-**What the bridge's "zero confirmed unsafe" covers.** Only the writers the core models: `List.set`, `List.push`,
+**What the bridge's confirmed-unsafe count covers.** Only the writers the core models: `List.set`, `List.push`,
 `List.update`'s focus, `List.copy`, the copying prepend, constructions (`++`, spread literals, `List.append`) and
-views, on the translated common subset. Views are judged under the most aliased lowering (a live `rest` sees a push
-of its source), which is stronger than the shipping runtime's fixed-length view, so view coverage is a statement
-about the checker's aliasing rule, not about the shipping view. It says nothing about the rows of the table below, nor about the code
-slice 5 will emit: the bridge's emitted library still uses persistent lists, and the Lean in-place interpreter
-is a model of the checker's promise, not of the lowering (thesis §12.2's stale-read sanitiser, §13.4, is what
-will judge that).
+views, on the translated common subset. Views are judged under the most aliased lowering (a live `rest` sees a
+push of its source), which is stronger than the shipping runtime's fixed-length view, so view coverage is a
+statement about the checker's aliasing rule, not about the shipping view. The count says nothing about the rows
+of the table below, nor about the code slice 5 will emit: the bridge's emitted library still uses persistent
+lists, and the Lean in-place interpreter is a model of the checker's promise, not of the lowering (thesis
+§12.2's stale-read sanitiser, §13.4, is what will judge that). On 2026-10-15 it is one, CK-232, pinned red.
 
 | Rule | Where | What is unsound if the rule is wrong |
 |---|---|---|
