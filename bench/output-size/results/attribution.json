@@ -1,0 +1,576 @@
+{
+  "method": "Per-response brotli 11 with size hint. Units = top-level declarators/functions/statements, owned by the source with most mapped raw bytes. Stub = initializer→0, body→{}, statement→0;. alone = one group from the original; ordered = cumulative in table order. Nonexecutable; costs in context, not savings.",
+  "subjects": {
+    "tea": {
+      "baseline": {
+        "raw": 129778,
+        "gzip": 37252,
+        "brotli": 31745
+      },
+      "mappedRawBySource": {
+        "core/Basics": 114,
+        "unmapped": 2521,
+        "core/Task": 4790,
+        "platforms/browser/Rt": 9691,
+        "core/Maybe": 88,
+        "app/Session": 182,
+        "core/List": 4794,
+        "platforms/browser/Hosted": 914,
+        "platforms/browser/Cmd": 626,
+        "core/Result": 51,
+        "core/String": 790,
+        "core/Schema": 10223,
+        "platforms/browser/Storage": 412,
+        "core/Url": 938,
+        "core/Url/Builder": 172,
+        "core/Dict": 3418,
+        "platforms/browser/Http": 4430,
+        "app/Api": 5039,
+        "core/Url/Parser": 1302,
+        "platforms/browser/Listen": 297,
+        "platforms/browser/Sub": 170,
+        "platforms/browser/Browser/Navigation": 1704,
+        "app/Route": 752,
+        "app/Author": 4357,
+        "app/Article": 13449,
+        "app/Page": 5350,
+        "platforms/html/Html": 31,
+        "app/Feed": 5436,
+        "app/Home": 3947,
+        "app/Settings": 5378,
+        "app/Login": 2686,
+        "app/Register": 3068,
+        "app/ProfilePage": 4240,
+        "app/Comment": 3408,
+        "app/ArticlePage": 12480,
+        "app/Editor": 5689,
+        "platforms/browser/Browser": 594,
+        "platforms/browser-tea/Tea": 3215,
+        "app/Main": 3032
+      },
+      "impureUnits": 0,
+      "rows": [
+        {
+          "group": "core/Task",
+          "units": 72,
+          "raw": 4638,
+          "alone": 1661,
+          "ordered": 1661
+        },
+        {
+          "group": "core/List",
+          "units": 58,
+          "raw": 4730,
+          "alone": 1605,
+          "ordered": 1414
+        },
+        {
+          "group": "core/Dict",
+          "units": 20,
+          "raw": 3398,
+          "alone": 883,
+          "ordered": 804
+        },
+        {
+          "group": "core/Schema",
+          "units": 75,
+          "raw": 10148,
+          "alone": 3129,
+          "ordered": 2991
+        },
+        {
+          "group": "core: Basics, Maybe, Result, String",
+          "units": 23,
+          "raw": 1008,
+          "alone": 418,
+          "ordered": 417
+        },
+        {
+          "group": "core: Url, Url.Parser, Url.Builder",
+          "units": 25,
+          "raw": 2381,
+          "alone": 792,
+          "ordered": 737
+        },
+        {
+          "group": "unmapped (JS siblings, shared constant constructors)",
+          "units": 104,
+          "raw": 2215,
+          "alone": 473,
+          "ordered": 420
+        },
+        {
+          "group": "platforms/browser/Rt",
+          "units": 67,
+          "raw": 9568,
+          "alone": 3489,
+          "ordered": 3523
+        },
+        {
+          "group": "platforms/browser/Http",
+          "units": 31,
+          "raw": 4399,
+          "alone": 1537,
+          "ordered": 1475
+        },
+        {
+          "group": "platforms/browser/Browser/Navigation",
+          "units": 16,
+          "raw": 1688,
+          "alone": 526,
+          "ordered": 541
+        },
+        {
+          "group": "platforms/browser: Hosted, Cmd, Sub, Listen, Storage, Browser",
+          "units": 46,
+          "raw": 2944,
+          "alone": 998,
+          "ordered": 1081
+        },
+        {
+          "group": "platforms/browser-tea/Tea",
+          "units": 23,
+          "raw": 3192,
+          "alone": 1024,
+          "ordered": 1080
+        },
+        {
+          "group": "app: schemas (generated parse/print/description)",
+          "units": 32,
+          "raw": 18654,
+          "alone": 2217,
+          "ordered": 2171
+        },
+        {
+          "group": "app: markup (generated templates, patches, direct protocol)",
+          "units": 219,
+          "raw": 39420,
+          "alone": 7346,
+          "ordered": 7394
+        },
+        {
+          "group": "app: main (direct: the mounted program and consumer matrix)",
+          "units": 1,
+          "raw": 69,
+          "alone": 120,
+          "ordered": 23
+        },
+        {
+          "group": "app: update / init",
+          "units": 30,
+          "raw": 11902,
+          "alone": 2396,
+          "ordered": 2321
+        },
+        {
+          "group": "app: view functions",
+          "units": 41,
+          "raw": 3290,
+          "alone": 963,
+          "ordered": 1024
+        },
+        {
+          "group": "app: requests, routes, helpers",
+          "units": 50,
+          "raw": 4779,
+          "alone": 1277,
+          "ordered": 1682
+        },
+        {
+          "group": "residual (declaration keywords, separators, stubs, interactions)",
+          "units": 0,
+          "raw": 1355,
+          "alone": null,
+          "ordered": 986
+        }
+      ],
+      "moduleRows": [
+        {
+          "module": "app/ArticlePage",
+          "units": 47,
+          "raw": 12433,
+          "alone": 2256
+        },
+        {
+          "module": "app/Article",
+          "units": 49,
+          "raw": 13400,
+          "alone": 1428
+        },
+        {
+          "module": "app/Editor",
+          "units": 25,
+          "raw": 5664,
+          "alone": 1142
+        },
+        {
+          "module": "app/Feed",
+          "units": 35,
+          "raw": 5401,
+          "alone": 991
+        },
+        {
+          "module": "app/Page",
+          "units": 40,
+          "raw": 5310,
+          "alone": 949
+        },
+        {
+          "module": "app/Api",
+          "units": 25,
+          "raw": 5014,
+          "alone": 905
+        },
+        {
+          "module": "app/Settings",
+          "units": 18,
+          "raw": 5360,
+          "alone": 896
+        },
+        {
+          "module": "app/ProfilePage",
+          "units": 22,
+          "raw": 4218,
+          "alone": 795
+        },
+        {
+          "module": "app/Home",
+          "units": 29,
+          "raw": 3918,
+          "alone": 742
+        },
+        {
+          "module": "app/Main",
+          "units": 15,
+          "raw": 3017,
+          "alone": 704
+        },
+        {
+          "module": "app/Author",
+          "units": 29,
+          "raw": 4328,
+          "alone": 667
+        },
+        {
+          "module": "app/Login",
+          "units": 11,
+          "raw": 2675,
+          "alone": 384
+        },
+        {
+          "module": "app/Register",
+          "units": 8,
+          "raw": 3060,
+          "alone": 379
+        },
+        {
+          "module": "app/Comment",
+          "units": 11,
+          "raw": 3391,
+          "alone": 349
+        },
+        {
+          "module": "app/Route",
+          "units": 5,
+          "raw": 747,
+          "alone": 336
+        },
+        {
+          "module": "app/Session",
+          "units": 4,
+          "raw": 178,
+          "alone": 169
+        }
+      ]
+    },
+    "direct": {
+      "baseline": {
+        "raw": 214199,
+        "gzip": 46063,
+        "brotli": 38243
+      },
+      "mappedRawBySource": {
+        "core/Basics": 114,
+        "unmapped": 2639,
+        "core/Task": 4756,
+        "platforms/browser/Rt": 6792,
+        "core/List": 4799,
+        "platforms/browser/Hosted": 914,
+        "core/Maybe": 108,
+        "core/Dict": 3981,
+        "platforms/browser/Cmd": 823,
+        "platforms/browser-direct/Tea": 2911,
+        "core/String": 795,
+        "core/Url": 1029,
+        "platforms/browser/Listen": 297,
+        "platforms/browser/Sub": 207,
+        "platforms/browser/Browser/Navigation": 1766,
+        "platforms/browser-direct/Direct": 7544,
+        "app/Session": 206,
+        "core/Result": 51,
+        "core/Schema": 10476,
+        "platforms/browser/Storage": 417,
+        "core/Url/Builder": 172,
+        "platforms/browser/Http": 4480,
+        "app/Api": 5071,
+        "core/Url/Parser": 1354,
+        "app/Route": 761,
+        "app/Author": 5090,
+        "app/Article": 14934,
+        "app/Page": 7233,
+        "platforms/html/Html": 31,
+        "app/Feed": 7420,
+        "app/Home": 4887,
+        "app/Settings": 6919,
+        "app/Login": 3690,
+        "app/Register": 4169,
+        "app/ProfilePage": 4915,
+        "app/Comment": 3418,
+        "app/ArticlePage": 15007,
+        "app/Editor": 7099,
+        "app/Main": 66924
+      },
+      "impureUnits": 0,
+      "rows": [
+        {
+          "group": "core/Task",
+          "units": 70,
+          "raw": 4606,
+          "alone": 1494,
+          "ordered": 1494
+        },
+        {
+          "group": "core/List",
+          "units": 58,
+          "raw": 4735,
+          "alone": 1468,
+          "ordered": 1558
+        },
+        {
+          "group": "core/Dict",
+          "units": 20,
+          "raw": 3961,
+          "alone": 812,
+          "ordered": 715
+        },
+        {
+          "group": "core/Schema",
+          "units": 75,
+          "raw": 10401,
+          "alone": 3094,
+          "ordered": 3156
+        },
+        {
+          "group": "core: Basics, Maybe, Result, String",
+          "units": 23,
+          "raw": 1033,
+          "alone": 329,
+          "ordered": 370
+        },
+        {
+          "group": "core: Url, Url.Parser, Url.Builder",
+          "units": 25,
+          "raw": 2524,
+          "alone": 697,
+          "ordered": 769
+        },
+        {
+          "group": "unmapped (JS siblings, shared constant constructors)",
+          "units": 104,
+          "raw": 2326,
+          "alone": 453,
+          "ordered": 437
+        },
+        {
+          "group": "platforms/browser/Rt",
+          "units": 36,
+          "raw": 6730,
+          "alone": 2435,
+          "ordered": 2415
+        },
+        {
+          "group": "platforms/browser/Http",
+          "units": 31,
+          "raw": 4449,
+          "alone": 1394,
+          "ordered": 1438
+        },
+        {
+          "group": "platforms/browser/Browser/Navigation",
+          "units": 16,
+          "raw": 1750,
+          "alone": 537,
+          "ordered": 552
+        },
+        {
+          "group": "platforms/browser: Hosted, Cmd, Sub, Listen, Storage, Browser",
+          "units": 39,
+          "raw": 2616,
+          "alone": 725,
+          "ordered": 810
+        },
+        {
+          "group": "platforms/browser-direct/Tea",
+          "units": 19,
+          "raw": 2892,
+          "alone": 791,
+          "ordered": 931
+        },
+        {
+          "group": "platforms/browser-direct/Direct",
+          "units": 73,
+          "raw": 7401,
+          "alone": 2513,
+          "ordered": 2771
+        },
+        {
+          "group": "app: schemas (generated parse/print/description)",
+          "units": 32,
+          "raw": 18654,
+          "alone": 2129,
+          "ordered": 2197
+        },
+        {
+          "group": "app: markup (generated templates, patches, direct protocol)",
+          "units": 588,
+          "raw": 54248,
+          "alone": 9488,
+          "ordered": 9560
+        },
+        {
+          "group": "app: main (direct: the mounted program and consumer matrix)",
+          "units": 1,
+          "raw": 64467,
+          "alone": 2749,
+          "ordered": 2838
+        },
+        {
+          "group": "app: update / init",
+          "units": 30,
+          "raw": 11951,
+          "alone": 2363,
+          "ordered": 2383
+        },
+        {
+          "group": "app: view functions",
+          "units": 37,
+          "raw": 2765,
+          "alone": 724,
+          "ordered": 932
+        },
+        {
+          "group": "app: requests, routes, helpers",
+          "units": 50,
+          "raw": 4914,
+          "alone": 1274,
+          "ordered": 1755
+        },
+        {
+          "group": "residual (declaration keywords, separators, stubs, interactions)",
+          "units": 0,
+          "raw": 1776,
+          "alone": null,
+          "ordered": 1162
+        }
+      ],
+      "moduleRows": [
+        {
+          "module": "app/Main",
+          "units": 14,
+          "raw": 66910,
+          "alone": 3239
+        },
+        {
+          "module": "app/ArticlePage",
+          "units": 118,
+          "raw": 14889,
+          "alone": 2574
+        },
+        {
+          "module": "app/Article",
+          "units": 82,
+          "raw": 14852,
+          "alone": 1478
+        },
+        {
+          "module": "app/Page",
+          "units": 88,
+          "raw": 7145,
+          "alone": 1174
+        },
+        {
+          "module": "app/Feed",
+          "units": 85,
+          "raw": 7335,
+          "alone": 1163
+        },
+        {
+          "module": "app/Editor",
+          "units": 57,
+          "raw": 7042,
+          "alone": 1110
+        },
+        {
+          "module": "app/Settings",
+          "units": 50,
+          "raw": 6869,
+          "alone": 917
+        },
+        {
+          "module": "app/Api",
+          "units": 25,
+          "raw": 5046,
+          "alone": 888
+        },
+        {
+          "module": "app/ProfilePage",
+          "units": 40,
+          "raw": 4875,
+          "alone": 835
+        },
+        {
+          "module": "app/Home",
+          "units": 52,
+          "raw": 4835,
+          "alone": 735
+        },
+        {
+          "module": "app/Author",
+          "units": 43,
+          "raw": 5047,
+          "alone": 647
+        },
+        {
+          "module": "app/Register",
+          "units": 31,
+          "raw": 4138,
+          "alone": 359
+        },
+        {
+          "module": "app/Login",
+          "units": 33,
+          "raw": 3657,
+          "alone": 346
+        },
+        {
+          "module": "app/Comment",
+          "units": 11,
+          "raw": 3401,
+          "alone": 337
+        },
+        {
+          "module": "app/Route",
+          "units": 5,
+          "raw": 756,
+          "alone": 278
+        },
+        {
+          "module": "app/Session",
+          "units": 4,
+          "raw": 202,
+          "alone": 55
+        }
+      ]
+    }
+  }
+}

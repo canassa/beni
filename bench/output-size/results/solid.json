@@ -1,0 +1,78 @@
+{
+  "baseline": 13085,
+  "mappedRawBySource": {
+    "app/solid.js": 11605,
+    "app/web.js": 3886,
+    "app/store.js": 2667,
+    "app/createAgent.js": 1695,
+    "app/createArticles.js": 1591,
+    "app/createCommon.js": 240,
+    "app/index.js": 2257,
+    "app/createRouteHandler.js": 373,
+    "app/createComments.js": 433,
+    "app/createProfile.js": 433,
+    "app/createAuth.js": 465,
+    "app/NavLink.js": 713,
+    "app/NavBar.js": 1048,
+    "app/App.js": 1033,
+    "app/ArticlePreview.js": 1324,
+    "app/ArticleList.js": 1444,
+    "app/Home.js": 1217,
+    "app/ListErrors.js": 984,
+    "app/Comments.js": 2622,
+    "app/Article.js": 2585,
+    "app/Profile.js": 2946,
+    "app/Editor.js": 2870,
+    "app/Settings.js": 2361,
+    "app/Auth.js": 1286
+  },
+  "rows": [
+    {
+      "group": "runtime: solid.js",
+      "units": 64,
+      "raw": 11416,
+      "alone": 3484,
+      "ordered": 3484
+    },
+    {
+      "group": "runtime: web.js",
+      "units": 13,
+      "raw": 3949,
+      "alone": 1197,
+      "ordered": 1286
+    },
+    {
+      "group": "runtime: store.js",
+      "units": 12,
+      "raw": 2651,
+      "alone": 759,
+      "ordered": 891
+    },
+    {
+      "group": "app: HTTP agent (createAgent)",
+      "units": 2,
+      "raw": 3851,
+      "alone": 1041,
+      "ordered": 1090
+    },
+    {
+      "group": "app: stores, router, startup",
+      "units": 24,
+      "raw": 3625,
+      "alone": 813,
+      "ordered": 931
+    },
+    {
+      "group": "app: pages and components (views, handlers)",
+      "units": 63,
+      "raw": 22264,
+      "alone": 4536,
+      "ordered": 4905
+    },
+    {
+      "group": "residual",
+      "raw": 322,
+      "ordered": 498
+    }
+  ]
+}

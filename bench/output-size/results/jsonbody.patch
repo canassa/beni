@@ -1,0 +1,68 @@
+diff -ru examples/conduit/src/Api.beni zig-out/proto/jsonbody/src/Api.beni
+--- examples/conduit/src/Api.beni	2026-10-15 15:55:12.023950955 +0200
++++ zig-out/proto/jsonbody/src/Api.beni	2026-10-15 16:21:37.217248265 +0200
+@@ -279,7 +279,7 @@
+ 
+ pub login : String, String → Result Error Viewer
+ login email password =
+-    body = Http.jsonBody (LoginJson.schema ⊤) { user = { email = email, password = password } }
++    body = jsonText LoginJson.print { user = { email = email, password = password } }
+     Result.map (post (url [ "users", "login" ] []) Nothing body UserEnvelope.parse) λenvelope →
+         viewerFromJson envelope.user
+ 
+@@ -287,7 +287,18 @@
+ pub register : String, String, String → Result Error Viewer
+ register username email password =
+     body =
+-        Http.jsonBody (RegisterJson.schema ⊤)
++        jsonText RegisterJson.print
+             { user = { username = username, email = email, password = password } }
+     Result.map (post (url [ "users" ] []) Nothing body UserEnvelope.parse) λenvelope →
+         viewerFromJson envelope.user
++
++
++--| A JSON request body from a schema's compiled `print`.
++pub jsonText : (a → Result (List Schema.Issue) String), a → Http.Body
++jsonText print value =
++    case print value of
++        Ok text →
++            Http.stringBody "application/json" text
++
++        Err _ →
++            Http.emptyBody
+diff -ru examples/conduit/src/Article.beni zig-out/proto/jsonbody/src/Article.beni
+--- examples/conduit/src/Article.beni	2026-10-15 15:55:12.023950955 +0200
++++ zig-out/proto/jsonbody/src/Article.beni	2026-10-15 16:21:22.327217357 +0200
+@@ -146,7 +146,7 @@
+ 
+ formBody : Fields → Http.Body
+ formBody fields =
+-    Http.jsonBody (ArticleForm.schema ⊤)
++    Api.jsonText ArticleForm.print
+         { article =
+             { title = fields.title
+             , description = fields.description
+diff -ru examples/conduit/src/Comment.beni zig-out/proto/jsonbody/src/Comment.beni
+--- examples/conduit/src/Comment.beni	2026-10-15 15:55:12.024950957 +0200
++++ zig-out/proto/jsonbody/src/Comment.beni	2026-10-15 16:21:22.327217357 +0200
+@@ -55,7 +55,7 @@
+         (Api.post
+             (Api.url [ "articles", slug, "comments" ] [])
+             (Just cred)
+-            (Http.jsonBody (NewComment.schema ⊤) { comment = { body = text } })
++            (Api.jsonText NewComment.print { comment = { body = text } })
+             CommentEnvelope.parse
+         )
+         λjson → fromJson (Just cred) json.comment
+diff -ru examples/conduit/src/Settings.beni zig-out/proto/jsonbody/src/Settings.beni
+--- examples/conduit/src/Settings.beni	2026-10-15 15:55:12.025950959 +0200
++++ zig-out/proto/jsonbody/src/Settings.beni	2026-10-15 16:21:22.328217359 +0200
+@@ -168,7 +168,7 @@
+ save : Cred, Form → Result Api.Error Viewer
+ save cred form =
+     body =
+-        Http.jsonBody (UpdateJson.schema ⊤)
++        Api.jsonText UpdateJson.print
+             { user =
+                 { email = form.email
+                 , username = form.username

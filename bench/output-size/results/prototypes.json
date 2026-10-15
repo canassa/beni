@@ -1,0 +1,21 @@
+{
+  "jsonbody": {
+    "label": "jsonbody",
+    "dir": "zig-out/proto/jsonbody/src",
+    "note": "request bodies through each schema's compiled print instead of Http.jsonBody's library interpreter",
+    "platforms": {
+      "tea": {
+        "baseline": 31745,
+        "brotli": 29522,
+        "raw": 124675,
+        "saved": 2223
+      },
+      "direct": {
+        "baseline": 38243,
+        "brotli": 36055,
+        "raw": 208966,
+        "saved": 2188
+      }
+    }
+  }
+}
