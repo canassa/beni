@@ -1,0 +1,5 @@
+[
+  { "name": "Counter", "platform": "browser-direct", "path": "samples/browser-direct/Counter.beni" },
+  { "name": "TodoMVC", "platform": "browser-direct", "path": "samples/browser-direct/TodoMVC.beni" },
+  { "name": "Fibonacci (prints)", "platform": "node", "path": "samples/node/Print.beni" }
+]
