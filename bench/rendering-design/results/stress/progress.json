@@ -1,7 +1,14 @@
 {
-  "updated": "2026-10-15T22:30:26.887Z",
-  "observations": 624,
+  "updated": "2026-10-15T23:16:18.325Z",
+  "observations": 798,
+  "native_builds": 184,
   "crossings": [
+    {
+      "family": "filter",
+      "mode": "tea",
+      "n": 3264,
+      "brotli": 523981
+    },
     {
       "family": "list",
       "mode": "tea",
@@ -25,6 +32,12 @@
       "mode": "static",
       "n": 9632,
       "brotli": 524719
+    },
+    {
+      "family": "list",
+      "mode": "local",
+      "n": 12656,
+      "brotli": 524180
     },
     {
       "family": "mixed",
@@ -70,9 +83,44 @@
       "n": 1728
     },
     {
+      "family": "nested",
+      "mode": "direct",
+      "n": 1152
+    },
+    {
+      "family": "form",
+      "mode": "direct",
+      "n": 1728
+    },
+    {
+      "family": "cluster",
+      "mode": "direct",
+      "n": 1728
+    },
+    {
+      "family": "nested",
+      "mode": "tea",
+      "n": 3888
+    },
+    {
       "family": "list",
       "mode": "direct",
       "n": 512
+    },
+    {
+      "family": "table",
+      "mode": "direct",
+      "n": 512
+    },
+    {
+      "family": "thread",
+      "mode": "direct",
+      "n": 768
+    },
+    {
+      "family": "tabs",
+      "mode": "direct",
+      "n": 1728
     },
     {
       "family": "filter",

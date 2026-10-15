@@ -1,0 +1,722 @@
+[
+  {
+    "mode": "tea",
+    "lower": 288,
+    "ceiling": 1152,
+    "values": {
+      "list": {
+        "slope": 131.64603518612944,
+        "intercept": 4125.4436511984095,
+        "rmse": 89.23480448492803,
+        "low": 336,
+        "high": 1152,
+        "samples": 4
+      },
+      "form": {
+        "slope": 123.62098419173883,
+        "intercept": 2227.278939316726,
+        "rmse": 354.7911104079113,
+        "low": 336,
+        "high": 1152,
+        "samples": 4
+      },
+      "tabs": {
+        "slope": 122.88543260241366,
+        "intercept": 174.28063912976359,
+        "rmse": 188.92327856680004,
+        "low": 336,
+        "high": 1152,
+        "samples": 4
+      },
+      "nested": {
+        "slope": 129.84713369029396,
+        "intercept": 2002.0334863165626,
+        "rmse": 84.44284557996218,
+        "low": 336,
+        "high": 1152,
+        "samples": 4
+      },
+      "thread": {
+        "slope": 103.3524774774774,
+        "intercept": 5720.585585585621,
+        "rmse": 66.1192275533549,
+        "low": 336,
+        "high": 1152,
+        "samples": 4
+      },
+      "cluster": {
+        "slope": 84.82367627061018,
+        "intercept": 1460.266020737734,
+        "rmse": 81.6562463215026,
+        "low": 336,
+        "high": 1152,
+        "samples": 4
+      },
+      "table": {
+        "slope": 160.72317482576906,
+        "intercept": 2548.813020567788,
+        "rmse": 713.2940865695308,
+        "low": 336,
+        "high": 1152,
+        "samples": 4
+      },
+      "modal": {
+        "slope": 126.19896311405736,
+        "intercept": 4396.3175250723,
+        "rmse": 873.9412559205159,
+        "low": 336,
+        "high": 1152,
+        "samples": 4
+      },
+      "filter": {
+        "slope": 159.9397734999149,
+        "intercept": 5056.926738058872,
+        "rmse": 400.2677397330622,
+        "low": 336,
+        "high": 1152,
+        "samples": 4
+      },
+      "summary": {
+        "slope": 159.06810938296778,
+        "intercept": 5484.118306986296,
+        "rmse": 583.7461248229283,
+        "low": 336,
+        "high": 1152,
+        "samples": 4
+      }
+    },
+    "ranking": [
+      "table",
+      "filter",
+      "summary",
+      "list",
+      "nested",
+      "modal",
+      "form",
+      "tabs",
+      "thread",
+      "cluster"
+    ]
+  },
+  {
+    "mode": "direct",
+    "lower": 84,
+    "ceiling": 336,
+    "values": {
+      "list": {
+        "slope": 185.12960271317823,
+        "intercept": 8611.829457364363,
+        "rmse": 720.9112376686162,
+        "low": 96,
+        "high": 336,
+        "samples": 4
+      },
+      "form": {
+        "slope": 151.86821705426354,
+        "intercept": 7601.356589147292,
+        "rmse": 593.2934519738437,
+        "low": 96,
+        "high": 336,
+        "samples": 4
+      },
+      "tabs": {
+        "slope": 140.86531007751935,
+        "intercept": 9099.93798449613,
+        "rmse": 703.5863307414392,
+        "low": 96,
+        "high": 336,
+        "samples": 4
+      },
+      "nested": {
+        "slope": 194.63250968992244,
+        "intercept": 10438.248062015518,
+        "rmse": 1117.4516642339515,
+        "low": 96,
+        "high": 336,
+        "samples": 4
+      },
+      "thread": {
+        "slope": 160.18725775193798,
+        "intercept": 10460.298449612414,
+        "rmse": 1080.6417940351482,
+        "low": 96,
+        "high": 336,
+        "samples": 4
+      },
+      "cluster": {
+        "slope": 101.33042635658913,
+        "intercept": 6832.414728682181,
+        "rmse": 413.03976430753727,
+        "low": 96,
+        "high": 336,
+        "samples": 4
+      },
+      "table": {
+        "slope": 215.28343023255812,
+        "intercept": 8470.313953488381,
+        "rmse": 584.8591909646419,
+        "low": 96,
+        "high": 336,
+        "samples": 4
+      },
+      "modal": {
+        "slope": 164.05402131782944,
+        "intercept": 8293.945736434118,
+        "rmse": 839.6431349044964,
+        "low": 96,
+        "high": 336,
+        "samples": 4
+      },
+      "filter": {
+        "slope": 211.77761627906978,
+        "intercept": 10384.97674418605,
+        "rmse": 1099.3684339148426,
+        "low": 96,
+        "high": 336,
+        "samples": 4
+      },
+      "summary": {
+        "slope": 222.17344961240303,
+        "intercept": 9157.310077519389,
+        "rmse": 799.8953807561595,
+        "low": 96,
+        "high": 336,
+        "samples": 4
+      }
+    },
+    "ranking": [
+      "summary",
+      "table",
+      "filter",
+      "nested",
+      "list",
+      "modal",
+      "thread",
+      "form",
+      "tabs",
+      "cluster"
+    ]
+  },
+  {
+    "mode": "vanilla",
+    "lower": 288,
+    "ceiling": 1152,
+    "values": {
+      "list": {
+        "slope": 5.254366394696579,
+        "intercept": 1755.228454869966,
+        "rmse": 6.956501403701718,
+        "low": 336,
+        "high": 1152,
+        "samples": 4
+      },
+      "form": {
+        "slope": 5.254844467108614,
+        "intercept": 997.6476287608386,
+        "rmse": 13.575379294828767,
+        "low": 336,
+        "high": 1152,
+        "samples": 4
+      },
+      "tabs": {
+        "slope": 5.214569522352537,
+        "intercept": 965.2678905320427,
+        "rmse": 8.719338108235439,
+        "low": 336,
+        "high": 1152,
+        "samples": 4
+      },
+      "nested": {
+        "slope": 5.214452660207374,
+        "intercept": 897.0987591364974,
+        "rmse": 5.595408926422057,
+        "low": 336,
+        "high": 1152,
+        "samples": 4
+      },
+      "thread": {
+        "slope": 5.246664116947132,
+        "intercept": 883.8084310725847,
+        "rmse": 2.28090611849761,
+        "low": 336,
+        "high": 1152,
+        "samples": 4
+      },
+      "cluster": {
+        "slope": 5.304000934897156,
+        "intercept": 773.8813530511668,
+        "rmse": 6.8702800465286895,
+        "low": 336,
+        "high": 1152,
+        "samples": 4
+      },
+      "table": {
+        "slope": 5.250733044365116,
+        "intercept": 1838.2427332993377,
+        "rmse": 7.9772752201992025,
+        "low": 336,
+        "high": 1152,
+        "samples": 4
+      },
+      "modal": {
+        "slope": 5.237208907020223,
+        "intercept": 952.8514363420043,
+        "rmse": 11.095022489943815,
+        "low": 336,
+        "high": 1152,
+        "samples": 4
+      },
+      "filter": {
+        "slope": 5.286163522012574,
+        "intercept": 1812.9748427672987,
+        "rmse": 23.63047547276986,
+        "low": 336,
+        "high": 1152,
+        "samples": 4
+      },
+      "summary": {
+        "slope": 5.2088432772395,
+        "intercept": 1853.9804521502674,
+        "rmse": 6.1488906337514315,
+        "low": 336,
+        "high": 1152,
+        "samples": 4
+      }
+    },
+    "ranking": [
+      "cluster",
+      "filter",
+      "form",
+      "list",
+      "table",
+      "thread",
+      "modal",
+      "tabs",
+      "nested",
+      "summary"
+    ]
+  },
+  {
+    "mode": "partial",
+    "lower": 288,
+    "ceiling": 1152,
+    "values": {
+      "list": {
+        "slope": 78.05767678055409,
+        "intercept": 3332.837667856569,
+        "rmse": 201.0822226313699,
+        "low": 336,
+        "high": 1152,
+        "samples": 4
+      },
+      "form": {
+        "slope": 71.50886027536966,
+        "intercept": 2130.3686894441926,
+        "rmse": 226.83443418128124,
+        "low": 336,
+        "high": 1152,
+        "samples": 4
+      },
+      "tabs": {
+        "slope": 58.18815867754543,
+        "intercept": 1901.0441951385656,
+        "rmse": 79.85743022406912,
+        "low": 336,
+        "high": 1152,
+        "samples": 4
+      },
+      "nested": {
+        "slope": 59.83878335883048,
+        "intercept": 3018.311915689297,
+        "rmse": 348.9759661785517,
+        "low": 336,
+        "high": 1152,
+        "samples": 4
+      },
+      "thread": {
+        "slope": 76.19208949515547,
+        "intercept": 4227.8240693523985,
+        "rmse": 272.17644523009943,
+        "low": 336,
+        "high": 1152,
+        "samples": 4
+      },
+      "cluster": {
+        "slope": 54.89654513003566,
+        "intercept": 1598.0907700153184,
+        "rmse": 66.87156702431535,
+        "low": 336,
+        "high": 1152,
+        "samples": 4
+      },
+      "table": {
+        "slope": 89.83707292197853,
+        "intercept": 3340.7455379908497,
+        "rmse": 33.5685914429467,
+        "low": 336,
+        "high": 1152,
+        "samples": 4
+      },
+      "modal": {
+        "slope": 69.894590345062,
+        "intercept": 1469.4434812170875,
+        "rmse": 162.90142848884338,
+        "low": 336,
+        "high": 1152,
+        "samples": 4
+      },
+      "filter": {
+        "slope": 89.74643039265675,
+        "intercept": 3642.4701682815175,
+        "rmse": 187.30269782342538,
+        "low": 336,
+        "high": 1152,
+        "samples": 4
+      },
+      "summary": {
+        "slope": 92.88226670066287,
+        "intercept": 3746.971443141272,
+        "rmse": 52.7639041082663,
+        "low": 336,
+        "high": 1152,
+        "samples": 4
+      }
+    },
+    "ranking": [
+      "summary",
+      "table",
+      "filter",
+      "list",
+      "thread",
+      "form",
+      "modal",
+      "nested",
+      "tabs",
+      "cluster"
+    ]
+  },
+  {
+    "mode": "static",
+    "lower": 288,
+    "ceiling": 1152,
+    "values": {
+      "list": {
+        "slope": 55.340090090090065,
+        "intercept": 3195.6576576576736,
+        "rmse": 146.80100829366148,
+        "low": 336,
+        "high": 1152,
+        "samples": 4
+      },
+      "form": {
+        "slope": 50.17920278769331,
+        "intercept": 2139.991670916217,
+        "rmse": 61.59713773535742,
+        "low": 336,
+        "high": 1152,
+        "samples": 4
+      },
+      "tabs": {
+        "slope": 51.78893634200234,
+        "intercept": 1547.8060513343808,
+        "rmse": 112.41879650023544,
+        "low": 336,
+        "high": 1152,
+        "samples": 4
+      },
+      "nested": {
+        "slope": 58.403992435832,
+        "intercept": 2925.6872344042495,
+        "rmse": 196.29204554085638,
+        "low": 336,
+        "high": 1152,
+        "samples": 4
+      },
+      "thread": {
+        "slope": 71.90034846166917,
+        "intercept": 4248.958864524931,
+        "rmse": 201.2119990717668,
+        "low": 336,
+        "high": 1152,
+        "samples": 4
+      },
+      "cluster": {
+        "slope": 40.36517295597481,
+        "intercept": 2684.050314465432,
+        "rmse": 119.58301503255738,
+        "low": 336,
+        "high": 1152,
+        "samples": 4
+      },
+      "table": {
+        "slope": 61.79011558728534,
+        "intercept": 3120.240013598541,
+        "rmse": 92.30939032628716,
+        "low": 336,
+        "high": 1152,
+        "samples": 4
+      },
+      "modal": {
+        "slope": 54.52292622811487,
+        "intercept": 1723.6350501445086,
+        "rmse": 147.05024719369624,
+        "low": 336,
+        "high": 1152,
+        "samples": 4
+      },
+      "filter": {
+        "slope": 62.60756629270776,
+        "intercept": 3877.314125446228,
+        "rmse": 342.65081174036686,
+        "low": 336,
+        "high": 1152,
+        "samples": 4
+      },
+      "summary": {
+        "slope": 66.7128378378378,
+        "intercept": 4382.216216216242,
+        "rmse": 193.66532151306095,
+        "low": 336,
+        "high": 1152,
+        "samples": 4
+      }
+    },
+    "ranking": [
+      "thread",
+      "summary",
+      "filter",
+      "table",
+      "nested",
+      "list",
+      "modal",
+      "tabs",
+      "form",
+      "cluster"
+    ]
+  },
+  {
+    "mode": "local",
+    "lower": 288,
+    "ceiling": 1152,
+    "values": {
+      "list": {
+        "slope": 41.04526814550397,
+        "intercept": 2697.4244433112526,
+        "rmse": 115.34643441393243,
+        "low": 336,
+        "high": 1152,
+        "samples": 4
+      },
+      "form": {
+        "slope": 37.60801249362568,
+        "intercept": 1875.5053544110287,
+        "rmse": 95.21829906749632,
+        "low": 336,
+        "high": 1152,
+        "samples": 4
+      },
+      "tabs": {
+        "slope": 48.24495368009515,
+        "intercept": 1732.2420533741424,
+        "rmse": 95.65976425877984,
+        "low": 336,
+        "high": 1152,
+        "samples": 4
+      },
+      "nested": {
+        "slope": 45.219244008159066,
+        "intercept": 1781.0331463539296,
+        "rmse": 77.53482381240372,
+        "low": 336,
+        "high": 1152,
+        "samples": 4
+      },
+      "thread": {
+        "slope": 57.827001529831676,
+        "intercept": 4354.714941356473,
+        "rmse": 1019.9271507866562,
+        "low": 336,
+        "high": 1152,
+        "samples": 4
+      },
+      "cluster": {
+        "slope": 33.81424230834606,
+        "intercept": 1339.7943226245225,
+        "rmse": 79.61290260649403,
+        "low": 336,
+        "high": 1152,
+        "samples": 4
+      },
+      "table": {
+        "slope": 45.3068374978752,
+        "intercept": 2888.1684514703666,
+        "rmse": 105.72213290682062,
+        "low": 336,
+        "high": 1152,
+        "samples": 4
+      },
+      "modal": {
+        "slope": 43.07792580316162,
+        "intercept": 1607.3253442121459,
+        "rmse": 155.33544905722394,
+        "low": 336,
+        "high": 1152,
+        "samples": 4
+      },
+      "filter": {
+        "slope": 43.718946540880474,
+        "intercept": 3199.238993710702,
+        "rmse": 90.35993713473786,
+        "low": 336,
+        "high": 1152,
+        "samples": 4
+      },
+      "summary": {
+        "slope": 50.35103263640997,
+        "intercept": 3093.5854156043097,
+        "rmse": 76.53711274761478,
+        "low": 336,
+        "high": 1152,
+        "samples": 4
+      }
+    },
+    "ranking": [
+      "thread",
+      "summary",
+      "tabs",
+      "table",
+      "nested",
+      "filter",
+      "modal",
+      "list",
+      "form",
+      "cluster"
+    ]
+  },
+  {
+    "mode": "cells",
+    "lower": 288,
+    "ceiling": 1152,
+    "values": {
+      "list": {
+        "slope": 78.80498895121532,
+        "intercept": 4769.947645759003,
+        "rmse": 47.92574661399674,
+        "low": 336,
+        "high": 1152,
+        "samples": 4
+      },
+      "form": {
+        "slope": 65.54140107088217,
+        "intercept": 3386.100458949535,
+        "rmse": 190.48581975247512,
+        "low": 336,
+        "high": 1152,
+        "samples": 4
+      },
+      "tabs": {
+        "slope": 57.45621919088895,
+        "intercept": 2147.546319904839,
+        "rmse": 197.35315245937568,
+        "low": 336,
+        "high": 1152,
+        "samples": 4
+      },
+      "nested": {
+        "slope": 61.90671213666492,
+        "intercept": 3447.805201427862,
+        "rmse": 267.62105068932016,
+        "low": 336,
+        "high": 1152,
+        "samples": 4
+      },
+      "thread": {
+        "slope": 76.18354793472714,
+        "intercept": 5537.734829168821,
+        "rmse": 101.64659281903081,
+        "low": 336,
+        "high": 1152,
+        "samples": 4
+      },
+      "cluster": {
+        "slope": 52.946158422573475,
+        "intercept": 2488.2583715791297,
+        "rmse": 363.2246286880941,
+        "low": 336,
+        "high": 1152,
+        "samples": 4
+      },
+      "table": {
+        "slope": 82.01970720720716,
+        "intercept": 4923.612612612662,
+        "rmse": 721.218504082246,
+        "low": 336,
+        "high": 1152,
+        "samples": 4
+      },
+      "modal": {
+        "slope": 65.65772140064588,
+        "intercept": 4250.356790753041,
+        "rmse": 67.38485056754857,
+        "low": 336,
+        "high": 1152,
+        "samples": 4
+      },
+      "filter": {
+        "slope": 85.37504249532545,
+        "intercept": 4982.970593234782,
+        "rmse": 72.27378383631788,
+        "low": 336,
+        "high": 1152,
+        "samples": 4
+      },
+      "summary": {
+        "slope": 82.9130545639979,
+        "intercept": 5608.166241713436,
+        "rmse": 161.92880704729072,
+        "low": 336,
+        "high": 1152,
+        "samples": 4
+      }
+    },
+    "ranking": [
+      "filter",
+      "summary",
+      "table",
+      "list",
+      "thread",
+      "modal",
+      "form",
+      "nested",
+      "tabs",
+      "cluster"
+    ]
+  },
+  {
+    "mode": "solid",
+    "lower": 972,
+    "ceiling": 3888,
+    "values": {
+      "list": {
+        "slope": 5.1723646723646715,
+        "intercept": 22300.66666666666,
+        "rmse": 42.94226893793977,
+        "low": 1152,
+        "high": 3888,
+        "samples": 4
+      },
+      "form": {
+        "slope": 5.0955772622439275,
+        "intercept": 13614.349206349209,
+        "rmse": 58.73566122789451,
+        "low": 1152,
+        "high": 3888,
+        "samples": 4
+      }
+    },
+    "ranking": [
+      "list",
+      "form"
+    ]
+  }
+]

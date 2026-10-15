@@ -1,8 +1,19 @@
 # Rendering design research — issue #172 / research 106
 
-[Answer and decision](../../docs/design/research/106-rendering-design.md).
-[Growth curves](results/graphs/mixed-growth.png), [family curves](results/graphs/family-growth.png),
-[slope matrix](results/graphs/slopes.png), [fits and residuals](results/fits.md).
+[Interactive HTML report](report.html) · [Answer and decision](../../docs/design/research/106-rendering-design.md).
+[Full-range mixed graph](results/stress/graphs/mixed-growth.svg),
+[family stress graphs](results/stress/graphs/family-growth.svg),
+[measured target crossings](results/stress/crossings.md).
+
+The size-only extension is in progress. The mixed family has measured 512 kB
+brotli crossings for all six successful strategies, including vanilla at
+100,352 components; direct is compiler-limited. Open `report.html` in a browser,
+or run `node bench/rendering-design/serve-report.mjs` from the repository root
+and visit **http://127.0.0.1:8765/report.html**.
+
+The [original N≤32 graphs](results/graphs/mixed-growth.png),
+[slope matrix](results/graphs/slopes.png) and [fits](results/fits.md) are retained
+as the small-app calibration, separately from the stress extension above.
 This replaces the earlier synthetic dispatch experiment in `bench/compile-to-vanilla/`.
 Research only: no compiler/runtime changes and no repository gates or suites.
 
@@ -54,8 +65,10 @@ uses Solid 2 rc.9's actual `reconcileArrays`, with detached new nodes.
 `solid.jsx` independently ports list and form with Solid's JSX compiler, signals,
 projection selector and `For`. See [actual prior-art compiler output](prior-art/README.md).
 
-Static types and exhaustive matches are checked by the real compiler before
-lowering. The prototypes cover pure sandbox rendering. Managed effects and typed
+The original N≤32 campaign checks static types and exhaustive matches with the
+real compiler before lowering. In the stress extension, after native curves end,
+larger prototype points consume real per-module BIR dumps without another
+whole-app build. The prototypes cover pure sandbox rendering. Managed effects and typed
 host errors are fixed external costs; these apps do not exercise them. There is
 no claim that this research lowerer implements all beni guarantees for arbitrary
 input. A production pass must preserve those boundaries and reject/fall back
@@ -118,7 +131,9 @@ one rendering response with brotli quality 11/size hint, gzip 9 and raw bytes.
 spans. Unmapped gaps inherit their containing declaration. Runtime and app spans
 stay in original order before recompression. Rendering extracts can be syntactically
 incomplete: they are byte attribution artifacts, **never the files executed**.
-Full bundles are executed. The fixed candidate `core.mjs` is excluded, as are
+Executable entry files are run with their dependencies. The `full` byte field
+prices the emitted entry JavaScript before attribution. The fixed prototype
+`core.mjs` is a separate dependency excluded from this rendering study, as are
 real compiler core spans. Solid's imported code is all rendering in these ports.
 
 Runtime compressed alone is a diagnostic; `rendering - runtime_alone` is the app
@@ -187,10 +202,16 @@ Open **http://127.0.0.1:8765/report.html**. The generated `report.html` is also 
 standalone offline file: no CDN, fetch, framework or external asset is required.
 It includes interactive family/strategy/metric controls, exact point values,
 local slopes, the crossing matrix, all measured results, CSV/JSON downloads,
+the original native release-build ledger with input/output hashes,
 conclusions and methodological limits. Incomplete curves are explicitly marked.
 `watch-report.mjs` can refresh it from the isolated azathoth campaign while it
 runs; reload the page to see new checkpoints. `stress-report.py` exports the
 size-only PNG/SVG figures, CSV and interval fits. Neither reads timing data.
+
+Run the size sweep on Linux: its resource controls use `prlimit` and `flock`.
+HTML generation and viewing work independently of that compiler host. The native
+ledger retains `build_ms` as an orchestration diagnostic that includes resource
+admission wait, not a compiler-speed benchmark.
 
 The extended sweep found two limits before its first large target crossings:
 `browser-direct` was killed by the kernel at mixed N=1,728 (about 30 GB resident

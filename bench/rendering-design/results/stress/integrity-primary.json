@@ -1,7 +1,8 @@
 {
-  "verified_at": "2026-10-15T22:29:45.657Z",
-  "observations": 259,
-  "scope": "Actual minified file SHA-256 and raw length, disjoint raw byte accounting, and source spec identity. No size fits or compression results are recomputed; no project suites.",
+  "verified_at": "2026-10-15T23:14:35.360Z",
+  "observations": 317,
+  "native_builds": 73,
+  "scope": "Compiler and minified JavaScript SHA-256 and raw length with source-map URL trailers removed, disjoint raw byte accounting, and source spec identity. No size fits or compression results are recomputed; no project suites.",
   "crossings": [
     {
       "family": "mixed",
@@ -43,6 +44,21 @@
   "compiler_limited": [
     {
       "family": "mixed",
+      "mode": "direct",
+      "n": 1728
+    },
+    {
+      "family": "nested",
+      "mode": "direct",
+      "n": 1152
+    },
+    {
+      "family": "form",
+      "mode": "direct",
+      "n": 1728
+    },
+    {
+      "family": "cluster",
       "mode": "direct",
       "n": 1728
     }

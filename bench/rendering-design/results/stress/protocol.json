@@ -21,7 +21,7 @@
     "solid.mjs": "bc4c38168432677be1d7fb12e3765f835ba9eecbb263e70e652b2dfc24c1b46e",
     "solid.jsx": "02ac2cb9c4358c704bbae33f66c674522c466d59bbeb99001927b395123dfc21",
     "package-lock.json": "a7ae5e60efc695ed0b21f7d470d868765a49e98333a2438a34cd1f7dc913f909",
-    "build-today.mjs": "3d7c2a0bf5d0ac956eb565e60fd2c19667cd2c12e8b4bf56214cc25973c49426",
+    "build-today.mjs": "c39a746c6c7766e82db797fdfc596066a62dd79db6cd1e65dee325106308b0d4",
     "dump-bir.mjs": "2adb11e23eb1625387fc3c802b2ad57e3ba4147352e12944dd0e161e08dba6c6",
     "resource-run.mjs": "0a99546075226a3cd3d2be9cef5050a9faf1c0f5ac6d82084f1c43e29646f9d7",
     "stress.mjs": "142cd0ddecb3759a6d2633824296bd264eb235fecee74ddf8e17e8dd693d6618"
@@ -82,6 +82,10 @@
     {
       "date": "2026-10-15T22:00:46.322Z",
       "change": "Parallelize independent per-module real-compiler BIR dumps in a four-process pool, admitted as two CPU slots / 1 GiB. Same compiler, source bytes, BIR cache keys and output; only orchestration changes."
+    },
+    {
+      "date": "2026-10-15T23:15:48.861370+00:00",
+      "change": "Recognize both OutOfMemory and out of memory diagnostics when recording native compiler resource failures. Nested TEA N3888 hit the same 16 GiB cap. Output generation, measurement and compression unchanged."
     }
   ],
   "compiler_address_space_limit_bytes": 17179869184,
@@ -122,7 +126,7 @@
       "solid.mjs": "bc4c38168432677be1d7fb12e3765f835ba9eecbb263e70e652b2dfc24c1b46e",
       "solid.jsx": "02ac2cb9c4358c704bbae33f66c674522c466d59bbeb99001927b395123dfc21",
       "package-lock.json": "a7ae5e60efc695ed0b21f7d470d868765a49e98333a2438a34cd1f7dc913f909",
-      "build-today.mjs": "3d7c2a0bf5d0ac956eb565e60fd2c19667cd2c12e8b4bf56214cc25973c49426",
+      "build-today.mjs": "c39a746c6c7766e82db797fdfc596066a62dd79db6cd1e65dee325106308b0d4",
       "dump-bir.mjs": "2adb11e23eb1625387fc3c802b2ad57e3ba4147352e12944dd0e161e08dba6c6",
       "resource-run.mjs": "0a99546075226a3cd3d2be9cef5050a9faf1c0f5ac6d82084f1c43e29646f9d7",
       "stress.mjs": "142cd0ddecb3759a6d2633824296bd264eb235fecee74ddf8e17e8dd693d6618"
@@ -170,6 +174,10 @@
       {
         "date": "2026-10-15T22:00:46.337Z",
         "change": "Parallelize independent per-module real-compiler BIR dumps in a four-process pool, admitted as two CPU slots / 1 GiB. Same compiler, source bytes, BIR cache keys and output; only orchestration changes."
+      },
+      {
+        "date": "2026-10-15T23:15:48.865721+00:00",
+        "change": "Recognize both OutOfMemory and out of memory diagnostics when recording native compiler resource failures. Nested TEA N3888 hit the same 16 GiB cap. Output generation, measurement and compression unchanged."
       }
     ],
     "initial_scope": "Unchanged ten-shape catalogue. Three original seeds through N32; seed 17 extended on a 1.5x grid with extra measured points near 512 kB. Each strategy stops at its first measured rendering response >=512000 brotli bytes. No padding. Later points for shared-factory baselines need no additional candidate or today output once those curves crossed. Every point requiring BIR builds real TEA; direct builds stop once their measured curve crosses; all sources remain reproducible. Lines join measured points, never extrapolate. Native curves are not rebuilt after their measured crossing or terminal resource failure. Larger prototype points consume real per-component BIR dumps without another full-app build.",
@@ -204,7 +212,7 @@
       "solid.mjs": "bc4c38168432677be1d7fb12e3765f835ba9eecbb263e70e652b2dfc24c1b46e",
       "solid.jsx": "02ac2cb9c4358c704bbae33f66c674522c466d59bbeb99001927b395123dfc21",
       "package-lock.json": "a7ae5e60efc695ed0b21f7d470d868765a49e98333a2438a34cd1f7dc913f909",
-      "build-today.mjs": "3d7c2a0bf5d0ac956eb565e60fd2c19667cd2c12e8b4bf56214cc25973c49426",
+      "build-today.mjs": "c39a746c6c7766e82db797fdfc596066a62dd79db6cd1e65dee325106308b0d4",
       "dump-bir.mjs": "2adb11e23eb1625387fc3c802b2ad57e3ba4147352e12944dd0e161e08dba6c6",
       "resource-run.mjs": "0a99546075226a3cd3d2be9cef5050a9faf1c0f5ac6d82084f1c43e29646f9d7",
       "stress.mjs": "142cd0ddecb3759a6d2633824296bd264eb235fecee74ddf8e17e8dd693d6618"
@@ -269,6 +277,10 @@
       {
         "date": "2026-10-15T22:00:46.347Z",
         "change": "Parallelize independent per-module real-compiler BIR dumps in a four-process pool, admitted as two CPU slots / 1 GiB. Same compiler, source bytes, BIR cache keys and output; only orchestration changes."
+      },
+      {
+        "date": "2026-10-15T23:15:48.868104+00:00",
+        "change": "Recognize both OutOfMemory and out of memory diagnostics when recording native compiler resource failures. Nested TEA N3888 hit the same 16 GiB cap. Output generation, measurement and compression unchanged."
       }
     ],
     "compiler_address_space_limit_bytes": 17179869184,

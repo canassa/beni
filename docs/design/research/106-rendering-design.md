@@ -26,12 +26,12 @@ same-size application comparisons; the fixed-N comparison above is.
 
 **The full family sweep is still in progress.** Direct exhausts host memory at
 mixed N1,728 before the target ([#203](https://github.com/canassa/beni/issues/203));
-no size is invented for that failed build. The webpage distinguishes crossings,
+Nested TEA also reaches the later 16 GiB cap at N3,888. No size is assigned to failed builds. The webpage distinguishes crossings,
 unfinished curves and compiler limits. This follow-up measures size only.
 
 For the original three-seed mixed N32 sample, C costs **7.29 kB**, versus
 **11.82 kB TEA, 17.06 kB direct, 3.89 kB vanilla, 8.39 kB A, 8.13 kB B and
-8.82 kB D**. C removes 38% of TEA's rendering bytes there: runtime alone falls
+8.82 kB D**. Direct has 28 broken pages ([#189](https://github.com/canassa/beni/issues/189)). C removes 38% of TEA's rendering bytes there: runtime alone falls
 3.51→1.79 kB, app increment 8.31→5.51 kB. This compares reachable platform
 support with a pure-sandbox prototype, not full platform parity.
 
@@ -44,7 +44,9 @@ and derived summaries. Vary fields, labels, nesting, validation thresholds,
 step values and which state a message changes. Compose shuffled prefixes at
 **N=1,2,4,8,16,32, with seeds 17/101/2027**. Mixed and ten homogeneous families
 produce **198 apps, 2,079 component instances and 396 real release builds**.
-Both `browser-tea` and `browser-direct` compile exactly that source.
+Both `browser-tea` and `browser-direct` compile exactly that source. In the large
+extension, each native curve ends at its target or failure; subsequent prototype
+points use per-module BIR dumps without another whole-app build.
 
 The experimental lowerer consumes the real compiler's public BIR. It computes
 writes from reducer result records, reads through expressions/helper arguments,
@@ -62,7 +64,8 @@ read/write witnesses, ownership witnesses and all four outputs.
 | C: local reducers | Keep TEA messages/reducers; closure routes directly to its instance; run that instance's guarded bindings. |
 | D: explicit cells | Typed action/transaction proposal; owned cell setters and dynamically tracked binding reads. [Source form](../../../bench/rendering-design/examples/list/Shape0.cells-proposal.beni.txt). |
 
-All four share a run-once DOM backend and inferred edit journal, so the direction
+These executable prototypes are not size lower bounds; all four omit factory
+factoring. They share a run-once DOM backend and inferred edit journal, so the direction
 comparison isolates state/update wiring. Vanilla is independently written and
 shares shape factories with configuration. Solid has independent list/form ports
 using its actual JSX compiler, signals, projection selector and keyed `For`.
@@ -71,8 +74,8 @@ using its actual JSX compiler, signals, projection selector and keyed `For`.
 
 All numbers below are **rendering bytes**, excluding core/List/Task/Schema/Http
 and other core spans. Exact source-map attribution deletes core spans, including
-inlined ones, then recompresses the rendering response. Full executable bundles,
-not the resulting attribution fragments, are validated. Normalize every candidate
+inlined ones, then recompresses the rendering response. Executable entries with their dependencies are validated; attribution fragments
+are not executable. Prototype `core.mjs` is separately loaded and excluded. Normalize every candidate
 with Terser 5.51.2; retain original compiler-release prices too. Brotli quality 11;
 raw/gzip and incremental prices are retained. Excluded owned-array helpers cost
 137 B brotli standalone. Reclassifying all unmapped spans in a mixed N32 sample
@@ -105,36 +108,38 @@ observations; they do not supply missing points or predict a failed build.
 **These slopes measure varied repetitions of ten templates, not new-feature
 cost.** Ranking may change on real applications. An intercept is a fit, not the
 runtime floor. Mixed curves flatten when all families appear. Seed ranges are
-not confidence intervals. [Full fits](../../../bench/rendering-design/results/fits.md)
-include residuals, which are large for the mixed linear approximation.
+not confidence intervals. [Full stress fits](../../../bench/rendering-design/results/stress/fits.json)
+retain residuals; the original N≤32 calibration remains archived.
 
-Original N≤32 per-family slopes, brotli bytes per added varied instance
-(three seeds). The live HTML matrix updates the larger common measured windows:
+Current common-window family slopes, brotli bytes per added varied instance,
+seed 17. **N288–1,152** for every column except direct (**N84–336**, censored)
+and Solid (**N972–3,888**, two ports). Windows differ between strategies; compare
+shapes within a column. The live report advances these windows as data arrives.
 
-| Shape | TEA | Direct | A | B | C | D | Vanilla |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| Keyed list | 135 | 236 | 101 | 78 | 58 | 107 | 7 |
-| Form | 121 | 206 | 97 | 74 | 55 | 98 | 7 |
-| Tabs | 126 | 195 | 81 | 72 | 67 | 83 | 7 |
-| Nested helpers | 136 | 265 | 92 | 91 | 65 | 94 | 7 |
-| Recursive thread | 116 | 216 | 116 | 107 | 85 | 109 | 7 |
-| Counter/toggle | 93 | 148 | 73 | 62 | 50 | 82 | 7 |
-| Sortable table | 152 | 271 | 113 | 84 | 61 | 119 | 7 |
-| Modal | 140 | 223 | 92 | 84 | 63 | 100 | 7 |
-| Filter | 168 | 286 | 115 | 86 | 61 | 128 | 7 |
-| Derived summary | 160 | 286 | 120 | 94 | 68 | 124 | 7 |
+| Shape | TEA | Direct | A | B | C | D | Vanilla | Solid |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| Keyed list | 132 | 185 | 78 | 55 | 41 | 79 | 5.3 | 5.2 |
+| Form | 124 | 152 | 72 | 50 | 38 | 66 | 5.3 | 5.1 |
+| Tabs | 123 | 141 | 58 | 52 | 48 | 57 | 5.2 | — |
+| Nested helpers | 130 | 195 | 60 | 58 | 45 | 62 | 5.2 | — |
+| Recursive thread | 103 | 160 | 76 | 72 | 58 | 76 | 5.2 | — |
+| Counter/toggle | 85 | 101 | 55 | 40 | 34 | 53 | 5.3 | — |
+| Sortable table | 161 | 215 | 90 | 62 | 45 | 82 | 5.3 | — |
+| Modal | 126 | 164 | 70 | 55 | 43 | 66 | 5.2 | — |
+| Filter | 160 | 212 | 90 | 63 | 44 | 85 | 5.3 | — |
+| Derived summary | 159 | 222 | 93 | 67 | 50 | 83 | 5.2 | — |
 
-![Slope matrix](../../../bench/rendering-design/results/graphs/slopes.png)
+![Slope matrix](../../../bench/rendering-design/results/stress/graphs/family-slopes.png)
 
-In the original sample, filters/summaries drive today's growth: collection traversal, captures and
-consumer wiring accumulate. A still pays for summary updates and recursive
-helper dependencies; recursion barely improves over TEA. Recursion is C's
-largest slope too. D adds subscriptions without eliminating the underlying
-binding machinery. Vanilla's near-flat family slopes expose another missing
-optimization: shared component factories parameterized by configuration.
-These compiler candidates still emit distinct factories per source module.
-[All family curves](../../../bench/rendering-design/results/graphs/family-growth.png)
-include today's output; Solid appears only for its two actual ports.
+Tables, filters and summaries drive today's growth: collection traversal,
+captures and consumer wiring accumulate. A still pays for summary updates and
+recursive helper dependencies. Recursion is the largest slope for B and C;
+filters lead D, which adds subscriptions without eliminating binding machinery.
+Vanilla and Solid's near-flat slopes expose the missing shared-factory
+optimization: the compiler candidates emit distinct factories per source module.
+[All family curves](../../../bench/rendering-design/results/stress/graphs/family-growth.png)
+include today's output; [fits](../../../bench/rendering-design/results/stress/family-fits.json)
+retain actual sample bounds and residuals.
 
 ## 3. Correctness and limits
 

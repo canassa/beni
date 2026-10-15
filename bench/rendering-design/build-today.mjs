@@ -33,7 +33,7 @@ for(const c of cases){
   const executable=process.env.BENI_MEMORY_BYTES?'prlimit':beni,args=process.env.BENI_MEMORY_BYTES?['--as='+process.env.BENI_MEMORY_BYTES,'--',beni,...compileArgs]:compileArgs;
   try{const locked=process.env.RESEARCH_LOCK?['flock','--exclusive',process.env.RESEARCH_LOCK+'.compiler',executable,...args]:[executable,...args];const reservation=Math.ceil(Math.min(16384,platform==='direct'?Math.max(1024,c.n*c.n/16):Math.max(1024,c.n*2)));execFileSync(process.execPath,[here+'/resource-run.mjs','--memory-mib='+reservation,'--cpu=4','--',...locked],{stdio:['ignore','pipe','pipe'],maxBuffer:16*1024*1024});}
   catch(e){fs.writeFileSync(here+'/results/failure-'+c.name+'-'+platform+'.txt',e.stderr||String(e));
-   if(prefix==='stress-'&&(platform==='direct'||e.signal==='SIGKILL'||String(e.stderr).includes('OutOfMemory'))){
+   if(prefix==='stress-'&&(platform==='direct'||e.signal==='SIGKILL'||/out\s*of\s*memory/i.test(String(e.stderr)))){
     fs.appendFileSync(here+'/results/stress/stopped.jsonl',JSON.stringify({family:c.shape||'mixed',mode:platform,name:c.name,n:c.n,status:e.status,signal:e.signal,reason:String(e.stderr||e.message),input_sha256:inputHash,compiler_sha256:manifest.compiler_sha256,address_space_limit_bytes:Number(process.env.BENI_MEMORY_BYTES||0)||null,date:new Date().toISOString()})+'\n');console.log(c.name,platform,'build failed; preserving failure and measuring other curves');continue;
    }throw e;
   }

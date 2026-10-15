@@ -21,6 +21,13 @@ def draw(ax,family,log=True):
   ns=sorted(set(r['n'] for r in rs));ys=[[r['brotli']/1000 for r in rs if r['n']==n] for n in ns]
   ax.plot(ns,[np.median(y) for y in ys],marker='o',ms=3,lw=1.5,color=color,label=name)
   ax.fill_between(ns,[min(y) for y in ys],[max(y) for y in ys],color=color,alpha=.13)
+  stop=next((s for s in D.get('stopped',[]) if s['family']==family and s['mode']==mode),None)
+  if stop:
+   ax.scatter([ns[-1]],[np.median(ys[-1])],marker='x',s=40,color=color,zorder=5,label='Last success before compiler failure')
+   family_max=max(r['n'] for r in rows if r['family']==family)
+   near_right=(np.log2(ns[-1])/np.log2(family_max)>.8) if log else ns[-1]/family_max>.8
+   ax.annotate(f"Next N={stop['n']:,} failed",(ns[-1],np.median(ys[-1])),xytext=(-6 if near_right else 6,9),ha='right' if near_right else 'left',textcoords='offset points',fontsize=7,color=color)
+
  ax.axhline(512,color='#909aad',linestyle='--',linewidth=1,label='512 kB target')
  if log:ax.set_xscale('log',base=2)
  ax.set_ylim(bottom=0);ax.set_xlabel('Component instances (N)'+(' · log₂' if log else ''));ax.set_ylabel('Rendering response · brotli kB');ax.set_title(family.capitalize());ax.grid(alpha=.15)
@@ -49,6 +56,35 @@ for family in families:
    if len(points)<3:continue
    x=np.array([r['n'] for r in points]);y=np.array([r['brotli'] for r in points]);slope,intercept=np.polyfit(x,y,1)
    fits.append({'family':family,'mode':mode,'range':label,'min_n':int(min(x)),'max_n':int(max(x)),'points':len(points),'slope':float(slope),'intercept':float(intercept),'rmse':float(np.sqrt(np.mean((y-(intercept+slope*x))**2)))})
+
+# Compare shapes within the same measured N window for each strategy. Widen
+# that window until every applicable family has at least three seed-17 points.
+columns=[]
+for mode in modes:
+ applicable=[f for f in families[1:] if mode!='solid' or f in ['list','form']]
+ ceiling=min(max(r['n'] for r in rows if r['family']==f and r['mode']==mode and r['seed']==17) for f in applicable)
+ lower=max(1,ceiling//2)
+ def selected(f):return [r for r in rows if r['family']==f and r['mode']==mode and r['seed']==17 and lower<=r['n']<=ceiling]
+ while lower>1 and any(len(selected(f))<3 for f in applicable):lower=max(1,lower//2)
+ values={}
+ for family in applicable:
+  points=selected(family);x=np.array([r['n'] for r in points]);y=np.array([r['brotli'] for r in points]);slope,intercept=np.polyfit(x,y,1)
+  values[family]={'slope':float(slope),'intercept':float(intercept),'rmse':float(np.sqrt(np.mean((y-(intercept+slope*x))**2))),'low':int(min(x)),'high':int(max(x)),'samples':len(points)}
+ columns.append({'mode':mode,'lower':lower,'ceiling':ceiling,'values':values,'ranking':sorted(values,key=lambda f:values[f]['slope'],reverse=True)})
+(H/'results/stress/family-fits.json').write_text(json.dumps(columns,indent=2)+'\n')
+matrix=np.array([[c['values'].get(f,{}).get('slope',np.nan) for c in columns] for f in families[1:]])
+fig,ax=plt.subplots(figsize=(13,6.8));cmap=plt.colormaps['YlOrRd'].copy();cmap.set_bad('#edf0f4');plot=ax.imshow(matrix,cmap=cmap,vmin=0,vmax=np.nanmax(matrix),aspect='auto')
+ax.set_xticks(range(len(modes)),[name+'\nN='+str(c['lower'])+'–'+str(c['ceiling']) for name,c in zip(names,columns)],fontsize=8)
+ax.set_yticks(range(10),[f.capitalize() for f in families[1:]])
+for i in range(10):
+ for j in range(len(modes)):
+  value=matrix[i,j];ax.text(j,i,'—' if np.isnan(value) else f'{value:.1f}',ha='center',va='center',color='white' if value>np.nanmax(matrix)*.58 else '#162033',fontsize=10)
+ax.set_title('Fitted brotli bytes per added varied instance · seed 17',pad=15,weight='bold');fig.colorbar(plot,ax=ax,label='Brotli bytes / component',shrink=.8);fig.text(.02,.02,'Each column uses a common N window across its families. Windows differ between strategies; no failed build is assigned a size.',fontsize=9);fig.tight_layout(rect=[0,.05,1,1]);save(fig,'family-slopes')
+lines=['# Common-window family slopes','','Seed 17; windows are chosen independently per strategy and widened until every applicable family has three measured samples. These are varied repetitions of a fixed catalogue.','','| Family | '+' | '.join(names)+' |','|---|'+'---:|'*len(modes)]
+for family in families[1:]:lines.append('| '+family+' | '+' | '.join(f"{c['values'][family]['slope']:.1f}" if family in c['values'] else '—' for c in columns)+' |')
+lines+=['','| Strategy | Common N window |','|---|---|']+[f"| {name} | {c['lower']}–{c['ceiling']} |" for name,c in zip(names,columns)]
+(H/'results/stress/family-fits.md').write_text('\n'.join(lines)+'\n')
+
 (H/'results/stress/fits.json').write_text(json.dumps(fits,indent=2)+'\n')
 (H/'results/stress/crossings.json').write_text(json.dumps(crossings,indent=2)+'\n')
 with (H/'results/stress/sizes.csv').open('w') as f:

@@ -35,3 +35,11 @@ CASES_FILE=/.out/grouped-pilot-cases.json RESULT_PREFIX=grouped-pilot- \
 
 This is research evidence, not a diagnosis or compiler fix. No repository gates
 or suites were run.
+
+The nested-helper family also reaches this cap with `browser-tea` at N3,888
+(exit 2, `beni: out of memory`). Its last successful normalized rendering
+response is 346,066 brotli bytes at N2,592. The original diagnostic is retained
+in `failures.jsonl`; `stopped.jsonl` records the input and compiler hashes.
+The harness now recognizes both diagnostic spellings (`OutOfMemory` and
+`out of memory`). This only changes failure handling, not emitted output or
+size accounting. Other strategies continue from the same source specification.
