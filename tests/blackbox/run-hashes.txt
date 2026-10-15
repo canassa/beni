@@ -37,7 +37,7 @@ build_id_test.test.two compilers that differ only in their embedded core share a
 build_test.test.--release refuses a build that reaches Debug; the same program builds and logs without the flag #0 25a4aa5dc9defc629996b720535152cf62e5c8cc76b456055d17a0cc209a388b
 build_test.test.--release refuses a build that reaches Debug; the same program builds and logs without the flag #1 2be7572568481e02028bd6e6057100cbebd0a876cfe878bfa556f7ab6a3cfb02
 build_test.test.--release writes a map only when asked, and asking changes no byte of the code #0 0c8bd0587c661cb3e8790e7f97faeed5cd657da47a4076f02b0d85e2d0e62f81
-build_test.test.--release writes a map only when asked, and asking changes no byte of the code #1 9a3c1068f9bfd80dc99d0ba2ab6323f24bec82b2c40a19f27993c5ff6b9515d4
+build_test.test.--release writes a map only when asked, and asking changes no byte of the code #1 dcba63314bb5370e2c9f823dc119c00e57a0f8e3ffb2b3aa1e7d64c680d9b4f2
 build_test.test.Debug.todo compiles as anything and crashes with its message when reached #0 717b1f9a140435dd30fc71f5a2a91aa3f772e7c40a1025c5d54d9945777f88ff
 build_test.test.a --core-root core without a core-private List value the emitter calls is refused where a module needs it #0 696cde132e411ca93a74b4a7fe267bf54ab09eb5ac70f8861411f4f7f2221d2f
 build_test.test.a Debug call that reachability drops does not refuse the release build #0 01120bf841884cc7a9ce51eb80a6548036145c0c020bb39e6e00ccb51fd85f53
