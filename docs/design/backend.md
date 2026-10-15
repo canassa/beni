@@ -2384,13 +2384,34 @@ user's local. `localName` names a local `<source name>$<its index + 1>`, and the
 ask `fresh` for plain words a user can write (`x`, `i`, `item`, `value`), so `fresh`'s `x$4` and a
 user's fourth local `x` can be one name, and the page then throws a `ReferenceError`. The module-wide
 counter had the same defect in the first declarations of a module; per-declaration numbers reach it
-in every declaration. How to keep the two apart is the owner's decision (`emit-cache-q4`), and this
-rule waits for it. The release optimiser counts uses per top-level declaration and keys a
+in every declaration. The owner decided how the two stay apart (below, *A `$` in front of every
+compiler-made name*). The release optimiser counts uses per top-level declaration and keys a
 substitution by its use site (§9 item 1). *Corrected the same day, after review:* its rule that an
 arm which declares a name its declaration declares twice is not spliced (§9, *Compact statements*)
 was one bit per name for the whole module (`Opt.Plan.repeated`). A name that one declaration binds
 twice then stopped the splice in every declaration that holds the same name, and per-declaration
 numbers make that common. The bit is now kept per declaration statement, as the rule says.
+
+**A `$` in front of every compiler-made name.** *Added 2026-10-15, Cesar's decision (the
+dashboard's question `emit-cache-q4`): "Option 1, `$` prefix; one name source per declaration for all
+compiler-made names; add the master reproduction as a fixture."* So:
+
+- **Every name `Lowerer.fresh` makes is `$<hint>$<n>`.** A hint that does not start with `$` gets
+  one: the markup lowerings' `x`, `item` and `value` print as `$x$4`, `$item$2` and `$value$3`. A
+  beni name cannot start with `$` (`language.md` §2.4), so no user's local (`<source name>$<n>`),
+  no declaration and no module-qualified name can be one of them.
+- **One name source per top-level declaration.** Every compiler-made name of a declaration that
+  carries a number comes from `fresh` and its one counter, which restarts at 1 for each top-level
+  declaration (the rule above). Two compiler-made names of one declaration therefore never meet.
+- **The positional names keep their own shape, and no hint can take it.** `$m$<k>` (an evidence
+  parameter), `$in$<i>` (a loop slot) and `$l<inst>$<k>` (a `let`'s evidence) are written by their
+  position, not by the counter. `fresh` refuses the hints that would print as one of them — `m`,
+  `in`, and `l` followed by digits — as an internal error: a lowering that asks for one is a bug of
+  the compiler, which carries every lowering. The `dom` lowering's patch inputs, which asked for
+  `in`, now ask for `input`.
+- **Fixtures:** the page that throws on master (`view` the first declaration of its module that
+  makes a compiler name) and the page that per-declaration numbers made throw (`helper` before
+  `view`) are `tests/corpus/browser/dom/NameMeetsLocal` and `NameMeetsLocalAfterHelper`.
 
 **Why.** The second step of the checked core's emit work (`fast-compiler.md` §8, *The checked core,
 embedded*) stores the printed text of each embedded declaration once, for every program. With one
@@ -2405,7 +2426,9 @@ number pushes to the right.
 one after its first top-level declaration: every `emit/` golden and run hash that holds one, which
 Node verifies again. *Corrected the same day, after review:* a source map's `names` list can also
 get shorter, because two names of one text that were two indices are now one. Each mapping still
-names the same text at the same source position.
+names the same text at the same source position. *And with the `$` in front:* a development build of
+a page also spells the markup lowerings' compiler-made names with it (`x$4` is `$x$4`, the `dom`
+patch inputs' `$in$2` is `$input$2`). A release build renames every local, so it does not change.
 
 ### A parameter of type `()`
 
