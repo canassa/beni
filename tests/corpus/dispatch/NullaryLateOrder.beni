@@ -1,0 +1,10 @@
+-- The second nullary dot resolves first. Wanted ids are append-only handles;
+-- dispatch sites still use source instruction order, including cache replay.
+pub counts first second =
+    a = first.length
+    b = second.length
+    width =
+        nested = String.length second
+        nested
+    count = List.length first
+    a + b + width + count

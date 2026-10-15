@@ -393,7 +393,10 @@ fn isWellKnownName(name: Symbol) bool {
 /// the survivor has its method type lowered to the survivor's rank.
 fn finishJoins(u: *Unify, root: Var, joins: []const Join, lowered: []const Var) Error!void {
     const rank = u.store.rank(root);
-    for (lowered) |v| try Walk.lowerTo(u.store, u.stacks, u.gpa, v, rank);
+    for (lowered) |v| {
+        try Walk.lowerTo(u.store, u.stacks, u.gpa, v, rank);
+        if (std.debug.runtime_safety) std.debug.assert(u.store.rank(u.store.find(v)) <= rank);
+    }
     for (joins) |j| {
         const younger = u.evidence.ptr(j.younger);
         younger.state = .answered;
@@ -440,6 +443,9 @@ fn lowerOwned(u: *Unify, root: Var, ids: []const Obligations.Id) Error!void {
         if (row.state != .open) continue;
         if (u.store.find(row.vars[row.owner()]) != root) continue;
         for (row.dependants()) |slot| try Walk.lowerTo(u.store, u.stacks, u.gpa, row.vars[slot], rank);
+        if (std.debug.runtime_safety) for (row.dependants()) |slot| {
+            std.debug.assert(u.store.rank(u.store.find(row.vars[slot])) <= rank);
+        };
     }
 }
 

@@ -1,0 +1,10 @@
+-- Both receivers start unknown. The second dot becomes String first,
+-- then the first becomes List; diagnostics still follow source order.
+pub inspect first second =
+    one = first.missing
+    two = second.absent
+    width =
+        nested = String.length second
+        nested
+    count = List.length first
+    width + count

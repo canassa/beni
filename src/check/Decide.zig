@@ -80,6 +80,11 @@ fn lowerDependants(s: *Solve, row: Row) Error!u32 {
     const rank = st.rank(st.find(row.vars[row.owner()]));
     if (rank == TypeStore.generalized) return rank;
     for (row.dependants()) |slot| try Walk.lowerTo(st, &s.stacks, s.cx.gpa, row.vars[slot], rank);
+    // Check the new/changed edges here, once, rather than rescanning the
+    // owner's accumulating set at every younger binding boundary.
+    if (std.debug.runtime_safety) for (row.dependants()) |slot| {
+        std.debug.assert(st.rank(st.find(row.vars[slot])) <= rank);
+    };
     return rank;
 }
 

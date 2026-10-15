@@ -1,0 +1,4 @@
+module NullaryLateOrder
+  decl counts evidence=0 arity=2 convention=plain
+  site 7 callee ext List length
+  site 9 callee ext String length

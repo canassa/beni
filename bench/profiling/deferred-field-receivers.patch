@@ -1,0 +1,12 @@
+diff --git a/src/check/Dot.zig b/src/check/Dot.zig
+index ed723d74d..bbb8247f9 100644
+--- a/src/check/Dot.zig
++++ b/src/check/Dot.zig
+@@ -23,6 +23,7 @@ pub fn begin(s: *Solve, node: Tree.Node) Error!void {
+     const d = s.tree.extraData(node.a, Tree.FieldDot);
+     const st = s.store();
+     const root, const content = st.resolved(d.receiver);
++    std.debug.print("DOT_RECEIVER {s}\n", .{@tagName(content)});
+     if (s.recursive_frames == 0) {
+         if (isRecord(content) and try cheap(s, root, d.name)) {
+             s.obligations.seq += 2;

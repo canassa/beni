@@ -1,0 +1,49 @@
+{
+  "source": "tests/corpus/dispatch/NullaryLateOrder.beni",
+  "source_sha256": "1b67ba4fe6a47b08f6e06c0335ab16461ac435e157cf4a8f66dab76f192e58c5",
+  "runs": [
+    {
+      "compiler": "before",
+      "jobs": 1,
+      "cache": "cold",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "runtime_stdout": "14\n"
+    },
+    {
+      "compiler": "before",
+      "jobs": 8,
+      "cache": "warm",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "runtime_stdout": "14\n"
+    },
+    {
+      "compiler": "after",
+      "jobs": 1,
+      "cache": "cold",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "runtime_stdout": "14\n"
+    },
+    {
+      "compiler": "after",
+      "jobs": 8,
+      "cache": "warm",
+      "stdout_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "runtime_stdout": "14\n"
+    }
+  ],
+  "identical_output_files": {
+    "NullaryLateOrder.mjs": "f10a2fda9613bb50ac58460695adbca0b898d78abfb24ddc5d9081ebfb123d93",
+    "NullaryLateOrder.mjs.map": "3647e1e18a230a9527643157e377f096e6913780c03eb42baaf12dd2e141ece3",
+    "_core/List.foreign.mjs": "d0dc0fa8568683cc451cdd9f98d2614d2f8fb40252682c21a83523f278a310ab",
+    "_core/List.mjs": "33f84403867978b8fc085012e8cc204d2fa1088fe138bbd3ed058761ed187377",
+    "_core/List.mjs.map": "4d72ef9d932de00833e7d3503400252d089cab8b00b1d2c52f4f09ff7329186f",
+    "_core/String.mjs": "e0155dad570eb5912ede960e3f96a840576b51f588f141039f9b8da634cf3612",
+    "_core/String.mjs.map": "cfd52bf7012a04a8ec86abb6073e837d1b5d6bbad509bda7af70fd087c49e71c",
+    "_manifest.txt": "a301fa37523a041a8770f62b50c537105bcaaec02c896f59081c79e0ffdede35",
+    "_platform/runtime.foreign.mjs": "392039999ccc3c64316ec194ddf45147775ddc45af050c646c9c4fd01156d193"
+  }
+}

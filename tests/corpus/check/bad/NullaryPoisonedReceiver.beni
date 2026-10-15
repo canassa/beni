@@ -1,0 +1,2 @@
+-- A failed receiver does not produce an extra nullary-method diagnostic.
+pub value = missingReceiver.completed

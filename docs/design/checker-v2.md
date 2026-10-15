@@ -5939,7 +5939,11 @@ its own bucket, and I15 has already lowered its owned closure on every attachmen
 rank drop. None of that closure can be quantified at this boundary. Treat it
 as an already settled outer node, just as when another young node reaches an
 outer root absent from the pool. Its owning boundary still walks and checks
-it normally. Structural roots keep the ordinary rank fold. This removes the
+it normally. Runtime-safety assertions check each newly attached or strictly
+rank-lowered dependency at its mutation site, so an invariant break is detected
+before a younger boundary could quantify it. These checks visit only the new
+or lowered edges, rather than rescanning the growing owner set. Structural
+roots keep the ordinary rank fold. This removes the
 repeated traversal of an outer receiver's accumulating pending dots at each
 local binding; it does not default or otherwise constrain the receiver.
 

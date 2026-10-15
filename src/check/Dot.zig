@@ -1,5 +1,7 @@
 //! Bare-dot resolution without eagerly constructing method/effect objects.
 //! Flexible receivers still wait for the same owner-rank boundary default.
+//! A late arrow wraps existing variables: ordinary rank folding lowers the
+//! fresh wrapper to those dependencies before generalisation.
 const std = @import("std");
 const Bir = @import("../bir/Bir.zig");
 const Tree = @import("constrain/Tree.zig");

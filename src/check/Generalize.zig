@@ -379,7 +379,8 @@ pub fn adjustRanks(
         const root = store.find(v);
         // An escaped variable is already an outer node: I15 lowered its
         // complete owned closure when attaching or lowering its rank.
-        // Its own boundary still walks it; this one cannot quantify it.
+        // Mutation sites assert each new/lowered dependency. Its own
+        // boundary still walks the set; this one cannot quantify it.
         const escaped = store.rank(root) != TypeStore.generalized and store.rank(root) < young and switch (store.content(root)) {
             .flex, .rigid => true,
             else => false,

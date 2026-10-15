@@ -115,6 +115,8 @@ gpa: Allocator,
 store: *TypeStore,
 types: *const Types,
 interner: *const InternPool.Global,
+/// Includes reserved `deferred_callee` slots. Consumers must skip them
+/// until a method decision supplies a real callee; record reads leave them inert.
 edges: std.ArrayList(Pair) = .empty,
 seeds: std.ArrayList(Seed) = .empty,
 joins: std.ArrayList(Pair) = .empty,
@@ -237,7 +239,8 @@ pub fn deinit(e: *Effects) void {
 // ---------------------------------------------------------------------------
 
 /// §14.3 rule 1: a call of `callee` from a body whose class is `ambient`,
-/// written at `site` (§15.4).
+/// written at `site` (§15.4). Only appends; never dereferences the callee,
+/// which may be the reserved `deferred_callee` sentinel.
 pub fn call(e: *Effects, callee: Var, ambient: Var, site: Site) Error!void {
     try e.edges.append(e.gpa, .{ .a = callee, .b = ambient });
     try e.sites.append(e.gpa, site);

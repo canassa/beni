@@ -465,6 +465,7 @@ fn attach(s: *Solve, id: WantedId, root: Var, flags: TypeStore.Flags) Error!void
             if (s.evidence.get(other).state.rejected()) {
                 try replaceEntry(s, root, flags, other, id);
                 try Walk.lowerTo(st, &s.stacks, gpa, w.method_type, st.rank(root));
+                if (std.debug.runtime_safety) std.debug.assert(st.rank(st.find(w.method_type)) <= st.rank(root));
                 return;
             }
             const older, const younger = if (s.evidence.get(other).seq < w.seq) .{ other, id } else .{ id, other };
@@ -474,6 +475,7 @@ fn attach(s: *Solve, id: WantedId, root: Var, flags: TypeStore.Flags) Error!void
                 try replaceEntry(s, root, flags, other, id);
             }
             try Walk.lowerTo(st, &s.stacks, gpa, w.method_type, st.rank(root));
+            if (std.debug.runtime_safety) std.debug.assert(st.rank(st.find(w.method_type)) <= st.rank(root));
             answer(s, younger, .{ .alias = older });
             s.evidence.joinField(older, younger);
             try joinTypes(s, younger, older);
@@ -496,6 +498,7 @@ fn attach(s: *Solve, id: WantedId, root: Var, flags: TypeStore.Flags) Error!void
     with.constraints = extended;
     st.setContent(root, .{ .flex = with });
     try Walk.lowerTo(st, &s.stacks, gpa, w.method_type, st.rank(root));
+    if (std.debug.runtime_safety) std.debug.assert(st.rank(st.find(w.method_type)) <= st.rank(root));
 }
 
 /// `root`'s set with `was`'s entry replaced by `now`'s.
