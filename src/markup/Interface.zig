@@ -37,7 +37,7 @@ const std = @import("std");
 /// `programBranchEnter`, `programBranchValue`, `programShowFallback`,
 /// `programNestedEnter`, `programViewStatements`, `programLet`,
 /// `Program.view_lets`).
-pub const version: Version = .{ .major = 1, .minor = 11 };
+pub const version: Version = .{ .major = 1, .minor = 13 };
 
 /// The newest version whose gated feature a tree can use. No minor version
 /// has gated one yet, so every tree requires 1.0 and every lowering of
@@ -63,6 +63,8 @@ pub const Lowering = struct {
     name: []const u8,
     /// The interface version the lowering was written against (§9.4.6).
     targets: Version,
+    /// 1.13: retain producer substitutions and emit the direct consumer plan.
+    parameterised_templates: bool = false,
     /// The markup runtime's exports this lowering's emitted code imports,
     /// each with its parameter count (§9.4.5).
     runtime: []const RuntimeExport,
@@ -162,6 +164,8 @@ pub const Program = struct {
     /// `Node.Index.none` for it, and `programViewEnter` binds `view`'s
     /// parameter and its `let`s with no root. `view_root` is null.
     view_branch: bool = false,
+    /// 1.12: the root value slot keeps complete helper/branch documents for body and title.
+    document_branch: bool = false,
     /// What `update` is: `markup` and `function` alike are functions this
     /// module declares or the record writes; `other_module` or `computed`.
     update: Shape,
@@ -1013,6 +1017,37 @@ pub const Context = struct {
         return cx.vtable.program_hole(cx.impl, hole);
     }
 
+    /// 1.13: bind a row's parameters and produce its parameterised block.
+    pub fn rowTemplate(cx: *Context, into: Block, row_index: Row.Index, item: Name, position: ?Name) Error!Expr {
+        return cx.vtable.row_template(cx.impl, into, row_index, item, position);
+    }
+
+    /// 1.13: analysis masks for parameterised templates of this program.
+    pub fn templatePlan(cx: *Context) Error!Expr {
+        return cx.vtable.template_plan(cx.impl);
+    }
+
+    /// Source identities of a template group's holes, independent of its call.
+    pub fn templateHoles(cx: *Context, holes: []const Program.HoleRef) Error!Expr {
+        return cx.vtable.template_holes(cx.impl, holes);
+    }
+
+    /// Capture the call's substitution context with the template's inputs.
+    pub fn templateCapture(cx: *Context, root_index: Root.Index) Error!Expr {
+        return cx.vtable.template_capture(cx.impl, root_index);
+    }
+
+    /// Evaluate a producer under the call path, or scope a placement's
+    /// entry mask (placement=true) without extending its producer path.
+    pub fn templateValue(cx: *Context, site_node: Node.Index, value_: Expr, placement: bool) Error!Expr {
+        return cx.vtable.template_value(cx.impl, site_node, value_, placement);
+    }
+
+    /// Enter/leave code generation for an outlined parameterised template.
+    pub fn templateScope(cx: *Context, active: bool) bool {
+        return cx.vtable.template_scope(cx.impl, active);
+    }
+
     /// 1.7, inside `Lowering.program` only: whether key `key`'s write set
     /// conflicts with read set `group` (`write-sets.md` §2.5, with tag
     /// reads): whether that key's handler must call the group.
@@ -1395,6 +1430,12 @@ pub const VTable = struct {
     start: *const fn (impl: *anyopaque, key: []const u8, value: []const u8) Error!void,
     report: *const fn (impl: *anyopaque, node: Node.Index, message: []const u8) error{ OutOfMemory, Reported },
     not_implemented: *const fn (impl: *anyopaque, node: Node.Index, message: []const u8) error{ OutOfMemory, Reported },
+    row_template: *const fn (impl: *anyopaque, into: Block, row_index: Row.Index, item: Name, position: ?Name) Error!Expr,
+    template_plan: *const fn (impl: *anyopaque) Error!Expr,
+    template_holes: *const fn (impl: *anyopaque, holes: []const Program.HoleRef) Error!Expr,
+    template_capture: *const fn (impl: *anyopaque, root_index: Root.Index) Error!Expr,
+    template_value: *const fn (impl: *anyopaque, at: Node.Index, value_: Expr, placement: bool) Error!Expr,
+    template_scope: *const fn (impl: *anyopaque, active: bool) bool,
     program_start: *const fn (impl: *anyopaque, block: Block, args: []const Expr) Error!Expr,
     program_field: *const fn (impl: *anyopaque, block: Block, field: Context.ProgramField, model: Expr) Error!Expr,
     program_settles: *const fn (impl: *anyopaque, key: u32) bool,

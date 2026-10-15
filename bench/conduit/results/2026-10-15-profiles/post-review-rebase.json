@@ -1,0 +1,308 @@
+{
+  "master": "2f397d7b671e672f34a0b85b8b9abd02baec8b33",
+  "baseCommit": "8a63918867927817ffc27931a23cf0d9e0a8cad2",
+  "sourceDiffSha256": "5b2bd5fa16bef0acdb73f19dcca60d51f756f1eb8b9249c9ea0b4d2e404f6606",
+  "compilerSha256": "5fac4caba693d48836eacd9e02118e0793f95c11b0a4fdfb5d1761d15025ba60",
+  "compilerMode": "ReleaseSafe LLVM",
+  "bundles": [
+    {
+      "platform": "browser-direct",
+      "sha256": "be3e354a67f1d1c0291592bdd31c0269aa36dad1a4b3a901fc918fd10ba661ee",
+      "byteIdenticalToArchive": true
+    },
+    {
+      "platform": "browser-tea",
+      "sha256": "262ea8b11c0d83a24afe54e228ee0de088a6b417d7c4c34feee7cae86000743e",
+      "byteIdenticalToArchive": true
+    }
+  ],
+  "sweepPrograms": [
+    {
+      "page": "depth/1",
+      "sha256": "95c5050dacda646cc10e86584607c0e65bba7b8c37794c5fc04962a53a512689",
+      "byteIdenticalToProfiledCompiler": true
+    },
+    {
+      "page": "depth/128",
+      "sha256": "3e09fc9b939cd662f83b490ece89f75be29056f52a238ff86a212ba39c0d9ddf",
+      "byteIdenticalToProfiledCompiler": true
+    },
+    {
+      "page": "depth/16",
+      "sha256": "e418b28b00ebfac8f7b0445bf50151eef9a07059f8b2409062f0163a1eb2a0d4",
+      "byteIdenticalToProfiledCompiler": true
+    },
+    {
+      "page": "depth/2",
+      "sha256": "26873709806da919b1fb08663d517337f8612e5e81a79ac2a48423695cbad637",
+      "byteIdenticalToProfiledCompiler": true
+    },
+    {
+      "page": "depth/32",
+      "sha256": "afa9469d48157c83bcafc0dac41a9fe5c9f748d5da4445f190d3b85bd87d266a",
+      "byteIdenticalToProfiledCompiler": true
+    },
+    {
+      "page": "depth/4",
+      "sha256": "8a4c5aab306d336c90dd35bee9478e5cf4212a38d9d87965f35186f747bd1b7c",
+      "byteIdenticalToProfiledCompiler": true
+    },
+    {
+      "page": "depth/64",
+      "sha256": "135bac414a905f8e58851c94996102436036c586ac5df93da2d8a0aade017a69",
+      "byteIdenticalToProfiledCompiler": true
+    },
+    {
+      "page": "depth/8",
+      "sha256": "c32c3352f87029a2e14f3e5210fa503d5e6e2717e04552c4ac89a8ae62883210",
+      "byteIdenticalToProfiledCompiler": true
+    },
+    {
+      "page": "derived/100",
+      "sha256": "b4188e268408fb388a2f2a2d393fa33d4a562e60078e50ec9bf9aeaaaad79f2d",
+      "byteIdenticalToProfiledCompiler": true
+    },
+    {
+      "page": "derived/1000",
+      "sha256": "beb9cf31860d110ab4497bace0cb311b4ff91387fac71eedcb9b0e26ee7525eb",
+      "byteIdenticalToProfiledCompiler": true
+    },
+    {
+      "page": "derived/10000",
+      "sha256": "1d58327e76595e4198f5c77a62c7c8ae525189c3adc17f1aff0e569301430b23",
+      "byteIdenticalToProfiledCompiler": true
+    },
+    {
+      "page": "derived/100000",
+      "sha256": "60f4a069054adca221a08ac84439d59f61cf5d15fe3147bdb4c77aee8d584331",
+      "byteIdenticalToProfiledCompiler": true
+    },
+    {
+      "page": "derived/300",
+      "sha256": "791d4253b2c8b82c0e3ae35a787231ad0a23902f9790db618b5c0b4df461ca19",
+      "byteIdenticalToProfiledCompiler": true
+    },
+    {
+      "page": "derived/3000",
+      "sha256": "53f947b769b491243bee59372de71659a7f78da15769c4da4b7d0f85ad1c2241",
+      "byteIdenticalToProfiledCompiler": true
+    },
+    {
+      "page": "derived/30000",
+      "sha256": "58276a02ff706900c5d6b3481252efd3af68512ad79d48ee74eff658a2a862d3",
+      "byteIdenticalToProfiledCompiler": true
+    },
+    {
+      "page": "filtered/100",
+      "sha256": "ecc89f1ca455ad6e23987ac7910ecc1e511700d35dca0f9c6bd96e7c6493912c",
+      "byteIdenticalToProfiledCompiler": true
+    },
+    {
+      "page": "filtered/1000",
+      "sha256": "acabfad03fd451c16cc70504387054aab02c0914e3b76745697adc16626a242c",
+      "byteIdenticalToProfiledCompiler": true
+    },
+    {
+      "page": "helperRows/100",
+      "sha256": "2b5875246284b86ab17bfd769723ff33825579dde4f4434d9fb478fdadcbf7e5",
+      "byteIdenticalToProfiledCompiler": true
+    },
+    {
+      "page": "helperRows/1000",
+      "sha256": "1334275a775b2eced9c650631ec9a21083978003ea61a5ee27e727314b7712c5",
+      "byteIdenticalToProfiledCompiler": true
+    },
+    {
+      "page": "helperRows/10000",
+      "sha256": "3bd80fc6d4cfaebad89dca1593c5d635e642185829cf1a97f151fd7e097647b1",
+      "byteIdenticalToProfiledCompiler": true
+    },
+    {
+      "page": "helperRows/300",
+      "sha256": "fba79303020e6dea911ea2a71335962a44550bbda8fae99c449dc45202f33ecd",
+      "byteIdenticalToProfiledCompiler": true
+    },
+    {
+      "page": "helperRows/3000",
+      "sha256": "33e3464535a1263d6bd3e5b20f6fe5615b6707f3b9d76ae1d99a84a9b5295eac",
+      "byteIdenticalToProfiledCompiler": true
+    },
+    {
+      "page": "holes/10",
+      "sha256": "61e9eeab7c1d09d85cd13ad86e977708ca4a855929ea7d8dfcf2f8821116c43c",
+      "byteIdenticalToProfiledCompiler": true
+    },
+    {
+      "page": "holes/100",
+      "sha256": "41c280e63027cf6993ecdf2adea296a28f398e6b58d822887404fb52adfa6a46",
+      "byteIdenticalToProfiledCompiler": true
+    },
+    {
+      "page": "holes/1000",
+      "sha256": "b2e3d4ff926c4dbe792f2f3130380244c45a7ff5adaccb57e0f84ce3a8852ff7",
+      "byteIdenticalToProfiledCompiler": true
+    },
+    {
+      "page": "holes/10000",
+      "sha256": "87b05b5ec0aea172eb5d1e0c49ed73f88c2ec19bcd39034b56c5ec892f74d099",
+      "byteIdenticalToProfiledCompiler": true
+    },
+    {
+      "page": "holes/30",
+      "sha256": "0344f724de7454bb14f866496262f5d45b7297155c096cf99a8bced143156777",
+      "byteIdenticalToProfiledCompiler": true
+    },
+    {
+      "page": "holes/300",
+      "sha256": "7ef610ab3a17e13ddb339ee09e34ebe136e8ef76c44cc2c6e566131f57c0091f",
+      "byteIdenticalToProfiledCompiler": true
+    },
+    {
+      "page": "holes/3000",
+      "sha256": "47175b30ec19fde8064a1bc6b75f7ef7398e7f434dfe79d471d8d6a58d444ccb",
+      "byteIdenticalToProfiledCompiler": true
+    },
+    {
+      "page": "live/100",
+      "sha256": "aa8de096be4d0a72735d11229e8b0cb4fae65276d1748ef214575ae2067c93c0",
+      "byteIdenticalToProfiledCompiler": true
+    },
+    {
+      "page": "live/1000",
+      "sha256": "3b812148fe2055738413fa1c20b18b473ee4d09c95f16a4ed37e9ea1c2fa9f4b",
+      "byteIdenticalToProfiledCompiler": true
+    },
+    {
+      "page": "live/10000",
+      "sha256": "d6a0200ab55a362be8f155168852b74c3994584c8f8f63e7b67712bf959108bc",
+      "byteIdenticalToProfiledCompiler": true
+    },
+    {
+      "page": "live/300",
+      "sha256": "d25bf13f257c4b39d7226a0fa221a1e5a9d8e2a34e0dd7e0f7cbf03afe148be2",
+      "byteIdenticalToProfiledCompiler": true
+    },
+    {
+      "page": "live/3000",
+      "sha256": "0b3da34d7982087fafffee36446429c3c35db455b9cfe8be28e19e8404f8678c",
+      "byteIdenticalToProfiledCompiler": true
+    },
+    {
+      "page": "rows/10",
+      "sha256": "cb28b460385524683f5b72741123212b89a2786e11dd6ac5690044c2a6103448",
+      "byteIdenticalToProfiledCompiler": true
+    },
+    {
+      "page": "rows/100",
+      "sha256": "2e8ad2185e64c3bded762752979451ec3d336072899449227f377be43a8086ce",
+      "byteIdenticalToProfiledCompiler": true
+    },
+    {
+      "page": "rows/1000",
+      "sha256": "d1f97475283a1ac607eed412a433bb89844a460c3143826c8cf140534257d3ec",
+      "byteIdenticalToProfiledCompiler": true
+    },
+    {
+      "page": "rows/10000",
+      "sha256": "6ee5e1ad40d2a8a56e490d40839df71fa86fed87de10afe513a7259985699698",
+      "byteIdenticalToProfiledCompiler": true
+    },
+    {
+      "page": "rows/30",
+      "sha256": "e4e0aa1299b6c5e32237f61c3086695e8a1c91b729b4333c0ab551579e202270",
+      "byteIdenticalToProfiledCompiler": true
+    },
+    {
+      "page": "rows/300",
+      "sha256": "421c5e2de687c883f3af916dd1178ffd0e2d8fd60cb7e647594a1d773a21723b",
+      "byteIdenticalToProfiledCompiler": true
+    },
+    {
+      "page": "rows/3000",
+      "sha256": "2ae51167d4602456262d5866b5cfc6c276c822157cb24aac03b2c16e7e7d2670",
+      "byteIdenticalToProfiledCompiler": true
+    },
+    {
+      "page": "rows/30000",
+      "sha256": "a238b06331e2f2736bafaf610a6ea990a11f648e2a0fa5c9d44e7d55831c3f42",
+      "byteIdenticalToProfiledCompiler": true
+    },
+    {
+      "page": "tree/10",
+      "sha256": "02962092dd35f10d4cd93a5e4fb932d371577ccef696a577531403abe58786eb",
+      "byteIdenticalToProfiledCompiler": true
+    },
+    {
+      "page": "tree/12",
+      "sha256": "5bd0838e08c32b899d125ebdba8e1e5df39d1db63956b590566b58bad3f5d44b",
+      "byteIdenticalToProfiledCompiler": true
+    },
+    {
+      "page": "tree/4",
+      "sha256": "de93a9a030cbea2a59fdf116ec5bb17e763eb35e7eb27a8e5bc7daaba58b93a0",
+      "byteIdenticalToProfiledCompiler": true
+    },
+    {
+      "page": "tree/6",
+      "sha256": "691b1119c113a86dde5bf017cb69f858c3683e32756bb7f82f080b64673e1edc",
+      "byteIdenticalToProfiledCompiler": true
+    },
+    {
+      "page": "tree/8",
+      "sha256": "e42b387a6fa63ff37658bec0f33b0d8ddd91af605362e59e24166661c4987d7e",
+      "byteIdenticalToProfiledCompiler": true
+    },
+    {
+      "page": "width/1024",
+      "sha256": "3c84869c5541123757983ea6734f638f21bccc055224eeccca96f6625449d783",
+      "byteIdenticalToProfiledCompiler": true
+    },
+    {
+      "page": "width/128",
+      "sha256": "40e588c9be7b0c7f4dfac55014159d0d1a331fd4d810b8262e69b5dc359be619",
+      "byteIdenticalToProfiledCompiler": true
+    },
+    {
+      "page": "width/16",
+      "sha256": "1b5c3e6daa68932e50219743921a9f0d407883b4dc749b54473c220c2675444a",
+      "byteIdenticalToProfiledCompiler": true
+    },
+    {
+      "page": "width/17",
+      "sha256": "6185a6337d9160bf763642c54772a72b070b1710f74ed751210d3dbbf59fb520",
+      "byteIdenticalToProfiledCompiler": true
+    },
+    {
+      "page": "width/20",
+      "sha256": "09dbfbf06a61e3edb451c4f50028218665a97bd24a5af17edef948109136b8b7",
+      "byteIdenticalToProfiledCompiler": true
+    },
+    {
+      "page": "width/256",
+      "sha256": "847a2995ae3b84114a05ba6b7982c27194392dc369767d1253f782c6ec51fdd0",
+      "byteIdenticalToProfiledCompiler": true
+    },
+    {
+      "page": "width/32",
+      "sha256": "bbf16365fa399af90ad79375674737e115af8b66c8465d84f19ab62ee008e50c",
+      "byteIdenticalToProfiledCompiler": true
+    },
+    {
+      "page": "width/4",
+      "sha256": "f85616023c5f1a7940679158f5e02521ad818fc46ab1d76890cd0d9083afbc9c",
+      "byteIdenticalToProfiledCompiler": true
+    },
+    {
+      "page": "width/64",
+      "sha256": "e790b076fc96f578d198dc687a5dee3507620fb4f7c2e157cd9ba337f16c7f63",
+      "byteIdenticalToProfiledCompiler": true
+    },
+    {
+      "page": "width/8",
+      "sha256": "865386ff7028ac669c9672adf6792cd9d8f3c3bdda8cbfc8e6ca8fa76476d828",
+      "byteIdenticalToProfiledCompiler": true
+    }
+  ],
+  "s0Sha256": "fa90be654d9142490afbc59b06b8a49904a1619ce5dda5a3d40f6436530c2fb8",
+  "s0ByteIdenticalToProfiledCompiler": true
+}

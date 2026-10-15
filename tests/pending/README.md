@@ -146,7 +146,7 @@ promoted it), `050cd2d` with the fix reads GREEN through the same harness. The n
 
 ### Direct effects ownership summaries (CK-223, 2026-10-14)
 
-Fifteen `browser/direct/` fixtures keep the original browser-tea source and
+The direct ownership fixtures keep the original browser-tea source and
 correct transcript. HTTP wrappers, generated lists, reentrant command sends
 and model/view captures expose conservative ownership summaries. Their direct
 build diagnostic is pinned in `RED`; the browser-tea corpus originals remain
@@ -165,6 +165,18 @@ external sources; the scripts have not been rewritten to bypass lowering.
 HttpFailures retains one approximate diagnostic for work functions stored
 inside its traversal callback. The unseen-tagger check now exposes this
 existing slot limit after the render-only rejection is removed.
+
+External-source projects carry a comment-only `AAFinding.beni`: its first
+`-- CK-NN:` line identifies the finding and makes the corpus walker discover
+the project. `_expected.sources` supplies the real application sources; the
+metadata module does not modify those sources.
+
+*Amended 2026-10-14:* the document-helper lowering now accepts Conduit's
+unchanged application. Reader, Editor and Tour move together to the paired
+`tests/corpus/browser/direct/` corpus, with their external sources, scripts
+and existing budget grants. Both platforms use one golden captured with the
+paired driver's existing comment-sentinel normalization. CK-225 is resolved;
+the built-platform criterion-7 finding is separate and remains recorded.
 
 ### Ownership bridge soundness leads (2026-10-15)
 

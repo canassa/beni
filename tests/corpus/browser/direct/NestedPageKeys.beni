@@ -1,0 +1,87 @@
+-- Conduit's nested keys and same-variant page rebuilds, without its unrelated
+-- event-payload ownership limit (browser-direct.md §14, Conduit validation).
+-- A mapped child reads the current serial when sending Add; rebuilding the
+-- same page must refresh that event payload and every controlled value.
+import Cmd
+import Html exposing (Html)
+import Sub
+import Tea
+
+
+type alias ChildModel =
+    serial : Int
+    count : Int
+    text : String
+
+
+type Model
+    = Open ChildModel
+    | Closed Int
+
+
+type ChildMsg
+    = Add Int
+    | Typed String
+
+
+type Msg
+    = Child ChildMsg
+    | Rebuild
+    | Leave
+
+
+update : Msg, Model → Model × Cmd.Cmd Msg
+update msg model =
+    case ( msg, model ) of
+        ( Child (Add serial), Open child ) →
+            next = if serial == child.serial then child.count + 1 else -100
+            ( Open { child | count = next }, Cmd.none )
+
+        ( Child (Typed text), Open child ) →
+            ( Open { child | text = text }, Cmd.none )
+
+        ( Rebuild, Open child ) →
+            ( Open { child | serial = child.serial + 1, text = "rebuilt" }, Cmd.none )
+
+        ( Rebuild, Closed serial ) →
+            ( Open { serial = serial + 1, count = 0, text = "back" }, Cmd.none )
+
+        ( Leave, Open child ) →
+            ( Closed child.serial, Cmd.none )
+
+        ( _, _ ) →
+            ( model, Cmd.none )
+
+
+childView : ChildModel → Html ChildMsg
+childView child =
+    <section>
+        <p id="serial">{child.serial}</p>
+        <p id="count">{child.count}</p>
+        <input id="text" value={child.text} onInput={Typed} />
+        <button id="add" onClick={Add child.serial}>add</button>
+    </section>
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="rebuild" onClick={Rebuild}>rebuild</button>
+        <button id="leave" onClick={Leave}>leave</button>
+        {case model of
+            Open child →
+                Html.map (childView child) Child
+            Closed serial →
+                <p id="closed">{serial}</p>
+        }
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( Open { serial = 0, count = 0, text = "start" }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

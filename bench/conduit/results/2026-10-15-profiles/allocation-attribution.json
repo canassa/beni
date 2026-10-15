@@ -1,0 +1,2239 @@
+{
+  "method": "As-served release source. CPU self intervals after reconstructing and stably sorting sample timestamps, clipped to s6-start/end marks; no inclusive double counting. Known compilation is the main-thread trace union; native/program gaps are not interpolated. Ordered replacement of source declarators by name=0 stubs without reoptimising unrelated code; remaining compression interactions and stubs are charged to later parts/startup. Peeling is an attribution convention, not executable variants.",
+  "subjects": {
+    "browser-tea-release": {
+      "raw": 125961,
+      "brotli": 31389,
+      "parts": [
+        {
+          "part": "core",
+          "raw": 26825,
+          "peelBrotli": 8138
+        },
+        {
+          "part": "runtime",
+          "raw": 22150,
+          "peelBrotli": 7682
+        },
+        {
+          "part": "handlers",
+          "raw": 7994,
+          "peelBrotli": 1336
+        },
+        {
+          "part": "templates",
+          "raw": 19454,
+          "peelBrotli": 3282
+        },
+        {
+          "part": "application and startup",
+          "raw": 49538,
+          "peelBrotli": 10951
+        }
+      ]
+    },
+    "browser-direct-start-release": {
+      "raw": 361594,
+      "brotli": 38030,
+      "parts": [
+        {
+          "part": "core",
+          "raw": 27835,
+          "peelBrotli": 8237
+        },
+        {
+          "part": "runtime",
+          "raw": 25643,
+          "peelBrotli": 8895
+        },
+        {
+          "part": "handlers",
+          "raw": 182193,
+          "peelBrotli": 2282
+        },
+        {
+          "part": "templates",
+          "raw": 89134,
+          "peelBrotli": 9582
+        },
+        {
+          "part": "application and startup",
+          "raw": 36789,
+          "peelBrotli": 9034
+        }
+      ]
+    },
+    "browser-direct-release": {
+      "raw": 209384,
+      "brotli": 37768,
+      "parts": [
+        {
+          "part": "core",
+          "raw": 27835,
+          "peelBrotli": 8177
+        },
+        {
+          "part": "runtime",
+          "raw": 25643,
+          "peelBrotli": 8855
+        },
+        {
+          "part": "handlers",
+          "raw": 29963,
+          "peelBrotli": 2168
+        },
+        {
+          "part": "templates",
+          "raw": 89134,
+          "peelBrotli": 9501
+        },
+        {
+          "part": "application and startup",
+          "raw": 36809,
+          "peelBrotli": 9067
+        }
+      ]
+    }
+  },
+  "profiles": {
+    "editor keystroke/browser-direct-release": {
+      "pages": 30,
+      "functions": [
+        {
+          "name": "(program):-1",
+          "sampledUsPerPage": 234.23333333333332,
+          "compilationOverlapUsPerPage": 152.56666666666666
+        },
+        {
+          "name": "window.addEventListener.capture:74",
+          "sampledUsPerPage": 56.36666666666667,
+          "compilationOverlapUsPerPage": 0.23333333333333334
+        },
+        {
+          "name": "Direct.templatePatch / (anonymous):36315",
+          "sampledUsPerPage": 43.233333333333334,
+          "compilationOverlapUsPerPage": 9.666666666666666
+        },
+        {
+          "name": "Editor.update / Sw:141353",
+          "sampledUsPerPage": 38.7,
+          "compilationOverlapUsPerPage": 21.066666666666666
+        },
+        {
+          "name": "Direct.templateSelectNew / Jf:35775",
+          "sampledUsPerPage": 32.63333333333333,
+          "compilationOverlapUsPerPage": 4.333333333333333
+        },
+        {
+          "name": "Direct.send / Fe:30017",
+          "sampledUsPerPage": 30.733333333333334,
+          "compilationOverlapUsPerPage": 21.933333333333334
+        },
+        {
+          "name": "Main.main / eb:206027",
+          "sampledUsPerPage": 27.833333333333332,
+          "compilationOverlapUsPerPage": 23.466666666666665
+        },
+        {
+          "name": "Direct.edits / jf:32704",
+          "sampledUsPerPage": 25.733333333333334,
+          "compilationOverlapUsPerPage": 18.366666666666667
+        },
+        {
+          "name": "Direct.listen / (anonymous):31898",
+          "sampledUsPerPage": 21.9,
+          "compilationOverlapUsPerPage": 17.333333333333332
+        },
+        {
+          "name": "Direct.listen / (anonymous):31697",
+          "sampledUsPerPage": 21.233333333333334,
+          "compilationOverlapUsPerPage": 14.933333333333334
+        },
+        {
+          "name": "Direct.templateSelect / Kf:35975",
+          "sampledUsPerPage": 15.6,
+          "compilationOverlapUsPerPage": 0.6
+        },
+        {
+          "name": "Direct.templatePlace / Gf:34775",
+          "sampledUsPerPage": 15.133333333333333,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "(garbage collector):-1",
+          "sampledUsPerPage": 11.7,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Direct.templateCapture / Df:34341",
+          "sampledUsPerPage": 11.366666666666667,
+          "compilationOverlapUsPerPage": 0.6666666666666666
+        },
+        {
+          "name": "Direct.reconcileMarks / df:32191",
+          "sampledUsPerPage": 9.733333333333333,
+          "compilationOverlapUsPerPage": 4
+        },
+        {
+          "name": "end:18",
+          "sampledUsPerPage": 9.033333333333333,
+          "compilationOverlapUsPerPage": 2.7
+        },
+        {
+          "name": "Editor.updateForm / Qw:140834",
+          "sampledUsPerPage": 7.8,
+          "compilationOverlapUsPerPage": 0.8
+        },
+        {
+          "name": "Session.cred / Qf:37095",
+          "sampledUsPerPage": 7.433333333333334,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Rt.patch / Ga:5836",
+          "sampledUsPerPage": 6.966666666666667,
+          "compilationOverlapUsPerPage": 2.4
+        },
+        {
+          "name": "Basics.append / c:65",
+          "sampledUsPerPage": 5.266666666666667,
+          "compilationOverlapUsPerPage": 1.2333333333333334
+        },
+        {
+          "name": "Direct.affected / ff:32336",
+          "sampledUsPerPage": 4.533333333333333,
+          "compilationOverlapUsPerPage": 1.5333333333333334
+        },
+        {
+          "name": "Main.update / mx:144287",
+          "sampledUsPerPage": 3.8333333333333335,
+          "compilationOverlapUsPerPage": 3.6333333333333333
+        },
+        {
+          "name": "Editor.view / Tw:142291",
+          "sampledUsPerPage": 3.7666666666666666,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Direct.keyMap / Oe:30910",
+          "sampledUsPerPage": 3.3666666666666667,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Hosted.title / zc:17754",
+          "sampledUsPerPage": 3.1666666666666665,
+          "compilationOverlapUsPerPage": 1.7333333333333334
+        },
+        {
+          "name": "Direct.templateInputs / Mf:36968",
+          "sampledUsPerPage": 3,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Main.main / (anonymous):187038",
+          "sampledUsPerPage": 2.7,
+          "compilationOverlapUsPerPage": 2.1666666666666665
+        },
+        {
+          "name": "Editor.dp749_0 / Dw:139250",
+          "sampledUsPerPage": 2.466666666666667,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Editor.viewForm / Ew:142232",
+          "sampledUsPerPage": 2.4,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Editor.update / (anonymous):141610",
+          "sampledUsPerPage": 2.2666666666666666,
+          "compilationOverlapUsPerPage": 0
+        }
+      ],
+      "categories": {
+        "V8 compilation": 313.3333333333333,
+        "harness": 62.9,
+        "host / unattributed": 83.43333333333334,
+        "runtime patching / control": 34.5,
+        "runtime dispatch": 19.666666666666668,
+        "generated handler / template": 29.333333333333332,
+        "generated dispatcher": 4.366666666666666,
+        "GC": 11.7,
+        "template runtime": 110.33333333333333,
+        "core": 7.866666666666666,
+        "handler / application": 21.366666666666667,
+        "generated handler": 1.4,
+        "effects / commands": 2.1
+      },
+      "gcTraceUs": null,
+      "compileUs": 315.6666666666667,
+      "heapBytes": [
+        {
+          "name": "native / unknown",
+          "bytesPerPage": 17686.133333333335
+        },
+        {
+          "name": "Direct.templateSelectNew",
+          "bytesPerPage": 1497.7333333333333
+        },
+        {
+          "name": "Direct.templatePatch",
+          "bytesPerPage": 909.6
+        },
+        {
+          "name": "Editor.update",
+          "bytesPerPage": 873.7333333333333
+        },
+        {
+          "name": "Direct.edits",
+          "bytesPerPage": 711.8666666666667
+        },
+        {
+          "name": "Direct.send",
+          "bytesPerPage": 707.3333333333334
+        },
+        {
+          "name": "Main.main",
+          "bytesPerPage": 628.8
+        },
+        {
+          "name": "Direct.listen",
+          "bytesPerPage": 615.4666666666667
+        },
+        {
+          "name": "Direct.reconcileMarks",
+          "bytesPerPage": 544.9333333333333
+        },
+        {
+          "name": "Direct.templateCapture",
+          "bytesPerPage": 412.8
+        },
+        {
+          "name": "Direct.templateSelect",
+          "bytesPerPage": 326
+        },
+        {
+          "name": "Direct.afterPoint",
+          "bytesPerPage": 289.73333333333335
+        },
+        {
+          "name": "Direct.affected",
+          "bytesPerPage": 273.2
+        },
+        {
+          "name": "Direct.keyMap",
+          "bytesPerPage": 236.8
+        },
+        {
+          "name": "Editor.updateForm",
+          "bytesPerPage": 211.06666666666666
+        }
+      ],
+      "heapTotal": 27636.8,
+      "heapPages": 30,
+      "negativeDeltas": 83,
+      "medianDeliveredUs": 39
+    },
+    "editor keystroke/browser-direct-start-release": {
+      "pages": 30,
+      "functions": [
+        {
+          "name": "(program):-1",
+          "sampledUsPerPage": 240.93333333333334,
+          "compilationOverlapUsPerPage": 148.7
+        },
+        {
+          "name": "Main.main / eb:356571",
+          "sampledUsPerPage": 128.63333333333333,
+          "compilationOverlapUsPerPage": 121.6
+        },
+        {
+          "name": "window.addEventListener.capture:74",
+          "sampledUsPerPage": 51.733333333333334,
+          "compilationOverlapUsPerPage": 0.2
+        },
+        {
+          "name": "Direct.templatePatch / (anonymous):36315",
+          "sampledUsPerPage": 38.166666666666664,
+          "compilationOverlapUsPerPage": 10.1
+        },
+        {
+          "name": "Direct.send / Fe:30017",
+          "sampledUsPerPage": 34.36666666666667,
+          "compilationOverlapUsPerPage": 23.566666666666666
+        },
+        {
+          "name": "Direct.templateSelectNew / Jf:35775",
+          "sampledUsPerPage": 30.533333333333335,
+          "compilationOverlapUsPerPage": 5
+        },
+        {
+          "name": "Editor.update / Sw:141353",
+          "sampledUsPerPage": 29,
+          "compilationOverlapUsPerPage": 20.166666666666668
+        },
+        {
+          "name": "Direct.edits / jf:32704",
+          "sampledUsPerPage": 28.533333333333335,
+          "compilationOverlapUsPerPage": 20.266666666666666
+        },
+        {
+          "name": "(garbage collector):-1",
+          "sampledUsPerPage": 26.733333333333334,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Direct.listen / (anonymous):31898",
+          "sampledUsPerPage": 22.1,
+          "compilationOverlapUsPerPage": 17.666666666666668
+        },
+        {
+          "name": "Direct.listen / (anonymous):31697",
+          "sampledUsPerPage": 19.3,
+          "compilationOverlapUsPerPage": 12.133333333333333
+        },
+        {
+          "name": "Direct.templatePlace / Gf:34775",
+          "sampledUsPerPage": 19.133333333333333,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Direct.templateCapture / Df:34341",
+          "sampledUsPerPage": 14.166666666666666,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Main.main / Ta:333646",
+          "sampledUsPerPage": 13.866666666666667,
+          "compilationOverlapUsPerPage": 7.5
+        },
+        {
+          "name": "Direct.templateSelect / Kf:35975",
+          "sampledUsPerPage": 12.433333333333334,
+          "compilationOverlapUsPerPage": 0.7666666666666667
+        },
+        {
+          "name": "Editor.updateForm / Qw:140834",
+          "sampledUsPerPage": 11.966666666666667,
+          "compilationOverlapUsPerPage": 4.3
+        },
+        {
+          "name": "Direct.reconcileMarks / df:32191",
+          "sampledUsPerPage": 11.7,
+          "compilationOverlapUsPerPage": 4.733333333333333
+        },
+        {
+          "name": "Direct.keyMap / Oe:30910",
+          "sampledUsPerPage": 10.9,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Main.updateWith / ix:143126",
+          "sampledUsPerPage": 9.533333333333333,
+          "compilationOverlapUsPerPage": 0.7333333333333333
+        },
+        {
+          "name": "end:18",
+          "sampledUsPerPage": 7.733333333333333,
+          "compilationOverlapUsPerPage": 1.3
+        },
+        {
+          "name": "Editor.dp804_4 / b:136460",
+          "sampledUsPerPage": 7.5,
+          "compilationOverlapUsPerPage": 6.7
+        },
+        {
+          "name": "Direct.affected / ff:32336",
+          "sampledUsPerPage": 6.166666666666667,
+          "compilationOverlapUsPerPage": 2.1666666666666665
+        },
+        {
+          "name": "Editor.view / Tw:142291",
+          "sampledUsPerPage": 5.166666666666667,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Direct.childHtml / Qe:31094",
+          "sampledUsPerPage": 5.1,
+          "compilationOverlapUsPerPage": 0.5333333333333333
+        },
+        {
+          "name": "Direct.templateProgram / Bf:34221",
+          "sampledUsPerPage": 4.966666666666667,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Rt.patch / Ga:5836",
+          "sampledUsPerPage": 4.666666666666667,
+          "compilationOverlapUsPerPage": 0.6333333333333333
+        },
+        {
+          "name": "Cmd.map / fd:22216",
+          "sampledUsPerPage": 3.966666666666667,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Editor.update / (anonymous):141610",
+          "sampledUsPerPage": 3.7,
+          "compilationOverlapUsPerPage": 0.8333333333333334
+        },
+        {
+          "name": "Editor.viewForm / Ew:142232",
+          "sampledUsPerPage": 3.7,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Hosted.title / zc:17754",
+          "sampledUsPerPage": 3.6333333333333333,
+          "compilationOverlapUsPerPage": 2.7
+        }
+      ],
+      "categories": {
+        "V8 compilation": 421.2,
+        "harness": 58.93333333333333,
+        "host / unattributed": 95.1,
+        "runtime patching / control": 46.86666666666667,
+        "runtime dispatch": 22.4,
+        "generated dispatcher": 7.033333333333333,
+        "handler / application": 11.7,
+        "generated handler / template": 35.86666666666667,
+        "template runtime": 108.96666666666667,
+        "GC": 26.733333333333334,
+        "generated handler": 6.466666666666667,
+        "core": 3.2,
+        "effects / commands": 3.966666666666667
+      },
+      "gcTraceUs": null,
+      "compileUs": 437.26666666666665,
+      "heapBytes": [
+        {
+          "name": "native / unknown",
+          "bytesPerPage": 17577.333333333332
+        },
+        {
+          "name": "Main.main",
+          "bytesPerPage": 6822.8
+        },
+        {
+          "name": "Direct.templateSelectNew",
+          "bytesPerPage": 1524.2666666666667
+        },
+        {
+          "name": "Direct.templatePatch",
+          "bytesPerPage": 951.4666666666667
+        },
+        {
+          "name": "Editor.update",
+          "bytesPerPage": 908.9333333333333
+        },
+        {
+          "name": "Direct.send",
+          "bytesPerPage": 787.7333333333333
+        },
+        {
+          "name": "Direct.listen",
+          "bytesPerPage": 673.0666666666667
+        },
+        {
+          "name": "Direct.edits",
+          "bytesPerPage": 669.8666666666667
+        },
+        {
+          "name": "Direct.reconcileMarks",
+          "bytesPerPage": 539.2
+        },
+        {
+          "name": "Direct.templateCapture",
+          "bytesPerPage": 460.8
+        },
+        {
+          "name": "Direct.templateSelect",
+          "bytesPerPage": 340
+        },
+        {
+          "name": "Direct.afterPoint",
+          "bytesPerPage": 271.06666666666666
+        },
+        {
+          "name": "Editor.updateForm",
+          "bytesPerPage": 262.53333333333336
+        },
+        {
+          "name": "Direct.affected",
+          "bytesPerPage": 261.6
+        },
+        {
+          "name": "Direct.keyMap",
+          "bytesPerPage": 251.46666666666667
+        }
+      ],
+      "heapTotal": 34020.26666666667,
+      "heapPages": 30,
+      "negativeDeltas": 101,
+      "medianDeliveredUs": 39
+    },
+    "editor keystroke/browser-tea-release": {
+      "pages": 30,
+      "functions": [
+        {
+          "name": "(program):-1",
+          "sampledUsPerPage": 209.4,
+          "compilationOverlapUsPerPage": 131.2
+        },
+        {
+          "name": "window.addEventListener.capture:74",
+          "sampledUsPerPage": 57.233333333333334,
+          "compilationOverlapUsPerPage": 0.26666666666666666
+        },
+        {
+          "name": "Rt.delegate / (anonymous):14192",
+          "sampledUsPerPage": 57.2,
+          "compilationOverlapUsPerPage": 10.9
+        },
+        {
+          "name": "Editor.update / bp:117250",
+          "sampledUsPerPage": 44.7,
+          "compilationOverlapUsPerPage": 26.133333333333333
+        },
+        {
+          "name": "Rt.turn / Za:6846",
+          "sampledUsPerPage": 31.2,
+          "compilationOverlapUsPerPage": 19.766666666666666
+        },
+        {
+          "name": "Rt.edits / yb:13103",
+          "sampledUsPerPage": 26.6,
+          "compilationOverlapUsPerPage": 22.066666666666666
+        },
+        {
+          "name": "Rt.mountAbove / ub:12790",
+          "sampledUsPerPage": 24,
+          "compilationOverlapUsPerPage": 10.033333333333333
+        },
+        {
+          "name": "Rt.affected / tb:12574",
+          "sampledUsPerPage": 19.2,
+          "compilationOverlapUsPerPage": 7.5
+        },
+        {
+          "name": "Rt.patch / Ia:5870",
+          "sampledUsPerPage": 18.466666666666665,
+          "compilationOverlapUsPerPage": 6.333333333333333
+        },
+        {
+          "name": "(garbage collector):-1",
+          "sampledUsPerPage": 15.333333333333334,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Dict.blacken / Kf:34216",
+          "sampledUsPerPage": 15.1,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "List.append / oc:16952",
+          "sampledUsPerPage": 14.333333333333334,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Rt.putBackMarked / sb:12438",
+          "sampledUsPerPage": 13.433333333333334,
+          "compilationOverlapUsPerPage": 5.366666666666666
+        },
+        {
+          "name": "Dict.insertHelp / Mf:34830",
+          "sampledUsPerPage": 12.7,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Rt.markEdit / vb:12862",
+          "sampledUsPerPage": 9.333333333333334,
+          "compilationOverlapUsPerPage": 1.6666666666666667
+        },
+        {
+          "name": "Hosted.compareKeys / Yc:19766",
+          "sampledUsPerPage": 8.766666666666667,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "end:18",
+          "sampledUsPerPage": 7.8,
+          "compilationOverlapUsPerPage": 2.8666666666666667
+        },
+        {
+          "name": "Dict.foldlTree / Yf:37195",
+          "sampledUsPerPage": 7.1,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Editor.updateForm / _o:116731",
+          "sampledUsPerPage": 7,
+          "compilationOverlapUsPerPage": 0.36666666666666664
+        },
+        {
+          "name": "Sub.on / Gh:48885",
+          "sampledUsPerPage": 6.166666666666667,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Page.p29 / hk:69363",
+          "sampledUsPerPage": 5.566666666666666,
+          "compilationOverlapUsPerPage": 1.8666666666666667
+        },
+        {
+          "name": "Page.p118 / bk:68288",
+          "sampledUsPerPage": 5.466666666666667,
+          "compilationOverlapUsPerPage": 1.7
+        },
+        {
+          "name": "List.foldrFrom / Dc:18370",
+          "sampledUsPerPage": 5.1,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Tea.diff / (anonymous):121940",
+          "sampledUsPerPage": 4.966666666666667,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "List.copy / dc:15944",
+          "sampledUsPerPage": 4.7,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Hosted.title / od:20722",
+          "sampledUsPerPage": 4.133333333333334,
+          "compilationOverlapUsPerPage": 0.4666666666666667
+        },
+        {
+          "name": "Main.update / Kp:124977",
+          "sampledUsPerPage": 3.933333333333333,
+          "compilationOverlapUsPerPage": 3.1666666666666665
+        },
+        {
+          "name": "Sub.both / Eh:48775",
+          "sampledUsPerPage": 3.9,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Dict.balance / Lf:34319",
+          "sampledUsPerPage": 3.8333333333333335,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Rt.putBack / rb:12339",
+          "sampledUsPerPage": 3.8,
+          "compilationOverlapUsPerPage": 0.16666666666666666
+        }
+      ],
+      "categories": {
+        "V8 compilation": 266.6333333333333,
+        "harness": 62.46666666666667,
+        "host / unattributed": 80.53333333333333,
+        "GC": 15.333333333333334,
+        "runtime patching / control": 101.46666666666667,
+        "scheduler": 12.833333333333334,
+        "runtime dispatch": 53.06666666666667,
+        "handler / application": 21.6,
+        "core": 72.8,
+        "generated handler / template": 27.633333333333333,
+        "effects / commands": 6.6
+      },
+      "gcTraceUs": null,
+      "compileUs": 272.23333333333335,
+      "heapBytes": [
+        {
+          "name": "native / unknown",
+          "bytesPerPage": 16735.6
+        },
+        {
+          "name": "Rt.putBackMarked",
+          "bytesPerPage": 2614.133333333333
+        },
+        {
+          "name": "Rt.delegate",
+          "bytesPerPage": 2111.866666666667
+        },
+        {
+          "name": "Editor.update",
+          "bytesPerPage": 897.6
+        },
+        {
+          "name": "Rt.mountAbove",
+          "bytesPerPage": 653.3333333333334
+        },
+        {
+          "name": "Rt.edits",
+          "bytesPerPage": 650
+        },
+        {
+          "name": "Rt.turn",
+          "bytesPerPage": 528.8
+        },
+        {
+          "name": "Rt.markEdit",
+          "bytesPerPage": 433.2
+        },
+        {
+          "name": "Tea.diff",
+          "bytesPerPage": 429.8666666666667
+        },
+        {
+          "name": "Rt.patch",
+          "bytesPerPage": 383.73333333333335
+        },
+        {
+          "name": "Rt.affected",
+          "bytesPerPage": 348.93333333333334
+        },
+        {
+          "name": "Editor.updateForm",
+          "bytesPerPage": 210
+        },
+        {
+          "name": "Sub.on",
+          "bytesPerPage": 206.4
+        },
+        {
+          "name": "Dict.insertHelp",
+          "bytesPerPage": 184.8
+        },
+        {
+          "name": "Dict.blacken",
+          "bytesPerPage": 148.26666666666668
+        }
+      ],
+      "heapTotal": 28937.866666666665,
+      "heapPages": 30,
+      "negativeDeltas": 96,
+      "medianDeliveredUs": 39
+    },
+    "favorite/browser-direct-release": {
+      "pages": 30,
+      "functions": [
+        {
+          "name": "(program):-1",
+          "sampledUsPerPage": 163.26666666666668,
+          "compilationOverlapUsPerPage": 57.56666666666667
+        },
+        {
+          "name": "globalThis.fetch:21",
+          "sampledUsPerPage": 99.83333333333333,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "window.addEventListener.capture:74",
+          "sampledUsPerPage": 50.166666666666664,
+          "compilationOverlapUsPerPage": 0.26666666666666666
+        },
+        {
+          "name": "Main.main / eb:206027",
+          "sampledUsPerPage": 34.333333333333336,
+          "compilationOverlapUsPerPage": 11.466666666666667
+        },
+        {
+          "name": "Direct.listen / (anonymous):31697",
+          "sampledUsPerPage": 33.733333333333334,
+          "compilationOverlapUsPerPage": 16.066666666666666
+        },
+        {
+          "name": "ArticlePage.update / Ov.b.gd.$:133237",
+          "sampledUsPerPage": 22.4,
+          "compilationOverlapUsPerPage": 5.1
+        },
+        {
+          "name": "Request:-1",
+          "sampledUsPerPage": 21.333333333333332,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Direct.listen / (anonymous):31898",
+          "sampledUsPerPage": 19.033333333333335,
+          "compilationOverlapUsPerPage": 16.033333333333335
+        },
+        {
+          "name": "Http.exchange$s / ai:51347",
+          "sampledUsPerPage": 16.433333333333334,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "(garbage collector):-1",
+          "sampledUsPerPage": 15.166666666666666,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Cmd.task$s / a:22755",
+          "sampledUsPerPage": 10.733333333333333,
+          "compilationOverlapUsPerPage": 7.3
+        },
+        {
+          "name": "Main.main / ta:198609",
+          "sampledUsPerPage": 9.466666666666667,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Task.fork / ka:3784",
+          "sampledUsPerPage": 9.366666666666667,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Http.isToken / di:51933",
+          "sampledUsPerPage": 7.733333333333333,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "List.member / bc:16612",
+          "sampledUsPerPage": 7.633333333333334,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "String.join / Od:26310",
+          "sampledUsPerPage": 6.7,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "parse:-1",
+          "sampledUsPerPage": 6.466666666666667,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Direct.templateSelectNew / Jf:35775",
+          "sampledUsPerPage": 6,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Cmd.map / (anonymous):22276",
+          "sampledUsPerPage": 5.533333333333333,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Http.isHeaderValue / fi:52025",
+          "sampledUsPerPage": 5.4,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "(anonymous):23",
+          "sampledUsPerPage": 5.366666666666666,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Direct.keyMap / Oe:30910",
+          "sampledUsPerPage": 5.033333333333333,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Browser.Navigation.request / $d:29069",
+          "sampledUsPerPage": 4.833333333333333,
+          "compilationOverlapUsPerPage": 0.26666666666666666
+        },
+        {
+          "name": "Tea.perform / (anonymous):23625",
+          "sampledUsPerPage": 4.666666666666667,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Http.exchange$s / (anonymous):51454",
+          "sampledUsPerPage": 4.566666666666666,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "List.any / ac:16569",
+          "sampledUsPerPage": 4.1,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Url.percentEncode / Xd:27317",
+          "sampledUsPerPage": 4.1,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Api.headers / Ci:56804",
+          "sampledUsPerPage": 4.066666666666666,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Api.send$s / Di:56850",
+          "sampledUsPerPage": 4,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Article.favorite / ol:75906",
+          "sampledUsPerPage": 4,
+          "compilationOverlapUsPerPage": 0
+        }
+      ],
+      "categories": {
+        "V8 compilation": 122.73333333333333,
+        "harness": 150.13333333333333,
+        "host / unattributed": 148.13333333333333,
+        "runtime dispatch": 20.8,
+        "generated dispatcher": 22.866666666666667,
+        "generated handler": 9.466666666666667,
+        "effects / commands": 83.63333333333334,
+        "GC": 15.166666666666666,
+        "core": 50.43333333333333,
+        "template runtime": 14.533333333333333,
+        "runtime patching / control": 30.066666666666666,
+        "handler / application": 22.066666666666666,
+        "generated handler / template": 16.2
+      },
+      "gcTraceUs": null,
+      "compileUs": 124.73333333333333,
+      "heapBytes": [
+        {
+          "name": "native / unknown",
+          "bytesPerPage": 15393.6
+        },
+        {
+          "name": "Http.answer$s",
+          "bytesPerPage": 2412.4
+        },
+        {
+          "name": "Browser.Navigation.request",
+          "bytesPerPage": 690.6666666666666
+        },
+        {
+          "name": "Main.main",
+          "bytesPerPage": 620.8
+        },
+        {
+          "name": "ArticlePage.update",
+          "bytesPerPage": 603.6
+        },
+        {
+          "name": "Direct.listen",
+          "bytesPerPage": 409.06666666666666
+        },
+        {
+          "name": "Cmd.task$s",
+          "bytesPerPage": 360.53333333333336
+        },
+        {
+          "name": "Direct.templateSelectNew",
+          "bytesPerPage": 355.8666666666667
+        },
+        {
+          "name": "Direct.afterPoint",
+          "bytesPerPage": 299.8666666666667
+        },
+        {
+          "name": "Task.fork",
+          "bytesPerPage": 286.8
+        },
+        {
+          "name": "Tea.spawn",
+          "bytesPerPage": 233.46666666666667
+        },
+        {
+          "name": "Http.exchange$s",
+          "bytesPerPage": 188.66666666666666
+        },
+        {
+          "name": "Http.wait",
+          "bytesPerPage": 178.26666666666668
+        },
+        {
+          "name": "String.join",
+          "bytesPerPage": 169.73333333333332
+        },
+        {
+          "name": "Direct.templateCapture",
+          "bytesPerPage": 158.4
+        }
+      ],
+      "heapTotal": 25275.866666666665,
+      "heapPages": 30,
+      "negativeDeltas": 115,
+      "medianDeliveredUs": 39
+    },
+    "favorite/browser-direct-start-release": {
+      "pages": 30,
+      "functions": [
+        {
+          "name": "(program):-1",
+          "sampledUsPerPage": 174.9,
+          "compilationOverlapUsPerPage": 59.9
+        },
+        {
+          "name": "Main.main / eb:356571",
+          "sampledUsPerPage": 148.26666666666668,
+          "compilationOverlapUsPerPage": 129.53333333333333
+        },
+        {
+          "name": "globalThis.fetch:21",
+          "sampledUsPerPage": 102.1,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "window.addEventListener.capture:74",
+          "sampledUsPerPage": 48.7,
+          "compilationOverlapUsPerPage": 0.23333333333333334
+        },
+        {
+          "name": "Direct.listen / (anonymous):31697",
+          "sampledUsPerPage": 34.733333333333334,
+          "compilationOverlapUsPerPage": 13.533333333333333
+        },
+        {
+          "name": "Request:-1",
+          "sampledUsPerPage": 27.866666666666667,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "ArticlePage.update / Ov.b.gd.$:133237",
+          "sampledUsPerPage": 25.666666666666668,
+          "compilationOverlapUsPerPage": 6.766666666666667
+        },
+        {
+          "name": "(garbage collector):-1",
+          "sampledUsPerPage": 24.6,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Direct.listen / (anonymous):31898",
+          "sampledUsPerPage": 21.633333333333333,
+          "compilationOverlapUsPerPage": 17.466666666666665
+        },
+        {
+          "name": "Cmd.task$s / a:22755",
+          "sampledUsPerPage": 17.3,
+          "compilationOverlapUsPerPage": 12.8
+        },
+        {
+          "name": "Main.updateWith / ix:143126",
+          "sampledUsPerPage": 13.3,
+          "compilationOverlapUsPerPage": 1.5333333333333334
+        },
+        {
+          "name": "parse:-1",
+          "sampledUsPerPage": 12.566666666666666,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Http.exchange$s / ai:51347",
+          "sampledUsPerPage": 9.966666666666667,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Cmd.map / (anonymous):22276",
+          "sampledUsPerPage": 9.3,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Main.main / ta:289571",
+          "sampledUsPerPage": 7.733333333333333,
+          "compilationOverlapUsPerPage": 1.1
+        },
+        {
+          "name": "Http.isToken / di:51933",
+          "sampledUsPerPage": 7.666666666666667,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Tea.spawn / ld:22850",
+          "sampledUsPerPage": 7.466666666666667,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Http.isHeaderValue / fi:52025",
+          "sampledUsPerPage": 7.3,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Api.headers / Ci:56804",
+          "sampledUsPerPage": 6.433333333333334,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Direct.templateSelectNew / Jf:35775",
+          "sampledUsPerPage": 5.6,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Task.fork / ka:3784",
+          "sampledUsPerPage": 5.566666666666666,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "ArticlePage.update / Ov:132969",
+          "sampledUsPerPage": 5.166666666666667,
+          "compilationOverlapUsPerPage": 1.2333333333333334
+        },
+        {
+          "name": "Http.exchange$s / (anonymous):51454",
+          "sampledUsPerPage": 5.166666666666667,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Cmd.task$s / gd:22720",
+          "sampledUsPerPage": 5.166666666666667,
+          "compilationOverlapUsPerPage": 1.1
+        },
+        {
+          "name": "Direct.keyMap / Oe:30910",
+          "sampledUsPerPage": 5.133333333333334,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "List.member / bc:16612",
+          "sampledUsPerPage": 5.066666666666666,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Tea.perform / (anonymous):23625",
+          "sampledUsPerPage": 4.7,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "List.filterMapHelp / Xb:16209",
+          "sampledUsPerPage": 4.266666666666667,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "List.append / zb:14109",
+          "sampledUsPerPage": 4.1,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Url.percentEncode / Xd:27317",
+          "sampledUsPerPage": 3.9,
+          "compilationOverlapUsPerPage": 0
+        }
+      ],
+      "categories": {
+        "V8 compilation": 252.23333333333332,
+        "harness": 151.2,
+        "host / unattributed": 173.53333333333333,
+        "runtime dispatch": 25.366666666666667,
+        "generated dispatcher": 18.733333333333334,
+        "GC": 24.6,
+        "core": 41.13333333333333,
+        "effects / commands": 89.76666666666667,
+        "handler / application": 22.833333333333332,
+        "runtime patching / control": 33.833333333333336,
+        "generated handler / template": 23.033333333333335,
+        "template runtime": 21.2,
+        "generated handler": 7.033333333333333,
+        "scheduler": 0.9333333333333333
+      },
+      "gcTraceUs": null,
+      "compileUs": 255.56666666666666,
+      "heapBytes": [
+        {
+          "name": "native / unknown",
+          "bytesPerPage": 15680.133333333333
+        },
+        {
+          "name": "Main.main",
+          "bytesPerPage": 6337.466666666666
+        },
+        {
+          "name": "Http.answer$s",
+          "bytesPerPage": 2543.0666666666666
+        },
+        {
+          "name": "Browser.Navigation.request",
+          "bytesPerPage": 689.7333333333333
+        },
+        {
+          "name": "ArticlePage.update",
+          "bytesPerPage": 610.9333333333333
+        },
+        {
+          "name": "Direct.listen",
+          "bytesPerPage": 540.6666666666666
+        },
+        {
+          "name": "Cmd.task$s",
+          "bytesPerPage": 450.53333333333336
+        },
+        {
+          "name": "Task.fork",
+          "bytesPerPage": 288.4
+        },
+        {
+          "name": "Direct.templateSelectNew",
+          "bytesPerPage": 283.8666666666667
+        },
+        {
+          "name": "Direct.afterPoint",
+          "bytesPerPage": 271.06666666666666
+        },
+        {
+          "name": "Cmd.map",
+          "bytesPerPage": 230.93333333333334
+        },
+        {
+          "name": "Main.updateWith",
+          "bytesPerPage": 226.53333333333333
+        },
+        {
+          "name": "Tea.spawn",
+          "bytesPerPage": 217.46666666666667
+        },
+        {
+          "name": "Http.wait",
+          "bytesPerPage": 216.53333333333333
+        },
+        {
+          "name": "Http.exchange$s",
+          "bytesPerPage": 206.26666666666668
+        }
+      ],
+      "heapTotal": 31707.6,
+      "heapPages": 30,
+      "negativeDeltas": 114,
+      "medianDeliveredUs": 39
+    },
+    "favorite/browser-tea-release": {
+      "pages": 30,
+      "functions": [
+        {
+          "name": "(program):-1",
+          "sampledUsPerPage": 166.86666666666667,
+          "compilationOverlapUsPerPage": 70.23333333333333
+        },
+        {
+          "name": "globalThis.fetch:21",
+          "sampledUsPerPage": 104.5,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "window.addEventListener.capture:74",
+          "sampledUsPerPage": 52.03333333333333,
+          "compilationOverlapUsPerPage": 0.36666666666666664
+        },
+        {
+          "name": "Rt.delegate / (anonymous):14192",
+          "sampledUsPerPage": 45.666666666666664,
+          "compilationOverlapUsPerPage": 9.2
+        },
+        {
+          "name": "ArticlePage.update / Do.b.wd.$:110181",
+          "sampledUsPerPage": 25.6,
+          "compilationOverlapUsPerPage": 5.566666666666666
+        },
+        {
+          "name": "Page.p118 / bk:68288",
+          "sampledUsPerPage": 23.1,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Request:-1",
+          "sampledUsPerPage": 21.666666666666668,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "(garbage collector):-1",
+          "sampledUsPerPage": 18.2,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Cmd.map / (anonymous):20960",
+          "sampledUsPerPage": 15.933333333333334,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Task.fork / ma:3818",
+          "sampledUsPerPage": 13.6,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Cmd.task$s / a:21330",
+          "sampledUsPerPage": 10.833333333333334,
+          "compilationOverlapUsPerPage": 7.333333333333333
+        },
+        {
+          "name": "Http.isToken / Cg:40882",
+          "sampledUsPerPage": 10.1,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Http.exchange$s / zg:40301",
+          "sampledUsPerPage": 8.466666666666667,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "String.join / Kd:21983",
+          "sampledUsPerPage": 7.733333333333333,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Http.isHeaderValue / Eg:40974",
+          "sampledUsPerPage": 7.5,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Tea.spawn / mp:119509",
+          "sampledUsPerPage": 7.366666666666666,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "parse:-1",
+          "sampledUsPerPage": 6.633333333333334,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Main.update / Kp:124977",
+          "sampledUsPerPage": 6.3,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Http.headersOf / mg:38103",
+          "sampledUsPerPage": 6.233333333333333,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "List.append / oc:16952",
+          "sampledUsPerPage": 6.166666666666667,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Dict.insertHelp / Mf:34830",
+          "sampledUsPerPage": 5.866666666666666,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Dict.blacken / Kf:34216",
+          "sampledUsPerPage": 5.2,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Http.exchange$s / (anonymous):40408",
+          "sampledUsPerPage": 5.133333333333334,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Page.frame / yk:71199",
+          "sampledUsPerPage": 4.133333333333334,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Http.transfer$s / Bg:40816",
+          "sampledUsPerPage": 4.1,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "List.filterMapHelp / Mc:19052",
+          "sampledUsPerPage": 4,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Task.suspend / I:1171",
+          "sampledUsPerPage": 4,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "ArticlePage.view / Eo:112432",
+          "sampledUsPerPage": 3.966666666666667,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Rt.mountAbove / ub:12790",
+          "sampledUsPerPage": 3.933333333333333,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Page.p98 / Wj:66681",
+          "sampledUsPerPage": 3.9,
+          "compilationOverlapUsPerPage": 0
+        }
+      ],
+      "categories": {
+        "V8 compilation": 95.53333333333333,
+        "harness": 156.86666666666667,
+        "host / unattributed": 139.73333333333332,
+        "runtime dispatch": 42.63333333333333,
+        "core": 63.733333333333334,
+        "effects / commands": 108.03333333333333,
+        "generated handler / template": 41.9,
+        "GC": 18.2,
+        "runtime patching / control": 44.7,
+        "scheduler": 5.033333333333333,
+        "handler / application": 29.5
+      },
+      "gcTraceUs": null,
+      "compileUs": 97.26666666666667,
+      "heapBytes": [
+        {
+          "name": "native / unknown",
+          "bytesPerPage": 15774.933333333332
+        },
+        {
+          "name": "Http.answer$s",
+          "bytesPerPage": 2601.4666666666667
+        },
+        {
+          "name": "Rt.delegate",
+          "bytesPerPage": 875.8666666666667
+        },
+        {
+          "name": "Browser.Navigation.request",
+          "bytesPerPage": 784.9333333333333
+        },
+        {
+          "name": "Tea.diff",
+          "bytesPerPage": 596.8
+        },
+        {
+          "name": "ArticlePage.update",
+          "bytesPerPage": 563.4666666666667
+        },
+        {
+          "name": "Page.p98",
+          "bytesPerPage": 552
+        },
+        {
+          "name": "Task.fork",
+          "bytesPerPage": 300.8
+        },
+        {
+          "name": "Cmd.task$s",
+          "bytesPerPage": 300
+        },
+        {
+          "name": "Tea.spawn",
+          "bytesPerPage": 254.66666666666666
+        },
+        {
+          "name": "Http.wait",
+          "bytesPerPage": 239.33333333333334
+        },
+        {
+          "name": "Sub.on",
+          "bytesPerPage": 227.06666666666666
+        },
+        {
+          "name": "Page.p118",
+          "bytesPerPage": 225.6
+        },
+        {
+          "name": "Rt.mountAbove",
+          "bytesPerPage": 215.86666666666667
+        },
+        {
+          "name": "Http.exchange$s",
+          "bytesPerPage": 209.86666666666667
+        }
+      ],
+      "heapTotal": 27646,
+      "heapPages": 30,
+      "negativeDeltas": 101,
+      "medianDeliveredUs": 39
+    },
+    "feed tab/browser-direct-release": {
+      "pages": 30,
+      "functions": [
+        {
+          "name": "(program):-1",
+          "sampledUsPerPage": 168.4,
+          "compilationOverlapUsPerPage": 51.266666666666666
+        },
+        {
+          "name": "window.addEventListener.capture:74",
+          "sampledUsPerPage": 56.03333333333333,
+          "compilationOverlapUsPerPage": 0.3
+        },
+        {
+          "name": "Direct.templatePatch / (anonymous):36315",
+          "sampledUsPerPage": 53.4,
+          "compilationOverlapUsPerPage": 11.733333333333333
+        },
+        {
+          "name": "Rt.forPosition / $a:10835",
+          "sampledUsPerPage": 48.46666666666667,
+          "compilationOverlapUsPerPage": 33.9
+        },
+        {
+          "name": "globalThis.fetch:21",
+          "sampledUsPerPage": 46.766666666666666,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "(garbage collector):-1",
+          "sampledUsPerPage": 38.766666666666666,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Direct.templateSelect / Kf:35975",
+          "sampledUsPerPage": 37.93333333333333,
+          "compilationOverlapUsPerPage": 3.3666666666666667
+        },
+        {
+          "name": "Direct.templateSelectNew / Jf:35775",
+          "sampledUsPerPage": 34.9,
+          "compilationOverlapUsPerPage": 6.366666666666666
+        },
+        {
+          "name": "Main.main / eb:206027",
+          "sampledUsPerPage": 33.2,
+          "compilationOverlapUsPerPage": 9.033333333333333
+        },
+        {
+          "name": "Tea.runsAt / (anonymous):23010",
+          "sampledUsPerPage": 32.43333333333333,
+          "compilationOverlapUsPerPage": 25.266666666666666
+        },
+        {
+          "name": "Direct.listen / (anonymous):31898",
+          "sampledUsPerPage": 31.733333333333334,
+          "compilationOverlapUsPerPage": 25.866666666666667
+        },
+        {
+          "name": "Direct.templateCapture / Df:34341",
+          "sampledUsPerPage": 27.3,
+          "compilationOverlapUsPerPage": 0.26666666666666666
+        },
+        {
+          "name": "List.append / zb:14109",
+          "sampledUsPerPage": 24.4,
+          "compilationOverlapUsPerPage": 0.23333333333333334
+        },
+        {
+          "name": "Request:-1",
+          "sampledUsPerPage": 22.466666666666665,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Rt.patchRow / Sa:6780",
+          "sampledUsPerPage": 20.4,
+          "compilationOverlapUsPerPage": 6.5
+        },
+        {
+          "name": "Dict.get / Hc:18038",
+          "sampledUsPerPage": 18.6,
+          "compilationOverlapUsPerPage": 12
+        },
+        {
+          "name": "Direct.listen / (anonymous):31697",
+          "sampledUsPerPage": 17.566666666666666,
+          "compilationOverlapUsPerPage": 12.633333333333333
+        },
+        {
+          "name": "_derived.listCompare / jd:11515",
+          "sampledUsPerPage": 16.866666666666667,
+          "compilationOverlapUsPerPage": 12.233333333333333
+        },
+        {
+          "name": "Direct.keyMap / Oe:30910",
+          "sampledUsPerPage": 15.966666666666667,
+          "compilationOverlapUsPerPage": 0.9666666666666667
+        },
+        {
+          "name": "toggle:-1",
+          "sampledUsPerPage": 15.266666666666667,
+          "compilationOverlapUsPerPage": 0.2
+        },
+        {
+          "name": "Hosted.compareKeys / hc:11999",
+          "sampledUsPerPage": 13.466666666666667,
+          "compilationOverlapUsPerPage": 6.866666666666666
+        },
+        {
+          "name": "Main.main / m:186437",
+          "sampledUsPerPage": 12.333333333333334,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Page.dp29_1 / Hm:81726",
+          "sampledUsPerPage": 11.366666666666667,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Feed.dp380_1 / Ko:90091",
+          "sampledUsPerPage": 9.333333333333334,
+          "compilationOverlapUsPerPage": 2.3666666666666667
+        },
+        {
+          "name": "List.filterHelp / Vb:16051",
+          "sampledUsPerPage": 8.866666666666667,
+          "compilationOverlapUsPerPage": 3.3333333333333335
+        },
+        {
+          "name": "Dict.insertHelp / Kc:18964",
+          "sampledUsPerPage": 8.833333333333334,
+          "compilationOverlapUsPerPage": 1.4
+        },
+        {
+          "name": "Rt.patch / Ga:5836",
+          "sampledUsPerPage": 8.566666666666666,
+          "compilationOverlapUsPerPage": 2.8333333333333335
+        },
+        {
+          "name": "Basics.append / c:65",
+          "sampledUsPerPage": 8,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Http.exchange$s / (anonymous):51454",
+          "sampledUsPerPage": 7.866666666666666,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Session.cred / Qf:37095",
+          "sampledUsPerPage": 7.8,
+          "compilationOverlapUsPerPage": 0
+        }
+      ],
+      "categories": {
+        "V8 compilation": 264.23333333333335,
+        "harness": 102.93333333333334,
+        "host / unattributed": 178.2,
+        "runtime patching / control": 90.36666666666666,
+        "generated handler / template": 93.43333333333334,
+        "generated dispatcher": 24.166666666666668,
+        "effects / commands": 65.16666666666667,
+        "template runtime": 142.5,
+        "core": 96.36666666666666,
+        "GC": 38.766666666666666,
+        "runtime dispatch": 11,
+        "handler / application": 4.766666666666667,
+        "generated handler": 1.8666666666666667,
+        "scheduler": 0.9666666666666667
+      },
+      "gcTraceUs": null,
+      "compileUs": 268.76666666666665,
+      "heapBytes": [
+        {
+          "name": "native / unknown",
+          "bytesPerPage": 15511.2
+        },
+        {
+          "name": "Direct.templateSelectNew",
+          "bytesPerPage": 1604.2666666666667
+        },
+        {
+          "name": "Http.answer$s",
+          "bytesPerPage": 1254
+        },
+        {
+          "name": "Direct.templatePatch",
+          "bytesPerPage": 1102.4
+        },
+        {
+          "name": "Main.main",
+          "bytesPerPage": 1007.4666666666667
+        },
+        {
+          "name": "Direct.templateSelect",
+          "bytesPerPage": 982
+        },
+        {
+          "name": "Direct.templateCapture",
+          "bytesPerPage": 835.2
+        },
+        {
+          "name": "Direct.listen",
+          "bytesPerPage": 709.4666666666667
+        },
+        {
+          "name": "Rt.forPosition",
+          "bytesPerPage": 553.6
+        },
+        {
+          "name": "Direct.keyMap",
+          "bytesPerPage": 432.53333333333336
+        },
+        {
+          "name": "Tea.runsAt",
+          "bytesPerPage": 339.8666666666667
+        },
+        {
+          "name": "Rt.patchRow",
+          "bytesPerPage": 313.46666666666664
+        },
+        {
+          "name": "Home.dp362_0",
+          "bytesPerPage": 281.2
+        },
+        {
+          "name": "Hosted.compareKeys",
+          "bytesPerPage": 275.2
+        },
+        {
+          "name": "Http.exchange$s",
+          "bytesPerPage": 257.46666666666664
+        }
+      ],
+      "heapTotal": 32820.8,
+      "heapPages": 30,
+      "negativeDeltas": 110,
+      "medianDeliveredUs": 40
+    },
+    "feed tab/browser-direct-start-release": {
+      "pages": 30,
+      "functions": [
+        {
+          "name": "(program):-1",
+          "sampledUsPerPage": 162.3,
+          "compilationOverlapUsPerPage": 43.86666666666667
+        },
+        {
+          "name": "Main.main / eb:356571",
+          "sampledUsPerPage": 144.26666666666668,
+          "compilationOverlapUsPerPage": 124.53333333333333
+        },
+        {
+          "name": "globalThis.fetch:21",
+          "sampledUsPerPage": 55.13333333333333,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "window.addEventListener.capture:74",
+          "sampledUsPerPage": 52.4,
+          "compilationOverlapUsPerPage": 0.3333333333333333
+        },
+        {
+          "name": "Direct.templatePatch / (anonymous):36315",
+          "sampledUsPerPage": 51.166666666666664,
+          "compilationOverlapUsPerPage": 8.8
+        },
+        {
+          "name": "Direct.templateSelectNew / Jf:35775",
+          "sampledUsPerPage": 47.1,
+          "compilationOverlapUsPerPage": 4.866666666666666
+        },
+        {
+          "name": "Rt.forPosition / $a:10835",
+          "sampledUsPerPage": 45.833333333333336,
+          "compilationOverlapUsPerPage": 34.1
+        },
+        {
+          "name": "Direct.templateSelect / Kf:35975",
+          "sampledUsPerPage": 43,
+          "compilationOverlapUsPerPage": 6.266666666666667
+        },
+        {
+          "name": "Tea.runsAt / (anonymous):23010",
+          "sampledUsPerPage": 35.46666666666667,
+          "compilationOverlapUsPerPage": 24.2
+        },
+        {
+          "name": "(garbage collector):-1",
+          "sampledUsPerPage": 33.43333333333333,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Request:-1",
+          "sampledUsPerPage": 26.233333333333334,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Rt.patchRow / Sa:6780",
+          "sampledUsPerPage": 24.833333333333332,
+          "compilationOverlapUsPerPage": 5.733333333333333
+        },
+        {
+          "name": "Direct.listen / (anonymous):31898",
+          "sampledUsPerPage": 24.233333333333334,
+          "compilationOverlapUsPerPage": 20.6
+        },
+        {
+          "name": "Direct.listen / (anonymous):31697",
+          "sampledUsPerPage": 22.833333333333332,
+          "compilationOverlapUsPerPage": 16.033333333333335
+        },
+        {
+          "name": "List.filterHelp / Vb:16051",
+          "sampledUsPerPage": 20,
+          "compilationOverlapUsPerPage": 5.3
+        },
+        {
+          "name": "List.append / zb:14109",
+          "sampledUsPerPage": 18.933333333333334,
+          "compilationOverlapUsPerPage": 1.2
+        },
+        {
+          "name": "Dict.get / Hc:18038",
+          "sampledUsPerPage": 17.7,
+          "compilationOverlapUsPerPage": 14.9
+        },
+        {
+          "name": "Hosted.compareKeys / hc:11999",
+          "sampledUsPerPage": 15.3,
+          "compilationOverlapUsPerPage": 7.966666666666667
+        },
+        {
+          "name": "_derived.listCompare / jd:11515",
+          "sampledUsPerPage": 12.133333333333333,
+          "compilationOverlapUsPerPage": 7.533333333333333
+        },
+        {
+          "name": "Direct.keyMap / Oe:30910",
+          "sampledUsPerPage": 11.066666666666666,
+          "compilationOverlapUsPerPage": 0.8333333333333334
+        },
+        {
+          "name": "Basics.append / c:65",
+          "sampledUsPerPage": 10.766666666666667,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Direct.templateCapture / Df:34341",
+          "sampledUsPerPage": 9.6,
+          "compilationOverlapUsPerPage": 0.26666666666666666
+        },
+        {
+          "name": "toggle:-1",
+          "sampledUsPerPage": 9.333333333333334,
+          "compilationOverlapUsPerPage": 1.2
+        },
+        {
+          "name": "Page.p29 / (anonymous):82002",
+          "sampledUsPerPage": 8.933333333333334,
+          "compilationOverlapUsPerPage": 4.433333333333334
+        },
+        {
+          "name": "Direct.childHtml / Qe:31094",
+          "sampledUsPerPage": 8.9,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Rt.patch / Ga:5836",
+          "sampledUsPerPage": 8.866666666666667,
+          "compilationOverlapUsPerPage": 2.066666666666667
+        },
+        {
+          "name": "Feed.dp380_1 / c:90149",
+          "sampledUsPerPage": 8.733333333333333,
+          "compilationOverlapUsPerPage": 7.333333333333333
+        },
+        {
+          "name": "Main.updateWith / ix:143126",
+          "sampledUsPerPage": 8.7,
+          "compilationOverlapUsPerPage": 1.0333333333333334
+        },
+        {
+          "name": "parse:-1",
+          "sampledUsPerPage": 8.566666666666666,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Dict.insertHelp / Kc:18964",
+          "sampledUsPerPage": 8.266666666666667,
+          "compilationOverlapUsPerPage": 1.7
+        }
+      ],
+      "categories": {
+        "V8 compilation": 371.8666666666667,
+        "harness": 108.66666666666667,
+        "host / unattributed": 182.03333333333333,
+        "runtime dispatch": 10.8,
+        "generated dispatcher": 19.733333333333334,
+        "generated handler / template": 69.26666666666667,
+        "template runtime": 148.5,
+        "runtime patching / control": 97.13333333333334,
+        "core": 85.06666666666666,
+        "effects / commands": 67.2,
+        "GC": 33.43333333333333,
+        "generated handler": 7.8,
+        "handler / application": 6.433333333333334,
+        "scheduler": 5.733333333333333
+      },
+      "gcTraceUs": null,
+      "compileUs": 380.03333333333336,
+      "heapBytes": [
+        {
+          "name": "native / unknown",
+          "bytesPerPage": 15687.2
+        },
+        {
+          "name": "Main.main",
+          "bytesPerPage": 6748.8
+        },
+        {
+          "name": "Direct.templateSelectNew",
+          "bytesPerPage": 1706.4
+        },
+        {
+          "name": "Http.answer$s",
+          "bytesPerPage": 1224.1333333333334
+        },
+        {
+          "name": "Direct.templatePatch",
+          "bytesPerPage": 1057.8666666666666
+        },
+        {
+          "name": "Direct.templateSelect",
+          "bytesPerPage": 1047.8666666666666
+        },
+        {
+          "name": "Direct.templateCapture",
+          "bytesPerPage": 739.2
+        },
+        {
+          "name": "Direct.listen",
+          "bytesPerPage": 606.6666666666666
+        },
+        {
+          "name": "Rt.forPosition",
+          "bytesPerPage": 594.1333333333333
+        },
+        {
+          "name": "Direct.keyMap",
+          "bytesPerPage": 401.8666666666667
+        },
+        {
+          "name": "Tea.runsAt",
+          "bytesPerPage": 351.46666666666664
+        },
+        {
+          "name": "Rt.patchRow",
+          "bytesPerPage": 328.26666666666665
+        },
+        {
+          "name": "Direct.afterPoint",
+          "bytesPerPage": 304.1333333333333
+        },
+        {
+          "name": "Main.updateWith",
+          "bytesPerPage": 274.93333333333334
+        },
+        {
+          "name": "Page.frame",
+          "bytesPerPage": 239.46666666666667
+        }
+      ],
+      "heapTotal": 38272.13333333333,
+      "heapPages": 30,
+      "negativeDeltas": 114,
+      "medianDeliveredUs": 39
+    },
+    "feed tab/browser-tea-release": {
+      "pages": 30,
+      "functions": [
+        {
+          "name": "(program):-1",
+          "sampledUsPerPage": 166.3,
+          "compilationOverlapUsPerPage": 50.766666666666666
+        },
+        {
+          "name": "globalThis.fetch:21",
+          "sampledUsPerPage": 61.43333333333333,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "window.addEventListener.capture:74",
+          "sampledUsPerPage": 54.6,
+          "compilationOverlapUsPerPage": 0.3
+        },
+        {
+          "name": "Rt.delegate / (anonymous):14192",
+          "sampledUsPerPage": 51.8,
+          "compilationOverlapUsPerPage": 21.366666666666667
+        },
+        {
+          "name": "Rt.patchRow / gb:7875",
+          "sampledUsPerPage": 45,
+          "compilationOverlapUsPerPage": 10.066666666666666
+        },
+        {
+          "name": "Rt.forPosition / ob:11930",
+          "sampledUsPerPage": 40.43333333333333,
+          "compilationOverlapUsPerPage": 28.133333333333333
+        },
+        {
+          "name": "Tea.runsAt / (anonymous):119654",
+          "sampledUsPerPage": 31.2,
+          "compilationOverlapUsPerPage": 26.066666666666666
+        },
+        {
+          "name": "Request:-1",
+          "sampledUsPerPage": 23.366666666666667,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Dict.getHelp / If:34039",
+          "sampledUsPerPage": 22.266666666666666,
+          "compilationOverlapUsPerPage": 18.633333333333333
+        },
+        {
+          "name": "_derived.listCompare / kp:118449",
+          "sampledUsPerPage": 22.2,
+          "compilationOverlapUsPerPage": 14.566666666666666
+        },
+        {
+          "name": "(garbage collector):-1",
+          "sampledUsPerPage": 20.966666666666665,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Dict.insertHelp / Mf:34830",
+          "sampledUsPerPage": 19.6,
+          "compilationOverlapUsPerPage": 1.2666666666666666
+        },
+        {
+          "name": "toggle:-1",
+          "sampledUsPerPage": 18.7,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "List.filterHelp / Kc:18894",
+          "sampledUsPerPage": 16.066666666666666,
+          "compilationOverlapUsPerPage": 6.233333333333333
+        },
+        {
+          "name": "Hosted.compareKeys / Yc:19766",
+          "sampledUsPerPage": 13.3,
+          "compilationOverlapUsPerPage": 5.6
+        },
+        {
+          "name": "Feed.p382 / d:75718",
+          "sampledUsPerPage": 12.966666666666667,
+          "compilationOverlapUsPerPage": 4.2
+        },
+        {
+          "name": "Rt.flush / Ya:6705",
+          "sampledUsPerPage": 11.9,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Cmd.keyed$s / td:20841",
+          "sampledUsPerPage": 11.1,
+          "compilationOverlapUsPerPage": 3.433333333333333
+        },
+        {
+          "name": "List.copy / dc:15944",
+          "sampledUsPerPage": 10.1,
+          "compilationOverlapUsPerPage": 1.4333333333333333
+        },
+        {
+          "name": "Http.exchange$s / zg:40301",
+          "sampledUsPerPage": 8.633333333333333,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Http.exchange$s / (anonymous):40408",
+          "sampledUsPerPage": 8.233333333333333,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Home.viewTabs / Jl:80711",
+          "sampledUsPerPage": 7.866666666666666,
+          "compilationOverlapUsPerPage": 5.766666666666667
+        },
+        {
+          "name": "Url.percentEncode / zf:33653",
+          "sampledUsPerPage": 7.5,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Http.isToken / Cg:40882",
+          "sampledUsPerPage": 7.3,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Dict.balance / Lf:34319",
+          "sampledUsPerPage": 7.133333333333334,
+          "compilationOverlapUsPerPage": 0.8333333333333334
+        },
+        {
+          "name": "entries:-1",
+          "sampledUsPerPage": 6.633333333333334,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "List.append / oc:16952",
+          "sampledUsPerPage": 6.5,
+          "compilationOverlapUsPerPage": 1.3666666666666667
+        },
+        {
+          "name": "Feed.p382 / p:75921",
+          "sampledUsPerPage": 6.3,
+          "compilationOverlapUsPerPage": 0
+        },
+        {
+          "name": "Hosted.keyOf / Xc:19732",
+          "sampledUsPerPage": 5.9,
+          "compilationOverlapUsPerPage": 2.566666666666667
+        },
+        {
+          "name": "Task.schedule / O:3309",
+          "sampledUsPerPage": 5.833333333333333,
+          "compilationOverlapUsPerPage": 1.5666666666666667
+        }
+      ],
+      "categories": {
+        "V8 compilation": 234.96666666666667,
+        "host / unattributed": 182,
+        "harness": 116.76666666666667,
+        "runtime dispatch": 42.9,
+        "generated handler / template": 36.833333333333336,
+        "runtime patching / control": 99.8,
+        "core": 91.63333333333334,
+        "GC": 20.966666666666665,
+        "effects / commands": 73.33333333333333,
+        "scheduler": 21.3,
+        "handler / application": 5.133333333333334
+      },
+      "gcTraceUs": null,
+      "compileUs": 240.9,
+      "heapBytes": [
+        {
+          "name": "native / unknown",
+          "bytesPerPage": 15566.4
+        },
+        {
+          "name": "Rt.delegate",
+          "bytesPerPage": 1295.6
+        },
+        {
+          "name": "Http.answer$s",
+          "bytesPerPage": 1271.6
+        },
+        {
+          "name": "Rt.forPosition",
+          "bytesPerPage": 572.4
+        },
+        {
+          "name": "Rt.patchRow",
+          "bytesPerPage": 491.06666666666666
+        },
+        {
+          "name": "Tea.diff",
+          "bytesPerPage": 404
+        },
+        {
+          "name": "Tea.runsAt",
+          "bytesPerPage": 339.2
+        },
+        {
+          "name": "Dict.insertHelp",
+          "bytesPerPage": 314
+        },
+        {
+          "name": "Dict.getHelp",
+          "bytesPerPage": 292.4
+        },
+        {
+          "name": "Feed.p382",
+          "bytesPerPage": 272.93333333333334
+        },
+        {
+          "name": "Sub.on",
+          "bytesPerPage": 272
+        },
+        {
+          "name": "Hosted.compareKeys",
+          "bytesPerPage": 268.1333333333333
+        },
+        {
+          "name": "Rt.mountAbove",
+          "bytesPerPage": 264.93333333333334
+        },
+        {
+          "name": "Rt.flush",
+          "bytesPerPage": 260.53333333333336
+        },
+        {
+          "name": "List.filterHelp",
+          "bytesPerPage": 216
+        }
+      ],
+      "heapTotal": 27481.866666666665,
+      "heapPages": 30,
+      "negativeDeltas": 104,
+      "medianDeliveredUs": 40
+    }
+  }
+}

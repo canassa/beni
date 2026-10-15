@@ -1,0 +1,31 @@
+-- load
+<body>
+  <main>
+    <button id="inc">"inc"</button>
+    <button id="quiet">"quiet"</button>
+    <span>"0"</span>
+    <span>"0"</span>
+  </main>
+</body>
+-- click #quiet
+(the DOM did not change)
+-- click #inc
+<body>
+  <main>
+    <button id="inc">"inc"</button>
+    <button id="quiet">"quiet"</button>
+    <span>"1"</span>
+    <span>"1"</span>
+  </main>
+</body>
+-- click #quiet
+(the DOM did not change)
+-- click #inc
+<body>
+  <main>
+    <button id="inc">"inc"</button>
+    <button id="quiet">"quiet"</button>
+    <span>"2"</span>
+    <span>"2"</span>
+  </main>
+</body>

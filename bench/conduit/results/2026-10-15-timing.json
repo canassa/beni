@@ -1,0 +1,1988 @@
+{
+  "date": "2026-10-15T07:12:50.249Z",
+  "node": "v24.19.0",
+  "chrome": "Chrome/155.0.8059.80",
+  "cpu": "Apple M2 Pro",
+  "load": [
+    6.1259765625,
+    13.1376953125,
+    11.47412109375
+  ],
+  "samples": 15,
+  "sources": {
+    "browser-tea-release": "262ea8b11c0d83a24afe54e228ee0de088a6b417d7c4c34feee7cae86000743e",
+    "browser-direct-before-release": "60ac9dfbbedc95baaacf0ed43a973a4a08a8db3e0271cd3fd5dcba68ed9ef69d",
+    "browser-direct-release": "6854ce17e4283f3f48dda7b46186c39807db0df85cf88f4877a71530b485683e"
+  },
+  "method": "Fresh page per sample; rotated release platforms; corpus scripted API and virtual clock; real CDP clicks and Input.insertText. Capture to eight microtasks untraced, and trace script union. Setup outside timing; transcript/property checks after. No CSS.",
+  "rows": [
+    {
+      "operation": "feed tab",
+      "subjects": [
+        {
+          "subject": "browser-tea-release",
+          "untracedMedian": 0.3049999997019768,
+          "tracedMedian": 0.501,
+          "raw": [
+            {
+              "sample": 0,
+              "tracing": false,
+              "load": 6.1259765625,
+              "ms": 0.375,
+              "scriptMs": null
+            },
+            {
+              "sample": 0,
+              "tracing": true,
+              "load": 6.1259765625,
+              "ms": 0.6550000011920929,
+              "scriptMs": 0.657
+            },
+            {
+              "sample": 1,
+              "tracing": false,
+              "load": 6.19580078125,
+              "ms": 0.29999999701976776,
+              "scriptMs": null
+            },
+            {
+              "sample": 1,
+              "tracing": true,
+              "load": 6.19580078125,
+              "ms": 0.4750000014901161,
+              "scriptMs": 0.48
+            },
+            {
+              "sample": 2,
+              "tracing": false,
+              "load": 6.19580078125,
+              "ms": 0.3049999997019768,
+              "scriptMs": null
+            },
+            {
+              "sample": 2,
+              "tracing": true,
+              "load": 6.19580078125,
+              "ms": 0.5200000032782555,
+              "scriptMs": 0.523
+            },
+            {
+              "sample": 3,
+              "tracing": false,
+              "load": 6.19580078125,
+              "ms": 0.3099999949336052,
+              "scriptMs": null
+            },
+            {
+              "sample": 3,
+              "tracing": true,
+              "load": 6.19580078125,
+              "ms": 0.5,
+              "scriptMs": 0.499
+            },
+            {
+              "sample": 4,
+              "tracing": false,
+              "load": 6.19580078125,
+              "ms": 0.4750000014901161,
+              "scriptMs": null
+            },
+            {
+              "sample": 4,
+              "tracing": true,
+              "load": 6.19580078125,
+              "ms": 0.4750000014901161,
+              "scriptMs": 0.472
+            },
+            {
+              "sample": 5,
+              "tracing": false,
+              "load": 6.19580078125,
+              "ms": 0.2749999985098839,
+              "scriptMs": null
+            },
+            {
+              "sample": 5,
+              "tracing": true,
+              "load": 6.19580078125,
+              "ms": 0.5,
+              "scriptMs": 0.497
+            },
+            {
+              "sample": 6,
+              "tracing": false,
+              "load": 6.1796875,
+              "ms": 0.30000000447034836,
+              "scriptMs": null
+            },
+            {
+              "sample": 6,
+              "tracing": true,
+              "load": 6.1796875,
+              "ms": 0.47999999672174454,
+              "scriptMs": 0.482
+            },
+            {
+              "sample": 7,
+              "tracing": false,
+              "load": 6.1796875,
+              "ms": 0.3149999976158142,
+              "scriptMs": null
+            },
+            {
+              "sample": 7,
+              "tracing": true,
+              "load": 6.1796875,
+              "ms": 0.630000002682209,
+              "scriptMs": 0.624
+            },
+            {
+              "sample": 8,
+              "tracing": false,
+              "load": 6.1796875,
+              "ms": 0.35499999672174454,
+              "scriptMs": null
+            },
+            {
+              "sample": 8,
+              "tracing": true,
+              "load": 6.1796875,
+              "ms": 0.5650000050663948,
+              "scriptMs": 0.562
+            },
+            {
+              "sample": 9,
+              "tracing": false,
+              "load": 6.1796875,
+              "ms": 0.2800000011920929,
+              "scriptMs": null
+            },
+            {
+              "sample": 9,
+              "tracing": true,
+              "load": 6.1796875,
+              "ms": 0.5300000011920929,
+              "scriptMs": 0.523
+            },
+            {
+              "sample": 10,
+              "tracing": false,
+              "load": 6.0849609375,
+              "ms": 0.28999999910593033,
+              "scriptMs": null
+            },
+            {
+              "sample": 10,
+              "tracing": true,
+              "load": 6.0849609375,
+              "ms": 0.4750000014901161,
+              "scriptMs": 0.477
+            },
+            {
+              "sample": 11,
+              "tracing": false,
+              "load": 6.0849609375,
+              "ms": 0.30000000447034836,
+              "scriptMs": null
+            },
+            {
+              "sample": 11,
+              "tracing": true,
+              "load": 6.0849609375,
+              "ms": 0.4699999988079071,
+              "scriptMs": 0.473
+            },
+            {
+              "sample": 12,
+              "tracing": false,
+              "load": 6.0849609375,
+              "ms": 0.5049999952316284,
+              "scriptMs": null
+            },
+            {
+              "sample": 12,
+              "tracing": true,
+              "load": 6.0849609375,
+              "ms": 0.5349999964237213,
+              "scriptMs": 0.532
+            },
+            {
+              "sample": 13,
+              "tracing": false,
+              "load": 6.0849609375,
+              "ms": 0.3049999997019768,
+              "scriptMs": null
+            },
+            {
+              "sample": 13,
+              "tracing": true,
+              "load": 6.0849609375,
+              "ms": 0.49000000208616257,
+              "scriptMs": 0.501
+            },
+            {
+              "sample": 14,
+              "tracing": false,
+              "load": 6.0849609375,
+              "ms": 0.2800000011920929,
+              "scriptMs": null
+            },
+            {
+              "sample": 14,
+              "tracing": true,
+              "load": 6.0849609375,
+              "ms": 0.5600000023841858,
+              "scriptMs": 0.562
+            }
+          ]
+        },
+        {
+          "subject": "browser-direct-before-release",
+          "untracedMedian": 0.380000002682209,
+          "tracedMedian": 0.685,
+          "raw": [
+            {
+              "sample": 0,
+              "tracing": false,
+              "load": 6.1259765625,
+              "ms": 0.4350000023841858,
+              "scriptMs": null
+            },
+            {
+              "sample": 0,
+              "tracing": true,
+              "load": 6.1259765625,
+              "ms": 0.6850000023841858,
+              "scriptMs": 0.687
+            },
+            {
+              "sample": 1,
+              "tracing": false,
+              "load": 6.19580078125,
+              "ms": 0.36500000208616257,
+              "scriptMs": null
+            },
+            {
+              "sample": 1,
+              "tracing": true,
+              "load": 6.19580078125,
+              "ms": 0.6750000044703484,
+              "scriptMs": 0.673
+            },
+            {
+              "sample": 2,
+              "tracing": false,
+              "load": 6.19580078125,
+              "ms": 0.3099999949336052,
+              "scriptMs": null
+            },
+            {
+              "sample": 2,
+              "tracing": true,
+              "load": 6.19580078125,
+              "ms": 0.6850000023841858,
+              "scriptMs": 0.683
+            },
+            {
+              "sample": 3,
+              "tracing": false,
+              "load": 6.19580078125,
+              "ms": 0.35500000417232513,
+              "scriptMs": null
+            },
+            {
+              "sample": 3,
+              "tracing": true,
+              "load": 6.19580078125,
+              "ms": 0.7450000047683716,
+              "scriptMs": 0.747
+            },
+            {
+              "sample": 4,
+              "tracing": false,
+              "load": 6.19580078125,
+              "ms": 0.5200000032782555,
+              "scriptMs": null
+            },
+            {
+              "sample": 4,
+              "tracing": true,
+              "load": 6.19580078125,
+              "ms": 0.6799999997019768,
+              "scriptMs": 0.685
+            },
+            {
+              "sample": 5,
+              "tracing": false,
+              "load": 6.19580078125,
+              "ms": 0.380000002682209,
+              "scriptMs": null
+            },
+            {
+              "sample": 5,
+              "tracing": true,
+              "load": 6.19580078125,
+              "ms": 0.6700000017881393,
+              "scriptMs": 0.671
+            },
+            {
+              "sample": 6,
+              "tracing": false,
+              "load": 6.1796875,
+              "ms": 0.380000002682209,
+              "scriptMs": null
+            },
+            {
+              "sample": 6,
+              "tracing": true,
+              "load": 6.1796875,
+              "ms": 0.6799999997019768,
+              "scriptMs": 0.682
+            },
+            {
+              "sample": 7,
+              "tracing": false,
+              "load": 6.1796875,
+              "ms": 0.42499999701976776,
+              "scriptMs": null
+            },
+            {
+              "sample": 7,
+              "tracing": true,
+              "load": 6.1796875,
+              "ms": 0.755000002682209,
+              "scriptMs": 0.756
+            },
+            {
+              "sample": 8,
+              "tracing": false,
+              "load": 6.1796875,
+              "ms": 0.3500000014901161,
+              "scriptMs": null
+            },
+            {
+              "sample": 8,
+              "tracing": true,
+              "load": 6.1796875,
+              "ms": 0.7200000062584877,
+              "scriptMs": 0.721
+            },
+            {
+              "sample": 9,
+              "tracing": false,
+              "load": 6.1796875,
+              "ms": 0.369999997317791,
+              "scriptMs": null
+            },
+            {
+              "sample": 9,
+              "tracing": true,
+              "load": 6.1796875,
+              "ms": 0.6850000023841858,
+              "scriptMs": 0.685
+            },
+            {
+              "sample": 10,
+              "tracing": false,
+              "load": 6.1796875,
+              "ms": 0.6349999979138374,
+              "scriptMs": null
+            },
+            {
+              "sample": 10,
+              "tracing": true,
+              "load": 6.1796875,
+              "ms": 0.7149999961256981,
+              "scriptMs": 0.717
+            },
+            {
+              "sample": 11,
+              "tracing": false,
+              "load": 6.0849609375,
+              "ms": 0.3450000062584877,
+              "scriptMs": null
+            },
+            {
+              "sample": 11,
+              "tracing": true,
+              "load": 6.0849609375,
+              "ms": 0.8099999949336052,
+              "scriptMs": 0.806
+            },
+            {
+              "sample": 12,
+              "tracing": false,
+              "load": 6.0849609375,
+              "ms": 0.369999997317791,
+              "scriptMs": null
+            },
+            {
+              "sample": 12,
+              "tracing": true,
+              "load": 6.0849609375,
+              "ms": 0.6799999997019768,
+              "scriptMs": 0.684
+            },
+            {
+              "sample": 13,
+              "tracing": false,
+              "load": 6.0849609375,
+              "ms": 0.42000000178813934,
+              "scriptMs": null
+            },
+            {
+              "sample": 13,
+              "tracing": true,
+              "load": 6.0849609375,
+              "ms": 0.7249999940395355,
+              "scriptMs": 0.727
+            },
+            {
+              "sample": 14,
+              "tracing": false,
+              "load": 6.0849609375,
+              "ms": 0.380000002682209,
+              "scriptMs": null
+            },
+            {
+              "sample": 14,
+              "tracing": true,
+              "load": 6.0849609375,
+              "ms": 0.6649999991059303,
+              "scriptMs": 0.665
+            }
+          ]
+        },
+        {
+          "subject": "browser-direct-release",
+          "untracedMedian": 0.4000000059604645,
+          "tracedMedian": 0.762,
+          "raw": [
+            {
+              "sample": 0,
+              "tracing": false,
+              "load": 6.1259765625,
+              "ms": 0.4050000011920929,
+              "scriptMs": null
+            },
+            {
+              "sample": 0,
+              "tracing": true,
+              "load": 6.1259765625,
+              "ms": 0.7549999952316284,
+              "scriptMs": 0.754
+            },
+            {
+              "sample": 1,
+              "tracing": false,
+              "load": 6.19580078125,
+              "ms": 0.4050000011920929,
+              "scriptMs": null
+            },
+            {
+              "sample": 1,
+              "tracing": true,
+              "load": 6.19580078125,
+              "ms": 0.7349999994039536,
+              "scriptMs": 0.731
+            },
+            {
+              "sample": 2,
+              "tracing": false,
+              "load": 6.19580078125,
+              "ms": 0.42000000178813934,
+              "scriptMs": null
+            },
+            {
+              "sample": 2,
+              "tracing": true,
+              "load": 6.19580078125,
+              "ms": 0.755000002682209,
+              "scriptMs": 0.756
+            },
+            {
+              "sample": 3,
+              "tracing": false,
+              "load": 6.19580078125,
+              "ms": 0.38499999791383743,
+              "scriptMs": null
+            },
+            {
+              "sample": 3,
+              "tracing": true,
+              "load": 6.19580078125,
+              "ms": 0.75,
+              "scriptMs": 0.752
+            },
+            {
+              "sample": 4,
+              "tracing": false,
+              "load": 6.19580078125,
+              "ms": 0.4099999964237213,
+              "scriptMs": null
+            },
+            {
+              "sample": 4,
+              "tracing": true,
+              "load": 6.19580078125,
+              "ms": 0.7249999940395355,
+              "scriptMs": 0.724
+            },
+            {
+              "sample": 5,
+              "tracing": false,
+              "load": 6.19580078125,
+              "ms": 0.36500000208616257,
+              "scriptMs": null
+            },
+            {
+              "sample": 5,
+              "tracing": true,
+              "load": 6.19580078125,
+              "ms": 0.7549999952316284,
+              "scriptMs": 0.75
+            },
+            {
+              "sample": 6,
+              "tracing": false,
+              "load": 6.1796875,
+              "ms": 0.39500000327825546,
+              "scriptMs": null
+            },
+            {
+              "sample": 6,
+              "tracing": true,
+              "load": 6.1796875,
+              "ms": 1,
+              "scriptMs": 0.994
+            },
+            {
+              "sample": 7,
+              "tracing": false,
+              "load": 6.1796875,
+              "ms": 0.4050000011920929,
+              "scriptMs": null
+            },
+            {
+              "sample": 7,
+              "tracing": true,
+              "load": 6.1796875,
+              "ms": 0.8249999955296516,
+              "scriptMs": 0.824
+            },
+            {
+              "sample": 8,
+              "tracing": false,
+              "load": 6.1796875,
+              "ms": 0.4450000002980232,
+              "scriptMs": null
+            },
+            {
+              "sample": 8,
+              "tracing": true,
+              "load": 6.1796875,
+              "ms": 0.8350000008940697,
+              "scriptMs": 0.837
+            },
+            {
+              "sample": 9,
+              "tracing": false,
+              "load": 6.1796875,
+              "ms": 0.380000002682209,
+              "scriptMs": null
+            },
+            {
+              "sample": 9,
+              "tracing": true,
+              "load": 6.1796875,
+              "ms": 0.7950000017881393,
+              "scriptMs": 0.797
+            },
+            {
+              "sample": 10,
+              "tracing": false,
+              "load": 6.1796875,
+              "ms": 0.4000000059604645,
+              "scriptMs": null
+            },
+            {
+              "sample": 10,
+              "tracing": true,
+              "load": 6.1796875,
+              "ms": 0.8400000035762787,
+              "scriptMs": 0.843
+            },
+            {
+              "sample": 11,
+              "tracing": false,
+              "load": 6.0849609375,
+              "ms": 0.45000000298023224,
+              "scriptMs": null
+            },
+            {
+              "sample": 11,
+              "tracing": true,
+              "load": 6.0849609375,
+              "ms": 0.7150000035762787,
+              "scriptMs": 0.715
+            },
+            {
+              "sample": 12,
+              "tracing": false,
+              "load": 6.0849609375,
+              "ms": 0.39500000327825546,
+              "scriptMs": null
+            },
+            {
+              "sample": 12,
+              "tracing": true,
+              "load": 6.0849609375,
+              "ms": 0.8100000023841858,
+              "scriptMs": 0.808
+            },
+            {
+              "sample": 13,
+              "tracing": false,
+              "load": 6.0849609375,
+              "ms": 0.38999999314546585,
+              "scriptMs": null
+            },
+            {
+              "sample": 13,
+              "tracing": true,
+              "load": 6.0849609375,
+              "ms": 0.8999999985098839,
+              "scriptMs": 0.899
+            },
+            {
+              "sample": 14,
+              "tracing": false,
+              "load": 6.0849609375,
+              "ms": 0.38500000536441803,
+              "scriptMs": null
+            },
+            {
+              "sample": 14,
+              "tracing": true,
+              "load": 6.0849609375,
+              "ms": 0.7650000005960464,
+              "scriptMs": 0.762
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "operation": "favorite",
+      "subjects": [
+        {
+          "subject": "browser-tea-release",
+          "untracedMedian": 0.27000000327825546,
+          "tracedMedian": 0.52,
+          "raw": [
+            {
+              "sample": 0,
+              "tracing": false,
+              "load": 6.0849609375,
+              "ms": 0.26500000059604645,
+              "scriptMs": null
+            },
+            {
+              "sample": 0,
+              "tracing": true,
+              "load": 6.0849609375,
+              "ms": 0.4100000038743019,
+              "scriptMs": 0.408
+            },
+            {
+              "sample": 1,
+              "tracing": false,
+              "load": 5.998046875,
+              "ms": 0.23000000417232513,
+              "scriptMs": null
+            },
+            {
+              "sample": 1,
+              "tracing": true,
+              "load": 5.998046875,
+              "ms": 0.5249999985098839,
+              "scriptMs": 0.527
+            },
+            {
+              "sample": 2,
+              "tracing": false,
+              "load": 5.998046875,
+              "ms": 0.375,
+              "scriptMs": null
+            },
+            {
+              "sample": 2,
+              "tracing": true,
+              "load": 5.998046875,
+              "ms": 0.5450000017881393,
+              "scriptMs": 0.54
+            },
+            {
+              "sample": 3,
+              "tracing": false,
+              "load": 5.998046875,
+              "ms": 0.32499999552965164,
+              "scriptMs": null
+            },
+            {
+              "sample": 3,
+              "tracing": true,
+              "load": 5.998046875,
+              "ms": 0.5150000005960464,
+              "scriptMs": 0.514
+            },
+            {
+              "sample": 4,
+              "tracing": false,
+              "load": 5.998046875,
+              "ms": 0.2800000011920929,
+              "scriptMs": null
+            },
+            {
+              "sample": 4,
+              "tracing": true,
+              "load": 5.998046875,
+              "ms": 0.4350000023841858,
+              "scriptMs": 0.433
+            },
+            {
+              "sample": 5,
+              "tracing": false,
+              "load": 5.998046875,
+              "ms": 0.26500000059604645,
+              "scriptMs": null
+            },
+            {
+              "sample": 5,
+              "tracing": true,
+              "load": 5.91796875,
+              "ms": 0.5949999988079071,
+              "scriptMs": 0.591
+            },
+            {
+              "sample": 6,
+              "tracing": false,
+              "load": 5.91796875,
+              "ms": 0.29999999701976776,
+              "scriptMs": null
+            },
+            {
+              "sample": 6,
+              "tracing": true,
+              "load": 5.91796875,
+              "ms": 0.6099999994039536,
+              "scriptMs": 0.605
+            },
+            {
+              "sample": 7,
+              "tracing": false,
+              "load": 5.91796875,
+              "ms": 0.2850000038743019,
+              "scriptMs": null
+            },
+            {
+              "sample": 7,
+              "tracing": true,
+              "load": 5.91796875,
+              "ms": 0.5500000044703484,
+              "scriptMs": 0.543
+            },
+            {
+              "sample": 8,
+              "tracing": false,
+              "load": 5.91796875,
+              "ms": 0.28999999910593033,
+              "scriptMs": null
+            },
+            {
+              "sample": 8,
+              "tracing": true,
+              "load": 5.91796875,
+              "ms": 0.5249999985098839,
+              "scriptMs": 0.526
+            },
+            {
+              "sample": 9,
+              "tracing": false,
+              "load": 5.91796875,
+              "ms": 0.3100000023841858,
+              "scriptMs": null
+            },
+            {
+              "sample": 9,
+              "tracing": true,
+              "load": 5.91796875,
+              "ms": 0.5449999943375587,
+              "scriptMs": 0.539
+            },
+            {
+              "sample": 10,
+              "tracing": false,
+              "load": 5.84423828125,
+              "ms": 0.24000000208616257,
+              "scriptMs": null
+            },
+            {
+              "sample": 10,
+              "tracing": true,
+              "load": 5.84423828125,
+              "ms": 0.4450000002980232,
+              "scriptMs": 0.444
+            },
+            {
+              "sample": 11,
+              "tracing": false,
+              "load": 5.84423828125,
+              "ms": 0.2200000062584877,
+              "scriptMs": null
+            },
+            {
+              "sample": 11,
+              "tracing": true,
+              "load": 5.84423828125,
+              "ms": 0.5250000059604645,
+              "scriptMs": 0.52
+            },
+            {
+              "sample": 12,
+              "tracing": false,
+              "load": 5.84423828125,
+              "ms": 0.255000002682209,
+              "scriptMs": null
+            },
+            {
+              "sample": 12,
+              "tracing": true,
+              "load": 5.84423828125,
+              "ms": 0.5,
+              "scriptMs": 0.498
+            },
+            {
+              "sample": 13,
+              "tracing": false,
+              "load": 5.84423828125,
+              "ms": 0.25,
+              "scriptMs": null
+            },
+            {
+              "sample": 13,
+              "tracing": true,
+              "load": 5.84423828125,
+              "ms": 0.45000000298023224,
+              "scriptMs": 0.447
+            },
+            {
+              "sample": 14,
+              "tracing": false,
+              "load": 5.84423828125,
+              "ms": 0.27000000327825546,
+              "scriptMs": null
+            },
+            {
+              "sample": 14,
+              "tracing": true,
+              "load": 5.84423828125,
+              "ms": 0.49000000208616257,
+              "scriptMs": 0.487
+            }
+          ]
+        },
+        {
+          "subject": "browser-direct-before-release",
+          "untracedMedian": 0.33000000566244125,
+          "tracedMedian": 0.702,
+          "raw": [
+            {
+              "sample": 0,
+              "tracing": false,
+              "load": 6.0849609375,
+              "ms": 0.32999999821186066,
+              "scriptMs": null
+            },
+            {
+              "sample": 0,
+              "tracing": true,
+              "load": 5.998046875,
+              "ms": 0.7549999952316284,
+              "scriptMs": 0.75
+            },
+            {
+              "sample": 1,
+              "tracing": false,
+              "load": 5.998046875,
+              "ms": 0.3500000014901161,
+              "scriptMs": null
+            },
+            {
+              "sample": 1,
+              "tracing": true,
+              "load": 5.998046875,
+              "ms": 0.5650000050663948,
+              "scriptMs": 0.562
+            },
+            {
+              "sample": 2,
+              "tracing": false,
+              "load": 5.998046875,
+              "ms": 0.3999999985098839,
+              "scriptMs": null
+            },
+            {
+              "sample": 2,
+              "tracing": true,
+              "load": 5.998046875,
+              "ms": 0.7050000056624413,
+              "scriptMs": 0.702
+            },
+            {
+              "sample": 3,
+              "tracing": false,
+              "load": 5.998046875,
+              "ms": 0.3200000002980232,
+              "scriptMs": null
+            },
+            {
+              "sample": 3,
+              "tracing": true,
+              "load": 5.998046875,
+              "ms": 0.6849999949336052,
+              "scriptMs": 0.68
+            },
+            {
+              "sample": 4,
+              "tracing": false,
+              "load": 5.998046875,
+              "ms": 0.39500000327825546,
+              "scriptMs": null
+            },
+            {
+              "sample": 4,
+              "tracing": true,
+              "load": 5.998046875,
+              "ms": 0.6850000023841858,
+              "scriptMs": 0.684
+            },
+            {
+              "sample": 5,
+              "tracing": false,
+              "load": 5.998046875,
+              "ms": 0.33000000566244125,
+              "scriptMs": null
+            },
+            {
+              "sample": 5,
+              "tracing": true,
+              "load": 5.998046875,
+              "ms": 0.8200000002980232,
+              "scriptMs": 0.821
+            },
+            {
+              "sample": 6,
+              "tracing": false,
+              "load": 5.91796875,
+              "ms": 0.29500000178813934,
+              "scriptMs": null
+            },
+            {
+              "sample": 6,
+              "tracing": true,
+              "load": 5.91796875,
+              "ms": 0.75,
+              "scriptMs": 0.752
+            },
+            {
+              "sample": 7,
+              "tracing": false,
+              "load": 5.91796875,
+              "ms": 0.3349999934434891,
+              "scriptMs": null
+            },
+            {
+              "sample": 7,
+              "tracing": true,
+              "load": 5.91796875,
+              "ms": 0.6649999991059303,
+              "scriptMs": 0.663
+            },
+            {
+              "sample": 8,
+              "tracing": false,
+              "load": 5.91796875,
+              "ms": 0.35999999940395355,
+              "scriptMs": null
+            },
+            {
+              "sample": 8,
+              "tracing": true,
+              "load": 5.91796875,
+              "ms": 0.6950000002980232,
+              "scriptMs": 0.69
+            },
+            {
+              "sample": 9,
+              "tracing": false,
+              "load": 5.91796875,
+              "ms": 0.3150000050663948,
+              "scriptMs": null
+            },
+            {
+              "sample": 9,
+              "tracing": true,
+              "load": 5.91796875,
+              "ms": 0.7299999967217445,
+              "scriptMs": 0.73
+            },
+            {
+              "sample": 10,
+              "tracing": false,
+              "load": 5.84423828125,
+              "ms": 0.369999997317791,
+              "scriptMs": null
+            },
+            {
+              "sample": 10,
+              "tracing": true,
+              "load": 5.84423828125,
+              "ms": 0.7299999967217445,
+              "scriptMs": 0.728
+            },
+            {
+              "sample": 11,
+              "tracing": false,
+              "load": 5.84423828125,
+              "ms": 0.2800000011920929,
+              "scriptMs": null
+            },
+            {
+              "sample": 11,
+              "tracing": true,
+              "load": 5.84423828125,
+              "ms": 0.6349999979138374,
+              "scriptMs": 0.636
+            },
+            {
+              "sample": 12,
+              "tracing": false,
+              "load": 5.84423828125,
+              "ms": 0.3449999988079071,
+              "scriptMs": null
+            },
+            {
+              "sample": 12,
+              "tracing": true,
+              "load": 5.84423828125,
+              "ms": 0.7349999994039536,
+              "scriptMs": 0.74
+            },
+            {
+              "sample": 13,
+              "tracing": false,
+              "load": 5.84423828125,
+              "ms": 0.32499999552965164,
+              "scriptMs": null
+            },
+            {
+              "sample": 13,
+              "tracing": true,
+              "load": 5.84423828125,
+              "ms": 0.7100000008940697,
+              "scriptMs": 0.707
+            },
+            {
+              "sample": 14,
+              "tracing": false,
+              "load": 5.84423828125,
+              "ms": 0.3099999949336052,
+              "scriptMs": null
+            },
+            {
+              "sample": 14,
+              "tracing": true,
+              "load": 6.0166015625,
+              "ms": 0.6550000011920929,
+              "scriptMs": 0.653
+            }
+          ]
+        },
+        {
+          "subject": "browser-direct-release",
+          "untracedMedian": 0.36000000685453415,
+          "tracedMedian": 0.72,
+          "raw": [
+            {
+              "sample": 0,
+              "tracing": false,
+              "load": 5.998046875,
+              "ms": 0.32500000298023224,
+              "scriptMs": null
+            },
+            {
+              "sample": 0,
+              "tracing": true,
+              "load": 5.998046875,
+              "ms": 0.6700000017881393,
+              "scriptMs": 0.672
+            },
+            {
+              "sample": 1,
+              "tracing": false,
+              "load": 5.998046875,
+              "ms": 0.3799999952316284,
+              "scriptMs": null
+            },
+            {
+              "sample": 1,
+              "tracing": true,
+              "load": 5.998046875,
+              "ms": 0.7299999967217445,
+              "scriptMs": 0.72
+            },
+            {
+              "sample": 2,
+              "tracing": false,
+              "load": 5.998046875,
+              "ms": 0.42000000178813934,
+              "scriptMs": null
+            },
+            {
+              "sample": 2,
+              "tracing": true,
+              "load": 5.998046875,
+              "ms": 0.7100000008940697,
+              "scriptMs": 0.709
+            },
+            {
+              "sample": 3,
+              "tracing": false,
+              "load": 5.998046875,
+              "ms": 0.32999999821186066,
+              "scriptMs": null
+            },
+            {
+              "sample": 3,
+              "tracing": true,
+              "load": 5.998046875,
+              "ms": 0.744999997317791,
+              "scriptMs": 0.743
+            },
+            {
+              "sample": 4,
+              "tracing": false,
+              "load": 5.998046875,
+              "ms": 0.3349999934434891,
+              "scriptMs": null
+            },
+            {
+              "sample": 4,
+              "tracing": true,
+              "load": 5.998046875,
+              "ms": 0.7199999988079071,
+              "scriptMs": 0.718
+            },
+            {
+              "sample": 5,
+              "tracing": false,
+              "load": 5.91796875,
+              "ms": 0.380000002682209,
+              "scriptMs": null
+            },
+            {
+              "sample": 5,
+              "tracing": true,
+              "load": 5.91796875,
+              "ms": 0.7199999988079071,
+              "scriptMs": 0.72
+            },
+            {
+              "sample": 6,
+              "tracing": false,
+              "load": 5.91796875,
+              "ms": 0.45000000298023224,
+              "scriptMs": null
+            },
+            {
+              "sample": 6,
+              "tracing": true,
+              "load": 5.91796875,
+              "ms": 0.8100000023841858,
+              "scriptMs": 0.811
+            },
+            {
+              "sample": 7,
+              "tracing": false,
+              "load": 5.91796875,
+              "ms": 0.369999997317791,
+              "scriptMs": null
+            },
+            {
+              "sample": 7,
+              "tracing": true,
+              "load": 5.91796875,
+              "ms": 0.7850000038743019,
+              "scriptMs": 0.779
+            },
+            {
+              "sample": 8,
+              "tracing": false,
+              "load": 5.91796875,
+              "ms": 0.5,
+              "scriptMs": null
+            },
+            {
+              "sample": 8,
+              "tracing": true,
+              "load": 5.91796875,
+              "ms": 0.7250000014901161,
+              "scriptMs": 0.727
+            },
+            {
+              "sample": 9,
+              "tracing": false,
+              "load": 5.91796875,
+              "ms": 0.30000000447034836,
+              "scriptMs": null
+            },
+            {
+              "sample": 9,
+              "tracing": true,
+              "load": 5.91796875,
+              "ms": 0.6850000023841858,
+              "scriptMs": 0.682
+            },
+            {
+              "sample": 10,
+              "tracing": false,
+              "load": 5.84423828125,
+              "ms": 0.36000000685453415,
+              "scriptMs": null
+            },
+            {
+              "sample": 10,
+              "tracing": true,
+              "load": 5.84423828125,
+              "ms": 0.7999999970197678,
+              "scriptMs": 0.796
+            },
+            {
+              "sample": 11,
+              "tracing": false,
+              "load": 5.84423828125,
+              "ms": 0.29500000178813934,
+              "scriptMs": null
+            },
+            {
+              "sample": 11,
+              "tracing": true,
+              "load": 5.84423828125,
+              "ms": 0.6799999997019768,
+              "scriptMs": 0.684
+            },
+            {
+              "sample": 12,
+              "tracing": false,
+              "load": 5.84423828125,
+              "ms": 0.29999999701976776,
+              "scriptMs": null
+            },
+            {
+              "sample": 12,
+              "tracing": true,
+              "load": 5.84423828125,
+              "ms": 0.7349999994039536,
+              "scriptMs": 0.741
+            },
+            {
+              "sample": 13,
+              "tracing": false,
+              "load": 5.84423828125,
+              "ms": 0.380000002682209,
+              "scriptMs": null
+            },
+            {
+              "sample": 13,
+              "tracing": true,
+              "load": 5.84423828125,
+              "ms": 0.7349999994039536,
+              "scriptMs": 0.733
+            },
+            {
+              "sample": 14,
+              "tracing": false,
+              "load": 5.84423828125,
+              "ms": 0.3049999997019768,
+              "scriptMs": null
+            },
+            {
+              "sample": 14,
+              "tracing": true,
+              "load": 5.84423828125,
+              "ms": 0.6899999976158142,
+              "scriptMs": 0.693
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "operation": "editor keystroke",
+      "subjects": [
+        {
+          "subject": "browser-tea-release",
+          "untracedMedian": 0.3400000035762787,
+          "tracedMedian": 0.524,
+          "raw": [
+            {
+              "sample": 0,
+              "tracing": false,
+              "load": 6.0166015625,
+              "ms": 0.38500000536441803,
+              "scriptMs": null
+            },
+            {
+              "sample": 0,
+              "tracing": true,
+              "load": 6.0166015625,
+              "ms": 0.5499999970197678,
+              "scriptMs": 0.555
+            },
+            {
+              "sample": 1,
+              "tracing": false,
+              "load": 6.0166015625,
+              "ms": 0.32999999821186066,
+              "scriptMs": null
+            },
+            {
+              "sample": 1,
+              "tracing": true,
+              "load": 6.0166015625,
+              "ms": 0.5299999937415123,
+              "scriptMs": 0.53
+            },
+            {
+              "sample": 2,
+              "tracing": false,
+              "load": 6.0166015625,
+              "ms": 0.3400000035762787,
+              "scriptMs": null
+            },
+            {
+              "sample": 2,
+              "tracing": true,
+              "load": 6.0166015625,
+              "ms": 0.494999997317791,
+              "scriptMs": 0.495
+            },
+            {
+              "sample": 3,
+              "tracing": false,
+              "load": 6.0166015625,
+              "ms": 0.3400000035762787,
+              "scriptMs": null
+            },
+            {
+              "sample": 3,
+              "tracing": true,
+              "load": 6.0166015625,
+              "ms": 0.5300000011920929,
+              "scriptMs": 0.53
+            },
+            {
+              "sample": 4,
+              "tracing": false,
+              "load": 6.0166015625,
+              "ms": 0.3349999934434891,
+              "scriptMs": null
+            },
+            {
+              "sample": 4,
+              "tracing": true,
+              "load": 6.0166015625,
+              "ms": 0.5150000005960464,
+              "scriptMs": 0.509
+            },
+            {
+              "sample": 5,
+              "tracing": false,
+              "load": 6.0166015625,
+              "ms": 0.3049999997019768,
+              "scriptMs": null
+            },
+            {
+              "sample": 5,
+              "tracing": true,
+              "load": 6.0166015625,
+              "ms": 0.494999997317791,
+              "scriptMs": 0.498
+            },
+            {
+              "sample": 6,
+              "tracing": false,
+              "load": 6.09521484375,
+              "ms": 0.3100000023841858,
+              "scriptMs": null
+            },
+            {
+              "sample": 6,
+              "tracing": true,
+              "load": 6.09521484375,
+              "ms": 0.5199999958276749,
+              "scriptMs": 0.524
+            },
+            {
+              "sample": 7,
+              "tracing": false,
+              "load": 6.09521484375,
+              "ms": 0.30000000447034836,
+              "scriptMs": null
+            },
+            {
+              "sample": 7,
+              "tracing": true,
+              "load": 6.09521484375,
+              "ms": 0.5300000011920929,
+              "scriptMs": 0.529
+            },
+            {
+              "sample": 8,
+              "tracing": false,
+              "load": 6.09521484375,
+              "ms": 0.38500000536441803,
+              "scriptMs": null
+            },
+            {
+              "sample": 8,
+              "tracing": true,
+              "load": 6.09521484375,
+              "ms": 0.5200000032782555,
+              "scriptMs": 0.519
+            },
+            {
+              "sample": 9,
+              "tracing": false,
+              "load": 6.09521484375,
+              "ms": 0.32500000298023224,
+              "scriptMs": null
+            },
+            {
+              "sample": 9,
+              "tracing": true,
+              "load": 6.09521484375,
+              "ms": 0.5549999997019768,
+              "scriptMs": 0.556
+            },
+            {
+              "sample": 10,
+              "tracing": false,
+              "load": 6.09521484375,
+              "ms": 0.45499999821186066,
+              "scriptMs": null
+            },
+            {
+              "sample": 10,
+              "tracing": true,
+              "load": 6.09521484375,
+              "ms": 0.6099999994039536,
+              "scriptMs": 0.608
+            },
+            {
+              "sample": 11,
+              "tracing": false,
+              "load": 6.09521484375,
+              "ms": 0.38499999791383743,
+              "scriptMs": null
+            },
+            {
+              "sample": 11,
+              "tracing": true,
+              "load": 6.09521484375,
+              "ms": 0.5200000032782555,
+              "scriptMs": 0.52
+            },
+            {
+              "sample": 12,
+              "tracing": false,
+              "load": 7.12841796875,
+              "ms": 0.3399999961256981,
+              "scriptMs": null
+            },
+            {
+              "sample": 12,
+              "tracing": true,
+              "load": 7.12841796875,
+              "ms": 0.5200000032782555,
+              "scriptMs": 0.518
+            },
+            {
+              "sample": 13,
+              "tracing": false,
+              "load": 7.12841796875,
+              "ms": 0.39000000059604645,
+              "scriptMs": null
+            },
+            {
+              "sample": 13,
+              "tracing": true,
+              "load": 7.12841796875,
+              "ms": 0.5300000011920929,
+              "scriptMs": 0.53
+            },
+            {
+              "sample": 14,
+              "tracing": false,
+              "load": 7.12841796875,
+              "ms": 0.35999999940395355,
+              "scriptMs": null
+            },
+            {
+              "sample": 14,
+              "tracing": true,
+              "load": 7.12841796875,
+              "ms": 0.5250000059604645,
+              "scriptMs": 0.521
+            }
+          ]
+        },
+        {
+          "subject": "browser-direct-before-release",
+          "untracedMedian": 0.36500000208616257,
+          "tracedMedian": 0.675,
+          "raw": [
+            {
+              "sample": 0,
+              "tracing": false,
+              "load": 6.0166015625,
+              "ms": 0.35999999940395355,
+              "scriptMs": null
+            },
+            {
+              "sample": 0,
+              "tracing": true,
+              "load": 6.0166015625,
+              "ms": 0.6449999958276749,
+              "scriptMs": 0.644
+            },
+            {
+              "sample": 1,
+              "tracing": false,
+              "load": 6.0166015625,
+              "ms": 0.39000000059604645,
+              "scriptMs": null
+            },
+            {
+              "sample": 1,
+              "tracing": true,
+              "load": 6.0166015625,
+              "ms": 0.6550000011920929,
+              "scriptMs": 0.656
+            },
+            {
+              "sample": 2,
+              "tracing": false,
+              "load": 6.0166015625,
+              "ms": 0.3449999988079071,
+              "scriptMs": null
+            },
+            {
+              "sample": 2,
+              "tracing": true,
+              "load": 6.0166015625,
+              "ms": 0.6499999985098839,
+              "scriptMs": 0.649
+            },
+            {
+              "sample": 3,
+              "tracing": false,
+              "load": 6.0166015625,
+              "ms": 0.36500000208616257,
+              "scriptMs": null
+            },
+            {
+              "sample": 3,
+              "tracing": true,
+              "load": 6.0166015625,
+              "ms": 0.6950000002980232,
+              "scriptMs": 0.693
+            },
+            {
+              "sample": 4,
+              "tracing": false,
+              "load": 6.0166015625,
+              "ms": 0.33000000566244125,
+              "scriptMs": null
+            },
+            {
+              "sample": 4,
+              "tracing": true,
+              "load": 6.0166015625,
+              "ms": 0.6799999997019768,
+              "scriptMs": 0.675
+            },
+            {
+              "sample": 5,
+              "tracing": false,
+              "load": 6.0166015625,
+              "ms": 0.39500000327825546,
+              "scriptMs": null
+            },
+            {
+              "sample": 5,
+              "tracing": true,
+              "load": 6.0166015625,
+              "ms": 0.6899999976158142,
+              "scriptMs": 0.69
+            },
+            {
+              "sample": 6,
+              "tracing": false,
+              "load": 6.09521484375,
+              "ms": 0.35500000417232513,
+              "scriptMs": null
+            },
+            {
+              "sample": 6,
+              "tracing": true,
+              "load": 6.09521484375,
+              "ms": 0.6549999937415123,
+              "scriptMs": 0.653
+            },
+            {
+              "sample": 7,
+              "tracing": false,
+              "load": 6.09521484375,
+              "ms": 0.45000000298023224,
+              "scriptMs": null
+            },
+            {
+              "sample": 7,
+              "tracing": true,
+              "load": 6.09521484375,
+              "ms": 0.755000002682209,
+              "scriptMs": 0.752
+            },
+            {
+              "sample": 8,
+              "tracing": false,
+              "load": 6.09521484375,
+              "ms": 0.35999999940395355,
+              "scriptMs": null
+            },
+            {
+              "sample": 8,
+              "tracing": true,
+              "load": 6.09521484375,
+              "ms": 0.6600000038743019,
+              "scriptMs": 0.663
+            },
+            {
+              "sample": 9,
+              "tracing": false,
+              "load": 6.09521484375,
+              "ms": 0.369999997317791,
+              "scriptMs": null
+            },
+            {
+              "sample": 9,
+              "tracing": true,
+              "load": 6.09521484375,
+              "ms": 0.744999997317791,
+              "scriptMs": 0.744
+            },
+            {
+              "sample": 10,
+              "tracing": false,
+              "load": 6.09521484375,
+              "ms": 0.33500000089406967,
+              "scriptMs": null
+            },
+            {
+              "sample": 10,
+              "tracing": true,
+              "load": 6.09521484375,
+              "ms": 0.6799999997019768,
+              "scriptMs": 0.68
+            },
+            {
+              "sample": 11,
+              "tracing": false,
+              "load": 6.09521484375,
+              "ms": 0.38500000536441803,
+              "scriptMs": null
+            },
+            {
+              "sample": 11,
+              "tracing": true,
+              "load": 6.09521484375,
+              "ms": 0.7049999982118607,
+              "scriptMs": 0.699
+            },
+            {
+              "sample": 12,
+              "tracing": false,
+              "load": 7.12841796875,
+              "ms": 0.4050000011920929,
+              "scriptMs": null
+            },
+            {
+              "sample": 12,
+              "tracing": true,
+              "load": 7.12841796875,
+              "ms": 0.6599999964237213,
+              "scriptMs": 0.654
+            },
+            {
+              "sample": 13,
+              "tracing": false,
+              "load": 7.12841796875,
+              "ms": 0.4100000038743019,
+              "scriptMs": null
+            },
+            {
+              "sample": 13,
+              "tracing": true,
+              "load": 7.12841796875,
+              "ms": 0.6749999970197678,
+              "scriptMs": 0.678
+            },
+            {
+              "sample": 14,
+              "tracing": false,
+              "load": 7.12841796875,
+              "ms": 0.35999999940395355,
+              "scriptMs": null
+            },
+            {
+              "sample": 14,
+              "tracing": true,
+              "load": 7.12841796875,
+              "ms": 0.630000002682209,
+              "scriptMs": 0.632
+            }
+          ]
+        },
+        {
+          "subject": "browser-direct-release",
+          "untracedMedian": 0.3799999952316284,
+          "tracedMedian": 0.722,
+          "raw": [
+            {
+              "sample": 0,
+              "tracing": false,
+              "load": 6.0166015625,
+              "ms": 0.39000000059604645,
+              "scriptMs": null
+            },
+            {
+              "sample": 0,
+              "tracing": true,
+              "load": 6.0166015625,
+              "ms": 0.7049999982118607,
+              "scriptMs": 0.708
+            },
+            {
+              "sample": 1,
+              "tracing": false,
+              "load": 6.0166015625,
+              "ms": 0.3799999952316284,
+              "scriptMs": null
+            },
+            {
+              "sample": 1,
+              "tracing": true,
+              "load": 6.0166015625,
+              "ms": 0.8200000002980232,
+              "scriptMs": 0.814
+            },
+            {
+              "sample": 2,
+              "tracing": false,
+              "load": 6.0166015625,
+              "ms": 0.369999997317791,
+              "scriptMs": null
+            },
+            {
+              "sample": 2,
+              "tracing": true,
+              "load": 6.0166015625,
+              "ms": 0.7549999952316284,
+              "scriptMs": 0.749
+            },
+            {
+              "sample": 3,
+              "tracing": false,
+              "load": 6.0166015625,
+              "ms": 0.4050000011920929,
+              "scriptMs": null
+            },
+            {
+              "sample": 3,
+              "tracing": true,
+              "load": 6.0166015625,
+              "ms": 0.7250000014901161,
+              "scriptMs": 0.722
+            },
+            {
+              "sample": 4,
+              "tracing": false,
+              "load": 6.0166015625,
+              "ms": 0.38500000536441803,
+              "scriptMs": null
+            },
+            {
+              "sample": 4,
+              "tracing": true,
+              "load": 6.0166015625,
+              "ms": 0.6899999976158142,
+              "scriptMs": 0.692
+            },
+            {
+              "sample": 5,
+              "tracing": false,
+              "load": 6.0166015625,
+              "ms": 0.3799999952316284,
+              "scriptMs": null
+            },
+            {
+              "sample": 5,
+              "tracing": true,
+              "load": 6.0166015625,
+              "ms": 0.7800000011920929,
+              "scriptMs": 0.78
+            },
+            {
+              "sample": 6,
+              "tracing": false,
+              "load": 6.09521484375,
+              "ms": 0.39000000059604645,
+              "scriptMs": null
+            },
+            {
+              "sample": 6,
+              "tracing": true,
+              "load": 6.09521484375,
+              "ms": 0.7099999934434891,
+              "scriptMs": 0.709
+            },
+            {
+              "sample": 7,
+              "tracing": false,
+              "load": 6.09521484375,
+              "ms": 0.3999999985098839,
+              "scriptMs": null
+            },
+            {
+              "sample": 7,
+              "tracing": true,
+              "load": 6.09521484375,
+              "ms": 0.7200000062584877,
+              "scriptMs": 0.711
+            },
+            {
+              "sample": 8,
+              "tracing": false,
+              "load": 6.09521484375,
+              "ms": 0.3700000047683716,
+              "scriptMs": null
+            },
+            {
+              "sample": 8,
+              "tracing": true,
+              "load": 6.09521484375,
+              "ms": 0.7899999991059303,
+              "scriptMs": 0.78
+            },
+            {
+              "sample": 9,
+              "tracing": false,
+              "load": 6.09521484375,
+              "ms": 0.3400000035762787,
+              "scriptMs": null
+            },
+            {
+              "sample": 9,
+              "tracing": true,
+              "load": 6.09521484375,
+              "ms": 0.7250000014901161,
+              "scriptMs": 0.722
+            },
+            {
+              "sample": 10,
+              "tracing": false,
+              "load": 6.09521484375,
+              "ms": 0.375,
+              "scriptMs": null
+            },
+            {
+              "sample": 10,
+              "tracing": true,
+              "load": 6.09521484375,
+              "ms": 0.7100000008940697,
+              "scriptMs": 0.71
+            },
+            {
+              "sample": 11,
+              "tracing": false,
+              "load": 6.09521484375,
+              "ms": 0.380000002682209,
+              "scriptMs": null
+            },
+            {
+              "sample": 11,
+              "tracing": true,
+              "load": 6.09521484375,
+              "ms": 0.8049999997019768,
+              "scriptMs": 0.8
+            },
+            {
+              "sample": 12,
+              "tracing": false,
+              "load": 7.12841796875,
+              "ms": 0.36499999463558197,
+              "scriptMs": null
+            },
+            {
+              "sample": 12,
+              "tracing": true,
+              "load": 7.12841796875,
+              "ms": 0.6999999955296516,
+              "scriptMs": 0.696
+            },
+            {
+              "sample": 13,
+              "tracing": false,
+              "load": 7.12841796875,
+              "ms": 0.3450000062584877,
+              "scriptMs": null
+            },
+            {
+              "sample": 13,
+              "tracing": true,
+              "load": 7.12841796875,
+              "ms": 0.7150000035762787,
+              "scriptMs": 0.71
+            },
+            {
+              "sample": 14,
+              "tracing": false,
+              "load": 7.12841796875,
+              "ms": 0.38500000536441803,
+              "scriptMs": null
+            },
+            {
+              "sample": 14,
+              "tracing": true,
+              "load": 7.12841796875,
+              "ms": 0.7400000020861626,
+              "scriptMs": 0.74
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}
