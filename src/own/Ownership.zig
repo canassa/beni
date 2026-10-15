@@ -45,6 +45,7 @@ const SourceStore = @import("../SourceStore.zig");
 const Token = @import("../lex/Token.zig");
 const Ast = @import("../parse/Ast.zig");
 const summary_bytes = @import("summary_bytes.zig");
+const SchemaCtor = @import("../js/SchemaCtor.zig");
 const Profile = @import("../Profile.zig");
 
 const Inst = Bir.Inst;
@@ -93,6 +94,9 @@ pub const Input = struct {
     /// Per module index.
     birs: []const *const Bir,
     provenance: []const Interface.Provenance,
+    /// Per module index: its interface, for an imported schema constructor
+    /// (`ext_schema_ctor`); shorter when none is known.
+    interfaces: []const Interface = &.{},
     /// Per module index; shorter when a module was not checked.
     dispatch: []const Dispatch,
     /// Per module index: the kept check tables; shorter, or with an empty
@@ -505,6 +509,9 @@ result_err: ?ResultErr = null,
 ctor_type: std.ArrayList(u64) = .empty,
 /// Per constructor id: its `(module, index)`, for printing.
 ctor_key: std.ArrayList(u64) = .empty,
+/// Per module: where each declaration's schema constructors start
+/// (`schemaCtorBases`), in `keep`.
+schema_ctor_bases: []?[]const u32 = &.{},
 /// Per type `(module, declaration)`: whether it is recursive.
 recursive_types: std.AutoHashMapUnmanaged(u64, bool) = .empty,
 /// Memos of path arithmetic, which the walk repeats (§18.11).
@@ -544,6 +551,7 @@ pub fn deinit(o: *Ownership) void {
     o.ctor_ids.deinit(o.in.gpa);
     o.ctor_type.deinit(o.in.gpa);
     o.ctor_key.deinit(o.in.gpa);
+    o.in.gpa.free(o.schema_ctor_bases);
     o.recursive_types.deinit(o.in.gpa);
     o.concat_memo.deinit(o.in.gpa);
     o.tracked_memo.deinit(o.in.gpa);
@@ -855,9 +863,88 @@ pub fn moduleNamed(o: *Ownership, package: SourceStore.Package, name: []const u8
     return o.module_by_name.get(key);
 }
 
-/// Whether module `m` has a constructor at index `i`.
-pub fn hasCtor(o: *const Ownership, m: u32, i: u32) bool {
-    return m < o.in.birs.len and i < o.in.birs[m].ctors.len;
+/// Whether module `m` has a constructor at index `i`: one of its BIR's
+/// constructors, or one of its tagged schemas' (`schemaCtorIndex`).
+pub fn hasCtor(o: *Ownership, m: u32, i: u32) Allocator.Error!bool {
+    if (m >= o.in.birs.len) return false;
+    const bases = try o.schemaCtorBases(m);
+    return i < o.in.birs[m].ctors.len + bases[bases.len - 1];
+}
+
+/// A tagged schema's constructor in its module's constructor index space
+/// (§28.4): after the BIR's own constructors, every tagged schema of the
+/// module in declaration order, each with its `Type` family's variants and
+/// then its `Encoded` family's. A function of the module's source, as a
+/// BIR constructor's index is, so a block can name it. Null when the
+/// declaration is no tagged schema of that many variants.
+fn schemaCtorIndex(o: *Ownership, m: u32, decl: u32, encoded: bool, variant: u32) Allocator.Error!?u32 {
+    if (m >= o.in.birs.len) return null;
+    const bir = o.in.birs[m];
+    if (decl >= bir.decls.len or bir.decls[decl].kind != .schema) return null;
+    const bases = try o.schemaCtorBases(m);
+    const count = (bases[decl + 1] - bases[decl]) / 2;
+    if (variant >= count) return null;
+    return @intCast(bir.ctors.len + bases[decl] + (if (encoded) count else 0) + variant);
+}
+
+/// `schemaCtorIndex` of module `m`'s interface schema constructor `i`, as
+/// an `ext_schema_ctor` names it.
+fn extSchemaCtorIndex(o: *Ownership, m: u32, i: u32) Allocator.Error!?u32 {
+    if (m >= o.in.interfaces.len or m >= o.in.provenance.len) return null;
+    const iface = &o.in.interfaces[m];
+    if (i >= iface.schema_ctors.len) return null;
+    const ctor = iface.schema_ctors[i];
+    const si = @backingInt(ctor.schema);
+    if (si >= iface.schemas.len) return null;
+    const schema = iface.schemas[si];
+    const from = switch (ctor.endpoint) {
+        .type => schema.program_ctors_start,
+        .encoded => schema.encoded_ctors_start,
+    };
+    if (i < from) return null;
+    const decl = o.in.provenance[m].schemaDecl(si) orelse return null;
+    return o.schemaCtorIndex(m, decl.int(), ctor.endpoint == .encoded, i - from);
+}
+
+/// Per declaration of module `m`, where its schema constructors start after
+/// the BIR's own; one more entry holds the module's total.
+fn schemaCtorBases(o: *Ownership, m: u32) Allocator.Error![]const u32 {
+    if (o.schema_ctor_bases.len == 0) {
+        o.schema_ctor_bases = try o.in.gpa.alloc(?[]const u32, o.in.birs.len);
+        @memset(o.schema_ctor_bases, null);
+    }
+    if (o.schema_ctor_bases[m]) |b| return b;
+    const bir = o.in.birs[m];
+    const bases = try o.keep.allocator().alloc(u32, bir.decls.len + 1);
+    var at: u32 = 0;
+    for (bir.decls, 0..) |d, i| {
+        bases[i] = at;
+        if (d.kind == .schema) if (SchemaCtor.taggedVariants(bir, d)) |v| {
+            at += 2 * @as(u32, @intCast(v.len));
+        };
+    }
+    bases[bir.decls.len] = at;
+    o.schema_ctor_bases[m] = bases;
+    return bases;
+}
+
+/// The name of constructor `i` of module `m`, for a printed path; empty
+/// when it has none.
+fn ctorName(o: *const Ownership, m: u32, i: u32) []const u8 {
+    if (m >= o.in.birs.len or i == none) return "";
+    const bir = o.in.birs[m];
+    if (i < bir.ctors.len) return o.in.interner.slice(bir.symbol(bir.ctors[i].name));
+    const bases = (if (m < o.schema_ctor_bases.len) o.schema_ctor_bases[m] else null) orelse return "";
+    const k = i - @as(u32, @intCast(bir.ctors.len));
+    for (bir.decls, 0..) |d, di| {
+        if (k < bases[di] or k >= bases[di + 1]) continue;
+        const count = (bases[di + 1] - bases[di]) / 2;
+        const variant = (k - bases[di]) % count;
+        const variants = SchemaCtor.taggedVariants(bir, d) orelse return "";
+        if (variant >= variants.len) return "";
+        return o.in.interner.slice(bir.symbol(@fromBackingInt(@intCast(bir.instData(variants[variant]).lhs))));
+    }
+    return "";
 }
 
 /// A constructor id's module and index in that module's table.
@@ -2307,12 +2394,7 @@ fn writePath(o: *const Ownership, w: *std.Io.Writer, p: u32) std.Io.Writer.Error
             const name: []const u8 = blk: {
                 if (c >= o.ctor_key.items.len) break :blk "";
                 const key = o.ctor_key.items[c];
-                const m: u32 = @intCast(key >> 32);
-                const i: u32 = @truncate(key);
-                if (m >= o.in.birs.len or i == none) break :blk "";
-                const bir = o.in.birs[m];
-                if (i >= bir.ctors.len) break :blk "";
-                break :blk o.in.interner.slice(bir.symbol(bir.ctors[i].name));
+                break :blk o.ctorName(@intCast(key >> 32), @truncate(key));
             };
             try w.print("#{s}.{d}", .{ name, s.arg % 64 });
         },
@@ -4261,7 +4343,24 @@ const Walker = struct {
                 const i = w.o.in.provenance[data.lhs].ctorIndex(data.rhs) orelse none;
                 return w.o.ctorId(data.lhs, i);
             },
-            else => return w.o.ctorId(none, ref.int()),
+            // A tagged schema's constructor, named as its declaring module
+            // names it (`schemaCtorIndex`), so a block can carry its paths
+            // and an imported use is the same constructor as a local one.
+            .schema_ctor_top => {
+                const r = Bir.SchemaCtorRef.unpack(data.rhs);
+                const i = try w.o.schemaCtorIndex(w.m, data.lhs, r.encoded, r.variant) orelse none;
+                return w.o.ctorId(w.m, i);
+            },
+            .ext_schema_ctor => {
+                const m = data.lhs;
+                return w.o.ctorId(m, try w.o.extSchemaCtorIndex(m, data.rhs) orelse none);
+            },
+            // Unreachable in a program the check accepted, which is the only
+            // one the pass walks: a resolved constructor reference is one of
+            // the four above. Its id has a module, so a block that meets it
+            // stays well formed; the index names no constructor, so the
+            // reader refuses that block (§28.4's last paragraph).
+            else => return w.o.ctorId(w.m, none),
         }
     }
 
