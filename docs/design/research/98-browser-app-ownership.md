@@ -1,8 +1,8 @@
-# 95 — Browser application ownership: audited causes and idiomatic repairs
+# 98 — Browser application ownership: audited causes and idiomatic repairs
 
 *2026-10-15. The original campaign on `52a2c5d2f` plus PR #116's
 initialization-transfer rule is retained as historical evidence in
-[`95-browser-app-ownership.json`](95-browser-app-ownership.json). The independent
+[`98-browser-app-ownership.json`](98-browser-app-ownership.json). The independent
 audit below corrects its causal and scheduling claims. The repaired apps are
 measured on the rebased PR. The later captured-local soundness correction is
 recorded separately in §5.*
