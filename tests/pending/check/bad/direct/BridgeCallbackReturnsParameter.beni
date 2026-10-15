@@ -1,0 +1,18 @@
+-- a callee pushes what its callback returns, and the callback returns the
+-- callee's own parameter: the caller's list is written while it is still read.
+-- Confirmed by the in-place interpreter (bridge lead v6-17-5271); see
+-- proofs/ownership/CONSTRUCTIONS-RESULTS.md. Fault: src/own/Ownership.zig
+-- returnsOwned, the `.param` result branch of the need check, trusts the
+-- callee-frame owned bit of the supply of p and demands nothing of `xs`.
+pushReturned p f =
+    b = f p
+    List.push b 3
+
+
+identity x = x
+
+
+pub run ⊤ =
+    xs = [ 1, 3, 2 ]
+    r = pushReturned xs identity
+    { f0 = r, f2 = xs }
