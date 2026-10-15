@@ -20,7 +20,8 @@ is bimodal, so its median contrast is not treated as a stable headline speedup.
 
 The fixed counts all completed. The clean batch wall window was **12:20:31–15:16:17 UTC,
 2 h 55 min 46 s**, including the roughly three-minute setup-only app stall
-and native report processing, following the owner's instruction to finish the original
+and native report processing. The actual 200-page app grid occupies 17.112 s
+of that window. This follows the owner’s instruction to finish the original
 batch despite the underestimated memory cost. Initial setup and its invalidated
 epoch add about 42 minutes from the first machine capture; the original
 two-hour estimate was not met. The setup errors and zero-sample app setup
@@ -189,7 +190,10 @@ Swap fires criterion 4 under the **amended pre-S7 1.15× bar**, not the older
 1.0× bar. Its direct IQR is 0.1450–0.1863 versus vanilla 0.1250–0.1400 ms.
 The slower-than-P3 prong also fires literally: its pooled point ratio is
 1.0833×. The overlapping IQRs qualify the strength of that ordering, not the
-literal verdict. The shipped-reconciler prong is also unmet: exact unique-key
+literal verdict. By page, direct/P3 is 1.0154× on page 0 and a displayed
+tie (0.1500/0.1500 ms) on page 1. Direct/vanilla is 1.2692× and 1.153846×;
+the latter exceeds 1.15 by only about 0.5 microseconds, not a resolved margin.
+These page contrasts qualify the pooled result. The shipped-reconciler prong is also unmet: exact unique-key
 edits bypass it, but duplicate-key fallback code remains, as the later
 rank-correctness amendment requires. Thus all three stated swap/reconciler
 conditions are accounted for; preserving the required fallback does not mean
@@ -313,6 +317,11 @@ bimodal: six observations are 4.915–5.500 ms and fourteen are
 4.605–8.060 ms, including its high observation; comparison with tea's lower mode gives a much smaller gap
 and some overlap. The bimodality is unexplained; tiering, scheduling or which
 queued work the eight-microtask boundary includes were not isolated.
+A read-only post-review split finds low-mode sample indices 0, 5, 7, 12,
+14 and 19: three run first and three second; the high mode splits seven/seven.
+The observed mode is therefore not associated with first/second position in
+these twenty samples, and low observations are not confined to early pages.
+This does not establish a cause or rule out other scheduling/tiering effects.
 Reset's direct median is 43.2% higher within this same interval. Neither
 contrast measures layout/paint or whole user-perceived latency, and selection
 is not used below as a settled 40.7% platform win. These setup/reset operations
