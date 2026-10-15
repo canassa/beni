@@ -22,13 +22,13 @@ It does not substitute for the development visit oracle or full value fuzz.
 `speed.mjs` measures two mask kernels and two dictionary-lookup kernels in
 Chrome. Its raw observations concern warmed kernels, not application latency.
 `timing.mjs` reconstructs the Conduit tea/original-direct/short-ID comparison
-from the archive and invokes the existing fresh-page CDP harness. Both record
+from the archive (pass `inline-group-records` for that prototype) and invokes the existing fresh-page CDP harness. Both record
 raw observations; the latter also records hashes, host load and transcript checks.
 
 `results/*.mjs.gz` are lossless archived JavaScript, with gzip only as a storage
 envelope. The delivery gzip-9/brotli-11 figures come from compressing the unzipped
 bytes. `measurements.json` identifies the compiler/base and stores declaration
 names/spans, hashes, raw/gzip/brotli baselines and both kinds of attribution.
-`prototypes.json`, `verification.json`, `speed.json` and `path-timing.json`
+`prototypes.json`, `verification.json`, `speed.json`, `path-timing.json` and `group-timing.json`
 retain the additional measurements. Each encoding is applied to the baseline
 alone, except the explicitly labelled paths-and-zeroes composition experiment.
