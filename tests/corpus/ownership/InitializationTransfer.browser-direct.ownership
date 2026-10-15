@@ -1,0 +1,26 @@
+module InitializationTransfer
+  14:17 ++ InitializationTransfer.seed: accepted call
+  18:28 List.push InitializationTransfer.consumed: rejected top-level: InitializationTransfer.consumed is a top-level value
+  26:19 ++ InitializationTransfer.twice: rejected top-level: InitializationTransfer.twice is a top-level value
+  38:30 ++ InitializationTransfer.deferredSeed: rejected top-level: InitializationTransfer.deferredSeed is a top-level value
+  46:25 ++ InitializationTransfer.publicSeed: rejected top-level: InitializationTransfer.publicSeed is a top-level value
+  58:7 List.push left: rejected alias: right holds it and is read at 58:5
+  70:14 List.push InitializationTransfer.wrapper.items: rejected top-level: InitializationTransfer.shared is a top-level value
+  84:7 List.push left: accepted call
+  95:15 List.push InitializationTransfer.escapedSeed: rejected escaped: it was given to JavaScript, or kept by a callee (approx)
+  103:18 List.push InitializationTransfer.functionSeed: rejected top-level: InitializationTransfer.functionSeed is a top-level value
+  111:38 List.push InitializationTransfer.branchSeed: accepted call
+  119:15 List.push InitializationTransfer.chainStart: accepted call
+  123:12 List.push InitializationTransfer.chainMiddle: accepted call
+  132:14 List.push InitializationTransfer.localSeed: rejected top-level: InitializationTransfer.localSeed is a top-level value
+  142:23 List.pop InitializationTransfer.evidenceSeed: rejected top-level: InitializationTransfer.evidenceSeed is a top-level value
+  154:14 List.push InitializationTransfer.schemaSeed: rejected top-level: InitializationTransfer.schemaSeed is a top-level value
+  162:14 List.push InitializationTransfer.markupSeed: rejected top-level: InitializationTransfer.markupSeed is a top-level value
+  175:22 List.push InitializationTransfer.sourceWithEvidence: rejected top-level: InitializationTransfer.sourceWithEvidence is a top-level value
+  summary destinationStillShared: res [*] shared(InitializationTransfer.consumed)[*], shared(InitializationTransfer.consumed)
+  summary functionRead: res shared(InitializationTransfer.functionSeed)
+  demands 18: accepted 5 (fresh 0, call 5, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 13
+total 18: accepted 5 (fresh 0, call 5, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 13
+cause escaped 1
+cause top-level 11
+cause alias 1

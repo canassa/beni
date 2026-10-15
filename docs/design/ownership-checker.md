@@ -2574,7 +2574,7 @@ its boundaries; `RESULTS.md` records the campaigns and holes. The residual gaps 
 | `Dict.focus`'s destructive read (§20.8) | `assertDictFocus` | two positions of a tree holding one value, both written. List focus is modelled; the core has no tree, keys or dictionary representative separation. |
 | Markup/constructor lowering and opaque carrier encodings | markup transfer and summary blocks | Slots and constructor payload retention are modelled as positional records; HTML syntax, wildcard opaque paths, import serialization and actual row/component lowering are absent. Their encoding must preserve the modelled slots and conservative fallback |
 | Fold dictionary representatives and recursion | fold/focus summaries | Container ownership is modelled for lists and positional records; no dictionary keys, recursive data types, mutual recursion or unknown/coarsened foreign rows exist in the core, so those implementations and their precision backstops still need Zig fixtures |
-| Private single-read initialization transfer (2026-10-15 amendment) | `initializationTransfer`, `sharedOf` | A repeated/deferred read or a retained allocation mistaken for fresh would observe a later mutation. The Lean core has no module initialization or private global bindings; accepted and rejected BIR fixtures cover this boundary. |
+| Private single-read initialization transfer (2026-10-15 amendment) | `initializationTransfer`, `sharedOf` | A repeated/deferred or evidence-parameterized read, or a retained allocation mistaken for fresh, would observe a later mutation. The Lean core has no module initialization, suspension or private global bindings; accepted and rejected BIR fixtures cover this boundary. |
 
 ### 26.8 Open questions
 
@@ -3342,8 +3342,8 @@ A private, parameterless value may transfer its freshly allocated cells to its
 sole read when that read executes directly in another nonrecursive,
 parameterless initializer of the same application module. The whole module
 must contain exactly one reference to the value. Reads in closures or functions,
-public values, foreign values, recursive initializers, coarsened summaries and
-unknown results receive no permission. The reference count is over BIR value
+public values, foreign values, recursive initializers, coarsened summaries,
+evidence-parameterized values and unknown results receive no permission. The reference count is over BIR value
 instructions, including deferred bodies, not over reachable calls.
 
 The value's ordinary result summary is instantiated at that read, preserving
@@ -3359,4 +3359,23 @@ the transferred binding. Existing summary escape and separation obligations
 cover retained aliases and repeated result positions. A read in a closure could
 execute repeatedly, so it is excluded even when the closure itself has one
 syntactic occurrence. A later use of the destination must still be rejected.
-The cached ownership block version advances from 4 to 5 with this rule.
+The cached ownership block version advances from 4 to 6 with this rule and its
+reviewed evidence guard.
+
+
+*Review clarification, 2026-10-15.* Ordinary top-level values cannot suspend
+(`transparent-effects-proposal.md` §15.2 item 7); delayed work in a lambda is
+not executed by initialization, and its reads get a nonzero ownership frame.
+A parameterless value carrying explicit or inferred `where` evidence, or a
+hidden identity parameter, can instead be evaluated at its uses. Neither the
+source nor the consumer may have such hidden parameters. Their presence is
+read from the solved dispatch table, not merely the source annotation.
+An explicit-evidence pop of a private polymorphic empty list pins this guard.
+
+Known private expression names lower through `resolveValue` to `.top`, also
+inside schema `via` expressions and markup holes; schema namespace references
+name schema declarations, which are ineligible sources. A private value cannot
+be a public static-dispatch member; function-valued result provenances are also
+ineligible for this transfer. The new schema and markup second-read twins pin
+the ordinary-value path. Ownership currently walks modules serially; its lazy
+reference-count memo would need synchronization before parallelizing that walk.

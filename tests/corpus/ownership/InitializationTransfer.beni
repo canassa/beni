@@ -1,6 +1,8 @@
 -- One strict read transfers fresh allocations; the destination stays shared.
 -- The unsafe twins have a second read, deferred reads, a public seed, aliases
 -- within the transferred value, or a genuinely shared source allocation.
+import Html exposing (Html)
+import Schema
 import Task
 
 
@@ -99,3 +101,75 @@ functionSeed = [ 1 ]
 
 pub functionRead : Int → List Int
 functionRead n = List.push functionSeed n
+
+
+branchSeed : List Int
+branchSeed = [ 1 ]
+
+
+pub branchRead : List Int
+branchRead = if List.isEmpty [] then List.push branchSeed 2 else []
+
+
+chainStart : List Int
+chainStart = [ 1 ]
+
+
+chainMiddle : List Int
+chainMiddle = List.push chainStart 2
+
+
+pub chainEnd : List Int
+chainEnd = List.push chainMiddle 3
+
+
+localSeed : List Int
+localSeed = [ 1 ]
+
+
+pub localFunction : List Int
+localFunction =
+    grow n = List.push localSeed n
+    grow 2
+
+
+evidenceSeed : List a
+evidenceSeed = []
+
+
+pub evidenceDestination : List a
+    where a.compare : a, a → Order
+evidenceDestination = List.pop evidenceSeed
+
+
+schemaSeed : List Int
+schemaSeed = [ 1 ]
+
+
+pub schema KeepsSeed =
+    Int via (Schema.conversion (λn → Ok (n + List.length schemaSeed)) λn → Ok n)
+
+
+pub schemaRead : List Int
+schemaRead = List.push schemaSeed 2
+
+
+markupSeed : List Int
+markupSeed = [ 1 ]
+
+
+pub markupRead : List Int
+markupRead = List.push markupSeed 2
+
+
+pub markupObserver : Html Int
+markupObserver = <p>{String.fromInt (List.length markupSeed)}</p>
+
+
+sourceWithEvidence : List a
+    where a.compare : a, a → Order
+sourceWithEvidence = []
+
+
+pub evidenceSourceRead : List Int
+evidenceSourceRead = List.push sourceWithEvidence 1
