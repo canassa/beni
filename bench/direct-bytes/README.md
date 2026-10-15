@@ -1,6 +1,6 @@
 # Direct bundle anatomy
 
-[Research 98](../../docs/design/research/98-direct-bytes.md) owns the conclusions,
+[Research 99](../../docs/design/research/99-direct-bytes.md) owns the conclusions,
 method, limits and reproduction commands. Run scripts from the repository root.
 No compiler changes are needed. The scripts use the UI benchmark's installed,
 pinned Acorn and source-map dependencies (`npm ci` in `bench/ui/apps/solid1`).
