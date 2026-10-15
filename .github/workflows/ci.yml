@@ -122,3 +122,35 @@ jobs:
             .zig-cache
             ~/.cache/zig
           key: zig-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock') }}-${{ github.sha }}
+
+  # The guard: the one check the rule on master requires, so the rule
+  # stays correct when a job here is added, renamed or split. It passes
+  # only when every job in `needs:` succeeded. No other job in any
+  # workflow may be named `check`.
+  #
+  # `if: always()`: a skipped job counts as a passed required check, and
+  # without it a failed or cancelled `tests` skips the guard. When a newer
+  # push cancels this run, the guard still runs and fails, on the older
+  # commit; the rule reads the head commit. A `tests` that reaches its
+  # timeout also reads `cancelled`.
+  #
+  # `needs:` sees only this workflow. Another workflow joins as
+  # `on: workflow_call`, called here with `uses:` and added to `needs:`;
+  # one that answers another event, such as `claude.yml`, cannot. A pull
+  # request that this workflow skips (a `paths:` or `branches:` filter, a
+  # `[skip ci]` commit) never gets `check` and waits forever.
+  check:
+    name: check
+    if: always()
+    needs: [tests]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    timeout-minutes: 5
+    steps:
+      - name: Check the result of every job
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          echo "$RESULTS"
+          echo "$RESULTS" | jq --exit-status 'all(.[].result; . == "success")' > /dev/null
