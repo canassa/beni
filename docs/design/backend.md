@@ -4203,7 +4203,9 @@ over-elimination, which is the failure this pass has to fear.
 - What **reruns on every build is the walk**, because reachability is whole-program by definition
   and an edit to one module can make another's declaration dead. It is the cheap half: 278 nodes for
   the null program, O(declarations) at scale, against a re-check that the firewall may skip
-  entirely. §8.2's `emit` unit is invalidated by "a change to `decl_val`, or to any representation
+  entirely. *Amended 2026-10-15:* the same split holds inside one build. A build that walks two
+  times (§15.1, *The runtime module*) builds the edge lists once and walks them two times. On
+  `browser/tea/ApiItems` the edge lists cost 62 million instructions and a walk 1.5 million. §8.2's `emit` unit is invalidated by "a change to `decl_val`, or to any representation
   decision it depends on"; **a change to liveness is one more such input**, and a declaration whose
   liveness flipped is an `emit` unit to redo whether or not its own bytes would differ.
 
@@ -7610,6 +7612,21 @@ text (§15.3, §15.6) are compiled; and the differential oracle has a harness (�
   (`--library`) roots the module's `run`, `start` and `flush`, as a development build keeps the
   hand-written file's whole: the page's own entry mounts the exported program with them
   (`import { Rt$run as run } from "./_platform/Rt.mjs"`; `browser_test`'s library page).
+  *Amended 2026-10-15 (issue #94):* **the second walk builds no edge list, and a first lowering
+  that leaves a module out prints nothing.** An edge list is a function of its module's `Bir`, its
+  dispatch table and the build's options, and the roots belong to the walk alone (§9,
+  *Incrementality (M4) and chunking (§10)*). Thus the build makes each module's edge lists once,
+  and the second walk reads the same lists from the new roots. The first lowering does not lower
+  core or the runtime module, because their own lowerings cannot tell the build what it uses of the
+  module (research 70). When it leaves one of them out, the second lowering always follows and
+  lowers every module again. Thus the first lowering only records what each module uses of the
+  runtime module: it prints nothing and makes no source map, and each module is printed once.
+  `--self-profile` counts this: `edge_lists` is the number of modules of the graph, `reach_walks`
+  is 2, and `modules_printed` is the number of modules written. *Measured* in instructions per
+  build (`perf stat -e instructions:u`, the gates' ReleaseSafe compiler): `browser/tea/ApiItems`
+  629 → 545 million in development (−13.5 %) and 1 818 → 1 756 million under `--release`;
+  `browser/direct/AfterRenderFocus` 584 → 489 million (−16.2 %) and 716 → 652 million. A build with
+  no runtime module, which is every `node` program, does not change. No output changes by one byte.
 - **Program start.** The entry file (§5) calls the runtime's `start` export with the build's start
   data before it calls `run`, as `boundary.md` §9.4.5's one shape — an object of sorted keys, each an
   array of sorted, de-duplicated strings: `start({ delegate: ["click", "input"] }); run(Main$main);`.
