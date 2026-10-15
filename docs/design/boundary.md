@@ -3402,7 +3402,17 @@ the `Http` + `Time` page of §9.8.9.
   is still a key.)*
 - **`expectJson` and `jsonBody` take a schema** (`schema.md`), not a `Json.Decode.Decoder` or a
   `Json.Encode.Value`: schemas are beni's JSON story, and one schema reads the answer and writes the
-  request.
+  request. *Amended 2026-10-15 (`schema.md` §6, *A statically known schema runs compiled*;
+  A.11):* the signatures stay, and a statically known schema runs compiled through them.
+  `X.schema ⊤`, `Schema.list (X.schema ⊤)` and every composition of compiled makers carry their
+  compiled parse and print, and `Schema.parse`/`Schema.print` run those. So
+  `Http.jsonBody (X.schema ⊤) v` prints with `X`'s encoding worker and ships no library
+  interpreter, and so does `Http.expectJson (X.schema ⊤)`. A developer writes the plain call, with
+  no `expectStringResponse` helper over `X.parse` and no `stringBody` over `X.print`.
+  `Unprintable issues`, which becomes `BadRequest (UnprintableBody issues)`, and `BadBody issues`
+  carry the compiled root's issues, which are the issues the library makes. The API was not
+  changed to take compiled functions: that would lose `Schema.list X`, which has no `print` of
+  its own, and it would give every program two spellings of one request.
 - **`BadBody` carries the schema's issues, not a string** (H2): each issue has its path and code,
   `Schema.formatIssues` (`schema.md` §14.4, slice S12) makes the text, and a typed failure is what rule 9 asks.
 - **`BadRequest` is new**, for the requests Elm let crash (`setRequestHeader` throwing) or reported
