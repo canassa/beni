@@ -124,15 +124,16 @@ returning a top-level value.
 
 ## 3. Diagnostics and executable evidence
 
-A changed top-level list, including one returned through `init`, now recommends
-building the value **inside a function**:
+An entry demand on a changed top-level list, including one returned through
+`init`, recommends building the value **inside the init function**:
 
 ```beni
 init ⊤ = …
 ```
 
 The message explains that `λ⊤ → initial` still returns the same shared value and
-cites `ownership-checker.md` §22.2. It no longer suggests that merely moving the
+cites `ownership-checker.md` §22.2. Other top-level demands recommend making
+the value a function or writing `List.copy <name>`, citing §4.2. It no longer suggests that merely moving the
 read to startup makes the top-level lists fresh. Whole-list, nested-list and
 entry cases have full diagnostic goldens, including the new `OwnershipInitValue`.
 The existing still-used-base hint is retained verbatim; `OwnershipBorrowedAppend`
@@ -209,3 +210,8 @@ Final validation of the capture correction: full Linux `zorg build test-run-hash
 and exact `zorg build gates` both pass. Source and fixture checksums match the
 worktree. macOS constituent checks have 1,303 passed, 15 skipped and only the two
 known case-folding failures. No budget grant was added or increased.
+
+After master advanced, the branch was rebased again onto `2f397d7b6` (including
+nullary methods and release source maps). Full Linux hash recording and exact
+gates pass again; regenerated hash files need no further changes. The three
+original tea goldens remain byte-identical.
