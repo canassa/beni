@@ -72,21 +72,24 @@ pub const Plan = struct {
     /// `run/MatchRowOrder.beni` catches and which is the reason this array is
     /// as long as `nodes` rather than as long as `names`.
     inlined: []const Node.OptionalIndex = &.{},
-    /// One bit per NAME: declared more than once in some top-level
-    /// declaration (the compiler's positional names can repeat). A
-    /// statement list that declares none of these may be printed as part
-    /// of the list around it — the printer's `else` that follows an arm
-    /// that jumps — since no name in it can then come to mean another.
+    /// One bit per NODE: a declaration statement whose name is bound more
+    /// than once in its own top-level declaration (the compiler's
+    /// positional names can repeat). A statement list that holds none of
+    /// these may be printed as part of the list around it — the printer's
+    /// `else` that follows an arm that jumps — since no name in it can then
+    /// come to mean another. Keyed by the statement, not by the name: one
+    /// `NameIndex` is shared by every declaration that holds that name.
     repeated: []const u32 = &.{},
 
     /// The plan a development build runs under: nothing dropped, nothing
     /// substituted.
     pub const none: Plan = .{};
 
-    /// Whether `n` is declared twice in a declaration; true for anything
-    /// the plan does not cover, which is the safe answer.
-    pub fn isRepeated(p: *const Plan, n: NameIndex) bool {
-        const i = n.unwrap() orelse return false;
+    /// Whether declaration statement `node` binds a name its top-level
+    /// declaration binds more than once; true for anything the plan does
+    /// not cover, which is the safe answer.
+    pub fn isRepeated(p: *const Plan, node: Index) bool {
+        const i = node.int();
         const word = i / 32;
         if (word >= p.repeated.len) return true;
         return p.repeated[word] & (@as(u32, 1) << @intCast(i % 32)) != 0;
@@ -165,7 +168,7 @@ pub fn runKeeping(arena: Allocator, ir: *const JsIr, keep: []const Index, discar
         .stamp = try arena.alloc(u32, ir.names.len),
         .dropped = try arena.alloc(u32, (ir.nodes.len + 31) / 32),
         .inlined = try arena.alloc(Node.OptionalIndex, ir.nodes.len),
-        .repeated = try arena.alloc(u32, (ir.names.len + 31) / 32),
+        .repeated = try arena.alloc(u32, (ir.nodes.len + 31) / 32),
         .mutable = mutable,
     };
     @memset(o.stamp, 0);
@@ -176,7 +179,12 @@ pub fn runKeeping(arena: Allocator, ir: *const JsIr, keep: []const Index, discar
 
     for (ir.extraSlice(ir.body, Index)) |top| {
         o.current += 1;
+        o.binders.clearRetainingCapacity();
         try o.countStmt(top);
+        for (o.binders.items) |stmt| {
+            const i = @as(NameIndex, @fromBackingInt(@intCast(ir.data(stmt).lhs))).unwrap() orelse continue;
+            if (i < o.binds.len and o.readOf(i, "binds") > 1) o.repeated[stmt.int() / 32] |= @as(u32, 1) << @intCast(stmt.int() % 32);
+        }
         try o.planStmt(top);
     }
     return .{ .dropped = o.dropped, .inlined = o.inlined, .repeated = o.repeated };
@@ -224,6 +232,9 @@ const Opt = struct {
     inlined: []Node.OptionalIndex,
     /// `Plan.repeated`.
     repeated: []u32,
+    /// The declaration statements of the top-level declaration being
+    /// counted, whose `repeated` bit is decided once its count is whole.
+    binders: std.ArrayList(Index) = .empty,
     /// `runKeeping`'s `mutable`: bases no fold may rest on.
     mutable: []const NameIndex = &.{},
     /// The `ident` node `exprUses` last matched, which `findUse` reads back
@@ -264,7 +275,6 @@ const Opt = struct {
     /// One more binding of name `i`, a declaration or a parameter.
     fn bind(o: *Opt, i: u32) void {
         o.binds[i] += 1;
-        if (o.binds[i] > 1) o.repeated[i / 32] |= @as(u32, 1) << @intCast(i % 32);
     }
 
     fn readOf(o: *Opt, i: u32, comptime field: []const u8) u32 {
@@ -289,14 +299,17 @@ const Opt = struct {
             },
             .export_stmt => for (o.ir.extraSlice(JsIr.inlineRange(d), NameIndex)) |n| o.use(n),
             .const_decl => {
+                try o.binders.append(o.arena, stmt);
                 o.declare(@fromBackingInt(@intCast(d.lhs)));
                 try o.countExpr(@fromBackingInt(@intCast(d.rhs)));
             },
             .let_decl => {
+                try o.binders.append(o.arena, stmt);
                 o.declare(@fromBackingInt(@intCast(d.lhs)));
                 if (@as(Node.OptionalIndex, @fromBackingInt(@intCast(d.rhs))).unwrap()) |v| try o.countExpr(v);
             },
             .func_decl, .gen_decl => {
+                try o.binders.append(o.arena, stmt);
                 o.declare(@fromBackingInt(@intCast(d.lhs)));
                 try o.countFunc(@fromBackingInt(@intCast(d.rhs)));
             },
