@@ -6797,9 +6797,9 @@ fact 3 finds at the call:
   ask the size model at a call through a property when, by fact 3's values over the whole
   program, these three hold: the callee of exactly one call may be that function, the function
   does not escape, and every other node that may be it only holds it (the function itself, a
-  key's value in an object literal, or a binding's initialiser). And a call may pass more
-  arguments than the function has parameters, when each one past them is `inert`: the call
-  evaluates it and nothing reads it. This is `app.init(null)` of a lambda lowered with no
+  key's value in an object literal, or a binding's initialiser). And a call through a property
+  may pass more arguments than the function has parameters, when each one past them is `inert`:
+  the call evaluates it and nothing reads it. This is `app.init(null)` of a lambda lowered with no
   parameter for its `⊤`; `trimArguments` drops such an argument only after slice 8 has run. The
   rewrite is slice 8's, with slice 8's rules for the arguments that stay: atoms, or one read once
   and first. The uses are counted in one walk of the program, made at most once per pass and only
@@ -6811,7 +6811,7 @@ fact 3 finds at the call:
 
 Neither rule changes a development build.
 
-Measured against `f1ab9cc87` (release, brotli 11, the whole bundle; `bench/size.mjs`'s page and
+Measured against `7bbcb6603` (release, brotli 11, the whole bundle; `bench/size.mjs`'s page and
 fibers lines, raw → raw | brotli → brotli):
 
 | Page | Raw | Brotli |
@@ -6825,24 +6825,25 @@ fibers lines, raw → raw | brotli → brotli):
 | `browser-tea url` | 1 542 → 1 501 | 734 → 713 |
 | `browser-tea random` | 4 367 → 4 318 | 1 915 → 1 896 |
 | `browser-tea effects` | 15 479 → 15 433 | 5 825 → 5 812 |
-| ApiAndRoutes | 49 081 → 49 037 | 16 540 → 16 530 |
+| ApiAndRoutes | 43 930 → 43 908 | 14 542 → 14 522 |
 | TodoMVC | 23 958 → 23 936 | 8 907 → 8 902 |
 
 The `http` page, the empty pages and the Node fibers lines are byte for byte as before: `http`'s
 `init` calls `Cmd.task`, so its body is not inert, and its value is read. `bench/size.mjs` as a
-whole: 18 lines smaller, none larger, −331 brotli (raw −914). Every `browser/` fixture built
-`--release` (each `browser/direct/` page for both platforms): 274 smaller, 267 equal, 9 larger,
-−5 250 brotli (raw −12 946); no output's raw bytes grow, and development output does not move.
-The 9 larger builds, each with 42–44 fewer raw bytes: `browser/tea/Routes` and its
-`browser/direct/` twin on `browser-tea` +24 each, `tea/QueuedListSnapshot` +23,
-`direct/HttpRequestShape` +9, `AnimationFrames` (both directories) +4 each,
-`direct/ControlledEdits` +4, `tea/ApiLogin` and `direct/LateResponse` +2 each. The cause is
-item 2's naming: a declaration that goes moves every later short name by one letter, and brotli
-compresses some of the moved names a little worse. Cesar accepted these increases on 2026-10-15
-(dashboard question `release-purity-q1`), as the slices before this one recorded theirs. Conduit
-(`examples/conduit`) 31 375 → 31 371 on `browser-tea` and 36 439 → 36 426 on `browser-direct`;
-its release build costs 5 219 → 5 254 million instructions on `browser-tea` (+0.7 %, the use
-count of the second rule) and 9 828 → 9 833 on `browser-direct`. The `bench/ui` app is 5 354 →
+whole: 13 lines smaller, none larger, −291 brotli (raw −763). Every `browser/` fixture built
+`--release` (each `browser/direct/` page for both platforms): 267 smaller, 278 equal, 6 larger,
+−5 147 brotli (raw −12 535); no output's raw bytes grow, and development output does not move.
+The 6 larger builds, each with 42–43 fewer raw bytes: `browser/tea/QueuedListSnapshot` +23,
+`browser/direct/HttpRequestShape` on `browser-tea` +9, `AnimationFrames` (both directories) +4
+each, `browser/direct/ControlledEdits` +4 and `LateResponse` +2, both on `browser-tea`. Conduit
+(`examples/conduit`) is 28 844 → 28 850 on `browser-tea` (raw 122 285 → 122 263: the hosted
+`init` of `Tea.application` written at its one call) and byte for byte the same on
+`browser-direct`. The cause of every increase is item 2's naming: a declaration that goes moves
+every later short name by one letter, and brotli compresses some of the moved names a little
+worse. Cesar accepted these increases on 2026-10-15 (dashboard question `release-purity-q1`), as
+the slices before this one recorded theirs. Conduit's release build costs 4 723 → 4 752 million
+instructions on `browser-tea` (+0.6 %, the use count of the second rule) and 9 160 → 9 164 on
+`browser-direct`. The `bench/ui` app is 5 354 →
 5 329 on `browser-tea` (raw 13 395 → 13 350: its one mount is written in its caller, and its first
 model is the literal) and byte for byte the same on `browser-direct`. **Speed**, that app on
 `browser-tea` in happy-dom (the mount as the module's import, then each button clicked and the
@@ -6864,6 +6865,15 @@ neighbours) — red with `makesOnly` accepting any body: the release build loses
 unread `a.init()` and the record holding the lambda go; the hosted `view` calls the start function
 by name), `emit/release/split/HolesPage` (`a.init()` is the model literal `{g:0,a:false}`, and the
 mount, then called with atoms only, is written in its caller).
+
+**Measured and not built: inert extra arguments at every call.** Slice 8 could accept inert
+arguments past the parameters at any call, not only at one through a property. Against the rule
+as built, that wrote in two more of Conduit's wrappers (`Sf(null)` of `()=>le()`, and
+`Qf(null)`, which folds to `0`) and saved 196 raw bytes over `bench/size.mjs` and 453 over the
+`browser/` corpus. But Conduit grew 28 850 → 28 883 brotli on `browser-tea` (raw −44) and
+33 855 → 33 881 on `browser-direct` (raw −16), and `browser/tea/Routes` grew 24 bytes, each by
+the same renaming. A top-level function's calls match its arity already; the rule is kept to the
+calls through a property that `trimArguments` trims later.
 
 **Measured and not built: `releaseKeeps` asking the same test.** A binding lowering keeps for its
 initialiser (`effect_keep`) could be released when that initialiser is a pure call, as one whose

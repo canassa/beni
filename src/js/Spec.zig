@@ -5029,9 +5029,11 @@ const Spec = struct {
         // An argument past the parameters is evaluated by the call and read
         // by nothing: one that does nothing (`inert`) goes with the call —
         // `app.init(null)` of a function lowered with no parameter for `⊤`.
-        // A function called where it is made keeps the exact match: its
-        // own text goes with the call, and no argument may be left over.
-        if (passed.len < small.params.len or (iife and passed.len != small.params.len)) return false;
+        // Only a call through a property, whose arguments `trimArguments`
+        // trims after this pass, may pass more. A top-level function's
+        // calls match its arity already, and one called where it is made
+        // keeps the exact match: its own text goes with the call.
+        if (passed.len < small.params.len or ((iife or small.owner != none) and passed.len != small.params.len)) return false;
         for (passed[small.params.len..]) |a| if (!inert(m.ir, a)) return false;
         const args = passed[0..small.params.len];
         // Arguments: atoms, or one non-atom read once and first.
