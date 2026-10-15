@@ -3061,7 +3061,8 @@ pub fn renderLate(session: *Session, items: []const LateItem, stderr: *Io.Writer
     defer session.late_sources = &.{};
     try session.render(rendered, stderr);
     var errors: u32 = 0;
-    for (rendered[0..items.len]) |d| {
+    // Sorting interleaves held warnings with late errors; count the whole stream.
+    for (rendered) |d| {
         if (d.severity == .@"error") errors += 1;
     }
     return errors;
