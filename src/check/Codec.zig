@@ -62,8 +62,10 @@ pub const State = struct {
     nodes: std.ArrayList(Node) = .empty,
     words: std.ArrayList(u32) = .empty,
     by_key: std.StringHashMapUnmanaged(u32) = .empty,
-    /// A slot's sub-wanted and the field its type was read at, for
-    /// `derived_codec_needs_type`: an error path's list, scanned.
+    /// A slot's sub-wanted and the field its type was read at. Every
+    /// derivation appends one per slot read at a field; only
+    /// `derived_codec_needs_type` reads it, scanning it once per refused
+    /// use (an error path).
     fields: std.ArrayList(struct { WantedId, Symbol }) = .empty,
     /// The uses `derived_codec_needs_type` was said at, once each: scanned.
     unknown: std.ArrayList(Bir.Inst.Index) = .empty,
@@ -471,6 +473,11 @@ const Derivation = struct {
     fn keyInto(d: *Derivation, t: Var, text: *std.ArrayList(u8), slots: *std.ArrayList(Var), fields: *std.ArrayList(Symbol.Optional), field: Symbol.Optional, depth: u32) Error!void {
         const scratch = d.s.cx.scratch;
         const interner = d.s.cx.interner;
+        // A key cut here is never compiled: `nodeFor`'s depth counts every
+        // level of the whole derivation, nested definitions included, so a
+        // type this deep is refused ("nests too deep") before its key's
+        // definition is used, and a second type sharing the cut key finds
+        // that refused definition.
         if (depth > max_depth) return text.appendSlice(scratch, "…");
         const root, const content = d.st().resolved(t);
         switch (content) {
@@ -735,8 +742,8 @@ const Derivation = struct {
         if (prim) |p| return try d.add(.{ .tag = .prim, .a = @backingInt(p) });
         if (a.type == wk.list and args.len == 1) {
             try d.path.append(d.s.cx.scratch, "[]");
+            defer _ = d.path.pop();
             const child = (try d.nodeFor(args[0], slots, false)) orelse return null;
-            _ = d.path.pop();
             return try d.add(.{ .tag = .list, .a = child });
         }
         if (a.type == wk.nullable and args.len == 1) {
@@ -828,6 +835,11 @@ const Derivation = struct {
         // Its type: the module rule makes a module's one `codec` the
         // method of every type the module declares, so it must be this
         // type's (`Instances.match` says the same at the receiver).
+        // An annotated declaration's scheme is read from its annotation
+        // before any group is checked (`Module.zig`), so a null one is an
+        // annotation that failed to read, and an imported null one a module
+        // whose interface failed: both already reported, and the build
+        // stopped. Refusing again says the same thing twice.
         const copy: ?Var = switch (found) {
             .imported => |v| try s.instantiate.importedValue(v.module, @backingInt(v.value)),
             .own => |decl| blk: {
@@ -841,10 +853,12 @@ const Derivation = struct {
         };
         const got = copy orelse return false;
         const wanted = try methodType(s, at);
+        // Rendered before the unification, which may bind part of `at`
+        // before it fails.
+        var namer: Render.Namer = .init(s.cx.scratch);
+        defer namer.deinit();
+        const shown = try Render.allocType(s.cx.scratch, .{ .store = s.store(), .types = s.cx.types, .interner = s.cx.interner }, &namer, at);
         if (!try s.unifyQuiet(got, wanted, d.origin)) {
-            var namer: Render.Namer = .init(s.cx.scratch);
-            defer namer.deinit();
-            const shown = try Render.allocType(s.cx.scratch, .{ .store = s.store(), .types = s.cx.types, .interner = s.cx.interner }, &namer, at);
             _ = try d.failText(at, "has its module's `codec`, which is not `⊤ → Codec {s}`: a module's one `codec` is the method of every type the module declares", .{shown});
             return false;
         }

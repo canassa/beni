@@ -44,10 +44,32 @@ segment s =
             String.fromInt n
 
 
+-- One inferred row feeds two uses in one declaration, a decode and an
+-- encode of the same value, beside an annotated decode in a binding: the row
+-- is closed once, at the boundary, at the one field read, and both uses
+-- share its definition; the annotated use has its own.
+echo : String → String
+echo text =
+    tagged : Result (List Issue) { tag : String }
+    tagged = Json.decode text
+    case Json.decode text of
+        Ok card →
+            card.name
+                ++ " -> "
+                ++ Result.withDefault (Json.encode card) "?"
+                ++ " / "
+                ++ Result.withDefault (Result.map tagged λt → t.tag) "no tag"
+
+        Err issues →
+            "not a card: " ++ String.join (List.map issues issue) "; "
+
+
 main : Node.Program
 main =
     Node.printLines
-        [ summarize "{\"title\":\"Roc\",\"author\":\"Ann\",\"views\":3,\"tags\":[\"fp\",\"json\"]}"
+        [ echo "{\"name\":\"n\",\"tag\":\"t\",\"other\":1}"
+        , echo "{\"name\":\"n\"}"
+        , summarize "{\"title\":\"Roc\",\"author\":\"Ann\",\"views\":3,\"tags\":[\"fp\",\"json\"]}"
         , summarize
             "{\"title\":\"Roc\",\"author\":\"Ann\",\"views\":3,\"tags\":[],\"draft\":true,\"body\":{\"any\":1}}"
         , summarize "{\"title\":\"Roc\",\"author\":\"Ann\",\"tags\":[]}"
