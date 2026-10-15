@@ -2970,7 +2970,7 @@ const Emitter = struct {
         fn build(t: EdgeTask, w: *Worker, i: u32) Allocator.Error!void {
             t.read[i] = false;
             if (t.rows[i]) |bytes| {
-                if (try EdgePack.decode(w.edges.allocator(), bytes, t.in)) |edges| {
+                if (try EdgePack.decode(w.edges.allocator(), bytes, t.in, @fromBackingInt(@intCast(i)))) |edges| {
                     t.edges[i] = edges;
                     t.read[i] = true;
                     return;

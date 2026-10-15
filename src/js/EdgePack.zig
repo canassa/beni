@@ -16,13 +16,34 @@
 //! `Graph.Index`: an index depends on which modules a build holds, and the
 //! maker's graph holds every module of the core where a program's holds
 //! the ones it imports. A row starts with the table of the modules its
-//! nodes name. A build resolves each with `Graph.find`; a target in a
-//! module the build does not hold is dropped, which is what the builder
-//! does when it cannot name that module — the edges no instruction names
-//! (`String.compare`, `core/List`'s helpers) are the only ones that can
-//! reach outside a module's imports. A guard in such a module, or anything
-//! else out of shape, makes the row unusable, and the build builds the
-//! list as before.
+//! nodes name, and a build resolves each with `Graph.find`.
+//!
+//! **A target in a module the build does not hold is dropped.** A
+//! module's edges reach four kinds of target:
+//!
+//! 1. what its instructions and dispatch table name, which is always in a
+//!    module it imports, so in every build that holds it;
+//! 2. `String.compare` and `core/List`'s helpers, which lowering calls
+//!    with no reference of the module's own (`Builder.string_compare`,
+//!    `listEdges`);
+//! 3. `Task.andThen` and `Task.isWaiting`, which a body that may suspend
+//!    calls (`effectEdges`);
+//! 4. the `core/Schema` values a schema member's code calls
+//!    (`memberEdges`).
+//!
+//! The last three can name a core module the module does not import. The
+//! builder finds each of them by name in the build's graph and adds no
+//! edge when the module is not there, which is the drop. That is exact only
+//! because **the maker's graph holds every module a build's graph can
+//! hold**: `Session.isLazy` is false in a run that makes a pack, so each
+//! maker run reads every core module and every module of its chain, and
+//! core's rows come from the run that holds core alone. A change that
+//! makes the maker's graph smaller breaks this rule.
+//!
+//! **A row that cannot be used is not used.** Another version, a length or
+//! an order that does not fit the module, a node out of its module's
+//! range, a chain out of the row's, or a guard in a module the build does
+//! not hold: the build builds the list as before.
 //!
 //! ```
 //! version: u32                     `version`
@@ -175,7 +196,7 @@ fn appendU32(gpa: Allocator, out: *std.ArrayList(u8), value: u32) Allocator.Erro
 /// the row cannot be used: malformed, of another `version`, a node out of
 /// its module's range, or a guard in a module the build does not hold. The
 /// caller then builds the lists.
-pub fn decode(arena: Allocator, bytes: []const u8, in: Reach.Input) Allocator.Error!?Reach.ModuleEdges {
+pub fn decode(arena: Allocator, bytes: []const u8, in: Reach.Input, m: Graph.Index) Allocator.Error!?Reach.ModuleEdges {
     var r: Reader = .{ .bytes = bytes };
     if ((r.word() orelse return null) != version) return null;
     const interner = in.interner orelse return null;
@@ -192,12 +213,22 @@ pub fn decode(arena: Allocator, bytes: []const u8, in: Reach.Input) Allocator.Er
         slot.* = if (symbol) |s| in.graph.find(@fromBackingInt(package), s) else null;
     }
 
+    // One start per node of the module and one past the last, as
+    // `Builder.module` makes them: declarations, derived rows, suspendable
+    // bodies and schema members.
+    const bir = in.birOf(m);
+    const nodes = [4]usize{ bir.decls.len, in.dispatchOf(m).derived.len, bir.decls.len, bir.decls.len * SchemaGraph.Member.count };
     var ats: [4][]const u32 = undefined;
-    for (&ats) |*at| at.* = try r.words(arena) orelse return null;
+    for (&ats, nodes) |*at, n| {
+        at.* = try r.words(arena) orelse return null;
+        if (at.len != n + 1 or at.*[0] != 0) return null;
+        for (at.*[0 .. at.len - 1], at.*[1..]) |a, b| if (a > b) return null;
+    }
     var lists: [4][]Reach.Target = undefined;
     var starts: [4][]u32 = undefined;
     for (&lists, &starts, ats) |*list, *start, at| {
         const len = r.word() orelse return null;
+        if (at[at.len - 1] != len) return null;
         if (@as(u64, len) * 16 > r.rest()) return null;
         var kept: std.ArrayList(Reach.Target) = try .initCapacity(arena, len);
         // Each node's start, moved down by the targets dropped before it.
@@ -213,10 +244,7 @@ pub fn decode(arena: Allocator, bytes: []const u8, in: Reach.Input) Allocator.Er
             };
             kept.appendAssumeCapacity(.{ .node = node, .chain = chain });
         }
-        while (next < at.len) : (next += 1) {
-            if (at[next] > len) return null;
-            moved[next] = @intCast(kept.items.len);
-        }
+        while (next < at.len) : (next += 1) moved[next] = @intCast(kept.items.len);
         list.* = kept.items;
         start.* = moved;
     }
@@ -229,6 +257,9 @@ pub fn decode(arena: Allocator, bytes: []const u8, in: Reach.Input) Allocator.Er
         .start = r.word() orelse return null,
         .end = r.word() orelse return null,
     };
+    // Chain 0 is no chain; any other names one of the row's.
+    for (lists) |list| for (list) |t| if (t.chain != 0 and t.chain >= chain_count) return null;
+    for (chains) |c| if (c.parent != 0 and c.parent >= chain_count) return null;
     const ctor_count = r.word() orelse return null;
     if (@as(u64, ctor_count) * 12 > r.rest()) return null;
     const chain_ctors = try arena.alloc(Reach.Node, ctor_count);
