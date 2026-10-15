@@ -5011,6 +5011,9 @@ const Spec = struct {
         var any = false;
         for (s.mods, 0..) |*m, mi| {
             const body = try s.arena.dupe(Index, m.ir.extraSlice(m.ir.body, Index));
+            // One module's scratch for every copy made in it, so that a copy
+            // costs what the value holds and not what the module names.
+            var scratch: ReadCopy = .{};
             for (body, 0..) |stmt, ti| {
                 if (m.ir.tag(stmt) != .const_decl) continue;
                 const g = m.globalOf(@fromBackingInt(@intCast(m.ir.data(stmt).lhs))) orelse continue;
@@ -5024,7 +5027,7 @@ const Spec = struct {
                 // A name the value reads as it is made holds the same value
                 // when it is made later: nothing assigns it.
                 if (!try s.immutableNames(m, value, stmt, assigned)) continue;
-                if (try s.writeRead(m, @intCast(mi), g, value, at.node)) any = true;
+                if (try s.writeRead(m, @intCast(mi), g, value, at.node, &scratch)) any = true;
             }
         }
         return any;
@@ -5057,6 +5060,12 @@ const Spec = struct {
                 }
                 children.clearRetainingCapacity();
                 try pushChildren(s.arena, ir, node, &children);
+                // Every function `JsIr` has is one of these three tags — an
+                // arrow of any kind (`arrow_plain`, `arrow_depth`, and
+                // `arrow_method`, the `function` a `Js.method` is), or a
+                // declared `function` or generator — and every loop is one
+                // of the two after them: what runs a mention again, or
+                // later, is under one of these five.
                 const repeats = switch (t) {
                     .arrow, .func_decl, .gen_decl, .while_true, .for_of => true,
                     else => false,
@@ -5074,16 +5083,43 @@ const Spec = struct {
         }
     }
 
+    /// `writeRead`'s scratch, kept across one module's copies: `renamed` is
+    /// `Copy.renamed`, all `none` between copies (each copy puts back the
+    /// entries it set), and `seen` marks a local met by the current copy's
+    /// walk with that copy's number.
+    const ReadCopy = struct {
+        renamed: std.ArrayList(u32) = .empty,
+        seen: std.ArrayList(u32) = .empty,
+        copy: u32 = 0,
+        locals: std.ArrayList(u32) = .empty,
+
+        /// Both columns as long as the module's names, which a copy grows.
+        fn fit(r: *ReadCopy, arena: Allocator, names: usize) Allocator.Error!void {
+            while (r.renamed.items.len < names) try r.renamed.append(arena, none);
+            while (r.seen.items.len < names) try r.seen.append(arena, 0);
+        }
+    };
+
+    /// Note `n`, met by `writeRead`'s walk, among the locals the copy renames.
+    fn readCopyLocal(s: *Spec, m: *Mod, scratch: *ReadCopy, n: NameIndex) Allocator.Error!void {
+        const i = n.unwrap() orelse return;
+        if (i >= scratch.seen.items.len or m.globalOf(n) != null) return;
+        if (scratch.seen.items[i] == scratch.copy) return;
+        scratch.seen.items[i] = scratch.copy;
+        try scratch.locals.append(s.arena, i);
+    }
+
     /// Write top-level value `value` of module `m`, declared as whole-program
     /// name `g`, at its one read `site`: a copy whose every local is new,
     /// so that none meets a name of the statement it now stands in. False
     /// when the value is too big or too deep to copy.
-    fn writeRead(s: *Spec, m: *Mod, mi: u32, g: u32, value: Index, site: Index) Allocator.Error!bool {
+    fn writeRead(s: *Spec, m: *Mod, mi: u32, g: u32, value: Index, site: Index, scratch: *ReadCopy) Allocator.Error!bool {
         const ir = m.ir;
+        try scratch.fit(s.arena, ir.names.len);
+        scratch.copy += 1;
+        scratch.locals.clearRetainingCapacity();
         // Every local the value names — each is bound inside it, since a
         // top-level value stands in no function — and how big it is.
-        const locals = try s.arena.alloc(bool, ir.names.len);
-        @memset(locals, false);
         var stack: std.ArrayList(Index) = .empty;
         var depths: std.ArrayList(u32) = .empty;
         var children = try s.takeStack();
@@ -5101,20 +5137,13 @@ const Spec = struct {
                 .try_stmt => &.{@backingInt(ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.Try).catch_name)},
                 else => &.{},
             };
-            for (named) |x| {
-                const local: NameIndex = @fromBackingInt(@intCast(x));
-                const i = local.unwrap() orelse continue;
-                if (i < locals.len and m.globalOf(local) == null) locals[i] = true;
-            }
+            for (named) |x| try s.readCopyLocal(m, scratch, @fromBackingInt(@intCast(x)));
             const func: ?ExtraIndex = switch (ir.tag(node)) {
                 .arrow => @fromBackingInt(@intCast(d.lhs)),
                 .func_decl, .gen_decl => @fromBackingInt(@intCast(d.rhs)),
                 else => null,
             };
-            if (func) |record| for (ir.extraSlice(ir.extraData(record, JsIr.Func).params(), NameIndex)) |p| {
-                const i = p.unwrap() orelse continue;
-                if (i < locals.len and m.globalOf(p) == null) locals[i] = true;
-            };
+            if (func) |record| for (ir.extraSlice(ir.extraData(record, JsIr.Func).params(), NameIndex)) |p| try s.readCopyLocal(m, scratch, p);
             children.clearRetainingCapacity();
             try pushChildren(s.arena, ir, node, &children);
             for (children.items) |c| {
@@ -5122,19 +5151,22 @@ const Spec = struct {
                 try depths.append(s.arena, depth + 1);
             }
         }
+        // No parameter is substituted; `fresh` grows the module's names, so
+        // the column `Copy` reads is the one sized before it.
         var c: Copy = .{
             .s = s,
             .src = m,
             .dst = m,
             .cross = false,
-            .renamed = try s.arena.alloc(u32, ir.names.len),
-            .subst = try s.arena.alloc(Node.OptionalIndex, ir.names.len),
+            .renamed = scratch.renamed.items,
+            .subst = &.{},
         };
-        @memset(c.renamed, none);
-        @memset(c.subst, .none);
-        for (locals, 0..) |is_local, i| if (is_local) try c.fresh(@intCast(i), false);
+        // In the order of the names, as one walk of every local would meet them.
+        std.mem.sortUnstable(u32, scratch.locals.items, {}, std.sort.asc(u32));
+        for (scratch.locals.items) |i| try c.fresh(i, false);
         s.noteCopy(mi, g);
         const e = try c.expr(value, 0);
+        for (scratch.locals.items) |i| scratch.renamed.items[i] = none;
         m.foldTo(site, e);
         // The table lowering handed the printer names the copy's root; the
         // root is now `site`.

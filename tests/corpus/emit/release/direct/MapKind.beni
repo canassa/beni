@@ -1,0 +1,34 @@
+-- `Html.map`'s kind is a record of two functions, each a top-level value
+-- of the platform read once, at start-up, in that record (`backend.md` §9,
+-- *Slice 10 — a value read once at start-up*): both are written inside
+-- it. The patch's result is read by no one, so its copy is printed as
+-- the declaration was, with no `return null` at its ends.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Quiet
+
+
+card : String → Html msg
+card text = <b>{text}</b>
+
+
+view : List Int → Html Msg
+view rows =
+    <main>
+        <For each={rows} keyed={λr → r}>
+            {λr →
+                case r of
+                    1 →
+                        Html.map (card "one") λ_ → Quiet
+                    _ →
+                        Html.map (card "many") λ_ → Quiet
+            }
+        </For>
+    </main>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → [ 1, 2 ], update = λ_ rows → rows, view = view }
