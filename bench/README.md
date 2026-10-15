@@ -19,6 +19,34 @@ was saturating the four cores and read 784 ms where the real number was
 
 ---
 
+## 2026-10-15 — deferred field reads after #135
+
+**Apple M2 Pro, 16 GiB, macOS 26.7.1, zorg 0.17.1+zorg.1.** All binaries
+LLVM ReleaseSafe, `--jobs=1 --no-cache`, identical inputs, medians of 12 runs
+per compiler across all six execution orders twice after warming:
+
+| Checking, ms | Before #126 (`134d24ab9`) | Master (`d10749f70`) | Follow-up (`bf6ccdde4`) |
+|---|---:|---:|---:|
+| Annotated 63k | 49.64 | 64.51 | 35.55 |
+| Unannotated 63k | 47.81 | 147.50 | 42.60 |
+| Same generated 100k | 67.87 | 69.94 | 69.02 |
+| Updated bench/corpus | 7.35 | 8.36 | 8.17 |
+| 100k plus TaskBoard | 67.77 | 69.06 | 69.41 |
+
+The synthetic net overhead is removed: 194.8%/105.2% recovery includes
+savings on ordinary field unification that predates #126. The follow-up is
+28.4%/10.9% faster than pre-#126. Corpus ranges overlap; their small differences
+do not establish a precise recovery fraction. TaskBoard adds 34 unannotated
+record callbacks: an untimed counter confirms all 40 accesses start flexible.
+The pending-read scaling test fails on the earlier master at 3.82 and passes
+here at 1.33 (ReleaseFast child CPU ratios). Safe-build mutation assertions are
+enabled in the timing compiler.
+
+[Full method, phases, profiles and validation](profiling/deferred-fields.md);
+[all median inputs and samples](results/2026-10-15-deferred-fields-three-way-safe.json).
+
+---
+
 ## 2026-10-15 — three-way LLVM ReleaseSafe nullary overhead
 
 **Apple M2 Pro, 16 GiB, macOS 26.7.1, zorg 0.17.1+zorg.1.** Before #126

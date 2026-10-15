@@ -1,0 +1,40 @@
+{
+  "revision": "bf6ccdde4a33ce25262a61a169a34a574cd48c7e",
+  "mode": "LLVM ReleaseSafe, verbose timing invocation replayed replacing -fstrip with -fno-strip only for symbolisation; not used for timing",
+  "method": "macOS sample, 1 ms interval, up to 5 s; successful complete CLI runs; inclusive stack counts, recursive occurrences counted once per sampled stack; no other builds, tests or timing runs",
+  "input": {
+    "functions": 32000,
+    "lines": 2016000,
+    "reads": 1920000,
+    "generator": "bench/field-dense.py 32000 [--unannotated]"
+  },
+  "inputs": {
+    "known": {
+      "inclusive_samples": {
+        "check.Module.check": 1252,
+        "check.Generalize.adjustRanks": 132,
+        "check.Generalize.assertOwnedWithin": 6,
+        "check.Decide.drain": 8,
+        "check.Decide.attach": 0,
+        "check.Instances.fieldRead": 105,
+        "check.Walk.assertProved": 75,
+        "check.Effects.run": 18
+      },
+      "sample_sha256": "7cecbcadddf28772a03eb2baeafcf9ab299294d607046c45792e9fd3dbd1155f"
+    },
+    "unknown": {
+      "inclusive_samples": {
+        "check.Module.check": 1328,
+        "check.Generalize.adjustRanks": 98,
+        "check.Generalize.assertOwnedWithin": 4,
+        "check.Decide.drain": 258,
+        "check.Decide.attach": 86,
+        "check.Instances.fieldRead": 97,
+        "check.Walk.assertProved": 64,
+        "check.Effects.run": 20
+      },
+      "sample_sha256": "a584e73694a33c8c8b72e73bc9ae95ddb71ea088348a99dff477bf393abd7b42"
+    }
+  },
+  "binary_sha256": "d0823365341b56d23b3920390b3b44158a12f0cd217c552a6f20593e0cb59988"
+}

@@ -1,0 +1,23 @@
+{
+  "mode": "Untimed self-hosted ReleaseSafe; diagnostic-only Dot.begin receiver tag counter in a separate worktree with its own cache; never a timing binary",
+  "base_revision": "d5531425b",
+  "patch": "bench/profiling/deferred-field-receivers.patch",
+  "method": "zorg build beni-fmt-check; check --jobs=1 --no-cache FILE without JSON diagnostics; count DOT_RECEIVER stderr tags; both exits 0, no non-counter diagnostics",
+  "inputs": {
+    "annotated": {
+      "counts": {
+        "structure": 40
+      },
+      "input_sha256": "8c77b8a8f0acd4c2261996c1a52dc6c61b0b6b15b77f9f1dd70e254576050549",
+      "lines": 144
+    },
+    "inferred": {
+      "counts": {
+        "flex": 40
+      },
+      "input_sha256": "cba9cc6fa86aebbe5d5db2e88bbe347d8f4c50ce00e1742024a1630aeb5aa7db",
+      "lines": 128
+    }
+  },
+  "note": "Check bench/corpus/TaskBoard.beni alone after applying the temporary counter patch in a separate worktree. All 40 field accesses enter with flexible receivers."
+}

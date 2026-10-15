@@ -167,11 +167,14 @@ pub fn create(s: *Solve, name: Symbol, receiver: Var, method_type: Var, origin: 
 /// The `method` node (Rule U0): the callee's wanted, resolved now when its
 /// receiver is known, else riding on it.
 pub fn method(s: *Solve, node: Tree.Node) Error!void {
-    const info = s.tree.extraData(node.a, Tree.Method);
+    return methodInfo(s, s.tree.extraData(node.a, Tree.Method), node.region);
+}
+
+pub fn methodInfo(s: *Solve, info: Tree.Method, origin: Bir.Inst.Index) Error!void {
     // A known record has no nullary methods. Keep recursive frames on the
     // full path: their rows carry canonical pessimism and hint provenance.
     // An unproved or rejected receiver also needs step's ordinary checks.
-    if (s.cx.bir.instTag(node.region) == .field_access and s.recursive_frames == 0 and s.resolver.steps < step_budget - 1) {
+    if (s.cx.bir.instTag(origin) == .field_access and s.recursive_frames == 0 and s.resolver.steps < step_budget - 1) {
         const st = s.store();
         const root, const content = st.resolved(info.receiver);
         const record = content == .structure and (content.structure == .record or content.structure == .empty_record);
@@ -182,18 +185,18 @@ pub fn method(s: *Solve, node: Tree.Node) Error!void {
                 // its nullary obligation, without storing either row.
                 s.resolver.steps += 1;
                 s.obligations.seq += 2;
-                return Instances.fieldRead(s, info.receiver, info.name, f.result, node.region);
+                return Instances.fieldRead(s, info.receiver, info.name, f.result, origin);
             }
         }
     }
-    const id = try create(s, info.name, info.receiver, info.method_type, node.region, @fromBackingInt(@intCast(info.kind)), .none);
+    const id = try create(s, info.name, info.receiver, info.method_type, origin, @fromBackingInt(@intCast(info.kind)), .none);
     // A hand-written dot-call's own wanted may become a field call (§11).
     if (s.evidence.get(id).kind == .dot_call) s.evidence.ptr(id).field_ok = true;
-    try s.evidence.callees.append(s.cx.gpa, .{ .inst = node.region, .wanted = id });
-    if (s.cx.bir.instTag(node.region) == .field_access) {
+    try s.evidence.callees.append(s.cx.gpa, .{ .inst = origin, .wanted = id });
+    if (s.cx.bir.instTag(origin) == .field_access) {
         // Nullary dots are independent of method requirements: joining them
         // by name would confuse `r.f` with the valid field call `r.f x`.
-        const row = try s.obligations.create(s.cx.gpa, .nullary_dot, node.region, &.{ info.receiver, info.method_type }, id.int(), null);
+        const row = try s.obligations.create(s.cx.gpa, .nullary_dot, origin, &.{ info.receiver, info.method_type }, id.int(), null);
         return @import("Decide.zig").begin(s, row);
     }
     try step(s, id, true);
@@ -462,6 +465,7 @@ fn attach(s: *Solve, id: WantedId, root: Var, flags: TypeStore.Flags) Error!void
             if (s.evidence.get(other).state.rejected()) {
                 try replaceEntry(s, root, flags, other, id);
                 try Walk.lowerTo(st, &s.stacks, gpa, w.method_type, st.rank(root));
+                if (std.debug.runtime_safety) std.debug.assert(st.rank(st.find(w.method_type)) <= st.rank(root));
                 return;
             }
             const older, const younger = if (s.evidence.get(other).seq < w.seq) .{ other, id } else .{ id, other };
@@ -471,6 +475,7 @@ fn attach(s: *Solve, id: WantedId, root: Var, flags: TypeStore.Flags) Error!void
                 try replaceEntry(s, root, flags, other, id);
             }
             try Walk.lowerTo(st, &s.stacks, gpa, w.method_type, st.rank(root));
+            if (std.debug.runtime_safety) std.debug.assert(st.rank(st.find(w.method_type)) <= st.rank(root));
             answer(s, younger, .{ .alias = older });
             s.evidence.joinField(older, younger);
             try joinTypes(s, younger, older);
@@ -493,6 +498,7 @@ fn attach(s: *Solve, id: WantedId, root: Var, flags: TypeStore.Flags) Error!void
     with.constraints = extended;
     st.setContent(root, .{ .flex = with });
     try Walk.lowerTo(st, &s.stacks, gpa, w.method_type, st.rank(root));
+    if (std.debug.runtime_safety) std.debug.assert(st.rank(st.find(w.method_type)) <= st.rank(root));
 }
 
 /// `root`'s set with `was`'s entry replaced by `now`'s.

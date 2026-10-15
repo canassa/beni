@@ -1,0 +1,20 @@
+diff --git a/src/check/Dot.zig b/src/check/Dot.zig
+index ed723d74d..c8ea7f34e 100644
+--- a/src/check/Dot.zig
++++ b/src/check/Dot.zig
+@@ -21,6 +21,7 @@ pub const Pending = struct { name: InternPool.Symbol, effect_edge: u32, decl: u3
+ 
+ pub fn begin(s: *Solve, node: Tree.Node) Error!void {
+     const d = s.tree.extraData(node.a, Tree.FieldDot);
++    std.debug.print("DOT_FRAME_BEGIN site={d} rank={d}\n", .{ @backingInt(node.region), s.frame().rank });
+     const st = s.store();
+     const root, const content = st.resolved(d.receiver);
+     if (s.recursive_frames == 0) {
+@@ -54,6 +55,7 @@ pub fn begin(s: *Solve, node: Tree.Node) Error!void {
+ 
+ pub fn decide(s: *Solve, id: Obligations.Id, default: bool) Error!void {
+     const row = s.obligations.row(id);
++    std.debug.print("DOT_FRAME_DECIDE site={d} rank={d} default={} owner_rank={d}\n", .{ @backingInt(row.region), s.frame().rank, default, s.store().rank(s.store().find(row.vars[0])) });
+     const p = s.field_dots.items[row.index];
+     const st = s.store();
+     const root, const content = st.resolved(row.vars[0]);

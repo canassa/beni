@@ -1,0 +1,15 @@
+{
+  "mode": "Untimed self-hosted ReleaseSafe, separate diagnostic-only worktree/cache; never used for timing",
+  "base_revision": "d5531425b",
+  "patch": "bench/profiling/deferred-field-frames.patch",
+  "source": "tests/corpus/dispatch/NullaryLateOrder.beni",
+  "source_sha256": "1b67ba4fe6a47b08f6e06c0335ab16461ac435e157cf4a8f66dab76f192e58c5",
+  "exit": 0,
+  "trace": [
+    "DOT_FRAME_BEGIN site=7 rank=2",
+    "DOT_FRAME_BEGIN site=9 rank=2",
+    "DOT_FRAME_DECIDE site=9 rank=3 default=false owner_rank=1",
+    "DOT_FRAME_DECIDE site=7 rank=2 default=false owner_rank=1"
+  ],
+  "conclusion": "Both dots begin at rank 2. Site 9 resolves first at rank 3, then site 7 at rank 2; both deciding owners have rank 1."
+}

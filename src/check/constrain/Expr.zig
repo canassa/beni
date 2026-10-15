@@ -169,12 +169,26 @@ pub fn expr(g: *Generator, inst: Bir.Inst.Index, expected: Var, category: Catego
             return g.conj(parts.items);
         },
 
-        .field_access => return dotCall(g, inst, data, .{
-            .name = @fromBackingInt(@intCast(data.rhs)),
-            .origin = .none,
-            .args_start = @fromBackingInt(0),
-            .args_end = @fromBackingInt(0),
-        }, expected, category),
+        .field_access => {
+            const recv = try g.freshFlex();
+            var edge: u32 = @import("../Effects.zig").none;
+            if (g.ambient) |ambient| if (g.cx.effects) |effects| {
+                edge = @intCast(effects.edges.items.len);
+                // Reserve the original call-site order, but a field read
+                // contributes no effect edge or function class.
+                try effects.call(@import("../Effects.zig").deferred_callee, ambient, .{ .call = @backingInt(inst), .ambient = g.ambient_site });
+            };
+            const payload = try g.addExtra(Tree.FieldDot{
+                .receiver = recv,
+                .result = expected,
+                .name = bir.symbol(@fromBackingInt(@intCast(data.rhs))),
+                .effect_edge = edge,
+            });
+            return g.conj(&.{
+                try expr(g, @fromBackingInt(@intCast(data.lhs)), recv, .{ .tag = .general }),
+                try g.add(.field_dot, inst, payload, 0, category),
+            });
+        },
 
         // A `${…}` string: `String`, and each part an `interpolatable`
         // obligation on its own variable (§4.5).

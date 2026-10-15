@@ -15,6 +15,7 @@ module is written, valid under `docs/design/language.md`:
 
 | File | Shape |
 |---|---|
+| `TaskBoard.beni` | inferred record projections and filters: 34 unannotated `List.map`/`List.filter` callbacks, all 40 reads initially flexible (issue #131) |
 | `NotesApp.beni` | Model/Msg/update/view with undo history, search and tags |
 | `JsonCodecs.beni` | decoders and encoders for a nested order domain |
 | `DictExtra.beni` | Dict/Set utilities: grouping, counting, merging, ordered views |
@@ -46,8 +47,9 @@ beni check bench/corpus                                    # no platform needed
 beni build --platform=node --library --out=out bench/corpus  # the build bench/size.mjs makes
 ```
 
-Both must be clean — exit 0 and no diagnostic of any severity, warnings
-included — and two black-box scenarios in `tests/blackbox/build_test.zig`
+Both must exit 0 with no diagnostic except the retained `prepend_in_loop`
+warnings (the owner keeps the existing loops for benchmark comparability). Two
+black-box scenarios in `tests/blackbox/build_test.zig`
 hold them to it inside the gates (`bench/corpus type-checks with no
 diagnostic and no platform`, `bench/corpus builds as a library for the node
 platform`). They exist because the corpus did rot: until 2026-09-29
@@ -63,6 +65,7 @@ What that repair changed, per file (lines, bytes, and tokens with each file's
 | File | before: lines / bytes / tokens | after |
 |---|---:|---:|
 | `JsonCodecs.beni` | 308 / 7 785 / 1 084 | 309 / 7 827 / 1 084 |
+| `TaskBoard.beni` | inferred record projections and filters: 34 unannotated `List.map`/`List.filter` callbacks, all 40 reads initially flexible (issue #131) |
 | `NotesApp.beni` | 391 / 10 099 / 1 551 | 392 / 10 139 / 1 551 |
 | `Codec/Value.beni` | — | 216 / 5 096 / 724 |
 | `Codec/Parse.beni` | — | 282 / 7 274 / 1 018 |

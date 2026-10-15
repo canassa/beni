@@ -1,0 +1,128 @@
+--! Inferred projections keep callback receivers unknown while map/filter
+--! check their bodies. Helpers infer record rows before the typed application
+--! summary instantiates them. Retained for issue #131.
+
+pub type alias Task =
+    id : Int
+    title : String
+    completed : Bool
+    priority : Int
+    estimate : Int
+    spent : Int
+    owner : String
+    project : String
+    archived : Bool
+    due : Int
+
+
+ids tasks = List.map tasks λt → t.id
+
+
+titles tasks = List.map tasks λt → t.title
+
+
+completion tasks = List.map tasks λt → t.completed
+
+
+priorities tasks = List.map tasks λt → t.priority
+
+
+estimates tasks = List.map tasks λt → t.estimate
+
+
+timeSpent tasks = List.map tasks λt → t.spent
+
+
+owners tasks = List.map tasks λt → t.owner
+
+
+projects tasks = List.map tasks λt → t.project
+
+
+archiveFlags tasks = List.map tasks λt → t.archived
+
+
+dueDates tasks = List.map tasks λt → t.due
+
+
+completed tasks = List.filter tasks λt → t.completed
+
+
+unfinished tasks = List.filter tasks λt → not t.completed
+
+
+active tasks = List.filter tasks λt → not t.archived
+
+
+archived tasks = List.filter tasks λt → t.archived
+
+
+urgent tasks = List.filter tasks λt → t.priority > 2
+
+
+overdue tasks = List.filter tasks λt → t.due < 0
+
+
+unestimated tasks = List.filter tasks λt → t.estimate == 0
+
+
+overBudget tasks = List.filter tasks λt → t.spent > t.estimate
+
+
+completedTitles tasks =
+    tasks
+        ▷ List.filter λt → t.completed
+        ▷ List.map λt → t.title
+
+
+openTitles tasks =
+    tasks
+        ▷ List.filter λt → not t.completed
+        ▷ List.map λt → t.title
+
+
+activeTitles tasks =
+    tasks
+        ▷ List.filter λt → not t.archived
+        ▷ List.map λt → t.title
+
+
+urgentTitles tasks =
+    tasks
+        ▷ List.filter λt → t.priority > 2
+        ▷ List.map λt → t.title
+
+
+overdueTitles tasks =
+    tasks
+        ▷ List.filter λt → t.due < 0
+        ▷ List.map λt → t.title
+
+
+overBudgetTitles tasks =
+    tasks
+        ▷ List.filter λt → t.spent > t.estimate
+        ▷ List.map λt → t.title
+
+
+remainingEffort tasks = List.map tasks λt → t.estimate - t.spent
+
+
+priorityScores tasks = List.map tasks λt → t.priority * t.estimate
+
+
+overruns tasks = List.map tasks λt → max 0 (t.spent - t.estimate)
+
+
+deadlines tasks = List.map tasks λt → t.due - t.spent
+
+
+pub summary :
+      List Task
+    → { ids : List Int, titles : List String, completed : List String, remaining : List Int }
+summary tasks =
+    { ids = ids tasks
+    , titles = titles tasks
+    , completed = completedTitles tasks
+    , remaining = remainingEffort tasks
+    }

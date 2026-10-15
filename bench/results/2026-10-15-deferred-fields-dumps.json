@@ -1,0 +1,1207 @@
+{
+  "before": "/Users/canassa/code/src/github.com/canassa/beni-131-current-master/zig-out/safe-llvm/bin/beni",
+  "after": "zig-out/safe/bin/beni",
+  "commands": 109,
+  "differences": [],
+  "runs": [
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=interface",
+        "tests/corpus/check/good/AliasNamesInsideStructures.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "206ffe2864f44d819f54bcba815e9089c7fb73b3aa2bac629b7c83dcc53c9735",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=interface",
+        "tests/corpus/check/good/AnnotatedManyConstraints.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "668a9ba7d156f14f7e3aad7a18c76185e501ee5d25376924dbc23d8f1cf7c5c0",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=interface",
+        "tests/corpus/check/good/CyclicArgumentsUnify.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "3541bb1dc0946e632060f54c478bfa577ad7fba8711e0c7e7e7050fde5eca9c2",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=interface",
+        "tests/corpus/check/good/DeclaredTIsNotTop.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "547094b5544b4ab02bcf609d1235de25c32703e9efb34e6c882be74aff3cd277",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=interface",
+        "tests/corpus/check/good/DeepInferredScheme.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "7273f239692d4d331e878f39ba42c83af17e237d87503f0b3e821feab8a29e83",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=interface",
+        "tests/corpus/check/good/DerivedNestedEvidence.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "26f7892b7bb74a13a900d9e564bbc27e7ddc20ed27db2720f6701134af85e0e8",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=interface",
+        "tests/corpus/check/good/EagerDrainInnerLet.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "f2bafd03bd795d62334958beb97f0bce4a8516dd48f5f83b321c402d0022302c",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=interface",
+        "tests/corpus/check/good/EffectEvidence.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "e8ea5c1935182a446ce84358a64c3e1b4bbc24dbb03d8a69a85ee9e25b20112c",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=interface",
+        "tests/corpus/check/good/EffectHigherOrder.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "303d0dd6fd5cb334057e9a8f4e0a35ef4c52f80bbec0ccb62071e450d71e6468",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=interface",
+        "tests/corpus/check/good/EffectNominal.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "3bd17c328ae963f9b5eda269bae3d5e545246376ae4218aebcecbdded77303ef",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=interface",
+        "tests/corpus/check/good/EffectRecursion.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "e559a824cbef4b282e676280bac8a36d9c2e80fca863e8338c33f560f5ae7147",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=interface",
+        "tests/corpus/check/good/EqualityShapes.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "54ac4c43f8dbbb88c14c44d0b88eaf0969d901f6cb42c4d77be6c9a1d8a91be0",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=interface",
+        "tests/corpus/check/good/Inference.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "2334cc0ea41a3669adb1983a8129c5ce6f1f50ccb0641b8a6b83688737bbbf87",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=interface",
+        "tests/corpus/check/good/InferredConstraint.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "f92a5dc21935b50a5f4b55fd7f1f61bbe7ec2cac6769bcde656252b7c21ee3b8",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=interface",
+        "tests/corpus/check/good/ListSpreadExhaustive.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "cf75f05cb84f9750f203c15fb4f3dc2248fe6f7088c22944e1fb7e9d332fadec",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=interface",
+        "tests/corpus/check/good/LookupTable.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "ee5c7f36cf8edc532ab2dcff80543bee59f25b392f090d2cacb00d1f3c507677",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=interface",
+        "tests/corpus/check/good/MethodOnOwnType.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "50304947b79d74a14c39252417da61557564c380eda2a07dbeea9caa56458ff2",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=interface",
+        "tests/corpus/check/good/MixedRecursive.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "64a4d2f1ed4d55c145864938ac533570c3ecfc55600844ff8b97bb71bb433c7c",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=interface",
+        "tests/corpus/check/good/MutualGroupFiveMembers.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "9872dfda873715c1f7b18b91103daaa2b27b08f148c8d040ca06236307420a76",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=interface",
+        "tests/corpus/check/good/MutualGroupLocalTypes.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "33fab2e7813991c92d7f449215b16d7e888dbda653bf2842a906bc98650c9fc7",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=interface",
+        "tests/corpus/check/good/NestAfterDefault.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "2caa29da75af20df849ba42e88acf5a66b2bc812061f8b2a4da071049b0ba0de",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=interface",
+        "tests/corpus/check/good/NumberBridgeRigid.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "5d9fdc074eed7385de770f8df55e0f1929a5f6a2a5b731d74250720f073863f2",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=interface",
+        "tests/corpus/check/good/NumberVariableNamedByKind.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "e6f784ae028c004dde0080555adea7dee750aacd679cc459b6240d70375e8b60",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=interface",
+        "tests/corpus/check/good/OpaqueType.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "e9c94c4bd35b756060307bf06c96f0004e6871416917460357c790134ac23286",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=interface",
+        "tests/corpus/check/good/Operators.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "08b28d6e768e161e9b105599192705bc78f6e4fadb1db0377d9f37f5bdb59672",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=interface",
+        "tests/corpus/check/good/OrderingPrimitives.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "dee166c5437240ab3e1b2708e71d8c93aa3c0bb1cf837ec5ba3cc77c84e4b023",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=interface",
+        "tests/corpus/check/good/PairLookupTable.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "516d9df14b9877d6264dcff5028beb502d7602b25428d95e04e67149ba2402f6",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=interface",
+        "tests/corpus/check/good/Prelude.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "76db091cd65ef3f663298155315168cda1b2e11905a1d9d914306bd76276a973",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=interface",
+        "tests/corpus/check/good/PrependInLoop.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "1f5011c5ff14e930b84a70bc8d0bcafbf61ec4b794ba5e2f2ec8076517130ab1",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=interface",
+        "tests/corpus/check/good/PrependNotInLoop.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "365f0a1c17bf308a740ee6bdc0d7f91790628b5d6126d65c7d1949388a8792f3",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=interface",
+        "tests/corpus/check/good/PrivateAndPublic.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "06d5215b0df9a11de92b1861ae3f9746f21b41636642228259ac087380430eef",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=interface",
+        "tests/corpus/check/good/QuestionShapes.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "1fe6f526a98331b60072bb469c7a13335e5cb60b417b7e9df15ea2bf24941050",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=interface",
+        "tests/corpus/check/good/QuestionWithConstraints.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "2f6f669f69c9a9b638bc457192679788420b5adfc5ddb66a9a082e18864f7f8f",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=interface",
+        "tests/corpus/check/good/RecordAlias.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "9cf1d1458f87e69b87b7fcf4a8f835d77a4d5cbf2fa99918b7caa8b19b5aeb85",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=interface",
+        "tests/corpus/check/good/RecordExtChain.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "7a1ef2dc355fd1c7595a849af4c6e46d17f607809aedbac2885fae961c58a111",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=interface",
+        "tests/corpus/check/good/RecordRows.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "6d01500b9ce12ea8b36c710a2b75be190738651ada4504f51e8340157e46fe19",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=interface",
+        "tests/corpus/check/good/RefUpdateImpure.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "bed8ebfd63d4f7c112fc12848a49642763ba0f87f182b5c5d4c10c2985c0afc2",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=interface",
+        "tests/corpus/check/good/RequirementBelowDepth512.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "ab7dafd232093f14c64f604a03243d1e5b0c4771381e31cd2b43d427764be20d",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=interface",
+        "tests/corpus/check/good/SchemaEncodedInFlight.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "5b7d505914c1f2db17c1d5cc127653d1d4632702558653c8f700cb562eeb9b1a",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=interface",
+        "tests/corpus/check/good/SchemaEndpointAlias.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "1a5b88bf526e448a898025f72fb823d9e406f7d440011933065ff7b677e6f70b",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=interface",
+        "tests/corpus/check/good/SchemaEndpointInFlightClosed.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "5709f153b5bc16eed660abde5845d7792fdd80557b1e642789e75223ce315ef0",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=interface",
+        "tests/corpus/check/good/SchemaEndpointMeetsItself.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "69661ac53622da42e998e329249cd28e8796f7cfd6f89fd96fb65025cf233eaa",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=interface",
+        "tests/corpus/check/good/SchemaRecordViaWrapped.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "50b718f1474bfa6fea4e3ee917628f3d51ab9515ca6b2a815d1506a2b0eac571",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=interface",
+        "tests/corpus/check/good/SchemaTypeConstructorArgument.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "60e4c6c8e84c626e1a2c3d68ff121ecd6313a000d59fc8cae37e787b9aeb65bf",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=interface",
+        "tests/corpus/check/good/SchemaTypeNameControl.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "aab760be42f499215ce993e6ed558a8a57c4d9ea1361ffd526cb27d74a3ad2b3",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=interface",
+        "tests/corpus/check/good/SchemaUnsupported.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "3c1c8a358aa7fa8277258586454c032a0f6ae3ed33930c4ca52cf11f2a853ecc",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=interface",
+        "tests/corpus/check/good/SchemaViaMutualOwnType.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "565f3900f0724863b11b1ea2e5d128d41824321a92590726aee0898b3306bc84",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=interface",
+        "tests/corpus/check/good/SchemaViaRing.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "6c2db369f2d0db1d1106678780bdfd683a7929982879529f3e4c5e890b4c9d6a",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=interface",
+        "tests/corpus/check/good/SixtyFourConstraints.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "cebe511b1d6df632de58ed06e81b411f0072e652544d4ea5c21f27c086b7672c",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=interface",
+        "tests/corpus/check/good/SuspiciousArgumentOrder.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "688d7a762b193653b297c3c21a64ffea1ee46c42710f61c519aeb30bfe2552a2",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=interface",
+        "tests/corpus/check/good/SuspiciousArgumentOrderSilenced.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "cdb50b512dd423ff728733aaba9add8422c3fd9f6c615001503f58f0dfeeedaa",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=interface",
+        "tests/corpus/check/good/TwoConstraints.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "848e9da2c4ff7a30bf06c3cc415b86b06aa71fdc8962765da91f29e530f10204",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=interface",
+        "tests/corpus/check/good/TypeDispatch.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "aba334989054dfa33db5a783a07861d9f421d77e37b892180067f018eac8b0eb",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=interface",
+        "tests/corpus/check/good/UnitDiscardedWarns.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "e17fd3d33319c054e4701250a281133038d38506d060f58084f27e73c50fab20",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=interface",
+        "tests/corpus/check/good/UserEqMethod.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "a294476cb437824f521bf24bcbf83d2469bad5103f478593ce299b1c79bb2990",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=interface",
+        "tests/corpus/check/good/WarningWithoutExplain.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "7627531553afb5ac2aaf5591d9bbdd55f9f5ee95e5ce654f38e80d68688b6bb0",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=interface",
+        "tests/corpus/check/good/WhereConstrainedGeneric.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "b5dec86a9a9c33d78408be2d2e3f893124da0254bab57e2d52559cb25887b36b",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=dispatch",
+        "tests/corpus/dispatch/AllNullaryEq.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "536aca956bc0f449896939df3adb3c2efaf30f9acb303e27269636eadfe7e464",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=dispatch",
+        "tests/corpus/dispatch/AppendOnLists.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "440ab3d3d3be71de6e5a4c2cb017a73dcfb7ba734a5d0a05128f102aa8a45b7c",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=dispatch",
+        "tests/corpus/dispatch/Conventions.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "479218fc2a23080f5648a56fa58ff3d41ff753d1a2a030b7c99ce2eb1996b67b",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=dispatch",
+        "tests/corpus/dispatch/DebugShapes.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "c8abde356ea87fa0b29002de2aec45b311b2743db37ed8547fab6ecabcea498f",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=dispatch",
+        "tests/corpus/dispatch/DecodeInto.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "468c39a6fe5cf7c34f7e5649684a90289a682d1a10329c92f3a2319000a70ccf",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=dispatch",
+        "tests/corpus/dispatch/DerivedShapes.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "40ed27e799dd350fdd800f3b0d82f880609c2b9cfb8d46cb22829d584ab5da18",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=dispatch",
+        "tests/corpus/dispatch/DerivedShapesDistinctElements.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "48d7ff702b7f0dc96699d3a1b4cfc641ced19832d6ac8668be078bbcb456f032",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=dispatch",
+        "tests/corpus/dispatch/ErrParts.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "836cae01be6ca2207b6b622bc919e371cb3d66221bef305017f131ec6d680a9a",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=dispatch",
+        "tests/corpus/dispatch/Evidence.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "8d77073505002692b3659f3ce0250035bfdb3b40ee11a599ba95c0b4a4b0802a",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=dispatch",
+        "tests/corpus/dispatch/FieldCall.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "1e6c061f8dc39e362ea0d1d7174bbf8a3a5c765c3ae7545a9a2d264d40055a0e",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=dispatch",
+        "tests/corpus/dispatch/JoinedConstraintNested.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "74560eaa82fc0244b53adce67b85a8431ac53487e88ac19a42681f0257e77ce7",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=dispatch",
+        "tests/corpus/dispatch/JoinedConstraintSites.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "dede4dcc7a8a254e545dc72f8984e88356badbfd1b04a9e95d09fc1de37dd6d5",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=dispatch",
+        "tests/corpus/dispatch/LiteralEvidence.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "1dbfef15fcb63d350fb3cb1b7e8310d35f0412161db3b04c291b094e84aef1db",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=dispatch",
+        "tests/corpus/dispatch/MethodCall.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "f8233c69cc39c1d240dd837208a1471897ec3e26c2703032ec6b274105414ddf",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=dispatch",
+        "tests/corpus/dispatch/NestedEvidenceIndices.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "610633d8627c4d3282060eabed2f3381155367388df1273644aa804be26a94bd",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=dispatch",
+        "tests/corpus/dispatch/NestedEvidenceParam.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "3a058bde52491db31b9facfa75577d2e031235fc9932cd10c6cb2966d0f740be",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=dispatch",
+        "tests/corpus/dispatch/NullaryLateOrder.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "829eb08e5c9546625fb42ace39e52e94f262cd2c04f53fc136d7a19ae26551a5",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=dispatch",
+        "tests/corpus/dispatch/Primitives.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "a202788ba0c319b9f1029cb3327a8b954cee3277d4e7d202c61854a4208cadaf",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=dispatch",
+        "tests/corpus/dispatch/PrivateEqStillDerives.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "51ea5d54be8d3226fcdd0d25b4a7b87f3cf01a8e15c551f29c8e92c29de9c3e6",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=dispatch",
+        "tests/corpus/dispatch/QuestionShapes.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "647879ea8fec532569a9862c9d31648da318abb22dba23c534375e04cf441812",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=dispatch",
+        "tests/corpus/dispatch/SharedEvidenceDag.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "c395cc095f777d364fd7bad430c44c65f6a450bb51396d68a74a4370afe90eb3",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=dispatch",
+        "tests/corpus/dispatch/TwoSlotsNested.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "70458f842d1cd17e6b528b9f16648cf3607e562969220eb0a1f69f4134171078",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=dispatch",
+        "tests/corpus/dispatch/TypeDispatch.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "28fcef59a42f50cf9b821d03d615624ff388ccb7c44f2c359576cbba7ac82d10",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=dispatch",
+        "tests/corpus/dispatch/UndeterminedUnderValueEvidence.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "900564499c91ca84fe904df4dce8852d9d329168d5c7299722083d8bca13d0ec",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=dispatch",
+        "tests/corpus/dispatch/UserEqInsideParametric.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "159bf842246bc46cf6d216da24cf33656c49551102840255d94253ad21f71f3b",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=dispatch",
+        "tests/corpus/dispatch/UserMethodWins.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "48aa0e76e6305f9f3cb9cf7cf5f00cf0cdd73b7572f2878ba3bbf7939bf24785",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=dispatch",
+        "tests/corpus/dispatch/WhereClauseDerives.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "aa5d365aa7e824075d9064e4366a246bbccbec45b56594550afe9dbd58cbb1b6",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=types",
+        "/tmp/beni-135-inputs/FieldDense.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "9d32b00e6edc84cf248aa67e7a108b2122fc7a4db7ca99473885e6b60b2cddc9",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=interface",
+        "/tmp/beni-135-inputs/FieldDense.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "96c6bf170a431097774d664b5b54b920e21e924da441c53f6f8b775f59042261",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=dispatch",
+        "/tmp/beni-135-inputs/FieldDense.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "96c6bf170a431097774d664b5b54b920e21e924da441c53f6f8b775f59042261",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=raw",
+        "/tmp/beni-135-inputs/FieldDense.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "96c6bf170a431097774d664b5b54b920e21e924da441c53f6f8b775f59042261",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=types",
+        "/tmp/beni-135-inputs/UnknownFields.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "76318e00ec685ba5bfdb06a73126065165863fe6d48e509186fe0c193133249c",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=interface",
+        "/tmp/beni-135-inputs/UnknownFields.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "ec89fec94193017feb513da086819ef39771e5f9c71360de14c6151a40740474",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=dispatch",
+        "/tmp/beni-135-inputs/UnknownFields.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "ec89fec94193017feb513da086819ef39771e5f9c71360de14c6151a40740474",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=raw",
+        "/tmp/beni-135-inputs/UnknownFields.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "ec89fec94193017feb513da086819ef39771e5f9c71360de14c6151a40740474",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=interface",
+        "bench/corpus"
+      ],
+      "exit": 0,
+      "stdout_sha256": "7937787ffbb09e4419d485505b51a2f05e349372b4960c642ba43f401705244d",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=dispatch",
+        "bench/corpus"
+      ],
+      "exit": 0,
+      "stdout_sha256": "2233e48b8652d5e3f83637caf916d09259d60d2f18993cab06ddd2464297fd31",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=raw",
+        "bench/corpus"
+      ],
+      "exit": 0,
+      "stdout_sha256": "fcb5536f87d17b5801dddebaff5ed9ffcb1289bf704724f8f96415876e3de3d4",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=interface",
+        "/tmp/beni-135-inputs/corpus-100k"
+      ],
+      "exit": 0,
+      "stdout_sha256": "0d5eb49076ed6143a5ce2d51ccc31ab8375b1f32f77ba01f7630170e927d401c",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=dispatch",
+        "/tmp/beni-135-inputs/corpus-100k"
+      ],
+      "exit": 0,
+      "stdout_sha256": "dd4538fbf50afd7faf91ecde077718b70629d9086e680d92a6ee287b08ff85a3",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=raw",
+        "/tmp/beni-135-inputs/corpus-100k"
+      ],
+      "exit": 0,
+      "stdout_sha256": "9e6cf5d71b00315a5b12fc5aa1ead3a9bf3d9f5b4c247b79006a09ca789234aa",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=types",
+        "bench/corpus/TaskBoard.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "279e6bcc2dd07cc6096e0d6f8b8adfef77f33bf05b4ae07e67b976b90c180d2c",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=interface",
+        "bench/corpus/TaskBoard.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "89c624f9e6f06af1cc0fbf7e7584488022ef38131899633f06cb97cc5d815ef4",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=dispatch",
+        "bench/corpus/TaskBoard.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "1eb631bce76e0c2004e4a807ca77cf86caba246d366ab6a0d15fbea9e08fa1d3",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=raw",
+        "bench/corpus/TaskBoard.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "e2065d3d80c6e3c1ce34107c127f09f849752abda7dcf853e480cc7fecd9fed8",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=types",
+        "/tmp/beni-135-inputs/corpus-100k/Gen/Page0.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "cab72b0b9e5f2eebbb95c3c1c89cbe66d3b8cb40678062544d6d16d1236a2e9d",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=interface",
+        "/tmp/beni-135-inputs/corpus-100k/Gen/Page0.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "88adbb6a4becb658ec8a06a6843a3dc253cdc23e096121e51204978bb16e9382",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=dispatch",
+        "/tmp/beni-135-inputs/corpus-100k/Gen/Page0.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "3400b702d941981ef8c4eea1cec71903ce480efc0e1268df9262c5a9e1c786d4",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=raw",
+        "/tmp/beni-135-inputs/corpus-100k/Gen/Page0.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "8f7e650c580cb0e6e589846763fdbd6e36b40332370861f30447d9f01d1cc7d7",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=types",
+        "tests/corpus/dispatch/NullaryLateOrder.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "4afec9f6204fd1332d216882605521e8eee60146f3efbca9b3f642f456c6326e",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=interface",
+        "tests/corpus/dispatch/NullaryLateOrder.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "c49e7892a451dc697fdd425db07d5a6aac77082d49c559653ac58665746177f3",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "args": [
+        "dump",
+        "--diagnostics=json",
+        "--stage=raw",
+        "tests/corpus/dispatch/NullaryLateOrder.beni"
+      ],
+      "exit": 0,
+      "stdout_sha256": "4c9de7a68bfa47f99326107b9216750f51d39b6628d5fed880933253158293ed",
+      "stderr_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ]
+}

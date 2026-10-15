@@ -47,6 +47,10 @@ pub const Rung = Bir.Rung;
 pub const Symbol = InternPool.Symbol;
 pub const Error = Allocator.Error;
 
+/// Reserved bare-dot edge, activated only if resolution chooses a method.
+/// This is never a store variable and never reaches effect graph solving.
+pub const deferred_callee: Var = @fromBackingInt(std.math.maxInt(u32));
+
 pub const Pair = struct { a: Var, b: Var };
 pub const Seed = struct { v: Var, rung: Rung };
 
@@ -111,6 +115,8 @@ gpa: Allocator,
 store: *TypeStore,
 types: *const Types,
 interner: *const InternPool.Global,
+/// Includes reserved `deferred_callee` slots. Consumers must skip them
+/// until a method decision supplies a real callee; record reads leave them inert.
 edges: std.ArrayList(Pair) = .empty,
 seeds: std.ArrayList(Seed) = .empty,
 joins: std.ArrayList(Pair) = .empty,
@@ -233,7 +239,8 @@ pub fn deinit(e: *Effects) void {
 // ---------------------------------------------------------------------------
 
 /// §14.3 rule 1: a call of `callee` from a body whose class is `ambient`,
-/// written at `site` (§15.4).
+/// written at `site` (§15.4). Only appends; never dereferences the callee,
+/// which may be the reserved `deferred_callee` sentinel.
 pub fn call(e: *Effects, callee: Var, ambient: Var, site: Site) Error!void {
     try e.edges.append(e.gpa, .{ .a = callee, .b = ambient });
     try e.sites.append(e.gpa, site);
@@ -787,7 +794,9 @@ pub fn run(e: *Effects, in: Input) Error!void {
     e.scheme_decl = try gpa.dupe([2]u32, scheme_decl.pairs);
 
     // 2. The edges, and the rungs seeded so far.
-    for (e.edges.items, 0..) |p, i| try e.addEdge(p.a, p.b, @intCast(i));
+    for (e.edges.items, 0..) |p, i| if (p.a != deferred_callee) {
+        try e.addEdge(p.a, p.b, @intCast(i));
+    };
     for (in.wanted_edges) |p| try e.addEdge(p.a, p.b, none);
     var work: std.ArrayList(u32) = .empty;
     defer work.deinit(scratch);

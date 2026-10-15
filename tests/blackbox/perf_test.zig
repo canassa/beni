@@ -68,6 +68,27 @@ test "interface writing is linear in the number of constructors" {
     try s.finish("interface writing per constructor", verdict);
 }
 
+// Initially unknown bare-dot receivers retain all reads until the owning
+// boundary. Each local binding used to revisit the accumulated pending rows.
+// A single receiver with twice as many reads must cost linearly, even when
+// no annotation can decide it early (issue #131).
+test "pending field reads scale linearly per receiver" {
+    var s = try Perf.init(.concurrent);
+    defer s.deinit();
+    try s.w.write("Fields.beni", try pendingFields(s.arena(), 4_000));
+    try s.w.write("Fields2.beni", try pendingFields(s.arena(), 8_000));
+    const verdict = try s.ratio("Fields.beni", "Fields2.beni", 4_000);
+    try s.finish("pending field reads per receiver", verdict);
+}
+
+fn pendingFields(arena: std.mem.Allocator, count: usize) ![]const u8 {
+    var out: std.ArrayList(u8) = .empty;
+    try out.appendSlice(arena, "pub project r =\n");
+    for (0..count) |i| try out.print(arena, "    v{d} = r.a\n", .{i});
+    try out.appendSlice(arena, "    r.a\n");
+    return out.toOwnedSlice(arena);
+}
+
 /// `pub type Big = C0 Int | C1 Int | … ` with `count` constructors.
 fn bigType(arena: std.mem.Allocator, count: usize) ![]const u8 {
     var out: std.ArrayList(u8) = .empty;
