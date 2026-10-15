@@ -425,7 +425,8 @@ compares instead of `.expected`. The differences known today:
   number has at most six decimals in happy-dom, as CSSOM says, and six
   significant digits in Chrome (`browser/direct/Sternhalma`:
   `275.75128869403574px` is `275.751289px` in happy-dom and `275.751px`
-  in Chrome);
+  in Chrome). Chrome writes a large number with an exponent:
+  `1234567.5px` is `1.23457e+06px`, and happy-dom keeps it;
 - leaving the page: happy-dom sees only a navigation through `location`,
   so a form's submission, `window.open(url, "_self")`, a link activated
   outside the `click` step (a `press`, a script's `a.click()`) and
