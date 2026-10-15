@@ -239,6 +239,7 @@ program Main.main : Tea.application
   hole Page.beni:78:9                             dynamic    reads ρ.Profile#0
   hole Page.beni:79:29                            static     reads ∅
   hole Page.beni:79:53                            static     reads ∅
+  hole Page.beni:87:34                            static     reads ∅
   hole Page.beni:102:14                           dynamic    reads ρ.Home#0.feed.Loaded#0.Model#0.errors; ρ.Profile#1.errors; ρ.Profile#1.feed.Loaded#0.Model#0.errors; ρ.Article#0.errors
   hole Page.beni:102:59                           dynamic    reads ρ.Home#0.feed.Loaded#0.Model#0.errors[*]; ρ.Profile#1.errors[*]; ρ.Profile#1.feed.Loaded#0.Model#0.errors[*]; ρ.Article#0.errors[*]
   hole Page.beni:114:48                           static     reads ∅
@@ -266,7 +267,7 @@ program Main.main : Tea.application
   hole Settings.beni:289:21                       dynamic    reads ρ.Settings#0.status.Loaded#0.bio
   hole Settings.beni:298:21                       dynamic    reads ρ.Settings#0.status.Loaded#0.email
   hole Settings.beni:308:21                       dynamic    reads ρ.Settings#0.status.Loaded#0.password
-  holes 145: static 19, literal 6, static-key 0, dynamic 120
+  holes 146: static 20, literal 6, static-key 0, dynamic 120
   site Article.beni:199:17                        instanced
   site Article.beni:208:5                         unique
   site Article.beni:209:73                        instanced

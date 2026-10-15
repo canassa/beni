@@ -1,5 +1,5 @@
 module Api
-  131:52 ++ <literal>: accepted fresh
+  132:72 ++ <literal>: accepted fresh
   summary viewerFromJson: unused
   summary viewerToJson: unused
   summary fromNullable: π1 R, π1#NonNull.0 RA; res #Just.0 π1#NonNull.0
@@ -75,6 +75,8 @@ module Comment
   summary list: res #Err.0#Failed.0#BadBody.0 fresh1{lost}, #Err.0#Failed.0#BadRequest.0 fresh2{lost}, #Err.0#Rejected.0 fresh3, #Ok.0 fresh4, #Ok.0[*] ~fresh5
   summary post: res #Err.0#Failed.0#BadBody.0 fresh2{lost}, #Err.0#Failed.0#BadRequest.0 fresh3{lost}, #Err.0#Failed.0#BadRequest.0#UnprintableBody.0 fresh1{lost}, #Err.0#Rejected.0 fresh4
   summary delete: res #Err.0#Failed.0#BadRequest.0 fresh1{lost}, #Err.0#Rejected.0 fresh2
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+module Deploy
   demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
 module Editor
   223:11 ++ title: accepted fresh
@@ -170,6 +172,7 @@ module Register
 module Route
   summary fromUrl: unused
   summary href: unused
+  summary path: unused
   summary replaceUrl: π3 RA; res #Cmd.0 fresh1{excl π3}, #Cmd.0[*]#Perform.0◇ ~π3; π3 calls many, need owned, unseen
   demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
 module Session

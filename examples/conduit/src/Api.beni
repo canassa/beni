@@ -6,6 +6,7 @@
 --! (`Viewer`) holds the credentials (`Cred`) every authenticated request
 --! sends, and is kept in `localStorage` between visits.
 
+import Deploy
 import Http
 import Schema exposing (NonNull, Null, Nullable)
 import Storage exposing (Local)
@@ -126,9 +127,9 @@ logout ⊤ = Storage.remove Local storageKey
 
 -- ---- Endpoints ---------------------------------------------------------------
 
---| `/api/<paths…>?<query>`.
+--| `<apiOrigin>/api/<paths…>?<query>` (`Deploy.apiOrigin`).
 pub url : List String, List QueryParameter → String
-url paths params = Url.Builder.absolute ([ "api" ] ++ paths) params
+url paths params = Url.Builder.crossOrigin Deploy.apiOrigin ([ "api" ] ++ paths) params
 
 
 -- ---- Errors ------------------------------------------------------------------

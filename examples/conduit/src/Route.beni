@@ -4,6 +4,7 @@
 
 import Browser.Navigation as Navigation
 import Cmd exposing (Cmd)
+import Deploy
 import Url exposing (Url)
 import Url.Parser exposing (Parser, map, oneOf, s, slash, string, top)
 
@@ -38,12 +39,23 @@ parser =
         ]
 
 
+--| The route at an address under `Deploy.basePath`.
 pub fromUrl : Url → Maybe Route
-fromUrl url = Url.Parser.parse parser url
+fromUrl url =
+    if String.startsWith url.path Deploy.basePath then
+        Url.Parser.parse parser
+            { url | path = String.dropLeft url.path (String.length Deploy.basePath) }
+    else
+        Nothing
 
 
+--| The address of a route, under `Deploy.basePath`.
 pub href : Route → String
-href route =
+href route = Deploy.basePath ++ path route
+
+
+path : Route → String
+path route =
     case route of
         Home →
             "/"
