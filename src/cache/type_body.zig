@@ -517,7 +517,9 @@ const Reader = struct {
 
     fn text(r: *Reader) []const u8 {
         const len = r.int();
-        if (r.at + len > r.bytes.len) {
+        // In 64 bits, as the other readers count: on wasm32 a damaged `len`
+        // near 4 GiB wraps a `usize` sum past the check.
+        if (@as(u64, r.at) + len > r.bytes.len) {
             r.bad = true;
             r.at = r.bytes.len;
             return "";
