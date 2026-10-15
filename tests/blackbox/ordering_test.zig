@@ -38,6 +38,24 @@ test "a recursive group's nullary read and dot-call print the same reversed" {
     try expectReversedPrints("tests/corpus/run/NullaryRecursiveGroup.beni", "tests/corpus/run/NullaryRecursiveGroup.expected");
 }
 
+test "a private nullary method helper's hint is the same reversed" {
+    var s = try Scenario.init("a private nullary method helper's hint, reversed");
+    defer s.deinit();
+    const a = s.arena();
+    const path = "tests/corpus/check/bad/CallStylePrivateMethodReceiver.beni";
+    const written = try source(a, path, .written);
+    const reversed = try source(a, path, .reversed);
+    try s.w.write("Written.beni", written);
+    try s.w.write("Reversed.beni", reversed);
+    const run = try s.w.runWith(&.{ "check", "--no-cache", "--diagnostics=json", "--platform=node", "Written.beni", "Reversed.beni" }, .{ .raw_diagnostics = true });
+    if (run.exit_code != 1) return s.finish(try s.failed(run));
+    const diags = std.json.parseFromSliceLeaky([]@import("diagnostic").Diagnostic, a, std.mem.trim(u8, run.stderr, " \r\n"), .{}) catch return s.finish(try s.failed(run));
+    const want = refusals(diags, "Written.beni", written, .type_mismatch) orelse return s.finish(try s.failed(run));
+    const got = refusals(diags, "Reversed.beni", reversed, .type_mismatch) orelse return s.finish(try s.failed(run));
+    const same = std.mem.eql(u8, want.message, got.message) and std.mem.eql(u8, want.text, got.text);
+    try s.finish(.{ .green = same, .signature = if (same) "" else "exit=1 differs", .detail = "the private method helper's diagnostic differs in reverse declaration order" });
+}
+
 // An own method written below the annotated function whose parameter
 // receives it, called from a `let` helper used at two types: the method's
 // group is checked when it is first demanded, and the helper still
@@ -301,6 +319,8 @@ fn expectReversedPrints(comptime path: []const u8, twin: []const u8) !void {
 fn reversedPrints(s: *Scenario, comptime path: []const u8, twin: []const u8) !void {
     const a = s.arena();
     try s.w.write("Main.beni", try source(a, path, .reversed));
+    // Each scenario owns a fresh directory containing only its source
+    // modules. The directory target includes dependencies such as Box.
     const built = try s.w.runWith(&.{ "build", "--no-cache", "--diagnostics=json", "--platform=node", "--out=out", "." }, .{ .raw_diagnostics = true });
     if (built.exit_code != 0) return s.finish(try s.failed(built));
     const expected = try readRepo(a, twin);

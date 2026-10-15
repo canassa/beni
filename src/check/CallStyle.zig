@@ -123,6 +123,8 @@ fn reachedFunction(r: *Reporter, actual: Var, field: Symbol) ?Reached {
     if (app.type == .none) return null;
     const entry = r.env.types.entry(app.type);
     if (entry.module == r.env.module) {
+        // Top-level value names are unique within a module; privacy does
+        // not restrict calls from that same module (spike §1.2).
         for (r.env.bir.decls, 0..) |decl, d| {
             if (!decl.kind.isValue() or r.env.bir.symbol(decl.name) != field) continue;
             const scheme = r.env.decl_scheme[d].unwrap() orelse return null;
@@ -447,12 +449,14 @@ fn helperHint(r: *Reporter, w: *std.Io.Writer, original: Category, region: Bir.I
     const data = bir.instData(callee);
     var params: []const Bir.Inst.Index = undefined;
     var locals_base: u32 = undefined;
+    var body: Bir.Inst.OptionalIndex = .none;
     switch (bir.instTag(callee)) {
         .top => {
             const decl = bir.decls[data.lhs];
             if (decl.annotation != .none) return false;
             params = bir.extraSlice(.{ .start = decl.params_start, .end = decl.params_end }, Bir.Inst.Index);
             locals_base = decl.locals_start;
+            body = decl.body;
         },
         .local => {
             var found: ?Bir.LetDef = null;
@@ -462,7 +466,10 @@ fn helperHint(r: *Reporter, w: *std.Io.Writer, original: Category, region: Bir.I
                     const inst: Bir.Inst.Index = @fromBackingInt(@intCast(i));
                     if (bir.instTag(inst) != .let_def) continue;
                     const def = bir.extraData(@fromBackingInt(@intCast(bir.instData(inst).lhs)), Bir.LetDef);
-                    if (def.local == data.lhs) found = def;
+                    if (def.local == data.lhs) {
+                        found = def;
+                        body = @fromBackingInt(@intCast(bir.instData(inst).rhs));
+                    }
                 }
             }
             const def = found orelse return false;
@@ -472,6 +479,13 @@ fn helperHint(r: *Reporter, w: *std.Io.Writer, original: Category, region: Bir.I
         },
         else => return false,
     }
+    // `helper = λxs → …` binds its parameters on the lambda rather
+    // than on the declaration, at both top-level and local bindings.
+    if (params.len == 0) {
+        const lambda = body.unwrap() orelse return false;
+        if (bir.instTag(lambda) != .lambda) return false;
+        params = bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(bir.instData(lambda).lhs))), Bir.Inst.Index);
+    }
     if (category.index > params.len) return false;
     const param = params[category.index - 1];
     if (bir.instTag(param) != .pat_var) return false;
@@ -480,15 +494,18 @@ fn helperHint(r: *Reporter, w: *std.Io.Writer, original: Category, region: Bir.I
     var match = helperMethod(r, expected, actual, 8) orelse return false;
     match.nested = match.nested or original.tag == .list_entry;
     const name = r.env.interner.slice(match.field);
-    w.print("\nHint: unannotated helper `{s}` infers {s}record receiver{s} for parameter\n`{s}`. Annotate the helper's receiver to call the method, or write\n`", .{
-        r.calleeOf(call).name,
-        if (match.nested) "" else "a ",
-        if (match.nested) "s within the value" else "",
-        parameter,
-    }) catch return error.OutOfMemory;
+    if (match.nested) {
+        w.print("\nHint: unannotated helper `{s}` infers record receivers for elements of\nparameter `{s}`. Annotate the element type to call the method, or use\n`", .{ r.calleeOf(call).name, parameter }) catch return error.OutOfMemory;
+    } else {
+        w.print("\nHint: unannotated helper `{s}` infers a record receiver for parameter\n`{s}`. Annotate the helper's receiver to call the method, or write\n`", .{ r.calleeOf(call).name, parameter }) catch return error.OutOfMemory;
+    }
     if (match.reached.module != r.env.module)
         w.print("{s}.", .{r.env.interner.slice(match.reached.module_name)}) catch return error.OutOfMemory;
-    w.print("{s} {s}` inside it.\n", .{ name, if (match.nested) "element" else parameter }) catch return error.OutOfMemory;
+    if (match.nested) {
+        w.print("{s}` on each element inside it.\n", .{name}) catch return error.OutOfMemory;
+    } else {
+        w.print("{s} {s}` inside it.\n", .{ name, parameter }) catch return error.OutOfMemory;
+    }
     return true;
 }
 
