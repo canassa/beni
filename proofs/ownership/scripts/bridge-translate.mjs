@@ -34,7 +34,7 @@ export function constructs(ds, main) {
 }
 export function translate(ds, main) {
   let serial = 0;
-  const sites = [], defs = new Map(), building = new Set(), hoisted = new Set(), globals = [];
+  const defs = new Map(), building = new Set(), hoisted = new Set(), globals = [];
   const bindings = new Map();
   for (let e = main; e[0] === 'let'; e = e[3]) bindings.set(e[1], e[2]);
   function hoistAtom(a) {
@@ -74,7 +74,7 @@ export function translate(ds, main) {
     if (a[0] === 'field') return `${atom(a[1], env)}.f${a[2]}`;
     throw Error(`unknown atom ${a[0]}`);
   };
-  const mark = (key, text) => { sites.push(key); return `-- bridge ${key}\n${text}`; };
+  const mark = (key, text) => `-- bridge-start ${key}\n${text}\n-- bridge-end ${key}`;
   const ind = (s, n = 4) => s.split('\n').map(x => ' '.repeat(n) + x).join('\n');
   function closure(id, caps, env, key) {
     const d = ds[id];
@@ -102,6 +102,9 @@ export function translate(ds, main) {
       : `(λ${ps.join(' ') || '⊤'} →\n${ind(body)}\n)`;
   }
   function emit(e, env, key, self = null) {
+    return mark(key, emitRaw(e, env, key, self));
+  }
+  function emitRaw(e, env, key, self) {
     const a = x => atom(x, env), args = xs => xs.map(x => `(${a(x)})`).join(' ');
     switch (e[0]) {
       case 'atom': return a(e[1]);
@@ -134,17 +137,17 @@ export function translate(ds, main) {
         else fail(({builder:'private-builder', put:'private-put', close:'private-close',
           events:'abstract-event-boundary', owned:'abstract-owned-boundary'})[op] ?? `primitive-${op}`);
         if (["length", "at"].includes(op)) text = `bridgeRead (\n${ind(text)}\n)`;
-        return mark(key, text);
+        return text;
       }
-      case 'closure': return mark(key, closure(e[1], e[2], env, key));
-      case 'app': return mark(key, `${a(e[1])} ${args(e[2]) || '⊤'}`);
+      case 'closure': return closure(e[1], e[2], env, key);
+      case 'app': return `${a(e[1])} ${args(e[2]) || '⊤'}`;
       case 'recur':
         if (!self) fail('recursion-outside-declaration');
-        return mark(key, `${self.local ?? `d${self.id}`} ${args(e[1]) || '⊤'}`);
+        return `${self.local ?? `d${self.id}`} ${args(e[1]) || '⊤'}`;
       case 'branch': return `if ${a(e[1])} == 0 then\n${ind(emit(e[2], env, key + '/0', self))}\nelse\n${ind(emit(e[3], env, key + '/1', self))}`;
       case 'focus': {
         const local = `focus${serial++}`, next = new Map(env); next.set(e[3], local);
-        return mark(key, `List.update (${a(e[1])}) (${a(e[2])}) (λ${local} →\n${ind(emit(e[4], next, key + '/body', self))}\n)`);
+        return `List.update (${a(e[1])}) (${a(e[2])}) (λ${local} →\n${ind(emit(e[4], next, key + '/body', self))}\n)`;
       }
       case 'traverse': {
         if (e[1] === 'model') fail('model-entry-protocol');
@@ -152,22 +155,29 @@ export function translate(ds, main) {
         const index = `index${serial++}`, item = `item${serial++}`, acc = `acc${serial++}`, next = new Map(env);
         next.set(e[4], index); next.set(e[5], e[1] === 'range' ? index : item); next.set(e[6], acc);
         const src = e[1] === 'list' ? a(e[2]) : `(List.range 0 (${a(e[2])} - 1))`;
-        return mark(key, `List.foldl (${src}) (${a(e[3])}) (λ${e[1] === 'list' ? item : index} ${acc} →\n${ind(emit(e[7], next, key + '/body', self))}\n)`);
+        return `List.foldl (${src}) (${a(e[3])}) (λ${e[1] === 'list' ? item : index} ${acc} →\n${ind(emit(e[7], next, key + '/body', self))}\n)`;
       }
       default: throw Error(`unknown expression ${e[0]}`);
     }
   }
   const body = emit(main, new Map(), 'main');
   const source = ['pub bridgeRead value = value', ...globals, ...defs.values(), `pub run ⊤ =\n${ind(body)}`].join('\n\n\n') + '\n';
-  // Each marker belongs to its following expression. Keep its enclosing range
-  // for call/update obligations whose token is stamped on an argument.
-  const lines = source.split('\n'), markers = [];
+  // Balanced ranges return closing tokens to their enclosing expression.
+  const lines = source.split('\n'), markers = [], stack = [];
   for (let i = 0; i < lines.length; ++i) {
-    const m = lines[i].match(/^( *)-- bridge (.+)$/);
-    if (m) markers.push({ key: m[2], line: i + 2, indent: m[1].length });
+    const m = lines[i].match(/^ *-- bridge-(start|end) (.+)$/);
+    if (!m) continue;
+    if (m[1] === 'start') {
+      const marker={key:m[2],line:i+2,end:null}; markers.push(marker); stack.push(marker);
+    } else {
+      const marker=stack.pop();
+      if (!marker || marker.key!==m[2]) throw Error('unbalanced bridge markers');
+      marker.end=i;
+    }
   }
+  if (stack.length) throw Error('unclosed bridge marker');
   return { source, markers };
 }
 export function siteAt(markers, row) {
-  return markers.filter(m => m.line <= row).at(-1)?.key ?? null;
+  return markers.filter(m => m.line <= row && row <= m.end).at(-1)?.key ?? null;
 }
