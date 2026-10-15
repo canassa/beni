@@ -112,10 +112,36 @@ test "a dispatch cycle through an annotated eq written above its caller, reverse
 // clean; it must be the written order's one `not_equatable`, the same
 // message at the same source text.
 test "a schema endpoint's exclusion through its via target is the same refusal reversed" {
-    var s = try Scenario.init("a schema endpoint's exclusion, reversed");
+    try expectReversedNotEquatable("tests/corpus/check/bad/SchemaWrapperExclusionThroughOwnType.beni");
+}
+
+// Schema declarations that name each other (checker-v2.md §11.5): the
+// derived-context fixpoint reads them as one unit, and a record schema
+// between two tagged ones is no recursive alias, in either order. Written,
+// `Expr` comes before the `Stmts` it holds and `Stmts` before the `Stmt`
+// that holds it back, which was a false `recursive_alias`; reversed, the
+// tagged `Stmt` comes first.
+test "mutually recursive schema declarations print the same reversed" {
+    var s = try Scenario.init("mutually recursive schemas, reversed");
+    defer s.deinit();
+    try s.w.write("Show.beni", try readRepo(s.arena(), "tests/corpus/run/SchemaDeclMutual/Show.beni"));
+    try reversedPrints(&s, "tests/corpus/run/SchemaDeclMutual/Main.beni", "tests/corpus/run/SchemaDeclMutual/_expected.expected");
+}
+
+test "two tagged schemas that name each other check reversed" {
+    try expectReversedChecks("tests/corpus/check/good/SchemaMutualTagged.beni");
+}
+
+test "an exclusion round a cycle of tagged schemas is the same refusal reversed" {
+    try expectReversedNotEquatable("tests/corpus/check/bad/SchemaMutualExclusion.beni");
+}
+
+/// `path`'s one `not_equatable`, written and reversed: the same message at
+/// the same source text.
+fn expectReversedNotEquatable(comptime path: []const u8) !void {
+    var s = try Scenario.init(path ++ ", reversed");
     defer s.deinit();
     const a = s.arena();
-    const path = "tests/corpus/check/bad/SchemaWrapperExclusionThroughOwnType.beni";
     const written = try source(a, path, .written);
     const reversed = try source(a, path, .reversed);
     try s.w.write("Written.beni", written);

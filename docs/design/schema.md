@@ -406,6 +406,25 @@ recursion avoids inventing an implicit recursive alias fix.
 Nonproductive cycles (a reference cycle with no input descent) must fail at
 construction/execution under §5 rather than overflow or hang.
 
+*Amended 2026-10-16 (#196): mutual recursion.* Declarations of one module may name each other in
+a cycle of any length, through tagged and record declarations alike, provided the cycle passes
+through a tagged one.
+- **A tagged declaration is its nominal endpoints.** Naming one is never structural recursion,
+  so the checker names it without building its payloads first (`buildAll` builds every one). A
+  record declaration between two tagged ones that name it, `Expr` holding `Stmts` holding `Stmt`
+  holding `Stmts`, therefore checks in every declaration order. `recursive_alias` is a cycle of
+  record declarations alone.
+- **The derived contexts read the cycle as one unit** (checker-v2.md §11.5, *amended
+  2026-10-16*). So `eq` and `compare` derive over the cycle, and an exclusion reached anywhere
+  in it reaches every member that holds it.
+- **A generic cycle's description closes inside one use.** A reference to another member of the
+  cycle that hands the parameters on as they are (`Ping a` holding `Pong a`, which holds `Ping a`)
+  is described as that member's body, under its own `describedRecursive` cell, inside the
+  referring description. It is not a call of the member's factory, which would make a new cell
+  of the referrer on every level and describe without end. A reference with other arguments is
+  polymorphic recursion (`Nested a` holding `Nested (List a)`). It still builds a definition per
+  level, and §5's walks do not end on it: that is the open defect #213, which owes a decision.
+
 ## 5. The description and `core/Schema`
 
 **Context contract:** the schema engine owns and threads direction, full path,
