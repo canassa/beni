@@ -121,6 +121,7 @@ structure Config where
   mutant : Option Mutant := none
   /-- Check with the frozen per-call re-inference checker instead (cross-check). -/
   reinfer : Bool := false
+  bridgeTrace : Bool := false -- observations only; no ownership rule changes
   shapeOnly : Bool := false -- internal provenance pass; never used for acceptance
   inferenceFuel : Nat := 200
   rounds : Nat := 24

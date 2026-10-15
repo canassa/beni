@@ -18,6 +18,7 @@ per-call re-inference checker is `Ownership.Reinfer`, kept as a cross-check. -/
 namespace Ownership
 
 structure Context where
+  bridgeRoot : String := "main"
   declarations : List Decl
   config : Config
   owned : List Origin := []
@@ -45,6 +46,7 @@ structure CacheEntry where
   deriving Repr, Inhabited
 
 structure St where
+  bridgeSites : List String := []
   facts : Summary := {}
   cache : Array CacheEntry := #[]
   /-- Summaries computed, and call sites served from the cache. -/
@@ -55,6 +57,21 @@ structure St where
   deriving Inhabited
 
 abbrev CheckM := StateT St (Except String)
+
+/-- Diagnostic breadcrumbs only. The ordinary exception and state are unchanged
+    when disabled. A failure carries the sites visited before it; unvisited
+    sites must not be classified by a differential consumer. -/
+def bridgeKey (ctx : Context) (site : List Nat) : String :=
+  ctx.bridgeRoot ++ String.join (site.map fun n => s!"/{n}")
+
+def bridgeObserve (ctx : Context) (site : List Nat) (m : CheckM Abstract) : CheckM Abstract :=
+  if !ctx.config.bridgeTrace || ctx.config.shapeOnly then m else fun st =>
+    match m.run st with
+    | .ok (a, next) => .ok (a, { next with bridgeSites := next.bridgeSites ++ [bridgeKey ctx site] })
+    | .error e =>
+      if e.startsWith "BRIDGE\n" then .error e
+      else .error ("BRIDGE\n" ++ bridgeKey ctx site ++ "\n" ++
+        String.intercalate "," st.bridgeSites ++ "\n" ++ e)
 
 def getFacts : CheckM Summary := do pure (← get).facts
 
@@ -500,7 +517,7 @@ def recheckSupplies (ctx : Context) (s : Summary) (site : List Nat) (args caps :
 mutual
 
 def inferExpr (fuel : Nat) (ctx : Context) (env : Env Abstract)
-    (e : Expr) (after : Live) (site : List Nat) : CheckM Abstract := do
+    (e : Expr) (after : Live) (site : List Nat) : CheckM Abstract := bridgeObserve ctx site do
   if fuel = 0 then throw "limit: inference depth"
   else
     let f := fuel - 1
@@ -596,7 +613,7 @@ def inferExpr (fuel : Nat) (ctx : Context) (env : Env Abstract)
       let caps := closureCaps ctx.config env body [x]
       let capValues := caps.map Prod.snd
       let element := if ex then item.grantExclusive else item
-      let s ← inferScope f ctx [(x, element)] caps body later
+      let s ← inferScope f { ctx with bridgeRoot := bridgeKey ctx site ++ "/body" } [(x, element)] caps body later
       let consumes := (s.writes ++ s.consumes).any fun c => match c with | .parameter 0 _ => true | _ => false
       let rootWrites := (s.writes ++ s.consumes).all fun c => match c with
         | .parameter 0 p => containerPath p
@@ -644,7 +661,7 @@ def inferExpr (fuel : Nat) (ctx : Context) (env : Env Abstract)
         | c => c
       let cacheBefore := (← get).cache
       let ((shape, made), _) ← isolated do
-        let shapeCtx := { ctx with config := { ctx.config with shapeOnly := true } }
+        let shapeCtx := { ctx with bridgeRoot := bridgeKey ctx site ++ "/body", config := { ctx.config with shapeOnly := true } }
         let mut shape := init
         let mut made : List Origin := []
         let mut stable := false
@@ -686,7 +703,7 @@ def inferExpr (fuel : Nat) (ctx : Context) (env : Env Abstract)
           let ((joined, escapeStable), effects) ← isolated do
             modifyFacts fun _ => { baseFacts with escapes := proofEscapes }
             let beforeEscapes := (← getFacts).escapes
-            let s ← inferScope f ctx [(i, .scalar), (x, element), (acc, current)] caps body later
+            let s ← inferScope f { ctx with bridgeRoot := bridgeKey ctx site ++ "/body" } [(i, .scalar), (x, element), (acc, current)] caps body later
             if !ctx.config.shapeOnly && !ctx.config.has .manyCalls &&
                 (s.writes ++ s.consumes).any (fun c => match c with | .capture .. => true | _ => false) then
               throw "many calls: traversal step consumes a capture or once closure"
@@ -1096,7 +1113,7 @@ def summarise (fuel : Nat) (parent : Context) (id : Nat) (inputs : List Abstract
           return entry.summary
     let ps := inputs.take n
     let es := inputs.drop n
-    let base : Context := { declarations := parent.declarations, config := parent.config,
+    let base : Context := { bridgeRoot := s!"d{id}", declarations := parent.declarations, config := parent.config,
                             owned, frames }
     let mut candidate : Summary := {}
     let mut done_ := false
@@ -1123,6 +1140,7 @@ decreasing_by all_goals simp_wf; omega
 end
 
 structure Accepted where
+  bridgeSites : List String := []
   result : Abstract
   facts : Summary
   computed : Nat
@@ -1137,6 +1155,6 @@ def check (p : Program) (config : Config := {}) : Except String Accepted := do
     let _ ← (if config.has .shadowing then typesOf p else typecheck p)
     let ctx : Context := { declarations := p.declarations, config }
     let (result, st) ← (inferExpr config.inferenceFuel ctx [] p.main [] []).run {}
-    pure { result, facts := st.facts, computed := st.computed, reused := st.reused, cache := st.cache, hits := st.hits }
+    pure { bridgeSites := st.bridgeSites, result, facts := st.facts, computed := st.computed, reused := st.reused, cache := st.cache, hits := st.hits }
 
 end Ownership
