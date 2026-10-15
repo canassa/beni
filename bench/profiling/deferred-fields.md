@@ -9,12 +9,12 @@ zorg 0.17.1+zorg.1. All timing binaries are **LLVM ReleaseSafe**
 |---|---|
 | Immediately before #126 | `134d24ab96c5b57f1917ed67af3b931a30a16add` |
 | Master including merged #135 | `d10749f70a2060230c99cd196d70c15c2666eb9b` |
-| This follow-up, including #135 | `b9e227f9aeda9d793c7bed46d627984448d70133` |
+| This follow-up, including #135 | `bf6ccdde4a33ce25262a61a169a34a574cd48c7e` |
 
-The measured master already includes #135 (`dd38d162e`); its subsequent
-`d10749f70` update and the final feature-branch merge change documentation only.
-Rebuilds produced identical compiler SHA-256 values, retained with the samples.
-The recovery column therefore measures the **remaining** net overhead after #135.
+The measured master includes #135 and the subsequent documentation update.
+All three binaries were rebuilt in their own worktrees; source and binary
+fingerprints are retained with these final samples. The recovery column
+measures the **remaining** net overhead after #135.
 
 ## Identical inputs and method
 
@@ -52,48 +52,48 @@ Medians of 12 runs per compiler, total checking spans, milliseconds:
 
 | Input | Before #126 | Master | Follow-up | Added cost removed |
 |---|---:|---:|---:|---:|
-| Annotated 63k | 47.68 | 62.43 | **34.16** | 191.6% |
-| Unannotated 63k | 46.43 | 146.02 | **40.90** | 105.5% |
-| Same generated 100k | 67.20 | 68.28 | 67.63 | noisy |
-| Updated bench/corpus | 6.47 | 6.58 | 6.89 | noisy |
-| 100k plus TaskBoard | 66.56 | 68.02 | 68.50 | noisy |
+| Annotated 63k | 49.64 | 64.51 | **35.55** | 194.8% |
+| Unannotated 63k | 47.81 | 147.50 | **42.60** | 105.2% |
+| Same generated 100k | 67.87 | 69.94 | 69.02 | noisy |
+| Updated bench/corpus | 7.35 | 8.36 | 8.17 | noisy |
+| 100k plus TaskBoard | 67.77 | 69.06 | 69.41 | noisy |
 
 Recovery is `(master − follow-up) / (master − before)`, calculated from
 unrounded medians. Above 100% means the net added cost is gone **and** the
 ordinary field-read shortcut saves work that predates #126. It does not mean
 that deferral itself costs nothing. The annotated case is 28.4% faster than
-before #126; the unannotated case is 11.9% faster. Both beat the requested
+before #126; the unannotated case is 10.9% faster. Both beat the requested
 "no more than about 10% slower than before #126" target. Versus master the
-checking reductions are 45.3% and 72.0% respectively.
+checking reductions are 44.9% and 71.1% respectively.
 
-Do not infer precise corpus recovery from a sub-millisecond denominator.
-The original 100k check ranges overlap: before 60.98–71.40 ms, master 66.91–72.70 ms, follow-up 65.25–75.03 ms.
+Do not infer precise corpus recovery from a small denominator.
+The original 100k check ranges overlap: before 64.95–73.68 ms, master 66.35–75.55 ms, follow-up 66.74–77.31 ms.
 The other corpus inputs also overlap. Their follow-up medians are
-0.6% (original 100k), 6.6% (realistic corpus) and
-2.9% (enriched 100k) above pre-#126. These inputs verify broader
+1.7% (original 100k), 11.2% (realistic corpus) and
+2.4% (enriched 100k) above pre-#126. These inputs verify broader
 throughput rather than establish a precise field-dense recovery fraction.
 
 Whole-process wall medians, including loading and the frontend, milliseconds:
 
 | Input | Before #126 | Master | Follow-up |
 |---|---:|---:|---:|
-| Annotated 63k | 81.89 | 96.85 | 69.25 |
-| Unannotated 63k | 78.93 | 178.39 | 73.51 |
-| Same generated 100k | 341.64 | 346.65 | 347.45 |
-| Updated bench/corpus | 39.51 | 39.67 | 41.33 |
-| 100k plus TaskBoard | 322.82 | 336.13 | 331.24 |
+| Annotated 63k | 85.22 | 101.73 | 70.46 |
+| Unannotated 63k | 80.89 | 180.92 | 75.46 |
+| Same generated 100k | 348.88 | 352.39 | 345.47 |
+| Updated bench/corpus | 47.37 | 47.18 | 49.41 |
+| 100k plus TaskBoard | 355.17 | 353.94 | 356.68 |
 
 Selected checker phases (independent medians; this partial table does not sum
 to total checking), milliseconds:
 
 | Input/compiler | Constrain | Solve | Effects |
 |---|---:|---:|---:|
-| Annotated, before #126 | 9.89 | 31.85 | 0.84 |
-| Annotated, master | 12.29 | 40.75 | 4.00 |
-| Annotated, follow-up | 9.97 | 18.21 | 0.91 |
-| Unannotated, before #126 | 9.79 | 31.19 | 0.98 |
-| Unannotated, master | 12.03 | 124.29 | 4.23 |
-| Unannotated, follow-up | 9.92 | 25.04 | 1.11 |
+| Annotated, before #126 | 10.32 | 33.27 | 0.96 |
+| Annotated, master | 12.98 | 41.92 | 4.06 |
+| Annotated, follow-up | 10.48 | 19.01 | 0.92 |
+| Unannotated, before #126 | 10.08 | 32.21 | 1.04 |
+| Unannotated, master | 12.22 | 125.74 | 4.31 |
+| Unannotated, follow-up | 10.52 | 25.97 | 1.22 |
 
 ## What changed and why it preserves results
 
@@ -137,10 +137,8 @@ including its invariant check at 253/1,116, on the 504k-line unannotated input.
 The [retained earlier report](nullary-overhead.md) also cross-checks the actual
 63k timing input. This motivated the dependency-walk change.
 
-Native sampling uses the reviewed checker at `36a879521` and LLVM ReleaseSafe.
-The later master update leaves every `src/check` file unchanged; the timing
-comparison above was freshly collected on that updated base. The profile binary
-disables stripping solely for symbols. `sample PID 5 1 -file OUTPUT`
+Native sampling uses the final checker at `bf6ccdde4` and LLVM ReleaseSafe.
+The profile binary disables stripping solely for symbols. `sample PID 5 1 -file OUTPUT`
 covers successful complete runs. Inputs use `field-dense.py 32000
 [--unannotated]`: 2,016,000 lines and 1,920,000 reads. The extra independent
 functions give enough samples for the faster compiler; each function retains
@@ -148,14 +146,14 @@ exactly the timing input's 60-read/boundary shape.
 
 | Inclusive final samples | Annotated | Unannotated |
 |---|---:|---:|
-| Module checker | 1033 | 1347 |
-| Rank adjustment | 115 | 91 (6.8%) |
-| Owning-boundary assertion, subset | 4 | 5 |
-| Ready-queue draining | 6 | 273 (20.3%) |
-| Obligation attachment | 0 | 80 (5.9%) |
-| Field unification | 86 | 119 (8.8%) |
-| Cycle-proof assertion | 65 | 70 |
-| Effects | 17 | 20 |
+| Module checker | 1252 | 1328 |
+| Rank adjustment | 132 | 98 (7.4%) |
+| Owning-boundary assertion, subset | 6 | 4 |
+| Ready-queue draining | 8 | 258 (19.4%) |
+| Obligation attachment | 0 | 86 (6.5%) |
+| Field unification | 105 | 97 (7.3%) |
+| Cycle-proof assertion | 75 | 64 |
+| Effects | 18 | 20 |
 
 The mutation-site safety assertions are included in attachment/lowering work;
 the assertion row lists only the full owning-boundary check.
@@ -178,7 +176,7 @@ regression to justify weakening that guarantee.
 The new black-box `test-perf` scenario doubles reads on one unknown receiver
 from 4,000 to 8,000. With the test copied to the earlier master baseline `2c4e2aee0`, the **actual
 ReleaseFast test fails**: 140/536 ms child CPU, ratio **3.82**, above 2.5.
-On the final follow-up it passes: 7/10 ms, ratio **1.42**. These are the
+On the final follow-up it passes: 9/12 ms, ratio **1.33**. These are the
 harness's CPU best-of-three scaling measurements, separate from the LLVM
 ReleaseSafe median comparison above. Run it with:
 
@@ -188,12 +186,10 @@ zorg build test-perf -Dtest-filter='pending field reads scale'
 
 The complete self-hosted `zorg build test test-blackbox fmt-check beni-fmt-check`
 passes, with filesystem-sensitive temporary files on case-sensitive APFS and
-the normal cache restored afterwards. LLVM unit, corpus, ordering, determinism
-and formatting checks pass via:
+the normal cache restored afterwards. The complete LLVM run passes too:
 
 ```sh
-zorg build test test-blackbox-corpus test-blackbox-ordering \
-  test-blackbox-blackbox fmt-check beni-fmt-check -Dllvm
+zorg build test test-blackbox fmt-check beni-fmt-check -Dllvm
 ```
 
 All **109 successful unique** direct before/after dump requests match, retained
@@ -207,7 +203,13 @@ file: matching usage errors or missing-context diagnostics are excluded.
 The added reverse-resolution diagnostic and late-dispatch fixtures force the
 second receiver to become concrete first inside a deeper nested binding. Their
 new goldens come from the #135 compiler and match the follow-up. A poisoned
-receiver fixture pins the same single naming error. A separate cold/warm cache
+receiver fixture pins the same single naming error. A final alias probe found
+and fixed a numeric well-known-method bridge ordering regression: `(wrap 1).eq`
+and `.compare` must bridge before retrying a flexible receiver at a
+non-defaulting boundary. The new `NullaryNumericAlias` fixture and retained
+[before/fixed comparison](../results/2026-10-15-numeric-alias-compatibility.json)
+prove the previous reviewed implementation aborts while master and the final code emit
+the same `too_few_args` diagnostics. A separate cold/warm cache
 replay at jobs 1/8 under both compilers emits identical files and returns 14 in
 Node on all four runs. The replay JSON retains each file's fingerprint.
 
