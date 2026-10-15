@@ -2422,6 +2422,20 @@ const Emitter = struct {
         try e.walk();
     }
 
+    /// `shareValidators` again, after a walk from narrower roots: true when
+    /// the decision changed and `share_roots` with it. A narrower walk can
+    /// only drop worker sets, so the new set is a subset of the old and one
+    /// more walk settles it.
+    fn reshareValidators(e: *Emitter) !bool {
+        const sg = if (e.schema_graph) |*g| g else return false;
+        if (e.options.schema_library or !e.options.release) return false;
+        const again = try SchemaShare.decide(e.scratch, sg, &e.live);
+        if (again.set.eql(sg.share.set)) return false;
+        sg.share = again;
+        e.share_roots = try SchemaShare.roots(e.scratch, sg, again);
+        return true;
+    }
+
     fn withFuzzRoots(e: *Emitter, roots: []const Reach.Node) ![]const Reach.Node {
         if (!e.options.fuzz) return roots;
         var out: std.ArrayList(Reach.Node) = .empty;
@@ -3330,6 +3344,13 @@ const Emitter = struct {
             e.extra_roots = precise;
             for (slots) |*slot| slot.deinit(e.gpa);
             try e.walk();
+            // The narrower roots may leave fewer worker sets alive, and then
+            // fewer calls of a shared validator: decided again, so a helper
+            // the count no longer pays for is not kept (`SchemaShare`).
+            if (try e.reshareValidators()) {
+                e.extra_roots = try e.withShareRoots(try e.withFuzzRoots(try e.preciseRuntimeRoots(entry)));
+                try e.walk();
+            }
         }
         e.dropEdges();
         defer for (slots) |*slot| slot.deinit(e.gpa);

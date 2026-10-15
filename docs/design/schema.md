@@ -2613,7 +2613,12 @@ writes every worker from one generator over them (`Fn.op`). `core/Schema` adds `
   - `SchemaShare` counts each helper's calls over the live worker sets and decides what a
     `--release` build shares.
   - `Emit.shareValidators` roots the shared helpers and takes the walk again. `withShareRoots`
-    keeps them through the walk that refines the runtime's roots.
+    keeps them through the walk that refines the runtime's roots. That walk can leave fewer
+    worker sets alive, so `reshareValidators` decides again after it. The new set can only
+    shrink, so one more walk settles it.
+  - The count mirrors `SchemaLower`'s emission by hand. A drift cannot mis-emit, because a call is
+    written only where `Share.on` says so and a shared helper is always a root. A check that the
+    two agree is #209.
   - `SchemaLower.failText` and `decodeRecord` call a helper wherever `Share.on` says so.
   - `core/Schema` adds `compiledDeep`, `compiledMissing` and the five `bad…` helpers.
 - **The guarantee as a test.** `run/SchemaSharedValidators` parses enough required fields of each
