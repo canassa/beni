@@ -1,5 +1,5 @@
 {
-  "revision": "9a6efe69685230ad7af9cee649352e50dd9f71d3",
+  "revision": "36a8795219f297c78cefedc15d84678b6b100e7a",
   "mode": "LLVM ReleaseSafe, verbose timing invocation replayed replacing -fstrip with -fno-strip only for symbolisation; not used for timing",
   "method": "macOS sample, 1 ms interval, up to 5 s; successful complete CLI runs; inclusive stack counts, recursive occurrences counted once per sampled stack; no other builds, tests or timing runs",
   "input": {
@@ -11,29 +11,29 @@
   "inputs": {
     "known": {
       "inclusive_samples": {
-        "check.Module.check": 1101,
-        "check.Generalize.adjustRanks": 133,
-        "check.Generalize.assertOwnedWithin": 7,
-        "check.Decide.drain": 9,
+        "check.Module.check": 1033,
+        "check.Generalize.adjustRanks": 115,
+        "check.Generalize.assertOwnedWithin": 4,
+        "check.Decide.drain": 6,
         "check.Decide.attach": 0,
-        "check.Instances.fieldRead": 91,
-        "check.Walk.assertProved": 58,
-        "check.Effects.run": 21
+        "check.Instances.fieldRead": 86,
+        "check.Walk.assertProved": 65,
+        "check.Effects.run": 17
       },
-      "sample_sha256": "db00bd290ade1f93e1eb5126f718e1efcea683a84c6fc1785b74a0b91621a471"
+      "sample_sha256": "05344dd6c171f72d63fca1207494772a847a8ac4d13e948db01fbe5573eed526"
     },
     "unknown": {
       "inclusive_samples": {
-        "check.Module.check": 1452,
-        "check.Generalize.adjustRanks": 115,
-        "check.Generalize.assertOwnedWithin": 6,
-        "check.Decide.drain": 284,
-        "check.Decide.attach": 92,
-        "check.Instances.fieldRead": 124,
-        "check.Walk.assertProved": 60,
-        "check.Effects.run": 23
+        "check.Module.check": 1347,
+        "check.Generalize.adjustRanks": 91,
+        "check.Generalize.assertOwnedWithin": 5,
+        "check.Decide.drain": 273,
+        "check.Decide.attach": 80,
+        "check.Instances.fieldRead": 119,
+        "check.Walk.assertProved": 70,
+        "check.Effects.run": 20
       },
-      "sample_sha256": "e991c920fbbdc8d972c7e50a56a309a19d921420a0840a4f2981fea85ca86293"
+      "sample_sha256": "87f0c9c4f9b0fd56db5647f2e064b52f46e8e56b03c0b1dc16cb3ac88edbbd8c"
     }
   }
 }

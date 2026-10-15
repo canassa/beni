@@ -47,8 +47,9 @@ beni check bench/corpus                                    # no platform needed
 beni build --platform=node --library --out=out bench/corpus  # the build bench/size.mjs makes
 ```
 
-Both must be clean — exit 0 and no diagnostic of any severity, warnings
-included — and two black-box scenarios in `tests/blackbox/build_test.zig`
+Both must exit 0 with no diagnostic except the retained `prepend_in_loop`
+warnings (the owner keeps the existing loops for benchmark comparability). Two
+black-box scenarios in `tests/blackbox/build_test.zig`
 hold them to it inside the gates (`bench/corpus type-checks with no
 diagnostic and no platform`, `bench/corpus builds as a library for the node
 platform`). They exist because the corpus did rot: until 2026-09-29

@@ -9,7 +9,7 @@ zorg 0.17.1+zorg.1. All timing binaries are **LLVM ReleaseSafe**
 |---|---|
 | Immediately before #126 | `134d24ab96c5b57f1917ed67af3b931a30a16add` |
 | Current master at measurement start | `2c4e2aee0a5be57606da36ee7c667ca46c6de427` |
-| This follow-up, including #135 | `9a6efe69685230ad7af9cee649352e50dd9f71d3` |
+| This follow-up, including #135 | `36a8795219f297c78cefedc15d84678b6b100e7a` |
 
 ## Identical inputs and method
 
@@ -21,10 +21,16 @@ receivers initially unknown. Both versions are valid before #126.
 The generated 100k input is also unchanged: 644 files, 100,082 lines, with
 its obsolete names already migrated, and 85 identical argument-order warnings.
 Two extra inputs check the new realistic workload: the updated `bench/corpus`
-(19 files, 3,795 lines), and the same generated input plus its new
-`TaskBoard.beni` (645 files, 100,226 lines). TaskBoard contains 34 unannotated
-`List.map`/`List.filter` callbacks over records; both new inputs check cleanly,
-including before #126. The enriched input is formed by copying TaskBoard into
+(19 files, 3,779 lines), and the same generated input plus its new
+`TaskBoard.beni` (645 files, 100,210 lines). TaskBoard contains 34 unannotated
+`List.map`/`List.filter` callbacks over records. Its helpers infer their rows
+before a typed summary uses them, so the callbacks actually start unknown.
+An [untimed isolated counter](../results/2026-10-15-deferred-field-receivers.json)
+confirms all 40 field accesses enter with flex receivers; the original annotated
+version entered all 40 as structures. The counter patch is retained and is
+never used for timing. The realistic corpus's existing prepend warnings and the
+generated corpus's argument-order warnings remain byte-identical across builds;
+there are no new diagnostics, including before #126. The enriched input is formed by copying TaskBoard into
 the generated project root, alongside `Gen/`.
 
 `bench/field-dense-three-way.py PRE MASTER PR INPUT...` runs one warm-up triple,
@@ -41,48 +47,48 @@ Medians of 12 runs per compiler, total checking spans, milliseconds:
 
 | Input | Before #126 | Master | Follow-up | Added cost removed |
 |---|---:|---:|---:|---:|
-| Annotated 63k | 48.85 | 72.14 | **34.87** | **160.1%** |
-| Unannotated 63k | 48.31 | 151.48 | **43.12** | **105.0%** |
-| Same generated 100k | 67.66 | 68.56 | 67.68 | noisy |
-| Updated bench/corpus | 6.44 | 6.78 | 6.54 | noisy |
-| 100k plus TaskBoard | 67.01 | 66.75 | 68.74 | no master regression signal |
+| Annotated 63k | 46.91 | 69.94 | **33.56** | 158.0% |
+| Unannotated 63k | 45.75 | 145.05 | **40.10** | 105.7% |
+| Same generated 100k | 66.21 | 68.34 | 67.53 | noisy |
+| Updated bench/corpus | 6.29 | 7.04 | 6.75 | noisy |
+| 100k plus TaskBoard | 67.48 | 67.92 | 68.77 | noisy |
 
 Recovery is `(master − follow-up) / (master − before)`, calculated from
 unrounded medians. Above 100% means the net added cost is gone **and** the
 ordinary field-read shortcut saves work that predates #126. It does not mean
-that deferral itself costs nothing. The annotated case is 28.6% faster than
-before #126; the unannotated case is 10.7% faster. Both beat the requested
+that deferral itself costs nothing. The annotated case is 28.5% faster than
+before #126; the unannotated case is 12.3% faster. Both beat the requested
 "no more than about 10% slower than before #126" target. Versus master the
-checking reductions are 51.7% and 71.5% respectively.
+checking reductions are 52.0% and 72.4% respectively.
 
 Do not infer precise corpus recovery from a sub-millisecond denominator.
-The original 100k check ranges overlap: before 63.80–74.81 ms, master
-65.01–72.63 ms, follow-up 65.76–69.67 ms. The other corpus inputs also overlap;
-the enriched corpus is 2.6% above pre-#126 at its median, with no established
-master regression to recover. These inputs verify broader throughput rather
-than establish the field-dense recovery claim.
+The original 100k check ranges overlap: before 63.72–71.33 ms, master 64.34–70.37 ms, follow-up 63.85–73.15 ms.
+The other corpus inputs also overlap. Their follow-up medians are
+2.0% (original 100k), 7.4% (realistic corpus) and
+1.9% (enriched 100k) above pre-#126. These inputs verify broader
+throughput rather than establish a precise field-dense recovery fraction.
 
 Whole-process wall medians, including loading and the frontend, milliseconds:
 
 | Input | Before #126 | Master | Follow-up |
 |---|---:|---:|---:|
-| Annotated 63k | 84.00 | 106.96 | 68.77 |
-| Unannotated 63k | 82.30 | 186.94 | 77.01 |
-| Same generated 100k | 352.79 | 350.81 | 348.00 |
-| Updated bench/corpus | 39.50 | 39.05 | 40.96 |
-| 100k plus TaskBoard | 350.33 | 336.61 | 347.08 |
+| Annotated 63k | 79.89 | 103.01 | 66.24 |
+| Unannotated 63k | 76.43 | 176.71 | 70.97 |
+| Same generated 100k | 349.93 | 346.79 | 341.53 |
+| Updated bench/corpus | 38.24 | 37.73 | 39.86 |
+| 100k plus TaskBoard | 350.89 | 348.27 | 343.86 |
 
 Selected checker phases (independent medians; this partial table does not sum
 to total checking), milliseconds:
 
 | Input/compiler | Constrain | Solve | Effects |
 |---|---:|---:|---:|
-| Annotated, before #126 | 10.18 | 32.70 | 0.85 |
-| Annotated, master | 12.52 | 49.59 | 4.15 |
-| Annotated, follow-up | 10.18 | 18.82 | 0.90 |
-| Unannotated, before #126 | 10.28 | 32.30 | 1.07 |
-| Unannotated, master | 12.63 | 128.49 | 4.54 |
-| Unannotated, follow-up | 10.69 | 26.26 | 1.20 |
+| Annotated, before #126 | 9.79 | 31.67 | 0.84 |
+| Annotated, master | 12.21 | 47.96 | 4.07 |
+| Annotated, follow-up | 9.86 | 18.19 | 0.88 |
+| Unannotated, before #126 | 9.66 | 30.98 | 0.99 |
+| Unannotated, master | 11.92 | 123.74 | 4.23 |
+| Unannotated, follow-up | 9.87 | 24.70 | 1.10 |
 
 ## What changed and why it preserves results
 
@@ -102,7 +108,10 @@ Owned walks enumerate actual live dependants rather than three slots per row,
 including self placeholders. Rank adjustment treats a non-generalised escaped
 flex/rigid root as settled at a younger boundary: I15 already lowered its owned
 closure on attachment and every strict rank drop, and none of that closure can
-be quantified there. Its own boundary still walks it and checks the invariant.
+be quantified there. New/strictly lowered edges are asserted at attachment and merge in safe builds,
+before any younger boundary could quantify them. This checks only the changed
+edges rather than rescanning the growing set. Its own boundary still walks it
+and checks the invariant.
 Structural roots retain ordinary rank adjustment. This removes repeated walks
 of the outer receiver's growing pending set at every local binding.
 
@@ -130,14 +139,17 @@ exactly the timing input's 60-read/boundary shape.
 
 | Inclusive final samples | Annotated | Unannotated |
 |---|---:|---:|
-| Module checker | 1,101 | 1,452 |
-| Rank adjustment | 133 | **115 (7.9%)** |
-| Rank invariant assertion, subset | 7 | **6** |
-| Ready-queue draining | 9 | 284 (19.6%) |
-| Obligation attachment | 0 | 92 (6.3%) |
-| Field unification | 91 | 124 (8.5%) |
-| Cycle-proof assertion | 58 | 60 |
-| Effects | 21 | 23 |
+| Module checker | 1033 | 1347 |
+| Rank adjustment | 115 | 91 (6.8%) |
+| Owning-boundary assertion, subset | 4 | 5 |
+| Ready-queue draining | 6 | 273 (20.3%) |
+| Obligation attachment | 0 | 80 (5.9%) |
+| Field unification | 86 | 119 (8.8%) |
+| Cycle-proof assertion | 65 | 70 |
+| Effects | 17 | 20 |
+
+The mutation-site safety assertions are included in attachment/lowering work;
+the assertion row lists only the full owning-boundary check.
 
 These are qualitative inclusive stack counts, not an exact allocation of the
 63k timing regression; before and after profile sizes differ and small counts
@@ -157,7 +169,7 @@ regression to justify weakening that guarantee.
 The new black-box `test-perf` scenario doubles reads on one unknown receiver
 from 4,000 to 8,000. With the test copied to current master, the **actual
 ReleaseFast test fails**: 140/536 ms child CPU, ratio **3.82**, above 2.5.
-On the final follow-up it passes: 7/9 ms, ratio **1.28**. These are the
+On the final follow-up it passes: 7/10 ms, ratio **1.42**. These are the
 harness's CPU best-of-three scaling measurements, separate from the LLVM
 ReleaseSafe median comparison above. Run it with:
 
@@ -175,12 +187,29 @@ zorg build test test-blackbox-corpus test-blackbox-ordering \
   test-blackbox-blackbox fmt-check beni-fmt-check -Dllvm
 ```
 
-All 118 direct before/after dump comparisons match (interface/dispatch fixtures,
-plus types/interface/dispatch/raw dumps on both synthetic files and both original
-corpora). The 467 development, 467 release and 1,469 browser recorded output
+All **109 successful unique** direct before/after dump requests match, retained
+with command arguments, exit codes and stream fingerprints. The verifier requires
+exit 0 and nonempty output. It covers standalone interface/dispatch fixtures,
+all project interface/dispatch/raw dumps and selected module type dumps; contextual
+core/markup fixtures remain covered by the complete corpus harness with their
+proper privileged/platform setup. `dump` has no `--no-cache`, and `types` needs a
+file: matching usage errors or missing-context diagnostics are excluded.
+
+The added reverse-resolution diagnostic and late-dispatch fixtures force the
+second receiver to become concrete first inside a deeper nested binding. Their
+new goldens come from the #135 compiler and match the follow-up. A poisoned
+receiver fixture pins the same single naming error. A separate cold/warm cache
+replay at jobs 1/8 under both compilers emits identical files and returns 14 in
+Node on all four runs. The replay JSON retains each file's fingerprint.
+
+The 467 development, 467 release and 1,469 browser recorded output
 hashes all match, with no stale hashes. No existing golden or run hash changes.
 The Linux instruction-budget gate remains owed before merge: this Mac cannot
 count it. #135 and the follow-up remain unmerged.
 
 - [Every timing sample, input fingerprint and recovery calculation](../results/2026-10-15-deferred-fields-three-way-safe.json)
 - [Final native profile counts and sample fingerprints](../results/2026-10-15-deferred-fields-profile.json)
+
+- [Successful dump comparisons](../results/2026-10-15-deferred-fields-dumps.json)
+- [Late dispatch/cache replay](../results/2026-10-15-deferred-late-replay.json)
+- [Untimed callback receiver counts](../results/2026-10-15-deferred-field-receivers.json)
