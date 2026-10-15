@@ -1,0 +1,30 @@
+-- Two tagged schemas that name each other (checker-v2.md §11.5, *Mentions*):
+-- a schema body's references are mentions of the derived-context unit graph,
+-- so `Odd` and `Even` are one unit. Read only off the declarations' own
+-- references, which a schema body does not record, they were two, and the
+-- first one's fixpoint ran the second's nested, which read the first's
+-- approximation: an `internal` per pass. Every endpoint compares.
+import Schema
+
+
+pub schema Odd tagged "o" of
+    OddOne as "one"
+        next : List Even
+
+
+pub schema Even tagged "e" of
+    EvenMore as "more"
+        next : List Odd
+    EvenEnd as "end"
+
+
+sameOdd : Odd.Type, Odd.Type → Bool
+sameOdd a b = a == b
+
+
+sameEven : Even.Encoded, Even.Encoded → Bool
+sameEven a b = a == b
+
+
+parsed : Result (List Schema.Issue) Odd.Type
+parsed = Schema.parse (Odd.schema ⊤) "{\"o\":\"one\",\"next\":[]}"
