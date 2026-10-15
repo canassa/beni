@@ -1,0 +1,22 @@
+{
+  "passed": true,
+  "counts": {
+    "table": 1080,
+    "sweeps": 10188,
+    "todo": 600,
+    "apps": 200,
+    "conduit": 240,
+    "jfb": 60,
+    "jfb-1": 60,
+    "jfb-2": 60,
+    "jfb-3": 60
+  },
+  "orderChecks": {
+    "tableIterations": 180,
+    "todoRounds": 120,
+    "appRounds": 100,
+    "sweepPages": 882,
+    "jfbInvocations": 208
+  },
+  "method": "Counts, two sweep pages with twelve ordinary observations each, and chronological row/log order. App position is inferred from retained append order; Conduit has explicit positions. Behavioral evidence remains in harness postconditions and test logs."
+}

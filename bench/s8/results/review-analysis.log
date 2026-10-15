@@ -1,0 +1,28 @@
+{
+  census: {
+    defaultPrograms: 103,
+    defaultStaticRows: 95,
+    defaultStaticOver: 52,
+    defaultRootsOver: [ [Object] ],
+    defaultPairPrograms: 78,
+    defaultPairMedian: {
+      program: 'DefectInRender.beni DefectInRender.main',
+      set: 'corpus',
+      keys: 3,
+      pairs: 1,
+      groups: 1,
+      ratio: 0.3333333333333333
+    },
+    defaultLargestPair: {
+      program: 'examples/conduit/src Main.main',
+      set: 'conduit',
+      keys: 96,
+      pairs: 782,
+      groups: 114,
+      ratio: 8.145833333333334
+    },
+    extraStatic: [ [Object], [Object] ],
+    extraRoots: [ [Object], [Object] ]
+  },
+  appWallMs: 17112
+}

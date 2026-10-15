@@ -1,0 +1,18 @@
+{
+  "reason": "Review changed the analysis/audit code; no comparison or native Chrome rerun.",
+  "command": [
+    "zorg",
+    "build",
+    "gates"
+  ],
+  "started": "2026-10-15T16:01:59.230Z",
+  "finished": "2026-10-15T16:02:38.815Z",
+  "status": 0,
+  "sourceCommit": "6c327a9f17050941bc170f9e888160795ca471f5",
+  "measurementEvidenceCommit": "95d875e7b",
+  "scripts": {
+    "bench/s8/audit.mjs": "9416f0fbda2a307b4503e4f1d13218cc0daf0c03a47fcf9071c4f5dba37441df",
+    "bench/s8/review-analysis.mjs": "d46ae84801a1dcba0186fd847162a2679bd1e80ed9f182377e9e99ccd4575a04"
+  },
+  "log": "bench/s8/results/review-gates.log"
+}

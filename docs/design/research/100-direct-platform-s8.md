@@ -15,10 +15,12 @@ remains incomplete: native Chrome is red on one CSS-precision golden and the
 full V3 campaigns remain owed.** The three S4 endpoint targets all miss.
 My recommendation is to **stop direct in its current form**, for the reasons
 and contrary evidence at the end. This is evidence for the owner's decision,
-not an implementation of that decision.
+not an implementation of that decision. Sternhalma’s selection distribution
+is bimodal, so its median contrast is not treated as a stable headline speedup.
 
-The fixed counts all completed. Clean comparisons ran **12:20:31–15:16:17 UTC,
-2 h 55 min 46 s**, following the owner's instruction to finish the original
+The fixed counts all completed. The clean batch wall window was **12:20:31–15:16:17 UTC,
+2 h 55 min 46 s**, including the roughly three-minute setup-only app stall
+and native report processing, following the owner's instruction to finish the original
 batch despite the underestimated memory cost. Initial setup and its invalidated
 epoch add about 42 minutes from the first machine capture; the original
 two-hour estimate was not met. The setup errors and zero-sample app setup
@@ -167,7 +169,7 @@ The full grids, including every available P3 subject, are in §7.
 | helperRows/tick/10000 | 0.0800 [0.0700–0.0863] | 0.1175 [0.1100–0.1313] | 1.4688× | ≤1.15× |
 | tree/tick/12 | 0.2050 [0.1950–0.2113] | 0.2600 [0.2175–0.2850] | 1.2683× | ≤1.15× |
 
-**All three S4 endpoints miss**: live 1.6429×, derived 1.2235×,
+**All three pooled S4 endpoint ratios miss their bars**: live 1.6429×, derived 1.2235×,
 depth 2.8315×. Derived medians range 0.2250–0.2600 ms; its final/initial
 median is +14.3%, with overlapping IQRs and only two page clusters. Skipping
 the sort/filter on tick is source evidence, not a proof of flat elapsed time.
@@ -185,11 +187,47 @@ new threshold mechanism or justify selecting a favorable endpoint.
 
 Swap fires criterion 4 under the **amended pre-S7 1.15× bar**, not the older
 1.0× bar. Its direct IQR is 0.1450–0.1863 versus vanilla 0.1250–0.1400 ms.
-Its 1.0833× P3 point ratio has overlapping IQRs. Exact unique-key edits bypass
-the general reconcile; the duplicate-key fallback remains shipped, as the later
-rank-correctness amendment requires. The original no-reconciler ideal is not
-literally achieved. S7's record/list in-place promises have not been credited:
+The slower-than-P3 prong also fires literally: its pooled point ratio is
+1.0833×. The overlapping IQRs qualify the strength of that ordering, not the
+literal verdict. The shipped-reconciler prong is also unmet: exact unique-key
+edits bypass it, but duplicate-key fallback code remains, as the later
+rank-correctness amendment requires. Thus all three stated swap/reconciler
+conditions are accounted for; preserving the required fallback does not mean
+the original no-reconciler byte promise was achieved. S7's record/list in-place promises have not been credited:
 the inspected output still contains record spreads.
+
+**The nine endpoints, separated by page.** These are medians of twelve clicks
+per page, recomputed from retained rows; no new observations. In particular,
+derived 100,000 is 1.0714× vanilla on page 0 and 1.2759× on page 1: the pooled
+miss should not be described as agreement between independent pages.
+
+### Endpoint page 0
+
+| Endpoint | Vanilla | Solid 1 | Solid 2 | Tea | Direct | P3 |
+|---|--:|--:|--:|--:|--:|--:|
+| holes/tick/10000 | 0.2000 | 0.3350 | 0.3975 | 0.2725 | 0.1950 | 0.2400 |
+| rows/change/30000 | 0.0925 | 0.1375 | 0.1925 | 0.5750 | 0.1050 | 0.1275 |
+| rows/swap/30000 | 0.1300 | 7.6075 | 4.5200 | 0.9800 | 0.1650 | 0.1625 |
+| width/field/1024 | 0.2075 | 0.4200 | 0.5400 | 1.4075 | 1.1625 | — |
+| depth/leaf/128 | 0.2175 | 0.8300 | 1.1050 | 0.5400 | 0.5700 | 0.3900 |
+| derived/tick/100000 | 0.2100 | 0.4375 | 0.5125 | 0.3050 | 0.2250 | — |
+| live/tick/10000 | 0.0725 | 0.1450 | 0.1750 | 0.1575 | 0.1200 | 0.1150 |
+| helperRows/tick/10000 | 0.0800 | 0.2075 | 0.2500 | 0.1800 | 0.1250 | — |
+| tree/tick/12 | 0.2075 | 0.3275 | 0.4150 | 0.3075 | 0.2800 | — |
+
+### Endpoint page 1
+
+| Endpoint | Vanilla | Solid 1 | Solid 2 | Tea | Direct | P3 |
+|---|--:|--:|--:|--:|--:|--:|
+| holes/tick/10000 | 0.1975 | 0.3375 | 0.3875 | 0.2950 | 0.2100 | 0.2025 |
+| rows/change/30000 | 0.0800 | 0.1500 | 0.2100 | 0.5300 | 0.1025 | 0.1125 |
+| rows/swap/30000 | 0.1300 | 6.0950 | 4.5825 | 1.1825 | 0.1500 | 0.1500 |
+| width/field/1024 | 0.1925 | 0.4325 | 0.5475 | 1.4375 | 1.1525 | — |
+| depth/leaf/128 | 0.2275 | 0.8275 | 1.3575 | 0.6450 | 0.6500 | 0.2825 |
+| derived/tick/100000 | 0.2175 | 0.3700 | 0.5350 | 0.3650 | 0.2775 | — |
+| live/tick/10000 | 0.0700 | 0.1400 | 0.1975 | 0.1675 | 0.0975 | 0.0850 |
+| helperRows/tick/10000 | 0.0725 | 0.1975 | 0.2950 | 0.1600 | 0.1150 | — |
+| tree/tick/12 | 0.2050 | 0.3275 | 0.3475 | 0.3175 | 0.2400 | — |
 
 Sweep bytes below are normalized by the existing scaling-size protocol.
 Width/depth growth is the endpoint delta divided by added fields/levels, not
@@ -269,9 +307,16 @@ The two-platform transcript signatures agree for every measured full-app page.
 
 Conduit is mixed: feed/favorite favor tea by their point medians; editor
 input favors direct, with some boundary overlap in the IQRs. Full TodoMVC is
-close except its modest toggle improvement. Sternhalma selection is **40.7%
-faster** under direct, while reset is **43.2% slower**, with separated middle
-halves. These setup/reset operations do not price drag/drop gameplay.
+close except its modest toggle improvement. Sternhalma selection has a **40.7% lower pooled direct median**, but tea is
+bimodal: six observations are 4.915–5.500 ms and fourteen are
+8.015–8.480 ms. The pooled tea median lies in the upper mode. Direct spans
+4.605–8.060 ms, including its high observation; comparison with tea's lower mode gives a much smaller gap
+and some overlap. The bimodality is unexplained; tiering, scheduling or which
+queued work the eight-microtask boundary includes were not isolated.
+Reset's direct median is 43.2% higher within this same interval. Neither
+contrast measures layout/paint or whole user-perceived latency, and selection
+is not used below as a settled 40.7% platform win. These setup/reset operations
+do not price drag/drop gameplay.
 
 ### Bike Wars
 
@@ -335,7 +380,9 @@ larger; routing is 1,162 B / 14.07% smaller. At 1,000 todos, sandbox add is
 overlap. Sandbox clear at 100 is 1.3743× tea with overlapping IQRs. The other
 cells improve or nearly tie tea; in particular **clear at 1,000 is faster in
 both direct variants in this batch**, not an excuse carried forward from
-earlier results.
+earlier results. The amendment's premise—direct smaller on both variants
+and faster at 100 todos—therefore no longer holds on this measured revision:
+Sandbox is larger and its 100-todo clear point median regresses.
 
 Against vanilla, routing toggle at 100 is 1.6471×, missing the 1.2× target;
 both 1,000-todo toggles satisfy the special 1.3× bar. Routing's 7,096 B also
@@ -345,11 +392,28 @@ possible future improvements do not turn these measured misses into passes.
 
 ## 5. Statistics, built visits and correctness
 
-The S0 census includes **105 programs**, the historical corpus/table/TodoMVC
-series and Conduit's eight page programs, plus explicit Sternhalma and Bike
-Wars projects. Static constructor checks exclude the eight separate Conduit
-page programs, as the existing protocol specifies: **97 rows, 54 above 5%**.
-No threshold or corpus member is deleted because it is intentionally opaque.
+The historical enumerator on this frozen master, without the new extra-app
+hook, covers **103 programs**. Explicit Sternhalma and Bike Wars projects add
+two supplemental real-app checks, for **105**. Static checks exclude the
+eight separate Conduit page programs as the existing protocol specifies.
+The ledgers are separated here because extending a population can change a
+median-based test; no threshold or inconvenient fixture is removed.
+
+| Population on frozen master | Programs | Static rows / over 5% | Value-root exceptions | Bounded pair-series size |
+|---|--:|---|---|--:|
+| Default enumerator | 103 | 95 / 52 | ValuePath 2/7; none with >3 roots | 78 |
+| Supplemental app checks | +2 | +2 / +2 | Sternhalma 5/12; Bike Wars 7/9 | +2 |
+| Expanded census | 105 | 97 / 54 | All three above | 80 |
+
+Criterion 1 already fires in the default population: static fixtures,
+ValuePath's fraction, dynamic navigation, the pair test and trie writer.
+The real-app >3-root and 33%/50% static findings belong to the supplement.
+The “no value roots” statement in browser-direct.md's helper amendment is
+about **Conduit**, whose 79 sites / zero roots are unchanged, not the entire
+corpus. The older [research-97 S0 artifact](../../../bench/conduit/results/2026-10-15-profiles/s0.json)
+already contains ValuePath 2/7. There is no new reversal from zero to two
+corpus roots here. Navigation 9/62 and Conduit 782/96 are likewise
+reconfirmations of known tripwires, not newly discovered regressions.
 
 | Criterion 1 component | Measurement | Verdict / mechanism |
 |---|--:|--:|
@@ -362,7 +426,13 @@ No threshold or corpus member is deleted because it is intentionally opaque.
 
 The pair series has 80 programs with bounded keys; its log-log fitted
 exponent is 1.5121, a descriptive cross-program fit, not a proof of asymptotic
-complexity. The specified largest/median test fails by itself. Adding the real
+complexity. The specified largest/median test fails by itself, in both ledgers: the
+largest and median ratios are unchanged by the two additions. Its 0.6667 bar
+is driven by low-ratio small/guard fixtures, making it a weak diagnostic of
+asymptotic growth on real applications. The fitted exponent is another
+descriptive view of heterogeneous programs; neither establishes a complexity
+law. “Any realistic program must fail” is not demonstrated, and the owner’s
+bar is not silently replaced. Adding the real
 apps exposes material fallback shapes: Sternhalma's SetPlayers/Reset are star
 keys; Bike's `KeyDown · Nothing` is star. Five and seven value roots respectively
 are not just synthetic corpus stress cases. Their direct plans retain the
@@ -372,7 +442,10 @@ their dynamic groups. This is safe fallback behavior with measured costs.
 **Criterion 7 passes its observed comparison.** All 62 independently predicted
 instance/group sets match actual entries before comparisons. All nine actual
 patchAll calls match star keys; the five empty-write Internal messages call
-zero groups. This does not waive criterion 1's excessive frequency or count
+zero groups. This pass is limited to those **three Conduit scripts**:
+full TodoMVC, Sternhalma and Bike Wars were not included in this separately
+recorded predicted-versus-actual visit-count comparison. This does not waive
+criterion 1's excessive frequency or count
 capture/preparation/selection as free.
 
 | Correctness check | Result | Scope / limitation |
@@ -382,13 +455,17 @@ capture/preparation/selection as free.
 | Timed native app postconditions | all pass | 200 full-app + 240 Conduit pages; full-app DOM/properties/title/error signatures and Todo persistence agree. |
 | Full V3 adversarial campaigns | owed | Neither ordinary corpus passes nor these measurement postconditions replace them. |
 
-The entire retained **4,989-line Sternhalma expected/actual transcript
+The entire retained **4,988-line Sternhalma expected/actual transcript
 matches after normalizing only decimal pixel numbers inside style attributes
 to six significant digits** (1,456 changed lines). For example, expected
 `275.751289px` is Chrome's `275.751px`. The raw failure and
 [diagnostic method/hashes](../../../bench/s8/results/chrome-sternhalma-diagnosis.json)
-remain committed. No golden was blessed and no suite repeated. This identifies
-a CSS serialization oracle mismatch rather than an observed stale screen;
+remain committed. No golden was blessed and native Chrome was not repeated. This identifies
+evidence consistent with a CSS serialization oracle mismatch, rather than
+an observed stale screen. That causal classification is an inference from
+the narrow normalization. No separate full tea-only Sternhalma golden replay
+was performed, so this log does not establish whether its full golden would
+also fail; the two timed release transitions agree across platforms;
 **native validation nevertheless remains red**. The full-app native pairs
 cover selection/reset, not a replacement for the full Sternhalma oracle.
 
@@ -563,8 +640,17 @@ its first timed message. A live CDP snapshot shows its stopwatch was not yet
 installed; setup was corrected and the entire app grid started at zero retained
 observations. Earlier phases were not repeated.
 
-Candidate order rotates; the two-platform app comparisons alternate order.
+The JFB, UI table and app orders rotate, with two-platform app comparisons
+alternating. Sweep order is weaker: page 0 uses Tea, Direct, Solid 2,
+Solid 1, P3 where available, Vanilla; page 1 shifts that list once. Every
+cell repeats those same two positions per candidate. It is a fixed,
+two-position rotation, not balanced across all available positions (five or six), and a position
+effect can bias every ratio the same way.
 Fresh pages share browser processes; they are not fresh browser launches.
+The 200-page full-app grid ran from 15:16:00.065 to 15:16:17.177 UTC:
+17.112 seconds, about 85.56 ms of wall time per page including setup, input,
+postconditions and close. Each row gets a new CDP target in the same browser;
+there is no frame wait or CSS load. That throughput is not its message latency.
 
 The initial preparation mistakenly overlapped a compiler build. When the
 compiler SHA mismatch was found, the entire affected JFB epoch was invalidated,
@@ -623,6 +709,26 @@ reproduces this batch's Conduit bytes and bounds representation redesigns;
 its external references have feature gaps and do not replace this batch's
 like-for-like tea/direct comparisons.
 
+The original audit checked retained counts and hashes. The
+[review audit](../../../bench/s8/results/review-audit.json) additionally verifies
+twelve ordered observations on each of two sweep pages, every available P3
+cell, all 208 JFB invocations against the operation/round rotation in the logs,
+180 UI-table iterations, 120 Todo rounds and 100 app rounds. App position is
+inferred from chronological append order, not an independently recorded
+position field; Conduit records explicit positions and balances both modes.
+These assertions read existing evidence and add no observations.
+
+The Conduit order repair is applied before any timing in this batch. With
+only two subjects, the old rotate-then-reverse loop cancelled rotation and
+always ran tea first. The 2026-10-14 two-subject artifact is order-confounded;
+the sign change here must not be treated as a causal platform improvement.
+This does **not** invalidate the three-subject comparisons in research 95/97:
+their [research-95 timing](../../../bench/conduit/results/2026-10-15-timing.json)
+and [research-97 timing](../../../bench/conduit/results/2026-10-15-profiles/timing.json)
+name tea, old direct and new direct, for which
+rotate/reverse does rotate positions. Machines, source and modes also differ
+across those studies; no before/after speed attribution is made here.
+
 Full provenance is [recorded here](../../../bench/s8/results/provenance.json):
 kernel 6.18.55, 33,558,818,816 RAM bytes, executable SHA-256s and all twelve
 governor/preferences. JFB round peak one-minute loads were 2.44, 0.82, 1.62
@@ -632,8 +738,15 @@ diff establish the frozen inputs. The full timing/audit inputs are under
 observation counts so TodoMVC's `n` remains its 100/1,000 scenario dimension.
 
 After the red native check, the post script stopped. Only the unfinished
-source-diff/provenance collection resumed; neither correctness suite nor any
-comparison was repeated. `provenance-continuation.log` records that step.
+source-diff/provenance collection resumed at that point.
+The later review changed read-only audit/analysis code, so the full Linux gate
+was run again: **39.59 s, exit 0**, recorded in
+[review validation](../../../bench/s8/results/review-validation.json).
+Native Chrome and all comparisons were left unchanged.
+The original source fingerprints correspond to the files in commit
+`95d875e7b`; that commit preserves the measurement/report code. The later
+analysis scripts have their own hashes in the review validation. Timing
+harnesses, application bundles and raw observations did not change.
 
 ## 7. Complete research-87 grids
 
@@ -807,8 +920,9 @@ demonstrate that Conduit's excess can be recovered.
 The evidence against stopping is substantial: the empty mounted page is
 smaller, holes stay constant outside HTML, direct avoids large unrelated-view
 work, keyed edit meets its current bar, the table is 19.1% smaller than tea,
-and Sternhalma selection is 40.7% faster. Research 102 also supplies concrete
-compiler byte opportunities on a newer baseline. Direct wins table update/swap/
+and Sternhalma selection has a lower direct median, with the unexplained
+tea bimodality making it weaker evidence of a stable advantage. Research 102
+also supplies concrete compiler byte opportunities on a newer baseline. Direct wins table update/swap/
 remove relative to tea and Conduit editor input. Those results justify the
 research and preserve useful compiler facts; they do not establish one
 platform that wins across the measured applications.
