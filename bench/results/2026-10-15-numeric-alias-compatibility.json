@@ -1,0 +1,9 @@
+{
+  "master": "d10749f70a2060230c99cd196d70c15c2666eb9b",
+  "before_fix_profile_revision": "36a8795219f297c78cefedc15d84678b6b100e7a",
+  "source_sha256": "db0484ea3eef862eb0cf47598eb619d089d0a620721621d1bcac7994ebabc413",
+  "before_fix_exit": -6,
+  "master_and_fixed_exit": 1,
+  "fixed_streams_equal_master": true,
+  "diagnostic_sha256": "ccefe3a4e38e9203006ff1905e64a23317bbc1389b60f88e49c63de8959b17a9"
+}

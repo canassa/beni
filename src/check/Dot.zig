@@ -63,9 +63,13 @@ pub fn decide(s: *Solve, id: Obligations.Id, default: bool) Error!void {
     s.report.at(if (p.decl == Evidence.Wanted.no_decl) saved else p.decl);
     defer s.report.at(saved);
     if (content == .flex) {
-        if (!default) return Decide.reopen(s, id);
-        if (!(content.flex.kind == .number and Resolve.isWellKnownName(p.name)) and s.recursive_frames == 0)
-            return Instances.fieldRead(s, row.vars[0], p.name, row.vars[1], row.region);
+        // Numeric aliases may be decided before defaulting. Preserve the
+        // legacy bridge before retrying a still-flexible receiver.
+        if (!(content.flex.kind == .number and Resolve.isWellKnownName(p.name))) {
+            if (!default) return Decide.reopen(s, id);
+            if (s.recursive_frames == 0)
+                return Instances.fieldRead(s, row.vars[0], p.name, row.vars[1], row.region);
+        }
     } else if (isRecord(content) and s.recursive_frames == 0 and try cheap(s, root, p.name)) {
         s.resolver.steps += 1;
         return Instances.fieldRead(s, row.vars[0], p.name, row.vars[1], row.region);

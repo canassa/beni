@@ -1,0 +1,14 @@
+-- A numeric transparent alias reaches the bridge before boundary defaulting.
+-- It reports the same missing argument as a direct numeric receiver.
+pub type alias Id a =
+    a
+
+
+pub wrap : a → Id a
+wrap x = x
+
+
+pub badEq = (wrap 1).eq
+
+
+pub badCompare = (wrap 1).compare
