@@ -109,14 +109,23 @@ other wanteds, so they too see any record information. A nullary dot never
 promotes an inferred method requirement. A rigid receiver uses its annotated
 `where a.m : a → result`, as an ordinary dot-call does.
 
-Records report `unknown_field`; nominal types report `unknown_method` or
+Records report `missing_field`; nominal types report `unknown_method` or
 `private_method`, naming the declaring module. Other shapes report
 `no_methods_on_shape` (well-known methods retain their existing rules).
 A method requiring further arguments reports `too_few_args`, suggesting
 `x.m argument` or `x.m _`; there is no automatic partial application.
 An unannotated `size xs = xs.length` still infers `{ r | length : a } → a`.
 Passing a list then reports a type mismatch with a hint explaining that the
-helper inferred a record: annotate its receiver, or write `List.length xs`.
+helper inferred a record: name the actual helper and parameter, and suggest
+annotating that receiver or writing `List.length xs`. Only unannotated helpers
+qualify; methods private to the current module qualify too. A defaulted accessor
+inside a helper (for example `lengths xs = List.map xs .length`) gets the same
+explanation, naming the element receiver rather than treating `xs` as a string.
+
+**Checking cost (PR #126 independent review, 2026-10-15).** Field-dense synthetic
+code (63k lines, `--jobs=1`) checks 41% slower, 284 → 401 ms; the 100k-line
+bench corpus moves from 0.31 → 0.32 s. These are the review's measurements,
+not a new run; its machine was not recorded. Accepted here without optimisation.
 
 Chains decide each dot independently: `a.b.copy` may read `b` and call `copy`;
 `xs.reverse.length` calls twice. `.m` is still an accessor lambda and its body
@@ -141,7 +150,7 @@ receiver type `R`:
 | a nominal type `T` declared in module `M` — `type`, `pub opaque type`, `foreign type` | `M.m x a b` | `unknown_method` when `M` has no value named `m`; `private_method` when `M` has a value `m` that is not `pub` and `M` is not the current module |
 | an alias declared in **this** module | looked through to what it names — aliases are transparent (`fast-compiler.md` §3.1), so the method set is the *expansion's* | as the expansion |
 | an alias declared in **another** module | looked through as well: the interface's own `alias` term carries the expansion, so no `Interface.alias_body` is needed (A.48) | as the expansion |
-| a record | a **field call**: `(x.m) a b`, `language.md` §6.3 unchanged | the ordinary record diagnostics (`unknown_field`, `not_a_function`) |
+| a record | a **field call**: `(x.m) a b`, `language.md` §6.3 unchanged | the ordinary record diagnostics (`missing_field`, `not_a_function`) |
 | a tuple | well-known names only (§3): `eq`/`compare` derive (§9.3) | any other name: `no_methods_on_shape` |
 | `()` | well-known names only: `eq` is constantly `True`, `compare` constantly `EQ` | any other name: `no_methods_on_shape` |
 | a function type | nothing | `not_equatable` for `eq` (the existing code, `checker.md` §8.1); `no_methods_on_shape` for every other name including `compare` |

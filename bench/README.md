@@ -19,6 +19,16 @@ was saturating the four cores and read 784 ms where the real number was
 
 ---
 
+## 2026-10-15 — nullary method checking cost
+
+PR #126's independent review measured 63k lines of field-dense synthetic code
+at `--jobs=1`: **284 → 401 ms (+41%)**. The 100k-line bench corpus moved
+**0.31 → 0.32 s**. Machine not recorded by the review; these are its figures,
+not a fresh benchmark. Recorded without optimisation; research 96 and
+`static-dispatch-spike.md` §1.1 carry the cost alongside the rule.
+
+---
+
 ## 2026-09-29 — `bench/corpus` checks clean, and its numbers again
 
 **Every check number taken over `bench/corpus` before this entry measured an error path.**

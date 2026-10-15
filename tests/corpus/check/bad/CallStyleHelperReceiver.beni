@@ -1,0 +1,5 @@
+-- The hint names this helper and its actual parameter.
+measure items = items.length
+
+
+answer = measure [ 1 ]

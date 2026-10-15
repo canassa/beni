@@ -25,6 +25,19 @@ const testing = std.testing;
 // fixture asserts as written. Top-level comments are dropped; nothing else
 // about the program changes.
 
+// Research 96 §3.2: deferred nullary receivers and record defaults must
+// settle identically when their declarations and callers trade places.
+test "nullary methods and record defaults print the same reversed" {
+    var s = try Scenario.init("nullary methods, reversed");
+    defer s.deinit();
+    try s.w.write("Box.beni", try readRepo(s.arena(), "tests/corpus/run/NullaryMethods/Box.beni"));
+    try reversedPrints(&s, "tests/corpus/run/NullaryMethods/Main.beni", "tests/corpus/run/NullaryMethods/_expected.expected");
+}
+
+test "a recursive group's nullary read and dot-call print the same reversed" {
+    try expectReversedPrints("tests/corpus/run/NullaryRecursiveGroup.beni", "tests/corpus/run/NullaryRecursiveGroup.expected");
+}
+
 // An own method written below the annotated function whose parameter
 // receives it, called from a `let` helper used at two types: the method's
 // group is checked when it is first demanded, and the helper still
@@ -282,9 +295,13 @@ fn withoutHolePositions(a: std.mem.Allocator, dump: []const u8) ![]const u8 {
 fn expectReversedPrints(comptime path: []const u8, twin: []const u8) !void {
     var s = try Scenario.init(path);
     defer s.deinit();
+    try reversedPrints(&s, path, twin);
+}
+
+fn reversedPrints(s: *Scenario, comptime path: []const u8, twin: []const u8) !void {
     const a = s.arena();
     try s.w.write("Main.beni", try source(a, path, .reversed));
-    const built = try s.w.runWith(&.{ "build", "--no-cache", "--diagnostics=json", "--platform=node", "--out=out", "Main.beni" }, .{ .raw_diagnostics = true });
+    const built = try s.w.runWith(&.{ "build", "--no-cache", "--diagnostics=json", "--platform=node", "--out=out", "." }, .{ .raw_diagnostics = true });
     if (built.exit_code != 0) return s.finish(try s.failed(built));
     const expected = try readRepo(a, twin);
     const differs = try s.w.checkProgram(world.entry_file, .{ .stdout = expected });

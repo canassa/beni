@@ -1,0 +1,13 @@
+-- A private method is callable within its declaring module.
+type Box
+    = Box Int
+
+
+size : Box → Int
+size (Box n) = n
+
+
+useBox b = b.size
+
+
+answer = useBox (Box 4)
