@@ -1,0 +1,104 @@
+{
+  "conduit": [
+    {
+      "name": "short-protocol-fields",
+      "edits": 17,
+      "raw": 209250,
+      "gzip": 45418,
+      "brotli": 37781,
+      "saved": -13
+    },
+    {
+      "name": "u32-masks",
+      "edits": 334,
+      "raw": 182300,
+      "gzip": 45171,
+      "brotli": 37818,
+      "saved": -50
+    },
+    {
+      "name": "inline-group-records",
+      "edits": 297,
+      "raw": 208588,
+      "gzip": 45105,
+      "brotli": 37535,
+      "saved": 233
+    },
+    {
+      "name": "literal-plan",
+      "edits": 1,
+      "raw": 208742,
+      "gzip": 45437,
+      "brotli": 37715,
+      "saved": 53
+    }
+  ],
+  "todomvc": [
+    {
+      "name": "short-protocol-fields",
+      "edits": 14,
+      "raw": 18852,
+      "gzip": 7455,
+      "brotli": 6716,
+      "saved": 19
+    },
+    {
+      "name": "u32-masks",
+      "edits": 22,
+      "raw": 18841,
+      "gzip": 7477,
+      "brotli": 6746,
+      "saved": -11
+    },
+    {
+      "name": "inline-group-records",
+      "edits": 13,
+      "raw": 18883,
+      "gzip": 7441,
+      "brotli": 6716,
+      "saved": 19
+    },
+    {
+      "name": "literal-plan",
+      "edits": 2,
+      "raw": 18883,
+      "gzip": 7458,
+      "brotli": 6728,
+      "saved": 7
+    }
+  ],
+  "table": [
+    {
+      "name": "short-protocol-fields",
+      "edits": 0,
+      "raw": 11402,
+      "gzip": 4788,
+      "brotli": 4340,
+      "saved": 0
+    },
+    {
+      "name": "u32-masks",
+      "edits": 0,
+      "raw": 11402,
+      "gzip": 4788,
+      "brotli": 4340,
+      "saved": 0
+    },
+    {
+      "name": "inline-group-records",
+      "edits": 0,
+      "raw": 11402,
+      "gzip": 4788,
+      "brotli": 4340,
+      "saved": 0
+    },
+    {
+      "name": "literal-plan",
+      "edits": 0,
+      "raw": 11402,
+      "gzip": 4788,
+      "brotli": 4340,
+      "saved": 0
+    }
+  ]
+}
