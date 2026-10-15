@@ -160,7 +160,9 @@ The follow-up request extends the same catalogue until each strategy/family curv
 actually reaches **512,000 brotli bytes**. It does not increase row population,
 append padding or fill labels with random strings. N counts independently owned
 shape instances. Original N≤32 has three seeds; the larger sweep uses seed 17 on
-a 1.5× grid starting at 64, rounded up to multiples of 16. Each curve stops at its
+a 1.5× grid starting at 64, rounded up to multiples of 16, with closer
+measured inputs selected from the observed slope near 512 kB. This estimates
+only the next component count; every reported byte size is measured. Each curve stops at its
 own first measured crossing. Vanilla and Solid's shared factories can need many
 more components than compiler-emitted separate factories.
 
@@ -199,6 +201,12 @@ invocations use that cap and retain failed endpoints in `stopped.jsonl`.
 Terser overflowed the default JavaScript stack on the flat N1,728 TEA output;
 the harness resumes with a 16 MiB V8 stack / 32 MiB OS stack, retaining exactly
 the same minifier and compression options. Protocol amendments record these
-resource changes. Two disjoint family queues share a lock: compiler and source
-generation take it exclusively, minifiers share it. This avoids overlapping
-memory-heavy compiler builds. These are research resource controls, not gates.
+resource changes. Three disjoint family queues rotate through component counts rather than finishing
+one family before starting the next. Native compiler builds remain serialized.
+`resource-run.mjs` admits at most six CPU slots and 26,000 MiB of estimated
+concurrent memory reservations; large minifiers can run alongside smaller jobs.
+A native build reserves four CPU slots and an N-dependent 1–16 GiB;
+its enforced address-space cap remains 16 GiB. These are scheduling limits,
+not measured application costs or repository gates. Repeated identical byte
+strings are compressed only once within each account; a seven-strategy check
+retains exact equality of every price and attribution field.

@@ -1,0 +1,14 @@
+{
+  "scope": "All account fields and hashes identical before/after memoizing repeated compression within one account",
+  "app": "mixed-17-32",
+  "modes": [
+    "tea",
+    "direct",
+    "partial",
+    "static",
+    "local",
+    "cells",
+    "vanilla"
+  ],
+  "equal": true
+}

@@ -31,7 +31,7 @@ for(const c of cases){
   const begin=performance.now();
   const compileArgs=['build',`--platform=browser-${platform}`,'--release','--source-maps','--jobs=4',`--out=${out}`,root];
   const executable=process.env.BENI_MEMORY_BYTES?'prlimit':beni,args=process.env.BENI_MEMORY_BYTES?['--as='+process.env.BENI_MEMORY_BYTES,'--',beni,...compileArgs]:compileArgs;
-  try{execFileSync(process.env.RESEARCH_LOCK?'flock':executable,process.env.RESEARCH_LOCK?[c.n<=512?'--shared':'--exclusive',process.env.RESEARCH_LOCK,executable,...args]:args,{stdio:['ignore','pipe','pipe'],maxBuffer:16*1024*1024});}
+  try{const locked=process.env.RESEARCH_LOCK?['flock','--exclusive',process.env.RESEARCH_LOCK+'.compiler',executable,...args]:[executable,...args];const reservation=Math.ceil(Math.min(16384,platform==='direct'?Math.max(1024,c.n*c.n/16):Math.max(1024,c.n*2)));execFileSync(process.execPath,[here+'/resource-run.mjs','--memory-mib='+reservation,'--cpu=4','--',...locked],{stdio:['ignore','pipe','pipe'],maxBuffer:16*1024*1024});}
   catch(e){fs.writeFileSync(here+'/results/failure-'+c.name+'-'+platform+'.txt',e.stderr||String(e));
    if(prefix==='stress-'&&(platform==='direct'||e.signal==='SIGKILL'||String(e.stderr).includes('OutOfMemory'))){
     fs.appendFileSync(here+'/results/stress/stopped.jsonl',JSON.stringify({family:c.shape||'mixed',mode:platform,name:c.name,n:c.n,status:e.status,signal:e.signal,reason:String(e.stderr||e.message),input_sha256:inputHash,compiler_sha256:manifest.compiler_sha256,address_space_limit_bytes:Number(process.env.BENI_MEMORY_BYTES||0)||null,date:new Date().toISOString()})+'\n');console.log(c.name,platform,'build failed; preserving failure and measuring other curves');continue;
@@ -41,10 +41,6 @@ for(const c of cases){
   const row={key,name:c.name,n:c.n,seed:c.seed,shape:c.shape,platform,input_sha256:inputHash,compiler_sha256:manifest.compiler_sha256,build_ms:performance.now()-begin,...measure(js)};
   fs.appendFileSync(checkpoint,JSON.stringify(row)+'\n');console.log(key,row.brotli+' B',Math.round(row.build_ms)+' ms');
  }
- for(let i=0;i<c.n;i++){
-  const file=root+`/Shape${i}.beni`,key=hash(fs.readFileSync(file)),cache=here+'/.out/bir-cache/'+key;
-  if(!fs.existsSync(cache))fs.writeFileSync(cache,execFileSync(beni,['dump','--stage=bir',file],{maxBuffer:16*1024*1024}));
-  fs.copyFileSync(cache,root+`/Shape${i}.bir`);
- }
+ execFileSync(process.execPath,[here+'/resource-run.mjs','--memory-mib=1024','--cpu=2','--',process.execPath,here+'/dump-bir.mjs',root,String(c.n)],{env:{...process.env,BENI:beni},stdio:['ignore','pipe','pipe'],maxBuffer:16*1024*1024});
 }
 fs.writeFileSync(here+'/results/'+prefix+'today-complete.json',JSON.stringify({completed:new Date().toISOString(),cases:cases.length})+'\n');

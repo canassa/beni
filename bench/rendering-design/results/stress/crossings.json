@@ -22,53 +22,53 @@
     "mode": "vanilla",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 3888,
-    "last_brotli": 23506,
+    "last_n": 32480,
+    "last_brotli": 170997,
     "compiler_limited": false
   },
   {
     "family": "mixed",
     "mode": "partial",
-    "crossing_n": null,
-    "crossing_brotli": null,
-    "last_n": 3888,
-    "last_brotli": 349231,
+    "crossing_n": 5840,
+    "crossing_brotli": 516680,
+    "last_n": 5840,
+    "last_brotli": 516680,
     "compiler_limited": false
   },
   {
     "family": "mixed",
     "mode": "static",
-    "crossing_n": null,
-    "crossing_brotli": null,
-    "last_n": 3888,
-    "last_brotli": 223429,
+    "crossing_n": 9264,
+    "crossing_brotli": 524091,
+    "last_n": 9264,
+    "last_brotli": 524091,
     "compiler_limited": false
   },
   {
     "family": "mixed",
     "mode": "local",
-    "crossing_n": null,
-    "crossing_brotli": null,
-    "last_n": 3888,
-    "last_brotli": 211255,
+    "crossing_n": 9616,
+    "crossing_brotli": 525605,
+    "last_n": 9616,
+    "last_brotli": 525605,
     "compiler_limited": false
   },
   {
     "family": "mixed",
     "mode": "cells",
-    "crossing_n": null,
-    "crossing_brotli": null,
-    "last_n": 3888,
-    "last_brotli": 373905,
+    "crossing_n": 5840,
+    "crossing_brotli": 553701,
+    "last_n": 5840,
+    "last_brotli": 553701,
     "compiler_limited": false
   },
   {
     "family": "list",
     "mode": "tea",
-    "crossing_n": null,
-    "crossing_brotli": null,
-    "last_n": 336,
-    "last_brotli": 48473,
+    "crossing_n": 3888,
+    "crossing_brotli": 516823,
+    "last_n": 3888,
+    "last_brotli": 516823,
     "compiler_limited": false
   },
   {
@@ -85,8 +85,8 @@
     "mode": "vanilla",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 336,
-    "last_brotli": 3516,
+    "last_n": 3888,
+    "last_brotli": 21653,
     "compiler_limited": false
   },
   {
@@ -94,8 +94,8 @@
     "mode": "partial",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 336,
-    "last_brotli": 29815,
+    "last_n": 5840,
+    "last_brotli": 452602,
     "compiler_limited": false
   },
   {
@@ -103,8 +103,8 @@
     "mode": "static",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 336,
-    "last_brotli": 21870,
+    "last_n": 5840,
+    "last_brotli": 319821,
     "compiler_limited": false
   },
   {
@@ -112,8 +112,8 @@
     "mode": "local",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 336,
-    "last_brotli": 16487,
+    "last_n": 3888,
+    "last_brotli": 162353,
     "compiler_limited": false
   },
   {
@@ -121,8 +121,8 @@
     "mode": "cells",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 336,
-    "last_brotli": 31298,
+    "last_n": 3888,
+    "last_brotli": 310023,
     "compiler_limited": false
   },
   {
@@ -130,8 +130,8 @@
     "mode": "solid",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 336,
-    "last_brotli": 23775,
+    "last_n": 3888,
+    "last_brotli": 42374,
     "compiler_limited": false
   },
   {
@@ -139,8 +139,8 @@
     "mode": "tea",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 32,
-    "last_brotli": 6269,
+    "last_n": 224,
+    "last_brotli": 29764,
     "compiler_limited": false
   },
   {
@@ -148,8 +148,8 @@
     "mode": "direct",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 32,
-    "last_brotli": 10230,
+    "last_n": 224,
+    "last_brotli": 42438,
     "compiler_limited": false
   },
   {
@@ -157,8 +157,8 @@
     "mode": "vanilla",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 32,
-    "last_brotli": 1081,
+    "last_n": 224,
+    "last_brotli": 2145,
     "compiler_limited": false
   },
   {
@@ -166,8 +166,8 @@
     "mode": "partial",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 32,
-    "last_brotli": 3986,
+    "last_n": 224,
+    "last_brotli": 18302,
     "compiler_limited": false
   },
   {
@@ -175,8 +175,8 @@
     "mode": "static",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 32,
-    "last_brotli": 3356,
+    "last_n": 224,
+    "last_brotli": 13642,
     "compiler_limited": false
   },
   {
@@ -184,8 +184,8 @@
     "mode": "local",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 32,
-    "last_brotli": 2742,
+    "last_n": 224,
+    "last_brotli": 10330,
     "compiler_limited": false
   },
   {
@@ -193,8 +193,8 @@
     "mode": "cells",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 32,
-    "last_brotli": 4312,
+    "last_n": 224,
+    "last_brotli": 17764,
     "compiler_limited": false
   },
   {
@@ -202,8 +202,8 @@
     "mode": "solid",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 32,
-    "last_brotli": 13379,
+    "last_n": 224,
+    "last_brotli": 14451,
     "compiler_limited": false
   },
   {
@@ -211,8 +211,8 @@
     "mode": "tea",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 32,
-    "last_brotli": 6266,
+    "last_n": 96,
+    "last_brotli": 13693,
     "compiler_limited": false
   },
   {
@@ -220,8 +220,8 @@
     "mode": "direct",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 32,
-    "last_brotli": 10102,
+    "last_n": 96,
+    "last_brotli": 21907,
     "compiler_limited": false
   },
   {
@@ -229,8 +229,8 @@
     "mode": "vanilla",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 32,
-    "last_brotli": 1088,
+    "last_n": 96,
+    "last_brotli": 1454,
     "compiler_limited": false
   },
   {
@@ -238,8 +238,8 @@
     "mode": "partial",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 32,
-    "last_brotli": 3516,
+    "last_n": 96,
+    "last_brotli": 7615,
     "compiler_limited": false
   },
   {
@@ -247,8 +247,8 @@
     "mode": "static",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 32,
-    "last_brotli": 3330,
+    "last_n": 96,
+    "last_brotli": 6976,
     "compiler_limited": false
   },
   {
@@ -256,8 +256,8 @@
     "mode": "local",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 32,
-    "last_brotli": 3146,
+    "last_n": 96,
+    "last_brotli": 6484,
     "compiler_limited": false
   },
   {
@@ -265,8 +265,8 @@
     "mode": "cells",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 32,
-    "last_brotli": 3846,
+    "last_n": 96,
+    "last_brotli": 7994,
     "compiler_limited": false
   },
   {
@@ -274,8 +274,8 @@
     "mode": "tea",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 32,
-    "last_brotli": 6308,
+    "last_n": 224,
+    "last_brotli": 31314,
     "compiler_limited": false
   },
   {
@@ -283,8 +283,8 @@
     "mode": "direct",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 32,
-    "last_brotli": 11923,
+    "last_n": 224,
+    "last_brotli": 55593,
     "compiler_limited": false
   },
   {
@@ -292,8 +292,8 @@
     "mode": "vanilla",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 32,
-    "last_brotli": 994,
+    "last_n": 224,
+    "last_brotli": 2057,
     "compiler_limited": false
   },
   {
@@ -301,8 +301,8 @@
     "mode": "partial",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 32,
-    "last_brotli": 3991,
+    "last_n": 224,
+    "last_brotli": 16158,
     "compiler_limited": false
   },
   {
@@ -310,8 +310,8 @@
     "mode": "static",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 32,
-    "last_brotli": 4024,
+    "last_n": 224,
+    "last_brotli": 16129,
     "compiler_limited": false
   },
   {
@@ -319,8 +319,8 @@
     "mode": "local",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 32,
-    "last_brotli": 3131,
+    "last_n": 224,
+    "last_brotli": 11996,
     "compiler_limited": false
   },
   {
@@ -328,8 +328,8 @@
     "mode": "cells",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 32,
-    "last_brotli": 4261,
+    "last_n": 224,
+    "last_brotli": 16765,
     "compiler_limited": false
   },
   {
@@ -337,8 +337,8 @@
     "mode": "tea",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 32,
-    "last_brotli": 7773,
+    "last_n": 96,
+    "last_brotli": 15152,
     "compiler_limited": false
   },
   {
@@ -346,8 +346,8 @@
     "mode": "direct",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 32,
-    "last_brotli": 12600,
+    "last_n": 96,
+    "last_brotli": 24729,
     "compiler_limited": false
   },
   {
@@ -355,8 +355,8 @@
     "mode": "vanilla",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 32,
-    "last_brotli": 1023,
+    "last_n": 96,
+    "last_brotli": 1390,
     "compiler_limited": false
   },
   {
@@ -364,8 +364,8 @@
     "mode": "partial",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 32,
-    "last_brotli": 6170,
+    "last_n": 96,
+    "last_brotli": 11867,
     "compiler_limited": false
   },
   {
@@ -373,8 +373,8 @@
     "mode": "static",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 32,
-    "last_brotli": 5887,
+    "last_n": 96,
+    "last_brotli": 10890,
     "compiler_limited": false
   },
   {
@@ -382,8 +382,8 @@
     "mode": "local",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 32,
-    "last_brotli": 5165,
+    "last_n": 96,
+    "last_brotli": 9217,
     "compiler_limited": false
   },
   {
@@ -391,8 +391,8 @@
     "mode": "cells",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 32,
-    "last_brotli": 5993,
+    "last_n": 96,
+    "last_brotli": 12257,
     "compiler_limited": false
   },
   {
@@ -400,8 +400,8 @@
     "mode": "tea",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 32,
-    "last_brotli": 4600,
+    "last_n": 224,
+    "last_brotli": 20484,
     "compiler_limited": false
   },
   {
@@ -409,8 +409,8 @@
     "mode": "direct",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 32,
-    "last_brotli": 7511,
+    "last_n": 224,
+    "last_brotli": 30132,
     "compiler_limited": false
   },
   {
@@ -418,8 +418,8 @@
     "mode": "vanilla",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 32,
-    "last_brotli": 912,
+    "last_n": 224,
+    "last_brotli": 1951,
     "compiler_limited": false
   },
   {
@@ -427,8 +427,8 @@
     "mode": "partial",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 32,
-    "last_brotli": 3006,
+    "last_n": 224,
+    "last_brotli": 13883,
     "compiler_limited": false
   },
   {
@@ -436,8 +436,8 @@
     "mode": "static",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 32,
-    "last_brotli": 2769,
+    "last_n": 224,
+    "last_brotli": 11592,
     "compiler_limited": false
   },
   {
@@ -445,8 +445,8 @@
     "mode": "local",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 32,
-    "last_brotli": 2354,
+    "last_n": 224,
+    "last_brotli": 9102,
     "compiler_limited": false
   },
   {
@@ -454,8 +454,8 @@
     "mode": "cells",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 32,
-    "last_brotli": 3569,
+    "last_n": 224,
+    "last_brotli": 14231,
     "compiler_limited": false
   },
   {
@@ -463,8 +463,8 @@
     "mode": "tea",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 32,
-    "last_brotli": 8724,
+    "last_n": 96,
+    "last_brotli": 18622,
     "compiler_limited": false
   },
   {
@@ -472,8 +472,8 @@
     "mode": "direct",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 32,
-    "last_brotli": 13760,
+    "last_n": 96,
+    "last_brotli": 28606,
     "compiler_limited": false
   },
   {
@@ -481,8 +481,8 @@
     "mode": "vanilla",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 32,
-    "last_brotli": 1949,
+    "last_n": 96,
+    "last_brotli": 2307,
     "compiler_limited": false
   },
   {
@@ -490,8 +490,8 @@
     "mode": "partial",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 32,
-    "last_brotli": 6076,
+    "last_n": 96,
+    "last_brotli": 12207,
     "compiler_limited": false
   },
   {
@@ -499,8 +499,8 @@
     "mode": "static",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 32,
-    "last_brotli": 5260,
+    "last_n": 96,
+    "last_brotli": 9497,
     "compiler_limited": false
   },
   {
@@ -508,8 +508,8 @@
     "mode": "local",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 32,
-    "last_brotli": 4522,
+    "last_n": 96,
+    "last_brotli": 7381,
     "compiler_limited": false
   },
   {
@@ -517,8 +517,8 @@
     "mode": "cells",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 32,
-    "last_brotli": 6584,
+    "last_n": 96,
+    "last_brotli": 12358,
     "compiler_limited": false
   },
   {
@@ -526,8 +526,8 @@
     "mode": "tea",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 32,
-    "last_brotli": 6730,
+    "last_n": 224,
+    "last_brotli": 32284,
     "compiler_limited": false
   },
   {
@@ -535,8 +535,8 @@
     "mode": "direct",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 32,
-    "last_brotli": 10897,
+    "last_n": 224,
+    "last_brotli": 46328,
     "compiler_limited": false
   },
   {
@@ -544,8 +544,8 @@
     "mode": "vanilla",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 32,
-    "last_brotli": 1057,
+    "last_n": 224,
+    "last_brotli": 2095,
     "compiler_limited": false
   },
   {
@@ -553,8 +553,8 @@
     "mode": "partial",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 32,
-    "last_brotli": 3845,
+    "last_n": 224,
+    "last_brotli": 17341,
     "compiler_limited": false
   },
   {
@@ -562,8 +562,8 @@
     "mode": "static",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 32,
-    "last_brotli": 3672,
+    "last_n": 224,
+    "last_brotli": 14431,
     "compiler_limited": false
   },
   {
@@ -571,8 +571,8 @@
     "mode": "local",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 32,
-    "last_brotli": 2965,
+    "last_n": 224,
+    "last_brotli": 11524,
     "compiler_limited": false
   },
   {
@@ -580,8 +580,8 @@
     "mode": "cells",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 32,
-    "last_brotli": 4408,
+    "last_n": 224,
+    "last_brotli": 17958,
     "compiler_limited": false
   },
   {
@@ -589,8 +589,8 @@
     "mode": "tea",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 32,
-    "last_brotli": 9732,
+    "last_n": 224,
+    "last_brotli": 40890,
     "compiler_limited": false
   },
   {
@@ -598,8 +598,8 @@
     "mode": "direct",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 32,
-    "last_brotli": 14874,
+    "last_n": 224,
+    "last_brotli": 59537,
     "compiler_limited": false
   },
   {
@@ -607,8 +607,8 @@
     "mode": "vanilla",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 32,
-    "last_brotli": 1984,
+    "last_n": 224,
+    "last_brotli": 3020,
     "compiler_limited": false
   },
   {
@@ -616,8 +616,8 @@
     "mode": "partial",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 32,
-    "last_brotli": 6158,
+    "last_n": 224,
+    "last_brotli": 24146,
     "compiler_limited": false
   },
   {
@@ -625,8 +625,8 @@
     "mode": "static",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 32,
-    "last_brotli": 5383,
+    "last_n": 224,
+    "last_brotli": 17818,
     "compiler_limited": false
   },
   {
@@ -634,8 +634,8 @@
     "mode": "local",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 32,
-    "last_brotli": 4534,
+    "last_n": 224,
+    "last_brotli": 13138,
     "compiler_limited": false
   },
   {
@@ -643,8 +643,8 @@
     "mode": "cells",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 32,
-    "last_brotli": 6783,
+    "last_n": 224,
+    "last_brotli": 24434,
     "compiler_limited": false
   },
   {
@@ -652,8 +652,8 @@
     "mode": "tea",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 32,
-    "last_brotli": 8998,
+    "last_n": 224,
+    "last_brotli": 40813,
     "compiler_limited": false
   },
   {
@@ -661,8 +661,8 @@
     "mode": "direct",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 32,
-    "last_brotli": 14277,
+    "last_n": 224,
+    "last_brotli": 60113,
     "compiler_limited": false
   },
   {
@@ -670,8 +670,8 @@
     "mode": "vanilla",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 32,
-    "last_brotli": 1976,
+    "last_n": 224,
+    "last_brotli": 3000,
     "compiler_limited": false
   },
   {
@@ -679,8 +679,8 @@
     "mode": "partial",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 32,
-    "last_brotli": 6331,
+    "last_n": 224,
+    "last_brotli": 24632,
     "compiler_limited": false
   },
   {
@@ -688,8 +688,8 @@
     "mode": "static",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 32,
-    "last_brotli": 5613,
+    "last_n": 224,
+    "last_brotli": 19223,
     "compiler_limited": false
   },
   {
@@ -697,8 +697,8 @@
     "mode": "local",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 32,
-    "last_brotli": 4771,
+    "last_n": 224,
+    "last_brotli": 14584,
     "compiler_limited": false
   },
   {
@@ -706,8 +706,8 @@
     "mode": "cells",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 32,
-    "last_brotli": 6672,
+    "last_n": 224,
+    "last_brotli": 23633,
     "compiler_limited": false
   }
 ]

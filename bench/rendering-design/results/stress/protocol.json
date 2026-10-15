@@ -16,19 +16,21 @@
     "vanilla.js": "f00333faa59134e0e120265ff17dc4868905dfff50db6f55b68adde2e439c21a",
     "stress-generate.mjs": "705d7a6fdc3b6a75f0ec6ca6e335fc843e73d85de91d8a7bff195d65521ebe97",
     "stress-worker.mjs": "ac48674ddc3626f3bb90a493f8f4aa8aab46290e3a1a8b9743b0814d6b815717",
-    "measure.mjs": "f4d9eca06d2cba537f9a1f1a9db9e4142dbe999de0fb967f520e119f0b7503bb",
+    "measure.mjs": "ff491f163d23efed602671e72635f04ec2b56b354f9d57206e955fde8295bd30",
     "provenance.mjs": "e24055892ba759997c2b1927031b48be01a34dfba27457528aa615f8b69d7cf0",
     "solid.mjs": "bc4c38168432677be1d7fb12e3765f835ba9eecbb263e70e652b2dfc24c1b46e",
     "solid.jsx": "02ac2cb9c4358c704bbae33f66c674522c466d59bbeb99001927b395123dfc21",
     "package-lock.json": "a7ae5e60efc695ed0b21f7d470d868765a49e98333a2438a34cd1f7dc913f909",
-    "build-today.mjs": "b5a5fc72a751cd624866b31989e8403906c3b64f3eca4d74defbbc35b2ac8a71",
-    "stress.mjs": "b43d79da821dd737d10323d837e4d3b291441ca58fa5b217371144aac72c9463"
+    "build-today.mjs": "3d7c2a0bf5d0ac956eb565e60fd2c19667cd2c12e8b4bf56214cc25973c49426",
+    "dump-bir.mjs": "2adb11e23eb1625387fc3c802b2ad57e3ba4147352e12944dd0e161e08dba6c6",
+    "resource-run.mjs": "0a99546075226a3cd3d2be9cef5050a9faf1c0f5ac6d82084f1c43e29646f9d7",
+    "stress.mjs": "142cd0ddecb3759a6d2633824296bd264eb235fecee74ddf8e17e8dd693d6618"
   },
   "compiler_sha256": "0291b420028819837b7fc33c269f8c71240fbd3dff73b93b63965ba236221f7a",
   "node": "v24.19.0",
   "cpu": "Intel(R) Xeon(R) E-2386G CPU @ 3.50GHz",
   "source_commit": "3cca64d0196da6b121ce1fde2af407265d82919d",
-  "scope": "Unchanged ten-shape catalogue. Three original seeds through N32; seed 17 extended on a common 1.5x grid. Each strategy stops at its first measured rendering response >=512000 brotli bytes. No padding. Later points for shared-factory baselines need no additional candidate or today output once those curves crossed. Every point requiring BIR builds real TEA; direct builds stop once their measured curve crosses; all sources remain reproducible. Lines join measured points, never extrapolate. Native curves are not rebuilt after their measured crossing or terminal resource failure. Larger prototype points consume real per-component BIR dumps without another full-app build.",
+  "scope": "Unchanged ten-shape catalogue. Three original seeds through N32; seed 17 extended on a 1.5x grid with extra measured points near 512 kB. Each strategy stops at its first measured rendering response >=512000 brotli bytes. No padding. Later points for shared-factory baselines need no additional candidate or today output once those curves crossed. Every point requiring BIR builds real TEA; direct builds stop once their measured curve crosses; all sources remain reproducible. Lines join measured points, never extrapolate. Native curves are not rebuilt after their measured crossing or terminal resource failure. Larger prototype points consume real per-component BIR dumps without another full-app build.",
   "normalization": "Terser 5.51.2 module/two passes/mangle; source-map core exclusion; whole-response brotli 11 and gzip 9. Original release prices retained.",
   "heap_mib": {
     "through_N4096": 6144,
@@ -59,13 +61,35 @@
     },
     {
       "change": "Keep the memory-bounded minifier pool occupied instead of waiting for whole batches. Small native builds (N<=512) and source generation may share the lock; larger compiler builds remain exclusive. Scheduling only; no byte-account changes."
+    },
+    {
+      "change": "Use a separate exclusive compiler lock so one capped compiler may coexist with a memory-bounded minifier from the other queue. Compiler builds remain serialized. No measured-byte changes."
+    },
+    {
+      "change": "Near the target, estimate only the next input count from the last measured interval, then build/minify/compress that actual app. This avoids a 50% count jump when a curve is already near 512 kB. All plotted sizes remain measured; earlier grid points remain retained."
+    },
+    {
+      "change": "Restrict near-target input forecasting to active curves on resume. Retain the extra measured intermediate points selected before this scheduling correction; their prices are valid."
+    },
+    {
+      "date": "2026-10-15T21:52:53.987Z",
+      "change": "Rotate measured points across families in three queues. Shared six-CPU-slot / 26000 MiB admission, 16 GiB native compiler cap, completed-worker recovery. Memoize identical compression inputs within an account; seven complete sample accounts are exactly unchanged. No source-output, minifier or compression-option changes."
+    },
+    {
+      "date": "2026-10-15T21:57:02.111Z",
+      "change": "Size native compiler scheduling reservations by N (1–16 GiB), retaining the actual 16 GiB address-space cap. Small builds can use spare memory beside large minifiers; compiler flags and output are unchanged."
+    },
+    {
+      "date": "2026-10-15T22:00:46.322Z",
+      "change": "Parallelize independent per-module real-compiler BIR dumps in a four-process pool, admitted as two CPU slots / 1 GiB. Same compiler, source bytes, BIR cache keys and output; only orchestration changes."
     }
   ],
   "compiler_address_space_limit_bytes": 17179869184,
   "node_stack_kib": 16384,
   "queues": {
-    "primary": "mixed,form,nested,cluster,modal,summary",
-    "secondary": "list,tabs,thread,table,filter"
+    "primary": "mixed,form,nested,cluster",
+    "secondary": "list,tabs,thread,table",
+    "tertiary": "modal,filter,summary"
   },
   "secondary_protocol": {
     "target_brotli_bytes": 512000,
@@ -85,19 +109,21 @@
       "vanilla.js": "f00333faa59134e0e120265ff17dc4868905dfff50db6f55b68adde2e439c21a",
       "stress-generate.mjs": "705d7a6fdc3b6a75f0ec6ca6e335fc843e73d85de91d8a7bff195d65521ebe97",
       "stress-worker.mjs": "ac48674ddc3626f3bb90a493f8f4aa8aab46290e3a1a8b9743b0814d6b815717",
-      "measure.mjs": "f4d9eca06d2cba537f9a1f1a9db9e4142dbe999de0fb967f520e119f0b7503bb",
+      "measure.mjs": "ff491f163d23efed602671e72635f04ec2b56b354f9d57206e955fde8295bd30",
       "provenance.mjs": "e24055892ba759997c2b1927031b48be01a34dfba27457528aa615f8b69d7cf0",
       "solid.mjs": "bc4c38168432677be1d7fb12e3765f835ba9eecbb263e70e652b2dfc24c1b46e",
       "solid.jsx": "02ac2cb9c4358c704bbae33f66c674522c466d59bbeb99001927b395123dfc21",
       "package-lock.json": "a7ae5e60efc695ed0b21f7d470d868765a49e98333a2438a34cd1f7dc913f909",
-      "build-today.mjs": "b5a5fc72a751cd624866b31989e8403906c3b64f3eca4d74defbbc35b2ac8a71",
-      "stress.mjs": "b43d79da821dd737d10323d837e4d3b291441ca58fa5b217371144aac72c9463"
+      "build-today.mjs": "3d7c2a0bf5d0ac956eb565e60fd2c19667cd2c12e8b4bf56214cc25973c49426",
+      "dump-bir.mjs": "2adb11e23eb1625387fc3c802b2ad57e3ba4147352e12944dd0e161e08dba6c6",
+      "resource-run.mjs": "0a99546075226a3cd3d2be9cef5050a9faf1c0f5ac6d82084f1c43e29646f9d7",
+      "stress.mjs": "142cd0ddecb3759a6d2633824296bd264eb235fecee74ddf8e17e8dd693d6618"
     },
     "compiler_sha256": "0291b420028819837b7fc33c269f8c71240fbd3dff73b93b63965ba236221f7a",
     "node": "v24.19.0",
     "cpu": "Intel(R) Xeon(R) E-2386G CPU @ 3.50GHz",
     "source_commit": "3cca64d0196da6b121ce1fde2af407265d82919d",
-    "scope": "Unchanged ten-shape catalogue. Three original seeds through N32; seed 17 extended on a common 1.5x grid. Each strategy stops at its first measured rendering response >=512000 brotli bytes. No padding. Later points for shared-factory baselines need no additional candidate or today output once those curves crossed. Every point requiring BIR builds real TEA; direct builds stop once their measured curve crosses; all sources remain reproducible. Lines join measured points, never extrapolate. Native curves are not rebuilt after their measured crossing or terminal resource failure. Larger prototype points consume real per-component BIR dumps without another full-app build.",
+    "scope": "Unchanged ten-shape catalogue. Three original seeds through N32; seed 17 extended on a 1.5x grid with extra measured points near 512 kB. Each strategy stops at its first measured rendering response >=512000 brotli bytes. No padding. Later points for shared-factory baselines need no additional candidate or today output once those curves crossed. Every point requiring BIR builds real TEA; direct builds stop once their measured curve crosses; all sources remain reproducible. Lines join measured points, never extrapolate. Native curves are not rebuilt after their measured crossing or terminal resource failure. Larger prototype points consume real per-component BIR dumps without another full-app build.",
     "normalization": "Terser 5.51.2 module/two passes/mangle; source-map core exclusion; whole-response brotli 11 and gzip 9. Original release prices retained.",
     "heap_mib": {
       "through_N4096": 6144,
@@ -115,7 +141,121 @@
       },
       {
         "change": "Keep the memory-bounded minifier pool occupied instead of waiting for whole batches. Small native builds (N<=512) and source generation may share the lock; larger compiler builds remain exclusive. Scheduling only; no byte-account changes."
+      },
+      {
+        "change": "Use a separate exclusive compiler lock so one capped compiler may coexist with a memory-bounded minifier from the other queue. Compiler builds remain serialized. No measured-byte changes."
+      },
+      {
+        "change": "Near the target, estimate only the next input count from the last measured interval, then build/minify/compress that actual app. This avoids a 50% count jump when a curve is already near 512 kB. All plotted sizes remain measured; earlier grid points remain retained."
+      },
+      {
+        "change": "Restrict near-target input forecasting to active curves on resume. Retain the extra measured intermediate points selected before this scheduling correction; their prices are valid."
+      },
+      {
+        "date": "2026-10-15T21:52:54.000Z",
+        "change": "Rotate measured points across families in three queues. Shared six-CPU-slot / 26000 MiB admission, 16 GiB native compiler cap, completed-worker recovery. Memoize identical compression inputs within an account; seven complete sample accounts are exactly unchanged. No source-output, minifier or compression-option changes."
+      },
+      {
+        "date": "2026-10-15T21:57:02.116Z",
+        "change": "Size native compiler scheduling reservations by N (1–16 GiB), retaining the actual 16 GiB address-space cap. Small builds can use spare memory beside large minifiers; compiler flags and output are unchanged."
+      },
+      {
+        "date": "2026-10-15T22:00:46.337Z",
+        "change": "Parallelize independent per-module real-compiler BIR dumps in a four-process pool, admitted as two CPU slots / 1 GiB. Same compiler, source bytes, BIR cache keys and output; only orchestration changes."
       }
     ]
+  },
+  "tertiary_protocol": {
+    "target_brotli_bytes": 512000,
+    "unit": "kB = 1000 bytes",
+    "seed": 17,
+    "source_hashes": {
+      "catalogue.mjs": "25eb6f985e5c7ab188debf68573ee032ac713d07fde14cbb269f13289ae28df2",
+      "bir.mjs": "82320278bca67c6f202da7bcf82891b7d75ffadd895bec6c3c402c55d6ef8e60",
+      "ownership.mjs": "8e069e4e03898120ca8103cf5cb8404b4a07b96ef5ce917ca6bff2dbdb9dc6b5",
+      "prototype.mjs": "49c6a529a27f0fcdb91559729484788bd6bc4121b4ba0c195dcfc91ae8308234",
+      "expressions.mjs": "f47f96998df5d467206fc0359a6d32b0515e77834f337d44d2eb8f230e6b06be",
+      "dom-compiler.mjs": "434ef78c644d00c7191b2c0ee83fdd8cdb2bebcc07cea503a12047b586e97dea",
+      "runtime.js": "b586d6dd1b2f023d88321ab0c257fc27a596cc78025ee2944fd230f66e6dce6c",
+      "reconcile.js": "3c37b7e694e551396d0c24fbf63c0e52342f000fe15a266fc8ea46158902dbc7",
+      "cells.js": "1f4c829fab7b2046339f97375fbe1dee1364ed367a2cdefdcf87d74160cfb361",
+      "vanilla.mjs": "9c694b847b6ff680ac97a60fc5b58d287f1d099d8e78811908bc4cf6f3a4d709",
+      "vanilla.js": "f00333faa59134e0e120265ff17dc4868905dfff50db6f55b68adde2e439c21a",
+      "stress-generate.mjs": "705d7a6fdc3b6a75f0ec6ca6e335fc843e73d85de91d8a7bff195d65521ebe97",
+      "stress-worker.mjs": "ac48674ddc3626f3bb90a493f8f4aa8aab46290e3a1a8b9743b0814d6b815717",
+      "measure.mjs": "ff491f163d23efed602671e72635f04ec2b56b354f9d57206e955fde8295bd30",
+      "provenance.mjs": "e24055892ba759997c2b1927031b48be01a34dfba27457528aa615f8b69d7cf0",
+      "solid.mjs": "bc4c38168432677be1d7fb12e3765f835ba9eecbb263e70e652b2dfc24c1b46e",
+      "solid.jsx": "02ac2cb9c4358c704bbae33f66c674522c466d59bbeb99001927b395123dfc21",
+      "package-lock.json": "a7ae5e60efc695ed0b21f7d470d868765a49e98333a2438a34cd1f7dc913f909",
+      "build-today.mjs": "3d7c2a0bf5d0ac956eb565e60fd2c19667cd2c12e8b4bf56214cc25973c49426",
+      "dump-bir.mjs": "2adb11e23eb1625387fc3c802b2ad57e3ba4147352e12944dd0e161e08dba6c6",
+      "resource-run.mjs": "0a99546075226a3cd3d2be9cef5050a9faf1c0f5ac6d82084f1c43e29646f9d7",
+      "stress.mjs": "142cd0ddecb3759a6d2633824296bd264eb235fecee74ddf8e17e8dd693d6618"
+    },
+    "compiler_sha256": "0291b420028819837b7fc33c269f8c71240fbd3dff73b93b63965ba236221f7a",
+    "node": "v24.19.0",
+    "cpu": "Intel(R) Xeon(R) E-2386G CPU @ 3.50GHz",
+    "source_commit": "3cca64d0196da6b121ce1fde2af407265d82919d",
+    "scope": "Unchanged ten-shape catalogue. Three original seeds through N32; seed 17 extended on a 1.5x grid with extra measured points near 512 kB. Each strategy stops at its first measured rendering response >=512000 brotli bytes. No padding. Later points for shared-factory baselines need no additional candidate or today output once those curves crossed. Every point requiring BIR builds real TEA; direct builds stop once their measured curve crosses; all sources remain reproducible. Lines join measured points, never extrapolate. Native curves are not rebuilt after their measured crossing or terminal resource failure. Larger prototype points consume real per-component BIR dumps without another full-app build.",
+    "normalization": "Terser 5.51.2 module/two passes/mangle; source-map core exclusion; whole-response brotli 11 and gzip 9. Original release prices retained.",
+    "heap_mib": {
+      "through_N4096": 6144,
+      "larger": 12288
+    },
+    "started": "2026-10-15T20:33:48.199Z",
+    "amendments": [
+      {
+        "change": "Per-mode result files permit concurrent size-only workers; no measurement settings changed.",
+        "validated_bundle": "stress-mixed-17-64/tea",
+        "unchanged_sha256": "b400b64869ce4cfb48eb644ad6014c5882818ea34a1236f194074debcbb828d9",
+        "previous_protocol": "protocol-pilot.json"
+      },
+      {
+        "change": "Skip subsequent direct builds once that family/direct curve has an actual 512000-byte crossing. Continue real TEA builds for all compiler-derived points. No plotted price changes."
+      },
+      {
+        "change": "After direct N1728 caused a confirmed host OOM, cap subsequent compiler address spaces at 16 GiB and record terminal direct build failures while continuing other curves. Stream input hashes instead of joining arbitrarily large source strings. Compression/minifier settings unchanged; grouped-64 layout was tried separately and also failed direct at N1728 under the cap."
+      },
+      {
+        "change": "Terser overflowed the default JS stack on the flat N1728 TEA output. Resume with a 16 MiB V8 stack and 32 MiB OS stack. Two independent family queues use a shared/exclusive lock to serialize heavy compiler/generator work against minifiers; byte options remain unchanged."
+      },
+      {
+        "change": "Native builds stop independently at their own measured target/resource failure; continue per-component BIR for remaining ideal-output curves. Avoid performing unused compiler builds above the plotted native endpoints."
+      },
+      {
+        "change": "For baseline-only endpoints, hash generated TEA source in memory and retain its manifest instead of writing duplicate source files. Specs and source hashes match full generation byte-for-byte (source-generation-check.json). Minifier inputs/options unchanged."
+      },
+      {
+        "change": "Keep the memory-bounded minifier pool occupied instead of waiting for whole batches. Small native builds (N<=512) and source generation may share the lock; larger compiler builds remain exclusive. Scheduling only; no byte-account changes."
+      },
+      {
+        "change": "Use a separate exclusive compiler lock so one capped compiler may coexist with a memory-bounded minifier from the other queue. Compiler builds remain serialized. No measured-byte changes."
+      },
+      {
+        "change": "Near the target, estimate only the next input count from the last measured interval, then build/minify/compress that actual app. This avoids a 50% count jump when a curve is already near 512 kB. All plotted sizes remain measured; earlier grid points remain retained."
+      },
+      {
+        "change": "Restrict near-target input forecasting to active curves on resume. Retain the extra measured intermediate points selected before this scheduling correction; their prices are valid."
+      },
+      {
+        "date": "2026-10-15T21:52:53.987Z",
+        "change": "Rotate measured points across families in three queues. Shared six-CPU-slot / 26000 MiB admission, 16 GiB native compiler cap, completed-worker recovery. Memoize identical compression inputs within an account; seven complete sample accounts are exactly unchanged. No source-output, minifier or compression-option changes."
+      },
+      {
+        "date": "2026-10-15T21:52:54.013Z",
+        "change": "Rotate measured points across families in three queues. Shared six-CPU-slot / 26000 MiB admission, 16 GiB native compiler cap, completed-worker recovery. Memoize identical compression inputs within an account; seven complete sample accounts are exactly unchanged. No source-output, minifier or compression-option changes."
+      },
+      {
+        "date": "2026-10-15T21:57:02.118Z",
+        "change": "Size native compiler scheduling reservations by N (1–16 GiB), retaining the actual 16 GiB address-space cap. Small builds can use spare memory beside large minifiers; compiler flags and output are unchanged."
+      },
+      {
+        "date": "2026-10-15T22:00:46.347Z",
+        "change": "Parallelize independent per-module real-compiler BIR dumps in a four-process pool, admitted as two CPU slots / 1 GiB. Same compiler, source bytes, BIR cache keys and output; only orchestration changes."
+      }
+    ],
+    "compiler_address_space_limit_bytes": 17179869184,
+    "node_stack_kib": 16384
   }
 }

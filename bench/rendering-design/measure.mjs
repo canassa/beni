@@ -20,7 +20,10 @@ export function account(code,map,kind){
   origins[owner]=(origins[owner]||0)+Buffer.byteLength(text);
  }
  const runtime=chunks.runtime.join(''),app=chunks.app.join(''),render=renderParts.join('');
- return {full:size(code),rendering:size(render),runtime:size(runtime),app_alone:size(app),app_in_rendering_context:size(render).brotli-size(runtime).brotli,excluded_core:size(chunks.core.join('')),origins,rendering_sha256:hash(render),render};
+ // Compress each identical byte string once within this account. This matters
+ // when core is empty and full/rendering are identical; prices do not change.
+ const prices=new Map(),price=text=>{if(!prices.has(text))prices.set(text,size(text));return prices.get(text)};
+ return {full:price(code),rendering:price(render),runtime:price(runtime),app_alone:price(app),app_in_rendering_context:price(render).brotli-price(runtime).brotli,excluded_core:price(chunks.core.join('')),origins,rendering_sha256:hash(render),render};
 }
 if(process.argv[1]===import.meta.filename){
 const cases=JSON.parse(fs.readFileSync(here+(process.env.CASES_FILE||'/.out/cases.json')));

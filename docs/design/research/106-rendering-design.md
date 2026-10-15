@@ -6,31 +6,33 @@ Compiler `3cca64d`, built ReleaseFast on azathoth; exact identities are retained
 
 ## 0. Answer
 
-**Keep B and C as finalists; the extended sweep does not support choosing C
-from N=32 alone.** The original
-32-component mixed app costs **7.29 kB brotli**, versus **11.82 kB today on TEA,
-17.06 kB on direct, and 3.89 kB handwritten vanilla**. Direct has 28 broken pages
-(#189). C removes 38% of TEA's rendering bytes here: runtime alone falls
+**For bundle size, bet on C's closure-routed local reducers, then investigate
+shared component factories. Keep B as the comparator.** At mixed **N=8,768**,
+C is **478.85 kB brotli**, B **497.03 kB**, and handwritten-style vanilla
+**48.43 kB**. C's advantage over B is only 3.7%; the 9.89× gap to vanilla is much
+larger. Vanilla shares configurable factories; the prototypes still emit a
+factory for each source component. Erasing messages is not automatically worth
+duplicating arm-specific wiring, and explicit cells have no demonstrated size
+advantage here.
+
+The [standalone HTML report](../../../bench/rendering-design/report.html) contains
+continuous lines joining actual measurements toward **512 kB brotli per curve**,
+local slopes, range-specific intercept/slope/error fits, family comparisons and
+downloadable data. The mixed-app crossings are measured: TEA **579.19 kB at
+N3,888**, A **516.68 kB at N5,840**, D **553.70 kB at N5,840**, B **524.09 kB
+at N9,264**, and C **525.61 kB at N9,616**. Different crossing counts are not
+same-size application comparisons; the fixed-N comparison above is.
+
+**The full family sweep is still in progress.** Direct exhausts host memory at
+mixed N1,728 before the target ([#203](https://github.com/canassa/beni/issues/203));
+no size is invented for that failed build. The webpage distinguishes crossings,
+unfinished curves and compiler limits. This follow-up measures size only.
+
+For the original three-seed mixed N32 sample, C costs **7.29 kB**, versus
+**11.82 kB TEA, 17.06 kB direct, 3.89 kB vanilla, 8.39 kB A, 8.13 kB B and
+8.82 kB D**. C removes 38% of TEA's rendering bytes there: runtime alone falls
 3.51→1.79 kB, app increment 8.31→5.51 kB. This compares reachable platform
-support with a pure-sandbox prototype, not full platform parity. C still ships
-1.88× vanilla.
-
-The source-derived alternatives lose on bytes: A's message erasure costs
-**8.39 kB**, B's static reactivity **8.13 kB**, and D's explicit cells **8.82 kB**.
-Erasing dispatch is not automatically worth duplicating arm-specific wiring.
-A smaller local dispatcher plus guarded bindings compresses better here. The
-explicit-cell language change has no demonstrated byte justification.
-
-The [standalone HTML report](../../../bench/rendering-design/report.html) now
-extends the same catalogue toward **512 kB brotli per curve**, with actual points,
-local slopes, family comparisons and downloadable data. **This sweep is in
-progress.** At mixed N=1,152, B is **69.58 kB**, C **70.23 kB**, A **111.73 kB**,
-D **116.73 kB**, TEA **170.66 kB**, direct **242.07 kB**, vanilla **9.66 kB**.
-The B/C ordering already differs from N32; the larger points use seed 17.
-Direct exhausts host memory at N1,728 before reaching the target
-([#203](https://github.com/canassa/beni/issues/203)); no size is invented for that
-failed build. Other curves continue. The live webpage distinguishes crossings,
-unfinished curves and compiler limits. This follow-up focuses on size only.
+support with a pure-sandbox prototype, not full platform parity.
 
 ## 1. What was actually generated and proved
 
@@ -75,17 +77,23 @@ raw/gzip and incremental prices are retained. Excluded owned-array helpers cost
 137 B brotli standalone. Reclassifying all unmapped spans in a mixed N32 sample
 changes prices by ≤164 B without changing rank ([sensitivity](../../../bench/rendering-design/results/sensitivity.json)).
 
-![Mixed growth](../../../bench/rendering-design/results/graphs/mixed-growth.png)
+![Mixed stress growth](../../../bench/rendering-design/results/stress/graphs/mixed-growth.png)
 
-| Mixed direction | Fitted intercept, B | B/shape, N=1–32 | B/shape, N=8–32 | N32 rendering runtime alone, B |
+Large-range fits from the current measured endpoints, seed 17:
+
+| Mixed direction | Actual N range | Fitted intercept, B | B/shape | RMSE, B |
 |---|---:|---:|---:|---:|
-| Today TEA | 4,463 | 254 | 163 | 3,510 |
-| Today direct | 5,997 | 371 | 281 | 4,867 |
-| Vanilla | 1,557 | 93 | 18 | 740 |
-| A: partial | 2,677 | 194 | 133 | 1,788 |
-| B: static | 2,823 | 183 | 118 | 1,786 |
-| **C: local** | **2,791** | **158** | **94** | **1,787** |
-| D: cells | 2,928 | 202 | 138 | 1,980 |
+| Today TEA | 512–3,888 | 1,241 | 147.77 | 2,777 |
+| Today direct | 512–1,152 | 5,214 | 205.29 | 657 |
+| Vanilla | 512–32,480 | 3,521 | 5.15 | 225 |
+| A: partial | 512–5,840 | 10,737 | 86.77 | 985 |
+| B: static | 512–9,264 | 5,616 | 55.96 | 1,005 |
+| C: local | 512–9,616 | 6,170 | 53.70 | 2,437 |
+| D: cells | 512–5,840 | 7,874 | 93.57 | 1,313 |
+
+Ranges differ because curves stop at their own target or compiler limit. The
+HTML report also separates small, medium and large fits. These fits describe
+observations; they do not supply missing points or predict a failed build.
 
 **These slopes measure varied repetitions of ten templates, not new-feature
 cost.** Ranking may change on real applications. An intercept is a fit, not the
@@ -93,7 +101,8 @@ runtime floor. Mixed curves flatten when all families appear. Seed ranges are
 not confidence intervals. [Full fits](../../../bench/rendering-design/results/fits.md)
 include residuals, which are large for the mixed linear approximation.
 
-Per-family slopes, brotli bytes per added varied instance:
+Original N≤32 per-family slopes, brotli bytes per added varied instance
+(three seeds). The live HTML matrix updates the larger common measured windows:
 
 | Shape | TEA | Direct | A | B | C | D | Vanilla |
 |---|---:|---:|---:|---:|---:|---:|---:|
@@ -110,7 +119,7 @@ Per-family slopes, brotli bytes per added varied instance:
 
 ![Slope matrix](../../../bench/rendering-design/results/graphs/slopes.png)
 
-Filters/summaries drive today's growth: collection traversal, captures and
+In the original sample, filters/summaries drive today's growth: collection traversal, captures and
 consumer wiring accumulate. A still pays for summary updates and recursive
 helper dependencies; recursion barely improves over TEA. Recursion is C's
 largest slope too. D adds subscriptions without eliminating the underlying
@@ -161,8 +170,8 @@ resumability into this browser-only comparison. Solid **2 rc.9** here costs abou
 21.9 kB for the list and 13.1 kB for the form; these are not the old Solid **1.3.3**
 Conduit runtime's 5.4 kB.
 
-From direct, first lower closed constructor-routing regions into C's local
-reducers and run-once factories. Retain the general fallback for escaping messages
+From direct, first compare B and C within closed constructor-routing regions
+using the same run-once factories. Retain the general fallback for escaping messages
 and shared state; reuse ownership/edit analysis, controlled inputs and lifetime
 checks. Price A/B specialization per region instead of assuming more static
 analysis always means smaller output. No language change is required for C.
@@ -174,7 +183,7 @@ here, plus unrepresented cases). The older Solid reference is 4.8 kB views and
 5.4 kB runtime. These separately priced areas must not be added into a promised
 bundle total.
 
-**One confirming experiment:** lower complete Conduit with C at six cumulative
+**One confirming experiment:** lower complete Conduit with B and C at six cumulative
 feature stages, retaining its typed host services unchanged. Require equivalent
 DOM/interaction transcripts including alias preservation and changing handler
 payloads, no nested-helper defect, rendering view/wiring
@@ -184,5 +193,6 @@ The limits apply once: this is a finite catalogue of pure sandbox shapes, not a
 feature-complete Conduit port or a general proof of the lowerer. Cross-component
 writes, asynchronous effects and arbitrary stored messages remain unexercised;
 Solid's older Conduit has feature differences. The proposed cell surface is not
-implemented in beni. Do not extrapolate these curves to 500 kB or adopt a design
-from them alone. No repository gates or suites were run.
+implemented in beni. The extension measures large bundles directly; it does not
+turn repeated templates into a prediction of real feature growth. Do not adopt a
+design from these curves alone. No repository gates or suites were run.

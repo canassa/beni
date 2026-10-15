@@ -1,6 +1,6 @@
 // Merge disjoint family queues and refresh the standalone report. No estimates.
 import fs from 'node:fs';import {execFileSync} from 'node:child_process';import {createHash} from 'node:crypto';
-const here=import.meta.dirname,queues=[['primary','rendering-design'],['secondary','.rendering-design-secondary']],base='azathoth:/home/canassa/beni-rendering-design-172/bench/';let previous='';
+const here=import.meta.dirname,queues=[['primary','rendering-design'],['secondary','.rendering-design-secondary'],['tertiary','.rendering-design-tertiary']],base='azathoth:/home/canassa/beni-rendering-design-172/bench/';let previous='';
 const jsonl=file=>fs.existsSync(file)?fs.readFileSync(file,'utf8').trim().split('\n').filter(Boolean).map(JSON.parse):[];
 for(;;){try{
  const rows=new Map(),stops=new Map(),failures=[],protocols={};
@@ -10,13 +10,13 @@ for(;;){try{
   for(const r of jsonl(dest+'/stopped.jsonl'))stops.set(r.family+'/'+r.mode,{...r,queue});
   failures.push(...jsonl(dest+'/failures.jsonl').map(r=>({...r,queue})));
  }
- const a=protocols.primary,b=protocols.secondary;if(JSON.stringify(a.source_hashes)!==JSON.stringify(b.source_hashes)||a.compiler_sha256!==b.compiler_sha256)throw Error('Queue source/compiler identities differ');
+ const a=protocols.primary,b=protocols.secondary;for(const p of Object.values(protocols))if(JSON.stringify(a.source_hashes)!==JSON.stringify(p.source_hashes)||a.compiler_sha256!==p.compiler_sha256)throw Error('Queue source/compiler identities differ');
  const dir=here+'/results/stress';fs.mkdirSync(dir,{recursive:true});
  const observations=[...rows.values()].sort((a,b)=>(a.shape||'mixed').localeCompare(b.shape||'mixed')||a.n-b.n||a.mode.localeCompare(b.mode)),stopped=[...stops.values()];
  const payload=JSON.stringify({observations,stopped,protocols}),current=createHash('sha256').update(payload).digest('hex');
  if(current!==previous){
   fs.writeFileSync(dir+'/observations.jsonl',observations.map(JSON.stringify).join('\n')+'\n');fs.writeFileSync(dir+'/stopped.jsonl',stopped.map(JSON.stringify).join('\n')+(stopped.length?'\n':''));
-  fs.writeFileSync(dir+'/failures.jsonl',failures.map(JSON.stringify).join('\n')+(failures.length?'\n':''));fs.writeFileSync(dir+'/protocol.json',JSON.stringify({...a,queues:{primary:'mixed,form,nested,cluster,modal,summary',secondary:'list,tabs,thread,table,filter'},secondary_protocol:b},null,2)+'\n');
+  fs.writeFileSync(dir+'/failures.jsonl',failures.map(JSON.stringify).join('\n')+(failures.length?'\n':''));fs.writeFileSync(dir+'/protocol.json',JSON.stringify({...a,queues:{primary:'mixed,form,nested,cluster',secondary:'list,tabs,thread,table',tertiary:'modal,filter,summary'},secondary_protocol:b,tertiary_protocol:protocols.tertiary},null,2)+'\n');
   fs.writeFileSync(dir+'/progress.json',JSON.stringify({updated:new Date().toISOString(),observations:observations.length,crossings:observations.filter(r=>r.rendering.brotli>=512000).map(r=>({family:r.shape||'mixed',mode:r.mode,n:r.n,brotli:r.rendering.brotli})),compiler_limited:stopped.map(r=>({family:r.family,mode:r.mode,n:r.n}))},null,2)+'\n');
   execFileSync(process.execPath,[here+'/html-report.mjs'],{stdio:'inherit'});previous=current;
  }
