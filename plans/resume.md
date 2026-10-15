@@ -2,7 +2,7 @@
 
 **The owner parked implementation on 2026-09-19.** No new agents are to be launched after the one
 in flight (M4-3) finishes. This file is the single place to resume from; the running order is
-`plans/queue.md`, the history is `plans/diary.md`, the numbers are
+`plans/queue.md`, the history is `plans/diary/`, the numbers are
 `plans/state-of-the-compiler.md`.
 
 ## 0. The browser design pass is DONE, twice (2026-09-20) — the owner's answers are what is awaited
@@ -155,7 +155,7 @@ single-file bundle / chunking / `lazy`, source maps, and a browser test harness.
 ## 5. How to resume
 
 Read, in this order: `CLAUDE.md` (rules 1–8), this file, the last three entries of
-`plans/diary.md`, `plans/queue.md` from the most recent "Owner decision" heading down. The working
+`plans/diary/`, `plans/queue.md` from the most recent "Owner decision" heading down. The working
 arrangement that produced all of the above: the main session plans, briefs and validates; Opus
 agents implement from written briefs, one worktree per building agent, at most five agents; every
 unit is validated by the manager (fail-first proven, gates on the combined tree, numbers re-run)

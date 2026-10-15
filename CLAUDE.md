@@ -596,14 +596,20 @@ The owner, 2026-10-08: **all work is carried through pull requests on GitHub**
    `gh pr merge --rebase --delete-branch`, so each slice keeps its own commits
    on `master`. Never force-push `master`.
 
-### Captain's log — `plans/diary.md` (APPEND AFTER EVERY SESSION)
+### Captain's log — `plans/diary/` (ADD AN ENTRY AFTER EVERY SESSION)
 
-`plans/diary.md` is an **append-only** captain's log of all work on this repo.
-**At the end of any session where you did real work, append an entry** —
-heading `## YYYY-MM-DD HH:MM TZ — <short title>` (get the real timestamp with
-`date`), then **What I did** and **What I learned**. Newest entries at the
-**bottom**; never edit or delete a prior entry (correct a past statement in a
-*new* entry). **Do this proactively — do NOT wait to be asked.**
+`plans/diary/` is an **append-only** captain's log of all work on this repo,
+**one file per entry**. **At the end of any session where you did real work,
+add an entry**: a new file `plans/diary/YYYY-MM-DD-HHMM-<slug>.md`, whose first
+line is the heading `## YYYY-MM-DD HH:MM TZ — <short title>` (get the real
+timestamp with `date`; the file name uses the same date and time), then
+**What I did** and **What I learned**. `<slug>` is the title in lower-case
+kebab case, at most 60 characters; if the name is taken, add `-2`. The names
+sort in time order. Never edit or delete a prior entry (correct a past
+statement in a *new* entry). **Do this proactively — do NOT wait to be asked.**
+The log was one file, `plans/diary.md`, until 2026-10-15; every two branches
+that logged a session conflicted in it, so it was split (issue #123,
+[`plans/diary/README.md`](plans/diary/README.md)).
 
 ### Skills
 

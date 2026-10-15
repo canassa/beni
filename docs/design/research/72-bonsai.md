@@ -633,4 +633,4 @@ measuring Bonsai was found.
 
 In this repository: research 57 (§ on Jane Street), 58, 70; `browser-direct.md` §5–§6, §9;
 `write-sets.md` §2.6 and O3; `backend.md` §4; `core/Dict.beni`; `docs/thesis/ownership/`;
-`plans/diary.md` (2026-09-20, the local-state reading).
+`plans/diary/` (the entries of 2026-09-20, the local-state reading).

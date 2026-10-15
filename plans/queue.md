@@ -6,7 +6,7 @@
 The manager's running order, written 2026-09-18 when the owner went offline with
 "continue the work on the language, don't stop; you are manager, planner and
 validator; Opus agents implement". Edit freely — this is a plan, not a log; the
-log is `diary.md`.
+log is `diary/`.
 
 ## How a slice runs
 

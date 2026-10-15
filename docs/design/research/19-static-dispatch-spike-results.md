@@ -815,7 +815,8 @@ byte-comparison at two job counts.
 ## 11. What the review found
 
 Every slice was implemented by one agent and reviewed read-only by another. The blocking and
-near-blocking findings, from `plans/diary.md` 2026-09-17 13:57 onward:
+near-blocking findings, from the diary entry of 2026-09-17 13:57 onward
+(`plans/diary/2026-09-17-1357-spike-s0-s2-landed-s3-in-flight.md` and later):
 
 | # | Defect | Slice | Found by | Design or implementation |
 |---|---|---|---|---|
@@ -840,8 +841,8 @@ near-blocking findings, from `plans/diary.md` 2026-09-17 13:57 onward:
    thing — how a constraint set is rebuilt, indexed, numbered and counted. Nothing in spec §6.1's
    representation or spec §7.1's table shape had to change.
 2. **The obligation plumbing needed five passes, not four.** S3's fix pass, S5, S6a's numbering,
-   S6b's A.75/A.76, and S8-fix's A.81 (`plans/diary.md`, `## 2026-09-18 12:16 CEST — S8-fix: the
-   constraint chain was cubic, and the bisect lied`). Three of the five were found by a reviewer, one
+   S6b's A.75/A.76, and S8-fix's A.81 (the diary entry
+   `plans/diary/2026-09-18-1216-s8-fix-the-constraint-chain-was-cubic-and-the-bisect-lied.md`). Three of the five were found by a reviewer, one
    by a sibling slice, and **two by a measurement** — rows 3 and 15, both of which the gates were
    green over.
 3. **The recurring failure mode is exit-0 wrongness, which the gates do not catch.** Rows 2, 7, 9 and
