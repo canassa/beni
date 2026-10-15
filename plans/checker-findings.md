@@ -5825,7 +5825,7 @@ read even when its final value agrees. Pending refusal:
 
 Ownership soundness: one original lead (`fixture-24`), confirmed by the in-place
 interpreter. Local groups are walked before value bindings. An unresolved
-captured result becomes no cells at `src/own/Ownership.zig:6426`; the recursive
+captured result becomes no cells in `instProv` at `src/own/Ownership.zig:6425`; the recursive
 return's write contributes no captured cell to `env_writes` (`:4935`) and no
 once requirement. Reusing the closure mutates its retained seed. Pending:
 `tests/pending/check/bad/direct/BridgeRecursiveCapture.beni` (`list_still_used`).
@@ -5844,3 +5844,10 @@ The six bridge findings deliberately leave the shipping checker unchanged.
 membership lists, original/minimum traces, Lean precision counts and the
 reverse-direction precision summary. Their primary cluster counts sum to 201
 original programs; they are not 201 independent rules.
+
+The causal cluster assignment is manual; its coverage and disjointness are
+checked by the replay. Function/line citations refer to the unchanged ownership
+source at `2491cb6a4`. The pending beni fixtures are hand-transcribed Lean twins.
+Historical persistent-runtime minima are not reliable witnesses for their
+originals: 94 erase an original in-place divergence and 113 introduce one.
+Every original and minimum is therefore judged and retained separately.

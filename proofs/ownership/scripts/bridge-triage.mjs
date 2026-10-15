@@ -14,6 +14,7 @@ await mkdir(dest,{recursive:true});await rm(resolve(dest,'report.json'),{force:t
 const packed=await readFile(resolve(own,'evidence/bridge-long/evidence.json.gz'));
 const bundle=JSON.parse(gunzipSync(packed)),leads=bundle.cases.filter(c=>c.programLead);
 assert.equal(leads.length,2358);
+const byId=new Map(leads.map(c=>[c.id,c]));
 const work=await mkdtemp(resolve(root,'zig-out/bridge-triage-replay-'));
 const hash=x=>createHash('sha256').update(x).digest('hex');
 const input=leads.map(c=>c.id+'\t'+JSON.stringify([bundle.tables[c.minimum.table],c.minimum.main])).join('\n')+'\n';
@@ -28,7 +29,7 @@ const assigned=new Map();for(const [cluster,ids]of Object.entries(groups))for(co
 const cases=new Map(),tables={};
 for(const row of rows){
  assert.equal(row.diverges,JSON.stringify(row.value)!==JSON.stringify(row.inPlace));
- const c=leads.find(c=>c.id===row.id);assert(c,'unexpected case');
+ const c=byId.get(row.id);assert(c,'unexpected case');
  const pair=cases.get(c.id)??{id:c.id,cluster:null};assert(!pair[row.phase],'duplicate phase');
  if(row.phase==='original'){
   assert.equal(row.lean,c.lean,'regenerated verdict');
