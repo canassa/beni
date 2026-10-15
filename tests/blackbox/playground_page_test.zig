@@ -1,7 +1,8 @@
-//! The playground page's own modules (docs/design/playground.md §4.2, §4.5),
-//! run under Node by `tests/wasm/page_test.mjs`: where a diagnostic of the
-//! real compiler lands in the editor's text, the shareable link, and the
-//! grammar. The page in a browser is `zig build test-playground-page`'s.
+//! The playground page's own modules (docs/design/playground.md §4.2, §4.5,
+//! §4.6), run under Node by `tests/wasm/page_test.mjs`: where a diagnostic of
+//! the real compiler lands in the editor's text, the shareable link, the
+//! grammar, the output frame's document and the samples' files. The page in
+//! a browser is `zig build test-playground-page`'s.
 //!
 //! Nothing here imports a compiler internal: `std` and the harness.
 
@@ -63,6 +64,32 @@ test "the playground's link gives back the source and the platform it was made f
     try expectPageTest(&w, &.{"share"});
 }
 
+test "the playground's output frame gets the CSS pane's text unchanged, and nothing when the pane is empty" {
+    // An empty pane gives the frame's document of before the pane, byte for
+    // byte (`playground.md` §4.6); a CSS with `</style>` and `</script>` in
+    // it reaches the frame as JSON and ends no element early.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try expectPageTest(&w, &.{"srcdoc"});
+}
+
+test "each playground sample's CSS is next to its source, and TodoMVC's is todomvc-app-css with its notice" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `playground.md` §4.6: TodoMVC.css holds todomvc-app-css 2.4.3's
+    // `index.css` unmodified between two markers (CC-BY-4.0 asks for a note
+    // of the changes, which follow the markers), and the site ships the
+    // credit and the licence in `samples/LICENSES.txt`.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE AND VERIFY                      │
+    // └─────────────────────────────────────────┘
+    try expectPageTestIn(&w, .inherit, &.{"samples"});
+}
+
 test "the playground's grammar names comments, strings, keywords, notation and markup" {
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
@@ -73,7 +100,7 @@ test "the editor's vendored modules are the bytes their checksums name, and the 
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // The 13 CodeMirror modules are files of the site, not a CDN's
+    // The CodeMirror modules are files of the site, not a CDN's
     // (`playground.md` §4.2): the page runs in an origin every Pages site of
     // its owner shares. `playground/vendor.sh` fetches them; this checks what
     // is checked in.

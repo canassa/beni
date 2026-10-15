@@ -104,12 +104,6 @@ button {
   font: inherit;
 }
 
-#editor {
-  flex: 2;
-  min-height: 0;
-  overflow: hidden;
-}
-
 #diagnostics {
   flex: 1;
   min-height: 0;
@@ -200,6 +194,16 @@ pre {
 
 [role="tabpanel"][hidden] {
   display: none;
+}
+
+/* The source's two editors (playground.md §4.6): a block, not a flex
+   column, so CodeMirror's `height: 100%` fills it. After the rule above, so
+   it wins; `[hidden]` above is more specific, so a hidden one stays hidden. */
+.editor {
+  display: block;
+  flex: 2;
+  min-height: 0;
+  overflow: hidden;
 }
 
 iframe {

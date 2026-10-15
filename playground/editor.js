@@ -1,10 +1,12 @@
-// The playground's editor and its view of the emitted JavaScript
-// (docs/design/playground.md §4.2): CodeMirror 6, each package vendored at the
-// version `index.html`'s import map pins. The editor has beni's grammar,
-// CodeMirror's Elm mode extended with beni's tokens (`syntax.js`), and the
-// compiler's diagnostics as lint marks at their positions (`positions.js`).
-// The emitted JavaScript is a read-only view with CodeMirror's JavaScript
-// grammar (`@codemirror/lang-javascript`), so one highlighter colours both.
+// The playground's editors and its view of the emitted JavaScript
+// (docs/design/playground.md §4.2, §4.6): CodeMirror 6, each package vendored
+// at the version `index.html`'s import map pins. The beni editor has beni's
+// grammar, CodeMirror's Elm mode extended with beni's tokens (`syntax.js`),
+// and the compiler's diagnostics as lint marks at their positions
+// (`positions.js`); the CSS editor has CodeMirror's CSS grammar
+// (`@codemirror/lang-css`). The emitted JavaScript is a read-only view with
+// CodeMirror's JavaScript grammar (`@codemirror/lang-javascript`), so one
+// highlighter colours all three.
 import { EditorSelection, EditorState, Transaction } from "@codemirror/state";
 import {
   EditorView,
@@ -20,14 +22,18 @@ import { lintGutter, setDiagnostics } from "@codemirror/lint";
 import { closeBrackets, closeBracketsKeymap } from "@codemirror/autocomplete";
 import { highlightSelectionMatches, searchKeymap } from "@codemirror/search";
 import { javascript } from "@codemirror/lang-javascript";
+import { css } from "@codemirror/lang-css";
 import { tags } from "@lezer/highlight";
 import { beni } from "./syntax.js";
 import { rangeOf } from "./positions.js";
 
 // Colours from `style.css`, so that a dark page gets dark colours. One style
-// for both grammars: a tag the JavaScript grammar uses and beni's does not
-// (`function`, `regexp`, `className`) has a colour too.
+// for every grammar: a tag the JavaScript or the CSS grammar uses and beni's
+// does not (`function`, `regexp`, `className`, `unit`, `color`, `labelName`)
+// has a colour too.
 const highlight = HighlightStyle.define([
+  { tag: [tags.unit, tags.color], color: "var(--syntax-number)" },
+  { tag: tags.labelName, color: "var(--syntax-def)" },
   { tag: tags.keyword, color: "var(--syntax-keyword)" },
   { tag: tags.comment, color: "var(--syntax-comment)", fontStyle: "italic" },
   { tag: [tags.definition(tags.variableName), tags.function(tags.variableName), tags.function(tags.propertyName)], color: "var(--syntax-def)" },
@@ -52,10 +58,20 @@ const theme = EditorView.theme({
   "&.cm-focused": { outline: "none" },
 });
 
-/// An editor in `parent` holding `text`; `changed(byUser)` runs after each
-/// change of the text, with `byUser` true when a person made it (typing,
-/// pasting, undo) and false when the page did (`replaceText`).
-export function createEditor(parent, text, changed) {
+// What each language adds to an editor: beni's grammar, its lint marks and
+// its four-space indent, or CSS's grammar and a two-space indent.
+const languages = {
+  // beni refuses a tab character anywhere (language.md §2.1): the Tab key
+  // indents with four spaces.
+  beni: () => [indentUnit.of("    "), EditorState.tabSize.of(4), StreamLanguage.define(beni), lintGutter()],
+  css: () => [indentUnit.of("  "), css()],
+};
+
+/// An editor of `language` (`beni` or `css`) in `parent` holding `text`;
+/// `changed(byUser)` runs after each change of the text, with `byUser` true
+/// when a person made it (typing, pasting, undo) and false when the page
+/// did (`replaceText`).
+export function createEditor(parent, text, changed, language = "beni") {
   return new EditorView({
     parent,
     state: EditorState.create({
@@ -70,13 +86,8 @@ export function createEditor(parent, text, changed) {
         closeBrackets(),
         highlightActiveLine(),
         highlightSelectionMatches(),
-        // beni refuses a tab character anywhere (language.md §2.1): the Tab
-        // key indents with four spaces.
-        indentUnit.of("    "),
-        EditorState.tabSize.of(4),
-        StreamLanguage.define(beni),
+        languages[language](),
         syntaxHighlighting(highlight),
-        lintGutter(),
         keymap.of([...closeBracketsKeymap, ...defaultKeymap, ...searchKeymap, ...historyKeymap, indentWithTab]),
         EditorView.updateListener.of((update) => {
           if (update.docChanged) changed(update.transactions.some((tr) => tr.annotation(Transaction.userEvent) !== undefined));

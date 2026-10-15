@@ -1,36 +1,56 @@
-// The playground's shareable link (docs/design/playground.md §4.5): the
-// platform and the source in the URL fragment, which never goes to the
-// server. The source is compressed with the browser's
-// `CompressionStream("deflate-raw")` and encoded in base64url:
+// The playground's shareable link (docs/design/playground.md §4.5, §4.6):
+// the platform, the source and the CSS pane's text in the URL fragment,
+// which never goes to the server. The source and the CSS are each
+// compressed with the browser's `CompressionStream("deflate-raw")` and
+// encoded in base64url; `css` is there only when the pane holds text:
 //
-//   #platform=browser-direct&code=<base64url>
+//   #platform=browser-direct&code=<base64url>&css=<base64url>
 
-/// The longest source a link opens: a link is typed by no one, and a few
-/// bytes of deflate data can stand for hundreds of megabytes.
+/// The longest source, and the longest CSS, a link opens: a link is typed
+/// by no one, and a few bytes of deflate data can stand for hundreds of
+/// megabytes.
 export const maxSource = 1024 * 1024;
 
-/// The fragment, without its `#`, for `platform` and `source`.
-export async function encode(platform, source) {
-  const bytes = await compress(new TextEncoder().encode(source));
-  let binary = "";
-  for (let at = 0; at < bytes.length; at += 0x8000) {
-    binary += String.fromCharCode(...bytes.subarray(at, at + 0x8000));
-  }
-  const code = btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
-  return new URLSearchParams({ platform, code }).toString();
+/// The fragment, without its `#`, for `platform`, `source` and `css`. An
+/// empty `css` adds nothing, so the link is the one made before the pane.
+export async function encode(platform, source, css = "") {
+  const params = new URLSearchParams({ platform, code: await pack(source) });
+  if (css !== "") params.set("css", await pack(css));
+  return params.toString();
 }
 
-/// `{ platform, source }` from a fragment `encode` made (with or without
-/// its `#`); null when the fragment holds no source, and null when its
-/// source is not base64url, not deflate data, not UTF-8, or longer than
-/// `maxSource`: a link cut short, edited by hand, or made to be large.
+/// `{ platform, source, css }` from a fragment `encode` made (with or
+/// without its `#`); `css` is empty when the fragment has none. Null when
+/// the fragment holds no source, and null when its source or its CSS is not
+/// base64url, not deflate data, not UTF-8, or longer than `maxSource`: a
+/// link cut short, edited by hand, or made to be large.
 export async function decode(fragment) {
   const params = new URLSearchParams(fragment.replace(/^#/, ""));
   const code = params.get("code");
   if (code === null) return null;
+  const source = await unpack(code);
+  if (source === null) return null;
+  const css = params.has("css") ? await unpack(params.get("css")) : "";
+  if (css === null) return null;
+  return { platform: params.get("platform"), source, css };
+}
+
+/// `text`, compressed and encoded in base64url.
+async function pack(text) {
+  const bytes = await compress(new TextEncoder().encode(text));
+  let binary = "";
+  for (let at = 0; at < bytes.length; at += 0x8000) {
+    binary += String.fromCharCode(...bytes.subarray(at, at + 0x8000));
+  }
+  return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
+}
+
+/// The text `pack` made, or null when `packed` is not base64url, not
+/// deflate data, not UTF-8, or longer than `maxSource`.
+async function unpack(packed) {
   let binary;
   try {
-    binary = atob(code.replaceAll("-", "+").replaceAll("_", "/"));
+    binary = atob(packed.replaceAll("-", "+").replaceAll("_", "/"));
   } catch (e) {
     // A character outside base64.
     if (e instanceof DOMException && e.name === "InvalidCharacterError") return null;
@@ -39,7 +59,7 @@ export async function decode(fragment) {
   const bytes = await decompress(Uint8Array.from(binary, (c) => c.charCodeAt(0)));
   if (bytes === null) return null;
   try {
-    return { platform: params.get("platform"), source: new TextDecoder("utf-8", { fatal: true }).decode(bytes) };
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes);
   } catch (e) {
     // A fatal decoder's answer to bytes that are not UTF-8.
     if (e instanceof TypeError) return null;
