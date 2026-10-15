@@ -1,0 +1,47 @@
+-- ownership: a construction writes its base, so every OTHER operand —
+-- items and later spreads alike — must not reach it (thesis §3.10,
+-- Disjoint; T1's construction form). `xs ++ xs` (`selfAppend`) and
+-- `[ …xs, 4, …xs ]` (`selfSpread`) read their base while extending it in
+-- place: rejected, `disjoint`; so is a chain whose last link is its base
+-- (`chainBack`, flattened into one construction), a base reached through a
+-- second name (`renamed`), and a later spread that is a view of the base
+-- (`spreadsView`). A later spread of a different list is only read
+-- (`otherList`, accepted). Spreads' `twice` pins `[ …xs, …xs ]`; this
+-- fixture adds the forms that put an item between the two spreads or reach
+-- the base indirectly, so that leaving later spreads out of the disjoint
+-- check fails here as well (the ownership oracle's adversarial review,
+-- 2026-10-15: its Lean core has no append).
+pub selfAppend : ⊤ → List Int
+selfAppend ⊤ =
+    xs = [ 1, 2, 3 ]
+    xs ++ xs
+
+
+pub selfSpread : ⊤ → List Int
+selfSpread ⊤ =
+    xs = [ 1, 2, 3 ]
+    [ …xs, 4, …xs ]
+
+
+pub chainBack : List Int, List Int → List Int
+chainBack a b = a ++ b ++ a
+
+
+pub renamed : List Int → List Int
+renamed xs =
+    ys = xs
+    [ …xs, 0, …ys ]
+
+
+pub spreadsView : List Int → List Int
+spreadsView xs =
+    case xs of
+        [ _, …rest ] →
+            xs ++ rest
+
+        [] →
+            []
+
+
+pub otherList : List Int, List Int → List Int
+otherList xs ys = [ …xs, 4, …ys ]

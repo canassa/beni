@@ -1,0 +1,68 @@
+-- ownership: a list pattern's `…rest` is a view of the list it matched —
+-- the same cells (thesis §3.8; `Ownership.zig`'s `.pat_list` binds a spread
+-- to the scrutinee's own value). The alias runs both ways. Writing the
+-- matched list while `rest` is still read is rejected, `alias`
+-- (`pushWhileRest`), and so is writing `rest` while the matched list is
+-- still read (`setRestWhileWhole`); the same holds for a spread at the
+-- front, `[ …init, last ]` (`pushWhileInit`), and for a list that arrives
+-- as a parameter (`setRestOfParam`). In place, each accepted write would
+-- show through the other name. When nothing reads the other name after the
+-- write, it is accepted (`restDead`). This fixture is the gate on that
+-- alias in both directions: with a spread bound to no cells, the four
+-- rejections turn into accepts (Binders' `spreadArm` pins only the second
+-- direction; the ownership oracle's adversarial review, 2026-10-15, found
+-- the oracle blind to it, its Lean core having no list patterns).
+pub pushWhileRest : ⊤ → { a : List Int, b : List Int, c : Int }
+pushWhileRest ⊤ =
+    xs = [ 1, 2, 3 ]
+    case xs of
+        [ x, …rest ] →
+            ys = List.push xs 9
+            { a = rest, b = ys, c = x }
+
+        [] →
+            { a = [], b = [], c = 0 }
+
+
+pub setRestWhileWhole : ⊤ → { a : List Int, b : List Int, c : Int }
+setRestWhileWhole ⊤ =
+    xs = [ 1, 2, 3 ]
+    case xs of
+        [ x, …rest ] →
+            ys = List.set rest 0 9
+            { a = xs, b = ys, c = x }
+
+        [] →
+            { a = [], b = [], c = 0 }
+
+
+pub pushWhileInit : ⊤ → List Int × List Int
+pushWhileInit ⊤ =
+    xs = [ 1, 2, 3 ]
+    case xs of
+        [ …init, _ ] →
+            ( init, List.push xs 9 )
+
+        [] →
+            ( [], [] )
+
+
+pub setRestOfParam : List Int → List Int × List Int
+setRestOfParam xs =
+    case xs of
+        [ _, …rest ] →
+            ( List.set rest 0 9, xs )
+
+        [] →
+            ( [], [] )
+
+
+pub restDead : ⊤ → List Int
+restDead ⊤ =
+    xs = [ 1, 2, 3 ]
+    case xs of
+        [ _, …rest ] →
+            List.push rest 9
+
+        [] →
+            []
