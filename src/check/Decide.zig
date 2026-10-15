@@ -68,7 +68,7 @@ fn attach(s: *Solve, id: Id) Error!void {
     const rank = try lowerDependants(s, row);
     // A markup row joins the same list: its default is taken at its owner's
     // boundary, before quantification, because some defaults unify (§25.4).
-    if (row.kind == .@"try" or row.kind == .nullary_dot or row.kind.isMarkup()) {
+    if (row.kind == .@"try" or row.kind == .nullary_dot or row.kind == .field_dot or row.kind.isMarkup()) {
         const at = if (rank == TypeStore.generalized) s.frames.items.len else rank;
         try s.frames.items[at - 1].tries.append(gpa, id.int());
     }
@@ -150,6 +150,7 @@ fn decide(s: *Solve, id: Id, default: bool) Error!void {
     if (s.recursive_frames != 0) try Recursion.row(s, id);
     const row = s.obligations.row(id);
     switch (row.kind) {
+        .field_dot => try @import("Dot.zig").decide(s, id, default),
         .nullary_dot => {
             const wanted: Evidence.WantedId = @fromBackingInt(row.index);
             switch (s.store().resolvedContent(row.vars[0])) {
@@ -402,7 +403,7 @@ pub fn close(s: *Solve) Error!void {
                     },
                     .interpolatable => if (flags.kind != .number) try s.report.ambiguousInterpolation(row.region),
                     .equatable => {},
-                    .nullary_dot => try s.report.internal(row.region, "a nullary dot reached quantification before its field default"),
+                    .nullary_dot, .field_dot => try s.report.internal(row.region, "a nullary dot reached quantification before its field default"),
                     .@"try" => try s.report.internal(row.region, "a `?` reached quantification undecided; §8.1 step 3 defaults every one at its target's boundary first (checker-v2.md §8.6)"),
                     .renderable, .handler, .attr_form, .row, .key, .item => try s.report.internal(row.region, "a markup obligation reached quantification undecided; §8.1 step 3 decides every one at its owner's boundary first (checker-v2.md §25.4)"),
                 }
@@ -422,6 +423,7 @@ pub fn settle(s: *Solve, set: Obligations.Set) Error!void {
         row.state = .done;
         const r = row.*;
         switch (r.kind) {
+            .field_dot => {},
             .nullary_dot => {
                 try Resolve.poisoned(s, @fromBackingInt(r.index));
                 try s.poison(r.vars[1]);

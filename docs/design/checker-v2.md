@@ -5904,7 +5904,46 @@ the rows that canonical pessimism and its diagnostic provenance inspect (§10.7)
 Both paths use the same field unification and diagnostic category. This changes
 neither the flexible-receiver default nor checked BIR or published output.
 
-The deferred implementation uses a `nullary_dot` obligation (§4.5): its receiver is
+**Deferred field-read optimisation (issue #131 follow-up).** A bare dot has a
+separate constraint containing receiver, result, name and a reserved effect-site
+index. It does not eagerly allocate a method arrow. Its effect position is
+reserved during generation as an inert sentinel edge, preserving the relative
+order of all real call sites; a method resolution fills that position, while a
+record read leaves it inert. Effect solving skips only this sentinel; real
+self-edges retain their existing graph-node ordering.
+
+Outside recursive frames, an initially flexible receiver carries a `field_dot`
+obligation whose dependant is the result, plus origin/declaration/sequence
+metadata. It neither assumes a record nor allocates a method wanted. Binding
+and defaulting use the same owner-rank queue and ordering as `nullary_dot`.
+A record/defaulted read performs the shared field unification; non-records,
+cycle/rejection/budget cases, and recursive frames materialise the ordinary
+method arrow and wanted with the original sequence, declaration and frame.
+Recursive provenance remains visible through the row's receiver/result closure;
+when materialised, the row uses the ordinary method type too. Its result must
+never outrank its deciding receiver. The generalisation default and the checked
+method-call rewrite are unchanged. Neither public dumps nor serialized interfaces
+or dispatch may expose the temporary constraint representation.
+
+For an existing field on a direct record (not an alias), whose type is a nullary
+nominal application or a flex with no owned dependencies, a completely
+unconstrained flexible result can unify directly with the field type. That
+unification cannot fail or introduce a cycle, so the temporary open record and
+extension add no information. Aliases, other result/field types, missing fields
+and open row searches keep ordinary record unification and its complete
+diagnostics.
+
+Rank adjustment need not revisit a non-generalised escaped flex or rigid root
+whose rank is already below the boundary's young rank. Its rank is fixed by
+its own bucket, and I15 has already lowered its owned closure on every attachment and strict
+rank drop. None of that closure can be quantified at this boundary. Treat it
+as an already settled outer node, just as when another young node reaches an
+outer root absent from the pool. Its owning boundary still walks and checks
+it normally. Structural roots keep the ordinary rank fold. This removes the
+repeated traversal of an outer receiver's accumulating pending dots at each
+local binding; it does not default or otherwise constrain the receiver.
+
+The ordinary method path uses a `nullary_dot` obligation (§4.5): its receiver is
 its deciding owner, its method type a dependant, and its index names an ordinary
 callee wanted. Keeping these obligations independent of the name-keyed method
 sets preserves reading and calling the same function field at different arities.

@@ -174,6 +174,7 @@ fn bucket(p: *Plan) Error!void {
     const scratch = p.in.scratch;
     const bir = p.in.bir;
     for (e.edges.items, e.sites.items) |edge, site| {
+        if (edge.a == Effects.deferred_callee) continue;
         if (site.call == none) continue;
         const d = declOf(bir, site.call);
         if (d == none) continue;

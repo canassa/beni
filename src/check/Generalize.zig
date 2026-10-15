@@ -377,7 +377,14 @@ pub fn adjustRanks(
     var all_young = true;
     for (pool, entries) |v, *e| {
         const root = store.find(v);
-        store.setMark(root, young_mark);
+        // An escaped variable is already an outer node: I15 lowered its
+        // complete owned closure when attaching or lowering its rank.
+        // Its own boundary still walks it; this one cannot quantify it.
+        const escaped = store.rank(root) != TypeStore.generalized and store.rank(root) < young and switch (store.content(root)) {
+            .flex, .rigid => true,
+            else => false,
+        };
+        store.setMark(root, if (escaped) visit_mark else young_mark);
         e.* = .{ .v = root, .bucket = @min(store.rank(root), young) };
         all_young = all_young and e.bucket == young;
     }
@@ -547,11 +554,17 @@ fn assertOwnedWithin(store: *TypeStore, obligations: ?*const Obligations, root: 
     const rank = store.rank(root);
     // A generalised receiver's method type may mention outer variables free.
     if (rank == TypeStore.generalized) return;
-    var n: u32 = 0;
-    while (Walk.owned(store, obligations, root, n)) |c| : (n += 1) {
-        const r = store.rank(store.find(c));
-        if (r > rank) std.debug.panic("a variable of rank {d} rides on one of rank {d} after rank adjustment (checker-v2.md I15)", .{ r, rank });
-    }
+    const Check = struct {
+        store: *TypeStore,
+        rank: u32,
+
+        pub fn add(check: *@This(), c: Var) Walk.Error!void {
+            const r = check.store.rank(check.store.find(c));
+            if (r > check.rank) std.debug.panic("a variable of rank {d} rides on one of rank {d} after rank adjustment (checker-v2.md I15)", .{ r, check.rank });
+        }
+    };
+    var check: Check = .{ .store = store, .rank = rank };
+    Walk.eachOwned(store, obligations, root, store.content(root), &check) catch unreachable;
 }
 
 /// A young node with no successor to walk: an `err`, or a variable with

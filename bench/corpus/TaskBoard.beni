@@ -1,0 +1,144 @@
+--! Task-board projections keep callback receivers unannotated until the
+--! surrounding List call supplies the record type. Retained for issue #131.
+
+pub type alias Task =
+    id : Int
+    title : String
+    completed : Bool
+    priority : Int
+    estimate : Int
+    spent : Int
+    owner : String
+    project : String
+    archived : Bool
+    due : Int
+
+
+pub ids : List Task → List Int
+ids tasks = List.map tasks λt → t.id
+
+
+pub titles : List Task → List String
+titles tasks = List.map tasks λt → t.title
+
+
+pub completion : List Task → List Bool
+completion tasks = List.map tasks λt → t.completed
+
+
+pub priorities : List Task → List Int
+priorities tasks = List.map tasks λt → t.priority
+
+
+pub estimates : List Task → List Int
+estimates tasks = List.map tasks λt → t.estimate
+
+
+pub timeSpent : List Task → List Int
+timeSpent tasks = List.map tasks λt → t.spent
+
+
+pub owners : List Task → List String
+owners tasks = List.map tasks λt → t.owner
+
+
+pub projects : List Task → List String
+projects tasks = List.map tasks λt → t.project
+
+
+pub archiveFlags : List Task → List Bool
+archiveFlags tasks = List.map tasks λt → t.archived
+
+
+pub dueDates : List Task → List Int
+dueDates tasks = List.map tasks λt → t.due
+
+
+pub completed : List Task → List Task
+completed tasks = List.filter tasks λt → t.completed
+
+
+pub unfinished : List Task → List Task
+unfinished tasks = List.filter tasks λt → not t.completed
+
+
+pub active : List Task → List Task
+active tasks = List.filter tasks λt → not t.archived
+
+
+pub archived : List Task → List Task
+archived tasks = List.filter tasks λt → t.archived
+
+
+pub urgent : List Task → List Task
+urgent tasks = List.filter tasks λt → t.priority > 2
+
+
+pub overdue : List Task → List Task
+overdue tasks = List.filter tasks λt → t.due < 0
+
+
+pub unestimated : List Task → List Task
+unestimated tasks = List.filter tasks λt → t.estimate == 0
+
+
+pub overBudget : List Task → List Task
+overBudget tasks = List.filter tasks λt → t.spent > t.estimate
+
+
+pub completedTitles : List Task → List String
+completedTitles tasks =
+    tasks
+        ▷ List.filter λt → t.completed
+        ▷ List.map λt → t.title
+
+
+pub openTitles : List Task → List String
+openTitles tasks =
+    tasks
+        ▷ List.filter λt → not t.completed
+        ▷ List.map λt → t.title
+
+
+pub activeTitles : List Task → List String
+activeTitles tasks =
+    tasks
+        ▷ List.filter λt → not t.archived
+        ▷ List.map λt → t.title
+
+
+pub urgentTitles : List Task → List String
+urgentTitles tasks =
+    tasks
+        ▷ List.filter λt → t.priority > 2
+        ▷ List.map λt → t.title
+
+
+pub overdueTitles : List Task → List String
+overdueTitles tasks =
+    tasks
+        ▷ List.filter λt → t.due < 0
+        ▷ List.map λt → t.title
+
+
+pub overBudgetTitles : List Task → List String
+overBudgetTitles tasks =
+    tasks
+        ▷ List.filter λt → t.spent > t.estimate
+        ▷ List.map λt → t.title
+
+
+pub remainingEffort : List Task → List Int
+remainingEffort tasks = List.map tasks λt → t.estimate - t.spent
+
+
+pub priorityScores : List Task → List Int
+priorityScores tasks = List.map tasks λt → t.priority * t.estimate
+
+
+pub overruns : List Task → List Int
+overruns tasks = List.map tasks λt → max 0 (t.spent - t.estimate)
+
+
+pub deadlines : List Task → List Int
+deadlines tasks = List.map tasks λt → t.due - t.spent

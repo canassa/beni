@@ -85,9 +85,17 @@ pub fn owned(store: *TypeStore, obligations: ?*const Obligations, root: Var, n: 
 pub inline fn eachOwned(store: *TypeStore, obligations: ?*const Obligations, root: Var, content: TypeStore.Content, visitor: anytype) Error!void {
     switch (content) {
         .err => {},
-        .flex, .rigid => {
-            var n: u32 = 0;
-            while (owned(store, obligations, root, n)) |c| : (n += 1) try visitor.add(c);
+        .flex, .rigid => |flags| {
+            const set = constraints(flags);
+            var i: u32 = 0;
+            while (i < set.count(store)) : (i += 1) try visitor.add(set.at(store, i).fn_var);
+            if (obligations) |o| {
+                for (o.owned(flags.obls)) |id| {
+                    const r = o.row(id);
+                    if (r.state != .open or store.find(r.vars[r.owner()]) != root) continue;
+                    for (r.dependants()) |slot| try visitor.add(r.vars[slot]);
+                }
+            }
         },
         .alias => |a| {
             try visitor.add(a.actual);

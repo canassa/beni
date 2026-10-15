@@ -182,6 +182,7 @@ generalisations: u64 = 0,
 evidence: Evidence = .{},
 /// The resolver's own tables (§9): one owner, `Resolve.zig`.
 resolver: Resolve.State = .{},
+field_dots: std.ArrayList(@import("Dot.zig").Pending) = .empty,
 /// The module's derived contexts (§11.2): set by `Module` in P1.
 contexts: Contexts = undefined,
 /// The module's own report. A fixpoint resolves under a quiet one, and a
@@ -263,6 +264,7 @@ pub fn deinit(s: *Solve) void {
     s.spare.deinit(gpa);
     s.evidence.deinit(gpa);
     s.resolver.deinit(gpa);
+    s.field_dots.deinit(gpa);
 }
 
 pub fn store(s: *const Solve) *TypeStore {
@@ -458,6 +460,7 @@ pub fn solve(s: *Solve, first: Constraint) Error!void {
                 try Decide.begin(s, id);
             },
             .method => try Resolve.method(s, node),
+            .field_dot => try @import("Dot.zig").begin(s, node),
             .demand => try Groups.demanded(s, node),
             .internal => {
                 try s.poison(@fromBackingInt(@intCast(node.a)));

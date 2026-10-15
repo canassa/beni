@@ -15,6 +15,7 @@ module is written, valid under `docs/design/language.md`:
 
 | File | Shape |
 |---|---|
+| `TaskBoard.beni` | record projections and filters with many unannotated `List.map`/`List.filter` callbacks (issue #131) |
 | `NotesApp.beni` | Model/Msg/update/view with undo history, search and tags |
 | `JsonCodecs.beni` | decoders and encoders for a nested order domain |
 | `DictExtra.beni` | Dict/Set utilities: grouping, counting, merging, ordered views |
@@ -63,6 +64,7 @@ What that repair changed, per file (lines, bytes, and tokens with each file's
 | File | before: lines / bytes / tokens | after |
 |---|---:|---:|
 | `JsonCodecs.beni` | 308 / 7 785 / 1 084 | 309 / 7 827 / 1 084 |
+| `TaskBoard.beni` | record projections and filters with many unannotated `List.map`/`List.filter` callbacks (issue #131) |
 | `NotesApp.beni` | 391 / 10 099 / 1 551 | 392 / 10 139 / 1 551 |
 | `Codec/Value.beni` | — | 216 / 5 096 / 724 |
 | `Codec/Parse.beni` | — | 282 / 7 274 / 1 018 |

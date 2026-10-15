@@ -47,6 +47,10 @@ pub const Rung = Bir.Rung;
 pub const Symbol = InternPool.Symbol;
 pub const Error = Allocator.Error;
 
+/// Reserved bare-dot edge, activated only if resolution chooses a method.
+/// This is never a store variable and never reaches effect graph solving.
+pub const deferred_callee: Var = @fromBackingInt(std.math.maxInt(u32));
+
 pub const Pair = struct { a: Var, b: Var };
 pub const Seed = struct { v: Var, rung: Rung };
 
@@ -787,7 +791,9 @@ pub fn run(e: *Effects, in: Input) Error!void {
     e.scheme_decl = try gpa.dupe([2]u32, scheme_decl.pairs);
 
     // 2. The edges, and the rungs seeded so far.
-    for (e.edges.items, 0..) |p, i| try e.addEdge(p.a, p.b, @intCast(i));
+    for (e.edges.items, 0..) |p, i| if (p.a != deferred_callee) {
+        try e.addEdge(p.a, p.b, @intCast(i));
+    };
     for (in.wanted_edges) |p| try e.addEdge(p.a, p.b, none);
     var work: std.ArrayList(u32) = .empty;
     defer work.deinit(scratch);

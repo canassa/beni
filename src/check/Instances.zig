@@ -1155,6 +1155,29 @@ fn fieldTextLess(interner: *const InternPool.Global, a: TypeStore.Field, b: Type
 /// A nullary record read, shared by immediate resolution and deferred defaults.
 /// Keep the required record first so missing-field diagnostics stay identical.
 pub fn fieldRead(s: *Solve, receiver: Var, name: InternPool.Symbol, result: Var, origin: Bir.Inst.Index) Error!void {
+    const st = s.store();
+    // A leaf field into a plain flex cannot fail or form a cycle. Avoid
+    // building and merging a throwaway row for this guaranteed success;
+    // every potentially failing case keeps the full record diagnostic.
+    const receiver_content = st.content(st.find(receiver));
+    const result_content = st.resolvedContent(result);
+    if (receiver_content == .structure and receiver_content.structure == .record and result_content == .flex) {
+        const flags = result_content.flex;
+        if (flags.kind == .any and !flags.equatable and Walk.constraints(flags).isEmpty() and flags.obls == .none) {
+            if (Walk.fieldIn(st, receiver_content.structure.record.fields, name)) |value| {
+                const value_content = st.resolvedContent(value);
+                const leaf = switch (value_content) {
+                    .flex => |f| Walk.constraints(f).isEmpty() and f.obls == .none,
+                    .structure => |flat| flat == .app and flat.app.args.len == 0,
+                    else => false,
+                };
+                if (leaf) {
+                    _ = try s.unify(result, value, origin, .{ .tag = .field_access, .index = @backingInt(name) });
+                    return;
+                }
+            }
+        }
+    }
     var pair = [_]TypeStore.Field{.{ .name = name, .value = result }};
     const fields = try s.store().addFields(&pair);
     const ext = try s.fresh(.{ .flex = .{} });

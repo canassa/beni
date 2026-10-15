@@ -98,6 +98,8 @@ pub const Node = struct {
         /// arguments', so a receiver already known is resolved inline and
         /// seeds the arguments' types.
         method,
+        /// Bare dot: receiver/result and a reserved effect position, no arrow.
+        field_dot,
         /// A reference to declaration `b` of a group that was not `done` when
         /// this one was generated (§10.2): `a` = the target. The solver
         /// demands the group — nesting it, or taking the in-flight link — and
@@ -198,6 +200,8 @@ pub const Try = struct { subject: Var, target: Var, value: Var };
 /// (checker-v2.md §4.2). `receiver` is the value's variable, or the
 /// annotation's rigid for a `type_dispatch`; `method_type` is the method's
 /// type at this use.
+pub const FieldDot = struct { receiver: Var, result: Var, name: Symbol, effect_edge: u32 };
+
 pub const Method = struct {
     name: Symbol,
     receiver: Var,

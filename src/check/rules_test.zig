@@ -47,6 +47,7 @@ const files = [_]File{
     .{ .path = "Diagnostics.zig", .text = @embedFile("Diagnostics.zig") },
     .{ .path = "Dispatch.zig", .text = @embedFile("Dispatch.zig") },
     .{ .path = "DispatchTexts.zig", .text = @embedFile("DispatchTexts.zig") },
+    .{ .path = "Dot.zig", .text = @embedFile("Dot.zig") },
     .{ .path = "Driver.zig", .text = @embedFile("Driver.zig") },
     .{ .path = "Eager.zig", .text = @embedFile("Eager.zig") },
     .{ .path = "Edges.zig", .text = @embedFile("Edges.zig") },
