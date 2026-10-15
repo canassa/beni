@@ -1,0 +1,5 @@
+## 2026-10-13 20:20 CEST — S4 validation stops at an ownership limit
+
+**What I did.** Validated the missing direct `Blocks` fixture with zorg and Node 24; its development, release and value-fuzz cases pass on both platforms with one golden. Ran `test-run-hashes` after rebasing. Fixed `ControlledOptions`'s real unsafe edit with `List.copy` and verified its filtered corpus case. Kept all build caches under `~/.cache` and skipped benchmarks as requested.
+
+**What I learned.** The new ownership enforcement refuses `browser/direct/ValuePath` at `Tea.sandbox`: the checker says it cannot prove the recursive tree's child list unshared. This is its stated `list_may_be_shared` limit, not evidence of an unsafe edit, so rule 10 calls for reporting the limit instead of changing the fixture's design. The full hash recording also fails two unrelated case-folding black-box tests on this macOS filesystem. The run hashes it did record remain in the worktree for a later complete run; no gates or PR are possible from this result.
