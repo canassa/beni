@@ -8,7 +8,7 @@
 -- runs in a branch (`inBranch`). In place, the updated record would carry
 -- the pushed list. An update that replaces the field holding the list
 -- does not keep it, so the push is accepted (`replaced`). The holder is
--- the update itself, read after the write; the record built from it is
+-- `r.a`, which the update reads after the write; the record built from it is
 -- born later and holds nothing at the push. Without the update counting
 -- as a use of `r`, every rejection here turns into an accept; before this
 -- fixture the gates saw that only as a lost `R` bit in other fixtures'
