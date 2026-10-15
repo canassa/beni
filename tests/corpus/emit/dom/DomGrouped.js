@@ -28,7 +28,7 @@ const DomGrouped$p21 = ($i$1, $v$2) => {
     Rt$control($i$1.w5, "value", $t$8);
   }
 };
-const DomGrouped$t21 = Rt$template("<div><p> </p><b> </b><input>", 0);
+const DomGrouped$t21 = Rt$template("<div><p> </p><b> </b><input>");
 const DomGrouped$k21 = { m: ($v$9, $cx$10) => {
   const $r$11 = DomGrouped$t21();
   const $w$12 = $r$11.firstChild;
@@ -62,7 +62,7 @@ const DomGrouped$p36 = ($i$1, $v$2) => {
     }
   }
 };
-const DomGrouped$t36 = Rt$template("<div><span>x", 0);
+const DomGrouped$t36 = Rt$template("<div><span>x");
 const DomGrouped$k36 = { m: ($v$7, $cx$8) => {
   const $r$9 = DomGrouped$t36();
   const $w$10 = $r$9.firstChild;
@@ -91,7 +91,7 @@ const DomGrouped$p50 = ($i$1, $v$2) => {
     }
   }
 };
-const DomGrouped$t50 = Rt$template("<p> ", 0);
+const DomGrouped$t50 = Rt$template("<p> ");
 const DomGrouped$k50 = { m: ($v$7, $cx$8) => {
   const $r$9 = DomGrouped$t50();
   const $w$10 = $r$9.firstChild;

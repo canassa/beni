@@ -1,0 +1,64 @@
+-- load
+<body>
+  <main>
+    <button id="flip">"flip"</button>
+    <p>"no card"</p>
+    <svg:svg viewBox="0 0 20 20">
+      <svg:line x2="10" y2="10"></svg:line>
+      <svg:text font-size="3">"pair"</svg:text>
+    </svg:svg>
+    <svg:svg viewBox="0 0 20 20">
+      <svg:circle cx="5" cy="5" r="2"></svg:circle>
+    </svg:svg>
+    <p>"no fragment"</p>
+  </main>
+</body>
+-- click #flip
+<body>
+  <main>
+    <button id="flip">"flip"</button>
+    <my-card data-name="ada">"ada"</my-card>
+    <svg:svg viewBox="0 0 20 20">
+      <svg:circle cx="5" cy="5" r="2"></svg:circle>
+    </svg:svg>
+    <svg:svg viewBox="0 0 20 20">
+      <svg:line x2="10" y2="10"></svg:line>
+      <svg:text font-size="3">"pair"</svg:text>
+    </svg:svg>
+    "Hi "
+    "ada"
+    <hr>
+  </main>
+</body>
+-- click #flip
+<body>
+  <main>
+    <button id="flip">"flip"</button>
+    <p>"no card"</p>
+    <svg:svg viewBox="0 0 20 20">
+      <svg:line x2="10" y2="10"></svg:line>
+      <svg:text font-size="3">"pair"</svg:text>
+    </svg:svg>
+    <svg:svg viewBox="0 0 20 20">
+      <svg:circle cx="5" cy="5" r="2"></svg:circle>
+    </svg:svg>
+    <p>"no fragment"</p>
+  </main>
+</body>
+-- click #flip
+<body>
+  <main>
+    <button id="flip">"flip"</button>
+    <my-card data-name="ada">"ada"</my-card>
+    <svg:svg viewBox="0 0 20 20">
+      <svg:circle cx="5" cy="5" r="2"></svg:circle>
+    </svg:svg>
+    <svg:svg viewBox="0 0 20 20">
+      <svg:line x2="10" y2="10"></svg:line>
+      <svg:text font-size="3">"pair"</svg:text>
+    </svg:svg>
+    "Hi "
+    "ada"
+    <hr>
+  </main>
+</body>

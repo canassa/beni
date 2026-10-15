@@ -13,7 +13,7 @@ const DomHelpers$p10 = ($i$1, $v$2) => {
     $i$1.x1.data = $x$6;
   }
 };
-const DomHelpers$t10 = Rt$template("<b> <!>", 0);
+const DomHelpers$t10 = Rt$template("<b> <!>");
 const DomHelpers$k10 = { m: ($v$7, $cx$8) => {
   const $r$9 = DomHelpers$t10();
   const $w$10 = $r$9.firstChild;
@@ -53,7 +53,7 @@ const DomHelpers$p27 = ($i$1, $v$2) => {
   }
   $i$1.l = $i$1.c0.l || $i$1.c1.l;
 };
-const DomHelpers$t27 = Rt$template("<div><!><!>", 0);
+const DomHelpers$t27 = Rt$template("<div><!><!>");
 const DomHelpers$k27 = { m: ($v$5, $cx$6) => {
   const $r$7 = DomHelpers$t27();
   const $w$8 = $r$7.firstChild;
@@ -64,7 +64,7 @@ const DomHelpers$k27 = { m: ($v$5, $cx$6) => {
   DomHelpers$p27($i$12, $v$5);
   return $i$12;
 }, p: DomHelpers$p27, l: true };
-const DomHelpers$t42 = Rt$template("<li>", 0);
+const DomHelpers$t42 = Rt$template("<li>");
 const DomHelpers$p44 = ($i$1, $v$2) => {
   const $input$3 = $v$2[0];
   const $x$4 = $input$3;
@@ -92,7 +92,7 @@ const DomHelpers$p44 = ($i$1, $v$2) => {
   }
   $i$1.l = $i$1.c0.w || $i$1.c0.l;
 };
-const DomHelpers$t44 = Rt$template("<ul>", 0);
+const DomHelpers$t44 = Rt$template("<ul>");
 const DomHelpers$k44 = { m: ($v$15, $cx$16) => {
   const $r$17 = DomHelpers$t44();
   const $c$18 = Rt$slot($r$17, null, $cx$16);
@@ -100,7 +100,7 @@ const DomHelpers$k44 = { m: ($v$15, $cx$16) => {
   DomHelpers$p44($i$19, $v$15);
   return $i$19;
 }, p: DomHelpers$p44, l: true };
-const DomHelpers$t69 = Rt$template("<b> ", 0);
+const DomHelpers$t69 = Rt$template("<b> ");
 const DomHelpers$k69 = { m: ($v$2, $cx$3) => {
   const $r$4 = DomHelpers$t69();
   const $w$5 = $r$4.firstChild;
@@ -121,7 +121,7 @@ const DomHelpers$p85 = ($i$1, $v$2) => {
     $i$1.x1.data = $x$4;
   }
 };
-const DomHelpers$t85 = Rt$template("<i><!><!>", 0);
+const DomHelpers$t85 = Rt$template("<i><!><!>");
 const DomHelpers$k85 = { m: ($v$5, $cx$6) => {
   const $r$7 = DomHelpers$t85();
   const $w$8 = $r$7.firstChild;
@@ -160,7 +160,7 @@ const DomHelpers$p96 = ($i$13, $v$14) => {
   }
   $i$13.l = $i$13.c0.l || $i$13.c1.l || $i$13.c2.l;
 };
-const DomHelpers$t96 = Rt$template("<div><!><!><!>", 0);
+const DomHelpers$t96 = Rt$template("<div><!><!><!>");
 const DomHelpers$k96 = { m: ($v$21, $cx$22) => {
   const $r$23 = DomHelpers$t96();
   const $w$24 = $r$23.firstChild;

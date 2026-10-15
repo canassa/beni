@@ -1,5 +1,5 @@
 import { Rt$template, Rt$delegate, Rt$forKeyed, Rt$restate, Rt$slot } from "./_platform/Rt.mjs";
-const DomRowItemOnly$t51 = Rt$template("<tr><td> </td><td><a> </a></td><td><a>x", 0);
+const DomRowItemOnly$t51 = Rt$template("<tr><td> </td><td><a> </a></td><td><a>x");
 const DomRowItemOnly$p53 = ($i$1, $v$2) => {
   const $input$3 = $v$2[0];
   if ($input$3.rows !== $i$1.g0_0 || $input$3.selected !== $i$1.g0_1) {
@@ -59,7 +59,7 @@ const DomRowItemOnly$p53 = ($i$1, $v$2) => {
   }
   $i$1.l = $i$1.c0.w || $i$1.c0.l;
 };
-const DomRowItemOnly$t53 = Rt$template("<table>", 0);
+const DomRowItemOnly$t53 = Rt$template("<table>");
 const DomRowItemOnly$k53 = { m: ($v$27, $cx$28) => {
   const $r$29 = DomRowItemOnly$t53();
   const $c$30 = Rt$slot($r$29, null, $cx$28);

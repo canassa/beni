@@ -1606,9 +1606,14 @@ sameKey a b =
 -- this module's: a kind's events (`listen`), its controls (`control`,
 -- `edited`).
 
---| `(html, flags)`: a kind's template cloner (`Rt.template`).
-pub template : String, Int → (⊤ → V)
-template html flags = Rt.template html flags
+--| `(html)`: a kind's template cloner (`Rt.template`).
+pub template : String → (⊤ → V)
+template html = Rt.template html
+
+
+--| `(html, flags)`: a kind's template cloner with a flag (`Rt.templateOf`).
+pub templateOf : String, Int → (⊤ → V)
+templateOf html flags = Rt.templateOf html flags
 
 
 --| `(parent, marker, cx)`: a slot (`Rt.slot`) — a value slot of this

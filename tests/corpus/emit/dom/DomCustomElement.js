@@ -1,4 +1,4 @@
-import { Rt$template } from "./_platform/Rt.mjs";
+import { Rt$templateOf } from "./_platform/Rt.mjs";
 const DomCustomElement$p7 = ($i$1, $v$2) => {
   const $input$3 = $v$2[0];
   const $x$4 = $input$3;
@@ -7,7 +7,7 @@ const DomCustomElement$p7 = ($i$1, $v$2) => {
     $i$1.w0.setAttribute("title", $x$4);
   }
 };
-const DomCustomElement$t7 = Rt$template("<my-widget><x-a-b>hi", 1);
+const DomCustomElement$t7 = Rt$templateOf("<my-widget><x-a-b>hi", 1);
 const DomCustomElement$k7 = { m: ($v$5, $cx$6) => {
   const $r$7 = DomCustomElement$t7();
   const $i$8 = { s: $r$7, q: null, e: $r$7, w0: $r$7, g0_0: NaN };

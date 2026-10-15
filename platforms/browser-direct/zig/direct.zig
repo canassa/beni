@@ -186,7 +186,8 @@ pub const lowering: m.Lowering = .{
         // listening on itself; `(el, prop, v)` and `(el)`, the edited set
         // (item 2). And `(slot, value, kind, what)`, the verify mode's check
         // of a value slot.
-        .{ .name = "template", .arity = 2 },
+        .{ .name = "template", .arity = 1 },
+        .{ .name = "templateOf", .arity = 2 },
         .{ .name = "slot", .arity = 3 },
         .{ .name = "childHtml", .arity = 2 },
         .{ .name = "childMaybe", .arity = 2 },

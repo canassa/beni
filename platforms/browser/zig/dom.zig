@@ -50,7 +50,10 @@ pub const lowering: m.Lowering = .{
     .runtime = &.{
         .{ .name = "start", .arity = 1 },
         .{ .name = "delegate", .arity = 1 },
-        .{ .name = "template", .arity = 2 },
+        // `(html)` for a template with no flag, `(html, flags)` for one
+        // with any (`backend.md` §15.3, amended 2026-10-15).
+        .{ .name = "template", .arity = 1 },
+        .{ .name = "templateOf", .arity = 2 },
         .{ .name = "slot", .arity = 3 },
         .{ .name = "childHtml", .arity = 2 },
         .{ .name = "childMaybe", .arity = 2 },
@@ -1039,7 +1042,10 @@ pub const Gen = struct {
     /// The template's cloner, hoisted once.
     fn template(g: *Gen, b: *const Body, hint: []const u8) !m.Name {
         if (g.cx.hoisted(hint)) |t| return t;
-        return g.cx.hoist(hint, try g.rt("template", &.{ try g.str(b.html.items), try g.num(b.flags) }));
+        // A template with no flag has a cloner of its own, so that a page
+        // whose templates have none writes no flag's branch.
+        if (b.flags == 0) return g.cx.hoist(hint, try g.rt("template", &.{try g.str(b.html.items)}));
+        return g.cx.hoist(hint, try g.rt("templateOf", &.{ try g.str(b.html.items), try g.num(b.flags) }));
     }
 
     fn hoistKind(g: *Gen, b: *Body, n: Names) m.Error!m.Name {

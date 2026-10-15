@@ -5,7 +5,7 @@ const DomConstantUrl$p3 = ($i$1, $v$2) => {
     $i$1.w5.setAttribute("href", Rt$safeUrl(" javascript:x"));
   }
 };
-const DomConstantUrl$t3 = Rt$template("<nav><a href=\"#/\">All</a><a href>none</a><a>nbsp", 0);
+const DomConstantUrl$t3 = Rt$template("<nav><a href=\"#/\">All</a><a href>none</a><a>nbsp");
 const DomConstantUrl$k3 = { m: ($v$3, $cx$4) => {
   const $r$5 = DomConstantUrl$t3();
   const $w$6 = $r$5.firstChild.nextSibling.nextSibling;

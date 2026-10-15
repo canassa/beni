@@ -1,13 +1,13 @@
-import { Rt$template, Rt$childHtml, Rt$restate, Rt$slot, Rt$childMaybe, Rt$childList, Rt$text, Rt$insertText, Rt$map } from "./_platform/Rt.mjs";
+import { Rt$template, Rt$childHtml, Rt$restate, Rt$slot, Rt$childMaybe, Rt$childList, Rt$text, Rt$templateOf, Rt$insertText, Rt$map } from "./_platform/Rt.mjs";
 import { String$fromInt } from "./_core/String.mjs";
-const DomChildren$t9 = Rt$template("<b>on", 0);
+const DomChildren$t9 = Rt$template("<b>on");
 const DomChildren$k9 = { m: ($v$5, $cx$6) => {
   const $r$7 = DomChildren$t9();
   return { s: $r$7, q: null, e: $r$7 };
 }, p: ($i$8, $v$9) => {
 } };
 const DomChildren$b9 = { t: DomChildren$k9, v: null };
-const DomChildren$t13 = Rt$template("<i>off", 0);
+const DomChildren$t13 = Rt$template("<i>off");
 const DomChildren$k13 = { m: ($v$10, $cx$11) => {
   const $r$12 = DomChildren$t13();
   return { s: $r$12, q: null, e: $r$12 };
@@ -26,7 +26,7 @@ const DomChildren$p16 = ($i$1, $v$2) => {
   }
   $i$1.l = $i$1.c0.l;
 };
-const DomChildren$t16 = Rt$template("<div>", 0);
+const DomChildren$t16 = Rt$template("<div>");
 const DomChildren$k16 = { m: ($v$16, $cx$17) => {
   const $r$18 = DomChildren$t16();
   const $c$19 = Rt$slot($r$18, null, $cx$17);
@@ -62,7 +62,7 @@ const DomChildren$p42 = ($i$1, $v$2) => {
   }
   $i$1.l = $i$1.c0.l || $i$1.c1.l || $i$1.c2.w;
 };
-const DomChildren$t42 = Rt$template("<section><h1>title</h1><!><ul>", 0);
+const DomChildren$t42 = Rt$template("<section><h1>title</h1><!><ul>");
 const DomChildren$k42 = { m: ($v$10, $cx$11) => {
   const $r$12 = DomChildren$t42();
   const $w$13 = $r$12.firstChild.nextSibling;
@@ -87,7 +87,7 @@ const DomChildren$p53 = ($i$1, $v$2) => {
   }
   $i$1.l = $i$1.c1.l;
 };
-const DomChildren$t53 = Rt$template("Hi <hr><!>", 4);
+const DomChildren$t53 = Rt$templateOf("Hi <hr><!>", 4);
 const DomChildren$k53 = { m: ($v$6, $cx$7) => {
   const $r$8 = DomChildren$t53();
   const $w$9 = $r$8.firstChild;
@@ -111,7 +111,7 @@ const DomChildren$p66 = ($i$1, $v$2) => {
   }
   $i$1.l = $i$1.c0.l;
 };
-const DomChildren$t66 = Rt$template("<div>", 0);
+const DomChildren$t66 = Rt$template("<div>");
 const DomChildren$k66 = { m: ($v$6, $cx$7) => {
   const $r$8 = DomChildren$t66();
   const $c$9 = Rt$slot($r$8, null, $cx$7);

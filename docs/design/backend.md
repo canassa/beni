@@ -8525,7 +8525,8 @@ runtime, `boundary.md` §9.2, §15.11) and the `html` primitives `text` (1) and 
 |---|--:|---|
 | `start` | 1 | registers the delegated names of a whole program, from the start data object |
 | `delegate` | 1 | the same, idempotently, for a `--library` build's kinds |
-| `template` | 2 | `(html, flags)`: a lazy cloner — the first call parses, later calls clone (`rt/client.js:140-158`); pure to create |
+| `template` | 1 | `(html)`: a lazy cloner — the first call parses, later calls clone (`rt/client.js:140-158`); pure to create; a template with no flag (*amended 2026-10-15*, below the table) |
+| `templateOf` | 2 | `(html, flags)`: the same for a template with a flag (*amended 2026-10-15*) |
 | `slot` | 3 | `(parent, marker, cx)`: makes a slot, remembering the mount context its content mounts with |
 | `childHtml` | 2 | `(slot, block)`: patches when the block's kind is the slot's, remounts otherwise (§15.4) |
 | `childMaybe` | 2 | `(slot, blockOrNull)`: likewise, `null` emptying the slot |
@@ -8542,6 +8543,24 @@ runtime, `boundary.md` §9.2, §15.11) and the `html` primitives `text` (1) and 
 | `listen` | 3 | `(el, name, flags)`: the stable stub of a non-delegated event |
 | `control` | 3 | `(el, prop, v)`: a `stateful` attribute's model value, kept on the element and written when the page's differs (*Controlled inputs*, amended 2026-10-08) |
 | `edited` | 1 | `(el)`: a controlled element a write of this render may have changed, reconciled when the render ends (*Controlled inputs*) |
+
+*Amended 2026-10-15 (research 103 §5): `template` is two exports.* `template` was arity 2,
+`(html, flags)`. It is now arity 1, `(html)`,
+the cloner of a template with no flag — one node of the HTML namespace that cloning makes whole,
+nearly every template — and `templateOf` is arity 2, `(html, flags)`, the cloner above for a
+template with any flag (1 import, 2 a namespace root taken off, 4 several nodes in a fragment).
+The lowering picks one per template; both are pure to create, as `template` was. One cloner taking
+every template's flags made a page with two kinds of template ship every flag's branch, since the
+release build folds a parameter only when every call passes the same constant (§9, *Whole-program
+specialisation*); with the split, a page whose flagged templates share one flag passes `templateOf`
+a constant and keeps only that flag's steps, and a page with no flagged template writes none. `Rt`
+writes `template` as `templateOf`'s steps for flag 0, so a page with no flagged template is the
+file it was. Measured (release, brotli, the whole bundle): Conduit 31 497 → 31 375 on `browser-tea`
+and 36 502 → 36 439 on `browser-direct`, Bike Wars 9 254 → 9 205 and 11 120 → 11 090; TodoMVC,
+Sternhalma and the table app byte for byte. `browser-direct`'s `Direct` supplies both (S4's *`Rt`
+is imported, not copied*). Fixtures: `emit/release/split/TemplateOneFlag` (a page whose one flag is
+a fragment's ships no `importNode`, `createDocumentFragment` or `gather`) and
+`browser/direct/TemplateShapes` (every flag in one page, on both platforms).
 
 **Controlled inputs** (*amended 2026-10-08*: the owner's decision on research 58 §5(c), approved
 for `plans/compile-away.md` slice R2; research 60 §3.3 built it by hand). **The promise is

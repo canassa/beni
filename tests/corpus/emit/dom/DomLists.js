@@ -1,4 +1,4 @@
-import { Rt$template, Rt$forKeyed, Rt$restate, Rt$slot, Rt$insertText, Rt$forPosition, Rt$show, Rt$hide } from "./_platform/Rt.mjs";
+import { Rt$template, Rt$forKeyed, Rt$restate, Rt$slot, Rt$insertText, Rt$forPosition, Rt$show, Rt$hide, Rt$templateOf } from "./_platform/Rt.mjs";
 import { List$head } from "./_core/List.mjs";
 const DomLists$p18 = ($i$1, $v$2) => {
   const $input$3 = $v$2[0];
@@ -8,7 +8,7 @@ const DomLists$p18 = ($i$1, $v$2) => {
     $i$1.w1.data = $x$4;
   }
 };
-const DomLists$t18 = Rt$template("<li> ", 0);
+const DomLists$t18 = Rt$template("<li> ");
 const DomLists$k18 = { m: ($v$5, $cx$6) => {
   const $r$7 = DomLists$t18();
   const $w$8 = $r$7.firstChild;
@@ -16,7 +16,7 @@ const DomLists$k18 = { m: ($v$5, $cx$6) => {
   DomLists$p18($i$9, $v$5);
   return $i$9;
 }, p: DomLists$p18 };
-const DomLists$t42 = Rt$template("<tr><td> ", 0);
+const DomLists$t42 = Rt$template("<tr><td> ");
 const DomLists$p44 = ($i$1, $v$2) => {
   const $input$3 = $v$2[0];
   if ($input$3.rows !== $i$1.g0_0 || $input$3.selected !== $i$1.g0_1) {
@@ -55,7 +55,7 @@ const DomLists$p44 = ($i$1, $v$2) => {
   }
   $i$1.l = $i$1.c0.w || $i$1.c0.l;
 };
-const DomLists$t44 = Rt$template("<table><tbody>", 0);
+const DomLists$t44 = Rt$template("<table><tbody>");
 const DomLists$k44 = { m: ($v$21, $cx$22) => {
   const $r$23 = DomLists$t44();
   const $w$24 = $r$23.firstChild;
@@ -64,15 +64,15 @@ const DomLists$k44 = { m: ($v$21, $cx$22) => {
   DomLists$p44($i$26, $v$21);
   return $i$26;
 }, p: DomLists$p44, l: true };
-const DomLists$t62 = Rt$template("<li>none", 0);
+const DomLists$t62 = Rt$template("<li>none");
 const DomLists$k62 = { m: ($v$7, $cx$8) => {
   const $r$9 = DomLists$t62();
   return { s: $r$9, q: null, e: $r$9 };
 }, p: ($i$10, $v$11) => {
 } };
 const DomLists$b62 = { t: DomLists$k62, v: null };
-const DomLists$t58 = Rt$template("<li>. <!>", 0);
-const DomLists$t72 = Rt$template("<li>blank", 0);
+const DomLists$t58 = Rt$template("<li>. <!>");
+const DomLists$t72 = Rt$template("<li>blank");
 const DomLists$k72 = { m: ($v$31, $cx$32) => {
   const $r$33 = DomLists$t72();
   return { s: $r$33, q: null, e: $r$33 };
@@ -87,7 +87,7 @@ const DomLists$p77 = ($i$36, $v$37) => {
     $i$36.w1.data = $x$39;
   }
 };
-const DomLists$t77 = Rt$template("<li> ", 0);
+const DomLists$t77 = Rt$template("<li> ");
 const DomLists$k77 = { m: ($v$40, $cx$41) => {
   const $r$42 = DomLists$t77();
   const $w$43 = $r$42.firstChild;
@@ -137,7 +137,7 @@ const DomLists$p81 = ($i$1, $v$2) => {
   }
   $i$1.l = $i$1.c0.w || $i$1.c0.l || $i$1.c1.w || $i$1.c1.l || $i$1.c2.w || $i$1.c2.l;
 };
-const DomLists$t81 = Rt$template("<div><ol></ol><ul></ul><ul>", 0);
+const DomLists$t81 = Rt$template("<div><ol></ol><ul></ul><ul>");
 const DomLists$k81 = { m: ($v$46, $cx$47) => {
   const $r$48 = DomLists$t81();
   const $w$49 = $r$48.firstChild;
@@ -150,14 +150,14 @@ const DomLists$k81 = { m: ($v$46, $cx$47) => {
   DomLists$p81($i$55, $v$46);
   return $i$55;
 }, p: DomLists$p81, l: true };
-const DomLists$t96 = Rt$template("<p>none", 0);
+const DomLists$t96 = Rt$template("<p>none");
 const DomLists$k96 = { m: ($v$7, $cx$8) => {
   const $r$9 = DomLists$t96();
   return { s: $r$9, q: null, e: $r$9 };
 }, p: ($i$10, $v$11) => {
 } };
 const DomLists$b96 = { t: DomLists$k96, v: null };
-const DomLists$t102 = Rt$template("<p> of <!>", 0);
+const DomLists$t102 = Rt$template("<p> of <!>");
 const DomLists$k102 = { m: ($v$18, $cx$19) => {
   const $r$20 = DomLists$t102();
   const $w$21 = $r$20.firstChild;
@@ -207,7 +207,7 @@ const DomLists$p104 = ($i$1, $v$2) => {
   }
   $i$1.l = $i$1.c0.l;
 };
-const DomLists$t104 = Rt$template("<!>", 4);
+const DomLists$t104 = Rt$templateOf("<!>", 4);
 const DomLists$k104 = { m: ($v$27, $cx$28) => {
   const $r$29 = DomLists$t104();
   const $w$30 = $r$29.firstChild;

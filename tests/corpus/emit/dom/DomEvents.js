@@ -35,7 +35,7 @@ const DomEvents$p16 = ($i$1, $v$2) => {
     }
   }
 };
-const DomEvents$t16 = Rt$template("<form><button>go</button><input>", 0);
+const DomEvents$t16 = Rt$template("<form><button>go</button><input>");
 const DomEvents$k16 = { m: ($v$10, $cx$11) => {
   const $r$12 = DomEvents$t16();
   const $w$13 = $r$12.firstChild;

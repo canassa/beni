@@ -16,7 +16,7 @@ const DomAttributes$p27 = ($i$1, $v$2) => {
     $i$1.w0.style.setProperty("color", $x$6);
   }
 };
-const DomAttributes$t27 = Rt$template("<tr class=row style=font-size:12px><td>x", 0);
+const DomAttributes$t27 = Rt$template("<tr class=row style=font-size:12px><td>x");
 const DomAttributes$k27 = { m: ($v$7, $cx$8) => {
   const $r$9 = DomAttributes$t27();
   const $i$10 = { s: $r$9, q: null, e: $r$9, w0: $r$9, a0: false, g0_0: NaN, g1_0: NaN };
@@ -44,7 +44,7 @@ const DomAttributes$p48 = ($i$1, $v$2) => {
     }
   }
 };
-const DomAttributes$t48 = Rt$template("<p>x", 0);
+const DomAttributes$t48 = Rt$template("<p>x");
 const DomAttributes$k48 = { m: ($v$8, $cx$9) => {
   const $r$10 = DomAttributes$t48();
   const $i$11 = { s: $r$10, q: null, e: $r$10, w0: $r$10, a0: null, a1: null, g0_0: NaN, g1_0: NaN };
@@ -73,7 +73,7 @@ const DomAttributes$p68 = ($i$1, $v$2) => {
     Rt$control($i$1.w1, "checked", $t$8);
   }
 };
-const DomAttributes$t68 = Rt$template("<form><input><a>link</a><b>", 0);
+const DomAttributes$t68 = Rt$template("<form><input><a>link</a><b>");
 const DomAttributes$k68 = { m: ($v$9, $cx$10) => {
   const $r$11 = DomAttributes$t68();
   const $w$12 = $r$11.firstChild;
