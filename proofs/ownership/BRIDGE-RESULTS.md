@@ -1,5 +1,9 @@
 # Ownership differential bridge — 2026-10-15
 
+This is the pre-fix baseline. The ownership corrections and before/after counts
+are recorded in [BRIDGE-FIX-RESULTS.md](BRIDGE-FIX-RESULTS.md); the six refusal
+fixtures linked below have since been promoted to the gated corpus.
+
 The corrected bridge covered **116,456 inputs**: 43,066 translated and
 value-checked programs, and 73,390 explicitly counted skips. Both checkers
 accepted 18,346 programs and refused 21,961; Zig refused 401 that Lean accepted,
@@ -241,12 +245,12 @@ commit `2491cb6a4` (the source is identical in this triage commit).
 
 | Minimal Zig pattern | Originals | Pending fixture | Zig rule/protocol at fault |
 |---|---:|---|---|
-| Return an old value through a case arm after an eager write | 170 | [BridgeCaseResult](../../tests/pending/check/bad/direct/BridgeCaseResult.beni) | `src/own/Ownership.zig:5235`: `evalCase` evaluates arm results without consuming their variable paths; `refPath` cannot recover that use from the compound case. Dead misses the later arm read. |
-| Return an earlier written capture from a later focus callback | 16 | [BridgeCaptureResult](../../tests/pending/check/bad/direct/BridgeCaptureResult.beni) | `src/own/Ownership.zig:3965`, `:4909`, `:8342`: the returned capture is used in the callback frame, while the earlier demand resolves only uses in its own frame. Its later capture/return does not keep the outer holder live. |
-| Return an old parameter/block result after writing or lending it, including recursive calls | 8 | [BridgeBlockResult](../../tests/pending/check/bad/direct/BridgeBlockResult.beni) | `src/own/Ownership.zig:5040`, `:3168`: `evalLet` evaluates its final result without consuming it; consuming the compound body does not consume its terminal local. The summary can publish `W` and return the old `π` without the internal Dead refusal. |
-| Reuse a borrowed input as a fold's written accumulator | 5 | [BridgeFoldBorrow](../../tests/pending/check/bad/direct/BridgeFoldBorrow.beni) | `src/own/Ownership.zig:7174`, `:7436`, `:7530`: the callback-result guard accepts the item's owned supply without enforcing its taken-container condition/lifetime on the feedback edge. Returning an input can make the next written accumulator alias the retained input or a later input position. |
-| Recursive return of a capture loses the write/once obligation | 1 | [BridgeRecursiveCapture](../../tests/pending/check/bad/direct/BridgeRecursiveCapture.beni) | `src/own/Ownership.zig:6425`, `:4935`: `walkGroup` runs before value bindings; `instProv` turns an unresolved environment result into no cells, so the write through the recursive return contributes no captured write and the closure is not once. A second call mutates the first call's retained seed. |
-| Written argument aliases the callee's returned capture | 1 | [BridgeCaptureOperand](../../tests/pending/check/bad/direct/BridgeCaptureOperand.beni) | `src/own/Ownership.zig:6660`: `callSiteDemandDeep` includes other explicit arguments and paths but omits the callee environment from Disjoint. |
+| Return an old value through a case arm after an eager write | 170 | [BridgeCaseResult](../../tests/corpus/check/bad/direct/BridgeCaseResult.beni) | `src/own/Ownership.zig:5235`: `evalCase` evaluates arm results without consuming their variable paths; `refPath` cannot recover that use from the compound case. Dead misses the later arm read. |
+| Return an earlier written capture from a later focus callback | 16 | [BridgeCaptureResult](../../tests/corpus/check/bad/direct/BridgeCaptureResult.beni) | `src/own/Ownership.zig:3965`, `:4909`, `:8342`: the returned capture is used in the callback frame, while the earlier demand resolves only uses in its own frame. Its later capture/return does not keep the outer holder live. |
+| Return an old parameter/block result after writing or lending it, including recursive calls | 8 | [BridgeBlockResult](../../tests/corpus/check/bad/direct/BridgeBlockResult.beni) | `src/own/Ownership.zig:5040`, `:3168`: `evalLet` evaluates its final result without consuming it; consuming the compound body does not consume its terminal local. The summary can publish `W` and return the old `π` without the internal Dead refusal. |
+| Reuse a borrowed input as a fold's written accumulator | 5 | [BridgeFoldBorrow](../../tests/corpus/check/bad/direct/BridgeFoldBorrow.beni) | `src/own/Ownership.zig:7174`, `:7436`, `:7530`: the callback-result guard accepts the item's owned supply without enforcing its taken-container condition/lifetime on the feedback edge. Returning an input can make the next written accumulator alias the retained input or a later input position. |
+| Recursive return of a capture loses the write/once obligation | 1 | [BridgeRecursiveCapture](../../tests/corpus/check/bad/direct/BridgeRecursiveCapture.beni) | `src/own/Ownership.zig:6425`, `:4935`: `walkGroup` runs before value bindings; `instProv` turns an unresolved environment result into no cells, so the write through the recursive return contributes no captured write and the closure is not once. A second call mutates the first call's retained seed. |
+| Written argument aliases the callee's returned capture | 1 | [BridgeCaptureOperand](../../tests/corpus/check/bad/direct/BridgeCaptureOperand.beni) | `src/own/Ownership.zig:6660`: `callSiteDemandDeep` includes other explicit arguments and paths but omits the callee environment from Disjoint. |
 | **Total** | **201** | **6 fixtures** | **Shipping checker unchanged** |
 
 All six fixtures currently check successfully with no diagnostics under
