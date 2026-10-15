@@ -5325,13 +5325,14 @@ const Walker = struct {
     /// A private binding's only read, executed once during module init
     /// (ownership-checker.md, initialization-transfer amendment).
     fn initializationTransfer(w: *Walker, t: Target, s: *const Summary) Allocator.Error!bool {
-        if (t.m != w.m or w.o.in.packages[w.m] != .app or w.frame != 0 or
-            w.decl.params != 0 or w.decl.kind != .value or w.recursive or
+        if (t.m != w.m or w.o.in.packages[w.m] != .app or w.recursive or w.frame != 0 or
+            w.decl.params != 0 or w.decl.kind != .value or
             s.limit != .none or s.coarse) return false;
+        if (w.m >= w.o.private_reads.len or t.d >= w.bir.decls.len) return false;
         const dispatch = &w.o.in.dispatch[w.m];
         // Evidence-polymorphic values run at their uses, not once at load.
         for ([_]u32{ w.decl_index, t.d }) |di| {
-            if (dispatch.declRequirements(di).len != 0 or dispatch.declIdentities(di).len != 0) return false;
+            if (dispatch.declIdentities(di).len != 0 or dispatch.declRequirements(di).len != 0) return false;
         }
         const source = w.bir.decls[t.d];
         if (source.is_pub or source.params != 0 or source.kind != .value) return false;
@@ -5343,11 +5344,12 @@ const Walker = struct {
             const counts = try w.o.keep.allocator().alloc(u8, w.bir.decls.len);
             @memset(counts, 0);
             for (w.bir.insts.items(.tag), w.bir.insts.items(.data)) |tag, data| {
-                if (tag == .top) counts[data.lhs] = @min(counts[data.lhs] + 1, 2);
+                if (tag == .top and data.lhs < counts.len) counts[data.lhs] = @min(counts[data.lhs] + 1, 2);
             }
             w.o.private_reads[w.m] = counts;
         }
-        return w.o.private_reads[w.m].?[t.d] == 1;
+        const counts = w.o.private_reads[w.m].?;
+        return t.d < counts.len and counts[t.d] == 1;
     }
 
     /// A top-level value's cells, from its definition's summary: each cell
@@ -5591,6 +5593,24 @@ const Walker = struct {
         return w.norm(out.items);
     }
 
+    /// What the entry keeps outside init, including environments of closures
+    /// returned by helpers. Those carry instantiated bindings rather than locals.
+    fn retainedEntryFields(w: *Walker, fields: AV) Allocator.Error!AV {
+        var held: std.ArrayList(Entry) = .empty;
+        try held.appendSlice(w.a, try w.expand(fields));
+        var seen: std.ArrayList(u32) = .empty;
+        var i: usize = 0;
+        while (i < held.items.len) : (i += 1) {
+            const c = w.cells.items[held.items[i].cell];
+            if (c.kind != .closure or !w.closures.items[c.a].carried) continue;
+            if (std.mem.indexOfScalar(u32, seen.items, c.a) != null) continue;
+            try seen.append(w.a, c.a);
+            for (w.closures.items[c.a].binds) |b| try held.appendSlice(w.a, try w.expand(b.av));
+            for (w.closures.items[c.a].cb_avs) |cb| try held.appendSlice(w.a, try w.expand(cb.av));
+        }
+        return w.norm(held.items);
+    }
+
     /// A call of a program constructor with an entry row (§20.2–§20.6): the
     /// model at entry as the fixpoint of `init` and `update`, what the
     /// runtime's calls escape, and a demand for each path `update` writes.
@@ -5613,6 +5633,13 @@ const Walker = struct {
             try w.sight(app, .{ .pending = "it is handed to a program whose update the checker cannot place" }, tok);
             return w.entryResult(inst);
         };
+        // §22.2: init's captures arrive from outside its body. Other entry
+        // callbacks keep their environments across messages and renders.
+        const init_sym = w.o.in.interner.find("init").?;
+        const init_path = try w.o.child(eps, .field, @backingInt(init_sym));
+        var retained_fields: std.ArrayList(Entry) = .empty;
+        for (app) |e| if (!w.o.overlap(e.path, init_path)) try retained_fields.append(w.a, e);
+        const retained = try w.retainedEntryFields(retained_fields.items);
         const view = (try w.entryFn(try w.fieldOf(app, "view"))) orelse EntryFn{};
         const subs = (try w.entryFn(try w.fieldOf(app, "subscriptions"))) orelse EntryFn{};
         // `init` is a function the runtime calls once per mount (§22.2): of
@@ -5719,7 +5746,7 @@ const Walker = struct {
                 // §20.5, §23.6: update writes its message in place — what a
                 // send gave up, or what a view event built from the model.
                 const at = try w.projPath(msg, x.path, null);
-                try w.entryDemandDeep(tok, op, try w.pathName("msg", x.path), if (x.deep) try w.flat(at) else at, &.{}, view_msgs, row, x.origin, x.xfail, x.deep);
+                try w.entryDemandDeep(tok, op, try w.pathName("msg", x.path), if (x.deep) try w.flat(at) else at, &.{retained}, view_msgs, row, x.origin, x.xfail, x.deep);
                 continue;
             }
             var rest: std.ArrayList(Entry) = .empty;
@@ -5727,7 +5754,7 @@ const Walker = struct {
             const at = try w.projPath(model, x.path, null);
             // Not Disjoint against this message: what a send put in the
             // model was another send's, given up there (§23.6).
-            try w.entryDemandDeep(tok, op, try w.pathName("model", x.path), if (x.deep) try w.flat(at) else at, &.{rest.items}, view_msgs, row, x.origin, x.xfail, x.deep);
+            try w.entryDemandDeep(tok, op, try w.pathName("model", x.path), if (x.deep) try w.flat(at) else at, &.{ rest.items, retained }, view_msgs, row, x.origin, x.xfail, x.deep);
         }
         // §20.3: view and subscriptions receive the model to read only.
         for ([_]struct { f: EntryFn, n: []const u8 }{ .{ .f = view, .n = "view" }, .{ .f = subs, .n = "subscriptions" } }) |x| {

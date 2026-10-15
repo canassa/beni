@@ -1,0 +1,20 @@
+-- Inferred evidence makes the unannotated dest run at its two type uses.
+-- Its source's one reference is not a one-shot initialization transfer.
+seed : List a
+seed = []
+
+
+checkedPop : List a → List a
+    where a.compare : a, a → Order
+checkedPop xs = if List.isEmpty (List.sort xs) then List.pop xs else xs
+
+
+dest = checkedPop seed
+
+
+pub ints : List Int
+ints = dest
+
+
+pub strings : List String
+strings = dest
