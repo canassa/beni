@@ -223,3 +223,7 @@ reporting verdict movement separately from changes to refusal details. The
 long audit requires every one of the six original confirmed clusters to have
 ceased to be a program-level acceptance. The compressed judgments retain the
 core programs, complete traces, old/new reverse refusals and compiler hashes.
+
+The exact baseline comparison applies to canonical CI (766 inputs) and long
+(116,456 inputs) populations. A custom-sized campaign is still judged and has
+its reverse leads replayed, but makes no baseline-equality claim.
