@@ -3239,7 +3239,7 @@ choices:
   call where a primitive is now checked in place.
 - **Containers in the compiler's table, not as core `pub codec` values.** *Reversal:* give core a
   module that imports `Schema` and the containers, and let the module rule find it.
-- **Nested module codecs take no evidence.** *Reversal:* give a definition body terms of its own,
+- **Nested module codecs take no evidence** (issue #207). *Reversal:* give a definition body terms of its own,
   as derived `eq` has, so a nested `pub codec` can take its `where`.
 - **`Http.expectJson` takes no schema, and `expectSchema` does.** *Reversal:* keep `expectJson`'s
   argument and add an inferred form under another name.
