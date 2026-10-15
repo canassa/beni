@@ -22,7 +22,7 @@ Solid's 6.9 kB. Tea's view gap (2.8 kB) is re-render bookkeeping (+1.8 kB) and
 kind scaffolding (+1.2 kB); HTML, walks, writes, events and component calls are
 at par. Direct adds 5.3 kB of parameterised-template protocol, which is all of
 its excess over tea. The update gap is TEA's plumbing and features; Terser
-takes only 4–5% of it. Brotli prices difference, not volume: shared shapes are
+takes only about 4% of it. Brotli prices difference, not volume: shared shapes are
 nearly free, per-site names and field codes are not, so a one-view redesign
 always looks like a loss and must be priced across every view. Direct's
 handlers have become tea's tag dispatch plus a mask-key lookup in Conduit.
