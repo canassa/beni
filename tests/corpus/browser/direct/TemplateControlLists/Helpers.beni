@@ -1,0 +1,13 @@
+import Html exposing (Html)
+
+
+leaf : Int → Html msg
+leaf n = <b>{n}</b>
+
+
+pub picked : Bool, Int → Html msg
+picked pick n = if pick then leaf 0 else leaf n
+
+
+pub rows : List Int → Html msg
+rows xs = <ul><For each={xs} keyed={False}>{λn → <li>{leaf n}</li>}</For></ul>

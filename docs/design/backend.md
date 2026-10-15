@@ -9258,3 +9258,11 @@ fallback reason. It is inspection data and the entry does not import it.
 It participates in the output manifest, collision and stale-file rules like
 any emitted file. The platform's JavaScript byte measurements count emitted
 JavaScript; this unrequested inspection data is reported separately.
+
+*Amended 2026-10-15 (volatile row inputs):* every-render facts for values in
+markup rows are computed independently of whether that row uses grouped
+parameterised templates. The ordinary DOM lowering consumes those same facts
+to choose a live row's patch versus restate protocol. A clock call passed to
+a pure helper inside a helper-owned `For` must therefore update on every
+render on both browser platforms. Enabling grouped rows only on direct must
+not leave the ordinary lowering with an all-false effect table for those rows.

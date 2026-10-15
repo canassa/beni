@@ -649,3 +649,10 @@ It pins parameterised sites, per-call analysis masks and declared value
 fallback reasons. It is captured with the same `BENI_WRITE_EXPECTED=1` /
 `BENI_BLESS_ONLY` discipline as the page transcript; the paired tea build
 still checks the single page golden and has no direct consumer plan.
+
+*Superseded on rebase, 2026-10-15:* the historical CPU-fallback amendment
+above predates master’s reference-build instruction budget. Current `gates`
+requires a suitable x86-64 Linux counter and refuses unsupported hosts; the
+other test steps run without a budget there, as CLAUDE.md now specifies. The
+Conduit grants retain their original owner-approved limits and measured CPU
+provenance; that evidence is not a hardware instruction-budget verification.

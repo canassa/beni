@@ -1272,6 +1272,8 @@ fn mkSameControlled(a: *Writes, p: u32, control: u32) Error!u32 {
     return a.finish(mark, 0);
 }
 
+// Function terms are interned with their module, declaration/body and
+// captures: equal captures alone never identify different function bodies.
 fn closedIdentity(a: *Writes, term_: u32) u32 {
     var at_ = term_;
     while (a.termTag(at_) == .alt and a.termWord(at_, 1) == none and a.termWord(at_, 2) == 0 and a.altLen(at_) == 1) {
@@ -2470,7 +2472,13 @@ fn callTop(a: *Writes, m: u32, d: u32, args: []const u32, site_m: u32, site: Ins
 fn opaqueCall(a: *Writes, args: []const u32, m: u32, site_m: u32, site: Inst.Index) Error!u32 {
     const result = try a.freshCall(args);
     if (a.ctx.mode != .view or std.mem.eql(u8, a.in.module_names[m], "Debug")) return result;
-    const dispatch = a.dispatchOf(site_m) orelse return result;
+    const dispatch = a.dispatchOf(site_m) orelse {
+        // Checked app call sites must have a dispatch table. Missing host
+        // metadata is conservatively volatile, never assumed pure.
+        std.debug.assert(a.in.packages[site_m] != .app);
+        const host = try a.mkPath(none, .omega, 0, 0);
+        return a.withReadControl(result, try a.depsOfPath(host));
+    };
     const effects = dispatch.effectAt(site);
     if (!effects.impure and effects.own == .no) return result;
     const host = try a.mkPath(none, .omega, 0, 0);

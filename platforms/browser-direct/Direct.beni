@@ -1643,6 +1643,7 @@ childList s list =
     Rt.childList s list
 
 
+-- Rt.childList skips identical pure blocks; enter those here exactly once.
 templateListSame : V, V, Int → ⊤
 templateListSame previous incoming position =
     if
@@ -1726,11 +1727,11 @@ templateMapPatch : V, V → ⊤
 templateMapPatch instance values =
     before = Js.read templateRowOwner
     rowScope = Js.get instance "$$rowScope"
-    if not (Js.isUndefined rowScope) then
-        Js.write templateRowOwner rowScope
-        if Js.development ⊤ then visitRowMode rowScope (Js.read templateEffects)
     Js.finally
         (λ⊤ →
+            if not (Js.isUndefined rowScope) then
+                Js.write templateRowOwner rowScope
+                if Js.development ⊤ then visitRowMode rowScope (Js.read templateEffects)
             held = Js.get instance "q"
             inner = Js.get held "i"
             block = Js.at values 0

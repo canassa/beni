@@ -21,3 +21,9 @@ validation and remaining cost. `counts.json` adds predicted versus actual
 instance/group counts and template work counters; timing remains uninstrumented.
 Use `BASELINE_BENI=<research-94 compiler>` for `measure.mjs`, then
 `time.mjs --baseline=browser-direct-before-release --samples=15`.
+
+The `2026-10-15-rebased-*` files are the final post-review batch on master
+`df04ca2db`, including the shared volatile-row fact repair. They supersede the
+first 2026-10-15 batch for the final PR measurements; both batches are retained.
+Master's hardware-budget gate now refuses this macOS host; research 95 §7
+separates the local native/LLVM suites from the still-owed Linux budget gate.
