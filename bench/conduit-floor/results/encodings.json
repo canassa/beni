@@ -1,0 +1,50 @@
+{
+  "warning": "Same matrix information; changed formats are not runnable or complete AOT group plans. No replacement runtime is credited.",
+  "entries": 331,
+  "keys": 97,
+  "setBits": 1706,
+  "encodings": [
+    {
+      "label": "binaryPairs",
+      "literal": {
+        "raw": 41039,
+        "gzip": 1908,
+        "brotli": 1588
+      },
+      "wholeBundle": {
+        "raw": 210016,
+        "gzip": 45678,
+        "brotli": 37970
+      },
+      "saved": 0
+    },
+    {
+      "label": "sparseKeyLists",
+      "literal": {
+        "raw": 13445,
+        "gzip": 1755,
+        "brotli": 1496
+      },
+      "wholeBundle": {
+        "raw": 182422,
+        "gzip": 45344,
+        "brotli": 37864
+      },
+      "saved": 106
+    },
+    {
+      "label": "invertedSourceLists",
+      "literal": {
+        "raw": 13629,
+        "gzip": 2382,
+        "brotli": 1936
+      },
+      "wholeBundle": {
+        "raw": 182606,
+        "gzip": 46025,
+        "brotli": 38228
+      },
+      "saved": -258
+    }
+  ]
+}
