@@ -196,6 +196,14 @@ are arrays*, `language.md` §6.8; order of work and measurements: `plans/list-ar
 2026-10-02 a loop that walks its list with `[ x, …rest ]` reads it by an offset into its base
 array (scalar views, `backend.md` §8), and `core/List`'s own loops read and write their arrays in
 place; slices 4–5 (markup identity, bytes) are still to come.
+**Specified 2026-10-15, not built — the trie goes and ownership is the language's** (the owner:
+"no 'fallbacks', i want a proper implementation. this is no longer a platform decision, it's
+core to beni"). A `List` becomes a plain array plus a read-only view for a pattern's `rest`
+(readers use `length`, `Array.isArray` and a view's `$b`/`$o`; `$plain()` goes). Every write the
+ownership checker accepts is edited in place, on every platform. Every write it cannot prove
+safe is a compile error with a `List.copy` fix. There is no copying fallback and no `"lists"`
+manifest key. Contract: `backend.md` §4 *The representation: a plain array* and *Every platform
+edits in place*; the measured corpus and the slices O0–O6: `ownership-checker.md` §30.
 
 **Landed inside M3**: static dispatch, whole — `where` clauses, dot-call,
 well-known `eq`/`compare` with derivation, return-type dispatch, and `core/`

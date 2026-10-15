@@ -42,6 +42,9 @@ the exempt comparison and §25.3 are gone — in §27.*
 *Amended 2026-10-13: slice 4 — enforcement: a platform that edits lists in place declares it, and on such a
 platform `check` and `build` run the pass and every rejected or pending line is an error with an Elm-quality
 message; core's and the platforms' summaries ship in the checked core — is specified in §28.*
+*Amended 2026-10-15: ownership everywhere (the owner). The pass is the language's: every platform edits lists in
+place, `"lists"` is withdrawn, and every program constructor has the direct row. The whole corpus is measured
+under enforcement, and the slices O0–O6 that build it are listed — in §30.*
 
 The argument for the checker is the thesis `docs/thesis/ownership/` ("Edit in Place or Not at
 All", 2026-10-11, with its five reviews and responses in `reviews/`). This document is not that
@@ -130,6 +133,10 @@ platform-specific.
 edits lists in place (`"lists": "in-place"`), and only on such a platform do `check` and `build` run the pass. The
 verdicts themselves still do not depend on the platform, but for §20.2's entry rows.*
 
+*Amended 2026-10-15 (the owner, §30): no platform decides it. The pass runs in every `check` and
+`build`, lists are edited in place on every platform, `"lists"` is withdrawn, and every program
+constructor has the direct row.*
+
 ---
 
 ## 2. Where it runs
@@ -202,7 +209,10 @@ Thesis §3.8. A demand is an operation whose operand — the **base** — it wou
 A call whose callee is core `List.set`, `update`, `push`, `pop`, `swap`, `insertAt` or `removeAt`
 demands its first argument; `List.cons` its second; `List.append` its first. Only core's `List`
 module counts: a platform module named `List` is not core's. A writer passed as a value and called
-through a local is not a demand in slice 1; it is a conservative call (§6).
+through a local is not a demand in slice 1; it is a conservative call (§6). *Superseded
+(amended 2026-10-15, §30.4): since slice 2 such a value carries its class (§16.5). A call through
+it is a demand where the class is in sight, and the value is pending, which is an error, where it
+leaves sight. Neither case writes unchecked, and neither copies.*
 
 *Amended 2026-10-12 (slice 3f, §25.2):* `List.cons` is not a writer. A prepend copies its base (the owner's
 decision of 2026-10-11), so it reads its second argument and demands nothing.
@@ -1428,6 +1438,11 @@ the direct row, whatever the package is called, so that the row survives `browse
 The template rows keep their names (`browser-tea`'s `Tea`, `browser`'s `Browser.program`) and apply only to a
 package that does not declare the property. Any other program constructor — `Browser.hosted`, which a program never
 meets, or a test platform's — has no row: the functions it is handed stay `pending` (§16.5).
+
+*Amended 2026-10-15 (the owner, §30.3):* the template rows and the `platform` cause are
+withdrawn. Every program constructor has the direct row, declared by the ownership word `entry`
+on its record parameter instead of by this table: `browser-direct`'s and `browser-tea`'s `Tea.*`,
+`browser`'s `Browser.program` and the test platform `page`'s `Page.sandbox`.
 
 **Which platform.** Thesis §7 checks every program against the direct row "so that a source has one verdict on
 both browser back ends"; Change 8 keeps in-place lists to the direct platform. Both hold here: a template row
@@ -2776,6 +2791,11 @@ construction copies its base, O(n). Whether the property should stay a platform'
 that the checker runs and lists are edited in place on every platform, is open with the owner. The question and
 the recommendation are in `backend.md` §4, in the same subsection.
 
+*Amended 2026-10-15 again (the owner, §30):* the question is closed. The property is the
+language's, and `"lists"` is withdrawn. §28.3's pass runs in every `check` and `build`, on every
+platform and with no platform. §28.7's rule that a platform's modules have no rejected or pending
+line holds for every platform.
+
 ### 28.3 When the pass runs
 
 **`check` and `build`, when the chain is in-place, and the run's own check produced no error.** The pass
@@ -3438,3 +3458,318 @@ retains the `Err` payload in the frame result (§26.2). The terminal-result rule
 also applies when that operand is itself a case or block. A nested callback
 result whose ownership cannot be established remains refused; the result-loan
 walk never supplies permission in place of the ordinary returns-owned check.
+
+## 30. Ownership everywhere (the owner, 2026-10-15; normative from 2026-10-15)
+
+*Amends §1.3, §3.1, §16.5, §20.2, §20.9, §24.5, §28.1–§28.3, §28.6–§28.8, §28.10 and §28.11, and the
+amendment of 2026-10-15 to §28.2. Sections 1–29 keep their numbers and text. Where this section changes a
+rule, it wins. It specifies; it builds nothing. The slices of §30.7 build it.*
+
+### 30.1 The decision
+
+The owner, 2026-10-15, verbatim: **"no 'fallbacks', i want a proper implementation. this is no longer a
+platform decision, it's core to beni."**
+
+- **Ownership is the language's rule.** Every `check` and every `build` runs the pass. This holds on every
+  platform (`node`, `html`, `browser`, `browser-tea`, `browser-direct`, the test platforms and any
+  third party's) and with no platform at all. §28.1's "errors only where lists are edited in place" and
+  §28.3's "when the chain is in-place" are withdrawn: lists are edited in place everywhere.
+- **`"lists": "in-place"` is withdrawn** (§28.2, `boundary.md` §5.2 amended). No platform declares how a
+  list is written, and nothing reads the key. `browser-direct`'s manifest drops it. A manifest that still
+  writes it has an unknown key, which is ignored (`boundary.md` §5.2).
+- **No fallback.** No platform copies where ownership is not proved. There is no copying writer, no trie,
+  and no interim in which a construction copies over a plain array (`backend.md` §4, *Every platform edits
+  in place*). A demand the checker cannot prove safe is an error (§28.5) on every platform. Its message is
+  §28.6's, and its fix is `List.copy`.
+- **The template row and the `platform` cause are withdrawn** (§20.2). Every program constructor has the
+  direct row (§30.3). One source has one verdict on every platform, which thesis §7 asked for. A
+  `build/bad/direct/Ownership…` project that fails on `browser-direct` must now fail on `browser-tea`
+  with the same diagnostics. The §28.10 rule that it must succeed there is reversed.
+- **Pattern `rest` views stay read-only**, as `backend.md` §4, *The representation: a plain array*,
+  specifies.
+
+### 30.2 The precondition, measured (2026-10-15)
+
+`backend.md` §4's open question made a whole-corpus measurement a hard precondition of this choice. It was
+taken before the decision was written down here.
+
+**How it was measured.** There is no flag that turns enforcement on for a platform that does not declare
+`"lists"`. So this measurement used a local patch, not committed, on the tree of PR #148. The patch:
+
+- read one environment variable;
+- made `Chain.inPlace` true for every chain;
+- marked every platform module as in-place for §20.2's rows. That gives `browser-tea`'s `Tea.*`, and
+  `browser`'s `Browser.program`, the direct row;
+- gave the test platform `page`'s `Page.sandbox` the direct row.
+
+Each fixture was then checked with `check --platform=<its corpus platform> --diagnostics=json`, and the
+ownership codes were counted. The causes come from `dump --stage=ownership` under the same rows. A program
+is a corpus file, or a project directory. The table counts programs, not demands:
+
+| What | Platform | Programs | Rejected |
+|---|---|---|---|
+| `run/` (files and projects) | `node`, or the project's `platform/` | 459 | **16**, and 4 that crash (below) |
+| `browser/` top level and `OwnPlatform` | `tests/platforms/page`, own | 4 | 0 |
+| `browser/dom/` | `browser` | 52 | **1** |
+| `browser/tea/` | `browser-tea` | 88 | **13** |
+| `browser/direct/` | `browser-direct` (as today) | 214 | 0 |
+| `browser/direct/`, the same sources | `browser-tea` | 214 | 0 |
+| `examples/` (Bike Wars, Conduit, Sternhalma) | `browser-tea` | 3 | 0 |
+| `bench/` apps: TodoMVC ×4, `ui` ×4, `jfb` ×2 | `browser-tea`, `browser-direct` | 10 | 0 |
+| `bench/corpus` | `node` | 1 project | **1** |
+| core | — | 116 demands | 0 |
+| the platform modules: `node`, `html`, `browser`, `browser-direct` | — | — | 0 |
+| the platform modules: `browser-tea` | — | — | **2 lines** (`Tea.application`) |
+
+`bench/markup` and `bench/size-apps` do not check today, for reasons that have nothing to do with
+ownership, and are left out. **31 of 831 programs are rejected (3.7 %): 17 of them really share, and 14 are limits of the checker.** Every page of `browser/direct/`
+also passes on `browser-tea`, and so do all three examples.
+
+**By cause, and whether the program really shares:**
+
+1. **A top-level list written** (`top-level`, position; `top_level_list_changed`). 11 programs, 9 of
+   them for this cause alone (`run/ListForms` and `ListPrepend` also have exact lines):
+   - `run/`: `ConstrainedConstant`, `ConstrainedFunctionConstant`, `ConstrainedFunctionConstantRoutes`,
+     `Int32Keys`, `ListDirectDeep`, `ListIndexed` (29 lines), `ListIndexedDeep` and `NestingFlatList`;
+   - `browser/dom/KeyedInPlace`, whose `init` returns the top-level `rows`.
+
+   *Real.* In place, the top-level value would change for every later reader, and for every later mount.
+   Example: `xs = [ 1, 2, 3 ]` at the top level, then `List.set xs 0 9` in `main`.
+2. **Real sharing that the text shows** (`later-use`, `alias`, `disjoint`, `captured`, exact;
+   `list_still_used`). 5 programs, each a test of persistence or identity: `run/ListForms`,
+   `ListPrepend`, `ListSpreadPatterns`, `ListIdentity`, and 2 of `ListIndexedIdentity`'s lines.
+   *Real.* In place, each would print something else. Example: `ys = xs ++ [ 4 ]`, then `xs` read again.
+3. **Real sharing that the checker reports as a limit** (approximate). 4 programs:
+   - `run/ListPersistence` (7 lines, `call`): it edits old versions kept in a `Dict`. It is a test of
+     the trie and retires with it;
+   - `browser/tea/QueuedListSnapshot` (`escaped` at the entry): a queued command reads the list that a
+     later arm extends. Its own comment says that an in-place append would change what it prints;
+   - `run/ListIndexedIdentity` and `run/WriteRowsIdentity` (`escaped`, 17 lines): the lists reach
+     `refEq`, a test platform's `foreign` with no ownership words. These programs observe identity, so
+     in place they would print something else.
+4. **Checker limits, with no sharing in the program** (approximate, or exact only in name).
+   14 programs and the platform's own `Tea`:
+   - **A tagger's result through a command**, the largest family (§23.5 `need`; 10 `browser/tea/`
+     programs, 14 lines). Examples are `Http.send { … } (Got "send" _)`, `Cmd.task work (Got label _)`
+     and `Random.generate Rolled …`. The payload holds no list the program kept. Eight of these lines
+     print as exact (`list_still_used`) where §28.5 would call them a limit, and that is a defect of
+     the message.
+   - **`Tea.application`'s forwarding of `onUrlRequest`/`onUrlChange`** (`need`, 2 lines in
+     `browser-tea`'s own `Tea`). Under §28.7 this fails the build of beni itself.
+   - `browser/tea/DebouncedSearch` (`supply`: a function parameter loses sight of `send`).
+   - `browser/tea/ReentrantSend` (`disjoint` on a message that carries the `send` function: a closure
+     is taken for a list).
+   - `run/RefModify` (`supply`: `Ref.update` hands its callback the value borrowed, `⊤`).
+   - `bench/corpus`'s `FormValidation` (`call`, 4 lines: an applicative `andMap` chain through
+     function values with no summary).
+
+**A defect found on the way.** Under enforcement, `check` crashes on four `run/` projects:
+`SchemaDeclDepth`, `SchemaDeclGeneric`, `SchemaDeclModules` and `SchemaDeclTagged`. A ReleaseFast build
+gets `SIGSEGV`. A Debug build panics with "index out of bounds: index 4294967295" in
+`summary_bytes.write`'s module sort (`SortModules.less`, `packages[none]`), reached from
+`Ownership.writeBlock` through `Enforce.run`. It happens only when the run writes cache entries. With
+`--no-cache` all four check clean, with no ownership lines. A summary row names a module index of
+`none`, and a schema declaration's rows are where it comes from. Whether `browser-direct` can reach it
+today was not established: a minimal schema program there does not crash.
+
+**Cost.** This is the whole process at `--jobs=1 --no-cache`, the best of 7 runs, with the ReleaseFast
+build of the patch:
+
+| Program | Without | With the pass | Change |
+|---|---|---|---|
+| Conduit on `browser-tea` | 95 ms | 165 ms | +74 % |
+| Conduit on `browser-direct`, as today | — | 174 ms | — |
+| Bike Wars on `browser-tea` | 65 ms | 83 ms | +28 % |
+| `bench/corpus` on `node` | 84 ms | 137 ms | +63 % |
+
+§28.8's target of 10 % is now missed on every platform, not only on `browser-direct`. The 100 000-line
+benchmark has no platform, so until now it ran no pass. After this decision it runs one, and that has
+not been measured. §28.4's transitive cache keys, which cost the firewall, now apply to every build.
+§30.6 makes both preconditions.
+
+### 30.3 Entry rows: what every platform provides
+
+Every program constructor gets **the direct row** (§20.3–§20.6, Table 7.1 of the thesis). Nothing takes
+its place where a row is missing. A constructor with no row leaves its functions pending (§16.5), and a
+pending line is an error (§28.5).
+
+**Who declares the row.** §20.2 asserted the rows by name "until Change 5's words let a platform declare
+its rows". That table cannot cover a test platform or a third party's, so words now declare the row.
+A new ownership word, **`entry`**, stands in front of a record-typed parameter of a platform declaration
+(§24.2–§24.4: core and platform packages only, `misplaced_ownership_word` elsewhere). It says that the
+runtime calls the record's functions as a program:
+
+- `init` once per mount, handed `⊤` (or its address and key, for `application`);
+- `update` with the model owned (P1), and the message as §23.6 says;
+- `view` and `subscriptions` with the model to read only;
+- `onUrlRequest` and `onUrlChange` with crossing arguments.
+
+A field of the record that has none of those names is refused with `misplaced_ownership_word`. A word on
+a parameter that is not a record written out is refused the same way. The words replace §20.2's table:
+
+| Platform | Constructors that write `entry` | Note |
+|---|---|---|
+| `browser-direct` | `Tea.sandbox`, `element`, `document`, `application` | as today, by word instead of by name |
+| `browser-tea` | `Tea.sandbox`, `element`, `document`, `application` | was the template row |
+| `browser` | `Browser.program` | was the template row. `programs` and `mountAt` take `Program` values, not records of functions, and need none |
+| `tests/platforms/page` | `Page.sandbox` (a `foreign`) | had no row |
+| `node` | none | `main` is a value. `print`, `printLines` and `exitWith` take values and carry words. `Io.run`'s body is beni, and its summary is inferred |
+| `html`, `tests/platforms/toy`, `layered`, `oracle` | none | no program takes functions |
+
+A declaration that writes `entry` puts the direct row's obligations on its platform. These are P1–P4 and
+P7 of thesis §7, which the checker does not see. §20.9's trusted surface lists each such declaration with
+how its runtime meets them:
+
+- **`browser-direct`**, as designed (`browser-direct.md` §7.4).
+- **`browser` and `browser-tea`**, once slice O3 lands, and not before:
+  - **P1 and P2.** The runtime reads nothing of the old model after `update` returns. The Tea driver
+    hands `update` the model and keeps only the result.
+  - **P3.** Handlers made by a render may be called before the next render. Their messages and captures
+    are the view's event slot (the 2026-10-14 amendment to §28, *markup slots*). §20.5 rejects a write
+    to any list they hold, so a handler never reads a list written since its render.
+  - **P4.** It holds, because `view` is recomputed whole.
+  - **P7.** `backend.md` §15.5's amendment of 2026-10-15: the renderer never decides "unchanged" from a
+    list's identity.
+- **`Page.sandbox`**: its `runtime.js` renders the whole view after every message and keeps no list. Its
+  entry in the trusted surface says so, and a fixture pins it.
+
+### 30.4 A writer handed as a value
+
+`backend.md` §4's plain-array amendment found a conflict, and this resolves it. §3.1 said that "a writer
+passed as a value and called through a local is not a demand in slice 1". On an in-place platform that
+would have let it write unchecked or copy silently. Neither happens, and neither has happened since
+slice 2:
+
+- A writer named as a value (`List.push`, a placeholder such as `List.push _ 4`, a lambda that writes
+  its parameter) **is a function value whose class writes that parameter** (§16.5). The value is the
+  in-place writer, the only one there is.
+- **Where the class is in sight**, every call of it is a call-site demand (§16.4). Examples are a callee
+  whose `fun(j)` is seen, and a local called directly. It is accepted, or rejected with §8.3's cause,
+  like any demand.
+- **Where it leaves sight**, it is a **pending** line, and so an error (§28.5, `list_may_be_shared`).
+  Leaving sight means being stored in a structure, returned, captured, passed as evidence, or passed to a
+  callee that does not see it (a `foreign` with no words, §24.5).
+
+Measured on 2026-10-15 with the patch of §30.2:
+
+- `apply f xs = f xs 4`, then `ys = apply List.push xs` followed by a read of `xs`: rejected
+  `later-use`, with the fix `apply List.push (List.copy xs)`.
+- `{ f = List.push }`: pending, "it is stored in a record".
+
+Neither is a silent copy. §3.1's sentence is superseded by §16.5 and by this section. No rule is new:
+what is new is that the rule now holds on every platform.
+
+### 30.5 `foreign`, siblings and the platforms' own modules
+
+- **Words are load-bearing everywhere.** §24.5 is unchanged. A `foreign` with no words escapes every
+  argument and returns `⊤`, which is sound and may be imprecise. A sibling that keeps a list past the
+  call must not carry `borrowed`, so its default `escaped` is the safe reading (`boundary.md` §4,
+  amended). A sibling still never writes a list it is handed, and returns only a fresh array or one it
+  was given.
+- **Every platform's modules are checked when beni is built** (§28.7). The rule had applied only to
+  in-place chains. The maker now reports every platform module in the run for its chain. Core and every
+  platform must have no rejected or pending line. On 2026-10-15 every platform passes but `browser-tea`,
+  which has 2 lines (§30.2, cause 4).
+- **A test platform's `foreign`s** that take lists get words like the shipped platforms' do. Examples
+  are `refEq` and `Page.element`'s children. They are privileged code, held to the same standard
+  (§24.6, *the trusted surface*).
+
+### 30.6 Cost, the firewall and the benchmark
+
+Two properties that held only on `browser-direct` now cover every build, so they become preconditions of
+turning enforcement on (O4):
+
+- **The firewall.** §28.4 rule 2 makes every importer's key move when any block it reads may move.
+  §28.11 item 1, moving the pass onto the DAG and putting the summary block in the interface record
+  (§16.9–§16.10), brings the firewall back. It is slice O2.
+- **The budgets.** `fast-compiler.md` §2's budgets for checking (250 000 lines a second, cold, per core)
+  and for an 800 ms build of 100 000 lines now include the pass. §28.8's 10 % target is re-measured on
+  the 100 000-line benchmark (run with `--platform=node`, since it needs a platform's `main`), Conduit,
+  Bike Wars and the corpus pages. A miss is reported under CLAUDE.md rule 10. It is never answered by
+  turning the pass off on a platform.
+
+### 30.7 The slices, in order
+
+No slice introduces a fallback. Every slice keeps `zig build gates` green on `master`. Until O5,
+programs run on E1tp unchanged. O0–O4 only tighten what compiles, which is never a fallback, because no
+behaviour changes.
+
+- **O0 — the defect and the measurement in the gates.**
+  - *Builds:* the fix for §30.2's summary-block crash, with a red-first fixture in `tests/corpus/ownership/`
+    that writes cache entries;
+  - a hidden, test-only flag that enforces on any chain, so that §30.2's measurement is a test rather
+    than a patch. Like `--allow-debug`, it is listed in no usage text, and it is deleted in O4;
+  - the measurement script in `bench/` that runs it.
+
+  *Accepted when:* the four `SchemaDecl*` projects check under enforcement with a cache, and the script
+  reproduces §30.2's table.
+- **O1 — the corpus, by the owner's rule-10 decision on §30.2's list.**
+  - *Builds:* causes 1–3, which are real, take their fix from the message (`List.copy`, or the top-level
+    value made a function) wherever the fixture tests something other than persistence. A fixture that
+    tests persistence itself (`ListPersistence`, the identity tests through `refEq`) is the owner's to
+    rewrite or retire, and it retires with the trie in O5 at the latest.
+  - Each cause-4 limit gets a red fixture in `tests/pending/` first, then precision work in the checker,
+    measured against every ownership golden (§28.11 item 4's rule). The work covers the tagger family,
+    `Tea.application`'s forwarding, the function-valued `send`, `Ref.update`'s words and the applicative
+    `andMap` chain.
+  - The tagger messages that print exact are corrected to approximate.
+
+  *Accepted when:* O0's flag finds no rejected and no pending line in the whole corpus, the examples, the
+  bench apps, core and every platform. No limit is answered by adding a `List.copy` to a platform or to
+  core (the 2026-10-14 *subscription tap builder* amendment's rule).
+- **O2 — the pass on the DAG, and the block in the interface** (§28.11 item 1, §16.9–§16.10).
+  - *Accepted when:* the firewall holds for every build, as `cache_test.zig` shows. The 100 000-line
+    benchmark, Conduit and the corpus pages meet §28.8's target with the pass on, or the miss is reported
+    with its profile.
+- **O3 — every runtime meets the direct row.**
+  - *Builds:* the `entry` word (§30.3) and its refusals, with `trusted-surface.txt` rows and flips; §20.2's
+    name table deleted;
+  - `backend.md` §15.5's identity rule in the `dom` lowering and `Rt`: no `items === s.b`, no `same`, no
+    list-typed item, input, value or hole skipped by `===`, and `s.b` no longer kept;
+  - the P1 audit of `browser-tea`'s driver and `browser`'s runtime;
+  - the template row and the `platform` cause deleted.
+
+  *Accepted when:*
+  - research 29's harness runs every operation on `browser` and `browser-tea`, before and after, against
+    Solid 2 (CLAUDE.md rule 8), and any loss is reported, not put back;
+  - fixtures pin a `For` over a list written in place and a row whose item is a list written in place
+    (thesis T35–T37, T47). They are red against a runtime that keeps the skip, which O5 proves once the
+    write is really in place;
+  - the `browser/` corpus is unchanged.
+- **O4 — enforcement is the language's.**
+  - *Builds:* the pass in every `check` and `build`, with a platform or without one; `"lists"` removed
+    from `Manifest` and from `browser-direct`'s manifest; O0's flag deleted; §28.7's maker reporting
+    every platform;
+  - §28.10's `build/bad/direct/Ownership…` projects failing on `browser-tea` with the same golden, and a
+    `node` project for each kind of error under `build/bad/`;
+  - the determinism test run on `node` as well.
+
+  *Accepted when:* the gates are green with no golden changed but O1's, and the run hashes are unchanged:
+  nothing emitted moves.
+- **O5 — the representation and the in-place lowering, together, on every platform.** This is
+  `browser-direct.md`'s S7, items 1 and 2, and it needs the oracle conditions C1–C5 first.
+  - *Preconditions:* C1–C5 (`browser-direct.md`, the last amendment and its 2026-10-15 follow-up), and
+    W27's `language.md` §11.12 amendment written.
+  - *Builds:* `backend.md` §4, *The representation: a plain array*, with *Every platform edits in place*:
+    the trie deleted; plain arrays and read-only views; every accepted demand lowered in place, including
+    every construction and `++` chain; the public writers in place; the optimiser barrier; fresh literals
+    (invariant 7). The run hashes are re-recorded.
+  - *Accepted when:*
+    - C3's fixtures pass;
+    - the whole `run/`, `browser/` and `emit/` corpus prints its value-semantics goldens, recorded under
+      E1tp before this slice, with no golden changed but those of `emit/` that show the lowering;
+    - the stale-read sanitiser build (thesis §12.2, a hidden test-only flag that versions each array and
+      traps a read through an old holder) runs the corpus clean;
+    - `size-parts.mjs` finds no `trie*` part in any bundle;
+    - `bench/arrays`, research 29's harness, TodoMVC and Conduit are measured before and after;
+    - and a search of `core/List` finds no copying twin of a writer.
+- **O6 — record assignment** (`browser-direct.md` §7.4, its condition C4) stays `browser-direct`'s. It
+  comes after O5, under C4, and is not a precondition of anything here.
+
+### 30.8 Open questions
+
+None are left for the owner on the platform question, which this section closes. Two decisions are
+recorded in §30.2's list for O1, and they are the owner's under CLAUDE.md rule 10:
+
+- whether each persistence and identity test in causes 2–3 is rewritten with `List.copy` or retired;
+- whether the eight tagger lines that print as exact are corrected before or with the precision work.

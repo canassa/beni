@@ -319,6 +319,11 @@ assignment waits on C4 (design, the last amendment, *`List` is a plain array; S7
 representation*). The owner's open platform question in `backend.md` §4 is answered before S7's
 lowering lands. The row above is kept as written.*
 
+*Amended 2026-10-15 again (the owner): the platform question is answered. Every platform edits
+lists in place, and ownership is the language's rule. S7 is now the slices O0–O6 of
+`ownership-checker.md` §30.7. The whole corpus was measured under enforcement first: 31 of 831
+programs are rejected, 17 of them for real sharing and 14 for checker limits (§30.2).*
+
 **Shared and not shared** (design §12.1): the compiler, its analyses, `core`, `html`, `browser`'s
 capability modules and the defect teardown, the corpus driver and the bench harness are one copy;
 the `direct` lowering, its `Rt` and its `Tea` (the command driver copied, ~300 lines) are the

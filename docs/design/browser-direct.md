@@ -3523,3 +3523,42 @@ but not yet written.
   bar. The generated page now has no trie either.
 - **§15's "Reported, not asked"** line on the thresholds and the trie's ~500 B is closed: both are
   gone.
+
+### *Amended 2026-10-15 again (the owner):* ownership everywhere; S7 becomes O0–O6
+
+The owner, 2026-10-15, verbatim: **"no 'fallbacks', i want a proper implementation. this is no
+longer a platform decision, it's core to beni."** Edit-in-place is no longer this platform's
+property. Every platform edits lists in place, and the ownership checker runs in every `check`
+and `build` (`ownership-checker.md` §30; `backend.md` §4, *Every platform edits in place*). This
+amendment changes the previous one in four places:
+
+1. **S7's scope is the slice list of `ownership-checker.md` §30.7, O0–O6.**
+   - The previous amendment's item 1 (the representation) and item 2 (in place where accepted) are
+     O5, and O5 applies on every platform.
+   - Item 3, the platform question, is answered: every platform.
+   - Item 4, record assignment, is O6 and stays this platform's, under C4.
+   - Item 5, a writer used as a value, is resolved in `ownership-checker.md` §30.4. Such a value is
+     the in-place writer. Every call through it is a demand where its class is in sight, and it is a
+     pending line, which is an error, where it leaves sight. There is no silent copy and no unchecked
+     write.
+
+   "On an in-place platform" in that amendment now reads "on every platform", and "elsewhere, the
+   public writers copy" is withdrawn.
+2. **C1 is unchanged and still a precondition**: in-place constructions land with the trie's
+   removal, in the one slice O5. No interim build copies `++` over plain arrays.
+3. **C3's reference is amended.** "Run against value semantics (`browser-tea`, or the copying
+   writers)" cannot stand, because `browser-tea` now edits in place and there are no copying
+   writers. The reference becomes the two oracles that already exist:
+   - **the corpus's goldens**, every one recorded under E1tp's persistent lists before O5, which are
+     value semantics by construction;
+   - **the stale-read sanitiser** of thesis §12.2, a hidden test-only build flag. It gives each
+     array a version, and it traps any read through a holder older than the array's last write.
+
+   A copying writer kept only for tests would be the fallback the owner refused, so none is kept.
+4. **The template row is gone.** This platform's direct row is no longer what tells it apart from
+   `browser-tea` and `browser`, because every program constructor has that row and declares it with
+   the ownership word `entry` (`ownership-checker.md` §30.3). The single-source pages of
+   `browser/direct/` already pass the checker on `browser-tea`: all 214 programs, measured on
+   2026-10-15 (`ownership-checker.md` §30.2).
+
+C2, C4 and C5 stand as written.

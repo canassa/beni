@@ -814,6 +814,83 @@ S8.** If S8 keeps `browser-direct`, the question closes with `browser-tea`'s del
 decided here. The owner decides it before S7's lowering lands, because it decides which platforms
 the copying writers serve.
 
+*Answered 2026-10-15 by the owner: (a), on every platform, and (b) nowhere. The next subsection,
+*Every platform edits in place*, is the answer.*
+
+#### Every platform edits in place (the owner, 2026-10-15)
+
+*Added 2026-10-15; specified, not built. It is built by the slices of `ownership-checker.md` §30.
+It closes the open question above. Wherever *The representation: a plain array* says "on an
+in-place platform", read "on every platform". Its "On any other platform" bullet under *Writes*,
+the copying writers under *The runtime*, and the "any other platform" column of `language.md`
+§6.8's cost table are withdrawn.*
+
+The owner's decision, 2026-10-15, verbatim: **"no 'fallbacks', i want a proper implementation.
+this is no longer a platform decision, it's core to beni."**
+
+**The rule is the language's.** Ownership is no longer a property a platform declares. The
+ownership checker runs in every `check` and every `build`: on `node`, `html`, `browser`,
+`browser-tea`, `browser-direct`, every test platform, every platform a third party writes, and
+with no platform at all. On every platform, every demand in a program that builds is one the
+checker accepted, and the emitter lowers it in place. Every other demand is a compile error
+(`ownership-checker.md` §28.5). The manifest key `"lists"` is withdrawn (`boundary.md` §5.2,
+amended). So one list program costs the same on every platform, and the `run/` corpus on `node`
+measures the code a browser runs.
+
+**There is no fallback anywhere.** None of these exist, on any platform:
+
+- a copy where ownership is not proved;
+- a copying writer beside the in-place one;
+- a `"lists"`-gated lowering;
+- a trie, or any other persistent structure behind `List`;
+- an interim in which constructions copy over plain arrays.
+
+A program that needs an old version writes `List.copy`, and the checker's message offers it. The
+O(n) copies that remain are the ones a program asks for by what it writes. Each is the same on
+every platform:
+
+- `List.copy`;
+- a prepend, which copies (decided 2026-10-11) and is not a demand;
+- a write whose base is a view, which first makes the view plain. That copy is about the view's
+  form, not about sharing (*The representation: a plain array*);
+- the functions that build a new list (`map`, `filter`, `concat`, the sorts and the rest).
+
+**One set of writers.** `core/List`'s public `set`, `update`, `swap`, `push`, `pop`, `insertAt`,
+`removeAt` and `append` are the in-place writers. No copying twin exists for a platform or for
+a value. A writer handed to a function as a value is the same function. Every call through it
+is a demand the checker decides, or the checker rejects the value where it leaves its sight
+(`ownership-checker.md` §30.4). So no call writes in place unchecked, and none copies silently.
+
+**In-place constructions land with the trie's removal.** Without a trie, a copying
+`[ …acc, x ]` makes every building loop O(n²). So no build of beni lowers lists as plain arrays
+while it still lowers constructions by copying. The representation, the in-place lowering of
+every demand and the removal of the trie are one slice (`ownership-checker.md` §30.5, O5). That
+slice comes after the oracle's conditions C1–C5 (`browser-direct.md`, the last amendment).
+
+**What every runtime keeps, on every platform.** Invariants 1, 3 and 8 above now hold on every
+platform.
+
+- **No runtime writes a list.** This covers a platform runtime, a sibling, the markup runtime,
+  `Debug` and the derived-comparison engine.
+- **No runtime keeps a list across a message unless its words say so.** A runtime that keeps a
+  list past the call that handed it over must say so in its ownership words, and the default
+  for a `foreign` with no words is `escaped` (`ownership-checker.md` §24.5).
+- **No runtime decides "unchanged" from a list's identity.** It may not skip work because a
+  list, or a value that a release build represents by a list, is `===` the one it saw last, or
+  is a view over the same base at the same offset. §15.5, amended the same day, says what that
+  removes from the `dom` lowering's runtime and what the change costs.
+
+The identity of every value that is not a list still means "unchanged", as `language.md` §11.12
+promises. The reason is that only lists are written in place. `browser-direct.md` §7.4's
+assignment to records waits on its own condition C4. Until C4 lands, a record, a tuple, a
+constructor or a closure that is `===` the one seen last was not rebuilt, so it holds the same
+lists. The checker also proves that a list was not written in place while anything that holds
+it is read afterwards (thesis P7, *Why write sets provide it*).
+
+**Identity of a written list.** On every platform, a writer that writes returns its input
+array, edited. The *Identity* bullets about a fresh array "on any other platform" are
+withdrawn.
+
 #### The representation: E1t
 
 *Superseded 2026-10-15 by *The representation: a plain array* (above), once S7 lands; kept as the record.*
@@ -8863,6 +8940,47 @@ plain list in place and a view over `$b` from `$o`, with no copy. The trie bulle
 `$chunks()` proposal are withdrawn, and `same`'s trie case goes. A platform runtime that skips by
 a list's identity cannot run where lists are edited in place. §4's open question says when that
 matters.
+
+*Amended 2026-10-15 again (the owner; §4, *Every platform edits in place*):* lists are edited in
+place on every platform, so the open question is closed. **The `dom` lowering and its runtime
+stop deciding "unchanged" from the identity of a list.** This is a rule about the values the
+lowering knows to be lists: values whose static type is `List a`, or whose type a release build
+represents by a list (a one-constructor type of one field over such a type, transitively, §9
+*Item 4*). The rule is thesis P7 restated for a renderer that has no write sets. Every identity
+test listed below either goes or is emitted only for a value that is not a list:
+
+- **the `For` skip** (`items === s.b`, *Identity* below). It goes, and so does `same`'s view case.
+  A `For` reconciles its items on every render of its root. The slot keeps no list from one
+  render to the next, so `s.b` goes too (§4, invariant 8). The key map, the ends-first match,
+  the rank chains and the selector are unchanged, because they work on items and keys;
+- **a row's item test** (`item === i.x`, *What reads only the item*), when the item's type is a
+  list. Such a row is patched on every render that reaches it. A row whose item is a record, a
+  constructor or a scalar keeps the test;
+- **a row input, a component's argument, a `Show`'s value or its body's inputs**, when that
+  value's type is a list. The value is compared as changed on every render, and the other
+  inputs keep `===`. The lowering knows each input's type when it compiles the row, so it emits
+  the comparison per input, as it already places the selector's probe. No test happens at run
+  time that the identity design did not already do;
+- **a hole whose value is a list**: a `List (Html msg)` child, a class list or a style list.
+  It is written on every run of its root;
+- **a root's value groups** (§15.4, *A root computes its own values*; `language.md` §11.11 as
+  amended the same day). A group whose read paths include one whose value is a list runs on every
+  render of its root. A `let` such as `shown = top model.items` is one of these groups.
+
+The identity of a record, a tuple, a constructor, a closure, a markup block or a scalar still
+means "unchanged", and `Rt.patch`'s `b === i.b` stays. §4, *Every platform edits in place*, says
+why only a value that is itself a list loses it. A block that is `===` the last one was not
+rebuilt, so it is still a holder of every list its values reach. The checker rejects a write to
+such a list while the block is read afterwards.
+
+*What it costs*, still to be measured: a `For` over a list that did not change now runs its
+ends-first match, O(n) pointer comparisons of items, where the skip did one comparison. A row
+whose item is a list is patched where it was skipped. Research 29's harness (CLAUDE.md rule 8)
+measures every operation before and after, on `browser` and `browser-tea`, in the slice that
+makes the change (`ownership-checker.md` §30.5, O3). A loss to Solid 2 is a finding, reported
+under rule 10, and it is never answered by putting the skip back. The `ssr` lowering keeps
+nothing across renders, so this rule takes nothing from it. `browser-direct` already keeps the
+rule through its write sets (`browser-direct.md` §7.4, the first rule).
 
 *Added 2026-10-01; specified, not built* (§4, *Lists are arrays*). Every loop of the markup
 runtimes over a list — `forKeyed`, `forPosition`, `trimmed`, `childList`, `classes`' and `styles`'
