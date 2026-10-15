@@ -89,7 +89,7 @@ aliases, escapes and both container/deep conditions. Arriving shared cells
 remain shared. Reading the destination afterwards still uses the ordinary
 top-level rule. The checker does not insert a copy or re-evaluate an initializer.
 Reference counts saturate at two and are computed once per module. Ownership
-summary blocks advance from version 4 to 5.
+summary blocks advance from version 4 to 6 (including the review guard below).
 
 The rule is listed in §26.7 as not yet modelled in Lean: its language does not
 have private module bindings or module initialization. The risk is accepting a
@@ -135,3 +135,32 @@ The full pending run also exposes an unrelated stale signature for
 `ValueCommands`: it currently reports `missing_field` (`tracker`), while its
 existing RED line expects `list_may_be_shared`. That is a type-checking error
 before ownership runs. This work does not rewrite that fixture or its signature.
+
+
+## 5. Review follow-up
+
+Claude requested suspension, nonstandard reference and shape coverage. Ordinary
+top-level values are already sync (`transparent-effects-proposal.md` §15.2 item
+7; `check/bad/core/TopLevelValueSuspends` pins `must_not_suspend`). The review
+prompted a further necessary guard: annotated `where` constants may be
+recomputed when evidence changes (`static-dispatch-spike.md` §8.1). Both ends
+of a transfer must have no solved evidence or identity parameters. Explicit
+constraints are checked through Dispatch, including annotation-only extra
+constraints. With this guard stashed, the generic pop and evidence-source
+regressions change to accepted. A repeated evidence-parameterized consumer
+invalidates the one-shot proof; excluding an evidence-parameterized source is
+a conservative boundary of this rule, rather than a claim of real sharing in
+its particular empty-list twin. Block version 6 invalidates the earlier
+version 5 proof.
+
+Additional class cases accept a branch and a chain of initializers, reject a
+local function's read, and reject second reads appearing in a schema conversion
+or markup hole. Known private names in those expressions lower through
+`bir/Lower.zig`'s `resolveValue` to `.top`; schema namespace instructions name
+schema declarations, which are ineligible sources. Private values cannot be
+public dispatch members. The ownership memo's comment now states that the
+current walk is serial and parallel walkers would need synchronization.
+
+`allTriangleCoords` is private with one initialization read too. Its fresh
+allocations therefore transfer alongside `centralHexagon`; the right operand
+of concatenation is only read. No second ownership error is claimed for it.

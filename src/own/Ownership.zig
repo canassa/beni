@@ -493,6 +493,7 @@ ctor_ids: std.AutoHashMapUnmanaged(u64, u32) = .empty,
 slots: []?[]Slot = &.{},
 groups: []?Groups = &.{},
 /// Saturated reference counts, allocated once per application module.
+/// Ownership walks serially; parallel walkers would need to synchronize this memo.
 private_reads: []?[]u8 = &.{},
 /// Per module: whether the run reports on it.
 report_for: []bool = &.{},
@@ -5327,6 +5328,11 @@ const Walker = struct {
         if (t.m != w.m or w.o.in.packages[w.m] != .app or w.frame != 0 or
             w.decl.params != 0 or w.decl.kind != .value or w.recursive or
             s.limit != .none or s.coarse) return false;
+        const dispatch = &w.o.in.dispatch[w.m];
+        // Evidence-polymorphic values run at their uses, not once at load.
+        for ([_]u32{ w.decl_index, t.d }) |di| {
+            if (dispatch.declRequirements(di).len != 0 or dispatch.declIdentities(di).len != 0) return false;
+        }
         const source = w.bir.decls[t.d];
         if (source.is_pub or source.params != 0 or source.kind != .value) return false;
         for (s.res) |r| switch (r.prov.kind) {
