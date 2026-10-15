@@ -1,0 +1,36 @@
+-- A local captured only by init transfers; allocating in init is also fresh.
+import Html exposing (Html)
+import Tea
+
+
+pub onlyInit : Tea.Program
+onlyInit =
+    m = { items = [ 7 ] }
+    Tea.sandbox
+        { init = λ⊤ → m
+        , update = λ_ model → { model | items = List.push model.items 8 }
+        , view = λmodel → <button onClick={⊤}>{List.length model.items}</button>
+        }
+
+
+pub madeInside : Tea.Program
+madeInside =
+    Tea.sandbox
+        { init = λ⊤ → { items = [ 7 ] }
+        , update = λ_ model → { model | items = List.push model.items 8 }
+        , view = λmodel → <button onClick={⊤}>{List.length model.items}</button>
+        }
+
+
+initial : { items : List Int }
+initial = { items = [ 7 ] }
+
+
+pub onlyInitFromTop : Tea.Program
+onlyInitFromTop =
+    m = initial
+    Tea.sandbox
+        { init = λ⊤ → m
+        , update = λ_ model → { model | items = List.push model.items 8 }
+        , view = λmodel → <button onClick={⊤}>{List.length model.items}</button>
+        }

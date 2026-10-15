@@ -302,7 +302,17 @@ pub fn build(a: Allocator, src: Src, m: u32, lines: []const Demand) Allocator.Er
         }
     }
     if (cause == .top_level) {
-        try w(&out, a, "Build the value inside a function, so that each call makes fresh lists:\n\n    init ⊤ = …\n\nCall that function where the model is made. Wrapping `{s}` in `λ⊤ → {s}` still returns the same shared value.\n\n", .{ top, top });
+        if (entry)
+            try w(&out, a, "Build the value inside `init ⊤`, so that each call makes fresh lists:\n\n    init ⊤ = …\n\nCall that function where the model is made. Wrapping `{s}` in `λ⊤ → {s}` still returns the same shared value.\n\n", .{ top, top })
+        else {
+            const whole = if (d.top) |t| t[2] == 1 else false;
+            var copy = if (whole) top else d.base;
+            // Report paths qualify this module, but its own name is not an
+            // import alias that the suggested source expression can use.
+            const prefix = try std.fmt.allocPrint(a, "{s}.", .{src.vtable.module_name(src.ctx, m)});
+            if (std.mem.startsWith(u8, copy, prefix)) copy = copy[prefix.len..];
+            try w(&out, a, "Make `{s}` a function that builds a fresh value at each call, or change a copy: `List.copy {s}`.\n\n", .{ top, copy });
+        }
         fixed = true;
     } else if (cause == .read_only) {
         try w(&out, a, "Let `{s}` build a new list instead, or change a copy: `List.copy {s}`.\n\n", .{ entry_fn, d.base });
@@ -327,7 +337,10 @@ pub fn build(a: Allocator, src: Src, m: u32, lines: []const Demand) Allocator.Er
     if (d.verdict == .pending) {
         try w(&out, a, "This is a limit of the checker, not proof of sharing: a call it cannot see may hand the function a list something else still holds.", .{});
     } else if (cause) |c| switch (c) {
-        .top_level => try w(&out, a, "This is the language's rule for top-level values, whether or not anything else reads the list. `init` builds its model; a top-level value it returns is still shared (ownership-checker.md §22.2).", .{}),
+        .top_level => if (entry)
+            try w(&out, a, "This is the language's rule for top-level values, whether or not anything else reads the list. `init` builds its model; a top-level value it returns is still shared (ownership-checker.md §22.2).", .{})
+        else
+            try w(&out, a, "This is the language's rule for top-level values, whether or not anything else reads the list (ownership-checker.md §4.2).", .{}),
         .read_only => try w(&out, a, "This is the platform's rule for `{s}`, whether or not anything else reads the list.", .{entry_fn}),
         .platform => try w(&out, a, "This is the rule of the runtime this program is mounted by.", .{}),
         else => if (exact) switch (c) {

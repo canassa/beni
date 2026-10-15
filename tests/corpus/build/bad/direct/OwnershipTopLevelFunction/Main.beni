@@ -1,0 +1,21 @@
+-- An ordinary function writing a top-level list needs no model-entry advice.
+-- For a record, copy its list field rather than passing the record to List.copy.
+import Html exposing (Html)
+import Tea
+
+
+initial : { items : List Int }
+initial = { items = [ 7 ] }
+
+
+grow : Int → List Int
+grow n = List.push initial.items n
+
+
+main : Tea.Program
+main =
+    Tea.sandbox
+        { init = λ⊤ → 0
+        , update = λn _ → List.length (grow n)
+        , view = λn → <button onClick={n + 1}>{String.fromInt n}</button>
+        }

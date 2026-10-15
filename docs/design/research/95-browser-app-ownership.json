@@ -869,12 +869,45 @@
     "TodoMVC_value_fuzz_millions": 4300,
     "policy": "Page and value-fuzz grants are separate; no checker or comparison relaxed."
   },
-  "final_validation": {
+  "captured_local_review": {
+    "date": "2026-10-15",
+    "base": "134d24ab96c5b57f1917ed67af3b931a30a16add",
+    "includes_merged_pr": 124,
+    "rejected_fixtures": [
+      "OwnershipInitCapturedTop",
+      "OwnershipInitCapturedLiteral",
+      "OwnershipInitCapturedCarried"
+    ],
+    "positive_fixture": "EntryInitCaptureOnly",
+    "todo_and_stern_paired_pass_without_initialization_transfer": true,
+    "ownership_block_version": 7,
+    "orphan_budget_regressions": [
+      "missing page",
+      "tea page has no value fuzz",
+      "unknown corpus kind"
+    ],
+    "reported_pair_ownership_refused_before_fix": false,
+    "reported_pair_ownership_refused_after_fix": true
+  },
+  "historical_app_repair_validation": {
     "host": "x86_64-linux",
     "test_run_hashes_exit": 0,
     "gates_exit": 0,
     "macos_known_case_folding_failures": 2,
     "original_tea_goldens_changed": false,
     "additional_ownership_rule_changes": false
+  },
+  "review_final_validation": {
+    "host": "x86_64-linux",
+    "test_run_hashes_exit": 0,
+    "gates_exit": 0,
+    "macos_constituents": {
+      "passed": 1303,
+      "skipped": 15,
+      "known_case_folding_failures": 2
+    },
+    "source_and_fixture_checksums_match": true,
+    "original_tea_goldens_changed": false,
+    "new_budget_grants": false
   }
 }

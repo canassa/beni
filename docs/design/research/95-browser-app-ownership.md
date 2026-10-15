@@ -4,7 +4,8 @@
 initialization-transfer rule is retained as historical evidence in
 [`95-browser-app-ownership.json`](95-browser-app-ownership.json). The independent
 audit below corrects its causal and scheduling claims. The repaired apps are
-measured on the rebased PR; no additional checker rule is introduced.*
+measured on the rebased PR. The later captured-local soundness correction is
+recorded separately in §5.*
 
 ## 0. Outcome
 
@@ -117,8 +118,8 @@ module initialization. The original positive/negative class fixtures remain:
 repeated/deferred/public/function reads, evidence parameters, result aliases,
 shared arrivals, escapes, chains and separate allocations.
 
-Those are the checker changes already present in #116. This follow-up changes
-no checker rule. In particular it adds no permission for an `init` function
+Those are the checker changes already present in #116. The app-repair follow-up changed
+no checker rule; the subsequent captured-local correction is recorded in §5. In particular it adds no permission for an `init` function
 returning a top-level value.
 
 ## 3. Diagnostics and executable evidence
@@ -174,3 +175,35 @@ checksums match this worktree. The macOS constituent checks and hash recording
 have only the two known case-folding failures; exact gates refuse that host.
 The focused Bike Wars pending replay matches `not_implemented` plus its two
 existing prepend warnings. No checker refusal was weakened.
+
+## 5. Captured-local entry correction (2026-10-15)
+
+The independent review found a soundness hole in §22.2: `init = λ⊤ → m`
+returned cells also retained by `view`. A local literal already reached this
+hole on master; this PR's private initialization transfer also made `m = initial`
+reach it. Neither is an allocation by the init body. The dated §22.2 amendment
+now keeps every other entry field's environment live against runtime writes,
+including instantiated bindings of helper-returned closures. Both reported
+programs and a carried-view twin are rejected fixtures. The init-only capture
+and body-allocation positives remain accepted; block version 7 invalidates older
+proofs. This is a soundness fix, not a new acceptance rule.
+
+Rebased onto master including #124 (`134d24ab9`). Both reported refusals fail
+their tests when the capture fix is set aside. TodoMVC and Sternhalma's paired
+pages also pass with initialization transfer temporarily disabled, on both
+platforms in both modes. No shipped app depends on initialization transfer now.
+The original tea goldens remain unchanged.
+
+Diagnostics now scope the `init ⊤` advice and §22.2 citation to entry demands.
+An ordinary top-level write recommends making the value a function or copying
+the list (§4.2); a record's list field is the copy target. Inferred evidence at
+two types, return-type dispatch with hidden identity, recursive consumers,
+coarsened results and width-limit arrivals have ownership fixtures. Budget files
+are checked against the complete case inventory before filters, including a
+separate value-fuzz case; orphan page/fuzz/unknown-kind grants fail. Those three
+harness tests fail when the inventory fix is set aside.
+
+Final validation of the capture correction: full Linux `zorg build test-run-hashes`
+and exact `zorg build gates` both pass. Source and fixture checksums match the
+worktree. macOS constituent checks have 1,303 passed, 15 skipped and only the two
+known case-folding failures. No budget grant was added or increased.
