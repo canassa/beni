@@ -136,6 +136,15 @@ try {
   // fixture (bridge-known-unsafe.json) is reported; any other fails the audit.
   const known = JSON.parse(await readFile(resolve(own, 'scripts/bridge-known-unsafe.json'), 'utf8'));
   const unknown = confirmed.filter(id => !Object.hasOwn(known, id));
+  // A pin names a generated id, valid only while its generator and seed are
+  // frozen. A pinned id this campaign judged must still be confirmed: once
+  // its defect is fixed (it is no longer a lead) or the stream changes, the
+  // pin is stale and must be removed with its fixture's promotion.
+  const judgedIds = new Set(judgments.map(r => r.id));
+  const exported = id => report.streams.some(s => s.name === streamOf(id) &&
+    !(/^(seed|v6)-/.test(id) && Number(id.split('-').at(-1)) >= s.programs));
+  const stale = Object.keys(known).filter(id => exported(id) && !(judgedIds.has(id) && confirmed.includes(id)));
+  assert.equal(stale.length, 0, `stale known-unsafe pins: ${stale.join(', ')}`);
   if (confirmed.length) console.log(`confirmed unsafe: ${confirmed.join(', ')} (pinned: ${confirmed.filter(id => Object.hasOwn(known, id)).join(', ') || 'none'})`);
   assert.equal(unknown.length, 0, 'interpreter-confirmed unsafe original programs without a pending fixture');
   if (isLong) assert(Object.values(survivingOriginals).every(ids => ids.length === 0), 'an original defect cluster remains accepted');

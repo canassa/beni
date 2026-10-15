@@ -16,5 +16,7 @@
 Both campaigns used one frozen ReleaseSafe compiler from master `dd38d162e`.
 The long audit reports one confirmed unsafe original, `v6-17-5271`, pinned by
 `tests/pending/check/bad/direct/BridgeCallbackReturnsParameter.beni` and listed in
-`scripts/bridge-known-unsafe.json`; its core is
+`scripts/bridge-known-unsafe.json` (a generated id, valid only while generator
+v6 and seed 17 are frozen; the audit fails when a pin it judged is no longer
+confirmed, so a fixed or moved pin cannot linger); its core is
 `regressions/bridge/CallbackReturnsParameter.json`.
