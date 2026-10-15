@@ -39,12 +39,14 @@ parser =
         ]
 
 
---| The route at an address under `Deploy.basePath`.
+--| The route at an address under `Deploy.basePath`. The base must end at
+--| a `/` or at the end of the path, so `/beni/conduitlogin` is no route
+--| under `/beni/conduit`.
 pub fromUrl : Url → Maybe Route
 fromUrl url =
-    if String.startsWith url.path Deploy.basePath then
-        Url.Parser.parse parser
-            { url | path = String.dropLeft url.path (String.length Deploy.basePath) }
+    rest = String.dropLeft url.path (String.length Deploy.basePath)
+    if String.startsWith url.path Deploy.basePath && (rest == "" || String.startsWith rest "/") then
+        Url.Parser.parse parser { url | path = rest }
     else
         Nothing
 
