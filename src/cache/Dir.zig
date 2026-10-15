@@ -108,6 +108,20 @@ pub fn open(io: Io, path: []const u8, failure: *?Failure) OpenError!Dir {
     return .{ .io = io, .handle = handle, .path = path };
 }
 
+/// Move the cache into its subdirectory `name`, created if it is missing.
+/// `--ownership-everywhere` (`Cli.Common`) keeps its entries there: their
+/// summary blocks are computed under other entry rows than an ordinary
+/// run's, and a key that told them apart would also miss every module of
+/// the checked core. The path a message names stays the parent's.
+pub fn into(dir: *Dir, name: []const u8, failure: *?Failure) OpenError!void {
+    const handle = dir.handle.createDirPathOpen(dir.io, name, .{}) catch |err| {
+        failure.* = .{ .path = dir.path, .err = err };
+        return error.CachePath;
+    };
+    dir.handle.close(dir.io);
+    dir.handle = handle;
+}
+
 /// The cache a `check` or a `build` was asked for, or null.
 ///
 /// `--no-cache` wins over `--cache-dir` and produces the same null a run
