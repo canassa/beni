@@ -4,7 +4,7 @@ index 9a4660419..12fd4f8e0 100644
 +++ b/src/js/Emit.zig
 @@ -4324,10 +4324,16 @@ const Emitter = struct {
          };
- 
+
          for (h.order) |p| switch (p) {
 -            .module => |i| if (slots[i].text) |text| try appendJoined(scratch, &out, text, true),
 +            .module => |i| if (slots[i].text) |text| {
@@ -23,7 +23,7 @@ index 9a4660419..12fd4f8e0 100644
 @@ -4347,6 +4353,12 @@ const Emitter = struct {
              },
          };
- 
+
 +        var names = e.globals.map.iterator();
 +        while (names.next()) |item| {
 +            const k = item.key_ptr.*;
