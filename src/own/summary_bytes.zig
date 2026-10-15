@@ -63,7 +63,8 @@ pub const magic = "BENIOWN\x00";
 /// absent, never misread. In this PR: 5 transferred private initializers,
 /// 6 excluded evidence-driven values, 7 retained entry environments, and
 /// 8 preserves unknown/root entry paths while excluding only known init fields.
-pub const version: u32 = 8;
+/// 9 reads `need` through taken elements (§16.4 item 5, amended 2026-10-15).
+pub const version: u32 = 9;
 
 pub const Error = error{Bad} || Allocator.Error;
 

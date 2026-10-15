@@ -7045,7 +7045,7 @@ const Walker = struct {
         const actual = (try w.actualOf(s, avs, j)) orelse return;
         // A function slot (§24.9) has no argument of its own: what the
         // checks below read off an argument's text or type, they skip.
-        if (j >= args.len or j >= s.params) return w.checkSlot(inst, s, avs, j, ff, actual, callee.name);
+        if (j >= args.len or j >= s.params) return w.checkSlot(inst, callee, args, avs, j, ff, actual);
         // The caller's own function parameter, passed on.
         if (w.fnParamOf(actual)) |jj| {
             if (w.frame != 0) {
@@ -7064,7 +7064,9 @@ const Walker = struct {
     /// passed on; a function value the caller wrote went through `sight`
     /// where it was stored, so what remains is what the callee does with
     /// what it returns (`need`).
-    fn checkSlot(w: *Walker, inst: Inst.Index, s: *const Summary, avs: []const AV, j: u32, ff: FunFacts, actual: AV, callee: []const u8) Allocator.Error!void {
+    fn checkSlot(w: *Walker, inst: Inst.Index, slot_callee: Callee, args: []const Inst.Index, avs: []const AV, j: u32, ff: FunFacts, actual: AV) Allocator.Error!void {
+        const s = slot_callee.sum;
+        const callee = slot_callee.name;
         if (w.frame == 0) if (w.fnParamOf(actual) orelse try w.slotOf(actual)) |jj| return w.passOn(inst, s, avs, j, ff, jj);
         if (!ff.need) return;
         const ictx: InstCtx = .{ .inst = inst, .s = s, .avs = avs, .depth = 0 };
@@ -7080,7 +7082,10 @@ const Walker = struct {
                 reported = true;
                 continue;
             };
-            if (try w.returnsOwned(c, s, avs, ictx, j, 0, none)) continue;
+            if (try w.returnsOwned(c, s, avs, ictx, j, 0, none)) {
+                try w.returnedParamDemands(inst, slot_callee, args, avs, c, j, eps, true, 0);
+                continue;
+            }
             const name: []const u8 = switch (cls) {
                 .closure => "<lambda>",
                 .func => |t| try w.qualified(t),
@@ -7189,7 +7194,7 @@ const Walker = struct {
                     .fixed = .{ .verdict = .{ .rejected = .need }, .detail = why },
                     .prelim = .{ .cause = .need, .detail = why, .approx = approx },
                 });
-            }
+            } else try w.returnedParamDemands(inst, callee, args, avs, c, j, eps, true, 0);
             return;
         } else if (classes.len == 0) try w.needUnknown(inst, try w.baseText(args[j]), callee.name);
         var reported = false;
@@ -7218,8 +7223,12 @@ const Walker = struct {
             if (!ff.seen) {
                 // Need does not depend on seen: retained captures must be
                 // empty at callers, and all other results must be owned.
-                if (ff.need and !try w.taggerReturnsOwned(c, s, avs, j, cls, ictx))
-                    try w.valueLine(tok, name, .{ .rejected = .need }, try std.fmt.allocPrint(arena, "{s} edits what it returns, which may be a list it does not own", .{callee.name}), "", w.frame != 0);
+                if (ff.need) {
+                    if (!try w.taggerReturnsOwned(c, s, avs, j, cls, ictx))
+                        try w.valueLine(tok, name, .{ .rejected = .need }, try std.fmt.allocPrint(arena, "{s} edits what it returns, which may be a list it does not own", .{callee.name}), "", w.frame != 0)
+                    else
+                        try w.returnedParamDemands(inst, callee, args, avs, c, j, eps, true, 0);
+                }
                 if (writes) switch (cls) {
                     .closure => |ci| try w.closures.items[ci].consumed.append(w.a, .{ .kind = .pending, .why = try std.fmt.allocPrint(arena, "{s} loses sight of what calls it", .{callee.name}) }),
                     .func => try w.valueLine(tok, name, .pending, try std.fmt.allocPrint(arena, "{s} loses sight of what calls it", .{callee.name}), "", false),
@@ -7264,7 +7273,7 @@ const Walker = struct {
                     // A returned destructive loan must also be dead in the
                     // caller for the lifetime of the feedback result (§29).
                     if (e.owned and e.prov.kind == .cb) {
-                        try w.callbackLoanDemands(inst, callee, args, avs, e.prov.a, written, 0);
+                        try w.callbackLoanDemands(inst, callee, args, avs, e.prov.a, written, u.bits & bit_d != 0, 0);
                     }
                     const owned = e.owned and try w.provOwned(e.prov, s, avs, ictx, none, 0, written);
                     if (!owned) {
@@ -7334,7 +7343,12 @@ const Walker = struct {
             }
             // The callee edits what the callback returns (§16.2's need).
             var need_bad = false;
-            if (ff.need and !try w.returnsOwned(c, s, avs, ictx, j, 0, none)) need_bad = true;
+            if (ff.need) {
+                if (!try w.returnsOwned(c, s, avs, ictx, j, 0, none))
+                    need_bad = true
+                else
+                    try w.returnedParamDemands(inst, callee, args, avs, c, j, eps, true, 0);
+            }
             switch (cls) {
                 .send => if (bad[0]) |why| try w.demands.append(w.a, .{
                     .kind = .value,
@@ -7525,28 +7539,53 @@ const Walker = struct {
         }
     }
 
-    /// A callback result that will be written transfers any item loan it
-    /// returns. Its input holder must not survive that transfer, and the
-    /// existing taken-container condition proves separation of positions.
-    fn callbackLoanDemands(w: *Walker, inst: Inst.Index, callee: Callee, args: []const Inst.Index, avs: []const AV, j: u32, written: u32, depth: u32) Allocator.Error!void {
+    /// §16.4 item 5 as amended 2026-10-15 (CK-233): the callee writes what
+    /// the actual for its function parameter `j` returns, at `written` of
+    /// that result (and below it when `deep`), relying on it being owned. A
+    /// returned parameter is the cell the callee supplied there, and a supply
+    /// of the callee's own parameter was owned only in the callee's frame:
+    /// the caller's argument is what is written, so it gets a call-site
+    /// demand. A supply of another callback's result asks the same of that
+    /// callback's actual. §29's taken-item loans are the case it began with.
+    fn callbackLoanDemands(w: *Walker, inst: Inst.Index, callee: Callee, args: []const Inst.Index, avs: []const AV, j: u32, written: u32, deep: bool, depth: u32) Allocator.Error!void {
         if (depth >= inst_depth) return;
-        const s = callee.sum;
-        const actual = (try w.actualOf(s, avs, j)) orelse return;
+        const actual = (try w.actualOf(callee.sum, avs, j)) orelse return;
         for (try w.classesOf(actual)) |cls| {
             const c = (try w.classSummary(cls)) orelse continue;
-            for (c.res) |r| {
-                if (!w.o.isPrefix(r.path, written) or r.prov.kind != .param) continue;
-                for (s.supply) |supply| {
-                    if (supply.fun != j or supply.k != r.prov.a or !w.o.overlap(supply.path, r.prov.path)) continue;
-                    const p = supply.prov;
-                    if (p.kind == .cb and p.a != j) {
-                        try w.callbackLoanDemands(inst, callee, args, avs, p.a, written, depth + 1);
-                    }
-                    if (!p.taken or p.kind != .param or p.a >= args.len) continue;
-                    var path = p.path;
-                    if (try w.o.suffix(supply.path, r.prov.path)) |rest| path = try w.o.concat(path, rest);
-                    if (try w.o.suffix(r.path, written)) |rest| path = try w.o.concat(path, rest);
-                    try w.callSiteDemandDeep(inst, callee.op, args, avs, if (callee.closure != none) try w.single(.{ .kind = .closure, .a = callee.closure }) else &.{}, p.a, path, "a returned item is transferred to a later written callback result", if (supply.approx or r.approx) .approx else .exact, null, false);
+            try w.returnedParamDemands(inst, callee, args, avs, c, j, written, deep, depth);
+        }
+    }
+
+    /// `callbackLoanDemands` for one class `c` of the actual for `j` — also a
+    /// constructor's row (§23.5) or an unseen tagger's.
+    fn returnedParamDemands(w: *Walker, inst: Inst.Index, callee: Callee, args: []const Inst.Index, avs: []const AV, c: *const Summary, j: u32, written: u32, deep: bool, depth: u32) Allocator.Error!void {
+        if (depth >= inst_depth) return;
+        const s = callee.sum;
+        for (c.res) |r| {
+            if (r.prov.kind != .param) continue;
+            const above = w.o.isPrefix(r.path, written);
+            if (!above and !(deep and w.o.isPrefix(written, r.path))) continue;
+            // The path of the callback's parameter that is written.
+            var at = r.prov.path;
+            if (above) if (try w.o.suffix(r.path, written)) |rest| {
+                at = try w.o.concat(at, rest);
+            };
+            for (s.supply) |supply| {
+                if (supply.fun != j or supply.k != r.prov.a or !w.o.overlap(supply.path, at)) continue;
+                const p = supply.prov;
+                // A borrowed supply is rejected by `returnsOwned` already;
+                // a taken item's loan is demanded either way (§29).
+                if (!supply.owned and !p.taken) continue;
+                var path = p.path;
+                if (try w.o.suffix(supply.path, at)) |rest| path = try w.o.concat(path, rest);
+                switch (p.kind) {
+                    .cb => if (p.a != j) try w.callbackLoanDemands(inst, callee, args, avs, p.a, path, deep, depth + 1),
+                    .param => if (p.a < args.len) {
+                        const origin: Origin = if (s.limit != .none or c.limit != .none) .limit else if (supply.approx or r.approx) .approx else .exact;
+                        const note = if (w.mode != .report) "" else if (p.taken) "a returned item is transferred to a later written callback result" else try std.fmt.allocPrint(w.o.out.allocator(), "{s} writes what its callback returns, and the callback returns this argument", .{callee.name});
+                        try w.callSiteDemandDeep(inst, callee.op, args, avs, if (callee.closure != none) try w.single(.{ .kind = .closure, .a = callee.closure }) else &.{}, p.a, path, note, origin, null, deep);
+                    },
+                    else => {},
                 }
             }
         }
@@ -8828,7 +8867,9 @@ const Walker = struct {
                 for (w.demands.items) |rec| {
                     if (rec.kind == .probe or rec.kind == .value) continue;
                     for (rec.cells) |e| {
-                        const c = w.cells.items[e.cell];
+                        // A taken element stands for the cell it was taken
+                        // from (§18.5), which may be what πⱼ returned.
+                        const c = w.cells.items[try w.takenBase(e.cell)];
                         if (c.kind == .cbres and c.a == j) need = true;
                     }
                 }

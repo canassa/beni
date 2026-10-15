@@ -1,0 +1,126 @@
+-- ownership-checker.md §16.4 item 5, amended 2026-10-15 (CK-233): a callee
+-- that writes what its callback returns writes the caller's argument when the
+-- callback returns what the callee supplied it from a parameter. Each rejected
+-- case reads its argument after the call; each accepted twin does not, or
+-- hands over a list nothing else holds.
+pushReturned p f =
+    b = f p
+    List.push b 3
+
+
+identity x = x
+
+
+pub returnsParameter ⊤ =
+    xs = [ 1, 3, 2 ]
+    r = pushReturned xs identity
+    { grown = r, old = xs }
+
+
+pub returnsParameterDead ⊤ =
+    xs = [ 1, 3, 2 ]
+    pushReturned xs identity
+
+
+pub returnsFresh ⊤ =
+    xs = [ 1, 3, 2 ]
+    r = pushReturned xs λ_ → [ 0 ]
+    { grown = r, old = xs }
+
+
+-- A path inside the parameter.
+pushField p f = List.push (f p) 3
+
+
+pub returnsField ⊤ =
+    rec = { items = [ 1 ], count = 0 }
+    r = pushField rec λx → x.items
+    { grown = r, old = rec.items }
+
+
+pub returnsOtherField ⊤ =
+    rec = { items = [ 1 ], other = [ 2 ] }
+    r = pushField rec λx → x.items
+    { grown = r, old = rec.other }
+
+
+-- Through a second callback: `g` writes what `f` returned.
+chain p f g = g (f p)
+
+
+pub nestedCallbacks ⊤ =
+    xs = [ 1 ]
+    r = chain xs identity λl → List.push l 3
+    { grown = r, old = xs }
+
+
+pub nestedCallbacksDead ⊤ =
+    xs = [ 1 ]
+    chain xs identity λl → List.push l 3
+
+
+-- Passed on through a caller's own function parameter.
+wrap p f = pushReturned p f
+
+
+pub passedOn ⊤ =
+    xs = [ 1 ]
+    r = wrap xs identity
+    { grown = r, old = xs }
+
+
+-- A constructor handed as a tagger returns its argument at a field.
+type Box
+    = Box (List Int)
+
+
+pushBoxed p f =
+    case f p of
+        Box items →
+            List.push items 3
+
+
+pub tagger ⊤ =
+    xs = [ 1 ]
+    r = pushBoxed xs Box
+    { grown = r, old = xs }
+
+
+-- A fold whose callback returns its accumulator, edited by the callee.
+pushFolded rows init f = List.push (List.foldl rows init f) 9
+
+
+pub foldReturnsAccumulator ⊤ =
+    xs = [ 1 ]
+    r = pushFolded [ 2 ] xs λ_ acc → acc
+    { grown = r, old = xs }
+
+
+pub foldReturnsAccumulatorDead ⊤ = pushFolded [ 2 ] [ 1 ] λ_ acc → acc
+
+
+-- `map`'s callback returns its element, and the callee edits an element of
+-- the result.
+pushFirst rows f =
+    case List.map rows f of
+        [ first, …_ ] →
+            List.push first 3
+        [] →
+            []
+
+
+pub mapReturnsElement ⊤ =
+    rows = [ [ 1 ], [ 2 ] ]
+    r = pushFirst rows identity
+    { grown = r, old = rows }
+
+
+pub mapReturnsElementDead ⊤ =
+    rows = [ [ 1 ], [ 2 ] ]
+    pushFirst rows identity
+
+
+pub mapReturnsFresh ⊤ =
+    rows = [ [ 1 ], [ 2 ] ]
+    r = pushFirst rows λ_ → [ 0 ]
+    { grown = r, old = rows }
