@@ -27,15 +27,34 @@ interfaces: []const Interface,
 provenance: []const Interface.Provenance,
 interner: *const InternPool.Global,
 
-/// The three nodes one declaration emits besides its `via`s, and their
+/// The four nodes one declaration emits besides its `via`s, and their
 /// order in a module's member table (`Reach`'s `schema` kind is
-/// `decl * members + member`).
+/// `decl * members + member`). `root` is `S.schema`'s value, a compiled
+/// schema (`schema.md` §6, *A statically known schema runs compiled*): it
+/// reaches the other three only through guards, the description on
+/// `core/Schema`'s `nodeOf`, each direction on a `core/Schema` value that
+/// runs a compiled schema's worker of that direction (`root_guards`).
 pub const Member = enum(u2) {
     description = 0,
     read = 1,
     write = 2,
+    root = 3,
 
-    pub const count = 3;
+    pub const count = 4;
+};
+
+/// The `core/Schema` declarations whose survival lets a root reach each of
+/// the other members, any one of them enough: `nodeOf`, the one reader of
+/// a compiled schema's description; `parseWith` and `readSlot`, which run
+/// a compiled schema's decoding worker; `printWith` and `writeSlot`, its
+/// encoding one. Every other value that touches a worker — `list`,
+/// `nullable`, `converted` — only passes it on to one of these.
+pub const root_guards = [_]struct { Member, []const u8 }{
+    .{ .description, "nodeOf" },
+    .{ .read, "parseWith" },
+    .{ .read, "readSlot" },
+    .{ .write, "printWith" },
+    .{ .write, "writeSlot" },
 };
 
 /// A schema declaration of some module.
@@ -46,6 +65,7 @@ pub const Ref = struct { module: Graph.Index, decl: u32 };
 pub const compiled_values = [_][]const u8{
     "compiledParse", "compiledPrint", "compiledFail", "compiledForward", "compiledBackward",
     "belowBackward", "readSlot",      "writeSlot",    "pathAt",          "printableWithin",
+    "declared",
 };
 
 pub fn isCompiledValue(text: []const u8) bool {
@@ -64,6 +84,8 @@ pub fn coreNeeds(g: SchemaGraph, scratch: Allocator, r: Ref, member: Member, lib
     try subtree(plan, scratch, d.root, &nodes);
     const params = d.params_end - d.params_start;
     switch (member) {
+        // Under `--schema-library` the root is its description.
+        .root => if (!library) try out.append(scratch, "declared"),
         .description => {
             if (try g.recursive(scratch, r.module, r.decl)) try out.append(scratch, "recursive");
             for (nodes.items) |n| switch (tag(plan, n)) {
@@ -122,6 +144,7 @@ pub fn coreNeeds(g: SchemaGraph, scratch: Allocator, r: Ref, member: Member, lib
 /// same member of every definition its value references. Under
 /// `--schema-library` a direction reaches the description instead.
 pub fn memberTargets(g: SchemaGraph, scratch: Allocator, r: Ref, member: Member, library: bool, out: *std.ArrayList(struct { Ref, Member })) Allocator.Error!void {
+    if (member == .root) return;
     if (member != .description and library) {
         try out.append(scratch, .{ r, .description });
         return;

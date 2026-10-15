@@ -1301,7 +1301,7 @@ pub const Lowerer = struct {
     /// survived: its `via`s or one of its members.
     fn liveSchemaAny(l: *Lowerer, decl: u32) bool {
         const ref: SchemaGraph.Ref = .{ .module = l.in.module, .decl = decl };
-        return l.liveDecl(decl) or l.liveSchema(ref, .description) or l.liveSchema(ref, .read) or l.liveSchema(ref, .write);
+        return l.liveDecl(decl) or l.liveSchema(ref, .description) or l.liveSchema(ref, .read) or l.liveSchema(ref, .write) or l.liveSchema(ref, .root);
     }
 
     /// One of `core/Schema`'s values by name: a `pub` builder or runner

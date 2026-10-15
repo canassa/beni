@@ -1,0 +1,41 @@
+-- emit/app: a declaration's `schema` value carries its compiled workers, and
+-- only the ones the build runs (`docs/design/schema.md` §6, *A statically
+-- known schema runs compiled*).
+--
+-- `Schema.print (Point.schema ⊤)` reaches `Point`'s root member, and
+-- through `core/Schema`'s `printWith` its encoding worker. Nothing calls
+-- `parseWith` or `nodeOf`, so the value is `Schema$declared(null, null,
+-- …$$write, [])`: no description, no decoding worker, no builder. The
+-- generic `Pair` passed `Point.schema ⊤` closes its encoding worker over
+-- `writeSlot` of its argument once, when the value is made.
+import Node exposing (Program)
+import Schema
+
+
+schema Point =
+    x : Int
+    y : Int
+
+
+schema Pair a =
+    left : a
+    right : a
+
+
+main : Program
+main =
+    point = { x = 1, y = 2 }
+    Node.printLines
+        [ case Schema.print (Point.schema ⊤) point of
+            Ok text →
+                text
+
+            Err _ →
+                "failed"
+        , case Schema.print (Pair.schema (Point.schema ⊤)) { left = point, right = point } of
+            Ok text →
+                text
+
+            Err _ →
+                "failed"
+        ]

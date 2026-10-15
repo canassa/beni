@@ -1,0 +1,7 @@
+click #save
+respond 1 201 ""
+click #nan
+click #good
+respond 2 200 "[{\"note-title\":\"first\",\"stars\":3},{\"note-title\":\"second\",\"stars\":4}]"
+click #partial
+respond 3 200 "[{\"note-title\":\"first\",\"stars\":3},{\"stars\":4}]"

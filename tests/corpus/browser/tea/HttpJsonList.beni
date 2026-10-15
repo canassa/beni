@@ -1,0 +1,141 @@
+-- `jsonBody` and `expectJson` given a composition of a declaration,
+-- `Schema.list (Note.schema ⊤)`, which runs compiled (`schema.md` §6, *A
+-- statically known schema runs compiled*; boundary.md §9.8.12, amended
+-- 2026-10-15). The typed failures are the library's, carried through the
+-- compiled path: a list whose second note holds a `NaN` is `BadRequest
+-- (UnprintableBody …)` with `PrintFailed` at `1.stars`, the declared name,
+-- and nothing is sent; an answer whose second note lacks its renamed key is
+-- `BadBody` with `MissingKey` at `1.note-title`, the external key. A list
+-- that prints is sent with its keys as the schema writes them, and one
+-- that parses is read. `.compiled-schemas` holds the page to shipping no
+-- library interpreter.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Http
+import Schema
+import Sub
+import Tea
+
+
+schema Note =
+    title : String as "note-title"
+    stars : Float
+
+
+type Msg
+    = Save (List Note.Type)
+    | Load String
+    | Got String String
+
+
+issue : Schema.Issue → String
+issue i =
+    path =
+        String.join
+            (List.map i.path λs →
+                case s of
+                    Schema.Field name →
+                        name
+
+                    Schema.Index n →
+                        String.fromInt n
+            )
+            "."
+    code =
+        case i.code of
+            Schema.PrintFailed →
+                "PrintFailed"
+
+            Schema.MissingKey →
+                "MissingKey"
+
+            _ →
+                "another code"
+    "${code} at [${path}]"
+
+
+sent : Result Http.Error ⊤ → String
+sent result =
+    case result of
+        Ok ⊤ →
+            "ok"
+
+        Err (Http.BadRequest (Http.UnprintableBody issues)) →
+            "UnprintableBody (" ++ String.join (List.map issues issue) "; " ++ ")"
+
+        Err _ →
+            "another error"
+
+
+read : Result Http.Error (List Note.Type) → String
+read result =
+    case result of
+        Ok got →
+            "ok " ++ String.join (List.map got λn → n.title) ","
+
+        Err (Http.BadBody issues) →
+            "BadBody (" ++ String.join (List.map issues issue) "; " ++ ")"
+
+        Err _ →
+            "another error"
+
+
+notes : Schema.Schema (List Note.Encoded) (List Note.Type)
+notes = Schema.list (Note.schema ⊤)
+
+
+update : Msg, List String → List String × Cmd Msg
+update msg lines =
+    case msg of
+        Save list →
+            ( lines
+            , Cmd.task
+                (λ⊤ →
+                    Http.post
+                        { url = "/notes"
+                        , body = Http.jsonBody notes list
+                        , expect = Http.expectWhatever
+                        }
+                )
+                λr → Got "save" (sent r)
+            )
+
+        Load name →
+            ( lines
+            , Cmd.task (λ⊤ → Http.get { url = "/${name}", expect = Http.expectJson notes }) λr →
+                Got name (read r)
+            )
+
+        Got label line →
+            ( lines ++ [ "${label}: ${line}" ], Cmd.none )
+
+
+view : List String → Html Msg
+view lines =
+    <main>
+        <button
+            id="save"
+            onClick={Save [ { title = "a", stars = 1 }, { title = "b", stars = 2.5 } ]}
+        >
+            save
+        </button>
+        <button
+            id="nan"
+            onClick={Save [ { title = "a", stars = 1 }, { title = "b", stars = 0 / 0 } ]}
+        >
+            nan
+        </button>
+        <button id="good" onClick={Load "good"}>good</button>
+        <button id="partial" onClick={Load "partial"}>partial</button>
+        <ol><For each={lines} keyed={False}>{λline → <li>{line}</li>}</For></ol>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( [], Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

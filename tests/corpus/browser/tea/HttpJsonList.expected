@@ -1,0 +1,73 @@
+-- load
+<body>
+  <main>
+    <button id="save">"save"</button>
+    <button id="nan">"nan"</button>
+    <button id="good">"good"</button>
+    <button id="partial">"partial"</button>
+    <ol></ol>
+  </main>
+</body>
+-- click #save
+(fetch 1: POST /notes {"content-type":"application/json"} "[{\"note-title\":\"a\",\"stars\":1},{\"note-title\":\"b\",\"stars\":2.5}]")
+(the DOM did not change)
+-- respond 1 201 ""
+<body>
+  <main>
+    <button id="save">"save"</button>
+    <button id="nan">"nan"</button>
+    <button id="good">"good"</button>
+    <button id="partial">"partial"</button>
+    <ol>
+      <li>"save: ok"</li>
+    </ol>
+  </main>
+</body>
+-- click #nan
+<body>
+  <main>
+    <button id="save">"save"</button>
+    <button id="nan">"nan"</button>
+    <button id="good">"good"</button>
+    <button id="partial">"partial"</button>
+    <ol>
+      <li>"save: ok"</li>
+      <li>"save: UnprintableBody (PrintFailed at [1.stars])"</li>
+    </ol>
+  </main>
+</body>
+-- click #good
+(fetch 2: GET /good {"accept":"application/json"})
+(the DOM did not change)
+-- respond 2 200 "[{\"note-title\":\"first\",\"stars\":3},{\"note-title\":\"second\",\"stars\":4}]"
+<body>
+  <main>
+    <button id="save">"save"</button>
+    <button id="nan">"nan"</button>
+    <button id="good">"good"</button>
+    <button id="partial">"partial"</button>
+    <ol>
+      <li>"save: ok"</li>
+      <li>"save: UnprintableBody (PrintFailed at [1.stars])"</li>
+      <li>"good: ok first,second"</li>
+    </ol>
+  </main>
+</body>
+-- click #partial
+(fetch 3: GET /partial {"accept":"application/json"})
+(the DOM did not change)
+-- respond 3 200 "[{\"note-title\":\"first\",\"stars\":3},{\"stars\":4}]"
+<body>
+  <main>
+    <button id="save">"save"</button>
+    <button id="nan">"nan"</button>
+    <button id="good">"good"</button>
+    <button id="partial">"partial"</button>
+    <ol>
+      <li>"save: ok"</li>
+      <li>"save: UnprintableBody (PrintFailed at [1.stars])"</li>
+      <li>"good: ok first,second"</li>
+      <li>"partial: BadBody (MissingKey at [1.note-title])"</li>
+    </ol>
+  </main>
+</body>
