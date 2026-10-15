@@ -1,5 +1,6 @@
 -- TodoMVC's persistence shape: a deferred command reads the same list that
--- update installs in the model. Two messages can arrive before commands run.
+-- update installs in the model. Only two synthetic sends in one task reach
+-- this schedule; native listeners drain the queued command before later input.
 -- Value semantics gives the commands snapshots of lengths 1 and 2. An
 -- in-place append would make the first command observe length 2 instead.
 import Cmd exposing (Cmd)

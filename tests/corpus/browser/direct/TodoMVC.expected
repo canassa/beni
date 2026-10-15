@@ -17,7 +17,6 @@
             <label>"buy milk"</label>
             <button class="destroy"></button>
           </div>
-          <!---->
         </li>
       </ul>
     </section>
@@ -58,7 +57,6 @@
             <label>"buy milk"</label>
             <button class="destroy"></button>
           </div>
-          <!---->
         </li>
       </ul>
     </section>
@@ -102,7 +100,6 @@
             <label>"buy milk"</label>
             <button class="destroy"></button>
           </div>
-          <!---->
         </li>
       </ul>
     </section>
@@ -144,7 +141,6 @@
             <label>"buy milk"</label>
             <button class="destroy"></button>
           </div>
-          <!---->
         </li>
         <li>
           <div class="view">
@@ -152,7 +148,6 @@
             <label>"write tests"</label>
             <button class="destroy"></button>
           </div>
-          <!---->
         </li>
       </ul>
     </section>
@@ -193,7 +188,6 @@
             <label>"write tests"</label>
             <button class="destroy"></button>
           </div>
-          <!---->
         </li>
       </ul>
     </section>
@@ -234,7 +228,6 @@
             <label>"buy milk"</label>
             <button class="destroy"></button>
           </div>
-          <!---->
         </li>
         <li class="completed">
           <div class="view">
@@ -242,7 +235,6 @@
             <label>"walk the dog"</label>
             <button class="destroy"></button>
           </div>
-          <!---->
         </li>
       </ul>
     </section>
@@ -283,7 +275,6 @@
             <label>"buy milk"</label>
             <button class="destroy"></button>
           </div>
-          <!---->
         </li>
         <li class="completed">
           <div class="view">
@@ -291,7 +282,6 @@
             <label>"walk the dog"</label>
             <button class="destroy"></button>
           </div>
-          <!---->
         </li>
         <li>
           <div class="view">
@@ -299,7 +289,6 @@
             <label>"write tests"</label>
             <button class="destroy"></button>
           </div>
-          <!---->
         </li>
       </ul>
     </section>
@@ -340,7 +329,6 @@
             <label>"buy milk"</label>
             <button class="destroy"></button>
           </div>
-          <!---->
         </li>
         <li class="completed editing">
           <div class="view">
@@ -356,7 +344,6 @@
             <label>"write tests"</label>
             <button class="destroy"></button>
           </div>
-          <!---->
         </li>
       </ul>
     </section>
@@ -397,7 +384,6 @@
             <label>"buy milk"</label>
             <button class="destroy"></button>
           </div>
-          <!---->
         </li>
         <li class="completed editing">
           <div class="view">
@@ -413,7 +399,6 @@
             <label>"write tests"</label>
             <button class="destroy"></button>
           </div>
-          <!---->
         </li>
       </ul>
     </section>
@@ -454,7 +439,6 @@
             <label>"buy milk"</label>
             <button class="destroy"></button>
           </div>
-          <!---->
         </li>
         <li class="completed">
           <div class="view">
@@ -462,7 +446,6 @@
             <label>"walk the cat"</label>
             <button class="destroy"></button>
           </div>
-          <!---->
         </li>
         <li>
           <div class="view">
@@ -470,7 +453,6 @@
             <label>"write tests"</label>
             <button class="destroy"></button>
           </div>
-          <!---->
         </li>
       </ul>
     </section>
@@ -519,7 +501,6 @@
             <label>"walk the cat"</label>
             <button class="destroy"></button>
           </div>
-          <!---->
         </li>
         <li>
           <div class="view">
@@ -527,7 +508,6 @@
             <label>"write tests"</label>
             <button class="destroy"></button>
           </div>
-          <!---->
         </li>
       </ul>
     </section>
@@ -576,7 +556,6 @@
             <label>"walk the cat"</label>
             <button class="destroy"></button>
           </div>
-          <!---->
         </li>
         <li>
           <div class="view">
@@ -584,7 +563,6 @@
             <label>"write tests"</label>
             <button class="destroy"></button>
           </div>
-          <!---->
         </li>
       </ul>
     </section>
@@ -625,7 +603,6 @@
             <label>"buy milk"</label>
             <button class="destroy"></button>
           </div>
-          <!---->
         </li>
         <li class="completed">
           <div class="view">
@@ -633,7 +610,6 @@
             <label>"walk the cat"</label>
             <button class="destroy"></button>
           </div>
-          <!---->
         </li>
         <li>
           <div class="view">
@@ -641,7 +617,6 @@
             <label>"write tests"</label>
             <button class="destroy"></button>
           </div>
-          <!---->
         </li>
       </ul>
     </section>
@@ -682,7 +657,6 @@
             <label>"buy milk"</label>
             <button class="destroy"></button>
           </div>
-          <!---->
         </li>
         <li class="completed">
           <div class="view">
@@ -690,7 +664,6 @@
             <label>"walk the cat"</label>
             <button class="destroy"></button>
           </div>
-          <!---->
         </li>
         <li class="editing">
           <div class="view">
@@ -739,7 +712,6 @@
             <label>"buy milk"</label>
             <button class="destroy"></button>
           </div>
-          <!---->
         </li>
         <li class="completed">
           <div class="view">
@@ -747,7 +719,6 @@
             <label>"walk the cat"</label>
             <button class="destroy"></button>
           </div>
-          <!---->
         </li>
         <li class="editing">
           <div class="view">
@@ -796,7 +767,6 @@
             <label>"buy milk"</label>
             <button class="destroy"></button>
           </div>
-          <!---->
         </li>
         <li class="completed">
           <div class="view">
@@ -804,7 +774,6 @@
             <label>"walk the cat"</label>
             <button class="destroy"></button>
           </div>
-          <!---->
         </li>
         <li class="">
           <div class="view">
@@ -812,7 +781,6 @@
             <label>"write more tests"</label>
             <button class="destroy"></button>
           </div>
-          <!---->
         </li>
       </ul>
     </section>
@@ -861,7 +829,6 @@
             <label>"walk the cat"</label>
             <button class="destroy"></button>
           </div>
-          <!---->
         </li>
         <li class="">
           <div class="view">
@@ -869,7 +836,6 @@
             <label>"write more tests"</label>
             <button class="destroy"></button>
           </div>
-          <!---->
         </li>
       </ul>
     </section>
@@ -918,7 +884,6 @@
             <label>"walk the cat"</label>
             <button class="destroy"></button>
           </div>
-          <!---->
         </li>
         <li class="">
           <div class="view">
@@ -926,7 +891,6 @@
             <label>"write more tests"</label>
             <button class="destroy"></button>
           </div>
-          <!---->
         </li>
       </ul>
     </section>
@@ -967,7 +931,6 @@
             <label>"walk the cat"</label>
             <button class="destroy"></button>
           </div>
-          <!---->
         </li>
         <li class="">
           <div class="view">
@@ -975,7 +938,6 @@
             <label>"write more tests"</label>
             <button class="destroy"></button>
           </div>
-          <!---->
         </li>
       </ul>
     </section>
@@ -1019,7 +981,6 @@
             <label>"walk the cat"</label>
             <button class="destroy"></button>
           </div>
-          <!---->
         </li>
         <li class="completed">
           <div class="view">
@@ -1027,7 +988,6 @@
             <label>"write more tests"</label>
             <button class="destroy"></button>
           </div>
-          <!---->
         </li>
       </ul>
     </section>
@@ -1068,7 +1028,6 @@
             <label>"walk the cat"</label>
             <button class="destroy"></button>
           </div>
-          <!---->
         </li>
         <li class="">
           <div class="view">
@@ -1076,7 +1035,6 @@
             <label>"write more tests"</label>
             <button class="destroy"></button>
           </div>
-          <!---->
         </li>
       </ul>
     </section>
@@ -1117,7 +1075,6 @@
             <label>"walk the cat"</label>
             <button class="destroy"></button>
           </div>
-          <!---->
         </li>
         <li class="">
           <div class="view">
@@ -1125,7 +1082,6 @@
             <label>"write more tests"</label>
             <button class="destroy"></button>
           </div>
-          <!---->
         </li>
       </ul>
     </section>
@@ -1166,7 +1122,6 @@
             <label>"walk the cat"</label>
             <button class="destroy"></button>
           </div>
-          <!---->
         </li>
         <li class="completed">
           <div class="view">
@@ -1174,7 +1129,6 @@
             <label>"write more tests"</label>
             <button class="destroy"></button>
           </div>
-          <!---->
         </li>
       </ul>
     </section>
@@ -1215,7 +1169,6 @@
             <label>"write more tests"</label>
             <button class="destroy"></button>
           </div>
-          <!---->
         </li>
       </ul>
     </section>

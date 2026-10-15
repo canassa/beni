@@ -96,7 +96,7 @@ playerColor id =
 
 setupBoard : Int → Board
 setupBoard totalPlayers =
-    board = Board.init
+    board = Board.init ⊤
     playerIds = List.range 0 (totalPlayers - 1)
     List.foldl playerIds board λplayerId b → placePlayerPieces totalPlayers playerId b
 
@@ -306,7 +306,7 @@ viewBoard model =
     board =
         case model of
             SelectPlayers →
-                Board.init
+                Board.init ⊤
 
             Playing state →
                 state.board
