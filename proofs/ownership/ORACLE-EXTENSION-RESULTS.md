@@ -81,7 +81,11 @@ is rejected by that check. Total full-run agreements rise from
 
 Every remaining original forward lead was judged with both Lean interpreters,
 comparing the complete final value, reads and external-reader observations.
-**All 1,725 agree.** All six old defect-cluster membership sets have zero
+**All 1,725 agree.** *Qualified 2026-10-15 (the oracle review, F7):* only
+351 of them write a list when run in place (the review counted 375 containing a
+writer; the rest are mostly model limits, which write nothing and cannot
+diverge), so the meaningful statement is that all 351 write-bearing leads agree.
+`CONSTRUCTIONS-RESULTS.md` reports both counts for later campaigns. All six old defect-cluster membership sets have zero
 surviving accepted originals. A replay of all **401 historical reverse sources**
 still refuses each, with **zero changed refusal details**. The judge checks
 original source fidelity and frozen compiler hashes; no historical minimum

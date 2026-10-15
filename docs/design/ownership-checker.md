@@ -2598,8 +2598,11 @@ The owner's process rule (2026-10-12): every checker rule a slice adds or change
 (`proofs/ownership/`) or listed here, with the soundness risk of leaving it unmodelled. The oracle's language has
 `let`, primitives, closures, calls, recursion, a branch on an integer, traversals and focus (`Syntax.lean`); it
 has positional records, copying prepend, typed `Result`, a definition-local CPS lowering of `?`, and the
-recursive type `Chain a = End | Link a (Chain a)`. It has no list views, dictionaries, effects or platform
-execution. `entry` models one initialization followed by model updates with retained callback environments;
+recursive type `Chain a = End | Link a (Chain a)`. *Amended 2026-10-15 (the oracle review):* it also has
+constructions (§3.2: `++` chains and spread literals, the base the first spread, items before it, every later
+operand in Disjoint) and list views (a pattern's `…rest` or `…init`, sharing its source's array). A record update
+is the record of its base's other fields, which the bridge prints as `{ r | f = y }`. It has no dictionaries,
+effects or platform execution. `entry` models one initialization followed by model updates with retained callback environments;
 private single-read initialization transfers and captured-local exclusion follow PR #116's contract. It is
 a core projection, not a model of the browser's scheduler or rendering. The sync in
 `proofs/ownership/Ownership/Sync.lean` models branch-local escapes,
@@ -2621,13 +2624,25 @@ entry projections remain counted skips because the bridge does not implement run
 This is a core model, not a proof that the Zig walk or lowering implements the rules. `DESIGN.md` specifies
 its boundaries; `RESULTS.md` records the campaigns and holes. The residual gaps below remain explicit.
 
+**What the bridge's "zero confirmed unsafe" covers.** Only the writers the core models: `List.set`, `List.push`,
+`List.update`'s focus, `List.copy`, the copying prepend, constructions (`++`, spread literals, `List.append`) and
+views, on the translated common subset. It says nothing about the rows of the table below, nor about the code
+slice 5 will emit: the bridge's emitted library still uses persistent lists, and the Lean in-place interpreter
+is a model of the checker's promise, not of the lowering (thesis §12.2's stale-read sanitiser, §13.4, is what
+will judge that).
+
 | Rule | Where | What is unsound if the rule is wrong |
 |---|---|---|
+| The writers `List.pop`, `swap`, `insertAt` and `removeAt` (§3.1, §22.5) | `writerName`, the library rows | a demand on their base whose row is wrong (a `swap` that keeps exclusivity it should lose, an `insertAt` that stores without separation): two holders of one array, one written. The core has none of them; only Zig fixtures test them. |
+| The re-cons rule (§3.2, *Not demands*): a list rebuilt in the shape a pattern matched is an alias | `reconsed` | a rebuilt `[ h, …t ]` taken to be fresh while it is the scrutinee's array, then written. The core's views alias their source, but no construction is ever read as a re-cons. |
+| The multi-item prepend `[ a, b, …xs ]` (§3.2, §25.2) | `prepended` | as the single prepend's row below. The core's prepend takes one item. |
+| A `++` on a generic type, dispatched through hidden evidence | dispatch identities, conservative call | none found: the checker reads it as a conservative call that escapes its operands (`appendable`), not as a construction, and the bridge spells `++` only where its operands are known lists. If slice 5 lowered an evidence-dispatched append in place, this row would become unsound. |
+| Record field assignment on owned model paths (`browser-direct.md` §7.4, S7) | the write-set interpreter, not `src/own/` | two holders of one model record, one assigned in place. Neither the ownership checker nor this oracle judges it; it needs its own specification check and differential test before it is emitted. |
 | A prepend of a list made after its base (§26.3) | `madeAfter` | a write onto the prepend's result reaches the base through a re-cons the rule took to be impossible. Copying prepend and conservative backing provenance are modelled; offset views and the re-cons identity optimization are absent, so made-after precision cannot be tested faithfully. |
 | Ownership words on `foreign` signatures, and the thesis row for a `foreign` with none (§24) | `wordsRow` | a word claiming less than the JavaScript does: a write or an escape the checker does not see. The core has no foreign declarations or JavaScript sibling validation. |
 | The decoder followed through `Expect` (§24.9) | `carry`, `carriedEnv` | a decoder's captures held past the call that runs it. No decoder/opaque carrier syntax; captures are tested as ordinary closures only. |
-| Runtime entry delivery (§20, §22) | `entryCall` | Initialization transfer, retained callback captures, recursive Chain payloads and finite model preservation are modelled. The renderer, effects, opaque entry rows and unbounded event delivery remain outside the core; their actual runtime retention still needs platform fixtures. |
-| Owned sends and navigation commands (§23) | `send_class`, `checkSender` | The returns-owned boundary and retained-callback obligations are modelled; actual fibers, navigation capabilities and asynchronous delivery have no core semantics, so runtime payload retention remains untested |
+| Runtime entry delivery (§20, §22) | `entryCall` | Initialization transfer, retained callback captures, recursive Chain payloads and finite model preservation are modelled. The renderer, effects, opaque entry rows and unbounded event delivery remain outside the core; their actual runtime retention still needs platform fixtures. The shipping bridge skips every entry projection, so Zig's `entryCall` verdicts (a fifth of the real apps' demands, 2026-10-15) are never compared with the oracle. |
+| Owned sends and navigation commands (§23) | `send_class`, `checkSender` | a payload a fiber, a command or the next dispatch still reads after the send, edited in place. *Amended 2026-10-15:* the send rule itself (§23.2, a send is a write of everything it is handed) is not modelled: the core has no send, and its `owned` boundary is the returns-owned rule and retained-callback obligations only. Fibers, navigation capabilities and asynchronous delivery have no core semantics, so runtime payload retention remains untested |
 | `Dict.focus`'s destructive read (§20.8) | `assertDictFocus` | two positions of a tree holding one value, both written. List focus is modelled; the core has no tree, keys or dictionary representative separation. |
 | Markup/constructor lowering and opaque carrier encodings | markup transfer and summary blocks | Slots and constructor payload retention are modelled as positional records; HTML syntax, wildcard opaque paths, import serialization and actual row/component lowering are absent. Their encoding must preserve the modelled slots and conservative fallback |
 | Fold dictionary representatives and recursion | fold/focus summaries | Container ownership is modelled for lists and positional records; no dictionary keys, mutually recursive declarations or unknown/coarsened foreign rows exist in the core, so those implementations and their precision backstops still need Zig fixtures |

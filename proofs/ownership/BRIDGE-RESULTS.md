@@ -9,8 +9,12 @@ value-checked programs, and 73,390 explicitly counted skips. Both checkers
 accepted 18,346 programs and refused 21,961; Zig refused 401 that Lean accepted,
 and accepted 2,358 that Lean refused. **201 original programs expose shipping
 ownership-checker defects, confirmed by the in-place interpreter**, in six
-clusters. This confirms the in-place ownership policy against the Lean model;
-the emitted JavaScript still uses persistent lists. The other **2,157 original programs are Lean precision leads**: the
+clusters. *Corrected 2026-10-15 (the oracle review):* this checks the shipping
+checker's verdicts on the translated common subset, the writers the core then
+modelled (`set`, `push`, focus, copy, prepend), against the Lean model. It does
+not confirm the in-place ownership policy as a whole: constructions, views,
+entry rows, sends and record assignment were outside it, and the emitted
+JavaScript still uses persistent lists. The other **2,157 original programs are Lean precision leads**: the
 oracle's value and in-place traces agree. Neither checker was changed or weakened.
 Six minimal beni refusals are pinned under `tests/pending/check/bad/direct/`.
 The emitted direct runtime still uses persistent lists; it cannot judge this

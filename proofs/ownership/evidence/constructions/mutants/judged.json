@@ -1,0 +1,82 @@
+[
+  {
+    "hole": "dead",
+    "leads": 361,
+    "programLeads": 315,
+    "diverging": 296,
+    "divergingProgramLeads": 252,
+    "writing": 346,
+    "example": "fixture-10"
+  },
+  {
+    "hole": "disjoint",
+    "leads": 49,
+    "programLeads": 36,
+    "diverging": 46,
+    "divergingProgramLeads": 34,
+    "writing": 26,
+    "example": "enum-1-118"
+  },
+  {
+    "hole": "shared",
+    "leads": 14,
+    "programLeads": 9,
+    "diverging": 14,
+    "divergingProgramLeads": 9,
+    "writing": 14,
+    "example": "fixture-39"
+  },
+  {
+    "hole": "view",
+    "leads": 48,
+    "programLeads": 46,
+    "diverging": 47,
+    "divergingProgramLeads": 46,
+    "writing": 38,
+    "example": "sync-80"
+  },
+  {
+    "hole": "append",
+    "leads": 21,
+    "programLeads": 19,
+    "diverging": 21,
+    "divergingProgramLeads": 19,
+    "writing": 0,
+    "example": "sync-78"
+  },
+  {
+    "hole": "record",
+    "leads": 9,
+    "programLeads": 9,
+    "diverging": 5,
+    "divergingProgramLeads": 5,
+    "writing": 9,
+    "example": "sync-96"
+  },
+  {
+    "hole": "oncecall",
+    "leads": 13,
+    "programLeads": 13,
+    "diverging": 13,
+    "divergingProgramLeads": 13,
+    "writing": 13,
+    "example": "fixture-0"
+  },
+  {
+    "hole": "foldret",
+    "leads": 0
+  },
+  {
+    "hole": "keepshape",
+    "leads": 0
+  },
+  {
+    "hole": "spreadcert",
+    "leads": 5,
+    "programLeads": 5,
+    "diverging": 5,
+    "divergingProgramLeads": 5,
+    "writing": 5,
+    "example": "sync-89"
+  }
+]
