@@ -1,0 +1,56 @@
+[
+  {
+    "input": "known",
+    "counts": {
+      "total": 60000,
+      "fast": 59000,
+      "record": 60000,
+      "record_unproved": 1000,
+      "flex": 0,
+      "other": 0,
+      "recursive": 0,
+      "budget": 0,
+      "proved": 59000,
+      "defaulted": 0,
+      "nominal_decisions": 0,
+      "record_decisions": 1000
+    },
+    "modules_with_dots": 1
+  },
+  {
+    "input": "unknown",
+    "counts": {
+      "total": 60000,
+      "fast": 0,
+      "record": 0,
+      "record_unproved": 0,
+      "flex": 60000,
+      "other": 0,
+      "recursive": 0,
+      "budget": 0,
+      "proved": 0,
+      "defaulted": 1000,
+      "nominal_decisions": 0,
+      "record_decisions": 59000
+    },
+    "modules_with_dots": 1
+  },
+  {
+    "input": "corpus",
+    "counts": {
+      "total": 357,
+      "fast": 83,
+      "record": 357,
+      "record_unproved": 274,
+      "flex": 0,
+      "other": 0,
+      "recursive": 0,
+      "budget": 0,
+      "proved": 83,
+      "defaulted": 0,
+      "nominal_decisions": 0,
+      "record_decisions": 274
+    },
+    "modules_with_dots": 83
+  }
+]

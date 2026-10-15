@@ -19,6 +19,44 @@ was saturating the four cores and read 784 ms where the real number was
 
 ---
 
+## 2026-10-15 — three-way LLVM ReleaseSafe nullary overhead
+
+**Apple M2 Pro, 16 GiB, macOS 26.7.1, zorg 0.17.1+zorg.1.** Before #126
+is `134d24ab9`, current master is `2ca55a928`, and #135 is `310fd7887`.
+All three are built with **LLVM ReleaseSafe**, measured at `--jobs=1 --no-cache`
+on the same input paths. Medians of 12 runs per compiler, all six execution
+orders twice after one warm-up triple:
+
+| checking, ms | before #126 | master | #135 | added cost removed |
+|---|---:|---:|---:|---:|
+| Annotated 63k-line field file | 50.44 | 76.03 | 65.21 | **42.3%** |
+| Unannotated 63k-line field file | 49.38 | 153.05 | 152.95 | **~0%** |
+| Generated 100k corpus | 68.32 | 70.85 | 70.18 | 26.4% arithmetic; noisy |
+
+Recovery is `(master − PR) / (master − before)`. The known-record fix still
+leaves 57.7% of the added checking cost, and the PR is 29.3% slower than before
+#126 on that input. The 100k corpus's ranges overlap, so its small denominator
+cannot establish a precise recovery fraction.
+
+The unannotated file proves that deferred receivers remain expensive: all 60,000
+reads still allocate both rows. The LLVM ReleaseSafe profile puts 55.4% of its
+checker samples in rank adjustment, including 22.7% in the safety invariant
+check. This is mainly dependency traversal and boundary bookkeeping, not just
+row allocation. Known-record reads also still generate method arrows and effect
+edges before the fast path; their effect pass remains 0.99 → 4.15 ms.
+
+[The full report](profiling/nullary-overhead.md) retains process medians, phase
+timings, input hashes, branch counts, profiling instructions and specific further
+optimisation candidates that keep deferred resolution and its defaults. The
+[field generator](field-dense.py) now supports `--unannotated`; the
+[three-way runner](field-dense-three-way.py) checks identical streams and exits.
+The compiler implementation is unchanged by this measurement follow-up.
+
+This comparison supersedes the following **ReleaseFast, two-way** entry for
+claims about recovery of #126's overhead.
+
+---
+
 ## 2026-10-15 — known record reads without deferred rows (issue #131)
 
 **Apple M2 Pro, 16 GiB, macOS 26.7.1 (25G241), zorg 0.17.1+zorg.1,
