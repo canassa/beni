@@ -1,0 +1,8 @@
+-- A number-kind variable is not yet a nominal Int or Float receiver.
+-- Only eq/compare use the number bridge; other unknown dots default to
+-- record reads and report the numeric kind's incompatibility.
+import Node exposing (Program)
+
+
+main : Program
+main = Node.print (String.fromInt (1).abs)

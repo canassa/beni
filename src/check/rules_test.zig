@@ -73,6 +73,7 @@ const files = [_]File{
     .{ .path = "MarkupTexts.zig", .text = @embedFile("MarkupTexts.zig") },
     .{ .path = "Messages.zig", .text = @embedFile("Messages.zig") },
     .{ .path = "Module.zig", .text = @embedFile("Module.zig") },
+    .{ .path = "Nullary.zig", .text = @embedFile("Nullary.zig") },
     .{ .path = "Obligations.zig", .text = @embedFile("Obligations.zig") },
     .{ .path = "PatternStore.zig", .text = @embedFile("PatternStore.zig") },
     .{ .path = "PatternTexts.zig", .text = @embedFile("PatternTexts.zig") },

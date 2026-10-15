@@ -1,0 +1,6 @@
+-- Dots and chains round-trip without introducing a call marker.
+a=xs.length
+b=s.trim
+c=current.trail.copy ++ other.trail
+d=xs.reverse.length
+e=List.map words .trim

@@ -252,6 +252,7 @@ fn ownMethod(s: *Solve, id: WantedId, root: Var, decl: u32, entry: Types.Entry) 
             if (s.contexts.active(s)) |ri| {
                 if (s.cx.bir.decls[decl].annotation == .none) return Contexts.inFlight(s, ri, id, decl);
             }
+            if (!try Resolve.nullaryArity(s, id, v)) return;
             if (!try s.unifyQuiet(v, w.method_type, w.origin)) {
                 if (try Producers.cycle(s.groups, decl)) |cycle| {
                     try Messages.recursiveMethod(s.report, w.origin, w.method, v, w.method_type, cycle);
@@ -451,6 +452,7 @@ const MethodSource = union(enum) { own: u32, imported: Interface.ValueIndex };
 
 fn match(s: *Solve, id: WantedId, root: Var, copy: Var, entry: Types.Entry, source: MethodSource) Error!bool {
     const w = s.evidence.get(id);
+    if (!try Resolve.nullaryArity(s, id, copy)) return false;
     // Read before the unification, which binds the method type's parts.
     const well_known = Resolve.isWellKnownName(w.method) and Resolve.hasWellKnownType(s, w.method, w.method_type, root);
     if (try s.unifyQuiet(copy, w.method_type, w.origin)) return true;
@@ -1152,7 +1154,7 @@ fn fieldTextLess(interner: *const InternPool.Global, a: TypeStore.Field, b: Type
 
 /// `x.m a` on a record known at the call: `(x.m) a`, the ordinary field and
 /// arity diagnostics.
-fn fieldCall(s: *Solve, id: WantedId, root: Var) Error!void {
+pub fn fieldCall(s: *Solve, id: WantedId, root: Var) Error!void {
     const st = s.store();
     const w = s.evidence.get(id);
     const origin = w.origin;
@@ -1160,6 +1162,15 @@ fn fieldCall(s: *Solve, id: WantedId, root: Var) Error!void {
     const rest = try s.cx.scratch.dupe(Var, f.params[1..]);
     defer s.cx.scratch.free(rest);
     const result = f.result;
+    if (s.cx.bir.instTag(origin) == .field_access) {
+        var pair = [_]TypeStore.Field{.{ .name = w.method, .value = result }};
+        const fields = try st.addFields(&pair);
+        const ext = try s.fresh(.{ .flex = .{} });
+        const required = try s.fresh(.{ .structure = .{ .record = .{ .fields = fields, .ext = ext } } });
+        _ = try s.unify(required, w.receiver, origin, .{ .tag = .field_access, .index = @backingInt(w.method) });
+        Resolve.answer(s, id, .field);
+        return;
+    }
     // The FIELD first, against an open record, so a name the record lacks is
     // `unknown_field` and not an arity message about a type nobody wrote.
     const callee = try s.fresh(.{ .flex = .{} });

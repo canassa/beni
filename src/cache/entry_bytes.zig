@@ -73,7 +73,8 @@ pub const magic = "BENICAC\x00";
 /// the effect lowering columns (§16.2).
 /// 10: a fifth section, `ownership`, the module's summary block
 /// (`ownership-checker.md` §28.4).
-pub const format_version: u32 = 10;
+/// 11: nullary method dispatch sites replay the checked-BIR call rewrite.
+pub const format_version: u32 = 11;
 
 /// The five sections, in this order and no other.
 pub const Section = enum(u32) {

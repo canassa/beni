@@ -2051,3 +2051,7 @@ is not a value projection. In particular, `UrlChanged url` followed by a case
 on `url.fragment` tests the fragment, not the outer message. Such paths use
 the normal release record-field names. An event's constructor shortcut applies
 only to constructor-only paths; a record or tuple path uses the value dispatcher.
+
+**Nullary methods (2026-10-15).** Static-dispatch-spike.md §1.1's checked-form
+invariant applies here: a resolved `x.m` method is an ordinary zero-argument
+`method_call`, never a field path. Record `x.f` retains its path and identity.

@@ -678,13 +678,25 @@ with no `where` clause naming the method, or no annotation at all, it stays an e
 plain name, as in Elm, resolved by §6.2 (local, top-level, or exposed import); `{ r.a | … }` is not
 allowed. Access is a chain on any atom and must abut it (§3): `r.a.b`, `(f x).name`.
 
-**Field access and the method call share a spelling, and the argument list separates them** (§0).
-`x.m` alone is a field access, always — an application with no arguments is not an application, so
-even a nullary method is out of reach and is written `M.m x`. `x.m a b` is a **method call**: the
-checker resolves `m` against the methods of `x`'s *type* and, when that type turns out to be a
-record, falls back to the field call `(x.m) a b` with the record's own diagnostics. Parentheses opt
-out explicitly, and `M.f x` on a qualified *name* is an ordinary call and never a method call.
-→ `static-dispatch-spike.md` §1.1, §1.2.
+**Field access and method calls share a spelling** (amended 2026-10-15;
+owner accepted research 96). `x.m` reads a field when `x` is a record and calls
+`M.m x` when `x` has nominal type `T` declared in `M`. If the receiver's type is
+unknown, defer; if still unknown at generalisation, infer a record field,
+unchanged. Thus `size xs = xs.length` infers a record receiver; using it on a
+list reports a mismatch with a hint to annotate the helper or use `List.length`.
+Missing members report `unknown_field` on records, `unknown_method` on nominal
+types; private methods and missing arguments retain the ordinary call errors.
+`xs.length`, `s.trim`, `xs.copy` and `xs.reverse.length` are saturated calls.
+Each dot in `a.b.copy` resolves independently. `.m` lowers to a lambda whose
+body follows the same rule, defaulting to a field when unconstrained.
+
+`x.m a b` resolves against the receiver's type as before, falling back to
+`(x.m) a b` on records. Parentheses around its head opt out of that application
+rewrite; the inner `x.m` itself still follows the receiver-directed rule.
+`M.f x` on a qualified name is an ordinary call. A nullary method may allocate,
+be impure or suspend, just like its prefix spelling.
+→ `static-dispatch-spike.md` §1.1's dated amendment, §1.2 and §8.3 for the
+checked-form rewrite that keeps calls distinct from identity-preserving fields.
 
 **A record update keeps the identity of every field it does not name** (2026-09-29, W27): the
 untouched fields of `{ r | a = x }` are the very values `r` held, and no optimiser may break that.
@@ -2718,8 +2730,8 @@ so the list cannot rot. A file that fails `--check` fails the gate with the file
 
 | Written | Today | After |
 |---|---|---|
-| `xs.length`, `s.trim` — a field access on a value whose type is not a record, naming a `pub` function of the type's module that takes the value first | `type_mismatch`, "This is not a record with a `length` field" | the same code, with a hint: *`length` is a function of `List`, not a field. Write `List.length xs` — a method call needs its other arguments, `xs.take 3`, so one that takes none is written as a call.* |
-| `xs.length ()` — a method call whose only argument is `()` | `too_many_args` | the same code, with the same hint |
+| `size xs = xs.length`, then `size [1, 2]` | the helper infers a record receiver | `type_mismatch`, with a hint: the unannotated helper inferred a record; annotate its receiver or write `List.length xs` |
+| `xs.length ⊤` — an extra unit argument | method signature `type_mismatch` | the same code, with a hint to write `xs.length` |
 | `f(a, b)` — an application whose one argument is a tuple literal written against the callee, when the callee takes as many parameters as the tuple has elements | `too_few_args` or `type_mismatch` | the same code, with a hint: *beni separates arguments with spaces: `f a b`.* |
 | a call of a `core/` or platform function, in Elm's order, that fails to check | `type_mismatch`; the hint "this function looks like it belongs in the 2nd argument" exists today for a misplaced function | the hint generalises to every function §12.4 lists as kept with a different order: when the call would check with its arguments in Elm's order, the hint shows it in beni's — *`String.join` takes the list first: `String.join names ", "`* |
 
