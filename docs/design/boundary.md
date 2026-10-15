@@ -351,6 +351,22 @@ list it handed a sibling. So a sibling that **keeps** a list past the call must 
 signature's ownership words (`ownership-checker.md` §24), or the checker would take it as
 `borrowed`. A sibling still never writes a list it was given.
 
+*Amended 2026-10-15 again (the owner; `ownership-checker.md` §30):* "on an in-place platform"
+now means every platform. Every list a sibling is handed may later be written in place by the
+program, once nothing the checker sees still reads it. So the paragraph above holds for the
+siblings of `node`, `html`, `browser`, `browser-tea` and the test platforms as it does for
+`browser-direct`'s. Concretely:
+
+- A sibling that keeps a list past the call writes no word that says it does not. A `foreign`
+  with no words escapes every argument (`ownership-checker.md` §24.5), which is the safe reading.
+- A sibling that returns a list returns a fresh array (`fresh`) or a list it was given
+  (`returned`), as below.
+- A sibling never writes a list, whatever its words say.
+
+A word that claims less than the sibling does is a correctness bug in privileged code, as it was
+for `browser-direct`. Every worded declaration is pinned by `trusted-surface.txt` and
+`word-bodies.txt` (`ownership-checker.md` §24.6).
+
 **What a sibling returns.** A `List` result is either **a fresh plain array that nothing else holds
 and that the sibling never touches again** — `s.split(sep)`, `Array.from(s)`, an array it built — or
 **a `List` it was given**, unchanged. An array the *host* owns is never returned as it is: a DOM
@@ -814,6 +830,20 @@ code the chain emits may write a list's array where the ownership checker accept
 safe is an error; no other value is accepted, and a chain that does not say it edits nothing in place
 and runs no checker at all. Inherited first-found down the chain like every field (§9.1).
 `browser-direct` declares it; no other platform the binary carries does.
+
+*Withdrawn 2026-10-15 (the owner: "no 'fallbacks', i want a proper implementation. this is no
+longer a platform decision, it's core to beni"; [`ownership-checker.md`](ownership-checker.md)
+§30).* Every platform edits lists in place, and the ownership checker runs in every `check` and
+`build`, so a platform has nothing to declare. `"lists"` is no longer read. A manifest that still
+writes it has an unknown key, which is ignored like any other (§5.2's forward-compatibility rule),
+and `browser-direct`'s manifest drops it. What a platform does owe instead:
+
+- **ownership words** on every `foreign` that takes or returns a list or a function (§4,
+  amended the same day);
+- **the word `entry`** on the record parameter of each program constructor whose functions the
+  runtime calls (`ownership-checker.md` §30.3);
+- **the direct row's obligations** that its runtime keeps: P1–P4 and P7, in
+  `ownership-checker.md` §30.3 and `backend.md` §15.5's amendment of 2026-10-15.
 
 ### 5.3 One project, several platforms
 
@@ -1642,6 +1672,13 @@ the reason a loop is the runtime's is unchanged.)*
   row's item-only values while its item is, §11.11; *amended 2026-09-30*, a row whose selector
   changed and whose key neither probe is, §9.4.6's version 1.3). It
   reports no diagnostic but §9.4.7's.
+- **Skip on a list's identity** (*added 2026-10-15*, the owner's decision that every platform
+  edits lists in place, `ownership-checker.md` §30). Every skip above that compares a value with
+  `===` is allowed only for a value whose type is not a list. That includes a type a release build
+  represents by a list. A list that is `===` the last one may have been written in place since
+  then. A lowering's runtime keeps no list from one render to the next, and compares none by
+  identity (`backend.md` §15.5, amended the same day). This binds every platform's lowering
+  (`dom`, `ssr`, `direct`, a third party's) and every runtime module.
 
 #### 9.4.5 The runtime's well-known exports
 

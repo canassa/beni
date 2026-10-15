@@ -49,7 +49,8 @@ with `List.push`. §6.8 is the surface, `backend.md` §4 *Lists are arrays* the 
 claimable tail, so `[ x, ...xs ]` is amortised O(1) like `List.push` and no longer a copy; it
 grows at either end. *Amended 2026-10-15, the owner:* the trie is withdrawn. A `List` is a plain
 array edited in place where the ownership checker proves it unshared (§6.8, *A list is a plain
-array*).
+array*). *Amended 2026-10-15 again, the owner:* on every platform. Ownership is the language's
+rule, not a platform's (§6.8, the same subsection's last amendment).
 
 **Brackets and a spread, and no `::`.** Decided by the owner on 2026-10-01 (W35's second
 amendment), specified and built the same day on today's cons cells: `::` leaves the language, as an
@@ -1057,6 +1058,16 @@ gets worse:
 - **Every write, on a platform that does not edit in place**: a building loop is O(n²) there. That
   is the open question in `backend.md` §4.
 
+*Amended 2026-10-15 again (the owner: "no 'fallbacks', i want a proper implementation. this is no
+longer a platform decision, it's core to beni"; `backend.md` §4, *Every platform edits in place*):*
+**ownership is a rule of the language, not of a platform.** Every platform edits lists in place:
+`node`, `html`, `browser`, `browser-tea`, `browser-direct` and the test platforms. The ownership
+checker runs in every `check` and `build`, so a write it cannot prove safe is a compile error
+everywhere, and the fix is `List.copy` everywhere. One program has one verdict and one cost,
+whatever it is built for. The table's last column, "After, on any other platform (copies)", is
+withdrawn, and so is the bullet above about a platform that does not edit in place. No platform
+copies a list behind the program's back.
+
 A persistent sequence may come back only as **a separate type the developer chooses**, such as a
 `Vector` with its own module and costs. It is never `List`'s representation (`backend.md` §4,
 *What is not done*).
@@ -1521,7 +1532,7 @@ name the constructors that are missing. `nesting_too_deep` is shared the same wa
 | `view_not_compiled`, `program_mounted_twice` | the program hook | the line before the last, appended on 2026-10-09, again never inserted, with [`boundary.md`](boundary.md) §9.4.6's version 1.6 and `browser-direct`'s slice S0. Both are `build`'s, raised for a lowering that compiles whole programs. **`view_not_compiled`** is a program whose `view` no compiler can reach as markup — a `view` a call computes, a program constructor used as a value — on a platform with no run-time renderer to hand it to ([`browser-direct.md`](browser-direct.md) §11.1): the one refusal of a program shape left, an error because no fallback exists, and its message names `browser-tea`, which renders any `view`. **`program_mounted_twice`** is one top-level program value placed twice among `main`'s placements on a platform whose programs keep their state per program value ([`browser-direct.md`](browser-direct.md) §8.2): two mounts would share one model and show each other's writes, so it is an error, and the message names the escape, a program built by a function |
 | `prepend_in_loop` | the list representation | the line before the last, appended on 2026-10-11, again never inserted, with the owner's decision that a prepend copies (§6.8, *`[ x, …xs ]` copies*). A `warning`, the checker's, on by default for the root package only ([`checker-v2.md`](checker-v2.md) §35): a list built by putting elements in front of an accumulator a loop carries — a parameter a function hands back to itself, or the accumulator a `List.foldl` or `List.foldr` callback receives and returns — which copies the accumulator at every step. Its message shows the push form, `[ …acc, x ]`, which needs no `List.reverse`, and names the escape: bind the new list to a name first. Not at a one-off prepend, a list pattern or a push |
 | `misplaced_ownership_word` | ownership words | the line before the last, appended on 2026-10-12, again never inserted, with ownership words (§5.4; [`ownership-checker.md`](ownership-checker.md) §24.4). Lowering's, at the word, which is dropped: a word in a package that may not write `foreign` (one message per signature: Change 5(b), words on application code, is not approved), inside a type rather than in front of a parameter or the result, a function's word on a value, a result's word on a parameter or a parameter's on the result, or a word that cannot hold beside another written there (`borrowed` with any other, `once` with `many`, `exclusive` without `fresh`, …) |
-| `list_still_used` … `list_may_be_shared` | the ownership checker | the last line, appended on 2026-10-13, again never inserted, with the checker's enforcement ([`ownership-checker.md`](ownership-checker.md) §28). The checker's, all four `error`s, and only on a platform that declares `"lists": "in-place"` ([`boundary.md`](boundary.md) §5.2): everywhere else nothing is written in place and the checker is silent. **`list_still_used`** is a list changed in place while something the text shows still holds it and reads it afterwards — real sharing; **`top_level_list_changed`** a top-level value's list changed, which every part of the program shares; **`view_changes_model`** `view` or `subscriptions` changing the model the runtime hands them to read only; **`list_may_be_shared`** an edit the checker could not prove safe — a limit of the checker, which the message names — or a function that changes a list it is handed and goes where the checker cannot see every call of it. Each message names the places, says what the program would see, and writes the fix with `List.copy` |
+| `list_still_used` … `list_may_be_shared` | the ownership checker | the last line, appended on 2026-10-13, again never inserted, with the checker's enforcement ([`ownership-checker.md`](ownership-checker.md) §28). The checker's, all four `error`s, and only on a platform that declares `"lists": "in-place"` ([`boundary.md`](boundary.md) §5.2): everywhere else nothing is written in place and the checker is silent (*amended 2026-10-15, the owner: on every platform and in every `check`, since ownership is the language's rule, §6.8; `"lists"` is withdrawn*). **`list_still_used`** is a list changed in place while something the text shows still holds it and reads it afterwards — real sharing; **`top_level_list_changed`** a top-level value's list changed, which every part of the program shares; **`view_changes_model`** `view` or `subscriptions` changing the model the runtime hands them to read only; **`list_may_be_shared`** an edit the checker could not prove safe — a limit of the checker, which the message names — or a function that changes a list it is handed and goes where the checker cannot see every call of it. Each message names the places, says what the program would see, and writes the fix with `List.copy` |
 
 > **Checker v2 (2026-09-24).** `method_needs_annotation` is retired as an ordering refusal by the owner's
 > decision that an own untyped method is checked at its use. A use of a module's own untyped method checks that method's group nested at the moment
@@ -2175,6 +2186,20 @@ parameters — is evaluated where it is written, as before. **A `let` is a value
 most**: when two roots could take it (the `h1` in `header = <h1>{title}</h1>` and the root that
 reads `header`), the innermost does, and it is evaluated once per render that needs it.
 
+*Amended 2026-10-15 (the owner: lists are edited in place on every platform, §6.8; W27 as
+amended in §11.12):* **every "is not `===`" test in this section treats a list as changed.**
+A list that is `===` the last one may have been written in place since, so it no longer stands
+for "the same contents". The test covers a path whose value is a list, a row's item, an input,
+a component's prop and a `Show`'s value whose type is a list, and every type a release build
+represents by a list. The `shown = top model.items` above is therefore computed on every render
+that reaches its root, and not only when `model.items` is another list.
+
+Every other identity test stays: the test on a record, a constructor, a closure, a markup block
+or a scalar. Only lists are written in place (§11.12), and a value of any other kind that is
+`===` the last one was not rebuilt, so it still holds the same lists. The checker rejects a write
+to a list while a holder of it is read afterwards. What the change costs is measured on research
+29's harness (`backend.md` §15.5, amended the same day).
+
 ### 11.12 Identity: an untouched field keeps its identity
 
 **A record update `{ r | a = x }` produces a record whose every field other than `a` is the very
@@ -2214,6 +2239,21 @@ value (`backend.md` §4, *Identity*). The first tail of a list built by `List.pu
 pattern's tail is a view, so the promise holds for every tail again. On an in-place platform, a
 list written in place is the same object as before it was written, which no program can observe
 (the W27 amendment `browser-direct.md` §15 Q4 decided).
+
+**W27, amended for in-place update** (*written 2026-10-15*; decided by the owner on 2026-10-09 as
+`browser-direct.md` §15's Q4, and applied to every platform by the decision of 2026-10-15,
+`ownership-checker.md` §30). **An untouched value keeps its identity. A written value's container
+may be updated in place where the compiler proves it unshared, and keeps its identity when it is.
+No emitted comparison concludes "unchanged" from identity across such a write.**
+
+- Today the only containers written in place are lists, at the demands the ownership checker
+  accepts (§6.8). Records join them only under `browser-direct.md`'s condition C4.
+- The first sentence is the promise above, unchanged: a pass that rebuilds an untouched field is
+  still forbidden.
+- The second sentence cannot be observed by a program. The checker has proved that nothing reads
+  the old version again, and beni has no reference equality a program can call.
+- The third binds every runtime and lowering. `boundary.md` §9.4.4 and `backend.md` §15.5,
+  amended the same day, take a list's identity out of every skip.
 
 **A nullary constructor is one value** (*amended 2026-09-29*, research 39 §10.3): every use of a
 nullary constructor that a module writes is the same value, so `button "run" Run` gives its hole an
