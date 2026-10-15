@@ -5628,26 +5628,74 @@ test "a page builds the same with the edge lists the binary carries as with list
     try expectSameWithBuiltEdges(&w, "--platform=browser-tea", "page", &.{"Main.beni"});
 }
 
+test "a page builds the same under --release with the edge lists the binary carries as with lists it builds" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // The `--release` rows of the platform modules, which drop the other
+    // arm of each `if Js.development`: `browser/tea/SettlesManyFibers`
+    // runs keyed commands as fibers, so it reaches `Tea`, `core/Task` and
+    // their suspendable bodies.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.copyTreeInto("core", "mycore", "_");
+    try copyFixture(&w, "tests/corpus/browser/tea/SettlesManyFibers.beni", "Main.beni");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try expectSameWithBuiltEdges(&w, "--platform=browser-tea", "page", &.{ "--release", "Main.beni" });
+}
+
+test "a browser-direct page builds the same with the edge lists the binary carries as with lists it builds" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // The rows of the `browser-direct` chain, whose lowering compiles each
+    // program whole: `browser/direct/AfterRenderFocus` reaches its runtime
+    // module, `Direct` and the platform's commands.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.copyTreeInto("core", "mycore", "_");
+    try copyFixture(&w, "tests/corpus/browser/direct/AfterRenderFocus.beni", "Main.beni");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try expectSameWithBuiltEdges(&w, "--platform=browser-direct", "page", &.{"Main.beni"});
+}
+
 /// One fixture of the corpus, copied into the project at `to`.
 fn copyFixture(w: *World, from: []const u8, to: []const u8) !void {
     const bytes = try std.Io.Dir.cwd().readFileAlloc(w.io, from, w.arena.allocator(), .limited(1 << 20));
     try w.write(to, bytes);
 }
 
-/// Build `args` for `platform` into `<out>-embedded`, and again with the
-/// project's copy of core under `--core-root` into `<out>-built`, and
-/// expect two builds that succeed with the same diagnostics and the same
-/// tree: every module's edge lists read from the checked core in the first
-/// and built in the second.
+/// Build `args` for `platform` three times and expect three builds that
+/// succeed with the same diagnostics and the same tree: into
+/// `<out>-embedded` with the edge lists read from the checked core, into
+/// `<out>-jobs1` the same on one thread, and into `<out>-built` with the
+/// project's copy of core under `--core-root`, which reads no row and
+/// builds every module's lists. The one-thread build holds the rows and the
+/// walk to CLAUDE.md rule 5: workers read rows in whatever order they take
+/// modules, and the tree must not show it.
 fn expectSameWithBuiltEdges(w: *World, platform: []const u8, out: []const u8, args: []const []const u8) !void {
     const arena = w.arena.allocator();
-    var dirs: [2][]const u8 = undefined;
-    var stderrs: [2][]const u8 = undefined;
-    for ([_][]const u8{ "embedded", "built" }, &dirs, &stderrs) |how, *dir, *stderr| {
+    const hows = [_][]const u8{ "embedded", "jobs1", "built" };
+    var dirs: [hows.len][]const u8 = undefined;
+    var stderrs: [hows.len][]const u8 = undefined;
+    for (hows, &dirs, &stderrs) |how, *dir, *stderr| {
         dir.* = try std.fmt.allocPrint(arena, "{s}-{s}", .{ out, how });
         var argv: std.ArrayList([]const u8) = .empty;
         try argv.appendSlice(arena, &.{ "build", platform, "--no-cache", "--no-source-maps", "--self-profile=trace.json" });
         try argv.append(arena, try std.fmt.allocPrint(arena, "--out={s}", .{dir.*}));
+        if (std.mem.eql(u8, how, "jobs1")) try argv.append(arena, "--jobs=1");
         if (std.mem.eql(u8, how, "built")) try argv.append(arena, "--core-root=mycore");
         try argv.appendSlice(arena, args);
         const r = try w.runWith(argv.items, .{ .raw_diagnostics = true });
@@ -5655,25 +5703,27 @@ fn expectSameWithBuiltEdges(w: *World, platform: []const u8, out: []const u8, ar
         try testing.expectEqualStrings("", r.stdout);
         stderr.* = r.stderr;
         const counters = try emitCounters(w);
-        if (std.mem.eql(u8, how, "embedded")) {
-            try testing.expect(counters.edge_lists_embedded != 0);
-        } else {
+        if (std.mem.eql(u8, how, "built")) {
             try testing.expectEqual(@as(u64, 0), counters.edge_lists_embedded);
+        } else {
+            try testing.expect(counters.edge_lists_embedded != 0);
         }
     }
-    try testing.expectEqualStrings(stderrs[0], stderrs[1]);
     const want = try w.listFiles(dirs[0]);
-    const got = try w.listFiles(dirs[1]);
     try testing.expect(want.len > 1);
-    try testing.expectEqual(want.len, got.len);
-    for (want, got) |a, b| {
-        try testing.expectEqualStrings(a, b);
-        const want_bytes = try w.read(try std.fs.path.join(arena, &.{ dirs[0], a }));
-        const got_bytes = try w.read(try std.fs.path.join(arena, &.{ dirs[1], b }));
-        testing.expectEqualStrings(want_bytes, got_bytes) catch |err| {
-            std.debug.print("{s} differs between {s} and {s}\n", .{ a, dirs[0], dirs[1] });
-            return err;
-        };
+    for (dirs[1..], stderrs[1..]) |dir, stderr| {
+        try testing.expectEqualStrings(stderrs[0], stderr);
+        const got = try w.listFiles(dir);
+        try testing.expectEqual(want.len, got.len);
+        for (want, got) |a, b| {
+            try testing.expectEqualStrings(a, b);
+            const want_bytes = try w.read(try std.fs.path.join(arena, &.{ dirs[0], a }));
+            const got_bytes = try w.read(try std.fs.path.join(arena, &.{ dir, b }));
+            testing.expectEqualStrings(want_bytes, got_bytes) catch |err| {
+                std.debug.print("{s} differs between {s} and {s}\n", .{ a, dirs[0], dir });
+                return err;
+            };
+        }
     }
 }
 
