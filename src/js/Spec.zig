@@ -8273,6 +8273,10 @@ pub fn peephole(gpa: Allocator, ir: *JsIr) Allocator.Error!void {
             const b = ir.extraData(@fromBackingInt(@intCast(td.lhs)), JsIr.Binary);
             switch (op) {
                 .logical_and, .logical_or => {
+                    // A logical operator referred to from anywhere else may
+                    // be a value there, and then so are its operands: only
+                    // an unshared one is a test all the way down.
+                    if (refs[t.int()] > 1) continue;
                     // `x && true` and `x || false` are `x` in a test: the
                     // literal decides nothing and evaluates nothing, so the
                     // operator's value is truthy exactly when `x` is.
