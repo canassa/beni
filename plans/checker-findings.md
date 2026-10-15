@@ -5791,6 +5791,10 @@ consume their variable paths. An eager `List.push xs 2` followed by a case that
 returns `xs` checks and would return the mutated version. Pending refusal:
 `tests/pending/check/bad/direct/BridgeCaseResult.beni` (`list_still_used`).
 
+**Fixed 2026-10-15:** case and if arms consume their terminal result under the arm context (ownership-checker.md §29). Promoted
+`tests/corpus/check/bad/direct/BridgeCaseResult.beni` with a full diagnostic;
+`ownership/BridgeResultPaths` covers the class and accepted twins.
+
 ## CK-227 — a later callback return loses an outer captured holder (2026-10-15)
 
 Ownership soundness: 16 original leads, confirmed by the in-place interpreter.
@@ -5799,6 +5803,10 @@ Ownership soundness: 16 original leads, confirmed by the in-place interpreter.
 `xs` from a later `List.update` callback does not keep `xs` live before an
 earlier mutation. Pending: `check/bad/direct/BridgeCaptureResult.beni` under
 `tests/pending/`, requiring `list_still_used`.
+
+**Fixed 2026-10-15:** closure creation records outer capture reads (ownership-checker.md §29). Promoted
+`tests/corpus/check/bad/direct/BridgeCaptureResult.beni` with a full diagnostic;
+`ownership/BridgeResultPaths` covers the class and accepted twins.
 
 ## CK-228 — a block result loses its old parameter's later use (2026-10-15)
 
@@ -5809,6 +5817,10 @@ evaluates a block's final expression without consuming its terminal local;
 write or lend a parameter then return the old version, while its summary only
 publishes the write and the alias. Pending refusal:
 `tests/pending/check/bad/direct/BridgeBlockResult.beni` (`list_still_used`).
+
+**Fixed 2026-10-15:** blocks consume their terminal result (ownership-checker.md §29). Promoted
+`tests/corpus/check/bad/direct/BridgeBlockResult.beni` with a full diagnostic;
+`ownership/BridgeResultPaths` covers the class and accepted twins.
 
 ## CK-229 — a fold feeds a borrowed input back as its owned accumulator (2026-10-15)
 
@@ -5821,6 +5833,10 @@ position still observes it. The minimal witness differs in an intermediate item
 read even when its final value agrees. Pending refusal:
 `tests/pending/check/bad/direct/BridgeFoldBorrow.beni` (`list_still_used`).
 
+**Fixed 2026-10-15:** taken item results retain container conditions and caller liveness on feedback edges (ownership-checker.md §29). Promoted
+`tests/corpus/check/bad/direct/BridgeFoldBorrow.beni` with a full diagnostic;
+`ownership/BridgeResultPaths` covers the class and accepted twins.
+
 ## CK-230 — recursive capture results hide the once obligation (2026-10-15)
 
 Ownership soundness: one original lead (`fixture-24`), confirmed by the in-place
@@ -5829,6 +5845,10 @@ captured result becomes no cells in `instProv` at `src/own/Ownership.zig:6425`; 
 return's write contributes no captured cell to `env_writes` (`:4935`) and no
 once requirement. Reusing the closure mutates its retained seed. Pending:
 `tests/pending/check/bad/direct/BridgeRecursiveCapture.beni` (`list_still_used`).
+
+**Fixed 2026-10-15:** recursive summary instantiation preserves symbolic captures (ownership-checker.md §29). Promoted
+`tests/corpus/check/bad/direct/BridgeRecursiveCapture.beni` with a full diagnostic;
+`ownership/BridgeResultPaths` covers the class and accepted twins.
 
 ## CK-231 — call-site Disjoint omits the callee's environment (2026-10-15)
 
@@ -5851,3 +5871,7 @@ source at `2491cb6a4`. The pending beni fixtures are hand-transcribed Lean twins
 Historical persistent-runtime minima are not reliable witnesses for their
 originals: 94 erase an original in-place divergence and 113 introduce one.
 Every original and minimum is therefore judged and retained separately.
+
+**Fixed 2026-10-15:** call-site Disjoint includes the callee environment (ownership-checker.md §29). Promoted
+`tests/corpus/check/bad/direct/BridgeCaptureOperand.beni` with a full diagnostic;
+`ownership/BridgeResultPaths` covers the class and accepted twins.

@@ -1,7 +1,7 @@
 module CapturedReread
   13:14 List.push xs: rejected later-use: xs is read again at 14:26
   20:42 List.push xs: accepted once
-  26:46 List.push xs: rejected later-use: xs is read again at 27:5
+  26:46 List.push xs: rejected later-use: xs is read again at 27:24
   summary rereads: unused
   summary once: unused
   summary holder: unused

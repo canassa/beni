@@ -5,7 +5,7 @@ module HttpAnswer
   72:17 List.push issues: pending: Http.expectStringResponse loses sight of what calls it
   111:19 value Fetched: rejected need: Cmd.task sends what it returns, and it returns what Cmd.task hands it, which may hold a list the checker cannot place — from JavaScript, or through a call it does not see into (§23.5) (approx)
   112:19 value Loaded: rejected need: Cmd.task sends what it returns, and it returns what Cmd.task hands it, which may be a list the sender still holds (§23.5)
-  113:19 value Loaded: rejected need: Cmd.task sends what it returns, and it returns what Cmd.task hands it, which may hold a list the checker cannot place — from JavaScript, or through a call it does not see into (§23.5) (approx)
+  113:19 value Loaded: rejected need: Cmd.task sends what it returns, and it returns what Cmd.task hands it, which may be a list the sender still holds (§23.5)
   121:34 List.push model.errors: accepted param
   127:34 List.push model.errors: accepted param
   140:5 entry HttpAnswer.update model.errors: accepted entry

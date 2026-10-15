@@ -11,7 +11,7 @@ module ResultDefault
   summary handle: π1.items RAW, π1.items[*] A, π1.other RA; res .items π1.items, .items[*] ~π1.items[*], .other π1.other
   summary step: π2 RA, π2.items AW, π2.items[*] A, π2.other A; res .items ~π2.items, .items[*] ~π2.items[*], .other ~π2.other, ~π2
   summary stepLambda: π2 RA, π2.items AW, π2.items[*] A, π2.other A; res .items ~π2.items, .items[*] ~π2.items[*], .other ~π2.other, ~π2
-  summary stepCase: π2 A, π2.items RAW, π2.items[*] RA, π2.other RA; res .items π2.items, .items[*] ~π2.items[*], .other π2.other, π2
+  summary stepCase: π2 RA, π2.items RAW, π2.items[*] RA, π2.other RA; res .items π2.items, .items[*] ~π2.items[*], .other π2.other, π2
   summary readAfter: π2 R, π2.items RW, π2.items[*] R
   summary defaultReads: π2 R, π2.items RAW, π2.items[*] A, π2.other A; res .items ~π2.items, .items[*] ~π2.items[*], .other ~π2.items ~π2.other
   summary resultAndThen: π2 RA, π2.items AW, π2.items[*] A, π2.other A; res .items ~π2.items, .items[*] ~π2.items[*], .other ~π2.other, ~π2
