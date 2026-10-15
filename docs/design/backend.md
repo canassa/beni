@@ -7558,13 +7558,13 @@ order. Each release pass changes the printed bytes, and each has a rule.
    as a module's top-level name. A temporary that the lowering invented (`$t…`) still has no entry.
    A named function's first mapping carries its name, as in §11.1, so a stack frame under Node's
    `--enable-source-maps` names the beni function and not its short name.
-6. **Decided branches** (§9, *Whole-program specialisation*): specialisation writes the operand that a decided `cond`, `&&` or `||` keeps in place of
-   the node (`Spec.foldTo`). The node takes the kept operand's position too. The kept code is what
-   runs, so it maps to where it was written and not to the test that decided it. A call kept this
-   way is then the site of a copy into it (item 2). Before this rule, `if n > 100 then Aid.boom n`
-   with `n` known to be 500 mapped the copied `Aid.boom` to the `>`, and the crash frame named the
-   test's line. A node that an inline writes in place of a call keeps the call's position: the
-   call is where the inlined code runs.
+6. **Decided branches** (§9, *Whole-program specialisation*): specialisation writes the operand
+   that a decided `cond`, `&&` or `||` keeps in place of the node (`Spec.foldTo`). The node takes
+   the kept operand's position too. The kept code is what runs, so it maps to where it was written
+   and not to the test that decided it. A call kept this way is then the site of a copy into it
+   (item 2). Before this rule, `if n > 100 then Aid.boom n` with `n` known to be 500 mapped the
+   copied `Aid.boom` to the `>`, and the crash frame named the test's line. A node that an inline
+   writes in place of a call keeps the call's position: the call is where the inlined code runs.
 
 **The join.** The printer prints each module of the hoisted file on its own, with marks relative
 to the module's own bytes (§9). The link step joins the pieces, and the map follows the join:
@@ -7654,7 +7654,8 @@ copy, the guard's space, a run's keyword, a decided branch's position, the last 
 with no mark.
 
 **The flags.** `--release --source-maps` writes the maps. `--release` alone writes none, and
-`--release --no-source-maps` says so. Both flags together exit 2, as in development.
+`--release --no-source-maps` says so. `--source-maps` with `--no-source-maps` exits 2, with or
+without `--release`, as in development.
 
 **Deferred.**
 
