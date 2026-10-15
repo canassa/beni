@@ -384,6 +384,7 @@ pub fn run(
     }
     // §2's page shell, beside the entry file, in either layout.
     if (entry != null) try e.emitShell();
+    try e.emitDirectPlan();
     // §2's rule 2, with everything produced and nothing written yet.
     try e.checkOutputPaths();
     if (e.diagnostics.items.len != 0) return e.nothingWritten(gpa);
@@ -2480,17 +2481,34 @@ const Emitter = struct {
                 } else false;
             }
             out.settles = settles;
+            out.view_capped = prog.view_capped;
+            const sites = try a.alloc(Lower.Direct.Site, prog.sites.len);
+            for (prog.sites, sites) |site_, *to| to.* = .{
+                .module = site_.module,
+                .token = site_.token,
+                .fallback = if (site_.class != .value) "" else switch (site_.why) {
+                    .list => "List Html uses value reconciliation without a row edit plan",
+                    .recursive => "recursive producer beyond the finite summary",
+                    .none => "unresolved markup value producer",
+                },
+            };
+            out.sites = sites;
 
             // The holes, by read set: equal sets are one group — and, since
             // version 1.8, equal bound depths (a row's own read and the
             // whole list's are two groups).
             var groups: std.ArrayList([]const u32) = .empty;
             var group_bounds: std.ArrayList([]const u8) = .empty;
-            const holes = try a.alloc(Lower.Direct.Hole, prog.vholes.len);
-            const group_of = try a.alloc(u32, prog.vholes.len);
+            // Producer entry sets participate in row edits as consumer facts,
+            // while the public S0 dump continues to count only leaf holes.
+            var consumers = prog.*;
+            consumers.vholes = try std.mem.concat(a, Writes.Hole, &.{ prog.vholes, prog.vedges });
+            const all_holes = try a.alloc(Lower.Direct.Hole, consumers.vholes.len);
+            const holes = all_holes[0..prog.vholes.len];
+            const group_of = try a.alloc(u32, consumers.vholes.len);
             const rho = [_]u32{Writes.rho_path};
             const unbound = [_]u8{0};
-            for (prog.vholes, holes, group_of) |h, *o, *go| {
+            for (consumers.vholes, all_holes, group_of) |h, *o, *go| {
                 const reads: []const u32 = if (prog.view_capped) &rho else h.reads;
                 const bounds: []const u8 = if (prog.view_capped) &unbound else h.bound;
                 const group: u32 = for (groups.items, group_bounds.items, 0..) |g, gb, gi| {
@@ -2512,6 +2530,7 @@ const Emitter = struct {
                     .path = try a.dupe(u64, h.path),
                 };
             }
+            out.edges = all_holes[prog.vholes.len..];
             // Version 1.10: each `let`'s read set, a group as a hole's is.
             const lets = try a.alloc(Lower.Direct.Let, prog.vlets.len);
             for (prog.vlets, lets) |h, *o| {
@@ -2527,6 +2546,16 @@ const Emitter = struct {
                 o.* = .{ .module = h.module, .inst = h.token, .path = try a.dupe(u64, h.path), .group = group };
             }
             out.lets = lets;
+            const entry_reads: []const u32 = if (prog.view_capped) &rho else prog.view_reads;
+            const entry_bounds = try a.alloc(u8, entry_reads.len);
+            @memset(entry_bounds, 0);
+            out.root_group = for (groups.items, group_bounds.items, 0..) |g, gb, gi| {
+                if (std.mem.eql(u32, g, entry_reads) and std.mem.eql(u8, gb, entry_bounds)) break @intCast(gi);
+            } else grp: {
+                try groups.append(a, entry_reads);
+                try group_bounds.append(a, entry_bounds);
+                break :grp @intCast(groups.items.len - 1);
+            };
             const conflicts = try a.alloc(bool, groups.items.len * keys.len);
             for (groups.items, 0..) |g, gi| for (key_writes, 0..) |kw, ki| {
                 conflicts[gi * keys.len + ki] = for (g) |r| {
@@ -2534,7 +2563,7 @@ const Emitter = struct {
                 } else false;
             };
             // Version 1.8: the lists, and K3's per-row texts.
-            var lists: DirectLists = .{ .e = e, .w = w, .prog = prog, .key_writes = key_writes, .group_of = group_of, .holes = holes, .conflicts = conflicts, .keys = keys.len };
+            var lists: DirectLists = .{ .e = e, .w = w, .prog = &consumers, .key_writes = key_writes, .group_of = group_of, .holes = all_holes, .conflicts = conflicts, .keys = keys.len };
             try lists.build();
             std.mem.sort(Lower.Direct.Hole, holes, {}, struct {
                 fn less(_: void, x: Lower.Direct.Hole, y: Lower.Direct.Hole) bool {
@@ -2547,8 +2576,51 @@ const Emitter = struct {
             out.lists = lists.out.items;
             out.indices = lists.indices.items;
         }
-        e.direct = .{ .programs = programs };
+        var roots: std.ArrayList(Lower.Direct.Site) = .empty;
+        for (birs, 0..) |bir_, mi| {
+            const m: Graph.Index = @fromBackingInt(@intCast(mi));
+            if (e.graph().modulePackage(m) != .app) continue;
+            for (bir_.decls, 0..) |decl, di| {
+                if (!e.live.decl(m, di)) continue;
+                for (decl.inst_start.int()..decl.inst_end.int()) |inst| {
+                    if (bir_.instTag(@fromBackingInt(@intCast(inst))) != .markup) continue;
+                    try roots.append(a, .{ .module = @intCast(mi), .token = bir_.insts.items(.main_token)[inst] });
+                }
+            }
+        }
+        e.direct = .{ .programs = programs, .source_roots = roots.items };
         if (!e.options.release) try e.debugReach();
+    }
+
+    fn emitDirectPlan(e: *Emitter) !void {
+        const d = e.direct orelse return;
+        const lowering_name = e.options.platform.lowering orelse return;
+        const lowering = findLowering(lowering_name) orelse return;
+        if (!lowering.parameterised_templates) return;
+        const Site = struct { module: u32, token: u32, mode: []const u8, reason: []const u8 };
+        const Program = struct {
+            module: u32,
+            inst: u32,
+            keys: []const beni_markup.Program.Key,
+            holes: []const Lower.Direct.Hole,
+            producer_edges: []const Lower.Direct.Hole,
+            groups: u32,
+            conflicts: []const bool,
+            sites: []const Site,
+        };
+        const programs = try e.scratch.alloc(Program, d.programs.len);
+        for (d.programs, programs) |program_, *to| {
+            const sites = try e.scratch.alloc(Site, d.source_roots.len);
+            for (d.source_roots, sites) |root_, *site_| {
+                const reason = if (program_.view_capped) "analysis view cap" else for (program_.sites) |known| {
+                    if (known.module == root_.module and known.token == root_.token) break known.fallback;
+                } else "producer not resolved by the view walk (for example markup stored in the model)";
+                site_.* = .{ .module = root_.module, .token = root_.token, .mode = if (reason.len == 0) "parameterised" else "fallback", .reason = reason };
+            }
+            to.* = .{ .module = program_.module, .inst = program_.inst, .keys = program_.keys, .holes = program_.holes, .producer_edges = program_.edges, .groups = program_.groups, .conflicts = program_.calls, .sites = sites };
+        }
+        const text = try std.json.Stringify.valueAlloc(e.gpa, .{ .format = @as(u32, 1), .unbound_values_fallback = "Each placement gates entry by its slot read mask; entered unbound values visit every dynamic group. Bound uses retain parameter substitution.", .programs = programs }, .{ .whitespace = .indent_2 });
+        try e.produceOwned("_direct-plan.json", text, try e.manifestPath());
     }
 
     /// A constructor id of the write-set pass, as `Lower.Direct.Ctor`.

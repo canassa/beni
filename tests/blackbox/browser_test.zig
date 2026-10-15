@@ -491,3 +491,134 @@ test "the driver's cache pruning keeps the entries of the last hour" {
     defer w.deinit();
     try testing.expectEqual(@as(u32, 1025), try entriesLeft(&w, 1025, 60));
 }
+
+const VisitMutation = enum { missing, repeated, child, cache };
+
+fn visitMutation(mutation: VisitMutation) !void {
+    // PREPARE: alter an emitted call, independently of its analysis scope.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const arena = w.arena.allocator();
+    try w.write("Main.beni",
+        \\import Html exposing (Html)
+        \\import Tea
+        \\
+        \\
+        \\type Msg
+        \\    = Pressed
+        \\    | Quiet
+        \\
+        \\
+        \\update : Msg, { count : Int } → { count : Int }
+        \\update msg n =
+        \\    case msg of
+        \\        Pressed → { n | count = n.count + 1 }
+        \\        Quiet → n
+        \\
+        \\
+        \\view : { count : Int } → Html Msg
+        \\view n = <button id="inc" onClick={Pressed}>{n.count}</button>
+        \\
+        \\
+        \\main : Tea.Program
+        \\main = Tea.sandbox { init = λ⊤ → { count = 0 }, update = update, view = view }
+        \\
+    );
+    if (mutation == .child or mutation == .cache) {
+        const main_source = try w.read("Main.beni");
+        const old_view = "view n = <button id=\"inc\" onClick={Pressed}>{n.count}</button>";
+        const at = std.mem.indexOf(u8, main_source, old_view).?;
+        const view = if (mutation == .child)
+            "view n = <button id=\"inc\" onClick={Pressed}>{Body.view n.count}</button>"
+        else
+            "view n = <button id=\"inc\" onClick={Pressed}>{Body.view \"fixed\" n.count}</button>";
+        try w.write("Main.beni", try std.mem.concat(arena, u8, &.{ "import Body\n", main_source[0..at], view, main_source[at + old_view.len ..] }));
+        try w.write("Body.beni", if (mutation == .child)
+            "import Html exposing (Html)\n\npub view : Int → Html msg\nview n = <span>{n}</span>\n"
+        else
+            "import Html exposing (Html)\n\npub view : String, Int → Html msg\nview label n = <span title={label}>{n}</span>\n");
+    }
+    try w.write("page.steps", "throws click #inc\n");
+    const built = try w.run(&.{ "build", "--platform=browser-direct", "--out=out", if (mutation == .child or mutation == .cache) "." else "Main.beni" });
+    try expectExit(0, built);
+    try testing.expectEqual(@as(usize, 0), built.diagnostics.len);
+    const source = try w.read("out/Main.mjs");
+    const handler = std.mem.indexOf(u8, source, "const $hPressed") orelse return error.NoHandler;
+    const call = handler + (std.mem.indexOf(u8, source[handler..], "    $g") orelse return error.NoGroupCall);
+    const end = call + (std.mem.indexOfScalar(u8, source[call..], '\n') orelse return error.NoGroupCall) + 1;
+    const line = source[call..end];
+    try testing.expect(std.mem.endsWith(u8, line, "();\n"));
+    const changed = try std.mem.concat(arena, u8, &.{ source[0..call], if (mutation == .repeated) line else "", if (mutation == .repeated) line else "", source[end..] });
+    if (mutation == .child) {
+        const group_body = std.mem.indexOf(u8, source, "const $g") orelse return error.NoGroupCall;
+        const placement = group_body + (std.mem.indexOf(u8, source[group_body..], "Direct$childHtml(") orelse return error.NoChildCall);
+        const skipped = try std.mem.concat(arena, u8, &.{ source[0..placement], "(globalThis.__omitChild ? (...unused) => {} : Direct$childHtml)(", source[placement + "Direct$childHtml(".len ..] });
+        const start = std.mem.indexOf(u8, skipped, "const $hPressed").?;
+        const body_start = start + std.mem.indexOf(u8, skipped[start..], "=> {\n").? + "=> {\n".len;
+        try w.write("out/Main.mjs", try std.mem.concat(arena, u8, &.{ skipped[0..body_start], "    globalThis.__omitChild = true;\n", skipped[body_start..] }));
+    } else if (mutation == .cache) {
+        // Corrupt only the cached execution selection. Analysis and the
+        // independently recomputed expected visits remain intact.
+        const runtime = try w.read("out/_platform/Direct.mjs");
+        const selector = std.mem.indexOf(u8, runtime, "const Direct$templateSelectNew = (") orelse return error.NoTemplateSelector;
+        const assignment = selector + (std.mem.indexOf(u8, runtime[selector..], " = Direct$templateWanted(") orelse return error.NoTemplateSelection);
+        const rhs = assignment + " = ".len;
+        const rhs_end = rhs + (std.mem.indexOfScalar(u8, runtime[rhs..], ';') orelse return error.NoTemplateSelection);
+        try w.write("out/_platform/Direct.mjs", try std.mem.concat(arena, u8, &.{ runtime[0..rhs], "true", runtime[rhs_end..] }));
+    } else try w.write("out/Main.mjs", changed);
+
+    // EXECUTE: the handler must fail before the independent DOM verifier.
+    const shown = try browser.drive(&w, try browser.harness(testing.io), null, "out/_main.mjs", "page.steps", world.default_timeout_ms);
+
+    // VERIFY: assert the whole transcript and the specific visit defect.
+    try expectExit(0, shown);
+    const message = if (mutation == .child)
+        "browser-direct visit invariant: missing or repeated analysis-predicted group (key 0, group [[\"0:19\"],false,false,false])"
+    else if (mutation == .cache)
+        "browser-direct visit invariant: extra or repeated group (key 0, group [[\"0:21\"],false,false,false])"
+    else
+        "browser-direct visit invariant: missing or repeated analysis-predicted group (key 0, group 0)";
+    const wanted = try std.fmt.allocPrint(
+        arena,
+        "-- load\n<body>\n  <button id=\"inc\">\"0\"</button>\n</body>\n" ++
+            "-- throws click #inc\n(threw: Error: {s})\n<body>\n  <button id=\"inc\">\"{s}\"</button>\n" ++
+            "  <div style=\"position:fixed;inset:0;z-index:2147483647;overflow:auto;margin:0;padding:24px;background:#fff;color:#a00;font:14px/1.5 monospace;white-space:pre-wrap\">\"This program has stopped.\\n\\nSomething it ran threw an exception, so its state can no longer be trusted and nothing more of it runs. The exception is below, and in the console with its stack.\\n\\nError: {s}\"</div>\n</body>\n",
+        .{ message, if (mutation == .missing) "0" else "1", try std.mem.replaceOwned(u8, arena, message, "\"", "\\\"") },
+    );
+    if (mutation == .child or mutation == .cache) {
+        const before_dom = "  <button id=\"inc\">\"0\"</button>";
+        const after_dom = "  <button id=\"inc\">\"1\"</button>";
+        var transcript = std.Io.Writer.Allocating.init(arena);
+        var remaining: []const u8 = wanted;
+        while (std.mem.indexOf(u8, remaining, before_dom)) |at| {
+            try transcript.writer.writeAll(remaining[0..at]);
+            try transcript.writer.print("  <button id=\"inc\">\n    <span{s}>\"0\"</span>\n  </button>", .{if (mutation == .cache) " title=\"fixed\"" else ""});
+            remaining = remaining[at + before_dom.len ..];
+        }
+        // The missing placement leaves the old child's DOM unchanged.
+        if (std.mem.indexOf(u8, remaining, after_dom)) |at| {
+            try transcript.writer.writeAll(remaining[0..at]);
+            try transcript.writer.print("  <button id=\"inc\">\n    <span{s}>\"{s}\"</span>\n  </button>", .{ if (mutation == .cache) " title=\"fixed\"" else "", if (mutation == .cache) "1" else "0" });
+            remaining = remaining[at + after_dom.len ..];
+        }
+        try transcript.writer.writeAll(remaining);
+        try testing.expectEqualStrings(transcript.written(), shown.stdout);
+    } else try testing.expectEqualStrings(wanted, shown.stdout);
+    try testing.expectEqualStrings("", shown.stderr);
+}
+
+test "direct visit verification catches a missing emitted group call" {
+    try visitMutation(.missing);
+}
+
+test "direct visit verification catches a repeated emitted group call" {
+    try visitMutation(.repeated);
+}
+
+test "direct visit verification catches an omitted child patch through its live inventory" {
+    try visitMutation(.child);
+}
+
+test "direct visit verification rejects extra groups from a cached selection" {
+    try visitMutation(.cache);
+}

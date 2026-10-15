@@ -188,6 +188,8 @@ pub const PathKind = enum(u32) {
     /// holds. Only reads carry it — a `case`'s scrutiny, a tag fact's path —
     /// and it is exempt from the k-limit, since it goes no deeper.
     tag,
+    /// Host-dependent view input, selected on every render.
+    omega,
 };
 
 pub const rho_path: u32 = 0;
@@ -431,6 +433,8 @@ pub const Program = struct {
     /// what a derived value reads (browser-direct.md §5.4). The consumer's;
     /// no dump prints it.
     vlets: []Hole = &.{},
+    vedges: []Hole = &.{},
+    view_reads: []const u32 = &.{rho_path},
     /// The view's walk reached W: every hole reads ρ, and the dump says so.
     view_capped: bool = false,
     subscription_reads: []const u32 = &.{rho_path},
@@ -575,6 +579,10 @@ root_base_is_deps: std.ArrayList(bool) = .empty,
 /// Per root id: for a `For` row's item root, how many rows deep it is
 /// (1 for a row of the view's own `For`); 0 for any other root.
 root_row: std.ArrayList(u8) = .empty,
+root_control: std.ArrayList(bool) = .empty,
+resolve_view_controls: bool = false,
+view_args: std.HashMapUnmanaged(VHoleKey, ViewArg, std.hash_map.AutoContext(VHoleKey), std.hash_map.default_max_load_percentage) = .empty,
+
 next_root: u32 = 0,
 
 ctx: Ctx = .{ .mode = .closed },
@@ -589,6 +597,8 @@ holes: std.ArrayList(HoleAcc) = .empty,
 hole_index: std.HashMapUnmanaged(HoleKey, u32, std.hash_map.AutoContext(HoleKey), std.hash_map.default_max_load_percentage) = .empty,
 /// The holes per call path (write-sets.md, *a hole's facts per call*),
 /// and the call paths: each one's entries, and its extensions by one entry.
+vedges: std.ArrayList(HoleAcc) = .empty,
+vedge_index: std.HashMapUnmanaged(VHoleKey, u32, std.hash_map.AutoContext(VHoleKey), std.hash_map.default_max_load_percentage) = .empty,
 vholes: std.ArrayList(HoleAcc) = .empty,
 vhole_index: std.HashMapUnmanaged(VHoleKey, u32, std.hash_map.AutoContext(VHoleKey), std.hash_map.default_max_load_percentage) = .empty,
 /// Each constant `let` the view walk evaluated, per call path, as a hole
@@ -625,6 +635,14 @@ model_type: ?TyRef = null,
 const DiffKey = struct { term: u32, path: u32, gamma: u32 };
 const SubstKey = struct { inst: u32, term: u32 };
 const HoleKey = struct { module: u32, token: u32 };
+const ViewArg = struct {
+    root: u32 = none,
+    controls: u32 = 0,
+    paths: ?[]const u32 = null,
+    closed: u32 = none,
+    varied: bool = false,
+};
+
 const VHoleKey = struct { module: u32, token: u32, path: u32 };
 const PathStep = struct { from: u32, entry: u64 };
 
@@ -692,6 +710,8 @@ pub fn deinit(a: *Writes) void {
     a.root_base.deinit(gpa);
     a.root_base_is_deps.deinit(gpa);
     a.root_row.deinit(gpa);
+    a.root_control.deinit(gpa);
+    a.view_args.deinit(gpa);
     a.active.deinit(gpa);
     a.split_ctors.deinit(gpa);
     a.diff_memo.deinit(gpa);
@@ -711,6 +731,13 @@ pub fn deinit(a: *Writes) void {
     }
     a.vholes.deinit(gpa);
     a.vhole_index.deinit(gpa);
+    for (a.vedges.items) |*h| {
+        h.reads.deinit(gpa);
+        h.key_paths.deinit(gpa);
+        h.bound.deinit(gpa);
+    }
+    a.vedges.deinit(gpa);
+    a.vedge_index.deinit(gpa);
     for (a.vlets.items) |*h| {
         h.reads.deinit(gpa);
         h.key_paths.deinit(gpa);
@@ -921,6 +948,7 @@ fn mintRoot(a: *Writes, kind: PathKind, base: u32, base_is_deps: bool) Allocator
     try a.root_base.append(a.gpa, base);
     try a.root_base_is_deps.append(a.gpa, base_is_deps);
     try a.root_row.append(a.gpa, 0);
+    try a.root_control.append(a.gpa, false);
     return a.mkPath(none, kind, id, 0);
 }
 
@@ -1235,9 +1263,70 @@ fn finish(a: *Writes, mark: usize, depth: u32) Error!u32 {
 }
 
 fn mkSame(a: *Writes, p: u32) Error!u32 {
+    return a.mkSameControlled(p, 0);
+}
+
+fn mkSameControlled(a: *Writes, p: u32, control: u32) Error!u32 {
     const mark = a.scratch.items.len;
-    try a.scratch.appendSlice(a.gpa, &.{ @backingInt(Tag.same), p });
+    try a.scratch.appendSlice(a.gpa, &.{ @backingInt(Tag.same), p, control });
     return a.finish(mark, 0);
+}
+
+fn closedIdentity(a: *Writes, term_: u32) u32 {
+    var at_ = term_;
+    while (a.termTag(at_) == .alt and a.termWord(at_, 1) == none and a.termWord(at_, 2) == 0 and a.altLen(at_) == 1) {
+        const item = a.altItem(at_, 0);
+        if (item.gamma != 0) break;
+        at_ = item.term;
+    }
+    return at_;
+}
+
+fn closedArgument(a: *Writes, term_: u32) bool {
+    const constant = a.closedIdentity(term_);
+    if (a.termTag(constant) != .fun) return a.isLiteral(constant);
+    var i: u32 = 5;
+    while (i < a.termLen(constant)) : (i += 1) {
+        const captured = a.termWord(constant, i);
+        if (captured != none and !a.closedArgument(captured)) return false;
+    }
+    return true;
+}
+
+/// Resolve whether a formal's path substitution varies across choices.
+/// Deferred roots survive through computed expressions until the view walk ends.
+fn viewArgument(a: *Writes, frame: *Frame, param: Inst.Index, arg: u32, g: u32) Error!u32 {
+    if (a.ctx.mode != .view) return arg;
+    const same = a.termTag(arg) == .same;
+    const closed = !same and a.closedArgument(arg);
+    const known = same or closed;
+    var paths: std.ArrayList(u32) = .empty;
+    defer paths.deinit(a.gpa);
+    if (same) try a.anchorPath(a.termWord(arg, 1), &paths, 0);
+    const entry = try a.view_args.getOrPut(a.gpa, .{ .module = frame.m, .token = param.int(), .path = a.ctx.call_path });
+    if (!entry.found_existing) entry.value_ptr.* = .{
+        .paths = if (same) try a.arena().dupe(u32, paths.items) else null,
+        .closed = if (closed) a.closedIdentity(arg) else none,
+        .varied = !known,
+    };
+    const witness = entry.value_ptr;
+    if (same) {
+        if (witness.paths == null or !std.mem.eql(u32, witness.paths.?, paths.items)) witness.varied = true;
+    } else if (!closed or witness.closed != a.closedIdentity(arg)) witness.varied = true;
+    witness.controls = try a.depsUnion(witness.controls, try a.gammaDeps(g));
+    if (known and witness.controls != 0 and witness.root == none) {
+        witness.root = try a.mintRoot(.eps, 0, true);
+        a.root_control.items[a.pathA(witness.root)] = true;
+    }
+    if (witness.root != none) a.root_base.items[a.pathA(witness.root)] = if (witness.varied) witness.controls else 0;
+    if (!known) return if (g == 0) arg else a.mkAlt(none, false, none, &.{.{ .gamma = g, .term = arg }});
+    return if (witness.root == none) arg else a.withReadControl(arg, try a.depsOfPath(witness.root));
+}
+
+fn withReadControl(a: *Writes, term_: u32, control: u32) Error!u32 {
+    if (control == 0) return term_;
+    if (a.termTag(term_) == .same) return a.mkSameControlled(a.termWord(term_, 1), try a.depsUnion(a.termWord(term_, 2), control));
+    return a.mkAlt(none, false, control, &.{.{ .gamma = 0, .term = term_ }});
 }
 
 /// `Same(p.step)`, or `Fresh({p})` past k (B4).
@@ -1488,7 +1577,7 @@ fn deps(a: *Writes, t: u32) Allocator.Error!u32 {
     if (a.term_deps.items[t] != none) return a.term_deps.items[t];
     var d: u32 = 0;
     switch (a.termTag(t)) {
-        .same => d = try a.depsOfPath(a.termWord(t, 1)),
+        .same => d = try a.depsUnion(try a.depsOfPath(a.termWord(t, 1)), a.termWord(t, 2)),
         .lit => {},
         .fresh => d = a.termWord(t, 1),
         .ixeq => d = a.termWord(t, 3),
@@ -1661,7 +1750,7 @@ fn tick(a: *Writes) error{WorkCap}!void {
 
 fn proj(a: *Writes, t: u32, kind: PathKind, x: u32, y: u32) Error!u32 {
     switch (a.termTag(t)) {
-        .same => return a.mkSameStep(a.termWord(t, 1), kind, x, y),
+        .same => return a.withReadControl(try a.mkSameStep(a.termWord(t, 1), kind, x, y), a.termWord(t, 2)),
         .rec => if (kind == .field) {
             var i: u32 = 3;
             while (i < a.termLen(t)) : (i += 2) {
@@ -2056,7 +2145,7 @@ fn eval(a: *Writes, f: *Frame, inst: Inst.Index, g: u32) Error!u32 {
 
 fn recordUpdate(a: *Writes, base: u32, pairs: [][2]u32) Error!u32 {
     switch (a.termTag(base)) {
-        .same => return a.mkRec(a.termWord(base, 1), 1, pairs),
+        .same => return a.withReadControl(try a.mkRec(a.termWord(base, 1), 1, pairs), a.termWord(base, 2)),
         .rec => {
             var all: std.ArrayList([2]u32) = .empty;
             defer all.deinit(a.gpa);
@@ -2366,15 +2455,26 @@ fn callTop(a: *Writes, m: u32, d: u32, args: []const u32, site_m: u32, site: Ins
                     .{ .module = none, .token = 0 };
                 try a.map_sites.append(a.gpa, at);
             }
-            return a.freshCall(args);
+            return a.opaqueCall(args, m, site_m, site);
         }
     }
-    if (decl.kind == .foreign_value or !decl.kind.isValue()) return a.freshCall(args);
+    if (decl.kind == .foreign_value or !decl.kind.isValue()) return a.opaqueCall(args, m, site_m, site);
     if (decl.params == 0) return a.apply(try a.topValue(m, d, g), args, g);
-    if (args.len != decl.params) return a.freshCall(args);
+    if (args.len != decl.params) return a.opaqueCall(args, m, site_m, site);
     if (a.ctx.mode == .view and a.in.packages[m] == .app) return a.direct(m, d, args, g);
     const s = try a.summary(m, d);
     return a.instantiate(s, a.fnId(m, d), args, g);
+}
+
+/// Opaque impure host results vary independently of model writes.
+fn opaqueCall(a: *Writes, args: []const u32, m: u32, site_m: u32, site: Inst.Index) Error!u32 {
+    const result = try a.freshCall(args);
+    if (a.ctx.mode != .view or std.mem.eql(u8, a.in.module_names[m], "Debug")) return result;
+    const dispatch = a.dispatchOf(site_m) orelse return result;
+    const effects = dispatch.effectAt(site);
+    if (!effects.impure and effects.own == .no) return result;
+    const host = try a.mkPath(none, .omega, 0, 0);
+    return a.withReadControl(result, try a.depsOfPath(host));
 }
 
 /// Apply a function value (§4.2's reductions).
@@ -2449,7 +2549,12 @@ fn applyClosure(a: *Writes, fun: u32, args: []const u32, g: u32) Error!u32 {
         f.env[ld.local] = fun;
     }
     if (params.len != args.len) return a.freshCall(args);
-    for (params, args) |p, v| try a.bind(&f, p, v);
+    for (params, args) |p, v| {
+        // A caller's choice still controls an argument after passing it
+        // through a producer (write-sets.md, 2026-10-15 amendment).
+        const bound = try a.viewArgument(&f, p, v, g);
+        try a.bind(&f, p, bound);
+    }
     var r = try a.eval(&f, body, g);
     r = try a.joinTry(&f, r);
     return a.capSize(r);
@@ -2490,7 +2595,12 @@ fn direct(a: *Writes, m: u32, d: u32, args: []const u32, g: u32) Error!u32 {
     var f = try a.newFrame(m, d, if (a.ctx.mode == .summary) 0 else try a.depsOfPath(rho_path));
     const params = b.extraSlice(.{ .start = decl.params_start, .end = decl.params_end }, Inst.Index);
     if (params.len != args.len) return a.freshCall(args);
-    for (params, args) |p, v| try a.bind(&f, p, v);
+    for (params, args) |p, v| {
+        // A caller's choice still controls an argument after passing it
+        // through a producer (write-sets.md, 2026-10-15 amendment).
+        const bound = try a.viewArgument(&f, p, v, g);
+        try a.bind(&f, p, bound);
+    }
     const body = decl.body.unwrap() orelse return a.freshCall(args);
     var r = try a.eval(&f, body, g);
     r = try a.joinTry(&f, r);
@@ -2685,7 +2795,7 @@ fn substDeps(a: *Writes, sub: *const Subst, d: u32) Error!u32 {
 /// a value whose constructor is known, everything it depends on otherwise.
 fn tagDeps(a: *Writes, v: u32) Allocator.Error!u32 {
     return switch (a.termTag(v)) {
-        .same => a.depsOfPath(try a.tagRead(a.termWord(v, 1))),
+        .same => a.depsUnion(try a.depsOfPath(try a.tagRead(a.termWord(v, 1))), a.termWord(v, 2)),
         .con, .lit => 0,
         else => a.deps(v),
     };
@@ -2725,7 +2835,7 @@ fn subst(a: *Writes, sub: *const Subst, t: u32) Error!u32 {
 
 fn substNode(a: *Writes, sub: *const Subst, t: u32) Error!u32 {
     switch (a.termTag(t)) {
-        .same => return a.substPath(sub, a.termWord(t, 1)),
+        .same => return a.withReadControl(try a.substPath(sub, a.termWord(t, 1)), try a.substDeps(sub, a.termWord(t, 2))),
         .lit => return t,
         .fresh => return a.mkFresh(try a.substDeps(sub, a.termWord(t, 1))),
         .con => {
@@ -3553,13 +3663,16 @@ fn walkMarkup(a: *Writes, f: *Frame, node: Bir.ExtraIndex, g: u32, d: *u32, pare
                 return err;
             };
             a.ctx.call_path = outer;
+            try a.recordEdge(f, c.token, r);
             d.* = try a.depsUnion(d.*, try a.deps(r));
         },
         .@"for", .show => {
             const fm = b.extraData(node, Bir.MarkupForm);
+            var entry_deps: u32 = 0;
             var list: u32 = try a.freshEmpty();
             if (fm.list.unwrap()) |l| {
                 list = try a.eval(f, l, g);
+                entry_deps = try a.depsUnion(entry_deps, try a.deps(list));
                 d.* = try a.depsUnion(d.*, try a.deps(list));
                 try a.recordHole(f, fm.token, .each, l, list, false);
                 const form: Form = if (b.markupKind(node) == .show) .show else if (fm.mode == .literal_false) .for_positional else .for_keyed;
@@ -3568,12 +3681,16 @@ fn walkMarkup(a: *Writes, f: *Frame, node: Bir.ExtraIndex, g: u32, d: *u32, pare
             const is_show = b.markupKind(node) == .show;
             if (fm.fallback.unwrap()) |fb| {
                 const ft = try a.eval(f, fb, g);
+                entry_deps = try a.depsUnion(entry_deps, try a.deps(ft));
                 d.* = try a.depsUnion(d.*, try a.deps(ft));
                 // A `Show`'s fallback is one of its arms: what it reads is
                 // the `Show`'s too (write-sets.md, *a `Show`'s arms*).
                 if (is_show and fm.list.unwrap() != null) try a.recordHole(f, fm.token, .each, fm.list.unwrap().?, ft, false);
             }
-            if (fm.row == Bir.none_extra) return;
+            if (fm.row == Bir.none_extra) {
+                try a.recordEdge(f, fm.token, try a.mkFresh(entry_deps));
+                return;
+            }
             const row = b.extraData(@fromBackingInt(fm.row), Bir.MarkupRow);
             const fun = try a.eval(f, row.function, g);
             const is_for = b.markupKind(node) == .@"for";
@@ -3636,6 +3753,15 @@ fn walkMarkup(a: *Writes, f: *Frame, node: Bir.ExtraIndex, g: u32, d: *u32, pare
                 a.ctx.in_row -= 1;
             };
             const r = try a.apply(fun, args[0..@min(arity, 2)], g);
+            entry_deps = try a.depsUnion(entry_deps, try a.deps(r));
+            // The entry belongs to the enclosing row, never its own rows.
+            a.ctx.veach = saved_veach;
+            const inner_depth = a.ctx.in_row;
+            {
+                defer a.ctx.in_row = inner_depth;
+                if (is_for) a.ctx.in_row -= 1;
+                try a.recordEdge(f, fm.token, try a.mkFresh(entry_deps));
+            }
             d.* = try a.depsUnion(d.*, try a.deps(r));
             // A `Show`'s body is its other arm (*a `Show`'s arms*).
             if (is_show and fm.list.unwrap() != null) try a.recordHole(f, fm.token, .each, fm.list.unwrap().?, r, false);
@@ -3653,6 +3779,7 @@ fn anchors(a: *Writes, t: u32, out: *std.ArrayList(u32)) Error!void {
 fn anchorPath(a: *Writes, p: u32, out: *std.ArrayList(u32), depth: u32) Error!void {
     const root = a.rootOf(p);
     switch (a.pathKind(root)) {
+        .omega => if (std.mem.indexOfScalar(u32, out.items, p) == null) try out.append(a.gpa, p),
         .rho => {
             if (std.mem.indexOfScalar(u32, out.items, p) == null) try out.append(a.gpa, p);
             // `ρ.rows[model.sel]` also reads `ρ.sel`: which element is shown
@@ -3669,6 +3796,10 @@ fn anchorPath(a: *Writes, p: u32, out: *std.ArrayList(u32), depth: u32) Error!vo
         .eps, .iota => {
             if (depth > 16) return a.anchorPath(rho_path, out, depth);
             const id = a.pathA(root);
+            if (a.root_control.items[id] and !a.resolve_view_controls) {
+                if (std.mem.indexOfScalar(u32, out.items, root) == null) try out.append(a.gpa, root);
+                return;
+            }
             const base = a.root_base.items[id];
             if (a.root_base_is_deps.items[id]) {
                 for (0..a.deps_t.len(base)) |i| try a.anchorPath(a.deps_t.word(base, i), out, depth + 1);
@@ -3695,6 +3826,7 @@ fn anchorsBound(a: *Writes, t: u32, out: *std.ArrayList(u32), bounds: *std.Array
 fn anchorPathBound(a: *Writes, p: u32, out: *std.ArrayList(u32), bounds: *std.ArrayList(u8), bound: u8, depth: u32) Error!void {
     const root = a.rootOf(p);
     switch (a.pathKind(root)) {
+        .omega => try a.addBound(out, bounds, p, 0),
         .rho => {
             try addBound(a, out, bounds, p, bound);
             if (depth > 16) return;
@@ -3709,6 +3841,10 @@ fn anchorPathBound(a: *Writes, p: u32, out: *std.ArrayList(u32), bounds: *std.Ar
         .eps, .iota => {
             if (depth > 16) return a.anchorPathBound(rho_path, out, bounds, 0, depth);
             const id = a.pathA(root);
+            if (a.root_control.items[id] and !a.resolve_view_controls) {
+                try a.addBound(out, bounds, root, 0);
+                return;
+            }
             const base = a.root_base.items[id];
             const b = @max(bound, a.root_row.items[id]);
             if (a.root_base_is_deps.items[id]) {
@@ -3741,6 +3877,22 @@ fn isPathExpr(a: *Writes, m: u32, inst: Inst.Index) bool {
         .field_access, .tuple_index => a.isPathExpr(m, @fromBackingInt(b.instData(inst).lhs)),
         else => false,
     };
+}
+
+fn recordEdge(a: *Writes, f: *Frame, token: u32, t: u32) Error!void {
+    if (a.ctx.mode != .view or a.in.packages[f.m] != .app) return;
+    const gop = try a.vedge_index.getOrPut(a.gpa, .{ .module = f.m, .token = token, .path = a.ctx.call_path });
+    if (!gop.found_existing) {
+        gop.value_ptr.* = @intCast(a.vedges.items.len);
+        try a.vedges.append(a.gpa, .{ .module = f.m, .token = token, .kind = .child, .alone = false, .site = a.cur_site, .path = a.ctx.call_path, .literal_ok = false, .in_row = a.ctx.in_row > 0, .list = a.ctx.veach, .row_path = none, .key_path = none });
+    }
+    const edge = &a.vedges.items[gop.value_ptr.*];
+    var reads: std.ArrayList(u32) = .empty;
+    defer reads.deinit(a.gpa);
+    var bounds: std.ArrayList(u8) = .empty;
+    defer bounds.deinit(a.gpa);
+    try a.anchorsBound(t, &reads, &bounds);
+    for (reads.items, bounds.items) |r, bound| try a.addBound(&edge.reads, &edge.bound, r, bound);
 }
 
 fn recordHole(a: *Writes, f: *Frame, token: u32, kind: HoleKind, inst: Inst.Index, t: u32, alone: bool) Error!void {
@@ -3850,7 +4002,9 @@ fn noteEach(a: *Writes, f: *Frame, token: u32, form: Form, t: u32) Error!void {
     if (a.termTag(t) == .same) {
         var reads: std.ArrayList(u32) = .empty;
         defer reads.deinit(a.gpa);
-        try a.anchors(t, &reads);
+        // Control reads select the producer; the collection identity is
+        // still this path. Different paths across visits join to `none`.
+        try a.anchorPath(a.termWord(t, 1), &reads, 0);
         if (reads.items.len == 1) p = reads.items[0];
     }
     if (a.hole_index.get(.{ .module = f.m, .token = token })) |i| {
@@ -3965,6 +4119,7 @@ pub fn mayPrefix(a: *const Writes, p: u32, q: u32) bool {
 }
 
 pub fn conflicts(a: *const Writes, r: u32, ws: []const Write) bool {
+    if (a.pathKind(a.rootOf(r)) == .omega) return true;
     // A tag read at `p` conflicts with a `value` write at `p` or at a
     // prefix of it, and with nothing else: a `node` write keeps the tag, and
     // a write below `p` is under a `node` at `p` (amended 2026-10-09).
@@ -4212,6 +4367,8 @@ fn analyseProgram(a: *Writes, m: u32, kind: ProgramKind, fields: ?Fields, view_f
     // on the program's model type (§3.4's full-record row), and a summary's
     // caps are listed for the program that reached it.
     a.diff_memo.clearRetainingCapacity();
+    a.view_args.clearRetainingCapacity();
+    a.resolve_view_controls = false;
     @memset(a.summaries, .absent);
     @memset(a.summary_caps, .{});
     @memset(a.top_values, none);
@@ -4231,6 +4388,13 @@ fn analyseProgram(a: *Writes, m: u32, kind: ProgramKind, fields: ?Fields, view_f
     }
     a.vholes.clearRetainingCapacity();
     a.vhole_index.clearRetainingCapacity();
+    for (a.vedges.items) |*h| {
+        h.reads.deinit(a.gpa);
+        h.key_paths.deinit(a.gpa);
+        h.bound.deinit(a.gpa);
+    }
+    a.vedges.clearRetainingCapacity();
+    a.vedge_index.clearRetainingCapacity();
     for (a.vlets.items) |*h| {
         h.reads.deinit(a.gpa);
         h.key_paths.deinit(a.gpa);
@@ -4353,14 +4517,26 @@ fn analyseProgram(a: *Writes, m: u32, kind: ProgramKind, fields: ?Fields, view_f
         var frame = try a.newFrame(fs.m, fs.frame_decl, 0);
         a.ctx = .{ .mode = .view };
         const view_fun = try a.eval(&frame, vi, 0);
-        _ = a.applyDirect(view_fun, &.{try a.mkSame(rho_path)}, 0) catch |err| switch (err) {
-            error.WorkCap => prog.view_capped = true,
+        const result = a.applyDirect(view_fun, &.{try a.mkSame(rho_path)}, 0) catch |err| switch (err) {
+            error.WorkCap => cap: {
+                prog.view_capped = true;
+                break :cap none;
+            },
             else => |e| return e,
         };
+        a.resolve_view_controls = true;
+        if (result != none) {
+            var reads: std.ArrayList(u32) = .empty;
+            defer reads.deinit(a.gpa);
+            try a.anchors(result, &reads);
+            prog.view_reads = try a.arena().dupe(u32, reads.items);
+        }
     };
     a.ctx = .{ .mode = .closed };
+    a.resolve_view_controls = true;
     prog.holes = try a.finishHoles(a.holes.items, init_model, false);
     prog.vholes = try a.finishHoles(a.vholes.items, init_model, true);
+    prog.vedges = try a.finishHoles(a.vedges.items, init_model, true);
     prog.vlets = try a.finishHoles(a.vlets.items, none, true);
     // A view cut short says so, and every hole it met reads ρ: the top,
     // never a partial read set (§6.1).
@@ -4543,6 +4719,15 @@ fn initAt(a: *Writes, t0: u32, p: u32) Error!?u32 {
 fn finishHoles(a: *Writes, list: []HoleAcc, init_model: u32, per_path: bool) Error![]Hole {
     const out = try a.arena().alloc(Hole, list.len);
     for (list, out) |*h, *o| {
+        var resolved_reads: std.ArrayList(u32) = .empty;
+        defer resolved_reads.deinit(a.gpa);
+        var resolved_bounds: std.ArrayList(u8) = .empty;
+        defer resolved_bounds.deinit(a.gpa);
+        for (h.reads.items, h.bound.items) |r, bd| try a.anchorPathBound(r, &resolved_reads, &resolved_bounds, bd, 0);
+        h.reads.clearRetainingCapacity();
+        h.bound.clearRetainingCapacity();
+        try h.reads.appendSlice(a.gpa, resolved_reads.items);
+        try h.bound.appendSlice(a.gpa, resolved_bounds.items);
         // A tag read under a whole read of its path or a prefix of it adds
         // nothing: the whole read conflicts with every write the tag read does.
         var n: usize = 0;
@@ -4983,6 +5168,7 @@ pub fn writePath(a: *const Writes, w: *std.Io.Writer, p: u32) std.Io.Writer.Erro
     switch (a.pathKind(root)) {
         .rho => try w.writeAll("ρ"),
         .mu => try w.writeAll("μ"),
+        .omega => try w.writeAll("ω"),
         else => try w.writeAll("?"),
     }
     for (a.steps(p, &buf)) |s| {

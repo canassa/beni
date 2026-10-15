@@ -642,3 +642,10 @@ instruction limit separately when it selects CPU accounting. Owner-granted
 case budgets scale the CPU fallback by that limit, as they do when a running
 instruction counter becomes unavailable. This corrects lost budget provenance
 on hosts without counters; neither the global nor any granted limit changes.
+
+A direct page may carry `.plan` (`_expected.plan` for a project): its complete
+`_direct-plan.json` consumer plan, compared for both development and release.
+It pins parameterised sites, per-call analysis masks and declared value
+fallback reasons. It is captured with the same `BENI_WRITE_EXPECTED=1` /
+`BENI_BLESS_ONLY` discipline as the page transcript; the paired tea build
+still checks the single page golden and has no direct consumer plan.

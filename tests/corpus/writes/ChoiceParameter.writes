@@ -1,0 +1,17 @@
+program ChoiceParameter.main : Tea.sandbox
+  model { … }
+  init
+    literal ρ
+  key Switch                                      exact      node ρ; value ρ.open
+  key Quiet                                       exact      ∅
+  keys 2: bounded 2 (100%), exact 2, indexed 0, structural 0, * 0; capped 0
+  hole ChoiceParameter.beni:23:17                 dynamic    reads tag ρ.open
+  holes 1: static 0, literal 0, static-key 0, dynamic 1
+  site ChoiceParameter.beni:23:14                 shared     2 calls
+  sites 1: unique 0, shared 1, instanced 0, value 0
+  markup_value_roots 0 (0% of 1 sites)
+  carriers no
+  constructors 2: under * 0 (0%)
+  pairs 1 over 2 keys and 1 groups (0.50 per key); every key calls 0 of 1 groups (0%)
+  reconciler 0 of 0 lists
+  patchAll <none>

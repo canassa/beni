@@ -1,0 +1,40 @@
+-- A literal chosen by the caller still reads the choice after binding to
+-- a helper's parameter. This read must survive nested calls and a shared
+-- markup site (write-sets.md, parameterised templates, 2026-10-15).
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Switch
+    | Quiet
+
+
+update : Msg, { open : Bool } → { open : Bool }
+update msg model =
+    case msg of
+        Switch →
+            { model | open = not model.open }
+        Quiet →
+            model
+
+
+label : String → Html Msg
+label text = <p>{text}</p>
+
+
+page : String → Html Msg
+page text = label text
+
+
+view : { open : Bool } → Html Msg
+view model =
+    case model.open of
+        True →
+            page "open"
+        False →
+            page "closed"
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → { open = False }, update = update, view = view }

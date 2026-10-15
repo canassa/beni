@@ -2290,6 +2290,10 @@ const Case = struct {
         const bless = c.bless and !tea and (std.mem.eql(u8, golden, "chrome-expected") or
             (!chrome and (pass == .dev or !std.mem.eql(u8, golden, "expected"))));
         const out = pageOut(pass);
+        if (!tea and c.goldenExists("plan")) {
+            const plan = try c.w.read(try std.fmt.allocPrint(c.arena, "{s}/_direct-plan.json", .{out}));
+            try c.expectGoldenMaybeBless("plan", plan, c.bless and pass == .dev);
+        }
         return c.checkedPlan(.{
             .pass = pass,
             .golden = golden,

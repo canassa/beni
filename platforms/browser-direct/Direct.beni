@@ -1619,17 +1619,44 @@ slot parent marker cx = Rt.slot parent marker cx
 
 --| `(slot, block)`: an `Html` hole (`Rt.childHtml`).
 pub childHtml : V, V → ⊤
-childHtml s b = Rt.childHtml s b
+childHtml s b =
+    instance = Js.get s "i"
+    if not (Js.isNull instance) && Js.same b (Js.get instance "b") then
+        _ = Js.call (Js.get instance "t") "p" [ instance, Js.get b "v" ]
+        if Js.to (Js.get (Js.get instance "t") "l") then Js.set s "l" (Js.get instance "l")
+    else
+        Rt.childHtml s b
 
 
 --| `(slot, block or null)`: a `Maybe Html` hole (`Rt.childMaybe`).
 pub childMaybe : V, V → ⊤
-childMaybe s b = Rt.childMaybe s b
+childMaybe s b = if Js.isNull b then Rt.childMaybe s b else childHtml s b
 
 
 --| `(slot, list)`: a `List Html` hole (`Rt.childList`).
 pub childList : V, V → ⊤
-childList s list = Rt.childList s list
+childList s list =
+    previous = Js.get s "u"
+    if not (Js.isNull previous) then
+        incoming = Rt.elements list
+        templateListSame previous incoming 0
+    Rt.childList s list
+
+
+templateListSame : V, V, Int → ⊤
+templateListSame previous incoming position =
+    if
+        position < Js.to (Js.get previous "length") && position < Js.to (Js.get incoming "length")
+    then
+        instance = Js.at previous position
+        block = Js.at incoming position
+        if
+            Js.same block (Js.get instance "b")
+                && not (Js.to (Js.get (Js.get instance "t") "l") && Js.to (Js.get instance "l"))
+        then
+            _ = Js.call (Js.get instance "t") "p" [ instance, Js.get block "v" ]
+            ⊤
+        templateListSame previous incoming (position + 1)
 
 
 --| `(slot, items, keyOf, row, inputs)`: a kind's keyed `For` (`Rt.forKeyed`).
@@ -1665,7 +1692,58 @@ text s = Rt.text s
 
 --| `Html.map`: the same markup, its messages passed through `f`.
 pub map : V, V → V
-map html f = Rt.map html f
+map html f = Js.from { t = templateMapKind, v = Js.array [ html, f ] }
+
+
+templateMapBase : V
+templateMapBase = Js.get (Rt.map Js.null Js.null) "t"
+
+
+templateMapKind : V
+templateMapKind = Js.from { l = True, m = templateMapMount, p = templateMapPatch }
+
+
+templateMapMount : V, V → V
+templateMapMount values cx =
+    context = Js.get values "$$directContext"
+    ownsRow =
+        not (Js.isUndefined context)
+            && not (Js.isNull context)
+            && Js.same (Js.at context 6) (Js.from True)
+    before = Js.read templateRowOwner
+    rowScope = if ownsRow then Js.object [] else before
+    Js.write templateRowOwner rowScope
+    Js.finally
+        (λ⊤ →
+            made = Js.call templateMapBase "m" [ values, cx ]
+            if ownsRow then Js.set made "$$rowScope" rowScope
+            made
+        )
+        λ⊤ → Js.write templateRowOwner before
+
+
+templateMapPatch : V, V → ⊤
+templateMapPatch instance values =
+    before = Js.read templateRowOwner
+    rowScope = Js.get instance "$$rowScope"
+    if not (Js.isUndefined rowScope) then
+        Js.write templateRowOwner rowScope
+        if Js.development ⊤ then visitRowMode rowScope (Js.read templateEffects)
+    Js.finally
+        (λ⊤ →
+            held = Js.get instance "q"
+            inner = Js.get held "i"
+            block = Js.at values 0
+            repeat =
+                Js.same block (Js.get inner "b")
+                    && not (Js.to (Js.get (Js.get inner "t") "l") && Js.to (Js.get inner "l"))
+            _ = Js.call templateMapBase "p" [ instance, values ]
+            if repeat then
+                _ = Js.call (Js.get inner "t") "p" [ inner, Js.get block "v" ]
+                Js.set held "l" (Js.get inner "l")
+                Js.set instance "l" (Js.get inner "l")
+        )
+        λ⊤ → Js.write templateRowOwner before
 
 
 --| `(el, name, flags)`: a kind's handler node listening on itself, for
@@ -2634,3 +2712,628 @@ title value = Hosted.title value
 --| Direct writes have already completed; there is no render queue to flush.
 pub flush : ⊤ → ⊤
 flush ⊤ = ⊤
+
+
+-- Structural scripts and read walks can reach the same final row.
+groupEpoch : Js.Ref Int
+groupEpoch = Js.ref 0
+
+
+pub groupProgram : ⊤ → ⊤
+groupProgram ⊤ = Js.write groupEpoch (Js.read groupEpoch + 1)
+
+
+pub groupOnce : V, Int → Bool
+groupOnce instance group =
+    previous = Js.get instance "$$directGroups"
+    stamps =
+        if Js.isUndefined previous then
+            made = Js.array []
+            Js.set instance "$$directGroups" made
+            made
+        else
+            previous
+    if Js.same (Js.at stamps group) (Js.from (Js.read groupEpoch)) then
+        False
+    else
+        Js.set stamps (String.fromInt group) (Js.from (Js.read groupEpoch))
+        True
+
+
+-- ---- Parameterised templates -------------------------------------------
+-- A template captures the caller's analysis context with its inputs. The
+-- context is per guarded invocation, never a property of a shared helper.
+
+templateContext : Js.Ref V
+templateContext = Js.ref Js.null
+
+
+templateKey : Js.Ref Int
+templateKey = Js.ref (-1)
+
+
+templateMount : Js.Ref Bool
+templateMount = Js.ref False
+
+
+pub templatePlan : V → V
+templatePlan entries =
+    plan = Js.object []
+    Js.each entries λentry → Js.set plan (Js.to (Js.at entry 0)) (Js.at entry 1)
+    Js.set plan "$$templates" (Js.construct (Js.global "Map") [])
+    plan
+
+
+pub templateProgram : V, Int → V
+templateProgram plan key =
+    before =
+        Js.array
+            [ Js.read templateContext, Js.from (Js.read templateKey), Js.read templateProgramOwner ]
+    Js.write templateProgramOwner plan
+    Js.write
+        templateContext
+        (Js.array
+            [ plan
+            , Js.from ""
+            , Js.null
+            , Js.null
+            , Js.get plan "$root"
+            , Js.from False
+            , Js.from False
+            ]
+        )
+    Js.write templateKey key
+    before
+
+
+pub templateEnd : V → ⊤
+templateEnd before =
+    Js.write templateContext (Js.at before 0)
+    Js.write templateKey (Js.to (Js.at before 1))
+    Js.write templateProgramOwner (Js.at before 2)
+
+
+-- Only the block returned by a row producer owns the physical row. Nested
+-- helper values created while producing it keep that row as their parent.
+pub templateRow : V → V
+templateRow producer = Js.from λitem position →
+    result = Js.apply producer [ item, position ]
+    values = Js.get result "v"
+    if not (Js.to (Js.call (Js.global "Array") "isArray" [ values ])) then
+        result
+    else
+        captured = Js.get values "$$directContext"
+        context =
+            if Js.isNull captured || Js.isUndefined captured then
+                templateCapture "" ""
+            else
+                captured
+        if Js.isNull context then
+            result
+        else
+            rowContext =
+                Js.array
+                    [ Js.at context 0
+                    , Js.at context 1
+                    , Js.at context 2
+                    , Js.at context 3
+                    , Js.at context 4
+                    , if Js.isNull captured || Js.isUndefined captured then
+                        Js.from True
+                      else
+                        Js.at context 5
+                    , Js.from True
+                    ]
+            arguments = Js.call values "slice" []
+            Js.set arguments "$$directContext" rowContext
+            Js.object [ ( "t", Js.get result "t" ), ( "v", arguments ) ]
+
+
+pub templateCapture : String, String → V
+templateCapture prefix source =
+    context = Js.read templateContext
+    if Js.isNull context then
+        Js.null
+    else
+        path : String
+        path = Js.to (Js.at context 1)
+        Js.array
+            [ Js.at context 0
+            , Js.from (path ++ prefix)
+            , Js.read templateRowOwner
+            , if source == "" then Js.at context 3 else Js.from source
+            , Js.at context 4
+            , Js.at context 5
+            , Js.from False
+            ]
+
+
+pub templateValue : String, V → V
+templateValue part f =
+    before = Js.read templateContext
+    Js.write templateContext (templateCapture part "")
+    Js.finally (λ⊤ → Js.apply f []) λ⊤ → Js.write templateContext before
+
+
+pub templatePlace : String, V → V
+templatePlace part f =
+    before = Js.read templateContext
+    next = templateCapture "" ""
+    if not (Js.isNull next) then
+        cut : Int
+        cut = Js.to (Js.call (Js.from part) "lastIndexOf" [ Js.from "/" ])
+        tail : String
+        tail = Js.to (Js.call (Js.from part) "slice" [ Js.from (cut + 1) ])
+        prefix : String
+        prefix = Js.to (Js.call (Js.from part) "slice" [ Js.from 0, Js.from cut ])
+        path : String
+        path = Js.to (Js.at before 1)
+        table = Js.at before 0
+        exact = Js.get table (tail ++ path ++ prefix)
+        boundary =
+            if Js.isUndefined exact then
+                Js.get table ("$producer/" ++ tail ++ path ++ prefix)
+            else
+                exact
+        if not (Js.isUndefined boundary) then Js.set next "4" boundary
+    Js.write templateContext next
+    Js.finally (λ⊤ → Js.apply f []) λ⊤ → Js.write templateContext before
+
+
+-- A group's descriptor is [source holes, every-render, capture refresh].
+-- Capture refresh is not a DOM group; it updates an event's lexical inputs.
+templateWanted : V → Bool
+templateWanted desc =
+    if Js.to (Js.at desc 2) then
+        False
+    else if Js.read templateEffects then
+        Js.to (Js.at desc 1)
+    else if Js.read templateKey < 0 || Js.isNull (Js.read templateContext) then
+        True
+    else if Js.to (Js.at desc 3) || Js.to (Js.at desc 2) then
+        False
+    else if Js.to (Js.at desc 1) then
+        True
+    else
+        context = Js.read templateContext
+        if Js.same (Js.at context 5) (Js.from True) then
+            boundary = Js.at context 4
+            if Js.isUndefined boundary then
+                fault "browser-direct visit invariant: unbound value has no placement mask"
+            Js.same (Js.call boundary "charAt" [ Js.from (Js.read templateKey) ]) (Js.from "1")
+        else
+            templateAny (Js.at desc 0) (Js.at context 0) (Js.to (Js.at context 1)) 0
+
+
+templateAny : V, V, String, Int → Bool
+templateAny holes plan path n =
+    if n ≥ Js.to (Js.get holes "length") then
+        False
+    else
+        hole : String
+        hole = Js.to (Js.at holes n)
+        exact = Js.get plan (hole ++ path)
+        bits = if Js.isUndefined exact then Js.get plan ("$call${path}/${hole}") else exact
+        if Js.typeIs bits "undefined" then
+            context = Js.read templateContext
+            source : String
+            source = Js.to (Js.at context 3)
+            reason = Js.get plan ("$value/${source}")
+            if Js.isUndefined reason then
+                fault
+                    "browser-direct visit invariant: undeclared template fallback at ${hole}${path}"
+            boundary = Js.at context 4
+            if Js.isUndefined boundary then
+                fault "browser-direct visit invariant: declared fallback has no placement mask"
+            Js.same (Js.call boundary "charAt" [ Js.from (Js.read templateKey) ]) (Js.from "1")
+        else if Js.same (Js.call bits "charAt" [ Js.from (Js.read templateKey) ]) (Js.from "1") then
+            True
+        else
+            templateAny holes plan path (n + 1)
+
+
+pub templateGroup : V, V, V → V
+templateGroup desc patch restateGroup =
+    Js.set desc "$$patch" patch
+    Js.set desc "$$restate" restateGroup
+    desc
+
+
+templateSelect : V → V
+templateSelect groups =
+    context = Js.read templateContext
+    fallback =
+        if Js.isNull context then
+            True
+        else if Js.same (Js.at context 5) (Js.from True) then
+            True
+        else
+            source : String
+            source = Js.to (Js.at context 3)
+            not (Js.isUndefined (Js.get (Js.at context 0) ("$value/${source}")))
+    if fallback then
+        templateSelectNew groups
+    else
+        plan = Js.at context 0
+        templates = Js.get plan "$$templates"
+        saved = Js.call templates "get" [ groups ]
+        cache =
+            if Js.isUndefined saved then
+                made = keyMap ⊤
+                _ = Js.call templates "set" [ groups, made ]
+                made
+            else
+                saved
+        path : String
+        path = Js.to (Js.at context 1)
+        mode = if Js.read templateEffects then "effects" else "all"
+        key = "${path}:${String.fromInt (Js.read templateKey)}:${mode}"
+        selected = Js.call cache "get" [ Js.from key ]
+        if Js.isUndefined selected then
+            made = templateSelectNew groups
+            _ = Js.call cache "set" [ Js.from key, made ]
+            made
+        else
+            selected
+
+
+templateSelectNew : V → V
+templateSelectNew groups =
+    mask = keyMap ⊤
+    wanted = Js.ref False
+    normal = Js.array []
+    changed = Js.array []
+    Js.each groups λgroup →
+        selected = templateWanted group
+        if selected then Js.write wanted True
+        _ = Js.call mask "set" [ group, Js.from selected ]
+        if Js.to (Js.at group 2) then
+            _ = Js.call changed "push" [ Js.get group "$$patch" ]
+            ⊤
+        else
+            operation = if selected then Js.get group "$$patch" else Js.get group "$$restate"
+            if not (Js.isNull operation) then
+                _ = Js.call normal "push" [ operation ]
+                _ = Js.call changed "push" [ operation ]
+                ⊤
+    Js.array [ mask, Js.from (Js.read wanted), normal, changed ]
+
+
+templateSameInputs : V, V, Int → Bool
+templateSameInputs before after n =
+    if n == 0 then
+        True
+    else if Js.isUndefined before || not (Js.same (Js.at before (n - 1)) (Js.at after (n - 1))) then
+        False
+    else
+        templateSameInputs before after (n - 1)
+
+
+pub templatePatch : V, V, Int, V, Bool → V
+templatePatch prepare patch inputs groups rowTemplate = Js.from λinstance values →
+    captured = Js.get values "$$directContext"
+    before = Js.read templateContext
+    context =
+        if Js.isNull captured && not (Js.isNull before) then
+            Js.array
+                [ Js.at before 0
+                , Js.at before 1
+                , Js.at before 2
+                , Js.null
+                , Js.at before 4
+                , Js.from True
+                ]
+        else if not (Js.isNull captured) && not (Js.isNull before) then
+            Js.array
+                [ Js.at captured 0
+                , Js.at captured 1
+                , if Js.isNull (Js.at captured 2) || Js.isUndefined (Js.at captured 2) then
+                    Js.read templateRowOwner
+                  else
+                    Js.at captured 2
+                , Js.at captured 3
+                , Js.at before 4
+                , Js.at captured 5
+                , Js.at captured 6
+                ]
+        else
+            captured
+    wasMount = Js.read templateMount
+    wasRow = Js.read templateRowOwner
+    ownsRow = rowTemplate || (not (Js.isNull context) && Js.same (Js.at context 6) (Js.from True))
+    if ownsRow then
+        Js.write templateRowOwner instance
+        if not (Js.isNull context) then
+            Js.set context "2" instance
+            Js.set context "6" (Js.from False)
+        if Js.development ⊤ then visitRowMode instance (Js.read templateEffects)
+    else if not (Js.isNull context) then
+        Js.write templateRowOwner (Js.at context 2)
+    if Js.development ⊤ then templateRegister instance groups context before
+    mounted = Js.get instance "$$template"
+    Js.write templateContext context
+    Js.write templateMount (not (Js.same mounted (Js.from True)))
+    selected = templateSelect groups
+    sameInputs = templateSameInputs (Js.get instance "$$arguments") values inputs
+    Js.set instance "$$arguments" values
+    Js.finally
+        (λ⊤ →
+            if
+                Js.development ⊤
+                    && not (Js.read templateMount)
+                    && not (Js.same (Js.get instance "$$visitBorn") (Js.from (Js.read visitEpoch)))
+            then
+                expected = Js.array []
+                Js.each groups λgroup →
+                    _ =
+                        Js.call expected "push"
+                            [ Js.array [ group, Js.from (templateWanted group) ] ]
+                    ⊤
+                visitScope instance expected
+            if
+                Js.read templateMount
+                    || Js.to (Js.at selected 1)
+                    || not sameInputs
+                    || Js.same (Js.get instance "l") (Js.from True)
+            then
+                environment = Js.apply prepare [ instance, values ]
+                if Js.read templateMount then
+                    Js.each groups λgroup →
+                        _ = Js.apply (Js.get group "$$patch") [ instance, environment ]
+                        ⊤
+                else
+                    operations = if sameInputs then Js.at selected 2 else Js.at selected 3
+                    Js.each operations λoperation →
+                        _ = Js.apply operation [ instance, environment ]
+                        ⊤
+                _ = Js.apply patch [ instance, environment ]
+                ⊤
+            Js.set instance "$$template" (Js.from True)
+            Js.null
+        )
+        λ⊤ →
+            Js.write templateContext before
+            Js.write templateMount wasMount
+            Js.write templateRowOwner wasRow
+
+
+pub templateInputs : V, V → V
+templateInputs values context =
+    Js.set values "$$directContext" context
+    values
+
+
+-- ---- Observed visits against the analysis -------------------------------
+-- Expected scopes are published by the structural traversal (branch/row
+-- eligibility), independently of its group calls. A template publishes its
+-- analysis-selected groups before running any of its patch body.
+
+visitState : Js.Ref V
+visitState = Js.ref Js.null
+
+
+pub visitBegin : V, Int → V
+visitBegin owner key =
+    before = Js.read visitState
+    Js.write visitEpoch (Js.read visitEpoch + 1)
+    Js.write
+        visitState
+        (Js.array [ keyMap ⊤, keyMap ⊤, owner, Js.from (Js.read visitEpoch), Js.from key ])
+    before
+
+
+visitMap : V, V → V
+visitMap table instance =
+    before = Js.call table "get" [ instance ]
+    if Js.isUndefined before then
+        made = keyMap ⊤
+        _ = Js.call table "set" [ instance, made ]
+        made
+    else
+        before
+
+
+pub visitScope : V, V → ⊤
+visitScope instance groups =
+    state = Js.read visitState
+    if not (Js.isNull state) then
+        expected = visitMap (Js.at state 0) instance
+        Js.each groups λgroup →
+            if Js.to (Js.at group 1) then
+                _ = Js.call expected "set" [ Js.at group 0, Js.from True ]
+                ⊤
+
+
+pub visitObserve : V, V → ⊤
+visitObserve instance group =
+    state = Js.read visitState
+    if not (Js.isNull state) then
+        seen = visitMap (Js.at state 1) instance
+        before = Js.call seen "get" [ group ]
+        visits : Int
+        visits = if Js.isUndefined before then 0 else Js.to before
+        _ = Js.call seen "set" [ group, Js.from (visits + 1) ]
+        ⊤
+
+
+pub visitEnd : V → ⊤
+visitEnd before =
+    state = Js.read visitState
+    if not (Js.isNull state) then
+        visitInventoryExpected state
+        expected = Js.at state 0
+        seen = Js.at state 1
+        _ =
+            Js.call expected "forEach"
+                [ Js.from λgroups instance →
+                    actual = visitMap seen instance
+                    Js.to
+                        (Js.call groups "forEach"
+                            [ Js.from λ_ group →
+                                if not (Js.same (Js.call actual "get" [ group ]) (Js.from 1)) then
+                                    visitFault "missing or repeated analysis-predicted group" group
+                            ]
+                        )
+                ]
+        _ =
+            Js.call seen "forEach"
+                [ Js.from λgroups instance →
+                    wanted = visitMap expected instance
+                    Js.to
+                        (Js.call groups "forEach"
+                            [ Js.from λvisits group →
+                                if
+                                    not (Js.same visits (Js.from 1))
+                                        || not
+                                            (Js.same (Js.call wanted "get" [ group ]) (Js.from True)
+                                            )
+                                then
+                                    visitFault "extra or repeated group" group
+                            ]
+                        )
+                ]
+        ⊤
+    Js.write visitState before
+
+
+-- A new row/arm is initialised once, not visited by the dispatch mounting it.
+pub visitFactory : V → V
+visitFactory factory = Js.from λa b c d →
+    before = Js.read visitState
+    Js.write visitState Js.null
+    Js.finally (λ⊤ → Js.apply factory [ a, b, c, d ]) λ⊤ → Js.write visitState before
+
+
+pub templateObserve : V, V → ⊤
+templateObserve instance group =
+    if Js.development ⊤ && not (Js.read templateMount) then
+        visitObserve instance group
+
+
+-- Live template inventory: the end-of-handler walk also predicts groups of
+-- a child whose patch was accidentally omitted altogether.
+visitEpoch : Js.Ref Int
+visitEpoch = Js.ref 0
+
+
+templateRowOwner : Js.Ref V
+templateRowOwner = Js.ref Js.null
+
+
+pub templateRowPush : V → V
+templateRowPush rowScope =
+    before = Js.read templateRowOwner
+    Js.write templateRowOwner rowScope
+    before
+
+
+pub templateRowPop : V → ⊤
+templateRowPop before = Js.write templateRowOwner before
+
+
+pub visitRow : V → ⊤
+visitRow rowScope = visitRowMode rowScope False
+
+
+visitRowMode : V, Bool → ⊤
+visitRowMode rowScope effects =
+    sameEpoch = Js.same (Js.get rowScope "$$visitEpoch") (Js.from (Js.read visitEpoch))
+    onlyEffects =
+        effects && (not sameEpoch || Js.same (Js.get rowScope "$$visitEffectsOnly") (Js.from True))
+    Js.set rowScope "$$visitEpoch" (Js.from (Js.read visitEpoch))
+    Js.set rowScope "$$visitEffectsOnly" (Js.from onlyEffects)
+
+
+visitInventory : V → V
+visitInventory owner =
+    found = Js.get owner "$$directVisits"
+    if Js.isUndefined found then
+        made = keyMap ⊤
+        Js.set owner "$$directVisits" made
+        made
+    else
+        found
+
+
+templateRegister : V, V, V, V → ⊤
+templateRegister instance groups context parent =
+    owner =
+        if not (Js.isNull context) then
+            Js.at context 0
+        else if not (Js.isNull parent) then
+            Js.at parent 0
+        else
+            Js.read templateProgramOwner
+    if not (Js.isNull owner) then
+        inventory = visitInventory owner
+        found = Js.call inventory "get" [ instance ]
+        born = if Js.isUndefined found then Js.from (Js.read visitEpoch) else Js.at found 3
+        Js.set instance "$$visitBorn" born
+        _ =
+            Js.call inventory "set"
+                [ instance
+                , Js.array [ Js.get instance "e", groups, context, born, Js.read templateRowOwner ]
+                ]
+        ⊤
+
+
+visitInventoryExpected : V → ⊤
+visitInventoryExpected state =
+    owner = Js.at state 2
+    epoch = Js.at state 3
+    inventory = visitInventory owner
+    before = Js.read templateContext
+    beforeKey = Js.read templateKey
+    Js.write templateKey (Js.to (Js.at state 4))
+    Js.to
+        (Js.call inventory "forEach"
+            [ Js.from λentry instance →
+                node = Js.at entry 0
+                rowScope = Js.at entry 4
+                if not (Js.same (Js.get node "isConnected") (Js.from True)) then
+                    _ = Js.call inventory "delete" [ instance ]
+                    ⊤
+                else if
+                    not (Js.same (Js.at entry 3) epoch)
+                        && (Js.isNull rowScope || Js.same (Js.get rowScope "$$visitEpoch") epoch)
+                then
+                    Js.write templateContext (Js.at entry 2)
+                    wanted = Js.array []
+                    Js.each (Js.at entry 1) λgroup →
+                        onlyEffects =
+                            not (Js.isNull rowScope)
+                                && Js.same (Js.get rowScope "$$visitEffectsOnly") (Js.from True)
+                        selected =
+                            if onlyEffects then Js.to (Js.at group 1) else templateWanted group
+                        _ = Js.call wanted "push" [ Js.array [ group, Js.from selected ] ]
+                        ⊤
+                    visitScope instance wanted
+            ]
+        )
+    Js.write templateContext before
+    Js.write templateKey beforeKey
+
+
+visitFault : String, V → ⊤
+visitFault reason group =
+    rendered : String
+    rendered = Js.to (Js.call (Js.global "JSON") "stringify" [ group ])
+    key : Int
+    key = Js.to (Js.at (Js.read visitState) 4)
+    fault "browser-direct visit invariant: ${reason} (key ${String.fromInt key}, group ${rendered})"
+
+
+templateProgramOwner : Js.Ref V
+templateProgramOwner = Js.ref Js.null
+
+
+templateEffects : Js.Ref Bool
+templateEffects = Js.ref False
+
+
+pub templateRestate : V, V → ⊤
+templateRestate instance kind =
+    before = Js.read templateEffects
+    Js.write templateEffects True
+    Js.finally (λ⊤ → Js.to (Js.call kind "p" [ instance, Js.get instance "$$arguments" ])) λ⊤ →
+        Js.write templateEffects before
