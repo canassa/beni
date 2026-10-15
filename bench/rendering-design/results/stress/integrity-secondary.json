@@ -1,6 +1,6 @@
 {
-  "verified_at": "2026-10-15T22:03:03.014Z",
-  "observations": 125,
+  "verified_at": "2026-10-15T22:29:46.654Z",
+  "observations": 200,
   "scope": "Actual minified file SHA-256 and raw length, disjoint raw byte accounting, and source spec identity. No size fits or compression results are recomputed; no project suites.",
   "crossings": [
     {
@@ -8,6 +8,24 @@
       "mode": "tea",
       "n": 3888,
       "brotli": 516823
+    },
+    {
+      "family": "list",
+      "mode": "partial",
+      "n": 6656,
+      "brotli": 516859
+    },
+    {
+      "family": "list",
+      "mode": "cells",
+      "n": 6656,
+      "brotli": 525697
+    },
+    {
+      "family": "list",
+      "mode": "static",
+      "n": 9632,
+      "brotli": 524719
     }
   ],
   "compiler_limited": [

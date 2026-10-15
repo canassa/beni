@@ -1,12 +1,30 @@
 {
-  "updated": "2026-10-15T22:03:17.155Z",
-  "observations": 392,
+  "updated": "2026-10-15T22:30:26.887Z",
+  "observations": 624,
   "crossings": [
     {
       "family": "list",
       "mode": "tea",
       "n": 3888,
       "brotli": 516823
+    },
+    {
+      "family": "list",
+      "mode": "cells",
+      "n": 6656,
+      "brotli": 525697
+    },
+    {
+      "family": "list",
+      "mode": "partial",
+      "n": 6656,
+      "brotli": 516859
+    },
+    {
+      "family": "list",
+      "mode": "static",
+      "n": 9632,
+      "brotli": 524719
     },
     {
       "family": "mixed",
@@ -37,6 +55,12 @@
       "mode": "local",
       "n": 9616,
       "brotli": 525605
+    },
+    {
+      "family": "mixed",
+      "mode": "vanilla",
+      "n": 100352,
+      "brotli": 525739
     }
   ],
   "compiler_limited": [
@@ -49,6 +73,21 @@
       "family": "list",
       "mode": "direct",
       "n": 512
+    },
+    {
+      "family": "filter",
+      "mode": "direct",
+      "n": 512
+    },
+    {
+      "family": "summary",
+      "mode": "direct",
+      "n": 512
+    },
+    {
+      "family": "modal",
+      "mode": "direct",
+      "n": 1728
     }
   ]
 }

@@ -16,7 +16,10 @@ The grouped source is not spliced into the flat-source curves.
 
 Subsequent stress compiler invocations use that per-process cap. A curve ends
 at a failed build, with the reason and input/compiler hashes in `stopped.jsonl`.
-Other curves continue independently. `failures.jsonl` also retains harness
+Other curves continue independently. A follow-up of the failed list N512 build
+with `--jobs=1` also reports `OutOfMemory` under the same 16 GiB cap
+(`direct-single-thread-probe.json`); compiler parallelism is not sufficient to
+explain that limit. `failures.jsonl` also retains harness
 failures: the first missing dependency was installed; Terser's default-stack
 failure is retried with a 16 MiB V8 stack and 32 MiB OS stack, without changing
 its optimization options or the source being measured.

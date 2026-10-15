@@ -30,7 +30,7 @@
   "node": "v24.19.0",
   "cpu": "Intel(R) Xeon(R) E-2386G CPU @ 3.50GHz",
   "source_commit": "3cca64d0196da6b121ce1fde2af407265d82919d",
-  "scope": "Unchanged ten-shape catalogue. Three original seeds through N32; seed 17 extended on a 1.5x grid with extra measured points near 512 kB. Each strategy stops at its first measured rendering response >=512000 brotli bytes. No padding. Later points for shared-factory baselines need no additional candidate or today output once those curves crossed. Every point requiring BIR builds real TEA; direct builds stop once their measured curve crosses; all sources remain reproducible. Lines join measured points, never extrapolate. Native curves are not rebuilt after their measured crossing or terminal resource failure. Larger prototype points consume real per-component BIR dumps without another full-app build.",
+  "scope": "Unchanged ten-shape catalogue. Three original seeds through N32; seed 17 extended on a 1.5x grid, with extra measured points near 512 kB. Each strategy stops at its first measured rendering response >=512000 brotli bytes. No padding. Later points for shared-factory baselines need no additional candidate or today output once those curves crossed. Each native platform is built until its curve crosses or records a terminal resource failure. Later prototype points use real per-component BIR dumps without another full-app build; all sources remain reproducible. Lines join measured points, never extrapolate.",
   "normalization": "Terser 5.51.2 module/two passes/mangle; source-map core exclusion; whole-response brotli 11 and gzip 9. Original release prices retained.",
   "heap_mib": {
     "through_N4096": 6144,
@@ -86,6 +86,14 @@
   ],
   "compiler_address_space_limit_bytes": 17179869184,
   "node_stack_kib": 16384,
+  "initial_scope": "Unchanged ten-shape catalogue. Three original seeds through N32; seed 17 extended on a 1.5x grid with extra measured points near 512 kB. Each strategy stops at its first measured rendering response >=512000 brotli bytes. No padding. Later points for shared-factory baselines need no additional candidate or today output once those curves crossed. Every point requiring BIR builds real TEA; direct builds stop once their measured curve crosses; all sources remain reproducible. Lines join measured points, never extrapolate. Native curves are not rebuilt after their measured crossing or terminal resource failure. Larger prototype points consume real per-component BIR dumps without another full-app build.",
+  "resource_admission": {
+    "cpu_slots": 6,
+    "reserved_memory_mib": 26000,
+    "native_compiler_address_space_limit_bytes": 17179869184,
+    "bir_dump_processes": 4,
+    "notes": "Scheduling reservations estimate memory, not application cost. Native compiler builds are serialized. Three queues rotate family points."
+  },
   "queues": {
     "primary": "mixed,form,nested,cluster",
     "secondary": "list,tabs,thread,table",
@@ -123,7 +131,7 @@
     "node": "v24.19.0",
     "cpu": "Intel(R) Xeon(R) E-2386G CPU @ 3.50GHz",
     "source_commit": "3cca64d0196da6b121ce1fde2af407265d82919d",
-    "scope": "Unchanged ten-shape catalogue. Three original seeds through N32; seed 17 extended on a 1.5x grid with extra measured points near 512 kB. Each strategy stops at its first measured rendering response >=512000 brotli bytes. No padding. Later points for shared-factory baselines need no additional candidate or today output once those curves crossed. Every point requiring BIR builds real TEA; direct builds stop once their measured curve crosses; all sources remain reproducible. Lines join measured points, never extrapolate. Native curves are not rebuilt after their measured crossing or terminal resource failure. Larger prototype points consume real per-component BIR dumps without another full-app build.",
+    "scope": "Unchanged ten-shape catalogue. Three original seeds through N32; seed 17 extended on a 1.5x grid, with extra measured points near 512 kB. Each strategy stops at its first measured rendering response >=512000 brotli bytes. No padding. Later points for shared-factory baselines need no additional candidate or today output once those curves crossed. Each native platform is built until its curve crosses or records a terminal resource failure. Later prototype points use real per-component BIR dumps without another full-app build; all sources remain reproducible. Lines join measured points, never extrapolate.",
     "normalization": "Terser 5.51.2 module/two passes/mangle; source-map core exclusion; whole-response brotli 11 and gzip 9. Original release prices retained.",
     "heap_mib": {
       "through_N4096": 6144,
@@ -163,7 +171,15 @@
         "date": "2026-10-15T22:00:46.337Z",
         "change": "Parallelize independent per-module real-compiler BIR dumps in a four-process pool, admitted as two CPU slots / 1 GiB. Same compiler, source bytes, BIR cache keys and output; only orchestration changes."
       }
-    ]
+    ],
+    "initial_scope": "Unchanged ten-shape catalogue. Three original seeds through N32; seed 17 extended on a 1.5x grid with extra measured points near 512 kB. Each strategy stops at its first measured rendering response >=512000 brotli bytes. No padding. Later points for shared-factory baselines need no additional candidate or today output once those curves crossed. Every point requiring BIR builds real TEA; direct builds stop once their measured curve crosses; all sources remain reproducible. Lines join measured points, never extrapolate. Native curves are not rebuilt after their measured crossing or terminal resource failure. Larger prototype points consume real per-component BIR dumps without another full-app build.",
+    "resource_admission": {
+      "cpu_slots": 6,
+      "reserved_memory_mib": 26000,
+      "native_compiler_address_space_limit_bytes": 17179869184,
+      "bir_dump_processes": 4,
+      "notes": "Scheduling reservations estimate memory, not application cost. Native compiler builds are serialized. Three queues rotate family points."
+    }
   },
   "tertiary_protocol": {
     "target_brotli_bytes": 512000,
@@ -197,7 +213,7 @@
     "node": "v24.19.0",
     "cpu": "Intel(R) Xeon(R) E-2386G CPU @ 3.50GHz",
     "source_commit": "3cca64d0196da6b121ce1fde2af407265d82919d",
-    "scope": "Unchanged ten-shape catalogue. Three original seeds through N32; seed 17 extended on a 1.5x grid with extra measured points near 512 kB. Each strategy stops at its first measured rendering response >=512000 brotli bytes. No padding. Later points for shared-factory baselines need no additional candidate or today output once those curves crossed. Every point requiring BIR builds real TEA; direct builds stop once their measured curve crosses; all sources remain reproducible. Lines join measured points, never extrapolate. Native curves are not rebuilt after their measured crossing or terminal resource failure. Larger prototype points consume real per-component BIR dumps without another full-app build.",
+    "scope": "Unchanged ten-shape catalogue. Three original seeds through N32; seed 17 extended on a 1.5x grid, with extra measured points near 512 kB. Each strategy stops at its first measured rendering response >=512000 brotli bytes. No padding. Later points for shared-factory baselines need no additional candidate or today output once those curves crossed. Each native platform is built until its curve crosses or records a terminal resource failure. Later prototype points use real per-component BIR dumps without another full-app build; all sources remain reproducible. Lines join measured points, never extrapolate.",
     "normalization": "Terser 5.51.2 module/two passes/mangle; source-map core exclusion; whole-response brotli 11 and gzip 9. Original release prices retained.",
     "heap_mib": {
       "through_N4096": 6144,
@@ -256,6 +272,14 @@
       }
     ],
     "compiler_address_space_limit_bytes": 17179869184,
-    "node_stack_kib": 16384
+    "node_stack_kib": 16384,
+    "initial_scope": "Unchanged ten-shape catalogue. Three original seeds through N32; seed 17 extended on a 1.5x grid with extra measured points near 512 kB. Each strategy stops at its first measured rendering response >=512000 brotli bytes. No padding. Later points for shared-factory baselines need no additional candidate or today output once those curves crossed. Every point requiring BIR builds real TEA; direct builds stop once their measured curve crosses; all sources remain reproducible. Lines join measured points, never extrapolate. Native curves are not rebuilt after their measured crossing or terminal resource failure. Larger prototype points consume real per-component BIR dumps without another full-app build.",
+    "resource_admission": {
+      "cpu_slots": 6,
+      "reserved_memory_mib": 26000,
+      "native_compiler_address_space_limit_bytes": 17179869184,
+      "bir_dump_processes": 4,
+      "notes": "Scheduling reservations estimate memory, not application cost. Native compiler builds are serialized. Three queues rotate family points."
+    }
   }
 }

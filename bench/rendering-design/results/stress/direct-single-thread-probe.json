@@ -1,0 +1,16 @@
+{
+  "date": "2026-10-15T22:14:12.156Z",
+  "family": "list",
+  "n": 512,
+  "seed": 17,
+  "platform": "browser-direct",
+  "release": true,
+  "source_maps": true,
+  "jobs": 1,
+  "address_space_limit_bytes": 17179869184,
+  "compiler_sha256": "0291b420028819837b7fc33c269f8c71240fbd3dff73b93b63965ba236221f7a",
+  "input_sha256": "8f71adc9d1d3e2c55b7aa52bfc4c6c12841f43f525fe9ce142445e2413363dc8",
+  "status": 2,
+  "stderr": "beni: OutOfMemory",
+  "conclusion": "The same capped list build still fails with one compiler thread. This does not measure a bundle or diagnose the allocation source."
+}

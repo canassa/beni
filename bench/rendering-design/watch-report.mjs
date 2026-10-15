@@ -20,6 +20,7 @@ for(;;){try{
   fs.writeFileSync(dir+'/progress.json',JSON.stringify({updated:new Date().toISOString(),observations:observations.length,crossings:observations.filter(r=>r.rendering.brotli>=512000).map(r=>({family:r.shape||'mixed',mode:r.mode,n:r.n,brotli:r.rendering.brotli})),compiler_limited:stopped.map(r=>({family:r.family,mode:r.mode,n:r.n}))},null,2)+'\n');
   execFileSync(process.execPath,[here+'/html-report.mjs'],{stdio:'inherit'});previous=current;
  }
- }catch(e){console.error('Report refresh:',e.message)}
+ }catch(e){console.error('Report refresh:',e.message);if(process.argv.includes('--once'))process.exitCode=1}
+ if(process.argv.includes('--once'))break;
  await new Promise(r=>setTimeout(r,20000));
 }

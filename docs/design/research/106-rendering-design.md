@@ -6,12 +6,13 @@ Compiler `3cca64d`, built ReleaseFast on azathoth; exact identities are retained
 
 ## 0. Answer
 
-**For bundle size, bet on C's closure-routed local reducers, then investigate
-shared component factories. Keep B as the comparator.** At mixed **N=8,768**,
+**For this catalogue, prioritize compiler-recognized factory sharing, using C's
+local reducers as the starting point and B as the comparator.** At mixed **N=8,768**,
 C is **478.85 kB brotli**, B **497.03 kB**, and handwritten-style vanilla
 **48.43 kB**. C's advantage over B is only 3.7%; the 9.89× gap to vanilla is much
 larger. Vanilla shares configurable factories; the prototypes still emit a
-factory for each source component. Erasing messages is not automatically worth
+factory for each source component. C with factory sharing remains an unmeasured
+compiler hypothesis; the references establish the opportunity, not its savings. Erasing messages is not automatically worth
 duplicating arm-specific wiring, and explicit cells have no demonstrated size
 advantage here.
 
@@ -20,7 +21,7 @@ continuous lines joining actual measurements toward **512 kB brotli per curve**,
 local slopes, range-specific intercept/slope/error fits, family comparisons and
 downloadable data. The mixed-app crossings are measured: TEA **579.19 kB at
 N3,888**, A **516.68 kB at N5,840**, D **553.70 kB at N5,840**, B **524.09 kB
-at N9,264**, and C **525.61 kB at N9,616**. Different crossing counts are not
+at N9,264**, C **525.61 kB at N9,616**, and vanilla **525.74 kB at N100,352**. Different crossing counts are not
 same-size application comparisons; the fixed-N comparison above is.
 
 **The full family sweep is still in progress.** Direct exhausts host memory at
@@ -85,11 +86,17 @@ Large-range fits from the current measured endpoints, seed 17:
 |---|---:|---:|---:|---:|
 | Today TEA | 512–3,888 | 1,241 | 147.77 | 2,777 |
 | Today direct | 512–1,152 | 5,214 | 205.29 | 657 |
-| Vanilla | 512–32,480 | 3,521 | 5.15 | 225 |
+| Vanilla | 512–100,352 | 3,127 | 5.20 | 533 |
 | A: partial | 512–5,840 | 10,737 | 86.77 | 985 |
 | B: static | 512–9,264 | 5,616 | 55.96 | 1,005 |
 | C: local | 512–9,616 | 6,170 | 53.70 | 2,437 |
 | D: cells | 512–5,840 | 7,874 | 93.57 | 1,313 |
+
+**The small-app Solid comparison reverses under growth.** For lists, C is smaller
+at N512 (23.60 versus 24.79 kB), but Solid is smaller at N768 (26.11 versus
+34.41 kB). At N9,632, C is **400.25 kB** versus Solid **71.21 kB**. The form
+crossover lies between N336 and N512. Both Solid ports share factories; their
+larger fixed runtime stops dominating these repeated-shape workloads.
 
 Ranges differ because curves stop at their own target or compiler limit. The
 HTML report also separates small, medium and large fits. These fits describe
@@ -151,8 +158,9 @@ anchor helper reads to the correct instance; prove array uniqueness/no escaping
 snapshots before mutation; prove key stability and operation provenance before
 local DOM edits; and preserve controlled inputs, branch/row disposal and defect
 stop behavior. Exhaustiveness and static types remain the real checker's job.
-Effects must retain managed lifetimes and typed host failures; these pure apps
-do not demonstrate that extension.
+Factory sharing also needs equivalence modulo configuration, fresh instance
+state/captures and preserved nominal boundaries. Effects must retain managed
+lifetimes and typed host failures; these pure apps do not demonstrate that extension.
 
 **Hardest: an edited row in a filtered, sorted, recursively nested view whose
 parent derives a summary and whose callback outlives a branch.** A changed field
@@ -176,18 +184,15 @@ and shared state; reuse ownership/edit analysis, controlled inputs and lifetime
 checks. Price A/B specialization per region instead of assuming more static
 analysis always means smaller output. No language change is required for C.
 
-**Conduit planning target, not a prediction:** applying the observed
-0.5–0.67 local/TEA app-growth ratios to research 104's 7.6 kB view account suggests
-**3.8–5.1 kB of view/wiring**, with a **2–3 kB rendering-runtime budget** (1.8 kB
-here, plus unrepresented cases). The older Solid reference is 4.8 kB views and
-5.4 kB runtime. These separately priced areas must not be added into a promised
-bundle total.
-
-**One confirming experiment:** lower complete Conduit with B and C at six cumulative
-feature stages, retaining its typed host services unchanged. Require equivalent
-DOM/interaction transcripts including alias preservation and changing handler
-payloads, no nested-helper defect, rendering view/wiring
-≤5.1 kB and runtime ≤3 kB under the same account, and continued size advantage over A/D at each stage. Failure rejects this bet.
+**One confirming experiment:** lower complete Conduit at six cumulative feature
+stages with B, C, and C with factory sharing, retaining its typed host services.
+Compare actual rendering bytes against today's TEA at every stage, with identical
+minification and accounting. Require equivalent DOM/interaction transcripts,
+including alias preservation and changing handler payloads. C must remain smaller
+than B on the complete app, and factory sharing must reduce C's final app/wiring
+account by at least 20% without increasing its runtime account. These are proposed
+acceptance criteria, not estimates from repeated templates. Failure rejects the
+corresponding bet; no new language surface is justified by these results alone.
 
 The limits apply once: this is a finite catalogue of pure sandbox shapes, not a
 feature-complete Conduit port or a general proof of the lowerer. Cross-component

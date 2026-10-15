@@ -1,7 +1,23 @@
 {
-  "verified_at": "2026-10-15T22:03:03.120Z",
-  "observations": 84,
+  "verified_at": "2026-10-15T22:29:47.060Z",
+  "observations": 162,
   "scope": "Actual minified file SHA-256 and raw length, disjoint raw byte accounting, and source spec identity. No size fits or compression results are recomputed; no project suites.",
   "crossings": [],
-  "compiler_limited": []
+  "compiler_limited": [
+    {
+      "family": "filter",
+      "mode": "direct",
+      "n": 512
+    },
+    {
+      "family": "summary",
+      "mode": "direct",
+      "n": 512
+    },
+    {
+      "family": "modal",
+      "mode": "direct",
+      "n": 1728
+    }
+  ]
 }
