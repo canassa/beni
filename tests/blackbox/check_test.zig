@@ -1201,10 +1201,39 @@ test "ownership everywhere: a node program that writes a top-level list is refus
     try testing.expectEqual(@as(u8, 1), forced.exit_code);
     try testing.expectEqual(@as(usize, 1), forced.diagnostics.len);
     try testing.expectEqual(diagnostic.Code.top_level_list_changed, forced.diagnostics[0].code);
-    // Its entries are kept apart from an ordinary run's, whose rows differ.
-    try testing.expect(w.exists("c/ownership-everywhere"));
-    const again = try w.run(&.{ "check", "--platform=node", "--cache-dir=c", "Main.beni" });
-    try testing.expectEqual(@as(u8, 0), again.exit_code);
+    // `build` enforces with it too.
+    const built = try w.run(&.{ "build", "--platform=node", "--ownership-everywhere", "--no-cache", "--out=out", "Main.beni" });
+    try testing.expectEqual(@as(u8, 1), built.exit_code);
+    try testing.expectEqual(diagnostic.Code.top_level_list_changed, built.diagnostics[0].code);
+}
+
+test "ownership everywhere: its cache entries are kept in a subdirectory of their own" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\import Node
+        \\
+        \\
+        \\main : Node.Program
+        \\main = Node.printLines [ "ok" ]
+        \\
+    );
+    // A summary block made under the flag's rows must never meet an
+    // ordinary run, so its entries are written below `ownership-everywhere/`
+    // and nowhere else.
+    const forced = try w.run(&.{ "check", "--platform=node", "--ownership-everywhere", "--cache-dir=c", "Main.beni" });
+    try testing.expectEqual(@as(u8, 0), forced.exit_code);
+    try testing.expect(w.exists("c/ownership-everywhere/v1"));
+    try testing.expect(!w.exists("c/v1"));
+    const plain = try w.run(&.{ "check", "--platform=node", "--cache-dir=c", "Main.beni" });
+    try testing.expectEqual(@as(u8, 0), plain.exit_code);
+    try testing.expect(w.exists("c/v1"));
+    // A subdirectory that cannot be made is the cache directory's own
+    // usage failure: exit 2, the directory named.
+    try w.write("d/ownership-everywhere", "a file\n");
+    const blocked = try w.runWith(&.{ "check", "--platform=node", "--ownership-everywhere", "--cache-dir=d", "Main.beni" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 2), blocked.exit_code);
+    try testing.expect(std.mem.startsWith(u8, blocked.stderr, "beni: cannot write 'd'"));
 }
 
 test "ownership everywhere: Page.sandbox gets the direct entry row" {
