@@ -5,7 +5,7 @@ It takes about five minutes, most of it compiling the compiler.
 
 ## 1. Install beni
 
-beni is built from source for now. Its toolchain — Zig 0.16 and Node 24 — is pinned by the
+beni is built from source for now. Its toolchain — Zig 0.17 and Node 24 — is pinned by the
 repository's `flake.nix`, so the only thing you need installed is [Nix](https://nixos.org/download)
 with flakes enabled.
 
@@ -23,7 +23,8 @@ The compiler is one binary with the core library and the platforms inside it; co
 
 The shell keeps Zig's global cache for beni in `~/.cache/zig-beni` (or under
 `$XDG_CACHE_HOME`), apart from the `~/.cache/zig` of other projects. You can delete it at any
-time; the next build fills it again.
+time; the next build fills it again. Every Zig that runs in the shell uses this cache, so leave
+the shell before you build another Zig project.
 
 ## 2. Make a project
 
