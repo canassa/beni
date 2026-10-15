@@ -191,6 +191,12 @@ prevent treating the helper precision repair as overall S6 acceptance.
 
 ## 6. Validation and reproduction
 
+The visit oracle is independent of execution selections, **not of the analysis
+masks**. A missed analysis dependency can make plan and oracle agree on the
+wrong answer; paired DOM/value fuzz is the separate backstop. Both checks are
+therefore required. Group-entry verification does not prove that every
+instruction within a selected group is minimal.
+
 - Final `zorg build test-run-hashes`: all corpus behavior and value fuzz
   verified; 546 passes and only the two known macOS case-folding failures.
   No hashes were hand-edited or hand-merged.
@@ -268,3 +274,11 @@ fixtures; Conduit's 782/114 leaf facts, bounded counts, value roots and 9/62
 star dispatches are unchanged. The empty floor remains 327 B. The final source
 includes the shared row-fact repair and row-state cleanup; it does not contain
 a timing/size optimisation tuned after either measurement batch.
+
+The shared row-fact fix was also explicitly withheld after the final review:
+`TemplateClockRows` failed with tea's clock at 0 versus direct's at 500 in the
+shrunk fuzz sequence, then passed with the fix restored. This repeats the
+original red-first observation before implementing the fix. The handler's
+epoch emission now comments its send-guarded-entry requirement. These last
+clarifications change comments/documentation only; final measurements above
+use the same functional code.
