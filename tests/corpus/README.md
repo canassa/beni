@@ -96,6 +96,20 @@ stack frames whose paths are the test's own. Without a `.crash` file a
 `run/` program must exit 0, as before. The `.crash` text is part of what a
 build's run hash covers. `.crash` is never blessed: write it by hand.
 
+### A program whose schemas are all compiled
+
+A `run/` or `browser/` fixture with a `<name>.compiled-schemas` file
+(`_expected.compiled-schemas` in a project) asserts `schema.md` §6's guarantee,
+*A statically known schema runs compiled*. Every schema it builds is fixed at
+compile time, so its development build must ship no library interpreter:
+`_core/Schema.mjs` must declare neither `Schema$run`, which every interpreting
+runner calls, nor `Schema$box`, the one maker of an `Interpreted` schema. A
+`browser/direct/` project's `browser-tea` build is held to it too. The file's
+text says why the fixture qualifies. Like `.crash`, it is written by hand and
+never blessed. It costs no build of its own, because it reads the output of the
+development build the case already makes. Conduit's pages and the schema
+fixtures that build only compiled schemas carry one.
+
 ### `browser/`: a program in a page
 
 A `browser/` fixture is built like a `run/` one, twice, for the `page`
@@ -405,9 +419,14 @@ compares instead of `.expected`. The differences known today:
   frames (`frame`);
 - layout: happy-dom lays nothing out, so sizes and positions are zero;
 - CSS values: a property the page sets through `style.setProperty`
-  goes back into the `style` attribute as CSSOM serialises it in
-  Chrome, a colour as `rgb(…)`, and as the page wrote it in happy-dom
-  (`browser/tea/BikeWars`: `#222` is `rgb(34, 34, 34)` in Chrome);
+  goes back into the `style` attribute as each DOM serialises it. A
+  colour is `rgb(…)` in Chrome and as the page wrote it in happy-dom
+  (`browser/tea/BikeWars`: `#222` is `rgb(34, 34, 34)` in Chrome). A
+  number has at most six decimals in happy-dom, as CSSOM says, and six
+  significant digits in Chrome (`browser/direct/Sternhalma`:
+  `275.75128869403574px` is `275.751289px` in happy-dom and `275.751px`
+  in Chrome). Chrome writes a large number with an exponent:
+  `1234567.5px` is `1.23457e+06px`, and happy-dom keeps it;
 - leaving the page: happy-dom sees only a navigation through `location`,
   so a form's submission, `window.open(url, "_self")`, a link activated
   outside the `click` step (a `press`, a script's `a.click()`) and

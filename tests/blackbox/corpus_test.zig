@@ -1411,6 +1411,31 @@ const Case = struct {
         return millions;
     }
 
+    /// `schema.md` §6, *A statically known schema runs compiled*: a fixture
+    /// with a `.compiled-schemas` file (`_expected.compiled-schemas` in a
+    /// project) builds only schemas the program fixes at compile time, so
+    /// its development build `out_dir` must ship no library interpreter —
+    /// no `core/Schema` `run`, which every interpreting runner calls, and no
+    /// `box`, the one maker of an `Interpreted` schema. The file's text says
+    /// why the fixture qualifies; it is never blessed.
+    fn checkCompiledSchemas(c: Case, out_dir: []const u8) !void {
+        if (!c.goldenExists("compiled-schemas")) return;
+        const path = try std.fmt.allocPrint(c.arena, "{s}/_core/Schema.mjs", .{out_dir});
+        if (!c.w.exists(path)) {
+            detail("{s} [{s}]: a .compiled-schemas fixture ships no core/Schema at all\n", .{ c.fixture.name, out_dir });
+            because("[{s}] no _core/Schema.mjs in the output", .{out_dir});
+            return error.CompiledSchemasNoSchema;
+        }
+        const text = try c.w.read(path);
+        const banned = [_][]const u8{ "const Schema$run = ", "const Schema$box = " };
+        for (banned) |b| {
+            if (std.mem.indexOf(u8, text, b) == null) continue;
+            detail("{s} [{s}]: the program's schemas are all statically known, but its build ships the library interpreter: `{s}` is in _core/Schema.mjs\n", .{ c.fixture.name, out_dir, b });
+            because("[{s}] ships the schema interpreter ({s})", .{ out_dir, b });
+            return error.ShipsSchemaInterpreter;
+        }
+    }
+
     fn goldenExists(c: Case, ext: []const u8) bool {
         const p = c.goldenPath(ext) catch return false;
         Io.Dir.cwd().access(testing.io, p, .{}) catch return false;
@@ -1960,6 +1985,7 @@ const Case = struct {
                 first_error = err;
                 break :blk null;
             };
+            if (first_error == null) try c.checkCompiledSchemas("out");
         }
         if (differential and c.cfg.runs(Kind.run.partOf(.dev_library))) {
             var forced: std.ArrayList([]const u8) = .empty;
@@ -2203,6 +2229,8 @@ const Case = struct {
             };
         }
         if (pages[0]) |dev| pages[2] = try c.fiberPlan(dev, h, script, record);
+        if (pages[0] != null) try c.checkCompiledSchemas(pageOut(.dev));
+        if (pages[3] != null) try c.checkCompiledSchemas(pageOut(.tea_dev));
         // The page fuzzer (browser-direct.md §8.3): the fixture's two builds
         // replayed against each other on random sequences, in the same Node
         // process, after the pages.

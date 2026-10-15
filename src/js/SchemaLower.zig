@@ -76,7 +76,7 @@ pub fn memberUse(l: *const Lowerer, inst: Bir.Inst.Index) ?MemberUse {
 /// Which node a member binding belongs to.
 pub fn memberOf(kind: Interface.SchemaMember.Kind) ?Member {
     return switch (kind) {
-        .schema => .description,
+        .schema => .root,
         .parse, .parse_with => .read,
         .print, .print_with => .write,
         .type, .encoded => null,
@@ -123,8 +123,12 @@ fn schemaName(l: *Lowerer, ref: SchemaGraph.Ref, suffix: []const u8) !NameIndex 
 /// The bindings a declaration exports, by what survived.
 pub fn exports(l: *Lowerer, decl: u32, names: *std.ArrayList(NameIndex)) !void {
     const ref: SchemaGraph.Ref = .{ .module = l.in.module, .decl = decl };
-    if (l.liveSchema(ref, .description)) {
+    if (l.liveSchema(ref, .root)) {
         try names.append(l.scratch, try schemaName(l, ref, "schema"));
+    }
+    // The description, which another module's description names.
+    if (l.liveSchema(ref, .description)) {
+        try names.append(l.scratch, try schemaName(l, ref, "description"));
     }
     // The workers too, which another module's workers call; the forced
     // library path writes none.
@@ -176,6 +180,10 @@ pub fn declaration(l: *Lowerer, out: *Stmts, decl: u32) !void {
     if (l.liveSchema(ref, .write)) {
         l.restartNames();
         try g.direction(out, .write);
+    }
+    if (l.liveSchema(ref, .root)) {
+        l.restartNames();
+        try g.root(out);
     }
 }
 
@@ -405,8 +413,9 @@ const Gen = struct {
 
     // ---- The description --------------------------------------------------
 
-    /// `$$schema`, and for a nongeneric declaration the constant
-    /// `$$description` it returns: §5's builders composed as the plan says.
+    /// `$$description`: §5's builders composed as the plan says, a constant
+    /// for a nongeneric declaration and a function of the schema arguments
+    /// for a generic one.
     fn description(g: *Gen, out: *Stmts) !void {
         const recursive = try g.sg.recursive(g.l.scratch, g.ref.module, g.ref.decl);
         const params = try g.l.scratch.alloc(NameIndex, g.params);
@@ -417,11 +426,74 @@ const Gen = struct {
             body = try g.call(try g.core("recursive"), &.{ try g.str(g.l.text(g.schema)), try g.arrowOf(&.{self}, body) });
         }
         if (g.params == 0) {
-            const constant = try g.own("description");
-            try g.constDecl(out, constant, body);
+            try g.constDecl(out, try g.own("description"), body);
+        } else {
+            try g.constDecl(out, try g.own("description"), try g.arrowOf(params, body));
+        }
+    }
+
+    /// `$$schema`, `S.schema`'s value (`schema.md` §6, *A statically known
+    /// schema runs compiled*): `core/Schema`'s `declared` of the description
+    /// as a function of no argument, the decoding and encoding workers —
+    /// a generic declaration's closed over `readSlot`/`writeSlot` of its
+    /// arguments, made once per value — and the arguments its value reaches;
+    /// `null` for each member the build left out, which nothing then reads.
+    /// A nongeneric declaration's is one constant, `$$declared`. Under
+    /// `--schema-library` it is the description itself, so every
+    /// composition over it runs through the library (§6, *The forced
+    /// library path*).
+    fn root(g: *Gen, out: *Stmts) !void {
+        const params = try g.l.scratch.alloc(NameIndex, g.params);
+        for (params, 0..) |*slot, i| slot.* = try g.paramName(@intCast(i));
+        var args: std.ArrayList(Node.Index) = .empty;
+        for (params) |param| try args.append(g.l.scratch, try g.id(param));
+        const desc = try g.id(try g.own("description"));
+        const described = if (params.len == 0) desc else try g.call(desc, args.items);
+        if (g.l.in.schema_library) {
+            const fn_params: []const NameIndex = if (params.len == 0) &.{try g.fresh("$u")} else params;
+            try g.constDecl(out, try g.own("schema"), try g.arrowOf(fn_params, described));
+            return;
+        }
+        var slots: [4]Node.Index = undefined;
+        slots[0] = if (g.l.liveSchema(g.ref, .description)) try g.arrowOf(&.{}, described) else try g.lit(.null_lit);
+        for ([_]Dir{ .read, .write }, slots[1..3]) |dir, *slot| {
+            if (!g.l.liveSchema(g.ref, if (dir == .read) .read else .write)) {
+                slot.* = try g.lit(.null_lit);
+                continue;
+            }
+            const worker = try g.id(try g.own(@tagName(dir)));
+            if (params.len == 0) {
+                slot.* = worker;
+                continue;
+            }
+            // `((r0, …) => (c, d, p, k, n, v) => worker(c, d, p, k, n, v, r0, …))(readSlot(s0), …)`:
+            // each argument's slot made once, when the value is.
+            const bound = try g.l.scratch.alloc(NameIndex, params.len);
+            var made: std.ArrayList(Node.Index) = .empty;
+            for (bound, params) |*b, param| {
+                b.* = try g.fresh("$w");
+                try made.append(g.l.scratch, try g.call(try g.core(if (dir == .read) "readSlot" else "writeSlot"), &.{try g.id(param)}));
+            }
+            const ps = try g.freshParams();
+            var call_args: std.ArrayList(Node.Index) = .empty;
+            for (ps.list()) |p| try call_args.append(g.l.scratch, try g.id(p));
+            for (bound) |b| try call_args.append(g.l.scratch, try g.id(b));
+            const inner = try g.arrowOf(&ps.list(), try g.call(worker, call_args.items));
+            slot.* = try g.call(try g.arrowOf(bound, inner), made.items);
+        }
+        // The arguments the value reaches, in the order it meets them
+        // (`compiledProblem`).
+        const reached = try g.sg.reachedParams(g.l.scratch, g.ref);
+        var checked: std.ArrayList(Node.Index) = .empty;
+        for (reached) |i| try checked.append(g.l.scratch, try g.id(params[i]));
+        slots[3] = if (params.len == 0) try g.lit(.null_lit) else try g.l.arrayNode(checked.items, g.p);
+        const value = try g.call(try g.core("declared"), &slots);
+        if (params.len == 0) {
+            const constant = try g.own("declared");
+            try g.constDecl(out, constant, value);
             try g.constDecl(out, try g.own("schema"), try g.arrowOf(&.{try g.fresh("$u")}, try g.id(constant)));
         } else {
-            try g.constDecl(out, try g.own("schema"), try g.arrowOf(params, body));
+            try g.constDecl(out, try g.own("schema"), try g.arrowOf(params, value));
         }
     }
 
@@ -442,11 +514,9 @@ const Gen = struct {
                 if (self) |s| if (t.module == g.ref.module and t.decl == g.ref.decl and isIdentity(plan, words, params.len)) return g.id(s);
                 var args: std.ArrayList(Node.Index) = .empty;
                 for (words) |a| try args.append(g.l.scratch, try g.descNode(@fromBackingInt(@intCast(a)), params, self));
-                if (t.module == g.ref.module and words.len == 0 and g.sg.paramCount(t) == 0) {
-                    return g.id(try schemaName(g.l, t, "description"));
-                }
-                if (words.len == 0) try args.append(g.l.scratch, try g.lit(.null_lit));
-                return g.call(try g.id(try schemaName(g.l, t, "schema")), args.items);
+                const named = try g.id(try schemaName(g.l, t, "description"));
+                if (g.sg.paramCount(t) == 0) return named;
+                return g.call(named, args.items);
             },
             .list => return g.call(try g.core("list"), &.{try g.descNode(@fromBackingInt(@intCast(SchemaGraph.lhs(plan, n))), params, self)}),
             .nullable => return g.call(try g.core("nullable"), &.{try g.descNode(@fromBackingInt(@intCast(SchemaGraph.lhs(plan, n))), params, self)}),
@@ -638,8 +708,8 @@ const Gen = struct {
             // forced library path).
             var args: std.ArrayList(Node.Index) = .empty;
             for (params) |param| try args.append(g.l.scratch, try g.id(param));
-            if (params.len == 0) try args.append(g.l.scratch, try g.lit(.null_lit));
-            const s = try g.call(try g.id(try g.own("schema")), args.items);
+            const d = try g.id(try g.own("description"));
+            const s = if (params.len == 0) d else try g.call(d, args.items);
             break :blk try g.call(try g.core(with_suffix), &.{ s, try g.id(options), try g.id(input) });
         } else blk: {
             try g.workers(out, dir);
@@ -658,7 +728,7 @@ const Gen = struct {
             };
             break :blk try g.call(try g.core(if (dir == .read) "compiledParse" else "compiledPrint"), &.{
                 try g.id(options),
-                try g.l.arrayNode(checked.items, g.p),
+                if (params.len == 0) try g.lit(.null_lit) else try g.l.arrayNode(checked.items, g.p),
                 worker,
                 try g.id(input),
             });

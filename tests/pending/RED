@@ -107,4 +107,3 @@ tests/pending/browser/direct/DefectInTurnRender.beni PageFailed
 
 # HttpFailures: work function slots inside a traversal callback remain unmodelled.
 tests/pending/browser/direct/HttpFailures.beni dev: exit=1 codes=list_still_used×1
-tests/pending/check/bad/direct/BridgeCallbackReturnsParameter.beni exit=0 codes=none

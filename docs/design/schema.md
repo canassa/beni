@@ -87,6 +87,10 @@ compiled. The description is the plain form that remains available, under
 [report 28 §0](research/28-jsx-in-beni.md); runtime composition uses the library
 path. Both obey §5, including the same errors. Specialisation is not a second
 schema language and is not reserved for `--release`.
+*Amended 2026-10-15 (A.11):* runtime composition of statically known schemas is compiled too. A
+composition of declarations by `list`, `nullable`, `converted` and generic arguments carries
+compiled workers. The library path is the test oracle, and it runs only schemas whose shape is
+built at run time (§6, *A statically known schema runs compiled*).
 
 ## 2. The declaration
 
@@ -920,7 +924,9 @@ when their schema values are supplied at runtime, while the known outer shape
 remains specialised. Runtime branches selecting schemas and ordinary runtime
 builder calls are library operations; specialisation need not perform general constant
 evaluation or whole-program monomorphisation. A future recogniser may specialise
-statically known plain builder composition, but may change no semantics. There
+statically known plain builder composition, but may change no semantics. *(Amended 2026-10-15:
+superseded by §6, *A statically known schema runs compiled*. Composition by the compiled makers
+is compiled when the value is made, and no recogniser is involved.)* There
 is no eval/new Function, including capability probes, on either path.
 
 A declaration that depends on a dynamic child must pass its **existing engine
@@ -1038,6 +1044,126 @@ interpreter, and emits no worker. It changes no answer; that is what the differe
 asserts (§10). The corpus builds every `run/` fixture that declares a `schema` four times —
 development and `--release`, each compiled and forced — against the one `.expected`, which is
 written by hand: the two paths agreeing with each other is not evidence on its own.
+
+### A statically known schema runs compiled
+
+*Added 2026-10-15 (A.11, the owner's design); normative from this date.* This amends §1's "runtime
+composition uses the library path" and *The static/dynamic line* above, whose "future recogniser"
+it replaces. Parity with Effect means **what** a schema validates and does: the shapes, the
+issues, the options, the order. It does not mean **how** Effect runs one. Every schema whose
+shape the program fixes at compile time compiles to specialised JavaScript, for speed and for
+size. The library interpreter of §5 is not how such a schema runs. It stays as the test oracle,
+through the forced path below and the differential corpus. It ships only in a program that builds
+a schema whose shape is decided at run time.
+
+**What is statically known.** A schema value is *compiled* when it is made by one of these
+makers, each applied to compiled schemas:
+
+| Maker | Its parse and print |
+|---|---|
+| `S.schema ⊤`, a declaration's value | the declaration's own workers (§6, *The specialised path*) |
+| `S.schema a₁ … aₙ`, a generic one | the declaration's workers, with each argument's workers as its slots |
+| `Schema.string`, `bool`, `int`, `float`, `finiteFloat`, `null`, `value` | core's primitive workers |
+| `Schema.list s`, `Schema.nullable s` | core's list and `nullable` workers, around `s`'s |
+| `Schema.converted s c` | `s`'s workers, then `c`'s directions through `compiledForward` and `compiledBackward` |
+
+The set is closed under these makers, so `Schema.list (Item.schema ⊤)`,
+`Page.schema (Schema.list (User.schema ⊤))`, a recursive declaration and a list of lists are all
+compiled. A schema is *dynamic* when an interpreting builder made it, or made a part of it. The
+interpreting builders are the ones whose shape arrives as run-time values: `record` with `fields`,
+`field`, `optional`, `key` and `mapping`; `tagged` with `variant`, `nullary` and `injection`;
+`recursive`; `flip`, `typeOnly` and `encodedOnly`. A compiled maker given a dynamic schema makes a
+dynamic one, except a generic declaration. That keeps its compiled outer shape and runs the
+dynamic argument through the library on the parent's context, as before.
+
+**How it is decided.** It is decided when the value is made, and the value carries the answer.
+`core/Schema`'s private `Engine` type has two constructors:
+- `Interpreted`, a node the interpreter walks. Only `box` builds it, and every interpreting
+  builder calls `box`.
+- `Compiled`, the value's compiled parse and print workers, how to build its node if one is
+  asked for, and the dynamic schemas its workers run, if any.
+
+`parse`, `parseWith`, `print` and `printWith` branch on the engine. A compiled schema runs its
+workers under `compiledParse` and `compiledPrint`, the same root code a declaration's `S.parse`
+runs. So a compiled schema stays compiled wherever it goes: through a variable, a record field, a
+helper of the program, or `Http.jsonBody`. Nothing has to see it at the call. The compiler decides
+the rest when it builds. The constructors of `Engine` and of `Made` are the only constructors of
+`core` that reachability does not exempt (`backend.md` §9, *A `case` arm on a constructor nothing
+builds*, amended). `Made` records what a compiled schema was made of. Every arm that runs the
+interpreter is an `Interpreted` arm, so it survives only in a build that reaches a builder that
+calls `box`. A compiled maker's worker is made by `parserOf`/`printerOf` when a root or a slot
+runs it, in that maker's `Made` arm. So a build ships the list worker only if it makes a compiled
+`list`, and a build that composes and describes schemas without running one ships no worker.
+
+**The guarantee.** A program whose schemas are all statically known, and which runs them with
+`parse`, `print` and their `With` forms, ships no library interpreter. It ships no
+`core/Schema.run` and no `box`. Each of its parses and prints runs compiled workers. The corpus
+checks this on Conduit and on the schema fixtures (§16, *As built — slice A*). A program that
+builds a dynamic schema ships the interpreter, and only its dynamic schemas use it.
+
+**What still reaches the description in this slice.** `decode`, `encode`, `read`, `write`,
+`describe`, `flip`, `typeOnly` and `encodedOnly` need the schema's node. On a compiled schema they
+build the node from the declaration's description (§6's table), which `box` makes. So a program
+that calls one of them ships the interpreter, even with only compiled schemas. `read` and `write`
+cannot borrow the parse and print workers. Those workers trust what `JSON.parse` makes (an own key
+is a key that is not `undefined`), and they write JSON's refusals (a non-finite `Float`). A
+`Value` handed in by the host breaks the first assumption. `write`'s output is not JSON text, so
+the second does not apply. Typed `decode`/`encode` workers, and `read`/`write` workers that make no
+JSON assumption, are a later slice. That slice moves these eight operations out of this paragraph
+and into the guarantee.
+
+**What `S.schema` emits.** It is a fourth reachability member of the declaration, *root*, besides
+the description and the two directions. Its value is
+`Schema.declared(describe, parse, print, args)`, a core-private value:
+- `describe` is an arrow that answers the description.
+- `parse` and `print` are the declaration's workers. A generic declaration closes them over
+  `readSlot`/`writeSlot` of its arguments, made once per value.
+- `args` lists the arguments the value reaches.
+
+The root reaches the other members only through guards:
+- the description, only when `core/Schema`'s `nodeOf` survives;
+- the decoding worker, only when `parseWith` or `readSlot` survives;
+- the encoding worker, only when `printWith` or `writeSlot` survives.
+
+A member the build left out is written `null` in the value, and nothing reads it. So
+`Http.jsonBody (X.schema ⊤) v` ships `X`'s encoding worker and nothing else of `X`. A
+description refers to another declaration through that declaration's description, not its
+`schema`.
+
+**Issues are unchanged.** A compiled schema's root checks are `compiledProblem`'s. The options come
+first, then each dynamic argument's construction failure and opaque Encoded end, in the order the
+value reaches them. Its issues are the workers', which §6 already holds to the library's answer. A
+compiled maker cannot make a construction failure. A compiled schema's Encoded end never holds a
+conversion's target, because `converted` changes only the Type end, and `flip`, the one way to
+move it, is interpreting.
+
+**The forced library path.** Under `--schema-library` a declaration's `S.schema` is its
+description again. So every composition over declarations, and every parse and print of one, runs
+through the interpreter, and the differential corpus still compares the two paths. The primitive
+makers are core code, compiled in both builds. A composition of primitives alone is therefore
+compiled under the flag too, and its fixture's hand-written golden is what tests it.
+
+**`Http` takes the schema value, unchanged** (`boundary.md` §9.8.12, amended). `jsonBody : Schema
+e a, a → Body` and `expectJson : Schema e a → Expect Error a` keep their signatures. Both call
+`Schema.print`/`Schema.parse`, which run a compiled schema's workers. The two alternatives were
+weighed and both were refused:
+- **Specialising each call whose schema argument is visible.** This works only where the schema
+  expression is written at the call. It fails through a variable, a record field, or a helper
+  such as Conduit's `send`. It also needs inter-procedural specialisation of `Http`'s bodies.
+- **Changing the API to take compiled functions** (`jsonBody X.print v`). This makes a developer
+  learn two spellings. It loses composition: `Schema.list X` has no `print` member, so a list body
+  would need a declaration of its own. And it moves `Unprintable` and `BadBody` into every
+  caller's hands.
+
+A value that carries its compiled directions needs neither, and the source a developer writes is
+the source they wrote before. The typed errors are unchanged. `jsonBody`'s `Unprintable issues`
+(`BadRequest (UnprintableBody issues)`) and `expectJson`'s `BadBody issues` are the compiled root's
+issue list, the list the library makes.
+
+**What this leaves to later slices.** Workers that several schemas share, written once only where
+that makes the bundle smaller, are slice B. Schemas derived from a type (§12) are slice C. §12.8
+already says that the value passed through evidence is the callee's specialised worker, and that
+is this section's `Compiled`.
 
 ## 7. Effects
 
@@ -2284,6 +2410,68 @@ their constructors), over core-private values of `core/Schema.beni` (`compiledPa
   bundle row through `bundle.mjs`, startup, and the many-schema code-size curve §6 asks for before
   any parity claim.
 
+**As built — slice A** (2026-10-15; §6, *A statically known schema runs compiled*; A.11). The rule is
+built for `parse`, `print` and their `With` forms. `core/Schema` has a private `Engine`, made of
+`Interpreted` and `Compiled Workers`, and a private `Made`. `declared` is a core-private value
+that the code of a declaration's `S.schema` calls. `parserOf` and `printerOf` make a compiled
+maker's worker from its `Made`. `Reach` exempts no constructor of `Engine` or `Made` in an
+application build (`Input.schemaGuarded`). `S.schema` is the fourth member, `root`
+(`SchemaGraph.Member`), with guarded edges to the other three (`root_guards`).
+
+- **The guarantee is a corpus check.** A `.compiled-schemas`
+  file marks a `run/` or `browser/` fixture (`tests/corpus/README.md`). The fixture's development
+  build must then ship no `Schema$run` and no `Schema$box`. Eighteen fixtures carry the marker:
+  - Conduit's six pages, tea and direct, together with each direct page's tea build;
+  - `run/SchemaDeclConversions`, `SchemaDeclDepth`, `SchemaDeclKeys`, `SchemaDeclModules` and the
+    new `SchemaComposed`;
+  - `browser/tea/HttpJson`, `HttpJsonBody`, `ApiItems`, `ApiLogin` and the new `HttpJsonList`;
+  - `browser/direct/HttpJson` and `HttpJsonBody`.
+
+  The check went red when `Schema.string` was put back on `box`.
+- **Typed issues through the compiled path.** `run/SchemaComposed` exercises `list`, `nullable`,
+  `converted`, a list of lists, a generic declaration given a composition, and a primitive at the
+  root. It covers each kind of failure: `AllErrors`, `Reject`, the depth bound, invalid options,
+  malformed JSON, a conversion's moved issues, and a print failure. Its golden equals the master
+  interpreter's output line for line. `browser/tea/HttpJsonList` sends and reads
+  `Schema.list (Note.schema ⊤)`. It pins `UnprintableBody` with `PrintFailed` at `1.stars` and
+  `BadBody` with `MissingKey` at `1.note-title`. The earlier `HttpJson` and `HttpJsonBody` goldens
+  did not move. They now run compiled.
+- **Size** (release brotli 11 of `_main.mjs`, against master `927b7dcd4`):
+  - Conduit tea goes from 31 497 to **28 893** (−2 604). Conduit direct goes from 36 502 to
+    **33 906** (−2 596).
+  - `bench/size.mjs` totals: release gross −3 360 and development gross −5 442.
+    `bench/size-apps/ApiAndRoutes` is −2 004 release.
+  - The `run/SchemaDecl*` fixtures that build only compiled schemas are −2 kB each.
+  - A program that builds dynamic schemas pays for the compiled machinery beside the interpreter:
+    +115 to +700 release, for example `SchemaDirections` +675. Its primitives are compiled
+    schemas, so `parseWith`'s `Compiled` arm survives in it.
+- **Speed** (`bench/schema-libraries`' rows, as `quick.mjs` children, alternating the two builds
+  ten times; the median of each cell's per-child medians; Node 24; `taskset -c 23`; load 6–8). A
+  declaration's workers and its `S.parse`/`S.print` are the code they were. `compiledProblem`
+  skips the argument checks for a root with no argument (`null`), so the declaration rows run the
+  same JavaScript, and the release `failAt` is the same text. Every cell of those rows was within
+  ±3%, except flat `unknown_key` (+9%) and `missing_key` (+54%). On a rerun of `flat` alone, 16
+  alternations, every flat cell was 1–6% faster, `missing_key` included (1 680 → 1 578 ns). The
+  path `Http` takes is `Schema.parseWith (X.schema ⊤)` and `Schema.printWith`, which were the
+  library and are now the workers. On that path the same harness measured 10–64% faster on every
+  cell except three: the two unknown-key decodes stayed level, and flat `missing_key` was the same
+  outlier as above. Examples: flat encode 2 731 → 1 300 ns, list decode 1 707 → 1 046 µs,
+  typeahead encode 14 071 → 5 106 ns.
+- **A defect on the way, fixed.** A release build writes a function called from one place where
+  it is called (`backend.md` §9). It did this to `belowBackward` once `backwardWorker` became its
+  one caller. A `--library` build then exported a name that its file never declared. This
+  happened in `bench/schema-libraries`' `--schema-library` build. `core/Schema`'s core-private
+  values are now `named`, as `core/List`'s already were. `build_test`'s *keeps every core/Schema
+  value it exports* failed before the fix.
+- **Left for later slices:**
+  - typed `decode`/`encode` workers, and `read`/`write` workers that make no JSON assumption, so
+    that those operations, `describe` and the endpoint makers stop reaching the description (#175);
+  - a declaration's `S.print`/`S.printWith` wrappers ship with its encoding worker even where only
+    `S.schema` is used (#177);
+  - the compiled path's +0.1–0.7 kB in programs that also build dynamic schemas (#176);
+  - workers shared across schemas (slice B);
+  - derived schemas (slice C).
+
 ## Appendix A. Decisions log
 
 ### A.1 — Description plus specialised functions (2026-09-22)
@@ -2680,3 +2868,27 @@ the choices that were not forced by the owner's words, so they can be reversed.
   - Optics remain *proposed* until a checked field reference is specified.
 - **Slices (§16).** S3 and S4 are the trunk. S5, S6, S7 and S9 can run in parallel worktrees once
   S4 lands, and S15 closes the milestone.
+
+### A.11 — A statically known schema compiles; the interpreter is the oracle (2026-10-15)
+
+**Decided by the owner:** "Feature parity with Effect" means what schemas validate and do, not how
+Effect implements them. Every schema the program knows at compile time compiles to optimised
+JavaScript, for speed and size: a `schema` declaration, any composition built from declarations,
+and, later, a schema derived from a type (§12). Validators shared across schemas move into shared
+functions only where that makes the bundle smaller. The library interpreter does not run
+statically known schemas. It remains the test oracle, and it ships only for a schema built at run
+time. §6, *A statically known schema runs compiled*, is the contract.
+
+**Choices this slice made, which can be reversed:**
+- **Decided at construction, and carried by the value.** The alternative was a compile-time
+  recogniser that rewrites schema expressions it can see. That recogniser misses a schema that
+  travels through a variable, a field or a helper. A compiled schema built by core's list or
+  `nullable` maker calls its child's worker through a closure. The declaration's own nested list
+  does not. That costs one call per element and allocates nothing more on success.
+  *Reversal:* specialise a visible composition at compile time as well. The engine tag stays, and
+  the specialised value becomes one more `Compiled`.
+- **`Http`'s API is unchanged** (§6, as above). *Reversal:* add a body made from a compiled
+  printer. That would need no change here.
+- **The guarantee covers `parse` and `print`.** `decode`, `encode`, `read`, `write`, `describe`
+  and the endpoint makers still reach the description. They wait for typed workers in a later
+  slice.

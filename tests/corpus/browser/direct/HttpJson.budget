@@ -1,10 +1,5 @@
-6300 Granted by Cesar on 2026-10-14 (option B of question direct-budget-q1 on the owner's
-dashboard, issue #101); the limit and the rule wording were set by the owner (Jayson) on
-2026-10-14. The rule: a case whose cost comes from a compiler defect with an open issue, until
-the case fits 4 300M.
+5200 Owner-delegated grant (2026-10-15; CLAUDE.md, *Every test has a budget*), lowered from 6 300M.
 Cause: a browser/direct/ page is four builds in one case (browser-direct and browser-tea, dev and
-release), and Http.expectJson reaches the core/Schema library interpreter, which the release
-specialiser processes in both release builds (issue #105).
-Size: on the gate's host (Zen 2) the case is 4 799M, and 5 710M when Node runs the pages.
-PR #104's reference CPU, x86_64_v3+sha, counts within 5M of Zen 2. The limit is 5 710M plus 10%.
-Remove when the case fits 4 300M without this file.
+release). Since #181 the page runs compiled schemas (no core/Schema interpreter, #105 closed).
+Size: 4 728M on the x86-64 Linux reference with Node running the pages; the limit adds 10%.
+Remove when the case fits 4 300M without this file (issue #184).

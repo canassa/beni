@@ -1,0 +1,144 @@
+{
+  "fixedPrefix": {
+    "programs": 490,
+    "tables": 64,
+    "families": {
+      "fixture": 98,
+      "sync": 44,
+      "targeted": 348
+    },
+    "sha256": "27c16813417690b56c0968697dd32017542fc5c352ce0c8fcab050fe8b580c3a"
+  },
+  "judgeSha256": "8a59c5bfbe9c8567a6efdc09ef5917dd13887a5260d9f6a8d3129e66f89334de",
+  "observation": "Original programs; complete final value, reads and externalReads in both unchanged Lean interpreters. The judge labels the supplied original core minimum under --only; no reduction is used.",
+  "campaign": {
+    "programs": 176903,
+    "translated": 107163,
+    "skipped": 69740,
+    "valueChecked": 107163,
+    "leads": 1984,
+    "precision": 6239,
+    "environment": {
+      "node": "v24.19.0",
+      "compilerSha256": "7ecf97f814af31be8fe39a7dffb30fb48594d0564bda792dd449504985a761fb",
+      "oracleSha256": "a4fae8719c4bf3cbf551e117741329e2855dfab0c865494d7433c4fea97147a3"
+    },
+    "streams": [
+      {
+        "name": "fixtures-0.jsonl",
+        "programs": 937,
+        "translated": 703,
+        "skipped": 234,
+        "valueChecked": 703,
+        "agreements": 682,
+        "precision": 21,
+        "sha256": "a38e714abf0df309a1030bbf562a0e7246db4f77f3e86f511ab6f5653fd0ccb0"
+      },
+      {
+        "name": "enumerate-0.jsonl",
+        "programs": 55966,
+        "translated": 48391,
+        "skipped": 7575,
+        "valueChecked": 48391,
+        "agreements": 43930,
+        "precision": 4154,
+        "leads": 307,
+        "sha256": "aaee0cb2b54439c2b3eeaad7f1cad4a7b819d8778d542a63b7e199439b8596d9"
+      },
+      {
+        "name": "generator-17.jsonl",
+        "programs": 20000,
+        "translated": 9663,
+        "skipped": 10337,
+        "valueChecked": 9663,
+        "agreements": 8865,
+        "precision": 278,
+        "leads": 520,
+        "sha256": "1cfc13959605e7c8c6148520238cd96bc7a2599988b5773f2ae8e1be4a0d2e80"
+      },
+      {
+        "name": "generator-20261011.jsonl",
+        "programs": 20000,
+        "translated": 9699,
+        "skipped": 10301,
+        "valueChecked": 9699,
+        "agreements": 8912,
+        "leads": 499,
+        "precision": 288,
+        "sha256": "dfc0307698b269dd43e4851eb996311dacf5cdcd6ffa08c1f9e4fe30c1197bed"
+      },
+      {
+        "name": "generator-314159.jsonl",
+        "programs": 20000,
+        "translated": 9634,
+        "skipped": 10366,
+        "valueChecked": 9634,
+        "agreements": 8847,
+        "precision": 286,
+        "leads": 501,
+        "sha256": "f5e323829a081028782fee84df094cc25374667f08ca5017d7780da2a5eb0ede"
+      },
+      {
+        "name": "generator6-17.jsonl",
+        "programs": 20000,
+        "translated": 9637,
+        "skipped": 10363,
+        "valueChecked": 9637,
+        "agreements": 9171,
+        "precision": 411,
+        "leads": 55,
+        "sha256": "5c2c4a7ee5233e73dbaf38473cf5b28b90da4c06eb2ddb2945a34deda12fc16e"
+      },
+      {
+        "name": "generator6-20261011.jsonl",
+        "programs": 20000,
+        "translated": 9731,
+        "skipped": 10269,
+        "valueChecked": 9731,
+        "precision": 394,
+        "agreements": 9289,
+        "leads": 48,
+        "sha256": "de13708566a0cfeda6f8f26e5f587eb5294ea1a4ab7e7d15c226b60591fdd23c"
+      },
+      {
+        "name": "generator6-314159.jsonl",
+        "programs": 20000,
+        "translated": 9705,
+        "skipped": 10295,
+        "valueChecked": 9705,
+        "agreements": 9244,
+        "leads": 54,
+        "precision": 407,
+        "sha256": "a7ac4bd82d6bd4e96f6b074e8b7dfd28f7f49f4d31c6d3797b5b197e147b91e1"
+      }
+    ]
+  },
+  "confirmed": 0,
+  "confirmedIds": [],
+  "agreeingOriginalLeads": 1984,
+  "meaningfulLeads": 514,
+  "meaningfulByStream": {
+    "fixtures-0.jsonl": 0,
+    "enumerate-0.jsonl": 307,
+    "generator-17.jsonl": 31,
+    "generator-20261011.jsonl": 43,
+    "generator-314159.jsonl": 31,
+    "generator6-17.jsonl": 39,
+    "generator6-20261011.jsonl": 29,
+    "generator6-314159.jsonl": 34
+  },
+  "originalClusterLeadsStillAccepted": {
+    "RecursiveCapture": [],
+    "FoldFeedback": [],
+    "CaseResult": [],
+    "CaptureResult": [],
+    "BlockResult": [],
+    "CaptureOperand": []
+  },
+  "reverse": {
+    "before": 401,
+    "nowAccepted": 0,
+    "stillRefused": 401,
+    "refusalDetailsChanged": 0
+  }
+}

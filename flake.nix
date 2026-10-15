@@ -38,6 +38,30 @@
         unset LD_LIBRARY_PATH
         exec ${pkgs.chromium}/bin/chromium "$@"
       '';
+
+      # Zig has two caches. The LOCAL one, `.zig-cache`, holds what a build
+      # compiles from the worktree's files, and each worktree keeps its own:
+      # its manifests name files relative to the build root, so a shared one
+      # handed a worktree a binary built from another worktree's sources
+      # (commit bfc234325). The GLOBAL one holds what Zig compiles from its
+      # own library, the build runner and compiler-rt, with every input
+      # file named relative to Zig's library or the global cache itself.
+      # That stays true only while no build step writes a worktree's file
+      # into the global cache: `build.zig` never uses
+      # `b.graph.global_cache_root`, and it must not start to.
+      # One global cache serves every worktree of beni and no other
+      # project. In the default `~/.cache/zig`, another project's Nix
+      # build of Zig 0.17.0 took the build runner's slot: its library
+      # differs in one file and its version string does not, so each Zig
+      # evicted the other's runner, and the next `zig build` here compiled
+      # it again for 1 to 3 minutes (#145, #161). A ZIG_GLOBAL_CACHE_DIR
+      # that the caller set is kept: CI keeps `~/.cache/zig`, the path its
+      # cache steps restore (.github/workflows/ci.yml). Every shell below
+      # runs this, `default`'s through `inputsFrom`, and direnv's
+      # `use flake` runs `default`'s.
+      zigGlobalCache = ''
+        export ZIG_GLOBAL_CACHE_DIR="''${ZIG_GLOBAL_CACHE_DIR:-''${XDG_CACHE_HOME:-$HOME/.cache}/zig-beni}"
+      '';
     in
     {
       # `nix build .#checks.<system>.browser-chromium`: the `chromium` that
@@ -72,11 +96,8 @@
             pkgs.jq
           ];
 
-          # Each worktree keeps its own `.zig-cache`. Sharing one cache
-          # across worktrees is unsafe: Zig's manifests record
-          # build-root-relative paths, so a worktree could be handed a binary
-          # built from another worktree's sources.
-          shellHook = ''
+          # `zigGlobalCache` says which Zig cache is shared and which is not.
+          shellHook = zigGlobalCache + ''
             echo "beni: zig $(zig version) · node $(node --version)"
           '';
         };
@@ -128,6 +149,10 @@
               # tools still work there, and the bridge needs Zorg on PATH.
               ++ pkgs.lib.optional (builtins.hasAttr system zorgReleases) zorg
               ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.util-linux ];
+            # `zorg build` reads the same variable. Every Zorg version
+            # string carries `+zorg`, so Zorg never takes the slot of the
+            # other shells' Zig 0.17.0.
+            shellHook = zigGlobalCache;
           };
 
         # `nix develop .#browser`: the default shell plus Chromium, for

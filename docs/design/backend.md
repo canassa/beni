@@ -1697,6 +1697,12 @@ static/dynamic boundary, resolved-plan input and independent §9 reachability;
 specified fork, not implemented code or an effects-runtime decision.
 *(Amended 2026-10-02: built — `schema.md` §6, *The specialised path, as specified for S4*, and §16,
 *As built — S4*: `src/js/SchemaLower.zig` writes it, and §9's walk has a schema member node.)*
+*(Amended 2026-10-15: `schema.md` §6, *A statically known schema runs compiled*, and A.11.
+Every statically known schema runs compiled, and the library interpreter is the test oracle.
+`S.schema` is a fourth member, *root*, whose value carries the compiled workers. §9's walk
+reaches the description and each direction from the root only through a guard on the
+`core/Schema` value that reads them. The constructors of `core/Schema`'s private `Engine` and
+`Made` are the only core constructors whose arms reachability decides.)*
 
 ### Derived comparisons do not grow the native stack
 
@@ -4558,7 +4564,14 @@ is reached, and not before.
   the build names, and of every type that such a type's constructors or an alias name,
   transitively; and every constructor at all in a `--library` build, whose callers are not in the
   build, or in a build with a `schema` declaration, whose parse will build values no instruction
-  spells. None of these is ever a guard.
+  spells. None of these is ever a guard. *Amended 2026-10-15 (`schema.md` §6, *A statically known
+  schema runs compiled*):* in an application build, the constructors of `core/Schema`'s private
+  `Engine` (`Interpreted`, `Compiled`) and `Made` are not exempt. Only `core/Schema`'s own code
+  spells them: `box` builds `Interpreted`, and the compiled makers build the rest. The compiler
+  writes none, and no sibling, `foreign` or schema endpoint can name either type. An arm on
+  `Interpreted` is the library interpreter behind every runner, and it survives only where a
+  builder that boxes a node does. An arm on a `Made` constructor is that maker's worker, and it
+  survives only where the maker does.
 - **Why that is sound.** A value is built by beni code that spells one of its constructors, by the
   compiler for a core type, or by hand-written JavaScript — a sibling, a runtime — which receives
   and returns values only through signatures: it can build a value of a type its signatures name,

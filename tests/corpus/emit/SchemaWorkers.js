@@ -1,4 +1,4 @@
-import { Schema$conversion, Schema$issue, Schema$fields, Schema$list, Schema$field, Schema$nullable, Schema$string, Schema$mapping, Schema$record, Schema$compiledFail, Schema$pathAt, Schema$readSlot, Schema$compiledParse, Schema$defaultOptions, Schema$writeSlot, Schema$compiledPrint, Schema$converted, Schema$value, Schema$compiledForward, Schema$compiledBackward, Schema$belowBackward, Schema$printableWithin } from "./_core/Schema.mjs";
+import { Schema$conversion, Schema$issue, Schema$fields, Schema$list, Schema$field, Schema$nullable, Schema$string, Schema$mapping, Schema$record, Schema$compiledFail, Schema$pathAt, Schema$readSlot, Schema$compiledParse, Schema$defaultOptions, Schema$writeSlot, Schema$compiledPrint, Schema$declared, Schema$converted, Schema$value, Schema$compiledForward, Schema$compiledBackward, Schema$belowBackward, Schema$printableWithin } from "./_core/Schema.mjs";
 import { String$toInt, String$fromInt } from "./_core/String.mjs";
 import { Node$printLines } from "./_platform/Node.mjs";
 const SchemaWorkers$Schema$Null = { $: "Null", a: null };
@@ -11,7 +11,7 @@ const SchemaWorkers$decimalInt = Schema$conversion((s$1) => {
     return { $: "Err", a: [Schema$issue("not a decimal integer")] };
   }
 }, (n$3) => ({ $: "Ok", a: String$fromInt(n$3) }));
-const SchemaWorkers$Page$$schema = ($s0) => Schema$record(Schema$field(Schema$field(Schema$fields, "items", Schema$list($s0)), "note", Schema$nullable(Schema$string)), Schema$mapping(($p$1) => ({ items: $p$1.a.b, note: $p$1.b }), ($r$2) => ({ a: { a: null, b: $r$2.items }, b: $r$2.note })), Schema$mapping(($p$3) => ({ items: $p$3.a.b, note: $p$3.b }), ($r$4) => ({ a: { a: null, b: $r$4.items }, b: $r$4.note })));
+const SchemaWorkers$Page$$description = ($s0) => Schema$record(Schema$field(Schema$field(Schema$fields, "items", Schema$list($s0)), "note", Schema$nullable(Schema$string)), Schema$mapping(($p$1) => ({ items: $p$1.a.b, note: $p$1.b }), ($r$2) => ({ a: { a: null, b: $r$2.items }, b: $r$2.note })), Schema$mapping(($p$3) => ({ items: $p$3.a.b, note: $p$3.b }), ($r$4) => ({ a: { a: null, b: $r$4.items }, b: $r$4.note })));
 const SchemaWorkers$Page$$read = (c, d, p, k, n, v, $s0) => {
   if (typeof v !== "object" || v === null || globalThis.Array.isArray(v)) {
     return Schema$compiledFail(c, p, k, n, 0, "expected an object", v, false);
@@ -175,9 +175,9 @@ const SchemaWorkers$Page$$write$1 = (c, d, p, k, n, v, $s0) => {
 };
 const SchemaWorkers$Page$$printWith = ($s0, $o, $t) => Schema$compiledPrint($o, [$s0], ($c$17, $d$18, $p$19, $k$20, $n$21, $v$22) => SchemaWorkers$Page$$write($c$17, $d$18, $p$19, $k$20, $n$21, $v$22, Schema$writeSlot($s0)), $t);
 const SchemaWorkers$Page$$print = ($s0, $t) => SchemaWorkers$Page$$printWith($s0, Schema$defaultOptions, $t);
+const SchemaWorkers$Page$$schema = ($s0) => Schema$declared(() => SchemaWorkers$Page$$description($s0), (($w$1) => ($c$2, $d$3, $p$4, $k$5, $n$6, $v$7) => SchemaWorkers$Page$$read($c$2, $d$3, $p$4, $k$5, $n$6, $v$7, $w$1))(Schema$readSlot($s0)), (($w$8) => ($c$9, $d$10, $p$11, $k$12, $n$13, $v$14) => SchemaWorkers$Page$$write($c$9, $d$10, $p$11, $k$12, $n$13, $v$14, $w$8))(Schema$writeSlot($s0)), [$s0]);
 const SchemaWorkers$Box$$via$0 = SchemaWorkers$decimalInt;
 const SchemaWorkers$Box$$description = Schema$record(Schema$field(Schema$field(Schema$fields, "count", Schema$converted(Schema$string, SchemaWorkers$Box$$via$0)), "raw", Schema$value), Schema$mapping(($p$1) => ({ count: $p$1.a.b, raw: $p$1.b }), ($r$2) => ({ a: { a: null, b: $r$2.count }, b: $r$2.raw })), Schema$mapping(($p$3) => ({ count: $p$3.a.b, raw: $p$3.b }), ($r$4) => ({ a: { a: null, b: $r$4.count }, b: $r$4.raw })));
-const SchemaWorkers$Box$$schema = ($u$5) => SchemaWorkers$Box$$description;
 const SchemaWorkers$Box$$read = (c, d, p, k, n, v) => {
   if (typeof v !== "object" || v === null || globalThis.Array.isArray(v)) {
     return Schema$compiledFail(c, p, k, n, 0, "expected an object", v, false);
@@ -234,7 +234,7 @@ const SchemaWorkers$Box$$read = (c, d, p, k, n, v) => {
   }
   return { count: $f$5, raw: $f$8 };
 };
-const SchemaWorkers$Box$$parseWith = ($o, $t) => Schema$compiledParse($o, [], SchemaWorkers$Box$$read, $t);
+const SchemaWorkers$Box$$parseWith = ($o, $t) => Schema$compiledParse($o, null, SchemaWorkers$Box$$read, $t);
 const SchemaWorkers$Box$$parse = ($t) => SchemaWorkers$Box$$parseWith(Schema$defaultOptions, $t);
 const SchemaWorkers$Box$$write = (c, d, p, k, n, v) => {
   const $here = Schema$pathAt(p, k, n);
@@ -283,10 +283,11 @@ const SchemaWorkers$Box$$write = (c, d, p, k, n, v) => {
   $o$10["raw"] = $s$7;
   return $o$10;
 };
-const SchemaWorkers$Box$$printWith = ($o, $t) => Schema$compiledPrint($o, [], SchemaWorkers$Box$$write, $t);
+const SchemaWorkers$Box$$printWith = ($o, $t) => Schema$compiledPrint($o, null, SchemaWorkers$Box$$write, $t);
 const SchemaWorkers$Box$$print = ($t) => SchemaWorkers$Box$$printWith(Schema$defaultOptions, $t);
-const SchemaWorkers$Pages$$description = Schema$record(Schema$field(Schema$fields, "boxes", SchemaWorkers$Page$$schema(SchemaWorkers$Box$$description)), Schema$mapping(($p$1) => ({ boxes: $p$1.b }), ($r$2) => ({ a: null, b: $r$2.boxes })), Schema$mapping(($p$3) => ({ boxes: $p$3.b }), ($r$4) => ({ a: null, b: $r$4.boxes })));
-const SchemaWorkers$Pages$$schema = ($u$5) => SchemaWorkers$Pages$$description;
+const SchemaWorkers$Box$$declared = Schema$declared(() => SchemaWorkers$Box$$description, SchemaWorkers$Box$$read, SchemaWorkers$Box$$write, null);
+const SchemaWorkers$Box$$schema = ($u$1) => SchemaWorkers$Box$$declared;
+const SchemaWorkers$Pages$$description = Schema$record(Schema$field(Schema$fields, "boxes", SchemaWorkers$Page$$description(SchemaWorkers$Box$$description)), Schema$mapping(($p$1) => ({ boxes: $p$1.b }), ($r$2) => ({ a: null, b: $r$2.boxes })), Schema$mapping(($p$3) => ({ boxes: $p$3.b }), ($r$4) => ({ a: null, b: $r$4.boxes })));
 const SchemaWorkers$Pages$$read = (c, d, p, k, n, v) => {
   if (typeof v !== "object" || v === null || globalThis.Array.isArray(v)) {
     return Schema$compiledFail(c, p, k, n, 0, "expected an object", v, false);
@@ -323,7 +324,7 @@ const SchemaWorkers$Pages$$read = (c, d, p, k, n, v) => {
   }
   return { boxes: $f$5 };
 };
-const SchemaWorkers$Pages$$parseWith = ($o, $t) => Schema$compiledParse($o, [], SchemaWorkers$Pages$$read, $t);
+const SchemaWorkers$Pages$$parseWith = ($o, $t) => Schema$compiledParse($o, null, SchemaWorkers$Pages$$read, $t);
 const SchemaWorkers$Pages$$parse = ($t) => SchemaWorkers$Pages$$parseWith(Schema$defaultOptions, $t);
 const SchemaWorkers$Pages$$write = (c, d, p, k, n, v) => {
   const $here = Schema$pathAt(p, k, n);
@@ -346,8 +347,10 @@ const SchemaWorkers$Pages$$write = (c, d, p, k, n, v) => {
   $o$5["boxes"] = $s$3;
   return $o$5;
 };
-const SchemaWorkers$Pages$$printWith = ($o, $t) => Schema$compiledPrint($o, [], SchemaWorkers$Pages$$write, $t);
+const SchemaWorkers$Pages$$printWith = ($o, $t) => Schema$compiledPrint($o, null, SchemaWorkers$Pages$$write, $t);
 const SchemaWorkers$Pages$$print = ($t) => SchemaWorkers$Pages$$printWith(Schema$defaultOptions, $t);
+const SchemaWorkers$Pages$$declared = Schema$declared(() => SchemaWorkers$Pages$$description, SchemaWorkers$Pages$$read, SchemaWorkers$Pages$$write, null);
+const SchemaWorkers$Pages$$schema = ($u$1) => SchemaWorkers$Pages$$declared;
 const SchemaWorkers$main = Node$printLines([]);
-export { SchemaWorkers$main, SchemaWorkers$Page$$schema, SchemaWorkers$Page$$read, SchemaWorkers$Page$$parse, SchemaWorkers$Page$$parseWith, SchemaWorkers$Page$$write, SchemaWorkers$Page$$print, SchemaWorkers$Page$$printWith, SchemaWorkers$Box$$schema, SchemaWorkers$Box$$read, SchemaWorkers$Box$$parse, SchemaWorkers$Box$$parseWith, SchemaWorkers$Box$$write, SchemaWorkers$Box$$print, SchemaWorkers$Box$$printWith, SchemaWorkers$Pages$$schema, SchemaWorkers$Pages$$read, SchemaWorkers$Pages$$parse, SchemaWorkers$Pages$$parseWith, SchemaWorkers$Pages$$write, SchemaWorkers$Pages$$print, SchemaWorkers$Pages$$printWith };
+export { SchemaWorkers$main, SchemaWorkers$Page$$schema, SchemaWorkers$Page$$description, SchemaWorkers$Page$$read, SchemaWorkers$Page$$parse, SchemaWorkers$Page$$parseWith, SchemaWorkers$Page$$write, SchemaWorkers$Page$$print, SchemaWorkers$Page$$printWith, SchemaWorkers$Box$$schema, SchemaWorkers$Box$$description, SchemaWorkers$Box$$read, SchemaWorkers$Box$$parse, SchemaWorkers$Box$$parseWith, SchemaWorkers$Box$$write, SchemaWorkers$Box$$print, SchemaWorkers$Box$$printWith, SchemaWorkers$Pages$$schema, SchemaWorkers$Pages$$description, SchemaWorkers$Pages$$read, SchemaWorkers$Pages$$parse, SchemaWorkers$Pages$$parseWith, SchemaWorkers$Pages$$write, SchemaWorkers$Pages$$print, SchemaWorkers$Pages$$printWith };
 //# sourceMappingURL=SchemaWorkers.mjs.map

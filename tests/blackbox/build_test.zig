@@ -2354,6 +2354,58 @@ test "--library needs no main, writes no entry file, and roots at the exported s
     try testing.expectEqual(diagnostic.Code.missing_main, app.diagnostics[0].code);
 }
 
+test "a --library --release build keeps every core/Schema value it exports, even one called once" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `core/Schema` exports each core-private value the specialised path
+    // calls from other modules (`schema.md` §6) when it survives. Under
+    // `--schema-library` no worker calls them, and inside `core/Schema` one
+    // of them may be called from one place: a compiled maker's worker calls
+    // `belowBackward` once. A release build writes a function called from
+    // one place where it is called (`backend.md` §9), and it did that to
+    // such a value too, so no declaration was left. A `--library` build,
+    // whose modules are files of their own, then exported a name its file
+    // never declared, and Node refused to load the module at all.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Lib.beni",
+        \\import Schema
+        \\
+        \\
+        \\pub schema Point =
+        \\    x : Int
+        \\    y : Int
+        \\
+        \\
+        \\pub shown : Point.Type → String
+        \\shown p =
+        \\    case Point.print p of
+        \\        Ok text →
+        \\            text
+        \\
+        \\        Err _ →
+        \\            "failed"
+        \\
+    );
+    try w.write("check.mjs",
+        \\await import("./out/Lib.mjs");
+        \\console.log("loaded");
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.run(&.{ "build", "--platform=node", "--library", "--release", "--schema-library", "--out=out", "Lib.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    try w.expectProgram("check.mjs", .{ .stdout = "loaded\n" });
+}
+
 test "`main` is resolved per platform: it must exist and have the platform's Program type" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │

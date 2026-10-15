@@ -1,0 +1,5436 @@
+{
+  "commit": "f1ab9cc87cf85ac32a600afa817482a9fd8023c9",
+  "compilerSha256": "2de3fb93b04400ce144a1cf345f7ac364350d55b0a0db7dcfaec87bcde48dc96",
+  "node": "v24.19.0",
+  "method": "Unmodified emitted release JS. Ordered initializer stubs: core, runtime; remainder charged to app/startup. No reoptimisation. Compression interactions depend on order. Core leave-one-out is also recorded for criterion 5.",
+  "apps": [
+    {
+      "app": "bike",
+      "platform": "tea",
+      "input": "examples/bike-wars/src",
+      "args": [
+        "build",
+        "--platform=browser-tea",
+        "--release",
+        "--no-cache",
+        "--out=zig-out/s8/bike-tea",
+        "examples/bike-wars/src"
+      ],
+      "status": 0,
+      "stdout": "",
+      "stderr": "-- PREPEND IN LOOP ------------------- examples/bike-wars/src/Helpers.beni:36:35\n\nThis puts elements in front of `acc`, the accumulator this `List.foldr` hands\nback to its callback, so it happens at every step:\n\n    [ (…), …acc ]\n\nA list is an array, so every step copies the whole accumulator, and the loop\ntakes time that grows with the square of the list's length. Add at the end\ninstead, which takes the same short time at every step:\n\n    [ …acc, (…) ]\n\n`List.foldr` hands over the last element first, so to keep the order write\nthe loop as `List.foldl`, which hands over the first element first.\n\nIf the prepend is meant — the list stays short — give the new list a name\nfirst, and this warning goes.\n\n36|                [ [ start, end ], …acc ]\n                                     ^^^^\n\n-- PREPEND IN LOOP ------------------- examples/bike-wars/src/Helpers.beni:51:39\n\nThis puts elements in front of `acc`, which this function hands back to\nitself, so it happens at every step of a loop:\n\n    [ (…), …acc ]\n\nA list is an array, so every step copies the whole accumulator, and the loop\ntakes time that grows with the square of the list's length. Add at the end\ninstead, which takes the same short time at every step:\n\n    [ …acc, (…) ]\n\nThat keeps the elements in the order they arrive, so the `List.reverse` that\nput a prepended result back in order is no longer needed.\n\nIf the prepend is meant — the list stays short — give the new list a name\nfirst, and this warning goes.\n\n51|                recurse [ toLine a b, …acc ] [ b, …tail ]\n                                         ^^^^\n",
+      "size": {
+        "raw": 28373,
+        "brotli": 9205
+      },
+      "sha256": "240fa7056e075c09e29441bf24fefef7c3dd7862676b21c0e1b1901b402533ba",
+      "parts": [
+        {
+          "part": "core",
+          "rawSpans": 6407,
+          "orderedBrotli": 2045,
+          "leaveOneOut": 2045
+        },
+        {
+          "part": "runtime",
+          "rawSpans": 5622,
+          "orderedBrotli": 1991,
+          "leaveOneOut": 1897
+        },
+        {
+          "part": "app/startup/residual",
+          "orderedBrotli": 5169
+        }
+      ],
+      "bindings": [
+        {
+          "binding": "a",
+          "source": "beni:///core/Task.beni",
+          "line": 234,
+          "column": 0,
+          "name": "queue",
+          "start": 6,
+          "end": 10
+        },
+        {
+          "binding": "b",
+          "source": "beni:///core/Task.beni",
+          "line": 238,
+          "column": 0,
+          "name": "head",
+          "start": 15,
+          "end": 18
+        },
+        {
+          "binding": "c",
+          "source": "beni:///core/Task.beni",
+          "line": 242,
+          "column": 0,
+          "name": "scheduled",
+          "start": 19,
+          "end": 26
+        },
+        {
+          "binding": "d",
+          "source": "beni:///core/Task.beni",
+          "line": 250,
+          "column": 0,
+          "name": "port",
+          "start": 27,
+          "end": 33
+        },
+        {
+          "binding": "e",
+          "source": "beni:///core/Task.beni",
+          "line": 254,
+          "column": 0,
+          "name": "portTasks",
+          "start": 40,
+          "end": 44
+        },
+        {
+          "binding": "f",
+          "source": "beni:///core/Task.beni",
+          "line": 258,
+          "column": 0,
+          "name": "macrotask",
+          "start": 45,
+          "end": 243
+        },
+        {
+          "binding": "h",
+          "source": "beni:///core/Task.beni",
+          "line": 292,
+          "column": 0,
+          "name": "hosting",
+          "start": 248,
+          "end": 255
+        },
+        {
+          "binding": "i",
+          "source": "beni:///core/Task.beni",
+          "line": 326,
+          "column": 0,
+          "name": "turn",
+          "start": 256,
+          "end": 262
+        },
+        {
+          "binding": "j",
+          "source": "beni:///core/Task.beni",
+          "line": 372,
+          "column": 0,
+          "name": "phase",
+          "start": 263,
+          "end": 266
+        },
+        {
+          "binding": "k",
+          "source": "beni:///core/Task.beni",
+          "line": 950,
+          "column": 0,
+          "name": "soonRunning",
+          "start": 267,
+          "end": 273
+        },
+        {
+          "binding": "l",
+          "source": "beni:///core/Task.beni",
+          "line": 356,
+          "column": 0,
+          "name": "defect",
+          "start": 274,
+          "end": 280
+        },
+        {
+          "binding": "m",
+          "source": "beni:///core/Task.beni",
+          "line": 480,
+          "column": 0,
+          "name": "drainNow",
+          "start": 287,
+          "end": 607
+        },
+        {
+          "binding": "g",
+          "source": "beni:///core/Task.beni",
+          "line": 472,
+          "column": 0,
+          "name": "drain",
+          "start": 608,
+          "end": 631
+        },
+        {
+          "binding": "n",
+          "source": "beni:///core/Task.beni",
+          "line": 276,
+          "column": 0,
+          "name": "schedule",
+          "start": 632,
+          "end": 699
+        },
+        {
+          "binding": "p",
+          "source": "beni:///core/Task.beni",
+          "line": 301,
+          "column": 0,
+          "name": "fromHost",
+          "start": 700,
+          "end": 810
+        },
+        {
+          "binding": "q",
+          "source": "beni:///core/Task.beni",
+          "line": 335,
+          "column": 0,
+          "name": "onTurn",
+          "start": 811,
+          "end": 821
+        },
+        {
+          "binding": "r",
+          "source": "beni:///core/Task.beni",
+          "line": 365,
+          "column": 0,
+          "name": "onDefect",
+          "start": 822,
+          "end": 832
+        },
+        {
+          "binding": "s",
+          "source": "beni:///core/Task.beni",
+          "line": 386,
+          "column": 0,
+          "name": "soonQueued",
+          "start": 837,
+          "end": 844
+        },
+        {
+          "binding": "t",
+          "source": "beni:///core/Task.beni",
+          "line": 438,
+          "column": 0,
+          "name": "releasing",
+          "start": 845,
+          "end": 852
+        },
+        {
+          "binding": "u",
+          "source": "beni:///core/Task.beni",
+          "line": 442,
+          "column": 0,
+          "name": "releases",
+          "start": 859,
+          "end": 863
+        },
+        {
+          "binding": "v",
+          "source": "beni:///core/Task.beni",
+          "line": 446,
+          "column": 0,
+          "name": "releaseAll",
+          "start": 864,
+          "end": 906
+        },
+        {
+          "binding": "w",
+          "source": "beni:///core/Task.beni",
+          "line": 461,
+          "column": 0,
+          "name": "onShutdown",
+          "start": 907,
+          "end": 930
+        },
+        {
+          "binding": "x",
+          "source": "beni:///core/Task.beni",
+          "line": 468,
+          "column": 0,
+          "name": "stopQueue",
+          "start": 931,
+          "end": 951
+        },
+        {
+          "binding": "y",
+          "source": "beni:///core/Task.beni",
+          "line": 544,
+          "column": 0,
+          "name": "shutdown",
+          "start": 952,
+          "end": 991
+        },
+        {
+          "binding": "o",
+          "source": "beni:///core/Task.beni",
+          "line": 1394,
+          "column": 0,
+          "name": "runSoon",
+          "start": 992,
+          "end": 1075
+        },
+        {
+          "binding": "z",
+          "source": "beni:///core/Task.beni",
+          "line": 1425,
+          "column": 0,
+          "name": "soon",
+          "start": 1076,
+          "end": 1115
+        },
+        {
+          "binding": "A",
+          "source": "beni:///core/Task.beni",
+          "line": 1441,
+          "column": 0,
+          "name": "openRoot",
+          "start": 1116,
+          "end": 1172
+        },
+        {
+          "binding": "B",
+          "source": "beni:///platforms/browser/Rt.beni",
+          "line": 53,
+          "column": 0,
+          "name": "head",
+          "start": 1179,
+          "end": 1242
+        },
+        {
+          "binding": "C",
+          "source": "beni:///platforms/browser/Rt.beni",
+          "line": 35,
+          "column": 0,
+          "name": "first",
+          "start": 1243,
+          "end": 1269
+        },
+        {
+          "binding": "D",
+          "source": "beni:///platforms/browser/Rt.beni",
+          "line": 64,
+          "column": 0,
+          "name": "tail",
+          "start": 1270,
+          "end": 1344
+        },
+        {
+          "binding": "E",
+          "source": "beni:///platforms/browser/Rt.beni",
+          "line": 43,
+          "column": 0,
+          "name": "last",
+          "start": 1345,
+          "end": 1371
+        },
+        {
+          "binding": "F",
+          "source": "beni:///platforms/browser/Rt.beni",
+          "line": 77,
+          "column": 0,
+          "name": "put",
+          "start": 1372,
+          "end": 1471
+        },
+        {
+          "binding": "G",
+          "source": "beni:///platforms/browser/Rt.beni",
+          "line": 92,
+          "column": 0,
+          "name": "drop",
+          "start": 1472,
+          "end": 1556
+        },
+        {
+          "binding": "H",
+          "source": "beni:///platforms/browser/Rt.beni",
+          "line": 123,
+          "column": 0,
+          "name": "template",
+          "start": 1557,
+          "end": 1710
+        },
+        {
+          "binding": "I",
+          "source": "beni:///platforms/browser/Rt.beni",
+          "line": 144,
+          "column": 0,
+          "name": "templateOf",
+          "start": 1711,
+          "end": 1879
+        },
+        {
+          "binding": "J",
+          "source": "beni:///platforms/browser/Rt.beni",
+          "line": 185,
+          "column": 0,
+          "name": "slot",
+          "start": 1880,
+          "end": 1985
+        },
+        {
+          "binding": "K",
+          "source": "beni:///platforms/browser/Rt.beni",
+          "line": 205,
+          "column": 0,
+          "name": "parentOf",
+          "start": 1986,
+          "end": 2020
+        },
+        {
+          "binding": "L",
+          "source": "beni:///platforms/browser/Rt.beni",
+          "line": 215,
+          "column": 0,
+          "name": "unit",
+          "start": 2021,
+          "end": 2073
+        },
+        {
+          "binding": "M",
+          "source": "beni:///platforms/browser/Rt.beni",
+          "line": 228,
+          "column": 0,
+          "name": "patch",
+          "start": 2074,
+          "end": 2230
+        },
+        {
+          "binding": "N",
+          "source": "beni:///platforms/browser/Rt.beni",
+          "line": 249,
+          "column": 0,
+          "name": "again",
+          "start": 2231,
+          "end": 2250
+        },
+        {
+          "binding": "O",
+          "source": "beni:///platforms/browser/Rt.beni",
+          "line": 259,
+          "column": 0,
+          "name": "restate",
+          "start": 2251,
+          "end": 2311
+        },
+        {
+          "binding": "P",
+          "source": "beni:///platforms/browser/Rt.beni",
+          "line": 276,
+          "column": 0,
+          "name": "restateRows",
+          "start": 2312,
+          "end": 2447
+        },
+        {
+          "binding": "Q",
+          "source": "beni:///platforms/browser/Rt.beni",
+          "line": 336,
+          "column": 0,
+          "name": "held",
+          "start": 2448,
+          "end": 2475
+        },
+        {
+          "binding": "R",
+          "source": "beni:///platforms/browser/Rt.beni",
+          "line": 354,
+          "column": 0,
+          "name": "childHtml",
+          "start": 2476,
+          "end": 2577
+        },
+        {
+          "binding": "S",
+          "source": "beni:///platforms/browser/Rt.beni",
+          "line": 373,
+          "column": 0,
+          "name": "queued",
+          "start": 2582,
+          "end": 2586
+        },
+        {
+          "binding": "T",
+          "source": "beni:///platforms/browser/Rt.beni",
+          "line": 377,
+          "column": 0,
+          "name": "scheduled",
+          "start": 2587,
+          "end": 2594
+        },
+        {
+          "binding": "U",
+          "source": "beni:///platforms/browser/Rt.beni",
+          "line": 381,
+          "column": 0,
+          "name": "phase",
+          "start": 2595,
+          "end": 2601
+        },
+        {
+          "binding": "V",
+          "source": "beni:///platforms/browser/Rt.beni",
+          "line": 389,
+          "column": 0,
+          "name": "turning",
+          "start": 2602,
+          "end": 2609
+        },
+        {
+          "binding": "W",
+          "source": "beni:///platforms/browser/Rt.beni",
+          "line": 395,
+          "column": 0,
+          "name": "flushing",
+          "start": 2610,
+          "end": 2617
+        },
+        {
+          "binding": "X",
+          "source": "beni:///platforms/browser/Rt.beni",
+          "line": 432,
+          "column": 0,
+          "name": "dead",
+          "start": 2618,
+          "end": 2625
+        },
+        {
+          "binding": "Y",
+          "source": "beni:///platforms/browser/Rt.beni",
+          "line": 443,
+          "column": 0,
+          "name": "stop",
+          "start": 2632,
+          "end": 2662
+        },
+        {
+          "binding": "Z",
+          "source": "beni:///platforms/browser/Rt.beni",
+          "line": 573,
+          "column": 0,
+          "name": "flush",
+          "start": 2663,
+          "end": 2793
+        },
+        {
+          "binding": "$",
+          "source": "beni:///platforms/browser/Rt.beni",
+          "line": 664,
+          "column": 0,
+          "name": "mount",
+          "start": 2794,
+          "end": 2991
+        },
+        {
+          "binding": "_",
+          "source": "beni:///platforms/browser/Rt.beni",
+          "line": 599,
+          "column": 0,
+          "name": "run",
+          "start": 2992,
+          "end": 3369
+        },
+        {
+          "binding": "aa",
+          "source": "beni:///platforms/browser/Rt.beni",
+          "line": 752,
+          "column": 0,
+          "name": "childList",
+          "start": 3370,
+          "end": 3671
+        },
+        {
+          "binding": "ba",
+          "source": "beni:///platforms/browser/Rt.beni",
+          "line": 2069,
+          "column": 0,
+          "name": "textKind",
+          "start": 3672,
+          "end": 3784
+        },
+        {
+          "binding": "ca",
+          "source": "beni:///platforms/browser/Rt.beni",
+          "line": 2087,
+          "column": 0,
+          "name": "text",
+          "start": 3785,
+          "end": 3803
+        },
+        {
+          "binding": "da",
+          "source": "beni:///core/Basics.beni",
+          "line": 407,
+          "column": 0,
+          "name": "min",
+          "start": 3810,
+          "end": 3823
+        },
+        {
+          "binding": "ea",
+          "source": "beni:///core/Basics.beni",
+          "line": 474,
+          "column": 0,
+          "name": "identity",
+          "start": 3824,
+          "end": 3831
+        },
+        {
+          "binding": "fa",
+          "source": null,
+          "line": null,
+          "column": null,
+          "name": null,
+          "start": 3838,
+          "end": 3853
+        },
+        {
+          "binding": "ga",
+          "source": "beni:///core/List.beni",
+          "line": 629,
+          "column": 0,
+          "name": "isTrie",
+          "start": 3854,
+          "end": 3875
+        },
+        {
+          "binding": "ha",
+          "source": "beni:///core/List.beni",
+          "line": 123,
+          "column": 0,
+          "name": "reconsed",
+          "start": 3876,
+          "end": 3932
+        },
+        {
+          "binding": "ia",
+          "source": "beni:///core/List.beni",
+          "line": 616,
+          "column": 0,
+          "name": "copyTo",
+          "start": 3933,
+          "end": 3988
+        },
+        {
+          "binding": "ja",
+          "source": "beni:///core/List.beni",
+          "line": 671,
+          "column": 0,
+          "name": "leafAt",
+          "start": 3989,
+          "end": 4041
+        },
+        {
+          "binding": "ka",
+          "source": "beni:///core/List.beni",
+          "line": 580,
+          "column": 0,
+          "name": "triePlain",
+          "start": 4042,
+          "end": 4307
+        },
+        {
+          "binding": "la",
+          "source": "beni:///core/List.beni",
+          "line": 649,
+          "column": 0,
+          "name": "header",
+          "start": 4308,
+          "end": 4370
+        },
+        {
+          "binding": "ma",
+          "source": "beni:///core/List.beni",
+          "line": 625,
+          "column": 0,
+          "name": "isPlain",
+          "start": 4371,
+          "end": 4387
+        },
+        {
+          "binding": "na",
+          "source": "beni:///core/List.beni",
+          "line": 475,
+          "column": 0,
+          "name": "base",
+          "start": 4388,
+          "end": 4432
+        },
+        {
+          "binding": "oa",
+          "source": "beni:///core/List.beni",
+          "line": 486,
+          "column": 0,
+          "name": "offset",
+          "start": 4433,
+          "end": 4467
+        },
+        {
+          "binding": "pa",
+          "source": "beni:///core/List.beni",
+          "line": 567,
+          "column": 0,
+          "name": "viewPlain",
+          "start": 4468,
+          "end": 4557
+        },
+        {
+          "binding": "qa",
+          "source": "beni:///core/List.beni",
+          "line": 638,
+          "column": 0,
+          "name": "viewOf",
+          "start": 4558,
+          "end": 4614
+        },
+        {
+          "binding": "ra",
+          "source": "beni:///core/List.beni",
+          "line": 131,
+          "column": 0,
+          "name": "pushFrom",
+          "start": 4615,
+          "end": 4672
+        },
+        {
+          "binding": "sa",
+          "source": "beni:///core/List.beni",
+          "line": 85,
+          "column": 0,
+          "name": "cons",
+          "start": 4673,
+          "end": 4859
+        },
+        {
+          "binding": "ta",
+          "source": "beni:///core/List.beni",
+          "line": 364,
+          "column": 0,
+          "name": "copy",
+          "start": 4860,
+          "end": 4912
+        },
+        {
+          "binding": "ua",
+          "source": "beni:///core/List.beni",
+          "line": 174,
+          "column": 0,
+          "name": "plainOf",
+          "start": 4913,
+          "end": 4937
+        },
+        {
+          "binding": "va",
+          "source": "beni:///core/List.beni",
+          "line": 662,
+          "column": 0,
+          "name": "treeOf",
+          "start": 4938,
+          "end": 4974
+        },
+        {
+          "binding": "wa",
+          "source": "beni:///core/List.beni",
+          "line": 725,
+          "column": 0,
+          "name": "putLeaf",
+          "start": 4975,
+          "end": 5114
+        },
+        {
+          "binding": "xa",
+          "source": "beni:///core/List.beni",
+          "line": 793,
+          "column": 0,
+          "name": "rightGrow",
+          "start": 5115,
+          "end": 5198
+        },
+        {
+          "binding": "ya",
+          "source": "beni:///core/List.beni",
+          "line": 784,
+          "column": 0,
+          "name": "treeRight",
+          "start": 5199,
+          "end": 5271
+        },
+        {
+          "binding": "za",
+          "source": "beni:///core/List.beni",
+          "line": 936,
+          "column": 0,
+          "name": "pushedLeaves",
+          "start": 5272,
+          "end": 5364
+        },
+        {
+          "binding": "Aa",
+          "source": "beni:///core/List.beni",
+          "line": 908,
+          "column": 0,
+          "name": "triePushed",
+          "start": 5365,
+          "end": 5579
+        },
+        {
+          "binding": "Ba",
+          "source": "beni:///core/List.beni",
+          "line": 666,
+          "column": 0,
+          "name": "noTree",
+          "start": 5580,
+          "end": 5604
+        },
+        {
+          "binding": "Ca",
+          "source": "beni:///core/List.beni",
+          "line": 848,
+          "column": 0,
+          "name": "chunks",
+          "start": 5605,
+          "end": 5670
+        },
+        {
+          "binding": "Da",
+          "source": "beni:///core/List.beni",
+          "line": 827,
+          "column": 0,
+          "name": "fromPlain",
+          "start": 5671,
+          "end": 5867
+        },
+        {
+          "binding": "Ea",
+          "source": "beni:///core/List.beni",
+          "line": 150,
+          "column": 0,
+          "name": "append",
+          "start": 5868,
+          "end": 6046
+        },
+        {
+          "binding": "Fa",
+          "source": "beni:///core/List.beni",
+          "line": 204,
+          "column": 0,
+          "name": "eqFrom",
+          "start": 6047,
+          "end": 6132
+        },
+        {
+          "binding": "Ga",
+          "source": "beni:///core/List.beni",
+          "line": 196,
+          "column": 0,
+          "name": "eq",
+          "start": 6133,
+          "end": 6195
+        },
+        {
+          "binding": "Ha",
+          "source": "beni:///core/List.beni",
+          "line": 680,
+          "column": 0,
+          "name": "trieGet",
+          "start": 6196,
+          "end": 6327
+        },
+        {
+          "binding": "Ia",
+          "source": "beni:///core/List.beni",
+          "line": 445,
+          "column": 0,
+          "name": "unsafeGet",
+          "start": 6328,
+          "end": 6377
+        },
+        {
+          "binding": "Ja",
+          "source": "beni:///core/List.beni",
+          "line": 697,
+          "column": 0,
+          "name": "trieDrop",
+          "start": 6378,
+          "end": 6632
+        },
+        {
+          "binding": "Ka",
+          "source": "beni:///core/List.beni",
+          "line": 459,
+          "column": 0,
+          "name": "view",
+          "start": 6633,
+          "end": 6697
+        },
+        {
+          "binding": "La",
+          "source": "beni:///core/List.beni",
+          "line": 518,
+          "column": 0,
+          "name": "builder",
+          "start": 6698,
+          "end": 6722
+        },
+        {
+          "binding": "Ma",
+          "source": "beni:///core/List.beni",
+          "line": 531,
+          "column": 0,
+          "name": "done",
+          "start": 6723,
+          "end": 6770
+        },
+        {
+          "binding": "Na",
+          "source": "beni:///core/List.beni",
+          "line": 1283,
+          "column": 0,
+          "name": "putAll",
+          "start": 6771,
+          "end": 6826
+        },
+        {
+          "binding": "Oa",
+          "source": "beni:///core/List.beni",
+          "line": 1014,
+          "column": 0,
+          "name": "foldlFrom",
+          "start": 6827,
+          "end": 6890
+        },
+        {
+          "binding": "Pa",
+          "source": "beni:///core/List.beni",
+          "line": 1009,
+          "column": 0,
+          "name": "foldl",
+          "start": 6891,
+          "end": 6937
+        },
+        {
+          "binding": "Qa",
+          "source": "beni:///core/List.beni",
+          "line": 1035,
+          "column": 0,
+          "name": "foldrFrom",
+          "start": 6938,
+          "end": 7004
+        },
+        {
+          "binding": "Ra",
+          "source": "beni:///core/List.beni",
+          "line": 1031,
+          "column": 0,
+          "name": "foldr",
+          "start": 7005,
+          "end": 7053
+        },
+        {
+          "binding": "Sa",
+          "source": "beni:///core/List.beni",
+          "line": 1116,
+          "column": 0,
+          "name": "mapHelp",
+          "start": 7054,
+          "end": 7128
+        },
+        {
+          "binding": "Ta",
+          "source": "beni:///core/List.beni",
+          "line": 1109,
+          "column": 0,
+          "name": "map",
+          "start": 7129,
+          "end": 7180
+        },
+        {
+          "binding": "Ua",
+          "source": "beni:///core/List.beni",
+          "line": 1152,
+          "column": 0,
+          "name": "filterHelp",
+          "start": 7181,
+          "end": 7284
+        },
+        {
+          "binding": "Va",
+          "source": "beni:///core/List.beni",
+          "line": 1147,
+          "column": 0,
+          "name": "filter",
+          "start": 7285,
+          "end": 7338
+        },
+        {
+          "binding": "Wa",
+          "source": "beni:///core/List.beni",
+          "line": 1174,
+          "column": 0,
+          "name": "filterMapHelp",
+          "start": 7339,
+          "end": 7454
+        },
+        {
+          "binding": "Xa",
+          "source": "beni:///core/List.beni",
+          "line": 1170,
+          "column": 0,
+          "name": "filterMap",
+          "start": 7455,
+          "end": 7508
+        },
+        {
+          "binding": "Ya",
+          "source": "beni:///core/List.beni",
+          "line": 1193,
+          "column": 0,
+          "name": "reverse",
+          "start": 7509,
+          "end": 7629
+        },
+        {
+          "binding": "Za",
+          "source": "beni:///core/List.beni",
+          "line": 1318,
+          "column": 0,
+          "name": "concatFrom",
+          "start": 7630,
+          "end": 7736
+        },
+        {
+          "binding": "$a",
+          "source": "beni:///core/List.beni",
+          "line": 1298,
+          "column": 0,
+          "name": "concat",
+          "start": 7737,
+          "end": 7839
+        },
+        {
+          "binding": "_a",
+          "source": "beni:///core/List.beni",
+          "line": 1336,
+          "column": 0,
+          "name": "concatMap",
+          "start": 7840,
+          "end": 7861
+        },
+        {
+          "binding": "ab",
+          "source": "beni:///core/List.beni",
+          "line": 1707,
+          "column": 0,
+          "name": "get",
+          "start": 7862,
+          "end": 7895
+        },
+        {
+          "binding": "bb",
+          "source": "beni:///core/List.beni",
+          "line": 1692,
+          "column": 0,
+          "name": "drop",
+          "start": 7896,
+          "end": 7920
+        },
+        {
+          "binding": "cb",
+          "source": "beni:///platforms/browser/Cmd.beni",
+          "line": 76,
+          "column": 0,
+          "name": "none",
+          "start": 7927,
+          "end": 7932
+        },
+        {
+          "binding": "db",
+          "source": "beni:///platforms/browser/Cmd.beni",
+          "line": 86,
+          "column": 0,
+          "name": "items",
+          "start": 7933,
+          "end": 7942
+        },
+        {
+          "binding": "eb",
+          "source": null,
+          "line": null,
+          "column": null,
+          "name": null,
+          "start": 7949,
+          "end": 7992
+        },
+        {
+          "binding": "fb",
+          "source": null,
+          "line": null,
+          "column": null,
+          "name": null,
+          "start": 7993,
+          "end": 8008
+        },
+        {
+          "binding": "gb",
+          "source": "beni:///core/Dict.beni",
+          "line": 57,
+          "column": 0,
+          "name": "empty",
+          "start": 8009,
+          "end": 8014
+        },
+        {
+          "binding": "hb",
+          "source": "beni:///core/Dict.beni",
+          "line": 81,
+          "column": 0,
+          "name": "getHelp",
+          "start": 8015,
+          "end": 8168
+        },
+        {
+          "binding": "jb",
+          "source": "beni:///core/Dict.beni",
+          "line": 152,
+          "column": 0,
+          "name": "blacken",
+          "start": 8169,
+          "end": 8271
+        },
+        {
+          "binding": "kb",
+          "source": "beni:///core/Dict.beni",
+          "line": 183,
+          "column": 0,
+          "name": "balance",
+          "start": 8272,
+          "end": 8782
+        },
+        {
+          "binding": "lb",
+          "source": "beni:///core/Dict.beni",
+          "line": 163,
+          "column": 0,
+          "name": "insertHelp",
+          "start": 8783,
+          "end": 9012
+        },
+        {
+          "binding": "mb",
+          "source": "beni:///core/Dict.beni",
+          "line": 147,
+          "column": 0,
+          "name": "insert",
+          "start": 9013,
+          "end": 9038
+        },
+        {
+          "binding": "nb",
+          "source": "beni:///core/Dict.beni",
+          "line": 510,
+          "column": 0,
+          "name": "foldlTree",
+          "start": 9039,
+          "end": 9127
+        },
+        {
+          "binding": "pe",
+          "source": null,
+          "line": null,
+          "column": null,
+          "name": null,
+          "start": 9134,
+          "end": 9142
+        },
+        {
+          "binding": "ob",
+          "source": null,
+          "line": null,
+          "column": null,
+          "name": null,
+          "start": 9149,
+          "end": 9436
+        },
+        {
+          "binding": "pb",
+          "source": null,
+          "line": null,
+          "column": null,
+          "name": null,
+          "start": 9443,
+          "end": 9458
+        },
+        {
+          "binding": "qb",
+          "source": null,
+          "line": null,
+          "column": null,
+          "name": null,
+          "start": 9459,
+          "end": 9586
+        },
+        {
+          "binding": "rb",
+          "source": "beni:///core/Maybe.beni",
+          "line": 32,
+          "column": 0,
+          "name": "withDefault",
+          "start": 9587,
+          "end": 9610
+        },
+        {
+          "binding": "sb",
+          "source": "beni:///core/Maybe.beni",
+          "line": 50,
+          "column": 0,
+          "name": "map",
+          "start": 9611,
+          "end": 9643
+        },
+        {
+          "binding": "ub",
+          "source": null,
+          "line": null,
+          "column": null,
+          "name": null,
+          "start": 9650,
+          "end": 9677
+        },
+        {
+          "binding": "ib",
+          "source": null,
+          "line": null,
+          "column": null,
+          "name": null,
+          "start": 9684,
+          "end": 9773
+        },
+        {
+          "binding": "vb",
+          "source": "beni:///platforms/browser/Hosted.beni",
+          "line": 36,
+          "column": 0,
+          "name": "send",
+          "start": 9780,
+          "end": 9799
+        },
+        {
+          "binding": "wb",
+          "source": "beni:///platforms/browser/Hosted.beni",
+          "line": 244,
+          "column": 0,
+          "name": "tagged",
+          "start": 9800,
+          "end": 9917
+        },
+        {
+          "binding": "xb",
+          "source": "beni:///platforms/browser/Hosted.beni",
+          "line": 269,
+          "column": 0,
+          "name": "heard",
+          "start": 9918,
+          "end": 9930
+        },
+        {
+          "binding": "yb",
+          "source": "beni:///platforms/browser/Hosted.beni",
+          "line": 273,
+          "column": 0,
+          "name": "released",
+          "start": 9935,
+          "end": 9943
+        },
+        {
+          "binding": "zb",
+          "source": "beni:///platforms/browser/Hosted.beni",
+          "line": 320,
+          "column": 0,
+          "name": "queue",
+          "start": 9950,
+          "end": 9962
+        },
+        {
+          "binding": "Ab",
+          "source": "beni:///platforms/browser/Hosted.beni",
+          "line": 283,
+          "column": 0,
+          "name": "hear",
+          "start": 9963,
+          "end": 10225
+        },
+        {
+          "binding": "Bb",
+          "source": "beni:///platforms/browser/Hosted.beni",
+          "line": 346,
+          "column": 0,
+          "name": "retap",
+          "start": 10226,
+          "end": 10243
+        },
+        {
+          "binding": "Cb",
+          "source": "beni:///platforms/browser/Hosted.beni",
+          "line": 356,
+          "column": 0,
+          "name": "unhear",
+          "start": 10244,
+          "end": 10326
+        },
+        {
+          "binding": "Db",
+          "source": "beni:///platforms/browser/Hosted.beni",
+          "line": 371,
+          "column": 0,
+          "name": "title",
+          "start": 10327,
+          "end": 10374
+        },
+        {
+          "binding": "Eb",
+          "source": "beni:///platforms/browser/Browser.beni",
+          "line": 213,
+          "column": 0,
+          "name": "waiters",
+          "start": 10379,
+          "end": 10384
+        },
+        {
+          "binding": "Fb",
+          "source": "beni:///platforms/browser/Browser.beni",
+          "line": 209,
+          "column": 0,
+          "name": "later",
+          "start": 10385,
+          "end": 10390
+        },
+        {
+          "binding": "Gb",
+          "source": "beni:///platforms/browser/Browser.beni",
+          "line": 238,
+          "column": 0,
+          "name": "afterRender",
+          "start": 10397,
+          "end": 10487
+        },
+        {
+          "binding": "Hb",
+          "source": "beni:///platforms/browser/Browser.beni",
+          "line": 203,
+          "column": 0,
+          "name": "skip",
+          "start": 10488,
+          "end": 10493
+        },
+        {
+          "binding": "Ib",
+          "source": "beni:///platforms/browser/Browser.beni",
+          "line": 224,
+          "column": 0,
+          "name": "dispatching",
+          "start": 10498,
+          "end": 10506
+        },
+        {
+          "binding": "Jb",
+          "source": "beni:///platforms/browser/Browser.beni",
+          "line": 229,
+          "column": 0,
+          "name": "inbox",
+          "start": 10507,
+          "end": 10512
+        },
+        {
+          "binding": "Kb",
+          "source": "beni:///platforms/browser/Browser.beni",
+          "line": 118,
+          "column": 0,
+          "name": "hosted",
+          "start": 10519,
+          "end": 10964
+        },
+        {
+          "binding": "Lb",
+          "source": null,
+          "line": null,
+          "column": null,
+          "name": null,
+          "start": 10971,
+          "end": 10986
+        },
+        {
+          "binding": "Mb",
+          "source": "beni:///platforms/browser-tea/Tea.beni",
+          "line": 207,
+          "column": 0,
+          "name": "perform",
+          "start": 10987,
+          "end": 11198
+        },
+        {
+          "binding": "Nb",
+          "source": "beni:///platforms/browser-tea/Tea.beni",
+          "line": 198,
+          "column": 0,
+          "name": "start",
+          "start": 11199,
+          "end": 11236
+        },
+        {
+          "binding": "Pb",
+          "source": "beni:///platforms/browser-tea/Tea.beni",
+          "line": 203,
+          "column": 0,
+          "name": "step",
+          "start": 11237,
+          "end": 11263
+        },
+        {
+          "binding": "Qb",
+          "source": "beni:///platforms/browser-tea/Tea.beni",
+          "line": 571,
+          "column": 0,
+          "name": "hear",
+          "start": 11264,
+          "end": 11293
+        },
+        {
+          "binding": "Rb",
+          "source": "beni:///platforms/browser-tea/Tea.beni",
+          "line": 500,
+          "column": 0,
+          "name": "diff",
+          "start": 11294,
+          "end": 11733
+        },
+        {
+          "binding": "Sb",
+          "source": "beni:///platforms/browser-tea/Tea.beni",
+          "line": 484,
+          "column": 0,
+          "name": "lives",
+          "start": 11734,
+          "end": 11754
+        },
+        {
+          "binding": "Tb",
+          "source": "beni:///platforms/browser-tea/Tea.beni",
+          "line": 469,
+          "column": 0,
+          "name": "settle",
+          "start": 11755,
+          "end": 11886
+        },
+        {
+          "binding": "Ub",
+          "source": "beni:///platforms/browser-tea/Tea.beni",
+          "line": 65,
+          "column": 0,
+          "name": "element",
+          "start": 11887,
+          "end": 12018
+        },
+        {
+          "binding": "Xb",
+          "source": "beni:///platforms/browser-tea/Tea.beni",
+          "line": 154,
+          "column": 0,
+          "name": "titled",
+          "start": 12019,
+          "end": 12052
+        },
+        {
+          "binding": "Yb",
+          "source": "beni:///platforms/browser-tea/Tea.beni",
+          "line": 91,
+          "column": 0,
+          "name": "document",
+          "start": 12053,
+          "end": 12119
+        },
+        {
+          "binding": "Zb",
+          "source": null,
+          "line": null,
+          "column": null,
+          "name": null,
+          "start": 12126,
+          "end": 12156
+        },
+        {
+          "binding": "$b",
+          "source": "../../../examples/bike-wars/src/Math/Vector2.beni",
+          "line": 18,
+          "column": 0,
+          "name": "vec2",
+          "start": 12157,
+          "end": 12182
+        },
+        {
+          "binding": "_b",
+          "source": "../../../examples/bike-wars/src/Math/Vector2.beni",
+          "line": 23,
+          "column": 0,
+          "name": "getX",
+          "start": 12183,
+          "end": 12192
+        },
+        {
+          "binding": "ac",
+          "source": "../../../examples/bike-wars/src/Math/Vector2.beni",
+          "line": 28,
+          "column": 0,
+          "name": "getY",
+          "start": 12193,
+          "end": 12202
+        },
+        {
+          "binding": "bc",
+          "source": "../../../examples/bike-wars/src/Math/Vector2.beni",
+          "line": 33,
+          "column": 0,
+          "name": "setX",
+          "start": 12203,
+          "end": 12230
+        },
+        {
+          "binding": "cc",
+          "source": "../../../examples/bike-wars/src/Math/Vector2.beni",
+          "line": 38,
+          "column": 0,
+          "name": "setY",
+          "start": 12231,
+          "end": 12258
+        },
+        {
+          "binding": "dc",
+          "source": "../../../examples/bike-wars/src/Math/Vector2.beni",
+          "line": 48,
+          "column": 0,
+          "name": "add",
+          "start": 12259,
+          "end": 12296
+        },
+        {
+          "binding": "ec",
+          "source": "../../../examples/bike-wars/src/Constants.beni",
+          "line": 34,
+          "column": 0,
+          "name": "gameBounds",
+          "start": 12303,
+          "end": 12357
+        },
+        {
+          "binding": "fc",
+          "source": "../../../examples/bike-wars/src/Constants.beni",
+          "line": 44,
+          "column": 4,
+          "name": "colors",
+          "start": 12358,
+          "end": 12428
+        },
+        {
+          "binding": "gc",
+          "source": null,
+          "line": null,
+          "column": null,
+          "name": null,
+          "start": 12435,
+          "end": 12450
+        },
+        {
+          "binding": "hc",
+          "source": "beni:///platforms/browser/Sub.beni",
+          "line": 42,
+          "column": 0,
+          "name": "both",
+          "start": 12451,
+          "end": 12542
+        },
+        {
+          "binding": "ic",
+          "source": "beni:///platforms/browser/Sub.beni",
+          "line": 38,
+          "column": 0,
+          "name": "batch",
+          "start": 12543,
+          "end": 12560
+        },
+        {
+          "binding": "jc",
+          "source": "beni:///platforms/browser/Sub.beni",
+          "line": 107,
+          "column": 0,
+          "name": "on",
+          "start": 12561,
+          "end": 12614
+        },
+        {
+          "binding": "kc",
+          "source": null,
+          "line": null,
+          "column": null,
+          "name": null,
+          "start": 12621,
+          "end": 12664
+        },
+        {
+          "binding": "lc",
+          "source": null,
+          "line": null,
+          "column": null,
+          "name": null,
+          "start": 12665,
+          "end": 12726
+        },
+        {
+          "binding": "mc",
+          "source": null,
+          "line": null,
+          "column": null,
+          "name": null,
+          "start": 12727,
+          "end": 12790
+        },
+        {
+          "binding": "nc",
+          "source": null,
+          "line": null,
+          "column": null,
+          "name": null,
+          "start": 12791,
+          "end": 12854
+        },
+        {
+          "binding": "oc",
+          "source": "beni:///platforms/browser/Browser/Events.beni",
+          "line": 132,
+          "column": 0,
+          "name": "onKeyDown",
+          "start": 12855,
+          "end": 13026
+        },
+        {
+          "binding": "pc",
+          "source": "beni:///platforms/browser/Browser/Events.beni",
+          "line": 199,
+          "column": 0,
+          "name": "frameClock",
+          "start": 13027,
+          "end": 13048
+        },
+        {
+          "binding": "qc",
+          "source": "beni:///platforms/browser/Browser/Events.beni",
+          "line": 203,
+          "column": 0,
+          "name": "wall",
+          "start": 13049,
+          "end": 13066
+        },
+        {
+          "binding": "rc",
+          "source": "beni:///platforms/browser/Browser/Events.beni",
+          "line": 209,
+          "column": 0,
+          "name": "ask",
+          "start": 13067,
+          "end": 13187
+        },
+        {
+          "binding": "sc",
+          "source": "beni:///platforms/browser/Browser/Events.beni",
+          "line": 170,
+          "column": 0,
+          "name": "onAnimationFrameDelta",
+          "start": 13188,
+          "end": 13417
+        },
+        {
+          "binding": "tc",
+          "source": "beni:///platforms/html/Html.beni",
+          "line": 113,
+          "column": 0,
+          "name": "stringProp",
+          "start": 13424,
+          "end": 13466
+        },
+        {
+          "binding": "uc",
+          "source": null,
+          "line": null,
+          "column": null,
+          "name": null,
+          "start": 13473,
+          "end": 13489
+        },
+        {
+          "binding": "vc",
+          "source": null,
+          "line": null,
+          "column": null,
+          "name": null,
+          "start": 13490,
+          "end": 13505
+        },
+        {
+          "binding": "wc",
+          "source": null,
+          "line": null,
+          "column": null,
+          "name": null,
+          "start": 13506,
+          "end": 13522
+        },
+        {
+          "binding": "xc",
+          "source": null,
+          "line": null,
+          "column": null,
+          "name": null,
+          "start": 13523,
+          "end": 13539
+        },
+        {
+          "binding": "yc",
+          "source": null,
+          "line": null,
+          "column": null,
+          "name": null,
+          "start": 13540,
+          "end": 15505
+        },
+        {
+          "binding": "zc",
+          "source": "../../../examples/bike-wars/src/Keyboard.beni",
+          "line": 37,
+          "column": 0,
+          "name": "downs",
+          "start": 15506,
+          "end": 15527
+        },
+        {
+          "binding": "Ac",
+          "source": "../../../examples/bike-wars/src/Keyboard.beni",
+          "line": 44,
+          "column": 0,
+          "name": "oneOf",
+          "start": 15528,
+          "end": 15646
+        },
+        {
+          "binding": "Bc",
+          "source": "../../../examples/bike-wars/src/Keyboard.beni",
+          "line": 64,
+          "column": 0,
+          "name": "whitespaceKey",
+          "start": 15647,
+          "end": 15802
+        },
+        {
+          "binding": "Cc",
+          "source": "../../../examples/bike-wars/src/Direction.beni",
+          "line": 10,
+          "column": 0,
+          "name": "turnRight",
+          "start": 15809,
+          "end": 15897
+        },
+        {
+          "binding": "Dc",
+          "source": null,
+          "line": null,
+          "column": null,
+          "name": null,
+          "start": 15904,
+          "end": 15919
+        },
+        {
+          "binding": "Ec",
+          "source": "../../../examples/bike-wars/src/Helpers.beni",
+          "line": 12,
+          "column": 0,
+          "name": "sortPoints",
+          "start": 15920,
+          "end": 16009
+        },
+        {
+          "binding": "Fc",
+          "source": "../../../examples/bike-wars/src/Helpers.beni",
+          "line": 20,
+          "column": 0,
+          "name": "linesToTrail",
+          "start": 16010,
+          "end": 16187
+        },
+        {
+          "binding": "Gc",
+          "source": "../../../examples/bike-wars/src/Helpers.beni",
+          "line": 59,
+          "column": 0,
+          "name": "toLine",
+          "start": 16188,
+          "end": 16317
+        },
+        {
+          "binding": "Hc",
+          "source": "../../../examples/bike-wars/src/Helpers.beni",
+          "line": 40,
+          "column": 0,
+          "name": "trailToLines",
+          "start": 16318,
+          "end": 16504
+        },
+        {
+          "binding": "Ic",
+          "source": "../../../examples/bike-wars/src/Helpers.beni",
+          "line": 73,
+          "column": 0,
+          "name": "tryCollision",
+          "start": 16505,
+          "end": 16530
+        },
+        {
+          "binding": "Jc",
+          "source": "../../../examples/bike-wars/src/Helpers.beni",
+          "line": 112,
+          "column": 0,
+          "name": "isBetween",
+          "start": 16531,
+          "end": 16555
+        },
+        {
+          "binding": "Kc",
+          "source": "../../../examples/bike-wars/src/Helpers.beni",
+          "line": 81,
+          "column": 0,
+          "name": "tryObstacleCollision",
+          "start": 16556,
+          "end": 16705
+        },
+        {
+          "binding": "Lc",
+          "source": "../../../examples/bike-wars/src/Helpers.beni",
+          "line": 116,
+          "column": 0,
+          "name": "isBetweenWith",
+          "start": 16706,
+          "end": 16744
+        },
+        {
+          "binding": "Mc",
+          "source": "../../../examples/bike-wars/src/Helpers.beni",
+          "line": 92,
+          "column": 0,
+          "name": "horizontalOrthogonal",
+          "start": 16745,
+          "end": 16865
+        },
+        {
+          "binding": "Nc",
+          "source": "../../../examples/bike-wars/src/Helpers.beni",
+          "line": 102,
+          "column": 0,
+          "name": "verticalOrthogonal",
+          "start": 16866,
+          "end": 16986
+        },
+        {
+          "binding": "Oc",
+          "source": "../../../examples/bike-wars/src/Helpers.beni",
+          "line": 120,
+          "column": 0,
+          "name": "onlyVertical",
+          "start": 16987,
+          "end": 17015
+        },
+        {
+          "binding": "Pc",
+          "source": "../../../examples/bike-wars/src/Helpers.beni",
+          "line": 130,
+          "column": 0,
+          "name": "onlyHorizontal",
+          "start": 17016,
+          "end": 17044
+        },
+        {
+          "binding": "Qc",
+          "source": null,
+          "line": null,
+          "column": null,
+          "name": null,
+          "start": 17051,
+          "end": 17066
+        },
+        {
+          "binding": "Rc",
+          "source": "../../../examples/bike-wars/src/BikePhysics.beni",
+          "line": 15,
+          "column": 0,
+          "name": "computePosition",
+          "start": 17067,
+          "end": 17233
+        },
+        {
+          "binding": "Sc",
+          "source": "../../../examples/bike-wars/src/BikePhysics.beni",
+          "line": 34,
+          "column": 0,
+          "name": "computeDirection",
+          "start": 17234,
+          "end": 17287
+        },
+        {
+          "binding": "Tc",
+          "source": "../../../examples/bike-wars/src/BikePhysics.beni",
+          "line": 45,
+          "column": 0,
+          "name": "collision",
+          "start": 17288,
+          "end": 17554
+        },
+        {
+          "binding": "Uc",
+          "source": "beni:///core/String.beni",
+          "line": 374,
+          "column": 0,
+          "name": "fromFloat",
+          "start": 17561,
+          "end": 17605
+        },
+        {
+          "binding": "Vc",
+          "source": "beni:///core/String.beni",
+          "line": 465,
+          "column": 0,
+          "name": "join",
+          "start": 17606,
+          "end": 17655
+        },
+        {
+          "binding": "Wc",
+          "source": "../../../examples/bike-wars/src/Explosion.beni",
+          "line": 42,
+          "column": 5,
+          "name": "p161",
+          "start": 17662,
+          "end": 18330
+        },
+        {
+          "binding": "Xc",
+          "source": "../../../examples/bike-wars/src/Explosion.beni",
+          "line": 42,
+          "column": 5,
+          "name": "t161",
+          "start": 18331,
+          "end": 18356
+        },
+        {
+          "binding": "Yc",
+          "source": "../../../examples/bike-wars/src/Explosion.beni",
+          "line": 42,
+          "column": 5,
+          "name": "k161",
+          "start": 18357,
+          "end": 18592
+        },
+        {
+          "binding": "tb",
+          "source": "../../../examples/bike-wars/src/Explosion.beni",
+          "line": 13,
+          "column": 0,
+          "name": "forBike",
+          "start": 18593,
+          "end": 18621
+        },
+        {
+          "binding": "Zc",
+          "source": "../../../examples/bike-wars/src/Explosion.beni",
+          "line": 17,
+          "column": 0,
+          "name": "toObstacle",
+          "start": 18622,
+          "end": 18698
+        },
+        {
+          "binding": "$c",
+          "source": "../../../examples/bike-wars/src/Explosion.beni",
+          "line": 40,
+          "column": 0,
+          "name": "explosionForm",
+          "start": 18699,
+          "end": 18732
+        },
+        {
+          "binding": "_c",
+          "source": "../../../examples/bike-wars/src/Explosion.beni",
+          "line": 28,
+          "column": 0,
+          "name": "view",
+          "start": 18733,
+          "end": 18751
+        },
+        {
+          "binding": "ad",
+          "source": "../../../examples/bike-wars/src/Explosion.beni",
+          "line": 36,
+          "column": 0,
+          "name": "updateOne",
+          "start": 18752,
+          "end": 18774
+        },
+        {
+          "binding": "bd",
+          "source": "../../../examples/bike-wars/src/Explosion.beni",
+          "line": 32,
+          "column": 0,
+          "name": "update",
+          "start": 18775,
+          "end": 18804
+        },
+        {
+          "binding": "cd",
+          "source": "../../../examples/bike-wars/src/Tuple.beni",
+          "line": 8,
+          "column": 0,
+          "name": "mapFirst",
+          "start": 18811,
+          "end": 18839
+        },
+        {
+          "binding": "dd",
+          "source": "../../../examples/bike-wars/src/Tuple.beni",
+          "line": 13,
+          "column": 0,
+          "name": "mapSecond",
+          "start": 18840,
+          "end": 18868
+        },
+        {
+          "binding": "ed",
+          "source": "../../../examples/bike-wars/src/Trail.beni",
+          "line": 169,
+          "column": 0,
+          "name": "horizontalPairs",
+          "start": 18875,
+          "end": 19203
+        },
+        {
+          "binding": "fd",
+          "source": "../../../examples/bike-wars/src/Trail.beni",
+          "line": 217,
+          "column": 0,
+          "name": "verticalPairs",
+          "start": 19204,
+          "end": 19523
+        },
+        {
+          "binding": "gd",
+          "source": "../../../examples/bike-wars/src/Trail.beni",
+          "line": 149,
+          "column": 0,
+          "name": "breakLines",
+          "start": 19524,
+          "end": 19629
+        },
+        {
+          "binding": "hd",
+          "source": "../../../examples/bike-wars/src/Trail.beni",
+          "line": 24,
+          "column": 0,
+          "name": "breakTrail",
+          "start": 19630,
+          "end": 19655
+        },
+        {
+          "binding": "id",
+          "source": "../../../examples/bike-wars/src/Trail.beni",
+          "line": 14,
+          "column": 0,
+          "name": "breakIfNecessary",
+          "start": 19656,
+          "end": 19747
+        },
+        {
+          "binding": "jd",
+          "source": null,
+          "line": null,
+          "column": null,
+          "name": null,
+          "start": 19754,
+          "end": 19769
+        },
+        {
+          "binding": "kd",
+          "source": "../../../examples/bike-wars/src/Weapon.beni",
+          "line": 13,
+          "column": 0,
+          "name": "initMegaBlaster",
+          "start": 19770,
+          "end": 19790
+        },
+        {
+          "binding": "ld",
+          "source": "../../../examples/bike-wars/src/Weapon.beni",
+          "line": 17,
+          "column": 0,
+          "name": "initAssaultBazooka",
+          "start": 19791,
+          "end": 19807
+        },
+        {
+          "binding": "md",
+          "source": "../../../examples/bike-wars/src/Weapon.beni",
+          "line": 79,
+          "column": 0,
+          "name": "findArenaBorder",
+          "start": 19808,
+          "end": 19944
+        },
+        {
+          "binding": "nd",
+          "source": "../../../examples/bike-wars/src/Weapon.beni",
+          "line": 67,
+          "column": 0,
+          "name": "projectExplosionForwards",
+          "start": 19945,
+          "end": 20020
+        },
+        {
+          "binding": "od",
+          "source": "../../../examples/bike-wars/src/Weapon.beni",
+          "line": 28,
+          "column": 0,
+          "name": "shoot",
+          "start": 20021,
+          "end": 20301
+        },
+        {
+          "binding": "pd",
+          "source": null,
+          "line": null,
+          "column": null,
+          "name": null,
+          "start": 20308,
+          "end": 20323
+        },
+        {
+          "binding": "qd",
+          "source": "../../../examples/bike-wars/src/Bike.beni",
+          "line": 183,
+          "column": 13,
+          "name": "p524",
+          "start": 20324,
+          "end": 20604
+        },
+        {
+          "binding": "rd",
+          "source": "../../../examples/bike-wars/src/Bike.beni",
+          "line": 183,
+          "column": 13,
+          "name": "t524",
+          "start": 20605,
+          "end": 20818
+        },
+        {
+          "binding": "sd",
+          "source": "../../../examples/bike-wars/src/Bike.beni",
+          "line": 183,
+          "column": 13,
+          "name": "k524",
+          "start": 20819,
+          "end": 20971
+        },
+        {
+          "binding": "td",
+          "source": "../../../examples/bike-wars/src/Bike.beni",
+          "line": 160,
+          "column": 17,
+          "name": "p473",
+          "start": 20972,
+          "end": 21332
+        },
+        {
+          "binding": "ud",
+          "source": "../../../examples/bike-wars/src/Bike.beni",
+          "line": 160,
+          "column": 17,
+          "name": "t473",
+          "start": 21333,
+          "end": 21394
+        },
+        {
+          "binding": "vd",
+          "source": "../../../examples/bike-wars/src/Bike.beni",
+          "line": 160,
+          "column": 17,
+          "name": "k473",
+          "start": 21395,
+          "end": 21542
+        },
+        {
+          "binding": "wd",
+          "source": "../../../examples/bike-wars/src/Bike.beni",
+          "line": 171,
+          "column": 44,
+          "name": "p491",
+          "start": 21543,
+          "end": 22220
+        },
+        {
+          "binding": "xd",
+          "source": "../../../examples/bike-wars/src/Bike.beni",
+          "line": 171,
+          "column": 44,
+          "name": "t491",
+          "start": 22221,
+          "end": 22243
+        },
+        {
+          "binding": "yd",
+          "source": "../../../examples/bike-wars/src/Bike.beni",
+          "line": 171,
+          "column": 44,
+          "name": "k491",
+          "start": 22244,
+          "end": 22489
+        },
+        {
+          "binding": "zd",
+          "source": "../../../examples/bike-wars/src/Bike.beni",
+          "line": 18,
+          "column": 0,
+          "name": "initBike",
+          "start": 22490,
+          "end": 22547
+        },
+        {
+          "binding": "Ad",
+          "source": "../../../examples/bike-wars/src/Bike.beni",
+          "line": 30,
+          "column": 0,
+          "name": "frontWall",
+          "start": 22548,
+          "end": 22722
+        },
+        {
+          "binding": "Bd",
+          "source": "../../../examples/bike-wars/src/Bike.beni",
+          "line": 213,
+          "column": 0,
+          "name": "omitLastSections",
+          "start": 22723,
+          "end": 22795
+        },
+        {
+          "binding": "Cd",
+          "source": "../../../examples/bike-wars/src/Bike.beni",
+          "line": 109,
+          "column": 0,
+          "name": "toObstacle",
+          "start": 22796,
+          "end": 22861
+        },
+        {
+          "binding": "Dd",
+          "source": "../../../examples/bike-wars/src/Bike.beni",
+          "line": 203,
+          "column": 0,
+          "name": "swapPosition",
+          "start": 22862,
+          "end": 22988
+        },
+        {
+          "binding": "Ed",
+          "source": "../../../examples/bike-wars/src/Bike.beni",
+          "line": 54,
+          "column": 0,
+          "name": "update",
+          "start": 22989,
+          "end": 23314
+        },
+        {
+          "binding": "Fd",
+          "source": "../../../examples/bike-wars/src/Bike.beni",
+          "line": 89,
+          "column": 0,
+          "name": "shoot",
+          "start": 23315,
+          "end": 23432
+        },
+        {
+          "binding": "Gd",
+          "source": "../../../examples/bike-wars/src/Bike.beni",
+          "line": 193,
+          "column": 0,
+          "name": "cons",
+          "start": 23433,
+          "end": 23515
+        },
+        {
+          "binding": "Hd",
+          "source": "../../../examples/bike-wars/src/Bike.beni",
+          "line": 98,
+          "column": 0,
+          "name": "turn",
+          "start": 23516,
+          "end": 23597
+        },
+        {
+          "binding": "Id",
+          "source": "../../../examples/bike-wars/src/Bike.beni",
+          "line": 120,
+          "column": 0,
+          "name": "view",
+          "start": 23598,
+          "end": 23657
+        },
+        {
+          "binding": "Jd",
+          "source": null,
+          "line": null,
+          "column": null,
+          "name": null,
+          "start": 23664,
+          "end": 23680
+        },
+        {
+          "binding": "Kd",
+          "source": null,
+          "line": null,
+          "column": null,
+          "name": null,
+          "start": 23681,
+          "end": 23697
+        },
+        {
+          "binding": "Ld",
+          "source": null,
+          "line": null,
+          "column": null,
+          "name": null,
+          "start": 23698,
+          "end": 23714
+        },
+        {
+          "binding": "Md",
+          "source": null,
+          "line": null,
+          "column": null,
+          "name": null,
+          "start": 23715,
+          "end": 23731
+        },
+        {
+          "binding": "Nd",
+          "source": null,
+          "line": null,
+          "column": null,
+          "name": null,
+          "start": 23732,
+          "end": 23747
+        },
+        {
+          "binding": "Od",
+          "source": "../../../examples/bike-wars/src/Keyboard/Arrows.beni",
+          "line": 16,
+          "column": 0,
+          "name": "arrowKey",
+          "start": 23748,
+          "end": 24119
+        },
+        {
+          "binding": "Pd",
+          "source": null,
+          "line": null,
+          "column": null,
+          "name": null,
+          "start": 24126,
+          "end": 24141
+        },
+        {
+          "binding": "Qd",
+          "source": null,
+          "line": null,
+          "column": null,
+          "name": null,
+          "start": 24142,
+          "end": 24158
+        },
+        {
+          "binding": "Rd",
+          "source": null,
+          "line": null,
+          "column": null,
+          "name": null,
+          "start": 24159,
+          "end": 24175
+        },
+        {
+          "binding": "Sd",
+          "source": null,
+          "line": null,
+          "column": null,
+          "name": null,
+          "start": 24176,
+          "end": 24192
+        },
+        {
+          "binding": "Td",
+          "source": null,
+          "line": null,
+          "column": null,
+          "name": null,
+          "start": 24193,
+          "end": 24208
+        },
+        {
+          "binding": "Ud",
+          "source": "../../../examples/bike-wars/src/Game.beni",
+          "line": 195,
+          "column": 9,
+          "name": "p433",
+          "start": 24209,
+          "end": 24372
+        },
+        {
+          "binding": "Vd",
+          "source": "../../../examples/bike-wars/src/Game.beni",
+          "line": 195,
+          "column": 9,
+          "name": "t433",
+          "start": 24373,
+          "end": 24419
+        },
+        {
+          "binding": "Wd",
+          "source": "../../../examples/bike-wars/src/Game.beni",
+          "line": 195,
+          "column": 9,
+          "name": "b433",
+          "start": 24420,
+          "end": 24538
+        },
+        {
+          "binding": "Xd",
+          "source": "../../../examples/bike-wars/src/Game.beni",
+          "line": 206,
+          "column": 14,
+          "name": "p463",
+          "start": 24539,
+          "end": 24969
+        },
+        {
+          "binding": "Yd",
+          "source": "../../../examples/bike-wars/src/Game.beni",
+          "line": 206,
+          "column": 14,
+          "name": "t463",
+          "start": 24970,
+          "end": 25030
+        },
+        {
+          "binding": "Zd",
+          "source": "../../../examples/bike-wars/src/Game.beni",
+          "line": 206,
+          "column": 14,
+          "name": "k463",
+          "start": 25031,
+          "end": 25207
+        },
+        {
+          "binding": "$d",
+          "source": "../../../examples/bike-wars/src/Game.beni",
+          "line": 229,
+          "column": 7,
+          "name": "p535",
+          "start": 25208,
+          "end": 25547
+        },
+        {
+          "binding": "_d",
+          "source": "../../../examples/bike-wars/src/Game.beni",
+          "line": 229,
+          "column": 7,
+          "name": "t535",
+          "start": 25548,
+          "end": 25573
+        },
+        {
+          "binding": "ae",
+          "source": "../../../examples/bike-wars/src/Game.beni",
+          "line": 229,
+          "column": 7,
+          "name": "b535",
+          "start": 25574,
+          "end": 25731
+        },
+        {
+          "binding": "be",
+          "source": "../../../examples/bike-wars/src/Game.beni",
+          "line": 230,
+          "column": 85,
+          "name": "p538",
+          "start": 25732,
+          "end": 25831
+        },
+        {
+          "binding": "ce",
+          "source": "../../../examples/bike-wars/src/Game.beni",
+          "line": 230,
+          "column": 85,
+          "name": "t538",
+          "start": 25832,
+          "end": 25911
+        },
+        {
+          "binding": "de",
+          "source": "../../../examples/bike-wars/src/Game.beni",
+          "line": 230,
+          "column": 85,
+          "name": "b538",
+          "start": 25912,
+          "end": 26017
+        },
+        {
+          "binding": "ee",
+          "source": "../../../examples/bike-wars/src/Game.beni",
+          "line": 187,
+          "column": 12,
+          "name": "p414",
+          "start": 26018,
+          "end": 26690
+        },
+        {
+          "binding": "fe",
+          "source": "../../../examples/bike-wars/src/Game.beni",
+          "line": 187,
+          "column": 12,
+          "name": "t414",
+          "start": 26691,
+          "end": 26760
+        },
+        {
+          "binding": "ge",
+          "source": "../../../examples/bike-wars/src/Game.beni",
+          "line": 187,
+          "column": 12,
+          "name": "k414",
+          "start": 26761,
+          "end": 26949
+        },
+        {
+          "binding": "he",
+          "source": "../../../examples/bike-wars/src/Game.beni",
+          "line": 187,
+          "column": 12,
+          "name": "k414",
+          "start": 26950,
+          "end": 26965
+        },
+        {
+          "binding": "ie",
+          "source": "../../../examples/bike-wars/src/Game.beni",
+          "line": 187,
+          "column": 12,
+          "name": "k414",
+          "start": 26966,
+          "end": 27083
+        },
+        {
+          "binding": "ke",
+          "source": "../../../examples/bike-wars/src/Game.beni",
+          "line": 54,
+          "column": 0,
+          "name": "initBikes",
+          "start": 27291,
+          "end": 27435
+        },
+        {
+          "binding": "Ob",
+          "source": "../../../examples/bike-wars/src/Game.beni",
+          "line": 72,
+          "column": 0,
+          "name": "initModel",
+          "start": 27436,
+          "end": 27465
+        },
+        {
+          "binding": "le",
+          "source": "../../../examples/bike-wars/src/Game.beni",
+          "line": 80,
+          "column": 0,
+          "name": "init",
+          "start": 27466,
+          "end": 27471
+        },
+        {
+          "binding": "Wb",
+          "source": "../../../examples/bike-wars/src/Game.beni",
+          "line": 87,
+          "column": 0,
+          "name": "subscriptions",
+          "start": 27472,
+          "end": 27730
+        },
+        {
+          "binding": "me",
+          "source": "../../../examples/bike-wars/src/Game.beni",
+          "line": 120,
+          "column": 0,
+          "name": "pureUpdate",
+          "start": 27731,
+          "end": 28221
+        },
+        {
+          "binding": "Vb",
+          "source": "../../../examples/bike-wars/src/Game.beni",
+          "line": 113,
+          "column": 0,
+          "name": "update",
+          "start": 28222,
+          "end": 28245
+        },
+        {
+          "binding": "ne",
+          "source": "../../../examples/bike-wars/src/Game.beni",
+          "line": 181,
+          "column": 0,
+          "name": "view",
+          "start": 28246,
+          "end": 28266
+        },
+        {
+          "binding": "oe",
+          "source": "../../../examples/bike-wars/src/Main.beni",
+          "line": 11,
+          "column": 0,
+          "name": "main",
+          "start": 28273,
+          "end": 28342
+        }
+      ]
+    },
+    {
+      "app": "bike",
+      "platform": "direct",
+      "input": "examples/bike-wars/src",
+      "args": [
+        "build",
+        "--platform=browser-direct",
+        "--release",
+        "--no-cache",
+        "--out=zig-out/s8/bike-direct",
+        "examples/bike-wars/src"
+      ],
+      "status": 0,
+      "stdout": "",
+      "stderr": "-- PREPEND IN LOOP ------------------- examples/bike-wars/src/Helpers.beni:36:35\n\nThis puts elements in front of `acc`, the accumulator this `List.foldr` hands\nback to its callback, so it happens at every step:\n\n    [ (…), …acc ]\n\nA list is an array, so every step copies the whole accumulator, and the loop\ntakes time that grows with the square of the list's length. Add at the end\ninstead, which takes the same short time at every step:\n\n    [ …acc, (…) ]\n\n`List.foldr` hands over the last element first, so to keep the order write\nthe loop as `List.foldl`, which hands over the first element first.\n\nIf the prepend is meant — the list stays short — give the new list a name\nfirst, and this warning goes.\n\n36|                [ [ start, end ], …acc ]\n                                     ^^^^\n\n-- PREPEND IN LOOP ------------------- examples/bike-wars/src/Helpers.beni:51:39\n\nThis puts elements in front of `acc`, which this function hands back to\nitself, so it happens at every step of a loop:\n\n    [ (…), …acc ]\n\nA list is an array, so every step copies the whole accumulator, and the loop\ntakes time that grows with the square of the list's length. Add at the end\ninstead, which takes the same short time at every step:\n\n    [ …acc, (…) ]\n\nThat keeps the elements in the order they arrive, so the `List.reverse` that\nput a prepended result back in order is no longer needed.\n\nIf the prepend is meant — the list stays short — give the new list a name\nfirst, and this warning goes.\n\n51|                recurse [ toLine a b, …acc ] [ b, …tail ]\n                                         ^^^^\n",
+      "size": {
+        "raw": 35421,
+        "brotli": 11090
+      },
+      "sha256": "87981a423881f2efff6f508349980dce1d5d2fafb572a682bb1ee289dd602851",
+      "parts": [
+        {
+          "part": "core",
+          "rawSpans": 6692,
+          "orderedBrotli": 2135,
+          "leaveOneOut": 2135
+        },
+        {
+          "part": "runtime",
+          "rawSpans": 8410,
+          "orderedBrotli": 2930,
+          "leaveOneOut": 2794
+        },
+        {
+          "part": "app/startup/residual",
+          "orderedBrotli": 6025
+        }
+      ],
+      "bindings": [
+        {
+          "binding": "a",
+          "source": "beni:///core/Basics.beni",
+          "line": 173,
+          "column": 0,
+          "name": "plain",
+          "start": 6,
+          "end": 40
+        },
+        {
+          "binding": "b",
+          "source": "beni:///core/Basics.beni",
+          "line": 244,
+          "column": 0,
+          "name": "append",
+          "start": 41,
+          "end": 91
+        },
+        {
+          "binding": "c",
+          "source": "beni:///core/Basics.beni",
+          "line": 407,
+          "column": 0,
+          "name": "min",
+          "start": 92,
+          "end": 104
+        },
+        {
+          "binding": "d",
+          "source": "beni:///core/Basics.beni",
+          "line": 474,
+          "column": 0,
+          "name": "identity",
+          "start": 105,
+          "end": 111
+        },
+        {
+          "binding": "e",
+          "source": "beni:///core/Task.beni",
+          "line": 234,
+          "column": 0,
+          "name": "queue",
+          "start": 118,
+          "end": 122
+        },
+        {
+          "binding": "f",
+          "source": "beni:///core/Task.beni",
+          "line": 238,
+          "column": 0,
+          "name": "head",
+          "start": 127,
+          "end": 130
+        },
+        {
+          "binding": "g",
+          "source": "beni:///core/Task.beni",
+          "line": 242,
+          "column": 0,
+          "name": "scheduled",
+          "start": 131,
+          "end": 138
+        },
+        {
+          "binding": "h",
+          "source": "beni:///core/Task.beni",
+          "line": 250,
+          "column": 0,
+          "name": "port",
+          "start": 139,
+          "end": 145
+        },
+        {
+          "binding": "i",
+          "source": "beni:///core/Task.beni",
+          "line": 254,
+          "column": 0,
+          "name": "portTasks",
+          "start": 152,
+          "end": 156
+        },
+        {
+          "binding": "j",
+          "source": "beni:///core/Task.beni",
+          "line": 258,
+          "column": 0,
+          "name": "macrotask",
+          "start": 157,
+          "end": 355
+        },
+        {
+          "binding": "l",
+          "source": "beni:///core/Task.beni",
+          "line": 292,
+          "column": 0,
+          "name": "hosting",
+          "start": 360,
+          "end": 367
+        },
+        {
+          "binding": "m",
+          "source": "beni:///core/Task.beni",
+          "line": 372,
+          "column": 0,
+          "name": "phase",
+          "start": 368,
+          "end": 371
+        },
+        {
+          "binding": "n",
+          "source": "beni:///core/Task.beni",
+          "line": 950,
+          "column": 0,
+          "name": "soonRunning",
+          "start": 372,
+          "end": 378
+        },
+        {
+          "binding": "o",
+          "source": "beni:///core/Task.beni",
+          "line": 356,
+          "column": 0,
+          "name": "defect",
+          "start": 379,
+          "end": 385
+        },
+        {
+          "binding": "p",
+          "source": "beni:///core/Task.beni",
+          "line": 480,
+          "column": 0,
+          "name": "drainNow",
+          "start": 392,
+          "end": 712
+        },
+        {
+          "binding": "k",
+          "source": "beni:///core/Task.beni",
+          "line": 472,
+          "column": 0,
+          "name": "drain",
+          "start": 713,
+          "end": 722
+        },
+        {
+          "binding": "q",
+          "source": "beni:///core/Task.beni",
+          "line": 276,
+          "column": 0,
+          "name": "schedule",
+          "start": 723,
+          "end": 790
+        },
+        {
+          "binding": "s",
+          "source": "beni:///core/Task.beni",
+          "line": 301,
+          "column": 0,
+          "name": "fromHost",
+          "start": 791,
+          "end": 901
+        },
+        {
+          "binding": "t",
+          "source": "beni:///core/Task.beni",
+          "line": 365,
+          "column": 0,
+          "name": "onDefect",
+          "start": 902,
+          "end": 912
+        },
+        {
+          "binding": "u",
+          "source": "beni:///core/Task.beni",
+          "line": 386,
+          "column": 0,
+          "name": "soonQueued",
+          "start": 917,
+          "end": 924
+        },
+        {
+          "binding": "v",
+          "source": "beni:///core/Task.beni",
+          "line": 438,
+          "column": 0,
+          "name": "releasing",
+          "start": 925,
+          "end": 932
+        },
+        {
+          "binding": "w",
+          "source": "beni:///core/Task.beni",
+          "line": 442,
+          "column": 0,
+          "name": "releases",
+          "start": 939,
+          "end": 943
+        },
+        {
+          "binding": "x",
+          "source": "beni:///core/Task.beni",
+          "line": 446,
+          "column": 0,
+          "name": "releaseAll",
+          "start": 944,
+          "end": 986
+        },
+        {
+          "binding": "y",
+          "source": "beni:///core/Task.beni",
+          "line": 461,
+          "column": 0,
+          "name": "onShutdown",
+          "start": 987,
+          "end": 1010
+        },
+        {
+          "binding": "z",
+          "source": "beni:///core/Task.beni",
+          "line": 468,
+          "column": 0,
+          "name": "stopQueue",
+          "start": 1011,
+          "end": 1031
+        },
+        {
+          "binding": "A",
+          "source": "beni:///core/Task.beni",
+          "line": 544,
+          "column": 0,
+          "name": "shutdown",
+          "start": 1032,
+          "end": 1071
+        },
+        {
+          "binding": "r",
+          "source": "beni:///core/Task.beni",
+          "line": 1394,
+          "column": 0,
+          "name": "runSoon",
+          "start": 1072,
+          "end": 1155
+        },
+        {
+          "binding": "B",
+          "source": "beni:///core/Task.beni",
+          "line": 1425,
+          "column": 0,
+          "name": "soon",
+          "start": 1156,
+          "end": 1195
+        },
+        {
+          "binding": "C",
+          "source": "beni:///core/Task.beni",
+          "line": 1441,
+          "column": 0,
+          "name": "openRoot",
+          "start": 1196,
+          "end": 1252
+        },
+        {
+          "binding": "D",
+          "source": "beni:///platforms/browser/Rt.beni",
+          "line": 53,
+          "column": 0,
+          "name": "head",
+          "start": 1259,
+          "end": 1322
+        },
+        {
+          "binding": "E",
+          "source": "beni:///platforms/browser/Rt.beni",
+          "line": 35,
+          "column": 0,
+          "name": "first",
+          "start": 1323,
+          "end": 1349
+        },
+        {
+          "binding": "F",
+          "source": "beni:///platforms/browser/Rt.beni",
+          "line": 64,
+          "column": 0,
+          "name": "tail",
+          "start": 1350,
+          "end": 1424
+        },
+        {
+          "binding": "G",
+          "source": "beni:///platforms/browser/Rt.beni",
+          "line": 43,
+          "column": 0,
+          "name": "last",
+          "start": 1425,
+          "end": 1451
+        },
+        {
+          "binding": "H",
+          "source": "beni:///platforms/browser/Rt.beni",
+          "line": 77,
+          "column": 0,
+          "name": "put",
+          "start": 1452,
+          "end": 1551
+        },
+        {
+          "binding": "I",
+          "source": "beni:///platforms/browser/Rt.beni",
+          "line": 92,
+          "column": 0,
+          "name": "drop",
+          "start": 1552,
+          "end": 1636
+        },
+        {
+          "binding": "J",
+          "source": "beni:///platforms/browser/Rt.beni",
+          "line": 123,
+          "column": 0,
+          "name": "template",
+          "start": 1637,
+          "end": 1801
+        },
+        {
+          "binding": "K",
+          "source": "beni:///platforms/browser/Rt.beni",
+          "line": 144,
+          "column": 0,
+          "name": "templateOf",
+          "start": 1802,
+          "end": 1981
+        },
+        {
+          "binding": "L",
+          "source": "beni:///platforms/browser/Rt.beni",
+          "line": 185,
+          "column": 0,
+          "name": "slot",
+          "start": 1982,
+          "end": 2087
+        },
+        {
+          "binding": "M",
+          "source": "beni:///platforms/browser/Rt.beni",
+          "line": 205,
+          "column": 0,
+          "name": "parentOf",
+          "start": 2088,
+          "end": 2122
+        },
+        {
+          "binding": "N",
+          "source": "beni:///platforms/browser/Rt.beni",
+          "line": 215,
+          "column": 0,
+          "name": "unit",
+          "start": 2123,
+          "end": 2175
+        },
+        {
+          "binding": "O",
+          "source": "beni:///platforms/browser/Rt.beni",
+          "line": 228,
+          "column": 0,
+          "name": "patch",
+          "start": 2176,
+          "end": 2332
+        },
+        {
+          "binding": "P",
+          "source": "beni:///platforms/browser/Rt.beni",
+          "line": 249,
+          "column": 0,
+          "name": "again",
+          "start": 2333,
+          "end": 2352
+        },
+        {
+          "binding": "Q",
+          "source": "beni:///platforms/browser/Rt.beni",
+          "line": 259,
+          "column": 0,
+          "name": "restate",
+          "start": 2353,
+          "end": 2413
+        },
+        {
+          "binding": "R",
+          "source": "beni:///platforms/browser/Rt.beni",
+          "line": 276,
+          "column": 0,
+          "name": "restateRows",
+          "start": 2414,
+          "end": 2549
+        },
+        {
+          "binding": "S",
+          "source": "beni:///platforms/browser/Rt.beni",
+          "line": 336,
+          "column": 0,
+          "name": "held",
+          "start": 2550,
+          "end": 2577
+        },
+        {
+          "binding": "T",
+          "source": "beni:///platforms/browser/Rt.beni",
+          "line": 354,
+          "column": 0,
+          "name": "childHtml",
+          "start": 2578,
+          "end": 2679
+        },
+        {
+          "binding": "U",
+          "source": "beni:///platforms/browser/Rt.beni",
+          "line": 743,
+          "column": 0,
+          "name": "elements",
+          "start": 2680,
+          "end": 2714
+        },
+        {
+          "binding": "V",
+          "source": "beni:///platforms/browser/Rt.beni",
+          "line": 752,
+          "column": 0,
+          "name": "childList",
+          "start": 2715,
+          "end": 2990
+        },
+        {
+          "binding": "W",
+          "source": "beni:///platforms/browser/Rt.beni",
+          "line": 2069,
+          "column": 0,
+          "name": "textKind",
+          "start": 2991,
+          "end": 3113
+        },
+        {
+          "binding": "X",
+          "source": "beni:///platforms/browser/Rt.beni",
+          "line": 2087,
+          "column": 0,
+          "name": "text",
+          "start": 3114,
+          "end": 3130
+        },
+        {
+          "binding": "document",
+          "source": null,
+          "line": null,
+          "column": null,
+          "name": null,
+          "start": 3137,
+          "end": 3163
+        },
+        {
+          "binding": "ub",
+          "source": null,
+          "line": null,
+          "column": null,
+          "name": null,
+          "start": 3170,
+          "end": 3181
+        },
+        {
+          "binding": "Y",
+          "source": null,
+          "line": null,
+          "column": null,
+          "name": null,
+          "start": 3188,
+          "end": 3202
+        },
+        {
+          "binding": "Z",
+          "source": "beni:///core/List.beni",
+          "line": 629,
+          "column": 0,
+          "name": "isTrie",
+          "start": 3203,
+          "end": 3223
+        },
+        {
+          "binding": "$",
+          "source": "beni:///core/List.beni",
+          "line": 123,
+          "column": 0,
+          "name": "reconsed",
+          "start": 3224,
+          "end": 3279
+        },
+        {
+          "binding": "_",
+          "source": "beni:///core/List.beni",
+          "line": 616,
+          "column": 0,
+          "name": "copyTo",
+          "start": 3280,
+          "end": 3334
+        },
+        {
+          "binding": "aa",
+          "source": "beni:///core/List.beni",
+          "line": 671,
+          "column": 0,
+          "name": "leafAt",
+          "start": 3335,
+          "end": 3387
+        },
+        {
+          "binding": "ba",
+          "source": "beni:///core/List.beni",
+          "line": 580,
+          "column": 0,
+          "name": "triePlain",
+          "start": 3388,
+          "end": 3651
+        },
+        {
+          "binding": "ca",
+          "source": "beni:///core/List.beni",
+          "line": 649,
+          "column": 0,
+          "name": "header",
+          "start": 3652,
+          "end": 3714
+        },
+        {
+          "binding": "da",
+          "source": "beni:///core/List.beni",
+          "line": 625,
+          "column": 0,
+          "name": "isPlain",
+          "start": 3715,
+          "end": 3731
+        },
+        {
+          "binding": "ea",
+          "source": "beni:///core/List.beni",
+          "line": 475,
+          "column": 0,
+          "name": "base",
+          "start": 3732,
+          "end": 3776
+        },
+        {
+          "binding": "fa",
+          "source": "beni:///core/List.beni",
+          "line": 486,
+          "column": 0,
+          "name": "offset",
+          "start": 3777,
+          "end": 3811
+        },
+        {
+          "binding": "ga",
+          "source": "beni:///core/List.beni",
+          "line": 567,
+          "column": 0,
+          "name": "viewPlain",
+          "start": 3812,
+          "end": 3901
+        },
+        {
+          "binding": "ha",
+          "source": "beni:///core/List.beni",
+          "line": 638,
+          "column": 0,
+          "name": "viewOf",
+          "start": 3902,
+          "end": 3958
+        },
+        {
+          "binding": "ia",
+          "source": "beni:///core/List.beni",
+          "line": 131,
+          "column": 0,
+          "name": "pushFrom",
+          "start": 3959,
+          "end": 4016
+        },
+        {
+          "binding": "ja",
+          "source": "beni:///core/List.beni",
+          "line": 85,
+          "column": 0,
+          "name": "cons",
+          "start": 4017,
+          "end": 4201
+        },
+        {
+          "binding": "ka",
+          "source": "beni:///core/List.beni",
+          "line": 364,
+          "column": 0,
+          "name": "copy",
+          "start": 4202,
+          "end": 4254
+        },
+        {
+          "binding": "la",
+          "source": "beni:///core/List.beni",
+          "line": 174,
+          "column": 0,
+          "name": "plainOf",
+          "start": 4255,
+          "end": 4279
+        },
+        {
+          "binding": "ma",
+          "source": "beni:///core/List.beni",
+          "line": 662,
+          "column": 0,
+          "name": "treeOf",
+          "start": 4280,
+          "end": 4316
+        },
+        {
+          "binding": "na",
+          "source": "beni:///core/List.beni",
+          "line": 725,
+          "column": 0,
+          "name": "putLeaf",
+          "start": 4317,
+          "end": 4456
+        },
+        {
+          "binding": "oa",
+          "source": "beni:///core/List.beni",
+          "line": 793,
+          "column": 0,
+          "name": "rightGrow",
+          "start": 4457,
+          "end": 4540
+        },
+        {
+          "binding": "pa",
+          "source": "beni:///core/List.beni",
+          "line": 784,
+          "column": 0,
+          "name": "treeRight",
+          "start": 4541,
+          "end": 4613
+        },
+        {
+          "binding": "qa",
+          "source": "beni:///core/List.beni",
+          "line": 936,
+          "column": 0,
+          "name": "pushedLeaves",
+          "start": 4614,
+          "end": 4706
+        },
+        {
+          "binding": "ra",
+          "source": "beni:///core/List.beni",
+          "line": 908,
+          "column": 0,
+          "name": "triePushed",
+          "start": 4707,
+          "end": 4921
+        },
+        {
+          "binding": "sa",
+          "source": "beni:///core/List.beni",
+          "line": 666,
+          "column": 0,
+          "name": "noTree",
+          "start": 4922,
+          "end": 4946
+        },
+        {
+          "binding": "ta",
+          "source": "beni:///core/List.beni",
+          "line": 848,
+          "column": 0,
+          "name": "chunks",
+          "start": 4947,
+          "end": 5012
+        },
+        {
+          "binding": "ua",
+          "source": "beni:///core/List.beni",
+          "line": 827,
+          "column": 0,
+          "name": "fromPlain",
+          "start": 5013,
+          "end": 5209
+        },
+        {
+          "binding": "va",
+          "source": "beni:///core/List.beni",
+          "line": 150,
+          "column": 0,
+          "name": "append",
+          "start": 5210,
+          "end": 5387
+        },
+        {
+          "binding": "wa",
+          "source": "beni:///core/List.beni",
+          "line": 204,
+          "column": 0,
+          "name": "eqFrom",
+          "start": 5388,
+          "end": 5473
+        },
+        {
+          "binding": "xa",
+          "source": "beni:///core/List.beni",
+          "line": 196,
+          "column": 0,
+          "name": "eq",
+          "start": 5474,
+          "end": 5536
+        },
+        {
+          "binding": "ya",
+          "source": "beni:///core/List.beni",
+          "line": 680,
+          "column": 0,
+          "name": "trieGet",
+          "start": 5537,
+          "end": 5668
+        },
+        {
+          "binding": "za",
+          "source": "beni:///core/List.beni",
+          "line": 445,
+          "column": 0,
+          "name": "unsafeGet",
+          "start": 5669,
+          "end": 5718
+        },
+        {
+          "binding": "Aa",
+          "source": "beni:///core/List.beni",
+          "line": 697,
+          "column": 0,
+          "name": "trieDrop",
+          "start": 5719,
+          "end": 5973
+        },
+        {
+          "binding": "Ba",
+          "source": "beni:///core/List.beni",
+          "line": 459,
+          "column": 0,
+          "name": "view",
+          "start": 5974,
+          "end": 6037
+        },
+        {
+          "binding": "Ca",
+          "source": "beni:///core/List.beni",
+          "line": 518,
+          "column": 0,
+          "name": "builder",
+          "start": 6038,
+          "end": 6062
+        },
+        {
+          "binding": "Da",
+          "source": "beni:///core/List.beni",
+          "line": 531,
+          "column": 0,
+          "name": "done",
+          "start": 6063,
+          "end": 6110
+        },
+        {
+          "binding": "Ea",
+          "source": "beni:///core/List.beni",
+          "line": 1283,
+          "column": 0,
+          "name": "putAll",
+          "start": 6111,
+          "end": 6166
+        },
+        {
+          "binding": "Fa",
+          "source": "beni:///core/List.beni",
+          "line": 1014,
+          "column": 0,
+          "name": "foldlFrom",
+          "start": 6167,
+          "end": 6230
+        },
+        {
+          "binding": "Ga",
+          "source": "beni:///core/List.beni",
+          "line": 1009,
+          "column": 0,
+          "name": "foldl",
+          "start": 6231,
+          "end": 6277
+        },
+        {
+          "binding": "Ha",
+          "source": "beni:///core/List.beni",
+          "line": 1035,
+          "column": 0,
+          "name": "foldrFrom",
+          "start": 6278,
+          "end": 6344
+        },
+        {
+          "binding": "Ia",
+          "source": "beni:///core/List.beni",
+          "line": 1031,
+          "column": 0,
+          "name": "foldr",
+          "start": 6345,
+          "end": 6393
+        },
+        {
+          "binding": "Ja",
+          "source": "beni:///core/List.beni",
+          "line": 1116,
+          "column": 0,
+          "name": "mapHelp",
+          "start": 6394,
+          "end": 6468
+        },
+        {
+          "binding": "Ka",
+          "source": "beni:///core/List.beni",
+          "line": 1109,
+          "column": 0,
+          "name": "map",
+          "start": 6469,
+          "end": 6520
+        },
+        {
+          "binding": "La",
+          "source": "beni:///core/List.beni",
+          "line": 1152,
+          "column": 0,
+          "name": "filterHelp",
+          "start": 6521,
+          "end": 6624
+        },
+        {
+          "binding": "Ma",
+          "source": "beni:///core/List.beni",
+          "line": 1147,
+          "column": 0,
+          "name": "filter",
+          "start": 6625,
+          "end": 6678
+        },
+        {
+          "binding": "Na",
+          "source": "beni:///core/List.beni",
+          "line": 1174,
+          "column": 0,
+          "name": "filterMapHelp",
+          "start": 6679,
+          "end": 6794
+        },
+        {
+          "binding": "Oa",
+          "source": "beni:///core/List.beni",
+          "line": 1170,
+          "column": 0,
+          "name": "filterMap",
+          "start": 6795,
+          "end": 6848
+        },
+        {
+          "binding": "Pa",
+          "source": "beni:///core/List.beni",
+          "line": 1193,
+          "column": 0,
+          "name": "reverse",
+          "start": 6849,
+          "end": 6969
+        },
+        {
+          "binding": "Qa",
+          "source": "beni:///core/List.beni",
+          "line": 1318,
+          "column": 0,
+          "name": "concatFrom",
+          "start": 6970,
+          "end": 7076
+        },
+        {
+          "binding": "Ra",
+          "source": "beni:///core/List.beni",
+          "line": 1298,
+          "column": 0,
+          "name": "concat",
+          "start": 7077,
+          "end": 7179
+        },
+        {
+          "binding": "Sa",
+          "source": "beni:///core/List.beni",
+          "line": 1336,
+          "column": 0,
+          "name": "concatMap",
+          "start": 7180,
+          "end": 7201
+        },
+        {
+          "binding": "Ta",
+          "source": "beni:///core/List.beni",
+          "line": 1707,
+          "column": 0,
+          "name": "get",
+          "start": 7202,
+          "end": 7234
+        },
+        {
+          "binding": "Ua",
+          "source": "beni:///core/List.beni",
+          "line": 1692,
+          "column": 0,
+          "name": "drop",
+          "start": 7235,
+          "end": 7258
+        },
+        {
+          "binding": "Va",
+          "source": "beni:///platforms/browser/Cmd.beni",
+          "line": 76,
+          "column": 0,
+          "name": "none",
+          "start": 7265,
+          "end": 7274
+        },
+        {
+          "binding": "Wa",
+          "source": null,
+          "line": null,
+          "column": null,
+          "name": null,
+          "start": 7281,
+          "end": 7329
+        },
+        {
+          "binding": "Xa",
+          "source": null,
+          "line": null,
+          "column": null,
+          "name": null,
+          "start": 7330,
+          "end": 7345
+        },
+        {
+          "binding": "Ya",
+          "source": "beni:///core/Dict.beni",
+          "line": 57,
+          "column": 0,
+          "name": "empty",
+          "start": 7346,
+          "end": 7364
+        },
+        {
+          "binding": "Za",
+          "source": "beni:///core/Dict.beni",
+          "line": 76,
+          "column": 0,
+          "name": "get",
+          "start": 7365,
+          "end": 7533
+        },
+        {
+          "binding": "_a",
+          "source": "beni:///core/Dict.beni",
+          "line": 152,
+          "column": 0,
+          "name": "blacken",
+          "start": 7534,
+          "end": 7656
+        },
+        {
+          "binding": "ab",
+          "source": "beni:///core/Dict.beni",
+          "line": 183,
+          "column": 0,
+          "name": "balance",
+          "start": 7657,
+          "end": 8284
+        },
+        {
+          "binding": "bb",
+          "source": "beni:///core/Dict.beni",
+          "line": 163,
+          "column": 0,
+          "name": "insertHelp",
+          "start": 8285,
+          "end": 8533
+        },
+        {
+          "binding": "cb",
+          "source": "beni:///core/Dict.beni",
+          "line": 147,
+          "column": 0,
+          "name": "insert",
+          "start": 8534,
+          "end": 8576
+        },
+        {
+          "binding": "db",
+          "source": "beni:///core/Dict.beni",
+          "line": 510,
+          "column": 0,
+          "name": "foldlTree",
+          "start": 8577,
+          "end": 8670
+        },
+        {
+          "binding": "eb",
+          "source": "beni:///core/Dict.beni",
+          "line": 506,
+          "column": 0,
+          "name": "foldl",
+          "start": 8671,
+          "end": 8694
+        },
+        {
+          "binding": "Me",
+          "source": null,
+          "line": null,
+          "column": null,
+          "name": null,
+          "start": 8701,
+          "end": 8709
+        },
+        {
+          "binding": "fb",
+          "source": null,
+          "line": null,
+          "column": null,
+          "name": null,
+          "start": 8716,
+          "end": 9003
+        },
+        {
+          "binding": "gb",
+          "source": null,
+          "line": null,
+          "column": null,
+          "name": null,
+          "start": 9010,
+          "end": 9025
+        },
+        {
+          "binding": "hb",
+          "source": null,
+          "line": null,
+          "column": null,
+          "name": null,
+          "start": 9026,
+          "end": 9153
+        },
+        {
+          "binding": "ib",
+          "source": "beni:///core/Maybe.beni",
+          "line": 32,
+          "column": 0,
+          "name": "withDefault",
+          "start": 9154,
+          "end": 9177
+        },
+        {
+          "binding": "jb",
+          "source": "beni:///core/Maybe.beni",
+          "line": 50,
+          "column": 0,
+          "name": "map",
+          "start": 9178,
+          "end": 9210
+        },
+        {
+          "binding": "lb",
+          "source": null,
+          "line": null,
+          "column": null,
+          "name": null,
+          "start": 9217,
+          "end": 9244
+        },
+        {
+          "binding": "$a",
+          "source": null,
+          "line": null,
+          "column": null,
+          "name": null,
+          "start": 9251,
+          "end": 9340
+        },
+        {
+          "binding": "mb",
+          "source": "beni:///platforms/browser/Hosted.beni",
+          "line": 36,
+          "column": 0,
+          "name": "send",
+          "start": 9347,
+          "end": 9366
+        },
+        {
+          "binding": "nb",
+          "source": "beni:///platforms/browser/Hosted.beni",
+          "line": 244,
+          "column": 0,
+          "name": "tagged",
+          "start": 9367,
+          "end": 9484
+        },
+        {
+          "binding": "ob",
+          "source": "beni:///platforms/browser/Hosted.beni",
+          "line": 269,
+          "column": 0,
+          "name": "heard",
+          "start": 9485,
+          "end": 9497
+        },
+        {
+          "binding": "pb",
+          "source": "beni:///platforms/browser/Hosted.beni",
+          "line": 273,
+          "column": 0,
+          "name": "released",
+          "start": 9502,
+          "end": 9510
+        },
+        {
+          "binding": "qb",
+          "source": "beni:///platforms/browser/Hosted.beni",
+          "line": 320,
+          "column": 0,
+          "name": "queue",
+          "start": 9517,
+          "end": 9529
+        },
+        {
+          "binding": "rb",
+          "source": "beni:///platforms/browser/Hosted.beni",
+          "line": 283,
+          "column": 0,
+          "name": "hear",
+          "start": 9530,
+          "end": 9792
+        },
+        {
+          "binding": "sb",
+          "source": "beni:///platforms/browser/Hosted.beni",
+          "line": 346,
+          "column": 0,
+          "name": "retap",
+          "start": 9793,
+          "end": 9810
+        },
+        {
+          "binding": "tb",
+          "source": "beni:///platforms/browser/Hosted.beni",
+          "line": 356,
+          "column": 0,
+          "name": "unhear",
+          "start": 9811,
+          "end": 9893
+        },
+        {
+          "binding": "vb",
+          "source": null,
+          "line": null,
+          "column": null,
+          "name": null,
+          "start": 9900,
+          "end": 9920
+        },
+        {
+          "binding": "wb",
+          "source": "beni:///platforms/browser-direct/Tea.beni",
+          "line": 136,
+          "column": 0,
+          "name": "perform",
+          "start": 9921,
+          "end": 10170
+        },
+        {
+          "binding": "xb",
+          "source": "beni:///platforms/browser-direct/Tea.beni",
+          "line": 500,
+          "column": 0,
+          "name": "hear",
+          "start": 10171,
+          "end": 10200
+        },
+        {
+          "binding": "yb",
+          "source": "beni:///platforms/browser-direct/Tea.beni",
+          "line": 429,
+          "column": 0,
+          "name": "diff",
+          "start": 10201,
+          "end": 10654
+        },
+        {
+          "binding": "zb",
+          "source": "beni:///platforms/browser-direct/Tea.beni",
+          "line": 413,
+          "column": 0,
+          "name": "lives",
+          "start": 10655,
+          "end": 10680
+        },
+        {
+          "binding": "Ab",
+          "source": "beni:///platforms/browser-direct/Tea.beni",
+          "line": 398,
+          "column": 0,
+          "name": "settle",
+          "start": 10681,
+          "end": 10858
+        },
+        {
+          "binding": "Bb",
+          "source": "beni:///platforms/browser-direct/Tea.beni",
+          "line": 507,
+          "column": 0,
+          "name": "open",
+          "start": 10859,
+          "end": 10910
+        },
+        {
+          "binding": "Cb",
+          "source": "beni:///core/String.beni",
+          "line": 345,
+          "column": 0,
+          "name": "fromInt",
+          "start": 10917,
+          "end": 10932
+        },
+        {
+          "binding": "Db",
+          "source": "beni:///core/String.beni",
+          "line": 374,
+          "column": 0,
+          "name": "fromFloat",
+          "start": 10933,
+          "end": 10977
+        },
+        {
+          "binding": "Eb",
+          "source": "beni:///core/String.beni",
+          "line": 465,
+          "column": 0,
+          "name": "join",
+          "start": 10978,
+          "end": 11027
+        },
+        {
+          "binding": "Fb",
+          "source": "beni:///platforms/browser-direct/Direct.beni",
+          "line": 44,
+          "column": 0,
+          "name": "dead",
+          "start": 11032,
+          "end": 11040
+        },
+        {
+          "binding": "Gb",
+          "source": "beni:///platforms/browser-direct/Direct.beni",
+          "line": 49,
+          "column": 0,
+          "name": "running",
+          "start": 11041,
+          "end": 11049
+        },
+        {
+          "binding": "Hb",
+          "source": "beni:///platforms/browser-direct/Direct.beni",
+          "line": 55,
+          "column": 0,
+          "name": "queue",
+          "start": 11050,
+          "end": 11057
+        },
+        {
+          "binding": "Ib",
+          "source": "beni:///platforms/browser-direct/Direct.beni",
+          "line": 2579,
+          "column": 0,
+          "name": "phase",
+          "start": 11058,
+          "end": 11065
+        },
+        {
+          "binding": "Jb",
+          "source": "beni:///platforms/browser-direct/Direct.beni",
+          "line": 2583,
+          "column": 0,
+          "name": "later",
+          "start": 11066,
+          "end": 11071
+        },
+        {
+          "binding": "Kb",
+          "source": "beni:///platforms/browser-direct/Direct.beni",
+          "line": 2587,
+          "column": 0,
+          "name": "waiters",
+          "start": 11072,
+          "end": 11077
+        },
+        {
+          "binding": "Lb",
+          "source": "beni:///platforms/browser-direct/Direct.beni",
+          "line": 123,
+          "column": 0,
+          "name": "stop",
+          "start": 11084,
+          "end": 11137
+        },
+        {
+          "binding": "Mb",
+          "source": "beni:///platforms/browser-direct/Direct.beni",
+          "line": 66,
+          "column": 0,
+          "name": "send",
+          "start": 11138,
+          "end": 11422
+        },
+        {
+          "binding": "Nb",
+          "source": "beni:///platforms/browser-direct/Direct.beni",
+          "line": 264,
+          "column": 0,
+          "name": "fault",
+          "start": 11423,
+          "end": 11449
+        },
+        {
+          "binding": "Ob",
+          "source": "beni:///platforms/browser-direct/Direct.beni",
+          "line": 211,
+          "column": 0,
+          "name": "mountAll",
+          "start": 11450,
+          "end": 11751
+        },
+        {
+          "binding": "Pb",
+          "source": "beni:///platforms/browser-direct/Direct.beni",
+          "line": 205,
+          "column": 0,
+          "name": "run",
+          "start": 11752,
+          "end": 11766
+        },
+        {
+          "binding": "Qb",
+          "source": "beni:///platforms/browser-direct/Direct.beni",
+          "line": 513,
+          "column": 0,
+          "name": "keyMap",
+          "start": 11767,
+          "end": 11783
+        },
+        {
+          "binding": "Rb",
+          "source": "beni:///platforms/browser-direct/Direct.beni",
+          "line": 1531,
+          "column": 0,
+          "name": "arm",
+          "start": 11784,
+          "end": 11950
+        },
+        {
+          "binding": "Sb",
+          "source": "beni:///platforms/browser-direct/Direct.beni",
+          "line": 1627,
+          "column": 0,
+          "name": "childHtml",
+          "start": 11951,
+          "end": 12036
+        },
+        {
+          "binding": "Tb",
+          "source": "beni:///platforms/browser-direct/Direct.beni",
+          "line": 1643,
+          "column": 0,
+          "name": "childList",
+          "start": 12037,
+          "end": 12187
+        },
+        {
+          "binding": "Ub",
+          "source": "beni:///platforms/browser-direct/Direct.beni",
+          "line": 2782,
+          "column": 0,
+          "name": "templateFallback",
+          "start": 12192,
+          "end": 12200
+        },
+        {
+          "binding": "Vb",
+          "source": "beni:///platforms/browser-direct/Direct.beni",
+          "line": 1697,
+          "column": 0,
+          "name": "restateValue",
+          "start": 12207,
+          "end": 12295
+        },
+        {
+          "binding": "Wb",
+          "source": "beni:///platforms/browser-direct/Direct.beni",
+          "line": 2663,
+          "column": 0,
+          "name": "afterPoint",
+          "start": 12296,
+          "end": 12386
+        },
+        {
+          "binding": "Xb",
+          "source": "beni:///platforms/browser-direct/Direct.beni",
+          "line": 2595,
+          "column": 0,
+          "name": "makeHost",
+          "start": 12387,
+          "end": 12498
+        },
+        {
+          "binding": "Yb",
+          "source": "beni:///platforms/browser-direct/Direct.beni",
+          "line": 2613,
+          "column": 0,
+          "name": "commands",
+          "start": 12499,
+          "end": 12526
+        },
+        {
+          "binding": "Zb",
+          "source": "beni:///platforms/browser-direct/Direct.beni",
+          "line": 2618,
+          "column": 0,
+          "name": "subscriptions",
+          "start": 12527,
+          "end": 12562
+        },
+        {
+          "binding": "$b",
+          "source": "beni:///platforms/browser-direct/Direct.beni",
+          "line": 2729,
+          "column": 0,
+          "name": "title",
+          "start": 12563,
+          "end": 12636
+        },
+        {
+          "binding": "_b",
+          "source": "beni:///platforms/browser-direct/Direct.beni",
+          "line": 2734,
+          "column": 0,
+          "name": "flush",
+          "start": 12637,
+          "end": 12648
+        },
+        {
+          "binding": "ac",
+          "source": "beni:///platforms/browser-direct/Direct.beni",
+          "line": 2739,
+          "column": 0,
+          "name": "groupEpoch",
+          "start": 12653,
+          "end": 12657
+        },
+        {
+          "binding": "bc",
+          "source": "beni:///platforms/browser-direct/Direct.beni",
+          "line": 2743,
+          "column": 0,
+          "name": "groupProgram",
+          "start": 12664,
+          "end": 12677
+        },
+        {
+          "binding": "cc",
+          "source": "beni:///platforms/browser-direct/Direct.beni",
+          "line": 2768,
+          "column": 0,
+          "name": "templateContext",
+          "start": 12682,
+          "end": 12689
+        },
+        {
+          "binding": "dc",
+          "source": "beni:///platforms/browser-direct/Direct.beni",
+          "line": 2772,
+          "column": 0,
+          "name": "templateKey",
+          "start": 12690,
+          "end": 12695
+        },
+        {
+          "binding": "ec",
+          "source": "beni:///platforms/browser-direct/Direct.beni",
+          "line": 2776,
+          "column": 0,
+          "name": "templateMount",
+          "start": 12696,
+          "end": 12704
+        },
+        {
+          "binding": "fc",
+          "source": "beni:///platforms/browser-direct/Direct.beni",
+          "line": 3371,
+          "column": 0,
+          "name": "templateProgramOwner",
+          "start": 12705,
+          "end": 12712
+        },
+        {
+          "binding": "gc",
+          "source": "beni:///platforms/browser-direct/Direct.beni",
+          "line": 2794,
+          "column": 0,
+          "name": "templateProgram",
+          "start": 12719,
+          "end": 12806
+        },
+        {
+          "binding": "hc",
+          "source": "beni:///platforms/browser-direct/Direct.beni",
+          "line": 2816,
+          "column": 0,
+          "name": "templateEnd",
+          "start": 12807,
+          "end": 12838
+        },
+        {
+          "binding": "ic",
+          "source": "beni:///platforms/browser-direct/Direct.beni",
+          "line": 3264,
+          "column": 0,
+          "name": "templateRowOwner",
+          "start": 12843,
+          "end": 12850
+        },
+        {
+          "binding": "jc",
+          "source": "beni:///platforms/browser-direct/Direct.beni",
+          "line": 2859,
+          "column": 0,
+          "name": "templateCapture",
+          "start": 12857,
+          "end": 12965
+        },
+        {
+          "binding": "kc",
+          "source": "beni:///platforms/browser-direct/Direct.beni",
+          "line": 2878,
+          "column": 0,
+          "name": "templateValue",
+          "start": 12966,
+          "end": 13027
+        },
+        {
+          "binding": "lc",
+          "source": "beni:///platforms/browser-direct/Direct.beni",
+          "line": 2885,
+          "column": 0,
+          "name": "templatePlace",
+          "start": 13028,
+          "end": 13265
+        },
+        {
+          "binding": "mc",
+          "source": "beni:///platforms/browser-direct/Direct.beni",
+          "line": 2912,
+          "column": 0,
+          "name": "templateWanted",
+          "start": 13266,
+          "end": 13978
+        },
+        {
+          "binding": "nc",
+          "source": "beni:///platforms/browser-direct/Direct.beni",
+          "line": 2962,
+          "column": 0,
+          "name": "templateGroup",
+          "start": 13979,
+          "end": 14027
+        },
+        {
+          "binding": "oc",
+          "source": "beni:///platforms/browser-direct/Direct.beni",
+          "line": 3033,
+          "column": 0,
+          "name": "templateFallbackEntered",
+          "start": 14028,
+          "end": 14097
+        },
+        {
+          "binding": "pc",
+          "source": "beni:///platforms/browser-direct/Direct.beni",
+          "line": 3008,
+          "column": 0,
+          "name": "templateSelectNew",
+          "start": 14098,
+          "end": 14310
+        },
+        {
+          "binding": "qc",
+          "source": "beni:///platforms/browser-direct/Direct.beni",
+          "line": 2969,
+          "column": 0,
+          "name": "templateSelect",
+          "start": 14311,
+          "end": 14646
+        },
+        {
+          "binding": "rc",
+          "source": "beni:///platforms/browser-direct/Direct.beni",
+          "line": 3055,
+          "column": 0,
+          "name": "templatePatch",
+          "start": 14647,
+          "end": 15317
+        },
+        {
+          "binding": "sc",
+          "source": "beni:///platforms/browser-direct/Direct.beni",
+          "line": 3145,
+          "column": 0,
+          "name": "templateInputs",
+          "start": 15318,
+          "end": 15358
+        },
+        {
+          "binding": "tc",
+          "source": null,
+          "line": null,
+          "column": null,
+          "name": null,
+          "start": 15365,
+          "end": 15395
+        },
+        {
+          "binding": "uc",
+          "source": "../../../examples/bike-wars/src/Math/Vector2.beni",
+          "line": 18,
+          "column": 0,
+          "name": "vec2",
+          "start": 15396,
+          "end": 15421
+        },
+        {
+          "binding": "vc",
+          "source": "../../../examples/bike-wars/src/Math/Vector2.beni",
+          "line": 23,
+          "column": 0,
+          "name": "getX",
+          "start": 15422,
+          "end": 15431
+        },
+        {
+          "binding": "wc",
+          "source": "../../../examples/bike-wars/src/Math/Vector2.beni",
+          "line": 28,
+          "column": 0,
+          "name": "getY",
+          "start": 15432,
+          "end": 15441
+        },
+        {
+          "binding": "xc",
+          "source": "../../../examples/bike-wars/src/Math/Vector2.beni",
+          "line": 33,
+          "column": 0,
+          "name": "setX",
+          "start": 15442,
+          "end": 15469
+        },
+        {
+          "binding": "yc",
+          "source": "../../../examples/bike-wars/src/Math/Vector2.beni",
+          "line": 38,
+          "column": 0,
+          "name": "setY",
+          "start": 15470,
+          "end": 15497
+        },
+        {
+          "binding": "zc",
+          "source": "../../../examples/bike-wars/src/Math/Vector2.beni",
+          "line": 48,
+          "column": 0,
+          "name": "add",
+          "start": 15498,
+          "end": 15535
+        },
+        {
+          "binding": "Ac",
+          "source": "../../../examples/bike-wars/src/Constants.beni",
+          "line": 34,
+          "column": 0,
+          "name": "gameBounds",
+          "start": 15542,
+          "end": 15596
+        },
+        {
+          "binding": "Bc",
+          "source": "../../../examples/bike-wars/src/Constants.beni",
+          "line": 44,
+          "column": 4,
+          "name": "colors",
+          "start": 15597,
+          "end": 15667
+        },
+        {
+          "binding": "Cc",
+          "source": null,
+          "line": null,
+          "column": null,
+          "name": null,
+          "start": 15674,
+          "end": 15694
+        },
+        {
+          "binding": "Dc",
+          "source": "beni:///platforms/browser/Sub.beni",
+          "line": 42,
+          "column": 0,
+          "name": "both",
+          "start": 15695,
+          "end": 15810
+        },
+        {
+          "binding": "Ec",
+          "source": "beni:///platforms/browser/Sub.beni",
+          "line": 38,
+          "column": 0,
+          "name": "batch",
+          "start": 15811,
+          "end": 15828
+        },
+        {
+          "binding": "Fc",
+          "source": "beni:///platforms/browser/Sub.beni",
+          "line": 107,
+          "column": 0,
+          "name": "on",
+          "start": 15829,
+          "end": 15895
+        },
+        {
+          "binding": "Gc",
+          "source": null,
+          "line": null,
+          "column": null,
+          "name": null,
+          "start": 15902,
+          "end": 15945
+        },
+        {
+          "binding": "Hc",
+          "source": null,
+          "line": null,
+          "column": null,
+          "name": null,
+          "start": 15946,
+          "end": 16007
+        },
+        {
+          "binding": "Ic",
+          "source": null,
+          "line": null,
+          "column": null,
+          "name": null,
+          "start": 16008,
+          "end": 16071
+        },
+        {
+          "binding": "Jc",
+          "source": null,
+          "line": null,
+          "column": null,
+          "name": null,
+          "start": 16072,
+          "end": 16135
+        },
+        {
+          "binding": "Kc",
+          "source": "beni:///platforms/browser/Browser/Events.beni",
+          "line": 132,
+          "column": 0,
+          "name": "onKeyDown",
+          "start": 16136,
+          "end": 16307
+        },
+        {
+          "binding": "Lc",
+          "source": "beni:///platforms/browser/Browser/Events.beni",
+          "line": 199,
+          "column": 0,
+          "name": "frameClock",
+          "start": 16308,
+          "end": 16329
+        },
+        {
+          "binding": "Mc",
+          "source": "beni:///platforms/browser/Browser/Events.beni",
+          "line": 203,
+          "column": 0,
+          "name": "wall",
+          "start": 16330,
+          "end": 16347
+        },
+        {
+          "binding": "Nc",
+          "source": "beni:///platforms/browser/Browser/Events.beni",
+          "line": 209,
+          "column": 0,
+          "name": "ask",
+          "start": 16348,
+          "end": 16468
+        },
+        {
+          "binding": "Oc",
+          "source": "beni:///platforms/browser/Browser/Events.beni",
+          "line": 170,
+          "column": 0,
+          "name": "onAnimationFrameDelta",
+          "start": 16469,
+          "end": 16698
+        },
+        {
+          "binding": "Pc",
+          "source": "beni:///platforms/html/Html.beni",
+          "line": 113,
+          "column": 0,
+          "name": "stringProp",
+          "start": 16705,
+          "end": 16747
+        },
+        {
+          "binding": "Qc",
+          "source": null,
+          "line": null,
+          "column": null,
+          "name": null,
+          "start": 16754,
+          "end": 16770
+        },
+        {
+          "binding": "Rc",
+          "source": null,
+          "line": null,
+          "column": null,
+          "name": null,
+          "start": 16771,
+          "end": 16786
+        },
+        {
+          "binding": "Sc",
+          "source": null,
+          "line": null,
+          "column": null,
+          "name": null,
+          "start": 16787,
+          "end": 16803
+        },
+        {
+          "binding": "Tc",
+          "source": null,
+          "line": null,
+          "column": null,
+          "name": null,
+          "start": 16804,
+          "end": 16820
+        },
+        {
+          "binding": "Uc",
+          "source": null,
+          "line": null,
+          "column": null,
+          "name": null,
+          "start": 16821,
+          "end": 18786
+        },
+        {
+          "binding": "Vc",
+          "source": "../../../examples/bike-wars/src/Keyboard.beni",
+          "line": 37,
+          "column": 0,
+          "name": "downs",
+          "start": 18787,
+          "end": 18808
+        },
+        {
+          "binding": "Wc",
+          "source": "../../../examples/bike-wars/src/Keyboard.beni",
+          "line": 44,
+          "column": 0,
+          "name": "oneOf",
+          "start": 18809,
+          "end": 18927
+        },
+        {
+          "binding": "Xc",
+          "source": "../../../examples/bike-wars/src/Keyboard.beni",
+          "line": 64,
+          "column": 0,
+          "name": "whitespaceKey",
+          "start": 18928,
+          "end": 19083
+        },
+        {
+          "binding": "Yc",
+          "source": "../../../examples/bike-wars/src/Direction.beni",
+          "line": 10,
+          "column": 0,
+          "name": "turnRight",
+          "start": 19090,
+          "end": 19178
+        },
+        {
+          "binding": "Zc",
+          "source": null,
+          "line": null,
+          "column": null,
+          "name": null,
+          "start": 19185,
+          "end": 19200
+        },
+        {
+          "binding": "$c",
+          "source": "../../../examples/bike-wars/src/Helpers.beni",
+          "line": 12,
+          "column": 0,
+          "name": "sortPoints",
+          "start": 19201,
+          "end": 19290
+        },
+        {
+          "binding": "_c",
+          "source": "../../../examples/bike-wars/src/Helpers.beni",
+          "line": 20,
+          "column": 0,
+          "name": "linesToTrail",
+          "start": 19291,
+          "end": 19468
+        },
+        {
+          "binding": "ad",
+          "source": "../../../examples/bike-wars/src/Helpers.beni",
+          "line": 59,
+          "column": 0,
+          "name": "toLine",
+          "start": 19469,
+          "end": 19598
+        },
+        {
+          "binding": "bd",
+          "source": "../../../examples/bike-wars/src/Helpers.beni",
+          "line": 40,
+          "column": 0,
+          "name": "trailToLines",
+          "start": 19599,
+          "end": 19784
+        },
+        {
+          "binding": "cd",
+          "source": "../../../examples/bike-wars/src/Helpers.beni",
+          "line": 73,
+          "column": 0,
+          "name": "tryCollision",
+          "start": 19785,
+          "end": 19810
+        },
+        {
+          "binding": "dd",
+          "source": "../../../examples/bike-wars/src/Helpers.beni",
+          "line": 112,
+          "column": 0,
+          "name": "isBetween",
+          "start": 19811,
+          "end": 19835
+        },
+        {
+          "binding": "ed",
+          "source": "../../../examples/bike-wars/src/Helpers.beni",
+          "line": 81,
+          "column": 0,
+          "name": "tryObstacleCollision",
+          "start": 19836,
+          "end": 19985
+        },
+        {
+          "binding": "fd",
+          "source": "../../../examples/bike-wars/src/Helpers.beni",
+          "line": 116,
+          "column": 0,
+          "name": "isBetweenWith",
+          "start": 19986,
+          "end": 20024
+        },
+        {
+          "binding": "gd",
+          "source": "../../../examples/bike-wars/src/Helpers.beni",
+          "line": 92,
+          "column": 0,
+          "name": "horizontalOrthogonal",
+          "start": 20025,
+          "end": 20145
+        },
+        {
+          "binding": "hd",
+          "source": "../../../examples/bike-wars/src/Helpers.beni",
+          "line": 102,
+          "column": 0,
+          "name": "verticalOrthogonal",
+          "start": 20146,
+          "end": 20266
+        },
+        {
+          "binding": "id",
+          "source": "../../../examples/bike-wars/src/Helpers.beni",
+          "line": 120,
+          "column": 0,
+          "name": "onlyVertical",
+          "start": 20267,
+          "end": 20295
+        },
+        {
+          "binding": "jd",
+          "source": "../../../examples/bike-wars/src/Helpers.beni",
+          "line": 130,
+          "column": 0,
+          "name": "onlyHorizontal",
+          "start": 20296,
+          "end": 20324
+        },
+        {
+          "binding": "kd",
+          "source": null,
+          "line": null,
+          "column": null,
+          "name": null,
+          "start": 20331,
+          "end": 20346
+        },
+        {
+          "binding": "ld",
+          "source": "../../../examples/bike-wars/src/BikePhysics.beni",
+          "line": 15,
+          "column": 0,
+          "name": "computePosition",
+          "start": 20347,
+          "end": 20513
+        },
+        {
+          "binding": "md",
+          "source": "../../../examples/bike-wars/src/BikePhysics.beni",
+          "line": 34,
+          "column": 0,
+          "name": "computeDirection",
+          "start": 20514,
+          "end": 20567
+        },
+        {
+          "binding": "nd",
+          "source": "../../../examples/bike-wars/src/BikePhysics.beni",
+          "line": 45,
+          "column": 0,
+          "name": "collision",
+          "start": 20568,
+          "end": 20834
+        },
+        {
+          "binding": "od",
+          "source": "../../../examples/bike-wars/src/Explosion.beni",
+          "line": 42,
+          "column": 5,
+          "name": "p161",
+          "start": 20841,
+          "end": 21772
+        },
+        {
+          "binding": "pd",
+          "source": "../../../examples/bike-wars/src/Explosion.beni",
+          "line": 42,
+          "column": 5,
+          "name": "t161",
+          "start": 21773,
+          "end": 21798
+        },
+        {
+          "binding": "qd",
+          "source": "../../../examples/bike-wars/src/Explosion.beni",
+          "line": 42,
+          "column": 5,
+          "name": "k161",
+          "start": 21799,
+          "end": 22034
+        },
+        {
+          "binding": "kb",
+          "source": "../../../examples/bike-wars/src/Explosion.beni",
+          "line": 13,
+          "column": 0,
+          "name": "forBike",
+          "start": 22035,
+          "end": 22063
+        },
+        {
+          "binding": "rd",
+          "source": "../../../examples/bike-wars/src/Explosion.beni",
+          "line": 17,
+          "column": 0,
+          "name": "toObstacle",
+          "start": 22064,
+          "end": 22140
+        },
+        {
+          "binding": "sd",
+          "source": "../../../examples/bike-wars/src/Explosion.beni",
+          "line": 40,
+          "column": 0,
+          "name": "explosionForm",
+          "start": 22141,
+          "end": 22193
+        },
+        {
+          "binding": "td",
+          "source": "../../../examples/bike-wars/src/Explosion.beni",
+          "line": 28,
+          "column": 0,
+          "name": "view",
+          "start": 22194,
+          "end": 22212
+        },
+        {
+          "binding": "ud",
+          "source": "../../../examples/bike-wars/src/Explosion.beni",
+          "line": 36,
+          "column": 0,
+          "name": "updateOne",
+          "start": 22213,
+          "end": 22235
+        },
+        {
+          "binding": "vd",
+          "source": "../../../examples/bike-wars/src/Explosion.beni",
+          "line": 32,
+          "column": 0,
+          "name": "update",
+          "start": 22236,
+          "end": 22265
+        },
+        {
+          "binding": "wd",
+          "source": "../../../examples/bike-wars/src/Tuple.beni",
+          "line": 8,
+          "column": 0,
+          "name": "mapFirst",
+          "start": 22272,
+          "end": 22300
+        },
+        {
+          "binding": "xd",
+          "source": "../../../examples/bike-wars/src/Tuple.beni",
+          "line": 13,
+          "column": 0,
+          "name": "mapSecond",
+          "start": 22301,
+          "end": 22329
+        },
+        {
+          "binding": "yd",
+          "source": "../../../examples/bike-wars/src/Trail.beni",
+          "line": 169,
+          "column": 0,
+          "name": "horizontalPairs",
+          "start": 22336,
+          "end": 22664
+        },
+        {
+          "binding": "zd",
+          "source": "../../../examples/bike-wars/src/Trail.beni",
+          "line": 217,
+          "column": 0,
+          "name": "verticalPairs",
+          "start": 22665,
+          "end": 22984
+        },
+        {
+          "binding": "Ad",
+          "source": "../../../examples/bike-wars/src/Trail.beni",
+          "line": 149,
+          "column": 0,
+          "name": "breakLines",
+          "start": 22985,
+          "end": 23090
+        },
+        {
+          "binding": "Bd",
+          "source": "../../../examples/bike-wars/src/Trail.beni",
+          "line": 24,
+          "column": 0,
+          "name": "breakTrail",
+          "start": 23091,
+          "end": 23116
+        },
+        {
+          "binding": "Cd",
+          "source": "../../../examples/bike-wars/src/Trail.beni",
+          "line": 14,
+          "column": 0,
+          "name": "breakIfNecessary",
+          "start": 23117,
+          "end": 23208
+        },
+        {
+          "binding": "Dd",
+          "source": null,
+          "line": null,
+          "column": null,
+          "name": null,
+          "start": 23215,
+          "end": 23230
+        },
+        {
+          "binding": "Ed",
+          "source": "../../../examples/bike-wars/src/Weapon.beni",
+          "line": 13,
+          "column": 0,
+          "name": "initMegaBlaster",
+          "start": 23231,
+          "end": 23251
+        },
+        {
+          "binding": "Fd",
+          "source": "../../../examples/bike-wars/src/Weapon.beni",
+          "line": 17,
+          "column": 0,
+          "name": "initAssaultBazooka",
+          "start": 23252,
+          "end": 23268
+        },
+        {
+          "binding": "Gd",
+          "source": "../../../examples/bike-wars/src/Weapon.beni",
+          "line": 79,
+          "column": 0,
+          "name": "findArenaBorder",
+          "start": 23269,
+          "end": 23405
+        },
+        {
+          "binding": "Hd",
+          "source": "../../../examples/bike-wars/src/Weapon.beni",
+          "line": 67,
+          "column": 0,
+          "name": "projectExplosionForwards",
+          "start": 23406,
+          "end": 23481
+        },
+        {
+          "binding": "Id",
+          "source": "../../../examples/bike-wars/src/Weapon.beni",
+          "line": 28,
+          "column": 0,
+          "name": "shoot",
+          "start": 23482,
+          "end": 23762
+        },
+        {
+          "binding": "Jd",
+          "source": null,
+          "line": null,
+          "column": null,
+          "name": null,
+          "start": 23769,
+          "end": 23784
+        },
+        {
+          "binding": "Kd",
+          "source": "../../../examples/bike-wars/src/Bike.beni",
+          "line": 183,
+          "column": 13,
+          "name": "p524",
+          "start": 23785,
+          "end": 24200
+        },
+        {
+          "binding": "Ld",
+          "source": "../../../examples/bike-wars/src/Bike.beni",
+          "line": 183,
+          "column": 13,
+          "name": "t524",
+          "start": 24201,
+          "end": 24414
+        },
+        {
+          "binding": "Md",
+          "source": "../../../examples/bike-wars/src/Bike.beni",
+          "line": 183,
+          "column": 13,
+          "name": "k524",
+          "start": 24415,
+          "end": 24567
+        },
+        {
+          "binding": "Nd",
+          "source": "../../../examples/bike-wars/src/Bike.beni",
+          "line": 160,
+          "column": 17,
+          "name": "p473",
+          "start": 24568,
+          "end": 25168
+        },
+        {
+          "binding": "Od",
+          "source": "../../../examples/bike-wars/src/Bike.beni",
+          "line": 160,
+          "column": 17,
+          "name": "t473",
+          "start": 25169,
+          "end": 25230
+        },
+        {
+          "binding": "Pd",
+          "source": "../../../examples/bike-wars/src/Bike.beni",
+          "line": 160,
+          "column": 17,
+          "name": "k473",
+          "start": 25231,
+          "end": 25378
+        },
+        {
+          "binding": "Qd",
+          "source": "../../../examples/bike-wars/src/Bike.beni",
+          "line": 171,
+          "column": 44,
+          "name": "p491",
+          "start": 25379,
+          "end": 26273
+        },
+        {
+          "binding": "Rd",
+          "source": "../../../examples/bike-wars/src/Bike.beni",
+          "line": 171,
+          "column": 44,
+          "name": "t491",
+          "start": 26274,
+          "end": 26296
+        },
+        {
+          "binding": "Sd",
+          "source": "../../../examples/bike-wars/src/Bike.beni",
+          "line": 171,
+          "column": 44,
+          "name": "k491",
+          "start": 26297,
+          "end": 26542
+        },
+        {
+          "binding": "Td",
+          "source": "../../../examples/bike-wars/src/Bike.beni",
+          "line": 18,
+          "column": 0,
+          "name": "initBike",
+          "start": 26543,
+          "end": 26600
+        },
+        {
+          "binding": "Ud",
+          "source": "../../../examples/bike-wars/src/Bike.beni",
+          "line": 30,
+          "column": 0,
+          "name": "frontWall",
+          "start": 26601,
+          "end": 26775
+        },
+        {
+          "binding": "Vd",
+          "source": "../../../examples/bike-wars/src/Bike.beni",
+          "line": 213,
+          "column": 0,
+          "name": "omitLastSections",
+          "start": 26776,
+          "end": 26848
+        },
+        {
+          "binding": "Wd",
+          "source": "../../../examples/bike-wars/src/Bike.beni",
+          "line": 109,
+          "column": 0,
+          "name": "toObstacle",
+          "start": 26849,
+          "end": 26914
+        },
+        {
+          "binding": "Xd",
+          "source": "../../../examples/bike-wars/src/Bike.beni",
+          "line": 203,
+          "column": 0,
+          "name": "swapPosition",
+          "start": 26915,
+          "end": 27041
+        },
+        {
+          "binding": "Yd",
+          "source": "../../../examples/bike-wars/src/Bike.beni",
+          "line": 54,
+          "column": 0,
+          "name": "update",
+          "start": 27042,
+          "end": 27367
+        },
+        {
+          "binding": "Zd",
+          "source": "../../../examples/bike-wars/src/Bike.beni",
+          "line": 89,
+          "column": 0,
+          "name": "shoot",
+          "start": 27368,
+          "end": 27485
+        },
+        {
+          "binding": "$d",
+          "source": "../../../examples/bike-wars/src/Bike.beni",
+          "line": 193,
+          "column": 0,
+          "name": "cons",
+          "start": 27486,
+          "end": 27568
+        },
+        {
+          "binding": "_d",
+          "source": "../../../examples/bike-wars/src/Bike.beni",
+          "line": 98,
+          "column": 0,
+          "name": "turn",
+          "start": 27569,
+          "end": 27650
+        },
+        {
+          "binding": "ae",
+          "source": "../../../examples/bike-wars/src/Bike.beni",
+          "line": 120,
+          "column": 0,
+          "name": "view",
+          "start": 27651,
+          "end": 27748
+        },
+        {
+          "binding": "be",
+          "source": null,
+          "line": null,
+          "column": null,
+          "name": null,
+          "start": 27755,
+          "end": 27771
+        },
+        {
+          "binding": "ce",
+          "source": null,
+          "line": null,
+          "column": null,
+          "name": null,
+          "start": 27772,
+          "end": 27788
+        },
+        {
+          "binding": "de",
+          "source": null,
+          "line": null,
+          "column": null,
+          "name": null,
+          "start": 27789,
+          "end": 27805
+        },
+        {
+          "binding": "ee",
+          "source": null,
+          "line": null,
+          "column": null,
+          "name": null,
+          "start": 27806,
+          "end": 27822
+        },
+        {
+          "binding": "fe",
+          "source": null,
+          "line": null,
+          "column": null,
+          "name": null,
+          "start": 27823,
+          "end": 27838
+        },
+        {
+          "binding": "ge",
+          "source": "../../../examples/bike-wars/src/Keyboard/Arrows.beni",
+          "line": 16,
+          "column": 0,
+          "name": "arrowKey",
+          "start": 27839,
+          "end": 28210
+        },
+        {
+          "binding": "he",
+          "source": null,
+          "line": null,
+          "column": null,
+          "name": null,
+          "start": 28217,
+          "end": 28232
+        },
+        {
+          "binding": "ie",
+          "source": null,
+          "line": null,
+          "column": null,
+          "name": null,
+          "start": 28233,
+          "end": 28249
+        },
+        {
+          "binding": "je",
+          "source": null,
+          "line": null,
+          "column": null,
+          "name": null,
+          "start": 28250,
+          "end": 28266
+        },
+        {
+          "binding": "ke",
+          "source": null,
+          "line": null,
+          "column": null,
+          "name": null,
+          "start": 28267,
+          "end": 28283
+        },
+        {
+          "binding": "le",
+          "source": null,
+          "line": null,
+          "column": null,
+          "name": null,
+          "start": 28284,
+          "end": 28299
+        },
+        {
+          "binding": "me",
+          "source": "../../../examples/bike-wars/src/Game.beni",
+          "line": 195,
+          "column": 9,
+          "name": "p433",
+          "start": 28300,
+          "end": 28535
+        },
+        {
+          "binding": "ne",
+          "source": "../../../examples/bike-wars/src/Game.beni",
+          "line": 195,
+          "column": 9,
+          "name": "t433",
+          "start": 28536,
+          "end": 28582
+        },
+        {
+          "binding": "oe",
+          "source": "../../../examples/bike-wars/src/Game.beni",
+          "line": 195,
+          "column": 9,
+          "name": "k433",
+          "start": 28583,
+          "end": 28690
+        },
+        {
+          "binding": "pe",
+          "source": "../../../examples/bike-wars/src/Game.beni",
+          "line": 206,
+          "column": 14,
+          "name": "p463",
+          "start": 28691,
+          "end": 29326
+        },
+        {
+          "binding": "qe",
+          "source": "../../../examples/bike-wars/src/Game.beni",
+          "line": 206,
+          "column": 14,
+          "name": "t463",
+          "start": 29327,
+          "end": 29387
+        },
+        {
+          "binding": "re",
+          "source": "../../../examples/bike-wars/src/Game.beni",
+          "line": 206,
+          "column": 14,
+          "name": "k463",
+          "start": 29388,
+          "end": 29564
+        },
+        {
+          "binding": "se",
+          "source": "../../../examples/bike-wars/src/Game.beni",
+          "line": 229,
+          "column": 7,
+          "name": "p535",
+          "start": 29565,
+          "end": 30000
+        },
+        {
+          "binding": "te",
+          "source": "../../../examples/bike-wars/src/Game.beni",
+          "line": 229,
+          "column": 7,
+          "name": "t535",
+          "start": 30001,
+          "end": 30026
+        },
+        {
+          "binding": "ue",
+          "source": "../../../examples/bike-wars/src/Game.beni",
+          "line": 229,
+          "column": 7,
+          "name": "k535",
+          "start": 30027,
+          "end": 30173
+        },
+        {
+          "binding": "ve",
+          "source": "../../../examples/bike-wars/src/Game.beni",
+          "line": 230,
+          "column": 85,
+          "name": "p538",
+          "start": 30174,
+          "end": 30337
+        },
+        {
+          "binding": "we",
+          "source": "../../../examples/bike-wars/src/Game.beni",
+          "line": 230,
+          "column": 85,
+          "name": "t538",
+          "start": 30338,
+          "end": 30417
+        },
+        {
+          "binding": "xe",
+          "source": "../../../examples/bike-wars/src/Game.beni",
+          "line": 230,
+          "column": 85,
+          "name": "k538",
+          "start": 30418,
+          "end": 30512
+        },
+        {
+          "binding": "ye",
+          "source": "../../../examples/bike-wars/src/Game.beni",
+          "line": 187,
+          "column": 12,
+          "name": "p414",
+          "start": 30513,
+          "end": 31399
+        },
+        {
+          "binding": "ze",
+          "source": "../../../examples/bike-wars/src/Game.beni",
+          "line": 187,
+          "column": 12,
+          "name": "t414",
+          "start": 31400,
+          "end": 31469
+        },
+        {
+          "binding": "Ae",
+          "source": "../../../examples/bike-wars/src/Game.beni",
+          "line": 187,
+          "column": 12,
+          "name": "k414",
+          "start": 31470,
+          "end": 31658
+        },
+        {
+          "binding": "Be",
+          "source": "../../../examples/bike-wars/src/Game.beni",
+          "line": 187,
+          "column": 12,
+          "name": "k414",
+          "start": 31659,
+          "end": 31674
+        },
+        {
+          "binding": "Ce",
+          "source": "../../../examples/bike-wars/src/Game.beni",
+          "line": 187,
+          "column": 12,
+          "name": "k414",
+          "start": 31675,
+          "end": 31792
+        },
+        {
+          "binding": "Ee",
+          "source": "../../../examples/bike-wars/src/Game.beni",
+          "line": 54,
+          "column": 0,
+          "name": "initBikes",
+          "start": 32000,
+          "end": 32144
+        },
+        {
+          "binding": "Fe",
+          "source": "../../../examples/bike-wars/src/Game.beni",
+          "line": 72,
+          "column": 0,
+          "name": "initModel",
+          "start": 32145,
+          "end": 32174
+        },
+        {
+          "binding": "Ge",
+          "source": "../../../examples/bike-wars/src/Game.beni",
+          "line": 80,
+          "column": 0,
+          "name": "init",
+          "start": 32175,
+          "end": 32180
+        },
+        {
+          "binding": "He",
+          "source": "../../../examples/bike-wars/src/Game.beni",
+          "line": 87,
+          "column": 0,
+          "name": "subscriptions",
+          "start": 32181,
+          "end": 32439
+        },
+        {
+          "binding": "Ie",
+          "source": "../../../examples/bike-wars/src/Game.beni",
+          "line": 120,
+          "column": 0,
+          "name": "pureUpdate",
+          "start": 32440,
+          "end": 32928
+        },
+        {
+          "binding": "Je",
+          "source": "../../../examples/bike-wars/src/Game.beni",
+          "line": 113,
+          "column": 0,
+          "name": "update",
+          "start": 32929,
+          "end": 32952
+        },
+        {
+          "binding": "Ke",
+          "source": "../../../examples/bike-wars/src/Game.beni",
+          "line": 181,
+          "column": 0,
+          "name": "view",
+          "start": 32953,
+          "end": 32992
+        },
+        {
+          "binding": "Le",
+          "source": "../../../examples/bike-wars/src/Main.beni",
+          "line": 11,
+          "column": 0,
+          "name": "main",
+          "start": 32999,
+          "end": 35388
+        }
+      ]
+    }
+  ]
+}

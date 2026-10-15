@@ -305,10 +305,51 @@ type alias Cell =
     body : Js.Ref (Maybe Node)
 
 
--- A schema: its node, and the analysis a root operation on it made, once.
+-- A schema: its node, the analysis a root operation on it made, once, and
+-- how `parse` and `print` run it.
 type alias Box =
     node : Node
     analysis : Js.Ref (Maybe Analysis)
+    engine : Engine
+
+
+-- How `parse` and `print` run a schema (`schema.md` §6, *A statically known
+-- schema runs compiled*). A builder that boxes a node makes an
+-- `Interpreted` schema, which the engine of this module walks. A schema the
+-- program fixes at compile time — a declaration's `schema`, a primitive,
+-- and `list`, `nullable` and `converted` of compiled schemas — is
+-- `Compiled`: it carries its parse and print workers. Only `box` builds
+-- `Interpreted`, so in a build where no builder that boxes survives, the
+-- arms on it — the interpreter behind every runner — are not in it
+-- (`backend.md` §9, *A `case` arm on a constructor nothing builds*,
+-- amended 2026-10-15).
+type Engine
+    = Interpreted
+    | Compiled Workers
+
+
+-- A compiled schema: what it was made of (`Made`); a declaration's decoding
+-- and encoding workers, `null` where the build calls none, and `null` for
+-- every other maker, whose workers `parserOf` and `printerOf` make when one
+-- runs; and the `Interpreted` schemas its workers run through the library —
+-- a generic declaration's arguments — a host array in the order its value
+-- reaches them, or `null` when there are none.
+type alias Workers =
+    made : Made
+    parse : Js.Value
+    print : Js.Value
+    args : Js.Value
+
+
+-- What a compiled schema was made of: what `nodeOf` builds its node from
+-- and `parserOf` and `printerOf` its workers. A declaration's is a function
+-- of no argument that answers its description.
+type Made
+    = MadeDeclared Js.Value
+    | MadePrimitive PrimitiveKind
+    | MadeList Workers
+    | MadeNullable Workers
+    | MadeConverted Workers Pair
 
 
 type alias Analysis =
@@ -403,8 +444,58 @@ variantList xs = fromHost xs
 box : Node → Schema e a
 box n =
     b : Box
-    b = { node = n, analysis = Js.ref Nothing }
+    b = { node = n, analysis = Js.ref Nothing, engine = Interpreted }
     cast b
+
+
+-- A compiled schema (`Engine`). Its own `node` is never read: `nodeOf`
+-- makes one from `made`.
+compiled : Made, Js.Value, Js.Value, Js.Value → Schema e a
+compiled origin parsing printing args =
+    w : Workers
+    w = { made = origin, parse = parsing, print = printing, args = args }
+    b : Box
+    b = { node = fromHost Js.null, analysis = Js.ref Nothing, engine = Compiled w }
+    cast b
+
+
+-- A `schema` declaration's `schema` (`schema.md` §6, *A statically known
+-- schema runs compiled*): a function of no argument answering its
+-- description, its decoding and encoding workers — each `null` where the
+-- build calls none — and the schema arguments its value reaches, `null`
+-- for a nongeneric one. Called by the code a declaration compiles to, never
+-- by a program.
+declared : Js.Value, Js.Value, Js.Value, Js.Value → Schema e a
+declared description parsing printing args =
+    compiled (MadeDeclared description) parsing printing (interpretedIn args)
+
+
+-- The `Interpreted` schemas among `args` and behind its compiled ones, in
+-- order: what a compiled root checks before it reads (`compiledProblem`).
+-- `null`, which stands for no arguments, stays `null`.
+interpretedIn : Js.Value → Js.Value
+interpretedIn args =
+    if Js.isNull args then
+        args
+    else
+        out = Js.array []
+        _ =
+            Js.call args "forEach"
+                [ toHost λa →
+                    s : Schema Js.Value Js.Value
+                    s = fromHost a
+                    case (boxOf s).engine of
+                        Compiled w →
+                            if Js.isNull w.args then
+                                ⊤
+                            else
+                                _ = Js.call w.args "forEach" [ toHost λx → push out x ]
+                                ⊤
+
+                        Interpreted →
+                            push out a
+                ]
+        out
 
 
 pair : Js.Value, Js.Value → Pair
@@ -416,7 +507,36 @@ boxOf s = cast s
 
 
 nodeOf : Schema e a → Node
-nodeOf s = (boxOf s).node
+nodeOf s =
+    b = boxOf s
+    case b.engine of
+        Compiled w →
+            madeNode w.made
+
+        Interpreted →
+            b.node
+
+
+-- A compiled schema's node, for an operation that needs one: `describe`,
+-- `decode`, `flip`, a builder given it as a child. A declaration's is its
+-- description's.
+madeNode : Made → Node
+madeNode origin =
+    case origin of
+        MadeDeclared description →
+            nodeOf (fromHost (Js.apply description []))
+
+        MadePrimitive p →
+            NPrim p
+
+        MadeList child →
+            NList (madeNode child.made)
+
+        MadeNullable child →
+            NNullable (madeNode child.made)
+
+        MadeConverted source p →
+            NConverted (madeNode source.made) p.there p.back
 
 
 -- The two sides of a schema.
@@ -487,54 +607,195 @@ duplicateIn xs nameOf =
 
 
 -- ---- Primitives ----------------------------------------------------------
+-- Each is compiled (`Engine`): its worker, both ways, is `prim` on the
+-- context the root made, which knows the direction.
 
 --| A string, both ways.
 pub string : Schema String String
-string = box (NPrim StringKind)
+string = primitive StringKind
 
 
 --| `true` or `false`.
 pub bool : Schema Bool Bool
-bool = box (NPrim BoolKind)
+bool = primitive BoolKind
 
 
 --| A safe integer, both ways: a whole number from −(2⁵³−1) to 2⁵³−1. A
 --| well-typed `Int` outside that range fails to encode.
 pub int : Schema Int Int
-int = box (NPrim IntKind)
+int = primitive IntKind
 
 
 --| Any number. Printing NaN or an infinity as JSON fails, because JSON has
 --| no number for it.
 pub float : Schema Float Float
-float = box (NPrim FloatKind)
+float = primitive FloatKind
 
 
 --| A finite number, both ways.
 pub finiteFloat : Schema Float Float
-finiteFloat = box (NPrim FiniteFloatKind)
+finiteFloat = primitive FiniteFloatKind
 
 
 --| JSON's `null`, whose one value is `Null`.
 pub null : Schema (Nullable ⊥) (Nullable ⊥)
-null = box (NPrim NullKind)
+null = primitive NullKind
 
 
 --| Any host value, unread: the Encoded value is the Type value.
 pub value : Schema Value Value
-value = box (NPrim ValueKind)
+value = primitive ValueKind
+
+
+primitive : PrimitiveKind → Schema e a
+primitive p = compiled (MadePrimitive p) Js.null Js.null Js.null
 
 
 -- ---- Lists and nullability -----------------------------------------------
 
 --| A list of the child's values: an array outside, a `List` inside.
 pub list : Schema e a → Schema (List e) (List a)
-list child = box (NList (nodeOf child))
+list child =
+    case (boxOf child).engine of
+        Compiled w →
+            compiled (MadeList w) Js.null Js.null w.args
+
+        Interpreted →
+            box (NList (nodeOf child))
 
 
 --| The child's values, or `null`, told apart.
 pub nullable : Schema e a → Schema (Nullable e) (Nullable a)
-nullable child = box (NNullable (nodeOf child))
+nullable child =
+    case (boxOf child).engine of
+        Compiled w →
+            compiled (MadeNullable w) Js.null Js.null w.args
+
+        Interpreted →
+            box (NNullable (nodeOf child))
+
+
+-- A compiled schema's decoding worker. A declaration's is its own; the
+-- others' are made here, when a root or a slot is about to run one, so a
+-- build that only composes and describes schemas keeps none of them.
+parserOf : Workers → Js.Value
+parserOf w =
+    case w.made of
+        MadeDeclared _ →
+            w.parse
+
+        MadePrimitive p →
+            primitiveWorker p
+
+        MadeList child →
+            listWorker (parserOf child)
+
+        MadeNullable child →
+            nullableWorker (parserOf child)
+
+        MadeConverted source p →
+            forwardWorker (parserOf source) (cast p)
+
+
+-- A compiled schema's encoding worker, as `parserOf`.
+printerOf : Workers → Js.Value
+printerOf w =
+    case w.made of
+        MadeDeclared _ →
+            w.print
+
+        MadePrimitive p →
+            primitiveWorker p
+
+        MadeList child →
+            listWorker (printerOf child)
+
+        MadeNullable child →
+            nullableWorker (printerOf child)
+
+        MadeConverted source p →
+            backwardWorker (printerOf source) (cast p)
+
+
+-- `prim`, in either direction: the context says which.
+primitiveWorker : PrimitiveKind → Js.Value
+primitiveWorker p =
+    worker : Context, Int, Path, Js.Value, Js.Value, Js.Value → Js.Value
+    worker c depth parent input output v = prim c p depth (pathAt parent input output) v
+    toHost worker
+
+
+-- `listOf` over a compiled child's worker, in either direction: the context
+-- says which. A failure's path is made only when one is reported.
+listWorker : Js.Value → Js.Value
+listWorker child =
+    worker : Context, Int, Path, Js.Value, Js.Value, Js.Value → Js.Value
+    worker c depth parent input output v =
+        if c.sh && not (isArray v) then
+            failAt c (pathAt parent input output) WrongShape "expected an array" v False
+        else
+            before = issueCount c
+            path = pathAt parent input output
+            xs = plain v
+            out = Js.array []
+            if workerItems c child depth path xs out 0 (lengthOf xs) then
+                c.fail
+            else if issueCount c > before then
+                c.fail
+            else
+                out
+    toHost worker
+
+
+-- `listItems`, calling the child's worker. True when the list stops at a
+-- failure.
+workerItems : Context, Js.Value, Int, Path, Js.Value, Js.Value, Int, Int → Bool
+workerItems c child depth path xs out i n =
+    if i ≥ n then
+        False
+    else
+        item = Js.at xs i
+        x =
+            if depth ≥ c.max then
+                failAt
+                    c
+                    (step path (Js.from i) (Js.from i))
+                    DepthExceeded
+                    "the depth limit is reached"
+                    item
+                    False
+            else
+                Js.apply child [ toHost c, Js.from (depth + 1), path, Js.from i, Js.from i, item ]
+        if Js.same x c.fail then
+            if c.all then
+                workerItems c child depth path xs out (i + 1) n
+            else
+                True
+        else
+            _ = Js.call out "push" [ x ]
+            workerItems c child depth path xs out (i + 1) n
+
+
+-- `NNullable` over a compiled child's worker, in either direction.
+nullableWorker : Js.Value → Js.Value
+nullableWorker child =
+    worker : Context, Int, Path, Js.Value, Js.Value, Js.Value → Js.Value
+    worker c depth parent input output v =
+        if c.sh then
+            if Js.isNull v then
+                nullOut c
+            else
+                nonNullOut c (Js.apply child [ toHost c, Js.from depth, parent, input, output, v ])
+        else
+            case nullableOf v of
+                Null →
+                    nullOut c
+
+                NonNull a →
+                    nonNullOut
+                        c
+                        (Js.apply child [ toHost c, Js.from depth, parent, input, output, a ])
+    toHost worker
 
 
 -- ---- Records -------------------------------------------------------------
@@ -818,7 +1079,40 @@ pub converted : Schema e b, Conversion b a → Schema e a
 converted source c =
     p : Pair
     p = cast c
-    box (NConverted (nodeOf source) p.there p.back)
+    case (boxOf source).engine of
+        Compiled w →
+            compiled (MadeConverted w p) Js.null Js.null w.args
+
+        Interpreted →
+            box (NConverted (nodeOf source) p.there p.back)
+
+
+-- `NConverted` decoding over a compiled source's worker: the source, then
+-- the conversion's `forward` (`compiledForward`).
+forwardWorker : Js.Value, Conversion b a → Js.Value
+forwardWorker source conv =
+    worker : Context, Int, Path, Js.Value, Js.Value, Js.Value → Js.Value
+    worker c depth parent input output v =
+        b = Js.apply source [ toHost c, Js.from depth, parent, input, output, v ]
+        if Js.same b c.fail then
+            c.fail
+        else
+            compiledForward c parent input output conv b
+    toHost worker
+
+
+-- `NConverted` encoding: the conversion's `backward`, then the source below
+-- it (`belowBackward`).
+backwardWorker : Js.Value, Conversion b a → Js.Value
+backwardWorker source conv =
+    worker : Context, Int, Path, Js.Value, Js.Value, Js.Value → Js.Value
+    worker c depth parent input output v =
+        b = compiledBackward c parent input output conv v
+        if Js.same b c.fail then
+            c.fail
+        else
+            Js.apply source [ toHost (belowBackward c), Js.from depth, parent, input, output, b ]
+    toHost worker
 
 
 --| A conversion's failure at the value it converted, `ConversionFailed`.
@@ -1046,17 +1340,19 @@ opaqueVariant vs side seen i n =
                 opaqueVariant vs side seen (i + 1) n
 
 
-analyse : Box → Analysis
-analyse b =
+analyse : Schema e a → Analysis
+analyse s =
+    b = boxOf s
     case Js.read b.analysis of
         Just z →
             z
 
         Nothing →
-            problem = problemIn b.node (Js.construct (Js.global "Set") [])
+            n = nodeOf s
+            problem = problemIn n (Js.construct (Js.global "Set") [])
             seen = Js.construct (Js.global "Map") []
-            encodedOpaque = opaqueIn b.node encodedSide seen
-            typeOpaque = opaqueIn b.node typeSide seen
+            encodedOpaque = opaqueIn n encodedSide seen
+            typeOpaque = opaqueIn n typeSide seen
             z : Analysis
             z = { problem = problem, encodedOpaque = encodedOpaque, typeOpaque = typeOpaque }
             Js.write b.analysis (Just z)
@@ -1210,7 +1506,7 @@ rootProblem s o dir src sh dst dh =
             Just issues
 
         Nothing →
-            z = analyse (boxOf s)
+            z = analyse s
             case z.problem of
                 Just problem →
                     Just (rootIssue dir (endpointOf src) InvalidSchema problem)
@@ -2001,23 +2297,28 @@ parse schema text = parseWith schema defaultOptions text
 --| on as it came (CLAUDE.md rule 9).
 pub parseWith : borrowed Schema e a, Options, String → unknown Result (List Issue) a
 parseWith s o text =
-    case rootProblem s o Decoding encodedSide True typeSide False of
-        Just issues →
-            Err issues
+    case (boxOf s).engine of
+        Compiled w →
+            compiledParse o w.args (parserOf w) text
 
-        Nothing →
-            case
-                Js.catchIf
-                    (λ⊤ → Ok (Js.call (Js.global "JSON") "parse" [ Js.from text ]))
-                    (λthrown → Js.instanceOf thrown (Js.global "SyntaxError"))
-                    λthrown → Err (stringOf (Js.get thrown "message"))
-            of
-                Err message →
-                    rootErr Decoding Encoded ParseFailed "invalid JSON: ${message}"
+        Interpreted →
+            case rootProblem s o Decoding encodedSide True typeSide False of
+                Just issues →
+                    Err issues
 
-                Ok v →
-                    c = context o Decoding encodedSide True typeSide False True
-                    finish c (run c (nodeOf s) 0 atRoot NoneActive v)
+                Nothing →
+                    case
+                        Js.catchIf
+                            (λ⊤ → Ok (Js.call (Js.global "JSON") "parse" [ Js.from text ]))
+                            (λthrown → Js.instanceOf thrown (Js.global "SyntaxError"))
+                            λthrown → Err (stringOf (Js.get thrown "message"))
+                    of
+                        Err message →
+                            rootErr Decoding Encoded ParseFailed "invalid JSON: ${message}"
+
+                        Ok v →
+                            c = context o Decoding encodedSide True typeSide False True
+                            finish c (run c (nodeOf s) 0 atRoot NoneActive v)
 
 
 --| A Type value printed as JSON text.
@@ -2028,17 +2329,22 @@ print schema input = printWith schema defaultOptions input
 --| `print` with options.
 pub printWith : borrowed Schema e a, Options, aliased a → fresh Result (List Issue) String
 printWith s o v =
-    case rootProblem s o Encoding typeSide False encodedSide True of
-        Just issues →
-            Err issues
+    case (boxOf s).engine of
+        Compiled w →
+            compiledPrint o w.args (printerOf w) v
 
-        Nothing →
-            c = context o Encoding typeSide False encodedSide True True
-            x = run c (nodeOf s) 0 atRoot NoneActive (toHost v)
-            if Js.same x c.fail then
-                Err (fromHost c.issues)
-            else
-                Ok (stringOf (Js.call (Js.global "JSON") "stringify" [ x ]))
+        Interpreted →
+            case rootProblem s o Encoding typeSide False encodedSide True of
+                Just issues →
+                    Err issues
+
+                Nothing →
+                    c = context o Encoding typeSide False encodedSide True True
+                    x = run c (nodeOf s) 0 atRoot NoneActive (toHost v)
+                    if Js.same x c.fail then
+                        Err (fromHost c.issues)
+                    else
+                        Ok (stringOf (Js.call (Js.global "JSON") "stringify" [ x ]))
 
 
 -- ---- The specialised path ------------------------------------------------
@@ -2119,18 +2425,26 @@ compiledProblem o dir src args =
             Just issues
 
         Nothing →
-            n = lengthOf args
-            case argumentProblem args 0 n of
-                Just problem →
-                    Just (rootIssue dir (endpointOf src) InvalidSchema problem)
+            -- `null`: a root with no schema argument, such as a nongeneric
+            -- declaration's, which has nothing more to check.
+            if Js.isNull args then
+                Nothing
+            else
+                dynamic = interpretedIn args
+                n = lengthOf dynamic
+                case argumentProblem dynamic 0 n of
+                    Just problem →
+                        Just (rootIssue dir (endpointOf src) InvalidSchema problem)
 
-                Nothing →
-                    if argumentOpaque args 0 n then
-                        Just (opaqueIssue dir encodedSide)
-                    else
-                        Nothing
+                    Nothing →
+                        if argumentOpaque dynamic 0 n then
+                            Just (opaqueIssue dir encodedSide)
+                        else
+                            Nothing
 
 
+-- Each argument of `interpretedIn`'s answer is `Interpreted`; the arms say
+-- so, so that a build with no such schema keeps no analysis.
 argumentProblem : Js.Value, Int, Int → Maybe String
 argumentProblem args i n =
     if i ≥ n then
@@ -2138,12 +2452,17 @@ argumentProblem args i n =
     else
         s : Schema Js.Value Js.Value
         s = fromHost (Js.at args i)
-        case (analyse (boxOf s)).problem of
-            Nothing →
+        case (boxOf s).engine of
+            Compiled _ →
                 argumentProblem args (i + 1) n
 
-            found →
-                found
+            Interpreted →
+                case (analyse s).problem of
+                    Nothing →
+                        argumentProblem args (i + 1) n
+
+                    found →
+                        found
 
 
 argumentOpaque : Js.Value, Int, Int → Bool
@@ -2153,27 +2472,44 @@ argumentOpaque args i n =
     else
         s : Schema Js.Value Js.Value
         s = fromHost (Js.at args i)
-        opaqueAt (analyse (boxOf s)) encodedSide || argumentOpaque args (i + 1) n
+        case (boxOf s).engine of
+            Compiled _ →
+                argumentOpaque args (i + 1) n
+
+            Interpreted →
+                opaqueAt (analyse s) encodedSide || argumentOpaque args (i + 1) n
 
 
 -- A schema argument as a decoding worker: the library engine, on the
 -- context the specialised parent made.
 readSlot : Schema e a → Js.Value
 readSlot s =
-    n = nodeOf s
-    slot : Context, Int, Path, Js.Value, Js.Value, Js.Value → Js.Value
-    slot c depth parent input output v = run c n depth (pathAt parent input output) NoneActive v
-    toHost slot
+    case (boxOf s).engine of
+        Compiled w →
+            parserOf w
+
+        Interpreted →
+            n = nodeOf s
+            slot : Context, Int, Path, Js.Value, Js.Value, Js.Value → Js.Value
+            slot c depth parent input output v =
+                run c n depth (pathAt parent input output) NoneActive v
+            toHost slot
 
 
 -- A schema argument as an encoding worker: the library engine writes the
 -- host value, as an encoding worker does.
 writeSlot : Schema e a → Js.Value
 writeSlot s =
-    n = nodeOf s
-    slot : Context, Int, Path, Js.Value, Js.Value, Js.Value → Js.Value
-    slot c depth parent input output v = run c n depth (pathAt parent input output) NoneActive v
-    toHost slot
+    case (boxOf s).engine of
+        Compiled w →
+            printerOf w
+
+        Interpreted →
+            n = nodeOf s
+            slot : Context, Int, Path, Js.Value, Js.Value, Js.Value → Js.Value
+            slot c depth parent input output v =
+                run c n depth (pathAt parent input output) NoneActive v
+            toHost slot
 
 
 -- An issue with code `code`, its number in `IssueCode`'s declaration order,

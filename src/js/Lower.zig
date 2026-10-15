@@ -1301,7 +1301,7 @@ pub const Lowerer = struct {
     /// survived: its `via`s or one of its members.
     fn liveSchemaAny(l: *Lowerer, decl: u32) bool {
         const ref: SchemaGraph.Ref = .{ .module = l.in.module, .decl = decl };
-        return l.liveDecl(decl) or l.liveSchema(ref, .description) or l.liveSchema(ref, .read) or l.liveSchema(ref, .write);
+        return l.liveDecl(decl) or l.liveSchema(ref, .description) or l.liveSchema(ref, .read) or l.liveSchema(ref, .write) or l.liveSchema(ref, .root);
     }
 
     /// One of `core/Schema`'s values by name: a `pub` builder or runner
@@ -9007,6 +9007,14 @@ pub const Lowerer = struct {
         if (l.in.graph.lookup(.core, InternPool.WellKnown.List.symbol()) == l.in.module) {
             for (decls, 0..) |d, i| {
                 if (corePrivateSlot(l.bir.symbol(d.name)) != null) named[i] = true;
+            }
+        }
+        // `core/Schema`'s core-private values, on the same terms: the code a
+        // `schema` declaration compiles to calls them from other modules, and
+        // this module exports each that survives (`schema.md` §6).
+        if (l.in.graph.lookup(.core, InternPool.WellKnown.Schema.symbol()) == l.in.module) {
+            for (decls, 0..) |d, i| {
+                if (SchemaGraph.isCompiledValue(l.text(l.bir.symbol(d.name)))) named[i] = true;
             }
         }
         const uses = try l.scratch.alloc(u32, decls.len);

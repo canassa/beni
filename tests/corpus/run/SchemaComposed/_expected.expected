@@ -1,0 +1,22 @@
+Ok 1:a,2:b
+Err decoding Encoded MissingKey /1/item-name missing key "item-name"
+Err decoding Encoded MissingKey /1/item-name missing key "item-name" | decoding Encoded WrongShape /2/id expected a number
+Err decoding Encoded UnknownKey /0/x unexpected key "x"
+Err decoding Encoded DepthExceeded /0/id the depth limit is reached
+Err decoding Encoded DepthExceeded /0 the depth limit is reached
+Err decoding Encoded InvalidOptions / maxDepth must be from 0 to 1024, not -1
+Err decoding Encoded ParseFailed / invalid JSON: Expected double-quoted property name in JSON at position 9 (line 1 column 10)
+Err decoding Encoded WrongShape / expected an array
+Err encoding Type InvalidValue /1/id expected a safe integer
+Ok null
+Ok {"id":3,"item-name":"c"}
+Err decoding Type ConversionFailed /1/digits not a decimal integer: x
+Err decoding Type ConversionFailed /1/digits not a decimal integer: x | decoding Type ConversionFailed /2/digits not a decimal integer: y
+Err encoding Encoded ConversionFailed /1 negative
+Err encoding Encoded PrintFailed /1/0 JSON has no number for NaN or an infinity
+Err decoding Encoded WrongShape /1/1 expected a number
+Ok 1/2,3
+Err decoding Encoded WrongShape /items/1/1 expected a number
+Err encoding Type InvalidValue /items/0/1 expected a safe integer
+Err decoding Encoded InvalidValue / expected a safe integer
+Ok "a\"b"

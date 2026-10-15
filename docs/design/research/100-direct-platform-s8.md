@@ -340,7 +340,8 @@ production bytes or used for substitute timings.
 Master advanced during the fixed batch: `62b91b10a` removes that log and
 `682515f0b` adds paired Bike Wars browser coverage. This report does not claim
 current master cannot build the game; its production timing/byte cells are
-unavailable on the frozen comparison source.
+unavailable on the frozen comparison source. §9 adds the release bytes of a
+later master.
 
 ## 4. Criterion 6: the deferred timing, rejudged
 
@@ -943,3 +944,41 @@ copies and approximate sharing errors around captures/commands. The measured
 benefits do not yet justify imposing those costs on every tea application.
 The owner decides whether that further investment is worthwhile. No platform,
 application, threshold or golden is changed by this report.
+
+## 9. Addendum, 2026-10-15: Bike Wars' release bytes
+
+The frozen batch has no release bytes for Bike Wars (§3): its source called
+`Debug.log`, and `--release` refuses a build that reaches `Debug`. Commit
+`62b91b10a` (pull request #121) removed the call. This addendum measures the
+two release builds with §3's method on master `f1ab9cc87` (issue #158).
+
+| App / platform | App + startup B | Core B | Runtime B | Whole B | Raw B |
+|---|--:|--:|--:|--:|--:|
+| Bike Wars/tea | 5169 | 2045 | 1991 | 9205 | 28373 |
+| Bike Wars/direct | 6025 | 2135 | 2930 | 11090 | 35421 |
+
+Direct's whole bundle is **+1,885 B / 20.48%** against tea.
+
+- The compiler is newer than the batch's `6c327a9f1`. Thus these rows are
+  not part of §3's frozen comparison, and §0's answer does not use them.
+- Both builds exit 0 with no `--allow-debug`. Each prints two
+  `prepend_in_loop` warnings (`src/Helpers.beni:36` and `:51`).
+- The compiler is a ReleaseSafe beni built from `f1ab9cc87`, SHA-256
+  `2de3fb93b04400ce144a1cf345f7ac364350d55b0a0db7dcfaec87bcde48dc96`. Node
+  is v24.19.0.
+- [`bike-wars-2026-10-15/app-builds.json`](../../../bench/s8/results/bike-wars-2026-10-15/app-builds.json)
+  records the commands, the statuses, the SHA-256 of each bundle and the
+  binding provenance. The `.mjs.gz` and `.map.gz` files beside it keep the
+  bundles and their maps.
+- `bench/size.mjs` now builds every application under `examples/` as it
+  ships, dev and `--release` with no `--allow-debug` (its `app` lines). Its
+  `bike-wars` line has the same release bytes as the tea row: 28373 raw and
+  9205 brotli.
+
+To measure again, install the harness's parsers first
+(`npm ci` in `bench/ui/apps/solid1`), then run:
+
+```sh
+S8_APPS=bike S8_RESULTS=bench/s8/results/bike-wars-2026-10-15 \
+  BENI="$PWD/zig-out/safe/bin/beni" node bench/s8/build-apps.mjs
+```
