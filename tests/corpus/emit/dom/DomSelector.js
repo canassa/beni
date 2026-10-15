@@ -1,9 +1,9 @@
 import { Rt$template, Rt$delegate, Rt$forKeyed, Rt$restate, Rt$slot } from "./_platform/Rt.mjs";
-const DomSelector$t83 = Rt$template("<p> ", 0);
-const DomSelector$t108 = Rt$template("<p> ", 0);
-const DomSelector$t171 = Rt$template("<p> ", 0);
-const DomSelector$t127 = Rt$template("<p> ", 0);
-const DomSelector$t154 = Rt$template("<p><b> ", 0);
+const DomSelector$t83 = Rt$template("<p> ");
+const DomSelector$t108 = Rt$template("<p> ");
+const DomSelector$t171 = Rt$template("<p> ");
+const DomSelector$t127 = Rt$template("<p> ");
+const DomSelector$t154 = Rt$template("<p><b> ");
 const DomSelector$p173 = ($i$1, $v$2) => {
   const $input$3 = $v$2[0];
   if ($input$3.rows !== $i$1.g0_0 || $input$3.selected !== $i$1.g0_1) {
@@ -148,7 +148,7 @@ const DomSelector$p173 = ($i$1, $v$2) => {
   }
   $i$1.l = $i$1.c0.w || $i$1.c0.l || $i$1.c1.w || $i$1.c1.l || $i$1.c2.w || $i$1.c2.l || $i$1.c3.w || $i$1.c3.l || $i$1.c4.w || $i$1.c4.l;
 };
-const DomSelector$t173 = Rt$template("<div><!><!><!><!><!>", 0);
+const DomSelector$t173 = Rt$template("<div><!><!><!><!><!>");
 const DomSelector$k173 = { m: ($v$72, $cx$73) => {
   const $r$74 = DomSelector$t173();
   const $w$75 = $r$74.firstChild;

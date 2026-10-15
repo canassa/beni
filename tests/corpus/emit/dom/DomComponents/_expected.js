@@ -1,6 +1,6 @@
-import { Rt$template, Rt$childHtml, Rt$restate, Rt$slot } from "./_platform/Rt.mjs";
+import { Rt$templateOf, Rt$childHtml, Rt$restate, Rt$template, Rt$slot } from "./_platform/Rt.mjs";
 import { Card$view } from "./Card.mjs";
-const DomComponents$t14n4 = Rt$template("Welcome, <b> </b>!", 4);
+const DomComponents$t14n4 = Rt$templateOf("Welcome, <b> </b>!", 4);
 const DomComponents$k14n4 = { m: ($v$7, $cx$8) => {
   const $r$9 = DomComponents$t14n4();
   const $w$10 = $r$9.firstChild;
@@ -15,7 +15,7 @@ const DomComponents$k14n4 = { m: ($v$7, $cx$8) => {
     $i$14.w2.data = $v$15[0];
   }
 } };
-const DomComponents$t14n6 = Rt$template("no values", 0);
+const DomComponents$t14n6 = Rt$template("no values");
 const DomComponents$k14n6 = { m: ($v$17, $cx$18) => {
   const $r$19 = DomComponents$t14n6();
   return { s: $r$19, q: null, e: $r$19 };
@@ -54,7 +54,7 @@ const DomComponents$p14 = ($i$1, $v$2) => {
   }
   $i$1.l = $i$1.c0.l || $i$1.c1.l;
 };
-const DomComponents$t14 = Rt$template("<main><!><!>", 0);
+const DomComponents$t14 = Rt$template("<main><!><!>");
 const DomComponents$k14 = { m: ($v$22, $cx$23) => {
   const $r$24 = DomComponents$t14();
   const $w$25 = $r$24.firstChild;

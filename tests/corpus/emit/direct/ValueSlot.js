@@ -34,7 +34,7 @@ const ValueSlot$p65 = Direct$templatePatch(($i$20, $v$21) => {
 }, ($i$20, $v$21) => {
   const $input$22 = $v$21[0];
 }, 1, [Direct$templateGroup(ValueSlot$dg65_0, ValueSlot$dp65_0, null), Direct$templateGroup(ValueSlot$dg65_1, ValueSlot$dp65_1, null)], false);
-const ValueSlot$t65 = Direct$template("<li> ", 0);
+const ValueSlot$t65 = Direct$template("<li> ");
 const ValueSlot$k65 = { m: ($v$24, $cx$25) => {
   const $r$26 = ValueSlot$t65();
   const $w$27 = $r$26.firstChild;
@@ -83,7 +83,7 @@ const ValueSlot$p84 = Direct$templatePatch(($i$37, $v$38) => {
   const $input$39 = $v$38[0];
   const $input$40 = $v$38[1];
 }, 2, [Direct$templateGroup(ValueSlot$dg84_0, ValueSlot$dp84_0, null), Direct$templateGroup(ValueSlot$dg84_1, ValueSlot$dp84_1, null)], false);
-const ValueSlot$t84 = Direct$template("<b> ", 0);
+const ValueSlot$t84 = Direct$template("<b> ");
 const ValueSlot$k84 = { m: ($v$44, $cx$45) => {
   const $r$46 = ValueSlot$t84();
   const $w$47 = $r$46.firstChild;

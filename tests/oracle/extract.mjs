@@ -117,9 +117,10 @@ function beni(code) {
   const templates = new Map();
   // `template` is the markup runtime's export (`$markup$template`), or the
   // declaration of its runtime module that supplies it (`Rt$template`,
-  // backend.md §15.1).
-  for (const m of code.matchAll(/const ([\w$]+) = (?:\$markup|[A-Z]\w*)\$template\(("(?:[^"\\]|\\.)*"), (\d+)\);/g)) {
-    templates.set(m[1], { html: JSON.parse(m[2]), flag: m[3] });
+  // backend.md §15.1): `template(html)` for a template with no flag,
+  // `templateOf(html, flags)` for one with any (§15.3, amended 2026-10-15).
+  for (const m of code.matchAll(/const ([\w$]+) = (?:\$markup|[A-Z]\w*)\$template(?:Of)?\(("(?:[^"\\]|\\.)*")(?:, (\d+))?\);/g)) {
+    templates.set(m[1], { html: JSON.parse(m[2]), flag: m[3] ?? "0" });
   }
   // Clones and walks are compiler-made names, numbered within their
   // top-level declaration (backend.md §4, *A compiler-made name is numbered

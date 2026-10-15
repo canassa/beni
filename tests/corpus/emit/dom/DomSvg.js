@@ -1,4 +1,4 @@
-import { Rt$safeUrl, Rt$attrNS, Rt$template, Rt$forKeyed, Rt$restate, Rt$slot } from "./_platform/Rt.mjs";
+import { Rt$safeUrl, Rt$attrNS, Rt$template, Rt$templateOf, Rt$forKeyed, Rt$restate, Rt$slot } from "./_platform/Rt.mjs";
 import { String$fromInt } from "./_core/String.mjs";
 const DomSvg$p10 = ($i$1, $v$2) => {
   const $input$3 = $v$2[0];
@@ -14,7 +14,7 @@ const DomSvg$p10 = ($i$1, $v$2) => {
     Rt$attrNS($i$1.w3, "http://www.w3.org/1999/xlink", "xlink:href", Rt$safeUrl($x$6));
   }
 };
-const DomSvg$t10 = Rt$template("<svg><linearGradient id=fade><stop offset=0 stop-color=white></stop></linearGradient><use>", 0);
+const DomSvg$t10 = Rt$template("<svg><linearGradient id=fade><stop offset=0 stop-color=white></stop></linearGradient><use>");
 const DomSvg$k10 = { m: ($v$7, $cx$8) => {
   const $r$9 = DomSvg$t10();
   const $w$10 = $r$9.firstChild.nextSibling;
@@ -30,14 +30,14 @@ const DomSvg$p18 = ($i$1, $v$2) => {
     $i$1.w0.setAttribute("cx", $x$4);
   }
 };
-const DomSvg$t18 = Rt$template("<svg><circle r=2></svg>", 2);
+const DomSvg$t18 = Rt$templateOf("<svg><circle r=2></svg>", 2);
 const DomSvg$k18 = { m: ($v$5, $cx$6) => {
   const $r$7 = DomSvg$t18();
   const $i$8 = { s: $r$7, q: null, e: $r$7, w0: $r$7, g0_0: NaN };
   DomSvg$p18($i$8, $v$5);
   return $i$8;
 }, p: DomSvg$p18 };
-const DomSvg$t22 = Rt$template("<svg><line x2=10 y2=10></line><text font-size=3>pair</svg>", 6);
+const DomSvg$t22 = Rt$templateOf("<svg><line x2=10 y2=10></line><text font-size=3>pair</svg>", 6);
 const DomSvg$k22 = { m: ($v$1, $cx$2) => {
   const $r$3 = DomSvg$t22();
   const $w$4 = $r$3.firstChild;
@@ -46,7 +46,7 @@ const DomSvg$k22 = { m: ($v$1, $cx$2) => {
 }, p: ($i$6, $v$7) => {
 } };
 const DomSvg$b22 = { t: DomSvg$k22, v: null };
-const DomSvg$t39 = Rt$template("<svg><rect></svg>", 2);
+const DomSvg$t39 = Rt$templateOf("<svg><rect></svg>", 2);
 const DomSvg$p41 = ($i$1, $v$2) => {
   const $input$3 = $v$2[0];
   const $x$4 = $input$3;
@@ -69,7 +69,7 @@ const DomSvg$p41 = ($i$1, $v$2) => {
   }
   $i$1.l = $i$1.c0.w || $i$1.c0.l;
 };
-const DomSvg$t41 = Rt$template("<svg><g></svg>", 2);
+const DomSvg$t41 = Rt$templateOf("<svg><g></svg>", 2);
 const DomSvg$k41 = { m: ($v$15, $cx$16) => {
   const $r$17 = DomSvg$t41();
   const $c$18 = Rt$slot($r$17, null, $cx$16);

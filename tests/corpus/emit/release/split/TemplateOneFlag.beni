@@ -1,0 +1,32 @@
+-- A page whose templates are one element each but for a fragment, the only
+-- template with a flag (4: several nodes, cloned in their fragment). A
+-- template with no flag is `Rt.template html`, its own function; the
+-- fragment's is `Rt.templateOf html 4` (backend.md §15.3, amended
+-- 2026-10-15). `templateOf` is called with the one flag, so the release
+-- build folds it to the fragment's steps: the page ships no `importNode`
+-- (flag 1), no `createDocumentFragment` and no `gather` (flags 2 and 4).
+-- Before the split one cloner took every template's flags, and a page with
+-- two kinds of template shipped every flag's branch.
+import Browser
+import Html exposing (Html)
+
+
+both : String → Html Bool
+both name = <>Hi {name}<hr /></>
+
+
+view : Bool → Html Bool
+view on =
+    <main>
+        <button onClick={not on}>flip</button>
+        {if on then both "on" else <p>off</p>}
+    </main>
+
+
+main : Browser.Program
+main =
+    Browser.program
+        { init = λ⊤ → False
+        , update = λon _ → on
+        , view = view
+        }

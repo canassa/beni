@@ -1,5 +1,5 @@
 import { Rt$template, Rt$insertText, Rt$attr } from "./_platform/Rt.mjs";
-const DomTemplates$t3 = Rt$template("<div class=\"a b\"id=x><span>hi</span><br><p>there <b>you &amp; me", 0);
+const DomTemplates$t3 = Rt$template("<div class=\"a b\"id=x><span>hi</span><br><p>there <b>you &amp; me");
 const DomTemplates$k3 = { m: ($v$1, $cx$2) => {
   const $r$3 = DomTemplates$t3();
   return { s: $r$3, q: null, e: $r$3 };
@@ -24,7 +24,7 @@ const DomTemplates$p19 = ($i$1, $v$2) => {
     $i$1.x2.data = $x$6;
   }
 };
-const DomTemplates$t19 = Rt$template("<p>Hello <!>, you have <!> items and <!> more.", 0);
+const DomTemplates$t19 = Rt$template("<p>Hello <!>, you have <!> items and <!> more.");
 const DomTemplates$k19 = { m: ($v$7, $cx$8) => {
   const $r$9 = DomTemplates$t19();
   const $w$10 = $r$9.firstChild.nextSibling;
@@ -50,7 +50,7 @@ const DomTemplates$p32 = ($i$1, $v$2) => {
     $i$1.w5.data = $x$5;
   }
 };
-const DomTemplates$t32 = Rt$template("<tr><td class=col-md-1> </td><td class=col-md-4><a> ", 0);
+const DomTemplates$t32 = Rt$template("<tr><td class=col-md-1> </td><td class=col-md-4><a> ");
 const DomTemplates$k32 = { m: ($v$6, $cx$7) => {
   const $r$8 = DomTemplates$t32();
   const $w$9 = $r$8.firstChild;
@@ -85,14 +85,14 @@ const DomTemplates$p51 = ($i$1, $v$2) => {
     $i$1.w0.setAttribute("tabindex", $x$7);
   }
 };
-const DomTemplates$t51 = Rt$template("<div aria-label=static><input disabled type=text>", 0);
+const DomTemplates$t51 = Rt$template("<div aria-label=static><input disabled type=text>");
 const DomTemplates$k51 = { m: ($v$8, $cx$9) => {
   const $r$10 = DomTemplates$t51();
   const $i$11 = { s: $r$10, q: null, e: $r$10, w0: $r$10, g0_0: NaN, g1_0: NaN, g2_0: NaN, g3_0: NaN };
   DomTemplates$p51($i$11, $v$8);
   return $i$11;
 }, p: DomTemplates$p51 };
-const DomTemplates$t55 = Rt$template("<!>", 0);
+const DomTemplates$t55 = Rt$template("<!>");
 const DomTemplates$k55 = { m: ($v$1, $cx$2) => {
   const $r$3 = DomTemplates$t55();
   return { s: $r$3, q: null, e: $r$3 };

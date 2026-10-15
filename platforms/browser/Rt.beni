@@ -112,14 +112,36 @@ swap old i =
 
 -- ---- Templates -----------------------------------------------------------
 
--- `(html, flags)`: a cloner that parses `html` on its first call and clones
--- the result after that. Flag 1: import rather than clone; 2: the markup is
--- wrapped in its namespace's root element, which is taken off; 4: several
--- nodes, returned in a fragment. One function, as the hand-written
--- runtime's is: the parse is in the cloner, on its first call, and the
--- cell it fills is rewritten step by step.
-pub template : String, Int → (⊤ → V)
-template html flags =
+-- `(html)`: a cloner that parses `html` on its first call and clones the
+-- result after that — the template whose markup is one node of the HTML
+-- namespace that cloning makes whole, which is nearly every template. Its
+-- own function, apart from `templateOf`'s flags (`backend.md` §15.3,
+-- *Amended 2026-10-15*): a page none of whose templates has a flag writes
+-- none of their branches, and one whose templates use one flag passes
+-- `templateOf` a constant the release build folds.
+pub template : String → (⊤ → V)
+template html =
+    node = Js.ref Js.null
+    λ⊤ →
+        -- Written as `templateOf`'s steps are, so that a page whose
+        -- templates have no flag is the same file it was when `templateOf`
+        -- folded to these.
+        if Js.isNull (Js.read node) then
+            document = Js.global "document"
+            t = Js.call document "createElement" [ Js.from "template" ]
+            Js.set t "innerHTML" (Js.from html)
+            Js.write node (Js.get t "content")
+            Js.write node (Js.get (Js.read node) "firstChild")
+        Js.call (Js.read node) "cloneNode" [ Js.from True ]
+
+
+-- `(html, flags)`: `template` for a template with a flag. Flag 1: import
+-- rather than clone; 2: the markup is wrapped in its namespace's root
+-- element, which is taken off; 4: several nodes, returned in a fragment.
+-- The parse is in the cloner, on its first call, and the cell it fills is
+-- rewritten step by step.
+pub templateOf : String, Int → (⊤ → V)
+templateOf html flags =
     node = Js.ref Js.null
     λ⊤ →
         if Js.isNull (Js.read node) then

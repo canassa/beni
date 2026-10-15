@@ -1,7 +1,7 @@
 import { Rt$template, Rt$delegate, Rt$forKeyed, Rt$restate, Rt$slot } from "./_platform/Rt.mjs";
 import { Html$targetValue } from "./_platform/_html/Html.mjs";
 import { String$fromInt, String$compare } from "./_core/String.mjs";
-const DomRowMount$t57 = Rt$template("<li><a> </a><input>", 0);
+const DomRowMount$t57 = Rt$template("<li><a> </a><input>");
 const DomRowMount$p59 = ($i$1, $v$2) => {
   const $input$3 = $v$2[0];
   if ($input$3.rows !== $i$1.g0_0 || $input$3.picked !== $i$1.g0_1) {
@@ -58,7 +58,7 @@ const DomRowMount$p59 = ($i$1, $v$2) => {
   }
   $i$1.l = $i$1.c0.w || $i$1.c0.l;
 };
-const DomRowMount$t59 = Rt$template("<ul>", 0);
+const DomRowMount$t59 = Rt$template("<ul>");
 const DomRowMount$k59 = { m: ($v$24, $cx$25) => {
   const $r$26 = DomRowMount$t59();
   const $c$27 = Rt$slot($r$26, null, $cx$25);
@@ -66,7 +66,7 @@ const DomRowMount$k59 = { m: ($v$24, $cx$25) => {
   DomRowMount$p59($i$28, $v$24);
   return $i$28;
 }, p: DomRowMount$p59, l: true };
-const DomRowMount$t89 = Rt$template("<li>", 0);
+const DomRowMount$t89 = Rt$template("<li>");
 const DomRowMount$p91 = ($i$1, $v$2) => {
   const $input$3 = $v$2[0];
   if ($input$3.rows !== $i$1.g0_0 || $input$3.picked !== $i$1.g0_1) {
@@ -101,7 +101,7 @@ const DomRowMount$p91 = ($i$1, $v$2) => {
   }
   $i$1.l = $i$1.c0.w || $i$1.c0.l;
 };
-const DomRowMount$t91 = Rt$template("<ul>", 0);
+const DomRowMount$t91 = Rt$template("<ul>");
 const DomRowMount$k91 = { m: ($v$19, $cx$20) => {
   const $r$21 = DomRowMount$t91();
   const $c$22 = Rt$slot($r$21, null, $cx$20);
@@ -109,7 +109,7 @@ const DomRowMount$k91 = { m: ($v$19, $cx$20) => {
   DomRowMount$p91($i$23, $v$19);
   return $i$23;
 }, p: DomRowMount$p91, l: true };
-const DomRowMount$t115 = Rt$template("<li> ", 0);
+const DomRowMount$t115 = Rt$template("<li> ");
 const DomRowMount$p117 = ($i$1, $v$2) => {
   const $input$3 = $v$2[0];
   if ($input$3.rows !== $i$1.g0_0 || $input$3.picked !== $i$1.g0_1) {
@@ -147,7 +147,7 @@ const DomRowMount$p117 = ($i$1, $v$2) => {
   }
   $i$1.l = $i$1.c0.w || $i$1.c0.l;
 };
-const DomRowMount$t117 = Rt$template("<ul>", 0);
+const DomRowMount$t117 = Rt$template("<ul>");
 const DomRowMount$k117 = { m: ($v$20, $cx$21) => {
   const $r$22 = DomRowMount$t117();
   const $c$23 = Rt$slot($r$22, null, $cx$21);

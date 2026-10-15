@@ -1,12 +1,12 @@
 import { deep as _derived$deep } from "./_core/_derived.mjs";
 import { Rt$template, Rt$forKeyed, Rt$forPosition, Rt$restate, Rt$slot } from "./_platform/Rt.mjs";
 import { Maybe$withDefault, Maybe$Maybe$$eq } from "./_core/Maybe.mjs";
-const DomSelectorNearMiss$t68 = Rt$template("<p> ", 0);
-const DomSelectorNearMiss$t98 = Rt$template("<p> ", 0);
-const DomSelectorNearMiss$t127 = Rt$template("<p> ", 0);
-const DomSelectorNearMiss$t152 = Rt$template("<p> ", 0);
-const DomSelectorNearMiss$t200 = Rt$template("<p> ", 0);
-const DomSelectorNearMiss$t180 = Rt$template("<p> ", 0);
+const DomSelectorNearMiss$t68 = Rt$template("<p> ");
+const DomSelectorNearMiss$t98 = Rt$template("<p> ");
+const DomSelectorNearMiss$t127 = Rt$template("<p> ");
+const DomSelectorNearMiss$t152 = Rt$template("<p> ");
+const DomSelectorNearMiss$t200 = Rt$template("<p> ");
+const DomSelectorNearMiss$t180 = Rt$template("<p> ");
 const DomSelectorNearMiss$p202 = ($i$1, $v$2) => {
   const $input$3 = $v$2[0];
   if ($input$3.rows !== $i$1.g0_0 || $input$3.selected !== $i$1.g0_1) {
@@ -151,7 +151,7 @@ const DomSelectorNearMiss$p202 = ($i$1, $v$2) => {
   }
   $i$1.l = $i$1.c0.w || $i$1.c0.l || $i$1.c1.w || $i$1.c1.l || $i$1.c2.w || $i$1.c2.l || $i$1.c3.w || $i$1.c3.l || $i$1.c4.w || $i$1.c4.l || $i$1.c5.w || $i$1.c5.l;
 };
-const DomSelectorNearMiss$t202 = Rt$template("<div><!><!><!><!><!><!>", 0);
+const DomSelectorNearMiss$t202 = Rt$template("<div><!><!><!><!><!><!>");
 const DomSelectorNearMiss$k202 = { m: ($v$89, $cx$90) => {
   const $r$91 = DomSelectorNearMiss$t202();
   const $w$92 = $r$91.firstChild;
