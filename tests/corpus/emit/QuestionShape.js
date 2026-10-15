@@ -23,11 +23,11 @@ const QuestionShape$twice = (a$1, b$2) => {
   if (a$1.$ === "Nothing") {
     return a$1;
   }
-  const $t$2 = a$1.a;
+  const $t$1 = a$1.a;
   if (b$2.$ === "Nothing") {
     return b$2;
   }
-  return { $: "Just", a: $t$2 + b$2.a };
+  return { $: "Just", a: $t$1 + b$2.a };
 };
 const QuestionShape$main = Node$printLines([]);
 export { QuestionShape$main, QuestionShape$maybe, QuestionShape$result, QuestionShape$atom, QuestionShape$twice };

@@ -755,7 +755,7 @@ const Printer = struct {
         if (p.ir.tag(decl) != .let_decl or p.ir.tag(loop) != .while_true) return null;
         if (@as(JsIr.NameIndex, @fromBackingInt(@intCast(p.ir.data(loop).lhs))) != .none) return null;
         const n: JsIr.NameIndex = @fromBackingInt(@intCast(p.ir.data(decl).lhs));
-        if (n == .none or p.plan.isRepeated(n)) return null;
+        if (n == .none or p.plan.isRepeated(decl)) return null;
         const body = p.ir.subRange(@fromBackingInt(@intCast(p.ir.data(loop).rhs)));
         try p.markLoopTail(body);
         var shape = p.breakShape(loop) orelse return null;
@@ -1800,7 +1800,7 @@ const Printer = struct {
     fn spliceable(p: *Printer, range: JsIr.SubRange) bool {
         for (p.ir.extraSlice(range, Index)) |node| {
             switch (p.ir.tag(node)) {
-                .const_decl, .let_decl, .func_decl, .gen_decl => if (p.plan.isRepeated(@fromBackingInt(@intCast(p.ir.data(node).lhs)))) return false,
+                .const_decl, .let_decl, .func_decl, .gen_decl => if (p.plan.isRepeated(node)) return false,
                 else => {},
             }
         }

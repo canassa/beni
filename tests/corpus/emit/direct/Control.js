@@ -3,8 +3,8 @@ import { Direct$unset, Direct$visitObserve, Direct$edited, Direct$control, Direc
 import { String$length } from "./_core/String.mjs";
 import { Html$targetValue } from "./_platform/_html/Html.mjs";
 const Control$main = Tea$sandbox(($root$1, $t$2) => {
-  const init$3 = { secret: false, text: "ab" };
-  let $model$4 = init$3;
+  const $init$3 = { secret: false, text: "ab" };
+  let $model$4 = $init$3;
   $t$2.innerHTML = "<main><button>toggle</button><input>";
   const $r$5 = $t$2.content;
   const $w$6 = $r$5.firstChild;

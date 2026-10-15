@@ -5882,3 +5882,25 @@ Every original and minimum is therefore judged and retained separately.
 **Fixed 2026-10-15:** call-site Disjoint includes the callee environment (ownership-checker.md §29). Promoted
 `tests/corpus/check/bad/direct/BridgeCaptureOperand.beni` with a full diagnostic;
 `ownership/BridgeResultPaths` covers the class and accepted twins.
+
+## CK-232 — a compiler-made name of a markup lowering can be a user's local (2026-10-15)
+
+Lowering, not the checker; the pending walker needs an id. `Lower.localName`
+names a user's local `<source name>$<its index + 1>`, and `Lower.fresh` names a
+compiler-made value `<base>$<count>`. The markup lowerings pass `fresh` plain
+words a user can write (`dom`: `x`, `i`, `v`, `r`, `w`, `c`, `item`, `value`,
+`key`, …; `ssr` and `browser-direct`: `h`, `t`, `item`, `position`, `root`).
+When the two numbers meet, one name is two bindings, and a patch function reads
+the user's `x$4` before its `const`: a `ReferenceError` when the page renders
+(CLAUDE.md rule 9). Master has it where a declaration is the first of its
+module to make a compiler name; PR #129's per-declaration numbers bring it to
+every declaration. Found by the review of PR #129. The owner decides how the
+two kinds of name stay apart (dashboard question `emit-cache-q4`). Pending:
+`tests/pending/browser/dom/NameMeetsLocal.beni` (red on master too) and
+`NameMeetsLocalAfterHelper.beni` (red with per-declaration numbers),
+`PageFailed`.
+
+**Fixed 2026-10-15:** every compiler-made name has a `$` in front (Cesar's
+decision on `emit-cache-q4`; `backend.md` §4, *A `$` in front of every
+compiler-made name*). Promoted to `tests/corpus/browser/dom/NameMeetsLocal`
+and `NameMeetsLocalAfterHelper`, which render.

@@ -13,11 +13,11 @@ const TailModConsLoop$mapRec = (xs$1, f$2) => {
   return $root;
 };
 const TailModConsLoop$twice = (xs$1) => {
-  const $t$3 = List$base(xs$1);
+  const $t$1 = List$base(xs$1);
   xs$1 = List$offset(xs$1);
   const $root = [];
-  while ($t$3.length !== xs$1) {
-    const x$2 = $t$3[xs$1];
+  while ($t$1.length !== xs$1) {
+    const x$2 = $t$1[xs$1];
     const rest$3 = xs$1 + 1;
     $root.push(x$2);
     $root.push(x$2);
@@ -26,11 +26,11 @@ const TailModConsLoop$twice = (xs$1) => {
   return $root;
 };
 const TailModConsLoop$filterRec = (xs$1, keep$2) => {
-  const $t$5 = List$base(xs$1);
+  const $t$1 = List$base(xs$1);
   xs$1 = List$offset(xs$1);
   const $root = [];
-  while ($t$5.length !== xs$1) {
-    const x$3 = $t$5[xs$1];
+  while ($t$1.length !== xs$1) {
+    const x$3 = $t$1[xs$1];
     const rest$4 = xs$1 + 1;
     if (keep$2(x$3)) {
       $root.push(x$3);

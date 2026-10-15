@@ -38,9 +38,9 @@ const DispatchPrefixes$update = (msg$1, model$2) => {
   }
 };
 const DispatchPrefixes$main = Tea$sandbox(($root$1, $t$2) => {
-  const init$3 = { left: 0, right: 0 };
-  let $model$4 = init$3;
-  const update$5 = DispatchPrefixes$update;
+  const $init$3 = { left: 0, right: 0 };
+  let $model$4 = $init$3;
+  const $update$5 = DispatchPrefixes$update;
   $t$2.innerHTML = "<main><button id=la>left add</button><button id=ls>left sub</button><button id=lc>left clear</button><button id=ra>right add</button><button id=rs>right sub</button><button id=rc>right clear</button><button id=q>quiet</button><p>:<!>";
   const $r$6 = $t$2.content;
   const $w$7 = $r$6.firstChild;
@@ -77,7 +77,7 @@ const DispatchPrefixes$main = Tea$sandbox(($root$1, $t$2) => {
   const $hLeft$Add$28 = ($p$26) => {
     Direct$groupProgram(null);
     const $visitBefore$27 = Direct$visitBegin($root$1, 0);
-    $model$4 = update$5($p$26, $model$4);
+    $model$4 = $update$5($p$26, $model$4);
     Direct$visitScope($root$1, [[0, true], [1, false]]);
     $g$22();
     Direct$visitEnd($visitBefore$27);
@@ -85,7 +85,7 @@ const DispatchPrefixes$main = Tea$sandbox(($root$1, $t$2) => {
   const $hLeft$Sub$31 = ($p$29) => {
     Direct$groupProgram(null);
     const $visitBefore$30 = Direct$visitBegin($root$1, 1);
-    $model$4 = update$5($p$29, $model$4);
+    $model$4 = $update$5($p$29, $model$4);
     Direct$visitScope($root$1, [[0, true], [1, false]]);
     $g$22();
     Direct$visitEnd($visitBefore$30);
@@ -93,7 +93,7 @@ const DispatchPrefixes$main = Tea$sandbox(($root$1, $t$2) => {
   const $hLeft$Clear$34 = ($p$32) => {
     Direct$groupProgram(null);
     const $visitBefore$33 = Direct$visitBegin($root$1, 2);
-    $model$4 = update$5($p$32, $model$4);
+    $model$4 = $update$5($p$32, $model$4);
     Direct$visitScope($root$1, [[0, true], [1, false]]);
     $g$22();
     Direct$visitEnd($visitBefore$33);
@@ -101,7 +101,7 @@ const DispatchPrefixes$main = Tea$sandbox(($root$1, $t$2) => {
   const $hRight$Add$37 = ($p$35) => {
     Direct$groupProgram(null);
     const $visitBefore$36 = Direct$visitBegin($root$1, 3);
-    $model$4 = update$5($p$35, $model$4);
+    $model$4 = $update$5($p$35, $model$4);
     Direct$visitScope($root$1, [[0, false], [1, true]]);
     $g$24();
     Direct$visitEnd($visitBefore$36);
@@ -109,7 +109,7 @@ const DispatchPrefixes$main = Tea$sandbox(($root$1, $t$2) => {
   const $hRight$Sub$40 = ($p$38) => {
     Direct$groupProgram(null);
     const $visitBefore$39 = Direct$visitBegin($root$1, 4);
-    $model$4 = update$5($p$38, $model$4);
+    $model$4 = $update$5($p$38, $model$4);
     Direct$visitScope($root$1, [[0, false], [1, true]]);
     $g$24();
     Direct$visitEnd($visitBefore$39);
@@ -117,7 +117,7 @@ const DispatchPrefixes$main = Tea$sandbox(($root$1, $t$2) => {
   const $hRight$Clear$43 = ($p$41) => {
     Direct$groupProgram(null);
     const $visitBefore$42 = Direct$visitBegin($root$1, 5);
-    $model$4 = update$5($p$41, $model$4);
+    $model$4 = $update$5($p$41, $model$4);
     Direct$visitScope($root$1, [[0, false], [1, true]]);
     $g$24();
     Direct$visitEnd($visitBefore$42);
@@ -125,7 +125,7 @@ const DispatchPrefixes$main = Tea$sandbox(($root$1, $t$2) => {
   const $h_$46 = ($p$44) => {
     Direct$groupProgram(null);
     const $visitBefore$45 = Direct$visitBegin($root$1, 6);
-    $model$4 = update$5($p$44, $model$4);
+    $model$4 = $update$5($p$44, $model$4);
     Direct$visitScope($root$1, [[0, false], [1, false]]);
     Direct$visitEnd($visitBefore$45);
   };

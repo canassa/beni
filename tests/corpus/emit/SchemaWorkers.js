@@ -11,340 +11,340 @@ const SchemaWorkers$decimalInt = Schema$conversion((s$1) => {
     return { $: "Err", a: [Schema$issue("not a decimal integer")] };
   }
 }, (n$3) => ({ $: "Ok", a: String$fromInt(n$3) }));
-const SchemaWorkers$Page$$schema = ($s0) => Schema$record(Schema$field(Schema$field(Schema$fields, "items", Schema$list($s0)), "note", Schema$nullable(Schema$string)), Schema$mapping(($p$2) => ({ items: $p$2.a.b, note: $p$2.b }), ($r$3) => ({ a: { a: null, b: $r$3.items }, b: $r$3.note })), Schema$mapping(($p$4) => ({ items: $p$4.a.b, note: $p$4.b }), ($r$5) => ({ a: { a: null, b: $r$5.items }, b: $r$5.note })));
+const SchemaWorkers$Page$$schema = ($s0) => Schema$record(Schema$field(Schema$field(Schema$fields, "items", Schema$list($s0)), "note", Schema$nullable(Schema$string)), Schema$mapping(($p$1) => ({ items: $p$1.a.b, note: $p$1.b }), ($r$2) => ({ a: { a: null, b: $r$2.items }, b: $r$2.note })), Schema$mapping(($p$3) => ({ items: $p$3.a.b, note: $p$3.b }), ($r$4) => ({ a: { a: null, b: $r$4.items }, b: $r$4.note })));
 const SchemaWorkers$Page$$read = (c, d, p, k, n, v, $s0) => {
   if (typeof v !== "object" || v === null || globalThis.Array.isArray(v)) {
     return Schema$compiledFail(c, p, k, n, 0, "expected an object", v, false);
   }
   const $here = Schema$pathAt(p, k, n);
-  const $before$6 = c.issues.length;
+  const $before$1 = c.issues.length;
   if (c.reject) {
-    for (const $key$7 of globalThis.Object.keys(v)) {
-      if ($key$7 !== "items" && $key$7 !== "note") {
-        Schema$compiledFail(c, $here, $key$7, $key$7, 2, "unexpected key \"" + $key$7 + "\"", v[$key$7], false);
+    for (const $key$2 of globalThis.Object.keys(v)) {
+      if ($key$2 !== "items" && $key$2 !== "note") {
+        Schema$compiledFail(c, $here, $key$2, $key$2, 2, "unexpected key \"" + $key$2 + "\"", v[$key$2], false);
         if (!c.all) {
           return c.fail;
         }
       }
     }
   }
-  const $deep$9 = d >= c.max;
-  let $f$10;
-  const $x$11 = v["items"];
-  if ($x$11 !== undefined) {
-    if ($deep$9) {
-      $f$10 = Schema$compiledFail(c, $here, "items", "items", 5, "the depth limit is reached", $x$11, false);
+  const $deep$4 = d >= c.max;
+  let $f$5;
+  const $x$6 = v["items"];
+  if ($x$6 !== undefined) {
+    if ($deep$4) {
+      $f$5 = Schema$compiledFail(c, $here, "items", "items", 5, "the depth limit is reached", $x$6, false);
     } else {
-      $f$10 = SchemaWorkers$Page$$read$1(c, d + 1, $here, "items", "items", $x$11, $s0);
+      $f$5 = SchemaWorkers$Page$$read$1(c, d + 1, $here, "items", "items", $x$6, $s0);
     }
   } else {
-    $f$10 = Schema$compiledFail(c, $here, "items", "items", 1, "missing key \"items\"", v, false);
+    $f$5 = Schema$compiledFail(c, $here, "items", "items", 1, "missing key \"items\"", v, false);
   }
-  if ($f$10 === c.fail && !c.all) {
+  if ($f$5 === c.fail && !c.all) {
     return c.fail;
   }
-  let $f$12;
-  const $x$13 = v["note"];
-  if ($x$13 !== undefined) {
-    if ($deep$9) {
-      $f$12 = Schema$compiledFail(c, $here, "note", "note", 5, "the depth limit is reached", $x$13, false);
+  let $f$7;
+  const $x$8 = v["note"];
+  if ($x$8 !== undefined) {
+    if ($deep$4) {
+      $f$7 = Schema$compiledFail(c, $here, "note", "note", 5, "the depth limit is reached", $x$8, false);
     } else {
-      if ($x$13 === null) {
-        $f$12 = SchemaWorkers$Schema$Null;
+      if ($x$8 === null) {
+        $f$7 = SchemaWorkers$Schema$Null;
       } else {
-        let $y$14;
-        if (typeof $x$13 !== "string") {
-          $y$14 = Schema$compiledFail(c, $here, "note", "note", 0, "expected a string", $x$13, false);
+        let $y$9;
+        if (typeof $x$8 !== "string") {
+          $y$9 = Schema$compiledFail(c, $here, "note", "note", 0, "expected a string", $x$8, false);
         } else {
-          $y$14 = $x$13;
+          $y$9 = $x$8;
         }
-        $f$12 = $y$14 === c.fail ? c.fail : { $: "NonNull", a: $y$14 };
+        $f$7 = $y$9 === c.fail ? c.fail : { $: "NonNull", a: $y$9 };
       }
     }
   } else {
-    $f$12 = Schema$compiledFail(c, $here, "note", "note", 1, "missing key \"note\"", v, false);
+    $f$7 = Schema$compiledFail(c, $here, "note", "note", 1, "missing key \"note\"", v, false);
   }
-  if ($f$12 === c.fail && !c.all) {
+  if ($f$7 === c.fail && !c.all) {
     return c.fail;
   }
-  if (c.issues.length > $before$6) {
+  if (c.issues.length > $before$1) {
     return c.fail;
   }
-  return { items: $f$10, note: $f$12 };
+  return { items: $f$5, note: $f$7 };
 };
 const SchemaWorkers$Page$$read$1 = (c, d, p, k, n, v, $s0) => {
   if (!globalThis.Array.isArray(v)) {
     return Schema$compiledFail(c, p, k, n, 0, "expected an array", v, false);
   }
   const $here = Schema$pathAt(p, k, n);
-  const $before$15 = c.issues.length;
-  const $len$16 = v.length;
-  const $deep$17 = d >= c.max;
-  const $out$18 = [];
-  let $i$19 = 0;
-  while (!($i$19 >= $len$16)) {
-    const $x$20 = v[$i$19];
-    let $y$21;
-    if ($deep$17) {
-      $y$21 = Schema$compiledFail(c, $here, $i$19, $i$19, 5, "the depth limit is reached", $x$20, false);
+  const $before$10 = c.issues.length;
+  const $len$11 = v.length;
+  const $deep$12 = d >= c.max;
+  const $out$13 = [];
+  let $i$14 = 0;
+  while (!($i$14 >= $len$11)) {
+    const $x$15 = v[$i$14];
+    let $y$16;
+    if ($deep$12) {
+      $y$16 = Schema$compiledFail(c, $here, $i$14, $i$14, 5, "the depth limit is reached", $x$15, false);
     } else {
-      $y$21 = $s0(c, d + 1, $here, $i$19, $i$19, $x$20);
+      $y$16 = $s0(c, d + 1, $here, $i$14, $i$14, $x$15);
     }
-    if ($y$21 === c.fail) {
+    if ($y$16 === c.fail) {
       if (!c.all) {
         return c.fail;
       }
     } else {
-      $out$18.push($y$21);
+      $out$13.push($y$16);
     }
-    $i$19 = $i$19 + 1;
+    $i$14 = $i$14 + 1;
   }
-  if (c.issues.length > $before$15) {
+  if (c.issues.length > $before$10) {
     return c.fail;
   }
-  return $out$18;
+  return $out$13;
 };
-const SchemaWorkers$Page$$parseWith = ($s0, $o, $t) => Schema$compiledParse($o, [$s0], ($c$22, $d$23, $p$24, $k$25, $n$26, $v$27) => SchemaWorkers$Page$$read($c$22, $d$23, $p$24, $k$25, $n$26, $v$27, Schema$readSlot($s0)), $t);
+const SchemaWorkers$Page$$parseWith = ($s0, $o, $t) => Schema$compiledParse($o, [$s0], ($c$17, $d$18, $p$19, $k$20, $n$21, $v$22) => SchemaWorkers$Page$$read($c$17, $d$18, $p$19, $k$20, $n$21, $v$22, Schema$readSlot($s0)), $t);
 const SchemaWorkers$Page$$parse = ($s0, $t) => SchemaWorkers$Page$$parseWith($s0, Schema$defaultOptions, $t);
 const SchemaWorkers$Page$$write = (c, d, p, k, n, v, $s0) => {
   const $here = Schema$pathAt(p, k, n);
-  const $before$28 = c.issues.length;
-  const $deep$29 = d >= c.max;
-  let $s$30;
-  const $x$31 = v.items;
-  if ($deep$29) {
-    $s$30 = Schema$compiledFail(c, $here, "items", "items", 5, "the depth limit is reached", $x$31, false);
+  const $before$1 = c.issues.length;
+  const $deep$2 = d >= c.max;
+  let $s$3;
+  const $x$4 = v.items;
+  if ($deep$2) {
+    $s$3 = Schema$compiledFail(c, $here, "items", "items", 5, "the depth limit is reached", $x$4, false);
   } else {
-    $s$30 = SchemaWorkers$Page$$write$1(c, d + 1, $here, "items", "items", $x$31, $s0);
+    $s$3 = SchemaWorkers$Page$$write$1(c, d + 1, $here, "items", "items", $x$4, $s0);
   }
-  if ($s$30 === c.fail && !c.all) {
+  if ($s$3 === c.fail && !c.all) {
     return c.fail;
   }
-  let $s$32;
-  const $x$33 = v.note;
-  if ($deep$29) {
-    $s$32 = Schema$compiledFail(c, $here, "note", "note", 5, "the depth limit is reached", $x$33, false);
+  let $s$5;
+  const $x$6 = v.note;
+  if ($deep$2) {
+    $s$5 = Schema$compiledFail(c, $here, "note", "note", 5, "the depth limit is reached", $x$6, false);
   } else {
-    if ($x$33.$ === "Null") {
-      $s$32 = null;
+    if ($x$6.$ === "Null") {
+      $s$5 = null;
     } else {
-      const $a$34 = $x$33.a;
-      $s$32 = $a$34;
+      const $a$7 = $x$6.a;
+      $s$5 = $a$7;
     }
   }
-  if ($s$32 === c.fail && !c.all) {
+  if ($s$5 === c.fail && !c.all) {
     return c.fail;
   }
-  if (c.issues.length > $before$28) {
+  if (c.issues.length > $before$1) {
     return c.fail;
   }
-  const $o$35 = {};
-  $o$35["items"] = $s$30;
-  $o$35["note"] = $s$32;
-  return $o$35;
+  const $o$8 = {};
+  $o$8["items"] = $s$3;
+  $o$8["note"] = $s$5;
+  return $o$8;
 };
 const SchemaWorkers$Page$$write$1 = (c, d, p, k, n, v, $s0) => {
   const $here = Schema$pathAt(p, k, n);
-  const $xs$36 = globalThis.Array.isArray(v) ? v : v.$plain();
-  const $before$37 = c.issues.length;
-  const $len$38 = $xs$36.length;
-  const $deep$39 = d >= c.max;
-  const $out$40 = [];
-  let $i$41 = 0;
-  while (!($i$41 >= $len$38)) {
-    const $x$42 = $xs$36[$i$41];
-    let $y$43;
-    if ($deep$39) {
-      $y$43 = Schema$compiledFail(c, $here, $i$41, $i$41, 5, "the depth limit is reached", $x$42, false);
+  const $xs$9 = globalThis.Array.isArray(v) ? v : v.$plain();
+  const $before$10 = c.issues.length;
+  const $len$11 = $xs$9.length;
+  const $deep$12 = d >= c.max;
+  const $out$13 = [];
+  let $i$14 = 0;
+  while (!($i$14 >= $len$11)) {
+    const $x$15 = $xs$9[$i$14];
+    let $y$16;
+    if ($deep$12) {
+      $y$16 = Schema$compiledFail(c, $here, $i$14, $i$14, 5, "the depth limit is reached", $x$15, false);
     } else {
-      $y$43 = $s0(c, d + 1, $here, $i$41, $i$41, $x$42);
+      $y$16 = $s0(c, d + 1, $here, $i$14, $i$14, $x$15);
     }
-    if ($y$43 === c.fail) {
+    if ($y$16 === c.fail) {
       if (!c.all) {
         return c.fail;
       }
     } else {
-      $out$40.push($y$43);
+      $out$13.push($y$16);
     }
-    $i$41 = $i$41 + 1;
+    $i$14 = $i$14 + 1;
   }
-  if (c.issues.length > $before$37) {
+  if (c.issues.length > $before$10) {
     return c.fail;
   }
-  return $out$40;
+  return $out$13;
 };
-const SchemaWorkers$Page$$printWith = ($s0, $o, $t) => Schema$compiledPrint($o, [$s0], ($c$44, $d$45, $p$46, $k$47, $n$48, $v$49) => SchemaWorkers$Page$$write($c$44, $d$45, $p$46, $k$47, $n$48, $v$49, Schema$writeSlot($s0)), $t);
+const SchemaWorkers$Page$$printWith = ($s0, $o, $t) => Schema$compiledPrint($o, [$s0], ($c$17, $d$18, $p$19, $k$20, $n$21, $v$22) => SchemaWorkers$Page$$write($c$17, $d$18, $p$19, $k$20, $n$21, $v$22, Schema$writeSlot($s0)), $t);
 const SchemaWorkers$Page$$print = ($s0, $t) => SchemaWorkers$Page$$printWith($s0, Schema$defaultOptions, $t);
 const SchemaWorkers$Box$$via$0 = SchemaWorkers$decimalInt;
-const SchemaWorkers$Box$$description = Schema$record(Schema$field(Schema$field(Schema$fields, "count", Schema$converted(Schema$string, SchemaWorkers$Box$$via$0)), "raw", Schema$value), Schema$mapping(($p$50) => ({ count: $p$50.a.b, raw: $p$50.b }), ($r$51) => ({ a: { a: null, b: $r$51.count }, b: $r$51.raw })), Schema$mapping(($p$52) => ({ count: $p$52.a.b, raw: $p$52.b }), ($r$53) => ({ a: { a: null, b: $r$53.count }, b: $r$53.raw })));
-const SchemaWorkers$Box$$schema = ($u$54) => SchemaWorkers$Box$$description;
+const SchemaWorkers$Box$$description = Schema$record(Schema$field(Schema$field(Schema$fields, "count", Schema$converted(Schema$string, SchemaWorkers$Box$$via$0)), "raw", Schema$value), Schema$mapping(($p$1) => ({ count: $p$1.a.b, raw: $p$1.b }), ($r$2) => ({ a: { a: null, b: $r$2.count }, b: $r$2.raw })), Schema$mapping(($p$3) => ({ count: $p$3.a.b, raw: $p$3.b }), ($r$4) => ({ a: { a: null, b: $r$4.count }, b: $r$4.raw })));
+const SchemaWorkers$Box$$schema = ($u$5) => SchemaWorkers$Box$$description;
 const SchemaWorkers$Box$$read = (c, d, p, k, n, v) => {
   if (typeof v !== "object" || v === null || globalThis.Array.isArray(v)) {
     return Schema$compiledFail(c, p, k, n, 0, "expected an object", v, false);
   }
   const $here = Schema$pathAt(p, k, n);
-  const $before$55 = c.issues.length;
+  const $before$1 = c.issues.length;
   if (c.reject) {
-    for (const $key$56 of globalThis.Object.keys(v)) {
-      if ($key$56 !== "count" && $key$56 !== "raw") {
-        Schema$compiledFail(c, $here, $key$56, $key$56, 2, "unexpected key \"" + $key$56 + "\"", v[$key$56], false);
+    for (const $key$2 of globalThis.Object.keys(v)) {
+      if ($key$2 !== "count" && $key$2 !== "raw") {
+        Schema$compiledFail(c, $here, $key$2, $key$2, 2, "unexpected key \"" + $key$2 + "\"", v[$key$2], false);
         if (!c.all) {
           return c.fail;
         }
       }
     }
   }
-  const $deep$58 = d >= c.max;
-  let $f$59;
-  const $x$60 = v["count"];
-  if ($x$60 !== undefined) {
-    if ($deep$58) {
-      $f$59 = Schema$compiledFail(c, $here, "count", "count", 5, "the depth limit is reached", $x$60, false);
+  const $deep$4 = d >= c.max;
+  let $f$5;
+  const $x$6 = v["count"];
+  if ($x$6 !== undefined) {
+    if ($deep$4) {
+      $f$5 = Schema$compiledFail(c, $here, "count", "count", 5, "the depth limit is reached", $x$6, false);
     } else {
-      let $b$61;
-      if (typeof $x$60 !== "string") {
-        $b$61 = Schema$compiledFail(c, $here, "count", "count", 0, "expected a string", $x$60, false);
+      let $b$7;
+      if (typeof $x$6 !== "string") {
+        $b$7 = Schema$compiledFail(c, $here, "count", "count", 0, "expected a string", $x$6, false);
       } else {
-        $b$61 = $x$60;
+        $b$7 = $x$6;
       }
-      $f$59 = $b$61 === c.fail ? c.fail : Schema$compiledForward(c, $here, "count", "count", SchemaWorkers$Box$$via$0, $b$61);
+      $f$5 = $b$7 === c.fail ? c.fail : Schema$compiledForward(c, $here, "count", "count", SchemaWorkers$Box$$via$0, $b$7);
     }
   } else {
-    $f$59 = Schema$compiledFail(c, $here, "count", "count", 1, "missing key \"count\"", v, false);
+    $f$5 = Schema$compiledFail(c, $here, "count", "count", 1, "missing key \"count\"", v, false);
   }
-  if ($f$59 === c.fail && !c.all) {
+  if ($f$5 === c.fail && !c.all) {
     return c.fail;
   }
-  let $f$62;
-  const $x$63 = v["raw"];
-  if ($x$63 !== undefined) {
-    if ($deep$58) {
-      $f$62 = Schema$compiledFail(c, $here, "raw", "raw", 5, "the depth limit is reached", $x$63, false);
+  let $f$8;
+  const $x$9 = v["raw"];
+  if ($x$9 !== undefined) {
+    if ($deep$4) {
+      $f$8 = Schema$compiledFail(c, $here, "raw", "raw", 5, "the depth limit is reached", $x$9, false);
     } else {
-      $f$62 = $x$63;
+      $f$8 = $x$9;
     }
   } else {
-    $f$62 = Schema$compiledFail(c, $here, "raw", "raw", 1, "missing key \"raw\"", v, false);
+    $f$8 = Schema$compiledFail(c, $here, "raw", "raw", 1, "missing key \"raw\"", v, false);
   }
-  if ($f$62 === c.fail && !c.all) {
+  if ($f$8 === c.fail && !c.all) {
     return c.fail;
   }
-  if (c.issues.length > $before$55) {
+  if (c.issues.length > $before$1) {
     return c.fail;
   }
-  return { count: $f$59, raw: $f$62 };
+  return { count: $f$5, raw: $f$8 };
 };
 const SchemaWorkers$Box$$parseWith = ($o, $t) => Schema$compiledParse($o, [], SchemaWorkers$Box$$read, $t);
 const SchemaWorkers$Box$$parse = ($t) => SchemaWorkers$Box$$parseWith(Schema$defaultOptions, $t);
 const SchemaWorkers$Box$$write = (c, d, p, k, n, v) => {
   const $here = Schema$pathAt(p, k, n);
-  const $before$64 = c.issues.length;
-  const $deep$65 = d >= c.max;
-  let $s$66;
-  const $x$67 = v.count;
-  if ($deep$65) {
-    $s$66 = Schema$compiledFail(c, $here, "count", "count", 5, "the depth limit is reached", $x$67, false);
+  const $before$1 = c.issues.length;
+  const $deep$2 = d >= c.max;
+  let $s$3;
+  const $x$4 = v.count;
+  if ($deep$2) {
+    $s$3 = Schema$compiledFail(c, $here, "count", "count", 5, "the depth limit is reached", $x$4, false);
   } else {
-    const $b$68 = Schema$compiledBackward(c, $here, "count", "count", SchemaWorkers$Box$$via$0, $x$67);
-    if ($b$68 === c.fail) {
-      $s$66 = c.fail;
+    const $b$5 = Schema$compiledBackward(c, $here, "count", "count", SchemaWorkers$Box$$via$0, $x$4);
+    if ($b$5 === c.fail) {
+      $s$3 = c.fail;
     } else {
-      const $cv$69 = Schema$belowBackward(c);
-      $s$66 = $b$68;
+      const $cv$6 = Schema$belowBackward(c);
+      $s$3 = $b$5;
     }
   }
-  if ($s$66 === c.fail && !c.all) {
+  if ($s$3 === c.fail && !c.all) {
     return c.fail;
   }
-  let $s$70;
-  const $x$71 = v.raw;
-  if ($deep$65) {
-    $s$70 = Schema$compiledFail(c, $here, "raw", "raw", 5, "the depth limit is reached", $x$71, false);
+  let $s$7;
+  const $x$8 = v.raw;
+  if ($deep$2) {
+    $s$7 = Schema$compiledFail(c, $here, "raw", "raw", 5, "the depth limit is reached", $x$8, false);
   } else {
-    const $printable$72 = Schema$printableWithin(c, d + 1, $x$71);
-    if ($printable$72 === 1) {
-      $s$70 = Schema$compiledFail(c, $here, "raw", "raw", 5, "the value nests deeper than the depth limit", $x$71, true);
+    const $printable$9 = Schema$printableWithin(c, d + 1, $x$8);
+    if ($printable$9 === 1) {
+      $s$7 = Schema$compiledFail(c, $here, "raw", "raw", 5, "the value nests deeper than the depth limit", $x$8, true);
     } else {
-      if ($printable$72 === 2) {
-        $s$70 = Schema$compiledFail(c, $here, "raw", "raw", 10, "the value holds NaN or an infinity, which JSON has no number for", $x$71, true);
+      if ($printable$9 === 2) {
+        $s$7 = Schema$compiledFail(c, $here, "raw", "raw", 10, "the value holds NaN or an infinity, which JSON has no number for", $x$8, true);
       } else {
-        $s$70 = $x$71;
+        $s$7 = $x$8;
       }
     }
   }
-  if ($s$70 === c.fail && !c.all) {
+  if ($s$7 === c.fail && !c.all) {
     return c.fail;
   }
-  if (c.issues.length > $before$64) {
+  if (c.issues.length > $before$1) {
     return c.fail;
   }
-  const $o$73 = {};
-  $o$73["count"] = $s$66;
-  $o$73["raw"] = $s$70;
-  return $o$73;
+  const $o$10 = {};
+  $o$10["count"] = $s$3;
+  $o$10["raw"] = $s$7;
+  return $o$10;
 };
 const SchemaWorkers$Box$$printWith = ($o, $t) => Schema$compiledPrint($o, [], SchemaWorkers$Box$$write, $t);
 const SchemaWorkers$Box$$print = ($t) => SchemaWorkers$Box$$printWith(Schema$defaultOptions, $t);
-const SchemaWorkers$Pages$$description = Schema$record(Schema$field(Schema$fields, "boxes", SchemaWorkers$Page$$schema(SchemaWorkers$Box$$description)), Schema$mapping(($p$74) => ({ boxes: $p$74.b }), ($r$75) => ({ a: null, b: $r$75.boxes })), Schema$mapping(($p$76) => ({ boxes: $p$76.b }), ($r$77) => ({ a: null, b: $r$77.boxes })));
-const SchemaWorkers$Pages$$schema = ($u$78) => SchemaWorkers$Pages$$description;
+const SchemaWorkers$Pages$$description = Schema$record(Schema$field(Schema$fields, "boxes", SchemaWorkers$Page$$schema(SchemaWorkers$Box$$description)), Schema$mapping(($p$1) => ({ boxes: $p$1.b }), ($r$2) => ({ a: null, b: $r$2.boxes })), Schema$mapping(($p$3) => ({ boxes: $p$3.b }), ($r$4) => ({ a: null, b: $r$4.boxes })));
+const SchemaWorkers$Pages$$schema = ($u$5) => SchemaWorkers$Pages$$description;
 const SchemaWorkers$Pages$$read = (c, d, p, k, n, v) => {
   if (typeof v !== "object" || v === null || globalThis.Array.isArray(v)) {
     return Schema$compiledFail(c, p, k, n, 0, "expected an object", v, false);
   }
   const $here = Schema$pathAt(p, k, n);
-  const $before$79 = c.issues.length;
+  const $before$1 = c.issues.length;
   if (c.reject) {
-    for (const $key$80 of globalThis.Object.keys(v)) {
-      if ($key$80 !== "boxes") {
-        Schema$compiledFail(c, $here, $key$80, $key$80, 2, "unexpected key \"" + $key$80 + "\"", v[$key$80], false);
+    for (const $key$2 of globalThis.Object.keys(v)) {
+      if ($key$2 !== "boxes") {
+        Schema$compiledFail(c, $here, $key$2, $key$2, 2, "unexpected key \"" + $key$2 + "\"", v[$key$2], false);
         if (!c.all) {
           return c.fail;
         }
       }
     }
   }
-  const $deep$82 = d >= c.max;
-  let $f$83;
-  const $x$84 = v["boxes"];
-  if ($x$84 !== undefined) {
-    if ($deep$82) {
-      $f$83 = Schema$compiledFail(c, $here, "boxes", "boxes", 5, "the depth limit is reached", $x$84, false);
+  const $deep$4 = d >= c.max;
+  let $f$5;
+  const $x$6 = v["boxes"];
+  if ($x$6 !== undefined) {
+    if ($deep$4) {
+      $f$5 = Schema$compiledFail(c, $here, "boxes", "boxes", 5, "the depth limit is reached", $x$6, false);
     } else {
-      $f$83 = SchemaWorkers$Page$$read(c, d + 1, $here, "boxes", "boxes", $x$84, SchemaWorkers$Box$$read);
+      $f$5 = SchemaWorkers$Page$$read(c, d + 1, $here, "boxes", "boxes", $x$6, SchemaWorkers$Box$$read);
     }
   } else {
-    $f$83 = Schema$compiledFail(c, $here, "boxes", "boxes", 1, "missing key \"boxes\"", v, false);
+    $f$5 = Schema$compiledFail(c, $here, "boxes", "boxes", 1, "missing key \"boxes\"", v, false);
   }
-  if ($f$83 === c.fail && !c.all) {
+  if ($f$5 === c.fail && !c.all) {
     return c.fail;
   }
-  if (c.issues.length > $before$79) {
+  if (c.issues.length > $before$1) {
     return c.fail;
   }
-  return { boxes: $f$83 };
+  return { boxes: $f$5 };
 };
 const SchemaWorkers$Pages$$parseWith = ($o, $t) => Schema$compiledParse($o, [], SchemaWorkers$Pages$$read, $t);
 const SchemaWorkers$Pages$$parse = ($t) => SchemaWorkers$Pages$$parseWith(Schema$defaultOptions, $t);
 const SchemaWorkers$Pages$$write = (c, d, p, k, n, v) => {
   const $here = Schema$pathAt(p, k, n);
-  const $before$85 = c.issues.length;
-  const $deep$86 = d >= c.max;
-  let $s$87;
-  const $x$88 = v.boxes;
-  if ($deep$86) {
-    $s$87 = Schema$compiledFail(c, $here, "boxes", "boxes", 5, "the depth limit is reached", $x$88, false);
+  const $before$1 = c.issues.length;
+  const $deep$2 = d >= c.max;
+  let $s$3;
+  const $x$4 = v.boxes;
+  if ($deep$2) {
+    $s$3 = Schema$compiledFail(c, $here, "boxes", "boxes", 5, "the depth limit is reached", $x$4, false);
   } else {
-    $s$87 = SchemaWorkers$Page$$write(c, d + 1, $here, "boxes", "boxes", $x$88, SchemaWorkers$Box$$write);
+    $s$3 = SchemaWorkers$Page$$write(c, d + 1, $here, "boxes", "boxes", $x$4, SchemaWorkers$Box$$write);
   }
-  if ($s$87 === c.fail && !c.all) {
+  if ($s$3 === c.fail && !c.all) {
     return c.fail;
   }
-  if (c.issues.length > $before$85) {
+  if (c.issues.length > $before$1) {
     return c.fail;
   }
-  const $o$89 = {};
-  $o$89["boxes"] = $s$87;
-  return $o$89;
+  const $o$5 = {};
+  $o$5["boxes"] = $s$3;
+  return $o$5;
 };
 const SchemaWorkers$Pages$$printWith = ($o, $t) => Schema$compiledPrint($o, [], SchemaWorkers$Pages$$write, $t);
 const SchemaWorkers$Pages$$print = ($t) => SchemaWorkers$Pages$$printWith(Schema$defaultOptions, $t);

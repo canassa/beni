@@ -12,9 +12,9 @@ const OpaqueUpdate$update = (msg$1, model$2) => {
   }
 };
 const OpaqueUpdate$main = Tea$sandbox(($root$1, $t$2) => {
-  const init$3 = { n: 0, text: "" };
-  let $model$4 = init$3;
-  const update$5 = OpaqueUpdate$withLogging(OpaqueUpdate$update);
+  const $init$3 = { n: 0, text: "" };
+  let $model$4 = $init$3;
+  const $update$5 = OpaqueUpdate$withLogging(OpaqueUpdate$update);
   $t$2.innerHTML = "<main><button id=inc>inc</button><input id=in><p id=n> </p><p id=text> ";
   const $r$6 = $t$2.content;
   const $w$7 = $r$6.firstChild;
@@ -49,7 +49,7 @@ const OpaqueUpdate$main = Tea$sandbox(($root$1, $t$2) => {
   const $hAll$23 = ($p$21) => {
     Direct$groupProgram(null);
     const $visitBefore$22 = Direct$visitBegin($root$1, 0);
-    $model$4 = update$5($p$21, $model$4);
+    $model$4 = $update$5($p$21, $model$4);
     Direct$visitScope($root$1, [[0, true], [1, true]]);
     $patchAll$20();
     Direct$visitEnd($visitBefore$22);

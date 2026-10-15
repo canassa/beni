@@ -5,8 +5,8 @@ const ListScripts$fresh = (model$1, label$2) => ({ id: model$1.next, label: labe
 const ListScripts$main = Tea$sandbox(($root$1, $t$2) => {
   const $t$17 = [];
   const $t$18 = ["a", "b"];
-  const init$19 = { mark: "", next: 0, plain: $t$18, rows: $t$17 };
-  let $model$20 = init$19;
+  const $init$19 = { mark: "", next: 0, plain: $t$18, rows: $t$17 };
+  let $model$20 = $init$19;
   $t$2.innerHTML = "<li><!><!>";
   const $T$21 = $t$2.content.firstChild;
   $t$2.innerHTML = "<li> ";

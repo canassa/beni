@@ -2352,6 +2352,98 @@ checker at every site, and never something the backend has to discover.
 codegen helper would be neither that nor beni. Dropping the adapter makes that easier to keep, not
 harder — it was the one helper this section had ever needed.
 
+### A compiler-made name is numbered within its top-level declaration
+
+*Added 2026-10-15, Cesar's decision (the dashboard's question `emit-cache-q3`, issue #94): "count
+from 1 in each function — restart at 1 for each top-level declaration; one count within it,
+including its nested functions." It replaces Jayson's earlier answer to `emit-cache-q2`, which he
+said was not a decision.*
+
+A name the compiler makes — `$t$3`, `$p$2`, `$k$5`, and every other base `Lowerer.fresh` takes —
+carries a number, and the number keeps two such names of one base apart. Until this change one
+counter ran through the whole module. The numbers inside a declaration then depended on which
+declarations before it survived elimination (§9) and on how many names those made, so one
+declaration printed differently from one program to the next.
+
+**The rule.** The counter restarts at 1 for each top-level declaration that the lowering writes,
+and one count runs through that declaration and through every function nested in it. The
+top-level declarations are, each on its own:
+
+- a declaration's body, and its suspendable body (transparent-effects-proposal.md §16.2);
+- a schema declaration's `via`s, its description, and each of its two directions, each as it
+  survived (`schema.md` §6);
+- each derived function and each primitive comparator (§9.1).
+
+**Why two declarations may hold one name.** No compiler-made name is declared at module scope:
+each is a parameter, a `const` or a `let` inside the function of the declaration that made it. So
+two top-level declarations that both hold `$t$1` hold two bindings in two scopes. A body lowered
+inside another declaration (§9's *A function called once is written where it is called*) is lowered
+in that declaration's count, so two compiler-made names inside one top-level declaration never
+repeat. *Corrected the same day, after review:* that is not true of a compiler-made name against a
+user's local. `localName` names a local `<source name>$<its index + 1>`, and the markup lowerings
+ask `fresh` for plain words a user can write (`x`, `i`, `item`, `value`), so `fresh`'s `x$4` and a
+user's fourth local `x` can be one name, and the page then throws a `ReferenceError`. The module-wide
+counter had the same defect in the first declarations of a module; per-declaration numbers reach it
+in every declaration. The owner decided how the two stay apart (below, *A `$` in front of every
+compiler-made name*). The release optimiser counts uses per top-level declaration and keys a
+substitution by its use site (§9 item 1). *Corrected the same day, after review:* its rule that an
+arm which declares a name its declaration declares twice is not spliced (§9, *Compact statements*)
+was one bit per name for the whole module (`Opt.Plan.repeated`). A name that one declaration binds
+twice then stopped the splice in every declaration that holds the same name, and per-declaration
+numbers make that common. The bit is now kept per declaration statement, as the rule says.
+
+**A `$` in front of every compiler-made name.** *Added 2026-10-15, Cesar's decision (the
+dashboard's question `emit-cache-q4`): "Option 1, `$` prefix; one name source per declaration for all
+compiler-made names; add the master reproduction as a fixture."* So:
+
+- **Every name `Lowerer.fresh` makes is `$<hint>$<n>`.** A hint that does not start with `$` gets
+  one: the markup lowerings' `x`, `item` and `value` print as `$x$4`, `$item$2` and `$value$3`. A
+  beni name cannot start with `$` (`language.md` §2.4), so no user's local (`<source name>$<n>`),
+  no declaration and no module-qualified name can be one of them.
+- **One name source per top-level declaration.** Every name `fresh` makes comes from its one
+  counter, which restarts at 1 for each top-level declaration (the rule above), and so does
+  `joinAround`'s `$k$<n>`. Two of them in one declaration therefore never meet. *Corrected the same
+  day, after review:* not every numbered `$` name comes from that counter. The positional names
+  below are written by their position; the labels `$j$<d>$<b>` and `$c$<d>` are labels, which
+  JavaScript keeps apart from variables; and under `--release` the specialiser makes its own names
+  above the module's highest number (`Spec.freshLocal`, `Spec.Copy.fresh`), so it never takes one
+  that is there.
+- **The positional names keep their own shape, and no hint can take it.** `$m$<k>` (an evidence
+  parameter), `$in$<i>` (a loop slot), `$l<inst>$<k>` (a `let`'s evidence) and `$o$<i>` (an
+  intermediate `Order` inside a derived `compare`, `Lowerer.orderName`) are written by their
+  position, not by the counter. `fresh` refuses the hints that would print as one of the first
+  three — `m`, `in`, and `l` followed by digits — as an internal error: a lowering that asks for one
+  is a bug of the compiler, which carries every lowering. The `dom` lowering's patch inputs, which
+  asked for `in`, now ask for `input`. *Corrected the same day, after review:* `fresh` does not yet
+  refuse `o`. Nothing meets `$o$<i>` today: only a schema part asks for `$o`, and a derived function
+  is a top-level declaration of its own, which holds no schema or markup lowering. Closing the gap
+  (respell `$o$<i>`, or refuse `o`) changes development output, so it is its own change.
+- **Fixtures:** the page that throws on master (`view` the first declaration of its module that
+  makes a compiler name) and the page that per-declaration numbers made throw (`helper` before
+  `view`) are `tests/corpus/browser/dom/NameMeetsLocal` and `NameMeetsLocalAfterHelper`.
+
+**Why.** The second step of the checked core's emit work (`fast-compiler.md` §8, *The checked core,
+embedded*) stores the printed text of each embedded declaration once, for every program. With one
+counter per module that text was not fixed. The same rule keeps one edit from renumbering every
+later declaration of its module, which is what §2's warm rebuild wants: one edit rewrites one
+declaration's text. *Rejected:* keep the module-wide counter and let the cache store each
+declaration with holes for the numbers, filled while it joins the declarations of a build. That
+changes no byte, but every build then renumbers and moves every source-map column that a longer
+number pushes to the right.
+
+**What changes.** Only the numbers of compiler-made names, once, in every emitted module that holds
+one after its first top-level declaration: every `emit/` golden and run hash that holds one, which
+Node verifies again. *Corrected the same day, after review:* a source map's `names` list can also
+get shorter, because two names of one text that were two indices are now one. Each mapping still
+names the same text at the same source position. *And with the `$` in front:* a development build of
+a page also spells the markup lowerings' compiler-made names with it (`x$4` is `$x$4`, the `dom`
+patch inputs' `$in$2` is `$input$2`). A release build renames every local, so its JavaScript does
+not change. *Corrected the same day, after review:* its source map does. A name whose base starts
+with `$` gets no `names` entry in a map (§11.1: "a temporary the lowering invented … has none"; §11.2),
+so the markup lowerings' compiler-made names lose the hint they carried there, in development and in
+release maps, and a segment that then repeats the source position before it goes too. A lookup still
+gives the same source position at every segment, and no dropped name was a user's.
+
 ### A parameter of type `()`
 
 *Added 2026-10-02 (research 47 §6 item 7).* `f () = …` compiled to `($p) => …`: a parameter that

@@ -16,107 +16,107 @@ const SchemaParseOnly$User$$read = (c, d, p, k, n, v) => {
     return Schema$compiledFail(c, p, k, n, 0, "expected an object", v, false);
   }
   const $here = Schema$pathAt(p, k, n);
-  const $before$2 = c.issues.length;
+  const $before$1 = c.issues.length;
   if (c.reject) {
-    for (const $key$3 of globalThis.Object.keys(v)) {
-      if ($key$3 !== "user-name" && $key$3 !== "age" && $key$3 !== "scores") {
-        Schema$compiledFail(c, $here, $key$3, $key$3, 2, "unexpected key \"" + $key$3 + "\"", v[$key$3], false);
+    for (const $key$2 of globalThis.Object.keys(v)) {
+      if ($key$2 !== "user-name" && $key$2 !== "age" && $key$2 !== "scores") {
+        Schema$compiledFail(c, $here, $key$2, $key$2, 2, "unexpected key \"" + $key$2 + "\"", v[$key$2], false);
         if (!c.all) {
           return c.fail;
         }
       }
     }
   }
-  const $deep$5 = d >= c.max;
-  let $f$6;
-  const $x$7 = v["user-name"];
-  if ($x$7 !== undefined) {
-    if ($deep$5) {
-      $f$6 = Schema$compiledFail(c, $here, "user-name", "name", 5, "the depth limit is reached", $x$7, false);
+  const $deep$4 = d >= c.max;
+  let $f$5;
+  const $x$6 = v["user-name"];
+  if ($x$6 !== undefined) {
+    if ($deep$4) {
+      $f$5 = Schema$compiledFail(c, $here, "user-name", "name", 5, "the depth limit is reached", $x$6, false);
     } else {
-      if (typeof $x$7 !== "string") {
-        $f$6 = Schema$compiledFail(c, $here, "user-name", "name", 0, "expected a string", $x$7, false);
+      if (typeof $x$6 !== "string") {
+        $f$5 = Schema$compiledFail(c, $here, "user-name", "name", 0, "expected a string", $x$6, false);
       } else {
-        $f$6 = $x$7;
+        $f$5 = $x$6;
       }
     }
   } else {
-    $f$6 = Schema$compiledFail(c, $here, "user-name", "name", 1, "missing key \"user-name\"", v, false);
+    $f$5 = Schema$compiledFail(c, $here, "user-name", "name", 1, "missing key \"user-name\"", v, false);
   }
-  if ($f$6 === c.fail && !c.all) {
+  if ($f$5 === c.fail && !c.all) {
     return c.fail;
   }
-  let $f$8;
-  const $x$9 = v["age"];
-  if ($x$9 !== undefined) {
-    if ($deep$5) {
-      $f$8 = Schema$compiledFail(c, $here, "age", "age", 5, "the depth limit is reached", $x$9, false);
+  let $f$7;
+  const $x$8 = v["age"];
+  if ($x$8 !== undefined) {
+    if ($deep$4) {
+      $f$7 = Schema$compiledFail(c, $here, "age", "age", 5, "the depth limit is reached", $x$8, false);
     } else {
-      let $b$10;
-      if (typeof $x$9 !== "string") {
-        $b$10 = Schema$compiledFail(c, $here, "age", "age", 0, "expected a string", $x$9, false);
+      let $b$9;
+      if (typeof $x$8 !== "string") {
+        $b$9 = Schema$compiledFail(c, $here, "age", "age", 0, "expected a string", $x$8, false);
       } else {
-        $b$10 = $x$9;
+        $b$9 = $x$8;
       }
-      $f$8 = $b$10 === c.fail ? c.fail : Schema$compiledForward(c, $here, "age", "age", SchemaParseOnly$User$$via$0, $b$10);
+      $f$7 = $b$9 === c.fail ? c.fail : Schema$compiledForward(c, $here, "age", "age", SchemaParseOnly$User$$via$0, $b$9);
     }
   } else {
-    $f$8 = Schema$compiledFail(c, $here, "age", "age", 1, "missing key \"age\"", v, false);
+    $f$7 = Schema$compiledFail(c, $here, "age", "age", 1, "missing key \"age\"", v, false);
   }
-  if ($f$8 === c.fail && !c.all) {
+  if ($f$7 === c.fail && !c.all) {
     return c.fail;
   }
-  let $f$11;
-  const $x$12 = v["scores"];
-  if ($x$12 !== undefined) {
-    if ($deep$5) {
-      $f$11 = Schema$compiledFail(c, $here, "scores", "scores", 5, "the depth limit is reached", $x$12, false);
+  let $f$10;
+  const $x$11 = v["scores"];
+  if ($x$11 !== undefined) {
+    if ($deep$4) {
+      $f$10 = Schema$compiledFail(c, $here, "scores", "scores", 5, "the depth limit is reached", $x$11, false);
     } else {
-      $f$11 = SchemaParseOnly$User$$read$4(c, d + 1, $here, "scores", "scores", $x$12);
+      $f$10 = SchemaParseOnly$User$$read$4(c, d + 1, $here, "scores", "scores", $x$11);
     }
   } else {
-    $f$11 = Schema$compiledFail(c, $here, "scores", "scores", 1, "missing key \"scores\"", v, false);
+    $f$10 = Schema$compiledFail(c, $here, "scores", "scores", 1, "missing key \"scores\"", v, false);
   }
-  if ($f$11 === c.fail && !c.all) {
+  if ($f$10 === c.fail && !c.all) {
     return c.fail;
   }
-  if (c.issues.length > $before$2) {
+  if (c.issues.length > $before$1) {
     return c.fail;
   }
-  return { age: $f$8, name: $f$6, scores: $f$11 };
+  return { age: $f$7, name: $f$5, scores: $f$10 };
 };
 const SchemaParseOnly$User$$read$4 = (c, d, p, k, n, v) => {
   if (!globalThis.Array.isArray(v)) {
     return Schema$compiledFail(c, p, k, n, 0, "expected an array", v, false);
   }
-  const $before$13 = c.issues.length;
-  const $len$14 = v.length;
-  const $deep$15 = d >= c.max;
-  let $i$17 = 0;
-  while (!($i$17 >= $len$14)) {
-    const $x$18 = v[$i$17];
-    let $y$19;
-    if ($deep$15) {
-      $y$19 = Schema$compiledFail(c, Schema$pathAt(p, k, n), $i$17, $i$17, 5, "the depth limit is reached", $x$18, false);
+  const $before$12 = c.issues.length;
+  const $len$13 = v.length;
+  const $deep$14 = d >= c.max;
+  let $i$16 = 0;
+  while (!($i$16 >= $len$13)) {
+    const $x$17 = v[$i$16];
+    let $y$18;
+    if ($deep$14) {
+      $y$18 = Schema$compiledFail(c, Schema$pathAt(p, k, n), $i$16, $i$16, 5, "the depth limit is reached", $x$17, false);
     } else {
-      if (typeof $x$18 !== "number") {
-        $y$19 = Schema$compiledFail(c, Schema$pathAt(p, k, n), $i$17, $i$17, 0, "expected a number", $x$18, false);
+      if (typeof $x$17 !== "number") {
+        $y$18 = Schema$compiledFail(c, Schema$pathAt(p, k, n), $i$16, $i$16, 0, "expected a number", $x$17, false);
       } else {
-        if (!globalThis.Number.isSafeInteger($x$18)) {
-          $y$19 = Schema$compiledFail(c, Schema$pathAt(p, k, n), $i$17, $i$17, 4, "expected a safe integer", $x$18, false);
+        if (!globalThis.Number.isSafeInteger($x$17)) {
+          $y$18 = Schema$compiledFail(c, Schema$pathAt(p, k, n), $i$16, $i$16, 4, "expected a safe integer", $x$17, false);
         } else {
-          $y$19 = $x$18;
+          $y$18 = $x$17;
         }
       }
     }
-    if ($y$19 === c.fail) {
+    if ($y$18 === c.fail) {
       if (!c.all) {
         return c.fail;
       }
     }
-    $i$17 = $i$17 + 1;
+    $i$16 = $i$16 + 1;
   }
-  if (c.issues.length > $before$13) {
+  if (c.issues.length > $before$12) {
     return c.fail;
   }
   return v;
@@ -124,15 +124,15 @@ const SchemaParseOnly$User$$read$4 = (c, d, p, k, n, v) => {
 const SchemaParseOnly$User$$parseWith = ($o, $t) => Schema$compiledParse($o, [], SchemaParseOnly$User$$read, $t);
 const SchemaParseOnly$User$$parse = ($t) => SchemaParseOnly$User$$parseWith(Schema$defaultOptions, $t);
 const SchemaParseOnly$main = (() => {
-  const $t$20 = SchemaParseOnly$User$$parse("{\"user-name\":\"a\",\"age\":\"3\",\"scores\":[1]}");
-  let $t$21;
-  if ($t$20.$ === "Ok") {
-    const u$1 = $t$20.a;
-    $t$21 = u$1.name;
+  const $t$1 = SchemaParseOnly$User$$parse("{\"user-name\":\"a\",\"age\":\"3\",\"scores\":[1]}");
+  let $t$2;
+  if ($t$1.$ === "Ok") {
+    const u$1 = $t$1.a;
+    $t$2 = u$1.name;
   } else {
-    $t$21 = "failed";
+    $t$2 = "failed";
   }
-  return Node$printLines([$t$21]);
+  return Node$printLines([$t$2]);
 })();
 export { SchemaParseOnly$main };
 //# sourceMappingURL=SchemaParseOnly.mjs.map

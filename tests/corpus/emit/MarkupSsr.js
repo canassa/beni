@@ -11,6 +11,6 @@ const MarkupSsr$greet = (user$1) => {
   const $t$4 = Html$text("!");
   return { t: MarkupSsr$k21[0] + $markup$escapeAttr($t$1) + MarkupSsr$k21[1] + $markup$escape($t$2) + MarkupSsr$k21[2] + $t$3 + MarkupSsr$k21[3] + $t$4.t + MarkupSsr$k21[4] };
 };
-const MarkupSsr$list = (items$1) => ({ t: MarkupSsr$k35[0] + $markup$list(items$1, (item$5) => ({ t: MarkupSsr$k33[0] + $markup$escape(item$5) + MarkupSsr$k33[1] }), null) + MarkupSsr$k35[1] });
+const MarkupSsr$list = (items$1) => ({ t: MarkupSsr$k35[0] + $markup$list(items$1, ($item$1) => ({ t: MarkupSsr$k33[0] + $markup$escape($item$1) + MarkupSsr$k33[1] }), null) + MarkupSsr$k35[1] });
 export { MarkupSsr$static, MarkupSsr$greet, MarkupSsr$list };
 //# sourceMappingURL=MarkupSsr.mjs.map

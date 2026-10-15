@@ -1562,7 +1562,7 @@ pub const Error = error{ OutOfMemory, Reported };
 | `cx.build` | the build's options, read-only: `.release` (`--release`) and `.library` (`--library`, which has no program start, §9.4.5) |
 | `cx.js` | the restricted `JsIr` builder, below |
 | `cx.at(node)` | the markup node every following JavaScript node is positioned at, so a source map can point a hole's update at its hole (`backend.md` §11) |
-| `cx.fresh(hint) Name` | a local name, unique in the module |
+| `cx.fresh(hint) Name` | a local name `$<hint>$<n>`, unique in the top-level declaration being lowered; a hint that would print as a positional name (`m`, `in`, `l` and digits) is refused. *Amended 2026-10-15:* was "unique in the module" (`backend.md` §4, *A compiler-made name is numbered within its top-level declaration*, and *A `$` in front of every compiler-made name*) |
 | `cx.hoist(hint, init: Expr) Name` | a module-level `const` whose initialiser must be **pure** (literals, object and array literals, arrows, calls of the runtime's `template`, which is pure to create, `backend.md` §15.3), emitted in hoist order after the module's imports — because `backend.md` §9 drops and keeps declarations on the premise that loading a module does nothing (§9.7) |
 | `cx.hoistFunction(hint, params, body: Block) Name` | a module-level function declaration, hoisted likewise |
 | `cx.runtime(name) Name` | the import of one of the lowering's declared runtime exports (§9.4.5); nothing else can be imported |
@@ -2242,7 +2242,8 @@ not a sandbox.
   no state between calls, iterates no hash map, compares no pointers, reads no clock, and makes every
   name through `cx.fresh`, `cx.hoist` and `cx.hoistFunction`, which derive names from the site and a
   counter local to the module's lowering — never from a counter shared across workers, which is the
-  one way a lowering could break rule 5 (research 28 §9.3). The emit workers call it for several
+  one way a lowering could break rule 5 (research 28 §9.3). *Amended 2026-10-15:* `cx.fresh`'s
+  counter restarts at 1 for each top-level declaration of the module (`backend.md` §4). The emit workers call it for several
   modules at once, one module per call, so state kept between calls would be a data race as well
   as a determinism fault. The determinism test (`--jobs=1` against
   `--jobs=8`, twice each, byte-compared) covers it with no new machinery once a platform with markup

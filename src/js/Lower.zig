@@ -555,6 +555,17 @@ pub fn internFixedNames(gpa: Allocator, global: *InternPool.Global) Allocator.Er
     try global.moveBytesForSafety(gpa);
 }
 
+/// Whether `text`, a compiler-made name's base, would print with its number
+/// as a positional name: `$m` (`$m$<k>`, an evidence parameter), `$in`
+/// (`$in$<i>`, a loop slot) or `$l` and digits (`$l<inst>$<k>`, a `let`'s
+/// evidence).
+fn positionalBase(text: []const u8) bool {
+    if (std.mem.eql(u8, text, "$m") or std.mem.eql(u8, text, "$in")) return true;
+    if (text.len < 3 or !std.mem.startsWith(u8, text, "$l")) return false;
+    for (text[2..]) |c| if (!std.ascii.isDigit(c)) return false;
+    return true;
+}
+
 /// The compiler's own identifiers, interned once per module. They all start
 /// with `$`, which beni's identifier syntax cannot produce, so no source
 /// name can collide with one.
@@ -753,7 +764,11 @@ pub const Lowerer = struct {
     /// at all, so its name is invented — and inventing it twice would bind
     /// one name in the parameter list and read another in the body.
     local_names: []JsIr.NameIndex = &.{},
-    /// Counter behind every compiler-made name in this module.
+    /// Counter behind every compiler-made name of the top-level declaration
+    /// being lowered: it restarts at 1 for each (`restartNames`), and one
+    /// count runs through the declaration and every function nested in it
+    /// (`backend.md` §4, *A compiler-made name is numbered within its
+    /// top-level declaration*).
     next_tag: u32 = 1,
     /// Which of §9.1's primitive comparators this module has needed as a
     /// VALUE. A `primitive` target in evidence position is a function and
@@ -1069,11 +1084,39 @@ pub const Lowerer = struct {
         return l.b.intern(n);
     }
 
-    /// A fresh compiler-made name from `base`, unique in this module.
+    /// The first compiler-made name of a top-level declaration about to be
+    /// lowered is numbered 1, whatever the module lowered before it: what a
+    /// declaration prints does not depend on which others survived.
+    pub fn restartNames(l: *Lowerer) void {
+        l.next_tag = 1;
+    }
+
+    /// A fresh compiler-made name from `base`, unique in the top-level
+    /// declaration being lowered: `$<base>$<n>`, with a `$` in front when
+    /// `base` has none (`backend.md` §4, *A `$` in front of every
+    /// compiler-made name*). No beni name starts with `$`, so no local,
+    /// declaration or module-qualified name can be one of these.
     pub fn fresh(l: *Lowerer, base: Symbol) !JsIr.NameIndex {
+        const spelled = try l.compilerBase(base);
         const tag = l.next_tag;
         l.next_tag += 1;
-        return l.name(.{ .module = .none, .base = base, .tag = tag });
+        return l.name(.{ .module = .none, .base = spelled, .tag = tag });
+    }
+
+    /// `base` as the base of a compiler-made name: itself when it starts
+    /// with `$`, `$<base>` otherwise. A base that would print as a
+    /// positional name — `$m$<k>`, `$in$<i>`, `$l<inst>$<k>` — is refused:
+    /// a lowering that asks for one is a bug of the compiler.
+    fn compilerBase(l: *Lowerer, base: Symbol) !Symbol {
+        const written = l.text(base);
+        const spelled = if (written.len != 0 and written[0] == '$') base else try l.interner.getOrPut(l.gpa, try std.fmt.allocPrint(l.scratch, "${s}", .{written}));
+        if (positionalBase(l.text(spelled))) try l.report(
+            .internal,
+            l.region,
+            "A lowering asked for the compiler-made name `{s}`, which a positional name owns (`docs/design/backend.md` §4).",
+            .{l.text(spelled)},
+        );
+        return spelled;
     }
 
     pub fn ident(l: *Lowerer, n: JsIr.NameIndex, p: u32) !Node.Index {
@@ -1815,6 +1858,7 @@ pub const Lowerer = struct {
     fn declarationAs(l: *Lowerer, out: *StmtList, index: u32, variant: Variant) !void {
         const d = l.bir.decls[index];
         const body = d.body.unwrap() orelse return;
+        l.restartNames();
         l.locals = l.bir.declLocals(d);
         l.decl_index = index;
         l.read_locals = null;
@@ -5382,6 +5426,7 @@ pub const Lowerer = struct {
             if (!l.liveDerived(@intCast(index))) continue;
             const base = try l.derivedBase(row.kind, row.shape);
             l.derived_row = @intCast(index);
+            l.restartNames();
             const made = (try l.derivedArrow(row, base, l.isLeaf(@intCast(index)))) orelse continue;
             const bound = try l.synthesisedName(base);
             try list.append(l.scratch, .{
@@ -5395,9 +5440,18 @@ pub const Lowerer = struct {
             // precede the `compare` that indexes it (§8.5).
             if (try l.orderTable(row)) |table| try tables.append(l.scratch, table);
         }
-        if (l.needs.compare_char) try list.append(l.scratch, .{ .base = "compare$char", .node = try l.compareCharDecl() });
-        if (l.needs.compare_prim) try list.append(l.scratch, .{ .base = "compare$prim", .node = try l.comparePrimDecl() });
-        if (l.needs.eq_prim) try list.append(l.scratch, .{ .base = "eq$prim", .node = try l.eqPrimDecl() });
+        if (l.needs.compare_char) {
+            l.restartNames();
+            try list.append(l.scratch, .{ .base = "compare$char", .node = try l.compareCharDecl() });
+        }
+        if (l.needs.compare_prim) {
+            l.restartNames();
+            try list.append(l.scratch, .{ .base = "compare$prim", .node = try l.comparePrimDecl() });
+        }
+        if (l.needs.eq_prim) {
+            l.restartNames();
+            try list.append(l.scratch, .{ .base = "eq$prim", .node = try l.eqPrimDecl() });
+        }
         std.mem.sort(Synth, tables.items, {}, Synth.before);
         std.mem.sort(Synth, list.items, {}, Synth.before);
         const out = try l.scratch.alloc(Node.Index, tables.items.len + list.items.len);
