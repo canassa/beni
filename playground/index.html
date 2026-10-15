@@ -5,11 +5,40 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>beni playground</title>
     <link rel="stylesheet" href="style.css">
+    <!--
+      CodeMirror 6 from esm.sh, every package at an exact version
+      (docs/design/playground.md §4.2). The `*` form leaves each module's
+      own imports bare, so this map is the one place a package resolves:
+      each loads once, at the version written here.
+    -->
+    <script type="importmap">
+      {
+        "imports": {
+          "@codemirror/state": "https://esm.sh/*@codemirror/state@6.7.6",
+          "@codemirror/view": "https://esm.sh/*@codemirror/view@6.43.13",
+          "@codemirror/language": "https://esm.sh/*@codemirror/language@6.12.4",
+          "@codemirror/commands": "https://esm.sh/*@codemirror/commands@6.11.1",
+          "@codemirror/lint": "https://esm.sh/*@codemirror/lint@6.9.7",
+          "@codemirror/autocomplete": "https://esm.sh/*@codemirror/autocomplete@6.20.3",
+          "@codemirror/search": "https://esm.sh/*@codemirror/search@6.7.2",
+          "@lezer/common": "https://esm.sh/*@lezer/common@1.5.3",
+          "@lezer/highlight": "https://esm.sh/*@lezer/highlight@1.2.5",
+          "@marijn/find-cluster-break": "https://esm.sh/*@marijn/find-cluster-break@1.0.4",
+          "crelt": "https://esm.sh/*crelt@1.0.7",
+          "style-mod": "https://esm.sh/*style-mod@4.1.4",
+          "w3c-keyname": "https://esm.sh/*w3c-keyname@2.2.8"
+        }
+      }
+    </script>
     <script type="module" src="page.js"></script>
   </head>
   <body>
     <header>
       <h1>beni playground</h1>
+      <label>
+        Sample
+        <select id="sample"></select>
+      </label>
       <label>
         Platform
         <select id="platform">
@@ -17,17 +46,24 @@
           <option value="node">node (a program that prints)</option>
         </select>
       </label>
+      <button id="share" type="button">Share</button>
       <span id="status" role="status">Loading the compiler…</span>
     </header>
+    <p id="note">
+      <code>browser-direct</code> is new. The samples here build for it today; some programs that build
+      for <code>browser-tea</code> do not build for it yet.
+    </p>
     <main>
       <section class="pane" aria-label="Source">
-        <textarea id="source" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="Main.beni"></textarea>
-        <pre id="diagnostics" aria-label="Diagnostics"></pre>
+        <div id="editor"></div>
+        <div id="diagnostics" aria-label="Diagnostics"></div>
       </section>
       <section class="pane" aria-label="Output">
         <nav class="tabs" role="tablist">
           <button role="tab" data-tab="result" aria-selected="true">Result</button>
           <button role="tab" data-tab="javascript" aria-selected="false">JavaScript</button>
+          <button role="tab" data-tab="types" aria-selected="false">Types</button>
+          <button role="tab" data-tab="ownership" aria-selected="false">Ownership</button>
         </nav>
         <div id="result" role="tabpanel">
           <iframe id="frame" sandbox="allow-scripts" title="The compiled program"></iframe>
@@ -36,6 +72,12 @@
         <div id="javascript" role="tabpanel" hidden>
           <select id="file" aria-label="Emitted file"></select>
           <pre id="code"></pre>
+        </div>
+        <div id="types" role="tabpanel" hidden>
+          <pre id="types-text"></pre>
+        </div>
+        <div id="ownership" role="tabpanel" hidden>
+          <pre id="ownership-text"></pre>
         </div>
       </section>
     </main>
