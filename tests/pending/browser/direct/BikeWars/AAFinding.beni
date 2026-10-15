@@ -1,2 +1,2 @@
--- CK-223: BikeWars reaches direct ownership limits through its external sources.
--- The project sources remain the browser-tea example, without copies or edits.
+-- CK-225: BikeWars ownership is accepted; document helper markup is not lowered.
+-- Its one trail append now copies the retained base; the document view stays intact.

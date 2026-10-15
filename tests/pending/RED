@@ -100,9 +100,8 @@ tests/pending/browser/direct/RaceTwoServices.beni dev: exit=1 codes=list_may_be_
 tests/pending/browser/direct/RandomValues.beni dev: exit=1 codes=list_may_be_shared×1
 tests/pending/browser/direct/ReentrantSend.beni dev: exit=1 codes=list_may_be_shared×1
 tests/pending/browser/direct/TimeoutAroundRequest.beni dev: exit=1 codes=list_may_be_shared×1
-tests/pending/browser/direct/TodoMVC.beni dev: exit=1 codes=list_may_be_shared×1
 tests/pending/browser/direct/ValueCommands.beni dev: exit=1 codes=list_may_be_shared×1
-tests/pending/browser/direct/BikeWars dev: exit=1 codes=list_still_used×2,prepend_in_loop×2,top_level_list_changed×1
+tests/pending/browser/direct/BikeWars dev: exit=1 codes=not_implemented×1,prepend_in_loop×2
 # Direct executes an unused view statement at mount, not on every message (documented S4 oracle boundary).
 tests/pending/browser/direct/DefectInTurnRender.beni PageFailed
 
@@ -112,4 +111,3 @@ tests/pending/browser/direct/HttpFailures.beni dev: exit=1 codes=list_still_used
 
 # Lean bridge: confirmed by the in-place interpreter; checker fixes are deferred.
 # The unchanged external game really shares Board.init; initialization transfer only resolves centralHexagon.
-tests/pending/browser/direct/Sternhalma dev: exit=1 codes=top_level_list_changed×2

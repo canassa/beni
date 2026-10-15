@@ -2834,6 +2834,13 @@ against CLAUDE.md rule 7's test — what guarantee does the error buy?
 writing function value that reaches such a callee is pending where it gets there (§16.5), so the obligation is
 reported once, at that place.
 
+*Diagnostic guidance, 2026-10-15.* A `top-level` refusal recommends building the
+value inside a function (`init ⊤ = …`) and calling it where the model is made.
+It cites §22.2: returning a top-level value from `init`, even through a lambda,
+keeps that value shared. This is the existing position rule, not a checker
+limit or a new permission. A still-used base keeps the local copy suggestion,
+including `List.copy a ++ b` for an append whose base remains live.
+
 **One diagnostic per root cause.** Lines of one module with the same position, verdict, cause and detail are one
 diagnostic, listing every base — the entry's lines for several model paths that one top-level list or one view
 event reaches are one message, not one per path. Lines at different positions are different diagnostics.

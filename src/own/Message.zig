@@ -302,11 +302,7 @@ pub fn build(a: Allocator, src: Src, m: u32, lines: []const Demand) Allocator.Er
         }
     }
     if (cause == .top_level) {
-        const whole = if (d.top) |t| t[2] == 1 else false;
-        if (whole)
-            try w(&out, a, "Build the list where the program starts, or copy it there:\n\n    List.copy {s}\n\n", .{top})
-        else
-            try w(&out, a, "Build `{s}` where the program starts, so that its lists are new ones, or copy each list it holds there with `List.copy`.\n\n", .{top});
+        try w(&out, a, "Build the value inside a function, so that each call makes fresh lists:\n\n    init ⊤ = …\n\nCall that function where the model is made. Wrapping `{s}` in `λ⊤ → {s}` still returns the same shared value.\n\n", .{ top, top });
         fixed = true;
     } else if (cause == .read_only) {
         try w(&out, a, "Let `{s}` build a new list instead, or change a copy: `List.copy {s}`.\n\n", .{ entry_fn, d.base });
@@ -331,7 +327,7 @@ pub fn build(a: Allocator, src: Src, m: u32, lines: []const Demand) Allocator.Er
     if (d.verdict == .pending) {
         try w(&out, a, "This is a limit of the checker, not proof of sharing: a call it cannot see may hand the function a list something else still holds.", .{});
     } else if (cause) |c| switch (c) {
-        .top_level => try w(&out, a, "This is the language's rule for top-level values, whether or not anything else reads the list.", .{}),
+        .top_level => try w(&out, a, "This is the language's rule for top-level values, whether or not anything else reads the list. `init` builds its model; a top-level value it returns is still shared (ownership-checker.md §22.2).", .{}),
         .read_only => try w(&out, a, "This is the platform's rule for `{s}`, whether or not anything else reads the list.", .{entry_fn}),
         .platform => try w(&out, a, "This is the rule of the runtime this program is mounted by.", .{}),
         else => if (exact) switch (c) {
