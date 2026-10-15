@@ -876,11 +876,12 @@
     "rejected_fixtures": [
       "OwnershipInitCapturedTop",
       "OwnershipInitCapturedLiteral",
-      "OwnershipInitCapturedCarried"
+      "OwnershipInitCapturedCarried",
+      "OwnershipInitCapturedRecord"
     ],
     "positive_fixture": "EntryInitCaptureOnly",
     "todo_and_stern_paired_pass_without_initialization_transfer": true,
-    "ownership_block_version": 7,
+    "ownership_block_version": 8,
     "orphan_budget_regressions": [
       "missing page",
       "tea page has no value fuzz",

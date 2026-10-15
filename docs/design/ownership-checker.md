@@ -1650,13 +1650,15 @@ The entry's disjointness check includes every non-`init` field of its record,
 with closures expanded into their captures, alongside the other model paths.
 A helper-returned closure retains its instantiated bindings and callback values
 as well; carrying its class across a call does not erase its environment.
+Only a path known to start with the `init` field is excluded: root and wildcard
+entries may contain other callbacks and remain retained.
 Ordinary Dead and escape obligations still cover holders outside that record.
 
 Thus `init = λ⊤ → m` with `view = λ_ → …m.items…` cannot authorize editing
 `model.items`, whether `m` was a local literal or arrived through a private
 single-read top-level initializer. A local used only by `init` can still transfer;
 a literal allocated inside `init` remains fresh. This narrows §22.2's allocation
-claim and adds no permission. Cached ownership blocks advance to version 7 so
+claim and adds no permission. Cached ownership blocks advance to version 8 so
 an older entry proof cannot survive the corrected rule.
 
 ### 22.3 Commands that take values

@@ -492,7 +492,7 @@ ctor_ids: std.AutoHashMapUnmanaged(u64, u32) = .empty,
 /// Per module: the summary of each declaration, allocated on first use.
 slots: []?[]Slot = &.{},
 groups: []?Groups = &.{},
-/// Saturated reference counts, allocated once per application module.
+/// Saturated reference counts: inner counts allocated lazily for app modules only.
 /// Ownership walks serially; parallel walkers would need to synchronize this memo.
 private_reads: []?[]u8 = &.{},
 /// Per module: whether the run reports on it.
@@ -5594,7 +5594,8 @@ const Walker = struct {
     }
 
     /// What the entry keeps outside init, including environments of closures
-    /// returned by helpers. Those carry instantiated bindings rather than locals.
+    /// returned by helpers. `expand` follows ordinary local captures; carried
+    /// closures instead need the instantiated bindings and callbacks below.
     fn retainedEntryFields(w: *Walker, fields: AV) Allocator.Error!AV {
         var held: std.ArrayList(Entry) = .empty;
         try held.appendSlice(w.a, try w.expand(fields));
@@ -5635,10 +5636,16 @@ const Walker = struct {
         };
         // §22.2: init's captures arrive from outside its body. Other entry
         // callbacks keep their environments across messages and renders.
-        const init_sym = w.o.in.interner.find("init").?;
-        const init_path = try w.o.child(eps, .field, @backingInt(init_sym));
+        const init_sym = w.o.in.interner.find("init");
         var retained_fields: std.ArrayList(Entry) = .empty;
-        for (app) |e| if (!w.o.overlap(e.path, init_path)) try retained_fields.append(w.a, e);
+        for (app) |e| {
+            // Exclude only a known init subtree. A root or wildcard may hold
+            // other callbacks too; symmetric overlap would discard those.
+            if (init_sym) |sym| if (w.o.firstStep(e.path)) |step| {
+                if (step.kind == .field and step.arg == @backingInt(sym)) continue;
+            };
+            try retained_fields.append(w.a, e);
+        }
         const retained = try w.retainedEntryFields(retained_fields.items);
         const view = (try w.entryFn(try w.fieldOf(app, "view"))) orelse EntryFn{};
         const subs = (try w.entryFn(try w.fieldOf(app, "subscriptions"))) orelse EntryFn{};
@@ -5650,7 +5657,9 @@ const Walker = struct {
             &.{ &.{}, try w.single(.{ .kind = .top, .a = 0 }) }
         else
             &.{&.{}};
-        const init_av = if (try w.entryFn(try w.fieldOf(app, "init"))) |f|
+        const init_av = if (init_sym == null)
+            try w.single(.{ .kind = .top, .a = 0 })
+        else if (try w.entryFn(try w.fieldOf(app, "init"))) |f|
             try w.entryRes(inst, f, init_args, entry_init_ns)
         else
             try w.single(.{ .kind = .top, .a = 0 });
