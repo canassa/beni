@@ -2631,7 +2631,7 @@ push of its source), which is stronger than the shipping runtime's fixed-length 
 statement about the checker's aliasing rule, not about the shipping view. The count says nothing about the rows
 of the table below, nor about the code slice 5 will emit: the bridge's emitted library still uses persistent
 lists, and the Lean in-place interpreter is a model of the checker's promise, not of the lowering (thesis
-§12.2's stale-read sanitiser, §13.4, is what will judge that). On 2026-10-15 it is one, CK-232, pinned red.
+§12.2's stale-read sanitiser, §13.4, is what will judge that). On 2026-10-15 it is one, CK-233, pinned red.
 
 | Rule | Where | What is unsound if the rule is wrong |
 |---|---|---|

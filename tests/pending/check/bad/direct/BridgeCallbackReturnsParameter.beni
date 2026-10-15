@@ -1,4 +1,4 @@
--- CK-232: a callee pushes what its callback returns, and the callback returns the
+-- CK-233: a callee pushes what its callback returns, and the callback returns the
 -- callee's own parameter: the caller's list is written while it is still read.
 -- Confirmed by the in-place interpreter (bridge lead v6-17-5271); see
 -- proofs/ownership/CONSTRUCTIONS-RESULTS.md. Fault: src/own/Ownership.zig

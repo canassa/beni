@@ -109,7 +109,7 @@ caller's argument `xs`, which the result reads afterwards. The supply-edge
 branch of the same call (`An owned supply of the callee's own parameter`) does
 make that call-site demand when the callback *writes* a supplied parameter;
 the `need` path, where the callee writes what the callback *returns*, does not.
-The red fixture (CK-232 in `plans/checker-findings.md`) is `tests/pending/check/bad/direct/BridgeCallbackReturnsParameter.beni`
+The red fixture (CK-233 in `plans/checker-findings.md`) is `tests/pending/check/bad/direct/BridgeCallbackReturnsParameter.beni`
 (`exit=0 codes=none`; expected `list_still_used` at the call). The Zig checker
 is not changed in this PR. Its Lean core is
 `regressions/bridge/CallbackReturnsParameter.json`. It surfaced in a v6 stream
