@@ -7,12 +7,14 @@ import {brotliCompressSync,gzipSync,constants} from 'node:zlib';
 const require=createRequire(import.meta.url);
 const acorn=require('../ui/apps/solid1/node_modules/acorn');
 const {TraceMap,originalPositionFor}=require('../ui/apps/solid1/node_modules/@jridgewell/trace-mapping');
-const beni=process.env.BENI??'zig-out/bin/beni',dir='bench/s8/results';
+// S8_APPS (comma-separated keys of `apps`) and S8_RESULTS (a directory) measure a
+// later build without a change to the batch's own results.
+const beni=process.env.BENI??'zig-out/bin/beni',dir=process.env.S8_RESULTS??'bench/s8/results',only=process.env.S8_APPS?.split(',');
 fs.mkdirSync(dir,{recursive:true});
 const size=s=>{const b=Buffer.from(s);return {raw:b.length,brotli:brotliCompressSync(b,{params:{[constants.BROTLI_PARAM_QUALITY]:11,[constants.BROTLI_PARAM_SIZE_HINT]:b.length}}).length}};
 const apps={conduit:'examples/conduit/src',todomvc:'tests/corpus/browser/direct/TodoMVC.beni',sternhalma:'examples/sternhalma/src',bike:'examples/bike-wars/src',table:'bench/ui/apps/beni/Main.beni'};
 const result={commit:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),compilerSha256:createHash('sha256').update(fs.readFileSync(beni)).digest('hex'),node:process.version,method:'Unmodified emitted release JS. Ordered initializer stubs: core, runtime; remainder charged to app/startup. No reoptimisation. Compression interactions depend on order. Core leave-one-out is also recorded for criterion 5.',apps:[]};
-for(const [app,input] of Object.entries(apps)) for(const platform of ['tea','direct']){
+for(const [app,input] of Object.entries(apps)) if(!only||only.includes(app)) for(const platform of ['tea','direct']){
  const out=`zig-out/s8/${app}-${platform}`;
  const args=['build',`--platform=browser-${platform}`,'--release','--no-cache',`--out=${out}`,input];
  const run=spawnSync(beni,args,{encoding:'utf8'});
