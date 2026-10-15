@@ -284,50 +284,71 @@ pub fn viaEdges(c: *Contexts, from: u32, decl: u32) Error!bool {
 /// conversion's type mentions is known only once its group is checked: the
 /// type records that it reads the schema (`noteVia`), and `complete` adds
 /// those mentions as edges before a unit that reaches it runs.
+///
+/// A schema body records no `declRefs`: its operands are resolved in place
+/// (`schema_target_top`), so they are read off its instructions. Without
+/// them two tagged schemas that name each other were two units, and the
+/// first one's pass ran the second's fixpoint nested, which read the
+/// first's approximation (`internal`).
 pub fn mentions(c: *Contexts, d: Bir.Decl, edges: *std.ArrayList(u32), from: u32, named: []u32, expanded: []u32) Error!void {
     const bir = c.cx.bir;
     const scratch = c.cx.scratch;
-    const types = c.cx.types;
     var pending: std.ArrayList(Bir.Decl) = .empty;
     defer pending.deinit(scratch);
     try pending.append(scratch, d);
     while (pending.pop()) |next| {
         for (bir.declRefs(next)) |ref| {
-            if ((ref.kind != .top_type and ref.kind != .top_schema) or ref.a >= bir.decls.len) continue;
-            const target = bir.decls[ref.a];
-            switch (target.kind) {
-                .schema => {
-                    const program = types.ofSchemaDecl(c.cx.module, @fromBackingInt(@intCast(ref.a)), .type);
-                    if (program == .none or types.entry(program).kind != .adt) {
-                        // A record schema's `via` targets are this type's
-                        // mentions (`complete`) — not an encoded endpoint's,
-                        // whose side holds no conversion target.
-                        if (!c.isEncoded(from)) try c.noteVia(from, ref.a);
-                        if (expanded[ref.a] == from) continue;
-                        expanded[ref.a] = from;
-                        try pending.append(scratch, target);
-                        continue;
-                    }
-                    for ([_]Types.TypeId{ program, types.ofSchemaDecl(c.cx.module, @fromBackingInt(@intCast(ref.a)), .encoded) }) |endpoint| {
-                        const to = c.local(endpoint) orelse continue;
-                        if (named[to] == from) continue;
-                        named[to] = from;
-                        try edges.append(scratch, to);
-                    }
-                },
-                .type => {
-                    const to = c.local(c.cx.types.ofDecl(c.cx.module, @fromBackingInt(@intCast(ref.a)))) orelse continue;
-                    if (named[to] == from) continue;
-                    named[to] = from;
-                    try edges.append(scratch, to);
-                },
-                .type_alias => {
-                    if (expanded[ref.a] == from) continue;
-                    expanded[ref.a] = from;
-                    try pending.append(scratch, target);
-                },
-                else => {},
-            }
+            if (ref.kind != .top_type and ref.kind != .top_schema) continue;
+            try mention(c, ref.a, edges, from, named, expanded, &pending);
         }
+        if (next.kind != .schema) continue;
+        for (next.inst_start.int()..next.inst_end.int()) |i| {
+            const inst: Bir.Inst.Index = @fromBackingInt(@intCast(i));
+            if (bir.instTag(inst) != .schema_target_top) continue;
+            try mention(c, bir.instData(inst).lhs, edges, from, named, expanded, &pending);
+        }
+    }
+}
+
+/// `mentions`' one reference, to declaration `a`: an edge to each own type
+/// it names, or its body queued (`pending`) when it is an alias.
+fn mention(c: *Contexts, a: u32, edges: *std.ArrayList(u32), from: u32, named: []u32, expanded: []u32, pending: *std.ArrayList(Bir.Decl)) Error!void {
+    const bir = c.cx.bir;
+    const scratch = c.cx.scratch;
+    const types = c.cx.types;
+    if (a >= bir.decls.len) return;
+    const target = bir.decls[a];
+    switch (target.kind) {
+        .schema => {
+            const program = types.ofSchemaDecl(c.cx.module, @fromBackingInt(@intCast(a)), .type);
+            if (program == .none or types.entry(program).kind != .adt) {
+                // A record schema's `via` targets are this type's
+                // mentions (`complete`) — not an encoded endpoint's,
+                // whose side holds no conversion target.
+                if (!c.isEncoded(from)) try c.noteVia(from, a);
+                if (expanded[a] == from) return;
+                expanded[a] = from;
+                try pending.append(scratch, target);
+                return;
+            }
+            for ([_]Types.TypeId{ program, types.ofSchemaDecl(c.cx.module, @fromBackingInt(@intCast(a)), .encoded) }) |endpoint| {
+                const to = c.local(endpoint) orelse continue;
+                if (named[to] == from) continue;
+                named[to] = from;
+                try edges.append(scratch, to);
+            }
+        },
+        .type => {
+            const to = c.local(types.ofDecl(c.cx.module, @fromBackingInt(@intCast(a)))) orelse return;
+            if (named[to] == from) return;
+            named[to] = from;
+            try edges.append(scratch, to);
+        },
+        .type_alias => {
+            if (expanded[a] == from) return;
+            expanded[a] = from;
+            try pending.append(scratch, target);
+        },
+        else => {},
     }
 }
