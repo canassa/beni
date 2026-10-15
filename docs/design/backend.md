@@ -2378,9 +2378,19 @@ top-level declarations are, each on its own:
 each is a parameter, a `const` or a `let` inside the function of the declaration that made it. So
 two top-level declarations that both hold `$t$1` hold two bindings in two scopes. A body lowered
 inside another declaration (§9's *A function called once is written where it is called*) is lowered
-in that declaration's count, so names inside one top-level declaration never repeat. The release
-optimiser already counts uses per top-level declaration and keys a substitution by its use site
-(§9 item 1), because a local's own number (`localName`) has always restarted per declaration.
+in that declaration's count, so two compiler-made names inside one top-level declaration never
+repeat. *Corrected the same day, after review:* that is not true of a compiler-made name against a
+user's local. `localName` names a local `<source name>$<its index + 1>`, and the markup lowerings
+ask `fresh` for plain words a user can write (`x`, `i`, `item`, `value`), so `fresh`'s `x$4` and a
+user's fourth local `x` can be one name, and the page then throws a `ReferenceError`. The module-wide
+counter had the same defect in the first declarations of a module; per-declaration numbers reach it
+in every declaration. How to keep the two apart is the owner's decision (`emit-cache-q4`), and this
+rule waits for it. The release optimiser counts uses per top-level declaration and keys a
+substitution by its use site (§9 item 1). *Corrected the same day, after review:* its rule that an
+arm which declares a name its declaration declares twice is not spliced (§9, *Compact statements*)
+was one bit per name for the whole module (`Opt.Plan.repeated`). A name that one declaration binds
+twice then stopped the splice in every declaration that holds the same name, and per-declaration
+numbers make that common. The bit is now kept per declaration statement, as the rule says.
 
 **Why.** The second step of the checked core's emit work (`fast-compiler.md` §8, *The checked core,
 embedded*) stores the printed text of each embedded declaration once, for every program. With one
@@ -2393,7 +2403,9 @@ number pushes to the right.
 
 **What changes.** Only the numbers of compiler-made names, once, in every emitted module that holds
 one after its first top-level declaration: every `emit/` golden and run hash that holds one, which
-Node verifies again.
+Node verifies again. *Corrected the same day, after review:* a source map's `names` list can also
+get shorter, because two names of one text that were two indices are now one. Each mapping still
+names the same text at the same source position.
 
 ### A parameter of type `()`
 
