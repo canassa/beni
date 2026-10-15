@@ -4990,6 +4990,114 @@ test "the release specialiser counts a call chain deeper than its sweeps as a de
     try testing.expect(deep.analyses_declined >= 1);
 }
 
+test "a page build makes each module's edge lists once and prints each module once" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // A `browser-tea` page has a runtime module, so its build walks the
+    // declaration graph two times and lowers the modules that are not core
+    // or the runtime module two times (`backend.md` §15.1, *The runtime
+    // module*, amended 2026-10-15). The second walk reads the edge lists
+    // the first made, and the first lowering prints nothing: a module's
+    // bytes come from the second. Before, `edge_lists` was two times the
+    // modules of the graph, and every module the first lowering took was
+    // printed two times.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\import Html exposing (Html)
+        \\import Tea
+        \\
+        \\
+        \\type Msg
+        \\    = Inc
+        \\
+        \\
+        \\view : Int → Html Msg
+        \\view count =
+        \\    <button onClick={Inc}>{String.fromInt count}</button>
+        \\
+        \\
+        \\main : Tea.Program
+        \\main = Tea.sandbox { init = λ⊤ → 0, update = λ_ n → n + 1, view = view }
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const r = try w.runWith(&.{ "build", "--platform=browser-tea", "--out=out", "--no-cache", "--self-profile=trace.json", "Main.beni" }, .{ .raw_diagnostics = true });
+    try expectBuilt(r);
+    const counters = try emitCounters(&w);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    // Every module of the graph is checked here or installed from the
+    // embedded core, and each has its edge lists made once.
+    const modules = counters.embedded_modules + counters.modules_checked;
+    // A development build writes a source map beside every module it
+    // printed, and nothing else ends in `.mjs.map`.
+    var maps: u64 = 0;
+    for (try w.listFiles("out")) |path| {
+        if (std.mem.endsWith(u8, path, ".mjs.map")) maps += 1;
+    }
+    try testing.expect(maps != 0);
+    try testing.expectEqualDeep(EmitCounters{
+        .embedded_modules = counters.embedded_modules,
+        .modules_checked = counters.modules_checked,
+        .edge_lists = modules,
+        .reach_walks = 2,
+        .modules_lowered = counters.modules_lowered,
+        .modules_printed = maps,
+    }, counters);
+    // The first lowering took the page's own module and the platform
+    // modules that are not the runtime module, and the second took them
+    // again with the rest.
+    try testing.expect(counters.modules_lowered > maps);
+}
+
+const EmitCounters = struct {
+    embedded_modules: u64 = 0,
+    modules_checked: u64 = 0,
+    edge_lists: u64 = 0,
+    reach_walks: u64 = 0,
+    modules_lowered: u64 = 0,
+    modules_printed: u64 = 0,
+};
+
+/// Reachability's and lowering's counters (`backend.md` §9, §15.1) from
+/// the `--self-profile` trace a build wrote to `trace.json`, and what they
+/// are compared with.
+fn emitCounters(w: *World) !EmitCounters {
+    const Event = struct {
+        ph: []const u8,
+        args: struct {
+            embedded_modules: ?u64 = null,
+            modules_checked: ?u64 = null,
+            edge_lists: ?u64 = null,
+            reach_walks: ?u64 = null,
+            modules_lowered: ?u64 = null,
+            modules_printed: ?u64 = null,
+        } = .{},
+    };
+    const parsed = try std.json.parseFromSlice(struct { traceEvents: []Event }, testing.allocator, try w.read("trace.json"), .{ .ignore_unknown_fields = true });
+    defer parsed.deinit();
+    var counters: EmitCounters = .{};
+    var seen: u32 = 0;
+    for (parsed.value.traceEvents) |e| {
+        if (!std.mem.eql(u8, e.ph, "C")) continue;
+        inline for (@typeInfo(EmitCounters).@"struct".field_names) |name| {
+            if (@field(e.args, name)) |v| {
+                @field(counters, name) = v;
+                seen += 1;
+            }
+        }
+    }
+    if (seen != @typeInfo(EmitCounters).@"struct".field_names.len) return error.NoCounter;
+    return counters;
+}
+
 const SpecCounters = struct {
     analyses: u64 = 0,
     sweeps: u64 = 0,

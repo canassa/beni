@@ -821,6 +821,12 @@ const Emitter = struct {
     module_uses: std.ArrayList([]const u8) = .empty,
     /// Reachability's roots beside the build's own (`Reach.Input`).
     extra_roots: []const Reach.Node = &.{},
+    /// What every walk of the build reads (`walk`): the input `eliminate`
+    /// built the edge lists from, and the lists, in the workers' `edges`
+    /// arenas. A walk from other roots reads the same lists (§9,
+    /// *Incrementality (M4) and chunking (§10)*).
+    reach: Reach.Input = undefined,
+    edges: []const Reach.ModuleEdges = &.{},
     forwarding_foreigns: [][]Reach.ForeignProof = &.{},
     /// `--release` of an application that does not reach `Debug`: what
     /// JavaScript sees, closed before lowering (§9, *Item 4, taken up*).
@@ -2780,6 +2786,9 @@ const Emitter = struct {
         e.field_table = try Fields.assign(e.scratch, counts, &boundary.pinned, &plain);
     }
 
+    /// §9's elimination: every module's edge lists, on the workers, then
+    /// the walk from the build's roots. Once per build; a second walk reads
+    /// the same lists (`walk`).
     fn eliminate(e: *Emitter, entry: ?Entry) !void {
         const token = e.session.profile.begin();
         defer e.session.profile.end(0, token, .eliminate, Profile.Event.no_file, 0);
@@ -2820,15 +2829,40 @@ const Emitter = struct {
             .interner = &e.session.interner,
         };
         // Every module's edges on the workers, each into its own slot and
-        // its worker's `kept` arena, then the walk here.
+        // its worker's `edges` arena, then the walk here.
         const edges = try e.scratch.alloc(Reach.ModuleEdges, count);
         const builders = try e.scratch.alloc(Reach.Builder, e.pool.workers.len);
-        for (builders, e.pool.workers) |*b, *w| b.* = .init(in, w.kept.allocator());
+        for (builders, e.pool.workers) |*b, *w| b.* = .init(in, w.edges.allocator());
         const all = try e.scratch.alloc(u32, count);
         for (all, 0..) |*slot, i| slot.* = @intCast(i);
         try e.pool.run(all, EdgeTask{ .edges = edges, .builders = builders }, EdgeTask.build, e.wanted(insts, insts_per_edge_builder));
+        e.session.profile.addCounter(.edge_lists, count);
+        e.reach = in;
+        e.edges = edges;
         e.live = try Reach.walk(e.scratch, in, edges);
-        for (e.pool.workers) |*w| w.kept.reset(.retain_capacity);
+        e.session.profile.addCounter(.reach_walks, 1);
+    }
+
+    /// The walk again, from `extra_roots` as they are now, over the edge
+    /// lists `eliminate` built. An edge list is a function of its module's
+    /// `Bir` and dispatch table and of the build's options, and the roots
+    /// are the walk's alone (`Reach.Builder` reads none of them), so a
+    /// second walk from other roots has nothing to rebuild (§9,
+    /// *Incrementality (M4) and chunking (§10)*; §15.1, *The runtime
+    /// module*).
+    fn walk(e: *Emitter) !void {
+        const token = e.session.profile.begin();
+        defer e.session.profile.end(0, token, .eliminate, Profile.Event.no_file, 0);
+        var in = e.reach;
+        in.extra_roots = e.extra_roots;
+        e.live = try Reach.walk(e.scratch, in, e.edges);
+        e.session.profile.addCounter(.reach_walks, 1);
+    }
+
+    /// No walk is left to read the edge lists.
+    fn dropEdges(e: *Emitter) void {
+        e.edges = &.{};
+        for (e.pool.workers) |*w| w.edges.reset(.free_all);
     }
 
     /// One module's reachability edges (`Reach.Builder.module`).
@@ -3116,8 +3150,13 @@ const Emitter = struct {
             // The last write to the session's pool until every module is
             // lowered: from here on the workers only read it.
             try Lower.internFixedNames(e.gpa, &e.session.interner);
-            const context: Task = .{ .e = e, .slots = slots, .entry = entry };
+            // A first lowering that left a module out is followed by a
+            // second that lowers every module again: it only has to tell the
+            // build what it uses of the runtime module, and a module's bytes
+            // come from the second.
+            const context: Task = .{ .e = e, .slots = slots, .entry = entry, .lower_only = !refined and skipped };
             try e.pool.run(todo.items, context, Task.lower, e.wanted(insts, insts_per_emitter));
+            e.countLowered(slots, todo.items);
 
             // What the lowerings report beyond their trees, in module order,
             // whatever order the workers finished in.
@@ -3152,8 +3191,9 @@ const Emitter = struct {
             if (sameNodes(precise, e.extra_roots) and !skipped) break;
             e.extra_roots = precise;
             for (slots) |*slot| slot.deinit(e.gpa);
-            try e.eliminate(entry);
+            try e.walk();
         }
+        e.dropEdges();
         defer for (slots) |*slot| slot.deinit(e.gpa);
         const context: Task = .{ .e = e, .slots = slots, .entry = entry };
 
@@ -3207,7 +3247,11 @@ const Emitter = struct {
                 };
                 std.mem.sort(u32, printed.items, {}, std.sort.asc(u32));
             }
-            try e.pool.run(if (hoist != null) printed.items else todo.items, context, Task.print, e.wanted(insts, insts_per_emitter));
+            const print_items = if (hoist != null) printed.items else todo.items;
+            try e.pool.run(print_items, context, Task.print, e.wanted(insts, insts_per_emitter));
+            for (print_items) |i| {
+                if (slots[i].text != null) e.session.profile.addCounter(.modules_printed, 1);
+            }
         }
 
         // Diagnostics and files in module order, whatever order the workers
@@ -3308,11 +3352,24 @@ const Emitter = struct {
         }
     };
 
+    /// `modules_lowered` and `modules_printed` for one round of `Task.lower`:
+    /// a development build prints in the same round.
+    fn countLowered(e: *Emitter, slots: []const ModuleSlot, todo: []const u32) void {
+        e.session.profile.addCounter(.modules_lowered, todo.len);
+        for (todo) |i| {
+            if (slots[i].text != null) e.session.profile.addCounter(.modules_printed, 1);
+        }
+    }
+
     /// What a worker runs per module.
     const Task = struct {
         e: *Emitter,
         slots: []ModuleSlot,
         entry: ?Entry,
+        /// A first lowering that a second will follow (`emitModules`): what
+        /// the module uses of the runtime module is all it is for, so it
+        /// stops there, and nothing of it is printed.
+        lower_only: bool = false,
 
         /// `Bir` → `JsIr`, and in a development build straight on to the
         /// bytes. Under `--release`, the plan and the module's whole-program
@@ -3367,6 +3424,13 @@ const Emitter = struct {
                 .value = try w.kept.allocator().dupe(u8, pair.value),
             };
             slot.start = start;
+            if (t.lower_only) {
+                lowered.deinit(e.gpa);
+                slot.lowered = null;
+                slot.overlay.deinit(e.gpa);
+                slot.overlay = .init(&e.session.interner);
+                return;
+            }
             if (!e.options.release) {
                 const names: Print.Names = .fromOverlay(&slot.overlay);
                 var marks: SourceMap.Marks = .init(scratch);
@@ -4448,9 +4512,12 @@ const Emitter = struct {
         /// One item's working memory, reset before the next: nothing a
         /// module builds on the way to its bytes outlives it.
         module: Arena = .init(std.heap.page_allocator),
-        /// What one round hands a later one: the reachability edges until
-        /// the walk, and under `--release` what lowering hands printing.
+        /// What one round hands a later one: what a lowering reports beyond
+        /// its tree, and under `--release` what lowering hands printing.
         kept: Arena = .init(std.heap.page_allocator),
+        /// The reachability edges this worker built, until the build's
+        /// last walk (`Emitter.walk`).
+        edges: Arena = .init(std.heap.page_allocator),
         failure: ?Allocator.Error = null,
     };
 
@@ -4503,6 +4570,7 @@ const Emitter = struct {
             for (p.workers) |*w| {
                 w.module.deinit();
                 w.kept.deinit();
+                w.edges.deinit();
             }
             p.gpa.free(p.workers);
         }
