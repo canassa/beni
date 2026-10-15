@@ -15,6 +15,11 @@ syntax checks them, and writes their independent compression ledger. Group
 records deliberately retain dead zero stubs; literal plans retain an unused
 shared builder when present. No external minifier or unrelated DCE is credited.
 
+`audit.mjs` independently replays a reversed attribution order and checks every
+rewritten path literal and mask read against its protocol position. Its JSON
+lists all literal spans and classifications. `intervals.mjs` computes descriptive
+paired-round bootstrap intervals from the two archived application timing batches.
+
 `verify.mjs` runs all eight executable variants through five page scripts,
 comparing complete driver transcripts. It never executes removal ablations.
 It does not substitute for the development visit oracle or full value fuzz.

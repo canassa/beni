@@ -22,6 +22,7 @@ for(const [app,input] of Object.entries(subjects))for(const platform of ['tea','
  const source=fs.readFileSync(`${out}/_main.mjs`,'utf8');
  const mapped=fs.readFileSync(`${out}-maps/_main.mjs`,'utf8').replace(/\/\/# sourceMappingURL=.*\n$/,'');
  if(mapped!==source)throw Error('Map build changed executable bytes');
+ if(source.indexOf('\n')!==source.length-1)throw Error('Release source-map lookup requires one executable line');
  const map=new TraceMap(JSON.parse(fs.readFileSync(`${out}-maps/_main.mjs.map`)));
  const ast=acorn.parse(source,{ecmaVersion:'latest',sourceType:'module'}),decls=[],nodes=[],matrices=[];
  walk(ast,(n,p)=>{nodes.push(n);if(n.type==='VariableDeclarator'){let info=originalPositionFor(map,{line:1,column:n.id.start});decls.push({n,...info})}if(n.type==='ArrayExpression'&&n.elements.length&&n.elements.every(e=>e?.type==='ArrayExpression'&&e.elements.length===2&&typeof e.elements[0]?.value==='string'&&typeof e.elements[1]?.value==='string'&&/^[01]+$/.test(e.elements[1].value)))matrices.push(n)});
@@ -36,6 +37,9 @@ for(const [app,input] of Object.entries(subjects))for(const platform of ['tea','
   'selection runtime':decls.filter(d=>top.has(d.n)&&d.source?.includes('/browser-direct/Direct.beni')&&/^(templateWanted|templateAny|templateSelect|templateSelectNew|templateGroup|templateSameInputs)$/.test(d.name??'')).map(d=>d.n),
   'context and patch runtime':decls.filter(d=>top.has(d.n)&&d.source?.includes('/browser-direct/Direct.beni')&&/^template/.test(d.name??'')&&!/^(templateWanted|templateAny|templateSelect|templateSelectNew|templateGroup|templateSameInputs)$/.test(d.name??'')).map(d=>d.n),
  };
+ if(categories['group descriptors'].length!==categories['patch entry functions'].length)throw Error('Descriptor/patch map mismatch');
+ if(categories['restate entry functions'].length>categories['patch entry functions'].length)throw Error('Restate map mismatch');
+ if(platform==='direct'&&matrices.length>0&&categories['group descriptors'].length===0)throw Error('Unresolved template source-map names');
  const stub=n=>({start:n.type==='VariableDeclarator'?n.init.start:n.start,end:n.type==='VariableDeclarator'?n.init.end:n.end,text:n.type==='VariableDeclarator'?'0':'[]'});
  const baseline=size(source),rows=[];let cumulative=[],previous=baseline.brotli;
  for(const [part,ns] of Object.entries(categories)){

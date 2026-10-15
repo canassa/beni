@@ -1,0 +1,65 @@
+{
+  "method": "10000 paired-round percentile bootstrap replicates of candidate median minus original median; untraced only; deterministic PRNG; does not model timer quantization or establish an equivalence bound",
+  "rows": [
+    {
+      "file": "path-timing",
+      "variant": "short-path-ids",
+      "operation": "feed tab",
+      "medianDifferenceMs": -0.019999995827674866,
+      "percentile95Ms": [
+        -0.08500000089406967,
+        0.06000000238418579
+      ]
+    },
+    {
+      "file": "path-timing",
+      "variant": "short-path-ids",
+      "operation": "favorite",
+      "medianDifferenceMs": 0.004999995231628418,
+      "percentile95Ms": [
+        -0.05000000447034836,
+        0.04500000178813934
+      ]
+    },
+    {
+      "file": "path-timing",
+      "variant": "short-path-ids",
+      "operation": "editor keystroke",
+      "medianDifferenceMs": -0.009999990463256836,
+      "percentile95Ms": [
+        -0.019999995827674866,
+        0.019999995827674866
+      ]
+    },
+    {
+      "file": "group-timing",
+      "variant": "inline-group-records",
+      "operation": "feed tab",
+      "medianDifferenceMs": -0.005000002682209015,
+      "percentile95Ms": [
+        -0.04999999701976776,
+        0.019999995827674866
+      ]
+    },
+    {
+      "file": "group-timing",
+      "variant": "inline-group-records",
+      "operation": "favorite",
+      "medianDifferenceMs": 0.01499999314546585,
+      "percentile95Ms": [
+        -0.04500000178813934,
+        0.10500000417232513
+      ]
+    },
+    {
+      "file": "group-timing",
+      "variant": "inline-group-records",
+      "operation": "editor keystroke",
+      "medianDifferenceMs": 0.015000000596046448,
+      "percentile95Ms": [
+        -0.005000002682209015,
+        0.03999999165534973
+      ]
+    }
+  ]
+}
