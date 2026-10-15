@@ -8,7 +8,7 @@ module Api
   summary storeViewer: unused
   summary logout: unused
   summary url: π1 R, π2 R
-  summary errorMessages: π1 R, π1#Rejected.0 A; res fresh1 π1#Rejected.0
+  summary errorMessages: π1 R, π1#Rejected.0 RA; res fresh1 π1#Rejected.0
   summary serverErrors: res fresh1
   summary expecting: π1 RA; res #Expect.1 λ, #Expect.1◇ π1; π1 calls 0, unseen
   summary headers: res fresh1
@@ -95,7 +95,7 @@ module Feed
   64:53 ++ model.errors: accepted param
   summary init: π3.articles RA, π3.total R; res #Model.0.articles π3.articles, #Model.0.errors fresh1
   summary update: π1 R, π1#CompletedFavorite.0#Err.0 R, π1#CompletedFavorite.0#Err.0#Rejected.0 R, π1#CompletedFavorite.0#Err.0#Rejected.0[*] A, π1#CompletedFavorite.0#Ok.0 RA, π2#Model.0 RA, π2#Model.0.articles RA, π2#Model.0.articles[*] A, π2#Model.0.errors RAW; res .0#Model.0 π2#Model.0, .0#Model.0.articles fresh3{lost} π2#Model.0.articles, .0#Model.0.articles[*] ~fresh4{lost} ~π1#CompletedFavorite.0#Ok.0 ~π2#Model.0.articles[*], .0#Model.0.errors fresh1 π2#Model.0.errors{excl π1#CompletedFavorite.0#Err.0#Rejected.0, sep π1#CompletedFavorite.0#Err.0#Rejected.0[*] π2#Model.0.errors[*]}, .0#Model.0.errors[*] ~fresh5 ~π1#CompletedFavorite.0#Err.0#Rejected.0[*], .1#Cmd.0 fresh2 shared(Cmd.none)#Cmd.0
-  summary replaceArticle: π1 A, π1.slug R, π2 A, π2.slug R; res π1 π2
+  summary replaceArticle: π1 RA, π1.slug R, π2 RA, π2.slug R; res π1 π2
   summary viewArticles: π1#Model.0.articles RA, π1#Model.0.errors RA; res ⟨render⟩ fresh2{lost}, ⟨render⟩⋆ ~fresh1{lost} ~π1#Model.0.articles ~π1#Model.0.errors
   summary viewPreview: π2.description R, π2.favorited R, π2.slug R, π2.tags RA, π2.title R; res ⟨render⟩ fresh2{lost}, ⟨render⟩⋆ ~fresh1{lost} ~π2.tags
   summary viewPagination: π1 RA; res ⟨events⟩⋆ ~π1, ⟨render⟩ fresh2{lost}, ⟨render⟩⋆ ~fresh1 ~π1; π1 calls 0, unseen

@@ -195,3 +195,35 @@ reader intentionally supports the exporter's string escapes rather than every
 JSON escape. Unsupported escapes in ad hoc inputs fail loudly. JSONL campaign
 inputs are trusted exports of the matching oracle, not an untrusted-input
 attestation format.
+
+## Auditing an ownership fix
+
+`--no-minimize` keeps the original sources, dump/enforcement cross-check,
+whole-population value checks, paired executions, coverage floors and failure
+accounting. It omits only the historical persistent-runtime reduction. A fix
+campaign uses a frozen compiler binary so rebuilds cannot mix verdicts:
+
+```sh
+cp zig-out/safe/bin/beni zig-out/ownership-fixed-beni
+node proofs/ownership/scripts/bridge.mjs --ci --no-build --no-minimize \
+  --compiler=zig-out/ownership-fixed-beni --out=zig-out/bridge-fixed-ci
+node proofs/ownership/scripts/bridge.mjs --long --no-build --no-minimize \
+  --compiler=zig-out/ownership-fixed-beni --out=zig-out/bridge-fixed-long
+node proofs/ownership/scripts/bridge-fix-audit.mjs zig-out/bridge-fixed-ci \
+  zig-out/ownership-fixed-beni zig-out/audit-ci
+node proofs/ownership/scripts/bridge-fix-audit.mjs zig-out/bridge-fixed-long \
+  zig-out/ownership-fixed-beni zig-out/audit-long
+```
+
+Build `triage` with `lake build triage` in `proofs/ownership` first. The audit
+runs both Lean interpreters on every **original** program-level Zig-accepts /
+Lean-refuses lead, checks the complete traces, and fails if any diverge.
+It also replays all 401 retained reverse leads with the campaign compiler,
+reporting verdict movement separately from changes to refusal details. The
+long audit requires every one of the six original confirmed clusters to have
+ceased to be a program-level acceptance. The compressed judgments retain the
+core programs, complete traces, old/new reverse refusals and compiler hashes.
+
+The exact baseline comparison applies to canonical CI (766 inputs) and long
+(116,456 inputs) populations. A custom-sized campaign is still judged and has
+its reverse leads replayed, but makes no baseline-equality claim.

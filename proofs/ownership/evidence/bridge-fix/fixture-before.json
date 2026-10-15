@@ -1,0 +1,38 @@
+[
+  {
+    "fixture": "BridgeBlockResult.beni",
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "fixture": "BridgeCaptureOperand.beni",
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "fixture": "BridgeCaptureResult.beni",
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "fixture": "BridgeCaseResult.beni",
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "fixture": "BridgeFoldBorrow.beni",
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "fixture": "BridgeRecursiveCapture.beni",
+    "exit": 0,
+    "stdout": "",
+    "stderr": ""
+  }
+]
