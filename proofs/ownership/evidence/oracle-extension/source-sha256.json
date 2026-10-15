@@ -1,12 +1,12 @@
 {
-  "implementation": "bd580027d",
+  "implementation": "c6e206fef",
   "shippingCompiler": "bcf28a6ee",
   "leanSources": {
     "Audit.lean": "27be1e2ab0bc1be7753a3914c00c0bb9f90418e816a2d455e99fe58ab4430ab3",
     "Axioms.lean": "e8364d2012dfc59434b4a8324094b58443ec440517b41acc9e060dcc3052e8e2",
     "Main.lean": "84a49a42a6748f0fda1631df78387a11768eb4e171dfb440bdeb8ab3abfe46ed",
     "Ownership/Aliasing.lean": "d033360b0772c9cbc6c6ea85347d4269a1ca004b9a4cbe3d6c08c3ebfe05bfe1",
-    "Ownership/Bridge.lean": "0868d058999204bf9d8bd43183152164b4ca1a2b19391eb7a56d5f8e71c1119a",
+    "Ownership/Bridge.lean": "0d200d4ceb9df25bce7e1249b33e8f7cb1450d78feebf05bb308b3bbbc9de6a2",
     "Ownership/BridgeWire.lean": "a621e4b4c44a4d6e1d109f83a71a947026c093a1d76c859ccaebf947ed026eda",
     "Ownership/BuilderProof.lean": "eb0ed3235b003b1cb8953b353633bea1c2e2ce7cec6a3729c37a376835c86552",
     "Ownership/Checker.lean": "fd44598aa4c9f6ea7a7133ac52b41ddfac38cb176e8d58849ab34860c7b75475",
@@ -29,7 +29,7 @@
     "Ownership/Semantics.lean": "96f576b783d751d403f6161e6be8e5bd25fc069f80e2b5b538174404d251a073",
     "Ownership/Smoke.lean": "8c2b3f609c9a00ac17b5bb3af608a28034fa3600ff2a92e4c7cd095e00a6fefa",
     "Ownership/Soundness.lean": "1a60cea526e58c065f3ac784e53b5ee8255e4acb0552d9c2f6dbc5fc0de8fdd0",
-    "Ownership/Sync.lean": "bc46e80cef54bd1693582a440cc52f7af8cf19ba151844f4caf119ef3edc0eca",
+    "Ownership/Sync.lean": "4c433d2dfe364bd30bae45566ef7b5d498c71d6d2957842bf1dd1298b1502d33",
     "Ownership/Syntax.lean": "b40a7dcee376b92a03b2a193ab7e2e33f9ebc1e4709ecd4300dfced0a42c1ee0",
     "Ownership/Targeted.lean": "b4406e379bb62b71324c6b5b2a94961973ce695de6684d9129b0d2cf9d1014d9",
     "Ownership.lean": "1b287daa2386bd83c7bcc1f133ce2facbdb436c20bc46fe12464baa77126fa65",

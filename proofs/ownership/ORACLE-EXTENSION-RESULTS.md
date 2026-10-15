@@ -9,9 +9,9 @@ PR #116's initialization condition is projected without depending on that
 still-open compiler PR. The shipping compiler and its ownership policy are
 unchanged.
 
-There are **173 verdict fixtures** (98 original + 75 sync), **496 targeted
+There are **176 verdict fixtures** (98 original + 78 sync), **508 targeted
 programs**, and **twelve new required holes**. Historical fixture/targeted ids
-are unchanged; 31 verdict fixtures and 148 targeted programs append. The new
+are unchanged; 34 verdict fixtures and 160 targeted programs append. The new
 recursive Result fixture exercises optimistic bottom propagation before the
 base arm is discovered. An additional initialization regression prevents a
 subsequent module entry from reusing a spent private-transfer permission to clear
@@ -23,7 +23,7 @@ while solving or reusing its summary, even at a colliding relative allocation si
 Every fixed witness is well typed, refused by the corrected checker, accepted
 under its hole, and disagrees between the value and in-place interpreters.
 The independent finite targeted product must catch every hole too; an error
-or a rejection does not count. Its corrected run accepted 184 of 496 programs,
+or a rejection does not count. Its corrected run accepted 192 of 508 programs,
 with zero disagreements, execution errors or invalid result certificates.
 
 | Hole | Newly accepted targeted programs | Interpreter disagreements |
@@ -56,24 +56,28 @@ also pass: all 23 targeted controls are caught.
 
 | Campaign | Inputs | Translated / value-checked | Skipped | Zig accepts / Lean refuses | Zig refuses / Lean accepts | Confirmed unsafe originals |
 |---|---:|---:|---:|---:|---:|---:|
-| CI bound | 945 | 462 | 483 | **6** | **8** | **0** |
-| Bound 2 + three seeds × 20,000 | 116,635 | 43,180 | 73,455 | **1,725** | **401** | **0** |
+| CI bound | 960 | 467 | 493 | **6** | **8** | **0** |
+| Bound 2 + three seeds × 20,000 | 116,650 | 43,185 | 73,465 | **1,725** | **401** | **0** |
 
 | Full stream | Inputs | Translated | Forward leads | Reverse leads | Confirmed unsafe |
 |---|---:|---:|---:|---:|---:|
-| Fixtures / sync / targeted | 669 | 338 | 0 | 6 | 0 |
+| Fixtures / sync / targeted | 684 | 343 | 0 | 6 | 0 |
 | Bound-2 enumeration | 55,966 | 27,769 | 294 | 267 | 0 |
 | Seed 17 | 20,000 | 5,006 | 491 | 37 | 0 |
 | Seed 20261011 | 20,000 | 5,054 | 470 | 43 | 0 |
 | Seed 314159 | 20,000 | 5,013 | 470 | 48 | 0 |
 
 Compared with the post-#124 campaign, the forward and reverse counts are
-unchanged. The expanded fixed set contributes **114 new translated agreements**
-and **65 counted skips**, with no additional whole-program lead in either
+unchanged. The expanded fixed set contributes **119 new translated agreements**
+and **75 counted skips**, with no additional whole-program lead in either
 direction. All historical enumeration and generator stream SHA-256 hashes and
 input/translation/skip/value-check counts match exactly; the fixed stream
-changes only by the appended examples. Total full-run agreements rise from
-40,940 to **41,054**.
+changes only by the appended examples. Both audits also pin the full original
+490-program fixed prefix, including source, declaration tables and verdicts,
+to SHA-256 `27c16813417690b56c0968697dd32017542fc5c352ce0c8fcab050fe8b580c3a`.
+Negative controls change a source, flip a verdict, reorder or omit a row; each
+is rejected by that check. Total full-run agreements rise from
+40,940 to **41,059**.
 
 Every remaining original forward lead was judged with both Lean interpreters,
 comparing the complete final value, reads and external-reader observations.
@@ -84,11 +88,13 @@ original source fidelity and frozen compiler hashes; no historical minimum
 classifies an original. The optional persistent-runtime minimizer was disabled
 for these evidence runs; ordinary `ownership ci` also passed its default bridge.
 
-The bridge emits actual beni `?` for the canonical question lowering and a
+The bridge emits actual beni `?` for the canonical question lowering in
+definition-tail position, ordinary cases for bound intermediate results, and a
 native recursive Chain ADT. Their normalized final values match the oracle.
 Entry/private-root projections remain counted skips because the bridge has no
-runtime entry-delivery model. The emitted direct library still uses persistent
-lists; its execution is not the in-place judge. Agreeing finite traces are
+runtime entry-delivery model. Initialization controls are Lean-only; the zero
+confirmed count applies to the translated common subset. The emitted direct
+library still uses persistent lists; its execution is not the in-place judge. Agreeing finite traces are
 precision evidence on these inputs, not proofs of global safety.
 
 [CI report](evidence/oracle-extension/ci/report.json) and
@@ -124,18 +130,33 @@ The before-fix probes, source-rule-removal failures and restored fixture log are
 retained in `evidence/oracle-extension/review-*.log.gz`. The review response is
 on [PR #132](https://github.com/canassa/beni/pull/132#issuecomment-6190721943).
 
+The follow-up review found a genuine bridge bug: an intermediate bound Result
+case matching the question shape was emitted as `?`, so `Err 7` escaped the
+definition instead of allowing its continuation to return `Ok 99`. The retained
+compiler regression fails before the tail-context guard and passes after it.
+Case/branch arms inherit their context; a let RHS is non-tail and a callback
+starts its own definition frame. `review-tail-*.log.gz` retains both executions.
+
+That review also requested source-level fixed-prefix pinning and an initialization
+closure fixture. The prefix check and its four negative controls are described
+above. An initializer calling a local getter and putting its captured list into
+both result fields is refused (`Dead`); the distinct-copy twin is accepted.
+Both are fixed verdict fixtures and targeted products. The
+[follow-up response](https://github.com/canassa/beni/pull/132#issuecomment-6191335011)
+answers all four findings.
+
 ## Validation and boundaries
 
 `lake build` passes: 3,258 constants replayed through the kernel, no swapped
 compiler attributes, and exactly the existing three unproved statements. The
-independent `scripts/audit.sh` over committed `bd580027d` also passes: all
-32 sources parsed, 4,718 constants replayed module by module, only the four
+independent `scripts/audit.sh` over committed `c6e206fef` also passes: all
+32 sources parsed, 4,720 constants replayed module by module, only the four
 pinned constants dependent on the three existing unproved statements, no
 swapped attributes and no build-time source changes.
-`ownership ci 20000 17` passes all 173 verdict fixtures, the v5 campaign
+`ownership ci 20000 17` passes all 176 verdict fixtures, the v5 campaign
 (2,911 accepted, 1,815 writing in place, zero disagreements), every required
 control, all 55,966 bound-2 programs (31,680 accepted, 10,468 writing, zero
-disagreements), all 496 targeted programs and the bounded shipping bridge.
+disagreements), all 508 targeted programs and the bounded shipping bridge.
 Expected observations independently pin inner/outer question frames, recursive
 Result errors, successful questions and the recursive Chain consumer.
 
@@ -159,7 +180,7 @@ Inside `nix develop .#ownership`, with `LEAN_NUM_THREADS=8`:
 
 ```sh
 zorg build
-cp zig-out/bin/beni zig-out/ownership-oracle-reviewed-ci-beni
+cp zig-out/bin/beni zig-out/ownership-oracle-tail-ci-beni
 zorg build test test-blackbox fmt-check beni-fmt-check -j4
 cp zig-out/safe/bin/beni zig-out/ownership-oracle-long-beni
 cd proofs/ownership
@@ -169,13 +190,13 @@ lake exe ownership ci 20000 17
 lake exe ownership enumerate-targeted --mutant=init-authority
 # Use fresh, separate output directories for each campaign.
 node scripts/bridge.mjs --ci --no-build --no-minimize \
-  --compiler=../../zig-out/ownership-oracle-reviewed-ci-beni --out=../../zig-out/ownership-oracle-reviewed-ci --jobs=8
-node scripts/bridge-fix-audit.mjs ../../zig-out/ownership-oracle-reviewed-ci \
-  ../../zig-out/ownership-oracle-reviewed-ci-beni ../../zig-out/ownership-oracle-reviewed-audit-ci
+  --compiler=../../zig-out/ownership-oracle-tail-ci-beni --out=../../zig-out/ownership-oracle-tail-ci --jobs=8
+node scripts/bridge-fix-audit.mjs ../../zig-out/ownership-oracle-tail-ci \
+  ../../zig-out/ownership-oracle-tail-ci-beni ../../zig-out/ownership-oracle-tail-audit-ci
 node scripts/bridge.mjs --long --no-build --no-minimize \
-  --compiler=../../zig-out/ownership-oracle-long-beni --out=../../zig-out/ownership-oracle-reviewed-long --jobs=8
-node scripts/bridge-fix-audit.mjs ../../zig-out/ownership-oracle-reviewed-long \
-  ../../zig-out/ownership-oracle-long-beni ../../zig-out/ownership-oracle-reviewed-audit-long
+  --compiler=../../zig-out/ownership-oracle-long-beni --out=../../zig-out/ownership-oracle-tail-long --jobs=8
+node scripts/bridge-fix-audit.mjs ../../zig-out/ownership-oracle-tail-long \
+  ../../zig-out/ownership-oracle-long-beni ../../zig-out/ownership-oracle-tail-audit-long
 ```
 
 The CI evidence used a frozen default `zorg build` compiler; the long evidence

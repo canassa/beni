@@ -1,28 +1,38 @@
 {
-  "judgeSha256": "95980aed739c072ae06f5f743a187d598d25c88d0e551316c68d1cfa3e7b6f5d",
+  "fixedPrefix": {
+    "programs": 490,
+    "tables": 64,
+    "families": {
+      "fixture": 98,
+      "sync": 44,
+      "targeted": 348
+    },
+    "sha256": "27c16813417690b56c0968697dd32017542fc5c352ce0c8fcab050fe8b580c3a"
+  },
+  "judgeSha256": "b7ee7aa02d2e896b445b8e788d5ee92c096147a97b73d56ab80a82d65f613559",
   "observation": "Original programs; complete final value, reads and externalReads in both unchanged Lean interpreters. The judge labels the supplied original core minimum under --only; no reduction is used.",
   "campaign": {
-    "programs": 945,
-    "translated": 462,
-    "skipped": 483,
-    "valueChecked": 462,
+    "programs": 960,
+    "translated": 467,
+    "skipped": 493,
+    "valueChecked": 467,
     "leads": 6,
     "precision": 8,
     "environment": {
       "node": "v24.19.0",
       "compilerSha256": "445fda39e954533502679b8f302e13aecc8d4940d553bceea774dd7eb1b6e1c7",
-      "oracleSha256": "d75fdde02421e1f0184b2a6219397a36ccb451de5656e94b6961caad59c183b6"
+      "oracleSha256": "747352376c0873c6345748a09216456d07e4becee7931bbb7ed50cb9ddf041a8"
     },
     "streams": [
       {
         "name": "fixtures-0.jsonl",
-        "programs": 669,
-        "translated": 338,
-        "skipped": 331,
-        "valueChecked": 338,
-        "agreements": 332,
+        "programs": 684,
+        "translated": 343,
+        "skipped": 341,
+        "valueChecked": 343,
+        "agreements": 337,
         "precision": 6,
-        "sha256": "2e6e1056d75c79bcc4e2101ce2a6fb773677407670506a282de9fe5dc210c900"
+        "sha256": "723d6b2f61335070d92bdfded31013f753ba10aa357a1e73fa21359422013cf9"
       },
       {
         "name": "enumerate-0.jsonl",
@@ -42,8 +52,8 @@
         "valueChecked": 32,
         "sha256": "121e9228d9e26a0e11f09b8632dd7c55a644be1a7e68daf029c9770150ebff39",
         "agreements": 25,
-        "precision": 2,
-        "leads": 5
+        "leads": 5,
+        "precision": 2
       }
     ]
   },

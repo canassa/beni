@@ -1,9 +1,9 @@
 {
-  "programs": 945,
-  "translated": 462,
-  "skipped": 483,
-  "valueChecked": 462,
-  "agreements": 448,
+  "programs": 960,
+  "translated": 467,
+  "skipped": 493,
+  "valueChecked": 467,
+  "agreements": 453,
   "precision": 8,
   "leads": 6,
   "sites": {
@@ -27,35 +27,35 @@
     "model-entry-protocol": 20,
     "abstract-event-boundary": 21,
     "abstract-owned-boundary": 20,
-    "primitive-private-root": 40,
+    "primitive-private-root": 50,
     "late-shared-publication": 8,
     "runtime-entry-protocol": 20,
     "unused-capture-slot": 3
   },
   "constructs": {
     "let": {
-      "translated": 2540,
-      "skipped": 5123
+      "translated": 2550,
+      "skipped": 5168
     },
     "literal": {
       "translated": 1007,
-      "skipped": 1685
+      "skipped": 1695
     },
     "closure": {
       "translated": 418,
-      "skipped": 1153
+      "skipped": 1163
     },
     "push": {
       "translated": 397,
-      "skipped": 734
+      "skipped": 744
     },
     "app": {
       "translated": 419,
-      "skipped": 878
+      "skipped": 888
     },
     "record": {
       "translated": 218,
-      "skipped": 483
+      "skipped": 503
     },
     "builder": {
       "translated": 17,
@@ -115,7 +115,7 @@
     },
     "copy": {
       "translated": 12,
-      "skipped": 63
+      "skipped": 68
     },
     "recur": {
       "translated": 81,
@@ -141,25 +141,25 @@
       "translated": 0,
       "skipped": 43
     },
-    "private-root": {
-      "translated": 0,
-      "skipped": 45
-    },
-    "entry": {
-      "translated": 0,
-      "skipped": 80
-    },
     "err": {
-      "translated": 55,
+      "translated": 65,
       "skipped": 0
     },
     "result-case": {
-      "translated": 45,
+      "translated": 50,
       "skipped": 0
     },
     "ok": {
-      "translated": 40,
+      "translated": 50,
       "skipped": 0
+    },
+    "private-root": {
+      "translated": 0,
+      "skipped": 55
+    },
+    "entry": {
+      "translated": 0,
+      "skipped": 90
     },
     "end-chain": {
       "translated": 39,
@@ -187,16 +187,16 @@
       "precision": 2
     },
     "sync": {
-      "programs": 75,
-      "translated": 32,
-      "skipped": 43,
-      "agreements": 32
+      "programs": 78,
+      "translated": 33,
+      "skipped": 45,
+      "agreements": 33
     },
     "targeted": {
-      "programs": 496,
-      "translated": 224,
-      "skipped": 272,
-      "agreements": 220,
+      "programs": 508,
+      "translated": 228,
+      "skipped": 280,
+      "agreements": 224,
       "precision": 4
     },
     "enumerate": {
@@ -250,8 +250,8 @@
       "programs": 3,
       "translated": 3,
       "skipped": 0,
-      "precision": 2,
-      "agreements": 1
+      "agreements": 1,
+      "precision": 2
     },
     "indexed-chain": {
       "programs": 7,
@@ -294,18 +294,18 @@
   "environment": {
     "node": "v24.19.0",
     "compilerSha256": "445fda39e954533502679b8f302e13aecc8d4940d553bceea774dd7eb1b6e1c7",
-    "oracleSha256": "d75fdde02421e1f0184b2a6219397a36ccb451de5656e94b6961caad59c183b6"
+    "oracleSha256": "747352376c0873c6345748a09216456d07e4becee7931bbb7ed50cb9ddf041a8"
   },
   "streams": [
     {
       "name": "fixtures-0.jsonl",
-      "programs": 669,
-      "translated": 338,
-      "skipped": 331,
-      "valueChecked": 338,
-      "agreements": 332,
+      "programs": 684,
+      "translated": 343,
+      "skipped": 341,
+      "valueChecked": 343,
+      "agreements": 337,
       "precision": 6,
-      "sha256": "2e6e1056d75c79bcc4e2101ce2a6fb773677407670506a282de9fe5dc210c900"
+      "sha256": "723d6b2f61335070d92bdfded31013f753ba10aa357a1e73fa21359422013cf9"
     },
     {
       "name": "enumerate-0.jsonl",
@@ -325,8 +325,8 @@
       "valueChecked": 32,
       "sha256": "121e9228d9e26a0e11f09b8632dd7c55a644be1a7e68daf029c9770150ebff39",
       "agreements": 25,
-      "precision": 2,
-      "leads": 5
+      "leads": 5,
+      "precision": 2
     }
   ]
 }
