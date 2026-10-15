@@ -496,6 +496,8 @@ const VisitMutation = enum { missing, repeated, child, cache };
 
 fn visitMutation(mutation: VisitMutation) !void {
     // PREPARE: alter an emitted call, independently of its analysis scope.
+    // These negative probes intentionally pin the development emitter shape;
+    // a shape change must update the probe, never silently skip corruption.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     const arena = w.arena.allocator();

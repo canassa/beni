@@ -1,7 +1,8 @@
 # 95 — Parameterised helper templates match the visit plan, at a measured cost
 
 *2026-10-15. Apple M2 Pro; zorg 0.17.1+zorg.1; Node 24.19.0;
-Chrome 155.0.8059.80. Both native and LLVM ReleaseSafe gates were run.
+Chrome 155.0.8059.80. Local native and LLVM ReleaseSafe suites were run; §7 records the
+post-rebase hardware-budget gate refusal.
 Research 94 and its artifacts remain the historical before measurement.*
 
 ## 1. Result
@@ -13,8 +14,9 @@ enters exactly its independently predicted instance/group set. Its five
 Reader 2/18, Editor 1/12 and Tour 6/32: exactly the `ChangedUrl` keys.
 
 **This does not establish S6 performance acceptance.** Release brotli grows
-32,411 → 37,908 B, and the three timed messages are slower in the fresh
-before/after batch below. No threshold, application source, budget or test
+32,411 → 38,030 B, and browser-tea is faster on all three timed messages in
+the final fresh batch below. Direct before/after medians are mixed within
+overlapping spreads; no speed improvement is established. No threshold, application source, budget or test
 coverage was changed to conceal either result. The second full V3 campaign
 is still owed; the focused composition regressions here do not claim to be
 that campaign. Existing S0 tripwires remain visible in §5.
@@ -130,7 +132,7 @@ release build; it is not part of the JavaScript byte figure.
 |---|---:|---:|
 | browser-tea | 125,961 | 31,389 |
 | browser-direct before | 299,601 | 32,411 |
-| browser-direct now | 361,594 | 37,908 |
+| browser-direct now | 361,594 | 38,030 |
 
 The old compiler's binary SHA-256 exactly matches research 94. The new
 artifact records both compiler hashes, the source diff hash and base commit.
@@ -142,13 +144,24 @@ must match across all subjects. No CSS. Medians in milliseconds:
 
 | Message | Tea untraced | Direct before | Direct now | Tea traced script | Direct before | Direct now |
 |---|---:|---:|---:|---:|---:|---:|
-| Feed tab | 0.305 | 0.380 | 0.400 | 0.501 | 0.685 | 0.762 |
-| Favorite | 0.270 | 0.330 | 0.360 | 0.520 | 0.702 | 0.720 |
-| Editor keystroke | 0.340 | 0.365 | 0.380 | 0.524 | 0.675 | 0.722 |
+| Feed tab | 0.295 | 0.390 | 0.395 | 0.525 | 0.767 | 0.776 |
+| Favorite | 0.250 | 0.325 | 0.315 | 0.453 | 0.655 | 0.702 |
+| Editor keystroke | 0.315 | 0.340 | 0.365 | 0.510 | 0.657 | 0.703 |
 
 These are sub-millisecond, loaded-machine measurements, not a parity claim.
-All raw samples and loads are archived. Both measurement modes have the same
-ordering. The group precision repair did not improve this batch's timings.
+All raw samples and loads are archived. Tea is faster on all three in both
+measurement modes. Direct before/after untraced medians are mixed; traced
+medians are higher after the change. The overlapping spreads do not establish
+a statistically significant direct before/after difference. Untraced min/max
+across the 15 samples, in milliseconds:
+
+| Message | Tea range | Direct before range | Direct now range |
+|---|---:|---:|---:|
+| Feed tab | 0.265–0.490 | 0.335–0.525 | 0.370–0.435 |
+| Favorite | 0.225–0.400 | 0.285–0.450 | 0.270–0.405 |
+| Editor keystroke | 0.275–0.440 | 0.305–0.365 | 0.315–0.400 |
+
+The group precision repair does not establish a speed win.
 The mechanism added by this implementation is template context capture,
 parameter preparation and selection lookup/first-use construction, plus
 outlined entry functions and masks in the bundle. Instrumented counts show,
@@ -160,7 +173,7 @@ work. This identifies remaining work outside the group guards; it does not
 attribute an exact portion of Chrome CPU time to any one operation. No timing
 or byte tuning followed this batch.
 
-The S0 campaign retains its 99-program series. Conduit has 96/97 bounded keys,
+The final S0 campaign enumerates 102 programs (99 before the rebase). Conduit has 96/97 bounded keys,
 1/75 constructors under `*`, 79 sites and zero value roots. Its bounded leaf
 facts now have 782 pairs over 114 groups, versus 667/106 before: choice-dependent
 helper inputs now retain reads the old argument abstraction discarded. Message
@@ -173,30 +186,85 @@ comparisons is not the same measurement. The direct empty floor stays 327 B.
 Existing S0 tripwires still fire: dynamic star share is 9/62 (14.52%, above
 10%); largest pairs/key is 8.146 versus the unchanged 0.667 limit; the separate
 ValuePath program has 2/7 value roots; and the trie's write half remains in the
-set-only subject. None is renamed a pass. These and the larger/slower Conduit
-output prevent treating the helper precision repair as overall S6 acceptance.
+set-only subject. None is renamed a pass. These and the larger Conduit output, without an established speed win,
+prevent treating the helper precision repair as overall S6 acceptance.
 
 ## 6. Validation and reproduction
 
-- `zorg build test-run-hashes`: all corpus behavior and value fuzz verified;
-  only the two known macOS case-folding tests fail. The new list-value case
-  was recorded separately after the full replay. No hashes were hand-edited.
-- Unfiltered `zorg build gates` and `zorg build gates -Dllvm`: 1,301 passes,
-  15 skips; only those same two known failures. They include the visit invariant
-  and all four deliberate-corruption tests. The list-value fixture was added
-  afterward and both gates were rerun on the final tree.
-- `zorg build test-browser -Dcorpus=Template -Dchrome=…`: all new paired pages
-  and fuzz pass; the later list-value case passes in its own Chrome run.
-- Conduit's three happy-dom scripts and value fuzz pass in the replay/gates.
-  The three timed messages match across fresh Chrome pages. The previously
-  recorded Editor/Tour Chrome navigation-fuzz limitation (#103/#109) is not
-  claimed fixed by this work.
-- No new budget grant is used. The owner approved 5,300M for Tour fuzz during
-  this session; hash-recorded gates fit its existing limit, so it stays intact.
+- Final `zorg build test-run-hashes`: all corpus behavior and value fuzz
+  verified; 546 passes and only the two known macOS case-folding failures.
+  No hashes were hand-edited or hand-merged.
+- Final unfiltered `zorg build test test-blackbox fmt-check beni-fmt-check`,
+  also with `-Dllvm`: each has 1,304 passes, 15 skips and only those same two
+  known failures. All four deliberate-corruption probes are included.
+  **The hardware-budget `zorg build gates` run is owed on x86-64 Linux:**
+  current master refuses this unsupported host (§7). The earlier pre-rebase
+  CPU-fallback gate results are historical, not a final budget verdict.
+- Final `zorg build test-browser -Dcorpus=Template -Dchrome=…` and the same
+  with `-Dcorpus=Conduit`: all paired pages and value fuzz pass. Master's
+  driver fixes remove the previous Editor/Tour Chrome navigation-fuzz wall;
+  this work does not claim authorship of those driver fixes.
+- No new budget grant is used. The owner approved 5,300M for Tour fuzz;
+  the earlier hash-recorded gate fitted the existing CPU fallback. Final
+  instruction-budget validation remains owed; no instruction count is inferred
+  from that CPU evidence.
 
-Raw artifacts are under `bench/conduit/results/2026-10-15-*`. From the repo root,
+Raw artifacts are under `bench/conduit/results/2026-10-15-rebased-*`, plus
+`2026-10-15-validation.json`. The initial pre-rebase batch remains archived
+under `2026-10-15-*` without the `rebased` suffix; final tables use the later batch. From the repo root,
 use `direnv exec .` with `node bench/conduit/measure.mjs` and `BASELINE_BENI`
 pointing to the research-94 compiler, then `node bench/conduit/time.mjs
 --baseline=browser-direct-before-release --samples=15`. S0 is `BENI=zig-out/safe/bin/beni
 node bench/writesets/stats.mjs --json`; the floor is `node bench/size.mjs
 --beni=zig-out/safe/bin/beni --pages-only`. The results README maps each artifact.
+
+## 7. Review and rebase follow-up
+
+The branch was subsequently rebased onto master `df04ca2db`; all previous diary
+blocks were checked to survive verbatim. Conflicted run hashes were discarded
+and regenerated with `zorg build test-run-hashes`, never hand-merged. Master’s
+new budget contract supersedes the CPU fallback used by the earlier gate runs
+in §6: on this aarch64 macOS host `zorg build gates` now deliberately refuses.
+The prescribed local validation is `zorg build test test-blackbox fmt-check
+beni-fmt-check`, also run with `-Dllvm`. The hardware instruction-budget gate
+remains owed on a suitable x86-64 Linux host. CI’s no-budget test job does not
+substitute for that gate. No rule or limit is changed to avoid the refusal.
+
+Claude’s review found no blocking defect and requested targeted probes.
+`TemplateControlLists` adds a formal first receiving a closed literal and then
+a model path, plus a helper consuming a conditional choice between distinct
+list paths. `TemplateMaybe` switches a held Maybe Html slot between a runtime
+text value, a template and Nothing. `TemplateClockRows` exercises a clock
+argument inside a helper-owned For. This last probe found a shared compiler
+bug: the ordinary DOM lowering had no every-render facts for ungrouped markup
+rows, so tea’s clock stayed stale while direct’s advanced. Those facts are now
+computed independently of grouped template eligibility; tea is not opted into
+the parameterised protocol. The paired transcript and value fuzz pass after
+the fix. Backend.md records the rule. Missing dispatch metadata is also
+conservatively volatile, with an assertion for checked application call sites.
+
+The review’s remaining points are confirmed or clarified: only the two
+`anchorPath*` readers expand deferred control bases, after their early opaque
+root checks; hole/let accumulation resolves them at finish. Function term
+identity includes its body and captures. `templateMapPatch` restores row state
+even if scope publication throws. Global `send` queues reentrant sends across
+all programs, and every queued handler begins a fresh group epoch; existing
+RenderedSends/RenderedWaiterCancelled cases exercise this. Rt.childList skips
+identical pure blocks, so the direct prepass enters them once; that is now
+commented. The corruption tests intentionally pin development emitter shapes.
+
+“Independent” means independent of the emitted execution selection, not of
+Writes’ analysis. The visit oracle shares those masks and cannot catch an
+analysis omission by itself; paired DOM/value fuzz is the separate backstop.
+It checks group entry granularity, not whether every instruction inside a
+selected group is minimal. Source-order preparation and conservative read-set
+unions can do more work without an extra group entry. Raw timing spreads must
+be read alongside medians; overlapping sub-millisecond samples do not prove a
+statistically significant regression from the median difference alone.
+
+Final post-rebase artifacts use the `2026-10-15-rebased-*` prefix, retaining
+the original batch as well. S0 now enumerates 102 programs because master added
+fixtures; Conduit's 782/114 leaf facts, bounded counts, value roots and 9/62
+star dispatches are unchanged. The empty floor remains 327 B. The final source
+includes the shared row-fact repair and row-state cleanup; it does not contain
+a timing/size optimisation tuned after either measurement batch.

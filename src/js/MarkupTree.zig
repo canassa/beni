@@ -1012,7 +1012,10 @@ const Builder = struct {
         for (b.roots, 0..) |*root, ri| {
             const inst = b.root_insts.items[ri];
             root_decls[ri] = if (inst == none) none else (b.declOf(inst) orelse none);
-            if (!b.groupedRoot(root.kind) or root_decls[ri] == none) continue;
+            const grouped_root = b.groupedRoot(root.kind);
+            // Ordinary rows also need their every-render facts, even
+            // though only parameterised rows use grouped input templates.
+            if ((!grouped_root and root.kind != .row_markup) or root_decls[ri] == none) continue;
             var ok = true;
             for (0..root.values.len) |k| {
                 const v = root.values.start + k;
@@ -1038,8 +1041,8 @@ const Builder = struct {
                     else => false,
                 };
             }
-            groupable[ri] = ok;
-            if (!ok) bad_decls.set(root_decls[ri]);
+            groupable[ri] = grouped_root and ok;
+            if (grouped_root and !ok) bad_decls.set(root_decls[ri]);
         }
         // One answer per declaration: a root inside another's value, or in
         // a `let` moved into another, is lowered with it.

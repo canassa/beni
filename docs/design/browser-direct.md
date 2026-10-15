@@ -3282,3 +3282,24 @@ the now-correct group visits. Research 95 retains the probes and raw samples.
 No timing/size tuning follows the measurement. Prior S0 tripwires and the
 second full V3 campaign remain open; focused helper coverage does not replace
 that campaign. The PR remains draft and unmerged.
+
+*Review/rebase follow-up, 2026-10-15:* research 95's final batch is on master
+`df04ca2db`, with new mixed literal/path, conditional-list, Maybe Html and
+volatile-row probes. The latter found and fixed a shared row-effect-fact bug:
+the ordinary DOM lowering must receive every-render facts even for ungrouped
+rows (backend.md's dated amendment). All helper and Conduit paired Chrome
+scripts and value fuzz pass with master's driver fixes.
+
+Criterion 7 remains met on all 62 dispatches; Conduit's 782/114 leaf facts and
+9/62 star dispatches are unchanged in the now-102-program S0 series. Final
+direct size is 38,030 B brotli, versus old direct 32,411 and tea 31,389. Final
+feed/favorite/editor medians are direct 0.395/0.315/0.365 ms, old direct
+0.390/0.325/0.340, tea 0.295/0.250/0.315. The report gives min/max and raw
+samples: direct before/after spreads overlap; tea is faster in both measured
+modes. There is no speed acceptance or threshold change.
+
+Master's new instruction-budget gate now refuses this macOS host. Native and
+LLVM unfiltered local test/format steps have only the two known case-folding
+failures; the hardware-budget gate is still owed on a suitable x86-64 Linux
+host. This supersedes the earlier CPU-fallback validation as a current gate
+claim, preserving the historical measurements and diary entries.
