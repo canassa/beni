@@ -1,9 +1,11 @@
 # Lean oracle extension evidence — 2026-10-15
 
 `../../ORACLE-EXTENSION-RESULTS.md` reports the model boundary and measurements.
-The implementation is `c6e206fef`; the unchanged shipping compiler sources are
-`bcf28a6ee`. PR #116's initialization contract was read through `5310d3619`;
-this branch does not carry its compiler changes.
+The audited Lean implementation is `dac480495`; bridge tail-context fixes
+finish at `a85abcabf`. Both final campaigns use the frozen ReleaseSafe shipping
+compiler sources at `1ed777195`, including PR #116 after its merge into master.
+The initial pre-merge pairing at `bcf28a6ee` had the same counts and is retained
+in commit `813d6bbca`.
 
 `ci/` and `long/` contain:
 
@@ -28,19 +30,23 @@ removal failures and restored results are retained in
 `review-*.log.gz`; the source-read and function-valued guard failures were
 checked with each fix set aside. `review-tail-before.log.gz` and
 `review-tail-restored.log.gz` retain the real-compiler non-tail Result regression
-failing before the tail-context fix and passing after it. Initialization
+failing before the tail-context fix and passing after it. The later
+`review-chain-tail-*.log.gz` pair catches the shadowed boolean context through
+both recursive constructor arms, with the same before/after behavior. Initialization
 controls remain Lean-only; the shipping bridge skips their entry/private-root
 projections. The complete
 `ci.log.gz` includes all 23 targeted controls, the seeded controls, fixtures,
 enumeration and the normal CI bridge.
 
 `build.log.gz` records the in-build source/axiom/kernel audit (3,258 constants).
-`clean-audit.log.gz` records `scripts/audit.sh` over committed `c6e206fef`:
+`clean-audit.log.gz` records `scripts/audit.sh` over committed `dac480495`:
 32 parsed sources, 4,720 constants replayed, the same four pinned constants
 on the three unproved statements, no swapped attributes and no changed source.
 `fixtures.log.gz` retains every fixed verdict and hole result.
 `compiler-checks.log.gz` records the macOS constituents: 1,302 passed, 15 skipped
-and the two previously documented case-folding failures. `gates.log.gz` records
+and the two previously documented case-folding failures.
+`merged-compiler-checks.log.gz` records the combined tree at the newer master:
+1,329 passed, 15 skipped and the same two failures. `gates.log.gz` records
 the exact gate's refusal of this unsupported instruction-counting host. The
 hardware-budget gate is still owed on supported x86-64 Linux.
 
@@ -63,5 +69,6 @@ command fails rather than silently choosing another id. To replay a judgment,
 write `id<TAB>json(core)` to a file and run the built `triage input.tsv output.jsonl --only`.
 Reproduce campaigns with fresh output directories using the report's commands.
 `source-sha256.json` pins all 32 Lean source files at the audited implementation.
-The later report/evidence commit changes no Lean source. The omitted `cases/`
+The bridge tail fixes, master synchronization and later report/evidence
+commits change no Lean source. The omitted `cases/`
 build directories are ordinary generated artifacts.

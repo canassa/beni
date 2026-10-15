@@ -1,6 +1,6 @@
 {
-  "implementation": "c6e206fef",
-  "shippingCompiler": "bcf28a6ee",
+  "implementation": "dac480495",
+  "shippingCompiler": "1ed777195",
   "leanSources": {
     "Audit.lean": "27be1e2ab0bc1be7753a3914c00c0bb9f90418e816a2d455e99fe58ab4430ab3",
     "Axioms.lean": "e8364d2012dfc59434b4a8324094b58443ec440517b41acc9e060dcc3052e8e2",
@@ -9,7 +9,7 @@
     "Ownership/Bridge.lean": "0d200d4ceb9df25bce7e1249b33e8f7cb1450d78feebf05bb308b3bbbc9de6a2",
     "Ownership/BridgeWire.lean": "a621e4b4c44a4d6e1d109f83a71a947026c093a1d76c859ccaebf947ed026eda",
     "Ownership/BuilderProof.lean": "eb0ed3235b003b1cb8953b353633bea1c2e2ce7cec6a3729c37a376835c86552",
-    "Ownership/Checker.lean": "fd44598aa4c9f6ea7a7133ac52b41ddfac38cb176e8d58849ab34860c7b75475",
+    "Ownership/Checker.lean": "0227a63cf98e729e79830b7dec46a5393b3b79ebc172482fb28ac0ec926ca441",
     "Ownership/Cli.lean": "efc866a5449ce3ee996894059d187867af50c641aaf540751a3dc6e2e33d6162",
     "Ownership/Config.lean": "10a4cb0f5338bd226202be8ce3e8f41a1baf0e2600339c375876f787db19248f",
     "Ownership/Domain.lean": "f012638d66e1a591131fa5203337977513096bcee7ffc676cecc015c0471e4df",
@@ -34,5 +34,6 @@
     "Ownership/Targeted.lean": "b4406e379bb62b71324c6b5b2a94961973ce695de6684d9129b0d2cf9d1014d9",
     "Ownership.lean": "1b287daa2386bd83c7bcc1f133ce2facbdb436c20bc46fe12464baa77126fa65",
     "Triage.lean": "b17e7e288c6a46898f29a1220bfb31447ec23de37dbc570150802dd83994c22f"
-  }
+  },
+  "bridgeImplementation": "a85abcabf"
 }

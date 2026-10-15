@@ -20,7 +20,7 @@
     "precision": 8,
     "environment": {
       "node": "v24.19.0",
-      "compilerSha256": "445fda39e954533502679b8f302e13aecc8d4940d553bceea774dd7eb1b6e1c7",
+      "compilerSha256": "f875fd9586f2e0f4296791851f8d486e4211580aee4e3778e86bca5fef7f43be",
       "oracleSha256": "747352376c0873c6345748a09216456d07e4becee7931bbb7ed50cb9ddf041a8"
     },
     "streams": [

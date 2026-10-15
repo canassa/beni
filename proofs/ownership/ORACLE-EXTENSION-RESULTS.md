@@ -5,9 +5,9 @@ lowering of `?` scoped to its definition, the unbounded recursive type
 `Chain a = End | Link a (Chain a)`, and private initialization transfer with
 retained entry environments. The six §29 rules from PR #124 already had
 corresponding protections in the checker; each now has its own required hole.
-PR #116's initialization condition is projected without depending on that
-still-open compiler PR. The shipping compiler and its ownership policy are
-unchanged.
+PR #116's initialization condition is projected in the Lean core. The final
+bridge uses the frozen compiler at `1ed777195`, including #116 after it merged
+while this round was running. This PR changes no shipping compiler policy.
 
 There are **176 verdict fixtures** (98 original + 78 sync), **508 targeted
 programs**, and **twelve new required holes**. Historical fixture/targeted ids
@@ -145,11 +145,22 @@ Both are fixed verdict fixtures and targeted products. The
 [follow-up response](https://github.com/canassa/beni/pull/132#issuecomment-6191335011)
 answers all four findings.
 
+A further review found that the Chain tail binder shadowed the boolean tail
+context. It is now `tailVar`. Two real-compiler regressions cover a bound
+Chain case with a forwarding Result case inside either constructor arm; the
+before-fix run returns `Err 7`, while both restored regressions return `Ok 99`.
+The `review-chain-tail-*.log.gz` artifacts retain those executions. The later `privateToInit` comment explicitly separates eligibility from the
+Dead/separation obligations; no Lean behavior changed. The bridge correction is
+`a85abcabf`. The [review response](https://github.com/canassa/beni/pull/132#issuecomment-6191446217)
+answers the finding. The [last review and reply](https://github.com/canassa/beni/pull/132#issuecomment-6191498075)
+record no new correctness defect and the clarification that the duplicated
+capture fixture is rejected by Dead, while the copy twin passes.
+
 ## Validation and boundaries
 
 `lake build` passes: 3,258 constants replayed through the kernel, no swapped
 compiler attributes, and exactly the existing three unproved statements. The
-independent `scripts/audit.sh` over committed `c6e206fef` also passes: all
+independent `scripts/audit.sh` over committed `dac480495` also passes: all
 32 sources parsed, 4,720 constants replayed module by module, only the four
 pinned constants dependent on the three existing unproved statements, no
 swapped attributes and no build-time source changes.
@@ -161,8 +172,10 @@ Expected observations independently pin inner/outer question frames, recursive
 Result errors, successful questions and the recursive Chain consumer.
 
 `zorg build test test-blackbox fmt-check beni-fmt-check -j4` completed with
-**1,302 passed, 15 skipped and only the two documented macOS case-folding
-failures**. Exact `zorg build gates` refuses this Apple Silicon host because
+**1,329 passed, 15 skipped and only the two documented macOS case-folding
+failures** on the combined tree after updating to master. The earlier compiler
+check had 1,302 passed, 15 skipped and the same two failures. Exact
+`zorg build gates` refuses this Apple Silicon host because
 it cannot count reference x86-64 Linux instructions. The hardware-budget gate
 remains owed on a supported Linux host; no budget or exemption changed.
 
@@ -179,10 +192,8 @@ The three soundness statements remain unproved.
 Inside `nix develop .#ownership`, with `LEAN_NUM_THREADS=8`:
 
 ```sh
-zorg build
-cp zig-out/bin/beni zig-out/ownership-oracle-tail-ci-beni
 zorg build test test-blackbox fmt-check beni-fmt-check -j4
-cp zig-out/safe/bin/beni zig-out/ownership-oracle-long-beni
+cp zig-out/safe/bin/beni zig-out/ownership-oracle-current-beni
 cd proofs/ownership
 lake build
 lake build triage
@@ -190,16 +201,17 @@ lake exe ownership ci 20000 17
 lake exe ownership enumerate-targeted --mutant=init-authority
 # Use fresh, separate output directories for each campaign.
 node scripts/bridge.mjs --ci --no-build --no-minimize \
-  --compiler=../../zig-out/ownership-oracle-tail-ci-beni --out=../../zig-out/ownership-oracle-tail-ci --jobs=8
-node scripts/bridge-fix-audit.mjs ../../zig-out/ownership-oracle-tail-ci \
-  ../../zig-out/ownership-oracle-tail-ci-beni ../../zig-out/ownership-oracle-tail-audit-ci
+  --compiler=../../zig-out/ownership-oracle-current-beni --out=../../zig-out/ownership-oracle-current-ci --jobs=8
+node scripts/bridge-fix-audit.mjs ../../zig-out/ownership-oracle-current-ci \
+  ../../zig-out/ownership-oracle-current-beni ../../zig-out/ownership-oracle-current-audit-ci
 node scripts/bridge.mjs --long --no-build --no-minimize \
-  --compiler=../../zig-out/ownership-oracle-long-beni --out=../../zig-out/ownership-oracle-tail-long --jobs=8
-node scripts/bridge-fix-audit.mjs ../../zig-out/ownership-oracle-tail-long \
-  ../../zig-out/ownership-oracle-long-beni ../../zig-out/ownership-oracle-tail-audit-long
+  --compiler=../../zig-out/ownership-oracle-current-beni --out=../../zig-out/ownership-oracle-current-long --jobs=8
+node scripts/bridge-fix-audit.mjs ../../zig-out/ownership-oracle-current-long \
+  ../../zig-out/ownership-oracle-current-beni ../../zig-out/ownership-oracle-current-audit-long
 ```
 
-The CI evidence used a frozen default `zorg build` compiler; the long evidence
-used the frozen ReleaseSafe compiler from the compiler test steps. Both are the
-unchanged shipping source at `bcf28a6ee`; their exact hashes are in the reports.
+Both final campaigns use the same frozen ReleaseSafe compiler from the
+combined-tree test steps, shipping source `1ed777195`. Exact compiler/oracle
+hashes are in the reports. The earlier pre-merge pairing at `bcf28a6ee` also
+had the same lead and zero-confirmed counts (retained in commit `813d6bbca`).
 The evidence README records artifact replay commands and the independent audit.
