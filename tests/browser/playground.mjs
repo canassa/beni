@@ -203,6 +203,14 @@ check((await wrong.until(`/^1 error/.test(${status}) && (${status})`)) !== null,
 check((await wrong.until(`document.querySelector(".cm-lintRange-error")?.textContent === "missing"`, 10_000)) !== null, "the error is marked on `missing` in the editor");
 check((await wrong.evaluate(`document.querySelector(".diagnostic")?.textContent ?? ""`)).startsWith("NAMING ERROR — Main.beni:5:"), "the error is listed with its place");
 
+// beni's grammar in the editor: the Elm mode with beni's tokens (§4.2).
+const notation = "-- every token of beni's own\nimport Html exposing (Html)\n\n\npub schema Person =\n    name : String\n\n\nf : Int, Int → Int × Int\nf a b = ( a, b )\n\n\nview : ⊤ → Html msg\nview _ = <p class=\"x\">{\"a ≠ b ≤ c ≥ d ▷ e ◁ f … g ← h λ ⊥\"}</p>\n";
+const highlighted = await pageWith("browser-direct", notation);
+await highlighted.until(`document.querySelector(".cm-editor") !== null && document.querySelector(".cm-content")?.textContent.includes("schema")`, 20_000);
+for (const piece of ["→", "×", "⊤", "pub", "schema", "<p", "class"]) {
+  check(await highlighted.evaluate(`[...document.querySelectorAll("#editor .cm-line span")].some((s) => s.textContent === ${JSON.stringify(piece)} && s.className !== "")`), `the editor highlights ${piece}`);
+}
+
 // The dumps and the emitted JavaScript.
 const program = "import Node exposing (Program)\n\n\ndouble : Int → Int\ndouble n = n * 2\n\n\nmain : Program\nmain = Node.printLines [ String.fromInt (double 21) ]\n";
 const tabs = await pageWith("node", program);
@@ -213,7 +221,10 @@ check((await tabs.until(`document.getElementById("types-text").textContent.inclu
 await tabs.evaluate(click("ownership"));
 check((await tabs.until(`document.getElementById("ownership-text").textContent.includes("summary double:")`, 20_000)) !== null, "the Ownership tab shows the report");
 await tabs.evaluate(click("javascript"));
-check((await tabs.evaluate(`document.getElementById("code").textContent`)).includes("double"), "the JavaScript tab shows the emitted module");
+check((await tabs.until(`document.querySelector("#code .cm-content")?.textContent.includes("double")`, 10_000)) !== null, "the JavaScript tab shows the emitted module");
+// Highlighted by the JavaScript grammar: a keyword of the module is in an
+// element of its own with a highlight class.
+check(await tabs.evaluate(`[...document.querySelectorAll("#code .cm-line span")].some((s) => s.textContent === "import" && s.className !== "")`), "the JavaScript tab highlights the emitted module");
 
 // A dump refreshes after an edit while its tab is open.
 await tabs.evaluate(click("types"));

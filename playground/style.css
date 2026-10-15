@@ -18,6 +18,7 @@
   --syntax-property: #355a7a;
   --syntax-tag: #a1260d;
   --syntax-attribute: #7a5a00;
+  --syntax-def: #005f87;
   color-scheme: light;
 }
 
@@ -42,6 +43,7 @@
     --syntax-property: #a8c8e8;
     --syntax-tag: #ff9e86;
     --syntax-attribute: #ffd479;
+    --syntax-def: #7fd3ff;
     color-scheme: dark;
   }
 }
@@ -229,6 +231,10 @@ iframe {
 #ownership-text {
   flex: 1;
   min-height: 0;
+}
+
+#code {
+  overflow: hidden;
 }
 
 /* A dump of an older version of the input, until the new one arrives. */

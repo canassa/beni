@@ -10,7 +10,7 @@
 // free. A dump runs only while its tab is open. A defect of the playground
 // is not run again for the version it failed on, so a failure that repeats
 // is shown once and not retried without end; a newer version still runs.
-import { createEditor, markDiagnostics, replaceText, reveal, textOf } from "./editor.js";
+import { createCodeView, createEditor, markDiagnostics, replaceText, reveal, showCode, textOf } from "./editor.js";
 import { decode, encode } from "./share.js";
 
 const $ = (id) => document.getElementById(id);
@@ -20,7 +20,8 @@ const sampleList = $("sample");
 const diagnosticsView = $("diagnostics");
 const output = $("console");
 const fileList = $("file");
-const code = $("code");
+// The emitted JavaScript, in a read-only view with the JavaScript grammar.
+const code = createCodeView($("code"));
 let frame = $("frame");
 
 // A failure the page did not foresee (a file that does not load) is shown,
@@ -126,7 +127,7 @@ function showFiles(files) {
   );
   if (Object.hasOwn(files, selected)) fileList.value = selected;
   else if (Object.hasOwn(files, "Main.mjs")) fileList.value = "Main.mjs";
-  code.textContent = emitted[fileList.value] ?? "";
+  showCode(code, emitted[fileList.value] ?? "");
 }
 
 async function runProgram(files) {
@@ -276,7 +277,7 @@ for (const tab of document.querySelectorAll("[role=tab]")) {
 }
 
 fileList.addEventListener("change", () => {
-  code.textContent = emitted[fileList.value] ?? "";
+  showCode(code, emitted[fileList.value] ?? "");
 });
 
 platform.addEventListener("change", () => edited(true));

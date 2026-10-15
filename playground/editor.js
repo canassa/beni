@@ -1,7 +1,10 @@
-// The playground's editor (docs/design/playground.md §4.2): CodeMirror 6
-// from a CDN, each package at the version `index.html`'s import map pins,
-// with beni's grammar (`syntax.js`) and the compiler's diagnostics as lint
-// marks at their positions (`positions.js`).
+// The playground's editor and its view of the emitted JavaScript
+// (docs/design/playground.md §4.2): CodeMirror 6, each package vendored at the
+// version `index.html`'s import map pins. The editor has beni's grammar,
+// CodeMirror's Elm mode extended with beni's tokens (`syntax.js`), and the
+// compiler's diagnostics as lint marks at their positions (`positions.js`).
+// The emitted JavaScript is a read-only view with CodeMirror's JavaScript
+// grammar (`@codemirror/lang-javascript`), so one highlighter colours both.
 import { EditorSelection, EditorState, Transaction } from "@codemirror/state";
 import {
   EditorView,
@@ -16,14 +19,20 @@ import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirro
 import { lintGutter, setDiagnostics } from "@codemirror/lint";
 import { closeBrackets, closeBracketsKeymap } from "@codemirror/autocomplete";
 import { highlightSelectionMatches, searchKeymap } from "@codemirror/search";
+import { javascript } from "@codemirror/lang-javascript";
 import { tags } from "@lezer/highlight";
 import { beni } from "./syntax.js";
 import { rangeOf } from "./positions.js";
 
-// Colours from `style.css`, so that a dark page gets dark colours.
+// Colours from `style.css`, so that a dark page gets dark colours. One style
+// for both grammars: a tag the JavaScript grammar uses and beni's does not
+// (`function`, `regexp`, `className`) has a colour too.
 const highlight = HighlightStyle.define([
   { tag: tags.keyword, color: "var(--syntax-keyword)" },
-  { tag: [tags.lineComment, tags.docComment], color: "var(--syntax-comment)", fontStyle: "italic" },
+  { tag: tags.comment, color: "var(--syntax-comment)", fontStyle: "italic" },
+  { tag: [tags.definition(tags.variableName), tags.function(tags.variableName), tags.function(tags.propertyName)], color: "var(--syntax-def)" },
+  { tag: [tags.className, tags.namespace], color: "var(--syntax-type)" },
+  { tag: tags.regexp, color: "var(--syntax-escape)" },
   { tag: tags.string, color: "var(--syntax-string)" },
   { tag: tags.meta, color: "var(--syntax-operator)" },
   { tag: tags.escape, color: "var(--syntax-escape)" },
@@ -76,6 +85,29 @@ export function createEditor(parent, text, changed) {
       ],
     }),
   });
+}
+
+/// A read-only view of JavaScript in `parent`: the emitted modules.
+export function createCodeView(parent) {
+  return new EditorView({
+    parent,
+    state: EditorState.create({
+      doc: "",
+      extensions: [
+        lineNumbers(),
+        EditorState.readOnly.of(true),
+        EditorView.editable.of(false),
+        javascript(),
+        syntaxHighlighting(highlight),
+        theme,
+      ],
+    }),
+  });
+}
+
+/// Show `text` in a read-only view, from its top.
+export function showCode(view, text) {
+  view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: text }, selection: EditorSelection.cursor(0), scrollIntoView: true });
 }
 
 /// The editor's text.

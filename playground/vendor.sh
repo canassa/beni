@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Regenerates playground/vendor/: the 13 modules of CodeMirror 6 the
-# playground's editor loads (docs/design/playground.md §4.2), each the ES
-# module its npm package ships, unmodified, at the version pinned below.
+# Regenerates playground/vendor/: the modules of CodeMirror 6 the
+# playground's editor and its view of the emitted JavaScript load
+# (docs/design/playground.md §4.2), each the ES module its npm package ships,
+# unmodified, at the version pinned below.
 # Jayson Reis decided on 2026-10-15 (dashboard question `wasm-playground-q6`)
 # that the page loads them from its own site and not from a CDN: the page
 # runs in the `canassa.github.io` origin, which every Pages site of that user
@@ -15,8 +16,10 @@
 # reproduces the checked-in files exactly.
 set -euo pipefail
 
-# Each package, its version, and the file of its tarball that is its ES
-# module (its `exports` or `module` entry).
+# Each package, its version, the file of its tarball that is its ES module
+# (its `exports` or `module` entry, or the one mode of `legacy-modes` the
+# beni grammar extends), and the file's name here when the package's name
+# does not give it.
 PACKAGES="
 @codemirror/state 6.7.6 dist/index.js
 @codemirror/view 6.43.13 dist/index.js
@@ -31,6 +34,10 @@ PACKAGES="
 crelt 1.0.7 index.js
 style-mod 4.1.4 src/style-mod.js
 w3c-keyname 2.2.8 index.js
+@codemirror/legacy-modes 6.5.4 mode/elm.js codemirror-legacy-modes-elm.js
+@codemirror/lang-javascript 6.2.5 dist/index.js
+@lezer/javascript 1.5.5 dist/index.js
+@lezer/lr 1.4.10 dist/index.js
 "
 
 here="$(cd "$(dirname "$0")" && pwd)"
@@ -46,12 +53,12 @@ mkdir -p "$out"
   echo "its source."
 } >"$out/LICENSES.txt"
 
-echo "$PACKAGES" | while read -r name version entry; do
+echo "$PACKAGES" | while read -r name version entry file; do
   [ -n "$name" ] || continue
   base="${name##*/}"
   # `@codemirror/state` is `codemirror-state.js`; a package with no scope
   # keeps its name.
-  file="$(echo "${name#@}" | tr '/' '-').js"
+  [ -n "$file" ] || file="$(echo "${name#@}" | tr '/' '-').js"
   tarball="https://registry.npmjs.org/$name/-/$base-$version.tgz"
   # npm's own record of the tarball's SHA-512, checked before anything is
   # taken from it.

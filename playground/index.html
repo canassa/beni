@@ -6,7 +6,7 @@
     <title>beni playground</title>
     <link rel="stylesheet" href="style.css">
     <!--
-      CodeMirror 6, its 13 modules in the site's own `vendor/`
+      CodeMirror 6, its modules in the site's own `vendor/`
       (docs/design/playground.md §4.2): each the ES module its npm package
       ships, unmodified, at the version `vendor.sh` pins, checked against
       `vendor/SHA256SUMS`. Each module's imports are bare, so this map is the
@@ -27,7 +27,11 @@
           "@marijn/find-cluster-break": "./vendor/marijn-find-cluster-break.js",
           "crelt": "./vendor/crelt.js",
           "style-mod": "./vendor/style-mod.js",
-          "w3c-keyname": "./vendor/w3c-keyname.js"
+          "w3c-keyname": "./vendor/w3c-keyname.js",
+          "@codemirror/legacy-modes/mode/elm": "./vendor/codemirror-legacy-modes-elm.js",
+          "@codemirror/lang-javascript": "./vendor/codemirror-lang-javascript.js",
+          "@lezer/javascript": "./vendor/lezer-javascript.js",
+          "@lezer/lr": "./vendor/lezer-lr.js"
         }
       }
     </script>
@@ -88,7 +92,7 @@
         </div>
         <div id="javascript" role="tabpanel" hidden>
           <select id="file" aria-label="Emitted file"></select>
-          <pre id="code"></pre>
+          <div id="code"></div>
         </div>
         <div id="types" role="tabpanel" hidden>
           <pre id="types-text"></pre>
