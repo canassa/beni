@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>beni playground</title>
+    <link rel="stylesheet" href="style.css">
+    <script type="module" src="page.js"></script>
+  </head>
+  <body>
+    <header>
+      <h1>beni playground</h1>
+      <label>
+        Platform
+        <select id="platform">
+          <option value="browser-direct">browser-direct (a page)</option>
+          <option value="node">node (a program that prints)</option>
+        </select>
+      </label>
+      <span id="status" role="status">Loading the compiler…</span>
+    </header>
+    <main>
+      <section class="pane" aria-label="Source">
+        <textarea id="source" spellcheck="false" autocapitalize="off" autocomplete="off" aria-label="Main.beni"></textarea>
+        <pre id="diagnostics" aria-label="Diagnostics"></pre>
+      </section>
+      <section class="pane" aria-label="Output">
+        <nav class="tabs" role="tablist">
+          <button role="tab" data-tab="result" aria-selected="true">Result</button>
+          <button role="tab" data-tab="javascript" aria-selected="false">JavaScript</button>
+        </nav>
+        <div id="result" role="tabpanel">
+          <iframe id="frame" sandbox="allow-scripts" title="The compiled program"></iframe>
+          <pre id="console" aria-label="Console"></pre>
+        </div>
+        <div id="javascript" role="tabpanel" hidden>
+          <select id="file" aria-label="Emitted file"></select>
+          <pre id="code"></pre>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

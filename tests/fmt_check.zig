@@ -1,6 +1,7 @@
 //! `zig build beni-fmt-check`, part of `gates` (`docs/design/frontend.md`
 //! §11.6, `language.md` §12.5): every `.beni` file under `core/`,
-//! `platforms/`, `bench/`, `tests/corpus/` and `tests/platforms/` must be
+//! `platforms/`, `bench/`, `playground/`, `tests/corpus/` and
+//! `tests/platforms/` must be
 //! what `beni fmt` writes, unless `tests/fmt-exempt.txt` names it.
 //!
 //!   beni-fmt-check <beni>
@@ -23,7 +24,7 @@ const Io = std.Io;
 const Allocator = std.mem.Allocator;
 
 /// The directories the gate covers, relative to the root.
-const roots = [_][]const u8{ "core", "platforms", "bench", "tests/corpus", "tests/platforms" };
+const roots = [_][]const u8{ "core", "platforms", "bench", "playground", "tests/corpus", "tests/platforms" };
 
 /// Trees under the roots that are not the repository's own sources: what
 /// `.gitignore` keeps out (generated projects, fetched dependencies, build
