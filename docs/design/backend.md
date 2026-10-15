@@ -79,7 +79,7 @@ beni build [options] <entry>...      compile to JavaScript
 | `--release` | dead bindings out, short names, compact printing, joined `const`s (§9); **refuses a build that reaches `Debug`**; later chunks (§10), integer tags, maps off | off |
 | `--library` | no `main` is required and no entry file is written; every name the root package's modules export is a reachability root (§9) | off |
 | `--out=<dir>` | output directory | `out/` |
-| `--source-maps` | a `.mjs.map` beside every emitted module (§11.1); `--no-source-maps` writes none | on in dev; refused with `--release` until release maps exist |
+| `--source-maps` | a `.mjs.map` beside every emitted module (§11.1), or beside every file a release build lowers from beni (§11.2); `--no-source-maps` writes none | on in dev; off with `--release`, which writes maps only when the flag is given |
 
 *Amended 2026-10-01: development source maps are built (§11.1).* A development build writes a map
 beside every module by default; `--source-maps` states that default and `--no-source-maps` turns
@@ -87,6 +87,11 @@ it off (both together exit 2). The refusal described next survives for `--releas
 `--release --source-maps` exits 2 with `beni: --source-maps is not implemented for --release yet; a
 release build writes no .map file`, by the same argument, and `--release` alone writes no map. The
 two paragraphs below are kept as the record of why.
+
+*Amended 2026-10-15: release maps are built (§11.2).* `--release --source-maps` is no longer
+refused: it writes a map for each file that the release build lowers from beni. `--release` alone
+still writes no map, and `--release --no-source-maps` states that default. The refusal and its two
+paragraphs below are history now.
 
 **`--source-maps` is refused, not ignored.** It is not implemented — the encoder is M5 (§11) — and a
 flag that is accepted while doing nothing makes a user believe they asked for something: a silent,
@@ -7361,7 +7366,8 @@ only test is the degenerate case is a pass that will be wrong the first time it 
 
 Fused into the print pass — a mapping recorded at each emit site, never a second traversal —
 delta-encoded, per-file chunks rebased once at join time. On by default in dev, off in release.
-Positions live in `JsIr` from the start even while maps are off.
+Positions live in `JsIr` from the start even while maps are off. *Amended 2026-10-15:* "off in
+release" is the default, not a limit: `--release --source-maps` writes release maps (§11.2).
 
 ### 11.1 Development maps (specified and built 2026-10-01)
 
@@ -7369,7 +7375,9 @@ Pulled forward from M5 by `plans/status-2026-10.md` Milestone 1, item 4: beni is
 first, and debugging emitted JavaScript without a map is the first thing a user of `beni serve`
 hits. This subsection is the contract for the **development** build; `--release` writes no map yet
 (below). Code: `src/js/SourceMap.zig`, the printer's `mark`/`markName` (`src/js/Print.zig`), and
-`Emitter.planMap` (`src/js/Emit.zig`).
+`Emitter.planMap` (`src/js/Emit.zig`). *Amended 2026-10-15:* §11.2 is the contract for a
+`--release` build, and it extends this subsection; everything here that §11.2 does not change holds
+for a release map too.
 
 **One map per emitted module, beside it.** Every `.mjs` a development build lowers from a `.beni`
 module — the app's, `_core/`'s and `_platform/`'s alike — gets `<path>.mjs.map` in the same
@@ -7462,7 +7470,8 @@ under `beni://`; that half — the panel, breakpoints, stepping — has not been
 **The flags.** A development build writes maps unless `--no-source-maps` is given; `--source-maps`
 says so explicitly and is accepted; giving both is a usage error (exit 2). `--release` writes none,
 and `--release --source-maps` is refused with exit 2 and a one-line message rather than accepted
-while writing no `.map` — §2's original reason, kept for the half that is not built.
+while writing no `.map` — §2's original reason, kept for the half that is not built. *Amended
+2026-10-15:* the refusal is gone; §11.2 gives what the pair writes.
 
 **Deferred.** (1) **Release maps**: the one scope-hoisted file and the multi-file release layout
 need the marks to survive Opt's dropped statements and inlined initialisers, compact printing's
@@ -7472,7 +7481,164 @@ of `names` in a minified build) and §9's per-module pieces joined into one file
 unmapped in development (above) and, under `--release`, compacted by `Minify.zig`, which would then
 owe a map of its own. (3) A crash screen (`Rt.crashScreen`, development only) shows the message and
 points at the console, where DevTools already applies these maps to the stack; resolving frames on
-the screen itself would need a map reader in the runtime and is not built.
+the screen itself would need a map reader in the runtime and is not built. *Amended 2026-10-15:*
+item (1) is §11.2, and item (2) is §11.2's *Hand-written JavaScript*, which states what this slice
+maps and what it leaves unmapped.
+
+### 11.2 Release maps (specified and built 2026-10-15)
+
+*Issue #93, M5 (`fast-compiler.md` §13).* `beni build --release --source-maps` writes a Source Map
+v3 file for each output file that the release build lowers from beni. `--release` alone writes no
+map. **The flag does not change one byte of the code.** It adds the map files and one comment line
+at the end of each mapped file, and nothing else. The `emit/release/` goldens and the run hashes
+hold that for every build without the flag, and `build_test` holds it for the builds with it
+(*Tests*, below). Code: `src/js/SourceMap.zig` (`writeJoined`), the printer's marks under compact
+printing (`src/js/Print.zig`), and `Emitter.linkHoisted` (`src/js/Emit.zig`).
+
+**What gets a map.** A release build has two layouts (§9), and each gets maps by its own rule.
+
+- **The multi-file layout** (`--library`, and an application that §9 does not hoist): each `.mjs`
+  lowered from a `.beni` module gets `<path>.mjs.map` beside it, exactly as §11.1 says. One source
+  per map.
+- **The one scope-hoisted file** (§9, *One scope-hoisted file under `--release`*): one map,
+  `<entry>.map` beside the entry file (`_main.mjs.map`). Its `sources` has one entry for each
+  emitted module that the file holds, in the order of the file. The modules that the file does not
+  hold have no entry.
+- **No map:** the entry file of the multi-file layout and `_core/_derived.mjs`, for §11.1's reason
+  (no beni line wrote them), and each hand-written file that the build writes as a file of its own
+  (below).
+
+**Hand-written JavaScript.** Under `--release`, `Minify.zig` compacts a sibling and the runtimes
+(§9, *Hand-written JavaScript under `--release`*). In development the file is copied, so the file
+IS its source and needs no map (§11.1). The compacted file is not its source, but this slice does
+not map it: `Minify` does not record token positions. So:
+
+- A compacted hand-written file of its own (the multi-file layout, or a file §9 declines to hoist)
+  gets no map, as in development. The debugger shows the compacted text.
+- Inside the hoisted file, a hand-written piece and the bytes that the link step writes (the
+  `const` aliases, `start(…)`, `run(main)`, `export{flush}`) are **unmapped**. Each such stretch
+  starts with a one-field segment (ECMA-426: a segment with a generated column and nothing else).
+  Without it, the last mapping of the module before the stretch would cover it, and a frame in the
+  runtime would point at an unrelated beni line. An unmapped frame shows the compacted text.
+
+A map from the compacted text back to the original `.js` file is deferred (item 1 below).
+
+**What the marks survive.** The printer records the marks of §11.1 at the same sites, in the same
+order. Each release pass changes the printed bytes, and each has a rule.
+
+1. **Dropped bindings** (§9 item 1): the printer skips a dropped statement before it records a
+   mark. So a dropped binding records nothing.
+2. **Inlined initialisers** (§9 item 1, and *A function called once is written where it is
+   called*): the initialiser prints at the use, and its nodes keep their own positions. So the
+   inlined bytes map to the beni code that wrote them, not to the use. §11.1's innermost rule does
+   this: the use's identifier and the initialiser start at the same byte, and the initialiser is
+   marked last. A body that whole-program specialisation copies **into another module** cannot
+   keep its positions, because a position is an offset into the source of one module. So each
+   node of the copy takes the position of the call that the copy replaces (`Spec.Copy.site`).
+   The copy maps to the call: `Debug.todo "…"`, written where it is called, maps its `throw` to
+   that call, and the stack frame points at the line that the development build names (§11.1).
+   Before this rule the copy had no position, and the mark before it covered it: the `throw`
+   mapped to the `case` scrutinee. A map that names the other module's own line is item 2 of
+   *Deferred*.
+3. **Compact printing** (§9 item 3): the adjacency guard can put a space between a mark and the
+   token that the mark is for. The guard moves the mark past the space, so the mark is on the
+   token. A lookup of the token finds the same segment either way, but a tool that reads `names`
+   reads it at the binding's own column. `closeBlock` removes the `;` before a `}`. It also
+   removes a mark that it leaves past the end of the bytes, because such a mark was for a node
+   that printed nothing (an `if` with empty arms and a test that only compares prints nothing
+   under `--release`).
+4. **Joined declarations** (§9 item 5, and the `for` head of *Compact statements*): each
+   declarator in a run records what a `const` statement records in §11.1 — a mark on its name with
+   the name's `names` entry, and, when its value is an arrow, the function's name on the arrow's
+   mark. The run's keyword (`const`, `let`) maps where its first member does, as a `const`
+   statement's keyword does in §11.1.
+5. **Short names** (§9 item 2): under `--release` every binding prints a short name. So every
+   binding that the printer marks at its declaration gets its beni name in `names`, a local as well
+   as a module's top-level name. A temporary that the lowering invented (`$t…`) still has no entry.
+   A named function's first mapping carries its name, as in §11.1, so a stack frame under Node's
+   `--enable-source-maps` names the beni function and not its short name.
+
+**The join.** The printer prints each module of the hoisted file on its own, with marks relative
+to the module's own bytes (§9). The link step joins the pieces, and the map follows the join:
+
+- each module piece is one stretch: its start in the file, the index of its source, its marks and
+  its `names`;
+- the encoder adds the stretch's start to each mark, and writes a source index delta when the
+  source changes (ECMA-426: every field but the generated column is relative to its previous
+  value across the whole map);
+- the `names` of the stretches are joined in stretch order, and each mark's index moves by the
+  count of names before its stretch. No name is shared between two stretches;
+- a mark at or past the end of its stretch records nothing (the join removes a module's last
+  newline, and nothing maps to it).
+
+The encoder runs once, over the joined bytes. This is §11's "per-file chunks rebased once at join
+time", and §10's chunks will use it for each chunk file.
+
+**Format.** As §11.1, with two additions: more than one entry in `sources` (the hoisted file), and
+the one-field segment. `sourcesContent` always carries each source's text. A release map is
+written only when the user asks for it, and a map without the text shows an empty file. The user
+who ships the map ships the source; the user who does not want that does not give the flag, or
+does not deploy the `.map` files. The `sources` URLs follow §11.1: a disk source is relative to the
+map, an embedded one is `beni:///` and its store path.
+
+**The comment line.** Each mapped file ends with `//# sourceMappingURL=<basename>.map` and a
+newline, after the file's own last newline. A browser fetches the map only when its developer tools
+are open, so what a page pays is the comment line: about 35 bytes before compression.
+
+**Determinism** (rule 5) as §11.1: the marks are in print order, the stretches in the order of the
+file, and `names` in first-use order in each stretch. `--jobs` changes no byte of a map.
+
+**Cost**, measured 2026-10-15: a ReleaseFast LLVM beni, a whole cold `beni build --no-cache`,
+the median of 11 and of 21 runs interleaved with the build without the flag. Other builds ran on
+the machine (load 7–15), so a time is ± a few milliseconds.
+
+| Build | Time without → with maps | Code bytes | Map bytes | Of which `sourcesContent` |
+|---|---|---|---|---|
+| `bench/corpus`, `--release --library`, 27 maps | 59.0 → 60.2 ms; `--jobs=1` 67.2 → 69.6 and 69.9 → 73.7 ms | 72 950 + 985 (the comment lines) | 305 375 | 234 180 (77%) |
+| `examples/conduit`, `--release`, one map of 40 sources | 171.5 → 172.7 and 174.7 → 177.5 ms; `--jobs=1` 189.0 → 193.1 and 192.7 → 197.6 ms | 125 961 + 35 | 770 677 | 639 806 (83%) |
+| `examples/sternhalma`, `--release`, `--jobs=1` | 51.4 → 52.6 ms | 24 154 + 35 | 455 799 | 411 256 (90%) |
+
+So a release map costs 1–5 ms of a build, 2–5%. Most of its bytes are the sources' text. The
+mappings average 5.5 bytes a segment (conduit: 88 036 bytes for 15 747 segments; 1 933 `names`
+in 14 435 bytes). The page pays the comment line only.
+
+**Tests.** `build_test`:
+
+- *a release build maps the one hoisted file back to each module's beni source* builds an
+  application under `--release --source-maps` (with the hidden `--allow-debug`, for a crash),
+  decodes `_main.mjs.map` with a VLQ reader written from the format, and pins where named spots of
+  the one file map: calls, an inlined initialiser, a renamed local with its beni name, a run's
+  keyword, each function's first byte with its name, the copied `Debug.todo`, and two unmapped
+  stretches (the runtime's and the link step's). A segment that starts before its spot fails it.
+  It runs the program under Node's `--enable-source-maps` and pins the frames of the crash.
+- *a release library build writes a map beside every module* builds `--release --library
+  --source-maps` (the multi-file layout), pins named spots of `Lib.mjs`, and checks a map beside
+  each module lowered from beni, core's included, and none beside the hand-written runtime.
+- *--release writes a map only when asked, and asking changes no byte of the code* builds an
+  application and a library with and without the flag, and with `--no-source-maps`. It checks that
+  each file is the same but for the comment line, that the manifest is the only other file that
+  differs, and that the maps are the same at `--jobs=1` and `--jobs=8`.
+
+Unit tests hold the rules a program does not reach on purpose: `Print`'s *compact: a mark goes
+past the guard's space, and with the `;` a block's end takes back*, and `SourceMap`'s join
+tests. Each black-box claim above was checked red by a revert of its rule.
+
+**The flags.** `--release --source-maps` writes the maps. `--release` alone writes none, and
+`--release --no-source-maps` says so. Both flags together exit 2, as in development.
+
+**Deferred.**
+
+1. **Maps for hand-written JavaScript under `--release`.** `Minify` would record the position of
+   each token it keeps, as the printer does, and the hoisted map would get the `.js` file as one
+   more source. The one-field segments of this slice mark where those stretches go.
+2. **The other module's line for a body copied across modules.** `JsIr` positions are offsets
+   into one source. A copy from another module maps to its call (item 2 above); to map it to the
+   lines it came from, a position needs a source index with its offset.
+3. **Parameter names.** A parameter is a `NameIndex` with no node in `JsIr`, so it has no position
+   to mark, and `names` gives it no beni name. A debugger shows its short name.
+4. **A map without the comment line** ("hidden" maps, for an error-reporting service that reads
+   maps the page does not name). It needs a flag of its own.
+5. **§10's chunks**: each chunk file gets a map by the join above.
 
 ## 12. Testing
 

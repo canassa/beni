@@ -1675,7 +1675,9 @@ consequently has no source maps at all (03 §4).
 development build is not shipped, so a map's size is disk and not page weight, and the browser-first
 rule makes an unmapped debugger the first thing a user hits. Recorded in the print pass as specified;
 the line/column conversion is one forward scan of the printed bytes after it, not a tree walk.
-Release maps, and the join-time rebasing they need, remain M5.
+Release maps, and the join-time rebasing they need, remain M5. *Amended 2026-10-15:* release
+maps are built, with that rebasing, per [`backend.md`](backend.md) §11.2; they are written only
+when `--source-maps` asks for them, which keeps "off by default" for a release build.
 
 ## 10. Parallelism — and where not to use it
 

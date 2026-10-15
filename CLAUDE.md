@@ -107,7 +107,8 @@ item, a language gap and not a codegen one — was built on 2026-09-19.
 items 1, 2, 3 and 5: local dead bindings and single-use inlining
 (`src/js/Opt.zig`), two namespaces of short names (`src/js/Rename.zig`),
 compact printing and joined `const` runs (`src/js/Print.zig`). The flag is no
-longer refused; `--release --source-maps` still is. `bench/corpus` fell 126 436 → 55 593
+longer refused, and since 2026-10-15 neither is `--release --source-maps`
+(`backend.md` §11.2). `bench/corpus` fell 126 436 → 55 593
 raw and 21 840 → **15 017** brotli (−31%), `run/Dictionaries` 7 008 → 5 860
 (−16%), the floor 835 → 789. **Development output did not move by one byte**,
 which is what makes an `emit/` golden that changes a finding. The whole `run/`
@@ -255,7 +256,9 @@ the on-disk cache and interface firewall; remaining incrementality work and the
 daemon are still ahead ([`queue.md`](plans/queue.md), M4 rows). M5 is source
 maps, code splitting and LSP. **Development source maps have landed** (2026-10-01,
 `backend.md` §11.1, `src/js/SourceMap.zig`): a `.mjs.map` beside every emitted module, on by
-default, `--no-source-maps` to drop them; release maps, code splitting and LSP have not started.
+default, `--no-source-maps` to drop them. **Release maps have landed** (2026-10-15, `backend.md`
+§11.2): `--release --source-maps` writes one map for the hoisted file, or one per module under
+`--library`; hand-written JavaScript stays unmapped. Code splitting and LSP have not started.
 
 ## Effects, and what blocked them
 
