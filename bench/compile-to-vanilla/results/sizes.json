@@ -1,0 +1,4542 @@
+{
+  "commit": "f1ab9cc87cf85ac32a600afa817482a9fd8023c9",
+  "node": "v24.19.0",
+  "terser": "5.51.2",
+  "host": {
+    "platform": "darwin",
+    "arch": "arm64",
+    "cpu": "Apple M2 Pro"
+  },
+  "generator_sha256": "dd5c017f85ef10553e5099662c84210b9cfcf9eca30420cbce19b84ff020a80a",
+  "options": {
+    "module": true,
+    "compress": {
+      "passes": 2
+    },
+    "mangle": true,
+    "brotli": 11,
+    "gzip": 9
+  },
+  "observations": [
+    {
+      "family": "dashboard",
+      "shape": "repeated",
+      "mode": "vanilla",
+      "count": 1,
+      "name": "dashboard-repeated-vanilla-1",
+      "raw": 1212,
+      "brotli": 474,
+      "gzip": 587,
+      "sha256": "550e3c52af73686037e154b1cc3f995dc74be09f4dbc52328adcaeade2ad7a72"
+    },
+    {
+      "family": "dashboard",
+      "shape": "repeated",
+      "mode": "vanilla",
+      "count": 4,
+      "name": "dashboard-repeated-vanilla-4",
+      "raw": 1212,
+      "brotli": 475,
+      "gzip": 587,
+      "sha256": "a711188d513b056502b4949eb5b79d6123ef6d7cf69af68ff0087bc941aaa48b"
+    },
+    {
+      "family": "dashboard",
+      "shape": "repeated",
+      "mode": "vanilla",
+      "count": 16,
+      "name": "dashboard-repeated-vanilla-16",
+      "raw": 1213,
+      "brotli": 476,
+      "gzip": 588,
+      "sha256": "ec89766d0e13ef9658e8cb01ba6e62da9772f371fee47bd2c30eb4ddb0fa389d"
+    },
+    {
+      "family": "dashboard",
+      "shape": "repeated",
+      "mode": "vanilla",
+      "count": 64,
+      "name": "dashboard-repeated-vanilla-64",
+      "raw": 1213,
+      "brotli": 476,
+      "gzip": 589,
+      "sha256": "3bd7873e4ca2aac2158460a51b6b6a9039063e85470790d2b00c6da94a9b148e"
+    },
+    {
+      "family": "dashboard",
+      "shape": "repeated",
+      "mode": "lexical",
+      "count": 1,
+      "name": "dashboard-repeated-lexical-1",
+      "raw": 1205,
+      "brotli": 485,
+      "gzip": 601,
+      "sha256": "e252c345e28a9c46708fc5afd3d6c09344554c7bbafff8853019ba7c591e081e"
+    },
+    {
+      "family": "dashboard",
+      "shape": "repeated",
+      "mode": "lexical",
+      "count": 4,
+      "name": "dashboard-repeated-lexical-4",
+      "raw": 1205,
+      "brotli": 487,
+      "gzip": 601,
+      "sha256": "bd4f82896366a6e9b1818a7823e9ae1935f53dd5f9446358493f96278f270272"
+    },
+    {
+      "family": "dashboard",
+      "shape": "repeated",
+      "mode": "lexical",
+      "count": 16,
+      "name": "dashboard-repeated-lexical-16",
+      "raw": 1206,
+      "brotli": 491,
+      "gzip": 603,
+      "sha256": "4299bee94b26cc302f551abcb8571d83cea4cd0d8a06888f696b17f79855d68e"
+    },
+    {
+      "family": "dashboard",
+      "shape": "repeated",
+      "mode": "lexical",
+      "count": 64,
+      "name": "dashboard-repeated-lexical-64",
+      "raw": 1206,
+      "brotli": 491,
+      "gzip": 603,
+      "sha256": "6964a648cbe67449fc8ecc647baee4a2e7be01929382b5f583917aa4ac9ef5ae"
+    },
+    {
+      "family": "dashboard",
+      "shape": "repeated",
+      "mode": "indexed",
+      "count": 1,
+      "name": "dashboard-repeated-indexed-1",
+      "raw": 1354,
+      "brotli": 536,
+      "gzip": 655,
+      "sha256": "e720f68a99fdbce51137b1c11da5c454c0434d2f568f393bc9b550e1dfd0fabc"
+    },
+    {
+      "family": "dashboard",
+      "shape": "repeated",
+      "mode": "indexed",
+      "count": 4,
+      "name": "dashboard-repeated-indexed-4",
+      "raw": 1354,
+      "brotli": 537,
+      "gzip": 655,
+      "sha256": "66b4b507338aadd0f0a5343e9d959abbbce362c7dcd31eee1f753e1b36827ff1"
+    },
+    {
+      "family": "dashboard",
+      "shape": "repeated",
+      "mode": "indexed",
+      "count": 16,
+      "name": "dashboard-repeated-indexed-16",
+      "raw": 1355,
+      "brotli": 539,
+      "gzip": 657,
+      "sha256": "1bdd0fc6cb0896136650569ea0f2e6ab7e5f983d7d01c897e81564ac72e1e820"
+    },
+    {
+      "family": "dashboard",
+      "shape": "repeated",
+      "mode": "indexed",
+      "count": 64,
+      "name": "dashboard-repeated-indexed-64",
+      "raw": 1355,
+      "brotli": 539,
+      "gzip": 657,
+      "sha256": "23827bb4c546edfc42fa5ae63f143d4920792a83397aed6c4dd18c6f1d133f31"
+    },
+    {
+      "family": "dashboard",
+      "shape": "repeated",
+      "mode": "signals",
+      "count": 1,
+      "name": "dashboard-repeated-signals-1",
+      "raw": 1607,
+      "brotli": 630,
+      "gzip": 739,
+      "sha256": "ffaacdeefdf8c3bc26758c1da8826c15004cf587faf6b101cff25bfd2cd80fa5"
+    },
+    {
+      "family": "dashboard",
+      "shape": "repeated",
+      "mode": "signals",
+      "count": 4,
+      "name": "dashboard-repeated-signals-4",
+      "raw": 1607,
+      "brotli": 631,
+      "gzip": 739,
+      "sha256": "763b6ed32e3fd2c20e7a6e3f4965ce64c2c36a8a5912d188a661e1b8ea49e24a"
+    },
+    {
+      "family": "dashboard",
+      "shape": "repeated",
+      "mode": "signals",
+      "count": 16,
+      "name": "dashboard-repeated-signals-16",
+      "raw": 1608,
+      "brotli": 632,
+      "gzip": 741,
+      "sha256": "a9dab55fc55224d716ccf3bd98079676449da2cd97c88b737e20de35a5d9a7ed"
+    },
+    {
+      "family": "dashboard",
+      "shape": "repeated",
+      "mode": "signals",
+      "count": 64,
+      "name": "dashboard-repeated-signals-64",
+      "raw": 1608,
+      "brotli": 633,
+      "gzip": 741,
+      "sha256": "0e6c1b89a2dc9110c0ea6740a9948b8fc5e8334542e7119b3669ef9ad3adaab2"
+    },
+    {
+      "family": "dashboard",
+      "shape": "repeated",
+      "mode": "scan",
+      "count": 1,
+      "name": "dashboard-repeated-scan-1",
+      "raw": 1353,
+      "brotli": 533,
+      "gzip": 652,
+      "sha256": "1794eccaaca126eae08131b4fcea57ca79c09246e8d9d0809c37398e41c60f0c"
+    },
+    {
+      "family": "dashboard",
+      "shape": "repeated",
+      "mode": "scan",
+      "count": 4,
+      "name": "dashboard-repeated-scan-4",
+      "raw": 1353,
+      "brotli": 537,
+      "gzip": 653,
+      "sha256": "3b38b6043b2721d7078e62cf8f9ea9170c01964d5dd73c075992b3fbe951c70f"
+    },
+    {
+      "family": "dashboard",
+      "shape": "repeated",
+      "mode": "scan",
+      "count": 16,
+      "name": "dashboard-repeated-scan-16",
+      "raw": 1354,
+      "brotli": 537,
+      "gzip": 654,
+      "sha256": "8054723e5bf45da768351efe773c50c6499059457023d9e6811af4141513872f"
+    },
+    {
+      "family": "dashboard",
+      "shape": "repeated",
+      "mode": "scan",
+      "count": 64,
+      "name": "dashboard-repeated-scan-64",
+      "raw": 1354,
+      "brotli": 537,
+      "gzip": 654,
+      "sha256": "14753618c27615c34aa97d5263b2219adc40034746fab10ee693eda807677ff8"
+    },
+    {
+      "family": "dashboard",
+      "shape": "repeated",
+      "mode": "expanded",
+      "count": 1,
+      "name": "dashboard-repeated-expanded-1",
+      "raw": 1167,
+      "brotli": 485,
+      "gzip": 583,
+      "sha256": "0336422ffff4e33ed352a113f95b21e1b3e405d82d8956a5c8d25f5d44542927"
+    },
+    {
+      "family": "dashboard",
+      "shape": "repeated",
+      "mode": "expanded",
+      "count": 4,
+      "name": "dashboard-repeated-expanded-4",
+      "raw": 3622,
+      "brotli": 733,
+      "gzip": 970,
+      "sha256": "3c5adb17652b1973c6cccace15e34c96a7ed3ac83794dc2c7bbfb37e9ecd34d4"
+    },
+    {
+      "family": "dashboard",
+      "shape": "repeated",
+      "mode": "expanded",
+      "count": 16,
+      "name": "dashboard-repeated-expanded-16",
+      "raw": 13921,
+      "brotli": 1635,
+      "gzip": 2442,
+      "sha256": "d532845646ea874c04c505ea2c1a9d7c512ab9f54c9c48678e19af8823e7795c"
+    },
+    {
+      "family": "dashboard",
+      "shape": "repeated",
+      "mode": "expanded",
+      "count": 64,
+      "name": "dashboard-repeated-expanded-64",
+      "raw": 55201,
+      "brotli": 3732,
+      "gzip": 8177,
+      "sha256": "104bd52bf5ddf5ea6a0563033a57bbefc3f262e4efab136c7b45d4338058f43e"
+    },
+    {
+      "family": "dashboard",
+      "shape": "varied",
+      "mode": "vanilla",
+      "count": 1,
+      "name": "dashboard-varied-vanilla-1",
+      "raw": 1227,
+      "brotli": 480,
+      "gzip": 594,
+      "sha256": "f2174d119b6e3792f466534dfad0a903bb5f72f1dfeaf5e5a59d29b370c1ecf9"
+    },
+    {
+      "family": "dashboard",
+      "shape": "varied",
+      "mode": "vanilla",
+      "count": 4,
+      "name": "dashboard-varied-vanilla-4",
+      "raw": 3977,
+      "brotli": 818,
+      "gzip": 1048,
+      "sha256": "9fa656bc030432aec5f52ed7f6d9a3e7bd02e74b138e7ae273ff6e4569603b94"
+    },
+    {
+      "family": "dashboard",
+      "shape": "varied",
+      "mode": "vanilla",
+      "count": 16,
+      "name": "dashboard-varied-vanilla-16",
+      "raw": 15401,
+      "brotli": 1984,
+      "gzip": 2727,
+      "sha256": "5b5417a54d943c1a74f4b9f2be2313a66a1f4d2e251bdd5cf20abdaec5746500"
+    },
+    {
+      "family": "dashboard",
+      "shape": "varied",
+      "mode": "vanilla",
+      "count": 64,
+      "name": "dashboard-varied-vanilla-64",
+      "raw": 61229,
+      "brotli": 5105,
+      "gzip": 9247,
+      "sha256": "89727c5e116d904f7cc484bdc8df82c00d0b4e59243efd4a70cf16cb4249c009"
+    },
+    {
+      "family": "dashboard",
+      "shape": "varied",
+      "mode": "lexical",
+      "count": 1,
+      "name": "dashboard-varied-lexical-1",
+      "raw": 1169,
+      "brotli": 485,
+      "gzip": 587,
+      "sha256": "f836076cb8cb2e937ae32bef1523b3398f8e7b0543be26992a00d24fe9a81798"
+    },
+    {
+      "family": "dashboard",
+      "shape": "varied",
+      "mode": "lexical",
+      "count": 4,
+      "name": "dashboard-varied-lexical-4",
+      "raw": 3671,
+      "brotli": 781,
+      "gzip": 1019,
+      "sha256": "9b5f644995b8a0a0a176590a2cd6595270a022552b184d36834c4005f5a382d8"
+    },
+    {
+      "family": "dashboard",
+      "shape": "varied",
+      "mode": "lexical",
+      "count": 16,
+      "name": "dashboard-varied-lexical-16",
+      "raw": 14127,
+      "brotli": 1866,
+      "gzip": 2626,
+      "sha256": "b0c80ad919af1b7db3e03379d365be08bee569605178b828ad0d7d00dd9c58e5"
+    },
+    {
+      "family": "dashboard",
+      "shape": "varied",
+      "mode": "lexical",
+      "count": 64,
+      "name": "dashboard-varied-lexical-64",
+      "raw": 56067,
+      "brotli": 4491,
+      "gzip": 8842,
+      "sha256": "3fdbb733428653cfec94a0b9e313c36256df871fc172a31206bc08abd9836073"
+    },
+    {
+      "family": "dashboard",
+      "shape": "varied",
+      "mode": "indexed",
+      "count": 1,
+      "name": "dashboard-varied-indexed-1",
+      "raw": 1318,
+      "brotli": 520,
+      "gzip": 642,
+      "sha256": "f54bbf7d91ab6312a4ea53281e6a4ed90d5ad2a3ac4fbc8af73fa050104e6877"
+    },
+    {
+      "family": "dashboard",
+      "shape": "varied",
+      "mode": "indexed",
+      "count": 4,
+      "name": "dashboard-varied-indexed-4",
+      "raw": 3962,
+      "brotli": 876,
+      "gzip": 1115,
+      "sha256": "ea1f31cb2ef0899e76593bfbd2c53d55621af2e90bb42f7fdd3be070ac1a151d"
+    },
+    {
+      "family": "dashboard",
+      "shape": "varied",
+      "mode": "indexed",
+      "count": 16,
+      "name": "dashboard-varied-indexed-16",
+      "raw": 15009,
+      "brotli": 2048,
+      "gzip": 2848,
+      "sha256": "f78315fe8770332e0d890571ee0bc53dbbd24e5cac90daa2d2094e97275443b3"
+    },
+    {
+      "family": "dashboard",
+      "shape": "varied",
+      "mode": "indexed",
+      "count": 64,
+      "name": "dashboard-varied-indexed-64",
+      "raw": 59253,
+      "brotli": 5709,
+      "gzip": 9645,
+      "sha256": "207f8803293f5ffc92d42ca7367bf4b0749a6c6b42665b57f372d7ddb80249d4"
+    },
+    {
+      "family": "dashboard",
+      "shape": "varied",
+      "mode": "signals",
+      "count": 1,
+      "name": "dashboard-varied-signals-1",
+      "raw": 1580,
+      "brotli": 621,
+      "gzip": 744,
+      "sha256": "07dafc282b3e7c97b577b0b16d17eed5109fd49c07b8aa95bc8a684857920e19"
+    },
+    {
+      "family": "dashboard",
+      "shape": "varied",
+      "mode": "signals",
+      "count": 4,
+      "name": "dashboard-varied-signals-4",
+      "raw": 4233,
+      "brotli": 989,
+      "gzip": 1217,
+      "sha256": "240ecd37b2fecdc2e3aec857fe44f51ac6b8c7fbb516483b8545271577f6d820"
+    },
+    {
+      "family": "dashboard",
+      "shape": "varied",
+      "mode": "signals",
+      "count": 16,
+      "name": "dashboard-varied-signals-16",
+      "raw": 15244,
+      "brotli": 2236,
+      "gzip": 2972,
+      "sha256": "da81459b0a63bd187cb89d7ef174b1d8b20b5ee41e6d78fade7a1102005e7b12"
+    },
+    {
+      "family": "dashboard",
+      "shape": "varied",
+      "mode": "signals",
+      "count": 64,
+      "name": "dashboard-varied-signals-64",
+      "raw": 59344,
+      "brotli": 5617,
+      "gzip": 9873,
+      "sha256": "68fe2a9133e29fdd3ad4116d6d5544bb2b259558be78db9a119035d363978cc3"
+    },
+    {
+      "family": "dashboard",
+      "shape": "varied",
+      "mode": "scan",
+      "count": 1,
+      "name": "dashboard-varied-scan-1",
+      "raw": 1317,
+      "brotli": 523,
+      "gzip": 641,
+      "sha256": "36d8b752150e03010029b68707848bce5390cfaffadd9e925fb0f86be386a552"
+    },
+    {
+      "family": "dashboard",
+      "shape": "varied",
+      "mode": "scan",
+      "count": 4,
+      "name": "dashboard-varied-scan-4",
+      "raw": 3994,
+      "brotli": 853,
+      "gzip": 1104,
+      "sha256": "d467377c8835a66d87c4f78841f66d89225c598145110b04e5557787cc3627f0"
+    },
+    {
+      "family": "dashboard",
+      "shape": "varied",
+      "mode": "scan",
+      "count": 16,
+      "name": "dashboard-varied-scan-16",
+      "raw": 15203,
+      "brotli": 1933,
+      "gzip": 2818,
+      "sha256": "59751bffee315c2402995ecd2ff1b072486f73f97c193b855ddb18d0e51578a4"
+    },
+    {
+      "family": "dashboard",
+      "shape": "varied",
+      "mode": "scan",
+      "count": 64,
+      "name": "dashboard-varied-scan-64",
+      "raw": 60095,
+      "brotli": 4529,
+      "gzip": 9433,
+      "sha256": "cf18eca482db21f0fb8e137aef1acf9bc2867a4710498a472ce01b61131e7e94"
+    },
+    {
+      "family": "dashboard",
+      "shape": "varied",
+      "mode": "expanded",
+      "count": 1,
+      "name": "dashboard-varied-expanded-1",
+      "raw": 1169,
+      "brotli": 485,
+      "gzip": 587,
+      "sha256": "f836076cb8cb2e937ae32bef1523b3398f8e7b0543be26992a00d24fe9a81798"
+    },
+    {
+      "family": "dashboard",
+      "shape": "varied",
+      "mode": "expanded",
+      "count": 4,
+      "name": "dashboard-varied-expanded-4",
+      "raw": 3671,
+      "brotli": 781,
+      "gzip": 1019,
+      "sha256": "9b5f644995b8a0a0a176590a2cd6595270a022552b184d36834c4005f5a382d8"
+    },
+    {
+      "family": "dashboard",
+      "shape": "varied",
+      "mode": "expanded",
+      "count": 16,
+      "name": "dashboard-varied-expanded-16",
+      "raw": 14127,
+      "brotli": 1866,
+      "gzip": 2626,
+      "sha256": "b0c80ad919af1b7db3e03379d365be08bee569605178b828ad0d7d00dd9c58e5"
+    },
+    {
+      "family": "dashboard",
+      "shape": "varied",
+      "mode": "expanded",
+      "count": 64,
+      "name": "dashboard-varied-expanded-64",
+      "raw": 56067,
+      "brotli": 4491,
+      "gzip": 8842,
+      "sha256": "3fdbb733428653cfec94a0b9e313c36256df871fc172a31206bc08abd9836073"
+    },
+    {
+      "family": "form",
+      "shape": "repeated",
+      "mode": "vanilla",
+      "count": 1,
+      "name": "form-repeated-vanilla-1",
+      "raw": 1340,
+      "brotli": 499,
+      "gzip": 626,
+      "sha256": "f9cc96391b1d278c675361254c43924480d08d60fa6f0fee73a6b98560b55714"
+    },
+    {
+      "family": "form",
+      "shape": "repeated",
+      "mode": "vanilla",
+      "count": 4,
+      "name": "form-repeated-vanilla-4",
+      "raw": 1340,
+      "brotli": 501,
+      "gzip": 627,
+      "sha256": "d89c94ddf955d7a0006192647e721b0b68c8e19d12a602c8b806a9fcd6a406e4"
+    },
+    {
+      "family": "form",
+      "shape": "repeated",
+      "mode": "vanilla",
+      "count": 16,
+      "name": "form-repeated-vanilla-16",
+      "raw": 1341,
+      "brotli": 502,
+      "gzip": 629,
+      "sha256": "283d753b53b27cf90c5ae71561879f76345f95830eee098e7a693d744e860554"
+    },
+    {
+      "family": "form",
+      "shape": "repeated",
+      "mode": "vanilla",
+      "count": 64,
+      "name": "form-repeated-vanilla-64",
+      "raw": 1341,
+      "brotli": 502,
+      "gzip": 629,
+      "sha256": "75d6eb59d07e0b61199f6625387001c4bbe3347d3979572aa8b4cd0d6255ca22"
+    },
+    {
+      "family": "form",
+      "shape": "repeated",
+      "mode": "lexical",
+      "count": 1,
+      "name": "form-repeated-lexical-1",
+      "raw": 1287,
+      "brotli": 512,
+      "gzip": 637,
+      "sha256": "85e7cb7e0ddb60ed8624d4ce356d95876c515a69045c8c0b7489cc4bdf433478"
+    },
+    {
+      "family": "form",
+      "shape": "repeated",
+      "mode": "lexical",
+      "count": 4,
+      "name": "form-repeated-lexical-4",
+      "raw": 1287,
+      "brotli": 514,
+      "gzip": 638,
+      "sha256": "47924a9bd3d258fbda8362f04bc5f458a8d661640690af177d6fe1784cabe744"
+    },
+    {
+      "family": "form",
+      "shape": "repeated",
+      "mode": "lexical",
+      "count": 16,
+      "name": "form-repeated-lexical-16",
+      "raw": 1288,
+      "brotli": 515,
+      "gzip": 639,
+      "sha256": "27366e3d4572de1720f5ad54b10c744160ecc9acd2e88ab40f766254623d6bd0"
+    },
+    {
+      "family": "form",
+      "shape": "repeated",
+      "mode": "lexical",
+      "count": 64,
+      "name": "form-repeated-lexical-64",
+      "raw": 1288,
+      "brotli": 515,
+      "gzip": 640,
+      "sha256": "094e940587103a205f2ec52d721ab1dde9dd7d079dbcce4b69ba2ab4c121eb22"
+    },
+    {
+      "family": "form",
+      "shape": "repeated",
+      "mode": "indexed",
+      "count": 1,
+      "name": "form-repeated-indexed-1",
+      "raw": 1436,
+      "brotli": 558,
+      "gzip": 686,
+      "sha256": "e56f0239300a7a3dc72562932dbdcd1c111bc49a34ee5ec9ed12fbe710fd0205"
+    },
+    {
+      "family": "form",
+      "shape": "repeated",
+      "mode": "indexed",
+      "count": 4,
+      "name": "form-repeated-indexed-4",
+      "raw": 1436,
+      "brotli": 559,
+      "gzip": 687,
+      "sha256": "8589ea1a6ed855237b8d9def12afaf94629e5bef457cedb02a19c1d51b75aede"
+    },
+    {
+      "family": "form",
+      "shape": "repeated",
+      "mode": "indexed",
+      "count": 16,
+      "name": "form-repeated-indexed-16",
+      "raw": 1437,
+      "brotli": 560,
+      "gzip": 688,
+      "sha256": "b2982c3875eedc1477dafafc69028c63efb1bdefcbf530d5db668298438698f1"
+    },
+    {
+      "family": "form",
+      "shape": "repeated",
+      "mode": "indexed",
+      "count": 64,
+      "name": "form-repeated-indexed-64",
+      "raw": 1437,
+      "brotli": 560,
+      "gzip": 689,
+      "sha256": "9107ac88e03e66eb7346f4fd8deaaa3aa452bda0254aeb2c50009d353803eac6"
+    },
+    {
+      "family": "form",
+      "shape": "repeated",
+      "mode": "signals",
+      "count": 1,
+      "name": "form-repeated-signals-1",
+      "raw": 1697,
+      "brotli": 647,
+      "gzip": 780,
+      "sha256": "8fe1c67f5e07753c91bec27e401143b0ea6e84a511a9b11cb69c7cfcac002599"
+    },
+    {
+      "family": "form",
+      "shape": "repeated",
+      "mode": "signals",
+      "count": 4,
+      "name": "form-repeated-signals-4",
+      "raw": 1697,
+      "brotli": 649,
+      "gzip": 781,
+      "sha256": "12208010a2a0bb721c892764750988934cf708059208d0594ffc81b2901ae219"
+    },
+    {
+      "family": "form",
+      "shape": "repeated",
+      "mode": "signals",
+      "count": 16,
+      "name": "form-repeated-signals-16",
+      "raw": 1698,
+      "brotli": 650,
+      "gzip": 782,
+      "sha256": "958a7cd41a06fa44b6784d6529f65c7b38b78cd663baec3336191a446db9c55e"
+    },
+    {
+      "family": "form",
+      "shape": "repeated",
+      "mode": "signals",
+      "count": 64,
+      "name": "form-repeated-signals-64",
+      "raw": 1698,
+      "brotli": 651,
+      "gzip": 783,
+      "sha256": "9db958f9845f59d755d58a04aa093f967fda4f27c4dc990e05615a4ef3130892"
+    },
+    {
+      "family": "form",
+      "shape": "repeated",
+      "mode": "scan",
+      "count": 1,
+      "name": "form-repeated-scan-1",
+      "raw": 1418,
+      "brotli": 560,
+      "gzip": 683,
+      "sha256": "b60e2dea8c9f9268cab369606a1dbe9374d3fe75fc2920360fb5b050acb1ff4f"
+    },
+    {
+      "family": "form",
+      "shape": "repeated",
+      "mode": "scan",
+      "count": 4,
+      "name": "form-repeated-scan-4",
+      "raw": 1418,
+      "brotli": 561,
+      "gzip": 684,
+      "sha256": "b1921faf6b0ccb854c9a411e0d3d0eb00a29ee2bff103c5168af390fa3253e18"
+    },
+    {
+      "family": "form",
+      "shape": "repeated",
+      "mode": "scan",
+      "count": 16,
+      "name": "form-repeated-scan-16",
+      "raw": 1419,
+      "brotli": 564,
+      "gzip": 685,
+      "sha256": "2872a20f9b28beee930f344aecce8b05679980c1cb5b7c66bb0d4b7e0d69896c"
+    },
+    {
+      "family": "form",
+      "shape": "repeated",
+      "mode": "scan",
+      "count": 64,
+      "name": "form-repeated-scan-64",
+      "raw": 1419,
+      "brotli": 564,
+      "gzip": 685,
+      "sha256": "beb0138c51c12681e75379d92bccb98760adbad85c0fce261c1d14aa07dc25c0"
+    },
+    {
+      "family": "form",
+      "shape": "repeated",
+      "mode": "expanded",
+      "count": 1,
+      "name": "form-repeated-expanded-1",
+      "raw": 1249,
+      "brotli": 493,
+      "gzip": 618,
+      "sha256": "c01e15c5674ab58735783512b7bc173e56955582df3183543983934fe3e355bf"
+    },
+    {
+      "family": "form",
+      "shape": "repeated",
+      "mode": "expanded",
+      "count": 4,
+      "name": "form-repeated-expanded-4",
+      "raw": 3835,
+      "brotli": 790,
+      "gzip": 1047,
+      "sha256": "db39ce257bbe0c9e924e2857308309f9e3d7292dd44341226d34ffbb92736f42"
+    },
+    {
+      "family": "form",
+      "shape": "repeated",
+      "mode": "expanded",
+      "count": 16,
+      "name": "form-repeated-expanded-16",
+      "raw": 14701,
+      "brotli": 1748,
+      "gzip": 2649,
+      "sha256": "2dfa36296afdf5616ae0d3826307f228e92739aec2a1aaeefe66eb4b01049c30"
+    },
+    {
+      "family": "form",
+      "shape": "repeated",
+      "mode": "expanded",
+      "count": 64,
+      "name": "form-repeated-expanded-64",
+      "raw": 58189,
+      "brotli": 4770,
+      "gzip": 9034,
+      "sha256": "9617246bc0efa6415cb44727c9fe4fd0e50838e8c5cff51f7d64c2097540ad11"
+    },
+    {
+      "family": "form",
+      "shape": "varied",
+      "mode": "vanilla",
+      "count": 1,
+      "name": "form-varied-vanilla-1",
+      "raw": 1338,
+      "brotli": 500,
+      "gzip": 628,
+      "sha256": "90c1c03800d81946dd9f641fc5b4183de74705d74ede6b85bb2eaf5b072f3111"
+    },
+    {
+      "family": "form",
+      "shape": "varied",
+      "mode": "vanilla",
+      "count": 4,
+      "name": "form-varied-vanilla-4",
+      "raw": 4186,
+      "brotli": 838,
+      "gzip": 1109,
+      "sha256": "62f841d6474e02ce1ba97d2d938eab99512a6c0bc3b749e8cf1264218aa9259c"
+    },
+    {
+      "family": "form",
+      "shape": "varied",
+      "mode": "vanilla",
+      "count": 16,
+      "name": "form-varied-vanilla-16",
+      "raw": 16175,
+      "brotli": 2067,
+      "gzip": 2873,
+      "sha256": "8e82cf2ea5a8522205596c8644035479a5ba92dc056e953961cc3dc42128a278"
+    },
+    {
+      "family": "form",
+      "shape": "varied",
+      "mode": "vanilla",
+      "count": 64,
+      "name": "form-varied-vanilla-64",
+      "raw": 64187,
+      "brotli": 5571,
+      "gzip": 9789,
+      "sha256": "6ee4d2a1ac900e41866cba04f0c5bc00d52be8f58476ee74cb0b698018a6a0d8"
+    },
+    {
+      "family": "form",
+      "shape": "varied",
+      "mode": "lexical",
+      "count": 1,
+      "name": "form-varied-lexical-1",
+      "raw": 1251,
+      "brotli": 493,
+      "gzip": 623,
+      "sha256": "a4fdc433830edc7dd1593927a2af3d366e79fafe2c8110504d1615c0ffdd0e60"
+    },
+    {
+      "family": "form",
+      "shape": "varied",
+      "mode": "lexical",
+      "count": 4,
+      "name": "form-varied-lexical-4",
+      "raw": 3846,
+      "brotli": 822,
+      "gzip": 1096,
+      "sha256": "4f5682af6c8e902eaf7cf603bb6d482f4791e37b288e6f76968ec61ca090c43c"
+    },
+    {
+      "family": "form",
+      "shape": "varied",
+      "mode": "lexical",
+      "count": 16,
+      "name": "form-varied-lexical-16",
+      "raw": 14743,
+      "brotli": 1967,
+      "gzip": 2816,
+      "sha256": "e0654f355206a4e9b64ee581fc6e8c01c27d6b766c6e075d1a17b26e1a93f06d"
+    },
+    {
+      "family": "form",
+      "shape": "varied",
+      "mode": "lexical",
+      "count": 64,
+      "name": "form-varied-lexical-64",
+      "raw": 58387,
+      "brotli": 5502,
+      "gzip": 9589,
+      "sha256": "7351d1441c62aa9e30b8fce43ccfa518ef9b7dd1138aa5022f336b2738c97c2a"
+    },
+    {
+      "family": "form",
+      "shape": "varied",
+      "mode": "indexed",
+      "count": 1,
+      "name": "form-varied-indexed-1",
+      "raw": 1400,
+      "brotli": 542,
+      "gzip": 674,
+      "sha256": "20621ce9c9149d9617ae9d8c3194d3abf67967960b78ab059e5173dbe29fd913"
+    },
+    {
+      "family": "form",
+      "shape": "varied",
+      "mode": "indexed",
+      "count": 4,
+      "name": "form-varied-indexed-4",
+      "raw": 4146,
+      "brotli": 904,
+      "gzip": 1182,
+      "sha256": "23e8a8067cb97dd36a33c2ecb89d68c98bed803f1b77c33f399ea96db4ec1105"
+    },
+    {
+      "family": "form",
+      "shape": "varied",
+      "mode": "indexed",
+      "count": 16,
+      "name": "form-varied-indexed-16",
+      "raw": 15631,
+      "brotli": 2196,
+      "gzip": 3038,
+      "sha256": "977ce59b9ab5e0d7274f08ff0290b92bb88c8e02232cc1c6cae0a45bef19527a"
+    },
+    {
+      "family": "form",
+      "shape": "varied",
+      "mode": "indexed",
+      "count": 64,
+      "name": "form-varied-indexed-64",
+      "raw": 61627,
+      "brotli": 5671,
+      "gzip": 10325,
+      "sha256": "0c682945d1c46bbc52b71b0b2524814f95707b1141fb586606803289b01103b2"
+    },
+    {
+      "family": "form",
+      "shape": "varied",
+      "mode": "signals",
+      "count": 1,
+      "name": "form-varied-signals-1",
+      "raw": 1667,
+      "brotli": 643,
+      "gzip": 779,
+      "sha256": "2b73fc41bf66cb4002816565165adabbb3f7acf1280a9cdd3fdc5dd49ee0425a"
+    },
+    {
+      "family": "form",
+      "shape": "varied",
+      "mode": "signals",
+      "count": 4,
+      "name": "form-varied-signals-4",
+      "raw": 4446,
+      "brotli": 1040,
+      "gzip": 1304,
+      "sha256": "b2328243f0c1c632568f6b79a01fc51f3a2bca3351daea9c523b662475d29e17"
+    },
+    {
+      "family": "form",
+      "shape": "varied",
+      "mode": "signals",
+      "count": 16,
+      "name": "form-varied-signals-16",
+      "raw": 15955,
+      "brotli": 2370,
+      "gzip": 3214,
+      "sha256": "7a795a97fbd5f22c9f87d7ce58d0279c87b439628137558e9069e65d4ec980a6"
+    },
+    {
+      "family": "form",
+      "shape": "varied",
+      "mode": "signals",
+      "count": 64,
+      "name": "form-varied-signals-64",
+      "raw": 62047,
+      "brotli": 6024,
+      "gzip": 10767,
+      "sha256": "c9f25af60d2bc51e4e4b8afd08ad94f8e1eb89b2b8d9bf5813e592358594582e"
+    },
+    {
+      "family": "form",
+      "shape": "varied",
+      "mode": "scan",
+      "count": 1,
+      "name": "form-varied-scan-1",
+      "raw": 1382,
+      "brotli": 544,
+      "gzip": 671,
+      "sha256": "6ac868290c71ef7194f16f2a109d06010ad24bddaf47d47f6f74c285e927b418"
+    },
+    {
+      "family": "form",
+      "shape": "varied",
+      "mode": "scan",
+      "count": 4,
+      "name": "form-varied-scan-4",
+      "raw": 4117,
+      "brotli": 879,
+      "gzip": 1164,
+      "sha256": "c8d8cf91755d6a7dc796867299602629a17028f9c7af272bed19e803550be0b7"
+    },
+    {
+      "family": "form",
+      "shape": "varied",
+      "mode": "scan",
+      "count": 16,
+      "name": "form-varied-scan-16",
+      "raw": 15566,
+      "brotli": 2073,
+      "gzip": 2967,
+      "sha256": "e47e1d75556f60765c14a5275844feb6475b450e61225d499dfd2e430dea7ac6"
+    },
+    {
+      "family": "form",
+      "shape": "varied",
+      "mode": "scan",
+      "count": 64,
+      "name": "form-varied-scan-64",
+      "raw": 61418,
+      "brotli": 5755,
+      "gzip": 10032,
+      "sha256": "ed4da735c98b903a54f401ce8453e5e8033c454552380b9a6cf3d3dc224d1b6b"
+    },
+    {
+      "family": "form",
+      "shape": "varied",
+      "mode": "expanded",
+      "count": 1,
+      "name": "form-varied-expanded-1",
+      "raw": 1251,
+      "brotli": 493,
+      "gzip": 623,
+      "sha256": "a4fdc433830edc7dd1593927a2af3d366e79fafe2c8110504d1615c0ffdd0e60"
+    },
+    {
+      "family": "form",
+      "shape": "varied",
+      "mode": "expanded",
+      "count": 4,
+      "name": "form-varied-expanded-4",
+      "raw": 3846,
+      "brotli": 822,
+      "gzip": 1096,
+      "sha256": "4f5682af6c8e902eaf7cf603bb6d482f4791e37b288e6f76968ec61ca090c43c"
+    },
+    {
+      "family": "form",
+      "shape": "varied",
+      "mode": "expanded",
+      "count": 16,
+      "name": "form-varied-expanded-16",
+      "raw": 14743,
+      "brotli": 1967,
+      "gzip": 2816,
+      "sha256": "e0654f355206a4e9b64ee581fc6e8c01c27d6b766c6e075d1a17b26e1a93f06d"
+    },
+    {
+      "family": "form",
+      "shape": "varied",
+      "mode": "expanded",
+      "count": 64,
+      "name": "form-varied-expanded-64",
+      "raw": 58387,
+      "brotli": 5502,
+      "gzip": 9589,
+      "sha256": "7351d1441c62aa9e30b8fce43ccfa518ef9b7dd1138aa5022f336b2738c97c2a"
+    },
+    {
+      "family": "crud",
+      "shape": "repeated",
+      "mode": "vanilla",
+      "count": 1,
+      "name": "crud-repeated-vanilla-1",
+      "raw": 2249,
+      "brotli": 751,
+      "gzip": 876,
+      "sha256": "8a2f28af0410f33dd24b1405175219c232f58938eb4146acc2ef00013e0cbe51"
+    },
+    {
+      "family": "crud",
+      "shape": "repeated",
+      "mode": "vanilla",
+      "count": 4,
+      "name": "crud-repeated-vanilla-4",
+      "raw": 2249,
+      "brotli": 753,
+      "gzip": 876,
+      "sha256": "07667541112df9f6dc076450fccdcdb3bbed853f91f3561d8743fad354991ded"
+    },
+    {
+      "family": "crud",
+      "shape": "repeated",
+      "mode": "vanilla",
+      "count": 16,
+      "name": "crud-repeated-vanilla-16",
+      "raw": 2250,
+      "brotli": 754,
+      "gzip": 877,
+      "sha256": "4828872f3285b79911ae72c377bbad032072141bf79bbe7045ad4243702728a2"
+    },
+    {
+      "family": "crud",
+      "shape": "repeated",
+      "mode": "vanilla",
+      "count": 64,
+      "name": "crud-repeated-vanilla-64",
+      "raw": 2250,
+      "brotli": 754,
+      "gzip": 878,
+      "sha256": "471013b15f9be71210b5454f9173c02e0bfd8e4bcd82b4fe8715ef3692863d77"
+    },
+    {
+      "family": "crud",
+      "shape": "repeated",
+      "mode": "lexical",
+      "count": 1,
+      "name": "crud-repeated-lexical-1",
+      "raw": 2063,
+      "brotli": 752,
+      "gzip": 876,
+      "sha256": "8f3493b1cda126ad390ee974e69a31d1ca53424c3c9376545b7df2195761e256"
+    },
+    {
+      "family": "crud",
+      "shape": "repeated",
+      "mode": "lexical",
+      "count": 4,
+      "name": "crud-repeated-lexical-4",
+      "raw": 2063,
+      "brotli": 752,
+      "gzip": 877,
+      "sha256": "59fa0bd80ce17f6c4c8428373803807555df9063a271ba83e015939e5ed87183"
+    },
+    {
+      "family": "crud",
+      "shape": "repeated",
+      "mode": "lexical",
+      "count": 16,
+      "name": "crud-repeated-lexical-16",
+      "raw": 2064,
+      "brotli": 755,
+      "gzip": 878,
+      "sha256": "14b855d5a0d7e4bd1903a4d745afbc2f1a04c02bf92e6f193ae533693b870c27"
+    },
+    {
+      "family": "crud",
+      "shape": "repeated",
+      "mode": "lexical",
+      "count": 64,
+      "name": "crud-repeated-lexical-64",
+      "raw": 2064,
+      "brotli": 755,
+      "gzip": 879,
+      "sha256": "b671e4b9453b639b4403ef4cdbf6a19184c8d32f0f03ecaeb9cc71390b253ce7"
+    },
+    {
+      "family": "crud",
+      "shape": "repeated",
+      "mode": "indexed",
+      "count": 1,
+      "name": "crud-repeated-indexed-1",
+      "raw": 2232,
+      "brotli": 808,
+      "gzip": 927,
+      "sha256": "a91d2efb56667590a25815b1d517d941acc3b2d2aad826b516021b48acb8bb05"
+    },
+    {
+      "family": "crud",
+      "shape": "repeated",
+      "mode": "indexed",
+      "count": 4,
+      "name": "crud-repeated-indexed-4",
+      "raw": 2232,
+      "brotli": 809,
+      "gzip": 926,
+      "sha256": "12d86994367c6003c2577ee0b17c2fd0c911aae9b30e1a9481d2089ff55a5e79"
+    },
+    {
+      "family": "crud",
+      "shape": "repeated",
+      "mode": "indexed",
+      "count": 16,
+      "name": "crud-repeated-indexed-16",
+      "raw": 2233,
+      "brotli": 808,
+      "gzip": 927,
+      "sha256": "67cb53594e9d0322da4faa502e9b04861ae5db49e5edb8f8744cde78d109dd36"
+    },
+    {
+      "family": "crud",
+      "shape": "repeated",
+      "mode": "indexed",
+      "count": 64,
+      "name": "crud-repeated-indexed-64",
+      "raw": 2233,
+      "brotli": 808,
+      "gzip": 928,
+      "sha256": "4f9d17967d5a28ab5bc924f4b4daae95afa04eda68e465637bf5d84c77fbb4ee"
+    },
+    {
+      "family": "crud",
+      "shape": "repeated",
+      "mode": "signals",
+      "count": 1,
+      "name": "crud-repeated-signals-1",
+      "raw": 2480,
+      "brotli": 878,
+      "gzip": 1017,
+      "sha256": "23b7fa5618aa59f14f38478b35014f35d8ea21db246700e41df7f7c1522e4063"
+    },
+    {
+      "family": "crud",
+      "shape": "repeated",
+      "mode": "signals",
+      "count": 4,
+      "name": "crud-repeated-signals-4",
+      "raw": 2480,
+      "brotli": 888,
+      "gzip": 1018,
+      "sha256": "5a75c364522b98530640c558af731ecfeaa9ee5abce1536147917d52865555d6"
+    },
+    {
+      "family": "crud",
+      "shape": "repeated",
+      "mode": "signals",
+      "count": 16,
+      "name": "crud-repeated-signals-16",
+      "raw": 2481,
+      "brotli": 881,
+      "gzip": 1020,
+      "sha256": "a91c9e1b58b20fead0e3ae2ce72860fb4b7c55a87f4f6c045df84823732118cb"
+    },
+    {
+      "family": "crud",
+      "shape": "repeated",
+      "mode": "signals",
+      "count": 64,
+      "name": "crud-repeated-signals-64",
+      "raw": 2481,
+      "brotli": 891,
+      "gzip": 1020,
+      "sha256": "857536441ffd2432062e011d2bebfa97cc47d36ee1ae467df309892e9382a1f6"
+    },
+    {
+      "family": "crud",
+      "shape": "repeated",
+      "mode": "scan",
+      "count": 1,
+      "name": "crud-repeated-scan-1",
+      "raw": 2181,
+      "brotli": 813,
+      "gzip": 924,
+      "sha256": "df39597036fbc69f5227f1c9174f293e25336b9d5b66397ccc9175bc19639c91"
+    },
+    {
+      "family": "crud",
+      "shape": "repeated",
+      "mode": "scan",
+      "count": 4,
+      "name": "crud-repeated-scan-4",
+      "raw": 2181,
+      "brotli": 812,
+      "gzip": 924,
+      "sha256": "ed3fe6eac1e8d41a3f51b1982c481804a8342d275adf1cb0fb58e73f63cba762"
+    },
+    {
+      "family": "crud",
+      "shape": "repeated",
+      "mode": "scan",
+      "count": 16,
+      "name": "crud-repeated-scan-16",
+      "raw": 2182,
+      "brotli": 811,
+      "gzip": 926,
+      "sha256": "42767e5b3a87f793111d64a41b925ff05ec0a06e87790e16d83b35644e924cf8"
+    },
+    {
+      "family": "crud",
+      "shape": "repeated",
+      "mode": "scan",
+      "count": 64,
+      "name": "crud-repeated-scan-64",
+      "raw": 2182,
+      "brotli": 811,
+      "gzip": 927,
+      "sha256": "a8d248ea2c7aad9fc62fddf38e11551f407ec54fe3baa374096a7c90d9857adc"
+    },
+    {
+      "family": "crud",
+      "shape": "repeated",
+      "mode": "expanded",
+      "count": 1,
+      "name": "crud-repeated-expanded-1",
+      "raw": 2034,
+      "brotli": 748,
+      "gzip": 874,
+      "sha256": "83496a1fbbd75f56612ca136a119908e6d1fd8118237dd4fbd0e90530f3bbe38"
+    },
+    {
+      "family": "crud",
+      "shape": "repeated",
+      "mode": "expanded",
+      "count": 4,
+      "name": "crud-repeated-expanded-4",
+      "raw": 6113,
+      "brotli": 1159,
+      "gzip": 1458,
+      "sha256": "9de580577394a0209e90e9d43aad7ad99ad3501a3fc7acb6499f0da1efbcaa0e"
+    },
+    {
+      "family": "crud",
+      "shape": "repeated",
+      "mode": "expanded",
+      "count": 16,
+      "name": "crud-repeated-expanded-16",
+      "raw": 23075,
+      "brotli": 2521,
+      "gzip": 3682,
+      "sha256": "26a09622dc65c4d7bab3350a1e681262126ad991b48f78d15a1a5dc4f088993c"
+    },
+    {
+      "family": "crud",
+      "shape": "repeated",
+      "mode": "expanded",
+      "count": 64,
+      "name": "crud-repeated-expanded-64",
+      "raw": 90947,
+      "brotli": 6544,
+      "gzip": 12410,
+      "sha256": "e06d087e878e01d1d376acb483a6e4acbec9d749d44f308a8aedde602a662516"
+    },
+    {
+      "family": "crud",
+      "shape": "varied",
+      "mode": "vanilla",
+      "count": 1,
+      "name": "crud-varied-vanilla-1",
+      "raw": 2255,
+      "brotli": 764,
+      "gzip": 892,
+      "sha256": "451219482da8f3b751e97cc24b51ee84b870ec38b8c3731ab7e074452620ed02"
+    },
+    {
+      "family": "crud",
+      "shape": "varied",
+      "mode": "vanilla",
+      "count": 4,
+      "name": "crud-varied-vanilla-4",
+      "raw": 6965,
+      "brotli": 1236,
+      "gzip": 1534,
+      "sha256": "3c8a13967274f5632b6f4bdd5204327efb6bf88b0a46c748f613969fa2ddca3c"
+    },
+    {
+      "family": "crud",
+      "shape": "varied",
+      "mode": "vanilla",
+      "count": 16,
+      "name": "crud-varied-vanilla-16",
+      "raw": 26737,
+      "brotli": 2808,
+      "gzip": 4029,
+      "sha256": "d90be04ced9ef3723546b75d0cfb1c13f98f7f8805b15becad7431b83efd348d"
+    },
+    {
+      "family": "crud",
+      "shape": "varied",
+      "mode": "vanilla",
+      "count": 64,
+      "name": "crud-varied-vanilla-64",
+      "raw": 105913,
+      "brotli": 7670,
+      "gzip": 13814,
+      "sha256": "f04d67e9a78b164c69061ffb6560427c2ffe99b777686427746380b209d4cdc8"
+    },
+    {
+      "family": "crud",
+      "shape": "varied",
+      "mode": "lexical",
+      "count": 1,
+      "name": "crud-varied-lexical-1",
+      "raw": 2038,
+      "brotli": 750,
+      "gzip": 877,
+      "sha256": "0a9a83778bd59dfcf47c851e397ba6551211da103fdd699d900792c3d4216bc0"
+    },
+    {
+      "family": "crud",
+      "shape": "varied",
+      "mode": "lexical",
+      "count": 4,
+      "name": "crud-varied-lexical-4",
+      "raw": 6135,
+      "brotli": 1211,
+      "gzip": 1501,
+      "sha256": "eee8bf0c1ed9346e9189c9e1506aec61e8bb0ca2fe797c04572fbe35c7e6e5ad"
+    },
+    {
+      "family": "crud",
+      "shape": "varied",
+      "mode": "lexical",
+      "count": 16,
+      "name": "crud-varied-lexical-16",
+      "raw": 23159,
+      "brotli": 2717,
+      "gzip": 3862,
+      "sha256": "ba0a8fa66e8fe0566af780091878b39473c072de1e14e9a1fc493c93d5956903"
+    },
+    {
+      "family": "crud",
+      "shape": "varied",
+      "mode": "lexical",
+      "count": 64,
+      "name": "crud-varied-lexical-64",
+      "raw": 91343,
+      "brotli": 7280,
+      "gzip": 13107,
+      "sha256": "14114699562325b504e66aeff97194ba5b2c4d5f50d04d589d9c5a76a65555a9"
+    },
+    {
+      "family": "crud",
+      "shape": "varied",
+      "mode": "indexed",
+      "count": 1,
+      "name": "crud-varied-indexed-1",
+      "raw": 2207,
+      "brotli": 803,
+      "gzip": 929,
+      "sha256": "c88ade38539c842a715abd30677555c32bfcd58eab370f2ba5cbdd08525ee023"
+    },
+    {
+      "family": "crud",
+      "shape": "varied",
+      "mode": "indexed",
+      "count": 4,
+      "name": "crud-varied-indexed-4",
+      "raw": 6539,
+      "brotli": 1300,
+      "gzip": 1612,
+      "sha256": "6f9599104929f7056379bf31599f06ce746cd560a89b2d887a64903de78d5300"
+    },
+    {
+      "family": "crud",
+      "shape": "varied",
+      "mode": "indexed",
+      "count": 16,
+      "name": "crud-varied-indexed-16",
+      "raw": 24355,
+      "brotli": 2796,
+      "gzip": 4093,
+      "sha256": "dcc805db0e2c9650f55f6c3b6867dbd9944fb785574c35977c712ecd7c691cf7"
+    },
+    {
+      "family": "crud",
+      "shape": "varied",
+      "mode": "indexed",
+      "count": 64,
+      "name": "crud-varied-indexed-64",
+      "raw": 95707,
+      "brotli": 7949,
+      "gzip": 13794,
+      "sha256": "afbc9a839896b54dca4c13e95eca0d887f7e5587fb7be8004e1c50a5cc592b9c"
+    },
+    {
+      "family": "crud",
+      "shape": "varied",
+      "mode": "signals",
+      "count": 1,
+      "name": "crud-varied-signals-1",
+      "raw": 2461,
+      "brotli": 898,
+      "gzip": 1027,
+      "sha256": "832047ffe6bbd6cbe5163f94e598b90bd071a12fa3b38f732cb258385dd59c2b"
+    },
+    {
+      "family": "crud",
+      "shape": "varied",
+      "mode": "signals",
+      "count": 4,
+      "name": "crud-varied-signals-4",
+      "raw": 6770,
+      "brotli": 1398,
+      "gzip": 1705,
+      "sha256": "61beb29e7c2032c5d4a88f2ab6f8194da827bef84bf28006df39681e5cb09ec1"
+    },
+    {
+      "family": "crud",
+      "shape": "varied",
+      "mode": "signals",
+      "count": 16,
+      "name": "crud-varied-signals-16",
+      "raw": 24442,
+      "brotli": 2845,
+      "gzip": 4209,
+      "sha256": "206cde216213bace7b1c512e21433459030ee78d53bbefd1d191dab72f3b4866"
+    },
+    {
+      "family": "crud",
+      "shape": "varied",
+      "mode": "signals",
+      "count": 64,
+      "name": "crud-varied-signals-64",
+      "raw": 95218,
+      "brotli": 6229,
+      "gzip": 13833,
+      "sha256": "04b63d66346966fe4717aebd1ea118e33b0e769a74750bca74fbde9ac5289c95"
+    },
+    {
+      "family": "crud",
+      "shape": "varied",
+      "mode": "scan",
+      "count": 1,
+      "name": "crud-varied-scan-1",
+      "raw": 2156,
+      "brotli": 800,
+      "gzip": 922,
+      "sha256": "556c1d0aa88c5ec2ca1a30a645eadd4760f2d9929ae0f99732fb25f94243cfa2"
+    },
+    {
+      "family": "crud",
+      "shape": "varied",
+      "mode": "scan",
+      "count": 4,
+      "name": "crud-varied-scan-4",
+      "raw": 6351,
+      "brotli": 1248,
+      "gzip": 1552,
+      "sha256": "b4eed9ba9a6b6b5eb315c03ed577829686072711dea7bcf1ba80919a7245d0fc"
+    },
+    {
+      "family": "crud",
+      "shape": "varied",
+      "mode": "scan",
+      "count": 16,
+      "name": "crud-varied-scan-16",
+      "raw": 23687,
+      "brotli": 2825,
+      "gzip": 3895,
+      "sha256": "2d044085b2e691c49723ae8ea3110b42b169d64fd8f3ef1a2d97b1c712a5c997"
+    },
+    {
+      "family": "crud",
+      "shape": "varied",
+      "mode": "scan",
+      "count": 64,
+      "name": "crud-varied-scan-64",
+      "raw": 93119,
+      "brotli": 7308,
+      "gzip": 13012,
+      "sha256": "04adda817bd1d07801856527ec6e89f88b3573bedf81d93f83f367373d3c0f02"
+    },
+    {
+      "family": "crud",
+      "shape": "varied",
+      "mode": "expanded",
+      "count": 1,
+      "name": "crud-varied-expanded-1",
+      "raw": 2038,
+      "brotli": 750,
+      "gzip": 877,
+      "sha256": "0a9a83778bd59dfcf47c851e397ba6551211da103fdd699d900792c3d4216bc0"
+    },
+    {
+      "family": "crud",
+      "shape": "varied",
+      "mode": "expanded",
+      "count": 4,
+      "name": "crud-varied-expanded-4",
+      "raw": 6135,
+      "brotli": 1211,
+      "gzip": 1501,
+      "sha256": "eee8bf0c1ed9346e9189c9e1506aec61e8bb0ca2fe797c04572fbe35c7e6e5ad"
+    },
+    {
+      "family": "crud",
+      "shape": "varied",
+      "mode": "expanded",
+      "count": 16,
+      "name": "crud-varied-expanded-16",
+      "raw": 23159,
+      "brotli": 2717,
+      "gzip": 3862,
+      "sha256": "ba0a8fa66e8fe0566af780091878b39473c072de1e14e9a1fc493c93d5956903"
+    },
+    {
+      "family": "crud",
+      "shape": "varied",
+      "mode": "expanded",
+      "count": 64,
+      "name": "crud-varied-expanded-64",
+      "raw": 91343,
+      "brotli": 7280,
+      "gzip": 13107,
+      "sha256": "14114699562325b504e66aeff97194ba5b2c4d5f50d04d589d9c5a76a65555a9"
+    },
+    {
+      "family": "board",
+      "shape": "repeated",
+      "mode": "vanilla",
+      "count": 1,
+      "name": "board-repeated-vanilla-1",
+      "raw": 1590,
+      "brotli": 572,
+      "gzip": 696,
+      "sha256": "01a2fe1e434a01373424704c3028ed107de122662970c023c4bc49c1afe1be05"
+    },
+    {
+      "family": "board",
+      "shape": "repeated",
+      "mode": "vanilla",
+      "count": 4,
+      "name": "board-repeated-vanilla-4",
+      "raw": 1590,
+      "brotli": 572,
+      "gzip": 695,
+      "sha256": "91d8019b23d39e8f3806c7540a90589f9451c4520ae986611ae1b3b7d93f71c6"
+    },
+    {
+      "family": "board",
+      "shape": "repeated",
+      "mode": "vanilla",
+      "count": 16,
+      "name": "board-repeated-vanilla-16",
+      "raw": 1591,
+      "brotli": 573,
+      "gzip": 696,
+      "sha256": "465ad8d38ff343314c7aaf5fbbdc65e04b5c983cdb1e8cc8f92750b6e87022b1"
+    },
+    {
+      "family": "board",
+      "shape": "repeated",
+      "mode": "vanilla",
+      "count": 64,
+      "name": "board-repeated-vanilla-64",
+      "raw": 1591,
+      "brotli": 573,
+      "gzip": 696,
+      "sha256": "679cab7a01bbd5fe7fcd695989191df7dc37e82028ef3cc83fb0fcfee3736a1a"
+    },
+    {
+      "family": "board",
+      "shape": "repeated",
+      "mode": "lexical",
+      "count": 1,
+      "name": "board-repeated-lexical-1",
+      "raw": 1426,
+      "brotli": 572,
+      "gzip": 695,
+      "sha256": "8c7f4a4bfac0457e778801f347d623e75bdce2fb7ee48fe616cea2238790725c"
+    },
+    {
+      "family": "board",
+      "shape": "repeated",
+      "mode": "lexical",
+      "count": 4,
+      "name": "board-repeated-lexical-4",
+      "raw": 1426,
+      "brotli": 573,
+      "gzip": 695,
+      "sha256": "1a67bbda48449d0afafd5097e42ce1061488f990f5dad11eebdd24ec6c2baade"
+    },
+    {
+      "family": "board",
+      "shape": "repeated",
+      "mode": "lexical",
+      "count": 16,
+      "name": "board-repeated-lexical-16",
+      "raw": 1427,
+      "brotli": 568,
+      "gzip": 696,
+      "sha256": "a0c449443f781d35a269e7d7d3d80d6e5e528807902d3a8e749124913cff1b64"
+    },
+    {
+      "family": "board",
+      "shape": "repeated",
+      "mode": "lexical",
+      "count": 64,
+      "name": "board-repeated-lexical-64",
+      "raw": 1427,
+      "brotli": 568,
+      "gzip": 696,
+      "sha256": "d0b3449bdc847f981eaf617e366e3bc9c91e201584a8674461a47d21879b29af"
+    },
+    {
+      "family": "board",
+      "shape": "repeated",
+      "mode": "indexed",
+      "count": 1,
+      "name": "board-repeated-indexed-1",
+      "raw": 1598,
+      "brotli": 623,
+      "gzip": 749,
+      "sha256": "435b71fa07eb475bd13fcd01115abf71510467525d11cc60b01ec1aa1b14657b"
+    },
+    {
+      "family": "board",
+      "shape": "repeated",
+      "mode": "indexed",
+      "count": 4,
+      "name": "board-repeated-indexed-4",
+      "raw": 1598,
+      "brotli": 623,
+      "gzip": 749,
+      "sha256": "c440b2bb856d9f40d2f094c5265aef7cfa33c5b60b2738ae0b448791ad50b2a4"
+    },
+    {
+      "family": "board",
+      "shape": "repeated",
+      "mode": "indexed",
+      "count": 16,
+      "name": "board-repeated-indexed-16",
+      "raw": 1599,
+      "brotli": 625,
+      "gzip": 750,
+      "sha256": "60261a8fa1a9bec9d53e0a44fd450a774f4ca6ec34a242bf0f8562a7979be3f2"
+    },
+    {
+      "family": "board",
+      "shape": "repeated",
+      "mode": "indexed",
+      "count": 64,
+      "name": "board-repeated-indexed-64",
+      "raw": 1599,
+      "brotli": 625,
+      "gzip": 750,
+      "sha256": "4eda4c5d587769097173dee43e75f80a97746a872c7ad7f58b92866b53ab2486"
+    },
+    {
+      "family": "board",
+      "shape": "repeated",
+      "mode": "signals",
+      "count": 1,
+      "name": "board-repeated-signals-1",
+      "raw": 1849,
+      "brotli": 717,
+      "gzip": 847,
+      "sha256": "30937ba55544049f53c77020ed5095187950c777765d1f2873085dd9289672ce"
+    },
+    {
+      "family": "board",
+      "shape": "repeated",
+      "mode": "signals",
+      "count": 4,
+      "name": "board-repeated-signals-4",
+      "raw": 1849,
+      "brotli": 717,
+      "gzip": 846,
+      "sha256": "44e1e9a67ae9cbb0ef0cc9be72d2f108cafc9eaf8727e75864a30714f6df820c"
+    },
+    {
+      "family": "board",
+      "shape": "repeated",
+      "mode": "signals",
+      "count": 16,
+      "name": "board-repeated-signals-16",
+      "raw": 1850,
+      "brotli": 719,
+      "gzip": 847,
+      "sha256": "cfca7727d5438f7312fdc58763a325c922ebaf8fdf209135065a3128a2fe5fd4"
+    },
+    {
+      "family": "board",
+      "shape": "repeated",
+      "mode": "signals",
+      "count": 64,
+      "name": "board-repeated-signals-64",
+      "raw": 1850,
+      "brotli": 718,
+      "gzip": 847,
+      "sha256": "f3f922731a5bfc14c35732c8678ea86fd40d822e393fe18d5fda66c060ce516f"
+    },
+    {
+      "family": "board",
+      "shape": "repeated",
+      "mode": "scan",
+      "count": 1,
+      "name": "board-repeated-scan-1",
+      "raw": 1549,
+      "brotli": 619,
+      "gzip": 744,
+      "sha256": "3e88f9169672f0a36d5af216dda9a387c63857a4884005384e997e0675f24cf7"
+    },
+    {
+      "family": "board",
+      "shape": "repeated",
+      "mode": "scan",
+      "count": 4,
+      "name": "board-repeated-scan-4",
+      "raw": 1549,
+      "brotli": 618,
+      "gzip": 744,
+      "sha256": "3e0fb77b01a9c879dff1c46943eb9159ab3145e317eb1257b87365478a851faf"
+    },
+    {
+      "family": "board",
+      "shape": "repeated",
+      "mode": "scan",
+      "count": 16,
+      "name": "board-repeated-scan-16",
+      "raw": 1550,
+      "brotli": 619,
+      "gzip": 745,
+      "sha256": "2fd3aec912dda1b669cfcb7b140a9721eead89f7627cac70461168b1ee810acd"
+    },
+    {
+      "family": "board",
+      "shape": "repeated",
+      "mode": "scan",
+      "count": 64,
+      "name": "board-repeated-scan-64",
+      "raw": 1550,
+      "brotli": 620,
+      "gzip": 745,
+      "sha256": "188ff15a6431f6c5ee3b17691c557000ea61355e35e736a718285b876fa007df"
+    },
+    {
+      "family": "board",
+      "shape": "repeated",
+      "mode": "expanded",
+      "count": 1,
+      "name": "board-repeated-expanded-1",
+      "raw": 1388,
+      "brotli": 561,
+      "gzip": 678,
+      "sha256": "e5e28c4b853d1ef30f27db0a65bf9b6d2be2e109b136ec8e6991b7094fb0f363"
+    },
+    {
+      "family": "board",
+      "shape": "repeated",
+      "mode": "expanded",
+      "count": 4,
+      "name": "board-repeated-expanded-4",
+      "raw": 4512,
+      "brotli": 862,
+      "gzip": 1143,
+      "sha256": "87cbe6b3c15ffc79dc64c273ce8562d1d9bf35572f5e832e81413f4c5d1c744b"
+    },
+    {
+      "family": "board",
+      "shape": "repeated",
+      "mode": "expanded",
+      "count": 16,
+      "name": "board-repeated-expanded-16",
+      "raw": 17562,
+      "brotli": 1907,
+      "gzip": 2892,
+      "sha256": "084b271100e8e0c33b69ce2560e1a4f37c52eee69ca37a84a87c6f408ddf2c93"
+    },
+    {
+      "family": "board",
+      "shape": "repeated",
+      "mode": "expanded",
+      "count": 64,
+      "name": "board-repeated-expanded-64",
+      "raw": 69786,
+      "brotli": 5377,
+      "gzip": 9808,
+      "sha256": "23f0ec2d6a2aad9e4d8e5fe8596aafaadfac4cbc15179bd20e7dbb55922f7639"
+    },
+    {
+      "family": "board",
+      "shape": "varied",
+      "mode": "vanilla",
+      "count": 1,
+      "name": "board-varied-vanilla-1",
+      "raw": 1574,
+      "brotli": 562,
+      "gzip": 691,
+      "sha256": "98f49e3f1edc75e79db1f86dc939f1ff3cb590d17afaf8aa1614e6d397244803"
+    },
+    {
+      "family": "board",
+      "shape": "varied",
+      "mode": "vanilla",
+      "count": 4,
+      "name": "board-varied-vanilla-4",
+      "raw": 5251,
+      "brotli": 929,
+      "gzip": 1211,
+      "sha256": "9d17dfe5a24e69cb5269ab1f8017e6e8652f01e8fcbe8f010481f107eb5c6643"
+    },
+    {
+      "family": "board",
+      "shape": "varied",
+      "mode": "vanilla",
+      "count": 16,
+      "name": "board-varied-vanilla-16",
+      "raw": 20684,
+      "brotli": 2194,
+      "gzip": 3134,
+      "sha256": "6bbefb9ac5802f7ba4896258fbc15ad184bb98fabd8ac02bcdc65c70f53147a1"
+    },
+    {
+      "family": "board",
+      "shape": "varied",
+      "mode": "vanilla",
+      "count": 64,
+      "name": "board-varied-vanilla-64",
+      "raw": 82472,
+      "brotli": 6234,
+      "gzip": 10599,
+      "sha256": "861e00f7613f60725ee5a537e09cdb7a8c5edb0d2ae02fcbcc869d0dcaa1be89"
+    },
+    {
+      "family": "board",
+      "shape": "varied",
+      "mode": "lexical",
+      "count": 1,
+      "name": "board-varied-lexical-1",
+      "raw": 1390,
+      "brotli": 560,
+      "gzip": 682,
+      "sha256": "dfdb80ebc73a76eb431ae5004252db8e75cf731aae780d9e565cc27595a4edaa"
+    },
+    {
+      "family": "board",
+      "shape": "varied",
+      "mode": "lexical",
+      "count": 4,
+      "name": "board-varied-lexical-4",
+      "raw": 4523,
+      "brotli": 896,
+      "gzip": 1186,
+      "sha256": "024a15cc0b4ae6037f6f93c1654c1560c32d4cebf5ddd3f80947ca5fec80e101"
+    },
+    {
+      "family": "board",
+      "shape": "varied",
+      "mode": "lexical",
+      "count": 16,
+      "name": "board-varied-lexical-16",
+      "raw": 17604,
+      "brotli": 2109,
+      "gzip": 3051,
+      "sha256": "8af114673f7eb2848fcb2595a90e7566a0586dbb2cf29421fe7803d89d3cdf7c"
+    },
+    {
+      "family": "board",
+      "shape": "varied",
+      "mode": "lexical",
+      "count": 64,
+      "name": "board-varied-lexical-64",
+      "raw": 69984,
+      "brotli": 6139,
+      "gzip": 10354,
+      "sha256": "4ddd3a48a95d562b58aa1f3bd94ef5a373289c415d35bca73c27135c6c2a1bad"
+    },
+    {
+      "family": "board",
+      "shape": "varied",
+      "mode": "indexed",
+      "count": 1,
+      "name": "board-varied-indexed-1",
+      "raw": 1562,
+      "brotli": 611,
+      "gzip": 739,
+      "sha256": "15c10860191e95428b30e4db82a8e847e9d57929f7b60d6bed347c2c8a347951"
+    },
+    {
+      "family": "board",
+      "shape": "varied",
+      "mode": "indexed",
+      "count": 4,
+      "name": "board-varied-indexed-4",
+      "raw": 4918,
+      "brotli": 985,
+      "gzip": 1277,
+      "sha256": "3a3e5c407d76a1f31e9701b29b419964e5d6051039aa3daaf4c8f3c150ff2571"
+    },
+    {
+      "family": "board",
+      "shape": "varied",
+      "mode": "indexed",
+      "count": 16,
+      "name": "board-varied-indexed-16",
+      "raw": 18839,
+      "brotli": 2243,
+      "gzip": 3273,
+      "sha256": "eb57b735a377b54e730c471f917c8f71a6c5d9f3c981c26dbc4ebbf667a9787d"
+    },
+    {
+      "family": "board",
+      "shape": "varied",
+      "mode": "indexed",
+      "count": 64,
+      "name": "board-varied-indexed-64",
+      "raw": 74579,
+      "brotli": 5378,
+      "gzip": 11027,
+      "sha256": "6eeb101c83d3e0030ce120cfab26db5bfe4f76ed4083c2db75172eaee0b555c8"
+    },
+    {
+      "family": "board",
+      "shape": "varied",
+      "mode": "signals",
+      "count": 1,
+      "name": "board-varied-signals-1",
+      "raw": 1819,
+      "brotli": 708,
+      "gzip": 844,
+      "sha256": "affdb28defb3bee44624abfbee9d61972dfca2d9f29202eaa5a376003ae7f217"
+    },
+    {
+      "family": "board",
+      "shape": "varied",
+      "mode": "signals",
+      "count": 4,
+      "name": "board-varied-signals-4",
+      "raw": 5170,
+      "brotli": 1116,
+      "gzip": 1388,
+      "sha256": "6af70d9f006075c579b0176385dcbf687729e59d592b161bfa5d28d16fb91fe9"
+    },
+    {
+      "family": "board",
+      "shape": "varied",
+      "mode": "signals",
+      "count": 16,
+      "name": "board-varied-signals-16",
+      "raw": 18995,
+      "brotli": 2336,
+      "gzip": 3418,
+      "sha256": "7dd7a039a57e19c73f86ba629041320b2d542d42a23cbc87b0170769e5bb102c"
+    },
+    {
+      "family": "board",
+      "shape": "varied",
+      "mode": "signals",
+      "count": 64,
+      "name": "board-varied-signals-64",
+      "raw": 74351,
+      "brotli": 6097,
+      "gzip": 11441,
+      "sha256": "eb3c8a23ac58285bf4ca9193be2ca05a28dc3f612ff12529684d7ffaddaf2a04"
+    },
+    {
+      "family": "board",
+      "shape": "varied",
+      "mode": "scan",
+      "count": 1,
+      "name": "board-varied-scan-1",
+      "raw": 1513,
+      "brotli": 608,
+      "gzip": 732,
+      "sha256": "ef834f663df0481a0afce067fe417df7615e37d1cba10da85a97e795445ab79b"
+    },
+    {
+      "family": "board",
+      "shape": "varied",
+      "mode": "scan",
+      "count": 4,
+      "name": "board-varied-scan-4",
+      "raw": 4760,
+      "brotli": 951,
+      "gzip": 1250,
+      "sha256": "efc3f512d55ad6546fc947ff0da4fbcbd18b9156919ad8fd2ff18b88de01bfe6"
+    },
+    {
+      "family": "board",
+      "shape": "varied",
+      "mode": "scan",
+      "count": 16,
+      "name": "board-varied-scan-16",
+      "raw": 18273,
+      "brotli": 2160,
+      "gzip": 3176,
+      "sha256": "b868eddc4cb660321ae1e921d34beb6153573c45ae318bb28eb65d7ccd800abf"
+    },
+    {
+      "family": "board",
+      "shape": "varied",
+      "mode": "scan",
+      "count": 64,
+      "name": "board-varied-scan-64",
+      "raw": 72381,
+      "brotli": 6104,
+      "gzip": 10667,
+      "sha256": "c7cf82d2a57c71d798fb22b64fe74b2adb5d0d1834d75856bac3833e9a1aa57b"
+    },
+    {
+      "family": "board",
+      "shape": "varied",
+      "mode": "expanded",
+      "count": 1,
+      "name": "board-varied-expanded-1",
+      "raw": 1390,
+      "brotli": 560,
+      "gzip": 682,
+      "sha256": "dfdb80ebc73a76eb431ae5004252db8e75cf731aae780d9e565cc27595a4edaa"
+    },
+    {
+      "family": "board",
+      "shape": "varied",
+      "mode": "expanded",
+      "count": 4,
+      "name": "board-varied-expanded-4",
+      "raw": 4523,
+      "brotli": 896,
+      "gzip": 1186,
+      "sha256": "024a15cc0b4ae6037f6f93c1654c1560c32d4cebf5ddd3f80947ca5fec80e101"
+    },
+    {
+      "family": "board",
+      "shape": "varied",
+      "mode": "expanded",
+      "count": 16,
+      "name": "board-varied-expanded-16",
+      "raw": 17604,
+      "brotli": 2109,
+      "gzip": 3051,
+      "sha256": "8af114673f7eb2848fcb2595a90e7566a0586dbb2cf29421fe7803d89d3cdf7c"
+    },
+    {
+      "family": "board",
+      "shape": "varied",
+      "mode": "expanded",
+      "count": 64,
+      "name": "board-varied-expanded-64",
+      "raw": 69984,
+      "brotli": 6139,
+      "gzip": 10354,
+      "sha256": "4ddd3a48a95d562b58aa1f3bd94ef5a373289c415d35bca73c27135c6c2a1bad"
+    },
+    {
+      "family": "route",
+      "shape": "repeated",
+      "mode": "vanilla",
+      "count": 1,
+      "name": "route-repeated-vanilla-1",
+      "raw": 2718,
+      "brotli": 869,
+      "gzip": 1032,
+      "sha256": "236bd8228fe59f342932022fabcea7597ddac9de448a70ec5dd03e730dfc8a3f"
+    },
+    {
+      "family": "route",
+      "shape": "repeated",
+      "mode": "vanilla",
+      "count": 4,
+      "name": "route-repeated-vanilla-4",
+      "raw": 2718,
+      "brotli": 871,
+      "gzip": 1032,
+      "sha256": "939c66743c968b8360397f4a3a20bd9e230f7a88a47a6dbf2a3a9cef3d0f711f"
+    },
+    {
+      "family": "route",
+      "shape": "repeated",
+      "mode": "vanilla",
+      "count": 16,
+      "name": "route-repeated-vanilla-16",
+      "raw": 2719,
+      "brotli": 873,
+      "gzip": 1033,
+      "sha256": "b272e5ff65c73cd0b4de5ce8a7017c48f601a71c04cca03ec22b5cb3ae6f96cc"
+    },
+    {
+      "family": "route",
+      "shape": "repeated",
+      "mode": "vanilla",
+      "count": 64,
+      "name": "route-repeated-vanilla-64",
+      "raw": 2719,
+      "brotli": 873,
+      "gzip": 1034,
+      "sha256": "26f0989ad8b0787513dd38452564174e3ebba9e2e226e0f70ee035368dd31d90"
+    },
+    {
+      "family": "route",
+      "shape": "repeated",
+      "mode": "lexical",
+      "count": 1,
+      "name": "route-repeated-lexical-1",
+      "raw": 2714,
+      "brotli": 876,
+      "gzip": 1043,
+      "sha256": "5b0fe594cb4099c84d2d366043a7a0cfa93307a8db55ae3b1cba5cf2bd5c47bc"
+    },
+    {
+      "family": "route",
+      "shape": "repeated",
+      "mode": "lexical",
+      "count": 4,
+      "name": "route-repeated-lexical-4",
+      "raw": 2714,
+      "brotli": 878,
+      "gzip": 1042,
+      "sha256": "ac59410882aab9f63a875755cc32c94252c98ba73278255d236b21b0760203e0"
+    },
+    {
+      "family": "route",
+      "shape": "repeated",
+      "mode": "lexical",
+      "count": 16,
+      "name": "route-repeated-lexical-16",
+      "raw": 2715,
+      "brotli": 879,
+      "gzip": 1043,
+      "sha256": "1f072a13a430346fef1ea241e9defd91b9074d2723aeb8fa4d867169cf61eed4"
+    },
+    {
+      "family": "route",
+      "shape": "repeated",
+      "mode": "lexical",
+      "count": 64,
+      "name": "route-repeated-lexical-64",
+      "raw": 2715,
+      "brotli": 880,
+      "gzip": 1044,
+      "sha256": "64a0863f82832fb51d4b0c2de3cc146f9e3b36ab69193e97ed89b627b29e3f02"
+    },
+    {
+      "family": "route",
+      "shape": "repeated",
+      "mode": "indexed",
+      "count": 1,
+      "name": "route-repeated-indexed-1",
+      "raw": 2880,
+      "brotli": 929,
+      "gzip": 1101,
+      "sha256": "c862d804e1b678c9e29cac697ac64cefedf69a0a9bf57ad0b13613059fd543c7"
+    },
+    {
+      "family": "route",
+      "shape": "repeated",
+      "mode": "indexed",
+      "count": 4,
+      "name": "route-repeated-indexed-4",
+      "raw": 2880,
+      "brotli": 931,
+      "gzip": 1102,
+      "sha256": "b10202b56caf95a28f3ac85e590d94ff57bc42bb8b1b5e2d600e7638b6c1ff0f"
+    },
+    {
+      "family": "route",
+      "shape": "repeated",
+      "mode": "indexed",
+      "count": 16,
+      "name": "route-repeated-indexed-16",
+      "raw": 2881,
+      "brotli": 932,
+      "gzip": 1103,
+      "sha256": "e636c735da17259bedea536907ee8a3c15c0aad6fefa8fcad4e029157ba26ce5"
+    },
+    {
+      "family": "route",
+      "shape": "repeated",
+      "mode": "indexed",
+      "count": 64,
+      "name": "route-repeated-indexed-64",
+      "raw": 2881,
+      "brotli": 932,
+      "gzip": 1104,
+      "sha256": "9e4ec9308281df2903d0754f4a9b06af9a18533deec94c999dae07da72b0c63b"
+    },
+    {
+      "family": "route",
+      "shape": "repeated",
+      "mode": "signals",
+      "count": 1,
+      "name": "route-repeated-signals-1",
+      "raw": 3133,
+      "brotli": 1022,
+      "gzip": 1201,
+      "sha256": "8f593f21a688b7ba39af796edd2d53211b7ebc942e23a0a23f9cd9e59498e0c5"
+    },
+    {
+      "family": "route",
+      "shape": "repeated",
+      "mode": "signals",
+      "count": 4,
+      "name": "route-repeated-signals-4",
+      "raw": 3133,
+      "brotli": 1024,
+      "gzip": 1202,
+      "sha256": "d62c79cc2e0e7cf0a3d939bdc5c9392b983947f8ffb01feeaf181accc53a6e6f"
+    },
+    {
+      "family": "route",
+      "shape": "repeated",
+      "mode": "signals",
+      "count": 16,
+      "name": "route-repeated-signals-16",
+      "raw": 3134,
+      "brotli": 1025,
+      "gzip": 1204,
+      "sha256": "d1796d51f25659bc2a18d9b8a86682e9a25a492a9fe63ff99f68acfea7af23e9"
+    },
+    {
+      "family": "route",
+      "shape": "repeated",
+      "mode": "signals",
+      "count": 64,
+      "name": "route-repeated-signals-64",
+      "raw": 3134,
+      "brotli": 1025,
+      "gzip": 1204,
+      "sha256": "74a995c48277f455b18d41b5898ffa66ff9171ac74574572388248122914cf89"
+    },
+    {
+      "family": "route",
+      "shape": "repeated",
+      "mode": "scan",
+      "count": 1,
+      "name": "route-repeated-scan-1",
+      "raw": 2837,
+      "brotli": 925,
+      "gzip": 1096,
+      "sha256": "242eb93db733a56554fd75fdf0441042dcbd47ea09c87970bc6f666491b43105"
+    },
+    {
+      "family": "route",
+      "shape": "repeated",
+      "mode": "scan",
+      "count": 4,
+      "name": "route-repeated-scan-4",
+      "raw": 2837,
+      "brotli": 927,
+      "gzip": 1097,
+      "sha256": "e27236f910a76ce7cd53ebf45a25cfa08c66035a888bac4f128d02114b09eb7f"
+    },
+    {
+      "family": "route",
+      "shape": "repeated",
+      "mode": "scan",
+      "count": 16,
+      "name": "route-repeated-scan-16",
+      "raw": 2838,
+      "brotli": 929,
+      "gzip": 1099,
+      "sha256": "cff0ec00b85bf4babae3bc714e3d8df988b2ed0566c0aad210603323ea826fd5"
+    },
+    {
+      "family": "route",
+      "shape": "repeated",
+      "mode": "scan",
+      "count": 64,
+      "name": "route-repeated-scan-64",
+      "raw": 2838,
+      "brotli": 928,
+      "gzip": 1100,
+      "sha256": "e0b7a4e4911d172cfa13e099aa676d177c2693c4ce4128f3bae4d4a027576faa"
+    },
+    {
+      "family": "route",
+      "shape": "repeated",
+      "mode": "expanded",
+      "count": 1,
+      "name": "route-repeated-expanded-1",
+      "raw": 2678,
+      "brotli": 878,
+      "gzip": 1045,
+      "sha256": "001222a402ab83facd3a5db15435ce44a53d01ad6784269a8f8afa02c20eab40"
+    },
+    {
+      "family": "route",
+      "shape": "repeated",
+      "mode": "expanded",
+      "count": 4,
+      "name": "route-repeated-expanded-4",
+      "raw": 7897,
+      "brotli": 1399,
+      "gzip": 1766,
+      "sha256": "c3de4a838cf2e3e3b5aa3dd22264457c501be736e6bd87e82029fced9286c357"
+    },
+    {
+      "family": "route",
+      "shape": "repeated",
+      "mode": "expanded",
+      "count": 16,
+      "name": "route-repeated-expanded-16",
+      "raw": 29299,
+      "brotli": 2992,
+      "gzip": 4446,
+      "sha256": "915af74e552987b82ed3271717bc7a008a8fa36f9ce9e8aa8ef5b76cb9d36fdb"
+    },
+    {
+      "family": "route",
+      "shape": "repeated",
+      "mode": "expanded",
+      "count": 64,
+      "name": "route-repeated-expanded-64",
+      "raw": 114931,
+      "brotli": 7735,
+      "gzip": 15008,
+      "sha256": "f67924fd0478aa83fe8aa0d884259892979833ef03165b0578fed1d62281a48c"
+    },
+    {
+      "family": "route",
+      "shape": "varied",
+      "mode": "vanilla",
+      "count": 1,
+      "name": "route-varied-vanilla-1",
+      "raw": 2718,
+      "brotli": 883,
+      "gzip": 1056,
+      "sha256": "a09e4e87ff7fb0120f03042a9452c17a2459fed4bb7b7dc33952bff650207e74"
+    },
+    {
+      "family": "route",
+      "shape": "varied",
+      "mode": "vanilla",
+      "count": 4,
+      "name": "route-varied-vanilla-4",
+      "raw": 8064,
+      "brotli": 1436,
+      "gzip": 1815,
+      "sha256": "6d8b40bb74f5d74e4da443d70476fd56fbc94f40d6dbadc55497565f2ccf80f0"
+    },
+    {
+      "family": "route",
+      "shape": "varied",
+      "mode": "vanilla",
+      "count": 16,
+      "name": "route-varied-vanilla-16",
+      "raw": 30001,
+      "brotli": 3221,
+      "gzip": 4620,
+      "sha256": "ec618fa15500c89363f3ffde550547388efbdeb42b1326f6aa246aa3267fb527"
+    },
+    {
+      "family": "route",
+      "shape": "varied",
+      "mode": "vanilla",
+      "count": 64,
+      "name": "route-varied-vanilla-64",
+      "raw": 117805,
+      "brotli": 8268,
+      "gzip": 15613,
+      "sha256": "9db0d61ef0147fcd49040acafcf205224302e451cd9c5dda3c9ba4d5bfa81ea2"
+    },
+    {
+      "family": "route",
+      "shape": "varied",
+      "mode": "lexical",
+      "count": 1,
+      "name": "route-varied-lexical-1",
+      "raw": 2680,
+      "brotli": 879,
+      "gzip": 1048,
+      "sha256": "49341df2573ea83980bd12d02983c540d733cd49a1f2b8ad975449e95749f509"
+    },
+    {
+      "family": "route",
+      "shape": "varied",
+      "mode": "lexical",
+      "count": 4,
+      "name": "route-varied-lexical-4",
+      "raw": 7908,
+      "brotli": 1419,
+      "gzip": 1798,
+      "sha256": "006a2d46922e1a14eee6a7965c2e0e9d23c3bb4a10cc7a2a5567d91f75f0d424"
+    },
+    {
+      "family": "route",
+      "shape": "varied",
+      "mode": "lexical",
+      "count": 16,
+      "name": "route-varied-lexical-16",
+      "raw": 29341,
+      "brotli": 3156,
+      "gzip": 4561,
+      "sha256": "07b98b25d049be2c08c9ba630e6301f5976f4800b5a86fc065ec52ab1f32ac2a"
+    },
+    {
+      "family": "route",
+      "shape": "varied",
+      "mode": "lexical",
+      "count": 64,
+      "name": "route-varied-lexical-64",
+      "raw": 115129,
+      "brotli": 8185,
+      "gzip": 15393,
+      "sha256": "9f59bfb0e57069bc043fdda9493494c0895b0a8eab54497c6d09900c27654b7b"
+    },
+    {
+      "family": "route",
+      "shape": "varied",
+      "mode": "indexed",
+      "count": 1,
+      "name": "route-varied-indexed-1",
+      "raw": 2846,
+      "brotli": 932,
+      "gzip": 1107,
+      "sha256": "66648584575752dddebae86b3a0b56df3322e5022bad2e460894e6f7e5797f93"
+    },
+    {
+      "family": "route",
+      "shape": "varied",
+      "mode": "indexed",
+      "count": 4,
+      "name": "route-varied-indexed-4",
+      "raw": 8275,
+      "brotli": 1480,
+      "gzip": 1886,
+      "sha256": "fb2b2dd366d95423c3ce594ab1a77f7bd086e07480c51be4340500827df20d0d"
+    },
+    {
+      "family": "route",
+      "shape": "varied",
+      "mode": "indexed",
+      "count": 16,
+      "name": "route-varied-indexed-16",
+      "raw": 30476,
+      "brotli": 3163,
+      "gzip": 4725,
+      "sha256": "d10c67c68e3be7bb4ebc5177c5feff23a47d42123b11a87978184ecfea078fa8"
+    },
+    {
+      "family": "route",
+      "shape": "varied",
+      "mode": "indexed",
+      "count": 64,
+      "name": "route-varied-indexed-64",
+      "raw": 119336,
+      "brotli": 9376,
+      "gzip": 15786,
+      "sha256": "945d84f860bfbfff627c9ab31e68fc22e70b5f057c93d7ffebacfafe30a67f7f"
+    },
+    {
+      "family": "route",
+      "shape": "varied",
+      "mode": "signals",
+      "count": 1,
+      "name": "route-varied-signals-1",
+      "raw": 3105,
+      "brotli": 1037,
+      "gzip": 1215,
+      "sha256": "5936c74b2032bac7d1c9443d333c057fe86d593953eb2eb56498b50f61367c59"
+    },
+    {
+      "family": "route",
+      "shape": "varied",
+      "mode": "signals",
+      "count": 4,
+      "name": "route-varied-signals-4",
+      "raw": 8532,
+      "brotli": 1613,
+      "gzip": 1994,
+      "sha256": "02edbbff78a7bd604843565a7f2612b17dd1ea504af1b7c679fefcdfd36ff90b"
+    },
+    {
+      "family": "route",
+      "shape": "varied",
+      "mode": "signals",
+      "count": 16,
+      "name": "route-varied-signals-16",
+      "raw": 30661,
+      "brotli": 3448,
+      "gzip": 4893,
+      "sha256": "1ee34f238fb199f3186ee5c3f3692d4acd461c9e3b7028c4232a7563970c249a"
+    },
+    {
+      "family": "route",
+      "shape": "varied",
+      "mode": "signals",
+      "count": 64,
+      "name": "route-varied-signals-64",
+      "raw": 119233,
+      "brotli": 9554,
+      "gzip": 16184,
+      "sha256": "ac9b579b951a8bfccfe70e1c00bf75e24e3efcfbf74ae666f65030fddca00fa6"
+    },
+    {
+      "family": "route",
+      "shape": "varied",
+      "mode": "scan",
+      "count": 1,
+      "name": "route-varied-scan-1",
+      "raw": 2803,
+      "brotli": 931,
+      "gzip": 1101,
+      "sha256": "d378106ca16d36e6414db46ec4c30b566737eefc586519df8d84a5050b57d273"
+    },
+    {
+      "family": "route",
+      "shape": "varied",
+      "mode": "scan",
+      "count": 4,
+      "name": "route-varied-scan-4",
+      "raw": 8145,
+      "brotli": 1459,
+      "gzip": 1860,
+      "sha256": "c447f4ccf608f45e2c81e5654e3704fd3c8ff04ae4262f16176116fef362e35b"
+    },
+    {
+      "family": "route",
+      "shape": "varied",
+      "mode": "scan",
+      "count": 16,
+      "name": "route-varied-scan-16",
+      "raw": 30010,
+      "brotli": 3239,
+      "gzip": 4650,
+      "sha256": "2ff6dec056d4bf6f3240ac78ec324e119949a9578d1802b5dbacd732c6351859"
+    },
+    {
+      "family": "route",
+      "shape": "varied",
+      "mode": "scan",
+      "count": 64,
+      "name": "route-varied-scan-64",
+      "raw": 117526,
+      "brotli": 8113,
+      "gzip": 15598,
+      "sha256": "81ff4d051b071e49b3095206f2ce943f8fcd72798c27e369e3ef734cb153869d"
+    },
+    {
+      "family": "route",
+      "shape": "varied",
+      "mode": "expanded",
+      "count": 1,
+      "name": "route-varied-expanded-1",
+      "raw": 2680,
+      "brotli": 879,
+      "gzip": 1048,
+      "sha256": "49341df2573ea83980bd12d02983c540d733cd49a1f2b8ad975449e95749f509"
+    },
+    {
+      "family": "route",
+      "shape": "varied",
+      "mode": "expanded",
+      "count": 4,
+      "name": "route-varied-expanded-4",
+      "raw": 7908,
+      "brotli": 1419,
+      "gzip": 1798,
+      "sha256": "006a2d46922e1a14eee6a7965c2e0e9d23c3bb4a10cc7a2a5567d91f75f0d424"
+    },
+    {
+      "family": "route",
+      "shape": "varied",
+      "mode": "expanded",
+      "count": 16,
+      "name": "route-varied-expanded-16",
+      "raw": 29341,
+      "brotli": 3156,
+      "gzip": 4561,
+      "sha256": "07b98b25d049be2c08c9ba630e6301f5976f4800b5a86fc065ec52ab1f32ac2a"
+    },
+    {
+      "family": "route",
+      "shape": "varied",
+      "mode": "expanded",
+      "count": 64,
+      "name": "route-varied-expanded-64",
+      "raw": 115129,
+      "brotli": 8185,
+      "gzip": 15393,
+      "sha256": "9f59bfb0e57069bc043fdda9493494c0895b0a8eab54497c6d09900c27654b7b"
+    },
+    {
+      "family": "fanout",
+      "shape": "repeated",
+      "mode": "vanilla",
+      "count": 1,
+      "name": "fanout-repeated-vanilla-1",
+      "raw": 1386,
+      "brotli": 523,
+      "gzip": 641,
+      "sha256": "ec0b7040523e6a03a50a8494fa378591b2739da2e49529622326b7f53a866397"
+    },
+    {
+      "family": "fanout",
+      "shape": "repeated",
+      "mode": "vanilla",
+      "count": 4,
+      "name": "fanout-repeated-vanilla-4",
+      "raw": 1386,
+      "brotli": 525,
+      "gzip": 642,
+      "sha256": "498227490ff3a2c0737911e4e0c0401db20c18a3e89e8de9d1c3ec2be0f5be9b"
+    },
+    {
+      "family": "fanout",
+      "shape": "repeated",
+      "mode": "vanilla",
+      "count": 16,
+      "name": "fanout-repeated-vanilla-16",
+      "raw": 1387,
+      "brotli": 527,
+      "gzip": 643,
+      "sha256": "b8899555c2bdb66962bb051b719df3e662664e8251a9a6207d0153a316bde9f1"
+    },
+    {
+      "family": "fanout",
+      "shape": "repeated",
+      "mode": "vanilla",
+      "count": 64,
+      "name": "fanout-repeated-vanilla-64",
+      "raw": 1387,
+      "brotli": 527,
+      "gzip": 644,
+      "sha256": "74604c4514733464748bc694924ceecc19fb3e0b4cba3e41b19c5cdabca7a638"
+    },
+    {
+      "family": "fanout",
+      "shape": "repeated",
+      "mode": "lexical",
+      "count": 1,
+      "name": "fanout-repeated-lexical-1",
+      "raw": 1379,
+      "brotli": 542,
+      "gzip": 657,
+      "sha256": "1df56c6492a1430096883091344bc45ea4415bce85470e71c25a9a8af6f85834"
+    },
+    {
+      "family": "fanout",
+      "shape": "repeated",
+      "mode": "lexical",
+      "count": 4,
+      "name": "fanout-repeated-lexical-4",
+      "raw": 1379,
+      "brotli": 543,
+      "gzip": 657,
+      "sha256": "646f5585eac7555220895cf839b673e9b402dff2c5e33160b8849b9751265c06"
+    },
+    {
+      "family": "fanout",
+      "shape": "repeated",
+      "mode": "lexical",
+      "count": 16,
+      "name": "fanout-repeated-lexical-16",
+      "raw": 1380,
+      "brotli": 545,
+      "gzip": 658,
+      "sha256": "cf841408ae4d27f3ef22aa704ac53658b733f79ac55250b93eb8936905ec2d79"
+    },
+    {
+      "family": "fanout",
+      "shape": "repeated",
+      "mode": "lexical",
+      "count": 64,
+      "name": "fanout-repeated-lexical-64",
+      "raw": 1380,
+      "brotli": 545,
+      "gzip": 659,
+      "sha256": "8f9062e7a823193f7e86a1509222dca55856fcc7f58506fd4870537622a9c12f"
+    },
+    {
+      "family": "fanout",
+      "shape": "repeated",
+      "mode": "indexed",
+      "count": 1,
+      "name": "fanout-repeated-indexed-1",
+      "raw": 1528,
+      "brotli": 592,
+      "gzip": 712,
+      "sha256": "82a2ae0ff41cfcb48316fc208b0171aa9170175c5c4543762b45af6ba6e39f0d"
+    },
+    {
+      "family": "fanout",
+      "shape": "repeated",
+      "mode": "indexed",
+      "count": 4,
+      "name": "fanout-repeated-indexed-4",
+      "raw": 1528,
+      "brotli": 594,
+      "gzip": 712,
+      "sha256": "7bc84e7b396c98e3a4a099023e677753004a5a64a77dc0a76259f8296bb0808b"
+    },
+    {
+      "family": "fanout",
+      "shape": "repeated",
+      "mode": "indexed",
+      "count": 16,
+      "name": "fanout-repeated-indexed-16",
+      "raw": 1529,
+      "brotli": 596,
+      "gzip": 714,
+      "sha256": "bc4e127a749eb12cbe194ba5eb6adf69b34f9a52f9e773d6dbdcb24f74e6b986"
+    },
+    {
+      "family": "fanout",
+      "shape": "repeated",
+      "mode": "indexed",
+      "count": 64,
+      "name": "fanout-repeated-indexed-64",
+      "raw": 1529,
+      "brotli": 596,
+      "gzip": 714,
+      "sha256": "6e097e08e566596fd8524eadec87c99febe62284a10f2a86590a62a5dd986a2d"
+    },
+    {
+      "family": "fanout",
+      "shape": "repeated",
+      "mode": "signals",
+      "count": 1,
+      "name": "fanout-repeated-signals-1",
+      "raw": 1781,
+      "brotli": 685,
+      "gzip": 793,
+      "sha256": "9f59d020f125501eadba59ef621289fa92cc6ebe820250b3b9345ea370fde5fc"
+    },
+    {
+      "family": "fanout",
+      "shape": "repeated",
+      "mode": "signals",
+      "count": 4,
+      "name": "fanout-repeated-signals-4",
+      "raw": 1781,
+      "brotli": 687,
+      "gzip": 793,
+      "sha256": "6ada3fa98b4fa0dd059cd961a59936d1819bb6625fc7beb00ebee30a451ef010"
+    },
+    {
+      "family": "fanout",
+      "shape": "repeated",
+      "mode": "signals",
+      "count": 16,
+      "name": "fanout-repeated-signals-16",
+      "raw": 1782,
+      "brotli": 687,
+      "gzip": 795,
+      "sha256": "e038aa58ecedc873517093b207f04ed7b54a56c9d89d29feb17bfeeebf03dbe6"
+    },
+    {
+      "family": "fanout",
+      "shape": "repeated",
+      "mode": "signals",
+      "count": 64,
+      "name": "fanout-repeated-signals-64",
+      "raw": 1782,
+      "brotli": 687,
+      "gzip": 795,
+      "sha256": "b364bab6eedf600a20ff7495ac5b29a6b1d25c5d479128957b253ede933da837"
+    },
+    {
+      "family": "fanout",
+      "shape": "repeated",
+      "mode": "scan",
+      "count": 1,
+      "name": "fanout-repeated-scan-1",
+      "raw": 1527,
+      "brotli": 584,
+      "gzip": 705,
+      "sha256": "3562c810d08b90e8b776621c577e13a9daaaa87fc93730b86eb9f926b6b59c1d"
+    },
+    {
+      "family": "fanout",
+      "shape": "repeated",
+      "mode": "scan",
+      "count": 4,
+      "name": "fanout-repeated-scan-4",
+      "raw": 1527,
+      "brotli": 587,
+      "gzip": 706,
+      "sha256": "b821fbade6cc1386c25e57c6f905a77db054d4ff62ad63af3e969e53b9eac989"
+    },
+    {
+      "family": "fanout",
+      "shape": "repeated",
+      "mode": "scan",
+      "count": 16,
+      "name": "fanout-repeated-scan-16",
+      "raw": 1528,
+      "brotli": 589,
+      "gzip": 707,
+      "sha256": "c32b9c1fb32d02c7092c1aae2a8b5e7dabdfa5c6af23c993e39a1e25f0f17384"
+    },
+    {
+      "family": "fanout",
+      "shape": "repeated",
+      "mode": "scan",
+      "count": 64,
+      "name": "fanout-repeated-scan-64",
+      "raw": 1528,
+      "brotli": 589,
+      "gzip": 708,
+      "sha256": "0ddd8b376572063252ae30235edb7bdc9808e4965bfd585b2d8c36eb9cbff692"
+    },
+    {
+      "family": "fanout",
+      "shape": "repeated",
+      "mode": "expanded",
+      "count": 1,
+      "name": "fanout-repeated-expanded-1",
+      "raw": 1338,
+      "brotli": 529,
+      "gzip": 643,
+      "sha256": "f4b84e817cd1c37d830089fc647db548fce651f17419bacf5bdecbd3bf8c0e72"
+    },
+    {
+      "family": "fanout",
+      "shape": "repeated",
+      "mode": "expanded",
+      "count": 4,
+      "name": "fanout-repeated-expanded-4",
+      "raw": 3856,
+      "brotli": 803,
+      "gzip": 1043,
+      "sha256": "9a715593d1bca0daf56d4d125f43425e92ecdfe336fadaf360a715185d427a6a"
+    },
+    {
+      "family": "fanout",
+      "shape": "repeated",
+      "mode": "expanded",
+      "count": 16,
+      "name": "fanout-repeated-expanded-16",
+      "raw": 14438,
+      "brotli": 1687,
+      "gzip": 2557,
+      "sha256": "db64554c0f11e778d5433d97016d2673e3c3a1e529fd5fd0857fa01255175f5a"
+    },
+    {
+      "family": "fanout",
+      "shape": "repeated",
+      "mode": "expanded",
+      "count": 64,
+      "name": "fanout-repeated-expanded-64",
+      "raw": 56822,
+      "brotli": 3943,
+      "gzip": 8459,
+      "sha256": "1b9d4614ece57692dc0dbdf05584fccb796f7f39efed2215541416a8be715509"
+    },
+    {
+      "family": "fanout",
+      "shape": "varied",
+      "mode": "vanilla",
+      "count": 1,
+      "name": "fanout-varied-vanilla-1",
+      "raw": 1398,
+      "brotli": 533,
+      "gzip": 651,
+      "sha256": "0aa6a68c61c24eb88cf02cd3094784eaeee96ba40210277b24bb08618882293c"
+    },
+    {
+      "family": "fanout",
+      "shape": "varied",
+      "mode": "vanilla",
+      "count": 4,
+      "name": "fanout-varied-vanilla-4",
+      "raw": 4211,
+      "brotli": 887,
+      "gzip": 1120,
+      "sha256": "75a6fddcf8c939250177ce99138e8df2ccb7d6aca8c222c999924fd2b3484dd3"
+    },
+    {
+      "family": "fanout",
+      "shape": "varied",
+      "mode": "vanilla",
+      "count": 16,
+      "name": "fanout-varied-vanilla-16",
+      "raw": 15921,
+      "brotli": 2081,
+      "gzip": 2846,
+      "sha256": "aef57696a516747661716ad57e15d20be8539973ea7681fe2c49ad070ef0351f"
+    },
+    {
+      "family": "fanout",
+      "shape": "varied",
+      "mode": "vanilla",
+      "count": 64,
+      "name": "fanout-varied-vanilla-64",
+      "raw": 62853,
+      "brotli": 5245,
+      "gzip": 9559,
+      "sha256": "79cd4f9892cd7a9a8d85dc7f5f69a645246fe3e771f6ecafd3d1193769f50b95"
+    },
+    {
+      "family": "fanout",
+      "shape": "varied",
+      "mode": "lexical",
+      "count": 1,
+      "name": "fanout-varied-lexical-1",
+      "raw": 1340,
+      "brotli": 526,
+      "gzip": 647,
+      "sha256": "bac2c850977b0bbc8619adb3a5cad14a21d9512921ea0ca75ff0653d30e9088d"
+    },
+    {
+      "family": "fanout",
+      "shape": "varied",
+      "mode": "lexical",
+      "count": 4,
+      "name": "fanout-varied-lexical-4",
+      "raw": 3905,
+      "brotli": 847,
+      "gzip": 1093,
+      "sha256": "6a2cbdf0face6ea5a8f606b2a5657e86fa5b779d81241988d6c2d4215ab5f44f"
+    },
+    {
+      "family": "fanout",
+      "shape": "varied",
+      "mode": "lexical",
+      "count": 16,
+      "name": "fanout-varied-lexical-16",
+      "raw": 14644,
+      "brotli": 1972,
+      "gzip": 2744,
+      "sha256": "8b4d216614b1840b43b99e1105af49bbb189b08557923b5bdb9e48db052a2d8f"
+    },
+    {
+      "family": "fanout",
+      "shape": "varied",
+      "mode": "lexical",
+      "count": 64,
+      "name": "fanout-varied-lexical-64",
+      "raw": 57688,
+      "brotli": 4702,
+      "gzip": 9144,
+      "sha256": "7a4a4dea67230b716f8a5b87b32fa5ce9d95b1215dfa974a1be023040dd45f33"
+    },
+    {
+      "family": "fanout",
+      "shape": "varied",
+      "mode": "indexed",
+      "count": 1,
+      "name": "fanout-varied-indexed-1",
+      "raw": 1489,
+      "brotli": 578,
+      "gzip": 702,
+      "sha256": "7953df84d01b8f18749a8ee3fdb3af923a5381354a82c6cd1e0ca4aa5be96092"
+    },
+    {
+      "family": "fanout",
+      "shape": "varied",
+      "mode": "indexed",
+      "count": 4,
+      "name": "fanout-varied-indexed-4",
+      "raw": 4201,
+      "brotli": 938,
+      "gzip": 1191,
+      "sha256": "40b38017ddf38f9cbe38b19a00304fe961afe03348988a7cef5a5f94ff6f53a6"
+    },
+    {
+      "family": "fanout",
+      "shape": "varied",
+      "mode": "indexed",
+      "count": 16,
+      "name": "fanout-varied-indexed-16",
+      "raw": 15524,
+      "brotli": 2185,
+      "gzip": 2978,
+      "sha256": "c8e6c1f86f8848bb0563a79aa6aaa8f928a8daf1fc5baea2ee9ad69213cb00ca"
+    },
+    {
+      "family": "fanout",
+      "shape": "varied",
+      "mode": "indexed",
+      "count": 64,
+      "name": "fanout-varied-indexed-64",
+      "raw": 60872,
+      "brotli": 5975,
+      "gzip": 9987,
+      "sha256": "f1be44a496a2e7ce9b36db82be807c212aa5ba7ebf0faf35cbfd5448f283c1f2"
+    },
+    {
+      "family": "fanout",
+      "shape": "varied",
+      "mode": "signals",
+      "count": 1,
+      "name": "fanout-varied-signals-1",
+      "raw": 1751,
+      "brotli": 687,
+      "gzip": 801,
+      "sha256": "673ba1e31a42ec79afcbe3c2797e268144faf8a85703664f88ad376b33023db8"
+    },
+    {
+      "family": "fanout",
+      "shape": "varied",
+      "mode": "signals",
+      "count": 4,
+      "name": "fanout-varied-signals-4",
+      "raw": 4471,
+      "brotli": 1054,
+      "gzip": 1291,
+      "sha256": "e3a72341595fe7194e3b80a0225e8336a52b4830bfda7f4c023bfa841c7bd4de"
+    },
+    {
+      "family": "fanout",
+      "shape": "varied",
+      "mode": "signals",
+      "count": 16,
+      "name": "fanout-varied-signals-16",
+      "raw": 15758,
+      "brotli": 2339,
+      "gzip": 3097,
+      "sha256": "4aa9bc6cd431b9f1a7fd40fc5f8ab5900010555fd702e7bf49b44b5c147dd13b"
+    },
+    {
+      "family": "fanout",
+      "shape": "varied",
+      "mode": "signals",
+      "count": 64,
+      "name": "fanout-varied-signals-64",
+      "raw": 60962,
+      "brotli": 5723,
+      "gzip": 10197,
+      "sha256": "c98f544c2e63e4cd13b3b6a3ebc3c46bcde2c28c693d607b117b7fe2419d829b"
+    },
+    {
+      "family": "fanout",
+      "shape": "varied",
+      "mode": "scan",
+      "count": 1,
+      "name": "fanout-varied-scan-1",
+      "raw": 1488,
+      "brotli": 572,
+      "gzip": 699,
+      "sha256": "72ac1ac3dd448c55cb27a45a5e36a064e6b56023d62d5cdbe01b79707b30f0ee"
+    },
+    {
+      "family": "fanout",
+      "shape": "varied",
+      "mode": "scan",
+      "count": 4,
+      "name": "fanout-varied-scan-4",
+      "raw": 4232,
+      "brotli": 908,
+      "gzip": 1177,
+      "sha256": "46cdef4412f2c0f2f1383ed6a780a869be60abd14d01dfc8ca567a563a9d19ad"
+    },
+    {
+      "family": "fanout",
+      "shape": "varied",
+      "mode": "scan",
+      "count": 16,
+      "name": "fanout-varied-scan-16",
+      "raw": 15717,
+      "brotli": 2090,
+      "gzip": 2951,
+      "sha256": "8c59930d0a50c3bc2f23e7fb139b0a7bd040968747fbd48bdbf1c5d167ffe51e"
+    },
+    {
+      "family": "fanout",
+      "shape": "varied",
+      "mode": "scan",
+      "count": 64,
+      "name": "fanout-varied-scan-64",
+      "raw": 61713,
+      "brotli": 4827,
+      "gzip": 9797,
+      "sha256": "817e3dffc5b61a47d545eb7e81c1b1d154f70c8ef323a27a0d459b41e28d1116"
+    },
+    {
+      "family": "fanout",
+      "shape": "varied",
+      "mode": "expanded",
+      "count": 1,
+      "name": "fanout-varied-expanded-1",
+      "raw": 1340,
+      "brotli": 526,
+      "gzip": 647,
+      "sha256": "bac2c850977b0bbc8619adb3a5cad14a21d9512921ea0ca75ff0653d30e9088d"
+    },
+    {
+      "family": "fanout",
+      "shape": "varied",
+      "mode": "expanded",
+      "count": 4,
+      "name": "fanout-varied-expanded-4",
+      "raw": 3905,
+      "brotli": 847,
+      "gzip": 1093,
+      "sha256": "6a2cbdf0face6ea5a8f606b2a5657e86fa5b779d81241988d6c2d4215ab5f44f"
+    },
+    {
+      "family": "fanout",
+      "shape": "varied",
+      "mode": "expanded",
+      "count": 16,
+      "name": "fanout-varied-expanded-16",
+      "raw": 14644,
+      "brotli": 1972,
+      "gzip": 2744,
+      "sha256": "8b4d216614b1840b43b99e1105af49bbb189b08557923b5bdb9e48db052a2d8f"
+    },
+    {
+      "family": "fanout",
+      "shape": "varied",
+      "mode": "expanded",
+      "count": 64,
+      "name": "fanout-varied-expanded-64",
+      "raw": 57688,
+      "brotli": 4702,
+      "gzip": 9144,
+      "sha256": "7a4a4dea67230b716f8a5b87b32fa5ce9d95b1215dfa974a1be023040dd45f33"
+    },
+    {
+      "family": "crud",
+      "shape": "population",
+      "mode": "vanilla",
+      "count": 100,
+      "name": "crud-population-vanilla-100",
+      "raw": 2251,
+      "brotli": 751,
+      "gzip": 877,
+      "sha256": "1e0132ca2aea10de6b6776fc100f1a2bf1ded72ff3d7d268ee7f3d5c8de91faf"
+    },
+    {
+      "family": "crud",
+      "shape": "population",
+      "mode": "lexical",
+      "count": 100,
+      "name": "crud-population-lexical-100",
+      "raw": 2065,
+      "brotli": 753,
+      "gzip": 877,
+      "sha256": "9a13ce9bf265c502fd835d04ce998314dc3d1f1c07a4068c0b63425c79ad2001"
+    },
+    {
+      "family": "crud",
+      "shape": "population",
+      "mode": "indexed",
+      "count": 100,
+      "name": "crud-population-indexed-100",
+      "raw": 2234,
+      "brotli": 803,
+      "gzip": 927,
+      "sha256": "3a80fa882fb15aef79796949c08ba7760e2424cb2268995beac2e01f4c934970"
+    },
+    {
+      "family": "crud",
+      "shape": "population",
+      "mode": "signals",
+      "count": 100,
+      "name": "crud-population-signals-100",
+      "raw": 2482,
+      "brotli": 879,
+      "gzip": 1018,
+      "sha256": "14766f4e67a2568b853cfe6fef7fb2c7a9bb8e69ff457d1d1c84dc65e16cca2a"
+    },
+    {
+      "family": "crud",
+      "shape": "population",
+      "mode": "scan",
+      "count": 100,
+      "name": "crud-population-scan-100",
+      "raw": 2183,
+      "brotli": 807,
+      "gzip": 925,
+      "sha256": "d758f8ca266106889db5127bf20c60a524a671c71e5dca9b3f0a60223b683b58"
+    },
+    {
+      "family": "crud",
+      "shape": "population",
+      "mode": "expanded",
+      "count": 100,
+      "name": "crud-population-expanded-100",
+      "raw": 2036,
+      "brotli": 748,
+      "gzip": 875,
+      "sha256": "34b50a331781db7de7bcc7802e4f8b1686053b8f0f7c12636f08ec7ce871beec"
+    },
+    {
+      "family": "crud",
+      "shape": "population",
+      "mode": "vanilla",
+      "count": 1000,
+      "name": "crud-population-vanilla-1000",
+      "raw": 2251,
+      "brotli": 751,
+      "gzip": 878,
+      "sha256": "56bd696dc8f4c539fdba381a9bc9ce1be2231c50f1d65fb31630c54092b2b518"
+    },
+    {
+      "family": "crud",
+      "shape": "population",
+      "mode": "lexical",
+      "count": 1000,
+      "name": "crud-population-lexical-1000",
+      "raw": 2065,
+      "brotli": 754,
+      "gzip": 877,
+      "sha256": "da1a363f1f2f5f799cae4bfe026f8d29ac729e3d84d61988e1039bda503b7e74"
+    },
+    {
+      "family": "crud",
+      "shape": "population",
+      "mode": "indexed",
+      "count": 1000,
+      "name": "crud-population-indexed-1000",
+      "raw": 2234,
+      "brotli": 805,
+      "gzip": 928,
+      "sha256": "828a6c0b850b212264ed46e477d5bd3f6542f8d32b5ec8b79f724704b2b71ac9"
+    },
+    {
+      "family": "crud",
+      "shape": "population",
+      "mode": "signals",
+      "count": 1000,
+      "name": "crud-population-signals-1000",
+      "raw": 2482,
+      "brotli": 881,
+      "gzip": 1019,
+      "sha256": "e94c97a836dd12185e36b96bddb6e457c3cc737a990cfcdac46b8267e21feef3"
+    },
+    {
+      "family": "crud",
+      "shape": "population",
+      "mode": "scan",
+      "count": 1000,
+      "name": "crud-population-scan-1000",
+      "raw": 2183,
+      "brotli": 809,
+      "gzip": 925,
+      "sha256": "ab3c4be681374a878a25ef6cd64bbb1073c73d5845fbd45c8e28b5d3f1713e28"
+    },
+    {
+      "family": "crud",
+      "shape": "population",
+      "mode": "expanded",
+      "count": 1000,
+      "name": "crud-population-expanded-1000",
+      "raw": 2036,
+      "brotli": 748,
+      "gzip": 875,
+      "sha256": "d4a53d40ac7025d011ef30cc9a4af176eb3fe78e1887f7f4435094187ac6ac94"
+    },
+    {
+      "family": "crud",
+      "shape": "population",
+      "mode": "vanilla",
+      "count": 10000,
+      "name": "crud-population-vanilla-10000",
+      "raw": 2251,
+      "brotli": 752,
+      "gzip": 878,
+      "sha256": "6c7c61ec4d3c7aa9d75de2a08eab5e8b9b7fab03a74546bf48c42cb6347e345b"
+    },
+    {
+      "family": "crud",
+      "shape": "population",
+      "mode": "lexical",
+      "count": 10000,
+      "name": "crud-population-lexical-10000",
+      "raw": 2065,
+      "brotli": 755,
+      "gzip": 878,
+      "sha256": "c704ca7a45d9a060f228e1e5d7fdefe6bea6e8165b77c4155aa0a272896b3678"
+    },
+    {
+      "family": "crud",
+      "shape": "population",
+      "mode": "indexed",
+      "count": 10000,
+      "name": "crud-population-indexed-10000",
+      "raw": 2234,
+      "brotli": 805,
+      "gzip": 928,
+      "sha256": "11f4fbe787f0051d4c7e1d1d7a36d6da723b304a5288ef96afefa96f7bbc785c"
+    },
+    {
+      "family": "crud",
+      "shape": "population",
+      "mode": "signals",
+      "count": 10000,
+      "name": "crud-population-signals-10000",
+      "raw": 2482,
+      "brotli": 881,
+      "gzip": 1019,
+      "sha256": "59a0ac2234ff8edb0ffdabc678353f5b82dcbf7d5cd443ed6d6bb47d57587a6b"
+    },
+    {
+      "family": "crud",
+      "shape": "population",
+      "mode": "scan",
+      "count": 10000,
+      "name": "crud-population-scan-10000",
+      "raw": 2183,
+      "brotli": 810,
+      "gzip": 926,
+      "sha256": "53df8eb373d48286218b9d9bbab0da343df6450a9d366427a5526b1d8643fb62"
+    },
+    {
+      "family": "crud",
+      "shape": "population",
+      "mode": "expanded",
+      "count": 10000,
+      "name": "crud-population-expanded-10000",
+      "raw": 2036,
+      "brotli": 749,
+      "gzip": 875,
+      "sha256": "776f64814e34e37109e5d8c9cf777b1b3a0d5d5853d94f3d8d8bfd62b9573b40"
+    }
+  ],
+  "fits": [
+    {
+      "family": "dashboard",
+      "shape": "repeated",
+      "mode": "vanilla",
+      "one": 474,
+      "last": 476,
+      "intercept": 474.771144278607,
+      "slope": 0.02253438688908399,
+      "r2": 0.47322212467076374,
+      "residuals": [
+        -0.7936786654960664,
+        0.1387181738366816,
+        0.8683055311676737,
+        -0.21334503950835781
+      ]
+    },
+    {
+      "family": "dashboard",
+      "shape": "repeated",
+      "mode": "lexical",
+      "one": 485,
+      "last": 491,
+      "intercept": 486.92039800995025,
+      "slope": 0.07433421129645888,
+      "r2": 0.5244691574805711,
+      "residuals": [
+        -1.9947322212467062,
+        -0.21773485513608287,
+        2.8902546093064103,
+        -0.6777875329236158
+      ]
+    },
+    {
+      "family": "dashboard",
+      "shape": "repeated",
+      "mode": "indexed",
+      "one": 536,
+      "last": 539,
+      "intercept": 536.9601990049752,
+      "slope": 0.03716710564822944,
+      "r2": 0.5244691574805711,
+      "residuals": [
+        -0.9973661106233815,
+        -0.10886742756806986,
+        1.4451273046531767,
+        -0.33889376646183633
+      ]
+    },
+    {
+      "family": "dashboard",
+      "shape": "repeated",
+      "mode": "signals",
+      "one": 630,
+      "last": 633,
+      "intercept": 630.6666666666666,
+      "slope": 0.0392156862745098,
+      "r2": 0.788235294117647,
+      "residuals": [
+        -0.7058823529411385,
+        0.17647058823533202,
+        0.7058823529412144,
+        -0.1764705882352562
+      ]
+    },
+    {
+      "family": "dashboard",
+      "shape": "repeated",
+      "mode": "scan",
+      "one": 533,
+      "last": 537,
+      "intercept": 535.3283582089553,
+      "slope": 0.03160667251975417,
+      "r2": 0.21334503950834083,
+      "residuals": [
+        -2.359964881475005,
+        1.5452151009657322,
+        1.1659350307286822,
+        -0.3511852502195181
+      ]
+    },
+    {
+      "family": "dashboard",
+      "shape": "repeated",
+      "mode": "expanded",
+      "one": 485,
+      "last": 3732,
+      "intercept": 580.7960199004976,
+      "slope": 50.13901082821188,
+      "r2": 0.9861538138786632,
+      "residuals": [
+        -145.93503072870953,
+        -48.35206321334516,
+        251.97980684811228,
+        -57.69271290605775
+      ]
+    },
+    {
+      "family": "dashboard",
+      "shape": "varied",
+      "mode": "vanilla",
+      "one": 480,
+      "last": 5105,
+      "intercept": 571.1094527363184,
+      "slope": 71.79484928299678,
+      "r2": 0.9923623979062147,
+      "residuals": [
+        -162.9043020193152,
+        -40.28884986830553,
+        264.1729587357331,
+        -60.979806848112275
+      ]
+    },
+    {
+      "family": "dashboard",
+      "shape": "varied",
+      "mode": "lexical",
+      "one": 485,
+      "last": 4491,
+      "intercept": 588.1691542288556,
+      "slope": 62.00380450687738,
+      "r2": 0.9883364108866495,
+      "residuals": [
+        -165.172958735733,
+        -55.18437225636515,
+        285.7699736611063,
+        -65.41264266900771
+      ]
+    },
+    {
+      "family": "dashboard",
+      "shape": "varied",
+      "mode": "indexed",
+      "one": 520,
+      "last": 5709,
+      "intercept": 566.3034825870645,
+      "slope": 81.03277729002049,
+      "r2": 0.9968842432972698,
+      "residuals": [
+        -127.33625987708503,
+        -14.434591747146499,
+        185.17208077260761,
+        -43.40122914837593
+      ]
+    },
+    {
+      "family": "dashboard",
+      "shape": "varied",
+      "mode": "signals",
+      "one": 621,
+      "last": 5617,
+      "intercept": 717.721393034826,
+      "slope": 77.55428738659643,
+      "r2": 0.9927245935184623,
+      "residuals": [
+        -174.27568042142238,
+        -38.938542581211664,
+        277.4100087796312,
+        -64.19578577699758
+      ]
+    },
+    {
+      "family": "dashboard",
+      "shape": "varied",
+      "mode": "scan",
+      "one": 523,
+      "last": 4529,
+      "intercept": 648.044776119403,
+      "slope": 61.71553994732221,
+      "r2": 0.9868682792567357,
+      "residuals": [
+        -186.76031606672518,
+        -41.90693590869182,
+        297.5065847234416,
+        -68.83933274802439
+      ]
+    },
+    {
+      "family": "dashboard",
+      "shape": "varied",
+      "mode": "expanded",
+      "one": 485,
+      "last": 4491,
+      "intercept": 588.1691542288556,
+      "slope": 62.00380450687738,
+      "r2": 0.9883364108866495,
+      "residuals": [
+        -165.172958735733,
+        -55.18437225636515,
+        285.7699736611063,
+        -65.41264266900771
+      ]
+    },
+    {
+      "family": "form",
+      "shape": "repeated",
+      "mode": "vanilla",
+      "one": 499,
+      "last": 502,
+      "intercept": 500.3532338308458,
+      "slope": 0.030436055019022534,
+      "r2": 0.39566871524729297,
+      "residuals": [
+        -1.3836698858648178,
+        0.5250219490781147,
+        1.1597892888498442,
+        -0.30114135206323733
+      ]
+    },
+    {
+      "family": "form",
+      "shape": "repeated",
+      "mode": "lexical",
+      "one": 512,
+      "last": 515,
+      "intercept": 513.3532338308457,
+      "slope": 0.030436055019022534,
+      "r2": 0.39566871524729297,
+      "residuals": [
+        -1.383669885864761,
+        0.5250219490781716,
+        1.159789288849901,
+        -0.3011413520631805
+      ]
+    },
+    {
+      "family": "form",
+      "shape": "repeated",
+      "mode": "indexed",
+      "one": 558,
+      "last": 560,
+      "intercept": 558.7711442786069,
+      "slope": 0.02253438688908399,
+      "r2": 0.47322212467076386,
+      "residuals": [
+        -0.7936786654960095,
+        0.13871817383673846,
+        0.8683055311677306,
+        -0.21334503950830097
+      ]
+    },
+    {
+      "family": "form",
+      "shape": "repeated",
+      "mode": "signals",
+      "one": 647,
+      "last": 651,
+      "intercept": 648.2487562189054,
+      "slope": 0.04711735440444834,
+      "r2": 0.6502194907813872,
+      "residuals": [
+        -1.2958735733098898,
+        0.5627743634767651,
+        0.997366110623385,
+        -0.2642669007901355
+      ]
+    },
+    {
+      "family": "form",
+      "shape": "repeated",
+      "mode": "scan",
+      "one": 560,
+      "last": 564,
+      "intercept": 561.1492537313433,
+      "slope": 0.05179982440737489,
+      "r2": 0.5393275835356093,
+      "residuals": [
+        -1.2010535557506399,
+        -0.3564530289727645,
+        2.0219490781387366,
+        -0.464442493415258
+      ]
+    },
+    {
+      "family": "form",
+      "shape": "repeated",
+      "mode": "expanded",
+      "one": 493,
+      "last": 4770,
+      "intercept": 531.2636815920398,
+      "slope": 66.77582674860989,
+      "r2": 0.997005474409694,
+      "residuals": [
+        -105.03950834064969,
+        -8.366988586479351,
+        148.323090430202,
+        -34.91659350307236
+      ]
+    },
+    {
+      "family": "form",
+      "shape": "varied",
+      "mode": "vanilla",
+      "one": 500,
+      "last": 5571,
+      "intercept": 563.004975124378,
+      "slope": 79.10564822944103,
+      "r2": 0.9949313219707954,
+      "residuals": [
+        -142.11062335381905,
+        -41.42756804214213,
+        238.3046532045655,
+        -54.76646180860371
+      ]
+    },
+    {
+      "family": "form",
+      "shape": "varied",
+      "mode": "lexical",
+      "one": 493,
+      "last": 5502,
+      "intercept": 531.646766169154,
+      "slope": 78.32250512145157,
+      "r2": 0.9968807898411494,
+      "residuals": [
+        -116.9692712906056,
+        -22.936786654960315,
+        182.19315188762084,
+        -42.287093942054526
+      ]
+    },
+    {
+      "family": "form",
+      "shape": "varied",
+      "mode": "indexed",
+      "one": 542,
+      "last": 5671,
+      "intercept": 633.9154228855721,
+      "slope": 79.73339186420837,
+      "r2": 0.9927984188438898,
+      "residuals": [
+        -171.64881474978046,
+        -48.84899034240556,
+        286.350307287094,
+        -65.85250219490808
+      ]
+    },
+    {
+      "family": "form",
+      "shape": "varied",
+      "mode": "signals",
+      "one": 643,
+      "last": 6024,
+      "intercept": 743.7711442786072,
+      "slope": 83.55194615159496,
+      "r2": 0.9931347852403332,
+      "residuals": [
+        -184.32309043020211,
+        -37.978928884987,
+        289.39771729587346,
+        -67.09569798068515
+      ]
+    },
+    {
+      "family": "form",
+      "shape": "varied",
+      "mode": "scan",
+      "one": 544,
+      "last": 5755,
+      "intercept": 580.044776119403,
+      "slope": 81.53906935908692,
+      "r2": 0.9969614858272734,
+      "residuals": [
+        -117.58384547848989,
+        -27.20105355575066,
+        188.33011413520626,
+        -43.545215100965834
+      ]
+    },
+    {
+      "family": "form",
+      "shape": "varied",
+      "mode": "expanded",
+      "one": 493,
+      "last": 5502,
+      "intercept": 531.646766169154,
+      "slope": 78.32250512145157,
+      "r2": 0.9968807898411494,
+      "residuals": [
+        -116.9692712906056,
+        -22.936786654960315,
+        182.19315188762084,
+        -42.287093942054526
+      ]
+    },
+    {
+      "family": "crud",
+      "shape": "repeated",
+      "mode": "vanilla",
+      "one": 751,
+      "last": 754,
+      "intercept": 752.3532338308457,
+      "slope": 0.030436055019022534,
+      "r2": 0.39566871524729297,
+      "residuals": [
+        -1.383669885864761,
+        0.5250219490781716,
+        1.159789288849901,
+        -0.3011413520631805
+      ]
+    },
+    {
+      "family": "crud",
+      "shape": "repeated",
+      "mode": "lexical",
+      "one": 752,
+      "last": 755,
+      "intercept": 752.5671641791045,
+      "slope": 0.043898156277436345,
+      "r2": 0.5487269534679544,
+      "residuals": [
+        -0.6110623353818885,
+        -0.7427568042141975,
+        1.7304653204565663,
+        -0.37664618086037827
+      ]
+    },
+    {
+      "family": "crud",
+      "shape": "repeated",
+      "mode": "indexed",
+      "one": 808,
+      "last": 808,
+      "intercept": 808.3930348258707,
+      "slope": -0.006731050629206907,
+      "r2": 0.15481416447175889,
+      "residuals": [
+        -0.386303775241493,
+        0.6338893766461277,
+        -0.2853380158033894,
+        0.0377524143985421
+      ]
+    },
+    {
+      "family": "crud",
+      "shape": "repeated",
+      "mode": "signals",
+      "one": 878,
+      "last": 891,
+      "intercept": 881.4527363184079,
+      "slope": 0.1434006438396254,
+      "r2": 0.483483822119838,
+      "residuals": [
+        -3.5961369622475403,
+        5.973661106233584,
+        -2.747146619841921,
+        0.36962247585606
+      ]
+    },
+    {
+      "family": "crud",
+      "shape": "repeated",
+      "mode": "scan",
+      "one": 813,
+      "last": 811,
+      "intercept": 812.2288557213931,
+      "slope": -0.02253438688908399,
+      "r2": 0.47322212467076386,
+      "residuals": [
+        0.7936786654960095,
+        -0.13871817383673846,
+        -0.8683055311677306,
+        0.21334503950830097
+      ]
+    },
+    {
+      "family": "crud",
+      "shape": "repeated",
+      "mode": "expanded",
+      "one": 748,
+      "last": 6544,
+      "intercept": 824.4179104477614,
+      "slope": 90.28621597892888,
+      "r2": 0.9954516718182306,
+      "residuals": [
+        -166.7041264266903,
+        -26.562774363476933,
+        252.0026338893765,
+        -58.73573309920994
+      ]
+    },
+    {
+      "family": "crud",
+      "shape": "varied",
+      "mode": "vanilla",
+      "one": 764,
+      "last": 7670,
+      "intercept": 827.9701492537315,
+      "slope": 107.83669885864794,
+      "r2": 0.9967074734704376,
+      "residuals": [
+        -171.80684811237944,
+        -23.316944688323247,
+        254.64266900790153,
+        -59.518876207199355
+      ]
+    },
+    {
+      "family": "crud",
+      "shape": "varied",
+      "mode": "lexical",
+      "one": 750,
+      "last": 7280,
+      "intercept": 826.3283582089553,
+      "slope": 101.7963125548727,
+      "r2": 0.9960766886296404,
+      "residuals": [
+        -178.12467076382796,
+        -22.513608428446048,
+        261.93064091308156,
+        -61.292361720808
+      ]
+    },
+    {
+      "family": "crud",
+      "shape": "varied",
+      "mode": "indexed",
+      "one": 803,
+      "last": 7949,
+      "intercept": 836.7512437810947,
+      "slope": 111.77641205736026,
+      "r2": 0.998368074705262,
+      "residuals": [
+        -145.52765583845493,
+        16.143107989464283,
+        170.82616330114115,
+        -41.44161545215138
+      ]
+    },
+    {
+      "family": "crud",
+      "shape": "varied",
+      "mode": "signals",
+      "one": 898,
+      "last": 6229,
+      "intercept": 1109.0547263681592,
+      "slope": 81.57389522973368,
+      "r2": 0.9836905921533292,
+      "residuals": [
+        -292.6286215978929,
+        -37.350307287093926,
+        430.7629499561019,
+        -100.7840210711147
+      ]
+    },
+    {
+      "family": "crud",
+      "shape": "varied",
+      "mode": "scan",
+      "one": 800,
+      "last": 7308,
+      "intercept": 890.5422885572139,
+      "slope": 101.39800995024876,
+      "r2": 0.9946493116426701,
+      "residuals": [
+        -191.94029850746261,
+        -48.134328358208904,
+        312.08955223880594,
+        -72.01492537313425
+      ]
+    },
+    {
+      "family": "crud",
+      "shape": "varied",
+      "mode": "expanded",
+      "one": 750,
+      "last": 7280,
+      "intercept": 826.3283582089553,
+      "slope": 101.7963125548727,
+      "r2": 0.9960766886296404,
+      "residuals": [
+        -178.12467076382796,
+        -22.513608428446048,
+        261.93064091308156,
+        -61.292361720808
+      ]
+    },
+    {
+      "family": "board",
+      "shape": "repeated",
+      "mode": "vanilla",
+      "one": 572,
+      "last": 573,
+      "intercept": 572.1890547263681,
+      "slope": 0.014632718759145449,
+      "r2": 0.5487269534679544,
+      "residuals": [
+        -0.20368744512725828,
+        -0.24758560140469463,
+        0.57682177348556,
+        -0.12554872695342156
+      ]
+    },
+    {
+      "family": "board",
+      "shape": "repeated",
+      "mode": "lexical",
+      "one": 572,
+      "last": 568,
+      "intercept": 571.636815920398,
+      "slope": -0.0652619256657887,
+      "r2": 0.5260268466314777,
+      "residuals": [
+        0.42844600526776744,
+        1.6242317822651335,
+        -2.592625109745402,
+        0.5399473222124556
+      ]
+    },
+    {
+      "family": "board",
+      "shape": "repeated",
+      "mode": "indexed",
+      "one": 623,
+      "last": 625,
+      "intercept": 623.3781094527363,
+      "slope": 0.029265437518290898,
+      "r2": 0.5487269534679543,
+      "residuals": [
+        -0.40737489025463025,
+        -0.49517120280950294,
+        1.1536435469710062,
+        -0.2510974539069568
+      ]
+    },
+    {
+      "family": "board",
+      "shape": "repeated",
+      "mode": "signals",
+      "one": 717,
+      "last": 718,
+      "intercept": 717.4825870646766,
+      "slope": 0.012584138132865087,
+      "r2": 0.14757761992178153,
+      "residuals": [
+        -0.4951712028095012,
+        -0.5329236172080964,
+        1.3160667251975224,
+        -0.2879719051800017
+      ]
+    },
+    {
+      "family": "board",
+      "shape": "repeated",
+      "mode": "scan",
+      "one": 619,
+      "last": 620,
+      "intercept": 618.502487562189,
+      "slope": 0.023412350014632717,
+      "r2": 0.7023705004389815,
+      "residuals": [
+        0.47410008779636403,
+        -0.5961369622475341,
+        0.12291483757687327,
+        -0.0008779631254971498
+      ]
+    },
+    {
+      "family": "board",
+      "shape": "repeated",
+      "mode": "expanded",
+      "one": 561,
+      "last": 5377,
+      "intercept": 571.2338308457711,
+      "slope": 75.55370207784607,
+      "r2": 0.9983296712817762,
+      "residuals": [
+        -85.78753292361715,
+        -11.448639157155355,
+        126.90693590869182,
+        -29.670763827919473
+      ]
+    },
+    {
+      "family": "board",
+      "shape": "varied",
+      "mode": "vanilla",
+      "one": 562,
+      "last": 6234,
+      "intercept": 592.691542288557,
+      "slope": 88.80275095112673,
+      "r2": 0.9975825969333403,
+      "residuals": [
+        -119.49429323968373,
+        -18.902546093063904,
+        180.4644424934154,
+        -42.067603160667204
+      ]
+    },
+    {
+      "family": "board",
+      "shape": "varied",
+      "mode": "lexical",
+      "one": 560,
+      "last": 6139,
+      "intercept": 563.8606965174129,
+      "slope": 87.63008486976881,
+      "r2": 0.9984639391288711,
+      "residuals": [
+        -91.49078138718167,
+        -18.381035996488094,
+        143.0579455662862,
+        -33.18612818261681
+      ]
+    },
+    {
+      "family": "board",
+      "shape": "varied",
+      "mode": "indexed",
+      "one": 611,
+      "last": 5378,
+      "intercept": 738.9950248756218,
+      "slope": 73.65905765291191,
+      "r2": 0.9890033019377689,
+      "residuals": [
+        -201.65408252853368,
+        -48.631255487269414,
+        325.46005267778764,
+        -75.17471466198367
+      ]
+    },
+    {
+      "family": "board",
+      "shape": "varied",
+      "mode": "signals",
+      "one": 708,
+      "last": 6097,
+      "intercept": 783.1990049751244,
+      "slope": 83.81416447175886,
+      "r2": 0.9959796301861658,
+      "residuals": [
+        -159.0131694468832,
+        -2.455662862159784,
+        211.77436347673392,
+        -50.30553116769079
+      ]
+    },
+    {
+      "family": "board",
+      "shape": "varied",
+      "mode": "scan",
+      "one": 608,
+      "last": 6104,
+      "intercept": 624.1641791044776,
+      "slope": 86.19227392449517,
+      "r2": 0.9980759759468886,
+      "residuals": [
+        -102.3564530289728,
+        -17.9332748024583,
+        156.75943810359968,
+        -36.46971027216841
+      ]
+    },
+    {
+      "family": "board",
+      "shape": "varied",
+      "mode": "expanded",
+      "one": 560,
+      "last": 6139,
+      "intercept": 563.8606965174129,
+      "slope": 87.63008486976881,
+      "r2": 0.9984639391288711,
+      "residuals": [
+        -91.49078138718167,
+        -18.381035996488094,
+        143.0579455662862,
+        -33.18612818261681
+      ]
+    },
+    {
+      "family": "route",
+      "shape": "repeated",
+      "mode": "vanilla",
+      "one": 869,
+      "last": 873,
+      "intercept": 870.542288557214,
+      "slope": 0.04506877377816798,
+      "r2": 0.47322212467076374,
+      "residuals": [
+        -1.5873573309921327,
+        0.2774363476733632,
+        1.7366110623353475,
+        -0.42669007901671563
+      ]
+    },
+    {
+      "family": "route",
+      "shape": "repeated",
+      "mode": "lexical",
+      "one": 876,
+      "last": 880,
+      "intercept": 877.2487562189054,
+      "slope": 0.04711735440444834,
+      "r2": 0.6502194907813872,
+      "residuals": [
+        -1.2958735733098898,
+        0.5627743634767651,
+        0.997366110623385,
+        -0.2642669007901355
+      ]
+    },
+    {
+      "family": "route",
+      "shape": "repeated",
+      "mode": "indexed",
+      "one": 929,
+      "last": 932,
+      "intercept": 930.3532338308457,
+      "slope": 0.030436055019022534,
+      "r2": 0.39566871524729297,
+      "residuals": [
+        -1.383669885864761,
+        0.5250219490781716,
+        1.159789288849901,
+        -0.3011413520631805
+      ]
+    },
+    {
+      "family": "route",
+      "shape": "repeated",
+      "mode": "signals",
+      "one": 1022,
+      "last": 1025,
+      "intercept": 1023.3532338308457,
+      "slope": 0.030436055019022534,
+      "r2": 0.39566871524729297,
+      "residuals": [
+        -1.383669885864761,
+        0.5250219490781716,
+        1.159789288849901,
+        -0.3011413520631805
+      ]
+    },
+    {
+      "family": "route",
+      "shape": "repeated",
+      "mode": "scan",
+      "one": 925,
+      "last": 928,
+      "intercept": 926.6467661691543,
+      "slope": 0.02838747439274217,
+      "r2": 0.23602157280822778,
+      "residuals": [
+        -1.6751536435470038,
+        0.23968393327476967,
+        1.8990342405618637,
+        -0.46356453028976063
+      ]
+    },
+    {
+      "family": "route",
+      "shape": "repeated",
+      "mode": "expanded",
+      "one": 878,
+      "last": 7735,
+      "intercept": 986.8955223880598,
+      "slope": 106.54609306409131,
+      "r2": 0.9951477407326785,
+      "residuals": [
+        -215.44161545215113,
+        -14.079894644425053,
+        300.36698858647924,
+        -70.84547848990405
+      ]
+    },
+    {
+      "family": "route",
+      "shape": "varied",
+      "mode": "vanilla",
+      "one": 883,
+      "last": 8268,
+      "intercept": 1015.0597014925374,
+      "slope": 114.67954345917471,
+      "r2": 0.993881391191313,
+      "residuals": [
+        -246.73924495171215,
+        -37.77787532923628,
+        371.0676031606672,
+        -86.5504828797184
+      ]
+    },
+    {
+      "family": "route",
+      "shape": "varied",
+      "mode": "lexical",
+      "one": 879,
+      "last": 8185,
+      "intercept": 996.2985074626868,
+      "slope": 113.57418788410887,
+      "r2": 0.9946435052315596,
+      "residuals": [
+        -230.87269534679564,
+        -31.595258999122223,
+        342.5144863915714,
+        -80.0465320456542
+      ]
+    },
+    {
+      "family": "route",
+      "shape": "varied",
+      "mode": "indexed",
+      "one": 932,
+      "last": 9376,
+      "intercept": 920.0447761194032,
+      "slope": 132.59789288849868,
+      "r2": 0.9993106516057092,
+      "residuals": [
+        -120.64266900790187,
+        29.563652326602096,
+        121.38893766461797,
+        -30.30992098331808
+      ]
+    },
+    {
+      "family": "route",
+      "shape": "varied",
+      "mode": "signals",
+      "one": 1037,
+      "last": 9554,
+      "intercept": 1081.2587064676618,
+      "slope": 133.2584138132865,
+      "r2": 0.9980335394618586,
+      "residuals": [
+        -177.5171202809483,
+        -1.2923617208077758,
+        234.60667251975428,
+        -55.79719051799839
+      ]
+    },
+    {
+      "family": "route",
+      "shape": "varied",
+      "mode": "scan",
+      "one": 931,
+      "last": 8113,
+      "intercept": 1065.636815920398,
+      "slope": 111.52297336845186,
+      "r2": 0.9930581057423354,
+      "residuals": [
+        -246.15978928884988,
+        -52.72870939420545,
+        388.99561018437225,
+        -90.10711150131647
+      ]
+    },
+    {
+      "family": "route",
+      "shape": "varied",
+      "mode": "expanded",
+      "one": 879,
+      "last": 8185,
+      "intercept": 996.2985074626868,
+      "slope": 113.57418788410887,
+      "r2": 0.9946435052315596,
+      "residuals": [
+        -230.87269534679564,
+        -31.595258999122223,
+        342.5144863915714,
+        -80.0465320456542
+      ]
+    },
+    {
+      "family": "fanout",
+      "shape": "repeated",
+      "mode": "vanilla",
+      "one": 523,
+      "last": 527,
+      "intercept": 524.542288557214,
+      "slope": 0.04506877377816798,
+      "r2": 0.47322212467076374,
+      "residuals": [
+        -1.5873573309921327,
+        0.2774363476733632,
+        1.7366110623353475,
+        -0.42669007901671563
+      ]
+    },
+    {
+      "family": "fanout",
+      "shape": "repeated",
+      "mode": "lexical",
+      "one": 542,
+      "last": 545,
+      "intercept": 542.9601990049752,
+      "slope": 0.03716710564822944,
+      "r2": 0.5244691574805711,
+      "residuals": [
+        -0.9973661106233815,
+        -0.10886742756806986,
+        1.4451273046531767,
+        -0.33889376646183633
+      ]
+    },
+    {
+      "family": "fanout",
+      "shape": "repeated",
+      "mode": "indexed",
+      "one": 592,
+      "last": 596,
+      "intercept": 593.542288557214,
+      "slope": 0.04506877377816798,
+      "r2": 0.47322212467076374,
+      "residuals": [
+        -1.5873573309921327,
+        0.2774363476733632,
+        1.7366110623353475,
+        -0.42669007901671563
+      ]
+    },
+    {
+      "family": "fanout",
+      "shape": "repeated",
+      "mode": "signals",
+      "one": 685,
+      "last": 687,
+      "intercept": 686.1641791044776,
+      "slope": 0.015803336259877086,
+      "r2": 0.21334503950834083,
+      "residuals": [
+        -1.1799824407375026,
+        0.7726075504828661,
+        0.5829675153643411,
+        -0.17559262510975904
+      ]
+    },
+    {
+      "family": "fanout",
+      "shape": "repeated",
+      "mode": "scan",
+      "one": 584,
+      "last": 589,
+      "intercept": 586.1243781094528,
+      "slope": 0.05297044190810653,
+      "r2": 0.4292977605388334,
+      "residuals": [
+        -2.1773485513608843,
+        0.6637401229147963,
+        2.028094820017518,
+        -0.5144863915715954
+      ]
+    },
+    {
+      "family": "fanout",
+      "shape": "repeated",
+      "mode": "expanded",
+      "one": 529,
+      "last": 3943,
+      "intercept": 619.9154228855721,
+      "slope": 52.73339186420837,
+      "r2": 0.9897250860264117,
+      "residuals": [
+        -143.64881474978046,
+        -27.848990342405557,
+        223.35030728709398,
+        -51.852502194908084
+      ]
+    },
+    {
+      "family": "fanout",
+      "shape": "varied",
+      "mode": "vanilla",
+      "one": 533,
+      "last": 5245,
+      "intercept": 634.2238805970148,
+      "slope": 73.04828797190518,
+      "r2": 0.9917795050110564,
+      "residuals": [
+        -174.27216856892002,
+        -39.41703248463557,
+        278.00351185250224,
+        -64.31431079894628
+      ]
+    },
+    {
+      "family": "fanout",
+      "shape": "varied",
+      "mode": "lexical",
+      "one": 526,
+      "last": 4702,
+      "intercept": 640.313432835821,
+      "slope": 64.53819139596136,
+      "r2": 0.9880765519058814,
+      "residuals": [
+        -178.85162423178235,
+        -51.466198419666455,
+        299.0755048287972,
+        -68.75768217734822
+      ]
+    },
+    {
+      "family": "fanout",
+      "shape": "varied",
+      "mode": "indexed",
+      "one": 578,
+      "last": 5975,
+      "intercept": 627.3333333333333,
+      "slope": 84.31372549019608,
+      "r2": 0.9964750091696325,
+      "residuals": [
+        -133.64705882352933,
+        -26.588235294117567,
+        208.6470588235295,
+        -48.41176470588198
+      ]
+    },
+    {
+      "family": "fanout",
+      "shape": "varied",
+      "mode": "signals",
+      "one": 687,
+      "last": 5723,
+      "intercept": 790.0099502487562,
+      "slope": 78.15247292947029,
+      "r2": 0.9918231821837796,
+      "residuals": [
+        -181.16242317822653,
+        -48.61984196663741,
+        298.5504828797191,
+        -68.76821773485517
+      ]
+    },
+    {
+      "family": "fanout",
+      "shape": "varied",
+      "mode": "scan",
+      "one": 572,
+      "last": 4827,
+      "intercept": 705.0895522388059,
+      "slope": 65.60755048287972,
+      "r2": 0.9855882698110001,
+      "residuals": [
+        -198.69710272168567,
+        -59.5197541703248,
+        335.1896400351186,
+        -76.97278314310734
+      ]
+    },
+    {
+      "family": "fanout",
+      "shape": "varied",
+      "mode": "expanded",
+      "one": 526,
+      "last": 4702,
+      "intercept": 640.313432835821,
+      "slope": 64.53819139596136,
+      "r2": 0.9880765519058814,
+      "residuals": [
+        -178.85162423178235,
+        -51.466198419666455,
+        299.0755048287972,
+        -68.75768217734822
+      ]
+    }
+  ]
+}

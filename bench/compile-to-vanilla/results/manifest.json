@@ -1,0 +1,39 @@
+{
+  "base": "f1ab9cc87cf85ac32a600afa817482a9fd8023c9",
+  "node": "v24.19.0",
+  "sources": {
+    "browser.mjs": "5a23efe0d4bc7f14f093a7ba0c951d8d7d5d40ccfe0e950986767c82b758fc1b",
+    "build.mjs": "5637d1d544d05ff5594f05d066fccc730018d66b812accf781006de7ecd18948",
+    "edits.mjs": "6f9717ece6c4c9a51181772eaa7c52d5bc2ab34e5acd52b233323e0f466590f3",
+    "generate.mjs": "dd5c017f85ef10553e5099662c84210b9cfcf9eca30420cbce19b84ff020a80a",
+    "manifest.mjs": "67f5f904aedcb82176425e3314f4a23e5064fb486894771bf4483f7accb59991",
+    "package-lock.json": "e9667ac9e7a1b5a5dc725f561eb010674a6093d4df74951090c7ff9d25726ff5",
+    "package.json": "005425293336665699cff0fe3f93ab56ea5911857498165d2d162afccfab00f9",
+    "plot.py": "353646903c9c5cc461a49dbfcab595502017fe5fbc3087e430862d779be5ba14",
+    "prepare-ui.mjs": "78aa000f806f4f83ea06f3650022b5833ee4fb36d99bec4b6824e72459b2c63f",
+    "report.mjs": "8ba9ab734a66916ab95dc78761c163e59ba125d3e2a7c94581eea8af5cb66df0",
+    "static.mjs": "2752b50c02e610a26719d7aac3f58d64845c778ac9b94fc430aa5ef7ec42d65f",
+    "table.js": "a05fe16609a522214f02bf6e47e42cd8e0c518501f06ffbfcb4327302bc76322",
+    "table.mjs": "0b459179b3264f9ee6f5f9296ffcc3c042798307ca6f109e87c2eaf39815e8aa"
+  },
+  "results": {
+    "edits.json": "d49abc164f62f2c2c226d71ca3cbd892edf0cb1901381f957c94686e4f8794a9",
+    "repeated.svg": "d03369045e1526f5179cca019a6a2c42f57a6c8dfbfb4663135b4d0f87e74d52",
+    "sizes.json": "11a99879b338eef812ff300c66848dd59d5d5e85fb0421859ba862a2ee780d71",
+    "static.json": "036036b7c4b29d9936f89227a1466cb2d63aa4fcb5b33e43bb21d9a49feb65cd",
+    "table.json": "2afe3b7b213f9740133426d9cecc1df48864400bd80b573486f6f4e112801744",
+    "tables.md": "6a976cba2378e4294460a8dc779d4d370ed801d8acd679a7e62844945396995f",
+    "timing.json": "7c5d35851d4f92f92cec9c69cd7b0050520774884bbd82b79be86f748fe7e61f",
+    "varied.svg": "913843eed74c70b080af8ae1842f155d934277742d110378bd471948298a29e3",
+    "verification.json": "e858e48309535dbd9cf96da8e738bb8ed58aae2fc125f0b94780ff7f16262715"
+  },
+  "references": {
+    "../ui/apps/solid2/package-lock.json": "baea6474877fadff0c2df72d7a64b6c0fc89f54b7d84afc5827feb2762ccc157",
+    "../ui/apps/solid2/src/bench.jsx": "9385542acd26c70c54f999ede3808e6285790ab563c6be0c20f776f4dcdc1b6a",
+    "../ui/apps/solid2/src/static.jsx": "abf68938b6743ce049a366102fa24e2895a26daea6240bc1e53d07e596a69462",
+    "../ui/apps/micro/p2/static.js": "c5edb207a07c3a767872fb95f2f857416ea64c0c322fe17bb12ef597d543d640",
+    "../ui/lib/benchmarks.mjs": "b605ecd4b1a8889750ebebc4d840c9fb911c4992da33893845ad345ed523b88a",
+    "../ui/lib/cdp.mjs": "651b0b2676c996713313884b40f3d63920ee41b30a2875c1768d0b2ffe06e6ef",
+    "../ui/lib/trace.mjs": "1cbb79a804508c5e19a05bb02c4b006c2774f276a9bbb53f0659e34ee036d28c"
+  }
+}

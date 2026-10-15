@@ -1,0 +1,1106 @@
+{
+  "browser": "Chrome/155.0.8059.80",
+  "node": "v24.19.0",
+  "cpu": "Apple M2 Pro",
+  "protocol": "research 29 init/trace/postconditions; rate 1; 9 fresh pages/cell; rotated order; no retries",
+  "artifacts": {
+    "candidate": {
+      "sha256": "b982108086edb0cafe5f01225ac0707b725678cd427892057bbaf73dae1c47f0",
+      "raw": 1972,
+      "brotli": 900
+    },
+    "vanillajs": {
+      "sha256": "08a5cb7d5cec199396561ed28b3c2db77577f066480f33c19f22ce6b0b0c980f",
+      "raw": 9486,
+      "brotli": 2172
+    },
+    "solid2": {
+      "sha256": "682e8006f396bb2d634fbe9cc96b7abd2c5730dbeb02e4ab3769bcc59e6d7887",
+      "raw": 68518,
+      "brotli": 22131
+    }
+  },
+  "samples": [
+    {
+      "subject": "candidate",
+      "operation": "01_run1k",
+      "round": 0,
+      "total": 38.144,
+      "script": 6.2,
+      "paint": 31.419,
+      "commits": 4,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "vanillajs",
+      "operation": "01_run1k",
+      "round": 0,
+      "total": 103.174,
+      "script": 6.779,
+      "paint": 95.701,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "solid2",
+      "operation": "01_run1k",
+      "round": 0,
+      "total": 92.589,
+      "script": 4.653,
+      "paint": 87.485,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "vanillajs",
+      "operation": "01_run1k",
+      "round": 1,
+      "total": 101.274,
+      "script": 7.511,
+      "paint": 93.274,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "solid2",
+      "operation": "01_run1k",
+      "round": 1,
+      "total": 101.257,
+      "script": 6.322,
+      "paint": 94.402,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "candidate",
+      "operation": "01_run1k",
+      "round": 1,
+      "total": 98.995,
+      "script": 6.898,
+      "paint": 91.634,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "solid2",
+      "operation": "01_run1k",
+      "round": 2,
+      "total": 100.986,
+      "script": 6.07,
+      "paint": 94.394,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "candidate",
+      "operation": "01_run1k",
+      "round": 2,
+      "total": 101.084,
+      "script": 7.128,
+      "paint": 93.274,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "vanillajs",
+      "operation": "01_run1k",
+      "round": 2,
+      "total": 41.265,
+      "script": 6.337,
+      "paint": 34.257,
+      "commits": 4,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "candidate",
+      "operation": "01_run1k",
+      "round": 3,
+      "total": 100.07,
+      "script": 7.003,
+      "paint": 92.592,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "vanillajs",
+      "operation": "01_run1k",
+      "round": 3,
+      "total": 96.698,
+      "script": 6.492,
+      "paint": 89.716,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "solid2",
+      "operation": "01_run1k",
+      "round": 3,
+      "total": 40.52,
+      "script": 5.777,
+      "paint": 33.987,
+      "commits": 4,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "vanillajs",
+      "operation": "01_run1k",
+      "round": 4,
+      "total": 102.502,
+      "script": 7.142,
+      "paint": 94.633,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "solid2",
+      "operation": "01_run1k",
+      "round": 4,
+      "total": 101.393,
+      "script": 6.201,
+      "paint": 94.677,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "candidate",
+      "operation": "01_run1k",
+      "round": 4,
+      "total": 105.103,
+      "script": 7.632,
+      "paint": 97.009,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "solid2",
+      "operation": "01_run1k",
+      "round": 5,
+      "total": 41.525,
+      "script": 5.952,
+      "paint": 34.94,
+      "commits": 4,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "candidate",
+      "operation": "01_run1k",
+      "round": 5,
+      "total": 101.803,
+      "script": 7.447,
+      "paint": 93.824,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "vanillajs",
+      "operation": "01_run1k",
+      "round": 5,
+      "total": 40.84,
+      "script": 6.593,
+      "paint": 33.718,
+      "commits": 4,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "candidate",
+      "operation": "01_run1k",
+      "round": 6,
+      "total": 34.04,
+      "script": 4.921,
+      "paint": 28.642,
+      "commits": 4,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "vanillajs",
+      "operation": "01_run1k",
+      "round": 6,
+      "total": 44.416,
+      "script": 7.137,
+      "paint": 36.423,
+      "commits": 4,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "solid2",
+      "operation": "01_run1k",
+      "round": 6,
+      "total": 102.026,
+      "script": 6.268,
+      "paint": 95.241,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "vanillajs",
+      "operation": "01_run1k",
+      "round": 7,
+      "total": 41.625,
+      "script": 6.891,
+      "paint": 34.215,
+      "commits": 4,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "solid2",
+      "operation": "01_run1k",
+      "round": 7,
+      "total": 42.571,
+      "script": 6.051,
+      "paint": 35.865,
+      "commits": 4,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "candidate",
+      "operation": "01_run1k",
+      "round": 7,
+      "total": 43.082,
+      "script": 7.557,
+      "paint": 34.808,
+      "commits": 4,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "solid2",
+      "operation": "01_run1k",
+      "round": 8,
+      "total": 39.796,
+      "script": 5.717,
+      "paint": 33.56,
+      "commits": 4,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "candidate",
+      "operation": "01_run1k",
+      "round": 8,
+      "total": 42.776,
+      "script": 7.371,
+      "paint": 34.901,
+      "commits": 4,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "vanillajs",
+      "operation": "01_run1k",
+      "round": 8,
+      "total": 107.347,
+      "script": 6.915,
+      "paint": 99.332,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "candidate",
+      "operation": "03_update10th1k_x16",
+      "round": 0,
+      "total": 14.461,
+      "script": 0.566,
+      "paint": 9.505,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "vanillajs",
+      "operation": "03_update10th1k_x16",
+      "round": 0,
+      "total": 8.105,
+      "script": 0.363,
+      "paint": 7.246,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "solid2",
+      "operation": "03_update10th1k_x16",
+      "round": 0,
+      "total": 9.212,
+      "script": 0.988,
+      "paint": 7.447,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "vanillajs",
+      "operation": "03_update10th1k_x16",
+      "round": 1,
+      "total": 16.904,
+      "script": 0.404,
+      "paint": 7.337,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "solid2",
+      "operation": "03_update10th1k_x16",
+      "round": 1,
+      "total": 20.267,
+      "script": 0.947,
+      "paint": 7.74,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "candidate",
+      "operation": "03_update10th1k_x16",
+      "round": 1,
+      "total": 13.501,
+      "script": 0.449,
+      "paint": 8.172,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "solid2",
+      "operation": "03_update10th1k_x16",
+      "round": 2,
+      "total": 18.194,
+      "script": 1.236,
+      "paint": 8.56,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "candidate",
+      "operation": "03_update10th1k_x16",
+      "round": 2,
+      "total": 17.909,
+      "script": 0.391,
+      "paint": 9.147,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "vanillajs",
+      "operation": "03_update10th1k_x16",
+      "round": 2,
+      "total": 15.159,
+      "script": 0.424,
+      "paint": 7.595,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "candidate",
+      "operation": "03_update10th1k_x16",
+      "round": 3,
+      "total": 19.796,
+      "script": 0.509,
+      "paint": 9.422,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "vanillajs",
+      "operation": "03_update10th1k_x16",
+      "round": 3,
+      "total": 15.087,
+      "script": 0.549,
+      "paint": 8.513,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "solid2",
+      "operation": "03_update10th1k_x16",
+      "round": 3,
+      "total": 17.942,
+      "script": 0.901,
+      "paint": 7.747,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "vanillajs",
+      "operation": "03_update10th1k_x16",
+      "round": 4,
+      "total": 8.196,
+      "script": 0.397,
+      "paint": 7.3,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "solid2",
+      "operation": "03_update10th1k_x16",
+      "round": 4,
+      "total": 19.759,
+      "script": 0.977,
+      "paint": 7.374,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "candidate",
+      "operation": "03_update10th1k_x16",
+      "round": 4,
+      "total": 13.23,
+      "script": 0.299,
+      "paint": 6.23,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "solid2",
+      "operation": "03_update10th1k_x16",
+      "round": 5,
+      "total": 10.391,
+      "script": 0.832,
+      "paint": 6.627,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "candidate",
+      "operation": "03_update10th1k_x16",
+      "round": 5,
+      "total": 18.569,
+      "script": 0.372,
+      "paint": 7.797,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "vanillajs",
+      "operation": "03_update10th1k_x16",
+      "round": 5,
+      "total": 16.215,
+      "script": 0.417,
+      "paint": 7.056,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "candidate",
+      "operation": "03_update10th1k_x16",
+      "round": 6,
+      "total": 10.667,
+      "script": 0.283,
+      "paint": 6.442,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "vanillajs",
+      "operation": "03_update10th1k_x16",
+      "round": 6,
+      "total": 18.064,
+      "script": 0.307,
+      "paint": 5.58,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "solid2",
+      "operation": "03_update10th1k_x16",
+      "round": 6,
+      "total": 11.122,
+      "script": 0.614,
+      "paint": 5.741,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "vanillajs",
+      "operation": "03_update10th1k_x16",
+      "round": 7,
+      "total": 7.246,
+      "script": 0.363,
+      "paint": 6.405,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "solid2",
+      "operation": "03_update10th1k_x16",
+      "round": 7,
+      "total": 15.517,
+      "script": 0.934,
+      "paint": 7.492,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "candidate",
+      "operation": "03_update10th1k_x16",
+      "round": 7,
+      "total": 19.451,
+      "script": 0.403,
+      "paint": 8.484,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "solid2",
+      "operation": "03_update10th1k_x16",
+      "round": 8,
+      "total": 14.748,
+      "script": 0.952,
+      "paint": 7.777,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "candidate",
+      "operation": "03_update10th1k_x16",
+      "round": 8,
+      "total": 15.288,
+      "script": 0.408,
+      "paint": 8.622,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "vanillajs",
+      "operation": "03_update10th1k_x16",
+      "round": 8,
+      "total": 5.408,
+      "script": 0.442,
+      "paint": 4.466,
+      "commits": 4,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "candidate",
+      "operation": "05_swap1k",
+      "round": 0,
+      "total": 7.711,
+      "script": 0.173,
+      "paint": 5.974,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "vanillajs",
+      "operation": "05_swap1k",
+      "round": 0,
+      "total": 15.117,
+      "script": 0.198,
+      "paint": 6.196,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "solid2",
+      "operation": "05_swap1k",
+      "round": 0,
+      "total": 13.047,
+      "script": 0.62,
+      "paint": 6.194,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "vanillajs",
+      "operation": "05_swap1k",
+      "round": 1,
+      "total": 16.337,
+      "script": 0.219,
+      "paint": 6.012,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "solid2",
+      "operation": "05_swap1k",
+      "round": 1,
+      "total": 17.51,
+      "script": 0.631,
+      "paint": 6.41,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "candidate",
+      "operation": "05_swap1k",
+      "round": 1,
+      "total": 15.23,
+      "script": 0.205,
+      "paint": 6.285,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "solid2",
+      "operation": "05_swap1k",
+      "round": 2,
+      "total": 12.7,
+      "script": 0.72,
+      "paint": 6.732,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "candidate",
+      "operation": "05_swap1k",
+      "round": 2,
+      "total": 17.532,
+      "script": 0.209,
+      "paint": 6.311,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "vanillajs",
+      "operation": "05_swap1k",
+      "round": 2,
+      "total": 16.395,
+      "script": 0.221,
+      "paint": 6.555,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "candidate",
+      "operation": "05_swap1k",
+      "round": 3,
+      "total": 12.525,
+      "script": 0.236,
+      "paint": 7.248,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "vanillajs",
+      "operation": "05_swap1k",
+      "round": 3,
+      "total": 17.432,
+      "script": 0.217,
+      "paint": 6.648,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "solid2",
+      "operation": "05_swap1k",
+      "round": 3,
+      "total": 10.543,
+      "script": 0.716,
+      "paint": 6.643,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "vanillajs",
+      "operation": "05_swap1k",
+      "round": 4,
+      "total": 18.569,
+      "script": 0.234,
+      "paint": 6.997,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "solid2",
+      "operation": "05_swap1k",
+      "round": 4,
+      "total": 12.844,
+      "script": 0.712,
+      "paint": 7.137,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "candidate",
+      "operation": "05_swap1k",
+      "round": 4,
+      "total": 5.553,
+      "script": 0.147,
+      "paint": 4.957,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "solid2",
+      "operation": "05_swap1k",
+      "round": 5,
+      "total": 15.144,
+      "script": 0.735,
+      "paint": 7.035,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "candidate",
+      "operation": "05_swap1k",
+      "round": 5,
+      "total": 9.586,
+      "script": 0.188,
+      "paint": 6.287,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "vanillajs",
+      "operation": "05_swap1k",
+      "round": 5,
+      "total": 19.071,
+      "script": 0.265,
+      "paint": 7.167,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "candidate",
+      "operation": "05_swap1k",
+      "round": 6,
+      "total": 16.473,
+      "script": 0.2,
+      "paint": 6.69,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "vanillajs",
+      "operation": "05_swap1k",
+      "round": 6,
+      "total": 7.297,
+      "script": 0.213,
+      "paint": 6.581,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "solid2",
+      "operation": "05_swap1k",
+      "round": 6,
+      "total": 11.821,
+      "script": 0.644,
+      "paint": 6.49,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "vanillajs",
+      "operation": "05_swap1k",
+      "round": 7,
+      "total": 7.542,
+      "script": 0.226,
+      "paint": 6.757,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "solid2",
+      "operation": "05_swap1k",
+      "round": 7,
+      "total": 13.57,
+      "script": 0.683,
+      "paint": 6.488,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "candidate",
+      "operation": "05_swap1k",
+      "round": 7,
+      "total": 7.403,
+      "script": 0.222,
+      "paint": 6.676,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "solid2",
+      "operation": "05_swap1k",
+      "round": 8,
+      "total": 14.043,
+      "script": 0.736,
+      "paint": 6.813,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "candidate",
+      "operation": "05_swap1k",
+      "round": 8,
+      "total": 10.61,
+      "script": 0.24,
+      "paint": 5.75,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "vanillajs",
+      "operation": "05_swap1k",
+      "round": 8,
+      "total": 7.063,
+      "script": 0.237,
+      "paint": 6.338,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "candidate",
+      "operation": "06_remove-one-1k",
+      "round": 0,
+      "total": 16.86,
+      "script": 0.152,
+      "paint": 9.451,
+      "commits": 4,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "vanillajs",
+      "operation": "06_remove-one-1k",
+      "round": 0,
+      "total": 25.255,
+      "script": 0.345,
+      "paint": 23.58,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "solid2",
+      "operation": "06_remove-one-1k",
+      "round": 0,
+      "total": 23.841,
+      "script": 0.403,
+      "paint": 22.955,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "vanillajs",
+      "operation": "06_remove-one-1k",
+      "round": 1,
+      "total": 14.295,
+      "script": 0.392,
+      "paint": 9.55,
+      "commits": 4,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "solid2",
+      "operation": "06_remove-one-1k",
+      "round": 1,
+      "total": 26.531,
+      "script": 0.48,
+      "paint": 23.088,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "candidate",
+      "operation": "06_remove-one-1k",
+      "round": 1,
+      "total": 13.845,
+      "script": 0.157,
+      "paint": 9.879,
+      "commits": 4,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "solid2",
+      "operation": "06_remove-one-1k",
+      "round": 2,
+      "total": 25.743,
+      "script": 0.572,
+      "paint": 23.655,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "candidate",
+      "operation": "06_remove-one-1k",
+      "round": 2,
+      "total": 28.046,
+      "script": 0.151,
+      "paint": 27.389,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "vanillajs",
+      "operation": "06_remove-one-1k",
+      "round": 2,
+      "total": 10.776,
+      "script": 0.404,
+      "paint": 9.91,
+      "commits": 5,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "candidate",
+      "operation": "06_remove-one-1k",
+      "round": 3,
+      "total": 10.159,
+      "script": 0.155,
+      "paint": 9.547,
+      "commits": 5,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "vanillajs",
+      "operation": "06_remove-one-1k",
+      "round": 3,
+      "total": 17.751,
+      "script": 0.41,
+      "paint": 9.475,
+      "commits": 4,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "solid2",
+      "operation": "06_remove-one-1k",
+      "round": 3,
+      "total": 27.387,
+      "script": 0.651,
+      "paint": 26.222,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "vanillajs",
+      "operation": "06_remove-one-1k",
+      "round": 4,
+      "total": 26.751,
+      "script": 0.347,
+      "paint": 25.958,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "solid2",
+      "operation": "06_remove-one-1k",
+      "round": 4,
+      "total": 25.818,
+      "script": 0.438,
+      "paint": 24.92,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "candidate",
+      "operation": "06_remove-one-1k",
+      "round": 4,
+      "total": 27.755,
+      "script": 0.11,
+      "paint": 21.124,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "solid2",
+      "operation": "06_remove-one-1k",
+      "round": 5,
+      "total": 29.083,
+      "script": 0.636,
+      "paint": 27.87,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "candidate",
+      "operation": "06_remove-one-1k",
+      "round": 5,
+      "total": 21.964,
+      "script": 0.142,
+      "paint": 18.902,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "vanillajs",
+      "operation": "06_remove-one-1k",
+      "round": 5,
+      "total": 27.334,
+      "script": 0.356,
+      "paint": 26.509,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "candidate",
+      "operation": "06_remove-one-1k",
+      "round": 6,
+      "total": 17.743,
+      "script": 0.162,
+      "paint": 10.926,
+      "commits": 4,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "vanillajs",
+      "operation": "06_remove-one-1k",
+      "round": 6,
+      "total": 23.825,
+      "script": 0.363,
+      "paint": 22.948,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "solid2",
+      "operation": "06_remove-one-1k",
+      "round": 6,
+      "total": 9.483,
+      "script": 0.446,
+      "paint": 8.213,
+      "commits": 4,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "vanillajs",
+      "operation": "06_remove-one-1k",
+      "round": 7,
+      "total": 27.652,
+      "script": 0.334,
+      "paint": 26.225,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "solid2",
+      "operation": "06_remove-one-1k",
+      "round": 7,
+      "total": 27.349,
+      "script": 0.468,
+      "paint": 26.409,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "candidate",
+      "operation": "06_remove-one-1k",
+      "round": 7,
+      "total": 12.44,
+      "script": 0.151,
+      "paint": 9.788,
+      "commits": 4,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "solid2",
+      "operation": "06_remove-one-1k",
+      "round": 8,
+      "total": 26.116,
+      "script": 0.389,
+      "paint": 20.573,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "candidate",
+      "operation": "06_remove-one-1k",
+      "round": 8,
+      "total": 27.269,
+      "script": 0.175,
+      "paint": 26.646,
+      "commits": 3,
+      "rafLongDelay": 0
+    },
+    {
+      "subject": "vanillajs",
+      "operation": "06_remove-one-1k",
+      "round": 8,
+      "total": 28.22,
+      "script": 0.412,
+      "paint": 27.324,
+      "commits": 3,
+      "rafLongDelay": 0
+    }
+  ],
+  "errors": []
+}
