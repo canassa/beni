@@ -171,6 +171,23 @@ test "bench/size.mjs reports raw, gzip and brotli bytes per program, net of a fl
     try testing.expectEqual(page.files + 1, tea.files);
     try testing.expect(tea.raw_bytes > page.raw_bytes);
 
+    // The applications under `examples/`, built as they ship: their release
+    // build takes no `--allow-debug`, so a program that reaches `Debug` has
+    // no line and the script fails. Bike Wars had no release bytes while
+    // `Helpers.toLine` called `Debug.log` (issue #158).
+    var apps = std.mem.splitScalar(u8, r.stdout, '\n');
+    var bike_wars = false;
+    while (apps.next()) |line| {
+        if (!std.mem.startsWith(u8, line, "{\"app\":true")) continue;
+        const app = try parseJson(SizeApp, arena, line);
+        try testing.expect(app.platform.len > 0);
+        try testing.expect(app.brotli_bytes > 0 and app.brotli_bytes <= app.raw_bytes);
+        try testing.expect(app.release_raw_bytes > 0 and app.release_raw_bytes < app.raw_bytes);
+        try testing.expect(app.release_brotli_bytes > 0 and app.release_brotli_bytes <= app.release_raw_bytes);
+        if (std.mem.eql(u8, app.name, "bike-wars")) bike_wars = true;
+    }
+    try testing.expect(bike_wars);
+
     const total = try parseJson(SizeTotal, arena, lastLine(r.stdout));
     try testing.expect(total.total);
     try testing.expectEqual(@as(u32, 1), total.programs);
@@ -491,6 +508,16 @@ const SizePage = struct {
     raw_bytes: i64,
     brotli_bytes: i64,
     release_raw_bytes: i64,
+};
+
+const SizeApp = struct {
+    app: bool,
+    platform: []const u8,
+    name: []const u8,
+    raw_bytes: i64,
+    brotli_bytes: i64,
+    release_raw_bytes: i64,
+    release_brotli_bytes: i64,
 };
 
 const SizeFloor = struct {
