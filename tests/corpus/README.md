@@ -550,7 +550,8 @@ defect with an open issue**, until the case fits 4 300M. The grant is a `.budget
 whose rest says why and when it can go. A file without a reason fails the case. The file sets
 the budget of the page case only. A separately granted `[value fuzz]` case uses
 `.fuzz-budget` (`_expected.fuzz-budget` in a project); without that file it keeps the
-gates' budget. A page grant never extends to fuzz implicitly. Granted so far:
+gates' budget. A page grant never extends to fuzz implicitly. A `.budget` or `.fuzz-budget` without a
+matching case fails the corpus inventory check, even outside a run filter. Granted so far:
 `browser/tea/ConduitReader`, `ConduitEditor` and `ConduitTour` (12 000M, 2026-10-08): the
 RealWorld app, whose release build alone is ~5 800M because of the release optimiser's
 `specialise` phase (research 62 §1.3). `browser/direct/HttpJson` (6 300M) and `HttpJsonBody`
