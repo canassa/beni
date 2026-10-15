@@ -36,8 +36,8 @@ const world = @import("world.zig");
 const runner = @import("root");
 
 /// What `zig build` hands the maker ahead of the command's own arguments
-/// (Zig's `main.zig`, `jitCmd`, for `build`): the command, then the four
-/// arguments the maker reads before any other.
+/// (Zig's `main.zig`, `jitCmd`, for `build`), five entries: the command,
+/// then the four arguments the maker reads before any other.
 const maker_prefix = [_][]const u8{ "build", "--zig-lib=", "--zig=", "--global-cache=", "--seed=" };
 
 /// Appends the start of a child build's argv: the maker running this build
@@ -61,7 +61,7 @@ fn appendBuildCommand(arena: std.mem.Allocator, argv: *std.ArrayList([]const u8)
         const arg = args.next() orelse "";
         const matches = if (i == 0) std.mem.eql(u8, arg, expected) else std.mem.startsWith(u8, arg, expected);
         if (!matches) {
-            std.debug.print("this test runs under `zig build`, whose maker spawns it; process {d} is not one: {s}\n", .{ ppid, cmdline });
+            std.debug.print("this test runs under `zig build`, whose maker spawns it; process {d} is not one, or a new Zig lays out the maker's arguments differently (`maker_prefix`): {s}\n", .{ ppid, cmdline });
             return error.NotSpawnedByZigBuild;
         }
         try argv.append(arena, arg);
