@@ -10,6 +10,8 @@
 //       the output frame's document, with and without the CSS pane's text
 //   node tests/wasm/page_test.mjs samples
 //       each sample's files, and TodoMVC's copy of todomvc-app-css
+//   node tests/wasm/page_test.mjs tabs
+//       every tab of `index.html` controls a panel the page has
 //   node tests/wasm/page_test.mjs syntax
 //       the grammar names the tokens of each line as the test says
 //   node tests/wasm/page_test.mjs vendor
@@ -306,8 +308,21 @@ if (mode === "positions") {
   check(notices.includes("== browser-direct/TodoMVC.css: todomvc-app-css 2.4.3 (CC-BY-4.0)"), "samples/LICENSES.txt names TodoMVC.css's source and licence");
   check(notices.includes("Copyright (c) Sindre Sorhus") && notices.includes("Attribution 4.0 International Public License"), "samples/LICENSES.txt holds the credit and the licence's text");
   check(readFileSync("playground/index.html", "utf8").includes('href="samples/LICENSES.txt"'), "the page links to samples/LICENSES.txt");
+} else if (mode === "tabs") {
+  // `page.js`'s `select()` shows the panel a tab's `aria-controls` names
+  // (playground.md §4.6): a tab whose panel the page lacks would throw.
+  const html = readFileSync("playground/index.html", "utf8");
+  const ids = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map(([, id]) => id));
+  const tabs = [...html.matchAll(/<button role="tab"[^>]*>/g)].map(([tag]) => tag);
+  check(tabs.length === 6, `the page has six tabs: ${JSON.stringify(tabs)}`);
+  for (const tag of tabs) {
+    const panel = /aria-controls="([^"]+)"/.exec(tag)?.[1];
+    check(panel !== undefined && ids.has(panel), `${tag} controls a panel the page has`);
+    const named = /data-(?:tab|file)="([^"]+)"/.exec(tag)?.[1];
+    check(named === panel, `${tag} names the same panel in its data attribute and in aria-controls`);
+  }
 } else {
-  process.stderr.write("usage: node tests/wasm/page_test.mjs (positions <source> <diagnostics.json> <text>… | share | srcdoc | samples | syntax | vendor)\n");
+  process.stderr.write("usage: node tests/wasm/page_test.mjs (positions <source> <diagnostics.json> <text>… | share | srcdoc | samples | syntax | tabs | vendor)\n");
   process.exit(2);
 }
 process.exitCode = failures === 0 ? 0 : 1;
