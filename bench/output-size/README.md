@@ -45,7 +45,8 @@ Results:
 - `markup.json`, `solid.json`, `price.json`: the finer tables.
 - `prototypes.json`, `proto-jsonbody-*.mjs(.map).gz`, `jsonbody.patch`: the
   source-level prototype (request bodies through each schema's compiled print).
-- `edits.json`: bundle-edit prototypes, their savings and the corpus verdicts.
+- `edits.json`: bundle-edit prototypes (including `jsontyped`, the source prototype
+  with `Http.jsonBody`'s typed `Unprintable` error put back), savings and corpus verdicts.
 
 Stubbed attribution variants are syntax checked and never run: they locate a
 cost in context, not an available saving, and alone deltas do not add up.

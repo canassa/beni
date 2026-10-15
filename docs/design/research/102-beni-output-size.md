@@ -35,18 +35,22 @@ The single largest avoidable cost is **not a minifier problem**. Every
 request body goes through `Http.jsonBody`, which takes a `Schema` value. A
 `Schema` value means the library interpreter, so the interpreter and five
 schema descriptions ship. Each declared schema already has a compiled `print`. Routing
-the five bodies through those compiled `print`s (a source edit of Conduit, §5)
-saves **2,223 B tea / 2,188 B direct**. The edited build sends byte-identical
-requests in all six corpus runs.
+the five bodies through those compiled `print`s (a source edit of Conduit, §5),
+with `Http.jsonBody`'s typed `Unprintable issues` error kept, saves
+**2,319 B tea / 2,154 B direct**. The edited build sends byte-identical
+requests in all six corpus runs. Those runs only cover printable bodies; no
+corpus script reaches an unprintable one.
 
 **The guarantees cost about 6 kB of tea** (§3): response validation with typed
 issues (about 2.5 kB once the interpreter is gone), the fiber runtime
 (1.5 kB), typed HTTP and the checks that keep `fetch` from throwing (about
 1.0 kB), request printing (0.6 kB) and defect teardown (0.4 kB). Solid's app
 pays nothing for these. Its agent is `await fetch(…).json()` inside a catch
-that returns whatever was thrown. **Its UI runtime and beni's are the same size.**
-Solid's `solid.js`+`web.js`+`store.js` is 5.4 kB alone, and beni's Rt, Tea and
-browser glue together are about 5.5 kB. The rest of the excess is code Solid also needs
+that returns whatever was thrown. **The UI runtimes are comparable in size,
+though not in scope.** Solid's `solid.js`+`web.js`+`store.js` (signals, store
+proxies, resources, DOM insertion and list reconciliation) is 5.4 kB alone.
+Beni's Rt, Tea and the browser glue (DOM runtime and rows, the TEA loop,
+commands, subscriptions, storage and listeners) are about 5.5 kB. The rest of the excess is code Solid also needs
 but beni encodes larger. TEA view patching is 3.9 kB of patch functions Solid's
 run-once components do not have. Then come the richer libraries (array-trie
 `List`, red-black `Dict`, a real URL parser and History navigation against a
@@ -56,18 +60,23 @@ Ranked opportunities (§6), measured on executable variants unless marked:
 
 | # | Change | tea | direct | Guarantee | Risk |
 |---|---|---:|---:|---|---|
-| 1 | Request bodies through the schema's compiled `print` | **−2,223** | **−2,188** | kept | low; faster |
+| 1 | Request bodies through the schema's compiled `print`, typed error kept | **−2,319** | **−2,154** | kept | low; faster |
 | 2 | Inline top-level bindings read once at module initialisation | −180 | **−1,577** | kept | none at run time |
-| 3 | One shared field reader for compiled schemas | −972 | −799 | kept | parse speed to measure |
+| 3 | One shared field reader for compiled schemas | −972 | −799 | kept | parse speed: conditional on `bench/schema-libraries` |
 | 4 | Terser-class local passes and name assignment (estimate on 1+2) | ≈ −1,100 | ≈ −1,400 | kept | per transform |
 | 5 | Pay for `Http.track`'s streamed body only when reachable (alone, estimate) | ≤ −464 | ≤ −436 | kept | low |
 | 6 | Constructor tags stay strings for types crossing `Tea.application` | — | −203 | kept | boundary rule |
 | 7 | Drop the emitted `&&true` in schema readers | −138 | −31 | kept | none |
 | 8 | Pick the quote that needs fewer escapes, per file | −123 | (+18) | kept | none |
 
-Items 1 and 2 together are measured at **29,369 B tea / 34,509 B direct**
-(−7.5% / −9.8%), and all six corpus runs pass. Adding 3–8 by estimate gives
-**about 27 kB tea and 32 kB direct**, still about twice Solid. Closing more
+Items 1 and 2 together are measured at **29,353 B tea / 34,515 B direct**
+(−7.5% / −9.7%), and all six corpus runs pass. The rest is a range, not a
+sum. The high end adds only the measured no-risk items 6–8: **about 29.1 kB
+tea and 34.3 kB direct**. The low end also assumes item 3 passes its speed
+check and that items 3–5 add without overlap: **about 26.5 kB tea and 31.7 kB
+direct**. Item 4 already contains most of 7 and 8, because Terser folds
+`&&true` and picks quotes, so the low end slightly overstates. Either end is
+still more than twice Solid. Closing more
 needs representation work (§6.3) or **weakening a guarantee, which is the owner's
 decision and is not recommended here** (§6.4).
 
@@ -200,8 +209,9 @@ support). Groups overlap in context, so the column is not a sum.
 | Managed effects: fibers, interruption, scopes, keyed command policies | core/Task | 1,540 | 1,475 | promises and `async` functions; resources in `solid.js` |
 | A defect stops the page and runs every cleanup (§9.8.14) | Task teardown + Rt `stop` | 412 | 320 | nothing; an exception escapes |
 
-Today, before the §5 fix, the validation and printing rows cost 1,778 + 3,129 +
-415 + 156 B in tea. **Roughly 6 kB of tea buys guarantees Solid lacks**, and
+Today, before the §5 fix, the same two rows are four alone figures from
+`price.json`'s tea baseline: 1,778 (17 readers) + 3,129 (all of core/Schema,
+interpreter included) + 415 (5 descriptions) + 156 (2 printers) B. **Roughly 6 kB of tea buys guarantees Solid lacks**, and
 that is a floor for any equivalent beni app. It shrinks with encoding
 (§6.1 item 3), never to zero.
 
@@ -217,9 +227,11 @@ unit and stub method on research 101's single-chunk build; alone):
 | Requests, routes | requests/routes/helpers 1,277 + Url 792 + Navigation 526 | HTTP agent 1,041 (with its endpoints); hash router in the 813 |
 | Collections | List 1,605 + Dict 883 | native arrays and objects |
 
-Read side by side, the UI runtimes match, with one exception: beni's row reconciliation
-alone is larger than all of Solid's `web.js`. Rule 8 says to read Solid's
-`reconcileArrays` before accepting that. The views cost 1.8× because of TEA
+Read side by side, the UI runtimes are comparable in total but not in scope or
+split. Beni's row reconciliation is inside Rt's 3,489 (the second row is that
+part, not an addition), and alone it is larger than all of Solid's `web.js`. I
+recommend reading Solid's `reconcileArrays` before accepting that, in the
+spirit of rule 8's Solid gold standard. The views cost 1.8× because of TEA
 patching, which is the architecture rule 8 chose for speed, not an encoding
 accident. Navigation is a feature difference: History API and real URL
 parsing against `#/` routes.
@@ -269,10 +281,14 @@ against −146). `Rename.zig` assigns in emission order and records that this
 compressed better than frequency order (§9 table F). Terser also ranks its alphabet
 by the output's character frequency and reuses names across sibling scopes.
 That claim deserves a re-measurement on Conduit. The whitespace-only 146 B
-is almost entirely quoting: Terser prints `'…"…'` where beni escapes
-`"…\"…"` in template HTML (item 8).
+is mostly quoting. The output has the same counts of every other pattern
+checked (`let`, `===`, `true`, `null`, `return`…), but 120 fewer `"` and 118
+more `'`: Terser prints `'…"…'` where beni escapes `"…\"…"` in template HTML.
+`quotes.mjs` alone recovers 123 of the 146 B (`edits.json`, item 8).
 
 Terser on top of items 1 and 2 still takes **1,138 B tea / 1,368 B direct**.
+This was measured on `jsonbody` + `inline`; the typed variant differs from it
+by a dozen bytes.
 That is item 4's estimate for the rest of what a minifier-class pass could do.
 
 ## 5. Executable prototypes
@@ -280,18 +296,22 @@ That is item 4's estimate for the rest of what a minifier-class pass could do.
 | Prototype | How | tea | direct | Corpus scripts |
 |---|---|---:|---:|---|
 | `jsonbody` | Conduit's five `Http.jsonBody (X.schema ⊤) v` become `Api.jsonText X.print v`, a four-line helper over `Http.stringBody` ([patch](../../../bench/output-size/results/jsonbody.patch)) | −2,223 | −2,188 | 6/6 match |
+| `jsontyped` | `jsonbody` with the helper's failure branch edited back to `Http.jsonBody`'s typed `Unprintable issues` (`{$:3,a:issues,b:null}`, as the baseline builds it) | **−2,319** | **−2,154** | 6/6 match |
 | `inline` | top-level single-use inlining at module initialisation (`inline-toplevel.mjs`; 41 / 395 bindings) | −180 | −1,577 | 6/6 match |
 | `schema` | one shared per-field reader for compiled schemas (`schema-outline.mjs`; 41 field blocks) | −972 | −799 | 6/6 match |
 | `andtrue` | delete `&&true)` (48 sites) | −138 | −31 | 6/6 match |
 | `quotes` | fewer-escape quote per literal | −123 | +18 | 6/6 match |
-| **`jsonbody` + `inline`** | both | **−2,376** | **−3,734** | 6/6 match |
+| **`jsontyped` + `inline`** | both | **−2,392** | **−3,728** | 6/6 match |
 
-`jsonbody` does not weaken anything Conduit relies on: each compiled `print`
-still checks its value and returns `Result (List Issue) String`. The helper maps an
-unprintable value to an empty body where `Http.jsonBody` keeps `Unprintable
-issues`. A real change must keep that typed error. The bytes do not depend
-on it: the interpreter, `run`, `recordOf`, `variantOf`, `fieldsFrom` and the
-descriptions disappear because nothing reaches them. Two designs keep the API.
+The plain `jsonbody` helper is **not** guarantee-preserving. It maps an
+unprintable value to an empty body, where `Http.jsonBody` returns `Unprintable
+issues`, which surfaces as `Http.UnprintableBody issues`. `jsontyped` restores
+exactly that value. Http's existing handling of it is still in both bundles,
+so `jsontyped` is the figure to quote. The corpus scripts only send printable
+bodies, so they show the happy path is unchanged. They do not exercise the
+unprintable path, and a real change needs a fixture for it (rule 3). The bytes
+come from what is no longer reached: the interpreter (`run`, `recordOf`,
+`variantOf`, `fieldsFrom`…) and the descriptions. Two designs keep the API.
 (a) `Http.jsonBody`'s release lowering specialises on a statically known
 schema declaration, so `Schema.print (X.schema ⊤)` becomes `X.print`. The
 release optimiser already has a `specialise` phase. (b) Http gains a body
@@ -320,15 +340,24 @@ than Valibot, Zod and Effect.
 
 ### 6.1 Keep every guarantee; recommended
 
-1. **Request bodies through compiled printers: −2.2 kB, both platforms.** Low
-   risk, faster at run time, no compile-time cost. Owner-visible only if
-   option (b)'s API is chosen; (a) is a release-lowering change.
+1. **Request bodies through compiled printers: −2.2 kB, both platforms**
+   (`jsontyped`). This holds only if the typed `Unprintable issues` error is kept,
+   as `jsontyped` keeps it. Low risk, faster at run time, no compile-time cost.
+   Owner-visible only if option (b)'s API is chosen; (a) is a release-lowering
+   change.
 2. **Top-level single-use inlining at module initialisation: −1.6 kB direct,
-   −0.2 kB tea.** No run-time cost by construction. The value is created
-   once, by the same expression, before anything can observe it. It belongs in
-   the release optimiser next to `Reach`, which already counts uses. Do not
-   widen it to uses under a function: that would allocate per call and
-   change identity (rule 8, field identity).
+   −0.2 kB tea.** No run-time cost, under one condition. The single read must
+   be evaluated exactly once, during module initialisation and after the
+   declaration. That excludes a read under a function, under a loop (`for`,
+   `while`, `do`) even at top level, in a class body, in a getter or setter,
+   or in a static block. The initialiser must also be pure to evaluate (a
+   function, or an array or object literal of those and of literals). Then the
+   value is created once, by the same expression, before anything can observe
+   it. `inline-toplevel.mjs` applies exactly these exclusions; Conduit has
+   no top-level loop or class, so the numbers are the same either way. The
+   pass belongs in the release optimiser next to `Reach`, which already counts
+   uses. Widening it to reads under a function would allocate per call and
+   change identity (field identity is load-bearing under rule 8).
 3. **Shared compiled-schema field readers: about −0.8 to −1.0 kB.** Needs a
    parse-speed measurement first.
 4. **Minifier-class passes: about −1.1 kB tea, −1.4 kB direct on top of 1–2**
@@ -347,9 +376,11 @@ than Valibot, Zod and Effect.
 7. **`&&true` (−138 tea) and the quote choice (−123 tea, per file only when
    it wins).** Trivial printer fixes.
 
-Items 1 and 2 are measured together at 29,369 / 34,509 B. With 3–7 by
-estimate, **about 27 kB tea and 32 kB direct**: −15% and −16%, still about
-2× and 2.4× the Solid reference.
+Items 1 and 2 are measured together at 29,353 / 34,515 B. With 6–7 added (both
+measured, no risk), **about 29.1 / 34.3 kB**. If item 3 passes its speed
+check and 3–5 add without overlap, **about 26.5 / 31.7 kB** (−16% / −17%).
+That is about 2× and 2.4× the Solid reference. Item 4's Terser figure already
+includes most of item 7, so the low end is slightly optimistic.
 
 ### 6.2 Investigate (rule 8)
 
