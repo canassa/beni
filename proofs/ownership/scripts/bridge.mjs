@@ -46,9 +46,9 @@ if (!options['no-build']) await must('zorg', ['build', `-j${jobs}`]);
 const inputs = [];
 if (options.input) inputs.push(resolve(options.input));
 else {
-  const suites = options.suite ? [options.suite] : options.ci ? ['fixtures', 'enumerate', 'generator'] : ['fixtures','enumerate','generator'];
+  const suites = options.suite ? [options.suite] : ['fixtures','enumerate','generator','generator6'];
   for (const suite of suites) {
-    const seeds = suite === 'generator' ? String(options.seeds ?? (options.ci ? '17' : '17,20261011,314159')).split(',') : ['0'];
+    const seeds = suite.startsWith('generator') ? String(options.seeds ?? (options.ci ? '17' : '17,20261011,314159')).split(',') : ['0'];
     for (const seed of seeds) {
       const input = resolve(out, `${suite}-${seed}.jsonl`);
       const count = Number(options.count ?? (options.ci ? 128 : 20000)), bound = Number(options.bound ?? (options.ci ? 1 : 2));
@@ -63,7 +63,7 @@ if(options.ci) await must(process.execPath,[resolve(own,'scripts/bridge-selftest
 const total = { programs: 0, translated: 0, skipped: 0, valueChecked: 0, agreements: 0, precision: 0, leads: 0,
   sites: { agreement: 0, precision: 0, lead: 0, unknown: 0, extra: 0, pending: 0,
     ambiguousAgreement:0,ambiguousPrecision:0 },
-  skipReasons: {}, constructs: {}, families: {}, precisionPatterns: {}, cases: [], jobs,
+  skipReasons: {}, constructs: {}, families: {}, precisionPatterns: {}, precisionPrograms: {}, precisionExamples: {}, cases: [], jobs,
   minimization: options['no-minimize'] ? 'disabled; original checks and paired executions unchanged' : 'historical persistent-runtime relation',
   environment:{node:process.version,compilerSha256:createHash('sha256').update(await readFile(compiler)).digest('hex'),
     oracleSha256:createHash('sha256').update(await readFile(resolve(own,'.lake/build/bin/ownership'))).digest('hex')},streams:[] };
@@ -72,10 +72,13 @@ const tables = new Map();
 // Identical typed reductions recur across the enumerator's many contexts.
 // Cache only intermediate probes; originals and final minima run afresh.
 const reductionCache = new Map();
-const normalizer = `const normalize=x=>{if(typeof x==='function')throw Error('unobservable function');if(x&&typeof x.$plain==='function')x=x.$plain();if(Array.isArray(x))return x.map(normalize);if(x&&x.$==='Ok')return {f0:1,f1:0,f2:normalize(x.a)};if(x&&x.$==='Err')return {f0:0,f1:normalize(x.a),f2:0};if(x&&x.$==='BridgeEnd')return [];if(x&&x.$==='BridgeLink'){const out=[];for(let node=x;;node=node.b){if(node.$==='BridgeEnd')break;if(node.$!=='BridgeLink')throw Error('invalid bridge chain');out.push(normalize(node.a))}return out}if(x&&typeof x==='object')return Object.fromEntries(Object.entries(x).sort(([a],[b])=>a<b?-1:a>b?1:0).map(([k,v])=>[k,normalize(v)]));return x};`;
+const normalizer = `const normalize=x=>{if(typeof x==='function')return '<function>';if(x&&typeof x.$plain==='function')x=x.$plain();if(Array.isArray(x))return x.map(normalize);if(x&&x.$==='Ok')return {f0:1,f1:0,f2:normalize(x.a)};if(x&&x.$==='Err')return {f0:0,f1:normalize(x.a),f2:0};if(x&&x.$==='BridgeEnd')return [];if(x&&x.$==='BridgeLink'){const out=[];for(let node=x;;node=node.b){if(node.$==='BridgeEnd')break;if(node.$!=='BridgeLink')throw Error('invalid bridge chain');out.push(normalize(node.a))}return out}if(x&&typeof x==='object')return Object.fromEntries(Object.entries(x).sort(([a],[b])=>a<b?-1:a>b?1:0).map(([k,v])=>[k,normalize(v)]));return x};`;
 let batch = [], number = 0;
 const queue = new Set();
 let firstFailure;
+// Record fields compared by name: JavaScript orders `f10` before `f2`.
+const canonical = x => Array.isArray(x) ? x.map(canonical) : x && typeof x === 'object' ?
+  Object.fromEntries(Object.keys(x).sort().map(k => [k, canonical(x[k])])) : x;
 async function confirmation(p, dir) {
   const result = {};
   for (const platform of ['browser-tea','browser-direct']) {
@@ -90,12 +93,12 @@ async function confirmation(p, dir) {
     emitted+=`\nconst ${p.module}$bridgeRead = x => { globalThis.__bridgeReads.push(globalThis.__bridgeNormalize(x)); return ${p.module}$bridgeRead$original(x); };\n`;
     await writeFile(modulePath,emitted);
     const driver = resolve(dir, `${platform}-driver.mjs`);
-    await writeFile(driver, `const normalize=x=>{if(typeof x==='function')throw Error('unobservable function');if(x&&typeof x.$plain==='function')x=x.$plain();if(Array.isArray(x))return x.map(normalize);if(x&&x.$==='Ok')return {f0:1,f1:0,f2:normalize(x.a)};if(x&&x.$==='Err')return {f0:0,f1:normalize(x.a),f2:0};if(x&&x.$==='BridgeEnd')return [];if(x&&x.$==='BridgeLink'){const out=[];for(let node=x;;node=node.b){if(node.$==='BridgeEnd')break;if(node.$!=='BridgeLink')throw Error('invalid bridge chain');out.push(normalize(node.a))}return out}if(x&&typeof x==='object')return Object.fromEntries(Object.entries(x).map(([k,v])=>[k,normalize(v)]));return x};\nglobalThis.__bridgeReads=[];globalThis.__bridgeNormalize=normalize;\nconst mod=await import(${JSON.stringify(modulePath)});const result=normalize(mod[${JSON.stringify(p.module+'$run')}]());const shared=Object.fromEntries(Object.entries(mod).filter(([k])=>/\\$g[0-9]+$/.test(k)).map(([k,v])=>[k.split('$').at(-1),normalize(v)]));console.log(JSON.stringify({result,reads:globalThis.__bridgeReads,shared}));\n`);
+    await writeFile(driver, `const normalize=x=>{if(typeof x==='function')return '<function>';if(x&&typeof x.$plain==='function')x=x.$plain();if(Array.isArray(x))return x.map(normalize);if(x&&x.$==='Ok')return {f0:1,f1:0,f2:normalize(x.a)};if(x&&x.$==='Err')return {f0:0,f1:normalize(x.a),f2:0};if(x&&x.$==='BridgeEnd')return [];if(x&&x.$==='BridgeLink'){const out=[];for(let node=x;;node=node.b){if(node.$==='BridgeEnd')break;if(node.$!=='BridgeLink')throw Error('invalid bridge chain');out.push(normalize(node.a))}return out}if(x&&typeof x==='object')return Object.fromEntries(Object.entries(x).map(([k,v])=>[k,normalize(v)]));return x};\nglobalThis.__bridgeReads=[];globalThis.__bridgeNormalize=normalize;\nconst mod=await import(${JSON.stringify(modulePath)});const result=normalize(mod[${JSON.stringify(p.module+'$run')}]());const shared=Object.fromEntries(Object.entries(mod).filter(([k])=>/\\$g[0-9]+$/.test(k)).map(([k,v])=>[k.split('$').at(-1),normalize(v)]));console.log(JSON.stringify({result,reads:globalThis.__bridgeReads,shared}));\n`);
     const ran = await run(process.execPath, [driver], root, 10000);
     result[platform] = ran;
   }
   return { status: Object.values(result).some(r => r.status !== 0) ? 'execution-error' :
-    JSON.stringify(JSON.parse(result['browser-tea'].stdout).result) !== JSON.stringify(p.record[11]) ? 'translation-mismatch' :
+    JSON.stringify(canonical(JSON.parse(result['browser-tea'].stdout).result)) !== JSON.stringify(canonical(p.record[11])) ? 'translation-mismatch' :
     result['browser-tea'].stdout === result['browser-direct'].stdout ? 'unconfirmed' : 'confirmed', runs: result };
 }
 // Check fidelity for the whole translated population, including agreements and
@@ -147,7 +150,6 @@ async function minimize(original, dir, outcome) {
       let translation;
       try {
         if (record[13]) throw new Skip(record[13]);
-        if (JSON.stringify(record[12]).includes('"fn"')) throw new Skip('function-valued-observation');
         if (record[11] === null) throw new Skip('lean-value-execution-limit');
         translation=translate(ds,record[4]);
       } catch(e) { if(e instanceof Skip) {bump(skippedCandidates,e.reason);continue;} throw e; }
@@ -228,7 +230,22 @@ async function checkBatch(programs, n) {
   }
   const predicted = new Set(programs.flatMap(p=>reports.get(p.module).filter(d=>d.verdict !== 'accepted').map(d=>`${p.module}:${d.row}:${d.col}`)));
   const actual = new Set(errors.map(d=>`${basename(d.span.file,'.beni')}:${d.span.start.line}:${d.span.start.col}`));
-  if (predicted.size !== actual.size || [...predicted].some(k=>!actual.has(k)) || (predicted.size === 0) !== (enforced.status === 0)) {
+  // The dump places a `++` demand at its operator, while the diagnostic's
+  // span is the whole construction: a demand matches the diagnostic starting
+  // at it, or else the smallest unmatched one whose span contains it.
+  const spans = new Map(errors.map(d=>[`${basename(d.span.file,'.beni')}:${d.span.start.line}:${d.span.start.col}`,d.span]));
+  const unmatched = new Set(actual), pending = [];
+  for (const k of predicted) if (unmatched.has(k)) unmatched.delete(k); else pending.push(k);
+  const before = (a, b) => a.line < b.line || (a.line === b.line && a.col <= b.col);
+  let uncovered = 0;
+  for (const k of pending) {
+    const [m, row, col] = k.split(':'), at = {line: +row, col: +col};
+    const covering = [...unmatched].filter(a => a.split(':')[0] === m && before(spans.get(a).start, at) && before(at, spans.get(a).end))
+      .sort((a, b) => (spans.get(a).end.line - spans.get(a).start.line) - (spans.get(b).end.line - spans.get(b).start.line) ||
+        (spans.get(a).end.col - spans.get(a).start.col) - (spans.get(b).end.col - spans.get(b).start.col));
+    if (covering.length) unmatched.delete(covering[0]); else uncovered++;
+  }
+  if (uncovered || unmatched.size || (predicted.size === 0) !== (enforced.status === 0)) {
     await writeFile(resolve(dir,'enforcement-mismatch.json'), JSON.stringify({dumped,enforced},null,2));
     throw Error(`dump/enforcement mismatch: ${dir}`);
   }
@@ -265,7 +282,14 @@ async function checkBatch(programs, n) {
     const zig = demands.every(d=>d.verdict === 'accepted'), lean = p.record[5];
     const category = zig === lean ? 'agreements' : lean ? 'precision' : 'leads';
     total[category]++; bump(total.families[p.record[1]], category); bump(p.stream,category);
-    if (category === 'precision') for (const d of demands.filter(d=>d.verdict !== 'accepted')) bump(total.precisionPatterns, `${d.operation.split(' ')[0]}: ${d.detail.split(':')[0]}`);
+    if (category === 'precision') {
+      const refused = demands.filter(d=>d.verdict !== 'accepted');
+      for (const d of refused) bump(total.precisionPatterns, `${d.operation.split(' ')[0]}: ${d.detail.split(':')[0]}`);
+      // One pattern per program: its first refused demand's.
+      const first = `${refused[0].operation.split(' ')[0]}: ${refused[0].detail.split(':')[0]}`;
+      bump(total.precisionPrograms, first);
+      (total.precisionExamples[first] ??= []).length < 5 && total.precisionExamples[first].push(p.record[2]);
+    }
     if (category === 'leads' || siteLeads.length) {
       const evidence = resolve(out,'cases',p.record[2]); await mkdir(evidence,{recursive:true});
       await writeFile(resolve(evidence,`${p.module}.beni`),p.translation.source);
@@ -309,7 +333,6 @@ for (const input of inputs) {
     try {
       if (record[12]?.[0] === 'invalid') throw new Skip('ill-typed-core');
       if (record[13]) throw new Skip(record[13]);
-      if (JSON.stringify(record[12]).includes('"fn"')) throw new Skip('function-valued-observation');
       if (record[11] === null) throw new Skip('lean-value-execution-limit');
       translation = translate(ds,record[4]);
     }
@@ -334,10 +357,10 @@ if(total.streams.some(s=>s.valueChecked!==s.translated) || total.valueChecked!==
 total.cases.sort((a,b)=>a.id<b.id?-1:a.id>b.id?1:0);
 if(options.ci) {
   // Pinned CI stream floors make new skips an explicit, reviewable change.
-  for(const [family,floor] of Object.entries({fixture:82,sync:14,targeted:128,enumerate:92,
-    general:1,declarations:6,'branch-traversal':3,'fresh-tower':2,captures:4,
+  for(const [family,floor] of Object.entries({fixture:85,sync:61,targeted:548,enumerate:139,
+    general:8,declarations:28,'branch-traversal':3,'fresh-tower':2,captures:4,
     'once-many-wrappers':3,'indexed-chain':5,'recursive-higher-order-limit':5,
-    recursion:1,'fresh-nested':2})) {
+    recursion:1,'fresh-nested':2,constructions:26,'construct-declarations':30})) {
     if((total.families[family]?.translated??0)<floor) throw Error(`CI translation coverage fell below ${family} floor ${floor}`);
   }
   if(total.translated*4<total.programs) throw Error('CI translation coverage fell below 25%');

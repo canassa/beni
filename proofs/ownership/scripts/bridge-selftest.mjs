@@ -35,8 +35,9 @@ for(const line of (await readFile(options.input,'utf8')).trim().split('\n')) {
   const r=JSON.parse(line);
   if(r[0]==='table'){tables.set(r[1],r[2]);continue;}
   if(r[12][0]==='invalid' || r[13] || r[11]===null) continue;
-  if(JSON.stringify(r[12]).includes('"fn"')) skipped??={record:r,ds:tables.get(r[3])};
-  else if(!translated) try {translate(tables.get(r[3]),r[4]);translated={record:r,ds:tables.get(r[3])};} catch(e){if(!e.reason)throw e;}
+  // A program the translator skips explicitly (an entry, a private builder, …).
+  try {translate(tables.get(r[3]),r[4]);translated??={record:r,ds:tables.get(r[3])};}
+  catch(e){if(!e.reason)throw e;skipped??={record:r,ds:tables.get(r[3])};}
 }
 assert(translated && skipped,'fixture export must have a translated and a skipped program');
 const dir=await mkdtemp(resolve(root,'zig-out/bridge-failure-control-'));
