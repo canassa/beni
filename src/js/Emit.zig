@@ -3491,6 +3491,7 @@ const Emitter = struct {
                 .mappings = marks.list.items,
                 .names = marks.names.items,
                 .name_text = names.forMap(),
+                .end_line = true,
             });
         }
     };
@@ -4368,6 +4369,7 @@ const Emitter = struct {
                 .generated = out.items,
                 .sources = sources.items,
                 .stretches = stretches.items,
+                .end_line = true,
             });
             try e.produceOwned(try std.fmt.allocPrint(scratch, "{s}.map", .{entry}), map, try e.manifestPath());
         }
@@ -4376,7 +4378,8 @@ const Emitter = struct {
 
     /// §11.2, *The join*: the stretch of the one file that module `i`'s
     /// bytes take from `start`, and its source, named from the entry
-    /// file's map.
+    /// file's map. A module with no mark maps nothing, so its bytes are
+    /// an unmapped stretch and its text is not in the map.
     fn mapStretch(
         e: *Emitter,
         stretches: *std.ArrayList(SourceMap.Stretch),
@@ -4385,6 +4388,7 @@ const Emitter = struct {
         i: u32,
         start: usize,
     ) Allocator.Error!void {
+        if (slot.marks.len == 0) return stretches.append(e.scratch, .{ .start = @intCast(start), .source = SourceMap.Stretch.unmapped });
         const store = &e.session.store;
         const file = e.graph().moduleFile(@fromBackingInt(@intCast(i)));
         const map_file = try std.fmt.allocPrint(e.scratch, "{s}.map", .{e.options.platform.entry});
