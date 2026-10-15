@@ -1,0 +1,67 @@
+-- emit: whole-program specialisation sees through a record field's lambda
+-- (`backend.md` §9, *Slice 8*, amended 2026-10-15, *A record field's
+-- lambda*). `run` is handed one record, so fact 3 knows what each field
+-- holds:
+--
+-- - `ready` reads nothing of its parameter, and `app.init ⊤` only makes a
+--   record, so the call does nothing: it goes, then `init` and its lambda.
+-- - `app.start ⊤` is the one use of `start`, whose lambda only makes a
+--   record and takes no parameter for its `⊤`: its body is written at
+--   the call, though it prints longer than the call, and `start` and its
+--   lambda go. So is `app.step 4`'s.
+-- - `app.label ⊤` is the one use of `label`, so its body is written at
+--   the call too; `shown` reads nothing of it, but that body calls
+--   `String.repeat`, which is not known to do nothing, so the call stays.
+-- - `app.pair` is called twice, and `app.shared` is also handed to
+--   `List.map`: the size model keeps their calls.
+import Node exposing (Program)
+
+
+type alias Count =
+    count : Int
+
+
+type alias App =
+    init : ⊤ → Count
+    start : ⊤ → Count
+    step : Int → Count
+    label : ⊤ → String
+    pair : Int → Count
+    shared : Int → Count
+
+
+ready : Count → String
+ready _ = "ready"
+
+
+shown : String → String
+shown _ = "shown"
+
+
+run : App, Int → List String
+run app n =
+    first = app.pair n
+    second = app.pair (n + 1)
+    [ ready (app.init ⊤)
+    , String.fromInt (app.start ⊤).count
+    , String.fromInt (app.step 4).count
+    , shown (app.label ⊤)
+    , String.fromInt (first.count * second.count)
+    , String.fromInt (app.shared n).count
+    , String.fromInt (List.length (List.map [ 1, 2 ] app.shared))
+    ]
+
+
+main : Program
+main =
+    Node.printLines
+        (run
+            { init = λ⊤ → { count = 0 }
+            , start = λ⊤ → { count = 7 }
+            , step = λk → { count = k }
+            , label = λ⊤ → String.repeat "ab" 2
+            , pair = λk → { count = k }
+            , shared = λk → { count = k }
+            }
+            (String.length "abc")
+        )

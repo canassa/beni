@@ -1,0 +1,56 @@
+-- Whole-program specialisation sees through a record field's lambda
+-- (`backend.md` §9, *Slice 8*, amended 2026-10-15, *A record field's
+-- lambda*) only where nothing can tell, so both builds print the same
+-- lines in the same order:
+--
+-- - `quiet`'s lambda only makes a record, so its unread call goes, and so
+--   does the unread binding `unused` of another such call;
+-- - `noisy`'s lambda logs, so its unread call and the unread binding
+--   `heard` of one stay, and log where they stood;
+-- - `quiet` handed a logged `⊤` keeps the call: its argument does
+--   something;
+-- - `step`'s lambda, used once, is written where it is called: its logged
+--   argument is evaluated once, after "before" and before "after".
+import Node exposing (Program)
+
+
+type alias Count =
+    count : Int
+
+
+type alias App =
+    quiet : ⊤ → Count
+    noisy : ⊤ → Count
+    step : Int → Count
+
+
+ignored : Count → String
+ignored _ = "ignored"
+
+
+run : App → List String
+run app =
+    unused = app.quiet ⊤
+    heard = app.noisy ⊤
+    first = ignored (app.quiet ⊤)
+    second = ignored (app.noisy ⊤)
+    third = ignored (app.quiet (Debug.log "unit" ⊤))
+    before = Debug.log "before" 1
+    stepped = (app.step (Debug.log "argument" 2)).count
+    after = Debug.log "after" 3
+    [ first
+    , second
+    , third
+    , String.fromInt (before + stepped + after)
+    ]
+
+
+main : Program
+main =
+    Node.printLines
+        (run
+            { quiet = λ⊤ → { count = 0 }
+            , noisy = λ⊤ → Debug.log "noisy" { count = 1 }
+            , step = λk → { count = k * 10 }
+            }
+        )

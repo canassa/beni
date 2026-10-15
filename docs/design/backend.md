@@ -6760,6 +6760,113 @@ larger by 1–8); the `bench/ui` app byte-identical. Fixtures: `emit/release/app
 may hold a function reading two keeps both), `run/SpecializeTrailingArguments` (an argument that
 logs is kept, and logged where it was), `emit/release/split/EmptyPage`.
 
+*Amended 2026-10-15: a record field's lambda* (issue #95; `plans/queue.md` row 81, found by
+research 79 §5). `init` is a function of `⊤` since 2026-10-12 (`boundary.md` §9.8.16), so
+`Tea.element`'s hosted `init` calls `app.init ⊤` where it read a value. When a page writes its
+`init` as a lambda in the record, `--release` kept the lambda, its key and the call. Before, it
+folded the model into the first state. The pass knew nothing about what the lambda does: the
+checker's purity bit is per whole-program function (*Calls with known results*), and a lambda in a
+record is not one. Two rules now see through such a lambda. Each reads the lambda's own body, which
+fact 3 finds at the call:
+
+- **A call of functions that only make a value does nothing** (`Spec.pureCall`, `makesOnly`).
+  `effectFree` is the test a drop asks: of an argument nothing reads (`trimArguments`), of a
+  parameter nothing reads, of a dead binding's initialiser (`deadReads`), and of a dead write's
+  value, which asked its own copy of the test until now. It holds for a call when all four of these
+  hold:
+
+  | Condition | Why |
+  |---|---|
+  | the callee is a chain that can neither throw nor run a getter (`Pts.safeChain`) | evaluating the callee does nothing |
+  | fact 3 says the callee may be only functions of the program: never `null`, `undefined`, a primitive or a value the pass cannot see | the call cannot throw a `TypeError`, and no unseen code runs |
+  | each of those functions is an arrow or a `function` whose body is empty or one `return` of an `inert` value: a function, a literal, a name, or an object, array or template of those | the body calls nothing, reads no property and writes nothing, so it cannot throw, loop, suspend, log or change a value; binding a parameter does nothing, since a `JsIr` parameter is a plain name |
+  | every argument does nothing in turn, to a depth of 8 calls | the call evaluates its arguments first |
+
+  Such a call makes a new value and does nothing else, so when nothing reads that value nothing can
+  tell that it was not made: `language.md` §6's order loses no effect, and no reachable code holds
+  the object (rule 8). It goes like any other argument that does nothing: `start`'s unread
+  `app.init ⊤`, and `Navigation.key ⊤`, whose result an application's `init` does not read.
+- **A function used once is written in with no size model** (`Spec.soleCalls`). Slice 8 writes a
+  small function reached through a property at a call only when the body prints no longer than
+  the call, which a record's lambda that makes a record never does (`{a:{}}` against `a.init()`).
+  That model prices the body against the call alone. But when the call is the program's only use
+  of the function, the function goes after it: nothing reads the key that holds it, so fact 3
+  drops the key, and nothing reads its binding, so item 1 drops the binding. So slice 8 does not
+  ask the size model at a call through a property when, by fact 3's values over the whole
+  program, these three hold: the callee of exactly one call may be that function, the function
+  does not escape, and every other node that may be it only holds it (the function itself, a
+  key's value in an object literal, or a binding's initialiser). And a call may pass more
+  arguments than the function has parameters, when each one past them is `inert`: the call
+  evaluates it and nothing reads it. This is `app.init(null)` of a lambda lowered with no
+  parameter for its `⊤`; `trimArguments` drops such an argument only after slice 8 has run. The
+  rewrite is slice 8's, with slice 8's rules for the arguments that stay: atoms, or one read once
+  and first. The uses are counted in one walk of the program, made at most once per pass and only
+  when the size model has refused a call through a property.
+
+Neither rule changes a development build.
+
+Measured against `f1ab9cc87` (release, brotli 11, the whole bundle; `bench/size.mjs`'s page and
+fibers lines, raw → raw | brotli → brotli):
+
+| Page | Raw | Brotli |
+|---|--:|--:|
+| `browser-tea element` | 2 617 → 2 524 | 1 132 → **1 102** |
+| `browser-tea navigation` | 10 039 → 9 970 | 3 978 → **3 945** |
+| `browser-tea every` | 11 912 → 11 817 | 4 513 → 4 480 |
+| `browser-tea links` | 9 644 → 9 549 | 3 828 → 3 797 |
+| `browser-tea frames` | 8 780 → 8 685 | 3 484 → 3 454 |
+| `browser-tea application` | 10 725 → 10 673 | 4 187 → 4 160 |
+| `browser-tea url` | 1 542 → 1 501 | 734 → 713 |
+| `browser-tea random` | 4 367 → 4 318 | 1 915 → 1 896 |
+| `browser-tea effects` | 15 479 → 15 433 | 5 825 → 5 812 |
+| ApiAndRoutes | 49 081 → 49 037 | 16 540 → 16 530 |
+| TodoMVC | 23 958 → 23 936 | 8 907 → 8 902 |
+
+The `http` page, the empty pages and the Node fibers lines are byte for byte as before: `http`'s
+`init` calls `Cmd.task`, so its body is not inert, and its value is read. `bench/size.mjs` as a
+whole: 18 lines smaller, none larger, −331 brotli (raw −914). Every `browser/` fixture built
+`--release` (each `browser/direct/` page for both platforms): 274 smaller, 267 equal, 9 larger,
+−5 250 brotli (raw −12 946); no output's raw bytes grow, and development output does not move.
+The 9 larger builds, each with 42–44 fewer raw bytes: `browser/tea/Routes` and its
+`browser/direct/` twin on `browser-tea` +24 each, `tea/QueuedListSnapshot` +23,
+`direct/HttpRequestShape` +9, `AnimationFrames` (both directories) +4 each,
+`direct/ControlledEdits` +4, `tea/ApiLogin` and `direct/LateResponse` +2 each. The cause is
+item 2's naming: a declaration that goes moves every later short name by one letter, and brotli
+compresses some of the moved names a little worse. Cesar accepted these increases on 2026-10-15
+(dashboard question `release-purity-q1`), as the slices before this one recorded theirs. Conduit
+(`examples/conduit`) 31 375 → 31 371 on `browser-tea` and 36 439 → 36 426 on `browser-direct`;
+its release build costs 5 219 → 5 254 million instructions on `browser-tea` (+0.7 %, the use
+count of the second rule) and 9 828 → 9 833 on `browser-direct`. The `bench/ui` app is 5 354 →
+5 329 on `browser-tea` (raw 13 395 → 13 350: its one mount is written in its caller, and its first
+model is the literal) and byte for byte the same on `browser-direct`. **Speed**, that app on
+`browser-tea` in happy-dom (the mount as the module's import, then each button clicked and the
+runtime flushed, 6 rounds after 2 warm-ups, 16 interleaved processes, median [q1–q3] ms, load
+2.0–2.6): mount 6.28 [6.22–6.34] → 6.23 [6.18–6.30], create 1 000 76.4 [72.3–79.1] → 76.1
+[69.8–78.9], update every 10th 0.45 [0.37–0.52] → 0.46 [0.35–0.52], swap 0.17 [0.15–0.30] → 0.18
+[0.15–0.30], clear 10.19 [9.91–10.49] → 10.24 [10.00–10.59]: every range overlaps.
+
+Fixtures: `emit/release/app/SpecRecordLambda` (an unread `app.init ⊤` gone with its key and
+lambda; `start`'s and `step`'s lambdas, each used once, written at their calls, one of them past
+an inert `null`; a `label` whose body calls `String.repeat` written in, but its unread call kept;
+a lambda called twice and one also handed to `List.map` left to the size model) — red against
+the compiler before; `run/SpecializeRecordLambda` (an unread call and an unread binding of a
+lambda that only makes a value go, one whose lambda logs and one handed a logged `⊤` stay and log
+where they stood, and a lambda used once evaluates its logged argument once, between its
+neighbours) — red with `makesOnly` accepting any body: the release build loses the `noisy` and
+`unit` lines. Goldens moved: `emit/release/tea/HttpSendTracked` and `HttpSendUntracked` (the
+unread `a.init()` and the record holding the lambda go; the hosted `view` calls the start function
+by name), `emit/release/split/HolesPage` (`a.init()` is the model literal `{g:0,a:false}`, and the
+mount, then called with atoms only, is written in its caller).
+
+**Measured and not built: `releaseKeeps` asking the same test.** A binding lowering keeps for its
+initialiser (`effect_keep`) could be released when that initialiser is a pure call, as one whose
+initialiser is a read through program objects is. Released without more facts, it changed no
+output of `bench/size.mjs` or the `browser/` corpus. With the facts asked once more after it, so
+that `prune` can drop a declaration only the released binding named, 8 `browser-direct` pages
+lost 21 raw bytes each (−80 brotli in all, none larger), but Conduit's `browser-tea` release build
+took 5 157 → 5 497 million instructions (+6.6 %) and changed by no byte (both measured on
+`6508aeb3f`, before slice 10). It is not built; issue #167 holds it.
+
 **Slice 9 — constructor folding** (*added 2026-10-03*; `plans/runtime-in-beni.md`'s *Append
 against Solid 1*: a page that reads a list with `List.get` then `Maybe.withDefault` made a `Just`
 per read, most of the cold loop's cost). A value a small function makes, that another small
