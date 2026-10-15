@@ -761,8 +761,8 @@ No proof statement or shipping ownership rule was weakened.
 
 ## Result, recursive payload and initialization coverage — 2026-10-15
 
-The newer executable set has 98 original plus 75 sync verdict fixtures and
-496 targeted programs. The historical 348 programs retain their indices; 148
+The newer executable set has 98 original plus 78 sync verdict fixtures and
+508 targeted programs. The historical 348 programs retain their indices; 160
 new targeted programs append to them. Historical sync fixture indices also
 remain unchanged. Current counts and evidence are in RESULTS.md.
 
@@ -787,3 +787,13 @@ the finite targeted product must independently find an accepted disagreement.
 The counts never treat an interpreter error, a typing error or an ordinary
 rejection as a caught hole. The baseline target campaign checks concrete result
 certificates as well as observations. No additional unproved statement was added.
+
+The bridge's Result-case RHS regression executes the actual emitted program:
+it must bind the inner Err and still return Ok 99. With the tail guard absent
+it returns Err 7, which fails the value check; the restored translator passes.
+`initializationDuplicatedCapture` also rejects a closure returning the same
+captured row in both model fields; the copied-result twin passes. Initialization
+coverage is confined to the Lean model, since entry/private-root programs remain
+explicit shipping-bridge skips. The zero-confirmed count covers the translated
+common subset, not initialization transfer. The historical fixed-stream pin has
+independent source/verdict/order/removal controls in the bridge CI self-test.

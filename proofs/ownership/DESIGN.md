@@ -301,7 +301,9 @@ Err constructor's success type is the enclosing definition's, not the operand's.
 Calls remain ordinary expressions: an inner question cannot terminate an outer
 definition. Fixtures assert concrete expected values as well as interpreter
 agreement, including the two-frame case. The bridge recognizes this canonical
-error arm and emits the real source `?`; other eliminations emit Result cases.
+error arm in definition-tail position and emits the real source `?`; other
+eliminations emit Result cases. A matching case in a let RHS cannot return
+from the surrounding definition. Callback bodies start a fresh tail context.
 The bridge normalizes native Result tags back to the three observation fields.
 
 `Ty.chain payload` denotes the unbounded recursive ADT

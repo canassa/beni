@@ -108,28 +108,29 @@ export function translate(ds, main) {
       : `(λ${ps.join(' ') || '⊤'} →\n${ind(body)}\n)`;
     return `(\n${ind([...bindings,fn].join('\n'))}\n)`;
   }
-  function emit(e, env, key, self = null) {
-    return mark(key, emitRaw(e, env, key, self));
+  function emit(e, env, key, self = null, tail = true) {
+    return mark(key, emitRaw(e, env, key, self, tail));
   }
-  function emitRaw(e, env, key, self) {
+  function emitRaw(e, env, key, self, tail) {
     const a = x => atom(x, env), args = xs => xs.map(x => `(${a(x)})`).join(' ');
     switch (e[0]) {
       case 'entry': fail('runtime-entry-protocol');
       case 'result-case': {
         const left = new Map(env), right = new Map(env), err = `err${serial++}`, ok = `ok${serial++}`;
         left.set(e[2], err); right.set(e[3], ok);
-        // This is the canonical Question.lower error arm. Exercise the real
-        // source question operator, including its definition-local return.
-        if (e[4][0] === 'prim' && e[4][1][0] === 'err' &&
+        // Only a definition-tail forwarding case is a question. A matching
+        // case inside a let RHS must return its Result to that binding.
+        // Closure/focus/traversal bodies start their own tail context.
+        if (tail && e[4][0] === 'prim' && e[4][1][0] === 'err' &&
             e[4][2].length === 1 && e[4][2][0][0] === 'var' && e[4][2][0][1] === e[2])
-          return `${ok} = (${a(e[1])})?\n${emit(e[5], right, key + '/1', self)}`;
-        return `case ${a(e[1])} of\n    Err ${err} →\n${ind(emit(e[4], left, key + '/0', self), 8)}\n    Ok ${ok} →\n${ind(emit(e[5], right, key + '/1', self), 8)}`;
+          return `${ok} = (${a(e[1])})?\n${emit(e[5], right, key + '/1', self, tail)}`;
+        return `case ${a(e[1])} of\n    Err ${err} →\n${ind(emit(e[4], left, key + '/0', self, tail), 8)}\n    Ok ${ok} →\n${ind(emit(e[5], right, key + '/1', self, tail), 8)}`;
       }
       case 'chain-case': {
         chainUsed = true;
         const next = new Map(env), head = `head${serial++}`, tail = `tail${serial++}`;
         next.set(e[2], head); next.set(e[3], tail);
-        return `case ${a(e[1])} of\n    BridgeEnd →\n${ind(emit(e[4], env, key + '/0', self), 8)}\n    BridgeLink ${head} ${tail} →\n${ind(emit(e[5], next, key + '/1', self), 8)}`;
+        return `case ${a(e[1])} of\n    BridgeEnd →\n${ind(emit(e[4], env, key + '/0', self, tail), 8)}\n    BridgeLink ${head} ${tail} →\n${ind(emit(e[5], next, key + '/1', self, tail), 8)}`;
       }
       case 'atom': return a(e[1]);
       case 'let': {
@@ -137,9 +138,9 @@ export function translate(ds, main) {
         next.set(e[1], hoisted.has(e[1]) && bindings.get(e[1]) === e[2] ? `g${e[1]}` : n);
         if (hoisted.has(e[1]) && bindings.get(e[1]) === e[2]) {
           globals.push(`pub g${e[1]} =\n${ind(emit(e[2], env, key + '/0', self))}`);
-          return emit(e[3], next, key + '/1', self);
+          return emit(e[3], next, key + '/1', self, tail);
         }
-        return `${n} =\n${ind(emit(e[2], env, key + '/0', self))}\n${emit(e[3], next, key + '/1', self)}`;
+        return `${n} =\n${ind(emit(e[2], env, key + '/0', self, false))}\n${emit(e[3], next, key + '/1', self, tail)}`;
       }
       case 'prim': {
         const op = e[1][0], xs = e[2], aa = xs.map(a);
@@ -171,7 +172,7 @@ export function translate(ds, main) {
       case 'recur':
         if (!self) fail('recursion-outside-declaration');
         return `${self.local ?? `d${self.id}`} ${args(e[1]) || '⊤'}`;
-      case 'branch': return `if ${a(e[1])} == 0 then\n${ind(emit(e[2], env, key + '/0', self))}\nelse\n${ind(emit(e[3], env, key + '/1', self))}`;
+      case 'branch': return `if ${a(e[1])} == 0 then\n${ind(emit(e[2], env, key + '/0', self, tail))}\nelse\n${ind(emit(e[3], env, key + '/1', self, tail))}`;
       case 'focus': {
         const local = `focus${serial++}`, next = new Map(env); next.set(e[3], local);
         return `List.update (${a(e[1])}) (${a(e[2])}) (λ${local} →\n${ind(emit(e[4], next, key + '/body', self))}\n)`;

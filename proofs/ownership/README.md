@@ -18,8 +18,8 @@ commands are specified in [BRIDGE.md](BRIDGE.md); `ownership ci` includes its bo
 and the oracle triage: 201 original divergences in six Zig defect clusters and
 2,157 Lean precision leads. Every original and old minimum has both interpreter
 traces in `evidence/bridge-triage/`; the persistent emitted runtime is not the judge.
-The oracle has 98 original and 75 sync verdict fixtures, generator v5, a bounded-exhaustive
-grammar plus 496 targeted programs, required negative controls (including `set-exclusive` and `once-live`),
+The oracle has 98 original and 78 sync verdict fixtures, generator v5, a bounded-exhaustive
+grammar plus 508 targeted programs, required negative controls (including `set-exclusive` and `once-live`),
 and a falsifier that fails when summary coverage is excessively vacuous.
 The sync models branch-local escapes, inductive model/container conditions,
 fold accumulators, markup event slots, constructor callbacks and returns-owned
@@ -78,7 +78,7 @@ finds an accepted disagreement whose shrunk form the corrected checker
 rejects. `scripts/run-mutants.sh` applies source-level checker edits
 (`scripts/mutate.mjs`) and compares every verdict on each seeded stream with
 indices from the unedited build (`ownership source-sweep`). It also enumerates
-the seed-independent grammar (default bound 2) and all 496 targeted programs, saving per-seed counts, logs
+the seed-independent grammar (default bound 2) and all 508 targeted programs, saving per-seed counts, logs
 and original counterexamples under `regressions/mutant-evidence/`. Run it on
 Linux inside the ownership shell, which supplies Node 24 and taskset; `MUTANT_CORES` defaults to
 `0-7` and refuses more than eight CPUs. `ENUMERATE_BOUND` sets the bound.

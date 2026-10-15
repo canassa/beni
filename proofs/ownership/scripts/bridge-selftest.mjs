@@ -8,9 +8,28 @@ import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 import { translate } from './bridge-translate.mjs';
+import {historicalFixedPrefix} from './bridge-fixed-prefix.mjs';
 const root=resolve(dirname(fileURLToPath(import.meta.url)),'../../..');
 const options=Object.fromEntries(process.argv.slice(2).map(x=>{const [k,...v]=x.slice(2).split('=');return [k,v.join('=')];}));
 if(!options.input || !options.compiler) throw Error('selftest needs --input=<fixture-export> --compiler=<beni>');
+const fixedText = await readFile(options.input, 'utf8');
+const fixedBaseline = JSON.parse(await readFile(resolve(root, 'proofs/ownership/evidence/bridge-ci/report.json'), 'utf8'))
+  .streams.find(s => s.name === 'fixtures-0.jsonl').sha256;
+historicalFixedPrefix(fixedText, fixedBaseline);
+const fixedLines = fixedText.trimEnd().split('\n');
+const first = fixedLines.findIndex(line => JSON.parse(line)[0] === 'program');
+const verdictChanged = [...fixedLines], changed = JSON.parse(verdictChanged[first]);
+changed[5] = !changed[5]; verdictChanged[first] = JSON.stringify(changed);
+assert.throws(() => historicalFixedPrefix(verdictChanged.join('\n') + '\n', fixedBaseline), /historical fixed source\/verdict stream changed/);
+const sourceChanged = [...fixedLines], sourceRow = JSON.parse(sourceChanged[first]);
+sourceRow[4] = ['atom', ['int', '123']]; sourceChanged[first] = JSON.stringify(sourceRow);
+assert.throws(() => historicalFixedPrefix(sourceChanged.join('\n') + '\n', fixedBaseline));
+const reordered = [...fixedLines], second = fixedLines.findIndex((line, i) => i > first && JSON.parse(line)[0] === 'program');
+[reordered[first], reordered[second]] = [reordered[second], reordered[first]];
+assert.throws(() => historicalFixedPrefix(reordered.join('\n') + '\n', fixedBaseline));
+const omitted = fixedLines.filter((_, i) => i !== first);
+assert.throws(() => historicalFixedPrefix(omitted.join('\n') + '\n', fixedBaseline));
+console.log('historical fixed-prefix source/verdict/order/removal controls: caught');
 const tables=new Map(); let translated, skipped;
 for(const line of (await readFile(options.input,'utf8')).trim().split('\n')) {
   const r=JSON.parse(line);
@@ -23,7 +42,7 @@ assert(translated && skipped,'fixture export must have a translated and a skippe
 const dir=await mkdtemp(resolve(root,'zig-out/bridge-failure-control-'));
 let passed=false;
 try {
-  for(const name of ['UnusedCapture','CaptureField']) {
+  for(const name of ['UnusedCapture','CaptureField','ResultCaseNonTail']) {
     const [ds,main]=JSON.parse(await readFile(resolve(root,`proofs/ownership/regressions/bridge/${name}.json`),'utf8'));
     const wire=resolve(dir,`${name}.json`),exported=resolve(dir,`${name}.jsonl`);
     // Removing the fresh prefix is an ordinary oracle reduction and exports
@@ -39,14 +58,18 @@ try {
       assert.throws(()=>translate(ds,main),e=>e.reason==='unused-capture-slot');
     } else {
       assert.equal(record[5],true);
-      const source=resolve(dir,'CaptureField.beni'),target=resolve(dir,'field-output');
+      const source=resolve(dir,`${name}.beni`),target=resolve(dir,`${name}-output`);
       await writeFile(source,translate(ds,main).source);
       const built=spawnSync(resolve(options.compiler),['build','--library','--no-cache','--no-source-maps','--jobs=1','--platform=browser-direct',`--out=${target}`,source],{encoding:'utf8'});
       assert.equal(built.status,0,built.stderr);
-      const driver=resolve(dir,'field-driver.mjs');
-      await writeFile(driver,`import {CaptureField$run} from ${JSON.stringify(resolve(target,'CaptureField.mjs'))};console.log(JSON.stringify(CaptureField$run()));\n`);
+      const driver=resolve(dir,`${name}-driver.mjs`);
+      await writeFile(driver,`import {${name}$run as run} from ${JSON.stringify(resolve(target,`${name}.mjs`))};console.log(JSON.stringify(run()));\n`);
       const ran=spawnSync(process.execPath,[driver],{encoding:'utf8'});
-      assert.equal(ran.status,0,ran.stderr);assert.deepEqual(JSON.parse(ran.stdout),record[11]);
+      assert.equal(ran.status,0,ran.stderr);
+      if (name === 'ResultCaseNonTail') {
+        assert.deepEqual(record[11], {f0: 1, f1: 0, f2: 99});
+        assert.deepEqual(JSON.parse(ran.stdout), {$: 'Ok', a: 99});
+      } else assert.deepEqual(JSON.parse(ran.stdout),record[11]);
     }
   }
   const input=resolve(dir,'input.jsonl'),out=resolve(dir,'output'),wrapper=resolve(dir,'compiler.mjs');

@@ -216,6 +216,7 @@ def writeExport (path suite : String) (count seed bound : Nat) : IO Unit := do
     reductions preserving the verdict difference and concrete outcome. -/
 def references : Expr → List Nat
   | .closure d _ => [d]
+  | .entry a _ _ b | .resultCase _ _ _ a b | .chainCase _ _ _ a b
   | .letE _ a b | .branch _ a b => references a ++ references b
   | .focus _ _ _ b | .traverse _ _ _ _ _ _ b => references b
   | _ => []

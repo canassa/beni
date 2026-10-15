@@ -384,6 +384,25 @@ def initializationFrame (n : Int) (safe := false) : Program := {
     .letE 2 (.closure 0 [.int n]) <|
       .entry (.atom (v 1)) [] 3 (.app (v 2) [.int 0]) }
 
+/-- A plain Result case used as a binding RHS returns an Err value to that
+    binding; it must not be translated into a question returning from main. -/
+def ordinaryResultCase (n : Int) : Program := {
+  main := .letE 0 (.prim (.err .int) [.int n]) <|
+    .letE 1 (.resultCase (v 0) 2 3 (.prim (.err .int) [v 2]) (.prim (.ok .int) [v 3])) <|
+      .prim (.ok .int) [.int (n+10)] }
+
+/-- An eager closure capture is one read, but its result can retain that same
+    cell at two positions. Transferring publication never removes those aliases. -/
+def initializationDuplicatedCapture (n : Int) (copied := false) : Program := {
+  declarations := [{
+    name := "capturedPair", parameters := [.int], captures := [l], result := .record [l,l]
+    body := if copied then .letE 2 (.prim .copy [v 1]) (.prim .record [v 1, v 2])
+      else .prim .record [v 1, v 1]}]
+  main := .letE 0 (lit n) <| .letE 1 (.prim .privateRoot [v 0]) <|
+    .letE 2 (.closure 0 [v 1]) <|
+      .entry (.app (v 2) [.int 0]) [] 3 <|
+        .letE 4 (push (.field (v 3) 0)) (.prim .record [v 4, .field (v 3) 1]) }
+
 /-- Finite products, independent of seeds. These are not fixed probes alone. -/
 def legacyPrograms : List Program := [-1, 0, 1, 2].flatMap fun n =>
   [branchEscape n, branchEscape n true, branchEscape n false true, branchCall n, branchCall n true,
@@ -443,6 +462,9 @@ def legacyFixtures : List (String × Program × Bool) := [
   ("Forwarded callback fresh across calls", ownedFresh 1, true)]
 
 def extraFixtures : List (String × Program × Bool) := [
+  ("Result case RHS is not a question", ordinaryResultCase 9, true),
+  ("Init duplicated closure capture", initializationDuplicatedCapture 1, false),
+  ("Init distinct closure result", initializationDuplicatedCapture 1 true, true),
   ("Init callee cannot borrow module authority", initializationFrame 1, false),
   ("Init callee without a publication", initializationFrame 1 true, true),
   ("Init function-valued source stays shared", initializationFunctionRoot 9, false),
@@ -470,7 +492,7 @@ def extraFixtures : List (String × Program × Bool) := [
   ("Fold loan feedback", feedbackLoan 1, false)]
 
 def extraPrograms : List Program := [-1, 0, 1, 2].flatMap fun n =>
-  [initializationFrame n, initializationFrame n true, initializationFunctionRoot n, initializationFunctionRoot n true, initializationLoop n, initializationLoop n true, initializationRepublished n, recursiveQuestion n, twoFrames n, question n, question n true, question n false true,
+  [ordinaryResultCase n, initializationDuplicatedCapture n, initializationDuplicatedCapture n true, initializationFrame n, initializationFrame n true, initializationFunctionRoot n, initializationFunctionRoot n true, initializationLoop n, initializationLoop n true, initializationRepublished n, recursiveQuestion n, twoFrames n, question n, question n true, question n false true,
    initialization n, initialization n true, initialization n false true,
    initialization n false false true, initialization n true false true,
    initialization n false false true true] ++
@@ -533,6 +555,7 @@ def run : IO Bool := do
       IO.println s!"SYNC DIFFERENTIAL FAILED: {name}: {repr (Oracle.compare p)}"
       ok := false
   for (name, p, expected) in [
+      ("ordinary Result case stays in its binding", ordinaryResultCase 9, Observation.record [.int 1, .int 0, .int 19]),
       ("recursive question retains its error", recursiveQuestion 8, Observation.record [.int 0, .list [.int 8], .int 0]),
       ("inner question cannot return from outer", twoFrames 1, Observation.record [.int 1, .int 0, .int 5]),
       ("recursive consumer visits every node", recursiveConsumer 2 3, Observation.int 6),
