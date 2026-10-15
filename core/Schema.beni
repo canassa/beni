@@ -2417,7 +2417,9 @@ compiledProblem o dir src args =
             Just issues
 
         Nothing →
-            dynamic = interpretedIn args
+            -- A nongeneric declaration's root has no argument: no array is
+            -- made for it.
+            dynamic = if lengthOf args == 0 then args else interpretedIn args
             n = lengthOf dynamic
             case argumentProblem dynamic 0 n of
                 Just problem →

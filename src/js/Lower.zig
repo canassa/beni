@@ -9009,6 +9009,14 @@ pub const Lowerer = struct {
                 if (corePrivateSlot(l.bir.symbol(d.name)) != null) named[i] = true;
             }
         }
+        // `core/Schema`'s core-private values, on the same terms: the code a
+        // `schema` declaration compiles to calls them from other modules, and
+        // this module exports each that survives (`schema.md` §6).
+        if (l.in.graph.lookup(.core, InternPool.WellKnown.Schema.symbol()) == l.in.module) {
+            for (decls, 0..) |d, i| {
+                if (SchemaGraph.isCompiledValue(l.text(l.bir.symbol(d.name)))) named[i] = true;
+            }
+        }
         const uses = try l.scratch.alloc(u32, decls.len);
         @memset(uses, 0);
         const self_uses = try l.scratch.alloc(u32, decls.len);
