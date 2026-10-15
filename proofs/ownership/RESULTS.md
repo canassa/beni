@@ -1,4 +1,17 @@
-# Ownership checker sync — 2026-10-15
+# Ownership oracle results — 2026-10-15
+
+The latest [Result/recursive-payload/initialization measurements](ORACLE-EXTENSION-RESULTS.md)
+cover 176 verdict fixtures, 508 targeted programs and twelve new caught holes.
+The full shipping bridge has **116,650 inputs**, **43,185 translations/value checks**,
+**1,725 forward leads**, **401 reverse leads**, and **0 interpreter-confirmed unsafe
+original leads**. CI has 6 forward / 8 reverse / 0 confirmed. All historical generator
+and enumeration hashes match; the added 194 fixed programs contribute 119 translated
+agreements and 75 counted skips. Both the in-build and independent clean-checkout
+kernel/source audits pass with the existing three unproved statements.
+
+The earlier measurements below describe the previous, smaller core.
+
+## Previous ownership checker sync — 2026-10-15
 
 The shipping differential bridge is recorded separately in
 [BRIDGE-RESULTS.md](BRIDGE-RESULTS.md): 116,456 inputs, 43,066 translated/value-checked,

@@ -10,6 +10,7 @@ import {createHash} from 'node:crypto';
 import {gzipSync, gunzipSync} from 'node:zlib';
 import assert from 'node:assert/strict';
 import {translate} from './bridge-translate.mjs';
+import {historicalFixedPrefix} from './bridge-fixed-prefix.mjs';
 const [campaignArg, compilerArg, outputArg] = process.argv.slice(2);
 assert(campaignArg && compilerArg && outputArg && process.argv.length === 5,
   'usage: bridge-fix-audit.mjs campaign-directory compiler output-directory');
@@ -80,12 +81,29 @@ try {
     }
   }
   const clusters = JSON.parse(await readFile(resolve(own, 'evidence/bridge-triage/clusters.json'), 'utf8'));
-  const isLong = report.programs === 116456;
+  const isLong = report.programs === 116456 || report.programs === 116650;
   const baseline = JSON.parse(await readFile(resolve(own,
     isLong ? 'evidence/bridge-long/report.json' : 'evidence/bridge-ci/report.json'), 'utf8'));
-  // Compare the canonical runs exactly, including skips, rather than letting
-  // a changed translated population explain away a soundness improvement.
-  if (isLong || report.programs === 766) {
+  let fixedPrefix = null;
+  if (isLong || report.programs === 766 || report.programs === 960) {
+    const stream = report.streams.find(s => s.name === 'fixtures-0.jsonl');
+    const previous = baseline.streams.find(s => s.name === 'fixtures-0.jsonl');
+    assert(stream && previous);
+    fixedPrefix = historicalFixedPrefix(await readFile(resolve(campaign, stream.name), 'utf8'), previous.sha256);
+    assert.equal(fixedPrefix.programs, previous.programs);
+  }
+  // The extended fixed set appends 34 verdict fixtures and 160 targeted
+  // programs. Historical generator/enumeration streams must remain byte exact;
+  // fixed ids keep their original meaning, with extension ids appended.
+  if (report.programs === 116650 || report.programs === 960) {
+    assert.equal(report.programs, baseline.programs + 194);
+    for (const oldStream of baseline.streams.filter(s => !s.name.startsWith('fixtures-'))) {
+      const stream = report.streams.find(s => s.name === oldStream.name);
+      assert(stream);
+      for (const key of ['programs', 'translated', 'skipped', 'valueChecked', 'sha256'])
+        assert.equal(stream[key], oldStream[key], stream.name + ':' + key);
+    }
+  } else if (isLong || report.programs === 766) {
     for (const key of ['programs', 'translated', 'skipped', 'valueChecked']) assert.equal(report[key], baseline[key], key);
     assert.equal(report.streams.length, baseline.streams.length);
     for (const stream of report.streams) {
@@ -96,7 +114,7 @@ try {
   }
   assert.equal(hash(await readFile(compiler)), report.environment.compilerSha256, 'compiler changed during audit');
   const survivingOriginals = isLong ? Object.fromEntries(Object.entries(clusters).map(([k, ids]) => [k, ids.filter(id => byId.has(id))])) : null;
-  const audit = {judgeSha256: hash(await readFile(resolve(own, '.lake/build/bin/triage'))),
+  const audit = {fixedPrefix, judgeSha256: hash(await readFile(resolve(own, '.lake/build/bin/triage'))),
     observation: 'Original programs; complete final value, reads and externalReads in both unchanged Lean interpreters. The judge labels the supplied original core minimum under --only; no reduction is used.',
     campaign: {programs: report.programs, translated: report.translated, skipped: report.skipped,
     valueChecked: report.valueChecked, leads: report.leads, precision: report.precision,

@@ -10,22 +10,27 @@ statements three are `sorry` and the main theorem is proved only from one of
 them. It does not change the beni compiler
 or the thesis.
 
-Current results and the full source-mutant matrix are in [RESULTS.md](RESULTS.md).
+Current [Result/recursive-payload/initialization results](ORACLE-EXTENSION-RESULTS.md)
+and the earlier source-mutant matrix are indexed in [RESULTS.md](RESULTS.md).
 The shipping-compiler differential bridge, counted skips, runtime boundary and
 commands are specified in [BRIDGE.md](BRIDGE.md); `ownership ci` includes its bounded run.
 [BRIDGE-RESULTS.md](BRIDGE-RESULTS.md) records the corrected 116,456-input campaign
 and the oracle triage: 201 original divergences in six Zig defect clusters and
 2,157 Lean precision leads. Every original and old minimum has both interpreter
 traces in `evidence/bridge-triage/`; the persistent emitted runtime is not the judge.
-The oracle has 98 original and 44 sync verdict fixtures, generator v5, a bounded-exhaustive
-grammar plus 348 targeted programs, required negative controls (including `set-exclusive` and `once-live`),
+The oracle has 98 original and 78 sync verdict fixtures, generator v5, a bounded-exhaustive
+grammar plus 508 targeted programs, required negative controls (including `set-exclusive` and `once-live`),
 and a falsifier that fails when summary coverage is excessively vacuous.
 The sync models branch-local escapes, inductive model/container conditions,
 fold accumulators, markup event slots, constructor callbacks and returns-owned
-tagger obligations. Ten new holes are required through the seed-independent
+tagger obligations. Twenty-two holes are required through the seed-independent
 targeted enumerator, including the retained-reader-after-append hole. The
 case-lowered withDefault rule also has a required `branch-live` witness.
-`Sync.lean` and DESIGN.md state the projections and their runtime boundaries.
+The §29 result/capture/fold/callee rules have six independent required holes. Six further holes cover
+Err payloads, recursive payloads, shared initialization, retained entry captures,
+repeated transfer authority and its frame boundary. Result and Chain fixtures
+cross the shipping bridge; entry projections remain counted skips. `Sync.lean` and DESIGN.md
+state the projections and their runtime boundaries.
 `no-scope` is a checker-level probe: typed programs cannot reach an unbound
 live variable. `hiddencopy` changes the interpreter to copy on every write;
 value and in-place results then agree, so fixtures checking the intended
@@ -73,7 +78,7 @@ finds an accepted disagreement whose shrunk form the corrected checker
 rejects. `scripts/run-mutants.sh` applies source-level checker edits
 (`scripts/mutate.mjs`) and compares every verdict on each seeded stream with
 indices from the unedited build (`ownership source-sweep`). It also enumerates
-the seed-independent grammar (default bound 2) and all 348 targeted programs, saving per-seed counts, logs
+the seed-independent grammar (default bound 2) and all 508 targeted programs, saving per-seed counts, logs
 and original counterexamples under `regressions/mutant-evidence/`. Run it on
 Linux inside the ownership shell, which supplies Node 24 and taskset; `MUTANT_CORES` defaults to
 `0-7` and refuses more than eight CPUs. `ENUMERATE_BOUND` sets the bound.
@@ -95,6 +100,7 @@ macOS requires `zorg` on PATH).
 | `Reinfer.lean` | the frozen per-call re-inference checker (cross-check) |
 | `Library.lean` | map, initialize, foldl, update as ordinary declarations |
 | `Cli.lean` | validates command names, numbers and applicable options before work |
+| `Question.lean` | typed CPS lowering of `?`, with one error return per definition |
 | `Sync.lean` | Zig-fixture projections for branch, model, fold and Conduit rules, with required holes |
 | `Targeted.lean` | finite products exercising capture consumption, call counts, shape joins, set, comparisons and recursion |
 | `Enumerate.lean` | every typed program of a bounded grammar; independent of random seeds |
@@ -146,8 +152,12 @@ fixed in the statement or the checker.
 
 ## Limits
 
-No recursive data types, sum types/early return, list views, dictionaries, sets, opaque types, release
-representations, implicit evidence, effects, fibers, TEA or renderer.
+Result constructors and elimination, definition-local `?` lowering, recursive `Chain` types, and an
+initialization/retained-entry projection are modelled. Arbitrary user-defined or mutually recursive type
+declarations, list views, dictionaries, sets, opaque types, release representations, implicit evidence,
+effects, fibers, TEA and rendering remain outside the model. Chain tails copy their immutable spine;
+payload cells retain their identities. Private initialization uses a deliberately narrow single-read
+allocation/alias/capture chain; unsupported dependency graphs stay shared.
 Mutual recursion, higher-order recursion, recursion inside a traversal or
 focus step, function values below an input path and callbacks with
 function-typed parameters or results are explicit `limit:` rejections.
