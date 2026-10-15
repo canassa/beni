@@ -87,7 +87,9 @@ pub const magic = "BENIDSP\x00";
 /// type identities (§33): a decl and a let row grow 12 → 20 bytes by their
 /// `identities` range, two columns, `identities` and `text`, and two term
 /// tags, `identity` (its parts in `args`) and `text` (a range of `text`).
-pub const format_version: u32 = 11;
+/// 12 since derived codecs (schema.md §12.10): a `codec` term, its index the
+/// module's schema plan's `codecs` and its slots' evidence in `args`.
+pub const format_version: u32 = 12;
 
 pub const Column = enum(u32) {
     terms,
@@ -556,6 +558,7 @@ const Writer = struct {
             },
             .primitive => |p| std.mem.writeInt(u32, row[4..8], @backingInt(p), .little),
             .derived => |u| std.mem.writeInt(u32, row[4..8], u.index, .little),
+            .codec => |u| std.mem.writeInt(u32, row[4..8], u.index, .little),
             .ext_derived => |u| {
                 row[1] = @backingInt(u.kind);
                 std.mem.writeInt(u32, row[4..8], try w.moduleRef(u.module), .little);
@@ -953,7 +956,7 @@ fn readTerm(row: *const [term_bytes]u8, module_refs: u32, type_refs: u32) ReadEr
     // Only the four terms that name a function take arguments; any other
     // row with a non-empty range is not one this writer produced.
     switch (tag) {
-        .top, .ext, .derived, .ext_derived, .identity => {},
+        .top, .ext, .derived, .ext_derived, .identity, .codec => {},
         else => if (args.len != 0) return error.BadSidecar,
     }
     return switch (tag) {
@@ -976,6 +979,7 @@ fn readTerm(row: *const [term_bytes]u8, module_refs: u32, type_refs: u32) ReadEr
                 return error.BadSidecar) orelse return error.BadSidecar,
         },
         .derived => .{ .derived = .{ .index = a, .args = args } },
+        .codec => .{ .codec = .{ .index = a, .args = args } },
         .ext_derived => blk: {
             if (a != no_ref and a >= module_refs) return error.BadSidecar;
             if (b != no_ref and b >= type_refs) return error.BadSidecar;

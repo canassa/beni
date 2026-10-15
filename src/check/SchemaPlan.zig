@@ -32,6 +32,18 @@ literals: []const Literal,
 symbols: []const Symbol,
 schema_targets: []const SchemaTarget,
 ctor_targets: []const CtorTarget,
+/// The module's derived codecs (`schema.md` §12.10), in key order. Each is
+/// a `Definition` whose `decl` is a VIRTUAL declaration index, the module's
+/// declaration count plus its place here, so a backend that keys a schema
+/// by `(module, decl)` names it as it names a declaration. Its `name` and
+/// parameter words are the `codec` symbol, and its type fields are unused.
+codecs: []const Definition = &.{},
+/// A `constructors` node's constructors, by `extra` index.
+codec_ctors: []const CodecCtor = &.{},
+/// The nominal type a `constructors` node builds.
+type_targets: []const TypeTarget = &.{},
+/// The value a `codec_value` node runs: a type's module's `codec`.
+value_targets: []const ValueTarget = &.{},
 
 pub const empty: SchemaPlan = .{
     .definitions = &.{},
@@ -50,6 +62,10 @@ pub const empty: SchemaPlan = .{
     .symbols = &.{},
     .schema_targets = &.{},
     .ctor_targets = &.{},
+    .codecs = &.{},
+    .codec_ctors = &.{},
+    .type_targets = &.{},
+    .value_targets = &.{},
 };
 
 pub fn deinit(plan: *SchemaPlan, gpa: Allocator) void {
@@ -69,6 +85,10 @@ pub fn deinit(plan: *SchemaPlan, gpa: Allocator) void {
     gpa.free(plan.symbols);
     gpa.free(plan.schema_targets);
     gpa.free(plan.ctor_targets);
+    gpa.free(plan.codecs);
+    gpa.free(plan.codec_ctors);
+    gpa.free(plan.type_targets);
+    gpa.free(plan.value_targets);
     plan.* = empty;
 }
 
@@ -134,7 +154,37 @@ pub const Node = struct {
         check,
         annotation,
         nullable,
+        // A derived codec's (`schema.md` §12.10), each with its own worker
+        // and library builder:
+        /// `lhs` an `extra` range of element nodes: an array of exactly
+        /// that many, `⊤` being the tuple of none.
+        tuple,
+        /// `lhs` a `type_targets` index, `rhs` an `extra` range of
+        /// `codec_ctors` indices: a custom type's constructors, read and
+        /// written in Roc's form (§12.3).
+        constructors,
+        /// `lhs` the inner node, `rhs` `Maybe.mode` bits: `null` is
+        /// `Nothing` (§12.4).
+        maybe,
+        /// `lhs` a `codecs` index, `rhs` an `extra` range of argument
+        /// nodes, one per parameter of that codec.
+        codec_ref,
+        /// `lhs` a `value_targets` index: the type's module's `codec`,
+        /// run through its own workers.
+        codec_value,
     };
+};
+
+/// A `maybe` node's `rhs` bits (`schema.md` §12.4, §12.10).
+pub const Maybe = struct {
+    /// A record field's: its key may be absent, which is `Nothing`, and
+    /// `Nothing` writes no key.
+    pub const field: u32 = 4;
+    /// The inner node reads `null` itself, so a `null` is `Just` of it.
+    pub const reads_null: u32 = 1;
+    /// What the inner node reads is not known here (a parameter, a
+    /// module's `codec`): a `null` it writes inside `Just` is refused.
+    pub const refuse_null: u32 = 2;
 };
 
 pub const Primitive = enum(u8) {
@@ -145,6 +195,32 @@ pub const Primitive = enum(u8) {
     finite_float,
     null,
     value,
+    /// A derived codec's (`schema.md` §12.10): one character, a 32-bit
+    /// integer, and `⊥`, which reads nothing.
+    char,
+    int32,
+    never,
+};
+
+/// One constructor of a `constructors` node: its name, which is its wire
+/// form, its place among its type's constructors, and an `extra` range of
+/// its argument nodes.
+pub const CodecCtor = struct {
+    name: SymbolIndex,
+    order: u32,
+    args: u32,
+};
+
+pub const TypeTarget = struct {
+    package: SourceStore.Package,
+    module: SymbolIndex,
+    name: SymbolIndex,
+};
+
+pub const ValueTarget = struct {
+    package: SourceStore.Package,
+    module: SymbolIndex,
+    name: SymbolIndex,
 };
 
 pub const Field = struct {

@@ -1,0 +1,21 @@
+-- decode
+Ok Dot, Circle 1.5, Rect 2 3, Labelled L 4, Labelled M
+Err decoding Encoded WrongShape /0 the constructor Circle takes arguments, so it is an object with the key "Circle"
+Err decoding Encoded WrongShape /0 the constructor Dot takes no arguments, so it is the string "Dot"
+Err decoding Encoded WrongShape /0 expected a constructor: a string, or an object with one key
+Err decoding Encoded UnknownTag /0 unknown constructor "Square"; expected "Dot", "Circle", "Rect", "Labelled"
+Err decoding Encoded UnknownTag /0 unknown constructor "Square"; expected "Dot", "Circle", "Rect", "Labelled"
+Err decoding Encoded WrongShape /0 expected a constructor: a string, or an object with one key
+Err decoding Encoded WrongShape /0/Rect expected an array of 2 elements
+Err decoding Encoded WrongShape /0/Rect/0 expected a number
+Err decoding Encoded MissingKey /0/Labelled/label missing key "label"
+-- decode, every error
+Err decoding Encoded WrongShape /0/Rect/0 expected a number | decoding Encoded WrongShape /0/Rect/1 expected a number | decoding Encoded WrongShape /1/Labelled/label expected a string | decoding Encoded WrongShape /1/Labelled/size expected a number | decoding Encoded UnknownTag /2 unknown constructor "Nope"; expected "Dot", "Circle", "Rect", "Labelled"
+-- a recursive type under the depth bound
+Ok (.3(.2(.1.)))
+Ok (.3(.2(.1.)))
+Err decoding Encoded DepthExceeded /Node/2/Node/2/Node/0 the depth limit is reached
+-- encode
+Ok ["Dot",{"Circle":2.5},{"Rect":[1,2]},{"Labelled":{"label":"q"}},{"Labelled":{"label":"r","size":5}}]
+Ok {"Node":[{"Node":["Leaf",1,"Leaf"]},2,"Leaf"]}
+Err encoding Encoded PrintFailed /0/Circle JSON has no number for NaN or an infinity | encoding Type InvalidValue /1/Rect/0 expected a safe integer

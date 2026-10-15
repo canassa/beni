@@ -290,6 +290,11 @@ pub const WellKnown = enum(u32) {
     close,
     base,
     offset,
+    // NOT a prelude name: the third well-known method, a type's `codec`
+    // (`docs/design/schema.md` §12.2), and the core module whose calls
+    // the code generator writes as a derived codec's own (§12.10).
+    codec,
+    Json,
 
     pub fn symbol(w: WellKnown) Symbol {
         return @fromBackingInt(@intCast(@backingInt(w)));

@@ -1,0 +1,37 @@
+-- decode
+Ok 42
+Ok 9007199254740991
+Err decoding Encoded InvalidValue / expected a safe integer
+Err decoding Encoded InvalidValue / expected a safe integer
+Err decoding Encoded WrongShape / expected a number
+Ok 1000.0
+Err decoding Encoded WrongShape / expected a number
+Ok False
+Err decoding Encoded WrongShape / expected a boolean
+Ok hi
+Err decoding Encoded WrongShape / expected a string
+Ok é
+Ok 😀
+Err decoding Encoded InvalidValue / expected one character
+Err decoding Encoded InvalidValue / expected one character
+Err decoding Encoded WrongShape / expected a string
+Ok ⊤
+Err decoding Encoded WrongShape / expected an array of 0 elements
+Err decoding Encoded WrongShape / expected an array of 0 elements
+Ok {"any":[true,null]}
+Ok -2147483648
+Err decoding Encoded InvalidValue / expected a 32-bit integer
+Err decoding Encoded InvalidValue / expected a 32-bit integer
+Err decoding Encoded WrongShape / expected nothing: ⊥ has no value
+Ok 1 2.0 True s c 7 3
+Err decoding Encoded MissingKey /small missing key "small"
+-- encode
+Ok 42
+Err encoding Type InvalidValue / expected a safe integer
+Err encoding Encoded PrintFailed / JSON has no number for NaN or an infinity
+Err encoding Encoded PrintFailed / JSON has no number for NaN or an infinity
+Ok "x"
+Ok []
+Ok 5
+Ok {"bool":true,"char":"😀","float":2.5,"int":1,"small":-7,"string":"s","unit":[],"value":{"k":[1,null]}}
+Err encoding Encoded PrintFailed /float JSON has no number for NaN or an infinity

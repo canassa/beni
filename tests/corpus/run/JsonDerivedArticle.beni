@@ -1,0 +1,57 @@
+-- `Json.decode` inferred from use, as Roc's `JsonParseInferredArticle.roc`
+-- reads an article (`schema.md` §12.1, §12.5): nothing annotates the
+-- decoded value, so its type is what `summarize` reads of it — `title`
+-- and `author` as strings, `views` as an `Int`, `tags` as a list of
+-- strings — closed at those four fields by Roc's rule, since the record's
+-- row reaches nothing the declaration's type says. A key the program does
+-- not read is an unknown key, ignored; a read field missing, or of another
+-- type, fails before any field is touched. `dump --stage=types` prints the
+-- closed record as `article`'s type, and `ordering_test` checks that the
+-- reverse declaration order infers and prints the same. Both paths, as
+-- `JsonDerivedTable`.
+import Json
+import Node
+import Schema exposing (Issue)
+
+
+summarize : String → String
+summarize text =
+    case Json.decode text of
+        Ok article →
+            article.title
+                ++ " by "
+                ++ article.author
+                ++ ", "
+                ++ String.fromInt article.views
+                ++ " views: "
+                ++ String.join article.tags ", "
+
+        Err issues →
+            "not an article: " ++ String.join (List.map issues issue) "; "
+
+
+issue : Issue → String
+issue i = String.join (List.map i.path segment) "/" ++ " " ++ i.message
+
+
+segment : Schema.PathSegment → String
+segment s =
+    case s of
+        Schema.Field name →
+            name
+
+        Schema.Index n →
+            String.fromInt n
+
+
+main : Node.Program
+main =
+    Node.printLines
+        [ summarize "{\"title\":\"Roc\",\"author\":\"Ann\",\"views\":3,\"tags\":[\"fp\",\"json\"]}"
+        , summarize
+            "{\"title\":\"Roc\",\"author\":\"Ann\",\"views\":3,\"tags\":[],\"draft\":true,\"body\":{\"any\":1}}"
+        , summarize "{\"title\":\"Roc\",\"author\":\"Ann\",\"tags\":[]}"
+        , summarize "{\"title\":\"Roc\",\"author\":\"Ann\",\"views\":3.5,\"tags\":[]}"
+        , summarize "{\"title\":\"Roc\",\"author\":\"Ann\",\"views\":3,\"tags\":[1]}"
+        , summarize "[]"
+        ]

@@ -1,0 +1,62 @@
+--! The library side of `JsonDerivedModules`: a forwarding generic decoder,
+--! a validated id read through its module's `codec`, an opaque type whose
+--! module reads its shape with `Schema.structural`, and a declared schema
+--! with a renamed key.
+
+import Json
+import Schema exposing (Codec, Issue)
+
+
+pub type alias Page a =
+    items : List a
+    total : Int
+
+
+-- The caller chooses `a`: the requirement is the annotation's, and each
+-- caller's evidence is a definition of its own module.
+pub decodePage : String → Result (List Issue) (Page a)
+    where a.codec : ⊤ → Codec a
+decodePage text = Json.decode text
+
+
+pub opaque type UserId
+    = UserId Int
+
+
+pub userId : UserId → String
+userId (UserId n) = "user#" ++ String.fromInt n
+
+
+-- A validated newtype: its module's `codec` runs the smart constructor.
+pub codec : ⊤ → Codec UserId
+codec _ = Schema.erased (Schema.converted Schema.int (Schema.conversion toId fromId))
+
+
+toId : Int → Result (List Issue) UserId
+toId n =
+    if n > 0 then
+        Ok (UserId n)
+    else
+        Err [ Schema.issue "a user id is positive" ]
+
+
+fromId : UserId → Result (List Issue) Int
+fromId (UserId n) = Ok n
+
+
+-- A declared schema that renames a key; a structural alias of the same
+-- shape is read by its Beni names (§12.2 step 0).
+pub schema Account =
+    accountId : Int as "account-id"
+    owner : String
+
+
+pub type alias AccountRow =
+    accountId : Int
+    owner : String
+
+
+-- A generic declaration a derived schema is given at run time.
+pub schema Envelope a =
+    data : a
+    version : Int

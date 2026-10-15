@@ -12,7 +12,10 @@ const SchemaPlan = @import("../check/SchemaPlan.zig");
 pub const magic = "BENISPL\x00";
 /// 2: a `type_refs` row carries an alias's body and an `alias` term its
 /// arguments only, as in the interface (`checker-v2.md` §14.2).
-pub const format_version: u32 = 2;
+/// 3: a module's derived codecs (`schema.md` §12.10): four columns,
+/// `codecs` (a definition row each), `codec_ctors`, `type_targets` and
+/// `value_targets`, five node tags and three primitives.
+pub const format_version: u32 = 3;
 
 pub const Column = enum(u32) {
     definitions,
@@ -36,20 +39,24 @@ pub const Column = enum(u32) {
     symbols,
     schema_targets,
     ctor_targets,
+    codecs,
+    codec_ctors,
+    type_targets,
+    value_targets,
     strings,
 
     pub const count: u32 = @typeInfo(Column).@"enum".field_names.len;
 
     pub fn width(c: Column) u32 {
         return switch (c) {
-            .definitions => 44,
+            .definitions, .codecs => 44,
             .node_tags, .term_tags, .literal_bytes, .strings => 1,
             .node_lhs, .node_rhs, .node_tokens, .extra, .term_lhs, .term_rhs, .type_extra, .symbols => 4,
             .fields, .checks, .annotations => 20,
             .variants => 24,
             .conversions => 16,
             .type_refs => 16,
-            .schema_targets, .ctor_targets => 12,
+            .schema_targets, .ctor_targets, .codec_ctors, .type_targets, .value_targets => 12,
             .literals => 8,
         };
     }
@@ -107,6 +114,10 @@ pub fn write(gpa: Allocator, plan: *const SchemaPlan, interner: *const InternPoo
     lengths[@backingInt(Column.symbols)] = @intCast(plan.symbols.len);
     lengths[@backingInt(Column.schema_targets)] = @intCast(plan.schema_targets.len);
     lengths[@backingInt(Column.ctor_targets)] = @intCast(plan.ctor_targets.len);
+    lengths[@backingInt(Column.codecs)] = @intCast(plan.codecs.len);
+    lengths[@backingInt(Column.codec_ctors)] = @intCast(plan.codec_ctors.len);
+    lengths[@backingInt(Column.type_targets)] = @intCast(plan.type_targets.len);
+    lengths[@backingInt(Column.value_targets)] = @intCast(plan.value_targets.len);
     lengths[@backingInt(Column.strings)] = @intCast(blob.items.len);
 
     var offsets: [Column.count]u32 = undefined;
@@ -129,12 +140,11 @@ pub fn write(gpa: Allocator, plan: *const SchemaPlan, interner: *const InternPoo
         std.mem.writeInt(u32, row[4..8], lengths[i], .little);
     }
 
-    for (plan.definitions, 0..) |d, i| {
-        const row = col(out, offsets, .definitions)[i * 44 ..][0..44];
-        words(row[0..40], &.{ @backingInt(d.name), @backingInt(d.decl), d.params_start, d.params_end, @backingInt(d.root), @backingInt(d.type_ref), @backingInt(d.encoded_ref), @backingInt(d.program_term), @backingInt(d.encoded_term), d.token });
-        row[40] = d.program_properties;
-        row[41] = d.encoded_properties;
-    }
+    for (plan.definitions, 0..) |d, i| writeDefinition(col(out, offsets, .definitions)[i * 44 ..][0..44], d);
+    for (plan.codecs, 0..) |d, i| writeDefinition(col(out, offsets, .codecs)[i * 44 ..][0..44], d);
+    for (plan.codec_ctors, 0..) |c, i| words(col(out, offsets, .codec_ctors)[i * 12 ..][0..12], &.{ @backingInt(c.name), c.order, c.args });
+    for (plan.type_targets, 0..) |t, i| writeTarget(col(out, offsets, .type_targets)[i * 12 ..][0..12], t.package, t.module, t.name);
+    for (plan.value_targets, 0..) |t, i| writeTarget(col(out, offsets, .value_targets)[i * 12 ..][0..12], t.package, t.module, t.name);
     if (plan.nodes.len != 0) {
         const tags = plan.nodes.items(.tag);
         const lhs = plan.nodes.items(.lhs);
@@ -211,6 +221,23 @@ pub fn write(gpa: Allocator, plan: *const SchemaPlan, interner: *const InternPoo
     return out;
 }
 
+fn writeDefinition(row: *[44]u8, d: SchemaPlan.Definition) void {
+    words(row[0..40], &.{ @backingInt(d.name), @backingInt(d.decl), d.params_start, d.params_end, @backingInt(d.root), @backingInt(d.type_ref), @backingInt(d.encoded_ref), @backingInt(d.program_term), @backingInt(d.encoded_term), d.token });
+    row[40] = d.program_properties;
+    row[41] = d.encoded_properties;
+}
+
+fn writeTarget(row: *[12]u8, package: SourceStore.Package, module: SchemaPlan.SymbolIndex, name: SchemaPlan.SymbolIndex) void {
+    row[0] = @backingInt(package);
+    std.mem.writeInt(u32, row[4..8], @backingInt(module), .little);
+    std.mem.writeInt(u32, row[8..12], @backingInt(name), .little);
+}
+
+fn readDefinition(row: *const [44]u8) error{BadPlan}!SchemaPlan.Definition {
+    if (row[40] & ~@as(u8, 7) != 0 or row[41] & ~@as(u8, 7) != 0 or row[42] != 0 or row[43] != 0) return error.BadPlan;
+    return .{ .name = @fromBackingInt(@intCast(word(row, 0))), .decl = @fromBackingInt(@intCast(word(row, 1))), .params_start = word(row, 2), .params_end = word(row, 3), .root = @fromBackingInt(@intCast(word(row, 4))), .type_ref = @fromBackingInt(@intCast(word(row, 5))), .encoded_ref = @fromBackingInt(@intCast(word(row, 6))), .program_term = @fromBackingInt(@intCast(word(row, 7))), .encoded_term = @fromBackingInt(@intCast(word(row, 8))), .token = word(row, 9), .program_properties = row[40], .encoded_properties = row[41] };
+}
+
 pub fn read(gpa: Allocator, bytes: []const u8, interner: *const InternPool.Global) ReadError!SchemaPlan {
     var in: Interning = .{ .find = interner };
     return decode(gpa, bytes, &in);
@@ -270,10 +297,29 @@ fn decode(gpa: Allocator, bytes: []const u8, interning: *Interning) ReadError!Sc
 
     const defs = try gpa.alloc(SchemaPlan.Definition, lengths[@backingInt(Column.definitions)]);
     plan.definitions = defs;
-    for (defs, 0..) |*d, i| {
-        const row = section(bytes, offsets, lengths, .definitions)[i * 44 ..][0..44];
-        if (row[40] & ~@as(u8, 7) != 0 or row[41] & ~@as(u8, 7) != 0 or row[42] != 0 or row[43] != 0) return error.BadPlan;
-        d.* = .{ .name = @fromBackingInt(@intCast(word(row, 0))), .decl = @fromBackingInt(@intCast(word(row, 1))), .params_start = word(row, 2), .params_end = word(row, 3), .root = @fromBackingInt(@intCast(word(row, 4))), .type_ref = @fromBackingInt(@intCast(word(row, 5))), .encoded_ref = @fromBackingInt(@intCast(word(row, 6))), .program_term = @fromBackingInt(@intCast(word(row, 7))), .encoded_term = @fromBackingInt(@intCast(word(row, 8))), .token = word(row, 9), .program_properties = row[40], .encoded_properties = row[41] };
+    for (defs, 0..) |*d, i| d.* = try readDefinition(section(bytes, offsets, lengths, .definitions)[i * 44 ..][0..44]);
+    const codecs = try gpa.alloc(SchemaPlan.Definition, lengths[@backingInt(Column.codecs)]);
+    plan.codecs = codecs;
+    for (codecs, 0..) |*d, i| d.* = try readDefinition(section(bytes, offsets, lengths, .codecs)[i * 44 ..][0..44]);
+    const codec_ctors = try gpa.alloc(SchemaPlan.CodecCtor, lengths[@backingInt(Column.codec_ctors)]);
+    plan.codec_ctors = codec_ctors;
+    for (codec_ctors, 0..) |*c, i| {
+        const row = section(bytes, offsets, lengths, .codec_ctors)[i * 12 ..][0..12];
+        c.* = .{ .name = @fromBackingInt(@intCast(word(row, 0))), .order = word(row, 1), .args = word(row, 2) };
+    }
+    const type_targets = try gpa.alloc(SchemaPlan.TypeTarget, lengths[@backingInt(Column.type_targets)]);
+    plan.type_targets = type_targets;
+    for (type_targets, 0..) |*t, i| {
+        const row = section(bytes, offsets, lengths, .type_targets)[i * 12 ..][0..12];
+        if (!allZero(row[1..4])) return error.BadPlan;
+        t.* = .{ .package = std.enums.fromInt(SourceStore.Package, row[0]) orelse return error.BadPlan, .module = @fromBackingInt(@intCast(word(row, 1))), .name = @fromBackingInt(@intCast(word(row, 2))) };
+    }
+    const value_targets = try gpa.alloc(SchemaPlan.ValueTarget, lengths[@backingInt(Column.value_targets)]);
+    plan.value_targets = value_targets;
+    for (value_targets, 0..) |*t, i| {
+        const row = section(bytes, offsets, lengths, .value_targets)[i * 12 ..][0..12];
+        if (!allZero(row[1..4])) return error.BadPlan;
+        t.* = .{ .package = std.enums.fromInt(SourceStore.Package, row[0]) orelse return error.BadPlan, .module = @fromBackingInt(@intCast(word(row, 1))), .name = @fromBackingInt(@intCast(word(row, 2))) };
     }
     var nodes: std.MultiArrayList(SchemaPlan.Node) = .empty;
     errdefer nodes.deinit(gpa);
@@ -324,6 +370,17 @@ pub fn verify(plan: *const SchemaPlan) bool {
         if ((encoded.tag != .app and encoded.tag != .alias) or encoded.lhs != @backingInt(d.encoded_ref)) return false;
         for (plan.extra[d.params_start..d.params_end]) |name| if (name >= symbol_len) return false;
     }
+    // A derived codec has no endpoint types of its own (`SchemaPlan.codecs`).
+    for (plan.codecs) |d| {
+        if (@backingInt(d.name) >= symbol_len or d.params_start > d.params_end or d.params_end > plan.extra.len) return false;
+        if (@backingInt(d.root) >= node_len) return false;
+        for (plan.extra[d.params_start..d.params_end]) |name| if (name >= symbol_len) return false;
+    }
+    for (plan.codec_ctors) |c| {
+        if (@backingInt(c.name) >= symbol_len or !indicesInRange(plan.extra, c.args, node_len)) return false;
+    }
+    for (plan.type_targets) |t| if (@backingInt(t.module) >= symbol_len or @backingInt(t.name) >= symbol_len) return false;
+    for (plan.value_targets) |t| if (@backingInt(t.module) >= symbol_len or @backingInt(t.name) >= symbol_len) return false;
     if (node_len != 0) {
         const tags = plan.nodes.items(.tag);
         const lhs = plan.nodes.items(.lhs);
@@ -350,6 +407,14 @@ pub fn verify(plan: *const SchemaPlan) bool {
             .conversion => if (l >= node_i or r >= plan.conversions.len) return false,
             .check => if (l >= node_i or r >= plan.checks.len) return false,
             .annotation => if (l >= node_i or r >= plan.annotations.len) return false,
+            .tuple => if (!indicesInRange(plan.extra, l, node_i) or r != 0) return false,
+            .constructors => {
+                if (l >= plan.type_targets.len or !indicesInRange(plan.extra, r, plan.codec_ctors.len)) return false;
+                for (rangeAt(plan.extra, r).?) |c| if (!indicesInRange(plan.extra, plan.codec_ctors[c].args, node_i)) return false;
+            },
+            .maybe => if (l >= node_i or r & ~@as(u32, 7) != 0) return false,
+            .codec_ref => if (l >= plan.codecs.len or !indicesInRange(plan.extra, r, node_i)) return false,
+            .codec_value => if (l >= plan.value_targets.len or r != 0) return false,
         };
     }
     for (plan.fields) |f| if (@backingInt(f.name) >= symbol_len or @backingInt(f.external) >= plan.literals.len or @backingInt(f.child) >= node_len) return false;
@@ -386,7 +451,9 @@ fn verifyOwnership(gpa: Allocator, plan: *const SchemaPlan) Allocator.Error!bool
     defer work.deinit(gpa);
     try work.ensureTotalCapacity(gpa, plan.nodes.len);
 
-    for (plan.definitions, 0..) |definition, definition_i| {
+    const all_count = plan.definitions.len + plan.codecs.len;
+    for (0..all_count) |definition_i| {
+        const definition = if (definition_i < plan.definitions.len) plan.definitions[definition_i] else plan.codecs[definition_i - plan.definitions.len];
         const owner: u32 = @intCast(definition_i);
         const root = @backingInt(definition.root);
         if (owners[root] != none) return false;
@@ -425,9 +492,21 @@ fn claimChildren(plan: *const SchemaPlan, node: SchemaPlan.Node, owner: u32, own
                 if (!claim(owner, @backingInt(payload), owners, none, work)) return false;
             }
         },
-        .list, .nullable, .conversion, .check, .annotation => {
+        .list, .nullable, .conversion, .check, .annotation, .maybe => {
             if (!claim(owner, node.lhs, owners, none, work)) return false;
         },
+        .tuple => for (rangeAt(plan.extra, node.lhs).?) |child| {
+            if (!claim(owner, child, owners, none, work)) return false;
+        },
+        .constructors => for (rangeAt(plan.extra, node.rhs).?) |c| {
+            for (rangeAt(plan.extra, plan.codec_ctors[c].args).?) |child| {
+                if (!claim(owner, child, owners, none, work)) return false;
+            }
+        },
+        .codec_ref => for (rangeAt(plan.extra, node.rhs).?) |child| {
+            if (!claim(owner, child, owners, none, work)) return false;
+        },
+        .codec_value => {},
     }
     return true;
 }

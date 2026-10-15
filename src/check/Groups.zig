@@ -361,6 +361,14 @@ pub fn solveGroup(s: *Solve, g: Group, done: *[]const u32) Error!Ended {
     // into it (a default's consequence nests one that back-edges, §10.8), so
     // the members are read after them.
     if (!s.frames.items[index].merged) try s.settle();
+    // The `codec` wanteds of the group's declarations, which waited for the
+    // last default (schema.md §12.5, §12.10): closed and derived, and what
+    // that readied settled.
+    if (!s.frames.items[index].merged and s.codecs.pending.items.len != 0) {
+        const inherited_now: []const u32 = if (s.frames.items[index].inherited) |i| i.members.items else &.{};
+        const codec_members = if (inherited_now.len == 0) g.members else try std.mem.concat(s.cx.scratch, u32, &.{ g.members, inherited_now });
+        if (try @import("Codec.zig").boundary(s, codec_members)) try s.settle();
+    }
     if (s.frames.items[index].merged) {
         // An annotated declaration is a singleton SCC, never nested or merged
         // (`Module.bindingGroups` drops edges to it), so a merged frame has

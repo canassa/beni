@@ -208,6 +208,23 @@ fn onApp(s: *Solve, id: WantedId, root: Var, a: TypeStore.Structure.App) Error!v
     return Resolve.reject(s, id, true);
 }
 
+/// §9.3 step 3 alone, for a `codec` wanted whose receiver's module declares
+/// `codec` (`Codec.zig`, schema.md §12.2 step 2): this module's value, or
+/// another's `pub` one — instantiated, matched, its requirements the
+/// sub-wanteds.
+pub fn moduleRule(s: *Solve, id: WantedId, root: Var, a: TypeStore.Structure.App) Error!void {
+    const cx = s.cx;
+    const w = s.evidence.get(id);
+    const entry = cx.types.entry(a.type);
+    if (entry.module == cx.module) {
+        const decl = s.ownValue(w.method) orelse return Resolve.reject(s, id, false);
+        return ownMethod(s, id, root, decl, entry);
+    }
+    const iface = cx.iface(entry.module);
+    const value = iface.findValue(cx.interner, w.method) orelse return Resolve.reject(s, id, false);
+    return importedMethod(s, id, root, a.type, entry, value);
+}
+
 /// Whether module `module` declares `name` without `pub` (§10.2). An error
 /// path only: it reads another module's Bir (`reads.zig`
 /// notes it).

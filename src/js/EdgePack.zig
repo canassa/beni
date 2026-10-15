@@ -217,7 +217,7 @@ pub fn decode(arena: Allocator, bytes: []const u8, in: Reach.Input, m: Graph.Ind
     // `Builder.module` makes them: declarations, derived rows, suspendable
     // bodies and schema members.
     const bir = in.birOf(m);
-    const nodes = [4]usize{ bir.decls.len, in.dispatchOf(m).derived.len, bir.decls.len, bir.decls.len * SchemaGraph.Member.count };
+    const nodes = [4]usize{ bir.decls.len, in.dispatchOf(m).derived.len, bir.decls.len, in.schemaSlots(m) * SchemaGraph.Member.count };
     var ats: [4][]const u32 = undefined;
     for (&ats, nodes) |*at, n| {
         at.* = try r.words(arena) orelse return null;
@@ -333,7 +333,7 @@ const Reader = struct {
             .decl, .twin => bir.decls.len,
             .derived => in.dispatchOf(m).derived.len,
             .ctor => bir.ctors.len,
-            .schema => bir.decls.len * SchemaGraph.Member.count,
+            .schema => in.schemaSlots(m) * SchemaGraph.Member.count,
         };
         if (index >= bound and !(kind == .ctor and index == Reach.never_ctor)) return null;
         return .{ .at = .{ .module = m, .kind = kind, .index = index } };

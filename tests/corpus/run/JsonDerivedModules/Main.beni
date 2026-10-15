@@ -1,0 +1,91 @@
+-- Derived codecs across modules (`schema.md` §12.2, §12.5, §12.10): a
+-- generic decoder in `Lib` forwards its `where` to this module, which
+-- answers it with a definition of its own; `Lib.UserId`'s module `codec`
+-- runs its smart constructor wherever the type is, at the root or inside a
+-- record; `Sealed`, opaque here, reads through the `codec` its own module
+-- derives with `Schema.structural`; a structural alias of a declared
+-- schema's shape is read by its Beni names, the declaration by its renamed
+-- key; and `Schema.derived ⊤` is given to a generic declaration at run
+-- time. Both paths, as `JsonDerivedTable`.
+import Json
+import Lib exposing (AccountRow, Page, UserId)
+import Node
+import Schema exposing (Codec, Issue)
+import Sealed exposing (Sealed)
+import Show
+
+
+type alias User =
+    id : UserId
+    name : String
+
+
+users : Page User → String
+users p =
+    String.join (List.map p.items λu → Lib.userId u.id ++ " " ++ u.name) ", "
+        ++ " of "
+        ++ String.fromInt p.total
+
+
+id : String → Result (List Issue) UserId
+id text = Json.decode text
+
+
+sealed : String → Result (List Issue) (List Sealed)
+sealed text = Json.decode text
+
+
+row : String → Result (List Issue) AccountRow
+row text = Json.decode text
+
+
+userCodec : Codec User
+userCodec = Schema.derived ⊤
+
+
+main : Node.Program
+main =
+    Node.printLines
+        [ "-- a forwarding decoder, its evidence this module's"
+        , Show.result
+            (Lib.decodePage
+                "{\"items\":[{\"id\":1,\"name\":\"a\"},{\"id\":2,\"name\":\"b\"}],\"total\":2}"
+            )
+            users
+        , Show.result (Lib.decodePage "{\"items\":[{\"id\":0,\"name\":\"a\"}],\"total\":1}") users
+        , "-- a module's codec at the root"
+        , Show.result (id "7") Lib.userId
+        , Show.result (id "-1") Lib.userId
+        , "-- an opaque type derived in its own module"
+        , Show.result (sealed "[{\"Sealed\":[\"s\",1]}]") λxs →
+            String.join (List.map xs Sealed.show) ","
+        , Show.result (Result.andThen (sealed "[{\"Sealed\":[\"t\",2]}]") Json.encode) λs → s
+        , Show.result (sealed "[{\"Sealed\":[\"s\"]}]") λxs →
+            String.join (List.map xs Sealed.show) ","
+        , "-- a structural alias reads Beni names; the declaration its key"
+        , Show.result (row "{\"accountId\":1,\"owner\":\"o\"}") λr →
+            String.fromInt r.accountId ++ " " ++ r.owner
+        , Show.result (row "{\"account-id\":1,\"owner\":\"o\"}") λr →
+            String.fromInt r.accountId ++ " " ++ r.owner
+        , Show.result (Lib.Account.parse "{\"account-id\":1,\"owner\":\"o\"}") λr →
+            String.fromInt r.accountId ++ " " ++ r.owner
+        , "-- a derived schema given to a generic declaration"
+        , Show.result
+            (Schema.parse
+                (Lib.Envelope.schema userCodec)
+                "{\"data\":{\"id\":3,\"name\":\"c\"},\"version\":1}"
+            )
+            λenv → Lib.userId env.data.id ++ " v" ++ String.fromInt env.version
+        , Show.result
+            (Schema.parse
+                (Lib.Envelope.schema userCodec)
+                "{\"data\":{\"id\":0,\"name\":\"c\"},\"version\":1}"
+            )
+            λenv → env.data.name
+        , Show.result
+            (Result.andThen
+                (Schema.parse userCodec "{\"id\":4,\"name\":\"d\"}")
+                (Schema.print userCodec _)
+            )
+            λs → s
+        ]

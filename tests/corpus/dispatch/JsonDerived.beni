@@ -1,0 +1,28 @@
+-- dispatch: the evidence of a derived codec (`schema.md` §12.8, §12.10).
+-- `point` decodes a concrete record: its site passes `codec 1`, a
+-- definition of this module with no slot. `points` forwards its `where`:
+-- its call of `Json.decode` passes `codec 0`, `List a`'s definition, whose
+-- one slot is the declaration's own `param 0`. `pair` calls `points` at
+-- `Point`, so its site hands `points` the record's codec, `codec 1` again.
+-- The definitions are numbered in their keys' text order — `List.List(#0)`
+-- before `{x:…,y:…}` — not in the order the uses were met.
+import Json
+import Schema exposing (Codec, Issue)
+
+
+type alias Point =
+    x : Int
+    y : Int
+
+
+point : String → Result (List Issue) Point
+point text = Json.decode text
+
+
+points : String → Result (List Issue) (List a)
+    where a.codec : ⊤ → Codec a
+points text = Json.decode text
+
+
+pair : String → Result (List Issue) (List Point)
+pair text = points text

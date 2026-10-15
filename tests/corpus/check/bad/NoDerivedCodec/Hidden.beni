@@ -1,0 +1,9 @@
+--! `NoDerivedCodec`'s opaque type: its constructors only this module sees,
+--! and it declares no `codec`.
+
+pub opaque type Secret
+    = Secret String
+
+
+pub reveal : Secret → String
+reveal (Secret s) = s

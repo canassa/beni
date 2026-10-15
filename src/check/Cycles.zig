@@ -165,7 +165,7 @@ const Graph = struct {
                 .top => |target| if (target < count) try g.targets.append(g.scratch, target),
                 // Cross-module or synthesised; neither can close a cycle
                 // between two declarations of this module.
-                .ext, .derived, .ext_derived, .primitive, .undetermined => {},
+                .ext, .derived, .ext_derived, .primitive, .undetermined, .codec => {},
             };
         }
         g.at[count] = @intCast(g.targets.items.len);

@@ -134,15 +134,29 @@ pub expectString : Expect Error String
 expectString = Expect "" λresponse → answered response
 
 
---| The body parsed as JSON by the schema (`Schema.parse`), with `Accept:
---| application/json` sent unless a header names another type. A 2xx body
---| the schema does not parse — text that is not JSON, a field missing — is
---| `BadBody` with the schema's issues, each with its path; a status that
---| is not 2xx is `BadStatus`, whatever its body.
+--| The body parsed as JSON into the type the request's answer is used at,
+--| whose schema the compiler derives from that type, as `Json.decode`'s
+--| (`schema.md` §12): `Accept: application/json` is sent unless a header
+--| names another type. A 2xx body that does not parse — text that is not
+--| JSON, a field missing — is `BadBody` with the issues, each with its
+--| path; a status that is not 2xx is `BadStatus`, whatever its body.
 --|
---|     Http.get { url = "/api/notes", expect = Http.expectJson (Schema.list noteSchema) }
-pub expectJson : Schema e a → Expect Error a
-expectJson schema = Expect "application/json" λresponse →
+--|     Http.get { url = "/api/notes", expect = Http.expectJson }
+pub expectJson : Expect Error a
+    where a.codec : ⊤ → Schema.Codec a
+expectJson = Expect "application/json" λresponse →
+    Result.andThen (answered response) λtext →
+        Result.mapError (Schema.parse (a.codec ⊤) text) BadBody
+
+
+--| The body parsed as JSON by the schema given (`Schema.parse`): what
+--| `expectJson` does with a derived schema, with a declared one, which
+--| reads what the type alone cannot say — a renamed key, a default, a
+--| conversion.
+--|
+--|     Http.get { url = "/api/notes", expect = Http.expectSchema (Schema.list (Note.schema ⊤)) }
+pub expectSchema : Schema e a → Expect Error a
+expectSchema schema = Expect "application/json" λresponse →
     Result.andThen (answered response) λtext → Result.mapError (Schema.parse schema text) BadBody
 
 
