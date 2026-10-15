@@ -1,0 +1,27 @@
+-- emit/release/app: a compiled schema reader's failure test is the
+-- comparison alone (`backend.md` §9, *Compact statements*).
+--
+-- A field's worker stops at its first failure unless the options collect
+-- every one: `if (f === c.fail && !c.all) return c.fail`. Specialisation
+-- knows `c.all` is `false` in an application that never asks for every
+-- error, and folds `!c.all` to `true`; the release peephole then writes
+-- the test as `f === c.fail`, since `x && true` is `x` wherever only its
+-- truth is read. No `&&true` is left in the file.
+import Node exposing (Program)
+
+
+schema User =
+    name : String as "user-name"
+    age : Int
+
+
+main : Program
+main =
+    Node.printLines
+        [ case User.parse "{\"user-name\":\"a\",\"age\":3}" of
+            Ok u →
+                u.name
+
+            Err _ →
+                "failed"
+        ]

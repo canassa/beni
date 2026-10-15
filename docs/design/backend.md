@@ -7351,6 +7351,12 @@ the whole `run/` and `browser/` corpus's release pass is their differential test
    `(x & k) !== 0` is `x & k` and `(x & k) === 0` is `!(x & k)`: a bitwise operator's value is an
    integer and never `NaN`, so it is truthy exactly when it is not zero. A comparison node referred
    to from anywhere else keeps its `Bool`. Fixture: `emit/release/core/FlagTests`.
+   *Amended 2026-10-15* (research 102, §6.1 item 7): in the same test positions, **`x && true`
+   and `x || false` are `x`** — the literal decides nothing and evaluates nothing, so the operator
+   is truthy exactly when `x` is — when neither node is referred to from anywhere else. It is what
+   specialisation leaves where it folds `!c.all` to `true` in a compiled schema reader's
+   `if (f === c.fail && !c.all)`, and an `||` arm folded to `false`. Conduit: −136 brotli tea,
+   −68 direct. Fixture: `emit/release/app/SchemaReaderTest`.
 2. **No result where the result is `()`**: §4's *A `()` result is not written*, with its fixture
    `emit/release/core/UnitResults`.
 5. **An optional call** (`Print.optionalCall`). Where its value is discarded — an expression

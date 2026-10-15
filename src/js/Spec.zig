@@ -8214,6 +8214,9 @@ const Pts = struct {
 /// operator's value is an integer, never `NaN`, so it is truthy exactly when
 /// it is not zero. Only a node nothing else refers to is rewritten, so a
 /// comparison lowering shared with a value position keeps its `boolean`.
+/// In the same positions `x && true` and `x || false` are `x` (amended
+/// 2026-10-15): what specialisation leaves of a schema reader's
+/// `f === c.fail && !c.all` once it knows `c.all`.
 pub fn peephole(gpa: Allocator, ir: *JsIr) Allocator.Error!void {
     const refs = try gpa.alloc(u8, ir.nodes.len);
     defer gpa.free(refs);
@@ -8269,7 +8272,20 @@ pub fn peephole(gpa: Allocator, ir: *JsIr) Allocator.Error!void {
             const op: JsIr.BinaryOp = @fromBackingInt(@intCast(td.rhs));
             const b = ir.extraData(@fromBackingInt(@intCast(td.lhs)), JsIr.Binary);
             switch (op) {
-                .logical_and, .logical_or => try tests.appendSlice(gpa, &.{ b.left, b.right }),
+                .logical_and, .logical_or => {
+                    // `x && true` and `x || false` are `x` in a test: the
+                    // literal decides nothing and evaluates nothing, so the
+                    // operator's value is truthy exactly when `x` is.
+                    const neutral: JsIr.Node.Tag = if (op == .logical_and) .true_lit else .false_lit;
+                    if (ir.tag(b.right) == neutral and refs[t.int()] <= 1 and refs[b.left.int()] <= 1) {
+                        ir.nodes.items(.tag)[t.int()] = ir.tag(b.left);
+                        ir.nodes.items(.data)[t.int()] = ir.data(b.left);
+                        ir.nodes.items(.pos)[t.int()] = ir.pos(b.left);
+                        try tests.append(gpa, t);
+                        continue;
+                    }
+                    try tests.appendSlice(gpa, &.{ b.left, b.right });
+                },
                 .strict_eq, .strict_ne => {
                     if (refs[t.int()] > 1) continue;
                     const bits: Index = if (isZero(ir, b.right) and isBits(ir, b.left))
