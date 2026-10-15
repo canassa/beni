@@ -19,6 +19,113 @@ was saturating the four cores and read 784 ms where the real number was
 
 ---
 
+## 2026-10-15 — three-way LLVM ReleaseSafe nullary overhead
+
+**Apple M2 Pro, 16 GiB, macOS 26.7.1, zorg 0.17.1+zorg.1.** Before #126
+is `134d24ab9`, current master is `2ca55a928`, and #135 is `310fd7887`.
+All three are built with **LLVM ReleaseSafe**, measured at `--jobs=1 --no-cache`
+on the same input paths. Medians of 12 runs per compiler, all six execution
+orders twice after one warm-up triple:
+
+| checking, ms | before #126 | master | #135 | added cost removed |
+|---|---:|---:|---:|---:|
+| Annotated 63k-line field file | 50.44 | 76.03 | 65.21 | **42.3%** |
+| Unannotated 63k-line field file | 49.38 | 153.05 | 152.95 | **~0%** |
+| Generated 100k corpus | 68.32 | 70.85 | 70.18 | noisy |
+
+Recovery is `(master − PR) / (master − before)`. The known-record fix still
+leaves 57.7% of the added checking cost, and the PR is 29.3% slower than before
+#126 on that input. The 100k corpus's ranges overlap, so its small denominator
+cannot establish a precise recovery fraction.
+
+The unannotated file proves that deferred receivers remain expensive: all 60,000
+reads still allocate both rows. The LLVM ReleaseSafe profile, scaled to 504k lines, puts 55.4% of its
+checker samples in rank adjustment, including 22.7% in the safety invariant
+check. This is mainly dependency traversal and boundary bookkeeping, not just
+row allocation. Known-record reads also still generate method arrows and effect
+edges before the fast path; their effect pass remains 0.99 → 4.15 ms.
+
+[The full report](profiling/nullary-overhead.md) retains process medians, phase
+timings, input hashes, branch counts, profiling instructions and specific further
+optimisation candidates that keep deferred resolution and its defaults. The
+[field generator](field-dense.py) now supports `--unannotated`; the
+[three-way runner](field-dense-three-way.py) checks identical streams and exits.
+The compiler implementation is unchanged by this measurement follow-up.
+
+This comparison supersedes the following **ReleaseFast, two-way** entry for
+claims about recovery of #126's overhead.
+
+---
+
+## 2026-10-15 — known record reads without deferred rows (issue #131)
+
+**Apple M2 Pro, 16 GiB, macOS 26.7.1 (25G241), zorg 0.17.1+zorg.1,
+ReleaseFast.** Before is `7ff72c031`; after uses direct field unification for
+already-proved record receivers outside recursive frames. Both binaries use
+embedded core, `--jobs=1 --no-cache`. Eight measured pairs follow one warm-up
+pair, alternating which binary goes first; figures below are medians of the
+per-file Chrome trace spans summed over the input. Whole-process wall times
+include reading, diagnostics and process startup, and are reported separately.
+Other work was running on this machine; whole-process differences, especially
+on the many-file corpus, must not be read as a checker speedup.
+
+The original review's synthetic generator was not retained, so this does not
+reproduce its 284 → 401 ms absolute numbers. `field-dense.py` retains a
+replacement: **63,000 lines, 1,000 annotated functions, 60,000 field reads**,
+three fields per record, including reads in local bindings. Its optional
+argument scales the function count for sampling without changing the shape.
+
+| input / phase | before, ms | after, ms |
+|---|---:|---:|
+| field-dense / checking | 44.69 | 41.36 |
+| field-dense / solving | 30.48 | 27.15 |
+| field-dense / whole process | 69.83 | 66.71 |
+| generated 100k corpus / checking | 43.27 | 42.60 |
+| generated 100k corpus / whole process | 277.92 | 281.48 |
+
+The 100k corpus is `bench`'s 644-file, 100,082-line generated workload. Its
+generator still emits the removed name `modBy`; the existing name migration
+is applied to the generated input **before either binary measures it**, leaving
+the line count unchanged. It exits successfully with 85 argument-order warnings,
+identical between the binaries; it is not the generator's unmodified error path.
+The small, handwritten `bench/corpus` is also measured separately in the retained
+JSON results.
+
+**Profile before editing.** `/usr/bin/sample`, 1 ms interval, on the same shape
+scaled to 16,000 functions (1,008,000 lines): 248 of 459 solver samples (~54%),
+or 248 of 622 module-check samples (~40%), were in the method constraint arm.
+That includes the necessary field unification: 224 of those samples entered
+`Resolve.step` and 222 entered `Instances.lookup`. Wanted/obligation creation is
+also visible. These are inclusive sampled stacks, not a claim that all that
+work can disappear. The fast path removes the rows and dispatch while sharing
+exactly the existing required-record unification; it keeps the cycle proof,
+rejection and resolution-budget checks, and leaves recursive provenance alone.
+
+Reproduce (save each binary after its corresponding build):
+
+```sh
+zorg build -Doptimize=ReleaseFast
+cp zig-out/bin/beni /tmp/beni-before
+# apply the checker change, then build and save /tmp/beni-after the same way
+zorg build bench -- --generate=100000 --iterations=1
+/tmp/beni-before fmt --migrate-names .zig-cache/bench-gen
+python3 bench/field-dense.py > .zig-cache/FieldDense.beni
+python3 bench/field-dense-compare.py /tmp/beni-before /tmp/beni-after \
+  .zig-cache/FieldDense.beni .zig-cache/bench-gen bench/corpus > /tmp/fields.json
+```
+
+The comparison script asserts successful exits and byte-identical stdout and
+stderr on every pair, and retains all phase timings alongside their medians.
+The field-file check improves **7.5%** (solving **10.9%**); the 100k corpus
+shows no material change. [The retained measurements](results/2026-10-15-nullary-fields.json)
+include all individual checking, solving, constraint-generation and wall timings.
+
+Semantic coverage remains the existing corpus, its emitted-output hashes, the
+nullary declaration-order cases, and the determinism tests; no golden or run
+hash is changed to accommodate the optimisation.
+
+---
+
 ## 2026-10-15 — nullary method checking cost
 
 PR #126's independent review measured 63k lines of field-dense synthetic code

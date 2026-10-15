@@ -1,0 +1,45 @@
+{
+  "mode": "LLVM ReleaseSafe, same PR compiler sources; verbose compile command replayed with -fno-strip instead of -fstrip solely for native symbolisation; not a timing build",
+  "method": "macOS sample, 1 ms interval, up to 2 s, 8000 functions / 504000 lines per case; inclusive function counts, recursive occurrences counted once per sampled stack",
+  "inputs": {
+    "known": {
+      "check.Module.check": 474,
+      "check.Groups.check": 396,
+      "check.Solve.solve": 275,
+      "check.Solve.settle": 86,
+      "check.Generalize.adjustRanks": 73,
+      "check.Generalize.assertOwnedWithin": 7,
+      "check.Decide.attach": 0,
+      "check.Decide.drain": 6,
+      "check.Resolve.step": 12,
+      "check.Instances.fieldRead": 121,
+      "check.Effects.run": 18,
+      "check.Walk.assertProved": 25
+    },
+    "unknown": {
+      "check.Module.check": 1116,
+      "check.Groups.check": 1038,
+      "check.Solve.solve": 701,
+      "check.Solve.settle": 820,
+      "check.Generalize.adjustRanks": 618,
+      "check.Generalize.assertOwnedWithin": 253,
+      "check.Decide.attach": 33,
+      "check.Decide.drain": 192,
+      "check.Resolve.step": 175,
+      "check.Instances.fieldRead": 140,
+      "check.Effects.run": 20,
+      "check.Walk.assertProved": 29
+    }
+  },
+  "timing_size_cross_check": {
+    "input": "unannotated 1000 functions / 63000 lines",
+    "method": "same native profiler binary; sample at 1 ms up to 1 s or process exit; small counts are qualitative",
+    "inclusive_samples": {
+      "check.Module.check": 99,
+      "check.Generalize.adjustRanks": 46,
+      "check.Generalize.assertOwnedWithin": 20,
+      "check.Decide.attach": 5,
+      "check.Decide.drain": 17
+    }
+  }
+}

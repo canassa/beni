@@ -51,7 +51,13 @@ Five facts make this cheaper in beni than in any language surveyed:
 Measured in PR #126's independent review (2026-10-15; machine not recorded):
 field-dense synthetic code, 63k lines with `--jobs=1`, checks 41% slower
 (284 → 401 ms); the 100k-line bench corpus moves 0.31 → 0.32 s.
-Recorded without optimisation in the follow-up.
+Recorded without optimisation in the follow-up. Issue #131 subsequently adds a
+known-record fast path; [the benchmark log](../../../bench/README.md) retains its
+replacement generator, profile and interleaved before/after measurements. The subsequent
+[three-way LLVM ReleaseSafe comparison](../../../bench/profiling/nullary-overhead.md)
+finds that #135 removes 42.3% of the added checking time on known-record reads,
+but essentially none when receivers are initially flexible. Its profile identifies
+owned-dependency rank walks and retained method/effect bookkeeping as further work.
 
 - `x.m` no longer tells a reader whether it is a free read or a call. The call may allocate (`.copy`,
   `.reverse`), take O(n) time, be impure, or suspend.

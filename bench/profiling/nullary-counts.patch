@@ -1,0 +1,74 @@
+diff --git a/src/check/Decide.zig b/src/check/Decide.zig
+index bb70705ee..b61e241e5 100644
+--- a/src/check/Decide.zig
++++ b/src/check/Decide.zig
+@@ -152,6 +152,10 @@ fn decide(s: *Solve, id: Id, default: bool) Error!void {
+     switch (row.kind) {
+         .nullary_dot => {
+             const wanted: Evidence.WantedId = @fromBackingInt(row.index);
++            if (default) s.nullary_profile[9] += 1;
++            const content = s.store().resolvedContent(row.vars[0]);
++            if (content == .structure and (content.structure == .record or content.structure == .empty_record)) s.nullary_profile[11] += 1;
++            if (content == .structure and content.structure == .app) s.nullary_profile[10] += 1;
+             switch (s.store().resolvedContent(row.vars[0])) {
+                 .flex => |flags| {
+                     if (flags.kind == .number and Resolve.isWellKnownName(s.evidence.get(wanted).method))
+diff --git a/src/check/Module.zig b/src/check/Module.zig
+index c79b0f209..9c3a663cd 100644
+--- a/src/check/Module.zig
++++ b/src/check/Module.zig
+@@ -276,6 +276,7 @@ pub fn check(in: Input) Error!Check.Counters {
+     solver.groups = &groups;
+     const p4_token = if (in.profile) |p| p.begin() else null;
+     try groups.checkAll(&solver);
++    std.debug.print("NULLARY_PROFILE module={d} counts={any}\n", .{ in.module.int(), solver.nullary_profile });
+     // A `pub eq`/`compare` written for a type of this module that no use can
+     // call is said here, used or not.
+     try Instances.ownSignatures(&solver);
+diff --git a/src/check/Resolve.zig b/src/check/Resolve.zig
+index 2bdeac79b..f28a9789c 100644
+--- a/src/check/Resolve.zig
++++ b/src/check/Resolve.zig
+@@ -168,6 +168,22 @@ pub fn create(s: *Solve, name: Symbol, receiver: Var, method_type: Var, origin:
+ /// receiver is known, else riding on it.
+ pub fn method(s: *Solve, node: Tree.Node) Error!void {
+     const info = s.tree.extraData(node.a, Tree.Method);
++    if (s.cx.bir.instTag(node.region) == .field_access) {
++        s.nullary_profile[0] += 1;
++        const st = s.store();
++        const root, const content = st.resolved(info.receiver);
++        const record = content == .structure and (content.structure == .record or content.structure == .empty_record);
++        if (record) {
++            s.nullary_profile[2] += 1;
++            s.nullary_profile[if (st.proved(root)) @as(usize, 8) else 3] += 1;
++        } else if (content == .flex) {
++            s.nullary_profile[4] += 1;
++        } else {
++            s.nullary_profile[5] += 1;
++        }
++        if (s.recursive_frames != 0) s.nullary_profile[6] += 1;
++        if (s.resolver.steps >= step_budget - 1) s.nullary_profile[7] += 1;
++    }
+     // A known record has no nullary methods. Keep recursive frames on the
+     // full path: their rows carry canonical pessimism and hint provenance.
+     // An unproved or rejected receiver also needs step's ordinary checks.
+@@ -182,6 +198,7 @@ pub fn method(s: *Solve, node: Tree.Node) Error!void {
+                 // its nullary obligation, without storing either row.
+                 s.resolver.steps += 1;
+                 s.obligations.seq += 2;
++                s.nullary_profile[1] += 1;
+                 return Instances.fieldRead(s, info.receiver, info.name, f.result, node.region);
+             }
+         }
+diff --git a/src/check/Solve.zig b/src/check/Solve.zig
+index 42e811b50..bdeae76d5 100644
+--- a/src/check/Solve.zig
++++ b/src/check/Solve.zig
+@@ -178,6 +178,7 @@ spare: std.ArrayList(std.ArrayList(u32)) = .empty,
+ last_bad_call: Bir.Inst.OptionalIndex = .none,
+ depth: u32 = 0,
+ generalisations: u64 = 0,
++nullary_profile: [12]u64 = @splat(0),
+ /// The module's wanteds and givens (§4.2), resolved by `Resolve.zig`.
+ evidence: Evidence = .{},
+ /// The resolver's own tables (§9): one owner, `Resolve.zig`.
