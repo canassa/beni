@@ -4413,24 +4413,24 @@ test "a release build maps the one hoisted file back to each module's beni sourc
         "check-release-map.mjs",
         "out/_main.mjs",
         "run",
-        "q=|a=>{",
+        "p=|a=>{",
         "let b=a*7919",
         "let |b=a*7919",
         "b=|a*7919",
         "b+b*3",
-        "r=|b=>{if",
-        "return a(q(",
+        "q=|b=>{if",
+        "return a(p(",
         "throw new Error",
-        "s=|a=>a.length",
-        "s(n(a))",
-        "s(|n(a))",
-        "t=|b=>{let d=0",
+        "r=|a=>a.length",
+        "r(n(a))",
+        "r(|n(a))",
+        "s=|b=>{let d=0",
         "for(let c=b",
         "for(let |c=b",
         "let |d=0",
         "import process",
         "process.stdout",
-        "v(u)",
+        "u(t)",
     });
 
     // ┌─────────────────────────────────────────┐
@@ -4442,24 +4442,24 @@ test "a release build maps the one hoisted file back to each module's beni sourc
         \\source beni:///core/String.beni: embedded
         \\source beni:///core/List.beni: embedded
         \\source ../src/Main.beni: its text
-        \\q=|a=>{ -> Main.beni:24:13 spread
+        \\p=|a=>{ -> Main.beni:24:13 spread
         \\let b=a*7919 -> Main.beni:22:5
         \\let |b=a*7919 -> Main.beni:22:5 doubled
         \\b=|a*7919 -> Main.beni:23:9
         \\b+b*3 -> Main.beni:24:5
-        \\r=|b=>{if -> Main.beni:12:5 describe
-        \\return a(q( -> Main.beni:14:13
+        \\q=|b=>{if -> Main.beni:12:5 describe
+        \\return a(p( -> Main.beni:14:13
         \\throw new Error -> Main.beni:17:13
-        \\s=|a=>a.length -> Main.beni:29:5 total
-        \\s(n(a)) -> Main.beni:34:17
-        \\s(|n(a)) -> Main.beni:33:14
-        \\t=|b=>{let d=0 -> Main.beni:50:5 report
+        \\r=|a=>a.length -> Main.beni:29:5 total
+        \\r(n(a)) -> Main.beni:34:17
+        \\r(|n(a)) -> Main.beni:33:14
+        \\s=|b=>{let d=0 -> Main.beni:50:5 report
         \\for(let c=b -> Main.beni:49:9
         \\for(let |c=b -> Main.beni:49:9 i
         \\let |d=0 -> Main.beni:49:9 acc
         \\import process -> unmapped
         \\process.stdout -> unmapped
-        \\v(u) -> unmapped
+        \\u(t) -> unmapped
         \\frame describe Main.beni:17:13
         \\frame <anonymous> Main.beni:55:114
         \\exit 1
