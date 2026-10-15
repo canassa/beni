@@ -122,3 +122,42 @@ jobs:
             .zig-cache
             ~/.cache/zig
           key: zig-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock') }}-${{ github.sha }}
+
+  # The guard: the one job that the rule on master requires, so the rule
+  # stays correct when a job here is added, renamed or split into a
+  # matrix. It passes only when every job in `needs:` succeeded; a failed,
+  # skipped or cancelled job fails it.
+  #
+  # `if: always()` makes the guard report in every case. Without it, a
+  # failed job skips the guard, and GitHub counts a skipped job as a
+  # passed required check. `if: ${{ !cancelled() }}` has the same hole: a
+  # cancelled run skips the guard.
+  #
+  # When a newer push to a pull request cancels the older run (the
+  # concurrency group above), the older run's guard still runs, because
+  # GitHub keeps a job whose `if` is true on a cancel. It reads `cancelled`
+  # for `tests` and fails. That failure is on the older commit, and the
+  # rule reads the head commit, where the newer run reports. A push to
+  # master is never cancelled: each has a group of its own.
+  #
+  # `needs:` sees only the jobs of this workflow. To make a job a merge
+  # condition, add it to this file and to `needs:`. To bind another
+  # workflow, give it `on: workflow_call` in place of its own triggers,
+  # call it from a job here with `uses: ./.github/workflows/<file>.yml`
+  # and the `permissions:` and `secrets:` it needs, and add that job to
+  # `needs:`.
+  check:
+    name: check
+    if: always()
+    needs: [tests]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    timeout-minutes: 5
+    steps:
+      - name: Check the result of every job
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          echo "$RESULTS"
+          echo "$RESULTS" | jq --exit-status 'all(.[].result; . == "success")' > /dev/null
