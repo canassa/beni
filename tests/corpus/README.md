@@ -405,9 +405,13 @@ compares instead of `.expected`. The differences known today:
   frames (`frame`);
 - layout: happy-dom lays nothing out, so sizes and positions are zero;
 - CSS values: a property the page sets through `style.setProperty`
-  goes back into the `style` attribute as CSSOM serialises it in
-  Chrome, a colour as `rgb(…)`, and as the page wrote it in happy-dom
-  (`browser/tea/BikeWars`: `#222` is `rgb(34, 34, 34)` in Chrome);
+  goes back into the `style` attribute as each DOM serialises it. A
+  colour is `rgb(…)` in Chrome and as the page wrote it in happy-dom
+  (`browser/tea/BikeWars`: `#222` is `rgb(34, 34, 34)` in Chrome). A
+  number has at most six decimals in happy-dom, as CSSOM says, and six
+  significant digits in Chrome (`browser/direct/Sternhalma`:
+  `275.75128869403574px` is `275.751289px` in happy-dom and `275.751px`
+  in Chrome);
 - leaving the page: happy-dom sees only a navigation through `location`,
   so a form's submission, `window.open(url, "_self")`, a link activated
   outside the `click` step (a `press`, a script's `a.click()`) and
