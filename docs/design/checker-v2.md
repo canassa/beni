@@ -5885,3 +5885,23 @@ a one-off prepend in an `update`, a prepend onto a pattern's `rest`, a cons step
 `[ f x, …go rest ]`, a list pattern, a push accumulator, a construction bound to a name first,
 and `List.foldl xs [] List.cons`. A dependency's prepend loop — a module outside the root package
 — is silent unless `--explain`.
+
+**Nullary dot amendment (2026-10-15; §4.5, §8.1, §9, §13).** Static-dispatch-spike.md §1.1 and
+language.md §6.3 own the accepted research 96 rule. Nullary dots use deferred
+receiver resolution, default flexible receivers to record reads before the
+binding boundary closes other wanteds, and never promote an inferred clause.
+Resolved methods are retagged as zero-argument `method_call` instructions on
+the checked BIR before downstream consumers; record paths remain unchanged.
+This invariant also applies when loading a check-cache entry.
+
+The implementation uses a `nullary_dot` obligation (§4.5): its receiver is
+its deciding owner, its method type a dependant, and its index names an ordinary
+callee wanted. Keeping these obligations independent of the name-keyed method
+sets preserves reading and calling the same function field at different arities.
+Their defaults use the existing owner-rank boundary queue alongside `?` and
+markup defaults; a default that makes a record drains other ready wanteds before
+closing requirements. P4's solved callees retag the session-owned resolved BIR
+before effect planning. P6 omits field-read sites; check-cache hits replay the
+retag from non-field callee sites. Frontend serialization precedes resolution
+and checking, and therefore retains the original `field_access` instructions.
+Check-cache entry v11 discards entries written before this rule.

@@ -88,20 +88,48 @@ for an application is `call` (`src/bir/Bir.zig:263`).
 | Form | Meaning | Lowers to |
 |---|---|---|
 | `x.m a b` | method call: receiver `x`, method `m`, arguments `a`, `b` | `method_call { receiver = x, name = m, args = [a, b] }` |
-| `x.m` | field access, unchanged (`language.md` §6.3) | `field_access(x, m)` |
-| `(x.m) a` | field call, unchanged: parentheses opt out | `call(field_access(x, m), [a])` |
+| `x.m` | receiver-directed field read or nullary method call (2026-10-15 amendment below) | initially `field_access(x, m)`; resolved methods become `method_call { x, m, [] }` |
+| `(x.m) a` | ordinary call of the value `x.m` (a field on records); parentheses opt out of application-to-method lowering | `call(field_access(x, m), [a])` |
 | `x.m a \|> f` | `f (x.m a)`; pipes rewrite first (`language.md` §8 step 2) | `call(f, [method_call{x, m, [a]}])` |
 | `e \|> x.m a` | `x.m e a` — the pipe inserts at the **first argument**, which is the first argument *after* the receiver | `method_call { x, m, [e, a] }` |
-| `x.a.m b` | receiver is `x.a`, a field access; method `m` | `method_call { field_access(x, a), m, [b] }` |
+| `x.a.m b` | receiver is `x.a`, resolved independently by its receiver type; method `m` | `method_call { field_access(x, a), m, [b] }` |
 | `.m` | accessor lambda, unchanged (`language.md` §3 `Atom := dot_lower`) | `lambda` |
 | `x.m _ b` | placeholder over the method call: `λy -> x.m y b` (`language.md` §6.7) | `lambda` over `method_call` |
 | `x.0.m a` | receiver is the tuple element `x.0` | `method_call { tuple_index(x, 0), m, [a] }` |
 | `M.f x` | qualified value call, **not** a method call: the head is a qualified name — a `qualified_lower` token, lowered to `import_value` or to the BIR tag `qualified` (`src/bir/Bir.zig:164`) — and not a field access | `call(import_value(M, f), [x])` |
 | `M.v.m a` | receiver is the qualified value `M.v`; method `m`. The head of the application is a field access on a qualified name, so this is a method call, unlike `M.f x` above | `method_call { import_value(M, v), m, [a] }` |
 
-`x.m` with **no** arguments is never a method call, even when `m` resolves to a nullary method:
-`language.md` §6.3's field access wins, because an application with no arguments is not an
-application. Write `(M.m) x` or `M.m x` to reach a nullary method of module `M`.
+**Amendment — nullary method calls (owner accepted 2026-10-15, research 96).**
+`x.m` is decided by the receiver's type. A record reads field `m`, unchanged;
+a nominal type `T` declared in module `M` calls `M.m x`. Aliases are transparent.
+An unknown receiver defers the choice. If it remains flexible when its binding
+group or local binding is generalised, default to the field: unify it with
+`{ r | m : result }`. Run these defaults and drain resolution **before** closing
+other wanteds, so they too see any record information. A nullary dot never
+promotes an inferred method requirement. A rigid receiver uses its annotated
+`where a.m : a → result`, as an ordinary dot-call does.
+
+Records report `unknown_field`; nominal types report `unknown_method` or
+`private_method`, naming the declaring module. Other shapes report
+`no_methods_on_shape` (well-known methods retain their existing rules).
+A method requiring further arguments reports `too_few_args`, suggesting
+`x.m argument` or `x.m _`; there is no automatic partial application.
+An unannotated `size xs = xs.length` still infers `{ r | length : a } → a`.
+Passing a list then reports a type mismatch with a hint explaining that the
+helper inferred a record: annotate its receiver, or write `List.length xs`.
+
+Chains decide each dot independently: `a.b.copy` may read `b` and call `copy`;
+`xs.reverse.length` calls twice. `.m` is still an accessor lambda and its body
+obeys this rule; without type information it defaults to a record accessor.
+A call may allocate, be impure or suspend; bare dot syntax promises none of
+those are absent. Existing record programs retain their meaning.
+
+**Checked-form invariant (§8.3).** Before effects planning, ownership, write
+sets, markup lowering or emission consume checked BIR, every resolved nullary
+method is rewritten to an ordinary `method_call` with zero explicit arguments
+and its ordinary dispatch site. Record reads remain `field_access`. Apply the
+rewrite to the checked copy, including cache hits, never the cached frontend
+artifact; bump the check-cache entry version, not the frontend version.
 
 ### 1.2 Resolution
 
@@ -118,6 +146,7 @@ receiver type `R`:
 | `()` | well-known names only: `eq` is constantly `True`, `compare` constantly `EQ` | any other name: `no_methods_on_shape` |
 | a function type | nothing | `not_equatable` for `eq` (the existing code, `checker.md` §8.1); `no_methods_on_shape` for every other name including `compare` |
 | a type variable | a method constraint `m : <the type at this use>` is added to the variable (§6.1) and the call is typed by the constraint's result; resolution is deferred (a dot-call whose receiver becomes a record before the constraint is generalised is the field call after all: *Deferred receiver*, §11, amended 2026-09-26) | `missing_where_constraint` if the variable is rigid and its `where` clause does not name `m` |
+| a flexible variable at generalisation, **nullary `x.m` only** (2026-10-15) | default to a record field read, before other wanteds close | ordinary record diagnostics; never an inferred method clause |
 | `err` | `err`, silently (`checker.md` §6.2, "errors never stop the build") | none |
 
 **The module rule.** A method of type `T` is any `pub` value of the module that declares `T`. It is
@@ -1972,6 +2001,12 @@ const cmp = (a, b, c) => Dict$insert(String$compare, a, b, c);
 
 ### 8.3 `method_call`
 
+*Amended 2026-10-15.* A resolved nullary dot (§1.1) uses this same instruction
+with an empty explicit argument range. Its receiver remains the first argument
+of the emitted call, and its dispatch site is ordinary. Record dots remain
+`field_access`, with no callee site. Every post-check path walker therefore
+sees calls as calls, including ownership's fresh result from `copy`.
+
 | Target | Emitted |
 |---|---|
 | `top d` | `Module$m(receiver, args…)`, evidence first if the callee has any |
@@ -3336,10 +3371,9 @@ and why §5.1 moves two of them out. `core/Dict.beni` declares three (`Dict`, an
 and `NColor`), so `Dict`'s 22 `pub` values are nominally also `Tree`'s and `NColor`'s methods; both
 are private and never receive a dot-call, so nothing breaks, but it is the clash in miniature.
 
-**A nullary method is unreachable by dot-call.** `x.m` with no arguments is a field access (§1.1),
-so a method whose only parameter is the receiver — `t.toString`, `s.length` — must be written
-`M.toString t`. This is the price of keeping `language.md` §6.3 unchanged, and it is why §5 adds no
-zero-argument methods to core.
+**Nullary methods use dot-call** (amended 2026-10-15). §1.1's dated
+amendment supersedes the former limit: `x.m` calls `M.m x` on a nominal
+receiver, with field access retained for records and unresolved defaults.
 
 **A constrained `let` binding is monomorphic.** *Lifted on 2026-09-27 by the owner's decision for a `let`
 **function** binding whose requirements are not only dot-calls' own: it generalises and takes
