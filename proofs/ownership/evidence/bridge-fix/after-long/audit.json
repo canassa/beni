@@ -1,0 +1,90 @@
+{
+  "judgeSha256": "4c2ce1efadeb8ec896a7e3081d17bfa77a4562478caa6e2a9857f6c2c4588e79",
+  "observation": "Original programs; complete final value, reads and externalReads in both unchanged Lean interpreters. The judge labels the supplied original core minimum under --only; no reduction is used.",
+  "campaign": {
+    "programs": 116456,
+    "translated": 43066,
+    "skipped": 73390,
+    "valueChecked": 43066,
+    "leads": 1725,
+    "precision": 401,
+    "environment": {
+      "node": "v24.19.0",
+      "compilerSha256": "e1b89253c23f16c052be58f9e3ce97b41de0696afea4523118a1709505186ca1",
+      "oracleSha256": "b2916bad05b34923c80fe06ca97db5a8335b688c58a28bc586ed0c74298d363b"
+    },
+    "streams": [
+      {
+        "name": "fixtures-0.jsonl",
+        "programs": 490,
+        "translated": 224,
+        "skipped": 266,
+        "valueChecked": 224,
+        "sha256": "27c16813417690b56c0968697dd32017542fc5c352ce0c8fcab050fe8b580c3a",
+        "agreements": 218,
+        "precision": 6
+      },
+      {
+        "name": "enumerate-0.jsonl",
+        "programs": 55966,
+        "translated": 27769,
+        "skipped": 28197,
+        "valueChecked": 27769,
+        "agreements": 27208,
+        "leads": 294,
+        "precision": 267,
+        "sha256": "aaee0cb2b54439c2b3eeaad7f1cad4a7b819d8778d542a63b7e199439b8596d9"
+      },
+      {
+        "name": "generator-17.jsonl",
+        "programs": 20000,
+        "translated": 5006,
+        "skipped": 14994,
+        "valueChecked": 5006,
+        "agreements": 4478,
+        "leads": 491,
+        "precision": 37,
+        "sha256": "1cfc13959605e7c8c6148520238cd96bc7a2599988b5773f2ae8e1be4a0d2e80"
+      },
+      {
+        "name": "generator-20261011.jsonl",
+        "programs": 20000,
+        "translated": 5054,
+        "skipped": 14946,
+        "valueChecked": 5054,
+        "agreements": 4541,
+        "leads": 470,
+        "precision": 43,
+        "sha256": "dfc0307698b269dd43e4851eb996311dacf5cdcd6ffa08c1f9e4fe30c1197bed"
+      },
+      {
+        "name": "generator-314159.jsonl",
+        "programs": 20000,
+        "translated": 5013,
+        "skipped": 14987,
+        "valueChecked": 5013,
+        "agreements": 4495,
+        "leads": 470,
+        "precision": 48,
+        "sha256": "f5e323829a081028782fee84df094cc25374667f08ca5017d7780da2a5eb0ede"
+      }
+    ]
+  },
+  "confirmed": 0,
+  "confirmedIds": [],
+  "agreeingOriginalLeads": 1725,
+  "originalClusterLeadsStillAccepted": {
+    "RecursiveCapture": [],
+    "FoldFeedback": [],
+    "CaseResult": [],
+    "CaptureResult": [],
+    "BlockResult": [],
+    "CaptureOperand": []
+  },
+  "reverse": {
+    "before": 401,
+    "nowAccepted": 0,
+    "stillRefused": 401,
+    "refusalDetailsChanged": 0
+  }
+}

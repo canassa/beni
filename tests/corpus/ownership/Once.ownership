@@ -4,8 +4,8 @@ module Once
   24:18 construction xs: rejected later-use: xs is read again at 25:5
   29:36 construction xs: accepted once
   33:35 construction xs: rejected once: it is handed to List.map, which may call it more than once
-  summary once: π1 AW; res π1
-  summary twice: π1 W
+  summary once: π1 RAW; res π1
+  summary twice: π1 RW
   summary readAfter: π1 RW
   summary viaMaybe: π1 RAW; res #Just.0 π1
   summary viaMap: π1 RAW, π2 R; res [*] ~fresh2{lost} ~π1, fresh1{lost}

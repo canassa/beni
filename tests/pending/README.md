@@ -168,10 +168,8 @@ existing slot limit after the render-only rejection is removed.
 
 ### Ownership bridge soundness leads (2026-10-15)
 
-Six minimal `check/bad/direct/Bridge*.beni` fixtures pin refusals for the six
-patterns confirmed by the Lean in-place interpreter. `check/bad/direct/` uses
-`--platform=browser-direct`, so these are enforcement tests without a renderer
-or an artificial runtime. All six are red as `exit=0 codes=none`; their `.codes`
-files require `list_still_used`. Their counts, Zig rule locations and executable
-Lean twins are in [BRIDGE-RESULTS.md](../../proofs/ownership/BRIDGE-RESULTS.md).
-No ownership rule was changed.
+The six `Bridge*.beni` refusals were promoted to `tests/corpus/check/bad/direct/`
+with full diagnostics. Result paths, callback loans, captured recursive results
+and callee-environment disjointness are specified in ownership-checker.md §29.
+Their original counts and executable Lean twins remain in
+[BRIDGE-RESULTS.md](../../proofs/ownership/BRIDGE-RESULTS.md).

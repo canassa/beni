@@ -1441,6 +1441,10 @@ const Case = struct {
         var list: std.ArrayList([]const u8) = .empty;
         try list.appendSlice(c.arena, args);
         if (c.fixture.core) try list.append(c.arena, "--core");
+        // Enforcement refusals use the same platform as their ownership dump.
+        if (c.kind == .check_bad and args.len != 0 and !std.mem.eql(u8, args[0], "fmt")) {
+            if (c.fixture.platform) |name| try list.append(c.arena, try std.fmt.allocPrint(c.arena, "--platform={s}", .{name}));
+        }
         if (c.fixture.markup and args.len != 0 and !std.mem.eql(u8, args[0], "fmt")) try list.append(c.arena, "--platform=html");
         if (args.len != 0 and (std.mem.eql(u8, args[0], "check") or std.mem.eql(u8, args[0], "build"))) {
             try list.append(c.arena, "--no-cache");

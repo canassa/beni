@@ -1,0 +1,141 @@
+-- Result liveness follows projections through every result-producing form.
+-- The opposite-arm case stays valid: the old value is never read on the
+-- path that writes it. Fresh callback results and transferred accumulators
+-- also remain valid.
+pub oppositeArm flag =
+    xs = [ 1 ]
+    if flag then List.push xs 2 else xs
+
+
+pub freshResult flag =
+    xs = [ 1 ]
+    grown = List.push xs 2
+    if flag then grown else [ 3 ]
+
+
+pub caseProjection flag =
+    state = { values = [ 1 ], count = 0 }
+    grown = List.push state.values 2
+    case flag of
+        Just _ →
+            state.values
+        Nothing →
+            grown
+
+
+pub nestedBlock xs =
+    answer =
+        grown = List.push xs 2
+        { values = xs, count = List.length grown }
+    answer.values
+
+
+pub returnedReader ⊤ =
+    xs = [ 1 ]
+    grown = List.push xs 2
+    { reader = λ⊤ → xs, values = grown }
+
+
+pub laterNamedReader ⊤ =
+    xs = [ 1 ]
+    read ⊤ = xs
+    grown = List.push xs 2
+    List.update [ [] ] 0 λ_ → read ⊤
+
+
+pub freshCallback ⊤ =
+    xs = [ 1 ]
+    grown = List.push xs 2
+    List.update [ grown ] 0 λitem → List.copy item
+
+
+pub ownedFold rows = List.foldl rows [] λitem acc → List.push acc (List.length item)
+
+
+pub reverseBorrow ⊤ =
+    xs = [ 1 ]
+    List.foldr [ xs, [], xs ] [] λitem acc → if List.length acc == 0 then item else List.push acc 9
+
+
+pub retainedInput ⊤ =
+    rows = [ [ 1 ], [ 2 ] ]
+    result = List.foldl rows [] λitem acc → if List.length acc == 0 then item else List.push acc 9
+    ( result, rows )
+
+
+pub recursiveField ⊤ =
+    state = { values = [ 0 ] }
+    loop n = if n == 0 then state.values else List.push (loop (n - 1)) n
+    first = loop 1
+    ( first, loop 1 )
+
+
+pub argumentCaptureField ⊤ =
+    state = { values = [ 0 ] }
+    change ys =
+        grown = List.push ys 2
+        state.values
+    change state.values
+
+
+-- The callee keeps xs even when the write comes from its callback.
+pub callbackCapture xs =
+    change f ys = ( f ys, xs )
+    change (λys → List.push ys 2) xs
+
+
+pub blockArm xs flag =
+    grown = List.push xs 2
+    case flag of
+        True →
+            kept = { values = xs }
+            kept.values
+        False →
+            grown
+
+
+pub mutualCapture ⊤ =
+    xs = [ 0 ]
+    first n = if n == 0 then xs else second (n - 1)
+    second n = if n == 0 then xs else List.push (first (n - 1)) n
+    kept = first 2
+    ( kept, second 2 )
+
+
+-- A try operand's case result must preserve its error payload's later read.
+pub earlyResult flag =
+    xs = [ 1 ]
+    grown = List.push xs 2
+    value = (if flag then Err xs else Ok grown)?
+    Ok value
+
+
+pub nestedRecursive ⊤ =
+    xs = [ 0 ]
+    outer n =
+        inner m = if m == 0 then xs else List.push (inner (m - 1)) m
+        inner n
+    kept = outer 1
+    ( kept, outer 1 )
+
+
+-- A callback-result chain remains refused if an inner result is borrowed.
+pub nestedLoan ⊤ =
+    xs = [ 1 ]
+    List.foldl [ xs, [], xs ] [] λitem acc →
+        List.foldl [ 0 ] acc λ_ inner → if List.length inner == 0 then item else List.push inner 9
+
+
+pub nestedFresh rows = List.foldl rows [] λitem acc →
+    List.foldl item acc λx inner → List.push inner x
+
+
+readerFor xs = λ⊤ → xs
+
+
+-- The callee's capture itself holds a class returned by another function.
+pub carriedCapture ⊤ =
+    xs = [ 0 ]
+    read = readerFor xs
+    change ys = ( List.push ys 2, read ⊤ )
+    change xs

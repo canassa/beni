@@ -1,0 +1,331 @@
+{
+  "programs": 116456,
+  "translated": 43066,
+  "skipped": 73390,
+  "valueChecked": 43066,
+  "agreements": 40940,
+  "precision": 401,
+  "leads": 1725,
+  "sites": {
+    "agreement": 38085,
+    "precision": 426,
+    "lead": 1260,
+    "unknown": 43857,
+    "extra": 0,
+    "pending": 713,
+    "ambiguousAgreement": 67,
+    "ambiguousPrecision": 1
+  },
+  "skipReasons": {
+    "private-builder": 3569,
+    "function-valued-observation": 60672,
+    "conditional-shared-publication": 1421,
+    "identity-preserving-close": 4538,
+    "dynamic-shared-root": 298,
+    "ill-typed-core": 762,
+    "shared-function-observation": 18,
+    "model-entry-protocol": 20,
+    "abstract-event-boundary": 21,
+    "abstract-owned-boundary": 20,
+    "late-shared-publication": 1729,
+    "shared-field-root": 40,
+    "unused-capture-slot": 210,
+    "list-traversal-index": 72
+  },
+  "constructs": {
+    "let": {
+      "translated": 345698,
+      "skipped": 1508546
+    },
+    "literal": {
+      "translated": 167665,
+      "skipped": 494527
+    },
+    "closure": {
+      "translated": 57080,
+      "skipped": 336808
+    },
+    "push": {
+      "translated": 41390,
+      "skipped": 204653
+    },
+    "app": {
+      "translated": 52076,
+      "skipped": 284858
+    },
+    "record": {
+      "translated": 27155,
+      "skipped": 89572
+    },
+    "builder": {
+      "translated": 3352,
+      "skipped": 42697
+    },
+    "put": {
+      "translated": 3352,
+      "skipped": 37403
+    },
+    "close": {
+      "translated": 3352,
+      "skipped": 42697
+    },
+    "atom": {
+      "translated": 47035,
+      "skipped": 139687
+    },
+    "branch": {
+      "translated": 12495,
+      "skipped": 41435
+    },
+    "eq": {
+      "translated": 24,
+      "skipped": 33
+    },
+    "traverse-list": {
+      "translated": 8196,
+      "skipped": 52940
+    },
+    "focus": {
+      "translated": 17543,
+      "skipped": 70591
+    },
+    "traverse-range": {
+      "translated": 3954,
+      "skipped": 11604
+    },
+    "set": {
+      "translated": 7622,
+      "skipped": 24768
+    },
+    "shared": {
+      "translated": 1708,
+      "skipped": 22206
+    },
+    "length": {
+      "translated": 23827,
+      "skipped": 103156
+    },
+    "sub": {
+      "translated": 3383,
+      "skipped": 7197
+    },
+    "at": {
+      "translated": 5112,
+      "skipped": 26772
+    },
+    "copy": {
+      "translated": 4632,
+      "skipped": 23542
+    },
+    "recur": {
+      "translated": 3366,
+      "skipped": 6334
+    },
+    "add": {
+      "translated": 2016,
+      "skipped": 16860
+    },
+    "traverse-model": {
+      "translated": 0,
+      "skipped": 25
+    },
+    "prepend": {
+      "translated": 10,
+      "skipped": 0
+    },
+    "events": {
+      "translated": 0,
+      "skipped": 38
+    },
+    "owned": {
+      "translated": 0,
+      "skipped": 43
+    },
+    "lt": {
+      "translated": 680,
+      "skipped": 7229
+    }
+  },
+  "families": {
+    "fixture": {
+      "programs": 98,
+      "translated": 82,
+      "skipped": 16,
+      "agreements": 80,
+      "precision": 2
+    },
+    "sync": {
+      "programs": 44,
+      "translated": 14,
+      "skipped": 30,
+      "agreements": 14
+    },
+    "targeted": {
+      "programs": 348,
+      "translated": 128,
+      "skipped": 220,
+      "agreements": 124,
+      "precision": 4
+    },
+    "enumerate": {
+      "programs": 55966,
+      "translated": 27769,
+      "skipped": 28197,
+      "agreements": 27208,
+      "leads": 294,
+      "precision": 267
+    },
+    "general": {
+      "programs": 18984,
+      "translated": 2642,
+      "skipped": 16342,
+      "agreements": 2610,
+      "leads": 11,
+      "precision": 21
+    },
+    "declarations": {
+      "programs": 26040,
+      "translated": 2073,
+      "skipped": 23967,
+      "agreements": 1990,
+      "precision": 13,
+      "leads": 70
+    },
+    "identity-map": {
+      "programs": 1308,
+      "translated": 0,
+      "skipped": 1308
+    },
+    "library-pipeline": {
+      "programs": 1355,
+      "translated": 0,
+      "skipped": 1355
+    },
+    "branch-traversal": {
+      "programs": 1400,
+      "translated": 1400,
+      "skipped": 0,
+      "agreements": 1400
+    },
+    "fresh-tower": {
+      "programs": 1368,
+      "translated": 1368,
+      "skipped": 0,
+      "agreements": 1368
+    },
+    "captures": {
+      "programs": 1337,
+      "translated": 1337,
+      "skipped": 0,
+      "agreements": 1337
+    },
+    "once-many-wrappers": {
+      "programs": 1384,
+      "translated": 1040,
+      "skipped": 344,
+      "agreements": 946,
+      "precision": 94
+    },
+    "indexed-chain": {
+      "programs": 1347,
+      "translated": 1097,
+      "skipped": 250,
+      "agreements": 1097
+    },
+    "recursive-higher-order-limit": {
+      "programs": 1350,
+      "translated": 1350,
+      "skipped": 0,
+      "leads": 1350
+    },
+    "recursion": {
+      "programs": 1371,
+      "translated": 1371,
+      "skipped": 0,
+      "agreements": 1371
+    },
+    "fresh-nested": {
+      "programs": 1395,
+      "translated": 1395,
+      "skipped": 0,
+      "agreements": 1395
+    },
+    "escape-traversal": {
+      "programs": 1361,
+      "translated": 0,
+      "skipped": 1361
+    }
+  },
+  "precisionPatterns": {
+    "value: need": 18,
+    "List.push: once": 272,
+    "List.update: exclusive": 24,
+    "List.push: it is returned": 95,
+    "List.set: exclusive": 3,
+    "List.push: exclusive": 3
+  },
+  "cases": 2730,
+  "jobs": 8,
+  "minimization": "disabled; original checks and paired executions unchanged",
+  "environment": {
+    "node": "v24.19.0",
+    "compilerSha256": "e1b89253c23f16c052be58f9e3ce97b41de0696afea4523118a1709505186ca1",
+    "oracleSha256": "b2916bad05b34923c80fe06ca97db5a8335b688c58a28bc586ed0c74298d363b"
+  },
+  "streams": [
+    {
+      "name": "fixtures-0.jsonl",
+      "programs": 490,
+      "translated": 224,
+      "skipped": 266,
+      "valueChecked": 224,
+      "sha256": "27c16813417690b56c0968697dd32017542fc5c352ce0c8fcab050fe8b580c3a",
+      "agreements": 218,
+      "precision": 6
+    },
+    {
+      "name": "enumerate-0.jsonl",
+      "programs": 55966,
+      "translated": 27769,
+      "skipped": 28197,
+      "valueChecked": 27769,
+      "agreements": 27208,
+      "leads": 294,
+      "precision": 267,
+      "sha256": "aaee0cb2b54439c2b3eeaad7f1cad4a7b819d8778d542a63b7e199439b8596d9"
+    },
+    {
+      "name": "generator-17.jsonl",
+      "programs": 20000,
+      "translated": 5006,
+      "skipped": 14994,
+      "valueChecked": 5006,
+      "agreements": 4478,
+      "leads": 491,
+      "precision": 37,
+      "sha256": "1cfc13959605e7c8c6148520238cd96bc7a2599988b5773f2ae8e1be4a0d2e80"
+    },
+    {
+      "name": "generator-20261011.jsonl",
+      "programs": 20000,
+      "translated": 5054,
+      "skipped": 14946,
+      "valueChecked": 5054,
+      "agreements": 4541,
+      "leads": 470,
+      "precision": 43,
+      "sha256": "dfc0307698b269dd43e4851eb996311dacf5cdcd6ffa08c1f9e4fe30c1197bed"
+    },
+    {
+      "name": "generator-314159.jsonl",
+      "programs": 20000,
+      "translated": 5013,
+      "skipped": 14987,
+      "valueChecked": 5013,
+      "agreements": 4495,
+      "leads": 470,
+      "precision": 48,
+      "sha256": "f5e323829a081028782fee84df094cc25374667f08ca5017d7780da2a5eb0ede"
+    }
+  ]
+}

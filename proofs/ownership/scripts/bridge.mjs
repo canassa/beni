@@ -18,7 +18,7 @@ const options = Object.fromEntries(process.argv.slice(2).map(x => {
   if (!x.startsWith('--')) throw Error(`unexpected argument ${x}`);
   const [key, ...v] = x.slice(2).split('='); return [key, v.length ? v.join('=') : true];
 }));
-const allowed = ['input', 'out', 'jobs', 'compiler', 'ci', 'long', 'no-build', 'strict', 'suite', 'count', 'seeds', 'bound'];
+const allowed = ['input', 'out', 'jobs', 'compiler', 'ci', 'long', 'no-build', 'strict', 'suite', 'count', 'seeds', 'bound', 'no-minimize'];
 for (const k of Object.keys(options)) if (!allowed.includes(k)) throw Error(`unknown option --${k}`);
 const jobs = Number(options.jobs ?? Math.min(8, availableParallelism()));
 if (!Number.isInteger(jobs) || jobs < 1 || jobs > 8) throw Error('--jobs must be 1..8');
@@ -64,6 +64,7 @@ const total = { programs: 0, translated: 0, skipped: 0, valueChecked: 0, agreeme
   sites: { agreement: 0, precision: 0, lead: 0, unknown: 0, extra: 0, pending: 0,
     ambiguousAgreement:0,ambiguousPrecision:0 },
   skipReasons: {}, constructs: {}, families: {}, precisionPatterns: {}, cases: [], jobs,
+  minimization: options['no-minimize'] ? 'disabled; original checks and paired executions unchanged' : 'historical persistent-runtime relation',
   environment:{node:process.version,compilerSha256:createHash('sha256').update(await readFile(compiler)).digest('hex'),
     oracleSha256:createHash('sha256').update(await readFile(resolve(own,'.lake/build/bin/ownership'))).digest('hex')},streams:[] };
 const bump = (obj, k, n = 1) => { obj[k] = (obj[k] ?? 0) + n; };
@@ -269,7 +270,7 @@ async function checkBatch(programs, n) {
       const evidence = resolve(out,'cases',p.record[2]); await mkdir(evidence,{recursive:true});
       await writeFile(resolve(evidence,`${p.module}.beni`),p.translation.source);
       const originalRuntime = zig ? await confirmation(p,evidence) : {status:"blocked-by-other-refusals"};
-      const reduction = ["unconfirmed","confirmed"].includes(originalRuntime.status) ? await minimize(p,evidence,originalRuntime) : null;
+      const reduction = !options['no-minimize'] && ["unconfirmed","confirmed"].includes(originalRuntime.status) ? await minimize(p,evidence,originalRuntime) : null;
       const runtime = reduction?.runtime ?? originalRuntime;
       const report = { id:p.record[2], family:p.record[1], lean:p.record[8], leanSite:failed, siteLeads, programLead:category==='leads', demands, originalRuntime, runtime, reduction };
       await writeFile(resolve(evidence,'evidence.json'),JSON.stringify({ ...report, record:p.record, declarations:p.ds },null,2));

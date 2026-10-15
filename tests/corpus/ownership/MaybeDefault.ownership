@@ -7,14 +7,14 @@ module MaybeDefault
   53:44 call MaybeDefault.handle model.items: rejected later-use: model.items is read again at 54:30
   58:56 call MaybeDefault.handler model.items: rejected later-use: model.items is read again at 58:24 (MaybeDefault.handler writes π1.items)
   63:37 call MaybeDefault.handle model.items: rejected later-use: model.items is read again at 63:54
-  68:46 List.push model.items: rejected later-use: model.items is read again at 68:24
+  68:46 List.push model.items: rejected later-use: model.items is read again at 68:73
   68:73 call MaybeDefault.handle model.items: rejected later-use: model.items is read again at 68:5
   72:65 call MaybeDefault.handle model.items: rejected later-use: model.items is read again at 72:19
   summary handle: π1.items RAW, π1.items[*] A, π1.other RA; res .items π1.items, .items[*] ~π1.items[*], .other π1.other
-  summary handler: π1.items RAW, π1.items[*] A, π1.other RA; res λ, ◇.items π1.items, ◇.items[*] ~π1.items[*], ◇.other π1.other
+  summary handler: π1.items RAW, π1.items[*] RA, π1.other RA; res λ, ◇.items π1.items, ◇.items[*] ~π1.items[*], ◇.other π1.other
   summary step: π2 RA, π2.items AW, π2.items[*] A, π2.other A; res .items ~π2.items, .items[*] ~π2.items[*], .other ~π2.other, ~π2
   summary stepLambda: π2 RA, π2.items AW, π2.items[*] A, π2.other A; res .items ~π2.items, .items[*] ~π2.items[*], .other ~π2.other, ~π2
-  summary stepCase: π2 A, π2.items RAW, π2.items[*] RA, π2.other RA; res .items π2.items, .items[*] ~π2.items[*], .other π2.other, π2
+  summary stepCase: π2 RA, π2.items RAW, π2.items[*] RA, π2.other RA; res .items π2.items, .items[*] ~π2.items[*], .other π2.other, π2
   summary readAfter: π2 R, π2.items RW, π2.items[*] R
   summary eagerHandler: π2 RA, π2.items RAW, π2.items[*] RA, π2.other R; res .items ~π2.items, .items[*] ~π2.items[*], .other ~fresh1, ~π2
   summary defaultReads: π2 R, π2.items RAW, π2.items[*] A, π2.other A; res .items ~π2.items, .items[*] ~π2.items[*], .other ~π2.items ~π2.other
