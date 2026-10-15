@@ -72,7 +72,7 @@ const tables = new Map();
 // Identical typed reductions recur across the enumerator's many contexts.
 // Cache only intermediate probes; originals and final minima run afresh.
 const reductionCache = new Map();
-const normalizer = `const normalize=x=>{if(typeof x==='function')throw Error('unobservable function');if(x&&typeof x.$plain==='function')x=x.$plain();if(Array.isArray(x))return x.map(normalize);if(x&&typeof x==='object')return Object.fromEntries(Object.entries(x).sort(([a],[b])=>a<b?-1:a>b?1:0).map(([k,v])=>[k,normalize(v)]));return x};`;
+const normalizer = `const normalize=x=>{if(typeof x==='function')throw Error('unobservable function');if(x&&typeof x.$plain==='function')x=x.$plain();if(Array.isArray(x))return x.map(normalize);if(x&&x.$==='Ok')return {f0:1,f1:0,f2:normalize(x.a)};if(x&&x.$==='Err')return {f0:0,f1:normalize(x.a),f2:0};if(x&&x.$==='BridgeEnd')return [];if(x&&x.$==='BridgeLink'){const out=[];for(let node=x;;node=node.b){if(node.$==='BridgeEnd')break;if(node.$!=='BridgeLink')throw Error('invalid bridge chain');out.push(normalize(node.a))}return out}if(x&&typeof x==='object')return Object.fromEntries(Object.entries(x).sort(([a],[b])=>a<b?-1:a>b?1:0).map(([k,v])=>[k,normalize(v)]));return x};`;
 let batch = [], number = 0;
 const queue = new Set();
 let firstFailure;
@@ -90,7 +90,7 @@ async function confirmation(p, dir) {
     emitted+=`\nconst ${p.module}$bridgeRead = x => { globalThis.__bridgeReads.push(globalThis.__bridgeNormalize(x)); return ${p.module}$bridgeRead$original(x); };\n`;
     await writeFile(modulePath,emitted);
     const driver = resolve(dir, `${platform}-driver.mjs`);
-    await writeFile(driver, `const normalize=x=>{if(typeof x==='function')throw Error('unobservable function');if(x&&typeof x.$plain==='function')x=x.$plain();if(Array.isArray(x))return x.map(normalize);if(x&&typeof x==='object')return Object.fromEntries(Object.entries(x).map(([k,v])=>[k,normalize(v)]));return x};\nglobalThis.__bridgeReads=[];globalThis.__bridgeNormalize=normalize;\nconst mod=await import(${JSON.stringify(modulePath)});const result=normalize(mod[${JSON.stringify(p.module+'$run')}]());const shared=Object.fromEntries(Object.entries(mod).filter(([k])=>/\\$g[0-9]+$/.test(k)).map(([k,v])=>[k.split('$').at(-1),normalize(v)]));console.log(JSON.stringify({result,reads:globalThis.__bridgeReads,shared}));\n`);
+    await writeFile(driver, `const normalize=x=>{if(typeof x==='function')throw Error('unobservable function');if(x&&typeof x.$plain==='function')x=x.$plain();if(Array.isArray(x))return x.map(normalize);if(x&&x.$==='Ok')return {f0:1,f1:0,f2:normalize(x.a)};if(x&&x.$==='Err')return {f0:0,f1:normalize(x.a),f2:0};if(x&&x.$==='BridgeEnd')return [];if(x&&x.$==='BridgeLink'){const out=[];for(let node=x;;node=node.b){if(node.$==='BridgeEnd')break;if(node.$!=='BridgeLink')throw Error('invalid bridge chain');out.push(normalize(node.a))}return out}if(x&&typeof x==='object')return Object.fromEntries(Object.entries(x).map(([k,v])=>[k,normalize(v)]));return x};\nglobalThis.__bridgeReads=[];globalThis.__bridgeNormalize=normalize;\nconst mod=await import(${JSON.stringify(modulePath)});const result=normalize(mod[${JSON.stringify(p.module+'$run')}]());const shared=Object.fromEntries(Object.entries(mod).filter(([k])=>/\\$g[0-9]+$/.test(k)).map(([k,v])=>[k.split('$').at(-1),normalize(v)]));console.log(JSON.stringify({result,reads:globalThis.__bridgeReads,shared}));\n`);
     const ran = await run(process.execPath, [driver], root, 10000);
     result[platform] = ran;
   }

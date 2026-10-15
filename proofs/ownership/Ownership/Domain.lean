@@ -288,6 +288,14 @@ def usesArms (nonzero : Bool) (armClosures : Bool := true) (prependRead : Bool :
   | .prim _ xs | .recur xs => atomsUses xs
   | .closure _ xs => atomsUses xs
   | .app f xs => union (atomUses f) (atomsUses xs)
+  | .entry initial retained model body => union (usesArms nonzero armClosures prependRead initial)
+      (union (atomsUses retained) (removeVars [model] (usesArms nonzero armClosures prependRead body)))
+  | .resultCase input err ok a b => union (atomUses input)
+      (union (removeVars [err] (usesArms nonzero armClosures prependRead a))
+        (removeVars [ok] (usesArms nonzero armClosures prependRead b)))
+  | .chainCase input head tail a b => union (atomUses input)
+      (union (usesArms nonzero armClosures prependRead a)
+        (removeVars [head, tail] (usesArms nonzero armClosures prependRead b)))
   | .branch c a b =>
     -- The `branch-closure` control (`armClosures := false`) drops an arm's
     -- uses that are captures of the closures the arm creates.

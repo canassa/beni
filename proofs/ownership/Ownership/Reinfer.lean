@@ -215,6 +215,7 @@ def inferExpr (fuel : Nat) (ctx : Context) (env : Env Abstract)
       let a ← inferExpr f ctx env rhs (union after (removeVars [v] (uses rest))) (site ++ [0])
       inferExpr f ctx ((v, a) :: env) rest after (site ++ [1])
     | .prim op args => primitive ctx site op (← args.mapM (m := Except String) (abstractAtom env)) later
+    | .entry .. | .resultCase .. | .chainCase .. => throw "limit: sum/recursive data in frozen per-call checker"
     | .branch c yes no =>
       let _ ← abstractAtom env c
       let a ← inferExpr f ctx env yes after (site ++ [0])
@@ -331,8 +332,9 @@ decreasing_by all_goals simp_wf; omega
 
 def typeShape : Ty → Abstract
   | .int => .scalar
+  | .result e a => .record [.scalar, typeShape e, typeShape a]
   | .record xs => .record (xs.attach.map (fun x => typeShape x.val))
-  | .list t | .builder t => .list [.unknown] (typeShape t) true
+  | .chain t | .list t | .builder t => .list [.unknown] (typeShape t) true
   | .fn _ _ => .function [] []
 termination_by a => sizeOf a
 decreasing_by
@@ -345,8 +347,9 @@ decreasing_by
 def containsFunction : Ty → Bool
   | .fn .. => true
   | .record xs => xs.attach.any (fun x => containsFunction x.val)
-  | .list t | .builder t => containsFunction t
+  | .chain t | .list t | .builder t => containsFunction t
   | .int => false
+  | .result e a => containsFunction e || containsFunction a
 termination_by a => sizeOf a
 decreasing_by
   all_goals simp_wf

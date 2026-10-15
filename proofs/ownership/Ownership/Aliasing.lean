@@ -68,10 +68,15 @@ def writeNoted (env : Env Value) (c : Nat) (xs : List Value) : M Value := do
 
 def prim (env : Env Value) (op : Prim) (vs : List Value) : M Value := do
   match op, vs with
+  | .ok _, [x] => pure (.record [.int 1, .int 0, x])
+  | .err _, [x] => pure (.record [.int 0, x, .int 0])
+  | .endChain _, [] => alloc []
+  | .link, [x, .ref c] => do alloc (x :: (← array c))
   | .add, [.int a, .int b] => pure (.int (a + b))
   | .sub, [.int a, .int b] => pure (.int (a - b))
   | .eq, [.int a, .int b] => pure (.int (if a == b then 1 else 0))
   | .lt, [.int a, .int b] => pure (.int (if a < b then 1 else 0))
+  | .privateRoot, [x] => pure x
   | .record, xs => pure (.record xs)
   | .literal _, xs => alloc xs
   | .builder _, [] => alloc []
@@ -119,6 +124,22 @@ def eval (depth : Nat) (ds : List Decl) (self : Option (Nat × List Value))
       let actuals ← args.mapM (m := Except String) (InPlaceSemantics.atom env)
       let d ← ds[id]?.toExcept "decl"
       call env (eval (depth - 1) ds (some (id, caps)) (bindArgs (actuals ++ caps)) d.body)
+    | .entry initial retained model body =>
+      let value ← eval (depth - 1) ds self env initial
+      let kept ← retained.mapM (m := Except String) (InPlaceSemantics.atom env)
+      modify fun s => {s with kept := s.kept ++ kept.toArray}
+      eval (depth - 1) ds self ((model, value) :: env) body
+    | .resultCase input err ok onError onSuccess =>
+      let .record [.int tag, e, a] ← InPlaceSemantics.atom env input | throw "result case"
+      eval (depth - 1) ds self (if tag == 0 then (err, e) :: env else (ok, a) :: env)
+        (if tag == 0 then onError else onSuccess)
+    | .chainCase input head tail onEnd onLink =>
+      let .ref c ← InPlaceSemantics.atom env input | throw "chain case"
+      match (← array c) with
+      | [] => eval (depth - 1) ds self env onEnd
+      | h :: t =>
+        let rest ← alloc t
+        eval (depth - 1) ds self ((head, h) :: (tail, rest) :: env) onLink
     | .branch a yes no =>
       let .int n ← InPlaceSemantics.atom env a | throw "condition"
       eval (depth - 1) ds self env (if n == 0 then yes else no)

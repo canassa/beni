@@ -1,5 +1,6 @@
 import Ownership.Oracle
 import Ownership.Falsify
+import Ownership.Question
 
 /-! Small executable projections of the Zig ownership fixtures. Markup's opaque
 slots are positional fields; a constructor is an ordinary zero-capture record
@@ -213,14 +214,140 @@ def owned (n : Int) (which : Nat) (safe := false) : Program := {
 
 def ownedFresh (n : Int) : Program := {
   declarations := [
-    {name := "fresh", parameters := [.int], result := l, body := .prim (.literal .int) [v 0]},
+    {
+    name := "fresh", parameters := [.int], result := l, body := .prim (.literal .int) [v 0]},
     boundary l true]
   main := .letE 0 (.closure 0 []) <| .letE 1 (.closure 1 []) <|
     .letE 2 (.app (v 1) [v 0]) <| .letE 3 (push (v 2)) <|
     .letE 4 (.app (v 0) [.int n]) (.prim .record [v 3, v 4]) }
 
+/-- Result/capture projections of §29. Each operand is evaluated before the
+    terminal read; safe twins allocate a distinct holder. -/
+def resultRead (n : Int) (kind : Nat) (safe := false) : Program := {
+  declarations := [get]
+  main := .letE 0 (lit n) <| .letE 1 (lit (n+1)) <|
+    .letE 2 (push (v 0)) <|
+    .letE 3 (if kind == 0 then
+      .branch (.int n) (.atom (v (if safe then 1 else 0))) (.atom (v (if safe then 1 else 0)))
+    else if kind == 1 then
+      .letE 4 (.atom (.int n)) (.atom (v (if safe then 1 else 0)))
+    else .closure 0 [v (if safe then 1 else 0)]) <|
+    if kind == 2 then .app (v 3) [.int 0] else .atom (v 3) }
+
+def recursiveResult (n : Int) (safe := false) : Program := {
+  declarations := [{
+    name := "recursiveCaptured", parameters := [.int], captures := [l], result := l,
+    body := .branch (v 0) (.atom (v 1)) <|
+      .letE 2 (.prim .sub [v 0, .int 1]) <| .letE 3 (.recur [v 2]) (push (v 3))}]
+  main := .letE 0 (lit n) <| .letE 1 (.closure 0 [v 0]) <|
+    .letE 2 (.app (v 1) [.int (if safe then 0 else 2)]) <|
+    .prim .record [v 0, v 2] }
+
+def calleeEnvironment (n : Int) (safe := false) : Program := {
+  declarations := [{
+    name := "writeThenReadCapture", parameters := [l], captures := [l], result := .int,
+    body := .letE 2 (push (v 0)) (.prim .length [v 1])}]
+  main := .letE 0 (lit n) <| .letE 1 (lit (n+1)) <|
+    .letE 2 (.closure 0 [v (if safe then 1 else 0)]) (.app (v 2) [v 0]) }
+
+def feedbackLoan (n : Int) (safe := false) : Program := {
+  declarations := [Library.foldl l l,
+    {
+    name := "borrowOrGrow", parameters := [l,l], result := l,
+     body := .letE 2 (.prim .length [v 1]) (.branch (v 2) (.atom (v 0)) (push (v 1)))}]
+  main := .letE 0 (lit n) <| .letE 1 (lit (n+1)) <|
+    .letE 2 (.prim (.literal l) [v 0, v 1, if safe then v 1 else v 0]) <|
+    .letE 3 (.prim (.literal .int) []) <| .letE 4 (.closure 0 []) <|
+    .letE 5 (.closure 1 []) (.app (v 4) [v 2, v 3, v 5]) }
+
+/-- A function's failing question returns its captured list; its caller must
+    still see that holder after the call. The success twin holds only an Int. -/
+def question (n : Int) (success := false) (nested := false) : Program := {
+  declarations := [{
+    name := "attempt", parameters := [l], result := .result l .int,
+    body := Question.lower .int <| .question
+      (if nested then .branch (.int n) (.prim (.err .int) [v 0]) (.prim (.err .int) [v 0])
+       else if success then .prim (.ok l) [.int n] else .prim (.err .int) [v 0]) 1 2 3 <|
+        .finish (.prim (.ok l) [v 3])}]
+  main := .letE 0 (lit n) <| .letE 1 (.closure 0 []) <|
+    .letE 2 (.app (v 1) [v 0]) <| .letE 3 (push (v 0)) <|
+    .resultCase (v 2) 4 5 (.prim .length [v 4]) (.atom (v 5)) }
+
+/-- Recursive type Chain payload = End | Link payload (Chain payload).
+    There is no depth in the type; the payload can itself contain a list or
+    closure. Keeping a chain keeps the payloads of every recursive position. -/
+def recursiveData (n : Int) (depth : Nat) (safe := false) : Program := Id.run do
+  let finish := Expr.letE 50 (push (v 0)) (.atom (v (10+depth)))
+  let body := (List.range depth).foldr (fun i rest =>
+    Expr.letE (11+i) (.prim .link [v (if safe then 1 else 0), v (10+i)]) rest) finish
+  return {
+    main := .letE 0 (lit n) <| .letE 1 (lit (n+1)) <|
+      .letE 10 (.prim (.endChain l) []) body}
+
+/-- Recursive consumers see the recursive type itself, not a finite unrolling
+    of its syntax. Every node contributes a payload read on the way back. -/
+def recursiveConsumer (n : Int) (depth : Nat) : Program := Id.run do
+  let d : Decl := {
+    name := "chainSum", parameters := [.chain .int], result := .int,
+    body := .chainCase (v 0) 1 2 (.atom (.int 0)) <|
+      .letE 3 (.recur [v 2]) (.prim .add [v 1, v 3])}
+  let finish := Expr.letE 50 (.closure 0 []) (.app (v 50) [v (10+depth)])
+  let body := (List.range depth).foldr (fun i rest =>
+    Expr.letE (11+i) (.prim .link [.int n, v (10+i)]) rest) finish
+  return {declarations := [d], main := .letE 10 (.prim (.endChain .int) []) body}
+
+/-- Entry initialization is called once. Other entry fields remain observers
+    across every model update, including a helper-returned reader. Private
+    roots transfer only through the checker's single-read initialization proof. -/
+def initialization (n : Int) (privateSeed sharedSeed retained carried := false) : Program := {
+  declarations := [get, {
+    name := "carryReader", parameters := [l], result := .fn [.int] l,
+    body := .closure 0 [v 0]}]
+  main := .letE 0 (lit n) <|
+    .letE 1 (if sharedSeed then .prim .shared [v 0] else if privateSeed then .prim .privateRoot [v 0] else .atom (v 0)) <|
+    .letE 2 (.closure 0 [v 1]) <|
+    .letE 3 (if retained then
+      if carried then .letE 4 (.closure 1 []) (.app (v 4) [v 1]) else .closure 0 [v 1]
+      else .atom (.int 0)) <|
+    .entry (.app (v 2) [.int 0]) (if retained then [v 3] else []) 5 (push (v 5)) }
+
+/-- The inner Err belongs to the inner definition; the outer successful
+    question still binds 5 and returns Ok 5. -/
+def twoFrames (n : Int) : Program := {
+  declarations := [
+    {
+     name := "inner", parameters := [.result l .int], result := .result l .int
+     body := Question.lower .int <| .question (.atom (v 0)) 1 2 3 <|
+       .finish (.prim (.ok l) [v 3])},
+    {
+     name := "outer", parameters := [l], result := .result .int .int
+     body := Question.lower .int <| .question (.prim (.ok .int) [.int 5]) 1 2 3 <|
+       .letE 4 (.prim (.err .int) [v 0]) <| .letE 5 (.closure 0 []) <|
+       .letE 6 (.app (v 5) [v 4]) (.finish (.prim (.ok .int) [v 3]))}]
+  main := .letE 0 (lit n) <| .letE 1 (.closure 1 []) (.app (v 1) [v 0]) }
+
+/-- A question of a recursive result must propagate bottom during optimistic
+    summary solving, then retain the Err once the base arm is discovered. -/
+def recursiveQuestion (n : Int) : Program := {
+  declarations := [{
+    name := "recursiveQuestion", parameters := [.int, l], result := .result l .int
+    body := .branch (v 0) (.prim (.err .int) [v 1]) <|
+      .letE 2 (.prim .sub [v 0, .int 1]) <|
+        Question.lower .int (.question (.recur [v 2, v 1]) 3 4 5 <|
+          .finish (.prim (.ok l) [v 5]))}]
+  main := .letE 0 (lit n) <| .letE 1 (.closure 0 []) (.app (v 1) [.int 2, v 0]) }
+
+/-- After a private initialization transfers, a later publication remains
+    permanent. A nested entry cannot spend the old transfer authority again. -/
+def initializationRepublished (n : Int) : Program := {
+  declarations := [get]
+  main := .letE 0 (lit n) <| .letE 1 (.prim .privateRoot [v 0]) <|
+    .letE 2 (.closure 0 [v 1]) <|
+    .entry (.app (v 2) [.int 0]) [] 3 <|
+      .letE 4 (.prim .shared [v 3]) (.entry (.atom (v 3)) [] 5 (push (v 5))) }
+
 /-- Finite products, independent of seeds. These are not fixed probes alone. -/
-def programs : List Program := [-1, 0, 1, 2].flatMap fun n =>
+def legacyPrograms : List Program := [-1, 0, 1, 2].flatMap fun n =>
   [branchEscape n, branchEscape n true, branchEscape n false true, branchCall n, branchCall n true,
    modelUpdate n, modelUpdate n true, modelUpdate n false true,
    prepend n, prepend n true, withDefault n, withDefault n true, withDefault n false true] ++
@@ -231,7 +358,7 @@ def programs : List Program := [-1, 0, 1, 2].flatMap fun n =>
   [constructor n false, constructor n true, ownedFresh n] ++
   [0,1,2].flatMap (fun k => [owned n k, owned n k true])
 
-def fixtures : List (String × Program × Bool) := [
+def legacyFixtures : List (String × Program × Bool) := [
   ("AlternativeArmEscapes", branchEscape 1, true),
   ("RealEscape before", branchEscape 1 true, false),
   ("RealEscape joined", branchEscape 1 false true, false),
@@ -277,7 +404,47 @@ def fixtures : List (String × Program × Bool) := [
   ("Conditional capture scalar", owned 1 1 true, true),
   ("Forwarded callback fresh across calls", ownedFresh 1, true)]
 
+def extraFixtures : List (String × Program × Bool) := [
+  ("Init transfer authority consumed", initializationRepublished 1, false),
+  ("Question recursive result", recursiveQuestion 1, true),
+  ("Question two frames", twoFrames 1, true),
+  ("Question retains Err", question 1, false), ("Question scalar Ok", question 1 true, true),
+  ("Question operand case", question 1 false true, false),
+  ("Recursive payload", recursiveData 1 2, false), ("Recursive distinct payload", recursiveData 1 2 true, true),
+  ("Recursive consumer", recursiveConsumer 2 3, true),
+  ("Init local transfer", initialization 1, true), ("Init private transfer", initialization 1 true, true),
+  ("Init shared root", initialization 1 false true, false),
+  ("Init retained local", initialization 1 false false true, false),
+  ("Init retained private", initialization 1 true false true, false),
+  ("Init carried reader", initialization 1 false false true true, false),
+  ("Arm result read", resultRead 1 0, false), ("Arm distinct result", resultRead 1 0 true, true),
+  ("Block result read", resultRead 1 1, false), ("Block distinct result", resultRead 1 1 true, true),
+  ("Capture creation read", resultRead 1 2, false), ("Capture distinct result", resultRead 1 2 true, true),
+  ("Recursive captured result", recursiveResult 1, false),
+  ("Callee capture disjointness", calleeEnvironment 1, false),
+  ("Callee distinct environment", calleeEnvironment 1 true, true),
+  ("Fold loan feedback", feedbackLoan 1, false)]
+
+def extraPrograms : List Program := [-1, 0, 1, 2].flatMap fun n =>
+  [initializationRepublished n, recursiveQuestion n, twoFrames n, question n, question n true, question n false true,
+   initialization n, initialization n true, initialization n false true,
+   initialization n false false true, initialization n true false true,
+   initialization n false false true true] ++
+  [1,2,3].flatMap (fun depth => [recursiveData n depth, recursiveData n depth true, recursiveConsumer n depth]) ++
+  [resultRead n 0, resultRead n 0 true, resultRead n 1, resultRead n 1 true,
+   resultRead n 2, resultRead n 2 true, recursiveResult n, calleeEnvironment n, calleeEnvironment n true, feedbackLoan n]
+
+def programs := legacyPrograms ++ extraPrograms
+
+def fixtures := legacyFixtures ++ extraFixtures
+
 def holes : List (Mutant × Program) := [
+  (.initAuthority, initializationRepublished 1),
+  (.earlyErr, question 1), (.recursivePayload, recursiveData 1 2),
+  (.initRetained, initialization 1 false false true), (.initShared, initialization 1 false true),
+  (.armResult, resultRead 1 0), (.blockResult, resultRead 1 1),
+  (.captureRead, resultRead 1 2), (.recursiveCapture, recursiveResult 1),
+  (.calleeCapture, calleeEnvironment 1), (.foldLoan, feedbackLoan 1),
   (.branchEscapes, branchEscape 1 true), (.branchLive, withDefault 1 true),
   (.resultPositions, capturedAfter 1), (.prependBase, prepend 1 true),
   (.foldInvariant, invariant 1 .range true), (.modelInvariant, invariant 1 .model true),
@@ -310,6 +477,18 @@ def run : IO Bool := do
     if result.isOk && !(Oracle.compare p matches .equal) then
       IO.println s!"SYNC DIFFERENTIAL FAILED: {name}: {repr (Oracle.compare p)}"
       ok := false
+  for (name, p, expected) in [
+      ("recursive question retains its error", recursiveQuestion 8, Observation.record [.int 0, .list [.int 8], .int 0]),
+      ("inner question cannot return from outer", twoFrames 1, Observation.record [.int 1, .int 0, .int 5]),
+      ("recursive consumer visits every node", recursiveConsumer 2 3, Observation.int 6),
+      ("question Err path", question 1, Observation.int 1),
+      ("question Ok path", question 7 true, Observation.int 7)] do
+    match ValueSemantics.run p, InPlaceSemantics.run p with
+    | .ok a, .ok b =>
+      if a.finalValue != expected || ((check p).isOk && b.finalValue != expected) then
+        IO.println s!"SYNC OBSERVATION FAILED: {name}: {repr a.finalValue}, {repr b.finalValue}"
+        ok := false
+    | a, b => IO.println s!"SYNC EXECUTION FAILED: {name}: {repr a}, {repr b}"; ok := false
   for p in [earlierCapture 1, earlierCapture 1 true, earlierCapture 1 false true] do
     let caught := match check p {mutant := some .resultPositions} with
       | .ok a => !(Falsify.resultCertificates p a).isOk

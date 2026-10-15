@@ -21,6 +21,7 @@ structure Context where
   bridgeRoot : String := "main"
   declarations : List Decl
   config : Config
+  privateTransfer : Bool := false
   owned : List Origin := []
   escaped : List Origin := []
   recursiveSummary : Summary := {}
@@ -47,6 +48,7 @@ structure CacheEntry where
 
 structure St where
   bridgeSites : List String := []
+  privateCells : List Origin := []
   facts : Summary := {}
   cache : Array CacheEntry := #[]
   /-- Summaries computed, and call sites served from the cache. -/
@@ -306,9 +308,24 @@ def liveCellsWith (cfg : Config) (env : Env Abstract) (l : Live) : List Origin :
           !(match q with | .capture _ :: _ => true | _ => false)).foldl (fun cs (q, ds) =>
         if isPrefix p q || isPrefix q p then union cs ds else cs) cs) []
 
-/-- `uses`, or the `branch-live` control's weakened liveness. -/
-def usesWith (cfg : Config) (e : Expr) : Live :=
-  usesArms (!cfg.has .branchLive) (!cfg.has .branchClosure) (!cfg.has .prependBase) e
+/-- Liveness includes terminal results, within each arm's own context. The
+    controls remove only the corresponding read rule, never interpreter code. -/
+def usesWith (cfg : Config) (e : Expr) (resultRead : Bool := true) : Live :=
+  match e with
+  | .atom a => if resultRead then atomUses a else []
+  | .letE v rhs rest => union (usesWith cfg rhs)
+      (removeVars [v] (usesWith cfg rest (resultRead && !cfg.has .blockResult)))
+  | .branch c a b =>
+    let ua := usesWith cfg a (resultRead && !cfg.has .armResult)
+    let ub := if cfg.has .branchLive then [] else usesWith cfg b (resultRead && !cfg.has .armResult)
+    let ua := if cfg.has .branchClosure then ua.filter (fun u => !(closureCapUses a).contains u) else ua
+    let ub := if cfg.has .branchClosure then ub.filter (fun u => !(closureCapUses b).contains u) else ub
+    union (atomUses c) (union ua ub)
+  | .closure _ xs => if cfg.has .captureRead then [] else atomsUses xs
+  | .traverse _ src init i x acc body =>
+    union (atomsUses [src, init]) (removeVars [i, x, acc] (usesWith cfg body))
+  | .focus src i x body => union (atomsUses [src, i]) (removeVars [x] (usesWith cfg body))
+  | _ => usesArms (!cfg.has .branchLive) (!cfg.has .branchClosure) (!cfg.has .prependBase) e
 
 def closureCaps (cfg : Config) (env : Env Abstract) (body : Expr) (bound : List Var) : List (Var × Abstract) :=
   let names := (removeVars bound (usesWith cfg body)).map Prod.fst |>.foldl (fun xs x => union xs [x]) []
@@ -328,8 +345,9 @@ decreasing_by
 
 def typeShape : Ty → Abstract
   | .int => .scalar
+  | .result e a => .record [.scalar, typeShape e, typeShape a]
   | .record xs => .record (xs.attach.map (fun x => typeShape x.val))
-  | .list t | .builder t => .list [.unknown] (typeShape t) true
+  | .chain t | .list t | .builder t => .list [.unknown] (typeShape t) true
   | .fn _ _ => .function [] []
 termination_by a => sizeOf a
 decreasing_by
@@ -341,8 +359,9 @@ decreasing_by
 def containsFunction : Ty → Bool
   | .fn .. => true
   | .record xs => xs.attach.any (fun x => containsFunction x.val)
-  | .list t | .builder t => containsFunction t
+  | .chain t | .list t | .builder t => containsFunction t
   | .int => false
+  | .result e a => containsFunction e || containsFunction a
 termination_by a => sizeOf a
 decreasing_by
   all_goals simp_wf
@@ -353,8 +372,9 @@ decreasing_by
 /-- Paths of a type at which cells may live. -/
 def tyPaths : Ty → List Path
   | .int | .fn _ _ => []
+  | .result e a => (tyPaths e).map (.field 1 :: ·) ++ (tyPaths a).map (.field 2 :: ·)
   | .record ts => ts.attach.zipIdx.flatMap fun (t, i) => (tyPaths t.val).map (.field i :: ·)
-  | .list t | .builder t => [] :: (tyPaths t).map (.element :: ·)
+  | .chain t | .list t | .builder t => [] :: (tyPaths t).map (.element :: ·)
 termination_by a => sizeOf a
 decreasing_by
   all_goals simp_wf
@@ -365,8 +385,11 @@ decreasing_by
 /-- A value of type `t` whose cells and exclusivity are given per path. -/
 def shapeOf (cells : List (Path × List Origin)) (exclusive : List Path) (spines : List Path) : Ty → Path → Abstract
   | .int, _ | .fn _ _, _ => .scalar
+  | .result e a, p => .record [.scalar,
+      shapeOf cells exclusive spines e (p ++ [.field 1]),
+      shapeOf cells exclusive spines a (p ++ [.field 2])]
   | .record ts, p => .record (ts.attach.zipIdx.map fun (t, i) => shapeOf cells exclusive spines t.val (p ++ [.field i]))
-  | .list t, p | .builder t, p =>
+  | .chain t, p | .list t, p | .builder t, p =>
     .list ((cells.lookup p).getD []) (shapeOf cells exclusive spines t (p ++ [.element])) ⟨exclusive.contains p, spines.contains p⟩
 termination_by t => sizeOf t
 decreasing_by
@@ -423,6 +446,20 @@ def primitive (ctx : Context) (site : List Nat) (op : Prim) (args : List Abstrac
     (later : List Origin) : CheckM Abstract := do
   let fresh := Origin.site site 0
   match op, args with
+  | .ok _, [a] => pure (.record [.scalar, .bottom, a])
+  | .err _, [e] => pure (.record [.scalar, if ctx.config.has .earlyErr then e.mapOrigins (fun _ _ => []) else e, .bottom])
+  | .privateRoot, [a] => do
+    if ctx.bridgeRoot != "main" then throw "private root outside main initialization"
+    let escapes := (← getFacts).escapes
+    let eligible := a.cells.filter fun c => unescaped c && !cellOverlap [c] escapes
+    if ctx.privateTransfer then modify fun st => {st with privateCells := union st.privateCells eligible}
+    modifyFacts fun s => {s with escapes := union s.escapes a.cells}
+    pure a
+  | .endChain _, [] => pure (.list [fresh] .bottom true)
+  | .link, [a, .list _ elem ex] =>
+    pure (.list [fresh] (if ctx.config.has .recursivePayload then (a.join elem).mapOrigins (fun _ _ => []) else a.join elem)
+      ⟨ex.deep && storeExclusive ctx [a] later elem.cells,
+       ex.spine && storeSpines ctx [a] later elem.cells⟩)
   | .add, _ | .sub, _ | .eq, _ | .lt, _ => pure .scalar
   | .record, xs => pure (.record (if ctx.config.has .constructorArgs then
       xs.map (·.mapOrigins fun _ _ => []) else xs))
@@ -514,6 +551,37 @@ def recheckSupplies (ctx : Context) (s : Summary) (site : List Nat) (args caps :
         (inner.cells.flatMap outsideFor) []).isNone
     { sp with args := inst, env, owned, exclusive, spine }
 
+/-- Count actual source reads, including captures, rather than distinct paths.
+    A use below a callback/traversal cannot authorize a private transfer. -/
+def atomReadCount (v : Var) (a : Atom) : Nat :=
+  match a with
+  | .var n => if n == v then 1 else 0
+  | .field a _ => atomReadCount v a
+  | .int _ => 0
+
+def readCount (v : Var) : Expr → Nat
+  | .atom a => atomReadCount v a
+  | .prim _ xs | .closure _ xs | .recur xs => (xs.map (atomReadCount v)).sum
+  | .app a xs => atomReadCount v a + (xs.map (atomReadCount v)).sum
+  | .letE _ a b => readCount v a + readCount v b
+  | .branch c a b => atomReadCount v c + readCount v a + readCount v b
+  | .resultCase a _ _ x y | .chainCase a _ _ x y => atomReadCount v a + readCount v x + readCount v y
+  | .entry initial retained _ body => readCount v initial + (retained.map (atomReadCount v)).sum + readCount v body
+  | .traverse _ a z _ _ _ b => atomReadCount v a + atomReadCount v z + readCount v b
+  | .focus a i _ b => atomReadCount v a + atomReadCount v i + readCount v b
+
+/-- A deliberately narrow private-read proof: one straight allocation/alias/
+    capture chain ends in the single initializer. Everything else stays shared. -/
+def privateToInit (v : Var) : Expr → Bool
+  | .entry initial retained _ body => readCount v initial == 1 &&
+      (retained.map (atomReadCount v)).sum == 0 && readCount v body == 0
+  | .letE n rhs rest =>
+    if readCount v rhs == 0 then privateToInit v rest
+    else readCount v rhs == 1 && readCount v rest == 0 &&
+      (match rhs with | .atom _ | .closure .. | .prim .record _ => true | _ => false) &&
+      privateToInit n rest
+  | _ => false
+
 mutual
 
 def inferExpr (fuel : Nat) (ctx : Context) (env : Env Abstract)
@@ -527,7 +595,10 @@ def inferExpr (fuel : Nat) (ctx : Context) (env : Env Abstract)
     match e with
     | .atom a => abstractAtom env a
     | .letE v rhs rest =>
-      let a ← inferExpr f ctx env rhs (union after (removeVars [v] (usesWith ctx.config rest))) (site ++ [0])
+      let rhsCtx := {ctx with privateTransfer := (match rhs with
+        | .prim .privateRoot _ => privateToInit v rest
+        | _ => false)}
+      let a ← inferExpr f rhsCtx env rhs (union after (removeVars [v] (usesWith ctx.config rest))) (site ++ [0])
       -- The continuation's uses of `v` name the outer binding. Inside `rest`
       -- `v` is the new one, so their cells are pinned here, resolved
       -- against the outer environment (the `shadowing` control does not).
@@ -538,6 +609,50 @@ def inferExpr (fuel : Nat) (ctx : Context) (env : Env Abstract)
         inferExpr f { ctx with pinned := union ctx.pinned (liveCellsWith ctx.config env outer) } ((v, a) :: env) rest
           (removeVars [v] after) (site ++ [1])
     | .prim op args => primitive ctx site op (← args.mapM (m := Except String) (abstractAtom env)) later
+    | .entry initial retained model body =>
+      let privateCells := (← get).privateCells
+      -- Transfer authority is single-use. A nested entry cannot clear a
+      -- new escape of the model produced by this initialization.
+      if !ctx.config.has .initAuthority then modify fun st => {st with privateCells := []}
+      modifyFacts fun s => {s with escapes := s.escapes.filter fun c => !privateCells.contains c}
+      let ctx := {ctx with escaped := ctx.escaped.filter fun c => !privateCells.contains c}
+      let initialAfter := union after (union (atomsUses retained) (removeVars [model] (usesWith ctx.config body)))
+      let a ← inferExpr f ctx env initial initialAfter (site ++ [0])
+      let a := if ctx.config.has .initShared then a.mapOrigins (fun _ cs =>
+        cs.map fun c => if c == .shared then .site site 99 else c) else a
+      if ctx.config.has .initShared then
+        modifyFacts fun s => {s with escapes := s.escapes.filter fun c => !cellOverlap [c] a.cells}
+      let kept ← retained.mapM (m := Except String) (abstractAtom env)
+      if !ctx.config.has .initRetained then
+        modifyFacts fun s => {s with escapes := union s.escapes (kept.flatMap Abstract.cells)}
+      inferExpr f ctx ((model, a) :: env) body after (site ++ [1])
+    | .resultCase input err ok onError onSuccess =>
+      let value ← abstractAtom env input
+      if value == .bottom then return .bottom
+      let .record [_, e, a] := value | throw "abstract result case"
+      let before ← getFacts
+      let left ← if e == .bottom then pure .bottom else inferExpr f ctx ((err, e) :: env) onError after (site ++ [0])
+      let leftFacts ← getFacts
+      modifyFacts fun _ => before
+      let right ← if a == .bottom then pure .bottom else inferExpr f ctx ((ok, a) :: env) onSuccess after (site ++ [1])
+      let rightFacts ← getFacts
+      modifyFacts fun _ => leftFacts.join rightFacts
+      pure (left.join right)
+    | .chainCase input head tail onEnd onLink =>
+      let value ← abstractAtom env input
+      if value == .bottom then return .bottom
+      let .list cs elem ex := value | throw "abstract chain case"
+      let before ← getFacts
+      let left ← inferExpr f ctx env onEnd after (site ++ [0])
+      let leftFacts ← getFacts
+      modifyFacts fun _ => before
+      -- The tail conservatively holds every payload position. It is copied
+      -- by the interpreters; no destructive spine operation has a Chain type.
+      let right ← inferExpr f ctx ((head, elem) :: (tail, .list cs elem ex) :: env)
+        onLink after (site ++ [1])
+      let rightFacts ← getFacts
+      modifyFacts fun _ => leftFacts.join rightFacts
+      pure (left.join right)
     | .branch c yes no =>
       let _ ← abstractAtom env c
       let before ← getFacts
@@ -604,7 +719,9 @@ def inferExpr (fuel : Nat) (ctx : Context) (env : Env Abstract)
       if !(ctx.owned.all ownedNow.contains) then
         throw "recursive call does not preserve entry ownership assumptions"
       modifyFacts fun s => { s with recursive := true }
-      applyCall ctx ctx.recursiveSummary site actuals ctx.recursiveCaptures later
+      applyCall ctx ctx.recursiveSummary site actuals
+        (if ctx.config.has .recursiveCapture then
+          ctx.recursiveCaptures.map (·.mapOrigins fun _ _ => []) else ctx.recursiveCaptures) later
     | .focus src index x body =>
       let input ← abstractAtom env src
       let _ ← abstractAtom env index
@@ -652,7 +769,7 @@ def inferExpr (fuel : Nat) (ctx : Context) (env : Env Abstract)
       noteRead roots
       let caps := closureCaps ctx.config env body [i, x, acc]
       let capValues := caps.map Prod.snd
-      let element := if sourceEx then
+      let element := if sourceEx || ctx.config.has .foldLoan then
           (rawElement.grantExclusive).mapOrigins (fun _ cs => cs.map (.position site true))
         else rawElement
       let previous := fun a : Abstract => a.mapOrigins fun _ cs => cs.map fun c =>
@@ -721,7 +838,7 @@ def inferExpr (fuel : Nat) (ctx : Context) (env : Env Abstract)
             -- Kept: removing a rule on an argued, unproved equivalence is not
             -- done here (COVERAGE.md, "Borrowed supply").
             let retained := union roots (if consumes || ctx.config.has .borrowedSupply then later
-              else union later rawElement.cells)
+              else if ctx.config.has .foldLoan then later else union later rawElement.cells)
             let outsideFor := fun (w : Origin) => match w with
               | .parameter 1 _ => later
               | _ => retained
@@ -825,7 +942,7 @@ decreasing_by all_goals simp_wf
 def applyCall (ctx : Context) (s : Summary) (site : List Nat) (args caps : List Abstract)
     (later : List Origin) : CheckM Abstract := do
   for w in s.writes ++ s.consumes do
-    demand ctx.config (instantiateOrigin site args caps w) later (otherPaths args caps w)
+    demand ctx.config (instantiateOrigin site args caps w) later (otherPaths args (if ctx.config.has .calleeCapture then [] else caps) w)
   for x in s.requiresExclusive do
     let a := match x with
       | .parameter i p => (args[i]?.getD .bottom).atPath p

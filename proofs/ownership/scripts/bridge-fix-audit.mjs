@@ -80,12 +80,21 @@ try {
     }
   }
   const clusters = JSON.parse(await readFile(resolve(own, 'evidence/bridge-triage/clusters.json'), 'utf8'));
-  const isLong = report.programs === 116456;
+  const isLong = report.programs === 116456 || report.programs === 116605;
   const baseline = JSON.parse(await readFile(resolve(own,
     isLong ? 'evidence/bridge-long/report.json' : 'evidence/bridge-ci/report.json'), 'utf8'));
-  // Compare the canonical runs exactly, including skips, rather than letting
-  // a changed translated population explain away a soundness improvement.
-  if (isLong || report.programs === 766) {
+  // The extended fixed set appends 25 verdict fixtures and 124 targeted
+  // programs. Historical generator/enumeration streams must remain byte exact;
+  // fixed ids keep their original meaning, with extension ids appended.
+  if (report.programs === 116605 || report.programs === 915) {
+    assert.equal(report.programs, baseline.programs + 149);
+    for (const oldStream of baseline.streams.filter(s => !s.name.startsWith('fixtures-'))) {
+      const stream = report.streams.find(s => s.name === oldStream.name);
+      assert(stream);
+      for (const key of ['programs', 'translated', 'skipped', 'valueChecked', 'sha256'])
+        assert.equal(stream[key], oldStream[key], stream.name + ':' + key);
+    }
+  } else if (isLong || report.programs === 766) {
     for (const key of ['programs', 'translated', 'skipped', 'valueChecked']) assert.equal(report[key], baseline[key], key);
     assert.equal(report.streams.length, baseline.streams.length);
     for (const stream of report.streams) {

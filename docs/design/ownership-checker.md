@@ -2551,8 +2551,12 @@ prepend whose front item was made after its base names no approximate step.
 The owner's process rule (2026-10-12): every checker rule a slice adds or changes is modelled in the Lean oracle
 (`proofs/ownership/`) or listed here, with the soundness risk of leaving it unmodelled. The oracle's language has
 `let`, primitives, closures, calls, recursion, a branch on an integer, traversals and focus (`Syntax.lean`); it
-has positional records and copying prepend, but no list views, sum constructors, early return, dictionaries,
-effects or platform execution. The sync in `proofs/ownership/Ownership/Sync.lean` models branch-local escapes,
+has positional records, copying prepend, typed `Result`, a definition-local CPS lowering of `?`, and the
+recursive type `Chain a = End | Link a (Chain a)`. It has no list views, dictionaries, effects or platform
+execution. `entry` models one initialization followed by model updates with retained callback environments;
+private single-read initialization transfers and captured-local exclusion follow PR #116's contract. It is
+a core projection, not a model of the browser's scheduler or rendering. The sync in
+`proofs/ownership/Ownership/Sync.lean` models branch-local escapes,
 the inductive model and fold container invariants over finite record/list models, and the four Conduit rules:
 render/event slot projection, carried zero-capture constructor callbacks, unseen taggers with conditionally
 cell-free captures, and forwarding an enclosing callback's owned-result obligation. Each has executable
@@ -2560,20 +2564,27 @@ accepted/rejected projections and a required enumerator control. The model uses 
 `Maybe`/`Result.withDefault (map …)` case rule and numbered, distinct binders for §26.1 (already enforced since
 PR #65). A prepend reads its base and conservatively retains its backing provenance.
 
+The §29 rules have separate required planted holes for arm results, block results, capture creation reads,
+conditional fold loans, recursive capture substitution and callee-environment disjointness. The initialization
+projection has shared-root, retained-field and spent-transfer-authority holes; Result/`?` and recursive payload retention each have one.
+Every hole must admit a typed interpreter disagreement which the corrected checker refuses, both as a fixed
+fixture and through the seed-independent targeted enumeration. The bridge translates Result cases and the
+canonical question lowering to actual beni `case` and `?`, and recursive Chains to a native recursive ADT;
+entry projections remain counted skips because the bridge does not implement runtime entry delivery.
+
 This is a core model, not a proof that the Zig walk or lowering implements the rules. `DESIGN.md` specifies
 its boundaries; `RESULTS.md` records the campaigns and holes. The residual gaps below remain explicit.
 
 | Rule | Where | What is unsound if the rule is wrong |
 |---|---|---|
-| `?` returns its `Err` payload (§26.2) | `earlyReturn`, `withEarly` | a caller writes a list a returned `Err` holds. The core has neither sum constructors nor early return; a branch does not test `?` lowering. |
 | A prepend of a list made after its base (§26.3) | `madeAfter` | a write onto the prepend's result reaches the base through a re-cons the rule took to be impossible. Copying prepend and conservative backing provenance are modelled; offset views and the re-cons identity optimization are absent, so made-after precision cannot be tested faithfully. |
 | Ownership words on `foreign` signatures, and the thesis row for a `foreign` with none (§24) | `wordsRow` | a word claiming less than the JavaScript does: a write or an escape the checker does not see. The core has no foreign declarations or JavaScript sibling validation. |
 | The decoder followed through `Expect` (§24.9) | `carry`, `carriedEnv` | a decoder's captures held past the call that runs it. No decoder/opaque carrier syntax; captures are tested as ordinary closures only. |
-| The runtime entry protocol and recursive model types (§20, §22) | `entryCall` | Finite record/list model base and preservation invariants are modelled, but the core has no recursive data types, renderer, effects or unbounded event delivery; actual runtime retention and opaque entry rows remain untested |
+| Runtime entry delivery (§20, §22) | `entryCall` | Initialization transfer, retained callback captures, recursive Chain payloads and finite model preservation are modelled. The renderer, effects, opaque entry rows and unbounded event delivery remain outside the core; their actual runtime retention still needs platform fixtures. |
 | Owned sends and navigation commands (§23) | `send_class`, `checkSender` | The returns-owned boundary and retained-callback obligations are modelled; actual fibers, navigation capabilities and asynchronous delivery have no core semantics, so runtime payload retention remains untested |
 | `Dict.focus`'s destructive read (§20.8) | `assertDictFocus` | two positions of a tree holding one value, both written. List focus is modelled; the core has no tree, keys or dictionary representative separation. |
 | Markup/constructor lowering and opaque carrier encodings | markup transfer and summary blocks | Slots and constructor payload retention are modelled as positional records; HTML syntax, wildcard opaque paths, import serialization and actual row/component lowering are absent. Their encoding must preserve the modelled slots and conservative fallback |
-| Fold dictionary representatives and recursion | fold/focus summaries | Container ownership is modelled for lists and positional records; no dictionary keys, recursive data types, mutual recursion or unknown/coarsened foreign rows exist in the core, so those implementations and their precision backstops still need Zig fixtures |
+| Fold dictionary representatives and recursion | fold/focus summaries | Container ownership is modelled for lists and positional records; no dictionary keys, mutually recursive declarations or unknown/coarsened foreign rows exist in the core, so those implementations and their precision backstops still need Zig fixtures |
 
 ### 26.8 Open questions
 
@@ -3324,8 +3335,10 @@ and nested callback results obey this rule; fresh or transferred owned accumulat
 continue to satisfy the existing invariant. No new permission is introduced.
 
 Ownership summary blocks advance version when these rules land, so cached older
-summaries cannot bypass the corrected checks. The Lean bridge retains the unchanged
-oracle and translation contracts; interpreter-confirmed unsafe accepted originals
+summaries cannot bypass the corrected checks. The Lean oracle models these rules
+with required independent holes; its bridge preserves the historical generator and
+enumeration streams and appends the new fixtures. The runtime confirmation boundary
+is unchanged; interpreter-confirmed unsafe accepted originals
 must be zero at the CI bound and the three recorded generator seeds. Reverse leads
 are counted separately from confirmed soundness failures.
 

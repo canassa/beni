@@ -26,11 +26,15 @@ node scripts/bridge-mutants.mjs               # opt-in, isolated Zig source edit
 
 `--no-build` uses an existing compiler; `--compiler=/absolute/path` selects it.
 `--input=...jsonl` replays an export. `--out=...` isolates artifacts. The default
-long seeds are 17, 20261011 and 314159. CI uses all 490 fixed programs,
+long seeds are 17, 20261011 and 314159. CI uses all 639 fixed programs,
 enumeration bound 1, and 128 generated programs at seed 17. Runs use at most eight
 workers, with each compiler child on one thread. On Linux pin the parent with
 `taskset -c 0-7` to bound its entire process tree. Never rebuild the oracle
 executable while a campaign is spawning its exporter or reducer.
+
+The expanded long campaign has 116,605 inputs: the historical generator and
+enumeration streams are byte-identical, and the fixed set appends 25 verdict
+fixtures and 124 targeted programs.
 
 The bridge writes `report.json`, its input streams, and `cases/<id>/` with the
 original source, typed core, demands, rejection, both runtime outputs and
@@ -60,6 +64,15 @@ uses `case List.get` with an already evaluated default. Prepend copies with
 traversals fold over `List.range 0 (n-1)`. Ordinary library initialize, fold and
 update declarations, and map across different representations, are recognized
 by their exact typed bodies and use their public counterparts.
+
+Typed Result constructors and cases use actual beni constructors and `case`.
+The canonical `Question.lower` error arm emits the actual `?` operator, with
+its continuation in the same definition. Recursive Chains use a native recursive
+`BridgeChain` declaration. The bridge normalizes Result tags to the oracle's
+three-field observations and Chains to payload arrays. Chain spines have no
+writer in the core, so copying an immutable spine and sharing native node links
+preserve the observable payload identities. Entry initialization and private-root
+projections remain counted skips: the bridge does not simulate runtime entry.
 
 A builder is not a public beni value. Only complete recognized library idioms
 use public operations; arbitrary builder/put/close trees are explicit skips.

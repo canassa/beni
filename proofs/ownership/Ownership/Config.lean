@@ -6,6 +6,17 @@ namespace Ownership
     must find an accepted disagreement under it (`ownership controls`), and a
     fixture must disagree under it and be rejected by the unmutated checker. -/
 inductive Mutant where
+  | earlyErr -- an Err constructor drops its payload provenance
+  | recursivePayload -- Link drops its recursive payload provenance
+  | initRetained -- an entry omits other retained fields
+  | initAuthority -- a nested entry reuses spent private-transfer authority
+  | initShared -- an entry transfers exported/shared initialization cells
+  | armResult          -- terminal arm reads are omitted from enclosing liveness
+  | blockResult        -- terminal block reads are omitted from enclosing liveness
+  | captureRead        -- closure creation does not read captured paths
+  | foldLoan           -- a taken element loses its source condition on feedback
+  | recursiveCapture   -- recursion substitutes an empty captured environment
+  | calleeCapture      -- call disjointness ignores the callee environment
   | disjoint            -- a write ignores other operand paths (Disjoint dropped)
   | borrowedSupply      -- traversal treats a borrowed source's elements as owned
   | traversalExclusive  -- a consuming list traversal skips its exclusive-source demand
@@ -55,7 +66,7 @@ inductive Mutant where
   deriving Repr, BEq, Inhabited
 
 def Mutant.all : List Mutant :=
-  [.disjoint, .borrowedSupply, .traversalExclusive, .manyCalls, .copyExclusive,
+  [.initAuthority, .earlyErr, .recursivePayload, .initRetained, .initShared, .armResult, .blockResult, .captureRead, .foldLoan, .recursiveCapture, .calleeCapture, .disjoint, .borrowedSupply, .traversalExclusive, .manyCalls, .copyExclusive,
    .closeSource, .keepsShape, .guardReuse, .callbackXres, .supplyEdge, .supplyRecheck,
    .callsEdge, .callbackWrites, .callbackAliases, .callbackEnv, .callbackEscapes,
    .callbackRequires, .requiresEdge, .forwardGuards, .transferSupplies, .onceThroughCall, .branchLive,
@@ -63,6 +74,12 @@ def Mutant.all : List Mutant :=
    .taggerNeed, .captureEmpty, .forwardNeed, .foldInvariant, .modelInvariant]
 
 def Mutant.name : Mutant → String
+  | .initAuthority => "init-authority"
+  | .earlyErr => "early-err" | .recursivePayload => "recursive-payload"
+  | .initRetained => "init-retained" | .initShared => "init-shared"
+  | .armResult => "arm-result" | .blockResult => "block-result"
+  | .captureRead => "capture-read" | .foldLoan => "fold-loan"
+  | .recursiveCapture => "recursive-capture" | .calleeCapture => "callee-capture"
   | .disjoint => "disjoint" | .borrowedSupply => "borrowed-supply"
   | .traversalExclusive => "traversal-exclusive" | .manyCalls => "many-calls"
   | .copyExclusive => "copy-exclusive" | .closeSource => "close-source"
@@ -90,6 +107,9 @@ def Mutant.parse (s : String) : Option Mutant := Mutant.all.find? (·.name == s)
 /-- The sync grammar, rather than the legacy random generator, must catch
     these controls. Main enforces every one in CI and `controls`. -/
 def Mutant.enumeratorRequired : Mutant → Bool
+  | .initAuthority => true
+  | .earlyErr | .recursivePayload | .initRetained | .initShared => true
+  | .armResult | .blockResult | .captureRead | .foldLoan | .recursiveCapture | .calleeCapture => true
   | .resultPositions | .branchEscapes | .prependBase | .constructorArgs | .eventCapture
   | .taggerNeed | .captureEmpty | .forwardNeed | .foldInvariant | .modelInvariant => true
   | _ => false
@@ -100,6 +120,9 @@ def Mutant.enumeratorRequired : Mutant → Bool
     `no-scope` cannot be reached by a typed program and is required through its
     checker-level probe. `ownership controls` reports all four. -/
 def Mutant.generatorOptional : Mutant → Bool
+  | .initAuthority => true
+  | .earlyErr | .recursivePayload | .initRetained | .initShared => true
+  | .armResult | .blockResult | .captureRead | .foldLoan | .recursiveCapture | .calleeCapture => true
   | .callbackRequires | .requiresEdge | .transferSupplies => true
   | .resultPositions | .noScope | .branchEscapes | .prependBase | .constructorArgs | .eventCapture
   | .taggerNeed | .captureEmpty | .forwardNeed | .foldInvariant | .modelInvariant => true
@@ -108,6 +131,9 @@ def Mutant.generatorOptional : Mutant → Bool
 /-- Mutants of the summary layer's rows, and `branch-live`, which only the
     summary checker implements: inert in the per-call checker. -/
 def Mutant.summaryRow : Mutant → Bool
+  | .initAuthority => true
+  | .earlyErr | .recursivePayload | .initRetained | .initShared => true
+  | .armResult | .blockResult | .captureRead | .foldLoan | .recursiveCapture | .calleeCapture => true
   | .guardReuse | .callbackXres | .supplyEdge | .supplyRecheck | .callsEdge | .callbackWrites
   | .callbackAliases | .callbackEnv | .callbackEscapes | .callbackRequires | .requiresEdge
   | .forwardGuards | .transferSupplies | .onceThroughCall | .branchLive | .branchClosure

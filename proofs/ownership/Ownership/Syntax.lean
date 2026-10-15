@@ -9,6 +9,8 @@ abbrev Var := Nat
 
 inductive Ty where
   | int
+  | result (error success : Ty)
+  | chain (payload : Ty) -- End | Link payload (Chain payload)
   | record (fields : List Ty)
   | list (element : Ty)
   | builder (element : Ty)
@@ -21,7 +23,8 @@ def Ty.equal (a b : Ty) : Bool :=
   | .int, .int => true
   | .record xs, .record ys =>
     xs.length == ys.length && (xs.attach.zip ys).all (fun (x, y) => x.val.equal y)
-  | .list x, .list y | .builder x, .builder y => x.equal y
+  | .result e a, .result f b => e.equal f && a.equal b
+  | .chain x, .chain y | .list x, .list y | .builder x, .builder y => x.equal y
   | .fn xs x, .fn ys y => x.equal y && xs.length == ys.length &&
     (xs.attach.zip ys).all (fun (x, y) => x.val.equal y)
   | _, _ => false
@@ -41,6 +44,9 @@ inductive Atom where
   deriving Repr, BEq, Inhabited
 
 inductive Prim where
+  | ok (error : Ty) | err (success : Ty)
+  | endChain (payload : Ty) | link
+  | privateRoot -- a closed, unexported initialization binding
   | add | sub | eq | lt
   | record
   | literal (element : Ty)
@@ -70,6 +76,9 @@ inductive Expr where
   | closure (decl : Nat) (captures : List Atom)
   | app (callee : Atom) (args : List Atom)
   | recur (args : List Atom)
+  | entry (initial : Expr) (retained : List Atom) (model : Var) (body : Expr)
+  | resultCase (input : Atom) (error success : Var) (onError onSuccess : Expr)
+  | chainCase (input : Atom) (head tail : Var) (onEnd onLink : Expr)
   | branch (condition : Atom) (zero nonzero : Expr)
   | traverse (source : Source) (input initial : Atom)
       (index element accumulator : Var) (step : Expr)
@@ -108,6 +117,10 @@ def atomType (env : Env Ty) : Atom → Except String Ty
 
 def primType (p : Prim) (ts : List Ty) : Except String Ty := do
   match p, ts with
+  | .ok e, [a] => pure (.result e a)
+  | .err a, [e] => pure (.result e a)
+  | .endChain t, [] => pure (.chain t)
+  | .link, [a, .chain t] => if a == t then pure (.chain t) else throw "incorrect chain payload"
   | .add, [.int, .int] | .sub, [.int, .int]
   | .eq, [.int, .int] | .lt, [.int, .int] => pure .int
   | .record, xs => pure (.record xs)
@@ -123,7 +136,7 @@ def primType (p : Prim) (ts : List Ty) : Except String Ty := do
   | .events, [.record [_, events]] => pure events
   | .owned _, [t, .fn _ _] => pure t
   | .copy, [.list t] => pure (.list t)
-  | .shared, [t] => pure t
+  | .shared, [t] | .privateRoot, [t] => pure t
   | .builder t, [] => pure (.builder t)
   | .put, [.builder t, v] =>
     if t == v then pure (.builder t) else throw "incorrect builder element"
@@ -150,6 +163,20 @@ def exprType (ds : List Decl) (self : Decl) (env : Env Ty) : Expr → Except Str
   | .recur args => do
     if (← args.mapM (atomType env)) != self.parameters then throw "incorrect recursion arguments"
     pure self.result
+  | .entry initial retained model body => do
+    let t ← exprType ds self env initial
+    let _ ← retained.mapM (atomType env)
+    exprType ds self ((model, t) :: env) body
+  | .resultCase input err ok onError onSuccess => do
+    let .result e a ← atomType env input | throw "case of non-result"
+    let left ← exprType ds self ((err, e) :: env) onError
+    let right ← exprType ds self ((ok, a) :: env) onSuccess
+    if left == right then pure left else throw "result case type mismatch"
+  | .chainCase input head tail onEnd onLink => do
+    let .chain t ← atomType env input | throw "case of non-chain"
+    let left ← exprType ds self env onEnd
+    let right ← exprType ds self ((head, t) :: (tail, .chain t) :: env) onLink
+    if left == right then pure left else throw "chain case type mismatch"
   | .branch c yes no => do
     if (← atomType env c) != .int then throw "non-integer condition"
     let a ← exprType ds self env yes
@@ -186,6 +213,18 @@ def shadowFree (bound : List Var) : Expr → Except String Unit
     if bound.contains v then throw s!"shadowing: variable {v} is bound twice"
     shadowFree bound rhs
     shadowFree (v :: bound) rest
+  | .entry initial _ model body => do
+    if bound.contains model then throw "shadowing: entry model binder"
+    shadowFree bound initial
+    shadowFree (model :: bound) body
+  | .resultCase _ err ok a b => do
+    if bound.contains err || bound.contains ok then throw "shadowing: result case binder"
+    shadowFree (err :: bound) a
+    shadowFree (ok :: bound) b
+  | .chainCase _ head tail a b => do
+    if bound.contains head || bound.contains tail || head == tail then throw "shadowing: chain case binder"
+    shadowFree bound a
+    shadowFree (head :: tail :: bound) b
   | .branch _ a b => do shadowFree bound a; shadowFree bound b
   | .traverse _ _ _ i x acc body => do
     for v in [i, x, acc] do

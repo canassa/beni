@@ -295,6 +295,7 @@ def generate : Gen Program := do return (← generateFamily).2
 
 def exprDepth : Expr → Nat
   | .letE _ a b => 1 + max (exprDepth a) (exprDepth b)
+  | .resultCase _ _ _ a b | .chainCase _ _ _ a b | .entry a _ _ b => 1 + max (exprDepth a) (exprDepth b)
   | .branch _ a b => 1 + max (exprDepth a) (exprDepth b)
   | .traverse _ _ _ _ _ _ b | .focus _ _ _ b => 1 + exprDepth b
   | _ => 1
@@ -341,6 +342,15 @@ def argumentReductions (args : List Atom) : List (List Atom) :=
   args.zipIdx.flatMap fun (a,i) => (atomReductions a).map (fun x => args.set i x)
 
 def reductions : Expr → List Expr
+  | .entry initial retained model body => [initial, body] ++
+      (reductions initial).map (fun a => .entry a retained model body) ++
+      (reductions body).map (fun b => .entry initial retained model b)
+  | .resultCase a e k left right => [left, right] ++
+      (reductions left).map (fun b => .resultCase a e k b right) ++
+      (reductions right).map (fun b => .resultCase a e k left b)
+  | .chainCase a h t left right => [left, right] ++
+      (reductions left).map (fun b => .chainCase a h t b right) ++
+      (reductions right).map (fun b => .chainCase a h t left b)
   | .letE v rhs rest => [rhs, rest] ++
       (reductions rhs).map (fun r => .letE v r rest) ++
       (reductions rest).map (fun r => .letE v rhs r)

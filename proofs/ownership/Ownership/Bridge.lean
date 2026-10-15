@@ -15,6 +15,8 @@ def node (tag : String) (xs : List String := []) := arr (quote tag :: xs)
 
 def ty : Ty → String
   | .int => node "int"
+  | .result e a => node "result" [ty e, ty a]
+  | .chain t => node "chain" [ty t]
   | .list t => node "list" [ty t]
   | .builder t => node "builder" [ty t]
   | .record ts => node "record" [arr (ts.attach.map fun t => ty t.val)]
@@ -32,6 +34,11 @@ def atom : Atom → String
   | .field a n => node "field" [atom a, toString n]
 
 def prim : Prim → String
+  | .ok e => node "ok" [ty e]
+  | .err a => node "err" [ty a]
+  | .endChain t => node "end-chain" [ty t]
+  | .link => node "link"
+  | .privateRoot => node "private-root"
   | .literal t => node "literal" [ty t]
   | .builder t => node "builder" [ty t]
   | .owned f => node "owned" [toString f]
@@ -48,6 +55,9 @@ def expr : Expr → String
   | .closure n xs => node "closure" [toString n, arr (xs.map atom)]
   | .app f xs => node "app" [atom f, arr (xs.map atom)]
   | .recur xs => node "recur" [arr (xs.map atom)]
+  | .entry initial retained model body => node "entry" [expr initial, arr (retained.map atom), toString model, expr body]
+  | .resultCase input e a left right => node "result-case" [atom input, toString e, toString a, expr left, expr right]
+  | .chainCase input h t left right => node "chain-case" [atom input, toString h, toString t, expr left, expr right]
   | .branch c a b => node "branch" [atom c, expr a, expr b]
   | .focus a i x b => node "focus" [atom a, atom i, toString x, expr b]
   | .traverse k a z i x acc b => node "traverse"
@@ -86,6 +96,9 @@ def maxVar : Expr → Nat
   | .letE n a b => max n (max (maxVar a) (maxVar b))
   | .prim _ xs | .closure _ xs | .recur xs => (xs.map maxAtom).foldl max 0
   | .app f xs => max (maxAtom f) ((xs.map maxAtom).foldl max 0)
+  | .entry initial retained model body => max model (max (maxVar initial) (max (maxVar body) ((retained.map maxAtom).foldl max 0)))
+  | .resultCase input e a left right | .chainCase input e a left right =>
+    [maxAtom input, e, a, maxVar left, maxVar right].foldl max 0
   | .branch c a b => max (maxAtom c) (max (maxVar a) (maxVar b))
   | .focus a i x b => max x (max (maxAtom a) (max (maxAtom i) (maxVar b)))
   | .traverse _ a z i x acc b =>
@@ -101,6 +114,9 @@ def auditArithmetic (fresh : Nat) : Expr → Expr
           .prim .at [.var (fresh+1), .int 0, .int 0]
     else .prim op xs
   | .letE n a b => .letE n (auditArithmetic fresh a) (auditArithmetic fresh b)
+  | .entry initial retained model body => .entry (auditArithmetic fresh initial) retained model (auditArithmetic fresh body)
+  | .resultCase input e a left right => .resultCase input e a (auditArithmetic fresh left) (auditArithmetic fresh right)
+  | .chainCase input h t left right => .chainCase input h t (auditArithmetic fresh left) (auditArithmetic fresh right)
   | .branch c a b => .branch c (auditArithmetic fresh a) (auditArithmetic fresh b)
   | .focus a i x b => .focus a i x (auditArithmetic fresh b)
   | .traverse k a z i x acc b => .traverse k a z i x acc (auditArithmetic fresh b)
