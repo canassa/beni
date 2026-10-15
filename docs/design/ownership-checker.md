@@ -3525,7 +3525,9 @@ is a corpus file, or a project directory. The table counts programs, not demands
 ownership, and are left out. **31 of 831 programs are rejected (3.7 %): 17 of them really share, and 14 are limits of the checker.** Every page of `browser/direct/`
 also passes on `browser-tea`, and so do all three examples.
 
-**By cause, and whether the program really shares:**
+**By cause, and whether the program really shares.** A program can have lines of more than one
+cause, so the causes overlap: `ListForms`, `ListPrepend` and `ListIndexedIdentity` are each counted
+twice. Counted once each, causes 1–3 are 17 programs and cause 4 is 14.
 
 1. **A top-level list written** (`top-level`, position; `top_level_list_changed`). 11 programs, 9 of
    them for this cause alone (`run/ListForms` and `ListPrepend` also have exact lines):
@@ -3697,8 +3699,16 @@ behaviour changes.
 - **O0 — the defect and the measurement in the gates.**
   - *Builds:* the fix for §30.2's summary-block crash, with a red-first fixture in `tests/corpus/ownership/`
     that writes cache entries;
-  - a hidden, test-only flag that enforces on any chain, so that §30.2's measurement is a test rather
-    than a patch. Like `--allow-debug`, it is listed in no usage text, and it is deleted in O4;
+  - a check of whether the crash is reachable on `browser-direct` today. If it is, the fix is a bug
+    fix and lands at once, on its own branch, ahead of the rest of O0;
+  - a hidden, test-only flag that reproduces §30.2's patch whole, so that the measurement is a test
+    rather than a patch. Like `--allow-debug`, it is listed in no usage text, and it is deleted in O4.
+    The flag does three things:
+    - it enforces on any chain;
+    - it gives every program constructor the direct row, by the same name table §20.2 uses today,
+      extended with `browser-tea`'s `Tea.*`, `browser`'s `Browser.program` and `page`'s
+      `Page.sandbox`;
+    - it leaves the table for O3's `entry` word to replace;
   - the measurement script in `bench/` that runs it.
 
   *Accepted when:* the four `SchemaDecl*` projects check under enforcement with a cache, and the script
@@ -3744,6 +3754,20 @@ behaviour changes.
     `node` project for each kind of error under `build/bad/`;
   - the determinism test run on `node` as well.
 
+  - the tests of `src/js/Manifest.zig` for `"lists"` changed to read the key as unknown and ignore
+    it, whatever its value;
+  - the normative text that still says "on an in-place platform", or that `browser-direct` alone
+    declares `"lists"`, rewritten to say every platform. These amendments supersede that text but
+    leave it in place: `backend.md` §4's plain-array subsection (its *Writes*, invariants 1 and 8,
+    *Identity* and the open question), `language.md` §6.8's cost table and §10's row, this
+    document's §20.2, §28.2 and §28.6, and `boundary.md` §5.2. The slice's PR lists every passage it
+    rewrote.
+
+  *Gated on:* O2's measurements of the 100 000-line benchmark, Conduit and the corpus pages with the
+  pass on. Where one misses §28.8's target or `fast-compiler.md` §2's budgets, the owner accepts the
+  measured number, or the miss is fixed, before O4 turns the pass on for every build. A miss reported
+  in O2 does not let O4 go ahead by itself.
+
   *Accepted when:* the gates are green with no golden changed but O1's, and the run hashes are unchanged:
   nothing emitted moves.
 - **O5 — the representation and the in-place lowering, together, on every platform.** This is
@@ -3764,12 +3788,28 @@ behaviour changes.
     - `bench/arrays`, research 29's harness, TodoMVC and Conduit are measured before and after;
     - and a search of `core/List` finds no copying twin of a writer.
 - **O6 — record assignment** (`browser-direct.md` §7.4, its condition C4) stays `browser-direct`'s. It
-  comes after O5, under C4, and is not a precondition of anything here.
+  comes after O5, under C4, and nothing here waits for it. **It consumes the identity rule, though.**
+  The rule that only a list loses its `===` skip holds only while lists are the one thing written in
+  place. That rule is in `backend.md` §15.5, `language.md` §11.11 and `boundary.md` §9.4.4, all
+  amended 2026-10-15.
+  - Before O6 assigns through a record, those three are amended for every container type it writes,
+    on every platform whose runtime may meet such a record.
+  - `browser-direct`'s own skips already obey its §7.4 first rule: no group decides "unchanged" from
+    the identity of any object on a path written in place, records included. So O6 changes nothing
+    there.
 
 ### 30.8 Open questions
 
-None are left for the owner on the platform question, which this section closes. Two decisions are
-recorded in §30.2's list for O1, and they are the owner's under CLAUDE.md rule 10:
+The platform question is closed, and the slices have no open question. One decision is the owner's,
+under CLAUDE.md rule 10, and O1 waits for it: **which of the persistence and identity tests of
+causes 2 and 3 are retired, and which are rewritten with `List.copy`.** These are `ListPersistence`,
+`ListForms`, `ListPrepend`, `ListSpreadPatterns`, `ListIdentity`, `ListIndexedIdentity` and
+`WriteRowsIdentity`. The rest of O1 is decided as §30.7 writes it. That covers the cause-1 fixtures,
+`QueuedListSnapshot`, the precision work, and the correction of the eight tagger lines that print as
+exact, which is part of O1 and not left to choose.
 
-- whether each persistence and identity test in causes 2–3 is rewritten with `List.copy` or retired;
-- whether the eight tagger lines that print as exact are corrected before or with the precision work.
+**`entry` on a third-party platform** is checked the way every ownership word is (§24.6). Its
+placement and shape are refused when wrong (§30.3). Whether the runtime behind it keeps P1–P4 and P7
+is not checked. It is trusted, as a `foreign`'s words and its sibling's behaviour are. The platform is
+privileged code (CLAUDE.md rule 6), and a false claim is a defect in that platform. Shipped and test
+platforms are pinned by `trusted-surface.txt`. A third party's are not.
