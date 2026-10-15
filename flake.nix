@@ -43,22 +43,30 @@
       # compiles from the worktree's files, and each worktree keeps its own:
       # its manifests name files relative to the build root, so a shared one
       # handed a worktree a binary built from another worktree's sources
-      # (commit bfc234325). The GLOBAL one holds what Zig compiles from its
-      # own library, the build runner and compiler-rt, with every input
-      # file named relative to Zig's library or the global cache itself.
-      # That stays true only while no build step writes a worktree's file
-      # into the global cache: `build.zig` never uses
-      # `b.graph.global_cache_root`, and it must not start to.
+      # (commit bfc234325). The GLOBAL one holds the build runner,
+      # compiler-rt, the ZIR of Zig's library, the generated `builtin.zig`
+      # of each module and fetched packages, with every input file named
+      # relative to Zig's library or the global cache itself. That stays
+      # true only while no build step puts a file of the worktree into the
+      # global cache. In Zig 0.17 a step names a path there with the base
+      # `.global_cache`, as in `b.graph.path(.global_cache, …)`. beni's
+      # build has no such path (`git grep global_cache -- '*.zig'`), and it
+      # must not get one that holds a file of the worktree.
       # One global cache serves every worktree of beni and no other
       # project. In the default `~/.cache/zig`, another project's Nix
-      # build of Zig 0.17.0 took the build runner's slot: its library
-      # differs in one file and its version string does not, so each Zig
-      # evicted the other's runner, and the next `zig build` here compiled
-      # it again for 1 to 3 minutes (#145, #161). A ZIG_GLOBAL_CACHE_DIR
-      # that the caller set is kept: CI keeps `~/.cache/zig`, the path its
-      # cache steps restore (.github/workflows/ci.yml). Every shell below
-      # runs this, `default`'s through `inputsFrom`, and direnv's
-      # `use flake` runs `default`'s.
+      # build of Zig 0.17.0 took the slots of the build runner and
+      # compiler-rt: its library differs in one file and its version
+      # string does not, so each Zig evicted the other's entries, and the
+      # next `zig build` here compiled them again for 1 to 3 minutes
+      # (#145, #161). A ZIG_GLOBAL_CACHE_DIR that the caller set is kept:
+      # CI keeps `~/.cache/zig`, the path its cache steps restore
+      # (.github/workflows/ci.yml). A Zig that runs in the shell uses this
+      # cache, so leave the shell before you build another Zig project.
+      # The shells with Zig run this: `default`, and `browser`, `coverage`
+      # and `compare` through `inputsFrom`; direnv's `use flake` runs
+      # `default`'s. `ownership` has Zorg and no Zig. Zorg reads
+      # ZORG_GLOBAL_CACHE_DIR, not this variable, and its own default is
+      # `~/.cache/zorg`, which the eviction of #161 does not reach (#197).
       zigGlobalCache = ''
         export ZIG_GLOBAL_CACHE_DIR="''${ZIG_GLOBAL_CACHE_DIR:-''${XDG_CACHE_HOME:-$HOME/.cache}/zig-beni}"
       '';
@@ -149,10 +157,6 @@
               # tools still work there, and the bridge needs Zorg on PATH.
               ++ pkgs.lib.optional (builtins.hasAttr system zorgReleases) zorg
               ++ pkgs.lib.optionals pkgs.stdenv.isLinux [ pkgs.util-linux ];
-            # `zorg build` reads the same variable. Every Zorg version
-            # string carries `+zorg`, so Zorg never takes the slot of the
-            # other shells' Zig 0.17.0.
-            shellHook = zigGlobalCache;
           };
 
         # `nix develop .#browser`: the default shell plus Chromium, for
