@@ -73,7 +73,7 @@ const Reach = @import("Reach.zig");
 const SchemaGraph = @import("SchemaGraph.zig");
 
 const magic = "BENIEDGE";
-pub const version: u32 = 1;
+pub const version: u32 = 2;
 
 /// The build options an edge list depends on.
 pub const Options = struct {

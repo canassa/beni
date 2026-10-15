@@ -1,0 +1,3 @@
+Only declarations, primitives and their compositions by `list`,
+`nullable`, `converted` and a generic declaration: no build of it ships the
+library interpreter.

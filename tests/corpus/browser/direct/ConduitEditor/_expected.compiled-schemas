@@ -1,0 +1,2 @@
+Conduit: every schema is a declaration, run by `X.parse` and by
+`Http.jsonBody (X.schema ⊤)`, so no build of it ships the library interpreter.

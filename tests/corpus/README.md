@@ -96,6 +96,20 @@ stack frames whose paths are the test's own. Without a `.crash` file a
 `run/` program must exit 0, as before. The `.crash` text is part of what a
 build's run hash covers. `.crash` is never blessed: write it by hand.
 
+### A program whose schemas are all compiled
+
+A `run/` or `browser/` fixture with a `<name>.compiled-schemas` file
+(`_expected.compiled-schemas` in a project) asserts `schema.md` §6's guarantee,
+*A statically known schema runs compiled*. Every schema it builds is fixed at
+compile time, so its development build must ship no library interpreter:
+`_core/Schema.mjs` must declare neither `Schema$run`, which every interpreting
+runner calls, nor `Schema$box`, the one maker of an `Interpreted` schema. A
+`browser/direct/` project's `browser-tea` build is held to it too. The file's
+text says why the fixture qualifies. Like `.crash`, it is written by hand and
+never blessed. It costs no build of its own, because it reads the output of the
+development build the case already makes. Conduit's pages and the schema
+fixtures that build only compiled schemas carry one.
+
 ### `browser/`: a program in a page
 
 A `browser/` fixture is built like a `run/` one, twice, for the `page`

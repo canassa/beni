@@ -1,0 +1,142 @@
+-- Compositions of statically known schemas run compiled (`schema.md` §6,
+-- *A statically known schema runs compiled*): `Schema.list`,
+-- `Schema.nullable` and `Schema.converted` of a declaration or a
+-- primitive, a list of lists, a generic declaration given a composition, and
+-- a primitive at the root. Each `Schema.parse` and `Schema.print` here runs
+-- compiled workers, and `.compiled-schemas` holds the build to shipping no
+-- library interpreter. The issues are the library's: a list element's index
+-- then the field in the path, `AllErrors` in index order, the depth bound
+-- tested before the descent, the options and malformed JSON at the root, a
+-- conversion's issues moved under the value's path, and a print failure
+-- named as the output names it. The corpus also builds this with every
+-- declaration's `schema` forced through the library (§10).
+import Node
+import Schema exposing (Conversion)
+import Show
+
+
+schema Item =
+    id : Int
+    name : String as "item-name"
+
+
+schema Page a =
+    items : List a
+    total : Int
+
+
+decimalInt : Conversion String Int
+decimalInt =
+    Schema.conversion
+        (λs →
+            case String.toInt s of
+                Just n →
+                    Ok n
+
+                Nothing →
+                    Err
+                        [ Schema.issueAt [ Schema.Field "digits" ] ("not a decimal integer: " ++ s)
+                        ]
+        )
+        λn →
+            if n < 0 then
+                Err [ Schema.issue "negative" ]
+            else
+                Ok (String.fromInt n)
+
+
+with : Schema.ErrorMode, Schema.UnknownKeys, Int → Schema.Options
+with errors keys depth =
+    { errors = errors, unknownKeys = keys, maxDepth = depth, reportInput = False }
+
+
+items : List Item.Type → String
+items xs = String.join (List.map xs λi → "${String.fromInt i.id}:${i.name}") ","
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+text : String → String
+text s = s
+
+
+main : Node.Program
+main =
+    list = Schema.list (Item.schema ⊤)
+    maybe = Schema.nullable (Item.schema ⊤)
+    counts = Schema.list (Schema.converted Schema.string decimalInt)
+    grid = Schema.list (Schema.list Schema.float)
+    page = Page.schema (Schema.list Schema.int)
+    Node.printLines
+        [ Show.result
+            (Schema.parse list "[{\"id\":1,\"item-name\":\"a\"},{\"id\":2,\"item-name\":\"b\"}]")
+            items
+        , Show.result
+            (Schema.parse
+                list
+                "[{\"id\":1,\"item-name\":\"a\"},{\"id\":2},{\"id\":\"3\",\"item-name\":\"c\"}]"
+            )
+            items
+        , Show.result
+            (Schema.parseWith
+                list
+                (with Schema.AllErrors Schema.Ignore 512)
+                "[{\"id\":1,\"item-name\":\"a\"},{\"id\":2},{\"id\":\"3\",\"item-name\":\"c\"}]"
+            )
+            items
+        , Show.result
+            (Schema.parseWith
+                list
+                (with Schema.AllErrors Schema.Reject 512)
+                "[{\"id\":1,\"item-name\":\"a\",\"x\":0}]"
+            )
+            items
+        , Show.result
+            (Schema.parseWith
+                list
+                (with Schema.FirstError Schema.Ignore 1)
+                "[{\"id\":1,\"item-name\":\"a\"}]"
+            )
+            items
+        , Show.result
+            (Schema.parseWith
+                list
+                (with Schema.FirstError Schema.Ignore 0)
+                "[{\"id\":1,\"item-name\":\"a\"}]"
+            )
+            items
+        , Show.result (Schema.parseWith list (with Schema.FirstError Schema.Ignore (-1)) "[]") items
+        , Show.result (Schema.parse list "[{\"id\":1,") items
+        , Show.result (Schema.parse list "{}") items
+        , Show.result
+            (Schema.print list [ { id = 1, name = "a" }, { id = 9007199254740992, name = "b" } ])
+            text
+        , Show.result (Schema.parse maybe "null") λm →
+            case m of
+                Schema.Null →
+                    "null"
+
+                Schema.NonNull i →
+                    items [ i ]
+        , Show.result (Schema.print maybe (Schema.NonNull { id = 3, name = "c" })) text
+        , Show.result (Schema.parse counts "[\"12\",\"x\",\"3\"]") ints
+        , Show.result
+            (Schema.parseWith
+                counts
+                (with Schema.AllErrors Schema.Ignore 512)
+                "[\"12\",\"x\",\"y\"]"
+            )
+            ints
+        , Show.result (Schema.print counts [ 7, -1 ]) text
+        , Show.result (Schema.print grid [ [ 1.5 ], [ 0 / 0, 2 ] ]) text
+        , Show.result (Schema.parse grid "[[1],[2,\"3\"]]") λg → String.fromInt (List.length g)
+        , Show.result (Schema.parse page "{\"items\":[[1],[2,3]],\"total\":2}") λp →
+            String.join (List.map p.items ints) "/"
+        , Show.result (Schema.parse page "{\"items\":[[1],[2,\"3\"]],\"total\":2}") λp →
+            String.join (List.map p.items ints) "/"
+        , Show.result (Schema.print page { items = [ [ 1, 9007199254740992 ] ], total = 1 }) text
+        , Show.result (Schema.parse Schema.int "4.5") String.fromInt
+        , Show.result (Schema.print Schema.string "a\"b") text
+        ]

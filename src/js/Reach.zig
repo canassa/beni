@@ -327,6 +327,24 @@ pub const Input = struct {
         return null;
     }
 
+    /// `core/Schema`'s `Interpreted`, the one constructor of `core` that
+    /// guards (`schema.md` §6, *A statically known schema runs compiled*):
+    /// only `core/Schema`'s `box`, which every interpreting builder calls,
+    /// spells it; the compiler writes none, no sibling or `foreign` names
+    /// its core-private type, and no schema's endpoint can name it. Null
+    /// without an interner or a `core/Schema`, and then it is exempt like
+    /// the rest of core.
+    pub fn schemaInterpreted(in: Input) ?Node {
+        const interner = in.interner orelse return null;
+        const symbol = interner.find("Interpreted") orelse return null;
+        const m = in.graph.lookup(.core, InternPool.WellKnown.Schema.symbol()) orelse return null;
+        const bir = in.birOf(m);
+        for (bir.ctors, 0..) |c, i| {
+            if (bir.symbol(c.name) == symbol) return .{ .module = m, .kind = .ctor, .index = @intCast(i) };
+        }
+        return null;
+    }
+
     /// §9's root set.
     ///
     /// An application build has exactly ONE root, `main` of the entry
@@ -505,6 +523,12 @@ fn exempt(in: Input, scratch: Allocator, modules: []Live) Allocator.Error!void {
         const m: Graph.Index = @fromBackingInt(@intCast(@as(u32, @intCast(i))));
         if (all or in.store.package(in.graph.moduleFile(m)) == .core) live.ctors.setAll();
     }
+    // A library's callers may call a builder, so only an application build
+    // leaves `Interpreted` to its builders.
+    if (!in.library) if (in.schemaInterpreted()) |node| {
+        const ctors = &modules[node.module.int()].ctors;
+        if (node.index < ctors.bit_length) ctors.unset(node.index);
+    };
     if (all) return;
 
     // Type declarations whose constructors hand-written code may build: a
@@ -815,6 +839,9 @@ pub const Builder = struct {
     /// `List.append`, which a `++` on lists calls in place of
     /// `Basics.append` (`Dispatch.appends`).
     list_append: ?Node = null,
+    /// `core/Schema`'s `Interpreted` (`Input.schemaInterpreted`), the one core
+    /// constructor that guards.
+    schema_interpreted: ?Node = null,
     /// The shared walk's output for one node, cleared and refilled per
     /// node: a caller-owned buffer, so the whole module's edges cost one
     /// allocation.
@@ -838,6 +865,7 @@ pub const Builder = struct {
             .list_close = in.coreDecl(.List, .close),
             .list_cons = in.coreDecl(.List, .cons),
             .list_append = in.coreDecl(.List, .append),
+            .schema_interpreted = in.schemaInterpreted(),
         };
     }
 
@@ -926,7 +954,7 @@ pub const Builder = struct {
         for (bir.decls, 0..) |d, i| {
             inline for (0..SchemaGraph.Member.count) |k| {
                 schema_at[i * SchemaGraph.Member.count + k] = @intCast(schema_targets.items.len);
-                if (d.kind == .schema) try b.memberEdges(m, @intCast(i), @fromBackingInt(@intCast(k)), &schema_targets);
+                if (d.kind == .schema) try b.memberEdges(m, @intCast(i), @fromBackingInt(@intCast(k)), &guards, &schema_targets);
             }
         }
         schema_at[bir.decls.len * SchemaGraph.Member.count] = @intCast(schema_targets.items.len);
@@ -1119,7 +1147,7 @@ pub const Builder = struct {
                 break :blk .{ .{ .module = owner, .decl = decl.int() }, member.kind };
             } else continue;
             const member: SchemaGraph.Member = switch (kind) {
-                .schema => .description,
+                .schema => .root,
                 .parse, .parse_with => .read,
                 .print, .print_with => .write,
                 .type, .encoded => continue,
@@ -1132,10 +1160,33 @@ pub const Builder = struct {
     /// declaration's own node when it holds a `via`, the same member of each
     /// definition it references, and the `core/Schema` values its code calls
     /// (`SchemaGraph.coreNeeds`).
-    fn memberEdges(b: *Builder, m: Graph.Index, decl: u32, member: SchemaGraph.Member, out: *std.ArrayList(Target)) Allocator.Error!void {
+    fn memberEdges(b: *Builder, m: Graph.Index, decl: u32, member: SchemaGraph.Member, guards: *Guards, out: *std.ArrayList(Target)) Allocator.Error!void {
         const sg = b.schemaGraph() orelse return;
         const ref: SchemaGraph.Ref = .{ .module = m, .decl = decl };
-        if ((member == .description or !b.in.schema_library) and try sg.hasVia(b.scratch, ref)) {
+        if (member == .root and b.in.schema_library) {
+            // Under `--schema-library` `S.schema` is its description.
+            try out.append(b.scratch, .{ .node = schemaNode(ref, .description) });
+        } else if (member == .root) {
+            // `S.schema`'s compiled value (`schema.md` §6, *A statically
+            // known schema runs compiled*): each other member behind the
+            // `core/Schema` declarations that run it, one edge per guard,
+            // so any one of them is enough. A member left out is written
+            // `null` in the value (`SchemaLower`).
+            for (SchemaGraph.root_guards) |pick| {
+                const target = schemaNode(ref, pick[0]);
+                const guard = b.coreSchemaDecl(pick[1]) orelse {
+                    try out.append(b.scratch, .{ .node = target });
+                    continue;
+                };
+                if (guards.chains.items.len == 0) try guards.chains.append(b.scratch, .{ .parent = 0, .start = 0, .end = 0 });
+                const first: u32 = @intCast(guards.chain_ctors.items.len);
+                try guards.chain_ctors.append(b.scratch, guard);
+                const chain: u32 = @intCast(guards.chains.items.len);
+                try guards.chains.append(b.scratch, .{ .parent = 0, .start = first, .end = first + 1 });
+                try out.append(b.scratch, .{ .node = target, .chain = chain });
+            }
+        }
+        if (member != .root and (member == .description or !b.in.schema_library) and try sg.hasVia(b.scratch, ref)) {
             try out.append(b.scratch, .{ .node = .{ .module = m, .kind = .decl, .index = decl } });
         }
         var targets: std.ArrayList(struct { SchemaGraph.Ref, SchemaGraph.Member }) = .empty;
@@ -1153,6 +1204,21 @@ pub const Builder = struct {
                 break;
             }
         }
+    }
+
+    /// The node of `core/Schema`'s value declaration `name`, or null when
+    /// the build holds no `core/Schema` or the interner does not know the
+    /// name.
+    fn coreSchemaDecl(b: *const Builder, name: []const u8) ?Node {
+        const interner = b.in.interner orelse return null;
+        const symbol = interner.find(name) orelse return null;
+        const core = b.in.graph.lookup(.core, InternPool.WellKnown.Schema.symbol()) orelse return null;
+        const bir = b.in.birOf(core);
+        for (bir.decls, 0..) |d, i| {
+            if (!d.kind.isValue() or bir.symbol(d.name) != symbol) continue;
+            return .{ .module = core, .kind = .decl, .index = @intCast(i) };
+        }
+        return null;
     }
 
     /// An edge only a declaration's suspendable body has.
@@ -1356,8 +1422,12 @@ pub const Builder = struct {
                 else => return null,
             };
             if (owner.int() >= in.graph.count()) return null;
-            if (in.store.package(in.graph.moduleFile(owner)) == .core) return null;
-            return .{ .module = owner, .kind = .ctor, .index = index };
+            const node: Node = .{ .module = owner, .kind = .ctor, .index = index };
+            if (in.store.package(in.graph.moduleFile(owner)) == .core) {
+                const interpreted = g.b.schema_interpreted orelse return null;
+                return if (std.meta.eql(node, interpreted)) node else null;
+            }
+            return node;
         }
 
         /// Every constructor the declaration builds — a `ctor`/`ext_ctor`
