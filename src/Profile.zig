@@ -299,17 +299,17 @@ pub const Event = struct {
 /// One worker's event buffer. Only that worker writes it, which is what
 /// makes recording lock-free — but "no lock" is not "no contention": at 32
 /// bytes two workers' buffers shared a cache line, so every `record` on one
-/// core invalidated the other's line. Padded to a whole line so the
-/// independence is real and not just formal.
+/// core invalidated the other's line. Aligned to a whole line, which pads
+/// its size to one on every target, so the independence is real and not
+/// just formal. (It was padded by hand, by a sum that took `dropped` for a
+/// `usize`: on wasm32 a `usize` is 4 bytes and the sum came out short.)
 pub const ThreadBuffer = struct {
-    events: []Event,
+    events: []Event align(cache_line),
     len: usize = 0,
     dropped: u64 = 0,
-    _pad: [cache_line - (@sizeOf([]Event) + 2 * @sizeOf(usize)) % cache_line]u8 = undefined,
 };
 
-/// `std.atomic.cache_line` is the target's line size; naming it here keeps
-/// the padding expression readable.
+/// `std.atomic.cache_line` is the target's line size.
 const cache_line = std.atomic.cache_line;
 
 comptime {

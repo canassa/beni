@@ -4727,7 +4727,7 @@ const Emitter = struct {
             p.quit = true;
             p.start.broadcast(p.io);
             p.mutex.unlock(p.io);
-            for (p.threads.items) |t| t.join();
+            if (!@import("builtin").single_threaded) for (p.threads.items) |t| t.join();
             p.threads.deinit(p.gpa);
             for (p.workers) |*w| {
                 w.module.deinit();
@@ -4760,7 +4760,10 @@ const Emitter = struct {
             // for the rounds after; a round that wants fewer still wakes
             // them all, and the extra ones find nothing to claim.
             const threads = @min(want, p.workers.len) -| 1;
-            if (!p.spawn_failed and p.threads.items.len < threads) {
+            // A build with no threads spawns none, and the calling thread
+            // takes every item (fast-compiler.md §10, *A build with no
+            // threads*).
+            if (!@import("builtin").single_threaded and !p.spawn_failed and p.threads.items.len < threads) {
                 try p.threads.ensureTotalCapacity(p.gpa, p.workers.len - 1);
                 for (p.workers[1 + p.threads.items.len .. 1 + threads]) |*w| {
                     const t = std.Thread.spawn(.{ .stack_size = Session.check_stack_size }, loop, .{ p, w, p.round }) catch {

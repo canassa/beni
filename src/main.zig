@@ -20,6 +20,7 @@
 //! core's cost.
 
 const std = @import("std");
+const builtin = @import("builtin");
 const Io = std.Io;
 const beni = @import("beni");
 const Cli = beni.Cli;
@@ -32,12 +33,17 @@ pub fn main(init: std.process.Init) u8 {
     const io = init.io;
     const arena = init.arena.allocator();
 
+    // Both streams are written as streams, never at a file position: a
+    // pipe or a terminal has none, a WASI host may refuse a positional
+    // write on them (`NOTCAPABLE` under Node's), and a position would
+    // overwrite what a shell redirect already wrote to the file
+    // (fast-compiler.md §10, *A build with no threads*).
     var stderr_buffer: [4096]u8 = undefined;
-    var stderr_writer = Io.File.stderr().writer(io, &stderr_buffer);
+    var stderr_writer = Io.File.stderr().writerStreaming(io, &stderr_buffer);
     const stderr = &stderr_writer.interface;
     defer stderr.flush() catch {};
     var stdout_buffer: [4096]u8 = undefined;
-    var stdout_writer = Io.File.stdout().writer(io, &stdout_buffer);
+    var stdout_writer = Io.File.stdout().writerStreaming(io, &stdout_buffer);
     const stdout = &stdout_writer.interface;
     defer stdout.flush() catch {};
 
@@ -111,7 +117,9 @@ fn sessionOptions(common: Cli.Common) Session.Options {
     // than it has cores without the flag becoming a way to hang the tool.
     const jobs: u32 = @min(common.jobs orelse cpus, cpus *| 4);
     return .{
-        .jobs = @max(jobs, 1),
+        // A build with no threads has one worker, whatever `--jobs` says
+        // (fast-compiler.md §10, *A build with no threads*).
+        .jobs = if (builtin.single_threaded) 1 else @max(jobs, 1),
         // With no `--jobs`, the CPU count is only a ceiling, and the pools
         // are sized by how much source there is to work on.
         .size_by_work = common.jobs == null,
@@ -149,6 +157,9 @@ fn runSession(session: *Session, stderr: *Io.Writer, paths: []const []const u8, 
 /// consumer walks it by recursion, and a main thread does not have room for
 /// that many frames.
 fn onBigStack(comptime function: anytype, args: anytype) anyerror!void {
+    // A build with no threads calls it here: its main stack is sized for it
+    // (fast-compiler.md §10, *A build with no threads*).
+    if (builtin.single_threaded) return @call(.auto, function, args);
     const Runner = struct {
         args: @TypeOf(args),
         result: anyerror!void = {},
@@ -574,6 +585,7 @@ fn dumpOwnership(gpa: std.mem.Allocator, session: *Session, stdout: *Io.Writer, 
 /// `onBigStack` for a function with a result: the pass walks expression
 /// trees by recursion, as every other tree walk does.
 fn onBigStackResult(comptime function: anytype, args: anytype) @typeInfo(@TypeOf(function)).@"fn".return_type.? {
+    if (builtin.single_threaded) return @call(.auto, function, args);
     const R = @typeInfo(@TypeOf(function)).@"fn".return_type.?;
     const Runner = struct {
         args: @TypeOf(args),

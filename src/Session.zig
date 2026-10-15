@@ -35,6 +35,7 @@
 //! the product still does not depend on `--jobs`.
 
 const std = @import("std");
+const builtin = @import("builtin");
 const Allocator = std.mem.Allocator;
 const Io = std.Io;
 const diagnostic = @import("diagnostic");
@@ -749,7 +750,12 @@ fn runWave(session: *Session, files: []const SourceStore.Index, phases: Phases) 
     const gpa = session.gpa;
     session.wave = files;
     defer session.wave = &.{};
-    {
+    if (builtin.single_threaded) {
+        // A build with no threads runs every worker here, one after another
+        // (fast-compiler.md §10, *A build with no threads*): the first one
+        // claims every file, as the one worker of `--jobs=1` does.
+        for (session.workers) |*worker| workerMain(session, worker, phases);
+    } else {
         var threads: std.ArrayList(std.Thread) = .empty;
         defer threads.deinit(gpa);
         try threads.ensureTotalCapacity(gpa, session.workers.len);
@@ -2515,6 +2521,12 @@ fn runCheckOnBigStack(session: *Session, quiet: []const bool, cached: []?CacheEn
         }
     };
     var runner: Runner = .{ .session = session, .quiet = quiet, .cached = cached, .cutoff = cutoff };
+    // A build with no threads checks here: its main stack is sized for it
+    // (fast-compiler.md §10, *A build with no threads*).
+    if (builtin.single_threaded) {
+        Runner.go(&runner);
+        return runner.result;
+    }
     const thread = try std.Thread.spawn(.{ .stack_size = check_stack_size }, Runner.go, .{&runner});
     thread.join();
     return runner.result;

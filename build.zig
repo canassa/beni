@@ -71,6 +71,14 @@
 //!                                 beni accepts the benchmark's program, and
 //!                                 bench/size.mjs and bench/runtime.mjs on one
 //!                                 tiny program each
+//! And the playground (docs/design/playground.md), not a gate either:
+//!   zig build playground          write the static site, with the compiler
+//!                                 as ReleaseSmall WebAssembly, into
+//!                                 zig-out/playground/
+//!   zig build test-playground     run that compiler under Node on every
+//!                                 run/ and browser/direct/ program and on
+//!                                 TodoMVC, against the native compiler,
+//!                                 byte for byte
 //! And the cross-language benchmark (docs/design/compare-bench.md §12), which
 //! needs `nix develop .#compare` and is not a gate either:
 //!   zig build compare-gen         write the generated projects
@@ -117,6 +125,33 @@ const variant_core: Core = .{ .dir = core_dir, .extra = .{
     \\
     ,
 } };
+
+/// Where the compiler with no threads is installed under the prefix
+/// (`docs/design/fast-compiler.md` §10, *A build with no threads*): the
+/// ReleaseSafe compiler, single-threaded, for the host.
+const single_bin_dir = "single/bin";
+
+/// Where the WebAssembly compiler the gates run is installed under the
+/// prefix (`docs/design/playground.md` §6): ReleaseSafe, single-threaded,
+/// for `wasm32-wasi`.
+const wasm_bin_dir = "wasm/bin";
+
+/// Where `zig build playground` writes the site, under the prefix
+/// (`docs/design/playground.md` §9), and the sources it copies.
+const playground_dir = "playground";
+
+/// The main stack of a build with no threads (`fast-compiler.md` §10, *A
+/// build with no threads*): the stack every tree walk gets on a thread,
+/// `Check.stack_size` (64 MiB), plus 1 MiB for the frames under the walk.
+/// On Linux Zig's start code raises the stack limit to it; on WebAssembly
+/// it is the shadow stack in linear memory, first in memory, so an
+/// overflow traps.
+const no_threads_stack_size = 65 * 1024 * 1024;
+
+/// How many processes `test-playground` spreads its programs over, and the
+/// gates' `wasm_test.zig`.
+const playground_shards = 8;
+const wasm_shards = 3;
 
 /// How many processes `test-perf` spreads its CPU-time scenarios over.
 const perf_shards = 7;
@@ -429,6 +464,20 @@ pub fn build(b: *std.Build) void {
     // beside it against one cache directory.
     const variant = compiler(b, target, .safe, .self_hosted, .default, variant_core, platform_sources);
     const variant_install = b.addInstallArtifact(variant.exe, .{ .dest_dir = .{ .override = .{ .custom = variant_bin_dir } } });
+    // The same ReleaseSafe compiler with no threads (`fast-compiler.md` §10,
+    // *A build with no threads*), at `zig-out/single/bin/beni`, and for
+    // `wasm32-wasi` at `zig-out/wasm/bin/beni.wasm`: `wasm_test.zig` runs
+    // both against the threaded one (`docs/design/playground.md` §6). Each
+    // takes `-Dllvm` as the safe compiler does. The self-hosted `.wasm`
+    // compiles in seconds and runs slowly; the shipped one is `playground`'s.
+    const single = noThreads(compiler(b, target, .safe, if (llvm) .llvm else .self_hosted, .default, shipped_core, platform_sources));
+    const single_install = b.addInstallArtifact(single.exe, .{ .dest_dir = .{ .override = .{ .custom = single_bin_dir } } });
+    const wasm = noThreads(compiler(b, wasmTarget(b), .safe, if (llvm) .llvm else .self_hosted, .default, shipped_core, platform_sources));
+    const wasm_install = b.addInstallArtifact(wasm.exe, .{ .dest_dir = .{ .override = .{ .custom = wasm_bin_dir } } });
+    // The compiler the playground ships (`docs/design/playground.md` §2.5,
+    // §7.1): ReleaseSmall, by LLVM, at `zig-out/playground/beni.wasm`.
+    const shipped_wasm = noThreads(compiler(b, wasmTarget(b), .small, .llvm, .default, shipped_core, platform_sources));
+    const shipped_wasm_install = b.addInstallArtifact(shipped_wasm.exe, .{ .dest_dir = .{ .override = .{ .custom = playground_dir } } });
 
     // ---- Black-box suite. ----
     // Spawns the ReleaseSafe `zig-out/safe/bin/beni` (the timing steps below
@@ -478,6 +527,9 @@ pub fn build(b: *std.Build) void {
         .perf_install = &perf_install.step,
         .toy_install = &toy_install.step,
         .variant_install = &variant_install.step,
+        .single_install = &single_install.step,
+        .wasm_install = &wasm_install.step,
+        .shipped_wasm_install = &shipped_wasm_install.step,
         .budget = budget_env,
         .chrome = b.option([]const u8, "chrome", "The Chrome or Chromium `test-browser` runs pages in (default: the first of chromium, google-chrome-stable and google-chrome on PATH)") orelse "",
     };
@@ -534,6 +586,12 @@ pub fn build(b: *std.Build) void {
     const build_id_test = bb.artifact(build_id_file);
     bb.runSharded(bb.fileStep(build_id_file), build_id_test, .{ .root = "tests/corpus", .variant = true }, 1);
     bb.runSharded(&gate_summary.step, build_id_test, .{ .root = "tests/corpus", .variant = true, .report_dir = gate_counts_dir }, 1);
+    // The compiler with no threads and the WebAssembly one, against the
+    // threaded one (`docs/design/playground.md` §6).
+    const wasm_file = "tests/blackbox/wasm_test.zig";
+    const wasm_test = bb.artifact(wasm_file);
+    bb.runSharded(bb.fileStep(wasm_file), wasm_test, .{ .root = "tests/corpus", .wasm = .gate }, wasm_shards);
+    bb.runSharded(&gate_summary.step, wasm_test, .{ .root = "tests/corpus", .wasm = .gate, .report_dir = gate_counts_dir }, wasm_shards);
 
     // Record the run hashes: every `run/` program and every program a
     // black-box scenario runs goes under Node. Each fixture's `.run-hash` is
@@ -678,6 +736,20 @@ pub fn build(b: *std.Build) void {
     bench_run.addPassthruArgs();
     const bench_step = b.step("bench", "Measure per-phase throughput over bench/corpus (ReleaseFast)");
     bench_step.dependOn(&bench_run.step);
+
+    // ---- The playground (docs/design/playground.md). ----
+    // The static site: `playground/` as it is, and the shipped compiler
+    // beside it. Every URL in it is relative, so the site build of issue
+    // #127 copies the directory to `/beni/playground/` as it is (§9).
+    const playground_step = b.step("playground", "Write the playground's static site, with the compiler as ReleaseSmall WebAssembly, into zig-out/playground/");
+    playground_step.dependOn(&b.addInstallDirectory(.{ .source_dir = b.path(playground_dir), .install_dir = .prefix, .install_subdir = playground_dir }).step);
+    playground_step.dependOn(&shipped_wasm_install.step);
+    // That compiler against the native one, on every `run/` and
+    // `browser/direct/` program and on TodoMVC (§6). Not a gate: the LLVM
+    // compile of the `.wasm` is about a minute and a half on one thread.
+    // No budget, as for `test-browser`; takes `-Dcorpus`.
+    const test_playground_step = b.step("test-playground", "Run the playground's WebAssembly compiler under Node on every run/ and browser/direct/ program and on TodoMVC, against the native compiler, byte for byte");
+    bb.runSharded(test_playground_step, bb.artifact("tests/blackbox/playground_test.zig"), .{ .root = "tests/corpus", .wasm = .shipped, .budget = false }, playground_shards);
 
     // ---- Cross-language benchmark (docs/design/compare-bench.md §3, §12). ----
     // The generator is its own target: it imports nothing from `src/`. It
@@ -1224,6 +1296,28 @@ fn compiler(
         }),
     });
     return .{ .beni = beni, .diagnostic = diagnostic, .exe = exe };
+}
+
+/// `c`, built with no threads (`fast-compiler.md` §10, *A build with no
+/// threads*): its modules single-threaded, which WebAssembly is already,
+/// and its main stack the stack a check thread gets.
+fn noThreads(c: Compiler) Compiler {
+    c.exe.root_module.single_threaded = true;
+    c.beni.single_threaded = true;
+    c.diagnostic.single_threaded = true;
+    c.exe.stack_size = no_threads_stack_size;
+    return c;
+}
+
+/// The playground's target (`docs/design/playground.md` §2.1): WASI
+/// preview 1 on the `generic` CPU model, pinned so that a new default of
+/// Zig's does not change the binary.
+fn wasmTarget(b: *std.Build) std.Build.ResolvedTarget {
+    return b.resolveTargetQuery(.{
+        .cpu_arch = .wasm32,
+        .os_tag = .wasi,
+        .cpu_model = .{ .explicit = &std.Target.wasm.cpu.generic },
+    });
 }
 
 /// What `compiler` builds.
@@ -2060,6 +2154,11 @@ const HarnessEnvironment = struct {
     /// Whether the run also needs the compiler with a variant core, which
     /// it finds through `BENI_VARIANT_EXE` (`build_id_test.zig`).
     variant: bool = false,
+    /// Whether the run also needs the compilers with no threads, which it
+    /// finds through `BENI_SINGLE_EXE` and `BENI_WASM`: the gates' pair
+    /// (`wasm_test.zig`), or the playground's shipped `.wasm` alone
+    /// (`playground_test.zig`).
+    wasm: enum { none, gate, shipped } = .none,
     /// The corpus walker's `BENI_RUN_HASHES` (`record`) and
     /// `BENI_RUN_HASH_REPORT` (where its `run/` counts go).
     run_hashes: []const u8 = "",
@@ -2100,6 +2199,11 @@ const Blackbox = struct {
     toy_install: *std.Build.Step,
     /// Install `variant_bin_dir/beni`, the beni with a variant core.
     variant_install: *std.Build.Step,
+    /// Install `single_bin_dir/beni` and `wasm_bin_dir/beni.wasm`, the
+    /// compilers with no threads, and the playground's `.wasm`.
+    single_install: *std.Build.Step,
+    wasm_install: *std.Build.Step,
+    shipped_wasm_install: *std.Build.Step,
     /// `-Dtest-budget` in instructions, for every run held to it; empty
     /// where the host cannot count (`testBudget`).
     budget: []const u8,
@@ -2154,6 +2258,20 @@ const Blackbox = struct {
         });
         if (env.variant) r.step.dependOn(bb.variant_install);
         r.setEnvironmentVariable("BENI_VARIANT_EXE", if (env.variant) installPath(bb.b, bb.b.fmt("{s}/beni", .{variant_bin_dir})) else "");
+        switch (env.wasm) {
+            .none => {},
+            .gate => {
+                r.step.dependOn(bb.single_install);
+                r.step.dependOn(bb.wasm_install);
+            },
+            .shipped => r.step.dependOn(bb.shipped_wasm_install),
+        }
+        r.setEnvironmentVariable("BENI_SINGLE_EXE", if (env.wasm == .gate) installPath(bb.b, bb.b.fmt("{s}/beni", .{single_bin_dir})) else "");
+        r.setEnvironmentVariable("BENI_WASM", switch (env.wasm) {
+            .none => "",
+            .gate => installPath(bb.b, bb.b.fmt("{s}/beni.wasm", .{wasm_bin_dir})),
+            .shipped => installPath(bb.b, bb.b.fmt("{s}/beni.wasm", .{playground_dir})),
+        });
         r.setCwd(bb.b.path("."));
         r.setEnvironmentVariable("BENI_CORPUS_ROOT", env.root);
         r.setEnvironmentVariable("BENI_CORPUS_MODE", env.mode);
