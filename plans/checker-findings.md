@@ -5904,3 +5904,17 @@ two kinds of name stay apart (dashboard question `emit-cache-q4`). Pending:
 decision on `emit-cache-q4`; `backend.md` §4, *A `$` in front of every
 compiler-made name*). Promoted to `tests/corpus/browser/dom/NameMeetsLocal`
 and `NameMeetsLocalAfterHelper`, which render.
+
+## CK-233 — a callback returning the callee's parameter escapes the need check (2026-10-15)
+
+Ownership soundness: one original lead (`v6-17-5271`, generator v6, a result holding a function),
+confirmed by the in-place interpreter. A callee pushes what its callback returns; the callback
+returns the callee's own parameter; the caller reads its list afterwards. `returnsOwned`
+(`src/own/Ownership.zig`) handles a `.param` result provenance by checking the supply's owned bit,
+computed in the callee's frame, and `provOwned` returns true for any non-callback provenance, so
+nothing demands the caller's argument. The supply-edge path of the same call makes that call-site
+demand (`callSiteDemandDeep`) when the callback *writes* a supplied parameter; the `need` path,
+where the callee writes what the callback *returns*, does not. Pending:
+`tests/pending/check/bad/direct/BridgeCallbackReturnsParameter.beni` (`list_still_used` at the
+call). The shipping checker is left unchanged by the PR that found it
+([the report](../proofs/ownership/CONSTRUCTIONS-RESULTS.md)).
