@@ -268,7 +268,11 @@ structure State where
   /-- Views (`Prim.view`): `(view, source, front)`. A view is a heap array of
       its own whose contents are kept equal to its source's suffix (`front`)
       or prefix at every write, so every reader below is unchanged. A write to
-      either side is seen by the other: the most aliased in-place lowering. -/
+      either side is seen by the other: the most aliased in-place lowering.
+      Invariant: a view is linked only when made of a nonempty list (an empty
+      one is a fresh `[]`), and no writer shortens an array, so a source keeps
+      the element its view leaves out. A shortening writer (`pop`, `removeAt`)
+      would need `viewOf` and `spliceUp` revisited. -/
   links : List (Nat × Nat × Bool) := []
 abbrev M := StateT State (Except String)
 
