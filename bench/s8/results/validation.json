@@ -1,0 +1,28 @@
+[
+  {
+    "command": [
+      "zorg",
+      "build",
+      "gates"
+    ],
+    "started": "2026-10-15T15:17:47.075Z",
+    "finished": "2026-10-15T15:18:40.735Z",
+    "status": 0,
+    "signal": null,
+    "error": null,
+    "log": "bench/s8/results/gates.log"
+  },
+  {
+    "command": [
+      "zorg",
+      "build",
+      "test-browser"
+    ],
+    "started": "2026-10-15T15:18:40.735Z",
+    "finished": "2026-10-15T15:21:07.786Z",
+    "status": 1,
+    "signal": null,
+    "error": null,
+    "log": "bench/s8/results/chrome-tests.log"
+  }
+]

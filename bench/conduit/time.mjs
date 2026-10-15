@@ -87,7 +87,7 @@ try {
     for (let sample=0;sample<samples;sample++) {
       const shift = sample % subjects.length;
       const order = [...subjects.slice(shift), ...subjects.slice(0, shift)];
-      for (const subject of sample%2 ? order.reverse() : order) {
+      for (const subject of subjects.length > 2 && sample%2 ? order.reverse() : order) {
         for (const tracing of (profiles ? [true] : [false,true])) {
           const page=await browser.newPage(origin+'/');
           try {
@@ -126,7 +126,7 @@ try {
             const state=await page.eval(`({body:__s6Page.serialise(false),title:document.title,errors:__beniHarness.errors})`);
             if(state.errors.length)throw new Error(JSON.stringify(state.errors));
             if(oracle===null)oracle=JSON.stringify(state);else if(oracle!==JSON.stringify(state))throw new Error(`${op.name}: platforms disagree after timed event`);
-            collected[subject].push({sample,tracing,load:loadavg()[0],ms:await page.eval('__s6Ms'),scriptMs:trace?union(trace):null});
+            collected[subject].push({sample,position:order.indexOf(subject),tracing,load:loadavg()[0],ms:await page.eval('__s6Ms'),scriptMs:trace?union(trace):null});
           } finally {await page.close();}
         }
       }

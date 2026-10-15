@@ -99,6 +99,13 @@ for (const f of readdirSync(tea).sort()) {
     corpus.push({ target: p, platform: existsSync(plat) ? plat : "browser-tea" });
   }
 }
+// Explicit additional applications keep the historical series reproducible while
+// allowing later decision batches to include newly promoted external projects.
+const extraApps = process.argv.find((a) => a.startsWith("--extra-apps="))?.slice(13).split(",") ?? [];
+for (const target of extraApps) {
+  const absolute = path.resolve(repo, target);
+  if (!corpus.some((c) => c.target === absolute)) corpus.push({ target: absolute, platform: "browser-tea" });
+}
 const table = { target: path.join(repo, "bench/ui/apps/beni"), platform: "browser-tea" };
 const todomvc = { target: path.join(repo, "bench/todomvc/apps/beni"), platform: "browser-tea" };
 // Conduit and its pages in one directory: `dump` takes one path.

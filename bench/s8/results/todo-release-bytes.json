@@ -1,0 +1,35 @@
+{
+  "method": "Unmodified timed release JS, brotli 11 with input-size hint; legacy todo-sizes.json used no size hint.",
+  "rows": [
+    {
+      "subject": "browser-tea-Sandbox",
+      "sha256": "d26dda4527651589d4699404ba74e3dcc8fcc362c9d5f1102c27cc4f95053451",
+      "raw": 16391,
+      "brotli": 6169
+    },
+    {
+      "subject": "browser-direct-Sandbox",
+      "sha256": "b063db6cfc771db699ad76863b66c7470bee1311ff021656fb3a32512528441c",
+      "raw": 19068,
+      "brotli": 6774
+    },
+    {
+      "subject": "browser-tea-NoEditing",
+      "sha256": "669beb8f9c65180d123f5c7d0c4a1359580a22f5edfc42df1ca4c124068a80c1",
+      "raw": 21757,
+      "brotli": 8258
+    },
+    {
+      "subject": "browser-direct-NoEditing",
+      "sha256": "9da42eae9d5b8330bede25f755abe2dade89cb9c981a657803ea3ba2f2799a65",
+      "raw": 19398,
+      "brotli": 7096
+    },
+    {
+      "subject": "vanilla-es6",
+      "sha256": "b2540ce43968d958528c2069a6fcf2ebf5da6acdda8b908e7766878141356388",
+      "raw": 5339,
+      "brotli": 1722
+    }
+  ]
+}

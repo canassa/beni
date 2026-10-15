@@ -1,0 +1,34 @@
+{
+  "node": "v24.19.0",
+  "quality": 11,
+  "rows": [
+    {
+      "variant": "Sandbox",
+      "platform": "browser-tea",
+      "raw": 16391,
+      "brotli": 6169,
+      "entry": "/home/canassa/src/github.com/canassa/beni/bench/todomvc/out/direct-effects/browser-tea-Sandbox/_main.mjs"
+    },
+    {
+      "variant": "Sandbox",
+      "platform": "browser-direct",
+      "raw": 19068,
+      "brotli": 6774,
+      "entry": "/home/canassa/src/github.com/canassa/beni/bench/todomvc/out/direct-effects/browser-direct-Sandbox/_main.mjs"
+    },
+    {
+      "variant": "NoEditing",
+      "platform": "browser-tea",
+      "raw": 21757,
+      "brotli": 8258,
+      "entry": "/home/canassa/src/github.com/canassa/beni/bench/todomvc/out/direct-effects/browser-tea-NoEditing/_main.mjs"
+    },
+    {
+      "variant": "NoEditing",
+      "platform": "browser-direct",
+      "raw": 19398,
+      "brotli": 7096,
+      "entry": "/home/canassa/src/github.com/canassa/beni/bench/todomvc/out/direct-effects/browser-direct-NoEditing/_main.mjs"
+    }
+  ]
+}

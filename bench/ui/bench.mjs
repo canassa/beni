@@ -86,7 +86,7 @@ for (const bench of benchmarks) {
     for (let k = 0; k < subjects.length; k++) {
       const subject = subjects[(i + k) % subjects.length];
       let r = null;
-      for (let attempt = 0; attempt < 3 && r === null; attempt++) {
+      for (let attempt = 0; attempt < (process.argv.includes("--no-retry") ? 1 : 3) && r === null; attempt++) {
         try {
           r = await measure(subject, bench);
         } catch (e) {

@@ -1,0 +1,41 @@
+built with beni 0.1.0-m1 7445da00731bab8c2bf686c8b48bf033
+[plugin builtin:vite-reporter] 
+(!) Some chunks are larger than 500 kB after minification. Consider:
+- Using dynamic import() to code-split the application
+- Use build.rolldownOptions.output.codeSplitting to improve chunking: https://rolldown.rs/reference/OutputOptions.codeSplitting
+- Adjust chunk size limit for this warning via build.chunkSizeWarningLimit.
+[33m[PLUGIN_TIMINGS] [0mJavaScript callbacks ran for 7.3s of this 7.3s build (99%).
+The slowest callbacks, timed inside each callback (the wait before a callback starts is excluded, the time it awaits is included):
+  - plugin vite:terser renderChunk (98%, 7.2s, 1 call)
+Additional callback time came from callbacks under 1s.
+See https://rolldown.rs/reference/InputOptions.checks#bundlertimings for more details.
+
+skipped filtered.100 p3: no generated subject for this sweep
+skipped filtered.1000 p3: no generated subject for this sweep
+skipped width.4 p3: no generated subject for this sweep
+skipped width.8 p3: no generated subject for this sweep
+skipped width.16 p3: no generated subject for this sweep
+skipped width.17 p3: no generated subject for this sweep
+skipped width.20 p3: no generated subject for this sweep
+skipped width.32 p3: no generated subject for this sweep
+skipped width.64 p3: no generated subject for this sweep
+skipped width.128 p3: no generated subject for this sweep
+skipped width.256 p3: no generated subject for this sweep
+skipped width.1024 p3: no generated subject for this sweep
+skipped derived.100 p3: no generated subject for this sweep
+skipped derived.300 p3: no generated subject for this sweep
+skipped derived.1000 p3: no generated subject for this sweep
+skipped derived.3000 p3: no generated subject for this sweep
+skipped derived.10000 p3: no generated subject for this sweep
+skipped derived.30000 p3: no generated subject for this sweep
+skipped derived.100000 p3: no generated subject for this sweep
+skipped helperRows.100 p3: no generated subject for this sweep
+skipped helperRows.300 p3: no generated subject for this sweep
+skipped helperRows.1000 p3: no generated subject for this sweep
+skipped helperRows.3000 p3: no generated subject for this sweep
+skipped helperRows.10000 p3: no generated subject for this sweep
+skipped tree.4 p3: no generated subject for this sweep
+skipped tree.6 p3: no generated subject for this sweep
+skipped tree.8 p3: no generated subject for this sweep
+skipped tree.10 p3: no generated subject for this sweep
+skipped tree.12 p3: no generated subject for this sweep

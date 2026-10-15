@@ -1,0 +1,338 @@
+{
+  "method": "Independent initializer/matrix stubs, no execution or reoptimisation. Savings cannot be summed or treated as available optimisations.",
+  "rows": [
+    {
+      "app": "conduit",
+      "platform": "tea",
+      "brotli": 31389,
+      "parts": [
+        {
+          "part": "matrix",
+          "count": 0,
+          "rawSpanBytes": 0,
+          "independentBrotliSaved": 0
+        },
+        {
+          "part": "group descriptors",
+          "count": 0,
+          "rawSpanBytes": 0,
+          "independentBrotliSaved": 0
+        },
+        {
+          "part": "patch entries",
+          "count": 0,
+          "rawSpanBytes": 0,
+          "independentBrotliSaved": 0
+        },
+        {
+          "part": "restate entries",
+          "count": 0,
+          "rawSpanBytes": 0,
+          "independentBrotliSaved": 0
+        }
+      ],
+      "visitGuards": [],
+      "matrices": []
+    },
+    {
+      "app": "conduit",
+      "platform": "direct",
+      "brotli": 37970,
+      "parts": [
+        {
+          "part": "matrix",
+          "count": 1,
+          "rawSpanBytes": 41039,
+          "independentBrotliSaved": 1545
+        },
+        {
+          "part": "group descriptors",
+          "count": 146,
+          "rawSpanBytes": 4821,
+          "independentBrotliSaved": 572
+        },
+        {
+          "part": "patch entries",
+          "count": 146,
+          "rawSpanBytes": 20935,
+          "independentBrotliSaved": 3507
+        },
+        {
+          "part": "restate entries",
+          "count": 57,
+          "rawSpanBytes": 984,
+          "independentBrotliSaved": 76
+        }
+      ],
+      "visitGuards": [
+        {
+          "original": "groupEpoch",
+          "binding": "zf",
+          "source": "zf=0"
+        },
+        {
+          "original": "groupProgram",
+          "binding": "Af",
+          "source": "Af=()=>{zf++}"
+        }
+      ],
+      "matrices": [
+        {
+          "entries": 331,
+          "distinctMasks": 53
+        }
+      ]
+    },
+    {
+      "app": "todomvc",
+      "platform": "tea",
+      "brotli": 8913,
+      "parts": [
+        {
+          "part": "matrix",
+          "count": 0,
+          "rawSpanBytes": 0,
+          "independentBrotliSaved": 0
+        },
+        {
+          "part": "group descriptors",
+          "count": 0,
+          "rawSpanBytes": 0,
+          "independentBrotliSaved": 0
+        },
+        {
+          "part": "patch entries",
+          "count": 0,
+          "rawSpanBytes": 0,
+          "independentBrotliSaved": 0
+        },
+        {
+          "part": "restate entries",
+          "count": 0,
+          "rawSpanBytes": 0,
+          "independentBrotliSaved": 0
+        }
+      ],
+      "visitGuards": [],
+      "matrices": []
+    },
+    {
+      "app": "todomvc",
+      "platform": "direct",
+      "brotli": 9474,
+      "parts": [
+        {
+          "part": "matrix",
+          "count": 1,
+          "rawSpanBytes": 515,
+          "independentBrotliSaved": 100
+        },
+        {
+          "part": "group descriptors",
+          "count": 4,
+          "rawSpanBytes": 101,
+          "independentBrotliSaved": 41
+        },
+        {
+          "part": "patch entries",
+          "count": 4,
+          "rawSpanBytes": 389,
+          "independentBrotliSaved": 111
+        },
+        {
+          "part": "restate entries",
+          "count": 0,
+          "rawSpanBytes": 0,
+          "independentBrotliSaved": 0
+        }
+      ],
+      "visitGuards": [
+        {
+          "original": "groupEpoch",
+          "binding": "lc",
+          "source": "lc=0"
+        },
+        {
+          "original": "groupProgram",
+          "binding": "mc",
+          "source": "mc=()=>{lc++}"
+        },
+        {
+          "original": "groupOnce",
+          "binding": "nc",
+          "source": "nc=(a,b)=>{let c=a.$$directGroups,d;if(c===undefined){d=[];a.$$directGroups=d}else d=c;if(d[b]===lc)return false;d[gb(b)]=lc;return true}"
+        }
+      ],
+      "matrices": [
+        {
+          "entries": 19,
+          "distinctMasks": 7
+        }
+      ]
+    },
+    {
+      "app": "sternhalma",
+      "platform": "tea",
+      "brotli": 7746,
+      "parts": [
+        {
+          "part": "matrix",
+          "count": 0,
+          "rawSpanBytes": 0,
+          "independentBrotliSaved": 0
+        },
+        {
+          "part": "group descriptors",
+          "count": 0,
+          "rawSpanBytes": 0,
+          "independentBrotliSaved": 0
+        },
+        {
+          "part": "patch entries",
+          "count": 0,
+          "rawSpanBytes": 0,
+          "independentBrotliSaved": 0
+        },
+        {
+          "part": "restate entries",
+          "count": 0,
+          "rawSpanBytes": 0,
+          "independentBrotliSaved": 0
+        }
+      ],
+      "visitGuards": [],
+      "matrices": []
+    },
+    {
+      "app": "sternhalma",
+      "platform": "direct",
+      "brotli": 9742,
+      "parts": [
+        {
+          "part": "matrix",
+          "count": 0,
+          "rawSpanBytes": 0,
+          "independentBrotliSaved": 0
+        },
+        {
+          "part": "group descriptors",
+          "count": 14,
+          "rawSpanBytes": 420,
+          "independentBrotliSaved": 63
+        },
+        {
+          "part": "patch entries",
+          "count": 14,
+          "rawSpanBytes": 2329,
+          "independentBrotliSaved": 547
+        },
+        {
+          "part": "restate entries",
+          "count": 3,
+          "rawSpanBytes": 48,
+          "independentBrotliSaved": 0
+        }
+      ],
+      "visitGuards": [
+        {
+          "original": "groupEpoch",
+          "binding": "yb",
+          "source": "yb=0"
+        },
+        {
+          "original": "groupProgram",
+          "binding": "zb",
+          "source": "zb=()=>{yb++}"
+        },
+        {
+          "original": "groupOnce",
+          "binding": "Ab",
+          "source": "Ab=(a,b)=>{let c=a.$$directGroups,d;if(c===undefined){d=[];a.$$directGroups=d}else d=c;if(d[b]===yb)return false;d[Va(b)]=yb;return true}"
+        }
+      ],
+      "matrices": []
+    },
+    {
+      "app": "table",
+      "platform": "tea",
+      "brotli": 5365,
+      "parts": [
+        {
+          "part": "matrix",
+          "count": 0,
+          "rawSpanBytes": 0,
+          "independentBrotliSaved": 0
+        },
+        {
+          "part": "group descriptors",
+          "count": 0,
+          "rawSpanBytes": 0,
+          "independentBrotliSaved": 0
+        },
+        {
+          "part": "patch entries",
+          "count": 0,
+          "rawSpanBytes": 0,
+          "independentBrotliSaved": 0
+        },
+        {
+          "part": "restate entries",
+          "count": 0,
+          "rawSpanBytes": 0,
+          "independentBrotliSaved": 0
+        }
+      ],
+      "visitGuards": [],
+      "matrices": []
+    },
+    {
+      "app": "table",
+      "platform": "direct",
+      "brotli": 4340,
+      "parts": [
+        {
+          "part": "matrix",
+          "count": 0,
+          "rawSpanBytes": 0,
+          "independentBrotliSaved": 0
+        },
+        {
+          "part": "group descriptors",
+          "count": 0,
+          "rawSpanBytes": 0,
+          "independentBrotliSaved": 0
+        },
+        {
+          "part": "patch entries",
+          "count": 0,
+          "rawSpanBytes": 0,
+          "independentBrotliSaved": 0
+        },
+        {
+          "part": "restate entries",
+          "count": 0,
+          "rawSpanBytes": 0,
+          "independentBrotliSaved": 0
+        }
+      ],
+      "visitGuards": [
+        {
+          "original": "groupEpoch",
+          "binding": "ka",
+          "source": "ka=0"
+        },
+        {
+          "original": "groupProgram",
+          "binding": "la",
+          "source": "la=()=>{ka++}"
+        },
+        {
+          "original": "groupOnce",
+          "binding": "ma",
+          "source": "ma=(a,b)=>{let c=a.$$directGroups,d;if(c===undefined){d=[];a.$$directGroups=d}else d=c;if(d[b]===ka)return false;d[String(b)]=ka;return true}"
+        }
+      ],
+      "matrices": []
+    }
+  ]
+}

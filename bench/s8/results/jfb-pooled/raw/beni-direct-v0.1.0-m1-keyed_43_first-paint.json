@@ -1,0 +1,1 @@
+{"framework":"beni-direct-v0.1.0-m1-keyed","keyed":true,"benchmark":"43_first-paint","type":"size","values":{"DEFAULT":{"min":49.4,"max":111.6,"median":70,"mean":75.25,"stddev":30.08017065554427,"values":[88.3,49.4,111.6,51.7]}}}

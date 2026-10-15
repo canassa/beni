@@ -1,0 +1,9 @@
+{
+  "method": "Compare retained Chrome corpus expected/actual, trimming trailing diagnostic indentation and normalizing only decimal px literals inside style attributes to six significant digits; no browser rerun or golden update.",
+  "expectedSha256": "4849d828098ca200daff72a5d140849892ab45e3b4b2cdad96e7ae5bf833a944",
+  "actualSha256": "c500c2d16ffea08ca1cee2833a206ba31e60dabf6d9a22e10cbeb09178626c18",
+  "lines": 4988,
+  "changedLines": 1456,
+  "equalAfterStylePrecisionNormalization": true,
+  "remainingDiff": []
+}

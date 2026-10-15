@@ -1,0 +1,66 @@
+[
+  {
+    app: 'conduit',
+    platform: 'tea',
+    brotli: 31389,
+    parts: [ [Object], [Object], [Object], [Object] ],
+    visitGuards: [],
+    matrices: []
+  },
+  {
+    app: 'conduit',
+    platform: 'direct',
+    brotli: 37970,
+    parts: [ [Object], [Object], [Object], [Object] ],
+    visitGuards: [ [Object], [Object] ],
+    matrices: [ [Object] ]
+  },
+  {
+    app: 'todomvc',
+    platform: 'tea',
+    brotli: 8913,
+    parts: [ [Object], [Object], [Object], [Object] ],
+    visitGuards: [],
+    matrices: []
+  },
+  {
+    app: 'todomvc',
+    platform: 'direct',
+    brotli: 9474,
+    parts: [ [Object], [Object], [Object], [Object] ],
+    visitGuards: [ [Object], [Object], [Object] ],
+    matrices: [ [Object] ]
+  },
+  {
+    app: 'sternhalma',
+    platform: 'tea',
+    brotli: 7746,
+    parts: [ [Object], [Object], [Object], [Object] ],
+    visitGuards: [],
+    matrices: []
+  },
+  {
+    app: 'sternhalma',
+    platform: 'direct',
+    brotli: 9742,
+    parts: [ [Object], [Object], [Object], [Object] ],
+    visitGuards: [ [Object], [Object], [Object] ],
+    matrices: []
+  },
+  {
+    app: 'table',
+    platform: 'tea',
+    brotli: 5365,
+    parts: [ [Object], [Object], [Object], [Object] ],
+    visitGuards: [],
+    matrices: []
+  },
+  {
+    app: 'table',
+    platform: 'direct',
+    brotli: 4340,
+    parts: [ [Object], [Object], [Object], [Object] ],
+    visitGuards: [ [Object], [Object], [Object] ],
+    matrices: []
+  }
+]

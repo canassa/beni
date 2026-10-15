@@ -1,0 +1,161 @@
+{
+  "time": "2026-10-15T11:55:22.644Z",
+  "rows": [
+    {
+      "pid": 3320095,
+      "args": "node dist/benchmarkRunner.js --headless --chromeBinary /home/canassa/src/github.com/canassa/beni/bench/s8/chrome.sh --count 5 --framework keyed/solid ",
+      "cpus": "0-1,6-7",
+      "ppid": "3313197"
+    },
+    {
+      "pid": 3324594,
+      "args": "/nix/store/saw46kfbsrr618lhqhpz69hmhhnsgd71-chromium-unwrapped-153.0.8010.36/libexec/chromium/chromium --allow-pre-commit-input --disable-background-networking --disable-background-timer-throttling --disable-backgrounding-occluded-windows --disable-breakpad --disable-client-side-phishing-detection --disable-component-extensions-with-background-pages --disable-crash-reporter --disable-default-apps --disable-dev-shm-usage --disable-hang-monitor --disable-infobars --disable-ipc-flooding-protection --disable-popup-blocking --disable-prompt-on-repost --disable-renderer-backgrounding --disable-search-engine-choice-screen --disable-sync --enable-automation --export-tagged-pdf --force-color-profile=srgb --generate-pdf-document-outline --metrics-recording-only --no-first-run --password-store=basic --use-mock-keychain --disable-features=Translate,AcceptCHFrame,MediaRouter,OptimizationHints,WebUIReloadButton,ProcessPerSiteUpToMainFrameThreshold,IsolateSandboxedIframes,Translate,PrivacySandboxSettings4,IPH_SidePanelGenericMenuFeature --enable-features=PdfOopif --disable-extensions --window-size=1280,800 --js-flags=--expose-gc --no-default-browser-check --disable-sync --no-first-run --ash-no-nudges --disable-extensions --headless=new --remote-debugging-port=0 --user-data-dir=/tmp/nix-shell.ikbLvH/puppeteer_dev_chrome_profile-3CZmfV --noerrdialogs --ozone-platform=headless --ozone-override-screen-size=800,600 --use-angle=swiftshader-webgl about:blank ",
+      "cpus": "2-5,8-11",
+      "ppid": "3324583"
+    },
+    {
+      "pid": 3324601,
+      "args": "/nix/store/saw46kfbsrr618lhqhpz69hmhhnsgd71-chromium-unwrapped-153.0.8010.36/libexec/chromium/chrome_crashpad_handler --monitor-self --monitor-self-annotation=ptype=crashpad-handler --database=/home/canassa/.config/chromium/Crash Reports --annotation=lsb-release=NixOS 26.05 (Yarara) --annotation=plat=Linux --annotation=prod=Chrome_Linux --annotation=ver=153.0.8010.36 --initial-client-fd=5 --shared-client-connection ",
+      "cpus": "2-5,8-11",
+      "ppid": "1"
+    },
+    {
+      "pid": 3324603,
+      "args": "/nix/store/saw46kfbsrr618lhqhpz69hmhhnsgd71-chromium-unwrapped-153.0.8010.36/libexec/chromium/chrome_crashpad_handler --no-periodic-tasks --monitor-self-annotation=ptype=crashpad-handler --database=/home/canassa/.config/chromium/Crash Reports --annotation=lsb-release=NixOS 26.05 (Yarara) --annotation=plat=Linux --annotation=prod=Chrome_Linux --annotation=ver=153.0.8010.36 --initial-client-fd=4 --shared-client-connection ",
+      "cpus": "2-5,8-11",
+      "ppid": "1"
+    },
+    {
+      "pid": 3324607,
+      "args": "/nix/store/saw46kfbsrr618lhqhpz69hmhhnsgd71-chromium-unwrapped-153.0.8010.36/libexec/chromium/chromium --type=zygote --no-zygote-sandbox --headless=new --crashpad-handler-pid=3324601 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/nix-shell.ikbLvH/puppeteer_dev_chrome_profile-3CZmfV --change-stack-guard-on-fork=enable --no-first-run --ozone-platform=headless --ozone-override-screen-size=800,600 --use-angle=swiftshader-webgl ",
+      "cpus": "2-5,8-11",
+      "ppid": "3324594"
+    },
+    {
+      "pid": 3324608,
+      "args": "/nix/store/saw46kfbsrr618lhqhpz69hmhhnsgd71-chromium-unwrapped-153.0.8010.36/libexec/chromium/chromium --type=zygote --headless=new --crashpad-handler-pid=3324601 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/nix-shell.ikbLvH/puppeteer_dev_chrome_profile-3CZmfV --change-stack-guard-on-fork=enable --no-first-run --ozone-platform=headless --ozone-override-screen-size=800,600 --use-angle=swiftshader-webgl ",
+      "cpus": "2-5,8-11",
+      "ppid": "3324594"
+    },
+    {
+      "pid": 3324610,
+      "args": "/nix/store/saw46kfbsrr618lhqhpz69hmhhnsgd71-chromium-unwrapped-153.0.8010.36/libexec/chromium/chromium --type=zygote --headless=new --crashpad-handler-pid=3324601 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/nix-shell.ikbLvH/puppeteer_dev_chrome_profile-3CZmfV --change-stack-guard-on-fork=enable --no-first-run --ozone-platform=headless --ozone-override-screen-size=800,600 --use-angle=swiftshader-webgl ",
+      "cpus": "2-5,8-11",
+      "ppid": "3324608"
+    },
+    {
+      "pid": 3324631,
+      "args": "/nix/store/saw46kfbsrr618lhqhpz69hmhhnsgd71-chromium-unwrapped-153.0.8010.36/libexec/chromium/chromium --type=gpu-process --disable-dev-shm-usage --disable-breakpad --headless=new --ozone-platform=headless --use-angle=swiftshader-webgl --crashpad-handler-pid=3324601 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/nix-shell.ikbLvH/puppeteer_dev_chrome_profile-3CZmfV --change-stack-guard-on-fork=enable --gpu-preferences=YAAAAAAAAAAgAAAEAAAAAAAAAAAAAGAASAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAMAAAAAAAAAAwAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAMAAAAAQAAAAAAAAAAAAAACAAAAAAAAAAIAAAAAAAAAA== --shared-files --field-trial-handle=3,i,12136232926026246514,1002367896379928340,262144 --enable-features=PdfOopif --disable-features=AcceptCHFrame,IPH_SidePanelGenericMenuFeature,IsolateSandboxedIframes,MediaRouter,OptimizationHints,PaintHolding,PrivacySandboxSettings4,ProcessPerSiteUpToMainFrameThreshold,Translate,WebUIReloadButton --variations-seed-version --pseudonymization-salt-handle=7,i,1056932323642242166,3602179259674714464,4 --trace-process-track-uuid=3190708988185955192 ",
+      "cpus": "2-5,8-11",
+      "ppid": "3324607"
+    },
+    {
+      "pid": 3324633,
+      "args": "/nix/store/saw46kfbsrr618lhqhpz69hmhhnsgd71-chromium-unwrapped-153.0.8010.36/libexec/chromium/chromium --type=utility --utility-sub-type=network.mojom.NetworkService --lang=en-US --service-sandbox-type=none --disable-dev-shm-usage --use-angle=swiftshader-webgl --crashpad-handler-pid=3324601 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/nix-shell.ikbLvH/puppeteer_dev_chrome_profile-3CZmfV --change-stack-guard-on-fork=enable --shared-files=v8_context_snapshot_data:100 --field-trial-handle=3,i,12136232926026246514,1002367896379928340,262144 --enable-features=PdfOopif --disable-features=AcceptCHFrame,IPH_SidePanelGenericMenuFeature,IsolateSandboxedIframes,MediaRouter,OptimizationHints,PaintHolding,PrivacySandboxSettings4,ProcessPerSiteUpToMainFrameThreshold,Translate,WebUIReloadButton --variations-seed-version --pseudonymization-salt-handle=7,i,1056932323642242166,3602179259674714464,4 --trace-process-track-uuid=3190708989122997041 ",
+      "cpus": "2-5,8-11",
+      "ppid": "3324594"
+    },
+    {
+      "pid": 3324654,
+      "args": "/nix/store/saw46kfbsrr618lhqhpz69hmhhnsgd71-chromium-unwrapped-153.0.8010.36/libexec/chromium/chromium --type=utility --utility-sub-type=storage.mojom.StorageService --lang=en-US --service-sandbox-type=utility --disable-dev-shm-usage --use-angle=swiftshader-webgl --crashpad-handler-pid=3324601 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/nix-shell.ikbLvH/puppeteer_dev_chrome_profile-3CZmfV --change-stack-guard-on-fork=enable --shared-files=v8_context_snapshot_data:100 --field-trial-handle=3,i,12136232926026246514,1002367896379928340,262144 --enable-features=PdfOopif --disable-features=AcceptCHFrame,IPH_SidePanelGenericMenuFeature,IsolateSandboxedIframes,MediaRouter,OptimizationHints,PaintHolding,PrivacySandboxSettings4,ProcessPerSiteUpToMainFrameThreshold,Translate,WebUIReloadButton --variations-seed-version --pseudonymization-salt-handle=7,i,1056932323642242166,3602179259674714464,4 --trace-process-track-uuid=3190708990060038890 ",
+      "cpus": "2-5,8-11",
+      "ppid": "3324610"
+    },
+    {
+      "pid": 3324684,
+      "args": "/nix/store/saw46kfbsrr618lhqhpz69hmhhnsgd71-chromium-unwrapped-153.0.8010.36/libexec/chromium/chromium --type=renderer --top-chrome-webui --crashpad-handler-pid=3324601 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/nix-shell.ikbLvH/puppeteer_dev_chrome_profile-3CZmfV --change-stack-guard-on-fork=enable --disable-dev-shm-usage --disable-background-timer-throttling --disable-breakpad --enable-automation --force-color-profile=srgb --remote-debugging-port=0 --allow-pre-commit-input --js-flags=--expose-gc --ozone-platform=headless --disable-gpu-compositing --lang=en-US --num-raster-threads=4 --enable-main-frame-before-activation --renderer-client-id=5 --launch-time-ticks=909508938764 --shared-files=v8_context_snapshot_data:100 --field-trial-handle=3,i,12136232926026246514,1002367896379928340,262144 --enable-features=PdfOopif --disable-features=AcceptCHFrame,IPH_SidePanelGenericMenuFeature,IsolateSandboxedIframes,MediaRouter,OptimizationHints,PaintHolding,PrivacySandboxSettings4,ProcessPerSiteUpToMainFrameThreshold,Translate,WebUIReloadButton --variations-seed-version --pseudonymization-salt-handle=7,i,1056932323642242166,3602179259674714464,4 --trace-process-track-uuid=3190708990997080739 ",
+      "cpus": "2-5,8-11",
+      "ppid": "3324610"
+    },
+    {
+      "pid": 3324695,
+      "args": "/nix/store/saw46kfbsrr618lhqhpz69hmhhnsgd71-chromium-unwrapped-153.0.8010.36/libexec/chromium/chromium --type=renderer --crashpad-handler-pid=3324601 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/nix-shell.ikbLvH/puppeteer_dev_chrome_profile-3CZmfV --change-stack-guard-on-fork=enable --disable-dev-shm-usage --disable-background-timer-throttling --disable-breakpad --enable-automation --force-color-profile=srgb --remote-debugging-port=0 --allow-pre-commit-input --js-flags=--expose-gc --ozone-platform=headless --disable-gpu-compositing --lang=en-US --num-raster-threads=4 --enable-main-frame-before-activation --renderer-client-id=6 --launch-time-ticks=909508957211 --shared-files=v8_context_snapshot_data:100 --field-trial-handle=3,i,12136232926026246514,1002367896379928340,262144 --enable-features=PdfOopif --disable-features=AcceptCHFrame,IPH_SidePanelGenericMenuFeature,IsolateSandboxedIframes,MediaRouter,OptimizationHints,PaintHolding,PrivacySandboxSettings4,ProcessPerSiteUpToMainFrameThreshold,Translate,WebUIReloadButton --variations-seed-version --pseudonymization-salt-handle=7,i,1056932323642242166,3602179259674714464,4 --trace-process-track-uuid=3190708991934122588 ",
+      "cpus": "2-5,8-11",
+      "ppid": "3324610"
+    },
+    {
+      "pid": 3324719,
+      "args": "/nix/store/saw46kfbsrr618lhqhpz69hmhhnsgd71-chromium-unwrapped-153.0.8010.36/libexec/chromium/chromium --type=renderer --crashpad-handler-pid=3324601 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/nix-shell.ikbLvH/puppeteer_dev_chrome_profile-3CZmfV --change-stack-guard-on-fork=enable --disable-dev-shm-usage --disable-background-timer-throttling --disable-breakpad --enable-automation --force-color-profile=srgb --remote-debugging-port=0 --allow-pre-commit-input --js-flags=--expose-gc --ozone-platform=headless --disable-gpu-compositing --lang=en-US --num-raster-threads=4 --enable-main-frame-before-activation --renderer-client-id=8 --launch-time-ticks=909509001734 --shared-files=v8_context_snapshot_data:100 --field-trial-handle=3,i,12136232926026246514,1002367896379928340,262144 --enable-features=PdfOopif --disable-features=AcceptCHFrame,IPH_SidePanelGenericMenuFeature,IsolateSandboxedIframes,MediaRouter,OptimizationHints,PaintHolding,PrivacySandboxSettings4,ProcessPerSiteUpToMainFrameThreshold,Translate,WebUIReloadButton --variations-seed-version --pseudonymization-salt-handle=7,i,1056932323642242166,3602179259674714464,4 --trace-process-track-uuid=3190708993808206286 ",
+      "cpus": "2-5,8-11",
+      "ppid": "3324610"
+    },
+    {
+      "pid": 3324730,
+      "args": "/nix/store/saw46kfbsrr618lhqhpz69hmhhnsgd71-chromium-unwrapped-153.0.8010.36/libexec/chromium/chromium --type=renderer --crashpad-handler-pid=3324601 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/nix-shell.ikbLvH/puppeteer_dev_chrome_profile-3CZmfV --change-stack-guard-on-fork=enable --disable-dev-shm-usage --disable-background-timer-throttling --disable-breakpad --enable-automation --force-color-profile=srgb --remote-debugging-port=0 --allow-pre-commit-input --js-flags=--expose-gc --ozone-platform=headless --disable-gpu-compositing --lang=en-US --num-raster-threads=4 --enable-main-frame-before-activation --renderer-client-id=9 --launch-time-ticks=909509081599 --shared-files=v8_context_snapshot_data:100 --field-trial-handle=3,i,12136232926026246514,1002367896379928340,262144 --enable-features=PdfOopif --disable-features=AcceptCHFrame,IPH_SidePanelGenericMenuFeature,IsolateSandboxedIframes,MediaRouter,OptimizationHints,PaintHolding,PrivacySandboxSettings4,ProcessPerSiteUpToMainFrameThreshold,Translate,WebUIReloadButton --variations-seed-version --pseudonymization-salt-handle=7,i,1056932323642242166,3602179259674714464,4 --trace-process-track-uuid=3190708994745248135 ",
+      "cpus": "2-5,8-11",
+      "ppid": "3324610"
+    },
+    {
+      "pid": 736861,
+      "args": "/nix/store/saw46kfbsrr618lhqhpz69hmhhnsgd71-chromium-unwrapped-153.0.8010.36/libexec/chromium/chromium --js-flags=--expose-gc --enable-precise-memory-info --no-first-run --disable-background-networking --disable-background-timer-throttling --disable-cache --disable-translate --disable-sync --disable-extensions --disable-default-apps --window-size=1280,800 --headless=new --disable-gpu --no-sandbox --user-data-dir=/tmp/nix-shell.IfeYaL/bench-ui-chrome-5NbmBD --remote-debugging-port=0 --noerrdialogs --ozone-platform=headless --ozone-override-screen-size=800,600 --use-angle=swiftshader-webgl about:blank ",
+      "cpus": "2-5,8-11",
+      "ppid": "1"
+    },
+    {
+      "pid": 736868,
+      "args": "/nix/store/saw46kfbsrr618lhqhpz69hmhhnsgd71-chromium-unwrapped-153.0.8010.36/libexec/chromium/chrome_crashpad_handler --monitor-self --monitor-self-annotation=ptype=crashpad-handler --database=/home/canassa/.config/chromium/Crash Reports --annotation=lsb-release=NixOS 26.05 (Yarara) --annotation=plat=Linux --annotation=prod=Chrome_Linux --annotation=ver=153.0.8010.36 --initial-client-fd=5 --shared-client-connection ",
+      "cpus": "2-5,8-11",
+      "ppid": "1"
+    },
+    {
+      "pid": 736870,
+      "args": "/nix/store/saw46kfbsrr618lhqhpz69hmhhnsgd71-chromium-unwrapped-153.0.8010.36/libexec/chromium/chrome_crashpad_handler --no-periodic-tasks --monitor-self-annotation=ptype=crashpad-handler --database=/home/canassa/.config/chromium/Crash Reports --annotation=lsb-release=NixOS 26.05 (Yarara) --annotation=plat=Linux --annotation=prod=Chrome_Linux --annotation=ver=153.0.8010.36 --initial-client-fd=4 --shared-client-connection ",
+      "cpus": "2-5,8-11",
+      "ppid": "1"
+    },
+    {
+      "pid": 736873,
+      "args": "/nix/store/saw46kfbsrr618lhqhpz69hmhhnsgd71-chromium-unwrapped-153.0.8010.36/libexec/chromium/chromium --type=zygote --no-zygote-sandbox --no-sandbox --headless=new --crashpad-handler-pid=736868 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/nix-shell.IfeYaL/bench-ui-chrome-5NbmBD --change-stack-guard-on-fork=enable --no-first-run --ozone-platform=headless --ozone-override-screen-size=800,600 --use-angle=swiftshader-webgl ",
+      "cpus": "2-5,8-11",
+      "ppid": "736861"
+    },
+    {
+      "pid": 736874,
+      "args": "/nix/store/saw46kfbsrr618lhqhpz69hmhhnsgd71-chromium-unwrapped-153.0.8010.36/libexec/chromium/chromium --type=zygote --no-sandbox --headless=new --crashpad-handler-pid=736868 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/nix-shell.IfeYaL/bench-ui-chrome-5NbmBD --change-stack-guard-on-fork=enable --no-first-run --ozone-platform=headless --ozone-override-screen-size=800,600 --use-angle=swiftshader-webgl ",
+      "cpus": "2-5,8-11",
+      "ppid": "736861"
+    },
+    {
+      "pid": 736895,
+      "args": "/nix/store/saw46kfbsrr618lhqhpz69hmhhnsgd71-chromium-unwrapped-153.0.8010.36/libexec/chromium/chromium --type=gpu-process --no-sandbox --headless=new --ozone-platform=headless --use-angle=swiftshader-webgl --crashpad-handler-pid=736868 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/nix-shell.IfeYaL/bench-ui-chrome-5NbmBD --subproc-heap-profiling --change-stack-guard-on-fork=enable --gpu-preferences=YAAAAAAAAAAgAAAEAAAAAAAAAAAAAGAASAAAAAAAAAAAAAAAAAAAAEAAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAAAAAAAAAAAMAAAAAAAAAAwAAAAAAAAAAAAAAAAAAAACAAAAAAAAAAMAAAAAQAAAAAAAAAAAAAACAAAAAAAAAAIAAAAAAAAAA== --shared-files --field-trial-handle=3,i,15322352070718899256,10112005434220996199,262144 --disable-features=PaintHolding --variations-seed-version --pseudonymization-salt-handle=7,i,8475876776842243981,10086421251784300401,4 --trace-process-track-uuid=3190708988185955192 ",
+      "cpus": "2-5,8-11",
+      "ppid": "736873"
+    },
+    {
+      "pid": 736898,
+      "args": "/nix/store/saw46kfbsrr618lhqhpz69hmhhnsgd71-chromium-unwrapped-153.0.8010.36/libexec/chromium/chromium --type=utility --utility-sub-type=network.mojom.NetworkService --lang=en-US --service-sandbox-type=none --no-sandbox --use-angle=swiftshader-webgl --crashpad-handler-pid=736868 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/nix-shell.IfeYaL/bench-ui-chrome-5NbmBD --subproc-heap-profiling --change-stack-guard-on-fork=enable --shared-files=v8_context_snapshot_data:100 --field-trial-handle=3,i,15322352070718899256,10112005434220996199,262144 --disable-features=PaintHolding --variations-seed-version --pseudonymization-salt-handle=7,i,8475876776842243981,10086421251784300401,4 --trace-process-track-uuid=3190708989122997041 ",
+      "cpus": "2-5,8-11",
+      "ppid": "736861"
+    },
+    {
+      "pid": 736918,
+      "args": "/nix/store/saw46kfbsrr618lhqhpz69hmhhnsgd71-chromium-unwrapped-153.0.8010.36/libexec/chromium/chromium --type=utility --utility-sub-type=storage.mojom.StorageService --lang=en-US --service-sandbox-type=utility --no-sandbox --use-angle=swiftshader-webgl --crashpad-handler-pid=736868 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/nix-shell.IfeYaL/bench-ui-chrome-5NbmBD --subproc-heap-profiling --change-stack-guard-on-fork=enable --shared-files=v8_context_snapshot_data:100 --field-trial-handle=3,i,15322352070718899256,10112005434220996199,262144 --disable-features=PaintHolding --variations-seed-version --pseudonymization-salt-handle=7,i,8475876776842243981,10086421251784300401,4 --trace-process-track-uuid=3190708990060038890 ",
+      "cpus": "2-5,8-11",
+      "ppid": "736874"
+    },
+    {
+      "pid": 736947,
+      "args": "/nix/store/saw46kfbsrr618lhqhpz69hmhhnsgd71-chromium-unwrapped-153.0.8010.36/libexec/chromium/chromium --type=renderer --top-chrome-webui --crashpad-handler-pid=736868 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/nix-shell.IfeYaL/bench-ui-chrome-5NbmBD --subproc-heap-profiling --change-stack-guard-on-fork=enable --no-sandbox --disable-background-timer-throttling --enable-precise-memory-info --remote-debugging-port=0 --js-flags=--expose-gc --ozone-platform=headless --disable-gpu-compositing --lang=en-US --num-raster-threads=4 --enable-main-frame-before-activation --renderer-client-id=5 --launch-time-ticks=861592666602 --shared-files=v8_context_snapshot_data:100 --field-trial-handle=3,i,15322352070718899256,10112005434220996199,262144 --disable-features=PaintHolding --variations-seed-version --pseudonymization-salt-handle=7,i,8475876776842243981,10086421251784300401,4 --trace-process-track-uuid=3190708990997080739 ",
+      "cpus": "2-5,8-11",
+      "ppid": "736874"
+    },
+    {
+      "pid": 736958,
+      "args": "/nix/store/saw46kfbsrr618lhqhpz69hmhhnsgd71-chromium-unwrapped-153.0.8010.36/libexec/chromium/chromium --type=renderer --crashpad-handler-pid=736868 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/nix-shell.IfeYaL/bench-ui-chrome-5NbmBD --subproc-heap-profiling --change-stack-guard-on-fork=enable --no-sandbox --disable-background-timer-throttling --enable-precise-memory-info --remote-debugging-port=0 --js-flags=--expose-gc --ozone-platform=headless --disable-gpu-compositing --lang=en-US --num-raster-threads=4 --enable-main-frame-before-activation --renderer-client-id=6 --launch-time-ticks=861592684993 --shared-files=v8_context_snapshot_data:100 --field-trial-handle=3,i,15322352070718899256,10112005434220996199,262144 --disable-features=PaintHolding --variations-seed-version --pseudonymization-salt-handle=7,i,8475876776842243981,10086421251784300401,4 --trace-process-track-uuid=3190708991934122588 ",
+      "cpus": "2-5,8-11",
+      "ppid": "736874"
+    },
+    {
+      "pid": 744533,
+      "args": "/nix/store/saw46kfbsrr618lhqhpz69hmhhnsgd71-chromium-unwrapped-153.0.8010.36/libexec/chromium/chromium --type=renderer --crashpad-handler-pid=736868 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/nix-shell.IfeYaL/bench-ui-chrome-5NbmBD --subproc-heap-profiling --change-stack-guard-on-fork=enable --no-sandbox --disable-background-timer-throttling --enable-precise-memory-info --remote-debugging-port=0 --js-flags=--expose-gc --ozone-platform=headless --disable-gpu-compositing --lang=en-US --num-raster-threads=4 --enable-main-frame-before-activation --renderer-client-id=617 --launch-time-ticks=862275330121 --shared-files=v8_context_snapshot_data:100 --field-trial-handle=3,i,15322352070718899256,10112005434220996199,262144 --disable-features=PaintHolding --variations-seed-version --pseudonymization-salt-handle=7,i,8475876776842243981,10086421251784300401,4 --trace-process-track-uuid=3190709564466692327 ",
+      "cpus": "2-5,8-11",
+      "ppid": "736874"
+    },
+    {
+      "pid": 744542,
+      "args": "/nix/store/saw46kfbsrr618lhqhpz69hmhhnsgd71-chromium-unwrapped-153.0.8010.36/libexec/chromium/chromium --type=renderer --crashpad-handler-pid=736868 --enable-crash-reporter=, --noerrdialogs --user-data-dir=/tmp/nix-shell.IfeYaL/bench-ui-chrome-5NbmBD --subproc-heap-profiling --change-stack-guard-on-fork=enable --no-sandbox --disable-background-timer-throttling --enable-precise-memory-info --remote-debugging-port=0 --js-flags=--expose-gc --ozone-platform=headless --disable-gpu-compositing --lang=en-US --num-raster-threads=4 --enable-main-frame-before-activation --renderer-client-id=618 --launch-time-ticks=862275353127 --shared-files=v8_context_snapshot_data:100 --field-trial-handle=3,i,15322352070718899256,10112005434220996199,262144 --disable-features=PaintHolding --variations-seed-version --pseudonymization-salt-handle=7,i,8475876776842243981,10086421251784300401,4 --trace-process-track-uuid=3190709565403734176 ",
+      "cpus": "2-5,8-11",
+      "ppid": "736874"
+    }
+  ]
+}

@@ -1,0 +1,218 @@
+[
+  {
+    "sweep": "holes",
+    "n": 10000,
+    "file": "src/Main.beni",
+    "archive": "holes-10000-src-Main.beni.gz"
+  },
+  {
+    "sweep": "holes",
+    "n": 10000,
+    "file": "beni-direct-rel/_main.mjs",
+    "archive": "holes-10000-beni-direct-rel-_main.mjs.gz"
+  },
+  {
+    "sweep": "holes",
+    "n": 10000,
+    "file": "beni-rel/_main.mjs",
+    "archive": "holes-10000-beni-rel-_main.mjs.gz"
+  },
+  {
+    "sweep": "holes",
+    "n": 10000,
+    "file": "vanilla.js",
+    "archive": "holes-10000-vanilla.js.gz"
+  },
+  {
+    "sweep": "holes",
+    "n": 10000,
+    "file": "p3.js",
+    "archive": "holes-10000-p3.js.gz"
+  },
+  {
+    "sweep": "width",
+    "n": 1024,
+    "file": "src/Main.beni",
+    "archive": "width-1024-src-Main.beni.gz"
+  },
+  {
+    "sweep": "width",
+    "n": 1024,
+    "file": "beni-direct-rel/_main.mjs",
+    "archive": "width-1024-beni-direct-rel-_main.mjs.gz"
+  },
+  {
+    "sweep": "width",
+    "n": 1024,
+    "file": "beni-rel/_main.mjs",
+    "archive": "width-1024-beni-rel-_main.mjs.gz"
+  },
+  {
+    "sweep": "width",
+    "n": 1024,
+    "file": "vanilla.js",
+    "archive": "width-1024-vanilla.js.gz"
+  },
+  {
+    "sweep": "depth",
+    "n": 128,
+    "file": "src/Main.beni",
+    "archive": "depth-128-src-Main.beni.gz"
+  },
+  {
+    "sweep": "depth",
+    "n": 128,
+    "file": "beni-direct-rel/_main.mjs",
+    "archive": "depth-128-beni-direct-rel-_main.mjs.gz"
+  },
+  {
+    "sweep": "depth",
+    "n": 128,
+    "file": "beni-rel/_main.mjs",
+    "archive": "depth-128-beni-rel-_main.mjs.gz"
+  },
+  {
+    "sweep": "depth",
+    "n": 128,
+    "file": "vanilla.js",
+    "archive": "depth-128-vanilla.js.gz"
+  },
+  {
+    "sweep": "depth",
+    "n": 128,
+    "file": "p3.js",
+    "archive": "depth-128-p3.js.gz"
+  },
+  {
+    "sweep": "rows",
+    "n": 30000,
+    "file": "src/Main.beni",
+    "archive": "rows-30000-src-Main.beni.gz"
+  },
+  {
+    "sweep": "rows",
+    "n": 30000,
+    "file": "beni-direct-rel/_main.mjs",
+    "archive": "rows-30000-beni-direct-rel-_main.mjs.gz"
+  },
+  {
+    "sweep": "rows",
+    "n": 30000,
+    "file": "beni-rel/_main.mjs",
+    "archive": "rows-30000-beni-rel-_main.mjs.gz"
+  },
+  {
+    "sweep": "rows",
+    "n": 30000,
+    "file": "vanilla.js",
+    "archive": "rows-30000-vanilla.js.gz"
+  },
+  {
+    "sweep": "rows",
+    "n": 30000,
+    "file": "p3.js",
+    "archive": "rows-30000-p3.js.gz"
+  },
+  {
+    "sweep": "live",
+    "n": 10000,
+    "file": "src/Main.beni",
+    "archive": "live-10000-src-Main.beni.gz"
+  },
+  {
+    "sweep": "live",
+    "n": 10000,
+    "file": "beni-direct-rel/_main.mjs",
+    "archive": "live-10000-beni-direct-rel-_main.mjs.gz"
+  },
+  {
+    "sweep": "live",
+    "n": 10000,
+    "file": "beni-rel/_main.mjs",
+    "archive": "live-10000-beni-rel-_main.mjs.gz"
+  },
+  {
+    "sweep": "live",
+    "n": 10000,
+    "file": "vanilla.js",
+    "archive": "live-10000-vanilla.js.gz"
+  },
+  {
+    "sweep": "live",
+    "n": 10000,
+    "file": "p3.js",
+    "archive": "live-10000-p3.js.gz"
+  },
+  {
+    "sweep": "derived",
+    "n": 100000,
+    "file": "src/Main.beni",
+    "archive": "derived-100000-src-Main.beni.gz"
+  },
+  {
+    "sweep": "derived",
+    "n": 100000,
+    "file": "beni-direct-rel/_main.mjs",
+    "archive": "derived-100000-beni-direct-rel-_main.mjs.gz"
+  },
+  {
+    "sweep": "derived",
+    "n": 100000,
+    "file": "beni-rel/_main.mjs",
+    "archive": "derived-100000-beni-rel-_main.mjs.gz"
+  },
+  {
+    "sweep": "derived",
+    "n": 100000,
+    "file": "vanilla.js",
+    "archive": "derived-100000-vanilla.js.gz"
+  },
+  {
+    "sweep": "helperRows",
+    "n": 10000,
+    "file": "src/Main.beni",
+    "archive": "helperRows-10000-src-Main.beni.gz"
+  },
+  {
+    "sweep": "helperRows",
+    "n": 10000,
+    "file": "beni-direct-rel/_main.mjs",
+    "archive": "helperRows-10000-beni-direct-rel-_main.mjs.gz"
+  },
+  {
+    "sweep": "helperRows",
+    "n": 10000,
+    "file": "beni-rel/_main.mjs",
+    "archive": "helperRows-10000-beni-rel-_main.mjs.gz"
+  },
+  {
+    "sweep": "helperRows",
+    "n": 10000,
+    "file": "vanilla.js",
+    "archive": "helperRows-10000-vanilla.js.gz"
+  },
+  {
+    "sweep": "tree",
+    "n": 12,
+    "file": "src/Main.beni",
+    "archive": "tree-12-src-Main.beni.gz"
+  },
+  {
+    "sweep": "tree",
+    "n": 12,
+    "file": "beni-direct-rel/_main.mjs",
+    "archive": "tree-12-beni-direct-rel-_main.mjs.gz"
+  },
+  {
+    "sweep": "tree",
+    "n": 12,
+    "file": "beni-rel/_main.mjs",
+    "archive": "tree-12-beni-rel-_main.mjs.gz"
+  },
+  {
+    "sweep": "tree",
+    "n": 12,
+    "file": "vanilla.js",
+    "archive": "tree-12-vanilla.js.gz"
+  }
+]

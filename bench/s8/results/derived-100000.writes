@@ -1,0 +1,21 @@
+program Main.main : Tea.sandbox
+  model Main.Model
+  init
+    literal ρ.tick
+  key (any)                                       exact      node ρ; value ρ.tick
+  keys 1: bounded 1 (100%), exact 1, indexed 0, structural 0, * 0; capped 0
+  hole Main.beni:42:22                            dynamic    reads ρ.tick
+  hole Main.beni:45:18                            static     reads ρ.items; ρ.items[*].active
+  hole Main.beni:48:50                            static     reads ρ.items; ρ.items[*].active
+  hole Main.beni:49:50                            static     reads ρ.items; ρ.items[*].active
+  holes 4: static 3, literal 0, static-key 0, dynamic 1
+  site Main.beni:40:5                             unique
+  site Main.beni:47:25                            instanced
+  sites 2: unique 1, shared 0, instanced 1, value 0
+  markup_value_roots 0 (0% of 2 sites)
+  carriers no
+  constructors 1: under * 0 (0%)
+  pairs 1 over 1 keys and 3 groups (1.00 per key); every key calls 1 of 3 groups (33%)
+  list Main.beni:45:18                            scripts
+  reconciler 0 of 1 lists
+  patchAll <none>

@@ -1,0 +1,9 @@
+8/table-direct/_main.mjs: minified 10883 B, brotli 11 4188 B
+
+| part | alone raw | alone br | leave-one-out br | peel br |
+|---|--:|--:|--:|--:|
+| core | 2421 | 1077 | 698 | 698 |
+| runtime | 5154 | 2122 | 1565 | 1657 |
+| app | 3956 | 1469 | 1197 | 1297 |
+| what is left (start-up statements) | | | | 536 |
+| **sum** | | 4668 | 3460 | 4188 |

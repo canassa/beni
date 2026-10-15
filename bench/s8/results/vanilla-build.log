@@ -1,0 +1,12 @@
+
+added 2 packages in 246ms
+npm warn allow-scripts 1 package has install scripts not yet covered by allowScripts:
+npm warn allow-scripts   esbuild@0.27.0 (postinstall: node install.js)
+npm warn allow-scripts
+npm warn allow-scripts Run `npm approve-scripts --allow-scripts-pending` to review, or `npm approve-scripts <pkg>` to allow.
+{
+  "platform": "vanilla-es6",
+  "commit": "302b409c2b8510dc634fdd0e481196845109dc97",
+  "raw": 5339,
+  "brotli": 1722
+}

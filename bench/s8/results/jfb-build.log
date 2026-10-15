@@ -1,0 +1,37 @@
+$ (bench/jfb/work/webdriver-ts) npm run compile
+
+> webdriver-ts@1.0.0 compile
+> tsc
+
+$ (bench/jfb/work/frameworks/keyed/vanillajs) npm ci --no-audit --no-fund
+
+up to date in 178ms
+$ (bench/jfb/work/frameworks/keyed/vanillajs) npm run build-prod
+
+> js-framework-benchmark-vanillajs@1.1.1 build-prod
+> exit 0
+
+$ (bench/jfb/work/frameworks/keyed/solid) npm run build-prod
+
+> js-framework-benchmark-solid@1.0.0 build-prod
+> rollup -c --environment production
+
+[36m
+[1msrc/main.jsx[22m → [1mdist/main.js[22m...[39m
+[32mcreated [1mdist/main.js[22m in [1m390ms[22m[39m
+$ (bench/jfb/work/frameworks/keyed/beni-tea) npm ci --no-audit --no-fund
+
+up to date in 128ms
+$ (bench/jfb/work/frameworks/keyed/beni-tea) npm run build-prod
+
+> js-framework-benchmark-beni-tea@1.0.0 build-prod
+> node build.mjs browser-tea
+
+$ (bench/jfb/work/frameworks/keyed/beni-direct) npm ci --no-audit --no-fund
+
+up to date in 128ms
+$ (bench/jfb/work/frameworks/keyed/beni-direct) npm run build-prod
+
+> js-framework-benchmark-beni-direct@1.0.0 build-prod
+> node build.mjs browser-direct
+

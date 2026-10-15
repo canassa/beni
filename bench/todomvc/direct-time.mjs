@@ -39,7 +39,7 @@ const server = createServer((req, res) => {
 });
 await new Promise(r => server.listen(0, '127.0.0.1', r));
 const origin = `http://127.0.0.1:${server.address().port}`;
-const browser = await launch({ chrome: arg('chrome', '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome') });
+const browser = await launch({ chrome: arg('chrome', process.env.CHROME ?? '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome') });
 const results = { started: new Date().toISOString(), chrome: browser.version, node: process.version, cpu: cpus()[0].model,
   method: 'Fresh page per sample; real CDP input; capture-to-eight-microtasks untraced interval; trace union of EventDispatch/FunctionCall/RunMicrotasks. Six toggle warmups per fresh page; preparation and two animation frames outside timing; no CSS. Beni checkbox timing ends after change, not click. Vanilla add commits on Tab/change; beni on Enter/keydown. Vanilla retains upstream JSON persistence and editing; routing beni has line persistence, no editing; sandbox has neither persistence nor routing.',
   sources: Object.fromEntries(subjects.map(s => [s, createHash('sha256').update(readFileSync(join(root, s, '_main.mjs'))).digest('hex')])), rows: [] };
@@ -120,7 +120,7 @@ try {
   results.summary=[];
   for(const mode of ['untraced','traced']) for(const n of [100,1000]) for(const op of ['add','toggle','clear']) for(const subject of subjects){
     const xs=results.rows.filter(r=>r.mode===mode&&r.n===n&&r.op===op&&r.subject===subject).map(r=>r.script).sort((a,b)=>a-b);
-    if(xs.length)results.summary.push({mode,n,op,subject,samples:xs.length,median:xs[Math.floor(xs.length/2)],min:xs[0],max:xs.at(-1)});
+    if(xs.length)results.summary.push({mode,n,op,subject,samples:xs.length,median:xs.length%2 ? xs[(xs.length-1)/2] : (xs[xs.length/2-1]+xs[xs.length/2])/2,min:xs[0],max:xs.at(-1)});
   }
   mkdirSync(join(here,'results'),{recursive:true});
   const output=resolve(here,arg('out','results/2026-10-14-s5.json'));

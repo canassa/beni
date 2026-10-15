@@ -1,0 +1,1 @@
+{"framework":"solid-v1.9.3-keyed","keyed":true,"benchmark":"43_first-paint","type":"size","values":{"DEFAULT":{"min":60.5,"max":106.1,"median":79.4,"mean":81.35,"stddev":18.822769898892844,"values":[60.5,81.4,106.1,77.4]}}}

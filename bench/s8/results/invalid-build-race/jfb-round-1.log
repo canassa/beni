@@ -1,0 +1,1400 @@
+beni-direct-v0.1.0-m1-keyed is keyed for 'run benchmark' and keyed for 'remove row benchmark' and keyed for 'swap rows benchmark' . It'll appear as keyed in the results
+beni-tea-v0.1.0-m1-keyed is keyed for 'run benchmark' and keyed for 'remove row benchmark' and keyed for 'swap rows benchmark' . It'll appear as keyed in the results
+    '/home/canassa/src/github.com/canassa/beni/bench/jfb/work/webdriver-ts/dist/isCSPCompliant.js'
+  '$0': 'dist/isCSPCompliant.js'
+CSP test failed for elm-v0.19.1-6-keyed - during load
+CSP test failed for elm-v0.19.1-6-keyed - due to reporting
+$ node dist/benchmarkRunner.js --headless --chromeBinary /home/canassa/src/github.com/canassa/beni/bench/s8/chrome.sh --count 5 --framework keyed/solid
+PLEASE MAKE SURE THAT YOUR MOUSE IS OUTSIDE OF THE BROWSER WINDOW - and sorry for shouting :-) 
+args {
+  _: [
+    '/nix/store/i1rgc6zsrxbxgfz97vbczz7cxcg71p5s-nodejs-slim-24.19.0/bin/node',
+    '/home/canassa/src/github.com/canassa/beni/bench/jfb/work/webdriver-ts/dist/benchmarkRunner.js'
+  ],
+  headless: true,
+  chromeBinary: '/home/canassa/src/github.com/canassa/beni/bench/s8/chrome.sh',
+  'chrome-binary': '/home/canassa/src/github.com/canassa/beni/bench/s8/chrome.sh',
+  count: 5,
+  framework: [ 'keyed/solid' ],
+  nothrottling: false,
+  runner: 'puppeteer',
+  browser: 'chrome',
+  '$0': 'dist/benchmarkRunner.js'
+}
+INFO: Using puppeteer benchmark runner
+HEADLESS*** true
+args {
+  _: [
+    '/nix/store/i1rgc6zsrxbxgfz97vbczz7cxcg71p5s-nodejs-slim-24.19.0/bin/node',
+    '/home/canassa/src/github.com/canassa/beni/bench/jfb/work/webdriver-ts/dist/benchmarkRunner.js'
+  ],
+  headless: true,
+  chromeBinary: '/home/canassa/src/github.com/canassa/beni/bench/s8/chrome.sh',
+  'chrome-binary': '/home/canassa/src/github.com/canassa/beni/bench/s8/chrome.sh',
+  count: 5,
+  framework: [ 'keyed/solid' ],
+  nothrottling: false,
+  runner: 'puppeteer',
+  browser: 'chrome',
+  '$0': 'dist/benchmarkRunner.js'
+} allArgs []
+benchmarkOptions {
+  port: 8080,
+  host: 'localhost',
+  browser: 'chrome',
+  remoteDebuggingPort: 9999,
+  chromePort: 9998,
+  headless: true,
+  chromeBinaryPath: '/home/canassa/src/github.com/canassa/beni/bench/s8/chrome.sh',
+  numIterationsForCPUBenchmarks: 5,
+  numIterationsForMemBenchmarks: 5,
+  numIterationsForStartupBenchmark: 5,
+  numIterationsForSizeBenchmark: 1,
+  batchSize: 1,
+  resultsDirectory: 'results',
+  tracesDirectory: 'traces',
+  allowThrottling: true,
+  puppeteerSleep: 0
+}
+ARGS.smotest undefined
+Frameworks that will be benchmarked [ 'solid-v1.9.3-keyed' ]
+Benchmarks that will be run [
+  '01_run1k',
+  '02_replace1k',
+  '03_update10th1k_x16',
+  '04_select1k',
+  '05_swap1k',
+  '06_remove-one-1k',
+  '07_create10k',
+  '08_create1k-after1k_x2',
+  '09_clear1k_x8',
+  '21_ready-memory',
+  '22_run-memory',
+  '25_run-clear-memory',
+  '40_sizes'
+]
+runBenchmakLoop {
+  name: 'solid',
+  fullNameWithKeyedAndVersion: 'solid-v1.9.3-keyed',
+  uri: 'frameworks/keyed/solid',
+  keyed: true,
+  useShadowRoot: false,
+  useRowShadowRoot: false,
+  shadowRootName: undefined,
+  buttonsInShadowRoot: false,
+  issues: [],
+  language: 'JavaScript',
+  frameworkHomeURL: 'https://www.solidjs.com/',
+  startLogicEventName: 'click'
+} {
+  id: '01_run1k',
+  label: 'create rows',
+  warmupCount: 5,
+  description: 'creating 1,000 rows.',
+  type: 0,
+  allowBatching: true,
+  layoutEventRequired: true,
+  additionalNumberOfRuns: 0
+}
+FORKING: 01_run1k BatchSize 5
+forking dist/forkedBenchmarkRunnerPuppeteer.js
+START BENCHMARK. Write results? true
+forked runner using sleep for puppeteer 0
+benchmarking {
+  name: 'solid',
+  fullNameWithKeyedAndVersion: 'solid-v1.9.3-keyed',
+  uri: 'frameworks/keyed/solid',
+  keyed: true,
+  useShadowRoot: false,
+  useRowShadowRoot: false,
+  buttonsInShadowRoot: false,
+  issues: [],
+  language: 'JavaScript',
+  frameworkHomeURL: 'https://www.solidjs.com/',
+  startLogicEventName: 'click'
+} 01_run1k
+browser arguments [
+  '--window-size=1280,800',
+  '--js-flags=--expose-gc',
+  '--no-default-browser-check',
+  '--disable-sync',
+  '--no-first-run',
+  '--ash-no-nudges',
+  '--disable-extensions',
+  '--disable-features=Translate,PrivacySandboxSettings4,IPH_SidePanelGenericMenuFeature',
+  '--headless=new'
+]
+BROWSER:
+initBenchmark
+after initialized 01_run1k 0 solid
+Waiting for 50 ms
+runBenchmark
+after run 01_run1k 0 solid
+Waiting for 100 ms
+one mousedown event traces/solid-v1.9.3-keyed_01_run1k_0.json
+mousedownToClick 313 traces/solid-v1.9.3-keyed_01_run1k_0.json
+**** resultScript = 7.489
+duration for solid and 01_run1k: {"tsStart":910497884725,"tsEnd":910497954557,"duration":69.832,"layouts":1,"raf_long_delay":0,"droppedNonMainProcessCommitEvents":false,"droppedNonMainProcessOtherEvents":false,"maxDeltaBetweenCommits":0,"numberCommits":1}
+initBenchmark
+after initialized 01_run1k 0 solid
+Waiting for 50 ms
+runBenchmark
+after run 01_run1k 0 solid
+Waiting for 100 ms
+one mousedown event traces/solid-v1.9.3-keyed_01_run1k_1.json
+mousedownToClick 225 traces/solid-v1.9.3-keyed_01_run1k_1.json
+**** resultScript = 7.82
+duration for solid and 01_run1k: {"tsStart":910500811485,"tsEnd":910500882466,"duration":70.981,"layouts":1,"raf_long_delay":0,"droppedNonMainProcessCommitEvents":false,"droppedNonMainProcessOtherEvents":false,"maxDeltaBetweenCommits":0,"numberCommits":1}
+initBenchmark
+after initialized 01_run1k 0 solid
+Waiting for 50 ms
+runBenchmark
+after run 01_run1k 0 solid
+Waiting for 100 ms
+one mousedown event traces/solid-v1.9.3-keyed_01_run1k_2.json
+mousedownToClick 318 traces/solid-v1.9.3-keyed_01_run1k_2.json
+**** resultScript = 7.413
+duration for solid and 01_run1k: {"tsStart":910503713995,"tsEnd":910503783706,"duration":69.711,"layouts":1,"raf_long_delay":0,"droppedNonMainProcessCommitEvents":false,"droppedNonMainProcessOtherEvents":false,"maxDeltaBetweenCommits":0,"numberCommits":1}
+initBenchmark
+after initialized 01_run1k 0 solid
+Waiting for 50 ms
+runBenchmark
+after run 01_run1k 0 solid
+Waiting for 100 ms
+one mousedown event traces/solid-v1.9.3-keyed_01_run1k_3.json
+mousedownToClick 280 traces/solid-v1.9.3-keyed_01_run1k_3.json
+**** resultScript = 6.939
+duration for solid and 01_run1k: {"tsStart":910506653570,"tsEnd":910506722710,"duration":69.14,"layouts":1,"raf_long_delay":0,"droppedNonMainProcessCommitEvents":false,"droppedNonMainProcessOtherEvents":false,"maxDeltaBetweenCommits":0,"numberCommits":1}
+initBenchmark
+after initialized 01_run1k 0 solid
+Waiting for 50 ms
+runBenchmark
+after run 01_run1k 0 solid
+Waiting for 100 ms
+one mousedown event traces/solid-v1.9.3-keyed_01_run1k_4.json
+mousedownToClick 271 traces/solid-v1.9.3-keyed_01_run1k_4.json
+**** resultScript = 7.061
+duration for solid and 01_run1k: {"tsStart":910509559967,"tsEnd":910509629031,"duration":69.064,"layouts":1,"raf_long_delay":0,"droppedNonMainProcessCommitEvents":false,"droppedNonMainProcessOtherEvents":false,"maxDeltaBetweenCommits":0,"numberCommits":1}
+*** browser close
+*** browser closed
+*** browser has been shutting down
+=> Duration for 01_run1k and framework solid: 15017.59 ms
+result solid-v1.9.3-keyed_01_run1k.json total {"min":69.1,"max":71,"median":69.7,"mean":69.74,"stddev":0.7765307463326894,"values":[69.8,71,69.7,69.1,69.1]}
+result solid-v1.9.3-keyed_01_run1k.json script {"min":6.9,"max":7.8,"median":7.4,"mean":7.339999999999999,"stddev":0.35071355833500356,"values":[7.5,7.8,7.4,6.9,7.1]}
+result solid-v1.9.3-keyed_01_run1k.json paint {"min":61,"max":62.2,"median":61.3,"mean":61.44,"stddev":0.4505552130427541,"values":[61.3,62.2,61.4,61.3,61]}
+==> Duration for benchmark 01_run1k: 15197.15 ms
+runBenchmakLoop {
+  name: 'solid',
+  fullNameWithKeyedAndVersion: 'solid-v1.9.3-keyed',
+  uri: 'frameworks/keyed/solid',
+  keyed: true,
+  useShadowRoot: false,
+  useRowShadowRoot: false,
+  shadowRootName: undefined,
+  buttonsInShadowRoot: false,
+  issues: [],
+  language: 'JavaScript',
+  frameworkHomeURL: 'https://www.solidjs.com/',
+  startLogicEventName: 'click'
+} {
+  id: '02_replace1k',
+  label: 'replace all rows',
+  warmupCount: 5,
+  description: 'updating all 1,000 rows.',
+  type: 0,
+  allowBatching: true,
+  layoutEventRequired: true,
+  additionalNumberOfRuns: 0
+}
+FORKING: 02_replace1k BatchSize 5
+forking dist/forkedBenchmarkRunnerPuppeteer.js
+START BENCHMARK. Write results? true
+forked runner using sleep for puppeteer 0
+benchmarking {
+  name: 'solid',
+  fullNameWithKeyedAndVersion: 'solid-v1.9.3-keyed',
+  uri: 'frameworks/keyed/solid',
+  keyed: true,
+  useShadowRoot: false,
+  useRowShadowRoot: false,
+  buttonsInShadowRoot: false,
+  issues: [],
+  language: 'JavaScript',
+  frameworkHomeURL: 'https://www.solidjs.com/',
+  startLogicEventName: 'click'
+} 02_replace1k
+browser arguments [
+  '--window-size=1280,800',
+  '--js-flags=--expose-gc',
+  '--no-default-browser-check',
+  '--disable-sync',
+  '--no-first-run',
+  '--ash-no-nudges',
+  '--disable-extensions',
+  '--disable-features=Translate,PrivacySandboxSettings4,IPH_SidePanelGenericMenuFeature',
+  '--headless=new'
+]
+BROWSER:
+initBenchmark
+after initialized 02_replace1k 0 solid
+Waiting for 50 ms
+runBenchmark
+after run 02_replace1k 0 solid
+Waiting for 100 ms
+one mousedown event traces/solid-v1.9.3-keyed_02_replace1k_0.json
+mousedownToClick 1179 traces/solid-v1.9.3-keyed_02_replace1k_0.json
+**** resultScript = 13.8
+duration for solid and 02_replace1k: {"tsStart":910512943005,"tsEnd":910513020075,"duration":77.07,"layouts":1,"raf_long_delay":0,"droppedNonMainProcessCommitEvents":false,"droppedNonMainProcessOtherEvents":false,"maxDeltaBetweenCommits":0,"numberCommits":1}
+initBenchmark
+after initialized 02_replace1k 0 solid
+Waiting for 50 ms
+runBenchmark
+after run 02_replace1k 0 solid
+Waiting for 100 ms
+one mousedown event traces/solid-v1.9.3-keyed_02_replace1k_1.json
+mousedownToClick 1117 traces/solid-v1.9.3-keyed_02_replace1k_1.json
+**** resultScript = 13.909
+duration for solid and 02_replace1k: {"tsStart":910515821811,"tsEnd":910515898972,"duration":77.161,"layouts":1,"raf_long_delay":0,"droppedNonMainProcessCommitEvents":false,"droppedNonMainProcessOtherEvents":false,"maxDeltaBetweenCommits":0,"numberCommits":1}
+initBenchmark
+after initialized 02_replace1k 0 solid
+Waiting for 50 ms
+runBenchmark
+after run 02_replace1k 0 solid
+Waiting for 100 ms
+one mousedown event traces/solid-v1.9.3-keyed_02_replace1k_2.json
+mousedownToClick 1161 traces/solid-v1.9.3-keyed_02_replace1k_2.json
+**** resultScript = 14.039
+duration for solid and 02_replace1k: {"tsStart":910518703971,"tsEnd":910518781634,"duration":77.663,"layouts":1,"raf_long_delay":0,"droppedNonMainProcessCommitEvents":false,"droppedNonMainProcessOtherEvents":false,"maxDeltaBetweenCommits":0,"numberCommits":1}
+initBenchmark
+after initialized 02_replace1k 0 solid
+Waiting for 50 ms
+runBenchmark
+after run 02_replace1k 0 solid
+Waiting for 100 ms
+one mousedown event traces/solid-v1.9.3-keyed_02_replace1k_3.json
+mousedownToClick 1011 traces/solid-v1.9.3-keyed_02_replace1k_3.json
+**** resultScript = 16.129
+duration for solid and 02_replace1k: {"tsStart":910521564269,"tsEnd":910521643227,"duration":78.958,"layouts":1,"raf_long_delay":0,"droppedNonMainProcessCommitEvents":false,"droppedNonMainProcessOtherEvents":false,"maxDeltaBetweenCommits":0,"numberCommits":1}
+initBenchmark
+after initialized 02_replace1k 0 solid
+Waiting for 50 ms
+runBenchmark
+after run 02_replace1k 0 solid
+Waiting for 100 ms
+one mousedown event traces/solid-v1.9.3-keyed_02_replace1k_4.json
+mousedownToClick 1173 traces/solid-v1.9.3-keyed_02_replace1k_4.json
+**** resultScript = 13.818
+duration for solid and 02_replace1k: {"tsStart":910524449220,"tsEnd":910524526042,"duration":76.822,"layouts":1,"raf_long_delay":0,"droppedNonMainProcessCommitEvents":false,"droppedNonMainProcessOtherEvents":false,"maxDeltaBetweenCommits":0,"numberCommits":1}
+*** browser close
+*** browser closed
+*** browser has been shutting down
+=> Duration for 02_replace1k and framework solid: 14714.36 ms
+result solid-v1.9.3-keyed_02_replace1k.json total {"min":76.8,"max":79,"median":77.2,"mean":77.55999999999999,"stddev":0.8677557259966667,"values":[77.1,77.2,77.7,79,76.8]}
+result solid-v1.9.3-keyed_02_replace1k.json script {"min":13.8,"max":16.1,"median":13.9,"mean":14.319999999999999,"stddev":0.9984988733093296,"values":[13.8,13.9,14,16.1,13.8]}
+result solid-v1.9.3-keyed_02_replace1k.json paint {"min":61.8,"max":62.6,"median":62.2,"mean":62.160000000000004,"stddev":0.2966479394838281,"values":[62.2,62.2,62.6,61.8,62]}
+==> Duration for benchmark 02_replace1k: 14892.84 ms
+runBenchmakLoop {
+  name: 'solid',
+  fullNameWithKeyedAndVersion: 'solid-v1.9.3-keyed',
+  uri: 'frameworks/keyed/solid',
+  keyed: true,
+  useShadowRoot: false,
+  useRowShadowRoot: false,
+  shadowRootName: undefined,
+  buttonsInShadowRoot: false,
+  issues: [],
+  language: 'JavaScript',
+  frameworkHomeURL: 'https://www.solidjs.com/',
+  startLogicEventName: 'click'
+} {
+  id: '03_update10th1k_x16',
+  label: 'partial update',
+  warmupCount: 3,
+  description: 'updating every 10th row for 1,000 row.',
+  type: 0,
+  allowBatching: true,
+  layoutEventRequired: true,
+  additionalNumberOfRuns: 0
+}
+FORKING: 03_update10th1k_x16 BatchSize 5
+forking dist/forkedBenchmarkRunnerPuppeteer.js
+START BENCHMARK. Write results? true
+forked runner using sleep for puppeteer 0
+benchmarking {
+  name: 'solid',
+  fullNameWithKeyedAndVersion: 'solid-v1.9.3-keyed',
+  uri: 'frameworks/keyed/solid',
+  keyed: true,
+  useShadowRoot: false,
+  useRowShadowRoot: false,
+  buttonsInShadowRoot: false,
+  issues: [],
+  language: 'JavaScript',
+  frameworkHomeURL: 'https://www.solidjs.com/',
+  startLogicEventName: 'click'
+} 03_update10th1k_x16
+browser arguments [
+  '--window-size=1280,800',
+  '--js-flags=--expose-gc',
+  '--no-default-browser-check',
+  '--disable-sync',
+  '--no-first-run',
+  '--ash-no-nudges',
+  '--disable-extensions',
+  '--disable-features=Translate,PrivacySandboxSettings4,IPH_SidePanelGenericMenuFeature',
+  '--headless=new'
+]
+BROWSER:
+initBenchmark
+after initialized 03_update10th1k_x16 0 solid
+CPU slowdown 4
+Waiting for 50 ms
+runBenchmark
+after run 03_update10th1k_x16 0 solid
+Waiting for 100 ms
+one mousedown event traces/solid-v1.9.3-keyed_03_update10th1k_x16_0.json
+mousedownToClick 4197 traces/solid-v1.9.3-keyed_03_update10th1k_x16_0.json
+**** resultScript = 2.238
+duration for solid and 03_update10th1k_x16: {"tsStart":910527600166,"tsEnd":910527633837,"duration":33.671,"layouts":1,"raf_long_delay":0,"droppedNonMainProcessCommitEvents":false,"droppedNonMainProcessOtherEvents":false,"maxDeltaBetweenCommits":0,"numberCommits":1}
+initBenchmark
+after initialized 03_update10th1k_x16 0 solid
+CPU slowdown 4
+Waiting for 50 ms
+runBenchmark
+after run 03_update10th1k_x16 0 solid
+Waiting for 100 ms
+one mousedown event traces/solid-v1.9.3-keyed_03_update10th1k_x16_1.json
+mousedownToClick 3883 traces/solid-v1.9.3-keyed_03_update10th1k_x16_1.json
+**** resultScript = 2.412
+duration for solid and 03_update10th1k_x16: {"tsStart":910530205253,"tsEnd":910530239226,"duration":33.973,"layouts":1,"raf_long_delay":0,"droppedNonMainProcessCommitEvents":false,"droppedNonMainProcessOtherEvents":false,"maxDeltaBetweenCommits":0,"numberCommits":1}
+initBenchmark
+after initialized 03_update10th1k_x16 0 solid
+CPU slowdown 4
+Waiting for 50 ms
+runBenchmark
+after run 03_update10th1k_x16 0 solid
+Waiting for 100 ms
+one mousedown event traces/solid-v1.9.3-keyed_03_update10th1k_x16_2.json
+mousedownToClick 4196 traces/solid-v1.9.3-keyed_03_update10th1k_x16_2.json
+**** resultScript = 1.833
+duration for solid and 03_update10th1k_x16: {"tsStart":910532815311,"tsEnd":910532848468,"duration":33.157,"layouts":1,"raf_long_delay":0,"droppedNonMainProcessCommitEvents":false,"droppedNonMainProcessOtherEvents":false,"maxDeltaBetweenCommits":0,"numberCommits":1}
+initBenchmark
+after initialized 03_update10th1k_x16 0 solid
+CPU slowdown 4
+Waiting for 50 ms
+runBenchmark
+after run 03_update10th1k_x16 0 solid
+Waiting for 100 ms
+one mousedown event traces/solid-v1.9.3-keyed_03_update10th1k_x16_3.json
+mousedownToClick 4123 traces/solid-v1.9.3-keyed_03_update10th1k_x16_3.json
+**** resultScript = 2.105
+duration for solid and 03_update10th1k_x16: {"tsStart":910535387755,"tsEnd":910535420943,"duration":33.188,"layouts":1,"raf_long_delay":0,"droppedNonMainProcessCommitEvents":false,"droppedNonMainProcessOtherEvents":false,"maxDeltaBetweenCommits":0,"numberCommits":1}
+initBenchmark
+after initialized 03_update10th1k_x16 0 solid
+CPU slowdown 4
+Waiting for 50 ms
+runBenchmark
+after run 03_update10th1k_x16 0 solid
+Waiting for 100 ms
+one mousedown event traces/solid-v1.9.3-keyed_03_update10th1k_x16_4.json
+mousedownToClick 4188 traces/solid-v1.9.3-keyed_03_update10th1k_x16_4.json
+**** resultScript = 1.946
+duration for solid and 03_update10th1k_x16: {"tsStart":910537970671,"tsEnd":910538003671,"duration":33,"layouts":1,"raf_long_delay":0,"droppedNonMainProcessCommitEvents":false,"droppedNonMainProcessOtherEvents":false,"maxDeltaBetweenCommits":0,"numberCommits":1}
+*** browser close
+*** browser closed
+*** browser has been shutting down
+=> Duration for 03_update10th1k_x16 and framework solid: 13315.98 ms
+result solid-v1.9.3-keyed_03_update10th1k_x16.json total {"min":33,"max":34,"median":33.2,"mean":33.42,"stddev":0.4147288270665541,"values":[33.7,34,33.2,33.2,33]}
+result solid-v1.9.3-keyed_03_update10th1k_x16.json script {"min":1.8,"max":2.4,"median":2.1,"mean":2.08,"stddev":0.23874672772626643,"values":[2.2,2.4,1.8,2.1,1.9]}
+result solid-v1.9.3-keyed_03_update10th1k_x16.json paint {"min":27.4,"max":29,"median":27.7,"mean":27.919999999999998,"stddev":0.6685805860178718,"values":[27.4,29,27.4,28.1,27.7]}
+==> Duration for benchmark 03_update10th1k_x16: 13489.66 ms
+runBenchmakLoop {
+  name: 'solid',
+  fullNameWithKeyedAndVersion: 'solid-v1.9.3-keyed',
+  uri: 'frameworks/keyed/solid',
+  keyed: true,
+  useShadowRoot: false,
+  useRowShadowRoot: false,
+  shadowRootName: undefined,
+  buttonsInShadowRoot: false,
+  issues: [],
+  language: 'JavaScript',
+  frameworkHomeURL: 'https://www.solidjs.com/',
+  startLogicEventName: 'click'
+} {
+  id: '04_select1k',
+  label: 'select row',
+  warmupCount: 5,
+  description: 'highlighting a selected row.',
+  type: 0,
+  allowBatching: true,
+  layoutEventRequired: false,
+  additionalNumberOfRuns: 10
+}
+FORKING: 04_select1k BatchSize 15
+forking dist/forkedBenchmarkRunnerPuppeteer.js
+START BENCHMARK. Write results? true
+forked runner using sleep for puppeteer 0
+benchmarking {
+  name: 'solid',
+  fullNameWithKeyedAndVersion: 'solid-v1.9.3-keyed',
+  uri: 'frameworks/keyed/solid',
+  keyed: true,
+  useShadowRoot: false,
+  useRowShadowRoot: false,
+  buttonsInShadowRoot: false,
+  issues: [],
+  language: 'JavaScript',
+  frameworkHomeURL: 'https://www.solidjs.com/',
+  startLogicEventName: 'click'
+} 04_select1k
+browser arguments [
+  '--window-size=1280,800',
+  '--js-flags=--expose-gc',
+  '--no-default-browser-check',
+  '--disable-sync',
+  '--no-first-run',
+  '--ash-no-nudges',
+  '--disable-extensions',
+  '--disable-features=Translate,PrivacySandboxSettings4,IPH_SidePanelGenericMenuFeature',
+  '--headless=new'
+]
+BROWSER:
+initBenchmark
+after initialized 04_select1k 0 solid
+CPU slowdown 4
+Waiting for 50 ms
+runBenchmark
+after run 04_select1k 0 solid
+Waiting for 100 ms
+one mousedown event traces/solid-v1.9.3-keyed_04_select1k_0.json
+mousedownToClick 4063 traces/solid-v1.9.3-keyed_04_select1k_0.json
+**** resultScript = 1.778
+duration for solid and 04_select1k: {"tsStart":910541016683,"tsEnd":910541025410,"duration":8.727,"layouts":0,"raf_long_delay":0,"droppedNonMainProcessCommitEvents":false,"droppedNonMainProcessOtherEvents":false,"maxDeltaBetweenCommits":0,"numberCommits":1}
+initBenchmark
+after initialized 04_select1k 0 solid
+CPU slowdown 4
+Waiting for 50 ms
+runBenchmark
+after run 04_select1k 0 solid
+Waiting for 100 ms
+one mousedown event traces/solid-v1.9.3-keyed_04_select1k_1.json
+mousedownToClick 3550 traces/solid-v1.9.3-keyed_04_select1k_1.json
+**** resultScript = 1.49
+duration for solid and 04_select1k: {"tsStart":910543578709,"tsEnd":910543587410,"duration":8.701,"layouts":0,"raf_long_delay":0,"droppedNonMainProcessCommitEvents":false,"droppedNonMainProcessOtherEvents":false,"maxDeltaBetweenCommits":0,"numberCommits":1}
+initBenchmark
+after initialized 04_select1k 0 solid
+CPU slowdown 4
+Waiting for 50 ms
+runBenchmark
+after run 04_select1k 0 solid
+Waiting for 100 ms
+one mousedown event traces/solid-v1.9.3-keyed_04_select1k_2.json
+mousedownToClick 3243 traces/solid-v1.9.3-keyed_04_select1k_2.json
+**** resultScript = 2.197
+duration for solid and 04_select1k: {"tsStart":910546084734,"tsEnd":910546094312,"duration":9.578,"layouts":0,"raf_long_delay":0,"droppedNonMainProcessCommitEvents":false,"droppedNonMainProcessOtherEvents":false,"maxDeltaBetweenCommits":0,"numberCommits":1}
+initBenchmark
+after initialized 04_select1k 0 solid
+CPU slowdown 4
+Waiting for 50 ms
+runBenchmark
+after run 04_select1k 0 solid
+Waiting for 100 ms
+one mousedown event traces/solid-v1.9.3-keyed_04_select1k_3.json
+mousedownToClick 3784 traces/solid-v1.9.3-keyed_04_select1k_3.json
+**** resultScript = 2.009
+duration for solid and 04_select1k: {"tsStart":910548583713,"tsEnd":910548593502,"duration":9.789,"layouts":0,"raf_long_delay":0,"droppedNonMainProcessCommitEvents":false,"droppedNonMainProcessOtherEvents":false,"maxDeltaBetweenCommits":0,"numberCommits":1}
+initBenchmark
+after initialized 04_select1k 0 solid
+CPU slowdown 4
+Waiting for 50 ms
+runBenchmark
+after run 04_select1k 0 solid
+Waiting for 100 ms
+one mousedown event traces/solid-v1.9.3-keyed_04_select1k_4.json
+mousedownToClick 3747 traces/solid-v1.9.3-keyed_04_select1k_4.json
+**** resultScript = 1.764
+duration for solid and 04_select1k: {"tsStart":910551077192,"tsEnd":910551086062,"duration":8.87,"layouts":0,"raf_long_delay":0,"droppedNonMainProcessCommitEvents":false,"droppedNonMainProcessOtherEvents":false,"maxDeltaBetweenCommits":0,"numberCommits":1}
+initBenchmark
+after initialized 04_select1k 0 solid
+CPU slowdown 4
+Waiting for 50 ms
+runBenchmark
+after run 04_select1k 0 solid
+Waiting for 100 ms
+one mousedown event traces/solid-v1.9.3-keyed_04_select1k_5.json
+mousedownToClick 3359 traces/solid-v1.9.3-keyed_04_select1k_5.json
+**** resultScript = 2.181
+duration for solid and 04_select1k: {"tsStart":910553583246,"tsEnd":910553592493,"duration":9.247,"layouts":0,"raf_long_delay":0,"droppedNonMainProcessCommitEvents":false,"droppedNonMainProcessOtherEvents":false,"maxDeltaBetweenCommits":0,"numberCommits":1}
+initBenchmark
+after initialized 04_select1k 0 solid
+CPU slowdown 4
+Waiting for 50 ms
+runBenchmark
+after run 04_select1k 0 solid
+Waiting for 100 ms
+one mousedown event traces/solid-v1.9.3-keyed_04_select1k_6.json
+mousedownToClick 3254 traces/solid-v1.9.3-keyed_04_select1k_6.json
+**** resultScript = 1.998
+duration for solid and 04_select1k: {"tsStart":910556049463,"tsEnd":910556059366,"duration":9.903,"layouts":0,"raf_long_delay":0,"droppedNonMainProcessCommitEvents":false,"droppedNonMainProcessOtherEvents":false,"maxDeltaBetweenCommits":0,"numberCommits":1}
+initBenchmark
+after initialized 04_select1k 0 solid
+CPU slowdown 4
+Waiting for 50 ms
+runBenchmark
+after run 04_select1k 0 solid
+Waiting for 100 ms
+one mousedown event traces/solid-v1.9.3-keyed_04_select1k_7.json
+mousedownToClick 4096 traces/solid-v1.9.3-keyed_04_select1k_7.json
+**** resultScript = 1.428
+duration for solid and 04_select1k: {"tsStart":910558549797,"tsEnd":910558559243,"duration":9.446,"layouts":0,"raf_long_delay":0,"droppedNonMainProcessCommitEvents":false,"droppedNonMainProcessOtherEvents":false,"maxDeltaBetweenCommits":0,"numberCommits":1}
+initBenchmark
+after initialized 04_select1k 0 solid
+CPU slowdown 4
+Waiting for 50 ms
+runBenchmark
+after run 04_select1k 0 solid
+Waiting for 100 ms
+one mousedown event traces/solid-v1.9.3-keyed_04_select1k_8.json
+mousedownToClick 3901 traces/solid-v1.9.3-keyed_04_select1k_8.json
+**** resultScript = 1.373
+duration for solid and 04_select1k: {"tsStart":910561055600,"tsEnd":910561064251,"duration":8.651,"layouts":0,"raf_long_delay":0,"droppedNonMainProcessCommitEvents":false,"droppedNonMainProcessOtherEvents":false,"maxDeltaBetweenCommits":0,"numberCommits":1}
+initBenchmark
+after initialized 04_select1k 0 solid
+CPU slowdown 4
+Waiting for 50 ms
+runBenchmark
+after run 04_select1k 0 solid
+Waiting for 100 ms
+one mousedown event traces/solid-v1.9.3-keyed_04_select1k_9.json
+mousedownToClick 3547 traces/solid-v1.9.3-keyed_04_select1k_9.json
+**** resultScript = 1.483
+duration for solid and 04_select1k: {"tsStart":910563536770,"tsEnd":910563545592,"duration":8.822,"layouts":0,"raf_long_delay":0,"droppedNonMainProcessCommitEvents":false,"droppedNonMainProcessOtherEvents":false,"maxDeltaBetweenCommits":0,"numberCommits":1}
+initBenchmark
+after initialized 04_select1k 0 solid
+CPU slowdown 4
+Waiting for 50 ms
+runBenchmark
+after run 04_select1k 0 solid
+Waiting for 100 ms
+one mousedown event traces/solid-v1.9.3-keyed_04_select1k_10.json
+mousedownToClick 3417 traces/solid-v1.9.3-keyed_04_select1k_10.json
+**** resultScript = 2.783
+duration for solid and 04_select1k: {"tsStart":910566023466,"tsEnd":910566034142,"duration":10.676,"layouts":0,"raf_long_delay":0,"droppedNonMainProcessCommitEvents":false,"droppedNonMainProcessOtherEvents":false,"maxDeltaBetweenCommits":0,"numberCommits":1}
+initBenchmark
+after initialized 04_select1k 0 solid
+CPU slowdown 4
+Waiting for 50 ms
+runBenchmark
+after run 04_select1k 0 solid
+Waiting for 100 ms
+one mousedown event traces/solid-v1.9.3-keyed_04_select1k_11.json
+mousedownToClick 4230 traces/solid-v1.9.3-keyed_04_select1k_11.json
+**** resultScript = 2.017
+duration for solid and 04_select1k: {"tsStart":910568498717,"tsEnd":910568508967,"duration":10.25,"layouts":0,"raf_long_delay":0,"droppedNonMainProcessCommitEvents":false,"droppedNonMainProcessOtherEvents":false,"maxDeltaBetweenCommits":0,"numberCommits":1}
+initBenchmark
+after initialized 04_select1k 0 solid
+CPU slowdown 4
+Waiting for 50 ms
+runBenchmark
+after run 04_select1k 0 solid
+Waiting for 100 ms
+one mousedown event traces/solid-v1.9.3-keyed_04_select1k_12.json
+mousedownToClick 3929 traces/solid-v1.9.3-keyed_04_select1k_12.json
+**** resultScript = 1.82
+duration for solid and 04_select1k: {"tsStart":910570981114,"tsEnd":910570989973,"duration":8.859,"layouts":0,"raf_long_delay":0,"droppedNonMainProcessCommitEvents":false,"droppedNonMainProcessOtherEvents":false,"maxDeltaBetweenCommits":0,"numberCommits":1}
+initBenchmark
+after initialized 04_select1k 0 solid
+CPU slowdown 4
+Waiting for 50 ms
+runBenchmark
+after run 04_select1k 0 solid
+Waiting for 100 ms
+one mousedown event traces/solid-v1.9.3-keyed_04_select1k_13.json
+mousedownToClick 3349 traces/solid-v1.9.3-keyed_04_select1k_13.json
+**** resultScript = 2.379
+duration for solid and 04_select1k: {"tsStart":910573476474,"tsEnd":910573486160,"duration":9.686,"layouts":0,"raf_long_delay":0,"droppedNonMainProcessCommitEvents":false,"droppedNonMainProcessOtherEvents":false,"maxDeltaBetweenCommits":0,"numberCommits":1}
+initBenchmark
+after initialized 04_select1k 0 solid
+CPU slowdown 4
+Waiting for 50 ms
+runBenchmark
+after run 04_select1k 0 solid
+Waiting for 100 ms
+one mousedown event traces/solid-v1.9.3-keyed_04_select1k_14.json
+mousedownToClick 4519 traces/solid-v1.9.3-keyed_04_select1k_14.json
+**** resultScript = 1.195
+duration for solid and 04_select1k: {"tsStart":910575941272,"tsEnd":910575950572,"duration":9.3,"layouts":0,"raf_long_delay":0,"droppedNonMainProcessCommitEvents":false,"droppedNonMainProcessOtherEvents":false,"maxDeltaBetweenCommits":0,"numberCommits":1}
+*** browser close
+*** browser closed
+*** browser has been shutting down
+=> Duration for 04_select1k and framework solid: 37709.24 ms
+result solid-v1.9.3-keyed_04_select1k.json total {"min":8.7,"max":10.7,"median":9.3,"mean":9.373333333333333,"stddev":0.6215954893505522,"values":[8.7,8.7,9.6,9.8,8.9,9.2,9.9,9.4,8.7,8.8,10.7,10.3,8.9,9.7,9.3]}
+result solid-v1.9.3-keyed_04_select1k.json script {"min":1.2,"max":2.8,"median":1.8,"mean":1.8666666666666667,"stddev":0.43039295444755504,"values":[1.8,1.5,2.2,2,1.8,2.2,2,1.4,1.4,1.5,2.8,2,1.8,2.4,1.2]}
+result solid-v1.9.3-keyed_04_select1k.json paint {"min":5.5,"max":7,"median":6.1,"mean":6.006666666666667,"stddev":0.4026105290417007,"values":[5.5,6.1,5.8,5.6,6.2,6.1,6.2,6.3,5.6,6.2,5.7,6.4,5.7,5.7,7]}
+==> Duration for benchmark 04_select1k: 37886.85 ms
+runBenchmakLoop {
+  name: 'solid',
+  fullNameWithKeyedAndVersion: 'solid-v1.9.3-keyed',
+  uri: 'frameworks/keyed/solid',
+  keyed: true,
+  useShadowRoot: false,
+  useRowShadowRoot: false,
+  shadowRootName: undefined,
+  buttonsInShadowRoot: false,
+  issues: [],
+  language: 'JavaScript',
+  frameworkHomeURL: 'https://www.solidjs.com/',
+  startLogicEventName: 'click'
+} {
+  id: '05_swap1k',
+  label: 'swap rows',
+  warmupCount: 5,
+  description: 'swap 2 rows for table with 1,000 rows.',
+  type: 0,
+  allowBatching: true,
+  layoutEventRequired: true,
+  additionalNumberOfRuns: 0
+}
+FORKING: 05_swap1k BatchSize 5
+forking dist/forkedBenchmarkRunnerPuppeteer.js
+START BENCHMARK. Write results? true
+forked runner using sleep for puppeteer 0
+benchmarking {
+  name: 'solid',
+  fullNameWithKeyedAndVersion: 'solid-v1.9.3-keyed',
+  uri: 'frameworks/keyed/solid',
+  keyed: true,
+  useShadowRoot: false,
+  useRowShadowRoot: false,
+  buttonsInShadowRoot: false,
+  issues: [],
+  language: 'JavaScript',
+  frameworkHomeURL: 'https://www.solidjs.com/',
+  startLogicEventName: 'click'
+} 05_swap1k
+browser arguments [
+  '--window-size=1280,800',
+  '--js-flags=--expose-gc',
+  '--no-default-browser-check',
+  '--disable-sync',
+  '--no-first-run',
+  '--ash-no-nudges',
+  '--disable-extensions',
+  '--disable-features=Translate,PrivacySandboxSettings4,IPH_SidePanelGenericMenuFeature',
+  '--headless=new'
+]
+BROWSER:
+initBenchmark
+after initialized 05_swap1k 0 solid
+CPU slowdown 4
+Waiting for 50 ms
+runBenchmark
+after run 05_swap1k 0 solid
+Waiting for 100 ms
+one mousedown event traces/solid-v1.9.3-keyed_05_swap1k_0.json
+mousedownToClick 4121 traces/solid-v1.9.3-keyed_05_swap1k_0.json
+**** resultScript = 2.049
+duration for solid and 05_swap1k: {"tsStart":910579078604,"tsEnd":910579116728,"duration":38.124,"layouts":1,"raf_long_delay":0,"droppedNonMainProcessCommitEvents":false,"droppedNonMainProcessOtherEvents":false,"maxDeltaBetweenCommits":0,"numberCommits":1}
+initBenchmark
+after initialized 05_swap1k 0 solid
+CPU slowdown 4
+Waiting for 50 ms
+runBenchmark
+after run 05_swap1k 0 solid
+Waiting for 100 ms
+one mousedown event traces/solid-v1.9.3-keyed_05_swap1k_1.json
+mousedownToClick 4037 traces/solid-v1.9.3-keyed_05_swap1k_1.json
+**** resultScript = 2.708
+duration for solid and 05_swap1k: {"tsStart":910581778956,"tsEnd":910581818107,"duration":39.151,"layouts":1,"raf_long_delay":0,"droppedNonMainProcessCommitEvents":false,"droppedNonMainProcessOtherEvents":false,"maxDeltaBetweenCommits":0,"numberCommits":1}
+initBenchmark
+after initialized 05_swap1k 0 solid
+CPU slowdown 4
+Waiting for 50 ms
+runBenchmark
+after run 05_swap1k 0 solid
+Waiting for 100 ms
+one mousedown event traces/solid-v1.9.3-keyed_05_swap1k_2.json
+mousedownToClick 4123 traces/solid-v1.9.3-keyed_05_swap1k_2.json
+**** resultScript = 1.737
+duration for solid and 05_swap1k: {"tsStart":910584514464,"tsEnd":910584552516,"duration":38.052,"layouts":1,"raf_long_delay":0,"droppedNonMainProcessCommitEvents":false,"droppedNonMainProcessOtherEvents":false,"maxDeltaBetweenCommits":0,"numberCommits":1}
+initBenchmark
+after initialized 05_swap1k 0 solid
+CPU slowdown 4
+Waiting for 50 ms
+runBenchmark
+after run 05_swap1k 0 solid
+Waiting for 100 ms
+one mousedown event traces/solid-v1.9.3-keyed_05_swap1k_3.json
+mousedownToClick 4909 traces/solid-v1.9.3-keyed_05_swap1k_3.json
+**** resultScript = 3.066
+duration for solid and 05_swap1k: {"tsStart":910587222945,"tsEnd":910587264211,"duration":41.266,"layouts":1,"raf_long_delay":0,"droppedNonMainProcessCommitEvents":false,"droppedNonMainProcessOtherEvents":false,"maxDeltaBetweenCommits":0,"numberCommits":1}
+initBenchmark
+after initialized 05_swap1k 0 solid
+CPU slowdown 4
+Waiting for 50 ms
+runBenchmark
+after run 05_swap1k 0 solid
+Waiting for 100 ms
+one mousedown event traces/solid-v1.9.3-keyed_05_swap1k_4.json
+mousedownToClick 3675 traces/solid-v1.9.3-keyed_05_swap1k_4.json
+**** resultScript = 2.687
+duration for solid and 05_swap1k: {"tsStart":910589936957,"tsEnd":910589976546,"duration":39.589,"layouts":1,"raf_long_delay":0,"droppedNonMainProcessCommitEvents":false,"droppedNonMainProcessOtherEvents":false,"maxDeltaBetweenCommits":0,"numberCommits":1}
+*** browser close
+*** browser closed
+*** browser has been shutting down
+=> Duration for 05_swap1k and framework solid: 13911.17 ms
+result solid-v1.9.3-keyed_05_swap1k.json total {"min":38.1,"max":41.3,"median":39.2,"mean":39.260000000000005,"stddev":1.3202272531651493,"values":[38.1,39.2,38.1,41.3,39.6]}
+result solid-v1.9.3-keyed_05_swap1k.json script {"min":1.7,"max":3.1,"median":2.7,"mean":2.4400000000000004,"stddev":0.5727128425310541,"values":[2,2.7,1.7,3.1,2.7]}
+result solid-v1.9.3-keyed_05_swap1k.json paint {"min":32.5,"max":34,"median":33.3,"mean":33.3,"stddev":0.6595452979136461,"values":[32.8,32.5,33.3,34,33.9]}
+==> Duration for benchmark 05_swap1k: 14091.02 ms
+runBenchmakLoop {
+  name: 'solid',
+  fullNameWithKeyedAndVersion: 'solid-v1.9.3-keyed',
+  uri: 'frameworks/keyed/solid',
+  keyed: true,
+  useShadowRoot: false,
+  useRowShadowRoot: false,
+  shadowRootName: undefined,
+  buttonsInShadowRoot: false,
+  issues: [],
+  language: 'JavaScript',
+  frameworkHomeURL: 'https://www.solidjs.com/',
+  startLogicEventName: 'click'
+} {
+  id: '06_remove-one-1k',
+  label: 'remove row',
+  warmupCount: 5,
+  description: 'removing one row.',
+  type: 0,
+  allowBatching: true,
+  layoutEventRequired: true,
+  additionalNumberOfRuns: 0
+}
+FORKING: 06_remove-one-1k BatchSize 5
+forking dist/forkedBenchmarkRunnerPuppeteer.js
+START BENCHMARK. Write results? true
+forked runner using sleep for puppeteer 0
+benchmarking {
+  name: 'solid',
+  fullNameWithKeyedAndVersion: 'solid-v1.9.3-keyed',
+  uri: 'frameworks/keyed/solid',
+  keyed: true,
+  useShadowRoot: false,
+  useRowShadowRoot: false,
+  buttonsInShadowRoot: false,
+  issues: [],
+  language: 'JavaScript',
+  frameworkHomeURL: 'https://www.solidjs.com/',
+  startLogicEventName: 'click'
+} 06_remove-one-1k
+browser arguments [
+  '--window-size=1280,800',
+  '--js-flags=--expose-gc',
+  '--no-default-browser-check',
+  '--disable-sync',
+  '--no-first-run',
+  '--ash-no-nudges',
+  '--disable-extensions',
+  '--disable-features=Translate,PrivacySandboxSettings4,IPH_SidePanelGenericMenuFeature',
+  '--headless=new'
+]
+BROWSER:
+initBenchmark
+after initialized 06_remove-one-1k 0 solid
+CPU slowdown 2
+Waiting for 50 ms
+runBenchmark
+after run 06_remove-one-1k 0 solid
+Waiting for 100 ms
+one mousedown event traces/solid-v1.9.3-keyed_06_remove-one-1k_0.json
+mousedownToClick 3473 traces/solid-v1.9.3-keyed_06_remove-one-1k_0.json
+**** resultScript = 0.925
+duration for solid and 06_remove-one-1k: {"tsStart":910593152156,"tsEnd":910593187560,"duration":35.404,"layouts":1,"raf_long_delay":0,"droppedNonMainProcessCommitEvents":false,"droppedNonMainProcessOtherEvents":false,"maxDeltaBetweenCommits":0,"numberCommits":1}
+initBenchmark
+after initialized 06_remove-one-1k 0 solid
+CPU slowdown 2
+Waiting for 50 ms
+runBenchmark
+after run 06_remove-one-1k 0 solid
+Waiting for 100 ms
+one mousedown event traces/solid-v1.9.3-keyed_06_remove-one-1k_1.json
+mousedownToClick 3520 traces/solid-v1.9.3-keyed_06_remove-one-1k_1.json
+**** resultScript = 0.936
+duration for solid and 06_remove-one-1k: {"tsStart":910595833674,"tsEnd":910595868563,"duration":34.889,"layouts":1,"raf_long_delay":0,"droppedNonMainProcessCommitEvents":false,"droppedNonMainProcessOtherEvents":false,"maxDeltaBetweenCommits":0,"numberCommits":1}
+initBenchmark
+after initialized 06_remove-one-1k 0 solid
+CPU slowdown 2
+Waiting for 50 ms
+runBenchmark
+after run 06_remove-one-1k 0 solid
+Waiting for 100 ms
+one mousedown event traces/solid-v1.9.3-keyed_06_remove-one-1k_2.json
+mousedownToClick 3540 traces/solid-v1.9.3-keyed_06_remove-one-1k_2.json
+**** resultScript = 0.73
+duration for solid and 06_remove-one-1k: {"tsStart":910598493471,"tsEnd":910598528718,"duration":35.247,"layouts":1,"raf_long_delay":0,"droppedNonMainProcessCommitEvents":false,"droppedNonMainProcessOtherEvents":false,"maxDeltaBetweenCommits":0,"numberCommits":1}
+initBenchmark
+after initialized 06_remove-one-1k 0 solid
+CPU slowdown 2
+Waiting for 50 ms
+runBenchmark
+after run 06_remove-one-1k 0 solid
+Waiting for 100 ms
+one mousedown event traces/solid-v1.9.3-keyed_06_remove-one-1k_3.json
+mousedownToClick 3800 traces/solid-v1.9.3-keyed_06_remove-one-1k_3.json
+**** resultScript = 0.682
+duration for solid and 06_remove-one-1k: {"tsStart":910601147526,"tsEnd":910601183195,"duration":35.669,"layouts":1,"raf_long_delay":0,"droppedNonMainProcessCommitEvents":false,"droppedNonMainProcessOtherEvents":false,"maxDeltaBetweenCommits":0,"numberCommits":1}
+initBenchmark
+after initialized 06_remove-one-1k 0 solid
+CPU slowdown 2
+Waiting for 50 ms
+runBenchmark
+after run 06_remove-one-1k 0 solid
+Waiting for 100 ms
+one mousedown event traces/solid-v1.9.3-keyed_06_remove-one-1k_4.json
+mousedownToClick 3561 traces/solid-v1.9.3-keyed_06_remove-one-1k_4.json
+**** resultScript = 0.935
+duration for solid and 06_remove-one-1k: {"tsStart":910603806691,"tsEnd":910603841759,"duration":35.068,"layouts":1,"raf_long_delay":0,"droppedNonMainProcessCommitEvents":false,"droppedNonMainProcessOtherEvents":false,"maxDeltaBetweenCommits":0,"numberCommits":1}
+*** browser close
+*** browser closed
+*** browser has been shutting down
+=> Duration for 06_remove-one-1k and framework solid: 13650.93 ms
+result solid-v1.9.3-keyed_06_remove-one-1k.json total {"min":34.9,"max":35.7,"median":35.2,"mean":35.260000000000005,"stddev":0.3049590136395391,"values":[35.4,34.9,35.2,35.7,35.1]}
+result solid-v1.9.3-keyed_06_remove-one-1k.json script {"min":0.7,"max":0.9,"median":0.9,"mean":0.82,"stddev":0.10954451150103325,"values":[0.9,0.9,0.7,0.7,0.9]}
+result solid-v1.9.3-keyed_06_remove-one-1k.json paint {"min":31.7,"max":33.1,"median":32.8,"mean":32.559999999999995,"stddev":0.5639148871948678,"values":[32.9,32.3,32.8,33.1,31.7]}
+==> Duration for benchmark 06_remove-one-1k: 13831.45 ms
+runBenchmakLoop {
+  name: 'solid',
+  fullNameWithKeyedAndVersion: 'solid-v1.9.3-keyed',
+  uri: 'frameworks/keyed/solid',
+  keyed: true,
+  useShadowRoot: false,
+  useRowShadowRoot: false,
+  shadowRootName: undefined,
+  buttonsInShadowRoot: false,
+  issues: [],
+  language: 'JavaScript',
+  frameworkHomeURL: 'https://www.solidjs.com/',
+  startLogicEventName: 'click'
+} {
+  id: '07_create10k',
+  label: 'create many rows',
+  warmupCount: 5,
+  description: 'creating 10,000 rows.',
+  type: 0,
+  allowBatching: true,
+  layoutEventRequired: true,
+  additionalNumberOfRuns: 0
+}
+FORKING: 07_create10k BatchSize 5
+forking dist/forkedBenchmarkRunnerPuppeteer.js
+START BENCHMARK. Write results? true
+forked runner using sleep for puppeteer 0
+benchmarking {
+  name: 'solid',
+  fullNameWithKeyedAndVersion: 'solid-v1.9.3-keyed',
+  uri: 'frameworks/keyed/solid',
+  keyed: true,
+  useShadowRoot: false,
+  useRowShadowRoot: false,
+  buttonsInShadowRoot: false,
+  issues: [],
+  language: 'JavaScript',
+  frameworkHomeURL: 'https://www.solidjs.com/',
+  startLogicEventName: 'click'
+} 07_create10k
+browser arguments [
+  '--window-size=1280,800',
+  '--js-flags=--expose-gc',
+  '--no-default-browser-check',
+  '--disable-sync',
+  '--no-first-run',
+  '--ash-no-nudges',
+  '--disable-extensions',
+  '--disable-features=Translate,PrivacySandboxSettings4,IPH_SidePanelGenericMenuFeature',
+  '--headless=new'
+]
+BROWSER:
+initBenchmark
+after initialized 07_create10k 0 solid
+Waiting for 50 ms
+runBenchmark
+after run 07_create10k 0 solid
+Waiting for 100 ms
+one mousedown event traces/solid-v1.9.3-keyed_07_create10k_0.json
+mousedownToClick 248 traces/solid-v1.9.3-keyed_07_create10k_0.json
+INFO: Dropping commit events from other processes traces/solid-v1.9.3-keyed_07_create10k_0.json
+event commit 1138882 - 1138925 {"args":{"frameSeqId":241,"layerTreeId":1},"cat":"disabled-by-default-devtools.timeline","dur":43,"name":"Commit","ph":"X","pid":3341421,"tdur":41,"tid":3341421,"ts":910608415217,"tts":299389}
+event commit 1148290 - 1148330 {"args":{"frameSeqId":242,"layerTreeId":1},"cat":"disabled-by-default-devtools.timeline","dur":40,"name":"Commit","ph":"X","pid":3341421,"tdur":39,"tid":3341421,"ts":910608424625,"tts":299983}
+event commit 1164844 - 1164876 {"args":{"frameSeqId":243,"layerTreeId":1},"cat":"disabled-by-default-devtools.timeline","dur":32,"name":"Commit","ph":"X","pid":3341421,"tdur":31,"tid":3341421,"ts":910608441179,"tts":300783}
+**** resultScript = 65.073
+duration for solid and 07_create10k: {"tsStart":910607276335,"tsEnd":910608031119,"duration":754.784,"layouts":1,"raf_long_delay":0,"droppedNonMainProcessCommitEvents":true,"droppedNonMainProcessOtherEvents":false,"maxDeltaBetweenCommits":0,"numberCommits":1}
+initBenchmark
+after initialized 07_create10k 0 solid
+Waiting for 50 ms
+runBenchmark
+after run 07_create10k 0 solid
+Waiting for 100 ms
+one mousedown event traces/solid-v1.9.3-keyed_07_create10k_1.json
+mousedownToClick 226 traces/solid-v1.9.3-keyed_07_create10k_1.json
+**** resultScript = 63.171
+duration for solid and 07_create10k: {"tsStart":910611317490,"tsEnd":910612054695,"duration":737.205,"layouts":1,"raf_long_delay":0,"droppedNonMainProcessCommitEvents":false,"droppedNonMainProcessOtherEvents":false,"maxDeltaBetweenCommits":0,"numberCommits":1}
+initBenchmark
+after initialized 07_create10k 0 solid
+Waiting for 50 ms
+runBenchmark
+after run 07_create10k 0 solid
+Waiting for 100 ms
+one mousedown event traces/solid-v1.9.3-keyed_07_create10k_2.json
+mousedownToClick 268 traces/solid-v1.9.3-keyed_07_create10k_2.json
+**** resultScript = 64.513
+duration for solid and 07_create10k: {"tsStart":910615330805,"tsEnd":910616063959,"duration":733.154,"layouts":1,"raf_long_delay":0,"droppedNonMainProcessCommitEvents":false,"droppedNonMainProcessOtherEvents":false,"maxDeltaBetweenCommits":0,"numberCommits":1}
+initBenchmark
+after initialized 07_create10k 0 solid
+Waiting for 50 ms
+runBenchmark
+after run 07_create10k 0 solid
+Waiting for 100 ms
+one mousedown event traces/solid-v1.9.3-keyed_07_create10k_3.json
+mousedownToClick 286 traces/solid-v1.9.3-keyed_07_create10k_3.json
+**** resultScript = 62.929
+duration for solid and 07_create10k: {"tsStart":910619390171,"tsEnd":910620121974,"duration":731.803,"layouts":1,"raf_long_delay":0,"droppedNonMainProcessCommitEvents":false,"droppedNonMainProcessOtherEvents":false,"maxDeltaBetweenCommits":0,"numberCommits":1}
+initBenchmark
+after initialized 07_create10k 0 solid
+Waiting for 50 ms
+runBenchmark
+after run 07_create10k 0 solid
+Waiting for 100 ms
+one mousedown event traces/solid-v1.9.3-keyed_07_create10k_4.json
+mousedownToClick 301 traces/solid-v1.9.3-keyed_07_create10k_4.json
+**** resultScript = 63.525
+duration for solid and 07_create10k: {"tsStart":910623439321,"tsEnd":910624183448,"duration":744.127,"layouts":1,"raf_long_delay":0,"droppedNonMainProcessCommitEvents":false,"droppedNonMainProcessOtherEvents":false,"maxDeltaBetweenCommits":0,"numberCommits":1}
+*** browser close
+*** browser closed
+*** browser has been shutting down
+=> Duration for 07_create10k and framework solid: 20663.41 ms
+result solid-v1.9.3-keyed_07_create10k.json total {"min":731.8,"max":754.8,"median":737.2,"mean":740.2199999999999,"stddev":9.446269104784157,"values":[754.8,737.2,733.2,731.8,744.1]}
+result solid-v1.9.3-keyed_07_create10k.json script {"min":62.9,"max":65.1,"median":63.5,"mean":63.839999999999996,"stddev":0.9262828941527508,"values":[65.1,63.2,64.5,62.9,63.5]}
+result solid-v1.9.3-keyed_07_create10k.json paint {"min":659.6,"max":680.4,"median":664.9,"mean":667.2,"stddev":8.820147391058699,"values":[680.4,664.9,659.6,659.7,671.4]}
+==> Duration for benchmark 07_create10k: 20837.11 ms
+runBenchmakLoop {
+  name: 'solid',
+  fullNameWithKeyedAndVersion: 'solid-v1.9.3-keyed',
+  uri: 'frameworks/keyed/solid',
+  keyed: true,
+  useShadowRoot: false,
+  useRowShadowRoot: false,
+  shadowRootName: undefined,
+  buttonsInShadowRoot: false,
+  issues: [],
+  language: 'JavaScript',
+  frameworkHomeURL: 'https://www.solidjs.com/',
+  startLogicEventName: 'click'
+} {
+  id: '08_create1k-after1k_x2',
+  label: 'append rows to large table',
+  warmupCount: 5,
+  description: 'appending 1,000 to a table of 1,000 rows.',
+  type: 0,
+  allowBatching: true,
+  layoutEventRequired: true,
+  additionalNumberOfRuns: 0
+}
+FORKING: 08_create1k-after1k_x2 BatchSize 5
+forking dist/forkedBenchmarkRunnerPuppeteer.js
+START BENCHMARK. Write results? true
+forked runner using sleep for puppeteer 0
+benchmarking {
+  name: 'solid',
+  fullNameWithKeyedAndVersion: 'solid-v1.9.3-keyed',
+  uri: 'frameworks/keyed/solid',
+  keyed: true,
+  useShadowRoot: false,
+  useRowShadowRoot: false,
+  buttonsInShadowRoot: false,
+  issues: [],
+  language: 'JavaScript',
+  frameworkHomeURL: 'https://www.solidjs.com/',
+  startLogicEventName: 'click'
+} 08_create1k-after1k_x2
+browser arguments [
+  '--window-size=1280,800',
+  '--js-flags=--expose-gc',
+  '--no-default-browser-check',
+  '--disable-sync',
+  '--no-first-run',
+  '--ash-no-nudges',
+  '--disable-extensions',
+  '--disable-features=Translate,PrivacySandboxSettings4,IPH_SidePanelGenericMenuFeature',
+  '--headless=new'
+]
+BROWSER:
+initBenchmark
+after initialized 08_create1k-after1k_x2 0 solid
+Waiting for 50 ms
+runBenchmark
+after run 08_create1k-after1k_x2 0 solid
+Waiting for 100 ms
+one mousedown event traces/solid-v1.9.3-keyed_08_create1k-after1k_x2_0.json
+mousedownToClick 1019 traces/solid-v1.9.3-keyed_08_create1k-after1k_x2_0.json
+**** resultScript = 7.256
+duration for solid and 08_create1k-after1k_x2: {"tsStart":910628155657,"tsEnd":910628234429,"duration":78.772,"layouts":1,"raf_long_delay":0,"droppedNonMainProcessCommitEvents":false,"droppedNonMainProcessOtherEvents":false,"maxDeltaBetweenCommits":0,"numberCommits":1}
+initBenchmark
+after initialized 08_create1k-after1k_x2 0 solid
+Waiting for 50 ms
+runBenchmark
+after run 08_create1k-after1k_x2 0 solid
+Waiting for 100 ms
+one mousedown event traces/solid-v1.9.3-keyed_08_create1k-after1k_x2_1.json
+mousedownToClick 994 traces/solid-v1.9.3-keyed_08_create1k-after1k_x2_1.json
+**** resultScript = 7.851
+duration for solid and 08_create1k-after1k_x2: {"tsStart":910631266307,"tsEnd":910631346669,"duration":80.362,"layouts":1,"raf_long_delay":0,"droppedNonMainProcessCommitEvents":false,"droppedNonMainProcessOtherEvents":false,"maxDeltaBetweenCommits":0,"numberCommits":1}
+initBenchmark
+after initialized 08_create1k-after1k_x2 0 solid
+Waiting for 50 ms
+runBenchmark
+after run 08_create1k-after1k_x2 0 solid
+Waiting for 100 ms
+one mousedown event traces/solid-v1.9.3-keyed_08_create1k-after1k_x2_2.json
+mousedownToClick 1013 traces/solid-v1.9.3-keyed_08_create1k-after1k_x2_2.json
+**** resultScript = 7.262
+duration for solid and 08_create1k-after1k_x2: {"tsStart":910634359744,"tsEnd":910634438250,"duration":78.506,"layouts":1,"raf_long_delay":0,"droppedNonMainProcessCommitEvents":false,"droppedNonMainProcessOtherEvents":false,"maxDeltaBetweenCommits":0,"numberCommits":1}
+initBenchmark
+after initialized 08_create1k-after1k_x2 0 solid
+Waiting for 50 ms
+runBenchmark
+after run 08_create1k-after1k_x2 0 solid
+Waiting for 100 ms
+one mousedown event traces/solid-v1.9.3-keyed_08_create1k-after1k_x2_3.json
+mousedownToClick 1019 traces/solid-v1.9.3-keyed_08_create1k-after1k_x2_3.json
+**** resultScript = 7.198
+duration for solid and 08_create1k-after1k_x2: {"tsStart":910637435550,"tsEnd":910637514285,"duration":78.735,"layouts":1,"raf_long_delay":0,"droppedNonMainProcessCommitEvents":false,"droppedNonMainProcessOtherEvents":false,"maxDeltaBetweenCommits":0,"numberCommits":1}
+initBenchmark
+after initialized 08_create1k-after1k_x2 0 solid
+Waiting for 50 ms
+runBenchmark
+after run 08_create1k-after1k_x2 0 solid
+Waiting for 100 ms
+one mousedown event traces/solid-v1.9.3-keyed_08_create1k-after1k_x2_4.json
+mousedownToClick 1060 traces/solid-v1.9.3-keyed_08_create1k-after1k_x2_4.json
+**** resultScript = 7.625
+duration for solid and 08_create1k-after1k_x2: {"tsStart":910640513800,"tsEnd":910640595409,"duration":81.609,"layouts":1,"raf_long_delay":0,"droppedNonMainProcessCommitEvents":false,"droppedNonMainProcessOtherEvents":false,"maxDeltaBetweenCommits":0,"numberCommits":1}
+*** browser close
+*** browser closed
+*** browser has been shutting down
+=> Duration for 08_create1k-after1k_x2 and framework solid: 15777.05 ms
+result solid-v1.9.3-keyed_08_create1k-after1k_x2.json total {"min":78.5,"max":81.6,"median":78.8,"mean":79.6,"stddev":1.3509256086106283,"values":[78.8,80.4,78.5,78.7,81.6]}
+result solid-v1.9.3-keyed_08_create1k-after1k_x2.json script {"min":7.2,"max":7.9,"median":7.3,"mean":7.459999999999999,"stddev":0.2880972058177588,"values":[7.3,7.9,7.3,7.2,7.6]}
+result solid-v1.9.3-keyed_08_create1k-after1k_x2.json paint {"min":69.5,"max":72.1,"median":69.7,"mean":70.32000000000001,"stddev":1.1054410884348367,"values":[69.6,70.7,69.5,69.7,72.1]}
+==> Duration for benchmark 08_create1k-after1k_x2: 15957.62 ms
+runBenchmakLoop {
+  name: 'solid',
+  fullNameWithKeyedAndVersion: 'solid-v1.9.3-keyed',
+  uri: 'frameworks/keyed/solid',
+  keyed: true,
+  useShadowRoot: false,
+  useRowShadowRoot: false,
+  shadowRootName: undefined,
+  buttonsInShadowRoot: false,
+  issues: [],
+  language: 'JavaScript',
+  frameworkHomeURL: 'https://www.solidjs.com/',
+  startLogicEventName: 'click'
+} {
+  id: '09_clear1k_x8',
+  label: 'clear rows',
+  warmupCount: 5,
+  description: 'clearing a table with 1,000 rows.',
+  type: 0,
+  allowBatching: true,
+  layoutEventRequired: true,
+  additionalNumberOfRuns: 0
+}
+FORKING: 09_clear1k_x8 BatchSize 5
+forking dist/forkedBenchmarkRunnerPuppeteer.js
+START BENCHMARK. Write results? true
+forked runner using sleep for puppeteer 0
+benchmarking {
+  name: 'solid',
+  fullNameWithKeyedAndVersion: 'solid-v1.9.3-keyed',
+  uri: 'frameworks/keyed/solid',
+  keyed: true,
+  useShadowRoot: false,
+  useRowShadowRoot: false,
+  buttonsInShadowRoot: false,
+  issues: [],
+  language: 'JavaScript',
+  frameworkHomeURL: 'https://www.solidjs.com/',
+  startLogicEventName: 'click'
+} 09_clear1k_x8
+browser arguments [
+  '--window-size=1280,800',
+  '--js-flags=--expose-gc',
+  '--no-default-browser-check',
+  '--disable-sync',
+  '--no-first-run',
+  '--ash-no-nudges',
+  '--disable-extensions',
+  '--disable-features=Translate,PrivacySandboxSettings4,IPH_SidePanelGenericMenuFeature',
+  '--headless=new'
+]
+BROWSER:
+initBenchmark
+after initialized 09_clear1k_x8 0 solid
+CPU slowdown 4
+Waiting for 50 ms
+runBenchmark
+after run 09_clear1k_x8 0 solid
+Waiting for 100 ms
+one mousedown event traces/solid-v1.9.3-keyed_09_clear1k_x8_0.json
+mousedownToClick 3751 traces/solid-v1.9.3-keyed_09_clear1k_x8_0.json
+**** resultScript = 29.635
+duration for solid and 09_clear1k_x8: {"tsStart":910644179457,"tsEnd":910644212477,"duration":33.02,"layouts":1,"raf_long_delay":0,"droppedNonMainProcessCommitEvents":false,"droppedNonMainProcessOtherEvents":false,"maxDeltaBetweenCommits":0,"numberCommits":1}
+initBenchmark
+after initialized 09_clear1k_x8 0 solid
+CPU slowdown 4
+Waiting for 50 ms
+runBenchmark
+after run 09_clear1k_x8 0 solid
+Waiting for 100 ms
+one mousedown event traces/solid-v1.9.3-keyed_09_clear1k_x8_1.json
+mousedownToClick 3979 traces/solid-v1.9.3-keyed_09_clear1k_x8_1.json
+**** resultScript = 24.996
+duration for solid and 09_clear1k_x8: {"tsStart":910647215989,"tsEnd":910647244745,"duration":28.756,"layouts":1,"raf_long_delay":0,"droppedNonMainProcessCommitEvents":false,"droppedNonMainProcessOtherEvents":false,"maxDeltaBetweenCommits":0,"numberCommits":1}
+initBenchmark
+after initialized 09_clear1k_x8 0 solid
+CPU slowdown 4
+Waiting for 50 ms
+runBenchmark
+after run 09_clear1k_x8 0 solid
+Waiting for 100 ms
+one mousedown event traces/solid-v1.9.3-keyed_09_clear1k_x8_2.json
+mousedownToClick 3432 traces/solid-v1.9.3-keyed_09_clear1k_x8_2.json
+**** resultScript = 25.978
+duration for solid and 09_clear1k_x8: {"tsStart":910650277164,"tsEnd":910650306718,"duration":29.554,"layouts":1,"raf_long_delay":0,"droppedNonMainProcessCommitEvents":false,"droppedNonMainProcessOtherEvents":false,"maxDeltaBetweenCommits":0,"numberCommits":1}
+initBenchmark
+after initialized 09_clear1k_x8 0 solid
+CPU slowdown 4
+Waiting for 50 ms
+runBenchmark
+after run 09_clear1k_x8 0 solid
+Waiting for 100 ms
+one mousedown event traces/solid-v1.9.3-keyed_09_clear1k_x8_3.json
+mousedownToClick 4060 traces/solid-v1.9.3-keyed_09_clear1k_x8_3.json
+**** resultScript = 25.072
+duration for solid and 09_clear1k_x8: {"tsStart":910653367248,"tsEnd":910653395495,"duration":28.247,"layouts":1,"raf_long_delay":0,"droppedNonMainProcessCommitEvents":false,"droppedNonMainProcessOtherEvents":false,"maxDeltaBetweenCommits":0,"numberCommits":1}
+initBenchmark
+after initialized 09_clear1k_x8 0 solid
+CPU slowdown 4
+Waiting for 50 ms
+runBenchmark
+after run 09_clear1k_x8 0 solid
+Waiting for 100 ms
+one mousedown event traces/solid-v1.9.3-keyed_09_clear1k_x8_4.json
+mousedownToClick 4416 traces/solid-v1.9.3-keyed_09_clear1k_x8_4.json
+**** resultScript = 24.594
+duration for solid and 09_clear1k_x8: {"tsStart":910656425854,"tsEnd":910656453949,"duration":28.095,"layouts":1,"raf_long_delay":0,"droppedNonMainProcessCommitEvents":false,"droppedNonMainProcessOtherEvents":false,"maxDeltaBetweenCommits":0,"numberCommits":1}
+*** browser close
+*** browser closed
+*** browser has been shutting down
+=> Duration for 09_clear1k_x8 and framework solid: 15618.83 ms
+result solid-v1.9.3-keyed_09_clear1k_x8.json total {"min":28.1,"max":33,"median":28.8,"mean":29.54,"stddev":2.024351748091225,"values":[33,28.8,29.6,28.2,28.1]}
+result solid-v1.9.3-keyed_09_clear1k_x8.json script {"min":24.6,"max":29.6,"median":25.1,"mean":26.060000000000002,"stddev":2.0440156555173448,"values":[29.6,25,26,25.1,24.6]}
+result solid-v1.9.3-keyed_09_clear1k_x8.json paint {"min":1.9,"max":3.5,"median":3.1,"mean":2.88,"stddev":0.6723094525588644,"values":[3.1,3.5,3.4,1.9,2.5]}
+==> Duration for benchmark 09_clear1k_x8: 15797.51 ms
+runBenchmakLoop {
+  name: 'solid',
+  fullNameWithKeyedAndVersion: 'solid-v1.9.3-keyed',
+  uri: 'frameworks/keyed/solid',
+  keyed: true,
+  useShadowRoot: false,
+  useRowShadowRoot: false,
+  shadowRootName: undefined,
+  buttonsInShadowRoot: false,
+  issues: [],
+  language: 'JavaScript',
+  frameworkHomeURL: 'https://www.solidjs.com/',
+  startLogicEventName: 'click'
+} {
+  id: '21_ready-memory',
+  label: 'ready memory',
+  description: 'Memory usage after page load.',
+  type: 1
+}
+FORKING: 21_ready-memory BatchSize 1
+forking dist/forkedBenchmarkRunnerPuppeteer.js
+START BENCHMARK. Write results? true
+forked runner using sleep for puppeteer 0
+benchmarking {
+  name: 'solid',
+  fullNameWithKeyedAndVersion: 'solid-v1.9.3-keyed',
+  uri: 'frameworks/keyed/solid',
+  keyed: true,
+  useShadowRoot: false,
+  useRowShadowRoot: false,
+  buttonsInShadowRoot: false,
+  issues: [],
+  language: 'JavaScript',
+  frameworkHomeURL: 'https://www.solidjs.com/',
+  startLogicEventName: 'click'
+} 21_ready-memory
+browser arguments [
+  '--window-size=1280,800',
+  '--js-flags=--expose-gc',
+  '--no-default-browser-check',
+  '--disable-sync',
+  '--no-first-run',
+  '--ash-no-nudges',
+  '--disable-extensions',
+  '--disable-features=Translate,PrivacySandboxSettings4,IPH_SidePanelGenericMenuFeature',
+  '--headless=new'
+]
+initBenchmark
+after initialized 21_ready-memory 1 solid
+runBenchmark
+after run 21_ready-memory 1 solid
+Waiting for 40 ms
+afterBenchmark
+memory result for solid and 21_ready-memory: 0.6013326644897461
+=> Duration for 21_ready-memory and framework solid: 15458.06 ms
+FORKING: 21_ready-memory BatchSize 1
+forking dist/forkedBenchmarkRunnerPuppeteer.js
+START BENCHMARK. Write results? true
+forked runner using sleep for puppeteer 0
+benchmarking {
+  name: 'solid',
+  fullNameWithKeyedAndVersion: 'solid-v1.9.3-keyed',
+  uri: 'frameworks/keyed/solid',
+  keyed: true,
+  useShadowRoot: false,
+  useRowShadowRoot: false,
+  buttonsInShadowRoot: false,
+  issues: [],
+  language: 'JavaScript',
+  frameworkHomeURL: 'https://www.solidjs.com/',
+  startLogicEventName: 'click'
+} 21_ready-memory
+browser arguments [
+  '--window-size=1280,800',
+  '--js-flags=--expose-gc',
+  '--no-default-browser-check',
+  '--disable-sync',
+  '--no-first-run',
+  '--ash-no-nudges',
+  '--disable-extensions',
+  '--disable-features=Translate,PrivacySandboxSettings4,IPH_SidePanelGenericMenuFeature',
+  '--headless=new'
+]
+initBenchmark
+after initialized 21_ready-memory 1 solid
+runBenchmark
+after run 21_ready-memory 1 solid
+Waiting for 40 ms
+afterBenchmark
+memory result for solid and 21_ready-memory: 0.6013975143432617
+=> Duration for 21_ready-memory and framework solid: 12428.41 ms
+FORKING: 21_ready-memory BatchSize 1
+forking dist/forkedBenchmarkRunnerPuppeteer.js
+START BENCHMARK. Write results? true
+forked runner using sleep for puppeteer 0
+benchmarking {
+  name: 'solid',
+  fullNameWithKeyedAndVersion: 'solid-v1.9.3-keyed',
+  uri: 'frameworks/keyed/solid',
+  keyed: true,
+  useShadowRoot: false,
+  useRowShadowRoot: false,
+  buttonsInShadowRoot: false,
+  issues: [],
+  language: 'JavaScript',
+  frameworkHomeURL: 'https://www.solidjs.com/',
+  startLogicEventName: 'click'
+} 21_ready-memory
+browser arguments [
+  '--window-size=1280,800',
+  '--js-flags=--expose-gc',
+  '--no-default-browser-check',
+  '--disable-sync',
+  '--no-first-run',
+  '--ash-no-nudges',
+  '--disable-extensions',
+  '--disable-features=Translate,PrivacySandboxSettings4,IPH_SidePanelGenericMenuFeature',
+  '--headless=new'
+]
+initBenchmark
+after initialized 21_ready-memory 1 solid
+runBenchmark
+after run 21_ready-memory 1 solid
+Waiting for 40 ms
+afterBenchmark
+memory result for solid and 21_ready-memory: 0.6013975143432617
+=> Duration for 21_ready-memory and framework solid: 12430.86 ms
+FORKING: 21_ready-memory BatchSize 1
+forking dist/forkedBenchmarkRunnerPuppeteer.js
+START BENCHMARK. Write results? true
+forked runner using sleep for puppeteer 0
+benchmarking {
+  name: 'solid',
+  fullNameWithKeyedAndVersion: 'solid-v1.9.3-keyed',
+  uri: 'frameworks/keyed/solid',
+  keyed: true,
+  useShadowRoot: false,
+  useRowShadowRoot: false,
+  buttonsInShadowRoot: false,
+  issues: [],
+  language: 'JavaScript',
+  frameworkHomeURL: 'https://www.solidjs.com/',
+  startLogicEventName: 'click'
+} 21_ready-memory
+browser arguments [
+  '--window-size=1280,800',
+  '--js-flags=--expose-gc',
+  '--no-default-browser-check',
+  '--disable-sync',
+  '--no-first-run',
+  '--ash-no-nudges',
+  '--disable-extensions',
+  '--disable-features=Translate,PrivacySandboxSettings4,IPH_SidePanelGenericMenuFeature',
+  '--headless=new'
+]
+initBenchmark
+after initialized 21_ready-memory 1 solid
+runBenchmark
+after run 21_ready-memory 1 solid
+Waiting for 40 ms
+afterBenchmark
+memory result for solid and 21_ready-memory: 0.601374626159668
+=> Duration for 21_ready-memory and framework solid: 13458.04 ms
+FORKING: 21_ready-memory BatchSize 1
+forking dist/forkedBenchmarkRunnerPuppeteer.js
+START BENCHMARK. Write results? true
+forked runner using sleep for puppeteer 0
+benchmarking {
+  name: 'solid',
+  fullNameWithKeyedAndVersion: 'solid-v1.9.3-keyed',
+  uri: 'frameworks/keyed/solid',
+  keyed: true,
+  useShadowRoot: false,
+  useRowShadowRoot: false,
+  buttonsInShadowRoot: false,
+  issues: [],
+  language: 'JavaScript',
+  frameworkHomeURL: 'https://www.solidjs.com/',
+  startLogicEventName: 'click'
+} 21_ready-memory
+browser arguments [
+  '--window-size=1280,800',
+  '--js-flags=--expose-gc',
+  '--no-default-browser-check',
+  '--disable-sync',
+  '--no-first-run',
+  '--ash-no-nudges',
+  '--disable-extensions',
+  '--disable-features=Translate,PrivacySandboxSettings4,IPH_SidePanelGenericMenuFeature',
+  '--headless=new'
+]
+initBenchmark
+after initialized 21_ready-memory 1 solid
+runBenchmark
+after run 21_ready-memory 1 solid
+Waiting for 40 ms
