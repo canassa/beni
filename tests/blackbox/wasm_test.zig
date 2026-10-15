@@ -42,7 +42,8 @@ fn wasmCompiler(w: *World) ![]const u8 {
 /// The budget of the two tests that run the `.wasm`, in millions of
 /// instructions: a grant of their own (CLAUDE.md, *Every test has a
 /// budget*), decided by Jayson Reis on 2026-10-15 (dashboard question
-/// `wasm-playground-q5`). Most of their cost is fixed: Node, V8's compile of
+/// `wasm-playground-q5`) and granted by Cesar on 2026-10-15 (dashboard
+/// question `wasm-playground-q7`). Most of their cost is fixed: Node, V8's compile of
 /// the self-hosted build's 18 MB code section, and that build's slow start
 /// on the embedded core and platforms. A one-line program costs 92% of
 /// what `run/Adt` costs, so no smaller input reduces it, and under the

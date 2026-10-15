@@ -28,7 +28,7 @@ dashboard at 12:36 UTC:
 
 | Question | Decision |
 |---|---|
-| `wasm-playground-q5`: the two `.wasm` gate tests cost a fixed 74% of the budget | **A budget of their own, and `test-playground` in CI on every pull request** (§6). Cesar's agreement is pending. |
+| `wasm-playground-q5`: the two `.wasm` gate tests cost a fixed 74% of the budget | **A budget of their own, and `test-playground` in CI on every pull request** (§6). The budget was granted by Cesar on 2026-10-15 (dashboard question `wasm-playground-q7`). |
 | `wasm-playground-q6`: the editor's 13 modules from esm.sh run in the shared `canassa.github.io` origin with no integrity check | **Vendor the 13 files** in the repository, each with a checksum, and a script that fetches them again (§4.2). This replaces the "from a CDN" part of the editor decision above; CodeMirror 6 and the pinned versions stay. |
 
 The work lands in two pull requests:
@@ -367,7 +367,7 @@ guarded code at native speed. The shipped binary is proven by `test-playground`.
   build's 18 MB code section, and that build's start on the embedded core and platforms. A
   one-line program costs 92% of what `run/Adt` costs, so no smaller input reduces it, and under
   the gates' 4 300M the margin was 17%. Jayson Reis decided the grant on 2026-10-15 (dashboard
-  question `wasm-playground-q5`), with `test-playground` in CI; Cesar's agreement is pending.
+  question `wasm-playground-q5`), with `test-playground` in CI; the budget was granted by Cesar on 2026-10-15 (dashboard question `wasm-playground-q7`).
 - **`test-playground` runs in CI on every pull request**: the `playground` job of `ci.yml`,
   which the `check` guard needs, so a byte of difference blocks a merge.
 - **The printing-program test asserts the profile's counters** (`--self-profile`): the `.wasm`

@@ -363,7 +363,7 @@ Sternhalma's separate value fuzz (2026-10-15), and the paired Bike Wars page
 corpus, the two tests of `tests/blackbox/wasm_test.zig` that run the `.wasm` have 6 000M
 (`wasm_budget_millions`): a fixed cost of Node and the self-hosted wasm32 build that no smaller
 input reduces. Jayson Reis decided it on 2026-10-15 (dashboard `wasm-playground-q5`), with
-`zig build test-playground` in CI on every pull request; Cesar's agreement is pending.
+`zig build test-playground` in CI on every pull request; granted by Cesar on 2026-10-15 (dashboard question `wasm-playground-q7`).
 
 **The budget has one unit and one reference build** (2026-10-14). The count
 is the kernel's hardware count of user-space instructions (`perf_event_open`)
