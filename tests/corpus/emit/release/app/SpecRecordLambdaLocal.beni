@@ -1,0 +1,49 @@
+-- emit: a local binding of a field read does not hold a record field's
+-- lambda (`backend.md` §9, *Slice 8*, amended 2026-10-15, *A record
+-- field's lambda*). `app.step n` is the one call of the lambda, and the
+-- key `step = f` names the binding `f = ops.fn`. But the `return` after
+-- the binding reads `f` once and first, so slice 9 writes `ops.fn` in its
+-- place: the key becomes `ops.fn`, which is not inert, and stays with the
+-- lambda.
+-- Written at the call, its body would be in the output two times: the
+-- size model is asked, and the call stays.
+import Node exposing (Program)
+
+
+type alias Count =
+    count : Int
+    label : String
+    twice : Int
+
+
+type alias Ops =
+    fn : Int → Count
+    name : String
+
+
+type alias App =
+    step : Int → Count
+    tag : Int
+
+
+run : App, Int → List String
+run app n =
+    v = app.step n
+    [ String.fromInt v.count, v.label, String.fromInt v.twice, String.fromInt app.tag ]
+
+
+go : Ops, Int → List String
+go ops n =
+    f = ops.fn
+    run { step = f, tag = String.length ops.name } n
+
+
+main : Program
+main =
+    Node.printLines
+        (go
+            { fn = λk → { count = k * 10 + 7, label = "value " ++ String.fromInt k, twice = k + k }
+            , name = "ab"
+            }
+            (String.length "abcde")
+        )

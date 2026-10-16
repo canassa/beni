@@ -1,0 +1,47 @@
+-- emit: a key whose value is a field read keeps the lambda it holds
+-- (`backend.md` §9, *Slice 8*, amended 2026-10-15, *A record field's
+-- lambda*). `app.step n` is the one call of the lambda, but `mk` writes
+-- the key `step` as `ops.fn`, which is not inert, so fact 3 does not drop
+-- the key and the lambda stays. Written at the call, its body would be in
+-- the output two times: the size model is asked, and the call stays.
+import Node exposing (Program)
+
+
+type alias Count =
+    count : Int
+    label : String
+    twice : Int
+
+
+type alias Ops =
+    fn : Int → Count
+    name : String
+
+
+type alias App =
+    step : Int → Count
+    tag : Int
+
+
+mk : Ops → App
+mk ops = { step = ops.fn, tag = String.length ops.name }
+
+
+run : App, Int → List String
+run app n =
+    v = app.step n
+    [ String.fromInt v.count, v.label, String.fromInt v.twice, String.fromInt app.tag ]
+
+
+main : Program
+main =
+    Node.printLines
+        (run
+            (mk
+                { fn =
+                    λk → { count = k * 10 + 7, label = "value " ++ String.fromInt k, twice = k + k }
+                , name = "ab"
+                }
+            )
+            (String.length "abcde")
+        )
