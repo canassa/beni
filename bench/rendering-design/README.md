@@ -273,3 +273,40 @@ brotli bytes. `memory-probes.jsonl` retains attempt identities and limits;
 compiler have a successful larger-budget result. Changing the source, compiler,
 or merely repeating the same cap cannot mark a failed point recovered. This
 separates a selected resource budget from an intrinsic compiler limitation.
+
+
+For a failure close to the target, `memory-probe.mjs FAMILY N 64` separates
+address space from RAM: a 64 GiB virtual-address allowance inside a transient
+systemd user service with `MemoryMax=26000M` and `MemorySwapMax=0`. Compilation
+still reserves the whole research pool. GNU time retains peak resident memory
+as a resource diagnostic; it is not an application timing measurement. The
+attempt ledger records both caps, and a failed RAM-bounded build remains an
+endpoint. This mode requires systemd user memory-control delegation on Linux.
+
+After the largest completed prototype worker peaked at 9,973.4 MiB RSS, its
+admission estimate was capped at 12,500 MiB instead of 14,500 MiB. Two large
+workers now fit the unchanged 26,000 MiB / six-slot pool. Compiler and baseline
+reservations are unchanged; this is an estimate with about 25% headroom over
+the observed peak, not an enforced per-worker memory cap. The controlled lease
+check is retained in `results/stress/reservation-check.json`. Generated output,
+minifier flags and compression settings do not change.
+
+`baseline-local.mjs REFERENCE_OBSERVATIONS` runs the remaining vanilla curves
+in an isolated copy of this harness, one worker with a 6,144 MiB heap, on the
+Mac while Linux continues compiler/prototype work. It requires the retained
+cross-host control and matching measurement-source hashes. Both hosts use Node
+24.19.0 and Brotli 1.2.0; the N102,416 list control produced identical generated
+source, normalized JavaScript and rendering hashes, and every byte-account field
+(525,088 rendering brotli bytes). `local-host-check.json` records that control.
+The worker generates and hashes the exact TEA source in memory, then prices the
+handwritten baseline from its specification. It does not invoke the compiler or
+BIR lowerer. `results/stress/local-baseline/` retains its separate protocol,
+host identity and observation ledger; the report merges only matching outputs.
+The Linux compiler identity in this protocol is a reference, not a claim that
+it executed on the Mac. No repository gate or suite runs on either host.
+
+The probe driver's optional fourth argument selects `tea` or `direct`; its
+larger input counts grow by at most 1.5× per measured point. The RAM-bounded
+counter/toggle TEA retry at N6,176 succeeds with 8,074,084 KiB peak process RSS
+and reaches 524,741 rendering brotli bytes, despite failing under a 24 GiB
+virtual-address cap. Address-space allowance and physical RAM are separate.

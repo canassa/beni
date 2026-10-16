@@ -1,7 +1,7 @@
 {
-  "verified_at": "2026-10-16T01:04:09.751Z",
-  "observations": 265,
-  "native_builds": 51,
+  "verified_at": "2026-10-16T01:38:08.892Z",
+  "observations": 271,
+  "native_builds": 52,
   "scope": "Compiler and minified JavaScript SHA-256 and raw length with source-map URL trailers removed, disjoint raw byte accounting, and source spec identity. No size fits or compression results are recomputed; no project suites.",
   "crossings": [
     {
@@ -63,9 +63,40 @@
       "mode": "static",
       "n": 8304,
       "brotli": 519024
+    },
+    {
+      "family": "summary",
+      "mode": "static",
+      "n": 7872,
+      "brotli": 525008
+    },
+    {
+      "family": "modal",
+      "mode": "tea",
+      "n": 4112,
+      "brotli": 531816
+    },
+    {
+      "family": "modal",
+      "mode": "local",
+      "n": 11664,
+      "brotli": 522772
     }
   ],
-  "recovered": [],
+  "recovered": [
+    {
+      "family": "modal",
+      "mode": "tea",
+      "n": 4112,
+      "retry": {
+        "n": 4112,
+        "sha256": "89b8801871fc4f9549ba3e379cc32f7b000878450fa935c1269afe16b27cc402",
+        "brotli": 531816,
+        "address_space_limit_bytes": 25769803776,
+        "physical_memory_limit_bytes": null
+      }
+    }
+  ],
   "compiler_limited": [
     {
       "family": "filter",
@@ -81,11 +112,6 @@
       "family": "modal",
       "mode": "direct",
       "n": 1728
-    },
-    {
-      "family": "modal",
-      "mode": "tea",
-      "n": 4112
     }
   ]
 }

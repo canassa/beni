@@ -1,0 +1,9 @@
+{
+  "verified_at": "2026-10-16T01:37:32.037Z",
+  "observations": 40,
+  "native_builds": 0,
+  "scope": "Compiler and minified JavaScript SHA-256 and raw length with source-map URL trailers removed, disjoint raw byte accounting, and source spec identity. No size fits or compression results are recomputed; no project suites.",
+  "crossings": [],
+  "recovered": [],
+  "compiler_limited": []
+}

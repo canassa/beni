@@ -1,7 +1,7 @@
 {
-  "verified_at": "2026-10-16T01:03:59.372Z",
-  "observations": 378,
-  "native_builds": 77,
+  "verified_at": "2026-10-16T01:37:45.692Z",
+  "observations": 384,
+  "native_builds": 78,
   "scope": "Compiler and minified JavaScript SHA-256 and raw length with source-map URL trailers removed, disjoint raw byte accounting, and source spec identity. No size fits or compression results are recomputed; no project suites.",
   "crossings": [
     {
@@ -69,6 +69,18 @@
       "mode": "tea",
       "n": 3888,
       "brotli": 513666
+    },
+    {
+      "family": "form",
+      "mode": "cells",
+      "n": 7968,
+      "brotli": 525095
+    },
+    {
+      "family": "cluster",
+      "mode": "tea",
+      "n": 6176,
+      "brotli": 524741
     }
   ],
   "recovered": [
@@ -80,7 +92,32 @@
         "n": 3888,
         "sha256": "c6fb10e4af9658e18bd74e1855421fafe23d5db63ec01e4569a54a63831ad8c4",
         "brotli": 513666,
-        "address_space_limit_bytes": 25769803776
+        "address_space_limit_bytes": 25769803776,
+        "physical_memory_limit_bytes": null
+      }
+    },
+    {
+      "family": "cluster",
+      "mode": "tea",
+      "n": 6176,
+      "retry": {
+        "n": 6176,
+        "sha256": "dd92b000e388e1185c1bbaaffe58269580ba5cb62fd79d39c4fed8009c6fa677",
+        "brotli": 524741,
+        "address_space_limit_bytes": 68719476736,
+        "physical_memory_limit_bytes": 27262976000
+      }
+    },
+    {
+      "family": "cluster",
+      "mode": "tea",
+      "n": 6176,
+      "retry": {
+        "n": 6176,
+        "sha256": "dd92b000e388e1185c1bbaaffe58269580ba5cb62fd79d39c4fed8009c6fa677",
+        "brotli": 524741,
+        "address_space_limit_bytes": 68719476736,
+        "physical_memory_limit_bytes": 27262976000
       }
     }
   ],
@@ -104,11 +141,6 @@
       "family": "cluster",
       "mode": "direct",
       "n": 1728
-    },
-    {
-      "family": "cluster",
-      "mode": "tea",
-      "n": 6176
     }
   ]
 }

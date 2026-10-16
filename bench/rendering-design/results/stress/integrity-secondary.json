@@ -1,7 +1,7 @@
 {
-  "verified_at": "2026-10-16T01:04:04.930Z",
-  "observations": 339,
-  "native_builds": 67,
+  "verified_at": "2026-10-16T01:37:58.489Z",
+  "observations": 348,
+  "native_builds": 69,
   "scope": "Compiler and minified JavaScript SHA-256 and raw length with source-map URL trailers removed, disjoint raw byte accounting, and source spec identity. No size fits or compression results are recomputed; no project suites.",
   "crossings": [
     {
@@ -51,9 +51,40 @@
       "mode": "vanilla",
       "n": 102416,
       "brotli": 525088
+    },
+    {
+      "family": "tabs",
+      "mode": "tea",
+      "n": 4304,
+      "brotli": 525278
     }
   ],
-  "recovered": [],
+  "recovered": [
+    {
+      "family": "thread",
+      "mode": "tea",
+      "n": 3888,
+      "retry": {
+        "n": 3888,
+        "sha256": "fac697cbe68b09d122a35ab3c650281345af27846d5bdd18ddf32de5ac2148fc",
+        "brotli": 421104,
+        "address_space_limit_bytes": 25769803776,
+        "physical_memory_limit_bytes": null
+      }
+    },
+    {
+      "family": "tabs",
+      "mode": "tea",
+      "n": 4304,
+      "retry": {
+        "n": 4304,
+        "sha256": "c7d15d0ffe8e12c101a9158734b3c139ba3833b7f2ded9b7c3a1fc2af3e61ccb",
+        "brotli": 525278,
+        "address_space_limit_bytes": 25769803776,
+        "physical_memory_limit_bytes": null
+      }
+    }
+  ],
   "compiler_limited": [
     {
       "family": "list",
@@ -74,16 +105,6 @@
       "family": "tabs",
       "mode": "direct",
       "n": 1728
-    },
-    {
-      "family": "thread",
-      "mode": "tea",
-      "n": 3888
-    },
-    {
-      "family": "tabs",
-      "mode": "tea",
-      "n": 4304
     }
   ]
 }

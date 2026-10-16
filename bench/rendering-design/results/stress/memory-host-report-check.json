@@ -1,0 +1,16 @@
+{
+  "date": "2026-10-16T01:39:11.913Z",
+  "scope": "HTML report rendering only; no application timing or repository suite.",
+  "desktop": {
+    "ramLimit": true,
+    "clusterPrice": true,
+    "localProtocol": true,
+    "invalid": false,
+    "graphs": 13
+  },
+  "mobile": {
+    "viewport": 390,
+    "width": 390
+  },
+  "errors": []
+}

@@ -1,0 +1,15 @@
+{
+  "date": "2026-10-16T01:23:39.791480+00:00",
+  "scope": "Scheduling-reservation metadata check only, not bundle measurements or application timing.",
+  "passed": true,
+  "requested_mib": 14500,
+  "admitted_mib": 12500,
+  "pool_mib": 26000,
+  "cpu_slots": 6,
+  "largest_observed_worker": {
+    "name": "stress-list-17-12656",
+    "mode": "local",
+    "peak_rss_kib": 10212756,
+    "sha256": "107ddb78f94beffa91a28e875fb3681977c80bf0e281b2c34974165c5fb816d1"
+  }
+}
