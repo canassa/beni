@@ -4080,8 +4080,14 @@ state. None accepts a write the rules before it rejected for a reason the text s
    occurs below `List a`" to mean that no value of `a` holds one, which is false where `a` is a recursive type:
    with `type Tree = Node (List Tree) | Leaf`, a callback `List a → a` may answer `Node xs`, which holds `xs`,
    and `List.push xs t` put `xs` inside itself, accepted `param` (`ownership/RecursiveHolds`). "May hold"
-   (`mayHold`) no longer takes that shortcut. "May be the same object" (`mayShare`) keeps it: a value of `a`
-   is not the `List a` it is an element of, since no value is cyclic.
+   (`mayHold`) no longer takes that shortcut. "May be the same object" (`mayShare`) keeps it, which asserts
+   more than "a value of `a` is not the `List a` it is an element of": that a value of `a` is never the same
+   object as any value of a type in which `a` occurs below. That is false for an unboxed recursive type — with
+   `type One = One (List One)`, one constructor with one field, `One xs` is the array `xs` — so the shortcut
+   rests on another rule: a summary names the path `#One.0` where such a value holds its list, and the one
+   way a program reaches such a value through a type variable with no summary, a call of a function the
+   checker cannot identify, answers `⊤call` (§30.11). The probes of PR #280 found no accepted program with
+   §30.11 in place.
 5. **Supplies, cell by cell** (§16.4 item 4). A callee's supply passed on is probed one cell at a time (up
    to eight cells; a wider one is probed whole), so a cell the call made is not borrowed because another
    supplied beside it is. Inside a lambda, a capture of the declaration's own frame is named as that frame
