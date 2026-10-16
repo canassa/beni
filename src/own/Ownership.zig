@@ -3341,8 +3341,9 @@ fn unboxed(o: *Ownership, id: TypeId) Allocator.Error!bool {
 }
 
 /// Whether the type variable `v` occurs inside `t`, below its root: a value
-/// of type `v` can then be neither a `t` nor hold one, since no value is
-/// cyclic (§6.1) — an element of a `List a` is never the list.
+/// of type `v` can then not be a `t`, since no value is cyclic (§6.1) — an
+/// element of a `List a` is never the list. It may still hold one, where
+/// `v` is a recursive type (#270), so only `mayShare` asks this.
 fn occursBelow(store: *TypeStore, v: Var, t: Var, depth: u32) bool {
     if (depth > type_depth) return false;
     const root, const c = store.resolved(t);
@@ -3476,10 +3477,11 @@ fn mayShare(o: *Ownership, store: *TypeStore, a: Var, b: Var, depth: u32) Alloca
 }
 
 /// Whether a value of type `r`, or a part of it, may be the same object
-/// as a value of type `t` (§6.1).
+/// as a value of type `t` (§6.1). No `occursBelow` shortcut, as `mayShare`
+/// has: a value of a type variable `a` may hold a `List a` where `a` is a
+/// recursive type (`type Tree = Node (List Tree) | Leaf`, issue #270).
 fn mayHold(o: *Ownership, store: *TypeStore, r: Var, t: Var, depth: u32) Allocator.Error!bool {
     if (depth > type_depth) return true;
-    if (isVar(store, r)) |vr| if (occursBelow(store, vr, t, 0)) return false;
     if (try o.mayShare(store, r, t, depth)) return true;
     switch (store.resolvedContent(r)) {
         .flex, .rigid, .err, .alias => return true,

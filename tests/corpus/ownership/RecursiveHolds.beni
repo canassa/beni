@@ -1,0 +1,47 @@
+-- CK-248: a value of a type variable is taken never to hold a list of that type, false for a recursive type.
+-- ownership (§30.9 rule 4, amended for issue #270): what a value of a type
+-- variable `a` may hold is not filtered by "`a` occurs below `List a`". With
+-- `type Tree = Node (List Tree) | Leaf`, `f xs` may be `Node xs`, so `t`
+-- holds `xs`, and `List.push xs t` would put `xs` inside itself: `pushed`
+-- is rejected. Before, `g`'s write was accepted `param`, and `run` made
+-- `xs` a cycle in place. A type of one constructor (`One`) is the same. A
+-- push onto a copy of `xs` is accepted (`copied`).
+type Tree
+    = Node (List Tree)
+    | Leaf
+
+
+type One
+    = One (List One)
+
+
+pushed : List (List a → a), List a → List (a × List a)
+pushed fs xs =
+    case fs of
+        [ f, …_ ] →
+            t = f xs
+            [ ( t, List.push xs t ) ]
+        [] →
+            []
+
+
+copied : List (List a → a), List a → List (a × List a)
+copied fs xs =
+    case fs of
+        [ f, …_ ] →
+            t = f xs
+            [ ( t, List.push (List.copy xs) t ) ]
+        [] →
+            []
+
+
+pub run : ⊤ → List (Tree × List Tree)
+run ⊤ = pushed [ λys → Node ys ] [ Leaf ]
+
+
+pub runOne : ⊤ → List (One × List One)
+runOne ⊤ = pushed [ λys → One ys ] []
+
+
+pub runCopied : ⊤ → List (Tree × List Tree)
+runCopied ⊤ = copied [ λys → Node ys ] [ Leaf ]
