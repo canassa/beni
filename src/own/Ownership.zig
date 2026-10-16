@@ -4006,7 +4006,8 @@ const Walker = struct {
     use_order: []u32 = &.{},
     /// §20.4: wide values indexed by first step, by their slice.
     wide: std.AutoHashMapUnmanaged([2]usize, WideIndex) = .empty,
-    /// `projPath`'s answers with no type, by `(slice, length, path)`.
+    /// §20.4: `projPath`'s answers for a wide value with no type, by
+    /// `(slice, length, path)`.
     projected: std.AutoHashMapUnmanaged([3]usize, AV) = .empty,
     /// §28.6, a report walk only: the first and last token of what is being
     /// evaluated, and of each instruction evaluated so far — what a message
