@@ -1,0 +1,69 @@
+-- ownership (project, §30.11, issue #269): a member and a constructor of
+-- another module's schema handed on as values (`ext_schema_member`,
+-- `ext_schema_ctor`). `Fixed.parse` handed to `apply` or to
+-- `Result.andThen` answers the top-level `Schemas.kept` its conversion
+-- returns, and `Tree.Branch` handed to `apply` keeps its argument at its
+-- payload: pushing onto `Schemas.forest` is rejected `top-level`, and onto
+-- fresh children accepted. Before, each member handed on kept the cell
+-- made by the call, and `handed` and `chained` were accepted.
+import Html exposing (Html)
+import Schemas exposing (Fixed, Tree)
+import Tea
+
+
+apply : (a → b), a → b
+apply f x = f x
+
+
+handed : String → List String
+handed input =
+    case apply Fixed.parse input of
+        Ok f →
+            List.push f.text "x"
+        Err _ →
+            []
+
+
+chained : String → List String
+chained input =
+    case Result.andThen (Ok input) Fixed.parse of
+        Ok f →
+            List.push f.text "x"
+        Err _ →
+            []
+
+
+grownShared : ⊤ → List Tree.Type
+grownShared ⊤ =
+    case apply Tree.Branch { children = Schemas.forest } of
+        Tree.Branch r →
+            List.push r.children (Tree.Leaf { value = 0 })
+        Tree.Leaf _ →
+            []
+
+
+grownFresh : ⊤ → List Tree.Type
+grownFresh ⊤ =
+    case apply Tree.Branch { children = [] } of
+        Tree.Branch r →
+            List.push r.children (Tree.Leaf { value = 0 })
+        Tree.Leaf _ →
+            []
+
+
+view : Int → Html ⊤
+view n =
+    <p>
+        {String.fromInt
+            (n
+                + List.length (handed "a")
+                + List.length (chained "b")
+                + List.length (grownShared ⊤)
+                + List.length (grownFresh ⊤)
+            )
+        }
+    </p>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → 0, update = λ_ m → m, view = view }
