@@ -216,20 +216,40 @@ jobs:
             ~/.cache/zig
           key: zig-playground-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock') }}-${{ github.sha }}
 
-  # The Lean ownership proofs (proofs/ownership/README.md): `lake build`,
-  # which is the kernel check and the in-build axiom audit, then
-  # `scripts/audit.sh`, the independent audit. `check` needs this job, so
-  # a proof that breaks, a new `sorry` or `axiom`, or a weaker audit blocks
-  # a merge.
+  # The Lean ownership proofs (proofs/ownership/README.md):
+  # `scripts/audit.sh`, the independent audit, then `lake build`, the
+  # kernel check and the in-build axiom audit. `check` needs this job, so
+  # a proof that breaks, or a new `sorry` or `axiom`, blocks a merge.
+  #
+  # The job runs the audit files of the pull request itself: Axioms.lean,
+  # Audit.lean, scripts/audit.sh, the lakefile, flake.nix and this
+  # workflow. So a pull request that weakens them passes its own weaker
+  # audit, and this job does not catch it. .github/CODEOWNERS names the
+  # owner for these files (#263). When the ruleset on master requires a
+  # review from code owners, a change to them needs his review.
+  # `nix develop` also evaluates the flake of the pull request, and runs
+  # its shellHook, before any audit.
+  #
+  # The order of the steps matters. `scripts/audit.sh` runs first: it
+  # exports the commit into a new directory, and Lean's parser rejects
+  # `#eval` and the other banned commands before any audited code runs.
+  # Then it builds the export from nothing. `lake build` runs after it, in
+  # the checkout. An `#eval` in an audited module runs during that build,
+  # before Axioms.lean, and can rewrite files. When `lake build` ran
+  # first, such a commit passed both steps with a `sorry` (#261). The step
+  # after the build fails when the build changed a tracked file.
   #
   # The job always runs, because `check` fails when a job is skipped. Its
-  # first step decides if the other steps run. On a push to master, they
-  # always run. On a pull request, they run only when the pull request
-  # changes proofs/ownership, flake.nix, flake.lock or this workflow. The
-  # checkout of a pull request is its merge commit, and the first parent of
-  # that commit is the base branch, so `git diff HEAD^1 HEAD` lists every
-  # file that the merge changes. That diff fails when HEAD is not a merge
-  # commit: a wrong diff must not skip the proofs.
+  # first step decides if the other steps run. On a push to master, and on
+  # a pull request whose base is not master, they always run: a stacked
+  # pull request can move to master later, and then no new run starts. On
+  # a pull request to master, they run only when the pull request changes
+  # proofs/ownership, flake.nix, flake.lock, this workflow or a
+  # .gitattributes file, whose `export-ignore` changes the export of the
+  # audit (#262). The checkout of a pull request is its merge commit, and
+  # the first parent of that commit is the base branch, so `git diff
+  # HEAD^1 HEAD` lists every file that the merge changes. That diff fails
+  # when HEAD is not a merge commit: a wrong diff must not skip the proofs.
   #
   # The job restores the Nix store that `tests` saves. Lean is not in that
   # store, and it comes from cache.nixos.org. It is 2.7 GB, more than the
@@ -250,14 +270,20 @@ jobs:
         id: changes
         env:
           EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.base_ref }}
         run: |
           if [ "$EVENT" != pull_request ]; then
             echo "a push: check the proofs"
             echo "run=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          if [ "$BASE_REF" != master ]; then
+            echo "the base branch is not master: check the proofs"
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           git rev-parse --verify --quiet HEAD^2 > /dev/null || { echo "HEAD is not a merge commit"; exit 1; }
-          changed=$(git diff --name-only HEAD^1 HEAD -- proofs/ownership flake.nix flake.lock .github/workflows/ci.yml)
+          changed=$(git diff --name-only HEAD^1 HEAD -- proofs/ownership flake.nix flake.lock .github/workflows/ci.yml ':(glob)**/.gitattributes')
           if [ -n "$changed" ]; then
             echo "the pull request changes:"
             echo "$changed"
@@ -290,6 +316,11 @@ jobs:
         if: ${{ steps.changes.outputs.run == 'true' }}
         run: nix develop .#ownership --command lean --version
 
+      - name: scripts/audit.sh
+        if: ${{ steps.changes.outputs.run == 'true' }}
+        working-directory: proofs/ownership
+        run: nix develop ../..#ownership --command scripts/audit.sh HEAD
+
       # Lake's build directory, from master's newest build. Lake rebuilds a
       # module when the hash of its source, of its imports, of its options
       # or of Lean's commit changes; it does not read file times. So a
@@ -316,15 +347,18 @@ jobs:
         working-directory: proofs/ownership
         run: nix develop ../..#ownership --command lake build
 
-      - name: scripts/audit.sh
+      # Lean code of the pull request runs during `lake build` and can
+      # write files. A build that changed a tracked file fails the job, and
+      # its `.lake` is not saved.
+      - name: the build changed no tracked file
+        id: tree
         if: ${{ steps.changes.outputs.run == 'true' }}
-        working-directory: proofs/ownership
-        run: nix develop ../..#ownership --command scripts/audit.sh HEAD
+        run: git diff --exit-code
 
       # As for the Zig caches, only a push to master saves, also when a
-      # proof fails.
+      # proof fails. A build that changed a tracked file saves nothing.
       - name: save the Lake build
-        if: ${{ !cancelled() && github.event_name == 'push' && steps.lake-build.outcome != 'skipped' && steps.lake-cache.outputs.cache-hit != 'true' }}
+        if: ${{ !cancelled() && github.event_name == 'push' && steps.lake-build.outcome != 'skipped' && steps.tree.outcome != 'failure' && steps.lake-cache.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: proofs/ownership/.lake
