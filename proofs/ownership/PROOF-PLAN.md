@@ -355,7 +355,15 @@ The theorem states its scope explicitly. It is not the public step lemma, and `i
 The internal relation `FlatInvariant` extends `Invariant` as the internal statement above requires: typed allocated bindings, empty links, a bounded naming, and a complete finite observer witness.
 Each case derives its frame from the actual checker run. The push case uses the real default demand; no alias prohibition or permission oracle enters.
 The modules form one import chain, because the audit rejects an equation lemma that two modules realize (#182).
-Next: field atoms, the scalar primitives, records, then `branch` and the case expressions.
+`FlatInvariant` has four flat-only clauses, and each next step replaces one of them:
+`heapInts` (every array holds integers) goes with records and nested literals, which put references into arrays;
+`types` (`FlatType`: `int` or `list int`) goes with field atoms and records, which bind record types;
+`abstractShapes` (`FlatAbstract`: a scalar or a flat list with empty element cells) goes with the same step, because a record abstract has fields and a nested list has element cells;
+`links = []` goes with views, and it is where the #169 link invariant enters: the clause becomes the link clauses of `Invariant`.
+The case lemmas use these clauses (a flat reference has the footprint `[root]`), so the next fragment needs a more general relation and restates part of the case work.
+Order: the #169 link clauses on `Invariant` first (its prerequisite #253 is done), then field atoms, the scalar primitives, records, then `branch` and the case expressions, then views under the link clauses.
+`invariant_preserved_fragment` in its planned form, the premises of `invariant_preserved` restricted to the fragment, stays open: `flat_preserved` proves the step under the stronger relation, and the trace corollary is proved from it.
+`Trace.lean` records the reviewer's probe programs as `#guard`s: `every` (all six forms, accepted, equal traces, one in-place write), `liveAlias` and `observed` (in the fragment, rejected, different traces).
 
 ## Complete case inventory
 
