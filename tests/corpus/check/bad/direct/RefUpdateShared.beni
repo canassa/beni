@@ -1,0 +1,14 @@
+-- `run/RefModify` without its copy: a `Ref`'s value is shared state, and
+-- `snapshot` holds the list `Ref.get` read when `Ref.update`'s callback
+-- pushes onto it. Lists are edited in place, so the push would change
+-- `snapshot` too (`ownership-checker.md` §30); the checker refuses it,
+-- and `run/RefModify` writes `List.copy ns` instead.
+import Ref
+
+
+pub run : ⊤ → List String × List String
+run ⊤ =
+    names = Ref.make [ "a" ]
+    snapshot = Ref.get names
+    Ref.update names λns → List.push ns "b"
+    ( snapshot, Ref.get names )
