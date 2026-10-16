@@ -4289,7 +4289,8 @@ record with a field `load` and no declaration is the method, is a call of `r.loa
 `(r.load) a` is: a slot of the declaration's parameter (§24.9, called inside a lambda by §30.9 rules 1–2), a
 class the walk knows, or a function it cannot identify. Before, the dot form was a conservative call, which
 the rule above would have turned into a rejection of every `api.search q` on a record of functions
-(`DebouncedSearch`).
+(`DebouncedSearch`). The call reads `r.load`, not all of `r`, as `(r.load) a` does: a write onto `r.items`
+before it is not a write of a list the call reads (`ownership/DotFieldCall`).
 
 **Schema declarations** (issue #269). The rule has no exception for them:
 
