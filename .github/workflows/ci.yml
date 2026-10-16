@@ -216,6 +216,120 @@ jobs:
             ~/.cache/zig
           key: zig-playground-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.lock') }}-${{ github.sha }}
 
+  # The Lean ownership proofs (proofs/ownership/README.md): `lake build`,
+  # which is the kernel check and the in-build axiom audit, then
+  # `scripts/audit.sh`, the independent audit. `check` needs this job, so
+  # a proof that breaks, a new `sorry` or `axiom`, or a weaker audit blocks
+  # a merge.
+  #
+  # The job always runs, because `check` fails when a job is skipped. Its
+  # first step decides if the other steps run. On a push to master, they
+  # always run. On a pull request, they run only when the pull request
+  # changes proofs/ownership, flake.nix, flake.lock or this workflow. The
+  # checkout of a pull request is its merge commit, and the first parent of
+  # that commit is the base branch, so `git diff HEAD^1 HEAD` lists every
+  # file that the merge changes. That diff fails when HEAD is not a merge
+  # commit: a wrong diff must not skip the proofs.
+  #
+  # The job restores the Nix store that `tests` saves. Lean is not in that
+  # store, and it comes from cache.nixos.org. It is 2.7 GB, more than the
+  # 2 GiB bound on a saved store.
+  lean:
+    name: lean (ownership proofs)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 2
+
+      - name: do the proofs change
+        id: changes
+        env:
+          EVENT: ${{ github.event_name }}
+        run: |
+          if [ "$EVENT" != pull_request ]; then
+            echo "a push: check the proofs"
+            echo "run=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git rev-parse --verify --quiet HEAD^2 > /dev/null || { echo "HEAD is not a merge commit"; exit 1; }
+          changed=$(git diff --name-only HEAD^1 HEAD -- proofs/ownership flake.nix flake.lock .github/workflows/ci.yml)
+          if [ -n "$changed" ]; then
+            echo "the pull request changes:"
+            echo "$changed"
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "the pull request changes no file of the proofs: the next steps are skipped"
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: nix-installer v3.23.2
+        if: ${{ steps.changes.outputs.run == 'true' }}
+        run: |
+          curl -sSfL -o "$RUNNER_TEMP/nix-installer" \
+            https://github.com/DeterminateSystems/nix-installer/releases/download/v3.23.2/nix-installer-x86_64-linux
+          echo "d3c174b95b948ab1744a9a3507599d030bf31a39033305e8769b51c3134daeff  $RUNNER_TEMP/nix-installer" | sha256sum --check
+      - if: ${{ steps.changes.outputs.run == 'true' }}
+        uses: DeterminateSystems/nix-installer-action@3138316df39ed29be04236d7ffc686fa525866aa # v23
+        with:
+          source-binary: ${{ runner.temp }}/nix-installer
+          diagnostic-endpoint: ""
+
+      - name: restore the Nix store
+        if: ${{ steps.changes.outputs.run == 'true' }}
+        uses: nix-community/cache-nix-action/restore@7df957e333c1e5da7721f60227dbba6d06080569 # v7
+        with:
+          primary-key: nix-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('flake.nix', 'flake.lock') }}
+          restore-prefixes-first-match: nix-${{ runner.os }}-${{ runner.arch }}-
+
+      - name: dev shell
+        if: ${{ steps.changes.outputs.run == 'true' }}
+        run: nix develop .#ownership --command lean --version
+
+      # Lake's build directory, from master's newest build. Lake rebuilds a
+      # module when the hash of its source, of its imports, of its options
+      # or of Lean's commit changes; it does not read file times. So a
+      # restored module is used only for the same inputs. The source scan
+      # of Axioms.lean reads files outside its inputs, and a warm `lake
+      # build` replays an old scan when only such a file changes (#255).
+      # The independent audit never reads this directory: it builds a clean
+      # export of the commit and scans every source. The key also changes
+      # with flake.lock, which pins the Lean that built the cache, and with
+      # every Lean source and the lakefile. When no proof changed, a run
+      # restores its own key and saves nothing.
+      - name: restore the Lake build
+        id: lake-cache
+        if: ${{ steps.changes.outputs.run == 'true' }}
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: proofs/ownership/.lake
+          key: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('proofs/ownership/lean-toolchain', 'proofs/ownership/lake-manifest.json', 'flake.lock') }}-${{ hashFiles('proofs/ownership/lakefile.toml', 'proofs/ownership/**/*.lean') }}
+          restore-keys: lake-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('proofs/ownership/lean-toolchain', 'proofs/ownership/lake-manifest.json', 'flake.lock') }}-
+
+      - name: lake build
+        id: lake-build
+        if: ${{ steps.changes.outputs.run == 'true' }}
+        working-directory: proofs/ownership
+        run: nix develop ../..#ownership --command lake build
+
+      - name: scripts/audit.sh
+        if: ${{ steps.changes.outputs.run == 'true' }}
+        working-directory: proofs/ownership
+        run: nix develop ../..#ownership --command scripts/audit.sh HEAD
+
+      # As for the Zig caches, only a push to master saves, also when a
+      # proof fails.
+      - name: save the Lake build
+        if: ${{ !cancelled() && github.event_name == 'push' && steps.lake-build.outcome != 'skipped' && steps.lake-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: proofs/ownership/.lake
+          key: ${{ steps.lake-cache.outputs.cache-primary-key }}
+
   # The guard: the one check the rule on master requires, so the rule
   # stays correct when a job here is added, renamed or split. It passes
   # only when every job in `needs:` succeeded. No other job in any
@@ -235,7 +349,7 @@ jobs:
   check:
     name: check
     if: always()
-    needs: [tests, playground]
+    needs: [tests, playground, lean]
     runs-on: ubuntu-24.04
     permissions:
       contents: read
