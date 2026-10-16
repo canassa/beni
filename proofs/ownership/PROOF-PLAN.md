@@ -67,9 +67,9 @@ Both growth checks and the bounded construction loop remain intact.
 ### View links
 
 Track the approved premise repair in [issue #169](https://github.com/canassa/beni/issues/169).
-The premise and postcondition proofs are in [ViewLinks.lean](Ownership/StatementChecks/ViewLinks.lean).
+[ViewLinks.lean](Ownership/StatementChecks/ViewLinks.lean) proves `no_invariant` (no naming satisfies the strengthened invariant at the #169 pre-state) and, for the same witness in allocation order, `only_linkNamed` and `ordered_no_invariant` (the state fails `LinkNamed` alone); it keeps `no_post_invariant` for the record.
 
-`Invariant` constrains the heap and naming, but it does not constrain `State.links`.
+Before 2026-10-16, `Invariant` constrained the heap and naming but not `State.links`; since then it carries `linksValid` and `linkNamed` (as built below).
 `writeLinked` can change another address through these links.
 Separation by address alone cannot frame that change.
 
@@ -129,8 +129,9 @@ Count incomplete executions separately. Interpreter agreement or final heap diff
 As built (2026-10-16): `Invariant` has the clauses `linksValid : LinksValid hs` and `linkNamed : LinkNamed hs env live γ`.
 `LinksValid` records the link structure every reachable state has: the view is allocated after its source, both exist, the source is nonempty, and no view has two sources.
 `LinkNamed` is the narrowed clause: for every array a live path or a permanent observer protects, every array in its link component has exactly its origins.
-A component nothing protects is unconstrained, so a read-only split keeps its distinct names and a garbage view asks nothing.
-The step cases can establish it through `LinkClosed` (`LinkClauses.lean`), the per-link closure: the checker gives a view its source's origins and a fresh site, so a post-naming that names the view by exactly the source's origins is always available.
+The clause is conditional on protection, not on a write. At a read-only split such as `readBoth(rest, xs)` both sides are live, so the clause names the view and its source alike; that is possible because the checker's view rule gives a view its source's origins and a fresh site (`Checker.lean`, `primitive`, `.view`). Distinct canonical names for the two sides exist only in a callee frame, where `Invariant` does not apply, so R1 states its premise on written storage. A component that nothing protects is unconstrained.
+`LinkClauses.lean` proves `LinksValid` with the same heap and links, after an allocation, after a `set!` of a nonempty list and after a view; `LinkNamed` with the same heap, links and observers; and that the per-link closure `LinkClosed` gives `LinkNamed` and survives a naming that keeps old origins and names a new view by its source's origins. No theorem uses these lemmas yet.
+`Invariant` does not give `LinkClosed`: a dead split admits distinct names. So the step must keep `LinkNamed` itself: a component that nothing protects before a step becomes protected only through an operand, which the pre-state protects already; and the post-naming keeps the old arrays' origins and names a new view by its source's origins. `LinkClosed` is available in the main context only because of the view rule; it is a sufficient condition, not a clause.
 The first bullet's contents fact is not a clause. The model's `put` writes with `write`, not `writeLinked`, so the garbage view of a closed and viewed builder goes stale while the program is accepted and both runs agree (`ViewLinks.lean`, *A stale garbage view*). A protected view is never stale: its cells include its source's, so the demand on the source fails.
 `StatementChecks/ViewLinks.lean` proves that the #169 pre-state admits no naming under the clauses.
 Open: preservation of `LinkNamed` under a successful `writeLinked` (the protected set changes with the heap) and under a call; the fourth bullet (certificate reasoning over view addresses); the written-storage premise of `summary_sound` and `map_summary_sound` (R1); the validity and snapshot premises (R2); and their derivation at accepted callers.
@@ -138,7 +139,7 @@ Three obligations of the step cases, named by the review of PR #273:
 a post-naming must exist that keeps every old array's origins and names a new view by exactly its source's origins (`linkClosed_viewed`), and a write that moves a source's origins must move its views' origins with it;
 every writer keeps arrays nonempty (`linksValid_set` takes `xs ≠ []`): `push`, `set`, `construct` and the focus write-back never shorten an array, and each step case shows it for its own write;
 the view step splits on the source's emptiness: an empty source allocates a fresh `[]` with no link (`linksValid_push`), a nonempty one links (`linksValid_viewed`, with `lookup` and `nonempty` from the run).
-#258 still leaves open the direct controls for `inCall` and `rawObservedWrites`, the rejected-error classes, generated accepted read-only linked calls, and the `CallRecord.preKept` wording; none of them is a premise of the clauses.
+#258 still leaves open the direct controls for `inCall` and `rawObservedWrites`, the rejected-error classes, generated accepted read-only linked calls, the `CallRecord.preKept` wording, and the historical strict-false result with its source-hash scope in the evidence README; none of them is a premise of the clauses.
 
 ### Local linked-write frame
 
