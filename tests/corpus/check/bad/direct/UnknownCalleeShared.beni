@@ -1,5 +1,5 @@
 -- a function read out of a Dict returns a top-level list, which is pushed onto in place (issue #216).
--- ownership (§30.10): the call's result is `⊤call`, so the write is refused,
+-- ownership (§30.11): the call's result is `⊤call`, so the write is refused,
 -- approximately, with a message that says the checker cannot identify the
 -- function.
 import Dict exposing (Dict)

@@ -1,5 +1,5 @@
 -- CK-244: a call of a function the checker cannot identify counts its result as made by the call.
--- ownership (§30.10, issue #216): the result of a call of a function the
+-- ownership (§30.11, issue #216): the result of a call of a function the
 -- checker cannot identify is `⊤call`, never owned, so a write onto it is
 -- rejected `unknown`, approximately. Each `bad…` declaration calls such a
 -- function and pushes onto what it returns, and every one of those functions
