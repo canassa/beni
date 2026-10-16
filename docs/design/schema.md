@@ -423,7 +423,10 @@ through a tagged one.
   once, and every reference to a member that hands the parameters on as they are reads that
   member's cell. It is not a call of the member's factory, which would make a new cell of the
   referrer on every level and describe without end. A cell's body runs when the cell is first
-  read, so the description stays linear in the cycle's size. A reference with other arguments is
+  read, so the description stays linear in the cycle's size. A derived codec (§12.10) is a member
+  like any other: one derived where a type variable stays the caller's takes it as a parameter,
+  so `Rose a` holding `Grove a`, which holds `List (Rose a)`, gets one cell each, its
+  `codec_ref`s reading them as a declaration's references do. A reference with other arguments is
   polymorphic recursion (`Nested a` holding `Nested (List a)`). It still builds a definition per
   level, and §5's walks do not end on it: that is the open defect #213, which owes a decision.
 
