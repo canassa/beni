@@ -1,5 +1,6 @@
 import Ownership.Checker
 import Ownership.HeapProof
+import Ownership.LinkedWriteFrame
 import Ownership.Library
 
 /-! # Soundness: the bridge between the checker and concrete heaps
@@ -483,6 +484,74 @@ def projectVal : Value → Path → Option Value
 def Escaped (escapes : List Origin) (o : Origin) : Prop :=
   unescaped o = false ∨ cellOverlap [o.base] (escapes.map Origin.base) = true
 
+/-! ## Links
+
+A view (`Prim.view`) is an array of its own, linked to its source
+(`State.links`): a linked write (`writeLinked`) through either side rewrites
+the other, so for a write the two addresses are one storage. `Invariant`
+said nothing of links, and an arbitrary pre-state could give a view and its
+source non-aliasing origins: the checker's Dead test then accepts a write
+through the view while the source is live, and no post-naming restores
+correspondence (#169, `StatementChecks/ViewLinks.lean`). Two clauses close
+the gap. `LinksValid` records what every stored link has at every reachable
+state. `LinkNamed` is the plan's narrowed clause (owner decisions q1 and q4,
+2026-10-15 and 2026-10-16): linked storage that a live path or a permanent
+observer protects is named as one array, so the Dead, Disjoint and Unescaped
+tests of a demand on one side cover every holder of the other. Storage that
+nothing protects is unconstrained, which keeps a read-only split such as
+`readBoth(rest, xs)` legal and asks nothing of a view that is garbage.
+
+A view's contents (its source's suffix or prefix) are not a clause. The
+runtime refreshes every view at a `writeLinked`, but a builder's `put` writes
+with `write`, so the garbage view of a closed and viewed builder goes stale
+(`ViewLinks.lean`, *A stale garbage view*). A protected view is never stale:
+its cells include its source's, so the demand on the source fails. -/
+
+/-- Every stored link, at every reachable state: the view was allocated
+    after its source, both exist, the source is nonempty (a view is made only
+    of a nonempty list, and no writer shortens an array), and no view has two
+    sources. -/
+structure LinksValid (hs : InPlaceSemantics.State) : Prop where
+  bounded : ∀ v s front, (v, s, front) ∈ hs.links → s < v ∧ v < hs.heap.size
+  sources : ∀ v s front, (v, s, front) ∈ hs.links →
+    ∃ source, hs.heap[s]? = some source ∧ source ≠ []
+  unique : (hs.links.map (·.1)).Nodup
+
+/-- An array a live use or a permanent observer can see: the value a live
+    path projects to reaches it, or a registered observer does. -/
+def Protected (hs : InPlaceSemantics.State) (env : List (Var × Observation × Value))
+    (live : Live) (c : Nat) : Prop :=
+  (∃ x p o w w', (x, p) ∈ live ∧ env.lookup x = some (o, w) ∧ projectVal w p = some w' ∧
+    Reaches hs.heap w' (.ref c)) ∨
+  (∃ k ∈ hs.kept.toList, Reaches hs.heap k (.ref c))
+
+/-- Linked storage that something protects is named as one array: every
+    array in the link component of a protected array has exactly its
+    origins. A component nothing protects is unconstrained. -/
+def LinkNamed (hs : InPlaceSemantics.State) (env : List (Var × Observation × Value))
+    (live : Live) (γ : Naming) : Prop :=
+  ∀ c d, LinkedWriteFrame.LinkConnected hs.links c d → Protected hs env live d →
+    ∀ o, c ∈ γ o ↔ d ∈ γ o
+
+theorem linksValid_of_empty (hs : InPlaceSemantics.State) (empty : hs.links = []) :
+    LinksValid hs :=
+  ⟨by intro v s front member; rw [empty] at member; simp at member,
+   by intro v s front member; rw [empty] at member; simp at member,
+   by rw [empty]; simp⟩
+
+theorem linkConnected_nil_eq {c d : Nat} (h : LinkedWriteFrame.LinkConnected [] c d) : c = d := by
+  induction h with
+  | refl => rfl
+  | edge member => simp at member
+  | symm _ ih => exact ih.symm
+  | trans _ _ ih₁ ih₂ => exact ih₁.trans ih₂
+
+theorem linkNamed_of_empty (hs : InPlaceSemantics.State) (env : List (Var × Observation × Value))
+    (live : Live) (γ : Naming) (empty : hs.links = []) : LinkNamed hs env live γ := by
+  intro c d connected _ o
+  rw [empty] at connected
+  rw [linkConnected_nil_eq connected]
+
 /-- The configuration invariant of the prefix induction (§6.3, the gap the
     fifth reading named), between a value-semantics state `vs` and an
     in-place state `hs`, for an environment `env` pairing each variable's two
@@ -501,7 +570,10 @@ def Escaped (escapes : List Origin) (o : Origin) : Prop :=
       may hold an array since written in place, and its value copy then
       legitimately differs, but the array is still the one its origins name
       (a `close` compares against such a binding without using it);
-    * the naming is separating. -/
+    * the naming is separating;
+    * every stored link is valid (`linksValid`), and linked storage a live
+      path or an observer protects is named as one array (`linkNamed`), so a
+      demand on a view or its source tests the whole protected component. -/
 structure Invariant (vs : ValueSemantics.State) (hs : InPlaceSemantics.State)
     (env : List (Var × Observation × Value)) (live : Live) (aenv : Env Abstract)
     (escapes : List Origin) (γ : Naming) : Prop where
@@ -518,6 +590,8 @@ structure Invariant (vs : ValueSemantics.State) (hs : InPlaceSemantics.State)
   named : ∀ x o w a, env.lookup x = some (o, w) → aenv.lookup x = some a →
     ∀ q c, immutablePath q = true → ArrayAt hs.heap w q c → named γ (a.cellsAt q) c
   separating : Separating γ
+  linksValid : LinksValid hs
+  linkNamed : LinkNamed hs env live γ
 
 theorem invariant_initial (fuel : Nat) (live : Live) (escapes : List Origin) (γ : Naming)
     (hγ : Separating γ) : Invariant { fuel } { fuel } [] live [] escapes γ :=
@@ -527,7 +601,9 @@ theorem invariant_initial (fuel : Nat) (live : Live) (escapes : List Origin) (γ
     bindings := by intro x p _ o w h; simp at h
     described := by intro x p _ o w a w' h; simp at h
     named := by intro x o w a h; simp at h
-    separating := hγ }
+    separating := hγ
+    linksValid := linksValid_of_empty _ rfl
+    linkNamed := linkNamed_of_empty _ _ _ _ rfl }
 
 /-- What the invariant buys at the end: the two traces' observation streams
     so far are the same. -/

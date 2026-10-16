@@ -159,6 +159,8 @@ theorem flatInvariant_state_frame
       described := by simpa only [heapSame] using inv.described
       named := by simpa only [heapSame] using inv.named
       separating := inv.separating
+      linksValid := Soundness.linksValid_of_empty _ (linksSame.trans inv.links)
+      linkNamed := Soundness.linkNamed_of_empty _ _ _ _ (linksSame.trans inv.links)
     }
     heapInts := by simpa only [heapSame] using inv.heapInts
     links := linksSame.trans inv.links
@@ -207,6 +209,8 @@ theorem flatInvariant_restrict_live
       described := fun name path member => inv.described name path (included _ member)
       named := inv.named
       separating := inv.separating
+      linksValid := Soundness.linksValid_of_empty _ (inv.links)
+      linkNamed := Soundness.linkNamed_of_empty _ _ _ _ (inv.links)
     }
     heapInts := inv.heapInts
     links := inv.links

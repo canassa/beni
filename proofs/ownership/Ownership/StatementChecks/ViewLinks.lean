@@ -1,9 +1,21 @@
 -- Keep witness reductions in one import chain so generated private splitters stay available.
 import Ownership.StatementChecks.SummaryObservers
 
-/-! A content-consistent suffix link defeats address-only separation.
-The current step premises permit the pre-state, but no post-invariant exists (#169).
-These proofs use definitions and do not use the unproved step theorem. -/
+/-! A content-consistent suffix link defeats address-only separation (#169).
+Before the link clauses, the step premises admitted this pre-state, and no
+post-invariant existed (`no_post_invariant`, kept for the record). With the
+clauses, no naming satisfies the invariant on the pre-state (`no_invariant`):
+the live source protects the link component, so the view must carry the
+source's origins, and the two distinct sites do not alias. These proofs use
+definitions and do not use the unproved step theorem.
+
+*A stale garbage view.* A builder's `put` writes with `write`, not
+`writeLinked`. A builder closed into a list, viewed, and grown again with
+`put` leaves its view stale: the checker accepts the program (nothing live
+holds the view or the list), both runs print `[1, 2]`, and the final heap
+holds the view as `[]` where its source's suffix is `[2]`. So a view's
+contents are not a clause of the invariant; a protected view is never stale,
+because its cells include its source's and the demand on the source fails. -/
 
 namespace Ownership.ViewCounterexample
 
@@ -149,65 +161,30 @@ theorem live_cases (x : Var) (p : Path)
   rw [liveEq] at h
   simpa using h
 
-theorem invariant :
-    Invariant valuePre heapPre pairedEnv (union (uses expression) after) abstractEnv [] naming := by
-  refine
-    { reads := rfl, external := rfl, fuel := rfl, keptSize := rfl
-      kept := ?_, keptEscaped := ?_, bindings := ?_, described := ?_, named := ?_
-      separating := separating }
-  · intro i o w ho
-    simp [valuePre] at ho
-  · intro k hk
-    simp [heapPre] at hk
-  · intro x p hl o w he
-    rcases live_cases x p hl with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
-    · change some (.list [], .ref 0) = some (o, w) at he
-      cases he
-      exact ⟨.list [], .ref 0, rfl, rfl, corresponds_empty⟩
-    · change some (.list [.int 0], .ref 1) = some (o, w) at he
-      cases he
-      exact ⟨.list [.int 0], .ref 1, rfl, rfl, corresponds_source⟩
-  · intro x p hl o w a w' he ha hp
-    rcases live_cases x p hl with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩
-    · change some (.list [], .ref 0) = some (o, w) at he
-      cases he
-      change some (abstractValue 0) = some a at ha
-      cases ha
-      change some (.ref 0) = some w' at hp
-      cases hp
-      exact described_empty
-    · change some (.list [.int 0], .ref 1) = some (o, w) at he
-      cases he
-      change some (abstractValue 1) = some a at ha
-      cases ha
-      change some (.ref 1) = some w' at hp
-      cases hp
-      exact described_source
-  · intro x o w a he ha q c hq hc
-    cases x with
-    | zero =>
-      change some (.list [], .ref 0) = some (o, w) at he
-      cases he
-      change some (abstractValue 0) = some a at ha
-      cases ha
-      cases hc with
-      | here =>
-        exact ⟨.site [] 0, by simp [abstractValue, Abstract.cellsAt, Abstract.paths, union], by simp [naming]⟩
-      | element => simp [immutablePath] at hq
-    | succ x =>
-      cases x with
-      | zero =>
-        change some (.list [.int 0], .ref 1) = some (o, w) at he
-        cases he
-        change some (abstractValue 1) = some a at ha
-        cases ha
-        cases hc with
-        | here =>
-          exact ⟨.site [] 1, by simp [abstractValue, Abstract.cellsAt, Abstract.paths, union], by simp [naming]⟩
-        | element => simp [immutablePath] at hq
-      | succ x =>
-        change none = some (o, w) at he
-        contradiction
+/-- The strengthened invariant admits no naming for this pre-state: the
+    live source protects the link component, so the view must carry the
+    source's origins; each is named by its own site, and the two sites do
+    not alias. -/
+theorem no_invariant (gamma : Naming) :
+    ¬ Invariant valuePre heapPre pairedEnv (union (uses expression) after) abstractEnv [] gamma := by
+  intro h
+  have liveEq : union (uses expression) after = [(0, []), (1, [])] := by cbv
+  have yLive : (1, []) ∈ union (uses expression) after := by rw [liveEq]; simp
+  obtain ⟨xOrigin, xMember, xIn⟩ :=
+    h.named 0 (.list []) (.ref 0) (abstractValue 0) rfl rfl [] 0 rfl (AtPath.here _)
+  obtain ⟨yOrigin, yMember, yIn⟩ :=
+    h.named 1 (.list [.int 0]) (.ref 1) (abstractValue 1) rfl rfl [] 1 rfl (AtPath.here _)
+  simp [abstractValue, Abstract.cellsAt, Abstract.paths, union] at xMember yMember
+  subst xMember
+  subst yMember
+  have connected : LinkedWriteFrame.LinkConnected heapPre.links 0 1 :=
+    LinkedWriteFrame.LinkConnected.edge (front := true) (by simp [heapPre])
+  have sourceProtected : Protected heapPre pairedEnv (union (uses expression) after) 1 :=
+    Or.inl ⟨1, [], .list [.int 0], .ref 1, .ref 1, yLive, rfl, rfl, Reaches.refl _⟩
+  have sourceNamed : 1 ∈ gamma (.site [] 0) :=
+    (h.linkNamed 0 1 connected sourceProtected (.site [] 0)).mp xIn
+  have distinct : aliases (.site [] 0) (.site [] 1) = false := by decide
+  exact h.separating (.site [] 0) (.site [] 1) distinct 1 sourceNamed yIn
 
 theorem typed : WellTyped [] heapPre.heap pairedEnv expression := by
   refine ⟨typeEnv, .list .int, by cbv, ?_⟩
@@ -279,5 +256,26 @@ theorem no_post_invariant (gamma : Naming) :
   have snap : snapshot heapPost.heap 2 (.ref 1) = .ok (.list [.int 0, .int 1]) := by cbv
   rw [snap] at impossible
   cases impossible
+
+/-! ## A stale garbage view (`put` writes with `write`) -/
+
+def staleMain : Expr :=
+  .letE 0 (.prim (.builder .int) [])
+  (.letE 1 (.prim .put [.var 0, .int 1])
+  (.letE 2 (.prim .close [.var 1])
+  (.letE 3 (.prim (.view true) [.var 2])
+  (.letE 4 (.prim .put [.var 1, .int 2])
+  (.prim .close [.var 4])))))
+
+def staleProgram : Program := { main := staleMain }
+
+#guard (check staleProgram).isOk
+#guard match ValueSemantics.run staleProgram, InPlaceSemantics.run staleProgram with
+  | .ok t, .ok t' => t.finalValue == .list [.int 1, .int 2] && t'.finalValue == t.finalValue
+  | _, _ => false
+#guard match (InPlaceSemantics.eval 1000 [] none [] staleMain).run { fuel := 1000 } with
+  | .ok (_, s) => s.links == [(1, 0, true)] && s.heap[1]? == some [] &&
+      s.heap[0]? == some [.int 1, .int 2] && viewOf true [.int 1, .int 2] == [.int 2]
+  | .error _ => false
 
 end Ownership.ViewCounterexample

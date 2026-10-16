@@ -271,6 +271,7 @@ The write diagnostics count actual runtime write events.
 | `HeapProof.lean`, `BuilderProof.lean`, `KernelChecks.lean` | concrete heap and builder/close proofs, kernel checks |
 | `LinkedWriteFrame.lean` | conditional heap and observer frames for successful linked writes |
 | `FlatFragment/` | the first flat fragment: the strengthened relation, its heap frame, the expression cases, and the trace corollary, in one import chain |
+| `LinkClauses.lean` | the invariant's link clauses under allocation, nonempty writes and view creation, and the per-link closure that gives the naming clause |
 | `Soundness.lean` | the bridge to concrete heaps and the soundness statements |
 | `Falsify.lean` | executes the unproved statements on concrete configurations (`ownership falsify`) |
 | `Report.lean` | printing summaries |
@@ -311,6 +312,11 @@ All three general proof obligations remain open.
 The proof uses no `sorry` and none of the three pinned obligations.
 The generic theorem `flat_preserved` carries the strengthened relation `FlatInvariant` through every fragment expression, in both runtime directions, from the actual acceptance, typing, and shadow runs.
 The fragment excludes field atoms, calls, closures, views, constructions, branches, cases, and scopes. The three general obligations remain open.
+
+`Invariant` carries two link clauses since 2026-10-16 (#169, owner decisions q1 and q4): every stored link is valid (`LinksValid`), and linked storage that a live path or an observer protects is named as one array (`LinkNamed`).
+[ViewLinks.lean](Ownership/StatementChecks/ViewLinks.lean) proves that the #169 pre-state admits no naming under them, and checks that a builder's `put` leaves a garbage view stale, which is why a view's contents are not a clause.
+[LinkClauses.lean](Ownership/LinkClauses.lean) proves the clauses in a state with the same links, under allocation, under a write that keeps every array nonempty, and when a view is made; a per-link closed naming (`LinkClosed`) gives `LinkNamed`.
+Preservation under a successful `writeLinked` and under a call, and the summary theorems' written-storage premise for linked inputs, remain open.
 
 `sorry`: `summary_sound` (Lemma 6.7 clauses 1–3, clause 2 as repaired in
 round 5), `map_summary_sound`, `invariant_preserved` (the step case of the

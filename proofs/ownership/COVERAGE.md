@@ -309,6 +309,8 @@ its fixed probe is T46 two rows, run against the per-call checker.
 | `LinkedWriteFrame.writeLinked_preserves_represents`, `writeLinked_preserves_representsMany`, `writeLinked_preserves_snapshot`, `writeLinked_preserves_observers` | proved; conditional on runtime success and complete finite representation footprints outside that component. The observer theorem covers every pre-write permanent registration. |
 | `LinkedWriteFrame.writeCounted_preserves`, `writeCounted_preserves_represents` | proved; the real counter wrapper preserves the same heap frame and an individual representation under the stated success and separation premises. |
 | `LinkedWriteFrame.example_run`, `example_observer_frame`, `example_all_observers_frame` | proved; a linked write changes source 0 and view 1 while the nonempty permanent observer list retains the independent array `[7]`. |
+| `Invariant.linksValid`, `Invariant.linkNamed` — the link clauses (#169): every stored link is valid, and linked storage a live path or an observer protects is named as one array | **added to the invariant** (owner decisions q1 and q4). `LinkClauses.lean` proves them in a state with the same links, under allocation, under a write that keeps every array nonempty, and when a view is made, and proves that a per-link closed naming (`LinkClosed`) gives `linkNamed`. Preservation under a successful `writeLinked` and under a call is not proved. |
+| `ViewCounterexample.no_invariant` — the #169 pre-state admits no naming under the strengthened invariant | proved; the live source protects the component, so the view must carry the source's origins, and the two sites do not alias. The old statement's `no_post_invariant` is kept for the record. |
 | `FlatFragment.Preservation.accepted_flat_anf_traces_agree` (`FlatFragment/Trace.lean`) — the main theorem's conclusion for an accepted program whose main expression is in the first flat fragment (`FlatFragment.Support.FlatANF0`) | proved; no `sorry` and no pinned dependency. The scope hypothesis `FlatANF0 p.main` is the only addition to `accepted_traces_agree`. |
 | `FlatFragment.Preservation.flat_preserved` (`FlatFragment/Trace.lean`) — preservation of the strengthened flat relation `FlatInvariant` over the fragment, in both runtime directions | proved; structural induction over the fragment from the actual acceptance, typing, and shadow runs. The relation permits nonempty heaps, permanent observers, and stale dead aliases. |
 | `FlatFragment.HeapFrame.flatInvariant_heap_frame` (`Frame.lean`), `FlatFragment.Push.push_preserved` (`Primitives.lean`), `FlatFragment.Let.let_preserved` (`Let.lean`) | proved; the push case derives the written array's separation from the real default demand, not from an alias prohibition. |
@@ -332,6 +334,15 @@ Its proof does not use `invariant_preserved`, `summary_sound`, or `map_summary_s
 The internal relation `FlatInvariant` extends `Invariant` with flat heap contents, typed allocated bindings, empty links, aligned environments, a bounded naming, and a complete finite observer witness.
 Each case derives its frame from the actual checker run: a push's demand excludes the continuation's live bindings and every permanent observer from the written array; a literal extends the naming at the real allocation address; `shared` records the value's roots as escapes.
 The fragment proof establishes nothing for calls, views, linked storage, or the three general obligations, which remain open.
+
+The link clauses (`LinksValid`, `LinkNamed`, 2026-10-16) answer #169's first obligation, for the main-context invariant.
+`LinksValid` records the link structure: allocation order, nonempty sources, one source per view.
+`LinkNamed` is the plan's narrowed clause: linked storage that a live path or a permanent observer protects is named as one array, so a demand's Dead, Disjoint and Unescaped tests on one side cover every holder of the other.
+Storage nothing protects is unconstrained. A read-only split such as `readBoth(rest, xs)` stays legal, and a garbage view asks nothing of the naming.
+A view's contents are not a clause: a builder's `put` writes with `write`, so the garbage view of a closed and viewed builder goes stale (`ViewLinks.lean`, *A stale garbage view*, checked by `#guard`).
+The summary theorems keep distinct canonical names for a view and its source. Their linked-input premise is a separate written-storage premise (R1), not yet stated.
+`invariant_preserved` keeps its `sorry`; its statement now carries the clauses. Preservation of `LinkNamed` under a successful `writeLinked` is the next obligation.
+The falsifier tests both clauses (`linksValidB`, `linkNamedB`); its generated configurations hold no links, so the tests are finite evidence only for the witnesses.
 
 ### The invariant, restated
 

@@ -343,6 +343,8 @@ theorem flatInvariant_heap_frame {gamma : Naming}
       described := ?_
       named := ?_
       separating := separating
+      linksValid := Soundness.linksValid_of_empty _ (links)
+      linkNamed := Soundness.linkNamed_of_empty _ _ _ _ (links)
     }
     heapInts := nextFlat
     links := links
