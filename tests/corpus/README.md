@@ -583,7 +583,8 @@ paired TodoMVC page 6 300M (measured 5 711M), the paired Sternhalma page 10 000M
 (measured 9 031M), and Sternhalma's separate value fuzz 12 600M (measured 11 387M).
 The paired Bike Wars page is granted 8 600M (measured 7 784M). TodoMVC's
 and Bike Wars' value fuzz retain the default budget (Bike Wars measured 4 225M). `browser/direct/ApiItems`
-is granted 5 260M (measured 4 780M; 2026-10-16, #227), for the four builds of a direct page. Outside the
+is granted 5 260M (measured 4 780M; 2026-10-16, #227), for the four builds of a direct page. `ownership/EntryValueCommand`
+is granted 4 730M (measured 4 301M; 2026-10-16, delegated, #220), until the ownership dump stops re-checking core (#214). Outside the
 corpus, the two `.wasm` tests of `tests/blackbox/wasm_test.zig` have a grant of their own,
 6 000M, granted by Cesar on 2026-10-15 (dashboard question `wasm-playground-q7`) (CLAUDE.md, *Every test has a budget*).
 
