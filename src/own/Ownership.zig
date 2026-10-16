@@ -61,6 +61,9 @@ pub const none: u32 = std.math.maxInt(u32);
 pub const k_limit: u32 = 8;
 /// Depth of a walk over a type before it answers conservatively.
 const type_depth: u32 = 16;
+const debug_own = false;
+/// §30.9: a supply of at most this many cells is probed cell by cell.
+const split_cap: usize = 8;
 /// §16.7: the most entries a summary's component may hold.
 pub const width_cap: usize = 64;
 /// §16.6: the backstop on a recursive group's rounds.
@@ -498,6 +501,8 @@ keep: std.heap.ArenaAllocator,
 paths: Paths,
 /// Per `TypeId`, a column: null until computed.
 nominal: []?NominalFacts = &.{},
+/// §30.9: the nominal types whose bodies `ownMayHold` is reading.
+holding: std.ArrayList(TypeId) = .empty,
 ctor_ids: std.AutoHashMapUnmanaged(u64, u32) = .empty,
 /// Per module: the summary of each declaration, allocated on first use.
 slots: []?[]Slot = &.{},
@@ -554,6 +559,7 @@ pub fn deinit(o: *Ownership) void {
     o.keep.deinit();
     o.paths.deinit(o.in.gpa);
     o.in.gpa.free(o.nominal);
+    o.holding.deinit(o.in.gpa);
     o.ctor_ids.deinit(o.in.gpa);
     o.ctor_type.deinit(o.in.gpa);
     o.ctor_key.deinit(o.in.gpa);
@@ -1185,6 +1191,40 @@ fn walkSummary(o: *Ownership, m: u32, d: u32, recursive: bool) Allocator.Error!S
 // The lattice (§16.2)
 // ---------------------------------------------------------------------------
 
+/// §30.9: a copy of `s` whose every slice is the run's own (`keep`), for a
+/// summary that outlives the memory `s` was read into — a block's.
+pub fn cloneSummary(o: *Ownership, s: *const Summary) Allocator.Error!*const Summary {
+    const keep = o.keep.allocator();
+    const xsum = struct {
+        fn f(a: Allocator, x: XSum) Allocator.Error!XSum {
+            return .{ .no = x.no, .atoms = try a.dupe(XAtom, x.atoms) };
+        }
+    }.f;
+    const res = try keep.alloc(ResEntry, s.res.len);
+    for (res, s.res) |*d, r| d.* = .{ .path = r.path, .prov = r.prov, .approx = r.approx, .xc = try xsum(keep, r.xc), .sc = try xsum(keep, r.sc) };
+    const supply = try keep.alloc(SupplyEntry, s.supply.len);
+    for (supply, s.supply) |*d, e| {
+        d.* = e;
+        d.xc = try xsum(keep, e.xc);
+    }
+    const klasses = try keep.alloc(Carried, s.klasses.len);
+    for (klasses, s.klasses) |*d, k| {
+        const binds = try keep.alloc(Carried.Bind, k.binds.len);
+        for (binds, k.binds) |*b, kb| b.* = .{ .local = kb.local, .path = kb.path, .provs = try keep.dupe(ResEntry, kb.provs) };
+        d.* = .{ .sum = try o.cloneSummary(k.sum), .binds = binds, .cb_js = try keep.dupe(u32, k.cb_js) };
+    }
+    const out = try keep.create(Summary);
+    out.* = s.*;
+    out.uses = try keep.dupe(UseEntry, s.uses);
+    out.res = res;
+    out.supply = supply;
+    out.funs = try keep.dupe(FunFacts, s.funs);
+    out.xreq = try keep.dupe(XAtom, s.xreq);
+    out.slots = try keep.dupe([2]u32, s.slots);
+    out.klasses = klasses;
+    return out;
+}
+
 fn summaryEql(x: Summary, y: Summary) bool {
     if (x.limit != y.limit or x.params != y.params or x.coarse != y.coarse or x.once != y.once) return false;
     if (x.uses.len != y.uses.len or x.res.len != y.res.len or x.supply.len != y.supply.len or x.funs.len != y.funs.len) return false;
@@ -1666,13 +1706,28 @@ fn wordsRow(o: *Ownership, m: u32, d: u32) Allocator.Error!?Summary {
     // and how many parameters each such function takes.
     var fn_arity = try keep.alloc(?u32, n);
     @memset(fn_arity, null);
+    // §30.9: a `List` of functions written out: its words describe each
+    // element, a function slot at the parameter's `[*]`.
+    var elem_arity = try keep.alloc(?u32, n);
+    @memset(elem_arity, null);
     if (decl.annotation.unwrap()) |ann| if (bir.instTag(ann) == .type_fn) {
         const ps = bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(bir.instData(ann).lhs))), Inst.Index);
+        const graph_m: Graph.Index = @fromBackingInt(@intCast(m));
         for (ps, 0..) |p, i| {
-            if (i >= n or bir.instTag(p) != .type_fn) continue;
-            fn_arity[i] = @intCast(bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(bir.instData(p).lhs))), Inst.Index).len);
+            if (i >= n) continue;
+            if (bir.instTag(p) == .type_fn) {
+                fn_arity[i] = @intCast(bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(bir.instData(p).lhs))), Inst.Index).len);
+                continue;
+            }
+            if (bir.instTag(p) != .type_app) continue;
+            const head: Inst.Index = @fromBackingInt(@intCast(bir.instData(p).lhs));
+            if (o.in.types.headId(graph_m, bir.instTag(head), bir.instData(head)) != o.in.types.well_known.list) continue;
+            const args = bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(bir.instData(p).rhs))), Inst.Index);
+            if (args.len != 1 or bir.instTag(args[0]) != .type_fn) continue;
+            elem_arity[i] = @intCast(bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(bir.instData(args[0]).lhs))), Inst.Index).len);
         }
     };
+    var slot_keys: std.ArrayList([2]u32) = .empty;
     var uses: std.ArrayList(UseEntry) = .empty;
     var res: std.ArrayList(ResEntry) = .empty;
     var supply: std.ArrayList(SupplyEntry) = .empty;
@@ -1696,6 +1751,29 @@ fn wordsRow(o: *Ownership, m: u32, d: u32) Allocator.Error!?Summary {
         }.f;
         // What is not written is the worst case (§24.2).
         if (words == 0) words = W.escaped.bit();
+        if (elem_arity[i]) |arity| if (words & (W.once.bit() | W.many.bit() | W.unused.bit()) != 0) {
+            // §30.9: each element of the list is a function the call treats
+            // as the words say: a slot at `[*]`, numbered after the
+            // parameters. The list itself is read.
+            const j: u32 = n + @as(u32, @intCast(slot_keys.items.len));
+            try slot_keys.append(keep, .{ i, try o.child(eps, .elem, 0) });
+            const kept = has(words, .escaped);
+            const calls: Calls = if (has(words, .unused)) .zero else if (has(words, .once)) .once else .many;
+            try funs.append(keep, .{ .param = j, .calls = calls, .seen = !kept });
+            if (calls != .zero) {
+                for (0..arity) |k| try supply.append(keep, if (has(words, .owned))
+                    .{ .fun = j, .k = @intCast(k), .path = eps, .prov = .{ .kind = .fresh }, .owned = true }
+                else
+                    .{ .fun = j, .k = @intCast(k), .path = eps, .prov = .{ .kind = .top, .a = 0 }, .owned = false });
+            }
+            try uses.append(keep, .{ .param = i, .path = eps, .bits = bit_r | (if (kept) bit_j else 0) });
+            if (has(words, .returned)) {
+                returned = true;
+                try res.append(keep, .{ .path = eps, .prov = .{ .kind = .cb, .a = j } });
+            }
+            if (has(words, .aliased)) try res.append(keep, .{ .path = any, .prov = .{ .kind = .cb, .a = j }, .approx = true });
+            continue;
+        };
         if (fn_arity[i]) |arity| {
             // A function parameter: how often it is called, what it is
             // handed, and whether JavaScript keeps it.
@@ -1745,6 +1823,7 @@ fn wordsRow(o: *Ownership, m: u32, d: u32) Allocator.Error!?Summary {
         .supply = supply.items,
         .funs = funs.items,
         .asserted = true,
+        .slots = slot_keys.items,
     });
     out.words = slots.len != 0;
     // The thesis's row for a `foreign` without words is a default, not an
@@ -2623,6 +2702,11 @@ const view_event_detail = "a message a view event builds may hold it — a list 
 /// given up to `update`, which may write it in place.
 const send_class: Summary = .{ .params = 1, .uses = &.{.{ .param = 0, .path = eps, .bits = bit_w | bit_x | bit_d }}, .asserted = true };
 
+/// §30.3: the runtime as the callee of an entry's tagger (`onUrlRequest`,
+/// `onUrlChange`): it hands crossing values, which carry no cell, so it
+/// supplies nothing.
+const runtime_row: Summary = .{ .params = 1, .funs = &.{.{ .param = 0, .calls = .many, .need = true, .seen = false }}, .asserted = true };
+
 /// The `k`th parameter type of a function type, when `v` is one.
 fn funcParam(store: *TypeStore, v: Var, k: u32) ?Var {
     switch (store.resolvedContent(v)) {
@@ -2808,12 +2892,130 @@ fn mayHold(o: *Ownership, store: *TypeStore, r: Var, t: Var, depth: u32) Allocat
                     return false;
                 }
                 const nf = try o.nominalFacts(a.type);
-                // A body we do not instantiate: it may hold anything it holds.
-                if (nf.own) return true;
+                // What its body holds without going through a type parameter:
+                // its constructors' fields, read as written (§30.9); a
+                // parameter is one of the arguments, below.
+                if (nf.own and try o.ownMayHold(store, a.type, t, depth + 1)) return true;
                 if (nf.params) for (store.vars(a.args)) |arg| if (try o.mayHold(store, arg, t, depth + 1)) return true;
                 return false;
             },
         },
+    }
+}
+
+/// §30.9: whether a value of the nominal type `id` may hold, in its own
+/// body — its constructors' fields, or an alias's body, as written — an
+/// object of type `t`. A type parameter there is an argument, which the
+/// caller looks at; a body being read already holds nothing more through
+/// its own recursion (the least fixpoint of "holds").
+fn ownMayHold(o: *Ownership, store: *TypeStore, id: TypeId, t: Var, depth: u32) Allocator.Error!bool {
+    if (depth > type_depth or id == .none or id.int() >= o.in.types.entries.len) return true;
+    for (o.holding.items) |x| if (x == id) return false;
+    const e = o.in.types.entries[id.int()];
+    if (e.schema_endpoint) return true;
+    switch (e.kind) {
+        // A `foreign type`'s insides are not beni's to read.
+        .foreign => return true,
+        .alias, .adt => {},
+    }
+    try o.holding.append(o.in.gpa, id);
+    defer _ = o.holding.pop();
+    const m = e.module.int();
+    const bir = o.in.birs[m];
+    const d = bir.decl(e.decl);
+    if (e.kind == .alias) {
+        const body = d.annotation.unwrap() orelse return true;
+        return o.birMayHold(store, m, bir, body, t, depth + 1);
+    }
+    for (bir.declCtors(d)) |c| {
+        for (bir.extraSlice(.{ .start = c.args_start, .end = c.args_end }, Inst.Index)) |arg| {
+            if (try o.birMayHold(store, m, bir, arg, t, depth + 1)) return true;
+        }
+    }
+    return false;
+}
+
+/// `mayHold` for a type written in a declaration's body (§30.9): whether a
+/// value of it may be, or hold, an object of type `t`. A type parameter is
+/// the caller's to look at, through the arguments.
+fn birMayHold(o: *Ownership, store: *TypeStore, m: u32, bir: *const Bir, inst: Inst.Index, t: Var, depth: u32) Allocator.Error!bool {
+    if (depth > type_depth) return true;
+    const tag = bir.instTag(inst);
+    const data = bir.instData(inst);
+    // A type parameter is an argument, which the caller looks at.
+    if (tag == .type_var) return false;
+    if (try o.birMayShare(store, m, bir, inst, t, depth)) return true;
+    const graph_m: Graph.Index = @fromBackingInt(@intCast(m));
+    switch (tag) {
+        .type_var, .type_unit => return false,
+        // A closure may hold anything it captured.
+        .type_fn => return true,
+        .type_tuple => {
+            for (bir.extraSlice(Bir.inlineRange(data), Inst.Index)) |el| if (try o.birMayHold(store, m, bir, el, t, depth + 1)) return true;
+            return false;
+        },
+        .type_record => {
+            for (bir.extraSlice(Bir.inlineRange(data), Bir.Field)) |fl| if (try o.birMayHold(store, m, bir, fl.value, t, depth + 1)) return true;
+            return false;
+        },
+        .type_top, .ext_type, .schema_type_top, .ext_schema_type => {
+            const id = o.in.types.headId(graph_m, tag, data);
+            if (id == o.in.types.well_known.list) return true;
+            const nf = try o.nominalFacts(id);
+            return nf.own and try o.ownMayHold(store, id, t, depth + 1);
+        },
+        .type_app => {
+            const head: Inst.Index = @fromBackingInt(@intCast(data.lhs));
+            const id = o.in.types.headId(graph_m, bir.instTag(head), bir.instData(head));
+            const args = bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.rhs))), Inst.Index);
+            if (id == o.in.types.well_known.list) {
+                for (args) |arg| if (try o.birMayHold(store, m, bir, arg, t, depth + 1)) return true;
+                return false;
+            }
+            const nf = try o.nominalFacts(id);
+            if (nf.own and try o.ownMayHold(store, id, t, depth + 1)) return true;
+            // The arguments, as written here, are what its parameters hold.
+            if (nf.params) for (args) |arg| if (try o.birMayHold(store, m, bir, arg, t, depth + 1)) return true;
+            return false;
+        },
+        else => return true,
+    }
+}
+
+/// `mayShare` for a type written in a declaration's body (§30.9): whether a
+/// value of it may be the same object as a value of type `t`.
+fn birMayShare(o: *Ownership, store: *TypeStore, m: u32, bir: *const Bir, inst: Inst.Index, t: Var, depth: u32) Allocator.Error!bool {
+    if (depth > type_depth) return true;
+    const st = switch (store.resolvedContent(t)) {
+        .structure => |s| s,
+        else => return true,
+    };
+    if (st == .app) if (try o.unboxed(st.app.type)) return true;
+    const tag = bir.instTag(inst);
+    const data = bir.instData(inst);
+    const graph_m: Graph.Index = @fromBackingInt(@intCast(m));
+    switch (tag) {
+        .type_var => return true,
+        .type_unit => return false,
+        .type_fn => return st == .func,
+        .type_tuple => return st == .tuple,
+        .type_record, .type_record_ext => return st == .record,
+        .type_top, .ext_type, .schema_type_top, .ext_schema_type, .type_app => {
+            const id = if (tag == .type_app) blk: {
+                const head: Inst.Index = @fromBackingInt(@intCast(data.lhs));
+                break :blk o.in.types.headId(graph_m, bir.instTag(head), bir.instData(head));
+            } else o.in.types.headId(graph_m, tag, data);
+            if (try o.unboxed(id)) return true;
+            if (st != .app) return false;
+            if (!o.sameRepresentation(id, st.app.type)) return false;
+            if (tag != .type_app) return true;
+            const args = bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.rhs))), Inst.Index);
+            const ys = store.vars(st.app.args);
+            if (args.len != ys.len) return true;
+            for (args, ys) |p, q| if (!try o.birMayShare(store, m, bir, p, q, depth + 1)) return false;
+            return true;
+        },
+        else => return true,
     }
 }
 
@@ -3099,6 +3301,9 @@ const SupplyRec = struct {
     /// A call inside a lambda (§18.9): the probe where the lambda made the
     /// call, beside `probe`, where the lambda was handed on.
     probe2: u32 = none,
+    /// §30.9: a call inside a lambda nested in others, the probes where
+    /// each enclosing lambda was handed on, outermost last.
+    more: []const u32 = &.{},
 };
 
 /// §18.9: a call of the declaration's function parameter made inside a
@@ -3110,6 +3315,38 @@ const EnvCall = struct {
     inst: Inst.Index,
     args: []const AV,
     probes: []const u32,
+    /// §30.9: a call a lambda nested in this one made, handed on here. Per
+    /// argument, the probes where the inner lambdas were handed on, and
+    /// whether every supply it rests on was owned or taken; and whether
+    /// some lambda on the way is called more than once.
+    more: []const []const u32 = &.{},
+    owned: []const bool = &.{},
+    taken: []const bool = &.{},
+    many: bool = false,
+};
+
+/// §30.9: a callee relies on what a function it is handed returns being
+/// owned (`need`, or an owned `cb` supply), and the function is the
+/// enclosing lambda's own parameter, at `path`: what that is, is known only
+/// where the lambda is handed on or called. The obligation waits for it.
+const LambdaNeed = struct {
+    closure: u32,
+    k: u32,
+    path: u32,
+    /// The callee that relies on it, its function parameter, and the call.
+    s: *const Summary,
+    j: u32,
+    avs: []const AV,
+    inst: Inst.Index,
+    callee: []const u8,
+    point: u32,
+    frame: u32,
+    ctx: u32,
+    /// Reported already: one line however many places fail it.
+    failed: bool = false,
+    /// How many times it was decided where the lambda was handed on or
+    /// called: each of the lambda's consumers must decide it.
+    discharges: u32 = 0,
 };
 
 /// A summary or class being applied at a call.
@@ -3190,6 +3427,12 @@ const Walker = struct {
     /// `returnsOwned` reads only exact result entries: whether a failure was
     /// an approximate step's alone.
     ro_exact: bool = false,
+    /// §30.9: the closure of the class `returnsOwned` is reading, when it
+    /// is a lambda: what its calls of a carried function value return.
+    ro_closure: u32 = none,
+    /// §30.9: the path of the class's result that is handed on, when only a
+    /// part of it is (`cb_j.q`): its other paths are not looked at.
+    ro_within: u32 = eps,
     /// §18.2: the conditions, by index (`cond_yes`, `cond_lost` and
     /// `cond_shared` first), and the condition of each list cell that has
     /// one other than its kind's.
@@ -3207,6 +3450,12 @@ const Walker = struct {
     split_scrut: []?AV = &.{},
     /// §18.9: calls of the declaration's function parameters inside lambdas.
     env_calls: std.ArrayList(EnvCall) = .empty,
+    /// §30.9: the declaration's function parameters and slots a lambda
+    /// hands on to a callee, as `(closure, j)`, for each lambda the pass is
+    /// inside: a carried lambda's calls of them go to what the caller passed.
+    env_passes: std.ArrayList([2]u32) = .empty,
+    /// §30.9: what callees rely on of the enclosing lambdas' own parameters.
+    lambda_needs: std.ArrayList(LambdaNeed) = .empty,
     /// The record a program constructor with an entry row is handed: its
     /// functions are in sight there (§20.6), so storing them in it is not
     /// leaving the walk's sight.
@@ -4392,6 +4641,32 @@ const Walker = struct {
         }
     }
 
+    /// §30.9: the function a top-level value with no parameters names, when
+    /// its definition is nothing but a reference to another top-level value
+    /// that takes parameters (`list = Pcg.list`), through such names.
+    fn aliasTarget(w: *const Walker, t0: Target) ?Target {
+        var t = t0;
+        var hops: u32 = 0;
+        while (hops < 8) : (hops += 1) {
+            const bir = w.o.in.birs[t.m];
+            const decl = bir.decls[t.d];
+            if (decl.kind != .value or decl.params != 0) return if (hops == 0) null else t;
+            if (decl.where_end != decl.where_start) return null;
+            const body = decl.body.unwrap() orelse return null;
+            const data = bir.instData(body);
+            t = switch (bir.instTag(body)) {
+                .top => .{ .m = t.m, .d = data.lhs },
+                .ext_value => blk: {
+                    if (data.lhs >= w.o.in.provenance.len) return null;
+                    const d = w.o.in.provenance[data.lhs].valueDecl(data.rhs) orelse return null;
+                    break :blk .{ .m = data.lhs, .d = d.int() };
+                },
+                else => return null,
+            };
+        }
+        return null;
+    }
+
     fn termTarget(w: *const Walker, t: Dispatch.Term) ?Target {
         switch (t) {
             .top => |x| return .{ .m = w.m, .d = x.decl.int() },
@@ -5251,6 +5526,8 @@ const Walker = struct {
         probes: usize,
         reqs: usize,
         env_calls: usize,
+        env_passes: usize,
+        lambda_needs: []const LambdaNeed,
         frames: usize,
         closures: usize,
         conds: usize,
@@ -5289,6 +5566,8 @@ const Walker = struct {
             .probes = w.probe_ok.items.len,
             .reqs = w.reqs.items.len,
             .env_calls = w.env_calls.items.len,
+            .env_passes = w.env_passes.items.len,
+            .lambda_needs = try w.a.dupe(LambdaNeed, w.lambda_needs.items),
             .frames = w.frames.items.len,
             .closures = n,
             .conds = w.conds.items.len,
@@ -5318,6 +5597,9 @@ const Walker = struct {
         w.probe_info.shrinkRetainingCapacity(s.probes);
         w.reqs.shrinkRetainingCapacity(s.reqs);
         w.env_calls.shrinkRetainingCapacity(s.env_calls);
+        w.env_passes.shrinkRetainingCapacity(s.env_passes);
+        w.lambda_needs.shrinkRetainingCapacity(s.lambda_needs.len);
+        @memcpy(w.lambda_needs.items, s.lambda_needs);
         w.frames.shrinkRetainingCapacity(s.frames);
         w.closures.shrinkRetainingCapacity(s.closures);
         w.conds.shrinkRetainingCapacity(s.conds);
@@ -5409,8 +5691,13 @@ const Walker = struct {
             if (w.frameClosure(w.frame)) |ci| return w.envCall(inst, ci, j, args, callee);
             w.fn_state.items[j].seen = false;
         }
-        // A function stored at a path of a parameter (§24.9): a slot.
-        if (try w.slotOf(f)) |j| return w.callbackCall(inst, j, args, callee);
+        // A function stored at a path of a parameter (§24.9): a slot, called
+        // in a lambda wherever the lambda runs, as a parameter is (§30.9).
+        if (try w.slotOf(f)) |j| {
+            if (w.frame == 0) return w.callbackCall(inst, j, args, callee);
+            if (w.frameClosure(w.frame)) |ci| return w.envCall(inst, ci, j, args, callee);
+            w.fn_state.items[j].seen = false;
+        }
         const classes = try w.classesOf(f);
         if (classes.len == 1) {
             switch (classes[0]) {
@@ -5472,7 +5759,11 @@ const Walker = struct {
             // carried binding cannot say. Dropped otherwise: a call of the
             // value then finds no class and is §6.1's, as it was before.
             if (r.prov.kind == .klass) {
-                if (r.prov.a < s.klasses.len and s.klasses[r.prov.a].binds.len == 0 and s.klasses[r.prov.a].cb_js.len == 0) {
+                // A capture that holds no cell (a number) is no capture.
+                const holds_nothing = r.prov.a < s.klasses.len and for (s.klasses[r.prov.a].binds) |b| {
+                    if (b.provs.len != 0) break false;
+                } else true;
+                if (holds_nothing and s.klasses[r.prov.a].cb_js.len == 0) {
                     const av = try w.carry(r.prov, .{ .inst = inst, .s = s, .avs = &.{}, .depth = 0 });
                     try out.appendSlice(w.a, try w.under(av, r.path));
                 }
@@ -5515,6 +5806,11 @@ const Walker = struct {
                 return w.unionOf(&.{ try w.shift(retained, .{ .kind = .markup_render, .arg = 0 }), try w.shift(events, .{ .kind = .markup_event, .arg = 0 }) });
             }
         }
+        // §30.9: a top-level value that names another (`list = Pcg.list`)
+        // is called as the function it names.
+        if (w.o.in.birs[t.m].decls[t.d].params == 0) if (w.aliasTarget(t)) |named| {
+            if (w.o.in.birs[named.m].decls[named.d].params == args.len) return w.callTarget(inst, named, args);
+        };
         const has_params = w.o.in.birs[t.m].decls[t.d].params > 0;
         // `Js.maySuspend f` reads the static bit the checker inferred for
         // `f` and nothing of its value: no use, and `f` stays in sight
@@ -5879,6 +6175,15 @@ const Walker = struct {
             // model was another send's, given up there (§23.6).
             try w.entryDemandDeep(tok, op, try w.pathName("model", x.path), if (x.deep) try w.flat(at) else at, &.{ rest.items, retained }, view_msgs, row, x.origin, x.xfail, x.deep);
         }
+        // §30.3, §30.9: the runtime calls `onUrlRequest` and `onUrlChange`
+        // with crossing arguments and sends what they return, so each must
+        // return owned — a message is owned at `update` (§23.6) only because
+        // every send was checked where it was made.
+        for ([_][]const u8{ "onUrlRequest", "onUrlChange" }) |field| {
+            const sym = w.o.in.interner.find(field) orelse continue;
+            if (!w.recordHasField(w.instType(arg), @backingInt(sym))) continue;
+            try w.entryTagger(inst, field, try w.fieldOf(app, field));
+        }
         // §20.3: view and subscriptions receive the model to read only.
         for ([_]struct { f: EntryFn, n: []const u8 }{ .{ .f = view, .n = "view" }, .{ .f = subs, .n = "subscriptions" } }) |x| {
             const vop = if (w.mode == .report) try std.fmt.allocPrint(arena, "entry {s}", .{try w.entryName(x.f, x.n)}) else "entry";
@@ -6228,23 +6533,40 @@ const Walker = struct {
     /// declaration becomes a call here, its arguments what the callee
     /// supplies the lambda (§18.9).
     fn applyEnvCalls(w: *Walker, ci: u32, s: ?*const Summary, jj: u32, ctx: InstCtx) Allocator.Error!void {
-        for (w.env_calls.items) |ec| {
+        // Appending below re-registers a call under an enclosing lambda,
+        // which is never `ci`: only the calls present now are this lambda's.
+        const n = w.env_calls.items.len;
+        for (0..n) |ei| {
+            const ec = w.env_calls.items[ei];
             if (ec.closure != ci) continue;
             const st = &w.fn_state.items[ec.j];
-            if (w.frame != 0) {
-                st.seen = false;
-                continue;
-            }
             const calls: Calls = if (s) |cs| (if (cs.funOf(jj)) |f| f.calls else .many) else .once;
             if (calls == .zero) continue;
             if (s) |cs| if (cs.funOf(jj)) |f| {
                 st.seen = st.seen and f.seen;
             };
-            st.calls = if (w.recursive or st.calls != .zero or calls == .many) .many else .once;
+            const many = ec.many or calls == .many;
+            // §30.9: checked inside another lambda, the call is that lambda's,
+            // made wherever it is checked in turn, in its vocabulary.
+            const outer: ?u32 = if (w.frame != 0) w.frameClosure(w.frame) else null;
+            if (w.frame != 0 and outer == null) {
+                st.seen = false;
+                continue;
+            }
+            const args = try w.a.alloc(AV, ec.args.len);
+            const probes = try w.a.alloc(u32, ec.args.len);
+            const more = try w.a.alloc([]const u32, ec.args.len);
+            const owneds = try w.a.alloc(bool, ec.args.len);
+            const takens = try w.a.alloc(bool, ec.args.len);
             for (ec.args, ec.probes, 0..) |av, probe, k| {
+                args[k] = &.{};
+                probes[k] = none;
+                more[k] = if (k < ec.more.len) ec.more[k] else &.{};
+                owneds[k] = k >= ec.owned.len or ec.owned[k];
+                takens[k] = k < ec.taken.len and ec.taken[k];
                 if (av.len == 0) continue;
-                var owned = true;
-                var taken = false;
+                var owned = owneds[k];
+                var taken = takens[k];
                 var from: std.ArrayList(u32) = .empty;
                 const cells = try w.fromLambda(av, ci, s, jj, ctx, &owned, &taken, &from);
                 // Disjoint against every argument but the lambda and the
@@ -6255,9 +6577,47 @@ const Walker = struct {
                     try others.append(w.a, x);
                 }
                 const probe2 = if (owned and cells.len > 0) try w.probeDemand(ctx.inst, cells, others.items) else none;
-                try w.supplies.append(w.a, .{ .fun = ec.j, .k = @intCast(k), .path = eps, .av = cells, .probe = probe, .probe2 = probe2, .owned = owned, .cond = try w.deepCond(cells), .taken = taken });
+                if (outer != null) {
+                    args[k] = cells;
+                    probes[k] = probe2;
+                    var all: std.ArrayList(u32) = .empty;
+                    try all.appendSlice(w.a, more[k]);
+                    if (probe != none) try all.append(w.a, probe);
+                    more[k] = all.items;
+                    owneds[k] = owned;
+                    takens[k] = taken;
+                    continue;
+                }
+                try w.supplies.append(w.a, .{ .fun = ec.j, .k = @intCast(k), .path = eps, .av = cells, .probe = probe, .probe2 = probe2, .more = more[k], .owned = owned, .cond = try w.deepCond(cells), .taken = taken });
             }
+            if (outer) |oc| {
+                try w.env_calls.append(w.a, .{ .closure = oc, .j = ec.j, .inst = ec.inst, .args = args, .probes = probes, .more = more, .owned = owneds, .taken = takens, .many = many });
+                continue;
+            }
+            st.calls = if (w.recursive or st.calls != .zero or many) .many else .once;
         }
+    }
+
+    /// §30.9: inside a lambda, `av` with each capture of a local of the
+    /// declaration's own frame replaced by what that frame holds there, so
+    /// that a supply read off at the declaration names its parameters
+    /// rather than `⊤`. Elsewhere `av` itself.
+    fn declView(w: *Walker, av: AV) Allocator.Error!AV {
+        if (w.frame == 0) return av;
+        var changed = false;
+        var out: std.ArrayList(Entry) = .empty;
+        for (av) |e| {
+            const c = w.cells.items[e.cell];
+            if (c.kind == .env and c.a < w.local_frame.len and w.local_frame[c.a] == 0) if (w.local_av[c.a]) |held| {
+                changed = true;
+                for (try w.projPath(held, c.path, null)) |h| {
+                    try out.append(w.a, .{ .path = try w.o.concat(e.path, h.path), .cell = h.cell, .approx = if (e.approx != 0) e.approx else h.approx });
+                }
+                continue;
+            };
+            try out.append(w.a, e);
+        }
+        return if (changed) w.norm(out.items) else av;
     }
 
     /// A value in lambda `ci`'s vocabulary, in the enclosing body's: its
@@ -6374,7 +6734,10 @@ const Walker = struct {
         };
         // A lambda called here makes its calls of the declaration's function
         // parameters here (§18.9).
-        if (callee.closure != none) try w.applyEnvCalls(callee.closure, null, 0, .{ .inst = inst, .s = s, .avs = avs, .depth = 0 });
+        if (callee.closure != none) {
+            try w.applyEnvCalls(callee.closure, null, 0, .{ .inst = inst, .s = s, .avs = avs, .depth = 0 });
+            try w.dischargeLambdaNeeds(callee.closure, calledParam, avs);
+        }
         // 2. What the callbacks escape, before the callee writes (§16.4 item 4).
         for (s.funs) |f| {
             if (!hasActual(s, args.len, f.param)) continue;
@@ -6634,14 +6997,20 @@ const Walker = struct {
                 // there (§24.9).
                 if (p.b == 1 and ctx.closure != none and w.closures.items[ctx.closure].carried) {
                     for (w.closures.items[ctx.closure].cb_avs) |cb| if (cb.j == p.a) {
-                        if (w.frame == 0) if (w.fnParamOf(cb.av) orelse try w.slotOf(cb.av)) |jj| {
+                        if (w.fnParamOf(cb.av) orelse try w.slotOf(cb.av)) |jj| {
                             return w.projPath(try w.single(.{ .kind = .cbres, .a = jj, .b = ctx.inst.int() }), p.path, null);
-                        };
+                        }
+                        // §30.9: a function value whose classes the walk
+                        // knows returns what they return, handed what the
+                        // checker cannot see: `⊤` for each argument.
+                        if (ctx.depth < inst_depth) if (try w.callThrough(cb.av, ctx)) |av| return w.projPath(av, p.path, null);
                     };
                     return w.single(.{ .kind = .top, .a = 0 });
                 }
                 // A lambda's class: the enclosing declaration's callback result (§18.9).
-                if (p.b == 1) return if (w.frame == 0) w.projPath(try w.single(.{ .kind = .cbres, .a = p.a, .b = ctx.inst.int() }), p.path, null) else w.single(.{ .kind = .top, .a = 0 });
+                // In a lambda, it stays that callback's result, read off as
+                // the enclosing lambda's own call of it (§30.9).
+                if (p.b == 1) return w.projPath(try w.single(.{ .kind = .cbres, .a = p.a, .b = ctx.inst.int() }), p.path, null);
                 if (!hasActual(ctx.s, ctx.avs.len, p.a)) return w.single(.{ .kind = .top, .a = 0 });
                 const whole = if (p.a == ctx.self_j) ctx.self_av else if (ctx.depth >= inst_depth) try w.single(.{ .kind = .top, .a = 0 }) else try w.instCb(p.a, ctx);
                 return w.projPath(whole, p.path, null);
@@ -6655,9 +7024,10 @@ const Walker = struct {
     /// iterated from nothing; one that does not settle adds `⊤`.
     fn instCb(w: *Walker, j: u32, ctx: InstCtx) Allocator.Error!AV {
         const actual = (try w.actualOf(ctx.s, ctx.avs, j)) orelse return w.single(.{ .kind = .top, .a = 0 });
-        if (w.fnParamOf(actual) orelse try w.slotOf(actual)) |jj| {
-            if (w.frame == 0) return w.single(.{ .kind = .cbres, .a = jj, .b = ctx.inst.int() });
-        }
+        // The declaration's own function parameter or slot: what it returns,
+        // in a lambda too, where the read-off names it `cb` of the enclosing
+        // declaration (§18.9, §30.9).
+        if (w.fnParamOf(actual) orelse try w.slotOf(actual)) |jj| return w.single(.{ .kind = .cbres, .a = jj, .b = ctx.inst.int() });
         const classes = try w.classesOf(actual);
         if (classes.len == 0) return w.unknownCb(j, ctx);
         if (try w.foldAccumulator(j, classes, ctx) != null) return w.instFold(j, classes, ctx);
@@ -6921,6 +7291,9 @@ const Walker = struct {
         for (try w.expand(av)) |e| {
             const k = w.cells.items[e.cell].kind;
             if (k == .closure or k == .func) continue;
+            // A send value is the runtime's function, never a list, and it
+            // holds nothing of the program's (§23.3, §30.9).
+            if (w.isSend(w.cells.items[e.cell])) continue;
             try base.append(w.a, .{ .path = eps, .cell = e.cell, .approx = e.approx });
         }
         return w.norm(base.items);
@@ -6935,6 +7308,7 @@ const Walker = struct {
         for (try w.expand(av)) |e| {
             const k = w.cells.items[e.cell].kind;
             if (k == .closure or k == .func) continue;
+            if (w.isSend(w.cells.items[e.cell])) continue;
             try base.append(w.a, .{ .path = eps, .cell = e.cell, .approx = e.approx });
         }
         try w.demandOn(.{
@@ -6969,6 +7343,68 @@ const Walker = struct {
             .fixed = .{ .verdict = verdict, .detail = detail, .assumed = assumed },
             .note = note,
         });
+    }
+
+    /// A `need` rejection (§16.2, §23.5) of a function value `name`: exact
+    /// when an exact provenance of what it returns fails, approximate when
+    /// only an approximate step or a list from JavaScript does (§28.5, §30.9).
+    fn needLine(w: *Walker, tok: u32, name: []const u8, detail: []const u8, approx: bool, assumed: bool) Allocator.Error!void {
+        try w.demands.append(w.a, .{
+            .kind = .value,
+            .token = tok,
+            .op = "value",
+            .base = name,
+            .base_local = none,
+            .base_path = eps,
+            .point = w.point,
+            .frame = w.frame,
+            .ctx = w.ctx,
+            .element = false,
+            .accept = .callback_param,
+            .holders = &.{},
+            .fixed = .{ .verdict = .{ .rejected = .need }, .detail = detail, .assumed = assumed },
+            .prelim = .{ .cause = .need, .detail = detail, .approx = approx },
+        });
+    }
+
+    /// Whether `returnsOwned` fails only through approximate entries: it
+    /// holds once they are left out (`ro_exact`).
+    fn ownedButApprox(w: *Walker, c: *const Summary, s: *const Summary, avs: []const AV, ictx: InstCtx, j: u32) Allocator.Error!bool {
+        const previous = w.ro_exact;
+        w.ro_exact = true;
+        defer w.ro_exact = previous;
+        return w.returnsOwned(c, s, avs, ictx, j, 0, none);
+    }
+
+    /// §30.3, §30.9: a function the runtime calls with crossing arguments
+    /// and sends what it returns — `onUrlRequest`, `onUrlChange` — must
+    /// return owned: what it makes, or what it is handed, which crosses.
+    fn entryTagger(w: *Walker, inst: Inst.Index, field: []const u8, av: AV) Allocator.Error!void {
+        if (av.len == 0) return;
+        const tok = w.token(inst);
+        const arena = w.o.out.allocator();
+        const name = try std.fmt.allocPrint(arena, "<{s}>", .{field});
+        const unknown = try std.fmt.allocPrint(arena, "the runtime sends what {s} returns, and the checker does not know which function it is, so not that it returns a list it owns", .{field});
+        const classes = try w.classesOf(av);
+        if (classes.len == 0) return w.needLine(tok, name, unknown, true, false);
+        for (classes) |cls| {
+            const c = (try w.classSummary(cls)) orelse return w.needLine(tok, name, unknown, true, false);
+            const ictx: InstCtx = .{ .inst = inst, .s = &runtime_row, .avs = &.{}, .closure = if (cls == .closure) cls.closure else none, .depth = 0 };
+            if (try w.returnsOwned(c, &runtime_row, &.{}, ictx, 0, 0, none)) continue;
+            const approx = try w.ownedButApprox(c, &runtime_row, &.{}, ictx, 0);
+            const shown = switch (cls) {
+                .closure => "<lambda>",
+                .func => |t| try w.qualified(t),
+                .send => "send",
+            };
+            return w.needLine(tok, shown, try std.fmt.allocPrint(arena, "the runtime sends what {s} returns, which may be a list it does not own (§30.3)", .{field}), approx, false);
+        }
+    }
+
+    fn recordHasField(w: *Walker, ty: ?Var, name: u32) bool {
+        const fields = w.recordFields(ty) orelse return false;
+        for (fields) |f| if (@backingInt(f.name) == name) return true;
+        return false;
     }
 
     fn firstUnseen(w: *Walker, t: Target) Allocator.Error!bool {
@@ -7058,17 +7494,31 @@ const Walker = struct {
 
     /// The declaration's function slot a value is (§24.9): a function stored
     /// at a path of one of its own parameters, numbered after them on first
-    /// sight. Only in the declaration's own frame, and not in a recursive
-    /// group, whose rounds would number the slots apart.
+    /// sight. Not in a recursive group, whose rounds would number the slots
+    /// apart. Inside a lambda (§30.9) it is a capture of the parameter, at
+    /// the path: the slot is the declaration's, called or handed on wherever
+    /// the lambda runs.
     fn slotOf(w: *Walker, av: AV) Allocator.Error!?u32 {
-        if (w.frame != 0 or w.recursive) return null;
+        if (w.recursive) return null;
         var found: ?Cell = null;
         for (av) |e| {
             if (w.o.firstStep(e.path)) |s| if (s.kind == .env) continue;
             if (e.path != eps or found != null) return null;
             found = w.cells.items[e.cell];
         }
-        const c = found orelse return null;
+        var c = found orelse return null;
+        if (w.frame != 0) {
+            // A capture of a local of the declaration's own frame that holds
+            // exactly one of its parameters.
+            if (c.kind != .env or c.a >= w.local_frame.len or w.local_frame[c.a] != 0) return null;
+            const held = w.local_av[c.a] orelse return null;
+            if (held.len != 1 or held[0].path != eps) return null;
+            const hc = w.cells.items[held[0].cell];
+            if (hc.kind != .param or hc.b != 0) return null;
+            const path = try w.o.concat(hc.path, c.path);
+            c = hc;
+            c.path = path;
+        }
         if (c.kind != .param or c.b != 0 or c.path == eps) return null;
         const pi = w.paramIndex(c, 0, w.params) orelse return null;
         for (w.slot_keys.items, 0..) |key, k| if (key[0] == pi and key[1] == c.path) return @intCast(w.params.len + k);
@@ -7099,7 +7549,13 @@ const Walker = struct {
         }
         const cbs = try w.a.alloc(Closure.SynCall, k.cb_js.len);
         for (cbs, k.cb_js) |*c, j| {
-            c.* = .{ .j = j, .av = try w.instProv(.{ .kind = .param, .a = j }, inner) };
+            // A function slot (§30.9): the function at its path of the argument.
+            const av = if (j >= ctx.s.params) blk: {
+                const k_slot = j - ctx.s.params;
+                if (k_slot >= ctx.s.slots.len or ctx.s.slots[k_slot][0] >= ctx.avs.len) break :blk try w.single(.{ .kind = .top, .a = 0 });
+                break :blk try w.projPath(ctx.avs[ctx.s.slots[k_slot][0]], ctx.s.slots[k_slot][1], null);
+            } else try w.instProv(.{ .kind = .param, .a = j }, inner);
+            c.* = .{ .j = j, .av = av };
             if (ctx.effects) try w.sight(c.av, .{ .pending = "a function value a callee returned calls it" }, w.token(ctx.inst));
         }
         try w.closures.append(w.a, .{ .captures = &.{}, .class = k.sum, .binds = binds, .cb_avs = cbs, .carried = true });
@@ -7113,8 +7569,33 @@ const Walker = struct {
     /// its captures holds a function value, which has no provenance.
     fn carried(w: *Walker, ci: u32, params: []const Inst.Index, fresh: []const u32) Allocator.Error!?Carried {
         const cl = w.closures.items[ci];
-        if (cl.carried) return null;
+        // §30.9: a lambda a callee's result carried here is carried on, its
+        // bindings read off in this declaration's vocabulary, when it calls
+        // nothing the caller passed.
+        if (cl.carried) {
+            if (cl.cb_avs.len != 0) return null;
+            const ckeep = w.o.keep.allocator();
+            var cbinds: std.ArrayList(Carried.Bind) = .empty;
+            for (cl.binds) |b| {
+                var provs: std.ArrayList(ResEntry) = .empty;
+                for (try w.expand(b.av)) |e| {
+                    const kind = w.cells.items[e.cell].kind;
+                    if (kind == .closure or kind == .func) return null;
+                    var prov = (try w.provOf(e.cell, 0, params, fresh)) orelse return null;
+                    prov.taken = false;
+                    try provs.append(ckeep, .{ .path = e.path, .prov = prov, .approx = e.approx != 0 });
+                }
+                try cbinds.append(ckeep, .{ .local = b.local, .path = b.path, .provs = provs.items });
+            }
+            const csum = cl.class orelse return null;
+            // Its class may be a block's, read for one walk: the summary
+            // that carries it on keeps a copy of its own.
+            return .{ .sum = try w.o.cloneSummary(csum), .binds = cbinds.items };
+        }
         const cls = cl.class orelse return null;
+        // §30.9: what a callee relies on of its parameters is decided where
+        // it is handed on or called, which a caller of the result is not.
+        for (w.lambda_needs.items) |n| if (n.closure == ci) return null;
         if (cls.limit != .none or cls.once or cls.writesAny() or cls.xreq.len != 0 or cl.env_escapes.len != 0 or cl.env_writes.len != 0) return null;
         for (cls.uses) |u| if (u.bits & (bit_e | bit_j | bit_w) != 0) return null;
         const keep = w.o.keep.allocator();
@@ -7133,12 +7614,33 @@ const Walker = struct {
         }
         var cb_js: std.ArrayList(u32) = .empty;
         for (w.env_calls.items) |ec| {
-            if (ec.closure != ci or ec.j >= params.len) continue;
+            if (ec.closure != ci or ec.j >= params.len + w.slot_keys.items.len) continue;
             if (std.mem.indexOfScalar(u32, cb_js.items, ec.j) == null) try cb_js.append(keep, ec.j);
+        }
+        for (w.env_passes.items) |ep| {
+            if (ep[0] != ci or ep[1] >= params.len + w.slot_keys.items.len) continue;
+            if (std.mem.indexOfScalar(u32, cb_js.items, ep[1]) == null) try cb_js.append(keep, ep[1]);
         }
         const sum = try keep.create(Summary);
         sum.* = cls.*;
         return .{ .sum = sum, .binds = binds.items, .cb_js = cb_js.items };
+    }
+
+    /// §30.9: what calling the function value `f` returns when what it is
+    /// handed is not known — each of its classes' `res`, every parameter
+    /// `⊤` — or null when a part of `f` has no class.
+    fn callThrough(w: *Walker, f: AV, ctx: InstCtx) Allocator.Error!?AV {
+        const classes = try w.classesOf(f);
+        if (classes.len == 0) return null;
+        var parts: std.ArrayList(AV) = .empty;
+        for (classes) |cls| {
+            const c = (try w.classSummary(cls)) orelse return null;
+            if (c.limit != .none) return null;
+            const args = try w.a.alloc(AV, c.params);
+            for (args) |*x| x.* = try w.single(.{ .kind = .top, .a = 0 });
+            try parts.append(w.a, try w.instRes(c, .{ .inst = ctx.inst, .s = c, .avs = args, .closure = if (cls == .closure) cls.closure else none, .depth = ctx.depth + 1, .conds = false, .effects = ctx.effects }));
+        }
+        return try w.unionOf(parts.items);
     }
 
     /// What a carried lambda's capture `p` holds (§24.9).
@@ -7160,14 +7662,10 @@ const Walker = struct {
         // A function slot (§24.9) has no argument of its own: what the
         // checks below read off an argument's text or type, they skip.
         if (j >= args.len or j >= s.params) return w.checkSlot(inst, callee, args, avs, j, ff, actual);
-        // The caller's own function parameter, passed on.
-        if (w.fnParamOf(actual)) |jj| {
-            if (w.frame != 0) {
-                w.fn_state.items[jj].seen = false;
-                return;
-            }
-            return w.passOn(inst, s, avs, j, ff, jj);
-        }
+        // The caller's own function parameter or slot, passed on — inside a
+        // lambda too, where the callee's facts are the declaration's
+        // wherever the lambda runs (§30.9).
+        if (w.fnParamOf(actual) orelse try w.slotOf(actual)) |jj| return w.passOn(inst, s, avs, j, ff, jj);
         const ictx: InstCtx = .{ .inst = inst, .s = s, .avs = avs, .closure = callee.closure, .depth = 0 };
         const classes = try w.classesOf(actual);
         try w.checkClasses(inst, callee, args, avs, j, ff, actual, ictx, classes);
@@ -7181,7 +7679,7 @@ const Walker = struct {
     fn checkSlot(w: *Walker, inst: Inst.Index, slot_callee: Callee, args: []const Inst.Index, avs: []const AV, j: u32, ff: FunFacts, actual: AV) Allocator.Error!void {
         const s = slot_callee.sum;
         const callee = slot_callee.name;
-        if (w.frame == 0) if (w.fnParamOf(actual) orelse try w.slotOf(actual)) |jj| return w.passOn(inst, s, avs, j, ff, jj);
+        if (w.fnParamOf(actual) orelse try w.slotOf(actual)) |jj| return w.passOn(inst, s, avs, j, ff, jj);
         if (!ff.need) return;
         const ictx: InstCtx = .{ .inst = inst, .s = s, .avs = avs, .depth = 0 };
         const classes = try w.classesOf(actual);
@@ -7205,7 +7703,7 @@ const Walker = struct {
                 .func => |t| try w.qualified(t),
                 .send => "send",
             };
-            try w.valueLine(w.token(inst), name, .{ .rejected = .need }, try std.fmt.allocPrint(w.o.out.allocator(), "{s} edits what it returns, which may be a list it does not own", .{callee}), "", false);
+            try w.needLine(w.token(inst), name, try std.fmt.allocPrint(w.o.out.allocator(), "{s} edits what it returns, which may be a list it does not own", .{callee}), try w.ownedButApprox(c, s, avs, ictx, j), false);
         }
     }
 
@@ -7243,20 +7741,55 @@ const Walker = struct {
             // §23.3: a function parameter handed on to a send position.
             if (ff.send != none and st.send == none) st.send = ff.send;
             st.calls = @fromBackingInt(@min(2, @as(u8, @backingInt(st.calls)) + @as(u8, @backingInt(ff.calls))));
-            if (w.recursive and ff.calls != .zero) st.calls = .many;
+            // In a lambda, the callee calls it each time the lambda runs.
+            if ((w.recursive or w.frame != 0) and ff.calls != .zero) st.calls = .many;
+            // Each lambda the pass is inside calls it, through the callee.
+            if (ff.calls != .zero) {
+                var f = w.frame;
+                while (f != 0 and f != none) : (f = w.frames.items[f].parent) {
+                    if (w.frameClosure(f)) |ci| try w.env_passes.append(w.a, .{ ci, jj });
+                }
+            }
             st.need = st.need or ff.need;
             st.seen = st.seen and ff.seen;
             const ictx: InstCtx = .{ .inst = inst, .s = s, .avs = avs, .depth = 0 };
             for (s.supply) |e| {
                 if (e.fun != j) continue;
-                const cells = try w.instProv(e.prov, ictx);
+                // In a lambda, a capture of the declaration's own frame is
+                // what that frame holds (§30.9), so its parameters stay its
+                // own — borrowed: when the lambda runs, the declaration may
+                // still read them, which a probe here cannot see.
+                var own: std.ArrayList(Entry) = .empty;
+                var captured: std.ArrayList(Entry) = .empty;
+                for (try w.instProv(e.prov, ictx)) |x| {
+                    const xc = w.cells.items[x.cell];
+                    const of_decl = w.frame != 0 and xc.kind == .env and xc.a < w.local_frame.len and w.local_frame[xc.a] == 0 and w.local_av[xc.a] != null;
+                    try (if (of_decl) &captured else &own).append(w.a, x);
+                }
+                if (captured.items.len != 0) {
+                    const named = try w.declView(captured.items);
+                    try w.supplies.append(w.a, .{ .fun = jj, .k = e.k, .path = e.path, .av = named, .probe = none, .owned = false, .approx = true, .cond = try w.instXSum(e.xc, ictx), .taken = e.prov.taken });
+                }
+                const cells: AV = own.items;
                 // Disjoint against every argument but the function and the
                 // one the supplied cells come from.
                 const from: u32 = if (e.prov.kind == .param) e.prov.a else none;
                 var others: std.ArrayList(AV) = .empty;
                 for (avs, 0..) |x, i| if (i != j and i != from) try others.append(w.a, x);
+                const cond = try w.instXSum(e.xc, ictx);
+                // §30.9: each cell supplied is owned or not on its own, so a
+                // cell made during the call is not borrowed because another
+                // supplied beside it is.
+                if (cells.len > 1 and cells.len <= split_cap) {
+                    for (cells) |x| {
+                        const one = try w.a.dupe(Entry, &.{x});
+                        const probe = if (e.owned) try w.probeDemand(inst, one, others.items) else none;
+                        try w.supplies.append(w.a, .{ .fun = jj, .k = e.k, .path = e.path, .av = one, .probe = probe, .owned = e.owned, .approx = e.approx, .cond = cond, .taken = e.prov.taken });
+                    }
+                    continue;
+                }
                 const probe = if (e.owned and cells.len > 0) try w.probeDemand(inst, cells, others.items) else none;
-                try w.supplies.append(w.a, .{ .fun = jj, .k = e.k, .path = e.path, .av = cells, .probe = probe, .owned = e.owned, .approx = e.approx, .cond = try w.instXSum(e.xc, ictx), .taken = e.prov.taken });
+                try w.supplies.append(w.a, .{ .fun = jj, .k = e.k, .path = e.path, .av = cells, .probe = probe, .owned = e.owned, .approx = e.approx, .cond = cond, .taken = e.prov.taken });
             }
         }
     }
@@ -7324,7 +7857,10 @@ const Walker = struct {
                 .func => |t| try w.qualified(t),
                 .send => "send",
             };
-            if (cls == .closure) try w.applyEnvCalls(cls.closure, s, j, ictx);
+            if (cls == .closure) {
+                try w.applyEnvCalls(cls.closure, s, j, ictx);
+                try w.dischargeLambdaNeeds(cls.closure, suppliedParam, SupplyCtx{ .s = s, .j = j, .ictx = ictx });
+            }
             // §18.8: a once closure goes only where it runs at most once, and
             // handing it on is a call of it.
             if (cls == .closure and c.once and ff.seen) {
@@ -7339,7 +7875,7 @@ const Walker = struct {
                 // empty at callers, and all other results must be owned.
                 if (ff.need) {
                     if (!try w.taggerReturnsOwned(c, s, avs, j, cls, ictx))
-                        try w.valueLine(tok, name, .{ .rejected = .need }, try std.fmt.allocPrint(arena, "{s} edits what it returns, which may be a list it does not own", .{callee.name}), "", w.frame != 0)
+                        try w.needLine(tok, name, try std.fmt.allocPrint(arena, "{s} edits what it returns, which may be a list it does not own", .{callee.name}), try w.ownedButApprox(c, s, avs, ictx, j), w.frame != 0)
                     else
                         try w.returnedParamDemands(inst, callee, args, avs, c, j, eps, true, 0);
                 }
@@ -7482,11 +8018,11 @@ const Walker = struct {
                 }),
                 .closure => |ci| {
                     try w.closures.items[ci].consumed.append(w.a, .{ .kind = .supply, .bad = bad, .bad_approx = bad_approx, .bad_cause = bad_cause, .name = callee.name });
-                    if (need_bad) try w.valueLine(tok, name, .{ .rejected = .need }, try std.fmt.allocPrint(arena, "{s} edits what it returns, which may be a list it does not own", .{callee.name}), "", false);
+                    if (need_bad) try w.needLine(tok, name, try std.fmt.allocPrint(arena, "{s} edits what it returns, which may be a list it does not own", .{callee.name}), try w.ownedButApprox(c, s, avs, ictx, j), false);
                 },
                 .func => {
                     if (need_bad) {
-                        try w.valueLine(tok, name, .{ .rejected = .need }, try std.fmt.allocPrint(arena, "{s} edits what it returns, which may be a list it does not own", .{callee.name}), "", false);
+                        try w.needLine(tok, name, try std.fmt.allocPrint(arena, "{s} edits what it returns, which may be a list it does not own", .{callee.name}), try w.ownedButApprox(c, s, avs, ictx, j), false);
                     } else if (writes) {
                         var first: ?usize = null;
                         for (bad, 0..) |x, k| if (x != null and first == null) {
@@ -7711,12 +8247,187 @@ const Walker = struct {
     fn provOwned(w: *Walker, p: Prov, s: *const Summary, avs: []const AV, ictx: InstCtx, guard: u32, depth: u32, written: u32) Allocator.Error!bool {
         if (p.kind != .cb) return true;
         if (p.a == guard) return true;
-        if (depth >= inst_depth) return false;
-        const classes = try w.classesOf((try w.actualOf(s, avs, p.a)) orelse return false);
-        if (classes.len == 0) return false;
+        // A function the checker cannot place is its limit, not sharing the
+        // text shows: approximate (§24.9's `NeedUnknown`, §30.9).
+        if (depth >= inst_depth) return w.ro_exact;
+        const actual = (try w.actualOf(s, avs, p.a)) orelse return w.ro_exact;
+        // §30.9: the declaration's own function parameter or slot: what it
+        // returns is relied on, so its callers must hand one that returns
+        // owned (`need`).
+        if (w.fnParamOf(actual) orelse try w.slotOf(actual)) |jj| {
+            if (!w.ro_exact) w.fn_state.items[jj].need = true;
+            return true;
+        }
+        // The enclosing lambda's own parameter: decided where it is handed
+        // on or called.
+        if (try w.deferLambdaNeed(actual, s, p.a, avs, ictx.inst)) return true;
+        const classes = try w.classesOf(actual);
+        if (classes.len == 0) return w.ro_exact;
         for (classes) |cls| {
-            const c = (try w.classSummary(cls)) orelse return false;
+            const c = (try w.classSummary(cls)) orelse return w.ro_exact;
+            const saved = w.ro_closure;
+            const saved_within = w.ro_within;
+            w.ro_closure = if (cls == .closure) cls.closure else none;
+            w.ro_within = p.path;
+            defer {
+                w.ro_closure = saved;
+                w.ro_within = saved_within;
+            }
             if (!try w.returnsOwned(c, s, avs, ictx, p.a, depth + 1, written)) return false;
+        }
+        return true;
+    }
+
+    /// §30.9: when `actual` is, at a path, a parameter of a lambda whose body
+    /// the walk is in, record that callee `s` relies on what it returns as
+    /// its function parameter or slot `j`, and say so.
+    fn deferLambdaNeed(w: *Walker, actual: AV, s: *const Summary, j: u32, avs: []const AV, inst: Inst.Index) Allocator.Error!bool {
+        if (actual.len != 1 or actual[0].path != eps) return false;
+        const c = w.cells.items[try w.takenBase(actual[0].cell)];
+        const lp = w.lambdaParam(.{ .kind = .param, .a = c.a, .b = c.b }) orelse return false;
+        if (c.kind != .param or c.b != 1) return false;
+        if (!w.inFrameOf(w.closures.items[lp[0]].frame)) return false;
+        if (w.ro_exact) return true;
+        for (w.lambda_needs.items) |n| {
+            if (n.closure == lp[0] and n.k == lp[1] and n.path == c.path and n.inst == inst and n.j == j) return true;
+        }
+        try w.lambda_needs.append(w.a, .{
+            .closure = lp[0],
+            .k = lp[1],
+            .path = c.path,
+            .s = s,
+            .j = j,
+            .avs = avs,
+            .inst = inst,
+            .callee = if (w.mode == .report) try w.callName(inst) else "",
+            .point = w.point,
+            .frame = w.frame,
+            .ctx = w.ctx,
+        });
+        return true;
+    }
+
+    /// §30.9: lambda `ci`, handed on or called, where its parameter `k` is
+    /// `param(k)`: every obligation on it is decided — the function there
+    /// returns owned, or it is the declaration's own, which takes the
+    /// callee's `need`, or another enclosing lambda's, which waits again.
+    fn dischargeLambdaNeeds(w: *Walker, ci: u32, comptime param: anytype, ctx: anytype) Allocator.Error!void {
+        var i: usize = 0;
+        while (i < w.lambda_needs.items.len) : (i += 1) {
+            const n = w.lambda_needs.items[i];
+            if (n.closure != ci or n.failed) continue;
+            w.lambda_needs.items[i].discharges += 1;
+            const actual = try w.projPath(try param(w, n.k, ctx), n.path, null);
+            if (w.fnParamOf(actual) orelse try w.slotOf(actual)) |jj| {
+                w.fn_state.items[jj].need = true;
+                w.fn_state.items[jj].seen = false;
+                continue;
+            }
+            if (try w.deferLambdaNeed(actual, n.s, n.j, n.avs, n.inst)) continue;
+            const ictx: InstCtx = .{ .inst = n.inst, .s = n.s, .avs = n.avs, .depth = 0 };
+            const classes = try w.classesOf(actual);
+            var ok = classes.len != 0;
+            var approx = true;
+            for (classes) |cls| {
+                const c = (try w.classSummary(cls)) orelse {
+                    ok = false;
+                    break;
+                };
+                const saved = w.ro_closure;
+                w.ro_closure = if (cls == .closure) cls.closure else none;
+                defer w.ro_closure = saved;
+                if (try w.returnsOwned(c, n.s, n.avs, ictx, n.j, 0, none)) continue;
+                ok = false;
+                approx = try w.ownedButApprox(c, n.s, n.avs, ictx, n.j);
+                break;
+            }
+            if (ok) continue;
+            w.lambda_needs.items[i].failed = true;
+            try w.needAt(n, approx);
+        }
+    }
+
+    /// The line of a lambda's obligation that failed (§30.9), where the
+    /// callee relied on it.
+    fn needAt(w: *Walker, n: LambdaNeed, approx: bool) Allocator.Error!void {
+        const detail = try std.fmt.allocPrint(w.o.out.allocator(), "{s} relies on what the function it is handed returns, and the function this lambda is handed may return a list it does not own (§30.9)", .{n.callee});
+        try w.demands.append(w.a, .{
+            .kind = .value,
+            .token = w.token(n.inst),
+            .op = "value",
+            .base = "<function value>",
+            .base_local = none,
+            .base_path = eps,
+            .point = n.point,
+            .frame = n.frame,
+            .ctx = n.ctx,
+            .element = false,
+            .accept = .callback_param,
+            .holders = &.{},
+            .fixed = .{ .verdict = .{ .rejected = .need }, .detail = detail },
+            .prelim = .{ .cause = .need, .detail = detail, .approx = approx },
+        });
+    }
+
+    /// §30.9: what a callee supplies its function parameter `j`'s parameter
+    /// `k`, instantiated at the call.
+    const SupplyCtx = struct { s: *const Summary, j: u32, ictx: InstCtx };
+
+    fn suppliedParam(w: *Walker, k: u32, ctx: SupplyCtx) Allocator.Error!AV {
+        var parts: std.ArrayList(AV) = .empty;
+        for (ctx.s.supply) |e| {
+            if (e.fun != ctx.j or e.k != k) continue;
+            try parts.append(w.a, try w.under(try w.instProv(e.prov, ctx.ictx), e.path));
+        }
+        return w.unionOf(parts.items);
+    }
+
+    /// §30.9: what a lambda called here is handed as its parameter `k`.
+    fn calledParam(w: *Walker, k: u32, avs: []const AV) Allocator.Error!AV {
+        _ = w;
+        return if (k < avs.len) avs[k] else &.{};
+    }
+
+    /// §30.9: the obligations left on lambdas handed where the checker does
+    /// not see what they are handed — kept by JavaScript, stored, returned:
+    /// nothing shows the function their parameter holds returns owned.
+    fn undischargedNeeds(w: *Walker) Allocator.Error!void {
+        for (w.lambda_needs.items) |*n| {
+            if (n.failed) continue;
+            // Every consumer must have decided it: one that cannot (a
+            // runtime's entry, a callee with no summary, a place out of
+            // sight) leaves it undecided, and so does a lambda never handed
+            // on or called where the walk sees it.
+            var decided: u32 = 0;
+            var bad = n.discharges == 0;
+            for (w.closures.items[n.closure].consumed.items) |c| switch (c.kind) {
+                .pending, .no_summary => bad = true,
+                .supply, .local => decided += 1,
+            };
+            if (decided > n.discharges) bad = true;
+            if (!bad) continue;
+            n.failed = true;
+            try w.needAt(n.*, true);
+        }
+    }
+
+    /// §30.9: whether what a carried lambda's call returns, at this call, is
+    /// all made during it: cells nothing else holds, or none.
+    fn carriedCallOwned(w: *Walker, p: Prov, ictx: InstCtx) Allocator.Error!bool {
+        const ci = w.ro_closure;
+        if (ci == none or !w.closures.items[ci].carried) return false;
+        var inner = ictx;
+        inner.closure = ci;
+        if (debug_own) {
+            std.debug.print("CCO cb_avs:", .{});
+            for (w.closures.items[ci].cb_avs) |cb| std.debug.print(" j={d} len={d}", .{ cb.j, cb.av.len });
+            std.debug.print("\n", .{});
+        }
+        for (try w.expand(try w.instProv(p, inner))) |e| {
+            const c = w.cells.items[e.cell];
+            if (debug_own) std.debug.print("CCO cell kind={s} b={d}\n", .{ @tagName(c.kind), c.b });
+            if (c.kind == .closure or c.kind == .func) continue;
+            if (c.kind != .result or c.b == 0 or try w.isEscaped(e.cell)) return false;
         }
         return true;
     }
@@ -7785,11 +8496,22 @@ const Walker = struct {
         // A coarsened or pessimistic callee's supply rows no longer say
         // where each parameter is supplied: nothing it hands back is owned.
         if (s.coarse or s.limit != .none) return false;
+        // Read once: a nested `provOwned` sets its own.
+        const within = w.ro_within;
+        w.ro_within = eps;
+        defer w.ro_within = within;
+        if (debug_own) {
+            std.debug.print("RO depth={d} j={d} within={s} closure={d} res:\n", .{ depth, j, try w.o.pathText(within), w.ro_closure });
+            for (c.res) |r| std.debug.print("   {s} {s}\n", .{ try w.o.pathText(r.path), try w.o.provText(r.prov) });
+        }
         for (c.res) |r| {
             if (written != none and !w.o.isPrefix(r.path, written)) continue;
+            if (within != eps and !w.o.overlap(r.path, within)) continue;
             // A list from JavaScript is a limit of the analysis, not sharing
             // the text shows (§8.3, `unknown`).
-            if (w.ro_exact and (r.approx or r.prov.kind == .top)) continue;
+            // Nor is what another function returns, which the checker does
+            // not follow (§30.9: a limit, approximate).
+            if (w.ro_exact and (r.approx or r.prov.kind == .top or r.prov.kind == .cb)) continue;
             switch (r.prov.kind) {
                 .fresh => {},
                 .param => {
@@ -7798,7 +8520,12 @@ const Walker = struct {
                         if (e.fun != j or e.k != r.prov.a or !w.o.overlap(e.path, r.prov.path)) continue;
                         // §28.5: an approximate supply is a limit, not proven sharing.
                         if (w.ro_exact and e.approx) continue;
-                        if (!e.owned) return false;
+                        // §30.9: a borrowed supply of the callee's parameter
+                        // that holds nothing at this call hands nothing.
+                        if (!e.owned) {
+                            if (e.prov.kind == .param and (try w.instProv(e.prov, ictx)).len == 0) continue;
+                            return false;
+                        }
                         // A taken item is a conditional loan. Returning it
                         // onto a feedback edge retains its source condition.
                         if (e.prov.taken) switch (try w.rely(try w.instXSum(e.xc, ictx), w.frame)) {
@@ -7809,6 +8536,9 @@ const Walker = struct {
                         if (!try w.provOwned(e.prov, s, avs, ictx, j, depth, none)) return false;
                     }
                 },
+                // §30.9: a carried lambda's call of a function the caller
+                // passed, judged by what it returns at this call.
+                .cb => if (r.prov.b != 1 or !try w.carriedCallOwned(r.prov, ictx)) return false,
                 else => return false,
             }
             // One provenance at two distinct result paths is not owned.
@@ -8298,6 +9028,20 @@ const Walker = struct {
             try w.demands.append(w.a, rec);
             return;
         }
+        if (approx_hit != 0 and debug_own) {
+            std.debug.print("DEBUG demand cells:\n", .{});
+            for (cells.items) |e| {
+                const c = w.cells.items[e.cell];
+                std.debug.print("  cell {d} kind={s} a={d} b={d} path={s} approx={d}\n", .{ e.cell, @tagName(c.kind), c.a, c.b, try w.o.pathText(c.path), e.approx });
+            }
+            for (spec.others, 0..) |av, oi| {
+                std.debug.print(" other {d}:\n", .{oi});
+                for (av) |e| {
+                    const c = w.cells.items[e.cell];
+                    std.debug.print("  at {s}: cell {d} kind={s} a={d} b={d} path={s} approx={d}\n", .{ try w.o.pathText(e.path), e.cell, @tagName(c.kind), c.a, c.b, try w.o.pathText(c.path), e.approx });
+                }
+            }
+        }
         if (approx_hit != 0) {
             rec.via = w.token(@fromBackingInt(@intCast(approx_hit - 1)));
             const cp = w.pos(rec.via);
@@ -8507,6 +9251,7 @@ const Walker = struct {
     /// known (§16.5).
     fn resolve(w: *Walker, out_list: *std.ArrayList(Demand)) Allocator.Error!void {
         const out = w.o.out.allocator();
+        try w.undischargedNeeds();
         // The uses by local, so that a holder's later uses are found
         // without a scan of every use (§18.11).
         const n = w.local_av.len;
@@ -8991,8 +9736,14 @@ const Walker = struct {
             }
             var atoms: u32 = 0;
             for (w.supplies.items) |sr| {
-                const owned_probe = sr.owned and (sr.probe == none or w.probe_ok.items[sr.probe]) and (sr.probe2 == none or w.probe_ok.items[sr.probe2]);
-                const probe_approx = if (!sr.owned) sr.approx else (sr.probe != none or sr.probe2 != none) and (sr.probe == none or w.probe_approx.items[sr.probe]) and (sr.probe2 == none or w.probe_approx.items[sr.probe2]);
+                var more_ok = true;
+                var more_approx = true;
+                for (sr.more) |p| if (p != none) {
+                    more_ok = more_ok and w.probe_ok.items[p];
+                    more_approx = more_approx and w.probe_approx.items[p];
+                };
+                const owned_probe = sr.owned and more_ok and (sr.probe == none or w.probe_ok.items[sr.probe]) and (sr.probe2 == none or w.probe_ok.items[sr.probe2]);
+                const probe_approx = if (!sr.owned) sr.approx else (sr.probe != none or sr.probe2 != none or sr.more.len != 0) and more_approx and (sr.probe == none or w.probe_approx.items[sr.probe]) and (sr.probe2 == none or w.probe_approx.items[sr.probe2]);
                 const xc = try w.xsumOf(sr.cond, frame, params, none);
                 for (try w.expand(sr.av)) |e| {
                     var prov = (try w.provOf(e.cell, frame, params, &.{})) orelse continue;

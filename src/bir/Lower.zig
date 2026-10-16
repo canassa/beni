@@ -2025,6 +2025,18 @@ fn lowerSignature(l: *Lower, node: NodeIndex) Allocator.Error!Index {
     return t;
 }
 
+/// §30.9: whether the lowered type `inst` is `List` of a function written
+/// out — `List (⊤ → a)` — whose words describe each element.
+fn isListOfFunctions(l: *Lower, inst: u32) bool {
+    const tags = l.insts.items(.tag);
+    if (tags[inst] != .type_app) return false;
+    const data = l.insts.items(.data)[inst];
+    const head = data.lhs;
+    if (!std.mem.eql(u8, l.tokenText(l.insts.items(.main_token)[head]), "List")) return false;
+    const args = l.extra.items[l.extra.items[data.rhs]..l.extra.items[data.rhs + 1]];
+    return args.len == 1 and tags[args[0]] == .type_fn;
+}
+
 fn reportOwn(l: *Lower, token: TokenIndex, reading: Diagnostics.Item.Markup) Allocator.Error!void {
     try l.diagnostics.append(l.gpa, .{ .code = .misplaced_ownership_word, .start = l.starts[token], .end = l.tokenEnd(token), .markup = reading });
 }
@@ -2058,10 +2070,12 @@ fn recordOwnWords(l: *Lower, t: Index) Allocator.Error!void {
         defer i = j;
         // Whether the parameter is a function written out (`sync` included,
         // which lowers to the arrow it marks).
+        // §30.9: a `List` of functions written out takes the words of a
+        // function, which describe each of its elements.
         const param_fn = slot != Bir.own_result and is_fn_type and blk: {
             const at = l.insts.items(.data)[t.int()].lhs;
             const inst = l.extra.items[l.extra.items[at] + slot];
-            break :blk l.insts.items(.tag)[inst] == .type_fn;
+            break :blk l.insts.items(.tag)[inst] == .type_fn or l.isListOfFunctions(inst);
         };
         var bits: u32 = 0;
         var firsts: [16]TokenIndex = undefined;

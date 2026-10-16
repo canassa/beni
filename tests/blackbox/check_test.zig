@@ -1021,6 +1021,10 @@ test "ownership words: flipping the browser platforms' words is noticed" {
     try expectFlips("ownership/WordsBrowser.beni", &.{"--platform=browser-direct"});
 }
 
+test "ownership words: flipping Task's words is noticed" {
+    try expectFlips("ownership/TaskWords.beni", &.{"--platform=browser-direct"});
+}
+
 // ---------------------------------------------------------------------------
 // The bodies the words describe (ownership-checker.md §24.6, the owner's
 // guard of 2026-10-12)
@@ -1234,6 +1238,50 @@ test "ownership everywhere: its cache entries are kept in a subdirectory of thei
     const blocked = try w.runWith(&.{ "check", "--platform=node", "--ownership-everywhere", "--cache-dir=d", "Main.beni" }, .{ .raw_diagnostics = true });
     try testing.expectEqual(@as(u8, 2), blocked.exit_code);
     try testing.expect(std.mem.startsWith(u8, blocked.stderr, "beni: cannot write 'd'"));
+}
+
+/// §30.5, §30.7 (O1): under the flag, the modules of core or of a platform
+/// hold no rejected and no pending line — `browser-tea`'s `Tea.application`
+/// held two before O1, its taggers forwarded inside a lambda (§30.9).
+fn expectPlatformClean(argv: []const []const u8) !void {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const r = try w.runWith(argv, .{ .raw_diagnostics = true, .cwd = .inherit });
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    var totals: ?[]const u8 = null;
+    var lines = std.mem.splitScalar(u8, r.stdout, '\n');
+    while (lines.next()) |line| if (std.mem.startsWith(u8, line, "total ")) {
+        totals = line;
+    };
+    const line = totals orelse return error.NoTotals;
+    if (!std.mem.endsWith(u8, line, "pending 0, rejected 0")) {
+        std.debug.print("{s}\n", .{r.stdout});
+        return error.PlatformHasOwnershipErrors;
+    }
+}
+
+test "ownership everywhere: core holds no rejected or pending line" {
+    try expectPlatformClean(&.{ "dump", "--stage=ownership", "--ownership-totals", "--ownership-everywhere", "core" });
+}
+
+test "ownership everywhere: the node platform holds no rejected or pending line" {
+    try expectPlatformClean(&.{ "dump", "--stage=ownership", "--ownership-totals", "--ownership-everywhere", "--platform=node", "platforms/node" });
+}
+
+test "ownership everywhere: the html platform holds no rejected or pending line" {
+    try expectPlatformClean(&.{ "dump", "--stage=ownership", "--ownership-totals", "--ownership-everywhere", "--platform=html", "platforms/html" });
+}
+
+test "ownership everywhere: the browser platform holds no rejected or pending line" {
+    try expectPlatformClean(&.{ "dump", "--stage=ownership", "--ownership-totals", "--ownership-everywhere", "--platform=browser", "platforms/browser" });
+}
+
+test "ownership everywhere: the browser-direct platform holds no rejected or pending line" {
+    try expectPlatformClean(&.{ "dump", "--stage=ownership", "--ownership-totals", "--ownership-everywhere", "--platform=browser-direct", "platforms/browser-direct" });
+}
+
+test "ownership everywhere: the browser-tea platform holds no rejected or pending line" {
+    try expectPlatformClean(&.{ "dump", "--stage=ownership", "--ownership-totals", "--ownership-everywhere", "--platform=browser-tea", "platforms/browser-tea" });
 }
 
 test "ownership everywhere: Page.sandbox gets the direct entry row" {

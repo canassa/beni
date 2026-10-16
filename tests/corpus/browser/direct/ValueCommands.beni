@@ -67,6 +67,7 @@ update msg model =
                 , body = Http.stringBody "text/plain" (joined model.items)
                 , expect = Http.expectString
                 , timeout = Nothing
+                , tracker = Nothing
                 }
                 Posted
             )

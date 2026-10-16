@@ -6005,3 +6005,8 @@ entry row never asked them to return owned: a tagger answering a top-level list
 was accepted on `browser-direct`. `browser-tea`'s own `Tea.application`, which
 forwards them inside a lambda, was rejected `need` (§30.2). Pending:
 `tests/pending/ownership/EntryUrlTaggers.beni`.
+
+**CK-234 to CK-243 fixed 2026-10-16** by slice O1 (#210; ownership-checker.md §30.9, rules 1–11 and
+the words): each fixture promoted to `tests/corpus/ownership/`, where it pins the accepted program and a
+rejected twin of it. `browser-tea`'s `Tea.application` holds no line under `--ownership-everywhere`
+(`check_test.zig`, *the browser-tea platform holds no rejected or pending line*).
