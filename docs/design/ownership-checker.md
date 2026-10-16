@@ -726,6 +726,7 @@ loop O(n²).
    Change 5's ownership words, a `Js` operation, evidence received as a parameter, a function value whose
    class the checker cannot see — §6.1's conservative rule is kept, and the report line says so
    (`(no summary: M.f)`, §16.11).
+   *Amended 2026-10-16 (§30.11):* that rule's result is `⊤call`, never owned, except for a markup construction.
 3. **Caller-side checks of parameters are slice 2's** (§16.4): a call whose callee's summary writes a
    parameter path is a demand at the call.
 4. **A named `Basics.append` call is a construction exactly like `++`**, consuming its base: §3.2 as
@@ -1154,6 +1155,7 @@ Each module's demand lines (§9.1) gain:
   exact, `limit` approximate;
 - the summary that decided it, in parentheses: `(Main.addOne writes π1)`, `(List.update supplies π1[*]
   borrowed)`, `(no summary: Js.pure)`.
+  *Amended 2026-10-16 (§30.11):* an accepted line says `(no summary: M.f)` only for a markup construction.
 
 After a module's demand lines, a **summary line** for each top-level value with parameters, in source order:
 `summary f: <facts>` — each parameter path's bits (`π2.todos RAW`, `w` for an approximate write), the result
@@ -2749,7 +2751,7 @@ with §16.4's amendment of the same day it is zero.
 | Words on a `List` of functions, `Task.timeout`'s and `raceOk`'s, `crossing Int32` (§30.9) | `wordsRow` | as the words row above: the fiber runtime and its scope are not modelled. |
 | *Amended 2026-10-16 (#229):* a carried lambda named by where it is made, and the walk's fixpoints settled over finite cells and capped by the `fixpoint` limit (§28's dated amendment *the entry's fixpoints settle*) | `carry`, `entryConditions`, `entryCall`, `instCb`, `instFold` | a lambda whose merged captures miss what one instantiation captured: an alias lost; or a round taken for settled while a carried lambda still grew. The Lean model already names what a traversal or the model makes by its site (`.position site`) and fails a fixpoint that does not settle within its 24 rounds loudly, as a rejection (`throw "limit: …"`); Zig's cap is 32 and an error at the declaration. It carries no lambdas through results (rule 8's row), and the bridge skips entry projections, so neither the merge nor the caps are compared. |
 | *Amended 2026-10-16 (§30.10):* a schema's slots, the derivation from its declaration, and what a run answers | `schemaRunRow`, `schemaMakerRow`, `schemaTaint`, `schemaMemberRow`, `conversionSlots`, `codecRunRow`, `settleRun` | a list a conversion, a `Value` or a codec returns taken for built by the run, and written in place while its other holder keeps it. The core has no schemas, no JSON and no evidence; the bridge never emits one, so its confirmed-unsafe count says nothing of this rule. Zig fixtures (`ownership/SchemaAnswers`, `check/bad/direct/SchemaConversionShared`) and the corpus test it. |
-| *Amended 2026-10-16 (§30.11):* a call of a function the checker cannot identify answers `⊤call`; a record field called with a dot is its value called; a schema declaration's member handed on as a value has its run's row for its class, and a tagged schema's constructor is a constructor (#269) | `conservativeAV`, `unknownCb`, `fieldFunction`, `callValue`, `memberValue`, `ctorClass` | a write accepted onto a list a function returned while another holder keeps it. The core calls only closures it can name — no function is read out of a dictionary, a record field or a list, and no callee is handed one — so it has no unknown callee and no dot-called field, and neither rule is compared with the oracle. The core has no schemas either (the §30.10 row). The corpus fixtures (`ownership/UnknownCallee`, `UnknownCalleeTagger`, `SchemaMemberHanded`) test them. |
+| *Amended 2026-10-16 (§30.11):* a call of a function the checker cannot identify answers `⊤call`; a record field called with a dot is its value called; a schema declaration's member handed on as a value has its run's row for its class, and a tagged schema's constructor is a constructor (#269) | `conservativeAV`, `unknownCb`, `fieldFunction`, `callValue`, `memberValue`, `ctorClass` | a write accepted onto a list a function returned while another holder keeps it. The core calls only closures it can name — no function is read out of a dictionary, a record field or a list, and no callee is handed one — so it has no unknown callee and no dot-called field, and neither rule is compared with the oracle. The core has no schemas either (the §30.10 row). The corpus fixtures (`ownership/UnknownCallee`, `UnknownCalleeTagger`, `UnknownCalleeForms`, `DotFieldCall`, `SchemaMemberHanded`, `SchemaMemberExt`) test them. |
 
 ### 26.8 Open questions
 
@@ -4265,10 +4267,15 @@ grow ⊤ =
 **The rule.** The result of a call of a function the checker cannot identify holds, at `ε`, the cell
 **`⊤call`**: unknown provenance, never owned, printed `⊤call` in a summary. Its `(⋆, c)` entries for the
 arguments' cells stay as §6.1 writes them. The calls it covers are every §6.1 call but a markup
-construction: a function value whose classes the walk does not know; a method call that resolves to no
-declaration and is not a record field (below); a type dispatch; a top-level value with no parameters
-called as a function (`named ⊤` with `named = λ⊤ → shared`, unless §30.9 rule 9 names the function it is);
-a callee whose summary is unreadable. A callback whose actual has no class is instantiated the same way:
+construction: a function value whose classes the walk does not know; a function value that may be one of
+several classes the walk knows, which it does not join (issue #278; the line says "it came from a call of a
+function value that may be one of several functions"); a method call that resolves to no declaration and is
+not a record field (below); a type dispatch; a callee whose summary is unreadable. A top-level value with no
+parameters called as a function is called as the function value it is, unless §30.9 rule 9 names the
+function it is: the class its definition carries (§30.9 rule 8), so `mkBox = Box` called with a fresh list
+is accepted and `named ⊤` with `named = λ⊤ → shared` is rejected `top-level`, exactly; `⊤call` when it
+carries none. `ownership/UnknownCalleeForms` pins a type dispatch through a `where` method, two lambdas
+merged, a dot call on a call's result and a top-level constructor alias. A callback whose actual has no class is instantiated the same way:
 what it returns is `⊤call` (`unknownCb`). A summary carries `⊤call` to its callers like any `⊤`.
 
 Consequences, each through rules that already exist:
@@ -4285,7 +4292,7 @@ Consequences, each through rules that already exist:
   one result §6.1's "made by the call" is true of. §28.5's `assumed` count is that.
 
 **A record field called with a dot is the field's value called.** `r.load a`, where the receiver's type is a
-record with a field `load` and no declaration is the method, is a call of `r.load`'s value, exactly as
+record that lists a field `load` — closed, or extensible (`{ r | load : … }`) — and no declaration is the method, is a call of `r.load`'s value, exactly as
 `(r.load) a` is: a slot of the declaration's parameter (§24.9, called inside a lambda by §30.9 rules 1–2), a
 class the walk knows, or a function it cannot identify. Before, the dot form was a conservative call, which
 the rule above would have turned into a rejection of every `api.search q` on a record of functions
@@ -4309,7 +4316,7 @@ Before, the walk gave both §6.1's cell made by the call wherever it met them as
 `case apply Fixed.parse input of Ok f → List.push f.text "x"` was accepted and pushed onto `kept`. Its line
 said `call (no summary: S.apply)`: the cell named the call that handed the member on, a function with a
 summary. Now that program is rejected `top-level`, exactly, as the direct call `Fixed.parse input` is
-(CK-246, `ownership/SchemaMemberHanded`). No acceptance rests on a schema callee's cell made by the call, so
+(CK-246, `ownership/SchemaMemberHanded`; across modules, `ownership/SchemaMemberExt`). No acceptance rests on a schema callee's cell made by the call, so
 no `assumed` line names the wrong function.
 
 **Measured** (`bench/ownership-everywhere.mjs`, 2026-10-16, 847 programs): no new rejection in the corpus,
