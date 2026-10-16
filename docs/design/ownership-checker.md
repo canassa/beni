@@ -4228,6 +4228,18 @@ records it makes, or the array `JSON.parse` made (`schema.md` §6, *Lists are ar
 list across runs (a cache, a hoisted constant) would break it silently, and must put that list in its slot.
 The type filter drops a conversion whose end holds no list: such a conversion cannot answer one.
 
+*Amended 2026-10-16 (issue #268):* "not a holder" is true of `forward`'s argument, not of where `forward` puts
+it. A `forward` that returns one part of its argument at two places of its result — `λxs → Ok ( xs, xs )`,
+`{ all = xs, first = xs }`, `( xs, [ xs ] )` — puts one list the run built at two positions of the answer, and a
+write at one changes the other. Its `⟨decoded⟩` slot then holds `⊤twice`, a `⊤` that names its cause, so a
+write onto the answer is rejected `unknown`, approximately. Two places are two result paths whose argument
+paths overlap where neither is the other's placement: `π1` at `.0` and `π1[*]` at `.0[*]` are one placement. A
+part whose type holds no cell does not count (the `Int`s of a `List Int`, also found in a reversed copy). A `⋆`
+that blurs the alignment counts as two places. The slot cannot tell whether the other position is read again,
+so a program that writes one position and drops the other is rejected too: the issue's "loses separation". A
+list's elements need no change, because the elements of a run's answer may share one list already (§18.4).
+Fixture: `ownership/SchemaConversionTwice` (CK-247).
+
 **The corpus.** `browser/tea/ApiItems` and `ApiLogin` hold
 no line under `--ownership-everywhere`: `Schema.list (Item.schema ⊤)` holds nothing in its slots. `ApiLogin`'s
 `tests/pending/browser/direct/` twin is promoted; `ApiItems`' twin, four builds in one case (as `HttpJson`, #184),
