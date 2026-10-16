@@ -2250,6 +2250,10 @@ names the fixture that pins each (§24.6).
 *Amended 2026-10-16 (§30.9):* `Task.timeout`, `Task.raceOk` and `crossing Int32` have words, justified
 there; a `List` of functions written out takes a function's words, which describe each element.
 
+*Amended 2026-10-16 (§30.10, issue #218):* `Schema.parse` and `parseWith` carry no words. Their rows, and
+`decode`'s, `read`'s, `encode`'s and `write`'s, are the checker's: a run answers what it builds and what its
+schema's slot of that direction holds. `print` and `printWith` keep theirs.
+
 **Without words, by choice.** Each `foreign` that handles only values that cross — `Js`'s bit operations and `rem`
 (numbers), `regExp` (two string literals), `development`, `maySuspend` (read by the checker as a static bit, §23.3),
 the platforms' `Dom`, `Browser.Events` and `Html.targetValue`/`targetChecked` (strings, numbers and a `crossing`
@@ -2689,6 +2693,7 @@ with §16.4's amendment of the same day it is zero.
 | A carried lambda's calls of what the caller passed, re-carrying, and a top-level value's lambda whose captures hold nothing (rule 8) | `carry`, `callThrough`, `carriedCallOwned`, `carried`, `sharedOf` | a function value's result taken for made by the call while its class returns a list another holder keeps. The core's closures are not carried through results with their classes. |
 | A top-level value that names a function (rule 9), and the entry's URL taggers (rule 10) | `aliasTarget`, `entryTagger` | the wrong summary applied to a point-free name; a tagger the runtime sends from unchecked. Neither has core syntax; entry delivery is outside the core (row above). |
 | Words on a `List` of functions, `Task.timeout`'s and `raceOk`'s, `crossing Int32` (§30.9) | `wordsRow` | as the words row above: the fiber runtime and its scope are not modelled. |
+| *Amended 2026-10-16 (§30.10):* a schema's slots, the derivation from its declaration, and what a run answers | `schemaRunRow`, `schemaMakerRow`, `schemaTaint`, `schemaMemberRow`, `conversionSlots`, `codecRunRow`, `settleRun` | a list a conversion, a `Value` or a codec returns taken for built by the run, and written in place while its other holder keeps it. The core has no schemas, no JSON and no evidence; the bridge never emits one, so its confirmed-unsafe count says nothing of this rule. Zig fixtures (`ownership/SchemaAnswers`, `check/bad/direct/SchemaConversionShared`) and the corpus test it. |
 
 ### 26.8 Open questions
 
@@ -4029,3 +4034,92 @@ platform hold no rejected or pending line):
 A defect found on the way, not fixed here: a conservative call's result (§6.1) counts as made by the call,
 so a function value with no class that returns a list somebody else holds is written in place, accepted
 `assumed` (issue #216).
+
+### 30.10 What a schema's run answers (the owner, 2026-10-16; issue #218)
+
+*Amends §24.8 (`Schema.parse`, `parseWith`), §24.5's list of rows the checker asserts, §26.7 and §30.9's
+"What O1 does not clear". Sections 1–30.9 keep their text.*
+
+**The decision**, verbatim from the issue: "don't look for one ownership word for every schema. Schemas are
+compiled and statically known (schema.md §6), so the compiler derives the ownership of each schema's
+`parse`/`decode` result (and the encode direction) from its declaration, per direction: fresh where the value
+is built from the input, borrowed or unknown only where a conversion returns something it captured, or the
+program's own value in the encode direction. A genuinely runtime-built schema keeps the conservative word."
+
+**Two slots.** A value of `Schema e a` has two analysis slots, `⟨decoded⟩` and `⟨encoded⟩`, in the sense of
+Change 9 and as the markup type has `⟨render⟩` and `⟨events⟩` (§28, *markup slots*): paths of the analysis,
+not fields of the JavaScript. A slot holds what a run in that direction may answer that the run did not build
+from its input. Everything else the schema value holds — the functions of its conversions and what they
+captured, its arguments — stays where §16's summaries put it, so a list a conversion captured is still held by
+the schema for as long as the schema is, whatever the slots say. A slot can also hold the *input mark*: the
+run may answer part of what it was handed. The mark is a `⊤` (printed `⊤input`) wherever a run does not read
+it, so a mark that escapes its slot is as unknown as anything.
+
+**What a run answers.** `Schema.parse`, `parseWith`, `decode`, `decodeWith`, `read` and `readWith` answer a
+fresh value, which may hold anywhere what the schema's `⟨decoded⟩` slot holds; `encode`, `encodeWith`,
+`write` and `writeWith` the same with `⟨encoded⟩`. Where the slot holds the input mark and the run was handed
+a program's value (every run but `parse`, whose input is a string), the answer may hold any part of that
+value; where it does not, the answer holds nothing of it. `print` and `printWith` keep their words (§24.8): a
+string. These are rows the checker asserts (§24.5), keyed by `core/Schema`'s names, and `parse` and
+`parseWith` lose their words. A run that is not seen as one — a runner handed on as a function value — keeps
+its row with the mark unread, which is `⊤`.
+
+**What fills the slots.** A slot is filled where the schema is made, by its maker:
+
+| Maker | `⟨decoded⟩` | `⟨encoded⟩` |
+|---|---|---|
+| a primitive but `Schema.value` | nothing | nothing |
+| `Schema.value` | the input mark | the input mark |
+| `list s`, `nullable s`, `erased s` | `s`'s | `s`'s |
+| `converted s c` | `s`'s and `c`'s | `s`'s and `c`'s |
+| `conversion forward backward` | what `forward` may return that its call did not make and that is not its argument: what it captured, a top-level value, `⊤` for a function the walk cannot place; nothing when the target `a` holds no list | the same of `backward`, except that its argument is the program's value: what it returns of it is the input mark; nothing when the source `b` holds no list |
+| `S.schema a₁ … aₙ`, a declaration's | the arguments' and the declaration's own (below) | the same |
+| an interpreting builder (`record`, `tagged`, `recursive`, `flip`, `typeOnly`, `encodedOnly`: whatever calls `box`) | `⊤` | `⊤` |
+| `derived ⊤`, `structural ⊤`, and `Json`'s runs | the codec its `where a.codec` evidence names at the call (below); `⊤` where the evidence is a parameter | the same |
+
+`list`, `nullable`, `erased` and `converted` branch on their argument's engine at run time, and their
+interpreting arm boxes a node: that arm runs only for an argument whose slots hold `⊤` already, so their slots
+are their arguments' and nothing else. A schema from anywhere else — a `foreign`, a `Js` value, a call with no
+summary — has `⊤` in both slots (a cell a callee with no summary made holds `⊤` at a slot; one a callee with a
+summary made holds there only what that summary names).
+
+**A declaration's own slots — the derivation.** The compiler holds the declaration's resolved plan
+(`schema.md` §4), so the checker reads it, closed over every declaration and derived codec it names: each
+`via` contributes its conversion value, each `value` primitive the input mark, and each `codec_value` (a type's
+module's `codec`, `schema.md` §12.10) the slots its summary names. A `via`'s conversion is a top-level
+expression the declaration evaluates once (`schema.md` §6, *The `via`s*): a reference to a top-level value
+contributes the slots that value's summary names — a cell its definition made is that value's own, shared
+(§16.3) — and any other expression `⊤`, in each direction whose end holds a list. A declaration's schema
+parameters are the arguments of the member's call. `S.parse` and `S.parseWith` answer a fresh value holding
+the declaration's `⟨decoded⟩` (the input mark dropped: the input is a string); `S.print` and `S.printWith` a
+string, as `print`'s words say.
+
+**Derived codecs.** `Json.decode`, `decodeWith`, `decodeValue` and `encodeValue`, and `Schema.derived` and
+`structural`, are read at each call through the call's evidence (`schema.md` §12.10): a derived codec
+definition's slots are derived as a declaration's, each of its slots' evidence adding its own; a type's
+module's `codec` contributes what its summary names. An evidence parameter — the codec of a type variable —
+is `⊤`. `Http.expectJson`, a value whose evidence is its own, keeps `⊤` in its lambda.
+
+**Soundness.** A list the answer may hold arrives in one of four ways: the run built it from the input (fresh,
+no other holder); a conversion's function returned it (its slot names it: what it captured, a top-level
+value, `⊤`); a `Value` or a `backward` returned part of the run's input (the mark, which the run turns into
+the input); or a default (`schema.md` §11), which is not built yet and must enter its direction's slot when it
+is (§11.3's "a pure default may be evaluated once by the backend" is observable once lists are written in
+place: a default that holds a list is a shared cell in the slot). Each maker puts every such cell in a slot or
+writes `⊤`; a schema the checker cannot place is `⊤` in both. Forward conversions are handed what the run
+built, so their argument is not a holder; backward conversions are handed the program's value, so theirs is.
+The type filter drops a conversion whose end holds no list: such a conversion cannot answer one.
+
+**The corpus.** `browser/tea/ApiItems` and `ApiLogin` hold
+no line under `--ownership-everywhere`: `Schema.list (Item.schema ⊤)` holds nothing in its slots. `ApiLogin`'s
+`tests/pending/browser/direct/` twin is promoted; `ApiItems`' twin, four builds in one case (as `HttpJson`, #184),
+is over the test budget (4 780M) and is deleted: the `browser-tea` page runs it. Fixtures:
+`ownership/SchemaAnswers` (declared, composed and generic schemas, a conversion that builds, one that returns
+a top-level list and one that returns a capture; `Json.decode` of a derived codec; the encode direction with a
+`backward` that returns its argument), `check/bad/direct/SchemaConversionShared` (a conversion returning a
+captured list, written: refused).
+
+*Measured (2026-10-16):* `bench/ownership-everywhere.mjs`, with #219's `RefModify` copy, rejects 0 of 848
+programs (§30.9's 3 of 840); core and every platform hold no rejected or pending line. The Lean bridge at the
+CI bound (`node scripts/bridge.mjs --ci`): 1 341 programs, 959 translated, none confirmed unsafe — the rule is
+§26.7's last row, outside what the bridge emits.

@@ -19,6 +19,25 @@ was saturating the four cores and read 784 ms where the real number was
 
 ---
 
+## 2026-10-16 — ownership everywhere after schema answers (#218)
+
+**AMD Ryzen 9 5950X, 32 GiB, Linux 6.12, Zig 0.17.0, Node 24.19.0, LLVM
+ReleaseFast, cores 8–23.** `node bench/ownership-everywhere.mjs` with
+`ownership-checker.md` §30.10 (a schema's run answers what it builds and what
+its slots hold, derived from the declaration) and #219's `RefModify` copy
+applied: **0 of 848 programs rejected, none crashing** (3 of 840 before; 1,
+`RefModify`, without #219; the eight new programs are the corpus's growth,
+`browser/direct/ApiLogin` among them). Core and every platform hold no rejected
+or pending line. Cost, whole process, `--jobs=1 --no-cache`, best of 7, within
+noise of O1's:
+
+| Program | Platform | Without | With the pass | Change |
+|---|---|---:|---:|---:|
+| Conduit | browser-tea | 21 ms | 36 ms | +67 % |
+| Conduit | browser-direct, as today | — | 37 ms | — |
+| Bike Wars | browser-tea | 14 ms | 18 ms | +30 % |
+| `bench/corpus` | node | 18 ms | 28 ms | +56 % |
+
 ## 2026-10-16 — ownership everywhere after slice O1
 
 **AMD Ryzen 9 5950X, 32 GiB, Linux 6.12, Zig 0.17.0, Node 24.19.0, LLVM

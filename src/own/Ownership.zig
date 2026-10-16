@@ -46,6 +46,8 @@ const Token = @import("../lex/Token.zig");
 const Ast = @import("../parse/Ast.zig");
 const summary_bytes = @import("summary_bytes.zig");
 const SchemaCtor = @import("../js/SchemaCtor.zig");
+const SchemaGraph = @import("../js/SchemaGraph.zig");
+const SchemaPlan = @import("../check/SchemaPlan.zig");
 const Profile = @import("../Profile.zig");
 
 const Inst = Bir.Inst;
@@ -531,6 +533,13 @@ concat_memo: std.AutoHashMapUnmanaged([2]u32, u32) = .empty,
 tracked_memo: std.AutoHashMapUnmanaged(u64, bool) = .empty,
 /// Per `(module, declaration)`: its qualified name.
 names_memo: std.AutoHashMapUnmanaged(u64, []const u8) = .empty,
+/// §30.10: per `(module, schema declaration)`, what its own conversions and
+/// the declarations it names put in its slots (`schemaTaint`); `null` while
+/// it is being derived.
+schema_taints: std.AutoHashMapUnmanaged(u64, ?SchemaTaint) = .empty,
+/// §30.10: per `(module, schema declaration, member)`, the summary of a
+/// call of that member (`schemaMemberRow`).
+schema_members: std.AutoHashMapUnmanaged(u64, *const Summary) = .empty,
 /// Per depth of nested walks: an arena reused from walk to walk.
 walk_arenas: [16]?std.heap.ArenaAllocator = @splat(null),
 walk_depth: u32 = 0,
@@ -568,6 +577,8 @@ pub fn deinit(o: *Ownership) void {
     o.concat_memo.deinit(o.in.gpa);
     o.tracked_memo.deinit(o.in.gpa);
     o.names_memo.deinit(o.in.gpa);
+    o.schema_taints.deinit(o.in.gpa);
+    o.schema_members.deinit(o.in.gpa);
     for (&o.walk_arenas) |*a| if (a.*) |*x| x.deinit();
     o.in.gpa.free(o.slots);
     o.in.gpa.free(o.groups);
@@ -1099,6 +1110,7 @@ fn computeGroup(o: *Ownership, m: u32, d: u32) Allocator.Error!void {
             const report = m < o.report_for.len and o.report_for[m];
             slots[x].sum = if (!report and try o.crosses(m, x)) .{ .params = bir.decls[x].params } else try o.walkSummary(m, x, false);
             if (o.isDictFocus(m, x)) slots[x].sum = try o.assertDictFocus(slots[x].sum);
+            slots[x].sum = try o.schemaMakerRow(m, x, slots[x].sum);
             if (o.hostedRow(m, x)) |row| slots[x].sum = try o.assertHosted(slots[x].sum, row);
             slots[x].state = .done;
         }
@@ -1135,7 +1147,10 @@ fn computeGroup(o: *Ownership, m: u32, d: u32) Allocator.Error!void {
             slots[x].lines = null;
         }
     }
-    for (members.items) |x| slots[x].state = .done;
+    for (members.items) |x| {
+        slots[x].sum = try o.schemaMakerRow(m, x, slots[x].sum);
+        slots[x].state = .done;
+    }
 }
 
 /// Whether every parameter of the function `d` and its result cross
@@ -1591,6 +1606,7 @@ fn pessimistic(o: *Ownership, s: Summary, why: Limit) Allocator.Error!Summary {
 // ---------------------------------------------------------------------------
 
 fn assertedRow(o: *Ownership, m: u32, d: u32) Allocator.Error!?Summary {
+    if (o.in.packages[m] == .core and std.mem.eql(u8, o.in.module_names[m], "Schema")) return o.schemaRunRow(m, d);
     if (o.in.packages[m] != .core or !std.mem.eql(u8, o.in.module_names[m], "List")) return null;
     const bir = o.in.birs[m];
     const name = o.in.interner.slice(bir.symbol(bir.decls[d].name));
@@ -1685,6 +1701,394 @@ fn assertedRow(o: *Ownership, m: u32, d: u32) Allocator.Error!?Summary {
         .funs = funs,
         .asserted = true,
     });
+}
+
+/// §30.10: a run of a schema answers what it builds from its input, and
+/// what its schema's slot of that direction holds — `⟨decoded⟩` for
+/// `parse`, `decode` and `read`, `⟨encoded⟩` for `encode` and `write` —
+/// and, where its input is a program's value (`decode`, `read`, `encode`,
+/// `write`), parts of that input. Null for every other declaration of
+/// `core/Schema`.
+/// `res ⋆ p` and `res ⋆ p⋆`, approximate: the answer may hold, anywhere,
+/// what `p` is and any part of it — a list inside a record the slot holds,
+/// which a list's demand would not take the record's own cell for.
+fn anywhereIn(o: *Ownership, res: *std.ArrayList(ResEntry), p: Prov) Allocator.Error!void {
+    const keep = o.keep.allocator();
+    const any = try o.child(eps, .any, 0);
+    try res.append(keep, .{ .path = any, .prov = p, .approx = true });
+    var below = p;
+    below.path = try o.child(p.path, .any, 0);
+    if (below.path != p.path) try res.append(keep, .{ .path = any, .prov = below, .approx = true });
+}
+
+/// The path of a run's answer where its row sets its input aside: what the
+/// answer holds of it only when the schema's slot holds `input_marker`
+/// (`settleRun`).
+fn inputPath(o: *Ownership) Allocator.Error!u32 {
+    return o.child(eps, .schema_encoded, 0);
+}
+
+/// `res` at `inputPath` the input, `π_input` and any part of it.
+fn inputAside(o: *Ownership, res: *std.ArrayList(ResEntry), input: u32) Allocator.Error!void {
+    const keep = o.keep.allocator();
+    const at = try o.inputPath();
+    try res.append(keep, .{ .path = at, .prov = .{ .kind = .param, .a = input, .path = eps }, .approx = true });
+    try res.append(keep, .{ .path = at, .prov = .{ .kind = .param, .a = input, .path = try o.child(eps, .any, 0) }, .approx = true });
+}
+
+fn schemaRunRow(o: *Ownership, m: u32, d: u32) Allocator.Error!?Summary {
+    const bir = o.in.birs[m];
+    const decl = bir.decls[d];
+    const name = o.in.interner.slice(bir.symbol(decl.name));
+    const decoding = eqlAny(name, &.{ "parse", "parseWith", "decode", "decodeWith", "read", "readWith" });
+    const encoding = eqlAny(name, &.{ "encode", "encodeWith", "write", "writeWith" });
+    if (!decoding and !encoding) return null;
+    const n = decl.params;
+    if (n < 2) return null;
+    const keep = o.keep.allocator();
+    const R = bit_r;
+    const A = bit_a;
+    const slot = try o.child(eps, if (decoding) .schema_decoded else .schema_encoded, 0);
+    const input: u32 = n - 1;
+    // `parse` reads a string; every other run is handed a program's value,
+    // and a `Value` position of the schema answers the part of it there.
+    const aliases_input = !std.mem.startsWith(u8, name, "parse");
+    var uses: std.ArrayList(UseEntry) = .empty;
+    try uses.append(keep, .{ .param = 0, .path = eps, .bits = R });
+    try uses.append(keep, .{ .param = 0, .path = slot, .bits = R | A });
+    for (1..input) |i| try uses.append(keep, .{ .param = @intCast(i), .path = eps, .bits = R });
+    try uses.append(keep, .{ .param = input, .path = eps, .bits = if (aliases_input) R | A else R });
+    var res: std.ArrayList(ResEntry) = .empty;
+    try res.append(keep, .{ .path = eps, .prov = .{ .kind = .fresh, .a = 1 }, .xc = .{ .no = 1 } });
+    try o.anywhereIn(&res, .{ .kind = .param, .a = 0, .path = slot });
+    if (aliases_input) try o.inputAside(&res, input);
+    return try o.normalize(.{
+        .params = n,
+        .uses = uses.items,
+        .res = res.items,
+        .asserted = true,
+    });
+}
+
+/// §30.10: what `core/Schema`'s makers put in the slots of the schema they
+/// return, added to the summary read off the body. `box` makes every
+/// schema an interpreting builder answers, whose functions the checker
+/// does not follow: both its slots hold `⊤`. `list`, `nullable` and
+/// `erased` answer what their schema answers, and `converted` that and what
+/// its conversion's functions answer (the conversion's slots, which a call
+/// of `conversion` fills, `conversionSlots`).
+fn schemaMakerRow(o: *Ownership, m: u32, d: u32, s: Summary) Allocator.Error!Summary {
+    if (o.in.packages[m] != .core or !std.mem.eql(u8, o.in.module_names[m], "Schema")) return s;
+    const bir = o.in.birs[m];
+    const name = o.in.interner.slice(bir.symbol(bir.decls[d].name));
+    const keep = o.keep.allocator();
+    const slots = [_]u32{ try o.child(eps, .schema_decoded, 0), try o.child(eps, .schema_encoded, 0) };
+    var extra: std.ArrayList(ResEntry) = .empty;
+    // `derived` and `structural` answer what their evidence answers, which
+    // only a call knows (`codecRunRow`): from the body, anything.
+    if (eqlAny(name, &.{ "box", "derived", "structural" })) {
+        for (slots) |p| try extra.append(keep, .{ .path = p, .prov = .{ .kind = .top, .a = unfollowed } });
+    } else if (std.mem.eql(u8, name, "value") and bir.decls[d].params == 0) {
+        // A `Value` is answered as it was handed: the run's input.
+        for (slots) |p| try extra.append(keep, .{ .path = p, .prov = input_marker });
+    } else if (eqlAny(name, &.{ "list", "nullable", "erased", "converted" })) {
+        const n: u32 = if (std.mem.eql(u8, name, "converted")) 2 else 1;
+        if (bir.decls[d].params != n) return s;
+        for (0..n) |i| for (slots) |p| {
+            try extra.append(keep, .{ .path = p, .prov = .{ .kind = .param, .a = @intCast(i), .path = p } });
+        };
+    } else return s;
+    var out = s;
+    var res: std.ArrayList(ResEntry) = .empty;
+    for (s.res) |r| {
+        // The four branch on their argument's engine: the interpreting arm,
+        // whose `box` answers `⊤`, runs only for a schema whose slots hold
+        // `⊤` already. Their slots are their arguments', and nothing else.
+        if (extra.items.len > 0 and extra.items[0].prov.kind == .param) if (o.firstStep(r.path)) |st| {
+            if (st.kind == .schema_decoded or st.kind == .schema_encoded) continue;
+        };
+        try res.append(keep, r);
+    }
+    try res.appendSlice(keep, extra.items);
+    out.res = res.items;
+    var uses: std.ArrayList(UseEntry) = .empty;
+    try uses.appendSlice(keep, s.uses);
+    for (extra.items) |e| if (e.prov.kind == .param) {
+        try uses.append(keep, .{ .param = e.prov.a, .path = e.prov.path, .bits = bit_r | bit_a });
+    };
+    out.uses = uses.items;
+    return o.normalize(out);
+}
+
+/// §30.10: what a `schema` declaration's own runs may answer beyond what
+/// they build from their input, per direction, in a summary's vocabulary —
+/// what its conversions' functions return that they did not build, through
+/// every declaration and derived codec it names. Its schema parameters are
+/// not here: they are the arguments a call of a member passes.
+pub const SchemaTaint = struct {
+    decoded: []const Prov = &.{},
+    encoded: []const Prov = &.{},
+};
+
+/// §30.10: the mark a slot holds where a run answers part of what it was
+/// handed — a `Value`, or what a conversion's `backward` returns of its
+/// argument. A run of the schema puts its input there (`settleRun`);
+/// anywhere else it is a `⊤`, as unknown as any.
+const input_marker: Prov = .{ .kind = .top, .a = 2 };
+
+/// §30.10: a `⊤` a schema's slot holds where the checker does not follow
+/// what answered it — an interpreting builder's functions, a conversion
+/// expression a declaration evaluates once, a function it cannot place.
+/// Printed `⊤schema`; a cause like any `⊤`, named for what it is.
+const unfollowed: u32 = 3;
+
+/// §30.10: `core/Schema`'s runs, whose rows are `schemaRunRow`'s.
+const schema_runs = [_][]const u8{ "parse", "parseWith", "decode", "decodeWith", "read", "readWith", "encode", "encodeWith", "write", "writeWith" };
+
+const top_taint: SchemaTaint = .{
+    .decoded = &.{.{ .kind = .top, .a = unfollowed }},
+    .encoded = &.{.{ .kind = .top, .a = unfollowed }},
+};
+
+fn schemaGraph(o: *const Ownership) SchemaGraph {
+    return .{
+        .graph = o.in.graph,
+        .plans = o.in.types.plans,
+        .birs = o.in.birs,
+        .interfaces = o.in.interfaces,
+        .provenance = o.in.provenance,
+        .interner = o.in.interner,
+    };
+}
+
+/// The derivation (§30.10): a closure over the plan. Each declaration or
+/// derived codec reached contributes its `via`s, each a conversion value
+/// (`viaTaint`), and its `codec_value` nodes, each a module's `codec`
+/// (`codecValueTaint`). A plan the run does not have answers `⊤`, as does a
+/// declaration met again while it is being derived (a `via` whose value
+/// runs this very schema).
+fn schemaTaint(o: *Ownership, m: u32, decl: u32) Allocator.Error!SchemaTaint {
+    const key = (@as(u64, m) << 32) | decl;
+    if (o.schema_taints.get(key)) |t| return t orelse top_taint;
+    try o.schema_taints.put(o.in.gpa, key, null);
+    const t = try o.deriveTaint(m, decl);
+    try o.schema_taints.put(o.in.gpa, key, t);
+    return t;
+}
+
+fn deriveTaint(o: *Ownership, m0: u32, decl0: u32) Allocator.Error!SchemaTaint {
+    const sg = o.schemaGraph();
+    const keep = o.keep.allocator();
+    var decoded: std.ArrayList(Prov) = .empty;
+    var encoded: std.ArrayList(Prov) = .empty;
+    var todo: std.ArrayList(SchemaGraph.Ref) = .empty;
+    defer todo.deinit(o.in.gpa);
+    var seen: std.ArrayList(SchemaGraph.Ref) = .empty;
+    defer seen.deinit(o.in.gpa);
+    var nodes: std.ArrayList(SchemaPlan.NodeIndex) = .empty;
+    defer nodes.deinit(o.in.gpa);
+    try todo.append(o.in.gpa, .{ .module = @fromBackingInt(m0), .decl = decl0 });
+    while (todo.pop()) |r| {
+        for (seen.items) |s| {
+            if (s.module == r.module and s.decl == r.decl) break;
+        } else {
+            try seen.append(o.in.gpa, r);
+            const m = r.module.int();
+            const def = sg.definition(r.module, r.decl) orelse return top_taint;
+            const plan = sg.planOf(r.module);
+            nodes.clearRetainingCapacity();
+            try SchemaGraph.subtree(plan, o.in.gpa, def.root, &nodes);
+            for (nodes.items) |n| switch (SchemaGraph.tag(plan, n)) {
+                .conversion => {
+                    const index = SchemaGraph.rhs(plan, n);
+                    if (index >= plan.conversions.len) return top_taint;
+                    const t = try o.viaTaint(m, plan.conversions[index].expr);
+                    try decoded.appendSlice(keep, t.decoded);
+                    try encoded.appendSlice(keep, t.encoded);
+                },
+                .reference => {
+                    const target = sg.target(r.module, @fromBackingInt(SchemaGraph.lhs(plan, n))) orelse return top_taint;
+                    try todo.append(o.in.gpa, target);
+                },
+                .codec_ref => try todo.append(o.in.gpa, sg.codecTarget(r.module, SchemaGraph.lhs(plan, n))),
+                .codec_value => {
+                    const t = try o.codecValueTaint(plan, SchemaGraph.lhs(plan, n));
+                    try decoded.appendSlice(keep, t.decoded);
+                    try encoded.appendSlice(keep, t.encoded);
+                },
+                // A `Value` is answered as it was handed: the run's input.
+                .primitive => if (SchemaGraph.lhs(plan, n) == @backingInt(SchemaPlan.Primitive.value)) {
+                    try decoded.append(keep, input_marker);
+                    try encoded.append(keep, input_marker);
+                },
+                else => {},
+            };
+        }
+    }
+    return .{ .decoded = decoded.items, .encoded = encoded.items };
+}
+
+/// A `via`'s conversion value, `expr` an instruction of a schema
+/// declaration of `m`: nothing in a direction whose end — the target `a`
+/// decoding, the source `b` encoding — holds no list; else, for a
+/// top-level value, the slots its summary names, and `⊤` for any other
+/// expression, which the declaration evaluates once, where no walk sees it.
+fn viaTaint(o: *Ownership, m: u32, expr: Inst.Index) Allocator.Error!SchemaTaint {
+    var ends: [2]bool = .{ true, true };
+    if (m < o.in.modules.len) {
+        const km = &o.in.modules[m];
+        if (expr.int() < km.inst_type.len) if (km.inst_type[expr.int()].unwrap()) |v| switch (km.store.resolvedContent(v)) {
+            .structure => |st| switch (st) {
+                .app => |app| {
+                    const xs = km.store.vars(app.args);
+                    if (xs.len == 2) ends = .{ try o.tracked(&km.store, xs[1], 0), try o.tracked(&km.store, xs[0], 0) };
+                },
+                else => {},
+            },
+            else => {},
+        };
+    }
+    if (!ends[0] and !ends[1]) return .{};
+    const bir = o.in.birs[m];
+    const data = bir.instData(expr);
+    const target: ?[2]u32 = switch (bir.instTag(expr)) {
+        .top => .{ m, data.lhs },
+        .ext_value => blk: {
+            if (data.lhs >= o.in.provenance.len) break :blk null;
+            const d = o.in.provenance[data.lhs].valueDecl(data.rhs) orelse break :blk null;
+            break :blk .{ data.lhs, d.int() };
+        },
+        else => null,
+    };
+    const t = target orelse return .{
+        .decoded = if (ends[0]) top_taint.decoded else &.{},
+        .encoded = if (ends[1]) top_taint.encoded else &.{},
+    };
+    const s = (try o.ensureSummary(t[0], t[1])) orelse return top_taint;
+    const both = try o.slotProvs(s, t, true);
+    return .{
+        .decoded = if (ends[0]) both.decoded else &.{},
+        .encoded = if (ends[1]) both.encoded else &.{},
+    };
+}
+
+/// A `codec_value` node: its type's module's `codec`, a function of `⊤`,
+/// whose result's slots its summary names. Not the value its call makes
+/// at each run: what it put in a slot is `⊤`.
+fn codecValueTaint(o: *Ownership, plan: *const SchemaPlan, i: u32) Allocator.Error!SchemaTaint {
+    if (i >= plan.value_targets.len) return top_taint;
+    const target = plan.value_targets[i];
+    const owner = o.in.graph.find(target.package, SchemaGraph.symbol(plan, target.module)) orelse return top_taint;
+    const om = owner.int();
+    const name = SchemaGraph.symbol(plan, target.name);
+    const bir = o.in.birs[om];
+    var decl: ?u32 = null;
+    for (bir.decls, 0..) |d, k| {
+        if (d.kind.isValue() and bir.symbol(d.name) == name) decl = @intCast(k);
+    }
+    const d = decl orelse return top_taint;
+    const s = (try o.ensureSummary(om, d)) orelse return top_taint;
+    return o.slotProvs(s, .{ om, d }, false);
+}
+
+/// The provenances a summary's result puts in each slot, as a caller of
+/// the declaration `t` would see them: a cell a value's definition made is
+/// that value's own (`sharedOf`) when `shared` holds, else `⊤`. A cell at
+/// `⋆` is in both slots, and a `⊤` at the root covers them.
+fn slotProvs(o: *Ownership, s: *const Summary, t: [2]u32, shared: bool) Allocator.Error!SchemaTaint {
+    const keep = o.keep.allocator();
+    var decoded: std.ArrayList(Prov) = .empty;
+    var encoded: std.ArrayList(Prov) = .empty;
+    for (s.res) |r| {
+        const first = o.firstStep(r.path);
+        const into_decoded, const into_encoded = if (first) |st| switch (st.kind) {
+            .schema_decoded => .{ true, false },
+            .schema_encoded => .{ false, true },
+            .any => .{ true, true },
+            else => continue,
+        } else switch (r.prov.kind) {
+            // The value itself, at the root. One its definition or call
+            // made holds in its slots what the summary names there; one
+            // that may be anything covers them; any other — another
+            // top-level value, a parameter — is a value whose slots this
+            // summary does not name.
+            .fresh, .esc => continue,
+            else => .{ true, true },
+        };
+        const p: Prov = if (first == null) .{ .kind = .top, .a = if (r.prov.kind == .top) r.prov.a else unfollowed } else switch (r.prov.kind) {
+            .fresh, .esc => if (shared) .{ .kind = .shared, .a = t[0], .b = t[1], .path = r.path } else .{ .kind = .top, .a = unfollowed },
+            .shared => r.prov,
+            else => .{ .kind = .top, .a = if (r.prov.kind == .top) r.prov.a else unfollowed },
+        };
+        if (into_decoded) try decoded.append(keep, p);
+        if (into_encoded) try encoded.append(keep, p);
+    }
+    return .{ .decoded = decoded.items, .encoded = encoded.items };
+}
+
+/// §30.10: the summary of a call of a schema declaration's member —
+/// `S.schema`, `S.parse`, `S.parseWith`, `S.print`, `S.printWith` — whose
+/// first `n` arguments are its schema arguments. `S.schema` makes a schema
+/// whose slots hold its own (`schemaTaint`) and its arguments'; it keeps
+/// its arguments. `S.parse` answers what it builds and its decoding slot;
+/// `S.print` a string.
+fn schemaMemberRow(o: *Ownership, m: u32, decl: u32, kind: Interface.SchemaMember.Kind, arity: u32) Allocator.Error!?*const Summary {
+    const n = o.in.birs[m].decls[decl].params;
+    const extra: u32 = switch (kind) {
+        .schema => 0,
+        .parse, .print => 1,
+        .parse_with, .print_with => 2,
+        .type, .encoded => return null,
+    };
+    // A nongeneric declaration's `S.schema` takes `⊤`.
+    if (arity != n + extra and !(kind == .schema and n == 0 and arity == 1)) return null;
+    const key = ((@as(u64, m) << 32) | decl) *% 8 +% @backingInt(kind);
+    if (o.schema_members.get(key)) |s| return s;
+    const keep = o.keep.allocator();
+    const taint = try o.schemaTaint(m, decl);
+    const R = bit_r;
+    const A = bit_a;
+    const slots = [_]u32{ try o.child(eps, .schema_decoded, 0), try o.child(eps, .schema_encoded, 0) };
+    const any = try o.child(eps, .any, 0);
+    var uses: std.ArrayList(UseEntry) = .empty;
+    var res: std.ArrayList(ResEntry) = .empty;
+    try res.append(keep, .{ .path = eps, .prov = .{ .kind = .fresh, .a = 1 }, .xc = .{ .no = 1 } });
+    switch (kind) {
+        .schema => {
+            // What the value keeps of its arguments: not a slot, so that a
+            // run's answer holds only what their slots hold.
+            const kept = if (o.in.interner.find("args")) |sym| try o.child(eps, .field, @backingInt(sym)) else any;
+            for (0..n) |iu| {
+                const i: u32 = @intCast(iu);
+                try uses.append(keep, .{ .param = i, .path = eps, .bits = R | A });
+                try res.append(keep, .{ .path = kept, .prov = .{ .kind = .param, .a = i, .path = eps }, .approx = true });
+                for (slots) |p| try res.append(keep, .{ .path = p, .prov = .{ .kind = .param, .a = i, .path = p } });
+            }
+            for (taint.decoded) |p| try res.append(keep, .{ .path = slots[0], .prov = p });
+            for (taint.encoded) |p| try res.append(keep, .{ .path = slots[1], .prov = p });
+        },
+        .parse, .parse_with => {
+            for (0..n) |iu| {
+                const i: u32 = @intCast(iu);
+                try uses.append(keep, .{ .param = i, .path = eps, .bits = R });
+                try uses.append(keep, .{ .param = i, .path = slots[0], .bits = R | A });
+                try o.anywhereIn(&res, .{ .kind = .param, .a = i, .path = slots[0] });
+            }
+            for (n..arity) |i| try uses.append(keep, .{ .param = @intCast(i), .path = eps, .bits = R });
+            for (taint.decoded) |p| try o.anywhereIn(&res, p);
+        },
+        .print, .print_with => {
+            for (0..arity - 1) |i| try uses.append(keep, .{ .param = @intCast(i), .path = eps, .bits = R });
+            // An issue holds the value it was handed (`Issue.input`).
+            try uses.append(keep, .{ .param = arity - 1, .path = eps, .bits = R | A });
+            try o.anywhereIn(&res, .{ .kind = .param, .a = arity - 1, .path = eps });
+        },
+        .type, .encoded => unreachable,
+    }
+    const s = try keep.create(Summary);
+    s.* = try o.normalize(.{ .params = arity, .uses = uses.items, .res = res.items, .asserted = true });
+    try o.schema_members.put(o.in.gpa, key, s);
+    return s;
 }
 
 // ---------------------------------------------------------------------------
@@ -2177,7 +2581,7 @@ fn provText(o: *Ownership, p: Prov) Allocator.Error![]const u8 {
             const b = o.in.birs[p.a];
             break :blk std.fmt.allocPrint(arena, "shared({s}.{s}){s}", .{ o.in.module_names[p.a], o.in.interner.slice(b.symbol(b.decls[p.b].name)), pt });
         },
-        .top => if (p.a == 1) "⊤limit" else "⊤",
+        .top => if (p.a == 1) "⊤limit" else if (p.a == 2) "⊤input" else if (p.a == unfollowed) "⊤schema" else "⊤",
         .cb => if (o.text_sum) |s| (if (p.b == 0 and p.a >= s.params and p.a - s.params < s.slots.len) blk: {
             const slot = s.slots[p.a - s.params];
             break :blk std.fmt.allocPrint(arena, "cb(π{d}{s}){s}", .{ slot[0] + 1, try o.pathText(slot[1]), pt });
@@ -2191,7 +2595,7 @@ fn provText(o: *Ownership, p: Prov) Allocator.Error![]const u8 {
 // Paths (§4.1)
 // ---------------------------------------------------------------------------
 
-pub const StepKind = enum(u8) { field, tuple, ctor, elem, env, any, markup_render, markup_event };
+pub const StepKind = enum(u8) { field, tuple, ctor, elem, env, any, markup_render, markup_event, schema_decoded, schema_encoded };
 
 const Paths = struct {
     parent: std.ArrayList(u32) = .empty,
@@ -2492,6 +2896,8 @@ fn writePath(o: *const Ownership, w: *std.Io.Writer, p: u32) std.Io.Writer.Error
         .env => try w.writeAll("◇"),
         .markup_render => try w.writeAll("⟨render⟩"),
         .markup_event => try w.writeAll("⟨events⟩"),
+        .schema_decoded => try w.writeAll("⟨decoded⟩"),
+        .schema_encoded => try w.writeAll("⟨encoded⟩"),
         .any => try w.writeAll("⋆"),
     };
 }
@@ -3623,6 +4029,11 @@ const Walker = struct {
     /// A symbolic cell one step further down (§4.3).
     fn projCell(w: *Walker, c: u32, s: Step, ty: ?Var) Allocator.Error!?u32 {
         const x = w.cells.items[c];
+        // §30.10: a schema's slot. A callee with a summary named every cell
+        // it put there; a call with none may have put anything.
+        if (s.kind == .schema_decoded or s.kind == .schema_encoded) if (x.kind == .result) {
+            return if (x.b == 0) try w.cell(.{ .kind = .top, .a = unfollowed }) else null;
+        };
         switch (x.kind) {
             .site, .closure, .func => return null,
             .top => return c,
@@ -4636,6 +5047,31 @@ const Walker = struct {
                 if (data.lhs >= w.o.in.provenance.len) return null;
                 const d = w.o.in.provenance[data.lhs].valueDecl(data.rhs) orelse return null;
                 return .{ .m = data.lhs, .d = d.int() };
+            },
+            else => return null,
+        }
+    }
+
+    const SchemaMemberRef = struct { m: u32, decl: u32, kind: Interface.SchemaMember.Kind };
+
+    /// The schema declaration and member a `schema_member_top` or
+    /// `ext_schema_member` names.
+    fn schemaMemberOf(w: *const Walker, inst: Inst.Index) ?SchemaMemberRef {
+        const data = w.bir.instData(inst);
+        switch (w.bir.instTag(inst)) {
+            .schema_member_top => {
+                if (data.lhs >= w.bir.decls.len or w.bir.decls[data.lhs].kind != .schema) return null;
+                const kind = std.enums.fromInt(Interface.SchemaMember.Kind, data.rhs) orelse return null;
+                return .{ .m = w.m, .decl = data.lhs, .kind = kind };
+            },
+            .ext_schema_member => {
+                const m = data.lhs;
+                if (m >= w.o.in.interfaces.len or m >= w.o.in.provenance.len) return null;
+                const iface = &w.o.in.interfaces[m];
+                if (data.rhs >= iface.schema_members.len) return null;
+                const member = iface.schema_members[data.rhs];
+                const decl = w.o.in.provenance[m].schemaDecl(@backingInt(member.schema)) orelse return null;
+                return .{ .m = m, .decl = decl.int(), .kind = member.kind };
             },
             else => return null,
         }
@@ -5673,6 +6109,12 @@ const Walker = struct {
             },
             else => {},
         }
+        // §30.10: a member of a schema declaration's namespace.
+        if (w.schemaMemberOf(callee)) |sm| if (try w.o.schemaMemberRow(sm.m, sm.decl, sm.kind, @intCast(args.len))) |s| {
+            const name = try std.fmt.allocPrint(w.o.out.allocator(), "{s}.{s}.{s}", .{ w.o.in.module_names[sm.m], w.o.in.interner.slice(w.o.in.birs[sm.m].symbol(w.o.in.birs[sm.m].decls[sm.decl].name)), @tagName(sm.kind) });
+            const out = try w.applySummary(inst, .{ .sum = s, .name = name, .op = if (w.mode == .report) try std.fmt.allocPrint(w.o.out.allocator(), "call {s}", .{name}) else "call" }, args, &.{}, null);
+            return if (sm.kind == .parse or sm.kind == .parse_with) w.settleRun(out) else out;
+        };
         if (w.valueTarget(callee)) |t| {
             try w.evidenceSight(callee);
             try w.evidenceSight(inst);
@@ -5772,9 +6214,176 @@ const Walker = struct {
             const c: Cell = switch (r.prov.kind) {
                 .fresh, .esc => .{ .kind = .shared, .a = t.m, .b = t.d, .path = r.path, .made = true, .ty = if (r.path == eps) w.instTypeOpt(inst) else .none },
                 .shared => .{ .kind = .shared, .a = r.prov.a, .b = r.prov.b, .path = r.prov.path },
-                else => .{ .kind = .top, .a = if (s.limit != .none or r.prov.a == 1) 1 else 0 },
+                else => .{ .kind = .top, .a = if (s.limit != .none or r.prov.a == 1) 1 else if (r.prov.kind == .top) r.prov.a else 0 },
             };
             try out.append(w.a, .{ .path = r.path, .cell = try w.cell(c), .approx = if (r.approx) inst.int() + 1 else 0 });
+        }
+        return w.norm(out.items);
+    }
+
+    /// §30.10: a run's answer, settled. Where the slot it read held
+    /// `input_marker`, the input its row set aside (`inputPath`) may be
+    /// anywhere in it; elsewhere the input is not in it. The marks go.
+    fn settleRun(w: *Walker, out: AV) Allocator.Error!AV {
+        const any = try w.o.child(eps, .any, 0);
+        var marked = false;
+        for (out) |e| {
+            const c = w.cells.items[e.cell];
+            if (c.kind == .top and c.a == 2) marked = true;
+        }
+        var kept: std.ArrayList(Entry) = .empty;
+        for (out) |e| {
+            const c = w.cells.items[e.cell];
+            if (c.kind == .top and c.a == 2) continue;
+            if (w.o.firstStep(e.path)) |st| if (st.kind == .schema_encoded) {
+                if (marked) try kept.append(w.a, .{ .path = any, .cell = e.cell, .approx = e.approx });
+                continue;
+            };
+            try kept.append(w.a, e);
+        }
+        return w.norm(kept.items);
+    }
+
+    /// §30.10: the summary of a call of a function of core's whose schema is
+    /// its `where a.codec` evidence — `Json.decode`, `decodeWith`,
+    /// `decodeValue`, `encodeValue`, `Schema.derived`, `structural` — at
+    /// this call, where the evidence is known: a run answers what it builds
+    /// and what the codec's slot of its direction holds (`codecTaint`), and
+    /// `derived` makes a schema whose slots hold that. Null for any other
+    /// callee, whose summary is its own.
+    fn codecRunRow(w: *Walker, inst: Inst.Index, t: Target, arity: usize) Allocator.Error!?*const Summary {
+        const name = w.targetName(t);
+        const Kind = enum { decode, decode_value, encode_value, schema };
+        const kind: Kind = if (w.isCore(t, "Json")) blk: {
+            if (eqlAny(name, &.{ "decode", "decodeWith" })) break :blk .decode;
+            if (std.mem.eql(u8, name, "decodeValue")) break :blk .decode_value;
+            if (std.mem.eql(u8, name, "encodeValue")) break :blk .encode_value;
+            return null;
+        } else if (w.isCore(t, "Schema") and eqlAny(name, &.{ "derived", "structural" })) .schema else return null;
+        const taint = try w.codecTaint(inst);
+        const o = w.o;
+        const keep = o.keep.allocator();
+        const slots = [_]u32{ try o.child(eps, .schema_decoded, 0), try o.child(eps, .schema_encoded, 0) };
+        var uses: std.ArrayList(UseEntry) = .empty;
+        var res: std.ArrayList(ResEntry) = .empty;
+        try res.append(keep, .{ .path = eps, .prov = .{ .kind = .fresh, .a = 1 }, .xc = .{ .no = 1 } });
+        for (0..arity) |i| try uses.append(keep, .{ .param = @intCast(i), .path = eps, .bits = bit_r });
+        switch (kind) {
+            .schema => {
+                for (taint.decoded) |p| try res.append(keep, .{ .path = slots[0], .prov = p });
+                for (taint.encoded) |p| try res.append(keep, .{ .path = slots[1], .prov = p });
+            },
+            .decode => for (taint.decoded) |p| try o.anywhereIn(&res, p),
+            .decode_value, .encode_value => {
+                for (if (kind == .decode_value) taint.decoded else taint.encoded) |p| try o.anywhereIn(&res, p);
+                const input: u32 = @intCast(arity - 1);
+                uses.items[input].bits |= bit_a;
+                try o.inputAside(&res, input);
+            },
+        }
+        const s = try w.a.create(Summary);
+        s.* = try o.normalize(.{ .params = @intCast(arity), .uses = uses.items, .res = res.items, .asserted = true });
+        return s;
+    }
+
+    /// The slots of the schema a call's `a.codec` evidence answers: a
+    /// derived codec's (`schemaTaint` of its definition, with each of its
+    /// slots' evidence), or a type's module's `codec`'s, which its summary
+    /// names. `⊤` for an evidence parameter or anything else.
+    fn codecTaint(w: *Walker, inst: Inst.Index) Allocator.Error!SchemaTaint {
+        if (w.m >= w.o.in.dispatch.len) return top_taint;
+        const dt = &w.o.in.dispatch[w.m];
+        const callee: Inst.Index = @fromBackingInt(@intCast(w.bir.instData(inst).lhs));
+        const site = dt.siteOf(callee) orelse dt.siteOf(inst) orelse return top_taint;
+        const roots = dt.argsAt(site.evidence);
+        if (roots.len != 1) return top_taint;
+        return w.termTaint(dt, roots[0], 0);
+    }
+
+    fn termTaint(w: *Walker, dt: *const Dispatch, ti: Dispatch.TermIndex, depth: u32) Allocator.Error!SchemaTaint {
+        if (depth > 8) return top_taint;
+        const o = w.o;
+        switch (dt.term(ti)) {
+            .codec => |u| {
+                var t = try o.schemaTaint(w.m, @intCast(w.bir.decls.len + u.index));
+                for (dt.argsAt(u.args)) |a| {
+                    const x = try w.termTaint(dt, a, depth + 1);
+                    t = .{
+                        .decoded = try std.mem.concat(o.keep.allocator(), Prov, &.{ t.decoded, x.decoded }),
+                        .encoded = try std.mem.concat(o.keep.allocator(), Prov, &.{ t.encoded, x.encoded }),
+                    };
+                }
+                return t;
+            },
+            .top, .ext => {
+                const target = w.termTarget(dt.term(ti)) orelse return top_taint;
+                const s = (try o.ensureSummary(target.m, target.d)) orelse return top_taint;
+                return o.slotProvs(s, .{ target.m, target.d }, false);
+            },
+            else => return top_taint,
+        }
+    }
+
+    /// §30.10: the slots of the conversion `Schema.conversion forward
+    /// backward` made at `inst`, whose value `made` holds the two functions
+    /// at `.there` and `.back` (`core/Schema`'s `Pair`). Decoding hands
+    /// `forward` a value built from the input and answers what it returns;
+    /// encoding hands `backward` the program's value. So `⟨decoded⟩` holds
+    /// what `forward` may return that is neither built by its call nor its
+    /// argument, and `⟨encoded⟩` the same of `backward` — nothing at all
+    /// when the end it returns, `a` or `b`, holds no list.
+    fn conversionSlots(w: *Walker, inst: Inst.Index, made: AV) Allocator.Error!AV {
+        var ends: [2]?Var = .{ null, null };
+        if (w.instType(inst)) |v| switch (w.store.resolvedContent(v)) {
+            .structure => |st| switch (st) {
+                .app => |app| {
+                    const xs = w.store.vars(app.args);
+                    if (xs.len == 2) ends = .{ xs[1], xs[0] };
+                },
+                else => {},
+            },
+            else => {},
+        };
+        const fields = [_][]const u8{ "there", "back" };
+        const kinds = [_]StepKind{ .schema_decoded, .schema_encoded };
+        var parts: [2]AV = .{ &.{}, &.{} };
+        for (fields, kinds, ends, &parts) |field, kind, end, *part| {
+            if (end) |v| if (!try w.trackedVar(v)) continue;
+            const answer = if (w.o.in.interner.find(field)) |sym|
+                try w.functionAnswer(try w.proj(made, .{ .kind = .field, .arg = @backingInt(sym) }, null), inst, kind == .schema_encoded)
+            else
+                try w.single(.{ .kind = .top, .a = unfollowed });
+            part.* = try w.under(answer, try w.o.child(eps, kind, 0));
+        }
+        return w.unionOf(&parts);
+    }
+
+    /// §30.10: what a call of the function value `f` may return that
+    /// outlives the call: not a cell the call makes, not its argument or a
+    /// part of it, but what it captured, a top-level value, or anything
+    /// from where the checker cannot see. `⊤` when `f`'s classes are not
+    /// known.
+    fn functionAnswer(w: *Walker, f: AV, inst: Inst.Index, argument_is_input: bool) Allocator.Error!AV {
+        const classes = try w.classesOf(f);
+        if (classes.len == 0) return w.single(.{ .kind = .top, .a = unfollowed });
+        var out: std.ArrayList(Entry) = .empty;
+        for (classes) |cls| {
+            const s = (try w.classSummary(cls)) orelse return w.single(.{ .kind = .top, .a = unfollowed });
+            const ci: u32 = if (cls == .closure) cls.closure else none;
+            for (s.res) |r| switch (r.prov.kind) {
+                .fresh => {},
+                // `backward` is handed the program's value: what it returns of
+                // it is the run's input (`input_marker`). `forward` is handed
+                // what the run built.
+                .param => if (argument_is_input) try out.appendSlice(w.a, try w.single(.{ .kind = .top, .a = 2 })),
+                .esc => try out.appendSlice(w.a, try w.single(.{ .kind = .top, .a = unfollowed })),
+                .env => if (ci == none)
+                    try out.appendSlice(w.a, try w.single(.{ .kind = .top, .a = unfollowed }))
+                else
+                    try out.appendSlice(w.a, try w.instProv(r.prov, .{ .inst = inst, .s = s, .avs = &.{}, .closure = ci, .depth = 1, .effects = false })),
+                .shared, .top => try out.appendSlice(w.a, try w.instProv(r.prov, .{ .inst = inst, .s = s, .avs = &.{}, .depth = 1, .effects = false })),
+                .cb, .klass => try out.appendSlice(w.a, try w.single(.{ .kind = .top, .a = unfollowed })),
+            };
         }
         return w.norm(out.items);
     }
@@ -5819,6 +6428,24 @@ const Walker = struct {
             const avs = try w.evalOperands(args, false);
             w.popPending(avs.len);
             return &.{};
+        }
+        // §30.10: a run of a derived codec, or the codec itself, whose
+        // schema is the call's evidence.
+        if (has_params) if (try w.codecRunRow(inst, t, args.len)) |s| {
+            const out = try w.applySummary(inst, .{ .sum = s, .name = try w.qualified(t), .op = try w.callOp(t) }, args, &.{}, null);
+            return if (w.isCore(t, "Json")) w.settleRun(out) else out;
+        };
+        // §30.10: a run's answer holds its input only where its schema's
+        // slot says so.
+        if (has_params and w.isCore(t, "Schema") and eqlAny(w.targetName(t), &schema_runs)) if (try w.o.ensureSummary(t.m, t.d)) |s| {
+            return w.settleRun(try w.applySummary(inst, .{ .sum = s, .name = try w.qualified(t), .op = try w.callOp(t) }, args, &.{}, null));
+        };
+        // §30.10: a conversion's slots hold what its functions answer.
+        if (has_params and args.len == 2 and w.isCore(t, "Schema") and std.mem.eql(u8, w.targetName(t), "conversion")) {
+            if (try w.o.ensureSummary(t.m, t.d)) |s| {
+                const made = try w.applySummary(inst, .{ .sum = s, .name = try w.qualified(t), .op = try w.callOp(t) }, args, &.{}, null);
+                return w.unionOf(&.{ made, try w.conversionSlots(inst, made) });
+            }
         }
         if (if (has_params) try w.o.ensureSummary(t.m, t.d) else null) |s| {
             const saved = w.maybe_join;
@@ -6976,7 +7603,7 @@ const Walker = struct {
                 return av;
             },
             .shared => return w.single(.{ .kind = .shared, .a = p.a, .b = p.b, .path = p.path }),
-            .top => return w.single(.{ .kind = .top, .a = if (ctx.s.limit != .none or p.a == 1) 1 else 0 }),
+            .top => return w.single(.{ .kind = .top, .a = if (ctx.s.limit != .none or p.a == 1) 1 else p.a }),
             .env => {
                 if (ctx.closure == none) return w.single(.{ .kind = .top, .a = 0 });
                 // A carried lambda's capture: what the callee's binding said
@@ -8939,6 +9566,14 @@ const Walker = struct {
                 .top => if (c.a == 1) {
                     cause = .limit;
                     detail = "it came from a callee whose summary is past the checker's limits";
+                } else if (c.a == 2) {
+                    // §30.10: a schema's run answered part of its input, at
+                    // a call the checker did not see as a run.
+                    cause = .unknown;
+                    detail = "it may be part of the value a schema was run on";
+                } else if (c.a == unfollowed) {
+                    cause = .unknown;
+                    detail = "a schema answered it whose functions the checker does not follow — one built at run time, or a conversion it cannot place";
                 } else {
                     cause = .unknown;
                     detail = "the list came from JavaScript";

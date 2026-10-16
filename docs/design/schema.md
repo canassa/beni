@@ -1222,6 +1222,20 @@ that makes the bundle smaller, are slice B (*Validators shared across schemas*, 
 derived from a type (§12) are slice C. §12.8 already says that the value passed through evidence
 is the callee's specialised worker, and that is this section's `Compiled`.
 
+**What a run answers, for ownership** *(added 2026-10-16, the owner, #218;
+`ownership-checker.md` §30.10 is normative)*. Lists are written in place, so the ownership checker
+must know whether a run's answer holds a list somebody else holds. Because a compiled schema is
+statically known, the checker derives that from the schema, per direction, instead of one word for
+every schema: a run's answer is fresh — the workers build every array and record from the input,
+or adopt the array `JSON.parse` made — except where a conversion's function returns something it
+did not build from what it was handed (what it captured, a top-level value), where a `Value` or a
+conversion's `backward` hands back part of the program's own value (decoding a host value with
+`read`, and the encode direction), and wherever the schema was built by an interpreting builder,
+whose functions the checker does not follow. The derivation reads the declaration's plan: its
+`via`s, its `value` primitives, the declarations and derived codecs it names. A `via` that is a
+top-level value contributes what that value's conversion returns; any other `via` expression,
+which the declaration evaluates once, is unknown in each direction whose end holds a list.
+
 **Validators shared across schemas** *(added 2026-10-15, slice B, #192; the owner: "be careful,
 the goal is to save bytes, don't share if it increases the bundle size")*. A `--release` build
 may call a `core/Schema` helper in place of a failure branch its workers would write again and
@@ -1534,7 +1548,10 @@ inner schema or conversion. A default enters at the layer of its trigger:
 **Evaluation.** A default expression is evaluated **each time its default fires**, at the field's
 place in declaration-order traversal, and never when the key supplies the value. This is Effect's
 "executed each time a default value is needed" (L3050). A pure default may be evaluated once by
-the backend, since that is unobservable. An impure default, such as `Debug.log`, is ordered among
+the backend, since that is unobservable. *(Amended 2026-10-16, #218: with lists written in place,
+it is observable when the default holds a list — two decoded values would share one array. Such a
+default either is evaluated each time it fires, or enters its direction's slot as a shared cell,
+`ownership-checker.md` §30.10, which the default slice decides when it builds.)* An impure default, such as `Debug.log`, is ordered among
 its siblings' conversions. A suspending default makes the decoding direction suspend (§13). A
 FirstError traversal that stopped earlier does not evaluate it.
 
@@ -2161,6 +2178,12 @@ schema argument.
   is still 1 085 against 1 086 brotli. A five-field record of four strings and an integer, the
   shape `emit/release/app/SchemaSharedValidators` shares `badString` at, is byte-identical
   declared and derived in `--release` (986 brotli each, the shared helper in both).
+
+**What a derived codec's run answers** *(added 2026-10-16, #218)*. As a declaration's
+(§6, *What a run answers, for ownership*): `Json.decode`, `decodeWith`, `decodeValue` and
+`encodeValue` are read by the ownership checker at each call through the call's evidence, so a
+derived codec of a type with no `Value` and no module `codec` answers a fresh value, and a type's
+module's `codec` contributes what its own conversions return (`ownership-checker.md` §30.10).
 
 **`Schema.structural`, not `Schema.derived`, is the hint.** §12.2 says an opaque type's module
 "may derive it there by writing `pub codec () = Schema.derived ()`". By the module rule that call

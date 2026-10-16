@@ -1,0 +1,198 @@
+-- ownership: what a schema's run answers (`ownership-checker.md` §30.10).
+-- A compiled schema's answer is derived from its declaration, per
+-- direction: fresh where the run builds it from its input — a
+-- declaration's own `parse`, a composition, a generic declaration, a
+-- conversion that builds from what it is handed, a derived codec — and,
+-- elsewhere, what returned it: a top-level value a conversion returns
+-- (rejected, `top-level`), a list a conversion captured (rejected while
+-- the capture is read again), a schema an interpreting builder made
+-- (`flip`: rejected, unknown), and, decoding a host value or encoding, the
+-- program's own value where a `Value` or a `backward` hands it back. Each
+-- answer's list is written in place.
+import Json
+import Schema exposing (Conversion, Value)
+
+
+type alias Point =
+    x : Int
+    tags : List String
+
+
+schema Item =
+    id : Int
+    tags : List String
+
+
+schema Page a =
+    items : List a
+    next : String nullable
+
+
+words : Conversion String (List String)
+words = Schema.conversion (λs → Ok (String.split s " ")) λws → Ok (String.join ws " ")
+
+
+kept : List String
+kept = [ "kept" ]
+
+
+fixed : Conversion String (List String)
+fixed = Schema.conversion (λ_ → Ok kept) λws → Ok (String.join ws " ")
+
+
+same : Conversion (List Int) (List Int)
+same = Schema.conversion (λxs → Ok xs) λxs → Ok xs
+
+
+schema Sentence =
+    text : String via words
+
+
+schema Fixed =
+    text : String via fixed
+
+
+schema Box =
+    items : List Int via same
+
+
+-- A declaration's own `parse`: accepted.
+pub declared : String → List String
+declared input =
+    case Item.parse input of
+        Ok item →
+            List.push item.tags "x"
+        Err _ →
+            []
+
+
+-- A list of a declaration, through `Schema.parse`: accepted.
+pub composed : String → List Item.Type
+composed input =
+    case Schema.parse (Schema.list (Item.schema ⊤)) input of
+        Ok items →
+            List.push items { id = 0, tags = [] }
+        Err _ →
+            []
+
+
+-- A generic declaration's argument: accepted.
+pub generic : String → List Item.Type
+generic input =
+    case Schema.parse (Page.schema (Item.schema ⊤)) input of
+        Ok page →
+            List.push page.items { id = 0, tags = [] }
+        Err _ →
+            []
+
+
+-- A conversion that builds its answer from what it is handed: accepted.
+pub built : String → List String
+built input =
+    case Sentence.parse input of
+        Ok s →
+            List.push s.text "x"
+        Err _ →
+            []
+
+
+-- A conversion that answers a top-level list: rejected, `top-level`.
+pub topLevel : String → List String
+topLevel input =
+    case Fixed.parse input of
+        Ok f →
+            List.push f.text "x"
+        Err _ →
+            []
+
+
+-- A conversion that answers what it captured, read again after the
+-- write: rejected.
+pub captured : List String, String → List String × List String
+captured held input =
+    back = Schema.conversion (λ_ → Ok held) λws → Ok (String.join ws " ")
+    case Schema.parse (Schema.converted Schema.string back) input of
+        Ok ws →
+            ( List.push ws "x", held )
+        Err _ →
+            ( [], held )
+
+
+-- An interpreting builder's schema: its functions are not followed, so
+-- its answer is unknown — rejected.
+pub interpreted : String → List Int
+interpreted input =
+    case Schema.parse (Schema.flip (Schema.list Schema.int)) input of
+        Ok xs →
+            List.push xs 1
+        Err _ →
+            []
+
+
+-- A derived codec, through `Json.decode`: accepted.
+pub derived : String → List String
+derived input =
+    case Json.decode input of
+        Ok p →
+            point : Point
+            point = p
+            List.push point.tags "x"
+
+        Err _ →
+            []
+
+
+-- Decoding with a `backward`-only identity: the forward is handed what
+-- the run built, so the answer is fresh even while the input is read
+-- again — accepted.
+pub decoded : Box.Encoded → List Int × Box.Encoded
+decoded input =
+    case Schema.decode (Box.schema ⊤) input of
+        Ok box →
+            ( List.push box.items 1, input )
+        Err _ →
+            ( [], input )
+
+
+-- Encoding: `backward` hands back the program's own list, so the answer
+-- may be it. Read again after the write: rejected.
+pub encodedKept : Box.Type → List Int × Box.Type
+encodedKept box =
+    case Schema.encode (Box.schema ⊤) box of
+        Ok out →
+            ( List.push out.items 1, box )
+        Err _ →
+            ( [], box )
+
+
+-- Not read again: accepted, a write of the parameter (`π1⋆ W`).
+pub encodedAlone : Box.Type → List Int
+encodedAlone box =
+    case Schema.encode (Box.schema ⊤) box of
+        Ok out →
+            List.push out.items 1
+        Err _ →
+            []
+
+
+-- `read` of `Value`s: each element is the host value handed in, so the
+-- answer may hold any part of the input. Not read again: accepted, a
+-- write of the parameter (`π1⋆ W`), which its caller decides.
+pub values : Value, Value → List Value
+values input more =
+    case Schema.read (Schema.list Schema.value) input of
+        Ok vs →
+            List.push vs more
+        Err _ →
+            []
+
+
+-- The same read of a list of integers: no `Value`, so the answer holds
+-- nothing of the input, read again after the write — accepted.
+pub numbers : Value → List Int × Value
+numbers input =
+    case Schema.read (Schema.list Schema.int) input of
+        Ok xs →
+            ( List.push xs 1, input )
+        Err _ →
+            ( [], input )

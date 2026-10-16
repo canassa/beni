@@ -66,7 +66,9 @@ pub const magic = "BENIOWN\x00";
 /// 8 preserves unknown/root entry paths while excluding only known init fields.
 /// 9 reads `need` through taken elements (§16.4 item 5, amended 2026-10-15).
 /// 10 names a tagged schema's constructors after the BIR's own.
-pub const version: u32 = 10;
+/// 11 gives a schema value its two analysis slots, `⟨decoded⟩` and
+/// `⟨encoded⟩` (§30.10).
+pub const version: u32 = 11;
 
 pub const Error = error{Bad} || Allocator.Error;
 
@@ -292,7 +294,7 @@ fn pathKey(o: *Ownership, arena: Allocator, w: *Writer, p: u32) Allocator.Error!
                 try appendInt(arena, &out, key.index);
                 try out.append(arena, @intCast(st.arg % 64));
             },
-            .elem, .env, .any, .markup_render, .markup_event => {},
+            .elem, .env, .any, .markup_render, .markup_event, .schema_decoded, .schema_encoded => {},
         }
     }
     return out.items;
@@ -584,7 +586,7 @@ pub fn read(o: *Ownership, arena: Allocator, bytes: []const u8, m: u32) Error!Bl
                     if (k >= 64 or !try o.hasCtor(cm, ci)) return error.Bad;
                     break :blk (try o.ctorId(cm, ci)) *% 64 +% k;
                 },
-                .elem, .env, .any, .markup_render, .markup_event => 0,
+                .elem, .env, .any, .markup_render, .markup_event, .schema_decoded, .schema_encoded => 0,
             };
             at = try o.rawChild(at, kind, arg);
         }
