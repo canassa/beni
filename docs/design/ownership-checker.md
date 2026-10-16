@@ -4022,6 +4022,10 @@ platform hold no rejected or pending line):
   reader holds. Lending it owned would need every `get`'s result tracked across the program. The owner
   decides whether the fixture copies in its callback, as `ListPersistence` does (issue #219).
 
+  *Amended 2026-10-16 (the owner, issue #219):* real sharing, and the error is correct. `run/RefModify`'s
+  callback pushes onto `List.copy ns`, and `check/bad/direct/RefUpdateShared` — a `snapshot` read with
+  `Ref.get` before the `update` — pins the refusal. `Ref`'s API and words do not change.
+
 A defect found on the way, not fixed here: a conservative call's result (§6.1) counts as made by the call,
 so a function value with no class that returns a list somebody else holds is written in place, accepted
 `assumed` (issue #216).
