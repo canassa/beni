@@ -65,7 +65,7 @@ main : Program
 main =
     Node.printLines
         (List.map (List.sort samples) show
-            ++ List.map (Set.toList (Set.fromList (samples ++ samples))) show
+            ++ List.map (Set.toList (Set.fromList (List.copy samples ++ samples))) show
             ++ List.map (Dict.keys counts) show
             ++ Dict.values counts
             ++ [ yesNo (Dict.member counts Int32.minValue)

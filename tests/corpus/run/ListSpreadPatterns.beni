@@ -8,6 +8,12 @@
 -- a list pattern nested in a list and in a tuple; and the expression forms,
 -- whose items and spread operands run left to right before the list is
 -- built (the `Debug.log` lines, in source order).
+--
+-- `xs` is spread three times and printed after each, so since ownership
+-- holds on every platform (`ownership-checker.md` §30) each spread that
+-- writes keeps `xs` by an explicit `List.copy`; `[ ...xs, ...xs ]` copies
+-- its first operand. `check/bad/direct/ListSpreadShared` is the shared
+-- version, refused.
 import Node exposing (Program)
 
 
@@ -73,7 +79,7 @@ note tag x = Debug.log tag x
 main : Program
 main =
     xs = [ 1, 2, 3 ]
-    built = [ note "a" 0, …note "b" xs, note "c" 4, …note "d" [ 5 ] ]
+    built = [ note "a" 0, …note "b" (List.copy xs), note "c" 4, …note "d" [ 5 ] ]
     Node.printLines
         [ describe []
         , describe [ 7 ]
@@ -95,8 +101,8 @@ main =
         , pairUp ( [], [ 3 ] )
         , Debug.toString built
         , Debug.toString [ 0, …xs ]
-        , Debug.toString [ …xs, 4 ]
-        , Debug.toString [ …xs, …xs ]
+        , Debug.toString [ …List.copy xs, 4 ]
+        , Debug.toString [ …List.copy xs, …xs ]
         , Debug.toString [ …[], 1, …[] ]
         , Debug.toString [ …xs ]
         ]

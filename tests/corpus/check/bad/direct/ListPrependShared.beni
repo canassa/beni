@@ -1,0 +1,19 @@
+-- `run/ListPrepend`'s appends without their copies: `[ ...xs, 7 ]`,
+-- `xs ++ [ 7 ]` and `List.append` each write `xs` in place while `xs` is
+-- still read after them (`ownership-checker.md` §30). The checker refuses
+-- each; `run/ListPrepend` writes `List.copy xs`. A prepend copies (§25.2),
+-- so `[ 100, ...xs ]` is no line.
+summary : List Int → String
+summary xs = String.fromInt (List.length xs)
+
+
+pub appends : List Int → String
+appends xs =
+    String.join
+        [ summary [ 100, …xs ]
+        , summary [ …xs, 7 ]
+        , summary (xs ++ [ 7 ])
+        , summary (List.append xs [ 8 ])
+        , summary xs
+        ]
+        " "

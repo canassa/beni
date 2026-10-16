@@ -48,7 +48,7 @@ main =
             [ String.fromInt (List.length blankInts)
             , String.fromInt (List.length blankStrings)
             , yn (List.member blankInts 1)
-            , yn (List.member (List.append blankInts [ 1, 2 ]) 2)
+            , yn (List.member (List.append (List.copy blankInts) [ 1, 2 ]) 2)
             ]
             ","
         )
