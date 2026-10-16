@@ -3,7 +3,7 @@
 **What I did**
 
 I added `.github/CODEOWNERS`, which names `@canassa` for the files that decide what CI checks.
-The files are `Axioms.lean`, `Audit.lean`, `lakefile.toml`, `lake-manifest.json`, `lean-toolchain` and `scripts/` in `proofs/ownership/`, then `flake.nix`, `flake.lock`, `.github/` and every `.gitattributes`.
+The files are `Axioms.lean`, `Audit.lean`, `Ownership.lean`, `Main.lean`, `lakefile.toml`, `lake-manifest.json`, `lean-toolchain` and `scripts/` in `proofs/ownership/`, then `flake.nix`, `flake.lock`, `.github/` and every `.gitattributes`.
 Cesar decided it on 2026-10-16 (dashboard question `lean-ci-q1`).
 
 **What I learned**
@@ -12,3 +12,4 @@ The review of the job `lean` of #257 found that the job runs the audit files of 
 A pull request that weakens them passes its own weaker audit, and no CI step can catch that.
 The file has no effect until an admin turns on "Require review from Code Owners" in the ruleset on master.
 The audit does not check what a theorem states, so the proof sources stay unowned, and a reviewer must read the statements.
+`Ownership.lean` and `Main.lean` are owned, because their imports decide which modules the build and the audit check.
