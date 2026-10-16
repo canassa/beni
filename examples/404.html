@@ -8,24 +8,29 @@
       GitHub Pages answers a path that names no file with this page. Under a
       program that routes by path, such as /conduit/article/<slug> after a
       reload, the page runs that program, which reads its route from the
-      address. This page stands in for the program's default page shell,
-      which holds only the entry script and an empty body, so such a
-      program declares no "html" shell (examples/build-pages.mjs checks it
-      and fills in the list of programs).
+      address. This page stands in for the program's page shell:
+      examples/build-pages.mjs fills in each such program with the shell
+      its build wrote, and the script puts that shell in place of this
+      page. A script that DOMParser parses never runs, so each script of
+      the shell is made again, which runs it.
     -->
     <script type="module">
-      const app = {{apps}}.find((path) => location.pathname.startsWith(path));
-      const notFound = document.getElementById("not-found");
+      const app = {{apps}}.find(({ base }) => location.pathname.startsWith(base));
       if (app) {
-        notFound.remove();
-        import(`${app}_main.mjs`);
+        const shell = new DOMParser().parseFromString(app.shell, "text/html");
+        document.replaceChild(document.adoptNode(shell.documentElement), document.documentElement);
+        for (const parsed of document.querySelectorAll("script")) {
+          const script = document.createElement("script");
+          for (const { name, value } of parsed.attributes) script.setAttribute(name, value);
+          script.async = parsed.async;
+          script.text = parsed.text;
+          parsed.replaceWith(script);
+        }
       } else {
-        notFound.hidden = false;
+        document.getElementById("not-found").hidden = false;
       }
     </script>
     <!--
-      Every rule is under #not-found, so none of them touches a program
-      that this page runs: the program gets its default page shell's look.
       #not-found covers the viewport, which gives the page its background.
     -->
     <style>
