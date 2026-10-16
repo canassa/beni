@@ -12,7 +12,15 @@ cells after the call and the other operand paths; the operands are live, so
 cells; `linkNamed` makes a linked input array share the written array's
 origins; and the Disjoint test refuses the overlap. No theorem here uses a
 pinned obligation. Calls with captures and calls with function-valued
-inputs (the `env` and `calls` rows) are not covered. -/
+inputs (the `env` and `calls` rows) are not covered.
+
+Two notes on the main statement. The hypothesis `known` (no `unknown` cell
+on any actual) is stronger than the Known test, which checks the written
+cells only; the call case of `invariant_preserved` must establish it on its
+own, and it is a residual obligation (`PROOF-PLAN.md`, *Summary pre-state
+links and validity*). The trailing argument `ins` is unused: the lemma holds
+for any canonical input list, and the argument only matches the signature of
+`LinkedWritesCovered`. -/
 
 namespace Ownership.CallDerivation
 
@@ -85,7 +93,9 @@ theorem forIn_demands (items : List Origin) (cells others : Origin → List Orig
     · rw [← escapes]
       exact all w member
 
-/-- The default configuration keeps the callee's captures as operand paths. -/
+/-- The default configuration keeps the callee's captures as operand paths.
+    Both `rfl` facts below hold by the default `Config` (`mutant := none`); a
+    changed default breaks them loudly. -/
 theorem default_no_calleeCapture : ({} : Config).has .calleeCapture = false := rfl
 
 /-- Every write and consume row of a successful default `applyCall` passed
@@ -105,8 +115,6 @@ theorem applyCall_demands {ctx : Context} (config : ctx.config = {}) {s : Summar
   exact (forIn_demands (s.writes ++ s.consumes) (fun w => instantiateOrigin site args caps w)
     (fun w => otherPaths args caps w) later loopRun).2
 
-
-
 /-- A value found at a path is reached. -/
 theorem atPath_reaches {heap : Heap} {v : Value} {q : Path} {w : Value}
     (h : AtPath heap v q w) : Reaches heap v w := by
@@ -116,7 +124,6 @@ theorem atPath_reaches {heap : Heap} {v : Value} {q : Path} {w : Value}
   | field lookup _ ih => exact Reaches.field (List.mem_of_getElem? lookup) ih
   | capture lookup _ ih => exact Reaches.capture (List.mem_of_getElem? lookup) ih
   | env mem reaches => exact Reaches.capture mem reaches
-
 
 /-- A parameter row at a path that is not an environment path instantiates
     to the argument's cells at that path. -/
@@ -157,8 +164,6 @@ theorem mem_otherPaths (args caps : List Abstract) (i j : Nat) (q p : Path) (a :
       | field _ => simp [ne, member]
       | element => simp [ne, member]
       | capture _ => simp [ne, member]
-
-
 
 /-- The cells-at-path fold: an origin in its result is in the accumulator
     or in a cell list recorded at the path. -/
@@ -377,7 +382,6 @@ theorem cellsAt_of_mem_paths (a : Abstract) (p : Path) (cs : List Origin) (o : O
         exact foldl_keeps paths _ (Ownership.FlatFragment.Description.mem_union acc cs o (Or.inr member))
       · exact ih _ later
   exact general a.paths [] path
-
 
 /-! ## The premise at a first-order call without captures -/
 
