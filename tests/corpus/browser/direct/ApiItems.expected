@@ -1,0 +1,38 @@
+-- load
+<body>
+  <main>
+    <button id="load">"load"</button>
+    <ul></ul>
+    <ol></ol>
+  </main>
+</body>
+-- click #load
+(fetch 1: GET /api/items {"accept":"application/json","authorization":"Bearer t0k3n"})
+(the DOM did not change)
+-- respond 1 200 "[{\"id\":1,\"name\":\"tea\"},{\"id\":2,\"name\":\"cake\"}]" Content-Type: "application/json"
+<body>
+  <main>
+    <button id="load">"load"</button>
+    <ul>
+      <li>"1: tea"</li>
+      <li>"2: cake"</li>
+    </ul>
+    <ol>
+      <li>"2 items"</li>
+    </ol>
+  </main>
+</body>
+-- click #load
+(fetch 2: GET /api/items {"accept":"application/json","authorization":"Bearer t0k3n"})
+(the DOM did not change)
+-- respond 2 401 "{\"error\":\"expired\"}" Content-Type: "application/json"
+<body>
+  <main>
+    <button id="load">"load"</button>
+    <ul></ul>
+    <ol>
+      <li>"2 items"</li>
+      <li>"BadStatus 401"</li>
+    </ol>
+  </main>
+</body>
