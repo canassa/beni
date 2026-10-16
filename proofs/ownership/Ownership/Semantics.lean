@@ -246,6 +246,7 @@ structure CallRecord where
   caps : List Value
   preHeap : Array (List Value)
   preKept : Array Value
+  preLinks : List (Nat × Nat × Bool) := []
   postHeap : Array (List Value)
   postKept : Array Value
   result : Value
@@ -283,7 +284,7 @@ def countWrite : M Unit := modify fun s => { s with writes := s.writes + 1 }
     they return, so nested calls come before the call that made them. -/
 def logCall (pre : State) (id : Nat) (actuals caps : List Value) (r : Value) : M Unit :=
   if pre.logCalls then
-    modify fun s => { s with calls := s.calls.push (CallRecord.mk id actuals caps pre.heap pre.kept s.heap s.kept r) }
+    modify fun s => { s with calls := s.calls.push (CallRecord.mk id actuals caps pre.heap pre.kept pre.links s.heap s.kept r) }
   else pure ()
 
 def tick : M Unit := do
@@ -377,6 +378,45 @@ def atom (env : Env Value) : Atom → Except String Value
     let .record xs ← atom env a | throw "in-place projection"
     xs[i]?.toExcept "in-place field"
 
+/-- Pending reads at a construction write. The runtime ignores this metadata;
+the opt-in diagnostic interpreter uses it without changing any runtime field. -/
+structure ConstructionReads where
+  values : List Value := []
+  header : Option Nat := none
+  suffix : Option (Nat × Nat) := none
+
+/-- One construction loop shared by ordinary and diagnostic execution. The
+callbacks preserve the original read, guard, and write order. No element ticks. -/
+def constructWith {m : Type → Type} [Monad m] [MonadExceptOf String m]
+    (readArray : Nat → m (List Value))
+    (writeArray : ConstructionReads → Nat → List Value → m Value)
+    (spreads : List Bool) (vs : List Value) : m Value := do
+  let b := spreads.idxOf true
+  let .ref c := vs[b]?.getD (.int 0) | throw "in-place construction base"
+  let before := vs.take b
+  let later := (vs.zip spreads).drop (b + 1)
+  if !before.isEmpty then
+    let _ ← writeArray {values := before ++ later.map Prod.fst} c (before ++ (← readArray c))
+  for ((v, spread), index) in later.zipIdx do
+    let pending := (later.drop (index + 1)).map Prod.fst
+    if spread then
+      let .ref d := v | throw "in-place construction operand"
+      let length := (← readArray d).length
+      for j in [0:length] do
+        let source ← readArray d
+        if source.length != length then
+          throw "in-place construction: a spread operand grows with its base"
+        let x ← match source[j]? with
+          | some x => pure x
+          | none => throw "construction operand changed length"
+        let _ ← writeArray {values := x :: pending, header := some d, suffix := some (d, j + 1)}
+          c ((← readArray c) ++ [x])
+      if (← readArray d).length != length then
+        throw "in-place construction: a spread operand grows with its base"
+    else
+      let _ ← writeArray {values := v :: pending} c ((← readArray c) ++ [v])
+  pure (.ref c)
+
 def prim (op : Prim) (vs : List Value) : M Value := do
   match op, vs with
   | .ok _, [x] => pure (.record [.int 1, .int 0, x])
@@ -428,26 +468,7 @@ def prim (op : Prim) (vs : List Value) : M Value := do
     -- spread grows during its own loop only if it shares the base's array,
     -- and then it grows forever: that run fails at once, as it would when
     -- any amount of fuel ran out.
-    let b := spreads.idxOf true
-    let .ref c := vs[b]?.getD (.int 0) | throw "in-place construction base"
-    let before := vs.take b
-    if !before.isEmpty then
-      let _ ← writeCounted c (before ++ (← array c))
-    for (v, spread) in (vs.zip spreads).drop (b + 1) do
-      if spread then
-        let .ref d := v | throw "in-place construction operand"
-        let length := (← array d).length
-        for j in [0:length] do
-          let source ← array d
-          if source.length != length then
-            throw "in-place construction: a spread operand grows with its base"
-          let x ← source[j]?.toExcept "construction operand changed length"
-          let _ ← writeCounted c ((← array c) ++ [x])
-        if (← array d).length != length then
-          throw "in-place construction: a spread operand grows with its base"
-      else
-        let _ ← writeCounted c ((← array c) ++ [v])
-    pure (.ref c)
+    constructWith array (fun _ c xs => writeCounted c xs) spreads vs
   | .view front, [.ref c] => do
     let xs ← array c
     if xs.isEmpty then alloc []

@@ -1,0 +1,275 @@
+{
+  "complete": true,
+  "equal": false,
+  "before_log": {
+    "digest": {
+      "file": "/home/jayson/src/beni.worktrees/ownership-proofs/zig-out/scratch/enum-baseline-ci.log",
+      "bytes": 315600,
+      "lines": 4719,
+      "sha256": "b79b07be1da83caff69297e985a0bb3d53c0f3fdecf3208d4f284bc0a966044b"
+    },
+    "normalized_sha256": "020d4a4739596a148f75428bd4501ef61bea9289664172503ca2f7b4d385d722",
+    "other_lines_sha256": "5f677afab24bb7ec5f52483c3dd9db3c0dc9d8524a663ac4821b840f13f30d10",
+    "summary_rows": 348,
+    "generator_summaries": 34,
+    "summary_inventory": [
+      {
+        "category": "CI",
+        "count": 25
+      },
+      {
+        "category": "CONTROL",
+        "count": 57
+      },
+      {
+        "category": "bridge",
+        "count": 36
+      },
+      {
+        "category": "controls",
+        "count": 1
+      },
+      {
+        "category": "enumerate",
+        "count": 1
+      },
+      {
+        "category": "exporting",
+        "count": 4
+      },
+      {
+        "category": "generator",
+        "count": 1
+      },
+      {
+        "category": "generator-version=5",
+        "count": 61
+      },
+      {
+        "category": "generator-version=6",
+        "count": 1
+      },
+      {
+        "category": "summary",
+        "count": 2
+      },
+      {
+        "category": "sync",
+        "count": 131
+      },
+      {
+        "category": "targeted",
+        "count": 26
+      },
+      {
+        "category": "v6",
+        "count": 1
+      },
+      {
+        "category": "writes:",
+        "count": 1
+      }
+    ],
+    "final_bridge_json_matches": true,
+    "exit_code_attestation": 0
+  },
+  "after_log": {
+    "digest": {
+      "file": "/home/jayson/src/beni.worktrees/ownership-proofs/zig-out/scratch/enum-after-ci.log",
+      "bytes": 315597,
+      "lines": 4719,
+      "sha256": "689822c065b68a5ce0304306d6800fff2ee3b4fa8ffa08d77412489512c1dbb3"
+    },
+    "normalized_sha256": "0b9f5603d684eac28bd1412428f53c1bba25d4980454729651356e4a56d56e77",
+    "other_lines_sha256": "8a1df45e496a37987f7bf301995c4a40650c3827a2cf6f929a56934441119ca3",
+    "summary_rows": 348,
+    "generator_summaries": 34,
+    "summary_inventory": [
+      {
+        "category": "CI",
+        "count": 25
+      },
+      {
+        "category": "CONTROL",
+        "count": 57
+      },
+      {
+        "category": "bridge",
+        "count": 36
+      },
+      {
+        "category": "controls",
+        "count": 1
+      },
+      {
+        "category": "enumerate",
+        "count": 1
+      },
+      {
+        "category": "exporting",
+        "count": 4
+      },
+      {
+        "category": "generator",
+        "count": 1
+      },
+      {
+        "category": "generator-version=5",
+        "count": 61
+      },
+      {
+        "category": "generator-version=6",
+        "count": 1
+      },
+      {
+        "category": "summary",
+        "count": 2
+      },
+      {
+        "category": "sync",
+        "count": 131
+      },
+      {
+        "category": "targeted",
+        "count": 26
+      },
+      {
+        "category": "v6",
+        "count": 1
+      },
+      {
+        "category": "writes:",
+        "count": 1
+      }
+    ],
+    "final_bridge_json_matches": true,
+    "exit_code_attestation": 0
+  },
+  "normalized_log_differing_rows": 37,
+  "summary_differing_rows": 23,
+  "summary_equal": false,
+  "other_log_lines_equal": false,
+  "bridge_exports": [
+    {
+      "name": "enumerate-0.jsonl",
+      "before": {
+        "file": "/home/jayson/src/beni.worktrees/ownership-proofs/zig-out/scratch/enum-baseline-bridge/enumerate-0.jsonl",
+        "bytes": 299140,
+        "lines": 201,
+        "sha256": "03d400910275efe8c8beb08c1c8a1db6d782e2da837917f0f69db6c07714e4c0"
+      },
+      "after": {
+        "file": "/home/jayson/src/beni.worktrees/ownership-proofs/zig-out/scratch/enum-after-bridge/enumerate-0.jsonl",
+        "bytes": 299140,
+        "lines": 201,
+        "sha256": "03d400910275efe8c8beb08c1c8a1db6d782e2da837917f0f69db6c07714e4c0"
+      },
+      "equal": true,
+      "before_manifest_valid": true,
+      "after_manifest_valid": true
+    },
+    {
+      "name": "fixtures-0.jsonl",
+      "before": {
+        "file": "/home/jayson/src/beni.worktrees/ownership-proofs/zig-out/scratch/enum-baseline-bridge/fixtures-0.jsonl",
+        "bytes": 1390094,
+        "lines": 1026,
+        "sha256": "a38e714abf0df309a1030bbf562a0e7246db4f77f3e86f511ab6f5653fd0ccb0"
+      },
+      "after": {
+        "file": "/home/jayson/src/beni.worktrees/ownership-proofs/zig-out/scratch/enum-after-bridge/fixtures-0.jsonl",
+        "bytes": 1390094,
+        "lines": 1026,
+        "sha256": "a38e714abf0df309a1030bbf562a0e7246db4f77f3e86f511ab6f5653fd0ccb0"
+      },
+      "equal": true,
+      "before_manifest_valid": true,
+      "after_manifest_valid": true
+    },
+    {
+      "name": "generator-17.jsonl",
+      "before": {
+        "file": "/home/jayson/src/beni.worktrees/ownership-proofs/zig-out/scratch/enum-baseline-bridge/generator-17.jsonl",
+        "bytes": 1242811,
+        "lines": 198,
+        "sha256": "121e9228d9e26a0e11f09b8632dd7c55a644be1a7e68daf029c9770150ebff39"
+      },
+      "after": {
+        "file": "/home/jayson/src/beni.worktrees/ownership-proofs/zig-out/scratch/enum-after-bridge/generator-17.jsonl",
+        "bytes": 1242811,
+        "lines": 198,
+        "sha256": "121e9228d9e26a0e11f09b8632dd7c55a644be1a7e68daf029c9770150ebff39"
+      },
+      "equal": true,
+      "before_manifest_valid": true,
+      "after_manifest_valid": true
+    },
+    {
+      "name": "generator6-17.jsonl",
+      "before": {
+        "file": "/home/jayson/src/beni.worktrees/ownership-proofs/zig-out/scratch/enum-baseline-bridge/generator6-17.jsonl",
+        "bytes": 1458569,
+        "lines": 193,
+        "sha256": "f44e7ec3f01e1d0d7e7d0252c24272631a27dc4642a985119c2039484809d1c3"
+      },
+      "after": {
+        "file": "/home/jayson/src/beni.worktrees/ownership-proofs/zig-out/scratch/enum-after-bridge/generator6-17.jsonl",
+        "bytes": 1458569,
+        "lines": 193,
+        "sha256": "f44e7ec3f01e1d0d7e7d0252c24272631a27dc4642a985119c2039484809d1c3"
+      },
+      "equal": true,
+      "before_manifest_valid": true,
+      "after_manifest_valid": true
+    }
+  ],
+  "export_names_before": [
+    "enumerate-0.jsonl",
+    "fixtures-0.jsonl",
+    "generator-17.jsonl",
+    "generator6-17.jsonl"
+  ],
+  "export_names_after": [
+    "enumerate-0.jsonl",
+    "fixtures-0.jsonl",
+    "generator-17.jsonl",
+    "generator6-17.jsonl"
+  ],
+  "export_names_expected": [
+    "enumerate-0.jsonl",
+    "fixtures-0.jsonl",
+    "generator-17.jsonl",
+    "generator6-17.jsonl"
+  ],
+  "before_report": {
+    "file": "/home/jayson/src/beni.worktrees/ownership-proofs/zig-out/scratch/enum-baseline-bridge/report.json",
+    "bytes": 80267,
+    "lines": 2785,
+    "sha256": "8220d53b72d01f5e61cf18583e1e584e2cf425d1f20d25dbcf01fad4616d318b"
+  },
+  "after_report": {
+    "file": "/home/jayson/src/beni.worktrees/ownership-proofs/zig-out/scratch/enum-after-bridge/report.json",
+    "bytes": 80268,
+    "lines": 2785,
+    "sha256": "3640f380cf8a6d14148e3fa973de9904307d059f8c9bab0e01639ae9b7100978"
+  },
+  "json_differences": [
+    {
+      "category": "completion_order_samples",
+      "count": 9
+    },
+    {
+      "category": "environment_oracle_sha256",
+      "count": 1
+    }
+  ],
+  "json_difference_count": 10,
+  "evidence_files": [
+    "/home/jayson/src/beni.worktrees/ownership-proofs/zig-out/scratch/refactor-ci-strict-comparison-corrected/before-summary-rows.txt",
+    "/home/jayson/src/beni.worktrees/ownership-proofs/zig-out/scratch/refactor-ci-strict-comparison-corrected/after-summary-rows.txt",
+    "/home/jayson/src/beni.worktrees/ownership-proofs/zig-out/scratch/refactor-ci-strict-comparison-corrected/ci-all-normalized-line-differences.jsonl.gz",
+    "/home/jayson/src/beni.worktrees/ownership-proofs/zig-out/scratch/refactor-ci-strict-comparison-corrected/ci-summary-row-differences.jsonl.gz",
+    "/home/jayson/src/beni.worktrees/ownership-proofs/zig-out/scratch/refactor-ci-strict-comparison-corrected/bridge-report-differences.jsonl.gz"
+  ],
+  "normalization": "Only complete elapsed-ms=[0-9]+ tokens are removed from CI log rows. No JSON field or array order is ignored."
+}

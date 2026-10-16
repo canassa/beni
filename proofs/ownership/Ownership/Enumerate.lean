@@ -19,7 +19,15 @@ input, higher-order callees and map, update and foldl. Programs that differ
 only in a binding the observation never reaches are still enumerated: the
 enumeration is over syntax, not over behaviour. A template that needs a helper
 closure (map's callee, a nested closure) binds it in a `let` inside the
-right-hand side, numbered above every program variable, so it never shadows. -/
+right-hand side, numbered above every program variable, so it never shadows.
+
+Grammar 2 appends aliases, prefix/suffix views and constructions over flat and
+nested lists. Flat operands also include record fields. The declaration table
+and every grammar-1 choice remain unchanged. Each old choice list is a prefix
+of the new list; new descendants change the flattened visit indices.
+The predicted syntax counts are 105,150 programs at bound 2 and 200 at bound 1.
+Grammar 1 had 55,966 programs at bound 2 and 148 at bound 1.
+Check the predictions with `countOnly` after the build. -/
 
 namespace Ownership.Enumerate
 
@@ -34,6 +42,8 @@ def operands (env : List (Var × Ty)) (t : Ty) : List Atom :=
   else vars
 
 def ints : List Atom := [.int 0, .int 1]
+
+def grammarVersion : Nat := 2
 
 /-- Every right-hand side of one binding over `env`; helper closures are
     numbered from `tmp`. -/
@@ -117,7 +127,24 @@ def choices (env : List (Var × Ty)) (tmp : Nat) : List (Expr × Ty) :=
   (arms ns).map (fun (x, y) => (.branch (.int 1) (.atom x) (.atom y), tN)) ++
   (arms fil).map (fun (x, y) => (.branch (.int 1) (.atom x) (.atom y), fIL)) ++
   (arms ls).map (fun (x, y) =>
-    (.branch (.int 1) (.closure Generator.capGet [x]) (.closure Generator.capGet [y]), fIL))
+    (.branch (.int 1) (.closure Generator.capGet [x]) (.closure Generator.capGet [y]), fIL)) ++
+  -- Grammar 2. Keep the grammar-1 choices above in their original order.
+  -- An alias can precede a construction or a view within the bound-2 grammar.
+  ls.map (fun x => (.atom x, tL)) ++
+  ns.map (fun n => (.atom n, tN)) ++
+  [true, false].flatMap (fun front =>
+    ls.map (fun x => (.prim (.view front) [x], tL)) ++
+    ns.map (fun n => (.prim (.view front) [n], tN))) ++
+  -- Ordered pairs include the same operand twice and aliased record fields.
+  (pairs ls).map (fun (base, other) => (.prim (.construct [true, true]) [base, other], tL)) ++
+  (pairs ns).map (fun (base, other) => (.prim (.construct [true, true]) [base, other], tN)) ++
+  ls.flatMap (fun base => ints.map fun item => (.prim (.construct [true, false]) [base, item], tL)) ++
+  ns.flatMap (fun base => ls.map fun item => (.prim (.construct [true, false]) [base, item], tN)) ++
+  -- Both item positions vary independently, including repeated stored lists.
+  ls.flatMap (fun base => ints.flatMap fun before => ints.map fun after =>
+    (.prim (.construct [false, true, false]) [before, base, after], tL)) ++
+  ns.flatMap (fun base => (pairs ls).map fun (before, after) =>
+    (.prim (.construct [false, true, false]) [before, base, after], tN))
 
 /-- The observations a program may end in. -/
 def finals (bound : List Var) : List Expr :=
@@ -269,7 +296,7 @@ def run (bound : Nat) (config : Config := {}) (mode : Mode := .full) (quiet := f
   let ok := total.inconclusive == 0 && (if mode matches .full then found.isNone else found.isSome)
   if !quiet || !ok then
     let changed := if mode matches .full then "" else s!" changed-verdicts={total.changed}"
-    IO.println s!"enumerate bound={bound} enumerated={total.enumerated} typed={total.typed} accepted={total.accepted}{changed} with-write={total.withWrite} mismatches={total.mismatches} inconclusive={total.inconclusive} caught={found.isSome} elapsed-ms={elapsed}"
+    IO.println s!"enumerate bound={bound} enumerated={total.enumerated} typed={total.typed} accepted={total.accepted}{changed} with-write={total.withWrite} mismatches={total.mismatches} inconclusive={total.inconclusive} caught={found.isSome} elapsed-ms={elapsed} grammar-version={grammarVersion}"
   pure (ok, total)
 
 /-- The keys `run` wrote with `acceptedOut`. -/

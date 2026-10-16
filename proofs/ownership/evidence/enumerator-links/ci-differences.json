@@ -1,0 +1,177 @@
+{
+  "strict_reports_equal": false,
+  "raw_evidence_preserved": true,
+  "normalized_log_differences": {
+    "total": 37,
+    "lake_build_progress": {
+      "count": 4,
+      "rows": [
+        1,
+        5,
+        9,
+        30
+      ],
+      "before_job_total": 54,
+      "after_job_total": 62,
+      "module_names_and_job_positions_equal": true
+    },
+    "bridge_lead_completion_order": {
+      "count": 23,
+      "rows": [
+        4265,
+        4266,
+        4267,
+        4268,
+        4269,
+        4270,
+        4271,
+        4272,
+        4273,
+        4274,
+        4276,
+        4277,
+        4278,
+        4280,
+        4282,
+        4283,
+        4284,
+        4286,
+        4287,
+        4295,
+        4296,
+        4297,
+        4298
+      ],
+      "full_36_line_multisets_equal": true,
+      "blocked_by_other_refusals_each": 30,
+      "unconfirmed_each": 6
+    },
+    "precision_example_samples": {
+      "count": 9,
+      "rows": [
+        4632,
+        4634,
+        4638,
+        4640,
+        4641,
+        4644,
+        4645,
+        4646,
+        4647
+      ]
+    },
+    "oracle_binary_sha256": {
+      "count": 1,
+      "rows": [
+        4673
+      ],
+      "before": "2ee0e7df037a2dd867beb77feb3b038071078478a61b7eb1531c418dfe734f79",
+      "after": "6c04e08c1280afe6e72b4bf36e3c1f34e6752d56565255c8359084a10b2eb401"
+    },
+    "unclassified": 0
+  },
+  "summary_rows": {
+    "count_each": 348,
+    "ordered_differences": 23,
+    "all_differences_are_bridge_lead_lines": true,
+    "full_multisets_equal": true,
+    "non_lead_count_each": 312,
+    "non_lead_rows_equal_in_order": true,
+    "generator_metric_count_each": 34,
+    "inventories_equal": true
+  },
+  "bridge_reports": {
+    "json_leaf_differences": 10,
+    "oracle_sha_differences": 1,
+    "precision_sample_leaf_differences": 9,
+    "other_differences": 0,
+    "precision_program_counts_equal": true,
+    "samples": [
+      {
+        "pattern": "List.push: exclusive",
+        "before": [
+          "sync-88",
+          "sync-25",
+          "targeted-181",
+          "targeted-28",
+          "targeted-79"
+        ],
+        "after": [
+          "sync-88",
+          "sync-25",
+          "targeted-130",
+          "targeted-28",
+          "targeted-181"
+        ],
+        "same_multiset": false,
+        "before_only": [
+          "targeted-79"
+        ],
+        "after_only": [
+          "targeted-130"
+        ],
+        "classification": "bounded sample selection and order"
+      },
+      {
+        "pattern": "List.push: once",
+        "before": [
+          "targeted-204",
+          "targeted-207",
+          "targeted-210",
+          "fixture-1",
+          "targeted-213"
+        ],
+        "after": [
+          "fixture-1",
+          "targeted-204",
+          "targeted-207",
+          "targeted-210",
+          "targeted-213"
+        ],
+        "same_multiset": true,
+        "classification": "sample order"
+      },
+      {
+        "pattern": "List.update: exclusive",
+        "before": [
+          "sync-27",
+          "targeted-178",
+          "targeted-25",
+          "targeted-76",
+          "targeted-127"
+        ],
+        "after": [
+          "sync-27",
+          "targeted-127",
+          "targeted-25",
+          "targeted-178",
+          "targeted-76"
+        ],
+        "same_multiset": true,
+        "classification": "sample order"
+      }
+    ],
+    "sample_selection_source": "proofs/ownership/scripts/bridge.mjs:291 retains the first five completed examples; lines 313-315 run concurrent batches.",
+    "equal_totals": {
+      "programs": 1393,
+      "translated": 1011,
+      "skipped": 382,
+      "valueChecked": 1011,
+      "agreements": 962,
+      "precision": 43,
+      "leads": 6,
+      "cases": 36
+    }
+  },
+  "frozen_exports": {
+    "files": [
+      "enumerate-0.jsonl",
+      "fixtures-0.jsonl",
+      "generator-17.jsonl",
+      "generator6-17.jsonl"
+    ],
+    "all_four_byte_hashes_equal": true,
+    "both_manifest_hash_sets_valid": true
+  },
+  "interpretation": "The checker metrics and exported inputs match. The full logs and reports differ. No category changes strict inequality to equality."
+}

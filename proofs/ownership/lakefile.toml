@@ -26,3 +26,19 @@ supportInterpreter = true
 [[lean_exe]]
 name = "triage"
 root = "Triage"
+
+# Optional native evidence drivers. Keep the archived source at its original path.
+[[lean_exe]]
+name = "fueloutcomes"
+root = "FuelOutcomes"
+srcDir = "evidence/construction-fuel"
+
+[[lean_exe]]
+name = "fuelleft"
+root = "FuelLeft"
+srcDir = "evidence/construction-fuel"
+
+[[lean_exe]]
+name = "refactoroutcomes"
+root = "RefactorOutcomes"
+srcDir = "evidence/enumerator-links"

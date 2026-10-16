@@ -62,7 +62,7 @@ Both growth checks and the bounded construction loop remain intact.
 
 ### View links
 
-Track the required owner decision in [issue #169](https://github.com/canassa/beni/issues/169).
+Track the approved premise repair in [issue #169](https://github.com/canassa/beni/issues/169).
 The premise and postcondition proofs are in [ViewLinks.lean](Ownership/StatementChecks/ViewLinks.lean).
 
 `Invariant` constrains the heap and naming, but it does not constrain `State.links`.
@@ -79,28 +79,42 @@ Propose a link invariant that includes these facts:
 
 - Each link has valid addresses and the specified prefix or suffix contents.
 - The link graph terminates and satisfies the nonempty-source condition.
-- Names for linked storage reflect every array that a linked write changes.
+- Each written storage component has a permission that covers every array that its linked write changes.
 - Concrete certificate reasoning accounts for the model's distinct view addresses.
 
-One candidate naming clause closes every origin under the linked storage component:
+Use a conditional permission for written storage instead of global origin closure under links.
+For each permitted write, cover its complete linked storage component with the concrete write permission.
+Require that component to remain separate from live protected paths outside the consumed receiver path.
+Protected paths include outer frames, permanent observers, and unfinished operand reads.
+Derive this separation at accepted callers from actual live paths and the caller's alias-aware demand premises.
+Do not infer a write permission from valid link contents alone.
 
-```text
-c ∈ γ o ∧ Linked hs.links c d -> d ∈ γ o
-```
-
-Together with `Separating`, this clause excludes distinct non-aliasing names for linked addresses.
+A read-only component needs no write permission.
+Keep legal read-only aliases, including distinct canonical names for a view and its source.
+Do not require every `γ o` to contain the whole linked storage component.
+Such a global requirement conflicts with `Separating` at legal `readBoth(rest, xs)` calls.
 
 Cesar narrowed the enumerator condition on 2026-10-16 at 09:01 UTC (dashboard q4).
 Check that no accepted program writes one side of a view/source split while the other side remains live.
 A read-only split, such as `readBoth(rest, xs)`, is legal and is not a checker defect.
+Cesar's q1 rule classifies a reachable accepted write-while-live split as a checker bug.
 Inspect main-context states and call frames for this condition.
 Also check arbitrary states admitted by the theorem.
 A consistency check on link contents alone does not establish alias separation.
 Cesar authorized stronger link premises in q1. Complete the enumerator check first and derive the premises at accepted callers.
+The hash-attested grammar-2 run visited 226,103 program cases and completed every one of its 71,762 accepted runs.
+It checked 91,214 attempted writes, including 837 writes with linked storage.
+It found zero q1 hits and zero incomplete accepted runs.
+The run includes all 105,150 bound-2 programs and both generators at three 20,000-candidate seeds.
+This finite result does not prove the link clauses.
+[PR #245](https://github.com/canassa/beni/pull/245) supplies the #160 memory repair through sequential module processes.
+Its committed-tree audit passed with every check intact. The expanded enumerator source also requires its complete audit before publication.
+Inspect actual write events and their live readers, including outer call frames and unfinished operations.
+Count incomplete executions separately. Interpreter agreement or final heap differences cannot replace this check.
 
 ### Summary observer permissions
 
-Track the required owner decision in [issue #170](https://github.com/canassa/beni/issues/170).
+Track the approved premise repair in [issue #170](https://github.com/canassa/beni/issues/170).
 The complete premise witness is [SummaryObservers.lean](Ownership/StatementChecks/SummaryObservers.lean).
 
 `summary_sound` accepts arbitrary pre-call observers.
@@ -122,6 +136,43 @@ Propose a call admissibility premise that excludes observer access to written st
 Derive that premise from caller escapes and demand checks at actual accepted calls.
 Check the same premise for called once environments and linked storage.
 Cesar authorized observer-safety premises in q2. Complete the enumerator check first and derive the premises from accepted call demands.
+The hash-attested scan checked 51,088 actual calls and found no dangling inputs or observers.
+The public-premise filter matched 43,432 calls and left 7,656 unmatched under its selected witnesses.
+Matched calls include 21,560 with canonical written or consumed targets; their direct and linked observer-hit counts are zero.
+The raw scan found two direct-observer hits in unmatched cache candidates and zero linked-observer hits.
+The native probe classifies both hits as unsuitable cache-summary matches. Neither call changes its pre-existing observed array.
+At `v6:20261011:11101`, call 3, entry 2 cannot describe the actual array capture through its empty callback environment.
+At `v6:17:1707`, call 5, entry 1 expects a writing, non-escaping callback; the actual callback writes nothing and escapes its argument.
+The strict raw result remains false. Keep both hits and the 10,336 unmatched candidates explicit.
+The filter uses one canonical naming and one chosen closure-class interpretation.
+A failed chosen witness does not exclude every possible theorem instance.
+Do not infer complete theorem-instance coverage or a checker defect from these unmatched candidates.
+The fresh diagnostic capture completed with unchanged source and executable hashes. Its strict result remains false.
+The expanded source also requires its complete audit with the PR #245 repair before publication.
+Check written and consumed input paths under the complete public premises, including the concrete closure descriptions in `classes`.
+Report matched, unmatched, incomplete, direct-observer, and linked-observer counts separately.
+
+### Summary pre-state links and validity
+
+The review extended [#169 with R1](https://github.com/canassa/beni/issues/169#issuecomment-6213025667).
+A linked write can change a second canonical input without its write row.
+The current summary premises describe both inputs under distinct origins but impose no condition on `pre.links`.
+An invariant repair alone cannot repair `summary_sound`, because that theorem has no invariant premise.
+
+The review extended [#170 with R2](https://github.com/canassa/beni/issues/170#issuecomment-6213026741).
+A dangling observer can name the next allocation address before the call.
+Allocating `[input]` there creates a new observer path without writing the input or publishing an escape.
+The written-input observer premise alone cannot exclude this state.
+These arbitrary pre-states refute statements; they do not establish reachable checker defects.
+
+Add caller-derived link, validity, snapshot, and frame premises to the planned summary and map contracts.
+Cover inputs, captures, observers, and every linked or protected heap region that the call can expose.
+Require allocated references, valid links, and finite complete representations for the snapshots that the paired proof needs.
+Derive these facts from accepted execution and preserve them through calls and allocations.
+Do not assume them from `Describes` alone.
+The hash-attested actual-call scan found zero dangling input and observer references.
+Complete the expanded source's audit before the repairs.
+Keep read-only observed inputs and legal read-only view/source calls within the internal contract.
 
 ## Induction measure
 
@@ -194,7 +245,12 @@ The internal premises must describe these facts:
 - Closure descriptions agree recursively on code, captures, and once classification.
 - Abstract bottom and constructor alternatives agree with concrete inhabitation.
 - Binders preserve the ordinary typing and no-shadowing context.
-- Observers, recorded escapes, private transfer authority, and view links satisfy their concrete contracts.
+- Observer snapshots correspond, and their reachable references remain valid.
+- The callee observer clause protects observed storage from the call's permitted writes, including consumes, once environments, and linked effects.
+- Read-only inputs can remain observed; do not require every canonical observer origin to satisfy the main-context `Invariant.keptEscaped` clause.
+- Caller escapes and accepted demands establish the callee observer clause after instantiation.
+- Valid links and finite snapshot witnesses cover the call's reachable and protected heap regions.
+- Recorded escapes and private transfer authority satisfy their context-specific contracts.
 
 Construct fresh names for new arrays without invalidating surviving descriptions.
 Use a relation between entry and exit namings rather than an unrestricted replacement.
@@ -202,15 +258,42 @@ Instantiate and discharge this relation at every call and scope boundary.
 
 The current `CallSound` clauses do not provide this entire call contract.
 Prove result descriptions, certificates, closure honesty, and outside-holder framing in the internal theorem.
-Then project `CallSound` clauses 1–3 from it.
 Do not assume clause 4 or add it as an axiom.
 Add proof-only execution witnesses if callback-prefix permissions need explicit records.
 
-Canonical inputs also require care for read-only aliasing.
+### Projection to the public summary theorems
+
+`summary_sound` starts from an in-place pre-state, not a supplied value run.
+Construct the paired value configuration before applying expression preservation.
+Use the finite representation witnesses to snapshot every argument, capture, and permanent observer in `pre.heap`.
+Build the paired input environment from these snapshots and the concrete `args ++ caps`.
+Set the value state's `kept` array to the observer snapshots.
+Copy `pre.fuel`, `pre.reads`, and `pre.externalReads` to its corresponding fields.
+Establish typing, closure honesty, and the callee frame invariant from the caller-derived premises.
+Use the callee observer clause above, not the main-context `Invariant.keptEscaped` clause.
+
+At the supplied expression depth, split on the total value evaluation.
+The internal failure direction turns value failure into in-place failure.
+That contradicts the supplied successful `callResult`.
+The value success direction therefore supplies a matched successful in-place evaluation.
+Determinism identifies its result and post-state with the supplied `r` and `post`.
+Then project `CallSound` clauses 1–3 from the internal effect, result, and observer guarantees.
+For `map_summary_sound`, also project the result certificate from the same internal contract.
+Keep the expression depth and state fuel independent throughout this construction.
+Prove every new premise at accepted callers; do not replace the public conclusions with weaker claims.
+
+### Alias-aware instantiation for linked storage
+
+Canonical inputs require care for read-only aliases and linked addresses.
 Distinct parameter origins cannot share an address under `Separating`.
-Use an alias-aware internal instantiation relation for such calls.
-Show that every written path remains separate from protected paths.
-Do not exclude legal read-only calls merely to fit the public summary statement.
+Closing each origin under linked storage also exposes this conflict for distinct view and source addresses.
+Use an alias-aware internal instantiation relation for both equal addresses and linked storage components.
+Carry the caller's concrete aliases and link relation through canonicalization and summary substitution.
+Prove each accepted demand's separation from protected paths under that relation.
+Account for every address changed by a complete linked write, not only its receiver.
+Derive the public separating-naming premises for instances that satisfy them.
+Use the internal call contract directly for other legal read-only aliases.
+Do not add a public restriction that forbids read-only view/source calls or read-only observed inputs.
 
 ## First fragment
 
@@ -294,12 +377,16 @@ Continue the bridge checks for that separate implementation boundary.
 
 Before each push, run the required Lean build, ownership CI, audit steps, and Zig gates under the shared lock.
 Check memory before each heavy command.
-Run `audit env` only when at least 12 GB remains available.
-Record omitted checks and issue #160 in the PR.
+Start only when at least 6 GB remains available. Keep `MemoryMax=10G` and `MemorySwapMax=2G`.
+Start the full independent audit only when at least 12 GB remains available.
+Keep the PR #245 audit dependency and every audit check intact.
+Record omitted checks and capped failures in the PR. The complete audit of the expanded enumerator source remains pending.
 
 Keep the witness imports in one dependency chain after the existing proof modules.
 Later reductions then reuse imported equation lemmas and their private splitters.
 [Issue #182](https://github.com/canassa/beni/issues/182) tracks the audit's general limitation for duplicate equation lemmas from independent modules.
+PR #245 rejects duplicate declarations that involve audited modules before child replay.
+It does not establish support for valid duplicate equation lemmas.
 Keep every audit check intact.
 
 Fetch `origin/master` before each later branch.
