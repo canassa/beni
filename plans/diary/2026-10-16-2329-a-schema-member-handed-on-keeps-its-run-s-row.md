@@ -15,7 +15,10 @@ gone. Fixture `ownership/SchemaMemberHanded`: red before the fix (`handed` and `
 wrong message), rejected `top-level` after. `SchemaCtorBlock` became more precise (`accepted fresh`), and
 Conduit's report changed only in fresh numbers. `bench/ownership-everywhere.mjs`: 1 of 850 programs
 rejected, `bench/corpus` (#223). Conduit, TodoMVC (all four), Sternhalma and Bike Wars check clean on
-`browser-direct`.
+`browser-direct`. The open review of #225 found that a dot-called field (`r.load ⊤`) handed the receiver
+on as the callee, so the call read all of `r`: a write onto `r.items` before it was rejected `later-use`
+and told as sharing the checker can see. The callee now carries the field (`CalleeRef`); fixture
+`ownership/DotFieldCall`, red before.
 
 **What I learned.** A constructor handed on as a value was already a closure with a synthesised class
 (`constructorValue`). The same shape carries a schema member, so the fix needed no new cell kind and no
