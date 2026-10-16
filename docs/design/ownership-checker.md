@@ -2247,6 +2247,9 @@ names the fixture that pins each (§24.6).
 | `Node.printLines` | `borrowed List String → fresh Program` | `items.join("\n")` on the list's array |
 | `Ssr.render` | `borrowed Html msg → String` | `Ssr.js`: `html.t`, the markup's text |
 
+*Amended 2026-10-16 (§30.9):* `Task.timeout`, `Task.raceOk` and `crossing Int32` have words, justified
+there; a `List` of functions written out takes a function's words, which describe each element.
+
 **Without words, by choice.** Each `foreign` that handles only values that cross — `Js`'s bit operations and `rem`
 (numbers), `regExp` (two string literals), `development`, `maySuspend` (read by the checker as a static bit, §23.3),
 the platforms' `Dom`, `Browser.Events` and `Html.targetValue`/`targetChecked` (strings, numbers and a `crossing`
@@ -2270,7 +2273,8 @@ built, for the declaration's own frame:
   after its parameters; `funs`, `supply` and `cb` name a slot by number. At a call, the actual for a slot is the
   argument's value at `q`; the caller's own parameter or slot there takes the callee's facts (`request`'s
   `π1.expect#Expect.1` from `transfer`'s `π7#Expect.1`), and a function value there is called through its class.
-  Not in a recursive group, whose rounds would number the slots apart, and not inside a lambda.
+  Not in a recursive group, whose rounds would number the slots apart, and not inside a lambda
+  (*withdrawn 2026-10-16*, §30.9 rule 1: inside a lambda a slot is the declaration's, as a parameter is).
 - **Carried lambdas.** A lambda the result holds keeps its class in the summary, with what each capture held in the
   declaration's vocabulary, when calling it needs nothing but its result and its reads: its class writes nothing,
   escapes nothing, relies on nothing (§18.4) and is not once, and no capture holds a function value. Where the call
@@ -2677,6 +2681,14 @@ with §16.4's amendment of the same day it is zero.
 | Markup/constructor lowering and opaque carrier encodings | markup transfer and summary blocks | Slots and constructor payload retention are modelled as positional records; HTML syntax, wildcard opaque paths, import serialization and actual row/component lowering are absent. Their encoding must preserve the modelled slots and conservative fallback |
 | Fold dictionary representatives and recursion | fold/focus summaries | Container ownership is modelled for lists and positional records; no dictionary keys, mutually recursive declarations or unknown/coarsened foreign rows exist in the core, so those implementations and their precision backstops still need Zig fixtures |
 | Hidden-evidence initialization and suspension | `initializationTransfer`, dispatch identities/requirements | Private single-read transfer, captured-local exclusion and retained initialization environments are modelled. The core has no hidden evidence parameters, suspension or coarsened foreign summaries; their eligibility guards remain compiler-fixture boundaries. |
+| *Amended 2026-10-16 (§30.9, O1):* a function slot or a function parameter called or handed on inside a lambda, and env calls of nested lambdas (rules 1–2) | `slotOf`, `envCall`, `passOn`, `applyEnvCalls` | a call the walk makes in the wrong frame, or a probe it drops on the way out: a supply taken for owned that a lambda still on the stack reads. The core's closures call their captures, but it has no function stored in a record (a slot) and no callee summary handed a lambda's own parameter, so neither rule is compared with the oracle. |
+| A send value is never a list (rule 3) | `flat`, `probeDemand` | a cell the walk takes for the runtime's function while it is a list. The core has no send (row above). |
+| What a custom type may hold, read off its constructors (rule 4) | `mayHold`, `ownMayHold`, `birMayHold` | a cell the type filter drops while the value may hold it: an alias lost. The core is untyped for this purpose; only Zig fixtures and the corpus test it. |
+| Supplies probed cell by cell, a capture of the declaration's frame named and borrowed, a borrowed supply that holds nothing at a call (rule 5) | `passOn`, `declView`, `returnsOwned` | a cell taken for owned because the probe of its neighbour passed, or a supply skipped as empty while the argument holds a cell. The core's supplies are one value per call, so the split is not compared. |
+| What a callee relies on of the declaration's own function, and of an enclosing lambda's parameter (rules 6–7) | `provOwned`, `deferLambdaNeed`, `dischargeLambdaNeeds`, `undischargedNeeds` | an obligation dropped where a lambda is consumed out of the walk's sight. The sync's "forwarding an enclosing callback's owned-result obligation" models the declaration's half; a lambda's own parameter, decided at each consumer, is not modelled. |
+| A carried lambda's calls of what the caller passed, re-carrying, and a top-level value's lambda whose captures hold nothing (rule 8) | `carry`, `callThrough`, `carriedCallOwned`, `carried`, `sharedOf` | a function value's result taken for made by the call while its class returns a list another holder keeps. The core's closures are not carried through results with their classes. |
+| A top-level value that names a function (rule 9), and the entry's URL taggers (rule 10) | `aliasTarget`, `entryTagger` | the wrong summary applied to a point-free name; a tagger the runtime sends from unchecked. Neither has core syntax; entry delivery is outside the core (row above). |
+| Words on a `List` of functions, `Task.timeout`'s and `raceOk`'s, `crossing Int32` (§30.9) | `wordsRow` | as the words row above: the fiber runtime and its scope are not modelled. |
 
 ### 26.8 Open questions
 
@@ -2927,6 +2939,9 @@ ordinary ownership proof still checks every supply and refuses the program.
 summary cannot preserve the generator's fresh-list result through the opaque
 generator carrier. `Random.constant` can retain a shared list, so accepting
 every generator instead would be unsound. No ownership verdict is relaxed.
+*Amended 2026-10-16 (§30.9 rule 8):* the carried generator is now followed, so
+`Random.generate (Random.list generator n)` is accepted when the generator makes what it returns;
+`Random.constant` with a shared list is still rejected (`ownership/RandomGenerate`).
 
 **Every rejected line and every pending line of a reported module is an `error`.** One sentence per kind, each
 against CLAUDE.md rule 7's test — what guarantee does the error buy?
@@ -3807,6 +3822,11 @@ behaviour changes.
   *Accepted when:* O0's flag finds no rejected and no pending line in the whole corpus, the examples, the
   bench apps, core and every platform. No limit is answered by adding a `List.copy` to a platform or to
   core (the 2026-10-14 *subscription tap builder* amendment's rule).
+
+  *As built (2026-10-16, issue #210):* §30.9. 31 of 835 programs rejected became 3, and the two lines
+  of `browser-tea`'s `Tea.application` none. The three left wait on the owner: `ApiItems` and `ApiLogin`
+  on what `Schema.parse`'s answer holds (#218), `RefModify` on whether a `Ref`'s value may be lent
+  owned (#219). Until they are answered O1 is not accepted.
 - **O2 — the pass on the DAG, and the block in the interface** (§28.11 item 1, §16.9–§16.10).
   - *Accepted when:* the firewall holds for every build, as `cache_test.zig` shows. The 100 000-line
     benchmark, Conduit and the corpus pages meet §28.8's target with the pass on, or the miss is reported
@@ -3888,8 +3908,120 @@ causes 2 and 3 are retired, and which are rewritten with `List.copy`.** These ar
 `QueuedListSnapshot`, the precision work, and the correction of the eight tagger lines that print as
 exact, which is part of O1 and not left to choose.
 
+*Answered 2026-10-16 (the owner, issue #210):* the three identity tests (`ListIdentity`,
+`ListIndexedIdentity`, `WriteRowsIdentity`) are retired — the identity promises they pinned were
+dropped on 2026-10-13 (§27). The four persistence tests (`ListPersistence`, `ListForms`, `ListPrepend`,
+`ListSpreadPatterns`) are rewritten with an explicit `List.copy` where a version is kept, each with a
+rejected twin in `check/bad/direct/` that pins the ownership error. §30.9 records how O1 was built.
+
 **`entry` on a third-party platform** is checked the way every ownership word is (§24.6). Its
 placement and shape are refused when wrong (§30.3). Whether the runtime behind it keeps P1–P4 and P7
 is not checked. It is trusted, as a `foreign`'s words and its sibling's behaviour are. The platform is
 privileged code (CLAUDE.md rule 6), and a false claim is a defect in that platform. Shipped and test
 platforms are pinned by `trusted-surface.txt`. A third party's are not.
+
+### 30.9 O1 as built: the corpus, and the precision rules (2026-10-16)
+
+*Amends §16.5, §18.9, §20.3, §23.4, §24.2, §24.4, §24.8, §24.9, §28.5 and §30.3. Issue #210; it also fixes
+#212.*
+
+**The corpus.** The real sharing of §30.2's causes 1–3 is the programs': each fixture now makes its list
+where it writes it (a top-level value made a function: `ListIndexed`, `ListIndexedDeep`, `ListForms`'s
+forms, `KeyedInPlace`'s rows) or keeps the version it reads again with `List.copy` (the constrained
+constants, `Int32Keys`, `ListDirectDeep`, `NestingFlatList`, `QueuedListSnapshot`'s snapshot and the four
+persistence tests, §30.8). The three identity tests are deleted. No `List.copy` was added to core or to a
+platform.
+
+**The rules.** Each is general — no row names a program — and each only adds facts a body shows or the words
+state. None accepts a write the rules before it rejected for a reason the text shows.
+
+1. **Function slots, and the declaration's function parameters, inside a lambda** (§18.9, §24.9). A capture
+   of one of the declaration's own parameters, at a path, is a slot of the declaration in the lambda too.
+   Calling it inside the lambda is an env call (§18.9), made wherever the lambda runs. Handing it, or a
+   function parameter, on to a callee inside a lambda passes the callee's facts to the declaration
+   (§16.4 item 4: `calls` — `many`, since the lambda may run more than once — `need`, `seen`, the send
+   position) and its supplies. A callee's result through it is that parameter's result, `cb` of the
+   declaration (§18.9). Before, a pass inside a lambda only lost sight of the parameter and dropped its
+   `need`, so a tagger handed on inside a lambda was never asked to return owned (#212,
+   `ownership/LambdaPassNeed`). §24.9's "not inside a lambda" is withdrawn; "not in a recursive group"
+   stays.
+2. **Nested lambdas** (§18.9). An env call of a lambda checked inside another lambda is that lambda's env
+   call, its arguments in the outer lambda's vocabulary, made wherever the outer one is checked. Each
+   lambda on the way keeps its probe, and a supply is owned only when every probe passed; the call counts
+   `many` when some lambda on the way runs more than once (`ownership/NestedLambdaSend`).
+3. **A send value is not a list** (§23.2). A send's payload gives up every cell it holds but a send value:
+   the runtime's function, which holds nothing of the program's (`ownership/SendInPayload`).
+4. **What a custom type may hold is read off its constructors** (§6.1's type filter). Whether a value of
+   a type with a body may be, or hold, an object of another type is decided by its constructors' fields
+   and an alias's body as written, a type parameter being the caller's argument. Before, every type that
+   held anything was taken to hold anything (`ownership/NominalHolds`: a `Validation` never holds a list
+   of functions).
+5. **Supplies, cell by cell** (§16.4 item 4). A callee's supply passed on is probed one cell at a time (up
+   to eight cells; a wider one is probed whole), so a cell the call made is not borrowed because another
+   supplied beside it is. Inside a lambda, a capture of the declaration's own frame is named as that frame
+   holds it — a parameter stays the parameter, not `⊤` — and is borrowed: the declaration may read it again
+   while the lambda runs. A borrowed supply of the callee's parameter that holds no cell at a call hands
+   nothing there (§16.4 item 5): `Http.send` hands its decoder the issues of an `Unprintable` body,
+   borrowed, and a `stringBody` has none (`ownership/HttpSendBody`).
+6. **The declaration's own function relied on** (§16.4 item 5). When a callee relies on what the function
+   it is handed returns, and that function is the declaration's own parameter or slot, the declaration
+   needs it to return owned: its callers are asked (`need`), not the walk here (`ownership/SlotInLambda`).
+7. **A lambda's own parameter relied on.** When it is the enclosing lambda's own parameter, at a path, the
+   obligation waits for where the lambda is handed on or called. There the function is known: what the
+   callee supplies the lambda's parameter, or the call's argument, at the path. It is decided then: it
+   returns owned, it is the declaration's own (rule 6), or it is a further enclosing lambda's, which
+   waits again. Every place the lambda is consumed must decide it. One that cannot — a runtime's entry, a
+   callee with no summary, a place out of sight — leaves it undecided, and so does a lambda never handed
+   on or called; an undecided obligation is a `need` rejection, approximate. A lambda with one is not
+   carried (§24.9) (`ownership/LambdaParamNeed`).
+8. **Carried lambdas call what the caller passed** (§24.9). A carried lambda's calls of the declaration's
+   slots, and its passes of a parameter or slot on to a callee, go to what the caller passed there. When
+   that is a function value whose classes the walk knows, the call returns what they return, each handed
+   `⊤`; returns-owned (§16.4 item 5) judges such a call by those cells: owned when each was made by it. A
+   supply of part of a callback's result (`cb_j.q`) asks only the result's paths that overlap `q`. A
+   lambda a callee's result carried into this body is carried on in this body's result, its bindings read
+   off here and its class copied (it may be a block's). A top-level value carries its lambda when what it
+   captured holds no cell (`ownership/RandomGenerate`).
+9. **A top-level value that names a function is called as it.** `list = Pcg.list`: a call of `list` is a
+   call of `Pcg.list`, through `Pcg.list`'s summary, when the arities agree and no `where` clause stands
+   between them.
+10. **The entry's taggers** (§30.3). The runtime calls `onUrlRequest` and `onUrlChange` with values that
+    cross and sends what they return, so the entry checks that each returns owned, as a send is checked
+    where it is made (§23.6): a function the walk cannot place is rejected, approximately; one that
+    returns a list it does not own, exactly (`ownership/EntryUrlTaggers`). `browser-tea`'s own
+    `Tea.application` forwards the two inside its subscriptions' lambda, where rule 1 gives the
+    declaration the obligation the entry now discharges.
+11. **Labels** (§28.5). A `need` rejection of a function value is approximate exactly when it fails only
+    through an approximate entry, `⊤`, what another callback returns, or a function the checker cannot
+    place; the eight lines §30.2 found printed as exact now print approximate.
+
+**Words** (§24.2, §24.4, §24.8, amended). A parameter of type `List` of a function written out takes a
+function's words, which describe each element: the summary's function slot at the parameter's `[*]`
+(`many aliased List (⊤ → a)`). Three new rows in §24.8:
+
+| Declaration | Words | Why |
+|---|---|---|
+| `Task.timeout` | `borrowed Duration, once aliased (⊤ → a) → fresh Maybe a` | `startIn` runs the work once as a child of the call's own scope, and `within` closes that scope before the call returns; `valueOf` reads the child's outcome, which is what the work returned, and the `Just` around it is new. Nothing keeps the work or its value after the call |
+| `Task.raceOk` | `many aliased List (⊤ → Result e a) → fresh Result (List e) a` | each thunk runs once as a child of the call's scope, closed before it returns; the answer is the winner's `Ok` payload or a new list of every `Err` |
+| `Int32` | `crossing` | an `Int32` is a JavaScript number, `Math.imul`'s and the bit operations': it holds no list and no function |
+
+They are pinned in `trusted-surface.txt` (`ownership/TaskWords`, `ownership/RandomGenerate`) and their bodies,
+with `within`, `startIn` and `valueOf`, in `word-bodies.txt`.
+
+**What O1 does not clear** (`bench/ownership-everywhere.mjs`, 2026-10-16: 3 of 835 programs; core and every
+platform hold no rejected or pending line):
+
+- `browser/tea/ApiItems` and `ApiLogin`: a `need` through `Schema.parse`, whose words say its answer is
+  `unknown` (§24.8). The answer holds what the schema's mapping, injection and conversion functions return,
+  and one function serves both directions — in the encoding direction it is handed the program's own value
+  — so no word can say "returns what it is handed, owned, when decoding". A precise answer needs the
+  decoding direction's functions told apart from the encoding direction's: a design question, issue #218.
+- `run/RefModify`: `Ref.update` hands its callback the cell's value borrowed, `⊤`. That is not only a
+  limit: a `Ref`'s value is shared state by design — any holder of the `Ref`, in any fiber, may have read
+  it with `Ref.get` and still hold it — so editing it in place in the callback would change a value another
+  reader holds. Lending it owned would need every `get`'s result tracked across the program. The owner
+  decides whether the fixture copies in its callback, as `ListPersistence` does (issue #219).
+
+A defect found on the way, not fixed here: a conservative call's result (§6.1) counts as made by the call,
+so a function value with no class that returns a list somebody else holds is written in place, accepted
+`assumed` (issue #216).
