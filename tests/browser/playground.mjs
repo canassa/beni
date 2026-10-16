@@ -335,9 +335,9 @@ check((await page.until(loaded)) !== null, "the first sample's program loads in 
 const elsewhere = requests.filter((url) => !url.startsWith(`${origin}/`) && !url.startsWith("blob:") && !url.startsWith("data:"));
 check(requests.some((url) => url.endsWith("/vendor/codemirror-view.js")) && elsewhere.length === 0, `every request stays on the site (${JSON.stringify(elsewhere)})`);
 // The licences of the third-party files are files of the site, linked from
-// the page (§4.2, §4.6).
-const notices = await page.evaluate(`Promise.all([...document.querySelectorAll('#note a[href$="LICENSES.txt"]')].map(async (a) => { const r = await fetch(a.href); return [a.getAttribute("href"), r.status, (await r.text()).includes("== ")]; }))`);
-check(JSON.stringify(notices) === JSON.stringify([["vendor/LICENSES.txt", 200, true], ["samples/LICENSES.txt", 200, true]]), `the page links to the licences, which the site serves (${JSON.stringify(notices)})`);
+// the page in a new tab, so a click keeps an edited program (§4.2, §4.6).
+const notices = await page.evaluate(`Promise.all([...document.querySelectorAll('#note a[href$="LICENSES.txt"]')].map(async (a) => { const r = await fetch(a.href); return [a.getAttribute("href"), a.target, r.status, (await r.text()).includes("== ")]; }))`);
+check(JSON.stringify(notices) === JSON.stringify([["vendor/LICENSES.txt", "_blank", 200, true], ["samples/LICENSES.txt", "_blank", 200, true]]), `the page links to the licences in a new tab, and the site serves them (${JSON.stringify(notices)})`);
 
 // The counter, in its frame: a click on `+` shows 1.
 const counted = await page.until(`document.querySelector("span")?.textContent === "0" && (document.querySelectorAll("button")[1].click(), true)`, 10_000, true);

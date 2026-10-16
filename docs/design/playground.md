@@ -356,8 +356,10 @@ each sample has a look of its own.
   width, and a darker placeholder, because the package's placeholder is 2.85:1 on white. The site
   ships `samples/LICENSES.txt`, as `vendor/LICENSES.txt` does for the editor: the credit, the
   package's tarball and its SHA-512, the list of changes, and the licence's text. The page's note
-  links to both files. A gate test (§6) checks the part between the markers against the SHA-256
-  of the package's `index.css`, and that the page links to both files.
+  links to both files. Each link opens a new tab: the page keeps an edit only in its editor, so
+  a click that leaves the page can lose it. A gate test (§6) checks the part between the markers
+  against the SHA-256 of the package's `index.css`, and that the page has an `<a>` element for
+  each file that opens a new tab.
 - **Not built: a list of allowed style sheet URLs** (item 3 of the issue, optional). The frame
   already loads what its CSS names: an `@import url(…)`, a `url(…)` in a property, a `@font-face`
   source. The sandbox does not stop such a load. Only a `Content-Security-Policy` in the frame
@@ -452,6 +454,12 @@ frame; the frame of a program with an empty pane has no style sheet; an edit in 
 reaches the frame and the program keeps its state, an emptied pane removes the style sheet, and
 an edit of the source restarts the program with the CSS; the CSS pane highlights CSS; a link restores the source, the CSS and the
 platform; and an `@import` from another origin applies in the frame.
+
+*Amended 2026-10-16, issue #171* (§4.6). Item 2 also checks: the page has an `<a>` element, not
+a comment, for `vendor/LICENSES.txt` and for `samples/LICENSES.txt`, and each link opens a new
+tab; a link with an empty `css=` opens no program, as one with an empty `code=` does; and the
+`aria-controls` of each tab names an element of the page, the same one that its data attribute
+names. Item 3 also checks: the note's two links open a new tab, and the site serves each file.
 
 A test compares every file of the output tree and both streams byte for byte, and the exit code.
 It does not compare the persistent cache's directory, `.beni-cache/`, whose keys name the
