@@ -13,12 +13,19 @@
 # `export-ignore` removes a file from the export of scripts/audit.sh
 # (#262).
 #
-# The proof sources are not listed. The audit checks axioms, `sorry`,
+# Ownership.lean and Main.lean are the roots of the build: `lake build`,
+# Axioms.lean and `audit env` check only the modules they import. A pull
+# request that drops an import there takes that module out of every check
+# except the source scan.
+#
+# The other proof sources are not listed. The audit checks axioms, `sorry`,
 # commands and the kernel, not what a theorem states, so a review of a
 # proof pull request must check the statements.
 
 /proofs/ownership/Axioms.lean        @canassa
 /proofs/ownership/Audit.lean         @canassa
+/proofs/ownership/Ownership.lean     @canassa
+/proofs/ownership/Main.lean          @canassa
 /proofs/ownership/lakefile.toml      @canassa
 /proofs/ownership/lake-manifest.json @canassa
 /proofs/ownership/lean-toolchain     @canassa
