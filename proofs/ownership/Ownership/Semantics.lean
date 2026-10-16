@@ -441,7 +441,6 @@ def prim (op : Prim) (vs : List Value) : M Value := do
           let source ← array d
           if source.length != length then
             throw "in-place construction: a spread operand grows with its base"
-          tick
           let x ← source[j]?.toExcept "construction operand changed length"
           let _ ← writeCounted c ((← array c) ++ [x])
         if (← array d).length != length then

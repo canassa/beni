@@ -5,6 +5,12 @@ The #165 orientation found counterexamples to the current proof statements.
 `Ownership/StatementChecks/` contains their regression witnesses.
 The statements and their three `sorry` proofs remain unchanged.
 
+Before the #168 fix, `accepted_traces_agree` was false for a closed accepted program.
+At fuel 5, only its value run succeeded.
+The in-place interpreter now uses the value interpreter's construction tick schedule.
+The retained regression proves equal traces at fuel 5 and equal remaining fuel at fuel 6.
+This fix closes that counterexample. All three general proof obligations remain open.
+
 Current follow-up measurements are in [RESULTS.md](RESULTS.md) and its linked logs.
 Historical numerical sensitivity measurements below are marked as such;
 they do not establish final-head coverage. The executable theorem statements

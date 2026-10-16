@@ -2,8 +2,8 @@
 import Ownership.Soundness
 import Ownership.KernelChecks
 
-/-! A later spread costs an extra tick only in the in-place interpreter.
-This accepted closed program refutes the current same-fuel claim (#168). -/
+/-! Construction uses expression ticks in both interpreters (#168).
+This accepted closed program previously refuted the same-fuel main theorem. -/
 
 open Ownership
 
@@ -21,13 +21,13 @@ def program : Program := {
   | .error _ => false
 
 #guard match InPlaceSemantics.run program 5 with
-  | .error message => message == "in-place execution exhausted fuel"
-  | .ok _ => false
+  | .ok trace => trace.finalValue == .list [.int 1, .int 2]
+  | .error _ => false
 
 #guard match (ValueSemantics.eval 6 [] none [] program.main).run {fuel := 6},
     (InPlaceSemantics.eval 6 [] none [] program.main).run {fuel := 6} with
   | .ok (_, valueState), .ok (_, heapState) =>
-    valueState.fuel == 1 && heapState.fuel == 0
+    valueState.fuel == 1 && heapState.fuel == 1
   | _, _ => false
 
 theorem accepted : (check program).isOk = true := by
@@ -37,8 +37,18 @@ theorem value_run : ValueSemantics.run program 5 =
     .ok {reads := [], finalValue := .list [.int 1, .int 2]} := by
   cbv
 
-theorem heap_exhausts : InPlaceSemantics.run program 5 =
-    .error "in-place execution exhausted fuel" := by
+theorem heap_run : InPlaceSemantics.run program 5 =
+    .ok {reads := [], finalValue := .list [.int 1, .int 2]} := by
   cbv
+
+theorem runs_agree : ValueSemantics.run program 5 = InPlaceSemantics.run program 5 := by
+  rw [value_run, heap_run]
+
+theorem remaining_fuel :
+    (ValueSemantics.eval 6 [] none [] program.main).run {fuel := 6} =
+      .ok (.list [.int 1, .int 2], {fuel := 1}) ∧
+    (InPlaceSemantics.eval 6 [] none [] program.main).run {fuel := 6} =
+      .ok (.ref 0, {fuel := 1, heap := #[[.int 1, .int 2], [.int 2]], writes := 1}) := by
+  constructor <;> cbv
 
 end Ownership.ProofPlan.ConstructionFuel
