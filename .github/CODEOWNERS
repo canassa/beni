@@ -3,9 +3,9 @@
 # The CI job `lean` runs the audit files of the pull request itself. Thus
 # a pull request that weakens them passes its own weaker audit. Cesar
 # Canassa, the repository owner, decided on 2026-10-16 (dashboard question
-# `lean-ci-q1`) that a change to these files needs his review. The rule
-# takes effect only when the ruleset on master has "Require review from
-# Code Owners" on.
+# `lean-ci-q1`) that a change to these files needs the owner's review.
+# The rule takes effect only when the ruleset on master has "Require
+# review from Code Owners" on.
 #
 # `/.github/` includes this file and every workflow, so the guard `check`
 # and the job `lean` cannot change without that review. `.gitattributes`
