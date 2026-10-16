@@ -18,6 +18,8 @@
       const app = {{apps}}.find(({ base }) => location.pathname.startsWith(base));
       if (app) {
         const shell = new DOMParser().parseFromString(app.shell, "text/html");
+        // This script leaves the document with the old element, and it
+        // still runs to its end.
         document.replaceChild(document.adoptNode(shell.documentElement), document.documentElement);
         for (const parsed of document.querySelectorAll("script")) {
           const script = document.createElement("script");

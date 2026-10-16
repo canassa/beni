@@ -155,11 +155,14 @@ if (playgroundArg) {
 }
 
 const fill = (file, values) => {
-  let page = readFileSync(join(here, file), "utf8");
-  // A function, so that a "$" in a value is not a replacement pattern.
-  for (const [key, value] of Object.entries(values)) page = page.replaceAll(`{{${key}}}`, () => value);
-  const left = page.match(/\{\{[^}]*\}\}/);
-  if (left) throw new Error(`${file}: nothing fills ${left[0]}`);
+  const template = readFileSync(join(here, file), "utf8");
+  // The template is checked and filled in one pass, so a value is never
+  // read again: a program's shell in it may hold a "{{" or a "$" of its own.
+  const placeholder = /\{\{([^}]*)\}\}/g;
+  for (const [hole, key] of template.matchAll(placeholder)) {
+    if (!Object.hasOwn(values, key)) throw new Error(`${file}: nothing fills ${hole}`);
+  }
+  const page = template.replace(placeholder, (_, key) => values[key]);
   writeFileSync(join(out, file), page);
   console.log(`wrote ${join(out, file)}`);
 };
