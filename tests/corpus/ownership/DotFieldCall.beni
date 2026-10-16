@@ -34,3 +34,35 @@ parensCaptured items =
     r = { load = λ⊤ → items, items = [] }
     xs = List.push items 1
     ( xs, (r.load) ⊤ )
+
+
+-- An extensible record that lists the field is the same: `r.load ⊤` is a
+-- slot of the parameter, as `(r.load) ⊤` is, so a caller that hands a
+-- loader of a fresh list is accepted and one of the top-level `shared` is
+-- rejected `need`, exactly, in both spellings.
+shared : List Int
+shared = [ 1 ]
+
+
+extDotted : { r | load : ⊤ → List Int } → List Int
+extDotted r = List.push (r.load ⊤) 4
+
+
+extParens : { r | load : ⊤ → List Int } → List Int
+extParens r = List.push ((r.load) ⊤) 4
+
+
+pub extDottedFresh : ⊤ → List Int
+extDottedFresh ⊤ = extDotted { load = λ⊤ → [ 1 ], other = 1 }
+
+
+pub extParensFresh : ⊤ → List Int
+extParensFresh ⊤ = extParens { load = λ⊤ → [ 1 ], other = 1 }
+
+
+pub extDottedShared : ⊤ → List Int
+extDottedShared ⊤ = extDotted { load = λ⊤ → shared, other = 1 }
+
+
+pub extParensShared : ⊤ → List Int
+extParensShared ⊤ = extParens { load = λ⊤ → shared, other = 1 }

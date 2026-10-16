@@ -1,0 +1,90 @@
+-- ownership (§30.11): more calls whose callee master took for one that
+-- makes its result. A method a `where` clause names (`grab`'s `x.items`)
+-- is a type dispatch, so its result is `⊤call`: `grab (Bag 1)` was
+-- accepted `param` and pushed onto the top-level `shared`; the direct call
+-- `(Bag 1).items ⊤` resolves to `items` and is rejected `top-level`. A
+-- function value that may be one of two lambdas is not joined (issue
+-- #278): the call is rejected `unknown` with a message that says so, both
+-- where one lambda returns `shared` (master accepted it) and where both
+-- make their lists. A record field of a call's result called with a dot
+-- is the field's value: `(mk ⊤).load ⊤` answers `shared`. A top-level value
+-- that is a constructor or a lambda is called as the function value it
+-- is, through the class its definition carries: `mkBox []` is accepted
+-- and `mkBox shared` rejected `top-level`.
+pub type Bag
+    = Bag Int
+
+
+type Box
+    = Box (List Int)
+
+
+type alias Loader =
+    load : ⊤ → List Int
+
+
+shared : List Int
+shared = [ 1 ]
+
+
+pub items : Bag, ⊤ → List Int
+items _ _ = shared
+
+
+grab : a → List Int
+    where a.items : a, ⊤ → List Int
+grab x = List.push (x.items ⊤) 3
+
+
+pub dispatched : ⊤ → List Int
+dispatched ⊤ = grab (Bag 1)
+
+
+pub resolved : ⊤ → List Int
+resolved ⊤ = List.push ((Bag 1).items ⊤) 3
+
+
+pub twoShared : Bool → List Int
+twoShared flag =
+    f = if flag then λ⊤ → shared else λ⊤ → []
+    List.push (f ⊤) 2
+
+
+pub twoFresh : Bool → List Int
+twoFresh flag =
+    f = if flag then λ⊤ → [ 1 ] else λ⊤ → []
+    List.push (f ⊤) 2
+
+
+mk : ⊤ → Loader
+mk ⊤ = { load = λ⊤ → shared }
+
+
+fresh : ⊤ → Loader
+fresh ⊤ = { load = λ⊤ → [ 1 ] }
+
+
+pub callReceiver : ⊤ → List Int
+callReceiver ⊤ = List.push ((mk ⊤).load ⊤) 3
+
+
+pub callReceiverFresh : ⊤ → List Int
+callReceiverFresh ⊤ = List.push ((fresh ⊤).load ⊤) 3
+
+
+mkBox : List Int → Box
+mkBox = Box
+
+
+pub boxFresh : ⊤ → List Int
+boxFresh ⊤ =
+    case mkBox [] of
+        Box xs →
+            List.push xs 1
+
+
+pub boxShared : ⊤ → List Int
+boxShared ⊤ =
+    case mkBox shared of
+        Box xs →
+            List.push xs 1

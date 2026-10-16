@@ -346,6 +346,11 @@ pub const ProvKind = enum(u8) { param, fresh, esc, shared, top, cb, env, klass }
 /// checker cannot identify, printed `⊤call` (§30.11).
 const top_call: u32 = 4;
 
+/// `top`'s `a` for §6.1's call of a function value that may be one of
+/// several classes the walk knows and does not join (#278), printed
+/// `⊤call`. Not 5, which another open change takes.
+const top_several: u32 = 6;
+
 /// A provenance (thesis §3.7's `Prov`). `param`: `a` the parameter's index
 /// from 0, `path` its path. `fresh`/`esc`: `a` the number, from 1 (0 in a
 /// supply, where it is not compared). `shared`: `a` the module, `b` the
@@ -2664,7 +2669,7 @@ fn provText(o: *Ownership, p: Prov) Allocator.Error![]const u8 {
             1 => "⊤limit",
             2 => "⊤input",
             unfollowed => "⊤schema",
-            top_call => "⊤call",
+            top_call, top_several => "⊤call",
             else => "⊤",
         },
         .cb => if (o.text_sum) |s| (if (p.b == 0 and p.a >= s.params and p.a - s.params < s.slots.len) blk: {
@@ -5103,7 +5108,8 @@ const Walker = struct {
 
     /// The callee of a call: the instruction that evaluated it, and for
     /// `r.load a` the field of the receiver `inst` whose value is called
-    /// (§30.11), so that the call reads `r.load` and not all of `r`.
+    /// (§30.11), so that the call reads `r.load` and not all of `r`;
+    /// `none` for any other call (no symbol index is `none`).
     const CalleeRef = struct { inst: Inst.Index, field: u32 = none };
 
     fn useCallee(w: *Walker, c: CalleeRef, tok: u32) Allocator.Error!void {
@@ -5723,7 +5729,7 @@ const Walker = struct {
             .type_dispatch => {
                 const md = b.extraData(@fromBackingInt(@intCast(data.rhs)), Bir.TypeDispatch);
                 const args = b.extraSlice(.{ .start = md.args_start, .end = md.args_end }, Inst.Index);
-                return w.conservative(inst, args, &.{}, null, "", false, false);
+                return w.conservative(inst, args, &.{}, null, "", false, .unknown);
             },
             .lambda => {
                 const params = b.extraSlice(b.subRange(@fromBackingInt(@intCast(data.lhs))), Inst.Index);
@@ -5746,7 +5752,7 @@ const Walker = struct {
                 try b.markupValues(w.a, @fromBackingInt(@intCast(data.lhs)), &values);
                 const avs = try w.evalOperands(values.items, true);
                 w.popPending(avs.len);
-                const retained = try w.conservativeAV(inst, values.items, avs, &.{}, null, "", false, true);
+                const retained = try w.conservativeAV(inst, values.items, avs, &.{}, null, "", false, .made);
                 const events = try w.markupTreeEvents(inst, @fromBackingInt(@intCast(data.lhs)), try MarkupValues.init(w.a, values.items, avs));
                 return w.unionOf(&.{ try w.shift(retained, .{ .kind = .markup_render, .arg = 0 }), try w.shift(events, .{ .kind = .markup_event, .arg = 0 }) });
             },
@@ -6551,6 +6557,14 @@ const Walker = struct {
             try w.evidenceSight(callee);
             try w.evidenceSight(inst);
             if (args.len == 1) if (w.entryRow(t)) |row| return w.entryCall(inst, t, args[0], row);
+            // §30.11: a top-level value with no parameters that names no
+            // function (§30.9 rule 9) is called as the function value it
+            // is: the class its definition carries (§30.9 rule 8), else
+            // §6.1's call (`mkBox = Box`, `parser = Sentence.parse`).
+            const decl = w.o.in.birs[t.m].decls[t.d];
+            if (decl.kind == .value and decl.params == 0 and w.aliasTarget(t) == null) {
+                return w.callValue(inst, args, try w.eval(callee), .{ .inst = callee });
+            }
             return w.callTarget(inst, t, args);
         }
         // A function value: its classes, when the walk knows where it came
@@ -6597,7 +6611,9 @@ const Walker = struct {
             }
         }
         try w.sight(f, .{ .pending = "it is called where the checker does not know which function runs" }, w.token(inst));
-        return w.conservative(inst, args, f, callee, "", false, false);
+        // Two or more classes the walk knows are not joined (issue #278):
+        // the call is §6.1's, named for that.
+        return w.conservative(inst, args, f, callee, "", false, if (classes.len > 1) .several else .unknown);
     }
 
     /// A private binding's only read, executed once during module init
@@ -6840,13 +6856,13 @@ const Walker = struct {
         if (w.o.in.birs[t.m].decls[t.d].kind == .vocab_markup) {
             const name = w.targetName(t);
             if (std.mem.eql(u8, name, "text") and args.len == 1) {
-                const retained = try w.conservative(inst, args, &.{}, null, "", false, true);
+                const retained = try w.conservative(inst, args, &.{}, null, "", false, .made);
                 return w.shift(retained, .{ .kind = .markup_render, .arg = 0 });
             }
             if (std.mem.eql(u8, name, "map") and args.len == 2) {
                 const avs = try w.evalOperands(args, true);
                 w.popPending(avs.len);
-                const retained = try w.conservativeAV(inst, args, avs, &.{}, null, "", false, true);
+                const retained = try w.conservativeAV(inst, args, avs, &.{}, null, "", false, .made);
                 const child_events = try w.markupEvents(avs[0], w.instType(args[0]), inst, 0);
                 const mapper = avs[1];
                 const mapped = try w.markupCallback(inst, args[1], mapper, &.{child_events});
@@ -6893,7 +6909,7 @@ const Walker = struct {
             return w.applySummary(inst, .{ .sum = s, .name = try w.qualified(t), .op = try w.callOp(t), .merge_fresh = w.o.isComputing(t.m, t.d) }, args, &.{}, null);
         }
         if (w.escapes(t)) return w.escapeCall(inst, args, try w.qualified(t));
-        return w.conservative(inst, args, &.{}, null, try w.qualified(t), w.o.in.birs[t.m].decls[t.d].kind == .foreign_value, false);
+        return w.conservative(inst, args, &.{}, null, try w.qualified(t), w.o.in.birs[t.m].decls[t.d].kind == .foreign_value, .unknown);
     }
 
     /// §7.2 as amended for slice 3f: `Maybe.withDefault (Maybe.map m f) d`,
@@ -7407,19 +7423,29 @@ const Walker = struct {
         // the field's value, as `(r.load) a` is: a slot of a parameter, a
         // class the walk knows, or a function it cannot identify (§30.11).
         if (try w.fieldFunction(all[0], mc.name)) |f| return w.callValue(inst, rest, f, .{ .inst = all[0], .field = @backingInt(w.bir.symbol(mc.name)) });
-        return w.conservative(inst, all, &.{}, null, "", false, false);
+        return w.conservative(inst, all, &.{}, null, "", false, .unknown);
     }
 
     /// The function value a record receiver holds at its field `name`, when
-    /// the receiver's type is a record with that field.
+    /// the receiver's type is a record that lists the field: closed, or
+    /// extensible (`{ r | load : … }`), through its extension chain.
     fn fieldFunction(w: *Walker, receiver: Inst.Index, name: Bir.SymbolIndex) Allocator.Error!?AV {
         const sym = w.bir.symbol(name);
-        const fields = w.recordFields(w.instType(receiver)) orelse return null;
-        const field = for (fields) |f| {
-            if (f.name == sym) break f;
+        var t = w.instType(receiver) orelse return null;
+        var depth: u32 = 0;
+        const value: Var = found: while (depth <= type_depth) : (depth += 1) {
+            const rc = switch (w.store.resolvedContent(t)) {
+                .structure => |st| switch (st) {
+                    .record => |rc| rc,
+                    else => return null,
+                },
+                else => return null,
+            };
+            for (w.store.fields(rc.fields)) |f| if (f.name == sym) break :found f.value;
+            t = rc.ext;
         } else return null;
         const r = try w.eval(receiver);
-        return try w.proj(r, .{ .kind = .field, .arg = @backingInt(sym) }, field.value);
+        return try w.proj(r, .{ .kind = .field, .arg = @backingInt(sym) }, value);
     }
 
     /// Where a function the dispatch table passes as evidence writes a
@@ -7508,17 +7534,21 @@ const Walker = struct {
         return out.items;
     }
 
-    /// §6.1. `made`: the call is a markup construction, whose result is a
-    /// node it makes. Every other call here is of a function the checker
-    /// cannot identify, which may return a list something else holds, so
-    /// its result is `⊤call`, never a cell the call made (§30.11).
-    fn conservative(w: *Walker, inst: Inst.Index, args: []const Inst.Index, callee_av: AV, callee: ?CalleeRef, name: []const u8, foreign: bool, made: bool) Allocator.Error!AV {
+    /// What §6.1's call answers at `ε` (§30.11): `made`, a node a markup
+    /// construction makes; else `⊤call`, never a cell the call made, for a
+    /// function the checker cannot identify (`unknown`) or one of several
+    /// classes it does not join (`several`), either of which may return a
+    /// list something else holds.
+    const CallResult = enum { made, unknown, several };
+
+    /// §6.1.
+    fn conservative(w: *Walker, inst: Inst.Index, args: []const Inst.Index, callee_av: AV, callee: ?CalleeRef, name: []const u8, foreign: bool, result: CallResult) Allocator.Error!AV {
         const avs = try w.evalOperands(args, true);
         w.popPending(avs.len);
-        return w.conservativeAV(inst, args, avs, callee_av, callee, name, foreign, made);
+        return w.conservativeAV(inst, args, avs, callee_av, callee, name, foreign, result);
     }
 
-    fn conservativeAV(w: *Walker, inst: Inst.Index, args: []const Inst.Index, avs: []const AV, callee_av: AV, callee: ?CalleeRef, name: []const u8, foreign: bool, made: bool) Allocator.Error!AV {
+    fn conservativeAV(w: *Walker, inst: Inst.Index, args: []const Inst.Index, avs: []const AV, callee_av: AV, callee: ?CalleeRef, name: []const u8, foreign: bool, result: CallResult) Allocator.Error!AV {
         w.point += 1;
         const tok = w.token(inst);
         for (args) |x| try w.useOperand(x, tok, &.{});
@@ -7530,7 +7560,11 @@ const Walker = struct {
         const ty = w.instType(inst);
         if (ty) |v| if (!try w.trackedVar(v)) return &.{};
         var out: std.ArrayList(Entry) = .empty;
-        const own = try w.cell(if (made) .{ .kind = .result, .a = inst.int(), .ty = w.instTypeOpt(inst) } else .{ .kind = .top, .a = top_call });
+        const own = try w.cell(switch (result) {
+            .made => .{ .kind = .result, .a = inst.int(), .ty = w.instTypeOpt(inst) },
+            .unknown => .{ .kind = .top, .a = top_call },
+            .several => .{ .kind = .top, .a = top_several },
+        });
         try out.append(w.a, .{ .path = eps, .cell = own });
         const any = try w.o.child(eps, .any, 0);
         var from: std.ArrayList(AV) = .empty;
@@ -10107,6 +10141,9 @@ const Walker = struct {
                 } else if (c.a == top_call) {
                     cause = .unknown;
                     detail = "it came from a call of a function the checker cannot identify, which may return a list something else holds";
+                } else if (c.a == top_several) {
+                    cause = .unknown;
+                    detail = "it came from a call of a function value that may be one of several functions, and the checker does not join what each returns";
                 } else {
                     cause = .unknown;
                     detail = "the list came from JavaScript";
