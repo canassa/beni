@@ -6010,3 +6010,24 @@ forwards them inside a lambda, was rejected `need` (§30.2). Pending:
 the words): each fixture promoted to `tests/corpus/ownership/`, where it pins the accepted program and a
 rejected twin of it. `browser-tea`'s `Tea.application` holds no line under `--ownership-everywhere`
 (`check_test.zig`, *the browser-tea platform holds no rejected or pending line*).
+
+## CK-244 — a call of a function the checker cannot identify makes its result (2026-10-16)
+
+Ownership soundness, issue #216. §6.1 gave a callee with no summary the result
+"a cell made by the call", so a function read out of a `Dict`, an element of a
+list of functions, one handed on through a parameter, or a top-level value that
+is a lambda could return the top-level `shared` and have it pushed onto in place,
+accepted `call (no summary)`. `tests/corpus/ownership/UnknownCallee.beni`,
+`tests/corpus/check/bad/direct/UnknownCalleeShared.beni`.
+
+## CK-245 — a record field called with a dot is a conservative call (2026-10-16)
+
+Ownership soundness, issue #216. `r.load ⊤` on a record field was §6.1's call,
+not the field's value called as `(r.load) ⊤` is, so `send r tag = Cmd.task
+(λ⊤ → r.load ⊤) tag` handed `tag` a result counted as made by the call, and
+`send { load = λ⊤ → shared } Got` was accepted while `update` pushed onto the
+payload. `tests/corpus/ownership/UnknownCalleeTagger.beni`.
+
+**CK-244 and CK-245 fixed 2026-10-16** (#216; ownership-checker.md §30.11): the
+result of a call of a function the checker cannot identify is `⊤call`, never
+owned, and a dot call of a record field is the field's value called.

@@ -386,6 +386,10 @@ acceptance that rests on them.
 *Amended 2026-10-12: from slice 2, this is the rule for a callee with no summary only; a callee with
 one is applied by §16.4.*
 
+*Amended 2026-10-16 (§30.11):* item 3's cell made by the call is withdrawn for every call but a markup
+construction: a function the checker cannot identify may return a list something else holds, so its result
+is `⊤call`, never owned. A record field called with a dot is the field's value called.
+
 ### 6.2 The rows slice 1 has
 
 *Amended 2026-10-12: slice 2 replaces these rows with §16.8's asserted primitive rows and the
@@ -960,6 +964,8 @@ accepted `callback-param`, and the line says `(no summary: M.f)` (§15 decision 
 A function value read out of a structure, out of a call's result or out of a parameter's field has no
 class, and calling it is §6.1's conservative call, which assumes no write. That is sound only with the rule
 above: every writing function that reached such a place was reported `pending` where it got there.
+*Amended 2026-10-16 (§30.11):* that covers what such a function writes, not what it returns: its result is
+`⊤call`, which no write and no `need` may rely on.
 
 A local function that calls itself is walked once, its own calls conservative; if its class then writes a
 parameter, its demands on that parameter are `pending` — the group fixpoint of thesis §3.6 is not built.
@@ -2743,6 +2749,7 @@ with §16.4's amendment of the same day it is zero.
 | Words on a `List` of functions, `Task.timeout`'s and `raceOk`'s, `crossing Int32` (§30.9) | `wordsRow` | as the words row above: the fiber runtime and its scope are not modelled. |
 | *Amended 2026-10-16 (#229):* a carried lambda named by where it is made, and the walk's fixpoints settled over finite cells and capped by the `fixpoint` limit (§28's dated amendment *the entry's fixpoints settle*) | `carry`, `entryConditions`, `entryCall`, `instCb`, `instFold` | a lambda whose merged captures miss what one instantiation captured: an alias lost; or a round taken for settled while a carried lambda still grew. The Lean model already names what a traversal or the model makes by its site (`.position site`) and fails a fixpoint that does not settle within its 24 rounds loudly, as a rejection (`throw "limit: …"`); Zig's cap is 32 and an error at the declaration. It carries no lambdas through results (rule 8's row), and the bridge skips entry projections, so neither the merge nor the caps are compared. |
 | *Amended 2026-10-16 (§30.10):* a schema's slots, the derivation from its declaration, and what a run answers | `schemaRunRow`, `schemaMakerRow`, `schemaTaint`, `schemaMemberRow`, `conversionSlots`, `codecRunRow`, `settleRun` | a list a conversion, a `Value` or a codec returns taken for built by the run, and written in place while its other holder keeps it. The core has no schemas, no JSON and no evidence; the bridge never emits one, so its confirmed-unsafe count says nothing of this rule. Zig fixtures (`ownership/SchemaAnswers`, `check/bad/direct/SchemaConversionShared`) and the corpus test it. |
+| *Amended 2026-10-16 (§30.11):* a call of a function the checker cannot identify answers `⊤call`; a record field called with a dot is its value called; a schema declaration's member keeps §6.1's cell made by the call until #218 | `conservativeAV`, `unknownCb`, `fieldFunction`, `callValue` | a write accepted onto a list a function returned while another holder keeps it. The core calls only closures it can name — no function is read out of a dictionary, a record field or a list, and no callee is handed one — so it has no unknown callee and no dot-called field, and neither rule is compared with the oracle; the corpus fixtures (`ownership/UnknownCallee`, `UnknownCalleeTagger`) test them. |
 
 ### 26.8 Open questions
 
@@ -3020,6 +3027,9 @@ against CLAUDE.md rule 7's test — what guarantee does the error buy?
 **Acceptances are not errors**, including one that rests on a callee with no summary (`assumed`, §15 decision 2): a
 writing function value that reaches such a callee is pending where it gets there (§16.5), so the obligation is
 reported once, at that place.
+*Amended 2026-10-16 (§30.11):* an acceptance can rest on such a callee's result only when the call is a markup
+construction (or, until issue #218, a schema declaration's member); a write onto what a function the checker cannot
+identify returned is an approximate `unknown` rejection.
 
 *Diagnostic guidance, 2026-10-15.* At an entry, a `top-level` refusal recommends
 building the value inside `init ⊤ = …` and cites §22.2: returning a top-level
@@ -4136,7 +4146,7 @@ platform hold no rejected or pending line):
 
 A defect found on the way, not fixed here: a conservative call's result (§6.1) counts as made by the call,
 so a function value with no class that returns a list somebody else holds is written in place, accepted
-`assumed` (issue #216).
+`assumed` (issue #216). *Fixed 2026-10-16 by §30.11.*
 
 ### 30.10 What a schema's run answers (the owner, 2026-10-16; issue #218)
 
@@ -4229,3 +4239,70 @@ captured list, written: refused).
 programs (§30.9's 3 of 840); core and every platform hold no rejected or pending line. The Lean bridge at the
 CI bound (`node scripts/bridge.mjs --ci`): 1 341 programs, 959 translated, none confirmed unsafe — the rule is
 §26.7's last row, outside what the bridge emits.
+
+### 30.11 A call of a function the checker cannot identify answers `⊤` (2026-10-16)
+
+*Amends §6.1 item 3, §15 decision 2, §16.5 and §28.5. Issue #216.*
+
+**The hole.** §6.1 gave a callee with no summary the result `(ε, result(ι, ε))`, a cell *made by the call*,
+on the ground that the worst pure function "makes its result". That is a claim about the callee, and for a
+function the walk cannot identify nobody made it. A function read out of a `Dict`, out of a record field
+the walk cannot follow, out of a list of functions, or handed to a callee whose actual has no class
+(`unknownCb`) may return a list somebody else holds — a top-level value, a list a closure captured, the
+model. §28.5 accepted a write onto it as `call (no summary)`, *assumed*, and §16.5's argument for that only
+covers a function that **writes** what it is handed, not one that **returns** a list it does not own. So
+on `browser-direct` the top-level `shared` below was pushed onto in place:
+
+```elm
+handlers : Dict Int (⊤ → List Int)
+handlers = Dict.fromList [ ( 0, λ⊤ → shared ) ]
+
+grow ⊤ =
+    f = Dict.get handlers 0 ▷ Maybe.withDefault λ⊤ → []
+    List.push (f ⊤) 3
+```
+
+**The rule.** The result of a call of a function the checker cannot identify holds, at `ε`, the cell
+**`⊤call`**: unknown provenance, never owned, printed `⊤call` in a summary. Its `(⋆, c)` entries for the
+arguments' cells stay as §6.1 writes them. The calls it covers are every §6.1 call but a markup
+construction: a function value whose classes the walk does not know; a method call that resolves to no
+declaration and is not a record field (below); a type dispatch; a top-level value with no parameters
+called as a function (`named ⊤` with `named = λ⊤ → shared`, unless §30.9 rule 9 names the function it is);
+a callee whose summary is unreadable. A callback whose actual has no class is instantiated the same way:
+what it returns is `⊤call` (`unknownCb`). A summary carries `⊤call` to its callers like any `⊤`.
+
+Consequences, each through rules that already exist:
+
+- A write onto `⊤call` is rejected **`unknown`**, *approximately*: "it came from a call of a function the
+  checker cannot identify, which may return a list something else holds". It is a limit, not proof of
+  sharing (§28.5), and its message says how to make the program provable: call a function the checker can
+  see, or copy with `List.copy`.
+- A `need` resting on it — a tagger or callback whose result is sent or written — is not owned: rejected
+  `need`, approximately (§30.9 rule 11). A borrowed supply of what a callback returned before
+  (`List.foldl` handing back its accumulator) whose callback's result is `⊤call` is rejected `supply`, and
+  approximately when it fails only through `⊤` or an approximate entry, as a `need` is.
+- No acceptance rests on a callee with no summary any more except a markup construction, whose node is the
+  one result §6.1's "made by the call" is true of. §28.5's `assumed` count is that.
+
+**A record field called with a dot is the field's value called.** `r.load a`, where the receiver's type is a
+record with a field `load` and no declaration is the method, is a call of `r.load`'s value, exactly as
+`(r.load) a` is: a slot of the declaration's parameter (§24.9, called inside a lambda by §30.9 rules 1–2), a
+class the walk knows, or a function it cannot identify. Before, the dot form was a conservative call, which
+the rule above would have turned into a rejection of every `api.search q` on a record of functions
+(`DebouncedSearch`).
+
+**Schema declarations.** A constructor of a tagged schema (`Tree.Leaf { value = n }`, `schema_ctor_top`
+and `ext_schema_ctor`) is called like a function and makes its value: §6.1's cell made by the call is true
+of it, and it keeps that cell (`ownership/SchemaCtorBlock`). A member of a schema declaration (`Tags.parse`,
+`schema_member_top` and `ext_schema_member`) is a function the checker names but has no summary for: its
+result keeps the same cell, called directly or handed as an argument, until issue #218 derives each
+member's ownership from its declaration. That is the one place this rule does not reach, and it is #218's.
+
+**Measured** (`bench/ownership-everywhere.mjs`, 2026-10-16, 847 programs): no new rejection in the corpus,
+the examples or the bench apps but `bench/corpus`'s `FormValidation`, six lines: `all` calls each validator
+of a `List (Validator a)` inside a fold, and `validateSignUp` calls `(firstOf [ … ]) "email" form.email`, a
+function a call returned. Every validator the program writes makes the list it returns, so this is the
+checker's limit, not sharing: a function value carried through a list's elements or out of a call's result
+has no class (§16.1). It is the correct loud error until classes travel with those values (issue #223).
+Conduit, TodoMVC, Sternhalma and Bike Wars hold no rejected line; Conduit's `api` taggers rest on schema
+members (above).
