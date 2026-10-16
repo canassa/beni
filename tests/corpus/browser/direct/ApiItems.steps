@@ -1,0 +1,4 @@
+click #load
+respond 1 200 "[{\"id\":1,\"name\":\"tea\"},{\"id\":2,\"name\":\"cake\"}]" Content-Type: "application/json"
+click #load
+respond 2 401 "{\"error\":\"expired\"}" Content-Type: "application/json"
