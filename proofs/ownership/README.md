@@ -106,7 +106,12 @@ The guard `check` needs this job, so a failed proof blocks a merge.
 - With a restored `.lake`, `lake build` does not run the source scan of `Axioms.lean` again when only a file outside its imports changes.
   For example, a new `sorry` in `Triage.lean` passes a warm `lake build`.
   `scripts/audit.sh` does not read `.lake`: it builds a clean export and scans every source, so CI catches that `sorry`.
-- The job does not run `lake exe ownership ci`.
+- The job does not run `lake exe ownership ci` (#259).
+  The bridge of that command builds the beni compiler, so it depends on `src/` too.
+- On a GitHub runner, a cold run of the job took 9 to 14 minutes.
+  `lake build` took 184 to 310 s, and `scripts/audit.sh` took 257 to 428 s.
+- A restored `.lake` makes only `lake build` faster.
+  The audit always builds from nothing, so its time does not change.
 
 ## Audit memory and replay
 
