@@ -700,7 +700,8 @@ fn paramsAt(
     }
 }
 
-/// Whether declaration `decl` of `m` is in a reference cycle of its module:
+/// Whether declaration `decl` of `m` is in a reference cycle of its module
+/// (`reaches` itself):
 /// its description is then built under `Schema.recursive`. A cycle cannot
 /// cross a module, since modules import in a DAG.
 pub fn recursive(g: SchemaGraph, scratch: Allocator, m: Graph.Index, decl: u32) Allocator.Error!bool {

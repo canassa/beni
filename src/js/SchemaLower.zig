@@ -467,6 +467,15 @@ const Gen = struct {
         const recursive = try g.sg.recursive(g.l.scratch, g.ref.module, g.ref.decl);
         const params = try g.l.scratch.alloc(NameIndex, g.params);
         for (params, 0..) |*slot, i| slot.* = try g.paramName(@intCast(i));
+        if (recursive and g.params != 0) {
+            const members = try g.cycleMembers();
+            if (members.len > 1) {
+                var cells = try g.cycleCells(members, params);
+                if (g.codec) cells = try g.call(try g.core("describedHost"), &.{cells});
+                try g.constDecl(out, try g.own("description"), try g.arrowOf(params, cells));
+                return;
+            }
+        }
         const self = try g.local("$self");
         const scope: []const Bound = if (recursive) &.{.{ .decl = g.ref.decl, .name = self }} else &.{};
         var body = try g.descNode(g.def.root, params, scope);
@@ -643,18 +652,11 @@ const Gen = struct {
     /// A reference to definition `t` — a `schema` declaration's or, by a
     /// `codec_ref`, a derived codec's — with schema arguments `words`.
     fn descRef(g: *Gen, t: SchemaGraph.Ref, words: []const u32, params: []const NameIndex, scope: []const Bound) Allocator.Error!Node.Index {
-        if (scope.len != 0 and t.module == g.ref.module and isIdentity(g.plan, words, params.len)) {
+        // A member of the cycle in scope — this definition or, inside a
+        // generic cycle's cells, any other member — with the parameters
+        // as they are: its cell.
+        if (t.module == g.ref.module and isIdentity(g.plan, words, params.len)) {
             for (scope) |b| if (b.decl == t.decl) return g.id(b.name);
-            // Another generic member of the cycle, given these
-            // parameters as they are: its body, here, under a cell
-            // of its own. Its factory would make a new cell of
-            // this definition on every call, so a cycle of generic
-            // declarations would describe without end.
-            if (params.len != 0 and g.sg.paramCount(t) == params.len and
-                try g.sg.reaches(g.l.scratch, t.module, t.decl, scope[0].decl))
-            {
-                return g.inlined(t, params, scope);
-            }
         }
         var args: std.ArrayList(Node.Index) = .empty;
         for (words) |a| try args.append(g.l.scratch, try g.descNode(@fromBackingInt(@intCast(a)), params, scope));
@@ -717,23 +719,53 @@ const Gen = struct {
         return g.call(try g.core("describedConstructors"), &.{try g.l.arrayNode(rows.items, g.p)});
     }
 
-    /// `describedRecursive("T", $self => …)` of declaration `t`'s body,
-    /// described with its own names (its constructors, its `via`s) over
-    /// `params`, inside `scope` and its own cell.
-    fn inlined(g: *Gen, t: SchemaGraph.Ref, params: []const NameIndex, scope: []const Bound) Allocator.Error!Node.Index {
-        const def = g.sg.definition(t.module, t.decl) orelse return g.lit(.undefined_lit);
-        var sub = g.*;
-        sub.ref = t;
-        sub.def = def;
-        sub.codec = g.sg.codecIndex(t.module, t.decl) != null;
-        sub.schema = if (sub.codec) InternPool.WellKnown.codec.symbol() else g.l.bir.symbol(g.l.bir.decls[t.decl].name);
-        sub.params = def.params_end - def.params_start;
-        const self = try g.fresh("$self");
-        const inner = try g.l.scratch.alloc(Bound, scope.len + 1);
-        @memcpy(inner[0..scope.len], scope);
-        inner[scope.len] = .{ .decl = t.decl, .name = self };
-        const body = try sub.descNode(def.root, params, inner);
-        return g.call(try g.core("describedRecursive"), &.{ try g.str(g.l.text(sub.schema)), try g.arrowOf(&.{self}, body) });
+    /// The generic declarations of this one's reference cycle that take as
+    /// many parameters as it does, itself first, then in declaration order:
+    /// the members a reference with the parameters as they are can name.
+    fn cycleMembers(g: *Gen) Allocator.Error![]const u32 {
+        var members: std.ArrayList(u32) = .empty;
+        try members.append(g.l.scratch, g.ref.decl);
+        const m = g.ref.module;
+        // A derived codec's definition is a virtual declaration after the
+        // module's last one (`SchemaGraph.definition`), so a cycle of
+        // generic derived codecs has its cells too.
+        for (0..g.l.bir.decls.len + g.plan.codecs.len) |i| {
+            const t: u32 = @intCast(i);
+            if (t == g.ref.decl or g.sg.definition(m, t) == null) continue;
+            const ref: SchemaGraph.Ref = .{ .module = m, .decl = t };
+            if (g.sg.paramCount(ref) != g.params) continue;
+            if (!try g.sg.reaches(g.l.scratch, m, t, g.ref.decl)) continue;
+            if (!try g.sg.reaches(g.l.scratch, m, g.ref.decl, t)) continue;
+            try members.append(g.l.scratch, t);
+        }
+        return members.items;
+    }
+
+    /// `(() => { const c0 = describedRecursive("S", () => …); const c1 = …;
+    /// return c0; })()`: one cell per member of a generic cycle, each body
+    /// described once, with its own names (constructors, `via`s), and
+    /// every reference to a member with the parameters as they are its
+    /// cell. A member's factory would make a new cell of the referrer on
+    /// every call, so the cycle would describe without end; describing a
+    /// member at each reference instead would grow with the paths through
+    /// the cycle. A cell's body runs only when the cell is first read,
+    /// after every cell is made.
+    fn cycleCells(g: *Gen, members: []const u32, params: []const NameIndex) Allocator.Error!Node.Index {
+        const cells = try g.l.scratch.alloc(Bound, members.len);
+        for (cells, members) |*cell, t| cell.* = .{ .decl = t, .name = try g.fresh("$cell") };
+        var stmts: Stmts = .empty;
+        for (members, cells) |t, cell| {
+            var sub = g.*;
+            sub.ref = .{ .module = g.ref.module, .decl = t };
+            sub.def = g.sg.definition(g.ref.module, t).?;
+            sub.codec = g.sg.codecIndex(g.ref.module, t) != null;
+            sub.schema = if (sub.codec) InternPool.WellKnown.codec.symbol() else g.l.bir.symbol(g.l.bir.decls[t].name);
+            const body = try sub.descNode(sub.def.root, params, cells);
+            const made = try g.call(try g.core("describedRecursive"), &.{ try g.str(g.l.text(sub.schema)), try g.arrowOf(&.{}, body) });
+            try g.constDecl(&stmts, cell.name, made);
+        }
+        try g.ret(&stmts, try g.id(cells[0].name));
+        return g.call(try g.arrow(&.{}, stmts.items), &.{});
     }
 
     /// `describedRecord([describedField(name, key, optional, node), …], to,

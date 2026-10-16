@@ -10,7 +10,8 @@
 -- makes its own. Two declarations that name each other are two definitions,
 -- each named once: `Odd` and `Even` as constants, and the generic `Ping` and
 -- `Pong`, whose descriptions hand their parameter round, close the cycle
--- inside one use rather than make a new definition per reference.
+-- inside one use rather than make a new definition per reference; so do
+-- `Rock`, `Paper` and `Scissors`, each of which names the other two.
 import Node
 import Schema exposing (Conversion, Definition, FieldShape, Schema, Shape, VariantShape)
 
@@ -67,6 +68,25 @@ schema Ping a tagged "ping" of
 schema Pong a tagged "pong" of
     PongNext as "next"
         ping : Ping a
+
+
+schema Rock a tagged "r" of
+    RockBeats as "beats"
+        value : a
+        paper : List (Paper a)
+        scissors : List (Scissors a)
+
+
+schema Paper a tagged "p" of
+    PaperBeats as "beats"
+        rock : List (Rock a)
+        scissors : List (Scissors a)
+
+
+schema Scissors a tagged "s" of
+    ScissorsBeats as "beats"
+        rock : List (Rock a)
+        paper : List (Paper a)
 
 
 decimalInt : Conversion String Int
@@ -223,6 +243,7 @@ main =
         , describe (Schema.list (Even.schema ⊤))
         , describe (Ping.schema Schema.int)
         , describe (Pong.schema Schema.string)
+        , describe (Rock.schema Schema.bool)
         , case Schema.parse (Tree.schema ⊤) "{\"node\":\"leaf\",\"label\":\"a\"}" of
             Ok _ →
                 "parsed"
