@@ -840,7 +840,7 @@ arrived, unless that one is a callback's result — is never formed: each entry 
 and message cells, with the cells that arrived when it arrived, with the callbacks' results when it was made
 here, and with its own value's or call's cells for `covers`; a cell found at two paths is `lost` at once; and
 the atoms are sorted once per entry. The fresh numbering sorts `(cell, path)` pairs. Every condition is the
-pairwise definition's — under runtime safety the two are compared for every result of up to 64 entries — and
+pairwise definition's — under runtime safety the two are compared for every result of up to 8 entries — and
 no verdict moved: the dashboard's reports at 16 to 256 widgets are byte for byte the pairwise ones.
 
 ### 16.4 Applying a summary at a call

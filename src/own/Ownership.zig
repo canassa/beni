@@ -4006,6 +4006,8 @@ const Walker = struct {
     use_order: []u32 = &.{},
     /// §20.4: wide values indexed by first step, by their slice.
     wide: std.AutoHashMapUnmanaged([2]usize, WideIndex) = .empty,
+    /// `projPath`'s answers with no type, by `(slice, length, path)`.
+    projected: std.AutoHashMapUnmanaged([3]usize, AV) = .empty,
     /// §28.6, a report walk only: the first and last token of what is being
     /// evaluated, and of each instruction evaluated so far — what a message
     /// underlines.
@@ -4239,6 +4241,19 @@ const Walker = struct {
 
     /// `av` projected along every step of `p`.
     fn projPath(w: *Walker, av: AV, p: u32, ty: ?Var) Allocator.Error!AV {
+        // A value is never changed once made, and a projection only reads
+        // it and interns cells: one projection of a slice along a path
+        // serves every later one. A summary's conditions instantiate the
+        // same argument paths once per pair of result positions (§16.3).
+        // Only a wide value is keyed by its slice, as `wide` is: a narrow
+        // scratch slice's memory may be reused by the arena.
+        if (ty != null or p == eps or av.len < wide_index) return w.projPathRaw(av, p, ty);
+        const g = try w.projected.getOrPut(w.a, .{ @intFromPtr(av.ptr), av.len, p });
+        if (!g.found_existing) g.value_ptr.* = try w.projPathRaw(av, p, null);
+        return g.value_ptr.*;
+    }
+
+    fn projPathRaw(w: *Walker, av: AV, p: u32, ty: ?Var) Allocator.Error!AV {
         var buf: [k_limit + 1]Step = undefined;
         var at = av;
         const s = w.o.steps(p, &buf);
@@ -4524,7 +4539,7 @@ const Walker = struct {
             },
         }
         const k = try w.condAndAll(&acc);
-        if (std.debug.runtime_safety and idx.av.len <= 64) {
+        if (std.debug.runtime_safety and idx.av.len <= 8) {
             const want = try w.spineAtPairwise(idx.av, target);
             if (!w.condSame(k, want)) std.debug.panic("ownership: the indexed spine condition differs from the pairwise one", .{});
         }
@@ -4870,7 +4885,9 @@ const Walker = struct {
     fn instXSum(w: *Walker, x: XSum, ctx: InstCtx) Allocator.Error!u32 {
         if (x.no == 1) return cond_lost;
         if (x.no == 2) return cond_shared;
-        var k = cond_yes;
+        // The conjunction gathered and sorted once (§16.3's amendment): a
+        // fold of `condAnd` re-sorts what it holds at every atom.
+        var acc: SpineAcc = .{};
         for (x.atoms) |t| {
             const c = switch (t.kind) {
                 .excl => try w.deepCond(try w.instProv(t.a, ctx)),
@@ -4883,10 +4900,10 @@ const Walker = struct {
                     try w.sepValues(try w.instProv(t.a, ctx), try w.instProv(t.b, ctx)),
                 .keep => try w.keepShape(t.a.a, t.b, ctx),
             };
-            k = try w.condAnd(k, c);
-            if (k == cond_shared) return k;
+            if (c == cond_shared) return cond_shared;
+            try acc.add(w, c);
         }
-        return k;
+        return w.condAndAll(&acc);
     }
 
     /// `sep cb_j cb_j` at a call: two calls of the actual for `π_j` return no
