@@ -1,0 +1,109 @@
+-- CK-247: a conversion whose forward returns its argument at two places reads as two fresh lists.
+-- ownership (§30.10, amended for issue #268): a run hands a conversion's
+-- `forward` what it built, so the argument is no holder — but `forward`
+-- may return it at two places, and then two positions of the answer are
+-- one array. Such a schema's decoding slot holds `⊤twice`, so a write onto
+-- its answer is rejected `unknown`, approximately: a tuple (`tuple`), a
+-- record (`record`), a list beside the list itself (`nested`), and the
+-- library path through `Schema.converted` (`library`). Before, each was
+-- accepted `call`, and `List.push a 9` changed `b` too. The slot cannot
+-- tell whether the other position is read again, so `single`, which
+-- writes one position and drops the other, is rejected as well. A
+-- `forward` that returns its argument once beside a list it builds
+-- (`once`) is accepted.
+import Schema exposing (Conversion)
+
+
+type alias Both =
+    all : List Int
+    first : List Int
+
+
+dup : Conversion (List Int) (List Int × List Int)
+dup = Schema.conversion (λxs → Ok ( xs, xs )) λ( a, _ ) → Ok a
+
+
+both : Conversion (List Int) Both
+both = Schema.conversion (λxs → Ok { all = xs, first = xs }) λr → Ok r.all
+
+
+nest : Conversion (List Int) (List Int × List (List Int))
+nest = Schema.conversion (λxs → Ok ( xs, [ xs ] )) λ( a, _ ) → Ok a
+
+
+split : Conversion (List Int) (List Int × List Int)
+split = Schema.conversion (λxs → Ok ( xs, List.reverse xs )) λ( a, _ ) → Ok a
+
+
+schema Pair =
+    items : List Int via dup
+
+
+schema Rec =
+    items : List Int via both
+
+
+schema Nest =
+    items : List Int via nest
+
+
+schema Split =
+    items : List Int via split
+
+
+pub tuple : String → List Int × List Int
+tuple input =
+    case Pair.parse input of
+        Ok p →
+            ( a, b ) = p.items
+            ( List.push a 9, b )
+        Err _ →
+            ( [], [] )
+
+
+pub record : String → List Int × List Int
+record input =
+    case Rec.parse input of
+        Ok p →
+            ( List.push p.items.all 9, p.items.first )
+        Err _ →
+            ( [], [] )
+
+
+pub nested : String → List Int × List (List Int)
+nested input =
+    case Nest.parse input of
+        Ok p →
+            ( a, bs ) = p.items
+            ( List.push a 9, bs )
+        Err _ →
+            ( [], [] )
+
+
+pub library : String → List Int × List Int
+library input =
+    case Schema.parse (Schema.converted (Schema.list Schema.int) dup) input of
+        Ok ( a, b ) →
+            ( List.push a 9, b )
+        Err _ →
+            ( [], [] )
+
+
+pub single : String → List Int
+single input =
+    case Pair.parse input of
+        Ok p →
+            ( a, _ ) = p.items
+            List.push a 9
+        Err _ →
+            []
+
+
+pub once : String → List Int × List Int
+once input =
+    case Split.parse input of
+        Ok p →
+            ( a, b ) = p.items
+            ( List.push a 9, b )
+        Err _ →
+            ( [], [] )
