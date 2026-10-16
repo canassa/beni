@@ -1,0 +1,36 @@
+-- ownership (§30.11): `r.load a` on a record field is the field's value
+-- called, as `(r.load) a` is, so the call reads `r.load` and not all of
+-- `r`. Before, the dot form read the whole receiver: `dottedLater` was
+-- rejected `later-use` ("`r.items` is read again"), told as sharing the
+-- checker can see, while `parensLater` was accepted. A closure in the
+-- field that captured the written list is read by either spelling, and
+-- both are rejected `captured`.
+type alias Loader =
+    load : ⊤ → List Int
+    items : List Int
+
+
+pub dottedLater : Loader → List Int × List Int
+dottedLater r =
+    xs = List.push r.items 1
+    ( xs, r.load ⊤ )
+
+
+pub parensLater : Loader → List Int × List Int
+parensLater r =
+    xs = List.push r.items 1
+    ( xs, (r.load) ⊤ )
+
+
+pub dottedCaptured : List Int → List Int × List Int
+dottedCaptured items =
+    r = { load = λ⊤ → items, items = [] }
+    xs = List.push items 1
+    ( xs, r.load ⊤ )
+
+
+pub parensCaptured : List Int → List Int × List Int
+parensCaptured items =
+    r = { load = λ⊤ → items, items = [] }
+    xs = List.push items 1
+    ( xs, (r.load) ⊤ )

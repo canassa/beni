@@ -1,0 +1,12 @@
+module DotFieldCall
+  15:10 List.push r.items: accepted param
+  21:10 List.push r.items: accepted param
+  28:10 List.push items: rejected captured: r, a closure holding it, is used at 29:12
+  35:10 List.push items: rejected captured: r, a closure holding it, is used at 36:11
+  summary dottedLater: π1.items RAW, π1.items[*] RA, π1.load R; res .0 π1.items, .0[*] ~π1.items[*], .1 cb(π1.load){excl cb(π1.load)}; π1.load calls ≤1
+  summary parensLater: π1.items RAW, π1.items[*] RA, π1.load R; res .0 π1.items, .0[*] ~π1.items[*], .1 cb(π1.load){excl cb(π1.load)}; π1.load calls ≤1
+  summary dottedCaptured: π1 RAW, π1[*] RA; res .0 π1, .0[*] ~π1[*], .1 π1
+  summary parensCaptured: π1 RAW, π1[*] RA; res .0 π1, .0[*] ~π1[*], .1 π1
+  demands 4: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+total 4: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+cause captured 2
