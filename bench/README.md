@@ -19,6 +19,28 @@ was saturating the four cores and read 784 ms where the real number was
 
 ---
 
+## 2026-10-16 — ownership everywhere after slice O1
+
+**AMD Ryzen 9 5950X, 32 GiB, Linux 6.12, Zig 0.17.0, Node 24.19.0, LLVM
+ReleaseFast, cores 8–23, load ~3.** `node bench/ownership-everywhere.mjs`
+after O1 (`ownership-checker.md` §30.9, issue #210): **3 of 840 programs
+rejected, none crashing** (31 of 835 before). Core and every platform hold no
+rejected or pending line; `browser-tea`'s two `Tea.application` lines are gone.
+The 840 count the five pages O1 promoted to `browser/direct/` and drop the
+three identity tests it retired. Left: `browser/tea/ApiItems` and `ApiLogin`
+(`need` through `Schema.parse`, #218) and `run/RefModify` (`Ref.update`'s
+callback, #219). Cost, whole process, `--jobs=1 --no-cache`, best of 7; the
+first number is #200's compiler (`3869141`), the second O1's:
+
+| Program | Platform | Without | With the pass | Change |
+|---|---|---:|---:|---:|
+| Conduit | browser-tea | 20 / 20 ms | 34 / 35 ms | +71 % / +76 % |
+| Conduit | browser-direct, as today | — | 34 / 36 ms | — |
+| Bike Wars | browser-tea | 13 / 13 ms | 16 / 16 ms | +24 % / +23 % |
+| `bench/corpus` | node | 16 / 17 ms | 28 / 26 ms | +69 % / +56 % |
+
+---
+
 ## 2026-10-15 — ownership everywhere, the §30.2 measurement as a script
 
 **AMD Ryzen 9 5950X, 32 GiB, Linux 6.12, Zig 0.17.0, Node 24.19.0, LLVM
