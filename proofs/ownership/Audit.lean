@@ -20,12 +20,20 @@ checkout, and runs it before and after the full build:
   identifier whose any part names a kernel or compiler bypass, no import but
   `Std` and the package's own modules (`Lean` only in the two audit files),
   and exactly the pinned number of `sorry`s, all in `Soundness.lean`.
-* `audit env`: the built `Ownership` modules are imported and every
+* `audit env`: the built `Ownership` and `Main` modules are imported and every
   constant checked: axioms only `propext`, `Classical.choice`, `Quot.sound`
   and `sorryAx`, the `sorryAx` dependents exactly the pinned set, every
   constant replayed through the kernel, and no compiler attribute that swaps
   in an implementation (`implemented_by` other than a `partial def`'s own,
-  `extern`, `csimp`, an initialiser). -/
+  `extern`, `csimp`, an initialiser).
+
+Both parents reject duplicate declaration names that involve their audited modules.
+They inspect every module's stored declarations before delegation.
+`audit module NAME` performs the complete replay for one allowed module.
+It uses a fresh environment with only that module's declared imports.
+The parents require exact module/count receipts from sequential children.
+Each child exits after replay, so imported regions cannot accumulate across modules.
+Run the audit from the package directory, as `scripts/audit.sh` does. -/
 
 open Lean
 
@@ -133,10 +141,62 @@ def checkSources : IO Unit := do
     throw <| IO.userError s!"sorry in {sorries}; exactly {sorryCount} are allowed, in Soundness.lean"
   IO.println s!"audit sources: {files.length} files parsed, {sorries.length} sorry, every command and node allowed"
 
+/-- Replay one complete module in a process that releases its imported regions
+at exit. Each fresh base contains only the module's declared imports. -/
+def checkModule (m : Name) : IO Nat := do
+  unless (`Ownership).isPrefixOf m || m == `Main do
+    throw <| IO.userError s!"module outside audit scope: {m}"
+  let env ← importModules #[{module := m}] {}
+  let some (_, i) := env.header.moduleNames.zipIdx.find? (fun (name, _) => name == m) |
+    throw <| IO.userError s!"imported module is absent: {m}"
+  let some data := env.header.moduleData[i]? |
+    throw <| IO.userError s!"module data is absent: {m}"
+  let base ← importModules data.imports {}
+  let mut fresh : Std.HashMap Name ConstantInfo := {}
+  let mut recursors : Array RecursorVal := #[]
+  for (n, _) in env.constants.toList do
+    unless (env.getModuleIdxFor? n).map (·.toNat) == some i do continue
+    if let some ci := env.find? n then
+      match ci with
+      | .recInfo r => recursors := recursors.push r
+      | _ => fresh := fresh.insert n ci
+  let rebuilt ← Environment.replay fresh base
+  for original in recursors do
+    match rebuilt.toKernelEnv.find? original.name with
+    | some (.recInfo regenerated) =>
+      unless regenerated == original do throw <| IO.userError s!"invalid regenerated recursor {original.name}"
+    | _ => throw <| IO.userError s!"missing regenerated recursor {original.name}"
+  pure (fresh.size + recursors.size)
+
+/-- Require a successful child and an exact receipt for the complete module.
+The caller retains its global checks; children perform only kernel replay. -/
+def checkModuleChild (m : Name) (expected : Nat) : IO Unit := do
+  let result ← IO.Process.output {cmd := (← IO.appPath).toString, args := #["module", m.toString]}
+  if result.exitCode != 0 then
+    throw <| IO.userError s!"module replay failed: {m} (exit {result.exitCode})\n{result.stdout}\n{result.stderr}"
+  let receipt := s!"audit module: {m}: {expected}"
+  unless result.stdout.trimAscii.toString == receipt do
+    throw <| IO.userError s!"module replay receipt mismatch: {m}\nexpected {receipt}\nreceived {result.stdout}"
+  IO.println receipt
+
 def checkEnv : IO Unit := do
   -- Include the executable's modules too: importing only the library
   -- omitted the generator, fixtures, enumerator and executable falsifier.
   let env ← importModules #[{ module := `Ownership }, { module := `Main }] {} (loadExts := true)
+  -- Module-only children cannot reproduce a later replacement from another
+  -- import. Reject duplicate declarations before trusting their replay receipts.
+  let mut declaredBy : Std.HashMap Name Name := {}
+  for (m, i) in env.header.moduleNames.zipIdx do
+    let some data := env.header.moduleData[i]? |
+      throw <| IO.userError s!"missing module data during duplicate declaration check: {m}"
+    for n in data.constNames do
+      if let some previous := declaredBy[n]? then
+        let previousAudited := (`Ownership).isPrefixOf previous || previous == `Main
+        let currentAudited := (`Ownership).isPrefixOf m || m == `Main
+        if previous != m && (previousAudited || currentAudited) then
+          throw <| IO.userError s!"duplicate declaration {n} in {previous} and {m}"
+      else
+        declaredBy := declaredBy.insert n m
   let mut names : Array Name := #[]
   for (n, _) in env.constants.toList do
     if let some i := env.getModuleIdxFor? n then
@@ -159,31 +219,14 @@ def checkEnv : IO Unit := do
     if isExtern env n then throw <| IO.userError s!"{n} is extern"
     if Compiler.hasCSimpAttribute env n then throw <| IO.userError s!"{n} has @[csimp]"
     if hasInitAttr env n then throw <| IO.userError s!"{n} runs at initialisation"
-  -- Module by module, as lean4checker does: each module's constants are sent
-  -- to the kernel again in a fresh environment holding only its imports.
+  -- Each sequential child performs the same complete module replay and then
+  -- exits. Imported compacted regions cannot accumulate across modules.
   let mut replayed := 0
   for (m, i) in env.header.moduleNames.zipIdx do
     unless m.toString.startsWith "Ownership" || m == `Main do continue
-    let some data := env.header.moduleData[i]? | continue
-    let base ← importModules data.imports {}
-    let mut fresh : Std.HashMap Name ConstantInfo := {}
-    let mut recursors : Array RecursorVal := #[]
-    for n in names do
-      unless (env.getModuleIdxFor? n).map (·.toNat) == some i do continue
-      if let some ci := env.find? n then
-        match ci with
-        | .recInfo r => recursors := recursors.push r
-        | _ => fresh := fresh.insert n ci
-    let rebuilt ← Environment.replay fresh base
-    -- Replay's metadata lookup omits nested auxiliary recursors. The kernel
-    -- did regenerate them: compare every complete RecursorVal directly in
-    -- its kernel environment. Ordinary rec_* names have no exemption.
-    for original in recursors do
-      match rebuilt.toKernelEnv.find? original.name with
-      | some (.recInfo regenerated) =>
-        unless regenerated == original do throw <| IO.userError s!"invalid regenerated recursor {original.name}"
-      | _ => throw <| IO.userError s!"missing regenerated recursor {original.name}"
-    replayed := replayed + fresh.size + recursors.size
+    let expected := (names.filter fun n => (env.getModuleIdxFor? n).map (·.toNat) == some i).size
+    checkModuleChild m expected
+    replayed := replayed + expected
   IO.println s!"audit env: {names.size} constants, {withSorry.size} on sorryAx (pinned), {replayed} replayed through the kernel module by module, no compiler attribute swapped in ({partials} partial definitions)"
 
 end Audit
@@ -195,7 +238,10 @@ def main (args : List String) : IO UInt32 := do
   | [] => Audit.checkSources; Audit.checkEnv
   | ["sources"] => Audit.checkSources
   | ["env"] => Audit.checkEnv
+  | ["module", m] =>
+    let count ← Audit.checkModule m.toName
+    IO.println s!"audit module: {m.toName}: {count}"
   | _ =>
-    IO.eprintln "usage: audit [sources|env]"
+    IO.eprintln "usage: audit [sources|env|module NAME]"
     return 2
   pure 0

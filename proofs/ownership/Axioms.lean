@@ -3,6 +3,11 @@ import Lean
 
 /-! Axiom audit, built by `lake build` (target `AxiomCheck`).
 
+The target first builds the current `audit` executable.
+Global checks use this elaboration environment.
+Kernel replay uses one sequential `audit module NAME` child per module.
+Each child exits after its complete replay and releases its imported regions.
+
 Three checks, and **the build fails** unless all pass.
 
 1. Every constant declared in an `Ownership` module — theorems, definitions,
@@ -13,20 +18,23 @@ Three checks, and **the build fails** unless all pass.
    `def x : 1 + 1 = 3 := sorry` therefore fails the build, as does a proof that
    silently starts depending on a `sorry` or a declared `axiom`.
 2. Every such constant is sent to the kernel again (`Lean.Environment.replay`,
-   what lean4checker does), in a fresh environment holding only what the
+   through the dependency-built audit executable), in a fresh environment holding only what the
    modules import: a declaration added with `debug.skipKernelTC` or by a raw
    `addDecl` is checked after all, and a false one fails the build. Every
    constant's compiler attributes are read from the environment too: none may
    be `implemented_by` another constant, `extern`, `csimp` or an initialiser
    (the kernel never sees compiled code, so a swapped implementation would
    make `#guard`s and campaigns disagree with what is proved).
+   Before delegation, the audit rejects duplicate declarations that involve an
+   `Ownership` module. It checks exact names in every module's stored declarations.
+   Each child must return the parent's exact module name and declaration count.
 3. An `example` adds no constant to the environment, so (1) cannot see it.
    The source of every `.lean` file under the package (every subdirectory,
    `.lake` excepted) is therefore scanned, outside comments and string and
    character literals: `sorry` may occur exactly as often as there are pinned
    unproved statements, and the words and names of `banned` never (names in
-   any dot-separated part of a token); only this file may use `#eval` and
-   import `Lean`.
+   any dot-separated part of a token). Only this file can use `#eval`.
+   Both audit files can import `Lean`.
 
 Removing a `sorry` requires shrinking the list on purpose. -/
 
@@ -62,8 +70,8 @@ def sources : IO (List System.FilePath) := do
     expand to macros or run code — `#guard` evaluates a closed `Bool` and is
     allowed); and what swaps in another implementation (`implemented_by`,
     `implementedByAttr`, `extern`, `externAttr`, `setParam`, `unsafe`). Only
-    this audit file may use `#eval` and `import Lean`; every other file imports
-    only `Std` and its own modules. -/
+    `Axioms.lean` can use `#eval`. Both audit files can import `Lean`.
+    Every other file imports only `Std` and its own modules. -/
 def banned : List String := bannedWords ++ bannedNames
 where
   /-- Keywords, banned as whole tokens (an identifier spelled `«initialize»`,
@@ -149,6 +157,18 @@ partial def tokens (s : String) : List String := Id.run do
 
 #eval show CoreM Unit from do
   let env ← getEnv
+  -- A module-only child must see the same declaration bodies as this parent.
+  -- Scan declaring modules directly: the final owner map can hide replacements.
+  let mut declaredBy : Std.HashMap Name Name := {}
+  for (m, i) in env.header.moduleNames.zipIdx do
+    let some data := env.header.moduleData[i]? |
+      throwError "missing module data during duplicate declaration check: {m}"
+    for n in data.constNames do
+      if let some previous := declaredBy[n]? then
+        if previous != m && ((`Ownership).isPrefixOf previous || (`Ownership).isPrefixOf m) then
+          throwError "duplicate declaration {n} in {previous} and {m}"
+      else
+        declaredBy := declaredBy.insert n m
   let mut names : Array Name := #[]
   for (n, _) in env.constants.toList do
     match env.getModuleIdxFor? n with
@@ -178,26 +198,19 @@ partial def tokens (s : String) : List String := Id.run do
   -- as lean4checker does; `debug.skipKernelTC` cannot have let one through.
   -- Match the authoritative audit's module boundaries. Replaying all modules
   -- together collides Lean-generated private auxiliary names after normalization.
+  -- Sequential native children release imported regions at process exit.
   let mut replayed := 0
   for (m, i) in env.header.moduleNames.zipIdx do
     unless m.toString.startsWith "Ownership" do continue
-    let some data := env.header.moduleData[i]? | continue
-    let base ← importModules data.imports {}
-    let mut fresh : Std.HashMap Name ConstantInfo := {}
-    let mut recursors : Array RecursorVal := #[]
-    for n in sorted do
-      unless (env.getModuleIdxFor? n).map (·.toNat) == some i do continue
-      if let some ci := env.find? n then
-        match ci with
-        | .recInfo r => recursors := recursors.push r
-        | _ => fresh := fresh.insert n ci
-    let rebuilt ← Lean.Environment.replay fresh base
-    for original in recursors do
-      match rebuilt.toKernelEnv.find? original.name with
-      | some (.recInfo regenerated) =>
-        unless regenerated == original do throwError "invalid regenerated recursor {original.name}"
-      | _ => throwError "missing regenerated recursor {original.name}"
-    replayed := replayed + fresh.size + recursors.size
+    let expected := (sorted.filter fun n => (env.getModuleIdxFor? n).map (·.toNat) == some i).size
+    let result ← IO.Process.output {cmd := ".lake/build/bin/audit", args := #["module", m.toString]}
+    if result.exitCode != 0 then
+      throwError "module replay failed: {m} (exit {result.exitCode})\n{result.stdout}\n{result.stderr}"
+    let receipt := s!"audit module: {m}: {expected}"
+    unless result.stdout.trimAscii.toString == receipt do
+      throwError "module replay receipt mismatch: {m}\nexpected {receipt}\nreceived {result.stdout}"
+    IO.println receipt
+    replayed := replayed + expected
   -- Compiler attributes, read from the environment rather than the text: no
   -- constant may have another implementation swapped in (`implemented_by`,
   -- `extern`, `csimp`) or run at initialisation. A `partial def` is compiled
