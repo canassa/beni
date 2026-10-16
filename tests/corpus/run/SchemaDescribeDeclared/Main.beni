@@ -11,7 +11,10 @@
 -- each named once: `Odd` and `Even` as constants, and the generic `Ping` and
 -- `Pong`, whose descriptions hand their parameter round, close the cycle
 -- inside one use rather than make a new definition per reference; so do
--- `Rock`, `Paper` and `Scissors`, each of which names the other two.
+-- `Rock`, `Paper` and `Scissors`, each of which names the other two. A
+-- cycle of mixed arity, the generic `Bounce a` naming the nongeneric
+-- `Flat`, which names `Bounce Int`, has no cells: `Flat` is a constant, so
+-- `Bounce String` is three definitions, `Bounce Int` its own use.
 import Node
 import Schema exposing (Conversion, Definition, FieldShape, Schema, Shape, VariantShape)
 
@@ -87,6 +90,19 @@ schema Scissors a tagged "s" of
     ScissorsBeats as "beats"
         rock : List (Rock a)
         paper : List (Paper a)
+
+
+schema Bounce a tagged "b" of
+    BounceValue as "value"
+        value : a
+        flat : Flat
+    BounceEnd as "end"
+
+
+schema Flat tagged "f" of
+    FlatNext as "next"
+        bounce : Bounce Int
+    FlatEnd as "end"
 
 
 decimalInt : Conversion String Int
@@ -244,6 +260,7 @@ main =
         , describe (Ping.schema Schema.int)
         , describe (Pong.schema Schema.string)
         , describe (Rock.schema Schema.bool)
+        , describe (Bounce.schema Schema.string)
         , case Schema.parse (Tree.schema ⊤) "{\"node\":\"leaf\",\"label\":\"a\"}" of
             Ok _ →
                 "parsed"

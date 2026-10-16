@@ -755,6 +755,8 @@ const Gen = struct {
         for (cells, members) |*cell, t| cell.* = .{ .decl = t, .name = try g.fresh("$cell") };
         var stmts: Stmts = .empty;
         for (members, cells) |t, cell| {
+            // A copy is a generator of the member: `Gen` holds only
+            // pointers and plain values, so nothing it writes is lost.
             var sub = g.*;
             sub.ref = .{ .module = g.ref.module, .decl = t };
             sub.def = g.sg.definition(g.ref.module, t).?;

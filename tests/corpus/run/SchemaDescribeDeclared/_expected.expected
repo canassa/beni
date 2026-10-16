@@ -27,4 +27,8 @@ List (#0)
   #0 Rock = tagged "r" [ RockBeats as "beats" { value : Bool, paper : List (#1), scissors : List (#2) } ]
   #1 Paper = tagged "p" [ PaperBeats as "beats" { rock : List (#0), scissors : List (#2) } ]
   #2 Scissors = tagged "s" [ ScissorsBeats as "beats" { rock : List (#0), paper : List (#1) } ]
+#0
+  #0 Bounce = tagged "b" [ BounceValue as "value" { value : String, flat : #1 } | BounceEnd as "end" ]
+  #1 Flat = tagged "f" [ FlatNext as "next" { bounce : #2 } | FlatEnd as "end" ]
+  #2 Bounce = tagged "b" [ BounceValue as "value" { value : Int, flat : #1 } | BounceEnd as "end" ]
 parsed
