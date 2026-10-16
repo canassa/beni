@@ -1,0 +1,26 @@
+-- ownership: a callback's result settles while it returns a lambda
+-- (`ownership-checker.md` §16.4 item 6, §28's dated amendment *the entry's
+-- fixpoints settle*; issue #229). `at` folds `field` over the names, and
+-- `field` returns a decoder whose lambda captured the decoder it was handed:
+-- the fold hands each call the previous one's result. The fixpoint for what
+-- the callback returns made the lambda anew in every round, so it never
+-- settled; after 4 rounds it added `⊤`, silently, and `at`'s summary said
+-- its result may hold an unknown list (`~⊤{lost}`). The lambda is now one
+-- closure per place it is made, and the summary names only the decoder.
+type Decoder
+    = Decoder (List Int → List Int)
+
+
+run : Decoder, List Int → List Int
+run decoder value =
+    case decoder of
+        Decoder f →
+            f value
+
+
+field : String, Decoder → Decoder
+field name decoder = Decoder λvalue → run decoder value
+
+
+at : List String, Decoder → Decoder
+at names decoder = List.foldr names decoder field

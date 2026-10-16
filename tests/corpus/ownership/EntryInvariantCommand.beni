@@ -1,0 +1,57 @@
+-- ownership: the model's exclusivity invariant settles while `update`
+-- returns a lambda (`ownership-checker.md` §28's dated amendments, *the
+-- model's exclusivity invariant* and *the entry's fixpoints settle*; issue
+-- #229). `grow` rebuilds a tree whose child lists are each held once, and
+-- `update` hands the runtime the grown tree with a command whose lambda
+-- sends `Ping`. Each round of the invariant instantiated `update` again, and
+-- the lambda was a new closure in every round, so no round ever equalled
+-- the one before: after 32 rounds the backstop dropped the proof, silently,
+-- and the entry was rejected `exclusive`. The lambda is now one closure per
+-- place it is made, the invariant settles in two rounds, and the entry is
+-- accepted. `EntryInvariantCommandShared` is the twin whose other arm
+-- shares a child list: still rejected.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+
+
+type Tree
+    = Tree (List Tree)
+
+
+type Msg
+    = Grow
+    | Ping
+
+
+grow : Tree → Tree
+grow (Tree kids) =
+    case kids of
+        [] →
+            Tree [ …kids, Tree [] ]
+        _ →
+            Tree (List.map kids λchild → grow child)
+
+
+update : Msg, Tree → Tree × Cmd Msg
+update msg tree =
+    case msg of
+        Grow →
+            ( grow tree, Cmd.perform λsend → send Ping )
+        Ping →
+            ( tree, Cmd.none )
+
+
+view : Tree → Html Msg
+view _ = <button onClick={Grow}>grow</button>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( Tree [], Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

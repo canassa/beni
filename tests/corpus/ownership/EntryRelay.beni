@@ -1,0 +1,73 @@
+-- ownership: the model at entry settles however many rounds it needs under
+-- the checker's limit (`ownership-checker.md` §20.4, §28's dated amendment
+-- *the entry's fixpoints settle*; issue #229). `Pass` relays a list one
+-- field along per message, so the model reaches its fixpoint only after a
+-- round per field: eleven here. The fixpoint used to stop at 8 rounds and
+-- add `⊤`, silently, and the entry then rejected the edit of `b`, which no
+-- relay touches, as a list "from JavaScript". It is accepted.
+-- `build/bad/direct/OwnershipEntryRounds` relays past the limit of 32
+-- rounds: an error at the declaration.
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    a0 : List Int
+    a1 : List Int
+    a2 : List Int
+    a3 : List Int
+    a4 : List Int
+    a5 : List Int
+    a6 : List Int
+    a7 : List Int
+    a8 : List Int
+    a9 : List Int
+    b : List Int
+
+
+type Msg
+    = Pass
+    | Poke
+
+
+update : Msg, Model → Model
+update msg m =
+    case msg of
+        Pass →
+            { m
+                | a0 = [ 1 ]
+                , a1 = m.a0
+                , a2 = m.a1
+                , a3 = m.a2
+                , a4 = m.a3
+                , a5 = m.a4
+                , a6 = m.a5
+                , a7 = m.a6
+                , a8 = m.a7
+                , a9 = m.a8
+            }
+
+        Poke →
+            { m | b = List.set m.b 0 9 }
+
+
+main : Tea.Program
+main =
+    Tea.sandbox
+        { init =
+            λ⊤ →
+                { a0 = [ 0 ]
+                , a1 = [ 1 ]
+                , a2 = [ 2 ]
+                , a3 = [ 3 ]
+                , a4 = [ 4 ]
+                , a5 = [ 5 ]
+                , a6 = [ 6 ]
+                , a7 = [ 7 ]
+                , a8 = [ 8 ]
+                , a9 = [ 9 ]
+                , b = [ 0 ]
+                }
+        , update = update
+        , view = λ_ → <button onClick={Pass}>pass</button>
+        }

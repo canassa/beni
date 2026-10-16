@@ -69,7 +69,10 @@ pub const magic = "BENIOWN\x00";
 /// 11 gives a schema value its two analysis slots, `⟨decoded⟩` and
 /// `⟨encoded⟩` (§30.10).
 /// 12 drops the coarsened flag and carries a limit's measure (§16.7).
-pub const version: u32 = 12;
+/// 13 names a carried lambda by where it is made, so a fixpoint over the
+/// walk's cells settles, and a fixpoint that does not is the `fixpoint` limit
+/// (§20.4, amended 2026-10-16).
+pub const version: u32 = 13;
 
 pub const Error = error{Bad} || Allocator.Error;
 

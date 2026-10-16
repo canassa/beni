@@ -450,6 +450,11 @@ pub const Limit = enum(u8) {
     /// A value of more than `deep_cap` cells whose deep condition the walk
     /// needed (§18.2): its cells are compared pair by pair.
     value_cells,
+    /// A fixpoint inside a walk that did not settle within `round_cap`
+    /// rounds: the model at entry and its exclusivity invariant (§20.4), a
+    /// callback's result and a fold's spine (§16.4 item 6). Their cells are
+    /// finite, so their rounds are bounded by the program (#229).
+    fixpoint,
 
     pub fn text(l: Limit) []const u8 {
         return switch (l) {
@@ -460,6 +465,7 @@ pub const Limit = enum(u8) {
             .owned_atoms => "owned-atoms",
             .conditions => "conditions",
             .value_cells => "value-cells",
+            .fixpoint => "fixpoint",
         };
     }
 
@@ -473,6 +479,7 @@ pub const Limit = enum(u8) {
             .owned_atoms => atom_cap,
             .conditions => condition_cap,
             .value_cells => deep_cap,
+            .fixpoint => round_cap,
         };
     }
 };
@@ -3663,6 +3670,11 @@ const Consumption = struct {
     why: []const u8 = "",
 };
 
+/// Where a carried lambda is made (§20.4, amended 2026-10-16): the call, the
+/// callee's summary, its lambda, the callback depth, the entry's namespace,
+/// and whether the call is in the recursive group being solved.
+const CarrySite = struct { inst: u32, sum: usize, klass: u32, depth: u32, ns: u32, merge: bool };
+
 const Closure = struct {
     captures: []const Capture,
     params: []const Inst.Index = &.{},
@@ -3920,6 +3932,14 @@ const Walker = struct {
     point: u32 = 0,
     cells: std.ArrayList(Cell) = .empty,
     cell_map: std.AutoHashMapUnmanaged([4]u32, u32) = .empty,
+    /// §20.4, amended 2026-10-16 (#229): a lambda a callee's result carries
+    /// is one closure per place it is made — the call, the callee's summary,
+    /// the lambda, the callback depth and the entry's namespace — whatever
+    /// round made it, its captures the union of every instantiation's.
+    carry_sites: std.AutoHashMapUnmanaged(CarrySite, u32) = .empty,
+    /// Bumped whenever a carried closure's captures grow: a fixpoint over
+    /// cells has not settled while it moves.
+    carry_grew: u32 = 0,
     local_av: []?AV = &.{},
     local_frame: []u32 = &.{},
     local_ctx: []u32 = &.{},
@@ -6301,6 +6321,9 @@ const Walker = struct {
         consumed: []const usize,
         once_probes: []const [2]usize,
         once_bad: []const ?[]const u8,
+        /// A carried closure's captures grow in place (§20.4).
+        carried: []const Closure,
+        carry_sites: std.AutoHashMapUnmanaged(CarrySite, u32),
         fn_state: []const FnState,
         unseen: std.AutoHashMapUnmanaged(u64, void),
         cell_cond: []const u32,
@@ -6317,10 +6340,12 @@ const Walker = struct {
         const consumed = try w.a.alloc(usize, n);
         const once_probes = try w.a.alloc([2]usize, n);
         const once_bad = try w.a.alloc(?[]const u8, n);
-        for (w.closures.items, consumed, once_probes, once_bad) |c, *x, *y, *z| {
+        const kept_binds = try w.a.alloc(Closure, n);
+        for (w.closures.items, consumed, once_probes, once_bad, kept_binds) |c, *x, *y, *z, *v| {
             x.* = c.consumed.items.len;
             y.* = .{ c.once_probes.items.len, c.call_probes.items.len };
             z.* = c.once_bad;
+            v.* = .{ .captures = &.{}, .binds = c.binds, .cb_avs = c.cb_avs };
         }
         const captures = try w.a.alloc(usize, w.frames.items.len);
         for (w.frames.items, captures) |f, *x| x.* = f.captures.items.len;
@@ -6341,6 +6366,8 @@ const Walker = struct {
             .consumed = consumed,
             .once_probes = once_probes,
             .once_bad = once_bad,
+            .carried = kept_binds,
+            .carry_sites = try w.carry_sites.clone(w.a),
             .fn_state = try w.a.dupe(FnState, w.fn_state.items),
             .unseen = try w.unseen_funcs.clone(w.a),
             .cell_cond = try w.a.dupe(u32, w.cell_cond.items),
@@ -6370,12 +6397,15 @@ const Walker = struct {
         w.closures.shrinkRetainingCapacity(s.closures);
         w.conds.shrinkRetainingCapacity(s.conds);
         for (w.frames.items, s.captures) |*f, n| f.captures.shrinkRetainingCapacity(n);
-        for (w.closures.items, s.consumed, s.once_probes, s.once_bad) |*c, x, y, z| {
+        for (w.closures.items, s.consumed, s.once_probes, s.once_bad, s.carried) |*c, x, y, z, v| {
             c.consumed.shrinkRetainingCapacity(x);
             c.once_probes.shrinkRetainingCapacity(y[0]);
             c.call_probes.shrinkRetainingCapacity(y[1]);
             c.once_bad = z;
+            c.binds = v.binds;
+            c.cb_avs = v.cb_avs;
         }
+        w.carry_sites = try s.carry_sites.clone(w.a);
         w.fn_state.shrinkRetainingCapacity(s.fn_state.len);
         w.slot_keys.shrinkRetainingCapacity(s.fn_state.len - w.params.len);
         @memcpy(w.fn_state.items, s.fn_state);
@@ -6928,8 +6958,14 @@ const Walker = struct {
             w.cell_cond.items[e.cell] = cond_yes;
         }
         if (fresh.items.len == 0) return;
+        // §20.4, amended 2026-10-16 (#229): the rounds run over a finite
+        // domain — every cell is named by where it is made, a carried lambda
+        // too — so a round that makes no cell, grows no carried lambda and
+        // moves no condition is the fixpoint. Conditions only go down a chain
+        // of finite height, so it is reached in a bounded number of rounds.
         for (0..round_cap) |_| {
             const before = try w.a.dupe(u32, w.cell_cond.items);
+            const grew = w.carry_grew;
             const demands_before = w.demands.items.len;
             const uses_before = w.uses.items.len;
             const escapes_before = w.escaped.items.len;
@@ -6939,10 +6975,11 @@ const Walker = struct {
                 std.debug.assert(w.uses.items.len == uses_before);
                 std.debug.assert(w.escaped.items.len == escapes_before);
             }
-            if (std.mem.eql(u32, before, w.cell_cond.items)) return;
+            if (w.carry_grew == grew and std.mem.eql(u32, before, w.cell_cond.items)) return;
         }
-        // A backstop loses the invariant; never use an unfinished proof.
-        // It is reached on every program measured, silently: issue #229.
+        // Never use an unfinished proof, and never lose it silently: the
+        // declaration is an error (§16.7).
+        try w.o.hitLimit(.fixpoint, round_cap);
         for (fresh.items) |c| try w.lowerCond(c, cond_lost);
     }
 
@@ -7035,8 +7072,9 @@ const Walker = struct {
         // A message type that holds no cell brings none (§20.5).
         const msg_tracked = try w.messageTracked(arg);
         const payload: AV = if (msg_tracked) try w.single(.{ .kind = .payload, .a = inst.int() }) else &.{};
-        // The fixpoint (§20.4): update's fresh cells are one per number in
-        // every round, so it settles; 8 rounds is a backstop. Its rounds
+        // The fixpoint (§20.4): update's fresh cells are one per number and its
+        // carried lambdas one per place in every round, so it settles; §16.7's
+        // `fixpoint` limit bounds its rounds. Its rounds
         // compute cells only; the round that settles lowers their conditions.
         // §23.6: what a send gave up is owned; a view event's message is
         // not, and may hold the lists the view's messages carry. They are not
@@ -7049,15 +7087,20 @@ const Walker = struct {
         var res: AV = &.{};
         var round: u32 = 0;
         while (true) : (round += 1) {
+            const grew = w.carry_grew;
             res = try w.entryResWith(inst, upd, &.{ payload, model }, 0, false);
             const half = if (whole) res else try w.proj(res, tuple0, null);
             // The union is sorted and deduplicated, and contains `model`: the
-            // same length is the same set, so it has settled.
+            // same length is the same set, so it has settled — unless a
+            // lambda the model carries captured more this round.
             const next = try w.unionOf(&.{ model, half });
-            if (next.len == model.len) break;
+            if (next.len == model.len and w.carry_grew == grew) break;
             model = next;
-            if (round >= 8) {
-                model = try w.unionOf(&.{ model, try w.single(.{ .kind = .top, .a = 0 }) });
+            if (round + 1 >= round_cap) {
+                // Its cells are finite (§20.4), so this is the compiler's
+                // limit, and an error at the declaration (§16.7).
+                try w.o.hitLimit(.fixpoint, round_cap);
+                model = try w.unionOf(&.{ model, try w.single(.{ .kind = .top, .a = 1 }) });
                 break;
             }
         }
@@ -7979,7 +8022,8 @@ const Walker = struct {
     /// What the actual for function parameter `j` returns when the callee
     /// calls it (§16.4 item 6). A callee may hand the callback its own
     /// earlier result (a fold's accumulator), so this is a least fixpoint,
-    /// iterated from nothing; one that does not settle adds `⊤`.
+    /// iterated from nothing; one that does not settle within §16.7's
+    /// `fixpoint` limit adds `⊤limit` and is an error at the declaration.
     fn instCb(w: *Walker, j: u32, ctx: InstCtx) Allocator.Error!AV {
         const actual = (try w.actualOf(ctx.s, ctx.avs, j)) orelse return w.single(.{ .kind = .top, .a = 0 });
         // The declaration's own function parameter or slot: what it returns,
@@ -7991,16 +8035,20 @@ const Walker = struct {
         if (try w.foldAccumulator(j, classes, ctx) != null) return w.instFold(j, classes, ctx);
         var x: AV = &.{};
         var rounds: u32 = 0;
-        while (rounds < 4) : (rounds += 1) {
+        while (rounds < round_cap) : (rounds += 1) {
             var inner = ctx;
             inner.self_j = j;
             inner.self_av = x;
+            const grew = w.carry_grew;
             const y = try w.instCbOnce(j, classes, inner);
             const next = try w.unionOf(&.{ x, y });
-            if (next.len == x.len) return x;
+            if (next.len == x.len and w.carry_grew == grew) return x;
             x = next;
         }
-        return w.unionOf(&.{ x, try w.single(.{ .kind = .top, .a = 0 }) });
+        // Its cells are finite (§20.4, amended 2026-10-16): the compiler's
+        // limit, an error at the declaration (§16.7).
+        try w.o.hitLimit(.fixpoint, round_cap);
+        return w.unionOf(&.{ x, try w.single(.{ .kind = .top, .a = 1 }) });
     }
 
     /// A linear feedback edge: one owned initial parameter and the callback's
@@ -8068,16 +8116,20 @@ const Walker = struct {
         inner.effects = ctx.effects;
         inner.callback_fresh = &made;
         var stable = false;
-        for (0..4) |_| {
+        for (0..round_cap) |_| {
             inner.self_av = shape;
+            const grew = w.carry_grew;
             const next = try w.unionOf(&.{ shape, try w.instCbOnce(j, classes, inner) });
-            if (next.len == shape.len) {
+            if (next.len == shape.len and w.carry_grew == grew) {
                 stable = true;
                 break;
             }
             shape = next;
         }
-        if (!stable) return w.unionOf(&.{ shape, try w.single(.{ .kind = .top, .a = 0 }) });
+        if (!stable) {
+            try w.o.hitLimit(.fixpoint, round_cap);
+            return w.unionOf(&.{ shape, try w.single(.{ .kind = .top, .a = 1 }) });
+        }
         if (!ctx.conds) return shape;
         var future: std.ArrayList(u32) = .empty;
         for (made.items) |cell_id| {
@@ -8104,6 +8156,7 @@ const Walker = struct {
         var settled = false;
         for (0..round_cap) |_| {
             const before = try w.a.dupe(u32, w.cell_spine.items);
+            const grew = w.carry_grew;
             const escapes_before = w.escaped.items.len;
             const uses = w.uses.items.len;
             const demands = w.demands.items.len;
@@ -8115,14 +8168,18 @@ const Walker = struct {
                 std.debug.assert(demands == w.demands.items.len);
                 std.debug.assert(reqs == w.reqs.items.len);
             }
-            if (std.mem.eql(u32, before, w.cell_spine.items)) {
+            if (w.carry_grew == grew and std.mem.eql(u32, before, w.cell_spine.items)) {
                 settled = true;
                 break;
             }
         }
         // Only future cells received optimistic seeds. Every other condition
-        // was only weakened by conjunction, so exhaustion keeps those safe facts.
-        if (!settled) for (future.items) |c| try w.lowerSpine(c, cond_lost);
+        // was only weakened by conjunction, so exhaustion keeps those safe
+        // facts; the lost seeds are the compiler's limit, an error (§16.7).
+        if (!settled) {
+            try w.o.hitLimit(.fixpoint, round_cap);
+            for (future.items) |c| try w.lowerSpine(c, cond_lost);
+        }
         inner.effects = ctx.effects;
         return w.unionOf(&.{ shape, try w.instCbOnce(j, classes, inner) });
     }
@@ -8516,8 +8573,38 @@ const Walker = struct {
             c.* = .{ .j = j, .av = av };
             if (ctx.effects) try w.sight(c.av, .{ .pending = "a function value a callee returned calls it" }, w.token(ctx.inst));
         }
+        // One closure per place it is made (§20.4, amended 2026-10-16): a
+        // fixpoint's rounds instantiate the same call again, and a closure
+        // per round would be a new cell each round, so no round could ever
+        // equal the one before (#229). Its captures are the union of every
+        // instantiation's, as `result(call, k)` stands for every round's
+        // new list: aliasing only grows.
+        const site: CarrySite = .{ .inst = ctx.inst.int(), .sum = @intFromPtr(ctx.s), .klass = p.a, .depth = ctx.depth, .ns = ctx.fresh_ns, .merge = ctx.merge_fresh };
+        const gop = try w.carry_sites.getOrPut(w.a, site);
+        if (gop.found_existing) {
+            const cl = &w.closures.items[gop.value_ptr.*];
+            std.debug.assert(cl.binds.len == binds.len and cl.cb_avs.len == cbs.len);
+            var grew = false;
+            for (binds, cl.binds) |*b, old| {
+                const u = try w.unionOf(&.{ old.av, b.av });
+                if (u.len != old.av.len) grew = true;
+                b.av = u;
+            }
+            for (cbs, cl.cb_avs) |*c, old| {
+                const u = try w.unionOf(&.{ old.av, c.av });
+                if (u.len != old.av.len) grew = true;
+                c.av = u;
+            }
+            if (grew) {
+                cl.binds = binds;
+                cl.cb_avs = cbs;
+                w.carry_grew += 1;
+            }
+            return w.single(.{ .kind = .closure, .a = gop.value_ptr.* });
+        }
+        gop.value_ptr.* = @intCast(w.closures.items.len);
         try w.closures.append(w.a, .{ .captures = &.{}, .class = k.sum, .binds = binds, .cb_avs = cbs, .carried = true });
-        return w.single(.{ .kind = .closure, .a = @intCast(w.closures.items.len - 1) });
+        return w.single(.{ .kind = .closure, .a = gop.value_ptr.* });
     }
 
     /// The lambda `ci` as the declaration's result may carry it (§24.9): its
