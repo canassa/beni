@@ -18,7 +18,10 @@ rejected, `bench/corpus` (#223). Conduit, TodoMVC (all four), Sternhalma and Bik
 `browser-direct`. The open review of #225 found that a dot-called field (`r.load ⊤`) handed the receiver
 on as the callee, so the call read all of `r`: a write onto `r.items` before it was rejected `later-use`
 and told as sharing the checker can see. The callee now carries the field (`CalleeRef`); fixture
-`ownership/DotFieldCall`, red before.
+`ownership/DotFieldCall`, red before. The independent review found three new false rejections (a dot
+call on an extensible record, a top-level alias such as `mkBox = Box`, a value with two known classes):
+the first two are fixed, and the third keeps `⊤call` with a message that says why (#278). New fixtures
+pin the holes the PR closes: `ownership/UnknownCalleeForms` and the project `ownership/SchemaMemberExt`.
 
 **What I learned.** A constructor handed on as a value was already a closure with a synthesised class
 (`constructorValue`). The same shape carries a schema member, so the fix needed no new cell kind and no
