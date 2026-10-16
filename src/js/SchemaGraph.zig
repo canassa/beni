@@ -16,6 +16,8 @@ const Graph = @import("../resolve/Graph.zig");
 const Interface = @import("../resolve/Interface.zig");
 const InternPool = @import("../InternPool.zig");
 const SchemaPlan = @import("../check/SchemaPlan.zig");
+const SchemaShare = @import("SchemaShare.zig");
+const Dispatch = @import("../check/Dispatch.zig");
 
 const SchemaGraph = @This();
 
@@ -26,35 +28,151 @@ birs: []const *const Bir,
 interfaces: []const Interface,
 provenance: []const Interface.Provenance,
 interner: *const InternPool.Global,
+/// The validators this build shares across its schemas (`SchemaShare`),
+/// decided once reachability has run and read by every module's lowering.
+share: SchemaShare.Share = .{},
 
-/// The four nodes one declaration emits besides its `via`s, and their
-/// order in a module's member table (`Reach`'s `schema` kind is
-/// `decl * members + member`). `root` is `S.schema`'s value, a compiled
-/// schema (`schema.md` §6, *A statically known schema runs compiled*): it
-/// reaches the other three only through guards, the description on
-/// `core/Schema`'s `nodeOf`, each direction on a `core/Schema` value that
-/// runs a compiled schema's worker of that direction (`root_guards`).
-pub const Member = enum(u2) {
+/// The nodes one declaration emits besides its `via`s, and their order in
+/// a module's member table (`Reach`'s `schema` kind is
+/// `decl * members + member`):
+/// - `description`, `$$description`;
+/// - one worker set per operation a compiled schema runs (`schema.md` §6,
+///   *Every runner of a statically known schema is compiled*): `read` and
+///   `write`, the `parse` and `print` workers (`$$read`, `$$write`, named
+///   before the other four existed), and `decode`, `encode`, `read_value`
+///   and `write_value`, the workers of `Schema.decode`, `encode`, `read`
+///   and `write`;
+/// - `root`, `S.schema`'s value, a compiled schema. It reaches the
+///   description and each worker set only through guards: the description
+///   on `core/Schema`'s `nodeOf`, a worker set on a `core/Schema` value that
+///   runs a compiled schema's worker of that operation (`root_guards`);
+/// - `parse` and `print`, the root wrappers `S.parse`/`S.parseWith` and
+///   `S.print`/`S.printWith`, which only those members reach, so a build
+///   that runs `S.schema` alone ships none of them.
+pub const Member = enum(u4) {
     description = 0,
     read = 1,
     write = 2,
     root = 3,
+    parse = 4,
+    print = 5,
+    decode = 6,
+    encode = 7,
+    read_value = 8,
+    write_value = 9,
 
-    pub const count = 4;
+    pub const count = 10;
+
+    /// The members a `pub schema` exports from a `--library` build: what
+    /// another program can name. The other four worker sets are reached
+    /// only through a root's guards.
+    pub const exported = [_]Member{ .description, .read, .write, .root, .parse, .print };
+
+    /// The worker set of operation `op`.
+    pub fn worker(o: Op) Member {
+        return switch (o) {
+            .parse => .read,
+            .print => .write,
+            .decode => .decode,
+            .encode => .encode,
+            .read => .read_value,
+            .write => .write_value,
+        };
+    }
+
+    /// The operation whose worker set this member is, if it is one.
+    pub fn op(m: Member) ?Op {
+        return switch (m) {
+            .read => .parse,
+            .write => .print,
+            .decode => .decode,
+            .encode => .encode,
+            .read_value => .read,
+            .write_value => .write,
+            .description, .root, .parse, .print => null,
+        };
+    }
+};
+
+/// An operation a compiled schema runs (`core/Schema`'s `parseMode` …
+/// `writeMode`; `declared` takes the last four in this order). Its ends:
+/// whether it decodes (Encoded to Type), whether its input and its output
+/// are host values, and whether the host value is JSON's (`parse` reads
+/// what `JSON.parse` made, `print` writes what `JSON.stringify` takes).
+pub const Op = enum(u3) {
+    parse = 0,
+    print = 1,
+    decode = 2,
+    encode = 3,
+    read = 4,
+    write = 5,
+
+    pub fn decoding(o: Op) bool {
+        return switch (o) {
+            .parse, .decode, .read => true,
+            .print, .encode, .write => false,
+        };
+    }
+
+    pub fn hostIn(o: Op) bool {
+        return o == .parse or o == .read;
+    }
+
+    pub fn hostOut(o: Op) bool {
+        return o == .print or o == .write;
+    }
+
+    pub fn json(o: Op) bool {
+        return o == .parse or o == .print;
+    }
+
+    /// The core-private value that makes a schema argument this
+    /// operation's slot.
+    pub fn slot(o: Op) []const u8 {
+        return switch (o) {
+            .parse => "readSlot",
+            .print => "writeSlot",
+            .decode => "decodeSlot",
+            .encode => "encodeSlot",
+            .read => "readValueSlot",
+            .write => "writeValueSlot",
+        };
+    }
+
+    /// The suffix of its workers' names: `$$read`, `$$read$7`.
+    pub fn workerSuffix(o: Op) []const u8 {
+        return switch (o) {
+            .parse => "read",
+            .print => "write",
+            .decode => "decode",
+            .encode => "encode",
+            .read => "readValue",
+            .write => "writeValue",
+        };
+    }
 };
 
 /// The `core/Schema` declarations whose survival lets a root reach each of
 /// the other members, any one of them enough: `nodeOf`, the one reader of
-/// a compiled schema's description; `parseWith` and `readSlot`, which run
-/// a compiled schema's decoding worker; `printWith` and `writeSlot`, its
-/// encoding one. Every other value that touches a worker — `list`,
-/// `nullable`, `converted` — only passes it on to one of these.
+/// a compiled schema's description; for each operation, its runner
+/// (`parseWith` …) and its slot maker (`readSlot` …), which run a compiled
+/// schema's worker of that operation. Every other value that touches a
+/// worker — `list`, `nullable`, `converted` — only passes it on to one of
+/// these.
 pub const root_guards = [_]struct { Member, []const u8 }{
     .{ .description, "nodeOf" },
     .{ .read, "parseWith" },
     .{ .read, "readSlot" },
     .{ .write, "printWith" },
     .{ .write, "writeSlot" },
+    .{ .decode, "decodeWith" },
+    .{ .decode, "decodeSlot" },
+    .{ .encode, "encodeWith" },
+    .{ .encode, "encodeSlot" },
+    .{ .read_value, "readWith" },
+    .{ .read_value, "readValueSlot" },
+    .{ .write_value, "writeWith" },
+    .{ .write_value, "writeValueSlot" },
 };
 
 /// A schema declaration of some module.
@@ -63,9 +181,17 @@ pub const Ref = struct { module: Graph.Index, decl: u32 };
 /// `core/Schema`'s core-private values the specialised path calls: in no
 /// interface, exported by `core/Schema` when they survive.
 pub const compiled_values = [_][]const u8{
-    "compiledParse", "compiledPrint", "compiledFail", "compiledForward", "compiledBackward",
-    "belowBackward", "readSlot",      "writeSlot",    "pathAt",          "printableWithin",
-    "declared",
+    "compiledParse",   "compiledPrint",       "compiledFail",    "compiledForward",   "compiledBackward",
+    "belowBackward",   "readSlot",            "writeSlot",       "pathAt",            "printableWithin",
+    "declared",        "decodeSlot",          "encodeSlot",      "readValueSlot",     "writeValueSlot",
+    "box",             "describedOf",         "describedList",   "describedNullable", "describedConverted",
+    "describedRecord", "describedField",      "describedTagged", "describedVariant",  "describedRecursive",
+    "compiledDeep",    "compiledMissing",     "badString",       "badInt",            "badBool",
+    "badFloat",        "badFinite",
+    // A derived codec's (schema.md §12.10).
+              "describedHost",   "describedTuple",    "describedConstructors",
+    "describedMaybe",  "describedMaybeField", "derivedChar",     "derivedInt32",      "derivedNever",
+    "hostWorker",
 };
 
 pub fn isCompiledValue(text: []const u8) bool {
@@ -84,69 +210,216 @@ pub fn coreNeeds(g: SchemaGraph, scratch: Allocator, r: Ref, member: Member, lib
     try subtree(plan, scratch, d.root, &nodes);
     const params = d.params_end - d.params_start;
     switch (member) {
-        // Under `--schema-library` the root is its description.
-        .root => if (!library) try out.append(scratch, "declared"),
+        // Under `--schema-library` the root is its description, boxed.
+        .root => try out.append(scratch, if (library) "box" else "declared"),
         .description => {
-            if (try g.recursive(scratch, r.module, r.decl)) try out.append(scratch, "recursive");
+            // `describedOf` makes a primitive's node, and a generic root's
+            // description of each argument's node.
+            try out.append(scratch, "describedOf");
+            if (try g.recursive(scratch, r.module, r.decl)) try out.append(scratch, "describedRecursive");
+            // A derived codec's Encoded end is a host value (schema.md
+            // §12.10).
+            if (g.codecIndex(r.module, r.decl) != null) try out.append(scratch, "describedHost");
             for (nodes.items) |n| switch (tag(plan, n)) {
-                .primitive => try out.append(scratch, switch (std.enums.fromInt(SchemaPlan.Primitive, lhs(plan, n)) orelse .value) {
-                    .string => "string",
-                    .bool => "bool",
-                    .int => "int",
-                    .float => "float",
-                    .finite_float => "finiteFloat",
-                    .null => "null",
-                    .value => "value",
-                }),
-                .list => try out.append(scratch, "list"),
-                .nullable => try out.append(scratch, "nullable"),
-                .conversion => try out.append(scratch, "converted"),
+                .primitive => try out.append(scratch, primitiveBuilder(lhs(plan, n))),
+                .list => try out.append(scratch, "describedList"),
+                .nullable => try out.append(scratch, "describedNullable"),
+                .conversion => try out.append(scratch, "describedConverted"),
                 .record => {
-                    try out.appendSlice(scratch, &.{ "record", "fields", "mapping" });
-                    for (fields(plan, n)) |f| {
-                        try out.append(scratch, if (f.optional) "optional" else "field");
-                        const name = g.interner.slice(symbol(plan, f.name));
-                        if (!std.mem.eql(u8, name, literal(plan, f.external))) try out.append(scratch, "key");
-                    }
+                    try out.append(scratch, "describedRecord");
+                    for (fields(plan, n)) |f| try out.append(scratch, if (isMaybeField(plan, f)) "describedMaybeField" else "describedField");
                 },
-                .tagged => {
-                    try out.appendSlice(scratch, &.{ "tagged", "injection" });
-                    for (variants(plan, n)) |vi| {
-                        if (vi >= plan.variants.len) continue;
-                        try out.append(scratch, if (plan.variants[vi].payload == .none) "nullary" else "variant");
-                    }
-                },
-                .parameter, .reference, .check, .annotation => {},
+                .tagged => try out.appendSlice(scratch, &.{ "describedTagged", "describedVariant" }),
+                // A derived codec's (schema.md §12.10).
+                .tuple => try out.append(scratch, "describedTuple"),
+                .constructors => try out.append(scratch, "describedConstructors"),
+                .maybe => if (rhs(plan, n) & SchemaPlan.Maybe.field == 0) try out.append(scratch, "describedMaybe"),
+                .parameter, .reference, .check, .annotation, .codec_ref, .codec_value => {},
             };
         },
-        .read, .write => {
+        // The root wrappers: `S.parse`/`S.parseWith`, `S.print`/`S.printWith`.
+        .parse, .print => {
             try out.append(scratch, "defaultOptions");
             if (library) {
-                try out.append(scratch, if (member == .read) "parseWith" else "printWith");
+                try out.append(scratch, if (member == .parse) "parseWith" else "printWith");
                 return;
             }
-            try out.appendSlice(scratch, &.{ if (member == .read) "compiledParse" else "compiledPrint", "compiledFail", "pathAt" });
-            if (params != 0) try out.append(scratch, if (member == .read) "readSlot" else "writeSlot");
+            try out.append(scratch, if (member == .parse) "compiledParse" else "compiledPrint");
+            if (params != 0) try out.append(scratch, if (member == .parse) "readSlot" else "writeSlot");
+        },
+        .read, .write, .decode, .encode, .read_value, .write_value => {
+            // Under `--schema-library` no worker is written.
+            if (library) return;
+            // A derived codec's `decode` and `encode` are its `read` and
+            // `write` workers on a context whose Encoded end is a host value
+            // (`hostWorker`, schema.md §12.10): no worker set of their own.
+            if (g.hostAliased(r, member)) |_| {
+                try out.append(scratch, "hostWorker");
+                return;
+            }
+            const op = member.op().?;
+            try out.append(scratch, "pathAt");
+            // `compiledFail`, for any failure branch: the depth bound and a
+            // missing key call it too where the build does not share their
+            // helpers (`SchemaShare`), which are roots of their own when it
+            // does.
+            const failures = failureHelpers(plan, nodes.items, op);
+            if (failures.deep or failures.missing or failures.generic) try out.append(scratch, "compiledFail");
+            // A generic declaration's root closes this operation's worker
+            // over its arguments' slots, once this worker set survives.
+            if (params != 0) try out.append(scratch, op.slot());
             for (nodes.items) |n| switch (tag(plan, n)) {
-                .conversion => if (member == .read) {
+                .conversion => if (op.decoding()) {
                     try out.append(scratch, "compiledForward");
                 } else {
                     try out.appendSlice(scratch, &.{ "compiledBackward", "belowBackward" });
                 },
-                .primitive => if (member == .write and lhs(plan, n) == @backingInt(SchemaPlan.Primitive.value)) try out.append(scratch, "printableWithin"),
+                .primitive => if (op == .print and lhs(plan, n) == @backingInt(SchemaPlan.Primitive.value)) try out.append(scratch, "printableWithin"),
+                // A module's `codec` runs through its own workers.
+                .codec_value => try out.append(scratch, op.slot()),
                 else => {},
             };
         },
     }
 }
 
-/// The schema declarations member `member` of `r` reaches directly: the
-/// same member of every definition its value references. Under
-/// `--schema-library` a direction reaches the description instead.
+/// A derived codec's `decode` or `encode` member: the `read` or `write`
+/// worker set it runs instead, since a derived codec's Encoded end is a
+/// host value (schema.md §12.10, `NHost`). Null for any other member.
+pub fn hostAliased(g: SchemaGraph, r: Ref, member: Member) ?Member {
+    if (g.codecIndex(r.module, r.decl) == null) return null;
+    return switch (member) {
+        .decode => .read_value,
+        .encode => .write_value,
+        else => null,
+    };
+}
+
+/// The failure helpers a worker of operation `op` over `nodes` calls
+/// (`SchemaLower`'s `failText`): `compiledDeep` for the depth bound before
+/// every descent, `compiledMissing` for a missing key, and `compiledFail`
+/// for the rest — a shape or number test, an unknown key or tag, and what
+/// `print` refuses to write.
+pub const FailureHelpers = struct { deep: bool = false, missing: bool = false, generic: bool = false };
+
+pub fn failureHelpers(plan: *const SchemaPlan, nodes: []const SchemaPlan.NodeIndex, op: Op) FailureHelpers {
+    var f: FailureHelpers = .{};
+    for (nodes) |n| switch (tag(plan, n)) {
+        .record, .tagged => {
+            f.deep = true;
+            if (op.hostIn()) {
+                f.missing = true;
+                f.generic = true;
+            }
+        },
+        .list => {
+            f.deep = true;
+            f.generic = f.generic or op.hostIn();
+        },
+        .primitive => switch (std.enums.fromInt(SchemaPlan.Primitive, lhs(plan, n)) orelse .value) {
+            .int, .finite_float, .never => f.generic = true,
+            .string, .bool, .null, .float, .char, .int32 => f.generic = f.generic or op.hostIn() or (op == .print and lhs(plan, n) == @backingInt(SchemaPlan.Primitive.float)),
+            .value => f.generic = f.generic or op == .print,
+        },
+        // A derived codec's (schema.md §12.10): an array or a constructor
+        // read from a host value is tested for its shape, and a `Maybe`
+        // whose inner value writes `null` is refused.
+        .tuple, .constructors => {
+            f.deep = true;
+            f.generic = f.generic or op.hostIn();
+        },
+        .maybe => f.generic = f.generic or (!op.decoding() and rhs(plan, n) & SchemaPlan.Maybe.refuse_null != 0),
+        else => {},
+    };
+    return f;
+}
+
+/// A call of core's `Json.decode`, `encode`, `decodeWith` or `encodeWith`
+/// whose one evidence argument is a derived codec of this module
+/// (`schema.md` §12.10): written as the codec's own `parse`, `print`,
+/// `parseWith` or `printWith`, so a derived schema ships what a
+/// declaration's `S.parse` ships. `Lower` writes it and `Reach` keeps what
+/// it names; both ask here.
+pub const JsonCall = struct {
+    /// The codec's index in its module's plan, and the evidence term.
+    codec: u32,
+    term: Dispatch.TermIndex,
+    /// The root wrapper: `parse` or `print`.
+    member: Member,
+    /// The binding: `parse`, `print`, `parseWith` or `printWith`.
+    suffix: []const u8,
+};
+
+pub fn jsonCall(graph: *const Graph, interfaces: []const Interface, bir: *const Bir, dispatch: *const Dispatch, interner: *const InternPool.Global, call: Bir.Inst.Index) ?JsonCall {
+    if (call.int() >= bir.insts.len or bir.instTag(call) != .call) return null;
+    const callee: Bir.Inst.Index = @fromBackingInt(@intCast(bir.instData(call).lhs));
+    if (callee.int() >= bir.insts.len or bir.instTag(callee) != .ext_value) return null;
+    const d = bir.instData(callee);
+    const module: Graph.Index = @fromBackingInt(@intCast(d.lhs));
+    if (module.int() >= interfaces.len) return null;
+    if (graph.modulePackage(module) != .core or graph.moduleName(module) != InternPool.WellKnown.Json.symbol()) return null;
+    const iface = &interfaces[module.int()];
+    if (d.rhs >= iface.values.len) return null;
+    const name = interner.slice(iface.symbol(iface.values[d.rhs].name));
+    const member: Member, const suffix: []const u8 = if (std.mem.eql(u8, name, "decode"))
+        .{ .parse, "parse" }
+    else if (std.mem.eql(u8, name, "decodeWith"))
+        .{ .parse, "parseWith" }
+    else if (std.mem.eql(u8, name, "encode"))
+        .{ .print, "print" }
+    else if (std.mem.eql(u8, name, "encodeWith"))
+        .{ .print, "printWith" }
+    else
+        return null;
+    const site = dispatch.siteOf(call) orelse return null;
+    const roots = dispatch.argsAt(site.evidence);
+    if (roots.len != 1) return null;
+    return switch (dispatch.term(roots[0])) {
+        .codec => |use| .{ .codec = use.index, .term = roots[0], .member = member, .suffix = suffix },
+        else => null,
+    };
+}
+
+/// The `core/Schema` value a primitive node's description is.
+pub fn primitiveBuilder(kind: u32) []const u8 {
+    return switch (std.enums.fromInt(SchemaPlan.Primitive, kind) orelse .value) {
+        .string => "string",
+        .bool => "bool",
+        .int => "int",
+        .float => "float",
+        .finite_float => "finiteFloat",
+        .null => "null",
+        .value => "value",
+        .char => "derivedChar",
+        .int32 => "derivedInt32",
+        .never => "derivedNever",
+    };
+}
+
+/// Whether record field `f` is a derived record's `Maybe` field
+/// (schema.md §12.4): optional, its child a `maybe` node in field form.
+pub fn isMaybeField(plan: *const SchemaPlan, f: SchemaPlan.Field) bool {
+    if (!f.optional or @backingInt(f.child) >= plan.nodes.len) return false;
+    return tag(plan, f.child) == .maybe and rhs(plan, f.child) & SchemaPlan.Maybe.field != 0;
+}
+
+/// The schema members member `member` of `r` reaches directly: a root
+/// wrapper its own worker set, and a worker set or the description the same
+/// member of every definition its value references. Under
+/// `--schema-library` a root wrapper reaches the root, the boxed description, and a
+/// worker set nothing, since none is written.
 pub fn memberTargets(g: SchemaGraph, scratch: Allocator, r: Ref, member: Member, library: bool, out: *std.ArrayList(struct { Ref, Member })) Allocator.Error!void {
-    if (member == .root) return;
-    if (member != .description and library) {
-        try out.append(scratch, .{ r, .description });
+    switch (member) {
+        .root => return,
+        .parse, .print => {
+            try out.append(scratch, .{ r, if (library) .root else if (member == .parse) .read else .write });
+            return;
+        },
+        .description => {},
+        .read, .write, .decode, .encode, .read_value, .write_value => if (library) return,
+    }
+    if (g.hostAliased(r, member)) |aliased| {
+        try out.append(scratch, .{ r, aliased });
         return;
     }
     const d = g.definition(r.module, r.decl) orelse return;
@@ -154,8 +427,11 @@ pub fn memberTargets(g: SchemaGraph, scratch: Allocator, r: Ref, member: Member,
     var nodes: std.ArrayList(SchemaPlan.NodeIndex) = .empty;
     try subtree(plan, scratch, d.root, &nodes);
     for (nodes.items) |n| {
-        if (tag(plan, n) != .reference) continue;
-        const t = g.target(r.module, @fromBackingInt(@intCast(lhs(plan, n)))) orelse continue;
+        const t = switch (tag(plan, n)) {
+            .reference => g.target(r.module, @fromBackingInt(@intCast(lhs(plan, n)))) orelse continue,
+            .codec_ref => g.codecTarget(r.module, lhs(plan, n)),
+            else => continue,
+        };
         try out.append(scratch, .{ t, member });
     }
 }
@@ -181,13 +457,34 @@ pub fn birOf(g: SchemaGraph, m: Graph.Index) *const Bir {
     return g.birs[m.int()];
 }
 
-/// The plan's definition of declaration `decl` of module `m`.
+/// The plan's definition of declaration `decl` of module `m`: a `schema`
+/// declaration's, or a derived codec's, whose `decl` is a virtual index
+/// after the module's last declaration (`SchemaPlan.codecs`).
 pub fn definition(g: SchemaGraph, m: Graph.Index, decl: u32) ?*const SchemaPlan.Definition {
     const plan = g.planOf(m);
+    const decls = g.birOf(m).decls.len;
+    if (decl >= decls) {
+        const k = decl - decls;
+        if (k < plan.codecs.len and @backingInt(plan.codecs[k].decl) == decl) return &plan.codecs[k];
+        return null;
+    }
     for (plan.definitions) |*d| {
         if (@backingInt(d.decl) == decl) return d;
     }
     return null;
+}
+
+/// Whether `decl` of `m` is a derived codec's virtual declaration
+/// (schema.md §12.10): its index among the module's codecs.
+pub fn codecIndex(g: SchemaGraph, m: Graph.Index, decl: u32) ?u32 {
+    const decls = g.birOf(m).decls.len;
+    if (decl < decls) return null;
+    return decl - @as(u32, @intCast(decls));
+}
+
+/// The derived codec a `codec_ref` node of `m`'s plan names.
+pub fn codecTarget(g: SchemaGraph, m: Graph.Index, k: u32) Ref {
+    return .{ .module = m, .decl = @intCast(g.birOf(m).decls.len + k) };
 }
 
 /// How many schema parameters declaration `decl` of `m` takes.
@@ -255,6 +552,22 @@ pub fn variants(plan: *const SchemaPlan, n: SchemaPlan.NodeIndex) []const u32 {
     return range(plan, rhs(plan, n));
 }
 
+/// A `tuple` node's elements.
+pub fn elements(plan: *const SchemaPlan, n: SchemaPlan.NodeIndex) []const u32 {
+    return range(plan, lhs(plan, n));
+}
+
+/// A `constructors` node's `codec_ctors` indices, in declaration order.
+pub fn ctors(plan: *const SchemaPlan, n: SchemaPlan.NodeIndex) []const u32 {
+    return range(plan, rhs(plan, n));
+}
+
+/// A constructor's argument nodes.
+pub fn ctorArgs(plan: *const SchemaPlan, c: u32) []const u32 {
+    if (c >= plan.codec_ctors.len) return &.{};
+    return range(plan, plan.codec_ctors[c].args);
+}
+
 /// A record node's fields.
 pub fn fields(plan: *const SchemaPlan, n: SchemaPlan.NodeIndex) []const SchemaPlan.Field {
     const start = lhs(plan, n);
@@ -285,7 +598,13 @@ pub fn subtree(plan: *const SchemaPlan, scratch: Allocator, root: SchemaPlan.Nod
                 if (vi >= plan.variants.len) continue;
                 if (plan.variants[vi].payload.unwrap()) |p| try stack.append(scratch, p);
             },
-            .list, .conversion, .check, .annotation, .nullable => try stack.append(scratch, @fromBackingInt(@intCast(lhs(plan, n)))),
+            .list, .conversion, .check, .annotation, .nullable, .maybe => try stack.append(scratch, @fromBackingInt(@intCast(lhs(plan, n)))),
+            .tuple => for (range(plan, lhs(plan, n))) |a| try stack.append(scratch, @fromBackingInt(@intCast(a))),
+            .codec_ref => for (args(plan, n)) |a| try stack.append(scratch, @fromBackingInt(@intCast(a))),
+            .constructors => for (ctors(plan, n)) |c| {
+                for (ctorArgs(plan, c)) |a| try stack.append(scratch, @fromBackingInt(@intCast(a)));
+            },
+            .codec_value => {},
         }
         // Pushed in order, popped in reverse: turn the new run around so the
         // first child is visited first.
@@ -356,12 +675,28 @@ fn paramsAt(
             defer _ = active.pop();
             try g.paramsAt(scratch, callee.module, d.root, inner, out, active);
         },
+        .codec_ref => {
+            const callee = g.codecTarget(m, lhs(plan, n));
+            for (active.items) |s| if (s.module == callee.module and s.decl == callee.decl) return;
+            const d = g.definition(callee.module, callee.decl) orelse return;
+            const words = args(plan, n);
+            const inner = try scratch.alloc(Arg, words.len);
+            for (words, inner) |a, *slot| slot.* = .{ .node = .{ .module = m, .node = @fromBackingInt(@intCast(a)), .binding = binding } };
+            try active.append(scratch, callee);
+            defer _ = active.pop();
+            try g.paramsAt(scratch, callee.module, d.root, inner, out, active);
+        },
         .record => for (fields(plan, n)) |f| try g.paramsAt(scratch, m, f.child, binding, out, active),
         .tagged => for (variants(plan, n)) |vi| {
             if (vi >= plan.variants.len) continue;
             if (plan.variants[vi].payload.unwrap()) |p| try g.paramsAt(scratch, m, p, binding, out, active);
         },
-        .list, .conversion, .check, .annotation, .nullable => try g.paramsAt(scratch, m, @fromBackingInt(@intCast(lhs(plan, n))), binding, out, active),
+        .list, .conversion, .check, .annotation, .nullable, .maybe => try g.paramsAt(scratch, m, @fromBackingInt(@intCast(lhs(plan, n))), binding, out, active),
+        .tuple => for (elements(plan, n)) |e| try g.paramsAt(scratch, m, @fromBackingInt(@intCast(e)), binding, out, active),
+        .constructors => for (ctors(plan, n)) |c| {
+            for (ctorArgs(plan, c)) |a| try g.paramsAt(scratch, m, @fromBackingInt(@intCast(a)), binding, out, active);
+        },
+        .codec_value => {},
     }
 }
 
@@ -389,8 +724,11 @@ pub fn recursive(g: SchemaGraph, scratch: Allocator, m: Graph.Index, decl: u32) 
         var nodes: std.ArrayList(SchemaPlan.NodeIndex) = .empty;
         try subtree(plan, scratch, d.root, &nodes);
         for (nodes.items) |n| {
-            if (tag(plan, n) != .reference) continue;
-            const t = g.target(m, @fromBackingInt(@intCast(lhs(plan, n)))) orelse continue;
+            const t = switch (tag(plan, n)) {
+                .reference => g.target(m, @fromBackingInt(@intCast(lhs(plan, n)))) orelse continue,
+                .codec_ref => g.codecTarget(m, lhs(plan, n)),
+                else => continue,
+            };
             if (t.module != m) continue;
             try stack.append(scratch, t.decl);
         }

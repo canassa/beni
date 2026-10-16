@@ -1,0 +1,16 @@
+-- A conversion that answers the list it captured: decoding hands the
+-- answer that very list, so a write of the answer would change `held`,
+-- which is read again (`ownership-checker.md` §30.10). A compiled
+-- schema's answer is fresh only where the run builds it; the checker
+-- refuses this one and says to write a copy.
+import Schema
+
+
+pub run : List String, String → List String × List String
+run held input =
+    back = Schema.conversion (λ_ → Ok held) λws → Ok (String.join ws " ")
+    case Schema.parse (Schema.converted Schema.string back) input of
+        Ok ws →
+            ( List.push ws "x", held )
+        Err _ →
+            ( [], held )

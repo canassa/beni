@@ -993,6 +993,11 @@ three reachability nodes and the declaration's own:
 | `M$S$$read`, `M$S$$parse`, `M$S$$parseWith` | the decoding worker and its two root wrappers | `S.parse`, `S.parseWith`, and another decoding worker that names `S` |
 | `M$S$$write`, `M$S$$print`, `M$S$$printWith` | the encoding worker and its two root wrappers | `S.print`, `S.printWith`, and another encoding worker that names `S` |
 
+*(Amended 2026-10-15: `S.schema` became the root member, slice A; the root wrappers became a member
+of their own, beside the worker, #177; four more worker sets, `$$decode`, `$$encode`,
+`$$readValue` and `$$writeValue`, and a description made of nodes rather than builders, #175 — §6,
+*A statically known schema runs compiled*.)*
+
 No node reaches another direction or the description, so a program that only parses ships no
 print, no description and none of the builders (§6, *DCE*). The two tagged endpoints' constructors
 are §4's tagged unions with the variant's name as the tag in both families — a schema endpoint
@@ -1095,40 +1100,90 @@ calls `box`. A compiled maker's worker is made by `parserOf`/`printerOf` when a 
 runs it, in that maker's `Made` arm. So a build ships the list worker only if it makes a compiled
 `list`, and a build that composes and describes schemas without running one ships no worker.
 
-**The guarantee.** A program whose schemas are all statically known, and which runs them with
-`parse`, `print` and their `With` forms, ships no library interpreter. It ships no
-`core/Schema.run` and no `box`. Each of its parses and prints runs compiled workers. The corpus
-checks this on Conduit and on the schema fixtures (§16, *As built — slice A*). A program that
-builds a dynamic schema ships the interpreter, and only its dynamic schemas use it.
+**The guarantee.** A program whose schemas are all statically known ships no library
+interpreter, whichever of `parse`, `print`, `decode`, `encode`, `read`, `write`, their `With` forms
+and `describe` it calls. It ships no `core/Schema.run` and no `box`. Each of its runs is compiled
+workers, and `describe` reads the declarations' descriptions, which are nodes no builder boxed. The
+corpus checks this on Conduit and on the schema fixtures (§16, *As built — slice A*; *As built —
+every runner*). A program that builds a dynamic schema ships the interpreter, and only its dynamic
+schemas use it. *(Amended 2026-10-15, #175: the guarantee covered `parse` and `print` only.)*
 
-**What still reaches the description in this slice.** `decode`, `encode`, `read`, `write`,
-`describe`, `flip`, `typeOnly` and `encodedOnly` need the schema's node. On a compiled schema they
-build the node from the declaration's description (§6's table), which `box` makes. So a program
-that calls one of them ships the interpreter, even with only compiled schemas. `read` and `write`
-cannot borrow the parse and print workers. Those workers trust what `JSON.parse` makes (an own key
-is a key that is not `undefined`), and they write JSON's refusals (a non-finite `Float`). A
-`Value` handed in by the host breaks the first assumption. `write`'s output is not JSON text, so
-the second does not apply. Typed `decode`/`encode` workers, and `read`/`write` workers that make no
-JSON assumption, are a later slice. That slice moves these eight operations out of this paragraph
-and into the guarantee.
+**Every runner of a statically known schema is compiled** *(added 2026-10-15, #175; it replaces
+this slice's paragraph "What still reaches the description in this slice", which listed `decode`,
+`encode`, `read`, `write` and `describe` as building the node from a boxed description)*. A
+declaration emits one worker set per operation, each specialised to its operation's two ends, and
+each a reachability member of its own (`SchemaGraph.Member`):
 
-**What `S.schema` emits.** It is a fourth reachability member of the declaration, *root*, besides
-the description and the two directions. Its value is
-`Schema.declared(describe, parse, print, args)`, a core-private value:
+| Operation | Worker | Input | Output | What changes from `parse`/`print` |
+|---|---|---|---|---|
+| `parse` | `$$read` | host, what `JSON.parse` made | typed | — |
+| `print` | `$$write` | typed | host, for `JSON.stringify` | — |
+| `decode` | `$$decode` | typed Encoded value | typed | a typed input's shape is not tested; a field is read by its name, its path segment is its key |
+| `encode` | `$$encode` | typed | typed Encoded value | as `print`, with a typed output: a record in canonical key order, `Present`/`NonNull`/`Null` kept |
+| `read` | `$$readValue` | host, from anywhere | typed | every key tested with `Object.hasOwn`; the array handed in is never kept |
+| `write` | `$$writeValue` | typed | host, returned to the program | objects made with no prototype, `__proto__` an ordinary key; NaN, an infinity and an unprintable `Value` are written |
+
+The parse and print workers cannot serve the other four. They trust what `JSON.parse` makes: an own
+key is a key whose read is not `undefined`, and a list of primitives may keep the parsed array. A
+`Value` the host hands to `read` breaks both, since it may inherit any key, own one that holds
+`undefined`, and still be written by the host. And they write what `JSON.stringify` takes, refusing
+a non-finite `Float`, where `write`'s output is not JSON text. Every worker answers exactly what
+`run` answers on the same context, as the parse and print workers do (*The specialised path*), so
+the differential corpus holds each to the library. Core's own makers (`list`, `nullable`,
+`converted`, the primitives) need no new code: their workers read the operation's ends from the
+context and serve every operation. `parserIn`/`printerIn` make a worker of the other four
+operations as `parserOf`/`printerOf` make `parse`'s and `print`'s, from the operation's number
+(`decodeMode` … `writeMode`); `parserOf` and `printerOf` keep their one argument, so a program
+that only parses and prints is the program it was. `decodeWith`, `encodeWith`, `readWith` and
+`writeWith` branch on the engine as `parseWith` does; the compiled arm is `compiledRun`,
+`runRoot`'s context with the worker, after `compiledProblem` for `read` and `write` and
+`typedProblem` for `decode` and `encode`, which checks no argument's external form, as
+`rootProblem` checks none when no host value is read or written.
+
+**What `describe` ships** *(added 2026-10-15, #175)*. A declaration's description, `$$description`,
+is the node the builders would box, made directly by core-private `described…` values: no builder,
+no construction check (the checker refused every construction failure already), no `box`. One
+mapping per record and one injection per variant serve both endpoints, where the builders took two.
+`describe` reads a compiled schema's node (`madeNode`) and makes its `Description` with `shapeOf`,
+as for any schema, so the answer is the library's, recursive definitions included: a recursive
+declaration's description is `describedRecursive`, a reference cell like `Schema.recursive`'s, so
+two uses of a nongeneric declaration are one definition and two uses of a generic one are two. A
+program that describes declarations ships those descriptions, `shapeOf`, and nothing of the
+interpreter. The description is not compiled further, to a `Description` constant: `describe` of a
+composition must still walk a compiled maker's children, and reference identity decides the
+definitions, so a constant would have to reproduce cell identity per use for no change in what
+ships beside it.
+
+**What still interprets.** `flip`, `typeOnly` and `encodedOnly` are interpreting builders (the
+table of makers above): a schema they make is dynamic, so its runs, and the program, use the
+interpreter. They take a compiled schema's node from its description, as `describe` does.
+
+**What `S.schema` emits.** It is a reachability member of the declaration, *root*, besides
+the description, the worker sets and the root wrappers. Its value is
+`Schema.declared(describe, parse, print, args, others)`, a core-private value:
 - `describe` is an arrow that answers the description.
-- `parse` and `print` are the declaration's workers. A generic declaration closes them over
-  `readSlot`/`writeSlot` of its arguments, made once per value.
+- `parse` and `print` are the declaration's workers of those operations, and `others` an array of
+  its `decode`, `encode`, `read` and `write` workers, left out when the build runs none of them,
+  so that a program that only parses and prints passes what it passed before they existed. A
+  generic declaration closes each worker over its arguments' slots of that operation (`readSlot`,
+  `writeSlot`, `decodeSlot`, `encodeSlot`, `readValueSlot`, `writeValueSlot`), made once per
+  value.
 - `args` lists the arguments the value reaches.
 
 The root reaches the other members only through guards:
 - the description, only when `core/Schema`'s `nodeOf` survives;
-- the decoding worker, only when `parseWith` or `readSlot` survives;
-- the encoding worker, only when `printWith` or `writeSlot` survives.
+- each operation's worker set, only when that operation's runner (`parseWith`, `printWith`,
+  `decodeWith`, `encodeWith`, `readWith`, `writeWith`) or its slot maker survives.
 
-A member the build left out is written `null` in the value, and nothing reads it. So
-`Http.jsonBody (X.schema ⊤) v` ships `X`'s encoding worker and nothing else of `X`. A
-description refers to another declaration through that declaration's description, not its
-`schema`.
+A member the build left out is written `null` in the value, the trailing ones are left out, and
+nothing reads them. So `Http.jsonBody (X.schema ⊤) v` ships `X`'s encoding worker and nothing else
+of `X`. A description refers to another declaration through that declaration's description, not
+its `schema`, and a generic description takes its arguments' nodes (`describedOf`).
+
+**The root wrappers are a member of their own** *(amended 2026-10-15, #177)*. `S.parse` and
+`S.parseWith` are the `parse` member, `S.print` and `S.printWith` the `print` member; each reaches
+its worker set. Only a use of them reaches them, so a program that runs `S.schema` alone ships
+neither.
 
 **Issues are unchanged.** A compiled schema's root checks are `compiledProblem`'s. The options come
 first, then each dynamic argument's construction failure and opaque Encoded end, in the order the
@@ -1138,7 +1193,9 @@ conversion's target, because `converted` changes only the Type end, and `flip`, 
 move it, is interpreting.
 
 **The forced library path.** Under `--schema-library` a declaration's `S.schema` is its
-description again. So every composition over declarations, and every parse and print of one, runs
+description again, boxed (*amended 2026-10-15, #175*: the description is a node, so `box` makes it
+the `Interpreted` schema it was; a nongeneric declaration's is one constant, and its root wrappers
+run `S.schema`). So every composition over declarations, and every run of one, runs
 through the interpreter, and the differential corpus still compares the two paths. The primitive
 makers are core code, compiled in both builds. A composition of primitives alone is therefore
 compiled under the flag too, and its fixture's hand-written golden is what tests it.
@@ -1161,9 +1218,63 @@ the source they wrote before. The typed errors are unchanged. `jsonBody`'s `Unpr
 issue list, the list the library makes.
 
 **What this leaves to later slices.** Workers that several schemas share, written once only where
-that makes the bundle smaller, are slice B. Schemas derived from a type (§12) are slice C. §12.8
-already says that the value passed through evidence is the callee's specialised worker, and that
-is this section's `Compiled`.
+that makes the bundle smaller, are slice B (*Validators shared across schemas*, below). Schemas
+derived from a type (§12) are slice C. §12.8 already says that the value passed through evidence
+is the callee's specialised worker, and that is this section's `Compiled`.
+
+**What a run answers, for ownership** *(added 2026-10-16, the owner, #218;
+`ownership-checker.md` §30.10 is normative)*. Lists are written in place, so the ownership checker
+must know whether a run's answer holds a list somebody else holds. Because a compiled schema is
+statically known, the checker derives that from the schema, per direction, instead of one word for
+every schema: a run's answer is fresh — the workers build every array and record from the input,
+or adopt the array `JSON.parse` made — except where a conversion's function returns something it
+did not build from what it was handed (what it captured, a top-level value), where a `Value` or a
+conversion's `backward` hands back part of the program's own value (decoding a host value with
+`read`, and the encode direction), and wherever the schema was built by an interpreting builder,
+whose functions the checker does not follow. The derivation reads the declaration's plan: its
+`via`s, its `value` primitives, the declarations and derived codecs it names. A `via` that is a
+top-level value contributes what that value's conversion returns; any other `via` expression,
+which the declaration evaluates once, is unknown in each direction whose end holds a list.
+
+**Validators shared across schemas** *(added 2026-10-15, slice B, #192; the owner: "be careful,
+the goal is to save bytes, don't share if it increases the bundle size")*. A `--release` build
+may call a `core/Schema` helper in place of a failure branch its workers would write again and
+again. A development build writes every branch in place.
+
+- **What is shared: the cold half of a branch, never the success path.** The worker keeps every
+  test in place. A shared helper runs only after a test failed, and it makes the issue that the
+  replaced branch would have made, in `prim`'s order. It makes a known issue and interprets
+  nothing, as *The specialised path* allows. A helper that also ran the tests on the success path
+  was measured and refused: it saved more (Conduit −297/−220 brotli), but it slowed every decode
+  by 2–3%.
+- **The helpers.**
+  - `compiledDeep` is the depth bound, before a descent.
+  - `compiledMissing` is a missing key, with its message made from the key.
+  - `badString`, `badInt`, `badBool`, `badFloat` and `badFinite` cover one required field of a
+    JSON object (`parse`) that is read by value and whose value is that primitive. The worker
+    writes `const x = v[key]` and then one condition: absent, or past the bound, or failing the
+    primitive's tests. It calls the helper only when the condition holds.
+- **When a helper is shared.** A helper costs its own definition once and saves a little at
+  every call. `--release` cannot take a call back, because the helper is another module's value
+  and the inliner does not reach into it. So a helper is shared only when the build's live
+  worker sets call it at least *threshold* times:
+  - 4 for a field helper;
+  - 24 for the depth bound and the missing key, which are also shared whenever any field helper
+    is, since a field helper calls them.
+
+  Calls are counted after reachability, over the worker sets that survived
+  (`SchemaShare.decide`). The helpers chosen become roots of a second walk over the same edge
+  lists. Every number is input-derived, so the choice is deterministic (CLAUDE.md rule 5).
+- **How the thresholds were chosen.** In release brotli on Conduit and every `run/Schema*`
+  program:
+  - a field helper wins from 4 calls and loses at 3;
+  - the depth bound and the missing key win from 16 calls and lose at 12.
+
+  24 leaves the latter a margin. At these thresholds no measured program grows.
+- **What was measured and refused** (§16, *As built — slice B*):
+  - `badField`, for a required field of any other value: it took Conduit a further −39/−55, and
+    cost a program with 12 such calls +113;
+  - a helper running the tests on the success path, as above.
 
 ## 7. Effects
 
@@ -1437,7 +1548,10 @@ inner schema or conversion. A default enters at the layer of its trigger:
 **Evaluation.** A default expression is evaluated **each time its default fires**, at the field's
 place in declaration-order traversal, and never when the key supplies the value. This is Effect's
 "executed each time a default value is needed" (L3050). A pure default may be evaluated once by
-the backend, since that is unobservable. An impure default, such as `Debug.log`, is ordered among
+the backend, since that is unobservable. *(Amended 2026-10-16, #218: with lists written in place,
+it is observable when the default holds a list — two decoded values would share one array. Such a
+default either is evaluated each time it fires, or enters its direction's slot as a shared cell,
+`ownership-checker.md` §30.10, which the default slice decides when it builds.)* An impure default, such as `Debug.log`, is ordered among
 its siblings' conversions. A suspending default makes the decoding direction suspend (§13). A
 FirstError traversal that stopped earlier does not evaluate it.
 
@@ -1594,12 +1708,18 @@ expected answer.
 
 ## 12. Schemas derived from a type
 
-*Added 2026-10-02; specified, not built* (A.8, A.10). This is the zero-ceremony end of the
+*Added 2026-10-02* (A.8, A.10); *built 2026-10-15* (A.12, §12.10's *As built*), except `Dict`
+and `Set` (#205). This is the zero-ceremony end of the
 feature: `Json.decode text` returns a value of whatever type the program uses it at, and the
 compiler derives the schema from that type. It is checked by the same engine, with the same issues,
 the same specialisation, the same differential tests and the same `--release` behaviour as a
 declared schema. When the JSON does not look like the type, a declared schema (§2, §11) remains
 the tool.
+
+*Amended 2026-10-15 (A.12):* §12.10 settles what the sections below leave to the build, and
+amends §12.2's container rows, §12.8's *Where it is emitted* and *The interface*, and A.11's
+`Http` paragraph. A derived schema is statically known (§6, *A statically known schema runs
+compiled*): it compiles to parse and print workers and never reaches the library interpreter.
 
 ### 12.1 What Roc does, from primary sources
 
@@ -1818,7 +1938,7 @@ summarize : String → String
 summarize text =
     case Json.decode text of
         Ok article → article.title ++ " by " ++ article.author ++ ", " ++ String.fromInt article.views
-                        ++ " views: " ++ String.join ", " article.tags
+                        ++ " views: " ++ String.join article.tags ", "
         Err issues → Schema.formatIssues issues
 ```
 
@@ -1885,8 +2005,8 @@ A use whose variable reaches a rigid annotation variable with no `where` is the 
   - each custom-type wire form, with a payload record;
   - `Maybe` and nested `Maybe` in fields, elements and the root;
   - `Presence` and `Nullable`;
-  - `Dict String v` and a `Dict` with non-string keys;
-  - a `Set` duplicate;
+  - `Dict String v` and a `Dict` with non-string keys (#205);
+  - a `Set` duplicate (#205);
   - a recursive `Tree a` at the depth bound and one past it;
   - a safe integer one past 2⁵³;
   - an opaque type through its module's `pub codec`;
@@ -1902,6 +2022,173 @@ A use whose variable reaches a rigid annotation variable with no `where` is the 
 - **`dispatch/`:** the dispatch site and its evidence; a closed inferred row in
   `dump --stage=types`.
 - **`emit/`:** a derived record worker without interpretation; DCE of an unused derived codec.
+
+### 12.10 The build, specified (2026-10-15)
+
+*Added 2026-10-15 (A.12), before the build.* What §12.2–§12.9 leave open, decided against the
+code of slice A (§6, *A statically known schema runs compiled*). Each item amends the section it
+names.
+
+**A derived codec is a definition of the using module, keyed by its concrete type.** This amends
+§12.8's *Where it is emitted* and *The interface*. A use whose receiver is a type derives a
+*codec definition* in the module that holds the use. The definition is a resolved schema plan,
+written in §4's plan vocabulary with the node kinds below, and the module's plan carries it beside
+its declarations. Its key is the receiver's type with every type variable replaced by a numbered
+*slot*. Two uses with one key share one definition. A slot is a parameter of the definition, as a
+generic declaration's parameter is, and the use passes the variable's own `codec` evidence for
+it. So:
+- a `List { name : String, age : Int }` is one definition whose workers check the string and the
+  safe integer in place, the code a declaration of that record would compile to;
+- `Tree a` under a forwarding `where a.codec` is one definition with one slot;
+- a nominal type inside the receiver (`Shape` in a record field) is a definition of its own, so a
+  recursive type has a worker that calls itself under the depth bound. Its key is the type with
+  its arguments, `Tree Int` and `Tree String` being two definitions.
+
+The reason is speed and the checker's order. A definition per concrete type lets every primitive
+and every record below a nominal boundary be written in place, which is what makes a derived
+schema as fast and as small as the declared one (§12.8, *Specialisation*). An evidence
+parameter per position, as derived `eq` has, would call a closure per field. And a codec decided
+where it is used needs nothing from the type's module but its constructors, which the interface
+already carries for a type that is not opaque. So no derivability property is published, and
+checking a module never depends on what its importers decode. What it costs: two modules that
+decode one type each emit its workers.
+
+**The table answers core's containers.** This amends §12.2 step 2 for core. `core/List`,
+`Maybe`, `Int32` and `Basics` do not import `Schema`, so the containers are rows of the
+compiler's table and not core `pub codec` values. Each row is a plan node: `List a` is `list`,
+`Maybe a` is `maybe` (§12.4), `Schema.Nullable a` is `nullable`, `Int32` is a primitive, and
+`Schema.Presence a` is an optional field (§12.4). `Dict` and `Set` are §12.2's rows, built with
+a `compare` slot, the key's or the element's, that the use passes as evidence beside the codec
+slots. `Dict k v` is an object only when `k` is `String`; any other key, an opaque over `String`
+included, is an array of pairs. *Amended 2026-10-15, as built:* `Dict` and `Set` are not built
+in this slice and are tracked by issue #205. A derived type that holds one is `no_derived_codec`,
+"which a derived codec does not read yet (issue #205)", whose hint is a `List` of pairs or a
+declared schema.
+
+**A module's `pub codec` inside a derived type takes no evidence.** At the receiver itself the
+module rule is §12.2's step 2, with whatever `where` the method declares. Below it, a type whose
+module declares `codec` is a plan leaf that runs that value, which must need no evidence. A
+`pub codec : ⊤ → Codec (Box a) where a.codec : …` met inside a record is `no_derived_codec`, with
+"its module's `codec` needs evidence, so it is used only where it is the decoded type itself"
+as the reason. A tagged schema's `Message.Type` is §12.2's step 0, a reference to the
+declaration's own workers. Its `Message.Encoded` is `no_derived_codec`.
+
+**`Maybe` of a type variable.** §12.4 decides at compile time whether the inner type accepts
+`null`. A slot's type is not known there, so a `Maybe a` whose `a` is a slot reads `null` as
+`Nothing`, in a field and outside one. Encoding `Just x` whose `x` writes `null` is then an
+`InvalidValue` issue at that value, "the value inside `Just` writes null, which reads back as
+`Nothing`", and never a value that reads back different. A concrete inner type follows §12.4
+exactly.
+
+**When the closing rule runs.** A `codec` wanted whose receiver is a type waits until its
+top-level declaration's boundary. It waits until the last default of §8.1's step 3 has run, so a
+field read on a decoded value has made its record by then. The boundary then closes each record
+row of the receiver that is still open, whose variable is young, and that no member's type
+reaches. Then it derives. A row a member's type reaches is `no_derived_codec`, "an extensible
+record". A variable an inner `let` generalised is `derived_codec_needs_type`, whose hint is to
+annotate the `let`. A field whose type is still a variable that no member's type reaches is
+`derived_codec_needs_type`. One that a member's type reaches is promoted into the declaration's
+`where`, which is forwarding (§12.5, route 3).
+
+**The node kinds the plan gains.** Each has a compiled worker and a library builder. The
+differential corpus holds the two to one answer.
+
+| Node | Decodes | Encodes |
+|---|---|---|
+| `tuple` *n* | an array of exactly *n* elements, else `WrongShape` "expected an array of *n* elements"; element *i* one level down at `Index i` | an array |
+| `constructors` | a string naming a nullary constructor; an object of one own key naming one that takes arguments, its one argument one level down at `Field name`, or its *n* arguments an array of exactly *n* at `Field name`, each at `Field name, Index i`. Anything else is `WrongShape` "expected a constructor: a string, or an object with one key". A name no constructor has is `UnknownTag` at the value, "unknown constructor \"X\"; expected …" with every name quoted in declaration order. A nullary name given as an object, or a name that takes arguments given as a string, is `WrongShape` "the constructor X …" | the same form |
+| `maybe` | `null` as `Nothing`, anything else the inner node in `Just` (§12.4) | `Nothing` as `null` |
+| `codec` | the module's `codec` value, through its own workers | likewise |
+| `dict`, `set` (#205, not built) | as the `Dict`/`Set` rows above; a repeated key or element is `InvalidValue` at its index, "a repeated key", "a repeated element" | the dictionary's pairs in key order, the set's elements in order |
+| primitive `char` | a string of one scalar value, else `WrongShape`, or `InvalidValue` "expected one character" | the string |
+| primitive `int32` | a safe integer from −2³¹ to 2³¹ − 1, else `InvalidValue` "expected a 32-bit integer" | the number |
+| primitive `never` | nothing: `WrongShape` "expected nothing: ⊥ has no value" | (unreachable) |
+
+A record field of type `Maybe a` is the `maybe` node in field position. Its key may be absent,
+and encoding `Nothing` leaves the key out. `⊤` is `tuple 0`. `Value` is the `value` primitive.
+The description (`describe`) gains `TupleOf`, `ConstructorsOf` and `MaybeOf` shapes and the
+three primitive kinds.
+
+**What a definition emits** follows §6, *The specialised path*, and *A statically known schema
+runs compiled*. A definition has the four members of a declaration: description, decoding,
+encoding and root. Its value is `Schema.declared`'s, and its bindings are named
+`<Module>$$codec<k>$$<member>`, where *k* is its place among the module's definitions in key
+order. The use's evidence is a function of `⊤` answering that value. Under `--schema-library` the
+value is the description, so the differential corpus runs a derived schema through the
+interpreter as it runs a declared one. **A call of `Json.decode`, `encode`, `decodeWith` or
+`encodeWith` whose evidence is a definition is the definition's own `parse`, `print`,
+`parseWith` or `printWith`**, written where the call is, so a derived schema ships what a
+declaration's `S.parse` ships and no more. `decodeValue` and `encodeValue` run `Schema.read` and
+`Schema.write`, which reach the description until #175's workers land, as A.11 says.
+
+*Amended 2026-10-16, after #175 and slice B (#204, #208).* A definition has the members of a
+declaration (§6, *Every runner of a statically known schema is compiled*): the description, a
+worker set per operation, the root and the two root wrappers, and its description is made of
+nodes by core-private `described…` values (`describedTuple`, `describedConstructors`,
+`describedMaybe`, `describedMaybeField`). `decodeValue` and `encodeValue` therefore run the
+definition's compiled `read` and `write` workers, and `run/JsonDerivedValues` carries the
+`.compiled-schemas` guarantee for them. A derived record compiles to the same code as the
+equivalent declaration, shared validators included: their `--release` output is byte-identical
+(*As built* below).
+
+**A `Codec`'s Encoded end is a host value, whatever the operation** *(added 2026-10-16)*.
+`Codec a` is `Schema Value a`, so the input of `Schema.decode` of a `Codec` is a `Value` the
+program got from anywhere, and the output of `encode` is one. A typed input's shape is not
+tested (§6), and a `Value` is not typed, so a `Codec`'s `decode` reads its input as `read` does
+and its `encode` writes as `write` does: `Schema.decode (Schema.derived ⊤) 5` is `WrongShape`
+"expected an object", where trusting the input would read a number as a record. The engine
+node is `NHost`: it makes the context's Encoded end a host value (`hostEnds`). A definition's
+description is `describedHost` of its node, so the library path agrees; `Schema.erased` of an
+interpreted schema is `NHost` of its node, and of a compiled one `MadeErased`, whose `decode`
+and `encode` workers are its `read` and `write` ones run on that context (`hostWorker`). A
+definition writes no `decode` or `encode` worker set: its root's `decode` and `encode` are
+`hostWorker` of its `read` and `write` workers (`SchemaGraph.hostAliased`).
+
+**`Http.expectJson` is inferred** (amends A.11's *`Http`'s API is unchanged* and
+`boundary.md` §9.8.12 (a)). The owner asked for it in #193. It is now `expectJson : Expect Error a
+where a.codec : ⊤ → Codec a`, a constant whose type is fixed by the request it is given to, as
+`Json.decode`'s is. The schema-taking form is renamed `expectSchema : Schema e a → Expect Error
+a`. Its behaviour, its `Accept` default and its `BadBody` are unchanged. `jsonBody` keeps its
+schema argument.
+
+**As built (2026-10-15).** Everything above is built, `Dict` and `Set` aside (#205):
+- `src/check/Codec.zig` waits, closes and derives at the boundary, and numbers a module's
+  definitions in key order. A use's evidence is a `codec` term of the dispatch table. The
+  definitions are virtual declarations of the module's plan, past its last declaration. They
+  cross the plan sidecar (format v3) and the dispatch sidecar (v12).
+- `src/js/SchemaLower.zig` emits a definition as it emits a declaration. `src/js/Lower.zig`
+  writes a `Json` call whose evidence is a definition as that definition's own member.
+  `src/js/Reach.zig` keeps only the members a build reaches.
+- `core/Json` is new. `core/Schema` gains the three shapes, the three primitive kinds, `Codec`,
+  `derived`, `structural` and `erased`. It also gains the library builders and engine nodes of
+  the new kinds, which `--schema-library` runs.
+- The `run/JsonDerived*` fixtures run both paths and both builds. Each has a
+  `.compiled-schemas` list, the guarantee that no derived schema reaches the interpreter.
+  `run/JsonDerivedArticle` is Roc's article test. `ordering_test` runs it reversed and checks
+  the closed row of `dump --stage=types`. `iface_test` builds a program of derived codecs at
+  `--jobs=1` and `--jobs=8` through the three round trips.
+- Measured on an eight-field record, the shape of report 34's flat user with one optional
+  field, the declared schema and the derived codec compile to the same workers. In a
+  `--release` build of each alone, brotli is 1 085 bytes declared and 1 086 derived; the derived
+  one writes its fields in name order. Median parse is 754 ns declared and 759 ns derived, and
+  print 546 and 538 ns. A 1 000-element list parses in 508 and 498 µs (Node 24, one pinned
+  core, 15 interleaved samples of a development build).
+- A derived `Maybe` field costs about 9 brotli bytes more than `optional`, for its `null` check.
+- Rebased on #175's runners and slice B's shared validators (2026-10-16): the eight-field record
+  is still 1 085 against 1 086 brotli. A five-field record of four strings and an integer, the
+  shape `emit/release/app/SchemaSharedValidators` shares `badString` at, is byte-identical
+  declared and derived in `--release` (986 brotli each, the shared helper in both).
+
+**What a derived codec's run answers** *(added 2026-10-16, #218)*. As a declaration's
+(§6, *What a run answers, for ownership*): `Json.decode`, `decodeWith`, `decodeValue` and
+`encodeValue` are read by the ownership checker at each call through the call's evidence, so a
+derived codec of a type with no `Value` and no module `codec` answers a fresh value, and a type's
+module's `codec` contributes what its own conversions return (`ownership-checker.md` §30.10).
+
+**`Schema.structural`, not `Schema.derived`, is the hint.** §12.2 says an opaque type's module
+"may derive it there by writing `pub codec () = Schema.derived ()`". By the module rule that call
+finds the very `codec` it defines, and calls itself. `no_derived_codec`'s hint for an opaque type
+names `Schema.structural`, which skips the module rule for the outermost type.
 
 ## 13. Suspending conversions
 
@@ -2472,6 +2759,93 @@ application build (`Input.schemaGuarded`). `S.schema` is the fourth member, `roo
   - workers shared across schemas (slice B);
   - derived schemas (slice C).
 
+**As built — every runner** (2026-10-15, #175 and #177; §6, *Every runner of a statically known
+schema is compiled*, *What `describe` ships*, *The root wrappers are a member of their own*).
+`SchemaGraph.Member` has ten members: the description, the root, the two root wrappers and one
+worker set per operation; `SchemaGraph.Op` names an operation and its ends, and `SchemaLower`
+writes every worker from one generator over them (`Fn.op`). `core/Schema` adds `parserIn`/
+`printerIn`, `compiledRun`, `typedProblem`, four slot makers and the `described…` node makers;
+`recursive`'s cell now builds a node from a node. `EdgePack` is at version 3.
+
+- **The guarantee as a test.** `run/SchemaRunners` runs `decode`, `encode`, `read`, `write` and
+  their `With` forms on records, tagged unions, a recursive union, a generic declaration and the
+  compiled makers, every failure kind among them; `run/SchemaDescribeDeclared` describes
+  declarations, recursive and generic ones included, and parses one. Both carry
+  `.compiled-schemas`, and so do `run/SchemaDeclRecords` and `SchemaDeclTagged`, whose `decode`,
+  `read` and `write` lines shipped the interpreter on master. Every golden is master's
+  interpreter output line for line, and the forced path agrees. `run/SchemaDeclGeneric` covers the
+  four new runners with a schema passed at run time: an opaque argument is refused by `read` and
+  `write` and accepted by `decode` and `encode`, as `rootProblem` does. `emit/app/
+  SchemaRunnerWorkers` pins the worker shapes and that only the runners' worker sets ship;
+  `emit/app/SchemaValuePrintOnly` no longer writes `Point.print`/`printWith`.
+- **Size** (release brotli 11; master `7632518d3`):
+  - Conduit tea and direct: 28 934 and 37 909, byte for byte master's size. `parserOf` and
+    `printerOf` keep their one argument and `declared` its first four, so the release optimiser
+    still inlines the one and drops the constant arguments of the other; a first version that
+    passed the operation to `parserOf` cost Conduit direct +71. Development: −142 tea, −223
+    direct (the root wrappers no build called).
+  - Programs that run declarations by the new runners lose the interpreter:
+    `run/SchemaDeclRecords` 6 928 → 4 637, `SchemaDeclTagged` 6 485 → 3 692, `SchemaRunners`
+    9 364 → 7 250, `SchemaDescribeDeclared` 7 079 → 4 836.
+  - `bench/size.mjs` totals: release gross −8 324, development gross −17 653.
+  - Known cost, #176: programs that build dynamic schemas carry the new runners' compiled arms
+    beside the interpreter, +73 to +114 release (`SchemaDirections` +114, `SchemaTagged` +108).
+- **Speed.** `bench/schema-libraries`' beni rows, the two builds alternated 16 times on core 23:
+  every cell within noise (−2.5% to +1.5%, two outliers +3.5% and +5.8% that earlier runs
+  put at −14% and +0.2%). The new runners against master's interpreter (flat and list valid,
+  median of 8): `read` 1 243 → 210 ns and 565 → 171 µs, `decode` 497 → 54 ns and 323 → 39 µs,
+  `encode` 408 → 65 ns and 343 → 40 µs, `write` 653 → 329 ns and 588 → 290 µs.
+- **Found on the way:** two mutually recursive tagged declarations hit a checker internal error
+  (#196), on master too; the describe fixture leaves mutual recursion to it.
+
+**As built — slice B** (2026-10-15, #192; §6, *Validators shared across schemas*).
+- **Implementation.**
+  - `SchemaShare` counts each helper's calls over the live worker sets and decides what a
+    `--release` build shares.
+  - `Emit.shareValidators` roots the shared helpers and takes the walk again. `withShareRoots`
+    keeps them through the walk that refines the runtime's roots. That walk can leave fewer
+    worker sets alive, so `reshareValidators` decides again after it. The new set can only
+    shrink, so one more walk settles it.
+  - The count mirrors `SchemaLower`'s emission by hand. A drift cannot mis-emit, because a call is
+    written only where `Share.on` says so and a shared helper is always a root. A check that the
+    two agree is #209.
+  - `SchemaLower.failText` and `decodeRecord` call a helper wherever `Share.on` says so.
+  - `core/Schema` adds `compiledDeep`, `compiledMissing` and the five `bad…` helpers.
+- **The guarantee as a test.** `run/SchemaSharedValidators` parses enough required fields of each
+  primitive, and enough records, that its release build shares every helper. Its development
+  build shares none. Both builds run against one golden, which equals master's interpreter output
+  line for line. It covers every issue a helper makes:
+  - absent, past the depth bound, not the primitive, an unsafe integer, a non-finite number;
+  - each under `FirstError` and under `AllErrors` with the input reported;
+  - a renamed key;
+  - a prototype key, which no helper reads.
+
+  `emit/release/app/SchemaSharedValidators` pins the shape:
+  - four strings share `badString`;
+  - the one integer under the threshold keeps its tests and issues in place;
+  - specialisation folds the root's depth tests, the helper's included.
+- **Size** (release brotli 11, against #204's head):
+  - Conduit tea 28 934 → **28 749** (−185); direct, its `.mjs` files, 33 954 → **33 818**
+    (−136).
+  - `run/SchemaDeclKeys` −73, `SchemaRunners` −73, `SchemaSharedValidators` −236. No measured
+    program grows.
+  - `bench/size.mjs` release gross −412 brotli and −15 640 raw. Its development column does not
+    move.
+- **Speed.** `bench/schema-libraries`' beni rows, the two builds interleaved in one process 60 and
+  80 rounds on an idle core (a batch of each per round, the ratio's median): every cell within
+  −1.8% to +1.7%, and the second run within −1.2% to +1.0%. **No slowdown.** The success path is
+  the code it was.
+- **Refused, with numbers.**
+  - *Helpers that run the tests too* (`readString` …, one call per field). Conduit −297 tea,
+    −220 direct. But the decode cells were +1–3% slower over 20 alternated builds, and +5–7% when
+    the helper also read the key, `v[key]` becoming a load by a key the function does not know.
+  - *`badField`*, for a required field whose value has no primitive helper. At 16 calls it took
+    Conduit −224/−191, against −185/−136 without it. At 12 calls it cost `run/SchemaRunners` +113
+    against −82 without it. The calls that decide it are close to where it starts losing, so it
+    is not shared.
+  - *One `compiledFixed` with a table of every fixed failure.* The table ships whole, so a program
+    with one or two fields grew: `SchemaTypeConstructorArgument` +87, `SchemaDeclDepth` +56.
+
 ## Appendix A. Decisions log
 
 ### A.1 — Description plus specialised functions (2026-09-22)
@@ -2891,4 +3265,36 @@ time. §6, *A statically known schema runs compiled*, is the contract.
   printer. That would need no change here.
 - **The guarantee covers `parse` and `print`.** `decode`, `encode`, `read`, `write`, `describe`
   and the endpoint makers still reach the description. They wait for typed workers in a later
-  slice.
+  slice. *(Done 2026-10-15, #175: every runner has a worker set of its own and `describe` reads a
+  description made of nodes, so the guarantee covers them all. The endpoint makers stay
+  interpreting builders. Choices this made, which can be reversed: one worker set per operation
+  rather than one worker that reads its ends from the context — that worker would cost every
+  `parse` a test per key and give up keeping the parsed array; and a description of nodes rather
+  than a `Description` constant, §6, *What `describe` ships*.)*
+- **Shared validators are cold halves, counted per build** (slice B, 2026-10-15, #192; §6,
+  *Validators shared across schemas*). A release build shares a failure branch's issue-making half
+  only when its live workers call it at least a measured number of times. The tests stay in
+  place, so no shared helper is on the success path. *Reversal:* lower or raise a threshold
+  (`SchemaShare.Helper.threshold`) when a measurement shows that a program grows or that a
+  saving is left on the table. Share a whole-field reader only if V8 stops charging a call
+  for it.
+
+### A.12 — Derived codecs, as built (2026-10-15)
+
+Issue #193, slice C of the owner's 2026-10-15 design: §12 is built, and a derived schema compiles
+like a declared one (A.11). §12.10 records what the build decided. These are its reversible
+choices:
+- **A definition per concrete type, in the using module.** *Reversal:* emit a nominal type's
+  codec in its declaring module with one slot per type parameter. Each slot is then a closure
+  call where a primitive is now checked in place.
+- **Containers in the compiler's table, not as core `pub codec` values.** *Reversal:* give core a
+  module that imports `Schema` and the containers, and let the module rule find it.
+- **Nested module codecs take no evidence** (issue #207). *Reversal:* give a definition body terms of its own,
+  as derived `eq` has, so a nested `pub codec` can take its `where`.
+- **`Http.expectJson` takes no schema, and `expectSchema` does.** *Reversal:* keep `expectJson`'s
+  argument and add an inferred form under another name.
+- **`Dict` and `Set` deferred to #205.** Their rows need a `compare` slot beside the codec slots,
+  and a repeated key's issue. Until then a derived type that holds one is `no_derived_codec`.
+- **A nested type's module `codec` must be of that type.** By the module rule, a module's one
+  `codec` is the method of every type it declares. Inside a derived type, a type whose module's
+  `codec` has another type is `no_derived_codec`, as the receiver's method check is at the root.

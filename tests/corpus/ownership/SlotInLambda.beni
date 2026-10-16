@@ -1,0 +1,80 @@
+-- CK-235: a function slot is not followed inside a lambda, and a shared loader is accepted.
+-- ownership (§30.9): a function slot (§24.9) — a function stored at a path
+-- of the declaration's parameter — is called inside a lambda the way a
+-- function parameter is (§18.9): wherever the lambda runs. `send` is
+-- `Http.send`'s shape: the work it hands `Cmd.task` calls `r.load`, so
+-- what `tag` is handed is what `r.load` returns, and a caller's tagger is
+-- checked against the loader it passes. A loader that makes its list is
+-- accepted; one that answers the top-level `shared` is rejected `need`,
+-- exactly. Before, a slot was not built inside a lambda: its call was
+-- §6.1's, whose result counted as made by the call, and the shared
+-- loader was accepted.
+-- `handOn` hands `r.load` on to `run` inside a lambda: the slot takes
+-- `run`'s facts there too, and since `run` relies on what it returns,
+-- `handOn` asks its callers for a loader that returns what it owns: the
+-- top-level `shared` is rejected there, a new list accepted.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+
+
+type alias Loader =
+    load : ⊤ → List Int
+
+
+type Msg
+    = Fresh
+    | Shared
+    | Passed
+    | PassedFresh
+    | Got (List Int)
+
+
+shared : List Int
+shared = [ 1, 2 ]
+
+
+send : Loader, (List Int → Msg) → Cmd Msg
+send r tag = Cmd.task (λ⊤ → (r.load) ⊤) tag
+
+
+run : (⊤ → List Int), (List Int → Msg) → Cmd Msg
+run work tag = Cmd.task work tag
+
+
+handOn : Loader → Cmd Msg
+handOn r = (λ⊤ → run r.load Got) ⊤
+
+
+update : Msg, List Int → List Int × Cmd Msg
+update msg model =
+    case msg of
+        Fresh →
+            ( model, send { load = λ⊤ → [ 3 ] } Got )
+
+        Shared →
+            ( model, send { load = λ⊤ → shared } Got )
+
+        Passed →
+            ( model, handOn { load = λ⊤ → shared } )
+
+        PassedFresh →
+            ( model, handOn { load = λ⊤ → [ 6 ] } )
+
+        Got xs →
+            ( List.push xs 4, Cmd.none )
+
+
+view : List Int → Html Msg
+view model = <button onClick={Fresh}>{String.fromInt (List.length model)}</button>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( [], Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

@@ -38,10 +38,12 @@ core       Js.finally            ownership/core/JsWords.beni     1:returned>-+re
 core       Js.catchIf            ownership/core/JsWords.beni     1:returned>-+3:returned>-+res:->fresh
 core       Js.pure               ownership/core/JsWords.beni     1:returned>-+res:->fresh
 core       Js.suspending         ownership/core/JsWords.beni     1:returned>-+res:->fresh
-core       Schema.parse          ownership/Words.beni            res:unknown>fresh
-core       Schema.parseWith      ownership/Words.beni            res:unknown>fresh
 core       Schema.print          ownership/Words.beni            2:aliased>borrowed
 core       Schema.printWith      ownership/Words.beni            3:aliased>borrowed
+core       Task.timeout          ownership/TaskWords.beni        2:aliased>-
+core       Task.raceOk           ownership/TaskWords.beni        1:aliased>-
+# crossing is the unsafe end already: an Int32 is a number
+core       Int32.Int32           ownership/RandomGenerate.beni   -                      Int32
 core       String.join           ownership/Words.beni            1:borrowed>unused
 core       String.fromList       ownership/Words.beni            -
 # fresh exclusive is the top of the order for a result: no word claims more

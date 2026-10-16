@@ -73,6 +73,7 @@ const Sync = @import("Sync.zig");
 const CallStyle = @import("CallStyle.zig");
 const Prepend = @import("Prepend.zig");
 const EffectPlan = @import("EffectPlan.zig");
+const Codec = @import("Codec.zig");
 
 pub const Error = Allocator.Error;
 const Var = TypeStore.Var;
@@ -276,6 +277,10 @@ pub fn check(in: Input) Error!Check.Counters {
     solver.groups = &groups;
     const p4_token = if (in.profile) |p| p.begin() else null;
     try groups.checkAll(&solver);
+    // The derived codecs no boundary took, then every one in key order
+    // (schema.md §12.10).
+    try Codec.finish(&solver);
+    try Codec.sortKeys(&solver.codecs, gpa, scratch);
     // A `pub eq`/`compare` written for a type of this module that no use can
     // call is said here, used or not.
     try Instances.ownSignatures(&solver);
@@ -431,7 +436,7 @@ pub fn check(in: Input) Error!Check.Counters {
         var bodies = cx.builder(.flex, TypeStore.generalized);
         defer bodies.deinit();
         bodies.shallow = true;
-        break :blk try SchemaPlanBuild.build(gpa, in.module, bir, in.graph, in.interfaces, in.interner, in.types, store, &schemas, properties, &bodies);
+        break :blk try SchemaPlanBuild.build(gpa, in.module, bir, in.graph, in.interfaces, in.interner, in.types, store, &schemas, properties, &bodies, &solver.codecs);
     } else .empty;
     if (in.roundtrip_dispatch) try roundtripPlan(in, &report);
     if (in.profile) |p| p.end(in.tid, p9_token.?, .finish, file.int(), 0);
@@ -477,6 +482,9 @@ fn solveEffects(effects: *Effects, scratch: Allocator, bir: *const Bir, decl_sch
         if (w.state != .answered) continue;
         switch (answer) {
             .derived => |a| for (evidence.argsOf(a.args)) |sub| {
+                try edges.append(scratch, .{ .a = evidence.get(sub).method_type, .b = w.method_type });
+            },
+            .codec => |a| for (evidence.argsOf(a.args)) |sub| {
                 try edges.append(scratch, .{ .a = evidence.get(sub).method_type, .b = w.method_type });
             },
             .alias => |other| try joins.append(scratch, .{ .a = evidence.get(other).method_type, .b = w.method_type }),
@@ -820,6 +828,7 @@ fn elaborate(in: Input, bir: *const Bir, store: *TypeStore, decl_scheme: []const
         .lets = lets,
         .let_schemes = let_schemes,
         .group_of = try groupOf(scratch, groups),
+        .codec_order = solver.codecs.order,
         .report = report,
         .clean = !report.quiet and report.errors == 0,
     });

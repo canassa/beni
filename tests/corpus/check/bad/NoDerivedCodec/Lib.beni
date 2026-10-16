@@ -1,0 +1,12 @@
+--! `NoDerivedCodec`'s container, whose `codec` needs its argument's.
+
+import Schema exposing (Codec)
+
+
+pub type Box a
+    = Box a
+
+
+pub codec : ⊤ → Codec (Box a)
+    where a.codec : ⊤ → Codec a
+codec u = Schema.structural u

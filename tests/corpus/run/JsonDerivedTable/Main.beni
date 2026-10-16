@@ -1,0 +1,155 @@
+-- Every type the derived-codec table answers (`schema.md` §12.2 step 1,
+-- §12.10), each read from JSON and written back, at the root and as a
+-- record's field: `Int` a safe integer, so one past 2⁵³ is refused both
+-- ways; `Float` any number, whose NaN or infinity JSON cannot print;
+-- `Bool`; `String`; `Char` a string of exactly one character, an astral
+-- one included; `⊤` the empty array; `Value` the host value unread;
+-- `Int32` a 32-bit integer; and `⊥`, which reads nothing. The corpus
+-- builds this program twice more with `--schema-library`, which runs the
+-- derived schemas through the library interpreter, against this one
+-- golden.
+import Int32 exposing (Int32)
+import Json
+import Node
+import Schema exposing (Issue, Value)
+import Show
+
+
+type alias Row =
+    int : Int
+    float : Float
+    bool : Bool
+    string : String
+    char : Char
+    unit : ⊤
+    value : Value
+    small : Int32
+
+
+int : String → Result (List Issue) Int
+int text = Json.decode text
+
+
+float : String → Result (List Issue) Float
+float text = Json.decode text
+
+
+bool : String → Result (List Issue) Bool
+bool text = Json.decode text
+
+
+string : String → Result (List Issue) String
+string text = Json.decode text
+
+
+char : String → Result (List Issue) Char
+char text = Json.decode text
+
+
+unit : String → Result (List Issue) ⊤
+unit text = Json.decode text
+
+
+value : String → Result (List Issue) Value
+value text = Json.decode text
+
+
+small : String → Result (List Issue) Int32
+small text = Json.decode text
+
+
+never : String → Result (List Issue) ⊥
+never text = Json.decode text
+
+
+row : String → Result (List Issue) Row
+row text = Json.decode text
+
+
+showRow : Row → String
+showRow r =
+    String.join
+        [ String.fromInt r.int
+        , String.fromFloat r.float
+        , if r.bool then "True" else "False"
+        , r.string
+        , String.fromChar r.char
+        , Show.json r.value
+        , String.fromInt (Int32.toInt r.small)
+        ]
+        " "
+
+
+printed : Result (List Issue) String → String
+printed r = Show.result r λs → s
+
+
+sample : Row
+sample =
+    { int = 1
+    , float = 2.5
+    , bool = True
+    , string = "s"
+    , char = '😀'
+    , unit = ⊤
+    , value = Show.host "{\"k\":[1,null]}"
+    , small = Int32.fromInt (0 - 7)
+    }
+
+
+main : Node.Program
+main =
+    Node.printLines
+        [ "-- decode"
+        , Show.result (int "42") String.fromInt
+        , Show.result (int "9007199254740991") String.fromInt
+        , Show.result (int "9007199254740992") String.fromInt
+        , Show.result (int "1.5") String.fromInt
+        , Show.result (int "\"1\"") String.fromInt
+        , Show.result (float "1e3") String.fromFloat
+        , Show.result (float "true") String.fromFloat
+        , Show.result (bool "false") λb → if b then "True" else "False"
+        , Show.result (bool "0") λb → if b then "True" else "False"
+        , Show.result (string "\"hi\"") λs → s
+        , Show.result (string "null") λs → s
+        , Show.result (char "\"é\"") String.fromChar
+        , Show.result (char "\"😀\"") String.fromChar
+        , Show.result (char "\"ab\"") String.fromChar
+        , Show.result (char "\"\"") String.fromChar
+        , Show.result (char "7") String.fromChar
+        , Show.result (unit "[]") λ_ → "⊤"
+        , Show.result (unit "[1]") λ_ → "⊤"
+        , Show.result (unit "{}") λ_ → "⊤"
+        , Show.result (value "{\"any\":[true,null]}") Show.json
+        , Show.result (small "-2147483648") λn → String.fromInt (Int32.toInt n)
+        , Show.result (small "2147483648") λn → String.fromInt (Int32.toInt n)
+        , Show.result (small "1.5") λn → String.fromInt (Int32.toInt n)
+        , Show.result (never "null") λ_ → "impossible"
+        , Show.result
+            (row
+                "{\"int\":1,\"float\":2,\"bool\":true,\"string\":\"s\",\"char\":\"c\",\"unit\":[],\"value\":7,\"small\":3}"
+            )
+            showRow
+        , Show.result
+            (row "{\"int\":1,\"float\":2,\"bool\":true,\"string\":\"s\",\"char\":\"c\",\"unit\":[]}"
+            )
+            showRow
+        , "-- encode"
+        , printed (Json.encode (whole 42))
+        , printed (Json.encode (whole 9007199254740992))
+        , printed (Json.encode (fraction (0 / 0)))
+        , printed (Json.encode (fraction (1 / 0)))
+        , printed (Json.encode 'x')
+        , printed (Json.encode ⊤)
+        , printed (Json.encode (Int32.fromInt 5))
+        , printed (Json.encode sample)
+        , printed (Json.encode { sample | float = 0 / 0 })
+        ]
+
+
+whole : Int → Int
+whole n = n
+
+
+fraction : Float → Float
+fraction x = x

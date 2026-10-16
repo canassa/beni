@@ -1,0 +1,36 @@
+-- ownership (project): a summary that names a schema's constructor, read
+-- across the module boundary and written into a cache entry
+-- (`ownership-checker.md` §28.3, §28.4). Before the fix, a schema
+-- constructor in a pattern had no module, and writing the block crashed
+-- the `check` that wrote cache entries. `count` matches the imported
+-- constructors as `Trees` matches its own.
+import Browser
+import Html exposing (Html)
+import Tea
+import Trees exposing (Tree)
+
+
+count : Tree.Type → Int
+count t =
+    case t of
+        Tree.Leaf _ →
+            1
+
+        Tree.Branch r →
+            List.foldl r.children 1 λc n → n + count c
+
+
+view : Int → Html ⊤
+view n =
+    <p>
+        {String.fromInt
+            (n
+                + List.length (Trees.children (Tree.Leaf { value = n }))
+                + count (Tree.Branch { children = Trees.grow (Tree.Leaf { value = n }) })
+            )
+        }
+    </p>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = λ⊤ → 0, update = λ_ m → m, view = view }

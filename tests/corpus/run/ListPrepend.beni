@@ -16,6 +16,13 @@
 -- Each line prints the input after the operation next to the result, by
 -- length and a weighted sum that pins the order, so a write into a shared
 -- array shows as an input that changed.
+--
+-- Since ownership holds on every platform (`ownership-checker.md` §30), an
+-- append that keeps its input says so: each `[ ...xs, x ]`, `++` and
+-- `List.append` of `appends` writes an explicit `List.copy xs`, and the
+-- input printed beside it is the version kept. A prepend copies by itself
+-- (§25.2) and needs none. `check/bad/direct/ListPrependShared` is the
+-- append without the copy, refused.
 import List
 import Node exposing (Program)
 import String
@@ -86,12 +93,12 @@ prepends ( label, xs ) =
 appends : String × List Int → String
 appends ( label, xs ) =
     String.join
-        [ both label xs [ …xs, 7 ]
-        , summary [ …xs, 8, 9 ]
-        , summary [ …xs, …List.range 50 80 ]
-        , summary [ …xs, …List.range 50 81 ]
-        , summary (xs ++ [ 7 ])
-        , summary (List.append xs (List.range 50 60))
+        [ both label xs [ …List.copy xs, 7 ]
+        , summary [ …List.copy xs, 8, 9 ]
+        , summary [ …List.copy xs, …List.range 50 80 ]
+        , summary [ …List.copy xs, …List.range 50 81 ]
+        , summary (List.copy xs ++ [ 7 ])
+        , summary (List.append (List.copy xs) (List.range 50 60))
         , summary xs
         ]
         " "

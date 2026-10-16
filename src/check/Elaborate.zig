@@ -95,6 +95,9 @@ pub const Input = struct {
     let_schemes: []const Var = &.{},
     /// Per declaration, its top-level binding group.
     group_of: []const u32,
+    /// Per derived codec of P4, its place in key order: the index a `codec`
+    /// term names (`Codec.sortKeys`, schema.md §12.10).
+    codec_order: []const u32 = &.{},
     report: *Report,
     /// No error was reported before P6: a refusal here is said now.
     clean: bool,
@@ -784,6 +787,10 @@ fn termOf(e: *Elaborate, id: WantedId, binder: Binder, ctx: Ctx, node: u32) Erro
         .top => |t| try e.withArgs(node, .{ .top = .{ .decl = @fromBackingInt(@intCast(t.decl)) } }, ev.argsOf(t.args), ctx),
         .ext => |x| try e.withArgs(node, .{ .ext = .{ .module = x.module, .value = x.value } }, ev.argsOf(x.args), ctx),
         .derived => |dv| try e.derivedTerm(id, dv, binder, node),
+        .codec => |c| if (c.index < e.in.codec_order.len)
+            try e.withArgs(node, .{ .codec = .{ .index = e.in.codec_order[c.index] } }, ev.argsOf(c.args), .none)
+        else
+            e.failTerm(.internal, "a derived codec's answer names a definition P4 did not make (schema.md §12.10)"),
         .primitive => |p| .{ .primitive = p },
         .undetermined => e.undetermined(w.method, ctx),
         .field => .field,

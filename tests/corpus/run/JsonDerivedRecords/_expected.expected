@@ -1,0 +1,19 @@
+-- decode
+Ok n; Nothing; Nothing; Missing; Null; l×2; 1,a; T,1.5,2; [Just 1,Nothing,Just 3]
+Ok n; Nothing; Just (Nothing); Present 0; Null; l×2; 1,a; T,1.5,2; [Just 1,Nothing,Just 3]
+Ok n; Just k; Just (Just 3); Missing; Null; l×2; 1,a; T,1.5,2; [Just 1,Nothing,Just 3]
+Err decoding Encoded MissingKey /inner missing key "inner"
+Err decoding Encoded WrongShape /pair expected an array of 2 elements
+Err decoding Encoded WrongShape /nick expected a string
+-- decode, every error, unknown keys refused
+Err decoding Encoded UnknownKey /zzz unexpected key "zzz"
+Err decoding Encoded WrongShape /deep expected a number | decoding Encoded UnknownKey /inner/more unexpected key "more" | decoding Encoded WrongShape /inner/count expected a number | decoding Encoded MissingKey /inner/label missing key "label" | decoding Encoded WrongShape /name expected a string | decoding Encoded WrongShape /nick expected a string | decoding Encoded WrongShape /nulled expected a boolean | decoding Encoded WrongShape /pair/0 expected a number | decoding Encoded WrongShape /pair/1 expected a string | decoding Encoded WrongShape /scores/0 expected a number | decoding Encoded WrongShape /seen expected a number | decoding Encoded WrongShape /triple expected an array of 3 elements
+-- a Maybe at the root
+Ok Nothing
+Ok Just r×1
+Err decoding Encoded WrongShape / expected an object
+-- encode
+Ok {"deep":null,"inner":{"count":2,"label":"l"},"name":"n","nulled":false,"pair":[7,"b"],"scores":[1,null],"triple":[false,0.5,[]]}
+Ok {"inner":{"count":2,"label":"l"},"name":"n","nick":"k","nulled":null,"pair":[7,"b"],"scores":[1,null],"seen":4,"triple":[false,0.5,[]]}
+Ok {"deep":9,"inner":{"count":2,"label":"l"},"name":"n","nulled":false,"pair":[7,"b"],"scores":[1,null],"triple":[false,0.5,[]]}
+Err encoding Type InvalidValue /inner/count expected a safe integer | encoding Type InvalidValue /scores/0 expected a safe integer

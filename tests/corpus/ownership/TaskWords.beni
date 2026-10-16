@@ -1,0 +1,75 @@
+-- CK-241: what `Task.timeout` and `Task.raceOk` answer comes back through `Js`, `⊤`.
+-- ownership (§24.8, §30.9): `Task.timeout` and `Task.raceOk` carry words.
+-- `timeout` calls its work at most once, during the call, and answers
+-- `Just` what it returned: `once aliased (⊤ → a) → fresh Maybe a`.
+-- `raceOk` calls each of its thunks during the call and answers one's `Ok`
+-- or every `Err`, in a list it makes: `many aliased List (⊤ → …) → fresh
+-- …`, a `List` of functions whose words describe each element (§30.9).
+-- Before, both answered what came back through the fiber runtime's
+-- `Js`, `⊤`, and every tagger handed one was rejected `need`,
+-- approximately. A work or thunk that makes its list is accepted; one that
+-- answers the top-level `shared` is rejected — approximately, since
+-- `aliased` says the answer may hold what the work returns, not where.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Task
+import Tea
+import Time
+
+
+type Msg
+    = Go
+    | Shared
+    | Timed (Maybe (List Int))
+    | Raced (Result (List String) (List Int))
+
+
+shared : List Int
+shared = [ 1, 2 ]
+
+
+update : Msg, List Int → List Int × Cmd Msg
+update msg model =
+    case msg of
+        Go →
+            ( model
+            , Cmd.batch
+                [ Cmd.task (λ⊤ → Task.timeout (Time.millis 5) λ⊤ → [ 3 ]) Timed
+                , Cmd.task (λ⊤ → Task.raceOk [ λ⊤ → Ok [ 4 ], λ⊤ → Err "no" ]) Raced
+                ]
+            )
+
+        Shared →
+            ( model
+            , Cmd.batch
+                [ Cmd.task (λ⊤ → Task.timeout (Time.millis 5) λ⊤ → shared) Timed
+                , Cmd.task (λ⊤ → Task.raceOk [ λ⊤ → Ok shared ]) Raced
+                ]
+            )
+
+        Timed (Just xs) →
+            ( List.push xs 5, Cmd.none )
+
+        Timed Nothing →
+            ( model, Cmd.none )
+
+        Raced (Ok xs) →
+            ( List.push xs 6, Cmd.none )
+
+        Raced (Err _) →
+            ( model, Cmd.none )
+
+
+view : List Int → Html Msg
+view model = <button onClick={Go}>{String.fromInt (List.length model)}</button>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( [], Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

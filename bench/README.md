@@ -19,6 +19,69 @@ was saturating the four cores and read 784 ms where the real number was
 
 ---
 
+## 2026-10-16 — ownership everywhere after schema answers (#218)
+
+**AMD Ryzen 9 5950X, 32 GiB, Linux 6.12, Zig 0.17.0, Node 24.19.0, LLVM
+ReleaseFast, cores 8–23.** `node bench/ownership-everywhere.mjs` with
+`ownership-checker.md` §30.10 (a schema's run answers what it builds and what
+its slots hold, derived from the declaration) and #219's `RefModify` copy
+applied: **0 of 848 programs rejected, none crashing** (3 of 840 before; 1,
+`RefModify`, without #219; the eight new programs are the corpus's growth,
+`browser/direct/ApiLogin` among them). Core and every platform hold no rejected
+or pending line. Cost, whole process, `--jobs=1 --no-cache`, best of 7, within
+noise of O1's:
+
+| Program | Platform | Without | With the pass | Change |
+|---|---|---:|---:|---:|
+| Conduit | browser-tea | 21 ms | 36 ms | +67 % |
+| Conduit | browser-direct, as today | — | 37 ms | — |
+| Bike Wars | browser-tea | 14 ms | 18 ms | +30 % |
+| `bench/corpus` | node | 18 ms | 28 ms | +56 % |
+
+## 2026-10-16 — ownership everywhere after slice O1
+
+**AMD Ryzen 9 5950X, 32 GiB, Linux 6.12, Zig 0.17.0, Node 24.19.0, LLVM
+ReleaseFast, cores 8–23, load ~3.** `node bench/ownership-everywhere.mjs`
+after O1 (`ownership-checker.md` §30.9, issue #210): **3 of 840 programs
+rejected, none crashing** (31 of 835 before). Core and every platform hold no
+rejected or pending line; `browser-tea`'s two `Tea.application` lines are gone.
+The 840 count the five pages O1 promoted to `browser/direct/` and drop the
+three identity tests it retired. Left: `browser/tea/ApiItems` and `ApiLogin`
+(`need` through `Schema.parse`, #218) and `run/RefModify` (`Ref.update`'s
+callback, #219). Cost, whole process, `--jobs=1 --no-cache`, best of 7; the
+first number is #200's compiler (`3869141`), the second O1's:
+
+| Program | Platform | Without | With the pass | Change |
+|---|---|---:|---:|---:|
+| Conduit | browser-tea | 20 / 20 ms | 34 / 35 ms | +71 % / +76 % |
+| Conduit | browser-direct, as today | — | 34 / 36 ms | — |
+| Bike Wars | browser-tea | 13 / 13 ms | 16 / 16 ms | +24 % / +23 % |
+| `bench/corpus` | node | 16 / 17 ms | 28 / 26 ms | +69 % / +56 % |
+
+---
+
+## 2026-10-15 — ownership everywhere, the §30.2 measurement as a script
+
+**AMD Ryzen 9 5950X, 32 GiB, Linux 6.12, Zig 0.17.0, Node 24.19.0, LLVM
+ReleaseFast, cores 8–23, load ~6.** `node bench/ownership-everywhere.mjs`
+checks every program under the hidden `--ownership-everywhere` flag
+(`ownership-checker.md` §30.7, O0), which replaces §30.2's uncommitted patch.
+It finds **31 of 835 programs rejected and none crashing**. Each rejected
+program has the causes that §30.2 lists. The four `run/SchemaDecl*` crashes
+were fixed in #195. The four more programs than §30.2's 831
+(`run/InlineStartReads`, `run/SchemaComposed`, `browser/tea/HttpJsonList` and
+`browser/direct/TemplateShapes`) landed after #148's tree, and all four pass.
+Cost, whole process, `--jobs=1 --no-cache`, best of 7:
+
+| Program | Platform | Without | With the pass | Change |
+|---|---|---:|---:|---:|
+| Conduit | browser-tea | 30 ms | 51 ms | +74 % |
+| Conduit | browser-direct, as today | — | 50 ms | — |
+| Bike Wars | browser-tea | 19 ms | 23 ms | +27 % |
+| `bench/corpus` | node | 25 ms | 41 ms | +68 % |
+
+---
+
 ## 2026-10-15 — deferred field reads after #135
 
 **Apple M2 Pro, 16 GiB, macOS 26.7.1, zorg 0.17.1+zorg.1.** All binaries

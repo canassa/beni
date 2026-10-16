@@ -173,3 +173,13 @@ sourceWithEvidence = []
 
 pub evidenceSourceRead : List Int
 evidenceSourceRead = List.push sourceWithEvidence 1
+
+
+-- A write the way `main` writes it: accepted, and the same write in a
+-- function, `functionRead`, is `top-level`.
+issueSeed : List Int
+issueSeed = [ 1, 2, 3 ]
+
+
+pub issueRead : List String
+issueRead = [ String.fromInt (List.length (List.set issueSeed 0 9)) ]

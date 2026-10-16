@@ -139,6 +139,31 @@ fn before(src: Src, m: u32, x: u32, y: u32) bool {
     return src.start(m, x).order(src.start(m, y)) == .lt;
 }
 
+/// The message for a declaration that reached one of the checker's limits
+/// (§16.7, `ownership_limit`): the declaration, the limit, what it measured,
+/// and that the limit is the compiler's. The renderer shows the
+/// declaration's name under it.
+pub fn limit(a: Allocator, src: Src, m: u32, h: Ownership.LimitLine) Allocator.Error![]const u8 {
+    const name = try std.fmt.allocPrint(a, "{s}.{s}", .{ src.vtable.module_name(src.ctx, m), h.name });
+    const what = switch (h.limit) {
+        .none => unreachable,
+        .rounds => try std.fmt.allocPrint(a, "`{s}`'s ownership summary did not settle within the checker's limit of {d} rounds", .{ name, h.limit.cap() }),
+        .entries => try std.fmt.allocPrint(a, "`{s}`'s ownership summary needs {d} entries, more than the checker's limit of {d}", .{ name, h.at, h.limit.cap() }),
+        .path_entries => try std.fmt.allocPrint(a, "`{s}`'s ownership summary needs {d} entries at one path, more than the checker's limit of {d}", .{ name, h.at, h.limit.cap() }),
+        .owned_atoms => try std.fmt.allocPrint(a, "`{s}`'s ownership summary rests on {d} places where its function arguments must return lists they own, more than the checker's limit of {d}", .{ name, h.at, h.limit.cap() }),
+        .value_cells => try std.fmt.allocPrint(a, "checking `{s}` needs whether {d} lists are each held once, more than the checker's limit of {d}", .{ name, h.at, h.limit.cap() }),
+        .fixpoint => try std.fmt.allocPrint(a, "checking `{s}` needs a fixpoint that did not settle within the checker's limit of {d} rounds", .{ name, h.limit.cap() }),
+        .conditions => try std.fmt.allocPrint(a, "`{s}`'s ownership summary needs {d} conditions on what its arguments share, more than the checker's limit of {d}", .{ name, h.at, h.limit.cap() }),
+    };
+    return std.fmt.allocPrint(a,
+        \\{s} (ownership-checker.md §16.7).
+        \\
+        \\This is a limit of the compiler, not sharing in your code: the checker
+        \\cannot tell which lists `{s}` changes or keeps, so it refuses the build
+        \\rather than guess.
+    , .{ what, h.name });
+}
+
 /// The message for a group of lines that share one root cause (§28.5): the
 /// same position, verdict, cause and detail; `lines[0]` speaks for them.
 pub fn build(a: Allocator, src: Src, m: u32, lines: []const Demand) Allocator.Error![]const u8 {

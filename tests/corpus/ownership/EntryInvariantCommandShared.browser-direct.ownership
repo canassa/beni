@@ -1,0 +1,13 @@
+module EntryInvariantCommandShared
+  25:20 construction kids: accepted param
+  27:19 call List.map kids[*]#Tree.0: accepted param (<lambda> writes what List.map supplies it)
+  27:42 call EntryInvariantCommandShared.grow child#Tree.0: accepted callback-param (List.map supplies it owned)
+  40:15 call EntryInvariantCommandShared.grow tree#Tree.0: accepted param (EntryInvariantCommandShared.grow writes π1#Tree.0)
+  51:5 entry EntryInvariantCommandShared.update model#Tree.0: rejected exclusive: the callee needs the list's elements not to share, and they may
+  summary grow: π1#Tree.0 RAW; res #Tree.0 fresh1{excl π1#Tree.0} ~fresh3{excl π1#Tree.0} π1#Tree.0, #Tree.0[*] ~fresh2{excl π1#Tree.0} ~fresh3{excl π1#Tree.0}; xreq excl π1#Tree.0
+  summary shared: res #Tree.0 fresh1{shared}
+  summary update: π2#Tree.0 RAW; res .0#Tree.0 fresh5{shared} ~fresh1{excl π2#Tree.0} ~fresh3{excl π2#Tree.0} ~π2#Tree.0, .0#Tree.0[*] ~fresh2{excl π2#Tree.0} ~fresh3{excl π2#Tree.0}, .1#Cmd.0 fresh4 shared(Cmd.none)#Cmd.0, .1#Cmd.0[*]#Now.0 λ, .1#Cmd.0[*]#Perform.0 λ; xreq excl π2#Tree.0
+  summary view: res ⟨render⟩ fresh1{lost}
+  demands 5: accepted 4 (fresh 0, call 0, param 3, callback-param 1, once 0, entry 0; assumed 0), pending 0, rejected 1
+total 5: accepted 4 (fresh 0, call 0, param 3, callback-param 1, once 0, entry 0; assumed 0), pending 0, rejected 1
+cause exclusive 1

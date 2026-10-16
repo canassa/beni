@@ -34,6 +34,34 @@ test "nullary methods and record defaults print the same reversed" {
     try reversedPrints(&s, "tests/corpus/run/NullaryMethods/Main.beni", "tests/corpus/run/NullaryMethods/_expected.expected");
 }
 
+// `schema.md` §12.5: a decoded record whose type is inferred from what the
+// declaration reads of it is closed at those fields, and the closing waits
+// for the declaration's boundary. Reversed, the program prints the same and
+// infers the same closed record for the decoded value.
+test "Json.decode inferred from use prints the same reversed" {
+    try expectReversedPrints("tests/corpus/run/JsonDerivedArticle.beni", "tests/corpus/run/JsonDerivedArticle.expected");
+}
+
+test "Json.decode inferred from use infers the same closed record reversed" {
+    var s = try Scenario.init("an inferred decoded record, reversed");
+    defer s.deinit();
+    const a = s.arena();
+    const path = "tests/corpus/run/JsonDerivedArticle.beni";
+    const texts = [2][]const u8{ try source(a, path, .written), try source(a, path, .reversed) };
+    var lines: [2][]const u8 = undefined;
+    for (texts, &lines) |text, *line| {
+        try s.w.write("Main.beni", text);
+        const run = try s.w.runWith(&.{ "dump", "--stage=types", "--platform=node", "Main.beni" }, .{ .raw_diagnostics = true });
+        if (run.exit_code != 0) return s.finish(try s.failed(run));
+        const at = std.mem.indexOf(u8, run.stdout, "article : ") orelse return s.finish(try s.failed(run));
+        const end = std.mem.indexOfScalarPos(u8, run.stdout, at, '\n') orelse run.stdout.len;
+        line.* = run.stdout[at..end];
+    }
+    const want = "article : { author : String, tags : List String, title : String, views : Int }";
+    const same = std.mem.eql(u8, lines[0], want) and std.mem.eql(u8, lines[1], want);
+    try s.finish(.{ .green = same, .signature = if (same) "" else "types differ", .detail = if (same) "" else lines[1] });
+}
+
 test "a recursive group's nullary read and dot-call print the same reversed" {
     try expectReversedPrints("tests/corpus/run/NullaryRecursiveGroup.beni", "tests/corpus/run/NullaryRecursiveGroup.expected");
 }

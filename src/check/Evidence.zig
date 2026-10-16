@@ -122,6 +122,10 @@ pub const Answer = union(enum(u8)) {
     /// A derived function: a nominal type's (`type_id` set) or a structural
     /// shape's, with one sub-wanted per context entry or position.
     derived: struct { type_id: TypeStore.TypeId, args: Range },
+    /// A derived codec (schema.md §12.10): definition `index` of the
+    /// module's `Codec.State`, in the order P4 made them, and one sub-wanted
+    /// per slot.
+    codec: struct { index: u32, args: Range },
     primitive: Dispatch.Primitive,
     /// §9.4's proven-undetermined default.
     undetermined,

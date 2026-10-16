@@ -1,0 +1,62 @@
+-- check/bad (project): every reason `no_derived_codec` gives (`schema.md`
+-- §12.7, §12.10), one declaration each, each said at its `Json` call and
+-- naming the decoded type, the path to the first part that has no codec,
+-- and why: a function; a foreign type; an opaque type of another module,
+-- whose hint is `Schema.structural` in that module; `Schema.structural`
+-- outside the type's module; an extensible record its declaration's type
+-- keeps open; a `Maybe` outside a field of a type that reads `null`; a
+-- `Presence` outside a field; a nested type whose module's `codec` needs
+-- evidence; a nested type whose module's `codec` is another type's; and a
+-- `Dict`, not derived yet.
+import Dict exposing (Dict)
+import Hidden exposing (Secret)
+import Json
+import Lib exposing (Box)
+import Schema exposing (Codec, Issue)
+import Sides exposing (Right)
+import Task
+
+
+type alias Model =
+    name : String
+    onClick : Int → Int
+
+
+function : String → Result (List Issue) Model
+function text = Json.decode text
+
+
+foreignType : String → Result (List Issue) (List (Task.Fiber Int))
+foreignType text = Json.decode text
+
+
+opaqueType : String → Result (List Issue) Secret
+opaqueType text = Json.decode text
+
+
+structural : Codec Secret
+structural = Schema.structural ⊤
+
+
+extensible : String → Result (List Issue) { r | name : String }
+extensible text = Json.decode text
+
+
+maybeOfNull : String → Result (List Issue) (List (Maybe (Maybe Int)))
+maybeOfNull text = Json.decode text
+
+
+presence : String → Result (List Issue) (Schema.Presence Int)
+presence text = Json.decode text
+
+
+nestedEvidence : String → Result (List Issue) { box : Box Int }
+nestedEvidence text = Json.decode text
+
+
+dict : String → Result (List Issue) (Dict String Int)
+dict text = Json.decode text
+
+
+nestedWrongType : String → Result (List Issue) { right : Right }
+nestedWrongType text = Json.decode text

@@ -746,7 +746,7 @@ numbers and their slice-1 text; where slice 2 changes a rule, the rule here wins
 | Applying a summary at a call, and the caller's side of a written parameter (§3.10) | **built** (§16.4) |
 | Recursion fixpoint (§4.5, §4.6) | **built** (§16.6): optimistic, joined, validated |
 | The library's rows (§3.8, §6.5) | inferred from every beni body; **asserted only for primitives** (§16.8) |
-| Width cap (§4.6, §4.9) | **built** (§16.7) |
+| Width cap (§4.6, §4.9) | built, then **deleted** 2026-10-16 (§16.7): no summary is cut to fit; what outgrows the source is limited, each limit an error |
 | Folding of recursive types (§3.1) | **built** for constructor steps (§16.7); representatives' exclusivity is not |
 | Ownership classes of function values (§3.6, §4.7) | built for function values whose origin the walk sees — a lambda written in the body, a local function, a top-level function, a function parameter passed on — and **not** carried through types: a function value read out of a structure or a call result has no class (§16.5) |
 | Once closures (§3.6) | not built: `captured-edit` stays (§8.3) |
@@ -829,6 +829,19 @@ Derivation tags of supplies (§16.8's findings, §16.11): a supply is borrowed *
 an exact condition (a parameter the body reads later, a top-level list), and *approximately* when it failed
 only through an approximate step — a list's element, a level of a recursive value that folding merged
 (§16.7; thesis §3.1's representatives), a cell from JavaScript.
+
+*Amended 2026-10-16 (#220): how the read-off is computed, not what it reads.* Read pair by pair, a result's spine
+conditions (§18.3's `sc`: a returned container shares no cell with the result's other positions) cost a sweep
+of every other entry per entry, each conjunction re-sorting the atoms gathered so far, and the fresh numbering
+a sweep of the result per new cell: 94% of the pass on #220's dashboard once nothing was cut. The read-off now
+sorts the result's entries once by what §18.2's separation can say of a pair. A pair whose kinds alone make it
+`yes` — a closure; a top-level value's cell beside any but its own value's; a cell made here beside one that
+arrived, unless that one is a callback's result — is never formed: each entry is compared with the taken, `⊤`
+and message cells, with the cells that arrived when it arrived, with the callbacks' results when it was made
+here, and with its own value's or call's cells for `covers`; a cell found at two paths is `lost` at once; and
+the atoms are sorted once per entry. The fresh numbering sorts `(cell, path)` pairs. Every condition is the
+pairwise definition's — under runtime safety the two are compared for every result of up to 8 entries — and
+no verdict moved: the dashboard's reports at 16 to 256 widgets are byte for byte the pairwise ones.
 
 ### 16.4 Applying a summary at a call
 
@@ -976,20 +989,55 @@ round, so the chain would never settle. Merging them is sound (two cells taken f
 aliasing) and loses nothing the group's callers see, since a caller outside the group instantiates the
 final summary.
 
-### 16.7 The width cap
+### 16.7 Limits, and no width cap
 
-A summary's width is the number of distinct paths in its largest component (`use`'s parameter paths,
-`res`'s result paths, `supply`'s `(j, k, q)`) — thesis §4.9's *w*. Above **64**, thesis §4.9's "say 64", a
-type with too many tracked paths "is tracked as a whole": the summary is **coarsened** — the parameter with
-the most paths is tracked whole, its bits joined at ε (a write there approximate), until the uses fit, and
-the result's and the supplies' paths are cut shallower, the rest of each replaced by `⋆` and made
-approximate, until they fit — and its line says `coarse`. Coarsening only merges places, so it adds holders
-and never removes one. A summary still too wide (a coarsened one cannot shrink further) is the pessimistic
-one of §16.2 with `limit width`, and a rejection it causes is reported with the `limit` cause, approximate —
-a call-site demand it makes, and a `⊤` it returns, carry the mark however far they travel (`⊤limit` in a
-summary line). A recursive group that reaches the round cap gets `limit rounds`.
+*Amended 2026-10-16 (the owner, #220): the width cap of 64 paths and coarsening are deleted. The text they
+replaced is in this section's history; what follows is normative.*
 
-The fresh numbers do not count toward the width: as thesis §4.6 bounds them (`k ≤ |Q|`), a number only says
+**Nothing a type bounds is capped.** A summary names paths of its parameters and its result, and those are
+bounded by their types: cut at k (§4.1) and folded where a type is recursive (below). The fresh numbers are
+bounded by the result paths (thesis §4.6's `k ≤ |Q|`, next paragraph), and the provenances by the parameters'
+paths, the declaration's own cells and the top-level values it reads. So a summary is as wide as the program
+it describes, and it keeps every fact: **no summary is cut, merged or made approximate to fit a limit**. A TEA
+`update`'s parameter is the model, and its paths are the model's: thesis §4.9's "say 64" counted that, and #220
+measured what it cost — a 256-widget dashboard whose `step` needs 167 result paths had its summaries coarsened,
+silently, from 16 widgets on, and its build refused at 256 under a message that blamed a list "from
+JavaScript" the program had already copied.
+
+**What can outgrow the source is limited, and reaching a limit is an error.** The checker's limits are on
+what grows faster than the program — products of paths and provenances, conditions between pairs of result
+positions, rounds of a fixpoint:
+
+| Limit | At most | What it bounds |
+|---|---|---|
+| `entries` | 262 144 | a summary's entries in all, `use`, `res` and `supply` together |
+| `path-entries` | 4 096 | its entries at one result path, or at one `(j, k, q)` of a supply |
+| `conditions` | 1 048 576 | the atoms of its conditions (§18.3) in all |
+| `rounds` | 32 | the rounds of a recursive group (§16.6) or of a block's local functions (§18.7) |
+| `owned-atoms` | 8 | the distinct `returns owned` atoms `(j, q)` its `owned` bits rest on (§16.4 item 5) |
+| `value-cells` | 256 | the cells of a value whose deep condition (§18.2) the walk needs, compared pair by pair; past it the condition was `lost`, silently, before 2026-10-16 |
+| `fixpoint` | 32 | the rounds of a fixpoint inside a walk: the model at entry and its exclusivity invariant (§20.4), a callback's result, a fold's shape and its spine (§16.4 item 6). *Amended 2026-10-16 (#229):* their cells are finite, so they settle in a bounded number of rounds (§28's dated amendment *the entry's fixpoints settle*); before, each ended on a silent backstop: 8 rounds for the model, 4 for a callback's result and a fold's shape, 32 for the invariant and a fold's spine |
+
+A declaration whose summary would pass one is reported as **one error at the declaration**,
+`ownership_limit`: it names the declaration, the limit and what it measured, and says that the limit is the
+compiler's and not sharing in the program. The declaration's summary is then the pessimistic one of §16.2,
+`limit <name> <measure>` in its line, so that the walk can go on; a rejection elsewhere that rests on it — a
+call-site demand it makes, a `⊤` it returns, `⊤limit` in a summary line, however far they travel — has the
+`limit` cause (§16.11); a run that reports a limit does not report those rejections as errors too, since they
+follow from it.
+The dump prints `limit f: <name> <measure>, over <limit>` after the module's summary lines (`limit f: rounds,
+unsettled after 32` for a fixpoint).
+
+The bounds are set from the largest summaries measured, #220's dashboard at 1 024 widgets — one module of
+22 000 lines, its `step`, `pushed` and `update` the widest: 23 456 entries, 300 at one path and 87 764
+condition atoms, each about a tenth of its limit. The `owned-atoms` guard counts distinct atoms; before
+2026-10-16 it counted the supply entries that rest on one, so that `Dict.merge`, 13 entries over 3 atoms,
+reached it and had its last five owned supplies made borrowed, silently. *Amended 2026-10-16 (#229):* the
+fixpoints inside a walk are under this rule too — the `fixpoint` row. Before, they ended on silent backstops,
+and the model's exclusivity invariant (§28's dated amendment) reached its backstop in every application
+measured, because each round made a carried lambda anew (§28's dated amendment *the entry's fixpoints settle*).
+
+The fresh numbers do not count toward any limit: as thesis §4.6 bounds them (`k ≤ |Q|`), a number only says
 which result paths may hold one new cell, so the read-off of §16.3 gives two new cells that appear at the
 same result paths the same number — a TEA `update` that builds its model from forty literals has a handful.
 
@@ -997,10 +1045,8 @@ same result paths the same number — a TEA `update` that builds its model from 
 value of a type the path has already entered goes on from where the path first entered that type, so
 `t#Node.3#Node.1` is `t#Node.1`, and a summary over a `Dict` or a tree names a few paths instead of every
 level to the cut. Folding only merges places, so it adds aliasing and never removes a holder; a demand
-on a folded path is checked against every level it stands for. Without it every `Dict` function's summary
-exceeded the cap. The guard atoms are bounded by the function-typed parameters: a summary whose `owned` bits
-would depend on more than **8** `returns owned` atoms treats the entries past the eighth as borrowed. A cap
-never accepts: each turns facts pessimistic.
+on a folded path is checked against every level it stands for. Folding is what makes a recursive type's paths
+finite, and so is part of what bounds them, not a limit.
 
 ### 16.8 The library
 
@@ -1511,6 +1557,8 @@ Instantiation is §16.4 item 6's. update's `fresh_k` is the one cell `result(con
 — two dispatches' new lists taken for one, which only adds aliasing, as §16.6 merges a recursive group's — so the
 fixpoint is over a finite set of cells; `esc_k` is that cell, escaped; `shared` and `⊤` are carried; a parameter
 cell's condition is lowered by its `xres` (§18.3). A fixpoint not reached in 8 rounds adds `⊤` (a backstop).
+*Amended 2026-10-16 (#229): the set of cells is finite and every round of this fixpoint and of the invariant
+below is counted against §16.7's `fixpoint` limit: §28's dated amendment *the entry's fixpoints settle*.*
 
 *As built*: the rounds compute cells only, and the round that settles is taken once more with the conditions its
 instantiation lowers. The message carried round the loop is `msg` alone; the cells a view puts in messages
@@ -2247,6 +2295,13 @@ names the fixture that pins each (§24.6).
 | `Node.printLines` | `borrowed List String → fresh Program` | `items.join("\n")` on the list's array |
 | `Ssr.render` | `borrowed Html msg → String` | `Ssr.js`: `html.t`, the markup's text |
 
+*Amended 2026-10-16 (§30.9):* `Task.timeout`, `Task.raceOk` and `crossing Int32` have words, justified
+there; a `List` of functions written out takes a function's words, which describe each element.
+
+*Amended 2026-10-16 (§30.10, issue #218):* `Schema.parse` and `parseWith` carry no words. Their rows, and
+`decode`'s, `read`'s, `encode`'s and `write`'s, are the checker's: a run answers what it builds and what its
+schema's slot of that direction holds. `print` and `printWith` keep theirs.
+
 **Without words, by choice.** Each `foreign` that handles only values that cross — `Js`'s bit operations and `rem`
 (numbers), `regExp` (two string literals), `development`, `maySuspend` (read by the checker as a static bit, §23.3),
 the platforms' `Dom`, `Browser.Events` and `Html.targetValue`/`targetChecked` (strings, numbers and a `crossing`
@@ -2270,7 +2325,8 @@ built, for the declaration's own frame:
   after its parameters; `funs`, `supply` and `cb` name a slot by number. At a call, the actual for a slot is the
   argument's value at `q`; the caller's own parameter or slot there takes the callee's facts (`request`'s
   `π1.expect#Expect.1` from `transfer`'s `π7#Expect.1`), and a function value there is called through its class.
-  Not in a recursive group, whose rounds would number the slots apart, and not inside a lambda.
+  Not in a recursive group, whose rounds would number the slots apart, and not inside a lambda
+  (*withdrawn 2026-10-16*, §30.9 rule 1: inside a lambda a slot is the declaration's, as a parameter is).
 - **Carried lambdas.** A lambda the result holds keeps its class in the summary, with what each capture held in the
   declaration's vocabulary, when calling it needs nothing but its result and its reads: its class writes nothing,
   escapes nothing, relies on nothing (§18.4) and is not once, and no capture holds a function value. Where the call
@@ -2675,8 +2731,18 @@ with §16.4's amendment of the same day it is zero.
 | Owned sends and navigation commands (§23) | `send_class`, `checkSender` | a payload a fiber, a command or the next dispatch still reads after the send, edited in place. *Amended 2026-10-15:* the send rule itself (§23.2, a send is a write of everything it is handed) is not modelled: the core has no send, and its `owned` boundary is the returns-owned rule and retained-callback obligations only. Fibers, navigation capabilities and asynchronous delivery have no core semantics, so runtime payload retention remains untested |
 | `Dict.focus`'s destructive read (§20.8) | `assertDictFocus` | two positions of a tree holding one value, both written. List focus is modelled; the core has no tree, keys or dictionary representative separation. |
 | Markup/constructor lowering and opaque carrier encodings | markup transfer and summary blocks | Slots and constructor payload retention are modelled as positional records; HTML syntax, wildcard opaque paths, import serialization and actual row/component lowering are absent. Their encoding must preserve the modelled slots and conservative fallback |
-| Fold dictionary representatives and recursion | fold/focus summaries | Container ownership is modelled for lists and positional records; no dictionary keys, mutually recursive declarations or unknown/coarsened foreign rows exist in the core, so those implementations and their precision backstops still need Zig fixtures |
-| Hidden-evidence initialization and suspension | `initializationTransfer`, dispatch identities/requirements | Private single-read transfer, captured-local exclusion and retained initialization environments are modelled. The core has no hidden evidence parameters, suspension or coarsened foreign summaries; their eligibility guards remain compiler-fixture boundaries. |
+| Fold dictionary representatives and recursion | fold/focus summaries | Container ownership is modelled for lists and positional records; no dictionary keys, mutually recursive declarations or unknown or limited (§16.7) foreign rows exist in the core, so those implementations and their precision backstops still need Zig fixtures |
+| Hidden-evidence initialization and suspension | `initializationTransfer`, dispatch identities/requirements | Private single-read transfer, captured-local exclusion and retained initialization environments are modelled. The core has no hidden evidence parameters, suspension or limited (§16.7) foreign summaries; their eligibility guards remain compiler-fixture boundaries. |
+| *Amended 2026-10-16 (§30.9, O1):* a function slot or a function parameter called or handed on inside a lambda, and env calls of nested lambdas (rules 1–2) | `slotOf`, `envCall`, `passOn`, `applyEnvCalls` | a call the walk makes in the wrong frame, or a probe it drops on the way out: a supply taken for owned that a lambda still on the stack reads. The core's closures call their captures, but it has no function stored in a record (a slot) and no callee summary handed a lambda's own parameter, so neither rule is compared with the oracle. |
+| A send value is never a list (rule 3) | `flat`, `probeDemand` | a cell the walk takes for the runtime's function while it is a list. The core has no send (row above). |
+| What a custom type may hold, read off its constructors (rule 4) | `mayHold`, `ownMayHold`, `birMayHold` | a cell the type filter drops while the value may hold it: an alias lost. The core is untyped for this purpose; only Zig fixtures and the corpus test it. |
+| Supplies probed cell by cell, a capture of the declaration's frame named and borrowed, a borrowed supply that holds nothing at a call (rule 5) | `passOn`, `declView`, `returnsOwned` | a cell taken for owned because the probe of its neighbour passed, or a supply skipped as empty while the argument holds a cell. The core's supplies are one value per call, so the split is not compared. |
+| What a callee relies on of the declaration's own function, and of an enclosing lambda's parameter (rules 6–7) | `provOwned`, `deferLambdaNeed`, `dischargeLambdaNeeds`, `undischargedNeeds` | an obligation dropped where a lambda is consumed out of the walk's sight. The sync's "forwarding an enclosing callback's owned-result obligation" models the declaration's half; a lambda's own parameter, decided at each consumer, is not modelled. |
+| A carried lambda's calls of what the caller passed, re-carrying, and a top-level value's lambda whose captures hold nothing (rule 8) | `carry`, `callThrough`, `carriedCallOwned`, `carried`, `sharedOf` | a function value's result taken for made by the call while its class returns a list another holder keeps. The core's closures are not carried through results with their classes. |
+| A top-level value that names a function (rule 9), and the entry's URL taggers (rule 10) | `aliasTarget`, `entryTagger` | the wrong summary applied to a point-free name; a tagger the runtime sends from unchecked. Neither has core syntax; entry delivery is outside the core (row above). |
+| Words on a `List` of functions, `Task.timeout`'s and `raceOk`'s, `crossing Int32` (§30.9) | `wordsRow` | as the words row above: the fiber runtime and its scope are not modelled. |
+| *Amended 2026-10-16 (#229):* a carried lambda named by where it is made, and the walk's fixpoints settled over finite cells and capped by the `fixpoint` limit (§28's dated amendment *the entry's fixpoints settle*) | `carry`, `entryConditions`, `entryCall`, `instCb`, `instFold` | a lambda whose merged captures miss what one instantiation captured: an alias lost; or a round taken for settled while a carried lambda still grew. The Lean model already names what a traversal or the model makes by its site (`.position site`) and fails a fixpoint that does not settle within its 24 rounds loudly, as a rejection (`throw "limit: …"`); Zig's cap is 32 and an error at the declaration. It carries no lambdas through results (rule 8's row), and the bridge skips entry projections, so neither the merge nor the caps are compared. |
+| *Amended 2026-10-16 (§30.10):* a schema's slots, the derivation from its declaration, and what a run answers | `schemaRunRow`, `schemaMakerRow`, `schemaTaint`, `schemaMemberRow`, `conversionSlots`, `codecRunRow`, `settleRun` | a list a conversion, a `Value` or a codec returns taken for built by the run, and written in place while its other holder keeps it. The core has no schemas, no JSON and no evidence; the bridge never emits one, so its confirmed-unsafe count says nothing of this rule. Zig fixtures (`ownership/SchemaAnswers`, `check/bad/direct/SchemaConversionShared`) and the corpus test it. |
 
 ### 26.8 Open questions
 
@@ -2866,7 +2932,8 @@ declaration, not per module, because a report that summarised the whole of every
 test budget on `EntryValueCommand` (4 651 million instructions); per declaration it summarises no more of the
 library than before. *One known way a block and a walk could still differ*: the cap on guard atoms (§16.7) keeps
 the first eight in an order by id, and a session that computed the summary itself assigns other ids than one that
-read it; no measured summary reaches the cap.
+read it; no measured summary reaches the cap. *Amended 2026-10-16 (#220):* no longer — the guard counts distinct
+atoms, whatever their order, and reaching it is an error, not a cut; `Dict.merge` had reached it all along.
 
 **What it reports.** The modules of the app's packages that the run checked: an installed app module was cached
 clean, which by §28.5 means without an ownership error. Core and the platforms are not reported — their verdicts
@@ -2881,7 +2948,11 @@ nothing by a session's id:
 
 - a **module** by its package and dotted name, through a table at the block's head;
 - a **declaration** by its index in its module's BIR, and a **constructor** by its module and its index in that
-  module's constructor table — both functions of the module's source, which the key covers;
+  module's constructor table — both functions of the module's source, which the key covers. *Amended
+  2026-10-15 (issue #156):* that table is the BIR's constructors, then each tagged schema's (`schema.md`
+  §4), in declaration order, its `Type` family's variants before its `Encoded` family's. A pattern on a
+  schema's constructor, local or imported, names it there. It had been given an id with no module, which
+  no block can name, and writing the block crashed. Block version 10;
 - a **path** step by step (§4.1), a field by its name, a constructor step by its constructor and argument;
 - a **local** of a carried lambda (§24.9) by its index in the declaration, as BIR numbers it.
 
@@ -2923,6 +2994,9 @@ ordinary ownership proof still checks every supply and refuses the program.
 summary cannot preserve the generator's fresh-list result through the opaque
 generator carrier. `Random.constant` can retain a shared list, so accepting
 every generator instead would be unsound. No ownership verdict is relaxed.
+*Amended 2026-10-16 (§30.9 rule 8):* the carried generator is now followed, so
+`Random.generate (Random.list generator n)` is accepted when the generator makes what it returns;
+`Random.constant` with a shared list is still rejected (`ownership/RandomGenerate`).
 
 **Every rejected line and every pending line of a reported module is an `error`.** One sentence per kind, each
 against CLAUDE.md rule 7's test — what guarantee does the error buy?
@@ -2973,6 +3047,12 @@ Four codes, appended to `language.md` §10's catalogue:
 All four are `error`s, the checker's, and only on an in-place platform. The diagnostic's span is the edit — a
 construction from its `[` to its `]`, a `++` chain, a writer's call, a call that writes an argument, a send — and
 its file the module's.
+
+*Amended 2026-10-16 (#220):* a fifth, `ownership_limit` (`OWNERSHIP CHECK TOO LARGE`), for a declaration whose
+summary reached one of §16.7's limits: an `error`, on the same platforms, one per declaration and limit, its span
+the declaration's name, its message the declaration, the limit and what it measured, and that the limit is the
+compiler's. Its excerpt is the renderer's. A run that reports one does not report the rejections with the
+`limit` cause (§16.7).
 
 **The message has thesis §8.3's fixed shape**:
 
@@ -3169,6 +3249,53 @@ positions, retained elsewhere in the model, introduced by a sharing update arm o
 obtained from an unknown source still fail the existing separation/exclusivity tests.
 No recursive type is trusted exclusive merely because of its declaration.
 
+### *Amended 2026-10-16 (#229, the owner's decision):* the entry's fixpoints settle
+
+**Why they did not.** Each round of a fixpoint inside a walk instantiates the same summaries again, and a
+fixpoint has settled when a round adds nothing: the model's union is as long as before (§20.4), every cell's
+condition is what it was (the invariant above), a callback's result is as long as before (§16.4 item 6). That
+test is right only if a round that changes nothing makes no new cell. Every cell instantiation makes is named by
+where it is made — `result(call, k)`, a taken element by its container and call, a callback's result by its
+parameter and call — but one was named by when: a lambda a callee's result carries (§24.9's `carry`) was a new
+closure, so a new cell, at every instantiation. `update` returns its commands' lambdas (`Cmd.perform λsend →
+…`), so every round of the invariant made two new cells, the table of conditions grew, and the comparison failed
+in every round — after round two on T29, every one of 32 rounds; then the backstop lowered every seed to `lost`,
+silently. TodoMVC, Conduit, Bike Wars and the defect pages reached it, and a recursive tree that `update` grows
+was rejected for it as soon as an arm returned a command with a lambda (`ownership/EntryInvariantCommand`). A
+callback that returns a decoder (`List.foldr names decoder field`) reached a callback's backstop of 4 the same
+way and added `⊤`. The model's own backstop of 8 was a second silent loss: a model that relays a list one field
+per message needs a round per field, and at nine fields the `⊤` it added made an unrelated field's edit a list
+"from JavaScript" (`ownership/EntryRelay`).
+
+**The rule: the cells are finite, and each fixpoint is computed over them.**
+
+1. *A carried lambda is named by where it is made*: the call, the callee's summary, the lambda's place in it, the
+   callback depth and the entry's namespace (§20.4) — one closure per place, standing for every lambda made there,
+   whose captures are the union of every instantiation's. This is the abstraction `result(call, k)` already makes
+   of the lists a call makes in every round; it only adds aliasing. It loses nothing the fixpoint kept before:
+   the rounds' values were already joined, so the model held every round's lambda, each capturing a subset of what
+   the merged one captures.
+2. *A round has settled* when it makes no cell, grows no carried lambda's captures, and moves no condition (or,
+   for a shape, adds no entry). With (1) every cell a round can make is one of finitely many — calls, summary
+   entries, paths a type bounds (§16.7) — and a condition only goes down a chain of finite height (`yes`, then
+   more atoms over finitely many cells, `lost`, `shared`), so each fixpoint reaches its least or greatest
+   fixpoint in a number of rounds bounded by the program: by the longest chain of messages a value needs to
+   reach its place in the model, not by a constant.
+3. *Every one of these fixpoints has the same cap*, §16.7's `fixpoint` limit of 32 rounds: the model at entry
+   (formerly 8), its exclusivity invariant, a callback's result and a fold's shape (formerly 4) and a fold's
+   spine. **Reaching it is an error**, `ownership_limit` at the declaration that makes the call: a shape adds
+   `⊤limit`, whose rejections have the `limit` cause and are not reported beside it; an invariant lowers its
+   seeds to `lost`, a partial proof accepting nothing. The rounds a fixpoint needs grow with the program, as
+   a model that relays a list from field to field one message at a time needs one round per field; the cap
+   bounds the work of such a chain, rounds times the model, and a program that needs more is told so.
+
+**Measured** (2026-10-16): over the 948 programs of `bench/ownership-everywhere.mjs`'s set and the ownership
+corpus, core and every platform, the model at entry settles in at most 4 rounds, its invariant in 2, a
+callback's result in 3, a fold's shape in 3 and its spine in 2; the research dashboard (shared components,
+`beni-direct`, N = 1 … 1 024) in 3 and 2. No program reaches the cap. The verdicts of all of them are unchanged;
+one summary is more precise (`bench/corpus`'s `Decode.at` loses a `⊤`). The checker does fewer instructions on
+Conduit (−15 % instructions, a ReleaseFast `check`), as it runs 2 rounds where it ran 32. Summary blocks advance to version 13.
+
 ### *Amended 2026-10-14 (the subscription tap builder):* fresh folds remain a limit
 
 The runtime's `wanted` dictionary starts at `Dict.empty` each render. Each fold
@@ -3235,7 +3362,7 @@ received, with separation from the other result positions. No callback arm may
 escape that container, capture it in a retained closure, store it at a second
 position, or replace it with a borrowed/shared/unknown container. Its existing
 Known, Unescaped, Disjoint and Dead obligations still apply. Unknown callback
-classes, coarsened summaries and exhausted solvers establish no invariant.
+classes, summaries past a limit (§16.7) and exhausted solvers establish no invariant.
 A fresh outer dictionary alone proves nothing about its stored lists.
 
 **The written footprint.** Exclusivity of a list's container is distinguished
@@ -3416,7 +3543,7 @@ A private, parameterless value may transfer its freshly allocated cells to its
 sole read when that read executes directly in another nonrecursive,
 parameterless initializer of the same application module. The whole module
 must contain exactly one reference to the value. Reads in closures or functions,
-public values, foreign values, recursive initializers, coarsened summaries,
+public values, foreign values, recursive initializers, summaries past a limit (§16.7),
 evidence-parameterized values and unknown results receive no permission. The reference count is over BIR value
 instructions, including deferred bodies, not over reachable calls.
 
@@ -3453,6 +3580,22 @@ be a public static-dispatch member; function-valued result provenances are also
 ineligible for this transfer. The new schema and markup second-read twins pin
 the ordinary-value path. Ownership currently walks modules serially; its lazy
 reference-count memo would need synchronization before parallelizing that walk.
+
+*Clarification, 2026-10-16 (a write in `main`).* This rule is why `main`, or any
+other parameterless value, may write a private top-level list that a function
+may not. Take `xs = [ 1, 2, 3 ]`, private and named nowhere else, and
+`main = … List.set xs 0 9 …`: the write is accepted, and the report prints the
+cause `call`, because the read is the instantiated result of `xs`'s summary, as
+a callee's result is. `bump n = List.set xs 0 n` is rejected `top-level`
+(`top_level_list_changed`), because a function's body may run many times. The
+acceptance is sound in place. After the write, no source-level reader of `xs`
+is left that could see it: the module names `xs` once, and that one read runs
+once. A second read anywhere in the module, a read in a lambda or a local
+function, or a `pub` on `xs` makes the write `top-level` again, and the
+destination stays shared, so a function that writes it is `top-level` too
+(`destinationStillShared`). `InitializationTransfer` has a case for each of
+these, and `issueRead` (accepted) and `functionRead` (rejected) are the two
+halves of this one. §26.7 records that the oracle models the rule.
 
 ## 29. Result liveness and ownership across calls (2026-10-15)
 
@@ -3758,6 +3901,21 @@ behaviour changes.
 
   *Accepted when:* the four `SchemaDecl*` projects check under enforcement with a cache, and the script
   reproduces §30.2's table.
+
+  *As built (2026-10-15, issue #156).* The crash could be reached on `browser-direct`, so its fix landed
+  first, in #195 (§28.4's amendment of the same date). The flag is **`--ownership-everywhere`**. It is
+  on `Cli.Common`, so `check`, `build` and `dump --stage=ownership` all take it, and no usage text lists it.
+  It does what the patch did:
+  - every chain enforces, and every chain reports its platforms to the maker;
+  - every platform module counts as in place for §20.2's rows;
+  - the name table also gives the direct row to `browser`'s `Browser.program` and `page`'s `Page.sandbox`.
+
+  The checked core is read as built: its blocks were made under the ordinary rows, and the patch read
+  them that way too. A key that told the flag's entries apart would also miss every module of the
+  checked core, which more than doubles the cost, so the flag does not change the key. Instead, a
+  cache's entries go to its `ownership-everywhere/` subdirectory. That keeps blocks made under the
+  flag's rows away from an ordinary run. The script is `bench/ownership-everywhere.mjs`, and its first
+  run is in `bench/README.md`.
 - **O1 — the corpus, by the owner's rule-10 decision on §30.2's list.**
   - *Builds:* causes 1–3, which are real, take their fix from the message (`List.copy`, or the top-level
     value made a function) wherever the fixture tests something other than persistence. A fixture that
@@ -3772,6 +3930,11 @@ behaviour changes.
   *Accepted when:* O0's flag finds no rejected and no pending line in the whole corpus, the examples, the
   bench apps, core and every platform. No limit is answered by adding a `List.copy` to a platform or to
   core (the 2026-10-14 *subscription tap builder* amendment's rule).
+
+  *As built (2026-10-16, issue #210):* §30.9. 31 of 835 programs rejected became 3, and the two lines
+  of `browser-tea`'s `Tea.application` none. The three left wait on the owner: `ApiItems` and `ApiLogin`
+  on what `Schema.parse`'s answer holds (#218), `RefModify` on whether a `Ref`'s value may be lent
+  owned (#219). Until they are answered O1 is not accepted.
 - **O2 — the pass on the DAG, and the block in the interface** (§28.11 item 1, §16.9–§16.10).
   - *Accepted when:* the firewall holds for every build, as `cache_test.zig` shows. The 100 000-line
     benchmark, Conduit and the corpus pages meet §28.8's target with the pass on, or the miss is reported
@@ -3853,8 +4016,216 @@ causes 2 and 3 are retired, and which are rewritten with `List.copy`.** These ar
 `QueuedListSnapshot`, the precision work, and the correction of the eight tagger lines that print as
 exact, which is part of O1 and not left to choose.
 
+*Answered 2026-10-16 (the owner, issue #210):* the three identity tests (`ListIdentity`,
+`ListIndexedIdentity`, `WriteRowsIdentity`) are retired — the identity promises they pinned were
+dropped on 2026-10-13 (§27). The four persistence tests (`ListPersistence`, `ListForms`, `ListPrepend`,
+`ListSpreadPatterns`) are rewritten with an explicit `List.copy` where a version is kept, each with a
+rejected twin in `check/bad/direct/` that pins the ownership error. §30.9 records how O1 was built.
+
 **`entry` on a third-party platform** is checked the way every ownership word is (§24.6). Its
 placement and shape are refused when wrong (§30.3). Whether the runtime behind it keeps P1–P4 and P7
 is not checked. It is trusted, as a `foreign`'s words and its sibling's behaviour are. The platform is
 privileged code (CLAUDE.md rule 6), and a false claim is a defect in that platform. Shipped and test
 platforms are pinned by `trusted-surface.txt`. A third party's are not.
+
+### 30.9 O1 as built: the corpus, and the precision rules (2026-10-16)
+
+*Amends §16.5, §18.9, §20.3, §23.4, §24.2, §24.4, §24.8, §24.9, §28.5 and §30.3. Issue #210; it also fixes
+#212.*
+
+**The corpus.** The real sharing of §30.2's causes 1–3 is the programs': each fixture now makes its list
+where it writes it (a top-level value made a function: `ListIndexed`, `ListIndexedDeep`, `ListForms`'s
+forms, `KeyedInPlace`'s rows) or keeps the version it reads again with `List.copy` (the constrained
+constants, `Int32Keys`, `ListDirectDeep`, `NestingFlatList`, `QueuedListSnapshot`'s snapshot and the four
+persistence tests, §30.8). The three identity tests are deleted. No `List.copy` was added to core or to a
+platform.
+
+**The rules.** Each is general — no row names a program — and each only adds facts a body shows or the words
+state. None accepts a write the rules before it rejected for a reason the text shows.
+
+1. **Function slots, and the declaration's function parameters, inside a lambda** (§18.9, §24.9). A capture
+   of one of the declaration's own parameters, at a path, is a slot of the declaration in the lambda too.
+   Calling it inside the lambda is an env call (§18.9), made wherever the lambda runs. Handing it, or a
+   function parameter, on to a callee inside a lambda passes the callee's facts to the declaration
+   (§16.4 item 4: `calls` — `many`, since the lambda may run more than once — `need`, `seen`, the send
+   position) and its supplies. A callee's result through it is that parameter's result, `cb` of the
+   declaration (§18.9). Before, a pass inside a lambda only lost sight of the parameter and dropped its
+   `need`, so a tagger handed on inside a lambda was never asked to return owned (#212,
+   `ownership/LambdaPassNeed`). §24.9's "not inside a lambda" is withdrawn; "not in a recursive group"
+   stays.
+2. **Nested lambdas** (§18.9). An env call of a lambda checked inside another lambda is that lambda's env
+   call, its arguments in the outer lambda's vocabulary, made wherever the outer one is checked. Each
+   lambda on the way keeps its probe, and a supply is owned only when every probe passed; the call counts
+   `many` when some lambda on the way runs more than once (`ownership/NestedLambdaSend`).
+3. **A send value is not a list** (§23.2). A send's payload gives up every cell it holds but a send value:
+   the runtime's function, which holds nothing of the program's (`ownership/SendInPayload`).
+4. **What a custom type may hold is read off its constructors** (§6.1's type filter). Whether a value of
+   a type with a body may be, or hold, an object of another type is decided by its constructors' fields
+   and an alias's body as written, a type parameter being the caller's argument. Before, every type that
+   held anything was taken to hold anything (`ownership/NominalHolds`: a `Validation` never holds a list
+   of functions).
+5. **Supplies, cell by cell** (§16.4 item 4). A callee's supply passed on is probed one cell at a time (up
+   to eight cells; a wider one is probed whole), so a cell the call made is not borrowed because another
+   supplied beside it is. Inside a lambda, a capture of the declaration's own frame is named as that frame
+   holds it — a parameter stays the parameter, not `⊤` — and is borrowed: the declaration may read it again
+   while the lambda runs. A borrowed supply of the callee's parameter that holds no cell at a call hands
+   nothing there (§16.4 item 5): `Http.send` hands its decoder the issues of an `Unprintable` body,
+   borrowed, and a `stringBody` has none (`ownership/HttpSendBody`).
+6. **The declaration's own function relied on** (§16.4 item 5). When a callee relies on what the function
+   it is handed returns, and that function is the declaration's own parameter or slot, the declaration
+   needs it to return owned: its callers are asked (`need`), not the walk here (`ownership/SlotInLambda`).
+7. **A lambda's own parameter relied on.** When it is the enclosing lambda's own parameter, at a path, the
+   obligation waits for where the lambda is handed on or called. There the function is known: what the
+   callee supplies the lambda's parameter, or the call's argument, at the path. It is decided then: it
+   returns owned, it is the declaration's own (rule 6), or it is a further enclosing lambda's, which
+   waits again. Every place the lambda is consumed must decide it. One that cannot — a runtime's entry, a
+   callee with no summary, a place out of sight — leaves it undecided, and so does a lambda never handed
+   on or called; an undecided obligation is a `need` rejection, approximate. A lambda with one is not
+   carried (§24.9) (`ownership/LambdaParamNeed`).
+8. **Carried lambdas call what the caller passed** (§24.9). A carried lambda's calls of the declaration's
+   slots, and its passes of a parameter or slot on to a callee, go to what the caller passed there. When
+   that is a function value whose classes the walk knows, the call returns what they return, each handed
+   `⊤`; returns-owned (§16.4 item 5) judges such a call by those cells: owned when each was made by it. A
+   supply of part of a callback's result (`cb_j.q`) asks only the result's paths that overlap `q`. A
+   lambda a callee's result carried into this body is carried on in this body's result, its bindings read
+   off here and its class copied (it may be a block's). A top-level value carries its lambda when what it
+   captured holds no cell (`ownership/RandomGenerate`).
+9. **A top-level value that names a function is called as it.** `list = Pcg.list`: a call of `list` is a
+   call of `Pcg.list`, through `Pcg.list`'s summary, when the arities agree and no `where` clause stands
+   between them.
+10. **The entry's taggers** (§30.3). The runtime calls `onUrlRequest` and `onUrlChange` with values that
+    cross and sends what they return, so the entry checks that each returns owned, as a send is checked
+    where it is made (§23.6): a function the walk cannot place is rejected, approximately; one that
+    returns a list it does not own, exactly (`ownership/EntryUrlTaggers`). `browser-tea`'s own
+    `Tea.application` forwards the two inside its subscriptions' lambda, where rule 1 gives the
+    declaration the obligation the entry now discharges.
+11. **Labels** (§28.5). A `need` rejection of a function value is approximate exactly when it fails only
+    through an approximate entry, `⊤`, what another callback returns, or a function the checker cannot
+    place; the eight lines §30.2 found printed as exact now print approximate.
+
+**Words** (§24.2, §24.4, §24.8, amended). A parameter of type `List` of a function written out takes a
+function's words, which describe each element: the summary's function slot at the parameter's `[*]`
+(`many aliased List (⊤ → a)`). Three new rows in §24.8:
+
+| Declaration | Words | Why |
+|---|---|---|
+| `Task.timeout` | `borrowed Duration, once aliased (⊤ → a) → fresh Maybe a` | `startIn` runs the work once as a child of the call's own scope, and `within` closes that scope before the call returns; `valueOf` reads the child's outcome, which is what the work returned, and the `Just` around it is new. Nothing keeps the work or its value after the call |
+| `Task.raceOk` | `many aliased List (⊤ → Result e a) → fresh Result (List e) a` | each thunk runs once as a child of the call's scope, closed before it returns; the answer is the winner's `Ok` payload or a new list of every `Err` |
+| `Int32` | `crossing` | an `Int32` is a JavaScript number, `Math.imul`'s and the bit operations': it holds no list and no function |
+
+They are pinned in `trusted-surface.txt` (`ownership/TaskWords`, `ownership/RandomGenerate`) and their bodies,
+with `within`, `startIn` and `valueOf`, in `word-bodies.txt`.
+
+**What O1 does not clear** (`bench/ownership-everywhere.mjs`, 2026-10-16: 3 of 835 programs; core and every
+platform hold no rejected or pending line):
+
+- `browser/tea/ApiItems` and `ApiLogin`: a `need` through `Schema.parse`, whose words say its answer is
+  `unknown` (§24.8). The answer holds what the schema's mapping, injection and conversion functions return,
+  and one function serves both directions — in the encoding direction it is handed the program's own value
+  — so no word can say "returns what it is handed, owned, when decoding". A precise answer needs the
+  decoding direction's functions told apart from the encoding direction's: a design question, issue #218.
+- `run/RefModify`: `Ref.update` hands its callback the cell's value borrowed, `⊤`. That is not only a
+  limit: a `Ref`'s value is shared state by design — any holder of the `Ref`, in any fiber, may have read
+  it with `Ref.get` and still hold it — so editing it in place in the callback would change a value another
+  reader holds. Lending it owned would need every `get`'s result tracked across the program. The owner
+  decides whether the fixture copies in its callback, as `ListPersistence` does (issue #219).
+
+  *Amended 2026-10-16 (the owner, issue #219):* real sharing, and the error is correct. `run/RefModify`'s
+  callback pushes onto `List.copy ns`, and `check/bad/direct/RefUpdateShared` — a `snapshot` read with
+  `Ref.get` before the `update` — pins the refusal. `Ref`'s API and words do not change.
+
+A defect found on the way, not fixed here: a conservative call's result (§6.1) counts as made by the call,
+so a function value with no class that returns a list somebody else holds is written in place, accepted
+`assumed` (issue #216).
+
+### 30.10 What a schema's run answers (the owner, 2026-10-16; issue #218)
+
+*Amends §24.8 (`Schema.parse`, `parseWith`), §24.5's list of rows the checker asserts, §26.7 and §30.9's
+"What O1 does not clear". Sections 1–30.9 keep their text.*
+
+**The decision**, verbatim from the issue: "don't look for one ownership word for every schema. Schemas are
+compiled and statically known (schema.md §6), so the compiler derives the ownership of each schema's
+`parse`/`decode` result (and the encode direction) from its declaration, per direction: fresh where the value
+is built from the input, borrowed or unknown only where a conversion returns something it captured, or the
+program's own value in the encode direction. A genuinely runtime-built schema keeps the conservative word."
+
+**Two slots.** A value of `Schema e a` has two analysis slots, `⟨decoded⟩` and `⟨encoded⟩`, in the sense of
+Change 9 and as the markup type has `⟨render⟩` and `⟨events⟩` (§28, *markup slots*): paths of the analysis,
+not fields of the JavaScript. A slot holds what a run in that direction may answer that the run did not build
+from its input. Everything else the schema value holds — the functions of its conversions and what they
+captured, its arguments — stays where §16's summaries put it, so a list a conversion captured is still held by
+the schema for as long as the schema is, whatever the slots say. A slot can also hold the *input mark*: the
+run may answer part of what it was handed. The mark is a `⊤` (printed `⊤input`) wherever a run does not read
+it, so a mark that escapes its slot is as unknown as anything.
+
+**What a run answers.** `Schema.parse`, `parseWith`, `decode`, `decodeWith`, `read` and `readWith` answer a
+fresh value, which may hold anywhere what the schema's `⟨decoded⟩` slot holds; `encode`, `encodeWith`,
+`write` and `writeWith` the same with `⟨encoded⟩`. Where the slot holds the input mark and the run was handed
+a program's value (every run but `parse`, whose input is a string), the answer may hold any part of that
+value; where it does not, the answer holds nothing of it. `print` and `printWith` keep their words (§24.8): a
+string. These are rows the checker asserts (§24.5), keyed by `core/Schema`'s names, and `parse` and
+`parseWith` lose their words. A run that is not seen as one — a runner handed on as a function value — keeps
+its row with the mark unread, which is `⊤`.
+
+**What fills the slots.** A slot is filled where the schema is made, by its maker:
+
+| Maker | `⟨decoded⟩` | `⟨encoded⟩` |
+|---|---|---|
+| a primitive but `Schema.value` | nothing | nothing |
+| `Schema.value` | the input mark | the input mark |
+| `list s`, `nullable s`, `erased s` | `s`'s | `s`'s |
+| `converted s c` | `s`'s and `c`'s | `s`'s and `c`'s |
+| `conversion forward backward` | what `forward` may return that its call did not make and that is not its argument: what it captured, a top-level value, `⊤` for a function the walk cannot place; nothing when the target `a` holds no list | the same of `backward`, except that its argument is the program's value: what it returns of it is the input mark; nothing when the source `b` holds no list |
+| `S.schema a₁ … aₙ`, a declaration's | the arguments' and the declaration's own (below) | the same |
+| an interpreting builder (`record`, `tagged`, `recursive`, `flip`, `typeOnly`, `encodedOnly`: whatever calls `box`) | `⊤` | `⊤` |
+| `derived ⊤`, `structural ⊤`, and `Json`'s runs | the codec its `where a.codec` evidence names at the call (below); `⊤` where the evidence is a parameter | the same |
+
+`list`, `nullable`, `erased` and `converted` branch on their argument's engine at run time, and their
+interpreting arm boxes a node: that arm runs only for an argument whose slots hold `⊤` already, so their slots
+are their arguments' and nothing else. A schema from anywhere else — a `foreign`, a `Js` value, a call with no
+summary — has `⊤` in both slots (a cell a callee with no summary made holds `⊤` at a slot; one a callee with a
+summary made holds there only what that summary names).
+
+**A declaration's own slots — the derivation.** The compiler holds the declaration's resolved plan
+(`schema.md` §4), so the checker reads it, closed over every declaration and derived codec it names: each
+`via` contributes its conversion value, each `value` primitive the input mark, and each `codec_value` (a type's
+module's `codec`, `schema.md` §12.10) the slots its summary names. A `via`'s conversion is a top-level
+expression the declaration evaluates once (`schema.md` §6, *The `via`s*): a reference to a top-level value
+contributes the slots that value's summary names — a cell its definition made is that value's own, shared
+(§16.3) — and any other expression `⊤`, in each direction whose end holds a list. A declaration's schema
+parameters are the arguments of the member's call. `S.parse` and `S.parseWith` answer a fresh value holding
+the declaration's `⟨decoded⟩` (the input mark dropped: the input is a string); `S.print` and `S.printWith` a
+string, as `print`'s words say.
+
+**Derived codecs.** `Json.decode`, `decodeWith`, `decodeValue` and `encodeValue`, and `Schema.derived` and
+`structural`, are read at each call through the call's evidence (`schema.md` §12.10): a derived codec
+definition's slots are derived as a declaration's, each of its slots' evidence adding its own; a type's
+module's `codec` contributes what its summary names. An evidence parameter — the codec of a type variable —
+is `⊤`. `Http.expectJson`, a value whose evidence is its own, keeps `⊤` in its lambda.
+
+**Soundness.** A list the answer may hold arrives in one of four ways: the run built it from the input (fresh,
+no other holder); a conversion's function returned it (its slot names it: what it captured, a top-level
+value, `⊤`); a `Value` or a `backward` returned part of the run's input (the mark, which the run turns into
+the input); or a default (`schema.md` §11), which is not built yet and must enter its direction's slot when it
+is (§11.3's "a pure default may be evaluated once by the backend" is observable once lists are written in
+place: a default that holds a list is a shared cell in the slot). Each maker puts every such cell in a slot or
+writes `⊤`; a schema the checker cannot place is `⊤` in both. Forward conversions are handed what the run
+built, so their argument is not a holder; backward conversions are handed the program's value, so theirs is.
+That first half rests on every decoding worker building what it hands `forward` from fresh cells — arrays and
+records it makes, or the array `JSON.parse` made (`schema.md` §6, *Lists are arrays*). A worker that reused a
+list across runs (a cache, a hoisted constant) would break it silently, and must put that list in its slot.
+The type filter drops a conversion whose end holds no list: such a conversion cannot answer one.
+
+**The corpus.** `browser/tea/ApiItems` and `ApiLogin` hold
+no line under `--ownership-everywhere`: `Schema.list (Item.schema ⊤)` holds nothing in its slots. `ApiLogin`'s
+`tests/pending/browser/direct/` twin is promoted; `ApiItems`' twin, four builds in one case (as `HttpJson`, #184),
+is over the test budget (4 780M) and is deleted: the `browser-tea` page runs it. Fixtures:
+`ownership/SchemaAnswers` (declared, composed and generic schemas, a conversion that builds, one that returns
+a top-level list and one that returns a capture; `Json.decode` of a derived codec; the encode direction with a
+`backward` that returns its argument), `check/bad/direct/SchemaConversionShared` (a conversion returning a
+captured list, written: refused).
+
+*Measured (2026-10-16):* `bench/ownership-everywhere.mjs`, with #219's `RefModify` copy, rejects 0 of 848
+programs (§30.9's 3 of 840); core and every platform hold no rejected or pending line. The Lean bridge at the
+CI bound (`node scripts/bridge.mjs --ci`): 1 341 programs, 959 translated, none confirmed unsafe — the rule is
+§26.7's last row, outside what the bridge emits.

@@ -1,0 +1,16 @@
+Ok n 10 on 2.5 k
+Err decoding Encoded MissingKey /row-name missing key "row-name"
+Err decoding Encoded WrongShape /row-name expected a string
+Err decoding Encoded WrongShape /row-count expected a number
+Err decoding Encoded InvalidValue /size expected a safe integer
+Err decoding Encoded InvalidValue /rank expected a safe integer
+Err decoding Encoded WrongShape /on expected a boolean
+Err decoding Encoded WrongShape /x expected a number
+Err decoding Encoded InvalidValue /a expected a finite number
+Err decoding Encoded WrongShape /b expected a number
+Err decoding Encoded WrongShape /constructor expected a string
+Err decoding Encoded WrongShape /row-name expected a string <- 1 | decoding Encoded MissingKey /tag missing key "tag" <- {"row-name":1,"note":"o","code":null,"row-count":"1","size":1.5,"step":4,"on":0,"seen":false,"done":null,"x":"1","y":2,"z":3,"w":4,"a":"q","b":true,"c":3,"d":4} | decoding Encoded WrongShape /code expected a string <- null | decoding Encoded WrongShape /row-count expected a number <- "1" | decoding Encoded InvalidValue /size expected a safe integer <- 1.5 | decoding Encoded MissingKey /rank missing key "rank" <- {"row-name":1,"note":"o","code":null,"row-count":"1","size":1.5,"step":4,"on":0,"seen":false,"done":null,"x":"1","y":2,"z":3,"w":4,"a":"q","b":true,"c":3,"d":4} | decoding Encoded WrongShape /on expected a boolean <- 0 | decoding Encoded MissingKey /open missing key "open" <- {"row-name":1,"note":"o","code":null,"row-count":"1","size":1.5,"step":4,"on":0,"seen":false,"done":null,"x":"1","y":2,"z":3,"w":4,"a":"q","b":true,"c":3,"d":4} | decoding Encoded WrongShape /done expected a boolean <- null | decoding Encoded WrongShape /x expected a number <- "1" | decoding Encoded WrongShape /a expected a number <- "q" | decoding Encoded WrongShape /b expected a number <- true | decoding Encoded MissingKey /constructor missing key "constructor" <- {"row-name":1,"note":"o","code":null,"row-count":"1","size":1.5,"step":4,"on":0,"seen":false,"done":null,"x":"1","y":2,"z":3,"w":4,"a":"q","b":true,"c":3,"d":4}
+Ok n 10 on 2.5 k / n 10 on 2.5 k
+Err decoding Encoded MissingKey /right/row-name missing key "row-name"
+Err decoding Encoded DepthExceeded /left/row-name the depth limit is reached
+Err decoding Encoded DepthExceeded /left the depth limit is reached

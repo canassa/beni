@@ -1,0 +1,104 @@
+-- CK-223: direct effects reject a safe browser-tea program with a coarse ownership summary.
+-- Commands that take values (boundary.md §9.8.16): `Storage.save`,
+-- `Http.send` and `Log.write` are handed what they persist or send — the
+-- text, a request whose body is already text, the line — computed by
+-- `update` when it makes the command, never a function that reads the model
+-- when the command runs. `save` stores the items as `update` left them and
+-- sends nothing when the write succeeds (its failures are `StorageFaults`');
+-- `send` answers through its tag, as `Cmd.task` over `Http.request` would;
+-- `write` logs the line at its level.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Http
+import Log
+import Storage exposing (Local)
+import Sub
+import Tea
+
+
+type Msg
+    = Add
+    | Save
+    | NotSaved Storage.Error
+    | Post
+    | Posted (Result Http.Error String)
+    | Report
+
+
+type alias Model =
+    items : List String
+    log : List String
+
+
+joined : List String → String
+joined items = List.foldl items "" λitem text →
+    if text == "" then
+        item
+    else
+        text ++ "," ++ item
+
+
+logged : Model, String → Model × Cmd Msg
+logged model line = ( { model | log = List.push model.log line }, Cmd.none )
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        Add →
+            ( { model
+                | items = List.push model.items "item ${String.fromInt (List.length model.items)}"
+              }
+            , Cmd.none
+            )
+
+        Save →
+            ( model, Storage.save Local "items" (joined model.items) NotSaved )
+
+        NotSaved _ →
+            logged model "not saved"
+
+        Post →
+            ( model
+            , Http.send
+                { method = "POST"
+                , headers = [ Http.header "X-Count" (String.fromInt (List.length model.items)) ]
+                , url = "/api/items"
+                , body = Http.stringBody "text/plain" (joined model.items)
+                , expect = Http.expectString
+                , timeout = Nothing
+                , tracker = Nothing
+                }
+                Posted
+            )
+
+        Posted (Ok text) →
+            logged model "posted: ${text}"
+
+        Posted (Err _) →
+            logged model "the post failed"
+
+        Report →
+            ( model, Log.write Log.Info "${String.fromInt (List.length model.items)} items" )
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="add" onClick={Add}>add</button>
+        <button id="save" onClick={Save}>save</button>
+        <button id="post" onClick={Post}>post</button>
+        <button id="report" onClick={Report}>report</button>
+        <ul><For each={model.items} keyed={False}>{λitem → <li>{item}</li>}</For></ul>
+        <ol><For each={model.log} keyed={False}>{λline → <li>{line}</li>}</For></ol>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( { items = [], log = [] }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

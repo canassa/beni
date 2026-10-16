@@ -1,0 +1,18 @@
+--! An opaque type whose module derives its codec: `Schema.structural` reads
+--! the type's own shape here, where its constructors are visible, and
+--! skips this module's `codec` for the outermost type, which would
+--! otherwise be the very method it defines (`schema.md` §12.2).
+
+import Schema exposing (Codec)
+
+
+pub opaque type Sealed
+    = Sealed String Int
+
+
+pub show : Sealed → String
+show (Sealed s n) = s ++ "/" ++ String.fromInt n
+
+
+pub codec : ⊤ → Codec Sealed
+codec u = Schema.structural u

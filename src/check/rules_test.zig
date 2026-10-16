@@ -34,6 +34,7 @@ const files = [_]File{
     .{ .path = "Boundary.zig", .text = @embedFile("Boundary.zig") },
     .{ .path = "Category.zig", .text = @embedFile("Category.zig") },
     .{ .path = "Check.zig", .text = @embedFile("Check.zig") },
+    .{ .path = "Codec.zig", .text = @embedFile("Codec.zig") },
     .{ .path = "ColumnIndex.zig", .text = @embedFile("ColumnIndex.zig") },
     .{ .path = "Command.zig", .text = @embedFile("Command.zig") },
     .{ .path = "Context.zig", .text = @embedFile("Context.zig") },

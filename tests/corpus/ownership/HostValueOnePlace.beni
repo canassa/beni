@@ -1,0 +1,28 @@
+-- ownership: a derived decode of a host value names it once (#220). The
+-- decoder reads `state` through `Maybe` and `Nullable` views of the one
+-- JavaScript value; a summary that spelled each place every way a view
+-- reaches it — `π1`, `π1#Just.0`, `π1#NonNull.0`, both orders of the two —
+-- named five places for one, at no gain in precision, and multiplied the
+-- width of every caller's summary by five (`ownership-checker.md` §30.10).
+import Json
+import Schema exposing (Value)
+
+
+pub type alias Item =
+    id : Int
+    text : String
+
+
+pub type alias Model =
+    items : List Item
+    draft : String
+
+
+pub replace : Value, Model → Model
+replace state model =
+    case Json.decodeValue state of
+        Ok new →
+            { items = List.copy new.items, draft = new.draft }
+
+        Err _ →
+            model

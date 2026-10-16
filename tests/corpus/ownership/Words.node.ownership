@@ -1,21 +1,21 @@
 module Words
-  23:16 construction parts: accepted fresh
-  24:14 construction letters: accepted fresh
-  34:37 List.push parts: rejected later-use: parts is read again at 34:5
-  46:12 construction xs: accepted param
-  53:12 construction xs: rejected call: text⋆ may hold it through the call at 52:12, and is read at 54:5 (approx)
-  64:11 construction <call String.split>: accepted call
-  65:11 construction <call String.words>: accepted call
-  66:11 construction <call String.lines>: accepted call
-  67:11 construction <call String.toList>: accepted call
-  68:11 construction <call String.indexes>: accepted call
-  76:27 construction xs: rejected unknown: the list came from JavaScript (approx)
-  91:12 construction xs: accepted param
-  98:12 construction xs: rejected call: text⋆ may hold it through the call at 97:12, and is read at 99:5 (approx)
-  111:27 construction xs: rejected unknown: the list came from JavaScript (approx)
-  120:14 construction lines: accepted param
-  136:14 construction rows: accepted fresh
-  138:7 construction ps: accepted fresh
+  24:16 construction parts: accepted fresh
+  25:14 construction letters: accepted fresh
+  35:37 List.push parts: rejected later-use: parts is read again at 35:5
+  47:12 construction xs: accepted param
+  54:12 construction xs: rejected call: text⋆ may hold it through the call at 53:12, and is read at 55:5 (approx)
+  65:11 construction <call String.split>: accepted call
+  66:11 construction <call String.words>: accepted call
+  67:11 construction <call String.lines>: accepted call
+  68:11 construction <call String.toList>: accepted call
+  69:11 construction <call String.indexes>: accepted call
+  77:27 construction xs: accepted call
+  92:12 construction xs: accepted param
+  99:12 construction xs: rejected call: text⋆ may hold it through the call at 98:12, and is read at 100:5 (approx)
+  112:27 construction xs: accepted call
+  121:14 construction lines: accepted param
+  137:14 construction rows: accepted fresh
+  139:7 construction ps: accepted fresh
   summary joined: unused
   summary joinedHeld: unused
   summary printed: π1 RW
@@ -27,8 +27,7 @@ module Words
   summary parsedWith: unused
   summary printing: π1 RW; res fresh1{lost}
   summary rendered: res [*] fresh1{lost}, fresh2{lost}
-  demands 17: accepted 12 (fresh 4, call 5, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 5
-total 17: accepted 12 (fresh 4, call 5, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 5
-cause unknown 2
+  demands 17: accepted 14 (fresh 4, call 7, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+total 17: accepted 14 (fresh 4, call 7, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
 cause later-use 1
 cause call 2

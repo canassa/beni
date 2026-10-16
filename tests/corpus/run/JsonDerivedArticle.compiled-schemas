@@ -1,0 +1,1 @@
+Every schema the program runs is derived from a type, fixed at compile time (schema.md §6, §12.10), so its development build ships no library interpreter.

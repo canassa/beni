@@ -28,6 +28,7 @@ const Interface = @import("../resolve/Interface.zig");
 const InternPool = @import("../InternPool.zig");
 const SchemaPlan = @import("../check/SchemaPlan.zig");
 const SchemaGraph = @import("SchemaGraph.zig");
+const SchemaShare = @import("SchemaShare.zig");
 
 const Node = JsIr.Node;
 const NameIndex = JsIr.NameIndex;
@@ -77,11 +78,14 @@ pub fn memberUse(l: *const Lowerer, inst: Bir.Inst.Index) ?MemberUse {
 pub fn memberOf(kind: Interface.SchemaMember.Kind) ?Member {
     return switch (kind) {
         .schema => .root,
-        .parse, .parse_with => .read,
-        .print, .print_with => .write,
+        .parse, .parse_with => .parse,
+        .print, .print_with => .print,
         .type, .encoded => null,
     };
 }
+
+/// Every operation, in the order a declaration emits their workers.
+const all_ops = [_]Op{ .parse, .print, .decode, .encode, .read, .write };
 
 fn suffixOf(kind: Interface.SchemaMember.Kind) []const u8 {
     return switch (kind) {
@@ -104,14 +108,38 @@ pub fn memberReference(l: *Lowerer, inst: Bir.Inst.Index) !Node.Index {
     return l.ident(try schemaName(l, use.ref, suffixOf(use.kind)), p);
 }
 
+/// Derived codec `k`'s `schema` binding (`schema.md` §12.10), the value its
+/// evidence is, required to have survived.
+pub fn codecSchemaName(l: *Lowerer, k: u32) !NameIndex {
+    const sg = l.in.schemas.?;
+    const ref = sg.codecTarget(l.in.module, k);
+    try l.requireLive(l.liveSchema(ref, .root), "a derived codec");
+    return schemaName(l, ref, "schema");
+}
+
+/// Derived codec `k`'s root wrapper binding `suffix` of `member` — its
+/// `parse`, `print`, `parseWith` or `printWith`, which a `Json` call is
+/// written as (`SchemaGraph.jsonCall`) — required to have survived.
+pub fn codecMemberName(l: *Lowerer, k: u32, member: SchemaGraph.Member, suffix: []const u8) !NameIndex {
+    const sg = l.in.schemas.?;
+    const ref = sg.codecTarget(l.in.module, k);
+    try l.requireLive(l.liveSchema(ref, member), "a derived codec's parse or print");
+    return schemaName(l, ref, suffix);
+}
+
 /// `<Module>$<Schema>$$<suffix>`: a schema's binding, by the reserved double
 /// separator no module member can spell (§6). Imported when `ref` is
 /// another module's.
 fn schemaName(l: *Lowerer, ref: SchemaGraph.Ref, suffix: []const u8) !NameIndex {
     const sg = l.in.schemas.?;
     const bir = sg.birOf(ref.module);
-    const schema = l.text(bir.symbol(bir.decls[ref.decl].name));
-    const base = try l.interner.getOrPut(l.gpa, try std.fmt.allocPrint(l.scratch, "{s}$${s}", .{ schema, suffix }));
+    // A derived codec is `<Module>$$codec<k>$$<member>` (schema.md
+    // §12.10): no `schema` declaration's name begins with `$`.
+    const text = if (sg.codecIndex(ref.module, ref.decl)) |k|
+        try std.fmt.allocPrint(l.scratch, "$codec{d}$${s}", .{ k, suffix })
+    else
+        try std.fmt.allocPrint(l.scratch, "{s}$${s}", .{ l.text(bir.symbol(bir.decls[ref.decl].name)), suffix });
+    const base = try l.interner.getOrPut(l.gpa, text);
     if (ref.module != l.in.module) {
         const entry: Lowerer.Needed = .{ .module = ref.module, .base = base.toOptional() };
         try l.needName(entry);
@@ -131,15 +159,20 @@ pub fn exports(l: *Lowerer, decl: u32, names: *std.ArrayList(NameIndex)) !void {
         try names.append(l.scratch, try schemaName(l, ref, "description"));
     }
     // The workers too, which another module's workers call; the forced
-    // library path writes none.
+    // library path writes none. Then the root wrappers.
     const workers = !l.in.schema_library;
-    if (l.liveSchema(ref, .read)) {
-        if (workers) try names.append(l.scratch, try schemaName(l, ref, "read"));
-        for ([_][]const u8{ "parse", "parseWith" }) |s| try names.append(l.scratch, try schemaName(l, ref, s));
-    }
-    if (l.liveSchema(ref, .write)) {
-        if (workers) try names.append(l.scratch, try schemaName(l, ref, "write"));
-        for ([_][]const u8{ "print", "printWith" }) |s| try names.append(l.scratch, try schemaName(l, ref, s));
+    const sg = l.in.schemas.?;
+    for (all_ops) |op| {
+        // A derived codec's `decode` and `encode` are its `read` and
+        // `write` workers (`SchemaGraph.hostAliased`): none of their own.
+        const own = sg.hostAliased(ref, Member.worker(op)) == null;
+        if (workers and own and l.liveSchema(ref, Member.worker(op))) try names.append(l.scratch, try schemaName(l, ref, op.workerSuffix()));
+        const wrapper: Member, const suffixes: [2][]const u8 = switch (op) {
+            .parse => .{ .parse, .{ "parse", "parseWith" } },
+            .print => .{ .print, .{ "print", "printWith" } },
+            else => continue,
+        };
+        if (l.liveSchema(ref, wrapper)) for (suffixes) |s| try names.append(l.scratch, try schemaName(l, ref, s));
     }
 }
 
@@ -152,20 +185,23 @@ pub fn declaration(l: *Lowerer, out: *Stmts, decl: u32) !void {
     const sg = l.in.schemas orelse return;
     const def = sg.definition(l.in.module, decl) orelse return;
     const ref: SchemaGraph.Ref = .{ .module = l.in.module, .decl = decl };
+    const codec = sg.codecIndex(l.in.module, decl) != null;
     var g: Gen = .{
         .l = l,
         .sg = sg,
         .plan = sg.planOf(l.in.module),
         .ref = ref,
         .def = def,
-        .schema = l.bir.symbol(l.bir.decls[decl].name),
+        .schema = if (codec) InternPool.WellKnown.codec.symbol() else l.bir.symbol(l.bir.decls[decl].name),
         .params = def.params_end - def.params_start,
         .p = if (def.token < l.in.token_starts.len) l.in.token_starts[def.token] else no_pos,
+        .codec = codec,
     };
     // Each part is a top-level declaration of its own, and its
     // compiler-made names count from 1 (`backend.md` §4, *A compiler-made
-    // name is numbered within its top-level declaration*).
-    if (l.liveDecl(decl)) {
+    // name is numbered within its top-level declaration*). A derived codec
+    // has no `via`.
+    if (!codec and l.liveDecl(decl)) {
         l.restartNames();
         try g.vias(out);
     }
@@ -173,13 +209,20 @@ pub fn declaration(l: *Lowerer, out: *Stmts, decl: u32) !void {
         l.restartNames();
         try g.description(out);
     }
-    if (l.liveSchema(ref, .read)) {
+    // Each operation's worker set, and for `parse` and `print` the root
+    // wrappers after it, in one naming scope.
+    for (all_ops) |op| {
+        const own_set = sg.hostAliased(ref, Member.worker(op)) == null;
+        const worker = !l.in.schema_library and own_set and l.liveSchema(ref, Member.worker(op));
+        const wrapper = switch (op) {
+            .parse => l.liveSchema(ref, .parse),
+            .print => l.liveSchema(ref, .print),
+            else => false,
+        };
+        if (!worker and !wrapper) continue;
         l.restartNames();
-        try g.direction(out, .read);
-    }
-    if (l.liveSchema(ref, .write)) {
-        l.restartNames();
-        try g.direction(out, .write);
+        if (worker) try g.workers(out, op);
+        if (wrapper) try g.wrappers(out, op);
     }
     if (l.liveSchema(ref, .root)) {
         l.restartNames();
@@ -187,7 +230,7 @@ pub fn declaration(l: *Lowerer, out: *Stmts, decl: u32) !void {
     }
 }
 
-const Dir = enum { read, write };
+const Op = SchemaGraph.Op;
 
 const Gen = struct {
     l: *Lowerer,
@@ -198,6 +241,8 @@ const Gen = struct {
     schema: Symbol,
     params: u32,
     p: u32,
+    /// A derived codec's definition (schema.md §12.10), not a declaration.
+    codec: bool = false,
 
     // ---- Small builders -------------------------------------------------
 
@@ -373,9 +418,9 @@ const Gen = struct {
         return schemaName(g.l, g.ref, suffix);
     }
 
-    fn nodeWorkerName(g: *Gen, dir: Dir, n: PNode) !NameIndex {
+    fn nodeWorkerName(g: *Gen, op: Op, n: PNode) !NameIndex {
         var buf: [32]u8 = undefined;
-        const suffix = std.fmt.bufPrint(&buf, "{s}${d}", .{ @tagName(dir), @backingInt(n) }) catch unreachable;
+        const suffix = std.fmt.bufPrint(&buf, "{s}${d}", .{ op.workerSuffix(), @backingInt(n) }) catch unreachable;
         return g.own(try g.l.scratch.dupe(u8, suffix));
     }
 
@@ -413,9 +458,11 @@ const Gen = struct {
 
     // ---- The description --------------------------------------------------
 
-    /// `$$description`: §5's builders composed as the plan says, a constant
-    /// for a nongeneric declaration and a function of the schema arguments
-    /// for a generic one.
+    /// `$$description`: the node §5's builders would make, made by
+    /// `core/Schema`'s `described…` values as the plan says — no builder
+    /// and no box (§6, *What `describe` ships*). A constant for a
+    /// nongeneric declaration and a function of the schema arguments for a
+    /// generic one.
     fn description(g: *Gen, out: *Stmts) !void {
         const recursive = try g.sg.recursive(g.l.scratch, g.ref.module, g.ref.decl);
         const params = try g.l.scratch.alloc(NameIndex, g.params);
@@ -423,8 +470,11 @@ const Gen = struct {
         const self = try g.local("$self");
         var body = try g.descNode(g.def.root, params, if (recursive) self else null);
         if (recursive) {
-            body = try g.call(try g.core("recursive"), &.{ try g.str(g.l.text(g.schema)), try g.arrowOf(&.{self}, body) });
+            body = try g.call(try g.core("describedRecursive"), &.{ try g.str(g.l.text(g.schema)), try g.arrowOf(&.{self}, body) });
         }
+        // A derived codec's Encoded end is a host value (`NHost`): `decode`
+        // reads it as `read` does (schema.md §12.10).
+        if (g.codec) body = try g.call(try g.core("describedHost"), &.{body});
         if (g.params == 0) {
             try g.constDecl(out, try g.own("description"), body);
         } else {
@@ -434,36 +484,55 @@ const Gen = struct {
 
     /// `$$schema`, `S.schema`'s value (`schema.md` §6, *A statically known
     /// schema runs compiled*): `core/Schema`'s `declared` of the description
-    /// as a function of no argument, the decoding and encoding workers —
-    /// a generic declaration's closed over `readSlot`/`writeSlot` of its
-    /// arguments, made once per value — and the arguments its value reaches;
-    /// `null` for each member the build left out, which nothing then reads.
-    /// A nongeneric declaration's is one constant, `$$declared`. Under
-    /// `--schema-library` it is the description itself, so every
-    /// composition over it runs through the library (§6, *The forced
+    /// as a function of no argument, the `parse` and `print` workers, the
+    /// arguments its value reaches, then the `decode`, `encode`, `read` and
+    /// `write` workers — a generic declaration's closed over its arguments'
+    /// slots of that operation (`readSlot` …), made once per value; `null`
+    /// for each member the build left out, which nothing then reads, and
+    /// trailing ones left out. A nongeneric declaration's is one constant,
+    /// `$$declared`. Under
+    /// `--schema-library` it is the description itself, boxed — an
+    /// `Interpreted` schema, one constant for a nongeneric declaration — so
+    /// every composition over it runs through the library (§6, *The forced
     /// library path*).
     fn root(g: *Gen, out: *Stmts) !void {
         const params = try g.l.scratch.alloc(NameIndex, g.params);
         for (params, 0..) |*slot, i| slot.* = try g.paramName(@intCast(i));
-        var args: std.ArrayList(Node.Index) = .empty;
-        for (params) |param| try args.append(g.l.scratch, try g.id(param));
-        const desc = try g.id(try g.own("description"));
-        const described = if (params.len == 0) desc else try g.call(desc, args.items);
         if (g.l.in.schema_library) {
-            const fn_params: []const NameIndex = if (params.len == 0) &.{try g.fresh("$u")} else params;
-            try g.constDecl(out, try g.own("schema"), try g.arrowOf(fn_params, described));
+            const boxed = try g.call(try g.core("box"), &.{try g.described(params)});
+            if (params.len == 0) {
+                const constant = try g.own("declared");
+                try g.constDecl(out, constant, boxed);
+                try g.constDecl(out, try g.own("schema"), try g.arrowOf(&.{try g.fresh("$u")}, try g.id(constant)));
+            } else {
+                try g.constDecl(out, try g.own("schema"), try g.arrowOf(params, boxed));
+            }
             return;
         }
-        var slots: [4]Node.Index = undefined;
-        slots[0] = if (g.l.liveSchema(g.ref, .description)) try g.arrowOf(&.{}, described) else try g.lit(.null_lit);
-        for ([_]Dir{ .read, .write }, slots[1..3]) |dir, *slot| {
-            if (!g.l.liveSchema(g.ref, if (dir == .read) .read else .write)) {
+        // `declared`'s arguments: the description, the `parse` and `print`
+        // workers, the arguments, then an array of the other four
+        // operations' workers, its trailing `null`s left out, or no array
+        // when it would hold none.
+        var slots: [8]Node.Index = undefined;
+        slots[0] = if (g.l.liveSchema(g.ref, .description)) try g.arrowOf(&.{}, try g.described(params)) else try g.lit(.null_lit);
+        const positions = [_]struct { Op, usize }{ .{ .parse, 1 }, .{ .print, 2 }, .{ .decode, 4 }, .{ .encode, 5 }, .{ .read, 6 }, .{ .write, 7 } };
+        var used: usize = 4;
+        for (positions) |pick| {
+            const op, const at = pick;
+            const slot = &slots[at];
+            if (!g.l.liveSchema(g.ref, Member.worker(op))) {
                 slot.* = try g.lit(.null_lit);
                 continue;
             }
-            const worker = try g.id(try g.own(@tagName(dir)));
+            used = @max(used, at + 1);
+            // A derived codec's `decode` and `encode` are its `read` and
+            // `write` workers on a context whose Encoded end is a host
+            // value (`hostWorker`, schema.md §12.10).
+            const aliased = g.sg.hostAliased(g.ref, Member.worker(op));
+            const runs: Op = if (aliased) |m| m.op().? else op;
+            const worker = try g.id(try g.own(runs.workerSuffix()));
             if (params.len == 0) {
-                slot.* = worker;
+                slot.* = if (aliased != null) try g.call(try g.core("hostWorker"), &.{worker}) else worker;
                 continue;
             }
             // `((r0, …) => (c, d, p, k, n, v) => worker(c, d, p, k, n, v, r0, …))(readSlot(s0), …)`:
@@ -472,13 +541,14 @@ const Gen = struct {
             var made: std.ArrayList(Node.Index) = .empty;
             for (bound, params) |*b, param| {
                 b.* = try g.fresh("$w");
-                try made.append(g.l.scratch, try g.call(try g.core(if (dir == .read) "readSlot" else "writeSlot"), &.{try g.id(param)}));
+                try made.append(g.l.scratch, try g.call(try g.core(runs.slot()), &.{try g.id(param)}));
             }
             const ps = try g.freshParams();
             var call_args: std.ArrayList(Node.Index) = .empty;
             for (ps.list()) |p| try call_args.append(g.l.scratch, try g.id(p));
             for (bound) |b| try call_args.append(g.l.scratch, try g.id(b));
-            const inner = try g.arrowOf(&ps.list(), try g.call(worker, call_args.items));
+            var inner = try g.arrowOf(&ps.list(), try g.call(worker, call_args.items));
+            if (aliased != null) inner = try g.call(try g.core("hostWorker"), &.{inner});
             slot.* = try g.call(try g.arrowOf(bound, inner), made.items);
         }
         // The arguments the value reaches, in the order it meets them
@@ -487,7 +557,12 @@ const Gen = struct {
         var checked: std.ArrayList(Node.Index) = .empty;
         for (reached) |i| try checked.append(g.l.scratch, try g.id(params[i]));
         slots[3] = if (params.len == 0) try g.lit(.null_lit) else try g.l.arrayNode(checked.items, g.p);
-        const value = try g.call(try g.core("declared"), &slots);
+        // Every argument is written, `null` included: the release optimiser
+        // drops a parameter only when every call passes the same constant.
+        var call_args: [5]Node.Index = undefined;
+        @memcpy(call_args[0..4], slots[0..4]);
+        call_args[4] = if (used > 4) try g.l.arrayNode(slots[4..used], g.p) else try g.lit(.null_lit);
+        const value = try g.call(try g.core("declared"), &call_args);
         if (params.len == 0) {
             const constant = try g.own("declared");
             try g.constDecl(out, constant, value);
@@ -497,12 +572,24 @@ const Gen = struct {
         }
     }
 
-    /// A node's description: an expression that builds it. `self` is the
-    /// definition's own schema inside its `Schema.recursive`.
+    /// The value's description, `$$description`, or for a generic
+    /// declaration `$$description` of each schema argument's node.
+    fn described(g: *Gen, params: []const NameIndex) !Node.Index {
+        const desc = try g.id(try g.own("description"));
+        if (params.len == 0) return desc;
+        var args: std.ArrayList(Node.Index) = .empty;
+        for (params) |param| try args.append(g.l.scratch, try g.call(try g.core("describedOf"), &.{try g.id(param)}));
+        return g.call(desc, args.items);
+    }
+
+    /// A node's description: an expression that makes its node. `self` is
+    /// the definition's own reference inside its `describedRecursive`, and
+    /// a generic declaration's parameters are nodes — its root turns each
+    /// schema argument into its node (`describedOf`).
     fn descNode(g: *Gen, n: PNode, params: []const NameIndex, self: ?NameIndex) Allocator.Error!Node.Index {
         const plan = g.plan;
         switch (SchemaGraph.tag(plan, n)) {
-            .primitive => return g.core(primitiveBuilder(SchemaGraph.lhs(plan, n))),
+            .primitive => return g.call(try g.core("describedOf"), &.{try g.core(primitiveBuilder(SchemaGraph.lhs(plan, n)))}),
             .parameter => {
                 const i = SchemaGraph.lhs(plan, n);
                 if (i >= params.len) return g.lit(.undefined_lit);
@@ -518,39 +605,134 @@ const Gen = struct {
                 if (g.sg.paramCount(t) == 0) return named;
                 return g.call(named, args.items);
             },
-            .list => return g.call(try g.core("list"), &.{try g.descNode(@fromBackingInt(@intCast(SchemaGraph.lhs(plan, n))), params, self)}),
-            .nullable => return g.call(try g.core("nullable"), &.{try g.descNode(@fromBackingInt(@intCast(SchemaGraph.lhs(plan, n))), params, self)}),
+            .list => return g.call(try g.core("describedList"), &.{try g.descNode(@fromBackingInt(@intCast(SchemaGraph.lhs(plan, n))), params, self)}),
+            .nullable => return g.call(try g.core("describedNullable"), &.{try g.descNode(@fromBackingInt(@intCast(SchemaGraph.lhs(plan, n))), params, self)}),
             .conversion => {
                 const source = try g.descNode(@fromBackingInt(@intCast(SchemaGraph.lhs(plan, n))), params, self);
-                return g.call(try g.core("converted"), &.{ source, try g.id(try g.viaName(SchemaGraph.rhs(plan, n))) });
+                return g.call(try g.core("describedConverted"), &.{ source, try g.id(try g.viaName(SchemaGraph.rhs(plan, n))) });
             },
             .check, .annotation => return g.descNode(@fromBackingInt(@intCast(SchemaGraph.lhs(plan, n))), params, self),
             .record => return g.descRecord(n, params, self),
             .tagged => return g.descTagged(n, params, self),
+            // A derived codec's (schema.md §12.10).
+            .codec_ref => {
+                const t = g.sg.codecTarget(g.ref.module, SchemaGraph.lhs(plan, n));
+                const words = SchemaGraph.args(plan, n);
+                if (self) |s| if (t.module == g.ref.module and t.decl == g.ref.decl and isIdentity(plan, words, params.len)) return g.id(s);
+                var args: std.ArrayList(Node.Index) = .empty;
+                for (words) |a| try args.append(g.l.scratch, try g.descNode(@fromBackingInt(@intCast(a)), params, self));
+                const named = try g.id(try schemaName(g.l, t, "description"));
+                if (g.sg.paramCount(t) == 0) return named;
+                return g.call(named, args.items);
+            },
+            .codec_value => return g.call(try g.core("describedOf"), &.{try g.codecValue(n)}),
+            .maybe => return g.call(try g.core("describedMaybe"), &.{
+                try g.descNode(@fromBackingInt(@intCast(SchemaGraph.lhs(plan, n))), params, self),
+                try g.num(SchemaGraph.rhs(plan, n)),
+            }),
+            .tuple => {
+                const elems = SchemaGraph.elements(plan, n);
+                var items: std.ArrayList(Node.Index) = .empty;
+                for (elems) |e| try items.append(g.l.scratch, try g.descNode(@fromBackingInt(@intCast(e)), params, self));
+                const xs = try g.fresh("$xs");
+                var values: std.ArrayList(Node.Index) = .empty;
+                for (0..elems.len) |i| try values.append(g.l.scratch, try g.indexOf(try g.id(xs), try g.num(@intCast(i))));
+                const there = try g.arrowOf(&.{xs}, try g.tupleValue(values.items));
+                const t = try g.fresh("$t");
+                var parts: std.ArrayList(Node.Index) = .empty;
+                for (0..elems.len) |i| try parts.append(g.l.scratch, try g.l.member(try g.id(t), try g.l.slotName(@intCast(i)), g.p));
+                const back = try g.arrowOf(&.{t}, try g.l.arrayNode(parts.items, g.p));
+                return g.call(try g.core("describedTuple"), &.{ try g.l.arrayNode(items.items, g.p), there, back });
+            },
+            .constructors => return g.descCtors(n, params, self),
         }
     }
 
-    /// `Schema.record (fields |> field … |> key …) mapping mapping`, the
-    /// mapping between the left-nested product and the record written out.
+    /// A tuple of `values`: `⊤`'s `null` for none, else §4's object of
+    /// positional slots.
+    fn tupleValue(g: *Gen, values: []const Node.Index) !Node.Index {
+        if (values.len == 0) return g.lit(.null_lit);
+        var properties: std.ArrayList(Node.Index) = .empty;
+        for (values, 0..) |v, i| try properties.append(g.l.scratch, try g.l.property(try g.l.slotName(@intCast(i)), v, g.p));
+        return g.l.object(properties.items, g.p);
+    }
+
+    /// A `codec_value` node: its type's module's `codec`, applied to `⊤`.
+    fn codecValue(g: *Gen, n: PNode) !Node.Index {
+        const target = g.plan.value_targets[SchemaGraph.lhs(g.plan, n)];
+        const callee = try g.l.valueNamed(target.package, SchemaGraph.symbol(g.plan, target.module), SchemaGraph.symbol(g.plan, target.name), g.p);
+        return g.call(callee, &.{try g.lit(.null_lit)});
+    }
+
+    /// A derived custom type's constructor: its representation (§4) and
+    /// how it is named and built.
+    fn codecCtor(g: *Gen, n: PNode, c: u32) !?Lowerer.CodecCtor {
+        const target = g.plan.type_targets[SchemaGraph.lhs(g.plan, n)];
+        return g.l.codecCtor(target.package, SchemaGraph.symbol(g.plan, target.module), SchemaGraph.symbol(g.plan, target.name), g.plan.codec_ctors[c].order);
+    }
+
+    /// `describedConstructors([[name, [nodes], inject, project], …])`.
+    fn descCtors(g: *Gen, n: PNode, params: []const NameIndex, self: ?NameIndex) Allocator.Error!Node.Index {
+        const plan = g.plan;
+        var rows: std.ArrayList(Node.Index) = .empty;
+        for (SchemaGraph.ctors(plan, n)) |c| {
+            const cc = (try g.codecCtor(n, c)) orelse continue;
+            const arg_nodes = SchemaGraph.ctorArgs(plan, c);
+            var descs: std.ArrayList(Node.Index) = .empty;
+            for (arg_nodes) |a| try descs.append(g.l.scratch, try g.descNode(@fromBackingInt(@intCast(a)), params, self));
+            const xs = try g.fresh("$xs");
+            var built: std.ArrayList(Node.Index) = .empty;
+            for (0..arg_nodes.len) |i| try built.append(g.l.scratch, try g.indexOf(try g.id(xs), try g.num(@intCast(i))));
+            const inject = try g.arrowOf(&.{xs}, try g.l.codecCtorValue(cc, built.items, g.p));
+            const v = try g.fresh("$v");
+            var read: std.ArrayList(Node.Index) = .empty;
+            for (0..arg_nodes.len) |i| try read.append(g.l.scratch, try g.l.codecCtorArg(cc, try g.id(v), @intCast(i), g.p));
+            const taken = try g.l.arrayNode(read.items, g.p);
+            const project = try g.arrowOf(&.{v}, if (try g.l.codecCtorTest(cc, try g.id(v), g.p)) |t|
+                try g.l.condOf(t, taken, try g.lit(.null_lit), g.p)
+            else
+                taken);
+            try rows.append(g.l.scratch, try g.l.arrayNode(&.{
+                try g.str(g.l.text(SchemaGraph.symbol(plan, plan.codec_ctors[c].name))),
+                try g.l.arrayNode(descs.items, g.p),
+                inject,
+                project,
+            }, g.p));
+        }
+        return g.call(try g.core("describedConstructors"), &.{try g.l.arrayNode(rows.items, g.p)});
+    }
+
+    /// `describedRecord([describedField(name, key, optional, node), …], to,
+    /// from)`: the mapping between the left-nested product and the record
+    /// written out once, for both endpoints.
     fn descRecord(g: *Gen, n: PNode, params: []const NameIndex, self: ?NameIndex) Allocator.Error!Node.Index {
         const fields = SchemaGraph.fields(g.plan, n);
-        var fs = try g.core("fields");
+        var fs: std.ArrayList(Node.Index) = .empty;
         for (fields) |f| {
             const name = SchemaGraph.symbol(g.plan, f.name);
+            // A derived record's `Maybe` field (schema.md §12.4): its key
+            // absent is `Nothing`, and its node the `maybe`'s inner one.
+            if (SchemaGraph.isMaybeField(g.plan, f)) {
+                const inner = try g.descNode(@fromBackingInt(@intCast(SchemaGraph.lhs(g.plan, f.child))), params, self);
+                try fs.append(g.l.scratch, try g.call(try g.core("describedMaybeField"), &.{ try g.str(g.l.text(name)), inner, try g.num(SchemaGraph.rhs(g.plan, f.child)) }));
+                continue;
+            }
             const child = try g.descNode(f.child, params, self);
-            fs = try g.call(try g.core(if (f.optional) "optional" else "field"), &.{ fs, try g.str(g.l.text(name)), child });
-            const external = SchemaGraph.literal(g.plan, f.external);
-            if (!std.mem.eql(u8, external, g.l.text(name))) fs = try g.call(try g.core("key"), &.{ fs, try g.str(external) });
+            try fs.append(g.l.scratch, try g.call(try g.core("describedField"), &.{
+                try g.str(g.l.text(name)),
+                try g.str(SchemaGraph.literal(g.plan, f.external)),
+                try g.lit(if (f.optional) .true_lit else .false_lit),
+                child,
+            }));
         }
-        const encoded = try g.mapping(fields);
-        const typed = try g.mapping(fields);
-        return g.call(try g.core("record"), &.{ fs, encoded, typed });
+        const to, const from = try g.mapping(fields);
+        return g.call(try g.core("describedRecord"), &.{ try g.l.arrayNode(fs.items, g.p), to, from });
     }
 
-    /// `Schema.mapping to from` for a record whose fields are `fields`:
-    /// `( ( ( (), a ), b ), c )` — `{a: {a: {a: null, b: a}, b: b}, b: c}` —
-    /// to `{a, b, c}` and back.
-    fn mapping(g: *Gen, fields: []const SchemaPlan.Field) !Node.Index {
+    /// The two functions of a record's mapping, for a record whose fields
+    /// are `fields`: `( ( ( (), a ), b ), c )` — `{a: {a: {a: null, b: a},
+    /// b: b}, b: c}` — to `{a, b, c}`, and back.
+    fn mapping(g: *Gen, fields: []const SchemaPlan.Field) !struct { Node.Index, Node.Index } {
         const product = try g.fresh("$p");
         const names = try g.l.scratch.alloc(Symbol, fields.len);
         for (fields, names) |f, *slot| slot.* = SchemaGraph.symbol(g.plan, f.name);
@@ -573,7 +755,7 @@ const Gen = struct {
             }, g.p);
         }
         const from = try g.arrowOf(&.{r}, acc);
-        return g.call(try g.core("mapping"), &.{ to, from });
+        return .{ to, from };
     }
 
     /// A beni record of `names` and `values`, keys in the canonical order.
@@ -584,7 +766,8 @@ const Gen = struct {
         return g.l.object(properties.items, g.p);
     }
 
-    /// `Schema.tagged "key" [ variant …, nullary … ]`.
+    /// `describedTagged("key", [describedVariant(name, tag, payload,
+    /// inject, project), …])`, a nullary variant's payload `null`.
     fn descTagged(g: *Gen, n: PNode, params: []const NameIndex, self: ?NameIndex) Allocator.Error!Node.Index {
         const plan = g.plan;
         const discriminator = SchemaGraph.literal(plan, @fromBackingInt(@intCast(SchemaGraph.lhs(plan, n))));
@@ -595,25 +778,17 @@ const Gen = struct {
             const v = plan.variants[vi];
             const name = SchemaGraph.symbol(plan, v.name);
             const tag_text = SchemaGraph.literal(plan, v.external);
-            if (v.payload.unwrap()) |payload| {
-                const record_desc = try g.descNode(payload, params, self);
-                variants.append(g.l.scratch, try g.call(try g.core("variant"), &.{
-                    try g.str(g.l.text(name)),
-                    try g.str(tag_text),
-                    record_desc,
-                    try g.injection(info, @intCast(order), name, true),
-                    try g.injection(info, @intCast(order), name, true),
-                })) catch return error.OutOfMemory;
-            } else {
-                try variants.append(g.l.scratch, try g.call(try g.core("nullary"), &.{
-                    try g.str(g.l.text(name)),
-                    try g.str(tag_text),
-                    try g.injection(info, @intCast(order), name, false),
-                    try g.injection(info, @intCast(order), name, false),
-                }));
-            }
+            const payload = if (v.payload.unwrap()) |p| try g.descNode(p, params, self) else try g.lit(.null_lit);
+            const inject, const project = try g.injection(info, @intCast(order), name, v.payload != .none);
+            try variants.append(g.l.scratch, try g.call(try g.core("describedVariant"), &.{
+                try g.str(g.l.text(name)),
+                try g.str(tag_text),
+                payload,
+                inject,
+                project,
+            }));
         }
-        return g.call(try g.core("tagged"), &.{ try g.str(discriminator), try g.l.arrayNode(variants.items, g.p) });
+        return g.call(try g.core("describedTagged"), &.{ try g.str(discriminator), try g.l.arrayNode(variants.items, g.p) });
     }
 
     /// Whether any variant of the union has a payload: §4's padded object
@@ -663,8 +838,9 @@ const Gen = struct {
         return g.bin(.strict_eq, subject, try g.str(g.l.text(name)));
     }
 
-    /// `Schema.injection inject project` for one variant.
-    fn injection(g: *Gen, info: Variants, order: u32, name: Symbol, payload: bool) !Node.Index {
+    /// A variant's injection, `inject` and `project`, which both endpoints
+    /// share.
+    fn injection(g: *Gen, info: Variants, order: u32, name: Symbol, payload: bool) !struct { Node.Index, Node.Index } {
         const x = try g.fresh("$x");
         const inject = if (payload)
             try g.arrowOf(&.{x}, try g.variantValue(info, order, name, try g.id(x)))
@@ -681,17 +857,19 @@ const Gen = struct {
             try g.coreCtor("Maybe", "Nothing", &.{}),
             g.p,
         ));
-        return g.call(try g.core("injection"), &.{ inject, project });
+        return .{ inject, project };
     }
 
     // ---- The directions ---------------------------------------------------
 
-    /// One direction's worker, its node workers and its two root wrappers;
-    /// or, under `--schema-library`, the two wrappers over the description.
-    fn direction(g: *Gen, out: *Stmts, dir: Dir) !void {
-        const root_suffix, const with_suffix = switch (dir) {
-            .read => .{ "parse", "parseWith" },
-            .write => .{ "print", "printWith" },
+    /// The two root wrappers of `parse` (`S.parse`, `S.parseWith`) or of
+    /// `print`, over the operation's worker; or, under `--schema-library`,
+    /// over the description.
+    fn wrappers(g: *Gen, out: *Stmts, op: Op) !void {
+        const root_suffix, const with_suffix = switch (op) {
+            .parse => .{ "parse", "parseWith" },
+            .print => .{ "print", "printWith" },
+            else => unreachable,
         };
         const params = try g.l.scratch.alloc(NameIndex, g.params);
         for (params, 0..) |*slot, i| slot.* = try g.paramName(@intCast(i));
@@ -705,15 +883,15 @@ const Gen = struct {
         try with_params.append(g.l.scratch, input);
         const with_body = if (g.l.in.schema_library) blk: {
             // The whole root through the interpreter (`schema.md` §10's
-            // forced library path).
+            // forced library path): `S.schema`, which is the boxed
+            // description there.
             var args: std.ArrayList(Node.Index) = .empty;
             for (params) |param| try args.append(g.l.scratch, try g.id(param));
-            const d = try g.id(try g.own("description"));
-            const s = if (params.len == 0) d else try g.call(d, args.items);
+            if (params.len == 0) try args.append(g.l.scratch, try g.lit(.null_lit));
+            const s = try g.call(try g.id(try g.own("schema")), args.items);
             break :blk try g.call(try g.core(with_suffix), &.{ s, try g.id(options), try g.id(input) });
         } else blk: {
-            try g.workers(out, dir);
-            const worker_name = try g.own(@tagName(dir));
+            const worker_name = try g.own(op.workerSuffix());
             // The arguments the value reaches, in the order it meets them
             // (`compiledProblem`).
             const reached = try g.sg.reachedParams(g.l.scratch, g.ref);
@@ -723,10 +901,10 @@ const Gen = struct {
                 const ps = try g.freshParams();
                 var args: std.ArrayList(Node.Index) = .empty;
                 for (ps.list()) |n| try args.append(g.l.scratch, try g.id(n));
-                for (params) |param| try args.append(g.l.scratch, try g.call(try g.core(if (dir == .read) "readSlot" else "writeSlot"), &.{try g.id(param)}));
+                for (params) |param| try args.append(g.l.scratch, try g.call(try g.core(op.slot()), &.{try g.id(param)}));
                 break :wrapped try g.arrowOf(&ps.list(), try g.call(try g.id(worker_name), args.items));
             };
-            break :blk try g.call(try g.core(if (dir == .read) "compiledParse" else "compiledPrint"), &.{
+            break :blk try g.call(try g.core(if (op == .parse) "compiledParse" else "compiledPrint"), &.{
                 try g.id(options),
                 if (params.len == 0) try g.lit(.null_lit) else try g.l.arrayNode(checked.items, g.p),
                 worker,
@@ -791,10 +969,10 @@ const Gen = struct {
         return slots;
     }
 
-    /// Every worker of one direction: the definition's own and one per
+    /// Every worker of one operation: the definition's own and one per
     /// record, list and tagged node of its value and per argument of a
     /// generic reference.
-    fn workers(g: *Gen, out: *Stmts, dir: Dir) !void {
+    fn workers(g: *Gen, out: *Stmts, op: Op) !void {
         var nodes: std.ArrayList(PNode) = .empty;
         try SchemaGraph.subtree(g.plan, g.l.scratch, g.def.root, &nodes);
         // A tagged node's payload records are written into its own worker.
@@ -806,11 +984,11 @@ const Gen = struct {
                 if (g.plan.variants[vi].payload.unwrap()) |payload| try payloads.append(g.l.scratch, payload);
             }
         }
-        try g.emitWorker(out, dir, g.def.root, try g.own(@tagName(dir)));
+        try g.emitWorker(out, op, g.def.root, try g.own(op.workerSuffix()));
         for (nodes.items) |n| {
             if (n == g.def.root) continue;
             if (!g.needsWorker(n, payloads.items)) continue;
-            try g.emitWorker(out, dir, n, try g.nodeWorkerName(dir, n));
+            try g.emitWorker(out, op, n, try g.nodeWorkerName(op, n));
         }
     }
 
@@ -841,18 +1019,20 @@ const Gen = struct {
     }
 
     /// The worker `name` for node `n`.
-    fn emitWorker(g: *Gen, out: *Stmts, dir: Dir, n: PNode, name: NameIndex) !void {
+    fn emitWorker(g: *Gen, out: *Stmts, op: Op, n: PNode, name: NameIndex) !void {
         const ps = try g.workerParams();
         const slots = try g.slotNames();
         var params: std.ArrayList(NameIndex) = .empty;
         try params.appendSlice(g.l.scratch, &ps.list());
         try params.appendSlice(g.l.scratch, slots);
-        var w: Fn = .{ .g = g, .dir = dir, .ps = ps, .slots = slots, .c = ps.c };
+        var w: Fn = .{ .g = g, .op = op, .ps = ps, .slots = slots, .c = ps.c };
         var body: Stmts = .empty;
         switch (SchemaGraph.tag(g.plan, n)) {
             .record => try w.recordWorker(&body, n),
             .list => try w.listWorker(&body, n),
             .tagged => try w.taggedWorker(&body, n),
+            .tuple => try w.tupleWorker(&body, n),
+            .constructors => try w.ctorsWorker(&body, n),
             else => {
                 const r = try g.fresh("$r");
                 try g.letDecl(&body, r);
@@ -867,7 +1047,7 @@ const Gen = struct {
 /// A path segment, as the code that names it: none (the value is its
 /// parent's own position, the root), a literal key, or a name holding a
 /// key or an index.
-const Seg = union(enum) { none, text: []const u8, name: NameIndex };
+const Seg = union(enum) { none, text: []const u8, name: NameIndex, index: u32 };
 
 /// Where a value is: its parent's path — a name holding a path, or the
 /// worker's own value's path made from its three parameters — and the
@@ -883,7 +1063,7 @@ const At = struct {
 /// One worker being written.
 const Fn = struct {
     g: *Gen,
-    dir: Dir,
+    op: Op,
     ps: Gen.Params,
     slots: []const NameIndex,
     /// The context the code reads: the parameter, or below an encoding
@@ -906,6 +1086,7 @@ const Fn = struct {
             .none => w.g.lit(.null_lit),
             .text => |t| w.g.str(t),
             .name => |n| w.g.id(n),
+            .index => |i| w.g.num(i),
         };
     }
 
@@ -943,8 +1124,25 @@ const Fn = struct {
         });
     }
 
+    /// A failure with a literal message: the depth bound and a missing key
+    /// named as the input names it call their shared helper where the build
+    /// shares it (`SchemaShare`), and the rest `compiledFail` (`schema.md`
+    /// §6, *Validators shared across schemas*).
     fn failText(w: *Fn, at: At, code: Code, message: []const u8, input: Node.Index, written: bool) !Node.Index {
-        return w.fail(at, code, try w.g.str(message), input, written);
+        const g = w.g;
+        if (!written) {
+            const shared: ?SchemaShare.Helper = if (code == .depth_exceeded and std.mem.eql(u8, message, depth_message))
+                .deep
+            else if (code == .missing_key and at.k == .text and missingMessage(at.k.text, message))
+                .missing
+            else
+                null;
+            if (shared) |h| if (g.sg.share.on(h)) {
+                const path = try w.pathArgs(at);
+                return g.call(try g.core(h.coreName()), &.{ try g.id(w.c), path[0], path[1], path[2], input });
+            };
+        }
+        return w.fail(at, code, try g.str(message), input, written);
     }
 
     /// `c.fail`.
@@ -1003,11 +1201,134 @@ const Fn = struct {
     /// The statements that set `target` to node `n`'s answer for the value
     /// `x` at depth `d + offset` and place `at`: written in place for a
     /// primitive, a `nullable` and a `via`, a call for anything else.
+    /// `run` for one node on the operation's ends (`prim`, `NNullable`,
+    /// `NConverted`; the rest are calls).
     fn into(w: *Fn, out: *Stmts, n: PNode, x: NameIndex, offset: u32, at: At, target: NameIndex) Allocator.Error!void {
-        switch (w.dir) {
-            .read => try w.decodeInto(out, n, x, offset, at, target),
-            .write => try w.encodeInto(out, n, x, offset, at, target),
+        const g = w.g;
+        const plan = g.plan;
+        const child: PNode = @fromBackingInt(@intCast(SchemaGraph.lhs(plan, n)));
+        switch (SchemaGraph.tag(plan, n)) {
+            .primitive => if (w.op.hostIn())
+                try w.readPrimitive(out, SchemaGraph.lhs(plan, n), x, at, target)
+            else
+                try w.typedPrimitive(out, SchemaGraph.lhs(plan, n), x, offset, at, target),
+            .nullable => try w.nullable(out, child, x, offset, at, target),
+            .conversion => if (w.op.decoding()) {
+                // `NConverted`, decoding: the source, then `forward`.
+                const b = try g.fresh("$b");
+                try g.letDecl(out, b);
+                try w.into(out, child, x, offset, at, b);
+                const path = try w.pathArgs(at);
+                const forward = try g.call(try g.core("compiledForward"), &.{
+                    try g.id(w.c),
+                    path[0],
+                    path[1],
+                    path[2],
+                    try g.id(try g.viaName(SchemaGraph.rhs(plan, n))),
+                    try g.id(b),
+                });
+                const failed = try g.bin(.strict_eq, try g.id(b), try w.failMark());
+                try g.assign(out, target, try g.l.condOf(failed, try w.failMark(), forward, g.p));
+            } else {
+                // `NConverted`, encoding: `backward`, then the source below
+                // it, where a failure is in what is written.
+                const b = try g.fresh("$b");
+                const path = try w.pathArgs(at);
+                try g.constDecl(out, b, try g.call(try g.core("compiledBackward"), &.{
+                    try g.id(w.c),
+                    path[0],
+                    path[1],
+                    path[2],
+                    try g.id(try g.viaName(SchemaGraph.rhs(plan, n))),
+                    try g.id(x),
+                }));
+                var then: Stmts = .empty;
+                try g.assign(&then, target, try w.failMark());
+                var otherwise: Stmts = .empty;
+                const below = try g.fresh("$cv");
+                try g.constDecl(&otherwise, below, try g.call(try g.core("belowBackward"), &.{try g.id(w.c)}));
+                const outer = w.c;
+                w.c = below;
+                defer w.c = outer;
+                try w.into(&otherwise, child, b, offset, at, target);
+                try g.ifElse(out, try g.bin(.strict_eq, try g.id(b), try g.ctxField(outer, "fail")), then.items, otherwise.items);
+            },
+            .check, .annotation => try w.into(out, child, x, offset, at, target),
+            .maybe => try w.maybe(out, n, x, offset, at, target),
+            else => {
+                const callee, const extra = try w.calleeOf(n);
+                try w.callInto(out, callee, extra, x, offset, at, target);
+            },
         }
+    }
+
+    /// A derived `Maybe` (`NMaybe`, schema.md §12.4, §12.10), whose Encoded
+    /// end is a host value. Decoding: `null` is `Nothing` unless the inner
+    /// node reads it, anything else the inner node's answer in `Just`.
+    /// Encoding: `Nothing` writes `null`, `Just` its value — refused when
+    /// the inner node's is a `null` that would read back as `Nothing`.
+    fn maybe(w: *Fn, out: *Stmts, n: PNode, x: NameIndex, offset: u32, at: At, target: NameIndex) Allocator.Error!void {
+        const g = w.g;
+        const plan = g.plan;
+        const mode = SchemaGraph.rhs(plan, n);
+        const inner: PNode = @fromBackingInt(@intCast(SchemaGraph.lhs(plan, n)));
+        if (w.op.decoding()) {
+            var nothing: Stmts = .empty;
+            try g.assign(&nothing, target, try g.coreCtor("Maybe", "Nothing", &.{}));
+            var just: Stmts = .empty;
+            const y = try g.fresh("$y");
+            try g.letDecl(&just, y);
+            try w.into(&just, inner, x, offset, at, y);
+            const failed = try g.bin(.strict_eq, try g.id(y), try w.failMark());
+            try g.assign(&just, target, try g.l.condOf(failed, try w.failMark(), try g.coreCtor("Maybe", "Just", &.{try g.id(y)}), g.p));
+            if (mode & SchemaPlan.Maybe.reads_null != 0) {
+                try out.appendSlice(g.l.scratch, just.items);
+            } else {
+                try g.ifElse(out, try g.bin(.strict_eq, try g.id(x), try g.lit(.null_lit)), nothing.items, just.items);
+            }
+            return;
+        }
+        var then: Stmts = .empty;
+        try g.assign(&then, target, try g.lit(.null_lit));
+        var otherwise: Stmts = .empty;
+        const a = try g.fresh("$a");
+        try g.constDecl(&otherwise, a, try g.l.member(try g.id(x), try g.l.slotName(0), g.p));
+        try w.into(&otherwise, inner, a, offset, at, target);
+        if (mode & SchemaPlan.Maybe.refuse_null != 0) {
+            var refuse: Stmts = .empty;
+            try g.assign(&refuse, target, try w.failText(at, .invalid_value, "the value inside Just writes null, which reads back as Nothing", try g.id(a), true));
+            try g.ifElse(&otherwise, try g.bin(.strict_eq, try g.id(target), try g.lit(.null_lit)), refuse.items, &.{});
+        }
+        try g.ifElse(out, try g.coreCtorTest("Maybe", "Nothing", try g.id(x)), then.items, otherwise.items);
+    }
+
+    /// `NNullable`: `null` on a host input, `Null` on a typed one, is the
+    /// output's `null` or `Null`; anything else is the child's answer, in
+    /// `NonNull` when the output is typed.
+    fn nullable(w: *Fn, out: *Stmts, child: PNode, x: NameIndex, offset: u32, at: At, target: NameIndex) Allocator.Error!void {
+        const g = w.g;
+        const is_null = if (w.op.hostIn())
+            try g.bin(.strict_eq, try g.id(x), try g.lit(.null_lit))
+        else
+            try g.coreCtorTest("Schema", "Null", try g.id(x));
+        var then: Stmts = .empty;
+        try g.assign(&then, target, if (w.op.hostOut()) try g.lit(.null_lit) else try g.coreCtor("Schema", "Null", &.{}));
+        var otherwise: Stmts = .empty;
+        const inner = if (w.op.hostIn()) x else inner: {
+            const a = try g.fresh("$a");
+            try g.constDecl(&otherwise, a, try g.l.member(try g.id(x), try g.l.slotName(0), g.p));
+            break :inner a;
+        };
+        if (w.op.hostOut()) {
+            try w.into(&otherwise, child, inner, offset, at, target);
+        } else {
+            const y = try g.fresh("$y");
+            try g.letDecl(&otherwise, y);
+            try w.into(&otherwise, child, inner, offset, at, y);
+            const failed = try g.bin(.strict_eq, try g.id(y), try w.failMark());
+            try g.assign(&otherwise, target, try g.l.condOf(failed, try w.failMark(), try g.coreCtor("Schema", "NonNull", &.{try g.id(y)}), g.p));
+        }
+        try g.ifElse(out, is_null, then.items, otherwise.items);
     }
 
     /// A call of another worker: a record, list or tagged node of this
@@ -1034,15 +1355,30 @@ const Fn = struct {
             },
             .reference => {
                 const t = g.sg.target(g.ref.module, @fromBackingInt(@intCast(SchemaGraph.lhs(plan, n)))) orelse return .{ try g.lit(.undefined_lit), &.{} };
-                const callee = try g.id(try schemaName(g.l, t, @tagName(w.dir)));
+                const callee = try g.id(try schemaName(g.l, t, w.op.workerSuffix()));
                 var args: std.ArrayList(Node.Index) = .empty;
                 for (SchemaGraph.args(plan, n)) |a| try args.append(g.l.scratch, try w.slotFor(@fromBackingInt(@intCast(a))));
                 return .{ callee, args.items };
             },
+            // A derived codec's (schema.md §12.10): another definition's
+            // worker, as a declaration's reference calls one.
+            .codec_ref => {
+                const t = g.sg.codecTarget(g.ref.module, SchemaGraph.lhs(plan, n));
+                const callee = try g.id(try schemaName(g.l, t, w.op.workerSuffix()));
+                var args: std.ArrayList(Node.Index) = .empty;
+                for (SchemaGraph.args(plan, n)) |a| try args.append(g.l.scratch, try w.slotFor(@fromBackingInt(@intCast(a))));
+                return .{ callee, args.items };
+            },
+            // A module's `codec`, through its own workers, as a schema
+            // argument runs (`readSlot` …).
+            .codec_value => {
+                const slot = try g.call(try g.core(w.op.slot()), &.{try g.codecValue(n)});
+                return .{ slot, &.{} };
+            },
             else => {
                 var args: std.ArrayList(Node.Index) = .empty;
                 for (w.slots) |s| try args.append(g.l.scratch, try g.id(s));
-                return .{ try g.id(try g.nodeWorkerName(w.dir, n)), args.items };
+                return .{ try g.id(try g.nodeWorkerName(w.op, n)), args.items };
             },
         }
     }
@@ -1060,11 +1396,15 @@ const Fn = struct {
             },
             .reference => if (SchemaGraph.args(plan, n).len == 0) {
                 const t = g.sg.target(g.ref.module, @fromBackingInt(@intCast(SchemaGraph.lhs(plan, n)))) orelse return g.lit(.undefined_lit);
-                return g.id(try schemaName(g.l, t, @tagName(w.dir)));
+                return g.id(try schemaName(g.l, t, w.op.workerSuffix()));
             },
+            .codec_ref => if (SchemaGraph.args(plan, n).len == 0) {
+                return g.id(try schemaName(g.l, g.sg.codecTarget(g.ref.module, SchemaGraph.lhs(plan, n)), w.op.workerSuffix()));
+            },
+            .codec_value => return g.call(try g.core(w.op.slot()), &.{try g.codecValue(n)}),
             else => {},
         }
-        const worker = try g.id(try g.nodeWorkerName(w.dir, n));
+        const worker = try g.id(try g.nodeWorkerName(w.op, n));
         if (w.slots.len == 0) return worker;
         const ps = try g.freshParams();
         var args: std.ArrayList(Node.Index) = .empty;
@@ -1073,55 +1413,10 @@ const Fn = struct {
         return g.arrowOf(&ps.list(), try g.call(worker, args.items));
     }
 
-    // ---- Decoding (`parse`) -------------------------------------------------
+    // ---- A host input (`parse`, `read`) -----------------------------------------
 
-    /// `run` on the Encoded host value, for one node (`prim`, `NNullable`,
-    /// `NConverted`; the rest are calls).
-    fn decodeInto(w: *Fn, out: *Stmts, n: PNode, x: NameIndex, offset: u32, at: At, target: NameIndex) Allocator.Error!void {
-        const g = w.g;
-        const plan = g.plan;
-        switch (SchemaGraph.tag(plan, n)) {
-            .primitive => try w.decodePrimitive(out, SchemaGraph.lhs(plan, n), x, at, target),
-            .nullable => {
-                // `NNullable` on a host value: `null`, or the child's answer
-                // in `NonNull`.
-                var then: Stmts = .empty;
-                try g.assign(&then, target, try g.coreCtor("Schema", "Null", &.{}));
-                var otherwise: Stmts = .empty;
-                const y = try g.fresh("$y");
-                try g.letDecl(&otherwise, y);
-                try w.decodeInto(&otherwise, @fromBackingInt(@intCast(SchemaGraph.lhs(plan, n))), x, offset, at, y);
-                const failed = try g.bin(.strict_eq, try g.id(y), try w.failMark());
-                try g.assign(&otherwise, target, try g.l.condOf(failed, try w.failMark(), try g.coreCtor("Schema", "NonNull", &.{try g.id(y)}), g.p));
-                try g.ifElse(out, try g.bin(.strict_eq, try g.id(x), try g.lit(.null_lit)), then.items, otherwise.items);
-            },
-            .conversion => {
-                // `NConverted`, decoding: the source, then `forward`.
-                const b = try g.fresh("$b");
-                try g.letDecl(out, b);
-                try w.decodeInto(out, @fromBackingInt(@intCast(SchemaGraph.lhs(plan, n))), x, offset, at, b);
-                const path = try w.pathArgs(at);
-                const forward = try g.call(try g.core("compiledForward"), &.{
-                    try g.id(w.c),
-                    path[0],
-                    path[1],
-                    path[2],
-                    try g.id(try g.viaName(SchemaGraph.rhs(plan, n))),
-                    try g.id(b),
-                });
-                const failed = try g.bin(.strict_eq, try g.id(b), try w.failMark());
-                try g.assign(out, target, try g.l.condOf(failed, try w.failMark(), forward, g.p));
-            },
-            .check, .annotation => try w.decodeInto(out, @fromBackingInt(@intCast(SchemaGraph.lhs(plan, n))), x, offset, at, target),
-            else => {
-                const callee, const extra = try w.calleeOf(n);
-                try w.callInto(out, callee, extra, x, offset, at, target);
-            },
-        }
-    }
-
-    /// `prim` on a host value.
-    fn decodePrimitive(w: *Fn, out: *Stmts, kind: u32, x: NameIndex, at: At, target: NameIndex) !void {
+    /// `prim` on a host input, whose output is typed.
+    fn readPrimitive(w: *Fn, out: *Stmts, kind: u32, x: NameIndex, at: At, target: NameIndex) !void {
         const g = w.g;
         const typeof_x = try g.l.unary(.type_of, try g.id(x), g.p);
         switch (std.enums.fromInt(SchemaPlan.Primitive, kind) orelse .value) {
@@ -1138,6 +1433,16 @@ const Fn = struct {
             }, x, at, target, try g.id(x)),
             .null => try w.checks(out, &.{.{ .cond = try g.bin(.strict_ne, try g.id(x), try g.lit(.null_lit)), .code = .wrong_shape, .message = "expected null" }}, x, at, target, try g.coreCtor("Schema", "Null", &.{})),
             .value => try g.assign(out, target, try g.id(x)),
+            // A derived codec's (schema.md §12.10), as `prim` reads them.
+            .char => try w.checks(out, &.{
+                .{ .cond = try g.bin(.strict_ne, typeof_x, try g.str("string")), .code = .wrong_shape, .message = "expected a string" },
+                .{ .cond = try g.bin(.strict_ne, try g.prop(try g.globalCall("Array", "from", &.{try g.id(x)}), "length"), try g.num(1)), .code = .invalid_value, .message = "expected one character" },
+            }, x, at, target, try g.id(x)),
+            .int32 => try w.checks(out, &.{
+                .{ .cond = try g.bin(.strict_ne, typeof_x, try g.str("number")), .code = .wrong_shape, .message = "expected a number" },
+                .{ .cond = try g.bin(.strict_ne, try g.bin(.bit_or, try g.id(x), try g.num(0)), try g.id(x)), .code = .invalid_value, .message = "expected a 32-bit integer" },
+            }, x, at, target, try g.id(x)),
+            .never => try g.assign(out, target, try w.failText(at, .wrong_shape, "expected nothing: ⊥ has no value", try g.id(x), false)),
         }
     }
 
@@ -1166,7 +1471,7 @@ const Fn = struct {
     fn takesPath(plan: *const SchemaPlan, n: PNode) bool {
         return switch (SchemaGraph.tag(plan, n)) {
             .primitive => false,
-            .nullable, .check, .annotation => takesPath(plan, @fromBackingInt(@intCast(SchemaGraph.lhs(plan, n)))),
+            .nullable, .check, .annotation, .maybe => takesPath(plan, @fromBackingInt(@intCast(SchemaGraph.lhs(plan, n)))),
             else => true,
         };
     }
@@ -1174,7 +1479,7 @@ const Fn = struct {
     /// `run` on a record node, standalone (`NRecord` on a host value).
     fn recordWorker(w: *Fn, out: *Stmts, n: PNode) !void {
         const g = w.g;
-        if (w.dir == .read) {
+        if (w.op.hostIn()) {
             var then: Stmts = .empty;
             try g.ret(&then, try w.failText(w.ownAt(), .wrong_shape, "expected an object", try g.id(w.ps.v), false));
             try g.ifElse(out, try w.isObjectTest(try g.id(w.ps.v), try g.id(w.ps.v), try g.id(w.ps.v)), then.items, &.{});
@@ -1190,10 +1495,22 @@ const Fn = struct {
     const Owner = struct { discriminator: []const u8, variant: SchemaPlan.Variant, order: u32, info: Gen.Variants };
 
     fn recordBody(w: *Fn, out: *Stmts, n: PNode, v: NameIndex, offset: u32, owner: ?Owner) !void {
-        switch (w.dir) {
-            .read => try w.decodeRecord(out, n, v, offset, owner),
-            .write => try w.encodeRecord(out, n, v, offset, owner),
+        if (w.op.hostIn()) {
+            try w.decodeRecord(out, n, v, offset, owner);
+        } else {
+            try w.encodeRecord(out, n, v, offset, owner);
         }
+    }
+
+    /// Whether host object `v`'s own key `key` is read by testing what a
+    /// read of it answers against `undefined`: only an object `JSON.parse`
+    /// made (`parse`), whose objects inherit only `Object.prototype` and
+    /// hold no `undefined`, and only for a key `Object.prototype` does not
+    /// hold (§5, *Host values*). `read` takes a host value from anywhere,
+    /// which may inherit any key or own one that holds `undefined`, so it
+    /// tests each key with `Object.hasOwn`, as `fieldsFrom` does.
+    fn readsByValue(w: *const Fn, key: []const u8) bool {
+        return w.op.json() and !isPrototypeKey(key);
     }
 
     /// `recordOf` on a host object at depth `d + offset`: the unknown keys
@@ -1221,33 +1538,70 @@ const Fn = struct {
             const at = w.childAt(.{ .text = key }, .{ .text = name });
             const value = try g.fresh("$f");
             slot.* = value;
+            // A required primitive field of a JSON object, where the build
+            // shares its failure branch (`SchemaShare`): the key read and
+            // every test written here, as one condition, and one call that
+            // makes the issue of the test that failed — absent, past the
+            // depth bound, or not the primitive — made only when one did.
+            if (SchemaShare.fieldCall(g.sg.share, g.plan, w.op, f, key)) |h| {
+                const parent: [3]Node.Index = switch (at.parent) {
+                    .own => .{ try g.id(w.ps.pp), try g.id(w.ps.pk), try g.id(w.ps.pn) },
+                    .path => |here| .{ try g.id(here), try g.lit(.null_lit), try g.lit(.null_lit) },
+                };
+                const x = try g.fresh("$x");
+                try g.letDecl(out, value);
+                try g.constDecl(out, x, try g.indexOf(try g.id(v), try g.str(key)));
+                const typeof_x = try g.l.unary(.type_of, try g.id(x), g.p);
+                const wrong = switch (h) {
+                    .string => try g.bin(.strict_ne, typeof_x, try g.str("string")),
+                    .bool => try g.bin(.strict_ne, typeof_x, try g.str("boolean")),
+                    .float => try g.bin(.strict_ne, typeof_x, try g.str("number")),
+                    // `Number.isSafeInteger` and `Number.isFinite` answer
+                    // false for anything that is not a number.
+                    .int => try g.not(try g.globalCall("Number", "isSafeInteger", &.{try g.id(x)})),
+                    .finite => try g.not(try g.globalCall("Number", "isFinite", &.{try g.id(x)})),
+                    .deep, .missing => unreachable,
+                };
+                const absent_or_deep = try g.bin(.logical_or, try g.bin(.strict_eq, try g.id(x), try g.lit(.undefined_lit)), try g.id(deep));
+                var bad: Stmts = .empty;
+                try g.assign(&bad, value, try g.call(try g.core(h.coreName()), &.{
+                    try g.id(w.c), parent[0],   parent[1],      parent[2],
+                    try g.id(v),   try g.id(x), try g.str(key), try g.id(deep),
+                }));
+                var good: Stmts = .empty;
+                try g.assign(&good, value, try g.id(x));
+                try g.ifElse(out, try g.bin(.logical_or, absent_or_deep, wrong), bad.items, good.items);
+                try w.stopOnFailure(out, value);
+                continue;
+            }
             try g.letDecl(out, value);
-            // Present: read it one level down (`descend`). A key no object
-            // inherits is read once and tested against `undefined`: what a
-            // decoding worker reads is `JSON.parse`'s, whose objects inherit
-            // only `Object.prototype` and hold no `undefined`, so that IS the
-            // own-key test (§5, *Host values*); a key `Object.prototype` has
-            // is tested with `Object.hasOwn`.
-            const inherited = isPrototypeKey(key);
+            // Present: read it one level down (`descend`). The own-key test
+            // is `readsByValue`'s.
+            const inherited = !w.readsByValue(key);
             var present: Stmts = .empty;
             const x = try g.fresh("$x");
             if (inherited) try g.constDecl(&present, x, try g.indexOf(try g.id(v), try g.str(key)));
             var too_deep: Stmts = .empty;
             try g.assign(&too_deep, value, try w.failText(at, .depth_exceeded, "the depth limit is reached", try g.id(x), false));
             var descend: Stmts = .empty;
-            if (f.optional) {
+            // A derived record's `Maybe` field (schema.md §12.4): its
+            // `maybe` node's answer, and absent `Nothing`.
+            const lenient = SchemaGraph.isMaybeField(g.plan, f);
+            if (f.optional and !lenient) {
                 const y = try g.fresh("$y");
                 try g.letDecl(&descend, y);
-                try w.decodeInto(&descend, f.child, x, offset + 1, at, y);
+                try w.into(&descend, f.child, x, offset + 1, at, y);
                 const failed = try g.bin(.strict_eq, try g.id(y), try w.failMark());
                 try g.assign(&descend, value, try g.l.condOf(failed, try w.failMark(), try g.coreCtor("Schema", "Present", &.{try g.id(y)}), g.p));
             } else {
-                try w.decodeInto(&descend, f.child, x, offset + 1, at, value);
+                try w.into(&descend, f.child, x, offset + 1, at, value);
             }
             try g.ifElse(&present, try g.id(deep), too_deep.items, descend.items);
             // Absent: `Missing`, or the missing key.
             var absent: Stmts = .empty;
-            if (f.optional) {
+            if (lenient) {
+                try g.assign(&absent, value, try g.coreCtor("Maybe", "Nothing", &.{}));
+            } else if (f.optional) {
                 try g.assign(&absent, value, try g.coreCtor("Schema", "Missing", &.{}));
             } else {
                 const message = try std.fmt.allocPrint(g.l.scratch, "missing key \"{s}\"", .{key});
@@ -1314,13 +1668,15 @@ const Fn = struct {
         try g.ifElse(out, try g.ctxField(w.c, "reject"), reject.items, &.{});
     }
 
-    /// `listOf` on a host array: each element one level down, the output a
-    /// fresh array — or, for a list of a primitive with no conversion, the
-    /// array `JSON.parse` made itself (§6, *Lists are arrays*).
+    /// `listOf`: each element one level down, the output a fresh array —
+    /// or, under `parse`, for a list of a primitive with no conversion, the
+    /// array `JSON.parse` made itself (§6, *Lists are arrays*). An array
+    /// `read` was handed is never adopted: the host may still write it.
     fn listWorker(w: *Fn, out: *Stmts, n: PNode) !void {
-        switch (w.dir) {
-            .read => try w.decodeList(out, n),
-            .write => try w.encodeList(out, n),
+        if (w.op.hostIn()) {
+            try w.decodeList(out, n);
+        } else {
+            try w.encodeList(out, n);
         }
     }
 
@@ -1332,7 +1688,7 @@ const Fn = struct {
         try g.ret(&then, try w.failText(w.ownAt(), .wrong_shape, "expected an array", try g.id(v), false));
         try g.ifElse(out, try g.not(try g.globalCall("Array", "isArray", &.{try g.id(v)})), then.items, &.{});
         if (takesPath(g.plan, child)) try w.hereFor(out);
-        const adopt = adoptable(g.plan, child);
+        const adopt = w.op.json() and adoptable(g.plan, child);
         const before = try g.fresh("$before");
         try g.constDecl(out, before, try w.issueCount());
         const len = try g.fresh("$len");
@@ -1356,7 +1712,7 @@ const Fn = struct {
         var too_deep: Stmts = .empty;
         try g.assign(&too_deep, y, try w.failText(at, .depth_exceeded, "the depth limit is reached", try g.id(x), false));
         var descend: Stmts = .empty;
-        try w.decodeInto(&descend, child, x, 1, at, y);
+        try w.into(&descend, child, x, 1, at, y);
         try g.ifElse(&body, try g.id(deep), too_deep.items, descend.items);
         // `listItems`: a failure stops the list under `FirstError`.
         var failed: Stmts = .empty;
@@ -1375,9 +1731,10 @@ const Fn = struct {
     /// `run` on a tagged node: the discriminator, then the selected
     /// variant's payload (`variantOf`, `nullaryOf`).
     fn taggedWorker(w: *Fn, out: *Stmts, n: PNode) !void {
-        switch (w.dir) {
-            .read => try w.decodeTagged(out, n),
-            .write => try w.encodeTagged(out, n),
+        if (w.op.hostIn()) {
+            try w.decodeTagged(out, n);
+        } else {
+            try w.encodeTagged(out, n);
         }
     }
 
@@ -1405,7 +1762,7 @@ const Fn = struct {
         try g.ret(&missing, try w.failText(at_disc, .missing_key, missing_message, try g.id(v), false));
         // The own-key test as `decodeRecord` makes it.
         const tag = try g.fresh("$tag");
-        if (isPrototypeKey(discriminator)) {
+        if (!w.readsByValue(discriminator)) {
             try g.ifElse(out, try g.not(try g.globalCall("Object", "hasOwn", &.{ try g.id(v), try g.str(discriminator) })), missing.items, &.{});
             try g.constDecl(out, tag, try g.indexOf(try g.id(v), try g.str(discriminator)));
         } else {
@@ -1459,83 +1816,45 @@ const Fn = struct {
         try out.append(g.l.scratch, try g.l.add(.switch_stmt, g.p, discriminant.int(), @backingInt(record)));
     }
 
-    // ---- Encoding (`print`) ---------------------------------------------------
+    // ---- A typed input (`print`, `write`, `decode`, `encode`) ---------------
 
-    /// `run` on a Type value with a host output, for one node: the host
-    /// value the engine would write — `compiledPrint` turns the root's into
-    /// JSON text with one `JSON.stringify`, as `printWith` does.
-    fn encodeInto(w: *Fn, out: *Stmts, n: PNode, x: NameIndex, offset: u32, at: At, target: NameIndex) Allocator.Error!void {
+    /// `prim` on a typed input: the type has already proved the shape, so
+    /// only the refinements are tested — a safe integer, a finite number,
+    /// and for `print` a number JSON can hold and a `Value` within the
+    /// bound (`prim`'s `c.json && c.dh`). `Null` is written `null` to a
+    /// host output and stays `Null` in a typed one.
+    fn typedPrimitive(w: *Fn, out: *Stmts, kind: u32, x: NameIndex, offset: u32, at: At, target: NameIndex) !void {
         const g = w.g;
-        const plan = g.plan;
-        switch (SchemaGraph.tag(plan, n)) {
-            .primitive => try w.encodePrimitive(out, SchemaGraph.lhs(plan, n), x, offset, at, target),
-            .nullable => {
-                var then: Stmts = .empty;
-                try g.assign(&then, target, try g.lit(.null_lit));
-                var otherwise: Stmts = .empty;
-                const a = try g.fresh("$a");
-                try g.constDecl(&otherwise, a, try g.l.member(try g.id(x), try g.l.slotName(0), g.p));
-                try w.encodeInto(&otherwise, @fromBackingInt(@intCast(SchemaGraph.lhs(plan, n))), a, offset, at, target);
-                try g.ifElse(out, try g.coreCtorTest("Schema", "Null", try g.id(x)), then.items, otherwise.items);
-            },
-            .conversion => {
-                // `NConverted`, encoding: `backward`, then the source below
-                // it, where a failure is in what is written.
-                const b = try g.fresh("$b");
-                const path = try w.pathArgs(at);
-                try g.constDecl(out, b, try g.call(try g.core("compiledBackward"), &.{
-                    try g.id(w.c),
-                    path[0],
-                    path[1],
-                    path[2],
-                    try g.id(try g.viaName(SchemaGraph.rhs(plan, n))),
-                    try g.id(x),
-                }));
-                var then: Stmts = .empty;
-                try g.assign(&then, target, try w.failMark());
-                var otherwise: Stmts = .empty;
-                const below = try g.fresh("$cv");
-                try g.constDecl(&otherwise, below, try g.call(try g.core("belowBackward"), &.{try g.id(w.c)}));
-                const outer = w.c;
-                w.c = below;
-                defer w.c = outer;
-                try w.encodeInto(&otherwise, @fromBackingInt(@intCast(SchemaGraph.lhs(plan, n))), b, offset, at, target);
-                try g.ifElse(out, try g.bin(.strict_eq, try g.id(b), try g.ctxField(outer, "fail")), then.items, otherwise.items);
-            },
-            .check, .annotation => try w.encodeInto(out, @fromBackingInt(@intCast(SchemaGraph.lhs(plan, n))), x, offset, at, target),
-            else => {
-                const callee, const extra = try w.calleeOf(n);
-                try w.callInto(out, callee, extra, x, offset, at, target);
-            },
-        }
-    }
-
-    /// `prim` on a Type value: the type has already proved the shape, so
-    /// only the refinements are tested — a safe integer, a finite number, a
-    /// number JSON can hold, a `Value` within the bound.
-    fn encodePrimitive(w: *Fn, out: *Stmts, kind: u32, x: NameIndex, offset: u32, at: At, target: NameIndex) !void {
-        const g = w.g;
+        const json_out = w.op.json() and w.op.hostOut();
         switch (std.enums.fromInt(SchemaPlan.Primitive, kind) orelse .value) {
             .string, .bool => try g.assign(out, target, try g.id(x)),
             .int => try w.checks(out, &.{.{ .cond = try g.not(try g.globalCall("Number", "isSafeInteger", &.{try g.id(x)})), .code = .invalid_value, .message = "expected a safe integer" }}, x, at, target, try g.id(x)),
-            .float => try w.checks(out, &.{.{ .cond = try g.not(try g.globalCall("Number", "isFinite", &.{try g.id(x)})), .code = .print_failed, .message = "JSON has no number for NaN or an infinity", .written = true }}, x, at, target, try g.id(x)),
+            .float => if (json_out)
+                try w.checks(out, &.{.{ .cond = try g.not(try g.globalCall("Number", "isFinite", &.{try g.id(x)})), .code = .print_failed, .message = "JSON has no number for NaN or an infinity", .written = true }}, x, at, target, try g.id(x))
+            else
+                try g.assign(out, target, try g.id(x)),
             .finite_float => try w.checks(out, &.{.{ .cond = try g.not(try g.globalCall("Number", "isFinite", &.{try g.id(x)})), .code = .invalid_value, .message = "expected a finite number" }}, x, at, target, try g.id(x)),
-            .null => try g.assign(out, target, try g.lit(.null_lit)),
-            .value => {
+            .null => try g.assign(out, target, if (w.op.hostOut()) try g.lit(.null_lit) else try g.coreCtor("Schema", "Null", &.{})),
+            .value => if (json_out) {
                 const r = try g.fresh("$printable");
                 try g.constDecl(out, r, try g.call(try g.core("printableWithin"), &.{ try g.id(w.c), try w.depth(offset), try g.id(x) }));
                 try w.checks(out, &.{
                     .{ .cond = try g.bin(.strict_eq, try g.id(r), try g.num(1)), .code = .depth_exceeded, .message = "the value nests deeper than the depth limit", .written = true },
                     .{ .cond = try g.bin(.strict_eq, try g.id(r), try g.num(2)), .code = .print_failed, .message = "the value holds NaN or an infinity, which JSON has no number for", .written = true },
                 }, x, at, target, try g.id(x));
-            },
+            } else try g.assign(out, target, try g.id(x)),
+            // A well-typed `Char` is one character and an `Int32` a 32-bit
+            // integer, so `prim`'s tests always hold.
+            .char, .int32 => try g.assign(out, target, try g.id(x)),
+            .never => try g.assign(out, target, try w.failText(at, .wrong_shape, "expected nothing: ⊥ has no value", try g.id(x), false)),
         }
     }
 
-    /// `recordOf` on a Type record at depth `d + offset`: each field in
-    /// declaration order, then the host object — keys in field order, a
-    /// variant's discriminator first (`newObject`), a `Missing` field left
-    /// out.
+    /// `recordOf` on a typed record at depth `d + offset`: each field in
+    /// declaration order, then the output — a host object, keys in field
+    /// order, a variant's discriminator first (`newObject`), a `Missing`
+    /// field left out; or a typed record, in its variant's constructor for
+    /// a payload.
     fn encodeRecord(w: *Fn, out: *Stmts, n: PNode, v: NameIndex, offset: u32, owner: ?Owner) !void {
         const g = w.g;
         const fields = SchemaGraph.fields(g.plan, n);
@@ -1548,20 +1867,41 @@ const Fn = struct {
             const name_sym = SchemaGraph.symbol(g.plan, f.name);
             const name = g.l.text(name_sym);
             const key = SchemaGraph.literal(g.plan, f.external);
-            const at = w.childAt(.{ .text = name }, .{ .text = key });
+            // The input names a field by its name when it is the Type
+            // endpoint and by its key when it is the Encoded (`fieldsFrom`).
+            const at = if (w.op.decoding()) w.childAt(.{ .text = key }, .{ .text = name }) else w.childAt(.{ .text = name }, .{ .text = key });
             const s = try g.fresh("$s");
             slot.* = s;
             try g.letDecl(out, s);
             const x = try g.fresh("$x");
             try g.constDecl(out, x, try g.field(try g.id(v), name_sym));
-            if (f.optional) {
-                // `Missing` writes nothing; `Present a` writes `a`.
+            if (SchemaGraph.isMaybeField(g.plan, f)) {
+                // A derived `Maybe` field, whose Encoded end is a host
+                // value: `Nothing` writes nothing, `Just` what its `maybe`
+                // node writes (schema.md §12.4).
+                var nothing: Stmts = .empty;
+                try g.assign(&nothing, s, try g.lit(.undefined_lit));
+                var just: Stmts = .empty;
+                try w.encodeField(&just, f.child, x, offset, at, s, deep);
+                try g.ifElse(out, try g.coreCtorTest("Maybe", "Nothing", try g.id(x)), nothing.items, just.items);
+            } else if (f.optional) {
+                // `Missing` writes nothing to a host output and stays
+                // `Missing` in a typed one; `Present a` writes `a`, or
+                // `Present` of it.
                 var missing: Stmts = .empty;
-                try g.assign(&missing, s, try g.lit(.undefined_lit));
+                try g.assign(&missing, s, if (w.op.hostOut()) try g.lit(.undefined_lit) else try g.id(x));
                 var present: Stmts = .empty;
                 const a = try g.fresh("$a");
                 try g.constDecl(&present, a, try g.l.member(try g.id(x), try g.l.slotName(0), g.p));
-                try w.encodeField(&present, f.child, a, offset, at, s, deep);
+                if (w.op.hostOut()) {
+                    try w.encodeField(&present, f.child, a, offset, at, s, deep);
+                } else {
+                    const y = try g.fresh("$y");
+                    try g.letDecl(&present, y);
+                    try w.encodeField(&present, f.child, a, offset, at, y, deep);
+                    const failed = try g.bin(.strict_eq, try g.id(y), try w.failMark());
+                    try g.assign(&present, s, try g.l.condOf(failed, try w.failMark(), try g.coreCtor("Schema", "Present", &.{try g.id(y)}), g.p));
+                }
                 try g.ifElse(out, try g.coreCtorTest("Schema", "Missing", try g.id(x)), missing.items, present.items);
             } else {
                 try w.encodeField(out, f.child, x, offset, at, s, deep);
@@ -1569,21 +1909,48 @@ const Fn = struct {
             try w.stopOnFailure(out, s);
         }
         try w.failIfGrew(out, before);
-        const object = try g.fresh("$o");
-        try g.constDecl(out, object, try g.l.object(&.{}, g.p));
+        if (!w.op.hostOut()) {
+            // The typed record, in canonical key order (`made`).
+            const names = try g.l.scratch.alloc(Symbol, fields.len);
+            const exprs = try g.l.scratch.alloc(Node.Index, fields.len);
+            for (fields, names, exprs, values) |f, *name, *expr, value| {
+                name.* = SchemaGraph.symbol(g.plan, f.name);
+                expr.* = try g.id(value);
+            }
+            const built = try g.recordValue(names, exprs);
+            try g.ret(out, if (owner) |o| try g.variantValue(o.info, o.order, SchemaGraph.symbol(g.plan, o.variant.name), built) else built);
+            return;
+        }
+        const object = try w.newObject(out);
         if (owner) |o| try w.setKey(out, object, o.discriminator, try g.str(SchemaGraph.literal(g.plan, o.variant.external)), null);
         for (fields, values) |f, s| try w.setKey(out, object, SchemaGraph.literal(g.plan, f.external), try g.id(s), if (f.optional) s else null);
         try g.ret(out, try g.id(object));
     }
 
+    /// `const o = …`, the host object a host output writes a record into:
+    /// `{}` for `print`, whose object only `JSON.stringify` reads, and
+    /// `Object.create(null)` for `write`, whose object the program gets —
+    /// §5's *Host values*, built with no prototype (`newObject`).
+    fn newObject(w: *Fn, out: *Stmts) !NameIndex {
+        const g = w.g;
+        const object = try g.fresh("$o");
+        const value = if (w.op.json())
+            try g.l.object(&.{}, g.p)
+        else
+            try g.globalCall("Object", "create", &.{try g.lit(.null_lit)});
+        try g.constDecl(out, object, value);
+        return object;
+    }
+
     /// `o[key] = value`, a key the object then owns; under `present`, only
     /// when that name does not hold `undefined` (a `Missing` field).
-    /// `__proto__` is defined rather than assigned: assigning it would set
-    /// the prototype (§5, *Host values*).
+    /// On `print`'s `{}`, `__proto__` is defined rather than assigned:
+    /// assigning it would set the prototype (§5, *Host values*). `write`'s
+    /// object has no prototype, so there it is an ordinary key.
     fn setKey(w: *Fn, out: *Stmts, object: NameIndex, key: []const u8, value: Node.Index, present: ?NameIndex) !void {
         const g = w.g;
         var write: Stmts = .empty;
-        if (std.mem.eql(u8, key, "__proto__")) {
+        if (w.op.json() and std.mem.eql(u8, key, "__proto__")) {
             const descriptor = try g.l.object(&.{
                 try g.l.property(try g.sym("value"), value, g.p),
                 try g.l.property(try g.sym("enumerable"), try g.lit(.true_lit), g.p),
@@ -1608,7 +1975,7 @@ const Fn = struct {
         var too_deep: Stmts = .empty;
         try g.assign(&too_deep, target, try w.failText(at, .depth_exceeded, "the depth limit is reached", try g.id(x), false));
         var descend: Stmts = .empty;
-        try w.encodeInto(&descend, child, x, offset + 1, at, target);
+        try w.into(&descend, child, x, offset + 1, at, target);
         try g.ifElse(out, try g.id(deep), too_deep.items, descend.items);
     }
 
@@ -1651,7 +2018,7 @@ const Fn = struct {
         var too_deep: Stmts = .empty;
         try g.assign(&too_deep, y, try w.failText(at, .depth_exceeded, "the depth limit is reached", try g.id(x), false));
         var descend: Stmts = .empty;
-        try w.encodeInto(&descend, child, x, 1, at, y);
+        try w.into(&descend, child, x, 1, at, y);
         try g.ifElse(&body, try g.id(deep), too_deep.items, descend.items);
         var failed: Stmts = .empty;
         var give_up: Stmts = .empty;
@@ -1696,11 +2063,13 @@ const Fn = struct {
                 try g.ret(&stop, try w.failText(w.ownAt(), .depth_exceeded, "the depth limit is reached", try g.id(a), false));
                 try g.ifElse(&arm, try w.deepTest(0), stop.items, &.{});
                 try w.encodeRecord(&arm, payload, a, 1, owner);
-            } else {
-                const object = try g.fresh("$o");
-                try g.constDecl(&arm, object, try g.l.object(&.{}, g.p));
+            } else if (w.op.hostOut()) {
+                const object = try w.newObject(&arm);
                 try w.setKey(&arm, object, discriminator, try g.str(SchemaGraph.literal(plan, variant.external)), null);
                 try g.ret(&arm, try g.id(object));
+            } else {
+                // `nullaryOf` to a typed output: the variant's constructor.
+                try g.ret(&arm, try g.variantValue(info, @intCast(order), name, null));
             }
             // The last variant is the `default`: a well-typed value is one
             // of them.
@@ -1710,11 +2079,282 @@ const Fn = struct {
         const discriminant = if (info.padded) try g.l.member(try g.id(v), g.l.well.tag, g.p) else try g.id(v);
         try w.switchOn(out, discriminant, cases.items);
     }
+
+    // ---- A derived codec's (schema.md §12.10) ---------------------------
+    // Only a derived codec's definitions hold these nodes, and a derived
+    // codec runs `parse`, `print`, `read` and `write` only (its `decode` and
+    // `encode` are `read` and `write`, `SchemaGraph.hostAliased`): decoding
+    // reads a host value, and encoding writes one.
+
+    /// `NTuple` (`tupleOf`): an array of exactly its elements outside, each
+    /// one level down at its index, and the tuple inside.
+    fn tupleWorker(w: *Fn, out: *Stmts, n: PNode) !void {
+        const g = w.g;
+        const elems = SchemaGraph.elements(g.plan, n);
+        const v = w.ps.v;
+        const decoding = w.op.decoding();
+        if (decoding) {
+            var then: Stmts = .empty;
+            try g.ret(&then, try w.failText(w.ownAt(), .wrong_shape, try elementsMessage(g, elems.len), try g.id(v), false));
+            const not_array = try g.not(try g.globalCall("Array", "isArray", &.{try g.id(v)}));
+            const wrong_length = try g.bin(.strict_ne, try g.prop(try g.id(v), "length"), try g.num(@intCast(elems.len)));
+            try g.ifElse(out, try g.bin(.logical_or, not_array, wrong_length), then.items, &.{});
+        }
+        var takes = false;
+        for (elems) |e| takes = takes or takesPath(g.plan, @fromBackingInt(@intCast(e)));
+        if (takes) try w.hereFor(out);
+        const items = try g.l.scratch.alloc(Node.Index, elems.len);
+        for (0..elems.len) |i| items[i] = if (decoding)
+            try g.indexOf(try g.id(v), try g.num(@intCast(i)))
+        else
+            try g.l.member(try g.id(v), try g.l.slotName(@intCast(i)), g.p);
+        const values = try w.elementsInto(out, elems, items, w.childParent(), 0);
+        try w.failIfGrew(out, values.before);
+        var ids: std.ArrayList(Node.Index) = .empty;
+        for (values.names) |name| try ids.append(g.l.scratch, try g.id(name));
+        try g.ret(out, if (decoding) try g.tupleValue(ids.items) else try g.l.arrayNode(ids.items, g.p));
+    }
+
+    /// The parent a child of this worker's own value is read under: the
+    /// worker's own path once made (`hereFor`).
+    fn childParent(w: *const Fn) At.Parent {
+        return if (w.here) |h| .{ .path = h } else .own;
+    }
+
+    const Elements = struct { names: []const NameIndex, before: NameIndex };
+
+    /// `elementsFrom`: element `i` of `items` by node `nodes[i]`, at
+    /// `Index i` below `parent`, one level down from `d + offset`; under
+    /// `FirstError` the first failure ends the worker.
+    fn elementsInto(w: *Fn, out: *Stmts, nodes: []const u32, items: []const Node.Index, parent: At.Parent, offset: u32) !Elements {
+        const g = w.g;
+        const before = try g.fresh("$before");
+        try g.constDecl(out, before, try w.issueCount());
+        const deep = try g.fresh("$deep");
+        if (nodes.len != 0) try g.constDecl(out, deep, try w.deepTest(offset));
+        const names = try g.l.scratch.alloc(NameIndex, nodes.len);
+        for (nodes, items, names, 0..) |node, item, *name, i| {
+            const at: At = .{ .parent = parent, .k = .{ .index = @intCast(i) }, .n = .{ .index = @intCast(i) } };
+            const x = try g.fresh("$x");
+            try g.constDecl(out, x, item);
+            const y = try g.fresh("$e");
+            name.* = y;
+            try g.letDecl(out, y);
+            var too_deep: Stmts = .empty;
+            try g.assign(&too_deep, y, try w.failText(at, .depth_exceeded, depth_message, try g.id(x), false));
+            var descend: Stmts = .empty;
+            try w.into(&descend, @fromBackingInt(@intCast(node)), x, offset + 1, at, y);
+            try g.ifElse(out, try g.id(deep), too_deep.items, descend.items);
+            try w.stopOnFailure(out, y);
+        }
+        return .{ .names = names, .before = before };
+    }
+
+    /// `NCtors`: a custom type's constructors in Roc's form (§12.3) — a
+    /// nullary one's name, or an object whose one key names one that takes
+    /// arguments, its argument or an array of its arguments below.
+    fn ctorsWorker(w: *Fn, out: *Stmts, n: PNode) !void {
+        if (w.op.decoding()) {
+            try w.decodeCtors(out, n);
+        } else {
+            try w.encodeCtors(out, n);
+        }
+    }
+
+    fn decodeCtors(w: *Fn, out: *Stmts, n: PNode) !void {
+        const g = w.g;
+        const plan = g.plan;
+        const v = w.ps.v;
+        const all = SchemaGraph.ctors(plan, n);
+        // The names, quoted, for `UnknownTag` (`unknownCtor`).
+        var expected: std.ArrayList(u8) = .empty;
+        for (all, 0..) |c, i| try expected.print(g.l.scratch, "{s}\"{s}\"", .{ if (i == 0) "" else ", ", g.l.text(SchemaGraph.symbol(plan, plan.codec_ctors[c].name)) });
+        var takes = false;
+        for (all) |c| for (SchemaGraph.ctorArgs(plan, c)) |a| {
+            takes = takes or takesPath(plan, @fromBackingInt(@intCast(a)));
+        };
+        if (takes) try w.hereFor(out);
+
+        // A string: a nullary constructor's name.
+        {
+            var cases: std.ArrayList(Node.Index) = .empty;
+            for (all) |c| {
+                const name = g.l.text(SchemaGraph.symbol(plan, plan.codec_ctors[c].name));
+                var arm: Stmts = .empty;
+                if (SchemaGraph.ctorArgs(plan, c).len == 0) {
+                    const cc = (try g.codecCtor(n, c)) orelse continue;
+                    try g.ret(&arm, try g.l.codecCtorValue(cc, &.{}, g.p));
+                } else {
+                    const message = try std.fmt.allocPrint(g.l.scratch, "the constructor {s} takes arguments, so it is an object with the key \"{s}\"", .{ name, name });
+                    try g.ret(&arm, try w.failText(w.ownAt(), .wrong_shape, message, try g.id(v), false));
+                }
+                try cases.append(g.l.scratch, try w.switchCase(try g.str(name), arm.items));
+            }
+            var fallback: Stmts = .empty;
+            try g.ret(&fallback, try w.fail(w.ownAt(), .unknown_tag, try g.concat(&.{ .{ .text = "unknown constructor \"" }, .{ .value = try g.id(v) }, .{ .text = try std.fmt.allocPrint(g.l.scratch, "\"; expected {s}", .{expected.items}) } }), try g.id(v), false));
+            try cases.append(g.l.scratch, try w.switchCase(null, fallback.items));
+            var string_arm: Stmts = .empty;
+            try w.switchOn(&string_arm, try g.id(v), cases.items);
+            const is_string = try g.bin(.strict_eq, try g.l.unary(.type_of, try g.id(v), g.p), try g.str("string"));
+            try g.ifElse(out, is_string, string_arm.items, &.{});
+        }
+        // An object of one key.
+        var not_object: Stmts = .empty;
+        try g.ret(&not_object, try w.failText(w.ownAt(), .wrong_shape, "expected a constructor: a string, or an object with one key", try g.id(v), false));
+        try g.ifElse(out, try w.isObjectTest(try g.id(v), try g.id(v), try g.id(v)), not_object.items, &.{});
+        const keys = try g.fresh("$keys");
+        try g.constDecl(out, keys, try g.globalCall("Object", "keys", &.{try g.id(v)}));
+        var not_one: Stmts = .empty;
+        try g.ret(&not_one, try w.failText(w.ownAt(), .wrong_shape, "expected a constructor: a string, or an object with one key", try g.id(v), false));
+        try g.ifElse(out, try g.bin(.strict_ne, try g.prop(try g.id(keys), "length"), try g.num(1)), not_one.items, &.{});
+        const key = try g.fresh("$key");
+        try g.constDecl(out, key, try g.indexOf(try g.id(keys), try g.num(0)));
+        var cases: std.ArrayList(Node.Index) = .empty;
+        for (all) |c| {
+            const name = g.l.text(SchemaGraph.symbol(plan, plan.codec_ctors[c].name));
+            const args = SchemaGraph.ctorArgs(plan, c);
+            var arm: Stmts = .empty;
+            if (args.len == 0) {
+                const message = try std.fmt.allocPrint(g.l.scratch, "the constructor {s} takes no arguments, so it is the string \"{s}\"", .{ name, name });
+                try g.ret(&arm, try w.failText(w.ownAt(), .wrong_shape, message, try g.id(v), false));
+            } else {
+                const cc = (try g.codecCtor(n, c)) orelse continue;
+                const payload = try g.fresh("$x");
+                try g.constDecl(&arm, payload, try g.indexOf(try g.id(v), try g.str(name)));
+                try w.ctorArgsInto(&arm, cc, name, args, payload, &.{});
+            }
+            try cases.append(g.l.scratch, try w.switchCase(try g.str(name), arm.items));
+        }
+        var fallback: Stmts = .empty;
+        try g.ret(&fallback, try w.fail(w.ownAt(), .unknown_tag, try g.concat(&.{ .{ .text = "unknown constructor \"" }, .{ .value = try g.id(key) }, .{ .text = try std.fmt.allocPrint(g.l.scratch, "\"; expected {s}", .{expected.items}) } }), try g.id(v), false));
+        try cases.append(g.l.scratch, try w.switchCase(null, fallback.items));
+        try w.switchOn(out, try g.id(key), cases.items);
+    }
+
+    /// `ctorArgs`: constructor `cc`'s arguments, read at its name one level
+    /// down — the argument itself, or an array of exactly as many — then the
+    /// constructor (decoding) or its wire object (encoding). `payload` is the
+    /// host value at the name when decoding; `typed` the arguments read off
+    /// the value when encoding.
+    fn ctorArgsInto(w: *Fn, out: *Stmts, cc: Lowerer.CodecCtor, name: []const u8, args: []const u32, payload: NameIndex, typed: []const Node.Index) !void {
+        const g = w.g;
+        const decoding = w.op.decoding();
+        const at = w.childAt(.{ .text = name }, .{ .text = name });
+        // The depth bound, before the descent; its input is the payload
+        // read, or the constructor written.
+        var stop: Stmts = .empty;
+        try g.ret(&stop, try w.failText(at, .depth_exceeded, depth_message, try g.id(if (decoding) payload else w.ps.v), false));
+        try g.ifElse(out, try w.deepTest(0), stop.items, &.{});
+        if (args.len == 1) {
+            const y = try g.fresh("$y");
+            try g.letDecl(out, y);
+            const x = if (decoding) payload else blk: {
+                const a = try g.fresh("$a");
+                try g.constDecl(out, a, typed[0]);
+                break :blk a;
+            };
+            try w.into(out, @fromBackingInt(@intCast(args[0])), x, 1, at, y);
+            var failed: Stmts = .empty;
+            try g.ret(&failed, try w.failMark());
+            try g.ifElse(out, try g.bin(.strict_eq, try g.id(y), try w.failMark()), failed.items, &.{});
+            try g.ret(out, try w.ctorOut(out, cc, name, &.{try g.id(y)}, false));
+            return;
+        }
+        if (decoding) {
+            var wrong: Stmts = .empty;
+            try g.ret(&wrong, try w.failText(at, .wrong_shape, try elementsMessage(g, args.len), try g.id(payload), false));
+            const not_array = try g.not(try g.globalCall("Array", "isArray", &.{try g.id(payload)}));
+            const wrong_length = try g.bin(.strict_ne, try g.prop(try g.id(payload), "length"), try g.num(@intCast(args.len)));
+            try g.ifElse(out, try g.bin(.logical_or, not_array, wrong_length), wrong.items, &.{});
+        }
+        // The arguments' own path, below the constructor's name.
+        const here = try g.fresh("$at");
+        const path = try w.pathArgs(at);
+        try g.constDecl(out, here, try g.call(try g.core("pathAt"), &path));
+        const items = try g.l.scratch.alloc(Node.Index, args.len);
+        for (items, 0..) |*item, i| item.* = if (decoding) try g.indexOf(try g.id(payload), try g.num(@intCast(i))) else typed[i];
+        const values = try w.elementsInto(out, args, items, .{ .path = here }, 1);
+        try w.failIfGrew(out, values.before);
+        var ids: std.ArrayList(Node.Index) = .empty;
+        for (values.names) |v| try ids.append(g.l.scratch, try g.id(v));
+        try g.ret(out, try w.ctorOut(out, cc, name, ids.items, true));
+    }
+
+    /// The constructor of `args` (decoding), or its wire object (encoding):
+    /// `{"Name": arg}`, or `{"Name": [args]}` when it takes several — for
+    /// `write`, an object with no prototype (`newObject`).
+    fn ctorOut(w: *Fn, out: *Stmts, cc: Lowerer.CodecCtor, name: []const u8, args: []const Node.Index, several: bool) !Node.Index {
+        const g = w.g;
+        if (w.op.decoding()) return g.l.codecCtorValue(cc, args, g.p);
+        const value = if (several) try g.l.arrayNode(args, g.p) else args[0];
+        if (w.op.json()) return g.l.object(&.{try g.l.property(try g.sym(name), value, g.p)}, g.p);
+        const object = try w.newObject(out);
+        try w.setKey(out, object, name, value, null);
+        return g.id(object);
+    }
+
+    fn encodeCtors(w: *Fn, out: *Stmts, n: PNode) !void {
+        const g = w.g;
+        const plan = g.plan;
+        const v = w.ps.v;
+        const all = SchemaGraph.ctors(plan, n);
+        var takes = false;
+        for (all) |c| for (SchemaGraph.ctorArgs(plan, c)) |a| {
+            takes = takes or takesPath(plan, @fromBackingInt(@intCast(a)));
+        };
+        if (takes) try w.hereFor(out);
+        // An `if` chain over the constructors, the last one the `else`: a
+        // well-typed value is one of them.
+        var tail: Stmts = .empty;
+        var i = all.len;
+        while (i > 0) {
+            i -= 1;
+            const c = all[i];
+            const cc = (try g.codecCtor(n, c)) orelse continue;
+            const name = g.l.text(SchemaGraph.symbol(plan, plan.codec_ctors[c].name));
+            const args = SchemaGraph.ctorArgs(plan, c);
+            var arm: Stmts = .empty;
+            if (args.len == 0) {
+                try g.ret(&arm, try g.str(name));
+            } else {
+                const typed = try g.l.scratch.alloc(Node.Index, args.len);
+                for (typed, 0..) |*t, k| t.* = try g.l.codecCtorArg(cc, try g.id(v), @intCast(k), g.p);
+                try w.ctorArgsInto(&arm, cc, name, args, v, typed);
+            }
+            if (i + 1 == all.len) {
+                tail = arm;
+                continue;
+            }
+            const test_expr = (try g.l.codecCtorTest(cc, try g.id(v), g.p)) orelse {
+                tail = arm;
+                continue;
+            };
+            var chained: Stmts = .empty;
+            try g.ifElse(&chained, test_expr, arm.items, tail.items);
+            tail = chained;
+        }
+        try out.appendSlice(g.l.scratch, tail.items);
+    }
 };
+
+/// "expected an array of N elements" (`elementsMessage`).
+fn elementsMessage(g: *Gen, n: usize) ![]const u8 {
+    return std.fmt.allocPrint(g.l.scratch, "expected an array of {d} elements", .{n});
+}
+
+/// The depth bound's message, which `compiledDeep` fixes.
+const depth_message = "the depth limit is reached";
+
+/// Whether `message` is `missing key "<key>"`, as `compiledMissing` makes it.
+fn missingMessage(key: []const u8, message: []const u8) bool {
+    const head = "missing key \"";
+    return message.len == head.len + key.len + 1 and std.mem.startsWith(u8, message, head) and
+        std.mem.eql(u8, message[head.len..][0..key.len], key) and message[message.len - 1] == '"';
+}
 
 fn isComposite(plan: *const SchemaPlan, n: PNode) bool {
     return switch (SchemaGraph.tag(plan, n)) {
-        .record, .list, .tagged => true,
+        .record, .list, .tagged, .tuple, .constructors => true,
         else => false,
     };
 }
@@ -1724,8 +2364,8 @@ fn isComposite(plan: *const SchemaPlan, n: PNode) bool {
 fn adoptable(plan: *const SchemaPlan, child: PNode) bool {
     if (SchemaGraph.tag(plan, child) != .primitive) return false;
     return switch (std.enums.fromInt(SchemaPlan.Primitive, SchemaGraph.lhs(plan, child)) orelse return false) {
-        .string, .bool, .int, .float, .finite_float, .value => true,
-        .null => false,
+        .string, .bool, .int, .float, .finite_float, .value, .char, .int32 => true,
+        .null, .never => false,
     };
 }
 
@@ -1740,33 +2380,6 @@ fn isIdentity(plan: *const SchemaPlan, words: []const u32, params: usize) bool {
     return true;
 }
 
-fn primitiveBuilder(kind: u32) []const u8 {
-    return switch (std.enums.fromInt(SchemaPlan.Primitive, kind) orelse .value) {
-        .string => "string",
-        .bool => "bool",
-        .int => "int",
-        .float => "float",
-        .finite_float => "finiteFloat",
-        .null => "null",
-        .value => "value",
-    };
-}
+const primitiveBuilder = SchemaGraph.primitiveBuilder;
 
-/// Whether an object `JSON.parse` made answers a read of `key` it does not
-/// own: the names `Object.prototype` holds.
-fn isPrototypeKey(key: []const u8) bool {
-    const inherited = [_][]const u8{
-        "__proto__",            "__defineGetter__", "__defineSetter__", "__lookupGetter__",
-        "__lookupSetter__",     "constructor",      "hasOwnProperty",   "isPrototypeOf",
-        "propertyIsEnumerable", "toLocaleString",   "toString",         "valueOf",
-    };
-    for (inherited) |name| if (std.mem.eql(u8, name, key)) return true;
-    return false;
-}
-
-test "a key Object.prototype holds is read as an own key, and no other" {
-    try std.testing.expect(isPrototypeKey("toString"));
-    try std.testing.expect(isPrototypeKey("__proto__"));
-    try std.testing.expect(!isPrototypeKey("user-id"));
-    try std.testing.expect(!isPrototypeKey("toJSON"));
-}
+const isPrototypeKey = SchemaShare.isPrototypeKey;

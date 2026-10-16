@@ -1,0 +1,18 @@
+-- a forwarding decoder, its evidence this module's
+Ok user#1 a, user#2 b of 2
+Err decoding Type ConversionFailed /items/0/id a user id is positive
+-- a module's codec at the root
+Ok user#7
+Err decoding Type ConversionFailed / a user id is positive
+-- an opaque type derived in its own module
+Ok s/1
+Ok [{"Sealed":["t",2]}]
+Err decoding Encoded WrongShape /0/Sealed expected an array of 2 elements
+-- a structural alias reads Beni names; the declaration its key
+Ok 1 o
+Err decoding Encoded MissingKey /accountId missing key "accountId"
+Ok 1 o
+-- a derived schema given to a generic declaration
+Ok user#3 v1
+Err decoding Type ConversionFailed /data/id a user id is positive
+Ok {"id":4,"name":"d"}

@@ -52,6 +52,7 @@ pub const Inputs = struct {
             .graph = &session.graph,
             .birs = i.birs,
             .provenance = session.resolution.provenance,
+            .interfaces = session.resolution.interfaces,
             .dispatch = session.checked.dispatch,
             .modules = session.checked.modules,
             .types = &session.checked.types,
@@ -64,6 +65,7 @@ pub const Inputs = struct {
             .platform_names = i.platform_names,
             .in_place = i.in_place,
             .blocks = i.blocks,
+            .entry_everywhere = session.options.ownership_everywhere,
             .profile = &session.profile,
         };
     }
@@ -106,7 +108,7 @@ pub fn inputs(gpa: Allocator, session: *const Session, cached: []const ?CacheEnt
         const layer = session.file_layers[f.int()];
         if (layer >= chain.layers.len) continue;
         out.platform_names[i] = chain.layers[layer].name;
-        out.in_place[i] = chain.layers[layer].manifest.lists == .@"in-place";
+        out.in_place[i] = session.options.ownership_everywhere or chain.layers[layer].manifest.lists == .@"in-place";
     }
     return out;
 }
@@ -132,7 +134,7 @@ pub fn run(session: *Session, cached: []const ?CacheEntry.Loaded) Allocator.Erro
     var o = Ownership.init(ins.input(gpa, session));
     defer o.deinit();
 
-    const chain_in_place = if (session.options.chain) |c| c.inPlace() else false;
+    const chain_in_place = if (session.options.chain) |c| session.options.ownership_everywhere or c.inPlace() else false;
     const making_pack = session.options.pack_out != null;
     var targets: std.ArrayList(u32) = .empty;
     defer targets.deinit(gpa);
@@ -170,6 +172,30 @@ pub fn run(session: *Session, cached: []const ?CacheEntry.Loaded) Allocator.Erro
     defer scratch.deinit();
     var src_ctx: SrcCtx = .{ .session = session, .arena = scratch.allocator() };
     const src: Message.Src = .{ .ctx = &src_ctx, .vtable = &src_vtable };
+    // §16.7: a limit of the checker is one error at the declaration that
+    // reached it. The rejections it causes downstream follow from it, so a
+    // run that reports one does not report them too.
+    var any_limit = false;
+    for (reports) |r| {
+        if (!r.checked) continue;
+        for (r.limits) |h| {
+            any_limit = true;
+            const text = try Message.limit(scratch.allocator(), src, r.module, h);
+            try items.ensureUnusedCapacity(gpa, 1);
+            const message = try gpa.dupe(u8, text);
+            items.appendAssumeCapacity(.{
+                .code = .ownership_limit,
+                .module = @fromBackingInt(r.module),
+                .region = @fromBackingInt(0),
+                .token = blk: {
+                    const t = srcDeclToken(&src_ctx, r.module, h.decl);
+                    break :blk if (t == none) null else t;
+                },
+                .last_token = null,
+                .message = message,
+            });
+        }
+    }
     for (reports) |r| {
         if (!r.checked) continue;
         var i: usize = 0;
@@ -179,6 +205,7 @@ pub fn run(session: *Session, cached: []const ?CacheEntry.Loaded) Allocator.Erro
             while (j < r.demands.len and sameCause(d, r.demands[j])) j += 1;
             defer i = j;
             if (d.verdict == .accepted) continue;
+            if (any_limit and d.verdict == .rejected and d.verdict.rejected == .limit) continue;
             var group: std.ArrayList(Ownership.Demand) = .empty;
             for (r.demands[i..j]) |x| {
                 var line = x;

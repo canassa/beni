@@ -144,7 +144,7 @@ main =
         [ String.fromInt (List.length logged)
         , String.fromInt (List.sum logged)
         , if logged == at33 then "same" else "different"
-        , if at33 == at32 ++ [ 33 ] then "appended" else "not appended"
+        , if at33 == List.copy at32 ++ [ 33 ] then "appended" else "not appended"
         , String.fromInt (List.length at32) ++ " " ++ String.fromInt (List.length at33)
         , String.fromInt (headOf at33) ++ " " ++ String.fromInt (headOf (List.drop at33 32))
         , String.fromInt (List.length (List.concat nested))

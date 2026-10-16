@@ -448,6 +448,7 @@ const Context = struct {
             .field => try w.writeAll("field"),
             .identity => try w.writeAll("identity"),
             .text => |r| try w.print("text \"{s}\"", .{cx.dispatch.textOf(r)}),
+            .codec => |c| try w.print("codec {d}", .{c.index}),
         }
     }
 };

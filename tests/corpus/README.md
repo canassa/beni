@@ -17,7 +17,7 @@ outputs: stdout, the JSON diagnostics on stderr, and the exit code.
 | `bir/` | `dump --stage=bir` | `<name>.bir` | lowering golden: resolution, desugaring, interface skeleton |
 | `check/good/` | `check`, then `dump --stage=interface` | `<name>.iface` | resolves clean against the project and core; the golden is the module's public face |
 | `writes/` | `check`, then `dump --stage=writes`, both `--platform=browser-tea` | `<name>.writes` | the write-set pass (`write-sets.md` §8.1): per message key its write set and class, per view hole its class and reads; a project may name its sources elsewhere (`_expected.sources`), carry the hidden `--writes-work` cap (`.writes-work`), and be the gate of §8.2 (`.gate`: its `keys` lines must show two thirds bounded) |
-| `ownership/` | `check`, then `dump --stage=ownership` | `<name>.ownership` | the ownership checker's report (`ownership-checker.md` §9): one line per demand with its verdict and cause; a project takes `_expected.ownership`. Beside a `.platform` file naming `browser-direct`, which edits lists in place, the `check` must fail, with the ownership codes alone, exactly when the report has a rejected or pending line (§28.10) |
+| `ownership/` | `check`, then `dump --stage=ownership` | `<name>.ownership` | the ownership checker's report (`ownership-checker.md` §9): one line per demand with its verdict and cause; a project takes `_expected.ownership`. Beside a `.platform` file naming `browser-direct`, which edits lists in place, the `check` must fail, with the ownership codes alone, exactly when the report has a rejected or pending line or a `limit` line (§28.10, §16.7). With a `.cached` file (its reason), each such `check` is run twice more with a cache directory of its own — writing every cache entry and summary block, then installing them — and both must agree with the `--no-cache` one (§28.4) |
 | `check/bad/` | `check --diagnostics=json` | `<name>.diag` | must fail resolution; the **whole** diagnostic list is the golden |
 | `build/bad/<Dir>/` | `build --diagnostics=json --platform=…` | `<Dir>/_expected.diag` | must fail the BUILD: exit 1, the whole diagnostic list, and no `out/` |
 | `build/bad-release/<Dir>/` | the same, **plus `--release`** | `<Dir>/_expected.diag` | must build clean WITHOUT the flag and fail with it (`backend.md` §9's refusal of `Debug`) |
@@ -101,7 +101,8 @@ build's run hash covers. `.crash` is never blessed: write it by hand.
 A `run/` or `browser/` fixture with a `<name>.compiled-schemas` file
 (`_expected.compiled-schemas` in a project) asserts `schema.md` §6's guarantee,
 *A statically known schema runs compiled*. Every schema it builds is fixed at
-compile time, so its development build must ship no library interpreter:
+compile time, so its development build must ship no library interpreter,
+whichever of the runners and `describe` it calls:
 `_core/Schema.mjs` must declare neither `Schema$run`, which every interpreting
 runner calls, nor `Schema$box`, the one maker of an `Interpreted` schema. A
 `browser/direct/` project's `browser-tea` build is held to it too. The file's
@@ -581,7 +582,9 @@ Node running the pages plus 10%. On 2026-10-15 the owner also granted the large
 paired TodoMVC page 6 300M (measured 5 711M), the paired Sternhalma page 10 000M
 (measured 9 031M), and Sternhalma's separate value fuzz 12 600M (measured 11 387M).
 The paired Bike Wars page is granted 8 600M (measured 7 784M). TodoMVC's
-and Bike Wars' value fuzz retain the default budget (Bike Wars measured 4 225M). Outside the
+and Bike Wars' value fuzz retain the default budget (Bike Wars measured 4 225M). `browser/direct/ApiItems`
+is granted 5 260M (measured 4 780M; 2026-10-16, #227), for the four builds of a direct page. `ownership/EntryValueCommand`
+is granted 4 730M (measured 4 301M; 2026-10-16, delegated, #220), until the ownership dump stops re-checking core (#214). Outside the
 corpus, the two `.wasm` tests of `tests/blackbox/wasm_test.zig` have a grant of their own,
 6 000M, granted by Cesar on 2026-10-15 (dashboard question `wasm-playground-q7`) (CLAUDE.md, *Every test has a budget*).
 
@@ -595,6 +598,11 @@ unchanged application; remove them when its builds fit the global budget.
 *Amended 2026-10-15 (the owner):* those grants were sized from CPU time on a host without an
 instruction counter. Measured on the x86-64 Linux reference, the three pages cost 19 699–19 702M and
 the three value-fuzz cases 6 088–6 089M; they are re-granted 21 700M and 6 700M, Tour's fuzz included.
+
+*Amended 2026-10-16 (delegated grant, #206):* `ownership/Conduit`, the RealWorld app's ownership
+report, is granted 4 750M. `dump --stage=ownership` re-checks all of core from source, so the
+case grew with derived codecs' engine code in `core/Schema`: 4 248M on master, 4 317M after, and
+the grant adds 10%. Remove it when the dump installs the checked core's summaries (#214).
 
 A project may also take its modules from outside the corpus: `_expected.sources` holds a
 repo-relative directory whose `.beni` files are the program, so several scripts can drive one

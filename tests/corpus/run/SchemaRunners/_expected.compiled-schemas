@@ -1,0 +1,3 @@
+Only declarations, primitives and their compositions by `list`, `nullable`,
+`converted` and a generic declaration, run by `decode`, `encode`, `read`,
+`write`, `parse` and `print`: no build of it ships the library interpreter.

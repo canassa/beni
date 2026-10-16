@@ -3,7 +3,11 @@
 -- answers what its function computed from the old value and leaves the new
 -- one. An `update` whose function writes the same cell itself is overruled
 -- by `update`'s own write, which comes last — the documented consequence
--- of the program's own code, not a race.
+-- of the program's own code, not a race. A `Ref` hands out its value
+-- shared — any holder may have kept what `get` read — so a callback that
+-- pushes onto the list it is handed pushes onto a copy
+-- (`ownership-checker.md` §30; `check/bad/direct/RefUpdateShared` is the
+-- refused twin without it).
 import Node exposing (Program)
 import Ref exposing (Ref)
 
@@ -23,7 +27,7 @@ main =
         n + 5
     afterSelfWrite = Ref.get counter
     names = Ref.make [ "a" ]
-    Ref.update names λns → List.push ns "b"
+    Ref.update names λns → List.push (List.copy ns) "b"
     joined = String.join (Ref.get names) ","
 
     Node.printLines

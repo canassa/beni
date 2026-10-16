@@ -1,0 +1,17 @@
+--! `NoDerivedCodec`'s two types of one module: its one `codec` is written
+--! for `Left`, and by the module rule it is `Right`'s method too, of the
+--! wrong type for it.
+
+import Schema exposing (Codec)
+
+
+pub type Left
+    = Left Int
+
+
+pub type Right
+    = Right Int
+
+
+pub codec : ⊤ → Codec Left
+codec u = Schema.structural u

@@ -10,7 +10,19 @@
 -- alone (`twelve`), two results (`thirteen`), `exclusive` without `fresh`
 -- (`fourteen`). A signature in parentheses is a type like any other: its
 -- words are inside it (`fifteen`). Outside a signature a word is an ordinary
--- type variable, so `keep` means what it always meant.
+-- type variable, so `keep` means what it always meant. Since 2026-10-16 a
+-- `List` of functions written out takes a function's words, for each element
+-- (`sixteen`, no line), but only core's `List` and written out: another
+-- type of one function (`seventeen`), or an alias of such a list
+-- (`eighteen`), is refused.
+type Box a
+    = Box a
+
+
+type alias Thunks =
+    List (Int → Int)
+
+
 type alias Handler =
     Int → Int
 
@@ -62,3 +74,12 @@ pub foreign pure fifteen : (borrowed List Int → Int)
 
 keep : fresh → List fresh
 keep x = [ x ]
+
+
+pub foreign pure sixteen : many List (Int → Int) → Int
+
+
+pub foreign pure seventeen : many Box (Int → Int) → Int
+
+
+pub foreign pure eighteen : many Thunks → Int

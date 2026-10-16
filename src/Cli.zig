@@ -163,6 +163,24 @@ pub const Common = struct {
     /// Makes `check` print one `<package>:<Module> <32 hex digits>` line per
     /// module, `core` and the platform included, sorted by that key.
     iface_hash: bool = false,
+    /// `--ownership-everywhere` — **hidden**, test-only and temporary
+    /// (`ownership-checker.md` §30.7, slice O0): run the ownership checker
+    /// as if every platform edited lists in place. Every chain enforces, as
+    /// one that says `"lists": "in-place"` does; every platform module is in
+    /// place for §20.2's entry rows; and the name table also gives the
+    /// direct row to `browser-tea`'s `Tea.*`, `browser`'s `Browser.program`
+    /// and the test platform `page`'s `Page.sandbox`. It is §30.2's
+    /// measurement patch, whole, so that the measurement is a script
+    /// (`bench/ownership-everywhere.mjs`) and not a patch. The checked core
+    /// is read as built, its blocks made under the ordinary rows, as the
+    /// patch read it; a cache's entries go to its `ownership-everywhere/`
+    /// subdirectory (`cache/Dir.zig`'s `into`).
+    ///
+    /// On `Common` for `--roundtrip-dispatch`'s reason: `check` and `build`
+    /// enforce with it, and `dump --stage=ownership` must report under the
+    /// same rows. Absent from `usage`, for `--allow-debug`'s reason. It is
+    /// deleted when enforcement becomes the language's (§30.7, O4).
+    ownership_everywhere: bool = false,
 };
 
 /// The persistent cache's flags (`frontend.md` §1, `fast-compiler.md` §8).
@@ -614,6 +632,12 @@ fn applyCommon(common: *Common, name: []const u8, value: ?[]const u8) Allocator.
     if (std.mem.eql(u8, name, "--iface-hash")) {
         if (value != null) return noValue(name);
         common.iface_hash = true;
+        return null;
+    }
+    // Hidden and test-only (see `Common.ownership_everywhere`).
+    if (std.mem.eql(u8, name, "--ownership-everywhere")) {
+        if (value != null) return noValue(name);
+        common.ownership_everywhere = true;
         return null;
     }
     if (std.mem.eql(u8, name, "--core-root")) {
@@ -1515,6 +1539,23 @@ test "the hidden flags parse, take no value, and are absent from the usage text"
     try expectUsage("beni: --msg-types applies to --stage=writes only", &.{ "dump", "--stage=types", "--msg-types", "M.beni" });
     try expectUsage("beni: unknown option '--msg-types'; run 'beni help' for usage", &.{ "check", "--msg-types", "src" });
     try testing.expect(std.mem.indexOf(u8, usage, "msg-types") == null);
+
+    // `--ownership-everywhere` (ownership-checker.md §30.7): `check` and
+    // `build` enforce with it, and `dump --stage=ownership` reports under
+    // the same rows, so it is on `Common`.
+    try expectCommand(
+        .{ .check = .{ .common = .{ .ownership_everywhere = true }, .platform = "node", .paths = &.{"src"} } },
+        &.{ "check", "--ownership-everywhere", "--platform=node", "src" },
+    );
+    try expectCommand(
+        .{ .dump = .{ .common = .{ .ownership_everywhere = true }, .stage = .ownership, .file = "M.beni" } },
+        &.{ "dump", "--stage=ownership", "--ownership-everywhere", "M.beni" },
+    );
+    try expectUsage(
+        "beni: option '--ownership-everywhere' does not take a value",
+        &.{ "check", "--ownership-everywhere=1", "src" },
+    );
+    try testing.expect(std.mem.indexOf(u8, usage, "everywhere") == null);
 }
 
 test "--cache-build-id is check's and build's, hidden, and nobody else's" {

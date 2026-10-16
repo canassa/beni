@@ -32,8 +32,8 @@ type alias Model =
     mark : Int
 
 
-rows : List Row
-rows =
+rows : ⊤ → List Row
+rows ⊤ =
     [ { id = 1, label = "one", done = False }
     , { id = 2, label = "two", done = False }
     , { id = 3, label = "three", done = False }
@@ -108,4 +108,4 @@ view model =
 
 
 main : Browser.Program
-main = Browser.program { init = λ⊤ → { rows = rows, mark = 0 }, update = update, view = view }
+main = Browser.program { init = λ⊤ → { rows = rows ⊤, mark = 0 }, update = update, view = view }

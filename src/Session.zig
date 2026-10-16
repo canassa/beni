@@ -365,6 +365,10 @@ pub const Options = struct {
     /// rejects errors (`ownership-checker.md` §28.3). On any other chain it
     /// does nothing at all.
     ownership: bool = false,
+    /// `--ownership-everywhere` (`Cli.Common`, `ownership-checker.md` §30.7
+    /// O0): every chain enforces as an in-place one does, and every platform
+    /// module is in place for the entry rows. Hidden and test-only.
+    ownership_everywhere: bool = false,
     /// With `pack_out`: the build id of the compiler that will carry the
     /// pack, which every key is computed with in place of this one's.
     pack_build_id: ?[16]u8 = null,
@@ -562,7 +566,7 @@ pub fn init(gpa: Allocator, io: Io, asked: Options) Allocator.Error!Session {
     // maker of the checked core, which writes every core and platform
     // module's summary block (§28.7), keep the type stores.
     if (options.ownership) if (options.chain) |c| {
-        session.enforce_ownership = c.inPlace();
+        session.enforce_ownership = options.ownership_everywhere or c.inPlace();
     };
     if (session.enforce_ownership or options.pack_out != null) session.options.keep_type_stores = true;
     // A core read from `--core-root` is not the core the pack was checked

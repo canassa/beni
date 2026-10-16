@@ -240,6 +240,7 @@ pub fn emit(
             .ext => |*x| x.args = range,
             .derived => |*x| x.args = range,
             .ext_derived => |*x| x.args = range,
+            .codec => |*x| x.args = range,
             else => {},
         }
         try lists.add(terms, gpa, t);

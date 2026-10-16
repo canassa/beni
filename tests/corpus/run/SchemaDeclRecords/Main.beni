@@ -153,7 +153,7 @@ main =
                 { person | age = 9007199254740992, height = 1 / 0, weight = 0 / 0 }
             )
             λs → s
-        , "-- the description, through the library"
+        , "-- decode, write and read"
         , Show.result (Schema.decode (Friend.schema ⊤) { name = "Di", best = True }) λf → f.name
         , Show.value (Schema.write (Friend.schema ⊤) { name = "Di", best = True })
         , Show.result (Schema.read (Friend.schema ⊤) (Show.host "{\"name\":\"Ed\",\"best\":false}")) λf →

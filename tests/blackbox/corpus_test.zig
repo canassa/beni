@@ -1337,7 +1337,9 @@ const Case = struct {
     fn malformedGolden(c: Case) ?[]const u8 {
         const has_codes = c.goldenExists("codes");
         const ext = c.kind.golden() orelse return if (has_codes) "a `.codes` golden on a kind that runs no `check`" else null;
-        const has_golden = c.goldenExists(ext);
+        // An ownership fixture beside a `.platform` file has one golden per
+        // platform it names (`X.browser-direct.ownership`), read where it runs.
+        const has_golden = c.goldenExists(ext) or (c.kind == .ownership and c.goldenExists("platform"));
         if (has_codes and !c.kind.takesCodes()) return "a `.codes` golden on a kind whose golden is not a diagnostic list";
         if (has_codes and has_golden) return "both a `.diag` and a `.codes`: keep one";
         if (!has_codes and !has_golden) return "no golden";
@@ -1811,7 +1813,7 @@ const Case = struct {
     /// Whether a JSON diagnostic list names the ownership checker's codes
     /// and no others (`ownership-checker.md` §28.6).
     fn ownershipOnly(stderr: []const u8) bool {
-        const codes = [_][]const u8{ "list_still_used", "top_level_list_changed", "view_changes_model", "list_may_be_shared" };
+        const codes = [_][]const u8{ "list_still_used", "top_level_list_changed", "view_changes_model", "list_may_be_shared", "ownership_limit" };
         var any = false;
         var it = std.mem.splitSequence(u8, stderr, "\"code\":\"");
         _ = it.next();
@@ -2058,6 +2060,10 @@ const Case = struct {
             var lines = std.mem.splitScalar(u8, text, '\n');
             while (lines.next()) |line| {
                 if (std.mem.startsWith(u8, line, "schema ") or std.mem.startsWith(u8, line, "pub schema ")) return true;
+                // A schema derived from a type (`schema.md` §12.8): its
+                // fixtures run both paths, as a declaration's do.
+                if (std.mem.startsWith(u8, line, "import Json")) return true;
+                if (std.mem.indexOf(u8, line, "Schema.derived") != null or std.mem.indexOf(u8, line, "Schema.structural") != null) return true;
             }
         }
         return false;
@@ -2879,13 +2885,15 @@ const Case = struct {
                 const checked = try c.compiler(&.{ "check", "--diagnostics=json", flag, path });
                 const r = try c.compiler(&.{ "dump", "--stage=ownership", flag, path });
                 try expectExit(0, r);
+                try c.ownershipCached(flag, path, checked);
                 // `ownership-checker.md` §28.10, the dump against the build:
                 // on a platform that edits lists in place `check` fails
                 // exactly when the report has a rejected or pending line,
                 // with the ownership checker's codes and no others, and
                 // elsewhere it is silent whatever the report says.
                 const enforces = std.mem.eql(u8, name, "browser-direct");
-                const refused = enforces and (std.mem.indexOf(u8, r.stdout, ": rejected ") != null or std.mem.indexOf(u8, r.stdout, ": pending") != null);
+                // A limit the checker reached is an error too (§16.7).
+                const refused = enforces and (std.mem.indexOf(u8, r.stdout, ": rejected ") != null or std.mem.indexOf(u8, r.stdout, ": pending") != null or std.mem.indexOf(u8, r.stdout, "\n  limit ") != null);
                 if (refused) {
                     try expectExit(1, checked);
                     if (!ownershipOnly(checked.stderr)) {
@@ -2915,6 +2923,42 @@ const Case = struct {
         const r = try c.compiler(&.{ "dump", "--stage=ownership", path });
         try expectExit(0, r);
         try c.expectGolden("ownership", r.stdout);
+    }
+
+    /// An ownership fixture with a `.cached` file is also checked with a cache
+    /// directory of its own, twice: the first run writes every module's cache
+    /// entry and its summary block (`ownership-checker.md` §28.4), the second
+    /// installs them. Each must agree with the `--no-cache` check, exit code
+    /// and diagnostics. The `.cached` file holds why the fixture needs it.
+    fn ownershipCached(c: Case, flag: []const u8, path: []const u8, checked: world.Result) !void {
+        if (!c.goldenExists("cached")) return;
+        const project = try c.w.projectPath();
+        const name = std.fs.path.basename(flag);
+        const dir = try std.fmt.allocPrint(c.arena, "--cache-dir={s}/ownership-cache-{s}", .{ project, name });
+        const trace = try std.fmt.allocPrint(c.arena, "ownership-trace-{s}.json", .{name});
+        const profile = try std.fmt.allocPrint(c.arena, "--self-profile={s}/{s}", .{ project, trace });
+        for ([_][]const u8{ "writes", "reads" }) |pass| {
+            const r = try c.w.runWith(&.{ "check", "--diagnostics=json", flag, dir, profile, path }, .{ .raw_diagnostics = true, .cwd = .inherit, .timeout_ms = c.cfg.timeout_ms });
+            if (r.exit_code != checked.exit_code or !std.mem.eql(u8, r.stderr, checked.stderr)) {
+                detail("{s}: the check that {s} the cache disagrees with --no-cache (exit {d}, not {d})\n--- stderr ---\n{s}\n", .{ c.fixture.name, pass, r.exit_code, checked.exit_code, r.stderr });
+                return error.CachedCheckDisagrees;
+            }
+        }
+        // The second run must have installed every entry, blocks and all: a
+        // miss would leave the reading of the blocks untested.
+        const Event = struct { ph: []const u8, args: struct { cache_hits: ?u64 = null, cache_misses: ?u64 = null } = .{} };
+        const parsed = try std.json.parseFromSlice(struct { traceEvents: []Event }, c.arena, try c.w.read(trace), .{ .ignore_unknown_fields = true });
+        var hits: u64 = 0;
+        var misses: u64 = 0;
+        for (parsed.value.traceEvents) |e| {
+            if (!std.mem.eql(u8, e.ph, "C")) continue;
+            if (e.args.cache_hits) |v| hits = v;
+            if (e.args.cache_misses) |v| misses = v;
+        }
+        if (hits == 0 or misses != 0) {
+            detail("{s}: the check that reads the cache installed {d} entries and missed {d}\n", .{ c.fixture.name, hits, misses });
+            return error.CachedCheckMissed;
+        }
     }
 
     /// The write sets of a program (`write-sets.md` §8.1): the fixture must

@@ -1,0 +1,66 @@
+-- CK-242: a callee relying on what a lambda's own parameter returns is rejected inside it.
+-- ownership (§30.9): a callee relies on what a function it is handed
+-- returns, and that function is the enclosing lambda's own parameter, at a
+-- path — `HttpFailures`' shape, a list of labelled works mapped to
+-- commands. Inside the lambda nothing says what `work` is; the obligation
+-- waits for where the lambda is handed on, here to `List.map`, which hands
+-- it the list's elements, and is decided there against each work's class.
+-- Before, it was rejected `need` inside the lambda, and labelled exact. `works`
+-- holds a work that answers the top-level `shared`, rejected, exactly;
+-- `freshOnly`'s works make their lists, accepted. `kept` stores such a
+-- lambda in a record, out of sight, and is rejected, approximately: no
+-- one decides the obligation there.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+
+
+type Msg
+    = Go
+    | Got String (List Int)
+
+
+shared : List Int
+shared = [ 1, 2 ]
+
+
+works : List (String × (⊤ → List Int))
+works = [ ( "fresh", λ⊤ → [ 3 ] ), ( "shared", λ⊤ → shared ) ]
+
+
+freshOnly : List (String × (⊤ → List Int))
+freshOnly = [ ( "fresh", λ⊤ → [ 3 ] ) ]
+
+
+kept : ⊤ → { run : (⊤ → List Int) → Cmd Msg }
+kept ⊤ = { run = λwork → Cmd.task work (Got "kept" _) }
+
+
+update : Msg, List Int → List Int × Cmd Msg
+update msg model =
+    case msg of
+        Go →
+            ( model
+            , Cmd.batch
+                [ Cmd.batch (List.map works λ( label, work ) → Cmd.task work (Got label _))
+                , Cmd.batch (List.map freshOnly λ( label, work ) → Cmd.task work (Got label _))
+                ]
+            )
+
+        Got _ xs →
+            ( List.push xs 4, Cmd.none )
+
+
+view : List Int → Html Msg
+view model = <button onClick={Go}>{String.fromInt (List.length model)}</button>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( [], Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

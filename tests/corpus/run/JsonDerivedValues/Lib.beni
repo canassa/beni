@@ -1,0 +1,28 @@
+--! `JsonDerivedValues`'s validated type: its module's `codec` is an erased
+--! compiled schema, a range check over `Schema.int`.
+
+import Schema exposing (Codec, Issue)
+
+
+pub opaque type Level
+    = Level Int
+
+
+pub levelOf : Level → Int
+levelOf (Level n) = n
+
+
+pub codec : ⊤ → Codec Level
+codec _ = Schema.erased (Schema.converted Schema.int (Schema.conversion toLevel fromLevel))
+
+
+toLevel : Int → Result (List Issue) Level
+toLevel n =
+    if n ≥ 0 && n ≤ 9 then
+        Ok (Level n)
+    else
+        Err [ Schema.issue "a level is from 0 to 9" ]
+
+
+fromLevel : Level → Result (List Issue) Int
+fromLevel (Level n) = Ok n

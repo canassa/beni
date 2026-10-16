@@ -850,6 +850,141 @@ test "a build whose evidence crosses modules is byte-identical through all three
     try w.expectProgram("tripped/_main.mjs", .{ .stdout = "largest\nrect\nsame\n" });
 }
 
+test "a build of derived codecs is byte-identical at one job and eight, through the round trips, and runs" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `schema.md` §12.10: a module's derived codecs are numbered in their
+    // keys' order, cross the dispatch sidecar as `codec` terms and the plan
+    // sidecar as virtual definitions, and are compiled by the module that
+    // uses them. A generic decoder in `Lib` forwards its requirement, and
+    // `Main` answers it with a nominal type of `Lib`'s and a record holding
+    // a type whose module declares `codec`. Nothing may move a byte between
+    // `--jobs=1` and `--jobs=8`, or through the formats.
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("src/Lib.beni",
+        \\import Json
+        \\import Schema exposing (Codec, Issue)
+        \\
+        \\
+        \\pub type Shape
+        \\    = Dot
+        \\    | Circle Float
+        \\    | Rect Int Int
+        \\
+        \\
+        \\pub decodeAll : String → Result (List Issue) (List a)
+        \\    where a.codec : ⊤ → Codec a
+        \\decodeAll text = Json.decode text
+        \\
+    );
+    try w.write("src/Ids.beni",
+        \\import Schema exposing (Codec)
+        \\
+        \\
+        \\pub opaque type Id
+        \\    = Id Int
+        \\
+        \\
+        \\pub idText : Id → String
+        \\idText (Id n) = String.fromInt n
+        \\
+        \\
+        \\pub codec : ⊤ → Codec Id
+        \\codec u = Schema.structural u
+        \\
+    );
+    try w.write("src/Main.beni",
+        \\import Ids
+        \\import Json
+        \\import Lib exposing (Shape)
+        \\import Node exposing (Program)
+        \\
+        \\
+        \\shape : Shape → String
+        \\shape s =
+        \\    case s of
+        \\        Lib.Dot →
+        \\            "dot"
+        \\
+        \\        Lib.Circle r →
+        \\            "circle " ++ String.fromFloat r
+        \\
+        \\        Lib.Rect w h →
+        \\            "rect " ++ String.fromInt (w * h)
+        \\
+        \\
+        \\shapes : String → String
+        \\shapes text =
+        \\    case Lib.decodeAll text of
+        \\        Ok xs →
+        \\            String.join (List.map xs shape) ", "
+        \\
+        \\        Err _ →
+        \\            "bad"
+        \\
+        \\
+        \\tagged : String → String
+        \\tagged text =
+        \\    case Json.decode text of
+        \\        Ok r →
+        \\            Ids.idText r.id ++ " " ++ r.name
+        \\
+        \\        Err _ →
+        \\            "bad"
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.printLines
+        \\        [ shapes "[\"Dot\",{\"Circle\":1.5},{\"Rect\":[2,3]}]"
+        \\        , tagged "{\"id\":{\"Id\":7},\"name\":\"n\"}"
+        \\        ]
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const plain = try w.runWith(
+        &.{ "build", "--platform=node", "--out=plain", "--jobs=1", "--no-cache", "src" },
+        .{ .raw_diagnostics = true },
+    );
+    const tripped = try w.runWith(&.{
+        "build",                  "--platform=node",      "--out=tripped",        "--jobs=8", "--no-cache",
+        "--roundtrip-interfaces", "--roundtrip-dispatch", "--roundtrip-frontend", "src",
+    }, .{ .raw_diagnostics = true });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqual(@as(u8, 0), plain.exit_code);
+    try testing.expectEqualStrings("", plain.stderr);
+    try testing.expectEqual(plain.exit_code, tripped.exit_code);
+    try testing.expectEqualStrings(plain.stderr, tripped.stderr);
+    const want = try w.listFiles("plain");
+    const got = try w.listFiles("tripped");
+    try testing.expectEqual(want.len, got.len);
+    for (want, got) |a, b| {
+        try testing.expectEqualStrings(a, b);
+        const want_bytes = try w.read(try std.fs.path.join(arena, &.{ "plain", a }));
+        const got_bytes = try w.read(try std.fs.path.join(arena, &.{ "tripped", b }));
+        testing.expectEqualStrings(want_bytes, got_bytes) catch |err| {
+            std.debug.print("{s} differs between a plain build and a round-tripped one\n", .{a});
+            return err;
+        };
+    }
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try w.expectProgram("tripped/_main.mjs", .{ .stdout = "dot, circle 1.5, rect 6\n7 n\n" });
+}
+
 test "an importer's type error names the imported types identically through the round trip" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │

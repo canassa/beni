@@ -1,0 +1,34 @@
+-- ownership: a tagged schema's constructor in a pattern, in a module no
+-- other module reads (`ownership-checker.md` §28.4). Only the cache entry
+-- carries `links`' summary block, which names `Chain.Link`; before the fix
+-- the constructor had no module, and the `check` that wrote the entry
+-- crashed while a `--no-cache` one checked clean.
+import Browser
+import Html exposing (Html)
+import Schema
+import Tea
+
+
+schema Chain tagged "t" of
+    Link as "link"
+        next : Chain
+        tags : List String
+    End as "end"
+
+
+links : Chain.Type, Int → Int
+links c n =
+    case c of
+        Chain.End →
+            n
+
+        Chain.Link r →
+            links r.next (n + List.length r.tags)
+
+
+view : Int → Html ⊤
+view n = <p>{String.fromInt (links Chain.End n)}</p>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = λ⊤ → 0, update = λ_ m → m, view = view }

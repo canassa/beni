@@ -1,11 +1,11 @@
--- emit/app: a program that only describes ships no worker
--- (`docs/design/schema.md` §6, *DCE*).
+-- emit/app: a program that only describes ships no worker and no builder
+-- (`docs/design/schema.md` §6, *DCE*; *What `describe` ships*).
 --
--- `Tree.schema ()` reaches the description alone: `core/Schema`'s builders
--- composed as §5's table composes them, under `Schema.recursive "Tree"`
--- because `Tree` refers to itself, the injections written as arrows over
--- §4's representation. No `$$read`, no `$$write`, and none of the
--- specialised path's core-private values.
+-- `Tree.schema ⊤` reaches the description alone: the node §5's builders
+-- would make, made by `core/Schema`'s `described…` values without boxing,
+-- under `describedRecursive "Tree"` because `Tree` refers to itself, one
+-- mapping per record and one injection per variant, both endpoints', written
+-- as arrows over §4's representation. No `$$read`, no `$$write`, no `box`.
 import Node exposing (Program)
 import Schema
 

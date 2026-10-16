@@ -1,0 +1,393 @@
+-- Every runner of a statically known schema runs compiled (`schema.md` §6,
+-- *Every runner of a statically known schema is compiled*): `decode`,
+-- `encode`, `read` and `write` and their `With` forms, on a record with
+-- every field form, a renamed key, prototype key names and a `via`; a tagged
+-- union with payload and nullary variants, an all-nullary one and a
+-- recursive one; a generic declaration; and `list`, `nullable` and
+-- `converted` of them and primitives at the root. `.compiled-schemas` holds
+-- the build to shipping no library interpreter, and every answer is the
+-- library's.
+--
+-- `decode` and `encode` touch no host value: a typed value's shape is not
+-- tested, only its refinements — a safe `Int`, a finite `FiniteFloat`, and a
+-- conversion, which `decode` runs forward and `encode` backward — and the
+-- input names a field by its key under `decode`, by its name under `encode`.
+-- `read` tests each key with `Object.hasOwn` and never keeps the array it
+-- was handed. `write` builds objects with no prototype, so `__proto__` is an
+-- ordinary key of what it writes, and it writes NaN and a `Value` holding
+-- one, which `print` refuses because JSON has no number for them.
+import Node
+import Schema exposing (Conversion, Missing, NonNull, Null, Present)
+import Show
+
+
+schema Note =
+    id : Int
+    title : String as "note-title"
+    score : Float
+    exact : FiniteFloat
+    done : Bool
+    tag : String optional
+    by : String nullable
+    proto : Int as "__proto__"
+    extra : Value
+    count : String via decimalInt
+    parts : List Part
+
+
+schema Part =
+    n : Int
+
+
+schema Shape tagged "type" of
+    Circle as "circle"
+        radius : Float as "r"
+    Dot as "dot"
+
+
+schema Light tagged "is" of
+    Red as "red"
+    Green as "green"
+
+
+schema Tree tagged "node" of
+    Leaf as "leaf"
+        label : String
+    Branch as "branch"
+        kids : List Tree
+
+
+schema Page a =
+    items : List a
+    total : Int
+
+
+decimalInt : Conversion String Int
+decimalInt =
+    Schema.conversion
+        (λs →
+            case String.toInt s of
+                Just n →
+                    Ok n
+
+                Nothing →
+                    Err
+                        [ Schema.issueAt [ Schema.Field "digits" ] ("not a decimal integer: " ++ s)
+                        ]
+        )
+        λn →
+            if n < 0 then
+                Err [ Schema.issue "negative" ]
+            else
+                Ok (String.fromInt n)
+
+
+all : Schema.Options
+all = { errors = Schema.AllErrors, unknownKeys = Schema.Reject, maxDepth = 512, reportInput = True }
+
+
+depth : Int → Schema.Options
+depth n =
+    { errors = Schema.FirstError, unknownKeys = Schema.Ignore, maxDepth = n, reportInput = False }
+
+
+presence : Schema.Presence a, (a → String) → String
+presence p show =
+    case p of
+        Missing →
+            "Missing"
+
+        Present a →
+            "Present " ++ show a
+
+
+nullable : Schema.Nullable a, (a → String) → String
+nullable v show =
+    case v of
+        Null →
+            "Null"
+
+        NonNull a →
+            "NonNull " ++ show a
+
+
+quoted : String → String
+quoted s = "\"" ++ s ++ "\""
+
+
+parts : List Part.Type → String
+parts ps = "[" ++ String.join (List.map ps λp → String.fromInt p.n) "," ++ "]"
+
+
+showNote : Note.Type → String
+showNote x =
+    String.join
+        [ String.fromInt x.id
+        , quoted x.title
+        , String.fromFloat x.score
+        , String.fromFloat x.exact
+        , if x.done then "done" else "open"
+        , presence x.tag quoted
+        , nullable x.by quoted
+        , String.fromInt x.proto
+        , Show.json x.extra
+        , String.fromInt x.count
+        , parts x.parts
+        ]
+        "; "
+
+
+showEncodedNote : Note.Encoded → String
+showEncodedNote x =
+    String.join
+        [ String.fromInt x.id
+        , quoted x.title
+        , String.fromFloat x.score
+        , presence x.tag quoted
+        , nullable x.by quoted
+        , quoted x.count
+        , parts x.parts
+        ]
+        "; "
+
+
+showShape : Shape.Type → String
+showShape s =
+    case s of
+        Shape.Circle c →
+            "Circle " ++ String.fromFloat c.radius
+
+        Shape.Dot →
+            "Dot"
+
+
+showEncodedShape : Shape.Encoded → String
+showEncodedShape s =
+    case s of
+        Shape.Encoded.Circle c →
+            "encoded Circle " ++ String.fromFloat c.radius
+
+        Shape.Encoded.Dot →
+            "encoded Dot"
+
+
+showLight : Light.Type → String
+showLight l =
+    case l of
+        Light.Red →
+            "Red"
+
+        Light.Green →
+            "Green"
+
+
+showTree : Tree.Type → String
+showTree t =
+    case t of
+        Tree.Leaf l →
+            l.label
+
+        Tree.Branch b →
+            "(" ++ String.join (List.map b.kids showTree) " " ++ ")"
+
+
+ints : List Int → String
+ints xs = String.join (List.map xs String.fromInt) ","
+
+
+encoded : Note.Encoded
+encoded =
+    { id = 1
+    , title = "t"
+    , score = 1.5
+    , exact = 2
+    , done = True
+    , tag = Present "x"
+    , by = Null
+    , proto = 3
+    , extra = Show.host "{\"k\":[1]}"
+    , count = "12"
+    , parts = [ { n = 1 }, { n = 2 } ]
+    }
+
+
+note : Note.Type
+note =
+    { id = 1
+    , title = "t"
+    , score = 1.5
+    , exact = 2
+    , done = False
+    , tag = Missing
+    , by = NonNull "Bo"
+    , proto = 3
+    , extra = Show.host "[true]"
+    , count = 12
+    , parts = [ { n = 1 } ]
+    }
+
+
+hostNote : String
+hostNote =
+    "{\"id\":1,\"note-title\":\"t\",\"score\":1.5,\"exact\":2,\"done\":true,\"by\":null,\"__proto__\":3,\"extra\":{},\"count\":\"12\",\"parts\":[{\"n\":1}]}"
+
+
+tree : Tree.Type
+tree = Tree.Branch { kids = [ Tree.Leaf { label = "a" }, Tree.Branch { kids = [] } ] }
+
+
+main : Node.Program
+main =
+    noteSchema = Note.schema ⊤
+    page = Page.schema (Schema.list Schema.int)
+    notes = Schema.list (Part.schema ⊤)
+    maybe = Schema.nullable (Part.schema ⊤)
+    counted = Schema.converted Schema.string decimalInt
+    Node.printLines
+        [ "-- decode"
+        , Show.result (Schema.decode noteSchema encoded) showNote
+        , Show.result (Schema.decode noteSchema { encoded | proto = 9007199254740992 }) showNote
+        , Show.result
+            (Schema.decode noteSchema
+                { encoded
+                    | id = 9007199254740992
+                    , exact = 1 / 0
+                    , count = "x"
+                    , parts = [ { n = 9007199254740992 } ]
+                }
+            )
+            showNote
+        , Show.result
+            (Schema.decodeWith noteSchema all
+                { encoded
+                    | id = 9007199254740992
+                    , exact = 1 / 0
+                    , count = "x"
+                    , parts = [ { n = 9007199254740992 } ]
+                }
+            )
+            showNote
+        , Show.result (Schema.decodeWith noteSchema (depth 1) encoded) showNote
+        , Show.result (Schema.decodeWith noteSchema (depth (-1)) encoded) showNote
+        , "-- encode"
+        , Show.result (Schema.encode noteSchema note) showEncodedNote
+        , Show.result (Schema.encode noteSchema { note | proto = 9007199254740992 }) showEncodedNote
+        , Show.value (Schema.write noteSchema { note | proto = 9007199254740992 })
+        , Show.result
+            (Schema.encodeWith noteSchema all
+                { note | score = 0 / 0, count = -1, parts = [ { n = 9007199254740992 } ] }
+            )
+            showEncodedNote
+        , "-- read"
+        , Show.result (Schema.read noteSchema (Show.host hostNote)) showNote
+        , Show.result
+            (Schema.readWith
+                noteSchema
+                all
+                (Show.host
+                    "{\"zz\":0,\"id\":\"1\",\"score\":1.5,\"exact\":\"2\",\"done\":1,\"tag\":2,\"__proto__\":3,\"extra\":null,\"count\":\"y\",\"parts\":{}}"
+                )
+            )
+            showNote
+        , Show.result (Schema.read noteSchema (Show.host "{\"id\":1}")) showNote
+        , Show.result (Schema.read noteSchema (Show.host "[]")) showNote
+        , Show.result (Schema.readWith noteSchema (depth 1) (Show.host hostNote)) showNote
+        , "-- write"
+        , Show.value (Schema.write noteSchema note)
+        , Show.value (Schema.write noteSchema { note | tag = Present "x", by = Null })
+        , Show.value (Schema.write noteSchema { note | score = 0 / 0 })
+        , Show.result (Schema.print noteSchema { note | score = 0 / 0 }) λs → s
+        , Show.value (Schema.write noteSchema { note | extra = Show.host "1e999" })
+        , Show.result (Schema.print noteSchema { note | extra = Show.host "1e999" }) λs → s
+        , Show.value (Schema.writeWith noteSchema all { note | id = 9007199254740992, count = -2 })
+        , "-- tagged"
+        , Show.result
+            (Schema.decode (Shape.schema ⊤) (Shape.Encoded.Circle { radius = 2 }))
+            showShape
+        , Show.result (Schema.decode (Shape.schema ⊤) Shape.Encoded.Dot) showShape
+        , Show.result
+            (Schema.encode (Shape.schema ⊤) (Shape.Circle { radius = 0 / 0 }))
+            showEncodedShape
+        , Show.result (Schema.encode (Shape.schema ⊤) Shape.Dot) showEncodedShape
+        , Show.result
+            (Schema.read (Shape.schema ⊤) (Show.host "{\"type\":\"circle\",\"r\":1}"))
+            showShape
+        , Show.result (Schema.read (Shape.schema ⊤) (Show.host "{\"type\":\"square\"}")) showShape
+        , Show.result
+            (Schema.readWith (Shape.schema ⊤) all (Show.host "{\"type\":\"dot\",\"x\":1,\"y\":2}"))
+            showShape
+        , Show.result (Schema.read (Shape.schema ⊤) (Show.host "{\"r\":1}")) showShape
+        , Show.value (Schema.write (Shape.schema ⊤) (Shape.Circle { radius = 1 / 0 }))
+        , Show.value (Schema.write (Shape.schema ⊤) Shape.Dot)
+        , Show.result (Schema.decode (Light.schema ⊤) Light.Encoded.Red) showLight
+        , Show.result (Schema.read (Light.schema ⊤) (Show.host "{\"is\":\"green\"}")) showLight
+        , Show.value (Schema.write (Light.schema ⊤) Light.Green)
+        , Show.result (Schema.encode (Light.schema ⊤) Light.Green) λl →
+            case l of
+                Light.Encoded.Red →
+                    "encoded Red"
+
+                Light.Encoded.Green →
+                    "encoded Green"
+        , "-- recursion"
+        , Show.result
+            (Schema.read
+                (Tree.schema ⊤)
+                (Show.host
+                    "{\"node\":\"branch\",\"kids\":[{\"node\":\"leaf\",\"label\":\"a\"},{\"node\":\"branch\",\"kids\":[]}]}"
+                )
+            )
+            showTree
+        , Show.result
+            (Schema.readWith
+                (Tree.schema ⊤)
+                (depth 2)
+                (Show.host "{\"node\":\"branch\",\"kids\":[{\"node\":\"branch\",\"kids\":[]}]}")
+            )
+            showTree
+        , Show.value (Schema.write (Tree.schema ⊤) tree)
+        , Show.result
+            (Schema.decode
+                (Tree.schema ⊤)
+                (Tree.Encoded.Branch
+                    { kids =
+                        [ Tree.Encoded.Leaf { label = "b" }, Tree.Encoded.Branch { kids = [] } ]
+                    }
+                )
+            )
+            showTree
+        , Show.result (Schema.encodeWith (Tree.schema ⊤) (depth 1) tree) λ_ → "encoded"
+        , Show.result (Schema.encode (Tree.schema ⊤) tree) λ_ → "encoded"
+        , "-- compositions"
+        , Show.result (Schema.decode page { items = [ [ 1 ], [ 2, 3 ] ], total = 2 }) λp →
+            String.join (List.map p.items ints) "/"
+        , Show.result (Schema.encode page { items = [ [ 9007199254740992 ] ], total = 1 }) λp →
+            String.join (List.map p.items ints) "/"
+        , Show.result (Schema.read page (Show.host "{\"items\":[[1],[2,\"3\"]],\"total\":2}")) λp →
+            String.join (List.map p.items ints) "/"
+        , Show.value (Schema.write page { items = [ [ 1 ], [] ], total = 2 })
+        , Show.result
+            (Schema.readWith notes all (Show.host "[{\"n\":1},{\"n\":\"x\"},{\"m\":2}]"))
+            parts
+        , Show.value (Schema.write notes [ { n = 4 }, { n = 5 } ])
+        , Show.result (Schema.decode notes [ { n = 1 }, { n = 9007199254740993 } ]) parts
+        , Show.result (Schema.decode maybe Null) λm → nullable m λp → parts [ p ]
+        , Show.result (Schema.encode maybe (NonNull { n = 7 })) λm → nullable m λp → parts [ p ]
+        , Show.value (Schema.write maybe (NonNull { n = 8 }))
+        , Show.result (Schema.read maybe (Show.host "null")) λm → nullable m λp → parts [ p ]
+        , Show.result (Schema.decode counted "12") String.fromInt
+        , Show.result (Schema.decode counted "1x") String.fromInt
+        , Show.result (Schema.encode counted (-1)) quoted
+        , Show.result (Schema.read counted (Show.host "\"34\"")) String.fromInt
+        , Show.value (Schema.write counted 56)
+        , "-- primitives"
+        , Show.result (Schema.decode Schema.int 9007199254740992) String.fromInt
+        , Show.result (Schema.encode Schema.finiteFloat (0 / 0)) String.fromFloat
+        , Show.result (Schema.read Schema.finiteFloat (Show.host "1e999")) String.fromFloat
+        , Show.result (Schema.read Schema.string (Show.host "1")) quoted
+        , Show.value (Schema.write Schema.float (0 / 0))
+        , Show.result (Schema.print Schema.float (0 / 0)) λs → s
+        , Show.result (Schema.decode Schema.null Null) λv → nullable v λ_ → "?"
+        , Show.value (Schema.write Schema.null Null)
+        , Show.result (Schema.read Schema.null (Show.host "0")) λv → nullable v λ_ → "?"
+        ]

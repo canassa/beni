@@ -1021,6 +1021,10 @@ test "ownership words: flipping the browser platforms' words is noticed" {
     try expectFlips("ownership/WordsBrowser.beni", &.{"--platform=browser-direct"});
 }
 
+test "ownership words: flipping Task's words is noticed" {
+    try expectFlips("ownership/TaskWords.beni", &.{"--platform=browser-direct"});
+}
+
 // ---------------------------------------------------------------------------
 // The bodies the words describe (ownership-checker.md §24.6, the owner's
 // guard of 2026-10-12)
@@ -1169,4 +1173,139 @@ test "ownership words: the node platform's are catalogued" {
 test "ownership words: browser-tea and browser-direct carry none" {
     try expectSurface("browser-tea", &.{ "dump", "--stage=ownership", "--platform=browser-tea", "platforms/browser-tea" });
     try expectSurface("browser-direct", &.{ "dump", "--stage=ownership", "--platform=browser-direct", "platforms/browser-direct" });
+}
+
+// ---------------------------------------------------------------------------
+// `--ownership-everywhere` (ownership-checker.md §30.7, slice O0): the hidden
+// flag that enforces on every platform until enforcement is the language's
+// ---------------------------------------------------------------------------
+
+test "ownership everywhere: a node program that writes a top-level list is refused only under the flag" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\import Node
+        \\
+        \\
+        \\xs : List Int
+        \\xs = [ 1, 2, 3 ]
+        \\
+        \\
+        \\main : Node.Program
+        \\main = Node.printLines [ String.fromInt (bump 9) ]
+        \\
+        \\
+        \\bump : Int → Int
+        \\bump n = List.length (List.set xs 0 n)
+        \\
+    );
+    const plain = try w.run(&.{ "check", "--platform=node", "--cache-dir=c", "Main.beni" });
+    try testing.expectEqual(@as(u8, 0), plain.exit_code);
+    const forced = try w.run(&.{ "check", "--platform=node", "--ownership-everywhere", "--cache-dir=c", "Main.beni" });
+    try testing.expectEqual(@as(u8, 1), forced.exit_code);
+    try testing.expectEqual(@as(usize, 1), forced.diagnostics.len);
+    try testing.expectEqual(diagnostic.Code.top_level_list_changed, forced.diagnostics[0].code);
+    // `build` enforces with it too.
+    const built = try w.run(&.{ "build", "--platform=node", "--ownership-everywhere", "--no-cache", "--out=out", "Main.beni" });
+    try testing.expectEqual(@as(u8, 1), built.exit_code);
+    try testing.expectEqual(diagnostic.Code.top_level_list_changed, built.diagnostics[0].code);
+}
+
+test "ownership everywhere: its cache entries are kept in a subdirectory of their own" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\import Node
+        \\
+        \\
+        \\main : Node.Program
+        \\main = Node.printLines [ "ok" ]
+        \\
+    );
+    // A summary block made under the flag's rows must never meet an
+    // ordinary run, so its entries are written below `ownership-everywhere/`
+    // and nowhere else.
+    const forced = try w.run(&.{ "check", "--platform=node", "--ownership-everywhere", "--cache-dir=c", "Main.beni" });
+    try testing.expectEqual(@as(u8, 0), forced.exit_code);
+    try testing.expect(w.exists("c/ownership-everywhere/v1"));
+    try testing.expect(!w.exists("c/v1"));
+    const plain = try w.run(&.{ "check", "--platform=node", "--cache-dir=c", "Main.beni" });
+    try testing.expectEqual(@as(u8, 0), plain.exit_code);
+    try testing.expect(w.exists("c/v1"));
+    // A subdirectory that cannot be made is the cache directory's own
+    // usage failure: exit 2, the directory named.
+    try w.write("d/ownership-everywhere", "a file\n");
+    const blocked = try w.runWith(&.{ "check", "--platform=node", "--ownership-everywhere", "--cache-dir=d", "Main.beni" }, .{ .raw_diagnostics = true });
+    try testing.expectEqual(@as(u8, 2), blocked.exit_code);
+    try testing.expect(std.mem.startsWith(u8, blocked.stderr, "beni: cannot write 'd'"));
+}
+
+/// §30.5, §30.7 (O1): under the flag, the modules of core or of a platform
+/// hold no rejected and no pending line — `browser-tea`'s `Tea.application`
+/// held two before O1, its taggers forwarded inside a lambda (§30.9).
+fn expectPlatformClean(argv: []const []const u8) !void {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const r = try w.runWith(argv, .{ .raw_diagnostics = true, .cwd = .inherit });
+    try testing.expectEqual(@as(u8, 0), r.exit_code);
+    var totals: ?[]const u8 = null;
+    var lines = std.mem.splitScalar(u8, r.stdout, '\n');
+    while (lines.next()) |line| if (std.mem.startsWith(u8, line, "total ")) {
+        totals = line;
+    };
+    const line = totals orelse return error.NoTotals;
+    if (!std.mem.endsWith(u8, line, "pending 0, rejected 0")) {
+        std.debug.print("{s}\n", .{r.stdout});
+        return error.PlatformHasOwnershipErrors;
+    }
+}
+
+test "ownership everywhere: core holds no rejected or pending line" {
+    try expectPlatformClean(&.{ "dump", "--stage=ownership", "--ownership-totals", "--ownership-everywhere", "core" });
+}
+
+test "ownership everywhere: the node platform holds no rejected or pending line" {
+    try expectPlatformClean(&.{ "dump", "--stage=ownership", "--ownership-totals", "--ownership-everywhere", "--platform=node", "platforms/node" });
+}
+
+test "ownership everywhere: the html platform holds no rejected or pending line" {
+    try expectPlatformClean(&.{ "dump", "--stage=ownership", "--ownership-totals", "--ownership-everywhere", "--platform=html", "platforms/html" });
+}
+
+test "ownership everywhere: the browser platform holds no rejected or pending line" {
+    try expectPlatformClean(&.{ "dump", "--stage=ownership", "--ownership-totals", "--ownership-everywhere", "--platform=browser", "platforms/browser" });
+}
+
+test "ownership everywhere: the browser-direct platform holds no rejected or pending line" {
+    try expectPlatformClean(&.{ "dump", "--stage=ownership", "--ownership-totals", "--ownership-everywhere", "--platform=browser-direct", "platforms/browser-direct" });
+}
+
+test "ownership everywhere: the browser-tea platform holds no rejected or pending line" {
+    try expectPlatformClean(&.{ "dump", "--stage=ownership", "--ownership-totals", "--ownership-everywhere", "--platform=browser-tea", "platforms/browser-tea" });
+}
+
+test "ownership everywhere: Page.sandbox gets the direct entry row" {
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    // `update` writes its model in place. With no row that is a function
+    // stored in a record, pending (§16.5); the direct row owns the model
+    // (§20.3), so the write is accepted at the entry.
+    try w.write("Main.beni",
+        \\import Page
+        \\
+        \\
+        \\update : ⊤, List Int → List Int
+        \\update _ xs = List.push xs 1
+        \\
+        \\
+        \\main : Page.Program
+        \\main = Page.sandbox { init = λ⊤ → [], update = update, view = λxs → Page.text (String.fromInt (List.length xs)) }
+        \\
+    );
+    const main = try std.fs.path.join(w.arena.allocator(), &.{ try w.projectPath(), "Main.beni" });
+    const page = "--platform=tests/platforms/page";
+    const checked = try w.runWith(&.{ "check", page, "--ownership-everywhere", "--no-cache", main }, .{ .cwd = .inherit });
+    try testing.expectEqual(@as(u8, 0), checked.exit_code);
+    const report = try w.runWith(&.{ "dump", "--stage=ownership", page, "--ownership-everywhere", main }, .{ .raw_diagnostics = true, .cwd = .inherit });
+    try testing.expect(std.mem.indexOf(u8, report.stdout, "entry Main.update model: accepted entry") != null);
 }

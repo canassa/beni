@@ -9,7 +9,8 @@
 //! - a **module** by its package and dotted name, through the table at the
 //!   block's head;
 //! - a **declaration** by its index in its module's BIR, a **constructor** by
-//!   its module and its index in that module's constructor table — both
+//!   its module and its index in that module's constructor table (the
+//!   BIR's constructors, then its tagged schemas', `Ownership.schemaCtorIndex`) — both
 //!   functions of the module's source, which the module's key covers;
 //! - a **path** step by step, a field by its name;
 //! - every other number (a parameter, a fresh number, a lambda's local) as
@@ -64,7 +65,14 @@ pub const magic = "BENIOWN\x00";
 /// 6 excluded evidence-driven values, 7 retained entry environments, and
 /// 8 preserves unknown/root entry paths while excluding only known init fields.
 /// 9 reads `need` through taken elements (§16.4 item 5, amended 2026-10-15).
-pub const version: u32 = 9;
+/// 10 names a tagged schema's constructors after the BIR's own.
+/// 11 gives a schema value its two analysis slots, `⟨decoded⟩` and
+/// `⟨encoded⟩` (§30.10).
+/// 12 drops the coarsened flag and carries a limit's measure (§16.7).
+/// 13 names a carried lambda by where it is made, so a fixpoint over the
+/// walk's cells settles, and a fixpoint that does not is the `fixpoint` limit
+/// (§20.4, amended 2026-10-16).
+pub const version: u32 = 13;
 
 pub const Error = error{Bad} || Allocator.Error;
 
@@ -290,7 +298,7 @@ fn pathKey(o: *Ownership, arena: Allocator, w: *Writer, p: u32) Allocator.Error!
                 try appendInt(arena, &out, key.index);
                 try out.append(arena, @intCast(st.arg % 64));
             },
-            .elem, .env, .any, .markup_render, .markup_event => {},
+            .elem, .env, .any, .markup_render, .markup_event, .schema_decoded, .schema_encoded => {},
         }
     }
     return out.items;
@@ -389,7 +397,8 @@ fn writeRes(w: *Writer, arena: Allocator, items: []const ResEntry, sort: bool) A
 fn writeSummary(w: *Writer, arena: Allocator, s: *const Summary) Allocator.Error!void {
     try w.int(s.params);
     try w.byte(@backingInt(s.limit));
-    try w.byte(@as(u8, @intFromBool(s.asserted)) | @as(u8, @intFromBool(s.coarse)) << 1 | @as(u8, @intFromBool(s.once)) << 2 | @as(u8, @intFromBool(s.words)) << 3);
+    try w.int(s.limit_at);
+    try w.byte(@as(u8, @intFromBool(s.asserted)) | @as(u8, @intFromBool(s.once)) << 2 | @as(u8, @intFromBool(s.words)) << 3);
 
     const uses = try arena.dupe(UseEntry, s.uses);
     const UseCx = struct {
@@ -579,10 +588,10 @@ pub fn read(o: *Ownership, arena: Allocator, bytes: []const u8, m: u32) Error!Bl
                     const cm = try r.module();
                     const ci = try r.int();
                     const k = try r.byte();
-                    if (k >= 64 or !o.hasCtor(cm, ci)) return error.Bad;
+                    if (k >= 64 or !try o.hasCtor(cm, ci)) return error.Bad;
                     break :blk (try o.ctorId(cm, ci)) *% 64 +% k;
                 },
-                .elem, .env, .any, .markup_render, .markup_event => 0,
+                .elem, .env, .any, .markup_render, .markup_event, .schema_decoded, .schema_encoded => 0,
             };
             at = try o.rawChild(at, kind, arg);
         }
@@ -660,8 +669,10 @@ fn readSummary(r: *Reader, depth: u32) Error!Summary {
     if (depth > 16) return error.Bad;
     const params = try r.int();
     const limit = try r.enumOf(Ownership.Limit);
+    const limit_at = try r.int();
     const flags = try r.byte();
-    if (flags > 15) return error.Bad;
+    // Bit 2 was a coarsened summary's, before §16.7 deleted coarsening.
+    if (flags > 15 or flags & 2 != 0) return error.Bad;
 
     const uses = try r.arena.alloc(UseEntry, try r.count(9));
     for (uses) |*u| u.* = .{ .param = try r.int(), .path = try r.path(), .bits = try r.byte() };
@@ -711,8 +722,8 @@ fn readSummary(r: *Reader, depth: u32) Error!Summary {
         .supply = supply,
         .funs = funs,
         .limit = limit,
+        .limit_at = limit_at,
         .asserted = flags & 1 != 0,
-        .coarse = flags & 2 != 0,
         .once = flags & 4 != 0,
         .words = flags & 8 != 0,
         .xreq = xreq,

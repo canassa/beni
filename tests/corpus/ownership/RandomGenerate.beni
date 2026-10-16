@@ -1,0 +1,54 @@
+-- CK-240: a carried generator's call of the generator it was handed is `⊤`.
+-- ownership (§30.9; it replaces `build/bad/direct/RandomTaggerDiagnostic`,
+-- which pinned this as a limit): `Random.generate`'s tagger is handed what
+-- the generator returns. `Random.list` is `Pcg.list`, named, and is called
+-- as the function it names; its lambda, which the result carries (§24.9),
+-- calls the generator it was handed, a slot of `list`: a carried lambda's
+-- call of a function the caller passed returns what that function's class
+-- returns, handed what the checker cannot see. `Random.int`'s lambda
+-- returns numbers and a seed of `Int32`s, a `crossing` type, so the list is
+-- made by the call and `Roll` is accepted. `Random.constant shared` answers
+-- the top-level list it captured, so `Constant` is rejected `need`:
+-- accepting every generator would be unsound (§28.5's amendment).
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Random
+import Sub
+import Tea
+
+
+type Msg
+    = Roll
+    | Constant
+    | Rolled (List Int)
+
+
+shared : List Int
+shared = [ 1, 2 ]
+
+
+update : Msg, List Int → List Int × Cmd Msg
+update msg rolls =
+    case msg of
+        Roll →
+            ( rolls, Random.generate (Random.list (Random.int 1 6) 3) Rolled )
+
+        Constant →
+            ( rolls, Random.generate (Random.constant shared) Rolled )
+
+        Rolled more →
+            ( List.push more 7, Cmd.none )
+
+
+view : List Int → Html Msg
+view rolls = <button onClick={Roll}>{String.fromInt (List.length rolls)}</button>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( [], Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }
