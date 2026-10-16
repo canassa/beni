@@ -10,7 +10,7 @@
 -- accepted (before rule 4 it was rejected `call`, approximately).
 -- `heldLists` is its twin, whose result's type can be the written list's,
 -- and is rejected `call`. `bench/corpus`'s applicative chain, `check`:
--- `andMap` appends its errors in place, and since §30.10 (issue #216) the
+-- `andMap` appends its errors in place, and since §30.11 (issue #216) the
 -- errors each step hands it are what a function the checker cannot
 -- identify returned (`(firstOf [ … ]) "a" a`), `⊤call`, so each write is
 -- rejected `unknown`, approximately — the checker's limit, issue #223.

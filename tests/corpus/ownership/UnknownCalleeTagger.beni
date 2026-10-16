@@ -1,5 +1,5 @@
 -- CK-245: a send rests on a call of a function the checker cannot identify, and is accepted.
--- ownership (§30.10, issue #216): `Cmd.task` sends what its work returns, and
+-- ownership (§30.11, issue #216): `Cmd.task` sends what its work returns, and
 -- `update` pushes onto the payload in place, so the work must return a list
 -- it owns. `fetch` calls a record field with a dot inside the work, and
 -- hands `Cmd.task` its own tagger: the dot call is the field's value called,
