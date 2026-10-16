@@ -23,4 +23,8 @@ List (#0)
 #0
   #0 Pong = tagged "pong" [ PongNext as "next" { ping : #1 } ]
   #1 Ping = tagged "ping" [ PingValue as "value" { value : String, pong : #0 } | PingEnd as "end" ]
+#0
+  #0 Rock = tagged "r" [ RockBeats as "beats" { value : Bool, paper : List (#1), scissors : List (#2) } ]
+  #1 Paper = tagged "p" [ PaperBeats as "beats" { rock : List (#0), scissors : List (#2) } ]
+  #2 Scissors = tagged "s" [ ScissorsBeats as "beats" { rock : List (#0), paper : List (#1) } ]
 parsed
