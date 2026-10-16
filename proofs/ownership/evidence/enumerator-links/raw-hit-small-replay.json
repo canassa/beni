@@ -1,0 +1,38 @@
+{
+  "started_at_utc": "2026-10-16T14:12:32.252168+00:00",
+  "finished_at_utc": "2026-10-16T14:12:38.022495+00:00",
+  "command": [
+    "lake",
+    "env",
+    "lean",
+    "--run",
+    "/home/jayson/src/beni.worktrees/ownership-proofs/zig-out/scratch/RawHitProbeRepro20261016T141232Z.lean"
+  ],
+  "exit_code": 0,
+  "source": {
+    "file": "zig-out/scratch/RawHitProbeRepro20261016T141232Z.lean",
+    "bytes": 7229,
+    "sha256": "1cc7d1dddbe630b6eabe06387da5a874e1372175d522e830ecffdaf9dd0f0312"
+  },
+  "stdout": {
+    "file": "zig-out/scratch/raw-hit-small-repro-20261016T141232Z.log",
+    "bytes": 200446,
+    "sha256": "4acb7c58bd2b5983d23d94f44888dbc1fd0740175fd9682c5c4464960e784b1c"
+  },
+  "stderr": {
+    "file": "zig-out/scratch/raw-hit-small-repro-20261016T141232Z.stderr.log",
+    "bytes": 0,
+    "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "archived_native_log": {
+    "file": "proofs/ownership/evidence/enumerator-links/archives/raw-hit-probe-current.log.gz",
+    "bytes": 10647,
+    "sha256": "64256cde1767f555d22cb62a9686a6142f7655fc3909c95a5c035349749c95a8"
+  },
+  "expected_native_sha256": "4acb7c58bd2b5983d23d94f44888dbc1fd0740175fd9682c5c4464960e784b1c",
+  "archived_native_sha256_matches": true,
+  "stdout_equals_archived_native_bytes": true,
+  "target_headers": 2,
+  "target_footers": 2,
+  "passed": true
+}

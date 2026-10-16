@@ -4,6 +4,8 @@ This plan covers [issue #165](https://github.com/canassa/beni/issues/165).
 The source baseline is `927b7dcd4` on `origin/master`, dated 2026-10-15.
 The branch then advanced to `f1ab9cc87`; those four commits changed no Lean model rule.
 The branch later advanced to `23e571c18`; the later commits also changed no Lean model rule.
+The branch rebased onto `0452a59c4` on 2026-10-16.
+That base merges the audit repair and the emitter holder rule. It changes no Lean model rule.
 This document specifies proof work. It does not certify the checker.
 
 ## Contract and current status
@@ -140,7 +142,8 @@ The hash-attested scan checked 51,088 actual calls and found no dangling inputs 
 The public-premise filter matched 43,432 calls and left 7,656 unmatched under its selected witnesses.
 Matched calls include 21,560 with canonical written or consumed targets; their direct and linked observer-hit counts are zero.
 The raw scan found two direct-observer hits in unmatched cache candidates and zero linked-observer hits.
-The native probe classifies both hits as unsuitable cache-summary matches. Neither call changes its pre-existing observed array.
+The worker interprets both native probe records as unsuitable cache-summary matches.
+Both records show unchanged pre-existing observed arrays.
 At `v6:20261011:11101`, call 3, entry 2 cannot describe the actual array capture through its empty callback environment.
 At `v6:17:1707`, call 5, entry 1 expects a writing, non-escaping callback; the actual callback writes nothing and escapes its argument.
 The strict raw result remains false. Keep both hits and the 10,336 unmatched candidates explicit.
@@ -379,8 +382,9 @@ Before each push, run the required Lean build, ownership CI, audit steps, and Zi
 Check memory before each heavy command.
 Start only when at least 6 GB remains available. Keep `MemoryMax=10G` and `MemorySwapMax=2G`.
 Start the full independent audit only when at least 12 GB remains available.
-Keep the PR #245 audit dependency and every audit check intact.
-Record omitted checks and capped failures in the PR. The complete audit of the expanded enumerator source remains pending.
+Keep the merged PR #245 audit repair and every audit check intact.
+Record omitted checks and capped failures in the PR.
+Complete the expanded source's independent audit before publication. Record its result and commit in the PR.
 
 Keep the witness imports in one dependency chain after the existing proof modules.
 Later reductions then reuse imported equation lemmas and their private splitters.

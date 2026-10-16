@@ -146,15 +146,22 @@ It refuses unfamiliar trace formats or ambiguous paths.
 ## Opt-in write diagnostics
 
 Run this mode from `proofs/ownership`.
-Check available memory first. Start only with at least 6 GB available.
-Keep the shared lock and both memory caps:
+The command checks available memory after it takes the shared lock.
+It starts only with at least 6 GB available and keeps both memory caps:
 
 ```sh
-free -g
 flock /home/jayson/.local/state/beni-dispatch/heavy.lock \
   systemd-run --user --scope --quiet \
   -p MemoryMax=10G -p MemorySwapMax=2G -- \
-  nix develop ../..#ownership --command \
+  bash -eu -c '
+    free -g
+    available_gb=$(free -g | awk "/^Mem:/ {print \$7}")
+    if test "$available_gb" -lt 6; then
+      printf "%s\n" "Less than 6 GB available; command did not start." >&2
+      exit 75
+    fi
+    exec "$@"
+  ' bash nix develop ../..#ownership --command \
   lake exe ownership diagnostics 20000 20261011 --enumerate-bound=2 \
   --out=../../zig-out/scratch/ownership-diagnostics.log
 ```
@@ -168,6 +175,11 @@ The q1 check follows Cesar's q4 decision.
 It inspects every attempted write in main expressions and nested calls.
 It reports a hit when a protected reader reaches a distinct member of the receiver's linked storage component.
 Protected readers include outer continuations, permanent observers, loop readers, and unfinished operands.
+Continuation atom uses define the live paths. The diagnostic follows their reachable cells in the current heap at each write.
+Live closure values contribute their captures. Explicit capture atom uses also contribute readers.
+Traversal readers pin outer values before iteration; their heap reachability remains current at each write.
+An eventual return adds no separate pre-existing observer.
+Intercepted writes preserve `State.links`. Only `.view` adds links.
 Read-only view/source splits remain legal.
 The conservative check also reports no-op writes and writes that leave the counterpart unchanged.
 Classify each hit before calling it a checker defect.
@@ -179,6 +191,8 @@ A failed chosen witness does not exclude every possible theorem instance.
 Cache presence alone proves neither actual-call admissibility nor complete effect coverage.
 Matched demand counts expose an empty matched subset.
 Linked-demand and observed-demand counts expose narrower coverage gaps.
+Permanent-registration counts require a nonempty pre-call `kept` array; they do not require overlap with a written or consumed target.
+Direct and linked observer-hit counts record that overlap separately.
 
 The mode checks input and observer references for dangling addresses.
 It counts failed executions, failed snapshots, unsupported reader contexts, and incomplete scans explicitly.
@@ -188,10 +202,15 @@ Every complete execution requires exact ordinary/diagnostic equality for results
 The fresh capture completed 71,762 accepted runs across 226,103 program cases.
 It found zero q1 hits, divergent states or traces, incomplete accepted runs, or dangling input or observer references.
 The strict q2 result remains false: two raw direct-observer hits and zero matched direct or linked hits.
-The native classifications find unsuitable cache-summary matches. Neither call changes its pre-existing observed array.
+Those zero matched hits cover one canonical naming and one chosen closure-class interpretation, not every theorem instance.
+The worker interprets the native records as unsuitable cache-summary matches. Both records show unchanged pre-existing observed arrays.
 The run retains 7,656 unmatched calls and 10,336 unmatched candidates as explicit coverage limits.
+The six matched read-only linked calls compare distinct canonical input slots.
+The metric excludes linked paths within one slot.
+It requires empty summary write and consume rows and zero callback call counts.
 Its source and executable hashes stay equal before and after execution.
-[Enumerator evidence](evidence/enumerator-links/README.md) records the manifests, exact hashes, classifications, counts, and native reproduction commands.
+[Enumerator evidence](evidence/enumerator-links/README.md) keeps compressed raw records, local-run attestations, worker interpretations, and replay commands.
+The hashes identify local execution records. They do not establish complete build reproducibility.
 The fresh CI run passed, including its bounded compiler bridge.
 The complete independent audit remains a separate publication check. The PR records its result.
 

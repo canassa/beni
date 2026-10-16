@@ -1,0 +1,11 @@
+{
+  "method": "Exact-byte copy directly into zig-out/scratch; --help and root/package resolution only. No full stream rescan.",
+  "source_file": "proofs/ownership/evidence/enumerator-links/verify-remaining-fuel-stream.py",
+  "source_sha256": "b0f02ddfbad5385aeebcefbedfbed98c3fc0817d38a90ec8452ff9d339137a7e",
+  "copied_file": "zig-out/scratch/fuel-verifier-relocation-4edlsaqw.py",
+  "copied_sha256": "b0f02ddfbad5385aeebcefbedfbed98c3fc0817d38a90ec8452ff9d339137a7e",
+  "exit_code": 0,
+  "root_matches": true,
+  "package_matches": true,
+  "help_stdout": "usage: fuel-verifier-relocation-4edlsaqw.py [-h] --input INPUT --output OUTPUT\n\nCheck the existing FuelLeft byte stream. Run through run-heavy.zsh.\n\noptions:\n  -h, --help       show this help message and exit\n  --input INPUT\n  --output OUTPUT\n"
+}

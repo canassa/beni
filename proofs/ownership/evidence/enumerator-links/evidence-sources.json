@@ -81,7 +81,7 @@
       ]
     },
     "raw-hit-classification.json": {
-      "derivation": "JSON summary from the listed source records",
+      "derivation": "Worker interpretation of the full native probe and diagnostic records. The prose is not machine output or a proof. Numeric fields transcribe the source records.",
       "inputs": [
         {
           "file": "zig-out/scratch/raw-hit-probe-current.log",
@@ -109,7 +109,317 @@
           "bytes": 441
         }
       ]
+    },
+    "verify-remaining-fuel-stream.py": {
+      "derivation": "exact byte copy",
+      "inputs": [
+        {
+          "file": "zig-out/scratch/verify-remaining-fuel-stream.py",
+          "sha256": "b0f02ddfbad5385aeebcefbedfbed98c3fc0817d38a90ec8452ff9d339137a7e",
+          "bytes": 18632
+        }
+      ]
+    },
+    "remaining-fuel-verification.json": {
+      "derivation": "exact byte copy",
+      "inputs": [
+        {
+          "file": "zig-out/scratch/fuel-stream-verification-20261016T134556Z.json",
+          "sha256": "7fc9e2a3bdc6ff68c8c34040336c115f732234f4b49c2e737c7f7db8ae4c5978",
+          "bytes": 5392
+        }
+      ]
+    },
+    "RawHitProbe.lean.txt": {
+      "derivation": "exact byte copy",
+      "inputs": [
+        {
+          "file": "zig-out/scratch/RawHitProbe.lean",
+          "sha256": "1cc7d1dddbe630b6eabe06387da5a874e1372175d522e830ecffdaf9dd0f0312",
+          "bytes": 7229
+        }
+      ]
+    },
+    "verifier-relocation-check.json": {
+      "derivation": "Local --help and root/package resolution check after an exact-byte copy directly into zig-out/scratch. This check does not scan the fuel stream.",
+      "inputs": [
+        {
+          "file": "proofs/ownership/evidence/enumerator-links/verify-remaining-fuel-stream.py",
+          "sha256": "b0f02ddfbad5385aeebcefbedfbed98c3fc0817d38a90ec8452ff9d339137a7e",
+          "bytes": 18632
+        }
+      ]
+    },
+    "archive-manifest.json": {
+      "derivation": "Original bytes compressed once with gzip level 9, empty filename and mtime 0; each archive passed a full lossless decode check. Hashes attest local-run records, not complete build reproducibility.",
+      "inputs": [
+        {
+          "file": "zig-out/scratch/enum-final-diagnostic-capture/diagnostics.log",
+          "bytes": 12745,
+          "sha256": "0035d0af49e0006440b39b8eba2d874eeee6da710b890c041e1b5367581a852c"
+        },
+        {
+          "file": "zig-out/scratch/enum-final-diagnostic-capture/evidence.log",
+          "bytes": 3132824,
+          "sha256": "c3856170add17ba7ae2790a246a6abf4bc247d42433eb80c93a7122059998779"
+        },
+        {
+          "file": "zig-out/scratch/raw-hit-probe-current.log",
+          "bytes": 200446,
+          "sha256": "4acb7c58bd2b5983d23d94f44888dbc1fd0740175fd9682c5c4464960e784b1c"
+        },
+        {
+          "file": "zig-out/scratch/enum-baseline-ci.log",
+          "bytes": 315600,
+          "sha256": "b79b07be1da83caff69297e985a0bb3d53c0f3fdecf3208d4f284bc0a966044b"
+        },
+        {
+          "file": "zig-out/scratch/enum-after-ci.log",
+          "bytes": 315597,
+          "sha256": "689822c065b68a5ce0304306d6800fff2ee3b4fa8ffa08d77412489512c1dbb3"
+        },
+        {
+          "file": "zig-out/scratch/enum-baseline-bridge/enumerate-0.jsonl",
+          "bytes": 299140,
+          "sha256": "03d400910275efe8c8beb08c1c8a1db6d782e2da837917f0f69db6c07714e4c0"
+        },
+        {
+          "file": "zig-out/scratch/enum-after-bridge/enumerate-0.jsonl",
+          "bytes": 299140,
+          "sha256": "03d400910275efe8c8beb08c1c8a1db6d782e2da837917f0f69db6c07714e4c0"
+        },
+        {
+          "file": "zig-out/scratch/enum-baseline-bridge/fixtures-0.jsonl",
+          "bytes": 1390094,
+          "sha256": "a38e714abf0df309a1030bbf562a0e7246db4f77f3e86f511ab6f5653fd0ccb0"
+        },
+        {
+          "file": "zig-out/scratch/enum-after-bridge/fixtures-0.jsonl",
+          "bytes": 1390094,
+          "sha256": "a38e714abf0df309a1030bbf562a0e7246db4f77f3e86f511ab6f5653fd0ccb0"
+        },
+        {
+          "file": "zig-out/scratch/enum-baseline-bridge/generator-17.jsonl",
+          "bytes": 1242811,
+          "sha256": "121e9228d9e26a0e11f09b8632dd7c55a644be1a7e68daf029c9770150ebff39"
+        },
+        {
+          "file": "zig-out/scratch/enum-after-bridge/generator-17.jsonl",
+          "bytes": 1242811,
+          "sha256": "121e9228d9e26a0e11f09b8632dd7c55a644be1a7e68daf029c9770150ebff39"
+        },
+        {
+          "file": "zig-out/scratch/enum-baseline-bridge/generator6-17.jsonl",
+          "bytes": 1458569,
+          "sha256": "f44e7ec3f01e1d0d7e7d0252c24272631a27dc4642a985119c2039484809d1c3"
+        },
+        {
+          "file": "zig-out/scratch/enum-after-bridge/generator6-17.jsonl",
+          "bytes": 1458569,
+          "sha256": "f44e7ec3f01e1d0d7e7d0252c24272631a27dc4642a985119c2039484809d1c3"
+        },
+        {
+          "file": "zig-out/scratch/enum-baseline-bridge/report.json",
+          "bytes": 80267,
+          "sha256": "8220d53b72d01f5e61cf18583e1e584e2cf425d1f20d25dbcf01fad4616d318b"
+        },
+        {
+          "file": "zig-out/scratch/enum-after-bridge/report.json",
+          "bytes": 80268,
+          "sha256": "3640f380cf8a6d14148e3fa973de9904307d059f8c9bab0e01639ae9b7100978"
+        },
+        {
+          "file": "zig-out/scratch/enum-remaining-fuel.tsv",
+          "bytes": 191094251,
+          "sha256": "00b3320501a76b4df3afcff2cdbd7889e1feb09bc4cee6680ae219ca3633aa31"
+        },
+        {
+          "file": "zig-out/scratch/enum-remaining-fuel.log",
+          "bytes": 441,
+          "sha256": "09f0cbef2c121ceea65850e157dd7c8b287f9e05a1aed7d71de11602973b6494"
+        }
+      ]
+    },
+    "archives/diagnostics/diagnostics.log.gz": {
+      "derivation": "Deterministic gzip archive; a full decode preserves every original byte.",
+      "inputs": [
+        {
+          "file": "zig-out/scratch/enum-final-diagnostic-capture/diagnostics.log",
+          "bytes": 12745,
+          "sha256": "0035d0af49e0006440b39b8eba2d874eeee6da710b890c041e1b5367581a852c"
+        }
+      ]
+    },
+    "archives/diagnostics/evidence.log.gz": {
+      "derivation": "Deterministic gzip archive; a full decode preserves every original byte.",
+      "inputs": [
+        {
+          "file": "zig-out/scratch/enum-final-diagnostic-capture/evidence.log",
+          "bytes": 3132824,
+          "sha256": "c3856170add17ba7ae2790a246a6abf4bc247d42433eb80c93a7122059998779"
+        }
+      ]
+    },
+    "archives/raw-hit-probe-current.log.gz": {
+      "derivation": "Deterministic gzip archive; a full decode preserves every original byte.",
+      "inputs": [
+        {
+          "file": "zig-out/scratch/raw-hit-probe-current.log",
+          "bytes": 200446,
+          "sha256": "4acb7c58bd2b5983d23d94f44888dbc1fd0740175fd9682c5c4464960e784b1c"
+        }
+      ]
+    },
+    "archives/enum-baseline-ci.log.gz": {
+      "derivation": "Deterministic gzip archive; a full decode preserves every original byte.",
+      "inputs": [
+        {
+          "file": "zig-out/scratch/enum-baseline-ci.log",
+          "bytes": 315600,
+          "sha256": "b79b07be1da83caff69297e985a0bb3d53c0f3fdecf3208d4f284bc0a966044b"
+        }
+      ]
+    },
+    "archives/enum-after-ci.log.gz": {
+      "derivation": "Deterministic gzip archive; a full decode preserves every original byte.",
+      "inputs": [
+        {
+          "file": "zig-out/scratch/enum-after-ci.log",
+          "bytes": 315597,
+          "sha256": "689822c065b68a5ce0304306d6800fff2ee3b4fa8ffa08d77412489512c1dbb3"
+        }
+      ]
+    },
+    "archives/baseline-bridge/enumerate-0.jsonl.gz": {
+      "derivation": "Deterministic gzip archive; a full decode preserves every original byte.",
+      "inputs": [
+        {
+          "file": "zig-out/scratch/enum-baseline-bridge/enumerate-0.jsonl",
+          "bytes": 299140,
+          "sha256": "03d400910275efe8c8beb08c1c8a1db6d782e2da837917f0f69db6c07714e4c0"
+        }
+      ]
+    },
+    "archives/after-bridge/enumerate-0.jsonl.gz": {
+      "derivation": "Deterministic gzip archive; a full decode preserves every original byte.",
+      "inputs": [
+        {
+          "file": "zig-out/scratch/enum-after-bridge/enumerate-0.jsonl",
+          "bytes": 299140,
+          "sha256": "03d400910275efe8c8beb08c1c8a1db6d782e2da837917f0f69db6c07714e4c0"
+        }
+      ]
+    },
+    "archives/baseline-bridge/fixtures-0.jsonl.gz": {
+      "derivation": "Deterministic gzip archive; a full decode preserves every original byte.",
+      "inputs": [
+        {
+          "file": "zig-out/scratch/enum-baseline-bridge/fixtures-0.jsonl",
+          "bytes": 1390094,
+          "sha256": "a38e714abf0df309a1030bbf562a0e7246db4f77f3e86f511ab6f5653fd0ccb0"
+        }
+      ]
+    },
+    "archives/after-bridge/fixtures-0.jsonl.gz": {
+      "derivation": "Deterministic gzip archive; a full decode preserves every original byte.",
+      "inputs": [
+        {
+          "file": "zig-out/scratch/enum-after-bridge/fixtures-0.jsonl",
+          "bytes": 1390094,
+          "sha256": "a38e714abf0df309a1030bbf562a0e7246db4f77f3e86f511ab6f5653fd0ccb0"
+        }
+      ]
+    },
+    "archives/baseline-bridge/generator-17.jsonl.gz": {
+      "derivation": "Deterministic gzip archive; a full decode preserves every original byte.",
+      "inputs": [
+        {
+          "file": "zig-out/scratch/enum-baseline-bridge/generator-17.jsonl",
+          "bytes": 1242811,
+          "sha256": "121e9228d9e26a0e11f09b8632dd7c55a644be1a7e68daf029c9770150ebff39"
+        }
+      ]
+    },
+    "archives/after-bridge/generator-17.jsonl.gz": {
+      "derivation": "Deterministic gzip archive; a full decode preserves every original byte.",
+      "inputs": [
+        {
+          "file": "zig-out/scratch/enum-after-bridge/generator-17.jsonl",
+          "bytes": 1242811,
+          "sha256": "121e9228d9e26a0e11f09b8632dd7c55a644be1a7e68daf029c9770150ebff39"
+        }
+      ]
+    },
+    "archives/baseline-bridge/generator6-17.jsonl.gz": {
+      "derivation": "Deterministic gzip archive; a full decode preserves every original byte.",
+      "inputs": [
+        {
+          "file": "zig-out/scratch/enum-baseline-bridge/generator6-17.jsonl",
+          "bytes": 1458569,
+          "sha256": "f44e7ec3f01e1d0d7e7d0252c24272631a27dc4642a985119c2039484809d1c3"
+        }
+      ]
+    },
+    "archives/after-bridge/generator6-17.jsonl.gz": {
+      "derivation": "Deterministic gzip archive; a full decode preserves every original byte.",
+      "inputs": [
+        {
+          "file": "zig-out/scratch/enum-after-bridge/generator6-17.jsonl",
+          "bytes": 1458569,
+          "sha256": "f44e7ec3f01e1d0d7e7d0252c24272631a27dc4642a985119c2039484809d1c3"
+        }
+      ]
+    },
+    "archives/baseline-bridge/report.json.gz": {
+      "derivation": "Deterministic gzip archive; a full decode preserves every original byte.",
+      "inputs": [
+        {
+          "file": "zig-out/scratch/enum-baseline-bridge/report.json",
+          "bytes": 80267,
+          "sha256": "8220d53b72d01f5e61cf18583e1e584e2cf425d1f20d25dbcf01fad4616d318b"
+        }
+      ]
+    },
+    "archives/after-bridge/report.json.gz": {
+      "derivation": "Deterministic gzip archive; a full decode preserves every original byte.",
+      "inputs": [
+        {
+          "file": "zig-out/scratch/enum-after-bridge/report.json",
+          "bytes": 80268,
+          "sha256": "3640f380cf8a6d14148e3fa973de9904307d059f8c9bab0e01639ae9b7100978"
+        }
+      ]
+    },
+    "archives/remaining-fuel.tsv.gz": {
+      "derivation": "Deterministic gzip archive; a full decode preserves every original byte.",
+      "inputs": [
+        {
+          "file": "zig-out/scratch/enum-remaining-fuel.tsv",
+          "bytes": 191094251,
+          "sha256": "00b3320501a76b4df3afcff2cdbd7889e1feb09bc4cee6680ae219ca3633aa31"
+        }
+      ]
+    },
+    "archives/remaining-fuel.log.gz": {
+      "derivation": "Deterministic gzip archive; a full decode preserves every original byte.",
+      "inputs": [
+        {
+          "file": "zig-out/scratch/enum-remaining-fuel.log",
+          "bytes": 441,
+          "sha256": "09f0cbef2c121ceea65850e157dd7c8b287f9e05a1aed7d71de11602973b6494"
+        }
+      ]
+    },
+    "raw-hit-small-replay.json": {
+      "derivation": "exact byte copy",
+      "inputs": [
+        {
+          "file": "zig-out/scratch/raw-hit-small-repro-20261016T141232Z.json",
+          "sha256": "064b62f9116e9b653b41a814b72439f697aa0c0c821a561e2c2a0527a9125e5d",
+          "bytes": 1365
+        }
+      ]
     }
   },
-  "capture_limit": "The diagnostic manifests identify measured file bytes on base HEAD 9230e047e. They do not claim that HEAD alone contains the enumerator edits."
+  "capture_limit": "The diagnostic manifests identify measured file bytes on base HEAD 9230e047e. HEAD alone does not identify the enumerator edits. All hashes attest local records; the manifests omit external toolchain and library inputs."
 }

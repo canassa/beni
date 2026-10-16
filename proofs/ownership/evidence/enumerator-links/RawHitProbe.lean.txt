@@ -1,0 +1,115 @@
+import Ownership.DiagnosticCalls
+import Ownership.Oracle
+
+/-! Reproduce the two raw q2 hits without the full campaign.
+Generate every preceding program to preserve the exact RNG stream. Check and
+execute only the two selected programs. Print unmatched premises as evidence;
+no raw hit counts as a checker defect without an admissible candidate. -/
+
+namespace Ownership.RawHitProbe
+
+open InPlaceSemantics
+
+structure Target where
+  seed : Nat
+  index : Nat
+  callIndex : Nat
+  cacheIndex : Nat
+  address : Nat
+
+def targets : List Target := [
+  {seed := 20261011, index := 11101, callIndex := 3, cacheIndex := 2, address := 1},
+  {seed := 17, index := 1707, callIndex := 5, cacheIndex := 1, address := 5}
+]
+
+def selectedProgram (seed index : Nat) : String × Program := Id.run do
+  let mut rng := seed
+  let mut selected : String × Program := ("uninitialized", {main := .atom (.int 0)})
+  for _ in List.range (index + 1) do
+    let (sample, next) := (Oracle.generateVersion 6).run rng
+    rng := next
+    selected := sample
+  return selected
+
+def changedAddresses (call : CallRecord) : List Nat :=
+  (List.range (max call.preHeap.size call.postHeap.size)).filter fun address =>
+    call.preHeap[address]? != call.postHeap[address]?
+
+def printCall (label : String) (call : CallRecord) : IO Unit := do
+  IO.println s!"{label}\tdecl={call.decl}\targs={repr call.args}\tcaps={repr call.caps}\tresult={repr call.result}"
+  IO.println s!"{label}\tpreHeap={repr call.preHeap}\tpreKept={repr call.preKept}\tpreLinks={repr call.preLinks}"
+  IO.println s!"{label}\tpostHeap={repr call.postHeap}\tpostKept={repr call.postKept}"
+  IO.println s!"{label}\tchangedAddresses={repr (changedAddresses call)}"
+
+def printCandidate (p : Program) (call : CallRecord) (cacheIndex : Nat)
+    (entry : CacheEntry) : IO Unit := do
+  let some declaration := p.declarations[entry.decl]? | do
+    IO.println s!"candidate={cacheIndex}\tMISSING DECLARATION"
+    return
+  let inputs := call.args ++ call.caps
+  let gamma := Falsify.canonicalNaming call.preHeap entry.inputs inputs declaration.parameters.length
+  let snapshots := DiagnosticCalls.snapshotIssues call.preHeap inputs .input
+  let fs := DiagnosticCalls.actualClasses call entry
+  IO.println s!"candidate={cacheIndex}\tfull={repr entry}"
+  IO.println s!"candidate={cacheIndex}\tstatus={repr (DiagnosticCalls.premises p.declarations call entry snapshots.isEmpty)}"
+  IO.println s!"candidate={cacheIndex}\tgamma={repr gamma}\tseparating={Falsify.separatingB gamma}\tinputSnapshotIssues={repr snapshots}"
+  IO.println s!"candidate={cacheIndex}\tW={repr entry.summary.writes}\tC={repr entry.summary.consumes}\tguards={repr entry.summary.guards}"
+  for (value, slot) in inputs.zipIdx do
+    let abstractValue := entry.inputs[slot]?.getD .bottom
+    IO.println s!"candidate={cacheIndex}\tinput={slot}\tconcrete={repr value}\tabstract={repr abstractValue}"
+    IO.println s!"candidate={cacheIndex}\tinput={slot}\tdescribes={repr (Falsify.describesB gamma call.preHeap abstractValue value)}"
+    IO.println s!"candidate={cacheIndex}\tinput={slot}\tprePaths={repr (Falsify.pathsOf call.preHeap Falsify.depthFuel value [])}\tpostPaths={repr (Falsify.pathsOf call.postHeap Falsify.depthFuel value [])}"
+  IO.println s!"candidate={cacheIndex}\tactualClasses={repr fs}"
+  for (slot, abstractValue) in fs do
+    let value := inputs[slot]?.getD (.int 0)
+    let once := entry.summary.guards.any fun guard =>
+      guard.query.slot == slot && guard.query.fact == .once && !guard.answer.isEmpty
+    let (_, extraNaming) := Falsify.closureAbs call.preHeap value once
+    IO.println s!"candidate={cacheIndex}\tclass={slot}\tconcrete={repr value}\tclassDescription={repr abstractValue}"
+    IO.println s!"candidate={cacheIndex}\tclass={slot}\tdescribesClosure={repr (DiagnosticCalls.describesClosureB gamma call.preHeap abstractValue value)}\tclosureAbsExtraNaming={repr extraNaming}"
+  for (guard, guardIndex) in entry.summary.guards.zipIdx do
+    IO.println s!"candidate={cacheIndex}\tguard={guardIndex}\tquery={repr guard.query}\texpected={repr guard.answer}"
+    match (answer ({} : Config).inferenceFuel p.declarations {} [{actuals := fs}] guard.query).run {} with
+    | .ok (actual, _) =>
+      IO.println s!"candidate={cacheIndex}\tguard={guardIndex}\tactual={repr actual}\tequal={actual == guard.answer}"
+    | .error problem =>
+      IO.println s!"candidate={cacheIndex}\tguard={guardIndex}\tANSWER ERROR={repr problem}"
+
+def runTarget (target : Target) : IO Unit := do
+  let label := s!"v6:{target.seed}:{target.index}"
+  let (family, p) := selectedProgram target.seed target.index
+  IO.println s!"TARGET\t{label}\tfamily={family}\tcall={target.callIndex}\trawCandidate={target.cacheIndex}\tobservedAddress={target.address}"
+  IO.println s!"{label}\tFULL PROGRAM AST\n{repr p}"
+  for (declaration, index) in p.declarations.zipIdx do
+    IO.println s!"{label}\tdeclaration={index}\n{repr declaration}"
+  let checked := check p
+  let .ok accepted := checked | do
+    let problem := match checked with | .error detail => detail | .ok _ => "unexpected acceptance"
+    throw <| IO.userError s!"{label}: checker rejected target: {problem}"
+  IO.println s!"{label}\tCHECKER accepted\tcacheSize={accepted.cache.size}"
+  for (entry, index) in accepted.cache.toList.zipIdx do
+    IO.println s!"{label}\tcache={index}\tdecl={entry.decl}\tW={repr entry.summary.writes}\tC={repr entry.summary.consumes}"
+  let .ok ((result, state), _) := Diagnostics.run p {fuel := 100000, logCalls := true} |
+    throw <| IO.userError s!"{label}: ordinary execution failed"
+  IO.println s!"{label}\tEXECUTION succeeded\tresult={repr result}\tfuelLeft={state.fuel}\tcalls={state.calls.size}"
+  for (call, index) in state.calls.toList.zipIdx do
+    let name := (p.declarations[call.decl]?.map Decl.name).getD "missing"
+    IO.println s!"{label}\tcall={index}\tdecl={call.decl}\tname={name}\targs={repr call.args}\tcaps={repr call.caps}\tchanged={repr (changedAddresses call)}"
+  let some call := state.calls[target.callIndex]? |
+    throw <| IO.userError s!"{label}: missing focused call {target.callIndex}"
+  let focus := s!"{label}:call={target.callIndex}"
+  printCall focus call
+  IO.println s!"{focus}\tobservedAddress={target.address}\tchanged={call.preHeap[target.address]? != call.postHeap[target.address]?}\tbefore={repr call.preHeap[target.address]?}\tafter={repr call.postHeap[target.address]?}"
+  IO.println s!"{focus}\tpreObserverReferences={repr (DiagnosticCalls.references call.preHeap call.preKept.toList)}\tpostObserverReferences={repr (DiagnosticCalls.references call.postHeap call.postKept.toList)}"
+  let inspected := DiagnosticCalls.inspectDetailed p.declarations accepted.cache call
+  IO.println s!"{focus}\tFULL INSPECTION\n{repr inspected}"
+  for candidate in inspected.candidates do
+    IO.println s!"{focus}\tcandidate={candidate.cacheIndex}\tmatched={candidate.status.isMatched}\tstatus={repr candidate.status}"
+  for (entry, index) in accepted.cache.toList.zipIdx do
+    if entry.decl == call.decl then printCandidate p call index entry
+  IO.println s!"END TARGET\t{label}"
+
+end Ownership.RawHitProbe
+
+def main : IO Unit := do
+  for target in Ownership.RawHitProbe.targets do Ownership.RawHitProbe.runTarget target
