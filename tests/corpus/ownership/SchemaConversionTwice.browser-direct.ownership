@@ -1,0 +1,16 @@
+module SchemaConversionTwice
+  59:15 List.push a: rejected unknown: a schema answered it whose conversion returns what the run built at two places, so two parts of the answer may be one list (approx)
+  68:15 List.push p.items.all: rejected unknown: a schema answered it whose conversion returns what the run built at two places, so two parts of the answer may be one list (approx)
+  78:15 List.push a: rejected unknown: a schema answered it whose conversion returns what the run built at two places, so two parts of the answer may be one list (approx)
+  87:15 List.push a: rejected unknown: a schema answered it whose conversion returns what the run built at two places, so two parts of the answer may be one list (approx)
+  97:13 List.push a: rejected unknown: a schema answered it whose conversion returns what the run built at two places, so two parts of the answer may be one list (approx)
+  107:15 List.push a: accepted call
+  summary tuple: res .0 fresh1{lost}, .0[*] ~fresh3{lost}, .0[*]⋆ ~⊤twice{lost}, .0⋆ ~⊤twice{lost}, .1 fresh2{lost}, .1⋆ ~⊤twice{lost}
+  summary record: res .0 fresh1{lost}, .0[*] ~fresh2{lost}, .0[*]⋆ ~⊤twice{lost}, .0⋆ ~⊤twice{lost}, .1 fresh3{lost}, .1⋆ ~⊤twice{lost}
+  summary nested: res .0 fresh1{lost}, .0[*] ~fresh3{lost}, .0[*]⋆ ~⊤twice{lost}, .0⋆ ~⊤twice{lost}, .1 fresh2{lost}, .1⋆ ~⊤twice{lost}
+  summary library: res .0 fresh1{lost}, .0[*] ~fresh3{lost}, .0[*]⋆ ~⊤twice{lost}, .0⋆ ~⊤twice{lost}, .1 fresh2{lost}, .1⋆ ~⊤twice{lost}
+  summary single: res [*] ~fresh2{lost}, [*]⋆ ~⊤twice{lost}, fresh1{lost}, ⋆ ~⊤twice{lost}
+  summary once: res .0 fresh1{lost}, .0[*] ~fresh3{lost}, .1 fresh2{lost}
+  demands 6: accepted 1 (fresh 0, call 1, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 5
+total 6: accepted 1 (fresh 0, call 1, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 5
+cause unknown 5

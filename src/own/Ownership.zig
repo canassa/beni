@@ -1928,6 +1928,56 @@ const input_marker: Prov = .{ .kind = .top, .a = 2 };
 /// Printed `⊤schema`; a cause like any `⊤`, named for what it is.
 const unfollowed: u32 = 3;
 
+/// §30.10, amended 2026-10-16 (#268): a `⊤` a schema's decoding slot holds
+/// where a conversion's `forward` returns one part of what it was handed at
+/// two places of its result, so two positions of a run's answer may be one
+/// list. Printed `⊤twice`. Not 4, which `⊤call` (§30.11) takes.
+const twice_named: u32 = 5;
+
+/// Whether summary `s` names one part of its parameter 0, of type `arg`,
+/// at two places of its result that are not one placement of it: `( xs, xs
+/// )`, `{ all = xs, first = xs }`, `( xs, [ xs ] )`. `π1` at `.0` and
+/// `π1[*]` at `.0[*]` are one placement. A part that holds no cell (the
+/// `Int`s of a `List Int`, at `.0[*]` and in a reversed copy) does not
+/// count; a `⋆` that blurs the alignment counts as two places.
+fn namesArgumentTwice(o: *Ownership, store: *TypeStore, s: *const Summary, arg: ?Var) Allocator.Error!bool {
+    for (s.res, 0..) |x, i| {
+        if (x.prov.kind != .param or x.prov.a != 0) continue;
+        for (s.res[i + 1 ..]) |y| {
+            if (y.prov.kind != .param or y.prov.a != 0) continue;
+            if (!o.overlap(x.prov.path, y.prov.path)) continue;
+            const short, const long = if (o.paths.depth.items[x.prov.path] <= o.paths.depth.items[y.prov.path]) .{ x, y } else .{ y, x };
+            if (arg) |v| if (!try o.partTracked(store, v, long.prov.path)) continue;
+            const d = (try o.suffix(short.prov.path, long.prov.path)) orelse return true;
+            if (try o.concat(short.path, d) != long.path) return true;
+        }
+    }
+    return false;
+}
+
+/// Whether the part at `path` of a value of type `v` may hold a cell,
+/// through the steps of lists, records and tuples; true where the type does
+/// not say (a constructor's step, a `⋆`, a type variable).
+fn partTracked(o: *Ownership, store: *TypeStore, v: Var, path: u32) Allocator.Error!bool {
+    var buf: [k_limit + 1]Step = undefined;
+    var t = v;
+    for (o.steps(path, &buf)) |st| {
+        const next: ?Var = switch (store.resolvedContent(t)) {
+            .structure => |sc| switch (sc) {
+                .app => |a| if (st.kind == .elem and a.type == o.in.types.well_known.list and store.vars(a.args).len == 1) store.vars(a.args)[0] else null,
+                .record => |r| if (st.kind == .field) for (store.fields(r.fields)) |f| {
+                    if (@backingInt(f.name) == st.arg) break f.value;
+                } else null else null,
+                .tuple => |r| if (st.kind == .tuple and st.arg < store.vars(r).len) store.vars(r)[st.arg] else null,
+                else => null,
+            },
+            else => null,
+        };
+        t = next orelse return true;
+    }
+    return o.tracked(store, t, 0);
+}
+
 /// §30.10: `core/Schema`'s runs, whose rows are `schemaRunRow`'s.
 const schema_runs = [_][]const u8{ "parse", "parseWith", "decode", "decodeWith", "read", "readWith", "encode", "encodeWith", "write", "writeWith" };
 
@@ -2670,6 +2720,7 @@ fn provText(o: *Ownership, p: Prov) Allocator.Error![]const u8 {
             2 => "⊤input",
             unfollowed => "⊤schema",
             top_call, top_several => "⊤call",
+            twice_named => "⊤twice",
             else => "⊤",
         },
         .cb => if (o.text_sum) |s| (if (p.b == 0 and p.a >= s.params and p.a - s.params < s.slots.len) blk: {
@@ -6805,7 +6856,7 @@ const Walker = struct {
         for (fields, kinds, ends, &parts) |field, kind, end, *part| {
             if (end) |v| if (!try w.trackedVar(v)) continue;
             const answer = if (w.o.in.interner.find(field)) |sym|
-                try w.functionAnswer(try w.proj(made, .{ .kind = .field, .arg = @backingInt(sym) }, null), inst, kind == .schema_encoded)
+                try w.functionAnswer(try w.proj(made, .{ .kind = .field, .arg = @backingInt(sym) }, null), inst, kind == .schema_encoded, ends[1])
             else
                 try w.single(.{ .kind = .top, .a = unfollowed });
             part.* = try w.under(answer, try w.o.child(eps, kind, 0));
@@ -6817,14 +6868,18 @@ const Walker = struct {
     /// outlives the call: not a cell the call makes, not its argument or a
     /// part of it, but what it captured, a top-level value, or anything
     /// from where the checker cannot see. `⊤` when `f`'s classes are not
-    /// known.
-    fn functionAnswer(w: *Walker, f: AV, inst: Inst.Index, argument_is_input: bool) Allocator.Error!AV {
+    /// known. `source` is the type `forward` is handed (`namesArgumentTwice`).
+    fn functionAnswer(w: *Walker, f: AV, inst: Inst.Index, argument_is_input: bool, source: ?Var) Allocator.Error!AV {
         const classes = try w.classesOf(f);
         if (classes.len == 0) return w.single(.{ .kind = .top, .a = unfollowed });
         var out: std.ArrayList(Entry) = .empty;
         for (classes) |cls| {
             const s = (try w.classSummary(cls)) orelse return w.single(.{ .kind = .top, .a = unfollowed });
             const ci: u32 = if (cls == .closure) cls.closure else none;
+            // `forward`'s argument is what the run built, no holder — but
+            // returned at two places, it puts one list at two positions of
+            // the answer (#268).
+            if (!argument_is_input and try w.o.namesArgumentTwice(w.store, s, source)) try out.appendSlice(w.a, try w.single(.{ .kind = .top, .a = twice_named }));
             for (s.res) |r| switch (r.prov.kind) {
                 .fresh => {},
                 // `backward` is handed the program's value: what it returns of
@@ -10144,6 +10199,9 @@ const Walker = struct {
                 } else if (c.a == top_several) {
                     cause = .unknown;
                     detail = "it came from a call of a function value that may be one of several functions, and the checker does not join what each returns";
+                } else if (c.a == twice_named) {
+                    cause = .unknown;
+                    detail = "a schema answered it whose conversion returns what the run built at two places, so two parts of the answer may be one list";
                 } else {
                     cause = .unknown;
                     detail = "the list came from JavaScript";
