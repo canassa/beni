@@ -395,4 +395,7 @@ theorem example_all_observers_frame :
     subst c
     exact example_component_apart
 
+/-- Throwaway: a new `sorry` in an audited module. CI must fail (#254). -/
+theorem ciProbe : False := sorry
+
 end Ownership.LinkedWriteFrame
