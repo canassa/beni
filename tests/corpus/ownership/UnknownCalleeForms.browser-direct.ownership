@@ -1,0 +1,26 @@
+module UnknownCalleeForms
+  36:10 List.push <call>: rejected unknown: it came from a call of a function the checker cannot identify, which may return a list something else holds (approx)
+  40:16 call UnknownCalleeForms.grab <Bag …>: accepted fresh (UnknownCalleeForms.grab writes π1)
+  44:14 List.push <call>: rejected top-level: UnknownCalleeForms.shared is a top-level value
+  50:5 List.push <call>: rejected unknown: it came from a call of a function value that may be one of several functions, and the checker does not join what each returns (approx)
+  56:5 List.push <call>: rejected unknown: it came from a call of a function value that may be one of several functions, and the checker does not join what each returns (approx)
+  68:18 List.push <call>: rejected top-level: UnknownCalleeForms.shared is a top-level value
+  72:23 List.push <call>: accepted call
+  83:13 List.push xs: accepted fresh
+  90:13 List.push xs: rejected top-level: UnknownCalleeForms.shared is a top-level value
+  summary items: res shared(UnknownCalleeForms.shared)
+  summary grab: π1 RAw; res [*] ~⊤call{lost}, [*]⋆ ~π1, ⊤call{lost}, ⋆ ~π1
+  summary dispatched: res [*] ~⊤call{lost}, ⊤call{lost}
+  summary resolved: res [*] ~shared(UnknownCalleeForms.shared)[*], shared(UnknownCalleeForms.shared)
+  summary twoShared: res [*] ~⊤call{lost}, ⊤call{lost}
+  summary twoFresh: res [*] ~⊤call{lost}, ⊤call{lost}
+  summary mk: res .load λ
+  summary fresh: res .load λ
+  summary callReceiver: res [*] ~shared(UnknownCalleeForms.shared)[*], shared(UnknownCalleeForms.shared)
+  summary callReceiverFresh: res [*] ~fresh2, fresh1
+  summary boxFresh: res fresh1
+  summary boxShared: res shared(UnknownCalleeForms.shared)
+  demands 9: accepted 3 (fresh 2, call 1, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 6
+total 9: accepted 3 (fresh 2, call 1, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 6
+cause unknown 3
+cause top-level 3
