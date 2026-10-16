@@ -1,0 +1,69 @@
+-- CK-238: a custom type is taken to hold anything, so a list of functions meets a write.
+-- ownership (§30.9): whether a value of a custom type may hold an object
+-- of another type is read off its constructors' fields, as written, not
+-- assumed of every type that holds anything. `bench/corpus`'s applicative
+-- chain: `andMap` appends its errors in place, and each step's argument is
+-- a call of a function value with no class, whose result may be any cell
+-- its callee captured — here the list of validators, a `List` of
+-- functions. A `Validation` holds a `List (String × String)`, never a list
+-- of functions, so that list is not one the write may reach, and the
+-- chain is accepted past its second step (it was rejected `call`,
+-- approximately, from the third). `twice` hands `andMap` one error list as
+-- both operands, and is rejected: real sharing the text shows.
+pub type Validation a
+    = Valid a
+    | Invalid (List (String × String))
+
+
+pub andMap : Validation (a → b), Validation a → Validation b
+andMap function value =
+    case ( function, value ) of
+        ( Valid f, Valid a ) →
+            Valid (f a)
+
+        ( Invalid errors, Valid _ ) →
+            Invalid errors
+
+        ( Valid _, Invalid errors ) →
+            Invalid errors
+
+        ( Invalid left, Invalid right ) →
+            Invalid (left ++ right)
+
+
+required : String, String → Validation String
+required field value =
+    if String.isEmpty value then
+        Invalid [ ( field, "is required" ) ]
+    else
+        Valid value
+
+
+firstOf : List (String, String → Validation String) → (String, String → Validation String)
+firstOf validators =
+    λfield value →
+        case validators of
+            [] →
+                Valid value
+
+            [ validator, …rest ] →
+                case validator field value of
+                    Valid v →
+                        (firstOf rest) field v
+
+                    invalid →
+                        invalid
+
+
+pub check : String, String → Validation (String × String)
+check a b =
+    Valid (λx → λy → λz → ( x, y ))
+        ▷ andMap ((firstOf [ required ]) "a" a)
+        ▷ andMap ((firstOf [ required ]) "b" b)
+        ▷ andMap ((firstOf [ required ]) "c" b)
+
+
+pub twice : ⊤ → Validation String
+twice ⊤ =
+    errors = [ ( "a", "is required" ) ]
+    andMap (Invalid errors) (Invalid errors)

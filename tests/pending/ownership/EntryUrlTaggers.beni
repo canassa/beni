@@ -1,0 +1,45 @@
+-- CK-243: the entry does not check what `onUrlRequest` and `onUrlChange` return.
+-- ownership (§30.3, §30.9): the runtime calls an application's
+-- `onUrlRequest` and `onUrlChange` with values that cross and sends what
+-- they return, so each must return a message it owns — `update` writes
+-- its payload in place (§23.6). A tagger that answers the top-level
+-- `visited` gives `update` a list the program still holds, and is rejected
+-- at the entry; one that makes its list is accepted. Before, the entry did
+-- not look at either function.
+import Browser
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+import Url exposing (Url)
+
+
+type Msg
+    = Requested (List String)
+    | Changed (List String)
+
+
+visited : List String
+visited = [ "/" ]
+
+
+update : Msg, List String → List String × Cmd Msg
+update msg model =
+    case msg of
+        Requested paths →
+            ( List.push paths "requested", Cmd.none )
+
+        Changed paths →
+            ( List.push paths "changed", Cmd.none )
+
+
+main : Tea.Program
+main =
+    Tea.application
+        { init = λ_ _ → ( [], Cmd.none )
+        , update = update
+        , view = λpaths → { title = "urls", body = <p>{String.join paths ","}</p> }
+        , subscriptions = λ_ → Sub.none
+        , onUrlRequest = λ_ → Requested visited
+        , onUrlChange = λurl → Changed [ url.path ]
+        }

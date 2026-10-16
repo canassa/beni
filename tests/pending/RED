@@ -107,3 +107,17 @@ tests/pending/browser/direct/DefectInTurnRender.beni PageFailed
 
 # HttpFailures: work function slots inside a traversal callback remain unmodelled.
 tests/pending/browser/direct/HttpFailures.beni dev: exit=1 codes=list_still_used×1
+
+# Ownership everywhere (2026-10-16): the checker's limits on the corpus, and
+# three holes found beside them (a need dropped inside a lambda, a slot's
+# conservative result counted as made by the call, the entry's URL taggers).
+tests/pending/ownership/EntryUrlTaggers.beni exit=0 browser-direct.ownership-differs
+tests/pending/ownership/HttpSendBody.beni exit=0 browser-direct.ownership-differs
+tests/pending/ownership/LambdaParamNeed.beni exit=0 browser-direct.ownership-differs
+tests/pending/ownership/LambdaPassNeed.beni exit=0 browser-direct.ownership-differs
+tests/pending/ownership/NestedLambdaSend.beni exit=0 browser-direct.ownership-differs
+tests/pending/ownership/NominalHolds.beni exit=0 browser-direct.ownership-differs
+tests/pending/ownership/RandomGenerate.beni exit=0 browser-direct.ownership-differs
+tests/pending/ownership/SendInPayload.beni exit=0 browser-direct.ownership-differs
+tests/pending/ownership/SlotInLambda.beni exit=0 browser-direct.ownership-differs
+tests/pending/ownership/TaskWords.beni exit=0 browser-direct.ownership-differs
