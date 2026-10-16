@@ -2925,7 +2925,6 @@ fn suffix(o: *Ownership, p: u32, q: u32) Allocator.Error!?u32 {
     return at;
 }
 
-/// Whether `p` is a prefix of `q`, `⋆` matching anything.
 /// `p`'s prefix of depth `d`, which is at most `p`'s.
 fn ancestor(o: *const Ownership, p: u32, d: u8) u32 {
     var at = p;
@@ -2940,6 +2939,7 @@ fn startsWith(o: *const Ownership, p: u32, q: u32) bool {
     return o.paths.depth.items[p] >= d and o.ancestor(p, d) == q;
 }
 
+/// Whether `p` is a prefix of `q`, `⋆` matching anything.
 fn isPrefix(o: *const Ownership, p: u32, q: u32) bool {
     return o.paths.depth.items[p] <= o.paths.depth.items[q] and o.overlap(p, q);
 }
@@ -6942,6 +6942,7 @@ const Walker = struct {
             if (std.mem.eql(u32, before, w.cell_cond.items)) return;
         }
         // A backstop loses the invariant; never use an unfinished proof.
+        // It is reached on every program measured, silently: issue #229.
         for (fresh.items) |c| try w.lowerCond(c, cond_lost);
     }
 
