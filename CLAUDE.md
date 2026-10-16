@@ -461,7 +461,9 @@ request changes `proofs/ownership/`, `flake.nix`, `flake.lock` or
 `.github/workflows/ci.yml`; otherwise it skips them and passes. It restores
 `.lake` from `master`. The audit never reads that directory, so a restored
 build cannot hide a broken proof from the job; a warm `lake build` alone can
-miss a `sorry` (#255). `proofs/ownership/README.md`, *CI*.
+miss a `sorry` (#255). A cold run takes 9 to 14 minutes, and a warm cache
+makes only `lake build` faster. The job does not run `lake exe ownership ci`
+(#259). `proofs/ownership/README.md`, *CI*.
 
 `beni dump --stage=tokens|ast|bir|types|interface` is the window into every
 phase, and the dumps are corpus-tested, so they are outputs rather than
