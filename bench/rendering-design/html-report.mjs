@@ -7,7 +7,7 @@ const compact=r=>({name:r.name,n:r.n,seed:r.seed,family:r.shape||'mixed',mode:r.
 const stopFile=here+'/results/stress/stopped.jsonl',stopped=fs.existsSync(stopFile)?fs.readFileSync(stopFile,'utf8').trim().split('\n').filter(Boolean).map(JSON.parse):[];
 const nativeFile=here+'/results/stress/native-builds.jsonl',native=fs.existsSync(nativeFile)?fs.readFileSync(nativeFile,'utf8').trim().split('\n').filter(Boolean).map(JSON.parse):[];
 const recoveredFile=here+'/results/stress/recovered.jsonl',recovered=fs.existsSync(recoveredFile)?fs.readFileSync(recoveredFile,'utf8').trim().split('\n').filter(Boolean).map(JSON.parse):[];
-const data={native,stopped,recovered,generated:new Date().toISOString(),target:512000,unit:'kB = 1,000 bytes',rows:[...original,...stress].map(compact),protocol:fs.existsSync(here+'/results/stress/protocol.json')?read('results/stress/protocol.json'):null};
+const data={native,stopped,recovered,finalized:fs.existsSync(here+'/results/stress/finalized.json')?read('results/stress/finalized.json'):null,generated:new Date().toISOString(),target:512000,unit:'kB = 1,000 bytes',rows:[...original,...stress].map(compact),protocol:fs.existsSync(here+'/results/stress/protocol.json')?read('results/stress/protocol.json'):null};
 const mixtureModes=['tea','partial','static','local','cells','vanilla'],families=['list','form','tabs','nested','thread','cluster','table','modal','filter','summary'];
 const indexed=new Map(data.rows.filter(r=>r.seed===17).map(r=>[r.family+'/'+r.mode+'/'+r.n,r]));
 const mixtureN=[...new Set(data.rows.map(r=>r.n))].filter(n=>n>=64&&mixtureModes.every(m=>['mixed',...families].every(f=>indexed.has(f+'/'+m+'/'+n)))).sort((a,b)=>b-a)[0];

@@ -1,13 +1,19 @@
 {
-  "updated": "2026-10-16T01:37:32.198Z",
-  "observations": 1043,
-  "native_builds": 199,
+  "updated": "2026-10-16T01:43:29.217Z",
+  "observations": 1058,
+  "native_builds": 200,
   "crossings": [
     {
       "family": "cluster",
       "mode": "tea",
       "n": 6176,
       "brotli": 524741
+    },
+    {
+      "family": "cluster",
+      "mode": "vanilla",
+      "n": 101600,
+      "brotli": 524765
     },
     {
       "family": "filter",
@@ -160,6 +166,12 @@
       "brotli": 522772
     },
     {
+      "family": "modal",
+      "mode": "vanilla",
+      "n": 102096,
+      "brotli": 525172
+    },
+    {
       "family": "nested",
       "mode": "tea",
       "n": 3888,
@@ -212,6 +224,12 @@
       "mode": "tea",
       "n": 4304,
       "brotli": 525278
+    },
+    {
+      "family": "thread",
+      "mode": "tea",
+      "n": 4768,
+      "brotli": 520808
     }
   ],
   "compiler_limited": [

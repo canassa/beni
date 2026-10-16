@@ -24,12 +24,13 @@ N3,888**, A **516.68 kB at N5,840**, D **553.70 kB at N5,840**, B **524.09 kB
 at N9,264**, C **525.61 kB at N9,616**, and vanilla **525.74 kB at N100,352**. Different crossing counts are not
 same-size application comparisons; the fixed-N comparison above is.
 
-**The full family sweep is still in progress.** Direct exhausts host memory at
-mixed N1,728 before the target ([#203](https://github.com/canassa/beni/issues/203));
-Four capped TEA curves now cross 512 kB. Counter/toggle reaches **524.74 kB at
-N6,176**, using **7.70 GiB peak RSS** despite failing under a 24 GiB virtual-address
-cap. Thread and direct memory probes continue. No size is assigned to failed
-builds; the webpage distinguishes budgeted failures and unfinished curves. This follow-up measures size only.
+**The sweep stopped at the owner's requested checkpoint:** 2,480 measured bundles,
+including 1,058 stress observations; **38 of 79** applicable curves reached
+512 kB. Eleven direct curves are compiler-limited, including mixed N1,728
+([#203](https://github.com/canassa/beni/issues/203)); 30 curves remain below
+target. Counter/toggle TEA reaches **524.74 kB at N6,176**, using **7.70 GiB
+peak RSS** after failing under a 24 GiB virtual-address cap. No size is assigned
+to failed builds or extrapolated for unfinished curves. This follow-up measures size only.
 
 Measured N1 baselines and the original three-seed calibration remain in the
 HTML report. Pure-sandbox runtime sizes do not establish full platform parity.
@@ -120,21 +121,21 @@ retain residuals; the original N≤32 calibration remains archived.
 
 Common-window family slopes: brotli bytes per added varied instance, seed 17.
 Headers give each strategy's common N window across families; compare shapes
-within a column. Direct is censored; Solid has two ports. The live HTML updates
-as data arrives.
+within a column. Direct is censored; Solid has two ports. The HTML records
+the submitted checkpoint.
 
-| Shape | TEA (792–3,168) | Direct (84–336) | A (1,244–4,976) | B (1,244–4,976) | C (1,244–4,976) | D (1,076–4,304) | Vanilla (6,312–25,248) | Solid (1,992–7,968) |
+| Shape | TEA (792–3,168) | Direct (84–336) | A (1,244–4,976) | B (1,244–4,976) | C (1,244–4,976) | D (1,244–4,976) | Vanilla (12,276–49,104) | Solid (1,992–7,968) |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
 | Keyed list | 135 | 185 | 77 | 54 | 41 | 79 | 5.1 | 5.1 |
 | Form | 123 | 152 | 71 | 50 | 38 | 67 | 5.1 | 5.1 |
-| Tabs | 122 | 141 | 55 | 52 | 47 | 57 | 5.0 | — |
+| Tabs | 122 | 141 | 55 | 52 | 47 | 57 | 5.1 | — |
 | Nested helpers | 135 | 195 | 61 | 59 | 45 | 64 | 5.1 | — |
 | Recursive thread | 107 | 160 | 77 | 84 | 54 | 75 | 5.1 | — |
 | Counter/toggle | 89 | 101 | 54 | 39 | 33 | 52 | 5.1 | — |
-| Sortable table | 155 | 215 | 87 | 61 | 46 | 82 | 5.1 | — |
-| Modal | 130 | 164 | 69 | 53 | 45 | 74 | 5.1 | — |
+| Sortable table | 155 | 215 | 87 | 61 | 46 | 83 | 5.1 | — |
+| Modal | 130 | 164 | 69 | 53 | 45 | 75 | 5.1 | — |
 | Filter | 161 | 212 | 89 | 62 | 45 | 87 | 5.1 | — |
-| Derived summary | 164 | 222 | 90 | 66 | 50 | 85 | 5.1 | — |
+| Derived summary | 164 | 222 | 90 | 66 | 50 | 84 | 5.1 | — |
 
 ![Slope matrix](../../../bench/rendering-design/results/stress/graphs/family-slopes.png)
 

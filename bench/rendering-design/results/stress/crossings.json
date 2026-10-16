@@ -157,8 +157,8 @@
     "mode": "vanilla",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 55856,
-    "last_brotli": 285832,
+    "last_n": 83792,
+    "last_brotli": 429112,
     "compiler_limited": false
   },
   {
@@ -229,8 +229,8 @@
     "mode": "vanilla",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 32736,
-    "last_brotli": 167292,
+    "last_n": 49104,
+    "last_brotli": 250816,
     "compiler_limited": false
   },
   {
@@ -265,8 +265,8 @@
     "mode": "cells",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 4304,
-    "last_brotli": 249028,
+    "last_n": 6464,
+    "last_brotli": 373533,
     "compiler_limited": false
   },
   {
@@ -292,8 +292,8 @@
     "mode": "vanilla",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 65888,
-    "last_brotli": 338294,
+    "last_n": 98832,
+    "last_brotli": 507537,
     "compiler_limited": false
   },
   {
@@ -335,10 +335,10 @@
   {
     "family": "thread",
     "mode": "tea",
-    "crossing_n": null,
-    "crossing_brotli": null,
-    "last_n": 3888,
-    "last_brotli": 421104,
+    "crossing_n": 4768,
+    "crossing_brotli": 520808,
+    "last_n": 4768,
+    "last_brotli": 520808,
     "compiler_limited": false
   },
   {
@@ -355,8 +355,8 @@
     "mode": "vanilla",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 44400,
-    "last_brotli": 227745,
+    "last_n": 66608,
+    "last_brotli": 342600,
     "compiler_limited": false
   },
   {
@@ -416,10 +416,10 @@
   {
     "family": "cluster",
     "mode": "vanilla",
-    "crossing_n": null,
-    "crossing_brotli": null,
-    "last_n": 46944,
-    "last_brotli": 241845,
+    "crossing_n": 101600,
+    "crossing_brotli": 524765,
+    "last_n": 101600,
+    "last_brotli": 524765,
     "compiler_limited": false
   },
   {
@@ -481,8 +481,8 @@
     "mode": "vanilla",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 25248,
-    "last_brotli": 130594,
+    "last_n": 56816,
+    "last_brotli": 291750,
     "compiler_limited": false
   },
   {
@@ -542,10 +542,10 @@
   {
     "family": "modal",
     "mode": "vanilla",
-    "crossing_n": null,
-    "crossing_brotli": null,
-    "last_n": 59088,
-    "last_brotli": 303287,
+    "crossing_n": 102096,
+    "crossing_brotli": 525172,
+    "last_n": 102096,
+    "last_brotli": 525172,
     "compiler_limited": false
   },
   {
@@ -607,8 +607,8 @@
     "mode": "vanilla",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 42096,
-    "last_brotli": 215767,
+    "last_n": 63152,
+    "last_brotli": 325064,
     "compiler_limited": false
   },
   {
@@ -670,8 +670,8 @@
     "mode": "vanilla",
     "crossing_n": null,
     "crossing_brotli": null,
-    "last_n": 39872,
-    "last_brotli": 205856,
+    "last_n": 59808,
+    "last_brotli": 308390,
     "compiler_limited": false
   },
   {

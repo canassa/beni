@@ -5,9 +5,10 @@
 [family stress graphs](results/stress/graphs/family-growth.svg),
 [measured target crossings](results/stress/crossings.md).
 
-The size-only extension is in progress. The mixed family has measured 512 kB
-brotli crossings for all six successful strategies, including vanilla at
-100,352 components; direct is compiler-limited. Open `report.html` in a browser,
+The size-only sweep stopped at the submitted checkpoint: 2,480 measured bundles,
+38 of 79 applicable curves crossed 512 kB brotli, 11 direct curves are
+compiler-limited, and 30 curves remain below target. All six successful mixed
+strategies crossed, including vanilla at 100,352 components. Open `report.html` in a browser,
 or run `node bench/rendering-design/serve-report.mjs` from the repository root
 and visit **http://127.0.0.1:8765/report.html**.
 

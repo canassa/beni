@@ -1,5 +1,5 @@
 {
-  "verified_at": "2026-10-16T01:37:45.692Z",
+  "verified_at": "2026-10-16T01:44:56.937Z",
   "observations": 384,
   "native_builds": 78,
   "scope": "Compiler and minified JavaScript SHA-256 and raw length with source-map URL trailers removed, disjoint raw byte accounting, and source spec identity. No size fits or compression results are recomputed; no project suites.",
