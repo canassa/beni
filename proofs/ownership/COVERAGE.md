@@ -309,6 +309,9 @@ its fixed probe is T46 two rows, run against the per-call checker.
 | `LinkedWriteFrame.writeLinked_preserves_represents`, `writeLinked_preserves_representsMany`, `writeLinked_preserves_snapshot`, `writeLinked_preserves_observers` | proved; conditional on runtime success and complete finite representation footprints outside that component. The observer theorem covers every pre-write permanent registration. |
 | `LinkedWriteFrame.writeCounted_preserves`, `writeCounted_preserves_represents` | proved; the real counter wrapper preserves the same heap frame and an individual representation under the stated success and separation premises. |
 | `LinkedWriteFrame.example_run`, `example_observer_frame`, `example_all_observers_frame` | proved; a linked write changes source 0 and view 1 while the nonempty permanent observer list retains the independent array `[7]`. |
+| `FlatFragment.Trace.accepted_flat_anf_traces_agree` — the main theorem's conclusion for an accepted program whose main expression is in the first flat fragment (`FlatFragment.Support.FlatANF0`) | proved; no `sorry` and no pinned dependency. The scope hypothesis `FlatANF0 p.main` is the only addition to `accepted_traces_agree`. |
+| `FlatFragment.Trace.flat_preserved` — preservation of the strengthened flat relation `FlatInvariant` over the fragment, in both runtime directions | proved; structural induction over the fragment from the actual acceptance, typing, and shadow runs. The relation permits nonempty heaps, permanent observers, and stale dead aliases. |
+| `FlatFragment.Frame.flatInvariant_heap_frame`, `FlatFragment.Primitives.push_preserved`, `FlatFragment.Let.let_preserved` | proved; the push case derives the written array's separation from the real default demand, not from an alias prohibition. |
 | kernel checks of `storeExclusive` and permanent escapes | proved (unchanged) |
 
 The linked-write frame uses the undirected closure of the pre-state's actual stored links.
@@ -320,6 +323,14 @@ The caller must still derive footprint separation from accepted demands.
 These lemmas establish no result correspondence, certificate preservation, or `CallSound.noNewHolders` clause.
 They do not cover allocation, plain builder `put`, or complete expression evaluation without further composition.
 They do not resolve #169, #170, or any general proof obligation.
+
+The first flat fragment (`Ownership/FlatFragment/`) is `FlatANF0`: integer and variable atoms, `let`, integer list literals, `push`, `length`, and `shared`.
+It excludes field atoms, calls, closures, views, constructions, branches, cases, scopes, and every other primitive.
+`accepted_flat_anf_traces_agree` has the exact conclusion of `accepted_traces_agree` and one extra hypothesis, `FlatANF0 p.main`.
+Its proof does not use `invariant_preserved`, `summary_sound`, or `map_summary_sound`.
+The internal relation `FlatInvariant` extends `Invariant` with flat heap contents, typed allocated bindings, empty links, aligned environments, a bounded naming, and a complete finite observer witness.
+Each case derives its frame from the actual checker run: a push's demand excludes the continuation's live bindings and every permanent observer from the written array; a literal extends the naming at the real allocation address; `shared` records the value's roots as escapes.
+The fragment proof establishes nothing for calls, views, linked storage, or the three general obligations, which remain open.
 
 ### The invariant, restated
 

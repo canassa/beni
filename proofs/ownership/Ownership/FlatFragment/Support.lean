@@ -1,0 +1,884 @@
+import Ownership.Soundness
+import Ownership.BuilderProof
+import Ownership.LinkedWriteFrame
+import Ownership.KernelChecks
+import Ownership.StatementChecks.ViewLinks
+import Ownership.Report
+import Ownership.Question
+import Ownership.DiagnosticCampaign
+import Ownership.Smoke
+import Ownership.Oracle
+import Ownership.Fixtures
+import Ownership.Falsify
+import Ownership.Enumerate
+import Ownership.Cli
+import Ownership.Bridge
+import Ownership.Targeted
+
+/-! The fragment modules form one import chain, and this first link imports
+every other proof and executable module of the package. The audit rejects an
+equation lemma that two modules realize, so a module that unfolds a model
+definition must see every earlier realization. -/
+
+/-! The first flat fragment: the predicate, demand and footprint support, the naming extension, flat descriptions, root names, live sets, live cells, and liveness bookkeeping. -/
+
+/-! support for a separate flat ANF trace theorem.
+No theorem below uses a pinned soundness obligation.
+The demand lemmas take successful executions of the actual default checker
+operation. They do not replace its test with an external permission oracle. -/
+
+namespace Ownership.FlatFragment.Support
+
+open InPlaceSemantics HeapProof Soundness
+
+inductive FlatAtom : Atom → Prop where
+  | int (n : Int) : FlatAtom (.int n)
+  | var (v : Var) : FlatAtom (.var v)
+
+/-- The planned expression fragment. Ordinary accepted typing fixes the
+literal elements and the push arguments to Int and List Int. -/
+inductive FlatANF0 : Expr → Prop where
+  | atom : FlatAtom a → FlatANF0 (.atom a)
+  | letE : FlatANF0 rhs → FlatANF0 rest → FlatANF0 (.letE v rhs rest)
+  | literal : (∀ a ∈ args, FlatAtom a) → FlatANF0 (.prim (.literal .int) args)
+  | push : FlatAtom receiver → FlatAtom item → FlatANF0 (.prim .push [receiver, item])
+  | length : FlatAtom receiver → FlatANF0 (.prim .length [receiver])
+  | shared : FlatAtom value → FlatANF0 (.prim .shared [value])
+
+/-- The existing demand soundness theorem states the live and operand frame
+conditions. This lemma also retains the recorded-escape branch. -/
+theorem demandProblem_none_not_escaped
+    (passed : demandProblem cfg escapes cs later others = none) :
+    ∀ origin ∈ cs, ¬ Escaped escapes origin := by
+  unfold demandProblem at passed
+  split at passed
+  · contradiction
+  split at passed
+  · contradiction
+  split at passed
+  · contradiction
+  rename_i knownPass unescapedPass escapePass
+  have allUnescaped : cs.all unescaped = true := by simpa using unescapedPass
+  have noEscapes : cellOverlap (cs.map Origin.base) (escapes.map Origin.base) = false := by
+    simpa using escapePass
+  intro origin member escaped
+  have allowed := List.all_eq_true.mp allUnescaped origin member
+  rcases escaped with shared | recorded
+  · rw [allowed] at shared
+    contradiction
+  · have originMember : origin.base ∈ cs.map Origin.base :=
+      List.mem_map.mpr ⟨origin, member, rfl⟩
+    have absent := List.any_eq_false.mp noEscapes origin.base originMember
+    apply absent
+    simpa [cellOverlap] using recorded
+
+/-- Extract the actual permission test from a successful default demand. -/
+theorem demand_success_problem
+    (run : (demand ({} : Config) cs later others).run before = .ok (result, after)) :
+    demandProblem ({} : Config) before.facts.escapes cs later others = none := by
+  cases problem : demandProblem ({} : Config) before.facts.escapes cs later others with
+  | none => rfl
+  | some detail =>
+    dsimp [demand, getFacts, StateT.run, StateT.bind, StateT.map, StateT.get] at run
+    simp only [pure_bind] at run
+    rw [problem] at run
+    change Except.error detail = Except.ok (result, after) at run
+    contradiction
+
+theorem demand_success_not_escaped
+    (run : (demand ({} : Config) cs later others).run before = .ok (result, after)) :
+    ∀ origin ∈ cs, ¬ Escaped before.facts.escapes origin :=
+  demandProblem_none_not_escaped (demand_success_problem run)
+
+/-- A successful checked demand cannot target any current permanent reader.
+The invariant permits observers and aliases; it relates their origins to the
+actual checker prefix's recorded escapes. -/
+theorem demand_success_no_kept_reaches
+    (inv : Invariant vs hs env live aenv before.facts.escapes gamma)
+    (run : (demand ({} : Config) cs later others).run before = .ok (result, after))
+    (receiver : named gamma cs root)
+    (member : observer ∈ hs.kept.toList) :
+    ¬ Reaches hs.heap observer (.ref root) := by
+  intro reaches
+  obtain ⟨origin, originMember, addressMember⟩ := receiver
+  have escaped := inv.keptEscaped observer member root reaches origin addressMember
+  exact demand_success_not_escaped run origin originMember escaped
+
+/-- The Dead branch gives the other half of the flat push frame rule. -/
+theorem demand_success_live_separate
+    (separating : Separating gamma)
+    (run : (demand ({} : Config) cs later others).run before = .ok (result, after)) :
+    ∀ root, named gamma cs root → ¬ named gamma later root :=
+  (demandProblem_sound gamma separating ({} : Config) before.facts.escapes cs later others
+    (demand_success_problem run)).2.1
+
+mutual
+/-- A finite representation exposes every footprint cell through real heap
+reachability, including nested record fields and closure captures. -/
+theorem represents_footprint_reaches (rep : Represents heap depth value observation footprint) :
+    ∀ address ∈ footprint, Reaches heap value (.ref address) := by
+  cases rep with
+  | int => simp
+  | record children =>
+    intro address member
+    obtain ⟨child, childMember, reachable⟩ := representsMany_footprint_reaches children address member
+    exact Reaches.field childMember reachable
+  | closure children =>
+    intro address member
+    obtain ⟨child, childMember, reachable⟩ := representsMany_footprint_reaches children address member
+    exact Reaches.capture childMember reachable
+  | ref lookup children =>
+    intro address member
+    rcases List.mem_cons.mp member with same | nested
+    · subst address
+      exact Reaches.refl _
+    · obtain ⟨child, childMember, reachable⟩ := representsMany_footprint_reaches children address nested
+      exact Reaches.element lookup childMember reachable
+
+theorem representsMany_footprint_reaches
+    (rep : RepresentsMany heap depth values observations footprint) :
+    ∀ address ∈ footprint, ∃ value ∈ values, Reaches heap value (.ref address) := by
+  cases rep with
+  | nil => simp
+  | cons head tail =>
+    intro address member
+    rcases List.mem_append.mp member with first | rest
+    · exact ⟨_, by simp, represents_footprint_reaches head address first⟩
+    · obtain ⟨child, childMember, reachable⟩ := representsMany_footprint_reaches tail address rest
+      exact ⟨child, List.mem_cons_of_mem _ childMember, reachable⟩
+end
+
+/-- The outside footprint follows from the checked demand and the observer
+invariant. It is not an independent no-alias or empty-observer assumption. -/
+theorem demand_success_observer_footprint
+    (inv : Invariant vs hs env live aenv before.facts.escapes gamma)
+    (run : (demand ({} : Config) cs later others).run before = .ok (result, after))
+    (receiver : named gamma cs root)
+    (observers : RepresentsMany hs.heap depth hs.kept.toList observations footprint) :
+    root ∉ footprint := by
+  intro member
+  obtain ⟨observer, observerMember, reachable⟩ :=
+    representsMany_footprint_reaches observers root member
+  exact demand_success_no_kept_reaches inv run receiver observerMember reachable
+
+/-- A concrete write frames complete permanent observers because the real
+checker demand excludes their reachable receiver. Arbitrary other sharing is
+legal, and old dead aliases need no observation correspondence. -/
+theorem demand_success_observers_after_write
+    (inv : Invariant vs hs env live aenv before.facts.escapes gamma)
+    (run : (demand ({} : Config) cs later others).run before = .ok (result, after))
+    (receiver : named gamma cs root)
+    (observers : RepresentsMany hs.heap depth hs.kept.toList observations footprint) :
+    RepresentsMany (hs.heap.set! root stored) depth hs.kept.toList observations footprint :=
+  representsMany_after_write observers (demand_success_observer_footprint inv run receiver observers)
+
+theorem demand_success_observer_snapshots_after_write
+    (inv : Invariant vs hs env live aenv before.facts.escapes gamma)
+    (run : (demand ({} : Config) cs later others).run before = .ok (result, after))
+    (receiver : named gamma cs root)
+    (observers : RepresentsMany hs.heap depth hs.kept.toList observations footprint) :
+    hs.kept.toList.mapM (snapshot (hs.heap.set! root stored) depth) = .ok observations :=
+  snapshots_of_represents (demand_success_observers_after_write inv run receiver observers)
+
+end Ownership.FlatFragment.Support
+
+/-! allocation naming lemmas.
+The extension uses the actual next heap address. It preserves every old
+address membership and permits one origin to name several allocations. -/
+
+namespace Ownership.FlatFragment.Naming
+
+open Soundness
+
+def NamingBound (gamma : Naming) (bound : Nat) : Prop :=
+  ∀ origin address, address ∈ gamma origin → address < bound
+
+def ExtendsAt (gamma next : Naming) (fresh : Origin) (address : Nat) : Prop :=
+  ∀ origin cell, cell ∈ next origin ↔
+    cell ∈ gamma origin ∨ (origin = fresh ∧ cell = address)
+
+theorem extension_exists (gamma : Naming) (fresh : Origin) (address : Nat) :
+    ∃ next, ExtendsAt gamma next fresh address := by
+  classical
+  refine ⟨fun origin => if origin = fresh then address :: gamma origin else gamma origin, ?_⟩
+  intro origin cell
+  by_cases same : origin = fresh
+  · simp [same, eq_comm, or_comm]
+  · simp [same]
+
+theorem extension_old_membership
+    (extension : ExtendsAt gamma next fresh bound) (old : cell < bound) :
+    cell ∈ next origin ↔ cell ∈ gamma origin := by
+  rw [extension origin cell]
+  constructor
+  · rintro (member | ⟨_, same⟩)
+    · exact member
+    · omega
+  · exact Or.inl
+
+theorem extension_bound
+    (bounded : NamingBound gamma bound)
+    (extension : ExtendsAt gamma next fresh bound) :
+    NamingBound next (bound + 1) := by
+  intro origin cell member
+  rcases (extension origin cell).mp member with old | ⟨_, same⟩
+  · have previous := bounded origin cell old
+    omega
+  · omega
+
+theorem extension_separating
+    (separating : Separating gamma)
+    (bounded : NamingBound gamma bound)
+    (extension : ExtendsAt gamma next fresh bound)
+    (selfAliases : aliases fresh fresh = true) :
+    Separating next := by
+  intro first second different cell firstMember secondMember
+  rcases (extension first cell).mp firstMember with firstOld | ⟨firstFresh, cellNew⟩
+  · rcases (extension second cell).mp secondMember with secondOld | ⟨_, cellNew⟩
+    · exact separating first second different cell firstOld secondOld
+    · have previous := bounded first cell firstOld
+      omega
+  · rcases (extension second cell).mp secondMember with secondOld | ⟨secondFresh, _⟩
+    · have previous := bounded second cell secondOld
+      omega
+    · subst first
+      subst second
+      rw [selfAliases] at different
+      contradiction
+
+theorem site_self_aliases (site : List Nat) :
+    aliases (.site site 0) (.site site 0) = true := by
+  change ((site == site) && (0 == 0)) = true
+  simp
+
+/-- The caller constructs the extension at the real allocation boundary.
+No unused-site or globally alias-free-heap premise enters this theorem. -/
+theorem literal_allocation_naming
+    (bounded : NamingBound gamma heapSize)
+    (separating : Separating gamma) (site : List Nat) :
+    ∃ next, ExtendsAt gamma next (.site site 0) heapSize ∧
+      NamingBound next (heapSize + 1) ∧ Separating next ∧
+      (∀ origin cell, cell < heapSize → (cell ∈ next origin ↔ cell ∈ gamma origin)) := by
+  obtain ⟨next, extension⟩ := extension_exists gamma (.site site 0) heapSize
+  exact ⟨next, extension, extension_bound bounded extension,
+    extension_separating separating bounded extension (site_self_aliases site),
+    fun origin cell old => extension_old_membership extension old⟩
+
+end Ownership.FlatFragment.Naming
+
+/-! description support for flat allocated integer lists.
+
+The main theorem keeps the abstract element and certificate arbitrary.
+Only the allocated integer payload and its actual named root enter the
+premises. No global alias prohibition or empty-observer premise enters.
+No theorem uses a pinned soundness obligation.
+-/
+
+namespace Ownership.FlatFragment.Description
+
+open InPlaceSemantics HeapProof Soundness
+
+/- The real `cellsAt` fold deduplicates origins with their existing BEq.
+These local proofs justify membership facts for that exact implementation.
+They do not replace the checker comparison or export new global instances. -/
+local instance stepReflBEq : ReflBEq Step := ⟨by deriving_ReflEq_tactic⟩
+local instance stepLawfulBEq : LawfulBEq Step :=
+  LawfulBEq.mk (by deriving_LawfulEq_tactic)
+local instance originReflBEq : ReflBEq Origin := ⟨by deriving_ReflEq_tactic⟩
+local instance originLawfulBEq : LawfulBEq Origin :=
+  LawfulBEq.mk (by deriving_LawfulEq_tactic)
+
+/-- Actual union retains every element of either input, including when
+its Boolean membership test avoids an insertion. -/
+theorem mem_union [BEq α] [LawfulBEq α] (first second : List α) (value : α)
+    (member : value ∈ first ∨ value ∈ second) : value ∈ union first second := by
+  induction second generalizing first with
+  | nil => simpa [union] using member
+  | cons head tail ih =>
+    change value ∈ union (if first.contains head then first else first ++ [head]) tail
+    apply ih
+    by_cases present : first.contains head = true
+    · rw [if_pos present]
+      rcases member with old | added
+      · exact Or.inl old
+      · rcases List.mem_cons.mp added with same | later
+        · exact Or.inl (by simpa [same] using (List.contains_iff_mem.mp present))
+        · exact Or.inr later
+    · rw [if_neg present]
+      rcases member with old | added
+      · exact Or.inl (List.mem_append.mpr (Or.inl old))
+      · rcases List.mem_cons.mp added with same | later
+        · exact Or.inl (List.mem_append.mpr (Or.inr (by simp [same])))
+        · exact Or.inr later
+
+private def rootCollector (cells : List Origin) (entry : Path × List Origin) : List Origin :=
+  if ([] : Path) == entry.1 then union cells entry.2 else cells
+
+private theorem prefixed_root_fold (paths : List (Path × List Origin)) (initial : List Origin) :
+    (paths.map fun (path, cells) => (Step.element :: path, cells)).foldl rootCollector initial =
+      initial := by
+  induction paths generalizing initial with
+  | nil => rfl
+  | cons entry paths ih =>
+    rcases entry with ⟨path, cells⟩
+    simpa [rootCollector] using ih initial
+
+/-- Element paths cannot contribute cells to the root path. Root cells
+still pass through the real union operation and can lose duplicate entries. -/
+theorem list_root_names (roots : List Origin) (element : Abstract) (certificate : Certificate) :
+    namesAt (.list roots element certificate) [] = union [] roots := by
+  unfold namesAt
+  simp only [Abstract.cellsAt, Abstract.paths, List.foldl_cons]
+  change (element.paths.map fun (path, cells) => (Step.element :: path, cells)).foldl
+    rootCollector (union [] roots) = union [] roots
+  exact prefixed_root_fold element.paths (union [] roots)
+
+theorem named_list_root {root : Nat}
+    (rootNamed : named gamma roots root) :
+    named gamma (namesAt (.list roots element certificate) []) root := by
+  obtain ⟨origin, member, address⟩ := rootNamed
+  refine ⟨origin, ?_, address⟩
+  rw [list_root_names]
+  exact mem_union [] roots origin (Or.inr member)
+
+theorem represents_integer_footprint {heap : Heap}
+    (represented : Represents heap depth (.int integer) observation footprint) :
+    footprint = [] := by
+  cases represented
+  rfl
+
+theorem represents_integers_footprint {heap : Heap} (integers : List Int)
+    (represented : RepresentsMany heap depth (integers.map Value.int) observations footprint) :
+    footprint = [] := by
+  induction integers generalizing observations footprint with
+  | nil =>
+    cases represented
+    rfl
+  | cons integer integers ih =>
+    cases represented with
+    | cons first rest =>
+      have firstEmpty := represents_integer_footprint first
+      have restEmpty := ih rest
+      simp only [firstEmpty, restEmpty, List.nil_append]
+
+/-- Every complete expansion retains exactly the allocated root in its
+footprint, regardless of its snapshot depth or resulting observation. -/
+theorem represents_flat_ref_footprint {heap : Heap} {root : Nat} {integers : List Int}
+    (allocated : heap[root]? = some (integers.map Value.int))
+    (represented : Represents heap depth (.ref root) observation footprint) :
+    footprint = [root] := by
+  cases represented with
+  | ref current children =>
+    rw [allocated] at current
+    cases current
+    have childrenEmpty := represents_integers_footprint integers children
+    simp only [childrenEmpty]
+
+/-- The only paths of the flat reference are its root and one element
+step to an integer. No integer contains a further path. -/
+theorem atPath_flat_ref {heap : Heap} {root : Nat} {integers : List Int}
+    (allocated : heap[root]? = some (integers.map Value.int))
+    (located : AtPath heap (.ref root) path value) :
+    (path = [] ∧ value = .ref root) ∨
+      (∃ integer ∈ integers, path = [.element] ∧ value = .int integer) := by
+  cases located with
+  | here => exact Or.inl ⟨rfl, rfl⟩
+  | element current member child =>
+    rw [allocated] at current
+    cases current
+    obtain ⟨integer, integerMember, rfl⟩ := List.mem_map.mp member
+    cases child with
+    | here => exact Or.inr ⟨integer, integerMember, rfl, rfl⟩
+
+theorem arrayAt_flat_ref {heap : Heap} {root : Nat} {integers : List Int}
+    (allocated : heap[root]? = some (integers.map Value.int))
+    (located : ArrayAt heap (.ref root) path address) :
+    path = [] ∧ address = root := by
+  rcases atPath_flat_ref allocated located with rootPath | integerPath
+  · rcases rootPath with ⟨rfl, same⟩
+    cases same
+    exact ⟨rfl, rfl⟩
+  · obtain ⟨integer, _, _, impossible⟩ := integerPath
+    cases impossible
+
+theorem no_array_below_flat_ref {heap : Heap} {root : Nat} {integers : List Int}
+    (allocated : heap[root]? = some (integers.map Value.int)) :
+    ¬ ArrayAt heap (.ref root) (.element :: path) address := by
+  intro located
+  have impossible := (arrayAt_flat_ref allocated located).1
+  cases impossible
+
+/-- Every possible exclusive claim holds for the reachable flat payload.
+At the root, its footprint is a singleton. At an integer, it is empty.
+The spine clauses have no nested array to inspect. -/
+theorem flat_ref_certified {heap : Heap} {root : Nat} {integers : List Int}
+    (allocated : heap[root]? = some (integers.map Value.int)) :
+    CertifiedExclusive heap abstract (.ref root) := by
+  intro path roots element certificate value _shape located depth observation footprint represented
+  rcases atPath_flat_ref allocated located with rootPath | integerPath
+  · rcases rootPath with ⟨rfl, rfl⟩
+    have exactFootprint := represents_flat_ref_footprint allocated represented
+    refine ⟨?_, ?_⟩
+    · intro _
+      simp [exactFootprint]
+    · intro _ nextPath address _ found
+      exact False.elim (no_array_below_flat_ref allocated found)
+  · obtain ⟨integer, _, rfl, rfl⟩ := integerPath
+    have exactFootprint := represents_integer_footprint represented
+    refine ⟨?_, ?_⟩
+    · intro _
+      simp [exactFootprint]
+    · intro _ nextPath address _ found
+      cases found
+
+/-- An allocated flat integer list has the requested description whenever
+the abstract root names its concrete address. The abstract element and both
+certificate bits remain arbitrary. Other values can share the same root. -/
+theorem allocated_list_described {heap : Heap} {root : Nat} {integers : List Int}
+    (allocated : heap[root]? = some (integers.map Value.int))
+    (rootNamed : named gamma roots root) :
+    Describes gamma heap (.list roots element certificate) (.ref root) := by
+  refine ⟨⟨?_, flat_ref_certified allocated⟩, ?_⟩
+  · intro path address located
+    obtain ⟨rfl, rfl⟩ := arrayAt_flat_ref allocated located
+    exact named_list_root rootNamed
+  · apply ClosureAgreement.array allocated
+    intro value member
+    obtain ⟨integer, _, rfl⟩ := List.mem_map.mp member
+    exact ClosureAgreement.int _ integer
+
+end Ownership.FlatFragment.Description
+
+/-! state relation for the flat ANF proof.
+
+The relation extends the existing prefix invariant. It records concrete
+shape, allocation, and observer facts that the expression induction needs.
+Only live bindings require observation correspondence. A dead list binding
+can retain an old value observation after its heap array changes.
+
+The initial theorem uses the ordinary closed-program runtime states.
+The generic relation permits nonempty heaps and permanent observers.
+It does not assume final result correspondence or a global alias prohibition.
+No theorem below uses a pinned soundness obligation.
+-/
+
+namespace Ownership.FlatFragment.State
+
+open InPlaceSemantics HeapProof Soundness
+
+/-- These are the only binding types in the first flat fragment. -/
+inductive FlatType : Ty → Prop where
+  | int : FlatType .int
+  | listInt : FlatType (.list .int)
+
+/-- List descriptions retain bottom or scalar elements. Dead aliases keep
+their old element description after a write. The relation does not require
+uniqueness of a root or prohibit sharing between runtime bindings. -/
+inductive FlatAbstract : Ty → Abstract → Prop where
+  | int : FlatAbstract .int .scalar
+  | listBottom (roots : List Origin) (certificate : Certificate) :
+      FlatAbstract (.list .int) (.list roots .bottom certificate)
+  | listScalar (roots : List Origin) (certificate : Certificate) :
+      FlatAbstract (.list .int) (.list roots .scalar certificate)
+
+/-- Every allocated array stores integers. This permits any number of
+arrays and any number of aliases of each allocated array. -/
+def FlatHeap (heap : Heap) : Prop :=
+  ∀ (address : Nat) (values : List Value), heap[address]? = some values →
+    ∀ value ∈ values, ∃ integer : Int, value = Value.int integer
+
+/-- Every address in the naming already exists in the concrete heap. This
+local definition has the same statement as the checked naming support.
+ -/
+def NamingBound (gamma : Naming) (bound : Nat) : Prop :=
+  ∀ origin address, address ∈ gamma origin → address < bound
+
+def emptyNaming : Naming := fun _ => []
+
+theorem emptyNaming_separating : Separating emptyNaming := by
+  intro first second different address member
+  simp [emptyNaming] at member
+
+theorem emptyNaming_bound (bound : Nat) : NamingBound emptyNaming bound := by
+  intro origin address member
+  simp [emptyNaming] at member
+
+/-- The type environment supplies a type for every runtime lookup, including
+dead bindings. The value observation retains its type, but its contents need
+not match the current heap contents. `ValueTyped` supplies a complete finite
+expansion of the current runtime value and therefore excludes dangling roots.
+
+The abstract and type environments have the exact runtime key sequence.
+Their descriptions have the flat shapes that real primitive inference needs.
+The permanent observer witness covers the complete current observer list at
+the runtime's actual observation depth.
+-/
+structure FlatInvariant (declarations : List Decl)
+    (vs : ValueSemantics.State) (hs : InPlaceSemantics.State)
+    (env : List (Var × Observation × Value)) (live : Live)
+    (aenv : Env Abstract) (tenv : Env Ty)
+    (escapes : List Origin) (gamma : Naming) : Prop where
+  toInvariant : Invariant vs hs env live aenv escapes gamma
+  heapInts : FlatHeap hs.heap
+  links : hs.links = []
+  abstractKeys : env.map Prod.fst = aenv.map Prod.fst
+  typeKeys : env.map Prod.fst = tenv.map Prod.fst
+  types : ∀ x ty, tenv.lookup x = some ty → FlatType ty
+  abstractShapes : ∀ x ty abstract,
+    tenv.lookup x = some ty → aenv.lookup x = some abstract →
+      FlatAbstract ty abstract
+  bindingsTyped : ∀ x observation actual,
+    env.lookup x = some (observation, actual) →
+      ∃ ty, tenv.lookup x = some ty ∧
+        obsTyped declarations observation ty = true ∧
+        ValueTyped declarations hs.heap actual ty
+  namingBound : NamingBound gamma hs.heap.size
+  observers : ∃ footprint,
+    RepresentsMany hs.heap observationDepth hs.kept.toList vs.kept.toList footprint
+
+/-! The audit refuses `extends`, so the prefix invariant is a plain field.
+These wrappers keep every projection of the parent available by dot notation. -/
+
+theorem FlatInvariant.reads {declarations : List Decl} {vs : ValueSemantics.State} {hs : InPlaceSemantics.State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {escapes : List Origin} {gamma : Naming} (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma) : vs.reads = hs.reads := inv.toInvariant.reads
+
+theorem FlatInvariant.external {declarations : List Decl} {vs : ValueSemantics.State} {hs : InPlaceSemantics.State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {escapes : List Origin} {gamma : Naming} (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma) : vs.externalReads = hs.externalReads :=
+  inv.toInvariant.external
+
+theorem FlatInvariant.fuel {declarations : List Decl} {vs : ValueSemantics.State} {hs : InPlaceSemantics.State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {escapes : List Origin} {gamma : Naming} (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma) : vs.fuel = hs.fuel := inv.toInvariant.fuel
+
+theorem FlatInvariant.keptSize {declarations : List Decl} {vs : ValueSemantics.State} {hs : InPlaceSemantics.State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {escapes : List Origin} {gamma : Naming} (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma) : vs.kept.size = hs.kept.size := inv.toInvariant.keptSize
+
+theorem FlatInvariant.kept {declarations : List Decl} {vs : ValueSemantics.State} {hs : InPlaceSemantics.State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {escapes : List Origin} {gamma : Naming} (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma) :
+    ∀ (i : Nat) o w, vs.kept[i]? = some o → hs.kept[i]? = some w → Corresponds hs.heap o w :=
+  inv.toInvariant.kept
+
+theorem FlatInvariant.keptEscaped {declarations : List Decl} {vs : ValueSemantics.State} {hs : InPlaceSemantics.State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {escapes : List Origin} {gamma : Naming} (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma) :
+    ∀ k ∈ hs.kept.toList, ∀ c, Reaches hs.heap k (.ref c) → ∀ g, c ∈ gamma g → Escaped escapes g :=
+  inv.toInvariant.keptEscaped
+
+theorem FlatInvariant.bindings {declarations : List Decl} {vs : ValueSemantics.State} {hs : InPlaceSemantics.State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {escapes : List Origin} {gamma : Naming} (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma) :
+    ∀ x p, (x, p) ∈ live → ∀ o w, env.lookup x = some (o, w) →
+      ∃ o' w', projectObs o p = some o' ∧ projectVal w p = some w' ∧ Corresponds hs.heap o' w' :=
+  inv.toInvariant.bindings
+
+theorem FlatInvariant.described {declarations : List Decl} {vs : ValueSemantics.State} {hs : InPlaceSemantics.State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {escapes : List Origin} {gamma : Naming} (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma) :
+    ∀ x p, (x, p) ∈ live → ∀ o w a w', env.lookup x = some (o, w) → aenv.lookup x = some a →
+      projectVal w p = some w' → Describes gamma hs.heap (a.atPath p) w' :=
+  inv.toInvariant.described
+
+theorem FlatInvariant.named {declarations : List Decl} {vs : ValueSemantics.State} {hs : InPlaceSemantics.State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {escapes : List Origin} {gamma : Naming} (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma) :
+    ∀ x o w a, env.lookup x = some (o, w) → aenv.lookup x = some a →
+      ∀ q c, immutablePath q = true → ArrayAt hs.heap w q c → named gamma (a.cellsAt q) c :=
+  inv.toInvariant.named
+
+theorem FlatInvariant.separating {declarations : List Decl} {vs : ValueSemantics.State} {hs : InPlaceSemantics.State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {escapes : List Origin} {gamma : Naming} (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma) : Separating gamma := inv.toInvariant.separating
+
+/-- The current heap value of every runtime reference remains allocated.
+The binding need not occur in the live-use set. -/
+theorem FlatInvariant.binding_allocated
+    (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma)
+    (binding : env.lookup x = some (observation, .ref address)) :
+    address < hs.heap.size := by
+  obtain ⟨ty, _, _, typed⟩ := inv.bindingsTyped x observation (.ref address) binding
+  obtain ⟨depth, current, footprint, represented, _⟩ := typed
+  cases represented with
+  | ref allocated _ => exact (Array.getElem?_eq_some_iff.mp allocated).1
+
+/-- The complete observer witness gives the executable snapshot equation.
+No empty-observer premise enters this theorem. -/
+theorem FlatInvariant.observer_snapshots
+    (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma) :
+    hs.kept.toList.mapM (snapshot hs.heap observationDepth) = .ok vs.kept.toList := by
+  obtain ⟨footprint, represented⟩ := inv.observers
+  exact snapshots_of_represents represented
+
+/-- All cells in the complete observer footprint remain allocated. -/
+theorem FlatInvariant.observer_footprint_bound
+    (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma) :
+    ∃ footprint,
+      RepresentsMany hs.heap observationDepth hs.kept.toList vs.kept.toList footprint ∧
+      ∀ address ∈ footprint, address < hs.heap.size := by
+  obtain ⟨footprint, represented⟩ := inv.observers
+  exact ⟨footprint, represented, representsMany_bound represented⟩
+
+/-- Both runtimes start a closed program with only its fuel field set.
+Their default fields supply empty heaps, observers, links, and environments.
+The live-use set and the recorded escape set remain arbitrary here. -/
+theorem flatInvariant_initial (declarations : List Decl) (fuel : Nat)
+    (live : Live) (escapes : List Origin) :
+    FlatInvariant declarations
+      ({ fuel } : ValueSemantics.State) ({ fuel } : InPlaceSemantics.State)
+      [] live [] [] escapes emptyNaming := by
+  refine {
+    toInvariant := invariant_initial fuel live escapes emptyNaming emptyNaming_separating
+    heapInts := ?_
+    links := rfl
+    abstractKeys := rfl
+    typeKeys := rfl
+    types := ?_
+    abstractShapes := ?_
+    bindingsTyped := ?_
+    namingBound := emptyNaming_bound 0
+    observers := ⟨[], RepresentsMany.nil⟩
+  }
+  · intro address values allocated
+    simp at allocated
+  · intro x ty present
+    simp at present
+  · intro x ty abstract present
+    simp at present
+  · intro x observation actual present
+    simp at present
+
+/-- Initial emptiness follows from the runtime state constructors. It is
+not a restriction on the later heaps or observers of `FlatInvariant`. -/
+theorem closed_initial_configuration (declarations : List Decl) (fuel : Nat)
+    (live : Live) (escapes : List Origin) :
+    let vs : ValueSemantics.State := { fuel }
+    let hs : InPlaceSemantics.State := { fuel }
+    FlatInvariant declarations vs hs [] live [] [] escapes emptyNaming ∧
+      hs.heap = #[] ∧ hs.kept = #[] ∧ vs.kept = #[] := by
+  exact ⟨flatInvariant_initial declarations fuel live escapes, rfl, rfl, rfl⟩
+
+end Ownership.FlatFragment.State
+
+/-! root-name extraction for the actual demand frame.
+The prefix invariant names every binding, including dead aliases.
+These lemmas recover the exact primitive root row after its real union fold.
+They assume no separately checked permission predicate. -/
+
+namespace Ownership.FlatFragment.NamingFacts
+
+open InPlaceSemantics HeapProof Soundness Ownership.FlatFragment.State Ownership.FlatFragment.Description
+
+theorem mem_union_cases [BEq α] (first second : List α) (value : α)
+    (member : value ∈ union first second) : value ∈ first ∨ value ∈ second := by
+  induction second generalizing first with
+  | nil => exact Or.inl member
+  | cons head tail ih =>
+    change value ∈ union (if first.contains head then first else first ++ [head]) tail at member
+    rcases ih _ member with previous | later
+    · by_cases present : first.contains head = true
+      · rw [if_pos present] at previous
+        exact Or.inl previous
+      · rw [if_neg present] at previous
+        rcases List.mem_append.mp previous with old | added
+        · exact Or.inl old
+        · exact Or.inr (List.mem_cons.mpr (Or.inl (by simpa using added)))
+    · exact Or.inr (List.mem_cons_of_mem head later)
+
+theorem named_union_nil
+    (names : named gamma (union [] roots) root) : named gamma roots root := by
+  obtain ⟨origin, member, address⟩ := names
+  rcases mem_union_cases [] roots origin member with impossible | original
+  · simp at impossible
+  · exact ⟨origin, original, address⟩
+
+theorem named_root_from_invariant
+    (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma)
+    (found : env.lookup key = some (observation, .ref root))
+    (abstract : aenv.lookup key = some (.list roots element certificate)) :
+    named gamma roots root := by
+  have cells := inv.named key observation (.ref root) (.list roots element certificate)
+    found abstract [] root rfl (.here _)
+  have names : named gamma (namesAt (.list roots element certificate) []) root := by
+    simpa only [namesAt] using cells
+  rw [list_root_names] at names
+  exact named_union_nil names
+
+end Ownership.FlatFragment.NamingFacts
+
+/-! membership facts for the checker's actual live-set union.
+The local instances prove laws for the existing Boolean comparisons.
+They change no checker operation or exported global instance.
+-/
+
+namespace Ownership.FlatFragment.LiveSets
+
+open Ownership.FlatFragment.Description Ownership.FlatFragment.NamingFacts
+
+local instance stepReflBEq : ReflBEq Step := ⟨by deriving_ReflEq_tactic⟩
+local instance stepLawfulBEq : LawfulBEq Step := LawfulBEq.mk (by deriving_LawfulEq_tactic)
+
+theorem mem_union_iff [BEq α] [LawfulBEq α] (left right : List α) (value : α) :
+    value ∈ union left right ↔ value ∈ left ∨ value ∈ right :=
+  ⟨mem_union_cases left right value, mem_union left right value⟩
+
+theorem union_left (left right : Live) : ∀ use ∈ left, use ∈ union left right := by
+  intro use member
+  exact mem_union left right use (Or.inl member)
+
+theorem union_right (left right : Live) : ∀ use ∈ right, use ∈ union left right := by
+  intro use member
+  exact mem_union left right use (Or.inr member)
+
+theorem rhs_live_subset (rhs rest after : Live) :
+    ∀ use ∈ union rhs (union after rest), use ∈ union (union rhs rest) after := by
+  intro use member
+  rcases mem_union_cases rhs (union after rest) use member with first | later
+  · exact union_left _ _ use (union_left _ _ use first)
+  · rcases mem_union_cases after rest use later with outer | continuation
+    · exact union_right _ _ use outer
+    · exact union_left _ _ use (union_right _ _ use continuation)
+
+theorem removeVars_keeps_other {use : Var × Path} {live : Live} (binder : Var) (different : use.1 ≠ binder)
+    (member : use ∈ live) : use ∈ removeVars [binder] live := by
+  simp [removeVars, member, different, Ne.symm different]
+
+theorem continuation_old_live {use : Var × Path} (binder : Var) (rest after : Live)
+    (different : use.1 ≠ binder) (member : use ∈ union rest after) :
+    use ∈ union after (removeVars [binder] rest) := by
+  rcases mem_union_cases rest after use member with next | outer
+  · exact union_right _ _ use (removeVars_keeps_other binder different next)
+  · exact union_left _ _ use outer
+
+end Ownership.FlatFragment.LiveSets
+
+/-! membership facts for the checker's actual live-cell fold.
+The roots of a live list binding belong to the live cells of any live set
+that uses the binding at any path. The proofs follow the real `liveCells`
+fold and the real `union`. No checker operation changes.
+-/
+
+namespace Ownership.FlatFragment.LiveCells
+
+open Ownership.FlatFragment.Description Ownership.FlatFragment.NamingFacts
+
+local instance stepReflBEq : ReflBEq Step := ⟨by deriving_ReflEq_tactic⟩
+local instance stepLawfulBEq : LawfulBEq Step := LawfulBEq.mk (by deriving_LawfulEq_tactic)
+local instance originReflBEq : ReflBEq Origin := ⟨by deriving_ReflEq_tactic⟩
+local instance originLawfulBEq : LawfulBEq Origin := LawfulBEq.mk (by deriving_LawfulEq_tactic)
+
+theorem foldl_mono {β : Type} (f : List Origin → β → List Origin)
+    (mono : ∀ cs b, ∀ o ∈ cs, o ∈ f cs b) (items : List β) (init : List Origin) :
+    ∀ o ∈ init, o ∈ items.foldl f init := by
+  induction items generalizing init with
+  | nil => intro o member; exact member
+  | cons b items ih => intro o member; exact ih (f init b) o (mono init b o member)
+
+theorem foldl_member {β : Type} (f : List Origin → β → List Origin)
+    (mono : ∀ cs b, ∀ o ∈ cs, o ∈ f cs b) (items : List β) (init : List Origin)
+    (b : β) (present : b ∈ items) (o : Origin) (adds : ∀ cs, o ∈ f cs b) :
+    o ∈ items.foldl f init := by
+  induction items generalizing init with
+  | nil => simp at present
+  | cons first items ih =>
+    rcases List.mem_cons.mp present with rfl | later
+    · exact foldl_mono f mono items _ o (adds init)
+    · exact ih _ later
+
+/-- The inner fold of `liveCells` over the paths of one abstract value. -/
+def pathStep (p : Path) (cs : List Origin) (entry : Path × List Origin) : List Origin :=
+  if isPrefix p entry.1 || isPrefix entry.1 p then union cs entry.2 else cs
+
+theorem pathStep_mono (p : Path) : ∀ cs entry, ∀ o ∈ cs, o ∈ pathStep p cs entry := by
+  intro cs entry o member
+  unfold pathStep
+  split
+  · exact mem_union cs entry.2 o (Or.inl member)
+  · exact member
+
+/-- The outer fold of `liveCells` over the live uses. -/
+def useStep (env : Env Abstract) (cs : List Origin) (use : Var × Path) : List Origin :=
+  match env.lookup use.1 with
+  | none => union cs [.unknown]
+  | some a => a.paths.foldl (pathStep use.2) cs
+
+theorem useStep_mono (env : Env Abstract) : ∀ cs use, ∀ o ∈ cs, o ∈ useStep env cs use := by
+  intro cs use o member
+  unfold useStep
+  split
+  · exact mem_union cs [.unknown] o (Or.inl member)
+  · exact foldl_mono _ (pathStep_mono use.2) _ cs o member
+
+theorem liveCells_eq_fold (env : Env Abstract) (l : Live) :
+    liveCells env l = l.foldl (useStep env) [] := by
+  unfold liveCells useStep pathStep
+  rfl
+
+theorem isPrefix_nil (p : Path) : isPrefix [] p = true := by
+  simp [isPrefix]
+
+/-- The roots of a live list binding are live cells, at every use path. -/
+theorem roots_in_liveCells (env : Env Abstract) (l : Live) (x : Var) (p : Path)
+    (use : (x, p) ∈ l) (found : env.lookup x = some (.list roots element certificate)) :
+    ∀ o ∈ roots, o ∈ liveCells env l := by
+  intro o member
+  rw [liveCells_eq_fold]
+  apply foldl_member (useStep env) (useStep_mono env) l [] (x, p) use o
+  intro cs
+  unfold useStep
+  simp only [found, Abstract.paths, List.foldl_cons]
+  apply foldl_mono _ (pathStep_mono p)
+  unfold pathStep
+  simp only [isPrefix_nil, Bool.or_true, if_true]
+  exact mem_union cs roots o (Or.inr member)
+
+end Ownership.FlatFragment.LiveCells
+
+/-! liveness facts for the exact flat fragment.
+The caller derives empty paths from the permitted syntax. No interpreter
+result or final agreement premise enters these bookkeeping lemmas. -/
+
+namespace Ownership.FlatFragment.Liveness
+
+open Ownership.FlatFragment.Support Ownership.FlatFragment.NamingFacts
+
+def FlatLive (live : Live) : Prop :=
+  ∀ name path, (name, path) ∈ live → path = []
+
+theorem flatLive_union (first : FlatLive left) (second : FlatLive right) :
+    FlatLive (union left right) := by
+  intro name path member
+  rcases mem_union_cases left right (name, path) member with old | added
+  · exact first name path old
+  · exact second name path added
+
+theorem flatLive_removeVars (names : List Var) (flat : FlatLive live) :
+    FlatLive (removeVars names live) := by
+  intro name path member
+  exact flat name path (List.mem_filter.mp member).1
+
+theorem flatAtom_uses (flat : FlatAtom atom) : FlatLive (atomUses atom) := by
+  cases flat with
+  | int => simp [FlatLive, atomUses]
+  | var boundName =>
+    intro name path member
+    have fields : name = boundName ∧ path = [] := by simpa [atomUses] using member
+    exact fields.2
+
+theorem flatAtoms_uses (flat : ∀ atom ∈ atoms, FlatAtom atom) :
+    FlatLive (atomsUses atoms) := by
+  intro name path member
+  obtain ⟨atom, present, use⟩ := List.mem_flatMap.mp member
+  exact flatAtom_uses (flat atom present) name path use
+
+theorem flatExpr_uses (flat : FlatANF0 expression) : FlatLive (uses expression) := by
+  induction flat with
+  | atom atomFlat => simpa [uses, usesArms] using flatAtom_uses atomFlat
+  | letE rhsFlat restFlat rhsIH restIH =>
+    simpa only [uses, usesArms] using flatLive_union rhsIH (flatLive_removeVars _ restIH)
+  | literal atomsFlat => simpa [uses, usesArms] using flatAtoms_uses atomsFlat
+  | push receiverFlat itemFlat =>
+    apply flatAtoms_uses
+    intro atom member
+    simp only [List.mem_cons, List.not_mem_nil, or_false] at member
+    rcases member with rfl | rfl
+    · exact receiverFlat
+    · exact itemFlat
+  | length receiverFlat =>
+    simpa [uses, usesArms, atomsUses] using flatAtom_uses receiverFlat
+  | shared valueFlat =>
+    simpa [uses, usesArms, atomsUses] using flatAtom_uses valueFlat
+
+theorem flatExpr_default_uses (flat : FlatANF0 expression) :
+    usesWith ({} : Config) expression = uses expression := by
+  induction flat <;> simp_all [usesWith, uses, usesArms, Config.has]
+
+theorem flat_rhs_continuation
+    (flat : FlatANF0 rest) (outer : FlatLive after) :
+    FlatLive (union after (removeVars [binder] (usesWith ({} : Config) rest))) := by
+  rw [flatExpr_default_uses flat]
+  exact flatLive_union outer (flatLive_removeVars _ (flatExpr_uses flat))
+
+end Ownership.FlatFragment.Liveness

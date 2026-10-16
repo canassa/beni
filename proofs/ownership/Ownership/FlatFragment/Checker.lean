@@ -1,0 +1,469 @@
+import Ownership.FlatFragment.Support
+
+/-! The first flat fragment: environment projections, binding facts, and the extraction of typing, shadow, atom, primitive, let, and scope facts from the actual checker runs. -/
+
+/-! environment projection lemmas for the flat expression proof.
+These lemmas follow the actual lookup and atom functions. A caller supplies
+the prefix binding, not a final interpreter result or trace agreement. -/
+
+namespace Ownership.FlatFragment.Env
+
+open InPlaceSemantics Soundness
+
+theorem lookup_map_values (env : Env α) (f : α → β) (key : Var) :
+    (env.map fun (name, value) => (name, f value)).lookup key =
+      (env.lookup key).map f := by
+  induction env with
+  | nil => rfl
+  | cons entry env ih =>
+    rcases entry with ⟨name, value⟩
+    simp only [List.map_cons, List.lookup_cons]
+    split <;> simp_all
+
+theorem valueEnv_lookup {env : List (Var × Observation × Value)} {key : Var} {observation : Observation} {actual : Value}
+    (found : env.lookup key = some (observation, actual)) :
+    (valueEnv env).lookup key = some observation := by
+  simpa [valueEnv, found] using lookup_map_values env Prod.fst key
+
+theorem heapEnv_lookup {env : List (Var × Observation × Value)} {key : Var} {observation : Observation} {actual : Value}
+    (found : env.lookup key = some (observation, actual)) :
+    (heapEnv env).lookup key = some actual := by
+  simpa [heapEnv, found] using lookup_map_values env Prod.snd key
+
+theorem variable_atoms_run {env : List (Var × Observation × Value)} {key : Var} {observation : Observation} {actual : Value}
+    (found : env.lookup key = some (observation, actual)) :
+    ValueSemantics.atom (valueEnv env) (.var key) = .ok observation ∧
+      InPlaceSemantics.atom (heapEnv env) (.var key) = .ok actual := by
+  constructor
+  · simp [ValueSemantics.atom, lookup, valueEnv_lookup found]
+  · simp [InPlaceSemantics.atom, lookup, heapEnv_lookup found]
+
+end Ownership.FlatFragment.Env
+
+/-! variable facts from the actual prefix configuration.
+Key alignment supplies the runtime binding. Live correspondence, abstract
+description, and both runtime types come from the checked prefix relation.
+No final execution or trace-agreement premise enters these lemmas. -/
+
+namespace Ownership.FlatFragment.VariableFacts
+
+open InPlaceSemantics HeapProof Soundness Ownership.FlatFragment.State Ownership.FlatFragment.Env
+
+theorem lookup_exists_of_same_keys (left : Env α) (right : Env β)
+    (keys : left.map Prod.fst = right.map Prod.fst)
+    (found : right.lookup key = some value) : ∃ actual, left.lookup key = some actual := by
+  have present : (right.lookup key).isSome := by simp [found]
+  obtain ⟨pair, member, equal⟩ := List.lookup_isSome_iff.mp present
+  have rightKey : pair.1 ∈ right.map Prod.fst := List.mem_map.mpr ⟨pair, member, rfl⟩
+  rw [← keys] at rightKey
+  obtain ⟨actualPair, actualMember, sameName⟩ := List.mem_map.mp rightKey
+  have actualEqual : key == actualPair.1 := by simpa only [sameName] using equal
+  have actualPresent : (left.lookup key).isSome :=
+    List.lookup_isSome_iff.mpr ⟨actualPair, actualMember, actualEqual⟩
+  cases actual : left.lookup key with
+  | none => simp [actual] at actualPresent
+  | some value => exact ⟨value, rfl⟩
+
+theorem runtime_binding_of_abstract
+    (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma)
+    (found : aenv.lookup key = some abstract) :
+    ∃ observation actual, env.lookup key = some (observation, actual) := by
+  obtain ⟨pair, binding⟩ := lookup_exists_of_same_keys env aenv inv.abstractKeys found
+  exact ⟨pair.1, pair.2, binding⟩
+
+theorem live_variable_result
+    (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma)
+    (use : (key, []) ∈ live)
+    (binding : env.lookup key = some (observation, actual))
+    (abstractBinding : aenv.lookup key = some abstract) :
+    Corresponds hs.heap observation actual ∧ Describes gamma hs.heap abstract actual ∧
+      ∃ type, tenv.lookup key = some type ∧ FlatType type ∧ FlatAbstract type abstract ∧
+        obsTyped declarations observation type = true ∧ ValueTyped declarations hs.heap actual type := by
+  obtain ⟨observed, value, observationPath, valuePath, paired⟩ :=
+    inv.bindings key [] use observation actual binding
+  simp only [projectObs, projectVal, Option.some.injEq] at observationPath valuePath
+  cases observationPath
+  cases valuePath
+  have description := inv.described key [] use observation actual abstract actual binding abstractBinding rfl
+  obtain ⟨type, declared, observationTyped, actualTyped⟩ :=
+    inv.bindingsTyped key observation actual binding
+  refine ⟨paired, ?_, type, declared, inv.types key type declared,
+    inv.abstractShapes key type abstract declared abstractBinding, observationTyped, actualTyped⟩
+  simpa only [Abstract.atPath] using description
+
+end Ownership.FlatFragment.VariableFacts
+
+/-! extraction lemmas for the flat ANF induction.
+
+The lemmas retain the actual default checker acceptance equation. They
+extract the ordinary typing and shadow checks that `check` executes.
+The push lemma requires the actual list-shaped abstract operands and extracts
+the real `demand` execution. It does not infer permission from a proxy check.
+No theorem below uses a pinned soundness obligation.
+-/
+
+namespace Ownership.FlatFragment.CheckerExtraction
+
+open Soundness
+
+theorem except_bind_success {action : Except String α}
+    {next : α → Except String β}
+    (run : (action >>= next) = .ok result) :
+    ∃ intermediate, action = .ok intermediate ∧ next intermediate = .ok result := by
+  cases first : action with
+  | error problem =>
+    rw [first] at run
+    change Except.error problem = Except.ok result at run
+    contradiction
+  | ok intermediate =>
+    exact ⟨intermediate, rfl, by simpa [first] using run⟩
+
+/-- A successful checker bind exposes its real intermediate state. -/
+theorem checkM_bind_success {action : CheckM α} {next : α → CheckM β}
+    (run : (action >>= next).run before = .ok (result, after)) :
+    ∃ intermediate middle, action.run before = .ok (intermediate, middle) ∧
+      (next intermediate).run middle = .ok (result, after) := by
+  change (action before >>= fun (value, state) => next value state) = .ok (result, after) at run
+  cases first : action before with
+  | error problem =>
+    rw [first] at run
+    change Except.error problem = Except.ok (result, after) at run
+    contradiction
+  | ok pair =>
+    rcases pair with ⟨intermediate, middle⟩
+    exact ⟨intermediate, middle, first, by simpa [first] using run⟩
+
+/-- Default acceptance runs the ordinary type checker, including its
+shadow check. The result type comes from that exact successful execution. -/
+theorem check_typecheck_success (accepted : check program = .ok result) :
+    ∃ type, typecheck program = .ok type := by
+  unfold check at accepted
+  simp only [default_refuses_shadowing,
+    Bool.false_eq_true, if_false] at accepted
+  obtain ⟨type, typed, _⟩ := except_bind_success accepted
+  exact ⟨type, typed⟩
+
+/-- Ordinary typing returns the exact type of `typesOf` and also executes
+the complete no-shadowing pass. -/
+theorem typecheck_success_parts (run : typecheck program = .ok type) :
+    typesOf program = .ok type ∧ noShadowing program = .ok () := by
+  unfold typecheck at run
+  obtain ⟨actualType, typed, rest⟩ := except_bind_success run
+  obtain ⟨finished, shadow, returned⟩ := except_bind_success rest
+  cases finished
+  change Except.ok actualType = Except.ok type at returned
+  cases returned
+  exact ⟨typed, shadow⟩
+
+/-- The final action of the real no-shadowing pass checks the main body. -/
+theorem noShadowing_main_success (run : noShadowing program = .ok ()) :
+    shadowFree [] program.main = .ok () := by
+  unfold noShadowing at run
+  obtain ⟨_, _, main⟩ := except_bind_success run
+  exact main
+
+/-- These equations come directly from the checks that accepted this
+program. The declaration list remains unrestricted. -/
+theorem check_main_type_and_shadow (accepted : check program = .ok result) :
+    ∃ type,
+      exprType program.declarations (mainDecl program.main) [] program.main = .ok type ∧
+      shadowFree [] program.main = .ok () := by
+  obtain ⟨type, typed⟩ := check_typecheck_success accepted
+  exact ⟨type, typecheck_main program typed,
+    noShadowing_main_success (typecheck_success_parts typed).2⟩
+
+/-- Successful let typing supplies both exact child equations. The second
+child uses the type that the first child actually returned. -/
+theorem exprType_let_success
+    (run : exprType declarations self env (.letE binder rhs rest) = .ok type) :
+    ∃ rhsType,
+      exprType declarations self env rhs = .ok rhsType ∧
+      exprType declarations self ((binder, rhsType) :: env) rest = .ok type := by
+  change (exprType declarations self env rhs >>= fun rhsType =>
+    exprType declarations self ((binder, rhsType) :: env) rest) = .ok type at run
+  exact except_bind_success run
+
+/-- The successful let shadow check proves freshness and checks both child
+scopes. The RHS retains the old scope; the continuation adds the binder. -/
+theorem shadowFree_let_success
+    (run : shadowFree bound (.letE binder rhs rest) = .ok ()) :
+    bound.contains binder = false ∧ binder ∉ bound ∧
+      shadowFree bound rhs = .ok () ∧ shadowFree (binder :: bound) rest = .ok () := by
+  cases occupied : bound.contains binder with
+  | true =>
+    simp only [shadowFree, if_pos occupied] at run
+    change Except.error _ = Except.ok () at run
+    contradiction
+  | false =>
+    have fresh : binder ∉ bound := by
+      intro member
+      have present : bound.contains binder = true := List.contains_iff_mem.mpr member
+      rw [occupied] at present
+      contradiction
+    have children :
+        (shadowFree bound rhs >>= fun _ => shadowFree (binder :: bound) rest) = .ok () := by
+      simpa [shadowFree, fresh] using run
+    obtain ⟨_, first, second⟩ := except_bind_success children
+    exact ⟨rfl, fresh, first, second⟩
+
+/-- With the actual list-shaped operand, successful push inference runs the
+actual demand. All operations after the demand are pure, so the demand
+finishes in the primitive's exact final state. The configuration is general;
+the default caller instantiates `ctx.config` with `{}`. -/
+theorem primitive_push_demand_run
+    (run : (primitive ctx site .push [.list roots element certificate, value] later).run before =
+      .ok (result, after)) :
+    (demand ctx.config roots later (union element.cells value.cells)).run before =
+      .ok ((), after) := by
+  unfold primitive at run
+  obtain ⟨finished, middle, demanded, returned⟩ := checkM_bind_success run
+  cases finished
+  have same : middle = after := congrArg Prod.snd (Except.ok.inj returned)
+  exact same ▸ demanded
+
+/-- The explicit intermediate-state form is convenient for the generic
+expression induction and the checked demand support. -/
+theorem primitive_push_demand_witness
+    (run : (primitive ctx site .push [.list roots element certificate, value] later).run before =
+      .ok (result, after)) :
+    ∃ middle,
+      (demand ctx.config roots later (union element.cells value.cells)).run before =
+        .ok ((), middle) :=
+  ⟨after, primitive_push_demand_run run⟩
+
+end Ownership.FlatFragment.CheckerExtraction
+
+/-! extraction from the real accepted atom inference execution.
+The conclusion gives the actual abstract atom lookup and unchanged facts.
+It assumes no runtime success or final correspondence.
+-/
+
+namespace Ownership.FlatFragment.AtomInference
+
+open Ownership.FlatFragment.CheckerExtraction
+
+theorem infer_atom_success {inferenceFuel : Nat} {ctx : Context} {aenv : Env Abstract} {atom : Atom} {after : Live} {site : List Nat} {before : St} {next : St} {result : Abstract}
+    (defaultConfig : ctx.config = {})
+    (accepted : (inferExpr inferenceFuel ctx aenv (.atom atom) after site).run before =
+      .ok (result, next)) :
+    abstractAtom aenv atom = .ok result ∧ next = before := by
+  cases inferenceFuel with
+  | zero =>
+    simp [inferExpr, bridgeObserve, defaultConfig, Config.has,
+      StateT.run, StateT.bind, StateT.get, StateT.lift, Except.bind, Except.pure,
+      StateT.pure, bind, pure, get, getThe, MonadStateOf.get, MonadStateOf.set,
+      liftM, monadLift, MonadLift.monadLift, throw, throwThe, MonadExceptOf.throw] at accepted
+  | succ fuel =>
+    cases scope : liveScope aenv after with
+    | error problem =>
+      simp [inferExpr, bridgeObserve, defaultConfig, Config.has, getFacts,
+        scope, StateT.run, StateT.bind, StateT.map, StateT.get, StateT.lift,
+        Except.bind, Except.pure, StateT.pure, bind, pure, get, getThe,
+        MonadStateOf.get, MonadStateOf.set, liftM, monadLift,
+        MonadLift.monadLift, throw, throwThe, MonadExceptOf.throw] at accepted
+    | ok unit =>
+      cases atomRun : abstractAtom aenv atom with
+      | error problem =>
+        simp [inferExpr, bridgeObserve, defaultConfig, Config.has, getFacts,
+          scope, atomRun, StateT.run, StateT.bind, StateT.map, StateT.get,
+          StateT.lift, Except.bind, Except.pure, StateT.pure, bind, pure,
+          get, getThe, MonadStateOf.get, MonadStateOf.set, liftM, monadLift,
+          MonadLift.monadLift, throw, throwThe, MonadExceptOf.throw] at accepted
+      | ok abstract =>
+        have computation :
+            (inferExpr (fuel + 1) ctx aenv (.atom atom) after site).run before =
+              .ok (abstract, before) := by
+          simp [inferExpr, bridgeObserve, defaultConfig, Config.has, getFacts,
+            scope, atomRun, StateT.run, StateT.bind, StateT.map, StateT.get,
+            StateT.lift, Except.bind, Except.pure, StateT.pure, bind, pure,
+            get, getThe, MonadStateOf.get, MonadStateOf.set, liftM, monadLift,
+            MonadLift.monadLift, throw, throwThe, MonadExceptOf.throw]
+        rw [computation] at accepted
+        have equal := Except.ok.inj accepted
+        exact ⟨congrArg Except.ok (congrArg Prod.fst equal),
+          (congrArg Prod.snd equal).symm⟩
+
+end Ownership.FlatFragment.AtomInference
+
+/-! extraction of the actual default primitive inference step.
+The operand premise is the real pure abstract-atom map, derived at callers.
+Acceptance supplies the scope success and primitive execution, not a proxy
+permission predicate or a final interpreter agreement.
+-/
+
+namespace Ownership.FlatFragment.PrimitiveInference
+
+open Ownership.FlatFragment.CheckerExtraction
+
+theorem infer_primitive_equation {ctx : Context} {aenv : Env Abstract} {args : List Atom} {abstracts : List Abstract} {after : Live} {site : List Nat} {before : St} {fuel : Nat} {op : Prim}
+    (defaultConfig : ctx.config = {})
+    (argsRun : args.mapM (m := Except String) (abstractAtom aenv) = .ok abstracts)
+    (scope : liveScope aenv after = .ok ()) :
+    (inferExpr (fuel + 1) ctx aenv (.prim op args) after site).run before =
+      (primitive {ctx with escaped := union ctx.escaped before.facts.escapes} site op abstracts
+        (union (liveCellsWith ctx.config aenv after) ctx.pinned)).run before := by
+  simp [inferExpr, bridgeObserve, defaultConfig, Config.has, getFacts, scope, argsRun,
+    StateT.run, StateT.bind, StateT.map, StateT.get, StateT.lift, Except.bind,
+    Except.pure, StateT.pure, bind, pure, get, getThe, MonadStateOf.get,
+    MonadStateOf.set, liftM, monadLift, MonadLift.monadLift, throw, throwThe,
+    MonadExceptOf.throw] <;> rfl
+
+theorem infer_primitive_success {ctx : Context} {aenv : Env Abstract} {args : List Atom} {abstracts : List Abstract} {after : Live} {site : List Nat} {before : St} {next : St} {result : Abstract} {inferenceFuel : Nat} {op : Prim}
+    (defaultConfig : ctx.config = {})
+    (argsRun : args.mapM (m := Except String) (abstractAtom aenv) = .ok abstracts)
+    (accepted : (inferExpr inferenceFuel ctx aenv (.prim op args) after site).run before =
+      .ok (result, next)) :
+    ∃ childFuel,
+      inferenceFuel = childFuel + 1 ∧ liveScope aenv after = .ok () ∧
+      (primitive {ctx with escaped := union ctx.escaped before.facts.escapes} site op abstracts
+        (union (liveCellsWith ctx.config aenv after) ctx.pinned)).run before = .ok (result, next) := by
+  cases inferenceFuel with
+  | zero =>
+    simp [inferExpr, bridgeObserve, defaultConfig, Config.has,
+      StateT.run, StateT.bind, StateT.get, StateT.lift, Except.bind,
+      Except.pure, StateT.pure, bind, pure, get, getThe, MonadStateOf.get,
+      MonadStateOf.set, liftM, monadLift, MonadLift.monadLift, throw, throwThe,
+      MonadExceptOf.throw] at accepted
+  | succ childFuel =>
+    cases scope : liveScope aenv after with
+    | error problem =>
+      simp [inferExpr, bridgeObserve, defaultConfig, Config.has, getFacts, scope, argsRun,
+        StateT.run, StateT.bind, StateT.map, StateT.get, StateT.lift, Except.bind,
+        Except.pure, StateT.pure, bind, pure, get, getThe, MonadStateOf.get,
+        MonadStateOf.set, liftM, monadLift, MonadLift.monadLift, throw, throwThe,
+        MonadExceptOf.throw] at accepted
+    | ok finished =>
+      cases finished
+      rw [infer_primitive_equation defaultConfig argsRun scope] at accepted
+      exact ⟨childFuel, rfl, rfl, accepted⟩
+
+end Ownership.FlatFragment.PrimitiveInference
+
+/-! extraction of the actual default let inference execution.
+No theorem uses a pinned soundness obligation.
+
+The context retains its general escaped and pinned sets. The theorem derives
+both child executions and the real live-scope success from the complete run.
+The explicit outer-empty premise selects the ordinary continuation branch.
+No final-state equality or child-success premise enters.
+-/
+
+namespace Ownership.FlatFragment.InferLet
+
+open Ownership.FlatFragment.CheckerExtraction
+
+/-- One actual let inference step first checks the live scope. It then
+runs the RHS and continuation with the exact contexts and sites in Checker.
+The first read of the checker facts leaves the checker state unchanged.
+-/
+theorem infer_let_succ_equation {ctx : Context} {binder : Var} {after : Live}
+    (defaultConfig : ctx.config = {})
+    (outerEmpty : after.filter (fun use => use.1 == binder) = []) :
+    let updated : Context :=
+      {ctx with escaped := union ctx.escaped before.facts.escapes}
+    let rhsCtx : Context :=
+      {updated with privateTransfer := match rhs with
+        | .prim .privateRoot _ => privateToInit binder rest
+        | _ => false}
+    (inferExpr (fuel + 1) ctx aenv (.letE binder rhs rest) after site).run before =
+      (liveScope aenv after >>= fun _ =>
+        ((inferExpr fuel rhsCtx aenv rhs
+          (union after (removeVars [binder] (usesWith ctx.config rest))) (site ++ [0])) >>= fun value =>
+          inferExpr fuel updated ((binder, value) :: aenv) rest after (site ++ [1])).run before) := by
+  dsimp only
+  rw [inferExpr]
+  cases scope : liveScope aenv after with
+  | error problem =>
+    simp [bridgeObserve, defaultConfig, Config.has, getFacts, outerEmpty, scope,
+      StateT.run, StateT.bind, StateT.map, StateT.get, StateT.lift, Except.bind, Except.pure, StateT.pure, bind, pure, get, getThe, MonadStateOf.get, MonadStateOf.set, liftM, monadLift, MonadLift.monadLift, throw, throwThe, MonadExceptOf.throw]
+  | ok unit =>
+    cases unit
+    simp [bridgeObserve, defaultConfig, Config.has, getFacts, outerEmpty, scope,
+      StateT.run, StateT.bind, StateT.map, StateT.get, StateT.lift, Except.bind, Except.pure, StateT.pure, bind, pure, get, getThe, MonadStateOf.get, MonadStateOf.set, liftM, monadLift, MonadLift.monadLift, throw, throwThe, MonadExceptOf.throw]
+    rfl
+
+/-- Successful default inference cannot use zero inference fuel. Its real
+prefix supplies the live-scope success and exact intermediate checker state.
+The RHS private-transfer flag matches the actual private-root selection.
+The continuation preserves every pre-existing pinned origin.
+-/
+theorem infer_let_success {ctx : Context} {aenv : Env Abstract} {binder : Var} {rhs : Expr} {rest : Expr} {after : Live} {site : List Nat} {before : St} {next : St} {result : Abstract} {inferenceFuel : Nat}
+    (defaultConfig : ctx.config = {})
+    (outerEmpty : after.filter (fun use => use.1 == binder) = [])
+    (accepted : (inferExpr inferenceFuel ctx aenv (.letE binder rhs rest) after site).run before =
+      .ok (result, next)) :
+    ∃ childFuel value middle,
+      inferenceFuel = childFuel + 1 ∧ liveScope aenv after = .ok () ∧
+      let updated : Context :=
+        {ctx with escaped := union ctx.escaped before.facts.escapes}
+      let rhsCtx : Context :=
+        {updated with privateTransfer := match rhs with
+          | .prim .privateRoot _ => privateToInit binder rest
+          | _ => false}
+      (inferExpr childFuel rhsCtx aenv rhs
+        (union after (removeVars [binder] (usesWith ctx.config rest))) (site ++ [0])).run before =
+          .ok (value, middle) ∧
+      (inferExpr childFuel updated ((binder, value) :: aenv) rest after (site ++ [1])).run middle =
+          .ok (result, next) := by
+  cases inferenceFuel with
+  | zero =>
+    rw [inferExpr] at accepted
+    simp [bridgeObserve, defaultConfig, Config.has, StateT.run,
+      StateT.bind, StateT.lift, Except.bind, Except.pure, StateT.pure, bind, pure, get, getThe, MonadStateOf.get, MonadStateOf.set, liftM, monadLift, MonadLift.monadLift, throw, throwThe, MonadExceptOf.throw] at accepted
+  | succ childFuel =>
+    have expanded := infer_let_succ_equation (fuel := childFuel)
+      (before := before) (rhs := rhs) (rest := rest) (site := site)
+      (aenv := aenv) defaultConfig outerEmpty
+    rw [expanded] at accepted
+    obtain ⟨unit, scope, children⟩ := except_bind_success accepted
+    cases unit
+    obtain ⟨value, middle, rhsRun, restRun⟩ := checkM_bind_success children
+    exact ⟨childFuel, value, middle, rfl, scope, rhsRun, restRun⟩
+
+end Ownership.FlatFragment.InferLet
+
+/-! scope facts from the actual successful checker scope test.
+Shadow freshness and prefix key alignment exclude the let binder from the
+outer continuation. This derives the branch premise used by let extraction.
+-/
+
+namespace Ownership.FlatFragment.Scope
+
+theorem lookup_key_member {env : Env α} {key : Var} {value : α} (found : env.lookup key = some value) :
+    key ∈ env.map Prod.fst := by
+  have present : (env.lookup key).isSome := by simp [found]
+  obtain ⟨entry, member, equal⟩ := List.lookup_isSome_iff.mp present
+  have same : key = entry.1 := by simpa using equal
+  subst key
+  exact List.mem_map.mpr ⟨entry, member, rfl⟩
+
+theorem liveScope_lookup_exists {aenv : Env Abstract} {live : Live} {use : Var × Path}
+    (scope : liveScope aenv live = .ok ()) (member : use ∈ live) :
+    ∃ abstract, aenv.lookup use.1 = some abstract := by
+  cases search : live.find? (fun (key, _) => (aenv.lookup key).isNone) with
+  | some entry =>
+    rcases entry with ⟨key, path⟩
+    simp [liveScope, search] at scope
+  | none =>
+    have present := List.find?_eq_none.mp search use member
+    cases found : aenv.lookup use.1 with
+    | none => simp [found] at present
+    | some abstract => exact ⟨abstract, rfl⟩
+
+theorem outer_avoids_fresh_binder {env : Env α} {aenv : Env Abstract} {binder : Var} {after : Live}
+    (keys : env.map Prod.fst = aenv.map Prod.fst)
+    (fresh : binder ∉ env.map Prod.fst)
+    (scope : liveScope aenv after = .ok ()) :
+    after.filter (fun use => use.1 == binder) = [] := by
+  apply List.filter_eq_nil_iff.mpr
+  intro use member
+  have different : use.1 ≠ binder := by
+    intro same
+    obtain ⟨abstract, found⟩ := liveScope_lookup_exists scope member
+    have present : use.1 ∈ env.map Prod.fst := by
+      rw [keys]
+      exact lookup_key_member found
+    exact fresh (by simpa [same] using present)
+  simp [different]
+
+end Ownership.FlatFragment.Scope
