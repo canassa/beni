@@ -386,7 +386,8 @@ Conduit's page cases (2026-10-08, paired direct runs extended 2026-10-14, re-gra
 Linux instruction counts 2026-10-15), its direct value fuzz (2026-10-14), `browser/direct/HttpJson`
 and `HttpJsonBody` (2026-10-14, compiler defect #105), and the paired TodoMVC/Sternhalma pages plus
 Sternhalma's separate value fuzz (2026-10-15), and the paired Bike Wars page
-(2026-10-15, 8 600M; its value fuzz keeps the default) are the only corpus grants. Outside the
+(2026-10-15, 8 600M; its value fuzz keeps the default), and `browser/direct/ApiItems` (2026-10-16,
+5 260M, #227) are the only corpus grants. Outside the
 corpus, the two tests of `tests/blackbox/wasm_test.zig` that run the `.wasm` have 6 000M
 (`wasm_budget_millions`): a fixed cost of Node and the self-hosted wasm32 build that no smaller
 input reduces. Jayson Reis decided it on 2026-10-15 (dashboard `wasm-playground-q5`), with
