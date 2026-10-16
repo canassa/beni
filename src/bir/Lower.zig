@@ -2031,8 +2031,13 @@ fn isListOfFunctions(l: *Lower, inst: u32) bool {
     const tags = l.insts.items(.tag);
     if (tags[inst] != .type_app) return false;
     const data = l.insts.items(.data)[inst];
+    // Core's `List` itself, imported: a type of another module named `List`
+    // takes no function's words.
     const head = data.lhs;
-    if (!std.mem.eql(u8, l.tokenText(l.insts.items(.main_token)[head]), "List")) return false;
+    if (tags[head] != .type_import) return false;
+    const hd = l.insts.items(.data)[head];
+    const list = WellKnown.List.symbol();
+    if (l.symbols.items[hd.lhs] != list or l.symbols.items[hd.rhs] != list) return false;
     const args = l.extra.items[l.extra.items[data.rhs]..l.extra.items[data.rhs + 1]];
     return args.len == 1 and tags[args[0]] == .type_fn;
 }
