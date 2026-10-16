@@ -234,11 +234,12 @@ The write diagnostics count actual runtime write events.
 | `Sync.lean` | Zig-fixture projections for branch, model, fold and Conduit rules, with required holes |
 | `Targeted.lean` | finite products exercising capture consumption, call counts, shape joins, set, comparisons and recursion |
 | `Enumerate.lean` | every typed program of a bounded grammar; independent of random seeds |
-| `Generator.lean` | the general generator: v4's chains of moves, and v5's conditional arms and generated declaration tables |
+| `Generator.lean` | general generator: v4 move chains, v5 conditionals and declaration tables, and v6 constructions and views |
 | `Oracle.lean`, `OracleLegacy.lean` | template families, generator versions 1–6, campaigns, shrinking, controls, distinct and precision counts |
 | `Aliasing.lean` | a campaign metric: does an accepted program write an array two names reach |
 | `Fixtures.lean`, `GeneratedRegressions.lean`, `Smoke.lean` | verdict fixtures, frozen regressions, negative-control probes |
 | `HeapProof.lean`, `BuilderProof.lean`, `KernelChecks.lean` | concrete heap and builder/close proofs, kernel checks |
+| `LinkedWriteFrame.lean` | conditional heap and observer frames for successful linked writes |
 | `Soundness.lean` | the bridge to concrete heaps and the soundness statements |
 | `Falsify.lean` | executes the unproved statements on concrete configurations (`ownership falsify`) |
 | `Report.lean` | printing summaries |
@@ -260,8 +261,19 @@ the concrete allocation. Closure descriptions agree recursively on code and
 captures, including closures inside captured records and arrays. Bookkeeping: the invariant's base case, and that the
 review's counterexample to the earlier invariant is excluded by the restated
 one. The main theorem is proved only **conditionally** on the step lemma. All
-statements are about programs the corrected checker accepts
-(`check p = .ok _`).
+public soundness statements concern programs that the corrected checker accepts
+(`check p = .ok _`). The local runtime frame lemmas require no checker-acceptance premise.
+
+[LinkedWriteFrame.lean](Ownership/LinkedWriteFrame.lean) proves a local frame for successful real `writeLinked` and `writeCounted` operations.
+Every changed address belongs to the receiver's initial undirected link component.
+The operations preserve links, permanent observer registrations, and heap lookups outside that component.
+Complete finite representations outside the component retain their observations at the supplied snapshot depth.
+The `writeLinked` corollaries cover individual values, value lists, snapshots, and all permanent observers.
+The `writeCounted` corollary preserves an individual representation under the same separation premise.
+The example changes a source and its view while an independent registered observer retains `[7]`.
+These conditional lemmas establish no general execution success, checker permission, link validity, result correspondence, or certificate preservation.
+They establish no `CallSound.noNewHolders` clause or complete expression-evaluation theorem.
+All three general proof obligations remain open.
 
 `sorry`: `summary_sound` (Lemma 6.7 clauses 1–3, clause 2 as repaired in
 round 5), `map_summary_sound`, `invariant_preserved` (the step case of the

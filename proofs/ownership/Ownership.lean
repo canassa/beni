@@ -7,6 +7,7 @@ import Ownership.Checker
 import Ownership.Reinfer
 import Ownership.Library
 import Ownership.BuilderProof
+import Ownership.LinkedWriteFrame
 import Ownership.KernelChecks
 import Ownership.Report
 import Ownership.Soundness

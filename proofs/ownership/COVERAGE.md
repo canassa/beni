@@ -52,7 +52,7 @@ here; it is not evidence for unimplemented wrappers/algorithms.
 | T15 | core tested | Ordinary Library.foldl callback returns source element; later push with source live rejected. |
 | T16 | out of scope | Module/interface cache invalidation absent. |
 | T17 | core tested | compareLengths xs (push xs), retained tuple/record holder, and model.todos old/new record all rejected. Scalar compare is explicit because list comparison dispatch absent. |
-| T18 | out of scope | List views, cached $plain and header representation absent. |
+| T18 | out of scope | The core models list views. Cached `$plain` and JavaScript header identity remain outside this core. |
 | T19 | out of scope | Opaque slot boundary absent. |
 | T20 | out of scope | Command escape and TEA entry fixpoint absent. Traversal escape supplement is not this protocol. |
 | T21 | projection tested | Explicit shared root rejects write; TEA init/reset model absent. |
@@ -83,7 +83,7 @@ here; it is not evidence for unimplemented wrappers/algorithms.
 | T46 | projection tested; summary row tested | Previously listed as "core tested" on one row, where the borrowed row is returned but never written, so owned and borrowed were indistinguishable. Now: shared and captured conditional accumulators rejected; borrowed element then later push rejected; the List.isEmpty projection runs over **two rows**, so the second step pushes onto the borrowed first row, retained afterwards (rejected; under `borrowed-supply` with the per-call checker it is accepted and the traces differ); a three-row variant `[r1, r2, r1]` that reads r1 again. The row the thesis repaired — foldl's accumulator supplied owned only if the callback returns owned — is the summary layer's supply bit, re-checked where the step ends; its mutants `supply-recheck` and `supply-edge` are required controls caught by generated programs (`fold-keep`, `apply-read`). Only ordinary foldl and two callbacks; no Dict/fiber/TEA variant. |
 | T47 | projection tested; release/renderer excluded | Transparent one-field Column record under list focus edited by push and wrapped again, accepted. Erased constructor identity and renderer release protocol absent. |
 | T48 | projections tested | Duplicate versus distinct transparent record slots in list rejected/accepted. Opaque module summaries and Conduit entry protocol absent. |
-| T49 | out of scope | Recursive data representatives and across-level exclusivity absent. |
+| T49 | out of scope | The core includes the fixed recursive Chain type. The complete thesis variant for recursive data representatives and across-level exclusivity remains outside this core. |
 | T50 | out of scope | Borrowed send-message writes and parking absent. |
 | T51 | out of scope | Dictionary algorithm and empty dictionary special representation absent; both variants untested. |
 | T52 | projections tested | Retained spine alias rejected; shallow copied Int spine accepted. Exact filter identity and entry fixpoint absent. |
@@ -99,8 +99,9 @@ here; it is not evidence for unimplemented wrappers/algorithms.
 
 The core has integer zero/nonzero branches, positional record constructor and
 projection, scalar self-recursion, closures and four structured primitives.
-There is no record-update surface syntax, opaque/recursive type, list view or
-list-pattern syntax, effects/fibers, TEA entry analysis, renderer, release
+The core includes fixed Result and recursive Chain types, list views, and construction primitives.
+It excludes arbitrary opaque or recursive type declarations and record-update or list-pattern surface syntax.
+It also excludes effects/fibers, TEA entry analysis, the renderer, release
 identity rewriting, implicit method dispatch or dictionary/schema implementation.
 The checker explicitly rejects higher-order recursive actuals and recursive
 changes to tracked shape/exclusivity; these are implementation limits rather
@@ -125,10 +126,10 @@ and ordinary nested update calls (T57). These are executable observations,
 not universal library theorems. T43 reverse fold is rejected by a conservative
 many-call rule before the intended final Dead edge, an explicit precision limit.
 
-T6/T22 need runtime Task.join and unknown-origin values; using shared would
-exercise Unescaped instead of Known. T44/T51 require dictionary/Maybe algorithms
-and the empty-dictionary representation. T49 needs recursive data representatives;
-scalar recursion is not that boundary. T59's schema variant requires schema
+T6/T22 require runtime Task.join and unknown-origin values.
+An explicit shared root tests Unescaped; it does not test Known. T44/T51 require dictionary/Maybe algorithms
+and the empty-dictionary representation. T49 needs the complete recursive-data variant;
+the fixed Chain projection does not establish that coverage. T59's schema variant requires schema
 parsing/mapping. The TEA/send/renderer/opaque/module/release exclusions in the
 table remain excluded, and no full application is claimed to be reproduced.
 There are no remaining applicable pending core fixtures from the previous audit.
@@ -290,7 +291,7 @@ controls` prints both rows: NOT OBSERVABLE under summaries (with the
 verdict-change counts) and the required catch against the per-call checker;
 its fixed probe is T46 two rows, run against the per-call checker.
 
-## Theorems (Soundness.lean, BuilderProof.lean, HeapProof.lean, KernelChecks.lean)
+## Theorems (Soundness.lean, BuilderProof.lean, HeapProof.lean, LinkedWriteFrame.lean, KernelChecks.lean)
 
 | Theorem | Status |
 |---|---|
@@ -304,7 +305,21 @@ its fixed probe is T46 two rows, run against the per-call checker.
 | `map_summary_sound` — map's derived summary, including its certificate | **sorry**; restated with `summary_sound` |
 | Lemma 6.7 clause 4 (calls, supply) | **not stated**: the interpreters do not record callback invocations |
 | builder/close contracts, footprint framing, close identity (`BuilderProof`, `HeapProof`) | proved (unchanged) |
+| `LinkedWriteFrame.writeLinked_preserves`, `writeLinked_changed_address` | proved; conditional on runtime success. Links and permanent registrations stay equal. Every changed address belongs to the receiver's initial undirected link component. |
+| `LinkedWriteFrame.writeLinked_preserves_represents`, `writeLinked_preserves_representsMany`, `writeLinked_preserves_snapshot`, `writeLinked_preserves_observers` | proved; conditional on runtime success and complete finite representation footprints outside that component. The observer theorem covers every pre-write permanent registration. |
+| `LinkedWriteFrame.writeCounted_preserves`, `writeCounted_preserves_represents` | proved; the real counter wrapper preserves the same heap frame and an individual representation under the stated success and separation premises. |
+| `LinkedWriteFrame.example_run`, `example_observer_frame`, `example_all_observers_frame` | proved; a linked write changes source 0 and view 1 while the nonempty permanent observer list retains the independent array `[7]`. |
 | kernel checks of `storeExclusive` and permanent escapes | proved (unchanged) |
+
+The linked-write frame uses the undirected closure of the pre-state's actual stored links.
+Its helper proofs follow the real `spliceUp` and `refreshDown` operations and their explicit depth bounds.
+It requires no valid-link, acyclic-link, empty-link, or empty-observer premise.
+Runtime success remains a premise. These lemmas do not establish success for arbitrary states.
+Complete finite representations supply every protected footprint address at the stated snapshot depth.
+The caller must still derive footprint separation from accepted demands.
+These lemmas establish no result correspondence, certificate preservation, or `CallSound.noNewHolders` clause.
+They do not cover allocation, plain builder `put`, or complete expression evaluation without further composition.
+They do not resolve #169, #170, or any general proof obligation.
 
 ### The invariant, restated
 
