@@ -40,7 +40,7 @@ build_test.test.--release writes a map only when asked, and asking changes no by
 build_test.test.--release writes a map only when asked, and asking changes no byte of the code #1 dcba63314bb5370e2c9f823dc119c00e57a0f8e3ffb2b3aa1e7d64c680d9b4f2
 build_test.test.Debug.todo compiles as anything and crashes with its message when reached #0 717b1f9a140435dd30fc71f5a2a91aa3f772e7c40a1025c5d54d9945777f88ff
 build_test.test.a --core-root core without a core-private List value the emitter calls is refused where a module needs it #0 696cde132e411ca93a74b4a7fe267bf54ab09eb5ac70f8861411f4f7f2221d2f
-build_test.test.a --library --release build keeps every core/Schema value it exports, even one called once #0 bd2470a3ca2d077b5746bec89f8cf0007bed8e84c62f76ec30249c637280e39e
+build_test.test.a --library --release build keeps every core/Schema value it exports, even one called once #0 ddb2953b337ba8eafaa44d8d5ca5f39c837ba9f6725d83d32440b53792d673c5
 build_test.test.a Debug call that reachability drops does not refuse the release build #0 01120bf841884cc7a9ce51eb80a6548036145c0c020bb39e6e00ccb51fd85f53
 build_test.test.a build with cross-module evidence is byte-identical at every --jobs #0 1f68093000c0fa215f3cf86cf213045c2c5e1f6803a34ab17ceb081c64b9a532
 build_test.test.a build with cross-module evidence is byte-identical at every --jobs #1 daf37a1fa19ec2fdcbb3d87937ddb72eb308d948166d1bd200fd0daf9a32bc1a
@@ -129,6 +129,7 @@ ordering_test.test.a dispatch cycle through an annotated eq written above its ca
 ordering_test.test.a let helper at two types calls an own method written below it, reversed, and prints the same #0 ffe1b90cfc0f55f95a1469b85bbf68db796c990b2b4bd0ef222901cc8eded280
 ordering_test.test.a recursive group's nullary read and dot-call print the same reversed #0 9d7fc588798c54a7f0d939055ddde1e948a6d3fec702c83981b811ae0f4c36df
 ordering_test.test.an annotated recursive group calls an own method written below it, reversed, and prints the same #0 c31efca37536c020226804a1a6f7dcf8e9f1fa401080aeb8fbef411ea3d27229
+ordering_test.test.mutually recursive schema declarations print the same reversed #0 a7f19de41d77db33b33987b390d49861969b77518e648e39e1d34bfb537433ab
 ordering_test.test.nullary methods and record defaults print the same reversed #0 759ab1983b71da5fee5c4695545896e1251fef5f8af51ce6cd8ae5acd5defee0
 page_fuzz_test.test.a build that misses one hole's write is caught, at the message that shows it, and shrunk to it #0 3f8822545322a0da6c64b96debec8e9adc0d2070615239862d35c0219723dfed
 page_fuzz_test.test.a keyed list that misses a change is caught, its element the list #0 cacdbb3697868cba3212b51ae5b1659f01fc8d0d03c3af7e59d210bd03cd7676
