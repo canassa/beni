@@ -31,7 +31,7 @@ Lake decides a rebuild by hashes of the source, the imports, the options and Lea
 But the source scan of `Axioms.lean` reads files outside its imports.
 So a warm `lake build` replayed the old scan and passed with a new `sorry` in `Triage.lean` (#255).
 `scripts/audit.sh` builds a clean export, so the job catches it.
-Thus a warm `.lake` makes only `lake build` faster: the audit took 257 to 428 s on every run.
+Thus a warm `.lake` makes only `lake build` faster: the audit took 257 to 434 s on every run.
 After a revert, the net diff of the pull request is empty, so the job skips its steps.
 A warm measurement needs a commit that leaves a change under `proofs/ownership/`.
 `lake exe ownership ci` builds the beni compiler with Zorg, so it depends on `src/` and needs another trigger (#259).
