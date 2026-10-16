@@ -224,9 +224,10 @@ jobs:
   # The job runs the audit files of the pull request itself: Axioms.lean,
   # Audit.lean, scripts/audit.sh, the lakefile, flake.nix and this
   # workflow. So a pull request that weakens them passes its own weaker
-  # audit, and this job does not catch it. .github/CODEOWNERS names the
-  # owner for these files (#263). When the ruleset on master requires a
-  # review from code owners, a change to them needs his review.
+  # audit, and this job does not catch it. #263 adds .github/CODEOWNERS,
+  # which names the owner for these files. When the ruleset on master
+  # requires a review from code owners, a change to them needs the
+  # owner's review.
   # `nix develop` also evaluates the flake of the pull request, and runs
   # its shellHook, before any audit.
   #
@@ -237,7 +238,8 @@ jobs:
   # the checkout. An `#eval` in an audited module runs during that build,
   # before Axioms.lean, and can rewrite files. When `lake build` ran
   # first, such a commit passed both steps with a `sorry` (#261). The step
-  # after the build fails when the build changed a tracked file.
+  # after the build fails when the build changed or added a file that git
+  # does not ignore.
   #
   # The job always runs, because `check` fails when a job is skipped. Its
   # first step decides if the other steps run. On a push to master, and on
@@ -348,15 +350,24 @@ jobs:
         run: nix develop ../..#ownership --command lake build
 
       # Lean code of the pull request runs during `lake build` and can
-      # write files. A build that changed a tracked file fails the job, and
-      # its `.lake` is not saved.
-      - name: the build changed no tracked file
+      # write files. A build that changed or added a file that git does not
+      # ignore fails the job, and its `.lake` is not saved. When `lake
+      # build` fails, this step is skipped, and the job is red already.
+      - name: the build changed no file
         id: tree
         if: ${{ steps.changes.outputs.run == 'true' }}
-        run: git diff --exit-code
+        run: |
+          changes=$(git status --porcelain --untracked-files=all)
+          if [ -n "$changes" ]; then
+            echo "the build changed these files:"
+            echo "$changes"
+            git diff
+            exit 1
+          fi
 
-      # As for the Zig caches, only a push to master saves, also when a
-      # proof fails. A build that changed a tracked file saves nothing.
+      # As for the Zig caches, only a push to master saves, also when
+      # `lake build` fails. When the audit fails, `lake build` does not run,
+      # and nothing is saved. A build that changed a file saves nothing.
       - name: save the Lake build
         if: ${{ !cancelled() && github.event_name == 'push' && steps.lake-build.outcome != 'skipped' && steps.tree.outcome != 'failure' && steps.lake-cache.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
