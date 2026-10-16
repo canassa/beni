@@ -2749,7 +2749,7 @@ with §16.4's amendment of the same day it is zero.
 | Words on a `List` of functions, `Task.timeout`'s and `raceOk`'s, `crossing Int32` (§30.9) | `wordsRow` | as the words row above: the fiber runtime and its scope are not modelled. |
 | *Amended 2026-10-16 (#229):* a carried lambda named by where it is made, and the walk's fixpoints settled over finite cells and capped by the `fixpoint` limit (§28's dated amendment *the entry's fixpoints settle*) | `carry`, `entryConditions`, `entryCall`, `instCb`, `instFold` | a lambda whose merged captures miss what one instantiation captured: an alias lost; or a round taken for settled while a carried lambda still grew. The Lean model already names what a traversal or the model makes by its site (`.position site`) and fails a fixpoint that does not settle within its 24 rounds loudly, as a rejection (`throw "limit: …"`); Zig's cap is 32 and an error at the declaration. It carries no lambdas through results (rule 8's row), and the bridge skips entry projections, so neither the merge nor the caps are compared. |
 | *Amended 2026-10-16 (§30.10):* a schema's slots, the derivation from its declaration, and what a run answers | `schemaRunRow`, `schemaMakerRow`, `schemaTaint`, `schemaMemberRow`, `conversionSlots`, `codecRunRow`, `settleRun` | a list a conversion, a `Value` or a codec returns taken for built by the run, and written in place while its other holder keeps it. The core has no schemas, no JSON and no evidence; the bridge never emits one, so its confirmed-unsafe count says nothing of this rule. Zig fixtures (`ownership/SchemaAnswers`, `check/bad/direct/SchemaConversionShared`) and the corpus test it. |
-| *Amended 2026-10-16 (§30.11):* a call of a function the checker cannot identify answers `⊤call`; a record field called with a dot is its value called; a schema declaration's member keeps §6.1's cell made by the call until #218 | `conservativeAV`, `unknownCb`, `fieldFunction`, `callValue` | a write accepted onto a list a function returned while another holder keeps it. The core calls only closures it can name — no function is read out of a dictionary, a record field or a list, and no callee is handed one — so it has no unknown callee and no dot-called field, and neither rule is compared with the oracle; the corpus fixtures (`ownership/UnknownCallee`, `UnknownCalleeTagger`) test them. |
+| *Amended 2026-10-16 (§30.11):* a call of a function the checker cannot identify answers `⊤call`; a record field called with a dot is its value called; a schema declaration's member handed on as a value has its run's row for its class, and a tagged schema's constructor is a constructor (#269) | `conservativeAV`, `unknownCb`, `fieldFunction`, `callValue`, `memberValue`, `ctorClass` | a write accepted onto a list a function returned while another holder keeps it. The core calls only closures it can name — no function is read out of a dictionary, a record field or a list, and no callee is handed one — so it has no unknown callee and no dot-called field, and neither rule is compared with the oracle. The core has no schemas either (the §30.10 row). The corpus fixtures (`ownership/UnknownCallee`, `UnknownCalleeTagger`, `SchemaMemberHanded`) test them. |
 
 ### 26.8 Open questions
 
@@ -3028,8 +3028,8 @@ against CLAUDE.md rule 7's test — what guarantee does the error buy?
 writing function value that reaches such a callee is pending where it gets there (§16.5), so the obligation is
 reported once, at that place.
 *Amended 2026-10-16 (§30.11):* an acceptance can rest on such a callee's result only when the call is a markup
-construction (or, until issue #218, a schema declaration's member); a write onto what a function the checker cannot
-identify returned is an approximate `unknown` rejection.
+construction; a write onto what a function the checker cannot identify returned is an approximate `unknown`
+rejection.
 
 *Diagnostic guidance, 2026-10-15.* At an entry, a `top-level` refusal recommends
 building the value inside `init ⊤ = …` and cites §22.2: returning a top-level
@@ -4242,7 +4242,7 @@ CI bound (`node scripts/bridge.mjs --ci`): 1 341 programs, 959 translated, none 
 
 ### 30.11 A call of a function the checker cannot identify answers `⊤` (2026-10-16)
 
-*Amends §6.1 item 3, §15 decision 2, §16.5 and §28.5. Issue #216.*
+*Amends §6.1 item 3, §15 decision 2, §16.5 and §28.5. Issues #216 and #269.*
 
 **The hole.** §6.1 gave a callee with no summary the result `(ε, result(ι, ε))`, a cell *made by the call*,
 on the ground that the worst pure function "makes its result". That is a claim about the callee, and for a
@@ -4291,12 +4291,25 @@ class the walk knows, or a function it cannot identify. Before, the dot form was
 the rule above would have turned into a rejection of every `api.search q` on a record of functions
 (`DebouncedSearch`).
 
-**Schema declarations.** A constructor of a tagged schema (`Tree.Leaf { value = n }`, `schema_ctor_top`
-and `ext_schema_ctor`) is called like a function and makes its value: §6.1's cell made by the call is true
-of it, and it keeps that cell (`ownership/SchemaCtorBlock`). A member of a schema declaration (`Tags.parse`,
-`schema_member_top` and `ext_schema_member`) is a function the checker names but has no summary for: its
-result keeps the same cell, called directly or handed as an argument, until issue #218 derives each
-member's ownership from its declaration. That is the one place this rule does not reach, and it is #218's.
+**Schema declarations** (issue #269). The rule has no exception for them:
+
+- A constructor of a tagged schema (`Tree.Leaf { value = n }`, `schema_ctor_top` and `ext_schema_ctor`) is a
+  constructor. Its application holds each argument at its payload's step, as §6's table gives for any
+  constructor application (`ownership/SchemaCtorBlock`). Handed on as a value, its class is that row: its
+  arguments at `C#i` (§6.2, `ctorClass`).
+- A member of a schema declaration (`Tags.parse`, `schema_member_top` and `ext_schema_member`) called directly
+  is applied §30.10's row (`schemaMemberRow`). Handed on as a value — to a callee, to a local, to
+  `Result.andThen` — its class is the same row, at the arity its type gives (`memberValue`). A callee that calls
+  it answers what that row names. That run is not seen as one, so a slot's input mark stays a `⊤`, as §30.10
+  says of a runner handed on.
+
+Before, the walk gave both §6.1's cell made by the call wherever it met them as a function value. So
+`apply f s = f s` handed `Fixed.parse`, whose conversion answers the top-level `kept`, and
+`case apply Fixed.parse input of Ok f → List.push f.text "x"` was accepted and pushed onto `kept`. Its line
+said `call (no summary: S.apply)`: the cell named the call that handed the member on, a function with a
+summary. Now that program is rejected `top-level`, exactly, as the direct call `Fixed.parse input` is
+(CK-246, `ownership/SchemaMemberHanded`). No acceptance rests on a schema callee's cell made by the call, so
+no `assumed` line names the wrong function.
 
 **Measured** (`bench/ownership-everywhere.mjs`, 2026-10-16, 847 programs): no new rejection in the corpus,
 the examples or the bench apps but `bench/corpus`'s `FormValidation`, six lines: `all` calls each validator
@@ -4304,5 +4317,8 @@ of a `List (Validator a)` inside a fold, and `validateSignUp` calls `(firstOf [ 
 function a call returned. Every validator the program writes makes the list it returns, so this is the
 checker's limit, not sharing: a function value carried through a list's elements or out of a call's result
 has no class (§16.1). It is the correct loud error until classes travel with those values (issue #223).
-Conduit, TodoMVC, Sternhalma and Bike Wars hold no rejected line; Conduit's `api` taggers rest on schema
-members (above).
+Conduit, TodoMVC, Sternhalma and Bike Wars hold no rejected line.
+*Measured again 2026-10-16, on §30.10 and with schema members as classes (issue #269):* 1 of 850 programs is
+rejected, `bench/corpus` with the same six lines; core and every platform hold no rejected or pending line.
+Conduit, TodoMVC (all four), Sternhalma and Bike Wars check clean on `browser-direct`. Conduit's report changes
+only in the fresh numbers of its summaries.
