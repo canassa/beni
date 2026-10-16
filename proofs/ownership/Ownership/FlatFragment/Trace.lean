@@ -223,4 +223,78 @@ theorem accepted_flat_anf_traces_agree (p : Program) (a : Accepted) (ok : check 
       simp only [heapEnv, List.map_nil] at hrun
       simp [bind, Except.bind, hrun, corr observationDepth shallow, pure, Except.pure]
 
+/-! ## The reviewer's probe programs (PR #267)
+
+Kernel proofs put each program in `FlatANF0`; the `#guard`s run the real
+checker and both interpreters at build time. `every` uses all six forms, is
+accepted, makes one in-place write, and both runs agree. `liveAlias` and
+`observed` are in the fragment and rejected (the Dead and the Unescaped
+test), and their two runs differ: the corollary's `check` hypothesis carries
+weight. -/
+
+/-- `[5]`, an observer of it, `7`, `[7, 1]`, an in-place push onto it (its
+    old binding 3 is dead and stale), a length read, and a variable result. -/
+def every : Program := { main :=
+  (.letE 0 (.prim (.literal .int) [.int 5])
+  (.letE 1 (.prim .shared [.var 0])
+  (.letE 2 (.atom (.int 7))
+  (.letE 3 (.prim (.literal .int) [.var 2, .int 1])
+  (.letE 4 (.prim .push [.var 3, .var 2])
+  (.letE 5 (.prim .length [.var 4])
+  (.atom (.var 5)))))))) }
+
+theorem every_flat : FlatANF0 every.main := by
+  refine .letE (.literal ?_) (.letE (.shared (.var 0)) (.letE (.atom (.int 7))
+    (.letE (.literal ?_) (.letE (.push (.var 3) (.var 2)) (.letE (.length (.var 4)) (.atom (.var 5)))))))
+  · intro a member; simp at member; subst member; exact .int 5
+  · intro a member; simp at member
+    rcases member with rfl | rfl
+    · exact .var 2
+    · exact .int 1
+
+/-- The push target still live afterwards: rejected by the Dead test. -/
+def liveAlias : Program := { main :=
+  (.letE 0 (.prim (.literal .int) [.int 1])
+  (.letE 1 (.prim .push [.var 0, .int 2])
+  (.letE 2 (.prim .length [.var 0])
+  (.atom (.var 1))))) }
+
+theorem liveAlias_flat : FlatANF0 liveAlias.main :=
+  .letE (.literal (by intro a member; simp at member; subst member; exact .int 1))
+    (.letE (.push (.var 0) (.int 2)) (.letE (.length (.var 0)) (.atom (.var 1))))
+
+/-- A push onto an observed array: rejected by the Unescaped test. -/
+def observed : Program := { main :=
+  (.letE 0 (.prim (.literal .int) [.int 1])
+  (.letE 1 (.prim .shared [.var 0])
+  (.letE 2 (.prim .push [.var 0, .int 2])
+  (.prim .length [.var 2])))) }
+
+theorem observed_flat : FlatANF0 observed.main :=
+  .letE (.literal (by intro a member; simp at member; subst member; exact .int 1))
+    (.letE (.shared (.var 0)) (.letE (.push (.var 0) (.int 2)) (.length (.var 2))))
+
+set_option maxRecDepth 100000
+
+#guard (check every).isOk
+#guard match ValueSemantics.run every 100, InPlaceSemantics.run every 100 with
+  | .ok t, .ok t' => t.reads == t'.reads && t.externalReads == t'.externalReads &&
+      t.finalValue == t'.finalValue && t.finalValue == .int 3 && t.reads == [.int 3] &&
+      t.externalReads.length == 12
+  | _, _ => false
+#guard InPlaceSemantics.writeCount every 100 == 1
+#guard match check liveAlias with
+  | .error message => message == "Dead: an old holder is live after the demand"
+  | .ok _ => false
+#guard match ValueSemantics.run liveAlias 100, InPlaceSemantics.run liveAlias 100 with
+  | .ok t, .ok t' => t.reads == [.int 1] && t'.reads == [.int 2] && t.finalValue == t'.finalValue
+  | _, _ => false
+#guard match check observed with
+  | .error message => message == "Unescaped: program-lifetime holder"
+  | .ok _ => false
+#guard match ValueSemantics.run observed 100, InPlaceSemantics.run observed 100 with
+  | .ok t, .ok t' => t.reads == t'.reads && t.finalValue == t'.finalValue &&
+      t.externalReads != t'.externalReads
+  | _, _ => false
+
 end Ownership.FlatFragment.Preservation
