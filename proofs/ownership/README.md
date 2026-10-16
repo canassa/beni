@@ -100,14 +100,14 @@ The guard `check` needs this job, so a failed proof blocks a merge.
 - The job runs `scripts/audit.sh HEAD`, then `lake build`, in `nix develop .#ownership`.
   The audit runs first. Its source scan rejects `#eval` and the other banned commands before any audited code runs.
   An `#eval` in an audited module runs during `lake build` and can rewrite the audit files.
-  After `lake build`, the job fails when the build changed a tracked file.
+  After `lake build`, the job fails when the build changed or added a file that git does not ignore.
 - On a push to `master`, and on a pull request whose base is not `master`, the job always runs these steps.
 - On a pull request to `master`, the job runs them only when the pull request changes `proofs/ownership/`, `flake.nix`, `flake.lock`, `.github/workflows/ci.yml` or a `.gitattributes` file.
   For another pull request, the job skips the steps and passes.
 - The job runs the audit files of the pull request itself: `Axioms.lean`, `Audit.lean`, `scripts/audit.sh`, `lakefile.toml`, `flake.nix` and the workflow.
   Thus a pull request that weakens them passes its own weaker audit, and the job does not catch it.
-  `.github/CODEOWNERS` names `@canassa` for these files (#263).
-  When the ruleset on `master` requires a review from code owners, a change to them needs his review.
+  #263 adds `.github/CODEOWNERS`, which names `@canassa` for these files.
+  When the ruleset on `master` requires a review from code owners, a change to them needs the owner's review.
 - An `export-ignore` in a `.gitattributes` file removes a file from the export of `scripts/audit.sh` (#262).
 - The job restores `.lake` from the newest build on `master`.
   Lake builds a module again when the hash of its source, its imports, its options or Lean's commit changes.
@@ -120,7 +120,7 @@ The guard `check` needs this job, so a failed proof blocks a merge.
   `lake build` took 184 to 310 s, and `scripts/audit.sh` took 257 to 428 s.
 - A restored `.lake` makes only `lake build` faster.
   The audit always builds from nothing, so its time does not change.
-  A warm run took 7 min 45 s: `lake build` took 1 s, and the audit took 410 s.
+  Two warm runs took 7 min 45 s and 8 min 14 s: `lake build` took 1 s, and the audit took 410 s and 434 s.
 
 ## Audit memory and replay
 

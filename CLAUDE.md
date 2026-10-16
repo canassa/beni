@@ -457,21 +457,22 @@ only ran — no test necessarily checked it. Details: `tests/coverage.zig`.
 needs it: `scripts/audit.sh HEAD` (the independent audit of a clean export),
 then `lake build` (the kernel check and the in-build axiom audit). The audit
 runs first, because an `#eval` in an audited module runs during `lake build`
-and can rewrite the audit files; after the build, the job fails when a
-tracked file changed. On a push to `master`, and on a pull request whose base
-is not `master`, it runs both. On a pull request to `master` it runs them only
-when the pull request changes `proofs/ownership/`, `flake.nix`, `flake.lock`,
-`.github/workflows/ci.yml` or a `.gitattributes` file; otherwise it skips them
-and passes. The job runs the pull request's own audit files, so it does not
-catch a pull request that weakens them: `.github/CODEOWNERS` names the owner
-for them (#263), and when the ruleset on `master` requires a review from
-code owners, such a change needs his review. It restores `.lake` from
-`master`. The audit never reads that directory, so the cache cannot hide a
-broken proof from the job; a warm `lake build` alone can miss a `sorry`
-(#255), and an `export-ignore` can remove a file from the audit's export
-(#262). A cold run takes 9 to 14 minutes, and a warm cache makes only `lake
-build` faster. The job does not run `lake exe ownership ci` (#259).
-`proofs/ownership/README.md`, *CI*.
+and can rewrite the audit files; after the build, the job fails when the build
+changed or added a file that git does not ignore. On a push to `master`, and
+on a pull request whose base is not `master`, it runs both. On a pull request
+to `master` it runs them only when the pull request changes
+`proofs/ownership/`, `flake.nix`, `flake.lock`, `.github/workflows/ci.yml` or
+a `.gitattributes` file; otherwise it skips them and passes. The job runs the
+pull request's own audit files, so it does not catch a pull request that
+weakens them: #263 adds `.github/CODEOWNERS`, which names the owner for them,
+and when the ruleset on `master` requires a review from code owners, such a
+change needs the owner's review. It restores `.lake` from `master`. The audit
+never reads that directory, so the cache cannot hide a broken proof from the
+job; a warm `lake build` alone can miss a `sorry` (#255), and an
+`export-ignore` can remove a file from the audit's export (#262). A cold run
+takes 9 to 14 minutes, and a warm cache makes only `lake build` faster. The
+job does not run `lake exe ownership ci` (#259). `proofs/ownership/README.md`,
+*CI*.
 
 `beni dump --stage=tokens|ast|bir|types|interface` is the window into every
 phase, and the dumps are corpus-tested, so they are outputs rather than
