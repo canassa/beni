@@ -100,7 +100,7 @@ pub fn write(w: *std.Io.Writer, reports: []const Ownership.ModuleReport, module_
         if (!options.totals_only) {
             for (r.summaries) |s| try w.print("  {s}\n", .{s.text});
             for (r.limits) |h| switch (h.limit) {
-                .rounds => try w.print("  limit {s}: rounds, unsettled after {d}\n", .{ h.name, h.limit.cap() }),
+                .rounds, .fixpoint => try w.print("  limit {s}: {s}, unsettled after {d}\n", .{ h.name, h.limit.text(), h.limit.cap() }),
                 else => try w.print("  limit {s}: {s} {d}, over {d}\n", .{ h.name, h.limit.text(), h.at, h.limit.cap() }),
             };
             try counts.write(w, "  demands");

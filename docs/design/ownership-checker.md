@@ -1016,6 +1016,7 @@ positions, rounds of a fixpoint:
 | `rounds` | 32 | the rounds of a recursive group (§16.6) or of a block's local functions (§18.7) |
 | `owned-atoms` | 8 | the distinct `returns owned` atoms `(j, q)` its `owned` bits rest on (§16.4 item 5) |
 | `value-cells` | 256 | the cells of a value whose deep condition (§18.2) the walk needs, compared pair by pair; past it the condition was `lost`, silently, before 2026-10-16 |
+| `fixpoint` | 32 | the rounds of a fixpoint inside a walk: the model at entry and its exclusivity invariant (§20.4), a callback's result, a fold's shape and its spine (§16.4 item 6). *Amended 2026-10-16 (#229):* their cells are finite, so they settle in a bounded number of rounds (§28's dated amendment *the entry's fixpoints settle*); before, each ended on a silent backstop: 8 rounds for the model, 4 for a callback's result and a fold's shape, 32 for the invariant and a fold's spine |
 
 A declaration whose summary would pass one is reported as **one error at the declaration**,
 `ownership_limit`: it names the declaration, the limit and what it measured, and says that the limit is the
@@ -1031,10 +1032,10 @@ The bounds are set from the largest summaries measured, #220's dashboard at 1 02
 22 000 lines, its `step`, `pushed` and `update` the widest: 23 456 entries, 300 at one path and 87 764
 condition atoms, each about a tenth of its limit. The `owned-atoms` guard counts distinct atoms; before
 2026-10-16 it counted the supply entries that rest on one, so that `Dict.merge`, 13 entries over 3 atoms,
-reached it and had its last five owned supplies made borrowed, silently. *Not yet under this rule:* two
-fixpoints inside a walk — the model's exclusivity invariant (§28's dated amendment) and a callback's spine
-seeds — still end on a silent backstop of 32 rounds that lowers their seeds to `lost`. The first is reached by
-every application measured, because its comparison counts the cells each round makes anew; #229 tracks it.
+reached it and had its last five owned supplies made borrowed, silently. *Amended 2026-10-16 (#229):* the
+fixpoints inside a walk are under this rule too — the `fixpoint` row. Before, they ended on silent backstops,
+and the model's exclusivity invariant (§28's dated amendment) reached its backstop in every application
+measured, because each round made a carried lambda anew (§28's dated amendment *the entry's fixpoints settle*).
 
 The fresh numbers do not count toward any limit: as thesis §4.6 bounds them (`k ≤ |Q|`), a number only says
 which result paths may hold one new cell, so the read-off of §16.3 gives two new cells that appear at the
@@ -1556,6 +1557,8 @@ Instantiation is §16.4 item 6's. update's `fresh_k` is the one cell `result(con
 — two dispatches' new lists taken for one, which only adds aliasing, as §16.6 merges a recursive group's — so the
 fixpoint is over a finite set of cells; `esc_k` is that cell, escaped; `shared` and `⊤` are carried; a parameter
 cell's condition is lowered by its `xres` (§18.3). A fixpoint not reached in 8 rounds adds `⊤` (a backstop).
+*Amended 2026-10-16 (#229): the set of cells is finite and every round of this fixpoint and of the invariant
+below is counted against §16.7's `fixpoint` limit: §28's dated amendment *the entry's fixpoints settle*.*
 
 *As built*: the rounds compute cells only, and the round that settles is taken once more with the conditions its
 instantiation lowers. The message carried round the loop is `msg` alone; the cells a view puts in messages
@@ -2738,6 +2741,7 @@ with §16.4's amendment of the same day it is zero.
 | A carried lambda's calls of what the caller passed, re-carrying, and a top-level value's lambda whose captures hold nothing (rule 8) | `carry`, `callThrough`, `carriedCallOwned`, `carried`, `sharedOf` | a function value's result taken for made by the call while its class returns a list another holder keeps. The core's closures are not carried through results with their classes. |
 | A top-level value that names a function (rule 9), and the entry's URL taggers (rule 10) | `aliasTarget`, `entryTagger` | the wrong summary applied to a point-free name; a tagger the runtime sends from unchecked. Neither has core syntax; entry delivery is outside the core (row above). |
 | Words on a `List` of functions, `Task.timeout`'s and `raceOk`'s, `crossing Int32` (§30.9) | `wordsRow` | as the words row above: the fiber runtime and its scope are not modelled. |
+| *Amended 2026-10-16 (#229):* a carried lambda named by where it is made, and the walk's fixpoints settled over finite cells and capped by the `fixpoint` limit (§28's dated amendment *the entry's fixpoints settle*) | `carry`, `entryConditions`, `entryCall`, `instCb`, `instFold` | a lambda whose merged captures miss what one instantiation captured: an alias lost; or a round taken for settled while a carried lambda still grew. The Lean model already names what a traversal or the model makes by its site (`.position site`) and fails a fixpoint that does not settle within its 24 rounds loudly, as a rejection (`throw "limit: …"`); Zig's cap is 32 and an error at the declaration. It carries no lambdas through results (rule 8's row), and the bridge skips entry projections, so neither the merge nor the caps are compared. |
 | *Amended 2026-10-16 (§30.10):* a schema's slots, the derivation from its declaration, and what a run answers | `schemaRunRow`, `schemaMakerRow`, `schemaTaint`, `schemaMemberRow`, `conversionSlots`, `codecRunRow`, `settleRun` | a list a conversion, a `Value` or a codec returns taken for built by the run, and written in place while its other holder keeps it. The core has no schemas, no JSON and no evidence; the bridge never emits one, so its confirmed-unsafe count says nothing of this rule. Zig fixtures (`ownership/SchemaAnswers`, `check/bad/direct/SchemaConversionShared`) and the corpus test it. |
 
 ### 26.8 Open questions
@@ -3244,6 +3248,53 @@ whose grow operation preserves exclusive child lists. Lists duplicated at two
 positions, retained elsewhere in the model, introduced by a sharing update arm or
 obtained from an unknown source still fail the existing separation/exclusivity tests.
 No recursive type is trusted exclusive merely because of its declaration.
+
+### *Amended 2026-10-16 (#229, the owner's decision):* the entry's fixpoints settle
+
+**Why they did not.** Each round of a fixpoint inside a walk instantiates the same summaries again, and a
+fixpoint has settled when a round adds nothing: the model's union is as long as before (§20.4), every cell's
+condition is what it was (the invariant above), a callback's result is as long as before (§16.4 item 6). That
+test is right only if a round that changes nothing makes no new cell. Every cell instantiation makes is named by
+where it is made — `result(call, k)`, a taken element by its container and call, a callback's result by its
+parameter and call — but one was named by when: a lambda a callee's result carries (§24.9's `carry`) was a new
+closure, so a new cell, at every instantiation. `update` returns its commands' lambdas (`Cmd.perform λsend →
+…`), so every round of the invariant made two new cells, the table of conditions grew, and the comparison failed
+in every round — after round two on T29, every one of 32 rounds; then the backstop lowered every seed to `lost`,
+silently. TodoMVC, Conduit, Bike Wars and the defect pages reached it, and a recursive tree that `update` grows
+was rejected for it as soon as an arm returned a command with a lambda (`ownership/EntryInvariantCommand`). A
+callback that returns a decoder (`List.foldr names decoder field`) reached a callback's backstop of 4 the same
+way and added `⊤`. The model's own backstop of 8 was a second silent loss: a model that relays a list one field
+per message needs a round per field, and at nine fields the `⊤` it added made an unrelated field's edit a list
+"from JavaScript" (`ownership/EntryRelay`).
+
+**The rule: the cells are finite, and each fixpoint is computed over them.**
+
+1. *A carried lambda is named by where it is made*: the call, the callee's summary, the lambda's place in it, the
+   callback depth and the entry's namespace (§20.4) — one closure per place, standing for every lambda made there,
+   whose captures are the union of every instantiation's. This is the abstraction `result(call, k)` already makes
+   of the lists a call makes in every round; it only adds aliasing. It loses nothing the fixpoint kept before:
+   the rounds' values were already joined, so the model held every round's lambda, each capturing a subset of what
+   the merged one captures.
+2. *A round has settled* when it makes no cell, grows no carried lambda's captures, and moves no condition (or,
+   for a shape, adds no entry). With (1) every cell a round can make is one of finitely many — calls, summary
+   entries, paths a type bounds (§16.7) — and a condition only goes down a chain of finite height (`yes`, then
+   more atoms over finitely many cells, `lost`, `shared`), so each fixpoint reaches its least or greatest
+   fixpoint in a number of rounds bounded by the program: by the longest chain of messages a value needs to
+   reach its place in the model, not by a constant.
+3. *Every one of these fixpoints has the same cap*, §16.7's `fixpoint` limit of 32 rounds: the model at entry
+   (formerly 8), its exclusivity invariant, a callback's result and a fold's shape (formerly 4) and a fold's
+   spine. **Reaching it is an error**, `ownership_limit` at the declaration that makes the call: a shape adds
+   `⊤limit`, whose rejections have the `limit` cause and are not reported beside it; an invariant lowers its
+   seeds to `lost`, a partial proof accepting nothing. The rounds a fixpoint needs grow with the program, as
+   a model that relays a list from field to field one message at a time needs one round per field; the cap
+   bounds the work of such a chain, rounds times the model, and a program that needs more is told so.
+
+**Measured** (2026-10-16): over the 948 programs of `bench/ownership-everywhere.mjs`'s set and the ownership
+corpus, core and every platform, the model at entry settles in at most 4 rounds, its invariant in 2, a
+callback's result in 3, a fold's shape in 3 and its spine in 2; the research dashboard (shared components,
+`beni-direct`, N = 1 … 1 024) in 3 and 2. No program reaches the cap. The verdicts of all of them are unchanged;
+one summary is more precise (`bench/corpus`'s `Decode.at` loses a `⊤`). The checker does fewer instructions on
+Conduit (−13 %), as it runs 2 rounds where it ran 32. Summary blocks advance to version 13.
 
 ### *Amended 2026-10-14 (the subscription tap builder):* fresh folds remain a limit
 

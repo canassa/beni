@@ -1,0 +1,56 @@
+-- ownership: the rejected twin of `EntryInvariantCommand` (issue #229).
+-- The `Share` arm puts one child into the tree twice, so the model's
+-- exclusivity invariant cannot hold and the entry is rejected `exclusive`,
+-- exactly: the carried lambda `Grow`'s command returns, now one closure per
+-- place it is made, settles the fixpoint without loosening it.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+
+
+type Tree
+    = Tree (List Tree)
+
+
+type Msg
+    = Grow
+    | Share
+
+
+grow : Tree → Tree
+grow (Tree kids) =
+    case kids of
+        [] →
+            Tree [ …kids, Tree [] ]
+        _ →
+            Tree (List.map kids λchild → grow child)
+
+
+shared : ⊤ → Tree
+shared ⊤ =
+    child = Tree []
+    Tree [ child, child ]
+
+
+update : Msg, Tree → Tree × Cmd Msg
+update msg tree =
+    case msg of
+        Grow →
+            ( grow tree, Cmd.perform λsend → send Share )
+        Share →
+            ( shared ⊤, Cmd.none )
+
+
+view : Tree → Html Msg
+view _ = <button onClick={Grow}>grow</button>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( Tree [], Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }
