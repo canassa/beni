@@ -131,7 +131,7 @@ main =
         , viaLet "p" "q"
         , ints (clampAll [ 1, 5, 2 ] 3)
         , String.fromInt (biggest [ 4, 8, 1 ] 0)
-        , String.fromInt (List.length (none ++ [ 1, 2 ]))
+        , String.fromInt (List.length (List.copy none ++ [ 1, 2 ]))
         , ints (List.map [ 1, 5, 2 ] (top 3 _))
         , String.fromInt (List.foldl [ 1, 5, 2 ] 0 top)
         , List.foldl [ "b", "c", "a" ] "" lam
@@ -144,5 +144,5 @@ main =
         , String.fromInt (List.foldl [ 4, 5, 2 ] 9 M.h)
         , tf (M.lam 1 1) ++ tf (List.all [ 2, 2 ] (M.lam 2 _))
         , tf (apply2 M.lam "a" "b")
-        , String.fromInt (List.length (M.blank ++ [ 1 ]))
+        , String.fromInt (List.length (List.copy M.blank ++ [ 1 ]))
         ]

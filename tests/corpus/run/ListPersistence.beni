@@ -19,6 +19,14 @@
 -- walk by tails that re-conses every 97th step. Every version kept along
 -- the way is checked again at the end.
 --
+-- Every version is kept, so a write to one is a write to a list another
+-- holder still reads: since ownership holds on every platform
+-- (`ownership-checker.md` §30), each write here takes an explicit
+-- `List.copy` of the old version first, and the version the copy came
+-- from is checked again as it was. A prepend copies by itself (§25.2).
+-- `check/bad/direct/ListPersistenceShared` is the same write without the
+-- copy, refused.
+--
 -- Each check was proved by breaking `core/List.js` in a scratch build: the
 -- tail claim taken without `t.length === c`, the head claim without
 -- `h.length === hc`, and the already-there test `h[hc] === x` replaced by
@@ -211,12 +219,12 @@ step s n =
                 [] →
                     v
         else if op ≤ 6 then
-            { list = List.push v.list x, model = modelPush v.model x }
+            { list = List.push (List.copy v.list) x, model = modelPush v.model x }
         else if op == 7 then
-            { list = List.pop v.list, model = modelPop v.model }
+            { list = List.pop (List.copy v.list), model = modelPop v.model }
         else if op == 8 then
             i = pick seed1 (len + 1)
-            { list = List.set v.list i (0 - x), model = modelSet v.model i (0 - x) }
+            { list = List.set (List.copy v.list) i (0 - x), model = modelSet v.model i (0 - x) }
         else if op == 9 then
             case v.list of
                 [ _, …rest ] →
@@ -229,16 +237,16 @@ step s n =
             { list = List.drop v.list k, model = modelDrop v.model k }
         else if op == 11 then
             extra = List.range x (x + pick seed1 40)
-            { list = v.list ++ extra
+            { list = List.copy v.list ++ extra
             , model = List.foldl extra v.model λitem m → modelPush m item
             }
         else if op == 12 then
             extra = List.range x (x + pick seed2 3)
-            { list = [ …v.list, …extra ]
+            { list = [ …List.copy v.list, …extra ]
             , model = List.foldl extra v.model λitem m → modelPush m item
             }
         else
-            { list = List.push (List.push v.list x) (x + 1)
+            { list = List.push (List.push (List.copy v.list) x) (x + 1)
             , model = modelPush (modelPush v.model x) (x + 1)
             }
 

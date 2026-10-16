@@ -35,6 +35,6 @@ main =
         , tf (same "a" "a")
         , String.fromInt (M.h 1 2)
         , M.h "a" "b"
-        , String.fromInt (List.length (M.blank ++ [ 1 ]))
+        , String.fromInt (List.length (List.copy M.blank ++ [ 1 ]))
         , String.fromInt (List.foldl [ 1, 5, 2 ] 0 M.h)
         ]

@@ -9,6 +9,11 @@
 //! promise in both builds. A reader who finds a row the sibling does not
 //! honour has found a defect in the sibling, not in the row.
 //!
+//! The `run/` fixtures the rows below name as pins of an identity —
+//! `ListIdentity`, `ListIndexedIdentity` and `WriteRowsIdentity` — were
+//! retired on 2026-10-16 (issue #210), with the identity promises dropped on
+//! 2026-10-13 (`ownership-checker.md` §27): those citations are historical.
+//!
 //! A core function with no row is summarised from its body like a user
 //! function (§3.3, *Calls to core and platform functions*); one whose body
 //! reaches a `foreign` gets `Fresh` there. Nothing is ever wrong for want of

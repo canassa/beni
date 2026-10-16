@@ -4,7 +4,9 @@
 -- length without growing the stack; over cons cells each one that builds is
 -- a cons step compiled to a loop (`backend.md` §8, *Tail calls modulo
 -- cons*), so one left recursing would throw `RangeError` here, and one that
--- built backwards would print the wrong ends.
+-- built backwards would print the wrong ends. `cells` is made by a
+-- function, so each write edits a list of its own: a top-level list may
+-- not be written (`ownership-checker.md` §30).
 import List
 import Node exposing (Program)
 import String
@@ -14,8 +16,8 @@ size : Int
 size = 100000
 
 
-cells : List Int
-cells = List.initialize size λi → i + 1
+cells : ⊤ → List Int
+cells ⊤ = List.initialize size λi → i + 1
 
 
 ends : List Int → String
@@ -33,15 +35,15 @@ ends xs =
 main : Program
 main =
     Node.printLines
-        [ ends cells
-        , Debug.toString (List.get cells (size - 1))
-        , Debug.toString (List.last cells)
-        , ends (List.set cells (size - 1) 0)
-        , ends (List.update cells (size - 1) λx → x * 2)
-        , ends (List.push cells 0)
-        , ends (List.pop cells)
-        , ends (List.slice cells 1 (-1))
-        , ends (List.insertAt cells (size - 1) 0)
-        , ends (List.removeAt cells (size - 1))
-        , ends (List.swap cells 0 (size - 1))
+        [ ends (cells ⊤)
+        , Debug.toString (List.get (cells ⊤) (size - 1))
+        , Debug.toString (List.last (cells ⊤))
+        , ends (List.set (cells ⊤) (size - 1) 0)
+        , ends (List.update (cells ⊤) (size - 1) λx → x * 2)
+        , ends (List.push (cells ⊤) 0)
+        , ends (List.pop (cells ⊤))
+        , ends (List.slice (cells ⊤) 1 (-1))
+        , ends (List.insertAt (cells ⊤) (size - 1) 0)
+        , ends (List.removeAt (cells ⊤) (size - 1))
+        , ends (List.swap (cells ⊤) 0 (size - 1))
         ]

@@ -2,7 +2,11 @@
 -- update installs in the model. Only two synthetic sends in one task reach
 -- this schedule; native listeners drain the queued command before later input.
 -- Value semantics gives the commands snapshots of lengths 1 and 2. An
--- in-place append would make the first command observe length 2 instead.
+-- in-place append would make the first command observe length 2 instead,
+-- so since ownership holds on every platform (`ownership-checker.md` §30)
+-- the command keeps its snapshot by an explicit `List.copy`; without it the
+-- checker refuses the program (the list escapes in a command).
+-- `build/bad/direct/OwnershipQueuedSnapshot` is that program, refused.
 import Cmd exposing (Cmd)
 import Html exposing (Html)
 import Sub
@@ -24,8 +28,10 @@ update msg model =
     case msg of
         Add →
             items = List.push model.items 1
+
+            snapshot = List.copy items
             ( { model | items = items }
-            , Cmd.perform λsend → send (Saw (List.length items))
+            , Cmd.perform λsend → send (Saw (List.length snapshot))
             )
 
         Saw n →
