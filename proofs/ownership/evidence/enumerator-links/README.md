@@ -1,6 +1,11 @@
 # Enumerator and diagnostic evidence
 
 These finite results do not prove soundness.
+This directory preserves the grammar-2 capture from PR #248.
+The review found two reach limits, tracked in [#253](https://github.com/canassa/beni/issues/253).
+Bound 2 contains no main-context view write while its source remains live.
+The capture runs the detector only on accepted programs, so it does not measure rejected-program reach.
+Its zero accepted hits do not complete the enumerator prerequisite for #169.
 The state-stream and CI comparisons measure the construction-helper extraction.
 The fresh diagnostic capture also includes the separate audit memory repair.
 The initial expanded build reached the audit memory cap.
@@ -26,13 +31,15 @@ Each generator block contains 20,000 candidates: versions 5 and 6 use seeds `202
 | Matched demand calls with permanent registrations / targets | 369 / 431 |
 
 The q1 check follows Cesar's q4 decision.
-It covers every attempted write against distinct linked storage with a live protected reader, in main contexts and calls.
+The detector checks attempted writes against distinct linked storage with a live protected reader, in main contexts and calls.
+This detector scope does not establish that the enumerated case set reaches each direction and context.
 Continuation atom uses define the live paths. The diagnostic follows their reachable cells in the current heap at each write.
 Live closure values contribute their captures. Explicit capture atom uses also contribute readers.
 Traversal readers pin outer values before iteration; their heap reachability remains current at each write.
 An eventual return adds no separate pre-existing observer.
 Intercepted writes preserve `State.links`. Only `.view` adds links.
-Six matched read-only linked calls remain legal.
+Six matched read-only linked calls remain legal. All six come from planted `diagnostic:` fixtures.
+No enumerated or generated accepted call in this capture passes linked storage through two distinct input slots.
 This metric compares distinct canonical input slots. It excludes linked paths within one slot, including record-field pairs.
 It also requires empty summary write and consume rows and zero callback call counts.
 All accepted runs complete without execution errors, snapshot errors, divergent states or traces, or dangling input or observer references.
@@ -42,6 +49,7 @@ Their 431 targets need no observer overlap. Direct and linked observer-hit count
 
 The strict q2 result remains false: `diagnostics clean=false`.
 The raw W/C scan reports two direct-observer hits and zero linked-observer hits.
+Here, W/C means summary rows. This scan does not independently detect actual changed observer storage.
 The matched subset reports zero direct or linked hits.
 Those zero hits cover one canonical naming and one chosen closure-class interpretation, not every theorem instance.
 

@@ -111,6 +111,16 @@ It checked 91,214 attempted writes, including 837 writes with linked storage.
 It found zero q1 hits and zero incomplete accepted runs.
 The run includes all 105,150 bound-2 programs and both generators at three 20,000-candidate seeds.
 This finite result does not prove the link clauses.
+The review of #248 found a bound-2 coverage gap, tracked in [#253](https://github.com/canassa/beni/issues/253).
+Grammar 2 did not reach a main-context view write while its source remained live.
+Its campaign also omitted rejected-program diagnostics. Its accepted zero did not complete Cesar's enumerator prerequisite.
+The grammar-3 follow-up adds a prelude-source observation and rejected-program diagnostics at fuel 5,000.
+Its complete bound-2 run visits 157,824 programs and completes every one of its 84,037 accepted runs.
+Accepted q1 hits and actual observer-storage changes both equal zero.
+Rejected reach contains 28 main-view, 170 main-source, 54 call-view, and 114 call-source events.
+The nonvacuity condition requires all four categories from enumeration itself.
+[The complete capture](evidence/diagnostic-reach/README.md) separates rejected reach, execution errors, and accepted checks.
+Complete the #253 follow-up before the #169 premise repair. These finite results do not prove the repaired premise.
 [PR #245](https://github.com/canassa/beni/pull/245) supplies the #160 memory repair through sequential module processes.
 Its committed-tree audit passed with every check intact. The expanded enumerator source also requires its complete audit before publication.
 Inspect actual write events and their live readers, including outer call frames and unfinished operations.

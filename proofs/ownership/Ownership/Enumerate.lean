@@ -25,7 +25,10 @@ Grammar 2 appends aliases, prefix/suffix views and constructions over flat and
 nested lists. Flat operands also include record fields. The declaration table
 and every grammar-1 choice remain unchanged. Each old choice list is a prefix
 of the new list; new descendants change the flattened visit indices.
-The predicted syntax counts are 105,150 programs at bound 2 and 200 at bound 1.
+Grammar 3 also observes the latest binding beside prelude list 1.
+This reaches a view write while its source remains live within bound 2.
+The predicted syntax counts are 157,824 programs at bound 2 and 399 at bound 1.
+Grammar 2 had 105,150 programs at bound 2 and 200 at bound 1.
 Grammar 1 had 55,966 programs at bound 2 and 148 at bound 1.
 Check the predictions with `countOnly` after the build. -/
 
@@ -43,7 +46,7 @@ def operands (env : List (Var × Ty)) (t : Ty) : List Atom :=
 
 def ints : List Atom := [.int 0, .int 1]
 
-def grammarVersion : Nat := 2
+def grammarVersion : Nat := 3
 
 /-- Every right-hand side of one binding over `env`; helper closures are
     numbered from `tmp`. -/
@@ -148,11 +151,14 @@ def choices (env : List (Var × Ty)) (tmp : Nat) : List (Expr × Ty) :=
 
 /-- The observations a program may end in. -/
 def finals (bound : List Var) : List Expr :=
-  match bound with
-  | [] => [.atom (.int 0)]
-  | [x] => [.atom (v x)]
-  | [x, y] => [.atom (v x), .prim .record [v y, v x]]
-  | x :: y :: _ => [.atom (v x), .prim .record [v y, v x], .prim .record (bound.reverse.map v)]
+  let previous := match bound with
+    | [] => [.atom (.int 0)]
+    | [x] => [.atom (v x)]
+    | [x, y] => [.atom (v x), .prim .record [v y, v x]]
+    | x :: y :: _ => [.atom (v x), .prim .record [v y, v x], .prim .record (bound.reverse.map v)]
+  previous ++ match bound with
+    | [] => []
+    | x :: _ => [.prim .record [v x, v 1]]
 
 structure Counts where
   enumerated : Nat := 0

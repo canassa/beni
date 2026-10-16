@@ -158,6 +158,9 @@ def main (args : List String) : IO UInt32 := do
     return 0
   -- The CI-style check: fixtures, one normal campaign, every negative control.
   if mode == "ci" then
+    IO.FS.createDirAll "../../zig-out/scratch"
+    let controls ← IO.FS.Handle.mk "../../zig-out/scratch/diagnostic-controls-ci.log" .write
+    if !(← DiagnosticFixtures.run controls) then return 1
     let budget := positional[0]?.bind String.toNat? |>.getD 20000
     if !(← Fixtures.run) then return 1
     let r ← Oracle.runWith { count := budget, seed, version, quiet := true, keepEvidence := true }
@@ -185,7 +188,7 @@ def main (args : List String) : IO UInt32 := do
     IO.println s!"generator catches every required control within {budget} trials: {caught}"
     if !caught then return 1
     -- Every program of the enumeration grammar up to the bound (Enumerate.lean):
-    -- no accepted one may disagree. Grammar 2 has 105,150 programs at bound 2.
+    -- no accepted one may disagree. Grammar 3 has 157,824 programs at bound 2.
     -- Larger bounds use the same complete grammar.
     let bound := (flagValue args "enumerate-bound").bind String.toNat? |>.getD 2
     let (ok, _) ← Enumerate.run bound
