@@ -348,6 +348,15 @@ Do not present a smaller fragment as the public step lemma.
 Prove `invariant_preserved_fragment` as a separate theorem.
 Do not remove `invariant_preserved` from `Axioms.lean` at this stage.
 
+As built (2026-10-16): `Ownership/FlatFragment/` proves `accepted_flat_anf_traces_agree` for `FlatANF0`.
+That fragment contains integer and variable atoms, `let`, integer list literals, `push`, `length`, and `shared`.
+It is smaller than the planned fragment: it excludes `branch`, `resultCase`, `chainCase`, field atoms, and every other primitive.
+The theorem states its scope explicitly. It is not the public step lemma, and `invariant_preserved` stays in `Axioms.lean`.
+The internal relation `FlatInvariant` extends `Invariant` as the internal statement above requires: typed allocated bindings, empty links, a bounded naming, and a complete finite observer witness.
+Each case derives its frame from the actual checker run. The push case uses the real default demand; no alias prohibition or permission oracle enters.
+The modules form one import chain, because the audit rejects an equation lemma that two modules realize (#182).
+Next: field atoms, the scalar primitives, records, then `branch` and the case expressions.
+
 ## Complete case inventory
 
 The baseline contains 12 expression constructors and 25 primitive constructors.

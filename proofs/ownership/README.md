@@ -270,6 +270,7 @@ The write diagnostics count actual runtime write events.
 | `Fixtures.lean`, `GeneratedRegressions.lean`, `Smoke.lean` | verdict fixtures, frozen regressions, negative-control probes |
 | `HeapProof.lean`, `BuilderProof.lean`, `KernelChecks.lean` | concrete heap and builder/close proofs, kernel checks |
 | `LinkedWriteFrame.lean` | conditional heap and observer frames for successful linked writes |
+| `FlatFragment/` | the first flat fragment: the strengthened relation, its heap frame, the expression cases, and the trace corollary, in one import chain |
 | `Soundness.lean` | the bridge to concrete heaps and the soundness statements |
 | `Falsify.lean` | executes the unproved statements on concrete configurations (`ownership falsify`) |
 | `Report.lean` | printing summaries |
@@ -304,6 +305,12 @@ The example changes a source and its view while an independent registered observ
 These conditional lemmas establish no general execution success, checker permission, link validity, result correspondence, or certificate preservation.
 They establish no `CallSound.noNewHolders` clause or complete expression-evaluation theorem.
 All three general proof obligations remain open.
+
+[FlatFragment/Trace.lean](Ownership/FlatFragment/Trace.lean) proves `accepted_flat_anf_traces_agree`: the main theorem's conclusion for every accepted program whose main expression is in the first flat fragment.
+`FlatANF0` contains integer and variable atoms, `let`, integer list literals, `push`, `length`, and `shared`.
+The proof uses no `sorry` and none of the three pinned obligations.
+The generic theorem `flat_preserved` carries the strengthened relation `FlatInvariant` through every fragment expression, in both runtime directions, from the actual acceptance, typing, and shadow runs.
+The fragment excludes field atoms, calls, closures, views, constructions, branches, cases, and scopes. The three general obligations remain open.
 
 `sorry`: `summary_sound` (Lemma 6.7 clauses 1–3, clause 2 as repaired in
 round 5), `map_summary_sound`, `invariant_preserved` (the step case of the
