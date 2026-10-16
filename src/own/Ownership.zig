@@ -6405,6 +6405,9 @@ const Walker = struct {
             c.binds = v.binds;
             c.cb_avs = v.cb_avs;
         }
+        // `carry_grew` is not restored: fixpoints compare it only before
+        // and after a round, so growth a restore undoes costs at most one
+        // more round, never an answer.
         w.carry_sites = try s.carry_sites.clone(w.a);
         w.fn_state.shrinkRetainingCapacity(s.fn_state.len);
         w.slot_keys.shrinkRetainingCapacity(s.fn_state.len - w.params.len);
@@ -8581,9 +8584,13 @@ const Walker = struct {
         // new list: aliasing only grows.
         const site: CarrySite = .{ .inst = ctx.inst.int(), .sum = @intFromPtr(ctx.s), .klass = p.a, .depth = ctx.depth, .ns = ctx.fresh_ns, .merge = ctx.merge_fresh };
         const gop = try w.carry_sites.getOrPut(w.a, site);
-        if (gop.found_existing) {
+        // The site fixes the lambda, so its captures and calls are the same
+        // list in every instantiation; were they not, the lambda is made
+        // anew, as before #229 — a fixpoint then ends on its loud limit.
+        const same = gop.found_existing and w.closures.items[gop.value_ptr.*].binds.len == binds.len and
+            w.closures.items[gop.value_ptr.*].cb_avs.len == cbs.len;
+        if (same) {
             const cl = &w.closures.items[gop.value_ptr.*];
-            std.debug.assert(cl.binds.len == binds.len and cl.cb_avs.len == cbs.len);
             var grew = false;
             for (binds, cl.binds) |*b, old| {
                 const u = try w.unionOf(&.{ old.av, b.av });
