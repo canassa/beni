@@ -74,6 +74,7 @@ fn acceptText(a: Ownership.Accept) []const u8 {
 
 pub fn write(w: *std.Io.Writer, reports: []const Ownership.ModuleReport, module_names: []const []const u8, options: Options) Error!void {
     var total: Counts = .{};
+    var limits: usize = 0;
     for (reports) |r| {
         if (!options.totals_only) try w.print("module {s}", .{module_names[r.module]});
         if (!r.checked) {
@@ -98,11 +99,17 @@ pub fn write(w: *std.Io.Writer, reports: []const Ownership.ModuleReport, module_
         }
         if (!options.totals_only) {
             for (r.summaries) |s| try w.print("  {s}\n", .{s.text});
+            for (r.limits) |h| switch (h.limit) {
+                .rounds => try w.print("  limit {s}: rounds, unsettled after {d}\n", .{ h.name, h.limit.cap() }),
+                else => try w.print("  limit {s}: {s} {d}, over {d}\n", .{ h.name, h.limit.text(), h.at, h.limit.cap() }),
+            };
             try counts.write(w, "  demands");
         }
         total.merge(counts);
+        limits += r.limits.len;
     }
     try total.write(w, "total");
+    if (limits != 0) try w.print("limits {d}\n", .{limits});
     for (total.rejected, 0..) |n, i| {
         if (n == 0) continue;
         const c: Ownership.Cause = @fromBackingInt(@intCast(i));

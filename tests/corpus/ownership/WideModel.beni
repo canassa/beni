@@ -1,0 +1,270 @@
+-- ownership: a model of 40 list fields, each holding the lists its
+-- messages carry (`ownership-checker.md` §16.7, amended 2026-10-16; #220).
+-- `step`'s summary names 81 result paths, more than the old cap of 64, and
+-- the model's type bounds every one of them, so none is cut. Each list is
+-- changed in place and accepted at the entry.
+-- Under the old cap the paths were cut, each list merged with the payloads
+-- it holds, and the entry rejected the model as possibly the message's.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Add00 (List Int)
+    | Add01 (List Int)
+    | Add02 (List Int)
+    | Add03 (List Int)
+    | Add04 (List Int)
+    | Add05 (List Int)
+    | Add06 (List Int)
+    | Add07 (List Int)
+    | Add08 (List Int)
+    | Add09 (List Int)
+    | Add10 (List Int)
+    | Add11 (List Int)
+    | Add12 (List Int)
+    | Add13 (List Int)
+    | Add14 (List Int)
+    | Add15 (List Int)
+    | Add16 (List Int)
+    | Add17 (List Int)
+    | Add18 (List Int)
+    | Add19 (List Int)
+    | Add20 (List Int)
+    | Add21 (List Int)
+    | Add22 (List Int)
+    | Add23 (List Int)
+    | Add24 (List Int)
+    | Add25 (List Int)
+    | Add26 (List Int)
+    | Add27 (List Int)
+    | Add28 (List Int)
+    | Add29 (List Int)
+    | Add30 (List Int)
+    | Add31 (List Int)
+    | Add32 (List Int)
+    | Add33 (List Int)
+    | Add34 (List Int)
+    | Add35 (List Int)
+    | Add36 (List Int)
+    | Add37 (List Int)
+    | Add38 (List Int)
+    | Add39 (List Int)
+
+
+type alias Model =
+    l00 : List (List Int)
+    l01 : List (List Int)
+    l02 : List (List Int)
+    l03 : List (List Int)
+    l04 : List (List Int)
+    l05 : List (List Int)
+    l06 : List (List Int)
+    l07 : List (List Int)
+    l08 : List (List Int)
+    l09 : List (List Int)
+    l10 : List (List Int)
+    l11 : List (List Int)
+    l12 : List (List Int)
+    l13 : List (List Int)
+    l14 : List (List Int)
+    l15 : List (List Int)
+    l16 : List (List Int)
+    l17 : List (List Int)
+    l18 : List (List Int)
+    l19 : List (List Int)
+    l20 : List (List Int)
+    l21 : List (List Int)
+    l22 : List (List Int)
+    l23 : List (List Int)
+    l24 : List (List Int)
+    l25 : List (List Int)
+    l26 : List (List Int)
+    l27 : List (List Int)
+    l28 : List (List Int)
+    l29 : List (List Int)
+    l30 : List (List Int)
+    l31 : List (List Int)
+    l32 : List (List Int)
+    l33 : List (List Int)
+    l34 : List (List Int)
+    l35 : List (List Int)
+    l36 : List (List Int)
+    l37 : List (List Int)
+    l38 : List (List Int)
+    l39 : List (List Int)
+
+
+step : Msg, Model → Model
+step msg model =
+    case msg of
+        Add00 xs →
+            { model | l00 = List.push model.l00 xs }
+
+        Add01 xs →
+            { model | l01 = List.push model.l01 xs }
+
+        Add02 xs →
+            { model | l02 = List.push model.l02 xs }
+
+        Add03 xs →
+            { model | l03 = List.push model.l03 xs }
+
+        Add04 xs →
+            { model | l04 = List.push model.l04 xs }
+
+        Add05 xs →
+            { model | l05 = List.push model.l05 xs }
+
+        Add06 xs →
+            { model | l06 = List.push model.l06 xs }
+
+        Add07 xs →
+            { model | l07 = List.push model.l07 xs }
+
+        Add08 xs →
+            { model | l08 = List.push model.l08 xs }
+
+        Add09 xs →
+            { model | l09 = List.push model.l09 xs }
+
+        Add10 xs →
+            { model | l10 = List.push model.l10 xs }
+
+        Add11 xs →
+            { model | l11 = List.push model.l11 xs }
+
+        Add12 xs →
+            { model | l12 = List.push model.l12 xs }
+
+        Add13 xs →
+            { model | l13 = List.push model.l13 xs }
+
+        Add14 xs →
+            { model | l14 = List.push model.l14 xs }
+
+        Add15 xs →
+            { model | l15 = List.push model.l15 xs }
+
+        Add16 xs →
+            { model | l16 = List.push model.l16 xs }
+
+        Add17 xs →
+            { model | l17 = List.push model.l17 xs }
+
+        Add18 xs →
+            { model | l18 = List.push model.l18 xs }
+
+        Add19 xs →
+            { model | l19 = List.push model.l19 xs }
+
+        Add20 xs →
+            { model | l20 = List.push model.l20 xs }
+
+        Add21 xs →
+            { model | l21 = List.push model.l21 xs }
+
+        Add22 xs →
+            { model | l22 = List.push model.l22 xs }
+
+        Add23 xs →
+            { model | l23 = List.push model.l23 xs }
+
+        Add24 xs →
+            { model | l24 = List.push model.l24 xs }
+
+        Add25 xs →
+            { model | l25 = List.push model.l25 xs }
+
+        Add26 xs →
+            { model | l26 = List.push model.l26 xs }
+
+        Add27 xs →
+            { model | l27 = List.push model.l27 xs }
+
+        Add28 xs →
+            { model | l28 = List.push model.l28 xs }
+
+        Add29 xs →
+            { model | l29 = List.push model.l29 xs }
+
+        Add30 xs →
+            { model | l30 = List.push model.l30 xs }
+
+        Add31 xs →
+            { model | l31 = List.push model.l31 xs }
+
+        Add32 xs →
+            { model | l32 = List.push model.l32 xs }
+
+        Add33 xs →
+            { model | l33 = List.push model.l33 xs }
+
+        Add34 xs →
+            { model | l34 = List.push model.l34 xs }
+
+        Add35 xs →
+            { model | l35 = List.push model.l35 xs }
+
+        Add36 xs →
+            { model | l36 = List.push model.l36 xs }
+
+        Add37 xs →
+            { model | l37 = List.push model.l37 xs }
+
+        Add38 xs →
+            { model | l38 = List.push model.l38 xs }
+
+        Add39 xs →
+            { model | l39 = List.push model.l39 xs }
+
+
+main : Tea.Program
+main =
+    Tea.sandbox
+        { init =
+            λ⊤ →
+                { l00 = []
+                , l01 = []
+                , l02 = []
+                , l03 = []
+                , l04 = []
+                , l05 = []
+                , l06 = []
+                , l07 = []
+                , l08 = []
+                , l09 = []
+                , l10 = []
+                , l11 = []
+                , l12 = []
+                , l13 = []
+                , l14 = []
+                , l15 = []
+                , l16 = []
+                , l17 = []
+                , l18 = []
+                , l19 = []
+                , l20 = []
+                , l21 = []
+                , l22 = []
+                , l23 = []
+                , l24 = []
+                , l25 = []
+                , l26 = []
+                , l27 = []
+                , l28 = []
+                , l29 = []
+                , l30 = []
+                , l31 = []
+                , l32 = []
+                , l33 = []
+                , l34 = []
+                , l35 = []
+                , l36 = []
+                , l37 = []
+                , l38 = []
+                , l39 = []
+                }
+        , update = step
+        , view = λmodel → <button onClick={Add00 [ 1 ]}>{List.length model.l00}</button>
+        }

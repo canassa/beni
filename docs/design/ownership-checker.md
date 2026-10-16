@@ -746,7 +746,7 @@ numbers and their slice-1 text; where slice 2 changes a rule, the rule here wins
 | Applying a summary at a call, and the caller's side of a written parameter (§3.10) | **built** (§16.4) |
 | Recursion fixpoint (§4.5, §4.6) | **built** (§16.6): optimistic, joined, validated |
 | The library's rows (§3.8, §6.5) | inferred from every beni body; **asserted only for primitives** (§16.8) |
-| Width cap (§4.6, §4.9) | **built** (§16.7) |
+| Width cap (§4.6, §4.9) | built, then **deleted** 2026-10-16 (§16.7): no summary is cut to fit; what outgrows the source is limited, each limit an error |
 | Folding of recursive types (§3.1) | **built** for constructor steps (§16.7); representatives' exclusivity is not |
 | Ownership classes of function values (§3.6, §4.7) | built for function values whose origin the walk sees — a lambda written in the body, a local function, a top-level function, a function parameter passed on — and **not** carried through types: a function value read out of a structure or a call result has no class (§16.5) |
 | Once closures (§3.6) | not built: `captured-edit` stays (§8.3) |
@@ -829,6 +829,19 @@ Derivation tags of supplies (§16.8's findings, §16.11): a supply is borrowed *
 an exact condition (a parameter the body reads later, a top-level list), and *approximately* when it failed
 only through an approximate step — a list's element, a level of a recursive value that folding merged
 (§16.7; thesis §3.1's representatives), a cell from JavaScript.
+
+*Amended 2026-10-16 (#220): how the read-off is computed, not what it reads.* Read pair by pair, a result's spine
+conditions (§18.3's `sc`: a returned container shares no cell with the result's other positions) cost a sweep
+of every other entry per entry, each conjunction re-sorting the atoms gathered so far, and the fresh numbering
+a sweep of the result per new cell: 94% of the pass on #220's dashboard once nothing was cut. The read-off now
+sorts the result's entries once by what §18.2's separation can say of a pair. A pair whose kinds alone make it
+`yes` — a closure; a top-level value's cell beside any but its own value's; a cell made here beside one that
+arrived, unless that one is a callback's result — is never formed: each entry is compared with the taken, `⊤`
+and message cells, with the cells that arrived when it arrived, with the callbacks' results when it was made
+here, and with its own value's or call's cells for `covers`; a cell found at two paths is `lost` at once; and
+the atoms are sorted once per entry. The fresh numbering sorts `(cell, path)` pairs. Every condition is the
+pairwise definition's — under runtime safety the two are compared for every result of up to 64 entries — and
+no verdict moved: the dashboard's reports at 16 to 256 widgets are byte for byte the pairwise ones.
 
 ### 16.4 Applying a summary at a call
 
@@ -976,20 +989,54 @@ round, so the chain would never settle. Merging them is sound (two cells taken f
 aliasing) and loses nothing the group's callers see, since a caller outside the group instantiates the
 final summary.
 
-### 16.7 The width cap
+### 16.7 Limits, and no width cap
 
-A summary's width is the number of distinct paths in its largest component (`use`'s parameter paths,
-`res`'s result paths, `supply`'s `(j, k, q)`) — thesis §4.9's *w*. Above **64**, thesis §4.9's "say 64", a
-type with too many tracked paths "is tracked as a whole": the summary is **coarsened** — the parameter with
-the most paths is tracked whole, its bits joined at ε (a write there approximate), until the uses fit, and
-the result's and the supplies' paths are cut shallower, the rest of each replaced by `⋆` and made
-approximate, until they fit — and its line says `coarse`. Coarsening only merges places, so it adds holders
-and never removes one. A summary still too wide (a coarsened one cannot shrink further) is the pessimistic
-one of §16.2 with `limit width`, and a rejection it causes is reported with the `limit` cause, approximate —
-a call-site demand it makes, and a `⊤` it returns, carry the mark however far they travel (`⊤limit` in a
-summary line). A recursive group that reaches the round cap gets `limit rounds`.
+*Amended 2026-10-16 (the owner, #220): the width cap of 64 paths and coarsening are deleted. The text they
+replaced is in this section's history; what follows is normative.*
 
-The fresh numbers do not count toward the width: as thesis §4.6 bounds them (`k ≤ |Q|`), a number only says
+**Nothing a type bounds is capped.** A summary names paths of its parameters and its result, and those are
+bounded by their types: cut at k (§4.1) and folded where a type is recursive (below). The fresh numbers are
+bounded by the result paths (thesis §4.6's `k ≤ |Q|`, next paragraph), and the provenances by the parameters'
+paths, the declaration's own cells and the top-level values it reads. So a summary is as wide as the program
+it describes, and it keeps every fact: **no summary is cut, merged or made approximate to fit a limit**. A TEA
+`update`'s parameter is the model, and its paths are the model's: thesis §4.9's "say 64" counted that, and #220
+measured what it cost — a 256-widget dashboard whose `step` needs 167 result paths had its summaries coarsened,
+silently, from 16 widgets on, and its build refused at 256 under a message that blamed a list "from
+JavaScript" the program had already copied.
+
+**What can outgrow the source is limited, and reaching a limit is an error.** The checker's limits are on
+what grows faster than the program — products of paths and provenances, conditions between pairs of result
+positions, rounds of a fixpoint:
+
+| Limit | At most | What it bounds |
+|---|---|---|
+| `entries` | 262 144 | a summary's entries in all, `use`, `res` and `supply` together |
+| `path-entries` | 4 096 | its entries at one result path, or at one `(j, k, q)` of a supply |
+| `conditions` | 1 048 576 | the atoms of its conditions (§18.3) in all |
+| `rounds` | 32 | the rounds of a recursive group (§16.6) or of a block's local functions (§18.7) |
+| `owned-atoms` | 8 | the distinct `returns owned` atoms `(j, q)` its `owned` bits rest on (§16.4 item 5) |
+| `value-cells` | 256 | the cells of a value whose deep condition (§18.2) the walk needs, compared pair by pair; past it the condition was `lost`, silently, before 2026-10-16 |
+
+A declaration whose summary would pass one is reported as **one error at the declaration**,
+`ownership_limit`: it names the declaration, the limit and what it measured, and says that the limit is the
+compiler's and not sharing in the program. The declaration's summary is then the pessimistic one of §16.2,
+`limit <name> <measure>` in its line, so that the walk can go on; a rejection elsewhere that rests on it — a
+call-site demand it makes, a `⊤` it returns, `⊤limit` in a summary line, however far they travel — has the
+`limit` cause (§16.11); a run that reports a limit does not report those rejections as errors too, since they
+follow from it.
+The dump prints `limit f: <name> <measure>, over <limit>` after the module's summary lines (`limit f: rounds,
+unsettled after 32` for a fixpoint).
+
+The bounds are set from the largest summaries measured, #220's dashboard at 1 024 widgets — one module of
+22 000 lines, its `step`, `pushed` and `update` the widest: 23 456 entries, 300 at one path and 87 764
+condition atoms, each about a tenth of its limit. The `owned-atoms` guard counts distinct atoms; before
+2026-10-16 it counted the supply entries that rest on one, so that `Dict.merge`, 13 entries over 3 atoms,
+reached it and had its last five owned supplies made borrowed, silently. *Not yet under this rule:* two
+fixpoints inside a walk — the model's exclusivity invariant (§28's dated amendment) and a callback's spine
+seeds — still end on a silent backstop of 32 rounds that lowers their seeds to `lost`. The first is reached by
+every application measured, because its comparison counts the cells each round makes anew; #229 tracks it.
+
+The fresh numbers do not count toward any limit: as thesis §4.6 bounds them (`k ≤ |Q|`), a number only says
 which result paths may hold one new cell, so the read-off of §16.3 gives two new cells that appear at the
 same result paths the same number — a TEA `update` that builds its model from forty literals has a handful.
 
@@ -997,10 +1044,8 @@ same result paths the same number — a TEA `update` that builds its model from 
 value of a type the path has already entered goes on from where the path first entered that type, so
 `t#Node.3#Node.1` is `t#Node.1`, and a summary over a `Dict` or a tree names a few paths instead of every
 level to the cut. Folding only merges places, so it adds aliasing and never removes a holder; a demand
-on a folded path is checked against every level it stands for. Without it every `Dict` function's summary
-exceeded the cap. The guard atoms are bounded by the function-typed parameters: a summary whose `owned` bits
-would depend on more than **8** `returns owned` atoms treats the entries past the eighth as borrowed. A cap
-never accepts: each turns facts pessimistic.
+on a folded path is checked against every level it stands for. Folding is what makes a recursive type's paths
+finite, and so is part of what bounds them, not a limit.
 
 ### 16.8 The library
 
@@ -2683,8 +2728,8 @@ with §16.4's amendment of the same day it is zero.
 | Owned sends and navigation commands (§23) | `send_class`, `checkSender` | a payload a fiber, a command or the next dispatch still reads after the send, edited in place. *Amended 2026-10-15:* the send rule itself (§23.2, a send is a write of everything it is handed) is not modelled: the core has no send, and its `owned` boundary is the returns-owned rule and retained-callback obligations only. Fibers, navigation capabilities and asynchronous delivery have no core semantics, so runtime payload retention remains untested |
 | `Dict.focus`'s destructive read (§20.8) | `assertDictFocus` | two positions of a tree holding one value, both written. List focus is modelled; the core has no tree, keys or dictionary representative separation. |
 | Markup/constructor lowering and opaque carrier encodings | markup transfer and summary blocks | Slots and constructor payload retention are modelled as positional records; HTML syntax, wildcard opaque paths, import serialization and actual row/component lowering are absent. Their encoding must preserve the modelled slots and conservative fallback |
-| Fold dictionary representatives and recursion | fold/focus summaries | Container ownership is modelled for lists and positional records; no dictionary keys, mutually recursive declarations or unknown/coarsened foreign rows exist in the core, so those implementations and their precision backstops still need Zig fixtures |
-| Hidden-evidence initialization and suspension | `initializationTransfer`, dispatch identities/requirements | Private single-read transfer, captured-local exclusion and retained initialization environments are modelled. The core has no hidden evidence parameters, suspension or coarsened foreign summaries; their eligibility guards remain compiler-fixture boundaries. |
+| Fold dictionary representatives and recursion | fold/focus summaries | Container ownership is modelled for lists and positional records; no dictionary keys, mutually recursive declarations or unknown or limited (§16.7) foreign rows exist in the core, so those implementations and their precision backstops still need Zig fixtures |
+| Hidden-evidence initialization and suspension | `initializationTransfer`, dispatch identities/requirements | Private single-read transfer, captured-local exclusion and retained initialization environments are modelled. The core has no hidden evidence parameters, suspension or limited (§16.7) foreign summaries; their eligibility guards remain compiler-fixture boundaries. |
 | *Amended 2026-10-16 (§30.9, O1):* a function slot or a function parameter called or handed on inside a lambda, and env calls of nested lambdas (rules 1–2) | `slotOf`, `envCall`, `passOn`, `applyEnvCalls` | a call the walk makes in the wrong frame, or a probe it drops on the way out: a supply taken for owned that a lambda still on the stack reads. The core's closures call their captures, but it has no function stored in a record (a slot) and no callee summary handed a lambda's own parameter, so neither rule is compared with the oracle. |
 | A send value is never a list (rule 3) | `flat`, `probeDemand` | a cell the walk takes for the runtime's function while it is a list. The core has no send (row above). |
 | What a custom type may hold, read off its constructors (rule 4) | `mayHold`, `ownMayHold`, `birMayHold` | a cell the type filter drops while the value may hold it: an alias lost. The core is untyped for this purpose; only Zig fixtures and the corpus test it. |
@@ -2883,7 +2928,8 @@ declaration, not per module, because a report that summarised the whole of every
 test budget on `EntryValueCommand` (4 651 million instructions); per declaration it summarises no more of the
 library than before. *One known way a block and a walk could still differ*: the cap on guard atoms (§16.7) keeps
 the first eight in an order by id, and a session that computed the summary itself assigns other ids than one that
-read it; no measured summary reaches the cap.
+read it; no measured summary reaches the cap. *Amended 2026-10-16 (#220):* no longer — the guard counts distinct
+atoms, whatever their order, and reaching it is an error, not a cut; `Dict.merge` had reached it all along.
 
 **What it reports.** The modules of the app's packages that the run checked: an installed app module was cached
 clean, which by §28.5 means without an ownership error. Core and the platforms are not reported — their verdicts
@@ -2997,6 +3043,12 @@ Four codes, appended to `language.md` §10's catalogue:
 All four are `error`s, the checker's, and only on an in-place platform. The diagnostic's span is the edit — a
 construction from its `[` to its `]`, a `++` chain, a writer's call, a call that writes an argument, a send — and
 its file the module's.
+
+*Amended 2026-10-16 (#220):* a fifth, `ownership_limit` (`OWNERSHIP CHECK TOO LARGE`), for a declaration whose
+summary reached one of §16.7's limits: an `error`, on the same platforms, one per declaration and limit, its span
+the declaration's name, its message the declaration, the limit and what it measured, and that the limit is the
+compiler's. Its excerpt is the renderer's. A run that reports one does not report the rejections with the
+`limit` cause (§16.7).
 
 **The message has thesis §8.3's fixed shape**:
 
@@ -3259,7 +3311,7 @@ received, with separation from the other result positions. No callback arm may
 escape that container, capture it in a retained closure, store it at a second
 position, or replace it with a borrowed/shared/unknown container. Its existing
 Known, Unescaped, Disjoint and Dead obligations still apply. Unknown callback
-classes, coarsened summaries and exhausted solvers establish no invariant.
+classes, summaries past a limit (§16.7) and exhausted solvers establish no invariant.
 A fresh outer dictionary alone proves nothing about its stored lists.
 
 **The written footprint.** Exclusivity of a list's container is distinguished
@@ -3440,7 +3492,7 @@ A private, parameterless value may transfer its freshly allocated cells to its
 sole read when that read executes directly in another nonrecursive,
 parameterless initializer of the same application module. The whole module
 must contain exactly one reference to the value. Reads in closures or functions,
-public values, foreign values, recursive initializers, coarsened summaries,
+public values, foreign values, recursive initializers, summaries past a limit (§16.7),
 evidence-parameterized values and unknown results receive no permission. The reference count is over BIR value
 instructions, including deferred bodies, not over reachable calls.
 

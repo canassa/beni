@@ -1813,7 +1813,7 @@ const Case = struct {
     /// Whether a JSON diagnostic list names the ownership checker's codes
     /// and no others (`ownership-checker.md` §28.6).
     fn ownershipOnly(stderr: []const u8) bool {
-        const codes = [_][]const u8{ "list_still_used", "top_level_list_changed", "view_changes_model", "list_may_be_shared" };
+        const codes = [_][]const u8{ "list_still_used", "top_level_list_changed", "view_changes_model", "list_may_be_shared", "ownership_limit" };
         var any = false;
         var it = std.mem.splitSequence(u8, stderr, "\"code\":\"");
         _ = it.next();
@@ -2892,7 +2892,8 @@ const Case = struct {
                 // with the ownership checker's codes and no others, and
                 // elsewhere it is silent whatever the report says.
                 const enforces = std.mem.eql(u8, name, "browser-direct");
-                const refused = enforces and (std.mem.indexOf(u8, r.stdout, ": rejected ") != null or std.mem.indexOf(u8, r.stdout, ": pending") != null);
+                // A limit the checker reached is an error too (§16.7).
+                const refused = enforces and (std.mem.indexOf(u8, r.stdout, ": rejected ") != null or std.mem.indexOf(u8, r.stdout, ": pending") != null or std.mem.indexOf(u8, r.stdout, "\n  limit ") != null);
                 if (refused) {
                     try expectExit(1, checked);
                     if (!ownershipOnly(checked.stderr)) {

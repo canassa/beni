@@ -1,0 +1,25 @@
+-- ownership: a summary as wide as its result's type (`ownership-checker.md`
+-- §16.7, amended 2026-10-16). `w8` places its argument at 256 result paths,
+-- which the tuple type it returns bounds, and its summary names every one
+-- of them: no path is cut to fit a cap. So the caller sees exactly that the
+-- result holds the argument at `.0.0.0.0.0.0.0.0`, and extending that list
+-- while the argument is read later is rejected `alias`, exact. Under the old
+-- cap of 64 paths the summary was coarsened and the same edit was rejected
+-- `call`, approximate.
+w1 x = ( x, x )
+
+
+w2 x = w1 (w1 x)
+
+
+w4 x = w2 (w2 x)
+
+
+w8 x = w4 (w4 x)
+
+
+pub wide : List Int → Int
+wide xs =
+    t = w8 xs
+    ys = [ …t.0.0.0.0.0.0.0.0, 1 ]
+    List.length ys + List.length xs
