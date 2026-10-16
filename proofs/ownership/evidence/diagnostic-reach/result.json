@@ -576,12 +576,16 @@
     "callSource": 761,
     "other": 413
   },
-  "rawSha256": "01e69eca58c4d7c3bf06bced7243fa3b225006f478b6d11d96c2b783f0f8fed2",
-  "rawBytes": 225508384,
-  "archiveBytes": 9305481,
   "exitCode": 1,
   "acceptedChecksPassed": true,
   "enumeratedReachComplete": true,
   "strictClean": false,
-  "losslessArchive": true
+  "exitCodeNote": "exitCode is 1 because strictClean is false by design. acceptedChecksPassed is the accepted-program verdict.",
+  "localCaptureOnly": {
+    "note": "These four fields describe the removed local archive of the native stream. Git does not hold that archive, so a reader cannot check them from this repository.",
+    "rawSha256": "01e69eca58c4d7c3bf06bced7243fa3b225006f478b6d11d96c2b783f0f8fed2",
+    "rawBytes": 225508384,
+    "archiveBytes": 9305481,
+    "losslessArchive": true
+  }
 }

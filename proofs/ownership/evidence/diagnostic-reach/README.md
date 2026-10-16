@@ -59,13 +59,16 @@ All three call controls pass. `ownership ci` now runs these controls automatical
 
 ## Records and limits
 
-The measured source commit is `830ebb2ee57837da101d99a94dd200ea118db663`.
-The campaign used its diagnostic sources and the earlier Main source hash in `inputs.json`.
-The final Main edit changes only the CI controls' output path to scratch.
+The measured source commit was `830ebb2ee57837da101d99a94dd200ea118db663`.
+That commit was rewritten after the capture. This branch does not contain it, and `inputs.json` names its base `9e0c3d07b`.
+The six source hashes in `inputs.json` are the SHA-256 values of the files that this branch holds. Check them with `sha256sum`.
+The capture compiled `Main.lean` at hash `752a4fab…`, the `mainSourceSha256` value in `inputs.json`.
+The current `Main.lean` differs from that file in one line: the CI controls write their log under `zig-out/scratch`.
+The diagnostics branch of `Main.lean` is unchanged.
 The campaign used enumeration bound 2 and rejected fuel 5,000.
 Accepted fuel was 100,000 for fixtures and generated cases, and 20,000 for enumeration.
 
-The capture ran this exact command from `proofs/ownership`:
+The capture ran this exact command from `proofs/ownership`. Its absolute paths are the original capture's paths:
 
 ```sh
 .lake/build/bin/ownership diagnostics 20000 20261011 --enumerate-bound=2 --out=/home/jayson/src/beni.worktrees/ownership-proofs/zig-out/scratch/reach-campaign-1-evidence.log
@@ -73,7 +76,12 @@ The capture ran this exact command from `proofs/ownership`:
 
 `inputs.json` records the executable hash and source hashes.
 `result.json` records the eight parsed case blocks and the campaign totals.
-The archive-integrity fields describe the original local capture.
+Each block's `tally` holds its program, rejected, completed, execution-error, hit, reach, and raw observer counts.
+The text above restates only the totals and the reach table.
+In `result.json`, `exitCode` is 1 while `acceptedChecksPassed` is true: the strict summary-row result, `strictClean`, is false by design.
+`enumeratedReachComplete` records the nonvacuity condition.
+The object `localCaptureOnly` holds `rawSha256`, `rawBytes`, `archiveBytes`, and `losslessArchive`.
+These four fields describe the removed local archive. Git does not hold that archive, so a reader cannot check them from this repository.
 These records support the counts above. They do not replace the removed outputs.
 The capture omits external toolchain and dependency hashes. It does not establish complete build reproducibility.
 
@@ -85,16 +93,36 @@ The repository excludes logs and run output. The following table identifies each
 | `summary.log` | 16,764 | `66305845a1006bb4ef2b4a3fdf663708f8823f6a42d9acd93f23e3157ba84c1d` |
 | `Main-before-ci-output.txt` | 11,920 | `752a4fab9e382fe37f0eb478a9d2490825d35075fbbbebf8125aa383912cc63a` |
 
+`Main-before-ci-output.txt` was a byte-for-byte copy of `Main.lean` as the capture compiled it. Its hash is therefore the `mainSourceSha256` value.
 The uncompressed native stream contains 225,508,384 bytes.
 Its SHA-256 is `01e69eca58c4d7c3bf06bced7243fa3b225006f478b6d11d96c2b783f0f8fed2`.
 The removed verifier depended on the removed files, so this folder excludes it too.
 Local scratch copies retain the outputs. Git does not distribute those copies.
 
-From `proofs/ownership`, reproduce the campaign under the required lock and memory caps:
+## Rejected execution errors
+
+The 20,264 rejected execution errors have these classes.
+The classification read the removed native stream with SHA-256 `01e69eca58c4d7c3bf06bced7243fa3b225006f478b6d11d96c2b783f0f8fed2`. No program ran again.
+
+| Source | Fuel exhaustion | Depth exhaustion | Construction growth guard |
+| --- | ---: | ---: | ---: |
+| Fixtures | 1 | 0 | 39 |
+| Enumeration, bound 2 | 0 | 0 | 6,929 |
+| Generator v5 | 673 | 0 | 0 |
+| Generator v6 | 634 | 0 | 11,988 |
+| Total | 1,308 | 0 | 18,956 |
+
+The rows sum to 20,264, the `rejectedExecutionErrors` total of the blocks in `result.json`.
+Every construction-growth message is `in-place construction: a spread operand grows with its base`.
+No enumerated run ended with a fuel-limit error. These partial runs contribute no reach events.
+
+## Reproduction
+
+From `proofs/ownership`, reproduce the campaign under the shared build lock with `MemoryMax=10G` and `MemorySwapMax=2G`:
 
 ```sh
 lake exe ownership diagnostics 20000 20261011 --enumerate-bound=2 --out=../../zig-out/scratch/diagnostic-reach.log
 ```
 
 The command returns 1 because the retained strict summary-row result remains false.
-Check `enumerated-reach-complete=true`, every accepted block, and both raw summary-row candidates separately.
+Compare the printed summary with `result.json`: `enumeratedReachComplete`, `acceptedChecksPassed`, each block's `tally`, and both raw summary-row candidates.
