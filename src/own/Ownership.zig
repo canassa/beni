@@ -1940,10 +1940,12 @@ const twice_named: u32 = 5;
 /// (`( xs, xs )`, `{ all = xs, first = xs }`, `( xs, [ xs ] )`), or a list
 /// it makes, whose fresh number names both places (`dup [ 1 ]`, `dup
 /// (List.copy xs)`). `π1` at `.0` and `π1[*]` at `.0[*]` are one placement.
-/// A part of the parameter that holds no cell (the `Int`s of a `List Int`,
-/// at `.0[*]` and in a reversed copy) does not count; a `⋆` that blurs the
-/// alignment counts as two places.
-fn returnsOneCellTwice(o: *Ownership, store: *TypeStore, s: *const Summary, arg: ?Var) Allocator.Error!bool {
+/// A part that holds no cell does not count: of the parameter, the `Int`s
+/// of a `List Int` at `.0[*]` and in a reversed copy; of a list it makes,
+/// the elements a recursive builder numbers as the list (`range n`), read
+/// in the decoded type `target` below the result's `Ok`. A `⋆` that blurs
+/// the alignment counts as two places.
+fn returnsOneCellTwice(o: *Ownership, store: *TypeStore, s: *const Summary, arg: ?Var, target: ?Var) Allocator.Error!bool {
     for (s.res, 0..) |x, i| {
         const fresh = x.prov.kind == .fresh;
         if (!fresh and (x.prov.kind != .param or x.prov.a != 0)) continue;
@@ -1952,11 +1954,27 @@ fn returnsOneCellTwice(o: *Ownership, store: *TypeStore, s: *const Summary, arg:
             if (!o.overlap(x.prov.path, y.prov.path)) continue;
             const short, const long = if (o.paths.depth.items[x.prov.path] <= o.paths.depth.items[y.prov.path]) .{ x, y } else .{ y, x };
             if (!fresh) if (arg) |v| if (!try o.partTracked(store, v, long.prov.path)) continue;
+            if (fresh) if (target) |v| if (o.isOkStep(o.firstStep(long.path))) {
+                if (!try o.partTracked(store, v, try o.dropFirst(long.path))) continue;
+            };
             const d = (try o.suffix(short.prov.path, long.prov.path)) orelse return true;
             if (try o.concat(short.path, d) != long.path) return true;
         }
     }
     return false;
+}
+
+/// Whether `step` is core `Result`'s `Ok` and its value: the step from a
+/// conversion function's result to the value it converted.
+fn isOkStep(o: *const Ownership, step: ?Step) bool {
+    const st = step orelse return false;
+    if (st.kind != .ctor or st.arg % 64 != 0) return false;
+    const c = st.arg / 64;
+    if (c >= o.ctor_key.items.len) return false;
+    const key = o.ctor_key.items[c];
+    const m: u32 = @intCast(key >> 32);
+    if (m >= o.in.packages.len or o.in.packages[m] != .core or !std.mem.eql(u8, o.in.module_names[m], "Result")) return false;
+    return std.mem.eql(u8, o.ctorName(m, @truncate(key)), "Ok");
 }
 
 /// Whether the part at `path` of a value of type `v` may hold a cell,
@@ -6860,7 +6878,7 @@ const Walker = struct {
         for (fields, kinds, ends, &parts) |field, kind, end, *part| {
             if (end) |v| if (!try w.trackedVar(v)) continue;
             const answer = if (w.o.in.interner.find(field)) |sym|
-                try w.functionAnswer(try w.proj(made, .{ .kind = .field, .arg = @backingInt(sym) }, null), inst, kind == .schema_encoded, ends[1])
+                try w.functionAnswer(try w.proj(made, .{ .kind = .field, .arg = @backingInt(sym) }, null), inst, kind == .schema_encoded, ends[1], ends[0])
             else
                 try w.single(.{ .kind = .top, .a = unfollowed });
             part.* = try w.under(answer, try w.o.child(eps, kind, 0));
@@ -6872,8 +6890,9 @@ const Walker = struct {
     /// outlives the call: not a cell the call makes, not its argument or a
     /// part of it, but what it captured, a top-level value, or anything
     /// from where the checker cannot see. `⊤` when `f`'s classes are not
-    /// known. `source` is the type `forward` is handed (`returnsOneCellTwice`).
-    fn functionAnswer(w: *Walker, f: AV, inst: Inst.Index, argument_is_input: bool, source: ?Var) Allocator.Error!AV {
+    /// known. `source` is the type `forward` is handed and `target` the one
+    /// it converts to (`returnsOneCellTwice`).
+    fn functionAnswer(w: *Walker, f: AV, inst: Inst.Index, argument_is_input: bool, source: ?Var, target: ?Var) Allocator.Error!AV {
         const classes = try w.classesOf(f);
         if (classes.len == 0) return w.single(.{ .kind = .top, .a = unfollowed });
         var out: std.ArrayList(Entry) = .empty;
@@ -6883,7 +6902,7 @@ const Walker = struct {
             // `forward`'s argument is what the run built, no holder, and a
             // list it makes is new — but either, returned at two places,
             // puts one list at two positions of the answer (#268).
-            if (!argument_is_input and try w.o.returnsOneCellTwice(w.store, s, source)) try out.appendSlice(w.a, try w.single(.{ .kind = .top, .a = twice_named }));
+            if (!argument_is_input and try w.o.returnsOneCellTwice(w.store, s, source, target)) try out.appendSlice(w.a, try w.single(.{ .kind = .top, .a = twice_named }));
             for (s.res) |r| switch (r.prov.kind) {
                 .fresh => {},
                 // `backward` is handed the program's value: what it returns of

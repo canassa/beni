@@ -1,14 +1,18 @@
 module SchemaConversionTwice
-  87:15 List.push a: rejected unknown: a schema answered it whose conversion returns one list at two places, so two parts of the answer may be one list (approx)
-  96:15 List.push p.items.all: rejected unknown: a schema answered it whose conversion returns one list at two places, so two parts of the answer may be one list (approx)
-  106:15 List.push a: rejected unknown: a schema answered it whose conversion returns one list at two places, so two parts of the answer may be one list (approx)
-  115:15 List.push a: rejected unknown: a schema answered it whose conversion returns one list at two places, so two parts of the answer may be one list (approx)
-  125:13 List.push a: rejected unknown: a schema answered it whose conversion returns one list at two places, so two parts of the answer may be one list (approx)
-  135:15 List.push a: accepted call
-  145:15 List.push a: rejected unknown: a schema answered it whose conversion returns one list at two places, so two parts of the answer may be one list (approx)
-  155:15 List.push a: rejected unknown: a schema answered it whose conversion returns one list at two places, so two parts of the answer may be one list (approx)
-  164:13 List.push p.other: rejected unknown: a schema answered it whose conversion returns one list at two places, so two parts of the answer may be one list (approx)
+  52:33 List.push <call SchemaConversionTwice.range>: accepted call
+  109:15 List.push a: rejected unknown: a schema answered it whose conversion returns one list at two places, so two parts of the answer may be one list (approx)
+  118:15 List.push p.items.all: rejected unknown: a schema answered it whose conversion returns one list at two places, so two parts of the answer may be one list (approx)
+  128:15 List.push a: rejected unknown: a schema answered it whose conversion returns one list at two places, so two parts of the answer may be one list (approx)
+  137:15 List.push a: rejected unknown: a schema answered it whose conversion returns one list at two places, so two parts of the answer may be one list (approx)
+  147:13 List.push a: rejected unknown: a schema answered it whose conversion returns one list at two places, so two parts of the answer may be one list (approx)
+  157:15 List.push a: accepted call
+  167:15 List.push a: rejected unknown: a schema answered it whose conversion returns one list at two places, so two parts of the answer may be one list (approx)
+  177:15 List.push a: rejected unknown: a schema answered it whose conversion returns one list at two places, so two parts of the answer may be one list (approx)
+  186:13 List.push p.other: rejected unknown: a schema answered it whose conversion returns one list at two places, so two parts of the answer may be one list (approx)
+  195:13 List.push p.items: accepted call
+  205:15 List.push a: accepted call
   summary dupHelper: π1 RA; res .0 π1, .1 π1
+  summary range: res [*] ~fresh2 ~fresh3, fresh1 ~fresh2
   summary tuple: res .0 fresh1{lost}, .0[*] ~fresh3{lost}, .0[*]⋆ ~⊤twice{lost}, .0⋆ ~⊤twice{lost}, .1 fresh2{lost}, .1⋆ ~⊤twice{lost}
   summary record: res .0 fresh1{lost}, .0[*] ~fresh2{lost}, .0[*]⋆ ~⊤twice{lost}, .0⋆ ~⊤twice{lost}, .1 fresh3{lost}, .1⋆ ~⊤twice{lost}
   summary nested: res .0 fresh1{lost}, .0[*] ~fresh3{lost}, .0[*]⋆ ~⊤twice{lost}, .0⋆ ~⊤twice{lost}, .1 fresh2{lost}, .1⋆ ~⊤twice{lost}
@@ -18,6 +22,8 @@ module SchemaConversionTwice
   summary made: res .0 fresh1{lost}, .0[*] ~fresh3{lost}, .0[*]⋆ ~⊤twice{lost}, .0⋆ ~⊤twice{lost}, .1 fresh2{lost}, .1⋆ ~⊤twice{lost}
   summary copied: res .0 fresh1{lost}, .0[*] ~fresh3{lost}, .0[*]⋆ ~⊤twice{lost}, .0⋆ ~⊤twice{lost}, .1 fresh2{lost}, .1⋆ ~⊤twice{lost}
   summary sibling: res [*] ~fresh2{lost}, [*]⋆ ~⊤twice{lost}, fresh1{lost}, ⋆ ~⊤twice{lost}
-  demands 9: accepted 1 (fresh 0, call 1, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 8
-total 9: accepted 1 (fresh 0, call 1, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 8
+  summary ranged: res [*] ~fresh2{lost}, fresh1{lost}
+  summary rangedPair: res .0 fresh1{lost}, .0[*] ~fresh3{lost}, .1 fresh2{lost}
+  demands 12: accepted 4 (fresh 0, call 4, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 8
+total 12: accepted 4 (fresh 0, call 4, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 8
 cause unknown 8

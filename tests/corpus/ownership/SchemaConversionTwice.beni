@@ -13,7 +13,9 @@
 -- position is read again, so `single`, which drops the other position,
 -- and `sibling`, which writes another field, are rejected as well. A
 -- `forward` that returns its argument once beside a list it builds
--- (`once`) is accepted.
+-- (`once`) is accepted, and so is one that returns what a recursive
+-- builder makes (`ranged`, `rangedPair`): `range` numbers its elements as
+-- the list, but they are `Int`s, which hold no list.
 import Schema exposing (Conversion)
 
 
@@ -46,6 +48,18 @@ copyDup : Conversion (List Int) (List Int × List Int)
 copyDup = Schema.conversion (λxs → Ok (dupHelper (List.copy xs))) λ( a, _ ) → Ok a
 
 
+range : Int → List Int
+range n = if n ≤ 0 then [] else List.push (range (n - 1)) n
+
+
+oneRange : Conversion (List Int) (List Int)
+oneRange = Schema.conversion (λ_ → Ok (range 3)) λ_ → Ok []
+
+
+twoRanges : Conversion (List Int) (List Int × List Int)
+twoRanges = Schema.conversion (λ_ → Ok ( range 3, range 2 )) λ( a, _ ) → Ok a
+
+
 split : Conversion (List Int) (List Int × List Int)
 split = Schema.conversion (λxs → Ok ( xs, List.reverse xs )) λ( a, _ ) → Ok a
 
@@ -64,6 +78,14 @@ schema Nest =
 
 schema Split =
     items : List Int via split
+
+
+schema Ranged =
+    items : List Int via oneRange
+
+
+schema RangedPair =
+    items : List Int via twoRanges
 
 
 schema Made =
@@ -164,3 +186,22 @@ sibling input =
             List.push p.other 9
         Err _ →
             []
+
+
+pub ranged : String → List Int
+ranged input =
+    case Ranged.parse input of
+        Ok p →
+            List.push p.items 9
+        Err _ →
+            []
+
+
+pub rangedPair : String → List Int × List Int
+rangedPair input =
+    case RangedPair.parse input of
+        Ok p →
+            ( a, b ) = p.items
+            ( List.push a 9, b )
+        Err _ →
+            ( [], [] )
