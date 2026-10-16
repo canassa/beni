@@ -8,13 +8,22 @@
 # Code Owners" on.
 #
 # `/.github/` includes this file and every workflow, so the guard `check`
-# and the job `lean` cannot change without that review.
+# and the job `lean` cannot change without that review. `.gitattributes`
+# has no leading `/`, so it matches that file in every directory: its
+# `export-ignore` removes a file from the export of scripts/audit.sh
+# (#262).
+#
+# The proof sources are not listed. The audit checks axioms, `sorry`,
+# commands and the kernel, not what a theorem states, so a review of a
+# proof pull request must check the statements.
 
-/proofs/ownership/Axioms.lean    @canassa
-/proofs/ownership/Audit.lean     @canassa
-/proofs/ownership/lakefile.toml  @canassa
-/proofs/ownership/lean-toolchain @canassa
-/proofs/ownership/scripts/       @canassa
-/flake.nix                       @canassa
-/flake.lock                      @canassa
-/.github/                        @canassa
+/proofs/ownership/Axioms.lean        @canassa
+/proofs/ownership/Audit.lean         @canassa
+/proofs/ownership/lakefile.toml      @canassa
+/proofs/ownership/lake-manifest.json @canassa
+/proofs/ownership/lean-toolchain     @canassa
+/proofs/ownership/scripts/           @canassa
+/flake.nix                           @canassa
+/flake.lock                          @canassa
+/.github/                            @canassa
+.gitattributes                       @canassa
