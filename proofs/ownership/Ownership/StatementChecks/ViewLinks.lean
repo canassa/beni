@@ -273,6 +273,9 @@ def staleProgram : Program := { main := staleMain }
 #guard match ValueSemantics.run staleProgram, InPlaceSemantics.run staleProgram with
   | .ok t, .ok t' => t.finalValue == .list [.int 1, .int 2] && t'.finalValue == t.finalValue
   | _, _ => false
+-- If `put` is later switched to `writeLinked`, this guard fails on purpose:
+-- the view is then refreshed, and the contents fact becomes expressible as
+-- a clause of the invariant.
 #guard match (InPlaceSemantics.eval 1000 [] none [] staleMain).run { fuel := 1000 } with
   | .ok (_, s) => s.links == [(1, 0, true)] && s.heap[1]? == some [] &&
       s.heap[0]? == some [.int 1, .int 2] && viewOf true [.int 1, .int 2] == [.int 2]

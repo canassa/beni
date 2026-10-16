@@ -134,6 +134,10 @@ The step cases can establish it through `LinkClosed` (`LinkClauses.lean`), the p
 The first bullet's contents fact is not a clause. The model's `put` writes with `write`, not `writeLinked`, so the garbage view of a closed and viewed builder goes stale while the program is accepted and both runs agree (`ViewLinks.lean`, *A stale garbage view*). A protected view is never stale: its cells include its source's, so the demand on the source fails.
 `StatementChecks/ViewLinks.lean` proves that the #169 pre-state admits no naming under the clauses.
 Open: preservation of `LinkNamed` under a successful `writeLinked` (the protected set changes with the heap) and under a call; the fourth bullet (certificate reasoning over view addresses); the written-storage premise of `summary_sound` and `map_summary_sound` (R1); the validity and snapshot premises (R2); and their derivation at accepted callers.
+Three obligations of the step cases, named by the review of PR #273:
+a post-naming must exist that keeps every old array's origins and names a new view by exactly its source's origins (`linkClosed_viewed`), and a write that moves a source's origins must move its views' origins with it;
+every writer keeps arrays nonempty (`linksValid_set` takes `xs ≠ []`): `push`, `set`, `construct` and the focus write-back never shorten an array, and each step case shows it for its own write;
+the view step splits on the source's emptiness: an empty source allocates a fresh `[]` with no link (`linksValid_push`), a nonempty one links (`linksValid_viewed`, with `lookup` and `nonempty` from the run).
 #258 still leaves open the direct controls for `inCall` and `rawObservedWrites`, the rejected-error classes, generated accepted read-only linked calls, and the `CallRecord.preKept` wording; none of them is a premise of the clauses.
 
 ### Local linked-write frame

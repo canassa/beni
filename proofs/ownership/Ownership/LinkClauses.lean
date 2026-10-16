@@ -1,5 +1,7 @@
--- Keep proof modules in one import chain: a module that unfolds a model
--- definition must see every earlier realization of its equation lemmas.
+-- This module is the top of the proof import chain, not a leaf. It imports
+-- every other proof and executable module, so that `FlatFragment/Support.lean`
+-- and everything after it see one realization of each equation lemma: the
+-- audit rejects an equation lemma that two modules realize (#182).
 import Ownership.Soundness
 import Ownership.BuilderProof
 import Ownership.LinkedWriteFrame
