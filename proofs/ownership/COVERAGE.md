@@ -1,5 +1,10 @@
 # T1–T59 coverage audit
 
+The #165 orientation found counterexamples to the current proof statements.
+[PROOF-PLAN.md](PROOF-PLAN.md) records construction fuel (#168), linked-view naming (#169), and summary observer permissions (#170).
+`Ownership/StatementChecks/` contains their regression witnesses.
+The statements and their three `sorry` proofs remain unchanged.
+
 Current follow-up measurements are in [RESULTS.md](RESULTS.md) and its linked logs.
 Historical numerical sensitivity measurements below are marked as such;
 they do not establish final-head coverage. The executable theorem statements
