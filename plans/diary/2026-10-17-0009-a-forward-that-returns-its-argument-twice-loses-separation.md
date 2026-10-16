@@ -9,7 +9,11 @@ one placement puts `⊤twice` in the slot, with a message of its own, and a writ
 rejected `unknown`, approximately. `partTracked` follows the argument's type down the path, so the `Int`s
 of a `List Int` found again in `List.reverse xs` do not count. Spec: a dated amendment in §30.10. Fixture
 `ownership/SchemaConversionTwice`, red before (all five accepted). `bench/ownership-everywhere.mjs`: 0 of
-850 programs rejected.
+850 programs rejected. The independent review then found that a list `forward` makes and returns twice
+(`dup [ 1 ]`, `dup (List.copy xs)`) was still read as two fresh lists, proved one array at run time: two
+entries of one fresh number now count too (`returnsOneCellTwice`), and the fixture has `made`, `copied` and
+`sibling` (the `⊤` reaches every list of the answer). A forward that calls a function the checker cannot
+identify is closed only with #225's `⊤call`.
 
 **What I learned.** The elements of a run's answer were already "may share one list", so only distinct
 tuple slots, record fields and constructor arguments were wrongly separated. A summary's `[*] ~π1[*]` entry
