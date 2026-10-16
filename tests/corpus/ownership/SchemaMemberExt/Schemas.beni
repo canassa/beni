@@ -1,0 +1,24 @@
+import Schema exposing (Conversion)
+
+
+kept : List String
+kept = [ "kept" ]
+
+
+fixed : Conversion String (List String)
+fixed = Schema.conversion (λ_ → Ok kept) λws → Ok (String.join ws " ")
+
+
+pub schema Fixed =
+    text : String via fixed
+
+
+pub schema Tree tagged "t" of
+    Leaf as "leaf"
+        value : Int
+    Branch as "branch"
+        children : List Tree
+
+
+pub forest : List Tree.Type
+forest = [ Tree.Leaf { value = 1 } ]
