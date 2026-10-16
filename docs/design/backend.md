@@ -6838,11 +6838,13 @@ fibers lines, raw → raw | brotli → brotli):
 The `http` page, the empty pages and the Node fibers lines are byte for byte as before: `http`'s
 `init` calls `Cmd.task`, so its body is not inert, and its value is read. `bench/size.mjs` as a
 whole: 13 lines smaller, none larger, −291 brotli (raw −763). Every `browser/` fixture built
-`--release` (each `browser/direct/` page for both platforms): 267 smaller, 278 equal, 6 larger,
-−5 147 brotli (raw −12 535); no output's raw bytes grow, and development output does not move.
-The 6 larger builds, each with 42–43 fewer raw bytes: `browser/tea/QueuedListSnapshot` +23,
-`browser/direct/HttpRequestShape` on `browser-tea` +9, `AnimationFrames` (both directories) +4
-each, `browser/direct/ControlledEdits` +4 and `LateResponse` +2, both on `browser-tea`. Conduit
+`--release` (each `browser/direct/` fixture for both platforms, 575 builds): 276 smaller, 287
+equal, 12 larger, −5 287 brotli (raw −13 158); no output's raw bytes grow, and development output
+does not move. The 12 larger builds, each with 22–43 fewer raw bytes: `browser/tea/QueuedListSnapshot`
++23, `browser/direct/HttpRequestShape` on `browser-tea` +9, `AnimationFrames` (both directories) +4
+each, `browser/direct/ControlledEdits` +4 and `LateResponse` +2, both on `browser-tea`, and the
+Conduit program six times (`ConduitEditor`, `ConduitReader` and `ConduitTour` in `tea/` and
+`direct/`, on `browser-tea`) +6 each. Conduit
 (`examples/conduit`) is 28 844 → 28 850 on `browser-tea` (raw 122 285 → 122 263: the hosted
 `init` of `Tea.application` written at its one call) and byte for byte the same on
 `browser-direct`. The cause of every increase is item 2's naming: a declaration that goes moves
@@ -6858,6 +6860,15 @@ runtime flushed, 6 rounds after 2 warm-ups, 16 interleaved processes, median [q1
 2.0–2.6): mount 6.28 [6.22–6.34] → 6.23 [6.18–6.30], create 1 000 76.4 [72.3–79.1] → 76.1
 [69.8–78.9], update every 10th 0.45 [0.37–0.52] → 0.46 [0.35–0.52], swap 0.17 [0.15–0.30] → 0.18
 [0.15–0.30], clear 10.19 [9.91–10.49] → 10.24 [10.00–10.59]: every range overlaps.
+
+Measured again on `f9ade83c5`, with the record-update condition of item 2: `bench/size.mjs` 15 lines
+smaller and 1 larger, −389 brotli (raw −955); the one larger line is `ApiAndRoutes`, 14 535 → 14 538
+(raw 43 290 → 43 268), the same class of increase. The `browser/` corpus (590 builds): 290 smaller,
+295 equal, 5 larger, −5 815 brotli (raw −13 541), no raw increase; the 5 larger are the
+`AnimationFrames`, `HttpRequestShape`, `ControlledEdits` and `LateResponse` builds above, by the
+same bytes. Conduit is 28 671 → 28 623 on `browser-tea` (raw 116 253 → 116 231) and byte for byte
+the same on `browser-direct`; its release build costs 4 943 → 4 972 million instructions on
+`browser-tea` (+0.59 %) and 9 171 → 9 174 on `browser-direct` (+0.04 %).
 
 Fixtures: `emit/release/app/SpecRecordLambda` (an unread `app.init ⊤` gone with its key and
 lambda; `start`'s and `step`'s lambdas, each used once, written at their calls, one of them past
