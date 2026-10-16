@@ -5655,7 +5655,8 @@ const Walker = struct {
                 }
                 return w.single(.{ .kind = .shared, .a = t.m, .b = t.d, .ty = w.instTypeOpt(inst) });
             },
-            .ctor, .ext_ctor => return (try w.constructorValue(inst)) orelse &.{},
+            .ctor, .ext_ctor, .schema_ctor_top, .ext_schema_ctor => return (try w.constructorValue(inst)) orelse &.{},
+            .schema_member_top, .ext_schema_member => return (try w.memberValue(inst)) orelse &.{},
             .int, .float, .char, .string, .chunk, .unit, .@"error" => return &.{},
             .interp => {
                 const parts = b.extraSlice(Bir.inlineRange(data), Inst.Index);
@@ -5797,10 +5798,32 @@ const Walker = struct {
     }
 
     fn constructorValue(w: *Walker, inst: Inst.Index) Allocator.Error!?AV {
-        const sum = (try w.ctorClass(inst)) orelse return null;
+        return try w.rowValue((try w.ctorClass(inst)) orelse return null);
+    }
+
+    /// §30.11: a member of a schema declaration handed on as a value. Its
+    /// class is the row a call of it is applied (`schemaMemberRow`), at the
+    /// arity its type gives, so a callee that calls it answers what that
+    /// row names. A run there is not seen as one: its input mark stays a
+    /// `⊤` (§30.10).
+    fn memberValue(w: *Walker, inst: Inst.Index) Allocator.Error!?AV {
+        const sm = w.schemaMemberOf(inst) orelse return null;
+        const ty = w.instType(inst) orelse return null;
+        const arity = switch (w.store.resolvedContent(ty)) {
+            .structure => |st| switch (st) {
+                .func => |fun| w.store.vars(fun.params).len,
+                else => return null,
+            },
+            else => return null,
+        };
+        return try w.rowValue((try w.o.schemaMemberRow(sm.m, sm.decl, sm.kind, @intCast(arity))) orelse return null);
+    }
+
+    /// A function value with no captures whose class is `sum`.
+    fn rowValue(w: *Walker, sum: *const Summary) Allocator.Error!AV {
         const ci: u32 = @intCast(w.closures.items.len);
         try w.closures.append(w.a, .{ .captures = &.{}, .class = sum, .carried = true, .frame = none });
-        return try w.single(.{ .kind = .closure, .a = ci });
+        return w.single(.{ .kind = .closure, .a = ci });
     }
 
     fn markupCallback(w: *Walker, inst: Inst.Index, function: Inst.Index, f: AV, avs: []const AV) Allocator.Error!AV {
@@ -6488,7 +6511,9 @@ const Walker = struct {
         if (w.isSpreadCall(inst)) return w.construction(inst);
         if (w.isListAppend(inst)) return w.appendChain(inst);
         switch (b.instTag(callee)) {
-            .ctor, .ext_ctor => {
+            // A tagged schema's constructor builds its value as any
+            // constructor does (§30.11).
+            .ctor, .ext_ctor, .schema_ctor_top, .ext_schema_ctor => {
                 const c = try w.ctorOf(callee);
                 const avs = try w.evalOperands(args, false);
                 w.popPending(avs.len);
@@ -6558,11 +6583,7 @@ const Walker = struct {
             }
         }
         try w.sight(f, .{ .pending = "it is called where the checker does not know which function runs" }, w.token(inst));
-        // A schema declaration's constructor or member is a function the
-        // checker names: a constructor makes its value, and a member has no
-        // summary yet (issue #218). Their result keeps §6.1's cell made by
-        // the call (§30.11).
-        return w.conservative(inst, args, f, callee, "", false, w.isSchemaCallable(callee));
+        return w.conservative(inst, args, f, callee, "", false, false);
     }
 
     /// A private binding's only read, executed once during module init
@@ -8276,11 +8297,7 @@ const Walker = struct {
     /// function may return a list something else holds (§30.11).
     fn unknownCb(w: *Walker, j: u32, ctx: InstCtx) Allocator.Error!AV {
         var out: std.ArrayList(Entry) = .empty;
-        // A schema declaration's constructor or member handed as the
-        // argument keeps §6.1's cell made by the call (issue #218).
-        const made = if (w.callArgAt(ctx, j)) |arg| w.isSchemaCallable(arg) else false;
-        const own = try w.cell(if (made) .{ .kind = .result, .a = ctx.inst.int(), .b = 0 } else .{ .kind = .top, .a = top_call });
-        try out.append(w.a, .{ .path = eps, .cell = own });
+        try out.append(w.a, .{ .path = eps, .cell = try w.cell(.{ .kind = .top, .a = top_call }) });
         const any = try w.o.child(eps, .any, 0);
         var from: std.ArrayList(AV) = .empty;
         for (ctx.s.supply) |e| {
@@ -8294,39 +8311,6 @@ const Walker = struct {
             try out.append(w.a, .{ .path = any, .cell = e.cell, .approx = ctx.inst.int() + 1 });
         };
         return w.norm(out.items);
-    }
-
-    /// The instruction a call written in the body passes as the callee's
-    /// parameter `j`, when `ctx` instantiates that callee at that call.
-    fn callArgAt(w: *Walker, ctx: InstCtx, j: u32) ?Inst.Index {
-        if (ctx.depth != 0 or j >= ctx.s.params or j >= ctx.avs.len) return null;
-        const b = w.bir;
-        const i = ctx.inst.int() -% w.decl.inst_start.int();
-        if (i >= w.decl.inst_end.int() -% w.decl.inst_start.int()) return null;
-        switch (b.instTag(ctx.inst)) {
-            .call => {
-                const args = w.callArgs(ctx.inst);
-                return if (args.len == ctx.avs.len) args[j] else null;
-            },
-            .method_call => {
-                const data = b.instData(ctx.inst);
-                const mc = b.extraData(@fromBackingInt(@intCast(data.rhs)), Bir.MethodCall);
-                const rest = b.extraSlice(.{ .start = mc.args_start, .end = mc.args_end }, Inst.Index);
-                if (rest.len + 1 != ctx.avs.len) return null;
-                return if (j == 0) @fromBackingInt(@intCast(data.lhs)) else rest[j - 1];
-            },
-            else => return null,
-        }
-    }
-
-    /// A constructor of a schema declaration (`Tree.Leaf`), which makes its
-    /// value, or a member (`Tags.parse`), which has no summary yet (issue
-    /// #218): functions the checker names (§30.11).
-    fn isSchemaCallable(w: *const Walker, inst: Inst.Index) bool {
-        return switch (w.bir.instTag(inst)) {
-            .schema_member_top, .ext_schema_member, .schema_ctor_top, .ext_schema_ctor => true,
-            else => false,
-        };
     }
 
     /// A call-site demand (§16.4 item 3): argument `i`'s cells at `q`,
@@ -9278,7 +9262,7 @@ const Walker = struct {
     /// each at its own field.
     fn ctorClass(w: *Walker, arg: Inst.Index) Allocator.Error!?*const Summary {
         switch (w.bir.instTag(arg)) {
-            .ctor, .ext_ctor => {},
+            .ctor, .ext_ctor, .schema_ctor_top, .ext_schema_ctor => {},
             else => return null,
         }
         const ty = w.instType(arg) orelse return null;

@@ -18,8 +18,8 @@ module Api
   summary put: π3 R, π3#Unprintable.0 RA, π4 R; res #Err.0#Failed.0#BadBody.0 cb4#Err.0{excl cb4#Err.0}, #Err.0#Failed.0#BadRequest.0 fresh1{lost}, #Err.0#Failed.0#BadRequest.0#UnprintableBody.0 π3#Unprintable.0, #Err.0#Rejected.0 fresh2, #Ok.0 cb4#Ok.0{excl cb4#Ok.0}; π4 calls 0, unseen
   summary delete: π3 R; res #Err.0#Failed.0#BadBody.0 cb3#Err.0{excl cb3#Err.0}, #Err.0#Failed.0#BadRequest.0 fresh1{lost}, #Err.0#Rejected.0 fresh2, #Ok.0 cb3#Ok.0{excl cb3#Ok.0}; π3 calls 0, unseen
   summary ignored: unused
-  summary login: res #Err.0#Failed.0#BadBody.0 fresh2{lost}, #Err.0#Failed.0#BadRequest.0 fresh3{lost}, #Err.0#Failed.0#BadRequest.0#UnprintableBody.0 fresh1{lost}, #Err.0#Rejected.0 fresh4
-  summary register: res #Err.0#Failed.0#BadBody.0 fresh2{lost}, #Err.0#Failed.0#BadRequest.0 fresh3{lost}, #Err.0#Failed.0#BadRequest.0#UnprintableBody.0 fresh1{lost}, #Err.0#Rejected.0 fresh4
+  summary login: res #Err.0#Failed.0#BadBody.0 fresh4{lost}, #Err.0#Failed.0#BadRequest.0 fresh2{lost}, #Err.0#Failed.0#BadRequest.0#UnprintableBody.0 fresh1{lost}, #Err.0#Rejected.0 fresh3
+  summary register: res #Err.0#Failed.0#BadBody.0 fresh4{lost}, #Err.0#Failed.0#BadRequest.0 fresh2{lost}, #Err.0#Failed.0#BadRequest.0#UnprintableBody.0 fresh1{lost}, #Err.0#Rejected.0 fresh3
   demands 1: accepted 1 (fresh 1, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
 module Article
   207:74 ++ <literal>: accepted fresh
@@ -28,15 +28,15 @@ module Article
   summary fromJson: π2.body R, π2.createdAt R, π2.description R, π2.favorited R, π2.favoritesCount R, π2.slug R, π2.tagList RA, π2.title R; res .tags π2.tagList
   summary fromPreviewJson: π2.createdAt R, π2.description R, π2.favorited R, π2.favoritesCount R, π2.slug R, π2.tagList RA, π2.title R; res .tags π2.tagList
   summary single: π2 R, π2#Err.0 RA, π2#Ok.0 R, π2#Ok.0.article.tagList A; res #Err.0 π2#Err.0, #Ok.0.tags π2#Ok.0.article.tagList
-  summary fetch: res #Err.0#Failed.0#BadBody.0 fresh1{lost}, #Err.0#Failed.0#BadRequest.0 fresh3{lost}, #Err.0#Rejected.0 fresh4, #Ok.0.tags fresh2{lost}
-  summary favorite: res #Err.0#Failed.0#BadBody.0 fresh1{lost}, #Err.0#Failed.0#BadRequest.0 fresh3{lost}, #Err.0#Rejected.0 fresh4, #Ok.0.tags fresh2{lost}
-  summary unfavorite: res #Err.0#Failed.0#BadBody.0 fresh1{lost}, #Err.0#Failed.0#BadRequest.0 fresh3{lost}, #Err.0#Rejected.0 fresh4, #Ok.0.tags fresh2{lost}
+  summary fetch: res #Err.0#Failed.0#BadBody.0 fresh3{lost}, #Err.0#Failed.0#BadRequest.0 fresh1{lost}, #Err.0#Rejected.0 fresh2, #Ok.0.tags fresh4{lost}
+  summary favorite: res #Err.0#Failed.0#BadBody.0 fresh3{lost}, #Err.0#Failed.0#BadRequest.0 fresh1{lost}, #Err.0#Rejected.0 fresh2, #Ok.0.tags fresh4{lost}
+  summary unfavorite: res #Err.0#Failed.0#BadBody.0 fresh3{lost}, #Err.0#Failed.0#BadRequest.0 fresh1{lost}, #Err.0#Rejected.0 fresh2, #Ok.0.tags fresh4{lost}
   summary delete: res #Err.0#Failed.0#BadRequest.0 fresh1{lost}, #Err.0#Rejected.0 fresh2
   summary formBody: π1.body R, π1.description R, π1.tags RA, π1.title R; res #Unprintable.0 fresh1{lost}, #Unprintable.0⋆ ~π1.tags
-  summary create: π2.body R, π2.description R, π2.tags RA, π2.title R; res #Err.0#Failed.0#BadBody.0 fresh2{lost}, #Err.0#Failed.0#BadRequest.0 fresh4{lost}, #Err.0#Failed.0#BadRequest.0#UnprintableBody.0 fresh1{lost}, #Err.0#Failed.0#BadRequest.0#UnprintableBody.0⋆ ~π2.tags, #Err.0#Rejected.0 fresh5, #Ok.0.tags fresh3{lost}
-  summary update: π3.body R, π3.description R, π3.tags RA, π3.title R; res #Err.0#Failed.0#BadBody.0 fresh2{lost}, #Err.0#Failed.0#BadRequest.0 fresh4{lost}, #Err.0#Failed.0#BadRequest.0#UnprintableBody.0 fresh1{lost}, #Err.0#Failed.0#BadRequest.0#UnprintableBody.0⋆ ~π3.tags, #Err.0#Rejected.0 fresh5, #Ok.0.tags fresh3{lost}
-  summary list: res #Err.0#Failed.0#BadBody.0 fresh1{lost}, #Err.0#Failed.0#BadRequest.0 fresh3{lost}, #Err.0#Rejected.0 fresh4, #Ok.0.articles fresh5{lost}, #Ok.0.articles[*] ~fresh6{lost}, #Ok.0.articles[*].tags ~fresh2{lost}
-  summary tags: res #Err.0#Failed.0#BadBody.0 fresh1{lost}, #Err.0#Failed.0#BadRequest.0 fresh3{lost}, #Err.0#Rejected.0 fresh4, #Ok.0 fresh2{lost}
+  summary create: π2.body R, π2.description R, π2.tags RA, π2.title R; res #Err.0#Failed.0#BadBody.0 fresh4{lost}, #Err.0#Failed.0#BadRequest.0 fresh2{lost}, #Err.0#Failed.0#BadRequest.0#UnprintableBody.0 fresh1{lost}, #Err.0#Failed.0#BadRequest.0#UnprintableBody.0⋆ ~π2.tags, #Err.0#Rejected.0 fresh3, #Ok.0.tags fresh5{lost}
+  summary update: π3.body R, π3.description R, π3.tags RA, π3.title R; res #Err.0#Failed.0#BadBody.0 fresh4{lost}, #Err.0#Failed.0#BadRequest.0 fresh2{lost}, #Err.0#Failed.0#BadRequest.0#UnprintableBody.0 fresh1{lost}, #Err.0#Failed.0#BadRequest.0#UnprintableBody.0⋆ ~π3.tags, #Err.0#Rejected.0 fresh3, #Ok.0.tags fresh5{lost}
+  summary list: res #Err.0#Failed.0#BadBody.0 fresh3{lost}, #Err.0#Failed.0#BadRequest.0 fresh1{lost}, #Err.0#Rejected.0 fresh2, #Ok.0.articles fresh5{lost}, #Ok.0.articles[*] ~fresh6{lost}, #Ok.0.articles[*].tags ~fresh4{lost}
+  summary tags: res #Err.0#Failed.0#BadBody.0 fresh3{lost}, #Err.0#Failed.0#BadRequest.0 fresh1{lost}, #Err.0#Rejected.0 fresh2, #Ok.0 fresh4{lost}
   summary timestamp: res ⟨render⟩ fresh1{lost}
   summary body: res ⟨render⟩ fresh2{lost}, ⟨render⟩⋆ ~fresh1
   summary tagList: π1 RA; res ⟨render⟩ fresh1{lost}, ⟨render⟩⋆ ~π1
@@ -63,9 +63,9 @@ module Author
   summary fromJson: unused
   summary profile: unused
   summary username: unused
-  summary fetch: res #Err.0#Failed.0#BadBody.0 fresh1{lost}, #Err.0#Failed.0#BadRequest.0 fresh2{lost}, #Err.0#Rejected.0 fresh3
-  summary follow: res #Err.0#Failed.0#BadBody.0 fresh1{lost}, #Err.0#Failed.0#BadRequest.0 fresh2{lost}, #Err.0#Rejected.0 fresh3
-  summary unfollow: res #Err.0#Failed.0#BadBody.0 fresh1{lost}, #Err.0#Failed.0#BadRequest.0 fresh2{lost}, #Err.0#Rejected.0 fresh3
+  summary fetch: res #Err.0#Failed.0#BadBody.0 fresh3{lost}, #Err.0#Failed.0#BadRequest.0 fresh1{lost}, #Err.0#Rejected.0 fresh2
+  summary follow: res #Err.0#Failed.0#BadBody.0 fresh3{lost}, #Err.0#Failed.0#BadRequest.0 fresh1{lost}, #Err.0#Rejected.0 fresh2
+  summary unfollow: res #Err.0#Failed.0#BadBody.0 fresh3{lost}, #Err.0#Failed.0#BadRequest.0 fresh1{lost}, #Err.0#Rejected.0 fresh2
   summary avatarSrc: unused
   summary avatar: res ⟨render⟩ fresh1{lost}
   summary link: res ⟨render⟩ fresh1{lost}
@@ -73,8 +73,8 @@ module Author
   demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
 module Comment
   summary fromJson: unused
-  summary list: res #Err.0#Failed.0#BadBody.0 fresh1{lost}, #Err.0#Failed.0#BadRequest.0 fresh2{lost}, #Err.0#Rejected.0 fresh3, #Ok.0 fresh4, #Ok.0[*] ~fresh5
-  summary post: res #Err.0#Failed.0#BadBody.0 fresh2{lost}, #Err.0#Failed.0#BadRequest.0 fresh3{lost}, #Err.0#Failed.0#BadRequest.0#UnprintableBody.0 fresh1{lost}, #Err.0#Rejected.0 fresh4
+  summary list: res #Err.0#Failed.0#BadBody.0 fresh3{lost}, #Err.0#Failed.0#BadRequest.0 fresh1{lost}, #Err.0#Rejected.0 fresh2, #Ok.0 fresh4, #Ok.0[*] ~fresh5
+  summary post: res #Err.0#Failed.0#BadBody.0 fresh4{lost}, #Err.0#Failed.0#BadRequest.0 fresh2{lost}, #Err.0#Failed.0#BadRequest.0#UnprintableBody.0 fresh1{lost}, #Err.0#Rejected.0 fresh3
   summary delete: res #Err.0#Failed.0#BadRequest.0 fresh1{lost}, #Err.0#Rejected.0 fresh2
   demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
 module Deploy
@@ -185,10 +185,10 @@ module Session
 module Settings
   203:14 ++ username: accepted fresh
   summary init: res .0.problems fresh1, .1#Cmd.0 fresh3{lost} shared(Cmd.none)#Cmd.0, .1#Cmd.0[*] ~fresh2{lost}
-  summary load: res #Err.0#Failed.0#BadBody.0 fresh1{lost}, #Err.0#Failed.0#BadRequest.0 fresh2{lost}, #Err.0#Rejected.0 fresh3
+  summary load: res #Err.0#Failed.0#BadBody.0 fresh3{lost}, #Err.0#Failed.0#BadRequest.0 fresh1{lost}, #Err.0#Rejected.0 fresh2
   summary update: π1 R, π1#CompletedSave.0#Err.0 R, π1#CompletedSave.0#Err.0#Rejected.0 R, π2 RA, π2.problems RA, π2.status R; res .0 π2, .0.problems fresh1{lost} π2.problems, .0.problems[*] ~fresh3, .1#Cmd.0 fresh2{lost} shared(Cmd.none)#Cmd.0, .1#Cmd.0[*] ~fresh4{lost}
   summary updateForm: π1 R, π2 RA, π2.problems RA, π2.status R; res .0 π2, .0.problems π2.problems, .1#Cmd.0 shared(Cmd.none)#Cmd.0; π1 calls ≤1
-  summary save: res #Err.0#Failed.0#BadBody.0 fresh2{lost}, #Err.0#Failed.0#BadRequest.0 fresh3{lost}, #Err.0#Failed.0#BadRequest.0#UnprintableBody.0 fresh1{lost}, #Err.0#Rejected.0 fresh4
+  summary save: res #Err.0#Failed.0#BadBody.0 fresh4{lost}, #Err.0#Failed.0#BadRequest.0 fresh2{lost}, #Err.0#Failed.0#BadRequest.0#UnprintableBody.0 fresh1{lost}, #Err.0#Rejected.0 fresh3
   summary validate: res fresh1{lost}
   summary toSession: π1.session R
   summary view: π1.problems RA, π1.status R; res .content⟨render⟩ fresh2{lost}, .content⟨render⟩⋆ ~fresh1{lost} ~shared(Page.loading)⟨render⟩ ~π1.problems
