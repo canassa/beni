@@ -1,0 +1,96 @@
+-- CK-244: a call of a function the checker cannot identify counts its result as made by the call.
+-- ownership (§30.10, issue #216): the result of a call of a function the
+-- checker cannot identify is `⊤call`, never owned, so a write onto it is
+-- rejected `unknown`, approximately. Each `bad…` declaration calls such a
+-- function and pushes onto what it returns, and every one of those functions
+-- may return the top-level `shared`: one read out of a `Dict` (the issue's
+-- reproducer), a record field the caller fills, an element of a list of
+-- functions, one handed on through `apply`'s parameter, and a top-level
+-- value that is a lambda. Before, each was accepted `call (no summary)`, and
+-- in place `List.push` wrote `shared`. A record field called with a dot is
+-- the field's value called (`load r = List.push (r.load ⊤) 3`): a slot of
+-- the parameter, so `load`'s callers are asked for a function that returns
+-- what it owns — `badField` is rejected `need`, exactly. The `good…`
+-- declarations call functions the checker identifies, whose summaries make
+-- what they return, and are accepted.
+import Dict exposing (Dict)
+
+
+shared : List Int
+shared = [ 1, 2 ]
+
+
+handlers : Dict Int (⊤ → List Int)
+handlers = Dict.fromList [ ( 0, λ⊤ → shared ) ]
+
+
+pub badDict : ⊤ → List Int
+badDict ⊤ =
+    f = Dict.get handlers 0 ▷ Maybe.withDefault λ⊤ → []
+    List.push (f ⊤) 3
+
+
+type alias Loader =
+    load : ⊤ → List Int
+
+
+load : Loader → List Int
+load r = List.push (r.load ⊤) 3
+
+
+pub badField : ⊤ → List Int
+badField ⊤ = load { load = λ⊤ → shared }
+
+
+pub goodField : ⊤ → List Int
+goodField ⊤ = load { load = λ⊤ → [ 1, 2 ] }
+
+
+pub badList : List (⊤ → List Int) → List Int
+badList fs =
+    case fs of
+        [ f, …_ ] →
+            List.push (f ⊤) 3
+
+        [] →
+            []
+
+
+apply : (⊤ → List Int) → List Int
+apply g = g ⊤
+
+
+pub badParam : List (⊤ → List Int) → List Int
+badParam fs =
+    case fs of
+        [ f, …_ ] →
+            List.push (apply f) 3
+
+        [] →
+            []
+
+
+named : ⊤ → List Int
+named = λ⊤ → shared
+
+
+pub badNamed : ⊤ → List Int
+badNamed ⊤ = List.push (named ⊤) 3
+
+
+make : ⊤ → List Int
+make ⊤ = [ 1, 2 ]
+
+
+pub goodCall : ⊤ → List Int
+goodCall ⊤ = List.push (make ⊤) 3
+
+
+pub goodParam : ⊤ → List Int
+goodParam ⊤ = List.push (apply make) 3
+
+
+pub goodLocal : ⊤ → List Int
+goodLocal ⊤ =
+    f = λ⊤ → [ 1, 2 ]
+    List.push (f ⊤) 3

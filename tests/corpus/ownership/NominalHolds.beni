@@ -1,15 +1,21 @@
 -- CK-238: a custom type is taken to hold anything, so a list of functions meets a write.
 -- ownership (§30.9): whether a value of a custom type may hold an object
 -- of another type is read off its constructors' fields, as written, not
--- assumed of every type that holds anything. `bench/corpus`'s applicative
--- chain: `andMap` appends its errors in place, and each step's argument is
--- a call of a function value with no class, whose result may be any cell
--- its callee captured — here the list of validators, a `List` of
--- functions. A `Validation` holds a `List (String × String)`, never a list
--- of functions, so that list is not one the write may reach, and the
--- chain is accepted past its second step (it was rejected `call`,
--- approximately, from the third). `twice` hands `andMap` one error list as
--- both operands, and is rejected: real sharing the text shows.
+-- assumed of every type that holds anything. A call of a function value
+-- with no class may return any cell its callee captured, of a type its
+-- result could hold. In `held`, `result` is such a call's `Validation`,
+-- live while the list of validators it captured is pushed onto: a
+-- `Validation` holds a `List (String × String)`, never a list of
+-- functions, so `result` is not a holder of that list and the push is
+-- accepted (before rule 4 it was rejected `call`, approximately).
+-- `heldLists` is its twin, whose result's type can be the written list's,
+-- and is rejected `call`. `bench/corpus`'s applicative chain, `check`:
+-- `andMap` appends its errors in place, and since §30.10 (issue #216) the
+-- errors each step hands it are what a function the checker cannot
+-- identify returned (`(firstOf [ … ]) "a" a`), `⊤call`, so each write is
+-- rejected `unknown`, approximately — the checker's limit, issue #223.
+-- `twice` hands `andMap` one error list as both operands, and is
+-- rejected: real sharing the text shows.
 pub type Validation a
     = Valid a
     | Invalid (List (String × String))
@@ -67,3 +73,21 @@ pub twice : ⊤ → Validation String
 twice ⊤ =
     errors = [ ( "a", "is required" ) ]
     andMap (Invalid errors) (Invalid errors)
+
+
+pub held : String → List (String, String → Validation String) × Validation String
+held a =
+    validators = [ required ]
+    result = (firstOf validators) "a" a
+    ( List.push validators required, result )
+
+
+pub heldLists : List (List Int → List Int), List Int → List Int × List Int
+heldLists fs xs =
+    case fs of
+        [ f, …_ ] →
+            result = f xs
+            ( List.push xs 1, result )
+
+        [] →
+            ( xs, xs )

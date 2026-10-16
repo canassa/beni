@@ -1,0 +1,78 @@
+-- CK-245: a send rests on a call of a function the checker cannot identify, and is accepted.
+-- ownership (§30.10, issue #216): `Cmd.task` sends what its work returns, and
+-- `update` pushes onto the payload in place, so the work must return a list
+-- it owns. `fetch` calls a record field with a dot inside the work, and
+-- hands `Cmd.task` its own tagger: the dot call is the field's value called,
+-- a slot of `fetch`'s parameter, and what the tagger is handed is what the
+-- slot returns, so `fetch`'s callers are asked for a loader that returns what
+-- it owns (issue #216's `send r tag` form) — `Shared` hands
+-- one answering the top-level `shared` and is rejected `need`, exactly;
+-- `Fresh` hands one answering a new list and is accepted. Before, the dot
+-- call was a conservative call whose result counted as made by it, and
+-- `Shared` was accepted. `Stored` reads its loader out of a `Dict`: a
+-- function the checker cannot identify, whose result is `⊤call`, so the
+-- send is rejected, approximately.
+import Cmd exposing (Cmd)
+import Dict exposing (Dict)
+import Html exposing (Html)
+import Sub
+import Tea
+
+
+type Msg
+    = Shared
+    | Fresh
+    | Stored
+    | Got (List Int)
+
+
+shared : List Int
+shared = [ 1, 2 ]
+
+
+type alias Loader =
+    load : ⊤ → List Int
+
+
+fetch : Loader, (List Int → Msg) → Cmd Msg
+fetch r tag = Cmd.task (λ⊤ → r.load ⊤) tag
+
+
+loaders : Dict Int (⊤ → List Int)
+loaders = Dict.fromList [ ( 0, λ⊤ → shared ) ]
+
+
+stored : ⊤ → Cmd Msg
+stored ⊤ =
+    f = Dict.get loaders 0 ▷ Maybe.withDefault λ⊤ → []
+    Cmd.task (λ⊤ → f ⊤) Got
+
+
+update : Msg, List Int → List Int × Cmd Msg
+update msg model =
+    case msg of
+        Shared →
+            ( model, fetch { load = λ⊤ → shared } Got )
+
+        Fresh →
+            ( model, fetch { load = λ⊤ → [ 5 ] } Got )
+
+        Stored →
+            ( model, stored ⊤ )
+
+        Got xs →
+            ( List.push xs 4, Cmd.none )
+
+
+view : List Int → Html Msg
+view model = <button onClick={Fresh}>{String.fromInt (List.length model)}</button>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( [], Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }
