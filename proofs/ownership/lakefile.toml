@@ -1,6 +1,7 @@
 name = "ownership"
 version = "0.1.0"
 defaultTargets = ["Ownership", "ownership", "AxiomCheck", "audit"]
+restoreAllArtifacts = true
 
 [[lean_lib]]
 name = "Ownership"
@@ -9,6 +10,7 @@ name = "Ownership"
 [[lean_lib]]
 name = "AxiomCheck"
 roots = ["Axioms"]
+needs = ["audit"]
 
 [[lean_exe]]
 name = "ownership"

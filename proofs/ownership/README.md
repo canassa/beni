@@ -92,6 +92,55 @@ no network, no paid service. The Lean project is outside the Zig gates. The brid
 the ownership shell supplies pinned Zorg on Linux and Apple Silicon (Intel
 macOS requires `zorg` on PATH).
 
+## Audit memory and replay
+
+Run audit commands from `proofs/ownership` inside the ownership shell.
+The source scanners use the current directory. The in-build audit uses `.lake/build/bin/audit`.
+Lake builds that executable before `AxiomCheck`.
+Lake also restores cached artifacts locally, so child imports use the same module files.
+
+Lean's imported compacted regions do not use ordinary reference counts.
+The audits keep global axiom and compiler-attribute checks in the parent.
+They replay each complete module in a sequential child with a fresh environment for its declared imports.
+Every child checks the same declarations and regenerated recursors.
+The parent requires an exact module/count receipt.
+Process exit releases the child's imported regions.
+The source, axiom, pinned-`sorry`, compiler-attribute, recursor, and kernel checks remain mandatory.
+
+Before delegation, both audits reject duplicate declarations that involve audited modules.
+This guard addresses the replacement-body risk in [#182](https://github.com/canassa/beni/issues/182).
+Its independent-module regressions and remaining acceptance work remain open.
+The memory repair addresses [#160](https://github.com/canassa/beni/issues/160).
+A local build replayed all 4,842 constants under `MemoryMax=10G` and `MemorySwapMax=2G`.
+Its scope reported a 3.7 GiB memory peak and a 345.1 MiB swap peak.
+The complete independent audit remains mandatory and also checks the modules that `Main` imports.
+Keep the shared lock and memory caps for every heavy check.
+
+If any audit step fails or stops, `scripts/audit.sh` keeps its work directory and logs.
+It removes them only after complete success. This fixes [#242](https://github.com/canassa/beni/issues/242).
+
+After `lake build`, run the audit controls from this directory.
+Start only with at least 6 GB of available memory.
+
+```sh
+free -g
+flock /home/jayson/.local/state/beni-dispatch/heavy.lock \
+  systemd-run --user --scope --quiet \
+  -p MemoryMax=10G -p MemorySwapMax=2G -- \
+  nix develop ../..#ownership --command bash scripts/audit-controls.sh
+```
+
+The suite checks one successful module receipt and seven negative controls.
+It checks the module allowlist, both duplicate guards, both child-error paths, and both wrong-receipt paths.
+It keeps sources, command arguments, checksums, and logs under `zig-out/scratch/audit-negative.*`.
+The independent wrong-receipt control copies `Audit.lean` into that directory.
+It replaces only the CLI `main` with a test dispatcher.
+The real `Audit.checkModuleChild` body remains unchanged.
+The dispatcher returns a wrong receipt with exit zero in child mode.
+The parent mode calls the real helper and requires its refusal.
+The native build uses the audit's recorded compiler and linker arguments.
+It refuses unfamiliar trace formats or ambiguous paths.
+
 ## Modules
 
 | File | Content |

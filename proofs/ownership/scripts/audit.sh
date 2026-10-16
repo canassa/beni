@@ -14,12 +14,12 @@ set -euo pipefail
 rev=${1:-HEAD}
 repo=$(git rev-parse --show-toplevel)
 work=$(mktemp -d "${XDG_CACHE_HOME:-$HOME/.cache}/ownership-audit.XXXXXX")
+audit_passed=false
 cleanup() {
-  status=$?
-  if [ "$status" -eq 0 ]; then
+  if [ "$audit_passed" = true ]; then
     rm -rf "$work"
   else
-    echo "audit failed; retained work and logs: $work" >&2
+    echo "audit incomplete; retained work and logs: $work" >&2
   fi
 }
 trap cleanup EXIT
@@ -40,3 +40,4 @@ if ! sha256sum -c --quiet "$work/audit.sha"; then
 fi
 lake env ./.lake/build/bin/audit env
 echo "audit passed: $rev"
+audit_passed=true
