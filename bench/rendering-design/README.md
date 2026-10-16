@@ -227,7 +227,7 @@ one family before starting the next. Native compiler builds remain serialized.
 `resource-run.mjs` admits at most six CPU slots and 26,000 MiB of estimated
 concurrent memory reservations; large minifiers can run alongside smaller jobs.
 A native build reserves four CPU slots and an N-dependent 1–16 GiB;
-its enforced address-space cap remains 16 GiB. These are scheduling limits,
+its default address-space cap is 16 GiB. These are scheduling limits,
 not measured application costs or repository gates. Repeated identical byte
 strings are compressed only once within each account; a seven-strategy check
 retains exact equality of every price and attribution field.
@@ -261,3 +261,15 @@ by −1.2%. This demonstrates a composition-dependent compression effect, so
 homogeneous slopes are not additive predictions for mixed apps. The comparison
 and its plotted values are in `results/stress/mixture-compression.json` and
 `results/stress/graphs/mixture-compression.svg`.
+
+
+`memory-probe.mjs FAMILY N 24` retries a capped TEA point with the same source
+and compiler under a 24 GiB address-space cap. It reserves the entire six-slot,
+26,000 MiB scheduling budget during compilation. Successful retries are priced
+by the unchanged size worker, then continue with measured points until crossing
+512 kB or failing at the larger cap. The nested N3,888 retry reached 513,666
+brotli bytes. `memory-probes.jsonl` retains attempt identities and limits;
+`recovered.jsonl` preserves the original failed attempt when its exact source and
+compiler have a successful larger-budget result. Changing the source, compiler,
+or merely repeating the same cap cannot mark a failed point recovered. This
+separates a selected resource budget from an intrinsic compiler limitation.

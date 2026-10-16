@@ -15,7 +15,7 @@
     "vanilla.mjs": "9c694b847b6ff680ac97a60fc5b58d287f1d099d8e78811908bc4cf6f3a4d709",
     "vanilla.js": "f00333faa59134e0e120265ff17dc4868905dfff50db6f55b68adde2e439c21a",
     "stress-generate.mjs": "705d7a6fdc3b6a75f0ec6ca6e335fc843e73d85de91d8a7bff195d65521ebe97",
-    "stress-worker.mjs": "ac48674ddc3626f3bb90a493f8f4aa8aab46290e3a1a8b9743b0814d6b815717",
+    "stress-worker.mjs": "3bf092eb18a4b03320bf18323413c2abdc2f69b7750b73c6657b9cc310e30b0d",
     "measure.mjs": "d4f09efb992c489bccacd1edead9f305a7e10ede67742c144b2d4a8a1c0f7da6",
     "compression-batch.mjs": "348975757435dc6f5801e4a0cc2a58adbfb5b1ee2c045ce985c7ad96be17dce1",
     "provenance.mjs": "e24055892ba759997c2b1927031b48be01a34dfba27457528aa615f8b69d7cf0",
@@ -99,6 +99,10 @@
     {
       "date": "2026-10-16T00:11:52.231221+00:00",
       "change": "Admit ordinary resource requests in arrival order to prevent large jobs from starving behind newer small jobs. Optional compression helpers remain nonblocking and may borrow capacity only while the oldest queued job cannot fit. Controlled admission check passed (helper, older job, newer job); no output-generation or pricing changes. Earlier waiting Solid N96192 was admitted by briefly holding new admissions; all processes resumed at 00:01:01 UTC."
+    },
+    {
+      "date": "2026-10-16T00:50:17.097815+00:00",
+      "change": "An exclusive nested TEA N3888 retry succeeded with a 24 GiB address-space cap after the original 16 GiB capped failure. The worker now accepts explicit native/output artifact directories for pricing this sensitivity probe with exactly the existing minifier and accounting. Default paths, byte strings, source and compiler are unchanged. The default campaign build cap remains 16 GiB; the retry is separately identified."
     }
   ],
   "compiler_address_space_limit_bytes": 17179869184,
@@ -133,7 +137,7 @@
       "vanilla.mjs": "9c694b847b6ff680ac97a60fc5b58d287f1d099d8e78811908bc4cf6f3a4d709",
       "vanilla.js": "f00333faa59134e0e120265ff17dc4868905dfff50db6f55b68adde2e439c21a",
       "stress-generate.mjs": "705d7a6fdc3b6a75f0ec6ca6e335fc843e73d85de91d8a7bff195d65521ebe97",
-      "stress-worker.mjs": "ac48674ddc3626f3bb90a493f8f4aa8aab46290e3a1a8b9743b0814d6b815717",
+      "stress-worker.mjs": "3bf092eb18a4b03320bf18323413c2abdc2f69b7750b73c6657b9cc310e30b0d",
       "measure.mjs": "d4f09efb992c489bccacd1edead9f305a7e10ede67742c144b2d4a8a1c0f7da6",
       "compression-batch.mjs": "348975757435dc6f5801e4a0cc2a58adbfb5b1ee2c045ce985c7ad96be17dce1",
       "provenance.mjs": "e24055892ba759997c2b1927031b48be01a34dfba27457528aa615f8b69d7cf0",
@@ -204,6 +208,10 @@
       {
         "date": "2026-10-16T00:11:52.234921+00:00",
         "change": "Admit ordinary resource requests in arrival order to prevent large jobs from starving behind newer small jobs. Optional compression helpers remain nonblocking and may borrow capacity only while the oldest queued job cannot fit. Controlled admission check passed (helper, older job, newer job); no output-generation or pricing changes. Earlier waiting Solid N96192 was admitted by briefly holding new admissions; all processes resumed at 00:01:01 UTC."
+      },
+      {
+        "date": "2026-10-16T00:50:17.105705+00:00",
+        "change": "An exclusive nested TEA N3888 retry succeeded with a 24 GiB address-space cap after the original 16 GiB capped failure. The worker now accepts explicit native/output artifact directories for pricing this sensitivity probe with exactly the existing minifier and accounting. Default paths, byte strings, source and compiler are unchanged. The default campaign build cap remains 16 GiB; the retry is separately identified."
       }
     ],
     "initial_scope": "Unchanged ten-shape catalogue. Three original seeds through N32; seed 17 extended on a 1.5x grid with extra measured points near 512 kB. Each strategy stops at its first measured rendering response >=512000 brotli bytes. No padding. Later points for shared-factory baselines need no additional candidate or today output once those curves crossed. Every point requiring BIR builds real TEA; direct builds stop once their measured curve crosses; all sources remain reproducible. Lines join measured points, never extrapolate. Native curves are not rebuilt after their measured crossing or terminal resource failure. Larger prototype points consume real per-component BIR dumps without another full-app build.",
@@ -232,7 +240,7 @@
       "vanilla.mjs": "9c694b847b6ff680ac97a60fc5b58d287f1d099d8e78811908bc4cf6f3a4d709",
       "vanilla.js": "f00333faa59134e0e120265ff17dc4868905dfff50db6f55b68adde2e439c21a",
       "stress-generate.mjs": "705d7a6fdc3b6a75f0ec6ca6e335fc843e73d85de91d8a7bff195d65521ebe97",
-      "stress-worker.mjs": "ac48674ddc3626f3bb90a493f8f4aa8aab46290e3a1a8b9743b0814d6b815717",
+      "stress-worker.mjs": "3bf092eb18a4b03320bf18323413c2abdc2f69b7750b73c6657b9cc310e30b0d",
       "measure.mjs": "d4f09efb992c489bccacd1edead9f305a7e10ede67742c144b2d4a8a1c0f7da6",
       "compression-batch.mjs": "348975757435dc6f5801e4a0cc2a58adbfb5b1ee2c045ce985c7ad96be17dce1",
       "provenance.mjs": "e24055892ba759997c2b1927031b48be01a34dfba27457528aa615f8b69d7cf0",
@@ -320,6 +328,10 @@
       {
         "date": "2026-10-16T00:11:52.237134+00:00",
         "change": "Admit ordinary resource requests in arrival order to prevent large jobs from starving behind newer small jobs. Optional compression helpers remain nonblocking and may borrow capacity only while the oldest queued job cannot fit. Controlled admission check passed (helper, older job, newer job); no output-generation or pricing changes. Earlier waiting Solid N96192 was admitted by briefly holding new admissions; all processes resumed at 00:01:01 UTC."
+      },
+      {
+        "date": "2026-10-16T00:50:17.110254+00:00",
+        "change": "An exclusive nested TEA N3888 retry succeeded with a 24 GiB address-space cap after the original 16 GiB capped failure. The worker now accepts explicit native/output artifact directories for pricing this sensitivity probe with exactly the existing minifier and accounting. Default paths, byte strings, source and compiler are unchanged. The default campaign build cap remains 16 GiB; the retry is separately identified."
       }
     ],
     "compiler_address_space_limit_bytes": 17179869184,

@@ -1,0 +1,14 @@
+{
+  "date": "2026-10-16T01:04:21.852Z",
+  "scope": "HTML report rendering only; no application timing or repository suite.",
+  "desktop": {
+    "recovery": true,
+    "invalid": false,
+    "graphs": 13
+  },
+  "mobile": {
+    "viewport": 390,
+    "width": 390
+  },
+  "errors": []
+}

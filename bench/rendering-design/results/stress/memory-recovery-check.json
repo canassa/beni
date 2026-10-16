@@ -1,0 +1,11 @@
+{
+  "date": "2026-10-16T00:52:58.751Z",
+  "passed": true,
+  "cases": [
+    "same source/compiler, larger cap",
+    "changed source",
+    "changed compiler",
+    "same cap"
+  ],
+  "scope": "Provenance classification check with synthetic row metadata, not bundle measurements."
+}

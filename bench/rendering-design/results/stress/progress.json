@@ -1,7 +1,7 @@
 {
-  "updated": "2026-10-16T00:20:23.616Z",
-  "observations": 933,
-  "native_builds": 193,
+  "updated": "2026-10-16T01:03:53.794Z",
+  "observations": 982,
+  "native_builds": 195,
   "crossings": [
     {
       "family": "filter",
@@ -16,10 +16,28 @@
       "brotli": 524422
     },
     {
+      "family": "filter",
+      "mode": "cells",
+      "n": 6096,
+      "brotli": 527363
+    },
+    {
+      "family": "filter",
+      "mode": "static",
+      "n": 8304,
+      "brotli": 519024
+    },
+    {
       "family": "form",
       "mode": "tea",
       "n": 4256,
       "brotli": 527585
+    },
+    {
+      "family": "form",
+      "mode": "partial",
+      "n": 7344,
+      "brotli": 524559
     },
     {
       "family": "list",
@@ -56,6 +74,12 @@
       "mode": "solid",
       "n": 96192,
       "brotli": 518127
+    },
+    {
+      "family": "list",
+      "mode": "vanilla",
+      "n": 102416,
+      "brotli": 525088
     },
     {
       "family": "mixed",
@@ -106,10 +130,28 @@
       "brotli": 516979
     },
     {
+      "family": "modal",
+      "mode": "static",
+      "n": 10288,
+      "brotli": 529693
+    },
+    {
+      "family": "nested",
+      "mode": "tea",
+      "n": 3888,
+      "brotli": 513666
+    },
+    {
       "family": "nested",
       "mode": "cells",
       "n": 8416,
       "brotli": 526250
+    },
+    {
+      "family": "nested",
+      "mode": "partial",
+      "n": 8672,
+      "brotli": 525136
     },
     {
       "family": "summary",
@@ -122,6 +164,18 @@
       "mode": "partial",
       "n": 5728,
       "brotli": 525360
+    },
+    {
+      "family": "summary",
+      "mode": "cells",
+      "n": 6208,
+      "brotli": 524834
+    },
+    {
+      "family": "table",
+      "mode": "tea",
+      "n": 3312,
+      "brotli": 515906
     }
   ],
   "compiler_limited": [
@@ -144,11 +198,6 @@
       "family": "cluster",
       "mode": "direct",
       "n": 1728
-    },
-    {
-      "family": "nested",
-      "mode": "tea",
-      "n": 3888
     },
     {
       "family": "cluster",
@@ -181,6 +230,11 @@
       "n": 3888
     },
     {
+      "family": "tabs",
+      "mode": "tea",
+      "n": 4304
+    },
+    {
       "family": "filter",
       "mode": "direct",
       "n": 512
@@ -199,6 +253,16 @@
       "family": "modal",
       "mode": "tea",
       "n": 4112
+    }
+  ],
+  "recovered": [
+    {
+      "family": "nested",
+      "mode": "tea",
+      "n": 3888,
+      "sha256": "c6fb10e4af9658e18bd74e1855421fafe23d5db63ec01e4569a54a63831ad8c4",
+      "brotli": 513666,
+      "address_space_limit_bytes": 25769803776
     }
   ]
 }

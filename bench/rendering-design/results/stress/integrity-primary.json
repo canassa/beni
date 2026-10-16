@@ -1,7 +1,7 @@
 {
-  "verified_at": "2026-10-16T00:20:00.828Z",
-  "observations": 359,
-  "native_builds": 76,
+  "verified_at": "2026-10-16T01:03:59.372Z",
+  "observations": 378,
+  "native_builds": 77,
   "scope": "Compiler and minified JavaScript SHA-256 and raw length with source-map URL trailers removed, disjoint raw byte accounting, and source spec identity. No size fits or compression results are recomputed; no project suites.",
   "crossings": [
     {
@@ -51,6 +51,37 @@
       "mode": "cells",
       "n": 8416,
       "brotli": 526250
+    },
+    {
+      "family": "form",
+      "mode": "partial",
+      "n": 7344,
+      "brotli": 524559
+    },
+    {
+      "family": "nested",
+      "mode": "partial",
+      "n": 8672,
+      "brotli": 525136
+    },
+    {
+      "family": "nested",
+      "mode": "tea",
+      "n": 3888,
+      "brotli": 513666
+    }
+  ],
+  "recovered": [
+    {
+      "family": "nested",
+      "mode": "tea",
+      "n": 3888,
+      "retry": {
+        "n": 3888,
+        "sha256": "c6fb10e4af9658e18bd74e1855421fafe23d5db63ec01e4569a54a63831ad8c4",
+        "brotli": 513666,
+        "address_space_limit_bytes": 25769803776
+      }
     }
   ],
   "compiler_limited": [
@@ -73,11 +104,6 @@
       "family": "cluster",
       "mode": "direct",
       "n": 1728
-    },
-    {
-      "family": "nested",
-      "mode": "tea",
-      "n": 3888
     },
     {
       "family": "cluster",
