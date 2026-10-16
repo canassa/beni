@@ -3294,7 +3294,7 @@ corpus, core and every platform, the model at entry settles in at most 4 rounds,
 callback's result in 3, a fold's shape in 3 and its spine in 2; the research dashboard (shared components,
 `beni-direct`, N = 1 … 1 024) in 3 and 2. No program reaches the cap. The verdicts of all of them are unchanged;
 one summary is more precise (`bench/corpus`'s `Decode.at` loses a `⊤`). The checker does fewer instructions on
-Conduit (−13 %), as it runs 2 rounds where it ran 32. Summary blocks advance to version 13.
+Conduit (−15 % instructions, a ReleaseFast `check`), as it runs 2 rounds where it ran 32. Summary blocks advance to version 13.
 
 ### *Amended 2026-10-14 (the subscription tap builder):* fresh folds remain a limit
 
