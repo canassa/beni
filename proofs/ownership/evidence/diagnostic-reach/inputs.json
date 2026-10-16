@@ -1,0 +1,18 @@
+{
+  "capturedAt": "2026-10-16T15:46:36.274439+00:00",
+  "capturePhase": "during campaign; before the queued CI rebuild",
+  "base": "9e0c3d07bbe1ddc8135f9eef96c6901395e7594f",
+  "binarySha256": "ae74495662f663e39fd28a9cc3d7759078d8655799426972b3edcef1b242d83a",
+  "mainSourceSha256": "752a4fab9e382fe37f0eb478a9d2490825d35075fbbbebf8125aa383912cc63a",
+  "inputs": {
+    "proofs/ownership/Ownership/Enumerate.lean": "12b0a9554bd3f4412f3de6bdcf8e41c4f33260f6bc86d3efbbe1defb2a5fdeae",
+    "proofs/ownership/Ownership/DiagnosticCampaign.lean": "c42e182a8df659cefbbf6dcd5ed34741c027e07f73cea2ebc9cc5a018da11b6c",
+    "proofs/ownership/Ownership/DiagnosticCalls.lean": "ff2111d6b207f0e07e306ae4d8c60f57879fa3b700ea49ec2a88a0815c4ce0ff",
+    "proofs/ownership/Ownership/Diagnostics.lean": "1d4f72ae9f69943962515b871da10364aac2f11cd80e8f7c27e8e73740e2dd44",
+    "proofs/ownership/Ownership/DiagnosticFixtures.lean": "271f7559c1f86f31d4d6d830f61f868a9811c2d5310d066f61338be50fad9a58",
+    "proofs/ownership/Ownership/Semantics.lean": "fb8f5a64cd97e41d37cdf413be00d87e1b3091f8dacff18de06e6378581ae409"
+  },
+  "command": ".lake/build/bin/ownership diagnostics 20000 20261011 --enumerate-bound=2 --out=/home/jayson/src/beni.worktrees/ownership-proofs/zig-out/scratch/reach-campaign-1-evidence.log",
+  "rejectedFuel": 5000,
+  "limits": "Local capture. This is not a complete reproducible-build manifest. External dependencies are not hashed."
+}
