@@ -126,6 +126,16 @@ Its committed-tree audit passed with every check intact. The expanded enumerator
 Inspect actual write events and their live readers, including outer call frames and unfinished operations.
 Count incomplete executions separately. Interpreter agreement or final heap differences cannot replace this check.
 
+As built (2026-10-16): `Invariant` has the clauses `linksValid : LinksValid hs` and `linkNamed : LinkNamed hs env live γ`.
+`LinksValid` records the link structure every reachable state has: the view is allocated after its source, both exist, the source is nonempty, and no view has two sources.
+`LinkNamed` is the narrowed clause: for every array a live path or a permanent observer protects, every array in its link component has exactly its origins.
+A component nothing protects is unconstrained, so a read-only split keeps its distinct names and a garbage view asks nothing.
+The step cases can establish it through `LinkClosed` (`LinkClauses.lean`), the per-link closure: the checker gives a view its source's origins and a fresh site, so a post-naming that names the view by exactly the source's origins is always available.
+The first bullet's contents fact is not a clause. The model's `put` writes with `write`, not `writeLinked`, so the garbage view of a closed and viewed builder goes stale while the program is accepted and both runs agree (`ViewLinks.lean`, *A stale garbage view*). A protected view is never stale: its cells include its source's, so the demand on the source fails.
+`StatementChecks/ViewLinks.lean` proves that the #169 pre-state admits no naming under the clauses.
+Open: preservation of `LinkNamed` under a successful `writeLinked` (the protected set changes with the heap) and under a call; the fourth bullet (certificate reasoning over view addresses); the written-storage premise of `summary_sound` and `map_summary_sound` (R1); the validity and snapshot premises (R2); and their derivation at accepted callers.
+#258 still leaves open the direct controls for `inCall` and `rawObservedWrites`, the rejected-error classes, generated accepted read-only linked calls, and the `CallRecord.preKept` wording; none of them is a premise of the clauses.
+
 ### Local linked-write frame
 
 [LinkedWriteFrame.lean](Ownership/LinkedWriteFrame.lean) proves the runtime frame for a successful `writeLinked` operation.

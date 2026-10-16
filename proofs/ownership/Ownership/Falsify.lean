@@ -187,6 +187,43 @@ def typedB (ds : List Decl) (heap : Heap) (env : Bindings) (types : Env Ty) (e :
 def projections (o : Observation) (w : Value) (p : Path) : Option (Observation × Value) := do
   pure (← projectObs o p, ← projectVal w p)
 
+/-- `LinksValid` as a test: `none` when every stored link is valid. -/
+def linksValidB (hs : InPlaceSemantics.State) : Option String := Id.run do
+  for (v, s, _) in hs.links do
+    if !(s < v && v < hs.heap.size) then return some s!"link {v} of {s}: not allocated after its source"
+    match hs.heap[s]? with
+    | none => return some s!"link {v} of {s}: no source array"
+    | some source => if source.isEmpty then return some s!"link {v} of {s}: empty source"
+  if !nodup (hs.links.map (·.1)) then return some "a view has two sources"
+  pure none
+
+/-- The undirected link component of an array, by saturation. -/
+def linkComponent (links : List (Nat × Nat × Bool)) (c : Nat) : List Nat := Id.run do
+  let mut component := [c]
+  for _ in List.range (links.length + 1) do
+    for (v, s, _) in links do
+      if component.contains v && !component.contains s then component := component ++ [s]
+      else if component.contains s && !component.contains v then component := component ++ [v]
+  pure component
+
+/-- The arrays a live path or a permanent observer reaches. -/
+def protectedArrays (hs : InPlaceSemantics.State) (env : Bindings) (live : Live) : List Nat :=
+  live.flatMap (fun (x, p) => match env.lookup x with
+    | some (_, w) => match projectVal w p with
+      | some w' => reachArrays hs.heap depthFuel w'
+      | none => []
+    | none => []) ++ hs.kept.toList.flatMap (reachArrays hs.heap depthFuel)
+
+/-- `LinkNamed` as a test: in a link component something protects, every
+    array has the same origins. -/
+def linkNamedB (hs : InPlaceSemantics.State) (env : Bindings) (live : Live) (γ : FNaming) : Bool :=
+  let protectedCells := protectedArrays hs env live
+  hs.links.all fun (v, _, _) =>
+    let component := linkComponent hs.links v
+    !component.any protectedCells.contains ||
+      component.all fun d =>
+        (originsOf γ v).all (originsOf γ d).contains && (originsOf γ d).all (originsOf γ v).contains
+
 /-- `Invariant` as a test, for a finite naming: `none` when it holds. -/
 def invariantB (vs : ValueSemantics.State) (hs : InPlaceSemantics.State) (env : Bindings)
     (live : Live) (aenv : Env Abstract) (escapes : List Origin) (γ : FNaming) (naming := true) : Option String := Id.run do
@@ -218,6 +255,8 @@ def invariantB (vs : ValueSemantics.State) (hs : InPlaceSemantics.State) (env : 
           if immutablePath q && !namedB γ (a.cellsAt q) c then
             return some s!"binding {x}: array {c} at {repr q} not named"
   if naming && !separatingB γ then return some "naming not separating"
+  if let some why := linksValidB hs then return some why
+  if naming && !linkNamedB hs env live γ then return some "a protected linked array is named apart from its component"
   pure none
 
 /-! ## Constructing the naming after a step -/

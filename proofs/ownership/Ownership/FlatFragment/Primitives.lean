@@ -664,6 +664,8 @@ theorem shared_post_invariant {declarations : List Decl} {vs : ValueSemantics.St
       described := by simpa only [heapSame] using inv.described
       named := by simpa only [heapSame] using inv.named
       separating := inv.separating
+      linksValid := Soundness.linksValid_of_empty _ (by unfold heapShared; rw [heapObserved_links]; exact inv.links)
+      linkNamed := Soundness.linkNamed_of_empty _ _ _ _ (by unfold heapShared; rw [heapObserved_links]; exact inv.links)
     }
     heapInts := by rw [heapSame]; exact inv.heapInts
     links := by unfold heapShared; rw [heapObserved_links]; exact inv.links

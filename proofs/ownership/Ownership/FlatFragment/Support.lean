@@ -1,24 +1,9 @@
-import Ownership.Soundness
-import Ownership.BuilderProof
-import Ownership.LinkedWriteFrame
-import Ownership.KernelChecks
-import Ownership.StatementChecks.ViewLinks
-import Ownership.Report
-import Ownership.Question
-import Ownership.DiagnosticCampaign
-import Ownership.Smoke
-import Ownership.Oracle
-import Ownership.Fixtures
-import Ownership.Falsify
-import Ownership.Enumerate
-import Ownership.Cli
-import Ownership.Bridge
-import Ownership.Targeted
+import Ownership.LinkClauses
 
-/-! The fragment modules form one import chain, and this first link imports
-every other proof and executable module of the package. The audit rejects an
-equation lemma that two modules realize, so a module that unfolds a model
-definition must see every earlier realization. -/
+/-! The fragment modules form one import chain. Its first link imports
+`LinkClauses`, which imports every other proof and executable module of the
+package. The audit rejects an equation lemma that two modules realize, so a
+module that unfolds a model definition must see every earlier realization. -/
 
 /-! The first flat fragment: the predicate, demand and footprint support, the naming extension, flat descriptions, root names, live sets, live cells, and liveness bookkeeping. -/
 
