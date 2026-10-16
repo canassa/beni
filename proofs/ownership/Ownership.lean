@@ -14,6 +14,7 @@ import Ownership.Soundness
 import Ownership.StatementChecks.ConstructionFuel
 import Ownership.StatementChecks.SummaryObservers
 import Ownership.StatementChecks.ViewLinks
+import Ownership.StatementChecks.LinkSummary
 import Ownership.DiagnosticCampaign
 import Ownership.LinkClauses
 import Ownership.FlatFragment.Trace

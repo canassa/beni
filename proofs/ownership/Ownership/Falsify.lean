@@ -721,7 +721,8 @@ def loggedCalls (p : Program) (fuel := 100000) : Except String (Array CallRecord
   let (_, s) ← (eval fuel p.declarations none [] p.main).run { fuel, logCalls := true }
   pure s.calls
 
-def preOf (cr : CallRecord) : InPlaceSemantics.State := { fuel := 0, heap := cr.preHeap, kept := cr.preKept }
+def preOf (cr : CallRecord) : InPlaceSemantics.State :=
+  { fuel := 0, heap := cr.preHeap, kept := cr.preKept, links := cr.preLinks }
 def postOf (cr : CallRecord) : InPlaceSemantics.State := { fuel := 0, heap := cr.postHeap, kept := cr.postKept }
 
 /-- The canonical naming of a call: each canonical input origin names the
@@ -768,12 +769,30 @@ structure CallTally where
   vacuousSeparating : Nat := 0
   vacuousDescribed : Nat := 0
   vacuousUnique : Nat := 0
+  vacuousLinked : Nat := 0
   vacuousOther : Nat := 0
   deriving Repr
 
 def holders (s : InPlaceSemantics.State) (c : Nat) : List Holder :=
   ((List.range s.heap.size).filter fun d => ((s.heap[d]?).getD []).any fun x => (valueRefs x).contains c).map .array ++
   (if s.kept.toList.any fun x => (valueRefs x).contains c then [.kept] else [])
+
+/-- `WritePermitted` as a test. -/
+def writePermittedB (s : Summary) (nargs i : Nat) (q : Path) : Bool :=
+  rowHas (s.writes ++ s.consumes) (inputOrigin nargs i q) || (q == [.env] && (s.calls.lookup i).getD 0 ≥ 1)
+
+/-- `LinkedWritesCovered` as a test: every input array a link connects to an
+    input array at a permitted path is at a permitted path. -/
+def linkedWritesCoveredB (s : Summary) (ins : List Abstract) (inputs : List Value) (nargs : Nat)
+    (links : List (Nat × Nat × Bool)) (heap : Heap) : Bool :=
+  let canonicalArrays := inputs.zipIdx.flatMap fun (w, i) =>
+    let a := ins[i]?.getD .bottom
+    (pathsOf heap depthFuel w []).filterMap fun (q, c) =>
+      if (a.paths.map Prod.fst).contains q then some (i, q, c) else none
+  canonicalArrays.all fun (i, q, c) =>
+    !writePermittedB s nargs i q ||
+      (linkComponent links c).all fun d =>
+        canonicalArrays.all fun (j, p, d') => d' != d || writePermittedB s nargs j p
 
 /-- Check one call against one cache entry: `none` if fine or vacuous. -/
 def checkCall (decls : List Decl) (cr : CallRecord) (e : CacheEntry) (enforceArity := true) : Option String × Bool × Bool × String := Id.run do
@@ -790,6 +809,9 @@ def checkCall (decls : List Decl) (cr : CallRecord) (e : CacheEntry) (enforceAri
   if !separatingB γ then return (none, false, false, "separating")
   for (w, i) in inputs.zipIdx do
     if let some _ := describesB γ heap (e.inputs[i]?.getD .bottom) w then return (none, false, false, "described")
+  -- The written-storage premise (#169, R1).
+  if !linkedWritesCoveredB e.summary e.inputs inputs nargs cr.preLinks heap then
+    return (none, false, false, "linked")
   -- classes: closures at the symbolic slots resolve the guards as recorded.
   let mut fs : List (Nat × Abstract) := []
   for (a, j) in e.inputs.zipIdx do
@@ -889,6 +911,7 @@ def summaryCampaign (count seed : Nat) (limit : Nat := 5) (checker : Ownership.C
           | "separating" => { t with vacuousSeparating := t.vacuousSeparating + 1 }
           | "described" => { t with vacuousDescribed := t.vacuousDescribed + 1 }
           | "unique" => { t with vacuousUnique := t.vacuousUnique + 1 }
+          | "linked" => { t with vacuousLinked := t.vacuousLinked + 1 }
           | _ => { t with vacuousOther := t.vacuousOther + 1 }
         if reason == "described" && shownVacuous < limit then
           shownVacuous := shownVacuous + 1
