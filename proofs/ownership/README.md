@@ -273,6 +273,7 @@ The write diagnostics count actual runtime write events.
 | `FlatFragment/` | the first flat fragment: the strengthened relation, its heap frame, the expression cases, and the trace corollary, in one import chain |
 | `LinkClauses.lean` | the invariant's link clauses under allocation, nonempty writes and view creation, and the per-link closure that gives the naming clause |
 | `StatementChecks/LinkSummary.lean` | the R1 witness: every old premise of `summary_sound` at a linked pre-state, the failed conclusion, and the new premise's refusal |
+| `CallDerivation.lean` | the written-storage premise at a first-order call without captures, from the call-site invariant and the call's demands |
 | `Soundness.lean` | the bridge to concrete heaps and the soundness statements |
 | `Falsify.lean` | executes the unproved statements on concrete configurations (`ownership falsify`) |
 | `Report.lean` | printing summaries |
@@ -318,7 +319,7 @@ The fragment excludes field atoms, calls, closures, views, constructions, branch
 [ViewLinks.lean](Ownership/StatementChecks/ViewLinks.lean) proves that the #169 pre-state admits no naming under them, that the same witness in allocation order fails `LinkNamed` alone, and checks that a builder's `put` leaves a garbage view stale, which is why a view's contents are not a clause.
 [LinkClauses.lean](Ownership/LinkClauses.lean) proves `LinksValid` with the same heap and links, after an allocation, after a `set!` of a nonempty list and after a view; `LinkNamed` with the same heap, links and observers; and that a per-link closed naming (`LinkClosed`) gives `LinkNamed`. No theorem uses these lemmas yet.
 Preservation under a successful `writeLinked` and under a call remains open.
-`summary_sound` and `map_summary_sound` carry the written-storage premise `LinkedWritesCovered` (R1): an input array a link connects to an input array at a permitted path is at a permitted path. [LinkSummary.lean](Ownership/StatementChecks/LinkSummary.lean) proves that the R1 pre-state fails it and that, without it, every other premise held there while the conclusion failed. Its derivation at accepted callers remains open.
+`summary_sound` and `map_summary_sound` carry the written-storage premise `LinkedWritesCovered` (R1): an input array a link connects to an input array at a permitted path is at a permitted path. [LinkSummary.lean](Ownership/StatementChecks/LinkSummary.lean) proves that the R1 pre-state fails it and that, without it, every other premise held there while the conclusion failed. [CallDerivation.lean](Ownership/CallDerivation.lean) derives it at a first-order call without captures, from the call-site invariant and the call's own demands. Calls with captures, calls with function-valued inputs, and the wiring from `inferExpr`'s `.app` case remain open.
 
 `sorry`: `summary_sound` (Lemma 6.7 clauses 1–3, clause 2 as repaired in
 round 5), `map_summary_sound`, `invariant_preserved` (the step case of the
