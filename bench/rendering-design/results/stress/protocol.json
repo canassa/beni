@@ -24,7 +24,7 @@
     "package-lock.json": "a7ae5e60efc695ed0b21f7d470d868765a49e98333a2438a34cd1f7dc913f909",
     "build-today.mjs": "c39a746c6c7766e82db797fdfc596066a62dd79db6cd1e65dee325106308b0d4",
     "dump-bir.mjs": "979d6022450df54249ea763ccbdf29cfa39f13c4620227d9e8b7bcef2a6f20ff",
-    "resource-run.mjs": "df1302160608ba271f040e003d07e560e1840370ecba80084b0f0d16b8fe753e",
+    "resource-run.mjs": "db8d95f346e1ae8bfdeca0598b13b1c81c24f3c62b28867d32e2c07bdf8e7195",
     "stress.mjs": "519dd867f63899e1bcbe37c5e40a9c84a1fc3c735a77ab55f0d5c53d13f4f36a"
   },
   "compiler_sha256": "0291b420028819837b7fc33c269f8c71240fbd3dff73b93b63965ba236221f7a",
@@ -95,6 +95,10 @@
     {
       "date": "2026-10-15T23:47:19.340048+00:00",
       "change": "Hard-link immutable compiler-pinned cached BIR into each larger app rather than rewriting prefix dumps. Existing dumps must byte-match their cache entry; cross-device fallback copies. All four generated sources/chunks/witnesses unchanged on the actual mixed N32 sample. Filesystem I/O pressure, not computation, was stalling dump processes. No compiler/emission/pricing changes."
+    },
+    {
+      "date": "2026-10-16T00:11:52.231221+00:00",
+      "change": "Admit ordinary resource requests in arrival order to prevent large jobs from starving behind newer small jobs. Optional compression helpers remain nonblocking and may borrow capacity only while the oldest queued job cannot fit. Controlled admission check passed (helper, older job, newer job); no output-generation or pricing changes. Earlier waiting Solid N96192 was admitted by briefly holding new admissions; all processes resumed at 00:01:01 UTC."
     }
   ],
   "compiler_address_space_limit_bytes": 17179869184,
@@ -138,7 +142,7 @@
       "package-lock.json": "a7ae5e60efc695ed0b21f7d470d868765a49e98333a2438a34cd1f7dc913f909",
       "build-today.mjs": "c39a746c6c7766e82db797fdfc596066a62dd79db6cd1e65dee325106308b0d4",
       "dump-bir.mjs": "979d6022450df54249ea763ccbdf29cfa39f13c4620227d9e8b7bcef2a6f20ff",
-      "resource-run.mjs": "df1302160608ba271f040e003d07e560e1840370ecba80084b0f0d16b8fe753e",
+      "resource-run.mjs": "db8d95f346e1ae8bfdeca0598b13b1c81c24f3c62b28867d32e2c07bdf8e7195",
       "stress.mjs": "519dd867f63899e1bcbe37c5e40a9c84a1fc3c735a77ab55f0d5c53d13f4f36a"
     },
     "compiler_sha256": "0291b420028819837b7fc33c269f8c71240fbd3dff73b93b63965ba236221f7a",
@@ -196,6 +200,10 @@
       {
         "date": "2026-10-15T23:47:19.343649+00:00",
         "change": "Hard-link immutable compiler-pinned cached BIR into each larger app rather than rewriting prefix dumps. Existing dumps must byte-match their cache entry; cross-device fallback copies. All four generated sources/chunks/witnesses unchanged on the actual mixed N32 sample. Filesystem I/O pressure, not computation, was stalling dump processes. No compiler/emission/pricing changes."
+      },
+      {
+        "date": "2026-10-16T00:11:52.234921+00:00",
+        "change": "Admit ordinary resource requests in arrival order to prevent large jobs from starving behind newer small jobs. Optional compression helpers remain nonblocking and may borrow capacity only while the oldest queued job cannot fit. Controlled admission check passed (helper, older job, newer job); no output-generation or pricing changes. Earlier waiting Solid N96192 was admitted by briefly holding new admissions; all processes resumed at 00:01:01 UTC."
       }
     ],
     "initial_scope": "Unchanged ten-shape catalogue. Three original seeds through N32; seed 17 extended on a 1.5x grid with extra measured points near 512 kB. Each strategy stops at its first measured rendering response >=512000 brotli bytes. No padding. Later points for shared-factory baselines need no additional candidate or today output once those curves crossed. Every point requiring BIR builds real TEA; direct builds stop once their measured curve crosses; all sources remain reproducible. Lines join measured points, never extrapolate. Native curves are not rebuilt after their measured crossing or terminal resource failure. Larger prototype points consume real per-component BIR dumps without another full-app build.",
@@ -233,7 +241,7 @@
       "package-lock.json": "a7ae5e60efc695ed0b21f7d470d868765a49e98333a2438a34cd1f7dc913f909",
       "build-today.mjs": "c39a746c6c7766e82db797fdfc596066a62dd79db6cd1e65dee325106308b0d4",
       "dump-bir.mjs": "979d6022450df54249ea763ccbdf29cfa39f13c4620227d9e8b7bcef2a6f20ff",
-      "resource-run.mjs": "df1302160608ba271f040e003d07e560e1840370ecba80084b0f0d16b8fe753e",
+      "resource-run.mjs": "db8d95f346e1ae8bfdeca0598b13b1c81c24f3c62b28867d32e2c07bdf8e7195",
       "stress.mjs": "519dd867f63899e1bcbe37c5e40a9c84a1fc3c735a77ab55f0d5c53d13f4f36a"
     },
     "compiler_sha256": "0291b420028819837b7fc33c269f8c71240fbd3dff73b93b63965ba236221f7a",
@@ -308,6 +316,10 @@
       {
         "date": "2026-10-15T23:47:19.346025+00:00",
         "change": "Hard-link immutable compiler-pinned cached BIR into each larger app rather than rewriting prefix dumps. Existing dumps must byte-match their cache entry; cross-device fallback copies. All four generated sources/chunks/witnesses unchanged on the actual mixed N32 sample. Filesystem I/O pressure, not computation, was stalling dump processes. No compiler/emission/pricing changes."
+      },
+      {
+        "date": "2026-10-16T00:11:52.237134+00:00",
+        "change": "Admit ordinary resource requests in arrival order to prevent large jobs from starving behind newer small jobs. Optional compression helpers remain nonblocking and may borrow capacity only while the oldest queued job cannot fit. Controlled admission check passed (helper, older job, newer job); no output-generation or pricing changes. Earlier waiting Solid N96192 was admitted by briefly holding new admissions; all processes resumed at 00:01:01 UTC."
       }
     ],
     "compiler_address_space_limit_bytes": 17179869184,

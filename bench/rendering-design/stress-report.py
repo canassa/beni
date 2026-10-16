@@ -33,6 +33,13 @@ def draw(ax,family,log=True):
  ax.set_ylim(bottom=0);ax.set_xlabel('Component instances (N)'+(' · log₂' if log else ''));ax.set_ylabel('Rendering response · brotli kB');ax.set_title(family.capitalize());ax.grid(alpha=.15)
 def save(fig,name):
  fig.savefig(out/(name+'.png'));fig.savefig(out/(name+'.svg'),metadata={'Date':None});plt.close(fig)
+if D.get('mixture'):
+ mix=D['mixture'];x=np.arange(len(mix['rows']));fig,ax=plt.subplots(figsize=(11,4.5))
+ for offset,metric,color,label in [(-.18,'raw','#9ca9bb','Raw size change'),(.18,'brotli','#2675cc','Brotli size change')]:
+  bars=ax.bar(x+offset,[r[metric]['change_percent'] for r in mix['rows']],width=.33,color=color,label=label)
+  if metric=='brotli':ax.bar_label(bars,fmt='%.1f%%',padding=4,fontsize=9)
+ ax.set_xticks(x,[names[modes.index(r['mode'])] for r in mix['rows']],fontsize=8);ax.axhline(0,color='#465363',lw=.8);ax.set_ylabel('Change versus mean homogeneous size (%)');ax.set_title(f"Mixing families changes compression · same N={mix['n']:,}, seed 17",weight='bold');ax.legend();ax.set_ylim(-6,max(r['brotli']['change_percent'] for r in mix['rows'])+10);ax.grid(axis='y',alpha=.15);fig.tight_layout();save(fig,'mixture-compression')
+ (H/'results/stress/mixture-compression.json').write_text(json.dumps(mix,indent=2)+'\n')
 for log in [True,False]:
  fig,ax=plt.subplots(figsize=(11,6));draw(ax,'mixed',log);ax.legend(ncol=3,fontsize=8);fig.suptitle('Measured rendering growth toward 512 kB brotli',weight='bold');fig.tight_layout();save(fig,'mixed-growth'+('' if log else '-linear'))
 fig,axes=plt.subplots(5,2,figsize=(13,19))

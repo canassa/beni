@@ -1,0 +1,115 @@
+{
+  "n": 2592,
+  "seed": 17,
+  "scope": "Mixed app versus the arithmetic mean of ten homogeneous apps at the same N, using measured responses. The mean is a comparison, not an additive prediction for the mixed app.",
+  "rows": [
+    {
+      "mode": "tea",
+      "raw": {
+        "mixed": 6206994,
+        "homogeneous_mean": 6201638.7,
+        "change_percent": 0.08635298280113002
+      },
+      "brotli": {
+        "mixed": 380789,
+        "homogeneous_mean": 344038,
+        "change_percent": 10.682250216545853
+      },
+      "gzip": {
+        "mixed": 786864,
+        "homogeneous_mean": 670155.8,
+        "change_percent": 17.41508467135551
+      }
+    },
+    {
+      "mode": "partial",
+      "raw": {
+        "mixed": 5746723,
+        "homogeneous_mean": 5744575.8,
+        "change_percent": 0.037377868701815586
+      },
+      "brotli": {
+        "mixed": 235109,
+        "homogeneous_mean": 192858.5,
+        "change_percent": 21.907512502689784
+      },
+      "gzip": {
+        "mixed": 549871,
+        "homogeneous_mean": 395686.2,
+        "change_percent": 38.96643350210343
+      }
+    },
+    {
+      "mode": "static",
+      "raw": {
+        "mixed": 6116334,
+        "homogeneous_mean": 6115447.9,
+        "change_percent": 0.014489535590667124
+      },
+      "brotli": {
+        "mixed": 149301,
+        "homogeneous_mean": 151045.2,
+        "change_percent": -1.154753676382969
+      },
+      "gzip": {
+        "mixed": 511693,
+        "homogeneous_mean": 345874.7,
+        "change_percent": 47.94172571743467
+      }
+    },
+    {
+      "mode": "local",
+      "raw": {
+        "mixed": 5794429,
+        "homogeneous_mean": 5793895,
+        "change_percent": 0.009216597815453476
+      },
+      "brotli": {
+        "mixed": 146776,
+        "homogeneous_mean": 117590,
+        "change_percent": 24.820137766816906
+      },
+      "gzip": {
+        "mixed": 398479,
+        "homogeneous_mean": 248783.7,
+        "change_percent": 60.170863284049545
+      }
+    },
+    {
+      "mode": "cells",
+      "raw": {
+        "mixed": 6048301,
+        "homogeneous_mean": 6048119.6,
+        "change_percent": 0.002999279313198322
+      },
+      "brotli": {
+        "mixed": 249057,
+        "homogeneous_mean": 188998.7,
+        "change_percent": 31.77709687950234
+      },
+      "gzip": {
+        "mixed": 620232,
+        "homogeneous_mean": 459789.8,
+        "change_percent": 34.89468448408382
+      }
+    },
+    {
+      "mode": "vanilla",
+      "raw": {
+        "mixed": 225994,
+        "homogeneous_mean": 209572.7,
+        "change_percent": 7.835610267940418
+      },
+      "brotli": {
+        "mixed": 16952,
+        "homogeneous_mean": 14771.9,
+        "change_percent": 14.758426471882435
+      },
+      "gzip": {
+        "mixed": 25936,
+        "homogeneous_mean": 19845.3,
+        "change_percent": 30.690894065597398
+      }
+    }
+  ]
+}

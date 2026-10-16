@@ -47,3 +47,8 @@ size accounting. Other strategies continue from the same source specification.
 The modal TEA build subsequently reached the same cap at N4,112. Failure
 handling recorded it automatically, and its other curves continued. This is
 a compiler-resource endpoint, not a missing or extrapolated bundle price.
+
+Further TEA builds reached the cap for clusters at N6,176 (last successful
+rendering response 498,054 B at N5,840) and recursive threads at N3,888 (last
+success 279,046 B at N2,592). Their other strategies continue; the complete
+current failure ledger remains `stopped.jsonl`.

@@ -312,11 +312,11 @@
     "mode": "vanilla",
     "range": "large",
     "min_n": 512,
-    "max_n": 64128,
-    "points": 14,
-    "slope": 5.090681889751291,
-    "intercept": 1715.177420200749,
-    "rmse": 346.8334901547565
+    "max_n": 96192,
+    "points": 15,
+    "slope": 5.10159163826954,
+    "intercept": 1603.4333692285743,
+    "rmse": 419.4903722710237
   },
   {
     "family": "list",
@@ -477,11 +477,11 @@
     "mode": "solid",
     "range": "large",
     "min_n": 512,
-    "max_n": 64128,
-    "points": 14,
-    "slope": 5.142287289943212,
-    "intercept": 22109.43841197618,
-    "rmse": 379.97188921025287
+    "max_n": 96192,
+    "points": 15,
+    "slope": 5.151916435686917,
+    "intercept": 22010.81104664293,
+    "rmse": 429.3894793475373
   },
   {
     "family": "form",
@@ -576,11 +576,11 @@
     "mode": "vanilla",
     "range": "large",
     "min_n": 512,
-    "max_n": 4256,
-    "points": 7,
-    "slope": 5.0898427063852525,
-    "intercept": 1202.9575779550423,
-    "rmse": 125.94304406626961
+    "max_n": 6384,
+    "points": 8,
+    "slope": 5.06648985028015,
+    "intercept": 1242.1369982548058,
+    "rmse": 124.76961022284715
   },
   {
     "family": "form",
@@ -609,11 +609,11 @@
     "mode": "partial",
     "range": "large",
     "min_n": 512,
-    "max_n": 4256,
-    "points": 7,
-    "slope": 71.30786635052097,
-    "intercept": 2274.288977519926,
-    "rmse": 255.89832987622367
+    "max_n": 6384,
+    "points": 8,
+    "slope": 71.2178075533511,
+    "intercept": 2425.3819080862318,
+    "rmse": 287.0717206382037
   },
   {
     "family": "form",
@@ -642,11 +642,11 @@
     "mode": "static",
     "range": "large",
     "min_n": 512,
-    "max_n": 4256,
-    "points": 7,
-    "slope": 49.44973116484103,
-    "intercept": 2517.829224075431,
-    "rmse": 354.8846830039602
+    "max_n": 6384,
+    "points": 8,
+    "slope": 48.905348695692105,
+    "intercept": 3431.1474694590797,
+    "rmse": 1013.7828433149273
   },
   {
     "family": "form",
@@ -675,11 +675,11 @@
     "mode": "local",
     "range": "large",
     "min_n": 512,
-    "max_n": 4256,
-    "points": 7,
-    "slope": 37.816044712033886,
-    "intercept": 1764.8854242204611,
-    "rmse": 127.75152005753716
+    "max_n": 6384,
+    "points": 8,
+    "slope": 38.02365807625521,
+    "intercept": 1416.5695171612037,
+    "rmse": 384.3635424500119
   },
   {
     "family": "form",
@@ -708,11 +708,11 @@
     "mode": "cells",
     "range": "large",
     "min_n": 512,
-    "max_n": 4256,
-    "points": 7,
-    "slope": 66.30983430975917,
-    "intercept": 2665.2440174039016,
-    "rmse": 422.76173451699435
+    "max_n": 6384,
+    "points": 8,
+    "slope": 65.96774618155335,
+    "intercept": 3239.170157068201,
+    "rmse": 720.2173293379311
   },
   {
     "family": "form",
@@ -741,11 +741,11 @@
     "mode": "solid",
     "range": "large",
     "min_n": 512,
-    "max_n": 4256,
-    "points": 7,
-    "slope": 5.13046734857448,
-    "intercept": 13508.651196519224,
-    "rmse": 61.505436876497605
+    "max_n": 6384,
+    "points": 8,
+    "slope": 5.0912024553093005,
+    "intercept": 13574.526468877268,
+    "rmse": 89.90833905165552
   },
   {
     "family": "tabs",
@@ -774,11 +774,11 @@
     "mode": "tea",
     "range": "large",
     "min_n": 512,
-    "max_n": 2592,
-    "points": 5,
-    "slope": 121.58402140106637,
-    "intercept": 875.9375000000822,
-    "rmse": 828.837866679434
+    "max_n": 3888,
+    "points": 6,
+    "slope": 121.97029504588407,
+    "intercept": 438.5101186322686,
+    "rmse": 822.6160974844721
   },
   {
     "family": "tabs",
@@ -840,11 +840,11 @@
     "mode": "vanilla",
     "range": "large",
     "min_n": 512,
-    "max_n": 2592,
-    "points": 5,
-    "slope": 5.240558353080569,
-    "intercept": 942.750000000004,
-    "rmse": 6.949240471300775
+    "max_n": 3888,
+    "points": 6,
+    "slope": 5.188277851817261,
+    "intercept": 1001.9539427773897,
+    "rmse": 44.15203498765228
   },
   {
     "family": "tabs",
@@ -873,11 +873,11 @@
     "mode": "partial",
     "range": "large",
     "min_n": 512,
-    "max_n": 2592,
-    "points": 5,
-    "slope": 54.88291432168248,
-    "intercept": 4558.3125000000255,
-    "rmse": 865.8596619922863
+    "max_n": 3888,
+    "points": 6,
+    "slope": 54.86390905298836,
+    "intercept": 4579.834612700635,
+    "rmse": 790.577694707726
   },
   {
     "family": "tabs",
@@ -906,11 +906,11 @@
     "mode": "static",
     "range": "large",
     "min_n": 512,
-    "max_n": 2592,
-    "points": 5,
-    "slope": 52.129600488744074,
-    "intercept": 1282.1875000000236,
-    "rmse": 200.36699681415058
+    "max_n": 3888,
+    "points": 6,
+    "slope": 52.14882482724605,
+    "intercept": 1260.417306350317,
+    "rmse": 183.61351759838487
   },
   {
     "family": "tabs",
@@ -939,11 +939,11 @@
     "mode": "local",
     "range": "large",
     "min_n": 512,
-    "max_n": 2592,
-    "points": 5,
-    "slope": 46.96450588714455,
-    "intercept": 2820.5312500000227,
-    "rmse": 384.21061523621313
+    "max_n": 3888,
+    "points": 6,
+    "slope": 47.15186343388128,
+    "intercept": 2608.3621772505326,
+    "rmse": 384.1014919253123
   },
   {
     "family": "tabs",
@@ -972,11 +972,11 @@
     "mode": "cells",
     "range": "large",
     "min_n": 512,
-    "max_n": 2592,
-    "points": 5,
-    "slope": 57.23936657656991,
-    "intercept": 2284.3593750000273,
-    "rmse": 272.32087407459824
+    "max_n": 3888,
+    "points": 6,
+    "slope": 57.5212554895613,
+    "intercept": 1965.1402651779463,
+    "rmse": 342.4940196935149
   },
   {
     "family": "nested",
@@ -1060,11 +1060,11 @@
     "mode": "vanilla",
     "range": "large",
     "min_n": 512,
-    "max_n": 5840,
-    "points": 7,
-    "slope": 5.064472984205469,
-    "intercept": 1067.6407457562607,
-    "rmse": 77.8392067185363
+    "max_n": 8416,
+    "points": 8,
+    "slope": 5.034646062107483,
+    "intercept": 1122.1814547215263,
+    "rmse": 97.48520316539945
   },
   {
     "family": "nested",
@@ -1093,11 +1093,11 @@
     "mode": "partial",
     "range": "large",
     "min_n": 512,
-    "max_n": 5840,
-    "points": 7,
-    "slope": 60.07303720092203,
-    "intercept": 3166.3352755435435,
-    "rmse": 973.1700812241008
+    "max_n": 8416,
+    "points": 8,
+    "slope": 60.13507654140501,
+    "intercept": 3052.89180314775,
+    "rmse": 920.2476553726543
   },
   {
     "family": "nested",
@@ -1126,11 +1126,11 @@
     "mode": "static",
     "range": "large",
     "min_n": 512,
-    "max_n": 5840,
-    "points": 7,
-    "slope": 58.13611316270956,
-    "intercept": 3166.9792969351565,
-    "rmse": 434.6045632946846
+    "max_n": 8416,
+    "points": 8,
+    "slope": 58.29277307759208,
+    "intercept": 2880.5151825336347,
+    "rmse": 530.2681304261192
   },
   {
     "family": "nested",
@@ -1159,11 +1159,11 @@
     "mode": "local",
     "range": "large",
     "min_n": 512,
-    "max_n": 5840,
-    "points": 7,
-    "slope": 44.76705025182061,
-    "intercept": 2186.573121428018,
-    "rmse": 108.5281570120136
+    "max_n": 8416,
+    "points": 8,
+    "slope": 44.71269693575836,
+    "intercept": 2285.9621359200883,
+    "rmse": 155.75342809364133
   },
   {
     "family": "nested",
@@ -1192,11 +1192,11 @@
     "mode": "cells",
     "range": "large",
     "min_n": 512,
-    "max_n": 5840,
-    "points": 7,
-    "slope": 62.797146278924124,
-    "intercept": 2569.147046190056,
-    "rmse": 1248.7586643169338
+    "max_n": 8416,
+    "points": 8,
+    "slope": 62.327706772263205,
+    "intercept": 3427.5515247170783,
+    "rmse": 1550.9017376773568
   },
   {
     "family": "thread",
@@ -1280,11 +1280,11 @@
     "mode": "vanilla",
     "range": "large",
     "min_n": 512,
-    "max_n": 2592,
-    "points": 5,
-    "slope": 5.219654824496445,
-    "intercept": 908.5781250000042,
-    "rmse": 11.853571336775236
+    "max_n": 3888,
+    "points": 6,
+    "slope": 5.131603214246363,
+    "intercept": 1008.2903000697842,
+    "rmse": 74.3812631064068
   },
   {
     "family": "thread",
@@ -1313,11 +1313,11 @@
     "mode": "partial",
     "range": "large",
     "min_n": 512,
-    "max_n": 2592,
-    "points": 5,
-    "slope": 75.04699764884478,
-    "intercept": 4724.7343750000355,
-    "rmse": 862.7600081595785
+    "max_n": 3888,
+    "points": 6,
+    "slope": 75.75889217111165,
+    "intercept": 3918.5645498953154,
+    "rmse": 987.060311089481
   },
   {
     "family": "thread",
@@ -1346,11 +1346,11 @@
     "mode": "static",
     "range": "large",
     "min_n": 512,
-    "max_n": 2592,
-    "points": 5,
-    "slope": 74.92098637440759,
-    "intercept": 1577.5000000000377,
-    "rmse": 938.2556811566648
+    "max_n": 3888,
+    "points": 6,
+    "slope": 79.47436958586276,
+    "intercept": -3578.8820655966656,
+    "rmse": 3900.728765419881
   },
   {
     "family": "thread",
@@ -1379,11 +1379,11 @@
     "mode": "local",
     "range": "large",
     "min_n": 512,
-    "max_n": 2592,
-    "points": 5,
-    "slope": 55.25679891143365,
-    "intercept": 6462.218750000034,
-    "rmse": 949.7373698774328
+    "max_n": 3888,
+    "points": 6,
+    "slope": 54.665277442559635,
+    "intercept": 7132.074668527553,
+    "rmse": 998.0325236678879
   },
   {
     "family": "thread",
@@ -1412,11 +1412,11 @@
     "mode": "cells",
     "range": "large",
     "min_n": 512,
-    "max_n": 2592,
-    "points": 5,
-    "slope": 74.91012385219194,
-    "intercept": 6618.96875000002,
-    "rmse": 512.3516950488598
+    "max_n": 3888,
+    "points": 6,
+    "slope": 75.0901999853087,
+    "intercept": 6415.045359385871,
+    "rmse": 491.32870754988403
   },
   {
     "family": "cluster",
@@ -1511,11 +1511,11 @@
     "mode": "vanilla",
     "range": "large",
     "min_n": 512,
-    "max_n": 5840,
-    "points": 7,
-    "slope": 5.118698336606783,
-    "intercept": 987.5502018171721,
-    "rmse": 105.69740823006296
+    "max_n": 6176,
+    "points": 8,
+    "slope": 5.110251225758437,
+    "intercept": 1000.3935286520979,
+    "rmse": 101.59574383019377
   },
   {
     "family": "cluster",
@@ -1544,11 +1544,11 @@
     "mode": "partial",
     "range": "large",
     "min_n": 512,
-    "max_n": 5840,
-    "points": 7,
-    "slope": 54.38039688798244,
-    "intercept": 1911.008469435562,
-    "rmse": 341.3815847692693
+    "max_n": 6176,
+    "points": 8,
+    "slope": 54.20519141531321,
+    "intercept": 2177.3979118328953,
+    "rmse": 580.4940031585232
   },
   {
     "family": "cluster",
@@ -1577,11 +1577,11 @@
     "mode": "static",
     "range": "large",
     "min_n": 512,
-    "max_n": 5840,
-    "points": 7,
-    "slope": 39.67602564438862,
-    "intercept": 3356.442482925043,
-    "rmse": 593.5617372315073
+    "max_n": 6176,
+    "points": 8,
+    "slope": 39.79634260677959,
+    "intercept": 3173.5077376001022,
+    "rmse": 647.3777567902939
   },
   {
     "family": "cluster",
@@ -1610,11 +1610,11 @@
     "mode": "local",
     "range": "large",
     "min_n": 512,
-    "max_n": 5840,
-    "points": 7,
-    "slope": 33.36375106974578,
-    "intercept": 1652.6260529413457,
-    "rmse": 208.47341723661418
+    "max_n": 6176,
+    "points": 8,
+    "slope": 33.33533522304425,
+    "intercept": 1695.8306483386286,
+    "rmse": 210.2617576775965
   },
   {
     "family": "cluster",
@@ -1863,11 +1863,11 @@
     "mode": "cells",
     "range": "large",
     "min_n": 512,
-    "max_n": 1728,
-    "points": 4,
-    "slope": 81.00186965811967,
-    "intercept": 5798.555555555562,
-    "rmse": 704.2524526716378
+    "max_n": 2592,
+    "points": 5,
+    "slope": 81.94671023400474,
+    "intercept": 4943.562500000046,
+    "rmse": 782.1022179893635
   },
   {
     "family": "modal",
@@ -1962,11 +1962,11 @@
     "mode": "vanilla",
     "range": "large",
     "min_n": 512,
-    "max_n": 4112,
-    "points": 7,
-    "slope": 5.05576703362222,
-    "intercept": 1123.3321028578691,
-    "rmse": 59.96153322208452
+    "max_n": 7456,
+    "points": 9,
+    "slope": 5.038500344867532,
+    "intercept": 1157.6895790311128,
+    "rmse": 80.43480612705714
   },
   {
     "family": "modal",
@@ -1995,11 +1995,11 @@
     "mode": "partial",
     "range": "large",
     "min_n": 512,
-    "max_n": 4112,
-    "points": 7,
-    "slope": 69.04132600373137,
-    "intercept": 2280.908398993655,
-    "rmse": 416.71398444619126
+    "max_n": 7456,
+    "points": 9,
+    "slope": 69.08920706473108,
+    "intercept": 2218.1051860748757,
+    "rmse": 446.4510430222626
   },
   {
     "family": "modal",
@@ -2028,11 +2028,11 @@
     "mode": "static",
     "range": "large",
     "min_n": 512,
-    "max_n": 4112,
-    "points": 7,
-    "slope": 52.64344554290212,
-    "intercept": 3148.2701930154712,
-    "rmse": 882.8325408239331
+    "max_n": 7456,
+    "points": 9,
+    "slope": 51.13796803134128,
+    "intercept": 5772.323933156616,
+    "rmse": 2255.87790493308
   },
   {
     "family": "modal",
@@ -2061,11 +2061,11 @@
     "mode": "local",
     "range": "large",
     "min_n": 512,
-    "max_n": 4112,
-    "points": 7,
-    "slope": 44.52260535114195,
-    "intercept": 225.50369427920955,
-    "rmse": 458.39033645479583
+    "max_n": 7456,
+    "points": 9,
+    "slope": 44.760539071984226,
+    "intercept": -214.90455768886025,
+    "rmse": 635.2422521520426
   },
   {
     "family": "modal",
@@ -2094,11 +2094,11 @@
     "mode": "cells",
     "range": "large",
     "min_n": 512,
-    "max_n": 4112,
-    "points": 7,
-    "slope": 73.08509625808033,
-    "intercept": -2786.619999885779,
-    "rmse": 2283.2876771369847
+    "max_n": 7456,
+    "points": 9,
+    "slope": 71.24265091574594,
+    "intercept": 418.6218230519639,
+    "rmse": 3274.4025230370653
   },
   {
     "family": "filter",
@@ -2182,11 +2182,11 @@
     "mode": "vanilla",
     "range": "large",
     "min_n": 512,
-    "max_n": 4896,
-    "points": 7,
-    "slope": 5.126006623995236,
-    "intercept": 1984.4270318547108,
-    "rmse": 99.90765531662042
+    "max_n": 5888,
+    "points": 8,
+    "slope": 5.087376353381328,
+    "intercept": 2045.071481208556,
+    "rmse": 121.50887093869387
   },
   {
     "family": "filter",
@@ -2215,11 +2215,11 @@
     "mode": "partial",
     "range": "large",
     "min_n": 512,
-    "max_n": 4896,
-    "points": 7,
-    "slope": 88.81093827528035,
-    "intercept": 4474.184062716973,
-    "rmse": 667.8764752731098
+    "max_n": 5888,
+    "points": 8,
+    "slope": 88.45042738979272,
+    "intercept": 5040.138786539063,
+    "rmse": 956.8273871553558
   },
   {
     "family": "filter",
@@ -2248,11 +2248,11 @@
     "mode": "static",
     "range": "large",
     "min_n": 512,
-    "max_n": 4896,
-    "points": 7,
-    "slope": 61.99609971965862,
-    "intercept": 4315.737282921422,
-    "rmse": 340.4487518019827
+    "max_n": 5888,
+    "points": 8,
+    "slope": 61.92101555561855,
+    "intercept": 4433.609555391888,
+    "rmse": 352.419558243304
   },
   {
     "family": "filter",
@@ -2281,11 +2281,11 @@
     "mode": "local",
     "range": "large",
     "min_n": 512,
-    "max_n": 4896,
-    "points": 7,
-    "slope": 44.57594832291357,
-    "intercept": 2476.065515530375,
-    "rmse": 192.9157371789139
+    "max_n": 5888,
+    "points": 8,
+    "slope": 44.43261111662227,
+    "intercept": 2701.0860967821723,
+    "rmse": 339.98754294112223
   },
   {
     "family": "filter",
@@ -2314,11 +2314,11 @@
     "mode": "cells",
     "range": "large",
     "min_n": 512,
-    "max_n": 4896,
-    "points": 7,
-    "slope": 86.77531631437927,
-    "intercept": 3831.497588567877,
-    "rmse": 493.5228811249283
+    "max_n": 5888,
+    "points": 8,
+    "slope": 86.0920830735219,
+    "intercept": 4904.084008843107,
+    "rmse": 1448.9811165205301
   },
   {
     "family": "summary",
@@ -2402,11 +2402,11 @@
     "mode": "vanilla",
     "range": "large",
     "min_n": 512,
-    "max_n": 4752,
-    "points": 7,
-    "slope": 5.1093883830484454,
-    "intercept": 1981.0076634161699,
-    "rmse": 75.32837741605292
+    "max_n": 5728,
+    "points": 8,
+    "slope": 5.079031816243668,
+    "intercept": 2028.218868578642,
+    "rmse": 91.84345193749488
   },
   {
     "family": "summary",
@@ -2435,11 +2435,11 @@
     "mode": "partial",
     "range": "large",
     "min_n": 512,
-    "max_n": 4752,
-    "points": 7,
-    "slope": 90.9552435947566,
-    "intercept": 5663.5237111044635,
-    "rmse": 659.8108866662795
+    "max_n": 5728,
+    "points": 8,
+    "slope": 90.79249883912334,
+    "intercept": 5916.627960235379,
+    "rmse": 693.3028025118188
   },
   {
     "family": "summary",
@@ -2468,11 +2468,11 @@
     "mode": "static",
     "range": "large",
     "min_n": 512,
-    "max_n": 4752,
-    "points": 7,
-    "slope": 65.9710786504301,
-    "intercept": 5190.904862984228,
-    "rmse": 509.03906312344816
+    "max_n": 5728,
+    "points": 8,
+    "slope": 66.06918555806217,
+    "intercept": 5038.326826941452,
+    "rmse": 512.81105691198
   },
   {
     "family": "summary",
@@ -2501,11 +2501,11 @@
     "mode": "local",
     "range": "large",
     "min_n": 512,
-    "max_n": 4752,
-    "points": 7,
-    "slope": 50.08231273042116,
-    "intercept": 3334.7582313229423,
-    "rmse": 167.68697061774787
+    "max_n": 5728,
+    "points": 8,
+    "slope": 50.019956402282006,
+    "intercept": 3431.736174180835,
+    "rmse": 198.10648643072162
   },
   {
     "family": "summary",
@@ -2534,10 +2534,10 @@
     "mode": "cells",
     "range": "large",
     "min_n": 512,
-    "max_n": 4752,
-    "points": 7,
-    "slope": 84.54088928611326,
-    "intercept": 4574.724627735173,
-    "rmse": 595.7289339211313
+    "max_n": 5728,
+    "points": 8,
+    "slope": 84.14131031655555,
+    "intercept": 5196.15869278331,
+    "rmse": 954.8674884465789
   }
 ]

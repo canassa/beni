@@ -26,14 +26,12 @@ same-size application comparisons; the fixed-N comparison above is.
 
 **The full family sweep is still in progress.** Direct exhausts host memory at
 mixed N1,728 before the target ([#203](https://github.com/canassa/beni/issues/203));
-Nested and modal TEA reach the later 16 GiB cap at N3,888 and N4,112. No size is assigned to failed builds. The webpage distinguishes crossings,
+Several homogeneous TEA curves also reach the later 16 GiB cap. No size is assigned to failed builds. The webpage distinguishes crossings,
 unfinished curves and compiler limits. This follow-up measures size only.
 
-For the original three-seed mixed N32 sample, C costs **7.29 kB**, versus
-**11.82 kB TEA, 17.06 kB direct, 3.89 kB vanilla, 8.39 kB A, 8.13 kB B and
-8.82 kB D**. Direct has 28 broken pages ([#189](https://github.com/canassa/beni/issues/189)). C removes 38% of TEA's rendering bytes there: runtime alone falls
-3.51→1.79 kB, app increment 8.31→5.51 kB. This compares reachable platform
-support with a pure-sandbox prototype, not full platform parity.
+Measured N1 baselines and the original three-seed calibration remain in the
+HTML report. C's N32 runtime account is 1.79 kB versus TEA's 3.51 kB: reachable
+platform support versus a pure-sandbox prototype, not full platform parity.
 
 ## 1. What was actually generated and proved
 
@@ -95,6 +93,14 @@ Large-range fits from the current measured endpoints, seed 17:
 | C: local | 512–9,616 | 6,170 | 53.70 | 2,437 |
 | D: cells | 512–5,840 | 7,874 | 93.57 | 1,313 |
 
+**Composition changes compression.** At the common **N2,592**, C's mixed response
+is **146.78 kB**, versus **117.59 kB** averaged across ten homogeneous apps:
+**24.8% larger brotli with only 0.01% more raw code**. B changes by −1.2% in
+brotli, also with nearly identical raw size. The homogeneous mean is a comparator,
+not an additive prediction. This helps explain why C's mixed-app advantage is
+much smaller than its single-family advantage; it cautions against generalizing
+those slopes. [Comparison](../../../bench/rendering-design/results/stress/graphs/mixture-compression.png).
+
 **The small-app Solid comparison reverses under growth.** For lists, C is smaller
 at N512 (23.60 versus 24.79 kB), but Solid is smaller at N768 (26.11 versus
 34.41 kB). At N9,632, C is **400.25 kB** versus Solid **71.21 kB**. The form
@@ -111,22 +117,22 @@ runtime floor. Mixed curves flatten when all families appear. Seed ranges are
 not confidence intervals. [Full stress fits](../../../bench/rendering-design/results/stress/fits.json)
 retain residuals; the original N≤32 calibration remains archived.
 
-Current common-window family slopes, brotli bytes per added varied instance,
-seed 17. **N648–2,592** except direct (**N84–336**, censored), D
-(**N432–1,728**) and Solid (**N1,064–4,256**, two ports). Windows differ between strategies; compare
-shapes within a column. The live report advances these windows as data arrives.
+Common-window family slopes: brotli bytes per added varied instance, seed 17.
+Headers give each strategy's common N window across families; compare shapes
+within a column. Direct is censored; Solid has two ports. The live HTML updates
+as data arrives.
 
-| Shape | TEA | Direct | A | B | C | D | Vanilla | Solid |
+| Shape | TEA (648–2,592) | Direct (84–336) | A (648–2,592) | B (648–2,592) | C (648–2,592) | D (648–2,592) | Vanilla (648–2,592) | Solid (1,596–6,384) |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| Keyed list | 134 | 185 | 77 | 54 | 41 | 78 | 5.2 | 5.2 |
-| Form | 123 | 152 | 71 | 49 | 38 | 65 | 5.3 | 5.1 |
-| Tabs | 121 | 141 | 54 | 52 | 47 | 58 | 5.2 | — |
+| Keyed list | 134 | 185 | 77 | 54 | 41 | 78 | 5.2 | 5.1 |
+| Form | 123 | 152 | 71 | 49 | 38 | 66 | 5.3 | 5.0 |
+| Tabs | 121 | 141 | 54 | 52 | 47 | 57 | 5.2 | — |
 | Nested helpers | 134 | 195 | 60 | 58 | 45 | 62 | 5.1 | — |
-| Recursive thread | 106 | 160 | 75 | 75 | 55 | 76 | 5.2 | — |
-| Counter/toggle | 88 | 101 | 54 | 40 | 33 | 52 | 5.2 | — |
-| Sortable table | 157 | 215 | 87 | 61 | 46 | 81 | 5.1 | — |
-| Modal | 129 | 164 | 69 | 52 | 44 | 68 | 5.0 | — |
-| Filter | 162 | 212 | 89 | 62 | 45 | 86 | 5.2 | — |
+| Recursive thread | 106 | 160 | 75 | 75 | 55 | 75 | 5.2 | — |
+| Counter/toggle | 88 | 101 | 54 | 40 | 33 | 53 | 5.2 | — |
+| Sortable table | 157 | 215 | 87 | 61 | 46 | 82 | 5.1 | — |
+| Modal | 129 | 164 | 69 | 52 | 44 | 71 | 5.0 | — |
+| Filter | 162 | 212 | 89 | 62 | 45 | 87 | 5.2 | — |
 | Derived summary | 167 | 222 | 92 | 66 | 50 | 85 | 5.2 | — |
 
 ![Slope matrix](../../../bench/rendering-design/results/stress/graphs/family-slopes.png)

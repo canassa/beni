@@ -1,0 +1,6 @@
+{
+  "date": "2026-10-16T00:11:19.242Z",
+  "order": "XHT",
+  "passed": true,
+  "scope": "An older two-slot job blocked a newer one-slot job while one slot was held. An optional helper used the otherwise idle slot. Releasing the held slot admitted the older job, then the newer job. No output-generation or size-accounting changes."
+}

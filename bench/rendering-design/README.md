@@ -246,3 +246,18 @@ per-app dumps must byte-match the cache; cross-device links fall back to copies.
 `results/stress/bir-link-check.json` retains exact source, chunk and witness
 agreement for all four lowerings through 32 linked dumps. This reduces filesystem
 I/O without changing the generated programs.
+
+Ordinary resource requests are admitted in arrival order, preventing a large
+job from starving behind newer small jobs. Optional compression helpers can
+borrow otherwise idle capacity while the oldest request cannot yet fit; they
+yield immediately when it can. `results/stress/fair-admission-check.json`
+records the controlled ordering check. The six CPU-slot and 26,000 MiB
+reservation limits are unchanged.
+
+The report also compares a mixed app with the mean of ten homogeneous apps at
+the same measured component count. At N2,592, C's brotli response is 24.8%
+larger while its raw size changes by only 0.01%; B's brotli response changes
+by −1.2%. This demonstrates a composition-dependent compression effect, so
+homogeneous slopes are not additive predictions for mixed apps. The comparison
+and its plotted values are in `results/stress/mixture-compression.json` and
+`results/stress/graphs/mixture-compression.svg`.

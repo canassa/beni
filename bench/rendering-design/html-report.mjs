@@ -7,6 +7,10 @@ const compact=r=>({name:r.name,n:r.n,seed:r.seed,family:r.shape||'mixed',mode:r.
 const stopFile=here+'/results/stress/stopped.jsonl',stopped=fs.existsSync(stopFile)?fs.readFileSync(stopFile,'utf8').trim().split('\n').filter(Boolean).map(JSON.parse):[];
 const nativeFile=here+'/results/stress/native-builds.jsonl',native=fs.existsSync(nativeFile)?fs.readFileSync(nativeFile,'utf8').trim().split('\n').filter(Boolean).map(JSON.parse):[];
 const data={native,stopped,generated:new Date().toISOString(),target:512000,unit:'kB = 1,000 bytes',rows:[...original,...stress].map(compact),protocol:fs.existsSync(here+'/results/stress/protocol.json')?read('results/stress/protocol.json'):null};
+const mixtureModes=['tea','partial','static','local','cells','vanilla'],families=['list','form','tabs','nested','thread','cluster','table','modal','filter','summary'];
+const indexed=new Map(data.rows.filter(r=>r.seed===17).map(r=>[r.family+'/'+r.mode+'/'+r.n,r]));
+const mixtureN=[...new Set(data.rows.map(r=>r.n))].filter(n=>n>=64&&mixtureModes.every(m=>['mixed',...families].every(f=>indexed.has(f+'/'+m+'/'+n)))).sort((a,b)=>b-a)[0];
+data.mixture=mixtureN?{n:mixtureN,seed:17,scope:'Mixed app versus the arithmetic mean of ten homogeneous apps at the same N, using measured responses. The mean is a comparison, not an additive prediction for the mixed app.',rows:mixtureModes.map(mode=>({mode,...Object.fromEntries(['raw','brotli','gzip'].map(metric=>{const mixed=indexed.get('mixed/'+mode+'/'+mixtureN)[metric],mean=families.reduce((sum,f)=>sum+indexed.get(f+'/'+mode+'/'+mixtureN)[metric],0)/families.length;return [metric,{mixed,homogeneous_mean:mean,change_percent:100*(mixed/mean-1)}]}))}))}:null;
 const html=fs.readFileSync(here+'/report-template.html','utf8').replace('/*REPORT_DATA*/',JSON.stringify(data).replaceAll('<','\\u003c'));
 fs.writeFileSync(here+'/report.html',html);
 fs.writeFileSync(here+'/results/stress-report-data.json',JSON.stringify(data,null,2)+'\n');

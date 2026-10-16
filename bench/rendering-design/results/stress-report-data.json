@@ -2689,6 +2689,22 @@
       "queue": "secondary"
     },
     {
+      "key": "stress-tabs-17-3888/tea",
+      "name": "stress-tabs-17-3888",
+      "n": 3888,
+      "seed": 17,
+      "shape": "tabs",
+      "platform": "tea",
+      "input_sha256": "48c2348879cf18b54de4a28f819e71fb50441c5847c908bde27e823dbe0f2f21",
+      "compiler_sha256": "0291b420028819837b7fc33c269f8c71240fbd3dff73b93b63965ba236221f7a",
+      "build_ms": 133348.868319,
+      "raw": 8208488,
+      "brotli": 521019,
+      "gzip": 962160,
+      "sha256": "60e3c9d2c56e4a6269da1daddaab214beba76c79517445fc7a7a01f4e8b545d5",
+      "queue": "secondary"
+    },
+    {
       "key": "stress-tabs-17-512/direct",
       "name": "stress-tabs-17-512",
       "n": 512,
@@ -3146,6 +3162,20 @@
       "queue": "primary"
     },
     {
+      "family": "cluster",
+      "mode": "tea",
+      "name": "stress-cluster-17-6176",
+      "n": 6176,
+      "status": 2,
+      "signal": null,
+      "reason": "beni: OutOfMemory\n",
+      "input_sha256": "387ff4b13843fbc6e2cce89ec37b0279f866a9e96f29ce00ccf064923892a972",
+      "compiler_sha256": "0291b420028819837b7fc33c269f8c71240fbd3dff73b93b63965ba236221f7a",
+      "address_space_limit_bytes": 17179869184,
+      "date": "2026-10-16T00:14:25.514Z",
+      "queue": "primary"
+    },
+    {
       "family": "list",
       "mode": "direct",
       "name": "stress-list-17-512",
@@ -3199,6 +3229,20 @@
       "compiler_sha256": "0291b420028819837b7fc33c269f8c71240fbd3dff73b93b63965ba236221f7a",
       "address_space_limit_bytes": 17179869184,
       "date": "2026-10-15T23:14:59.863Z",
+      "queue": "secondary"
+    },
+    {
+      "family": "thread",
+      "mode": "tea",
+      "name": "stress-thread-17-3888",
+      "n": 3888,
+      "status": 2,
+      "signal": null,
+      "reason": "beni: out of memory\n",
+      "input_sha256": "232abce406c2a3edd440a21cb7f22ef1ee4bac00c84de8324c78540198a2956e",
+      "compiler_sha256": "0291b420028819837b7fc33c269f8c71240fbd3dff73b93b63965ba236221f7a",
+      "address_space_limit_bytes": 17179869184,
+      "date": "2026-10-16T00:14:22.685Z",
       "queue": "secondary"
     },
     {
@@ -3258,7 +3302,7 @@
       "queue": "tertiary"
     }
   ],
-  "generated": "2026-10-15T23:51:13.051Z",
+  "generated": "2026-10-16T00:22:05.194Z",
   "target": 512000,
   "unit": "kB = 1,000 bytes",
   "rows": [
@@ -27295,6 +27339,70 @@
       "source_bytes": 7819830
     },
     {
+      "name": "stress-cluster-17-6176",
+      "n": 6176,
+      "seed": 17,
+      "family": "cluster",
+      "mode": "local",
+      "raw": 7580953,
+      "brotli": 207409,
+      "gzip": 422875,
+      "runtime": 317,
+      "full_brotli": 207409,
+      "app_increment": 207092,
+      "sha256": "99ff5f080a233f35b21646448459860fc6f67443404375ee4e90f006f4537981",
+      "compiler_release_brotli": null,
+      "source_bytes": 8270614
+    },
+    {
+      "name": "stress-cluster-17-6176",
+      "n": 6176,
+      "seed": 17,
+      "family": "cluster",
+      "mode": "partial",
+      "raw": 7267226,
+      "brotli": 335926,
+      "gzip": 651920,
+      "runtime": 318,
+      "full_brotli": 335926,
+      "app_increment": 335608,
+      "sha256": "83ae0f9dd9fbbd94e25a0eaca292fdf7249fe0112b86f61312e0c98ba0829fa2",
+      "compiler_release_brotli": null,
+      "source_bytes": 8270614
+    },
+    {
+      "name": "stress-cluster-17-6176",
+      "n": 6176,
+      "seed": 17,
+      "family": "cluster",
+      "mode": "static",
+      "raw": 8280301,
+      "brotli": 249658,
+      "gzip": 611637,
+      "runtime": 317,
+      "full_brotli": 249658,
+      "app_increment": 249341,
+      "sha256": "be10d01308b2a5fb20ed96a265a364d13105cb994e91a2b0403f4cb6bf3c860c",
+      "compiler_release_brotli": null,
+      "source_bytes": 8270614
+    },
+    {
+      "name": "stress-cluster-17-6176",
+      "n": 6176,
+      "seed": 17,
+      "family": "cluster",
+      "mode": "vanilla",
+      "raw": 505962,
+      "brotli": 32512,
+      "gzip": 43799,
+      "runtime": 188,
+      "full_brotli": 32512,
+      "app_increment": 32324,
+      "sha256": "4d3d5b87dcadcbf1af20b5a56d241ded883bb6bbd538cf5aec6375fe7bbd5f00",
+      "compiler_release_brotli": null,
+      "source_bytes": 8270614
+    },
+    {
       "name": "stress-filter-17-64",
       "n": 64,
       "seed": 17,
@@ -28509,6 +28617,86 @@
       "sha256": "64aa91b52804cafc0c7bea2333118312e51248cb4774b8005f6dd83140ec6337",
       "compiler_release_brotli": null,
       "source_bytes": 13178225
+    },
+    {
+      "name": "stress-filter-17-5888",
+      "n": 5888,
+      "seed": 17,
+      "family": "filter",
+      "mode": "cells",
+      "raw": 16978774,
+      "brotli": 509134,
+      "gzip": 1294555,
+      "runtime": 1914,
+      "full_brotli": 509134,
+      "app_increment": 507220,
+      "sha256": "e8f8aee813e32420e42f0ce8f722ff1001faf529c8dd522c5e76a9b8783a9dde",
+      "compiler_release_brotli": null,
+      "source_bytes": 15852900
+    },
+    {
+      "name": "stress-filter-17-5888",
+      "n": 5888,
+      "seed": 17,
+      "family": "filter",
+      "mode": "local",
+      "raw": 15963349,
+      "brotli": 263758,
+      "gzip": 549556,
+      "runtime": 1721,
+      "full_brotli": 263758,
+      "app_increment": 262037,
+      "sha256": "a22253ad8d3d27d386569439602d34272719b34eef5d9fab307f7a55718dd7a2",
+      "compiler_release_brotli": null,
+      "source_bytes": 15852900
+    },
+    {
+      "name": "stress-filter-17-5888",
+      "n": 5888,
+      "seed": 17,
+      "family": "filter",
+      "mode": "partial",
+      "raw": 16084721,
+      "brotli": 524422,
+      "gzip": 1045202,
+      "runtime": 1725,
+      "full_brotli": 524422,
+      "app_increment": 522697,
+      "sha256": "5648c20788298fa418af78cead5b271e3bfba57ca0f7b01f2282407d0c2228fb",
+      "compiler_release_brotli": null,
+      "source_bytes": 15852900
+    },
+    {
+      "name": "stress-filter-17-5888",
+      "n": 5888,
+      "seed": 17,
+      "family": "filter",
+      "mode": "static",
+      "raw": 16828654,
+      "brotli": 368730,
+      "gzip": 819074,
+      "runtime": 1721,
+      "full_brotli": 368730,
+      "app_increment": 367009,
+      "sha256": "1e3435a6e951200400f468f16a02d4e906e26e06f45daa711148dac0f2c0a4a2",
+      "compiler_release_brotli": null,
+      "source_bytes": 15852900
+    },
+    {
+      "name": "stress-filter-17-5888",
+      "n": 5888,
+      "seed": 17,
+      "family": "filter",
+      "mode": "vanilla",
+      "raw": 479171,
+      "brotli": 31848,
+      "gzip": 43373,
+      "runtime": 733,
+      "full_brotli": 31848,
+      "app_increment": 31115,
+      "sha256": "a0ccb26a3e719bb63c78f93f5261384d125a0e021ac305e069f4a5b11d47e890",
+      "compiler_release_brotli": null,
+      "source_bytes": 15852900
     },
     {
       "name": "stress-form-17-64",
@@ -29981,6 +30169,102 @@
       "sha256": "ba5c35ee6f37ac6e41c8d66e1557b0a00a92edfd029b29baa98ae6bdbe137399",
       "compiler_release_brotli": null,
       "source_bytes": 7469916
+    },
+    {
+      "name": "stress-form-17-6384",
+      "n": 6384,
+      "seed": 17,
+      "family": "form",
+      "mode": "cells",
+      "raw": 13565457,
+      "brotli": 423299,
+      "gzip": 1094846,
+      "runtime": 512,
+      "full_brotli": 423299,
+      "app_increment": 422787,
+      "sha256": "fec1afa937f302030f057beb749a75c159bc9c11201c0565d55e0a7cdbd5ab07",
+      "compiler_release_brotli": null,
+      "source_bytes": 11217626
+    },
+    {
+      "name": "stress-form-17-6384",
+      "n": 6384,
+      "seed": 17,
+      "family": "form",
+      "mode": "local",
+      "raw": 12475945,
+      "brotli": 244814,
+      "gzip": 517083,
+      "runtime": 322,
+      "full_brotli": 244814,
+      "app_increment": 244492,
+      "sha256": "4047153d2a8e30ffc0837872aa95822b2a142c93e7924f40f361df170f32026c",
+      "compiler_release_brotli": null,
+      "source_bytes": 11217626
+    },
+    {
+      "name": "stress-form-17-6384",
+      "n": 6384,
+      "seed": 17,
+      "family": "form",
+      "mode": "partial",
+      "raw": 12844898,
+      "brotli": 456796,
+      "gzip": 923965,
+      "runtime": 322,
+      "full_brotli": 456796,
+      "app_increment": 456474,
+      "sha256": "61161d93c85801f04ef64f29995f6fc495e88104b7e76b9ee8ec423ce8788ff4",
+      "compiler_release_brotli": null,
+      "source_bytes": 11217626
+    },
+    {
+      "name": "stress-form-17-6384",
+      "n": 6384,
+      "seed": 17,
+      "family": "form",
+      "mode": "solid",
+      "raw": 520739,
+      "brotli": 45953,
+      "gzip": 60177,
+      "runtime": 12450,
+      "full_brotli": 45953,
+      "app_increment": 33503,
+      "sha256": "338f2c4cf80543774c28b5fe93e8b581d7cfd3c33a91891d3ca2a0d6e549b21d",
+      "compiler_release_brotli": null,
+      "source_bytes": null
+    },
+    {
+      "name": "stress-form-17-6384",
+      "n": 6384,
+      "seed": 17,
+      "family": "form",
+      "mode": "static",
+      "raw": 13616223,
+      "brotli": 313927,
+      "gzip": 811763,
+      "runtime": 322,
+      "full_brotli": 313927,
+      "app_increment": 313605,
+      "sha256": "82e2e95a09b276655253cba00cdec737d768742a7eb5cda79eb8b69d0ebd7cd4",
+      "compiler_release_brotli": null,
+      "source_bytes": 11217626
+    },
+    {
+      "name": "stress-form-17-6384",
+      "n": 6384,
+      "seed": 17,
+      "family": "form",
+      "mode": "vanilla",
+      "raw": 504341,
+      "brotli": 33513,
+      "gzip": 45195,
+      "runtime": 188,
+      "full_brotli": 33513,
+      "app_increment": 33325,
+      "sha256": "68faf32d0ed546b0e775aabce20665b976fd845b15e27319fcb5390a003d0d7c",
+      "compiler_release_brotli": null,
+      "source_bytes": 11217626
     },
     {
       "name": "stress-list-17-64",
@@ -31725,6 +32009,38 @@
       "sha256": "16430691a2fb081b1463371595d10dd068a20c98be0f4d1fec0b43873093a3d9",
       "compiler_release_brotli": null,
       "source_bytes": 141416277
+    },
+    {
+      "name": "stress-list-17-96192",
+      "n": 96192,
+      "seed": 17,
+      "family": "list",
+      "mode": "solid",
+      "raw": 7452378,
+      "brotli": 518127,
+      "gzip": 675026,
+      "runtime": 21066,
+      "full_brotli": 518127,
+      "app_increment": 497061,
+      "sha256": "8bd63c65fafbcf5ed6b09e4da14e08cd47d787e572dddb73e90c8bd18f421a56",
+      "compiler_release_brotli": null,
+      "source_bytes": null
+    },
+    {
+      "name": "stress-list-17-96192",
+      "n": 96192,
+      "seed": 17,
+      "family": "list",
+      "mode": "vanilla",
+      "raw": 7677140,
+      "brotli": 492951,
+      "gzip": 655565,
+      "runtime": 734,
+      "full_brotli": 492951,
+      "app_increment": 492217,
+      "sha256": "e5c5b126fb0e2913fb30e817fe455d1e395453380ecd7d7b30442fde0d696555",
+      "compiler_release_brotli": null,
+      "source_bytes": 212229648
     },
     {
       "name": "stress-mixed-17-64",
@@ -34543,6 +34859,166 @@
       "source_bytes": 6382066
     },
     {
+      "name": "stress-modal-17-6176",
+      "n": 6176,
+      "seed": 17,
+      "family": "modal",
+      "mode": "cells",
+      "raw": 12674322,
+      "brotli": 439047,
+      "gzip": 1057175,
+      "runtime": 646,
+      "full_brotli": 439047,
+      "app_increment": 438401,
+      "sha256": "902890d13cca394ccee96548c4191dede4b106a647fca185e0b981af4c7ef181",
+      "compiler_release_brotli": null,
+      "source_bytes": 9596620
+    },
+    {
+      "name": "stress-modal-17-6176",
+      "n": 6176,
+      "seed": 17,
+      "family": "modal",
+      "mode": "local",
+      "raw": 11817122,
+      "brotli": 275628,
+      "gzip": 565958,
+      "runtime": 440,
+      "full_brotli": 275628,
+      "app_increment": 275188,
+      "sha256": "7eff20d2edd73c1acd0479ebd9a64fa4f359182ea7eb53bfb4bf69547a8d1638",
+      "compiler_release_brotli": null,
+      "source_bytes": 9596620
+    },
+    {
+      "name": "stress-modal-17-6176",
+      "n": 6176,
+      "seed": 17,
+      "family": "modal",
+      "mode": "partial",
+      "raw": 11584181,
+      "brotli": 429548,
+      "gzip": 838298,
+      "runtime": 440,
+      "full_brotli": 429548,
+      "app_increment": 429108,
+      "sha256": "0eafb7f0f1c72196e5784e0faafe731086bf4d9d6cf06e94e38be8111c63e942",
+      "compiler_release_brotli": null,
+      "source_bytes": 9596620
+    },
+    {
+      "name": "stress-modal-17-6176",
+      "n": 6176,
+      "seed": 17,
+      "family": "modal",
+      "mode": "static",
+      "raw": 12572672,
+      "brotli": 320631,
+      "gzip": 799265,
+      "runtime": 440,
+      "full_brotli": 320631,
+      "app_increment": 320191,
+      "sha256": "fac135923644348313bf841dcfda28935513a8a2b158bcec774b2c4d2eed6610",
+      "compiler_release_brotli": null,
+      "source_bytes": 9596620
+    },
+    {
+      "name": "stress-modal-17-6176",
+      "n": 6176,
+      "seed": 17,
+      "family": "modal",
+      "mode": "vanilla",
+      "raw": 494032,
+      "brotli": 32389,
+      "gzip": 43797,
+      "runtime": 188,
+      "full_brotli": 32389,
+      "app_increment": 32201,
+      "sha256": "1d4811bc860cba6961cfaa244c9582cafbc4b896d1d850c5c1b7506c1b44ba06",
+      "compiler_release_brotli": null,
+      "source_bytes": 9596620
+    },
+    {
+      "name": "stress-modal-17-7456",
+      "n": 7456,
+      "seed": 17,
+      "family": "modal",
+      "mode": "cells",
+      "raw": 15304570,
+      "brotli": 528227,
+      "gzip": 1276234,
+      "runtime": 646,
+      "full_brotli": 528227,
+      "app_increment": 527581,
+      "sha256": "b7b92863a0ba1e9fcb26fffac825d8ffbaa9024e139feff39aded05eb3e3dab3",
+      "compiler_release_brotli": null,
+      "source_bytes": 11590496
+    },
+    {
+      "name": "stress-modal-17-7456",
+      "n": 7456,
+      "seed": 17,
+      "family": "modal",
+      "mode": "local",
+      "raw": 14269450,
+      "brotli": 334545,
+      "gzip": 682894,
+      "runtime": 440,
+      "full_brotli": 334545,
+      "app_increment": 334105,
+      "sha256": "991a808cd6ff5cea47b827e9517d1c6984c0fc6051c90972e6a0d2db56948bd8",
+      "compiler_release_brotli": null,
+      "source_bytes": 11590496
+    },
+    {
+      "name": "stress-modal-17-7456",
+      "n": 7456,
+      "seed": 17,
+      "family": "modal",
+      "mode": "partial",
+      "raw": 13990429,
+      "brotli": 516979,
+      "gzip": 1011739,
+      "runtime": 440,
+      "full_brotli": 516979,
+      "app_increment": 516539,
+      "sha256": "5e9e953359d2ffb94e2806bcd05e99d78255c3582b427476d0cfcd7db4a14eaa",
+      "compiler_release_brotli": null,
+      "source_bytes": 11590496
+    },
+    {
+      "name": "stress-modal-17-7456",
+      "n": 7456,
+      "seed": 17,
+      "family": "modal",
+      "mode": "static",
+      "raw": 15182440,
+      "brotli": 384186,
+      "gzip": 964649,
+      "runtime": 440,
+      "full_brotli": 384186,
+      "app_increment": 383746,
+      "sha256": "40f557be45c271d0988dde7e3c8ff84f91a56e87378cec75f5dbe036348671f7",
+      "compiler_release_brotli": null,
+      "source_bytes": 11590496
+    },
+    {
+      "name": "stress-modal-17-7456",
+      "n": 7456,
+      "seed": 17,
+      "family": "modal",
+      "mode": "vanilla",
+      "raw": 596305,
+      "brotli": 38597,
+      "gzip": 52500,
+      "runtime": 188,
+      "full_brotli": 38597,
+      "app_increment": 38409,
+      "sha256": "6bf72c8c21b18bd82bcbb572d8aab34536f36ce0c9b029f81d19cda8e57422e9",
+      "compiler_release_brotli": null,
+      "source_bytes": 11590496
+    },
+    {
       "name": "stress-nested-17-64",
       "n": 64,
       "seed": 17,
@@ -35775,6 +36251,86 @@
       "source_bytes": 9218433
     },
     {
+      "name": "stress-nested-17-8416",
+      "n": 8416,
+      "seed": 17,
+      "family": "nested",
+      "mode": "cells",
+      "raw": 18088414,
+      "brotli": 526250,
+      "gzip": 1278804,
+      "runtime": 643,
+      "full_brotli": 526250,
+      "app_increment": 525607,
+      "sha256": "5c306525061131df30f1b6a32f96d122e91158ff5ea8835cba9c6d9a1893a9c2",
+      "compiler_release_brotli": null,
+      "source_bytes": 13295422
+    },
+    {
+      "name": "stress-nested-17-8416",
+      "n": 8416,
+      "seed": 17,
+      "family": "nested",
+      "mode": "local",
+      "raw": 17987728,
+      "brotli": 378388,
+      "gzip": 859054,
+      "runtime": 440,
+      "full_brotli": 378388,
+      "app_increment": 377948,
+      "sha256": "22a1a8821ee661d8d62f131c29fbec55d4323a2d91bb348037747e3955fa44dd",
+      "compiler_release_brotli": null,
+      "source_bytes": 13295422
+    },
+    {
+      "name": "stress-nested-17-8416",
+      "n": 8416,
+      "seed": 17,
+      "family": "nested",
+      "mode": "partial",
+      "raw": 17461935,
+      "brotli": 509378,
+      "gzip": 1235974,
+      "runtime": 439,
+      "full_brotli": 509378,
+      "app_increment": 508939,
+      "sha256": "9233a45a5ba949cec889dcafc74d1227a32ab72a408f31717d717c480430ffb3",
+      "compiler_release_brotli": null,
+      "source_bytes": 13295422
+    },
+    {
+      "name": "stress-nested-17-8416",
+      "n": 8416,
+      "seed": 17,
+      "family": "nested",
+      "mode": "static",
+      "raw": 19103448,
+      "brotli": 494049,
+      "gzip": 1180940,
+      "runtime": 441,
+      "full_brotli": 494049,
+      "app_increment": 493608,
+      "sha256": "bae3a8149d6c4ba4af8ce2e373b8227828aac5a8ea29551d837421e4fdbff451",
+      "compiler_release_brotli": null,
+      "source_bytes": 13295422
+    },
+    {
+      "name": "stress-nested-17-8416",
+      "n": 8416,
+      "seed": 17,
+      "family": "nested",
+      "mode": "vanilla",
+      "raw": 681195,
+      "brotli": 43384,
+      "gzip": 59341,
+      "runtime": 187,
+      "full_brotli": 43384,
+      "app_increment": 43197,
+      "sha256": "23b23aa17d1a689276b70fc92d2d558e620f45d4b1087088d698d0631752c97e",
+      "compiler_release_brotli": null,
+      "source_bytes": 13295422
+    },
+    {
       "name": "stress-summary-17-64",
       "n": 64,
       "seed": 17,
@@ -36991,6 +37547,86 @@
       "source_bytes": 12417004
     },
     {
+      "name": "stress-summary-17-5728",
+      "n": 5728,
+      "seed": 17,
+      "family": "summary",
+      "mode": "cells",
+      "raw": 16661683,
+      "brotli": 485645,
+      "gzip": 1218319,
+      "runtime": 1917,
+      "full_brotli": 485645,
+      "app_increment": 483728,
+      "sha256": "cdf075981bb3ef0b9d24cb509503faf00bbe85683359098b4bf199e06fbb0033",
+      "compiler_release_brotli": null,
+      "source_bytes": 14971380
+    },
+    {
+      "name": "stress-summary-17-5728",
+      "n": 5728,
+      "seed": 17,
+      "family": "summary",
+      "mode": "local",
+      "raw": 15867888,
+      "brotli": 289710,
+      "gzip": 588785,
+      "runtime": 1724,
+      "full_brotli": 289710,
+      "app_increment": 287986,
+      "sha256": "2067a3803297fc74d46c6dd7360d16eda83d0d00bf2e10b232cf70be0a4db98b",
+      "compiler_release_brotli": null,
+      "source_bytes": 14971380
+    },
+    {
+      "name": "stress-summary-17-5728",
+      "n": 5728,
+      "seed": 17,
+      "family": "summary",
+      "mode": "partial",
+      "raw": 16355045,
+      "brotli": 525360,
+      "gzip": 1042734,
+      "runtime": 1720,
+      "full_brotli": 525360,
+      "app_increment": 523640,
+      "sha256": "3bf42744552bed69ed42b9602b23e97466e7bdc63aa0c531f6c22423a1f88b3f",
+      "compiler_release_brotli": null,
+      "source_bytes": 14971380
+    },
+    {
+      "name": "stress-summary-17-5728",
+      "n": 5728,
+      "seed": 17,
+      "family": "summary",
+      "mode": "static",
+      "raw": 16767067,
+      "brotli": 383854,
+      "gzip": 843171,
+      "runtime": 1727,
+      "full_brotli": 383854,
+      "app_increment": 382127,
+      "sha256": "8fcf7e3f45e3c6749e6ae953d615d253f10061509dab5ae7b72f92d7fc0e0832",
+      "compiler_release_brotli": null,
+      "source_bytes": 14971380
+    },
+    {
+      "name": "stress-summary-17-5728",
+      "n": 5728,
+      "seed": 17,
+      "family": "summary",
+      "mode": "vanilla",
+      "raw": 471980,
+      "brotli": 31006,
+      "gzip": 42277,
+      "runtime": 734,
+      "full_brotli": 31006,
+      "app_increment": 30272,
+      "sha256": "c01e0ae5e874f72fee00e5b59b544fb8f46764fba0802cd6e1442847603044a6",
+      "compiler_release_brotli": null,
+      "source_bytes": 14971380
+    },
+    {
       "name": "stress-table-17-64",
       "n": 64,
       "seed": 17,
@@ -37933,6 +38569,22 @@
       "sha256": "a43b51aa152066ce573b1986e47d6d8911aaf122e113baf91a25ed71e461a34c",
       "compiler_release_brotli": null,
       "source_bytes": 4444988
+    },
+    {
+      "name": "stress-table-17-2592",
+      "n": 2592,
+      "seed": 17,
+      "family": "table",
+      "mode": "cells",
+      "raw": 7566249,
+      "brotli": 217860,
+      "gzip": 520323,
+      "runtime": 1910,
+      "full_brotli": 217860,
+      "app_increment": 215950,
+      "sha256": "4b76e7ec0fe57b8154c3fd81739613b84b8c2de54b84321bdaf1cafeed36ceb1",
+      "compiler_release_brotli": null,
+      "source_bytes": 6678556
     },
     {
       "name": "stress-table-17-2592",
@@ -39103,6 +39755,102 @@
       "source_bytes": 3540877
     },
     {
+      "name": "stress-tabs-17-3888",
+      "n": 3888,
+      "seed": 17,
+      "family": "tabs",
+      "mode": "cells",
+      "raw": 7627526,
+      "brotli": 225915,
+      "gzip": 524789,
+      "runtime": 646,
+      "full_brotli": 225915,
+      "app_increment": 225269,
+      "sha256": "392b3c5d45dc6788d27c83deae248b23261d3bd9b16cbbba0bee45607e5d9999",
+      "compiler_release_brotli": null,
+      "source_bytes": 5322286
+    },
+    {
+      "name": "stress-tabs-17-3888",
+      "n": 3888,
+      "seed": 17,
+      "family": "tabs",
+      "mode": "local",
+      "raw": 7611562,
+      "brotli": 186139,
+      "gzip": 391195,
+      "runtime": 441,
+      "full_brotli": 186139,
+      "app_increment": 185698,
+      "sha256": "4522d2c78ac83737b3a52b3b4938028cb2edbe6263eeb7808e3ef77f6293c8c9",
+      "compiler_release_brotli": null,
+      "source_bytes": 5322286
+    },
+    {
+      "name": "stress-tabs-17-3888",
+      "n": 3888,
+      "seed": 17,
+      "family": "tabs",
+      "mode": "partial",
+      "raw": 7229563,
+      "brotli": 217870,
+      "gzip": 467652,
+      "runtime": 440,
+      "full_brotli": 217870,
+      "app_increment": 217430,
+      "sha256": "f7c7e3c3505b3fd39a64c9b193e743b16fbb028a8118310c77ebe5445e02a703",
+      "compiler_release_brotli": null,
+      "source_bytes": 5322286
+    },
+    {
+      "name": "stress-tabs-17-3888",
+      "n": 3888,
+      "seed": 17,
+      "family": "tabs",
+      "mode": "static",
+      "raw": 7905386,
+      "brotli": 204036,
+      "gzip": 479974,
+      "runtime": 440,
+      "full_brotli": 204036,
+      "app_increment": 203596,
+      "sha256": "401a36e888c19f0513e3ef57fbcfc1fe91c65e2f3f100a0d3116d6b6ce8da774",
+      "compiler_release_brotli": null,
+      "source_bytes": 5322286
+    },
+    {
+      "name": "stress-tabs-17-3888",
+      "n": 3888,
+      "seed": 17,
+      "family": "tabs",
+      "mode": "tea",
+      "raw": 7797757,
+      "brotli": 475080,
+      "gzip": 867823,
+      "runtime": 1592,
+      "full_brotli": 475080,
+      "app_increment": 473488,
+      "sha256": "77b7d1d8c7282d4136e657de814ba2d282cca26c7adfa430172c48213e9f8622",
+      "compiler_release_brotli": 521019,
+      "source_bytes": 5322286
+    },
+    {
+      "name": "stress-tabs-17-3888",
+      "n": 3888,
+      "seed": 17,
+      "family": "tabs",
+      "mode": "vanilla",
+      "raw": 307410,
+      "brotli": 21117,
+      "gzip": 28138,
+      "runtime": 188,
+      "full_brotli": 21117,
+      "app_increment": 20929,
+      "sha256": "fb80832b7774f8b769eab6666c6bfdc3622730dc8f8043f29fdaa7fb7c5e0d14",
+      "compiler_release_brotli": null,
+      "source_bytes": 5322286
+    },
+    {
       "name": "stress-thread-17-64",
       "n": 64,
       "seed": 17,
@@ -40157,6 +40905,86 @@
       "sha256": "eddd688ac3df554a9a318640122b368b8ac0b0952733dccb6229a7fa7493e2ee",
       "compiler_release_brotli": null,
       "source_bytes": 5775424
+    },
+    {
+      "name": "stress-thread-17-3888",
+      "n": 3888,
+      "seed": 17,
+      "family": "thread",
+      "mode": "cells",
+      "raw": 10284101,
+      "brotli": 298562,
+      "gzip": 788020,
+      "runtime": 1857,
+      "full_brotli": 298562,
+      "app_increment": 296705,
+      "sha256": "91ee27f427b98a9aa7e29641477b616e3156db0123f95f9fee323ed9f0c7c346",
+      "compiler_release_brotli": null,
+      "source_bytes": 8672374
+    },
+    {
+      "name": "stress-thread-17-3888",
+      "n": 3888,
+      "seed": 17,
+      "family": "thread",
+      "mode": "local",
+      "raw": 10248661,
+      "brotli": 219026,
+      "gzip": 558645,
+      "runtime": 1667,
+      "full_brotli": 219026,
+      "app_increment": 217359,
+      "sha256": "8b7f600e0b941361f570623be55b36a69d9dec9bfd728a51762efcf64552a3f9",
+      "compiler_release_brotli": null,
+      "source_bytes": 8672374
+    },
+    {
+      "name": "stress-thread-17-3888",
+      "n": 3888,
+      "seed": 17,
+      "family": "thread",
+      "mode": "partial",
+      "raw": 9981309,
+      "brotli": 299245,
+      "gzip": 732033,
+      "runtime": 1660,
+      "full_brotli": 299245,
+      "app_increment": 297585,
+      "sha256": "2186c5930fd15c8695d3a19eaaf57e5fd6937f4244a3f671b892b12fe729bf48",
+      "compiler_release_brotli": null,
+      "source_bytes": 8672374
+    },
+    {
+      "name": "stress-thread-17-3888",
+      "n": 3888,
+      "seed": 17,
+      "family": "thread",
+      "mode": "static",
+      "raw": 10616423,
+      "brotli": 310380,
+      "gzip": 683054,
+      "runtime": 1659,
+      "full_brotli": 310380,
+      "app_increment": 308721,
+      "sha256": "9ea48185d428484a7267416ef0e5c9bb18c202e104ab85bb02a3da6ca58fa90a",
+      "compiler_release_brotli": null,
+      "source_bytes": 8672374
+    },
+    {
+      "name": "stress-thread-17-3888",
+      "n": 3888,
+      "seed": 17,
+      "family": "thread",
+      "mode": "vanilla",
+      "raw": 315041,
+      "brotli": 20864,
+      "gzip": 28328,
+      "runtime": 188,
+      "full_brotli": 20864,
+      "app_increment": 20676,
+      "sha256": "e66efe0ddfbdadc72e7027dc4484a002e20af36e0af2408932e6006c6e18c35b",
+      "compiler_release_brotli": null,
+      "source_bytes": 8672374
     }
   ],
   "protocol": {
@@ -40185,7 +41013,7 @@
       "package-lock.json": "a7ae5e60efc695ed0b21f7d470d868765a49e98333a2438a34cd1f7dc913f909",
       "build-today.mjs": "c39a746c6c7766e82db797fdfc596066a62dd79db6cd1e65dee325106308b0d4",
       "dump-bir.mjs": "979d6022450df54249ea763ccbdf29cfa39f13c4620227d9e8b7bcef2a6f20ff",
-      "resource-run.mjs": "df1302160608ba271f040e003d07e560e1840370ecba80084b0f0d16b8fe753e",
+      "resource-run.mjs": "db8d95f346e1ae8bfdeca0598b13b1c81c24f3c62b28867d32e2c07bdf8e7195",
       "stress.mjs": "519dd867f63899e1bcbe37c5e40a9c84a1fc3c735a77ab55f0d5c53d13f4f36a"
     },
     "compiler_sha256": "0291b420028819837b7fc33c269f8c71240fbd3dff73b93b63965ba236221f7a",
@@ -40256,6 +41084,10 @@
       {
         "date": "2026-10-15T23:47:19.340048+00:00",
         "change": "Hard-link immutable compiler-pinned cached BIR into each larger app rather than rewriting prefix dumps. Existing dumps must byte-match their cache entry; cross-device fallback copies. All four generated sources/chunks/witnesses unchanged on the actual mixed N32 sample. Filesystem I/O pressure, not computation, was stalling dump processes. No compiler/emission/pricing changes."
+      },
+      {
+        "date": "2026-10-16T00:11:52.231221+00:00",
+        "change": "Admit ordinary resource requests in arrival order to prevent large jobs from starving behind newer small jobs. Optional compression helpers remain nonblocking and may borrow capacity only while the oldest queued job cannot fit. Controlled admission check passed (helper, older job, newer job); no output-generation or pricing changes. Earlier waiting Solid N96192 was admitted by briefly holding new admissions; all processes resumed at 00:01:01 UTC."
       }
     ],
     "compiler_address_space_limit_bytes": 17179869184,
@@ -40299,7 +41131,7 @@
         "package-lock.json": "a7ae5e60efc695ed0b21f7d470d868765a49e98333a2438a34cd1f7dc913f909",
         "build-today.mjs": "c39a746c6c7766e82db797fdfc596066a62dd79db6cd1e65dee325106308b0d4",
         "dump-bir.mjs": "979d6022450df54249ea763ccbdf29cfa39f13c4620227d9e8b7bcef2a6f20ff",
-        "resource-run.mjs": "df1302160608ba271f040e003d07e560e1840370ecba80084b0f0d16b8fe753e",
+        "resource-run.mjs": "db8d95f346e1ae8bfdeca0598b13b1c81c24f3c62b28867d32e2c07bdf8e7195",
         "stress.mjs": "519dd867f63899e1bcbe37c5e40a9c84a1fc3c735a77ab55f0d5c53d13f4f36a"
       },
       "compiler_sha256": "0291b420028819837b7fc33c269f8c71240fbd3dff73b93b63965ba236221f7a",
@@ -40357,6 +41189,10 @@
         {
           "date": "2026-10-15T23:47:19.343649+00:00",
           "change": "Hard-link immutable compiler-pinned cached BIR into each larger app rather than rewriting prefix dumps. Existing dumps must byte-match their cache entry; cross-device fallback copies. All four generated sources/chunks/witnesses unchanged on the actual mixed N32 sample. Filesystem I/O pressure, not computation, was stalling dump processes. No compiler/emission/pricing changes."
+        },
+        {
+          "date": "2026-10-16T00:11:52.234921+00:00",
+          "change": "Admit ordinary resource requests in arrival order to prevent large jobs from starving behind newer small jobs. Optional compression helpers remain nonblocking and may borrow capacity only while the oldest queued job cannot fit. Controlled admission check passed (helper, older job, newer job); no output-generation or pricing changes. Earlier waiting Solid N96192 was admitted by briefly holding new admissions; all processes resumed at 00:01:01 UTC."
         }
       ],
       "initial_scope": "Unchanged ten-shape catalogue. Three original seeds through N32; seed 17 extended on a 1.5x grid with extra measured points near 512 kB. Each strategy stops at its first measured rendering response >=512000 brotli bytes. No padding. Later points for shared-factory baselines need no additional candidate or today output once those curves crossed. Every point requiring BIR builds real TEA; direct builds stop once their measured curve crosses; all sources remain reproducible. Lines join measured points, never extrapolate. Native curves are not rebuilt after their measured crossing or terminal resource failure. Larger prototype points consume real per-component BIR dumps without another full-app build.",
@@ -40394,7 +41230,7 @@
         "package-lock.json": "a7ae5e60efc695ed0b21f7d470d868765a49e98333a2438a34cd1f7dc913f909",
         "build-today.mjs": "c39a746c6c7766e82db797fdfc596066a62dd79db6cd1e65dee325106308b0d4",
         "dump-bir.mjs": "979d6022450df54249ea763ccbdf29cfa39f13c4620227d9e8b7bcef2a6f20ff",
-        "resource-run.mjs": "df1302160608ba271f040e003d07e560e1840370ecba80084b0f0d16b8fe753e",
+        "resource-run.mjs": "db8d95f346e1ae8bfdeca0598b13b1c81c24f3c62b28867d32e2c07bdf8e7195",
         "stress.mjs": "519dd867f63899e1bcbe37c5e40a9c84a1fc3c735a77ab55f0d5c53d13f4f36a"
       },
       "compiler_sha256": "0291b420028819837b7fc33c269f8c71240fbd3dff73b93b63965ba236221f7a",
@@ -40469,6 +41305,10 @@
         {
           "date": "2026-10-15T23:47:19.346025+00:00",
           "change": "Hard-link immutable compiler-pinned cached BIR into each larger app rather than rewriting prefix dumps. Existing dumps must byte-match their cache entry; cross-device fallback copies. All four generated sources/chunks/witnesses unchanged on the actual mixed N32 sample. Filesystem I/O pressure, not computation, was stalling dump processes. No compiler/emission/pricing changes."
+        },
+        {
+          "date": "2026-10-16T00:11:52.237134+00:00",
+          "change": "Admit ordinary resource requests in arrival order to prevent large jobs from starving behind newer small jobs. Optional compression helpers remain nonblocking and may borrow capacity only while the oldest queued job cannot fit. Controlled admission check passed (helper, older job, newer job); no output-generation or pricing changes. Earlier waiting Solid N96192 was admitted by briefly holding new admissions; all processes resumed at 00:01:01 UTC."
         }
       ],
       "compiler_address_space_limit_bytes": 17179869184,
@@ -40482,5 +41322,120 @@
         "notes": "Scheduling reservations estimate memory, not application cost. Native compiler builds are serialized. Three queues rotate family points."
       }
     }
+  },
+  "mixture": {
+    "n": 2592,
+    "seed": 17,
+    "scope": "Mixed app versus the arithmetic mean of ten homogeneous apps at the same N, using measured responses. The mean is a comparison, not an additive prediction for the mixed app.",
+    "rows": [
+      {
+        "mode": "tea",
+        "raw": {
+          "mixed": 6206994,
+          "homogeneous_mean": 6201638.7,
+          "change_percent": 0.08635298280113002
+        },
+        "brotli": {
+          "mixed": 380789,
+          "homogeneous_mean": 344038,
+          "change_percent": 10.682250216545853
+        },
+        "gzip": {
+          "mixed": 786864,
+          "homogeneous_mean": 670155.8,
+          "change_percent": 17.41508467135551
+        }
+      },
+      {
+        "mode": "partial",
+        "raw": {
+          "mixed": 5746723,
+          "homogeneous_mean": 5744575.8,
+          "change_percent": 0.037377868701815586
+        },
+        "brotli": {
+          "mixed": 235109,
+          "homogeneous_mean": 192858.5,
+          "change_percent": 21.907512502689784
+        },
+        "gzip": {
+          "mixed": 549871,
+          "homogeneous_mean": 395686.2,
+          "change_percent": 38.96643350210343
+        }
+      },
+      {
+        "mode": "static",
+        "raw": {
+          "mixed": 6116334,
+          "homogeneous_mean": 6115447.9,
+          "change_percent": 0.014489535590667124
+        },
+        "brotli": {
+          "mixed": 149301,
+          "homogeneous_mean": 151045.2,
+          "change_percent": -1.154753676382969
+        },
+        "gzip": {
+          "mixed": 511693,
+          "homogeneous_mean": 345874.7,
+          "change_percent": 47.94172571743467
+        }
+      },
+      {
+        "mode": "local",
+        "raw": {
+          "mixed": 5794429,
+          "homogeneous_mean": 5793895,
+          "change_percent": 0.009216597815453476
+        },
+        "brotli": {
+          "mixed": 146776,
+          "homogeneous_mean": 117590,
+          "change_percent": 24.820137766816906
+        },
+        "gzip": {
+          "mixed": 398479,
+          "homogeneous_mean": 248783.7,
+          "change_percent": 60.170863284049545
+        }
+      },
+      {
+        "mode": "cells",
+        "raw": {
+          "mixed": 6048301,
+          "homogeneous_mean": 6048119.6,
+          "change_percent": 0.002999279313198322
+        },
+        "brotli": {
+          "mixed": 249057,
+          "homogeneous_mean": 188998.7,
+          "change_percent": 31.77709687950234
+        },
+        "gzip": {
+          "mixed": 620232,
+          "homogeneous_mean": 459789.8,
+          "change_percent": 34.89468448408382
+        }
+      },
+      {
+        "mode": "vanilla",
+        "raw": {
+          "mixed": 225994,
+          "homogeneous_mean": 209572.7,
+          "change_percent": 7.835610267940418
+        },
+        "brotli": {
+          "mixed": 16952,
+          "homogeneous_mean": 14771.9,
+          "change_percent": 14.758426471882435
+        },
+        "gzip": {
+          "mixed": 25936,
+          "homogeneous_mean": 19845.3,
+          "change_percent": 30.690894065597398
+        }
+      }
+    ]
   }
 }
