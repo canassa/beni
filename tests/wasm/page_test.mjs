@@ -9,14 +9,16 @@
 //   node tests/wasm/page_test.mjs srcdoc
 //       the output frame's document, with and without the CSS pane's text
 //   node tests/wasm/page_test.mjs samples
-//       each sample's files, and TodoMVC's copy of todomvc-app-css
+//       each sample's files, TodoMVC's copy of todomvc-app-css, and the
+//       page's link to its notice
 //   node tests/wasm/page_test.mjs tabs
 //       every tab of `index.html` controls a panel the page has
 //   node tests/wasm/page_test.mjs syntax
 //       the grammar names the tokens of each line as the test says
 //   node tests/wasm/page_test.mjs vendor
 //       every vendored editor module is the bytes `SHA256SUMS` names, and
-//       `index.html`'s import map names each module and nothing else
+//       `index.html`'s import map names each module and nothing else, and
+//       the page links to their notice
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { dirname } from "node:path";
@@ -106,6 +108,17 @@ class Stream {
   current() {
     return this.string.slice(this.start, this.pos);
   }
+}
+
+/// `index.html` links to the notice `href` with an `<a>` element, not with
+/// text in a comment, and the link opens a new tab: the page keeps an edit
+/// only in its editor, so a click that left the page could lose it
+/// (playground.md §4.6).
+function checkLicenceLink(href) {
+  const html = readFileSync("playground/index.html", "utf8").replace(/<!--[\s\S]*?-->/g, "");
+  const tag = [...html.matchAll(/<a\b[^>]*>/g)].map(([a]) => a).find((a) => a.includes(` href="${href}"`));
+  check(tag !== undefined, `the page has a link to ${href}`);
+  check(/\starget="_blank"/.test(tag ?? ""), `the link to ${href} opens a new tab: ${tag}`);
 }
 
 const [mode, ...args] = process.argv.slice(2);
@@ -238,7 +251,7 @@ if (mode === "positions") {
     check(sums.get(file) === sum, `${file} is the bytes SHA256SUMS names`);
   }
   const html = readFileSync("playground/index.html", "utf8");
-  check(html.includes('href="vendor/LICENSES.txt"'), "the page links to vendor/LICENSES.txt");
+  checkLicenceLink("vendor/LICENSES.txt");
   const map = JSON.parse(/<script type="importmap">([\s\S]*?)<\/script>/.exec(html)[1]).imports;
   const targets = Object.values(map).map((url) => url.replace(/^\.\/vendor\//, "")).sort();
   check(JSON.stringify(targets) === JSON.stringify(modules), `the import map names each vendored module once: ${JSON.stringify(targets)}`);
@@ -307,13 +320,13 @@ if (mode === "positions") {
   const notices = readFileSync("playground/samples/LICENSES.txt", "utf8");
   check(notices.includes("== browser-direct/TodoMVC.css: todomvc-app-css 2.4.3 (CC-BY-4.0)"), "samples/LICENSES.txt names TodoMVC.css's source and licence");
   check(notices.includes("Copyright (c) Sindre Sorhus") && notices.includes("Attribution 4.0 International Public License"), "samples/LICENSES.txt holds the credit and the licence's text");
-  check(readFileSync("playground/index.html", "utf8").includes('href="samples/LICENSES.txt"'), "the page links to samples/LICENSES.txt");
+  checkLicenceLink("samples/LICENSES.txt");
 } else if (mode === "tabs") {
   // `page.js`'s `select()` shows the panel a tab's `aria-controls` names
   // (playground.md §4.6): a tab whose panel the page lacks would throw.
   const html = readFileSync("playground/index.html", "utf8");
   const ids = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map(([, id]) => id));
-  const tabs = [...html.matchAll(/<button role="tab"[^>]*>/g)].map(([tag]) => tag);
+  const tabs = [...html.matchAll(/<button\b[^>]*\brole="tab"[^>]*>/g)].map(([tag]) => tag);
   check(tabs.length === 6, `the page has six tabs: ${JSON.stringify(tabs)}`);
   for (const tag of tabs) {
     const panel = /aria-controls="([^"]+)"/.exec(tag)?.[1];
