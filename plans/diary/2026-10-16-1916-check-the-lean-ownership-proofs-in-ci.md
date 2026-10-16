@@ -20,10 +20,10 @@ A review of the merged job found a hole, and I fixed it in #261.
 An `#eval` in an audited module runs during `lake build` and rewrote `Axioms.lean` and `scripts/audit.sh` before they ran.
 With `lake build` first, the job passed on a commit with a fourth `sorry`.
 Now `scripts/audit.sh` runs first, and its source scan rejects `#eval` before any audited code runs.
-After `lake build`, the job fails when the build changed a tracked file.
+After `lake build`, the job fails when the build changed or added a file that git does not ignore.
 The steps also run for a pull request whose base is not `master`, and for a change to a `.gitattributes` file.
 A `sorry` in `Triage.lean` showed on CI that `lake build` passed while the audit failed.
-Cesar decided that the audit files need his review, so #263 adds `.github/CODEOWNERS`.
+Cesar decided that the audit files need the owner's review, so #263 adds `.github/CODEOWNERS`.
 
 **What I learned**
 
