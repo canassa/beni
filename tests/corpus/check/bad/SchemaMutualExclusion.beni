@@ -1,0 +1,36 @@
+-- An exclusion travels round a cycle of tagged schemas (checker-v2.md
+-- §11.5): `Even`'s `via` target holds a function, so `Even.Type` does not
+-- compare, nor does `Odd.Type`, which holds it only through `Even`:
+-- `not_equatable` at `sameOdd`'s `==`. The encoded side holds no conversion
+-- target and compares. The two schemas are one unit of the fixpoint, read
+-- off their bodies; as two, the first one's run read the second's
+-- approximation, an `internal`.
+import Schema exposing (Conversion)
+
+
+type Holder
+    = Holder (Int → Int)
+
+
+conv : Conversion Int Holder
+conv = Debug.todo "checker-only conversion"
+
+
+schema Odd tagged "o" of
+    OddOne as "one"
+        next : List Even
+
+
+schema Even tagged "e" of
+    EvenMore as "more"
+        next : List Odd
+    EvenFn as "fn"
+        f : Int via conv
+
+
+sameOdd : Odd.Type, Odd.Type → Bool
+sameOdd a b = a == b
+
+
+sameOddEncoded : Odd.Encoded, Odd.Encoded → Bool
+sameOddEncoded a b = a == b

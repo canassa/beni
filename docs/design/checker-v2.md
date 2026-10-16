@@ -3118,6 +3118,18 @@ so editing the private schema's field moved no digest and a cached importer kept
 (`digest_test.zig`). The digest's bytes change only for a module whose
 alias body names a schema — a key that moves, never a stale hit — so `digest_version` stays 2.
 
+*Amended 2026-10-16 (#196).* **A schema's mentions are read off its body.** *Mentions* above
+says a schema's references are its payloads'. The code read them off the declaration's `declRefs`,
+but a schema body records none: its operands are resolved in place (`schema_target_top`). So a
+tagged endpoint had no mention edges at all. Two tagged schemas that name each other were two
+units, and the first one's pass ran the second's fixpoint nested. That run read the first's
+approximation, which *The unit graph is exact* above makes `internal`. `ContextUnits.mentions` now
+reads a schema declaration's resolved operands as well as its references: another tagged schema
+is an edge to its two endpoints, a record schema is expanded as before. A cycle of schemas is
+then one unit, an exclusion anywhere in it reaches every member that holds it
+(`check/bad/SchemaMutualExclusion`), and it checks in every declaration order (`ordering_test`).
+A cycle across modules cannot form, since modules import in a DAG.
+
 ---
 
 ## 12. Evidence and elaboration
