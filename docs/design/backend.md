@@ -6797,7 +6797,11 @@ fact 3 finds at the call:
   ask the size model at a call through a property when, by fact 3's values over the whole
   program, these three hold: the callee of exactly one call may be that function, the function
   does not escape, and every other node that may be it only holds it (the function itself, a
-  key's value in an object literal, or a binding's initialiser). And a call through a property
+  key's value in an object literal whose site neither escapes nor has every key read, or a
+  binding's initialiser). A record update `{ r | … }` spreads `r`, which reads every key of it, so
+  a key of `r` stays whatever its call becomes: written at the call, the body would be in the
+  output two times, raw bytes and brotli both larger (`emit/release/app/SpecRecordLambdaUpdate`,
+  found by the PR's review). And a call through a property
   may pass more arguments than the function has parameters, when each one past them is `inert`:
   the call evaluates it and nothing reads it. This is `app.init(null)` of a lambda lowered with no
   parameter for its `⊤`; `trimArguments` drops such an argument only after slice 8 has run. The
@@ -6805,8 +6809,11 @@ fact 3 finds at the call:
   and first. The uses are counted in one walk of the program, made at most once per pass and only
   when the size model has refused a call through a property. A body slice 8 has already written in
   during that pass is newer than the facts, so the walk cannot see the uses in it: every function
-  site a node of a copied body may be is marked, and a marked function is not used once. A wrong
-  count only costs bytes — the rewrite is slice 8's, sound at any size, and a key or a binding
+  site that fact 3 gives a node of a copied body is marked, and a marked function is not used
+  once. This is a guard, not an exact count: a node of that body newer than the facts (a copy an
+  earlier call wrote into it, or what `returnExpr` makes of an `if` or a `const` body) has no fact-3
+  value, and a function that only such a node may be is not marked. A wrong count only costs
+  bytes — the rewrite is slice 8's, sound at any size, and a key or a binding
   goes only when nothing reads it.
 
 Neither rule changes a development build.
@@ -6861,10 +6868,14 @@ lambda that only makes a value go, a lambda that makes a record of a name it cap
 one whose lambda logs and one handed a logged `⊤` stay and log
 where they stood, and a lambda used once evaluates its logged argument once, between its
 neighbours) — red with `makesOnly` accepting any body: the release build loses the `noisy` and
-`unit` lines. Goldens moved: `emit/release/tea/HttpSendTracked` and `HttpSendUntracked` (the
-unread `a.init()` and the record holding the lambda go; the hosted `view` calls the start function
-by name), `emit/release/split/HolesPage` (`a.init()` is the model literal `{g:0,a:false}`, and the
-mount, then called with atoms only, is written in its caller).
+`unit` lines; `emit/release/app/SpecRecordLambdaUpdate` (a lambda used once in a record that a
+record update spreads: the size model keeps the call, and the body is in the output once) — red
+against the rule before it checked the holding object's site (raw 440 → 456). Goldens moved:
+`emit/release/tea/HttpSendTracked` and `HttpSendUntracked` (the unread `a.init()` and the record
+holding the lambda go; the hosted `view` calls the start function by name),
+`emit/release/split/HolesPage` (`a.init()` is the model literal `{g:0,a:false}`; `update`'s body
+is written at its one call, so `d=a.update(b,d)` is `g={g:g.g+1,a:a}`; and the mount, then called
+with atoms only, is written in its caller).
 
 **Measured and not built: inert extra arguments at every call.** Slice 8 could accept inert
 arguments past the parameters at any call, not only at one through a property. Against the rule

@@ -1,0 +1,41 @@
+-- emit: a record update keeps the key that holds a record field's lambda
+-- (`backend.md` §9, *Slice 8*, amended 2026-10-15, *A record field's
+-- lambda*). `app.step n` is the one call of `step`'s lambda, but
+-- `{ app | tag = 2 }` spreads `app`, which reads every key of it, so the
+-- lambda stays in the record. Written at the call, its body would be in
+-- the output two times: the size model is asked, and the call stays.
+import Node exposing (Program)
+
+
+type alias Count =
+    count : Int
+    label : String
+    twice : Int
+
+
+type alias App =
+    step : Int → Count
+    tag : Int
+
+
+show : App → String
+show a = String.fromInt a.tag
+
+
+run : App, Int → List String
+run app n =
+    copy = { app | tag = 2 }
+    v = app.step n
+    [ String.fromInt v.count, v.label, String.fromInt v.twice, show copy, show app ]
+
+
+main : Program
+main =
+    Node.printLines
+        (run
+            { step =
+                λk → { count = k * 10 + 7, label = "value " ++ String.fromInt k, twice = k + k }
+            , tag = 1
+            }
+            (String.length "abcde")
+        )

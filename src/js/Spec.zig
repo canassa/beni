@@ -4955,10 +4955,12 @@ const Spec = struct {
     /// call of the program and nothing else — the callee of one call node
     /// may be it, it does not escape, and every other node that may be it
     /// only holds it: the function itself, a key's value in an object
-    /// literal, or a binding's initialiser. Once that call holds the body,
-    /// nothing reads the key or the binding, and the function goes with
-    /// them, so the size model, which prices the call against the body
-    /// alone, is not asked.
+    /// literal whose site neither escapes nor has every key read, or a
+    /// binding's initialiser. Once that call holds the body, nothing reads
+    /// the key or the binding, and the function goes with them, so the
+    /// size model, which prices the call against the body alone, is not
+    /// asked. A spread (`{ r | … }`) reads every key of `r`: its key stays,
+    /// and the body would be in the output two times.
     fn soleCalls(s: *Spec) Allocator.Error![]const bool {
         const n = s.pts.sites.items.len;
         const calls = try s.arena.alloc(u32, n);
@@ -4973,10 +4975,11 @@ const Spec = struct {
             // meets first.
             var callee: std.DynamicBitSetUnmanaged = try .initEmpty(s.arena, ir.nodes.len);
             var holds: std.DynamicBitSetUnmanaged = try .initEmpty(s.arena, ir.nodes.len);
+            var key: std.DynamicBitSetUnmanaged = try .initEmpty(s.arena, ir.nodes.len);
             for (ir.extraSlice(ir.body, Index)) |top| {
                 for (try s.preorder(m, top)) |node| {
                     // A node past `vals` is a copy this pass made; its uses
-                    // are marked in `copied_sites` (`noteCopiedSites`).
+                    // are guarded by `copied_sites` (`noteCopiedSites`).
                     const i = node.int();
                     const tag = ir.tag(node);
                     // A key's node is what its value is, and only holds it.
@@ -4989,7 +4992,16 @@ const Spec = struct {
                     const d = ir.data(node);
                     switch (tag) {
                         .call => callee.set(d.lhs),
-                        .property => holds.set(d.rhs),
+                        // A key holds its value only while fact 3 can drop
+                        // it: of an object literal whose site neither
+                        // escapes nor has every key read (`Pts.keyUnread`).
+                        .object => if (s.pts.siteAt(@intCast(mi), node)) |site| {
+                            const st = s.pts.sites.items[site];
+                            if (!st.escaped and !st.all_read) for (ir.extraSlice(JsIr.inlineRange(d), Index)) |prop| {
+                                if (ir.tag(prop) == .property) key.set(prop.int());
+                            };
+                        },
+                        .property => if (key.isSet(i)) holds.set(d.rhs),
                         .const_decl => holds.set(d.rhs),
                         .let_decl => if ((@as(Node.OptionalIndex, @fromBackingInt(@intCast(d.rhs)))).unwrap()) |v| holds.set(v.int()),
                         else => {},
@@ -5002,9 +5014,12 @@ const Spec = struct {
         return sole;
     }
 
-    /// Mark in `copied_sites` every function site a node of `small`'s body
-    /// may be: once the body is copied, each of them may have a use
-    /// `soleCalls` does not count.
+    /// Mark in `copied_sites` every function site fact 3 gives a node of
+    /// `small`'s body: once the body is copied, each of them may have a use
+    /// `soleCalls` does not count. A guard, not an exact count: a node of
+    /// the body newer than the facts (an earlier copy into it, what
+    /// `returnExpr` made) has no value, so a function that only it may be
+    /// is not marked — which costs bytes at most.
     fn noteCopiedSites(s: *Spec, small: Small) Allocator.Error!void {
         const ir = s.mods[small.module].ir;
         const vals = s.pts.vals[small.module];
