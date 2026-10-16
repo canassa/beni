@@ -452,6 +452,17 @@ reach in `zig-out/coverage/summary.md` and `lcov.info`
 (`nix develop .#coverage` has `genhtml`). A red line is untested; a green line
 only ran — no test necessarily checked it. Details: `tests/coverage.zig`.
 
+**The Lean ownership proofs** (`proofs/ownership/`, Lean 4.29.1, `nix develop
+.#ownership`) are outside the gates. CI's `lean` job checks them, and `check`
+needs it: `lake build` (the kernel check and the in-build axiom audit), then
+`scripts/audit.sh HEAD` (the independent audit of a clean export). On a push
+to `master` it runs both. On a pull request it runs them only when the pull
+request changes `proofs/ownership/`, `flake.nix`, `flake.lock` or
+`.github/workflows/ci.yml`; otherwise it skips them and passes. It restores
+`.lake` from `master`. The audit never reads that directory, so a restored
+build cannot hide a broken proof from the job; a warm `lake build` alone can
+miss a `sorry` (#255). `proofs/ownership/README.md`, *CI*.
+
 `beni dump --stage=tokens|ast|bir|types|interface` is the window into every
 phase, and the dumps are corpus-tested, so they are outputs rather than
 internals.
