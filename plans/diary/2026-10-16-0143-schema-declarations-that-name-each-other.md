@@ -20,9 +20,11 @@
     described without end. `describe` overflowed in the compiled path, and so
     did every use in `--schema-library`. Each reference called the other's
     description factory, which made a new `describedRecursive` cell per level.
-    `SchemaLower.descNode` now describes such a reference as the member's body
-    under its own cell, inside the referring description. A scope of in-scope
-    cells replaced the single `self`.
+    A generic description now makes one cell per member of its cycle
+    (`SchemaLower.cycleCells`), describes each body once, and reads the cells
+    for every reference with the parameters as they are. The first version
+    described a member at each reference, and the review pointed out that
+    this grows with the paths through a dense cycle.
 - Fixtures: `check/good/SchemaMutualTagged` (the issue's reproducer),
   `check/bad/SchemaMutualExclusion` (a function reached through the cycle, the
   encoded side still compares), `run/SchemaDeclMutual` (a pair, a ring of three,
