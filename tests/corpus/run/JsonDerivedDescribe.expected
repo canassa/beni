@@ -1,0 +1,32 @@
+#0
+  #0 codec = constructors [ Leaf | Node (#0) (Int) (#0) ]
+#0
+  #0 codec = constructors [ Num (Int) | Add (#0) (#0) | Block (List (#1)) ]
+  #1 codec = constructors [ Let (String) (#0) | Do (#0) ]
+#0
+  #0 codec = constructors [ Let (String) (#1) | Do (#1) ]
+  #1 codec = constructors [ Num (Int) | Add (#1) (#1) | Block (List (#0)) ]
+#0
+  #0 codec = constructors [ Rose (String) (#1) ]
+  #1 codec = constructors [ Grove (List (#0)) ]
+#0
+  #0 codec = constructors [ Grove (List (#1)) ]
+  #1 codec = constructors [ Rose (Bool) (#0) ]
+#0
+  #0 codec = constructors [ Ring (Int) (List (#1)) (List (#2)) ]
+  #1 codec = constructors [ Bell (List (#0)) (List (#2)) ]
+  #2 codec = constructors [ Horn (List (#0)) (List (#1)) ]
+#0
+  #0 codec = constructors [ Leaf | Node (#0) (Int) (#0) ]
+#0
+  #0 codec = constructors [ Rose (Int) (#1) ]
+  #1 codec = constructors [ Grove (List (#0)) ]
+#0
+  #0 codec = constructors [ Grove (List (#1)) ]
+  #1 codec = constructors [ Rose (Bool) (#0) ]
+#0
+  #0 codec = constructors [ Ring (Bool) (List (#1)) (List (#2)) ]
+  #1 codec = constructors [ Bell (List (#0)) (List (#2)) ]
+  #2 codec = constructors [ Horn (List (#0)) (List (#1)) ]
+decoded
+decoded
