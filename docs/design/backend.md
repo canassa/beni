@@ -6812,7 +6812,8 @@ fact 3 finds at the call:
   local binding of this kind that goes, because `init = app.init` is read before it. The rule
   does not count on that: five `browser/` builds of `Tea.document` give up 39–57 raw bytes
   against a rule that counts every local binding, and stay 22–68 raw bytes smaller than master.
-  And a call through a property
+  Issue #246 holds the wider drop, of a key or a binding of a field read that does nothing, that
+  would get them back. And a call through a property
   may pass more arguments than the function has parameters, when each one past them is `inert`:
   the call evaluates it and nothing reads it. This is `app.init(null)` of a lambda lowered with no
   parameter for its `⊤`; `trimArguments` drops such an argument only after slice 8 has run. The
@@ -6872,14 +6873,16 @@ runtime flushed, 6 rounds after 2 warm-ups, 16 interleaved processes, median [q1
 [69.8–78.9], update every 10th 0.45 [0.37–0.52] → 0.46 [0.35–0.52], swap 0.17 [0.15–0.30] → 0.18
 [0.15–0.30], clear 10.19 [9.91–10.49] → 10.24 [10.00–10.59]: every range overlaps.
 
-Measured again on `f9ade83c5`, with the record-update condition of item 2: `bench/size.mjs` 15 lines
-smaller and 1 larger, −389 brotli (raw −955); the one larger line is `ApiAndRoutes`, 14 535 → 14 538
-(raw 43 290 → 43 268), the same class of increase. The `browser/` corpus (590 builds): 290 smaller,
-295 equal, 5 larger, −5 815 brotli (raw −13 541), no raw increase; the 5 larger are the
-`AnimationFrames`, `HttpRequestShape`, `ControlledEdits` and `LateResponse` builds above, by the
-same bytes. Conduit is 28 671 → 28 623 on `browser-tea` (raw 116 253 → 116 231) and byte for byte
-the same on `browser-direct`; its release build costs 4 943 → 4 972 million instructions on
-`browser-tea` (+0.59 %) and 9 171 → 9 174 on `browser-direct` (+0.04 %).
+Measured again on `f9ade83c5`, with the record-update condition and the inert holders of item 2:
+`bench/size.mjs` 15 lines smaller and 1 larger, −389 brotli (raw −955); the one larger line is
+`ApiAndRoutes`, 14 535 → 14 538 (raw 43 290 → 43 268), the same class of increase. The `browser/`
+corpus (590 builds): 290 smaller, 295 equal, 5 larger, −5 775 brotli (raw −13 328), no raw
+increase; the 5 larger are the `AnimationFrames`, `HttpRequestShape`, `ControlledEdits` and
+`LateResponse` builds above, by the same bytes. The inert holders changed only the five
+`Tea.document` builds named in item 2 (+213 raw, +40 brotli in all, against the rule that counted
+every local binding). Conduit is 28 671 → 28 623 on `browser-tea` (raw 116 253 → 116 231) and
+byte for byte the same on `browser-direct`; its release build costs 4 943 → 4 974 million
+instructions on `browser-tea` (+0.63 %) and 9 171 → 9 174 on `browser-direct` (+0.04 %).
 
 Fixtures: `emit/release/app/SpecRecordLambda` (an unread `app.init ⊤` gone with its key and
 lambda; `start`'s and `step`'s lambdas, each used once, written at their calls, one of them past
