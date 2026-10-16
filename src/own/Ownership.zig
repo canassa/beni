@@ -5101,6 +5101,20 @@ const Walker = struct {
         }
     }
 
+    /// The callee of a call: the instruction that evaluated it, and for
+    /// `r.load a` the field of the receiver `inst` whose value is called
+    /// (§30.11), so that the call reads `r.load` and not all of `r`.
+    const CalleeRef = struct { inst: Inst.Index, field: u32 = none };
+
+    fn useCallee(w: *Walker, c: CalleeRef, tok: u32) Allocator.Error!void {
+        if (c.field == none) return w.useOperand(c.inst, tok, &.{});
+        if (try w.refPath(c.inst)) |r| {
+            w.use_at = .{ w.rootToken(c.inst), w.token(c.inst) };
+            defer w.use_at = .{ none, none };
+            try w.useAt(r.local, try w.o.child(r.path, .field, c.field), tok, &.{});
+        }
+    }
+
     fn useAt(w: *Walker, l: u32, path: u32, tok: u32, except: []const u32) Allocator.Error!void {
         // A local of this frame, or one this frame captured from an
         // enclosing one: a closure that gave up what it captured must not
@@ -6542,14 +6556,14 @@ const Walker = struct {
         // A function value: its classes, when the walk knows where it came
         // from (§16.5); else a conservative call that reads its captures.
         const f = try w.eval(callee);
-        return w.callValue(inst, args, f, callee);
+        return w.callValue(inst, args, f, .{ .inst = callee });
     }
 
     /// A call of the function value `f`, which `callee` evaluated: a
     /// function parameter or slot of the declaration, a value whose class
     /// the walk knows, or §6.1's call of a function it cannot identify.
-    fn callValue(w: *Walker, inst: Inst.Index, args: []const Inst.Index, f: AV, callee: Inst.Index) Allocator.Error!AV {
-        try w.pushPending(f, callee, true);
+    fn callValue(w: *Walker, inst: Inst.Index, args: []const Inst.Index, f: AV, callee: CalleeRef) Allocator.Error!AV {
+        try w.pushPending(f, callee.inst, true);
         defer w.popPending(1);
         // A call of a function parameter of the declaration (§16.4 item 4).
         if (w.fnParamOf(f)) |j| {
@@ -7392,7 +7406,7 @@ const Walker = struct {
         // `r.load a` on a record field that holds a function is a call of
         // the field's value, as `(r.load) a` is: a slot of a parameter, a
         // class the walk knows, or a function it cannot identify (§30.11).
-        if (try w.fieldFunction(all[0], mc.name)) |f| return w.callValue(inst, rest, f, all[0]);
+        if (try w.fieldFunction(all[0], mc.name)) |f| return w.callValue(inst, rest, f, .{ .inst = all[0], .field = @backingInt(w.bir.symbol(mc.name)) });
         return w.conservative(inst, all, &.{}, null, "", false, false);
     }
 
@@ -7498,19 +7512,19 @@ const Walker = struct {
     /// node it makes. Every other call here is of a function the checker
     /// cannot identify, which may return a list something else holds, so
     /// its result is `⊤call`, never a cell the call made (§30.11).
-    fn conservative(w: *Walker, inst: Inst.Index, args: []const Inst.Index, callee_av: AV, callee: ?Inst.Index, name: []const u8, foreign: bool, made: bool) Allocator.Error!AV {
+    fn conservative(w: *Walker, inst: Inst.Index, args: []const Inst.Index, callee_av: AV, callee: ?CalleeRef, name: []const u8, foreign: bool, made: bool) Allocator.Error!AV {
         const avs = try w.evalOperands(args, true);
         w.popPending(avs.len);
         return w.conservativeAV(inst, args, avs, callee_av, callee, name, foreign, made);
     }
 
-    fn conservativeAV(w: *Walker, inst: Inst.Index, args: []const Inst.Index, avs: []const AV, callee_av: AV, callee: ?Inst.Index, name: []const u8, foreign: bool, made: bool) Allocator.Error!AV {
+    fn conservativeAV(w: *Walker, inst: Inst.Index, args: []const Inst.Index, avs: []const AV, callee_av: AV, callee: ?CalleeRef, name: []const u8, foreign: bool, made: bool) Allocator.Error!AV {
         w.point += 1;
         const tok = w.token(inst);
         for (args) |x| try w.useOperand(x, tok, &.{});
-        if (callee) |c| try w.useOperand(c, tok, &.{});
+        if (callee) |c| try w.useCallee(c, tok);
         try w.useTemporaries(args, avs, tok);
-        if (callee) |c| try w.useTemporaries(&.{c}, &.{callee_av}, tok);
+        if (callee) |c| try w.useTemporaries(&.{c.inst}, &.{callee_av}, tok);
         for (avs) |av| try w.sight(av, if (name.len > 0) .{ .no_summary = name } else .{ .pending = "it is passed where the checker cannot see its calls" }, tok);
         if (foreign) for (avs) |av| try w.escapeCapturesOf(av, w.point, inst);
         const ty = w.instType(inst);
@@ -7551,13 +7565,13 @@ const Walker = struct {
     /// A call of the declaration's own function parameter `j` (§16.4 item
     /// 4): each argument is a supply, owned when it passes the four
     /// conditions at the call, and the result is that parameter's result.
-    fn callbackCall(w: *Walker, inst: Inst.Index, j: u32, args: []const Inst.Index, callee: Inst.Index) Allocator.Error!AV {
+    fn callbackCall(w: *Walker, inst: Inst.Index, j: u32, args: []const Inst.Index, callee: CalleeRef) Allocator.Error!AV {
         const avs = try w.evalOperands(args, true);
         w.popPending(avs.len);
         w.point += 1;
         const tok = w.token(inst);
         for (args) |x| try w.useOperand(x, tok, &.{});
-        try w.useOperand(callee, tok, &.{});
+        try w.useCallee(callee, tok);
         try w.useTemporaries(args, avs, tok);
         for (avs) |av| try w.sight(av, .{ .pending = "it is passed to a function parameter, whose class is not known here" }, tok);
         const st = &w.fn_state.items[j];
@@ -7589,13 +7603,13 @@ const Walker = struct {
     /// lambda `ci`. Its arguments are probed here, in the lambda; the call
     /// itself is made wherever the lambda runs, where `applyEnvCalls` makes
     /// it a call of `π_j`. The result is that parameter's result.
-    fn envCall(w: *Walker, inst: Inst.Index, ci: u32, j: u32, args: []const Inst.Index, callee: Inst.Index) Allocator.Error!AV {
+    fn envCall(w: *Walker, inst: Inst.Index, ci: u32, j: u32, args: []const Inst.Index, callee: CalleeRef) Allocator.Error!AV {
         const avs = try w.evalOperands(args, true);
         w.popPending(avs.len);
         w.point += 1;
         const tok = w.token(inst);
         for (args) |x| try w.useOperand(x, tok, &.{});
-        try w.useOperand(callee, tok, &.{});
+        try w.useCallee(callee, tok);
         try w.useTemporaries(args, avs, tok);
         for (avs) |av| try w.sight(av, .{ .pending = "it is passed to a function parameter, whose class is not known here" }, tok);
         w.cb_args[inst.int() - w.decl.inst_start.int()] = try w.unionOf(avs);
@@ -7757,7 +7771,7 @@ const Walker = struct {
     }
 
     /// §16.4: a call whose callee has a summary.
-    fn applySummary(w: *Walker, inst: Inst.Index, callee: Callee, args: []const Inst.Index, callee_av: AV, callee_inst: ?Inst.Index) Allocator.Error!AV {
+    fn applySummary(w: *Walker, inst: Inst.Index, callee: Callee, args: []const Inst.Index, callee_av: AV, callee_inst: ?CalleeRef) Allocator.Error!AV {
         const s = callee.sum;
         // §23.4: a lambda written at a send position: its parameter there
         // is a send, known before its body is walked.
@@ -7806,8 +7820,8 @@ const Walker = struct {
             }
         }
         if (callee_inst) |c| {
-            try w.useOperand(c, tok, &.{});
-            try w.useTemporaries(&.{c}, &.{callee_av}, tok);
+            try w.useCallee(c, tok);
+            try w.useTemporaries(&.{c.inst}, &.{callee_av}, tok);
         }
         // §23.3: a function parameter handed to a send position takes the
         // fact before anything the callee keeps of it is looked at.
