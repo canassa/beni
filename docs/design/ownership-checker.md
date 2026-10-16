@@ -4237,7 +4237,9 @@ that names its cause, so a write onto the answer is rejected `unknown`, approxim
 places are two result paths whose argument paths overlap where neither is the other's placement: `π1` at `.0`
 and `π1[*]` at `.0[*]` are one placement; a part whose type holds no cell does not count (the `Int`s of a
 `List Int`, also found in a reversed copy); a `⋆` that blurs the alignment counts as two places. For a list it
-makes, two places are two result paths that name one fresh number (§16.3). The slot holds no position, so the
+makes, two places are two result paths that name one fresh number (§16.3), unless the longer one, read in the
+decoded type below the result's `Ok`, holds no cell: a recursive builder (`range n = … List.push (range (n -
+1)) n`) numbers its `Int` elements as the list. The slot holds no position, so the
 `⊤` reaches every list of the answer: a program that writes one position and drops the other, or that writes
 another field of the same answer, is rejected too — the issue's "loses separation". A list's elements need no
 change, because the elements of a run's answer may share one list already (§18.4). Fixture:
