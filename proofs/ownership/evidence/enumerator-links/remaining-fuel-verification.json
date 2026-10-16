@@ -1,0 +1,175 @@
+{
+  "complete": true,
+  "passed": true,
+  "started_at_utc": "2026-10-16T13:49:46.658992+00:00",
+  "finished_at_utc": "2026-10-16T13:49:51.605243+00:00",
+  "input_file": "zig-out/scratch/enum-remaining-fuel.tsv",
+  "input_before": {
+    "device": 38,
+    "inode": 49317708,
+    "bytes": 191094251,
+    "modified_ns": 1792154507424572003
+  },
+  "input_after": {
+    "device": 38,
+    "inode": 49317708,
+    "bytes": 191094251,
+    "modified_ns": 1792154507424572003
+  },
+  "input_unchanged": true,
+  "verifier": {
+    "file": "zig-out/scratch/verify-remaining-fuel-stream.py",
+    "sha256": "b0f02ddfbad5385aeebcefbedfbed98c3fc0817d38a90ec8452ff9d339137a7e",
+    "bytes": 18632
+  },
+  "schedule_sources": [
+    {
+      "file": "proofs/ownership/Ownership/Fixtures.lean",
+      "sha256": "17aa602d9a2393073604eec8f85e48bf8ebb3469406f499ccde7e35b000fc5b0",
+      "bytes": 49118
+    },
+    {
+      "file": "proofs/ownership/Ownership/Sync.lean",
+      "sha256": "d9426cb3d47ad644864f6a16228bc051c385587bfba50e49170c0781cc0dee7d",
+      "bytes": 38291
+    },
+    {
+      "file": "proofs/ownership/evidence/construction-fuel/FuelLeft.lean",
+      "sha256": "04b3f2070b7843d2061ab6a04a3b31f8808eba499cbfd8110e4deea65b320422",
+      "bytes": 6222
+    }
+  ],
+  "schedule_sources_unchanged": true,
+  "expected": {
+    "cases": 226088,
+    "accepted": 71747,
+    "rejected": 154341,
+    "runs": 238166,
+    "rows": 702420
+  },
+  "counts": {
+    "cases": 226088,
+    "accepted": 71747,
+    "rejected": 154341,
+    "runs": 238166,
+    "paired_eval_success": 129141,
+    "equal_remaining_fuel": 129141,
+    "unequal_remaining_fuel": 0,
+    "value_eval_only": 0,
+    "heap_eval_only": 0,
+    "paired_eval_error": 109025,
+    "paired_eval_error_bytes_equal": 0,
+    "paired_eval_error_bytes_different": 109025,
+    "paired_trace_success": 129141,
+    "exact_trace_bytes_equal": 129141,
+    "exact_trace_bytes_different": 0,
+    "value_trace_only": 0,
+    "heap_trace_only": 0,
+    "paired_final_snapshot_error": 0,
+    "paired_final_snapshot_error_bytes_equal": 0,
+    "paired_final_snapshot_error_bytes_different": 0
+  },
+  "families": [
+    {
+      "family": "witness",
+      "cases": 1,
+      "accepted": 1,
+      "runs": 34,
+      "paired_eval_success": 29,
+      "paired_eval_error": 5
+    },
+    {
+      "family": "fixture",
+      "cases": 98,
+      "accepted": 22,
+      "runs": 22,
+      "paired_eval_success": 22,
+      "paired_eval_error": 0
+    },
+    {
+      "family": "sync",
+      "cases": 99,
+      "accepted": 43,
+      "runs": 43,
+      "paired_eval_success": 43,
+      "paired_eval_error": 0
+    },
+    {
+      "family": "targeted",
+      "cases": 740,
+      "accepted": 284,
+      "runs": 284,
+      "paired_eval_success": 284,
+      "paired_eval_error": 0
+    },
+    {
+      "family": "v5",
+      "cases": 60000,
+      "accepted": 8575,
+      "runs": 8575,
+      "paired_eval_success": 8575,
+      "paired_eval_error": 0
+    },
+    {
+      "family": "v6",
+      "cases": 60000,
+      "accepted": 5042,
+      "runs": 171428,
+      "paired_eval_success": 62408,
+      "paired_eval_error": 109020
+    },
+    {
+      "family": "enum",
+      "cases": 105150,
+      "accepted": 57780,
+      "runs": 57780,
+      "paired_eval_success": 57780,
+      "paired_eval_error": 0
+    }
+  ],
+  "streams": {
+    "combined": {
+      "rows": 702420,
+      "bytes": 191094251,
+      "sha256": "00b3320501a76b4df3afcff2cdbd7889e1feb09bc4cee6680ae219ca3633aa31"
+    },
+    "checks_only": {
+      "rows": 226088,
+      "bytes": 14609576,
+      "sha256": "823d39c194f0f1660f1128cbe4ed29149e6fafb400609d5663e72aa20f23c70a"
+    },
+    "value_results_only": {
+      "rows": 238166,
+      "bytes": 88197883,
+      "sha256": "7032ddbcead89ef5a9f43f9579ea45beff4ac3e3c95fd495d219f1ec8514839c"
+    },
+    "heap_results_only": {
+      "rows": 238166,
+      "bytes": 88286792,
+      "sha256": "0ef8c6e2baf0077383af2ba4f0c86c8af4dba269c79647a34da2edaad6f7dce1"
+    },
+    "value_with_checks": {
+      "rows": 464254,
+      "bytes": 102807459,
+      "sha256": "c5e477a3a3f42087bfbe9dfadb36963325dfc4d350a445f9cdda57d51a065a37"
+    },
+    "heap_with_checks": {
+      "rows": 464254,
+      "bytes": 102896368,
+      "sha256": "1a1fece19a6bef2c8dc00b4475245d02a49fd43d5c27e6ea279ab610b5435901"
+    }
+  },
+  "mismatches": [],
+  "errors": [],
+  "limits": [
+    "Raw LF-delimited rows, labels, fuel keys, result bytes, traces, and errors enter hashes without normalization.",
+    "Each interpreter-with-checks stream contains every original check row and only that interpreter's result rows, in source order.",
+    "The result-only hashes omit check rows explicitly; the check-only hash retains all rejected case records.",
+    "Paired evaluation failures retain exact bytes but do not establish equal remaining fuel or equal error strings.",
+    "Successful evaluation pairs compare remaining fuel; successful final snapshots also compare exact public trace bytes.",
+    "The parser checks the top-level Lean result schema and compares successful trace payloads as exact bytes without interpretation.",
+    "A schema failure stops validation and produces an explicitly partial hash; no row is silently normalized or excluded.",
+    "This scan validates existing stream bytes, not the historical build or execution provenance.",
+    "The finite measurement does not prove Invariant.fuel or any general soundness statement."
+  ]
+}

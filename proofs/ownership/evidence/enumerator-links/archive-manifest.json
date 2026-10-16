@@ -1,0 +1,300 @@
+{
+  "started_at_utc": "2026-10-16T14:12:30.610015+00:00",
+  "finished_at_utc": "2026-10-16T14:12:32.210698+00:00",
+  "compression_level": 9,
+  "gzip_mtime": 0,
+  "gzip_filename": "",
+  "fuel_tracked_limit_bytes": 12000000,
+  "archives": [
+    {
+      "source": {
+        "file": "zig-out/scratch/enum-final-diagnostic-capture/diagnostics.log",
+        "bytes": 12745,
+        "sha256": "0035d0af49e0006440b39b8eba2d874eeee6da710b890c041e1b5367581a852c"
+      },
+      "gzip": {
+        "file": "proofs/ownership/evidence/enumerator-links/archives/diagnostics/diagnostics.log.gz",
+        "bytes": 1434,
+        "sha256": "f4ae48e8f1aa6c9287affbfbd18f7bbf6bf1e8a63cdc591ef4f0f87b552cd731"
+      },
+      "decoded_bytes": 12745,
+      "decoded_sha256": "0035d0af49e0006440b39b8eba2d874eeee6da710b890c041e1b5367581a852c",
+      "source_unchanged": true,
+      "lossless": true,
+      "tracked": true
+    },
+    {
+      "source": {
+        "file": "zig-out/scratch/enum-final-diagnostic-capture/evidence.log",
+        "bytes": 3132824,
+        "sha256": "c3856170add17ba7ae2790a246a6abf4bc247d42433eb80c93a7122059998779"
+      },
+      "gzip": {
+        "file": "proofs/ownership/evidence/enumerator-links/archives/diagnostics/evidence.log.gz",
+        "bytes": 55547,
+        "sha256": "40bd76eece3369bee6843a3c6433a9fc66c52b3143d45136b7f2d885747beb33"
+      },
+      "decoded_bytes": 3132824,
+      "decoded_sha256": "c3856170add17ba7ae2790a246a6abf4bc247d42433eb80c93a7122059998779",
+      "source_unchanged": true,
+      "lossless": true,
+      "tracked": true
+    },
+    {
+      "source": {
+        "file": "zig-out/scratch/raw-hit-probe-current.log",
+        "bytes": 200446,
+        "sha256": "4acb7c58bd2b5983d23d94f44888dbc1fd0740175fd9682c5c4464960e784b1c"
+      },
+      "gzip": {
+        "file": "proofs/ownership/evidence/enumerator-links/archives/raw-hit-probe-current.log.gz",
+        "bytes": 10647,
+        "sha256": "64256cde1767f555d22cb62a9686a6142f7655fc3909c95a5c035349749c95a8"
+      },
+      "decoded_bytes": 200446,
+      "decoded_sha256": "4acb7c58bd2b5983d23d94f44888dbc1fd0740175fd9682c5c4464960e784b1c",
+      "source_unchanged": true,
+      "lossless": true,
+      "tracked": true
+    },
+    {
+      "source": {
+        "file": "zig-out/scratch/enum-baseline-ci.log",
+        "bytes": 315600,
+        "sha256": "b79b07be1da83caff69297e985a0bb3d53c0f3fdecf3208d4f284bc0a966044b"
+      },
+      "gzip": {
+        "file": "proofs/ownership/evidence/enumerator-links/archives/enum-baseline-ci.log.gz",
+        "bytes": 14713,
+        "sha256": "e2d33e9024f7338b631c6455c53e4d6d3fe9c1533531ef1cd02fcc7a1716ffe5"
+      },
+      "decoded_bytes": 315600,
+      "decoded_sha256": "b79b07be1da83caff69297e985a0bb3d53c0f3fdecf3208d4f284bc0a966044b",
+      "source_unchanged": true,
+      "lossless": true,
+      "tracked": true
+    },
+    {
+      "source": {
+        "file": "zig-out/scratch/enum-after-ci.log",
+        "bytes": 315597,
+        "sha256": "689822c065b68a5ce0304306d6800fff2ee3b4fa8ffa08d77412489512c1dbb3"
+      },
+      "gzip": {
+        "file": "proofs/ownership/evidence/enumerator-links/archives/enum-after-ci.log.gz",
+        "bytes": 14701,
+        "sha256": "dd3ff1972ed472c29296ec8edb2f07e86f25695f8c69e4188ea6a419e8bd557f"
+      },
+      "decoded_bytes": 315597,
+      "decoded_sha256": "689822c065b68a5ce0304306d6800fff2ee3b4fa8ffa08d77412489512c1dbb3",
+      "source_unchanged": true,
+      "lossless": true,
+      "tracked": true
+    },
+    {
+      "source": {
+        "file": "zig-out/scratch/enum-baseline-bridge/enumerate-0.jsonl",
+        "bytes": 299140,
+        "sha256": "03d400910275efe8c8beb08c1c8a1db6d782e2da837917f0f69db6c07714e4c0"
+      },
+      "gzip": {
+        "file": "proofs/ownership/evidence/enumerator-links/archives/baseline-bridge/enumerate-0.jsonl.gz",
+        "bytes": 6646,
+        "sha256": "986c2c2fcf05768dd1fd9696daf1d6ec13946156805ac7a356d7ba12b03d83bf"
+      },
+      "decoded_bytes": 299140,
+      "decoded_sha256": "03d400910275efe8c8beb08c1c8a1db6d782e2da837917f0f69db6c07714e4c0",
+      "source_unchanged": true,
+      "lossless": true,
+      "tracked": true
+    },
+    {
+      "source": {
+        "file": "zig-out/scratch/enum-after-bridge/enumerate-0.jsonl",
+        "bytes": 299140,
+        "sha256": "03d400910275efe8c8beb08c1c8a1db6d782e2da837917f0f69db6c07714e4c0"
+      },
+      "gzip": {
+        "file": "proofs/ownership/evidence/enumerator-links/archives/after-bridge/enumerate-0.jsonl.gz",
+        "bytes": 6646,
+        "sha256": "986c2c2fcf05768dd1fd9696daf1d6ec13946156805ac7a356d7ba12b03d83bf"
+      },
+      "decoded_bytes": 299140,
+      "decoded_sha256": "03d400910275efe8c8beb08c1c8a1db6d782e2da837917f0f69db6c07714e4c0",
+      "source_unchanged": true,
+      "lossless": true,
+      "tracked": true
+    },
+    {
+      "source": {
+        "file": "zig-out/scratch/enum-baseline-bridge/fixtures-0.jsonl",
+        "bytes": 1390094,
+        "sha256": "a38e714abf0df309a1030bbf562a0e7246db4f77f3e86f511ab6f5653fd0ccb0"
+      },
+      "gzip": {
+        "file": "proofs/ownership/evidence/enumerator-links/archives/baseline-bridge/fixtures-0.jsonl.gz",
+        "bytes": 56086,
+        "sha256": "cb9ebfe3e8ea900f03ecdbb1c31e4db57261e61eb1aa444f3dac8d2dd7cf5aab"
+      },
+      "decoded_bytes": 1390094,
+      "decoded_sha256": "a38e714abf0df309a1030bbf562a0e7246db4f77f3e86f511ab6f5653fd0ccb0",
+      "source_unchanged": true,
+      "lossless": true,
+      "tracked": true
+    },
+    {
+      "source": {
+        "file": "zig-out/scratch/enum-after-bridge/fixtures-0.jsonl",
+        "bytes": 1390094,
+        "sha256": "a38e714abf0df309a1030bbf562a0e7246db4f77f3e86f511ab6f5653fd0ccb0"
+      },
+      "gzip": {
+        "file": "proofs/ownership/evidence/enumerator-links/archives/after-bridge/fixtures-0.jsonl.gz",
+        "bytes": 56086,
+        "sha256": "cb9ebfe3e8ea900f03ecdbb1c31e4db57261e61eb1aa444f3dac8d2dd7cf5aab"
+      },
+      "decoded_bytes": 1390094,
+      "decoded_sha256": "a38e714abf0df309a1030bbf562a0e7246db4f77f3e86f511ab6f5653fd0ccb0",
+      "source_unchanged": true,
+      "lossless": true,
+      "tracked": true
+    },
+    {
+      "source": {
+        "file": "zig-out/scratch/enum-baseline-bridge/generator-17.jsonl",
+        "bytes": 1242811,
+        "sha256": "121e9228d9e26a0e11f09b8632dd7c55a644be1a7e68daf029c9770150ebff39"
+      },
+      "gzip": {
+        "file": "proofs/ownership/evidence/enumerator-links/archives/baseline-bridge/generator-17.jsonl.gz",
+        "bytes": 81101,
+        "sha256": "4cf2ffdb516d9329453df20ea30cec8d518474b981e167dcffe67dace1d7370f"
+      },
+      "decoded_bytes": 1242811,
+      "decoded_sha256": "121e9228d9e26a0e11f09b8632dd7c55a644be1a7e68daf029c9770150ebff39",
+      "source_unchanged": true,
+      "lossless": true,
+      "tracked": true
+    },
+    {
+      "source": {
+        "file": "zig-out/scratch/enum-after-bridge/generator-17.jsonl",
+        "bytes": 1242811,
+        "sha256": "121e9228d9e26a0e11f09b8632dd7c55a644be1a7e68daf029c9770150ebff39"
+      },
+      "gzip": {
+        "file": "proofs/ownership/evidence/enumerator-links/archives/after-bridge/generator-17.jsonl.gz",
+        "bytes": 81101,
+        "sha256": "4cf2ffdb516d9329453df20ea30cec8d518474b981e167dcffe67dace1d7370f"
+      },
+      "decoded_bytes": 1242811,
+      "decoded_sha256": "121e9228d9e26a0e11f09b8632dd7c55a644be1a7e68daf029c9770150ebff39",
+      "source_unchanged": true,
+      "lossless": true,
+      "tracked": true
+    },
+    {
+      "source": {
+        "file": "zig-out/scratch/enum-baseline-bridge/generator6-17.jsonl",
+        "bytes": 1458569,
+        "sha256": "f44e7ec3f01e1d0d7e7d0252c24272631a27dc4642a985119c2039484809d1c3"
+      },
+      "gzip": {
+        "file": "proofs/ownership/evidence/enumerator-links/archives/baseline-bridge/generator6-17.jsonl.gz",
+        "bytes": 92098,
+        "sha256": "c014baea0d30568323e46a2d80d6c2ba8d45a361b8d67c5b8bce897ae47640fd"
+      },
+      "decoded_bytes": 1458569,
+      "decoded_sha256": "f44e7ec3f01e1d0d7e7d0252c24272631a27dc4642a985119c2039484809d1c3",
+      "source_unchanged": true,
+      "lossless": true,
+      "tracked": true
+    },
+    {
+      "source": {
+        "file": "zig-out/scratch/enum-after-bridge/generator6-17.jsonl",
+        "bytes": 1458569,
+        "sha256": "f44e7ec3f01e1d0d7e7d0252c24272631a27dc4642a985119c2039484809d1c3"
+      },
+      "gzip": {
+        "file": "proofs/ownership/evidence/enumerator-links/archives/after-bridge/generator6-17.jsonl.gz",
+        "bytes": 92098,
+        "sha256": "c014baea0d30568323e46a2d80d6c2ba8d45a361b8d67c5b8bce897ae47640fd"
+      },
+      "decoded_bytes": 1458569,
+      "decoded_sha256": "f44e7ec3f01e1d0d7e7d0252c24272631a27dc4642a985119c2039484809d1c3",
+      "source_unchanged": true,
+      "lossless": true,
+      "tracked": true
+    },
+    {
+      "source": {
+        "file": "zig-out/scratch/enum-baseline-bridge/report.json",
+        "bytes": 80267,
+        "sha256": "8220d53b72d01f5e61cf18583e1e584e2cf425d1f20d25dbcf01fad4616d318b"
+      },
+      "gzip": {
+        "file": "proofs/ownership/evidence/enumerator-links/archives/baseline-bridge/report.json.gz",
+        "bytes": 4803,
+        "sha256": "fe69c6740cee30db6a4bf0f21f7d8e5da40556cab695e3140b0756f4167fe49d"
+      },
+      "decoded_bytes": 80267,
+      "decoded_sha256": "8220d53b72d01f5e61cf18583e1e584e2cf425d1f20d25dbcf01fad4616d318b",
+      "source_unchanged": true,
+      "lossless": true,
+      "tracked": true
+    },
+    {
+      "source": {
+        "file": "zig-out/scratch/enum-after-bridge/report.json",
+        "bytes": 80268,
+        "sha256": "3640f380cf8a6d14148e3fa973de9904307d059f8c9bab0e01639ae9b7100978"
+      },
+      "gzip": {
+        "file": "proofs/ownership/evidence/enumerator-links/archives/after-bridge/report.json.gz",
+        "bytes": 4791,
+        "sha256": "73710501ee484396226ebff133394c7393476c725e39a40e8f28975a95738f19"
+      },
+      "decoded_bytes": 80268,
+      "decoded_sha256": "3640f380cf8a6d14148e3fa973de9904307d059f8c9bab0e01639ae9b7100978",
+      "source_unchanged": true,
+      "lossless": true,
+      "tracked": true
+    },
+    {
+      "source": {
+        "file": "zig-out/scratch/enum-remaining-fuel.tsv",
+        "bytes": 191094251,
+        "sha256": "00b3320501a76b4df3afcff2cdbd7889e1feb09bc4cee6680ae219ca3633aa31"
+      },
+      "gzip": {
+        "file": "proofs/ownership/evidence/enumerator-links/archives/remaining-fuel.tsv.gz",
+        "bytes": 4476244,
+        "sha256": "4733e2c8aa96e0f1ea485118492f2506f71ac71bb109f82fccbfca2ffe479c8c"
+      },
+      "decoded_bytes": 191094251,
+      "decoded_sha256": "00b3320501a76b4df3afcff2cdbd7889e1feb09bc4cee6680ae219ca3633aa31",
+      "source_unchanged": true,
+      "lossless": true,
+      "tracked": true
+    },
+    {
+      "source": {
+        "file": "zig-out/scratch/enum-remaining-fuel.log",
+        "bytes": 441,
+        "sha256": "09f0cbef2c121ceea65850e157dd7c8b287f9e05a1aed7d71de11602973b6494"
+      },
+      "gzip": {
+        "file": "proofs/ownership/evidence/enumerator-links/archives/remaining-fuel.log.gz",
+        "bytes": 239,
+        "sha256": "bc867d2052a13f4102cd5c08dd64095fa18763dc92cd41d376b0501bf47615a9"
+      },
+      "decoded_bytes": 441,
+      "decoded_sha256": "09f0cbef2c121ceea65850e157dd7c8b287f9e05a1aed7d71de11602973b6494",
+      "source_unchanged": true,
+      "lossless": true,
+      "tracked": true
+    }
+  ],
+  "interpretation": "These archives preserve exact local-run records. Their hashes do not attest a fully reproducible build."
+}

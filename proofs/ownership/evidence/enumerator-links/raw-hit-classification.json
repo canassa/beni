@@ -54,5 +54,7 @@
     }
   ],
   "interpretation": "Both observed arrays stay unchanged. The raw hits remain explicit and do not establish checker defects.",
-  "coverage_limit": "A failed selected witness does not exclude all theorem instances."
+  "coverage_limit": "A failed selected witness does not exclude all theorem instances.",
+  "classification_kind": "Worker interpretation of the archived full native probe; classification prose is not machine output or a proof.",
+  "observed_arrays_source": "The numeric before/after fields transcribe the native probe records; both observed arrays remain unchanged."
 }
