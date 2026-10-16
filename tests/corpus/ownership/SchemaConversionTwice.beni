@@ -1,14 +1,17 @@
--- CK-247: a conversion whose forward returns its argument at two places reads as two fresh lists.
+-- CK-247: a conversion whose forward returns one list at two places reads as two fresh lists.
 -- ownership (§30.10, amended for issue #268): a run hands a conversion's
--- `forward` what it built, so the argument is no holder — but `forward`
--- may return it at two places, and then two positions of the answer are
--- one array. Such a schema's decoding slot holds `⊤twice`, so a write onto
--- its answer is rejected `unknown`, approximately: a tuple (`tuple`), a
--- record (`record`), a list beside the list itself (`nested`), and the
--- library path through `Schema.converted` (`library`). Before, each was
+-- `forward` what it built, so the argument is no holder, and a list
+-- `forward` makes is new — but `forward` may return either at two places,
+-- and then two positions of the answer are one array. Such a schema's
+-- decoding slot holds `⊤twice`, so a write onto its answer is rejected
+-- `unknown`, approximately: the argument in a tuple (`tuple`), a record
+-- (`record`), a list beside the list itself (`nested`), the library path
+-- through `Schema.converted` (`library`), and a list `forward` makes
+-- (`made`) or copies (`copied`) and returns twice. Before, each was
 -- accepted `call`, and `List.push a 9` changed `b` too. The slot cannot
--- tell whether the other position is read again, so `single`, which
--- writes one position and drops the other, is rejected as well. A
+-- tell which list of the answer is the doubled one or whether the other
+-- position is read again, so `single`, which drops the other position,
+-- and `sibling`, which writes another field, are rejected as well. A
 -- `forward` that returns its argument once beside a list it builds
 -- (`once`) is accepted.
 import Schema exposing (Conversion)
@@ -31,6 +34,18 @@ nest : Conversion (List Int) (List Int × List (List Int))
 nest = Schema.conversion (λxs → Ok ( xs, [ xs ] )) λ( a, _ ) → Ok a
 
 
+dupHelper : List Int → List Int × List Int
+dupHelper xs = ( xs, xs )
+
+
+madeDup : Conversion (List Int) (List Int × List Int)
+madeDup = Schema.conversion (λ_ → Ok (dupHelper [ 1 ])) λ( a, _ ) → Ok a
+
+
+copyDup : Conversion (List Int) (List Int × List Int)
+copyDup = Schema.conversion (λxs → Ok (dupHelper (List.copy xs))) λ( a, _ ) → Ok a
+
+
 split : Conversion (List Int) (List Int × List Int)
 split = Schema.conversion (λxs → Ok ( xs, List.reverse xs )) λ( a, _ ) → Ok a
 
@@ -49,6 +64,19 @@ schema Nest =
 
 schema Split =
     items : List Int via split
+
+
+schema Made =
+    items : List Int via madeDup
+
+
+schema Copied =
+    items : List Int via copyDup
+
+
+schema PairBeside =
+    items : List Int via dup
+    other : List Int
 
 
 pub tuple : String → List Int × List Int
@@ -107,3 +135,32 @@ once input =
             ( List.push a 9, b )
         Err _ →
             ( [], [] )
+
+
+pub made : String → List Int × List Int
+made input =
+    case Made.parse input of
+        Ok p →
+            ( a, b ) = p.items
+            ( List.push a 9, b )
+        Err _ →
+            ( [], [] )
+
+
+pub copied : String → List Int × List Int
+copied input =
+    case Copied.parse input of
+        Ok p →
+            ( a, b ) = p.items
+            ( List.push a 9, b )
+        Err _ →
+            ( [], [] )
+
+
+pub sibling : String → List Int
+sibling input =
+    case PairBeside.parse input of
+        Ok p →
+            List.push p.other 9
+        Err _ →
+            []

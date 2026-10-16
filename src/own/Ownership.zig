@@ -1929,25 +1929,29 @@ const input_marker: Prov = .{ .kind = .top, .a = 2 };
 const unfollowed: u32 = 3;
 
 /// §30.10, amended 2026-10-16 (#268): a `⊤` a schema's decoding slot holds
-/// where a conversion's `forward` returns one part of what it was handed at
-/// two places of its result, so two positions of a run's answer may be one
-/// list. Printed `⊤twice`. Not 4, which `⊤call` (§30.11) takes.
+/// where a conversion's `forward` returns one cell at two places of its
+/// result — a part of what it was handed, or a list it makes — so two
+/// positions of a run's answer may be one list. Printed `⊤twice`. Not 4,
+/// which `⊤call` (§30.11) takes.
 const twice_named: u32 = 5;
 
-/// Whether summary `s` names one part of its parameter 0, of type `arg`,
-/// at two places of its result that are not one placement of it: `( xs, xs
-/// )`, `{ all = xs, first = xs }`, `( xs, [ xs ] )`. `π1` at `.0` and
-/// `π1[*]` at `.0[*]` are one placement. A part that holds no cell (the
-/// `Int`s of a `List Int`, at `.0[*]` and in a reversed copy) does not
-/// count; a `⋆` that blurs the alignment counts as two places.
-fn namesArgumentTwice(o: *Ownership, store: *TypeStore, s: *const Summary, arg: ?Var) Allocator.Error!bool {
+/// Whether summary `s` returns one cell at two places of its result that
+/// are not one placement of it: a part of its parameter 0, of type `arg`
+/// (`( xs, xs )`, `{ all = xs, first = xs }`, `( xs, [ xs ] )`), or a list
+/// it makes, whose fresh number names both places (`dup [ 1 ]`, `dup
+/// (List.copy xs)`). `π1` at `.0` and `π1[*]` at `.0[*]` are one placement.
+/// A part of the parameter that holds no cell (the `Int`s of a `List Int`,
+/// at `.0[*]` and in a reversed copy) does not count; a `⋆` that blurs the
+/// alignment counts as two places.
+fn returnsOneCellTwice(o: *Ownership, store: *TypeStore, s: *const Summary, arg: ?Var) Allocator.Error!bool {
     for (s.res, 0..) |x, i| {
-        if (x.prov.kind != .param or x.prov.a != 0) continue;
+        const fresh = x.prov.kind == .fresh;
+        if (!fresh and (x.prov.kind != .param or x.prov.a != 0)) continue;
         for (s.res[i + 1 ..]) |y| {
-            if (y.prov.kind != .param or y.prov.a != 0) continue;
+            if (y.prov.kind != x.prov.kind or y.prov.a != x.prov.a) continue;
             if (!o.overlap(x.prov.path, y.prov.path)) continue;
             const short, const long = if (o.paths.depth.items[x.prov.path] <= o.paths.depth.items[y.prov.path]) .{ x, y } else .{ y, x };
-            if (arg) |v| if (!try o.partTracked(store, v, long.prov.path)) continue;
+            if (!fresh) if (arg) |v| if (!try o.partTracked(store, v, long.prov.path)) continue;
             const d = (try o.suffix(short.prov.path, long.prov.path)) orelse return true;
             if (try o.concat(short.path, d) != long.path) return true;
         }
@@ -6868,7 +6872,7 @@ const Walker = struct {
     /// outlives the call: not a cell the call makes, not its argument or a
     /// part of it, but what it captured, a top-level value, or anything
     /// from where the checker cannot see. `⊤` when `f`'s classes are not
-    /// known. `source` is the type `forward` is handed (`namesArgumentTwice`).
+    /// known. `source` is the type `forward` is handed (`returnsOneCellTwice`).
     fn functionAnswer(w: *Walker, f: AV, inst: Inst.Index, argument_is_input: bool, source: ?Var) Allocator.Error!AV {
         const classes = try w.classesOf(f);
         if (classes.len == 0) return w.single(.{ .kind = .top, .a = unfollowed });
@@ -6876,10 +6880,10 @@ const Walker = struct {
         for (classes) |cls| {
             const s = (try w.classSummary(cls)) orelse return w.single(.{ .kind = .top, .a = unfollowed });
             const ci: u32 = if (cls == .closure) cls.closure else none;
-            // `forward`'s argument is what the run built, no holder — but
-            // returned at two places, it puts one list at two positions of
-            // the answer (#268).
-            if (!argument_is_input and try w.o.namesArgumentTwice(w.store, s, source)) try out.appendSlice(w.a, try w.single(.{ .kind = .top, .a = twice_named }));
+            // `forward`'s argument is what the run built, no holder, and a
+            // list it makes is new — but either, returned at two places,
+            // puts one list at two positions of the answer (#268).
+            if (!argument_is_input and try w.o.returnsOneCellTwice(w.store, s, source)) try out.appendSlice(w.a, try w.single(.{ .kind = .top, .a = twice_named }));
             for (s.res) |r| switch (r.prov.kind) {
                 .fresh => {},
                 // `backward` is handed the program's value: what it returns of
@@ -10201,7 +10205,7 @@ const Walker = struct {
                     detail = "it came from a call of a function value that may be one of several functions, and the checker does not join what each returns";
                 } else if (c.a == twice_named) {
                     cause = .unknown;
-                    detail = "a schema answered it whose conversion returns what the run built at two places, so two parts of the answer may be one list";
+                    detail = "a schema answered it whose conversion returns one list at two places, so two parts of the answer may be one list";
                 } else {
                     cause = .unknown;
                     detail = "the list came from JavaScript";
