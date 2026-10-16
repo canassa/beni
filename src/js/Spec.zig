@@ -4954,13 +4954,15 @@ const Spec = struct {
     /// fact-3 site, whether the function it makes is used by exactly one
     /// call of the program and nothing else — the callee of one call node
     /// may be it, it does not escape, and every other node that may be it
-    /// only holds it: the function itself, a key's value in an object
-    /// literal whose site neither escapes nor has every key read, or a
-    /// binding's initialiser. Once that call holds the body, nothing reads
-    /// the key or the binding, and the function goes with them, so the
-    /// size model, which prices the call against the body alone, is not
-    /// asked. A spread (`{ r | … }`) reads every key of `r`: its key stays,
-    /// and the body would be in the output two times.
+    /// only holds it: the function itself, an inert key's value in an
+    /// object literal whose site neither escapes nor has every key read,
+    /// or a binding's inert initialiser. Once that call holds the body,
+    /// nothing reads the key or the binding, and the function goes with
+    /// them, so the size model, which prices the call against the body
+    /// alone, is not asked. A spread (`{ r | … }`) reads every key of `r`,
+    /// a key or a top-level binding of a field read (`ops.fn`) is not
+    /// dropped, and a local one may be copied into a key: there the
+    /// function stays, and the body would be in the output two times.
     fn soleCalls(s: *Spec) Allocator.Error![]const bool {
         // Asked only for a `Small` that the resolving pass gave a site, and
         // that pass runs only when fact 3 holds (`pts.ok`).
@@ -5004,9 +5006,16 @@ const Spec = struct {
                                 if (ir.tag(prop) == .property) key.set(prop.int());
                             };
                         },
-                        .property => if (key.isSet(i)) holds.set(d.rhs),
-                        .const_decl => holds.set(d.rhs),
-                        .let_decl => if ((@as(Node.OptionalIndex, @fromBackingInt(@intCast(d.rhs)))).unwrap()) |v| holds.set(v.int()),
+                        // Only an inert value holds: `dropKeys` drops only
+                        // such a key, and the pass only such a top-level
+                        // binding. Slice 9 may write a local `const`'s
+                        // initialiser in its one read (`const x = e;
+                        // return R`), so a key of it may become a field
+                        // read (`ops.fn`), which stays and keeps the
+                        // function.
+                        .property => if (key.isSet(i) and inert(ir, @fromBackingInt(@intCast(d.rhs)))) holds.set(d.rhs),
+                        .const_decl => if (inert(ir, @fromBackingInt(@intCast(d.rhs)))) holds.set(d.rhs),
+                        .let_decl => if ((@as(Node.OptionalIndex, @fromBackingInt(@intCast(d.rhs)))).unwrap()) |v| if (inert(ir, v)) holds.set(v.int()),
                         else => {},
                     }
                 }

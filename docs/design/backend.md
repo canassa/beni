@@ -6793,15 +6793,26 @@ fact 3 finds at the call:
   the call, which a record's lambda that makes a record never does (`{a:{}}` against `a.init()`).
   That model prices the body against the call alone. But when the call is the program's only use
   of the function, the function goes after it: nothing reads the key that holds it, so fact 3
-  drops the key, and nothing reads its binding, so item 1 drops the binding. So slice 8 does not
-  ask the size model at a call through a property when, by fact 3's values over the whole
-  program, these three hold: the callee of exactly one call may be that function, the function
-  does not escape, and every other node that may be it only holds it (the function itself, a
-  key's value in an object literal whose site neither escapes nor has every key read, or a
-  binding's initialiser). A record update `{ r | … }` spreads `r`, which reads every key of it, so
-  a key of `r` stays whatever its call becomes: written at the call, the body would be in the
-  output two times, raw bytes and brotli both larger (`emit/release/app/SpecRecordLambdaUpdate`,
-  found by the PR's review). And a call through a property
+  drops the key, and nothing reads its binding, so item 1 drops a local binding and the pass
+  drops a top-level one. Each of these drops needs an `inert` value. So slice 8 does not ask the
+  size model at a call through a property when, by fact 3's values over the whole program, these
+  three hold: the callee of exactly one call may be that function, the function does not escape,
+  and every other node that may be it only holds it (the function itself, an `inert` key's value
+  in an object literal whose site neither escapes nor has every key read, or a binding's `inert`
+  initialiser). A record update `{ r | … }` spreads `r`, which reads every key of it, so a key of
+  `r` stays whatever its call becomes: written at the call, the body would be in the output two
+  times, raw bytes and brotli both larger (`emit/release/app/SpecRecordLambdaUpdate`, found by
+  the PR's review). A field read (`ops.fn`) is not inert, and a key or a binding of one stays
+  for the same reason (found by the PR's second review). `dropKeys` keeps the key
+  `{ step = ops.fn }` (`emit/release/app/SpecRecordLambdaField`), and the pass keeps the
+  top-level binding `picked = ops.fn` (`SpecRecordLambdaTop`). A local `f = ops.fn` that a key
+  `{ step = f }` reads can go. But when a `return` that reads `f` once and first comes next,
+  slice 9 writes `ops.fn` in place of `f` (*`const x = e; return R`*), and the key becomes
+  `{ step = ops.fn }` (`SpecRecordLambdaLocal`). `Tea.document`'s `update = app.update` is a
+  local binding of this kind that goes, because `init = app.init` is read before it. The rule
+  does not count on that: five `browser/` builds of `Tea.document` give up 39–57 raw bytes
+  against a rule that counts every local binding, and stay 22–68 raw bytes smaller than master.
+  And a call through a property
   may pass more arguments than the function has parameters, when each one past them is `inert`:
   the call evaluates it and nothing reads it. This is `app.init(null)` of a lambda lowered with no
   parameter for its `⊤`; `trimArguments` drops such an argument only after slice 8 has run. The
@@ -6881,7 +6892,11 @@ where they stood, and a lambda used once evaluates its logged argument once, bet
 neighbours) — red with `makesOnly` accepting any body: the release build loses the `noisy` and
 `unit` lines; `emit/release/app/SpecRecordLambdaUpdate` (a lambda used once in a record that a
 record update spreads: the size model keeps the call, and the body is in the output once) — red
-against the rule before it checked the holding object's site (raw 440 → 456). Goldens moved:
+against the rule before it checked the holding object's site (raw 440 → 456);
+`emit/release/app/SpecRecordLambdaField` (a key `step = ops.fn`), `SpecRecordLambdaTop` (a
+top-level `picked = ops.fn`) and `SpecRecordLambdaLocal` (a local `f = ops.fn` read by a key
+`step = f`): the size model keeps the call, and the body is in the output once — red against the
+rule before it asked for an inert holder (raw 434 → 450, 438 → 450 and 450 → 466). Goldens moved:
 `emit/release/tea/HttpSendTracked` and `HttpSendUntracked` (the unread `a.init()` and the record
 holding the lambda go; the hosted `view` calls the start function by name),
 `emit/release/split/HolesPage` (`a.init()` is the model literal `{g:0,a:false}`; `update`'s body
