@@ -6,6 +6,8 @@ The branch then advanced to `f1ab9cc87`; those four commits changed no Lean mode
 The branch later advanced to `23e571c18`; the later commits also changed no Lean model rule.
 The branch rebased onto `0452a59c4` on 2026-10-16.
 That base merges the audit repair and the emitter holder rule. It changes no Lean model rule.
+The linked-write proof branch starts from merged master `a584b2ee4`.
+Its runtime write helpers match the enumerator baseline. No additional expression or primitive case enters this proof slice.
 This document specifies proof work. It does not certify the checker.
 
 ## Contract and current status
@@ -113,6 +115,25 @@ This finite result does not prove the link clauses.
 Its committed-tree audit passed with every check intact. The expanded enumerator source also requires its complete audit before publication.
 Inspect actual write events and their live readers, including outer call frames and unfinished operations.
 Count incomplete executions separately. Interpreter agreement or final heap differences cannot replace this check.
+
+### Local linked-write frame
+
+[LinkedWriteFrame.lean](Ownership/LinkedWriteFrame.lean) proves the runtime frame for a successful `writeLinked` operation.
+Its initial undirected link component contains every address that the operation changes.
+The operation preserves links, permanent observer registrations, and heap lookups outside that component.
+The proof follows the real ancestor splice and descendant refresh, including their explicit depth bounds.
+Complete finite representations outside the component retain their observations at the supplied snapshot depth.
+The observer corollary covers all permanent registrations, including repeated aliases, records, and closure captures.
+The `writeCounted` lemmas preserve the same heap frame and an individual representation.
+The example changes both a source and its view while an independent registered observer retains `[7]`.
+
+These lemmas assume runtime success. They establish no general execution success or checker permission.
+They need no valid-link or acyclic-link premise for this conditional frame.
+They establish no link-validity preservation, result correspondence, certificate preservation, or `CallSound.noNewHolders` clause.
+The accepted-caller proof must still derive component separation from the actual live paths and demand premises.
+Do not replace that obligation with global origin closure under links.
+Keep legal read-only view/source aliases within the planned contract.
+All three general proof obligations remain open.
 
 ### Summary observer permissions
 
