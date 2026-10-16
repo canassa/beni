@@ -68,7 +68,8 @@ pub const magic = "BENIOWN\x00";
 /// 10 names a tagged schema's constructors after the BIR's own.
 /// 11 gives a schema value its two analysis slots, `⟨decoded⟩` and
 /// `⟨encoded⟩` (§30.10).
-pub const version: u32 = 11;
+/// 12 drops the coarsened flag and carries a limit's measure (§16.7).
+pub const version: u32 = 12;
 
 pub const Error = error{Bad} || Allocator.Error;
 
@@ -393,7 +394,8 @@ fn writeRes(w: *Writer, arena: Allocator, items: []const ResEntry, sort: bool) A
 fn writeSummary(w: *Writer, arena: Allocator, s: *const Summary) Allocator.Error!void {
     try w.int(s.params);
     try w.byte(@backingInt(s.limit));
-    try w.byte(@as(u8, @intFromBool(s.asserted)) | @as(u8, @intFromBool(s.coarse)) << 1 | @as(u8, @intFromBool(s.once)) << 2 | @as(u8, @intFromBool(s.words)) << 3);
+    try w.int(s.limit_at);
+    try w.byte(@as(u8, @intFromBool(s.asserted)) | @as(u8, @intFromBool(s.once)) << 2 | @as(u8, @intFromBool(s.words)) << 3);
 
     const uses = try arena.dupe(UseEntry, s.uses);
     const UseCx = struct {
@@ -664,8 +666,10 @@ fn readSummary(r: *Reader, depth: u32) Error!Summary {
     if (depth > 16) return error.Bad;
     const params = try r.int();
     const limit = try r.enumOf(Ownership.Limit);
+    const limit_at = try r.int();
     const flags = try r.byte();
-    if (flags > 15) return error.Bad;
+    // Bit 2 was a coarsened summary's, before §16.7 deleted coarsening.
+    if (flags > 15 or flags & 2 != 0) return error.Bad;
 
     const uses = try r.arena.alloc(UseEntry, try r.count(9));
     for (uses) |*u| u.* = .{ .param = try r.int(), .path = try r.path(), .bits = try r.byte() };
@@ -715,8 +719,8 @@ fn readSummary(r: *Reader, depth: u32) Error!Summary {
         .supply = supply,
         .funs = funs,
         .limit = limit,
+        .limit_at = limit_at,
         .asserted = flags & 1 != 0,
-        .coarse = flags & 2 != 0,
         .once = flags & 4 != 0,
         .words = flags & 8 != 0,
         .xreq = xreq,

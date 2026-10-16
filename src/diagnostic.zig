@@ -429,6 +429,11 @@ pub const Code = enum {
     /// checker's, both errors.
     no_derived_codec,
     derived_codec_needs_type,
+    /// Appended on 2026-10-16 (ownership-checker.md §16.7, as amended): a
+    /// declaration whose ownership summary needs more than one of the
+    /// checker's limits allows — a limit of the compiler, not sharing in
+    /// the program. The checker's, an error.
+    ownership_limit,
 };
 
 /// Every code has exactly one title (frontend.md §1.1). Titles are SHOUTING
@@ -612,6 +617,7 @@ pub fn title(code: Code) []const u8 {
         .list_may_be_shared => "LIST MAY BE SHARED",
         .no_derived_codec => "CANNOT DERIVE A CODEC",
         .derived_codec_needs_type => "DECODED TYPE IS NOT KNOWN",
+        .ownership_limit => "OWNERSHIP CHECK TOO LARGE",
         .let_removed => "REMOVED LET SYNTAX",
         .block_ends_in_binding => "BLOCK WITHOUT A VALUE",
         .statement_not_unit => "UNUSED VALUE",

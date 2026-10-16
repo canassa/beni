@@ -172,6 +172,30 @@ pub fn run(session: *Session, cached: []const ?CacheEntry.Loaded) Allocator.Erro
     defer scratch.deinit();
     var src_ctx: SrcCtx = .{ .session = session, .arena = scratch.allocator() };
     const src: Message.Src = .{ .ctx = &src_ctx, .vtable = &src_vtable };
+    // §16.7: a limit of the checker is one error at the declaration that
+    // reached it. The rejections it causes downstream follow from it, so a
+    // run that reports one does not report them too.
+    var any_limit = false;
+    for (reports) |r| {
+        if (!r.checked) continue;
+        for (r.limits) |h| {
+            any_limit = true;
+            const text = try Message.limit(scratch.allocator(), src, r.module, h);
+            try items.ensureUnusedCapacity(gpa, 1);
+            const message = try gpa.dupe(u8, text);
+            items.appendAssumeCapacity(.{
+                .code = .ownership_limit,
+                .module = @fromBackingInt(r.module),
+                .region = @fromBackingInt(0),
+                .token = blk: {
+                    const t = srcDeclToken(&src_ctx, r.module, h.decl);
+                    break :blk if (t == none) null else t;
+                },
+                .last_token = null,
+                .message = message,
+            });
+        }
+    }
     for (reports) |r| {
         if (!r.checked) continue;
         var i: usize = 0;
@@ -181,6 +205,7 @@ pub fn run(session: *Session, cached: []const ?CacheEntry.Loaded) Allocator.Erro
             while (j < r.demands.len and sameCause(d, r.demands[j])) j += 1;
             defer i = j;
             if (d.verdict == .accepted) continue;
+            if (any_limit and d.verdict == .rejected and d.verdict.rejected == .limit) continue;
             var group: std.ArrayList(Ownership.Demand) = .empty;
             for (r.demands[i..j]) |x| {
                 var line = x;

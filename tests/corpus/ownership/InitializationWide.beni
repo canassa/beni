@@ -1,5 +1,9 @@
--- 65 independent result paths exceed the 64-path cap. The initializer's
--- summary is coarse; its sole read must not gain transfer permission.
+-- ownership: 65 result paths, which the initializer's type bounds, are kept
+-- whole (`ownership-checker.md` §16.7, amended 2026-10-16: no summary is cut
+-- to fit). Its one read therefore transfers the record it made, as a record
+-- of two fields does (the initialization-transfer amendment of §28), and the
+-- edit is accepted. Under the old cap of 64 paths the summary was coarsened
+-- and the edit rejected `top-level`.
 seed =
     { f00 = [ 0 ]
     , f01 = [ 1 ]
