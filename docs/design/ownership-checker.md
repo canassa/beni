@@ -4076,6 +4076,12 @@ state. None accepts a write the rules before it rejected for a reason the text s
    and an alias's body as written, a type parameter being the caller's argument. Before, every type that
    held anything was taken to hold anything (`ownership/NominalHolds`: a `Validation` never holds a list
    of functions).
+   *Amended 2026-10-16 (issue #270):* a value of a type variable `a` may hold a `List a`. The filter took "`a`
+   occurs below `List a`" to mean that no value of `a` holds one, which is false where `a` is a recursive type:
+   with `type Tree = Node (List Tree) | Leaf`, a callback `List a → a` may answer `Node xs`, which holds `xs`,
+   and `List.push xs t` put `xs` inside itself, accepted `param` (`ownership/RecursiveHolds`). "May hold"
+   (`mayHold`) no longer takes that shortcut. "May be the same object" (`mayShare`) keeps it: a value of `a`
+   is not the `List a` it is an element of, since no value is cyclic.
 5. **Supplies, cell by cell** (§16.4 item 4). A callee's supply passed on is probed one cell at a time (up
    to eight cells; a wider one is probed whole), so a cell the call made is not borrowed because another
    supplied beside it is. Inside a lambda, a capture of the declaration's own frame is named as that frame
