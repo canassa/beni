@@ -537,9 +537,9 @@ names_memo: std.AutoHashMapUnmanaged(u64, []const u8) = .empty,
 /// the declarations it names put in its slots (`schemaTaint`); `null` while
 /// it is being derived.
 schema_taints: std.AutoHashMapUnmanaged(u64, ?SchemaTaint) = .empty,
-/// §30.10: per `(module, schema declaration, member)`, the summary of a
+/// §30.10: per `(module, schema declaration, member, arity)`, the summary of a
 /// call of that member (`schemaMemberRow`).
-schema_members: std.AutoHashMapUnmanaged(u64, *const Summary) = .empty,
+schema_members: std.AutoHashMapUnmanaged([4]u32, *const Summary) = .empty,
 /// Per depth of nested walks: an arena reused from walk to walk.
 walk_arenas: [16]?std.heap.ArenaAllocator = @splat(null),
 walk_depth: u32 = 0,
@@ -1703,12 +1703,6 @@ fn assertedRow(o: *Ownership, m: u32, d: u32) Allocator.Error!?Summary {
     });
 }
 
-/// §30.10: a run of a schema answers what it builds from its input, and
-/// what its schema's slot of that direction holds — `⟨decoded⟩` for
-/// `parse`, `decode` and `read`, `⟨encoded⟩` for `encode` and `write` —
-/// and, where its input is a program's value (`decode`, `read`, `encode`,
-/// `write`), parts of that input. Null for every other declaration of
-/// `core/Schema`.
 /// `res ⋆ p` and `res ⋆ p⋆`, approximate: the answer may hold, anywhere,
 /// what `p` is and any part of it — a list inside a record the slot holds,
 /// which a list's demand would not take the record's own cell for.
@@ -1736,6 +1730,12 @@ fn inputAside(o: *Ownership, res: *std.ArrayList(ResEntry), input: u32) Allocato
     try res.append(keep, .{ .path = at, .prov = .{ .kind = .param, .a = input, .path = try o.child(eps, .any, 0) }, .approx = true });
 }
 
+/// §30.10: a run of a schema answers what it builds from its input, and
+/// what its schema's slot of that direction holds — `⟨decoded⟩` for
+/// `parse`, `decode` and `read`, `⟨encoded⟩` for `encode` and `write` —
+/// and, where its input is a program's value (`decode`, `read`, `encode`,
+/// `write`), the input set aside for `settleRun`. Null for every other
+/// declaration of `core/Schema`.
 fn schemaRunRow(o: *Ownership, m: u32, d: u32) Allocator.Error!?Summary {
     const bir = o.in.birs[m];
     const decl = bir.decls[d];
@@ -1784,6 +1784,9 @@ fn schemaMakerRow(o: *Ownership, m: u32, d: u32, s: Summary) Allocator.Error!Sum
     const keep = o.keep.allocator();
     const slots = [_]u32{ try o.child(eps, .schema_decoded, 0), try o.child(eps, .schema_encoded, 0) };
     var extra: std.ArrayList(ResEntry) = .empty;
+    // `list`, `nullable`, `erased` and `converted`: their slots are their
+    // arguments' alone (below).
+    var arguments_only = false;
     // `derived` and `structural` answer what their evidence answers, which
     // only a call knows (`codecRunRow`): from the body, anything.
     if (eqlAny(name, &.{ "box", "derived", "structural" })) {
@@ -1793,6 +1796,7 @@ fn schemaMakerRow(o: *Ownership, m: u32, d: u32, s: Summary) Allocator.Error!Sum
         for (slots) |p| try extra.append(keep, .{ .path = p, .prov = input_marker });
     } else if (eqlAny(name, &.{ "list", "nullable", "erased", "converted" })) {
         const n: u32 = if (std.mem.eql(u8, name, "converted")) 2 else 1;
+        arguments_only = true;
         if (bir.decls[d].params != n) return s;
         for (0..n) |i| for (slots) |p| {
             try extra.append(keep, .{ .path = p, .prov = .{ .kind = .param, .a = @intCast(i), .path = p } });
@@ -1801,10 +1805,11 @@ fn schemaMakerRow(o: *Ownership, m: u32, d: u32, s: Summary) Allocator.Error!Sum
     var out = s;
     var res: std.ArrayList(ResEntry) = .empty;
     for (s.res) |r| {
-        // The four branch on their argument's engine: the interpreting arm,
-        // whose `box` answers `⊤`, runs only for a schema whose slots hold
-        // `⊤` already. Their slots are their arguments', and nothing else.
-        if (extra.items.len > 0 and extra.items[0].prov.kind == .param) if (o.firstStep(r.path)) |st| {
+        // `list`, `nullable`, `erased` and `converted` branch on their
+        // argument's engine: the interpreting arm, whose `box` answers `⊤`,
+        // runs only for a schema whose slots hold `⊤` already. Their slots
+        // are their arguments', and nothing else.
+        if (arguments_only) if (o.firstStep(r.path)) |st| {
             if (st.kind == .schema_decoded or st.kind == .schema_encoded) continue;
         };
         try res.append(keep, r);
@@ -1883,16 +1888,14 @@ fn deriveTaint(o: *Ownership, m0: u32, decl0: u32) Allocator.Error!SchemaTaint {
     var encoded: std.ArrayList(Prov) = .empty;
     var todo: std.ArrayList(SchemaGraph.Ref) = .empty;
     defer todo.deinit(o.in.gpa);
-    var seen: std.ArrayList(SchemaGraph.Ref) = .empty;
+    var seen: std.AutoHashMapUnmanaged([2]u32, void) = .empty;
     defer seen.deinit(o.in.gpa);
     var nodes: std.ArrayList(SchemaPlan.NodeIndex) = .empty;
     defer nodes.deinit(o.in.gpa);
     try todo.append(o.in.gpa, .{ .module = @fromBackingInt(m0), .decl = decl0 });
     while (todo.pop()) |r| {
-        for (seen.items) |s| {
-            if (s.module == r.module and s.decl == r.decl) break;
-        } else {
-            try seen.append(o.in.gpa, r);
+        if ((try seen.getOrPut(o.in.gpa, .{ r.module.int(), r.decl })).found_existing) continue;
+        {
             const m = r.module.int();
             const def = sg.definition(r.module, r.decl) orelse return top_taint;
             const plan = sg.planOf(r.module);
@@ -2042,7 +2045,8 @@ fn schemaMemberRow(o: *Ownership, m: u32, decl: u32, kind: Interface.SchemaMembe
     };
     // A nongeneric declaration's `S.schema` takes `⊤`.
     if (arity != n + extra and !(kind == .schema and n == 0 and arity == 1)) return null;
-    const key = ((@as(u64, m) << 32) | decl) *% 8 +% @backingInt(kind);
+    // `m`, `decl`, the member and the arity: one row per call shape.
+    const key: [4]u32 = .{ m, decl, @backingInt(kind), arity };
     if (o.schema_members.get(key)) |s| return s;
     const keep = o.keep.allocator();
     const taint = try o.schemaTaint(m, decl);

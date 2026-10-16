@@ -4108,6 +4108,9 @@ is (§11.3's "a pure default may be evaluated once by the backend" is observable
 place: a default that holds a list is a shared cell in the slot). Each maker puts every such cell in a slot or
 writes `⊤`; a schema the checker cannot place is `⊤` in both. Forward conversions are handed what the run
 built, so their argument is not a holder; backward conversions are handed the program's value, so theirs is.
+That first half rests on every decoding worker building what it hands `forward` from fresh cells — arrays and
+records it makes, or the array `JSON.parse` made (`schema.md` §6, *Lists are arrays*). A worker that reused a
+list across runs (a cache, a hoisted constant) would break it silently, and must put that list in its slot.
 The type filter drops a conversion whose end holds no list: such a conversion cannot answer one.
 
 **The corpus.** `browser/tea/ApiItems` and `ApiLogin` hold
