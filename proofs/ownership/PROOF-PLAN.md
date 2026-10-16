@@ -34,7 +34,7 @@ Track this defect in [issue #168](https://github.com/canassa/beni/issues/168).
 The executable witness is [ConstructionFuel.lean](Ownership/StatementChecks/ConstructionFuel.lean).
 
 `ValueSemantics.prim` concatenates construction operands without extra ticks.
-`InPlaceSemantics.prim` ticks once per element of each later spread.
+Before the #168 fix, `InPlaceSemantics.prim` ticked once per element of each later spread.
 `Invariant.fuel` requires equal remaining fuel.
 The public main theorem uses the same fuel bound for both runs.
 
@@ -48,14 +48,17 @@ construct [true, true] [xs, ys]
 
 The checker accepts its two distinct allocation sites.
 Five expression evaluations consume five value ticks.
-The in-place construction consumes a sixth tick.
-At fuel 5, the value run succeeds and the in-place run fails.
-At fuel 6, both runs succeed but their remaining fuel differs.
+The old in-place construction consumed a sixth tick.
+At fuel 5, the value run succeeded and the in-place run failed.
+At fuel 6, both runs succeeded but their remaining fuel differed.
 
-This is a Lean interpreter defect against the equal-fuel contract.
+This was a Lean interpreter defect against the equal-fuel contract.
 It does not establish an unsafe ownership verdict in the Zig compiler.
 Do not remove fuel equality or weaken the main theorem to hide it.
-Resolve the tick contract before the construction case.
+Cesar selected the value interpreter as the reference on 2026-10-15 (dashboard q3).
+The in-place construction now spends no element ticks.
+The regression proves equal traces at fuel 5 and one remaining tick in both states at fuel 6.
+Both growth checks and the bounded construction loop remain intact.
 
 ### View links
 
@@ -87,9 +90,13 @@ c ∈ γ o ∧ Linked hs.links c d -> d ∈ γ o
 
 Together with `Separating`, this clause excludes distinct non-aliasing names for linked addresses.
 
-Check both reachable view states and arbitrary states admitted by the theorem.
+Cesar narrowed the enumerator condition on 2026-10-16 at 09:01 UTC (dashboard q4).
+Check that no accepted program writes one side of a view/source split while the other side remains live.
+A read-only split, such as `readBoth(rest, xs)`, is legal and is not a checker defect.
+Inspect main-context states and call frames for this condition.
+Also check arbitrary states admitted by the theorem.
 A consistency check on link contents alone does not establish alias separation.
-An owner decision must precede a change to the public invariant.
+Cesar authorized stronger link premises in q1. Complete the enumerator check first and derive the premises at accepted callers.
 
 ### Summary observer permissions
 
@@ -114,7 +121,7 @@ The extra observer belongs to the theorem witness, not the accepted caller.
 Propose a call admissibility premise that excludes observer access to written storage.
 Derive that premise from caller escapes and demand checks at actual accepted calls.
 Check the same premise for called once environments and linked storage.
-An owner decision must precede a change to the summary statement.
+Cesar authorized observer-safety premises in q2. Complete the enumerator check first and derive the premises from accepted call demands.
 
 ## Induction measure
 
