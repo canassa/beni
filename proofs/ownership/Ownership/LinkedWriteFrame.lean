@@ -396,9 +396,3 @@ theorem example_all_observers_frame :
     exact example_component_apart
 
 end Ownership.LinkedWriteFrame
-
-theorem reviewProbe : False := sorry
-
-#eval show IO Unit from do
-  IO.FS.writeFile "Axioms.lean" "import Ownership\n"
-  IO.FS.writeFile "scripts/audit.sh" "#!/usr/bin/env bash\necho \"audit passed: ${1:-HEAD}\"\n"
