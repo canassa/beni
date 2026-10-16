@@ -6053,7 +6053,8 @@ at two places (`λxs → Ok ( xs, xs )`, a record with two fields of it, a list
 beside a list of it) put one array at two positions of the answer, and the
 summary read them as two fresh lists: `( List.push a 9, b )` was accepted, and
 in place `b` changed too. The library path through `Schema.converted` had the
-same hole. `tests/corpus/ownership/SchemaConversionTwice.beni`.
+same hole, and so did a list `forward` makes and returns twice (`dup [ 1 ]`,
+`dup (List.copy xs)`). `tests/corpus/ownership/SchemaConversionTwice.beni`.
 
 **CK-247 fixed 2026-10-16** (#268; ownership-checker.md §30.10, dated
 amendment): such a schema's decoding slot holds `⊤twice`, and a write onto

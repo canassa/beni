@@ -4229,16 +4229,19 @@ list across runs (a cache, a hoisted constant) would break it silently, and must
 The type filter drops a conversion whose end holds no list: such a conversion cannot answer one.
 
 *Amended 2026-10-16 (issue #268):* "not a holder" is true of `forward`'s argument, not of where `forward` puts
-it. A `forward` that returns one part of its argument at two places of its result — `λxs → Ok ( xs, xs )`,
-`{ all = xs, first = xs }`, `( xs, [ xs ] )` — puts one list the run built at two positions of the answer, and a
-write at one changes the other. Its `⟨decoded⟩` slot then holds `⊤twice`, a `⊤` that names its cause, so a
-write onto the answer is rejected `unknown`, approximately. Two places are two result paths whose argument
-paths overlap where neither is the other's placement: `π1` at `.0` and `π1[*]` at `.0[*]` are one placement. A
-part whose type holds no cell does not count (the `Int`s of a `List Int`, also found in a reversed copy). A `⋆`
-that blurs the alignment counts as two places. The slot cannot tell whether the other position is read again,
-so a program that writes one position and drops the other is rejected too: the issue's "loses separation". A
-list's elements need no change, because the elements of a run's answer may share one list already (§18.4).
-Fixture: `ownership/SchemaConversionTwice` (CK-247).
+it, and a list `forward` makes is new only until it is placed twice. A `forward` that returns one cell at two
+places of its result — its argument, a part of it, or a list it makes: `λxs → Ok ( xs, xs )`, `{ all = xs,
+first = xs }`, `( xs, [ xs ] )`, `λ_ → Ok (dup [ 1 ])`, `λxs → Ok (dup (List.copy xs))` — puts one list at two
+positions of the answer, and a write at one changes the other. Its `⟨decoded⟩` slot then holds `⊤twice`, a `⊤`
+that names its cause, so a write onto the answer is rejected `unknown`, approximately. For the argument, two
+places are two result paths whose argument paths overlap where neither is the other's placement: `π1` at `.0`
+and `π1[*]` at `.0[*]` are one placement; a part whose type holds no cell does not count (the `Int`s of a
+`List Int`, also found in a reversed copy); a `⋆` that blurs the alignment counts as two places. For a list it
+makes, two places are two result paths that name one fresh number (§16.3). The slot holds no position, so the
+`⊤` reaches every list of the answer: a program that writes one position and drops the other, or that writes
+another field of the same answer, is rejected too — the issue's "loses separation". A list's elements need no
+change, because the elements of a run's answer may share one list already (§18.4). Fixture:
+`ownership/SchemaConversionTwice` (CK-247).
 
 **The corpus.** `browser/tea/ApiItems` and `ApiLogin` hold
 no line under `--ownership-everywhere`: `Schema.list (Item.schema ⊤)` holds nothing in its slots. `ApiLogin`'s
