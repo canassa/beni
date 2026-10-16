@@ -450,7 +450,10 @@ fn copyLine(a: Allocator, src: Src, m: u32, d: Demand) error{ NoBase, OutOfMemor
     const arg = if (atom) base else try std.fmt.allocPrint(a, "({s})", .{base});
     const spread = std.mem.endsWith(u8, ln[0..lo], "…");
     const left_of_append = std.mem.startsWith(u8, std.mem.trimStart(u8, ln[hi..], " "), "++");
-    const wrapped = if (spread or left_of_append)
+    // A base the line already wraps in parentheses, `(f ⊤)`: they become
+    // the call's, so the line does not gain a second pair.
+    const enclosed = lo > 0 and hi < ln.len and ln[lo - 1] == '(' and ln[hi] == ')';
+    const wrapped = if (spread or left_of_append or enclosed)
         try std.fmt.allocPrint(a, "List.copy {s}", .{arg})
     else
         try std.fmt.allocPrint(a, "(List.copy {s})", .{arg});

@@ -340,6 +340,12 @@ pub const UseEntry = struct { param: u32, path: u32, bits: u8 };
 
 pub const ProvKind = enum(u8) { param, fresh, esc, shared, top, cb, env, klass };
 
+/// `top`'s `a` (a provenance's and a cell's): 0 a value from JavaScript, 1 a
+/// pessimistic summary's (§16.7), 2 `input_marker` and `unfollowed` a
+/// schema's (§30.10), and `top_call` the result of a call of a function the
+/// checker cannot identify, printed `⊤call` (§30.11).
+const top_call: u32 = 4;
+
 /// A provenance (thesis §3.7's `Prov`). `param`: `a` the parameter's index
 /// from 0, `path` its path. `fresh`/`esc`: `a` the number, from 1 (0 in a
 /// supply, where it is not compared). `shared`: `a` the module, `b` the
@@ -2654,7 +2660,13 @@ fn provText(o: *Ownership, p: Prov) Allocator.Error![]const u8 {
             const b = o.in.birs[p.a];
             break :blk std.fmt.allocPrint(arena, "shared({s}.{s}){s}", .{ o.in.module_names[p.a], o.in.interner.slice(b.symbol(b.decls[p.b].name)), pt });
         },
-        .top => if (p.a == 1) "⊤limit" else if (p.a == 2) "⊤input" else if (p.a == unfollowed) "⊤schema" else "⊤",
+        .top => switch (p.a) {
+            1 => "⊤limit",
+            2 => "⊤input",
+            unfollowed => "⊤schema",
+            top_call => "⊤call",
+            else => "⊤",
+        },
         .cb => if (o.text_sum) |s| (if (p.b == 0 and p.a >= s.params and p.a - s.params < s.slots.len) blk: {
             const slot = s.slots[p.a - s.params];
             break :blk std.fmt.allocPrint(arena, "cb(π{d}{s}){s}", .{ slot[0] + 1, try o.pathText(slot[1]), pt });
@@ -5696,7 +5708,7 @@ const Walker = struct {
             .type_dispatch => {
                 const md = b.extraData(@fromBackingInt(@intCast(data.rhs)), Bir.TypeDispatch);
                 const args = b.extraSlice(.{ .start = md.args_start, .end = md.args_end }, Inst.Index);
-                return w.conservative(inst, args, &.{}, null, "", false);
+                return w.conservative(inst, args, &.{}, null, "", false, false);
             },
             .lambda => {
                 const params = b.extraSlice(b.subRange(@fromBackingInt(@intCast(data.lhs))), Inst.Index);
@@ -5719,7 +5731,7 @@ const Walker = struct {
                 try b.markupValues(w.a, @fromBackingInt(@intCast(data.lhs)), &values);
                 const avs = try w.evalOperands(values.items, true);
                 w.popPending(avs.len);
-                const retained = try w.conservativeAV(inst, values.items, avs, &.{}, null, "", false);
+                const retained = try w.conservativeAV(inst, values.items, avs, &.{}, null, "", false, true);
                 const events = try w.markupTreeEvents(inst, @fromBackingInt(@intCast(data.lhs)), try MarkupValues.init(w.a, values.items, avs));
                 return w.unionOf(&.{ try w.shift(retained, .{ .kind = .markup_render, .arg = 0 }), try w.shift(events, .{ .kind = .markup_event, .arg = 0 }) });
             },
@@ -6505,6 +6517,13 @@ const Walker = struct {
         // A function value: its classes, when the walk knows where it came
         // from (§16.5); else a conservative call that reads its captures.
         const f = try w.eval(callee);
+        return w.callValue(inst, args, f, callee);
+    }
+
+    /// A call of the function value `f`, which `callee` evaluated: a
+    /// function parameter or slot of the declaration, a value whose class
+    /// the walk knows, or §6.1's call of a function it cannot identify.
+    fn callValue(w: *Walker, inst: Inst.Index, args: []const Inst.Index, f: AV, callee: Inst.Index) Allocator.Error!AV {
         try w.pushPending(f, callee, true);
         defer w.popPending(1);
         // A call of a function parameter of the declaration (§16.4 item 4).
@@ -6539,7 +6558,11 @@ const Walker = struct {
             }
         }
         try w.sight(f, .{ .pending = "it is called where the checker does not know which function runs" }, w.token(inst));
-        return w.conservative(inst, args, f, callee, "", false);
+        // A schema declaration's constructor or member is a function the
+        // checker names: a constructor makes its value, and a member has no
+        // summary yet (issue #218). Their result keeps §6.1's cell made by
+        // the call (§30.11).
+        return w.conservative(inst, args, f, callee, "", false, w.isSchemaCallable(callee));
     }
 
     /// A private binding's only read, executed once during module init
@@ -6782,13 +6805,13 @@ const Walker = struct {
         if (w.o.in.birs[t.m].decls[t.d].kind == .vocab_markup) {
             const name = w.targetName(t);
             if (std.mem.eql(u8, name, "text") and args.len == 1) {
-                const retained = try w.conservative(inst, args, &.{}, null, "", false);
+                const retained = try w.conservative(inst, args, &.{}, null, "", false, true);
                 return w.shift(retained, .{ .kind = .markup_render, .arg = 0 });
             }
             if (std.mem.eql(u8, name, "map") and args.len == 2) {
                 const avs = try w.evalOperands(args, true);
                 w.popPending(avs.len);
-                const retained = try w.conservativeAV(inst, args, avs, &.{}, null, "", false);
+                const retained = try w.conservativeAV(inst, args, avs, &.{}, null, "", false, true);
                 const child_events = try w.markupEvents(avs[0], w.instType(args[0]), inst, 0);
                 const mapper = avs[1];
                 const mapped = try w.markupCallback(inst, args[1], mapper, &.{child_events});
@@ -6835,7 +6858,7 @@ const Walker = struct {
             return w.applySummary(inst, .{ .sum = s, .name = try w.qualified(t), .op = try w.callOp(t), .merge_fresh = w.o.isComputing(t.m, t.d) }, args, &.{}, null);
         }
         if (w.escapes(t)) return w.escapeCall(inst, args, try w.qualified(t));
-        return w.conservative(inst, args, &.{}, null, try w.qualified(t), w.o.in.birs[t.m].decls[t.d].kind == .foreign_value);
+        return w.conservative(inst, args, &.{}, null, try w.qualified(t), w.o.in.birs[t.m].decls[t.d].kind == .foreign_value, false);
     }
 
     /// §7.2 as amended for slice 3f: `Maybe.withDefault (Maybe.map m f) d`,
@@ -7345,7 +7368,23 @@ const Walker = struct {
         @memcpy(all[1..], rest);
         try w.evidenceSight(inst);
         if (w.methodTarget(inst)) |t| return w.callTarget(inst, t, all);
-        return w.conservative(inst, all, &.{}, null, "", false);
+        // `r.load a` on a record field that holds a function is a call of
+        // the field's value, as `(r.load) a` is: a slot of a parameter, a
+        // class the walk knows, or a function it cannot identify (§30.11).
+        if (try w.fieldFunction(all[0], mc.name)) |f| return w.callValue(inst, rest, f, all[0]);
+        return w.conservative(inst, all, &.{}, null, "", false, false);
+    }
+
+    /// The function value a record receiver holds at its field `name`, when
+    /// the receiver's type is a record with that field.
+    fn fieldFunction(w: *Walker, receiver: Inst.Index, name: Bir.SymbolIndex) Allocator.Error!?AV {
+        const sym = w.bir.symbol(name);
+        const fields = w.recordFields(w.instType(receiver)) orelse return null;
+        const field = for (fields) |f| {
+            if (f.name == sym) break f;
+        } else return null;
+        const r = try w.eval(receiver);
+        return try w.proj(r, .{ .kind = .field, .arg = @backingInt(sym) }, field.value);
     }
 
     /// Where a function the dispatch table passes as evidence writes a
@@ -7434,14 +7473,17 @@ const Walker = struct {
         return out.items;
     }
 
-    /// §6.1.
-    fn conservative(w: *Walker, inst: Inst.Index, args: []const Inst.Index, callee_av: AV, callee: ?Inst.Index, name: []const u8, foreign: bool) Allocator.Error!AV {
+    /// §6.1. `made`: the call is a markup construction, whose result is a
+    /// node it makes. Every other call here is of a function the checker
+    /// cannot identify, which may return a list something else holds, so
+    /// its result is `⊤call`, never a cell the call made (§30.11).
+    fn conservative(w: *Walker, inst: Inst.Index, args: []const Inst.Index, callee_av: AV, callee: ?Inst.Index, name: []const u8, foreign: bool, made: bool) Allocator.Error!AV {
         const avs = try w.evalOperands(args, true);
         w.popPending(avs.len);
-        return w.conservativeAV(inst, args, avs, callee_av, callee, name, foreign);
+        return w.conservativeAV(inst, args, avs, callee_av, callee, name, foreign, made);
     }
 
-    fn conservativeAV(w: *Walker, inst: Inst.Index, args: []const Inst.Index, avs: []const AV, callee_av: AV, callee: ?Inst.Index, name: []const u8, foreign: bool) Allocator.Error!AV {
+    fn conservativeAV(w: *Walker, inst: Inst.Index, args: []const Inst.Index, avs: []const AV, callee_av: AV, callee: ?Inst.Index, name: []const u8, foreign: bool, made: bool) Allocator.Error!AV {
         w.point += 1;
         const tok = w.token(inst);
         for (args) |x| try w.useOperand(x, tok, &.{});
@@ -7453,8 +7495,8 @@ const Walker = struct {
         const ty = w.instType(inst);
         if (ty) |v| if (!try w.trackedVar(v)) return &.{};
         var out: std.ArrayList(Entry) = .empty;
-        const fresh = try w.cell(.{ .kind = .result, .a = inst.int(), .ty = w.instTypeOpt(inst) });
-        try out.append(w.a, .{ .path = eps, .cell = fresh });
+        const own = try w.cell(if (made) .{ .kind = .result, .a = inst.int(), .ty = w.instTypeOpt(inst) } else .{ .kind = .top, .a = top_call });
+        try out.append(w.a, .{ .path = eps, .cell = own });
         const any = try w.o.child(eps, .any, 0);
         var from: std.ArrayList(AV) = .empty;
         try from.appendSlice(w.a, avs);
@@ -8230,11 +8272,15 @@ const Walker = struct {
     }
 
     /// A callback with no class: §6.1's conservative result over what the
-    /// callee supplies it and what it holds.
+    /// callee supplies it and what it holds. Its own cell is `⊤call`: the
+    /// function may return a list something else holds (§30.11).
     fn unknownCb(w: *Walker, j: u32, ctx: InstCtx) Allocator.Error!AV {
         var out: std.ArrayList(Entry) = .empty;
-        const fresh = try w.cell(.{ .kind = .result, .a = ctx.inst.int(), .b = 0 });
-        try out.append(w.a, .{ .path = eps, .cell = fresh });
+        // A schema declaration's constructor or member handed as the
+        // argument keeps §6.1's cell made by the call (issue #218).
+        const made = if (w.callArgAt(ctx, j)) |arg| w.isSchemaCallable(arg) else false;
+        const own = try w.cell(if (made) .{ .kind = .result, .a = ctx.inst.int(), .b = 0 } else .{ .kind = .top, .a = top_call });
+        try out.append(w.a, .{ .path = eps, .cell = own });
         const any = try w.o.child(eps, .any, 0);
         var from: std.ArrayList(AV) = .empty;
         for (ctx.s.supply) |e| {
@@ -8248,6 +8294,39 @@ const Walker = struct {
             try out.append(w.a, .{ .path = any, .cell = e.cell, .approx = ctx.inst.int() + 1 });
         };
         return w.norm(out.items);
+    }
+
+    /// The instruction a call written in the body passes as the callee's
+    /// parameter `j`, when `ctx` instantiates that callee at that call.
+    fn callArgAt(w: *Walker, ctx: InstCtx, j: u32) ?Inst.Index {
+        if (ctx.depth != 0 or j >= ctx.s.params or j >= ctx.avs.len) return null;
+        const b = w.bir;
+        const i = ctx.inst.int() -% w.decl.inst_start.int();
+        if (i >= w.decl.inst_end.int() -% w.decl.inst_start.int()) return null;
+        switch (b.instTag(ctx.inst)) {
+            .call => {
+                const args = w.callArgs(ctx.inst);
+                return if (args.len == ctx.avs.len) args[j] else null;
+            },
+            .method_call => {
+                const data = b.instData(ctx.inst);
+                const mc = b.extraData(@fromBackingInt(@intCast(data.rhs)), Bir.MethodCall);
+                const rest = b.extraSlice(.{ .start = mc.args_start, .end = mc.args_end }, Inst.Index);
+                if (rest.len + 1 != ctx.avs.len) return null;
+                return if (j == 0) @fromBackingInt(@intCast(data.lhs)) else rest[j - 1];
+            },
+            else => return null,
+        }
+    }
+
+    /// A constructor of a schema declaration (`Tree.Leaf`), which makes its
+    /// value, or a member (`Tags.parse`), which has no summary yet (issue
+    /// #218): functions the checker names (§30.11).
+    fn isSchemaCallable(w: *const Walker, inst: Inst.Index) bool {
+        return switch (w.bir.instTag(inst)) {
+            .schema_member_top, .ext_schema_member, .schema_ctor_top, .ext_schema_ctor => true,
+            else => false,
+        };
     }
 
     /// A call-site demand (§16.4 item 3): argument `i`'s cells at `q`,
@@ -9010,6 +9089,16 @@ const Walker = struct {
                             // limit (§16.8); a parameter's or a callback's
                             // result is what the text shows.
                             bad_approx[u.param] = !e.owned and e.approx;
+                            // What the callback returned before may be a
+                            // `⊤` — a list from JavaScript, or what a
+                            // function the checker cannot identify returned:
+                            // a limit, as a `need` through one is (§30.9
+                            // rule 11, §30.11).
+                            if (e.owned and e.prov.kind == .cb) {
+                                for (try w.expand(try w.instProv(e.prov, ictx))) |x| {
+                                    if (w.cells.items[x.cell].kind == .top) bad_approx[u.param] = true;
+                                }
+                            }
                             bad_cause[u.param] = .supply;
                         }
                         continue;
@@ -10017,6 +10106,9 @@ const Walker = struct {
                 } else if (c.a == unfollowed) {
                     cause = .unknown;
                     detail = "a schema answered it whose functions the checker does not follow — one built at run time, or a conversion it cannot place";
+                } else if (c.a == top_call) {
+                    cause = .unknown;
+                    detail = "it came from a call of a function the checker cannot identify, which may return a list something else holds";
                 } else {
                     cause = .unknown;
                     detail = "the list came from JavaScript";
