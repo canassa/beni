@@ -497,9 +497,15 @@ the gap. `LinksValid` records what every stored link has at every reachable
 state. `LinkNamed` is the plan's narrowed clause (owner decisions q1 and q4,
 2026-10-15 and 2026-10-16): linked storage that a live path or a permanent
 observer protects is named as one array, so the Dead, Disjoint and Unescaped
-tests of a demand on one side cover every holder of the other. Storage that
-nothing protects is unconstrained, which keeps a read-only split such as
-`readBoth(rest, xs)` legal and asks nothing of a view that is garbage.
+tests of a demand on one side cover every holder of the other. The clause is
+conditional on protection, not on a write. At a read-only split such as
+`readBoth(rest, xs)` both sides are live, so the clause names the view and
+its source alike; that is possible because the checker's view rule gives a
+view its source's origins and a fresh site (`primitive`, `.view`). Distinct
+canonical names for the two sides exist only in a callee frame, where
+`Invariant` does not apply; so the summary theorems state their linked-input
+premise on written storage (R1). A component that nothing protects is
+unconstrained, which asks nothing of a view that is garbage.
 
 A view's contents (its source's suffix or prefix) are not a clause. The
 runtime refreshes every view at a `writeLinked`, but a builder's `put` writes

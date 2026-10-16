@@ -314,8 +314,8 @@ The generic theorem `flat_preserved` carries the strengthened relation `FlatInva
 The fragment excludes field atoms, calls, closures, views, constructions, branches, cases, and scopes. The three general obligations remain open.
 
 `Invariant` carries two link clauses since 2026-10-16 (#169, owner decisions q1 and q4): every stored link is valid (`LinksValid`), and linked storage that a live path or an observer protects is named as one array (`LinkNamed`).
-[ViewLinks.lean](Ownership/StatementChecks/ViewLinks.lean) proves that the #169 pre-state admits no naming under them, and checks that a builder's `put` leaves a garbage view stale, which is why a view's contents are not a clause.
-[LinkClauses.lean](Ownership/LinkClauses.lean) proves the clauses in a state with the same links, under allocation, under a write that keeps every array nonempty, and when a view is made; a per-link closed naming (`LinkClosed`) gives `LinkNamed`.
+[ViewLinks.lean](Ownership/StatementChecks/ViewLinks.lean) proves that the #169 pre-state admits no naming under them, that the same witness in allocation order fails `LinkNamed` alone, and checks that a builder's `put` leaves a garbage view stale, which is why a view's contents are not a clause.
+[LinkClauses.lean](Ownership/LinkClauses.lean) proves `LinksValid` with the same heap and links, after an allocation, after a `set!` of a nonempty list and after a view; `LinkNamed` with the same heap, links and observers; and that a per-link closed naming (`LinkClosed`) gives `LinkNamed`. No theorem uses these lemmas yet.
 Preservation under a successful `writeLinked` and under a call, and the summary theorems' written-storage premise for linked inputs, remain open.
 
 `sorry`: `summary_sound` (Lemma 6.7 clauses 1–3, clause 2 as repaired in

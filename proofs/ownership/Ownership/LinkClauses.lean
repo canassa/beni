@@ -150,7 +150,7 @@ theorem linkConnected_same_origins {links : List (Nat × Nat × Bool)} {γ : Nam
 
 theorem linkNamed_of_closed {hs : State} {env : List (Var × Observation × Value)} {live : Live}
     {γ : Naming} (closed : LinkClosed hs.links γ) : LinkNamed hs env live γ :=
-  fun c d connected _ => linkConnected_same_origins closed connected
+  fun _ _ connected _ => linkConnected_same_origins closed connected
 
 theorem linkClosed_of_empty (links : List (Nat × Nat × Bool)) (γ : Naming) (empty : links = []) :
     LinkClosed links γ := by
