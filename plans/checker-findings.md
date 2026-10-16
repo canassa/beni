@@ -6031,3 +6031,16 @@ payload. `tests/corpus/ownership/UnknownCalleeTagger.beni`.
 **CK-244 and CK-245 fixed 2026-10-16** (#216; ownership-checker.md §30.11): the
 result of a call of a function the checker cannot identify is `⊤call`, never
 owned, and a dot call of a record field is the field's value called.
+
+## CK-246 — a schema member handed on as a value makes its result (2026-10-16)
+
+Ownership soundness, issue #269. A schema declaration's member handed on as a
+function value kept §6.1's cell made by the call, so `apply Fixed.parse input`,
+where `Fixed`'s conversion answers the top-level `kept`, had `kept` pushed onto
+in place, accepted `call (no summary: S.apply)` — a message that named the
+callee that handed the member on, not the member. The direct call was rejected.
+`tests/corpus/ownership/SchemaMemberHanded.beni`.
+
+**CK-246 fixed 2026-10-16** (#269; ownership-checker.md §30.11): a member handed
+on as a value has its run's row for its class, and a tagged schema's
+constructor is a constructor.
