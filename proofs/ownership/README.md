@@ -112,6 +112,7 @@ The guard `check` needs this job, so a failed proof blocks a merge.
   `lake build` took 184 to 310 s, and `scripts/audit.sh` took 257 to 428 s.
 - A restored `.lake` makes only `lake build` faster.
   The audit always builds from nothing, so its time does not change.
+  A warm run took 7 min 45 s: `lake build` took 1 s, and the audit took 410 s.
 
 ## Audit memory and replay
 
