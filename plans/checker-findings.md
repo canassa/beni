@@ -6059,3 +6059,14 @@ same hole, and so did a list `forward` makes and returns twice (`dup [ 1 ]`,
 **CK-247 fixed 2026-10-16** (#268; ownership-checker.md §30.10, dated
 amendment): such a schema's decoding slot holds `⊤twice`, and a write onto
 its answer is rejected `unknown`, approximately.
+
+## CK-248 — a value of a type variable never holds a list of it (2026-10-16)
+
+Ownership soundness, issue #270. `mayHold` took "`a` occurs below `List a`" to
+mean that a value of `a` holds no `List a`. With a recursive type
+(`type Tree = Node (List Tree) | Leaf`) a callback `List a → a` may answer
+`Node xs`, so `t = f xs; List.push xs t` was accepted `param`, and in place
+`xs` held itself. `tests/corpus/ownership/RecursiveHolds.beni`.
+
+**CK-248 fixed 2026-10-16** (#270; ownership-checker.md §30.9 rule 4, dated
+amendment): `mayHold` no longer takes that shortcut; `mayShare` keeps it.
