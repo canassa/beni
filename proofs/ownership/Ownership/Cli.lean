@@ -3,7 +3,7 @@ import Ownership.Config
 namespace Ownership.Cli
 
 def modes := ["bridge-reduce", "bridge-export", "all", "oracle", "fixtures", "controls", "reasons", "ci", "summaries",
-  "verdict-diff", "falsify", "accepted", "enumerate", "enumerate-targeted", "source-sweep"]
+  "verdict-diff", "falsify", "accepted", "enumerate", "enumerate-targeted", "source-sweep", "diagnostics"]
 
 /-- Reject inputs that would otherwise silently select defaults or ignore work. -/
 def validate (args : List String) : Except String (String × List String) := do
@@ -28,6 +28,7 @@ def validate (args : List String) : Except String (String × List String) := do
     (if general || ["falsify", "enumerate", "enumerate-targeted", "verdict-diff"].contains mode then ["mutant"] else []) ++
     (if ["enumerate", "enumerate-targeted"].contains mode then ["accepted-out", "skip-accepted"] else []) ++
     (if mode == "ci" then ["enumerate-bound"] else []) ++
+    (if mode == "diagnostics" then ["enumerate-bound", "out"] else []) ++
     (if mode == "bridge-reduce" then ["input", "out"] else []) ++
     (if mode == "bridge-export" then ["enumerate-bound", "out", "suite"] else []) ++
     (if mode == "source-sweep" then ["baseline-accepted"] else []) ++
@@ -47,7 +48,7 @@ def validate (args : List String) : Except String (String × List String) := do
       throw s!"unsupported generator version {value}"
     if name == "enumerate-bound" && mode == "ci" then
       unless value.toNat?.any (· ≥ 2) do throw "CI enumeration bound must be at least 2"
-    if name == "enumerate-bound" && mode == "bridge-export" && value.toNat?.isNone then
+    if name == "enumerate-bound" && ["bridge-export", "diagnostics"].contains mode && value.toNat?.isNone then
       throw "bridge enumeration bound must be a natural number"
     if name == "suite" && !["fixtures", "enumerate", "generator", "generator6"].contains value then
       throw s!"unknown bridge suite {value}"

@@ -10,9 +10,9 @@ statements three are `sorry` and the main theorem is proved only from one of
 them. It does not change the beni compiler
 or the thesis.
 
-[Constructions, views and the function-valued skip](CONSTRUCTIONS-RESULTS.md)
-are the latest results (2026-10-15), including one confirmed shipping defect
-pinned red in `tests/pending/`.
+[Enumerator and diagnostic evidence](evidence/enumerator-links/README.md) records the 2026-10-16 finite checks.
+[Constructions, views and the function-valued skip](CONSTRUCTIONS-RESULTS.md) records the 2026-10-15 results.
+Those results include one confirmed shipping defect in `tests/pending/`.
 [Result/recursive-payload/initialization results](ORACLE-EXTENSION-RESULTS.md)
 and the earlier source-mutant matrix are indexed in [RESULTS.md](RESULTS.md).
 The shipping-compiler differential bridge, counted skips, runtime boundary and
@@ -21,8 +21,8 @@ commands are specified in [BRIDGE.md](BRIDGE.md); `ownership ci` includes its bo
 and the oracle triage: 201 original divergences in six Zig defect clusters and
 2,157 Lean precision leads. Every original and old minimum has both interpreter
 traces in `evidence/bridge-triage/`; the persistent emitted runtime is not the judge.
-The oracle has 98 original and 98 sync verdict fixtures, generators v5 and v6, a bounded-exhaustive
-grammar plus 732 targeted programs, required negative controls (including `set-exclusive` and `once-live`),
+The oracle has 98 original and 99 sync verdict fixtures, generators v5 and v6, a bounded-exhaustive
+grammar plus 740 targeted programs, required negative controls (including `set-exclusive` and `once-live`),
 and a falsifier that fails when summary coverage is excessively vacuous.
 The sync models branch-local escapes, inductive model/container conditions,
 fold accumulators, markup event slots, constructor callbacks and returns-owned
@@ -82,7 +82,7 @@ finds an accepted disagreement whose shrunk form the corrected checker
 rejects. `scripts/run-mutants.sh` applies source-level checker edits
 (`scripts/mutate.mjs`) and compares every verdict on each seeded stream with
 indices from the unedited build (`ownership source-sweep`). It also enumerates
-the seed-independent grammar (default bound 2) and all 732 targeted programs, saving per-seed counts, logs
+the seed-independent grammar (default bound 2) and all 740 targeted programs, saving per-seed counts, logs
 and original counterexamples under `regressions/mutant-evidence/`. Run it on
 Linux inside the ownership shell, which supplies Node 24 and taskset; `MUTANT_CORES` defaults to
 `0-7` and refuses more than eight CPUs. `ENUMERATE_BOUND` sets the bound.
@@ -113,6 +113,8 @@ Its independent-module regressions and remaining acceptance work remain open.
 The memory repair addresses [#160](https://github.com/canassa/beni/issues/160).
 A local build replayed all 4,842 constants under `MemoryMax=10G` and `MemorySwapMax=2G`.
 Its scope reported a 3.7 GiB memory peak and a 345.1 MiB swap peak.
+The expanded enumerator build now passes with 7,142 kernel replays across 74 jobs.
+The complete independent audit remains a separate publication check. The PR records its result.
 The complete independent audit remains mandatory and also checks the modules that `Main` imports.
 Keep the shared lock and memory caps for every heavy check.
 
@@ -141,6 +143,62 @@ The parent mode calls the real helper and requires its refusal.
 The native build uses the audit's recorded compiler and linker arguments.
 It refuses unfamiliar trace formats or ambiguous paths.
 
+## Opt-in write diagnostics
+
+Run this mode from `proofs/ownership`.
+Check available memory first. Start only with at least 6 GB available.
+Keep the shared lock and both memory caps:
+
+```sh
+free -g
+flock /home/jayson/.local/state/beni-dispatch/heavy.lock \
+  systemd-run --user --scope --quiet \
+  -p MemoryMax=10G -p MemorySwapMax=2G -- \
+  nix develop ../..#ownership --command \
+  lake exe ownership diagnostics 20000 20261011 --enumerate-bound=2 \
+  --out=../../zig-out/scratch/ownership-diagnostics.log
+```
+
+The mode runs fixtures, the complete bounded grammar, and generators v5 and v6 at three seeds.
+Grammar version 2 contains 105,150 programs at bound 2 and 200 at bound 1.
+The added construction and view templates change flattened enumeration identifiers.
+Keep the grammar version with every identifier and result.
+
+The q1 check follows Cesar's q4 decision.
+It inspects every attempted write in main expressions and nested calls.
+It reports a hit when a protected reader reaches a distinct member of the receiver's linked storage component.
+Protected readers include outer continuations, permanent observers, loop readers, and unfinished operands.
+Read-only view/source splits remain legal.
+The conservative check also reports no-op writes and writes that leave the counterpart unchanged.
+Classify each hit before calling it a checker defect.
+
+The q2 check scans canonical write and consume paths across every same-declaration cache candidate for each actual call.
+It reports raw observer hits separately from the subset whose complete public premises match under selected witnesses.
+That subset uses one canonical naming and one chosen closure-class interpretation.
+A failed chosen witness does not exclude every possible theorem instance.
+Cache presence alone proves neither actual-call admissibility nor complete effect coverage.
+Matched demand counts expose an empty matched subset.
+Linked-demand and observed-demand counts expose narrower coverage gaps.
+
+The mode checks input and observer references for dangling addresses.
+It counts failed executions, failed snapshots, unsupported reader contexts, and incomplete scans explicitly.
+An incomplete execution cannot contribute a clean result.
+Every complete execution requires exact ordinary/diagnostic equality for results, runtime states, errors, remaining fuel, final snapshots, and traces.
+
+The fresh capture completed 71,762 accepted runs across 226,103 program cases.
+It found zero q1 hits, divergent states or traces, incomplete accepted runs, or dangling input or observer references.
+The strict q2 result remains false: two raw direct-observer hits and zero matched direct or linked hits.
+The native classifications find unsuitable cache-summary matches. Neither call changes its pre-existing observed array.
+The run retains 7,656 unmatched calls and 10,336 unmatched candidates as explicit coverage limits.
+Its source and executable hashes stay equal before and after execution.
+[Enumerator evidence](evidence/enumerator-links/README.md) records the manifests, exact hashes, classifications, counts, and native reproduction commands.
+The fresh CI run passed, including its bounded compiler bridge.
+The complete independent audit remains a separate publication check. The PR records its result.
+
+The `Aliasing.lean` campaign metric lacks `.construct`, `.view`, `.prepend`, `.events`, and `.owned` cases.
+[#243](https://github.com/canassa/beni/issues/243) tracks this limit. Do not quote that metric as complete v6 write coverage.
+The write diagnostics count actual runtime write events.
+
 ## Modules
 
 | File | Content |
@@ -158,7 +216,7 @@ It refuses unfamiliar trace formats or ambiguous paths.
 | `Targeted.lean` | finite products exercising capture consumption, call counts, shape joins, set, comparisons and recursion |
 | `Enumerate.lean` | every typed program of a bounded grammar; independent of random seeds |
 | `Generator.lean` | the general generator: v4's chains of moves, and v5's conditional arms and generated declaration tables |
-| `Oracle.lean`, `OracleLegacy.lean` | template families, generator versions 1–5, campaigns, shrinking, controls, distinct and precision counts |
+| `Oracle.lean`, `OracleLegacy.lean` | template families, generator versions 1–6, campaigns, shrinking, controls, distinct and precision counts |
 | `Aliasing.lean` | a campaign metric: does an accepted program write an array two names reach |
 | `Fixtures.lean`, `GeneratedRegressions.lean`, `Smoke.lean` | verdict fixtures, frozen regressions, negative-control probes |
 | `HeapProof.lean`, `BuilderProof.lean`, `KernelChecks.lean` | concrete heap and builder/close proofs, kernel checks |

@@ -1,0 +1,115 @@
+{
+  "files": {
+    "diagnostics-before.json": {
+      "derivation": "exact byte copy",
+      "inputs": [
+        {
+          "file": "zig-out/scratch/enum-final-diagnostic-capture/before.json",
+          "sha256": "93ee0e6dedce5207741ec545da124efde99b50a1167257fdc159cb2d9653a333",
+          "bytes": 8292
+        }
+      ]
+    },
+    "diagnostics-after.json": {
+      "derivation": "exact byte copy",
+      "inputs": [
+        {
+          "file": "zig-out/scratch/enum-final-diagnostic-capture/after.json",
+          "sha256": "d3464371002254942d264c137435657c4f2dbe825b21a2d7f49c2dc7446fff2e",
+          "bytes": 8292
+        }
+      ]
+    },
+    "diagnostics-result.json": {
+      "derivation": "exact byte copy",
+      "inputs": [
+        {
+          "file": "zig-out/scratch/enum-final-diagnostic-capture/result.json",
+          "sha256": "3672527951ab2ff281d91bb23958e1c63208986baa53a92e6fd9510041148631",
+          "bytes": 925
+        }
+      ]
+    },
+    "diagnostics-summary.json": {
+      "derivation": "JSON summary from the listed source records",
+      "inputs": [
+        {
+          "file": "zig-out/scratch/enum-final-diagnostic-capture/diagnostics.log",
+          "sha256": "0035d0af49e0006440b39b8eba2d874eeee6da710b890c041e1b5367581a852c",
+          "bytes": 12745
+        },
+        {
+          "file": "zig-out/scratch/enum-final-diagnostic-capture/result.json",
+          "sha256": "3672527951ab2ff281d91bb23958e1c63208986baa53a92e6fd9510041148631",
+          "bytes": 925
+        }
+      ]
+    },
+    "state-comparison.json": {
+      "derivation": "exact byte copy",
+      "inputs": [
+        {
+          "file": "zig-out/scratch/refactor-strict-comparison/outcomes-report.json",
+          "sha256": "fbe83e61180f7e927f1e9e487c6c35733cd1a4fe8cc36927b1a57b854bdfd0b9",
+          "bytes": 1908
+        }
+      ]
+    },
+    "ci-comparison.json": {
+      "derivation": "exact byte copy",
+      "inputs": [
+        {
+          "file": "zig-out/scratch/refactor-ci-strict-comparison-corrected/ci-report.json",
+          "sha256": "b9035ecd24c7937954f5bceb2595d3b235304ba22137553412e42d2063c1eace",
+          "bytes": 8188
+        }
+      ]
+    },
+    "ci-differences.json": {
+      "derivation": "JSON summary from the listed source records",
+      "inputs": [
+        {
+          "file": "zig-out/scratch/refactor-ci-classification.json",
+          "sha256": "bc585a80175298b45349b37cd3e8ccf0736068a5315b27313590d709b497eb61",
+          "bytes": 4227
+        },
+        {
+          "file": "zig-out/scratch/refactor-ci-strict-comparison-corrected/ci-report.json",
+          "sha256": "b9035ecd24c7937954f5bceb2595d3b235304ba22137553412e42d2063c1eace",
+          "bytes": 8188
+        }
+      ]
+    },
+    "raw-hit-classification.json": {
+      "derivation": "JSON summary from the listed source records",
+      "inputs": [
+        {
+          "file": "zig-out/scratch/raw-hit-probe-current.log",
+          "sha256": "4acb7c58bd2b5983d23d94f44888dbc1fd0740175fd9682c5c4464960e784b1c",
+          "bytes": 200446
+        },
+        {
+          "file": "zig-out/scratch/enum-final-diagnostic-capture/evidence.log",
+          "sha256": "c3856170add17ba7ae2790a246a6abf4bc247d42433eb80c93a7122059998779",
+          "bytes": 3132824
+        },
+        {
+          "file": "zig-out/scratch/enum-final-diagnostic-capture/result.json",
+          "sha256": "3672527951ab2ff281d91bb23958e1c63208986baa53a92e6fd9510041148631",
+          "bytes": 925
+        }
+      ]
+    },
+    "remaining-fuel-summary.json": {
+      "derivation": "JSON summary from the listed source records",
+      "inputs": [
+        {
+          "file": "zig-out/scratch/enum-remaining-fuel.log",
+          "sha256": "09f0cbef2c121ceea65850e157dd7c8b287f9e05a1aed7d71de11602973b6494",
+          "bytes": 441
+        }
+      ]
+    }
+  },
+  "capture_limit": "The diagnostic manifests identify measured file bytes on base HEAD 9230e047e. They do not claim that HEAD alone contains the enumerator edits."
+}

@@ -1,0 +1,236 @@
+{
+  "captured_at_utc": "2026-10-16T13:27:09.280094+00:00",
+  "head": "9230e047e5206e1f47e0f93b8d6342991d6253b8",
+  "files": [
+    {
+      "file": "proofs/ownership/Audit.lean",
+      "sha256": "71056fe0fa6a37568edfe9c327d7bafb16bbc9ab4c8776d7fcdc7098ba680c8b",
+      "bytes": 13697
+    },
+    {
+      "file": "proofs/ownership/Axioms.lean",
+      "sha256": "4bceae5230bdc48c5c332236c7c4ad62f377162479a0b58d6f84d0dcc86e2f76",
+      "bytes": 13224
+    },
+    {
+      "file": "proofs/ownership/Main.lean",
+      "sha256": "c5af8124a14524019b9c3d62c07ce3857afbaff4df444604d7ee107f1c9300f2",
+      "bytes": 11770
+    },
+    {
+      "file": "proofs/ownership/Ownership/Aliasing.lean",
+      "sha256": "d033360b0772c9cbc6c6ea85347d4269a1ca004b9a4cbe3d6c08c3ebfe05bfe1",
+      "bytes": 8079
+    },
+    {
+      "file": "proofs/ownership/Ownership/Bridge.lean",
+      "sha256": "b593320b2d77ef68ff8cbd2110c3e8b16761c4e8d528c028c58e706b5ed8fde4",
+      "bytes": 12817
+    },
+    {
+      "file": "proofs/ownership/Ownership/BridgeWire.lean",
+      "sha256": "93342b36722380479be1928748cee574ed20e01b8ccaab5470f200ec6442988e",
+      "bytes": 7771
+    },
+    {
+      "file": "proofs/ownership/Ownership/BuilderProof.lean",
+      "sha256": "eb0ed3235b003b1cb8953b353633bea1c2e2ce7cec6a3729c37a376835c86552",
+      "bytes": 9048
+    },
+    {
+      "file": "proofs/ownership/Ownership/Checker.lean",
+      "sha256": "05141bb8006b8b10612c5dd242d7cbe013683a50762fa4a072db505f4580c66b",
+      "bytes": 73188
+    },
+    {
+      "file": "proofs/ownership/Ownership/Cli.lean",
+      "sha256": "d5c46318411b3e84b718826983b3d1463bdfda38e6a5bf1f7e461fe7fc9870c5",
+      "bytes": 3996
+    },
+    {
+      "file": "proofs/ownership/Ownership/Config.lean",
+      "sha256": "de88f73f746a3f2b769bd8449dfb763a25ae0dde7f0e721056a7f7c610388284",
+      "bytes": 11018
+    },
+    {
+      "file": "proofs/ownership/Ownership/DiagnosticCalls.lean",
+      "sha256": "ff2111d6b207f0e07e306ae4d8c60f57879fa3b700ea49ec2a88a0815c4ce0ff",
+      "bytes": 20126
+    },
+    {
+      "file": "proofs/ownership/Ownership/DiagnosticCampaign.lean",
+      "sha256": "c3d8ebda806a31f16108fdcf1c0345023cab5a653b6dbc54683739776a0da981",
+      "bytes": 7450
+    },
+    {
+      "file": "proofs/ownership/Ownership/DiagnosticFixtures.lean",
+      "sha256": "271f7559c1f86f31d4d6d830f61f868a9811c2d5310d066f61338be50fad9a58",
+      "bytes": 26990
+    },
+    {
+      "file": "proofs/ownership/Ownership/Diagnostics.lean",
+      "sha256": "1d4f72ae9f69943962515b871da10364aac2f11cd80e8f7c27e8e73740e2dd44",
+      "bytes": 17192
+    },
+    {
+      "file": "proofs/ownership/Ownership/Domain.lean",
+      "sha256": "f012638d66e1a591131fa5203337977513096bcee7ffc676cecc015c0471e4df",
+      "bytes": 18504
+    },
+    {
+      "file": "proofs/ownership/Ownership/Enumerate.lean",
+      "sha256": "acd30af7e2df4a8294ef6759add41427e539a2bee12f36b8d2c9ef519ee1b5c0",
+      "bytes": 17193
+    },
+    {
+      "file": "proofs/ownership/Ownership/Falsify.lean",
+      "sha256": "408f84ac98459f941e9b763c6c0513c9d2ffb0f8376190a2cba99c912fb91ac6",
+      "bytes": 52189
+    },
+    {
+      "file": "proofs/ownership/Ownership/Fixtures.lean",
+      "sha256": "17aa602d9a2393073604eec8f85e48bf8ebb3469406f499ccde7e35b000fc5b0",
+      "bytes": 49118
+    },
+    {
+      "file": "proofs/ownership/Ownership/GeneratedRegressions.lean",
+      "sha256": "574305b944cf2e0291f63b36204030cee27d55cda646c5fbb9c0373f23160a52",
+      "bytes": 7994
+    },
+    {
+      "file": "proofs/ownership/Ownership/Generator.lean",
+      "sha256": "e405d1793525abc2d222c480baebd09d903fb33caf16c811e0551cc38dda5266",
+      "bytes": 67507
+    },
+    {
+      "file": "proofs/ownership/Ownership/HeapProof.lean",
+      "sha256": "c1b6f8febafc2f9830c5b7af22b6cec9db0f17320512f51c7cdd89cac910a755",
+      "bytes": 6906
+    },
+    {
+      "file": "proofs/ownership/Ownership/KernelChecks.lean",
+      "sha256": "72dc1dfa9da4ad18fffc030392804db54d0a044fa1e0f8dc28398634f4f5bed1",
+      "bytes": 1119
+    },
+    {
+      "file": "proofs/ownership/Ownership/Library.lean",
+      "sha256": "8be30705ad3ea92b4a8dea943bc351c64daea887965aafa366d71d572a3c0994",
+      "bytes": 1335
+    },
+    {
+      "file": "proofs/ownership/Ownership/Oracle.lean",
+      "sha256": "ec6f13205d461649263324306db09ba56b732444f22d756571a9e619dc0bb545",
+      "bytes": 42556
+    },
+    {
+      "file": "proofs/ownership/Ownership/OracleLegacy.lean",
+      "sha256": "3334b826f939aae74c1e875ccef83047956bcb2764226364fe42c61f28d450a4",
+      "bytes": 5278
+    },
+    {
+      "file": "proofs/ownership/Ownership/Question.lean",
+      "sha256": "0fd93d28e0865410e2cdffba3865e105ca8329bfc338d7d95cd8fd2cdd09184c",
+      "bytes": 1258
+    },
+    {
+      "file": "proofs/ownership/Ownership/Reinfer.lean",
+      "sha256": "f74a709f834dd6814ffbded56a2cbca89b6e12b9902cd847be9ebd0c2daf3037",
+      "bytes": 20945
+    },
+    {
+      "file": "proofs/ownership/Ownership/Report.lean",
+      "sha256": "d13b2c32f1a09a4c2927d261a93715a1e08b8587572adf25065d9d4e5767e3b3",
+      "bytes": 3924
+    },
+    {
+      "file": "proofs/ownership/Ownership/Semantics.lean",
+      "sha256": "fb8f5a64cd97e41d37cdf413be00d87e1b3091f8dacff18de06e6378581ae409",
+      "bytes": 24979
+    },
+    {
+      "file": "proofs/ownership/Ownership/Smoke.lean",
+      "sha256": "8c2b3f609c9a00ac17b5bb3af608a28034fa3600ff2a92e4c7cd095e00a6fefa",
+      "bytes": 1573
+    },
+    {
+      "file": "proofs/ownership/Ownership/Soundness.lean",
+      "sha256": "1a60cea526e58c065f3ac784e53b5ee8255e4acb0552d9c2f6dbc5fc0de8fdd0",
+      "bytes": 43244
+    },
+    {
+      "file": "proofs/ownership/Ownership/StatementChecks/ConstructionFuel.lean",
+      "sha256": "81da9388f99e451d4b1f9bac95d812af3f8f1e756d2412c1a60d436f2594512a",
+      "bytes": 1890
+    },
+    {
+      "file": "proofs/ownership/Ownership/StatementChecks/SummaryObservers.lean",
+      "sha256": "c61323caec9106d806f0e3f296281fda9f9b8a2c955fde800664ec27c9660db3",
+      "bytes": 6393
+    },
+    {
+      "file": "proofs/ownership/Ownership/StatementChecks/ViewLinks.lean",
+      "sha256": "4ee1f032a04ef97a9f41d8e0d5865e80fe66654bff89050ca114c902cc2aa237",
+      "bytes": 10158
+    },
+    {
+      "file": "proofs/ownership/Ownership/Sync.lean",
+      "sha256": "d9426cb3d47ad644864f6a16228bc051c385587bfba50e49170c0781cc0dee7d",
+      "bytes": 38291
+    },
+    {
+      "file": "proofs/ownership/Ownership/Syntax.lean",
+      "sha256": "c6bd6489f57728c2a78444a2210f974d8e1f98371c373d2a985c5e2230213cb3",
+      "bytes": 11525
+    },
+    {
+      "file": "proofs/ownership/Ownership/Targeted.lean",
+      "sha256": "0fb0fd9e5ba2096db4ab93af94242cbad8b3fbe0e9fd0a785570050486479566",
+      "bytes": 6229
+    },
+    {
+      "file": "proofs/ownership/Ownership.lean",
+      "sha256": "aff60bca82d41bcaeb9baf3436565761dd2b63a0bcdf0945da2a6949f9145bf0",
+      "bytes": 490
+    },
+    {
+      "file": "proofs/ownership/Triage.lean",
+      "sha256": "9ed6ce21b08273580074e456c283f721114f6050ce8ca2806d886790f949d911",
+      "bytes": 4187
+    },
+    {
+      "file": "proofs/ownership/evidence/construction-fuel/FuelLeft.lean",
+      "sha256": "04b3f2070b7843d2061ab6a04a3b31f8808eba499cbfd8110e4deea65b320422",
+      "bytes": 6222
+    },
+    {
+      "file": "proofs/ownership/evidence/construction-fuel/FuelOutcomes.lean",
+      "sha256": "c9cdae80819fb20762c149983bd36054361a1e8fcdccef6c173d0f14325b28dd",
+      "bytes": 2011
+    },
+    {
+      "file": "proofs/ownership/evidence/enumerator-links/RefactorOutcomes.lean",
+      "sha256": "6609d9b7a809c602143fb878efaebc053322b3497149b95e8c0fb9116a1a5715",
+      "bytes": 1676
+    },
+    {
+      "file": "proofs/ownership/lakefile.toml",
+      "sha256": "00ebc76205d81f089cf868fb29207a25167ac6bf75bbd917cbd2f077f86afb94",
+      "bytes": 999
+    },
+    {
+      "file": "proofs/ownership/scripts/audit-controls.sh",
+      "sha256": "fa0a5e957c3486d13004e653e6348878cff72abbc79377e2935f54596f70dd9e",
+      "bytes": 10507
+    },
+    {
+      "file": "proofs/ownership/scripts/audit.sh",
+      "sha256": "81304b749df5f5729c805c6d62da0f6b13675ad2df662fc8d9250c84442b03a9",
+      "bytes": 1983
+    }
+  ],
+  "binary": {
+    "file": "proofs/ownership/.lake/build/bin/ownership",
+    "sha256": "6c04e08c1280afe6e72b4bf36e3c1f34e6752d56565255c8359084a10b2eb401",
+    "bytes": 12058880
+  }
+}

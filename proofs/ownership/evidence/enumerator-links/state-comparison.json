@@ -1,0 +1,86 @@
+{
+  "complete": true,
+  "equal": true,
+  "expected_rows": 678261,
+  "expected_cases": 226087,
+  "before": {
+    "digest": {
+      "file": "/home/jayson/src/beni.worktrees/ownership-proofs/zig-out/scratch/refactor-before.tsv",
+      "bytes": 1508240578,
+      "lines": 678261,
+      "sha256": "81d7da1081e919812a8595860a28df8bb2328de99ef94914745dae76d06bec7f"
+    },
+    "cases": 226087,
+    "unique_cases": 226087,
+    "families": [
+      {
+        "category": "enum",
+        "count": 105150
+      },
+      {
+        "category": "fixture",
+        "count": 98
+      },
+      {
+        "category": "sync",
+        "count": 99
+      },
+      {
+        "category": "targeted",
+        "count": 740
+      },
+      {
+        "category": "v5",
+        "count": 60000
+      },
+      {
+        "category": "v6",
+        "count": 60000
+      }
+    ],
+    "validation_issues": []
+  },
+  "after": {
+    "digest": {
+      "file": "/home/jayson/src/beni.worktrees/ownership-proofs/zig-out/scratch/refactor-after.tsv",
+      "bytes": 1508240578,
+      "lines": 678261,
+      "sha256": "81d7da1081e919812a8595860a28df8bb2328de99ef94914745dae76d06bec7f"
+    },
+    "cases": 226087,
+    "unique_cases": 226087,
+    "families": [
+      {
+        "category": "enum",
+        "count": 105150
+      },
+      {
+        "category": "fixture",
+        "count": 98
+      },
+      {
+        "category": "sync",
+        "count": 99
+      },
+      {
+        "category": "targeted",
+        "count": 740
+      },
+      {
+        "category": "v5",
+        "count": 60000
+      },
+      {
+        "category": "v6",
+        "count": 60000
+      }
+    ],
+    "validation_issues": []
+  },
+  "differing_rows": 0,
+  "difference_categories": [],
+  "differences_gzip": null,
+  "validation_gzip": null,
+  "row_byte_cap": 67108864,
+  "scope": "98 fixtures, 99 sync, 740 targeted, six generator blocks, grammar-2 bound-2; no diagnostic fixtures"
+}

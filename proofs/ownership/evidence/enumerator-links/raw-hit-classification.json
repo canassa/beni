@@ -1,0 +1,58 @@
+{
+  "strict_clean": false,
+  "raw_direct_observer_calls": 2,
+  "raw_linked_observer_calls": 0,
+  "matched_direct_observer_calls": 0,
+  "matched_linked_observer_calls": 0,
+  "classification_source": {
+    "file": "zig-out/scratch/raw-hit-probe-current.log",
+    "sha256": "4acb7c58bd2b5983d23d94f44888dbc1fd0740175fd9682c5c4464960e784b1c",
+    "bytes": 200446
+  },
+  "reproduced_hit_keys_source": {
+    "file": "zig-out/scratch/enum-final-diagnostic-capture/evidence.log",
+    "sha256": "c3856170add17ba7ae2790a246a6abf4bc247d42433eb80c93a7122059998779",
+    "bytes": 3132824
+  },
+  "hits": [
+    {
+      "program": "v6:20261011:11101",
+      "call": 3,
+      "cache_entry": 2,
+      "premise_failure": "described",
+      "classification": "The empty callback environment cannot describe the actual array capture.",
+      "actual_callback": "capAppend",
+      "observed_address": 1,
+      "observed_before": [
+        1
+      ],
+      "observed_after": [
+        1
+      ],
+      "changed_addresses": [
+        2
+      ]
+    },
+    {
+      "program": "v6:17:1707",
+      "call": 5,
+      "cache_entry": 1,
+      "premise_failure": "guardAnswer 1",
+      "classification": "The candidate expects a writing, non-escaping callback. The actual callback writes nothing and escapes its argument.",
+      "actual_callback": "publish",
+      "observed_address": 5,
+      "observed_before": [
+        0
+      ],
+      "observed_after": [
+        0
+      ],
+      "changed_addresses": [
+        10
+      ],
+      "changed_addresses_are_fresh": true
+    }
+  ],
+  "interpretation": "Both observed arrays stay unchanged. The raw hits remain explicit and do not establish checker defects.",
+  "coverage_limit": "A failed selected witness does not exclude all theorem instances."
+}

@@ -7,6 +7,7 @@ import Ownership.Enumerate
 import Ownership.Cli
 import Ownership.Bridge
 import Ownership.Targeted
+import Ownership.DiagnosticCampaign
 
 open Ownership
 
@@ -20,6 +21,11 @@ def main (args : List String) : IO UInt32 := do
   let count := positional[0]?.bind String.toNat? |>.getD 1000
   let seed := positional[1]?.bind String.toNat? |>.getD 20261011
   let version := (flagValue args "generator-version").bind String.toNat? |>.getD 5
+  if mode == "diagnostics" then
+    let count := positional[0]?.bind String.toNat? |>.getD 20000
+    let bound := (flagValue args "enumerate-bound").bind String.toNat? |>.getD 2
+    let path := (flagValue args "out").getD "../../zig-out/ownership-diagnostics.log"
+    return if ← DiagnosticCampaign.run count seed bound path then 0 else 1
   if mode == "bridge-reduce" then
     Bridge.reduceFile ((flagValue args "input").getD "") ((flagValue args "out").getD "")
     return 0
@@ -179,8 +185,8 @@ def main (args : List String) : IO UInt32 := do
     IO.println s!"generator catches every required control within {budget} trials: {caught}"
     if !caught then return 1
     -- Every program of the enumeration grammar up to the bound (Enumerate.lean):
-    -- no accepted one may disagree. Bound 2 has 55 966 programs;
-    -- bound 3 has 20 965 567 and is scripts/campaigns.sh's larger campaign.
+    -- no accepted one may disagree. Grammar 2 has 105,150 programs at bound 2.
+    -- Larger bounds use the same complete grammar.
     let bound := (flagValue args "enumerate-bound").bind String.toNat? |>.getD 2
     let (ok, _) ← Enumerate.run bound
     if !ok then return 1

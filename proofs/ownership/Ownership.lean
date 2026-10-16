@@ -13,3 +13,4 @@ import Ownership.Soundness
 import Ownership.StatementChecks.ConstructionFuel
 import Ownership.StatementChecks.SummaryObservers
 import Ownership.StatementChecks.ViewLinks
+import Ownership.DiagnosticCampaign

@@ -1,0 +1,32 @@
+{
+  "measurement": "historical remaining-fuel run",
+  "counts": {
+    "programs": 226088,
+    "accepted": 71747,
+    "rejected": 154341,
+    "runs": 238166,
+    "bothEvalSuccess": 129141,
+    "equalFuel": 129141,
+    "unequalFuel": 0,
+    "valueEvalOnly": 0,
+    "heapEvalOnly": 0,
+    "bothEvalError": 109025,
+    "bothRunSuccess": 129141,
+    "traceMismatch": 0,
+    "valueRunOnly": 0,
+    "heapRunOnly": 0,
+    "bothRunError": 109025
+  },
+  "enumeration": {
+    "visited": 105150,
+    "expected": 105150,
+    "completed": true
+  },
+  "scope": "Accepted v6 programs and the closed witness at fuel 0 through 32 and 100000; other accepted families at their recorded campaign fuel.",
+  "limit": "Paired failures do not establish equal remaining fuel. This finite run does not prove Invariant.fuel.",
+  "source_log": {
+    "file": "zig-out/scratch/enum-remaining-fuel.log",
+    "sha256": "09f0cbef2c121ceea65850e157dd7c8b287f9e05a1aed7d71de11602973b6494",
+    "bytes": 441
+  }
+}
