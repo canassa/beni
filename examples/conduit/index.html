@@ -13,11 +13,19 @@
       The fonts load from Google Fonts, the one other host, as the head of
       the RealWorld spec loads them (realworld-apps/realworld,
       docs/src/content/docs/specifications/frontend/templates.md, *Head*).
-      A font file is too large to be inline. Without the fonts, the page
-      uses the browser's sans-serif and serif fonts.
+      A font file is too large to be inline. Until the fonts arrive, and
+      without them, the page uses the browser's sans-serif and serif fonts.
+
+      A stylesheet in the markup stops each script after it until the
+      stylesheet arrives, so a slow font host kept the program from
+      starting. This one starts as a print stylesheet, which blocks
+      nothing, and its onload applies it to the screen. The page has no
+      <noscript> copy: without scripts, the page shows nothing. Also,
+      404.html parses this shell with scripts off, so the link in a
+      <noscript> would load there.
     -->
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Source+Sans+Pro:300,400,600,700|Lora:400,700&amp;display=swap">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Source+Sans+Pro:300,400,600,700|Lora:400,700&amp;display=swap" media="print" onload="this.media = 'all'">
     <!--
       The theme: assets/theme/styles.css of https://github.com/realworld-apps/realworld
       at commit 8776403114b1b476309a72d53e029fc205fdbb44, unchanged, SHA-256
