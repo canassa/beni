@@ -214,6 +214,13 @@ Allocating `[input]` there creates a new observer path without writing the input
 The written-input observer premise alone cannot exclude this state.
 These arbitrary pre-states refute statements; they do not establish reachable checker defects.
 
+As built (2026-10-17): both summary theorems take `linked : LinkedWritesCovered e.summary e.inputs (args ++ caps) args.length pre`.
+It says: for every input array at a permitted canonical path (a `W` or consume row, or an `env` path with a `calls` row), every input array its link component holds is at a permitted path.
+`StatementChecks/LinkSummary.lean` keeps the R1 witness: every old premise holds there, `CallSound.writes` fails, and the new premise refuses the state.
+The premise constrains input arrays only, so a read-only split keeps its distinct canonical names inside both statements.
+The falsifier's call check counts a call that fails it as vacuous (`vacuousLinked`) and carries `preLinks` into the pre-state.
+Open: the derivation at accepted callers. `applyCall` demands every instantiated write row against the live cells after the call and the other operand paths (`otherPaths`); with `Invariant.named`, `described`, `separating` and `linkNamed` at the call site, an input array linked to a written one shares its origins, so the Disjoint test refuses the call unless that array is at a written path too.
+The validity and snapshot premises (R2) belong to #170 and are not stated here.
 Add caller-derived link, validity, snapshot, and frame premises to the planned summary and map contracts.
 Cover inputs, captures, observers, and every linked or protected heap region that the call can expose.
 Require allocated references, valid links, and finite complete representations for the snapshots that the paired proof needs.

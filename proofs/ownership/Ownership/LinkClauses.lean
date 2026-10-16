@@ -7,6 +7,7 @@ import Ownership.BuilderProof
 import Ownership.LinkedWriteFrame
 import Ownership.KernelChecks
 import Ownership.StatementChecks.ViewLinks
+import Ownership.StatementChecks.LinkSummary
 import Ownership.Report
 import Ownership.Question
 import Ownership.DiagnosticCampaign

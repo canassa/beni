@@ -401,6 +401,31 @@ def GuardsHold (decls : List Decl) (config : Config) (s : Summary) (fs : List (N
   ∀ g ∈ s.guards, ∃ st, (answer config.inferenceFuel decls config [{ actuals := fs }] g.query).run {} =
     .ok (g.answer, st)
 
+/-- A path of input `i` the summary may write: a `W` or consume row names
+    it, or it is the environment of a function input the call calls
+    (`CallSound.writes`'s two cases). -/
+def WritePermitted (s : Summary) (nargs i : Nat) (q : Path) : Prop :=
+  rowHas (s.writes ++ s.consumes) (inputOrigin nargs i q) = true ∨
+    (q == [.env] && (s.calls.lookup i).getD 0 ≥ 1) = true
+
+/-- The write permission covers linked storage (#169, R1): an input array
+    that a link connects to an input array at a permitted path is itself at
+    a permitted path. A linked write through the first changes the second
+    (`writeLinked`), so without this clause 1 is false at a linked pre-state
+    (`StatementChecks/LinkSummary.lean`). An accepted caller establishes it:
+    a write row instantiates to the argument's cells, the Disjoint test
+    refuses an overlap with another operand path, and `Invariant.linkNamed`
+    makes linked protected arrays share origins. Storage no input reaches is
+    unconstrained, so a read-only split such as `readBoth(rest, xs)` stays
+    inside the theorem. -/
+def LinkedWritesCovered (s : Summary) (ins : List Abstract) (inputs : List Value) (nargs : Nat)
+    (pre : State) : Prop :=
+  ∀ i q c, canonicalPath ins i q → ArrayAt pre.heap (inputs[i]?.getD (.int 0)) q c →
+    WritePermitted s nargs i q →
+    ∀ d, LinkedWriteFrame.LinkConnected pre.links c d →
+      ∀ j p, canonicalPath ins j p → ArrayAt pre.heap (inputs[j]?.getD (.int 0)) p d →
+        WritePermitted s nargs j p
+
 /-- **Summary soundness** (Lemma 6.7). For every program accepted by the
     corrected checker and every summary it published, every concrete call of
     that declaration whose inputs the summary's canonical inputs describe
@@ -427,6 +452,7 @@ theorem summary_sound (p : Program) (a : Accepted) (ok : check p = .ok a)
     (fs : List (Nat × Abstract))
     (classes : GuardsHold p.declarations {} e.summary fs ∧
       ∀ j f, fs.lookup j = some f → DescribesClosure γ pre.heap f ((args ++ caps)[j]?.getD (.int 0)))
+    (linked : LinkedWritesCovered e.summary e.inputs (args ++ caps) args.length pre)
     (run : callResult p.declarations e.decl args caps fuel pre = .ok (r, post)) :
     CallSound e.summary e.inputs (args ++ caps) args.length pre post r := by
   sorry
@@ -448,6 +474,7 @@ theorem map_summary_sound (a b : Ty) (p : Program) (acc : Accepted) (ok : check 
     (fs : List (Nat × Abstract))
     (classes : GuardsHold p.declarations {} e.summary fs ∧
       ∀ j f, fs.lookup j = some f → DescribesClosure γ pre.heap f ((args ++ caps)[j]?.getD (.int 0)))
+    (linked : LinkedWritesCovered e.summary e.inputs (args ++ caps) args.length pre)
     (run : callResult p.declarations e.decl args caps fuel pre = .ok (r, post)) :
     CallSound e.summary e.inputs (args ++ caps) args.length pre post r ∧
       CertifiedExclusive post.heap e.summary.result r := by
