@@ -1337,7 +1337,9 @@ const Case = struct {
     fn malformedGolden(c: Case) ?[]const u8 {
         const has_codes = c.goldenExists("codes");
         const ext = c.kind.golden() orelse return if (has_codes) "a `.codes` golden on a kind that runs no `check`" else null;
-        const has_golden = c.goldenExists(ext);
+        // An ownership fixture beside a `.platform` file has one golden per
+        // platform it names (`X.browser-direct.ownership`), read where it runs.
+        const has_golden = c.goldenExists(ext) or (c.kind == .ownership and c.goldenExists("platform"));
         if (has_codes and !c.kind.takesCodes()) return "a `.codes` golden on a kind whose golden is not a diagnostic list";
         if (has_codes and has_golden) return "both a `.diag` and a `.codes`: keep one";
         if (!has_codes and !has_golden) return "no golden";

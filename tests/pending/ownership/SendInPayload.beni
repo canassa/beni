@@ -1,0 +1,54 @@
+-- CK-237: a send value in a payload is taken for a list the send operand also reaches.
+-- ownership (§30.9): a send value is the runtime's function, never a list,
+-- and holds nothing of the program's, so a send whose payload carries the
+-- send itself gives up no cell of it — `ReentrantSend`'s shape. Before, the
+-- payload's send was taken for a list the send operand also reached, and
+-- the send was rejected `disjoint`. The list beside it is still given up:
+-- `Both` sends a list it keeps reading, rejected at the send.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+
+
+type Msg
+    = Captured (Cmd.Send Msg)
+    | Both (Cmd.Send Msg) (List Int)
+    | Count Int
+
+
+update : Msg, Int → Int × Cmd Msg
+update msg model =
+    case msg of
+        Captured _ →
+            ( model, Cmd.none )
+
+        Both _ xs →
+            ( model + List.length (List.push xs 1), Cmd.none )
+
+        Count n →
+            ( model + n, Cmd.none )
+
+
+view : Int → Html Msg
+view model = <p>{String.fromInt model}</p>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init =
+            λ⊤ →
+                ( 0
+                , Cmd.batch
+                    [ Cmd.perform λsend → send (Captured send)
+                    , Cmd.perform λsend →
+                        xs = [ 1, 2 ]
+                        send (Both send xs)
+                        send (Count (List.length xs))
+                    ]
+                )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

@@ -1,0 +1,85 @@
+-- CK-239: a supply is probed whole, and a capture of the frame is `⊤`, so no decoder is owned.
+-- ownership (§30.9): `Http.send`'s tagger is handed what the request's
+-- decoder returns (§24.9), now followed through the work `Http.send` hands
+-- `Cmd.task`, a lambda: the function at `r.expect` is a slot of `send`
+-- inside it. What `send` supplies the decoder is owned cell by cell: the
+-- answer, and the `Problem` of a request refused before it was sent, are
+-- made by the call; the issues of an `Unprintable` body are the request's
+-- own, `r.body`'s, which the command keeps for every time it runs, so they
+-- are borrowed. A borrowed supply that holds nothing at the call hands
+-- nothing: `stringBody`'s body has no issues, and `Text` is accepted.
+-- `jsonBody`'s may hold some, and a decoder that answers its `Problem`
+-- (`expectString` does) hands them to `update`: `Json` is rejected `need`,
+-- approximately. Before, both were rejected: the work's call of the
+-- decoder was not followed.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Http
+import Schema
+import Sub
+import Tea
+
+
+type Msg
+    = Text
+    | Json
+    | Answered (Result Http.Error String)
+
+
+update : Msg, List String → List String × Cmd Msg
+update msg model =
+    case msg of
+        Text →
+            ( model
+            , Http.send
+                { method = "POST"
+                , headers = []
+                , url = "/text"
+                , body = Http.stringBody "text/plain" "t"
+                , expect = Http.expectString
+                , timeout = Nothing
+                , tracker = Nothing
+                }
+                Answered
+            )
+
+        Json →
+            ( model
+            , Http.send
+                { method = "POST"
+                , headers = []
+                , url = "/json"
+                , body = Http.jsonBody (Schema.list Schema.string) [ "j" ]
+                , expect = Http.expectString
+                , timeout = Nothing
+                , tracker = Nothing
+                }
+                Answered
+            )
+
+        Answered (Ok text) →
+            ( List.push model text, Cmd.none )
+
+        Answered (Err (Http.BadRequest (Http.UnprintableBody issues))) →
+            ( List.push
+                model
+                (String.fromInt (List.length (List.push issues (Schema.issue "seen"))))
+            , Cmd.none
+            )
+
+        Answered (Err _) →
+            ( model, Cmd.none )
+
+
+view : List String → Html Msg
+view model = <button onClick={Text}>{String.fromInt (List.length model)}</button>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( [], Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

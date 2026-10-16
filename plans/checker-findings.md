@@ -5928,3 +5928,80 @@ supplies, so `chain xs identity λl → List.push l 3` wrote `xs`; and `need` wa
 untaken callback results, so a callee writing an element of `List.map rows f` never asked `f` to
 return owned. Promoted `tests/corpus/check/bad/direct/BridgeCallbackReturnsParameter.beni` with a
 full diagnostic; `ownership/BridgeReturnedParameter` covers the class and accepted twins.
+
+## CK-234 — a function parameter handed on inside a lambda drops the callee's need (2026-10-16)
+
+Ownership soundness, issue #212, found by slice O1 (#210). `checkCallback`
+(`src/own/Ownership.zig`), on the caller's own function parameter passed on
+inside a lambda, only set `seen = false`: the callee's `need owned` never
+reached the declaration's `fun(j)`, so no caller asked its tagger to return
+owned. `load tag = (λ⊤ → Cmd.task (λ⊤ → [ 3 ]) tag) ⊤` with a tagger answering
+a top-level list was accepted while `update` pushed onto it. Pending:
+`tests/pending/ownership/LambdaPassNeed.beni`.
+
+## CK-235 — a function slot is not followed inside a lambda (2026-10-16)
+
+O1 (#210), `Http.send`'s family. §24.9 built function slots "not inside a
+lambda", so `send r tag = Cmd.task (λ⊤ → (r.load) ⊤) tag` called `r.load` as
+§6.1's conservative call, whose result counted as made by the call: a loader
+answering a top-level list was accepted (soundness), and `Http.send`'s taggers
+were all rejected, approximately. Pending: `tests/pending/ownership/SlotInLambda.beni`.
+
+## CK-236 — a call inside a lambda nested in another is dropped (2026-10-16)
+
+O1 (#210), `DebouncedSearch`. An env call (§18.9) of a lambda checked inside
+another lambda was dropped and the declaration's parameter marked unseen, so a
+send made two lambdas deep was out of sight and rejected `supply`,
+approximately. Pending: `tests/pending/ownership/NestedLambdaSend.beni`.
+
+## CK-237 — a send value in a payload is taken for a list (2026-10-16)
+
+O1 (#210), `ReentrantSend`. A payload carrying the send itself
+(`send (Captured send)`) made a deep demand on the send's own cell, which the
+send operand also reached: rejected `disjoint`. Pending:
+`tests/pending/ownership/SendInPayload.beni`.
+
+## CK-238 — a custom type is taken to hold anything (2026-10-16)
+
+O1 (#210), `bench/corpus`'s `andMap` chain. `mayHold` answered yes for every
+type whose body held anything, so a conservative call's list of validator
+functions reached a `Validation`'s error list, and the third `andMap` was
+rejected `call`, approximately. Pending: `tests/pending/ownership/NominalHolds.beni`.
+
+## CK-239 — a supply is probed whole, and a capture of the frame is `⊤` (2026-10-16)
+
+O1 (#210), `Http.send`'s decoder. A supply passed on was one probe over every
+cell, so the `Problem` the call made was borrowed beside the body's issues;
+inside a lambda a capture of the declaration's parameter read off as `⊤`, so no
+supply could be found empty at a call. Pending: `tests/pending/ownership/HttpSendBody.beni`.
+
+## CK-240 — a carried generator's call of what it was handed is `⊤` (2026-10-16)
+
+O1 (#210), `Random.generate`. `Random.list` is `Pcg.list` named — a call of it
+was §6.1's — and its carried lambda's call of the generator slot was `⊤`, so
+`Random.generate (Random.list die 3) Rolled` was rejected, approximately
+(`build/bad/direct/RandomTaggerDiagnostic` pinned it). Pending:
+`tests/pending/ownership/RandomGenerate.beni`.
+
+## CK-241 — what the fiber runtime answers is `⊤` (2026-10-16)
+
+O1 (#210), `TimeoutAroundRequest`, `RaceTwoServices`. `Task.timeout` and
+`Task.raceOk` answer what their work returned through `Js`, read back as `⊤`,
+so every tagger handed their answer was rejected, approximately. Pending:
+`tests/pending/ownership/TaskWords.beni`.
+
+## CK-242 — a callee relying on a lambda's own parameter is rejected inside it (2026-10-16)
+
+O1 (#210), `HttpFailures`. `List.map works λ( label, work ) → Cmd.task work
+tag`: inside the lambda, `work` has no class, so `Cmd.task`'s reliance on what
+it returns was rejected — and labelled exact. Pending:
+`tests/pending/ownership/LambdaParamNeed.beni`.
+
+## CK-243 — the entry does not check `onUrlRequest` and `onUrlChange` (2026-10-16)
+
+Ownership soundness, O1 (#210). The runtime sends what an application's URL
+taggers return, and `update` writes its message in place (§23.6), but the
+entry row never asked them to return owned: a tagger answering a top-level list
+was accepted on `browser-direct`. `browser-tea`'s own `Tea.application`, which
+forwards them inside a lambda, was rejected `need` (§30.2). Pending:
+`tests/pending/ownership/EntryUrlTaggers.beni`.
