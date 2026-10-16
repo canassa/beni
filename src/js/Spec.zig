@@ -4962,6 +4962,9 @@ const Spec = struct {
     /// asked. A spread (`{ r | … }`) reads every key of `r`: its key stays,
     /// and the body would be in the output two times.
     fn soleCalls(s: *Spec) Allocator.Error![]const bool {
+        // Asked only for a `Small` that the resolving pass gave a site, and
+        // that pass runs only when fact 3 holds (`pts.ok`).
+        if (std.debug.runtime_safety and !s.pts.ok) unreachable;
         const n = s.pts.sites.items.len;
         const calls = try s.arena.alloc(u32, n);
         @memset(calls, 0);
