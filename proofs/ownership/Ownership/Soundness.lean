@@ -412,10 +412,12 @@ def WritePermitted (s : Summary) (nargs i : Nat) (q : Path) : Prop :=
     that a link connects to an input array at a permitted path is itself at
     a permitted path. A linked write through the first changes the second
     (`writeLinked`), so without this clause 1 is false at a linked pre-state
-    (`StatementChecks/LinkSummary.lean`). An accepted caller establishes it:
-    a write row instantiates to the argument's cells, the Disjoint test
-    refuses an overlap with another operand path, and `Invariant.linkNamed`
-    makes linked protected arrays share origins. Storage no input reaches is
+    (`StatementChecks/LinkSummary.lean`). An accepted caller is expected to
+    establish it; that derivation is an open obligation (`PROOF-PLAN.md`,
+    *Summary pre-state links and validity*): a write row instantiates to the
+    argument's cells, the Disjoint test refuses an overlap with another
+    operand path, and `Invariant.linkNamed` makes linked protected arrays
+    share origins. Storage no input reaches is
     unconstrained, so a read-only split such as `readBoth(rest, xs)` stays
     inside the theorem. -/
 def LinkedWritesCovered (s : Summary) (ins : List Abstract) (inputs : List Value) (nargs : Nat)

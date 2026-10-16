@@ -1,5 +1,6 @@
 -- Keep witness reductions in one import chain so generated private splitters stay available.
 import Ownership.StatementChecks.ViewLinks
+import Ownership.Falsify
 
 /-! The R1 witness of #169 for `summary_sound`, from the review of PR #202: a
 linked pre-state. The callee writes only its first input. The second input
@@ -227,6 +228,38 @@ theorem not_covered : ¬ LinkedWritesCovered entry.summary entry.inputs args arg
   · rw [hrow] at row
     cases row
   · cases env
+
+/-- The positive control: with both inputs permitted, the premise holds at
+    the same linked state, so it is not unsatisfiable under links. -/
+def bothSummary : Summary := { entry.summary with writes := [.parameter 0 [], .parameter 1 []] }
+
+theorem bothSummary_writes : bothSummary.writes = [.parameter 0 [], .parameter 1 []] := rfl
+theorem bothSummary_consumes : bothSummary.consumes = [] := entry_consumes
+
+theorem covered_when_both_written :
+    LinkedWritesCovered bothSummary entry.inputs args args.length pre := by
+  intro i q c _ _ _ d _ j p canonJ _
+  refine Or.inl ?_
+  unfold canonicalPath at canonJ
+  rw [entry_inputs] at canonJ
+  match j with
+  | 0 =>
+    simp [inputs, first, Abstract.paths] at canonJ
+    subst canonJ
+    rw [bothSummary_writes, bothSummary_consumes]
+    first | decide | rfl
+  | 1 =>
+    simp [inputs, second, Abstract.paths] at canonJ
+    subst canonJ
+    rw [bothSummary_writes, bothSummary_consumes]
+    first | decide | rfl
+  | _ + 2 =>
+    simp [inputs, Abstract.paths] at canonJ
+
+-- The falsifier's mirror of the premise agrees on both states.
+#guard Falsify.linkedWritesCoveredB entry.summary entry.inputs args args.length pre.links pre.heap == false
+#guard Falsify.linkedWritesCoveredB bothSummary entry.inputs args args.length pre.links pre.heap == true
+
 
 theorem no_call_sound : ¬ CallSound entry.summary entry.inputs args args.length pre post (.ref 0) := by
   intro h
