@@ -85,3 +85,5 @@ def main (args : List String) : IO Unit := do
   unless (← seen.get).size == ids.size do throw (IO.userError "missing original leads")
   out.flush
   IO.println s!"judged {ids.size} originals and minima"
+
+theorem triageProbe : True := sorry
