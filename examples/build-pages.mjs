@@ -93,6 +93,7 @@ rmSync(out, { recursive: true, force: true });
 mkdirSync(out, { recursive: true });
 writeFileSync(join(out, marker), "Written by examples/build-pages.mjs, which empties this directory on its next run.\n");
 
+const routed = [];
 const work = mkdtempSync(join(tmpdir(), "beni-pages-"));
 try {
   for (const { name, deploy, routesByPath } of programs) {
@@ -104,12 +105,6 @@ try {
     });
     const manifestPath = join(copy, "beni.json");
     const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
-    // 404.html stands in for the page of a program that routes by path, so
-    // that page must be the default shell: the entry script and an empty
-    // body. A shell of the program's own would hold more.
-    if (routesByPath && manifest.html !== undefined) {
-      throw new Error(`${name}: 404.html stands in for its page, so it cannot declare an "html" shell`);
-    }
     manifest.build.base = `${base}${name}/`;
     writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
     if (deploy) {
@@ -120,9 +115,13 @@ try {
     execFileSync(beni, ["build", "--no-cache", "--release", `--out=${dest}`], { cwd: copy, stdio: "inherit" });
 
     const entry = `${base}${name}/_main.mjs`;
-    if (!readFileSync(join(dest, "index.html"), "utf8").includes(`"${entry}"`)) {
+    const shell = readFileSync(join(dest, "index.html"), "utf8");
+    if (!shell.includes(`"${entry}"`)) {
       throw new Error(`${name}: index.html does not load ${entry}`);
     }
+    // 404.html stands in for the page of a program that routes by path: it
+    // holds the page shell the build wrote and puts it in place of itself.
+    if (routesByPath) routed.push({ base: `${base}${name}/`, shell });
     if (deploy) {
       const emitted = readdirSync(dest, { recursive: true })
         .filter((path) => path.endsWith(".mjs"))
@@ -157,7 +156,8 @@ if (playgroundArg) {
 
 const fill = (file, values) => {
   let page = readFileSync(join(here, file), "utf8");
-  for (const [key, value] of Object.entries(values)) page = page.replaceAll(`{{${key}}}`, value);
+  // A function, so that a "$" in a value is not a replacement pattern.
+  for (const [key, value] of Object.entries(values)) page = page.replaceAll(`{{${key}}}`, () => value);
   const left = page.match(/\{\{[^}]*\}\}/);
   if (left) throw new Error(`${file}: nothing fills ${left[0]}`);
   writeFileSync(join(out, file), page);
@@ -171,7 +171,9 @@ fill("index.html", {
   date: git("log", "-1", "--format=%cs"),
   playground,
 });
+// The shells go into a <script>, where a "</script>" or "<!--" in one
+// would end or change the script: JSON's \u003c keeps every "<" out of it.
 fill("404.html", {
   base,
-  apps: JSON.stringify(programs.filter((p) => p.routesByPath).map((p) => `${base}${p.name}/`)),
+  apps: JSON.stringify(routed).replaceAll("<", "\\u003c"),
 });
