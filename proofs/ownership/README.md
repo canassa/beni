@@ -92,6 +92,22 @@ no network, no paid service. The Lean project is outside the Zig gates. The brid
 the ownership shell supplies pinned Zorg on Linux and Apple Silicon (Intel
 macOS requires `zorg` on PATH).
 
+## CI
+
+The job `lean` of `.github/workflows/ci.yml` checks the proofs.
+The guard `check` needs this job, so a failed proof blocks a merge.
+
+- The job runs `lake build`, then `scripts/audit.sh HEAD`, in `nix develop .#ownership`.
+- On a push to `master`, the job always runs these two steps.
+- On a pull request, the job runs them only when the pull request changes `proofs/ownership/`, `flake.nix`, `flake.lock` or `.github/workflows/ci.yml`.
+  For another pull request, the job skips the steps and passes.
+- The job restores `.lake` from the newest build on `master`.
+  Lake builds a module again when the hash of its source, its imports, its options or Lean's commit changes.
+- With a restored `.lake`, `lake build` does not run the source scan of `Axioms.lean` again when only a file outside its imports changes.
+  For example, a new `sorry` in `Triage.lean` passes a warm `lake build`.
+  `scripts/audit.sh` does not read `.lake`: it builds a clean export and scans every source, so CI catches that `sorry`.
+- The job does not run `lake exe ownership ci`.
+
 ## Audit memory and replay
 
 Run audit commands from `proofs/ownership` inside the ownership shell.
