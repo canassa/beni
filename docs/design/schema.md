@@ -417,11 +417,13 @@ through a tagged one.
 - **The derived contexts read the cycle as one unit** (checker-v2.md §11.5, *amended
   2026-10-16*). So `eq` and `compare` derive over the cycle, and an exclusion reached anywhere
   in it reaches every member that holds it.
-- **A generic cycle's description closes inside one use.** A reference to another member of the
-  cycle that hands the parameters on as they are (`Ping a` holding `Pong a`, which holds `Ping a`)
-  is described as that member's body, under its own `describedRecursive` cell, inside the
-  referring description. It is not a call of the member's factory, which would make a new cell
-  of the referrer on every level and describe without end. A reference with other arguments is
+- **A generic cycle's description closes inside one use.** A generic declaration's description
+  makes one `describedRecursive` cell for every member of its cycle that takes as many
+  parameters (`Ping a` holding `Pong a`, which holds `Ping a`). Each member's body is described
+  once, and every reference to a member that hands the parameters on as they are reads that
+  member's cell. It is not a call of the member's factory, which would make a new cell of the
+  referrer on every level and describe without end. A cell's body runs when the cell is first
+  read, so the description stays linear in the cycle's size. A reference with other arguments is
   polymorphic recursion (`Nested a` holding `Nested (List a)`). It still builds a definition per
   level, and §5's walks do not end on it: that is the open defect #213, which owes a decision.
 
