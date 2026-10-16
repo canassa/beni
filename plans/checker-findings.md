@@ -6044,3 +6044,17 @@ callee that handed the member on, not the member. The direct call was rejected.
 **CK-246 fixed 2026-10-16** (#269; ownership-checker.md §30.11): a member handed
 on as a value has its run's row for its class, and a tagged schema's
 constructor is a constructor.
+
+## CK-247 — a conversion whose forward returns its argument twice reads as two fresh lists (2026-10-16)
+
+Ownership soundness, issue #268. §30.10 drops `forward`'s argument from a
+schema's decoding slot, because the run built it. A `forward` that returns it
+at two places (`λxs → Ok ( xs, xs )`, a record with two fields of it, a list
+beside a list of it) put one array at two positions of the answer, and the
+summary read them as two fresh lists: `( List.push a 9, b )` was accepted, and
+in place `b` changed too. The library path through `Schema.converted` had the
+same hole. `tests/corpus/ownership/SchemaConversionTwice.beni`.
+
+**CK-247 fixed 2026-10-16** (#268; ownership-checker.md §30.10, dated
+amendment): such a schema's decoding slot holds `⊤twice`, and a write onto
+its answer is rejected `unknown`, approximately.
