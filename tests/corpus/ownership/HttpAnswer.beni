@@ -7,9 +7,10 @@
 -- `Loaded`'s payload is owned — no line. `expecting` is Conduit's: it hands
 -- the body to the program's parser and forwards the request's `Problem`,
 -- which is fresh since `Http`'s failure has its own type (§24.11 item 1).
--- Here the decoder is built by a call in the work's own lambda, and what
--- the lambda it holds returns is a call the checker does not see into, so
--- its tagger is rejected `need`, approximately, at `Fetched`;
+-- Here the decoder is built by a call in the work's own lambda, and the
+-- lambda it holds calls the parser it captured: since §30.9 that call
+-- returns what the parser's class returns, a new list, so `Fetched` is
+-- accepted (it was rejected `need`, approximately, before);
 -- `HttpAnswerEdited` hands the parser to the function that sends, as
 -- Conduit does, and is accepted. A decoder that answers a
 -- top-level list is rejected, exactly; one that answers the model's list,

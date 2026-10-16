@@ -2417,7 +2417,7 @@ raceAll first rest = within λs →
 --| `Ok`, the answer is `Err` of every branch's error, in argument order —
 --| a branch cancelled by itself gives none, and if every branch was, the
 --| caller is cancelled. No branches at all is `Err []`. Effect's `race`.
-pub raceOk : List (⊤ → Result e a) → Result (List e) a
+pub raceOk : many aliased List (⊤ → Result e a) → fresh Result (List e) a
 raceOk thunks =
     if List.isEmpty thunks then
         Err []
@@ -2458,7 +2458,7 @@ errorOf o =
 --|
 --|     Task.timeout (Duration.seconds 5) (λ⊤ → Http.get url)
 --|         ▷ Maybe.withDefault (Err Http.Timeout)
-pub timeout : Duration, (⊤ → a) → Maybe a
+pub timeout : borrowed Duration, once aliased (⊤ → a) → fresh Maybe a
 timeout duration work =
     if Duration.toMillis duration == 0 then
         Nothing

@@ -19,6 +19,11 @@ core/Debug.beni                 Debug.logAs         e87fb512372356e1b97c15d30c96
 core/Debug.beni                 Debug.toStringAs    9721dfa272bf1c15a90c9d9df0fc1278047c7eab4b78fe87c5dcf6c7192c1ab2
 core/Debug.beni                 Debug.log           0027a590612d84d0bdfb13861c3da3ab82a9540fe90baa88c54e2c84c5cd3df9
 core/Debug.beni                 Debug.toString      613ca54abbe8d10944bf759e0d7f2f89f955126744e02ec1e82d30efddd339a3
+core/Task.beni                  Task.timeout        80666470e35da3ce46e126792d957eceb434928a42500ba5ff0cd39404b44e69
+core/Task.beni                  Task.raceOk         201a3bbea63e7566ab2ceabad84378a191b39965a90e3db1a48c178437bce1c3
+core/Task.beni                  Task.within         438c12ddfacd783d9da5dfdfc5883883e5f919bd74756e30a68e27c8ea9b16a6
+core/Task.beni                  Task.startIn        f84a81adc193a110a2d4d5a586125b60ac01af56c6680ac3694060c4f6b5b489
+core/Task.beni                  Task.valueOf        e115c506f87ffd748bb62025cf08d53f82ee2b2c1406982a8b8a3e90b1c37b8a
 core/Schema.beni                Schema.parse        ba5e8dae48e05043591f568e30057ed74c37bf35bc64e84e6839c4abf9783be7
 core/Schema.beni                Schema.parseWith    05edb90415f5c7c40d75493ac18b2eb675831e3e7c1545e01479c2d8f29f1929
 core/Schema.beni                Schema.print        aa88b5dda46701321f9ccd3b471e7fb2fb5892f2673005aaee0ef4b650bbbec7

@@ -74,7 +74,7 @@ import Js
 --|
 --| Two `Int32`s are equal when they are the same 32-bit value, and they are
 --| ordered as signed integers.
-pub equatable foreign type Int32
+pub crossing equatable foreign type Int32
 
 
 --| Truncate an `Int` to 32 bits, keeping the low bits. This is the only way
