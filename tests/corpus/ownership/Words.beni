@@ -7,8 +7,9 @@
 -- still to be read, rejected (`printedLate`). `String.split`, `words`,
 -- `lines`, `toList` and `indexes` make a new array nobody else holds
 -- (`fresh exclusive`): an edit of their result is accepted, `call`.
--- `Schema.parse` may return what the schema's own functions return
--- (`unknown`): an edit of its answer is rejected `unknown`.
+-- `Schema.parse` carries no words since 2026-10-16: its row is the
+-- checker's (§30.10), and a list of integers, whose slots hold nothing,
+-- answers what the run builds — an edit of its answer is accepted, `call`.
 import Node exposing (Program)
 import Schema
 import Ssr

@@ -98,9 +98,11 @@
 # TimeoutAroundRequest and ValueCommands, and promoted all but two:
 # ReentrantSend and TimeoutAroundRequest now build on browser-direct and differ
 # from browser-tea there for reasons of the platform (issue #217), not ownership.
-# ApiItems and ApiLogin wait on `Schema.parse`'s answer (its words say `unknown`).
-tests/pending/browser/direct/ApiItems.beni dev: exit=1 codes=list_may_be_shared×1
-tests/pending/browser/direct/ApiLogin.beni dev: exit=1 codes=list_may_be_shared×1
+# §30.10 (2026-10-16, issue #218) cleared ApiItems' and ApiLogin's ownership line: a
+# compiled schema's answer is derived from its declaration. ApiLogin was
+# promoted. ApiItems' twin, four builds in one case like HttpJson (#184),
+# measures 4 780M, over the test budget, and was deleted: browser/tea/ApiItems
+# runs the page and ownership/SchemaAnswers pins its list of a declaration.
 tests/pending/browser/direct/ReentrantSend.beni GoldenMismatch
 tests/pending/browser/direct/TimeoutAroundRequest.beni PageFailed
 # Direct executes an unused view statement at mount, not on every message (documented S4 oracle boundary).

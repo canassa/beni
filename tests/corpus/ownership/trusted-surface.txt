@@ -38,8 +38,6 @@ core       Js.finally            ownership/core/JsWords.beni     1:returned>-+re
 core       Js.catchIf            ownership/core/JsWords.beni     1:returned>-+3:returned>-+res:->fresh
 core       Js.pure               ownership/core/JsWords.beni     1:returned>-+res:->fresh
 core       Js.suspending         ownership/core/JsWords.beni     1:returned>-+res:->fresh
-core       Schema.parse          ownership/Words.beni            res:unknown>fresh
-core       Schema.parseWith      ownership/Words.beni            res:unknown>fresh
 core       Schema.print          ownership/Words.beni            2:aliased>borrowed
 core       Schema.printWith      ownership/Words.beni            3:aliased>borrowed
 core       Task.timeout          ownership/TaskWords.beni        2:aliased>-
