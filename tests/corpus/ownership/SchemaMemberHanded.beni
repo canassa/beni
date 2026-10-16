@@ -1,0 +1,113 @@
+-- CK-246: a schema member handed on as a function value counts its result as made by the call.
+-- ownership (§30.11, issue #269): a schema declaration's member handed on as
+-- a value has its run's row (§30.10) for its class, and a tagged schema's
+-- constructor is a constructor. `Fixed`'s conversion answers the top-level
+-- `kept`, so `Fixed.parse` handed to `apply`, bound to a local or handed to
+-- `Result.andThen` answers `kept`, and pushing onto it is rejected
+-- `top-level`, exactly, as the direct call is. Before, a member handed on
+-- kept §6.1's cell made by the call: `handed` was accepted `call (no
+-- summary: SchemaMemberHanded.apply)`, a message that named the wrong
+-- function, and `List.push` wrote `kept`. `Sentence`'s conversion builds
+-- what it answers, so its member handed on is accepted. `Tree.Branch`
+-- handed to `apply` keeps its argument at its payload: the fresh children
+-- are written, accepted; the top-level `forest` is not.
+import Schema exposing (Conversion)
+
+
+kept : List String
+kept = [ "kept" ]
+
+
+fixed : Conversion String (List String)
+fixed = Schema.conversion (λ_ → Ok kept) λws → Ok (String.join ws " ")
+
+
+words : Conversion String (List String)
+words = Schema.conversion (λs → Ok (String.split s " ")) λws → Ok (String.join ws " ")
+
+
+schema Fixed =
+    text : String via fixed
+
+
+schema Sentence =
+    text : String via words
+
+
+schema Tree tagged "t" of
+    Leaf as "leaf"
+        value : Int
+    Branch as "branch"
+        children : List Tree
+
+
+forest : List Tree.Type
+forest = [ Tree.Leaf { value = 1 } ]
+
+
+apply : (a → b), a → b
+apply f x = f x
+
+
+pub handed : String → List String
+handed input =
+    case apply Fixed.parse input of
+        Ok f →
+            List.push f.text "x"
+        Err _ →
+            []
+
+
+pub bound : String → List String
+bound input =
+    parse = Fixed.parse
+    case parse input of
+        Ok f →
+            List.push f.text "x"
+        Err _ →
+            []
+
+
+pub chained : String → List String
+chained input =
+    case Result.andThen (Ok input) Fixed.parse of
+        Ok f →
+            List.push f.text "x"
+        Err _ →
+            []
+
+
+pub direct : String → List String
+direct input =
+    case Fixed.parse input of
+        Ok f →
+            List.push f.text "x"
+        Err _ →
+            []
+
+
+pub built : String → List String
+built input =
+    case apply Sentence.parse input of
+        Ok s →
+            List.push s.text "x"
+        Err _ →
+            []
+
+
+pub grown : ⊤ → List Tree.Type
+grown ⊤ =
+    case apply Tree.Branch { children = [] } of
+        Tree.Branch r →
+            List.push r.children (Tree.Leaf { value = 0 })
+        Tree.Leaf _ →
+            []
+
+
+pub grownShared : ⊤ → List Tree.Type
+grownShared ⊤ =
+    case apply Tree.Branch { children = forest } of
+        Tree.Branch r →
+            List.push r.children (Tree.Leaf { value = 0 })
+        Tree.Leaf _ →
+            []
