@@ -13,7 +13,9 @@ of a `List Int` found again in `List.reverse xs` do not count. Spec: a dated ame
 (`dup [ 1 ]`, `dup (List.copy xs)`) was still read as two fresh lists, proved one array at run time: two
 entries of one fresh number now count too (`returnsOneCellTwice`), and the fixture has `made`, `copied` and
 `sibling` (the `⊤` reaches every list of the answer). A forward that calls a function the checker cannot
-identify is closed only with #225's `⊤call`.
+identify is closed only with #225's `⊤call`. The re-review then found that a non-tail recursive builder
+(`range n`) numbers its elements as the list, so `λ_ → Ok (range 3)` was refused even once: a fresh pair is
+now skipped when the longer path holds no cell in the decoded type below `Ok`.
 
 **What I learned.** The elements of a run's answer were already "may share one list", so only distinct
 tuple slots, record fields and constructor arguments were wrongly separated. A summary's `[*] ~π1[*]` entry
