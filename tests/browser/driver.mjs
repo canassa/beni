@@ -568,7 +568,7 @@ function prelude() {
 async function load({ url, runtime }) {
   const record = globalThis.__beniHarness;
   try {
-    await import(url);
+    record.entry = await import(url);
   } catch (error) {
     // A page's module script that throws while it evaluates is reported
     // to the window's `error` listeners; so is this, which is also how the
@@ -663,6 +663,15 @@ function step(s) {
   }
   if (s.command === "title") {
     globalThis.__beniHarness.log.push(`(title: ${JSON.stringify(document.title)})`);
+    return null;
+  }
+  // The page's unmount (`boundary.md` §9.4.5, amended 2026-10-17): the
+  // entry file's `stop` export, called once.
+  if (s.command === "stop") {
+    const stop = globalThis.__beniHarness.entry?.stop;
+    if (typeof stop !== "function") return "the entry file exports no `stop`";
+    stop();
+    globalThis.__beniHarness.log.push("(stopped)");
     return null;
   }
   if (s.command === "location") {
@@ -789,6 +798,14 @@ function step(s) {
       if (s.name === undefined || key.split("\u0000")[0] === s.name) n += set.size;
     }
     globalThis.__beniHarness.log.push(`(listeners: ${n})`);
+    return null;
+  }
+  // A `CustomEvent` whose `detail` is the step's JSON, as a host page pushes
+  // data to a program (the research adapter's `rr-push`).
+  if (s.command === "detail") {
+    const on = s.selector === "window" ? globalThis : s.selector === "document" ? document : document.querySelector(s.selector);
+    if (on === null) return `no element matches \`${s.selector}\``;
+    on.dispatchEvent(new CustomEvent(s.name, { detail: s.detail }));
     return null;
   }
   if (s.command === "event") {
@@ -1186,7 +1203,7 @@ if (stepsPath !== undefined) {
     if (line === "load" && (!throws || steps.some((s) => s.command !== "file" && s.command !== "url" && s.command !== "store"))) {
       usage(`${where}: \`load\` is written \`throws load\`, after the steps that set the page up`);
     }
-    if (["back", "forward", "location", "title", "file", "load"].includes(line)) {
+    if (["back", "forward", "location", "title", "file", "load", "stop"].includes(line)) {
       steps.push({ line: written, where, command: line, selector: null, throws });
       return;
     }
@@ -1233,6 +1250,15 @@ if (stepsPath !== undefined) {
         usage(`${where}: \`listeners\` takes \`window\` or \`document\` and at most an event name`);
       }
       s.name = argument;
+    } else if (command === "detail") {
+      const d = (argument ?? "").match(/^([a-z][a-z0-9-]*)\s+(.+)$/);
+      if (d === null) usage(`${where}: \`detail\` takes \`window\`, \`document\` or a selector, an event name and its detail as JSON`);
+      s.name = d[1];
+      try {
+        s.detail = JSON.parse(d[2]);
+      } catch {
+        usage(`${where}: the detail of \`detail\` is one JSON value`);
+      }
     } else if (command === "event") {
       const e = (argument ?? "").match(/^([a-z]+)(?:\s+([1-9][0-9]*))?$/);
       if (e === null) {
