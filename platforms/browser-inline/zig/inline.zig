@@ -356,6 +356,11 @@ const Page = struct {
             try js.expression(body, try js.call(try js.member(try js.name(at), "insertAdjacentHTML"), &.{ try js.string("beforeend"), try js.string(pg.html.items) }));
             node = try cx.fresh("node");
             try js.constant(body, node.?, try js.member(try js.name(at), "lastChild"));
+            // Each piece registers what removes it as it is added, so a mount
+            // that throws halfway leaves nothing `stop` cannot take back.
+            const undo = try js.block();
+            try js.expression(undo, try js.call(try js.member(try js.name(node.?), "remove"), &.{}));
+            try js.expression(body, try js.call(try js.name(try cx.runtime("own")), &.{try js.arrow(&.{}, undo)}));
         }
         // The binding's text node, and its first text.
         if (pg.binding) |b| {
@@ -411,7 +416,6 @@ const Page = struct {
         // Each subscription started: the first declaration of each key
         // starts it, and each value goes through every declaration of that
         // key in order, each a dispatch of its own.
-        var removers: std.ArrayList(m.Name) = .empty;
         for (subs, 0..) |s, i| {
             if (s.first != i) continue;
             const v = try cx.fresh("v");
@@ -424,23 +428,11 @@ const Page = struct {
             const send = try js.arrow(if (s.fields == 0) &.{} else &.{v}, sends);
             const remove = try cx.fresh("remove");
             try js.constant(body, remove, try cx.programSubscriptionStart(body, @intCast(i), send));
-            try removers.append(pg.a(), remove);
+            try js.expression(body, try js.call(try js.name(try cx.runtime("own")), &.{try js.name(remove)}));
         }
         // `init`'s command, after the mount's writes.
         if (element_ and cx.programCommand(null) == .runs) {
             try js.expression(body, try js.call(try js.name(try cx.runtime("commands")), &.{ try js.member(init, "b"), try js.name(pg.dispatch.?) }));
-        }
-        // What undoes the mount, the last added first: the listeners and
-        // timers, then the markup.
-        if (node != null or removers.items.len != 0) {
-            const undo = try js.block();
-            var i = removers.items.len;
-            while (i > 0) {
-                i -= 1;
-                try js.expression(undo, try js.call(try js.name(removers.items[i]), &.{try js.literal(.undefined)}));
-            }
-            if (node) |n| try js.expression(undo, try js.call(try js.member(try js.name(n), "remove"), &.{}));
-            try js.expression(body, try js.call(try js.name(try cx.runtime("own")), &.{try js.arrow(&.{}, undo)}));
         }
         return js.arrow(&.{id}, body);
     }
