@@ -4014,7 +4014,15 @@ const Spec = struct {
         for (s.mods) |*m| {
             const body = try s.arena.dupe(Index, m.ir.extraSlice(m.ir.body, Index));
             for (body) |top| switch (m.ir.tag(top)) {
-                .const_decl, .let_decl, .func_decl => if (try s.srBelow(m, top, top, 0)) {
+                // An arrow called where it is made in a top-level binding's own
+                // value, outside any function: written in its place as
+                // `inlineIifesIn` writes one inside a function, the binding the
+                // declaration that scopes its names.
+                .const_decl, .let_decl => {
+                    if (s.list_mode == .iife and try s.inlineIifesIn(m, top, top)) any = true;
+                    if (try s.srBelow(m, top, top, 0)) any = true;
+                },
+                .func_decl => if (try s.srBelow(m, top, top, 0)) {
                     any = true;
                 },
                 else => {},

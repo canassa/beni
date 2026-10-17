@@ -1,0 +1,18 @@
+-- An arrow called where it is made in a top-level binding's own value is
+-- written in its place, as one inside a function is (`backend.md` §9, *A
+-- function called where it is made*): once `shown 3` is taken into `main`'s
+-- value, `(x => …)(7)` stands outside every function, and is `7` written
+-- into the body. `run/` proves what it prints.
+import Node
+
+
+pick : Int, Int → Int
+pick a b = a * 10 + b
+
+
+shown : Int → String
+shown n = (λx → String.fromInt (pick x n)) 7
+
+
+main : Node.Program
+main = Node.print (shown 3)
