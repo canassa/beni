@@ -1276,6 +1276,33 @@ again. A development build writes every branch in place.
     cost a program with 12 such calls +113;
   - a helper running the tests on the success path, as above.
 
+**A run whose failure is never read is a validator** *(added 2026-10-17, the owner, for
+`browser-inline`'s first slice)*. This takes the inferred-from-use rule one step further: §6 already
+ships a direction only to a program that runs it, and now a failure's description ships only to a
+program that reads one. A run of a statically known schema — `parse`, `read`, `decode` and their
+`With` forms — **whose `Err` payload is never read compiles to a validator**: the same tests in the
+same order, the same success value, and on failure the same `Err`, but holding no `Issue`. No
+message is written, no path is built, no failing input is captured, no `compiledFail` is called,
+and nothing of `core/Schema`'s issue makers ships for it.
+
+- **Never read** is decided at the run's call, from the program's text: the call is the scrutinee
+  of a `case`, directly, and every arm of that `case` that can match an `Err` matches it as
+  `Err _`. Any other use of the call's value — bound to a name, passed, returned, stored, matched
+  with `Err e` or by a `?` — reads the payload, and that run keeps the issues and their prose.
+- **Only the program that reads pays.** The decision is the run's own, not the declaration's: a
+  declaration whose runs are all validators ships no failure branch with prose; one with runs of
+  both kinds ships both worker sets, each reached only from its own runs, so a program pays for
+  the prose of exactly the runs that read it.
+- **What the program sees does not change**: which inputs succeed, the value each yields, and
+  that every other input fails. A validator's `Err` holds an empty list, which nothing can observe
+  because nothing reads it. A validator stops at the first failure, because no issue is kept that
+  a later one could join (`Schema.all` reports every issue, so a validator reports none and gains
+  nothing by going on).
+- **Where it is not taken.** A dynamic schema runs the library interpreter as before. The forced
+  library path (`--schema-library`) runs every schema through the interpreter, which makes issues;
+  the differential corpus therefore compares the two paths on the success value and on success
+  against failure, which is all a validator's caller can see.
+
 ## 7. Effects
 
 Effectful transformations are part of the intended design. Synchronous delivery
