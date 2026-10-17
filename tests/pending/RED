@@ -122,12 +122,11 @@ tests/pending/browser/inline/Texts dev: exit=1 codes=not_implemented×2
 tests/pending/build/bad/inline/CapFired BuildDidNotFail
 tests/pending/build/bad/inline/MapNotCtor GoldenMismatch
 tests/pending/build/bad/inline/MarkupValue GoldenMismatch
-tests/pending/build/bad/inline/OpaqueUpdate GoldenMismatch
 tests/pending/build/bad/inline/ResearchListWidget GoldenMismatch
-tests/pending/build/bad/inline/StarNotReplace GoldenMismatch
 tests/pending/emit/release/inline/Counter BuildFailed
 tests/pending/emit/release/inline/Reader BuildFailed
 tests/pending/emit/release/inline/ResearchS2 BuildFailed
 tests/pending/emit/release/inline/ResearchS3 BuildFailed
 tests/pending/emit/release/inline/Texts BuildFailed
-tests/pending/emit/release/inline/EnumCycle.beni GoldenMismatch
+tests/pending/emit/release/inline/EnumCycle.beni exit=0 js-differs
+tests/pending/build/bad/inline/StarNotReplace BuildDidNotFail

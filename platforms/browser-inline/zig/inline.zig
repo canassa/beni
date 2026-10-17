@@ -617,6 +617,7 @@ const Page = struct {
         @memset(inlined, false);
         for (keys, 0..) |key, k| {
             if (refs[k] == 0) continue;
+            try pg.refuseKey();
             const params = try pg.a().alloc(m.Name, key.params);
             for (params) |*x| x.* = try cx.fresh("value");
             if (refs[k] == 1) if (only[k]) |i| {
@@ -699,6 +700,20 @@ const Page = struct {
             try js.expression(body, try js.call(try js.name(try cx.runtime("commands")), &.{ try js.member(init, "b"), try js.name(pg.dispatch.?) }));
         }
         return js.arrow(&.{id}, body);
+    }
+
+    /// The language rule a key's handler is refused by (§8.7, class 3): an
+    /// `update` computed when the page runs has no arm to write. A `*` key is
+    /// compiled as S0 compiles it, every binding called, until the owner
+    /// decides which the rule refuses (§8.7).
+    fn refuseKey(pg: *Page) m.Error!void {
+        const cx = pg.cx;
+        if (pg.p.update == .computed) return cx.programReport(.update, .program_shape,
+            \\This program's `update` is a value computed when the page runs, so `browser-inline`
+            \\cannot write each message's arm into the handler of its key: a handler is the arm itself,
+            \\with no message made (`docs/design/browser-inline.md` §8.7; §5, class 3). Name a function
+            \\of the program's modules as `update`, or write a lambda whose body chooses the arm.
+        );
     }
 
     /// Key `k`'s handler's name, made the first time it is asked for.

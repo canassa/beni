@@ -1,4 +1,3 @@
--- CK-254: an `update` computed when the page runs is refused by a rule.
 -- `browser-inline` writes each key's arm into its handler, so it needs the
 -- arms of `update` when the program is built (docs/design/browser-inline.md
 -- §8.7). Here `update` is what `updates True` returns: an opaque `update`,
