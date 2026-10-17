@@ -2023,15 +2023,35 @@ hasOwn : Js.Value, String → Bool
 hasOwn v k = Js.to (Js.call (Js.global "Object") "hasOwn" [ v, Js.from k ])
 
 
+-- The names a standard `Object.prototype` holds, which a read finds on
+-- any object: tested as own keys (`present`). The compiled workers test the
+-- same names, from `SchemaShare.isPrototypeKey`; a unit test there keeps
+-- the two lists equal, so compiled and library runs answer alike whatever
+-- a page adds to `Object.prototype`.
+prototypeKey : String → Bool
+prototypeKey k =
+    k == "__proto__"
+        || k == "__defineGetter__"
+        || k == "__defineSetter__"
+        || k == "__lookupGetter__"
+        || k == "__lookupSetter__"
+        || k == "constructor"
+        || k == "hasOwnProperty"
+        || k == "isPrototypeOf"
+        || k == "propertyIsEnumerable"
+        || k == "toLocaleString"
+        || k == "toString"
+        || k == "valueOf"
+
+
 -- Whether host object `v` holds key `k`, as every reading runner tests it
 -- (`schema.md` §5, *Host values*, amended 2026-10-17): a read of it answers
 -- anything but `undefined`, through the prototype chain — but for a name
--- `Object.prototype` has, which must be `v`'s own, so the prototype never
--- shadows a field. The compiled workers spell the same names from one
--- list (`SchemaShare.isPrototypeKey`); this asks `Object.prototype` itself.
+-- `prototypeKey` lists, which must be `v`'s own, so the prototype never
+-- shadows a field.
 present : Js.Value, String → Bool
 present v k =
-    if hasOwn (Js.get (Js.global "Object") "prototype") k then
+    if prototypeKey k then
         hasOwn v k
     else
         not (Js.isUndefined (Js.get v k))
@@ -2739,13 +2759,9 @@ fieldsFrom c fs i n depth path v values out =
                 -- record runs, and V8 inlines neither helper into it once a
                 -- program runs the engine several ways
                 -- (`plans/core-in-beni.md`, the schema engine).
-                object = Js.global "Object"
                 held =
-                    if
-                        Js.to
-                            (Js.call object "hasOwn" [ Js.get object "prototype", Js.from inName ])
-                    then
-                        Js.to (Js.call object "hasOwn" [ v, Js.from inName ])
+                    if prototypeKey inName then
+                        Js.to (Js.call (Js.global "Object") "hasOwn" [ v, Js.from inName ])
                     else
                         not (Js.isUndefined (Js.get v inName))
                 if held then

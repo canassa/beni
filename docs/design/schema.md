@@ -748,8 +748,11 @@ user =
   present with the value `undefined` is absent. `Object.hasOwn` is kept for the names
   `Object.prototype` has (`__proto__`, `constructor`, `toString`, …), so a prototype key never
   shadows a field. It is the rule `parse` already followed, now `read`'s and the library's as well,
-  over one list of those names (the compiled workers'; the library asks `Object.prototype`
-  itself, which holds the same names). The owner's reasons: a class instance's getter is its
+  over one fixed list of the twelve names a standard `Object.prototype` holds
+  (`SchemaShare.prototype_keys`; core's `Schema.prototypeKey` spells the same twelve, and a unit
+  test keeps the two equal). The list is fixed, never read from `Object.prototype` at run time,
+  so a key a page adds to `Object.prototype` is read through it by every runner alike, compiled
+  or library (`run/SchemaReadKeys`'s last line). The owner's reasons: a class instance's getter is its
   data, and Elm's decoders read through the prototype; `undefined` means absent throughout
   JavaScript; and `parse` already accepts the trade for a polluted `Object.prototype`.
 - **A typed tagged value** is matched by the variants' projections in order; a value none of them
