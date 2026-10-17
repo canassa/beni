@@ -1682,6 +1682,9 @@ pub const LimitHit = struct { module: u32, decl: u32, limit: Limit, at: u32 };
 fn hitLimit(o: *Ownership, why: Limit, at: u32) Allocator.Error!void {
     const m = o.cur_decl[0];
     const d = o.cur_decl[1];
+    // Every walk sets `cur_decl` (`run`, `walkSummary`), so a
+    // limit is always some declaration's error, never dropped (#271).
+    if (std.debug.runtime_safety) std.debug.assert(m != none);
     if (m == none) return;
     for (o.limit_hits.items) |*h| if (h.module == m and h.decl == d and h.limit == why) {
         h.at = @max(h.at, at);
@@ -5753,7 +5756,9 @@ const Walker = struct {
                 return w.proj(target, s, w.instType(inst));
             },
             .top, .ext_value => {
-                const t = w.valueTarget(inst) orelse return &.{};
+                // A reference the provenance does not resolve: unknown, not
+                // empty, so that what it holds is never taken for nothing.
+                const t = w.valueTarget(inst) orelse return if (try w.isTracked(inst)) w.single(.{ .kind = .top, .a = 0 }) else &.{};
                 const decl = w.o.in.birs[t.m].decls[t.d];
                 // A function: a value with no cell of its own, which carries
                 // its summary to where it is called (§16.5).
@@ -9587,7 +9592,8 @@ const Walker = struct {
             },
             .env => {
                 if (cls != .closure) return w.single(.{ .kind = .top, .a = 0 });
-                const held = w.local_av[p.a] orelse return &.{};
+                // A capture this walk has not bound: unknown, not empty.
+                const held = w.local_av[p.a] orelse return w.single(.{ .kind = .top, .a = 0 });
                 return w.projPath(held, p.path, null);
             },
             else => return w.single(.{ .kind = .top, .a = 0 }),
