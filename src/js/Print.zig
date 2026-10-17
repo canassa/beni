@@ -1981,6 +1981,8 @@ const Printer = struct {
             /// call's argument list, a conditional's two branches.
             binary_rest,
             member_rest,
+            /// `.` and an `index_get`'s string key printed as a name (`dottedKey`).
+            dotted_rest,
             call_rest,
             cond_rest,
         };
@@ -2123,6 +2125,10 @@ const Printer = struct {
                     try p.push(".");
                     try p.name(@fromBackingInt(@intCast(p.ir.data(@fromBackingInt(@intCast(w.value))).rhs)), .fixed);
                 },
+                .dotted_rest => {
+                    try p.push(".");
+                    try p.push(p.dottedKey(@fromBackingInt(@intCast(p.ir.data(@fromBackingInt(@intCast(w.value))).rhs))).?);
+                },
                 .call_rest => {
                     // `(` arg `, ` arg … `)`
                     try p.push("(");
@@ -2166,6 +2172,24 @@ const Printer = struct {
         const target = p.plan.replacement(node) orelse return node;
         std.debug.assert(p.ir.tag(target) != .ident or p.plan.replacement(target) == null);
         return target;
+    }
+
+    /// Compact printing writes `x["key"]` as `x.key` where `key` is an
+    /// identifier name: the same property, as ECMAScript reads both. Null
+    /// when the index is anything else, and always in a development build,
+    /// whose output does not move.
+    fn dottedKey(p: *Printer, index: Index) ?[]const u8 {
+        if (!p.compact) return null;
+        const at = p.resolve(index);
+        if (p.ir.tag(at) != .string) return null;
+        const key = p.ir.bytes(at);
+        if (key.len == 0) return null;
+        for (key, 0..) |c, i| switch (c) {
+            'a'...'z', 'A'...'Z', '_', '$' => {},
+            '0'...'9' => if (i == 0) return null,
+            else => return null,
+        };
+        return key;
     }
 
     fn precedence(p: *Printer, node: Index) u8 {
@@ -2251,6 +2275,11 @@ const Printer = struct {
             },
             .index_get => {
                 try p.expression(@fromBackingInt(@intCast(d.lhs)), prec_call, level);
+                if (p.dottedKey(@fromBackingInt(@intCast(d.rhs)))) |key| {
+                    try p.push(".");
+                    try p.push(key);
+                    return;
+                }
                 try p.push("[");
                 try p.expression(@fromBackingInt(@intCast(d.rhs)), 0, level);
                 try p.push("]");
@@ -2399,7 +2428,12 @@ const Printer = struct {
                 return .expr(@fromBackingInt(@intCast(d.lhs)), prec_call);
             },
             .index_get => {
-                // object `[` index `]`
+                // object `[` index `]`, or, compact, `.` key for a string
+                // key that is an identifier name.
+                if (p.dottedKey(@fromBackingInt(@intCast(d.rhs))) != null) {
+                    try p.later(.rest(.dotted_rest, node));
+                    return .expr(@fromBackingInt(@intCast(d.lhs)), prec_call);
+                }
                 try p.later(.piece(.close_bracket));
                 try p.later(.expr(@fromBackingInt(@intCast(d.rhs)), 0));
                 try p.later(.piece(.open_bracket));
