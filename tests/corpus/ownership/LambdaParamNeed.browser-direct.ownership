@@ -1,6 +1,6 @@
 module LambdaParamNeed
-  37:26 value <function value>: rejected need: Cmd.task relies on what the function it is handed returns, and the function this lambda is handed may return a list it does not own (§30.9) (approx)
-  46:64 value <function value>: rejected need: Cmd.task relies on what the function it is handed returns, and the function this lambda is handed may return a list it does not own (§30.9)
+  37:26 value work: rejected need: Cmd.task relies on what the function it is handed returns, and the function this lambda is handed may return a list it does not own (§30.9) (approx)
+  46:64 value work: rejected need: Cmd.task relies on what the function it is handed returns, and the function this lambda is handed may return a list it does not own (§30.9)
   52:15 List.push xs: accepted param
   61:5 entry LambdaParamNeed.update msg#Got.1: accepted entry
   summary kept: unused

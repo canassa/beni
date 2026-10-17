@@ -3841,6 +3841,9 @@ const CarrySite = struct { inst: u32, sum: usize, klass: u32, depth: u32, ns: u3
 const Closure = struct {
     captures: []const Capture,
     params: []const Inst.Index = &.{},
+    /// §28.6: where the lambda or local function is written, or where the
+    /// call or value that carried it here is; `none` for a test's.
+    token: u32 = none,
     frame: u32 = 0,
     class: ?*const Summary = null,
     /// The captured cells the lambda's body escaped (§16.4 item 4).
@@ -3938,8 +3941,8 @@ const DemandRec = struct {
     /// §23.2: a send's demand, on every cell of its base; read off as `S`.
     deep: bool = false,
     /// §28.6: the edit's and the base's tokens, the top-level value a
-    /// `top-level` rejection names, and the call or operand a `call` or
-    /// `held-operand` one does.
+    /// `top-level` rejection names, the call or operand a `call` or
+    /// `held-operand` one does, and the function a `need` one names.
     span: [2]u32 = .{ none, none },
     base_span: [2]u32 = .{ none, none },
     top: ?[3]u32 = null,
@@ -5897,7 +5900,7 @@ const Walker = struct {
             },
             .lambda => {
                 const params = b.extraSlice(b.subRange(@fromBackingInt(@intCast(data.lhs))), Inst.Index);
-                return w.closure(params, @fromBackingInt(@intCast(data.rhs)), null);
+                return w.closure(params, @fromBackingInt(@intCast(data.rhs)), null, w.token(inst));
             },
             .let => return w.evalLet(inst),
             .case => return w.evalCase(inst),
@@ -6303,7 +6306,7 @@ const Walker = struct {
 
     /// A lambda or local function: its body walked as a frame of its own,
     /// and its class read off it (§16.5).
-    fn closure(w: *Walker, params: []const Inst.Index, body: Inst.Index, ci_in: ?u32) Allocator.Error!AV {
+    fn closure(w: *Walker, params: []const Inst.Index, body: Inst.Index, ci_in: ?u32, tok: u32) Allocator.Error!AV {
         const saved_frame = w.frame;
         const saved_ctx = w.ctx;
         const id: u32 = @intCast(w.frames.items.len);
@@ -6313,6 +6316,7 @@ const Walker = struct {
             break :blk @intCast(w.closures.items.len - 1);
         };
         w.closures.items[ci].params = params;
+        w.closures.items[ci].token = tok;
         w.closures.items[ci].frame = id;
         for (params, 0..) |p, k| {
             const at = p.int() -% w.decl.inst_start.int();
@@ -6496,7 +6500,7 @@ const Walker = struct {
                 const ld = b.extraData(@fromBackingInt(@intCast(b.instData(item).lhs)), Bir.LetDef);
                 if (ld.params_start == ld.params_end) continue;
                 const params = b.extraSlice(.{ .start = ld.params_start, .end = ld.params_end }, Inst.Index);
-                _ = try w.closure(params, @fromBackingInt(@intCast(b.instData(item).rhs)), group[gi][1]);
+                _ = try w.closure(params, @fromBackingInt(@intCast(b.instData(item).rhs)), group[gi][1], w.token(item));
                 gi += 1;
             }
             var named = false;
@@ -6532,7 +6536,7 @@ const Walker = struct {
                     const ld = b.extraData(@fromBackingInt(@intCast(b.instData(item).lhs)), Bir.LetDef);
                     if (ld.params_start == ld.params_end) continue;
                     const params = b.extraSlice(.{ .start = ld.params_start, .end = ld.params_end }, Inst.Index);
-                    _ = try w.closure(params, @fromBackingInt(@intCast(b.instData(item).rhs)), group[gi][1]);
+                    _ = try w.closure(params, @fromBackingInt(@intCast(b.instData(item).rhs)), group[gi][1], w.token(item));
                     gi += 1;
                 }
                 for (group, assume) |g, x| w.closures.items[g[1]].class = x;
@@ -8779,13 +8783,26 @@ const Walker = struct {
         });
     }
 
+    /// Where class `cls` is written, when it is a lambda or local function
+    /// of this module.
+    fn classToken(w: *const Walker, cls: ?Class) u32 {
+        const c = cls orelse return none;
+        return switch (c) {
+            .closure => |ci| w.closures.items[ci].token,
+            else => none,
+        };
+    }
+
     /// A `need` rejection (§16.2, §23.5) of a function value `name`: exact
     /// when an exact provenance of what it returns fails, approximate when
     /// only an approximate step or a list from JavaScript does (§28.5, §30.9).
-    fn needLine(w: *Walker, tok: u32, name: []const u8, detail: []const u8, approx: bool, assumed: bool) Allocator.Error!void {
+    /// `cls` is the function that fails, when one does: a lambda or local
+    /// function written here is a place of the message (§28.6).
+    fn needLine(w: *Walker, tok: u32, name: []const u8, detail: []const u8, approx: bool, assumed: bool, cls: ?Class) Allocator.Error!void {
         try w.demands.append(w.a, .{
             .kind = .value,
             .token = tok,
+            .via = w.classToken(cls),
             .op = "value",
             .base = name,
             .base_local = none,
@@ -8820,9 +8837,9 @@ const Walker = struct {
         const name = try std.fmt.allocPrint(arena, "<{s}>", .{field});
         const unknown = try std.fmt.allocPrint(arena, "the runtime sends what {s} returns, and the checker does not know which function it is, so not that it returns a list it owns", .{field});
         const classes = try w.classesOf(av);
-        if (classes.len == 0) return w.needLine(tok, name, unknown, true, false);
+        if (classes.len == 0) return w.needLine(tok, name, unknown, true, false, null);
         for (classes) |cls| {
-            const c = (try w.classSummary(cls)) orelse return w.needLine(tok, name, unknown, true, false);
+            const c = (try w.classSummary(cls)) orelse return w.needLine(tok, name, unknown, true, false, null);
             const ictx: InstCtx = .{ .inst = inst, .s = &runtime_row, .avs = &.{}, .closure = if (cls == .closure) cls.closure else none, .depth = 0 };
             if (try w.returnsOwned(c, &runtime_row, &.{}, ictx, 0, 0, none)) continue;
             const approx = try w.ownedButApprox(c, &runtime_row, &.{}, ictx, 0);
@@ -8831,7 +8848,7 @@ const Walker = struct {
                 .func => |t| try w.qualified(t),
                 .send => "send",
             };
-            return w.needLine(tok, shown, try std.fmt.allocPrint(arena, "the runtime sends what {s} returns, which may be a list it does not own (§30.3)", .{field}), approx, false);
+            return w.needLine(tok, shown, try std.fmt.allocPrint(arena, "the runtime sends what {s} returns, which may be a list it does not own (§30.3)", .{field}), approx, false, cls);
         }
     }
 
@@ -9031,7 +9048,10 @@ const Walker = struct {
             return w.single(.{ .kind = .closure, .a = gop.value_ptr.* });
         }
         gop.value_ptr.* = @intCast(w.closures.items.len);
-        try w.closures.append(w.a, .{ .captures = &.{}, .class = k.sum, .binds = binds, .cb_avs = cbs, .carried = true });
+        // Its place is where the callee's result or the value that carries it
+        // is used here (§28.6).
+        const tok = if (ctx.inst.int() < w.bir.insts.len) w.token(ctx.inst) else none;
+        try w.closures.append(w.a, .{ .captures = &.{}, .class = k.sum, .binds = binds, .cb_avs = cbs, .carried = true, .token = tok });
         return w.single(.{ .kind = .closure, .a = gop.value_ptr.* });
     }
 
@@ -9176,7 +9196,7 @@ const Walker = struct {
                 .func => |t| try w.qualified(t),
                 .send => "send",
             };
-            try w.needLine(w.token(inst), name, try std.fmt.allocPrint(w.o.out.allocator(), "{s} edits what it returns, which may be a list it does not own", .{callee}), try w.ownedButApprox(c, s, avs, ictx, j), false);
+            try w.needLine(w.token(inst), name, try std.fmt.allocPrint(w.o.out.allocator(), "{s} edits what it returns, which may be a list it does not own", .{callee}), try w.ownedButApprox(c, s, avs, ictx, j), false, cls);
         }
     }
 
@@ -9330,6 +9350,10 @@ const Walker = struct {
                 .func => |t| try w.qualified(t),
                 .send => "send",
             };
+            // A `need` line names the function value as the call writes it:
+            // `f`, `r.load`, `Fixed.parse` — `<lambda>` only for a lambda
+            // written there (§28.6).
+            const need_name = if (cls == .closure and ff.need) try w.baseText(args[j]) else name;
             if (cls == .closure) {
                 try w.applyEnvCalls(cls.closure, s, j, ictx);
                 try w.dischargeLambdaNeeds(cls.closure, suppliedParam, SupplyCtx{ .s = s, .j = j, .ictx = ictx });
@@ -9348,7 +9372,7 @@ const Walker = struct {
                 // empty at callers, and all other results must be owned.
                 if (ff.need) {
                     if (!try w.taggerReturnsOwned(c, s, avs, j, cls, ictx))
-                        try w.needLine(tok, name, try std.fmt.allocPrint(arena, "{s} edits what it returns, which may be a list it does not own", .{callee.name}), try w.ownedButApprox(c, s, avs, ictx, j), w.frame != 0)
+                        try w.needLine(tok, need_name, try std.fmt.allocPrint(arena, "{s} edits what it returns, which may be a list it does not own", .{callee.name}), try w.ownedButApprox(c, s, avs, ictx, j), w.frame != 0, cls)
                     else
                         try w.returnedParamDemands(inst, callee, args, avs, c, j, eps, true, 0);
                 }
@@ -9501,11 +9525,11 @@ const Walker = struct {
                 }),
                 .closure => |ci| {
                     try w.closures.items[ci].consumed.append(w.a, .{ .kind = .supply, .bad = bad, .bad_approx = bad_approx, .bad_cause = bad_cause, .name = callee.name });
-                    if (need_bad) try w.needLine(tok, name, try std.fmt.allocPrint(arena, "{s} edits what it returns, which may be a list it does not own", .{callee.name}), try w.ownedButApprox(c, s, avs, ictx, j), false);
+                    if (need_bad) try w.needLine(tok, need_name, try std.fmt.allocPrint(arena, "{s} edits what it returns, which may be a list it does not own", .{callee.name}), try w.ownedButApprox(c, s, avs, ictx, j), false, cls);
                 },
                 .func => {
                     if (need_bad) {
-                        try w.needLine(tok, name, try std.fmt.allocPrint(arena, "{s} edits what it returns, which may be a list it does not own", .{callee.name}), try w.ownedButApprox(c, s, avs, ictx, j), false);
+                        try w.needLine(tok, need_name, try std.fmt.allocPrint(arena, "{s} edits what it returns, which may be a list it does not own", .{callee.name}), try w.ownedButApprox(c, s, avs, ictx, j), false, cls);
                     } else if (writes) {
                         var first: ?usize = null;
                         for (bad, 0..) |x, k| if (x != null and first == null) {
@@ -9817,6 +9841,7 @@ const Walker = struct {
             const classes = try w.classesOf(actual);
             var ok = classes.len != 0;
             var approx = true;
+            var failed: ?Class = null;
             for (classes) |cls| {
                 const c = (try w.classSummary(cls)) orelse {
                     ok = false;
@@ -9828,23 +9853,29 @@ const Walker = struct {
                 if (try w.returnsOwned(c, n.s, n.avs, ictx, n.j, 0, none)) continue;
                 ok = false;
                 approx = try w.ownedButApprox(c, n.s, n.avs, ictx, n.j);
+                failed = cls;
                 break;
             }
             if (ok) continue;
             w.lambda_needs.items[i].failed = true;
-            try w.needAt(n, approx);
+            try w.needAt(n, approx, failed);
         }
     }
 
     /// The line of a lambda's obligation that failed (§30.9), where the
-    /// callee relied on it.
-    fn needAt(w: *Walker, n: LambdaNeed, approx: bool) Allocator.Error!void {
+    /// callee relied on it; `failed` is the function there that does not
+    /// return owned, when one is known.
+    fn needAt(w: *Walker, n: LambdaNeed, approx: bool, failed: ?Class) Allocator.Error!void {
         const detail = try std.fmt.allocPrint(w.o.out.allocator(), "{s} relies on what the function it is handed returns, and the function this lambda is handed may return a list it does not own (§30.9)", .{n.callee});
+        // The lambda's parameter as the call writes it (`work`).
+        const args = if (w.bir.instTag(n.inst) == .call) w.callArgs(n.inst) else &.{};
+        const base = if (n.j < args.len) try w.baseText(args[n.j]) else "<function value>";
         try w.demands.append(w.a, .{
             .kind = .value,
             .token = w.token(n.inst),
+            .via = w.classToken(failed),
             .op = "value",
-            .base = "<function value>",
+            .base = base,
             .base_local = none,
             .base_path = eps,
             .point = n.point,
@@ -9896,7 +9927,7 @@ const Walker = struct {
             if (decided > n.discharges) bad = true;
             if (!bad) continue;
             n.failed = true;
-            try w.needAt(n.*, true);
+            try w.needAt(n.*, true, null);
         }
     }
 

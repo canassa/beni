@@ -6118,3 +6118,18 @@ the `exclusive` cause. Each was printed as a second error beside the limit's.
 
 **CK-252 fixed 2026-10-17** (#272, #233; ownership-checker.md §16.7, dated
 amendment): both take the `limit` cause (`limit_callee`, `cond_limit`).
+
+## CK-253 — a need line's message says the function changes a list (2026-10-17)
+
+Ownership diagnostics, issue #272. A `need` rejection is about a function value
+whose result a callee edits, but its message read "`<lambda>` changes a list it
+is handed in place", put "the list is changed in place here" under the call
+that hands the function on, and asked for `List.copy` before the change; a
+lambda's own parameter was named `<function value>` (`LambdaParamNeed`).
+`tests/corpus/check/bad/direct/NeedMessage.beni`.
+
+**CK-253 fixed 2026-10-17** (#272; ownership-checker.md §28.6): the message says
+that the function must return a list it owns, names it as the call writes it
+(`give`, `r.load`, `tagger`, a lambda's parameter `work`), points at the
+function that fails or at the value that carried it, and asks for a function
+that returns a list it owns.
