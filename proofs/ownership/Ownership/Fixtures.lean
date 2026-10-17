@@ -718,8 +718,12 @@ and the two interpreters agree: `writeFirst` (§16.4, "a callee that writes
 and `dropFresh` (the Zig checker rejects `kFresh` itself, whatever its
 callback returns). The core's class facts, answered at the call site, make a
 kept callback result a holder of what the callee handed it, so no new rule
-is needed for the keep edge; the chain limit is `rhsChain`. The custom-type
-cases (`keepCtor`, `keepOne`) have no core syntax. -/
+is needed for the keep edge; the chain limit is `rhsChain`. Of the file's 18
+programs, `keepCtor` and `keepOne` (a constructor of a custom type as the
+callback) are the only ones not ported: the core has no custom types. The
+limit does change a verdict where the precise rule accepts: a read-only chain
+of five (`chainRead 13`) is refused as `limit: callbacks`, as the Zig checker
+refuses it (review of PR #324, finding 1). -/
 
 private def pairTy : Ty := .record [.list .int, .int]
 private def keepFn : Ty := .fn [.list .int] pairTy
@@ -772,7 +776,17 @@ def keepDecls : List Decl := [
   -- 13 returned5, one callback more
   { name := "returned5", parameters := [listFn, listFn, listFn, listFn, listFn, .list .int], result := .list .int,
     body := .letE 6 (.app (v 0) [v 5]) (.letE 7 (.app (v 1) [v 6]) (.letE 8 (.app (v 2) [v 7])
-      (.letE 9 (.app (v 3) [v 8]) (.letE 10 (.app (v 4) [v 9]) (.atom (v 10)))))) }]
+      (.letE 9 (.app (v 3) [v 8]) (.letE 10 (.app (v 4) [v 9]) (.atom (v 10)))))) },
+  -- 14 pickSecond c f = a = [0]; b = [1]; t = f b; (t, if c then a else b)
+  { name := "pickSecond", parameters := [.int, keepFn], result := keepRes,
+    body := .letE 2 (.prim (.literal .int) [.int 0]) (.letE 3 (.prim (.literal .int) [.int 1])
+      (.letE 4 (.app (v 1) [v 3]) (.letE 5 (.branch (v 0) (.atom (v 3)) (.atom (v 2)))
+        (.prim .record [v 4, v 5])))) },
+  -- 15 inList f = a = [0]; b = [1]; t = f b; (t, [a, b])
+  { name := "inList", parameters := [keepFn], result := .record [pairTy, .list (.list .int)],
+    body := .letE 1 (.prim (.literal .int) [.int 0]) (.letE 2 (.prim (.literal .int) [.int 1])
+      (.letE 3 (.app (v 0) [v 2]) (.letE 4 (.prim (.literal (.list .int)) [v 1, v 2])
+        (.prim .record [v 3, v 4])))) }]
 
 private def keepProgram (main : Expr) : Program := { declarations := keepDecls, main }
 
@@ -805,8 +819,31 @@ def chainKept (returned : Nat) : Program := keepProgram <|
     .letE 3 (.app (v 2) ((List.replicate (if returned == 13 then 5 else 4) (v 1)) ++ [v 0])) <|
       .letE 4 (.prim .push [v 0, .int 1]) (.prim .record [v 4, v 3])
 
+/-- `( kept, xs ) = pickSecond c keep; ( kept, push xs 9 )`: the kept list is
+    whichever list the branch chose; refused with a keeping callback (`1`),
+    accepted with a dropping one (`2`). -/
+def secondKeep (callback : Nat) (c : Int) : Program := keepProgram <|
+  .letE 0 (.closure callback []) <| .letE 1 (.atom (.int c)) <| .letE 2 (.closure 14 []) <|
+    .letE 3 (.app (v 2) [v 1, v 0]) <| .letE 4 (push (.field (v 3) 1)) (.prim .record [.field (v 3) 0, v 4])
+/-- `( kept, xss ) = inList keep; b = xss[1]; ( kept, [ push b 9 ] )`: the kept
+    list is an element of the returned list. -/
+def listKeep (callback : Nat) : Program := keepProgram <|
+  .letE 0 (.closure callback []) <| .letE 1 (.closure 15 []) <| .letE 2 (.app (v 1) [v 0]) <|
+    .letE 3 emptyList <| .letE 4 (.prim .at [.field (v 2) 1, .int 1, v 3]) <|
+      .letE 5 (push (v 4)) <| .letE 6 (.prim (.literal (.list .int)) [v 5]) (.prim .record [.field (v 2) 0, v 6])
+/-- `length (returnedN id … id xs)`: a read-only chain of four (`12`) or five (`13`)
+    callbacks. The five are the `callbacks` limit although nothing is written. -/
+def chainRead (returned : Nat) : Program := keepProgram <|
+  .letE 0 emptyList <| .letE 1 (.closure 9 []) <| .letE 2 (.closure returned []) <|
+    .letE 3 (.app (v 2) ((List.replicate (if returned == 13 then 5 else 4) (v 1)) ++ [v 0])) (.prim .length [v 3])
+
 -- The fifth callback is the `callbacks` limit, in both checkers; four are not.
 #guard match check (chainPushed 11) with | .error e => e == "limit: callbacks" | .ok _ => false
+-- The limit refuses a read-only chain of five that the precise rule accepts: it does change a verdict.
+#guard match check (chainRead 13) with | .error e => e == "limit: callbacks" | .ok _ => false
+#guard (check (chainRead 13) { callbackLimit := 5 }).isOk
+#guard (check (chainRead 12)).isOk
+#guard match Reinfer.check (chainRead 13) with | .error e => e == "limit: callbacks" | .ok _ => false
 #guard match check (chainKept 13) with | .error e => e == "limit: callbacks" | .ok _ => false
 #guard match Reinfer.check (chainPushed 11) with | .error e => e == "limit: callbacks" | .ok _ => false
 #guard match check (chainPushed 10) with | .error e => e != "limit: callbacks" | .ok _ => false
@@ -819,14 +856,22 @@ def chainKept (returned : Nat) : Program := keepProgram <|
 Ports of the shapes of `tests/corpus/ownership/AliasWriter.beni` (§30.9 rule 9),
 `NeedLabels.beni` (rules 6, 7 and 11) and `UnknownCallee.beni` (§30.11) that the
 core can state. Expected verdicts are the goldens' where the Zig rule is exact;
-the core decides each by its precise rules: a closure bound to a variable is
-followed through any number of names (no cap of eight), a callback's class is
-answered at the call site (the shared root's cell is refused by the Unescaped
-test, exactly where Zig says `need`), and a function taken out of a local list
-of closures is identified (`listOfFns`: accepted by both checkers; Zig's
-`⊤call` is for a list of functions it was handed, which is the core's limit
-`function value below an input path`). The `Dict`, record-of-functions and
-platform shapes have no core syntax. -/
+the core decides each by its precise rules: a callback's class is answered at
+the call site (the shared root's cell is refused by the Unescaped test, exactly
+where Zig says `need`), and a function taken out of a local list of closures is
+identified (`listOfFns`: accepted by both checkers; Zig's `⊤call` is for a list
+of functions it was handed, which is the core's limit `function value below an
+input path`). The alias chains are **local** aliases, bound by `let` in `main`:
+the core has no top-level values, so §30.9 rule 9 (a top-level value that
+names a function, through at most eight names) is not reachable by it; both
+checkers follow a local alias chain of any length precisely, and the bridge
+compares exactly that (review of PR #326). Two ports are the core's analogues
+of corpus programs, not the programs: `sharedThroughApply` (the corpus's
+`badParam` takes its function out of a list it is handed, Zig's `⊤call` and
+the core's limit) and `sharedLocalLambda` (the corpus's `badNamed` calls a
+top-level value naming a lambda); `freshOnly` and `listOfFns` are controls
+the corpus files do not have. The `Dict`, record-of-functions and platform
+shapes have no core syntax. -/
 
 private def thunk : Ty := .fn [.int] (.list .int)
 private def emptyList305 : Expr := .prim (.literal .int) []
@@ -839,7 +884,8 @@ def aliasLets : Nat → Expr → Expr
   | 0, k => k
   | i + 1, k => aliasLets i (.letE (i + 1) (if i == 0 then .closure 0 [] else .atom (v i)) k)
 
-/-- `AliasWriter`: `xs = []; a1 = writer; …; r = an xs; ( r, xs )`. -/
+/-- The local alias chain: `xs = []; a1 = writer; …; r = an xs; ( r, xs )`, every
+    `a_k` a `let` of `main` (`AliasWriter`'s aliases are top-level values). -/
 def aliasChain (n : Nat) : Program :=
   { declarations := [writerDecl],
     main := .letE 0 emptyList305 (aliasLets n (.letE 100 (.app (v n) [v 0]) (.prim .record [v 100, v 0]))) }
@@ -887,11 +933,11 @@ def goodCall : Program :=
 def goodParam : Program :=
   { declarations := unknownDecls,
     main := .letE 0 (.closure 1 []) <| .letE 1 (.closure 0 []) <| .letE 2 (.app (v 1) [v 0]) (.prim .push [v 2, .int 3]) }
-def badNamed : Program :=
+def sharedLocalLambda : Program :=
   { declarations := unknownDecls,
     main := .letE 0 (.prim (.literal .int) [.int 1]) <| .letE 1 (.prim .shared [v 0]) <|
       .letE 2 (.closure 2 [v 1]) <| .letE 3 (.app (v 2) [.int 0]) (.prim .push [v 3, .int 3]) }
-def badParam : Program :=
+def sharedThroughApply : Program :=
   { declarations := unknownDecls,
     main := .letE 0 (.prim (.literal .int) [.int 1]) <| .letE 1 (.prim .shared [v 0]) <|
       .letE 2 (.closure 2 [v 1]) <| .letE 3 (.closure 0 []) <| .letE 4 (.app (v 3) [v 2]) (.prim .push [v 4, .int 3]) }
@@ -1000,13 +1046,19 @@ def all : List Fixture := [
   ⟨"CK-249 four",chainPushed 10,false⟩, ⟨"CK-249 five (the callbacks limit)",chainPushed 11,false⟩,
   ⟨"CK-249 kept4",chainKept 12,false⟩, ⟨"CK-249 kept5 (the callbacks limit)",chainKept 13,false⟩,
   -- Appended 2026-10-17 (#305).
-  ⟨"§30.9 rule 9 alias one",aliasChain 1,false⟩, ⟨"§30.9 rule 9 alias seven",aliasChain 7,false⟩,
-  ⟨"§30.9 rule 9 alias eight (Zig: ⊤call, pending)",aliasChain 8,false⟩, ⟨"§30.9 rule 9 alias nine (Zig: ⊤call, pending)",aliasChain 9,false⟩,
+  ⟨"local alias chain of one name",aliasChain 1,false⟩, ⟨"local alias chain of seven names",aliasChain 7,false⟩,
+  ⟨"local alias chain of eight names",aliasChain 8,false⟩, ⟨"local alias chain of nine names",aliasChain 9,false⟩,
   ⟨"§30.9 need exactShared",exactShared,false⟩, ⟨"§30.9 need approxEntry taken",approxEntry 1,false⟩,
   ⟨"§30.9 need approxEntry not taken",approxEntry 0,false⟩, ⟨"§30.9 need freshOnly",freshOnly,true⟩,
   ⟨"§30.11 goodCall",goodCall,true⟩, ⟨"§30.11 goodParam",goodParam,true⟩,
-  ⟨"§30.11 badNamed",badNamed,false⟩, ⟨"§30.11 badParam",badParam,false⟩,
-  ⟨"§30.11 listOfFns (a local list; identified by both checkers)",listOfFns,true⟩
+  ⟨"§30.11 analogue: a local lambda returning the shared root",sharedLocalLambda,false⟩,
+  ⟨"§30.11 analogue: the shared root through apply",sharedThroughApply,false⟩,
+  ⟨"§30.11 listOfFns (a local list; identified by both checkers)",listOfFns,true⟩,
+  -- Appended 2026-10-17 (the review of PR #324, findings 1 and 2).
+  ⟨"CK-251 secondKeep",secondKeep 1 1,false⟩, ⟨"CK-251 secondDrop",secondKeep 2 1,true⟩,
+  ⟨"CK-251 listKeep",listKeep 1,false⟩, ⟨"CK-251 listDrop",listKeep 2,true⟩,
+  ⟨"CK-249 read-only chain of four",chainRead 12,true⟩,
+  ⟨"CK-249 read-only chain of five (the callbacks limit)",chainRead 13,false⟩
 ]
 
 def run : IO Bool := do
