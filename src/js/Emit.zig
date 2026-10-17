@@ -2569,8 +2569,14 @@ const Emitter = struct {
                 // A top-level start is reached from the program site.
                 if (info.kind == .top) try roots.append(e.scratch, .{ .module = @fromBackingInt(@intCast(info.m)), .kind = .decl, .index = info.d });
                 if (info.kind != .lambda) continue;
-                const seen = for (pieces.items) |p| {
-                    if (p.module == info.m and p.inst == info.inst) break true;
+                // One piece per lambda; it is lowered in place only while every
+                // program that uses it is in the lambda's own module, and
+                // lifted and exported as soon as one is in another.
+                const seen = for (pieces.items) |*p| {
+                    if (p.module == info.m and p.inst == info.inst) {
+                        if (info.m != call.module) p.in_place = false;
+                        break true;
+                    }
                 } else false;
                 if (seen) continue;
                 const b = e.writes_birs[info.m];

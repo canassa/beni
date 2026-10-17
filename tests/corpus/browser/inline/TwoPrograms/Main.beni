@@ -1,0 +1,12 @@
+-- One subscription start used by two programs of two modules
+-- (docs/design/browser-inline.md §7): `A.program`, beside the start, writes
+-- it in place; `B.program`, in another module, calls the piece `A` lifts,
+-- which `A` must export whichever program the pass saw first. The page
+-- mounts `B.program`; a push counts.
+import A
+import B
+import Tea
+
+
+main : Tea.Program
+main = if A.first then A.program else B.program
