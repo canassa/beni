@@ -1324,6 +1324,18 @@ and nothing of `core/Schema`'s issue makers ships for it.
   `S`'s validator worker, and makes no schema value. Not yet built for `parse` and `decode`, nor for
   a schema that `Schema.list` or a primitive maker makes at the call, whose core workers keep their
   issues.
+- **One failure, so fewer tests** *(amended 2026-10-17)*. Every failure of a validator is the one
+  mark `c.fail`, so tests that only told failures apart merge. A required field whose value is a
+  `String`, `Bool`, `Float`, `Int` or finite `Float` is read once and tested once — the key's read,
+  the depth bound and the primitive's test as one condition that returns the mark, the field's
+  value the read itself, with no slot assigned on each path and compared afterwards: each
+  primitive's test answers false for `undefined`, so it is the presence test too, and
+  `Number.isSafeInteger` (`isFinite`) answers false for anything not a number, so no `typeof`
+  precedes it. A tagged union's discriminator read as a value is not tested for `undefined`
+  either: no variant's tag is `undefined`, so the unknown-tag arm fails it. A key
+  `Object.prototype` holds keeps its `Object.hasOwn` test. Measured (brotli 11):
+  `emit/release/inline/PushAndTimer` 670 → 628, `app/ValidatorRun` 685 → 655, before
+  `backend.md` §9's *A short `switch` is its `if`s* took the tag's `switch`.
 
 ## 7. Effects
 

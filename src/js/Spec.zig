@@ -417,6 +417,9 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error!Stats {
     // a function that is now called where it is made (`betaReduce`).
     s.list_mode = .iife;
     _ = try s.eachFunctionList();
+    // Last of the sweeps: a short `switch` on a name is its `if`s.
+    s.list_mode = .switches;
+    _ = try s.eachFunctionList();
     // A binding no longer kept may have held a parameter's last read
     // (`deadReads`): the facts once more, so that the parameter goes.
     if (try s.releaseKeeps()) {
@@ -762,7 +765,7 @@ const Spec = struct {
     /// holds the guard.
     narrow: std.ArrayList(NameIndex) = .empty,
     /// What `srList` does to each statement list it reaches.
-    list_mode: enum { scalars, constructors, self_assign, iife } = .scalars,
+    list_mode: enum { scalars, constructors, self_assign, iife, switches } = .scalars,
     /// Slice 8: `soleCalls`, for the pass in progress, made when a call
     /// first asks for it; null until then.
     sole: ?[]const bool = null,
@@ -4184,6 +4187,13 @@ const Spec = struct {
                 if (try s.inlineIifesIn(m, top, @fromBackingInt(@intCast(raw)))) any = true;
                 try out.append(s.arena, raw);
             },
+            .switches => for (items) |raw| {
+                if (try s.switchAsIfs(m, @fromBackingInt(@intCast(raw)), items, &out)) {
+                    changed = true;
+                    continue;
+                }
+                try out.append(s.arena, raw);
+            },
         }
         if (!changed) return any;
         const start = try m.append(s.gpa, out.items);
@@ -4193,6 +4203,87 @@ const Spec = struct {
         return true;
     }
 
+    /// Whether no statement of `siblings` but `except` mentions a name
+    /// `body`'s own statements declare.
+    fn declaresAlone(s: *Spec, m: *Mod, body: JsIr.SubRange, siblings: []const u32, except: Index) Allocator.Error!bool {
+        const ir = m.ir;
+        var stack = try s.takeStack();
+        defer s.giveStack(&stack);
+        for (ir.extraSlice(body, Index)) |st| {
+            const n: NameIndex = switch (ir.tag(st)) {
+                .const_decl, .let_decl, .func_decl, .gen_decl, .while_true, .block_stmt => @fromBackingInt(@intCast(ir.data(st).lhs)),
+                else => continue,
+            };
+            if (n == .none) continue;
+            for (siblings) |raw| {
+                if (raw == except.int()) continue;
+                stack.clearRetainingCapacity();
+                try JsIr.pushOperand(s.arena, &stack, @fromBackingInt(@intCast(raw)));
+                while (JsIr.popOperand(&stack)) |node| {
+                    switch (ir.tag(node)) {
+                        .ident, .const_decl, .let_decl, .func_decl, .gen_decl, .while_true, .block_stmt, .break_stmt, .continue_stmt, .for_of => if (ir.data(node).lhs == n.int()) return false,
+                        else => {},
+                    }
+                    try pushChildren(s.arena, ir, node, &stack);
+                }
+            }
+        }
+        return true;
+    }
+    /// `backend.md` §9, *A short `switch` is its `if`s*: `switch (k)` on a
+    /// name, with at most `max_switch_ifs` cases besides the `default`, each
+    /// test a literal and each body unable to run off its end and holding no
+    /// `break`, is `if (k === t) { body }` per case in order, then the
+    /// `default`'s statements. A literal test does nothing and a body that
+    /// cannot complete never falls into the next case, so the cases are
+    /// tried, and one run, exactly as the `switch` does. True when `stmt` was
+    /// one, its statements appended to `out`.
+    fn switchAsIfs(s: *Spec, m: *Mod, stmt: Index, siblings: []const u32, out: *std.ArrayList(u32)) Allocator.Error!bool {
+        const ir = m.ir;
+        if (ir.tag(stmt) != .switch_stmt) return false;
+        const d = ir.data(stmt);
+        const disc: Index = @fromBackingInt(@intCast(d.lhs));
+        if (ir.tag(disc) != .ident) return false;
+        const cases = try s.arena.dupe(Index, ir.extraSlice(ir.subRange(@fromBackingInt(@intCast(d.rhs))), Index));
+        var tested: u32 = 0;
+        var default: ?Index = null;
+        for (cases) |case| {
+            const body = ir.extraSlice(ir.subRange(@fromBackingInt(@intCast(ir.data(case).rhs))), Index);
+            if (holdsBreak(ir, body, 0)) return false;
+            const t = (@as(Node.OptionalIndex, @fromBackingInt(@intCast(ir.data(case).lhs)))).unwrap() orelse {
+                default = case;
+                continue;
+            };
+            if (!primitiveLit(ir, t) or !allReturn(ir, body, 0)) return false;
+            tested += 1;
+        }
+        if (tested == 0 or tested > max_switch_ifs) return false;
+        for (cases) |case| {
+            const cd = ir.data(case);
+            const t = (@as(Node.OptionalIndex, @fromBackingInt(@intCast(cd.lhs)))).unwrap() orelse continue;
+            const name = try m.addNode(s.gpa, .ident, ir.pos(disc), ir.data(disc).lhs, 0);
+            const pair = try m.append(s.gpa, &.{ name.int(), t.int() });
+            const test_node = try m.addNode(s.gpa, .binary, ir.pos(case), pair, @backingInt(JsIr.BinaryOp.strict_eq));
+            // An `if`'s body is a scope of its own, as the block was.
+            const body = unblocked(ir, ir.subRange(@fromBackingInt(@intCast(cd.rhs))));
+            const empty = try m.append(s.gpa, &.{});
+            const branches = try m.append(s.gpa, &.{ @backingInt(body.start), @backingInt(body.end), empty, empty });
+            try out.append(s.arena, (try m.addNode(s.gpa, .if_stmt, ir.pos(case), test_node.int(), branches)).int());
+        }
+        if (default) |case| {
+            const body = unblocked(ir, ir.subRange(@fromBackingInt(@intCast(ir.data(case).rhs))));
+            // Its statements join the list when nothing else of the list names
+            // what they declare: a `let` there would shadow, from the list's
+            // start, a name an earlier statement reads.
+            if (declaresNothing(ir, body) or try s.declaresAlone(m, body, siblings, stmt)) {
+                try out.appendSlice(s.arena, ir.extraSlice(body, u32));
+            } else {
+                const at = try m.append(s.gpa, &.{ @backingInt(body.start), @backingInt(body.end) });
+                try out.append(s.arena, (try m.addNode(s.gpa, .block_stmt, ir.pos(case), @backingInt(NameIndex.none), at)).int());
+            }
+        }
+        return true;
+    }
     /// Whether the list holds a statement `srList`'s mode could act on — a
     /// superset of where it does, so a list without one is one the mode
     /// leaves as it was: `replaceScalars` acts only on a `const` or `let`
@@ -4220,6 +4311,7 @@ const Spec = struct {
                 },
                 .self_assign => if (ir.tag(st) == .assign_stmt) return true,
                 .iife => if (iifeOf(ir, st) != null or try s.inlineIifesIn(m, null, st)) return true,
+                .switches => if (ir.tag(st) == .switch_stmt) return true,
             }
         }
         return false;
@@ -7250,6 +7342,10 @@ const Spec = struct {
         }
     };
 };
+
+/// The most cases besides `default` a `switch` written as `if`s has
+/// (`switchAsIfs`).
+const max_switch_ifs = 3;
 
 /// How many functions slice 5 writes where they are called, at most.
 const max_inlines = 256;
@@ -10343,4 +10439,28 @@ test "an unlabelled break that leaves a fused rest refuses the fusion" {
     try testing.expect(!leavingBreak(&ir, &.{labelled}, 0));
     // Inside a `switch` of the rest: it leaves that `switch` only.
     try testing.expect(!leavingBreak(&ir, &.{own_switch}, 0));
+}
+
+/// Whether `range`'s own statements declare no name: they may stand in the
+/// list around them, scoping nothing differently.
+fn declaresNothing(ir: *const JsIr, range: JsIr.SubRange) bool {
+    for (ir.extraSlice(range, Index)) |stmt| switch (ir.tag(stmt)) {
+        .const_decl, .let_decl, .func_decl, .gen_decl => return false,
+        .while_true, .block_stmt => if (@as(NameIndex, @fromBackingInt(@intCast(ir.data(stmt).lhs))) != .none) return false,
+        else => {},
+    };
+    return true;
+}
+
+/// A case body that is one unlabelled block, as the block's statements.
+fn unblocked(ir: *const JsIr, body: JsIr.SubRange) JsIr.SubRange {
+    var range = body;
+    var depth: u32 = 0;
+    while (depth < 32) : (depth += 1) {
+        const items = ir.extraSlice(range, Index);
+        if (items.len != 1 or ir.tag(items[0]) != .block_stmt) return range;
+        if (@as(NameIndex, @fromBackingInt(@intCast(ir.data(items[0]).lhs))) != .none) return range;
+        range = ir.subRange(@fromBackingInt(@intCast(ir.data(items[0]).rhs)));
+    }
+    return range;
 }
