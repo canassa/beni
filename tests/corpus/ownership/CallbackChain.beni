@@ -1,0 +1,74 @@
+-- CK-249: a chain of more than four callbacks dropped a demand or an alias, silently.
+-- ownership (§16.7's `callbacks` limit, issue #271): a callee that hands
+-- each callback the result of the one before is followed four callbacks
+-- deep. `pushed4` writes what its fourth callback returns, which is `xs`,
+-- and `four` is rejected `later-use`; `returned4` returns it, and `kept4`
+-- is rejected `alias`. Before, a fifth callback stopped the walk: the
+-- demand on `xs` was dropped (`five`) or the result became an unknown
+-- value with no alias of `xs` (`kept5`), and both were accepted. Now the
+-- walk past four callbacks is the `callbacks` limit, an error at the
+-- declaration, and the result is `⊤limit`.
+id : List Int → List Int
+id ys = ys
+
+
+pushed4 :
+      (List Int → List Int)
+    , (List Int → List Int)
+    , (List Int → List Int)
+    , (List Int → List Int)
+    , List Int
+    → List Int
+pushed4 g1 g2 g3 g4 xs = List.push (g4 (g3 (g2 (g1 xs)))) 1
+
+
+pushed5 :
+      (List Int → List Int)
+    , (List Int → List Int)
+    , (List Int → List Int)
+    , (List Int → List Int)
+    , (List Int → List Int)
+    , List Int
+    → List Int
+pushed5 g1 g2 g3 g4 g5 xs = List.push (g5 (g4 (g3 (g2 (g1 xs))))) 1
+
+
+returned4 :
+      (List Int → List Int)
+    , (List Int → List Int)
+    , (List Int → List Int)
+    , (List Int → List Int)
+    , List Int
+    → List Int
+returned4 g1 g2 g3 g4 xs = g4 (g3 (g2 (g1 xs)))
+
+
+returned5 :
+      (List Int → List Int)
+    , (List Int → List Int)
+    , (List Int → List Int)
+    , (List Int → List Int)
+    , (List Int → List Int)
+    , List Int
+    → List Int
+returned5 g1 g2 g3 g4 g5 xs = g5 (g4 (g3 (g2 (g1 xs))))
+
+
+pub four : List Int → List Int × List Int
+four xs = ( pushed4 id id id id xs, xs )
+
+
+pub five : List Int → List Int × List Int
+five xs = ( pushed5 id id id id id xs, xs )
+
+
+pub kept4 : List Int → List Int × List Int
+kept4 xs =
+    r = returned4 id id id id xs
+    ( List.push xs 1, r )
+
+
+pub kept5 : List Int → List Int × List Int
+kept5 xs =
+    r = returned5 id id id id id xs
+    ( List.push xs 1, r )
