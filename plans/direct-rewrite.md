@@ -344,6 +344,21 @@ rule's error naming `Dict.update`. This supersedes §6's "keyed-by-`Dict` rows c
 its keyed-primitive bullet: write-set positions in `Dict` are on S2's path, and the research
 generators change to `Dict`. D5, D6 and D7 remain open.
 
+*Amended 2026-10-17 (the owner), the rest of §9:*
+- **D5** is deferred to S4.
+- **D6:** the error stands until S6. S6's Conduit golden adds per-row registration, because its feed rows read the viewer's follow and favourite state. Its cost per row is measured first with a research variant: big-table with one column reading a global, a one-line generator option.
+- **D7:** §8 is confirmed as proposed:
+  - the defect guard stays;
+  - the mid-dispatch queue stays;
+  - LIS replaces `browser-tea`'s move order;
+  - duplicate-key checks are development-only;
+  - several programs on one page are out of release;
+  - controlled inputs are pay-per-use.
+
+**The strict rule's refusals are two kinds** (§3), and the diagnostics keep the split (idiom / intended-global / compiler cap):
+- *Compiler limits* are temporary, labelled as limits of the compiler, and each is closed by the slice in its area. Examples: a suspending command before S6, a model-dependent subscription set before S4, `lazy` before D5, an analysis cap.
+- *Language rules* are permanent: they are the decision to depart from Elm, not gaps waiting for a slice. Examples: a structural write to a `List` of rows, an opaque `update`, a markup site that cannot be numbered, a `*` key that is not a declared `replace`. Their text never says "not yet".
+
 ## 10. How this plan is tracked
 
 The parent issue holds the slices as sub-issues (S0–S6) and the parallel core work (#294 and the
