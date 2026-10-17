@@ -411,12 +411,14 @@ no tool for it; the numbers are each edit's own delta against the actual file).
 | `FormLocal`, the program as S1's first commit wrote it (no code or locked field) | 812 | 939 |
 | `FormLocal`, as the corpus holds it (two more inputs) | — | 1 002 |
 | `PushAndTimer` (S0's pinned bar) | ≤ 589 | 583 |
+| `ResearchS2` (pending), its target with core's `Maybe` (the owner, 2026-10-18) | 1 004 | — |
 
 What accounts for the gap, per item:
 
 | Item | `CounterLocal` | `FormLocal` | Kind |
 |---|---|---|---|
 | `Maybe` boxed as `{$:0,a:…}` / `{$:1,a:null}` (core's representation, kept: the owner, 2026-10-17); tea-inline has no `Maybe` | — | 18 | **a language cost**, like a record spread |
+| — the same, in `ResearchS2`'s target: 1 004 against 981 with `null` for `Nothing` (`plans/inline-s1/n1s2-spread.js`, whose `Maybe` is `null`) | — | — | 23, a language cost |
 | the enum cycle as a `switch` in a labelled block (`EnumCycle`, pending) | — | 16 | owed by S1 |
 | `when`'s anchor through an `=== undefined` branch, where the target has `a.$a ||= new Text` | — | 18 | beni has no `\|\|=`: a finding about the language |
 | `prop`'s and `on`'s defaults as `c === undefined ? … : c`, where the target has default parameters | 6 | 17 | beni has no default parameters: a finding about the language |
