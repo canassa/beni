@@ -3586,6 +3586,36 @@ pub const Lowerer = struct {
         return args[1];
     }
 
+    /// The argument of a call of core's `String.fromInt`, or null.
+    fn fromIntArgument(l: *Lowerer, inst: Inst.Index) ?Inst.Index {
+        if (l.bir.instTag(inst) != .call or l.rootsOf(inst).len != 0) return null;
+        const d = l.bir.instData(inst);
+        const callee: Inst.Index = @fromBackingInt(@intCast(d.lhs));
+        const cd = l.bir.instData(callee);
+        const base: Symbol = switch (l.bir.instTag(callee)) {
+            .top => blk: {
+                if (l.in.graph.modulePackage(l.in.module) != .core) return null;
+                if (l.module_name != InternPool.WellKnown.String.symbol()) return null;
+                if (cd.lhs >= l.bir.decls.len) return null;
+                break :blk l.bir.symbol(l.bir.decls[cd.lhs].name);
+            },
+            .ext_value => blk: {
+                const module: Graph.Index = @fromBackingInt(@intCast(cd.lhs));
+                if (module.int() >= l.in.interfaces.len) return null;
+                if (l.in.graph.modulePackage(module) != .core) return null;
+                if (l.in.graph.moduleName(module) != InternPool.WellKnown.String.symbol()) return null;
+                const iface = &l.in.interfaces[module.int()];
+                if (cd.rhs >= iface.values.len) return null;
+                break :blk iface.symbols[@backingInt(iface.values[cd.rhs].name)];
+            },
+            else => return null,
+        };
+        if (!std.mem.eql(u8, l.interner.slice(base), "fromInt")) return null;
+        const args = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index);
+        if (args.len != 1) return null;
+        return args[0];
+    }
+
     fn isListCons(l: *Lowerer, callee: Inst.Index) bool {
         const d = l.bir.instData(callee);
         const base: Symbol = switch (l.bir.instTag(callee)) {
@@ -4681,7 +4711,11 @@ pub const Lowerer = struct {
                 var holes: std.ArrayList(Inst.Index) = .empty;
                 for (parts) |part| {
                     if (l.bir.instTag(part) == .chunk) continue;
-                    try holes.append(l.scratch, part);
+                    // `${String.fromInt n}` is `${n}`: a template converts a
+                    // number to the text `String` gives it, and an `Int` is a
+                    // number (§4). Keyed on core's `String` and its `fromInt`,
+                    // as `consTail` is, never on the spelling.
+                    try holes.append(l.scratch, l.fromIntArgument(part) orelse part);
                 }
                 const values = try l.orderedExprs(out, holes.items, false);
                 var nodes: std.ArrayList(Node.Index) = .empty;
@@ -15897,8 +15931,8 @@ test "a lambda is an n-ary function expression, of exactly its parameters" {
 
 test "string interpolation becomes a template literal" {
     try expectJs(
-        \\import { String$fromInt } from "./String.mjs";
-        \\const M$label = (n$1) => `n is ${String$fromInt(n$1)}!`;
+        // `String.fromInt` of a segment is the `Int` itself (§4).
+        \\const M$label = (n$1) => `n is ${n$1}!`;
         \\export { M$label };
         \\
     ,

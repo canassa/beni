@@ -1,5 +1,4 @@
 import { deep as _derived$deep } from "./_core/_derived.mjs";
-import { String$fromInt } from "./_core/String.mjs";
 import { Node$printLines } from "./_platform/Node.mjs";
 const MatchNested$Colour$$order = { Red: 0, Blue: 1 };
 const MatchNested$Inner$$order = { Leaf: 0, Pair: 1 };
@@ -131,16 +130,16 @@ const MatchNested$describe = (shape$1, colour$2) => {
 const MatchNested$nested = (i$1) => {
   if (i$1.$ === "Leaf") {
     const n$5 = i$1.a;
-    return `leaf ${String$fromInt(n$5)}`;
+    return `leaf ${n$5}`;
   } else {
     if (i$1.a.$ === "Leaf") {
       if (i$1.b.$ === "Leaf") {
         const a$2 = i$1.a.a;
         const b$3 = i$1.b.a;
-        return `two leaves ${String$fromInt(a$2 + b$3)}`;
+        return `two leaves ${a$2 + b$3}`;
       } else {
         const a$4 = i$1.a.a;
-        return `left leaf ${String$fromInt(a$4)}`;
+        return `left leaf ${a$4}`;
       }
     } else {
       return "pair";
