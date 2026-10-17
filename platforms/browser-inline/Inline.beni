@@ -197,11 +197,11 @@ undo : Js.Ref V
 undo = Js.ref (Js.from nothing)
 
 
---| Whether a dispatch is running now, on a page that has not stopped: an
---| event a listener hears then fires inside it, synchronously, inside its
---| guard.
+--| Whether a dispatch is running now: an event a listener hears then fires
+--| inside it, synchronously, inside its guard. Asked once the page is known
+--| not to have stopped (`stopped`).
 pub busy : ⊤ → Bool
-busy ⊤ = Js.read running && not (Js.read dead)
+busy ⊤ = Js.read running
 
 
 --| Whether the page has stopped.
