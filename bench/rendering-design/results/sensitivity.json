@@ -1,0 +1,73 @@
+{
+  "scope": "All unmapped source-map spans are either excluded or retained as rendering. These alternative classifications are a sensitivity probe, not statistical uncertainty bounds. Prototype spans cannot refer to excluded core because core is external. Owned operations are excluded per the rendering-only brief, but their standalone shipping cost is disclosed.",
+  "owned_array_helpers": {
+    "raw": 291,
+    "brotli": 137,
+    "gzip": 171
+  },
+  "observations": [
+    {
+      "mode": "tea",
+      "app": "mixed-17-32",
+      "unmapped_raw": 1052,
+      "full_raw": 84267,
+      "unmapped_percent": 1.2484127831772818,
+      "all_unmapped_excluded": 11655,
+      "all_unmapped_rendering": 11819
+    },
+    {
+      "mode": "direct",
+      "app": "mixed-17-32",
+      "unmapped_raw": 1015,
+      "full_raw": 189472,
+      "unmapped_percent": 0.5356992062151663,
+      "all_unmapped_excluded": 16918,
+      "all_unmapped_rendering": 17045
+    },
+    {
+      "mode": "vanilla",
+      "app": "mixed-17-32",
+      "unmapped_raw": 10,
+      "full_raw": 21491,
+      "unmapped_percent": 0.046531106044390674,
+      "all_unmapped_excluded": 3880,
+      "all_unmapped_rendering": 3882
+    },
+    {
+      "mode": "partial",
+      "app": "mixed-17-32",
+      "unmapped_raw": 10,
+      "full_raw": 73186,
+      "unmapped_percent": 0.013663815483835707,
+      "all_unmapped_excluded": 8447,
+      "all_unmapped_rendering": 8465
+    },
+    {
+      "mode": "static",
+      "app": "mixed-17-32",
+      "unmapped_raw": 10,
+      "full_raw": 78169,
+      "unmapped_percent": 0.01279279509780092,
+      "all_unmapped_excluded": 8157,
+      "all_unmapped_rendering": 8163
+    },
+    {
+      "mode": "local",
+      "app": "mixed-17-32",
+      "unmapped_raw": 10,
+      "full_raw": 74599,
+      "unmapped_percent": 0.013405005429027199,
+      "all_unmapped_excluded": 7359,
+      "all_unmapped_rendering": 7364
+    },
+    {
+      "mode": "cells",
+      "app": "mixed-17-32",
+      "unmapped_raw": 10,
+      "full_raw": 77499,
+      "unmapped_percent": 0.012903392301836153,
+      "all_unmapped_excluded": 8944,
+      "all_unmapped_rendering": 8959
+    }
+  ]
+}

@@ -1,0 +1,54 @@
+import Html exposing (Html)
+
+type alias Row =
+    id : Int
+    title : String
+    score : Int
+    done : Bool
+
+pub type alias Model =
+    rows2595 : List Row
+    next2595 : Int
+    selected2595 : Int
+    query2595 : String
+    onlyDone2595 : Bool
+
+pub type Msg
+    = Add
+    | Remove Int
+    | Edit Int
+    | Select Int
+    | Reverse
+    | Query String
+    | OnlyDone
+
+pub init : ⊤ → Model
+init ⊤ = { rows2595 = List.map (List.range 1 20) λi → { id = i, title = "Item " ++ String.fromInt i, score = Int.mod (i * 1) 17, done = False }, next2595 = 21, selected2595 = 0, query2595 = "", onlyDone2595 = False }
+
+pub update : Msg, Model → Model
+update msg model =
+    case msg of
+        Add →
+            { model | rows2595 = [ …model.rows2595, { id = model.next2595, title = "filter 17/0 Activity " ++ String.fromInt model.next2595, score = 1, done = False } ], next2595 = model.next2595 + 1 }
+
+        Remove wanted →
+            { model | rows2595 = List.filter model.rows2595 λrow → row.id ≠ wanted }
+
+        Edit wanted →
+            { model | rows2595 = List.map model.rows2595 λrow → if row.id == wanted then { row | title = row.title ++ "!", score = row.score + 1, done = not row.done } else row }
+
+        Select wanted →
+            { model | selected2595 = wanted }
+
+        Reverse →
+            { model | rows2595 = List.reverse model.rows2595 }
+
+        Query text →
+            { model | query2595 = text }
+
+        OnlyDone →
+            { model | onlyDone2595 = not model.onlyDone2595 }
+
+pub view : Model → Html Msg
+view model =
+    <section id="s0" data-shape="filter"><h2>filter 17/0 Activity</h2><div class="level-0"><button id="s0-add" onClick={Add}>Add</button><button id="s0-reverse" onClick={Reverse}>Reverse</button><input id="s0-query" value={model.query2595} onInput={Query} /><button id="s0-onlydone" onClick={OnlyDone}>OnlyDone</button><p>{List.length model.rows2595} records</p><ul><For each={List.filter model.rows2595 λrow → String.contains row.title model.query2595 && (not model.onlyDone2595 || row.done)} keyed={.id}>{λrow → <li data-row={String.fromInt row.id} class={if model.selected2595 == row.id then "selected" else ""}><button onClick={Select row.id}>{row.title}</button><output>{row.score}</output><button onClick={Edit row.id}>Edit</button><button onClick={Remove row.id}>Remove</button></li>}</For></ul></div></section>

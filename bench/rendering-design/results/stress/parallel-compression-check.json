@@ -1,0 +1,23 @@
+{
+  "date": "2026-10-15T23:23:13.064Z",
+  "name": "stress-mixed-17-3888",
+  "mode": "tea",
+  "sha256": "b4a57aee01e979a84fe605b288d9ef6922557d9aa125b655d919f587ef25219b",
+  "rendering": {
+    "raw": 9344577,
+    "brotli": 579185,
+    "gzip": 1179325
+  },
+  "fields": [
+    "full",
+    "rendering",
+    "runtime",
+    "app_alone",
+    "app_in_rendering_context",
+    "excluded_core",
+    "rendering_sha256"
+  ],
+  "unchanged": true,
+  "scope": "Re-accounted the actual N3888 normalized TEA bundle with two asynchronous compression jobs. Every size account and rendering hash equals its previously recorded serial result. Same Node version and zlib/brotli versions.",
+  "admission_check": "A fully reserved pool returned exit 75 within the 2-second timeout without starting its child; the account falls back to serial compression."
+}

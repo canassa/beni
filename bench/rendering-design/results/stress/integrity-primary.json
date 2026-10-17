@@ -1,0 +1,146 @@
+{
+  "verified_at": "2026-10-16T01:44:56.937Z",
+  "observations": 384,
+  "native_builds": 78,
+  "scope": "Compiler and minified JavaScript SHA-256 and raw length with source-map URL trailers removed, disjoint raw byte accounting, and source spec identity. No size fits or compression results are recomputed; no project suites.",
+  "crossings": [
+    {
+      "family": "mixed",
+      "mode": "tea",
+      "n": 3888,
+      "brotli": 579185
+    },
+    {
+      "family": "mixed",
+      "mode": "partial",
+      "n": 5840,
+      "brotli": 516680
+    },
+    {
+      "family": "mixed",
+      "mode": "cells",
+      "n": 5840,
+      "brotli": 553701
+    },
+    {
+      "family": "mixed",
+      "mode": "static",
+      "n": 9264,
+      "brotli": 524091
+    },
+    {
+      "family": "mixed",
+      "mode": "local",
+      "n": 9616,
+      "brotli": 525605
+    },
+    {
+      "family": "mixed",
+      "mode": "vanilla",
+      "n": 100352,
+      "brotli": 525739
+    },
+    {
+      "family": "form",
+      "mode": "tea",
+      "n": 4256,
+      "brotli": 527585
+    },
+    {
+      "family": "nested",
+      "mode": "cells",
+      "n": 8416,
+      "brotli": 526250
+    },
+    {
+      "family": "form",
+      "mode": "partial",
+      "n": 7344,
+      "brotli": 524559
+    },
+    {
+      "family": "nested",
+      "mode": "partial",
+      "n": 8672,
+      "brotli": 525136
+    },
+    {
+      "family": "nested",
+      "mode": "tea",
+      "n": 3888,
+      "brotli": 513666
+    },
+    {
+      "family": "form",
+      "mode": "cells",
+      "n": 7968,
+      "brotli": 525095
+    },
+    {
+      "family": "cluster",
+      "mode": "tea",
+      "n": 6176,
+      "brotli": 524741
+    }
+  ],
+  "recovered": [
+    {
+      "family": "nested",
+      "mode": "tea",
+      "n": 3888,
+      "retry": {
+        "n": 3888,
+        "sha256": "c6fb10e4af9658e18bd74e1855421fafe23d5db63ec01e4569a54a63831ad8c4",
+        "brotli": 513666,
+        "address_space_limit_bytes": 25769803776,
+        "physical_memory_limit_bytes": null
+      }
+    },
+    {
+      "family": "cluster",
+      "mode": "tea",
+      "n": 6176,
+      "retry": {
+        "n": 6176,
+        "sha256": "dd92b000e388e1185c1bbaaffe58269580ba5cb62fd79d39c4fed8009c6fa677",
+        "brotli": 524741,
+        "address_space_limit_bytes": 68719476736,
+        "physical_memory_limit_bytes": 27262976000
+      }
+    },
+    {
+      "family": "cluster",
+      "mode": "tea",
+      "n": 6176,
+      "retry": {
+        "n": 6176,
+        "sha256": "dd92b000e388e1185c1bbaaffe58269580ba5cb62fd79d39c4fed8009c6fa677",
+        "brotli": 524741,
+        "address_space_limit_bytes": 68719476736,
+        "physical_memory_limit_bytes": 27262976000
+      }
+    }
+  ],
+  "compiler_limited": [
+    {
+      "family": "mixed",
+      "mode": "direct",
+      "n": 1728
+    },
+    {
+      "family": "nested",
+      "mode": "direct",
+      "n": 1152
+    },
+    {
+      "family": "form",
+      "mode": "direct",
+      "n": 1728
+    },
+    {
+      "family": "cluster",
+      "mode": "direct",
+      "n": 1728
+    }
+  ]
+}

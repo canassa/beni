@@ -1,0 +1,173 @@
+decl 0: pub alias Model
+  %0 = type_import Basics.Int
+  %1 = type_import Basics.Bool
+  %2 = type_import Basics.Int
+  %3 = type_record { count7112 : %0, enabled7112 : %1, history7112 : %2 }
+  body %3
+  ctor 0 Model [%0, %1, %2]
+  refs
+    import_type Basics.Int
+    import_type Basics.Bool
+  interface alias Model (record constructor)
+
+decl 1: pub type Msg
+  ctor 1 Increment []
+  ctor 2 Toggle []
+  ctor 3 Reset []
+  interface type Msg = Increment | Toggle | Reset
+
+decl 2: pub value init (annotated)
+  %0 = type_unit
+  %1 = type_top 0 (Model)
+  %2 = type_fn [%0] -> %1
+  %3 = pat_unit
+  %4 = int 0
+  %5 = import_ctor Basics.True
+  %6 = int 0
+  %7 = record { count7112 = %4, enabled7112 = %5, history7112 = %6 }
+  annotation %2
+  params [%3]
+  body %7
+  refs
+    type_top 0 (Model)
+    import_ctor Basics.True
+  interface value init (annotated)
+
+decl 3: pub value update (annotated)
+  %0 = type_top 1 (Msg)
+  %1 = type_top 0 (Model)
+  %2 = type_top 0 (Model)
+  %3 = type_fn [%0, %1] -> %2
+  %4 = pat_var local 0 (msg)
+  %5 = pat_var local 1 (model)
+  %6 = local 0 (msg)
+  %7 = ctor 1 (Increment)
+  %8 = pat_ctor %7 []
+  %9 = local 1 (model)
+  %10 = local 1 (model)
+  %11 = field_access %10 .count7112
+  %12 = int 5
+  %13 = import_value Basics.add
+  %14 = call %13 [%11, %12]
+  %15 = local 1 (model)
+  %16 = field_access %15 .history7112
+  %17 = int 1
+  %18 = import_value Basics.add
+  %19 = call %18 [%16, %17]
+  %20 = record_update %9 { count7112 = %14, history7112 = %19 }
+  %21 = branch %8 -> %20
+  %22 = ctor 2 (Toggle)
+  %23 = pat_ctor %22 []
+  %24 = local 1 (model)
+  %25 = import_value Basics.not
+  %26 = local 1 (model)
+  %27 = field_access %26 .enabled7112
+  %28 = call %25 [%27]
+  %29 = local 1 (model)
+  %30 = field_access %29 .history7112
+  %31 = int 1
+  %32 = import_value Basics.add
+  %33 = call %32 [%30, %31]
+  %34 = record_update %24 { enabled7112 = %28, history7112 = %33 }
+  %35 = branch %23 -> %34
+  %36 = ctor 3 (Reset)
+  %37 = pat_ctor %36 []
+  %38 = local 1 (model)
+  %39 = int 0
+  %40 = int 0
+  %41 = record_update %38 { count7112 = %39, history7112 = %40 }
+  %42 = branch %37 -> %41
+  %43 = case %6 [%21, %35, %42]
+  annotation %3
+  params [%4, %5]
+  body %43
+  locals
+    0 msg param %4
+    1 model param %5
+  refs
+    type_top 1 (Msg)
+    type_top 0 (Model)
+    ctor 1 (Increment)
+    import_value Basics.add
+    ctor 2 (Toggle)
+    import_value Basics.not
+    ctor 3 (Reset)
+  interface value update (annotated)
+
+decl 4: pub value view (annotated)
+  %0 = type_top 0 (Model)
+  %1 = type_import Html.Html
+  %2 = type_top 1 (Msg)
+  %3 = type_app %1 [%2]
+  %4 = type_fn [%0] -> %3
+  %5 = pat_var local 0 (model)
+  %6 = ctor 1 (Increment)
+  %7 = ctor 2 (Toggle)
+  %8 = ctor 3 (Reset)
+  %9 = local 0 (model)
+  %10 = field_access %9 .count7112
+  %11 = import_value Basics.not
+  %12 = local 0 (model)
+  %13 = field_access %12 .enabled7112
+  %14 = call %11 [%13]
+  %15 = local 0 (model)
+  %16 = field_access %15 .history7112
+  %17 = markup
+    element section
+      attr id = "s0"
+      attr data-shape = "cluster"
+      element h2
+        text "cluster 17/0 Review"
+      element div
+        attr class = "level-0"
+        element button
+          attr id = "s0-increment"
+          attr onClick = %6
+          text "Increment"
+        element button
+          attr id = "s0-toggle"
+          attr onClick = %7
+          text "Toggle"
+        element button
+          attr id = "s0-reset"
+          attr onClick = %8
+          text "Reset"
+        element output
+          attr id = "s0-count"
+          hole %10
+        element span
+          attr hidden = %14
+          hole %16
+  annotation %4
+  params [%5]
+  body %17
+  locals
+    0 model param %5
+  refs
+    type_top 0 (Model)
+    import_type Html.Html
+    type_top 1 (Msg)
+    ctor 1 (Increment)
+    ctor 2 (Toggle)
+    ctor 3 (Reset)
+    import_value Basics.not
+  interface value view (annotated)
+
+interface
+  alias Model (record constructor)
+  type Msg = Increment | Toggle | Reset
+  value init (annotated)
+  value update (annotated)
+  value view (annotated)
+
+imports
+  import Html exposing (Html)
+  prelude Basics
+  prelude List
+  prelude Maybe
+  prelude Result
+  prelude String
+  prelude Char
+  prelude Debug
+  prelude Int
+  prelude Float

@@ -1,0 +1,713 @@
+[
+  {
+    "family": "mixed",
+    "mode": "tea",
+    "crossing_n": 3888,
+    "crossing_brotli": 579185,
+    "last_n": 3888,
+    "last_brotli": 579185,
+    "compiler_limited": false
+  },
+  {
+    "family": "mixed",
+    "mode": "direct",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 1152,
+    "last_brotli": 242074,
+    "compiler_limited": true
+  },
+  {
+    "family": "mixed",
+    "mode": "vanilla",
+    "crossing_n": 100352,
+    "crossing_brotli": 525739,
+    "last_n": 100352,
+    "last_brotli": 525739,
+    "compiler_limited": false
+  },
+  {
+    "family": "mixed",
+    "mode": "partial",
+    "crossing_n": 5840,
+    "crossing_brotli": 516680,
+    "last_n": 5840,
+    "last_brotli": 516680,
+    "compiler_limited": false
+  },
+  {
+    "family": "mixed",
+    "mode": "static",
+    "crossing_n": 9264,
+    "crossing_brotli": 524091,
+    "last_n": 9264,
+    "last_brotli": 524091,
+    "compiler_limited": false
+  },
+  {
+    "family": "mixed",
+    "mode": "local",
+    "crossing_n": 9616,
+    "crossing_brotli": 525605,
+    "last_n": 9616,
+    "last_brotli": 525605,
+    "compiler_limited": false
+  },
+  {
+    "family": "mixed",
+    "mode": "cells",
+    "crossing_n": 5840,
+    "crossing_brotli": 553701,
+    "last_n": 5840,
+    "last_brotli": 553701,
+    "compiler_limited": false
+  },
+  {
+    "family": "list",
+    "mode": "tea",
+    "crossing_n": 3888,
+    "crossing_brotli": 516823,
+    "last_n": 3888,
+    "last_brotli": 516823,
+    "compiler_limited": false
+  },
+  {
+    "family": "list",
+    "mode": "direct",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 336,
+    "last_brotli": 70207,
+    "compiler_limited": true
+  },
+  {
+    "family": "list",
+    "mode": "vanilla",
+    "crossing_n": 102416,
+    "crossing_brotli": 525088,
+    "last_n": 102416,
+    "last_brotli": 525088,
+    "compiler_limited": false
+  },
+  {
+    "family": "list",
+    "mode": "partial",
+    "crossing_n": 6656,
+    "crossing_brotli": 516859,
+    "last_n": 6656,
+    "last_brotli": 516859,
+    "compiler_limited": false
+  },
+  {
+    "family": "list",
+    "mode": "static",
+    "crossing_n": 9632,
+    "crossing_brotli": 524719,
+    "last_n": 9632,
+    "last_brotli": 524719,
+    "compiler_limited": false
+  },
+  {
+    "family": "list",
+    "mode": "local",
+    "crossing_n": 12656,
+    "crossing_brotli": 524180,
+    "last_n": 12656,
+    "last_brotli": 524180,
+    "compiler_limited": false
+  },
+  {
+    "family": "list",
+    "mode": "cells",
+    "crossing_n": 6656,
+    "crossing_brotli": 525697,
+    "last_n": 6656,
+    "last_brotli": 525697,
+    "compiler_limited": false
+  },
+  {
+    "family": "list",
+    "mode": "solid",
+    "crossing_n": 96192,
+    "crossing_brotli": 518127,
+    "last_n": 96192,
+    "last_brotli": 518127,
+    "compiler_limited": false
+  },
+  {
+    "family": "form",
+    "mode": "tea",
+    "crossing_n": 4256,
+    "crossing_brotli": 527585,
+    "last_n": 4256,
+    "last_brotli": 527585,
+    "compiler_limited": false
+  },
+  {
+    "family": "form",
+    "mode": "direct",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 1152,
+    "last_brotli": 190463,
+    "compiler_limited": true
+  },
+  {
+    "family": "form",
+    "mode": "vanilla",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 83792,
+    "last_brotli": 429112,
+    "compiler_limited": false
+  },
+  {
+    "family": "form",
+    "mode": "partial",
+    "crossing_n": 7344,
+    "crossing_brotli": 524559,
+    "last_n": 7344,
+    "last_brotli": 524559,
+    "compiler_limited": false
+  },
+  {
+    "family": "form",
+    "mode": "static",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 7968,
+    "last_brotli": 390254,
+    "compiler_limited": false
+  },
+  {
+    "family": "form",
+    "mode": "local",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 7968,
+    "last_brotli": 305341,
+    "compiler_limited": false
+  },
+  {
+    "family": "form",
+    "mode": "cells",
+    "crossing_n": 7968,
+    "crossing_brotli": 525095,
+    "last_n": 7968,
+    "last_brotli": 525095,
+    "compiler_limited": false
+  },
+  {
+    "family": "form",
+    "mode": "solid",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 7968,
+    "last_brotli": 54177,
+    "compiler_limited": false
+  },
+  {
+    "family": "tabs",
+    "mode": "tea",
+    "crossing_n": 4304,
+    "crossing_brotli": 525278,
+    "last_n": 4304,
+    "last_brotli": 525278,
+    "compiler_limited": false
+  },
+  {
+    "family": "tabs",
+    "mode": "direct",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 1152,
+    "last_brotli": 177416,
+    "compiler_limited": true
+  },
+  {
+    "family": "tabs",
+    "mode": "vanilla",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 49104,
+    "last_brotli": 250816,
+    "compiler_limited": false
+  },
+  {
+    "family": "tabs",
+    "mode": "partial",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 6464,
+    "last_brotli": 357854,
+    "compiler_limited": false
+  },
+  {
+    "family": "tabs",
+    "mode": "static",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 6464,
+    "last_brotli": 336815,
+    "compiler_limited": false
+  },
+  {
+    "family": "tabs",
+    "mode": "local",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 6464,
+    "last_brotli": 307307,
+    "compiler_limited": false
+  },
+  {
+    "family": "tabs",
+    "mode": "cells",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 6464,
+    "last_brotli": 373533,
+    "compiler_limited": false
+  },
+  {
+    "family": "nested",
+    "mode": "tea",
+    "crossing_n": 3888,
+    "crossing_brotli": 513666,
+    "last_n": 3888,
+    "last_brotli": 513666,
+    "compiler_limited": false
+  },
+  {
+    "family": "nested",
+    "mode": "direct",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 768,
+    "last_brotli": 165539,
+    "compiler_limited": true
+  },
+  {
+    "family": "nested",
+    "mode": "vanilla",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 98832,
+    "last_brotli": 507537,
+    "compiler_limited": false
+  },
+  {
+    "family": "nested",
+    "mode": "partial",
+    "crossing_n": 8672,
+    "crossing_brotli": 525136,
+    "last_n": 8672,
+    "last_brotli": 525136,
+    "compiler_limited": false
+  },
+  {
+    "family": "nested",
+    "mode": "static",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 8672,
+    "last_brotli": 509908,
+    "compiler_limited": false
+  },
+  {
+    "family": "nested",
+    "mode": "local",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 8672,
+    "last_brotli": 387572,
+    "compiler_limited": false
+  },
+  {
+    "family": "nested",
+    "mode": "cells",
+    "crossing_n": 8416,
+    "crossing_brotli": 526250,
+    "last_n": 8416,
+    "last_brotli": 526250,
+    "compiler_limited": false
+  },
+  {
+    "family": "thread",
+    "mode": "tea",
+    "crossing_n": 4768,
+    "crossing_brotli": 520808,
+    "last_n": 4768,
+    "last_brotli": 520808,
+    "compiler_limited": false
+  },
+  {
+    "family": "thread",
+    "mode": "direct",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 512,
+    "last_brotli": 91973,
+    "compiler_limited": true
+  },
+  {
+    "family": "thread",
+    "mode": "vanilla",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 66608,
+    "last_brotli": 342600,
+    "compiler_limited": false
+  },
+  {
+    "family": "thread",
+    "mode": "partial",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 5840,
+    "last_brotli": 445424,
+    "compiler_limited": false
+  },
+  {
+    "family": "thread",
+    "mode": "static",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 5840,
+    "last_brotli": 437185,
+    "compiler_limited": false
+  },
+  {
+    "family": "thread",
+    "mode": "local",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 5840,
+    "last_brotli": 327918,
+    "compiler_limited": false
+  },
+  {
+    "family": "thread",
+    "mode": "cells",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 5840,
+    "last_brotli": 435875,
+    "compiler_limited": false
+  },
+  {
+    "family": "cluster",
+    "mode": "tea",
+    "crossing_n": 6176,
+    "crossing_brotli": 524741,
+    "last_n": 6176,
+    "last_brotli": 524741,
+    "compiler_limited": false
+  },
+  {
+    "family": "cluster",
+    "mode": "direct",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 1152,
+    "last_brotli": 133223,
+    "compiler_limited": true
+  },
+  {
+    "family": "cluster",
+    "mode": "vanilla",
+    "crossing_n": 101600,
+    "crossing_brotli": 524765,
+    "last_n": 101600,
+    "last_brotli": 524765,
+    "compiler_limited": false
+  },
+  {
+    "family": "cluster",
+    "mode": "partial",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 9264,
+    "last_brotli": 507975,
+    "compiler_limited": false
+  },
+  {
+    "family": "cluster",
+    "mode": "static",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 9264,
+    "last_brotli": 370786,
+    "compiler_limited": false
+  },
+  {
+    "family": "cluster",
+    "mode": "local",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 9264,
+    "last_brotli": 311051,
+    "compiler_limited": false
+  },
+  {
+    "family": "cluster",
+    "mode": "cells",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 9264,
+    "last_brotli": 491134,
+    "compiler_limited": false
+  },
+  {
+    "family": "table",
+    "mode": "tea",
+    "crossing_n": 3312,
+    "crossing_brotli": 515906,
+    "last_n": 3312,
+    "last_brotli": 515906,
+    "compiler_limited": false
+  },
+  {
+    "family": "table",
+    "mode": "direct",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 336,
+    "last_brotli": 80298,
+    "compiler_limited": true
+  },
+  {
+    "family": "table",
+    "mode": "vanilla",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 56816,
+    "last_brotli": 291750,
+    "compiler_limited": false
+  },
+  {
+    "family": "table",
+    "mode": "partial",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 4976,
+    "last_brotli": 440019,
+    "compiler_limited": false
+  },
+  {
+    "family": "table",
+    "mode": "static",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 4976,
+    "last_brotli": 307749,
+    "compiler_limited": false
+  },
+  {
+    "family": "table",
+    "mode": "local",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 4976,
+    "last_brotli": 229054,
+    "compiler_limited": false
+  },
+  {
+    "family": "table",
+    "mode": "cells",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 4976,
+    "last_brotli": 416228,
+    "compiler_limited": false
+  },
+  {
+    "family": "modal",
+    "mode": "tea",
+    "crossing_n": 4112,
+    "crossing_brotli": 531816,
+    "last_n": 4112,
+    "last_brotli": 531816,
+    "compiler_limited": false
+  },
+  {
+    "family": "modal",
+    "mode": "direct",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 1152,
+    "last_brotli": 203863,
+    "compiler_limited": true
+  },
+  {
+    "family": "modal",
+    "mode": "vanilla",
+    "crossing_n": 102096,
+    "crossing_brotli": 525172,
+    "last_n": 102096,
+    "last_brotli": 525172,
+    "compiler_limited": false
+  },
+  {
+    "family": "modal",
+    "mode": "partial",
+    "crossing_n": 7456,
+    "crossing_brotli": 516979,
+    "last_n": 7456,
+    "last_brotli": 516979,
+    "compiler_limited": false
+  },
+  {
+    "family": "modal",
+    "mode": "static",
+    "crossing_n": 10288,
+    "crossing_brotli": 529693,
+    "last_n": 10288,
+    "last_brotli": 529693,
+    "compiler_limited": false
+  },
+  {
+    "family": "modal",
+    "mode": "local",
+    "crossing_n": 11664,
+    "crossing_brotli": 522772,
+    "last_n": 11664,
+    "last_brotli": 522772,
+    "compiler_limited": false
+  },
+  {
+    "family": "modal",
+    "mode": "cells",
+    "crossing_n": 7456,
+    "crossing_brotli": 528227,
+    "last_n": 7456,
+    "last_brotli": 528227,
+    "compiler_limited": false
+  },
+  {
+    "family": "filter",
+    "mode": "tea",
+    "crossing_n": 3264,
+    "crossing_brotli": 523981,
+    "last_n": 3264,
+    "last_brotli": 523981,
+    "compiler_limited": false
+  },
+  {
+    "family": "filter",
+    "mode": "direct",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 336,
+    "last_brotli": 80586,
+    "compiler_limited": true
+  },
+  {
+    "family": "filter",
+    "mode": "vanilla",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 63152,
+    "last_brotli": 325064,
+    "compiler_limited": false
+  },
+  {
+    "family": "filter",
+    "mode": "partial",
+    "crossing_n": 5888,
+    "crossing_brotli": 524422,
+    "last_n": 5888,
+    "last_brotli": 524422,
+    "compiler_limited": false
+  },
+  {
+    "family": "filter",
+    "mode": "static",
+    "crossing_n": 8304,
+    "crossing_brotli": 519024,
+    "last_n": 8304,
+    "last_brotli": 519024,
+    "compiler_limited": false
+  },
+  {
+    "family": "filter",
+    "mode": "local",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 8304,
+    "last_brotli": 371353,
+    "compiler_limited": false
+  },
+  {
+    "family": "filter",
+    "mode": "cells",
+    "crossing_n": 6096,
+    "crossing_brotli": 527363,
+    "last_n": 6096,
+    "last_brotli": 527363,
+    "compiler_limited": false
+  },
+  {
+    "family": "summary",
+    "mode": "tea",
+    "crossing_n": 3168,
+    "crossing_brotli": 517173,
+    "last_n": 3168,
+    "last_brotli": 517173,
+    "compiler_limited": false
+  },
+  {
+    "family": "summary",
+    "mode": "direct",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 336,
+    "last_brotli": 83119,
+    "compiler_limited": true
+  },
+  {
+    "family": "summary",
+    "mode": "vanilla",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 59808,
+    "last_brotli": 308390,
+    "compiler_limited": false
+  },
+  {
+    "family": "summary",
+    "mode": "partial",
+    "crossing_n": 5728,
+    "crossing_brotli": 525360,
+    "last_n": 5728,
+    "last_brotli": 525360,
+    "compiler_limited": false
+  },
+  {
+    "family": "summary",
+    "mode": "static",
+    "crossing_n": 7872,
+    "crossing_brotli": 525008,
+    "last_n": 7872,
+    "last_brotli": 525008,
+    "compiler_limited": false
+  },
+  {
+    "family": "summary",
+    "mode": "local",
+    "crossing_n": null,
+    "crossing_brotli": null,
+    "last_n": 7872,
+    "last_brotli": 396683,
+    "compiler_limited": false
+  },
+  {
+    "family": "summary",
+    "mode": "cells",
+    "crossing_n": 6208,
+    "crossing_brotli": 524834,
+    "last_n": 6208,
+    "last_brotli": 524834,
+    "compiler_limited": false
+  }
+]

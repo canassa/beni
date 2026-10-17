@@ -1,0 +1,420 @@
+decl 0: alias Row
+  %0 = type_import Basics.Int
+  %1 = type_import String.String
+  %2 = type_import Basics.Int
+  %3 = type_import Basics.Bool
+  %4 = type_record { id : %0, title : %1, score : %2, done : %3 }
+  body %4
+  ctor 0 Row [%0, %1, %2, %3]
+  refs
+    import_type Basics.Int
+    import_type String.String
+    import_type Basics.Bool
+
+decl 1: pub alias Model
+  %0 = type_import List.List
+  %1 = type_top 0 (Row)
+  %2 = type_app %0 [%1]
+  %3 = type_import Basics.Int
+  %4 = type_import Basics.Int
+  %5 = type_import Basics.Bool
+  %6 = type_record { rows2266 : %2, next2266 : %3, selected2266 : %4, descending2266 : %5 }
+  body %6
+  ctor 1 Model [%2, %3, %4, %5]
+  refs
+    import_type List.List
+    type_top 0 (Row)
+    import_type Basics.Int
+    import_type Basics.Bool
+  interface alias Model (record constructor)
+
+decl 2: pub type Msg
+  %0 = type_import Basics.Int
+  %1 = type_import Basics.Int
+  %2 = type_import Basics.Int
+  ctor 2 Add []
+  ctor 3 Remove [%0]
+  ctor 4 Edit [%1]
+  ctor 5 Select [%2]
+  ctor 6 Reverse []
+  ctor 7 Sort []
+  refs
+    import_type Basics.Int
+  interface type Msg = Add | Remove | Edit | Select | Reverse | Sort
+
+decl 3: pub value init (annotated)
+  %0 = type_unit
+  %1 = type_top 1 (Model)
+  %2 = type_fn [%0] -> %1
+  %3 = pat_unit
+  %4 = qualified List.map
+  %5 = qualified List.range
+  %6 = int 1
+  %7 = int 20
+  %8 = call %5 [%6, %7]
+  %9 = pat_var local 0 (i)
+  %10 = local 0 (i)
+  %11 = string "Item "
+  %12 = qualified String.fromInt
+  %13 = local 0 (i)
+  %14 = call %12 [%13]
+  %15 = import_value Basics.append
+  %16 = call %15 [%11, %14]
+  %17 = qualified Int.mod
+  %18 = local 0 (i)
+  %19 = int 6
+  %20 = import_value Basics.mul
+  %21 = call %20 [%18, %19]
+  %22 = int 17
+  %23 = call %17 [%21, %22]
+  %24 = import_ctor Basics.False
+  %25 = record { id = %10, title = %16, score = %23, done = %24 }
+  %26 = lambda [%9] -> %25
+  %27 = call %4 [%8, %26]
+  %28 = int 21
+  %29 = int 0
+  %30 = import_ctor Basics.False
+  %31 = record { rows2266 = %27, next2266 = %28, selected2266 = %29, descending2266 = %30 }
+  annotation %2
+  params [%3]
+  body %31
+  locals
+    0 i param %9
+  refs
+    type_top 1 (Model)
+    import_value List.map
+    import_value List.range
+    import_value String.fromInt
+    import_value Basics.append
+    import_value Int.mod
+    import_value Basics.mul
+    import_ctor Basics.False
+  interface value init (annotated)
+
+decl 4: pub value update (annotated)
+  %0 = type_top 2 (Msg)
+  %1 = type_top 1 (Model)
+  %2 = type_top 1 (Model)
+  %3 = type_fn [%0, %1] -> %2
+  %4 = pat_var local 0 (msg)
+  %5 = pat_var local 1 (model)
+  %6 = local 0 (msg)
+  %7 = ctor 2 (Add)
+  %8 = pat_ctor %7 []
+  %9 = local 1 (model)
+  %10 = local 1 (model)
+  %11 = field_access %10 .rows2266
+  %12 = local 1 (model)
+  %13 = field_access %12 .next2266
+  %14 = string "table 17/0 People "
+  %15 = qualified String.fromInt
+  %16 = local 1 (model)
+  %17 = field_access %16 .next2266
+  %18 = call %15 [%17]
+  %19 = import_value Basics.append
+  %20 = call %19 [%14, %18]
+  %21 = int 6
+  %22 = import_ctor Basics.False
+  %23 = record { id = %13, title = %20, score = %21, done = %22 }
+  %24 = list [%23]
+  %25 = import_value List.append
+  %26 = call %25 [%11, %24]
+  %27 = local 1 (model)
+  %28 = field_access %27 .next2266
+  %29 = int 1
+  %30 = import_value Basics.add
+  %31 = call %30 [%28, %29]
+  %32 = record_update %9 { rows2266 = %26, next2266 = %31 }
+  %33 = branch %8 -> %32
+  %34 = ctor 3 (Remove)
+  %35 = pat_var local 2 (wanted)
+  %36 = pat_ctor %34 [%35]
+  %37 = local 1 (model)
+  %38 = qualified List.filter
+  %39 = local 1 (model)
+  %40 = field_access %39 .rows2266
+  %41 = pat_var local 3 (row)
+  %42 = local 3 (row)
+  %43 = field_access %42 .id
+  %44 = local 2 (wanted)
+  %45 = method_call %43 .eq [%44] (≠)
+  %46 = lambda [%41] -> %45
+  %47 = call %38 [%40, %46]
+  %48 = int 0
+  %49 = record_update %37 { rows2266 = %47, selected2266 = %48 }
+  %50 = branch %36 -> %49
+  %51 = ctor 4 (Edit)
+  %52 = pat_var local 4 (wanted)
+  %53 = pat_ctor %51 [%52]
+  %54 = local 1 (model)
+  %55 = qualified List.map
+  %56 = local 1 (model)
+  %57 = field_access %56 .rows2266
+  %58 = pat_var local 5 (row)
+  %59 = local 5 (row)
+  %60 = field_access %59 .id
+  %61 = local 4 (wanted)
+  %62 = method_call %60 .eq [%61] (==)
+  %63 = import_ctor Basics.True
+  %64 = pat_ctor %63 []
+  %65 = local 5 (row)
+  %66 = local 5 (row)
+  %67 = field_access %66 .title
+  %68 = string "!"
+  %69 = import_value Basics.append
+  %70 = call %69 [%67, %68]
+  %71 = local 5 (row)
+  %72 = field_access %71 .score
+  %73 = int 6
+  %74 = import_value Basics.add
+  %75 = call %74 [%72, %73]
+  %76 = import_value Basics.not
+  %77 = local 5 (row)
+  %78 = field_access %77 .done
+  %79 = call %76 [%78]
+  %80 = record_update %65 { title = %70, score = %75, done = %79 }
+  %81 = branch %64 -> %80
+  %82 = import_ctor Basics.False
+  %83 = pat_ctor %82 []
+  %84 = local 5 (row)
+  %85 = branch %83 -> %84
+  %86 = case %62 [%81, %85]
+  %87 = lambda [%58] -> %86
+  %88 = call %55 [%57, %87]
+  %89 = record_update %54 { rows2266 = %88 }
+  %90 = branch %53 -> %89
+  %91 = ctor 5 (Select)
+  %92 = pat_var local 6 (wanted)
+  %93 = pat_ctor %91 [%92]
+  %94 = local 1 (model)
+  %95 = local 6 (wanted)
+  %96 = record_update %94 { selected2266 = %95 }
+  %97 = branch %93 -> %96
+  %98 = ctor 6 (Reverse)
+  %99 = pat_ctor %98 []
+  %100 = local 1 (model)
+  %101 = qualified List.reverse
+  %102 = local 1 (model)
+  %103 = field_access %102 .rows2266
+  %104 = call %101 [%103]
+  %105 = record_update %100 { rows2266 = %104 }
+  %106 = branch %99 -> %105
+  %107 = ctor 7 (Sort)
+  %108 = pat_ctor %107 []
+  %109 = local 1 (model)
+  %110 = import_value Basics.not
+  %111 = local 1 (model)
+  %112 = field_access %111 .descending2266
+  %113 = call %110 [%112]
+  %114 = record_update %109 { descending2266 = %113 }
+  %115 = branch %108 -> %114
+  %116 = case %6 [%33, %50, %90, %97, %106, %115]
+  annotation %3
+  params [%4, %5]
+  body %116
+  locals
+    0 msg param %4
+    1 model param %5
+    2 wanted pattern %35
+    3 row param %41
+    4 wanted pattern %52
+    5 row param %58
+    6 wanted pattern %92
+  refs
+    type_top 2 (Msg)
+    type_top 1 (Model)
+    ctor 2 (Add)
+    import_value String.fromInt
+    import_value Basics.append
+    import_ctor Basics.False
+    import_value List.append
+    import_value Basics.add
+    ctor 3 (Remove)
+    import_value List.filter
+    ctor 4 (Edit)
+    import_value List.map
+    import_ctor Basics.True
+    import_value Basics.not
+    ctor 5 (Select)
+    ctor 6 (Reverse)
+    import_value List.reverse
+    ctor 7 (Sort)
+  interface value update (annotated)
+
+decl 5: pub value view (annotated)
+  %0 = type_top 1 (Model)
+  %1 = type_import Html.Html
+  %2 = type_top 2 (Msg)
+  %3 = type_app %1 [%2]
+  %4 = type_fn [%0] -> %3
+  %5 = pat_var local 0 (model)
+  %6 = ctor 2 (Add)
+  %7 = ctor 6 (Reverse)
+  %8 = qualified List.length
+  %9 = local 0 (model)
+  %10 = field_access %9 .rows2266
+  %11 = call %8 [%10]
+  %12 = ctor 7 (Sort)
+  %13 = local 0 (model)
+  %14 = field_access %13 .descending2266
+  %15 = import_ctor Basics.True
+  %16 = pat_ctor %15 []
+  %17 = qualified List.reverse
+  %18 = qualified List.sortBy
+  %19 = local 0 (model)
+  %20 = field_access %19 .rows2266
+  %21 = pat_var local 1
+  %22 = local 1
+  %23 = field_access %22 .score
+  %24 = lambda [%21] -> %23
+  %25 = call %18 [%20, %24]
+  %26 = call %17 [%25]
+  %27 = branch %16 -> %26
+  %28 = import_ctor Basics.False
+  %29 = pat_ctor %28 []
+  %30 = qualified List.sortBy
+  %31 = local 0 (model)
+  %32 = field_access %31 .rows2266
+  %33 = pat_var local 2
+  %34 = local 2
+  %35 = field_access %34 .score
+  %36 = lambda [%33] -> %35
+  %37 = call %30 [%32, %36]
+  %38 = branch %29 -> %37
+  %39 = case %14 [%27, %38]
+  %40 = pat_var local 3
+  %41 = local 3
+  %42 = field_access %41 .id
+  %43 = lambda [%40] -> %42
+  %44 = pat_var local 4 (row)
+  %45 = qualified String.fromInt
+  %46 = local 4 (row)
+  %47 = field_access %46 .id
+  %48 = call %45 [%47]
+  %49 = local 0 (model)
+  %50 = field_access %49 .selected2266
+  %51 = local 4 (row)
+  %52 = field_access %51 .id
+  %53 = method_call %50 .eq [%52] (==)
+  %54 = import_ctor Basics.True
+  %55 = pat_ctor %54 []
+  %56 = string "selected"
+  %57 = branch %55 -> %56
+  %58 = import_ctor Basics.False
+  %59 = pat_ctor %58 []
+  %60 = string ""
+  %61 = branch %59 -> %60
+  %62 = case %53 [%57, %61]
+  %63 = ctor 5 (Select)
+  %64 = local 4 (row)
+  %65 = field_access %64 .id
+  %66 = call %63 [%65]
+  %67 = local 4 (row)
+  %68 = field_access %67 .title
+  %69 = local 4 (row)
+  %70 = field_access %69 .score
+  %71 = ctor 4 (Edit)
+  %72 = local 4 (row)
+  %73 = field_access %72 .id
+  %74 = call %71 [%73]
+  %75 = ctor 3 (Remove)
+  %76 = local 4 (row)
+  %77 = field_access %76 .id
+  %78 = call %75 [%77]
+  %79 = markup
+    element tr
+      attr data-row = %48
+      attr class = %62
+      element td
+        element button
+          attr onClick = %66
+          hole %68
+      element td
+        hole %70
+      element td
+        element button
+          attr onClick = %74
+          text "Edit"
+        element button
+          attr onClick = %78
+          text "Remove"
+  %80 = lambda [%44] -> %79
+  %81 = markup
+    element section
+      attr id = "s0"
+      attr data-shape = "table"
+      element h2
+        text "table 17/0 People"
+      element div
+        attr class = "level-0"
+        element button
+          attr id = "s0-add"
+          attr onClick = %6
+          text "Add"
+        element button
+          attr id = "s0-reverse"
+          attr onClick = %7
+          text "Reverse"
+        element p
+          hole %11
+          text " records"
+        element table
+          element thead
+            element tr
+              element th
+                element button
+                  attr id = "s0-sort"
+                  attr onClick = %12
+                  text "Sort"
+              element th
+                text "Score"
+              element th
+                text "Actions"
+          element tbody
+            for each %39 keyed key %43
+              row markup %80 body %79 captures [0 (model)] inputs [model.selected2266]
+  annotation %4
+  params [%5]
+  body %81
+  locals
+    0 model param %5
+    1 _ fresh %21
+    2 _ fresh %33
+    3 _ fresh %40
+    4 row param %44
+  refs
+    type_top 1 (Model)
+    import_type Html.Html
+    type_top 2 (Msg)
+    ctor 2 (Add)
+    ctor 6 (Reverse)
+    import_value List.length
+    ctor 7 (Sort)
+    import_ctor Basics.True
+    import_value List.reverse
+    import_value List.sortBy
+    import_ctor Basics.False
+    import_value String.fromInt
+    ctor 5 (Select)
+    ctor 4 (Edit)
+    ctor 3 (Remove)
+  interface value view (annotated)
+
+interface
+  alias Model (record constructor)
+  type Msg = Add | Remove | Edit | Select | Reverse | Sort
+  value init (annotated)
+  value update (annotated)
+  value view (annotated)
+
+imports
+  import Html exposing (Html)
+  prelude Basics
+  prelude List
+  prelude Maybe
+  prelude Result
+  prelude String
+  prelude Char
+  prelude Debug
+  prelude Int
+  prelude Float

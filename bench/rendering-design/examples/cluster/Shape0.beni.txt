@@ -1,0 +1,32 @@
+import Html exposing (Html)
+
+
+
+pub type alias Model =
+    count7112 : Int
+    enabled7112 : Bool
+    history7112 : Int
+
+pub type Msg
+    = Increment
+    | Toggle
+    | Reset
+
+pub init : ⊤ → Model
+init ⊤ = { count7112 = 0, enabled7112 = True, history7112 = 0 }
+
+pub update : Msg, Model → Model
+update msg model =
+    case msg of
+        Increment →
+            { model | count7112 = model.count7112 + 5, history7112 = model.history7112 + 1 }
+
+        Toggle →
+            { model | enabled7112 = not model.enabled7112, history7112 = model.history7112 + 1 }
+
+        Reset →
+            { model | count7112 = 0, history7112 = 0 }
+
+pub view : Model → Html Msg
+view model =
+    <section id="s0" data-shape="cluster"><h2>cluster 17/0 Review</h2><div class="level-0"><button id="s0-increment" onClick={Increment}>Increment</button><button id="s0-toggle" onClick={Toggle}>Toggle</button><button id="s0-reset" onClick={Reset}>Reset</button><output id="s0-count">{model.count7112}</output><span hidden={not model.enabled7112}>{model.history7112}</span></div></section>

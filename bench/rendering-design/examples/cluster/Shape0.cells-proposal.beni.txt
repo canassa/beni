@@ -1,0 +1,39 @@
+-- Proposed surface, not accepted by today's compiler.
+-- Action is a typed, deferred DOM callback, not an ordinary eager call.
+-- An action commits its transaction atomically; render runs after commit.
+-- Model snapshots do not escape the owned component.
+import Html exposing (Html, Action)
+
+component Instance
+    type alias Model =
+        count7112 : Int
+        enabled7112 : Bool
+        history7112 : Int
+
+
+    init : ⊤ → Model
+    init ⊤ = { count7112 = 0, enabled7112 = True, history7112 = 0 }
+
+    state model : Model = init ⊤
+
+    action Increment =
+        transaction
+            let old = model
+            model ←
+                { old | count7112 = old.count7112 + 5, history7112 = old.history7112 + 1 }
+
+    action Toggle =
+        transaction
+            let old = model
+            model ←
+                { old | enabled7112 = not old.enabled7112, history7112 = old.history7112 + 1 }
+
+    action Reset =
+        transaction
+            let old = model
+            model ←
+                { old | count7112 = 0, history7112 = 0 }
+
+    view : Html Action
+    view =
+        <section id="s0" data-shape="cluster"><h2>cluster 17/0 Review</h2><div class="level-0"><button id="s0-increment" onClick={Increment}>Increment</button><button id="s0-toggle" onClick={Toggle}>Toggle</button><button id="s0-reset" onClick={Reset}>Reset</button><output id="s0-count">{model.count7112}</output><span hidden={not model.enabled7112}>{model.history7112}</span></div></section>

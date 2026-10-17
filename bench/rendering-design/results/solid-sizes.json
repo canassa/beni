@@ -1,0 +1,1446 @@
+{
+  "solid": "2.0.0-rc.9",
+  "compiler": "@solidjs/vite-plugin 3.0.0-next.35",
+  "observations": [
+    {
+      "name": "list-17-1",
+      "n": 1,
+      "seed": 17,
+      "shape": "list",
+      "mode": "solid",
+      "sha256": "067ebf0224097ff797bceac0fd9e1720c1d5994392f2cb683b3e4f328384828b",
+      "full": {
+        "raw": 67678,
+        "brotli": 21876,
+        "gzip": 24093
+      },
+      "rendering": {
+        "raw": 67678,
+        "brotli": 21876,
+        "gzip": 24093
+      },
+      "runtime": {
+        "raw": 65638,
+        "brotli": 21113,
+        "gzip": 23199
+      },
+      "app_alone": {
+        "raw": 2040,
+        "brotli": 916,
+        "gzip": 997
+      },
+      "app_in_rendering_context": 763,
+      "excluded_core": {
+        "raw": 0,
+        "brotli": 1,
+        "gzip": 20
+      },
+      "origins": {
+        "platforms/solid/runtime": 65638,
+        "unmapped": 227,
+        "app/main.jsx": 1813
+      },
+      "rendering_sha256": "067ebf0224097ff797bceac0fd9e1720c1d5994392f2cb683b3e4f328384828b"
+    },
+    {
+      "name": "list-17-2",
+      "n": 2,
+      "seed": 17,
+      "shape": "list",
+      "mode": "solid",
+      "sha256": "417c0ca92cbd282e730189da5cfb8dd903f0af9d8ad0ea4fbff8bdf30ba8d733",
+      "full": {
+        "raw": 67751,
+        "brotli": 21892,
+        "gzip": 24112
+      },
+      "rendering": {
+        "raw": 67751,
+        "brotli": 21892,
+        "gzip": 24112
+      },
+      "runtime": {
+        "raw": 65638,
+        "brotli": 21113,
+        "gzip": 23199
+      },
+      "app_alone": {
+        "raw": 2113,
+        "brotli": 930,
+        "gzip": 1017
+      },
+      "app_in_rendering_context": 779,
+      "excluded_core": {
+        "raw": 0,
+        "brotli": 1,
+        "gzip": 20
+      },
+      "origins": {
+        "platforms/solid/runtime": 65638,
+        "unmapped": 227,
+        "app/main.jsx": 1886
+      },
+      "rendering_sha256": "417c0ca92cbd282e730189da5cfb8dd903f0af9d8ad0ea4fbff8bdf30ba8d733"
+    },
+    {
+      "name": "list-17-4",
+      "n": 4,
+      "seed": 17,
+      "shape": "list",
+      "mode": "solid",
+      "sha256": "1f52835e320c86a1b2d05a647f94e89c06bc04bcbbc59a71959e1882681af7f0",
+      "full": {
+        "raw": 67896,
+        "brotli": 21901,
+        "gzip": 24136
+      },
+      "rendering": {
+        "raw": 67896,
+        "brotli": 21901,
+        "gzip": 24136
+      },
+      "runtime": {
+        "raw": 65638,
+        "brotli": 21113,
+        "gzip": 23199
+      },
+      "app_alone": {
+        "raw": 2258,
+        "brotli": 949,
+        "gzip": 1039
+      },
+      "app_in_rendering_context": 788,
+      "excluded_core": {
+        "raw": 0,
+        "brotli": 1,
+        "gzip": 20
+      },
+      "origins": {
+        "platforms/solid/runtime": 65638,
+        "unmapped": 227,
+        "app/main.jsx": 2031
+      },
+      "rendering_sha256": "1f52835e320c86a1b2d05a647f94e89c06bc04bcbbc59a71959e1882681af7f0"
+    },
+    {
+      "name": "list-17-8",
+      "n": 8,
+      "seed": 17,
+      "shape": "list",
+      "mode": "solid",
+      "sha256": "d79a353dafb718d483ba6e94e14393b12200a8c00bc3e5f4b64e2e2c40c1b081",
+      "full": {
+        "raw": 68188,
+        "brotli": 21952,
+        "gzip": 24188
+      },
+      "rendering": {
+        "raw": 68188,
+        "brotli": 21952,
+        "gzip": 24188
+      },
+      "runtime": {
+        "raw": 65638,
+        "brotli": 21076,
+        "gzip": 23196
+      },
+      "app_alone": {
+        "raw": 2550,
+        "brotli": 984,
+        "gzip": 1090
+      },
+      "app_in_rendering_context": 876,
+      "excluded_core": {
+        "raw": 0,
+        "brotli": 1,
+        "gzip": 20
+      },
+      "origins": {
+        "platforms/solid/runtime": 65638,
+        "unmapped": 227,
+        "app/main.jsx": 2323
+      },
+      "rendering_sha256": "d79a353dafb718d483ba6e94e14393b12200a8c00bc3e5f4b64e2e2c40c1b081"
+    },
+    {
+      "name": "list-17-16",
+      "n": 16,
+      "seed": 17,
+      "shape": "list",
+      "mode": "solid",
+      "sha256": "6d4c256183122de2ffefd11680df5a5eef2e78afb6c11579288fe379b20b01b7",
+      "full": {
+        "raw": 68778,
+        "brotli": 21987,
+        "gzip": 24281
+      },
+      "rendering": {
+        "raw": 68778,
+        "brotli": 21987,
+        "gzip": 24281
+      },
+      "runtime": {
+        "raw": 65638,
+        "brotli": 21070,
+        "gzip": 23197
+      },
+      "app_alone": {
+        "raw": 3140,
+        "brotli": 1033,
+        "gzip": 1172
+      },
+      "app_in_rendering_context": 917,
+      "excluded_core": {
+        "raw": 0,
+        "brotli": 1,
+        "gzip": 20
+      },
+      "origins": {
+        "platforms/solid/runtime": 65638,
+        "unmapped": 227,
+        "app/main.jsx": 2913
+      },
+      "rendering_sha256": "6d4c256183122de2ffefd11680df5a5eef2e78afb6c11579288fe379b20b01b7"
+    },
+    {
+      "name": "list-17-32",
+      "n": 32,
+      "seed": 17,
+      "shape": "list",
+      "mode": "solid",
+      "sha256": "f64a55c764f2a33eeff914a74f0f2e87868162d13e3d908942b0f27b7e34229a",
+      "full": {
+        "raw": 69961,
+        "brotli": 22103,
+        "gzip": 24454
+      },
+      "rendering": {
+        "raw": 69961,
+        "brotli": 22103,
+        "gzip": 24454
+      },
+      "runtime": {
+        "raw": 65638,
+        "brotli": 21095,
+        "gzip": 23199
+      },
+      "app_alone": {
+        "raw": 4323,
+        "brotli": 1139,
+        "gzip": 1321
+      },
+      "app_in_rendering_context": 1008,
+      "excluded_core": {
+        "raw": 0,
+        "brotli": 1,
+        "gzip": 20
+      },
+      "origins": {
+        "platforms/solid/runtime": 65638,
+        "unmapped": 227,
+        "app/main.jsx": 4096
+      },
+      "rendering_sha256": "f64a55c764f2a33eeff914a74f0f2e87868162d13e3d908942b0f27b7e34229a"
+    },
+    {
+      "name": "list-101-1",
+      "n": 1,
+      "seed": 101,
+      "shape": "list",
+      "mode": "solid",
+      "sha256": "ecc55657735fb40f5340d6217d031c18db35ea7e469586995af65e3b3a7de649",
+      "full": {
+        "raw": 67679,
+        "brotli": 21867,
+        "gzip": 24094
+      },
+      "rendering": {
+        "raw": 67679,
+        "brotli": 21867,
+        "gzip": 24094
+      },
+      "runtime": {
+        "raw": 65638,
+        "brotli": 21113,
+        "gzip": 23199
+      },
+      "app_alone": {
+        "raw": 2041,
+        "brotli": 912,
+        "gzip": 997
+      },
+      "app_in_rendering_context": 754,
+      "excluded_core": {
+        "raw": 0,
+        "brotli": 1,
+        "gzip": 20
+      },
+      "origins": {
+        "platforms/solid/runtime": 65638,
+        "unmapped": 227,
+        "app/main.jsx": 1814
+      },
+      "rendering_sha256": "ecc55657735fb40f5340d6217d031c18db35ea7e469586995af65e3b3a7de649"
+    },
+    {
+      "name": "list-101-2",
+      "n": 2,
+      "seed": 101,
+      "shape": "list",
+      "mode": "solid",
+      "sha256": "fb6d402939fecab16b171566af88e81871adc054004d9d8d6be334fa53dff982",
+      "full": {
+        "raw": 67753,
+        "brotli": 21883,
+        "gzip": 24114
+      },
+      "rendering": {
+        "raw": 67753,
+        "brotli": 21883,
+        "gzip": 24114
+      },
+      "runtime": {
+        "raw": 65638,
+        "brotli": 21113,
+        "gzip": 23199
+      },
+      "app_alone": {
+        "raw": 2115,
+        "brotli": 933,
+        "gzip": 1018
+      },
+      "app_in_rendering_context": 770,
+      "excluded_core": {
+        "raw": 0,
+        "brotli": 1,
+        "gzip": 20
+      },
+      "origins": {
+        "platforms/solid/runtime": 65638,
+        "unmapped": 227,
+        "app/main.jsx": 1888
+      },
+      "rendering_sha256": "fb6d402939fecab16b171566af88e81871adc054004d9d8d6be334fa53dff982"
+    },
+    {
+      "name": "list-101-4",
+      "n": 4,
+      "seed": 101,
+      "shape": "list",
+      "mode": "solid",
+      "sha256": "581d2c38ceb3d74b1226bc72d560baa64bd437c44ca1b8b53f69e7fb5893cf00",
+      "full": {
+        "raw": 67901,
+        "brotli": 21902,
+        "gzip": 24141
+      },
+      "rendering": {
+        "raw": 67901,
+        "brotli": 21902,
+        "gzip": 24141
+      },
+      "runtime": {
+        "raw": 65638,
+        "brotli": 21113,
+        "gzip": 23199
+      },
+      "app_alone": {
+        "raw": 2263,
+        "brotli": 957,
+        "gzip": 1043
+      },
+      "app_in_rendering_context": 789,
+      "excluded_core": {
+        "raw": 0,
+        "brotli": 1,
+        "gzip": 20
+      },
+      "origins": {
+        "platforms/solid/runtime": 65638,
+        "unmapped": 227,
+        "app/main.jsx": 2036
+      },
+      "rendering_sha256": "581d2c38ceb3d74b1226bc72d560baa64bd437c44ca1b8b53f69e7fb5893cf00"
+    },
+    {
+      "name": "list-101-8",
+      "n": 8,
+      "seed": 101,
+      "shape": "list",
+      "mode": "solid",
+      "sha256": "60f1cb9aa15cc987e114ca205c200723524fff225e7af8187989ec3ac06c3fd4",
+      "full": {
+        "raw": 68197,
+        "brotli": 21991,
+        "gzip": 24191
+      },
+      "rendering": {
+        "raw": 68197,
+        "brotli": 21991,
+        "gzip": 24191
+      },
+      "runtime": {
+        "raw": 65638,
+        "brotli": 21076,
+        "gzip": 23196
+      },
+      "app_alone": {
+        "raw": 2559,
+        "brotli": 990,
+        "gzip": 1093
+      },
+      "app_in_rendering_context": 915,
+      "excluded_core": {
+        "raw": 0,
+        "brotli": 1,
+        "gzip": 20
+      },
+      "origins": {
+        "platforms/solid/runtime": 65638,
+        "unmapped": 227,
+        "app/main.jsx": 2332
+      },
+      "rendering_sha256": "60f1cb9aa15cc987e114ca205c200723524fff225e7af8187989ec3ac06c3fd4"
+    },
+    {
+      "name": "list-101-16",
+      "n": 16,
+      "seed": 101,
+      "shape": "list",
+      "mode": "solid",
+      "sha256": "77c44f27df455c388d387de8c046b357a37f448db690436e0fa13e4a9c2e8901",
+      "full": {
+        "raw": 68793,
+        "brotli": 22054,
+        "gzip": 24286
+      },
+      "rendering": {
+        "raw": 68793,
+        "brotli": 22054,
+        "gzip": 24286
+      },
+      "runtime": {
+        "raw": 65638,
+        "brotli": 21070,
+        "gzip": 23197
+      },
+      "app_alone": {
+        "raw": 3155,
+        "brotli": 1036,
+        "gzip": 1178
+      },
+      "app_in_rendering_context": 984,
+      "excluded_core": {
+        "raw": 0,
+        "brotli": 1,
+        "gzip": 20
+      },
+      "origins": {
+        "platforms/solid/runtime": 65638,
+        "unmapped": 227,
+        "app/main.jsx": 2928
+      },
+      "rendering_sha256": "77c44f27df455c388d387de8c046b357a37f448db690436e0fa13e4a9c2e8901"
+    },
+    {
+      "name": "list-101-32",
+      "n": 32,
+      "seed": 101,
+      "shape": "list",
+      "mode": "solid",
+      "sha256": "1ea54939d1ccda700ce21a5cf316048653a0bc008bbcada78dba5ccbdafffc96",
+      "full": {
+        "raw": 69991,
+        "brotli": 22124,
+        "gzip": 24461
+      },
+      "rendering": {
+        "raw": 69991,
+        "brotli": 22124,
+        "gzip": 24461
+      },
+      "runtime": {
+        "raw": 65638,
+        "brotli": 21095,
+        "gzip": 23199
+      },
+      "app_alone": {
+        "raw": 4353,
+        "brotli": 1164,
+        "gzip": 1329
+      },
+      "app_in_rendering_context": 1029,
+      "excluded_core": {
+        "raw": 0,
+        "brotli": 1,
+        "gzip": 20
+      },
+      "origins": {
+        "platforms/solid/runtime": 65638,
+        "unmapped": 227,
+        "app/main.jsx": 4126
+      },
+      "rendering_sha256": "1ea54939d1ccda700ce21a5cf316048653a0bc008bbcada78dba5ccbdafffc96"
+    },
+    {
+      "name": "list-2027-1",
+      "n": 1,
+      "seed": 2027,
+      "shape": "list",
+      "mode": "solid",
+      "sha256": "1bc1c124ee48f10b44c3a23b58461e5a91be2eb3f5539fc17292a5e46049b472",
+      "full": {
+        "raw": 67680,
+        "brotli": 21868,
+        "gzip": 24094
+      },
+      "rendering": {
+        "raw": 67680,
+        "brotli": 21868,
+        "gzip": 24094
+      },
+      "runtime": {
+        "raw": 65638,
+        "brotli": 21113,
+        "gzip": 23199
+      },
+      "app_alone": {
+        "raw": 2042,
+        "brotli": 911,
+        "gzip": 998
+      },
+      "app_in_rendering_context": 755,
+      "excluded_core": {
+        "raw": 0,
+        "brotli": 1,
+        "gzip": 20
+      },
+      "origins": {
+        "platforms/solid/runtime": 65638,
+        "unmapped": 227,
+        "app/main.jsx": 1815
+      },
+      "rendering_sha256": "1bc1c124ee48f10b44c3a23b58461e5a91be2eb3f5539fc17292a5e46049b472"
+    },
+    {
+      "name": "list-2027-2",
+      "n": 2,
+      "seed": 2027,
+      "shape": "list",
+      "mode": "solid",
+      "sha256": "423f202498c490fd75e5f4a5220304b6507682270754ff58dade9b56504b82b0",
+      "full": {
+        "raw": 67755,
+        "brotli": 21903,
+        "gzip": 24113
+      },
+      "rendering": {
+        "raw": 67755,
+        "brotli": 21903,
+        "gzip": 24113
+      },
+      "runtime": {
+        "raw": 65638,
+        "brotli": 21113,
+        "gzip": 23199
+      },
+      "app_alone": {
+        "raw": 2117,
+        "brotli": 932,
+        "gzip": 1017
+      },
+      "app_in_rendering_context": 790,
+      "excluded_core": {
+        "raw": 0,
+        "brotli": 1,
+        "gzip": 20
+      },
+      "origins": {
+        "platforms/solid/runtime": 65638,
+        "unmapped": 227,
+        "app/main.jsx": 1890
+      },
+      "rendering_sha256": "423f202498c490fd75e5f4a5220304b6507682270754ff58dade9b56504b82b0"
+    },
+    {
+      "name": "list-2027-4",
+      "n": 4,
+      "seed": 2027,
+      "shape": "list",
+      "mode": "solid",
+      "sha256": "e19b61758b07979a145bbae760e18fbd2d4f739df05821f359b72e42da78a409",
+      "full": {
+        "raw": 67905,
+        "brotli": 21941,
+        "gzip": 24144
+      },
+      "rendering": {
+        "raw": 67905,
+        "brotli": 21941,
+        "gzip": 24144
+      },
+      "runtime": {
+        "raw": 65638,
+        "brotli": 21113,
+        "gzip": 23199
+      },
+      "app_alone": {
+        "raw": 2267,
+        "brotli": 954,
+        "gzip": 1047
+      },
+      "app_in_rendering_context": 828,
+      "excluded_core": {
+        "raw": 0,
+        "brotli": 1,
+        "gzip": 20
+      },
+      "origins": {
+        "platforms/solid/runtime": 65638,
+        "unmapped": 227,
+        "app/main.jsx": 2040
+      },
+      "rendering_sha256": "e19b61758b07979a145bbae760e18fbd2d4f739df05821f359b72e42da78a409"
+    },
+    {
+      "name": "list-2027-8",
+      "n": 8,
+      "seed": 2027,
+      "shape": "list",
+      "mode": "solid",
+      "sha256": "c8f5267de24e729a2aaf215bd2c8087368aecf95879f0b45758e5b4b8c4a1b4f",
+      "full": {
+        "raw": 68204,
+        "brotli": 21960,
+        "gzip": 24190
+      },
+      "rendering": {
+        "raw": 68204,
+        "brotli": 21960,
+        "gzip": 24190
+      },
+      "runtime": {
+        "raw": 65638,
+        "brotli": 21076,
+        "gzip": 23196
+      },
+      "app_alone": {
+        "raw": 2566,
+        "brotli": 982,
+        "gzip": 1091
+      },
+      "app_in_rendering_context": 884,
+      "excluded_core": {
+        "raw": 0,
+        "brotli": 1,
+        "gzip": 20
+      },
+      "origins": {
+        "platforms/solid/runtime": 65638,
+        "unmapped": 227,
+        "app/main.jsx": 2339
+      },
+      "rendering_sha256": "c8f5267de24e729a2aaf215bd2c8087368aecf95879f0b45758e5b4b8c4a1b4f"
+    },
+    {
+      "name": "list-2027-16",
+      "n": 16,
+      "seed": 2027,
+      "shape": "list",
+      "mode": "solid",
+      "sha256": "881eed1b51bc6ed35f5df8e3bcc1d53bf56fba2f1948035782ec138301a59814",
+      "full": {
+        "raw": 68808,
+        "brotli": 22087,
+        "gzip": 24282
+      },
+      "rendering": {
+        "raw": 68808,
+        "brotli": 22087,
+        "gzip": 24282
+      },
+      "runtime": {
+        "raw": 65638,
+        "brotli": 21070,
+        "gzip": 23197
+      },
+      "app_alone": {
+        "raw": 3170,
+        "brotli": 1043,
+        "gzip": 1172
+      },
+      "app_in_rendering_context": 1017,
+      "excluded_core": {
+        "raw": 0,
+        "brotli": 1,
+        "gzip": 20
+      },
+      "origins": {
+        "platforms/solid/runtime": 65638,
+        "unmapped": 227,
+        "app/main.jsx": 2943
+      },
+      "rendering_sha256": "881eed1b51bc6ed35f5df8e3bcc1d53bf56fba2f1948035782ec138301a59814"
+    },
+    {
+      "name": "list-2027-32",
+      "n": 32,
+      "seed": 2027,
+      "shape": "list",
+      "mode": "solid",
+      "sha256": "2f25f1b2a6824424aba12353f25659d819532011e3c0b71170c7d3b42c341607",
+      "full": {
+        "raw": 70022,
+        "brotli": 22194,
+        "gzip": 24452
+      },
+      "rendering": {
+        "raw": 70022,
+        "brotli": 22194,
+        "gzip": 24452
+      },
+      "runtime": {
+        "raw": 65638,
+        "brotli": 21095,
+        "gzip": 23199
+      },
+      "app_alone": {
+        "raw": 4384,
+        "brotli": 1134,
+        "gzip": 1317
+      },
+      "app_in_rendering_context": 1099,
+      "excluded_core": {
+        "raw": 0,
+        "brotli": 1,
+        "gzip": 20
+      },
+      "origins": {
+        "platforms/solid/runtime": 65638,
+        "unmapped": 227,
+        "app/main.jsx": 4157
+      },
+      "rendering_sha256": "2f25f1b2a6824424aba12353f25659d819532011e3c0b71170c7d3b42c341607"
+    },
+    {
+      "name": "form-17-1",
+      "n": 1,
+      "seed": 17,
+      "shape": "form",
+      "mode": "solid",
+      "sha256": "0d44c5aa876577e7521c6e25ee0e215002eab8dd6f10bc0a475771fcff457148",
+      "full": {
+        "raw": 37452,
+        "brotli": 13107,
+        "gzip": 14390
+      },
+      "rendering": {
+        "raw": 37452,
+        "brotli": 13107,
+        "gzip": 14390
+      },
+      "runtime": {
+        "raw": 35745,
+        "brotli": 12425,
+        "gzip": 13586
+      },
+      "app_alone": {
+        "raw": 1707,
+        "brotli": 777,
+        "gzip": 873
+      },
+      "app_in_rendering_context": 682,
+      "excluded_core": {
+        "raw": 0,
+        "brotli": 1,
+        "gzip": 20
+      },
+      "origins": {
+        "platforms/solid/runtime": 35745,
+        "unmapped": 208,
+        "app/main.jsx": 1499
+      },
+      "rendering_sha256": "0d44c5aa876577e7521c6e25ee0e215002eab8dd6f10bc0a475771fcff457148"
+    },
+    {
+      "name": "form-17-2",
+      "n": 2,
+      "seed": 17,
+      "shape": "form",
+      "mode": "solid",
+      "sha256": "c2fcb34c765f66c8207ce26cafd6c2cec2f989f15aa76061bf0b1dc520c5351b",
+      "full": {
+        "raw": 37525,
+        "brotli": 13125,
+        "gzip": 14411
+      },
+      "rendering": {
+        "raw": 37525,
+        "brotli": 13125,
+        "gzip": 14411
+      },
+      "runtime": {
+        "raw": 35745,
+        "brotli": 12406,
+        "gzip": 13588
+      },
+      "app_alone": {
+        "raw": 1780,
+        "brotli": 787,
+        "gzip": 890
+      },
+      "app_in_rendering_context": 719,
+      "excluded_core": {
+        "raw": 0,
+        "brotli": 1,
+        "gzip": 20
+      },
+      "origins": {
+        "platforms/solid/runtime": 35745,
+        "unmapped": 208,
+        "app/main.jsx": 1572
+      },
+      "rendering_sha256": "c2fcb34c765f66c8207ce26cafd6c2cec2f989f15aa76061bf0b1dc520c5351b"
+    },
+    {
+      "name": "form-17-4",
+      "n": 4,
+      "seed": 17,
+      "shape": "form",
+      "mode": "solid",
+      "sha256": "14ad218216eb65d8b62f4794f8359b3c36af18bcaf65405697260a197762a737",
+      "full": {
+        "raw": 37671,
+        "brotli": 13114,
+        "gzip": 14438
+      },
+      "rendering": {
+        "raw": 37671,
+        "brotli": 13114,
+        "gzip": 14438
+      },
+      "runtime": {
+        "raw": 35745,
+        "brotli": 12406,
+        "gzip": 13590
+      },
+      "app_alone": {
+        "raw": 1926,
+        "brotli": 805,
+        "gzip": 916
+      },
+      "app_in_rendering_context": 708,
+      "excluded_core": {
+        "raw": 0,
+        "brotli": 1,
+        "gzip": 20
+      },
+      "origins": {
+        "platforms/solid/runtime": 35745,
+        "unmapped": 208,
+        "app/main.jsx": 1718
+      },
+      "rendering_sha256": "14ad218216eb65d8b62f4794f8359b3c36af18bcaf65405697260a197762a737"
+    },
+    {
+      "name": "form-17-8",
+      "n": 8,
+      "seed": 17,
+      "shape": "form",
+      "mode": "solid",
+      "sha256": "22c59846c8bb8fb705b201d6d56bdb7cffd6f13ea6d0ef1da88899aeb6bf709f",
+      "full": {
+        "raw": 37963,
+        "brotli": 13194,
+        "gzip": 14490
+      },
+      "rendering": {
+        "raw": 37963,
+        "brotli": 13194,
+        "gzip": 14490
+      },
+      "runtime": {
+        "raw": 35745,
+        "brotli": 12430,
+        "gzip": 13593
+      },
+      "app_alone": {
+        "raw": 2218,
+        "brotli": 839,
+        "gzip": 962
+      },
+      "app_in_rendering_context": 764,
+      "excluded_core": {
+        "raw": 0,
+        "brotli": 1,
+        "gzip": 20
+      },
+      "origins": {
+        "platforms/solid/runtime": 35745,
+        "unmapped": 208,
+        "app/main.jsx": 2010
+      },
+      "rendering_sha256": "22c59846c8bb8fb705b201d6d56bdb7cffd6f13ea6d0ef1da88899aeb6bf709f"
+    },
+    {
+      "name": "form-17-16",
+      "n": 16,
+      "seed": 17,
+      "shape": "form",
+      "mode": "solid",
+      "sha256": "9fb0dfeab10920a7861679e72360741154c6ee4e29d1c40f642339880e74517c",
+      "full": {
+        "raw": 38550,
+        "brotli": 13260,
+        "gzip": 14584
+      },
+      "rendering": {
+        "raw": 38550,
+        "brotli": 13260,
+        "gzip": 14584
+      },
+      "runtime": {
+        "raw": 35745,
+        "brotli": 12408,
+        "gzip": 13593
+      },
+      "app_alone": {
+        "raw": 2805,
+        "brotli": 907,
+        "gzip": 1045
+      },
+      "app_in_rendering_context": 852,
+      "excluded_core": {
+        "raw": 0,
+        "brotli": 1,
+        "gzip": 20
+      },
+      "origins": {
+        "platforms/solid/runtime": 35745,
+        "unmapped": 208,
+        "app/main.jsx": 2597
+      },
+      "rendering_sha256": "9fb0dfeab10920a7861679e72360741154c6ee4e29d1c40f642339880e74517c"
+    },
+    {
+      "name": "form-17-32",
+      "n": 32,
+      "seed": 17,
+      "shape": "form",
+      "mode": "solid",
+      "sha256": "3830ad170b2b70963eba4e2a175d1c7fb70767a204914e46a878ed3269ad8c15",
+      "full": {
+        "raw": 39732,
+        "brotli": 13379,
+        "gzip": 14744
+      },
+      "rendering": {
+        "raw": 39732,
+        "brotli": 13379,
+        "gzip": 14744
+      },
+      "runtime": {
+        "raw": 35745,
+        "brotli": 12426,
+        "gzip": 13590
+      },
+      "app_alone": {
+        "raw": 3987,
+        "brotli": 990,
+        "gzip": 1184
+      },
+      "app_in_rendering_context": 953,
+      "excluded_core": {
+        "raw": 0,
+        "brotli": 1,
+        "gzip": 20
+      },
+      "origins": {
+        "platforms/solid/runtime": 35745,
+        "unmapped": 208,
+        "app/main.jsx": 3779
+      },
+      "rendering_sha256": "3830ad170b2b70963eba4e2a175d1c7fb70767a204914e46a878ed3269ad8c15"
+    },
+    {
+      "name": "form-101-1",
+      "n": 1,
+      "seed": 101,
+      "shape": "form",
+      "mode": "solid",
+      "sha256": "cab6db1f7cfca10a0a4dd764939acb2cbc1eacc849ca8a1c5e2c126cb4076f19",
+      "full": {
+        "raw": 37453,
+        "brotli": 13118,
+        "gzip": 14391
+      },
+      "rendering": {
+        "raw": 37453,
+        "brotli": 13118,
+        "gzip": 14391
+      },
+      "runtime": {
+        "raw": 35745,
+        "brotli": 12425,
+        "gzip": 13586
+      },
+      "app_alone": {
+        "raw": 1708,
+        "brotli": 783,
+        "gzip": 873
+      },
+      "app_in_rendering_context": 693,
+      "excluded_core": {
+        "raw": 0,
+        "brotli": 1,
+        "gzip": 20
+      },
+      "origins": {
+        "platforms/solid/runtime": 35745,
+        "unmapped": 208,
+        "app/main.jsx": 1500
+      },
+      "rendering_sha256": "cab6db1f7cfca10a0a4dd764939acb2cbc1eacc849ca8a1c5e2c126cb4076f19"
+    },
+    {
+      "name": "form-101-2",
+      "n": 2,
+      "seed": 101,
+      "shape": "form",
+      "mode": "solid",
+      "sha256": "20d4d7b1d8ee3496d7483585d6436506887f717ad93bed91c4a30147efeeaec5",
+      "full": {
+        "raw": 37527,
+        "brotli": 13122,
+        "gzip": 14412
+      },
+      "rendering": {
+        "raw": 37527,
+        "brotli": 13122,
+        "gzip": 14412
+      },
+      "runtime": {
+        "raw": 35745,
+        "brotli": 12406,
+        "gzip": 13588
+      },
+      "app_alone": {
+        "raw": 1782,
+        "brotli": 786,
+        "gzip": 891
+      },
+      "app_in_rendering_context": 716,
+      "excluded_core": {
+        "raw": 0,
+        "brotli": 1,
+        "gzip": 20
+      },
+      "origins": {
+        "platforms/solid/runtime": 35745,
+        "unmapped": 208,
+        "app/main.jsx": 1574
+      },
+      "rendering_sha256": "20d4d7b1d8ee3496d7483585d6436506887f717ad93bed91c4a30147efeeaec5"
+    },
+    {
+      "name": "form-101-4",
+      "n": 4,
+      "seed": 101,
+      "shape": "form",
+      "mode": "solid",
+      "sha256": "ceb06373e7aae962205736344c0e19d1a0e0585f11f4eb062e9b008fe341fe22",
+      "full": {
+        "raw": 37673,
+        "brotli": 13151,
+        "gzip": 14437
+      },
+      "rendering": {
+        "raw": 37673,
+        "brotli": 13151,
+        "gzip": 14437
+      },
+      "runtime": {
+        "raw": 35745,
+        "brotli": 12406,
+        "gzip": 13590
+      },
+      "app_alone": {
+        "raw": 1928,
+        "brotli": 803,
+        "gzip": 915
+      },
+      "app_in_rendering_context": 745,
+      "excluded_core": {
+        "raw": 0,
+        "brotli": 1,
+        "gzip": 20
+      },
+      "origins": {
+        "platforms/solid/runtime": 35745,
+        "unmapped": 208,
+        "app/main.jsx": 1720
+      },
+      "rendering_sha256": "ceb06373e7aae962205736344c0e19d1a0e0585f11f4eb062e9b008fe341fe22"
+    },
+    {
+      "name": "form-101-8",
+      "n": 8,
+      "seed": 101,
+      "shape": "form",
+      "mode": "solid",
+      "sha256": "176bd4e846a7053e55b2c048414504efbca8d30bf55ecc42986178fc3f0d32d0",
+      "full": {
+        "raw": 37968,
+        "brotli": 13180,
+        "gzip": 14493
+      },
+      "rendering": {
+        "raw": 37968,
+        "brotli": 13180,
+        "gzip": 14493
+      },
+      "runtime": {
+        "raw": 35745,
+        "brotli": 12430,
+        "gzip": 13593
+      },
+      "app_alone": {
+        "raw": 2223,
+        "brotli": 845,
+        "gzip": 965
+      },
+      "app_in_rendering_context": 750,
+      "excluded_core": {
+        "raw": 0,
+        "brotli": 1,
+        "gzip": 20
+      },
+      "origins": {
+        "platforms/solid/runtime": 35745,
+        "unmapped": 208,
+        "app/main.jsx": 2015
+      },
+      "rendering_sha256": "176bd4e846a7053e55b2c048414504efbca8d30bf55ecc42986178fc3f0d32d0"
+    },
+    {
+      "name": "form-101-16",
+      "n": 16,
+      "seed": 101,
+      "shape": "form",
+      "mode": "solid",
+      "sha256": "c6e294b32ac4ccaec3246bd678f438a4d84b04507252e0531d61d4adf2a9d35f",
+      "full": {
+        "raw": 38566,
+        "brotli": 13255,
+        "gzip": 14589
+      },
+      "rendering": {
+        "raw": 38566,
+        "brotli": 13255,
+        "gzip": 14589
+      },
+      "runtime": {
+        "raw": 35745,
+        "brotli": 12408,
+        "gzip": 13593
+      },
+      "app_alone": {
+        "raw": 2821,
+        "brotli": 908,
+        "gzip": 1050
+      },
+      "app_in_rendering_context": 847,
+      "excluded_core": {
+        "raw": 0,
+        "brotli": 1,
+        "gzip": 20
+      },
+      "origins": {
+        "platforms/solid/runtime": 35745,
+        "unmapped": 208,
+        "app/main.jsx": 2613
+      },
+      "rendering_sha256": "c6e294b32ac4ccaec3246bd678f438a4d84b04507252e0531d61d4adf2a9d35f"
+    },
+    {
+      "name": "form-101-32",
+      "n": 32,
+      "seed": 101,
+      "shape": "form",
+      "mode": "solid",
+      "sha256": "fcd555e3985401ed7d6d184e139fca5108697c8fcdf3e83442af1b1030482e79",
+      "full": {
+        "raw": 39764,
+        "brotli": 13369,
+        "gzip": 14763
+      },
+      "rendering": {
+        "raw": 39764,
+        "brotli": 13369,
+        "gzip": 14763
+      },
+      "runtime": {
+        "raw": 35745,
+        "brotli": 12426,
+        "gzip": 13590
+      },
+      "app_alone": {
+        "raw": 4019,
+        "brotli": 1007,
+        "gzip": 1199
+      },
+      "app_in_rendering_context": 943,
+      "excluded_core": {
+        "raw": 0,
+        "brotli": 1,
+        "gzip": 20
+      },
+      "origins": {
+        "platforms/solid/runtime": 35745,
+        "unmapped": 208,
+        "app/main.jsx": 3811
+      },
+      "rendering_sha256": "fcd555e3985401ed7d6d184e139fca5108697c8fcdf3e83442af1b1030482e79"
+    },
+    {
+      "name": "form-2027-1",
+      "n": 1,
+      "seed": 2027,
+      "shape": "form",
+      "mode": "solid",
+      "sha256": "7efab8e2ba2eb3e6adc4b3db882c03a6eb76e25bd227ae5e194217f5683c257f",
+      "full": {
+        "raw": 37452,
+        "brotli": 13092,
+        "gzip": 14389
+      },
+      "rendering": {
+        "raw": 37452,
+        "brotli": 13092,
+        "gzip": 14389
+      },
+      "runtime": {
+        "raw": 35745,
+        "brotli": 12425,
+        "gzip": 13586
+      },
+      "app_alone": {
+        "raw": 1707,
+        "brotli": 778,
+        "gzip": 872
+      },
+      "app_in_rendering_context": 667,
+      "excluded_core": {
+        "raw": 0,
+        "brotli": 1,
+        "gzip": 20
+      },
+      "origins": {
+        "platforms/solid/runtime": 35745,
+        "unmapped": 208,
+        "app/main.jsx": 1499
+      },
+      "rendering_sha256": "7efab8e2ba2eb3e6adc4b3db882c03a6eb76e25bd227ae5e194217f5683c257f"
+    },
+    {
+      "name": "form-2027-2",
+      "n": 2,
+      "seed": 2027,
+      "shape": "form",
+      "mode": "solid",
+      "sha256": "85f2fd41cfff6cbc62b1a52c4d51358a25b17350391c6eb1c0ce072253f50d9f",
+      "full": {
+        "raw": 37527,
+        "brotli": 13136,
+        "gzip": 14412
+      },
+      "rendering": {
+        "raw": 37527,
+        "brotli": 13136,
+        "gzip": 14412
+      },
+      "runtime": {
+        "raw": 35745,
+        "brotli": 12406,
+        "gzip": 13588
+      },
+      "app_alone": {
+        "raw": 1782,
+        "brotli": 792,
+        "gzip": 891
+      },
+      "app_in_rendering_context": 730,
+      "excluded_core": {
+        "raw": 0,
+        "brotli": 1,
+        "gzip": 20
+      },
+      "origins": {
+        "platforms/solid/runtime": 35745,
+        "unmapped": 208,
+        "app/main.jsx": 1574
+      },
+      "rendering_sha256": "85f2fd41cfff6cbc62b1a52c4d51358a25b17350391c6eb1c0ce072253f50d9f"
+    },
+    {
+      "name": "form-2027-4",
+      "n": 4,
+      "seed": 2027,
+      "shape": "form",
+      "mode": "solid",
+      "sha256": "597d0b734779edcfdcfe168bdbc8b5f4a78135a6cb81d93590ebc96fa5633f4a",
+      "full": {
+        "raw": 37677,
+        "brotli": 13152,
+        "gzip": 14439
+      },
+      "rendering": {
+        "raw": 37677,
+        "brotli": 13152,
+        "gzip": 14439
+      },
+      "runtime": {
+        "raw": 35745,
+        "brotli": 12406,
+        "gzip": 13590
+      },
+      "app_alone": {
+        "raw": 1932,
+        "brotli": 805,
+        "gzip": 916
+      },
+      "app_in_rendering_context": 746,
+      "excluded_core": {
+        "raw": 0,
+        "brotli": 1,
+        "gzip": 20
+      },
+      "origins": {
+        "platforms/solid/runtime": 35745,
+        "unmapped": 208,
+        "app/main.jsx": 1724
+      },
+      "rendering_sha256": "597d0b734779edcfdcfe168bdbc8b5f4a78135a6cb81d93590ebc96fa5633f4a"
+    },
+    {
+      "name": "form-2027-8",
+      "n": 8,
+      "seed": 2027,
+      "shape": "form",
+      "mode": "solid",
+      "sha256": "0dc62eab090f1c36fc32a46982b07e46dcf81883cc798fa2a335894bed9099bf",
+      "full": {
+        "raw": 37977,
+        "brotli": 13207,
+        "gzip": 14497
+      },
+      "rendering": {
+        "raw": 37977,
+        "brotli": 13207,
+        "gzip": 14497
+      },
+      "runtime": {
+        "raw": 35745,
+        "brotli": 12430,
+        "gzip": 13593
+      },
+      "app_alone": {
+        "raw": 2232,
+        "brotli": 842,
+        "gzip": 965
+      },
+      "app_in_rendering_context": 777,
+      "excluded_core": {
+        "raw": 0,
+        "brotli": 1,
+        "gzip": 20
+      },
+      "origins": {
+        "platforms/solid/runtime": 35745,
+        "unmapped": 208,
+        "app/main.jsx": 2024
+      },
+      "rendering_sha256": "0dc62eab090f1c36fc32a46982b07e46dcf81883cc798fa2a335894bed9099bf"
+    },
+    {
+      "name": "form-2027-16",
+      "n": 16,
+      "seed": 2027,
+      "shape": "form",
+      "mode": "solid",
+      "sha256": "f4957205e4e51093a0420bb15c9ae78552768321fec45a8c10bf29276edd2adf",
+      "full": {
+        "raw": 38583,
+        "brotli": 13268,
+        "gzip": 14592
+      },
+      "rendering": {
+        "raw": 38583,
+        "brotli": 13268,
+        "gzip": 14592
+      },
+      "runtime": {
+        "raw": 35745,
+        "brotli": 12408,
+        "gzip": 13593
+      },
+      "app_alone": {
+        "raw": 2838,
+        "brotli": 897,
+        "gzip": 1050
+      },
+      "app_in_rendering_context": 860,
+      "excluded_core": {
+        "raw": 0,
+        "brotli": 1,
+        "gzip": 20
+      },
+      "origins": {
+        "platforms/solid/runtime": 35745,
+        "unmapped": 208,
+        "app/main.jsx": 2630
+      },
+      "rendering_sha256": "f4957205e4e51093a0420bb15c9ae78552768321fec45a8c10bf29276edd2adf"
+    },
+    {
+      "name": "form-2027-32",
+      "n": 32,
+      "seed": 2027,
+      "shape": "form",
+      "mode": "solid",
+      "sha256": "cf1e3b9feede381fe9302c93e1beaa51ab9a066c3f520e8f3868cac0db036656",
+      "full": {
+        "raw": 39797,
+        "brotli": 13404,
+        "gzip": 14763
+      },
+      "rendering": {
+        "raw": 39797,
+        "brotli": 13404,
+        "gzip": 14763
+      },
+      "runtime": {
+        "raw": 35745,
+        "brotli": 12426,
+        "gzip": 13590
+      },
+      "app_alone": {
+        "raw": 4052,
+        "brotli": 998,
+        "gzip": 1194
+      },
+      "app_in_rendering_context": 978,
+      "excluded_core": {
+        "raw": 0,
+        "brotli": 1,
+        "gzip": 20
+      },
+      "origins": {
+        "platforms/solid/runtime": 35745,
+        "unmapped": 208,
+        "app/main.jsx": 3844
+      },
+      "rendering_sha256": "cf1e3b9feede381fe9302c93e1beaa51ab9a066c3f520e8f3868cac0db036656"
+    }
+  ]
+}

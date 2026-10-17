@@ -1,0 +1,7 @@
+{
+  "name": "beni-compile-to-vanilla-research",
+  "private": true,
+  "type": "module",
+  "scripts": { "build": "node build.mjs", "verify": "node browser.mjs --verify", "measure": "node browser.mjs" },
+  "devDependencies": { "terser": "5.51.2" }
+}

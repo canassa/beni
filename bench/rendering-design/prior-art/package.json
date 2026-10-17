@@ -1,0 +1,1 @@
+{"private":true,"type":"module","dependencies":{"@vue/compiler-vapor":"3.6.0-rc.11","@marko/compiler":"5.42.12","@marko/runtime-tags":"6.4.6","marko":"6.4.6"}}

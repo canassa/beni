@@ -1,0 +1,244 @@
+decl 0: pub alias Model
+  %0 = type_import String.String
+  %1 = type_import String.String
+  %2 = type_import Basics.Bool
+  %3 = type_import Basics.Int
+  %4 = type_record { name6502 : %0, email6502 : %1, submitted6502 : %2, attempts6502 : %3 }
+  body %4
+  ctor 0 Model [%0, %1, %2, %3]
+  refs
+    import_type String.String
+    import_type Basics.Bool
+    import_type Basics.Int
+  interface alias Model (record constructor)
+
+decl 1: pub type Msg
+  %0 = type_import String.String
+  %1 = type_import String.String
+  ctor 1 Name [%0]
+  ctor 2 Email [%1]
+  ctor 3 Submit []
+  ctor 4 Reset []
+  refs
+    import_type String.String
+  interface type Msg = Name | Email | Submit | Reset
+
+decl 2: pub value init (annotated)
+  %0 = type_unit
+  %1 = type_top 0 (Model)
+  %2 = type_fn [%0] -> %1
+  %3 = pat_unit
+  %4 = string ""
+  %5 = string ""
+  %6 = import_ctor Basics.False
+  %7 = int 0
+  %8 = record { name6502 = %4, email6502 = %5, submitted6502 = %6, attempts6502 = %7 }
+  annotation %2
+  params [%3]
+  body %8
+  refs
+    type_top 0 (Model)
+    import_ctor Basics.False
+  interface value init (annotated)
+
+decl 3: pub value update (annotated)
+  %0 = type_top 1 (Msg)
+  %1 = type_top 0 (Model)
+  %2 = type_top 0 (Model)
+  %3 = type_fn [%0, %1] -> %2
+  %4 = pat_var local 0 (msg)
+  %5 = pat_var local 1 (model)
+  %6 = local 0 (msg)
+  %7 = ctor 1 (Name)
+  %8 = pat_var local 2 (text)
+  %9 = pat_ctor %7 [%8]
+  %10 = qualified String.contains
+  %11 = local 2 (text)
+  %12 = string "#"
+  %13 = call %10 [%11, %12]
+  %14 = import_ctor Basics.True
+  %15 = pat_ctor %14 []
+  %16 = local 1 (model)
+  %17 = branch %15 -> %16
+  %18 = import_ctor Basics.False
+  %19 = pat_ctor %18 []
+  %20 = local 1 (model)
+  %21 = local 2 (text)
+  %22 = import_ctor Basics.False
+  %23 = record_update %20 { name6502 = %21, submitted6502 = %22 }
+  %24 = branch %19 -> %23
+  %25 = case %13 [%17, %24]
+  %26 = branch %9 -> %25
+  %27 = ctor 2 (Email)
+  %28 = pat_var local 3 (text)
+  %29 = pat_ctor %27 [%28]
+  %30 = local 1 (model)
+  %31 = local 3 (text)
+  %32 = import_ctor Basics.False
+  %33 = record_update %30 { email6502 = %31, submitted6502 = %32 }
+  %34 = branch %29 -> %33
+  %35 = ctor 3 (Submit)
+  %36 = pat_ctor %35 []
+  %37 = local 1 (model)
+  %38 = import_ctor Basics.True
+  %39 = local 1 (model)
+  %40 = field_access %39 .attempts6502
+  %41 = int 1
+  %42 = import_value Basics.add
+  %43 = call %42 [%40, %41]
+  %44 = record_update %37 { submitted6502 = %38, attempts6502 = %43 }
+  %45 = branch %36 -> %44
+  %46 = ctor 4 (Reset)
+  %47 = pat_ctor %46 []
+  %48 = local 1 (model)
+  %49 = string ""
+  %50 = string ""
+  %51 = import_ctor Basics.False
+  %52 = record_update %48 { name6502 = %49, email6502 = %50, submitted6502 = %51 }
+  %53 = branch %47 -> %52
+  %54 = case %6 [%26, %34, %45, %53]
+  annotation %3
+  params [%4, %5]
+  body %54
+  locals
+    0 msg param %4
+    1 model param %5
+    2 text pattern %8
+    3 text pattern %28
+  refs
+    type_top 1 (Msg)
+    type_top 0 (Model)
+    ctor 1 (Name)
+    import_value String.contains
+    import_ctor Basics.True
+    import_ctor Basics.False
+    ctor 2 (Email)
+    ctor 3 (Submit)
+    import_value Basics.add
+    ctor 4 (Reset)
+  interface value update (annotated)
+
+decl 4: pub value view (annotated)
+  %0 = type_top 0 (Model)
+  %1 = type_import Html.Html
+  %2 = type_top 1 (Msg)
+  %3 = type_app %1 [%2]
+  %4 = type_fn [%0] -> %3
+  %5 = pat_var local 0 (model)
+  %6 = local 0 (model)
+  %7 = field_access %6 .name6502
+  %8 = ctor 1 (Name)
+  %9 = local 0 (model)
+  %10 = field_access %9 .email6502
+  %11 = ctor 2 (Email)
+  %12 = qualified String.length
+  %13 = local 0 (model)
+  %14 = field_access %13 .name6502
+  %15 = call %12 [%14]
+  %16 = int 4
+  %17 = method_call %15 .compare [%16] (<)
+  %18 = import_ctor Basics.True
+  %19 = pat_ctor %18 []
+  %20 = string "Name too short"
+  %21 = branch %19 -> %20
+  %22 = import_ctor Basics.False
+  %23 = pat_ctor %22 []
+  %24 = qualified String.contains
+  %25 = local 0 (model)
+  %26 = field_access %25 .email6502
+  %27 = string "@"
+  %28 = call %24 [%26, %27]
+  %29 = import_ctor Basics.True
+  %30 = pat_ctor %29 []
+  %31 = string "Ready"
+  %32 = branch %30 -> %31
+  %33 = import_ctor Basics.False
+  %34 = pat_ctor %33 []
+  %35 = string "Email needs @"
+  %36 = branch %34 -> %35
+  %37 = case %28 [%32, %36]
+  %38 = branch %23 -> %37
+  %39 = case %17 [%21, %38]
+  %40 = ctor 3 (Submit)
+  %41 = ctor 4 (Reset)
+  %42 = import_value Basics.not
+  %43 = local 0 (model)
+  %44 = field_access %43 .submitted6502
+  %45 = call %42 [%44]
+  %46 = local 0 (model)
+  %47 = field_access %46 .name6502
+  %48 = local 0 (model)
+  %49 = field_access %48 .attempts6502
+  %50 = markup
+    element section
+      attr id = "s0"
+      attr data-shape = "form"
+      element h2
+        text "form 17/0 People"
+      element label
+        text "Name"
+        element input
+          attr id = "s0-name"
+          attr value = %7
+          attr onInput = %8
+      element label
+        text "Email"
+        element input
+          attr id = "s0-email"
+          attr value = %10
+          attr onInput = %11
+      element p
+        attr id = "s0-validation"
+        hole %39
+      element button
+        attr id = "s0-submit"
+        attr onClick = %40
+        text "Submit"
+      element button
+        attr id = "s0-reset"
+        attr onClick = %41
+        text "Reset"
+      element p
+        attr hidden = %45
+        text "Saved "
+        hole %47
+        text " / "
+        hole %49
+  annotation %4
+  params [%5]
+  body %50
+  locals
+    0 model param %5
+  refs
+    type_top 0 (Model)
+    import_type Html.Html
+    type_top 1 (Msg)
+    ctor 1 (Name)
+    ctor 2 (Email)
+    import_value String.length
+    import_ctor Basics.True
+    import_ctor Basics.False
+    import_value String.contains
+    ctor 3 (Submit)
+    ctor 4 (Reset)
+    import_value Basics.not
+  interface value view (annotated)
+
+interface
+  alias Model (record constructor)
+  type Msg = Name | Email | Submit | Reset
+  value init (annotated)
+  value update (annotated)
+  value view (annotated)
+
+imports
+  import Html exposing (Html)
+  prelude Basics
+  prelude List
+  prelude Maybe
+  prelude Result
+  prelude String
+  prelude Char
+  prelude Debug
+  prelude Int
+  prelude Float

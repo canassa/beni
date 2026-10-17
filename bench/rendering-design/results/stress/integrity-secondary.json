@@ -1,0 +1,116 @@
+{
+  "verified_at": "2026-10-16T01:44:55.764Z",
+  "observations": 351,
+  "native_builds": 70,
+  "scope": "Compiler and minified JavaScript SHA-256 and raw length with source-map URL trailers removed, disjoint raw byte accounting, and source spec identity. No size fits or compression results are recomputed; no project suites.",
+  "crossings": [
+    {
+      "family": "list",
+      "mode": "tea",
+      "n": 3888,
+      "brotli": 516823
+    },
+    {
+      "family": "list",
+      "mode": "partial",
+      "n": 6656,
+      "brotli": 516859
+    },
+    {
+      "family": "list",
+      "mode": "cells",
+      "n": 6656,
+      "brotli": 525697
+    },
+    {
+      "family": "list",
+      "mode": "static",
+      "n": 9632,
+      "brotli": 524719
+    },
+    {
+      "family": "list",
+      "mode": "local",
+      "n": 12656,
+      "brotli": 524180
+    },
+    {
+      "family": "list",
+      "mode": "solid",
+      "n": 96192,
+      "brotli": 518127
+    },
+    {
+      "family": "table",
+      "mode": "tea",
+      "n": 3312,
+      "brotli": 515906
+    },
+    {
+      "family": "list",
+      "mode": "vanilla",
+      "n": 102416,
+      "brotli": 525088
+    },
+    {
+      "family": "tabs",
+      "mode": "tea",
+      "n": 4304,
+      "brotli": 525278
+    },
+    {
+      "family": "thread",
+      "mode": "tea",
+      "n": 4768,
+      "brotli": 520808
+    }
+  ],
+  "recovered": [
+    {
+      "family": "thread",
+      "mode": "tea",
+      "n": 3888,
+      "retry": {
+        "n": 3888,
+        "sha256": "fac697cbe68b09d122a35ab3c650281345af27846d5bdd18ddf32de5ac2148fc",
+        "brotli": 421104,
+        "address_space_limit_bytes": 25769803776,
+        "physical_memory_limit_bytes": null
+      }
+    },
+    {
+      "family": "tabs",
+      "mode": "tea",
+      "n": 4304,
+      "retry": {
+        "n": 4304,
+        "sha256": "c7d15d0ffe8e12c101a9158734b3c139ba3833b7f2ded9b7c3a1fc2af3e61ccb",
+        "brotli": 525278,
+        "address_space_limit_bytes": 25769803776,
+        "physical_memory_limit_bytes": null
+      }
+    }
+  ],
+  "compiler_limited": [
+    {
+      "family": "list",
+      "mode": "direct",
+      "n": 512
+    },
+    {
+      "family": "table",
+      "mode": "direct",
+      "n": 512
+    },
+    {
+      "family": "thread",
+      "mode": "direct",
+      "n": 768
+    },
+    {
+      "family": "tabs",
+      "mode": "direct",
+      "n": 1728
+    }
+  ]
+}

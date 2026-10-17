@@ -1,0 +1,32 @@
+import Html exposing (Html)
+
+
+
+pub type alias Model =
+    tab1641 : Int
+    unread1641 : Int
+    draft1641 : String
+
+pub type Msg
+    = Choose Int
+    | Read
+    | Draft String
+
+pub init : ⊤ → Model
+init ⊤ = { tab1641 = 0, unread1641 = 4, draft1641 = "" }
+
+pub update : Msg, Model → Model
+update msg model =
+    case msg of
+        Choose tab →
+            { model | tab1641 = tab }
+
+        Read →
+            { model | unread1641 = 0 }
+
+        Draft text →
+            { model | draft1641 = text }
+
+pub view : Model → Html Msg
+view model =
+    <section id="s0" data-shape="tabs"><h2>tabs 17/0 Work</h2><div class="level-0"><button id="s0-choose-0" onClick={Choose 0}>Overview</button><button id="s0-choose-1" onClick={Choose 1}>Messages</button><div id="s0-panel">{if model.tab1641 == 0 then <article><h3>Overview</h3><p>{model.unread1641} unread</p><button id="s0-read" onClick={Read}>Read</button></article> else <aside><h3>Compose</h3><input id="s0-draft" value={model.draft1641} onInput={Draft} /><p>{model.draft1641}</p></aside>}</div></div></section>

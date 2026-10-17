@@ -1,0 +1,55 @@
+import Html exposing (Html)
+
+type Thread
+    = Comment Int String Int (List Thread)
+
+vote : Int, Thread → Thread
+vote wanted tree =
+    case tree of
+        Comment id title score children →
+            Comment id title (if id == wanted then score + 5 else score) (List.map children (vote wanted _))
+
+rename : Int, String, Thread → Thread
+rename wanted text tree =
+    case tree of
+        Comment id title score children →
+            Comment id (if id == wanted then text else title) score (List.map children (rename wanted text _))
+
+threadKey : Thread → Int
+threadKey tree =
+    case tree of
+        Comment id _ _ _ → id
+
+comment : Thread → Html Msg
+comment tree =
+    case tree of
+        Comment id title score children →
+            <article data-comment={String.fromInt id}><strong>{title}</strong><output>{score}</output><button onClick={Vote id}>Vote</button><input value={title} onInput={Rename id _} /><div><For each={children} keyed={threadKey}>{λchild → comment child}</For></div></article>
+
+pub type alias Model =
+    tree1956 : Thread
+    collapsed1956 : Bool
+
+pub type Msg
+    = Vote Int
+    | Rename Int String
+    | Collapse
+
+pub init : ⊤ → Model
+init ⊤ = { tree1956 = Comment 0 "Root 1956" 0 [ Comment 1 "First" 0 [ Comment 2 "Nested" 0 [] ], Comment 3 "Second" 0 [] ], collapsed1956 = False }
+
+pub update : Msg, Model → Model
+update msg model =
+    case msg of
+        Vote wanted →
+            { model | tree1956 = vote wanted model.tree1956 }
+
+        Rename wanted title →
+            { model | tree1956 = rename wanted title model.tree1956 }
+
+        Collapse →
+            { model | collapsed1956 = not model.collapsed1956 }
+
+pub view : Model → Html Msg
+view model =
+    <section id="s0" data-shape="thread"><h2>thread 17/0 Review</h2><div class="level-0"><button id="s0-collapse" onClick={Collapse}>Collapse</button><div hidden={model.collapsed1956}>{comment model.tree1956}</div></div></section>

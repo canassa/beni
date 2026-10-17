@@ -1,0 +1,348 @@
+{
+  "updated": "2026-10-16T01:43:29.217Z",
+  "observations": 1058,
+  "native_builds": 200,
+  "crossings": [
+    {
+      "family": "cluster",
+      "mode": "tea",
+      "n": 6176,
+      "brotli": 524741
+    },
+    {
+      "family": "cluster",
+      "mode": "vanilla",
+      "n": 101600,
+      "brotli": 524765
+    },
+    {
+      "family": "filter",
+      "mode": "tea",
+      "n": 3264,
+      "brotli": 523981
+    },
+    {
+      "family": "filter",
+      "mode": "partial",
+      "n": 5888,
+      "brotli": 524422
+    },
+    {
+      "family": "filter",
+      "mode": "cells",
+      "n": 6096,
+      "brotli": 527363
+    },
+    {
+      "family": "filter",
+      "mode": "static",
+      "n": 8304,
+      "brotli": 519024
+    },
+    {
+      "family": "form",
+      "mode": "tea",
+      "n": 4256,
+      "brotli": 527585
+    },
+    {
+      "family": "form",
+      "mode": "partial",
+      "n": 7344,
+      "brotli": 524559
+    },
+    {
+      "family": "form",
+      "mode": "cells",
+      "n": 7968,
+      "brotli": 525095
+    },
+    {
+      "family": "list",
+      "mode": "tea",
+      "n": 3888,
+      "brotli": 516823
+    },
+    {
+      "family": "list",
+      "mode": "cells",
+      "n": 6656,
+      "brotli": 525697
+    },
+    {
+      "family": "list",
+      "mode": "partial",
+      "n": 6656,
+      "brotli": 516859
+    },
+    {
+      "family": "list",
+      "mode": "static",
+      "n": 9632,
+      "brotli": 524719
+    },
+    {
+      "family": "list",
+      "mode": "local",
+      "n": 12656,
+      "brotli": 524180
+    },
+    {
+      "family": "list",
+      "mode": "solid",
+      "n": 96192,
+      "brotli": 518127
+    },
+    {
+      "family": "list",
+      "mode": "vanilla",
+      "n": 102416,
+      "brotli": 525088
+    },
+    {
+      "family": "mixed",
+      "mode": "tea",
+      "n": 3888,
+      "brotli": 579185
+    },
+    {
+      "family": "mixed",
+      "mode": "cells",
+      "n": 5840,
+      "brotli": 553701
+    },
+    {
+      "family": "mixed",
+      "mode": "partial",
+      "n": 5840,
+      "brotli": 516680
+    },
+    {
+      "family": "mixed",
+      "mode": "static",
+      "n": 9264,
+      "brotli": 524091
+    },
+    {
+      "family": "mixed",
+      "mode": "local",
+      "n": 9616,
+      "brotli": 525605
+    },
+    {
+      "family": "mixed",
+      "mode": "vanilla",
+      "n": 100352,
+      "brotli": 525739
+    },
+    {
+      "family": "modal",
+      "mode": "tea",
+      "n": 4112,
+      "brotli": 531816
+    },
+    {
+      "family": "modal",
+      "mode": "cells",
+      "n": 7456,
+      "brotli": 528227
+    },
+    {
+      "family": "modal",
+      "mode": "partial",
+      "n": 7456,
+      "brotli": 516979
+    },
+    {
+      "family": "modal",
+      "mode": "static",
+      "n": 10288,
+      "brotli": 529693
+    },
+    {
+      "family": "modal",
+      "mode": "local",
+      "n": 11664,
+      "brotli": 522772
+    },
+    {
+      "family": "modal",
+      "mode": "vanilla",
+      "n": 102096,
+      "brotli": 525172
+    },
+    {
+      "family": "nested",
+      "mode": "tea",
+      "n": 3888,
+      "brotli": 513666
+    },
+    {
+      "family": "nested",
+      "mode": "cells",
+      "n": 8416,
+      "brotli": 526250
+    },
+    {
+      "family": "nested",
+      "mode": "partial",
+      "n": 8672,
+      "brotli": 525136
+    },
+    {
+      "family": "summary",
+      "mode": "tea",
+      "n": 3168,
+      "brotli": 517173
+    },
+    {
+      "family": "summary",
+      "mode": "partial",
+      "n": 5728,
+      "brotli": 525360
+    },
+    {
+      "family": "summary",
+      "mode": "cells",
+      "n": 6208,
+      "brotli": 524834
+    },
+    {
+      "family": "summary",
+      "mode": "static",
+      "n": 7872,
+      "brotli": 525008
+    },
+    {
+      "family": "table",
+      "mode": "tea",
+      "n": 3312,
+      "brotli": 515906
+    },
+    {
+      "family": "tabs",
+      "mode": "tea",
+      "n": 4304,
+      "brotli": 525278
+    },
+    {
+      "family": "thread",
+      "mode": "tea",
+      "n": 4768,
+      "brotli": 520808
+    }
+  ],
+  "compiler_limited": [
+    {
+      "family": "mixed",
+      "mode": "direct",
+      "n": 1728
+    },
+    {
+      "family": "nested",
+      "mode": "direct",
+      "n": 1152
+    },
+    {
+      "family": "form",
+      "mode": "direct",
+      "n": 1728
+    },
+    {
+      "family": "cluster",
+      "mode": "direct",
+      "n": 1728
+    },
+    {
+      "family": "list",
+      "mode": "direct",
+      "n": 512
+    },
+    {
+      "family": "table",
+      "mode": "direct",
+      "n": 512
+    },
+    {
+      "family": "thread",
+      "mode": "direct",
+      "n": 768
+    },
+    {
+      "family": "tabs",
+      "mode": "direct",
+      "n": 1728
+    },
+    {
+      "family": "filter",
+      "mode": "direct",
+      "n": 512
+    },
+    {
+      "family": "summary",
+      "mode": "direct",
+      "n": 512
+    },
+    {
+      "family": "modal",
+      "mode": "direct",
+      "n": 1728
+    }
+  ],
+  "recovered": [
+    {
+      "family": "nested",
+      "mode": "tea",
+      "n": 3888,
+      "sha256": "c6fb10e4af9658e18bd74e1855421fafe23d5db63ec01e4569a54a63831ad8c4",
+      "brotli": 513666,
+      "address_space_limit_bytes": 25769803776,
+      "physical_memory_limit_bytes": null
+    },
+    {
+      "family": "cluster",
+      "mode": "tea",
+      "n": 6176,
+      "sha256": "dd92b000e388e1185c1bbaaffe58269580ba5cb62fd79d39c4fed8009c6fa677",
+      "brotli": 524741,
+      "address_space_limit_bytes": 68719476736,
+      "physical_memory_limit_bytes": 27262976000
+    },
+    {
+      "family": "cluster",
+      "mode": "tea",
+      "n": 6176,
+      "sha256": "dd92b000e388e1185c1bbaaffe58269580ba5cb62fd79d39c4fed8009c6fa677",
+      "brotli": 524741,
+      "address_space_limit_bytes": 68719476736,
+      "physical_memory_limit_bytes": 27262976000
+    },
+    {
+      "family": "thread",
+      "mode": "tea",
+      "n": 3888,
+      "sha256": "fac697cbe68b09d122a35ab3c650281345af27846d5bdd18ddf32de5ac2148fc",
+      "brotli": 421104,
+      "address_space_limit_bytes": 25769803776,
+      "physical_memory_limit_bytes": null
+    },
+    {
+      "family": "tabs",
+      "mode": "tea",
+      "n": 4304,
+      "sha256": "c7d15d0ffe8e12c101a9158734b3c139ba3833b7f2ded9b7c3a1fc2af3e61ccb",
+      "brotli": 525278,
+      "address_space_limit_bytes": 25769803776,
+      "physical_memory_limit_bytes": null
+    },
+    {
+      "family": "modal",
+      "mode": "tea",
+      "n": 4112,
+      "sha256": "89b8801871fc4f9549ba3e379cc32f7b000878450fa935c1269afe16b27cc402",
+      "brotli": 531816,
+      "address_space_limit_bytes": 25769803776,
+      "physical_memory_limit_bytes": null
+    }
+  ]
+}

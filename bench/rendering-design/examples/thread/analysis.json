@@ -1,0 +1,125 @@
+[
+  {
+    "module": "Shape0.bir",
+    "method": "Record-update result paths and view-expression dependencies from compiler BIR; helper argument substitution; recursive calls conservatively depend on argument roots.",
+    "cases": [
+      {
+        "name": "Vote",
+        "pat": 9,
+        "body": 16,
+        "params": [
+          8
+        ],
+        "writes": [
+          "tree1956"
+        ],
+        "assignments": [
+          {
+            "path": "tree1956",
+            "rhs": 15,
+            "operation": {
+              "kind": "replace",
+              "callee": "top 1 (vote)"
+            }
+          }
+        ]
+      },
+      {
+        "name": "Rename",
+        "pat": 21,
+        "body": 29,
+        "params": [
+          19,
+          20
+        ],
+        "writes": [
+          "tree1956"
+        ],
+        "assignments": [
+          {
+            "path": "tree1956",
+            "rhs": 28,
+            "operation": {
+              "kind": "replace",
+              "callee": "top 2 (rename)"
+            }
+          }
+        ]
+      },
+      {
+        "name": "Collapse",
+        "pat": 32,
+        "body": 38,
+        "params": [],
+        "writes": [
+          "collapsed1956"
+        ],
+        "assignments": [
+          {
+            "path": "collapsed1956",
+            "rhs": 37,
+            "operation": {
+              "kind": "replace",
+              "callee": "Basics.not"
+            }
+          }
+        ]
+      }
+    ],
+    "holes": [
+      {
+        "position": "%13.0.1.1@hidden",
+        "expr": 8,
+        "reads": [
+          "collapsed1956"
+        ]
+      },
+      {
+        "position": "%13.0.1.1.0",
+        "expr": 12,
+        "reads": [
+          "tree1956"
+        ]
+      }
+    ],
+    "edges": [
+      {
+        "message": "Vote",
+        "holes": [
+          "%13.0.1.1.0"
+        ]
+      },
+      {
+        "message": "Rename",
+        "holes": [
+          "%13.0.1.1.0"
+        ]
+      },
+      {
+        "message": "Collapse",
+        "holes": [
+          "%13.0.1.1@hidden"
+        ]
+      }
+    ],
+    "ownership": [],
+    "emittedFields": {
+      "tree1956": "m0",
+      "collapsed1956": "m1"
+    },
+    "rootPatches": [
+      {
+        "code": "attribute(n6,\"hidden\",v0.collapsed1956);",
+        "reads": [
+          "collapsed1956"
+        ]
+      },
+      {
+        "code": "n7.p();",
+        "reads": [
+          "tree1956"
+        ]
+      }
+    ]
+  }
+]

@@ -1,0 +1,25 @@
+import Browser
+import Html exposing (Html)
+import Tea
+import Shape0
+
+type alias Model =
+    part0 : Shape0.Model
+
+type Msg
+    = Part0 Shape0.Msg
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Part0 child →
+            { model | part0 = Shape0.update child model.part0 }
+
+view : Model → Html Msg
+view model =
+    <main>
+        {Html.map (Shape0.view model.part0) Part0}
+    </main>
+
+main : Browser.Program
+main = Tea.sandbox { init = λ⊤ → { part0 = Shape0.init ⊤ }, update = update, view = view }

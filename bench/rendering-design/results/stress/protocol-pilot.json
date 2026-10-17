@@ -1,0 +1,33 @@
+{
+  "target_brotli_bytes": 512000,
+  "unit": "kB = 1000 bytes",
+  "seed": 17,
+  "source_hashes": {
+    "catalogue.mjs": "25eb6f985e5c7ab188debf68573ee032ac713d07fde14cbb269f13289ae28df2",
+    "bir.mjs": "82320278bca67c6f202da7bcf82891b7d75ffadd895bec6c3c402c55d6ef8e60",
+    "ownership.mjs": "8e069e4e03898120ca8103cf5cb8404b4a07b96ef5ce917ca6bff2dbdb9dc6b5",
+    "prototype.mjs": "49c6a529a27f0fcdb91559729484788bd6bc4121b4ba0c195dcfc91ae8308234",
+    "expressions.mjs": "f47f96998df5d467206fc0359a6d32b0515e77834f337d44d2eb8f230e6b06be",
+    "dom-compiler.mjs": "434ef78c644d00c7191b2c0ee83fdd8cdb2bebcc07cea503a12047b586e97dea",
+    "runtime.js": "b586d6dd1b2f023d88321ab0c257fc27a596cc78025ee2944fd230f66e6dce6c",
+    "reconcile.js": "3c37b7e694e551396d0c24fbf63c0e52342f000fe15a266fc8ea46158902dbc7",
+    "cells.js": "1f4c829fab7b2046339f97375fbe1dee1364ed367a2cdefdcf87d74160cfb361",
+    "vanilla.mjs": "9c694b847b6ff680ac97a60fc5b58d287f1d099d8e78811908bc4cf6f3a4d709",
+    "vanilla.js": "f00333faa59134e0e120265ff17dc4868905dfff50db6f55b68adde2e439c21a",
+    "stress-generate.mjs": "6b62ba24dea4d39f1351921743d5a7c40817ed2ffd5cd097d61b8b2ea091e8ea",
+    "stress-worker.mjs": "7a3f3b0203df3528131c7a34912ee4a4b3db7b8c647651b7978c90b3dc7faa16",
+    "measure.mjs": "f4d9eca06d2cba537f9a1f1a9db9e4142dbe999de0fb967f520e119f0b7503bb",
+    "provenance.mjs": "e24055892ba759997c2b1927031b48be01a34dfba27457528aa615f8b69d7cf0",
+    "solid.mjs": "bc4c38168432677be1d7fb12e3765f835ba9eecbb263e70e652b2dfc24c1b46e",
+    "solid.jsx": "02ac2cb9c4358c704bbae33f66c674522c466d59bbeb99001927b395123dfc21",
+    "package-lock.json": "a7ae5e60efc695ed0b21f7d470d868765a49e98333a2438a34cd1f7dc913f909"
+  },
+  "compiler_sha256": "0291b420028819837b7fc33c269f8c71240fbd3dff73b93b63965ba236221f7a",
+  "node": "v24.19.0",
+  "cpu": "Intel(R) Xeon(R) E-2386G CPU @ 3.50GHz",
+  "source_commit": "3cca64d0196da6b121ce1fde2af407265d82919d",
+  "scope": "Unchanged ten-shape catalogue. Three original seeds through N32; seed 17 extended on a common 1.5x grid. Each strategy stops at its first measured rendering response >=512000 brotli bytes. No padding. Later points for shared-factory baselines need no additional candidate or today output once those curves crossed. Every point requiring BIR builds both real browser platforms; all sources remain reproducible. Lines join measured points, never extrapolate.",
+  "normalization": "Terser 5.51.2 module/two passes/mangle; source-map core exclusion; whole-response brotli 11 and gzip 9. Original release prices retained.",
+  "heap_mib": 6144,
+  "started": "2026-10-15T20:33:48.199Z"
+}

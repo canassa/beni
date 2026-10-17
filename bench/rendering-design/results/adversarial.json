@@ -1,0 +1,453 @@
+{
+  "browser": "Chrome/155.0.8059.80",
+  "before_commit": "6f3415d49",
+  "scope": "Real compiler inputs outside the closed catalogue, all rejected by its equality guard. Bypass that guard deliberately to challenge the analysis and generated output. Compare the prior lowering against the fixed lowering and actual TEA. No project suites.",
+  "witnesses": [
+    {
+      "name": "adversarial-whole-model-alias",
+      "closed_catalogue_recognizer": "rejects changed component source",
+      "before_owned": [
+        {
+          "expression": 13,
+          "path": "rows",
+          "operation": "List.reverse",
+          "reason": "fresh init array; same-field transform; no sibling RHS/callback dependency on old array; closed renderer has no retained model snapshots or effects"
+        }
+      ],
+      "after_owned": []
+    },
+    {
+      "name": "adversarial-cross-arm-alias",
+      "closed_catalogue_recognizer": "rejects changed component source",
+      "before_owned": [
+        {
+          "expression": 20,
+          "path": "rows",
+          "operation": "List.reverse",
+          "reason": "fresh init array; same-field transform; no sibling RHS/callback dependency on old array; closed renderer has no retained model snapshots or effects"
+        }
+      ],
+      "after_owned": []
+    },
+    {
+      "name": "adversarial-event-capture",
+      "closed_catalogue_recognizer": "rejects changed component source",
+      "before_owned": [],
+      "after_owned": []
+    },
+    {
+      "name": "adversarial-higher-order-capture",
+      "closed_catalogue_recognizer": "rejects changed component source",
+      "before_owned": [],
+      "after_owned": []
+    },
+    {
+      "name": "adversarial-pattern-helper-capture",
+      "closed_catalogue_recognizer": "rejects changed component source",
+      "before_owned": [],
+      "after_owned": []
+    }
+  ],
+  "observations": [
+    {
+      "name": "adversarial-whole-model-alias",
+      "mode": "tea",
+      "matches_tea": true,
+      "transcript_sha256": "d609b28dcf95847b7efc703bbfc5dcbb8e2ab52df7346c5bcdd05acc84de6395",
+      "bundle_sha256": "7e539976eaa6faa7a2272ea0866065cf8207ee25dcac2fdf9199a1fe85126a11",
+      "errors": []
+    },
+    {
+      "name": "adversarial-whole-model-alias",
+      "mode": "direct",
+      "matches_tea": true,
+      "transcript_sha256": "d609b28dcf95847b7efc703bbfc5dcbb8e2ab52df7346c5bcdd05acc84de6395",
+      "bundle_sha256": "bf7e6000ab56f6ec9c82391e8a2b5669e35933df3b6325ee9d81a63127a60ce1",
+      "errors": []
+    },
+    {
+      "name": "adversarial-whole-model-alias",
+      "mode": "partial",
+      "matches_tea": true,
+      "transcript_sha256": "d609b28dcf95847b7efc703bbfc5dcbb8e2ab52df7346c5bcdd05acc84de6395",
+      "bundle_sha256": "bbf35bbbdb2fc3c292746fddcfd6b07566c4dd36b6ff0a38145a9e83f09ab7bd",
+      "errors": []
+    },
+    {
+      "name": "adversarial-whole-model-alias",
+      "mode": "static",
+      "matches_tea": true,
+      "transcript_sha256": "d609b28dcf95847b7efc703bbfc5dcbb8e2ab52df7346c5bcdd05acc84de6395",
+      "bundle_sha256": "f6aaf6bba3e87c74b4820bc1ef3bc356ee6783612a617900ecda950ea484ddc7",
+      "errors": []
+    },
+    {
+      "name": "adversarial-whole-model-alias",
+      "mode": "cells",
+      "matches_tea": true,
+      "transcript_sha256": "d609b28dcf95847b7efc703bbfc5dcbb8e2ab52df7346c5bcdd05acc84de6395",
+      "bundle_sha256": "0a0ca08ac07d2a544a90b05d1c942778df0eb8ea0d0e62f60d462c9c7855cc22",
+      "errors": []
+    },
+    {
+      "name": "adversarial-whole-model-alias",
+      "mode": "local",
+      "matches_tea": true,
+      "transcript_sha256": "d609b28dcf95847b7efc703bbfc5dcbb8e2ab52df7346c5bcdd05acc84de6395",
+      "bundle_sha256": "c2135e60f4db37dc2320baad6823ed8f5707579d6f0d77c9cd08e87e145a65c1",
+      "errors": []
+    },
+    {
+      "name": "adversarial-whole-model-alias",
+      "mode": "before-partial",
+      "matches_tea": false,
+      "transcript_sha256": "8823c4498f85332be8b490af82ec0ccbfce975ebc8ca80fce29bc4a38c21e531",
+      "bundle_sha256": "005b96089543d582cca3e87fc5b6f72f4fd837442aeedac255821aef0453289f",
+      "errors": []
+    },
+    {
+      "name": "adversarial-whole-model-alias",
+      "mode": "before-static",
+      "matches_tea": false,
+      "transcript_sha256": "8823c4498f85332be8b490af82ec0ccbfce975ebc8ca80fce29bc4a38c21e531",
+      "bundle_sha256": "9ec8f93381eea46e0bbb9d4c110c1840a8f51970da1fffecfd5bbc7525b92561",
+      "errors": []
+    },
+    {
+      "name": "adversarial-whole-model-alias",
+      "mode": "before-cells",
+      "matches_tea": false,
+      "transcript_sha256": "a7266c5f305df2eac5ac922e76f1619adbbf8543f116286ad824af6ead51b9e9",
+      "bundle_sha256": "8be1ae96d34279303050b2dd8b7e9015e8adcd35cf18d623a743a2f26e316c6f",
+      "errors": []
+    },
+    {
+      "name": "adversarial-whole-model-alias",
+      "mode": "before-local",
+      "matches_tea": false,
+      "transcript_sha256": "8823c4498f85332be8b490af82ec0ccbfce975ebc8ca80fce29bc4a38c21e531",
+      "bundle_sha256": "0c494de829d8a1685ab06d997057a1f0ac0166f87e91d9621fa719347e75a49d",
+      "errors": []
+    },
+    {
+      "name": "adversarial-cross-arm-alias",
+      "mode": "tea",
+      "matches_tea": true,
+      "transcript_sha256": "c0fba5b50ae251aae352d46cd66376312c6bbb966ef6972caefe01b6ffed3160",
+      "bundle_sha256": "324baaa292ede4f3889f6d418a71e2a4b71ef3a8701e0ee675b152fb7e327ca1",
+      "errors": []
+    },
+    {
+      "name": "adversarial-cross-arm-alias",
+      "mode": "direct",
+      "matches_tea": true,
+      "transcript_sha256": "c0fba5b50ae251aae352d46cd66376312c6bbb966ef6972caefe01b6ffed3160",
+      "bundle_sha256": "9d7e88537455d105ccd64b2f1a609f7e3f2641c83074f489d4deb14ddb28869a",
+      "errors": []
+    },
+    {
+      "name": "adversarial-cross-arm-alias",
+      "mode": "partial",
+      "matches_tea": true,
+      "transcript_sha256": "c0fba5b50ae251aae352d46cd66376312c6bbb966ef6972caefe01b6ffed3160",
+      "bundle_sha256": "7db785b2611b934a91d83d5c4eeaddc753fd3b366d628254ed0b43cbccdfa718",
+      "errors": []
+    },
+    {
+      "name": "adversarial-cross-arm-alias",
+      "mode": "static",
+      "matches_tea": true,
+      "transcript_sha256": "c0fba5b50ae251aae352d46cd66376312c6bbb966ef6972caefe01b6ffed3160",
+      "bundle_sha256": "ba348f5adae392c84c4043217028e02b260e0821581f679fcb5ef805f0c336a9",
+      "errors": []
+    },
+    {
+      "name": "adversarial-cross-arm-alias",
+      "mode": "cells",
+      "matches_tea": true,
+      "transcript_sha256": "c0fba5b50ae251aae352d46cd66376312c6bbb966ef6972caefe01b6ffed3160",
+      "bundle_sha256": "2395f1e773a53993995f804e9de9d0d58b22efe8c56569a9530f2c8edf2a08ae",
+      "errors": []
+    },
+    {
+      "name": "adversarial-cross-arm-alias",
+      "mode": "local",
+      "matches_tea": true,
+      "transcript_sha256": "c0fba5b50ae251aae352d46cd66376312c6bbb966ef6972caefe01b6ffed3160",
+      "bundle_sha256": "1150036f0367fe18eaaada6ec72c8d2850570027df7c62e37c90afb8415fdac8",
+      "errors": []
+    },
+    {
+      "name": "adversarial-cross-arm-alias",
+      "mode": "before-partial",
+      "matches_tea": true,
+      "transcript_sha256": "c0fba5b50ae251aae352d46cd66376312c6bbb966ef6972caefe01b6ffed3160",
+      "bundle_sha256": "0569ac232b81612f49d746d600ba4333c059097250c2ab3a1d64d49cab41f79d",
+      "errors": []
+    },
+    {
+      "name": "adversarial-cross-arm-alias",
+      "mode": "before-static",
+      "matches_tea": true,
+      "transcript_sha256": "c0fba5b50ae251aae352d46cd66376312c6bbb966ef6972caefe01b6ffed3160",
+      "bundle_sha256": "e0bcd542e8a51790654eb850b57e93c6e86718dbdce399426e4de50eec14ef73",
+      "errors": []
+    },
+    {
+      "name": "adversarial-cross-arm-alias",
+      "mode": "before-cells",
+      "matches_tea": true,
+      "transcript_sha256": "c0fba5b50ae251aae352d46cd66376312c6bbb966ef6972caefe01b6ffed3160",
+      "bundle_sha256": "eb2d07bcb855a4bcc1e1e47c11fc757031fbb73771207ceeb534ee28c048651e",
+      "errors": []
+    },
+    {
+      "name": "adversarial-cross-arm-alias",
+      "mode": "before-local",
+      "matches_tea": false,
+      "transcript_sha256": "847b0f0850dfdc65cb68d7e4f32a5bc4133e2be4c1d4ccd53f00833531ddeec3",
+      "bundle_sha256": "74e22336acb6ed21cf18581136e41e9b84cb9f71a90304e2f8b15c33d8ffc372",
+      "errors": []
+    },
+    {
+      "name": "adversarial-event-capture",
+      "mode": "tea",
+      "matches_tea": true,
+      "transcript_sha256": "ead2a43393e9a06d1b46365a36de9e014e73959dbf8c9acd2249053ccb3f03c3",
+      "bundle_sha256": "b21f55c5a50eb8499f13250f0406f742cab3882e5f8cac9fcf158b4441dbbf8c",
+      "errors": []
+    },
+    {
+      "name": "adversarial-event-capture",
+      "mode": "direct",
+      "matches_tea": true,
+      "transcript_sha256": "ead2a43393e9a06d1b46365a36de9e014e73959dbf8c9acd2249053ccb3f03c3",
+      "bundle_sha256": "9e512a4f2a1f69f0f4f702d4eba40aebf4a79414673704b1f6fdf19b388069f4",
+      "errors": []
+    },
+    {
+      "name": "adversarial-event-capture",
+      "mode": "partial",
+      "matches_tea": true,
+      "transcript_sha256": "ead2a43393e9a06d1b46365a36de9e014e73959dbf8c9acd2249053ccb3f03c3",
+      "bundle_sha256": "3791e0ba8ca1e2dfcd1b7d411b5f3a1a1b57452f07e82ff152d60243cabb708e",
+      "errors": []
+    },
+    {
+      "name": "adversarial-event-capture",
+      "mode": "static",
+      "matches_tea": true,
+      "transcript_sha256": "ead2a43393e9a06d1b46365a36de9e014e73959dbf8c9acd2249053ccb3f03c3",
+      "bundle_sha256": "2a1e6b08f0d075e3c5c7c0c67939266ef5ec819785a6ce347070633a5fb46fc4",
+      "errors": []
+    },
+    {
+      "name": "adversarial-event-capture",
+      "mode": "cells",
+      "matches_tea": true,
+      "transcript_sha256": "ead2a43393e9a06d1b46365a36de9e014e73959dbf8c9acd2249053ccb3f03c3",
+      "bundle_sha256": "ccb94b95fe447a4ff51ee7a5b3b35525ef03944efe3717e4848635fc2a2bdccc",
+      "errors": []
+    },
+    {
+      "name": "adversarial-event-capture",
+      "mode": "local",
+      "matches_tea": true,
+      "transcript_sha256": "ead2a43393e9a06d1b46365a36de9e014e73959dbf8c9acd2249053ccb3f03c3",
+      "bundle_sha256": "791c59a38b6fb1de0a2a9f157c431e7160bae6ae75548cb5fae729cf702698b2",
+      "errors": []
+    },
+    {
+      "name": "adversarial-event-capture",
+      "mode": "before-partial",
+      "matches_tea": true,
+      "transcript_sha256": "ead2a43393e9a06d1b46365a36de9e014e73959dbf8c9acd2249053ccb3f03c3",
+      "bundle_sha256": "3791e0ba8ca1e2dfcd1b7d411b5f3a1a1b57452f07e82ff152d60243cabb708e",
+      "errors": []
+    },
+    {
+      "name": "adversarial-event-capture",
+      "mode": "before-static",
+      "matches_tea": true,
+      "transcript_sha256": "ead2a43393e9a06d1b46365a36de9e014e73959dbf8c9acd2249053ccb3f03c3",
+      "bundle_sha256": "2a1e6b08f0d075e3c5c7c0c67939266ef5ec819785a6ce347070633a5fb46fc4",
+      "errors": []
+    },
+    {
+      "name": "adversarial-event-capture",
+      "mode": "before-cells",
+      "matches_tea": true,
+      "transcript_sha256": "ead2a43393e9a06d1b46365a36de9e014e73959dbf8c9acd2249053ccb3f03c3",
+      "bundle_sha256": "ccb94b95fe447a4ff51ee7a5b3b35525ef03944efe3717e4848635fc2a2bdccc",
+      "errors": []
+    },
+    {
+      "name": "adversarial-event-capture",
+      "mode": "before-local",
+      "matches_tea": true,
+      "transcript_sha256": "ead2a43393e9a06d1b46365a36de9e014e73959dbf8c9acd2249053ccb3f03c3",
+      "bundle_sha256": "791c59a38b6fb1de0a2a9f157c431e7160bae6ae75548cb5fae729cf702698b2",
+      "errors": []
+    },
+    {
+      "name": "adversarial-higher-order-capture",
+      "mode": "tea",
+      "matches_tea": true,
+      "transcript_sha256": "58e57559670da67e20b3fc491ae52abc3492a3ec081a81538f1ac074da912990",
+      "bundle_sha256": "ed7bc4a2a9ea6cd0b91b6adc242563f149ef6226f3d07850bd0bc48f78cc2be4",
+      "errors": []
+    },
+    {
+      "name": "adversarial-higher-order-capture",
+      "mode": "direct",
+      "matches_tea": true,
+      "transcript_sha256": "58e57559670da67e20b3fc491ae52abc3492a3ec081a81538f1ac074da912990",
+      "bundle_sha256": "b08da6dcd29a9a3dd039dbee9d0ee4e7aad99e5400949a163bdce73343a70ae7",
+      "errors": []
+    },
+    {
+      "name": "adversarial-higher-order-capture",
+      "mode": "partial",
+      "matches_tea": true,
+      "transcript_sha256": "58e57559670da67e20b3fc491ae52abc3492a3ec081a81538f1ac074da912990",
+      "bundle_sha256": "687440e19a926d475bb190d48c40301762152f91f2acb763994db24cd0e5cc42",
+      "errors": []
+    },
+    {
+      "name": "adversarial-higher-order-capture",
+      "mode": "static",
+      "matches_tea": true,
+      "transcript_sha256": "58e57559670da67e20b3fc491ae52abc3492a3ec081a81538f1ac074da912990",
+      "bundle_sha256": "621fd57260e59d34e5ea8ff77d0aebc2879002b8982cfcc275cfe68b9e531cac",
+      "errors": []
+    },
+    {
+      "name": "adversarial-higher-order-capture",
+      "mode": "cells",
+      "matches_tea": true,
+      "transcript_sha256": "58e57559670da67e20b3fc491ae52abc3492a3ec081a81538f1ac074da912990",
+      "bundle_sha256": "a2837740a1adddf677adbf69e8e33ccb92f98d1900c864179d342e6e35c9825d",
+      "errors": []
+    },
+    {
+      "name": "adversarial-higher-order-capture",
+      "mode": "local",
+      "matches_tea": true,
+      "transcript_sha256": "58e57559670da67e20b3fc491ae52abc3492a3ec081a81538f1ac074da912990",
+      "bundle_sha256": "908bce557cd4a63c3af017e1125f872afa5a682fbda24c2c8d343d0583f8effd",
+      "errors": []
+    },
+    {
+      "name": "adversarial-higher-order-capture",
+      "mode": "before-partial",
+      "matches_tea": false,
+      "transcript_sha256": "b2b33e704474c3bd12b79c4bfdd0d7283f8c0612da768cc92517f663adc429fd",
+      "bundle_sha256": "618a033e5903083f05beb583b0e4bea316b6f38e728edf42bb1dfa922acae00e",
+      "errors": []
+    },
+    {
+      "name": "adversarial-higher-order-capture",
+      "mode": "before-static",
+      "matches_tea": false,
+      "transcript_sha256": "b2b33e704474c3bd12b79c4bfdd0d7283f8c0612da768cc92517f663adc429fd",
+      "bundle_sha256": "b6a15e53b58f2d9b33da74ca3955c71672adc1d46baf8fff85a52fd75ba6fbb7",
+      "errors": []
+    },
+    {
+      "name": "adversarial-higher-order-capture",
+      "mode": "before-cells",
+      "matches_tea": true,
+      "transcript_sha256": "58e57559670da67e20b3fc491ae52abc3492a3ec081a81538f1ac074da912990",
+      "bundle_sha256": "a2837740a1adddf677adbf69e8e33ccb92f98d1900c864179d342e6e35c9825d",
+      "errors": []
+    },
+    {
+      "name": "adversarial-higher-order-capture",
+      "mode": "before-local",
+      "matches_tea": true,
+      "transcript_sha256": "58e57559670da67e20b3fc491ae52abc3492a3ec081a81538f1ac074da912990",
+      "bundle_sha256": "908bce557cd4a63c3af017e1125f872afa5a682fbda24c2c8d343d0583f8effd",
+      "errors": []
+    },
+    {
+      "name": "adversarial-pattern-helper-capture",
+      "mode": "tea",
+      "matches_tea": true,
+      "transcript_sha256": "dd8311b43224da4c41d72d31c79db47a44d34a64737207df27bde8306a5d97fb",
+      "bundle_sha256": "b9f2962e1ff60666b600c9278967c1a750eb2be2a647ece1a8c4000505bc4216",
+      "errors": []
+    },
+    {
+      "name": "adversarial-pattern-helper-capture",
+      "mode": "direct",
+      "matches_tea": true,
+      "transcript_sha256": "dd8311b43224da4c41d72d31c79db47a44d34a64737207df27bde8306a5d97fb",
+      "bundle_sha256": "b4eec20e336cb2f728b0f124db8b0613788bee3c3062b287e507e33f4ba72a28",
+      "errors": []
+    },
+    {
+      "name": "adversarial-pattern-helper-capture",
+      "mode": "partial",
+      "matches_tea": true,
+      "transcript_sha256": "dd8311b43224da4c41d72d31c79db47a44d34a64737207df27bde8306a5d97fb",
+      "bundle_sha256": "682565e5c0e5bedbc5ceb932d0db4226e3b095b9ad2f04f98691b068d56bf0fe",
+      "errors": []
+    },
+    {
+      "name": "adversarial-pattern-helper-capture",
+      "mode": "static",
+      "matches_tea": true,
+      "transcript_sha256": "dd8311b43224da4c41d72d31c79db47a44d34a64737207df27bde8306a5d97fb",
+      "bundle_sha256": "6290a83e16118c90de8029fe2796b2b0dbde5f58602cdb1f8a58bed953ca7592",
+      "errors": []
+    },
+    {
+      "name": "adversarial-pattern-helper-capture",
+      "mode": "cells",
+      "matches_tea": true,
+      "transcript_sha256": "dd8311b43224da4c41d72d31c79db47a44d34a64737207df27bde8306a5d97fb",
+      "bundle_sha256": "2e4ab27e2f059fdd653c75258c30024da1dec882dc542857b876797b44913616",
+      "errors": []
+    },
+    {
+      "name": "adversarial-pattern-helper-capture",
+      "mode": "local",
+      "matches_tea": true,
+      "transcript_sha256": "dd8311b43224da4c41d72d31c79db47a44d34a64737207df27bde8306a5d97fb",
+      "bundle_sha256": "a2d38e4a12e54ba848df8e4d180d90aefddb7c9552d7e6ffd25ae34b15e1e435",
+      "errors": []
+    },
+    {
+      "name": "adversarial-pattern-helper-capture",
+      "mode": "before-partial",
+      "matches_tea": true,
+      "transcript_sha256": "dd8311b43224da4c41d72d31c79db47a44d34a64737207df27bde8306a5d97fb",
+      "bundle_sha256": "682565e5c0e5bedbc5ceb932d0db4226e3b095b9ad2f04f98691b068d56bf0fe",
+      "errors": []
+    },
+    {
+      "name": "adversarial-pattern-helper-capture",
+      "mode": "before-static",
+      "matches_tea": true,
+      "transcript_sha256": "dd8311b43224da4c41d72d31c79db47a44d34a64737207df27bde8306a5d97fb",
+      "bundle_sha256": "6290a83e16118c90de8029fe2796b2b0dbde5f58602cdb1f8a58bed953ca7592",
+      "errors": []
+    },
+    {
+      "name": "adversarial-pattern-helper-capture",
+      "mode": "before-cells",
+      "matches_tea": true,
+      "transcript_sha256": "dd8311b43224da4c41d72d31c79db47a44d34a64737207df27bde8306a5d97fb",
+      "bundle_sha256": "2e4ab27e2f059fdd653c75258c30024da1dec882dc542857b876797b44913616",
+      "errors": []
+    },
+    {
+      "name": "adversarial-pattern-helper-capture",
+      "mode": "before-local",
+      "matches_tea": true,
+      "transcript_sha256": "dd8311b43224da4c41d72d31c79db47a44d34a64737207df27bde8306a5d97fb",
+      "bundle_sha256": "a2d38e4a12e54ba848df8e4d180d90aefddb7c9552d7e6ffd25ae34b15e1e435",
+      "errors": []
+    }
+  ]
+}

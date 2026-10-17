@@ -1,0 +1,190 @@
+decl 0: pub alias Model
+  %0 = type_import Basics.Int
+  %1 = type_import Basics.Int
+  %2 = type_import String.String
+  %3 = type_record { tab1641 : %0, unread1641 : %1, draft1641 : %2 }
+  body %3
+  ctor 0 Model [%0, %1, %2]
+  refs
+    import_type Basics.Int
+    import_type String.String
+  interface alias Model (record constructor)
+
+decl 1: pub type Msg
+  %0 = type_import Basics.Int
+  %1 = type_import String.String
+  ctor 1 Choose [%0]
+  ctor 2 Read []
+  ctor 3 Draft [%1]
+  refs
+    import_type Basics.Int
+    import_type String.String
+  interface type Msg = Choose | Read | Draft
+
+decl 2: pub value init (annotated)
+  %0 = type_unit
+  %1 = type_top 0 (Model)
+  %2 = type_fn [%0] -> %1
+  %3 = pat_unit
+  %4 = int 0
+  %5 = int 4
+  %6 = string ""
+  %7 = record { tab1641 = %4, unread1641 = %5, draft1641 = %6 }
+  annotation %2
+  params [%3]
+  body %7
+  refs
+    type_top 0 (Model)
+  interface value init (annotated)
+
+decl 3: pub value update (annotated)
+  %0 = type_top 1 (Msg)
+  %1 = type_top 0 (Model)
+  %2 = type_top 0 (Model)
+  %3 = type_fn [%0, %1] -> %2
+  %4 = pat_var local 0 (msg)
+  %5 = pat_var local 1 (model)
+  %6 = local 0 (msg)
+  %7 = ctor 1 (Choose)
+  %8 = pat_var local 2 (tab)
+  %9 = pat_ctor %7 [%8]
+  %10 = local 1 (model)
+  %11 = local 2 (tab)
+  %12 = record_update %10 { tab1641 = %11 }
+  %13 = branch %9 -> %12
+  %14 = ctor 2 (Read)
+  %15 = pat_ctor %14 []
+  %16 = local 1 (model)
+  %17 = int 0
+  %18 = record_update %16 { unread1641 = %17 }
+  %19 = branch %15 -> %18
+  %20 = ctor 3 (Draft)
+  %21 = pat_var local 3 (text)
+  %22 = pat_ctor %20 [%21]
+  %23 = local 1 (model)
+  %24 = local 3 (text)
+  %25 = record_update %23 { draft1641 = %24 }
+  %26 = branch %22 -> %25
+  %27 = case %6 [%13, %19, %26]
+  annotation %3
+  params [%4, %5]
+  body %27
+  locals
+    0 msg param %4
+    1 model param %5
+    2 tab pattern %8
+    3 text pattern %21
+  refs
+    type_top 1 (Msg)
+    type_top 0 (Model)
+    ctor 1 (Choose)
+    ctor 2 (Read)
+    ctor 3 (Draft)
+  interface value update (annotated)
+
+decl 4: pub value view (annotated)
+  %0 = type_top 0 (Model)
+  %1 = type_import Html.Html
+  %2 = type_top 1 (Msg)
+  %3 = type_app %1 [%2]
+  %4 = type_fn [%0] -> %3
+  %5 = pat_var local 0 (model)
+  %6 = ctor 1 (Choose)
+  %7 = int 0
+  %8 = call %6 [%7]
+  %9 = ctor 1 (Choose)
+  %10 = int 1
+  %11 = call %9 [%10]
+  %12 = local 0 (model)
+  %13 = field_access %12 .tab1641
+  %14 = int 0
+  %15 = method_call %13 .eq [%14] (==)
+  %16 = import_ctor Basics.True
+  %17 = pat_ctor %16 []
+  %18 = local 0 (model)
+  %19 = field_access %18 .unread1641
+  %20 = ctor 2 (Read)
+  %21 = markup
+    element article
+      element h3
+        text "Overview"
+      element p
+        hole %19
+        text " unread"
+      element button
+        attr id = "s0-read"
+        attr onClick = %20
+        text "Read"
+  %22 = branch %17 -> %21
+  %23 = import_ctor Basics.False
+  %24 = pat_ctor %23 []
+  %25 = local 0 (model)
+  %26 = field_access %25 .draft1641
+  %27 = ctor 3 (Draft)
+  %28 = local 0 (model)
+  %29 = field_access %28 .draft1641
+  %30 = markup
+    element aside
+      element h3
+        text "Compose"
+      element input
+        attr id = "s0-draft"
+        attr value = %26
+        attr onInput = %27
+      element p
+        hole %29
+  %31 = branch %24 -> %30
+  %32 = case %15 [%22, %31]
+  %33 = markup
+    element section
+      attr id = "s0"
+      attr data-shape = "tabs"
+      element h2
+        text "tabs 17/0 Work"
+      element div
+        attr class = "level-0"
+        element button
+          attr id = "s0-choose-0"
+          attr onClick = %8
+          text "Overview"
+        element button
+          attr id = "s0-choose-1"
+          attr onClick = %11
+          text "Messages"
+        element div
+          attr id = "s0-panel"
+          hole %32
+  annotation %4
+  params [%5]
+  body %33
+  locals
+    0 model param %5
+  refs
+    type_top 0 (Model)
+    import_type Html.Html
+    type_top 1 (Msg)
+    ctor 1 (Choose)
+    import_ctor Basics.True
+    ctor 2 (Read)
+    import_ctor Basics.False
+    ctor 3 (Draft)
+  interface value view (annotated)
+
+interface
+  alias Model (record constructor)
+  type Msg = Choose | Read | Draft
+  value init (annotated)
+  value update (annotated)
+  value view (annotated)
+
+imports
+  import Html exposing (Html)
+  prelude Basics
+  prelude List
+  prelude Maybe
+  prelude Result
+  prelude String
+  prelude Char
+  prelude Debug
+  prelude Int
+  prelude Float

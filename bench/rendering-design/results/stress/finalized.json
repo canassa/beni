@@ -1,0 +1,8 @@
+{
+  "stopped_at": "2026-10-16T01:43:49.826Z",
+  "reason": "Owner requested submission of available results",
+  "observations": 1058,
+  "crossings": 38,
+  "compiler_limited": 11,
+  "applicable_pairs": 79
+}

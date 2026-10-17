@@ -1,0 +1,37 @@
+import Html exposing (Html)
+
+
+
+pub type alias Model =
+    open7423 : Bool
+    draft7423 : String
+    saved7423 : String
+    visits7423 : Int
+
+pub type Msg
+    = Open
+    | Close
+    | Draft String
+    | Confirm
+
+pub init : ⊤ → Model
+init ⊤ = { open7423 = False, draft7423 = "", saved7423 = "", visits7423 = 0 }
+
+pub update : Msg, Model → Model
+update msg model =
+    case msg of
+        Open →
+            { model | open7423 = True, draft7423 = model.saved7423, visits7423 = model.visits7423 + 1 }
+
+        Close →
+            { model | open7423 = False }
+
+        Draft text →
+            { model | draft7423 = text }
+
+        Confirm →
+            { model | open7423 = False, saved7423 = model.draft7423 }
+
+pub view : Model → Html Msg
+view model =
+    <section id="s0" data-shape="modal"><h2>modal 17/0 Activity</h2><div class="level-0"><button id="s0-open" onClick={Open}>Open</button><output id="s0-saved">{model.saved7423}</output><span>{model.visits7423}</span>{if model.open7423 then <div role="dialog" aria-label="Edit"><h3>Edit 7423</h3><input id="s0-draft" value={model.draft7423} onInput={Draft} /><button id="s0-confirm" onClick={Confirm}>Confirm</button><button id="s0-close" onClick={Close}>Close</button></div> else <></>}</div></section>

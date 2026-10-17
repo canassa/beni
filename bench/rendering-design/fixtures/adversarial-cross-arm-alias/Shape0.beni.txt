@@ -1,0 +1,18 @@
+import Html exposing (Html)
+
+pub type alias Model =
+    rows : List Int
+    snapshot : List Int
+
+pub type Msg = Capture | Reverse
+pub init : ⊤ → Model
+init ⊤ = { rows = [ 1, 2, 3 ], snapshot = [] }
+pub update : Msg, Model → Model
+update msg model =
+    case msg of
+        Capture → { model | snapshot = model.rows }
+        Reverse → { model | rows = List.reverse model.rows }
+number : List Int → Int
+number rows = List.foldl rows 0 (λn total → total * 10 + n)
+pub view : Model → Html Msg
+view model = <section data-shape="adversarial"><button id="capture" onClick={Capture}>Capture</button><button id="reverse" onClick={Reverse}>Reverse</button><output id="rowsOutput">{number model.rows}</output><output id="snapshotOutput">{number model.snapshot}</output></section>

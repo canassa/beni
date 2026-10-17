@@ -1,0 +1,52 @@
+import Html exposing (Html)
+
+type alias Row =
+    id : Int
+    title : String
+    score : Int
+    done : Bool
+
+total : List Row → Int
+total rows = List.foldl rows 0 (λrow sum → sum + row.score)
+
+pub type alias Model =
+    rows7751 : List Row
+    next7751 : Int
+    selected7751 : Int
+    rate7751 : Int
+
+pub type Msg
+    = Add
+    | Remove Int
+    | Edit Int
+    | Select Int
+    | Reverse
+    | Rate
+
+pub init : ⊤ → Model
+init ⊤ = { rows7751 = List.map (List.range 1 20) λi → { id = i, title = "Item " ++ String.fromInt i, score = Int.mod (i * 1) 17, done = False }, next7751 = 21, selected7751 = 0, rate7751 = 1 }
+
+pub update : Msg, Model → Model
+update msg model =
+    case msg of
+        Add →
+            { model | rows7751 = [ …model.rows7751, { id = model.next7751, title = "summary 17/0 Activity " ++ String.fromInt model.next7751, score = 1, done = False } ], next7751 = model.next7751 + 1 }
+
+        Remove wanted →
+            { model | rows7751 = List.filter model.rows7751 λrow → row.id ≠ wanted }
+
+        Edit wanted →
+            { model | rows7751 = List.map model.rows7751 λrow → if row.id == wanted then { row | title = row.title ++ "!", score = row.score + 1, done = not row.done } else row }
+
+        Select wanted →
+            { model | selected7751 = wanted }
+
+        Reverse →
+            { model | rows7751 = List.reverse model.rows7751 }
+
+        Rate →
+            { model | rate7751 = model.rate7751 + 1 }
+
+pub view : Model → Html Msg
+view model =
+    <section id="s0" data-shape="summary"><h2>summary 17/0 Activity</h2><div class="level-0"><button id="s0-add" onClick={Add}>Add</button><button id="s0-reverse" onClick={Reverse}>Reverse</button><button id="s0-rate" onClick={Rate}>Rate</button><dl><dt>Total</dt><dd id="s0-total">{total model.rows7751 * model.rate7751}</dd><dt>Completed</dt><dd>{List.length (List.filter model.rows7751 .done)}</dd></dl><p>{List.length model.rows7751} records</p><ul><For each={model.rows7751} keyed={.id}>{λrow → <li data-row={String.fromInt row.id} class={if model.selected7751 == row.id then "selected" else ""}><button onClick={Select row.id}>{row.title}</button><output>{row.score}</output><button onClick={Edit row.id}>Edit</button><button onClick={Remove row.id}>Remove</button></li>}</For></ul></div></section>

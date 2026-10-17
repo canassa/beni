@@ -1,0 +1,311 @@
+[
+  {
+    "module": "Shape0.bir",
+    "method": "Record-update result paths and view-expression dependencies from compiler BIR; helper argument substitution; recursive calls conservatively depend on argument roots.",
+    "cases": [
+      {
+        "name": "Add",
+        "pat": 8,
+        "body": 32,
+        "params": [],
+        "writes": [
+          "next7751",
+          "rows7751"
+        ],
+        "assignments": [
+          {
+            "path": "rows7751",
+            "rhs": 26,
+            "operation": {
+              "kind": "append",
+              "input": "rows7751",
+              "argument": 24,
+              "witness": "call %25 [%11, %24]"
+            }
+          },
+          {
+            "path": "next7751",
+            "rhs": 31,
+            "operation": {
+              "kind": "replace",
+              "callee": "Basics.add"
+            }
+          }
+        ]
+      },
+      {
+        "name": "Remove",
+        "pat": 36,
+        "body": 48,
+        "params": [
+          35
+        ],
+        "writes": [
+          "rows7751"
+        ],
+        "assignments": [
+          {
+            "path": "rows7751",
+            "rhs": 47,
+            "operation": {
+              "kind": "filter",
+              "input": "rows7751",
+              "argument": 46,
+              "witness": "call %38 [%40, %46]"
+            }
+          }
+        ]
+      },
+      {
+        "name": "Edit",
+        "pat": 52,
+        "body": 88,
+        "params": [
+          51
+        ],
+        "writes": [
+          "rows7751"
+        ],
+        "assignments": [
+          {
+            "path": "rows7751",
+            "rhs": 87,
+            "operation": {
+              "kind": "map",
+              "input": "rows7751",
+              "argument": 86,
+              "witness": "call %54 [%56, %86]"
+            }
+          }
+        ]
+      },
+      {
+        "name": "Select",
+        "pat": 92,
+        "body": 95,
+        "params": [
+          91
+        ],
+        "writes": [
+          "selected7751"
+        ],
+        "assignments": [
+          {
+            "path": "selected7751",
+            "rhs": 94,
+            "operation": {
+              "kind": "replace"
+            }
+          }
+        ]
+      },
+      {
+        "name": "Reverse",
+        "pat": 98,
+        "body": 104,
+        "params": [],
+        "writes": [
+          "rows7751"
+        ],
+        "assignments": [
+          {
+            "path": "rows7751",
+            "rhs": 103,
+            "operation": {
+              "kind": "reverse",
+              "input": "rows7751",
+              "argument": null,
+              "witness": "call %100 [%102]"
+            }
+          }
+        ]
+      },
+      {
+        "name": "Rate",
+        "pat": 107,
+        "body": 114,
+        "params": [],
+        "writes": [
+          "rate7751"
+        ],
+        "assignments": [
+          {
+            "path": "rate7751",
+            "rhs": 113,
+            "operation": {
+              "kind": "replace",
+              "callee": "Basics.add"
+            }
+          }
+        ]
+      }
+    ],
+    "holes": [
+      {
+        "position": "%72.0@data-row",
+        "expr": 41,
+        "reads": []
+      },
+      {
+        "position": "%72.0@class",
+        "expr": 55,
+        "reads": [
+          "selected7751"
+        ]
+      },
+      {
+        "position": "%72.0.0.0",
+        "expr": 61,
+        "reads": []
+      },
+      {
+        "position": "%72.0.1.0",
+        "expr": 63,
+        "reads": []
+      },
+      {
+        "position": "%74.0.1.3.1.0",
+        "expr": 16,
+        "reads": [
+          "rate7751",
+          "rows7751"
+        ]
+      },
+      {
+        "position": "%74.0.1.3.3.0",
+        "expr": 26,
+        "reads": [
+          "rows7751"
+        ]
+      },
+      {
+        "position": "%74.0.1.4.0",
+        "expr": 30,
+        "reads": [
+          "rows7751"
+        ]
+      },
+      {
+        "position": "%74.0.1.5.0",
+        "expr": 32,
+        "row": 73,
+        "reads": [
+          "rows7751",
+          "selected7751"
+        ],
+        "structural": true
+      }
+    ],
+    "edges": [
+      {
+        "message": "Add",
+        "holes": [
+          "%74.0.1.3.1.0",
+          "%74.0.1.3.3.0",
+          "%74.0.1.4.0",
+          "%74.0.1.5.0"
+        ]
+      },
+      {
+        "message": "Remove",
+        "holes": [
+          "%74.0.1.3.1.0",
+          "%74.0.1.3.3.0",
+          "%74.0.1.4.0",
+          "%74.0.1.5.0"
+        ]
+      },
+      {
+        "message": "Edit",
+        "holes": [
+          "%74.0.1.3.1.0",
+          "%74.0.1.3.3.0",
+          "%74.0.1.4.0",
+          "%74.0.1.5.0"
+        ]
+      },
+      {
+        "message": "Select",
+        "holes": [
+          "%72.0@class",
+          "%74.0.1.5.0"
+        ]
+      },
+      {
+        "message": "Reverse",
+        "holes": [
+          "%74.0.1.3.1.0",
+          "%74.0.1.3.3.0",
+          "%74.0.1.4.0",
+          "%74.0.1.5.0"
+        ]
+      },
+      {
+        "message": "Rate",
+        "holes": [
+          "%74.0.1.3.1.0"
+        ]
+      }
+    ],
+    "ownership": [
+      {
+        "expression": 26,
+        "path": "rows7751",
+        "operation": "List.append",
+        "reason": "fresh init array; same-field transform; no sibling RHS/callback dependency on old array; closed renderer has no retained model snapshots or effects"
+      },
+      {
+        "expression": 47,
+        "path": "rows7751",
+        "operation": "List.filter",
+        "reason": "fresh init array; same-field transform; no sibling RHS/callback dependency on old array; closed renderer has no retained model snapshots or effects"
+      },
+      {
+        "expression": 87,
+        "path": "rows7751",
+        "operation": "List.map",
+        "reason": "fresh init array; same-field transform; no sibling RHS/callback dependency on old array; closed renderer has no retained model snapshots or effects"
+      },
+      {
+        "expression": 103,
+        "path": "rows7751",
+        "operation": "List.reverse",
+        "reason": "fresh init array; same-field transform; no sibling RHS/callback dependency on old array; closed renderer has no retained model snapshots or effects"
+      }
+    ],
+    "emittedFields": {
+      "next7751": "m0",
+      "rows7751": "m1",
+      "selected7751": "m2",
+      "rate7751": "m3"
+    },
+    "rootPatches": [
+      {
+        "code": "textValue(n14,(s0_f1(v0.rows7751)*v0.rate7751));",
+        "reads": [
+          "rate7751",
+          "rows7751"
+        ]
+      },
+      {
+        "code": "textValue(n18,core.List_length(core.List_filter(v0.rows7751,(v1)=>v1.done)));",
+        "reads": [
+          "rows7751"
+        ]
+      },
+      {
+        "code": "textValue(n20,core.List_length(v0.rows7751));",
+        "reads": [
+          "rows7751"
+        ]
+      },
+      {
+        "code": "n23.p();",
+        "reads": [
+          "rows7751",
+          "selected7751"
+        ]
+      }
+    ]
+  }
+]

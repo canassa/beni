@@ -1,0 +1,286 @@
+[
+  {
+    "module": "Shape0.bir",
+    "method": "Record-update result paths and view-expression dependencies from compiler BIR; helper argument substitution; recursive calls conservatively depend on argument roots.",
+    "cases": [
+      {
+        "name": "Add",
+        "pat": 8,
+        "body": 32,
+        "params": [],
+        "writes": [
+          "next2266",
+          "rows2266"
+        ],
+        "assignments": [
+          {
+            "path": "rows2266",
+            "rhs": 26,
+            "operation": {
+              "kind": "append",
+              "input": "rows2266",
+              "argument": 24,
+              "witness": "call %25 [%11, %24]"
+            }
+          },
+          {
+            "path": "next2266",
+            "rhs": 31,
+            "operation": {
+              "kind": "replace",
+              "callee": "Basics.add"
+            }
+          }
+        ]
+      },
+      {
+        "name": "Remove",
+        "pat": 36,
+        "body": 49,
+        "params": [
+          35
+        ],
+        "writes": [
+          "rows2266",
+          "selected2266"
+        ],
+        "assignments": [
+          {
+            "path": "rows2266",
+            "rhs": 47,
+            "operation": {
+              "kind": "filter",
+              "input": "rows2266",
+              "argument": 46,
+              "witness": "call %38 [%40, %46]"
+            }
+          },
+          {
+            "path": "selected2266",
+            "rhs": 48,
+            "operation": {
+              "kind": "replace"
+            }
+          }
+        ]
+      },
+      {
+        "name": "Edit",
+        "pat": 53,
+        "body": 89,
+        "params": [
+          52
+        ],
+        "writes": [
+          "rows2266"
+        ],
+        "assignments": [
+          {
+            "path": "rows2266",
+            "rhs": 88,
+            "operation": {
+              "kind": "map",
+              "input": "rows2266",
+              "argument": 87,
+              "witness": "call %55 [%57, %87]"
+            }
+          }
+        ]
+      },
+      {
+        "name": "Select",
+        "pat": 93,
+        "body": 96,
+        "params": [
+          92
+        ],
+        "writes": [
+          "selected2266"
+        ],
+        "assignments": [
+          {
+            "path": "selected2266",
+            "rhs": 95,
+            "operation": {
+              "kind": "replace"
+            }
+          }
+        ]
+      },
+      {
+        "name": "Reverse",
+        "pat": 99,
+        "body": 105,
+        "params": [],
+        "writes": [
+          "rows2266"
+        ],
+        "assignments": [
+          {
+            "path": "rows2266",
+            "rhs": 104,
+            "operation": {
+              "kind": "reverse",
+              "input": "rows2266",
+              "argument": null,
+              "witness": "call %101 [%103]"
+            }
+          }
+        ]
+      },
+      {
+        "name": "Sort",
+        "pat": 108,
+        "body": 114,
+        "params": [],
+        "writes": [
+          "descending2266"
+        ],
+        "assignments": [
+          {
+            "path": "descending2266",
+            "rhs": 113,
+            "operation": {
+              "kind": "replace",
+              "callee": "Basics.not"
+            }
+          }
+        ]
+      }
+    ],
+    "holes": [
+      {
+        "position": "%79.0@data-row",
+        "expr": 48,
+        "reads": []
+      },
+      {
+        "position": "%79.0@class",
+        "expr": 62,
+        "reads": [
+          "selected2266"
+        ]
+      },
+      {
+        "position": "%79.0.0.0.0",
+        "expr": 68,
+        "reads": []
+      },
+      {
+        "position": "%79.0.1.0",
+        "expr": 70,
+        "reads": []
+      },
+      {
+        "position": "%81.0.1.2.0",
+        "expr": 11,
+        "reads": [
+          "rows2266"
+        ]
+      },
+      {
+        "position": "%81.0.1.3.1.0",
+        "expr": 39,
+        "row": 80,
+        "reads": [
+          "descending2266",
+          "rows2266",
+          "selected2266"
+        ],
+        "structural": true
+      }
+    ],
+    "edges": [
+      {
+        "message": "Add",
+        "holes": [
+          "%81.0.1.2.0",
+          "%81.0.1.3.1.0"
+        ]
+      },
+      {
+        "message": "Remove",
+        "holes": [
+          "%79.0@class",
+          "%81.0.1.2.0",
+          "%81.0.1.3.1.0"
+        ]
+      },
+      {
+        "message": "Edit",
+        "holes": [
+          "%81.0.1.2.0",
+          "%81.0.1.3.1.0"
+        ]
+      },
+      {
+        "message": "Select",
+        "holes": [
+          "%79.0@class",
+          "%81.0.1.3.1.0"
+        ]
+      },
+      {
+        "message": "Reverse",
+        "holes": [
+          "%81.0.1.2.0",
+          "%81.0.1.3.1.0"
+        ]
+      },
+      {
+        "message": "Sort",
+        "holes": [
+          "%81.0.1.3.1.0"
+        ]
+      }
+    ],
+    "ownership": [
+      {
+        "expression": 26,
+        "path": "rows2266",
+        "operation": "List.append",
+        "reason": "fresh init array; same-field transform; no sibling RHS/callback dependency on old array; closed renderer has no retained model snapshots or effects"
+      },
+      {
+        "expression": 47,
+        "path": "rows2266",
+        "operation": "List.filter",
+        "reason": "fresh init array; same-field transform; no sibling RHS/callback dependency on old array; closed renderer has no retained model snapshots or effects"
+      },
+      {
+        "expression": 88,
+        "path": "rows2266",
+        "operation": "List.map",
+        "reason": "fresh init array; same-field transform; no sibling RHS/callback dependency on old array; closed renderer has no retained model snapshots or effects"
+      },
+      {
+        "expression": 104,
+        "path": "rows2266",
+        "operation": "List.reverse",
+        "reason": "fresh init array; same-field transform; no sibling RHS/callback dependency on old array; closed renderer has no retained model snapshots or effects"
+      }
+    ],
+    "emittedFields": {
+      "next2266": "m0",
+      "rows2266": "m1",
+      "selected2266": "m2",
+      "descending2266": "m3"
+    },
+    "rootPatches": [
+      {
+        "code": "textValue(n9,core.List_length(v0.rows2266));",
+        "reads": [
+          "rows2266"
+        ]
+      },
+      {
+        "code": "n22.p();",
+        "reads": [
+          "descending2266",
+          "rows2266",
+          "selected2266"
+        ]
+      }
+    ]
+  }
+]

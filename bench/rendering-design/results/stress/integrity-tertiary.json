@@ -1,0 +1,117 @@
+{
+  "verified_at": "2026-10-16T01:44:51.852Z",
+  "observations": 272,
+  "native_builds": 52,
+  "scope": "Compiler and minified JavaScript SHA-256 and raw length with source-map URL trailers removed, disjoint raw byte accounting, and source spec identity. No size fits or compression results are recomputed; no project suites.",
+  "crossings": [
+    {
+      "family": "filter",
+      "mode": "tea",
+      "n": 3264,
+      "brotli": 523981
+    },
+    {
+      "family": "summary",
+      "mode": "tea",
+      "n": 3168,
+      "brotli": 517173
+    },
+    {
+      "family": "filter",
+      "mode": "partial",
+      "n": 5888,
+      "brotli": 524422
+    },
+    {
+      "family": "summary",
+      "mode": "partial",
+      "n": 5728,
+      "brotli": 525360
+    },
+    {
+      "family": "modal",
+      "mode": "partial",
+      "n": 7456,
+      "brotli": 516979
+    },
+    {
+      "family": "modal",
+      "mode": "cells",
+      "n": 7456,
+      "brotli": 528227
+    },
+    {
+      "family": "filter",
+      "mode": "cells",
+      "n": 6096,
+      "brotli": 527363
+    },
+    {
+      "family": "summary",
+      "mode": "cells",
+      "n": 6208,
+      "brotli": 524834
+    },
+    {
+      "family": "modal",
+      "mode": "static",
+      "n": 10288,
+      "brotli": 529693
+    },
+    {
+      "family": "filter",
+      "mode": "static",
+      "n": 8304,
+      "brotli": 519024
+    },
+    {
+      "family": "summary",
+      "mode": "static",
+      "n": 7872,
+      "brotli": 525008
+    },
+    {
+      "family": "modal",
+      "mode": "tea",
+      "n": 4112,
+      "brotli": 531816
+    },
+    {
+      "family": "modal",
+      "mode": "local",
+      "n": 11664,
+      "brotli": 522772
+    }
+  ],
+  "recovered": [
+    {
+      "family": "modal",
+      "mode": "tea",
+      "n": 4112,
+      "retry": {
+        "n": 4112,
+        "sha256": "89b8801871fc4f9549ba3e379cc32f7b000878450fa935c1269afe16b27cc402",
+        "brotli": 531816,
+        "address_space_limit_bytes": 25769803776,
+        "physical_memory_limit_bytes": null
+      }
+    }
+  ],
+  "compiler_limited": [
+    {
+      "family": "filter",
+      "mode": "direct",
+      "n": 512
+    },
+    {
+      "family": "summary",
+      "mode": "direct",
+      "n": 512
+    },
+    {
+      "family": "modal",
+      "mode": "direct",
+      "n": 1728
+    }
+  ]
+}

@@ -1,0 +1,2 @@
+import fs from 'node:fs';import {application} from './catalogue.mjs';import {writeApp} from './generate.mjs';
+const cases=[];for(const population of [1000,10000]){const name='perf-list-'+population;cases.push({name,path:writeApp(application(1,17,'list',population),name),n:1,seed:17,shape:'list',population})}fs.writeFileSync(import.meta.dirname+'/.out/perf-cases.json',JSON.stringify(cases,null,2)+'\n');

@@ -1,0 +1,8 @@
+{
+  "platform": "darwin",
+  "arch": "arm64",
+  "node": "v24.19.0",
+  "cpu": "Apple M2 Pro",
+  "heap_mib": 6144,
+  "workers": 1
+}

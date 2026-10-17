@@ -1,0 +1,7 @@
+{
+  "started": "2026-10-15T19:49:54.773Z",
+  "source_commit": "3cca64d0196da6b121ce1fde2af407265d82919d",
+  "compiler": "beni 0.1.0-m1 85a90d7e463391ed4a3b86a60997dfe8",
+  "compiler_sha256": "0291b420028819837b7fc33c269f8c71240fbd3dff73b93b63965ba236221f7a",
+  "node": "v24.19.0"
+}

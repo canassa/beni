@@ -1,0 +1,429 @@
+decl 0: alias Row
+  %0 = type_import Basics.Int
+  %1 = type_import String.String
+  %2 = type_import Basics.Int
+  %3 = type_import Basics.Bool
+  %4 = type_record { id : %0, title : %1, score : %2, done : %3 }
+  body %4
+  ctor 0 Row [%0, %1, %2, %3]
+  refs
+    import_type Basics.Int
+    import_type String.String
+    import_type Basics.Bool
+
+decl 1: pub alias Model
+  %0 = type_import List.List
+  %1 = type_top 0 (Row)
+  %2 = type_app %0 [%1]
+  %3 = type_import Basics.Int
+  %4 = type_import Basics.Int
+  %5 = type_import String.String
+  %6 = type_import Basics.Bool
+  %7 = type_record { rows2595 : %2, next2595 : %3, selected2595 : %4, query2595 : %5, onlyDone2595 : %6 }
+  body %7
+  ctor 1 Model [%2, %3, %4, %5, %6]
+  refs
+    import_type List.List
+    type_top 0 (Row)
+    import_type Basics.Int
+    import_type String.String
+    import_type Basics.Bool
+  interface alias Model (record constructor)
+
+decl 2: pub type Msg
+  %0 = type_import Basics.Int
+  %1 = type_import Basics.Int
+  %2 = type_import Basics.Int
+  %3 = type_import String.String
+  ctor 2 Add []
+  ctor 3 Remove [%0]
+  ctor 4 Edit [%1]
+  ctor 5 Select [%2]
+  ctor 6 Reverse []
+  ctor 7 Query [%3]
+  ctor 8 OnlyDone []
+  refs
+    import_type Basics.Int
+    import_type String.String
+  interface type Msg = Add | Remove | Edit | Select | Reverse | Query | OnlyDone
+
+decl 3: pub value init (annotated)
+  %0 = type_unit
+  %1 = type_top 1 (Model)
+  %2 = type_fn [%0] -> %1
+  %3 = pat_unit
+  %4 = qualified List.map
+  %5 = qualified List.range
+  %6 = int 1
+  %7 = int 20
+  %8 = call %5 [%6, %7]
+  %9 = pat_var local 0 (i)
+  %10 = local 0 (i)
+  %11 = string "Item "
+  %12 = qualified String.fromInt
+  %13 = local 0 (i)
+  %14 = call %12 [%13]
+  %15 = import_value Basics.append
+  %16 = call %15 [%11, %14]
+  %17 = qualified Int.mod
+  %18 = local 0 (i)
+  %19 = int 1
+  %20 = import_value Basics.mul
+  %21 = call %20 [%18, %19]
+  %22 = int 17
+  %23 = call %17 [%21, %22]
+  %24 = import_ctor Basics.False
+  %25 = record { id = %10, title = %16, score = %23, done = %24 }
+  %26 = lambda [%9] -> %25
+  %27 = call %4 [%8, %26]
+  %28 = int 21
+  %29 = int 0
+  %30 = string ""
+  %31 = import_ctor Basics.False
+  %32 = record { rows2595 = %27, next2595 = %28, selected2595 = %29, query2595 = %30, onlyDone2595 = %31 }
+  annotation %2
+  params [%3]
+  body %32
+  locals
+    0 i param %9
+  refs
+    type_top 1 (Model)
+    import_value List.map
+    import_value List.range
+    import_value String.fromInt
+    import_value Basics.append
+    import_value Int.mod
+    import_value Basics.mul
+    import_ctor Basics.False
+  interface value init (annotated)
+
+decl 4: pub value update (annotated)
+  %0 = type_top 2 (Msg)
+  %1 = type_top 1 (Model)
+  %2 = type_top 1 (Model)
+  %3 = type_fn [%0, %1] -> %2
+  %4 = pat_var local 0 (msg)
+  %5 = pat_var local 1 (model)
+  %6 = local 0 (msg)
+  %7 = ctor 2 (Add)
+  %8 = pat_ctor %7 []
+  %9 = local 1 (model)
+  %10 = local 1 (model)
+  %11 = field_access %10 .rows2595
+  %12 = local 1 (model)
+  %13 = field_access %12 .next2595
+  %14 = string "filter 17/0 Activity "
+  %15 = qualified String.fromInt
+  %16 = local 1 (model)
+  %17 = field_access %16 .next2595
+  %18 = call %15 [%17]
+  %19 = import_value Basics.append
+  %20 = call %19 [%14, %18]
+  %21 = int 1
+  %22 = import_ctor Basics.False
+  %23 = record { id = %13, title = %20, score = %21, done = %22 }
+  %24 = list [%23]
+  %25 = import_value List.append
+  %26 = call %25 [%11, %24]
+  %27 = local 1 (model)
+  %28 = field_access %27 .next2595
+  %29 = int 1
+  %30 = import_value Basics.add
+  %31 = call %30 [%28, %29]
+  %32 = record_update %9 { rows2595 = %26, next2595 = %31 }
+  %33 = branch %8 -> %32
+  %34 = ctor 3 (Remove)
+  %35 = pat_var local 2 (wanted)
+  %36 = pat_ctor %34 [%35]
+  %37 = local 1 (model)
+  %38 = qualified List.filter
+  %39 = local 1 (model)
+  %40 = field_access %39 .rows2595
+  %41 = pat_var local 3 (row)
+  %42 = local 3 (row)
+  %43 = field_access %42 .id
+  %44 = local 2 (wanted)
+  %45 = method_call %43 .eq [%44] (≠)
+  %46 = lambda [%41] -> %45
+  %47 = call %38 [%40, %46]
+  %48 = record_update %37 { rows2595 = %47 }
+  %49 = branch %36 -> %48
+  %50 = ctor 4 (Edit)
+  %51 = pat_var local 4 (wanted)
+  %52 = pat_ctor %50 [%51]
+  %53 = local 1 (model)
+  %54 = qualified List.map
+  %55 = local 1 (model)
+  %56 = field_access %55 .rows2595
+  %57 = pat_var local 5 (row)
+  %58 = local 5 (row)
+  %59 = field_access %58 .id
+  %60 = local 4 (wanted)
+  %61 = method_call %59 .eq [%60] (==)
+  %62 = import_ctor Basics.True
+  %63 = pat_ctor %62 []
+  %64 = local 5 (row)
+  %65 = local 5 (row)
+  %66 = field_access %65 .title
+  %67 = string "!"
+  %68 = import_value Basics.append
+  %69 = call %68 [%66, %67]
+  %70 = local 5 (row)
+  %71 = field_access %70 .score
+  %72 = int 1
+  %73 = import_value Basics.add
+  %74 = call %73 [%71, %72]
+  %75 = import_value Basics.not
+  %76 = local 5 (row)
+  %77 = field_access %76 .done
+  %78 = call %75 [%77]
+  %79 = record_update %64 { title = %69, score = %74, done = %78 }
+  %80 = branch %63 -> %79
+  %81 = import_ctor Basics.False
+  %82 = pat_ctor %81 []
+  %83 = local 5 (row)
+  %84 = branch %82 -> %83
+  %85 = case %61 [%80, %84]
+  %86 = lambda [%57] -> %85
+  %87 = call %54 [%56, %86]
+  %88 = record_update %53 { rows2595 = %87 }
+  %89 = branch %52 -> %88
+  %90 = ctor 5 (Select)
+  %91 = pat_var local 6 (wanted)
+  %92 = pat_ctor %90 [%91]
+  %93 = local 1 (model)
+  %94 = local 6 (wanted)
+  %95 = record_update %93 { selected2595 = %94 }
+  %96 = branch %92 -> %95
+  %97 = ctor 6 (Reverse)
+  %98 = pat_ctor %97 []
+  %99 = local 1 (model)
+  %100 = qualified List.reverse
+  %101 = local 1 (model)
+  %102 = field_access %101 .rows2595
+  %103 = call %100 [%102]
+  %104 = record_update %99 { rows2595 = %103 }
+  %105 = branch %98 -> %104
+  %106 = ctor 7 (Query)
+  %107 = pat_var local 7 (text)
+  %108 = pat_ctor %106 [%107]
+  %109 = local 1 (model)
+  %110 = local 7 (text)
+  %111 = record_update %109 { query2595 = %110 }
+  %112 = branch %108 -> %111
+  %113 = ctor 8 (OnlyDone)
+  %114 = pat_ctor %113 []
+  %115 = local 1 (model)
+  %116 = import_value Basics.not
+  %117 = local 1 (model)
+  %118 = field_access %117 .onlyDone2595
+  %119 = call %116 [%118]
+  %120 = record_update %115 { onlyDone2595 = %119 }
+  %121 = branch %114 -> %120
+  %122 = case %6 [%33, %49, %89, %96, %105, %112, %121]
+  annotation %3
+  params [%4, %5]
+  body %122
+  locals
+    0 msg param %4
+    1 model param %5
+    2 wanted pattern %35
+    3 row param %41
+    4 wanted pattern %51
+    5 row param %57
+    6 wanted pattern %91
+    7 text pattern %107
+  refs
+    type_top 2 (Msg)
+    type_top 1 (Model)
+    ctor 2 (Add)
+    import_value String.fromInt
+    import_value Basics.append
+    import_ctor Basics.False
+    import_value List.append
+    import_value Basics.add
+    ctor 3 (Remove)
+    import_value List.filter
+    ctor 4 (Edit)
+    import_value List.map
+    import_ctor Basics.True
+    import_value Basics.not
+    ctor 5 (Select)
+    ctor 6 (Reverse)
+    import_value List.reverse
+    ctor 7 (Query)
+    ctor 8 (OnlyDone)
+  interface value update (annotated)
+
+decl 5: pub value view (annotated)
+  %0 = type_top 1 (Model)
+  %1 = type_import Html.Html
+  %2 = type_top 2 (Msg)
+  %3 = type_app %1 [%2]
+  %4 = type_fn [%0] -> %3
+  %5 = pat_var local 0 (model)
+  %6 = ctor 2 (Add)
+  %7 = ctor 6 (Reverse)
+  %8 = local 0 (model)
+  %9 = field_access %8 .query2595
+  %10 = ctor 7 (Query)
+  %11 = ctor 8 (OnlyDone)
+  %12 = qualified List.length
+  %13 = local 0 (model)
+  %14 = field_access %13 .rows2595
+  %15 = call %12 [%14]
+  %16 = qualified List.filter
+  %17 = local 0 (model)
+  %18 = field_access %17 .rows2595
+  %19 = pat_var local 1 (row)
+  %20 = qualified String.contains
+  %21 = local 1 (row)
+  %22 = field_access %21 .title
+  %23 = local 0 (model)
+  %24 = field_access %23 .query2595
+  %25 = call %20 [%22, %24]
+  %26 = import_value Basics.not
+  %27 = local 0 (model)
+  %28 = field_access %27 .onlyDone2595
+  %29 = call %26 [%28]
+  %30 = local 1 (row)
+  %31 = field_access %30 .done
+  %32 = import_value Basics.or
+  %33 = call %32 [%29, %31]
+  %34 = import_value Basics.and
+  %35 = call %34 [%25, %33]
+  %36 = lambda [%19] -> %35
+  %37 = call %16 [%18, %36]
+  %38 = pat_var local 2
+  %39 = local 2
+  %40 = field_access %39 .id
+  %41 = lambda [%38] -> %40
+  %42 = pat_var local 3 (row)
+  %43 = qualified String.fromInt
+  %44 = local 3 (row)
+  %45 = field_access %44 .id
+  %46 = call %43 [%45]
+  %47 = local 0 (model)
+  %48 = field_access %47 .selected2595
+  %49 = local 3 (row)
+  %50 = field_access %49 .id
+  %51 = method_call %48 .eq [%50] (==)
+  %52 = import_ctor Basics.True
+  %53 = pat_ctor %52 []
+  %54 = string "selected"
+  %55 = branch %53 -> %54
+  %56 = import_ctor Basics.False
+  %57 = pat_ctor %56 []
+  %58 = string ""
+  %59 = branch %57 -> %58
+  %60 = case %51 [%55, %59]
+  %61 = ctor 5 (Select)
+  %62 = local 3 (row)
+  %63 = field_access %62 .id
+  %64 = call %61 [%63]
+  %65 = local 3 (row)
+  %66 = field_access %65 .title
+  %67 = local 3 (row)
+  %68 = field_access %67 .score
+  %69 = ctor 4 (Edit)
+  %70 = local 3 (row)
+  %71 = field_access %70 .id
+  %72 = call %69 [%71]
+  %73 = ctor 3 (Remove)
+  %74 = local 3 (row)
+  %75 = field_access %74 .id
+  %76 = call %73 [%75]
+  %77 = markup
+    element li
+      attr data-row = %46
+      attr class = %60
+      element button
+        attr onClick = %64
+        hole %66
+      element output
+        hole %68
+      element button
+        attr onClick = %72
+        text "Edit"
+      element button
+        attr onClick = %76
+        text "Remove"
+  %78 = lambda [%42] -> %77
+  %79 = markup
+    element section
+      attr id = "s0"
+      attr data-shape = "filter"
+      element h2
+        text "filter 17/0 Activity"
+      element div
+        attr class = "level-0"
+        element button
+          attr id = "s0-add"
+          attr onClick = %6
+          text "Add"
+        element button
+          attr id = "s0-reverse"
+          attr onClick = %7
+          text "Reverse"
+        element input
+          attr id = "s0-query"
+          attr value = %9
+          attr onInput = %10
+        element button
+          attr id = "s0-onlydone"
+          attr onClick = %11
+          text "OnlyDone"
+        element p
+          hole %15
+          text " records"
+        element ul
+          for each %37 keyed key %41
+            row markup %78 body %77 captures [0 (model)] inputs [model.selected2595]
+  annotation %4
+  params [%5]
+  body %79
+  locals
+    0 model param %5
+    1 row param %19
+    2 _ fresh %38
+    3 row param %42
+  refs
+    type_top 1 (Model)
+    import_type Html.Html
+    type_top 2 (Msg)
+    ctor 2 (Add)
+    ctor 6 (Reverse)
+    ctor 7 (Query)
+    ctor 8 (OnlyDone)
+    import_value List.length
+    import_value List.filter
+    import_value String.contains
+    import_value Basics.not
+    import_value Basics.or
+    import_value Basics.and
+    import_value String.fromInt
+    import_ctor Basics.True
+    import_ctor Basics.False
+    ctor 5 (Select)
+    ctor 4 (Edit)
+    ctor 3 (Remove)
+  interface value view (annotated)
+
+interface
+  alias Model (record constructor)
+  type Msg = Add | Remove | Edit | Select | Reverse | Query | OnlyDone
+  value init (annotated)
+  value update (annotated)
+  value view (annotated)
+
+imports
+  import Html exposing (Html)
+  prelude Basics
+  prelude List
+  prelude Maybe
+  prelude Result
+  prelude String
+  prelude Char
+  prelude Debug
+  prelude Int
+  prelude Float

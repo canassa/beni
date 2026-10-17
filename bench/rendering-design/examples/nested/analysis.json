@@ -1,0 +1,138 @@
+[
+  {
+    "module": "Shape0.bir",
+    "method": "Record-update result paths and view-expression dependencies from compiler BIR; helper argument substitution; recursive calls conservatively depend on argument roots.",
+    "cases": [
+      {
+        "name": "Child",
+        "pat": 10,
+        "body": 32,
+        "params": [
+          8,
+          9
+        ],
+        "writes": [
+          "left6797",
+          "right6797"
+        ],
+        "assignments": [
+          {
+            "path": "left6797",
+            "rhs": 19,
+            "operation": {
+              "kind": "replace",
+              "callee": "Basics.add"
+            }
+          },
+          {
+            "path": "right6797",
+            "rhs": 29,
+            "operation": {
+              "kind": "replace",
+              "callee": "Basics.add"
+            }
+          }
+        ]
+      },
+      {
+        "name": "Collapse",
+        "pat": 35,
+        "body": 41,
+        "params": [],
+        "writes": [
+          "expanded6797"
+        ],
+        "assignments": [
+          {
+            "path": "expanded6797",
+            "rhs": 40,
+            "operation": {
+              "kind": "replace",
+              "callee": "Basics.not"
+            }
+          }
+        ]
+      }
+    ],
+    "holes": [
+      {
+        "position": "%29.0.1.1.0",
+        "expr": 12,
+        "reads": [
+          "left6797",
+          "right6797"
+        ]
+      },
+      {
+        "position": "%29.0.1.2@hidden",
+        "expr": 16,
+        "reads": [
+          "expanded6797"
+        ]
+      },
+      {
+        "position": "%29.0.1.2.0",
+        "expr": 22,
+        "reads": [
+          "left6797"
+        ]
+      },
+      {
+        "position": "%29.0.1.2.1",
+        "expr": 28,
+        "reads": [
+          "right6797"
+        ]
+      }
+    ],
+    "edges": [
+      {
+        "message": "Child",
+        "holes": [
+          "%29.0.1.1.0",
+          "%29.0.1.2.0",
+          "%29.0.1.2.1"
+        ]
+      },
+      {
+        "message": "Collapse",
+        "holes": [
+          "%29.0.1.2@hidden"
+        ]
+      }
+    ],
+    "ownership": [],
+    "emittedFields": {
+      "left6797": "m0",
+      "right6797": "m1",
+      "expanded6797": "m2"
+    },
+    "rootPatches": [
+      {
+        "code": "textValue(n7,(v0.left6797+v0.right6797));",
+        "reads": [
+          "left6797",
+          "right6797"
+        ]
+      },
+      {
+        "code": "attribute(n8,\"hidden\",(!v0.expanded6797));",
+        "reads": [
+          "expanded6797"
+        ]
+      },
+      {
+        "code": "n9.p();",
+        "reads": [
+          "left6797"
+        ]
+      },
+      {
+        "code": "n10.p();",
+        "reads": [
+          "right6797"
+        ]
+      }
+    ]
+  }
+]
