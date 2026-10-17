@@ -1148,6 +1148,21 @@ const Fn = struct {
         return w.fail(at, code, try g.str(message), input, written);
     }
 
+    /// The primitive a validator's field test is written for, or null:
+    /// `SchemaShare.fieldHelper`'s primitives.
+    fn validFieldTest(w: *Fn, child: PNode) !?SchemaShare.Helper {
+        const g = w.g;
+        if (SchemaGraph.tag(g.plan, child) != .primitive) return null;
+        return switch (std.enums.fromInt(SchemaPlan.Primitive, SchemaGraph.lhs(g.plan, child)) orelse return null) {
+            .string => .string,
+            .int => .int,
+            .bool => .bool,
+            .float => .float,
+            .finite_float => .finite,
+            .null, .value, .char, .int32, .never => null,
+        };
+    }
+
     /// `c.fail`.
     fn failMark(w: *Fn) !Node.Index {
         return w.g.ctxField(w.c, "fail");
@@ -1543,6 +1558,32 @@ const Fn = struct {
             const at = w.childAt(.{ .text = key }, .{ .text = name });
             const value = try g.fresh("$f");
             slot.* = value;
+            // A validator's required primitive field (`schema.md` §6, *A run whose
+            // failure is never read is a validator*, amended 2026-10-17): every
+            // failure is `c.fail` alike, so the key's read, the depth bound
+            // and the primitive's test are one condition that returns it,
+            // and the field's value is what was read. Each test answers false
+            // for `undefined`, so it is the presence test too.
+            if (w.op == .valid and !f.optional and !SchemaGraph.isMaybeField(g.plan, f) and w.readsByValue(key)) if (try w.validFieldTest(f.child)) |kind| {
+                const x = try g.fresh("$x");
+                try g.constDecl(out, x, try g.indexOf(try g.id(v), try g.str(key)));
+                const typeof_x = try g.l.unary(.type_of, try g.id(x), g.p);
+                const wrong = switch (kind) {
+                    .string => try g.bin(.strict_ne, typeof_x, try g.str("string")),
+                    .bool => try g.bin(.strict_ne, typeof_x, try g.str("boolean")),
+                    .float => try g.bin(.strict_ne, typeof_x, try g.str("number")),
+                    // `Number.isSafeInteger` and `Number.isFinite` answer
+                    // false for anything that is not a number.
+                    .int => try g.not(try g.globalCall("Number", "isSafeInteger", &.{try g.id(x)})),
+                    .finite => try g.not(try g.globalCall("Number", "isFinite", &.{try g.id(x)})),
+                    .deep, .missing => unreachable,
+                };
+                var stop: Stmts = .empty;
+                try g.ret(&stop, try w.failMark());
+                try g.ifElse(out, try g.bin(.logical_or, try g.id(deep), wrong), stop.items, &.{});
+                slot.* = x;
+                continue;
+            };
             // A required primitive field of a JSON object, where the build
             // shares its failure branch (`SchemaShare`): the key read and
             // every test written here, as one condition, and one call that
@@ -1772,7 +1813,9 @@ const Fn = struct {
             try g.constDecl(out, tag, try g.indexOf(try g.id(v), try g.str(discriminator)));
         } else {
             try g.constDecl(out, tag, try g.indexOf(try g.id(v), try g.str(discriminator)));
-            try g.ifElse(out, try g.bin(.strict_eq, try g.id(tag), try g.lit(.undefined_lit)), missing.items, &.{});
+            // A validator's missing tag and unknown tag are one failure, and
+            // `undefined` is no variant's tag: the `switch` below fails it.
+            if (w.op != .valid) try g.ifElse(out, try g.bin(.strict_eq, try g.id(tag), try g.lit(.undefined_lit)), missing.items, &.{});
         }
 
         var cases: std.ArrayList(Node.Index) = .empty;

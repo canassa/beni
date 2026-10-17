@@ -7736,6 +7736,18 @@ which keeps the call), `emit/release/inline/PushAndTimer` (the validator's worke
 program's `read`: no `Set` and no `Ok` is built), and `run/CaseAcrossCall`, the same program run in
 both builds.
 
+**A short `switch` is its `if`s** (*added 2026-10-17*; `Spec.switchAsIfs`, the last sweep of every
+statement list). `switch (k)` on a name, with at most three cases besides the `default`, every
+case's test a literal, and every body holding no `break` and unable to run off its end, is
+`if (k === t) { body }` for each case in order, then the `default`'s statements. A literal test
+does nothing and a body that cannot complete never falls into the next case, so the cases are tried,
+and one is run, exactly as the `switch` tries and runs them. A body that is one unlabelled block is
+the block's statements (an `if`'s body is a scope of its own); the `default`'s join the list where
+the `switch` stood when they declare nothing, or when no other statement of the list names what
+they declare. `switch(k){case"set":{…}case"reset":{return R}default:{return F}}` is
+`if(k==="set"){…}if(k==="reset")return R;return F`. Measured (brotli 11):
+`emit/release/inline/PushAndTimer` 628 → 611, `app/ValidatorRun` 655 → 643; no other golden moved.
+
 ### The combined solver
 
 *Specified 2026-10-02, normative for `src/js/Spec.zig`'s analysis from slice 4 of research 52
