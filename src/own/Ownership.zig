@@ -3714,6 +3714,9 @@ const cond_shared: u32 = 2;
 /// on it takes the `limit` cause, so it is no second error beside the
 /// limit's (#233).
 const cond_limit: u32 = 3;
+/// The last of the conditions every walk starts with, which hold no atoms:
+/// a condition above it is a set of atoms (`mkCond`).
+const cond_fixed_last: u32 = cond_limit;
 
 /// What relying on a condition came to (§18.4); `limit` for `cond_limit`.
 /// The order is the order of `worse`: a later value is the worse failure.
@@ -4785,7 +4788,7 @@ const Walker = struct {
     /// Whether two conditions say the same: the same verdict, or the same
     /// atoms.
     fn condSame(w: *Walker, x: u32, y: u32) bool {
-        if (x <= cond_shared or y <= cond_shared) return x == y;
+        if (x <= cond_fixed_last or y <= cond_fixed_last) return x == y;
         const xs = w.conds.items[x].atoms;
         const ys = w.conds.items[y].atoms;
         for (xs) |t| {
@@ -4808,7 +4811,7 @@ const Walker = struct {
             else => {},
         };
         const k = try w.sepCells(x, y, exact);
-        if (k <= cond_shared) return k;
+        if (k <= cond_fixed_last) return k;
         const atoms = try w.a.dupe(WAtom, w.conds.items[k].atoms);
         for (atoms) |*a| switch (a.kind) {
             .sep => a.kind = .sep_spine,
