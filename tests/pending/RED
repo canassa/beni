@@ -129,4 +129,3 @@ tests/pending/emit/release/inline/ResearchS2 BuildFailed
 tests/pending/emit/release/inline/ResearchS3 BuildFailed
 tests/pending/emit/release/inline/Texts BuildFailed
 tests/pending/emit/release/inline/EnumCycle.beni exit=0 js-differs
-tests/pending/build/bad/inline/StarNotReplace BuildDidNotFail

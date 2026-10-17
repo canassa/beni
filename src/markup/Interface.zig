@@ -237,6 +237,23 @@ pub const Program = struct {
         /// re-runs every group of the page (`browser-direct.md` §4.1,
         /// `patchAll`).
         star: bool,
+        /// 1.15: when `star`, which of the three kinds of `*` it is (the
+        /// owner, 2026-10-17; `browser-inline.md` §5, §8.7).
+        star_kind: StarKind = .none,
+
+        pub const StarKind = enum(u8) {
+            none,
+            /// A cap of the write-set pass cut the key's writes to `ρ`: lost
+            /// precision, a limit of the compiler.
+            precision,
+            /// An inferred write of the whole model, a record of more than one
+            /// field the program reads or writes: it hides which fields changed.
+            whole_record,
+            /// The model is one value — no record of several fields — written
+            /// exactly.
+            single_value,
+            _,
+        };
     };
 
     /// 1.7: what `Context.programHole` says of one hole of the program's

@@ -1,0 +1,49 @@
+-- A `*` key of lost precision is a limit of the compiler, not the language
+-- rule (docs/design/browser-inline.md §5, the owner, 2026-10-17): `run`'s
+-- summary is instantiated past the write-set pass's depth cap, so `Go`'s writes
+-- are cut to the whole model (`write-sets.md` §6.1, cap D), and the key is
+-- refused at the record's `update`, class 4. The arm itself writes one field.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    x : Int
+
+
+type Msg
+    = Go
+
+
+run : (Model → Model), Model → Model
+run k m = k m
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Go →
+            run
+                (λm1 →
+                    run
+                        (λm2 →
+                            run
+                                (λm3 →
+                                    run
+                                        (λm4 → run (λm5 → { m5 | x = 1 }) m4)
+                                        m3
+                                )
+                                m2
+                        )
+                        m1
+                )
+                model
+
+
+view : Model → Html Msg
+view model = <button data-role="go" onClick={Go}>{model.x}</button>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → { x = 0 }, update = update, view = view }

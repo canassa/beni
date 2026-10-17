@@ -637,7 +637,7 @@ const Page = struct {
         @memset(inlined, false);
         for (keys, 0..) |key, k| {
             if (refs[k] == 0) continue;
-            try pg.refuseKey();
+            try pg.refuseKey(key);
             const params = try pg.a().alloc(m.Name, key.params);
             for (params) |*x| x.* = try cx.fresh("value");
             if (refs[k] == 1) if (only[k]) |i| {
@@ -722,11 +722,13 @@ const Page = struct {
         return js.arrow(&.{id}, body);
     }
 
-    /// The language rule a key's handler is refused by (§8.7, class 3): an
-    /// `update` computed when the page runs has no arm to write. A `*` key is
-    /// compiled as S0 compiles it, every binding called, until the owner
-    /// decides which the rule refuses (§8.7).
-    fn refuseKey(pg: *Page) m.Error!void {
+    /// What a key's handler is refused by (§8.7): an `update` computed when
+    /// the page runs has no arm to write (class 3); a `*` key, by its kind
+    /// (§5, the owner, 2026-10-17) — lost precision is a limit of the
+    /// compiler (class 4), an inferred whole write of a record of several
+    /// fields the language rule (class 3), and a model of one value is
+    /// written exactly and accepted, every binding called.
+    fn refuseKey(pg: *Page, key: m.Program.Key) m.Error!void {
         const cx = pg.cx;
         if (pg.p.update == .computed) return cx.programReport(.update, .program_shape,
             \\This program's `update` is a value computed when the page runs, so `browser-inline`
@@ -734,6 +736,25 @@ const Page = struct {
             \\with no message made (`docs/design/browser-inline.md` §8.7; §5, class 3). Name a function
             \\of the program's modules as `update`, or write a lambda whose body chooses the arm.
         );
+        if (!key.star) return;
+        switch (key.star_kind) {
+            .whole_record => return cx.programReport(.update, .program_shape, try std.fmt.allocPrint(cx.arena,
+                \\Key `{s}` writes the whole model, a record of several fields, with a value the compiler
+                \\cannot see into, which hides which of its fields changed, so no binding of the page can
+                \\be chosen for it: `browser-inline` writes only the bindings a key's writes reach, and
+                \\never checks the whole page again (`docs/design/browser-inline.md` §8.7; §5, class 3).
+                \\Write the fields the arm changes, as a record update of the model —
+                \\`{{ model | field = … }}` — so that its writes name them.
+            , .{key.name})),
+            .precision => return cx.programReport(.update, .not_implemented, try std.fmt.allocPrint(cx.arena,
+                \\A limit of the compiler: the write-set pass lost track of what key `{s}` writes and says
+                \\it writes the whole model, so it cannot say which bindings those writes reach
+                \\(`docs/design/browser-inline.md` §8.7; §5, class 4). The program is valid: it builds
+                \\with `--platform=browser-tea`.
+            , .{key.name})),
+            // A model of one value: its one write is the model, exactly.
+            else => {},
+        }
     }
 
     /// Key `k`'s handler's name, made the first time it is asked for.
