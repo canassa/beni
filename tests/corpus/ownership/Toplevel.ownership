@@ -10,7 +10,7 @@ module Toplevel
   summary init: res .todos fresh1
   summary addFresh: res .todos fresh1
   summary reading: res fresh1
-  summary bump: π1#Dict.0 R, π1#Dict.0#Node.1 RA, π1#Dict.0#Node.2 RAW, π1#Dict.0#Node.3 RA, π1#Dict.0#Node.4 RA; res #Dict.0#Node.1 ~π1#Dict.0#Node.1, #Dict.0#Node.2 ~fresh1{lost} ~π1#Dict.0#Node.2{lost}, #Dict.0#Node.3 ~π1#Dict.0#Node.3{excl π1#Dict.0#Node.4, sep π1#Dict.0#Node.1 π1#Dict.0#Node.4, sep π1#Dict.0#Node.2 π1#Dict.0#Node.4, sep π1#Dict.0#Node.3 π1#Dict.0#Node.4} ~π1#Dict.0#Node.4{excl π1#Dict.0#Node.3, sep π1#Dict.0#Node.1 π1#Dict.0#Node.4, sep π1#Dict.0#Node.2 π1#Dict.0#Node.4, sep π1#Dict.0#Node.3 π1#Dict.0#Node.4}, #Dict.0#Node.4 ~π1#Dict.0#Node.3{excl π1#Dict.0#Node.4, sep π1#Dict.0#Node.1 π1#Dict.0#Node.4, sep π1#Dict.0#Node.2 π1#Dict.0#Node.4, sep π1#Dict.0#Node.3 π1#Dict.0#Node.4} ~π1#Dict.0#Node.4{excl π1#Dict.0#Node.3, sep π1#Dict.0#Node.1 π1#Dict.0#Node.4, sep π1#Dict.0#Node.2 π1#Dict.0#Node.4, sep π1#Dict.0#Node.3 π1#Dict.0#Node.4}
+  summary bump: π1#Dict.0 R, π1#Dict.0#Node.1 RA, π1#Dict.0#Node.2 RAW, π1#Dict.0#Node.3 RA, π1#Dict.0#Node.4 RA; res #Dict.0#Node.1 ~π1#Dict.0#Node.1, #Dict.0#Node.2 ~fresh1{lost} ~π1#Dict.0#Node.2{lost}, #Dict.0#Node.3 ~π1#Dict.0#Node.3{lost} ~π1#Dict.0#Node.4{lost}, #Dict.0#Node.4 ~π1#Dict.0#Node.3{lost} ~π1#Dict.0#Node.4{lost}
   summary fromEmpty: res #Dict.0#Node.2 ~fresh1{lost}
   demands 6: accepted 3 (fresh 2, call 1, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
 total 6: accepted 3 (fresh 2, call 1, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3

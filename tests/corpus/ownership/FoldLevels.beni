@@ -1,0 +1,97 @@
+-- ownership: a projection keeps the levels folding merged (issue #286).
+-- A path that steps into a recursive type a second time goes on from
+-- where it first entered it, so `t#Node.0#Node.1` is `t#Node.1`: the root's
+-- list and every level's below share one path. Taking a level out by a
+-- pattern dropped the entries folded there, so the list `sub` puts one
+-- level down was nowhere in `l`, and `List.push zs 1` was accepted `fresh`
+-- while `xs` is returned beside it. Projecting a step into a recursive type
+-- now keeps those entries, approximately: at the same path when the field
+-- is the type itself (`sub`), anywhere below when the type is further down
+-- (`rose`, through `List Rose`). `fresh` holds only lists it made, and is
+-- accepted. `pushRoot` builds a fresh list at every level and edits the
+-- root's while reading the subtree: safe, and refused, since the levels are
+-- one place; telling them apart is the representatives' exclusivity the
+-- thesis names (§3.1), not built.
+type Tree
+    = Leaf
+    | Node Tree (List Int) Tree
+
+
+type Rose
+    = Rose (List Int) (List Rose)
+
+
+pub sub : List Int → List Int × List Int
+sub xs =
+    t = Node (Node Leaf xs Leaf) [ 0 ] Leaf
+    case t of
+        Node l _ _ →
+            case l of
+                Node _ zs _ →
+                    ( List.push zs 1, xs )
+
+                Leaf →
+                    ( [], xs )
+
+        Leaf →
+            ( [], xs )
+
+
+pub rose : List Int → List Int × List Int
+rose xs =
+    t = Rose [ 0 ] [ Rose xs [] ]
+    case t of
+        Rose _ kids →
+            case kids of
+                [ k, …_ ] →
+                    case k of
+                        Rose zs _ →
+                            ( List.push zs 1, xs )
+
+                [] →
+                    ( [], xs )
+
+
+pub fresh : ⊤ → List Int
+fresh ⊤ =
+    t = Node (Node Leaf [ 1 ] Leaf) [ 0 ] Leaf
+    case t of
+        Node l _ _ →
+            case l of
+                Node _ zs _ →
+                    List.push zs 1
+
+                Leaf →
+                    []
+
+        Leaf →
+            []
+
+
+build : Int → Tree
+build n =
+    if n == 0 then
+        Leaf
+    else
+        Node (build (n - 1)) [ n ] (build (n - 1))
+
+
+size : Tree → Int
+size t =
+    case t of
+        Leaf →
+            0
+
+        Node l xs r →
+            size l + List.length xs + size r
+
+
+pub pushRoot : Int → Tree × Int
+pushRoot n =
+    t = build n
+    case t of
+        Node l xs r →
+            ( Node l (List.push xs 0) r, size l )
+
+        Leaf →
+            ( Leaf, 0 )

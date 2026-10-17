@@ -1,0 +1,32 @@
+-- ownership: mutually recursive types hold what each other holds (issue
+-- #286). Whether a type may hold a list is read off its definition, a
+-- type being read assumed to hold nothing; `B`, read while `A` was, saw
+-- `A` hold nothing and was remembered so, so `B` crossed and `b` held no
+-- cell. Only the outermost type of a cycle is remembered from such a read
+-- now. `sub` takes the list `xs` two levels down, through `B`, and pushes
+-- onto it while returning `xs`: rejected.
+type A
+    = A B (List Int)
+    | AEnd
+
+
+type B
+    = B A
+
+
+pub sub : List Int → List Int × List Int
+sub xs =
+    t = A (B (A (B AEnd) xs)) [ 0 ]
+    case t of
+        A b _ →
+            case b of
+                B a →
+                    case a of
+                        A _ zs →
+                            ( List.push zs 1, xs )
+
+                        AEnd →
+                            ( [], xs )
+
+        AEnd →
+            ( [], xs )
