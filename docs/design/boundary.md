@@ -1709,6 +1709,31 @@ without the call — and calling it kept everything the runtime's `start` names:
 delegated listener and the message dispatch from a node to its program, 250 bytes of brotli of the
 empty page's 1 234.)*
 
+**`stop`, the page's unmount** *(amended 2026-10-17, `browser-inline`'s first slice; W51)*. A
+program runtime may export **`stop`**, of one parameter (it takes `⊤`), beside `run`, `start` and
+`flush`, and the compiler holds it to the same checks. When the runtime declares it and the build
+reaches it, the entry file exports it as `stop` from the module the page loads, exactly as it
+exports `flush` (`backend.md` §15.11): `export { … as stop }`. A page — a test driver, an
+embedding page, the research adapter's `dispose` — calls it to unmount the program, and it does
+three things, in this order:
+
+1. it sets the page's dead flag, so no send made after the call — a listener's, a timer's, a
+   command body's, the page's own — runs program code;
+2. it runs every disposer the program's mount registered, once each, the last registered first:
+   each listener the program added is removed, each timer it started is cleared, and the
+   program's root node is removed from the document;
+3. nothing else: it runs no program code, renders nothing and is not a `catch` (`CLAUDE.md`
+   rule 9).
+
+A second call does nothing, nor does a call before the mount has run. A call after a defect
+stopped the page still runs the disposers that had not run, so a page the defect left inert
+also gives its listeners and timers back. A call made while a dispatch runs — only page code can
+make one, from inside a handler it wrapped — lets the running function finish and drops what was
+queued behind it. **One per page**: a platform with `stop` mounts one program per page
+(`browser-inline` has no `Browser.programs`), so the export needs no argument naming a program.
+The name is tea-inline's (`../reactivity-research/frameworks/tea-inline/template/adapter.js`). A
+runtime that declares no `stop` builds exactly as before.
+
 #### 9.4.6 Versioning
 
 **The interface is stable under additive change** (the owner's answer of 2026-09-29): an addition
@@ -2520,6 +2545,23 @@ when its key leaves the set.
    once still lands after that render (`backend.md` §15.11).
 
 `update` always takes the current model, so a message carries data, not a model.
+
+*(Amended 2026-10-17, for `browser-inline` (`browser-inline.md`), which has no fiber kernel and
+writes the page synchronously.)* On that platform the program is not a scope and nothing is
+spawned, and the contract above reads as follows. A dispatch is one entry into the dispatch
+guard. The handler of the message's key runs its arm, which writes the model; then each binding
+the key's write set names runs once — the set deduplicated at compile time — and writes the page
+if its value changed. That is the **write pass**: one per dispatch, inside the guard, at the end
+of the arm, never one per field written and never on a microtask, so `settled` has nothing to
+wait for. **A command that cannot suspend runs after the write pass, in the same dispatch**: the
+handler appends the command's body to the guard's queue (rule 2's), behind any send already
+queued there, and the guard runs it before the dispatch ends. A body that sends while it runs
+puts that message on the same queue, so the message is applied after the body returns, in this
+dispatch, never re-entrantly; a body that sends nothing ends the dispatch. Rule 4 holds in this
+form: the page that shows the message's model is written before any body of that message runs.
+`Cmd.none` writes nothing at all, not even an empty call. A command that may suspend is refused
+when the program is built, with `browser-inline.md` §5's text. Two events in one task are two
+dispatches, each with its own write pass: nothing coalesces them.
 
 #### 9.8.5 Subscriptions (W48)
 

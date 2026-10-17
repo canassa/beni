@@ -1,0 +1,113 @@
+# `browser-inline` — the analysis rules and the error taxonomy
+
+*2026-10-17. The normative part of the second direct platform, `browser-inline`, which the owner
+ordered built from its output (`plans/direct-rewrite.md`). **The output is the specification**:
+what a program compiles to is pinned by goldens taken from tea-inline
+(`../reactivity-research/frameworks/tea-inline/`), under `tests/corpus/emit/inline/`,
+`emit/release/inline/`, `build/bad/inline/` and `browser/inline/`, and this document holds only
+what a golden cannot show — which facts the lowering takes from which analysis, and which programs
+it refuses, with what. It grows one section per slice; section numbers are never renumbered
+(CLAUDE.md rule 2), and a later change is a dated amendment in place.*
+
+## 1. The platform
+
+`platforms/browser-inline/` depends on `html` alone. It imports nothing of `browser`'s, of
+`browser-tea`'s or of `browser-direct`'s — no `Rt`, no `Hosted`, no driver, no `core/Task`, no
+`core/Dict` — and its runtime, `Inline.beni`, is beni over `Js`. Its markup lowering is `inline`
+(`platforms/browser-inline/zig/`), a program lowering (`boundary.md` §9.4.6, version 1.6 on): a
+program is compiled whole where its constructor is called, and there is no run-time renderer to
+fall back on.
+
+| Module | What a program may use |
+|---|---|
+| `Browser` | `Program`, `mountAt` |
+| `Tea` | `Program`, `sandbox`, `element` — `browser-tea`'s signatures, so one source builds on both |
+| `Cmd` | `Cmd`, `none`, `batch`, `perform` |
+| `Sub` | `Sub`, `none`, `batch`, `map`, `on` — `browser`'s signatures; there is no `listen` |
+| `Listen` | `on`, a listener on the window or the document |
+| `Html` | `html`'s vocabulary, re-exported |
+
+One program per page: `Browser.mountAt p id` mounts it at the element `id` names, and a program
+not placed mounts at `document.body`. The runtime exports `run` and `stop` (`boundary.md` §9.4.5,
+amended 2026-10-17).
+
+## 2. What the lowering takes, and from where
+
+The lowering re-derives nothing. Every fact below is an analysis's, through the markup lowering
+interface:
+
+| Fact | Analysis | Interface |
+|---|---|---|
+| the message keys, each key's arm, which bindings each key's writes reach | the write-set pass (`write-sets.md`) | `programKeys`, `programArm`, `programCalls`, `programHole` |
+| what the subscription set is | the write-set pass, evaluating `subscriptions ρ` (§3) | `programSubscriptions` (version 1.14) |
+| what each key's command is, and `init`'s | the write-set pass, evaluating the arm's result (§4) | `programCommand` (version 1.14) |
+| whether a command's body may suspend | the checker's effect inference (`checker-v2.md` §26) | `programCommand` |
+| whether a list is edited in place safely | the ownership checker, through the manifest's `"lists": "in-place"` | — (its refusals are its own) |
+
+## 3. Subscriptions
+
+The pass evaluates `subscriptions` applied to the model's root ρ, walking the platform layer's
+functions (`Push.onPush`, `Interval.every`) as it walks the program's, and recognising the four
+values of `Sub` by name. The set is the **flat list of `Sub.on` declarations** the value is made
+of, in order: `batch` concatenates, `map` composes its function onto each declaration's tagger,
+`none` is no declaration.
+
+- **The set must not depend on the model.** A value whose shape, or any declaration's key, reads
+  ρ is refused (§5, class 3): a set that changes needs the subscription diff, which is slice S4's.
+- **A key is a constant**: a literal or a constructor of constants, whatever the module it is
+  written in. Two declarations with equal keys are **one resource**, merged at compile time: the
+  first one's `start` runs once, and each value it sends goes through every declaration's tagger,
+  in declaration order (`boundary.md` §9.8.5's rule, decided when the program is built).
+- **A tagger resolves to a key.** Applied to a fresh payload π, the tagger must give a constructor
+  of the message type that is one of the program's keys, each field of which is π itself or a
+  constant. The value the start sends then calls that key's handler directly — no message is
+  made. A tagger that gives anything else is refused (§5, class 3).
+- **`start` must not suspend**: `Sub.on`'s `start` is `sync`, so the checker refuses one that
+  does, before the lowering sees it.
+
+Each declaration compiles to the start applied to a send that enters the dispatch guard with the
+key's handler; what it returns, the remover, is one of the program's disposers (`stop`).
+
+## 4. Commands
+
+The pass evaluates each key's arm — and `init` — to its `model × Cmd msg` result and reads the
+command half, recognising `Cmd.none`, `Cmd.batch` and `Cmd.perform` by name:
+
+- `Cmd.none`, and a `batch` of nothing but `none`, is **none**: the handler writes no code for it;
+- a `perform` whose body cannot suspend, by the checker's answer at that call, **runs**: after the
+  handler's write pass, in the same dispatch, through the guard's queue (`boundary.md` §9.8.4,
+  amended 2026-10-17);
+- a body that may suspend is refused (§5, class 2);
+- a command the pass cannot read as one of these is refused (§5, class 4).
+
+## 5. What the lowering refuses
+
+Strict, not coarse: what the lowering cannot compile exactly is a build error, `not_implemented`,
+at the program's call or at the construct, and never a fallback. Each message says which class it
+is, what the cause is, and what to write instead. There are four classes.
+
+1. **Not on this platform yet** — a construct a later slice of `plans/direct-rewrite.md` §5 adds:
+   the message names the slice (S1: events and holes beyond the one text binding; S2: `For`; S3:
+   a `view`'s `let`s; S4: a set of subscriptions that changes, `Show`, branches; S6: the task
+   kernel).
+2. **Needs the task kernel** — a command whose body may suspend: *"needs the task kernel: not on
+   this platform yet"*, with the call's position. The kernel returns behind reachability in S6.
+3. **The program's shape** — what the platform's model cannot express exactly, with what to write
+   instead: a subscription set that reads the model (*"… depends on the model: a set that changes
+   arrives with slice S4 …"*), a tagger that resolves to no key (*"… give the message a
+   constructor that takes the value …"*).
+4. **A limit of the compiler** — a fact the analysis did not give, or code the compiler cannot
+   write where the lowering needs it. The message says *"a limit of the compiler"*, so it is never
+   read as a rule of the language, and names what would lift it.
+
+## 6. The release ledger (`plans/direct-rewrite.md` §8, as the owner decided for S0)
+
+- **The dispatch guard and the mid-dispatch send queue are kept** on every page: a defect stops the
+  page (`try … finally`, no `catch`), and a send made while a dispatch runs is queued.
+- **The mount fault is development's.** A development build marks the mount node (`$$root`) and
+  throws *"cannot mount at …"* for a node that is missing or already holds a program. A release
+  build ships neither; a missing node still fails **inside the dispatch guard**, so the page stops
+  as for any defect, without prose, and no `TypeError` escapes the entry unguarded.
+- **No message object, no `switch` and no error prose in release** for what S0 compiles: a key's
+  handler is called directly, and a pushed value decoded with `Schema.read` whose `Err` payload is
+  never read is a validator (`schema.md` §6, amended 2026-10-17).
