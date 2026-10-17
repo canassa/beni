@@ -1065,6 +1065,7 @@ positions, rounds of a fixpoint:
 | `owned-atoms` | 8 | the distinct `returns owned` atoms `(j, q)` its `owned` bits rest on (§16.4 item 5) |
 | `value-cells` | 256 | the cells of a value whose deep condition (§18.2) the walk needs, compared pair by pair; past it the condition was `lost`, silently, before 2026-10-16 |
 | `fixpoint` | 32 | the rounds of a fixpoint inside a walk: the model at entry and its exclusivity invariant (§20.4), a callback's result, a fold's shape and its spine (§16.4 item 6). *Amended 2026-10-16 (#229):* their cells are finite, so they settle in a bounded number of rounds (§28's dated amendment *the entry's fixpoints settle*); before, each ended on a silent backstop: 8 rounds for the model, 4 for a callback's result and a fold's shape, 32 for the invariant and a fold's spine |
+| `callbacks` | 4 | *Added 2026-10-16 (#271):* a chain of callbacks, each instantiated inside the one before or handed the result of the one before (§16.4 items 5 and 6). Before, a fifth callback ended the walk silently: a demand was dropped, or a callback's result became a `⊤` with no alias of what the chain was handed |
 
 A declaration whose summary would pass one is reported as **one error at the declaration**,
 `ownership_limit`: it names the declaration, the limit and what it measured, and says that the limit is the
@@ -1084,6 +1085,40 @@ reached it and had its last five owned supplies made borrowed, silently. *Amende
 fixpoints inside a walk are under this rule too — the `fixpoint` row. Before, they ended on silent backstops,
 and the model's exclusivity invariant (§28's dated amendment) reached its backstop in every application
 measured, because each round made a carried lambda anew (§28's dated amendment *the entry's fixpoints settle*).
+
+*Amended 2026-10-16 (#271): every cap, loud or conservative.* A cap is **loud** when reaching it is an
+error (one `ownership_limit` at the declaration, its rejections given the `limit` cause), and
+**conservative** when the walk goes on with a rule that is sound for every program, at a cost in
+precision. No cap may be silent, that is, accept a program because the walk stopped. The ones in the
+code:
+
+| Cap | Value | Where | Past it | Kind |
+|---|---|---|---|---|
+| `entries`, `path-entries`, `conditions`, `rounds`, `owned-atoms`, `value-cells`, `fixpoint`, `callbacks` | the table above | summaries and walks | the table above | loud |
+| the path cut `k` (`k_limit`) | 8 | every path (§4.1) | the step is dropped, so two places merge into one: a call that writes one of them is not seen to write the other | **silent**, issue #286 (below) |
+| `type_depth` | 16 | the walks over types: what a type may hold or share (`tracked`, `holdsList`, `mayShare`, `mayHold`, `ownMayHold`), a type's facts | "may hold", "may share" | conservative |
+| `type_depth` in `occursBelow` | 16 | `mayShare`'s shortcut (rule 4) | "does not occur": the shortcut is not taken | conservative |
+| `type_depth` in `typeExprHeads` | 16 | which types a type names, for "is this type recursive" | the type may be taken for one that is not: only "exact" becomes "approximate" or the reverse in a line; both reject | conservative |
+| `split_cap` | 8 | a supply probed cell by cell (§30.9 rule 5) | probed whole | conservative |
+| the evidence walk (`evidenceSight`) | was 8 terms | a writing function passed as evidence (§16.5) | *before 2026-10-16:* not reported, silently; now every term is walked, each once, and there is no cap (`ownership/EvidenceDeep`) | removed |
+| `termTaint` | 8 terms | a codec's evidence (§30.10) | `⊤` in both slots | conservative |
+| `markupEvents` | `k` | the events of markup inside lists and `Maybe`s | the whole value, not its events | conservative |
+| `aliasTarget` | 8 hops | a point-free top-level alias (§30.9 rule 9) | no name: the value is called as §6.1's call | conservative only with §30.11's `⊤call`; before it, the #216 hole |
+| `inst_depth` | 4 | `instProv`, `callbackLoanDemands`, `returnedParamDemands`, `provOwned` | the `callbacks` limit (`ownership/CallbackChain`) | loud |
+| a reference the provenance does not resolve | — | `.top` and `.ext_value` | *before 2026-10-16:* holds nothing; now `⊤` | conservative |
+| a capture a walk has not bound, in a condition | — | `classSide` | *before 2026-10-16:* holds nothing; now `⊤` | conservative |
+| a limit reached outside a declaration | — | `hitLimit` | unreachable: every walk names its declaration, and a safety build asserts it | — |
+| `wide_index` | 256 | an index of wide values by their first step | not a cap: the same entries, found faster | — |
+
+**The path cut stays silent for now (issue #286).** The cut is relative to the root of each value, so a caller
+can cut a path its callee does not: a caller that passes `r.a.b` to a callee that writes `s.c.d.e.f.g.h.x` and
+then reads `.y`, where `.x` and `.y` hold one list, has `r.a.b.c.d.e.f.g.h.x` cut at 8 steps, and the call is
+accepted while its depth-7 twin is rejected `disjoint`. A loud cut is no answer: core's `Schema` (`parserOf`,
+`collect`, `unpack`, `made`, `productOf`) reaches it at 8 steps and at 16, because those paths have no fixed
+depth — nested tuples, one level per schema field, and chains of `parent` records — and the cut is what keeps
+their summaries finite. So the cut must become conservative: an entry that the cut merged stands for more than
+one position, through projection, wherever a check relies on two paths being two places. Issue #286 owns that
+design, its measurements and its fixture. The owner decided on 2026-10-17 to land the other caps first.
 
 The fresh numbers do not count toward any limit: as thesis §4.6 bounds them (`k ≤ |Q|`), a number only says
 which result paths may hold one new cell, so the read-off of §16.3 gives two new cells that appear at the
