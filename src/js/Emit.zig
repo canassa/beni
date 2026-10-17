@@ -2591,6 +2591,7 @@ const Emitter = struct {
                     .model => out.subscriptions = .model,
                     .unknown => out.subscriptions = .unknown,
                     .no_key => out.subscriptions = .{ .no_key = try where(e, a, subs.decls[subs.bad].module, subs.decls[subs.bad].inst) },
+                    .limit => out.subscriptions = .{ .limit = try where(e, a, subs.decls[subs.bad].module, subs.decls[subs.bad].inst) },
                     .set => {
                         const set = try a.alloc(beni_markup.Program.Subscription, subs.decls.len);
                         const starts = try a.alloc(Lower.Direct.Start, subs.decls.len);
@@ -2608,6 +2609,13 @@ const Emitter = struct {
                                 .inst = info.inst,
                                 .bound = try a.dupe(u32, info.bound),
                             };
+                            if (info.kind == .top and info.m < e.session.resolution.provenance.len) {
+                                const prov = &e.session.resolution.provenance[info.m];
+                                for (prov.value_decl, 0..) |vd, vi| if (vd.int() == info.d) {
+                                    st.value = @intCast(vi);
+                                    break;
+                                };
+                            }
                         }
                         out.subscriptions = .{ .set = set };
                         out.starts = starts;

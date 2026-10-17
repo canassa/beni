@@ -288,11 +288,18 @@ const Page = struct {
                 ),
                 .no_key => |where| return cx.programReport(.call, .not_implemented, try std.fmt.allocPrint(cx.arena,
                     \\The subscription at {s} hands its values to a tagger that does not give one of the
-                    \\program's message keys with the value as its field, and `browser-inline` calls the
-                    \\handler of that key with each value directly, with no message made
-                    \\(`docs/design/browser-inline.md` §3; §5, class 3). Give the message a constructor
-                    \\that takes the value — `Pushed Value`, tagged with `Pushed` — and tell its messages
-                    \\apart from the others' with a `case` on the message in `update`.
+                    \\program's message constructors, and `browser-inline` calls the handler of that
+                    \\constructor's key with each value directly, with no message made
+                    \\(`docs/design/browser-inline.md` §3; §5, class 3). Tag the value with a constructor of
+                    \\the message that takes it — `Pushed Value`, tagged with `Pushed` — and decide in
+                    \\`update` what it means.
+                , .{where})),
+                .limit => |where| return cx.programReport(.call, .not_implemented, try std.fmt.allocPrint(cx.arena,
+                    \\A limit of the compiler: the subscription at {s} tags its values with a message whose
+                    \\handler the write-set pass decides only from the value itself — the constructor wraps
+                    \\the value, or `update` matches on what the value holds — and `browser-inline` calls a
+                    \\handler chosen when the program is built (`docs/design/browser-inline.md` §3; §5,
+                    \\class 4). The program is valid: it builds with `--platform=browser-tea`.
                 , .{where})),
                 else => return cx.programReport(.call, .not_implemented,
                     \\A limit of the compiler: the write-set pass could not read this program's

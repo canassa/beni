@@ -1,0 +1,7 @@
+listeners window
+detail window rr-push {"type": "set", "value": 3}
+detail window rr-push 7
+detail window rr-reset null
+stop
+listeners window
+detail window rr-push 9

@@ -1,0 +1,12 @@
+-- load
+<body>
+  <p>"0"</p>
+</body>
+-- detail window rr-push 1
+<body>
+  <p>"1"</p>
+</body>
+-- detail window rr-push 2
+<body>
+  <p>"2"</p>
+</body>

@@ -402,9 +402,13 @@ pub const Program = struct {
         model,
         /// The pass could not read the value as a set of declarations.
         unknown,
-        /// The declaration at this place has a tagger that gives no key's
-        /// constructor with the value as each field.
+        /// The declaration at this place has a tagger that gives no
+        /// constructor of the message type.
         no_key: []const u8,
+        /// The declaration at this place has a tagger whose message the key
+        /// tree splits again on its payload, or that wraps the value: a
+        /// limit of the compiler.
+        limit: []const u8,
     };
 
     /// 1.14: what `Context.programCommand` says of a key's command, or of
