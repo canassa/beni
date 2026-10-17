@@ -176,6 +176,8 @@ pub fn build(a: Allocator, src: Src, m: u32, lines: []const Demand) Allocator.Er
     const exact = d.verdict == .rejected and !d.approx;
     const entry = std.mem.startsWith(u8, d.op, "entry ");
     // A function value that must return a list it owns (§28.6, amended).
+    // It is a rejection, never a pending line: `needLine`, `needAt` and
+    // `needUnknown` fix the verdict `need`.
     const need = cause == .need and std.mem.eql(u8, d.op, "value");
     var out: std.ArrayList(u8) = .empty;
     const w = struct {

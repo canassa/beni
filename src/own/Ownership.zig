@@ -442,6 +442,9 @@ pub const FunFacts = struct {
     /// §23.3: the callee hands this parameter, as its parameter `send`, a
     /// function that sends what it is given to `update`; `none` otherwise.
     send: u32 = none,
+    /// §23.5, amended: `need` comes only from a send that gives up what it
+    /// returns, so a `need` line says the callee sends it, not edits it.
+    sends: bool = false,
 };
 
 /// §16.7: why a summary is the pessimistic one — a limit of the checker it
@@ -1657,6 +1660,7 @@ fn normalizeRaw(o: *Ownership, s: Summary) Allocator.Error!Summary {
         if (nf > 0 and funs[nf - 1].param == f.param) {
             const p = &funs[nf - 1];
             p.calls = @fromBackingInt(@max(@backingInt(p.calls), @backingInt(f.calls)));
+            p.sends = (p.need or f.need) and (!p.need or p.sends) and (!f.need or f.sends);
             p.need = p.need or f.need;
             p.seen = p.seen and f.seen;
             if (p.send == none) p.send = f.send;
@@ -2576,11 +2580,11 @@ fn assertHosted(o: *Ownership, s: Summary, row: HostedRow) Allocator.Error!Summa
         .body => try funs.append(keep, .{ .param = 0, .calls = .many, .send = 0 }),
         .sub => {
             try funs.append(keep, .{ .param = 0, .calls = .many, .send = 0 });
-            try funs.append(keep, .{ .param = 1, .calls = .many, .need = true });
+            try funs.append(keep, .{ .param = 1, .calls = .many, .need = true, .sends = true });
             try supply.append(keep, .{ .fun = 1, .k = 0, .path = eps, .prov = fresh, .owned = false });
         },
         .map_owned, .map_borrowed => {
-            try funs.append(keep, .{ .param = 1, .calls = .many, .need = true });
+            try funs.append(keep, .{ .param = 1, .calls = .many, .need = true, .sends = true });
             try supply.append(keep, .{ .fun = 1, .k = 0, .path = eps, .prov = fresh, .owned = row == .map_owned });
         },
         // The job calls it; what it is handed was checked at the job's send
@@ -4000,6 +4004,8 @@ const FnState = struct {
     seen: bool = true,
     /// §23.3: handed on to a send position.
     send: u32 = none,
+    /// §23.5, amended: `need` came from somewhere other than a send.
+    need_edit: bool = false,
 };
 
 /// A supply to a function parameter, read off once its probe is resolved.
@@ -8189,6 +8195,7 @@ const Walker = struct {
             const actual = (try w.actualOf(s, avs, j)) orelse continue;
             if (w.fnParamOf(actual) orelse try w.slotOf(actual)) |jj| {
                 w.fn_state.items[jj].need = true;
+                w.fn_state.items[jj].need_edit = true;
                 continue;
             }
             const classes = try w.classesOf(actual);
@@ -9049,7 +9056,9 @@ const Walker = struct {
         }
         gop.value_ptr.* = @intCast(w.closures.items.len);
         // Its place is where the callee's result or the value that carries it
-        // is used here (§28.6).
+        // is used here (§28.6). `ctx.inst` is an instruction of this walk's
+        // module, whose BIR numbers every declaration's instructions; only a
+        // test's instruction is out of range.
         const tok = if (ctx.inst.int() < w.bir.insts.len) w.token(ctx.inst) else none;
         try w.closures.append(w.a, .{ .captures = &.{}, .class = k.sum, .binds = binds, .cb_avs = cbs, .carried = true, .token = tok });
         return w.single(.{ .kind = .closure, .a = gop.value_ptr.* });
@@ -9178,12 +9187,12 @@ const Walker = struct {
         const classes = try w.classesOf(actual);
         // A slot has no argument of its own to name: the line's base is the
         // function value at the slot's path.
-        if (classes.len == 0) return w.needUnknown(inst, "<function value>", callee);
+        if (classes.len == 0) return w.needUnknown(inst, "<function value>", callee, ff.sends);
         var reported = false;
         for (classes) |cls| {
             const c = (try w.classSummary(cls)) orelse {
                 // One line per call, however many classes it cannot place.
-                if (!reported) try w.needUnknown(inst, "<function value>", callee);
+                if (!reported) try w.needUnknown(inst, "<function value>", callee, ff.sends);
                 reported = true;
                 continue;
             };
@@ -9196,8 +9205,19 @@ const Walker = struct {
                 .func => |t| try w.qualified(t),
                 .send => "send",
             };
-            try w.needLine(w.token(inst), name, try std.fmt.allocPrint(w.o.out.allocator(), "{s} edits what it returns, which may be a list it does not own", .{callee}), try w.ownedButApprox(c, s, avs, ictx, j), false, cls);
+            try w.needLine(w.token(inst), name, try w.needWhy(callee, ff.sends), try w.ownedButApprox(c, s, avs, ictx, j), false, cls);
         }
+    }
+
+    /// What callee `callee` does with what a function value returns, for a
+    /// `need` line: sends it, when its `need` comes only from a send (§23.5,
+    /// amended), or edits it.
+    fn needWhy(w: *Walker, callee: []const u8, sends: bool) Allocator.Error![]const u8 {
+        const arena = w.o.out.allocator();
+        return if (sends)
+            std.fmt.allocPrint(arena, "{s} sends what it returns, which may be a list it does not own (§23.5)", .{callee})
+        else
+            std.fmt.allocPrint(arena, "{s} edits what it returns, which may be a list it does not own", .{callee});
     }
 
     /// A callee that edits what a function it is handed returns (`need`),
@@ -9205,8 +9225,8 @@ const Walker = struct {
     /// a `Ref`, from JavaScript, out of a structure: nothing shows it returns
     /// a list it owns, so the edit is rejected, approximately — the limit is
     /// the checker's, not sharing the text shows.
-    fn needUnknown(w: *Walker, inst: Inst.Index, base: []const u8, callee: []const u8) Allocator.Error!void {
-        const why = try std.fmt.allocPrint(w.o.out.allocator(), "{s} edits what it returns, and the checker does not know which function it is, so not that it returns a list it owns", .{callee});
+    fn needUnknown(w: *Walker, inst: Inst.Index, base: []const u8, callee: []const u8, sends: bool) Allocator.Error!void {
+        const why = try std.fmt.allocPrint(w.o.out.allocator(), "{s} {s} what it returns, and the checker does not know which function it is, so not that it returns a list it owns", .{ callee, if (sends) "sends" else "edits" });
         try w.demands.append(w.a, .{
             .kind = .value,
             .token = w.token(inst),
@@ -9244,6 +9264,7 @@ const Walker = struct {
                 }
             }
             st.need = st.need or ff.need;
+            if (ff.need and !ff.sends) st.need_edit = true;
             st.seen = st.seen and ff.seen;
             const ictx: InstCtx = .{ .inst = inst, .s = s, .avs = avs, .depth = 0 };
             for (s.supply) |e| {
@@ -9336,12 +9357,12 @@ const Walker = struct {
                 });
             } else try w.returnedParamDemands(inst, callee, args, avs, c, j, eps, true, 0);
             return;
-        } else if (classes.len == 0) try w.needUnknown(inst, try w.baseText(args[j]), callee.name);
+        } else if (classes.len == 0) try w.needUnknown(inst, try w.baseText(args[j]), callee.name, ff.sends);
         var reported = false;
         for (classes) |cls| {
             const c = (try w.classSummary(cls)) orelse {
                 // One line per call, however many classes it cannot place.
-                if (ff.need and !reported) try w.needUnknown(inst, try w.baseText(args[j]), callee.name);
+                if (ff.need and !reported) try w.needUnknown(inst, try w.baseText(args[j]), callee.name, ff.sends);
                 reported = true;
                 continue;
             };
@@ -9372,7 +9393,7 @@ const Walker = struct {
                 // empty at callers, and all other results must be owned.
                 if (ff.need) {
                     if (!try w.taggerReturnsOwned(c, s, avs, j, cls, ictx))
-                        try w.needLine(tok, need_name, try std.fmt.allocPrint(arena, "{s} edits what it returns, which may be a list it does not own", .{callee.name}), try w.ownedButApprox(c, s, avs, ictx, j), w.frame != 0, cls)
+                        try w.needLine(tok, need_name, try w.needWhy(callee.name, ff.sends), try w.ownedButApprox(c, s, avs, ictx, j), w.frame != 0, cls)
                     else
                         try w.returnedParamDemands(inst, callee, args, avs, c, j, eps, true, 0);
                 }
@@ -9525,11 +9546,11 @@ const Walker = struct {
                 }),
                 .closure => |ci| {
                     try w.closures.items[ci].consumed.append(w.a, .{ .kind = .supply, .bad = bad, .bad_approx = bad_approx, .bad_cause = bad_cause, .name = callee.name });
-                    if (need_bad) try w.needLine(tok, need_name, try std.fmt.allocPrint(arena, "{s} edits what it returns, which may be a list it does not own", .{callee.name}), try w.ownedButApprox(c, s, avs, ictx, j), false, cls);
+                    if (need_bad) try w.needLine(tok, need_name, try w.needWhy(callee.name, ff.sends), try w.ownedButApprox(c, s, avs, ictx, j), false, cls);
                 },
                 .func => {
                     if (need_bad) {
-                        try w.needLine(tok, need_name, try std.fmt.allocPrint(arena, "{s} edits what it returns, which may be a list it does not own", .{callee.name}), try w.ownedButApprox(c, s, avs, ictx, j), false, cls);
+                        try w.needLine(tok, need_name, try w.needWhy(callee.name, ff.sends), try w.ownedButApprox(c, s, avs, ictx, j), false, cls);
                     } else if (writes) {
                         var first: ?usize = null;
                         for (bad, 0..) |x, k| if (x != null and first == null) {
@@ -9768,7 +9789,10 @@ const Walker = struct {
         // returns is relied on, so its callers must hand one that returns
         // owned (`need`).
         if (w.fnParamOf(actual) orelse try w.slotOf(actual)) |jj| {
-            if (!w.ro_exact) w.fn_state.items[jj].need = true;
+            if (!w.ro_exact) {
+                w.fn_state.items[jj].need = true;
+                w.fn_state.items[jj].need_edit = true;
+            }
             return true;
         }
         // The enclosing lambda's own parameter: decided where it is handed
@@ -9833,6 +9857,7 @@ const Walker = struct {
             const actual = try w.projPath(try param(w, n.k, ctx), n.path, null);
             if (w.fnParamOf(actual) orelse try w.slotOf(actual)) |jj| {
                 w.fn_state.items[jj].need = true;
+                w.fn_state.items[jj].need_edit = true;
                 w.fn_state.items[jj].seen = false;
                 continue;
             }
@@ -9927,6 +9952,7 @@ const Walker = struct {
             if (decided > n.discharges) bad = true;
             if (!bad) continue;
             n.failed = true;
+            // No consumer decided it, so no function there is known to fail.
             try w.needAt(n.*, true, null);
         }
     }
@@ -9975,6 +10001,7 @@ const Walker = struct {
                 }
                 try w.applyEnvCalls(cls.closure, null, 0, .{ .inst = ictx.inst, .s = c, .avs = params, .closure = cls.closure, .depth = 0 });
                 w.fn_state.items[r.prov.a].need = true;
+                w.fn_state.items[r.prov.a].need_edit = true;
                 // Deferred tagger calls cannot inherit a locally seen
                 // call's supply/loan proof; keep the combined protocol unseen.
                 w.fn_state.items[r.prov.a].seen = false;
@@ -10784,6 +10811,20 @@ const Walker = struct {
                 if (!try w.writeExpr(wr, @fromBackingInt(@intCast(data.lhs)))) return false;
                 wr.print(".{d}", .{data.rhs}) catch return error.OutOfMemory;
             },
+            // A schema's member as the source writes it (`Fixed.parse`).
+            .schema_member_top, .ext_schema_member => {
+                const r = w.schemaMemberOf(inst) orelse return false;
+                const member: []const u8 = switch (r.kind) {
+                    .parse => "parse",
+                    .print => "print",
+                    .parse_with => "parseWith",
+                    .print_with => "printWith",
+                    .schema => "schema",
+                    .type, .encoded => return false,
+                };
+                const b = w.o.in.birs[r.m];
+                wr.print("{s}.{s}.{s}", .{ w.o.in.module_names[r.m], w.o.in.interner.slice(b.symbol(b.decls[r.decl].name)), member }) catch return error.OutOfMemory;
+            },
             else => return false,
         }
         return true;
@@ -11312,16 +11353,20 @@ const Walker = struct {
             for (w.fn_state.items, 0..) |st, j| {
                 if (!st.is_fn) continue;
                 var need = st.need;
+                var edit = st.need_edit;
                 for (w.demands.items) |rec| {
                     if (rec.kind == .probe or rec.kind == .value) continue;
                     for (rec.cells) |e| {
                         // A taken element stands for the cell it was taken
                         // from (§18.5), which may be what πⱼ returned.
                         const c = w.cells.items[try w.takenBase(e.cell)];
-                        if (c.kind == .cbres and c.a == j) need = true;
+                        if (c.kind == .cbres and c.a == j) {
+                            need = true;
+                            if (!rec.deep) edit = true;
+                        }
                     }
                 }
-                try funs.append(keep, .{ .param = @intCast(j), .calls = st.calls, .need = need, .seen = st.seen, .send = st.send });
+                try funs.append(keep, .{ .param = @intCast(j), .calls = st.calls, .need = need, .seen = st.seen, .send = st.send, .sends = need and !edit });
             }
             for (w.supplies.items) |sr| {
                 var more_ok = true;
