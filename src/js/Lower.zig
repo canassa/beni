@@ -11558,7 +11558,6 @@ pub const Lowerer = struct {
     fn programCall(l: *Lowerer, out: *StmtList, inst: Inst.Index, pc: *ProgramCall, callee_inst: Inst.Index) !Node.Index {
         const p = l.pos(inst);
         if (pc.refused) return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
-        const callee = try l.expr(out, callee_inst);
         const st = l.mk orelse return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
         const hook = st.lowering.program orelse {
             try l.report(.internal, inst, "The markup lowering `{s}` names program constructors and has no program hook.", .{st.lowering.name});
@@ -11608,7 +11607,9 @@ pub const Lowerer = struct {
             error.OutOfMemory => return error.OutOfMemory,
             error.Reported => return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused),
         };
-        return l.call(callee, &.{@fromBackingInt(@intCast(@backingInt(mount)))}, p);
+        // Version 1.14: a platform whose `Program` is the mount itself.
+        if (st.lowering.constructs) return @fromBackingInt(@intCast(@backingInt(mount)));
+        return l.call(try l.expr(out, callee_inst), &.{@fromBackingInt(@intCast(@backingInt(mount)))}, p);
     }
 
     /// `cx.programInit`: the program's `init`, evaluated into `block`, as

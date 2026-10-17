@@ -2192,6 +2192,8 @@ of the same date own selection and verification.
 
 **Version 1.14** (*amended 2026-10-17*, additive, gated on nothing; `browser-inline.md`): what a
 program lowering needs to compile a program's effects and its placement away.
+- `Lowering.constructs`: a program constructor's call is compiled as the mount alone, for a
+  platform whose `Program` is the mount.
 - `Lowering.places`: a call of a `first` placement whose first argument is a program constructor's
   call and whose second a string literal is compiled as the program call alone, and the hook is
   handed where the program mounts, `Program.placed`: at that element, at `document.body` when the

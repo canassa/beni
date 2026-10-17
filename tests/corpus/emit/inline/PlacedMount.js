@@ -1,6 +1,5 @@
-import { Tea$sandbox } from "./_platform/Tea.mjs";
 import { Inline$root, Inline$own } from "./_platform/Inline.mjs";
-const PlacedMount$main = Tea$sandbox(($id$1) => {
+const PlacedMount$main = ($id$1) => {
   const $root$2 = Inline$root("app");
   const $init$3 = {};
   $root$2.insertAdjacentHTML("beforeend", "<main><h1>Hello</h1></main>");
@@ -8,6 +7,6 @@ const PlacedMount$main = Tea$sandbox(($id$1) => {
   Inline$own(() => {
     $node$5.remove();
   });
-});
+};
 export { PlacedMount$main };
 //# sourceMappingURL=PlacedMount.mjs.map
