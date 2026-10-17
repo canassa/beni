@@ -929,20 +929,30 @@ Inside the callee the callback's result is `cb_j`, which holds nothing the walk 
 accepted there, and the caller saw only a fresh argument. Two rules close it:
 
 - **A parameter, at the call.** For every borrowed supply `(k, q′, πᵢ.q″)` of the callee — borrowed because
-  the callee uses `πᵢ` after the call — whose `πᵢ` the callee writes (`(i, q, U ∋ W)`, `q` overlapping `q″`),
-  an actual whose class may keep its `k`th parameter is rejected, cause `supply`. A class may keep it when a
+  the callee uses `πᵢ` after the call — whose `πᵢ` is changed after the call, an actual whose class may keep
+  its `k`th parameter is rejected, cause `supply`. `πᵢ` is changed when the callee writes it (`(i, q, U ∋ W)`,
+  `q` overlapping `q″`) or hands it to another callback whose actual writes the part supplied, has no class, or
+  is the caller's own function parameter (`keepThenHand f g xs = t = f xs; ( t, g xs )`). The path at which
+  the class keeps `π_k` is not compared with the path changed: a keeper of one field and a write of another
+  are refused too, approximately, as is a callee that writes `πᵢ` before the call and only reads it after. A class may keep it when a
   `res` entry has provenance `π_k`, `cb` (what its own callbacks return) or `⊤`; an actual with no class may
   keep anything. The rejection is approximate: the summary says that the callee uses `πᵢ` after the call,
   not that the write is that use. When the actual is the caller's own function parameter πⱼ″, the caller's
   `fun(j″)` gains `need = owned` (item 4): a function that returns a borrowed supply does not return owned.
 - **A list the callee makes, in the callee.** A call of the declaration's function parameter (§16.4 item 4)
   hands it cells; for a later write of one of them that is not one of the declaration's parameters, the
-  callback's result is a holder, approximately (§8.1's holders; the rejection's cause is `call`). No caller
-  sees that write, so the callee decides. The callback's result keeps no new entry in the summary: at the
+  callback's result is a holder, approximately (§8.1's holders; the rejection's cause is `call`). The write is
+  the callee's own, so the callee decides. The callback's result keeps no new entry in the summary: at the
   call, `cb_j` is instantiated from the actual's class, which says exactly what it keeps.
+- **A list the callee makes and returns, at the call.** When that list also leaves the callee in its result,
+  a caller may write it while the kept result lives (`makeKeepReturn f = xs = [ 1 ]; t = f xs; ( t, xs )`). A
+  supply of a cell the result numbers keeps that fresh number (§16.3, where a supply's number was always 0),
+  and at the call it is instantiated as the result's cell, not as a new one of the callback's depth, so the
+  caller's `kept` and `xs` share it and the caller's own checks see the alias.
 
-`ownership/CallbackKeeps` pins both: a keeper rejected, a dropper accepted, a callee that writes a list it
-made after handing it on rejected, and a wrapper whose own function parameter must then return owned. The
+`ownership/CallbackKeeps` pins them: a keeper rejected, a dropper accepted, a second callback that writes the
+kept list, a callee that writes a list it made after handing it on, one that returns it beside the kept result,
+and a wrapper whose own function parameter must then return owned. The
 `need` line of that wrapper says the callee "edits what it returns": `need` carries no reason (#272).
 
 *Amended 2026-10-15 (CK-233, returned parameters are the caller's):* item 5 asks whether a supply is
