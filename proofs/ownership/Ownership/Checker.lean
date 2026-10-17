@@ -34,6 +34,10 @@ structure Context where
   /-- Innermost first: the actual function values of the declarations being
       summarised. Only `answer` reads them. -/
   frames : List Frame := []
+  /-- The callback-chain depth of each binder in scope (§16.7, `callbacks`):
+      one more than its arguments' for the result of a call of a function
+      input, otherwise the deepest binder its value mentions. -/
+  chain : List (Var × Nat) := []
   /-- Cells of the continuation's uses of outer variables that an inner `let`
       has since rebound: live after the current expression whatever the
       name now means (shadowing is refused, this keeps liveness right anyway). -/
@@ -660,10 +664,14 @@ def inferExpr (fuel : Nat) (ctx : Context) (env : Env Abstract)
       -- `v` is the new one, so their cells are pinned here, resolved
       -- against the outer environment (the `shadowing` control does not).
       let outer := after.filter (·.1 == v)
+      let callback := match rhs with
+        | .app callee _ => ((abstractAtom env callee) matches .ok (.symbolic ..))
+        | _ => false
+      let chain := (v, rhsChain ctx.chain callback rhs) :: ctx.chain
       if ctx.config.has .shadowing || outer.isEmpty then
-        inferExpr f ctx ((v, a) :: env) rest after (site ++ [1])
+        inferExpr f { ctx with chain } ((v, a) :: env) rest after (site ++ [1])
       else
-        inferExpr f { ctx with pinned := union ctx.pinned (liveCellsWith ctx.config env outer) } ((v, a) :: env) rest
+        inferExpr f { ctx with pinned := union ctx.pinned (liveCellsWith ctx.config env outer), chain } ((v, a) :: env) rest
           (removeVars [v] after) (site ++ [1])
     | .prim op args => primitive ctx site op (← args.mapM (m := Except String) (abstractAtom env)) later
     | .entry initial retained model body =>
@@ -760,7 +768,9 @@ def inferExpr (fuel : Nat) (ctx : Context) (env : Env Abstract)
       let actuals ← args.mapM (m := Except String) (abstractAtom env)
       match fn with
       | .bottom => pure .bottom
-      | .symbolic .. => callSymbolic f ctx fn actuals site later
+      | .symbolic .. =>
+        if atomsChain ctx.chain args + 1 > ctx.config.callbackLimit then throw "limit: callbacks"
+        callSymbolic f ctx fn actuals site later
       | .function once alternatives =>
         demand ctx.config once later (actuals.flatMap Abstract.cells)
         let mut result := Abstract.bottom
