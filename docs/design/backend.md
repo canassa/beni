@@ -7000,8 +7000,9 @@ may hold a function reading two keeps both), `run/SpecializeTrailingArguments` (
 logs is kept, and logged where it was), `emit/release/split/EmptyPage`.
 
 *Amended 2026-10-17: a trailing `undefined` to an arrow.* A call whose callee fact 3 says is only
-arrows of the program drops the `undefined` literals that end its arguments: an arrow has no
-`arguments` to count them by, so a missing argument is `undefined` as much as a passed one, and a
+functions the program makes as arrows (`=>`, or `arrow_method`, printed `function(){}` but
+written by no code that reads `arguments`) drops the `undefined` literals that end its arguments:
+no emitted code reads `arguments` to count them by, so a missing argument is `undefined` as much as a passed one, and a
 literal does nothing to evaluate. `d(p,undefined)` is `d(p)`, a top-level function tracked by fact 1
 included. And **the entry's callee may become the function it forwards to**
 (`Spec.forwardEntry`): an entry callee `const f = (p₁, …, pₙ) => g(p₁, …, pₙ)` that passes its
@@ -7777,7 +7778,8 @@ nothing, so they go. `setInterval(()=>r(),1000)` is `setInterval(r,1000)`, and t
 rule of item 1 makes `r` there.
 
 **A short `switch` is its `if`s** (*added 2026-10-17*; `Spec.switchAsIfs`, the last sweep of every
-statement list). `switch (k)` on a name, with at most three cases besides the `default`, every
+statement list). `switch (k)` on a name, with at most three cases besides a `default` that comes
+last, every
 case's test a literal, and every body holding no `break` and unable to run off its end, is
 `if (k === t) { body }` for each case in order, then the `default`'s statements. A literal test
 does nothing and a body that cannot complete never falls into the next case, so the cases are tried,
