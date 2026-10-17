@@ -2,8 +2,8 @@
 -- #286). Whether a type may hold a list is read off its definition, a
 -- type being read assumed to hold nothing; `B`, read while `A` was, saw
 -- `A` hold nothing and was remembered so, so `B` crossed and `b` held no
--- cell. Only the outermost type of a cycle is remembered from such a read
--- now. `sub` takes the list `xs` two levels down, through `B`, and pushes
+-- cell. A cycle of types is solved as one group now (`MutualCycles`).
+-- `sub` takes the list `xs` two levels down, through `B`, and pushes
 -- onto it while returning `xs`: rejected.
 type A
     = A B (List Int)
