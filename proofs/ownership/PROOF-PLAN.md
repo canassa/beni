@@ -92,6 +92,7 @@ Require that component to remain separate from live protected paths outside the 
 Protected paths include outer frames, permanent observers, and unfinished operand reads.
 Derive this separation at accepted callers from actual live paths and the caller's alias-aware demand premises.
 Do not infer a write permission from valid link contents alone.
+State the observer premise of #170 over a written input's whole link component, not over the input array alone: a splice writes a stored reference into a linked source that no input holds, so an observer that reaches that source then reaches the stored input (review of PR #275, finding 3).
 
 A read-only component needs no write permission.
 Keep legal read-only aliases, including distinct canonical names for a view and its source.
@@ -217,7 +218,8 @@ These arbitrary pre-states refute statements; they do not establish reachable ch
 
 As built (2026-10-17): both summary theorems take `linked : LinkedWritesCovered e.summary e.inputs (args ++ caps) args.length pre`.
 It says: for every input array at a permitted canonical path (a `W` or consume row, or an `env` path with a `calls` row), every input array its link component holds is at a permitted path.
-`StatementChecks/LinkSummary.lean` keeps the R1 witness: every old premise holds there, `CallSound.writes` fails, and the new premise refuses the state.
+`StatementChecks/LinkSummary.lean` keeps the R1 witness: every old premise holds there, `CallSound.writes` fails, and the new premise refuses the state. Its addresses are in allocation order, so it satisfies `LinksValid` (`pre_linksValid`) and fails the premise alone (review of PR #275, finding 2).
+`StatementChecks/LinkedCallControl.lean` is the control at a reachable call (finding 1): in `xs = [1, 2]; rest = view xs; w(rest)`, with `w` a writer of its input and `xs` dead after the call, every premise of `summary_sound` holds at the pre-state the in-place run logs, the premise's trigger is real, and the linked write changes the dead source, which no input holds.
 The premise constrains input arrays only, so a read-only split keeps its distinct canonical names inside both statements.
 The falsifier's call check counts a call that fails it as vacuous (`vacuousLinked`) and carries `preLinks` into the pre-state.
 As built (2026-10-17): `CallDerivation.linkedWritesCovered_of_applyCall` proves the derivation at a first-order call without captures. `applyCall` demands every published write and consume row against the live cells after the call and the other operand paths (`otherPaths`); the operands are live, so `Invariant.described` names each input array at every path by the actual's cells (`namesAt` of a first-order, known abstract is recorded at that path); `linkNamed` makes a linked input array share the written array's origins; and the Disjoint test refuses the overlap. The hypotheses name the operands as live variables with their abstracts and values, in elementwise form; the wiring from `inferExpr`'s `.app` case (`mapM`, `callKnown`, `summarise`, base rows from `normalized`) is open.
