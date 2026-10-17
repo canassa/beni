@@ -1547,6 +1547,24 @@ fn overLimit(s: Summary) ?Over {
     return null;
 }
 
+test "a condition lowered at a limit is never read as one that holds" {
+    var arena: std.heap.ArenaAllocator = .init(std.testing.allocator);
+    defer arena.deinit();
+    // `condSame` and `spineOfSep` read only `conds` and `a`.
+    var w: Walker = .{ .o = undefined, .m = 0, .bir = undefined, .decl = std.mem.zeroes(Bir.Decl), .decl_index = 0, .store = undefined, .inst_type = &.{}, .local_type = &.{}, .a = arena.allocator(), .mode = .summary };
+    try w.conds.appendSlice(w.a, &fixed_conds);
+    try std.testing.expectEqual(cond_fixed_last + 1, w.conds.items.len);
+    try std.testing.expect(!w.condSame(cond_limit, cond_yes));
+    try std.testing.expect(!w.condSame(cond_yes, cond_limit));
+    try std.testing.expect(!w.condSame(cond_limit, cond_lost));
+    try std.testing.expect(w.condSame(cond_limit, cond_limit));
+    const sep = try w.sepCond(0, 1);
+    try std.testing.expect(!w.condSame(cond_limit, sep));
+    try std.testing.expect(!w.condSame(sep, cond_limit));
+    try std.testing.expectEqual(cond_limit, try w.spineOfSep(cond_limit));
+    try std.testing.expectEqual(cond_lost, try w.spineOfSep(cond_lost));
+}
+
 test "a summary past a limit says which and what it measured" {
     const gpa = std.testing.allocator;
     const res = try gpa.alloc(ResEntry, path_entry_cap + 1);
@@ -3704,6 +3722,9 @@ const WCond = struct {
     atoms: []const WAtom = &.{},
 };
 
+/// The conditions every walk starts with, at `cond_yes` .. `cond_fixed_last`.
+const fixed_conds = [_]WCond{ .{}, .{ .no = 1 }, .{ .no = 2 }, .{ .no = 1 } };
+
 /// The conditions every walk starts with.
 const cond_yes: u32 = 0;
 const cond_lost: u32 = 1;
@@ -4215,7 +4236,7 @@ const Walker = struct {
         }
         try w.ctx_nodes.append(w.a, .{ .parent = none, .case_id = none, .arm = 0, .depth = 0 });
         try w.frames.append(w.a, .{ .parent = none, .pending_base = 0 });
-        try w.conds.appendSlice(w.a, &.{ .{}, .{ .no = 1 }, .{ .no = 2 }, .{ .no = 1 } });
+        try w.conds.appendSlice(w.a, &fixed_conds);
         w.params = w.bir.extraSlice(.{ .start = w.decl.params_start, .end = w.decl.params_end }, Inst.Index);
         try w.fn_state.appendNTimes(w.a, .{}, w.params.len);
         for (w.params, 0..) |p, i| {
@@ -4810,7 +4831,12 @@ const Walker = struct {
             .param, .env, .cbres => if (try w.o.dictTreePath(cx.path)) return w.cellSpine(x),
             else => {},
         };
-        const k = try w.sepCells(x, y, exact);
+        return w.spineOfSep(try w.sepCells(x, y, exact));
+    }
+
+    /// `k`, a separation condition, as one on the spines: its atoms made
+    /// spine atoms, and a fixed condition kept as it is.
+    fn spineOfSep(w: *Walker, k: u32) Allocator.Error!u32 {
         if (k <= cond_fixed_last) return k;
         const atoms = try w.a.dupe(WAtom, w.conds.items[k].atoms);
         for (atoms) |*a| switch (a.kind) {
