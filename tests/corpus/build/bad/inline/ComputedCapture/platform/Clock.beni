@@ -1,0 +1,19 @@
+--! A timer whose key names no interval: its start captures `ms`.
+
+import Js
+import Sub exposing (Sub)
+
+
+type Key
+    = Clock
+
+
+--| A message every `ms` milliseconds.
+pub every : Int, msg → Sub msg
+every ms tag = Sub.on Clock (start ms _) λ_ → tag
+
+
+start : Int, sync (⊤ → ⊤) → (⊤ → ⊤)
+start ms send =
+    timer = Js.apply (Js.global "setInterval") [ Js.from λ⊤ → send ⊤, Js.from ms ]
+    λ⊤ → Js.to (Js.apply (Js.global "clearInterval") [ timer ])
