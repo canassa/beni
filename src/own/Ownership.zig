@@ -3781,6 +3781,8 @@ const Consumption = struct {
     name: []const u8 = "",
     /// pending: why.
     why: []const u8 = "",
+    /// pending: it follows from a callee's pessimistic summary (§16.7).
+    limit: bool = false,
 };
 
 /// Where a carried lambda is made (§20.4, amended 2026-10-16): the call, the
@@ -4118,6 +4120,10 @@ const Walker = struct {
     /// Per call of a function parameter: its arguments, so that a cell made
     /// here and passed to the call is known to be what it may return.
     cb_args: []?AV = &.{},
+    /// While a call is applied a pessimistic summary (§16.7): what it
+    /// rejects follows from the limit, so it takes the `limit` cause and is
+    /// not a second error beside the limit's (#272).
+    limit_callee: bool = false,
     /// §18.4 item 4: per list-pattern element, its pattern — the scope of
     /// the split's taken cells.
     split_list: []u32 = &.{},
@@ -7951,6 +7957,9 @@ const Walker = struct {
         w.popPending(args.len);
         w.point += 1;
         const tok = w.token(inst);
+        const saved_limit_callee = w.limit_callee;
+        w.limit_callee = saved_limit_callee or s.limit != .none;
+        defer w.limit_callee = saved_limit_callee;
         // 1. Uses, at the paths the callee touches.
         for (args, avs, 0..) |arg, av, i| {
             const pi: u32 = @intCast(i);
@@ -8729,8 +8738,8 @@ const Walker = struct {
             .element = false,
             .accept = .callback_param,
             .holders = &.{},
-            .fixed = .{ .verdict = .{ .rejected = .need }, .detail = detail, .assumed = assumed },
-            .prelim = .{ .cause = .need, .detail = detail, .approx = approx },
+            .fixed = .{ .verdict = .{ .rejected = if (w.limit_callee) .limit else .need }, .detail = detail, .assumed = assumed },
+            .prelim = .{ .cause = if (w.limit_callee) .limit else .need, .detail = detail, .approx = approx or w.limit_callee },
         });
     }
 
@@ -8809,7 +8818,7 @@ const Walker = struct {
                     const cls = cl.class orelse continue;
                     if (!cls.writesAny()) continue;
                     try cl.consumed.append(w.a, switch (why) {
-                        .pending => |t| .{ .kind = .pending, .why = t },
+                        .pending => |t| .{ .kind = .pending, .why = t, .limit = w.limit_callee },
                         .no_summary => |n| .{ .kind = .no_summary, .name = n },
                     });
                 },
@@ -8818,7 +8827,7 @@ const Walker = struct {
                     const s = (try w.o.ensureSummary(t.m, t.d)) orelse continue;
                     if (!s.writesAny()) continue;
                     switch (why) {
-                        .pending => |t2| if (try w.firstUnseen(t)) try w.valueLine(tok, try w.qualified(t), .pending, t2, "", false),
+                        .pending => |t2| if (try w.firstUnseen(t)) try w.valueLine(tok, try w.qualified(t), if (w.limit_callee) .{ .rejected = .limit } else .pending, t2, "", false),
                         .no_summary => |n| try w.valueLine(tok, try w.qualified(t), .{ .accepted = .callback_param }, "", try std.fmt.allocPrint(w.o.out.allocator(), "no summary: {s}", .{n}), true),
                     }
                 },
@@ -9351,7 +9360,7 @@ const Walker = struct {
                                     if (w.cells.items[x.cell].kind == .top) bad_approx[u.param] = true;
                                 }
                             }
-                            bad_cause[u.param] = .supply;
+                            bad_cause[u.param] = if (w.limit_callee) .limit else .supply;
                         }
                         continue;
                     }
@@ -10915,8 +10924,9 @@ const Walker = struct {
             return d;
         }
         for (cl.consumed.items) |c| if (c.kind == .pending) {
-            d.verdict = .pending;
+            d.verdict = if (c.limit) .{ .rejected = .limit } else .pending;
             d.detail = c.why;
+            d.approx = c.limit;
             return d;
         };
         for (cl.consumed.items) |c| if (c.kind == .no_summary) {
@@ -10964,8 +10974,9 @@ const Walker = struct {
         for (cl.consumed.items) |c| switch (c.kind) {
             .pending => if (rank < 3) {
                 rank = 3;
-                d.verdict = .pending;
+                d.verdict = if (c.limit) .{ .rejected = .limit } else .pending;
                 d.detail = c.why;
+                d.approx = c.limit;
                 d.note = "";
                 d.assumed = false;
             },
