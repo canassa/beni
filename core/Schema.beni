@@ -3379,14 +3379,10 @@ readValid : Schema e a, Value → Result (List Issue) a
 readValid s v =
     case (boxOf s).engine of
         Compiled w →
+            -- An argument with a dynamic part is the library's to run.
             case firstDynamic w.args of
-                Just d →
-                    case (boxOf d).engine of
-                        Interpreted →
-                            read s v
-
-                        Compiled _ →
-                            validate w v
+                Just _ →
+                    read s v
 
                 Nothing →
                     validate w v

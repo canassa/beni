@@ -1,0 +1,57 @@
+-- A validator run of a generic declaration's schema (`schema.md` §6, *A run
+-- whose failure is never read is a validator*): `Page.schema (Inner.schema
+-- ⊤)` is a value, so the run calls `Schema.readValid`, which runs `Page`'s
+-- validator workers with `Inner`'s as its slot, and `Page.schema Schema.int`
+-- the same with core's primitive worker. The corpus also builds this with
+-- every root through the library, against the same golden.
+import Node
+import Schema exposing (Value)
+
+
+schema Inner =
+    n : Int
+
+
+schema Page a =
+    items : List a
+
+
+verdict : Schema.Schema e a, Value → String
+verdict s v =
+    case Schema.read s v of
+        Ok _ →
+            "ok"
+
+        Err _ →
+            "invalid"
+
+
+line : String → String
+line text =
+    case Schema.parse Schema.value text of
+        Ok v →
+            text
+                ++ ": "
+                ++ verdict (Page.schema (Inner.schema ⊤)) v
+                ++ ", "
+                ++ verdict (Page.schema Schema.int) v
+
+        Err _ →
+            text ++ ": not JSON"
+
+
+main : Node.Program
+main =
+    Node.print
+        (String.join
+            (List.map
+                [ "{\"items\": [{\"n\": 1}, {\"n\": 2}]}"
+                , "{\"items\": [1, 2]}"
+                , "{\"items\": [{\"n\": \"x\"}]}"
+                , "{\"items\": 3}"
+                , "{}"
+                ]
+                line
+            )
+            "\n"
+        )
