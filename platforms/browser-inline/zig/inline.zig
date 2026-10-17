@@ -52,6 +52,7 @@ pub const lowering: m.Lowering = .{
         .{ .module = "Browser", .name = "mountAt", .places = .first },
     },
     .places = true,
+    .constructs = true,
     .effects = .{ .sub = "Sub", .cmd = "Cmd" },
     .no_markup_values = no_markup_values,
 };

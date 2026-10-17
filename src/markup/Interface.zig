@@ -107,6 +107,10 @@ pub const Lowering = struct {
     /// the element's id (`Program.placed`). False: placements run as
     /// written.
     places: bool = false,
+    /// 1.14: the program constructor's call is compiled as the mount the
+    /// hook returns alone, the constructor not called: for a platform whose
+    /// `Program` is the mount (its constructors' siblings the identity).
+    constructs: bool = false,
     /// 1.14: the lowering compiles a program's subscriptions and commands
     /// away (`browser-inline.md` §3–§4): the modules of the platform chain
     /// whose `none`, `batch`, `map` and `on` (`sub`) and `none`, `batch`
