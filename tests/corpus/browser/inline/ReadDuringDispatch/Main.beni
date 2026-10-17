@@ -1,0 +1,41 @@
+-- A listener reads its event while the event is dispatched, also when the
+-- event fires inside another dispatch (docs/design/browser-inline.md §3):
+-- `init`'s command fires `rr-ping` synchronously, the reader cancels it
+-- and finds it still at its target, and only the message is queued. So
+-- `Heard` shows `True`, and `Fired` shows the event was cancelled.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Ping
+import Sub exposing (Sub)
+import Tea
+
+
+type Msg
+    = Heard Bool
+    | Fired Bool
+
+
+type Key
+    = Pings
+
+
+update : Msg, {} → {} × Cmd Msg
+update msg model =
+    case msg of
+        Heard live →
+            _ = Debug.log "heard while dispatched" live
+            ( model, Cmd.none )
+
+        Fired cancelled →
+            _ = Debug.log "fired and cancelled" cancelled
+            ( model, Cmd.none )
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( {}, Cmd.perform λsend → send (Fired (Ping.fire ⊤)) )
+        , update = update
+        , view = λ_ → <p>mounted</p>
+        , subscriptions = λ_ → Sub.on Pings Ping.pings Heard
+        }

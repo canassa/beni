@@ -196,6 +196,18 @@ undo : Js.Ref V
 undo = Js.ref (Js.from nothing)
 
 
+--| Whether a dispatch is running now, on a page that has not stopped: an
+--| event a listener hears then fires inside it, synchronously, inside its
+--| guard.
+pub busy : ⊤ → Bool
+busy ⊤ = Js.read running && not (Js.read dead)
+
+
+--| Whether the page has stopped.
+pub stopped : ⊤ → Bool
+stopped ⊤ = Js.read dead
+
+
 --| `(f)`: one piece the mount added registers what removes it; `stop`
 --| runs them once, the last registered first.
 pub own : V → ⊤
