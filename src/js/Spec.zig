@@ -6028,7 +6028,7 @@ const Spec = struct {
         if (cross) for (scan.mentioned.items) |n| {
             if (n < scan.counts.len and scan.counts[n] != 0) continue;
             const g = fm.globalOf(@fromBackingInt(@intCast(n))) orelse return false;
-            const to = try s.namedIn(cm, g) orelse return false;
+            const to = try s.nameIn(cm, g) orelse return false;
             try outer.append(s.arena, .{ .from = n, .to = to.int() });
         };
         // Arguments: atoms — or an argument that makes a value and nothing
