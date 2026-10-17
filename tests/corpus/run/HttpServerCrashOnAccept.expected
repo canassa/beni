@@ -1,0 +1,13 @@
+(fault: server:EMFILE)
+--- stdout ---
+--- stderr ---
+<project>/<file>:<line>
+
+Error: accept EMFILE: injected by tests/serve/preload.mjs
+Emitted 'error' event on Server instance at:
+{
+  code: 'EMFILE',
+  syscall: 'accept'
+}
+
+--- exit 1 ---

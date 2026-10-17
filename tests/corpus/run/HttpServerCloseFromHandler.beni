@@ -1,0 +1,39 @@
+-- run: `close` is graceful and returns at once (boundary.md §9.10 (b)): a
+-- handler may call it, its own response is still written, and that response
+-- carries `connection: close`, so the keep-alive connection ends with it
+-- instead of serving another request. The driver's next request opens a new
+-- connection, which the closed server refuses.
+import Deferred exposing (Deferred)
+import Http.Server as Server exposing (Request, Response)
+import Io
+import Node exposing (Program)
+
+
+handle : Deferred Server.Server, Request → Response
+handle self request =
+    case request.path of
+        "/stop" →
+            server = Deferred.wait self
+            Server.close server
+            Server.close server
+            Server.text 200 "closing"
+
+        _ →
+            { status = 200
+            , headers = [ ( "content-type", "text/plain" ), ( "connection", "keep-alive" ) ]
+            , body = "open"
+            }
+
+
+main : Program
+main = Io.run λ⊤ →
+    self = Deferred.make ⊤
+    case Server.listen { host = "127.0.0.1", port = 0 } (handle self _) of
+        Err _ →
+            Node.exitWith "cannot listen" 1
+
+        Ok server →
+            _ = Deferred.complete self server
+            Server.wait server
+            Server.wait server
+            Node.print "closed"

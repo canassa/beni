@@ -1,0 +1,23 @@
+-- run: a failure of a request's read that the platform does not name is a
+-- defect (boundary.md §4.1, §9.10 (e); CLAUDE.md rule 9): thrown again, Node
+-- reports it and the process exits 1. The script's first step makes the
+-- preload fail the first request's read with `EIO`; only `ECONNRESET`, the
+-- client cutting its body, is handled.
+import Http.Server as Server exposing (Request, Response)
+import Io
+import Node exposing (Program)
+import Task
+
+
+handle : Request → Response
+handle _ = Server.text 200 "unreached"
+
+
+main : Program
+main = Io.run λ⊤ →
+    case Server.listen { host = "127.0.0.1", port = 0 } handle of
+        Err _ →
+            Node.exitWith "cannot listen" 1
+
+        Ok _ →
+            Task.never ⊤

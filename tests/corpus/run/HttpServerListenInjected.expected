@@ -1,0 +1,10 @@
+(fault: listen:EMFILE,ENFILE,EAFNOSUPPORT,EAI_AGAIN,EAI_FAIL)
+--- stdout ---
+EMFILE: too many open files
+ENFILE: too many open files
+EAFNOSUPPORT: address not available
+EAI_AGAIN: host not found
+EAI_FAIL: host not found
+no fault: listening
+--- stderr ---
+--- exit 0 ---

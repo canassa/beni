@@ -1,0 +1,2 @@
+{"method": "GET", "path": "/hang", "detach": true}
+{"method": "GET", "path": "/quit"}

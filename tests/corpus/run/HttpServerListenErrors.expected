@@ -1,0 +1,10 @@
+--- stdout ---
+same port: address in use
+no such interface: address not available
+no such host: host not found
+port 70000: invalid port
+port -1: invalid port
+port 65536: invalid port
+a second server: listening
+--- stderr ---
+--- exit 0 ---

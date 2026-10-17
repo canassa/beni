@@ -1,0 +1,69 @@
+-- run: `Http.Server.listen` answers each failure Node documents with its own
+-- constructor of `ListenError` (boundary.md §9.10 (e)), never with one value
+-- for all of them: the port a server of this program already holds, an
+-- address no interface has, a host name the resolver cannot answer, and a
+-- port no socket can have, which Node is not asked about. `EACCES` has no
+-- fixture: a port under 1024 is free to bind as root and on macOS.
+import Http.Server as Server exposing (ListenError, Request, Response)
+import Io
+import Node exposing (Program)
+
+
+describe : ListenError → String
+describe error =
+    case error of
+        Server.AddressInUse →
+            "address in use"
+
+        Server.PermissionDenied →
+            "permission denied"
+
+        Server.AddressNotAvailable →
+            "address not available"
+
+        Server.HostNotFound →
+            "host not found"
+
+        Server.TooManyOpenFiles →
+            "too many open files"
+
+        Server.InvalidPort →
+            "invalid port"
+
+
+handle : Request → Response
+handle _ = Server.text 200 "unreached"
+
+
+attempt : String, Server.Address → String
+attempt label at =
+    case Server.listen at handle of
+        Ok server →
+            Server.close server
+            Server.wait server
+            label ++ ": listening"
+
+        Err error →
+            label ++ ": " ++ describe error
+
+
+main : Program
+main = Io.run λ⊤ →
+    case Server.listen { host = "127.0.0.1", port = 0 } handle of
+        Err _ →
+            Node.exitWith "cannot listen at all" 1
+
+        Ok first →
+            taken = (Server.address first).port
+            lines =
+                [ attempt "same port" { host = "127.0.0.1", port = taken }
+                , attempt "no such interface" { host = "192.0.2.1", port = 0 }
+                , attempt "no such host" { host = "no.such.host.invalid", port = 0 }
+                , attempt "port 70000" { host = "127.0.0.1", port = 70000 }
+                , attempt "port -1" { host = "127.0.0.1", port = -1 }
+                , attempt "port 65536" { host = "127.0.0.1", port = 65536 }
+                , attempt "a second server" { host = "127.0.0.1", port = 0 }
+                ]
+            Server.close first
+            Server.wait first
+            Node.printLines lines

@@ -1,0 +1,50 @@
+-- run: the smallest server (boundary.md §9.10): it listens on a port the
+-- operating system picks, answers a request from its method, path, headers
+-- and body — a header looked up in another case than the one sent, a `HEAD`
+-- answered with the headers and no body — and stops when a handler asks it
+-- to. The port never reaches the transcript: the driver learns it from the
+-- preload (§9.10 (h)).
+import Deferred exposing (Deferred)
+import Http.Server as Server exposing (Request, Response)
+import Io
+import Node exposing (Program)
+
+
+handle : Deferred ⊤, Request → Response
+handle stop request =
+    case request.path of
+        "/hello" →
+            Server.text 200 "hello"
+
+        "/echo" →
+            { status = 200
+            , headers =
+                [ ( "content-type"
+                  , Server.header request "Content-Type"
+                      ▷ Maybe.withDefault "application/octet-stream"
+                  )
+                , ( "x-method", request.method )
+                ]
+            , body = request.body
+            }
+
+        "/stop" →
+            _ = Deferred.complete stop ⊤
+            Server.text 200 "stopping"
+
+        _ →
+            Server.text 404 ("no " ++ request.path)
+
+
+main : Program
+main = Io.run λ⊤ →
+    stop = Deferred.make ⊤
+    case Server.listen { host = "127.0.0.1", port = 0 } (handle stop _) of
+        Err _ →
+            Node.exitWith "cannot listen" 1
+
+        Ok server →
+            Deferred.wait stop
+            Server.close server
+            Server.wait server
+            Node.print ("stopped " ++ (Server.address server).host)
