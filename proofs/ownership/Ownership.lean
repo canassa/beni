@@ -19,3 +19,4 @@ import Ownership.DiagnosticCampaign
 import Ownership.LinkClauses
 import Ownership.FlatFragment.Trace
 import Ownership.CallDerivation
+import Ownership.LinkedWriteStep
