@@ -24,3 +24,4 @@ import Ownership.StatementChecks.LinkedCallControl
 import Ownership.StatementChecks.CallDerivationInstance
 import Ownership.StatementChecks.LinkedWriteInstance
 import Ownership.LinkedWriteValid
+import Ownership.StatementChecks.LinkedWriteValidInstance
