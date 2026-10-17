@@ -1311,7 +1311,13 @@ fn walkSummary(o: *Ownership, m: u32, d: u32, recursive: bool) Allocator.Error!S
     var lines: std.ArrayList(Demand) = .empty;
     try w.resolve(&lines);
     if (report) o.slots[m].?[d].lines = try lines.toOwnedSlice(o.out.allocator());
-    return w.readOff();
+    const s = try w.readOff();
+    // A limit the walk reached (a fixpoint, `value-cells`) makes the summary
+    // the pessimistic one, as §16.7 says, so that what its callers reject
+    // through it rests on the limit (`limit_callee`): a condition it lowered
+    // reaches a caller only as a lost one, which says nothing of the limit.
+    for (o.limit_hits.items) |h| if (h.module == m and h.decl == d) return o.pessimistic(s, h.limit, h.at);
+    return s;
 }
 
 // ---------------------------------------------------------------------------
@@ -3710,6 +3716,7 @@ const cond_shared: u32 = 2;
 const cond_limit: u32 = 3;
 
 /// What relying on a condition came to (§18.4); `limit` for `cond_limit`.
+/// The order is the order of `worse`: a later value is the worse failure.
 const Rely = enum {
     ok,
     approx,
@@ -8847,7 +8854,12 @@ const Walker = struct {
                     const s = (try w.o.ensureSummary(t.m, t.d)) orelse continue;
                     if (!s.writesAny()) continue;
                     switch (why) {
-                        .pending => |t2| if (try w.firstUnseen(t)) try w.valueLine(tok, try w.qualified(t), if (w.limit_callee) .{ .rejected = .limit } else .pending, t2, "", false),
+                        // A sight that follows from a limit does not count as
+                        // the function's report: a later one of its own still
+                        // prints (#272).
+                        .pending => |t2| if (w.limit_callee) {
+                            if (!w.unseen_funcs.contains((@as(u64, t.m) << 32) | t.d)) try w.valueLine(tok, try w.qualified(t), .{ .rejected = .limit }, t2, "", false);
+                        } else if (try w.firstUnseen(t)) try w.valueLine(tok, try w.qualified(t), .pending, t2, "", false),
                         .no_summary => |n| try w.valueLine(tok, try w.qualified(t), .{ .accepted = .callback_param }, "", try std.fmt.allocPrint(w.o.out.allocator(), "no summary: {s}", .{n}), true),
                     }
                 },
@@ -9310,8 +9322,8 @@ const Walker = struct {
                         try w.returnedParamDemands(inst, callee, args, avs, c, j, eps, true, 0);
                 }
                 if (writes) switch (cls) {
-                    .closure => |ci| try w.closures.items[ci].consumed.append(w.a, .{ .kind = .pending, .why = try std.fmt.allocPrint(arena, "{s} loses sight of what calls it", .{callee.name}) }),
-                    .func => try w.valueLine(tok, name, .pending, try std.fmt.allocPrint(arena, "{s} loses sight of what calls it", .{callee.name}), "", false),
+                    .closure => |ci| try w.closures.items[ci].consumed.append(w.a, .{ .kind = .pending, .why = try std.fmt.allocPrint(arena, "{s} loses sight of what calls it", .{callee.name}), .limit = w.limit_callee }),
+                    .func => try w.valueLine(tok, name, if (w.limit_callee) .{ .rejected = .limit } else .pending, try std.fmt.allocPrint(arena, "{s} loses sight of what calls it", .{callee.name}), "", false),
                     // §23.4: a send handed where its calls are not seen
                     // sends what the checker cannot see, when what it sends
                     // may hold a list.
@@ -9330,8 +9342,8 @@ const Walker = struct {
                             .element = false,
                             .accept = .callback_param,
                             .holders = &.{},
-                            .fixed = .{ .verdict = .{ .rejected = .supply }, .detail = why },
-                            .prelim = .{ .cause = .supply, .detail = why, .approx = true },
+                            .fixed = .{ .verdict = .{ .rejected = if (w.limit_callee) .limit else .supply }, .detail = why },
+                            .prelim = .{ .cause = if (w.limit_callee) .limit else .supply, .detail = why, .approx = true },
                         });
                     },
                 };
@@ -10942,10 +10954,17 @@ const Walker = struct {
             d.approx = cl.once_bad_approx;
             return d;
         }
-        for (cl.consumed.items) |c| if (c.kind == .pending) {
-            d.verdict = if (c.limit) .{ .rejected = .limit } else .pending;
+        // A pending consumption of its own goes before one that follows
+        // from a limit, which would hide it (#272).
+        for (cl.consumed.items) |c| if (c.kind == .pending and !c.limit) {
+            d.verdict = .pending;
             d.detail = c.why;
-            d.approx = c.limit;
+            return d;
+        };
+        for (cl.consumed.items) |c| if (c.kind == .pending) {
+            d.verdict = .{ .rejected = .limit };
+            d.detail = c.why;
+            d.approx = true;
             return d;
         };
         for (cl.consumed.items) |c| if (c.kind == .no_summary) {
@@ -10987,22 +11006,26 @@ const Walker = struct {
         }
         const x = lp orelse return;
         const cl = &w.closures.items[x[0]];
-        // The worst consumer decides: pending, then rejected, then a callee
-        // with no summary, then accepted.
+        // The worst consumer decides: pending, then rejected, then one that
+        // follows from a limit, then a callee with no summary, then accepted.
+        // A line of its own goes before a limit's, which would hide it (#272).
         var rank: u8 = 0;
         for (cl.consumed.items) |c| switch (c.kind) {
-            .pending => if (rank < 3) {
-                rank = 3;
+            .pending => if (rank < @as(u8, if (c.limit) 2 else 4)) {
+                rank = if (c.limit) 2 else 4;
                 d.verdict = if (c.limit) .{ .rejected = .limit } else .pending;
                 d.detail = c.why;
                 d.approx = c.limit;
                 d.note = "";
                 d.assumed = false;
             },
-            .supply => if (rank < 2 and x[1] < c.bad.len) {
+            .supply => if (x[1] < c.bad.len) {
                 if (c.bad[x[1]]) |why| {
-                    rank = 2;
-                    d.verdict = .{ .rejected = if (x[1] < c.bad_cause.len) c.bad_cause[x[1]] else .supply };
+                    const cause: Cause = if (x[1] < c.bad_cause.len) c.bad_cause[x[1]] else .supply;
+                    const r: u8 = if (cause == .limit) 2 else 3;
+                    if (rank >= r) continue;
+                    rank = r;
+                    d.verdict = .{ .rejected = cause };
                     d.detail = why;
                     d.approx = c.bad_approx[x[1]];
                     d.note = "";
