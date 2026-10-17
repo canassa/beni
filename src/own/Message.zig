@@ -154,7 +154,7 @@ pub fn limit(a: Allocator, src: Src, m: u32, h: Ownership.LimitLine) Allocator.E
         .value_cells => try std.fmt.allocPrint(a, "checking `{s}` needs whether {d} lists are each held once, more than the checker's limit of {d}", .{ name, h.at, h.limit.cap() }),
         .fixpoint => try std.fmt.allocPrint(a, "checking `{s}` needs a fixpoint that did not settle within the checker's limit of {d} rounds", .{ name, h.limit.cap() }),
         .conditions => try std.fmt.allocPrint(a, "`{s}`'s ownership summary needs {d} conditions on what its arguments share, more than the checker's limit of {d}", .{ name, h.at, h.limit.cap() }),
-        .callbacks => try std.fmt.allocPrint(a, "checking `{s}` needs a chain of {d} function arguments, each handed what the one before returned, more than the checker's limit of {d}", .{ name, h.at, h.limit.cap() }),
+        .callbacks => try std.fmt.allocPrint(a, "checking `{s}` needs a chain of more than {d} function arguments, each handed what the one before returned, which is the checker's limit", .{ name, h.limit.cap() }),
     };
     return std.fmt.allocPrint(a,
         \\{s} (ownership-checker.md §16.7).
