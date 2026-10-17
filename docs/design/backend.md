@@ -2658,12 +2658,19 @@ of them is a new mechanism:
   is copied iff the module has a *surviving* `foreign_value`, which replaces `copyAssets`' current
   "declares any `foreign`" test (`src/js/Emit.zig:725-729`). The platform's runtime is still copied
   unconditionally: the entry file imports its `run` (§2), so it is a root by construction.
-- **Emission order is unchanged and still correct.** `emissionOrder` (`src/js/Lower.zig:496-538`)
-  post-orders `bir.refs` plus the dispatch sites; its outer loop is restricted to surviving
-  declarations, and it can reach nothing else, because every edge it walks is also a reachability
-  edge. So the survivors come out in the same relative order they have today and the temporal dead
-  zone stays closed. The derived pass (`synthesisedValues`, `:1886`) keeps its two sorted runs and
-  iterates only surviving rows.
+- **Emission order, and what "unchanged" held.** `emissionOrder` (`src/js/Lower.zig:496-538`)
+  post-orders `bir.refs` plus the dispatch sites; its outer loop starts at a root only when the
+  root itself survived in some form (`liveDecl`, `liveTwin`, `livePiece`, a schema's
+  `liveSchemaAny`), and from a survivor it can reach nothing but survivors, because every edge it
+  walks is also a reachability edge. The temporal dead zone stays closed, and the order is the
+  restricted walk's own. The derived pass (`synthesisedValues`, `:1886`) keeps its two sorted runs
+  and iterates only surviving rows.
+  *Amended 2026-10-17:* this bullet first claimed the survivors "come out in the same relative
+  order they have today", i.e. in the order a walk over every root filtered to survivors gives.
+  The two orders differ — a dropped declaration's subtree can visit a survivor the surviving walk
+  reaches later — and the difference is a byte contract the emit cache rests on: see the
+  amendment under *The embedded modules' printed text, in the pack*, and
+  `tests/corpus/emit/app/DceSurvivorOrder.beni`.
   *Amended 2026-09-25:* "the dispatch sites" includes the bodies of
   the derived rows of this module they name (`Edges.termsEdges` through rows). A constant that
   calls a derived function runs its body, so a value that body names is a dependency: without the
@@ -4796,6 +4803,11 @@ already draws:
 
 - a declaration's own statements, and its suspendable body (`$s`) apart from them — `live.decl` and
   `live.twin`;
+- each lifted piece (`browser-inline.md` §7) — one unit per piece, one statement each, selected by
+  `Reach.Live`'s `lift` bit, the sixth survivor set, which landed with browser-inline's inline
+  work after this section was first written: `Lower.liftPieces` appends one statement per
+  surviving piece after the declaration's own statements, so a declaration's direct body, its
+  twin and each lift are units of their own;
 - each row `dispatch.derived` names, split at the lowering's own statement boundaries: its arrow;
   its `$$steps` helper when its synthesis appends one; and the `$$order` table of a nominal
   `compare`. Each is a unit of its own, selected by its row's `live.derived`, because the
@@ -4861,9 +4873,9 @@ declaration in the middle and compare a neighbour's bytes, tags included.
 - **The facts it consumed** — below.
 
 **The funnel, and why reuse is honest.** An embedded module's development text is a function of
-its own check and of a short list of facts about the build. As of this spec the list is: the five
-survivor sets (`Reach.Live`: declarations, derived rows, twins, constructors, schema members —
-which are also the selectors); the dead arms those sets imply (`Lower.findDeadArms`:
+its own check and of a short list of facts about the build. As of this spec the list is: the six
+survivor sets (`Reach.Live`: declarations, derived rows, twins, constructors, schema members and
+lifted pieces — which are also the selectors); the dead arms those sets imply (`Lower.findDeadArms`:
 `Js.development`'s arm, a development build constant; `Js.maySuspend`'s probe arm, a function of
 the module's own dispatch table; and a `case` arm over a constructor this build never builds,
 `patternDead` — the one arm fact that varies by program); the program hook's `consumed` set and
@@ -4920,16 +4932,15 @@ reproduce, byte for byte, the module text it split.
    other module in first-reference order (`importStatements`), whose modules and specifiers come
    from the surviving units' `Needed` entries replayed in the **ask** order of that bullet —
    declarations, rows, comparator constants — and never in the units' layout order;
-2. **the units, in today's assembly order, each class in its canonical order restricted to the
-   build's survivors** (`Lower.lower`): the nullary constants, in the sort by base text
-   (`nullaryDecls`); the markup-hoisted statements, in hoist order; the synthesised values in
-   `synthesisedValues`' two runs — the `$$order` tables first, then the arrows, the `$$steps`
-   helpers and the primitive comparator constants together, each run sorted by printed name text
-   (§8.5), a sort WITHIN a run, so filtering by survivors preserves each run's relative order;
-   then the declarations in the module's `emissionOrder`, a depth-first post-order whose roots and
-   edge set are the module's check, never the survivor set (liveness filters after the order is
-   built), so every build's order is that order filtered — §9.1's "the survivors come out in the
-   same relative order they have today". A schema declaration's parts sit inside its declaration's
+2. **the units, in today's assembly order** (`Lower.lower`): the nullary constants, in the sort by
+   base text (`nullaryDecls`), filtered to the ones this build built; the markup-hoisted
+   statements, in hoist order; the synthesised values in `synthesisedValues`' two runs — the
+   `$$order` tables first, then the arrows, the `$$steps` helpers and the primitive comparator
+   constants together, each run sorted by printed name text (§8.5), a sort WITHIN a run, so
+   filtering by survivors preserves each run's relative order; then the declarations in the
+   build's `emissionOrder` — the order the SURVIVING walk visits them, not a canonical walk
+   filtered afterwards (the amendment below): the join replays it from the edges a row records,
+   never by filtering one sequence. A schema declaration's parts sit inside its declaration's
    slot, in the order `SchemaLower.declaration` appends them, and a twin stands immediately after
    its direct body in that slot — a twin whose direct body did not survive stands where it would
    (`Lower.declaration`). Each cached unit's marks are rebased by the unit's start offset; a unit
@@ -4943,6 +4954,27 @@ reproduce, byte for byte, the module text it split.
 
 The join makes no second pass and re-prints nothing: a reused unit's bytes are spliced as they
 are.
+
+*Amended 2026-10-17 (slice 1).* Step 2 first said the declarations came in "the module's
+`emissionOrder`, a depth-first post-order whose roots and edge set are the module's check, never
+the survivor set (liveness filters after the order is built), so every build's order is that
+order filtered — §9.1's 'the survivors come out in the same relative order they have today'".
+That is wrong about the code, and one build shows it. `emissionOrder`'s outer loop starts at a
+root only when the root survived in some form (`liveDecl`, `liveTwin`, `livePiece`, a schema's
+`liveSchemaAny`), so a survivor a DROPPED declaration referenced is not visited inside the
+dropped declaration's subtree; it is first visited where a surviving declaration reaches it,
+which can be later. In `tests/corpus/emit/app/DceSurvivorOrder.beni`, `dead` stands first and
+calls `zed`, `main` names `later` then `zed`, and `dead` is dropped: a walk over every root
+emits `zed` inside `dead`'s subtree, before `later` — the same three declarations with nothing
+dropped emit `zed, dead, later` — and filtering `dead` out afterwards would keep `zed` before
+`later`, while the walk a build lowers with emits `later, zed, main`, which is the fixture's
+golden. **The maker therefore cannot record one canonical order and trust filtering**: it
+records, with each unit, the unit's outgoing edges — its `refs` and site `tops` as canonical
+positions, all of them the module's own check — and the join replays the restricted walk over
+them: the same walk, the same order, a few integers per unit, never a filter of one sequence.
+The one alternative — change `emissionOrder` itself so every build's order is the full walk
+filtered — moves bytes in every module shaped like the fixture, so it is a deliberate change
+with a measurement, and the owner's call, not a slice's.
 
 **One `SourceMap.write`, and the marks survive.** §11.1's rule is unchanged — the map is a
 byproduct of the bytes, written once per module over the joined text. The join appends a unit's
@@ -4980,9 +5012,12 @@ corpus's release second pass, every run hash and the determinism test then hold 
 byte" means — and they pin the shapes this section names in as many words:
 `tests/corpus/emit/DerivedCompareNominal.js` is the `$$order` run leading the synthesised values,
 the arrows run's one sort over arrows, `$$steps` helpers and comparator constants, and a head
-ordered by the ask walk rather than by the layout. Two smaller tests pin what reuse rests on: a
-slice-1 test drops a middle declaration and compares a neighbour's bytes, tags included, and the
-maker's self-check above splits and joins before any build reads a row. The acceptance is the
+ordered by the ask walk rather than by the layout, and
+`tests/corpus/emit/app/DceSurvivorOrder.js` is the amendment's counterexample: the surviving
+walk's order, where filtering the full walk would put `zed` first. Two smaller tests pin what
+reuse rests on: a slice-1 test drops a middle declaration and compares a neighbour's bytes, tags
+included, and the maker's self-check above splits and joins before any build reads a row. The
+acceptance is the
 measurement: the second step is worth about 235 million of ApiItems's 489 million instructions, the
 embedded modules' emit, and what it really saves is `perf stat`'s median of five on
 `run/Dictionaries`, `browser/tea/ApiItems` and `bench/corpus` as one `--library` build, when the
@@ -4994,6 +5029,26 @@ the pack stores, and the slice that proves the join against every golden. (2) th
 kind and the maker, with every build still lowering (the rows are made, not read). (3) a
 development build reads rows, falls back where the facts differ, and the counters and the
 differential tests above hold the saving.
+
+*As built (slice 1, 2026-10-17).* `Lower` records the module's pieces: `Result.head_len` and
+`Result.tail_len`, and one `Unit` per run of top-level statements between them, appended where
+`lower` builds each class — one per nullary constant, per markup hoist, per synthesised value,
+per primitive comparator constant, and per declaration with its twin and each lifted piece apart
+(`Part.twin_at`, `Part.lift_at`). `Print.Context` prints one range as a `Join.Piece` against the
+module's shared printer state, so the spellings, the name numbering and the mark list are one
+print's; `Join.join` concatenates the pieces, rebases each piece's marks by where it landed, and
+hands the count to one `SourceMap.write` per module. The development path of `Emit` goes through
+it; `--release` and walk-1 are untouched, and nothing is stored: every unit is this build's own,
+and no row kind exists. What the slice proves is the foundation — a master-vs-branch `diff -r`
+of the output trees of `run/Dictionaries`, `browser/tea/ApiItems` and `bench/corpus` (source
+maps included) is empty, 16, 43 and 59 files byte for byte — and the `emit/` goldens, the whole
+`run/` corpus's release second pass, every run hash and the determinism test are what they were.
+The cost is the medians of `perf stat -e instructions:u`, five runs, master `3c3d5f84e` against
+the slice's branch: `run/Dictionaries` 154.66M → 155.19M (+0.34%), `browser/tea/ApiItems`
+498.52M → 502.56M (+0.81%) and `bench/corpus` as one `--library` build 402.40M → 407.39M
+(+1.24%). The join prints a module's pieces where the walk printed it whole, so the cost is the
+pieces' own printing and the concatenation; the saving is slice 3's, when the embedded modules
+are not lowered at all.
 
 ### The release optimiser — items 1, 2, 3 and 5
 
