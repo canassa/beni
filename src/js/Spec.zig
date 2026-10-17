@@ -9082,6 +9082,11 @@ fn makesOnly(ir: *const JsIr, node: Index) bool {
     return if (value.unwrap()) |e| inert(ir, e) else true;
 }
 
+/// `inert`, for the emitter's reachability after the optimiser.
+pub fn isInert(ir: *const JsIr, root: Index) bool {
+    return inert(ir, root);
+}
+
 fn inert(ir: *const JsIr, root: Index) bool {
     var stack: [64]Index = undefined;
     var len: usize = 1;
