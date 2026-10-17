@@ -8078,6 +8078,30 @@ parameter or of several, and a derived comparison's `$d=0` keep theirs. It came 
 function compiled from beni was two bytes longer. Every `emit/release/` golden with such an arrow
 moved; development output does not.
 
+**Amended 2026-10-17: an identifier-named string index is a member** (`Print.dottedKey`). Compact
+printing writes `x["key"]` as `x.key` wherever `key` is an identifier name — ECMAScript reads both
+as one property access, so nothing a program does can tell. Specialisation leaves
+`globalThis["window"]` where the browser platforms ask for a host global, and the schema workers
+spell host keys as strings. Development output does not move.
+
+### Reachability after the optimiser
+
+*Added 2026-10-17.* Specialisation's reachability (`Spec.prune`) runs before the per-module
+release optimiser (item 1), which drops an unread binding whose initialiser does nothing. The
+binding may hold the last mention of a top-level function: a schema context's `inE` field is
+`endpointOf(src)`, scalar replacement leaves the read as `const t = endpointOf(src)`, nothing reads
+`t`, and the optimiser drops it — but specialisation had already counted the mention, so
+`endpointOf` stayed in the file with no caller. In a one-file build (*One scope-hoisted file*)
+the emitter therefore walks the program once more after the optimiser (`Emit.pruneOptimised`), as
+the printer will write it: a binding the plan drops is skipped, and a single use the plan
+substitutes is read as its value. The roots are specialisation's — the names files the pass cannot
+see read or call, and the entry's call — and every top-level statement but a declaration whose
+initialiser is inert (`Spec.inert`); a name an `export` statement names is kept, and so is a name
+declared twice. A declaration nothing reached is dropped from the plan. A multi-file build keeps
+what it has: its modules are printed apart, and a name one module exports may be read by a file
+the walk does not see. Fixtures: `emit/release/inline/PushAndTimer` (`endpointOf` and a schema
+helper go), `emit/release/app/InlineReachable`, `SpecMaybe`, `emit/release/direct/ListScripts`, and
+the `run/` and `browser/` release passes, which run every program the walk changed.
 ## 10. Chunking
 
 **Release output is chunks; development output is not.** §9.5 of the design doc settles that with

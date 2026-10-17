@@ -878,6 +878,8 @@ const Emitter = struct {
     /// The host globals a hoisted hand-written file binds as written, which
     /// emitted code may not then write bare (`bareBlocked`).
     bare_blocked: []const []const u8 = &.{},
+    /// What specialisation took as its roots, by name: `pruneOptimised`'s.
+    spec_roots: []const Rename.Globals.Key = &.{},
     /// The markup runtime's exports the modules written import, in
     /// module order and with repeats: what `--release` cuts the runtime file
     /// to (§9, *Hand-written JavaScript under `--release`*). Scratch-owned.
@@ -3596,6 +3598,7 @@ const Emitter = struct {
             // amended 2026-10-02).
             if (e.options.library and lowered_clean) try e.specialise(slots, todo.items, null, false);
             try e.pool.run(todo.items, context, Task.optimise, e.wanted(insts, insts_per_emitter));
+            if (one_scope) try e.pruneOptimised(slots, todo.items);
             // §9's *One scope-hoisted file under `--release`*: an
             // application whose every hand-written file can join one scope
             // is written as one file, and its names are numbered in that
@@ -4057,6 +4060,18 @@ const Emitter = struct {
             if (run_id) |g| try escaping.append(e.scratch, g);
             if (main_id) |g| try escaping.append(e.scratch, g);
         }
+        {
+            var root_ids: std.ArrayList(u32) = .empty;
+            try root_ids.appendSlice(e.scratch, escaping.items);
+            if (entry_call) |c| {
+                try root_ids.append(e.scratch, c.callee);
+                try root_ids.appendSlice(e.scratch, c.args);
+            }
+            var keys: std.ArrayList(Rename.Globals.Key) = .empty;
+            var it = ids.iterator();
+            while (it.next()) |kv| if (std.mem.indexOfScalar(u32, root_ids.items, kv.value_ptr.*) != null) try keys.append(e.scratch, kv.key_ptr.*);
+            e.spec_roots = keys.items;
+        }
         var builtin: std.ArrayList(u32) = .empty;
         for (Spec.prototype_names) |n| if (props.get(n)) |id| try builtin.append(e.scratch, id);
         var makers: std.ArrayList(u32) = .empty;
@@ -4116,6 +4131,195 @@ const Emitter = struct {
         try e.refineBoundary(slots, todo, modules.items, &ids, declared_before, stats);
     }
 
+    /// §9, *Reachability after the optimiser*: in a
+    /// one-file build, a top-level function or inert value that only
+    /// bindings the per-module optimiser dropped mentioned goes as well.
+    /// Specialisation's reachability (`Spec.prune`) runs before the
+    /// optimiser, which drops an unread binding whose initialiser does
+    /// nothing — `const t = endpointOf(src)` of a context whose field
+    /// nothing reads — and with it the last mention of `endpointOf`. The
+    /// roots are specialisation's: what files the pass cannot see read or
+    /// call (`spec_roots`) and every top-level statement that is not such a
+    /// declaration; a name an `export` statement names is kept. The walk
+    /// reads what the printer writes: a dropped binding is skipped, and a
+    /// single use the plan substitutes is read as its value.
+    fn pruneOptimised(e: *Emitter, slots: []ModuleSlot, todo: []const u32) Allocator.Error!void {
+        var ids: std.AutoHashMapUnmanaged(Rename.Globals.Key, u32) = .empty;
+        const gids = try e.scratch.alloc([]u32, todo.len);
+        for (todo, gids) |i, *gid| {
+            gid.* = &.{};
+            const slot = &slots[i];
+            const lowered = &(slot.lowered orelse continue);
+            if (lowered.diagnostics.len != 0) continue;
+            const ir = &lowered.ir;
+            gid.* = try e.scratch.alloc(u32, ir.names.len);
+            for (gid.*, 0..) |*g, n| {
+                g.* = Spec.none;
+                if (ir.names[n].module == .none) continue;
+                const name = try e.poolName(slot, @fromBackingInt(@intCast(@as(u32, @intCast(n)))));
+                const gop = try ids.getOrPut(e.scratch, Rename.Globals.key(name));
+                if (!gop.found_existing) gop.value_ptr.* = ids.count() - 1;
+                g.* = gop.value_ptr.*;
+            }
+        }
+        const count = ids.count();
+        const Decl = struct { at: u32, stmt: JsIr.Node.Index };
+        const decl = try e.scratch.alloc(?Decl, count);
+        @memset(decl, null);
+        const many = try e.scratch.alloc(bool, count);
+        @memset(many, false);
+        const live = try e.scratch.alloc(bool, count);
+        @memset(live, false);
+        var work: std.ArrayList(u32) = .empty;
+        for (e.spec_roots) |key| if (ids.get(key)) |g| {
+            live[g] = true;
+            try work.append(e.scratch, g);
+        };
+        // The declarations that may go, and the statements that are roots.
+        var roots: std.ArrayList(Decl) = .empty;
+        for (todo, gids, 0..) |i, gid, at| {
+            const lowered = &(slots[i].lowered orelse continue);
+            if (lowered.diagnostics.len != 0) continue;
+            const ir = &lowered.ir;
+            const plan = &slots[i].plan;
+            for (ir.extraSlice(ir.body, JsIr.Node.Index)) |stmt| {
+                if (plan.isDropped(stmt)) continue;
+                const d = ir.data(stmt);
+                switch (ir.tag(stmt)) {
+                    .import_stmt => continue,
+                    .export_stmt => {
+                        for (ir.extraSlice(JsIr.inlineRange(d), JsIr.NameIndex)) |n| {
+                            const g = gid[n.int()];
+                            if (g != Spec.none and !live[g]) {
+                                live[g] = true;
+                                try work.append(e.scratch, g);
+                            }
+                        }
+                        continue;
+                    },
+                    .const_decl => {
+                        const n: JsIr.NameIndex = @fromBackingInt(@intCast(d.lhs));
+                        const g = if (n.unwrap()) |x| gid[x] else Spec.none;
+                        if (g != Spec.none and Spec.isInert(ir, @fromBackingInt(@intCast(d.rhs)))) {
+                            if (decl[g] != null) many[g] = true;
+                            decl[g] = .{ .at = @intCast(at), .stmt = stmt };
+                            continue;
+                        }
+                    },
+                    else => {},
+                }
+                try roots.append(e.scratch, .{ .at = @intCast(at), .stmt = stmt });
+            }
+        }
+        for (many, 0..) |m, g| if (m and !live[g]) {
+            live[g] = true;
+            try work.append(e.scratch, @intCast(g));
+        };
+        var stack: std.ArrayList(JsIr.Node.Index) = .empty;
+        for (roots.items) |r| try e.mentionsOf(slots, todo, gids, r.at, r.stmt, &stack, live, &work);
+        while (work.pop()) |g| {
+            const at = decl[g] orelse continue;
+            try e.mentionsOf(slots, todo, gids, at.at, at.stmt, &stack, live, &work);
+        }
+        for (decl, 0..) |maybe, g| {
+            const at = maybe orelse continue;
+            if (live[g]) continue;
+            const slot = &slots[todo[at.at]];
+            const i = at.stmt.int();
+            const words: []u32 = @constCast(slot.plan.dropped);
+            if (i / 32 >= words.len) continue;
+            words[i / 32] |= @as(u32, 1) << @intCast(i % 32);
+            slot.met = try Rename.collectGlobals(e.scratch, &slot.lowered.?.ir, &slot.plan);
+        }
+    }
+
+    /// `pruneOptimised`'s walk of one statement as the printer writes it:
+    /// every whole-program name it mentions, marked live and queued.
+    fn mentionsOf(
+        e: *Emitter,
+        slots: []ModuleSlot,
+        todo: []const u32,
+        gids: []const []u32,
+        at: u32,
+        stmt: JsIr.Node.Index,
+        stack: *std.ArrayList(JsIr.Node.Index),
+        live: []bool,
+        work: *std.ArrayList(u32),
+    ) Allocator.Error!void {
+        const slot = &slots[todo[at]];
+        const ir = &slot.lowered.?.ir;
+        const plan = &slot.plan;
+        const gid = gids[at];
+        const a = e.scratch;
+        stack.clearRetainingCapacity();
+        try stack.append(a, stmt);
+        while (stack.pop()) |node| {
+            const t = ir.tag(node);
+            const d = ir.data(node);
+            if (t.isStatement() and node != stmt and plan.isDropped(node)) continue;
+            switch (t) {
+                .ident => {
+                    if (plan.replacement(node)) |v| {
+                        try stack.append(a, v);
+                        continue;
+                    }
+                    const n: JsIr.NameIndex = @fromBackingInt(@intCast(d.lhs));
+                    if (n.unwrap()) |x| if (x < gid.len and gid[x] != Spec.none and !live[gid[x]]) {
+                        live[gid[x]] = true;
+                        try work.append(a, gid[x]);
+                    };
+                },
+                .arrow => {
+                    const f = ir.extraData(@fromBackingInt(@intCast(d.lhs)), JsIr.Func);
+                    for (ir.extraSlice(f.body(), JsIr.Node.Index)) |b| try stack.append(a, b);
+                },
+                .import_stmt, .export_stmt, .break_stmt, .continue_stmt => {},
+                .const_decl => try stack.append(a, @fromBackingInt(@intCast(d.rhs))),
+                .let_decl => if (@as(JsIr.Node.OptionalIndex, @fromBackingInt(@intCast(d.rhs))).unwrap()) |v| try stack.append(a, v),
+                .func_decl, .gen_decl => {
+                    const f = ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.Func);
+                    for (ir.extraSlice(f.body(), JsIr.Node.Index)) |b| try stack.append(a, b);
+                },
+                .assign_stmt => {
+                    try stack.append(a, @fromBackingInt(@intCast(d.lhs)));
+                    try stack.append(a, @fromBackingInt(@intCast(d.rhs)));
+                },
+                .return_stmt => if (@as(JsIr.Node.OptionalIndex, @fromBackingInt(@intCast(d.lhs))).unwrap()) |v| try stack.append(a, v),
+                .if_stmt => {
+                    try stack.append(a, @fromBackingInt(@intCast(d.lhs)));
+                    const branches = ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.If);
+                    for (ir.extraSlice(branches.thenBody(), JsIr.Node.Index)) |b| try stack.append(a, b);
+                    for (ir.extraSlice(branches.elseBody(), JsIr.Node.Index)) |b| try stack.append(a, b);
+                },
+                .while_true, .block_stmt, .switch_case => {
+                    if (t == .switch_case) if (@as(JsIr.Node.OptionalIndex, @fromBackingInt(@intCast(d.lhs))).unwrap()) |c| try stack.append(a, c);
+                    for (ir.extraSlice(ir.subRange(@fromBackingInt(@intCast(d.rhs))), JsIr.Node.Index)) |b| try stack.append(a, b);
+                },
+                .for_of => {
+                    const f = ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.ForOf);
+                    try stack.append(a, f.iterable);
+                    for (ir.extraSlice(f.body(), JsIr.Node.Index)) |b| try stack.append(a, b);
+                },
+                .switch_stmt => {
+                    try stack.append(a, @fromBackingInt(@intCast(d.lhs)));
+                    for (ir.extraSlice(ir.subRange(@fromBackingInt(@intCast(d.rhs))), JsIr.Node.Index)) |c| try stack.append(a, c);
+                },
+                .expr_stmt, .throw_stmt => try stack.append(a, @fromBackingInt(@intCast(d.lhs))),
+                .try_stmt => {
+                    const tr = ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.Try);
+                    for (ir.extraSlice(tr.body(), JsIr.Node.Index)) |b| try stack.append(a, b);
+                    for (ir.extraSlice(tr.finalBody(), JsIr.Node.Index)) |b| try stack.append(a, b);
+                    for (ir.extraSlice(tr.catchBody(), JsIr.Node.Index)) |b| try stack.append(a, b);
+                },
+                else => if (t.isStatement()) {
+                    // A statement this walk does not know: everything it
+                    // could mention is kept.
+                    @memset(live, true);
+                    return;
+                } else try ir.pushOperands(a, stack, node),
+            }
+        }
+    }
     /// Every whole-program name `ir` declares at its top level, or imports:
     /// set in `out`, by the ids `global` gives its names.
     fn topDeclared(ir: *const JsIr, global: []const u32, out: []bool) void {
