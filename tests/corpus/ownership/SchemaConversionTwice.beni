@@ -15,7 +15,11 @@
 -- `forward` that returns its argument once beside a list it builds
 -- (`once`) is accepted, and so is one that returns what a recursive
 -- builder makes (`ranged`, `rangedPair`): `range` numbers its elements as
--- the list, but they are `Int`s, which hold no list.
+-- the list, but they are `Int`s, which hold no list. A `forward` that
+-- calls a function value that is one read out of a `Dict` or a default
+-- (`dict`) answers `⊤call` (§30.11), so a write onto its answer is
+-- rejected too, whatever the `Dict`'s function returns.
+import Dict exposing (Dict)
 import Schema exposing (Conversion)
 
 
@@ -60,8 +64,22 @@ twoRanges : Conversion (List Int) (List Int × List Int)
 twoRanges = Schema.conversion (λ_ → Ok ( range 3, range 2 )) λ( a, _ ) → Ok a
 
 
+helpers : Dict Int (List Int → List Int × List Int)
+helpers = Dict.fromList [ ( 0, λxs → ( xs, xs ) ) ]
+
+
+dictDup : Conversion (List Int) (List Int × List Int)
+dictDup =
+    Schema.conversion (λxs → Ok ((Dict.get helpers 0 ▷ Maybe.withDefault λys → ( ys, [] )) xs)) λ( a, _ ) →
+        Ok a
+
+
 split : Conversion (List Int) (List Int × List Int)
 split = Schema.conversion (λxs → Ok ( xs, List.reverse xs )) λ( a, _ ) → Ok a
+
+
+schema FromDict =
+    items : List Int via dictDup
 
 
 schema Pair =
@@ -200,6 +218,16 @@ ranged input =
 pub rangedPair : String → List Int × List Int
 rangedPair input =
     case RangedPair.parse input of
+        Ok p →
+            ( a, b ) = p.items
+            ( List.push a 9, b )
+        Err _ →
+            ( [], [] )
+
+
+pub dict : String → List Int × List Int
+dict input =
+    case FromDict.parse input of
         Ok p →
             ( a, b ) = p.items
             ( List.push a 9, b )
