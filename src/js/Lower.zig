@@ -11852,6 +11852,7 @@ pub const Lowerer = struct {
         } orelse @fromBackingInt(@intCast(pc.inst));
         try l.report(switch (code) {
             .view_not_compiled => .view_not_compiled,
+            .program_shape => .program_shape,
             else => .not_implemented,
         }, region, "{s}", .{message});
     }

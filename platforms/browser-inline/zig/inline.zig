@@ -58,10 +58,10 @@ pub const lowering: m.Lowering = .{
 };
 
 const no_markup_values =
-    \\`browser-inline` has no markup value: markup is compiled only as a program's `view`,
-    \\written in place (`docs/design/browser-inline.md` §5, class 1). Markup held, passed or
-    \\returned by a helper is not supported on browser-inline yet: write it in place in the
-    \\`view`, or build this program with `--platform=browser-tea`.
+    \\A limit of the compiler: `browser-inline` has no markup value yet; it compiles markup only
+    \\as a program's `view`, written in place (`docs/design/browser-inline.md` §5, class 1).
+    \\Write markup held, passed or returned by a helper in place in the `view`, or build this
+    \\program with `--platform=browser-tea`.
 ;
 
 fn module(cx: *m.Context, tree: *const m.Tree) m.Error!void {
@@ -75,11 +75,11 @@ fn root(cx: *m.Context, tree: *const m.Tree, index: m.Root.Index) m.Error!m.Expr
     return cx.notImplemented(tree.root(index).node, no_markup_values);
 }
 
-/// The class-1 refusal (`browser-inline.md` §5): a construct this platform
-/// does not compile yet, and what to write instead.
+/// The class-1 refusal (`browser-inline.md` §5): a limit of the compiler, a
+/// construct this platform does not compile yet, and what to write instead.
 fn later(cx: *m.Context, n: m.Node.Index, what: []const u8) m.Error {
     const message = std.fmt.allocPrint(cx.arena,
-        \\`browser-inline` does not compile {s}: not supported on browser-inline yet
+        \\A limit of the compiler: `browser-inline` does not compile {s} yet
         \\(`docs/design/browser-inline.md` §5, class 1). Write the `view` without it, or build this
         \\program with `--platform=browser-tea`, which compiles it.
     , .{what}) catch return error.OutOfMemory;
@@ -97,14 +97,14 @@ fn program(cx: *m.Context, tree: *const m.Tree, p: *const m.Program) m.Error!m.E
     switch (p.view) {
         .markup => {},
         .function => return cx.programReport(.view, .not_implemented,
-            \\`browser-inline` compiles a `view` whose body is markup written in place, and this
-            \\one's computes its markup, or has `let`s: not supported on browser-inline yet
+            \\A limit of the compiler: `browser-inline` compiles a `view` whose body is markup
+            \\written in place, and this one's computes its markup, or has `let`s, which it does not compile yet
             \\(`docs/design/browser-inline.md` §5, class 1). Write the markup in place as the body of
             \\`view`, or build this program with `--platform=browser-tea`.
         ),
         .other_module => return cx.programReport(.view, .not_implemented,
-            \\`browser-inline` compiles a `view` declared in the module that calls the program's
-            \\constructor, and this one is another module's: not supported on browser-inline yet
+            \\A limit of the compiler: `browser-inline` compiles a `view` declared in the module that
+            \\calls the program's constructor, and this one is another module's, which it does not compile yet
             \\(`docs/design/browser-inline.md` §5, class 1). Declare `view` beside the program, or
             \\build this program with `--platform=browser-tea`.
         ),
@@ -284,12 +284,13 @@ const Page = struct {
             switch (cx.programSubscriptions()) {
                 .set => |s| subs = s,
                 .model => return cx.programReport(.call, .not_implemented,
-                    \\This program's subscriptions depend on its model, and `browser-inline` compiles a
-                    \\set of subscriptions that is the same for the page's life: a set that changes is not
-                    \\supported on browser-inline yet (`docs/design/browser-inline.md` §3; §5, class 3). Write `subscriptions` so that
-                    \\it does not read the model, and let `update` ignore what it does not need.
+                    \\A limit of the compiler: this program's subscriptions depend on its model, and
+                    \\`browser-inline` compiles a set of subscriptions that is the same for the page's life;
+                    \\a set that changes it does not compile yet (`docs/design/browser-inline.md` §3; §5,
+                    \\class 1). Write `subscriptions` so that it does not read the model, and let `update`
+                    \\ignore what it does not need.
                 ),
-                .no_key => |where| return cx.programReport(.call, .not_implemented, try std.fmt.allocPrint(cx.arena,
+                .no_key => |where| return cx.programReport(.call, .program_shape, try std.fmt.allocPrint(cx.arena,
                     \\The subscription at {s} hands its values to a tagger that does not give one of the
                     \\program's message constructors, and `browser-inline` calls the handler of that
                     \\constructor's key with each value directly, with no message made
@@ -317,10 +318,10 @@ const Page = struct {
         for (subs) |s| {
             if (s.handler >= keys.len) return cx.programReport(.call, .not_implemented, "A limit of the compiler: a subscription's key has no handler.");
             if (s.fields > 1 or keys[s.handler].params != s.fields) return cx.programReport(.call, .not_implemented, try std.fmt.allocPrint(cx.arena,
-                \\`browser-inline` does not compile the subscription at {s} yet: its message's
-                \\constructor takes the value in more than one field, which is not supported on
-                \\browser-inline yet (`docs/design/browser-inline.md` §5, class 1). Give the constructor
-                \\one field for the value.
+                \\A limit of the compiler: `browser-inline` does not compile the subscription at {s} yet:
+                \\its message's constructor takes the value in more than one field
+                \\(`docs/design/browser-inline.md` §5, class 1). Give the constructor one field for the
+                \\value.
             , .{s.where}));
             reached[s.handler] = true;
         }
@@ -456,9 +457,9 @@ const Page = struct {
             .none => return false,
             .runs => return true,
             .suspends => |where| return cx.programReport(if (key == null) .init else .update, .not_implemented, try std.fmt.allocPrint(cx.arena,
-                \\The command whose body is at {s} may suspend, and a body that suspends needs the task
-                \\kernel, which is not supported on browser-inline yet (`docs/design/browser-inline.md` §4;
-                \\§5, class 2).
+                \\A limit of the compiler: the command whose body is at {s} may suspend, and a body that
+                \\suspends needs the task kernel, which `browser-inline` does not have yet
+                \\(`docs/design/browser-inline.md` §4; §5, class 2).
                 \\Write the body so that it does not wait, or build this program with
                 \\`--platform=browser-tea`.
             , .{where})),
