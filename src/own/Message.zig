@@ -175,6 +175,8 @@ pub fn build(a: Allocator, src: Src, m: u32, lines: []const Demand) Allocator.Er
     };
     const exact = d.verdict == .rejected and !d.approx;
     const entry = std.mem.startsWith(u8, d.op, "entry ");
+    // A function value that must return a list it owns (§28.6, amended).
+    const need = cause == .need and std.mem.eql(u8, d.op, "value");
     var out: std.ArrayList(u8) = .empty;
     const w = struct {
         fn s(o: *std.ArrayList(u8), al: Allocator, comptime fmt: []const u8, args: anytype) Allocator.Error!void {
@@ -214,6 +216,8 @@ pub fn build(a: Allocator, src: Src, m: u32, lines: []const Demand) Allocator.Er
         try w(&out, a, "`{s}` changes {s} in place", .{ entry_fn, base_name });
     } else if (std.mem.eql(u8, op, "send")) {
         try w(&out, a, "Sending {s} gives the list up to `update`", .{base_name});
+    } else if (need) {
+        try w(&out, a, "{s} must return a list it owns", .{try functionName(a, d.base)});
     } else if (std.mem.eql(u8, op, "value")) {
         try w(&out, a, "`{s}` changes a list it is handed in place", .{d.base});
     } else {
@@ -221,6 +225,11 @@ pub fn build(a: Allocator, src: Src, m: u32, lines: []const Demand) Allocator.Er
     }
     if (d.verdict == .pending) {
         try w(&out, a, ", and the function that does it goes where the checker cannot see every call of it: {s}.", .{try plain(a, d.detail)});
+    } else if (need) {
+        if (exact)
+            try w(&out, a, ", but {s}.", .{try plain(a, d.detail)})
+        else
+            try w(&out, a, ", and the checker cannot show that it does.", .{});
     } else if (cause) |c| switch (c) {
         .later_use => try w(&out, a, ", but {s} is read again afterwards.", .{holder}),
         .alias => try w(&out, a, ", but {s} still holds the old list and is read afterwards.", .{holder}),
@@ -249,9 +258,13 @@ pub fn build(a: Allocator, src: Src, m: u32, lines: []const Demand) Allocator.Er
         "the list is given up here"
     else if (entry)
         try std.fmt.allocPrint(a, "the runtime hands `{s}` the model here", .{entry_fn})
+    else if (need)
+        "the function is handed on here"
     else
         "the list is changed in place here";
     if (d.span[0] != none) try places.append(a, .{ .m = m, .first = d.span[0], .last = d.span[1], .label = changed });
+    if (need and d.via_token != none and d.via_token != d.span[0])
+        try places.append(a, .{ .m = m, .first = d.via_token, .last = d.via_token, .label = "the function here may return a list it does not own" });
     if (cause) |c| switch (c) {
         .alias, .captured, .call => if (d.keep_token != none and d.holder.len > 0) {
             const verb: []const u8 = if (c == .captured) "holds" else "keeps";
@@ -347,7 +360,9 @@ pub fn build(a: Allocator, src: Src, m: u32, lines: []const Demand) Allocator.Er
         try w(&out, a, "Or, if {s} only needs the list as it was, read it before line {d}.\n\n", .{ holder, edit_line });
     }
     if (!fixed) {
-        if (d.verdict == .pending)
+        if (need)
+            try w(&out, a, "Have the function return a list it owns: a new list, or a copy made with `List.copy`.\n\n", .{})
+        else if (d.verdict == .pending)
             try w(&out, a, "Call it where it is written, or have it change a copy, made with `List.copy`.\n\n", .{})
         else if (cause == .payload)
             try w(&out, a, "Build the messages the page sends from values that are not the model's lists, or have `update` change a copy of what a message carries, made with `List.copy`.\n\n", .{})
@@ -380,6 +395,13 @@ pub fn build(a: Allocator, src: Src, m: u32, lines: []const Demand) Allocator.Er
         } else try w(&out, a, "This is a limit of the checker, not proof of sharing: {s}.", .{try plain(a, d.detail)}),
     };
     return out.items;
+}
+
+/// A function value a `need` line is about, as the sentence's subject.
+fn functionName(a: Allocator, base: []const u8) Allocator.Error![]const u8 {
+    if (std.mem.eql(u8, base, "<lambda>")) return "A lambda";
+    if (base.len == 0 or base[0] == '<') return "A function value";
+    return std.fmt.allocPrint(a, "`{s}`", .{base});
 }
 
 /// A top-level value's name: bare in its own module, qualified in another.
