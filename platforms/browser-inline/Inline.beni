@@ -240,11 +240,11 @@ nothing ⊤ = ⊤
 
 -- ---- Bindings (`browser-inline.md` §8.2) --------------------------------
 
---| `(node, value)`: a text binding — the node's text, `String(value)`,
---| written when it differs from what the node shows.
+--| `(node, shown)`: a text binding — the node's text, written when it
+--| differs from what the node shows. `shown` is a string: the lowering
+--| writes a number as one (`browser-inline.md` §8.2).
 pub text : V, V → ⊤
-text node value =
-    shown = Js.apply (Js.global "String") [ value ]
+text node shown =
     if not (Js.same (Js.get node "textContent") shown) then
         Js.set node "textContent" shown
 

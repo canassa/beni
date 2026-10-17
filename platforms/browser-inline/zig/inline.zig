@@ -234,8 +234,6 @@ const Page = struct {
     elements: ?m.Name = null,
     /// `elements` is the one element code refers to, not the list.
     single: bool = false,
-    /// How many text writes the page has.
-    texts: u32 = 0,
     /// The handlers by key, named when something first calls one.
     handlers: []?m.Name = &.{},
     /// Per key, the functions of the stateful controls its events are on.
@@ -576,9 +574,6 @@ const Page = struct {
             }
         }
 
-        for (pg.writes.items) |w| if (w.what == .text) {
-            pg.texts += 1;
-        };
         // The binding functions, each written once and called once now.
         try pg.group();
         for (pg.functions.items) |*f| {
@@ -872,21 +867,10 @@ const Page = struct {
                             };
                             break :value try js.template(tp);
                         };
-                        if (pg.texts == 1) {
-                            // The page's one text write is written where it
-                            // is, not as a call of `text`, which then does not
-                            // ship: a template is the value's `String`.
-                            // A lone hole's value is a name already; a template or a
-                            // number is evaluated once, into one.
-                            const shown = if (parts.len == 1 and w.string) value else shown: {
-                                const s = try cx.fresh("shown");
-                                try js.constant(blk, s, if (w.string) value else try js.template(&.{.{ .expr = value }}));
-                                break :shown try js.name(s);
-                            };
-                            const then = try js.block();
-                            try js.assign(then, try js.member(node, "textContent"), shown);
-                            try js.@"if"(blk, try js.binary(.strict_ne, try js.member(node, "textContent"), shown), then, null);
-                        } else try js.expression(blk, try js.call(try js.name(try cx.runtime("text")), &.{ node, value }));
+                        // `text` takes a string: a lone number is written as
+                        // one, by a template (`browser-inline.md` §8.2).
+                        const shown = if (w.string) value else try js.template(&.{.{ .expr = value }});
+                        try js.expression(blk, try js.call(try js.name(try cx.runtime("text")), &.{ node, shown }));
                     },
                     .prop => |x| {
                         const value = try cx.value(x.value);

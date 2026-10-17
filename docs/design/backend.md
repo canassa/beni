@@ -7704,6 +7704,21 @@ makes was built and matched. Measured (release, brotli 11, each golden the chang
 `tea/HttpSendTracked` 6 860 → 6 787, `HttpSendUntracked` 4 867 → 4 834; 17 goldens moved, −207 in
 all, `direct/TableSwap` +8 and `MapKind` +4 the largest growths.
 
+
+**A body whose returns all end it, at a call statement** (*amended 2026-10-18*, the review of
+`browser-inline`'s S1). A function of `⊤` written in beni with an `if` and no `else` — the runtime's
+`text`, `if not (same …) then set …` — is lowered as `if (c) { …; return null } else { return null }`:
+two valued `return`s, which no form above takes at a call statement, so a helper called once
+stayed a call. Now, at a call statement, a body whose every `return` ends it — the last statement,
+or the last of each branch of an `if`, or of an unlabelled block, that is the last — is written in
+place with each such `return v` written as `v`, a statement, or as nothing when `v` is inert: the
+call's value was never read, and control leaves the body there either way. An early `return`, or
+one inside a loop, a `switch` or a `try`, keeps the call. Measured (release, brotli 11, every golden
+it moved): `inline/CounterLocal` 529 → 523, `inline/FormLocal` 1 020 → 1 017,
+`inline/PushAndTimer` 583 (the helper fused; it was 598 without `browser-inline`'s former special
+case), `tea/HttpSendTracked` 6 784 → 6 771, `tea/HttpSendUntracked` 4 829 → 4 818,
+`direct/ListScripts` 4 117 → 4 144 and `direct/TableSwap` 2 799 → 2 811 (a parameter bound as a
+`let`, and every later top-level name one letter on).
 **Slice 9 across a call: a `case` on what a function returns** (*added 2026-10-17*, the owner's
 decision for `browser-inline`'s first slice: a case of a known constructor fused across a call,
 general, in this pass, for every platform). Slice 9 folds a constructor made by a *small* function.

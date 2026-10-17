@@ -236,8 +236,10 @@ the unit's top element in document order (`top.querySelectorAll("*")`, read once
 only when some code refers to a descendant); the top element is the unit's node itself. There is
 no marker attribute and no walk. *Amended 2026-10-17:* when code refers to one descendant only, it is
 reached by its path of `firstChild` and `childNodes[i]` from the top node, which costs less than
-the list; and a page whose one text write is its only use of `text` writes it in place, so `text`
-does not ship (S0's pinned 589 B for `PushAndTimer` holds: 583 B).
+the list. *Amended 2026-10-18:* `text` takes a string — the lowering writes a lone number hole as
+one, by a template — and a page that calls it once has it written there by release's single-use
+inlining (`backend.md` §9, *A body whose returns all end it*), not by a case of this lowering (S0's
+pinned 589 B for `PushAndTimer` holds: 583 B).
 
 **A binding** is one write guarded by a compare, through the runtime's four functions, which are
 beni over `Js` in `Inline.beni`:
