@@ -1,0 +1,6 @@
+element "root"
+detail window rr-push 1
+listeners window
+stop
+listeners window
+detail window rr-push 1

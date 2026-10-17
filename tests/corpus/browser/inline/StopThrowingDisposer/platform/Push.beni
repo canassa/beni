@@ -1,0 +1,34 @@
+--! A layer whose second subscription's removal throws, for a page that
+--! stops the program (`boundary.md` §9.4.5): `stop` runs the disposers
+--! newest first, and a throw ends the chain there, with no `catch` (CLAUDE.md
+--! rule 9): the disposers older than it are skipped, and the throw reaches
+--! the page that called `stop`, whose program has stopped either way.
+
+import Js
+import Listen
+import Schema exposing (Value)
+import Sub exposing (Sub)
+
+
+type Key
+    = Pushed
+    | Broken
+
+
+--| Every event the host pushes, as the host value it sent.
+pub onPush : (Value → msg) → Sub msg
+onPush tag = Sub.on Pushed (Listen.on "window" "rr-push" detail _) tag
+
+
+--| A subscription that starts nothing and whose removal throws.
+pub onBroken : msg → Sub msg
+onBroken msg = Sub.on Broken breaks λ_ → msg
+
+
+--| The start: nothing is listened to; the removal fails.
+pub breaks : sync (Value → ⊤) → (⊤ → ⊤)
+breaks _ = λ⊤ → Js.throw (Js.construct (Js.global "Error") [ Js.from "the removal failed" ])
+
+
+detail : Js.Value → Value
+detail event = Js.to (Js.get event "detail")

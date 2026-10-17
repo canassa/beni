@@ -40,7 +40,7 @@ build_test.test.--release writes a map only when asked, and asking changes no by
 build_test.test.--release writes a map only when asked, and asking changes no byte of the code #1 dcba63314bb5370e2c9f823dc119c00e57a0f8e3ffb2b3aa1e7d64c680d9b4f2
 build_test.test.Debug.todo compiles as anything and crashes with its message when reached #0 717b1f9a140435dd30fc71f5a2a91aa3f772e7c40a1025c5d54d9945777f88ff
 build_test.test.a --core-root core without a core-private List value the emitter calls is refused where a module needs it #0 696cde132e411ca93a74b4a7fe267bf54ab09eb5ac70f8861411f4f7f2221d2f
-build_test.test.a --library --release build keeps every core/Schema value it exports, even one called once #0 977c69ec684d158c563152707d98296929f2f8f31c76c702732c702909192b9a
+build_test.test.a --library --release build keeps every core/Schema value it exports, even one called once #0 cefb9b97eecb849471df91bae91161876773319de0f606ba4c00dff1a3426bec
 build_test.test.a Debug call that reachability drops does not refuse the release build #0 01120bf841884cc7a9ce51eb80a6548036145c0c020bb39e6e00ccb51fd85f53
 build_test.test.a build with cross-module evidence is byte-identical at every --jobs #0 1f68093000c0fa215f3cf86cf213045c2c5e1f6803a34ab17ceb081c64b9a532
 build_test.test.a build with cross-module evidence is byte-identical at every --jobs #1 daf37a1fa19ec2fdcbb3d87937ddb72eb308d948166d1bd200fd0daf9a32bc1a
@@ -130,16 +130,16 @@ ordering_test.test.a let helper at two types calls an own method written below i
 ordering_test.test.a recursive group's nullary read and dot-call print the same reversed #0 9d7fc588798c54a7f0d939055ddde1e948a6d3fec702c83981b811ae0f4c36df
 ordering_test.test.an annotated recursive group calls an own method written below it, reversed, and prints the same #0 c31efca37536c020226804a1a6f7dcf8e9f1fa401080aeb8fbef411ea3d27229
 ordering_test.test.nullary methods and record defaults print the same reversed #0 759ab1983b71da5fee5c4695545896e1251fef5f8af51ce6cd8ae5acd5defee0
-page_fuzz_test.test.a build that misses one hole's write is caught, at the message that shows it, and shrunk to it #0 f16253ab4e573fd800e97893004fb0e890f5bbafc80f349cc1195fc63ab0c5fe
-page_fuzz_test.test.a keyed list that misses a change is caught, its element the list #0 89fba36a41bd70b84d50457af761d78e5b6f4cccf0da4a720211da165de6e50c
-page_fuzz_test.test.a missed attribute write is caught at the message that changes the attribute #0 6f7a56e04717c0e17ea8fc0cb2ef2990107e3329e80d64ec3f8c642e3d0c0d00
-page_fuzz_test.test.a missed title write is caught though the body is the same #0 13f2e885022c118f92de0a8b9aeecdb0e405dece24e699cb24d82f370d472036
-page_fuzz_test.test.a missed write of a controlled input's value is caught #0 d7d51916a556a33c2242ca7b0091c417790201631e0ede091549ef78f2b4217e
-page_fuzz_test.test.a page that stopped hands nothing to the next: a message that throws in update replays #0 2c068381f7a0ef804b776b8bf58e15fe39914f9b2050794a671fed4c1262d3fa
-page_fuzz_test.test.two development builds of one program agree on every seed, messages and events alike #0 300e39c8841bd856e019941bfe698024427c3697518f27ee790c1d34a02d1328
-page_fuzz_test.test.verify: a key map left holding a removed row's key is caught #0 19680386ab27487a2d859d31a8cb0f6f0fdc3ec7a5cd3b522b92dc29076da246
-page_fuzz_test.test.verify: a removed row left in the page is caught though one row remains #0 3e397cf89c64715dfa18a2b9241aeab5d492aa6def3917818166e7ae390b40a6
-page_fuzz_test.test.verify: a row of a derived list left showing a stale item is caught, its item a list of 1 500 #0 cc468527f246ddd4f7681103f21cf1f34294a994586ac0d6ceee061603527fd9
-page_fuzz_test.test.verify: a selector left holding its old probe is caught though every row is right #0 4572a39c40b7650066647a31264467cfda23c904c722c8326bd9c38f23b8f240
-page_fuzz_test.test.view events alone never reach the broken hole: no button makes the count negative #0 4bc3c9a43dbdde14de936ca478457bcab7ac788bab84064977b815d1456d9b57
+page_fuzz_test.test.a build that misses one hole's write is caught, at the message that shows it, and shrunk to it #0 9ec6e6536ab159d5e1a34e837b4e2be012b6d086cf2bfb5170722874907189f4
+page_fuzz_test.test.a keyed list that misses a change is caught, its element the list #0 14cb92cb3906bd31b788b52a67f9bd9b06532a9783edc666e7e5a3b2f06874a9
+page_fuzz_test.test.a missed attribute write is caught at the message that changes the attribute #0 7bfedae01b8100d471c780f4d571b33198f5d753d831a732325135a2be4c57d9
+page_fuzz_test.test.a missed title write is caught though the body is the same #0 f01013019db31488024081c97e9742ce24dfe7c8f542d7397ab676591a1f0311
+page_fuzz_test.test.a missed write of a controlled input's value is caught #0 7cae38ae044a4a6b83af365c526b9aec06861dfbeb572a1f0f75768407d5fde1
+page_fuzz_test.test.a page that stopped hands nothing to the next: a message that throws in update replays #0 139810c1a75017a52a30b763bb4aabae1c5577025a7f7538271adf59dd10f901
+page_fuzz_test.test.two development builds of one program agree on every seed, messages and events alike #0 049d2e0146ce422cb68a4941b29b45eb7595d821b0cd41cd1f90f8c5a0232ce7
+page_fuzz_test.test.verify: a key map left holding a removed row's key is caught #0 2a875c2acb25998ade5f2037d45a24346c9f222275fd210e2b2dd4d194d31baa
+page_fuzz_test.test.verify: a removed row left in the page is caught though one row remains #0 31655d1a43bfac104fc0f4c8925eff551f068f2f0a42bae255744065ac35dfca
+page_fuzz_test.test.verify: a row of a derived list left showing a stale item is caught, its item a list of 1 500 #0 faf52e848af16608ad64c7d5f6dc71ac1fb73ae91b0e88029fb327827928f01d
+page_fuzz_test.test.verify: a selector left holding its old probe is caught though every row is right #0 df0f9913bd70362cf412558aaf86b0ff364226f4a0e25251f31dfea0545fe911
+page_fuzz_test.test.view events alone never reach the broken hole: no button makes the count negative #0 576ff2e012125f9014e5c81e3dada174bcc6808d2fb5174d85b66a16be96f020
 platform_test.test.a platform layered on another builds a program with its base's program and runtime #0 d3c3b675c884dee767371dda2b18c2e2ea00b5786b4b65cd3ff84ee8132906bb
