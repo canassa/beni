@@ -1,0 +1,31 @@
+module CallbackKeeps
+  26:10 List.push xs: accepted param
+  32:10 List.push xs: accepted param
+  38:10 List.push xs: accepted param
+  45:10 List.push xs: rejected call: t may hold it through the call at 44:9, and is read at 45:5 (approx)
+  49:10 call CallbackKeeps.kParam <literal>: accepted fresh (CallbackKeeps.kParam writes π2)
+  53:15 call CallbackKeeps.kParam <literal>: accepted fresh (CallbackKeeps.kParam writes π2)
+  53:23 value <lambda>: rejected supply: CallbackKeeps.kParam writes what it hands this function (π2) after the call, and the function's result may keep it (approx)
+  57:15 call CallbackKeeps.kParam <literal>: accepted fresh (CallbackKeeps.kParam writes π2)
+  61:14 call CallbackKeeps.kTree <literal>: accepted fresh (CallbackKeeps.kTree writes π2)
+  61:20 value Node: rejected supply: CallbackKeeps.kTree writes what it hands this function (π2) after the call, and the function's result may keep it (approx)
+  65:13 call CallbackKeeps.kOne <literal>: accepted fresh (CallbackKeeps.kOne writes π2)
+  65:18 value One: rejected supply: CallbackKeeps.kOne writes what it hands this function (π2) after the call, and the function's result may keep it (approx)
+  73:14 value <lambda>: rejected need: CallbackKeeps.wrap edits what it returns, which may be a list it does not own
+  summary kParam: π1 R, π2 RAW, π2[*] A; res .0 cb1{excl cb1}, .1 π2, .1[*] ~π2[*]; π1 calls ≤1, supply 1 π2 borrowed{excl π2}
+  summary kTree: π1 R, π2 RAW, π2[*] A, π3 RA; res .0 cb1{excl cb1}, .1 π2{excl π3, sep π2[*] π3}, .1[*] ~π2[*] ~π3; π1 calls ≤1, supply 1 π2 borrowed{excl π2}
+  summary kOne: π1 R, π2 RAW, π2[*] A, π3 RA; res .0 cb1{excl cb1}, .1 π2{excl π3, sep π2[*] π3}, .1[*] ~π2[*] ~π3; π1 calls ≤1, supply 1 π2 borrowed{excl π2}
+  summary kFresh: π1 R; res .0 cb1{excl cb1}, .1 fresh1; π1 calls ≤1, supply 1 fresh borrowed
+  summary wrap: π1 R; res .0 cb1{excl cb1}, .1 fresh1; π1 calls ≤1, need owned, supply 1 fresh borrowed
+  summary keepParam: res .0.0 fresh1, .1 fresh1
+  summary dropParam: res .0.0 fresh2, .1 fresh1
+  summary keepCtor: res .0#Node.0 fresh1, .1 fresh1
+  summary keepOne: res .0#One.0 fresh1, .1 fresh1, .1[*]#One.0 ~fresh2
+  summary keepFresh: res .0.0 fresh2{lost}, .1 fresh1
+  summary wrapKeep: res .0.0 fresh2{lost}, .1 fresh1
+  summary wrapDrop: res .0.0 fresh2, .1 fresh1
+  demands 13: accepted 8 (fresh 5, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 5
+total 13: accepted 8 (fresh 5, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 5
+cause call 1
+cause supply 3
+cause need 1

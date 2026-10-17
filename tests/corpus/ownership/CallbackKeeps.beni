@@ -1,0 +1,77 @@
+-- CK-251: a callee kept a callback's result, then wrote the list it handed that callback.
+-- ownership (§16.4's keep edge, issue #281): a callback's result may keep
+-- what the callee handed it. `kParam` hands its callback `xs`, keeps the
+-- result `t`, then pushes onto `xs`; with a callback that returns its
+-- argument (`keepParam`, `keepCtor`, `keepOne`), `t` holds the list the
+-- push changes, so the call is rejected `supply`, approximately — the
+-- summary says that `kParam` uses `xs` after the call, not that the write
+-- comes after. A callback that drops its argument is accepted
+-- (`dropParam`). `kFresh` hands on a list it made itself and writes it
+-- after: no caller sees that write, so `kFresh` itself is rejected. `wrap`
+-- hands `kParam` its own function parameter, which must then return a
+-- list it owns: `wrapKeep` is rejected `need`. Before, all were accepted,
+-- and in place the kept result saw the push.
+type Tree
+    = Node (List Tree)
+    | Leaf
+
+
+type One
+    = One (List One)
+
+
+kParam : (List Int → List Int × Int), List Int → (List Int × Int) × List Int
+kParam f xs =
+    t = f xs
+    ( t, List.push xs 9 )
+
+
+kTree : (List Tree → Tree), List Tree, Tree → Tree × List Tree
+kTree f xs y =
+    t = f xs
+    ( t, List.push xs y )
+
+
+kOne : (List One → One), List One, One → One × List One
+kOne f xs y =
+    t = f xs
+    ( t, List.push xs y )
+
+
+kFresh : (List Int → List Int × Int) → (List Int × Int) × List Int
+kFresh f =
+    xs = [ 1 ]
+    t = f xs
+    ( t, List.push xs 9 )
+
+
+wrap : (List Int → List Int × Int) → (List Int × Int) × List Int
+wrap f = kParam f []
+
+
+pub keepParam : ⊤ → (List Int × Int) × List Int
+keepParam ⊤ = kParam (λys → ( ys, 1 )) []
+
+
+pub dropParam : ⊤ → (List Int × Int) × List Int
+dropParam ⊤ = kParam (λ_ → ( [], 1 )) []
+
+
+pub keepCtor : ⊤ → Tree × List Tree
+keepCtor ⊤ = kTree Node [] Leaf
+
+
+pub keepOne : ⊤ → One × List One
+keepOne ⊤ = kOne One [] (One [])
+
+
+pub keepFresh : ⊤ → (List Int × Int) × List Int
+keepFresh ⊤ = kFresh λys → ( ys, 1 )
+
+
+pub wrapKeep : ⊤ → (List Int × Int) × List Int
+wrapKeep ⊤ = wrap λys → ( ys, 1 )
+
+
+pub wrapDrop : ⊤ → (List Int × Int) × List Int
+wrapDrop ⊤ = wrap λ_ → ( [], 1 )
