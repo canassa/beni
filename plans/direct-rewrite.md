@@ -201,6 +201,16 @@ order of the gaps by bytes, with the boundary first because every scenario dispa
 - **Golden**: the counter; a widget with a list of texts; two widgets, one reading the other.
 - **Scenario**: unique-components and big-component, sizes 1–256. Bar per §4.
 - **Depends on**: S0; the ownership checker on records (exists).
+- *Amended 2026-10-17 (the owner, after S1's design pass; #297):*
+  - **The bar.** S1 meets §4's full bar on a **no-list-widgets variant** of the generators, sizes 1–256. The unmodified scenarios' list widgets edit rows by id, so those scenarios are **S2's** done criterion.
+  - **CPU** is measured with record spreads. The N = 256 miss is owed to #315 (the checker does not judge records yet) and re-checked when #315 lands.
+  - **Caps.** The write-set pass's leaf, alternative and size caps are lifted. `k` and the round cap are replaced by #286's precise folding.
+  - **Conditionals** are eager `when` here, not in S4.
+  - **Cross-module readers** are static calls from the writer key's handler, with no registration until S4. This replaces the "register into the source module's table" bullet above.
+  - **View `let`s.** One read by one hole is substituted here; one read by several holes is S3's memo node.
+  - **An arm that reads its message whole** builds that message in that arm only.
+  - **Handlers** live at the program site, measured against tea-inline's in-widget handlers.
+  - **The "Depends on" line above is wrong:** the checker does not judge records (#315).
 
 ### S2 — keyed rows
 
