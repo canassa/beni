@@ -400,7 +400,12 @@ development crash screen) shows it in both DOMs.
 **Which DOM.** The gates run the page in Node under happy-dom,
 `tests/browser/happy-dom.mjs`: one vendored, checksummed file that
 `tests/browser/vendor.sh` regenerates from pinned versions, so the gates
-need neither a browser nor the network. Compiling it costs about 100
+need neither a browser nor the network. *Added 2026-10-18:* happy-dom's HTML parser closes
+elements the standard leaves open, so the driver, given `--parser=tests/browser/parse5.mjs` (the
+harness always gives it under happy-dom), builds the tree of every `insertAdjacentHTML` string
+with parse5, the standard's algorithm: a page then shows the tree a browser builds
+(`browser/inline/EndTags`). `tests/browser/vendor-parse5.sh` bundles it, offline, from a local
+npm install, checksummed and pinned like happy-dom. Compiling it costs about 100
 million instructions, so the driver keeps V8's code cache in the
 checkout's `zig-out/browser-driver-cache/` — never in `/tmp`, where every
 worktree's copy of happy-dom was an entry of its own and the cache once

@@ -4,10 +4,10 @@
 -- those end tags do not close a `<p>`, so a string without it makes the
 -- parser rebuild the `<em>` around what follows, the click lands on another
 -- element and the text binding writes over it. A `<p>` at the end of a
--- `<div>`, and the `<li>`s of a list, need none. Only Chrome
--- (`zig build test-browser`) parses as the HTML standard does and shows the
--- original fault: happy-dom, which the gates run, closes the elements
--- either way.
+-- `<div>`, and the `<li>`s of a list, need none. happy-dom closes the
+-- elements either way, so the gates build the inserted markup's tree with
+-- parse5, the standard's parser (`tests/browser/parse5.mjs`), and the page
+-- shows the fault there as Chrome (`zig build test-browser`) does.
 import Browser
 import Html exposing (Html)
 import Tea
