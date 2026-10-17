@@ -4387,6 +4387,11 @@ const Spec = struct {
         const cases = try s.arena.dupe(Index, ir.extraSlice(ir.subRange(@fromBackingInt(@intCast(d.rhs))), Index));
         var tested: u32 = 0;
         var default: ?Index = null;
+        // The `default` must be the last case: one before a case is tried
+        // only after every test, and would be written there.
+        for (cases, 0..) |case, ci| {
+            if ((@as(Node.OptionalIndex, @fromBackingInt(@intCast(ir.data(case).lhs)))) == .none and ci + 1 != cases.len) return false;
+        }
         for (cases) |case| {
             const body = ir.extraSlice(ir.subRange(@fromBackingInt(@intCast(ir.data(case).rhs))), Index);
             if (holdsBreak(ir, body, 0)) return false;

@@ -198,8 +198,9 @@ undo = Js.ref (Js.from nothing)
 
 
 --| Whether a dispatch is running now: an event a listener hears then fires
---| inside it, synchronously, inside its guard. Asked once the page is known
---| not to have stopped (`stopped`).
+--| inside it, synchronously, inside its guard. The contract: it answers for
+--| a page that has not stopped, and says nothing of one that has — a caller
+--| asks `stopped` first, as `Listen.on` does.
 pub busy : ⊤ → Bool
 busy ⊤ = Js.read running
 
