@@ -519,6 +519,18 @@ const Opt = struct {
             if (t != .const_decl) continue;
             if (o.readOf(idx, "uses") != 1 or o.readOf(idx, "decls") != 1) continue;
             const value: Index = @fromBackingInt(@intCast(d.rhs));
+            // A function made once and used once: made where it is used
+            // (`backend.md` §9 item 1, amended 2026-10-17). Making one does
+            // nothing and reads nothing until it is called, so it moves past
+            // any statement; the use is in a later statement's own
+            // expressions, so it is still made once.
+            if (o.ir.tag(value) == .arrow) {
+                if (try o.findAnyUse(stmts[i + 1 ..], n)) |at| {
+                    o.drop(stmt);
+                    o.inlined[at.int()] = value.toOptional();
+                }
+                continue;
+            }
             // A property read that may have an effect — a `Js.get` of a
             // property some call may write — is evaluated where it stands:
             // folded into its use it would move past whatever that use's
@@ -691,6 +703,20 @@ const Opt = struct {
             if (own == 1) return o.found.unwrap();
             if (own != 0) return null;
             if (!o.isPureReadConst(stmt)) return null;
+        }
+        return null;
+    }
+
+    /// `findUse` for a value whose making does nothing and reads nothing (a
+    /// function): any statement may stand between, but the use must be in a
+    /// later statement's own expressions.
+    fn findAnyUse(o: *Opt, rest: []const Index, n: NameIndex) Allocator.Error!?Index {
+        for (rest, 0..) |stmt, seen| {
+            if (seen >= scan_limit) return null;
+            o.found = .none;
+            const own = try o.ownUses(stmt, n);
+            if (own == 1) return o.found.unwrap();
+            if (own != 0) return null;
         }
         return null;
     }

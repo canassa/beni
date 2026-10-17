@@ -5177,6 +5177,19 @@ next statement buys −90 brotli on `bench/corpus` and **loses 15 on `Dictionari
 the one condition above that is easy to state and hard to get wrong. So the rule stays "an atom or a
 member chain", and `collapse_vars`, constant evaluation and body inlining stay off the list.
 
+*Amended 2026-10-17:* **a function made once and used once is made where it is used.** A `const`
+whose initialiser is an arrow, read once in the declaration, is written at that read when the read
+is in a later statement's own expressions of the same list — never inside a branch, a loop or a
+function, so it is still made once. Making a function evaluates nothing and reads nothing until it
+is called, so it may move past any statement between (`Opt.findAnyUse`): the one condition above it
+relaxes is the first, and only for this initialiser. `const t=()=>clearInterval(s);own(t)` is
+`own(()=>clearInterval(s))`. Measured (brotli 11, every `emit/release/` golden): −91 over eight,
+none larger by more than 2. **The wider licence was measured again and stays out**: a single-use
+`const` of a call written into the next statement when only reads of names nothing reassigns are
+evaluated before its use there (`q=k(…);own(q)` → `own(k(…))`) is sound, but it was −6 on
+`emit/release/inline/PushAndTimer` and **+21** over twelve goldens (`direct/ListScripts` +19,
+`direct/TableSwap` +7), so it was not taken.
+
 **Determinism.** The pass reads only `JsIr`, visits statements in emission order, and its output is
 a subset of its input with substitutions at fixed positions; no map is iterated and no counter is
 shared. **Cost:** two linear walks of each function body and no sort. **No fixpoint either**, as long
@@ -7735,6 +7748,15 @@ fused at its one site; one called from three sites that stays shared; a site tha
 which keeps the call), `emit/release/inline/PushAndTimer` (the validator's worker fused into the
 program's `read`: no `Set` and no `Ok` is built), and `run/CaseAcrossCall`, the same program run in
 both builds.
+
+**A function that only calls a function is that function** (*added 2026-10-17*; `Spec.etaIn`, in
+the last sweep). `() => g()` is `g` where `g` is a local an earlier statement of the same list
+declares, once, as an arrow of no parameters, and nothing assigns it. Neither function takes a
+parameter or reads `this`, so a call of either, with any arguments, runs `g`'s body and answers
+what it answers; and `g` is bound by then, since its declaration ran before. Arguments of the
+inner call that are literals (`null`, the `⊤` a lowering passes) take no parameter and do
+nothing, so they go. `setInterval(()=>r(),1000)` is `setInterval(r,1000)`, and then the single-use
+rule of item 1 makes `r` there.
 
 **A short `switch` is its `if`s** (*added 2026-10-17*; `Spec.switchAsIfs`, the last sweep of every
 statement list). `switch (k)` on a name, with at most three cases besides the `default`, every
