@@ -4773,9 +4773,13 @@ already draws:
 
 - a declaration's own statements, and its suspendable body (`$s`) apart from them — `live.decl` and
   `live.twin`;
-- each row `dispatch.derived` names, with the statements its synthesis appends beside it (the
-  `$$order` table of a nominal `compare`, a helper a row splits into) — `live.derived`, plus what
-  discovery decides for each primitive comparator;
+- each row `dispatch.derived` names, split at the lowering's own statement boundaries: its arrow;
+  its `$$steps` helper when its synthesis appends one; and the `$$order` table of a nominal
+  `compare`. Each is a unit of its own, selected by its row's `live.derived`, because the
+  lowering prints them in two runs that sort by name text (below, and §8.5);
+- each primitive comparator constant (`compare$char`, `compare$prim`, `eq$prim`) — its own unit,
+  selected not by a survivor set but by the module's comparator flags (the funnel, below): a live
+  declaration's evidence sets one exactly as a row's does (`primitiveValue`);
 - each nullary constructor's constant — selected when the build lowers a use of it
   (`nullaryDecls`);
 - a schema declaration's parts, exactly where `SchemaLower.declaration` puts its `live.schema`
@@ -4783,6 +4787,12 @@ already draws:
 - each statement the markup lowering hoists. No embedded module writes markup today; a module
   whose lowering asks for a markup fact is not cached at all (the funnel, below), and the JSX work
   (rule 8, `plans/browser-decisions.md`) turns that refusal into a unit kind.
+
+**A module with a codec plan is not cached either.** `emissionOrder` orders virtual declarations
+after the last `bir.decls` entry — the derived codecs `SchemaLower.declaration` emits
+(`codecCount`) — and those slots have no unit kind above. No embedded module has one today; the
+first one gets the codec's liveness as a selector of its own, and until then a module with a codec
+plan reads and writes no row.
 
 Imports and the export list are not units: the join rebuilds them, because they are the two
 statement lists whose content depends on which units survive.
@@ -4800,21 +4810,28 @@ declaration in the middle and compare a neighbour's bytes, tags included.
   lines). No separator belongs to a neighbour, so any survivor set's text is a concatenation.
 - **Its marks**: for each, the generated offset relative to the unit's first byte, the source
   offset, and the identity of the name when it has one. The identity is the whole `JsIr.Name` —
-  module, base and tag — because two locals printed alike (`x$2` in one declaration and `x$2` in
-  another) are two names and two entries in the map's `names` (`Print.mapName`), and a name whose
-  base begins with `$` has none. A unit also records **the names it introduced, in the order it
-  introduced them**: naming a function adds the entry before the mark that consumes it
-  (`Print.nameFunction`). A mark carries its identity whether or not the unit introduced it, so a
-  use whose introducer the build dropped creates the entry at that use. The identity's module
-  component is the module's NAME, never a graph index (rule 5), and the source offset is against
+  module, base and tag — the key the interning already deduplicated on (`JsIr.intern`): the map
+  holds **one entry per identity**, deduplicated across units (`Print.mapName` numbers each
+  `NameIndex` once), so two locals printed alike (`x$2` in one declaration and `x$2` in another,
+  the per-declaration counters restarting, `restartNames`) are one identity and one entry however
+  many units print them, while `x$2` and `x$5` are two; a name whose base begins with `$` has
+  none, and an untagged, module-less name (the separate locals table, `internLocal`) has none in a
+  development build. A unit also records **the names it introduced, in the order it introduced
+  them**: naming a function adds the entry before the mark that consumes it (`Print.nameFunction`).
+  A mark carries its identity whether or not the unit introduced it, so a use whose introducer the
+  build dropped creates the entry at its first surviving use. The identity's module component is
+  the module's NAME, never a graph index (rule 5), and the source offset is against
   the embedded source — the map's only source, so a row stores no source bytes: the build writes
   `sources` and `sourcesContent` itself, exactly as today (§11.1).
 - **Its `Needed` entries**, in order: every cross-module value its body named. The head is a
   function of the order they were added in (`Lowerer.need`/`needName` dedupe; `importStatements`
-  groups by module in first-reference order), so the row keeps the order — the target module by
-  its package and dotted name, never a graph index — and the join resolves each name in its own
-  graph and replays the entries in encounter order, which is also the order a release build's own
-  head must keep: `Rename` numbers short names by first use.
+  groups by module in first-reference order), and that order is the lowering's **ask** walk, never
+  the units' layout order: the declaration bodies in `emissionOrder` first, then the derived rows
+  in dispatch order, then the comparator constants (`importStatements` runs before `nullaryDecls`).
+  The row keeps the ask order — the target module by its package and dotted name, never a graph
+  index — and the join resolves each name in its own graph and replays the surviving units'
+  entries in that order, which is also the order a release build's own head must keep: `Rename`
+  numbers short names by first use.
 - **Its runtime flags**: whether it reaches `_derived`'s `deep`, `listEq` or `listCompare`
   (`runtimeValue`; `uses_runtime` is the or of them). The runtime import's spec list comes from
   the flags rather than from `Needed`.
@@ -4827,11 +4844,15 @@ which are also the selectors); the dead arms those sets imply (`Lower.findDeadAr
 `Js.development`'s arm, a development build constant; `Js.maySuspend`'s probe arm, a function of
 the module's own dispatch table; and a `case` arm over a constructor this build never builds,
 `patternDead` — the one arm fact that varies by program); the program hook's `consumed` set and
-the `wanted` declarations that follow it (§4); whether a nullary constant is built; the markup and
-direct handles; the entry declaration; the schema plans and `--schema-library`; `core_private`;
-and the `debug` context. Two module-fixed reads go through the funnel as well, so that a row can
-record them: the `Js.maySuspend` probe answers a `$s` body consumed, and whether a helper
-statement was appended beside a derived row (a helper belongs to the row that appended it).
+the `wanted` declarations that follow it (§4); whether a nullary constant is built; the module's
+three comparator flags — whether anything the build lowers asks for `eq$prim`, `compare$prim` or
+`compare$char` as a value (`primitiveValue`) — which are module-level, like the runtime flags and
+for the same reason (`uses_runtime` is the or of its three): a live declaration's evidence sets
+one exactly as a row's does, and the comparator constants of the unit list are selected by them;
+the markup and direct handles; the entry declaration; the schema plans and `--schema-library`;
+`core_private`; and the `debug` context. Two module-fixed reads go through the funnel as well, so
+that a row can record them: the `Js.maySuspend` probe answers a `$s` body consumed, and whether a
+derived row's synthesis appended its `$$steps` helper (the helper is a unit of its own).
 Lowering reads each of them through **one accessor**, and the maker records, with each unit, the
 questions its lowering asked and the answers it got. The answers are a compact record — the bits
 of the survivor sets the unit read, the arms it dropped, a few scalars — so comparing a build's
@@ -4839,11 +4860,12 @@ record to a row's is a few words per unit, and only a mismatch costs a lowering;
 that cost with the rest. **A build reuses a unit only when it asks the same questions and gets
 the same answers.** A unit whose answers differ is lowered and printed by the build exactly as
 today, and the join does not care which units it spliced and which the build printed. A question
-a unit never asked is no dependence, and that is sound exactly while every read goes through the
-funnel. The honesty of reuse is an obligation on the funnel, not a claim about the text: a fact
-the funnel does not know is a fact the differential tests find as a byte that moves, and a read of
-the build that does not go through the funnel is a defect of the same kind as writing an output
-byte outside the printer.
+a unit never asked is no dependence. **The funnel's completeness is a proof obligation, and the
+differential tests are its oracle**: a fact the list above does not carry is a fact some build's
+bytes can see, so a read of build state that reaches a printed byte without going through the
+accessor is a **defect of the same class as writing an output byte outside the printer**, never a
+missed optimisation — and *What holds it*'s two trees, byte-identical with `emit_units_embedded`
+above zero, are the test that finds it.
 
 Two answers decide how much is reused, and both are measured when the slices land:
 
@@ -4872,18 +4894,23 @@ reproduce, byte for byte, the module text it split.
 1. **the head**, rebuilt rather than stored: the sibling import of the module's `foreign` values
    (in declaration order, filtered by `live.decl`), the runtime import from the units' flags, the
    markup runtime import (a module with markup facts is not cached), then one import statement per
-   other module in first-reference order (`importStatements`);
+   other module in first-reference order (`importStatements`), whose modules and specifiers come
+   from the surviving units' `Needed` entries replayed in the **ask** order of that bullet —
+   declarations, rows, comparator constants — and never in the units' layout order;
 2. **the units, in today's assembly order, each class in its canonical order restricted to the
    build's survivors** (`Lower.lower`): the nullary constants, in the sort by base text
-   (`nullaryDecls`); the markup-hoisted statements, in hoist order; the synthesised rows and the
-   helpers beside them, in the sort by printed name text (§8.5) — a sort on the unit's own text,
-   so filtering preserves relative order; then the declarations in the module's `emissionOrder`, a
-   depth-first post-order whose roots and edge set are the module's check, never the survivor set
-   (liveness filters after the order is built), so every build's order is that order filtered —
-   §9.1's "the survivors come out in the same relative order they have today". A schema
-   declaration's parts sit inside its declaration's slot, in the order `SchemaLower.declaration`
-   appends them. Each cached unit's marks are rebased by the unit's start offset; a unit the
-   build lowered contributes the marks its own printing recorded;
+   (`nullaryDecls`); the markup-hoisted statements, in hoist order; the synthesised values in
+   `synthesisedValues`' two runs — the `$$order` tables first, then the arrows, the `$$steps`
+   helpers and the primitive comparator constants together, each run sorted by printed name text
+   (§8.5), a sort WITHIN a run, so filtering by survivors preserves each run's relative order;
+   then the declarations in the module's `emissionOrder`, a depth-first post-order whose roots and
+   edge set are the module's check, never the survivor set (liveness filters after the order is
+   built), so every build's order is that order filtered — §9.1's "the survivors come out in the
+   same relative order they have today". A schema declaration's parts sit inside its declaration's
+   slot, in the order `SchemaLower.declaration` appends them, and a twin stands immediately after
+   its direct body in that slot — a twin whose direct body did not survive stands where it would
+   (`Lower.declaration`). Each cached unit's marks are rebased by the unit's start offset; a unit
+   the build lowered contributes the marks its own printing recorded;
 3. **the tail**: the export statement, rebuilt exactly as `exports` builds it — nominal derived
    rows in dispatch order, the entry declaration (null for an embedded module), the interface's
    surviving values and twins, `core/List`'s and `core/Schema`'s core-private survivors. It is a
@@ -4897,7 +4924,9 @@ are.
 **One `SourceMap.write`, and the marks survive.** §11.1's rule is unchanged — the map is a
 byproduct of the bytes, written once per module over the joined text. The join appends a unit's
 introduced names to the map's `names` at the unit's own position, in the recorded introduction
-order, which reproduces first-use order entry for entry, because the join's order is the print
+order, **unless the identity is already there**: one identity takes one entry however many units
+print it (the marks bullet), so the first surviving introducer appends it and a later unit adds
+nothing — which reproduces first-use order entry for entry, because the join's order is the print
 order. A name whose introducer the build did not keep is appended at the first use that survives,
 which is what the build's own printing would have done. The head, the tail and the footer record
 no marks: none has a position. **Release is untouched**, so §11.2's maps remain the ones a release
@@ -4909,9 +4938,12 @@ decides what is live, and it cannot hand a build a byte of a declaration the wal
 
 **What it does not do.** Release caching; the page's own modules (the pack holds the binary's
 modules only, so a module that `Session.packCovers` refuses reads nothing); markup units (refused
-above); a module of a platform read from a directory. A row that cannot be used is not used, with
-the refusals `fast-compiler.md` §8 lists for an edge list: discarding a row and lowering the
-module is always correct.
+above); a module with a codec plan (refused above); a module of a platform read from a directory.
+A row that cannot be used is not used, with the refusals `fast-compiler.md` §8 lists for an edge
+list: discarding a row and lowering the module is always correct. **Walk-1 is untouched**: the
+page path's first lowering (`lower_only`, the one that leaves core and the runtime to the second)
+neither reads nor writes a row — an embedded module is never a page module, so no row is read
+under walk-1 and none is made differently because of it.
 
 **What holds it.** The differential tests of the first step (`tests/blackbox/build_test.zig`) gain
 their second-step half: a node program (development and `--release`), a program that suspends and
@@ -4922,12 +4954,16 @@ counted beside `emit_units_lowered`, the units a build lowered itself. A fixture
 never builds a platform constructor exercises the other side — a platform unit falls back — and
 its tree still matches. The `emit/` development and `emit/release/` goldens, the whole `run/`
 corpus's release second pass, every run hash and the determinism test then hold what "not one
-byte" means. Two smaller tests pin what reuse rests on: a slice-1 test drops a middle declaration
-and compares a neighbour's bytes, tags included, and the maker's self-check above splits and joins
-before any build reads a row. The acceptance is the measurement: the second step is worth about
-235 million of ApiItems's 489 million instructions, the embedded modules' emit, and what it
-really saves is `perf stat`'s median of five on `run/Dictionaries`, `browser/tea/ApiItems` and
-`bench/corpus` as one `--library` build, when the slices land.
+byte" means — and they pin the shapes this section names in as many words:
+`tests/corpus/emit/DerivedCompareNominal.js` is the `$$order` run leading the synthesised values,
+the arrows run's one sort over arrows, `$$steps` helpers and comparator constants, and a head
+ordered by the ask walk rather than by the layout. Two smaller tests pin what reuse rests on: a
+slice-1 test drops a middle declaration and compares a neighbour's bytes, tags included, and the
+maker's self-check above splits and joins before any build reads a row. The acceptance is the
+measurement: the second step is worth about 235 million of ApiItems's 489 million instructions, the
+embedded modules' emit, and what it really saves is `perf stat`'s median of five on
+`run/Dictionaries`, `browser/tea/ApiItems` and `bench/corpus` as one `--library` build, when the
+slices land.
 
 **The slices.** (1) `Lower` lowers one unit at a time and a join assembles the module, with no pack
 and no funnel: the output is byte-identical and nothing is reusable yet — the foundation whatever
@@ -8309,9 +8345,9 @@ element that opens it, and the walk the lowering invents between them to the mar
 recorded. The printed text of every embedded module carries its marks in the checked core (§9, *The
 embedded modules' printed text, in the pack*), each with the generated offset relative to its
 unit's first byte and the identity of the name it carries; the join rebases the offsets and
-rebuilds `names` in first-use order, so the map is the one this subsection describes, entry for
-entry. Nothing else moves: a build still writes one map per module with one `SourceMap.write`, and
-`sources`, `sourcesContent` and the relative-URL rule are untouched.
+rebuilds `names` in first-use order, one entry per identity, so the map is the one this subsection
+describes, entry for entry. Nothing else moves: a build still writes one map per module with one
+`SourceMap.write`, and `sources`, `sourcesContent` and the relative-URL rule are untouched.
 
 **Determinism** (rule 5): the map is a function of the printed bytes, the marks (in print order)
 and the source; `names` is numbered in first-use order; nothing reads thread timing. The only input

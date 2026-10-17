@@ -1528,7 +1528,9 @@ marks is `backend.md` §9, *The embedded modules' printed text, in the pack*.
 - **The maker** lowers each embedded module once with every survivor set all live — the world where
   everything is used — under a development build, prints it once and records the units
   (`backend.md` §9). It writes both options' rows and refuses a pack that does not have both rows of
-  every core and platform module, as it does for edge lists. Its root now reaches `js/Lower.zig`,
+  every core and platform module, as it does for edge lists — a module with a codec plan has no row
+  to require (`backend.md` §9's no-row refusal), and no embedded module has one today. Its root
+  now reaches `js/Lower.zig`,
   `js/Print.zig` and `js/SourceMap.zig`: an edit under `src/js/` runs the maker again before beni
   compiles. The pack is embedded in the binary uncompressed (`build.zig`'s `core_pack`), so the
   growth is binary size; on 2026-10-17 the live embedded text of a development build was 452 071
