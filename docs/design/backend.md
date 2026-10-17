@@ -7648,34 +7648,51 @@ A function of statements — a schema validator's worker, whose every `return` i
 declared constructor or its failure mark — is not small, and its caller builds what it returns
 only to test its tag and read its fields. The rule:
 
-- **The site**: `const x = f(a₁, …, aₙ)` followed by `return R`, the last statement of its list,
-  where every argument is an atom (a literal or a name nothing assigns), `x` is mentioned nowhere
-  but in `R`, and every mention of `x` in `R` is the object of a property read (`x.$`, `x.a.b`) or
-  an operand of `===` or `!==`. `R` holds no function and is at most 96 nodes.
+- **The site**: `const x = f(a₁, …, aₙ)` in a function, and `R`, the statements after it in its
+  list — a `return R′`, or the `switch` a `case` lowers to — where every argument is an atom (a
+  literal or a name nothing assigns), `x` is mentioned nowhere but in `R`, and every mention of
+  `x` in `R` is the object of a property read (`x.$`, `x.a.b`) or an operand of `===` or `!==`.
+  `R` holds no function, no loop, no `try` and no `continue`, is at most 96 nodes, and cannot run
+  off its end (the function's rule below), so a copy of it may stand where `f` returned.
 - **The function**: a top-level `const f = (…) => {…}` of the program that nothing the pass cannot
   see names (`Input.escaping`), nothing assigns, whose every mention is the callee of such a site;
-  whose body holds no function, no `break` and no `continue`; and whose every path ends in a
-  `return` — a list whose last statement is a `return` or a `throw`, an `if` both of whose
-  branches are, or a `switch` with a `default` every case body of which is.
+  some `return` of which gives a constructor (an object literal, a declared object, or a choice of
+  them — slice 9's *producer*), whose body holds no function, no loop, no `try` and no
+  `continue`, and whose every path ends in a jump — a list whose last statement is a `return`, a
+  `throw` or a `break`, an `if` both of whose branches are such lists, an unlabelled block whose
+  list is, or a `switch` with a `default`, holding no `break`, every case body of which is. A
+  `break` inside the body leaves a statement of the body; one that leaves the site's rest is the
+  same jump in every copy.
 - **The rewrite**, at every site of `f` at once: `f`'s body is written in place of the two
   statements, its locals named fresh and each parameter its argument (*A function called once is
-  written where it is called*), and each of its `return P` becomes `return R[x := P]`, with what
-  the value is known to be applied as the copy is made:
+  written where it is called*), and each of its `return P` becomes `R[x := P]`, with what the value
+  is known to be applied as the copy is made:
   - `x.k` of an object literal `P` is `P`'s value at `k`, and a chain reads on through nested
     literals; of a name or a member chain, `P.k`;
   - `x === y` (`!==`) of an object literal `P` is `false` (`true`) when `y` is a name or a member
     chain on one — a literal makes an object nothing else holds — and of a `P` that is the same
-    member chain as `y`, on a local made by an object literal that nothing writes, mentions only
-    through property reads and hands to no call but the site's, ending at a value that is itself
-    an object or array literal (never `NaN`), `true` (`false`);
+    member chain as `y` — a *stable chain*: on a local made by an object literal that nothing
+    writes, mentions only through property reads and hands to no call but the site's (to a
+    parameter `f` only reads properties of), ending at a value that is itself an object or array
+    literal, or a `const` of one (never `NaN`) — `true` (`false`);
   - a conditional, `&&` or `||` whose test is then a literal, or `===`/`!==` of two literals, is the
-    branch it chooses, and the other branch is not written.
-  
-  A `P` that is none of these — a call's result, say — is bound once, `{ const x′ = P; return
-  R[x := x′] }`. `P` is an object literal only when it is `inert`, so no evaluation is dropped:
-  reading its fields where `R` reads them evaluates names and literals, which cannot change between
-  the `return` and `R`, because nothing runs between them and the function has no closure to write
-  its locals.
+    branch it chooses, and the other branch is not written;
+  - a declared object's `$` is its literal's, by slice 9's test for a tag (`tagValue`: no code
+    writes `$` on it), and the declared object or a primitive literal compared with a stable chain
+    (above) is `false`;
+  - an `if` the copy decides is the branch it takes, and a `switch` on a literal the case it
+    takes, when that case holds no `break`; an unlabelled block of the rest is its statements,
+    its declarations named afresh in each copy.
+
+  A `P` that is a conditional `t ? A : B` is `if (t) { …A } else { …B }`, each branch the rest
+  knowing its own value. A `P` that is none of these — a call's result, say — is bound once,
+  `const x′ = P; R[x := x′]`. `P` is an object literal read in place only when it is `inert` and
+  names nothing the site's function assigns or the program reassigns (`immutableNames`), so no
+  evaluation is dropped or moved past a write: reading its fields where `R` reads them evaluates
+  names and literals, which cannot change between the `return` and `R`, because the function has
+  no closure to write its locals. A value the literal holds that is itself made (an object, an
+  array, a function) is read in place only when `R` reads it once in the copy; otherwise `P` is
+  bound.
 - **Gated by bytes**, like slice 8: the rewrite is made when the copies are smaller than what they
   replace — Σ over the sites of the copy's size, against `f`'s declaration plus Σ over the sites of
   the two statements, in slice 8's size model (`nodeCount`, a literal or a property name its
@@ -7683,6 +7700,20 @@ only to test its tag and read its fields. The rule:
   smaller, stays shared, so a kind's shared code (`browser-inline.md`, S5's sharing by kind) is
   never undone for a gain smaller than the function. Slice 5's single-call rule, which runs first,
   is unchanged: a body of one `return` called once is written there without being priced.
+
+**A `switch` on a literal is the case it takes**, wherever it stands (`chosenCase`, the facts'
+`if` folding extended): its discriminant a literal, every case test a literal, the first test
+`===` it — else the `default` — chosen, when that case's body holds no `break` and cannot run off
+its end into the next. A schema primitive's worker switches on its kind, which the program
+passes as a literal: `run/` programs that read a `Schema.value` kept every kind's arm.
+
+Measured (release, brotli 11): `emit/release/inline/PushAndTimer` 756 → **709** (the worker
+written into the program's `read`, its `Set` and `Ok` never built), `app/ValidatorRun` 963 →
+**691** (the literal `switch` of `Schema.value`'s worker, and what only its other arms reached);
+every other golden unchanged. The compiler pays for asking: on `browser/direct/ApiLogin`,
+where nothing fuses, the release builds count 1 639 → 1 658 and 1 449 → 1 467 million
+instructions, most of it the walk over every function some `return` of which makes a
+constructor.
 
 Soundness is the `case`'s: `language.md` §6's order is the call's — the arguments (atoms), then the
 body, then `R` — and the only values dropped are constructors nothing else could see (`x` reaches

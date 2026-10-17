@@ -1,0 +1,136 @@
+-- A `case` on what a function returns, fused across the call under
+-- `--release` (`backend.md` §9, *Slice 9 across a call*): `command`, cased
+-- at its one site, is written there and builds no `Move`, `Say` or `Quit`;
+-- `size`, cased at three, would cost more copied than shared and stays a
+-- function; `flag`, read whole at one of its sites, keeps its calls.
+-- `run/CaseAcrossCall` runs the same program in both builds.
+import Node
+
+
+type Command
+    = Move Int Int
+    | Say String
+    | Quit
+
+
+-- Called from one place, and cased there: written into `reply`, each of
+-- its constructors read where it is made.
+command : String → Command
+command line =
+    words = String.words line
+    case words of
+        [ "move", x, y ] →
+            case ( String.toInt x, String.toInt y ) of
+                ( Just dx, Just dy ) →
+                    Move dx dy
+
+                _ →
+                    Say line
+
+        [ "quit" ] →
+            Quit
+
+        _ →
+            Say line
+
+
+reply : String → String
+reply line =
+    case command line of
+        Move dx dy →
+            "move by ${String.fromInt (dx + dy)}"
+
+        Say text →
+            "say ${text}"
+
+        Quit →
+            "bye"
+
+
+type Size
+    = Small
+    | Medium Int
+    | Large Int String
+
+
+-- Cased at three places: its copies would outweigh it, so it stays shared.
+size : Int → Size
+size n =
+    if n < 10 then
+        Small
+    else if n < 100 then
+        Medium (n // 10)
+    else
+        Large (n // 100) (String.repeat "#" (n // 100))
+
+
+first : Int → String
+first n =
+    case size n of
+        Small →
+            "s"
+
+        Medium k →
+            "m${String.fromInt k}"
+
+        Large k bar →
+            "l${String.fromInt k}${bar}"
+
+
+second : Int → Int
+second n =
+    case size n of
+        Small →
+            0
+
+        Medium k →
+            k
+
+        Large k _ →
+            k * 10
+
+
+third : Int → Bool
+third n =
+    case size n of
+        Large _ _ →
+            True
+
+        _ →
+            False
+
+
+type Flag
+    = On
+    | Off
+
+
+-- Read whole at one of its sites: the call stays.
+flag : String → Flag
+flag text =
+    trimmed = String.trim text
+    if trimmed == "on" then
+        On
+    else
+        Off
+
+
+showFlag : Flag → String
+showFlag f =
+    case f of
+        On →
+            "on"
+
+        Off →
+            "off"
+
+
+main : Node.Program
+main =
+    Node.printLines
+        (List.map [ "move 1 2", "quit", "hello there" ] reply
+            ++ List.map [ 5, 42, 300 ] first
+            ++ List.map [ 5, 42, 300 ] λn → String.fromInt (second n)
+            ++ List.map [ 5, 300 ] λn → if third n then "large" else "not large"
+            ++ [ showFlag (flag " on "), if flag "off" == On then "flag on" else "flag off" ]
+        )
