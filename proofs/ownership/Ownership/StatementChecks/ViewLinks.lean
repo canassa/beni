@@ -495,4 +495,26 @@ def staleProgram : Program := { main := staleMain }
       s.heap[0]? == some [.int 1, .int 2] && viewOf true [.int 1, .int 2] == [.int 2]
   | .error _ => false
 
+/-- The one-operand hand-over alone, without a `put` or a view: a builder
+    closed twice is refused at the first `close`, because the second still
+    holds it. -/
+def doubleCloseMain : Expr :=
+  .letE 0 (.prim (.builder .int) [])
+  (.letE 1 (.prim .put [.var 0, .int 1])
+  (.letE 2 (.prim .close [.var 1])
+  (.letE 3 (.prim .close [.var 1])
+  (.prim .record [.var 2, .var 3]))))
+
+/-- The accepted shape: the closed list is read, the builder is dead. -/
+def closeThenReadMain : Expr :=
+  .letE 0 (.prim (.builder .int) [])
+  (.letE 1 (.prim .put [.var 0, .int 1])
+  (.letE 2 (.prim .close [.var 1])
+  (.prim .length [.var 2])))
+
+#guard match check { main := doubleCloseMain } with
+  | .error message => message == "Dead: an old holder is live after the demand"
+  | .ok _ => false
+#guard (check { main := closeThenReadMain }).isOk
+
 end Ownership.ViewCounterexample
