@@ -1,0 +1,2 @@
+A constructor field past 64 in a summary block: the check that writes
+cache entries crashed writing it (issue #289).

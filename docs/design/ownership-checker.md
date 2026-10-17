@@ -1152,7 +1152,7 @@ code:
 | a capture a walk has not bound, in a condition | — | `classSide` | *before 2026-10-16:* holds nothing; now `⊤` | conservative |
 | a limit reached outside a declaration | — | `hitLimit` | unreachable: every walk names its declaration, and a safety build asserts it | — |
 | `wide_index` | 256 | an index of wide values by their first step | not a cap: the same entries, found faster | — |
-| a constructor step's fields | 64 | a path step `#C.i` is `c · 64 + i`, and a summary block refuses `i ≥ 64` | field 64 of a constructor names field 0 of the next constructor, so two places merge; across modules, writing the block crashes `check` | **silent**, issue #289 |
+| a constructor step's fields | 64 | a path step `#C.i` is `c · 64 + i`, and a summary block refuses `i ≥ 64` | *before 2026-10-17:* field 64 of a constructor named field 0 of the next constructor, so two places merged, and across modules writing the block crashed `check`; now a step names its constructor and field through a table of `(constructor, field)` pairs, exact for any field, and the block writes the field as a u32 (version 15; `ownership/WideCtor`, `ownership/WideCtorBlock`) | removed, issue #289 |
 | a carried lambda nested in a summary block | 16 | `readSummary` | the block is refused as not one | unreachable: the walk carries no lambda that deep; an assertion, not a cap |
 | `rootToken` | 64 steps | the first token of a variable path, for a message | a later token of the path | diagnostic position only |
 

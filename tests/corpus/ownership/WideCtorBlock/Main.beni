@@ -1,0 +1,14 @@
+-- ownership (project): `Main` calls `Wide.push` through the summary
+-- block of `Wide`, whose path names field 64 of a constructor.
+import Browser
+import Html exposing (Html)
+import Tea
+import Wide
+
+
+view : Int → Html ⊤
+view n = <p>{String.fromInt (n + Wide.size (Wide.push (Wide.make n)))}</p>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = λ⊤ → 0, update = λ_ m → m, view = view }
