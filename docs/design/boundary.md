@@ -4941,7 +4941,7 @@ pub type alias Request =
     }
 
 pub type alias Response =
-    { status : Int                      -- an integer from 200 to 999; 204 and 304 take an empty body
+    { status : Int                      -- an integer from 200 to 999; 204, 205 and 304 take an empty body
     , headers : List (String × String)   -- written in this order, before Node's own
     , body : String                     -- written as UTF-8; the platform writes its `content-length`
     }
@@ -5023,7 +5023,10 @@ the handler. It builds `Request` from Node's `IncomingMessage`:
   up by its lower-cased name.
 - `body` is every chunk concatenated and decoded as UTF-8. An invalid sequence decodes to U+FFFD,
   as `TextDecoder` does with `fatal: false`; a body is text in this slice, and a body that is not
-  text is a later slice's (streaming and bytes, below). There is no size limit in this slice.
+  text is a later slice's (streaming and bytes, #335). **A size limit is owed** (#336): one large
+  body can exhaust the process today. By rule 7 it will be a setting of the server with a
+  default, and a request over it answered with 413 before the handler runs — never a fixed
+  refusal.
 
 A request whose body does not arrive whole never reaches the handler: the client closed the
 connection first (`req` emits `aborted`, then `error` with `ECONNRESET`). The platform handles
@@ -5031,14 +5034,23 @@ exactly that code on `req` and drops the request. There is no one to answer, and
 does not see it. A request Node's parser refuses (a malformed line, a header block over
 `maxHeaderSize`, a request that took longer than `requestTimeout`) is Node's `clientError`, and
 the platform leaves Node's default handling in place: Node answers 400, 431 or 408 and closes the
-connection. The program does not see those either. Node's timeouts keep their defaults
+connection. The program does not see those either. Four events of the server have no listener,
+so Node's default stands (measured): a request with `Expect: 100-continue` is answered
+`100 Continue` and then reaches the handler whole (`checkContinue`); any other `Expect` is
+answered 417 by Node (`checkExpectation`); a `CONNECT` request's socket is destroyed, with
+nothing written (`connect`); a request with an `Upgrade` header is an ordinary request, which
+reaches the handler with that header (`upgrade`). Node's timeouts keep their defaults
 (`headersTimeout` 60 s, `requestTimeout` 300 s, `keepAliveTimeout` 5 s).
 
 **(d) A response.** When the handler returns, the platform writes the status, the program's
 headers in order, then `content-length` as the byte length of the UTF-8 body, and ends the
-response with the body. Node adds `date` and its `connection` and `keep-alive` headers. For a
-`HEAD` request Node sends the headers and no body. The platform never streams: one response, one
-write.
+response with the body. The headers go to `writeHead` as one flat array of names and values, so
+**a name given twice is written twice**, in order — two `set-cookie` headers arrive as two
+(measured); `setHeader`, which keeps one value per name, is not used. After `close`, a
+`connection` header of the program's is dropped and the platform's `connection: close` is written
+in its place ((b)): the graceful path cannot be undone by a handler. Node adds `date` and, where
+the program set none, its `connection` and `keep-alive` headers. For a `HEAD` request Node sends
+the headers and no body. The platform never streams: one response, one write.
 
 A `Response` the platform cannot write as it is, is **invalid**. Every check runs **before any
 header is set and before the first byte is sent**, so a fault leaves nothing behind, and no
@@ -5047,7 +5059,7 @@ header is set and before the first byte is sent**, so a fault leaves nothing beh
 | The fault | How it is found |
 |---|---|
 | `status` is not an integer from 200 to 999 | the sibling's own test, Node's rule for `writeHead` (`ERR_HTTP_INVALID_STATUS_CODE`) less the interim statuses: a handler answers once, and Node resets the connection on a final `100` (measured) |
-| `status` is 204 or 304 and `body` is not `""` | the sibling's own test: those statuses carry no body (RFC 9110), and Node drops it (measured) |
+| `status` is 204, 205 or 304 and `body` is not `""` | the sibling's own test: those statuses carry no body (RFC 9110). Node drops it for 204 and 304 and writes it for 205 (measured), which a client may misparse |
 | a header name is not a token | `http.validateHeaderName` throws `ERR_INVALID_HTTP_TOKEN`, a `TypeError`; caught from that call alone |
 | a header value holds a character Node refuses (CR, LF, NUL, a control character) | `http.validateHeaderValue` throws `ERR_INVALID_CHAR`, a `TypeError`; caught from that call alone |
 | a header named `content-length` or `transfer-encoding`, in any case | checked by name in the sibling; the transport owns both |
@@ -5061,9 +5073,15 @@ integer from 200 to 999`. It is not a defect: the handler returned a value of th
 client gets a well-formed answer, and the server stays up. It is not silent either. The two
 headers belong to the transport because a wrong one hangs the client: a `content-length` under
 the body's length left the client waiting for the rest, and one over it broke the client's parser
-(measured). For 204 and 304 the platform writes no `content-length`. The `Response` record stays
-a plain record; a smart constructor would make the fault a type error at the cost of every
-literal response, and the owner may ask for that instead (decision 3).
+(measured). For 204, 205 and 304 the platform writes no `content-length`.
+
+**Why this path is not a defect, against decision 1.** (f) is for a throw the platform did not
+anticipate: an unknown error, whose effect on the process is unknown, so the process stops. An
+invalid `Response` is a value of the right type that the platform anticipated and refuses before
+it writes: the fault is named, its effect is one 500, and the server's state is intact. It is the
+documented answer for this slice, taken with decision 3; a later decision may make the fault a
+type error instead (an opaque status, a validated header), which (d) does not foreclose, at the
+cost of every literal response.
 
 A client that went away before the response is written is not a failure: `res.destroyed` is
 true, Node drops the write and throws nothing (measured), and so does the platform. A client that
@@ -5090,7 +5108,11 @@ for this module. "Thrown again" means the error is a defect, and the process end
 | the body read | `req`'s `error` with `ECONNRESET` | the request is dropped |
 | the body read | `req`'s `error` with any other code | thrown again |
 | the server | `clientError` | left to Node: 400, 431 or 408, connection closed |
-| the response | `ERR_INVALID_HTTP_TOKEN` or `ERR_INVALID_CHAR` from the two validators, a status Node refuses, a body on 204 or 304 | an invalid response: 500 and a line on standard error |
+| the server | `checkContinue` (`Expect: 100-continue`) | left to Node: `100 Continue`, then the request reaches the handler |
+| the server | `checkExpectation` (any other `Expect`) | left to Node: 417 |
+| the server | `connect` (a `CONNECT` request) | left to Node: the socket is destroyed |
+| the server | `upgrade` (an `Upgrade` header) | left to Node: an ordinary request, which reaches the handler |
+| the response | `ERR_INVALID_HTTP_TOKEN` or `ERR_INVALID_CHAR` from the two validators, a status Node refuses, a body on 204, 205 or 304 | an invalid response: 500 and a line on standard error |
 | the response | `res.destroyed` before the write | the write is dropped: the client is gone |
 | the response | the socket fails during the write (`ECONNRESET`, `EPIPE`) | `clientError`, left to Node: the socket is destroyed |
 | the response | any other throw | thrown again |
@@ -5144,6 +5166,15 @@ by `node out/_main.mjs`; its transcript is the golden. The driver:
    absolute path becomes `<project>`, lines that start with `    at ` are dropped, and the
    `Node.js v…` line is dropped.
 
+**The first slice's fixtures**, one per row of (e): `HttpServerBasics`; `HttpServerListenErrors`
+(`AddressInUse`, `AddressNotAvailable`, `HostNotFound`, and `InvalidPort` for 70000, -1 and
+65536 — `EACCES` has none, since a port under 1024 binds as root and on macOS);
+`HttpServerInvalidResponse` (status 1000 and 100, a body on 204 and on 205, a 204 with no body,
+a bad header name, a bad header value, `Content-Length` and `transfer-encoding` of the program's);
+`HttpServerDuplicateHeaders` (two `set-cookie`); `HttpServerBadClients` (a body cut short, bytes
+no parser accepts, a client gone before its answer); `HttpServerCloseFromHandler`;
+`HttpServerOwnerEnds`; `HttpServerCrashOnListen` and `HttpServerCrashOnRequest`.
+
 Each build's verdict is recorded as a run hash (`run_hash.lineWith`, as `browser/` records its
 page): the digest covers what a `run/` one covers — the output tree, the golden, the Node version
 — and the driver's bytes, the preload's bytes and the script, so a verified build runs no Node. Every case stays under the
@@ -5152,7 +5183,9 @@ program processes, and no fixture sleeps for real.
 
 **(i) The owner's decisions**, taken on the dashboard on 2026-10-17 at 23:54 CEST. The PR's
 review (2026-10-17) found five gaps in (d) and (e); each is settled above with a probe or a
-stated crash.
+stated crash. Its second pass and the owner's two findings (2026-10-18) added the events Node
+answers by itself, duplicate headers, `connection` after `close`, 205, the size limit owed, and
+why an invalid response is not a defect; each is settled above.
 
 - Decision 1, a defect in a handler (`node-http-q1`): **stop the process**. Rule 9 does not
   change; (f) has the rule.
