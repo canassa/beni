@@ -240,7 +240,7 @@ pub fn build(b: *std.Build) void {
     // The ownership checker's own cross-check of an indexed spine condition
     // against the pairwise one runs in safety builds for values of eight
     // entries or fewer; this runs it for every value, at a cost in time.
-    const own_full_check = b.option(bool, "ownership-full-cross-check", "Cross-check every ownership spine condition against the pairwise one, not only those of values of eight entries or fewer (slow; safety builds)") orelse false;
+    const own_full_check = b.option(bool, "ownership-full-cross-check", "Cross-check every ownership spine condition against the pairwise one, not only those of values of eight entries or fewer (safety builds; slow, so give it -Dtest-budget=0)") orelse false;
     const own_opts = b.addOptions();
     own_opts.addOption(bool, "full_cross_check", own_full_check);
     ownership_options = own_opts.createModule();
