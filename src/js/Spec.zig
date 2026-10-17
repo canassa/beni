@@ -4187,7 +4187,8 @@ const Spec = struct {
                 if (try s.inlineIifesIn(m, top, @fromBackingInt(@intCast(raw)))) any = true;
                 try out.append(s.arena, raw);
             },
-            .switches => for (items) |raw| {
+            .switches => for (items, 0..) |raw, at| {
+                if (try s.etaIn(m, top, items, at)) any = true;
                 if (try s.switchAsIfs(m, @fromBackingInt(@intCast(raw)), items, &out)) {
                     changed = true;
                     continue;
@@ -4229,6 +4230,73 @@ const Spec = struct {
             }
         }
         return true;
+    }
+
+    /// `backend.md` §9, *A function that only calls a function is that
+    /// function*: in statement `items[at]`'s own expressions, `() => g()`
+    /// is `g` when `g` is a name an earlier statement of the list declares,
+    /// once, as a function of no parameters, and nothing assigns it. Neither
+    /// takes an argument nor reads `this`, a call of either runs `g`'s body
+    /// and answers what it answers, and `g` exists by then (it was declared
+    /// before). True when any was rewritten.
+    fn etaIn(s: *Spec, m: *Mod, top: Index, items: []const u32, at: usize) Allocator.Error!bool {
+        const ir = m.ir;
+        var any = false;
+        var stack = try s.takeStack();
+        defer s.giveStack(&stack);
+        try operandsOf(s.arena, ir, @fromBackingInt(@intCast(items[at])), &stack);
+        while (JsIr.popOperand(&stack)) |node| {
+            if (ir.tag(node) == .arrow) {
+                if (try s.etaTarget(m, top, items[0..at], node)) |g| {
+                    m.setNode(node, .ident, g.int(), 0);
+                    any = true;
+                }
+                continue;
+            }
+            try ir.pushOperands(s.arena, &stack, node);
+        }
+        return any;
+    }
+
+    /// Whether statement `stmt`'s own expressions make a function.
+    fn holdsArrow(s: *Spec, m: *Mod, stmt: Index) Allocator.Error!bool {
+        var stack = try s.takeStack();
+        defer s.giveStack(&stack);
+        try operandsOf(s.arena, m.ir, stmt, &stack);
+        while (JsIr.popOperand(&stack)) |node| {
+            if (m.ir.tag(node) == .arrow) return true;
+            try m.ir.pushOperands(s.arena, &stack, node);
+        }
+        return false;
+    }
+    fn etaTarget(s: *Spec, m: *Mod, top: Index, before: []const u32, arrow: Index) Allocator.Error!?NameIndex {
+        const ir = m.ir;
+        if (ir.data(arrow).rhs != Node.arrow_plain) return null;
+        const f = ir.extraData(@fromBackingInt(@intCast(ir.data(arrow).lhs)), JsIr.Func);
+        if (ir.extraSlice(f.params(), NameIndex).len != 0) return null;
+        const body = ir.extraSlice(f.body(), Index);
+        if (body.len != 1 or ir.tag(body[0]) != .return_stmt) return null;
+        const call = (@as(Node.OptionalIndex, @fromBackingInt(@intCast(ir.data(body[0]).lhs)))).unwrap() orelse return null;
+        if (ir.tag(call) != .call) return null;
+        // Arguments `g` takes no parameter for and whose evaluation does
+        // nothing (`null` for a `⊤`) are not passed by anything.
+        for (ir.extraSlice(ir.subRange(@fromBackingInt(@intCast(ir.data(call).rhs))), Index)) |a| if (!primitiveLit(ir, a)) return null;
+        const callee: Index = @fromBackingInt(@intCast(ir.data(call).lhs));
+        if (ir.tag(callee) != .ident) return null;
+        const g: NameIndex = @fromBackingInt(@intCast(ir.data(callee).lhs));
+        if (g == .none or m.globalOf(g) != null) return null;
+        const made = for (before) |raw| {
+            const st: Index = @fromBackingInt(@intCast(raw));
+            if (ir.tag(st) != .const_decl or ir.data(st).lhs != g.int()) continue;
+            break @as(Index, @fromBackingInt(@intCast(ir.data(st).rhs)));
+        } else return null;
+        if (ir.tag(made) != .arrow or ir.data(made).rhs != Node.arrow_plain) return null;
+        const gf = ir.extraData(@fromBackingInt(@intCast(ir.data(made).lhs)), JsIr.Func);
+        if (ir.extraSlice(gf.params(), NameIndex).len != 0) return null;
+        if (try declCount(s, m, top, g) != 1) return null;
+        const names = try s.assignedIn(m, top);
+        if (std.mem.indexOfScalar(u32, names, g.int()) != null) return null;
+        return g;
     }
     /// `backend.md` §9, *A short `switch` is its `if`s*: `switch (k)` on a
     /// name, with at most `max_switch_ifs` cases besides the `default`, each
@@ -4311,7 +4379,8 @@ const Spec = struct {
                 },
                 .self_assign => if (ir.tag(st) == .assign_stmt) return true,
                 .iife => if (iifeOf(ir, st) != null or try s.inlineIifesIn(m, null, st)) return true,
-                .switches => if (ir.tag(st) == .switch_stmt) return true,
+                // A `switch`, or an arrow an eta step may take.
+                .switches => if (ir.tag(st) == .switch_stmt or try s.holdsArrow(m, st)) return true,
             }
         }
         return false;
