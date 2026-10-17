@@ -1,0 +1,27 @@
+-- load
+<body>
+  <p>"0"</p>
+</body>
+-- listeners window
+(listeners: 2)
+(the DOM did not change)
+-- detail window rr-push {"type": "set", "value": 3}
+<body>
+  <p>"1"</p>
+</body>
+-- detail window rr-push 7
+<body>
+  <p>"2"</p>
+</body>
+-- detail window rr-reset null
+<body>
+  <p>"0"</p>
+</body>
+-- stop
+(stopped)
+<body></body>
+-- listeners window
+(listeners: 0)
+(the DOM did not change)
+-- detail window rr-push 9
+(the DOM did not change)

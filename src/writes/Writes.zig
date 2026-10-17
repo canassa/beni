@@ -141,9 +141,12 @@ pub const Subscriptions = struct {
         model,
         /// The pass could not read the value as a set of declarations.
         unknown,
-        /// A declaration's tagger gives no key's constructor, or a field
-        /// that is neither the payload nor a constant.
+        /// A declaration's tagger gives no constructor of the message.
         no_key,
+        /// A declaration's tagger gives a constructor whose key splits on
+        /// the payload's own shape, or a field that is not the payload: a
+        /// limit of the compiler (`browser-inline.md` §5, class 4).
+        limit,
     };
 };
 
@@ -712,6 +715,12 @@ mu_walk: u32 = 0,
 /// `Input.effects`: the marker terms a subscription set, a declaration
 /// and a command are tuples headed by (`effectTerm`), made on first use.
 markers: [3]u32 = .{ none, none, none },
+/// `Input.effects`: the last value `direct` walked in a key, before the
+/// k-limit cut it (`evalKey`).
+uncut: u32 = none,
+/// `Input.effects`: while the subscription set is read, platform functions
+/// are walked as the program's own are (`browser-inline.md` §3).
+walk_platform: bool = false,
 
 /// `Maybe` and `Basics` constructors the rows build.
 ctor_just: u32 = none,
@@ -2586,10 +2595,11 @@ fn effectCall(a: *Writes, fx: Effects, m: u32, d: u32, args: []const u32) Error!
     if (fx.sub_batch.is(m, d) and args.len == 1) return try a.effectConcat(args[0], .sub) orelse try a.freshCall(args);
     if (fx.cmd_batch.is(m, d) and args.len == 1) return try a.effectConcat(args[0], .cmd) orelse try a.freshCall(args);
     if (fx.sub_map.is(m, d) and args.len == 2) {
-        const decls = a.effectParts(args[0], .sub) orelse return try a.freshCall(args);
+        // Copied: the term table grows, and moves, as the loop interns.
+        const decls = try a.arena().dupe(u32, a.effectParts(args[0], .sub) orelse return try a.freshCall(args));
         const mapped = try a.arena().alloc(u32, decls.len);
         for (decls, mapped) |x, *y| {
-            const ps = a.effectParts(x, .decl) orelse return try a.freshCall(args);
+            const ps = try a.arena().dupe(u32, a.effectParts(x, .decl) orelse return try a.freshCall(args));
             const more = try a.arena().alloc(u32, ps.len + 1);
             @memcpy(more[0..ps.len], ps);
             more[ps.len] = args[1];
@@ -2601,11 +2611,26 @@ fn effectCall(a: *Writes, fx: Effects, m: u32, d: u32, args: []const u32) Error!
 }
 
 /// What a command term is (`browser-inline.md` §4).
-fn readCommand(a: *Writes, t: u32) Command {
+/// What the command half of a `model × Cmd msg` value is: `commandIn` on
+/// each alternative's second component, every shared subterm visited once.
+fn commandOf(a: *Writes, t: u32) Allocator.Error!Command {
+    var memo: std.AutoHashMapUnmanaged(u64, Command) = .empty;
+    return a.commandIn(t, true, &memo);
+}
+
+fn commandIn(a: *Writes, t: u32, pair: bool, memo: *std.AutoHashMapUnmanaged(u64, Command)) Allocator.Error!Command {
+    const key = (@as(u64, t) << 1) | @intFromBool(pair);
+    if (memo.get(key)) |c| return c;
+    const c = try a.commandAt(t, pair, memo);
+    try memo.put(a.arena(), key, c);
+    return c;
+}
+
+fn commandAt(a: *Writes, t: u32, pair: bool, memo: *std.AutoHashMapUnmanaged(u64, Command)) Allocator.Error!Command {
     if (a.termTag(t) == .alt) {
         var out: Command = .{ .class = .none };
         for (0..a.altLen(t)) |i| {
-            const c = a.readCommand(a.altItem(t, @intCast(i)).term);
+            const c = try a.commandIn(a.altItem(t, @intCast(i)).term, pair, memo);
             switch (c.class) {
                 .suspends => return c,
                 .unknown => out = c,
@@ -2616,6 +2641,10 @@ fn readCommand(a: *Writes, t: u32) Command {
             }
         }
         return out;
+    }
+    if (pair) {
+        if (a.termTag(t) != .tup or a.termLen(t) < 3) return .{ .class = .unknown };
+        return a.commandIn(a.termWord(t, 2), false, memo);
     }
     const bodies = a.effectParts(t, .cmd) orelse return .{ .class = .unknown };
     if (bodies.len == 0) return .{ .class = .none };
@@ -2695,15 +2724,53 @@ pub fn funInfo(a: *Writes, t: u32) Allocator.Error!FunInfo {
     }
 }
 
+/// The leaf of the key tree a message of constructor `c` reaches, its
+/// payload unknown (`browser-inline.md` §3): the key each of whose steps
+/// it satisfies — a step naming `c`, or a default step that no sibling
+/// naming `c` takes from it — every step on the message itself. `deeper`:
+/// the leaf `c` reaches splits again on the payload, which only the
+/// handler can tell.
+fn leafOf(keys: []const Key, c: u32) union(enum) { key: u32, deeper, none } {
+    for (keys, 0..) |k, ki| {
+        const ok = for (k.steps, 0..) |s, si| {
+            if (s.path != mu_path) break true;
+            if (s.ctor != none) {
+                if (s.ctor != c) break false;
+                continue;
+            }
+            // A default step: no sibling with the same steps before it
+            // names `c` here.
+            const named = for (keys) |other| {
+                if (other.steps.len <= si) continue;
+                if (!samePrefix(other.steps[0..si], k.steps[0..si])) continue;
+                if (other.steps[si].path == s.path and other.steps[si].ctor == c) break true;
+            } else false;
+            if (named) break false;
+        } else true;
+        if (!ok) continue;
+        // Matched on the message; a step past it splits on the payload.
+        for (k.steps) |s| if (s.path != mu_path) return .deeper;
+        return .{ .key = @intCast(ki) };
+    }
+    return .none;
+}
+
+fn samePrefix(x: []const KeyStep, y: []const KeyStep) bool {
+    if (x.len != y.len) return false;
+    for (x, y) |p, q| if (p.path != q.path or p.ctor != q.ctor) return false;
+    return true;
+}
+
 /// What a program's subscription value is (`browser-inline.md` §3).
 fn readSubscriptions(a: *Writes, result: u32, keys: []const Key) Error!Subscriptions {
     if (result == none) return .{ .class = .unknown };
     for (a.deps_t.get(try a.deps(result))) |p| if (a.rootOf(p) == rho_path) return .{ .class = .model };
-    const decls = a.effectParts(result, .sub) orelse return .{ .class = .unknown };
+    // Copied: the term table grows, and moves, as the taggers are applied.
+    const decls = try a.arena().dupe(u32, a.effectParts(result, .sub) orelse return .{ .class = .unknown });
     const out = try a.arena().alloc(Declaration, decls.len);
     const payload = try a.mkSame(mu_path);
     for (decls, out, 0..) |x, *o, i| {
-        const ps = a.effectParts(x, .decl) orelse return .{ .class = .unknown };
+        const ps = try a.arena().dupe(u32, a.effectParts(x, .decl) orelse return .{ .class = .unknown });
         if (ps.len < 3) return .{ .class = .unknown };
         if (!a.isConstantTerm(ps[0]) or a.termTag(ps[1]) != .fun) return .{ .class = .unknown };
         const at = a.funSite(ps[1]);
@@ -2725,13 +2792,15 @@ fn readSubscriptions(a: *Writes, result: u32, keys: []const Key) Error!Subscript
         if (a.termTag(v) != .con) return .{ .class = .no_key, .bad = @intCast(i), .decls = out[0 .. i + 1] };
         const c = a.termWord(v, 1);
         o.ctor = c;
-        for (keys, 0..) |k, ki| {
-            if (k.steps.len == 1 and k.steps[0].ctor == c) o.key_index = @intCast(ki);
+        switch (leafOf(keys, c)) {
+            .key => |ki| o.key_index = ki,
+            .deeper => return .{ .class = .limit, .bad = @intCast(i), .decls = out[0 .. i + 1] },
+            .none => {},
         }
         const fields = try a.arena().alloc(u32, a.termLen(v) - 2);
         for (fields, 2..) |*fld, k| fld.* = if (a.termWord(v, k) == payload) field_payload else a.termWord(v, k);
         o.fields = fields;
-        for (fields) |fld| if (fld != field_payload) return .{ .class = .no_key, .bad = @intCast(i), .decls = out[0 .. i + 1] };
+        for (fields) |fld| if (fld != field_payload) return .{ .class = .limit, .bad = @intCast(i), .decls = out[0 .. i + 1] };
         if (o.key_index == none) return .{ .class = .no_key, .bad = @intCast(i), .decls = out[0 .. i + 1] };
     }
     return .{ .class = .set, .decls = out };
@@ -2764,10 +2833,10 @@ fn callTop(a: *Writes, m: u32, d: u32, args: []const u32, site_m: u32, site: Ins
                     .{ .module = none, .token = 0 };
                 try a.map_sites.append(a.gpa, at);
             }
-            // Under `Input.effects` a platform function is walked as the
-            // program's own are, outside `view`: what a layer's `Push.onPush`
-            // declares is read through it (`browser-inline.md` §3).
-            if (a.in.effects == null or a.ctx.mode == .view) return a.opaqueCall(args, m, site_m, site);
+            // While the subscription set is read (`Input.effects`), a platform
+            // function is walked as the program's own are: what a layer's
+            // `Push.onPush` declares is read through it (`browser-inline.md` §3).
+            if (!a.walk_platform) return a.opaqueCall(args, m, site_m, site);
         }
     }
     if (decl.kind == .foreign_value or !decl.kind.isValue()) return a.opaqueCall(args, m, site_m, site);
@@ -2922,6 +2991,10 @@ fn direct(a: *Writes, m: u32, d: u32, args: []const u32, g: u32) Error!u32 {
     const body = decl.body.unwrap() orelse return a.freshCall(args);
     var r = try a.eval(&f, body, g);
     r = try a.joinTry(&f, r);
+    // The value before the k-limit cuts it: what a key's command is read
+    // from (`browser-inline.md` §4), since a deep `case` in `update` would
+    // otherwise leave only `Fresh` of it.
+    if (a.in.effects != null and a.ctx.mode == .key) a.uncut = r;
     return a.capSize(r);
 }
 
@@ -4789,7 +4862,7 @@ fn analyseProgram(a: *Writes, m: u32, kind: ProgramKind, fields: ?Fields, view_f
                     error.WorkCap => break :blk try a.freshEmpty(),
                     else => |e| return e,
                 };
-                if (a.in.effects != null and kind == .element) prog.init_command = a.readCommand(try a.proj(r, .tuple, 1, 0));
+                if (a.in.effects != null and kind == .element) prog.init_command = try a.commandOf(r);
                 if (kind == .element or kind == .document) r = try a.proj(r, .tuple, 0, 0);
                 break :blk r;
             };
@@ -4803,7 +4876,7 @@ fn analyseProgram(a: *Writes, m: u32, kind: ProgramKind, fields: ?Fields, view_f
                 error.WorkCap => break :blk try a.freshEmpty(),
                 else => |e| return e,
             };
-            if (a.in.effects != null and kind == .element) prog.init_command = a.readCommand(try a.proj(r, .tuple, 1, 0));
+            if (a.in.effects != null and kind == .element) prog.init_command = try a.commandOf(r);
             if (kind == .element or kind == .document or kind == .application) r = try a.proj(r, .tuple, 0, 0);
             break :blk r;
         };
@@ -4825,6 +4898,8 @@ fn analyseProgram(a: *Writes, m: u32, kind: ProgramKind, fields: ?Fields, view_f
     if (view_fields) |fs| if (fs.subscriptions) |si| {
         var frame = try a.newFrame(fs.m, fs.frame_decl, 0);
         a.ctx = .{ .mode = .closed };
+        a.walk_platform = a.in.effects != null;
+        defer a.walk_platform = false;
         const fun = try a.eval(&frame, si, 0);
         const result = a.applyDirect(fun, &.{try a.mkSame(rho_path)}, 0) catch |err| switch (err) {
             error.WorkCap => none,
@@ -4906,11 +4981,12 @@ fn evalKey(a: *Writes, kind: ProgramKind, update_fun: u32, g: u32) Error!struct 
     const msg = try a.mkSame(mu_path);
     const model = try a.mkSame(rho_path);
     const ok = blk: {
+        a.uncut = none;
         var r = a.applyDirect(update_fun, &.{ msg, model }, g) catch |err| switch (err) {
             error.WorkCap => break :blk false,
             else => |e| return e,
         };
-        if (a.in.effects != null and kind == .element) command = a.readCommand(try a.proj(r, .tuple, 1, 0));
+        if (a.in.effects != null and kind == .element) command = try a.commandOf(if (a.uncut != none) a.uncut else r);
         if (kind == .element or kind == .document or kind == .application) r = try a.proj(r, .tuple, 0, 0);
         r = try a.capSize(r);
         // A message placed in the model is a value (browser-direct.md §11).

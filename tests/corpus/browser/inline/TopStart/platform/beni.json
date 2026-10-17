@@ -1,0 +1,6 @@
+{
+  "platform": true,
+  "name": "pushes",
+  "platforms": ["browser-inline"],
+  "reexports": ["Browser", "Cmd", "Html", "Listen", "Sub", "Tea"]
+}

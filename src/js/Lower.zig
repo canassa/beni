@@ -357,6 +357,9 @@ pub const Direct = struct {
         decl: u32,
         inst: u32,
         bound: []const u32,
+        /// `top` of another module: its row in that module's interface, or
+        /// none when it exports no such value.
+        value: u32 = std.math.maxInt(u32),
     };
 
     pub const Let = struct {
@@ -11825,16 +11828,26 @@ pub const Lowerer = struct {
             else => "",
         };
         const here = start.module == l.in.module.int();
+        // A top-level function: this module's, by its name, or another
+        // module's that its interface exports, imported as any reference to
+        // it is.
+        if (start.kind == .top and (here or start.value != std.math.maxInt(u32))) {
+            const f = if (here)
+                try l.ident(try l.topNameChoosing(start.decl, .no), p)
+            else
+                try l.ident(try l.externalNameChoosing(@fromBackingInt(@intCast(start.module)), start.value, .no), p);
+            return try l.call(f, &.{send}, p);
+        }
         if (start.kind != .lambda or !here) {
             const owner = if (start.module < l.in.graph.count()) l.text(l.in.graph.moduleName(@fromBackingInt(@intCast(start.module)))) else "?";
             try l.programReport(.call, .not_implemented, try std.fmt.allocPrint(l.scratch,
-                \\A limit of the compiler: this program's subscription at {s} starts with code of the
-                \\module `{s}`, and the compiler can write into a program's mount only a function written
-                \\in place in the module that calls the program's constructor. It lowers one module at a
-                \\time, so it cannot write another module's code there or name its private values
-                \\(`docs/design/browser-inline.md` §5, class 4). What lifts it is writing another module's
-                \\closure into the mount, the same mechanism a widget module's `update` needs.
-            , .{ where, owner }));
+                \\A limit of the compiler: this program's subscription at {s} starts with {s} of the module
+                \\`{s}`. The compiler can call, from the program's mount,
+                \\a function written in place in the module that calls the program's constructor or a
+                \\top-level function that a module exports; it lowers one module at a time, so it cannot
+                \\write a closure of another module there (`docs/design/browser-inline.md` §5, class 4).
+                \\Until it can, write the start as a `pub` top-level function of its module.
+            , .{ where, if (start.kind == .top) "a top-level function the module does not export" else "a function made inside a function", owner }));
             return null;
         }
         for (start.bound) |local| if (l.subtreeReadsLocal(@fromBackingInt(start.inst), local)) {
