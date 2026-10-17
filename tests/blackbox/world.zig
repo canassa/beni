@@ -488,7 +488,9 @@ pub const World = struct {
     /// `expected` says — or, when this exact output tree, expectation and
     /// Node were verified together before, skip Node and take the recorded
     /// verdict (`run_hash.zig`, *Program runs*). The tree is the directory
-    /// holding `script`.
+    /// holding `script`. A script in the project directory has no tree of
+    /// its own: the digest covers the emitted output there, and the
+    /// script's bytes, not the project and not `.beni-cache`.
     ///
     /// This is how a scenario runs an emitted program: the expectation is
     /// given up front because it is part of what the record covers, so an

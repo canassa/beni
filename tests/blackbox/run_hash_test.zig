@@ -19,6 +19,8 @@
 //!
 //! These scenarios run Node on purpose, and every time: what they test is
 //! whether a run is skipped, so a skip of their own would test nothing.
+//! The one that compares digests does not run Node: it builds, then reads
+//! the digest a scenario's run hash would record.
 
 const std = @import("std");
 const testing = std.testing;
@@ -418,4 +420,117 @@ test "recording writes no run hash for a scenario program that does not do what 
     try testing.expectEqualStrings(other, try w.read("index.txt"));
     // The merge consumed the report.
     try testing.expect(!w.exists("recorded"));
+}
+
+test "a scenario's run hash covers the emitted output and the expectation, not the build cache" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // A script in the project directory used to make the digest cover every
+    // file there, `.beni-cache` included. A cache entry names the compiler
+    // that wrote it, so any change under `src/` staled the line even when
+    // the emitted JavaScript was identical. The digest covers the output
+    // tree and the expectation, as a `run/` hash does.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni", hello);
+    const built = try w.run(&.{ "build", "--platform=node", "--out=out", "Main.beni" });
+    try testing.expectEqual(@as(u8, 0), built.exit_code);
+    try testing.expect(w.exists(".beni-cache"));
+    const script =
+        \\await import("./out/_main.mjs");
+        \\
+    ;
+    try w.write("check.mjs", script);
+    const expected: world.Expected = .{ .stdout = "hello\n" };
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const digest = try requireDigest(&w, "check.mjs", expected);
+    const in_tree = try requireDigest(&w, "out/_main.mjs", expected);
+    try w.write(".beni-cache/noise.txt", "not part of the program\n");
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    // A cache entry is not the emitted program, for a script in the
+    // project directory or for one inside the output tree.
+    try testing.expectEqualStrings(digest, try requireDigest(&w, "check.mjs", expected));
+    try testing.expectEqualStrings(in_tree, try requireDigest(&w, "out/_main.mjs", expected));
+    // Nor is a source the build did not compile again.
+    try w.write("Main.beni", hello ++ "\n\n-- the build did not see this\n");
+    try testing.expectEqualStrings(digest, try requireDigest(&w, "check.mjs", expected));
+    // The expectation, the emitted bytes and the script are.
+    try testing.expect(!std.mem.eql(u8, digest, try requireDigest(&w, "check.mjs", .{ .stdout = "goodbye\n" })));
+    const js = try w.read("out/_main.mjs");
+    try w.write("out/_main.mjs", try std.mem.concat(w.arena.allocator(), u8, &.{ js, "\n" }));
+    const emitted = try requireDigest(&w, "check.mjs", expected);
+    try testing.expect(!std.mem.eql(u8, digest, emitted));
+    try w.write("check.mjs", "console.log(\"hello\");\n");
+    try testing.expect(!std.mem.eql(u8, emitted, try requireDigest(&w, "check.mjs", expected)));
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    // Nothing here runs Node, and nothing writes a record.
+    try testing.expect(!w.exists("index.txt"));
+    try testing.expect(w.exists(".beni-cache/noise.txt"));
+}
+
+test "a directory the run-hash walk cannot open fails the digest" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // Skipping the directory would hash fewer files and still succeed.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("check.mjs", "console.log(\"x\");\n");
+    try w.write("sealed/note.txt", "x\n");
+    defer w.restoreDirMode("sealed");
+    if (!try w.setMode("sealed", 0)) {
+        std.debug.print("skipping: chmod 000 did not make the directory unreadable (running as root?)\n", .{});
+        return;
+    }
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const opened = run_hash.programRunDigest(&w, "check.mjs", .{ .stdout = "x\n" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectError(error.AccessDenied, opened);
+}
+
+test "a beni manifest at the project root is refused" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // No scenario builds with `--out=.`. Hashing that manifest would cover
+    // the project's top-level files and miss nested output such as `_core/`.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("check.mjs", "console.log(\"x\");\n");
+    try w.write("_manifest.txt", "notes\n");
+    const expected: world.Expected = .{ .stdout = "x\n" };
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const digest = try requireDigest(&w, "check.mjs", expected);
+    try w.write("_manifest.txt", "notes changed\n");
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    // A file of that name that is not a beni manifest is not an output tree.
+    try testing.expectEqualStrings(digest, try requireDigest(&w, "check.mjs", expected));
+    try w.write("_manifest.txt", "beni-manifest 1\n");
+    try testing.expectError(error.ProjectRootOutput, run_hash.programRunDigest(&w, "check.mjs", expected));
+}
+
+fn requireDigest(w: *World, script: []const u8, expected: world.Expected) ![]const u8 {
+    return try run_hash.programRunDigest(w, script, expected) orelse return error.NoDigest;
 }

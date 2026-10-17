@@ -34,7 +34,14 @@
 //! in a golden, so it is fed to the digest itself: the exit code, stdout and
 //! stderr the scenario expects, with the Node version, how Node is invoked
 //! (the script's path; the environment is always empty and stdin closed)
-//! and the output tree holding the script. Every verified run is one line
+//! and the emitted output tree — the same things a `run/` line covers. That
+//! tree is the directory holding the script, which is where a build writes
+//! its entry. A script in the project directory has no such directory. The
+//! project also holds the sources and `.beni-cache`, and a cache entry names
+//! the compiler that wrote it, so walking the project stales the line on
+//! every compiler change even when the emitted JavaScript is identical. The
+//! digest then covers the script's own bytes and every emitted output tree,
+//! and nothing else in the project. Every verified run is one line
 //! of the checked-in index `tests/blackbox/run-hashes.txt`:
 //!
 //!   <test name> #<n> <sha-256 hex>
@@ -67,6 +74,15 @@ pub const ext = "run-hash";
 /// The file of the output tree the digest leaves out: the build's own list
 /// of what it wrote, with a hash per file, which Node never loads.
 pub const manifest = "_manifest.txt";
+
+/// The build cache's default directory (`src/cache/Dir.zig`'s
+/// `default_path`). A project-root script's walk skips it: the entries are
+/// not emitted output, so reading them would only be thrown away.
+const cache_dir = ".beni-cache";
+
+/// First line of a beni `_manifest.txt` (`backend.md` §2). A directory
+/// holding one is an emitted output tree.
+const manifest_header = "beni-manifest 1\n";
 
 /// The record line for the program `w` just built into `out_dir`, as build
 /// `pass`, compared against `golden_name` holding `golden`. Owned by
@@ -306,11 +322,22 @@ fn matches(got: world.Result, expected: world.Expected) bool {
     };
 }
 
-/// The hex digest of one program run: the Node version, the script, the
-/// expectation, and every file of the output tree that holds the script
-/// (its directory) but `_manifest.txt`. Null when that tree is empty, which
-/// only a build that wrote nothing leaves: such a run is never skipped nor
-/// recorded, and Node reports the missing script.
+/// `checkProgram`'s digest of one run of `script`, for the test that shows
+/// what a scenario's run hash covers. Null when the run has no output to
+/// cover (`programDigest`).
+pub fn programRunDigest(w: *World, script: []const u8, expected: world.Expected) !?[]const u8 {
+    return programDigest(w.arena.allocator(), w, script, expected);
+}
+
+/// The hex digest of one program run: the Node version, the script's path,
+/// the expectation, and every file of the emitted output tree but
+/// `_manifest.txt`. The tree is the directory holding `script`. A script in
+/// the project directory has none — that directory also holds the sources
+/// and `.beni-cache` — so the digest covers the script's own bytes and
+/// every directory whose `_manifest.txt` is a beni manifest instead. Null
+/// when nothing was covered, which only a build that wrote nothing leaves:
+/// such a run is never skipped nor recorded, and Node reports the missing
+/// script.
 fn programDigest(arena: Allocator, w: *World, script: []const u8, expected: world.Expected) !?[]const u8 {
     var h = Sha256.init(.{});
     feed(&h, "beni program-run 1");
@@ -325,21 +352,147 @@ fn programDigest(arena: Allocator, w: *World, script: []const u8, expected: worl
     feed(&h, switch (expected.stderr) {
         inline else => |text| text,
     });
-    const tree = std.fs.path.dirname(script) orelse ".";
-    const files = try w.listFiles(tree);
-    var fed: usize = 0;
-    for (files) |rel| {
-        if (std.mem.eql(u8, rel, manifest)) continue;
-        const full = try std.fs.path.join(arena, &.{ tree, rel });
-        const bytes = try w.tmp.dir.readFileAlloc(w.io, full, w.gpa, .limited(world.max_stream_bytes));
-        defer w.gpa.free(bytes);
-        feed(&h, rel);
-        feed(&h, bytes);
-        fed += 1;
-    }
+    const fed = try feedProgramFiles(&h, arena, w, script);
     if (fed == 0) return null;
     const hex = std.fmt.bytesToHex(h.finalResult(), .lower);
     return try arena.dupe(u8, &hex);
+}
+
+/// Feed the files a program run's digest covers, and how many there were.
+/// A script inside a directory covers that directory, which is the output
+/// tree. A script in the project directory covers its own bytes and every
+/// emitted output tree, not the project.
+fn feedProgramFiles(h: *Sha256, arena: Allocator, w: *World, script: []const u8) !usize {
+    if (std.fs.path.dirname(script)) |dir| {
+        if (!std.mem.eql(u8, dir, ".")) return feedTree(h, arena, w, dir);
+    }
+    return feedProjectProgram(h, arena, w, script);
+}
+
+/// Every file of `dir` but `_manifest.txt`, each as its path relative to
+/// `dir` and its bytes. This is the whole coverage of a script that lives
+/// in the output tree, and it is what a `run/` line hashes of that tree.
+fn feedTree(h: *Sha256, arena: Allocator, w: *World, dir: []const u8) !usize {
+    const files = try w.listFiles(dir);
+    var fed: usize = 0;
+    for (files) |rel| {
+        if (std.mem.eql(u8, rel, manifest)) continue;
+        const full = try std.fs.path.join(arena, &.{ dir, rel });
+        try feedFile(h, w, full, rel);
+        fed += 1;
+    }
+    return fed;
+}
+
+/// The script's own bytes, and every file of every emitted output tree in
+/// the project, each as its path relative to the project. `.beni-cache` is
+/// not walked: its entries are not output, and a walk would read the
+/// compiler's cache on the way to ignoring it. A `--cache-dir` somewhere
+/// else is walked. That is fine: the project is the scenario's temporary
+/// directory, and a directory contributes files only when its
+/// `_manifest.txt` is a beni manifest.
+fn feedProjectProgram(h: *Sha256, arena: Allocator, w: *World, script: []const u8) !usize {
+    const files = try projectFiles(arena, w);
+    var roots: std.ArrayList([]const u8) = .empty;
+    for (files) |rel| {
+        const root = manifestRoot(rel) orelse continue;
+        if (!try isBeniManifest(w, rel)) continue;
+        // No scenario builds into the project directory (`--out=.`). The
+        // only project-root script is `check.mjs`, and it builds into
+        // `out/`. A manifest here would cover the project's top-level
+        // files and miss nested output such as `_core/`.
+        if (root.len == 0) return error.ProjectRootOutput;
+        try roots.append(arena, root);
+    }
+    var chosen: std.ArrayList([]const u8) = .empty;
+    for (files) |rel| {
+        if (std.mem.eql(u8, rel, script) or inEmittedTree(rel, roots.items)) try chosen.append(arena, rel);
+    }
+    std.mem.sort([]const u8, chosen.items, {}, pathLessThan);
+    var fed: usize = 0;
+    for (chosen.items) |rel| {
+        try feedFile(h, w, rel, rel);
+        fed += 1;
+    }
+    return fed;
+}
+
+fn feedFile(h: *Sha256, w: *World, path: []const u8, name: []const u8) !void {
+    const bytes = try w.tmp.dir.readFileAlloc(w.io, path, w.gpa, .limited(world.max_stream_bytes));
+    defer w.gpa.free(bytes);
+    feed(h, name);
+    feed(h, bytes);
+}
+
+/// Every file under the project, sorted, except anything inside the build
+/// cache. Paths are relative to the project.
+fn projectFiles(arena: Allocator, w: *World) ![]const []const u8 {
+    var out: std.ArrayList([]const u8) = .empty;
+    try collectProject(arena, w, "", &out);
+    std.mem.sort([]const u8, out.items, {}, pathLessThan);
+    return out.items;
+}
+
+fn pathLessThan(_: void, a: []const u8, b: []const u8) bool {
+    return std.mem.lessThan(u8, a, b);
+}
+
+fn collectProject(arena: Allocator, w: *World, prefix: []const u8, out: *std.ArrayList([]const u8)) !void {
+    const full = if (prefix.len == 0) "." else prefix;
+    // A directory that vanished between the listing and this open is not
+    // there to hash. Anything else — permissions, a full file-descriptor
+    // table — must fail the digest: skipping it would cover fewer files
+    // and still report success.
+    var dir = w.tmp.dir.openDir(w.io, full, .{ .iterate = true }) catch |err| switch (err) {
+        error.FileNotFound => return,
+        else => return err,
+    };
+    defer dir.close(w.io);
+    var it = dir.iterate();
+    while (try it.next(w.io)) |entry| {
+        if (prefix.len == 0 and std.mem.eql(u8, entry.name, cache_dir)) continue;
+        const rel = if (prefix.len == 0)
+            try arena.dupe(u8, entry.name)
+        else
+            try std.fmt.allocPrint(arena, "{s}/{s}", .{ prefix, entry.name });
+        switch (entry.kind) {
+            .directory => try collectProject(arena, w, rel, out),
+            .file => try out.append(arena, rel),
+            // A symlink is not followed. The build writes regular files,
+            // and following a link could leave the project.
+            else => {},
+        }
+    }
+}
+
+/// The output directory a `_manifest.txt` at `rel` records, or null when
+/// `rel` is not that file. Empty when the manifest is the project itself
+/// (`--out=.`), which `feedProjectProgram` refuses.
+fn manifestRoot(rel: []const u8) ?[]const u8 {
+    if (std.mem.eql(u8, rel, manifest)) return "";
+    const slash = std.mem.lastIndexOfScalar(u8, rel, '/') orelse return null;
+    if (!std.mem.eql(u8, rel[slash + 1 ..], manifest)) return null;
+    return rel[0..slash];
+}
+
+fn isBeniManifest(w: *World, rel: []const u8) !bool {
+    const bytes = w.tmp.dir.readFileAlloc(w.io, rel, w.gpa, .limited(world.max_stream_bytes)) catch |err| switch (err) {
+        error.FileNotFound => return false,
+        else => return err,
+    };
+    defer w.gpa.free(bytes);
+    return std.mem.startsWith(u8, bytes, manifest_header);
+}
+
+/// Whether `rel` is a file of an emitted output tree: under one of `roots`,
+/// and not the tree's own `_manifest.txt`. No root is empty: a manifest at
+/// the project root is `error.ProjectRootOutput`.
+fn inEmittedTree(rel: []const u8, roots: []const []const u8) bool {
+    if (std.mem.eql(u8, std.fs.path.basename(rel), manifest)) return false;
+    for (roots) |root| {
+        if (rel.len > root.len and rel[root.len] == '/' and std.mem.startsWith(u8, rel, root)) return true;
+    }
+    return false;
 }
 
 fn recordingMode() bool {

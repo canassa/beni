@@ -84,6 +84,11 @@ upgrade, and commit the records with the change; on a merge conflict in
 them, take either side and regenerate. The code is
 `tests/blackbox/run_hash.zig`, and `run_hash_test.zig` drives the walker to
 show a recorded build skipped, a changed one run, and a mismatch refused.
+A line of `tests/blackbox/run-hashes.txt`, a program a black-box scenario
+runs, covers the same things: the emitted output tree, the expectation
+written in the test and the Node version. A script that lives in the
+project directory rather than in that tree contributes its own bytes, and
+the rest of the project, `.beni-cache` included, contributes nothing.
 
 ### A program that must crash
 

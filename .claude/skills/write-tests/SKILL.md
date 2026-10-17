@@ -212,7 +212,11 @@ A black-box scenario that runs its program does it through
 `w.expectProgram(script, .{ .stdout = …, .exit_code = …, .stderr = … })` or
 `w.buildAndRun(args, expected)`, never `w.node` and assertions after it: the
 expectation is given up front because it is part of the run's hash, whose
-verified lines live in `tests/blackbox/run-hashes.txt`. `w.checkProgram`
+verified lines live in `tests/blackbox/run-hashes.txt`. The hash covers the
+emitted output tree and that expectation, as a `run/` hash does, and not the
+project directory: a script that sits there contributes its own bytes, and
+`.beni-cache` contributes nothing, so a compiler change that leaves the
+emitted JavaScript identical does not stale the line. `w.checkProgram`
 returns what the program did instead of failing, for a scenario that
 reports a mismatch itself. After adding or changing such a scenario, run
 `zig build test-run-hashes -Dtest-filter=<its name>` and commit the index.
