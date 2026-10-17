@@ -4,9 +4,11 @@
 -- with an empty text node while hidden; a `select` and a number input are
 -- controlled (`prop`), their own events' handlers writing them back even
 -- when the arm leaves the model as it was (the code field) or writes
--- nothing (the locked field);
--- `</li>` and the closing run are left out. Bindings are grouped by what
--- they read: `muted`, `phase`, `pages`, and the input's `pages` and
+-- nothing (the locked field); a `case` on literals in an arm, the enum
+-- cycle, is written as release writes it today, a `switch`
+-- (`emit/release/inline/EnumCycle`, pending, holds the chain of conditionals
+-- S1 owes); `</li>` and the closing run are left out. Bindings are grouped by
+-- what they read: `muted`, `phase`, `pages`, and the input's `pages` and
 -- `pagesTyped`.
 import Browser
 import Html exposing (Html)
@@ -25,6 +27,7 @@ type alias Model =
 type Msg
     = SwitchMuted
     | PickPhase String
+    | RotatePhase
     | SetPages String
     | SetCode String
     | Locked String
@@ -52,6 +55,20 @@ update msg model =
 
         PickPhase chosen →
             { model | phase = chosen }
+
+        RotatePhase →
+            { model
+                | phase =
+                    case model.phase of
+                        "Basic" →
+                            "Standard"
+
+                        "Standard" →
+                            "Premium"
+
+                        _ →
+                            "Basic"
+            }
 
         SetPages typed →
             case intIn typed (-5) 20 of
@@ -85,7 +102,7 @@ view model =
             <option value="Standard">Standard</option>
             <option value="Premium">Premium</option>
         </select>
-        <button data-role="phase">{model.phase}</button>
+        <button data-role="rotatePhase" onClick={RotatePhase}>{model.phase}</button>
         <input
             type="number"
             data-role="setPages"

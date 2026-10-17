@@ -23,6 +23,7 @@ type alias Model =
 type Msg
     = SwitchMuted
     | PickPhase String
+    | RotatePhase
     | SetPages String
     | SetCode String
     | Locked String
@@ -50,6 +51,20 @@ update msg model =
 
         PickPhase chosen →
             { model | phase = chosen }
+
+        RotatePhase →
+            { model
+                | phase =
+                    case model.phase of
+                        "Basic" →
+                            "Standard"
+
+                        "Standard" →
+                            "Premium"
+
+                        _ →
+                            "Basic"
+            }
 
         SetPages typed →
             case intIn typed (-5) 20 of
@@ -83,7 +98,7 @@ view model =
             <option value="Standard">Standard</option>
             <option value="Premium">Premium</option>
         </select>
-        <button data-role="phase">{model.phase}</button>
+        <button data-role="rotatePhase" onClick={RotatePhase}>{model.phase}</button>
         <input
             type="number"
             data-role="setPages"

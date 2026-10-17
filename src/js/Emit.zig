@@ -114,6 +114,8 @@ pub const Item = struct {
     code: diagnostic.Code,
     file: SourceStore.Index,
     token: u32,
+    /// The span's last token, when it covers more than `token`.
+    end_token: ?u32 = null,
     /// Owned by the caller's allocator.
     message: []const u8,
     /// Where to report INSTEAD of `file`'s token, for a fault whose text is
@@ -3750,7 +3752,7 @@ const Emitter = struct {
                         e.bir(m).insts.items(.main_token)[d.region.int()]
                     else
                         0;
-                    try e.diagnostics.append(e.gpa, .{ .code = d.code, .file = file, .token = token, .message = d.message });
+                    try e.diagnostics.append(e.gpa, .{ .code = d.code, .file = file, .token = token, .end_token = d.end_token, .message = d.message });
                 }
                 // The messages are the diagnostics' now.
                 e.gpa.free(lowered.diagnostics);

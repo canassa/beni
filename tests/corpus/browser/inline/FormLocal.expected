@@ -10,7 +10,7 @@
         <option value="Standard">"Standard"</option>
         <option value="Premium">"Premium"</option>
       </select>
-      <button data-role="phase">"Standard"</button>
+      <button data-role="rotatePhase">"Standard"</button>
       <input type="number" data-role="setPages" .value="4">
       <input data-role="code" .value="ab">
       <input data-role="locked" .value="fixed">
@@ -35,7 +35,7 @@
         <option value="Standard">"Standard"</option>
         <option value="Premium">"Premium"</option>
       </select>
-      <button data-role="phase">"Standard"</button>
+      <button data-role="rotatePhase">"Standard"</button>
       <input type="number" data-role="setPages" .value="4">
       <input data-role="code" .value="ab">
       <input data-role="locked" .value="fixed">
@@ -60,7 +60,32 @@
         <option value="Standard">"Standard"</option>
         <option value="Premium">"Premium"</option>
       </select>
-      <button data-role="phase">"Premium"</button>
+      <button data-role="rotatePhase">"Premium"</button>
+      <input type="number" data-role="setPages" .value="4">
+      <input data-role="code" .value="ab">
+      <input data-role="locked" .value="fixed">
+      <ul>
+        <li>"Pages: 4"</li>
+        <li>"Static"</li>
+      </ul>
+    </section>
+  </div>
+</body>
+-- click [data-role=rotatePhase]
+<body>
+  <div id="root">
+    <section data-role="form">
+      <button data-role="switchMuted">"Switch muted"</button>
+      <div>
+        <p>"Muted: done"</p>
+        <strong>"Pages = 4"</strong>
+      </div>
+      <select data-role="pickPhase" .value="Basic">
+        <option value="Basic">"Basic"</option>
+        <option value="Standard">"Standard"</option>
+        <option value="Premium">"Premium"</option>
+      </select>
+      <button data-role="rotatePhase">"Basic"</button>
       <input type="number" data-role="setPages" .value="4">
       <input data-role="code" .value="ab">
       <input data-role="locked" .value="fixed">
@@ -80,12 +105,12 @@
         <p>"Muted: done"</p>
         <strong>"Pages = 12"</strong>
       </div>
-      <select data-role="pickPhase" .value="Premium">
+      <select data-role="pickPhase" .value="Basic">
         <option value="Basic">"Basic"</option>
         <option value="Standard">"Standard"</option>
         <option value="Premium">"Premium"</option>
       </select>
-      <button data-role="phase">"Premium"</button>
+      <button data-role="rotatePhase">"Basic"</button>
       <input type="number" data-role="setPages" .value="12">
       <input data-role="code" .value="ab">
       <input data-role="locked" .value="fixed">
@@ -105,12 +130,12 @@
         <p>"Muted: done"</p>
         <strong>"Pages = 12"</strong>
       </div>
-      <select data-role="pickPhase" .value="Premium">
+      <select data-role="pickPhase" .value="Basic">
         <option value="Basic">"Basic"</option>
         <option value="Standard">"Standard"</option>
         <option value="Premium">"Premium"</option>
       </select>
-      <button data-role="phase">"Premium"</button>
+      <button data-role="rotatePhase">"Basic"</button>
       <input type="number" data-role="setPages" .value="99">
       <input data-role="code" .value="ab">
       <input data-role="locked" .value="fixed">
@@ -130,12 +155,12 @@
         <p>"Muted: done"</p>
         <strong>"Pages = -3"</strong>
       </div>
-      <select data-role="pickPhase" .value="Premium">
+      <select data-role="pickPhase" .value="Basic">
         <option value="Basic">"Basic"</option>
         <option value="Standard">"Standard"</option>
         <option value="Premium">"Premium"</option>
       </select>
-      <button data-role="phase">"Premium"</button>
+      <button data-role="rotatePhase">"Basic"</button>
       <input type="number" data-role="setPages" .value="-3">
       <input data-role="code" .value="ab">
       <input data-role="locked" .value="fixed">
@@ -152,12 +177,12 @@
     <section data-role="form">
       <button data-role="switchMuted">"Switch muted"</button>
       ""
-      <select data-role="pickPhase" .value="Premium">
+      <select data-role="pickPhase" .value="Basic">
         <option value="Basic">"Basic"</option>
         <option value="Standard">"Standard"</option>
         <option value="Premium">"Premium"</option>
       </select>
-      <button data-role="phase">"Premium"</button>
+      <button data-role="rotatePhase">"Basic"</button>
       <input type="number" data-role="setPages" .value="-3">
       <input data-role="code" .value="ab">
       <input data-role="locked" .value="fixed">
@@ -174,12 +199,12 @@
     <section data-role="form">
       <button data-role="switchMuted">"Switch muted"</button>
       ""
-      <select data-role="pickPhase" .value="Premium">
+      <select data-role="pickPhase" .value="Basic">
         <option value="Basic">"Basic"</option>
         <option value="Standard">"Standard"</option>
         <option value="Premium">"Premium"</option>
       </select>
-      <button data-role="phase">"Premium"</button>
+      <button data-role="rotatePhase">"Basic"</button>
       <input type="number" data-role="setPages" .value="-3">
       <input data-role="code" .value="abcd">
       <input data-role="locked" .value="fixed">

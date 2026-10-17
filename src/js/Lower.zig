@@ -89,6 +89,9 @@ pub const Item = struct {
     /// Where to report instead of `region`'s token: a markup node's own
     /// token, for what a markup lowering reports (`boundary.md` §9.4.7).
     token: ?u32 = null,
+    /// The last token the span covers, when it is more than `region`'s or
+    /// `token`'s one: a field's whole value.
+    end_token: ?u32 = null,
     /// Owned by the caller's allocator.
     message: []const u8,
 };
@@ -11880,6 +11883,15 @@ pub const Lowerer = struct {
             .program_shape => .program_shape,
             else => .not_implemented,
         }, region, "{s}", .{message});
+        // A field's value is reported whole, `updates True` and not
+        // `updates`: its code is one range of instructions, ending at it
+        // (`Lift.low`), whose last token is the span's end.
+        if (part == .call or region.int() == pc.inst) return;
+        const lo = try Lift.low(l.bir, l.scratch, region.int());
+        const tokens = l.bir.insts.items(.main_token);
+        var last = tokens[region.int()];
+        for (lo..region.int() + 1) |i| last = @max(last, tokens[i]);
+        if (last != tokens[region.int()]) l.diagnostics.items[l.diagnostics.items.len - 1].end_token = last;
     }
 
     // ---- The program hook, version 1.7 (browser-direct.md §4, §5) ---------
