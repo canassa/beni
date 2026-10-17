@@ -98,8 +98,8 @@ const all = [
   // `browser-inline`'s pages and its application goldens; `build/bad/inline/`
   // is left out, since its projects are refused on purpose.
   ...programs("browser/inline/", join(browser, "inline"), "browser-inline"),
-  ...programs("emit/inline/, emit/release/inline/", join(corpus, "emit/inline"), "browser-inline"),
-  ...programs("emit/inline/, emit/release/inline/", join(corpus, "emit/release/inline"), "browser-inline"),
+  ...programs("emit/inline/", join(corpus, "emit/inline"), "browser-inline"),
+  ...programs("emit/release/inline/", join(corpus, "emit/release/inline"), "browser-inline"),
   ...["bike-wars", "conduit", "sternhalma"].map((n) => program("examples/", join(repo, "examples", n, "src"), "browser-tea")),
   ...["NoEditing", "NoRouting", "NoStorage", "Sandbox"].map((n) =>
     program("bench/ apps", join(repo, "bench/todomvc/apps/beni", `${n}.beni`), "browser-tea"),
