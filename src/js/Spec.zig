@@ -623,9 +623,17 @@ const Mod = struct {
     }
 
     /// Append `words` to `extra`, keeping the IR's view of it current.
+    /// `words` may be words of `extra` itself, read again by offset once
+    /// there is room (as `addBytes`).
     fn append(m: *Mod, gpa: Allocator, words: []const u32) Allocator.Error!u32 {
         const at: u32 = @intCast(m.extra.items.len);
-        try m.extra.appendSlice(gpa, words);
+        const buf = m.extra.items;
+        const inside = words.len != 0 and @intFromPtr(words.ptr) >= @intFromPtr(buf.ptr) and @intFromPtr(words.ptr) < @intFromPtr(buf.ptr) + buf.len * @sizeOf(u32);
+        if (inside) {
+            const off = (@intFromPtr(words.ptr) - @intFromPtr(buf.ptr)) / @sizeOf(u32);
+            try m.extra.ensureUnusedCapacity(gpa, words.len);
+            m.extra.appendSliceAssumeCapacity(m.extra.items[off..][0..words.len]);
+        } else try m.extra.appendSlice(gpa, words);
         m.ir.extra = m.extra.items;
         return at;
     }
@@ -648,10 +656,20 @@ const Mod = struct {
         return @fromBackingInt(@intCast(at));
     }
 
-    /// Append string bytes, keeping the IR's view current.
+    /// Append string bytes, keeping the IR's view current. `text` may be
+    /// bytes of this module's own buffer — a literal copied within the
+    /// module (`declaredTag`) — which growing the buffer would free before
+    /// they are read: such bytes are read again, by offset, once there is
+    /// room.
     fn addBytes(m: *Mod, gpa: Allocator, text: []const u8) Allocator.Error!u32 {
         const at: u32 = @intCast(m.string_bytes.items.len);
-        try m.string_bytes.appendSlice(gpa, text);
+        const buf = m.string_bytes.items;
+        const inside = text.len != 0 and @intFromPtr(text.ptr) >= @intFromPtr(buf.ptr) and @intFromPtr(text.ptr) < @intFromPtr(buf.ptr) + buf.len;
+        if (inside) {
+            const off = @intFromPtr(text.ptr) - @intFromPtr(buf.ptr);
+            try m.string_bytes.ensureUnusedCapacity(gpa, text.len);
+            m.string_bytes.appendSliceAssumeCapacity(m.string_bytes.items[off..][0..text.len]);
+        } else try m.string_bytes.appendSlice(gpa, text);
         m.ir.string_bytes = m.string_bytes.items;
         return at;
     }
