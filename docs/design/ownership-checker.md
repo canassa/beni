@@ -1100,8 +1100,8 @@ code:
 | `type_depth` in `occursBelow` | 16 | `mayShare`'s shortcut (rule 4) | "does not occur": the shortcut is not taken | conservative |
 | `type_depth` in `typeExprHeads` | 16 | which types a type names, for "is this type recursive" | the type may be taken for one that is not: only "exact" becomes "approximate" or the reverse in a line; both reject | conservative |
 | `split_cap` | 8 | a supply probed cell by cell (§30.9 rule 5) | probed whole | conservative |
-| the evidence walk (`evidenceSight`) | was 8 terms | a writing function passed as evidence (§16.5) | *before 2026-10-16:* not reported, silently; now every term is walked, each once, and there is no cap (`ownership/EvidenceDeep`) | removed |
-| `termTaint` | 8 terms | a codec's evidence (§30.10) | `⊤` in both slots | conservative |
+| the evidence walk (`evidenceSight`) | was 8 levels of nesting | a writing function passed as evidence (§16.5) | *before 2026-10-16:* not reported, silently; now every term is walked, each once per site, and there is no cap (`ownership/EvidenceDeep`) | removed |
+| `termTaint` | 8 levels of nesting | a codec's evidence (§30.10) | `⊤` in both slots | conservative |
 | `markupEvents` | `k` | the events of markup inside lists and `Maybe`s | the whole value, not its events | conservative |
 | `aliasTarget` | 8 hops | a point-free top-level alias (§30.9 rule 9) | no name: the value is called as §6.1's call | conservative only with §30.11's `⊤call`; before it, the #216 hole |
 | `inst_depth` | 4 | `instProv`, `callbackLoanDemands`, `returnedParamDemands`, `provOwned` | the `callbacks` limit (`ownership/CallbackChain`) | loud |
@@ -1109,6 +1109,9 @@ code:
 | a capture a walk has not bound, in a condition | — | `classSide` | *before 2026-10-16:* holds nothing; now `⊤` | conservative |
 | a limit reached outside a declaration | — | `hitLimit` | unreachable: every walk names its declaration, and a safety build asserts it | — |
 | `wide_index` | 256 | an index of wide values by their first step | not a cap: the same entries, found faster | — |
+| a constructor step's fields | 64 | a path step `#C.i` is `c · 64 + i`, and a summary block refuses `i ≥ 64` | field 64 of a constructor names field 0 of the next constructor, so two places merge; across modules, writing the block crashes `check` | **silent**, issue #289 |
+| a carried lambda nested in a summary block | 16 | `readSummary` | the block is refused as not one | unreachable: the walk carries no lambda that deep; an assertion, not a cap |
+| `rootToken` | 64 steps | the first token of a variable path, for a message | a later token of the path | diagnostic position only |
 
 **The path cut stays silent for now (issue #286).** The cut is relative to the root of each value, so a caller
 can cut a path its callee does not: a caller that passes `r.a.b` to a callee that writes `s.c.d.e.f.g.h.x` and
