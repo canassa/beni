@@ -1,0 +1,39 @@
+-- `stop` called while a dispatch runs drops what was queued behind it
+-- (boundary.md §9.4.5, amended 2026-10-17): `init`'s two bodies are queued;
+-- the first stops the page, so the second never runs, and nothing it logs
+-- or sends shows.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Stopper
+import Sub exposing (Sub)
+import Tea
+
+
+type Msg
+    = Loaded
+
+
+init : ⊤ → {} × Cmd Msg
+init ⊤ =
+    ( {}
+    , Cmd.batch
+        [ Cmd.perform λ_ → Stopper.stopNow ⊤
+        , Cmd.perform λsend →
+            Debug.log "the second body ran" ⊤
+            send Loaded
+        ]
+    )
+
+
+update : Msg, {} → {} × Cmd Msg
+update _ model =
+    Debug.log "update ran" ⊤
+    ( model, Cmd.none )
+
+
+view : {} → Html Msg
+view _ = <p>mounted</p>
+
+
+main : Tea.Program
+main = Tea.element { init = init, update = update, view = view, subscriptions = λ_ → Sub.none }
