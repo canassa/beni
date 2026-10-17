@@ -254,8 +254,8 @@ theorem mem_cells (a : Abstract) (cell : Origin) (member : cell ∈ a.cells) :
         · exact Or.inl old
         · exact Or.inr ⟨r, xs, by simp, new⟩
       · exact Or.inr ⟨r', cs', List.mem_cons_of_mem _ path, inCs⟩
-  rcases general a.paths [] member with none | found
-  · simp at none
+  rcases general a.paths [] member with hnone | found
+  · simp at hnone
   · exact found
 
 /-- A capture path of an alternative's capture abstract is a path of the function abstract. -/
@@ -332,8 +332,8 @@ theorem namesAt_mem_paths_general (q : Path) (b : Abstract) (cell : Origin)
       cases step with
       | capture i =>
         simp only [namesAt] at member
-        rcases mem_alts_fold alts i rest [] cell member with none | ⟨alt, altMember, inAlt⟩
-        · simp at none
+        rcases mem_alts_fold alts i rest [] cell member with hnone | ⟨alt, altMember, inAlt⟩
+        · simp at hnone
         · cases lookup : alt.2[i]? with
           | none =>
             rw [lookup] at inAlt
@@ -348,8 +348,8 @@ theorem namesAt_mem_paths_general (q : Path) (b : Abstract) (cell : Origin)
         cases rest with
         | nil =>
           simp only [namesAt, Abstract.envCells] at member
-          rcases mem_envCells_fold alts [] cell member with none | ⟨alt, altMember, x, xMember, inX⟩
-          · simp at none
+          rcases mem_envCells_fold alts [] cell member with hnone | ⟨alt, altMember, x, xMember, inX⟩
+          · simp at hnone
           · obtain ⟨r, ds, path, inDs⟩ := mem_cells x cell inX
             obtain ⟨i, lookup⟩ := List.mem_iff_getElem?.mp xMember
             exact ⟨.capture i :: r, ds, function_path_mem cs alts alt altMember i x lookup r ds path, inDs⟩
