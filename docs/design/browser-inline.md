@@ -388,3 +388,35 @@ What a golden shows, stated once: the runtime functions of §8.2 ship only when 
 once is fused into its one use by single-use inlining, which needs its arguments to be names; a
 `case` on literals whose arms are expressions — an enum cycle — is a chain of conditionals; no
 message object, `switch` on a key or context chain survives.
+
+### 8.9 Golden bytes against their targets
+
+*Added 2026-10-18, the review of S1's first pull request.* A golden is the compiler's actual
+output, and S1's red goldens held the hand-written target; the gap is recorded here, not hidden.
+Brotli 11, measured by editing the actual output into each target form one at a time (`plans/` has
+no tool for it; the numbers are each edit's own delta against the actual file).
+
+| Golden | Target | Actual |
+|---|---|---|
+| `CounterLocal` | 510 | 523 |
+| `FormLocal`, the program as S1's first commit wrote it (no code or locked field) | 812 | 939 |
+| `FormLocal`, as the corpus holds it (two more inputs) | — | 1 002 |
+| `PushAndTimer` (S0's pinned bar) | ≤ 589 | 583 |
+
+What accounts for the gap, per item:
+
+| Item | `CounterLocal` | `FormLocal` | Kind |
+|---|---|---|---|
+| `Maybe` boxed as `{$:0,a:…}` / `{$:1,a:null}` (core's representation, kept: the owner, 2026-10-17); tea-inline has no `Maybe` | — | 18 | **a language cost**, like a record spread |
+| the enum cycle as a `switch` in a labelled block (`EnumCycle`, pending) | — | 16 | owed by S1 |
+| `when`'s anchor through an `=== undefined` branch, where the target has `a.$a ||= new Text` | — | 18 | beni has no `\|\|=`: a finding about the language |
+| `prop`'s and `on`'s defaults as `c === undefined ? … : c`, where the target has default parameters | 6 | 17 | beni has no default parameters: a finding about the language |
+| `prop`'s constant key read through a binding, `a[c]`, not `a.disabled` | 8 | — | optimiser |
+| one read of a field per hole, `let b=f.a,c=f.a`, not one per field | 10 | 3 | optimiser (common reads in one declaration list) |
+| S0's `send` alias, `f=e` | 3 | 2 | optimiser |
+| the rest: arms through a `before` binding and a spread, a payload alias, the input's `Maybe`-shaped arm, a top-level name each, renaming | — | ≈ 49 | mixed |
+
+The reviewer's other items were measured and declined: a payload alias dropped (`c=b`) moved
+`FormLocal` from 1 002 to 1 004, and `!x` for `x ? 0 : 1` costs 13 in this file. A handler whose
+key writes nothing still reads its payload: the extractor is `foreign impure`, and only an
+interface fact that the key never reads its field would let the lowering skip it.
