@@ -6992,6 +6992,17 @@ larger by 1–8); the `bench/ui` app byte-identical. Fixtures: `emit/release/app
 may hold a function reading two keeps both), `run/SpecializeTrailingArguments` (an argument that
 logs is kept, and logged where it was), `emit/release/split/EmptyPage`.
 
+*Amended 2026-10-17: a trailing `undefined` to an arrow.* A call whose callee fact 3 says is only
+arrows of the program drops the `undefined` literals that end its arguments: an arrow has no
+`arguments` to count them by, so a missing argument is `undefined` as much as a passed one, and a
+literal does nothing to evaluate. `d(p,undefined)` is `d(p)`, a top-level function tracked by fact 1
+included. And **the entry's callee may become the function it forwards to**
+(`Spec.forwardEntry`): an entry callee `const f = (p₁, …, pₙ) => g(p₁, …, pₙ)` that passes its
+parameters, in order, to a function declared before it in the same module, is `const f = g` when
+nothing in the program names `f` and the entry passes at most `n` arguments — the hand-written entry
+file calls it and compares nothing. `run`'s `e=a=>d(a)` is `e=d`
+(`emit/release/inline/PushAndTimer` 599 → 589 brotli with both).
+
 *Amended 2026-10-15: a record field's lambda* (issue #95; `plans/queue.md` row 81, found by
 research 79 §5). `init` is a function of `⊤` since 2026-10-12 (`boundary.md` §9.8.16), so
 `Tea.element`'s hosted `init` calls `app.init ⊤` where it read a value. When a page writes its

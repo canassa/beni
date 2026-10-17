@@ -429,6 +429,7 @@ pub fn run(gpa: Allocator, arena: Allocator, in: Input) Allocator.Error!Stats {
     // Last, so that slice 8, which writes a call through a property in
     // only with every argument, has seen them all.
     try s.trimArguments();
+    try s.forwardEntry();
     // Slice 10, after every fact: a value made at start-up and read once
     // there is made where it is read; reachability drops its declaration.
     if (try s.inlineReads()) _ = try s.prune();
@@ -2608,6 +2609,28 @@ const Spec = struct {
         const ir = m.ir;
         const d = ir.data(node);
         const callee: Index = @fromBackingInt(@intCast(d.lhs));
+        // A trailing `undefined` passed to a callee that is only arrows of
+        // the program is what a missing argument is: an arrow has no
+        // `arguments` to count them by (`backend.md` §9, *Trimmed arguments*,
+        // amended 2026-10-17).
+        if (callee.int() < vals.len) trailing: {
+            const vt = vals[callee.int()];
+            if (vt.top or vt.prim or vt.nullish() or vt.sites.len == 0) break :trailing;
+            for (vt.sites) |site| {
+                const st = &s.pts.sites.items[site];
+                if (st.kind != .func or s.mods[st.module].ir.tag(st.node) != .arrow) break :trailing;
+            }
+            const all = ir.extraSlice(ir.subRange(@fromBackingInt(@intCast(d.rhs))), u32);
+            var keep = all.len;
+            while (keep > 0 and ir.tag(@fromBackingInt(@intCast(all[keep - 1]))) == .undefined_lit) keep -= 1;
+            if (keep != all.len) {
+                const kept = try s.arena.dupe(u32, all[0..keep]);
+                const start = try m.append(s.gpa, kept);
+                const rec = try m.append(s.gpa, &.{ start, start + @as(u32, @intCast(keep)) });
+                m.setData(node, d.lhs, rec);
+                return;
+            }
+        }
         // A function fact 1 tracks is called with its arity, or every
         // parameter of it is ⊤; its unread parameters go by `rewrite`.
         if (ir.tag(callee) == .ident) if (m.globalOf(@fromBackingInt(@intCast(ir.data(callee).lhs)))) |g| if (s.decl[g]) |decl| if (decl.func != null) return;
@@ -4232,6 +4255,55 @@ const Spec = struct {
         return true;
     }
 
+    /// `backend.md` §9, *The entry's call is a call*, amended 2026-10-17: an
+    /// entry callee `const f = (p₁, …, pₙ) => g(p₁, …, pₙ)` that only forwards
+    /// its parameters, in order, to a function `g` declared before it in the
+    /// same module, is `const f = g`, when nothing names `f` but the entry,
+    /// whose call passes at most `n` arguments. Calling either then runs
+    /// `g` with the same arguments; the entry never compares `f`.
+    fn forwardEntry(s: *Spec) Allocator.Error!void {
+        const entry = s.in.entry orelse return;
+        if (entry.args.len == 0) return;
+        const g = entry.callee;
+        if (g >= s.globals) return;
+        for (s.in.escaping) |e| if (e == g) return;
+        const decl = s.decl[g] orelse return;
+        if (s.assigned[g]) return;
+        const m = &s.mods[decl.module];
+        const ir = m.ir;
+        if (ir.tag(decl.stmt) != .const_decl) return;
+        const value: Index = @fromBackingInt(@intCast(ir.data(decl.stmt).rhs));
+        if (ir.tag(value) != .arrow or ir.data(value).rhs != Node.arrow_plain) return;
+        const f = ir.extraData(@fromBackingInt(@intCast(ir.data(value).lhs)), JsIr.Func);
+        const params = ir.extraSlice(f.params(), NameIndex);
+        if (entry.args.len > params.len) return;
+        const body = ir.extraSlice(f.body(), Index);
+        if (body.len != 1 or ir.tag(body[0]) != .return_stmt) return;
+        const call = (@as(Node.OptionalIndex, @fromBackingInt(@intCast(ir.data(body[0]).lhs)))).unwrap() orelse return;
+        if (ir.tag(call) != .call) return;
+        const args = ir.extraSlice(ir.subRange(@fromBackingInt(@intCast(ir.data(call).rhs))), Index);
+        if (args.len != params.len) return;
+        for (args, params) |a, p| if (ir.tag(a) != .ident or ir.data(a).lhs != p.int()) return;
+        const callee: Index = @fromBackingInt(@intCast(ir.data(call).lhs));
+        if (ir.tag(callee) != .ident) return;
+        const h = m.globalOf(@fromBackingInt(@intCast(ir.data(callee).lhs))) orelse return;
+        const hd = s.decl[h] orelse return;
+        if (hd.module != decl.module or s.assigned[h] or s.mods[hd.module].ir.tag(hd.stmt) != .const_decl) return;
+        const hv: Index = @fromBackingInt(@intCast(ir.data(hd.stmt).rhs));
+        if (ir.tag(hv) != .arrow) return;
+        // Declared before `f`, so `const f = g` reads a bound name.
+        const top = ir.extraSlice(ir.body, Index);
+        const at_h = std.mem.indexOfScalar(Index, top, hd.stmt) orelse return;
+        const at_f = std.mem.indexOfScalar(Index, top, decl.stmt) orelse return;
+        if (at_h >= at_f) return;
+        // Nothing of the program names `f`.
+        for (s.mods) |*mm| for (mm.ir.extraSlice(mm.ir.body, Index)) |t| {
+            for (try s.preorder(mm, t)) |node| {
+                if (mm.ir.tag(node) == .ident) if (mm.globalOf(@fromBackingInt(@intCast(mm.ir.data(node).lhs)))) |x| if (x == g) return;
+            }
+        };
+        m.copyNode(value, callee);
+    }
     /// `backend.md` §9, *A function that only calls a function is that
     /// function*: in statement `items[at]`'s own expressions, `() => g()`
     /// is `g` when `g` is a name an earlier statement of the list declares,
