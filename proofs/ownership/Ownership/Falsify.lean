@@ -189,11 +189,16 @@ def projections (o : Observation) (w : Value) (p : Path) : Option (Observation Ã
 
 /-- `LinksValid` as a test: `none` when every stored link is valid. -/
 def linksValidB (hs : InPlaceSemantics.State) : Option String := Id.run do
-  for (v, s, _) in hs.links do
+  for (v, s, front) in hs.links do
     if !(s < v && v < hs.heap.size) then return some s!"link {v} of {s}: not allocated after its source"
     match hs.heap[s]? with
     | none => return some s!"link {v} of {s}: no source array"
-    | some source => if source.isEmpty then return some s!"link {v} of {s}: empty source"
+    | some source =>
+      if source.isEmpty then return some s!"link {v} of {s}: empty source"
+      match hs.heap[v]? with
+      | none => return some s!"link {v} of {s}: no view array"
+      | some view =>
+        if !(view == viewOf front source) then return some s!"link {v} of {s}: the view is stale"
   if !nodup (hs.links.map (Â·.1)) then return some "a view has two sources"
   pure none
 

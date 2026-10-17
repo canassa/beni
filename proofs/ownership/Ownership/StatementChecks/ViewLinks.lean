@@ -307,7 +307,7 @@ theorem separatingOrdered : Separating namingOrdered := by
     rcases namingOrdered_mem hb with ⟨rfl, hc⟩ | ⟨rfl, hc⟩ <;> simp_all <;> revert hab <;> decide
 
 theorem linksValidOrdered : LinksValid heapOrdered := by
-  refine ⟨?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_⟩
   · intro v s f member
     simp only [heapOrdered, List.mem_singleton, Prod.mk.injEq] at member
     obtain ⟨rfl, rfl, rfl⟩ := member
@@ -317,6 +317,10 @@ theorem linksValidOrdered : LinksValid heapOrdered := by
     obtain ⟨rfl, rfl, rfl⟩ := member
     exact ⟨[.int 0], rfl, by simp⟩
   · decide
+  · intro v s f member
+    simp only [heapOrdered, List.mem_singleton, Prod.mk.injEq] at member
+    obtain ⟨rfl, rfl, rfl⟩ := member
+    exact ⟨[.int 0], rfl, rfl⟩
 
 theorem correspondsOrdered_view : Corresponds heapOrdered.heap (.list []) (.ref 1) := by
   intro n hn

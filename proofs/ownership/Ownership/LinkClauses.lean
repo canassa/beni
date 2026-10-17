@@ -36,7 +36,7 @@ open InPlaceSemantics Soundness LinkedWriteFrame
 theorem linksValid_of_same {hs hs' : State} (valid : LinksValid hs)
     (heap : hs'.heap = hs.heap) (links : hs'.links = hs.links) : LinksValid hs' :=
   ⟨by rw [links, heap]; exact valid.bounded, by rw [links, heap]; exact valid.sources,
-   by rw [links]; exact valid.unique⟩
+   by rw [links]; exact valid.unique, by rw [links, heap]; exact valid.contents⟩
 
 theorem linkNamed_of_same {hs hs' : State} {env : List (Var × Observation × Value)}
     {live : Live} {γ : Naming} (named : LinkNamed hs env live γ)
@@ -53,7 +53,7 @@ theorem linkNamed_of_same {hs hs' : State} {env : List (Var × Observation × Va
 
 theorem linksValid_push {hs : State} (valid : LinksValid hs) (xs : List Value) :
     LinksValid {hs with heap := hs.heap.push xs} := by
-  refine ⟨?_, ?_, valid.unique⟩
+  refine ⟨?_, ?_, valid.unique, ?_⟩
   · intro v s front member
     obtain ⟨order, bound⟩ := valid.bounded v s front member
     simp only [Array.size_push]
@@ -64,22 +64,39 @@ theorem linksValid_push {hs : State} (valid : LinksValid hs) (xs : List Value) :
     refine ⟨source, ?_, nonempty⟩
     have different : s ≠ hs.heap.size := by omega
     simp [Array.getElem?_push, different, sourceLookup]
+  · intro v s front member
+    obtain ⟨order, bound⟩ := valid.bounded v s front member
+    obtain ⟨source, sourceLookup, viewLookup⟩ := valid.contents v s front member
+    refine ⟨source, ?_, ?_⟩
+    · have different : s ≠ hs.heap.size := by omega
+      simp [Array.getElem?_push, different, sourceLookup]
+    · have different : v ≠ hs.heap.size := by omega
+      simp [Array.getElem?_push, different, viewLookup]
 
-/-! ## A write that keeps every array nonempty -/
+/-! ## A write to an array no link touches
+
+A write to a linked array goes through `writeLinked`; `LinkedWriteValid.lean`
+keeps the clauses through it. A plain `set!` keeps them only where no link
+names the written array. -/
 
 theorem linksValid_set {hs : State} (valid : LinksValid hs) (root : Nat) (xs : List Value)
-    (nonempty : xs ≠ []) : LinksValid {hs with heap := hs.heap.set! root xs} := by
-  refine ⟨?_, ?_, valid.unique⟩
+    (unlinked : ∀ v s front, (v, s, front) ∈ hs.links → v ≠ root ∧ s ≠ root) :
+    LinksValid {hs with heap := hs.heap.set! root xs} := by
+  refine ⟨?_, ?_, valid.unique, ?_⟩
   · intro v s front member
     simpa using valid.bounded v s front member
   · intro v s front member
     obtain ⟨source, sourceLookup, sourceNonempty⟩ := valid.sources v s front member
-    by_cases same : s = root
-    · subst same
-      have bound : s < hs.heap.size := (Array.getElem?_eq_some_iff.mp sourceLookup).1
-      exact ⟨xs, by simp [Array.getElem?_setIfInBounds_self_of_lt bound], nonempty⟩
-    · exact ⟨source, by rw [HeapProof.lookup_set_other hs.heap root xs same]; exact sourceLookup,
-        sourceNonempty⟩
+    refine ⟨source, ?_, sourceNonempty⟩
+    rw [HeapProof.lookup_set_other hs.heap root xs (unlinked v s front member).2]
+    exact sourceLookup
+  · intro v s front member
+    obtain ⟨source, sourceLookup, viewLookup⟩ := valid.contents v s front member
+    refine ⟨source, ?_, ?_⟩
+    · rw [HeapProof.lookup_set_other hs.heap root xs (unlinked v s front member).2]
+      exact sourceLookup
+    · rw [HeapProof.lookup_set_other hs.heap root xs (unlinked v s front member).1]
+      exact viewLookup
 
 /-! ## Making a view -/
 
@@ -99,7 +116,7 @@ theorem linksValid_viewed {hs : State} (valid : LinksValid hs) (c : Nat) (front 
     obtain ⟨_, bound⟩ := valid.bounded v s f linkMember
     simp only at same
     omega
-  refine ⟨?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_⟩
   · intro v s f member
     simp only [viewed, List.mem_append, List.mem_singleton] at member
     rcases member with old | new
@@ -128,6 +145,21 @@ theorem linksValid_viewed {hs : State} (valid : LinksValid hs) (c : Nat) (front 
       subst bMember
       intro same
       exact fresh (same ▸ aMember)⟩
+  · intro v s f member
+    simp only [viewed, List.mem_append, List.mem_singleton] at member
+    rcases member with old | new
+    · obtain ⟨order, bound⟩ := valid.bounded v s f old
+      obtain ⟨src, sourceLookup, viewLookup⟩ := valid.contents v s f old
+      refine ⟨src, ?_, ?_⟩
+      · have different : s ≠ hs.heap.size := by omega
+        simp [viewed, Array.getElem?_push, different, sourceLookup]
+      · have different : v ≠ hs.heap.size := by omega
+        simp [viewed, Array.getElem?_push, different, viewLookup]
+    · obtain ⟨rfl, rfl, rfl⟩ := new
+      refine ⟨source, ?_, ?_⟩
+      · have different : c ≠ hs.heap.size := by omega
+        simp [viewed, Array.getElem?_push, different, lookup]
+      · simp [viewed]
 
 /-! ## The sufficient condition: per-link closure of the naming
 

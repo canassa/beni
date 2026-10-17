@@ -536,24 +536,26 @@ canonical names for the two sides exist only in a callee frame, where
 premise on written storage (R1). A component that nothing protects is
 unconstrained, which asks nothing of a view that is garbage.
 
-A view's contents (its source's suffix or prefix) are not a clause yet.
-Every program-level write reaches a linked array through `writeLinked`,
-which refreshes every view; a builder's `put` writes with `write`, but since
-#284 `close` hands the builder over, so no accepted program puts into a
-closed builder (`ViewLinks.lean`, *A stale garbage view*). The contents
-clause is therefore true on reachable states, and `PROOF-PLAN.md` schedules
-it with the proof of `LinksValid` after a linked write, where its
-preservation needs the same contents arithmetic. -/
+A view's contents are the fourth clause (`contents`, 2026-10-17): every view
+holds `viewOf front source`, its source's suffix or prefix. The runtime
+refreshes every view at a `writeLinked`, and every in-place writer goes
+through it except a builder's `put`, which writes with `write`; since #284
+`close` hands the builder over, so no accepted program writes a linked array
+with `put` (`ViewLinks.lean`, *A stale garbage view*, now refused).
+`LinkedWriteValid.lean` proves the clause after a linked write that does not
+shorten the written array. -/
 
 /-- Every stored link, at every reachable state: the view was allocated
     after its source, both exist, the source is nonempty (a view is made only
-    of a nonempty list, and no writer shortens an array), and no view has two
-    sources. -/
+    of a nonempty list, and no writer shortens an array), no view has two
+    sources, and the view holds exactly its source's suffix or prefix. -/
 structure LinksValid (hs : InPlaceSemantics.State) : Prop where
   bounded : ∀ v s front, (v, s, front) ∈ hs.links → s < v ∧ v < hs.heap.size
   sources : ∀ v s front, (v, s, front) ∈ hs.links →
     ∃ source, hs.heap[s]? = some source ∧ source ≠ []
   unique : (hs.links.map (·.1)).Nodup
+  contents : ∀ v s front, (v, s, front) ∈ hs.links →
+    ∃ source, hs.heap[s]? = some source ∧ hs.heap[v]? = some (viewOf front source)
 
 /-- An array a live use or a permanent observer can see: the value a live
     path projects to reaches it, or a registered observer does. -/
@@ -575,7 +577,8 @@ theorem linksValid_of_empty (hs : InPlaceSemantics.State) (empty : hs.links = []
     LinksValid hs :=
   ⟨by intro v s front member; rw [empty] at member; simp at member,
    by intro v s front member; rw [empty] at member; simp at member,
-   by rw [empty]; simp⟩
+   by rw [empty]; simp,
+   by intro v s front member; rw [empty] at member; simp at member⟩
 
 theorem linkConnected_nil_eq {c d : Nat} (h : LinkedWriteFrame.LinkConnected [] c d) : c = d := by
   induction h with
