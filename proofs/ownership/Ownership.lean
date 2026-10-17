@@ -22,3 +22,4 @@ import Ownership.CallDerivation
 import Ownership.LinkedWriteStep
 import Ownership.StatementChecks.LinkedCallControl
 import Ownership.StatementChecks.CallDerivationInstance
+import Ownership.StatementChecks.LinkedWriteInstance
