@@ -11356,10 +11356,6 @@ pub const Lowerer = struct {
     /// declaration or interface row.
     const Placed = struct { module: u32, value: u32 };
 
-    /// `program_mounted_twice` (`browser-direct.md` §8.2): a top-level
-    /// program value named twice among what `main`'s placements place —
-    /// through `programs` lists, `mountAt`s and the top-level values of this
-    /// module that hold them — would be one state mounted twice.
     /// Version 1.14 (`Lowering.places`): each call of a `first` placement
     /// whose first argument is a program constructor's call and whose
     /// second is a string literal. The hook is handed the literal
@@ -11404,6 +11400,10 @@ pub const Lowerer = struct {
         }.order) != null;
     }
 
+    /// `program_mounted_twice` (`browser-direct.md` §8.2): a top-level
+    /// program value named twice among what `main`'s placements place —
+    /// through `programs` lists, `mountAt`s and the top-level values of this
+    /// module that hold them — would be one state mounted twice.
     fn findPlacedTwice(l: *Lowerer) !void {
         const entry = l.in.entry_decl orelse return;
         const body = l.bir.decls[entry].body.unwrap() orelse return;
