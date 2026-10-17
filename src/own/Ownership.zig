@@ -1935,6 +1935,13 @@ const unfollowed: u32 = 3;
 /// which `⊤call` (§30.11) takes.
 const twice_named: u32 = 5;
 
+comptime {
+    // Each `top.a` names one flavour of ⊤ (`provText`, `bad_cause`): 0 is
+    // JavaScript, 1 a limit, 2 an input.
+    const flavours = [_]u32{ 0, 1, 2, unfollowed, top_call, twice_named, top_several };
+    for (flavours, 0..) |x, i| for (flavours[i + 1 ..]) |y| if (x == y) @compileError("two flavours of ⊤ share a number");
+}
+
 /// Whether summary `s` returns one cell at two places of its result that
 /// are not one placement of it: a part of its parameter 0, of type `arg`
 /// (`( xs, xs )`, `{ all = xs, first = xs }`, `( xs, [ xs ] )`), or a list
