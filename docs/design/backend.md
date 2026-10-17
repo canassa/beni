@@ -4753,6 +4753,162 @@ sits one level down inside another target's `parts`. And `DceOrderTable` reaches
 through its own `where`-constrained helpers rather than through `List.sortWith`, which takes a
 comparator as an ordinary argument and would have made the edge an ordinary one.*
 
+### The embedded modules' printed text, in the pack
+
+*Added 2026-10-17, the dashboard's answer to `emit-cache-oc-q1` (issue #94): "Printed text,
+development first".* The first step put each embedded module's reachability edge lists in the
+checked core (`fast-compiler.md` §8, *The checked core, embedded*; §9.1 above). This one puts its
+**printed development text** there: for every module the binary carries, the pack holds what each
+top-level unit prints, the source-map marks that go with it, and the facts the join needs. A
+development build that has a row for a module splices the units its own reachability kept and
+lowers and prints nothing of that module; the bytes, and the map beside them, are the ones today's
+build would have written. **A release build reads no row** — `--release` rewrites the text after
+lowering (`Spec`, `Opt`, `Rename` and the hoist, §9) — so release caching is a later step with a
+spec of its own. The rows, their key, the maker and the completeness check are `fast-compiler.md` §8;
+which modules read them is the same rule as an edge list's: a development build's module that the
+pack covers, and `--core-root` or a platform read from a directory reads no row.
+
+**A unit is a run of top-level statements with one selector**, on the boundaries the lowering
+already draws:
+
+- a declaration's own statements, and its suspendable body (`$s`) apart from them — `live.decl` and
+  `live.twin`;
+- each row `dispatch.derived` names, with the statements its synthesis appends beside it (the
+  `$$order` table of a nominal `compare`, a helper a row splits into) — `live.derived`, plus what
+  discovery decides for each primitive comparator;
+- each nullary constructor's constant — selected when the build lowers a use of it
+  (`nullaryDecls`);
+- a schema declaration's parts, exactly where `SchemaLower.declaration` puts its `live.schema`
+  questions: the description, the root, each direction, each member's workers;
+- each statement the markup lowering hoists. No embedded module writes markup today; a module
+  whose lowering asks for a markup fact is not cached at all (the funnel, below), and the JSX work
+  (rule 8, `plans/browser-decisions.md`) turns that refusal into a unit kind.
+
+Imports and the export list are not units: the join rebuilds them, because they are the two
+statement lists whose content depends on which units survive.
+
+**What a unit carries.**
+
+- **Its bytes**, exactly as they stand in the module's development text: its statements, each with
+  the newline the printer writes after a top-level statement (a development module has no blank
+  lines). No separator belongs to a neighbour, so any survivor set's text is a concatenation.
+- **Its marks**: for each, the generated offset relative to the unit's first byte, the source
+  offset, and the identity of the name when it has one. The identity is the whole `JsIr.Name` —
+  module, base and tag — because two locals printed alike (`x$2` in one declaration and `x$2` in
+  another) are two names and two entries in the map's `names` (`Print.mapName`), and a name whose
+  base begins with `$` has none. A unit also records **the names it introduced, in the order it
+  introduced them**: naming a function adds the entry before the mark that consumes it
+  (`Print.nameFunction`).
+- **Its `Needed` entries**, in order: every cross-module value its body named. The head is a
+  function of the order they were added in (`Lowerer.need`/`needName` dedupe; `importStatements`
+  groups by module in first-reference order), so the row keeps the order and the join replays it.
+- **Its runtime flags**: whether it reaches `_derived`'s `deep`, `listEq` or `listCompare`
+  (`runtimeValue`; `uses_runtime` is the or of them). The runtime import's spec list comes from
+  the flags rather than from `Needed`.
+- **The facts it consumed** — below.
+
+**The funnel, and why reuse is honest.** An embedded module's development text is a function of
+its own check and of a short list of facts about the build. As of this spec the list is: the five
+survivor sets (`Reach.Live`: declarations, derived rows, twins, constructors, schema members —
+which are also the selectors); the dead arms those sets imply (`Lower.findDeadArms`:
+`Js.development`'s arm, a development build constant; `Js.maySuspend`'s probe arm, a function of
+the module's own dispatch table; and a `case` arm over a constructor this build never builds,
+`patternDead` — the one arm fact that varies by program); the program hook's `consumed` set and
+the `wanted` declarations that follow it (§4); whether a nullary constant is built; the markup and
+direct handles; the entry declaration; the schema plans and `--schema-library`; `core_private`;
+and the `debug` context. Lowering reads each of them through **one accessor**, and the maker
+records, with each unit, the questions its lowering asked and the answers it got. **A build reuses
+a unit only when it asks the same questions and gets the same answers.** A unit whose answers
+differ is lowered and printed by the build exactly as today, and the join does not care which
+units it spliced and which the build printed. The honesty of reuse is an obligation on the funnel,
+not a claim about the text: a fact the funnel does not know is a fact the differential tests find
+as a byte that moves, and a read of the build that does not go through the funnel is a defect of
+the same kind as writing an output byte outside the printer.
+
+Two answers decide how much is reused, and both are measured when the slices land:
+
+- **A core unit's answers are canonical in every build.** Core's constructors are all live by
+  decree (`Reach.exempt`: core is exempt in every application build, and everything is in a
+  library or a schema build), so `patternDead` is `false` there whatever the program builds, and
+  every other fact on the list is a function of the module's own check. The maker's canonical
+  answers — everything live — are therefore every build's answers, and every core unit is reused.
+- **A platform unit's are not.** A `case` arm over a constructor an application never builds is
+  not printed, and which arms those are differs per program; such a unit falls back. Measured when
+  the slices land, not before: about a tenth of the platform modules' statement bytes vary across
+  the corpus.
+
+**The maker** lowers each embedded module once with **canonical facts** — every declaration,
+derived row, twin, constructor and schema member live, every question answered as the world where
+everything is used, under a development build — prints it once, splits the text at the unit
+boundaries and records the units above. A module it cannot check, lower or print has no row, and
+that fails the maker exactly as a module that does not check does. Its root now reaches `Lower`,
+`Print` and `SourceMap` — the cost `fast-compiler.md` §8 accepted when it decided this step — and
+the pack grows by the development text of every embedded module, recorded when the maker writes
+its first pack.
+
+**The join** turns a row and a build's facts into the module's text, in this order:
+
+1. **the head**, rebuilt rather than stored: the sibling import of the module's `foreign` values
+   (in declaration order, filtered by `live.decl`), the runtime import from the units' flags, the
+   markup runtime import (a module with markup facts is not cached), then one import statement per
+   other module in first-reference order (`importStatements`);
+2. **the units, in canonical order restricted to the build's survivors**: declarations in the
+   module's `emissionOrder` — a depth-first post-order over an edge set that is a function of the
+   module's check, so every build's order is that order filtered, which is §9.1's "the survivors
+   come out in the same relative order they have today"; the synthesised units in the sort by
+   printed name text (§8.5); the nullary constants in the sort by base text (`nullaryDecls`);
+   schema parts and markup hoists in the order their lowering appends them. Each cached unit's
+   marks are rebased by the unit's start offset; a unit the build lowered contributes the marks
+   its own printing recorded;
+3. **the tail**: the export statement, rebuilt exactly as `exports` builds it — nominal derived
+   rows in dispatch order, the entry declaration (null for an embedded module), the interface's
+   surviving values and twins, `core/List`'s and `core/Schema`'s core-private survivors. It is a
+   pure function of the module's check and the survivor sets, so the join recomputes it and a row
+   stores nothing for it;
+4. **the footer**: `//# sourceMappingURL=<file>.map` for a module that gets a map, as today.
+
+The join makes no second pass and re-prints nothing: a reused unit's bytes are spliced as they
+are.
+
+**One `SourceMap.write`, and the marks survive.** §11.1's rule is unchanged — the map is a
+byproduct of the bytes, written once per module over the joined text. The join appends a unit's
+introduced names to the map's `names` at the unit's own position, in the recorded introduction
+order, which reproduces first-use order entry for entry, because the join's order is the print
+order. A name whose introducer the build did not keep is appended at the first use that survives,
+which is what the build's own printing would have done. The head, the tail and the footer record
+no marks: none has a position. **Release is untouched**, so §11.2's maps remain the ones a release
+build's own printing records.
+
+**Reach stays where it is.** §9.1's walk runs first, for every module, exactly as today: its
+survivor sets are both what selects units and what the funnel answers with. The cache never
+decides what is live, and it cannot hand a build a byte of a declaration the walk dropped.
+
+**What it does not do.** Release caching; the page's own modules (the pack holds the binary's
+modules only, so a module that `Session.packCovers` refuses reads nothing); markup units (refused
+above); a module of a platform read from a directory. A row that cannot be used is not used, with
+the refusals `fast-compiler.md` §8 lists for an edge list: discarding a row and lowering the
+module is always correct.
+
+**What holds it.** The differential tests of the first step (`tests/blackbox/build_test.zig`) gain
+their second-step half: a node program (development and `--release`), a program that suspends and
+a `browser-tea` page, each built with the embedded core and with a copy under `--core-root`, and
+**every file of the two trees byte-identical, maps included** — with `emit_units_embedded`, the
+new `--self-profile` counter, above zero in the embedded run, or the comparison is vacuous; it is
+counted beside `emit_units_lowered`, the units a build lowered itself. A fixture whose program
+never builds a platform constructor exercises the other side — a platform unit falls back — and
+its tree still matches. The `emit/` development goldens, every run hash and the determinism test then
+hold what "not one byte" means. The acceptance is the measurement: the second step is worth about
+235 million of ApiItems's 489 million instructions, the embedded modules' emit, and what it
+really saves is `perf stat`'s median of five on `run/Dictionaries`, `browser/tea/ApiItems` and
+`bench/corpus` as one `--library` build, when the slices land.
+
+**The slices.** (1) `Lower` lowers one unit at a time and a join assembles the module, with no pack
+and no funnel: the output is byte-identical and nothing is reusable yet — the foundation whatever
+the pack stores, and the slice that proves the join against every golden. (2) the funnel, the row
+kind and the maker, with every build still lowering (the rows are made, not read). (3) a
+development build reads rows, falls back where the facts differ, and the counters and the
+differential tests above hold the saving.
+
 ### The release optimiser — items 1, 2, 3 and 5
 
 **One change, four passes, one flag** (§1). Everything here runs **only under `--release`**; the dev
@@ -8122,6 +8278,14 @@ interface (`boundary.md` §9.4), whose `at` positions each built node at the mar
 from: a hole's patch and mount code map to the hole (`{r.maybe}`), a template and its kind to the
 element that opens it, and the walk the lowering invents between them to the mark before it.
 
+*Amended 2026-10-17 (issue #94):* a **cached** module's marks are the ones its own printing
+recorded. The printed text of every embedded module carries its marks in the checked core (§9, *The
+embedded modules' printed text, in the pack*), each with the generated offset relative to its
+unit's first byte and the identity of the name it carries; the join rebases the offsets and
+rebuilds `names` in first-use order, so the map is the one this subsection describes, entry for
+entry. Nothing else moves: a build still writes one map per module with one `SourceMap.write`, and
+`sources`, `sourcesContent` and the relative-URL rule are untouched.
+
 **Determinism** (rule 5): the map is a function of the printed bytes, the marks (in print order)
 and the source; `names` is numbered in first-use order; nothing reads thread timing. The only input
 outside the build's arguments is the working directory, and it enters only as the common prefix
@@ -8202,6 +8366,11 @@ printing (`src/js/Print.zig`), and `Emitter.linkHoisted` (`src/js/Emit.zig`).
 - **No map:** the entry file of the multi-file layout and `_core/_derived.mjs`, for §11.1's reason
   (no beni line wrote them), and each hand-written file that the build writes as a file of its own
   (below).
+
+*Amended 2026-10-17 (issue #94):* **a release build reads no emit row** (§9, *The embedded
+modules' printed text, in the pack*). The release text is entangled with the specialiser, the
+renamer and the hoist, so its marks are, and remain, the ones its own printing records — *What the
+marks survive*, below, unchanged.
 
 **Hand-written JavaScript.** Under `--release`, `Minify.zig` compacts a sibling and the runtimes
 (§9, *Hand-written JavaScript under `--release`*). In development the file is copied, so the file
