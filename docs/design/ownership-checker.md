@@ -492,8 +492,8 @@ base's), each `c ∈ C` must satisfy, in this order:
    overlapping path, in a compatible branch.
 
 *Amended 2026-10-17 (§31.4):* a record update is a demand too, with the same five conditions read for a record
-object: Unescaped against path-qualified escapes, Disjoint deep and field-sensitive, Captured through once
-closures, and Dead at the paths that reach a written field. §31.4 states them.
+object: Disjoint deep, Captured through once closures, and Dead per field — a later read of any field is
+accepted, a written one read first by the lowering (§31.14), and a later whole use refused. §31.4 states them.
 
 ### 8.2 Verdicts
 
@@ -4518,78 +4518,55 @@ only in the fresh numbers of its summaries.
 here. Where this section changes a rule, it wins. It specifies; it builds nothing. Issue #315, part of #322 (O6)
 under #317. The Lean oracle's part is #316.*
 
-### 31.0 Decisions open for the owner
+### 31.0 Decisions
 
-Each is written with a recommendation. Nothing in §31.1–§31.13 waits for them but what each names.
+*Revised 2026-10-17, the same day: the owner answered the four questions of this section's first version, and
+changed the rule (§31.14). The answers stand here; the questions they answered are in this file's history.*
 
-1. **How an explicit record copy is spelled.** A list has `List.copy`. A record has no module, because a record
-   type is structural, and `r.copy` reads a field named `copy` (`language.md` §6.3, *Field access and method
-   calls share a spelling*). Two spellings work today, and neither is enough:
-   - **A record literal that names every field**, `{ a = r.a, b = r.b, f = v }`. It is fresh, so the checker
-     accepts it, and it needs nothing new. But it is long for a wide model, it must be edited whenever a field is
-     added, and it cannot be written at all in a function over an extensible record (`{ r | name : String } →
-     …`), which does not know the other fields. A function of that kind could then never keep the old record and
-     return an updated one. That is a capability gap, and CLAUDE.md rule 7 says it is filled inside the wall.
-   - **Making the value a function**, `defaults ⊤`, which builds a fresh record per call. It fixes only a
-     top-level value.
+**Decided (the owner, 2026-10-17):**
 
-   *Recommendation:* a new core module `Record` with one function, **`Record.copy`**, as `List.copy` is in
-   `List`: a shallow, fresh copy, whose fields are the very values the argument held (`language.md` §11.12).
-   Its argument must be a record, closed or extensible. Today nothing in a type says "some record". So either
-   the checker knows `Record.copy`'s type as a row of its own, or core's signature may write `{ r | } → { r | }`,
-   an extensible record with no named field, which the grammar refuses today (`language.md` §3, the extensible
-   record rule). The second one is smaller and is the recommendation. Its lowering is type-directed, as
-   `Debug.toString`'s is (`backend.md` §4): a closed type's literal in canonical key order (one hidden class),
-   and `{ ...r }` for an extensible one. With it, also **allow a call as an update's target**, so that the fix is
-   one line, as `[ …List.copy acc, x ]` is: `{ Record.copy r | f = v }`. Today the target must be a plain name
-   (`language.md` §6.3), but markup already updates "the spread value — which, unlike a written `{ r | … }`, may
-   be any expression" (`language.md` §11.8's component spread). Until the owner decides, a message's fix is the
-   literal, or a function for a top-level value, written in prose (§31.9).
-2. **`core/` and the platforms are under the same rule, with no exemption.** They are privileged code, which no
-   program can repair, and §28.7 already refuses a rejected or pending line in them. What breaks, by §31.13's
-   measurement:
-   - **`core/Schema`'s engine.** Its `Context` record is updated for a child run and the parent goes on with the
-     old one: `run { c | src = 1 - c.src, dst = 1 - c.dst } inner …` (`core/Schema.beni:2125`), `:2118`,
-     `:2128`, `hostEnds` (`:1053`) and `:3577`. `run` then writes its parameter, and every caller that reads `c`
-     after the call, such as `fieldsFrom`'s next field (`:2706`–`:2736`), would see a context changed by a child.
-     That is real sharing. The fix is core's own: each child context is a new record, built as a literal or with
-     the copy of item 1. Each change is measured against the schema benchmarks (`schema.md` §16).
-   - **`Schema.defaultOptions`** (`core/Schema.beni:251`) is a `pub` top-level record. Every
-     `{ Schema.defaultOptions | maxDepth = d }` in a function is `top-level`, which is the options-record idiom
-     of Elm. *Recommendation:* keep the value, and the message names the copy. Making it `defaultOptions ⊤`
-     would remove the copy from every program, but Elm writes an options record as a value, and the owner mirrors Elm's
-     APIs, so this is the owner's call.
-   - **`browser-tea`'s and `browser-direct`'s `Tea`**: `put state path runs = { state | jobs = … }` and its
-     callers `keyed`, `keyedNow` and `perform`. The approximation of §31.13 flags them as possible only, and the
-     reason is that it cannot tell that `List.filter` makes a fresh list. The checker is expected to accept
-     them. If it does not, the fix is the platform's, never a copy added to get green (§30.7, O1's rule).
-   - `core/Schedule.shifted` (`core/Schedule.beni:244`) writes the `Metadata` record the schedule's runner hands
-     its step. It is accepted only if the runner hands it owned. Either the runner's summary shows that, or its
-     step makes a new record.
-3. **What the measurement says about the rule** (§31.13). At least 17 of the 1 050 programs measured would be
-   rejected for sharing that the text shows. Most of the 39 updates whose base is a top-level value are in a
-   `main` that names the value more than once, so they are rejected too. Under rule 7 each kind buys the
-   guarantee that a record update changes no other holder's value. That guarantee is real: ten of the 17 certain
-   programs (seven TodoMVCs' `nextId`, `PrettyPrinter`'s two updates of one `item`, the two `TypedKeys` pages' `count`) would
-   print something else if they were written in place. *Recommendation:* enforce. Rewrite
-   the corpus programs by the message's fix, as O1 did for lists (§30.9), and retire none: none of them tests
-   persistence for its own sake except `run/ListPersistence` and `run/Records`, which keep their versions with
-   the copy of item 1.
-4. **Captures of a field path.** A closure that reads `model.label` reads the model record whenever it runs, so
-   it holds the record (§31.6). A command or a subscription that keeps such a closure then makes every later
-   write of `model.label` `escaped`. Lowering could read the path when the closure is made, so that the closure
-   holds the field's value and not the record. That is sound, since a field read cannot fail and computes nothing
-   (`language.md` §11.11), and it would make the check more precise without coarsening anything. *Recommendation:*
-   not in this issue. Count the `escaped` lines it would clear when the report mode is built (§31.12, step 1),
-   and decide on that number.
+1. **Liveness per field, and the lowering hoists** (§31.4 item 5, §31.14). A later read of a field that the write
+   did not touch is accepted. So is a later read of a *written* field: the lowering reads it into a temporary
+   before the write, which is Perceus-style reuse, where the compiler makes the old value dead by reading what it
+   needs first and the author does not reorder. A later use of the record **whole** — stored, returned, sent,
+   compared, captured whole, bound to another variable, the base of another update, or handed to a function whose
+   summary reads a written field — is `record_still_used`, because no temporary can stand in for the object. Its
+   fix is `Record.copy`.
+2. **`Record.copy`, spelled `{ Record.copy r | f = … }`**, with a call allowed as an update's base (§31.15). The
+   `record_still_used` error names it as the fix.
+3. **No exemption for `core/` or the platforms.** `Schema.defaultOptions` becomes a function, as `init` did for
+   lists (§22.2), and `core/Schema`'s engine makes fresh child contexts. §31.16 lists every core and platform
+   site.
+4. **Enforce, and rewrite only what the rule still refuses.** `run/Records` and `run/ListPersistence` keep their
+   versions with `Record.copy`, Bike Wars stops updating a top-level constant, and nothing is retired. The report
+   mode records each rejection's **fix class** — `hoisted` (accepted by the lowering's reads), `copy` or
+   `restructure` — so that the cost of the departure from value semantics is a number (§31.12).
+5. **A closure that captures a field path reads the field when it is made** (§31.6). This is the hoisting rule for
+   closures, and the only sound lowering beside a refusal: a closure that held the record would see later writes.
+   The report mode's count decides only whether an eager read is ever a cost worth a refusal instead.
+
+**Open, with a recommendation:**
+
+6. **Whether `Record` is in the prelude.** `List.copy` needs no import, because `List` is a prelude module, and
+   the fix an error offers should be writable without an edit elsewhere in the file. *Recommendation:* `Record`
+   joins the prelude's modules for qualified use only, as `List`, `Debug` and the others are (the prelude,
+   `language.md` §6.2). It exposes no unqualified name, so it takes no name from a program.
+7. **A summary-precise "handed to a function".** Item 1's list says "passed to a function". This section reads it
+   at the paths the callee's summary reads (§16.4 item 1): a callee that reads only untouched fields is not a use
+   of a written one, and one that reads a written field reads it inside its own body, where no temporary of the
+   caller can stand in, so it is refused. *Recommendation:* keep this reading. It is the per-field rule applied
+   through a call, refuses every program the coarser reading would accept wrongly, and accepts `changed model
+   todos`-shaped helpers that read the other fields only. The owner may prefer the coarser reading, under which
+   any whole argument is refused; §31.13 counts both.
 
 ### 31.1 The decision
 
 The owner, 2026-10-17, on #315 and #317: **a record update that the checker cannot prove safe in place is a
 compile error, exactly as a shared list edit is. It is never a spread, never a silent copy, never a warning and
 never an opt-in mode. The checker, in-place lists and in-place records are the base language, on every
-platform, not a platform feature.** The program copies explicitly where it must keep the old value (§31.0
-item 1).
+platform, not a platform feature.** The program copies explicitly where it must keep the old value, with
+`Record.copy` (§31.15). *Revised the same day (§31.14):* **the checker reads liveness per field, and the
+lowering hoists.** A later read of a written field is not a reason to refuse: the lowering reads it first.
 
 So:
 
@@ -4603,7 +4580,7 @@ So:
   with any program"). No rule in this section introduces a cut, a cap or a coarse approximation. Where an
   existing cut touches records (§31.12) it is named with its issue, and it is a precondition, not something
   designed around.
-- **No Lean work in this issue.** Nothing under `proofs/` changes. §26.7's row is rewritten (§31.14), and #316
+- **No Lean work in this issue.** Nothing under `proofs/` changes. §26.7's row is rewritten, and #316
   models the rules later.
 
 ### 31.2 Cells: a record is one
@@ -4636,8 +4613,9 @@ record. The code today:
 ### 31.3 The demand
 
 **A record update `{ r | f₁ = v₁, …, fₙ = vₙ }` is a demand** (§3) of a new kind, `update`. Its **base** is `r`:
-the name as written (`language.md` §6.3), a top-level value, or the expression of a markup spread
-(`language.md` §11.8). Its **written fields** are `F = {f₁ … fₙ}`, and its point comes after every vᵢ (§31.10's
+the name as written (`language.md` §6.3), a top-level value, a call (`{ Record.copy r | … }`, §31.15), or the
+expression of a markup spread (`language.md` §11.8). A call's result is a temporary: the demand's cells are what
+the call answers, `site(ι)` for `Record.copy`, which nothing else holds. Its **written fields** are `F = {f₁ … fₙ}`, and its point comes after every vᵢ (§31.10's
 order). Its base cells are `C = A(r)@ε`, the record objects that `r` may be, together with every `⋆` entry whose
 cell's type may be `r`'s.
 
@@ -4667,35 +4645,39 @@ At an `update` demand, each `c ∈ C` must satisfy, in §8.1's order:
 
 1. **Known**: `c ≠ ⊤`. A record from JavaScript, from a `foreign` with no `fresh` word, from `⊤call`
    (§30.11) or from a schema slot that holds `⊤` (§30.10) is `unknown`, approximately.
-2. **Unescaped**: `c` is not a top-level value's (`top-level`, position). Nor has it joined Esc before the
-   demand **at a read path that overlaps a written field** (`escaped`, approximate). Esc is path-qualified for
-   record cells: what escapes is `(c, q)`, "kept by something that reads `c` at `q`". A command's closure that
-   reads `model.label` escapes `(model's cell, .label)`. A record handed whole to JavaScript escapes `(c, ε)`.
-   A write of `F` conflicts with `(c, q)` when `q` is a prefix of `.f` for some `f ∈ F`, or `.f` is a prefix of
-   `q`. A write of `.count` therefore does not conflict with a command that keeps `model.label`. That is
-   precision, not a relaxation: the command reads nothing that the write changes.
-3. **Disjoint, deep and field-sensitive**: no new field value `vᵢ`, closures expanded, holds `c` at ε, or at a
-   path that overlaps a written field. The first would make the record contain itself, which no value semantics
-   can produce. The second would let the new field see its own write: `{ r | f = λ⊤ → r.f }` would answer the
-   closure itself where value semantics answers the old `f`. A closure over the base that reads only other fields
-   (`{ r | f = λ⊤ → r.g }`) is accepted. It reads `r.g` from the written object, which a later write of `.g`
-   meets through condition 5.
+2. **Unescaped**: `c` is not a top-level value's (`top-level`, position), and it has not joined Esc before the
+   demand (`escaped`, approximate). What escapes is the record **whole**: handed to JavaScript, kept by a
+   `foreign` without words, or captured whole (`λ⊤ → model`) by a closure that a command, a subscription or a
+   view handler keeps. A closure that reads only a field path, `λs → … model.label …`, reads the field when it is
+   made (§31.6), so it keeps the field's value and not the record, and the record does not escape through it.
+   *Revised the same day (§31.14):* the first version qualified Esc by read path; the eager read makes that
+   unnecessary, and nothing is lost: the closure no longer reads the record at all.
+3. **Disjoint, deep**: no new field value `vᵢ`, closures expanded, holds `c` whole. That would make the record
+   contain itself, which no value semantics can produce. A field value that reads a field of the base is
+   evaluated before any store (§31.10), and a closure among the new values that captures a field path reads it
+   when it is made (§31.6): `{ r | f = λ⊤ → r.f }` answers the old `f`, as value semantics does, and is accepted.
+   *Revised the same day (§31.14):* the first version refused it.
 4. **Captured** is not a condition of its own. A write of a captured record inside a lambda makes the lambda
    **once** (§18.8): its creation is a demand on the capture, at the written fields, and each call of it a
    demand on the closure. `captured-edit` stays for a capture the walk cannot place in a closure.
-5. **Dead, field-sensitive**: no pending operand holds `c` (`held-operand`). And no local holder of `c` is used
-   after the demand, in a compatible branch (§7.2), **at a path that reaches a written field**. If a holder `h`
-   holds `c` at path `q`, a later use of `h` at `u` conflicts when `u` is a prefix of `q` (the record read whole),
-   or when `u` extends `q` by a step in `F`. A use at `q.g…` with `g ∉ F` does not conflict. So:
-   - after `s = { r | a = 1 }`, a read of `r.b` is accepted, and a read of `r.a` or of `r` whole is `later-use`;
-   - a local bound to a value inside the record, `x = r.a`, holds that value (a snapshot), not `r`'s object, so
-     a later read of `x` is not a use of `c`. Only its own cells are;
-   - a use through a call is at the paths the callee's summary reads (§16.4 item 1), so handing `r` to a function
-     that reads only `r.b` after writing `r.a` is accepted;
-   - an identity comparison, `==` at ε, or a whole value stored, returned or sent, reads every field;
-   - a later update's base use reads every field but its own (§7.1), so `next = { model | count = n }` followed,
-     in a compatible arm, by `{ model | heard = … }` is `later-use`: the second would carry the written `count`
-     (`browser/tea/TypedKeys`, §31.13).
+5. **Dead, per field** (*revised the same day*, §31.14): no pending operand holds `c` (`held-operand`), and no
+   local holder of `c` is used **whole** after the demand, in a compatible branch (§7.2). A holder `h` that holds
+   `c` at path `q` and is used after the demand at `u`:
+   - `u` extends `q` by a field `g ∉ F`: an untouched field, unchanged by the write. Accepted, nothing to do;
+   - `u` extends `q` by a field `f ∈ F`: a written field. Accepted, and the read becomes a **hoist** of the
+     demand: the lowering reads `c.f` into a temporary before the write and the later read reads the temporary
+     (§31.14). A pattern that destructures the record reads its fields the same way;
+   - `u` is a prefix of `q`, the record or a container of it used whole: `later-use` or `alias`, exact. That is
+     a store of it into a structure, its return, a send, `==` at ε, its binding to another variable, a whole
+     capture, and its use as the base of another update (which reads every field but its own, §7.1);
+   - `u` is an argument of a call: the call reads it at the paths the callee's summary reads (§16.4 item 1). A
+     read there of an untouched field is accepted; a read there of a written field, or a whole use, a keep or an
+     escape, is a whole use for the caller, since the read is in the callee's body (§31.0 item 7).
+
+   So after `s = { r | a = 1 }`, reads of `r.a` and `r.b` are accepted, the first hoisted, and `( s, r )` is
+   `later-use`. A local bound to a value inside the record, `x = r.a`, holds that value, not `r`'s object, and is
+   no holder of `c`. `next = { model | count = n }` followed, in a compatible arm, by `{ model | heard = … }` is
+   `later-use`: the second update's result is the object the first wrote (`browser/tea/TypedKeys`, §31.13).
 6. **Exclusive contents** (§18.2, §18.4) when the record is an element. A callback that writes the record it is
    handed by a destructive read (`List.map rows (λr → { r | done = True })`, `List.update`, `Dict.update`) relies
    on its container's exclusivity: no record object at two positions. Since a record has a cell, `[ r, r ]` now
@@ -4723,16 +4705,21 @@ and their later additions. No cause is new: a record demand is rejected for the 
 
 ### 31.6 Closures, messages and commands
 
-- **A capture of `x` at path `q` holds every record cell on `q`'s prefixes**, at the rest of the path. The closure
-  dereferences `x` when it runs, and it does not snapshot `x.q` when it is made. Its captures are used wherever
-  the closure is consumed (§7.3), so it is a holder under §31.4 item 5 like any other, field-sensitively: a
-  closure that reads `model.label` does not hold `model.count`. §31.0 item 4 asks whether lowering should
-  snapshot field paths instead.
+- **A closure that captures a field path reads it when the closure is made** (*revised the same day*, §31.0
+  item 5). A capture of `x` at a path `q` that reaches into a record — `model.label` — is lowered as a read of
+  `x.q` at the closure's creation, bound to a temporary the closure captures. The closure then holds the field's
+  value, not the record, and no later write of the record changes what it sees: value semantics, since the
+  closure of value semantics captured the old record, whose `label` never changes. It is the only sound lowering
+  beside a refusal; a closure that held the record would see later writes. The read is pure and cannot fail
+  (`language.md` §11.11), so making it earlier is unobservable. A capture of a record **whole** (`x` itself, used
+  whole in the body) holds the object, and is a whole use wherever the closure is consumed (§31.4 item 5).
+  Report mode counts the eager reads (§31.12).
 - **A send gives up every cell its payload holds** (§23.2, `bit_d`). Record objects are among those cells now, so
   `send (Saved model.form)` from a body whose arm keeps `model` is `later-use` at the send, as a list is.
-- **A command, a subscription or a view handler that keeps a closure** escapes what the closure reads, at the
-  paths it reads (§31.4 item 2): `Cmd.perform λsend → … model.query …` escapes `(model, .query)`. A later
-  dispatch's write of `model.query` is then `escaped`, and its write of `model.results` is not.
+- **A command, a subscription or a view handler that keeps a closure** escapes what the closure holds (§31.4
+  item 2). `Cmd.perform λsend → … model.query …` holds the value of `model.query` read when it was made, so a later
+  dispatch's write of `model.query` is accepted. One that captures `model` whole escapes the model record, and a
+  later write of it is `escaped`.
 - **View events** (§23.6). A view event's payload is borrowed, and a record in it is no exception:
   `onClick={Edit todo}` hands `update` a record that the model and the render's handlers still hold. An arm that
   writes it, `Edit t → { model | todos = … { t | … } … }`, is `payload`, approximate. The program writes the
@@ -4748,8 +4735,13 @@ and their later additions. No cause is new: a record demand is rejected for the 
 - **The caller's side** (§16.4 item 3): a call-site demand on `aᵢ`'s cells at `q`, checked by §31.4 with
   `F = {f, g}`: Disjoint against the other arguments and against `aᵢ`'s other paths, and Dead field-sensitively.
   It reaches the caller's own summary when the cell is its parameter. So `shift dx p = { p | x = p.x + dx }`
-  writes `π2 W{x}`, and `run/Records`' `shift 3 origin` followed by `origin.x` is rejected at the call
-  (`tests/corpus/run/Records.beni:18`–`:30`).
+  writes `π2 W{x}`. In `run/Records`, `shift 3 origin` followed by `origin.x` would be hoisted at the caller, but
+  the next `(shift 3 origin).x` hands `origin` whole to a callee that reads its written `x`, which is a whole use:
+  rejected at the call, fixed with `shift 3 (Record.copy origin)` (`tests/corpus/run/Records.beni:18`–`:30`).
+  A caller's later reads of a written field of its argument are hoisted before the call, as after an update.
+- **Hoists across a call are the caller's.** A read inside the callee's body of what it wrote is the callee's
+  own (§31.14 applies there). A read of a written field by the caller after the call is the caller's hoist, placed
+  before the call.
 - **Function values** (§16.5, §30.4): a lambda that writes its record parameter is a writing class like any
   other: checked where its calls are in sight and `pending` where it leaves sight. `{ handler = λr → { r | … } }`
   stored in a record is pending, and so an error.
@@ -4789,48 +4781,61 @@ four, with the subject a record. They are appended to `language.md` §10's catal
 
 A message has §28.6's fixed shape. It names **what is shared** (the record and the holder that keeps it),
 **where** (the update, the holder, and the later read as places, with carets), **what the program would see** (the
-later read sees the written field's new value), and **what to write instead**: read the field before the update
-where that is enough, or copy the record. The verdict line says whether this is sharing the checker can see or a
-limit of the checker (`plans/direct-rewrite.md` §9: a language rule never says "not yet", and a compiler limit
-says so). The copy is written as §31.0 item 1 decides. Until then the fix is in prose: a record literal naming
-every field, or, for a top-level value, a function that builds it. For example
-(`tests/corpus/browser/tea/TodoMVC.beni:147`):
+whole use sees the written fields' new values), and **what to write instead**: `{ Record.copy r | … }`
+(§31.15), a restructuring where one exists, and for a top-level value a function that builds it. The verdict line
+says whether this is sharing the checker can see or a limit of the checker (`plans/direct-rewrite.md` §9: a
+language rule never says "not yet", and a compiler limit says so). For example (`tests/corpus/browser/tea/TypedKeys/Main.beni:65`–`:81`), where the second update's base is the
+object the first one wrote:
 
 ```
--- RECORD CHANGED WHILE STILL IN USE --------------------------- TodoMVC.beni:147:25
+-- RECORD CHANGED WHILE STILL IN USE ------------------------------ Main.beni:65:12
 
-`{ model | draft = "", nextId = … }` changes `model` itself, but `model.nextId`
-is read afterwards.
+`{ model | count = n }` changes `model` itself, but `model` is used whole
+afterwards, as the base of another update.
 
-147|                        { model | draft = "", nextId = model.nextId + 1 }
-                            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the record is changed in place here
-148|                        (model.todos ++ [ { id = model.nextId, title = title, completed = False } ])
-                                                    ^^^^^^^^^^^^ and `model.nextId` is read here, after the change
+65|    next = { model | count = n }
+              ^^^^^^^^^^^^^^^^^^^^^ the record is changed in place here
+81|            ( { model | heard = model.heard ++ [ "${tagger} heard ${name}" ] }, Cmd.none )
+                  ^^^^^ and `model` is used here, after the change
 
-If the record were changed in place, the new todo's `id` would be the next
-number, not this one.
+If the record were changed in place, this update would start from the changed
+record, and carry its new `count`.
 
-Read it before the change:
+To change a copy and leave `model` as it was, copy it there:
 
-146|                    id = model.nextId
+65|    next = { Record.copy model | count = n }
 
-and write `id` on line 148, or keep the old record with a copy.
+Or, if only the `ByAlpha` … `ByPost` arms need `next`, compute it in those arms.
 
-This is sharing the checker can see: `model.nextId` is read on line 148, after
-the change on line 147.
+This is sharing the checker can see: `model` is used whole on line 81, after the
+change on line 65.
 ```
+
+A read of a field after the change is never in such a message: the lowering reads it first (§31.14). The first
+version of this section showed TodoMVC's `model.nextId` here. That program is correct under value semantics, and
+it is accepted by the revised rule.
 
 ### 31.10 What the lowering consumes, and what it emits
 
 **The fact.** A module reaches lowering only if its check, the ownership pass included, reported no error
 (`Session.zig:2249`–`2258`, §28.3). A cache entry exists only for such a module (§28.4). So in a program that
-builds, **every record update was accepted, and every one is lowered in place**. The fact the lowering reads is
-a per-module set, indexed like BIR's instructions: the demands the pass accepted. The list demands of O5 and the
-record updates of this section share it. It reaches `src/js/Lower.zig` as the dispatch table does: as a field of
-the `Lowerer`, beside `dispatch` (`src/js/Lower.zig:151`). Under runtime safety, `Lower` asserts that every
-`record_update` it lowers is in the set. For a module installed from the cache or from the checked core, the set
-is "every demand", because that entry is clean by construction, so it is not stored. No lowering ever chooses
-between a spread and an assignment, and there is no spread path left to fall back to.
+builds, **every record update was accepted, and every one is lowered in place**; no lowering chooses between a
+spread and an assignment, and there is no spread path to fall back to. What the lowering needs from the checker
+is therefore not a verdict but **the hoists** (*revised the same day*, §31.14). Per module, indexed by BIR
+instruction, the pass publishes a table: for each accepted demand — a `record_update`, or a call whose callee
+writes a record argument (§31.7) — the written fields whose old values are read later, and for each such field:
+
+- the holder whose version the reads name (a local, or the base);
+- the read instructions to rewrite: `field_access` chains, record-pattern bindings, and the captures of a lambda
+  read when it is made (§31.6), which are listed at the lambda;
+- the **placement**: the instruction before which the temporary is bound (§31.14's rule).
+
+The list demands of O5 share the table, with no hoists. It reaches `src/js/Lower.zig` as the dispatch table does,
+as a field of the `Lowerer` beside `dispatch` (`src/js/Lower.zig:151`). Because a cached module is lowered from
+its cached BIR, the table is a section of the module's **cache entry** and of the checked core, beside the
+summary block (§28.4), and its format is versioned with it. It names only BIR instructions and locals, functions
+of the module's source, so determinism holds (§10). Under runtime safety, `Lower` asserts that every
+`record_update` it lowers is an accepted demand of a module whose entry is clean.
 
 **The order** (`language.md` §6's *Evaluation order*, unchanged: the base, then the updated fields in written
 order). The base is evaluated into a temporary `b`, and each new value into a temporary `tᵢ`, in written order.
@@ -4886,18 +4891,26 @@ keeps nothing across renders.
    `dump --stage=ownership`, with errors off. This is the faithful version of §31.13's measurement, run on the
    same program set, and its numbers replace §31.13's. Fixtures under `tests/corpus/ownership/` for each rule of
    §31.4–§31.8, including the three of #315: a stored `msg` payload, a captured `model.form` and a `For` item. Also
-   the mutation controls: a checker with Dead not field-sensitive, a checker with no held-operand for records, and
-   one with no Disjoint on records. Each of these must fail at least one fixture, as C2's `RecordUpdate2` witness
-   does.
-2. **Enforcement**: §31.9's codes, the corpus rewritten by their fixes (§31.0 item 3), and `core/` and the
-   platforms clean (§31.0 item 2).
-3. **The lowering** (§31.10) with the identity skips removed (§31.11). Evidence:
+   the mutation controls: a checker that hoists a whole use, one with no held-operand for records, one with no
+   Disjoint on records, and one that publishes a hoist with the wrong placement. Each must fail at least one
+   fixture, as C2's `RecordUpdate2` witness does. **Each rejection's line records its fix class**: `copy` (a
+   whole use the copy answers), `restructure` (a top-level base, a value made a function, an arm reordered), and
+   beside the rejections a count of the accepted demands that carry hoists (`hoisted`), and of the eager reads of
+   captured field paths (§31.6). The `total` line sums them per class, so the cost of the departure from value
+   semantics is a number per program, and §31.0 item 5 is decided on it.
+2. **Enforcement**: §31.9's codes; the corpus rewritten only where the rule still refuses (§31.0 item 4); `core/`
+   and the platforms clean (§31.16).
+3. **The lowering** (§31.10, §31.14): the stores and the hoists, with the identity skips removed (§31.11).
+   Evidence:
    - every `run/`, `browser/` and `emit/` golden, recorded under spreads before this slice, which is value
      semantics by construction;
    - the stale-read sanitiser extended to records: each record object carries a version, and a read through a
      holder older than the object's last write traps;
    - a generated differential test: programs whose expected output is recorded with the compiler of the commit
-     before this slice, run in place under the sanitiser.
+     before this slice, run in place under the sanitiser. The generator writes reads of written fields after an
+     update in every position §31.14 names (the next argument, a later `let`, another arm, after a `case` that
+     writes in one arm, inside a closure made before and after the write), so that a misplaced hoist is a
+     difference.
 
    No test-only spread lowering is kept: it would be the fallback the owner refused (`browser-direct.md`, C3 as
    amended). `browser-inline` then emits an in-place field write for a single-module program, pinned by an
@@ -4906,62 +4919,74 @@ keeps nothing across renders.
 ### 31.13 Measured (2026-10-17): a static approximation, not the checker
 
 **Why an approximation.** The checker gives a record no cell (§31.2), so it cannot count record rejections. A
-faithful count needs the checker change of §31.12's first slice, and this slice changes no `src/`. The number
-below is therefore a **conservative syntactic approximation**, labelled as one. A script walks every module's
+faithful count needs the checker change of §31.12's first slice, and this slice changes no `src/`. The numbers
+below are therefore a **conservative syntactic approximation**, labelled as one. A script walks every module's
 `beni dump --stage=bir` in §2.1's evaluation order:
 
 - it records uses at their consuming instruction (§7.1) and branch contexts (§7.2);
 - it records holders: locals bound to a variable path, pattern bindings with their paths, closures' captures
   expanded where the closure is consumed, and pending temporaries;
-- it applies §31.4's conditions as written: field-sensitive Dead, held-operand, `top-level` and `read-only`;
-- for `update`, `view` and `subscriptions`, it applies field-sensitive escapes through command, subscription and
-  handler closures;
+- it applies §31.4's conditions: per-field Dead (§31.4 item 5), held-operand, `top-level` and `read-only`;
+- for `update`, `view` and `subscriptions`, it applies escapes through command, subscription and handler closures
+  that capture the model whole;
 - within one module, it carries the "writes its parameter" bit through calls of top-level functions (§31.7).
 
 Its set is the one of `bench/ownership-everywhere.mjs`: `run/`, `browser/` (all four kinds), `emit/`, the three
-examples, the ten bench apps, `bench/corpus`, `core` and the five platforms. That is 1 050 programs. Bike Wars'
-source is counted three times, as its two pages read it.
+examples, the ten bench apps, `bench/corpus`, `core` and the five platforms. That is 1 050 programs, with 1 041
+record updates in 267 of them. Bike Wars' source is counted three times, as its two pages read it.
+
+**Under the rule as revised (§31.0 item 1, §31.14):**
 
 | What | Count |
 |---|---|
-| programs with a record update | 267 |
-| record updates | 1 041 |
-| programs with **a certain rejection** | **17** (20 updates) |
-| programs with a possible rejection | 51 (218 lines, 54 of them call-site lines in `core/Schema`) |
+| updates with a later read of a written field, hoisted by the lowering | 15 (14 accepted with nothing else to decide) |
+| programs with **a certain rejection**: a whole use after an update | **9** (12 updates; 7 distinct sources) |
+| programs with a possible rejection | 51 (204 lines, 54 of them call-site lines in `core/Schema`) |
+| … of which a whole record handed to a call (§31.0 item 7) | 85 lines in 11 files; with the certain ones, 16 files under the coarser reading |
 
-**What "certain" means.** A certain rejection is one the checker cannot accept under §31.4 whatever its
-summaries say:
-- a later read of a written field, or of the whole record, by a field read, a store, a return or another update's
-  base;
-- a temporary that holds the record;
-- a top-level base in a function.
+**What "certain" means.** A certain rejection is a whole use of the old record after an update, which the checker
+refuses whatever its summaries say: a store, a return, a binding, the base of another update, a whole capture, a
+temporary that holds the record, or a top-level base in a function. So **9 programs is a lower bound** on the
+programs §31.4 refuses, short of a defect in the approximation. It misses, for example, holders across modules,
+holders inside containers it does not project, escapes to JavaScript and exclusive-contents failures.
 
-So **17 programs is a lower bound** on the programs §31.4 rejects, short of a defect in the approximation. It
-misses, for example, holders across modules, holders inside containers it does not project, escapes to
-JavaScript and exclusive-contents failures.
-
-**What "possible" means.** A possible rejection rests on something only summaries decide: a whole record handed to
-a call, a callback whose callee the script does not know, a payload, a lambda out of sight, or an update in a `main`
-whose top-level base the read-once transfer of §28's 2026-10-15 amendment might accept. So **51 is an
-approximation, not an upper bound**: the misses above can add to it. 39 of the possible lines are top-level
-bases in a parameterless `main`. Most of those are rejected too, since `main` names the value more than once
+**What "possible" means.** A possible rejection rests on something only summaries decide: a whole record handed
+to a call, a callback whose callee the script does not know, a payload, a lambda out of sight, or an update in a
+`main` whose top-level base the read-once transfer of §28's 2026-10-15 amendment might accept. So **51 is an
+approximation, not an upper bound**: the misses above can add to it. 39 of the possible lines are top-level bases
+in a parameterless `main`. Most of those are refused, because `main` names the value more than once
 (`run/SchemaRunners` names `note` nine times).
 
-**The certain ones, classified by hand:**
+**The certain ones, and their fix class** (§31.12):
 
-| Program | What | Kind |
+| Program | What | Fix |
 |---|---|---|
-| `browser/tea/TodoMVC`, `browser/direct/TodoMVC`, `TodoRouting`, the four `bench/todomvc` apps (7) | `changed { model \| draft = "", nextId = model.nextId + 1 } (model.todos ++ [ { id = model.nextId, … } ])`: the second argument reads `nextId` after the first wrote it (`TodoMVC.beni:147`–`148`) | **accidental sharing**: in place, every new todo's id would be off by one |
-| `browser/tea/TypedKeys`, `browser/direct/TypedKeys` (2) | `next = { model \| count = n }`, then `{ model \| heard = … }` in another arm of a later `case` (`Main.beni:65`, `:81`) | **accidental sharing**: the `Heard` arm would carry the written count |
-| `bench/corpus` (`PrettyPrinter`) | `[ { item \| doc = left }, { item \| doc = right }, …rest ]` (`:125`, `:167`) | **accidental sharing**: both items one object |
-| `run/SchemaDepth`, `run/SchemaDeclDepth` (2) | `Show.issue { i \| path = [] } ++ … List.length i.path` (`:99`); and `bound d = { defaultOptions \| maxDepth = d }` | a test that reads the old field; the options idiom (§31.0 item 2) |
-| Bike Wars ×3 | `{ initModel \| status = Running }` in `handleInput` (`Game.beni:148`) | **top-level**: in place it would change the initial model of every later restart |
-| `run/Records` | `shift 3 origin`, then `origin.x` | **persistence, on purpose**: a value-semantics test, kept with a copy |
-| `run/ListPersistence` | versions of a record model kept in a `Dict` and stepped | **undo-history-like persistence**: kept with a copy, as its lists already are (§30.9) |
+| `browser/tea/TypedKeys`, `browser/direct/TypedKeys` (2) | `next = { model \| count = n }`, then `{ model \| heard = … }` in an arm of a later `case` (`Main.beni:65`, `:81`): the second update's base is the written object | `restructure` (compute `next` in its arms), or `copy` |
+| `bench/corpus` (`PrettyPrinter`) | `[ { item \| doc = left }, { item \| doc = right }, …rest ]` (`:125`, `:167`): the first result waits while the second writes the same object | `copy`: `{ Record.copy item \| doc = right }` |
+| `run/SchemaDepth`, `run/SchemaDeclDepth` (2) | `bound d = { defaultOptions \| maxDepth = d }`, a top-level base in a function | `restructure`: `Schema.defaultOptions ⊤` (§31.16) |
+| Bike Wars ×3 | `{ initModel \| status = Running }` in `handleInput` (`Game.beni:148`) | `restructure`: `initModel ⊤` |
+| `run/ListPersistence` | versions of a record model kept in a `Dict` and stepped | `copy`, as its lists already are (§30.9) |
+
+`run/Records` (`shift 3 origin` again after `origin.x`) is not among them only because the script counts a whole
+record handed to a call as possible; under §31.0 item 7 it is refused too, and fixed with `copy` (§31.7).
+
+**The first count, reclassified.** This section's first version counted 17 programs as certain under a
+per-record rule, which refused any later read of a written field. Ten of them were correct programs that such a
+rule would refuse: the seven TodoMVCs, whose `changed { model | draft = "", nextId = model.nextId + 1 }
+(model.todos ++ [ { id = model.nextId, … } ])` reads `nextId` in the next argument (`TodoMVC.beni:147`–`148`), and
+`run/SchemaDepth`'s and `run/SchemaDeclDepth`'s `Show.issue { i | path = [] } ++ … List.length i.path` (`:99`).
+They are correct under value semantics, and they are **not** sharing and not defects: the read after the write is
+a cost of an in-place rule, not a bug the rule catches. The revised rule hoists them, and they are accepted.
+TodoMVC's `commit` (a closure capturing `ed.id` from `model.editing` before `{ model | editing = Nothing }`) moved
+from `captured` to an eager read in the same way. The other seven programs of the first count are the ones above.
+The first version called `PrettyPrinter` and `TypedKeys` accidental sharing. That was wrong as well: both are
+correct under value semantics, and the rule refuses them because the old record is used whole, so they pay a copy
+or a restructuring.
 
 **A sample of the possible ones:**
-- the `core/Schema` engine's `Context` is real sharing (§31.0 item 2);
-- `browser/tea/QueuedListSnapshot`'s captured snapshot is real; it is the record twin of its list case;
+- the `core/Schema` engine's `Context` is refused under §31.0 item 7: `fieldsFrom` hands `c` whole to the next
+  field's `descend`, whose `run` reads `c.src` (§31.16);
+- `browser/tea/QueuedListSnapshot`'s captured snapshot is a whole capture, the record twin of its list case;
 - TodoMVC's `List.map model.todos (λt → { t | completed = … })` followed by `changed model …`, whose summary
   reads only `model`'s other fields, is an idiom the checker is expected to accept;
 - `Tea.put` and `core/Schedule.shifted` are flagged only because the script cannot see that `List.filter` and
@@ -4969,5 +4994,106 @@ bases in a parameterless `main`. Most of those are rejected too, since `main` na
 - the Conduit `…Errors` pages' "payload" lines are the script's error: it does not shift a tuple scrutinee's parts
   by their index.
 
-The script was run once, outside the tree, and it is not part of the build. Its rules are the list above, and
-§31.12's first slice replaces its numbers with the checker's.
+The script was run outside the tree, and it is not part of the build. Its rules are the list above, and §31.12's
+first slice replaces its numbers with the checker's.
+
+### 31.14 Liveness per field, and the hoist (the owner, 2026-10-17)
+
+The owner's rule, which revises §31.4 item 5: the checker already computes liveness per `(variable, path)` (§7.1,
+thesis §3.9). The write rule reads it per field, and the lowering makes the old value dead by reading what it
+needs first. This is Perceus-style reuse (Reinking et al., "Perceus", PLDI 2021): the compiler reuses the object,
+and the author does not reorder the program to let it.
+
+**What is hoisted.** For an accepted demand `D` on the object `c`, writing `F`, a **hoist** is a field `f ∈ F`
+together with the later reads of `c.f` through holders whose version precedes `D`: the base, a local bound to
+`c` before `D`, a pattern variable bound to `c`, and captures of `c.f` in closures (§31.6). A read through the
+update's own result, or through anything bound after `D`, names the new version and is not hoisted.
+
+**Where the temporary goes.** The lowering binds `t = h.q.f` (the holder's path to `c`, then the field) at the
+**placement** `P`, and rewrites every read of the hoist to read `t`. `P` is:
+
+- **immediately before the stores of `D`**, after its new values are evaluated (§31.10's order), when `D`'s scope
+  dominates every read of the hoist: a later `let` of the same block, a later argument of the same call, the
+  arms of a `case` nested after `D`;
+- otherwise **in the nearest enclosing scope that dominates `D` and every read**, immediately before the statement
+  of that scope that contains `D` — for a write in one arm of a `case` whose result is read after the `case`, before
+  the `case`. The scope is a block, an arm or a function body; `D` and its later reads are always in one frame
+  (§7.3), so it exists;
+- and in either case **after the holder is bound and before the first accepted write of `c.f` that the read's
+  version does not see**, on every path from the holder's binding to the read. When two updates write `f` in turn
+  (`s = { r | a = 1 }; u = { s | a = 2 }; … r.a`), the read of `r.a` is placed before the first.
+
+For a capture of a field path, `P` is the closure's creation (§31.6). For a write made by a callee (§31.7), it is
+before the call.
+
+**Soundness.** The argument is the thesis's (§6.3, versions and stale references), with one step for the hoist:
+
+1. *No other writer of the old version exists once `D` is accepted.* §31.4's conditions show that no holder of `c`
+   is used whole after `D` and that no pending operand holds it. So the only later accesses to `c` that see a
+   version older than `D` are field reads, and a read of an untouched field returns what it returned before `D`.
+2. *A hoisted read returns the value of the version it names.* `t` is bound before every write of `c.f` that the
+   read's version does not see, and after the holder's binding, so it holds `c.f` as that version had it, which is
+   what value semantics reads at the original read.
+3. *Moving the read is unobservable.* A field read is pure and cannot fail: a record always has its fields, and the
+   type says which (`language.md` §11.11, "a field read of a record cannot fail and computes nothing"). So the read
+   may leave a branch that would not have run it, an arm, or the body of a closure that runs later or never. It
+   costs one load where it did not run, and changes no value and no effect. `Debug` cannot see a field read.
+4. *Aliases are whole uses.* A holder the checker cannot read field by field — a container that holds `c`, a whole
+   capture, a call result that may be `c`, a binding of `c` made after `D` — is a whole use and refused. So every
+   access that could see `c` after `D` is either a hoisted read, a read of an untouched field, or a read of the new
+   version.
+
+**Where it happens.** In the lowering (`src/js/Lower.zig`), from the checker's per-field facts: the table of
+§31.10. BIR is unchanged, and the checker does not rewrite the program. The optimiser barrier (§31.10) keeps
+`t`'s binding where the table put it: item 1 may not move it past `D`.
+
+**What it costs.** One load and one local per hoisted field, which is what the author would have written to make
+the program in-place-safe by hand. It is counted by report mode (§31.12).
+
+### 31.15 `Record.copy`, and a call as an update's base (the owner, 2026-10-17)
+
+**The module.** `core/Record.beni`, a new core module with one value:
+
+```elm
+--| A shallow, fresh copy of a record: the same fields, holding the very same
+--| values (`language.md` §11.12), in an object nobody else holds.
+pub copy : { r | } → { r | }
+```
+
+- **The type `{ r | }`** is an extensible record with no named field, "any record". The grammar refuses it
+  today (`language.md` §3, `TypeAtom`'s extensible-record rule takes one field or more). It is admitted everywhere,
+  not only in core, so a program can write a generic helper over any record (CLAUDE.md rule 7). It unifies with
+  every record type, closed or extensible, and with nothing else.
+- **Its row** is asserted, as `List.copy`'s is (§16.8): π₁ `R`, and every field of π₁ `A`; `res ε fresh₁`, whose
+  every field is π₁'s at that field. It writes nothing and is not a demand.
+- **Its body** is written over `Js`, as `List.copy`'s is (§3.4): `({ ...r })`. The spread copies the keys in their
+  order, so the copy has the record's hidden class, and under `--release` the short names are already the keys.
+- **Where it is**: `Record` is a prelude module for qualified use (§31.0 item 6, recommended), so the fix an error
+  offers needs no import.
+
+**The language change.** `language.md` §6.3 says "the update target is a plain name". It becomes: **the base of an
+update is a name, or a call** — an application whose head is a name or a qualified name and whose arguments are
+atoms, `{ Record.copy r | f = v }`, `{ defaults ⊤ | f = v }`. Any other expression is written in parentheses,
+`{ (pick model) | f = v }`. The grammar's update rule (`language.md` §3, *Atom*) changes from `'{' lower_ident '|'
+Field … '}'` to `'{' UpdateBase '|' Field … '}'` with `UpdateBase := lower_ident | qualified_lower Arg* |
+lower_ident Arg+ | '(' Expr ')'`. A record literal still begins `lower_ident '='`, so one token of lookahead
+after the name still tells a literal from an update. The formatter keeps the base as written. Markup's spread
+(`language.md` §11.8) already updates an expression and is unchanged.
+
+`{ Record.copy r | f = v }` is then the update of a fresh object: its demand's cells are `Record.copy`'s
+`fresh₁`, accepted `call`, and `r` is only read.
+
+### 31.16 Core and the platforms (the owner, 2026-10-17: no exemption)
+
+Every site of `core/` and the platforms that §31's measurement or reading found, and what each becomes:
+
+| Site | Today | Becomes |
+|---|---|---|
+| `core/Schema.beni:251`, `pub defaultOptions : Options` | a top-level record, updated by programs and passed to every `…With` | **a function**, `defaultOptions : ⊤ → Options`, as `init` became one (§22.2); its six readers in core (`decode`, `encode`, `read`, `write`, `parse`, `print`, `:2952`–`:3086`) call `defaultOptions ⊤` |
+| `core/Schema.beni:1053` (`hostEnds`), `:2118`, `:2125`, `:2128`, `:3577` | child contexts as `{ c \| … }` while the parent goes on with `c` (`fieldsFrom`, `:2706`–`:2736`) | **fresh child contexts**: each child's `Context` a record literal, or `{ Record.copy c \| … }`; measured on the schema benchmarks (`schema.md` §16) |
+| `core/Schema.beni:1225`, `{ last \| key = external, renamed = True }` | an update of a record the engine built | expected accepted; checked in report mode |
+| `core/Schedule.beni:244`, `{ m \| attempt = …, elapsed = since }` | writes the `Metadata` the schedule's runner hands its step | accepted if the runner's summary hands it owned; otherwise the step makes a new record |
+| `platforms/browser-tea/Tea.beni:203`, `:230`, `:364`, `:472`, `:480`; `platforms/browser-direct/Tea.beni:132`, `:159`, `:293`, `:401`, `:409` | the driver's `State` record (`model`, `jobs`, `live`) | expected accepted: each is the driver's own state, threaded; `put`'s callers are flagged by the approximation only because it cannot see `List.filter` makes a fresh list. A refusal here is fixed in the platform's code, never by a copy added to get green (§30.7, O1's rule) |
+
+`core/` and every platform must hold no rejected or pending record line when beni is built (§28.7). Every row is
+checked by the report-mode slice before enforcement.
