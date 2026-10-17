@@ -72,7 +72,9 @@ pub const magic = "BENIOWN\x00";
 /// 13 names a carried lambda by where it is made, so a fixpoint over the
 /// walk's cells settles, and a fixpoint that does not is the `fixpoint` limit
 /// (§20.4, amended 2026-10-16).
-pub const version: u32 = 13;
+/// 14 records whether a function parameter's `need` comes only from a send
+/// (§23.5, amended 2026-10-17).
+pub const version: u32 = 14;
 
 pub const Error = error{Bad} || Allocator.Error;
 
@@ -451,7 +453,7 @@ fn writeSummary(w: *Writer, arena: Allocator, s: *const Summary) Allocator.Error
     for (funs) |f| {
         try w.int(f.param);
         try w.byte(@backingInt(f.calls));
-        try w.byte(@as(u8, @intFromBool(f.need)) | @as(u8, @intFromBool(f.seen)) << 1);
+        try w.byte(@as(u8, @intFromBool(f.need)) | @as(u8, @intFromBool(f.seen)) << 1 | @as(u8, @intFromBool(f.sends)) << 2);
         try w.int(f.send);
     }
 
@@ -695,8 +697,8 @@ fn readSummary(r: *Reader, depth: u32) Error!Summary {
         const param = try r.int();
         const calls = try r.enumOf(Ownership.Calls);
         const bits = try r.byte();
-        if (bits > 3) return error.Bad;
-        f.* = .{ .param = param, .calls = calls, .need = bits & 1 != 0, .seen = bits & 2 != 0, .send = try r.int() };
+        if (bits > 7) return error.Bad;
+        f.* = .{ .param = param, .calls = calls, .need = bits & 1 != 0, .seen = bits & 2 != 0, .sends = bits & 4 != 0, .send = try r.int() };
     }
 
     const xreq = try readAtoms(r);

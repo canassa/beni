@@ -1,5 +1,5 @@
 module LambdaPassNeed
-  34:22 value <lambda>: rejected need: LambdaPassNeed.load edits what it returns, which may be a list it does not own
+  34:22 value <lambda>: rejected need: LambdaPassNeed.load sends what it returns, which may be a list it does not own (§23.5)
   40:15 List.push xs: accepted param
   49:5 entry LambdaPassNeed.update msg#Got.0: accepted entry
   summary load: π1 RA; res #Cmd.0 fresh1{excl π1}, #Cmd.0[*]#Perform.0◇ ~π1; π1 calls many, need owned, unseen, supply 1 fresh owned

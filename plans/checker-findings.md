@@ -6132,4 +6132,6 @@ lambda's own parameter was named `<function value>` (`LambdaParamNeed`).
 that the function must return a list it owns, names it as the call writes it
 (`give`, `r.load`, `tagger`, a lambda's parameter `work`), points at the
 function that fails or at the value that carried it, and asks for a function
-that returns a list it owns.
+that returns a list it owns. A tagger's line says that `Cmd.task` sends what it
+returns (§23.5, amended), and a schema member is named as written
+(`NeedMessage.Fixed.parse`).
