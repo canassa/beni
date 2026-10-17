@@ -1521,7 +1521,9 @@ marks is `backend.md` §9, *The embedded modules' printed text, in the pack*.
   `core/Schema` interpreter or the specialised code (`js/SchemaLower.zig`). So a row's key is
   SipHash-1-3 over `"BENIEMIT"`, a format version, the module key and one byte of that option. The
   maker writes one row per option, and the pack stores the bytes of two rows with the same content
-  once. **A release build computes no emit key and reads no row** — `--release` rewrites the text
+  once. No embedded module declares a schema today, so the two rows hold the same bytes and the
+  dedupe stores one copy; the option byte stays in the key for the day one does. **A release build
+  computes no emit key and reads no row** — `--release` rewrites the text
   after lowering, so release caching is a later step with its own spec.
 - **The maker** lowers each embedded module once with every survivor set all live — the world where
   everything is used — under a development build, prints it once and records the units
@@ -1532,7 +1534,8 @@ marks is `backend.md` §9, *The embedded modules' printed text, in the pack*.
   growth is binary size; on 2026-10-17 the live embedded text of a development build was 452 071
   bytes of `_core` and 288 414 of `_platform` on ApiItems, 143 844 and 4 243 on Dictionaries,
   231 640 and 848 on `bench/corpus` — the rows hold every declaration, so they cost more, and the
-  number is recorded when the maker writes its first pack.
+  number is recorded when the maker writes its first pack. The playground's wasm embeds the pack
+  too, so it grows by the same bytes (`playground.md` §2).
 - **Which modules read a row, and what a row that cannot be used does.** A development build's
   module that `Session.packCovers` holds and whose key the run computed, exactly as for an edge
   list; `--core-root` and a platform read from a directory read no row. A row that cannot be used is
