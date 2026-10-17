@@ -431,8 +431,10 @@ const Page = struct {
             const sends = try js.block();
             for (subs) |t| {
                 if (t.first != i) continue;
-                const arg = if (t.fields == 0) try js.literal(.undefined) else try js.name(v);
-                try js.expression(sends, try js.call(try js.name(try cx.runtime("send")), &.{ try js.name(pg.handlers[t.handler].?), arg }));
+                // A message with no payload passes none: `send`'s argument is
+                // `undefined` either way.
+                const handler = try js.name(pg.handlers[t.handler].?);
+                try js.expression(sends, try js.call(try js.name(try cx.runtime("send")), if (t.fields == 0) &.{handler} else &.{ handler, try js.name(v) }));
             }
             const send = try js.arrow(if (s.fields == 0) &.{} else &.{v}, sends);
             const remove = try cx.fresh("remove");
