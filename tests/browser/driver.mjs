@@ -1256,7 +1256,8 @@ if (stepsPath !== undefined) {
       s.name = d[1];
       try {
         s.detail = JSON.parse(d[2]);
-      } catch {
+      } catch (error) {
+        if (!(error instanceof SyntaxError)) throw error;
         usage(`${where}: the detail of \`detail\` is one JSON value`);
       }
     } else if (command === "event") {
