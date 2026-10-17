@@ -7961,10 +7961,12 @@ const Walker = struct {
             try w.applyEnvCalls(callee.closure, null, 0, .{ .inst = inst, .s = s, .avs = avs, .depth = 0 });
             try w.dischargeLambdaNeeds(callee.closure, calledParam, avs);
         }
-        // 2. What the callbacks escape, before the callee writes (§16.4 item 4).
+        // 2. What the callbacks escape, before the callee writes (§16.4 item 4),
+        // and what they keep of a parameter the callee writes after (#281).
         for (s.funs) |f| {
             if (!hasActual(s, args.len, f.param)) continue;
             try w.callbackEscapes(inst, s, f.param, avs);
+            try w.callbackKeeps(inst, callee, s, args, avs, f.param);
         }
         // §18.4 item 3: what the callee relied on, at the arguments; a
         // failure is reported on the call-site demand of the argument it
@@ -8071,6 +8073,68 @@ const Walker = struct {
                 }
             }
             if (cls == .closure) try w.escapeCaptures(cls.closure, w.point - 1);
+        }
+    }
+
+    /// §16.4's keep edge (amended for #281): the callee hands the actual for
+    /// πⱼ its parameter `πᵢ.q″` borrowed — it uses it after the call — and
+    /// writes `πᵢ`; an actual that may keep its parameter in its result has
+    /// that result hold the list the callee then changes. Rejected, cause
+    /// `supply`; an actual with no class may keep anything (approximate);
+    /// the caller's own function parameter is asked to return owned, which
+    /// no function that keeps a borrowed supply does.
+    fn callbackKeeps(w: *Walker, inst: Inst.Index, callee: Callee, s: *const Summary, args: []const Inst.Index, avs: []const AV, j: u32) Allocator.Error!void {
+        for (s.supply) |e| {
+            if (e.fun != j or e.owned or e.prov.kind != .param) continue;
+            const written = for (s.uses) |u| {
+                if (u.param == e.prov.a and u.bits & bit_w != 0 and w.o.overlap(u.path, e.prov.path)) break true;
+            } else false;
+            if (!written) continue;
+            const actual = (try w.actualOf(s, avs, j)) orelse continue;
+            if (w.fnParamOf(actual) orelse try w.slotOf(actual)) |jj| {
+                w.fn_state.items[jj].need = true;
+                continue;
+            }
+            const classes = try w.classesOf(actual);
+            var keeps = classes.len == 0;
+            // The summary does not say that the write comes after the call,
+            // only that `πᵢ` is used after it: approximate.
+            const approx = true;
+            for (classes) |cls| {
+                const c = (try w.classSummary(cls)) orelse {
+                    keeps = true;
+                    break;
+                };
+                for (c.res) |r| switch (r.prov.kind) {
+                    .param => if (r.prov.a == e.k) {
+                        keeps = true;
+                    },
+                    // What it returns of its own callbacks or of JavaScript
+                    // may be what it was handed.
+                    .cb, .top => keeps = true,
+                    else => {},
+                };
+            }
+            if (!keeps) continue;
+            const why = try std.fmt.allocPrint(w.o.out.allocator(), "{s} writes what it hands this function ({s}) after the call, and the function's result may keep it", .{ callee.name, try w.o.provText(e.prov) });
+            const arg = if (j < args.len) args[j] else inst;
+            try w.demands.append(w.a, .{
+                .kind = .value,
+                .token = w.token(arg),
+                .op = "value",
+                .base = try w.baseText(arg),
+                .base_local = none,
+                .base_path = eps,
+                .point = w.point,
+                .frame = w.frame,
+                .ctx = w.ctx,
+                .element = false,
+                .accept = .callback_param,
+                .holders = &.{},
+                .fixed = .{ .verdict = .{ .rejected = .supply }, .detail = why },
+                .prelim = .{ .cause = .supply, .detail = why, .approx = approx },
+            });
+            return;
         }
     }
 
@@ -10373,6 +10437,21 @@ const Walker = struct {
             if (w.local_frame[l] != w.frame) continue;
             if (!w.compatible(w.local_ctx[l], w.ctx)) continue;
             for (try w.expand(av)) |e| {
+                // §16.4's keep edge, in the callee (#281): a callback's
+                // result may keep what the call handed it. A list made here
+                // and handed on is written after while that result lives;
+                // no caller sees the write, so it is a holder here,
+                // approximately. A parameter's cells are the caller's
+                // question (`callbackKeeps`).
+                const ec = w.cells.items[e.cell];
+                if (ec.kind == .cbres) if (w.instCol(?AV, w.cb_args, ec.b, null)) |handed| {
+                    for (cells.items) |c| {
+                        const cc = w.cells.items[c.cell];
+                        if (cc.kind == .param and cc.b == 0) continue;
+                        if ((try w.reaches(handed, &.{.{ .path = eps, .cell = c.cell }})) == null) continue;
+                        try holders.append(w.a, .{ .local = @intCast(l), .path = e.path, .approx = ec.b + 1 });
+                    }
+                };
                 for (cells.items) |c| {
                     var split = false;
                     const rest = (try w.covers(e.cell, c.cell)) orelse blk: {
