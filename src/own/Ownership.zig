@@ -7558,8 +7558,9 @@ const Walker = struct {
         const dt = &w.o.in.dispatch[w.m];
         const site = dt.siteOf(inst) orelse return;
         // Every term, however deep the evidence nests: they are finite, and
-        // each is looked at once. Before 2026-10-16 the walk stopped at 8
-        // terms deep and a writing function below went unreported (#271).
+        // each is looked at once per site, so a writing function that occurs
+        // twice gives one line. Before 2026-10-16 the walk stopped 8 levels
+        // deep and a writing function below went unreported (#271).
         const tok = w.token(inst);
         var todo: std.ArrayList(Dispatch.TermIndex) = .empty;
         // A site's evidence is a small tree of terms: a list, not a map.
@@ -9659,8 +9660,9 @@ const Walker = struct {
     fn provOwned(w: *Walker, p: Prov, s: *const Summary, avs: []const AV, ictx: InstCtx, guard: u32, depth: u32, written: u32) Allocator.Error!bool {
         if (p.kind != .cb) return true;
         if (p.a == guard) return true;
-        // Past §16.7's `callbacks` limit: not owned, and an error at the
-        // declaration, as `callbackLoanDemands` is.
+        // Past §16.7's `callbacks` limit: an error at the declaration, as
+        // `callbackLoanDemands` is; the answer is `ro_exact`, as for a
+        // function the checker cannot place (not owned in the exact pass).
         if (depth >= inst_depth) {
             try w.o.hitLimit(.callbacks, depth + 1);
             return w.ro_exact;
