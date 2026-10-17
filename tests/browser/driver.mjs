@@ -277,6 +277,16 @@ function prelude() {
   globalThis.clearTimeout = (id) => {
     clock.timers = clock.timers.filter((t) => t.id !== id);
   };
+  // An interval is a timer that is set again for its next time as it fires,
+  // under the same id, until it is cleared.
+  globalThis.setInterval = (fn, ms, ...args) => {
+    const id = clock.next++;
+    const asked = Number(ms);
+    const every = asked > 2147483647 ? 1 : asked > 0 ? asked : 0;
+    clock.timers.push({ id, due: clock.now + every, fn, args, every });
+    return id;
+  };
+  globalThis.clearInterval = globalThis.clearTimeout;
   Date.now = () => clock.now;
   // The page's frames are virtual too: a `requestAnimationFrame` callback
   // runs only when a `frame` step draws a frame, in both DOMs, so how many
@@ -604,6 +614,7 @@ function step(s) {
       if (t === null) break;
       clock.timers = clock.timers.filter((c) => c !== t);
       clock.now = t.due;
+      if (t.every !== undefined) clock.timers.push({ ...t, due: t.due + (t.every > 0 ? t.every : 1) });
       // A timer's callback runs as a task of its own: what it throws is
       // reported to the window's `error` listeners, as a host reports it,
       // and the clock goes on.
@@ -1486,6 +1497,8 @@ async function happyDomPage(domPath) {
       await window.happyDOM.abort();
       globalThis.setTimeout = nodeTimers.setTimeout;
       globalThis.clearTimeout = nodeTimers.clearTimeout;
+      globalThis.setInterval = nodeTimers.setInterval;
+      globalThis.clearInterval = nodeTimers.clearInterval;
       // Every page shares Node's global object, and a browser gives each
       // page a fresh one: so every global the page's own code set there —
       // a `--fuzz` build's `__beniFuzzSend` — goes with it. A program that
@@ -1501,7 +1514,7 @@ async function happyDomPage(domPath) {
 }
 
 // Node's timers, which the prelude replaces with the page's virtual clock.
-const nodeTimers = { setTimeout: globalThis.setTimeout, clearTimeout: globalThis.clearTimeout };
+const nodeTimers = { setTimeout: globalThis.setTimeout, clearTimeout: globalThis.clearTimeout, setInterval: globalThis.setInterval, clearInterval: globalThis.clearInterval };
 
 // The names Node's global object has before any page: what a closing page
 // leaves (`happyDomPage`'s `close`).

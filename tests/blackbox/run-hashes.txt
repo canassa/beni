@@ -40,7 +40,7 @@ build_test.test.--release writes a map only when asked, and asking changes no by
 build_test.test.--release writes a map only when asked, and asking changes no byte of the code #1 dcba63314bb5370e2c9f823dc119c00e57a0f8e3ffb2b3aa1e7d64c680d9b4f2
 build_test.test.Debug.todo compiles as anything and crashes with its message when reached #0 717b1f9a140435dd30fc71f5a2a91aa3f772e7c40a1025c5d54d9945777f88ff
 build_test.test.a --core-root core without a core-private List value the emitter calls is refused where a module needs it #0 696cde132e411ca93a74b4a7fe267bf54ab09eb5ac70f8861411f4f7f2221d2f
-build_test.test.a --library --release build keeps every core/Schema value it exports, even one called once #0 9f0e558a3681ba98e61d937c4d0135c7b2b8c7f398012612c43e55743bf4268d
+build_test.test.a --library --release build keeps every core/Schema value it exports, even one called once #0 0b85afa4a06732f8aff6b64d4591a74355064b3b026386a5c09f033ea6100262
 build_test.test.a Debug call that reachability drops does not refuse the release build #0 01120bf841884cc7a9ce51eb80a6548036145c0c020bb39e6e00ccb51fd85f53
 build_test.test.a build with cross-module evidence is byte-identical at every --jobs #0 1f68093000c0fa215f3cf86cf213045c2c5e1f6803a34ab17ceb081c64b9a532
 build_test.test.a build with cross-module evidence is byte-identical at every --jobs #1 daf37a1fa19ec2fdcbb3d87937ddb72eb308d948166d1bd200fd0daf9a32bc1a
@@ -93,8 +93,8 @@ cache_test.test.a moved derived context rebuilds evidence as a cold build: a pay
 cache_test.test.a moved derived context rebuilds evidence as a cold build: a payload's eq drops its where clause #0 b2798c9ff302c30d4b4719e90967bc5a4c70d8d4be28967123958de28cd33bdc
 cache_test.test.a moved derived context rebuilds evidence as a cold build: a payload's eq made private #0 83fd6a41d8f7dec9ee13e22b28555e7b65a44dc5dfea42cb6707418058ae7dbf
 cache_test.test.a moved derived context rebuilds evidence as a cold build: a payload's private eq removed #0 a5a1c46beb44bb94060eecae96b3ab41f429fda266f0eb31e9d3ce0c305b3331
-cache_test.test.a private conversion's body edit behind an imported schema stops at the firewall, and the cached importer's worker runs the new body #0 fd04f6b80ad904b8401e9fd6878e26432fe4f16d13285cd6ed87bc27aa7f5238
-cache_test.test.a private conversion's body edit behind an imported schema stops at the firewall, and the cached importer's worker runs the new body #1 3c53d7a375200c8c1198c3ebdeb31bb2ae57c33ae5fc337694d65bbf118ca82d
+cache_test.test.a private conversion's body edit behind an imported schema stops at the firewall, and the cached importer's worker runs the new body #0 09573b4c2fb7d7664f288f17e0c2ef93663e0eaebdea2af26f94c81a1791f49f
+cache_test.test.a private conversion's body edit behind an imported schema stops at the firewall, and the cached importer's worker runs the new body #1 1aea9bead46f96b005a871e5f8b2a6a7b4e44907f6ad5911d00ef6e95948dad3
 cache_test.test.a warm build after an edit that moves a derived context writes what a cold build writes #0 5b9a520193e4195cbb2ed7f0e5ebe57d1fdb8fea726867d9563525f28d5f5b39
 cache_test.test.a warm build after an edit that moves a derived context writes what a cold build writes #1 cf135f9ef9cbe847f57f757e042a9d6acb5f04e5d254820d593158f71b57db2d
 cache_test.test.a warm build emits byte-identical JavaScript, and it runs #0 b42a548e41bbaaf812def46b1202bf0c77a8a2e6abb24a50b91f10174356cca2
@@ -122,24 +122,24 @@ devloop_test.test.build --watch rebuilds after an edit, reports a failed build, 
 docs_test.test.every `--|     expr == value` in core compiles in its own module and is true #0 12d6270b6a35b7a1cb30abf8840a874def0a04deba77caba75d435430d34c3d3
 external_platform_test.test.a release application calls the runtime's start and run inside its one file #0 0b2b0dcae989cbd6f3aa8cac202aeb7a590bf0b7d8411ecb302319e6c66c06c9
 external_platform_test.test.an external platform's markup lowering compiles a view the program then prints #0 71dd247fcec2842f1461553beee9808118e09490dc1f627d85e5559b4a3be0f5
-iface_test.test.a build of derived codecs is byte-identical at one job and eight, through the round trips, and runs #0 9e9584c8daee2db708ad5bc1530ef560ee4b2e7d0764f17c25022851d49d02c9
+iface_test.test.a build of derived codecs is byte-identical at one job and eight, through the round trips, and runs #0 13dd176833490106ef07d011cf3ddffad1eae2be0c0d6f702cd94ab8d77103c5
 iface_test.test.a build whose evidence crosses modules is byte-identical through all three round trips, and runs #0 9b05879acd3b1f79fa41d27961a862ec9d6c6229614be52abe9c14cce07ab7f3
-ordering_test.test.Json.decode inferred from use prints the same reversed #0 ca033af5bf3a495418aa1939e6162c7673feb14e031bf825df73d1851dafe11e
+ordering_test.test.Json.decode inferred from use prints the same reversed #0 353c157ee510a1a035813dbeb5ba54fbd008b5756ed768b4ead7acd2b404def6
 ordering_test.test.a dispatch cycle through an annotated eq written above its caller, reversed, prints the same #0 cbc5d59ec352a57e3641057730527789fa37d425420444092aa0dfa2a94bb308
 ordering_test.test.a let helper at two types calls an own method written below it, reversed, and prints the same #0 ffe1b90cfc0f55f95a1469b85bbf68db796c990b2b4bd0ef222901cc8eded280
 ordering_test.test.a recursive group's nullary read and dot-call print the same reversed #0 9d7fc588798c54a7f0d939055ddde1e948a6d3fec702c83981b811ae0f4c36df
 ordering_test.test.an annotated recursive group calls an own method written below it, reversed, and prints the same #0 c31efca37536c020226804a1a6f7dcf8e9f1fa401080aeb8fbef411ea3d27229
 ordering_test.test.nullary methods and record defaults print the same reversed #0 759ab1983b71da5fee5c4695545896e1251fef5f8af51ce6cd8ae5acd5defee0
-page_fuzz_test.test.a build that misses one hole's write is caught, at the message that shows it, and shrunk to it #0 0f38890fb23ffc5cb3f201e2ad892763f73fc01cf32fdf25e9653635082e7f4a
-page_fuzz_test.test.a keyed list that misses a change is caught, its element the list #0 7f0dc2769162533e7c42a2443020758079448527fbdf44f6abb0e58473c95697
-page_fuzz_test.test.a missed attribute write is caught at the message that changes the attribute #0 b05584009f4e1811f15790b1ff874d8185d53b61669b44d23f2b24df7af90876
-page_fuzz_test.test.a missed title write is caught though the body is the same #0 92d2f2c0ed6d9ffe51812889221b90edc370d1bb39b0a14a7c3e8f64535ca197
-page_fuzz_test.test.a missed write of a controlled input's value is caught #0 c715fd3fc89d8202c4ce8c95b8b88fd991187f871d6e576bb7653b2620d08adb
-page_fuzz_test.test.a page that stopped hands nothing to the next: a message that throws in update replays #0 dcb342788606958eb9aa7b7f3a60caa55ee1849a57c644baf39d4c76e815efe4
-page_fuzz_test.test.two development builds of one program agree on every seed, messages and events alike #0 f4675b4a4d00695d18ca773bd2409dc25cdd0cdb94e47eebaa72fbe7f23bfaa0
-page_fuzz_test.test.verify: a key map left holding a removed row's key is caught #0 c7a5408ef6348c00717871d301d83ea6a4bf84ce623ce4bf525236875c5180cf
-page_fuzz_test.test.verify: a removed row left in the page is caught though one row remains #0 19aae8a8629a5fde13e006703e80251e0bb3f8a638b758aac2bb097080d6d7ea
-page_fuzz_test.test.verify: a row of a derived list left showing a stale item is caught, its item a list of 1 500 #0 656ba51545cf9a393cfdda9cb24706b0acc9502319acfb267c0b842788e208e0
-page_fuzz_test.test.verify: a selector left holding its old probe is caught though every row is right #0 5dafad8c3e176bf8e4c631ccb4385fae5a9e76e2087d4ec25b71f960475712ce
-page_fuzz_test.test.view events alone never reach the broken hole: no button makes the count negative #0 be765afd954e2ceada325ddf810d615a90b7ee3864b752dc25b61a155dea7438
+page_fuzz_test.test.a build that misses one hole's write is caught, at the message that shows it, and shrunk to it #0 f16253ab4e573fd800e97893004fb0e890f5bbafc80f349cc1195fc63ab0c5fe
+page_fuzz_test.test.a keyed list that misses a change is caught, its element the list #0 89fba36a41bd70b84d50457af761d78e5b6f4cccf0da4a720211da165de6e50c
+page_fuzz_test.test.a missed attribute write is caught at the message that changes the attribute #0 6f7a56e04717c0e17ea8fc0cb2ef2990107e3329e80d64ec3f8c642e3d0c0d00
+page_fuzz_test.test.a missed title write is caught though the body is the same #0 13f2e885022c118f92de0a8b9aeecdb0e405dece24e699cb24d82f370d472036
+page_fuzz_test.test.a missed write of a controlled input's value is caught #0 d7d51916a556a33c2242ca7b0091c417790201631e0ede091549ef78f2b4217e
+page_fuzz_test.test.a page that stopped hands nothing to the next: a message that throws in update replays #0 2c068381f7a0ef804b776b8bf58e15fe39914f9b2050794a671fed4c1262d3fa
+page_fuzz_test.test.two development builds of one program agree on every seed, messages and events alike #0 300e39c8841bd856e019941bfe698024427c3697518f27ee790c1d34a02d1328
+page_fuzz_test.test.verify: a key map left holding a removed row's key is caught #0 45c013b234991ae1d4394960ae326ddb5f901ff3082a9f0024890a60a70a8ea5
+page_fuzz_test.test.verify: a removed row left in the page is caught though one row remains #0 493f74d2a0abeb669f0a6ed7e8771053bcf06e9ed8e6e627c204df95bd805652
+page_fuzz_test.test.verify: a row of a derived list left showing a stale item is caught, its item a list of 1 500 #0 47713cb96d9d4d2d862e008d76b0045d8a424388fdab7168f30d4fc8fc9051c6
+page_fuzz_test.test.verify: a selector left holding its old probe is caught though every row is right #0 afb36ba4796d3e88b4bba613c2625565220e0caf703d6d7ca4fdae861f095a49
+page_fuzz_test.test.view events alone never reach the broken hole: no button makes the count negative #0 4bc3c9a43dbdde14de936ca478457bcab7ac788bab84064977b815d1456d9b57
 platform_test.test.a platform layered on another builds a program with its base's program and runtime #0 d3c3b675c884dee767371dda2b18c2e2ea00b5786b4b65cd3ff84ee8132906bb
