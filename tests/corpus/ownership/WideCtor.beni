@@ -1,0 +1,246 @@
+-- ownership: a constructor field past 64 (issue #289). A path step names
+-- a constructor and one of its fields; it was the number `c * 64 + i`, so
+-- field 64 of `Big` was field 0 of the next constructor, `Small`, and the
+-- two arms of `pushBig` and `pushSmall` wrote one place, printed
+-- `π1#Small.0`. Each field is its own step now: `pushBig` writes
+-- `π1#Big.64` and `pushSmall` `π1#Small.0`, so handing `pushSmall` a
+-- `Big` whose field 64 is read again is accepted, and handing it a
+-- `Small` whose list is read again is not.
+type T
+    = Big
+        Int
+        Int
+        Int
+        Int
+        Int
+        Int
+        Int
+        Int
+        Int
+        Int
+        Int
+        Int
+        Int
+        Int
+        Int
+        Int
+        Int
+        Int
+        Int
+        Int
+        Int
+        Int
+        Int
+        Int
+        Int
+        Int
+        Int
+        Int
+        Int
+        Int
+        Int
+        Int
+        Int
+        Int
+        Int
+        Int
+        Int
+        Int
+        Int
+        Int
+        Int
+        Int
+        Int
+        Int
+        Int
+        Int
+        Int
+        Int
+        Int
+        Int
+        Int
+        Int
+        Int
+        Int
+        Int
+        Int
+        Int
+        Int
+        Int
+        Int
+        Int
+        Int
+        Int
+        Int
+        (List Int)
+    | Small (List Int)
+
+
+pushBig : T → List Int
+pushBig t =
+    case t of
+        Big _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ xs →
+            List.push xs 1
+
+        Small _ →
+            []
+
+
+pushSmall : T → List Int
+pushSmall t =
+    case t of
+        Big _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ →
+            []
+
+        Small ys →
+            List.push ys 1
+
+
+pub bigThenRead : List Int → List Int × List Int
+bigThenRead xs =
+    ( pushSmall
+        (Big
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            xs
+        )
+    , xs
+    )
+
+
+pub smallThenRead : List Int → List Int × List Int
+smallThenRead xs = ( pushSmall (Small xs), xs )
+
+
+pub bigWrite : List Int → List Int
+bigWrite xs =
+    pushBig
+        (Big
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            0
+            xs
+        )

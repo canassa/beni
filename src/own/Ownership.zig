@@ -607,6 +607,13 @@ result_err: ?ResultErr = null,
 ctor_type: std.ArrayList(u64) = .empty,
 /// Per constructor id: its `(module, index)`, for printing.
 ctor_key: std.ArrayList(u64) = .empty,
+/// A constructor step's argument (§4.1): one id per `(constructor id,
+/// field)` pair, so any field of any constructor is a step of its own
+/// (issue #289; before, the step was `c * 64 + i`, and field 64 named field
+/// 0 of the next constructor).
+ctor_steps: std.AutoHashMapUnmanaged([2]u32, u32) = .empty,
+/// Per constructor step: its constructor id and its field.
+step_ctor: std.ArrayList([2]u32) = .empty,
 /// Per module: where each declaration's schema constructors start
 /// (`schemaCtorBases`), in `keep`.
 schema_ctor_bases: []?[]const u32 = &.{},
@@ -662,6 +669,8 @@ pub fn deinit(o: *Ownership) void {
     o.ctor_ids.deinit(o.in.gpa);
     o.ctor_type.deinit(o.in.gpa);
     o.ctor_key.deinit(o.in.gpa);
+    o.ctor_steps.deinit(o.in.gpa);
+    o.step_ctor.deinit(o.in.gpa);
     o.in.gpa.free(o.schema_ctor_bases);
     o.recursive_types.deinit(o.in.gpa);
     o.concat_memo.deinit(o.in.gpa);
@@ -2014,8 +2023,8 @@ fn returnsOneCellTwice(o: *Ownership, store: *TypeStore, s: *const Summary, arg:
 /// conversion function's result to the value it converted.
 fn isOkStep(o: *const Ownership, step: ?Step) bool {
     const st = step orelse return false;
-    if (st.kind != .ctor or st.arg % 64 != 0) return false;
-    const c = st.arg / 64;
+    if (st.kind != .ctor or o.stepField(st.arg) != 0) return false;
+    const c = o.stepCtor(st.arg);
     if (c >= o.ctor_key.items.len) return false;
     const key = o.ctor_key.items[c];
     const m: u32 = @intCast(key >> 32);
@@ -2857,7 +2866,7 @@ fn child(o: *Ownership, parent: u32, kind: StepKind, arg: u32) Allocator.Error!u
 }
 
 fn foldAt(o: *Ownership, parent: u32, arg: u32) ?u32 {
-    const ty = o.ctorType(arg / 64) orelse return null;
+    const ty = o.ctorType(o.stepCtor(arg)) orelse return null;
     var chain: [k_limit + 1]u32 = undefined;
     var n: usize = 0;
     var at = parent;
@@ -2871,7 +2880,7 @@ fn foldAt(o: *Ownership, parent: u32, arg: u32) ?u32 {
         i -= 1;
         const node = chain[i];
         if (o.paths.kind.items[node] != .ctor) continue;
-        const t = o.ctorType(o.paths.arg.items[node] / 64) orelse continue;
+        const t = o.ctorType(o.stepCtor(o.paths.arg.items[node])) orelse continue;
         if (t == ty) return o.paths.parent.items[node];
     }
     return null;
@@ -2886,7 +2895,7 @@ fn representative(o: *Ownership, p: u32) Allocator.Error!bool {
     while (at != eps and at != none) : (at = o.paths.parent.items[at]) {
         switch (o.paths.kind.items[at]) {
             .elem => return true,
-            .ctor => if (o.ctorType(o.paths.arg.items[at] / 64)) |t| if (try o.typeRecursive(t)) return true,
+            .ctor => if (o.ctorType(o.stepCtor(o.paths.arg.items[at]))) |t| if (try o.typeRecursive(t)) return true,
             else => {},
         }
     }
@@ -2898,7 +2907,7 @@ fn dictTreePath(o: *Ownership, p: u32) Allocator.Error!bool {
     var at = p;
     while (at != eps and at != none) : (at = o.paths.parent.items[at]) {
         if (o.paths.kind.items[at] != .ctor) continue;
-        const t = o.ctorType(o.paths.arg.items[at] / 64) orelse continue;
+        const t = o.ctorType(o.stepCtor(o.paths.arg.items[at])) orelse continue;
         const m: u32 = @intCast(t >> 32);
         if (m >= o.in.packages.len or o.in.packages[m] != .core or !std.mem.eql(u8, o.in.module_names[m], "Dict")) continue;
         if (try o.typeRecursive(t)) return true;
@@ -3125,13 +3134,13 @@ fn writePath(o: *const Ownership, w: *std.Io.Writer, p: u32) std.Io.Writer.Error
         .tuple => try w.print(".{d}", .{s.arg}),
         .ctor => {
             // `#Name.i`: the constructor and the argument.
-            const c = s.arg / 64;
+            const c = o.stepCtor(s.arg);
             const name: []const u8 = blk: {
                 if (c >= o.ctor_key.items.len) break :blk "";
                 const key = o.ctor_key.items[c];
                 break :blk o.ctorName(@intCast(key >> 32), @truncate(key));
             };
-            try w.print("#{s}.{d}", .{ name, s.arg % 64 });
+            try w.print("#{s}.{d}", .{ name, o.stepField(s.arg) });
         },
         .elem => try w.writeAll("[*]"),
         .env => try w.writeAll("◇"),
@@ -3158,6 +3167,27 @@ pub fn ctorId(o: *Ownership, module: u32, index: u32) Allocator.Error!u32 {
         try o.ctor_key.append(o.in.gpa, key);
     }
     return gop.value_ptr.*;
+}
+
+/// The step argument of field `i` of constructor id `c` (§4.1): exact for
+/// every field of every constructor (issue #289).
+pub fn ctorStep(o: *Ownership, c: u32, i: u32) Allocator.Error!u32 {
+    const gop = try o.ctor_steps.getOrPut(o.in.gpa, .{ c, i });
+    if (!gop.found_existing) {
+        gop.value_ptr.* = @intCast(o.step_ctor.items.len);
+        try o.step_ctor.append(o.in.gpa, .{ c, i });
+    }
+    return gop.value_ptr.*;
+}
+
+/// The constructor id a constructor step names.
+pub fn stepCtor(o: *const Ownership, arg: u32) u32 {
+    return o.step_ctor.items[arg][0];
+}
+
+/// The field a constructor step names.
+pub fn stepField(o: *const Ownership, arg: u32) u32 {
+    return o.step_ctor.items[arg][1];
 }
 
 // ---------------------------------------------------------------------------
@@ -5533,7 +5563,7 @@ const Walker = struct {
             .pat_ctor => {
                 const c = try w.ctorOf(@fromBackingInt(@intCast(data.lhs)));
                 for (b.extraSlice(b.subRange(@fromBackingInt(@intCast(data.rhs))), Inst.Index), 0..) |arg, i| {
-                    try w.bindPattern(arg, try w.proj(av, .{ .kind = .ctor, .arg = c *% 64 +% @as(u32, @intCast(i)) }, w.patternType(arg)));
+                    try w.bindPattern(arg, try w.proj(av, .{ .kind = .ctor, .arg = try w.o.ctorStep(c, @intCast(i)) }, w.patternType(arg)));
                 }
             },
             .pat_list => {
@@ -5955,7 +5985,7 @@ const Walker = struct {
                             if (!std.mem.eql(u8, w.o.in.interner.slice(b.symbol(c.name)), "Just")) continue;
                             for (b.ctors, 0..) |cc, ci| if (cc.name == c.name) {
                                 const ctor = try w.o.ctorId(e.module.int(), @intCast(ci));
-                                return w.markupEvents(try w.proj(av, .{ .kind = .ctor, .arg = ctor *% 64 }, args[0]), args[0], inst, depth + 1);
+                                return w.markupEvents(try w.proj(av, .{ .kind = .ctor, .arg = try w.o.ctorStep(ctor, 0) }, args[0]), args[0], inst, depth + 1);
                             };
                         }
                     }
@@ -6181,7 +6211,7 @@ const Walker = struct {
         if (app.type != re.ty) return;
         const args = w.store.vars(app.args);
         if (args.len == 0) return;
-        const step: Step = .{ .kind = .ctor, .arg = re.ctor *% 64 };
+        const step: Step = .{ .kind = .ctor, .arg = try w.o.ctorStep(re.ctor, 0) };
         const payload = try w.proj(s, step, args[0]);
         if (payload.len == 0) return;
         try w.frames.items[w.frame].early.appendSlice(w.a, try w.shift(payload, step));
@@ -6713,7 +6743,7 @@ const Walker = struct {
                 w.popPending(avs.len);
                 try w.consume(args, w.token(inst));
                 var parts = try w.a.alloc(AV, avs.len);
-                for (avs, 0..) |av, i| parts[i] = try w.shift(av, .{ .kind = .ctor, .arg = c *% 64 +% @as(u32, @intCast(i)) });
+                for (avs, 0..) |av, i| parts[i] = try w.shift(av, .{ .kind = .ctor, .arg = try w.o.ctorStep(c, @intCast(i)) });
                 try w.storedBeside(parts);
                 const out = try w.unionOf(parts);
                 try w.sight(out, .{ .pending = "it is stored in a constructor" }, w.token(inst));
@@ -9666,7 +9696,7 @@ const Walker = struct {
         for (ps, 0..) |pt, i| {
             if (!try w.o.holdsList(w.store, pt, 0)) continue;
             try uses.append(keep, .{ .param = @intCast(i), .path = eps, .bits = bit_a });
-            try res.append(keep, .{ .path = try w.o.child(eps, .ctor, c *% 64 +% @as(u32, @intCast(i))), .prov = .{ .kind = .param, .a = @intCast(i), .path = eps } });
+            try res.append(keep, .{ .path = try w.o.child(eps, .ctor, try w.o.ctorStep(c, @intCast(i))), .prov = .{ .kind = .param, .a = @intCast(i), .path = eps } });
         }
         const out = try w.a.create(Summary);
         // A constructor has exactly this primitive row, so unseen callback

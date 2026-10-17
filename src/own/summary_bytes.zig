@@ -23,7 +23,7 @@
 //! strings: u32, then per string: u32 length, bytes        field names
 //! paths: u32, then per path: steps u8, then per step: kind u8 and
 //!        field: string index u32 · tuple: index u32 · ctor: module u32,
-//!        constructor u32, argument u8 · elem, env, any: nothing
+//!        constructor u32, argument u32 · elem, env, any: nothing
 //! decls: u32, then per declaration: index u32, flags u8 (1: a summary
 //!        follows; 2: a value whose type may hold a list), the summary
 //! ```
@@ -74,7 +74,9 @@ pub const magic = "BENIOWN\x00";
 /// (§20.4, amended 2026-10-16).
 /// 14 records whether a function parameter's `need` comes only from a send
 /// (§23.5, amended 2026-10-17).
-pub const version: u32 = 14;
+/// 15 writes a constructor step's field as a u32, so a field past 63 is
+/// named exactly (issue #289; it was a byte, and a field past 63 refused).
+pub const version: u32 = 15;
 
 pub const Error = error{Bad} || Allocator.Error;
 
@@ -157,7 +159,7 @@ pub fn write(o: *Ownership, gpa: Allocator, rows: []const Row) Allocator.Error![
             var buf: [Ownership.k_limit + 1]Ownership.Step = undefined;
             for (c.o.steps(p, &buf)) |s| switch (s.kind) {
                 .field => if (!(try c.seen_string.getOrPut(c.arena, s.arg)).found_existing) try c.strings.append(c.arena, s.arg),
-                .ctor => try c.module(c.o.ctorKey(s.arg / 64).module),
+                .ctor => try c.module(c.o.ctorKey(c.o.stepCtor(s.arg)).module),
                 else => {},
             };
         }
@@ -295,10 +297,10 @@ fn pathKey(o: *Ownership, arena: Allocator, w: *Writer, p: u32) Allocator.Error!
             .field => try appendInt(arena, &out, w.string_index.get(st.arg).?),
             .tuple => try appendInt(arena, &out, st.arg),
             .ctor => {
-                const key = o.ctorKey(st.arg / 64);
+                const key = o.ctorKey(o.stepCtor(st.arg));
                 try appendInt(arena, &out, w.module_index.get(key.module).?);
                 try appendInt(arena, &out, key.index);
-                try out.append(arena, @intCast(st.arg % 64));
+                try appendInt(arena, &out, o.stepField(st.arg));
             },
             .elem, .env, .any, .markup_render, .markup_event, .schema_decoded, .schema_encoded => {},
         }
@@ -589,9 +591,9 @@ pub fn read(o: *Ownership, arena: Allocator, bytes: []const u8, m: u32) Error!Bl
                 .ctor => blk: {
                     const cm = try r.module();
                     const ci = try r.int();
-                    const k = try r.byte();
-                    if (k >= 64 or !try o.hasCtor(cm, ci)) return error.Bad;
-                    break :blk (try o.ctorId(cm, ci)) *% 64 +% k;
+                    const k = try r.int();
+                    if (!try o.hasCtor(cm, ci)) return error.Bad;
+                    break :blk try o.ctorStep(try o.ctorId(cm, ci), k);
                 },
                 .elem, .env, .any, .markup_render, .markup_event, .schema_decoded, .schema_encoded => 0,
             };
