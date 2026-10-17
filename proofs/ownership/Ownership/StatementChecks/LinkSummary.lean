@@ -9,8 +9,11 @@ the second input's array, and the summary has no `W` row for it. Every
 premise of the old statement holds here, and `CallSound.writes` fails
 (`no_call_sound`). The written-storage premise `LinkedWritesCovered`
 excludes the state (`not_covered`): input 1 is linked to the written input 0
-and has no permitted path. These proofs use definitions and do not use the
-unproved summary theorem. -/
+and has no permitted path. The addresses are in allocation order (the source
+at 0, the view at 1), so the state satisfies `LinksValid` (`pre_linksValid`)
+and fails the premise alone; the review of PR #275 (finding 2) asked for this
+order, because R2 adds validity premises. These proofs use definitions and do
+not use the unproved summary theorem. -/
 
 namespace Ownership.LinkSummaryCounterexample
 
@@ -39,21 +42,23 @@ def first : Abstract := .list [.parameter 0 []] .bottom true
 def second : Abstract := .list [.parameter 1 []] .scalar true
 def inputs : List Abstract := [first, second]
 
-def args : List Value := [.ref 0, .ref 1]
+def args : List Value := [.ref 1, .ref 0]
 
-/-- Address 0 is the suffix view of address 1, with consistent contents. -/
-def pre : State := { fuel := 20, heap := #[[], [.int 0]], links := [(0, 1, true)] }
+/-- Address 1 is the suffix view of address 0, with consistent contents. -/
+def pre : State := { fuel := 20, heap := #[[.int 0], []], links := [(1, 0, true)] }
 
 def post : State :=
-  { pre with fuel := 19, heap := #[[.int 1], [.int 0, .int 1]], writes := 1 }
+  { pre with fuel := 19, heap := #[[.int 0, .int 1], [.int 1]], writes := 1 }
 
+/-- Input 0 (the view) is array 1, input 1 (the source) is array 0. -/
 def naming (o : Origin) : List Nat :=
   match o with
-  | .parameter i [] => [i]
+  | .parameter 0 [] => [1]
+  | .parameter 1 [] => [0]
   | _ => []
 
 #guard (check program).isOk
-#guard pre.heap[0]? == some (viewOf true [.int 0])
+#guard pre.heap[1]? == some (viewOf true [.int 0])
 
 theorem accepted_ok : check program = .ok accepted := by cbv
 theorem entry_inputs : entry.inputs = inputs := by cbv
@@ -67,27 +72,25 @@ theorem entry_mem : entry ∈ accepted.cache.toList := by
   rw [accepted_cache]
   simp
 
+theorem naming_mem {o : Origin} {c : Nat} (h : c ∈ naming o) :
+    (o = .parameter 0 [] ∧ c = 1) ∨ (o = .parameter 1 [] ∧ c = 0) := by
+  unfold naming at h
+  split at h
+  · simp at h; exact Or.inl ⟨rfl, h⟩
+  · simp at h; exact Or.inr ⟨rfl, h⟩
+  · simp at h
+
 theorem separating : Separating naming := by
   intro a b hab c hca hcb
-  cases a <;> try simp [naming] at hca
-  case parameter i q =>
-    cases q with
-    | cons s q => simp [naming] at hca
-    | nil =>
-      simp only [naming, List.mem_singleton] at hca
-      subst c
-      cases b <;> try simp [naming] at hcb
-      case parameter j q =>
-        cases q with
-        | cons s q => simp [naming] at hcb
-        | nil =>
-          simp only [naming, List.mem_singleton] at hcb
-          subst j
-          change (i == i && true) = false at hab
-          simp at hab
+  rcases naming_mem hca with ⟨rfl, rfl⟩ | ⟨rfl, rfl⟩ <;>
+    rcases naming_mem hcb with ⟨rfl, h⟩ | ⟨rfl, h⟩
+  · exact absurd hab (by decide)
+  · omega
+  · omega
+  · exact absurd hab (by decide)
 
-theorem first_described : Describes naming pre.heap first (.ref 0) := by
-  have hc : pre.heap[0]? = some [] := rfl
+theorem first_described : Describes naming pre.heap first (.ref 1) := by
+  have hc : pre.heap[1]? = some [] := rfl
   refine ⟨⟨?_, ?_⟩, ?_⟩
   · intro q d h
     obtain ⟨hq, hw⟩ := atPath_empty_ref hc h
@@ -107,8 +110,8 @@ theorem first_described : Describes naming pre.heap first (.ref 0) := by
       contradiction
   · exact .array hc (by intro x hx; simp at hx)
 
-theorem second_described : Describes naming pre.heap second (.ref 1) := by
-  have hc : pre.heap[1]? = some [.int 0] := rfl
+theorem second_described : Describes naming pre.heap second (.ref 0) := by
+  have hc : pre.heap[0]? = some [.int 0] := rfl
   refine ⟨⟨?_, ?_⟩, ?_⟩
   · intro q c h
     cases h with
@@ -196,9 +199,24 @@ theorem inputs_length : entry.inputs.length = args.length + ([] : List Value).le
   rw [entry_inputs]; rfl
 
 theorem concrete_run :
-    callResult program.declarations entry.decl args [] 10 pre = .ok (.ref 0, post) := by
+    callResult program.declarations entry.decl args [] 10 pre = .ok (.ref 1, post) := by
   rw [entry_decl]
   cbv
+
+/-- The witness is in allocation order: the view is above its source, both
+    exist, the source is nonempty, and the view has one source. So the state
+    fails the written-storage premise alone, not `LinksValid`. -/
+theorem pre_linksValid : LinksValid pre := by
+  refine ⟨?_, ?_, ?_⟩
+  · intro v s f member
+    simp only [pre, List.mem_singleton, Prod.mk.injEq] at member
+    obtain ⟨rfl, rfl, rfl⟩ := member
+    decide
+  · intro v s f member
+    simp only [pre, List.mem_singleton, Prod.mk.injEq] at member
+    obtain ⟨rfl, rfl, rfl⟩ := member
+    exact ⟨[.int 0], rfl, by simp⟩
+  · decide
 
 /-- The written-storage premise fails: input 0 is written at its root, the
     link joins its array to input 1's array, and no row permits input 1. -/
@@ -212,25 +230,28 @@ theorem not_covered : ¬ LinkedWritesCovered entry.summary entry.inputs args arg
     unfold canonicalPath
     rw [entry_inputs]
     simp [inputs, second, Abstract.paths]
-  have at0 : ArrayAt pre.heap (args[0]?.getD (.int 0)) [] 0 := .here _
-  have at1 : ArrayAt pre.heap (args[1]?.getD (.int 0)) [] 1 := .here _
+  have at0 : ArrayAt pre.heap (args[0]?.getD (.int 0)) [] 1 := .here _
+  have at1 : ArrayAt pre.heap (args[1]?.getD (.int 0)) [] 0 := .here _
   have permitted0 : WritePermitted entry.summary args.length 0 [] := by
     refine Or.inl ?_
     rw [entry_writes, entry_consumes]
     cbv
-  have connected : LinkedWriteFrame.LinkConnected pre.links 0 1 :=
+  have connected : LinkedWriteFrame.LinkConnected pre.links 1 0 :=
     LinkedWriteFrame.LinkConnected.edge (front := true) (by simp [pre])
   have hrow : rowHas (entry.summary.writes ++ entry.summary.consumes)
       (inputOrigin args.length 1 []) = false := by
     rw [entry_writes, entry_consumes]
     cbv
-  rcases h 0 [] 0 canon0 at0 permitted0 1 connected 1 [] canon1 at1 with row | env
+  rcases h 0 [] 1 canon0 at0 permitted0 0 connected 1 [] canon1 at1 with row | env
   · rw [hrow] at row
     cases row
   · cases env
 
-/-- The positive control: with both inputs permitted, the premise holds at
-    the same linked state, so it is not unsatisfiable under links. -/
+/-- A control on the Prop: with both inputs permitted, the premise holds at
+    the same linked state, so it is not unsatisfiable under links. No accepted
+    program publishes this summary at such a call (the Disjoint test refuses
+    it); the control at a reachable call, with every premise of
+    `summary_sound`, is `LinkedCallControl` (`StatementChecks/LinkedCallControl.lean`). -/
 def bothSummary : Summary := { entry.summary with writes := [.parameter 0 [], .parameter 1 []] }
 
 theorem bothSummary_writes : bothSummary.writes = [.parameter 0 [], .parameter 1 []] := rfl
@@ -261,21 +282,21 @@ theorem covered_when_both_written :
 #guard Falsify.linkedWritesCoveredB bothSummary entry.inputs args args.length pre.links pre.heap == true
 
 
-theorem no_call_sound : ¬ CallSound entry.summary entry.inputs args args.length pre post (.ref 0) := by
+theorem no_call_sound : ¬ CallSound entry.summary entry.inputs args args.length pre post (.ref 1) := by
   intro h
   have canon : canonicalPath entry.inputs 1 [] := by
     unfold canonicalPath
     rw [entry_inputs]
     simp [inputs, second, Abstract.paths]
-  have arrayAt : ArrayAt pre.heap (args[1]?.getD (.int 0)) [] 1 := .here _
-  have changed : post.heap[1]? ≠ pre.heap[1]? := by
+  have arrayAt : ArrayAt pre.heap (args[1]?.getD (.int 0)) [] 0 := .here _
+  have changed : post.heap[0]? ≠ pre.heap[0]? := by
     intro e
     simp [post, pre] at e
   have hrow : rowHas (entry.summary.writes ++ entry.summary.consumes)
       (inputOrigin args.length 1 []) = false := by
     rw [entry_writes, entry_consumes]
     cbv
-  rcases h.writes 1 [] 1 canon arrayAt changed with h1 | h2
+  rcases h.writes 1 [] 0 canon arrayAt changed with h1 | h2
   · rw [hrow] at h1
     cases h1
   · cases h2
