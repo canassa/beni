@@ -1221,6 +1221,29 @@ edits the root's while reading a subtree: the levels share one place, so the roo
 Telling the levels apart is the representatives' exclusivity of thesis §3.1, which is not built. The corpus,
 `bench/ownership-everywhere.mjs`, core and every platform refuse nothing new.
 
+*Amended 2026-10-18 (review of PR #341).* Three findings on the amendment above:
+
+- **Precision lost on `Dict`.** A projection into a dictionary's subtree now keeps the levels folded below it, so
+  the conditions a summary states on a dictionary's subtrees — that they share no list with each other or with the
+  values — are `{lost}` where they were atoms: `Toplevel.bump`'s `#Dict.0#Node.3` and `#Node.4` went from
+  `{excl …, sep …}` to `{lost}`. No verdict in the corpus, the bench, core or a platform moves, but code that
+  relies on a dictionary's subtrees not sharing, through a callee's `xreq`, is refused, approximately, until the
+  levels can be told apart.
+- **Mutually recursive types are solved once per cycle.** The fix of what a type may hold remembered only the
+  outermost type of a cycle, and read every other one again on each path through it: exponential in the cycle,
+  27 s for twelve types that each name all the others. What a type holds is now the least fixpoint of each strongly
+  connected group of the types definitions name, solved once per group in Tarjan's order, every member starting
+  from nothing (`ownership/MutualCycles`, under 1 s).
+- **A parameter's folded levels are not yet checked** (open). "A demand on a folded path is checked against every
+  level it stands for" holds for a value the body builds, whose entries the projection now keeps, and not for a
+  parameter, whose symbolic cells compare paths step by step: `param(t, #Node.0)`, the left subtree, does not cover
+  `param(t, #Node.1)`, the lists of every level, so `case t of Node l ys _ → ( List.push ys 1, l )` is accepted, as
+  on master, while the same body over a tree built inline is rejected (`Rose` and `Pair (List Int) (Maybe Pair)`
+  alike). Relating the two cells is sound but refuses `browser-direct`'s own `Tea.want`: `Dict.update` relies on the
+  dictionary's values being exclusive, and a subtree that may be any level holds every value. The caller must
+  instead discharge that the levels are pairwise distinct, which is the representatives' exclusivity above; the hole
+  closes with it.
+
 *Not yet built: decision (a), folding only types that reach themselves.* Folding any type the path already
 entered — `Maybe` inside `Maybe` — is what keeps core's `Schema` finite today: a value cast through `Js.Value`
 and back is read at another type, and the paths of `unpack`, `collect` and `productOf` grow by one step per
