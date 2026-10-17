@@ -1,0 +1,23 @@
+-- run: an unnamed `listen` error is a defect even when no fiber waits for
+-- the answer any more (boundary.md §9.10 (e); CLAUDE.md rule 9). The owner
+-- cancels the fiber that listens while the bind is pending; the preload
+-- then fails the bind with `EPROTO`, which the platform does not name, so
+-- Node reports it and the process exits 1 — never a silent drop.
+import Http.Server as Server exposing (Request, Response)
+import Io
+import Node exposing (Program)
+import Task
+
+
+handle : Request → Response
+handle _ = Server.text 200 "unreached"
+
+
+main : Program
+main = Io.run λ⊤ →
+    listener = Task.spawn λ⊤ → Server.listen { host = "127.0.0.1", port = 0 } handle
+    -- Let the child run until it parks on the bind, then cancel it.
+    Task.yieldNow ⊤
+    Task.cancel listener
+    Io.sleep 50
+    Node.print "the cancelled bind's error was dropped, which it must not be"

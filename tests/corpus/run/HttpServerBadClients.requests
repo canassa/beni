@@ -1,0 +1,16 @@
+# A body that stops short of its content-length, then a whole one.
+{"cut": {"path": "/cut", "declared": 10, "body": "abc"}}
+{"method": "POST", "path": "/whole", "body": "all of it"}
+# Bytes no parser accepts: Node answers 400 and closes.
+{"raw": "GARBAGE\r\n\r\n"}
+{"method": "GET", "path": "/after-garbage"}
+# A header block over Node's maxHeaderSize (16 KiB): 431, and the connection closed.
+{"raw": "GET /big-header HTTP/1.1\r\nhost: x\r\nx-big: {a*20000}\r\n\r\n"}
+{"method": "GET", "path": "/after-big-header"}
+# A client that leaves while a 16 MiB answer is being written.
+{"method": "GET", "path": "/big", "cutResponse": true}
+# A client that leaves before its answer: the handler runs to its end and
+# the write is dropped. `/release` lets that handler finish.
+{"method": "GET", "path": "/slow", "abort": true}
+{"method": "GET", "path": "/release"}
+{"method": "GET", "path": "/stop"}

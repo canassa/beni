@@ -1,0 +1,22 @@
+-- run: a `listen` failure the platform does not name is a defect
+-- (boundary.md §4.1, §9.10 (e); CLAUDE.md rule 9): thrown again, Node
+-- reports it and the process exits 1, with nothing on standard output. The
+-- script's first step makes the preload fail the bind with `EPROTO`, a code
+-- no constructor of `ListenError` names.
+import Http.Server as Server exposing (Request, Response)
+import Io
+import Node exposing (Program)
+
+
+handle : Request → Response
+handle _ = Server.text 200 "unreached"
+
+
+main : Program
+main = Io.run λ⊤ →
+    case Server.listen { host = "127.0.0.1", port = 0 } handle of
+        Err _ →
+            Node.print "a typed error, which EPROTO must not become"
+
+        Ok _ →
+            Node.print "listening, which a failed bind cannot be"

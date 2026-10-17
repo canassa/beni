@@ -1,0 +1,56 @@
+> (cut) POST /cut, content-length 10, 3 bytes sent
+> POST /whole
+>
+> all of it
+< 200
+< content-type: text/plain; charset=utf-8
+< content-length: 13
+< connection: keep-alive
+< keep-alive: timeout=5
+<
+< got all of it
+> (raw "GARBAGE\r\n\r\n")
+< HTTP/1.1 400 Bad Request
+< (closed by the server)
+> GET /after-garbage
+< 200
+< content-type: text/plain; charset=utf-8
+< content-length: 4
+< connection: keep-alive
+< keep-alive: timeout=5
+<
+< got 
+> (raw "GET /big-header HTTP/1.1\r\nhost: x\r\nx-big: {a*20000}\r\n\r\n")
+< HTTP/1.1 431 Request Header Fields Too Large
+< (closed by the server)
+> GET /after-big-header
+< 200
+< content-type: text/plain; charset=utf-8
+< content-length: 4
+< connection: keep-alive
+< keep-alive: timeout=5
+<
+< got 
+> GET /big (cut after the first chunk)
+< (cut after the first chunk of 200)
+> GET /slow (aborted)
+> GET /release
+< 200
+< content-type: text/plain; charset=utf-8
+< content-length: 8
+< connection: keep-alive
+< keep-alive: timeout=5
+<
+< released
+> GET /stop
+< 200
+< content-type: text/plain; charset=utf-8
+< content-length: 15
+< connection: keep-alive
+< keep-alive: timeout=5
+<
+< handlers ran: 7
+--- stdout ---
+stopped
+--- stderr ---
+--- exit 0 ---

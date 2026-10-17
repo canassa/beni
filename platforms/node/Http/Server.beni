@@ -1,0 +1,206 @@
+--! An HTTP server over `node:http` (`docs/design/boundary.md` §9.10): a
+--! program listens on an address and hands the platform one function. The
+--! platform calls it once per request, in a fiber of its own, and writes
+--! what it returns.
+--!
+--!     main : Program
+--!     main = Io.run λ⊤ →
+--!         stop = Deferred.make ⊤
+--!         case Server.listen { host = "127.0.0.1", port = 8080 } (handle stop _) of
+--!             Err error →
+--!                 Node.exitWith "cannot listen" 1
+--!
+--!             Ok server →
+--!                 Deferred.wait stop
+--!                 Server.close server
+--!                 Server.wait server
+--!                 Node.print "stopped"
+--!
+--! Every failure Node documents for these operations is one constructor of a
+--! typed error, and any other error is a defect, as `Io.readFile` does it
+--! (§4.1, `CLAUDE.md` rule 9). The sibling `Server.js` holds what needs
+--! `node:http`; the fibers are beni over `Task`.
+
+import Js
+import Task exposing (Resume, Scope)
+
+
+--| Where a server listens: `host` as Node's `listen` takes it (`"127.0.0.1"`,
+--| `"::1"`, `"localhost"`, `"0.0.0.0"`), and a `port` from 0 to 65535, where
+--| 0 lets the operating system pick one and `address` reports it.
+pub type alias Address =
+    host : String
+    port : Int
+
+
+--| Why a server could not listen: one constructor for each failure Node
+--| documents. Any other failure is a defect and ends the program.
+--|
+--| - `AddressInUse`: another socket listens on that address and port.
+--| - `PermissionDenied`: a port under 1024 without the privilege for it.
+--| - `AddressNotAvailable`: no interface of the machine has that address,
+--|   or its family is off.
+--| - `HostNotFound`: `host` is a name the resolver cannot answer.
+--| - `TooManyOpenFiles`: the process, or the system, has no file
+--|   descriptor to spare.
+--| - `InvalidPort`: `port` is not an integer from 0 to 65535. Node is not
+--|   called.
+pub type ListenError
+    = AddressInUse
+    | PermissionDenied
+    | AddressNotAvailable
+    | HostNotFound
+    | TooManyOpenFiles
+    | InvalidPort
+
+
+--| A request, whole: the platform waits for its headers and its body before
+--| it calls the handler.
+--|
+--| - `method` as Node gives it, in upper case: `"GET"`, `"POST"`, …
+--| - `path` is the request target as sent, with its query: `"/items?limit=3"`.
+--| - `headers` as sent, each name in lower case, duplicates kept in order.
+--| - `body` is the whole body decoded as UTF-8; `""` when there is none.
+pub type alias Request =
+    method : String
+    path : String
+    headers : List (String × String)
+    body : String
+
+
+--| What a handler answers. The platform writes the status, the headers in
+--| this order, then its own `content-length` for the body, written as UTF-8.
+--| A name given twice is written twice, in order. A response Node cannot
+--| write — a status outside 200 to 999, a body on a 204, a 205 or a 304, a
+--| header name that is not a token, a header value with a
+--| control character, or a `content-length` or `transfer-encoding` of the
+--| program's — is answered with 500 and reported on standard error
+--| (§9.10 (d)).
+pub type alias Response =
+    status : Int
+    headers : List (String × String)
+    body : String
+
+
+--| A listening server. Every operation is total on one that has closed.
+pub opaque type Server
+    = Server Handle
+
+
+foreign type Handle
+
+
+--| Bind `address` and serve each request with `handler`, in a fiber of its
+--| own: `Ok` with the server once it listens, or `Err` with why it cannot.
+--|
+--| The calling fiber owns the server: when that fiber ends, or is cancelled,
+--| every connection is destroyed, every handler still running is cancelled,
+--| and the server closes — from the moment `listen` returns, so a program
+--| that returns right after it serves nothing and ends. `close` is the
+--| graceful way to stop it.
+pub listen : Address, (Request → Response) → Result ListenError Server
+listen at handler =
+    if not (validPort at.port) then
+        Err InvalidPort
+    else
+        case Task.callback λresume → startListen at resume of
+            Err error →
+                Err error
+
+            Ok handle →
+                _ = Task.spawn λ⊤ → serve handle handler
+                -- Let the loop's fiber run until it parks, so that from here
+                -- on a cancellation of the caller, or its end, reaches the
+                -- loop's canceller and closes the server: a loop that never
+                -- ran would leave the server bound and the process alive.
+                Task.yieldNow ⊤
+                Ok (Server handle)
+
+
+validPort : Int → Bool
+validPort port = port ≥ 0 && port ≤ 65535
+
+
+-- The accept loop: one handler fiber per complete request, in the order
+-- they arrived, inside a scope that is cancelled with the loop's fiber.
+-- `nextRequest` answers `null` once the server has closed.
+serve : Handle, (Request → Response) → ⊤
+serve handle handler = Task.scope λscope → loop handle scope handler
+
+
+loop : Handle, Scope, (Request → Response) → ⊤
+loop handle scope handler =
+    incoming = Task.callback λresume → nextRequest handle resume
+    if Js.isNull incoming then
+        ⊤
+    else
+        _ = Task.spawnIn scope λ⊤ → write incoming (handler (requestOf incoming))
+        loop handle scope handler
+
+
+--| The address the server bound: with a `port` of 0 asked for, the one the
+--| operating system picked.
+pub address : Server → Address
+address (Server handle) = boundAddress handle
+
+
+--| Stop accepting connections and close the idle ones, and return at once.
+--| A handler still running finishes, and its response is written with
+--| `connection: close`. On a server that is closing already, nothing.
+pub close : Server → ⊤
+close (Server handle) = beginClose handle
+
+
+--| Wait until the server has closed and every response is written: at once
+--| when it has.
+pub wait : Server → ⊤
+wait (Server handle) = Task.callback λresume → awaitClosed handle resume
+
+
+--| A response with that status, `text` as its body and one header,
+--| `content-type: text/plain; charset=utf-8`.
+pub text : Int, String → Response
+text status body =
+    { status = status
+    , headers = [ ( "content-type", "text/plain; charset=utf-8" ) ]
+    , body = body
+    }
+
+
+--| The first value of the header named, in any case, or `Nothing`.
+pub header : Request, String → Maybe String
+header request name = find (String.toLower name) request.headers
+
+
+find : String, List (String × String) → Maybe String
+find name headers =
+    case headers of
+        [] →
+            Nothing
+
+        [ ( key, value ), …rest ] →
+            if key == name then
+                Just value
+            else
+                find name rest
+
+
+foreign impure startListen : Address, Resume (Result ListenError Handle) → (⊤ → ⊤)
+
+
+foreign impure nextRequest : Handle, Resume Js.Value → (⊤ → ⊤)
+
+
+foreign pure requestOf : Js.Value → Request
+
+
+foreign impure write : Js.Value, Response → ⊤
+
+
+foreign impure awaitClosed : Handle, Resume ⊤ → (⊤ → ⊤)
+
+
+foreign impure beginClose : Handle → ⊤
+
+
+foreign pure boundAddress : Handle → Address

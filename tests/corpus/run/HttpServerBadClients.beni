@@ -1,0 +1,56 @@
+-- run: what a client can do wrong never reaches the handler, and never stops
+-- the server (boundary.md §9.10 (c)): a body cut short is dropped
+-- (`ECONNRESET` on the request, handled by its code), a malformed request is
+-- Node's `clientError` and Node answers 400 by itself, as it answers 431 to
+-- a header block over `maxHeaderSize`; a client that left before the
+-- response is written gets nothing, with the write dropped; and a client
+-- that leaves during a 16 MiB write is the socket's error, left to Node.
+-- Each handler counts, and the stop route reports how many ran.
+import Deferred exposing (Deferred)
+import Http.Server as Server exposing (Request, Response)
+import Io
+import Node exposing (Program)
+import Ref exposing (Ref)
+
+
+handle : Ref Int, Deferred ⊤, Deferred ⊤, Request → Response
+handle seen release stop request =
+    Ref.update seen λn → n + 1
+    case request.path of
+        "/slow" →
+            -- Answered only once `/release` has been served, by which time
+            -- the client that asked has gone.
+            Deferred.wait release
+            Server.text 200 "late"
+
+        "/release" →
+            _ = Deferred.complete release ⊤
+            Server.text 200 "released"
+
+        "/big" →
+            -- Larger than the socket's buffers, so the client can leave
+            -- while the rest is still being written.
+            Server.text 200 (String.repeat "a" 16777216)
+
+        "/stop" →
+            _ = Deferred.complete stop ⊤
+            Server.text 200 ("handlers ran: " ++ String.fromInt (Ref.get seen))
+
+        _ →
+            Server.text 200 ("got " ++ request.body)
+
+
+main : Program
+main = Io.run λ⊤ →
+    seen = Ref.make 0
+    release = Deferred.make ⊤
+    stop = Deferred.make ⊤
+    case Server.listen { host = "127.0.0.1", port = 0 } (handle seen release stop _) of
+        Err _ →
+            Node.exitWith "cannot listen" 1
+
+        Ok server →
+            Deferred.wait stop
+            Server.close server
+            Server.wait server
+            Node.print "stopped"

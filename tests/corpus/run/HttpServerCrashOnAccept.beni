@@ -1,0 +1,23 @@
+-- run: an `error` of the server once it listens — an accept out of file
+-- descriptors, say — is a defect (boundary.md §9.10 (e); CLAUDE.md rule 9):
+-- the platform leaves no listener on the server, so Node throws the event,
+-- reports it and the process exits 1. `listen` has returned, so there is no
+-- one to answer. The preload emits `EMFILE` on the server once it listens.
+import Http.Server as Server exposing (Request, Response)
+import Io
+import Node exposing (Program)
+import Task
+
+
+handle : Request → Response
+handle _ = Server.text 200 "unreached"
+
+
+main : Program
+main = Io.run λ⊤ →
+    case Server.listen { host = "127.0.0.1", port = 0 } handle of
+        Err _ →
+            Node.exitWith "cannot listen" 1
+
+        Ok _ →
+            Task.never ⊤

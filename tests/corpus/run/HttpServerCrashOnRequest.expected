@@ -1,0 +1,14 @@
+(fault: request:EIO)
+> GET /any
+< (error ECONNRESET)
+--- stdout ---
+--- stderr ---
+<project>/<file>:<line>
+
+Error: read EIO: injected by tests/serve/preload.mjs
+{
+  code: 'EIO',
+  syscall: 'read'
+}
+
+--- exit 1 ---

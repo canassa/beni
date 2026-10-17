@@ -1,0 +1,50 @@
+-- run: a response header given twice is written twice, in order
+-- (boundary.md §9.10 (d)): two `set-cookie` headers reach the client as two,
+-- as `writeHead` with a flat array writes them, where `setHeader` would keep
+-- one. A request's duplicate headers reach the handler as two as well, in
+-- order, which the echo shows.
+import Deferred exposing (Deferred)
+import Http.Server as Server exposing (Request, Response)
+import Io
+import Node exposing (Program)
+
+
+handle : Deferred ⊤, Request → Response
+handle stop request =
+    case request.path of
+        "/cookies" →
+            { status = 200
+            , headers =
+                [ ( "set-cookie", "a=1" )
+                , ( "x-note", "first" )
+                , ( "set-cookie", "b=2" )
+                , ( "x-note", "second" )
+                ]
+            , body = "two cookies"
+            }
+
+        "/echo-notes" →
+            Server.text 200
+                (request.headers
+                    ▷ List.filter λ( name, _ ) → name == "x-note"
+                    ▷ List.map λ( _, value ) → value
+                    ▷ String.join ", "
+                )
+
+        _ →
+            _ = Deferred.complete stop ⊤
+            Server.text 200 "stopping"
+
+
+main : Program
+main = Io.run λ⊤ →
+    stop = Deferred.make ⊤
+    case Server.listen { host = "127.0.0.1", port = 0 } (handle stop _) of
+        Err _ →
+            Node.exitWith "cannot listen" 1
+
+        Ok server →
+            Deferred.wait stop
+            Server.close server
+            Server.wait server
+            Node.print "stopped"

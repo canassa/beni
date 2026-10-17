@@ -1,0 +1,7 @@
+# The basics: a GET, a POST echoed with its header, a path nothing serves,
+# then the stop route, whose response ends its connection.
+{"method": "GET", "path": "/hello"}
+{"method": "POST", "path": "/echo", "headers": {"content-type": "text/plain"}, "body": "one\ntwo"}
+{"method": "GET", "path": "/missing?x=1"}
+{"method": "HEAD", "path": "/hello"}
+{"method": "GET", "path": "/stop"}

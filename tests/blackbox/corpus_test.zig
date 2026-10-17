@@ -105,6 +105,7 @@ const testing = std.testing;
 const Part = @import("corpus_parts.zig").Part;
 const run_hash = @import("run_hash.zig");
 const browser = @import("browser.zig");
+const serve = @import("serve.zig");
 
 /// The root every `Kind` directory is joined onto unless
 /// `BENI_CORPUS_ROOT` says otherwise (see `Config`).
@@ -2693,12 +2694,21 @@ const Case = struct {
             else => return err,
         };
 
+        // A server program's script (`serve.zig`): the fixture is driven
+        // rather than run, and its record covers the script.
+        const requests: ?[]const u8 = if (Io.Dir.cwd().readFileAlloc(testing.io, try c.goldenPath("requests"), c.arena, .limited(world.max_stream_bytes))) |bytes|
+            bytes
+        else |err| switch (err) {
+            error.FileNotFound => null,
+            else => return err,
+        };
+
         // Skip Node when this exact output tree, golden and Node were
         // verified together before. Pending mode has no records, and a
         // blessing run exists to look at the output.
         if (c.cfg.run_hashes == .check and c.cfg.mode == .strict and !bless) {
             if (Io.Dir.cwd().readFileAlloc(testing.io, try c.goldenPath(golden), c.arena, .limited(world.max_stream_bytes))) |bytes| {
-                const line = try run_hash.line(c.arena, c.w, out_dir, @tagName(pass), golden, try withCrash(c.arena, bytes, crash));
+                const line = try c.recordLine(out_dir, @tagName(pass), golden, try withCrash(c.arena, bytes, crash), requests);
                 if (run_hash.listed(record, line)) {
                     RunCounts.add(&run_counts.skipped);
                     return null;
@@ -2710,7 +2720,17 @@ const Case = struct {
         }
 
         const entry = try std.fmt.allocPrint(c.arena, "{s}/_main.mjs", .{out_dir});
-        const program = c.w.nodeWith(entry, c.cfg.timeout_ms) catch |err| {
+        // A server program is run by the driver, which starts it, sends it
+        // the script's requests and prints the transcript (`serve.zig`).
+        const program = (if (requests != null)
+            c.w.runNode(&.{
+                (try serve.harness(testing.io)).driver,
+                entry,
+                // Absolute: the driver runs in the project directory.
+                try Io.Dir.cwd().realPathFileAlloc(testing.io, try c.goldenPath("requests"), c.arena),
+            })
+        else
+            c.w.nodeWith(entry, c.cfg.timeout_ms)) catch |err| {
             detail("{s} [{s}]: cannot run the emitted program ({t}); is node on PATH?\n", .{ c.fixture.name, out_dir, err });
             return err;
         };
@@ -2739,7 +2759,14 @@ const Case = struct {
         };
         // Verified: the golden now holds exactly what the program printed.
         if (c.cfg.run_hashes != .record) return null;
-        return try run_hash.line(c.arena, c.w, out_dir, @tagName(pass), golden, try withCrash(c.arena, program.stdout, crash));
+        return try c.recordLine(out_dir, @tagName(pass), golden, try withCrash(c.arena, program.stdout, crash), requests);
+    }
+
+    /// A build's record line: a plain `run/` one's, or, for a server program,
+    /// one that also covers the driver, the preload and the script.
+    fn recordLine(c: Case, out_dir: []const u8, pass: []const u8, golden: []const u8, expected: []const u8, requests: ?[]const u8) ![]const u8 {
+        const script = requests orelse return run_hash.line(c.arena, c.w, out_dir, pass, golden, expected);
+        return run_hash.lineWith(c.arena, c.w, out_dir, pass, golden, expected, try serve.inputs(c.arena, try serve.harness(testing.io), script));
     }
 
     /// What a `run/` build's record covers of its goldens: the stdout, and

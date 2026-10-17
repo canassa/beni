@@ -1,0 +1,32 @@
+-- run: the 500 an invalid response is answered with carries `connection:
+-- close` after `close`, as every response does (boundary.md §9.10 (b), (d)):
+-- the handler closes the server and then returns a status Node refuses, and
+-- the connection ends with the 500. The next connection is refused.
+import Deferred exposing (Deferred)
+import Http.Server as Server exposing (Request, Response)
+import Io
+import Node exposing (Program)
+
+
+handle : Deferred Server.Server, Request → Response
+handle self request =
+    case request.path of
+        "/stop-badly" →
+            Server.close (Deferred.wait self)
+            { status = 1000, headers = [ ( "connection", "keep-alive" ) ], body = "unreachable" }
+
+        _ →
+            Server.text 200 "open"
+
+
+main : Program
+main = Io.run λ⊤ →
+    self = Deferred.make ⊤
+    case Server.listen { host = "127.0.0.1", port = 0 } (handle self _) of
+        Err _ →
+            Node.exitWith "cannot listen" 1
+
+        Ok server →
+            _ = Deferred.complete self server
+            Server.wait server
+            Node.print "closed"

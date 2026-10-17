@@ -1,0 +1,50 @@
+-- run: the fiber that called `listen` owns the server (boundary.md §9.10
+-- (b)). When it ends, every connection is destroyed and every handler still
+-- running is cancelled, with its cleanup run: the detached request to
+-- `/hang` is never answered, its connection is reset, and the handler's
+-- `onExit` sees `Cancelled`. The server lives in a child fiber here, so the
+-- program can print after it.
+import Deferred exposing (Deferred)
+import Http.Server as Server exposing (Request, Response)
+import Io
+import Node exposing (Program)
+import Task
+
+
+handle : Deferred ⊤, Request → Response
+handle quit request =
+    case request.path of
+        "/hang" →
+            Task.onExit (λ⊤ → Task.never ⊤) λexit →
+                case exit of
+                    Task.Done _ →
+                        Debug.log "hang answered" ⊤
+
+                    Task.Cancelled →
+                        Debug.log "hang cancelled" ⊤
+
+        "/quit" →
+            _ = Deferred.complete quit ⊤
+            Server.text 200 "quitting"
+
+        _ →
+            Server.text 404 "no"
+
+
+owner : Deferred ⊤ → String
+owner quit =
+    case Server.listen { host = "127.0.0.1", port = 0 } (handle quit _) of
+        Err _ →
+            "cannot listen"
+
+        Ok _ →
+            Deferred.wait quit
+            "owner done"
+
+
+main : Program
+main = Io.run λ⊤ →
+    quit = Deferred.make ⊤
+    fiber = Task.spawn λ⊤ → owner quit
+    result = Task.join fiber
+    Node.print result

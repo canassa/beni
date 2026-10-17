@@ -1,0 +1,21 @@
+-- run: the server belongs to the fiber that called `listen` from the moment
+-- `listen` returns (boundary.md §9.10 (b)). A program that returns right
+-- after it serves nothing and ends: the server closes with the fiber, so
+-- the process is not kept alive by a bound socket no one can close.
+import Http.Server as Server exposing (Request, Response)
+import Io
+import Node exposing (Program)
+
+
+handle : Request → Response
+handle _ = Server.text 200 "unreached"
+
+
+main : Program
+main = Io.run λ⊤ →
+    case Server.listen { host = "127.0.0.1", port = 0 } handle of
+        Err _ →
+            Node.exitWith "cannot listen" 1
+
+        Ok _ →
+            Node.print "listened, and done"

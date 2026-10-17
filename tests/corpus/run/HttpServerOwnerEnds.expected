@@ -1,0 +1,16 @@
+> GET /hang (detached)
+> GET /quit
+< 200
+< content-type: text/plain; charset=utf-8
+< content-length: 8
+< connection: keep-alive
+< keep-alive: timeout=5
+<
+< quitting
+--- detached ---
+GET /hang: (error ECONNRESET)
+--- stdout ---
+hang cancelled: ⊤
+owner done
+--- stderr ---
+--- exit 0 ---

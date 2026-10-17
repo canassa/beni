@@ -1,0 +1,48 @@
+> GET /hello
+< 200
+< content-type: text/plain; charset=utf-8
+< content-length: 5
+< connection: keep-alive
+< keep-alive: timeout=5
+<
+< hello
+> POST /echo
+> content-type: text/plain
+>
+> one
+> two
+< 200
+< content-type: text/plain
+< x-method: POST
+< content-length: 7
+< connection: keep-alive
+< keep-alive: timeout=5
+<
+< one
+< two
+> GET /missing?x=1
+< 404
+< content-type: text/plain; charset=utf-8
+< content-length: 15
+< connection: keep-alive
+< keep-alive: timeout=5
+<
+< no /missing?x=1
+> HEAD /hello
+< 200
+< content-type: text/plain; charset=utf-8
+< content-length: 5
+< connection: keep-alive
+< keep-alive: timeout=5
+> GET /stop
+< 200
+< content-type: text/plain; charset=utf-8
+< content-length: 8
+< connection: keep-alive
+< keep-alive: timeout=5
+<
+< stopping
+--- stdout ---
+stopped 127.0.0.1
+--- stderr ---
+--- exit 0 ---

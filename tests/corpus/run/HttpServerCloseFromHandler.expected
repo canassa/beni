@@ -1,0 +1,20 @@
+> GET /one
+< 200
+< content-type: text/plain
+< connection: keep-alive
+< content-length: 4
+<
+< open
+> GET /stop
+< 200
+< content-type: text/plain; charset=utf-8
+< connection: close
+< content-length: 7
+<
+< closing
+> GET /two
+< (error ECONNREFUSED)
+--- stdout ---
+closed
+--- stderr ---
+--- exit 0 ---

@@ -1,0 +1,58 @@
+-- run: the `listen` failures no test host produces on demand, injected by
+-- the preload in turn (boundary.md §9.10 (e), (h)): `EMFILE` and `ENFILE`
+-- are `TooManyOpenFiles`, `EAFNOSUPPORT` is `AddressNotAvailable`, and
+-- `EAI_AGAIN` and `EAI_FAIL` are `HostNotFound`, each a typed answer and
+-- never a crash. The sixth `listen` is not failed, and the program ends.
+import Http.Server as Server exposing (ListenError, Request, Response)
+import Io
+import Node exposing (Program)
+
+
+describe : ListenError → String
+describe error =
+    case error of
+        Server.AddressInUse →
+            "address in use"
+
+        Server.PermissionDenied →
+            "permission denied"
+
+        Server.AddressNotAvailable →
+            "address not available"
+
+        Server.HostNotFound →
+            "host not found"
+
+        Server.TooManyOpenFiles →
+            "too many open files"
+
+        Server.InvalidPort →
+            "invalid port"
+
+
+handle : Request → Response
+handle _ = Server.text 200 "unreached"
+
+
+attempt : String → String
+attempt label =
+    case Server.listen { host = "127.0.0.1", port = 0 } handle of
+        Ok server →
+            Server.close server
+            Server.wait server
+            label ++ ": listening"
+
+        Err error →
+            label ++ ": " ++ describe error
+
+
+main : Program
+main = Io.run λ⊤ →
+    Node.printLines
+        [ attempt "EMFILE"
+        , attempt "ENFILE"
+        , attempt "EAFNOSUPPORT"
+        , attempt "EAI_AGAIN"
+        , attempt "EAI_FAIL"
+        , attempt "no fault"
+        ]

@@ -1,0 +1,66 @@
+-- run: a `Response` Node cannot write is answered with 500, an empty body
+-- and no header of the program's, and one line on standard error says why
+-- (boundary.md §9.10 (d)): a status outside 100 to 999, a header name that
+-- is not a token, a header value with a line break, a body on a 204 or a
+-- 205, and the two headers the transport owns; a 204 with no body is written
+-- with no `content-length`, a 205 with no body with `content-length: 0`. The
+-- server stays up, and the next request is served.
+import Deferred exposing (Deferred)
+import Http.Server as Server exposing (Request, Response)
+import Io
+import Node exposing (Program)
+
+
+handle : Deferred ⊤, Request → Response
+handle stop request =
+    case request.path of
+        "/status" →
+            { status = 1000, headers = [], body = "unreachable" }
+
+        "/interim" →
+            { status = 100, headers = [], body = "" }
+
+        "/no-content" →
+            { status = 204, headers = [], body = "unreachable" }
+
+        "/reset" →
+            { status = 205, headers = [], body = "unreachable" }
+
+        "/empty" →
+            { status = 204, headers = [ ( "x-note", "fine" ) ], body = "" }
+
+        "/reset-empty" →
+            { status = 205, headers = [], body = "" }
+
+        "/name" →
+            { status = 200, headers = [ ( "bad name", "x" ) ], body = "unreachable" }
+
+        "/value" →
+            { status = 200, headers = [ ( "x-note", "a\nb" ) ], body = "unreachable" }
+
+        "/length" →
+            { status = 200, headers = [ ( "Content-Length", "99" ) ], body = "unreachable" }
+
+        "/encoding" →
+            { status = 200, headers = [ ( "transfer-encoding", "chunked" ) ], body = "unreachable" }
+
+        "/stop" →
+            _ = Deferred.complete stop ⊤
+            Server.text 200 "still here"
+
+        _ →
+            Server.text 404 "no"
+
+
+main : Program
+main = Io.run λ⊤ →
+    stop = Deferred.make ⊤
+    case Server.listen { host = "127.0.0.1", port = 0 } (handle stop _) of
+        Err _ →
+            Node.exitWith "cannot listen" 1
+
+        Ok server →
+            Deferred.wait stop
+            Server.close server
+            Server.wait server
+            Node.print "stopped"

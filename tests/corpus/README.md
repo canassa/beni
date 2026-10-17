@@ -22,6 +22,7 @@ outputs: stdout, the JSON diagnostics on stderr, and the exit code.
 | `build/bad/<Dir>/` | `build --diagnostics=json --platform=…` | `<Dir>/_expected.diag` | must fail the BUILD: exit 1, the whole diagnostic list, and no `out/` |
 | `build/bad-release/<Dir>/` | the same, **plus `--release`** | `<Dir>/_expected.diag` | must build clean WITHOUT the flag and fail with it (`backend.md` §9's refusal of `Debug`) |
 | `run/` | `build --platform=node`, then `node out/_main.mjs` | `<name>.expected` | **the second boundary**: the emitted program's stdout |
+| `run/`, with `<name>.requests` | `build --platform=node`, then `node tests/serve/driver.mjs out/_main.mjs <name>.requests` | `<name>.expected` | a server program driven by the script: the transcript of its answers, then its streams and exit (*A server program*) |
 | `browser/` | `build --platform=tests/platforms/page`, then the program in a page, driven by `<name>.steps` | `<name>.expected` | the second boundary in a DOM: the page after the load and after each step |
 | `regress/` | as above, by subdirectory | as above | named after the bug they pin, e.g. `Shadowing2.beni` |
 
@@ -95,6 +96,63 @@ report, such as `Error: disk on fire`, since the rest of the report is
 stack frames whose paths are the test's own. Without a `.crash` file a
 `run/` program must exit 0, as before. The `.crash` text is part of what a
 build's run hash covers. `.crash` is never blessed: write it by hand.
+
+### A server program
+
+A `run/` fixture with a `<name>.requests` script (`_expected.requests` in a
+project) is a server (`boundary.md` §9.10 (h)). Each of its two builds is
+run by `node tests/serve/driver.mjs out/_main.mjs <name>.requests` in the
+project directory, instead of by `node out/_main.mjs`, and the driver's
+transcript is the golden. The driver starts the build as a child with
+`tests/serve/preload.mjs` imported first, which writes the address of each
+server the program binds to a pipe (file descriptor 3). So a fixture
+listens on port 0, the driver learns the port from the pipe, and **the port
+never appears in the transcript**. The script is one JSON object per line,
+`#` for a comment:
+
+    {"method": "GET", "path": "/items?limit=3", "headers": {"accept": "text/plain"}, "body": "…"}
+                                a request to the program, printed as `> GET
+                                /items?limit=3`, its headers as `> name:
+                                value` (a value that is a list is one header
+                                line per entry), then a blank `>` line and the body,
+                                one `> ` line each, when there is one; the
+                                answer is `< 200`, each response header as
+                                `< name: value` in the order received with
+                                `date` left out, then a blank `<` line and
+                                the body lines; a request the client cannot
+                                complete prints `< (error ECONNRESET)`, with
+                                Node's code; one unanswered for 5 s prints
+                                `< (no response in 5000 ms)`
+    {…, "detach": true}         the same request, not waited for: its answer,
+                                or `(error …)` when its connection ends, is
+                                printed after the last step under
+                                `--- detached ---`, in completion order
+    {…, "abort": true}          the same request, sent and then given up on
+                                at once: the server sees a client that left
+                                before it answered
+    {"raw": "GARBAGE\r\n\r\n"}  those bytes on a new connection; prints
+                                the first line of the answer and `(closed by
+                                the server)`
+    {"cut": {"path": "/x", "declared": 10, "body": "abc"}}
+                                a request whose body stops short: the headers
+                                with that `content-length`, the body given,
+                                then the connection closes
+    {"signal": "SIGTERM"}       the signal, to the program
+
+After the last step the driver waits up to 5 s for the program to exit, then
+prints `--- stdout ---`, `--- stderr ---` and `--- exit <code> ---` (or
+`--- exit signal <name> ---`, or, after a SIGKILL, `--- exit killed: still
+running after the last step ---`). Standard error goes through one filter,
+so a crash is deterministic: the project directory's absolute path becomes
+`<project>`, lines that start with `    at ` are dropped, and the
+`Node.js v…` line is dropped. The driver exits 0 whatever the program did;
+what it did is the transcript. A served fixture has no `.crash`: the crash
+is in the transcript.
+
+The record line (`.run-hash`) of a served build is `<pass> <node version>
+serve <sha-256>`: the digest covers what a `run/` one covers, and the
+driver's bytes, the preload's and the script, so a change to any of them
+runs the program again (`tests/blackbox/serve.zig`).
 
 ### A program whose schemas are all compiled
 

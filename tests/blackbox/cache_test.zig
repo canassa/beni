@@ -2406,10 +2406,12 @@ test "a platform read from a directory is checked by the build, and an embedded 
     try testing.expectEqual(1 + node_modules, disk.counters.lowered);
     try testing.expectEqual(disk.counters.modules, disk.counters.checked + disk.counters.embedded_modules);
     try testing.expect(disk.counters.embedded_modules > 0);
-    // The embedded `node` lazily reaches only what `Main` imports: one module
-    // fewer in its graph, `Io`, and none of them checked.
+    // The embedded `node` lazily reaches only what `Main` imports — `Node`,
+    // `Random` and `Ssr` — so the platform's other modules (`Io`,
+    // `Http.Server`) are not in its graph, and none of them is checked.
+    const unreached = node_modules - 3;
     try testing.expectEqual(@as(u64, 1), embedded.counters.checked);
-    try testing.expectEqual(disk.counters.modules, embedded.counters.modules + 1);
+    try testing.expectEqual(disk.counters.modules, embedded.counters.modules + unreached);
 }
 
 test "--no-cache beside --cache-dir reads nothing and writes nothing" {

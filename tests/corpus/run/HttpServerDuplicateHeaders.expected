@@ -1,0 +1,33 @@
+> GET /cookies
+< 200
+< set-cookie: a=1
+< x-note: first
+< set-cookie: b=2
+< x-note: second
+< content-length: 11
+< connection: keep-alive
+< keep-alive: timeout=5
+<
+< two cookies
+> GET /echo-notes
+> x-note: one
+> x-note: two
+< 200
+< content-type: text/plain; charset=utf-8
+< content-length: 8
+< connection: keep-alive
+< keep-alive: timeout=5
+<
+< one, two
+> GET /stop
+< 200
+< content-type: text/plain; charset=utf-8
+< content-length: 8
+< connection: keep-alive
+< keep-alive: timeout=5
+<
+< stopping
+--- stdout ---
+stopped
+--- stderr ---
+--- exit 0 ---
