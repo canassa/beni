@@ -680,6 +680,12 @@ of those rows into `TypeId`s lives outside the record, in `Types.ref_ids`, so re
 one array index. Two whole-program reads named in `checker.md` §7 remain — `Types.build` and
 `Types.Builder.aliasBody` — but neither is in the hashed bytes any more.*
 
+*Amended 2026-10-17 (`browser-inline.md` §7):* a program lowering that compiles a program's
+effects away makes the program module's output depend on the **names and captures** of pieces
+other modules lift for it — never on their bodies — and makes the lifting module's output
+depend on which of its lambdas the write-set pass names. Checking and interfaces are untouched;
+a cache of lowered output must key a module on that list as well.
+
 **What static dispatch did to this layer, and it is the sharpest measured cost of adopting it.** An
 interface is the *inferred* scheme of each `pub` declaration (§3.1, "Top-level annotations are
 optional"), and since 2026-09-18 a scheme may carry a `where` suffix: every method constraint its

@@ -120,3 +120,40 @@ is, what the cause is, and what to write instead. There are four classes.
   handler is called directly. A pushed value decoded with `Schema.read` whose `Err` payload is
   never read is to be a validator (`schema.md` §6, amended 2026-10-17): specified, **not yet
   built**, so a compiled run still ships its issues' prose.
+
+## 7. Lifted pieces: another module's code at the program site
+
+*Added 2026-10-17, the owner's decision (option 2 of the S0 report's wall).* A program site — the
+mount and the handlers the lowering writes in the module that calls the program's constructor —
+needs code that is written in other modules: a subscription's start is a lambda inside a layer's
+`Push.onPush`, which calls that module's private `detail`. The compiler lowers each module on its
+own, in parallel, so the program module cannot write that code itself.
+
+**The mechanism.** Each module lowers its own pieces, as exported top-level functions, and the
+program site calls them.
+
+- **Which pieces.** The write-set pass, which already runs over every module, serially and
+  deterministically, before the modules are lowered, says which: for S0, every subscription start
+  that is a lambda (§3). The set is general: S1's per-key arms of `update` are pieces of the same
+  kind.
+- **What a piece is.** `<Module>$<declaration>$$lift$<n>`: the lambda, lowered in its own module
+  where its declaration's other code is, as a function of the locals of that declaration it reads
+  (its captures), whose value is the lambda; a piece with no captures is the lambda itself. `n` is
+  the lambda's place among the lambdas of its declaration, in source order: the name never names
+  an instruction, so it does not move when other code does (CLAUDE.md rule 5).
+- **What the program site knows of it.** Its name and its captures, in order — never its body. The
+  program module still lowers in parallel with the others. At the program site each capture is the
+  value the pass found for it, which must be a literal (`Interval.every 1000` captures `1000`);
+  a piece that captures anything the program site cannot write is refused as a limit of the
+  compiler (§5, class 4).
+- **Reachability.** A piece is a node of its own (`backend.md` §9): reached from the program call
+  that uses it, and reaching what its own instructions name. The value a program record's
+  `subscriptions` field names is not reached through the record, since the program site never
+  evaluates it, so a layer's `onPush` and `Sub.on` ship only if something else uses them.
+- **In release**, the release optimiser fuses a piece used once into its listener where its rules
+  allow; a development build shows each piece as a call, which is accepted.
+
+**Rejected: writing the other module's code at the program site** (option 1). It specialises code
+per program instance, the first platform's cause 3 (`plans/direct-rewrite.md` §1), and it makes a
+module's output depend on another module's body at every use, which incremental lowering cannot
+cache by module (`fast-compiler.md` §8.1, amended the same day).
