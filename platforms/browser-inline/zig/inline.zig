@@ -151,6 +151,8 @@ const Page = struct {
     dispatch: ?m.Name = null,
     slot: m.Name = undefined,
     text: m.Name = undefined,
+    /// The binding's write, one function the mount and the handlers call.
+    writer: m.Name = undefined,
 
     fn a(pg: *Page) std.mem.Allocator {
         return pg.cx.arena;
@@ -371,7 +373,13 @@ const Page = struct {
             try js.constant(body, pg.text, try js.member(e, "firstChild"));
             pg.slot = try cx.fresh("shown");
             try js.let(body, pg.slot, null);
-            try pg.write(body, false);
+            // One function writes it, at the mount and in each write pass
+            // that reaches it.
+            const blk = try js.block();
+            try pg.write(blk, true);
+            pg.writer = try cx.fresh("show");
+            try js.constant(body, pg.writer, try js.arrow(&.{}, blk));
+            try js.expression(body, try js.call(try js.name(pg.writer), &.{}));
         }
 
         // One handler per key reached: its arm writes the model, then the
@@ -396,7 +404,7 @@ const Page = struct {
                 result = try js.name(pair);
             }
             try js.assign(blk, try js.name(pg.model), if (element_) try js.member(result, "a") else result);
-            if (pg.binding) |b| if (key.star or cx.programCalls(@intCast(k), b.group)) try pg.write(blk, true);
+            if (pg.binding) |b| if (key.star or cx.programCalls(@intCast(k), b.group)) try js.expression(blk, try js.call(try js.name(pg.writer), &.{}));
             if (element_) switch (cx.programCommand(@intCast(k))) {
                 .runs => try js.expression(blk, try js.call(try js.name(try cx.runtime("commands")), &.{ try js.member(result, "b"), try js.name(pg.dispatch.?) })),
                 else => {},
@@ -469,14 +477,14 @@ const Page = struct {
         const b = pg.binding.?;
         try cx.programViewEnter(blk, try js.name(pg.model));
         try cx.rootValues(blk, pg.index, &.{b.value});
-        const shown = try cx.fresh("t");
-        try js.constant(blk, shown, try cx.value(b.value));
+        // The value, read where the root's values bound it: a name.
+        const shown = try cx.value(b.value);
         cx.programViewLeave();
         const then = try js.block();
-        try js.assign(then, try js.name(pg.slot), try js.name(shown));
-        try js.assign(then, try js.member(try js.name(pg.text), "data"), try js.name(shown));
+        try js.assign(then, try js.name(pg.slot), shown);
+        try js.assign(then, try js.member(try js.name(pg.text), "data"), shown);
         if (compare)
-            try js.@"if"(blk, try js.binary(.strict_ne, try js.name(shown), try js.name(pg.slot)), then, null)
+            try js.@"if"(blk, try js.binary(.strict_ne, shown, try js.name(pg.slot)), then, null)
         else
             try js.nested(blk, then);
     }
