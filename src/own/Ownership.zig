@@ -90,7 +90,8 @@ const WideIndex = struct {
 
 /// §20.4: the widest value whose deep condition is computed pair by pair.
 const deep_cap: usize = 256;
-/// How deep a callback's result is instantiated through another's.
+/// How deep a callback's result is instantiated through another's (§16.7's
+/// `callbacks` limit).
 const inst_depth: u32 = 4;
 
 pub const Position = struct { line: u32, col: u32 };
@@ -466,6 +467,11 @@ pub const Limit = enum(u8) {
     /// callback's result and a fold's spine (§16.4 item 6). Their cells are
     /// finite, so their rounds are bounded by the program (#229).
     fixpoint,
+    /// A chain of more than `inst_depth` callbacks, each instantiated
+    /// inside the one before or handed the result of the one before
+    /// (§16.4 items 5 and 6): past it a result was `⊤` with no alias, or a
+    /// demand was dropped, silently, before 2026-10-16 (#271).
+    callbacks,
 
     pub fn text(l: Limit) []const u8 {
         return switch (l) {
@@ -477,6 +483,7 @@ pub const Limit = enum(u8) {
             .conditions => "conditions",
             .value_cells => "value-cells",
             .fixpoint => "fixpoint",
+            .callbacks => "callbacks",
         };
     }
 
@@ -491,6 +498,7 @@ pub const Limit = enum(u8) {
             .conditions => condition_cap,
             .value_cells => deep_cap,
             .fixpoint => round_cap,
+            .callbacks => inst_depth,
         };
     }
 };
@@ -8321,7 +8329,8 @@ const Walker = struct {
                         // §30.9: a function value whose classes the walk
                         // knows returns what they return, handed what the
                         // checker cannot see: `⊤` for each argument.
-                        if (ctx.depth < inst_depth) if (try w.callThrough(cb.av, ctx)) |av| return w.projPath(av, p.path, null);
+                        if (ctx.depth >= inst_depth) return w.chainLimit(ctx.depth + 1);
+                        if (try w.callThrough(cb.av, ctx)) |av| return w.projPath(av, p.path, null);
                     };
                     return w.single(.{ .kind = .top, .a = 0 });
                 }
@@ -8330,10 +8339,19 @@ const Walker = struct {
                 // the enclosing lambda's own call of it (§30.9).
                 if (p.b == 1) return w.projPath(try w.single(.{ .kind = .cbres, .a = p.a, .b = ctx.inst.int() }), p.path, null);
                 if (!hasActual(ctx.s, ctx.avs.len, p.a)) return w.single(.{ .kind = .top, .a = 0 });
-                const whole = if (p.a == ctx.self_j) ctx.self_av else if (ctx.depth >= inst_depth) try w.single(.{ .kind = .top, .a = 0 }) else try w.instCb(p.a, ctx);
+                const whole = if (p.a == ctx.self_j) ctx.self_av else if (ctx.depth >= inst_depth) try w.chainLimit(ctx.depth + 1) else try w.instCb(p.a, ctx);
                 return w.projPath(whole, p.path, null);
             },
         }
+    }
+
+    /// §16.7's `callbacks` limit: a callback's result instantiated more than
+    /// `inst_depth` deep. Its value is `⊤limit`, and the declaration gets
+    /// the error: the `⊤` keeps no alias of what the chain was handed, so
+    /// it must not decide anything quietly (#271).
+    fn chainLimit(w: *Walker, depth: u32) Allocator.Error!AV {
+        try w.o.hitLimit(.callbacks, depth);
+        return w.single(.{ .kind = .top, .a = 1 });
     }
 
     /// What the actual for function parameter `j` returns when the callee
@@ -9574,7 +9592,8 @@ const Walker = struct {
     /// demand. A supply of another callback's result asks the same of that
     /// callback's actual. §29's taken-item loans are the case it began with.
     fn callbackLoanDemands(w: *Walker, inst: Inst.Index, callee: Callee, args: []const Inst.Index, avs: []const AV, j: u32, written: u32, deep: bool, depth: u32) Allocator.Error!void {
-        if (depth >= inst_depth) return;
+        // Past the limit a demand would be dropped: an error instead (§16.7).
+        if (depth >= inst_depth) return w.o.hitLimit(.callbacks, depth + 1);
         const actual = (try w.actualOf(callee.sum, avs, j)) orelse return;
         for (try w.classesOf(actual)) |cls| {
             const c = (try w.classSummary(cls)) orelse continue;
@@ -9585,7 +9604,7 @@ const Walker = struct {
     /// `callbackLoanDemands` for one class `c` of the actual for `j` — also a
     /// constructor's row (§23.5) or an unseen tagger's.
     fn returnedParamDemands(w: *Walker, inst: Inst.Index, callee: Callee, args: []const Inst.Index, avs: []const AV, c: *const Summary, j: u32, written: u32, deep: bool, depth: u32) Allocator.Error!void {
-        if (depth >= inst_depth) return;
+        if (depth >= inst_depth) return w.o.hitLimit(.callbacks, depth + 1);
         const s = callee.sum;
         for (c.res) |r| {
             if (r.prov.kind != .param) continue;
@@ -9623,9 +9642,12 @@ const Walker = struct {
     fn provOwned(w: *Walker, p: Prov, s: *const Summary, avs: []const AV, ictx: InstCtx, guard: u32, depth: u32, written: u32) Allocator.Error!bool {
         if (p.kind != .cb) return true;
         if (p.a == guard) return true;
-        // A function the checker cannot place is its limit, not sharing the
-        // text shows: approximate (§24.9's `NeedUnknown`, §30.9).
-        if (depth >= inst_depth) return w.ro_exact;
+        // Past §16.7's `callbacks` limit: not owned, and an error at the
+        // declaration, as `callbackLoanDemands` is.
+        if (depth >= inst_depth) {
+            try w.o.hitLimit(.callbacks, depth + 1);
+            return w.ro_exact;
+        }
         const actual = (try w.actualOf(s, avs, p.a)) orelse return w.ro_exact;
         // §30.9: the declaration's own function parameter or slot: what it
         // returns is relied on, so its callers must hand one that returns
