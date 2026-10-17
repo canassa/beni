@@ -9,7 +9,11 @@ class may keep its parameter (`callbackKeeps`, cause `supply`, approximate becau
 the write after the call; the caller's own function parameter gets `need`); in the callee, a callback's
 result is a holder of a non-parameter cell the call handed it (`cb_args`), so the later write is refused
 there. Fixture `ownership/CallbackKeeps`, red on master. Gates green, `bench/ownership-everywhere.mjs` 0 of
-850, the apps clean on `browser-direct`.
+850, the apps clean on `browser-direct`. The review then found two shapes still open: a second callback writes
+the kept parameter (`keepThenHand`), and a callee returns the list it made beside the kept result for the
+caller to write (`makeKeepReturn`). Another callback's write now counts (`writtenByCallback`), and a supply
+keeps the fresh number of a list the result also numbers, instantiated as the result's cell (`supplyCells`).
+Cost on Conduit: +0.03% instructions.
 
 **What I learned.** A rule at the caller keeps `apply`-style functions precise, because the caller knows what
 the actual keeps; a rule in the callee is needed only for what no caller sees. Putting the alias into the
