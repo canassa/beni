@@ -1,0 +1,5 @@
+{"items": [{"n": 1}, {"n": 2}]}: ok, invalid
+{"items": [1, 2]}: invalid, ok
+{"items": [{"n": "x"}]}: invalid, invalid
+{"items": 3}: invalid, invalid
+{}: invalid, invalid
