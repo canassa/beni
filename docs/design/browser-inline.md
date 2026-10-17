@@ -118,8 +118,9 @@ is, what the cause is, and what to write instead. There are four classes.
   as for any defect, without prose, and no `TypeError` escapes the entry unguarded.
 - **No message object, no `switch` and no error prose in release** for what S0 compiles: a key's
   handler is called directly. A pushed value decoded with `Schema.read` whose `Err` payload is
-  never read is to be a validator (`schema.md` §6, amended 2026-10-17): specified, **not yet
-  built**, so a compiled run still ships its issues' prose.
+  never read is a validator (`schema.md` §6, amended 2026-10-17), built for `read`: it makes no
+  issue and ships no prose. The decoder's own tag test is still a `switch` over the literal tags
+  (`schema.md` §6's table), which the golden shows.
 
 ## 7. Lifted pieces: another module's code at the program site
 

@@ -1,0 +1,62 @@
+-- element "root"
+-- load
+<body>
+  <div id="root">
+    <div data-role="dashboard">
+      <p>"0 pushed, 0 ticks"</p>
+    </div>
+  </div>
+</body>
+-- listeners window
+(listeners: 1)
+(the DOM did not change)
+-- timers
+(timers: 1)
+(the DOM did not change)
+-- detail window rr-push {"type": "set", "value": 5}
+<body>
+  <div id="root">
+    <div data-role="dashboard">
+      <p>"5 pushed, 0 ticks"</p>
+    </div>
+  </div>
+</body>
+-- detail window rr-push {"type": "set", "value": "five"}
+(the DOM did not change)
+-- advance 1000
+<body>
+  <div id="root">
+    <div data-role="dashboard">
+      <p>"5 pushed, 1 ticks"</p>
+    </div>
+  </div>
+</body>
+-- advance 1000
+<body>
+  <div id="root">
+    <div data-role="dashboard">
+      <p>"5 pushed, 2 ticks"</p>
+    </div>
+  </div>
+</body>
+-- detail window rr-push {"type": "reset"}
+<body>
+  <div id="root">
+    <div data-role="dashboard">
+      <p>"0 pushed, 2 ticks"</p>
+    </div>
+  </div>
+</body>
+-- stop
+(stopped)
+<body>
+  <div id="root"></div>
+</body>
+-- listeners window
+(listeners: 0)
+(the DOM did not change)
+-- timers
+(timers: 0)
+(the DOM did not change)
+-- detail window rr-push {"type": "set", "value": 9}
+(the DOM did not change)

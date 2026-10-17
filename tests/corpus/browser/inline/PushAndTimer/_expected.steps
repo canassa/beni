@@ -1,0 +1,12 @@
+element "root"
+listeners window
+timers
+detail window rr-push {"type": "set", "value": 5}
+detail window rr-push {"type": "set", "value": "five"}
+advance 1000
+advance 1000
+detail window rr-push {"type": "reset"}
+stop
+listeners window
+timers
+detail window rr-push {"type": "set", "value": 9}
