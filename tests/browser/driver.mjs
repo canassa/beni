@@ -775,6 +775,13 @@ function step(s) {
     dispatchEvent(new HashChangeEvent("hashchange", { oldURL, newURL: location.href }));
     return null;
   }
+  // An element the program mounts at, put in the page before it loads.
+  if (s.command === "element") {
+    const at = document.createElement("div");
+    at.id = s.text;
+    document.body.append(at);
+    return null;
+  }
   if (s.command === "store") {
     (s.selector === "local" ? localStorage : sessionStorage).setItem(s.key, s.value);
     return null;
@@ -1200,7 +1207,7 @@ if (stepsPath !== undefined) {
     if (line === "timers") return void steps.push({ line: written, where, command: "timers", throws });
     if (line === "frames") return void steps.push({ line: written, where, command: "frames", throws });
     if (line === "file" && !throws && steps.length !== 0) usage(`${where}: \`file\` must be the script's first step`);
-    if (line === "load" && (!throws || steps.some((s) => s.command !== "file" && s.command !== "url" && s.command !== "store"))) {
+    if (line === "load" && (!throws || steps.some((s) => s.command !== "file" && s.command !== "url" && s.command !== "store" && s.command !== "element"))) {
       usage(`${where}: \`load\` is written \`throws load\`, after the steps that set the page up`);
     }
     if (["back", "forward", "location", "title", "file", "load", "stop"].includes(line)) {
@@ -1227,6 +1234,9 @@ if (stepsPath !== undefined) {
       s.tasks = f[2] === "tasks";
     } else if (command === "frames") {
       usage(`${where}: \`frames\` takes nothing`);
+    } else if (command === "element") {
+      if (argument !== undefined || !/^"[A-Za-z][A-Za-z0-9-]*"$/.test(selector)) usage(`${where}: \`element\` takes one id as a JSON string`);
+      s.text = JSON.parse(selector);
     } else if (command === "url" || command === "hash") {
       try {
         s.text = JSON.parse(argument === undefined ? selector : "");
@@ -1649,7 +1659,7 @@ async function runPage(entry, fiber) {
   // up: they run before the program loads, each a heading with nothing
   // under it.
   const setup = [];
-  while (script.length !== 0 && (script[0].command === "url" || script[0].command === "store") && !script[0].throws) setup.push(script.shift());
+  while (script.length !== 0 && (script[0].command === "url" || script[0].command === "store" || script[0].command === "element") && !script[0].throws) setup.push(script.shift());
   let setupFault = null;
   for (const s of setup) {
     transcript.push(`-- ${s.line}`);

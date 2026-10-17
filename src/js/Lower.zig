@@ -55,6 +55,7 @@ const InternPool = @import("../InternPool.zig");
 const SourceStore = @import("../SourceStore.zig");
 const JsIr = @import("JsIr.zig");
 const Reach = @import("Reach.zig");
+const Lift = @import("Lift.zig");
 const Fields = @import("Fields.zig");
 const DebugShape = @import("DebugShape.zig");
 const Edges = @import("../check/Edges.zig");
@@ -307,6 +308,9 @@ pub const Direct = struct {
     /// module.
     debug_values: []const []const bool = &.{},
     source_roots: []const Site = &.{},
+    /// `browser-inline.md` §7: every piece the build lifts, by the index
+    /// reachability numbers it with.
+    lifts: []const Lift.Piece = &.{},
 
     pub const Site = struct {
         module: u32,
@@ -360,6 +364,11 @@ pub const Direct = struct {
         /// `top` of another module: its row in that module's interface, or
         /// none when it exports no such value.
         value: u32 = std.math.maxInt(u32),
+        /// `lambda` of another module: the piece it is lifted as (`lifts`),
+        /// and the program's value of each of its captures, spelled; null
+        /// for one the program site cannot write.
+        lift: u32 = std.math.maxInt(u32),
+        captures: ?[]const []const u8 = &.{},
     };
 
     pub const Let = struct {
@@ -1155,6 +1164,19 @@ pub const Lowerer = struct {
         return l.add(.number, p, offset, len);
     }
 
+    /// A literal a lifted piece's capture is spelled as (`Writes.literalSpelling`).
+    fn rawNode(l: *Lowerer, spelled: []const u8, p: u32) !Node.Index {
+        if (std.mem.eql(u8, spelled, "null")) return l.nullNode(p);
+        if (spelled.len >= 2 and spelled[0] == '"') return l.stringNode(spelled[1 .. spelled.len - 1], p);
+        return l.numberNode(spelled, p);
+    }
+
+    /// The base symbol of a lifted piece's name (`browser-inline.md` §7).
+    fn liftBase(l: *Lowerer, module: Graph.Index, piece: Lift.Piece) !Symbol {
+        _ = module;
+        return l.interner.getOrPut(l.gpa, piece.name);
+    }
+
     pub fn nullNode(l: *Lowerer, p: u32) !Node.Index {
         return l.add(.null_lit, p, Node.Data.unused, Node.Data.unused);
     }
@@ -1751,11 +1773,63 @@ pub const Lowerer = struct {
         }
     }
 
+    /// The pieces of declaration `index` a program site lifts that survived
+    /// (`browser-inline.md` §7), after the declaration: each
+    /// `<Module>$<declaration>$$lift$<n>`, its lambda lowered where the
+    /// declaration's code is, as a function of its captures when it has
+    /// any.
+    /// Whether declaration `index` lifts a piece that survived.
+    fn livePiece(l: *Lowerer, index: u32) bool {
+        const d = l.in.direct orelse return false;
+        for (d.lifts, 0..) |piece, gi| {
+            if (piece.module != l.in.module.int() or piece.decl != index or piece.in_place) continue;
+            const r = l.in.live orelse return true;
+            if (r.of(l.in.module).lift(gi)) return true;
+        }
+        return false;
+    }
+
+    fn liftPieces(l: *Lowerer, out: *StmtList, index: u32) !void {
+        const d = l.in.direct orelse return;
+        for (d.lifts, 0..) |piece, gi| {
+            if (piece.module != l.in.module.int() or piece.decl != index or piece.in_place) continue;
+            if (l.in.live) |r| if (!r.of(l.in.module).lift(gi)) continue;
+            try l.liftPiece(out, piece);
+        }
+    }
+
+    fn liftPiece(l: *Lowerer, out: *StmtList, piece: Lift.Piece) !void {
+        const d = l.bir.decls[piece.decl];
+        l.restartNames();
+        l.locals = l.bir.declLocals(d);
+        l.decl_index = piece.decl;
+        l.read_locals = null;
+        l.local_names = try l.scratch.alloc(JsIr.NameIndex, l.locals.len);
+        @memset(l.local_names, .none);
+        l.local_tag_base = 0;
+        l.local_tag_next = @intCast(l.locals.len);
+        l.variant = .direct;
+        const inst: Inst.Index = @fromBackingInt(piece.inst);
+        const p = l.pos(inst);
+        const n = try l.name(.{ .module = l.module_name.toOptional(), .base = try l.liftBase(l.in.module, piece), .tag = JsIr.Name.no_tag });
+        const outer = l.enterFunction(false);
+        defer l.leaveFunction(outer);
+        const params = try l.scratch.alloc(JsIr.NameIndex, piece.captures.len);
+        for (piece.captures, params) |local, *x| x.* = try l.localName(local);
+        var stmts: StmtList = .empty;
+        const value = try l.expr(&stmts, inst);
+        if (params.len == 0 and stmts.items.len == 0) return l.constDecl(out, n, value, p);
+        try stmts.append(l.scratch, try l.returnStmt(value, p));
+        if (params.len == 0) return l.constDecl(out, n, try l.call(try l.arrowOf(&.{}, stmts.items, p), &.{}, p), p);
+        try l.constDecl(out, n, try l.arrowOf(params, stmts.items, p), p);
+    }
+
     /// One declaration's statements, measured against the nesting budget.
     fn declarationPart(l: *Lowerer, index: u32) ![]const Node.Index {
         var part: StmtList = .empty;
         const nodes = l.b.nodes.len;
         try l.declaration(&part, index);
+        try l.liftPieces(&part, index);
         // Fewer nodes than this cannot be over either budget, and
         // measuring is a walk of every node: most declarations skip it.
         if (index < l.bir.decls.len and l.b.nodes.len - nodes >= JsIr.nesting.could_exceed) try l.refuseTooDeep(part.items, index);
@@ -1851,7 +1925,7 @@ pub const Lowerer = struct {
             // stays closed. `requireLive` is the proof, not this loop.
             if (root >= decls) {
                 if (!l.liveSchemaAny(@intCast(root))) continue;
-            } else if (!l.liveDecl(@intCast(root)) and !l.liveTwin(@intCast(root)) and !(l.bir.decls[root].kind == .schema and l.liveSchemaAny(@intCast(root)))) continue;
+            } else if (!l.liveDecl(@intCast(root)) and !l.liveTwin(@intCast(root)) and !l.livePiece(@intCast(root)) and !(l.bir.decls[root].kind == .schema and l.liveSchemaAny(@intCast(root)))) continue;
             if (state[root] != 0) continue;
             try stack.append(l.scratch, .{ .decl = @intCast(root), .next = 0, .tops = try l.siteTops(@intCast(root)) });
             state[root] = 1;
@@ -2260,6 +2334,13 @@ pub const Lowerer = struct {
                 try names.append(l.scratch, try l.twinName(l.module_name, l.bir.symbol(d.name)));
             }
         }
+        // The pieces it lifts for program sites that survived
+        // (`browser-inline.md` §7).
+        if (l.in.direct) |dr| for (dr.lifts, 0..) |piece, gi| {
+            if (piece.module != l.in.module.int() or piece.in_place) continue;
+            if (l.in.live) |r| if (!r.of(l.in.module).lift(gi)) continue;
+            try names.append(l.scratch, try l.name(.{ .module = l.module_name.toOptional(), .base = try l.liftBase(l.in.module, piece), .tag = JsIr.Name.no_tag }));
+        };
         // `core/List`'s core-private values the emitter calls from other
         // modules (`corePrivate`, `backend.md` §4): in no interface, so no
         // program names them, and exported when they survive — which is
@@ -11840,6 +11921,32 @@ pub const Lowerer = struct {
                 try l.ident(try l.topNameChoosing(start.decl, .no), p)
             else
                 try l.ident(try l.externalNameChoosing(@fromBackingInt(@intCast(start.module)), start.value, .no), p);
+            return try l.call(f, &.{send}, p);
+        }
+        // A lambda of another module, which that module lifts
+        // (`browser-inline.md` §7): called with the values of its captures
+        // here, its value then handed `send`.
+        if (start.kind == .lambda and !here and start.lift != std.math.maxInt(u32)) {
+            const captures = start.captures orelse {
+                try l.programReport(.call, .not_implemented, try std.fmt.allocPrint(l.scratch,
+                    \\A limit of the compiler: this program's subscription at {s} starts with a function
+                    \\that reads a value of the function it is made in which is not a literal, and the
+                    \\program's mount can pass a lifted start only literals (`docs/design/browser-inline.md`
+                    \\§7; §5, class 4). Pass the start's arguments as literals where the subscription is
+                    \\declared.
+                , .{where}));
+                return null;
+            };
+            const piece = l.in.direct.?.lifts[start.lift];
+            const module: Graph.Index = @fromBackingInt(@intCast(piece.module));
+            const base = try l.liftBase(module, piece);
+            try l.needName(.{ .module = module, .base = base.toOptional() });
+            var f = try l.ident(try l.name(.{ .module = l.in.graph.moduleName(module).toOptional(), .base = base, .tag = JsIr.Name.no_tag }), p);
+            if (captures.len != 0) {
+                const args = try l.scratch.alloc(Node.Index, captures.len);
+                for (captures, args) |spelled, *x| x.* = try l.rawNode(spelled, p);
+                f = try l.call(f, args, p);
+            }
             return try l.call(f, &.{send}, p);
         }
         if (start.kind != .lambda or !here) {

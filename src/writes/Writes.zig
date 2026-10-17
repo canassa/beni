@@ -527,6 +527,11 @@ pub const Program = struct {
     subscription_reads: []const u32 = &.{rho_path},
     /// `Input.effects` only: the subscription set and `init`'s command.
     subscriptions: Subscriptions = .{},
+    /// The record's `subscriptions` field, the instruction its value is in
+    /// `subscriptions_module`, or `none`: what a program site never
+    /// evaluates (`browser-inline.md` §7).
+    subscriptions_module: u32 = none,
+    subscriptions_inst: u32 = none,
     init_command: Command = .{},
     /// The markup roots the view walk reached, in the order it met them
     /// (`Hole.site` indexes this; the dump sorts by position).
@@ -4896,6 +4901,8 @@ fn analyseProgram(a: *Writes, m: u32, kind: ProgramKind, fields: ?Fields, view_f
     }
     // Subscription values include the captures of their taggers.
     if (view_fields) |fs| if (fs.subscriptions) |si| {
+        prog.subscriptions_module = fs.m;
+        prog.subscriptions_inst = si.int();
         var frame = try a.newFrame(fs.m, fs.frame_decl, 0);
         a.ctx = .{ .mode = .closed };
         a.walk_platform = a.in.effects != null;
@@ -5699,4 +5706,44 @@ pub fn declNameOf(a: *const Writes, m: u32, d: u32) []const u8 {
 
 test {
     _ = Core;
+}
+
+/// A literal term as JavaScript spells it, or null for any other term: what
+/// a program site passes for a lifted piece's capture (`browser-inline.md`
+/// §7).
+pub fn literalSpelling(a: *Writes, t: u32, out: *std.ArrayList(u8)) Allocator.Error!bool {
+    if (a.termTag(t) != .lit) return false;
+    const kind = a.termWord(t, 1);
+    switch (kind) {
+        lit_int => {
+            const u = @as(u64, a.termWord(t, 2)) | (@as(u64, a.termWord(t, 3)) << 32);
+            const n: i64 = @bitCast(u);
+            try out.print(a.arena(), "{d}", .{n});
+        },
+        lit_string => {
+            if (a.termWord(t, 3) != 0) return false;
+            var buf: [256]u8 = undefined;
+            const words = a.bytes_t.get(a.termWord(t, 2));
+            if (words[0] > buf.len) return false;
+            const s = a.bytesOf(a.termWord(t, 2), &buf);
+            // Printable ASCII with nothing to escape; anything else is not
+            // spelled here.
+            for (s) |c| if (c < 0x20 or c > 0x7e or c == '"' or c == '\\') return false;
+            try out.append(a.arena(), '"');
+            try out.appendSlice(a.arena(), s);
+            try out.append(a.arena(), '"');
+        },
+        lit_unit => try out.appendSlice(a.arena(), "null"),
+        else => return false,
+    }
+    return true;
+}
+
+/// The value a closure term's frame held for local `local` of its
+/// declaration, or `none`.
+pub fn closureLocal(a: *const Writes, t: u32, local: u32) u32 {
+    if (a.termTag(t) != .fun) return none;
+    const k = 5 + @as(usize, local);
+    if (k >= a.termLen(t)) return none;
+    return a.termWord(t, k);
 }
