@@ -1,7 +1,8 @@
 -- A subscription's tagger must give one of the program's message keys with
 -- the pushed value as its field (docs/design/browser-inline.md §3): here it
 -- wraps the value in a constructor of its own, so the key's field is not the
--- value, and the program is refused at its call, class 3 (§5).
+-- value. The analysis cannot split the key on the value's own shape, so the
+-- program is refused at its call as a limit of the compiler, class 4 (§5).
 import Browser
 import Cmd exposing (Cmd)
 import Html exposing (Html)

@@ -2194,6 +2194,7 @@ of the same date own selection and verification.
 program lowering needs to compile a program's effects and its placement away.
 - `Lowering.constructs`: a program constructor's call is compiled as the mount alone, for a
   platform whose `Program` is the mount.
+- `Program.Code.program_shape`: a `programReport` refusal by a language rule (`browser-inline.md` §5, class 3), reported as the `program_shape` code, whose title says no "yet".
 - `Lowering.places`: a call of a `first` placement whose first argument is a program constructor's
   call and whose second a string literal is compiled as the program call alone, and the hook is
   handed where the program mounts, `Program.placed`: at that element, at `document.body` when the

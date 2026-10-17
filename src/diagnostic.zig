@@ -434,6 +434,11 @@ pub const Code = enum {
     /// checker's limits allows — a limit of the compiler, not sharing in
     /// the program. The checker's, an error.
     ownership_limit,
+    /// Appended on 2026-10-17 (`browser-inline.md` §5, the owner's refusal
+    /// taxonomy): a program a platform refuses by a language rule — a shape
+    /// its model does not express, permanently, as a tagger that gives no
+    /// message constructor. `build`'s, an error; never "not yet".
+    program_shape,
 };
 
 /// Every code has exactly one title (frontend.md §1.1). Titles are SHOUTING
@@ -618,6 +623,7 @@ pub fn title(code: Code) []const u8 {
         .no_derived_codec => "CANNOT DERIVE A CODEC",
         .derived_codec_needs_type => "DECODED TYPE IS NOT KNOWN",
         .ownership_limit => "OWNERSHIP CHECK TOO LARGE",
+        .program_shape => "PROGRAM SHAPE",
         .let_removed => "REMOVED LET SYNTAX",
         .block_ends_in_binding => "BLOCK WITHOUT A VALUE",
         .statement_not_unit => "UNUSED VALUE",

@@ -216,7 +216,8 @@ pub const Program = struct {
     /// Where `Context.programReport` points.
     pub const Part = enum(u8) { call, init, update, view, _ };
     /// What `Context.programReport` reports.
-    pub const Code = enum(u8) { not_implemented, view_not_compiled, _ };
+    /// `program_shape` (1.14): a refusal by a language rule, never "not yet".
+    pub const Code = enum(u8) { not_implemented, view_not_compiled, program_shape, _ };
 
     /// 1.7: one leaf message key of the program (`write-sets.md` §4.4),
     /// what `Context.programKeys` lists.

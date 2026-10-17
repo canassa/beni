@@ -88,20 +88,31 @@ command half, recognising `Cmd.none`, `Cmd.batch` and `Cmd.perform` by name:
 
 Strict, not coarse: what the lowering cannot compile exactly is a build error, `not_implemented`,
 at the program's call or at the construct, and never a fallback. Each message says which class it
-is, what the cause is, and what to write instead. There are four classes.
+is, what the cause is, and what to write instead. There are four classes, of two kinds.
 
-1. **Not supported on browser-inline yet** — a construct a later slice of
+*Amended 2026-10-17, the owner's refusal taxonomy.* **Compiler limits** — classes 1, 2 and 4 — are
+temporary: every such message begins *"A limit of the compiler"*, may say *"yet"*, and is closed by
+the slice in its area (a suspending command, a set of subscriptions that changes, `lazy`, an
+analysis cap). **Language rules** — class 3 — are permanent departures from Elm, and their text
+never says *"not yet"*: an opaque `update` or `view`, a tagger that gives no message constructor, a
+markup site that cannot be numbered, a `*` key that is not a declared `replace`, and, from S2, a
+structural write to a `List` of rows, whose error names `Dict.update`: **`Dict` is the keyed
+collection** (#294). The messages keep the split between an idiom to write instead, a value meant
+to be global, and a cap of the compiler.
+
+1. **Not compiled yet** (a compiler limit) — a construct a later slice of
    `plans/direct-rewrite.md` §5 adds (S1: events and holes beyond the one text binding; S2:
-   `For`; S3: a `view`'s `let`s; S4: a set of subscriptions that changes, `Show`, branches; S6:
-   the task kernel). The message says *"not supported on browser-inline yet"* and what to write
-   instead; it names no slice and no plan, which are this document's and not the user's.
-2. **Needs the task kernel** — a command whose body may suspend: *"needs the task kernel, which
-   is not supported on browser-inline yet"*, with the body's position. The kernel returns behind
-   reachability in S6.
-3. **The program's shape** — what the platform's model cannot express exactly, with what to write
-   instead: a subscription set that reads the model (*"… depends on its model …"*), a tagger
-   that gives no message constructor of the program (*"… give the message a constructor that
-   takes the value …"*). A tagger that gives a constructor whose key the analysis splits on the
+   `For`; S3: a `view`'s `let`s; S4: a set of subscriptions that changes — moved here from class 3
+   on 2026-10-17 — `Show`, branches; S6: the task kernel). The message says *"A limit of the
+   compiler: … does not compile … yet"* and what to write instead; it names no slice and no
+   plan, which are this document's and not the user's.
+2. **Needs the task kernel** (a compiler limit) — a command whose body may suspend: *"A limit of
+   the compiler: … needs the task kernel, which `browser-inline` does not have yet"*, with the
+   body's position. The kernel returns behind reachability in S6.
+3. **The program's shape** (a language rule) — what the platform's model does not express, with
+   what to write instead: a program record or `view` computed when the page runs, a tagger that
+   gives no message constructor of the program (*"… tag the value with a constructor of the
+   message that takes it …"*). A tagger that gives a constructor whose key the analysis splits on the
    payload's own shape (`Pushed (Box v)` with `update` matching on `Box`) is class 4, not 3:
    the program is valid.
 4. **A limit of the compiler** — a fact the analysis did not give, or code the compiler cannot
