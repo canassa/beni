@@ -59,9 +59,13 @@ of, in order: `batch` concatenates, `map` composes its function onto each declar
   first one's `start` runs once, and each value it sends goes through every declaration's tagger,
   in declaration order (`boundary.md` §9.8.5's rule, decided when the program is built).
 - **A tagger resolves to a key.** Applied to a fresh payload π, the tagger must give a constructor
-  of the message type that is one of the program's keys, each field of which is π itself or a
-  constant. The value the start sends then calls that key's handler directly — no message is
-  made. A tagger that gives anything else is refused (§5, class 3).
+  of the message type each field of which is π itself. Its key is the leaf of the program's key
+  tree whose steps that message satisfies: a step naming the constructor, a default step whose
+  constructors include it, or no step at all (a message type `update` does not split, one of one
+  constructor among them). The value the start sends then calls that key's handler directly — no
+  message is made. A tagger that gives no constructor of the message type is refused (§5, class
+  3); one whose key splits further, on the payload's own shape, is a limit of the compiler (§5,
+  class 4), since only the handler could tell.
 - **`start` must not suspend**: `Sub.on`'s `start` is `sync`, so the checker refuses one that
   does, before the lowering sees it.
 
@@ -86,16 +90,20 @@ Strict, not coarse: what the lowering cannot compile exactly is a build error, `
 at the program's call or at the construct, and never a fallback. Each message says which class it
 is, what the cause is, and what to write instead. There are four classes.
 
-1. **Not on this platform yet** — a construct a later slice of `plans/direct-rewrite.md` §5 adds:
-   the message names the slice (S1: events and holes beyond the one text binding; S2: `For`; S3:
-   a `view`'s `let`s; S4: a set of subscriptions that changes, `Show`, branches; S6: the task
-   kernel).
-2. **Needs the task kernel** — a command whose body may suspend: *"needs the task kernel: not on
-   this platform yet"*, with the call's position. The kernel returns behind reachability in S6.
+1. **Not supported on browser-inline yet** — a construct a later slice of
+   `plans/direct-rewrite.md` §5 adds (S1: events and holes beyond the one text binding; S2:
+   `For`; S3: a `view`'s `let`s; S4: a set of subscriptions that changes, `Show`, branches; S6:
+   the task kernel). The message says *"not supported on browser-inline yet"* and what to write
+   instead; it names no slice and no plan, which are this document's and not the user's.
+2. **Needs the task kernel** — a command whose body may suspend: *"needs the task kernel, which
+   is not supported on browser-inline yet"*, with the body's position. The kernel returns behind
+   reachability in S6.
 3. **The program's shape** — what the platform's model cannot express exactly, with what to write
-   instead: a subscription set that reads the model (*"… depends on the model: a set that changes
-   arrives with slice S4 …"*), a tagger that resolves to no key (*"… give the message a
-   constructor that takes the value …"*).
+   instead: a subscription set that reads the model (*"… depends on its model …"*), a tagger
+   that gives no message constructor of the program (*"… give the message a constructor that
+   takes the value …"*). A tagger that gives a constructor whose key the analysis splits on the
+   payload's own shape (`Pushed (Box v)` with `update` matching on `Box`) is class 4, not 3:
+   the program is valid.
 4. **A limit of the compiler** — a fact the analysis did not give, or code the compiler cannot
    write where the lowering needs it. The message says *"a limit of the compiler"*, so it is never
    read as a rule of the language, and names what would lift it.
@@ -109,5 +117,6 @@ is, what the cause is, and what to write instead. There are four classes.
   build ships neither; a missing node still fails **inside the dispatch guard**, so the page stops
   as for any defect, without prose, and no `TypeError` escapes the entry unguarded.
 - **No message object, no `switch` and no error prose in release** for what S0 compiles: a key's
-  handler is called directly, and a pushed value decoded with `Schema.read` whose `Err` payload is
-  never read is a validator (`schema.md` §6, amended 2026-10-17).
+  handler is called directly. A pushed value decoded with `Schema.read` whose `Err` payload is
+  never read is to be a validator (`schema.md` §6, amended 2026-10-17): specified, **not yet
+  built**, so a compiled run still ships its issues' prose.

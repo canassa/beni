@@ -1299,9 +1299,10 @@ and nothing of `core/Schema`'s issue makers ships for it.
   a later one could join (`Schema.all` reports every issue, so a validator reports none and gains
   nothing by going on).
 - **Where it is not taken.** A dynamic schema runs the library interpreter as before. The forced
-  library path (`--schema-library`) runs every schema through the interpreter, which makes issues;
-  the differential corpus therefore compares the two paths on the success value and on success
-  against failure, which is all a validator's caller can see.
+  library path (`--schema-library`) runs every schema through the interpreter, which makes issues.
+  The differential corpus is unchanged: a program that reads its `Err` keeps the issues, and the
+  full comparison with them.
+- **Status.** Specified on 2026-10-17, not yet built: every compiled run still makes its issues.
 
 ## 7. Effects
 
