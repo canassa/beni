@@ -946,7 +946,8 @@ accepted there, and the caller saw only a fresh argument. Two rules close it:
   call, `cb_j` is instantiated from the actual's class, which says exactly what it keeps.
 - **A list the callee makes and returns, at the call.** When that list also leaves the callee in its result,
   a caller may write it while the kept result lives (`makeKeepReturn f = xs = [ 1 ]; t = f xs; ( t, xs )`). A
-  supply of a cell the result numbers keeps that fresh number (§16.3, where a supply's number was always 0),
+  supply of a cell the result numbers keeps that fresh number, renumbered as the result's entries are (§16.3, where
+a supply's number was always 0),
   and at the call it is instantiated as the result's cell, not as a new one of the callback's depth, so the
   caller's `kept` and `xs` share it and the caller's own checks see the alias.
 
