@@ -1,0 +1,9 @@
+-- load
+console.log: heard while dispatched: True
+console.log: fired and cancelled: True
+<body>
+  <p>"mounted"</p>
+</body>
+-- listeners window
+(listeners: 1)
+(the DOM did not change)

@@ -15,9 +15,18 @@ import Js
 pub on : String, String, sync (Js.Value → a), sync (a → ⊤) → (⊤ → ⊤)
 on target name read send =
     host = Js.global target
-    -- The read is program code: it runs inside the dispatch guard, so a
-    -- throw in it stops the page, and once the page has stopped it does
-    -- not run.
-    handler = Js.from λevent → Inline.send (Js.from λdispatched → send (read dispatched)) event
+    -- The read is program code, and it runs while the event is dispatched,
+    -- inside a dispatch guard: in the one running when the event fires in
+    -- it, where only the send of what it read is queued, else in one it
+    -- starts. A throw in it stops the page; once the page has stopped it
+    -- does not run.
+    handler = Js.from λevent →
+        if Inline.stopped ⊤ then
+            ⊤
+        else if Inline.busy ⊤ then
+            -- `send` enters the guard, which queues it.
+            send (read event)
+        else
+            Inline.send (Js.from λdispatched → send (read dispatched)) event
     _ = Js.call host "addEventListener" [ Js.from name, handler ]
     λ⊤ → Js.to (Js.call host "removeEventListener" [ Js.from name, handler ])
