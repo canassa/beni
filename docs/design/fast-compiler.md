@@ -1510,6 +1510,46 @@ holds them.
   two times each: with the embedded core, and with a copy of it under `--core-root`, which builds
   every list. The two trees must be the same.
 
+*Amended 2026-10-17, the second step's spec, the dashboard's answer to `emit-cache-oc-q1` (issue
+#94): "Printed text, development first".* **The pack holds the printed development text of each
+embedded module.** The rows are a fourth kind, `emit`; a development build joins them instead of
+lowering and printing those modules, and the contract of a unit, the join, the funnel and the
+marks is `backend.md` §9, *The embedded modules' printed text, in the pack*.
+
+- **The key.** The printed text depends on the module's check and on one build option besides
+  `--release`: `--schema-library`, which decides whether a schema member's workers call the
+  `core/Schema` interpreter or the specialised code (`js/SchemaLower.zig`). So a row's key is
+  SipHash-1-3 over `"BENIEMIT"`, a format version, the module key and one byte of that option. The
+  maker writes one row per option, and the pack stores the bytes of two rows with the same content
+  once. **A release build computes no emit key and reads no row** — `--release` rewrites the text
+  after lowering, so release caching is a later step with its own spec.
+- **The maker** lowers each embedded module once with every survivor set all live — the world where
+  everything is used — under a development build, prints it once and records the units
+  (`backend.md` §9). It writes both options' rows and refuses a pack that does not have both rows of
+  every core and platform module, as it does for edge lists. Its root now reaches `js/Lower.zig`,
+  `js/Print.zig` and `js/SourceMap.zig`: an edit under `src/js/` runs the maker again before beni
+  compiles. The pack is embedded in the binary uncompressed (`build.zig`'s `core_pack`), so the
+  growth is binary size; on 2026-10-17 the live embedded text of a development build was 452 071
+  bytes of `_core` and 288 414 of `_platform` on ApiItems, 143 844 and 4 243 on Dictionaries,
+  231 640 and 848 on `bench/corpus` — the rows hold every declaration, so they cost more, and the
+  number is recorded when the maker writes its first pack.
+- **Which modules read a row, and what a row that cannot be used does.** A development build's
+  module that `Session.packCovers` holds and whose key the run computed, exactly as for an edge
+  list; `--core-root` and a platform read from a directory read no row. A row that cannot be used is
+  not used: another version, a key the build did not compute, a range that does not fit, a selector
+  out of its module's range — and, unit by unit, a fact the build answers differently
+  (`backend.md` §9) — the build lowers what it cannot take.
+- **What holds it.** `--self-profile` counts `emit_units_embedded`, the units spliced from a row,
+  beside `emit_units_lowered`, the units the build lowered itself. The first step's differential
+  tests (`tests/blackbox/build_test.zig`) gain the emit half: the same three builds, two trees
+  each, **every file byte-identical, maps included**, with `emit_units_embedded` above zero in the
+  embedded run so the comparison cannot pass vacuously.
+- **What a build saves.** The second step is the embedded modules' emit: about 235 million of
+  ApiItems's 489 million instructions on 2026-10-17, and nothing under `--release`, which reads no
+  row. The numbers that matter — `perf stat`, median of five, on `run/Dictionaries`,
+  `browser/tea/ApiItems` and `bench/corpus` as one `--library` build — are recorded when the
+  slices land; `backend.md` §9 lists them as the acceptance.
+
 **Measured** (2026-10-02, master `bec44d00` against the same tree with the checked core; instructions,
 user space, because the machine's load moved wall time by 2× between runs). **Output: not one byte
 moved** — every `run/` and `browser/` program's run hash matched, development and release, with no
