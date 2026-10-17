@@ -77,7 +77,9 @@ drain ⊤ =
 
 applyFrom : V, Int → ⊤
 applyFrom q i =
-    if i < Js.to (Js.get q "length") then
+    -- A send applied may stop the page (`stop`, a defect): nothing queued
+    -- behind it runs.
+    if i < Js.to (Js.get q "length") && not (Js.read dead) then
         _ = Js.apply (Js.at q i) [ Js.at q (i + 1) ]
         applyFrom q (i + 2)
 
@@ -204,6 +206,7 @@ own f = Js.write undo f
 pub stop : ⊤ → ⊤
 stop ⊤ =
     Js.write dead True
+    Js.write queue Js.null
     f = Js.read undo
     Js.write undo (Js.from nothing)
     Js.to (Js.apply f [])
