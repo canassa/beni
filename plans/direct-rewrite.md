@@ -334,6 +334,16 @@ Decided once, before S1 (the owner; defaults proposed):
   Proposed: error until a real program needs it.
 - **D7 — the ledger of §8.**
 
+*Amended 2026-10-17 (the owner).* **D3** is decided: synchronous — one write pass at the end of the
+dispatch, inside the handler's guard; measured against tea-inline's microtask in S1 (#296). **D2 and
+D4** are decided together (#294, #298): **`Dict` is the keyed collection**, ordered by insertion —
+an entries array plus a `Map<key, position>` index; keys are `Int` or `String`; order is part of
+the value (`eq` includes it), and `compare` is removed from `Dict` and `Set`. `List` is positional
+only and there is **no idiom recogniser**: a structural edit of `List` rows by id is the strict
+rule's error naming `Dict.update`. This supersedes §6's "keyed-by-`Dict` rows come after both" and
+its keyed-primitive bullet: write-set positions in `Dict` are on S2's path, and the research
+generators change to `Dict`. D5, D6 and D7 remain open.
+
 ## 10. How this plan is tracked
 
 The parent issue holds the slices as sub-issues (S0–S6) and the parallel core work (#294 and the
