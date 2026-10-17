@@ -7628,6 +7628,70 @@ The corpus case `browser/tea/ApiItems`, both builds and the harness with its has
 (ReleaseFast, LLVM): `ApiItems` 406 → **359**, `ApiLogin` 342 → 311, `HttpJson` 326 → 298,
 `ApiAndRoutes` 446 → 401, `run/SchemaDeclRecords` 211 → 197.
 
+**Another module's function, in one file** (*amended 2026-10-17*). *A function called once is
+written where it is called* takes in another module's function only when the caller's module
+already names every whole-program name the body names, "in the one scope-hoisted file and in the
+multi-file layout alike". In a one-file build no module imports anything — every top-level name is
+one binding of the one scope (`nameIn`) — so there the condition is dropped: the caller's module
+names the body's names by their own `Name`, as slice 6 already does for a field read. The
+multi-file layout keeps it. What it unlocked first: `Schema.validRun`, called once from the
+program's `read`, named `endpointOf`, which the program's module did not, so the `Result` it
+makes was built and matched. Measured (release, brotli 11, each golden the change moved):
+`emit/release/inline/PushAndTimer` 770 → 756, `app/ValidatorRun` 996 → 963,
+`tea/HttpSendTracked` 6 860 → 6 787, `HttpSendUntracked` 4 867 → 4 834; 17 goldens moved, −207 in
+all, `direct/TableSwap` +8 and `MapKind` +4 the largest growths.
+
+**Slice 9 across a call: a `case` on what a function returns** (*added 2026-10-17*, the owner's
+decision for `browser-inline`'s first slice: a case of a known constructor fused across a call,
+general, in this pass, for every platform). Slice 9 folds a constructor made by a *small* function.
+A function of statements — a schema validator's worker, whose every `return` is a constructor, a
+declared constructor or its failure mark — is not small, and its caller builds what it returns
+only to test its tag and read its fields. The rule:
+
+- **The site**: `const x = f(a₁, …, aₙ)` followed by `return R`, the last statement of its list,
+  where every argument is an atom (a literal or a name nothing assigns), `x` is mentioned nowhere
+  but in `R`, and every mention of `x` in `R` is the object of a property read (`x.$`, `x.a.b`) or
+  an operand of `===` or `!==`. `R` holds no function and is at most 96 nodes.
+- **The function**: a top-level `const f = (…) => {…}` of the program that nothing the pass cannot
+  see names (`Input.escaping`), nothing assigns, whose every mention is the callee of such a site;
+  whose body holds no function, no `break` and no `continue`; and whose every path ends in a
+  `return` — a list whose last statement is a `return` or a `throw`, an `if` both of whose
+  branches are, or a `switch` with a `default` every case body of which is.
+- **The rewrite**, at every site of `f` at once: `f`'s body is written in place of the two
+  statements, its locals named fresh and each parameter its argument (*A function called once is
+  written where it is called*), and each of its `return P` becomes `return R[x := P]`, with what
+  the value is known to be applied as the copy is made:
+  - `x.k` of an object literal `P` is `P`'s value at `k`, and a chain reads on through nested
+    literals; of a name or a member chain, `P.k`;
+  - `x === y` (`!==`) of an object literal `P` is `false` (`true`) when `y` is a name or a member
+    chain on one — a literal makes an object nothing else holds — and of a `P` that is the same
+    member chain as `y`, on a local made by an object literal that nothing writes, mentions only
+    through property reads and hands to no call but the site's, ending at a value that is itself
+    an object or array literal (never `NaN`), `true` (`false`);
+  - a conditional, `&&` or `||` whose test is then a literal, or `===`/`!==` of two literals, is the
+    branch it chooses, and the other branch is not written.
+  
+  A `P` that is none of these — a call's result, say — is bound once, `{ const x′ = P; return
+  R[x := x′] }`. `P` is an object literal only when it is `inert`, so no evaluation is dropped:
+  reading its fields where `R` reads them evaluates names and literals, which cannot change between
+  the `return` and `R`, because nothing runs between them and the function has no closure to write
+  its locals.
+- **Gated by bytes**, like slice 8: the rewrite is made when the copies are smaller than what they
+  replace — Σ over the sites of the copy's size, against `f`'s declaration plus Σ over the sites of
+  the two statements, in slice 8's size model (`nodeCount`, a literal or a property name its
+  text). It is all or nothing: a function some site of which does not fit, or whose copies are not
+  smaller, stays shared, so a kind's shared code (`browser-inline.md`, S5's sharing by kind) is
+  never undone for a gain smaller than the function. Slice 5's single-call rule, which runs first,
+  is unchanged: a body of one `return` called once is written there without being priced.
+
+Soundness is the `case`'s: `language.md` §6's order is the call's — the arguments (atoms), then the
+body, then `R` — and the only values dropped are constructors nothing else could see (`x` reaches
+nothing but `R`'s reads and comparisons). Fixtures: `emit/release/app/CaseAcrossCall` (one function
+fused at its one site; one called from three sites that stays shared; a site that reads `x` whole,
+which keeps the call), `emit/release/inline/PushAndTimer` (the validator's worker fused into the
+program's `read`: no `Set` and no `Ok` is built), and `run/CaseAcrossCall`, the same program run in
+both builds.
+
 ### The combined solver
 
 *Specified 2026-10-02, normative for `src/js/Spec.zig`'s analysis from slice 4 of research 52
