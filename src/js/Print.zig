@@ -38,6 +38,7 @@ const Opt = @import("Opt.zig");
 const Rename = @import("Rename.zig");
 const Fields = @import("Fields.zig");
 const SourceMap = @import("SourceMap.zig");
+const Join = @import("Join.zig");
 
 const Node = JsIr.Node;
 const Index = Node.Index;
@@ -179,25 +180,114 @@ pub fn print(gpa: Allocator, scratch: Allocator, ir: *const JsIr, names: Names, 
     // because §9 item 2's local alphabet RESTARTS at every top-level
     // declaration and this is the only place that boundary is visible.
     const body = ir.extraSlice(ir.body, Index);
-    var i: usize = 0;
-    while (i < body.len) : (i += 1) {
+    try walk(&p, ir, options.hoisted, 0, body.len);
+    // A release module is one line, and a file ends with a newline.
+    if (p.compact and p.joiner.length != 0) try p.push("\n");
+    try p.joiner.push(options.footer);
+    return p.joiner.blit();
+}
+
+/// The module body from `from` to `to`, one top-level statement at a time.
+/// `print` walks the whole body; `Context.printRange` walks one piece of it,
+/// and a piece boundary is a statement boundary, so both callers write the
+/// same bytes for the same statements.
+fn walk(p: *Printer, ir: *const JsIr, hoisted: bool, from: usize, to: usize) Allocator.Error!void {
+    const body = ir.extraSlice(ir.body, Index);
+    var i: usize = from;
+    while (i < to) : (i += 1) {
         if (p.plan.isDropped(body[i])) continue;
-        if (options.hoisted) switch (p.ir.tag(body[i])) {
+        if (hoisted) switch (ir.tag(body[i])) {
             .import_stmt, .export_stmt => continue,
             else => {},
         };
-        if (p.compact and (p.ir.tag(body[i]) == .const_decl or p.ir.tag(body[i]) == .let_decl)) {
+        if (p.compact and (ir.tag(body[i]) == .const_decl or ir.tag(body[i]) == .let_decl)) {
             i = try p.topConstRun(body, i);
             continue;
         }
         if (p.rename) |m| try m.enter(body[i]);
         try p.statement(body[i], 0);
     }
-    // A release module is one line, and a file ends with a newline.
-    if (p.compact and p.joiner.length != 0) try p.push("\n");
-    try p.joiner.push(options.footer);
-    return p.joiner.blit();
 }
+
+/// A module printed in pieces (`backend.md` §9, *The embedded modules'
+/// printed text, in the pack*): the state every piece of one module shares,
+/// so that printing a unit at a time costs what printing the module in one
+/// walk costs and gives the same bytes.
+///
+/// **A development print only.** `--release` prints the whole module in one
+/// call, and two things there cross a piece boundary: `Rename`'s local
+/// namespaces, entered per module and not per statement, and compact
+/// printing's `const` runs (`topConstRun`), which merge neighbouring
+/// declarations into one statement. Neither is in a development build, and
+/// neither is a piece.
+pub const Context = struct {
+    ir: *const JsIr,
+    names: Names,
+    /// `Options.unobserved`, the one option a development print sets.
+    unobserved: []const Index,
+    /// Whether to record marks: a development build with source maps.
+    record_marks: bool,
+    /// The pieces' scratch and the shared tables: an arena the caller
+    /// resets; nothing is freed from it here.
+    arena: Allocator,
+    /// `Printer.spellings`, shared by every piece: a name's text is spelled
+    /// once for the module.
+    spellings: []?Spelling,
+    /// `Printer.map_names`, shared: a name is numbered once however many
+    /// pieces use it. Allocated by the first `mapName` of the module.
+    map_names: []u32 = &.{},
+    /// The module's map names, first-use order — `Marks.names` in `print`,
+    /// one list here. A piece's newly numbered names append while the piece
+    /// is printed, so the order is the module's.
+    names_out: std.ArrayList(InternPool.Symbol) = .empty,
+
+    pub fn init(arena: Allocator, ir: *const JsIr, names: Names, unobserved: []const Index, record_marks: bool) Allocator.Error!Context {
+        const spellings = try arena.alloc(?Spelling, ir.names.len);
+        @memset(spellings, null);
+        return .{
+            .ir = ir,
+            .names = names,
+            .unobserved = unobserved,
+            .record_marks = record_marks,
+            .arena = arena,
+            .spellings = spellings,
+        };
+    }
+
+    /// The module's statement count: the join's last piece ends here.
+    pub fn bodyLen(c: *const Context) u32 {
+        return @intCast(c.ir.extraSlice(c.ir.body, Index).len);
+    }
+
+    /// Print `ir.body[from..to]` — one run of top-level statements — as one
+    /// piece. The bytes and the marks come from the arena and live until
+    /// the caller's join has copied them.
+    pub fn printRange(c: *Context, from: u32, to: u32) Allocator.Error!Join.Piece {
+        const body = c.ir.extraSlice(c.ir.body, Index);
+        std.debug.assert(from <= to and to <= body.len);
+        var marks = SourceMap.Marks.init(c.arena);
+        // A piece's marks accumulator is handed the module's names list, by
+        // header, because `mapName` appends to the accumulator it is given:
+        // the piece puts what it numbers where `print` puts what it numbers,
+        // and the header is copied back below.
+        marks.names = c.names_out;
+        var p: Printer = .{
+            .joiner = .init(c.arena, c.arena),
+            .ir = c.ir,
+            .names = c.names,
+            .unobserved = c.unobserved,
+            .marks = if (c.record_marks) &marks else null,
+            .spelled = c.arena,
+            .spellings = c.spellings,
+            .map_names = c.map_names,
+        };
+        try walk(&p, c.ir, false, from, to);
+        c.names_out = marks.names;
+        c.map_names = p.map_names;
+        const text = try p.joiner.blit();
+        return .{ .text = text, .mappings = if (p.marks != null) marks.list.items else &.{} };
+    }
+};
 
 // ---------------------------------------------------------------------------
 // The joiner (fast-compiler.md §9.2)
