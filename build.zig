@@ -22,8 +22,9 @@
 //!                         <text>, in `test-blackbox` and `test-pending`
 //!   zig build test-blackbox-<file>   one black-box test file (`--list-steps`)
 //! `gates` refuses the two filters: a gate runs everything. It also refuses
-//! `-Doptimize` and `--release`, and the options below that change the
-//! budget's count.
+//! `-Doptimize` and `--release`, the options below that change the
+//! budget's count, and `-Downership-full-cross-check` (every ownership spine
+//! condition cross-checked against the pairwise one: slow).
 //!
 //! Every test of the gates' binaries, and every corpus case, is held to a
 //! budget (`tests/test_runner.zig`): one that retires more than 4 300
@@ -236,6 +237,13 @@ pub fn build(b: *std.Build) void {
     const llvm = b.option(bool, "llvm", "Build the ReleaseSafe compiler the black-box suites spawn with LLVM, the code users get, instead of Zig's self-hosted backend: about a minute's compile instead of seconds") orelse false;
     const test_filters = b.option([]const []const u8, "test-filter", "Compile only the tests whose name contains this text (repeatable); `gates` refuses it") orelse &.{};
     const corpus_only = b.option([]const u8, "corpus", "Run only the corpus fixtures whose repo-relative path contains this text; `gates` refuses it") orelse "";
+    // The ownership checker's own cross-check of an indexed spine condition
+    // against the pairwise one runs in safety builds for values of eight
+    // entries or fewer; this runs it for every value, at a cost in time.
+    const own_full_check = b.option(bool, "ownership-full-cross-check", "Cross-check every ownership spine condition against the pairwise one, not only those of values of eight entries or fewer (slow; safety builds)") orelse false;
+    const own_opts = b.addOptions();
+    own_opts.addOption(bool, "full_cross_check", own_full_check);
+    ownership_options = own_opts.createModule();
     // The budget of one test or corpus case (`tests/test_runner.zig`), on
     // every run of a binary the gates run; the random sweeps of `fuzz`, the
     // pending and timing steps, the run-hash recording and coverage are not
@@ -284,6 +292,7 @@ pub fn build(b: *std.Build) void {
     // time, which is correct and costs ~2 ms of a 15 ms warm budget.
     const default_id = compilerBuildId(b, target, optimize, null, shipped_core, platform_sources);
     beni_mod.addImport("build_options", default_id.options);
+    beni_mod.addImport("ownership_options", ownership_options.?);
     // The hermetic suite's library carries no checked core: its tests build
     // their own projects, and the pack is the installed compilers' (below).
     beni_mod.addImport("core_pack", emptyCorePack(b));
@@ -304,6 +313,7 @@ pub fn build(b: *std.Build) void {
     exe_beni.addImport("markup_lowerings", markup.registry);
     exe_beni.addImport("markup_entity_table", entityTable(b));
     exe_beni.addImport("build_options", default_id.options);
+    exe_beni.addImport("ownership_options", ownership_options.?);
     exe_beni.addImport("core_pack", corePack(b, shipped_core, platform_sources, default_id));
 
     const exe = b.addExecutable(.{
@@ -1225,6 +1235,8 @@ fn gatesRefusal(b: *std.Build, filtered: bool, optimize: std.lang.Optimize, host
     for ([_][]const u8{ "test-budget", "target", "cpu" }) |name| {
         if (b.user_input_options.contains(name)) return b.fmt("`gates` holds every test to the budget on the reference build: drop -D{s}, or give it to `test`, `test-blackbox` or a `test-blackbox-<file>` step", .{name});
     }
+    // A slower compiler, which the budget was not set for.
+    if (b.user_input_options.contains("ownership-full-cross-check")) return "`gates` holds every test to the budget on the reference build: drop -Downership-full-cross-check, or give it to `test-blackbox` or a `test-blackbox-<file>` step";
     // `-Doptimize` and `--release=`, which never reaches the options.
     if (optimize != .debug) return "`gates` holds every test to the budget on the reference build: drop -Doptimize and --release, or give them to `test`, `test-blackbox` or a `test-blackbox-<file>` step";
     if (host.cannot_count) |why| return b.fmt("`gates` cannot check the test budget here: {s}. Run the gates on an x86-64 Linux host that can count it (CLAUDE.md, *Every test has a budget*); `zig build test test-blackbox fmt-check beni-fmt-check` runs the same tests here, with no budget", .{why});
@@ -1304,6 +1316,7 @@ fn compiler(
     beni.addImport("markup_entity_table", entityTable(b));
     const id = compilerBuildId(b, target, mode, backend, core, sources);
     beni.addImport("build_options", id.options);
+    beni.addImport("ownership_options", ownership_options.?);
     beni.addImport("core_pack", corePack(b, core, sources, id));
     const exe = b.addExecutable(.{
         .name = "beni",
@@ -1451,6 +1464,7 @@ fn corePackMaker(b: *std.Build) *std.Build.Step.Compile {
     // Its own id is never a key's term: every key it computes takes the id
     // of the compiler it makes the pack for.
     beni.addImport("build_options", compilerBuildId(b, host, mode, .self_hosted, shipped_core, &.{}).options);
+    beni.addImport("ownership_options", ownership_options.?);
     beni.addImport("core_pack", emptyCorePack(b));
     const exe = b.addExecutable(.{
         .name = "core_pack",
@@ -1832,6 +1846,10 @@ fn entityTable(b: *std.Build) *std.Build.Module {
 }
 
 var entity_table_module: ?*std.Build.Module = null;
+
+/// `-Downership-full-cross-check`, as the module `ownership_options` every
+/// build of the compiler imports (`src/own/Ownership.zig`).
+var ownership_options: ?*std.Build.Module = null;
 
 /// One platform package compiled into beni (`docs/design/boundary.md`
 /// §9.5): a directory under `platforms/`, or one `-Dplatform=<dir>` adds.

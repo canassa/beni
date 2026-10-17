@@ -323,7 +323,10 @@ zig build --list-steps
 Options: `-Dtest-filter=<text>` (tests whose name contains it),
 `-Dcorpus=<text>` (corpus fixtures whose path contains it; matching nothing
 fails), `zig build test-blackbox-<file>` (one black-box file), `-Dllvm` (see
-below), `-Dtest-budget=<millions>` (profiling only). `gates` refuses the filters,
+below), `-Dtest-budget=<millions>` (profiling only),
+`-Downership-full-cross-check` (the ownership checker cross-checks every
+spine condition, not only those of values of eight entries or fewer; slow,
+so give it `-Dtest-budget=0`). `gates` refuses the filters,
 and it refuses to run on a host that cannot count the budget (*Every test has a
 budget*, below).
 
