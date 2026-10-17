@@ -7552,18 +7552,29 @@ const Walker = struct {
         if (w.m >= w.o.in.dispatch.len) return;
         const dt = &w.o.in.dispatch[w.m];
         const site = dt.siteOf(inst) orelse return;
-        for (dt.argsAt(site.evidence)) |ti| try w.evidenceTerm(dt, ti, w.token(inst), 0);
-    }
-
-    fn evidenceTerm(w: *Walker, dt: *const Dispatch, ti: Dispatch.TermIndex, tok: u32, depth: u32) Allocator.Error!void {
-        if (depth > 8) return;
-        const t = dt.term(ti);
-        if (w.termTarget(t)) |target| {
-            if (try w.o.ensureSummary(target.m, target.d)) |s| if (s.writesAny()) {
-                try w.valueLine(tok, try w.qualified(target), .pending, "it is passed as evidence, whose calls the checker does not see", "", false);
-            };
+        // Every term, however deep the evidence nests: they are finite, and
+        // each is looked at once. Before 2026-10-16 the walk stopped at 8
+        // terms deep and a writing function below went unreported (#271).
+        const tok = w.token(inst);
+        var todo: std.ArrayList(Dispatch.TermIndex) = .empty;
+        // A site's evidence is a small tree of terms: a list, not a map.
+        var seen: std.ArrayList(Dispatch.TermIndex) = .empty;
+        const top = dt.argsAt(site.evidence);
+        var i = top.len;
+        while (i > 0) : (i -= 1) try todo.append(w.a, top[i - 1]);
+        while (todo.pop()) |ti| {
+            if (std.mem.indexOfScalar(Dispatch.TermIndex, seen.items, ti) != null) continue;
+            try seen.append(w.a, ti);
+            const t = dt.term(ti);
+            if (w.termTarget(t)) |target| {
+                if (try w.o.ensureSummary(target.m, target.d)) |s| if (s.writesAny()) {
+                    try w.valueLine(tok, try w.qualified(target), .pending, "it is passed as evidence, whose calls the checker does not see", "", false);
+                };
+            }
+            const args = dt.argsOfTerm(ti);
+            var k = args.len;
+            while (k > 0) : (k -= 1) try todo.append(w.a, args[k - 1]);
         }
-        for (dt.argsOfTerm(ti)) |x| try w.evidenceTerm(dt, x, tok, depth + 1);
     }
 
     /// The function parameter of the declaration an abstract value is,

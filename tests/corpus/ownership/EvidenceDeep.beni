@@ -1,0 +1,27 @@
+-- CK-250: a writing function passed as evidence nested more than 8 terms deep went unreported.
+-- ownership (§16.5, issue #271): a function passed as evidence is called
+-- where the checker does not see it, so a writing one is reported pending
+-- wherever it is passed. `Box`'s `compare` pushes onto a list it is
+-- handed, and `List.sort` on nested lists passes it inside the evidence
+-- of every level. Before, the walk over evidence stopped 8 terms deep, so
+-- `deep`, ten levels down, was accepted with no line; `shallow` was
+-- reported. Now every term is walked, each once, and both are pending.
+pub type Box
+    = Box (List Int)
+
+
+pub compare : Box, Box → Order
+compare a b =
+    case ( a, b ) of
+        ( Box xs, Box ys ) →
+            Basics.compare (List.length (List.push xs 0)) (List.length ys)
+
+
+pub shallow : List (List Box) → List (List Box)
+shallow xs = List.sort xs
+
+
+pub deep :
+      List (List (List (List (List (List (List (List (List (List (Box))))))))))
+    → List (List (List (List (List (List (List (List (List (List (Box))))))))))
+deep xs = List.sort xs
