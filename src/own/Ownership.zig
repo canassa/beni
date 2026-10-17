@@ -592,10 +592,12 @@ keep: std.heap.ArenaAllocator,
 paths: Paths,
 /// Per `TypeId`, a column: null until computed.
 nominal: []?NominalFacts = &.{},
-/// The types whose `nominalFacts` are being computed, outermost first, and
-/// the lowest index of one of them a computation read while in progress.
-nominal_stack: std.ArrayList(u32) = .empty,
-nominal_low: usize = std.math.maxInt(usize),
+/// Per `TypeId`, `solveNominal`'s Tarjan columns: 0 for a type not on
+/// the walk, else 1 + its visit order; its low link; whether it is on the
+/// stack. Reset for every type a solve visits.
+nominal_order: []u32 = &.{},
+nominal_link: []u32 = &.{},
+nominal_on: []bool = &.{},
 /// §30.9: the nominal types whose bodies `ownMayHold` is reading.
 holding: std.ArrayList(TypeId) = .empty,
 ctor_ids: std.AutoHashMapUnmanaged(u64, u32) = .empty,
@@ -677,7 +679,9 @@ pub fn deinit(o: *Ownership) void {
     o.keep.deinit();
     o.paths.deinit(o.in.gpa);
     o.in.gpa.free(o.nominal);
-    o.nominal_stack.deinit(o.in.gpa);
+    o.in.gpa.free(o.nominal_order);
+    o.in.gpa.free(o.nominal_link);
+    o.in.gpa.free(o.nominal_on);
     o.holding.deinit(o.in.gpa);
     o.ctor_ids.deinit(o.in.gpa);
     o.ctor_type.deinit(o.in.gpa);
@@ -3354,26 +3358,144 @@ fn nominalFacts(o: *Ownership, id: TypeId) Allocator.Error!NominalFacts {
         o.nominal = try o.in.gpa.alloc(?NominalFacts, o.in.types.entries.len);
         @memset(o.nominal, null);
     }
-    // Optimistic while in progress: a type's own recursion adds nothing
-    // its other edges do not (the least fixpoint of "holds a cell"). What a
-    // type read that way says is the least fixpoint only for the outermost
-    // type of the cycle: `type B = B A` read inside `type A = A B (List
-    // Int)` saw `A` hold nothing, and is not remembered (it was before
-    // 2026-10-17, and `B` crossed).
-    if (std.mem.indexOfScalar(u32, o.nominal_stack.items, id.int())) |at| {
-        o.nominal_low = @min(o.nominal_low, at);
-        return .{};
-    }
     if (o.nominal[id.int()]) |f| return f;
-    const at = o.nominal_stack.items.len;
-    try o.nominal_stack.append(o.in.gpa, id.int());
-    const outer_low = o.nominal_low;
-    o.nominal_low = std.math.maxInt(usize);
-    const facts = try o.nominalFactsOf(id);
-    _ = o.nominal_stack.pop();
-    if (o.nominal_low >= at) o.nominal[id.int()] = facts;
-    o.nominal_low = @min(outer_low, if (o.nominal_low >= at) std.math.maxInt(usize) else o.nominal_low);
-    return facts;
+    try o.solveNominal(id);
+    return o.nominal[id.int()].?;
+}
+
+/// What every type `id` reaches holds (§4.4), remembered for each. The
+/// types a definition names are a graph, and "holds a cell" is the least
+/// fixpoint over it: each strongly connected group of mutually recursive
+/// types is solved once, every member starting from nothing and read again
+/// until none changes, after the groups it names (Tarjan's order). Before
+/// 2026-10-17 a type was read with the ones in progress taken to hold
+/// nothing and remembered so: `type B = B A`, read inside `type A = A B
+/// (List Int)`, crossed. Its first fix remembered only a cycle's outermost
+/// type, and read the others again on every path through the cycle, which
+/// is exponential in the cycle (#341).
+fn solveNominal(o: *Ownership, root: TypeId) Allocator.Error!void {
+    const gpa = o.in.gpa;
+    const n = o.in.types.entries.len;
+    if (o.nominal_order.len == 0) {
+        o.nominal_order = try gpa.alloc(u32, n);
+        @memset(o.nominal_order, 0);
+        o.nominal_link = try gpa.alloc(u32, n);
+        o.nominal_on = try gpa.alloc(bool, n);
+        @memset(o.nominal_on, false);
+    }
+    const TypeFrame = struct { id: u32, edges: []u32, next: usize };
+    var frames: std.ArrayList(TypeFrame) = .empty;
+    defer {
+        for (frames.items) |fr| gpa.free(fr.edges);
+        frames.deinit(gpa);
+    }
+    var stack: std.ArrayList(u32) = .empty;
+    defer stack.deinit(gpa);
+    var visited: std.ArrayList(u32) = .empty;
+    defer {
+        for (visited.items) |v| o.nominal_order[v] = 0;
+        visited.deinit(gpa);
+    }
+    var order: u32 = 0;
+    const enter = struct {
+        fn f(ow: *Ownership, fs: *std.ArrayList(TypeFrame), st: *std.ArrayList(u32), vs: *std.ArrayList(u32), ord: *u32, v: u32) Allocator.Error!void {
+            ord.* += 1;
+            ow.nominal_order[v] = ord.*;
+            ow.nominal_link[v] = ord.*;
+            ow.nominal_on[v] = true;
+            try st.append(ow.in.gpa, v);
+            try vs.append(ow.in.gpa, v);
+            var edges: std.ArrayList(u32) = .empty;
+            try ow.nominalEdges(@fromBackingInt(v), &edges);
+            try fs.append(ow.in.gpa, .{ .id = v, .edges = try edges.toOwnedSlice(ow.in.gpa), .next = 0 });
+        }
+    }.f;
+    try enter(o, &frames, &stack, &visited, &order, root.int());
+    while (frames.items.len > 0) {
+        const top = &frames.items[frames.items.len - 1];
+        if (top.next < top.edges.len) {
+            const w = top.edges[top.next];
+            top.next += 1;
+            if (o.nominal[w] != null) continue;
+            if (o.nominal_order[w] == 0) {
+                try enter(o, &frames, &stack, &visited, &order, w);
+            } else if (o.nominal_on[w]) {
+                o.nominal_link[top.id] = @min(o.nominal_link[top.id], o.nominal_order[w]);
+            }
+            continue;
+        }
+        const fr = frames.pop().?;
+        gpa.free(fr.edges);
+        const v = fr.id;
+        if (frames.items.len > 0) {
+            const parent = frames.items[frames.items.len - 1].id;
+            o.nominal_link[parent] = @min(o.nominal_link[parent], o.nominal_link[v]);
+        }
+        if (o.nominal_link[v] != o.nominal_order[v]) continue;
+        // `v` roots a group: the stack down to it.
+        var at = stack.items.len;
+        while (true) {
+            at -= 1;
+            if (stack.items[at] == v) break;
+        }
+        const group = stack.items[at..];
+        for (group) |x| {
+            o.nominal_on[x] = false;
+            o.nominal[x] = .{};
+        }
+        var changed = true;
+        while (changed) {
+            changed = false;
+            for (group) |x| {
+                const f = try o.nominalFactsOf(@fromBackingInt(x));
+                if (!std.meta.eql(f, o.nominal[x].?)) {
+                    o.nominal[x] = joinFacts(o.nominal[x].?, f);
+                    o.nominal[x].?.unboxed = f.unboxed;
+                    changed = true;
+                }
+            }
+        }
+        stack.shrinkRetainingCapacity(at);
+    }
+}
+
+/// The nominal types `birTypeFacts` may read for type `id`'s definition.
+fn nominalEdges(o: *Ownership, id: TypeId, out: *std.ArrayList(u32)) Allocator.Error!void {
+    if (id == .none or id.int() >= o.in.types.entries.len) return;
+    const e = o.in.types.entries[id.int()];
+    if (e.schema_endpoint or e.kind == .foreign) return;
+    const m = e.module.int();
+    const bir = o.in.birs[m];
+    const d = bir.decl(e.decl);
+    if (e.kind == .alias) {
+        if (d.annotation.unwrap()) |body| try o.exprEdges(m, bir, body, out);
+        return;
+    }
+    for (bir.declCtors(d)) |c| for (bir.extraSlice(.{ .start = c.args_start, .end = c.args_end }, Inst.Index)) |arg| try o.exprEdges(m, bir, arg, out);
+}
+
+fn exprEdges(o: *Ownership, m: u32, bir: *const Bir, inst: Inst.Index, out: *std.ArrayList(u32)) Allocator.Error!void {
+    const tag = bir.instTag(inst);
+    const data = bir.instData(inst);
+    const graph_m: Graph.Index = @fromBackingInt(@intCast(m));
+    const push = struct {
+        fn f(ow: *Ownership, x: TypeId, list: *std.ArrayList(u32)) Allocator.Error!void {
+            if (x == .none or x.int() >= ow.in.types.entries.len) return;
+            try list.append(ow.in.gpa, x.int());
+        }
+    }.f;
+    switch (tag) {
+        .type_tuple => for (bir.extraSlice(Bir.inlineRange(data), Inst.Index)) |el| try o.exprEdges(m, bir, el, out),
+        .type_record => for (bir.extraSlice(Bir.inlineRange(data), Bir.Field)) |fl| try o.exprEdges(m, bir, fl.value, out),
+        .type_record_ext => for (bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.rhs))), Bir.Field)) |fl| try o.exprEdges(m, bir, fl.value, out),
+        .type_top, .ext_type, .schema_type_top, .ext_schema_type => try push(o, o.in.types.headId(graph_m, tag, data), out),
+        .type_app => {
+            const head: Inst.Index = @fromBackingInt(@intCast(data.lhs));
+            try push(o, o.in.types.headId(graph_m, bir.instTag(head), bir.instData(head)), out);
+            for (bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.rhs))), Inst.Index)) |arg| try o.exprEdges(m, bir, arg, out);
+        },
+        else => {},
+    }
 }
 
 fn nominalFactsOf(o: *Ownership, id: TypeId) Allocator.Error!NominalFacts {

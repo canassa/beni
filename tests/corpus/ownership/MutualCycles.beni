@@ -1,0 +1,376 @@
+-- ownership: what mutually recursive types hold is solved once per cycle
+-- (#341). Whether a type may hold a list is the least fixpoint over the
+-- types its definition names. A first fix of the mutual-recursion hole
+-- (`MutualTypes`) remembered only the outermost type of a cycle and read
+-- every other one again on each path through it: twelve types that each
+-- name all the others took 27 s to check, and twenty-eight that each name
+-- the next three 9 s. Each strongly connected group is solved once now.
+-- `f` pushes onto the list of its parameter, and `g` onto one reached
+-- through the chain: both accepted, `param`.
+type K0
+    = K0
+        (List Int)
+        (Maybe K1)
+        (Maybe K2)
+        (Maybe K3)
+        (Maybe K4)
+        (Maybe K5)
+        (Maybe K6)
+        (Maybe K7)
+        (Maybe K8)
+        (Maybe K9)
+        (Maybe K10)
+        (Maybe K11)
+    | KEnd0
+
+
+type K1
+    = K1
+        (List Int)
+        (Maybe K0)
+        (Maybe K2)
+        (Maybe K3)
+        (Maybe K4)
+        (Maybe K5)
+        (Maybe K6)
+        (Maybe K7)
+        (Maybe K8)
+        (Maybe K9)
+        (Maybe K10)
+        (Maybe K11)
+    | KEnd1
+
+
+type K2
+    = K2
+        (List Int)
+        (Maybe K0)
+        (Maybe K1)
+        (Maybe K3)
+        (Maybe K4)
+        (Maybe K5)
+        (Maybe K6)
+        (Maybe K7)
+        (Maybe K8)
+        (Maybe K9)
+        (Maybe K10)
+        (Maybe K11)
+    | KEnd2
+
+
+type K3
+    = K3
+        (List Int)
+        (Maybe K0)
+        (Maybe K1)
+        (Maybe K2)
+        (Maybe K4)
+        (Maybe K5)
+        (Maybe K6)
+        (Maybe K7)
+        (Maybe K8)
+        (Maybe K9)
+        (Maybe K10)
+        (Maybe K11)
+    | KEnd3
+
+
+type K4
+    = K4
+        (List Int)
+        (Maybe K0)
+        (Maybe K1)
+        (Maybe K2)
+        (Maybe K3)
+        (Maybe K5)
+        (Maybe K6)
+        (Maybe K7)
+        (Maybe K8)
+        (Maybe K9)
+        (Maybe K10)
+        (Maybe K11)
+    | KEnd4
+
+
+type K5
+    = K5
+        (List Int)
+        (Maybe K0)
+        (Maybe K1)
+        (Maybe K2)
+        (Maybe K3)
+        (Maybe K4)
+        (Maybe K6)
+        (Maybe K7)
+        (Maybe K8)
+        (Maybe K9)
+        (Maybe K10)
+        (Maybe K11)
+    | KEnd5
+
+
+type K6
+    = K6
+        (List Int)
+        (Maybe K0)
+        (Maybe K1)
+        (Maybe K2)
+        (Maybe K3)
+        (Maybe K4)
+        (Maybe K5)
+        (Maybe K7)
+        (Maybe K8)
+        (Maybe K9)
+        (Maybe K10)
+        (Maybe K11)
+    | KEnd6
+
+
+type K7
+    = K7
+        (List Int)
+        (Maybe K0)
+        (Maybe K1)
+        (Maybe K2)
+        (Maybe K3)
+        (Maybe K4)
+        (Maybe K5)
+        (Maybe K6)
+        (Maybe K8)
+        (Maybe K9)
+        (Maybe K10)
+        (Maybe K11)
+    | KEnd7
+
+
+type K8
+    = K8
+        (List Int)
+        (Maybe K0)
+        (Maybe K1)
+        (Maybe K2)
+        (Maybe K3)
+        (Maybe K4)
+        (Maybe K5)
+        (Maybe K6)
+        (Maybe K7)
+        (Maybe K9)
+        (Maybe K10)
+        (Maybe K11)
+    | KEnd8
+
+
+type K9
+    = K9
+        (List Int)
+        (Maybe K0)
+        (Maybe K1)
+        (Maybe K2)
+        (Maybe K3)
+        (Maybe K4)
+        (Maybe K5)
+        (Maybe K6)
+        (Maybe K7)
+        (Maybe K8)
+        (Maybe K10)
+        (Maybe K11)
+    | KEnd9
+
+
+type K10
+    = K10
+        (List Int)
+        (Maybe K0)
+        (Maybe K1)
+        (Maybe K2)
+        (Maybe K3)
+        (Maybe K4)
+        (Maybe K5)
+        (Maybe K6)
+        (Maybe K7)
+        (Maybe K8)
+        (Maybe K9)
+        (Maybe K11)
+    | KEnd10
+
+
+type K11
+    = K11
+        (List Int)
+        (Maybe K0)
+        (Maybe K1)
+        (Maybe K2)
+        (Maybe K3)
+        (Maybe K4)
+        (Maybe K5)
+        (Maybe K6)
+        (Maybe K7)
+        (Maybe K8)
+        (Maybe K9)
+        (Maybe K10)
+    | KEnd11
+
+
+type R0
+    = R0 (List Int) (Maybe R1) (Maybe R2) (Maybe R3)
+    | REnd0
+
+
+type R1
+    = R1 (List Int) (Maybe R2) (Maybe R3) (Maybe R4)
+    | REnd1
+
+
+type R2
+    = R2 (List Int) (Maybe R3) (Maybe R4) (Maybe R5)
+    | REnd2
+
+
+type R3
+    = R3 (List Int) (Maybe R4) (Maybe R5) (Maybe R6)
+    | REnd3
+
+
+type R4
+    = R4 (List Int) (Maybe R5) (Maybe R6) (Maybe R7)
+    | REnd4
+
+
+type R5
+    = R5 (List Int) (Maybe R6) (Maybe R7) (Maybe R8)
+    | REnd5
+
+
+type R6
+    = R6 (List Int) (Maybe R7) (Maybe R8) (Maybe R9)
+    | REnd6
+
+
+type R7
+    = R7 (List Int) (Maybe R8) (Maybe R9) (Maybe R10)
+    | REnd7
+
+
+type R8
+    = R8 (List Int) (Maybe R9) (Maybe R10) (Maybe R11)
+    | REnd8
+
+
+type R9
+    = R9 (List Int) (Maybe R10) (Maybe R11) (Maybe R12)
+    | REnd9
+
+
+type R10
+    = R10 (List Int) (Maybe R11) (Maybe R12) (Maybe R13)
+    | REnd10
+
+
+type R11
+    = R11 (List Int) (Maybe R12) (Maybe R13) (Maybe R14)
+    | REnd11
+
+
+type R12
+    = R12 (List Int) (Maybe R13) (Maybe R14) (Maybe R15)
+    | REnd12
+
+
+type R13
+    = R13 (List Int) (Maybe R14) (Maybe R15) (Maybe R16)
+    | REnd13
+
+
+type R14
+    = R14 (List Int) (Maybe R15) (Maybe R16) (Maybe R17)
+    | REnd14
+
+
+type R15
+    = R15 (List Int) (Maybe R16) (Maybe R17) (Maybe R18)
+    | REnd15
+
+
+type R16
+    = R16 (List Int) (Maybe R17) (Maybe R18) (Maybe R19)
+    | REnd16
+
+
+type R17
+    = R17 (List Int) (Maybe R18) (Maybe R19) (Maybe R20)
+    | REnd17
+
+
+type R18
+    = R18 (List Int) (Maybe R19) (Maybe R20) (Maybe R21)
+    | REnd18
+
+
+type R19
+    = R19 (List Int) (Maybe R20) (Maybe R21) (Maybe R22)
+    | REnd19
+
+
+type R20
+    = R20 (List Int) (Maybe R21) (Maybe R22) (Maybe R23)
+    | REnd20
+
+
+type R21
+    = R21 (List Int) (Maybe R22) (Maybe R23) (Maybe R24)
+    | REnd21
+
+
+type R22
+    = R22 (List Int) (Maybe R23) (Maybe R24) (Maybe R25)
+    | REnd22
+
+
+type R23
+    = R23 (List Int) (Maybe R24) (Maybe R25) (Maybe R26)
+    | REnd23
+
+
+type R24
+    = R24 (List Int) (Maybe R25) (Maybe R26) (Maybe R27)
+    | REnd24
+
+
+type R25
+    = R25 (List Int) (Maybe R26) (Maybe R27) (Maybe R0)
+    | REnd25
+
+
+type R26
+    = R26 (List Int) (Maybe R27) (Maybe R0) (Maybe R1)
+    | REnd26
+
+
+type R27
+    = R27 (List Int) (Maybe R0) (Maybe R1) (Maybe R2)
+    | REnd27
+
+
+pub f : K0 → List Int
+f t =
+    case t of
+        K0 xs _ _ _ _ _ _ _ _ _ _ _ →
+            List.push xs 1
+
+        KEnd0 →
+            []
+
+
+pub g : R0 → List Int
+g t =
+    case t of
+        R0 _ _ _ next →
+            case next of
+                Just (R3 ys _ _ _) →
+                    List.push ys 1
+
+                _ →
+                    []
+
+        REnd0 →
+            []
