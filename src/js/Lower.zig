@@ -370,6 +370,8 @@ pub const Direct = struct {
         /// for one the program site cannot write.
         lift: u32 = std.math.maxInt(u32),
         captures: ?[]const []const u8 = &.{},
+        /// When `captures` is null: the capture that is not a literal, by name.
+        computed: []const u8 = "",
     };
 
     pub const Let = struct {
@@ -11941,11 +11943,10 @@ pub const Lowerer = struct {
             const captures = start.captures orelse {
                 try l.programReport(.call, .not_implemented, try std.fmt.allocPrint(l.scratch,
                     \\A limit of the compiler: this program's subscription at {s} starts with a function
-                    \\that reads a value of the function it is made in which is not a literal, and the
-                    \\program's mount can pass a lifted start only literals (`docs/design/browser-inline.md`
-                    \\§7; §5, class 4). Pass the start's arguments as literals where the subscription is
-                    \\declared.
-                , .{where}));
+                    \\that captures `{s}`, a value computed when the page runs, and the program's mount
+                    \\can hand a lifted start only literals (`docs/design/browser-inline.md` §7; §5,
+                    \\class 4). Pass a literal for it where the subscription is declared.
+                , .{ where, if (start.computed.len != 0) start.computed else "a local" }));
                 return null;
             };
             const piece = l.in.direct.?.lifts[start.lift];

@@ -2715,6 +2715,9 @@ const Emitter = struct {
                                         var text_: std.ArrayList(u8) = .empty;
                                         if (!try w.literalSpelling(w.closureLocal(dcl.start, local), &text_)) {
                                             st.captures = null;
+                                            const lb = e.writes_birs[pc.module];
+                                            const locals = lb.declLocals(lb.decls[pc.decl]);
+                                            if (local < locals.len and locals[local].name != .none) st.computed = try a.dupe(u8, e.session.interner.slice(lb.symbol(locals[local].name)));
                                             break;
                                         }
                                         sp.* = try a.dupe(u8, text_.items);
