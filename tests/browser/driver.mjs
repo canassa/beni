@@ -681,7 +681,17 @@ function step(s) {
   if (s.command === "stop") {
     const stop = globalThis.__beniHarness.entry?.stop;
     if (typeof stop !== "function") return "the entry file exports no `stop`";
-    stop();
+    // A disposer that throws ends `stop` with its exception, which the
+    // runtime does not catch (CLAUDE.md rule 9): the transcript shows it.
+    // Only an `Error` is a thrown exception the page can name; anything
+    // else is re-thrown.
+    try {
+      stop();
+    } catch (e) {
+      if (!(e instanceof Error)) throw e;
+      globalThis.__beniHarness.log.push(`(stop threw: ${e.message})`);
+      return null;
+    }
     globalThis.__beniHarness.log.push("(stopped)");
     return null;
   }

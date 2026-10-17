@@ -1,0 +1,48 @@
+-- `stop` while one disposer throws (`boundary.md` §9.4.5; CLAUDE.md rule
+-- 9). The mount registers its node's removal, then the push listener's,
+-- then `onBroken`'s, whose removal throws; `stop` runs them newest first,
+-- so the throw comes first and the two older ones are skipped: the node
+-- stays and the listener stays attached. The throw reaches the page (the
+-- driver logs it), and the program has stopped: a later push changes
+-- nothing.
+import Browser
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Push
+import Schema exposing (Value)
+import Sub exposing (Sub)
+import Tea
+
+
+type Msg
+    = Pushed Value
+    | Tick
+
+
+init : ⊤ → Int × Cmd Msg
+init ⊤ = ( 0, Cmd.none )
+
+
+update : Msg, Int → Int × Cmd Msg
+update msg model =
+    case msg of
+        Pushed _ →
+            ( model + 1, Cmd.none )
+
+        Tick →
+            ( model, Cmd.none )
+
+
+subscriptions : Int → Sub Msg
+subscriptions _ = Sub.batch [ Push.onPush Pushed, Push.onBroken Tick ]
+
+
+view : Int → Html Msg
+view model = <p>{"pushes: ${String.fromInt model}"}</p>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.element { init = init, update = update, view = view, subscriptions = subscriptions })
+        "root"

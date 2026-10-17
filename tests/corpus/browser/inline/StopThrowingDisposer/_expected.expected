@@ -1,0 +1,24 @@
+-- element "root"
+-- load
+<body>
+  <div id="root">
+    <p>"pushes: 0"</p>
+  </div>
+</body>
+-- detail window rr-push 1
+<body>
+  <div id="root">
+    <p>"pushes: 1"</p>
+  </div>
+</body>
+-- listeners window
+(listeners: 1)
+(the DOM did not change)
+-- stop
+(stop threw: the removal failed)
+(the DOM did not change)
+-- listeners window
+(listeners: 1)
+(the DOM did not change)
+-- detail window rr-push 1
+(the DOM did not change)
