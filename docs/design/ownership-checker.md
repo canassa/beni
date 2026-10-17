@@ -2060,6 +2060,14 @@ model.rows) Loaded` is rejected `need` at the tagger — "`Cmd.task` sends what 
 model holds, approximately when only an approximate step made it so (a list from JavaScript, a conservative
 call's result).
 
+*Amended 2026-10-17 (issue #272):* a function parameter's summary fact says whether its `need` comes only from
+a send (`sends`): the read-off sets it when every demand on what the parameter returns is a send's (`S`), and
+every `need` it takes from a callee is a `sends` one; the hosted rows' taggers and mapped functions have it. A
+`need` line through such a parameter says "`Cmd.task` sends what it returns, which may be a list it does not
+own", whatever the function value is — a constructor keeps the sentence above — and one through any other says
+that the callee edits what it returns. Before, a lambda or a named function handed as a tagger read "`Cmd.task`
+edits what it returns". The fact changes no verdict.
+
 ### 23.6 The entry: messages are owned
 
 §20.5 is replaced. The message `update` receives is the symbolic cell **`msg`**, standing for every payload a
