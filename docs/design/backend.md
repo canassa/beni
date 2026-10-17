@@ -7738,10 +7738,13 @@ only to test its tag and read its fields. The rule:
   no closure to write its locals. A value the literal holds that is itself made (an object, an
   array, a function) is read in place only when `R` reads it once in the copy; otherwise `P` is
   bound.
-- **Gated by bytes**, like slice 8: the rewrite is made when the copies are smaller than what they
-  replace — Σ over the sites of the copy's size, against `f`'s declaration plus Σ over the sites of
-  the two statements, in slice 8's size model (`nodeCount`, a literal or a property name its
-  text). It is all or nothing: a function some site of which does not fit, or whose copies are not
+- **Gated by a size proxy**, like slice 8: the rewrite is made when the copies are smaller than
+  what they replace by `Spec.stmtSize`, a count of nodes that stands in for bytes, not bytes —
+  each expression's `nodeCount` (a literal or a property name its text, an operator its spelling,
+  any other node a small constant) and 4 for each statement around them; Σ over the sites of the
+  copy's count, against `f`'s declaration plus Σ over the sites of the replaced statements. Printed
+  and compressed bytes can disagree with it: the proxy is what is asked, and the goldens pin what
+  it chose. It is all or nothing: a function some site of which does not fit, or whose copies are not
   smaller, stays shared, so a kind's shared code (`browser-inline.md`, S5's sharing by kind) is
   never undone for a gain smaller than the function. Slice 5's single-call rule, which runs first,
   is unchanged: a body of one `return` called once is written there without being priced.
