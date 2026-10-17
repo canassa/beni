@@ -2609,6 +2609,9 @@ const Spec = struct {
         const ir = m.ir;
         const d = ir.data(node);
         const callee: Index = @fromBackingInt(@intCast(d.lhs));
+        // Invariant: JsIr has no rest and no default parameters, so a missing
+        // argument and a passed `undefined` bind alike; this must change if
+        // either is ever added.
         // A trailing `undefined` passed to a callee that is only arrows of
         // the program is what a missing argument is: an arrow has no
         // `arguments` to count them by (`backend.md` §9, *Trimmed arguments*,
@@ -6445,7 +6448,8 @@ const Spec = struct {
     /// whose every site is `const x = f(…)` and then the rest of a list that
     /// only cases on `x`, written into every site with each of its `return
     /// P` the rest of that list knowing `x` is `P` — when the copies are
-    /// smaller than the function and its calls. One function at a time, the
+    /// smaller than the function and its calls by `stmtSize`, a node count
+    /// standing in for bytes (not bytes). One function at a time, the
     /// program counted again after each.
     fn fuseCalls(s: *Spec) Allocator.Error!bool {
         if (s.in.fresh == .none) return false;

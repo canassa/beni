@@ -2552,6 +2552,13 @@ const Emitter = struct {
         var pieces: std.ArrayList(Lift.Piece) = .empty;
         var cuts: std.ArrayList(Reach.Cut) = .empty;
         var roots: std.ArrayList(Reach.Node) = .empty;
+        // Each module's piece per instruction, made the first time one of
+        // its lambdas is a start: a per-module index, so finding a lambda's
+        // piece again is one read, and the walk is linear in the number of
+        // subscriptions (CLAUDE.md rule 5: the pieces stay in the order they
+        // are met).
+        const piece_at = try e.scratch.alloc([]u32, e.writes_birs.len);
+        @memset(piece_at, &.{});
         for (e.writes_calls) |call| {
             const prog = &call.program;
             if (prog.subscriptions_inst != Writes.none) {
@@ -2574,14 +2581,18 @@ const Emitter = struct {
                 // One piece per lambda; it is lowered in place only while every
                 // program that uses it is in the lambda's own module, and
                 // lifted and exported as soon as one is in another.
-                const seen = for (pieces.items) |*p| {
-                    if (p.module == info.m and p.inst == info.inst) {
-                        if (info.m != call.module) p.in_place = false;
-                        break true;
-                    }
-                } else false;
-                if (seen) continue;
                 const b = e.writes_birs[info.m];
+                if (piece_at[info.m].len == 0) {
+                    piece_at[info.m] = try e.scratch.alloc(u32, b.insts.len);
+                    @memset(piece_at[info.m], Writes.none);
+                }
+                const slot = &piece_at[info.m][info.inst];
+                if (slot.* != Writes.none) {
+                    if (info.m != call.module) pieces.items[slot.*].in_place = false;
+                    continue;
+                }
+                slot.* = @intCast(pieces.items.len);
+                const n = Lift.ordinal(b, info.d, info.inst);
                 var captures: std.ArrayList(u32) = .empty;
                 for (info.bound) |local| if (try Lift.readsLocal(b, e.scratch, info.inst, local)) try captures.append(e.scratch, local);
                 try roots.append(e.scratch, .{ .module = @fromBackingInt(@intCast(info.m)), .kind = .lift, .index = @intCast(pieces.items.len) });
@@ -2590,8 +2601,8 @@ const Emitter = struct {
                     .decl = info.d,
                     .inst = info.inst,
                     .lo = try Lift.low(b, e.scratch, info.inst),
-                    .ordinal = Lift.ordinal(b, info.d, info.inst),
-                    .name = try Lift.base(e.scratch, e.session.interner.slice(b.symbol(b.decls[info.d].name)), Lift.ordinal(b, info.d, info.inst)),
+                    .ordinal = n,
+                    .name = try Lift.base(e.scratch, e.session.interner.slice(b.symbol(b.decls[info.d].name)), n),
                     .captures = captures.items,
                     .in_place = info.m == call.module,
                 });
