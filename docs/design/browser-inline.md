@@ -106,6 +106,10 @@ to be global, and a cap of the compiler.
    on 2026-10-17 — `Show`, branches; S6: the task kernel). The message says *"A limit of the
    compiler: … does not compile … yet"* and what to write instead; it names no slice and no
    plan, which are this document's and not the user's.
+   *Amended 2026-10-17 (the owner's D-b and D-d, S1's design pass):* an `if` whose other arm is
+   `<></>` is S1's, an eager `when` (§8.2), and no longer S4's, which keeps a branch of any other
+   shape and `Show`; a `view`'s `let` read by one hole is S1's, substituted into the hole, and one
+   read by several holes stays S3's.
 2. **Needs the task kernel** (a compiler limit) — a command whose body may suspend: *"A limit of
    the compiler: … needs the task kernel, which `browser-inline` does not have yet"*, with the
    body's position. The kernel returns behind reachability in S6.
@@ -167,7 +171,200 @@ program site calls them.
 - **In release**, the release optimiser fuses a piece used once into its listener where its rules
   allow; a development build shows each piece as a call, which is accepted.
 
+*Amended 2026-10-17 (S1, #297):* the pieces are of three kinds, each named by its declaration and
+an ordinal as above: a lifted lambda, `<Module>$<declaration>$$lift$<n>`; an **arm piece**,
+`<Module>$<declaration>$$arm$<n>`, one branch of a `case` at which the key tree splits a message;
+and the **view pieces** of a markup root another module's program uses, its HTML string
+`<Module>$<declaration>$$html$<n>` and its binding functions `<Module>$<declaration>$$bind$<n>`
+(§8.4). The program site knows an arm piece by its name and parameters and a view piece by the
+facts `programPiece` gives (§8.4), never by its body.
+
 **Rejected: writing the other module's code at the program site** (option 1). It specialises code
 per program instance, the first platform's cause 3 (`plans/direct-rewrite.md` §1), and it makes a
 module's output depend on another module's body at every use, which incremental lowering cannot
 cache by module (`fast-compiler.md` §8.1, amended the same day).
+
+## 8. Holes, handlers and pieces (S1)
+
+*Added 2026-10-17, slice S1 (#297), the owner's decisions of the same day (`plans/inline-s1-brief.md`
+§1). It holds what S1's goldens cannot show: which facts the lowering reads, how it names and
+places what it writes, and what it refuses. The goldens are `emit/release/inline/` and
+`browser/inline/` (`CounterLocal`, `FormLocal`, `Counter/`, `Texts/`, `Reader/`, `ResearchS2/`,
+`ResearchS3/`), the refusals `build/bad/inline/`. S1 lands in several pull requests: §8.2–§8.3
+first, in one module; §8.4–§8.6 after.*
+
+### 8.1 What the lowering takes
+
+§2's table, extended. Every row is an analysis's answer; the lowering re-derives none of them.
+
+| Fact | Analysis | Interface |
+|---|---|---|
+| each hole's and attribute's read set, as a group, and whether `init` bakes it | the write-set pass's view walk, per call path (`write-sets.md`, *a hole's facts per call*) | `programHole` |
+| which groups a key's writes reach | the same pass, §2.5's conflict | `programCalls`, `programGroupsOf` (1.15) |
+| a `case` the key tree splits a message at, and each branch's arm piece | the key tree (`write-sets.md` §4.4, amended 2026-10-17: *split sites*) | `Program.Key`, `programArm` |
+| which branch of an `if` a hole shows, and whether its arm can be evaluated eagerly | the lowerer's branch reading (`boundary.md` §9.4.6, 1.10) | `programBranch`, `Program.Arm.eager` (1.15) |
+| another module's `view` as pieces: their names, groups, elements and events | the pieces pre-pass (§8.4) | `Program.Callee.piece`, `programPiece` (1.15) |
+| what each tail of a key's arm writes | the write-set pass's per-path sets (`write-sets.md`, amended 2026-10-17) | `programArmTails`, `programCallsAt` (1.15) |
+
+### 8.2 The page
+
+**One HTML string per unit** — the program's `view`, or a piece's root (§8.4) — written into the
+mount once, with `insertAdjacentHTML`. It holds every element of the unit, the elements of an eager
+`when`'s arm included, every constant attribute and every text that never changes: a constant, or
+a hole `init` bakes (`write-sets.md` §9.1). Attribute values are left unquoted where HTML reads them
+back unquoted (no space, quote, `=`, `<`, `>` or backtick, and not empty), and the end tags HTML
+makes optional are left out where the next node or the parent's end closes them as the end tag
+would (`</li>`, `</option>`, `</p>` before an element that closes it or at the end of a parent other
+than `a`, `audio`, `del`, `ins`, `map`, `noscript` and `video`, `</td>`, `</th>`, `</tr>`, `</dt>`,
+`</dd>`, `</thead>`, `</tbody>`, `</optgroup>`, `</rt>`, `</rp>`); the run of end tags at the very end
+of a string parsed alone is left out too, which the parser closes at the end of its input. A
+string that is concatenated with another keeps its own closing run.
+
+**Elements by document order.** An element some code refers to is `E[n]`, the `n`-th descendant of
+the unit's top element in document order (`top.querySelectorAll("*")`, read once at the mount, and
+only when some code refers to a descendant); the top element is the unit's node itself. There is
+no marker attribute and no walk.
+
+**A binding** is one write guarded by a compare, through the runtime's four functions, which are
+beni over `Js` in `Inline.beni`:
+
+| Function | What it writes |
+|---|---|
+| `text(node, value)` | `node.textContent`, `String(value)`, when it differs |
+| `prop(node, value, key = "value")` | the DOM property `key` when it differs: a control's `value`, `checked`, `selected`, and the boolean attributes whose property has their name (`disabled`, `hidden`, `multiple`, `open`, `required`) |
+| `when(node, hidden)` | the node, or the empty text node it keeps in its place while `hidden` |
+| `on(node, f, type = "click")` | a listener of `type` whose event enters the dispatch guard with `f` |
+
+- **A text hole** is `text` on its element. An element whose children are texts and text holes —
+  *mixed text* — is one binding writing its whole text as a template. A hole of `String`, `Char` or
+  a number only; a text hole beside an element is a limit of the compiler (§8.7).
+- **An attribute** whose value changes is `prop`; a constant one, and one `init` bakes, is in the
+  markup. An attribute that is not a DOM property and whose value changes, a URL, raw HTML, and a
+  class or style list that changes are limits of the compiler.
+- **An eager `when`** (the owner's D-b) is an `html` hole whose value is an `if` — a `case` of two
+  arms — one arm of which is one element written in place and the other `<></>`, and whose markup
+  arm reads no variable the branch binds (`Program.Arm.eager`): the arm's element is in the markup
+  and its holes are bindings like any other, evaluated whichever arm the value takes; `when` hides it
+  while the value takes the other arm. A branch of any other shape is S4's (§5, class 1).
+- **Groups.** Bindings are grouped by read set, `programHole`'s `group`: one binding *function* per
+  distinct set of groups among the bindings of a unit — a mixed text whose holes read two sets is in
+  both — in document order of its first binding. A `when`'s group is its hole's, which is the read set
+  of the whole value, arm included: the `when` runs again on a write its arm's text reads, and writes
+  nothing then.
+- **A `view` `let`** read by one hole is that hole's value, substituted (D-d); one read by several
+  holes is a memo node, S3's, and refused as a limit of the compiler until then.
+
+S0's one text binding — a text node marked by a space in the markup, its `data` written when it
+differs from a slot — is a `text` binding like the others from S1: one shape, the same as
+tea-inline's, and the S0 goldens move with it.
+
+### 8.3 Handlers and the write pass
+
+A handler is the arm of its key, called directly with the key's fields: no message, no `case`,
+no dispatcher. The program module's own `update` is written in place, its top-level `case`'s arm
+for the key's constructor taken (`programArm`); another module's arm is a piece (§8.4).
+
+**The write pass** (D3, the owner, synchronous): at the end of the handler, inside the guard, the
+binding functions of the page whose groups the key's writes reach (`programCalls`, or for a tail
+`programCallsAt`, §8.5), each once — deduplicated when the program is built, not at run time — in
+document order; then the key's command (§4). There is no scheduler and no microtask: two events in
+one task are two passes. *Measured against tea-inline's microtask flush in S1's report.*
+
+**Controlled inputs.** A binding of a `stateful` attribute (a control's `value`, `checked`,
+`selected`) is called by the handler of every key one of its own element's events reaches, whatever
+the key writes, so the control shows the model after the user's edit even when the arm leaves the
+model as it was (`plans/direct-rewrite.md` §8, pay-per-use). `prop` compares with the DOM's live
+value, so an edit the model agrees with writes nothing.
+
+**An event** is `on(E[n], f, type)`: `f` is the key's handler when the handler value is a
+constructor with no fields, and otherwise a function of the event that reads the payload through
+the event's extractor (`onInput`'s `target.value`) and calls the handler with the constructor's
+fields. A handler value that is not a constructor whose key the lowering can name (a message
+value) is a limit of the compiler. `preventDefault` and `stopPropagation` run in the DOM listener,
+before the guard.
+
+### 8.4 Pieces: another module's view and arms
+
+The program site (§7) is written in the module that calls the program's constructor; another
+module's code reaches it as **pieces**: exported top-level functions and constants of the module
+that declares the code, lowered there, in parallel with every other module, and called at the
+program site by name (option 2 of §7, extended to `update` and `view`).
+
+- **An arm piece**, `<Module>$<declaration>$$arm$<n>`: one per branch of a `case` at which the key
+  tree splits a message inside a function of that module — `W1.update`'s `case msg of` — other
+  than the program's own `update`'s. It takes the branch's pattern variables, in order, then the
+  function's other parameters, and returns the function's result for that branch. `n` is the
+  branch's index among the arms of every split `case` of the declaration, in `Bir` order. The
+  arm of `Main` that hands the sub-message on (`{ model | w1 = W1.update sub model.w1 }`) is
+  written at the program site with that call replaced by the arm piece of the key's next step,
+  applied to the key's fields — the leaf constructor's, `Program.Key.fields` — and its other
+  arguments, each a name, so release's single-use inlining fuses the piece
+  (`emit/release/core/InlineOnce.beni`). A key whose split inside another module is followed by a
+  further split in a function that branch's arm calls is `deep_split`, a limit of the compiler.
+- **View pieces**, of a `view` (or a function `view` calls through `Html.map`) of another module,
+  on one call path: `<Module>$<declaration>$$html$<n>`, the unit's HTML string (§8.2); and
+  `<Module>$<declaration>$$bind$<n>`, one per binding function (§8.2's grouping), taking `E`, then
+  the function's parameters. The events are not a piece: the program site wires each from
+  `programPiece`'s facts — the element's ordinal, the key the event's message reaches through the
+  `Html.map`s around the call, and its argument: none, the payload, or constants the program site
+  spells. An argument the program site cannot write is a limit of the compiler.
+- **Names and numbers** are input-derived: a piece's `n` counts the pieces of its declaration
+  before it, in the order the pass meets them (CLAUDE.md rule 5). A piece's facts — its groups,
+  bakes, element ordinals and events — are computed once, serially, by the pieces pre-pass from the
+  write-set pass and the module's `Bir`, before any module is lowered, and both the owning module
+  (the `piece` hook, run there) and the program site (`programPiece`) read that one record, so
+  they agree by construction.
+- **A cross-module reader** (D-c) — `W2.view` reading `W1.Model` — is a binding piece of `W2`
+  whose groups `W1`'s keys reach: the handler of each such key calls it in its write pass, from the
+  program site, by name. There is no registration at mount and no rule about which widget is above
+  which.
+- **The first refusal S1 removes** is a `view` through `Html.map` whose markup is another
+  module's (§5, class 1 until then).
+- **Handlers live at the program site**: the arm, the pass and the wiring of every key, whatever
+  module its markup is in. *Measured against tea-inline's in-widget handlers at N = 256.*
+
+### 8.5 Per-path passes
+
+A key's write set joins what every path through its arm writes (`write-sets.md` §4.4): a host
+event that one key receives — `Pushed`, decoded in the arm into `serverSet` of one widget or a
+`snapshot` of all — writes every widget's state, and one pass at the end would run every binding
+of the page for each push. So a key's arm, through the program module's own functions it calls, is
+written in place, and **each tail** — each result of a `case` or `if` arm the value of the key's
+`update` can be (`programArmTails`) — ends with its own pass, of the groups that tail's writes
+reach (`programCallsAt`, `write-sets.md`'s per-path sets, amended 2026-10-17). A function of
+another module is one path: its arm piece returns, and the pass follows.
+
+### 8.6 Lists
+
+`List` is positional only (#294, #298). S1 compiles what reads a list whole — `List.length`,
+`String.join`, `List.foldl` in a hole — and the arms that append (`[ …xs, x ]`), remove the last
+element (`List.pop`) or clear it, each a write of the list's path. A `For` is not S1's: a keyed one
+is a limit of the compiler naming keyed rows; a positional one is S1's only if it stays small, and
+is a limit until its size is reported. An edit of `List` rows by id (`List.filter (λr → r.id ≠
+id)`, a `map` with an id guard) is a language rule's error that names `Dict.update`: **`Dict` is
+the keyed collection** (§5, class 3, from S2).
+
+### 8.7 What S1 refuses
+
+The texts, each in `build/bad/inline/` (§5's classes; a limit of the compiler begins *"A limit of
+the compiler"*, a language rule never says *"yet"*):
+
+| Refusal | Class | At | Fixture |
+|---|---|---|---|
+| an `update` computed when the page runs: *"… cannot write each message's arm into the handler of its key: a handler is the arm itself, with no message made … Name a function of the program's modules as `update`, or write a lambda whose body chooses the arm."* | 3 | the record's `update` | `OpaqueUpdate/` |
+| an `Html.map` whose function is not a constructor: *"… which key each of those messages reaches cannot be known when the program is built … Map with a constructor … and decide in `update` what the message means."* | 3 | the map's hole | `MapNotCtor/` |
+| markup held as a value — in the model, a record, a list — at the hole that shows it and at the markup itself: *"… its elements cannot be numbered when the program is built … Keep in the model the data the markup shows, and write the markup in `view` or in a function `view` calls."* | 3 | each | `MarkupValue/` |
+| a key whose write set is `*` (`write-sets.md` §3.4), whose arm replaces the whole model with a value the pass cannot see into: *"… no binding of the page can be chosen for it … Write the fields the arm changes …"* — a declared `replace` (`plans/direct-rewrite.md` §6) is the other way out once it exists | 3 | the record's `update` | `StarNotReplace/` |
+| a keyed `For`: *"… does not compile keyed rows — a `For` with `keyed` — yet …"* | 1 | the `For` | `ResearchListWidget/` |
+| a key whose writes a cap of the write-set pass cut (`Program.Key.cap`): the depth limit `k` and the rounds of a recursive component until #286's folding replaces them; the leaf, alternative and size caps are lifted in S1 | 4 | the record's `update` | `CapFired/` |
+| a key that splits again inside another module (`deep_split`); an event argument or a piece capture the program site cannot write; a text hole beside an element; an attribute that changes and is not a DOM property; a `view` `let` read by several holes | 4 / 1 | the construct | — |
+
+**An arm that reads its message whole** (D-e, `message_read_whole`) is not refused: that key's
+handler builds the message value from its fields, in that handler only, and hands it on.
+
+### 8.8 Release
+
+What a golden shows, stated once: the runtime functions of §8.2 ship only when used; a piece used
+once is fused into its one use by single-use inlining, which needs its arguments to be names; a
+`case` on literals whose arms are expressions — an enum cycle — is a chain of conditionals; no
+message object, `switch` on a key or context chain survives.

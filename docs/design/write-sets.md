@@ -2174,3 +2174,42 @@ leaf still selects its original handler and parameter convention. Defaults
 retain source priority and the final fallback is unchanged. Update bodies
 that have no constructor-specialised arm may be shared across handlers;
 the consumer matrix and expected group visits are independent of that choice.
+
+### *Amended 2026-10-17 (`browser-inline`'s S1, #297):* split sites and per-path write sets
+
+Two new outputs of the pass, for a consumer that writes each key's arm in place and writes
+another module's code as pieces (`browser-inline.md` §8.4–§8.5). Nothing printed moves, and no
+key's write set changes: both are refinements a consumer may read, of facts the pass already
+computes.
+
+**Split sites.** Every `case` at which §4.4's key tree splits μ is recorded with its module, its
+declaration and its instruction, and per branch the key steps under it: the branch whose pattern
+names constructor `C` holds every leaf below `· C`, and a default branch every leaf of the default
+child. A leaf's **path of split sites** is the chain of branches its steps were taken at, from
+`update` down. What a consumer may rely on: each leaf is under exactly one branch of each site on
+its path, and the branch's pattern variables bound to `Same(μ.s.C#j)` are, at the leaf, the
+leaf constructor's fields or what holds them — so a branch whose arm is written as a function of
+its pattern variables (an *arm piece*) is called, for a leaf, with the leaf's fields, or with the
+message the key's fields rebuild when the arm reads it whole (`message_read_whole`). A leaf whose
+path has two sites in functions of one module other than the program's, the second reached from the
+first branch's arm, is marked `deep_split`: no arm piece of the first can be written without the
+sub-message.
+
+**Per-path write sets.** §3.4 reads a key's write set off `diff` of `update`'s result, and an `if`
+or a `case` whose arms are not one value makes that result an `Alt` of its arms' values (§3.3),
+which `diff` joins. The pass now also keeps, per key, each alternative **before** the join, by its
+**tail**: the instruction of the arm result it came from, in a function of the program module that
+the key's arm reaches by calls the consumer writes in place — through any depth of such calls, an
+`Alt` of an arm's own `Alt`s being its alternatives' tails. A call of another module's function is
+one tail, its whole result. Each tail's write set is `diff` of that alternative alone; the key's
+write set is the join of its tails', as before. What a consumer may rely on: on every run of the
+key's arm, the value returned is the value of exactly one tail, and what that run writes is in that
+tail's set — so a write pass placed at each tail, of the groups that tail's set conflicts with, is
+sound (§1.2), and is exact where the tails' sets differ. The `cap_alt` cap does not apply to the
+tails: they are as many as the arms the key's arm is written with, which the consumer writes anyway
+(`browser-inline.md` §8.5).
+
+**The caps** (the owner, 2026-10-17): the leaf cap `L`, the alternative cap `A` and the size cap `S`
+(§6.1) are lifted for a program built for a platform whose lowering refuses a capped key
+(`browser-inline.md` §8.7); `k` and the round cap `I` stay until #286's precise folding replaces
+them, and a key they cut is refused there as a limit of the compiler.
