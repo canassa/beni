@@ -977,6 +977,12 @@ writeMode : Int
 writeMode = 3
 
 
+-- `read` as a validator (`schema.md` §6, *A run whose failure is never
+-- read is a validator*): a declaration's workers that make no issue.
+validMode : Int
+validMode = 4
+
+
 -- A compiled schema's worker of decoding operation `mode`, as `parserOf`
 -- makes its `parse` worker. Not `parserOf` with one more argument: that
 -- would cost every program that only parses and prints its inlined
@@ -2017,6 +2023,40 @@ hasOwn : Js.Value, String → Bool
 hasOwn v k = Js.to (Js.call (Js.global "Object") "hasOwn" [ v, Js.from k ])
 
 
+-- The names a standard `Object.prototype` holds, which a read finds on
+-- any object: tested as own keys (`present`). The compiled workers test the
+-- same names, from `SchemaShare.isPrototypeKey`; a unit test there keeps
+-- the two lists equal, so compiled and library runs answer alike whatever
+-- a page adds to `Object.prototype`.
+prototypeKey : String → Bool
+prototypeKey k =
+    k == "__proto__"
+        || k == "__defineGetter__"
+        || k == "__defineSetter__"
+        || k == "__lookupGetter__"
+        || k == "__lookupSetter__"
+        || k == "constructor"
+        || k == "hasOwnProperty"
+        || k == "isPrototypeOf"
+        || k == "propertyIsEnumerable"
+        || k == "toLocaleString"
+        || k == "toString"
+        || k == "valueOf"
+
+
+-- Whether host object `v` holds key `k`, as every reading runner tests it
+-- (`schema.md` §5, *Host values*, amended 2026-10-17): a read of it answers
+-- anything but `undefined`, through the prototype chain — but for a name
+-- `prototypeKey` lists, which must be `v`'s own, so the prototype never
+-- shadows a field.
+present : Js.Value, String → Bool
+present v k =
+    if prototypeKey k then
+        hasOwn v k
+    else
+        not (Js.isUndefined (Js.get v k))
+
+
 -- A payload's discriminator and variant.
 type alias Owner =
     discriminator : String
@@ -2714,12 +2754,17 @@ fieldsFrom c fs i n depth path v values out =
         here = step path (Js.from inName) (Js.from outName)
         x =
             if c.sh then
-                -- `Object.hasOwn` and `push` are written out here and not
-                -- through `hasOwn` and `push`: this is the loop every
+                -- `present`'s test and `push` are written out here and not
+                -- through `present` and `push`: this is the loop every
                 -- record runs, and V8 inlines neither helper into it once a
                 -- program runs the engine several ways
                 -- (`plans/core-in-beni.md`, the schema engine).
-                if Js.to (Js.call (Js.global "Object") "hasOwn" [ v, Js.from inName ]) then
+                held =
+                    if prototypeKey inName then
+                        Js.to (Js.call (Js.global "Object") "hasOwn" [ v, Js.from inName ])
+                    else
+                        not (Js.isUndefined (Js.get v inName))
+                if held then
                     descend c f depth here (Js.get v inName)
                 else if f.lenient then
                     toHost Nothing
@@ -2800,7 +2845,7 @@ variantOf c discriminator vs path v =
             failed (failAt c path WrongShape "expected an object" v False)
         else
             here = step path (Js.from discriminator) (Js.from discriminator)
-            if not (hasOwn v discriminator) then
+            if not (present v discriminator) then
                 failed (failAt c here MissingKey "missing key \"${discriminator}\"" v False)
             else
                 tag = Js.get v discriminator
@@ -3349,6 +3394,65 @@ readValueSlot s =
 
         Interpreted →
             interpretedSlot s
+
+
+-- A schema argument as a validator's worker: a compiled one's validator,
+-- and the library engine on the context for a dynamic one.
+readValidSlot : Schema e a → Js.Value
+readValidSlot s =
+    case (boxOf s).engine of
+        Compiled w →
+            parserIn w validMode
+
+        Interpreted →
+            interpretedSlot s
+
+
+-- `read` at a call whose `Err` payload nothing reads (`schema.md` §6, *A run
+-- whose failure is never read is a validator*): the compiler calls this in
+-- its place. A compiled schema runs its validator workers, which make no
+-- issue, and fails with none; a schema with a dynamic part — the library's
+-- to run, or a dynamic argument that may fail to be built — runs as `read`
+-- runs, which only a program that builds such a schema reaches.
+readValid : Schema e a, Value → Result (List Issue) a
+readValid s v =
+    case (boxOf s).engine of
+        Compiled w →
+            -- An argument with a dynamic part is the library's to run.
+            case firstDynamic w.args of
+                Just _ →
+                    read s v
+
+                Nothing →
+                    validate w v
+
+        Interpreted →
+            read s v
+
+
+validate : Workers, Value → Result (List Issue) a
+validate w v = validRun (parserIn w validMode) v
+
+
+-- A validator worker run on a host value, its context `read`'s: what a run
+-- whose schema is `S.schema ⊤` of a nongeneric declaration calls with `S`'s
+-- validator, the schema value never made (`schema.md` §6).
+validRun : Js.Value, Value → Result (List Issue) a
+validRun worker v =
+    c = context defaultOptions Decoding encodedSide True typeSide False False
+    x = Js.apply worker [ toHost c, Js.from 0, atRoot, Js.null, Js.null, toHost v ]
+    if Js.same x c.fail then Err [] else Ok (fromHost x)
+
+
+-- The first schema argument of a compiled root's that has a dynamic part,
+-- as `interpretedIn` finds them.
+firstDynamic : Js.Value → Maybe (Schema Js.Value Js.Value)
+firstDynamic args =
+    if Js.isNull args then
+        Nothing
+    else
+        dynamic = interpretedIn args
+        if lengthOf dynamic == 0 then Nothing else Just (fromHost (Js.at dynamic 0))
 
 
 -- A schema argument as a `write` worker.

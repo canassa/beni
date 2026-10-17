@@ -1,0 +1,47 @@
+--! Subscriptions: what a program listens to (`docs/design/boundary.md`
+--! §9.8.5). On `browser-inline` the set is decided when the program is
+--! built: the write-set pass reads `subscriptions` as the flat list of its
+--! `on` declarations, and the `inline` lowering compiles each one into the
+--! mount (`docs/design/browser-inline.md` §3). So the set may not depend on
+--! the model, and nothing here runs on the page: these values only say what
+--! a program declared.
+
+import Js
+
+
+--| The subscriptions a model needs: its `on` declarations, in order.
+pub type Sub msg
+    = Sub (List (Js.Value × Js.Value × (Js.Value → msg)))
+
+
+--| None.
+pub none : Sub msg
+none = Sub []
+
+
+--| All of these.
+pub batch : List (Sub msg) → Sub msg
+batch subs = Sub (List.concat (List.map subs declarations))
+
+
+--| The same subscriptions, each message passed through `tag`.
+pub map : Sub a, (a → msg) → Sub msg
+map sub tag = Sub (List.map (declarations sub) λ( k, start, t ) → ( k, start, λv → tag (t v) ))
+
+
+--| While the program runs, the host's listener `start` adds is added:
+--| handed a function, `start` adds a listener that calls it with a value
+--| as each event is dispatched, and returns what removes it. Each value
+--| reaches `update` through `tag`. The key names the resource: two
+--| declarations with one key share one listener, and each value goes
+--| through both taggers, in order.
+--|
+--|     onKeyDown tag =
+--|         Sub.on KeyDown (Listen.on "document" "keydown" Js.to _) tag
+pub on : k, sync ((a → ⊤) → (⊤ → ⊤)), (a → msg) → Sub msg
+    where k.compare : k, k → Order
+on k start tag = Sub [ ( Js.from k, Js.from start, λv → tag (Js.to v) ) ]
+
+
+declarations : Sub msg → List (Js.Value × Js.Value × (Js.Value → msg))
+declarations (Sub list) = list

@@ -1,0 +1,10 @@
+-- load
+<body>
+  <p>"mounted"</p>
+</body>
+-- throws detail window rr-push 1
+console.log: reading an event: ⊤
+(threw: TypeError: a.noSuchMethod is not a function)
+(the DOM did not change)
+-- detail window rr-push 2
+(the DOM did not change)

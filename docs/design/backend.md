@@ -437,7 +437,7 @@ mapping.
 | `case` | a decision tree (§7) |
 | `if` | conditional expression when both arms are expressions, else `if`/`else` |
 | `let` | a VALUE binding is a `const` in the enclosing statement list, in written order; a binding whose right-hand side is a **function** is a `function` declaration, which JavaScript **hoists** — every one of them, not only the mutually recursive ones. The hoisting is what makes mutual recursion between `let` functions work, and `language.md` §7's initialisation rule is stated in terms of it: a value may not read a `const` below it, and may read a `function` anywhere |
-| string interpolation | template literal |
+| string interpolation | template literal. *Amended 2026-10-17:* a segment that is a call of core's `String.fromInt` is its argument, `${n}` for `${String.fromInt n}`: a template converts a number to the text `String` gives it, and an `Int` is a number (`Lower.fromIntArgument`, keyed on core's module and name). `String.fromFloat` is not: it writes a whole float with its point |
 | `?` | a test and an early `return` of the failure, in statements, over the subject bound once (below) |
 | `foreign` | an `import` from the sibling file, one binding per foreign value (`boundary.md` §4). Its **arity is its annotation's**, carried on the declaration's `params` by lowering (`frontend.md` §3.6): the backend reads targets and never types (§3), so a `foreign` in value position eta-expands over that number like any other target |
 | method call, resolved to a declaration | a direct call of that declaration, receiver first: `x.m a` is `M$m(x, a)` |
@@ -5177,6 +5177,26 @@ next statement buys −90 brotli on `bench/corpus` and **loses 15 on `Dictionari
 the one condition above that is easy to state and hard to get wrong. So the rule stays "an atom or a
 member chain", and `collapse_vars`, constant evaluation and body inlining stay off the list.
 
+*Amended 2026-10-17:* **a function made once and used once is made where it is used.** A `const`
+whose initialiser is an arrow, read once in the declaration, is written at that read when the read
+is in a later statement's own expressions of the same list — never inside a branch, a loop or a
+function, so it is still made once. Making a function evaluates nothing and reads nothing until it
+is called, so it may move past any statement between (`Opt.findAnyUse`): the one condition above it
+relaxes is the first, and only for this initialiser. `const t=()=>clearInterval(s);own(t)` is
+`own(()=>clearInterval(s))`. Measured (brotli 11, every `emit/release/` golden): −91 over eight,
+none larger by more than 2. **The wider licence was measured again and stays out**: a single-use
+`const` of a call written into the next statement when only reads of names nothing reassigns are
+evaluated before its use there (`q=k(…);own(q)` → `own(k(…))`) is sound, but it was −6 on
+`emit/release/inline/PushAndTimer` and **+21** over twelve goldens (`direct/ListScripts` +19,
+`direct/TableSwap` +7), so it was not taken.
+
+*Amended 2026-10-17: never into a loop's head.* A use in a `for…of`'s iterable is no fold's, of
+either rule above: the printer writes the value in the loop's head, where the loop's own binding is
+already in scope, and `Rename` names scopes from the IR as written, so the binding may take a name
+the value reads — `for(let a of[()=>a])` and `for(let b of b)`, a `ReferenceError` in a release
+build where development answers. The single-use rule for member chains had the gap before the
+arrow rule did. `run/LoopHeadArrow`, `run/LoopHeadChain`.
+
 **Determinism.** The pass reads only `JsIr`, visits statements in emission order, and its output is
 a subset of its input with substitutions at fixed positions; no map is iterated and no counter is
 shared. **Cost:** two linear walks of each function body and no sort. **No fixpoint either**, as long
@@ -6979,6 +6999,18 @@ larger by 1–8); the `bench/ui` app byte-identical. Fixtures: `emit/release/app
 may hold a function reading two keeps both), `run/SpecializeTrailingArguments` (an argument that
 logs is kept, and logged where it was), `emit/release/split/EmptyPage`.
 
+*Amended 2026-10-17: a trailing `undefined` to an arrow.* A call whose callee fact 3 says is only
+functions the program makes as arrows (`=>`, or `arrow_method`, printed `function(){}` but
+written by no code that reads `arguments`) drops the `undefined` literals that end its arguments:
+no emitted code reads `arguments` to count them by, so a missing argument is `undefined` as much as a passed one, and a
+literal does nothing to evaluate. `d(p,undefined)` is `d(p)`, a top-level function tracked by fact 1
+included. And **the entry's callee may become the function it forwards to**
+(`Spec.forwardEntry`): an entry callee `const f = (p₁, …, pₙ) => g(p₁, …, pₙ)` that passes its
+parameters, in order, to a function declared before it in the same module, is `const f = g` when
+nothing in the program names `f` and the entry passes at most `n` arguments — the hand-written entry
+file calls it and compares nothing. `run`'s `e=a=>d(a)` is `e=d`
+(`emit/release/inline/PushAndTimer` 599 → 589 brotli with both).
+
 *Amended 2026-10-15: a record field's lambda* (issue #95; `plans/queue.md` row 81, found by
 research 79 §5). `init` is a function of `⊤` since 2026-10-12 (`boundary.md` §9.8.16), so
 `Tea.element`'s hosted `init` calls `app.init ⊤` where it read a value. When a page writes its
@@ -7007,6 +7039,14 @@ fact 3 finds at the call:
   value nothing can tell that it was not made: `language.md` §6's order loses no effect, and no reachable code holds
   the object (rule 8). It goes like any other argument that does nothing: `start`'s unread
   `app.init ⊤`, and `Navigation.key ⊤`, whose result an application's `init` does not read.
+
+  *Amended 2026-10-17:* the returned value may also be a *plain value* (`plainValue`): names,
+  literals, `===`, `!==`, `!`, `typeof`, `&&`, `||` and conditionals of those — none of which can
+  throw, run code or read a property — so `endpointOf`'s `a === 0 ? 0 : 1` is such a function.
+  And a binding lowering kept for its initialiser is kept no more when that initialiser is such a
+  call (`releaseKeeps`): a field of a kept schema context, left by scalar replacement as
+  `const i = endpointOf(1)` that nothing reads, goes with its function
+  (`emit/release/inline/PushAndTimer`, 698 → 675 brotli).
 - **A function used once is written in with no size model** (`Spec.soleCalls`). Slice 8 writes a
   small function reached through a property at a call only when the body prints no longer than
   the call, which a record's lambda that makes a record never does (`{a:{}}` against `a.init()`).
@@ -7628,6 +7668,128 @@ The corpus case `browser/tea/ApiItems`, both builds and the harness with its has
 (ReleaseFast, LLVM): `ApiItems` 406 → **359**, `ApiLogin` 342 → 311, `HttpJson` 326 → 298,
 `ApiAndRoutes` 446 → 401, `run/SchemaDeclRecords` 211 → 197.
 
+**Another module's function, in one file** (*amended 2026-10-17*). *A function called once is
+written where it is called* takes in another module's function only when the caller's module
+already names every whole-program name the body names, "in the one scope-hoisted file and in the
+multi-file layout alike". In a one-file build no module imports anything — every top-level name is
+one binding of the one scope (`nameIn`) — so there the condition is dropped: the caller's module
+names the body's names by their own `Name`, as slice 6 already does for a field read. The
+multi-file layout keeps it. What it unlocked first: `Schema.validRun`, called once from the
+program's `read`, named `endpointOf`, which the program's module did not, so the `Result` it
+makes was built and matched. Measured (release, brotli 11, each golden the change moved):
+`emit/release/inline/PushAndTimer` 770 → 756, `app/ValidatorRun` 996 → 963,
+`tea/HttpSendTracked` 6 860 → 6 787, `HttpSendUntracked` 4 867 → 4 834; 17 goldens moved, −207 in
+all, `direct/TableSwap` +8 and `MapKind` +4 the largest growths.
+
+**Slice 9 across a call: a `case` on what a function returns** (*added 2026-10-17*, the owner's
+decision for `browser-inline`'s first slice: a case of a known constructor fused across a call,
+general, in this pass, for every platform). Slice 9 folds a constructor made by a *small* function.
+A function of statements — a schema validator's worker, whose every `return` is a constructor, a
+declared constructor or its failure mark — is not small, and its caller builds what it returns
+only to test its tag and read its fields. The rule:
+
+- **The site**: `const x = f(a₁, …, aₙ)` in a function, and `R`, the statements after it in its
+  list — a `return R′`, or the `switch` a `case` lowers to — where every argument is an atom (a
+  literal or a name nothing assigns), `x` is mentioned nowhere but in `R`, and every mention of
+  `x` in `R` is the object of a property read (`x.$`, `x.a.b`) or an operand of `===` or `!==`.
+  `R` — one statement or several — holds no function, no loop, no `try` and no `continue`, is
+  at most 96 units of slice 8's size model (`nodeCount`, statements 4 each), and cannot run off
+  its end (the function's rule below, a `break` counting as a jump), so a copy of it may stand
+  where `f` returned. An unlabelled `break` of `R` that leaves `R` refuses the site
+  (`leavingBreak`): copied in place of a `return` inside a `switch` of `f`, it would leave that
+  `switch` instead. A labelled one names its target and is the same jump in every copy.
+- **The function**: a top-level `const f = (…) => {…}` of the program that nothing the pass cannot
+  see names (`Input.escaping`), nothing assigns, whose every mention is the callee of such a site;
+  some `return` of which gives a constructor (an object literal, a declared object, or a choice of
+  them — slice 9's *producer*), whose body holds no function, no loop, no `try` and no
+  `continue`, and whose every path ends in a jump — a list whose last statement is a `return`, a
+  `throw` or a `break`, an `if` both of whose branches are such lists, an unlabelled block whose
+  list is, or a `switch` with a `default`, holding no `break`, every case body of which is. A
+  `break` inside the body leaves a statement of the body; one that leaves the site's rest is the
+  same jump in every copy.
+- **The rewrite**, at every site of `f` at once: `f`'s body is written in place of the two
+  statements, its locals named fresh and each parameter its argument (*A function called once is
+  written where it is called*), and each of its `return P` becomes `R[x := P]`, with what the value
+  is known to be applied as the copy is made:
+  - `x.k` of an object literal `P` is `P`'s value at `k`, and a chain reads on through nested
+    literals; of a name or a member chain, `P.k`;
+  - `x === y` (`!==`) of an object literal `P` is `false` (`true`) when `y` is a name or a member
+    chain on one — a literal makes an object nothing else holds — and of a `P` that is the same
+    member chain as `y` — a *stable chain*: on a local made by an object literal that nothing
+    writes, mentions only through property reads and hands to no call but the site's (to a
+    parameter `f` only reads properties of), ending at a value that is itself an object or array
+    literal, or a `const` of one (never `NaN`) — `true` (`false`);
+  - a conditional, `&&` or `||` whose test is then a literal, or `===`/`!==` of two literals, is the
+    branch it chooses, and the other branch is not written;
+  - a declared object's `$` is its literal's, by slice 9's test for a tag (`tagValue`: no code
+    writes `$` on it); and `x === y` (`!==`) of a `P` that is a primitive literal or a declared
+    object, with `y` a stable chain (above, an object made in the site's function), is `false`
+    (`true`): neither can be that object;
+  - an `if` the copy decides is the branch it takes, and a `switch` on a literal the case it
+    takes, when that case holds no `break`; an unlabelled block of the rest is its statements,
+    its declarations named afresh in each copy.
+
+  A `P` that is a conditional `t ? A : B` is `if (t) { …A } else { …B }`, each branch the rest
+  knowing its own value. A `P` that is none of these — a call's result, say — is bound once,
+  `const x′ = P; R[x := x′]`. `P` is an object literal read in place only when it is `inert` and
+  names nothing the site's function assigns or the program reassigns (`immutableNames`), so no
+  evaluation is dropped or moved past a write: reading its fields where `R` reads them evaluates
+  names and literals, which cannot change between the `return` and `R`, because the function has
+  no closure to write its locals. A value the literal holds that is itself made (an object, an
+  array, a function) is read in place only when `R` reads it once in the copy; otherwise `P` is
+  bound.
+- **Gated by bytes**, like slice 8: the rewrite is made when the copies are smaller than what they
+  replace — Σ over the sites of the copy's size, against `f`'s declaration plus Σ over the sites of
+  the two statements, in slice 8's size model (`nodeCount`, a literal or a property name its
+  text). It is all or nothing: a function some site of which does not fit, or whose copies are not
+  smaller, stays shared, so a kind's shared code (`browser-inline.md`, S5's sharing by kind) is
+  never undone for a gain smaller than the function. Slice 5's single-call rule, which runs first,
+  is unchanged: a body of one `return` called once is written there without being priced.
+
+**A `switch` on a literal is the case it takes**, wherever it stands (`chosenCase`, the facts'
+`if` folding extended): its discriminant a literal, every case test a literal, the first test
+`===` it — else the `default` — chosen, when that case's body holds no `break` and cannot run off
+its end into the next. A schema primitive's worker switches on its kind, which the program
+passes as a literal: `run/` programs that read a `Schema.value` kept every kind's arm.
+
+Measured (release, brotli 11): `emit/release/inline/PushAndTimer` 756 → **709** (the worker
+written into the program's `read`, its `Set` and `Ok` never built), `app/ValidatorRun` 963 →
+**691** (the literal `switch` of `Schema.value`'s worker, and what only its other arms reached);
+every other golden unchanged. The compiler pays for asking: on `browser/direct/ApiLogin`,
+where nothing fuses, the release builds count 1 639 → 1 658 and 1 449 → 1 467 million
+instructions, most of it the walk over every function some `return` of which makes a
+constructor.
+
+Soundness is the `case`'s: `language.md` §6's order is the call's — the arguments (atoms), then the
+body, then `R` — and the only values dropped are constructors nothing else could see (`x` reaches
+nothing but `R`'s reads and comparisons). Fixtures: `emit/release/app/CaseAcrossCall` (one function
+fused at its one site; one called from three sites that stays shared; a site that reads `x` whole,
+which keeps the call), `emit/release/inline/PushAndTimer` (the validator's worker fused into the
+program's `read`: no `Set` and no `Ok` is built), and `run/CaseAcrossCall`, the same program run in
+both builds.
+
+**A function that only calls a function is that function** (*added 2026-10-17*; `Spec.etaIn`, in
+the last sweep). `() => g()` is `g` where `g` is a local an earlier statement of the same list
+declares, once, as an arrow of no parameters, and nothing assigns it. Neither function takes a
+parameter or reads `this`, so a call of either, with any arguments, runs `g`'s body and answers
+what it answers; and `g` is bound by then, since its declaration ran before. Arguments of the
+inner call that are literals (`null`, the `⊤` a lowering passes) take no parameter and do
+nothing, so they go. `setInterval(()=>r(),1000)` is `setInterval(r,1000)`, and then the single-use
+rule of item 1 makes `r` there.
+
+**A short `switch` is its `if`s** (*added 2026-10-17*; `Spec.switchAsIfs`, the last sweep of every
+statement list). `switch (k)` on a name, with at most three cases besides a `default` that comes
+last, every
+case's test a literal, and every body holding no `break` and unable to run off its end, is
+`if (k === t) { body }` for each case in order, then the `default`'s statements. A literal test
+does nothing and a body that cannot complete never falls into the next case, so the cases are tried,
+and one is run, exactly as the `switch` tries and runs them. A body that is one unlabelled block is
+the block's statements (an `if`'s body is a scope of its own); the `default`'s join the list where
+the `switch` stood when they declare nothing, or when no other statement of the list names what
+they declare. `switch(k){case"set":{…}case"reset":{return R}default:{return F}}` is
+`if(k==="set"){…}if(k==="reset")return R;return F`. Measured (brotli 11):
+`emit/release/inline/PushAndTimer` 628 → 611, `app/ValidatorRun` 655 → 643; no other golden moved.
+
 ### The combined solver
 
 *Specified 2026-10-02, normative for `src/js/Spec.zig`'s analysis from slice 4 of research 52
@@ -8078,6 +8240,30 @@ parameter or of several, and a derived comparison's `$d=0` keep theirs. It came 
 function compiled from beni was two bytes longer. Every `emit/release/` golden with such an arrow
 moved; development output does not.
 
+**Amended 2026-10-17: an identifier-named string index is a member** (`Print.dottedKey`). Compact
+printing writes `x["key"]` as `x.key` wherever `key` is an identifier name — ECMAScript reads both
+as one property access, so nothing a program does can tell. Specialisation leaves
+`globalThis["window"]` where the browser platforms ask for a host global, and the schema workers
+spell host keys as strings. Development output does not move.
+
+### Reachability after the optimiser
+
+*Added 2026-10-17.* Specialisation's reachability (`Spec.prune`) runs before the per-module
+release optimiser (item 1), which drops an unread binding whose initialiser does nothing. The
+binding may hold the last mention of a top-level function: a schema context's `inE` field is
+`endpointOf(src)`, scalar replacement leaves the read as `const t = endpointOf(src)`, nothing reads
+`t`, and the optimiser drops it — but specialisation had already counted the mention, so
+`endpointOf` stayed in the file with no caller. In a one-file build (*One scope-hoisted file*)
+the emitter therefore walks the program once more after the optimiser (`Emit.pruneOptimised`), as
+the printer will write it: a binding the plan drops is skipped, and a single use the plan
+substitutes is read as its value. The roots are specialisation's — the names files the pass cannot
+see read or call, and the entry's call — and every top-level statement but a declaration whose
+initialiser is inert (`Spec.inert`); a name an `export` statement names is kept, and so is a name
+declared twice. A declaration nothing reached is dropped from the plan. A multi-file build keeps
+what it has: its modules are printed apart, and a name one module exports may be read by a file
+the walk does not see. Fixtures: `emit/release/inline/PushAndTimer` (`endpointOf` and a schema
+helper go), `emit/release/app/InlineReachable`, `SpecMaybe`, `emit/release/direct/ListScripts`, and
+the `run/` and `browser/` release passes, which run every program the walk changed.
 ## 10. Chunking
 
 **Release output is chunks; development output is not.** §9.5 of the design doc settles that with

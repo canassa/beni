@@ -1,0 +1,70 @@
+-- A `read` whose `Err` payload is never read compiles to a validator
+-- (`schema.md` §6, *A run whose failure is never read is a validator*): the
+-- same tests in the same order and the same success values, and on failure
+-- an `Err` that nothing reads. `classify` is such a run; `issues` reads the
+-- payload of the same schema's `read`, so the build keeps both worker sets,
+-- and each answers as `read` does. The corpus also builds this with every
+-- root through the library, which makes issues, against the same golden.
+import Node
+import Schema exposing (Value)
+
+
+schema Event tagged "type" of
+    Set as "set"
+        value : Int
+    Reset as "reset"
+
+
+classify : Value → String
+classify v =
+    case Schema.read (Event.schema ⊤) v of
+        Ok (Event.Set event) →
+            "set " ++ String.fromInt event.value
+
+        Ok Event.Reset →
+            "reset"
+
+        Err _ →
+            "invalid"
+
+
+issues : Value → String
+issues v =
+    case Schema.read (Event.schema ⊤) v of
+        Ok _ →
+            "no issue"
+
+        Err list →
+            String.fromInt (List.length list) ++ " issue"
+
+
+line : String → String
+line text =
+    case Schema.parse Schema.value text of
+        Ok v →
+            text ++ ": " ++ classify v ++ ", " ++ issues v
+
+        Err _ →
+            text ++ ": not JSON"
+
+
+main : Node.Program
+main =
+    Node.print
+        (String.join
+            (List.map
+                [ "{\"type\": \"set\", \"value\": 3}"
+                , "{\"type\": \"reset\"}"
+                , "{\"type\": \"reset\", \"extra\": 1}"
+                , "{\"type\": \"set\"}"
+                , "{\"type\": \"set\", \"value\": \"3\"}"
+                , "{\"type\": \"set\", \"value\": 1.5}"
+                , "{\"type\": \"other\"}"
+                , "{\"value\": 3}"
+                , "[1, 2]"
+                , "null"
+                ]
+                line
+            )
+            "\n"
+        )

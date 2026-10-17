@@ -85,7 +85,7 @@ pub fn memberOf(kind: Interface.SchemaMember.Kind) ?Member {
 }
 
 /// Every operation, in the order a declaration emits their workers.
-const all_ops = [_]Op{ .parse, .print, .decode, .encode, .read, .write };
+const all_ops = [_]Op{ .parse, .print, .decode, .encode, .read, .write, .valid };
 
 fn suffixOf(kind: Interface.SchemaMember.Kind) []const u8 {
     return switch (kind) {
@@ -513,9 +513,9 @@ const Gen = struct {
         // workers, the arguments, then an array of the other four
         // operations' workers, its trailing `null`s left out, or no array
         // when it would hold none.
-        var slots: [8]Node.Index = undefined;
+        var slots: [9]Node.Index = undefined;
         slots[0] = if (g.l.liveSchema(g.ref, .description)) try g.arrowOf(&.{}, try g.described(params)) else try g.lit(.null_lit);
-        const positions = [_]struct { Op, usize }{ .{ .parse, 1 }, .{ .print, 2 }, .{ .decode, 4 }, .{ .encode, 5 }, .{ .read, 6 }, .{ .write, 7 } };
+        const positions = [_]struct { Op, usize }{ .{ .parse, 1 }, .{ .print, 2 }, .{ .decode, 4 }, .{ .encode, 5 }, .{ .read, 6 }, .{ .write, 7 }, .{ .valid, 8 } };
         var used: usize = 4;
         for (positions) |pick| {
             const op, const at = pick;
@@ -1111,6 +1111,8 @@ const Fn = struct {
     /// `compiledFail(c, …at, code, message, input, written)`.
     fn fail(w: *Fn, at: At, code: Code, message: Node.Index, input: Node.Index, written: bool) !Node.Index {
         const g = w.g;
+        // A validator makes no issue: its failure is `c.fail` alone.
+        if (w.op == .valid) return w.failMark();
         const path = try w.pathArgs(at);
         return g.call(try g.core("compiledFail"), &.{
             try g.id(w.c),
@@ -1130,6 +1132,7 @@ const Fn = struct {
     /// §6, *Validators shared across schemas*).
     fn failText(w: *Fn, at: At, code: Code, message: []const u8, input: Node.Index, written: bool) !Node.Index {
         const g = w.g;
+        if (w.op == .valid) return w.failMark();
         if (!written) {
             const shared: ?SchemaShare.Helper = if (code == .depth_exceeded and std.mem.eql(u8, message, depth_message))
                 .deep
@@ -1143,6 +1146,21 @@ const Fn = struct {
             };
         }
         return w.fail(at, code, try g.str(message), input, written);
+    }
+
+    /// The primitive a validator's field test is written for, or null:
+    /// `SchemaShare.fieldHelper`'s primitives.
+    fn validFieldTest(w: *Fn, child: PNode) !?SchemaShare.Helper {
+        const g = w.g;
+        if (SchemaGraph.tag(g.plan, child) != .primitive) return null;
+        return switch (std.enums.fromInt(SchemaPlan.Primitive, SchemaGraph.lhs(g.plan, child)) orelse return null) {
+            .string => .string,
+            .int => .int,
+            .bool => .bool,
+            .float => .float,
+            .finite_float => .finite,
+            .null, .value, .char, .int32, .never => null,
+        };
     }
 
     /// `c.fail`.
@@ -1164,6 +1182,8 @@ const Fn = struct {
 
     /// `c.issues.length`.
     fn issueCount(w: *Fn) !Node.Index {
+        // A validator's context gains no issue.
+        if (w.op == .valid) return w.g.num(0);
         return w.g.prop(try w.g.ctxField(w.c, "issues"), "length");
     }
 
@@ -1502,15 +1522,15 @@ const Fn = struct {
         }
     }
 
-    /// Whether host object `v`'s own key `key` is read by testing what a
-    /// read of it answers against `undefined`: only an object `JSON.parse`
-    /// made (`parse`), whose objects inherit only `Object.prototype` and
-    /// hold no `undefined`, and only for a key `Object.prototype` does not
-    /// hold (§5, *Host values*). `read` takes a host value from anywhere,
-    /// which may inherit any key or own one that holds `undefined`, so it
-    /// tests each key with `Object.hasOwn`, as `fieldsFrom` does.
+    /// Whether host object `v`'s key `key` is present by what a read of it
+    /// answers: anything but `undefined`, wherever along its prototype
+    /// chain it is (§5, *Host values*, amended 2026-10-17). Every runner
+    /// that reads a host value — `parse`, `read` and its validator — tests a
+    /// key so, but a name `Object.prototype` has, which is tested with
+    /// `Object.hasOwn` so that the prototype never shadows a field; the one
+    /// list of those names is `isPrototypeKey`'s.
     fn readsByValue(w: *const Fn, key: []const u8) bool {
-        return w.op.json() and !isPrototypeKey(key);
+        return w.op.hostIn() and !isPrototypeKey(key);
     }
 
     /// `recordOf` on a host object at depth `d + offset`: the unknown keys
@@ -1538,6 +1558,32 @@ const Fn = struct {
             const at = w.childAt(.{ .text = key }, .{ .text = name });
             const value = try g.fresh("$f");
             slot.* = value;
+            // A validator's required primitive field (`schema.md` §6, *A run whose
+            // failure is never read is a validator*, amended 2026-10-17): every
+            // failure is `c.fail` alike, so the key's read, the depth bound
+            // and the primitive's test are one condition that returns it,
+            // and the field's value is what was read. Each test answers false
+            // for `undefined`, so it is the presence test too.
+            if (w.op == .valid and !f.optional and !SchemaGraph.isMaybeField(g.plan, f) and w.readsByValue(key)) if (try w.validFieldTest(f.child)) |kind| {
+                const x = try g.fresh("$x");
+                try g.constDecl(out, x, try g.indexOf(try g.id(v), try g.str(key)));
+                const typeof_x = try g.l.unary(.type_of, try g.id(x), g.p);
+                const wrong = switch (kind) {
+                    .string => try g.bin(.strict_ne, typeof_x, try g.str("string")),
+                    .bool => try g.bin(.strict_ne, typeof_x, try g.str("boolean")),
+                    .float => try g.bin(.strict_ne, typeof_x, try g.str("number")),
+                    // `Number.isSafeInteger` and `Number.isFinite` answer
+                    // false for anything that is not a number.
+                    .int => try g.not(try g.globalCall("Number", "isSafeInteger", &.{try g.id(x)})),
+                    .finite => try g.not(try g.globalCall("Number", "isFinite", &.{try g.id(x)})),
+                    .deep, .missing => unreachable,
+                };
+                var stop: Stmts = .empty;
+                try g.ret(&stop, try w.failMark());
+                try g.ifElse(out, try g.bin(.logical_or, try g.id(deep), wrong), stop.items, &.{});
+                slot.* = x;
+                continue;
+            };
             // A required primitive field of a JSON object, where the build
             // shares its failure branch (`SchemaShare`): the key read and
             // every test written here, as one condition, and one call that
@@ -1767,7 +1813,9 @@ const Fn = struct {
             try g.constDecl(out, tag, try g.indexOf(try g.id(v), try g.str(discriminator)));
         } else {
             try g.constDecl(out, tag, try g.indexOf(try g.id(v), try g.str(discriminator)));
-            try g.ifElse(out, try g.bin(.strict_eq, try g.id(tag), try g.lit(.undefined_lit)), missing.items, &.{});
+            // A validator's missing tag and unknown tag are one failure, and
+            // `undefined` is no variant's tag: the `switch` below fails it.
+            if (w.op != .valid) try g.ifElse(out, try g.bin(.strict_eq, try g.id(tag), try g.lit(.undefined_lit)), missing.items, &.{});
         }
 
         var cases: std.ArrayList(Node.Index) = .empty;
@@ -2383,3 +2431,10 @@ fn isIdentity(plan: *const SchemaPlan, words: []const u32, params: usize) bool {
 const primitiveBuilder = SchemaGraph.primitiveBuilder;
 
 const isPrototypeKey = SchemaShare.isPrototypeKey;
+
+/// `<Module>$<Schema>$$readValid`, the root validator worker of `ref`, which
+/// a validator run whose schema is `S.schema ⊤` calls (`SchemaValid`).
+pub fn validWorker(l: *Lowerer, ref: SchemaGraph.Ref, p: u32) !Node.Index {
+    try l.requireLive(l.liveSchema(ref, .read_valid), "readValid");
+    return l.ident(try schemaName(l, ref, Op.valid.workerSuffix()), p);
+}

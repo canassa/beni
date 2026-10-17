@@ -1,0 +1,28 @@
+--! An event the page fires synchronously, and a listener whose reader
+--! needs the event while it is being dispatched: it cancels the event and
+--! reads its `eventPhase`, which the host sets back to none once dispatch
+--! ends.
+
+import Js
+import Listen
+
+
+--| Fire a cancelable `rr-ping` on the window, now; whether a listener
+--| cancelled it.
+pub fire : ⊤ → Bool
+fire ⊤ =
+    event = Js.construct (Js.global "Event") [ Js.from "rr-ping", Js.from { cancelable = True } ]
+    _ = Js.call (Js.global "window") "dispatchEvent" [ event ]
+    Js.to (Js.get event "defaultPrevented")
+
+
+--| Every `rr-ping`, cancelled as it is read: whether it was still being
+--| dispatched on the window when it was read.
+pub pings : sync (Bool → ⊤) → (⊤ → ⊤)
+pings send = Listen.on "window" "rr-ping" check send
+
+
+check : Js.Value → Bool
+check event =
+    _ = Js.call event "preventDefault" []
+    Js.to (Js.from (Js.same (Js.get event "eventPhase") (Js.from 2)))

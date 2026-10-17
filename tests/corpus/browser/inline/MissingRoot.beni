@@ -1,0 +1,17 @@
+-- The mount fault is development's (docs/design/browser-inline.md §6, the
+-- owner's decision for the slice): with no element of the id `mountAt`
+-- names, a development build throws "cannot mount at …" from `Inline.root`,
+-- and a release build ships no mark and no prose — the missing element
+-- fails inside the dispatch guard, so the page stops with the host's own
+-- error and nothing of the program runs after it.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+view : {} → Html {}
+view _ = <p>never shown</p>
+
+
+main : Tea.Program
+main = Browser.mountAt (Tea.sandbox { init = λ⊤ → {}, update = λ_ m → m, view = view }) "nowhere"

@@ -1,0 +1,57 @@
+-- A subscription's start may be a top-level function (docs/design/browser-
+-- inline.md §3): `Pushes.pushes`, exported by the project's layer, is called
+-- from the mount; `start`, this module's own, too. Each push counts, through
+-- the one text binding. `listeners window`
+-- shows the two listeners the starts added, and none after `stop`, after
+-- which a push changes nothing.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Listen
+import Pushes
+import Schema exposing (Value)
+import Sub exposing (Sub)
+import Tea
+
+
+type alias Model =
+    count : Int
+
+
+type Msg
+    = Pushed Value
+    | Reset Value
+
+
+type Key
+    = Push
+    | Clear
+
+
+init : ⊤ → Model × Cmd Msg
+init ⊤ = ( { count = 0 }, Cmd.none )
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        Pushed _ →
+            ( { model | count = model.count + 1 }, Cmd.none )
+
+        Reset _ →
+            ( { model | count = 0 }, Cmd.none )
+
+
+start : (Value → ⊤) → (⊤ → ⊤)
+start send = Listen.on "window" "rr-reset" Pushes.detail send
+
+
+subscriptions : Model → Sub Msg
+subscriptions _ = Sub.batch [ Sub.on Push Pushes.pushes Pushed, Sub.on Clear start Reset ]
+
+
+view : Model → Html Msg
+view model = <p>{model.count}</p>
+
+
+main : Tea.Program
+main = Tea.element { init = init, update = update, view = view, subscriptions = subscriptions }

@@ -1,0 +1,10 @@
+--! Page code that unmounts the program while a dispatch runs: what a host
+--! page's own handler could do from inside a program's listener, reached here
+--! from a command's body.
+
+import Inline
+
+
+--| The page's `stop`, called now.
+pub stopNow : ⊤ → ⊤
+stopNow ⊤ = Inline.stop ⊤

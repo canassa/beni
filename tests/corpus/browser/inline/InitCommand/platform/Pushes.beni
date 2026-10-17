@@ -1,0 +1,18 @@
+--! What a host page pushes to a program, as the research generators' `Push`
+--! layer reads it, with its start and its reader exported: a `rr-push`
+--! `CustomEvent` on `window`, its `detail` the value.
+
+import Js
+import Listen
+import Schema exposing (Value)
+
+
+--| Add the listener, calling `send` with each push's value, and return
+--| what removes it: a subscription's start.
+pub pushes : sync (Value → ⊤) → (⊤ → ⊤)
+pushes send = Listen.on "window" "rr-push" detail send
+
+
+--| A push's value.
+pub detail : Js.Value → Value
+detail event = Js.to (Js.get event "detail")

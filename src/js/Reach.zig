@@ -105,6 +105,7 @@ const JsIntrinsic = @import("JsIntrinsic.zig");
 const Operator = @import("Operator.zig");
 const SchemaGraph = @import("SchemaGraph.zig");
 const SchemaPlan = @import("../check/SchemaPlan.zig");
+const SchemaValid = @import("SchemaValid.zig");
 
 const Reach = @This();
 
@@ -119,7 +120,7 @@ const Reach = @This();
 /// by `decl * Member.count + member`: its description, its root value, its
 /// root wrappers and one worker set per operation, each reached by its own
 /// uses (`schema.md` §6).
-pub const Kind = enum(u8) { decl, derived, twin, ctor, schema };
+pub const Kind = enum(u8) { decl, derived, twin, ctor, schema, lift };
 
 /// One node of the graph: a declaration of a module, or one of its derived
 /// rows. Flat and comparable; nothing here is a pointer.
@@ -134,6 +135,9 @@ pub const Live = struct {
     decls: std.DynamicBitSetUnmanaged,
     derived: std.DynamicBitSetUnmanaged,
     twins: std.DynamicBitSetUnmanaged = .{},
+    /// The lifted pieces (`browser-inline.md` §7) that survived, by their
+    /// index in `Input.lift_targets`, in the module that lowers them.
+    lifts: std.DynamicBitSetUnmanaged = .{},
     /// The constructors something that survived builds, and the exempt
     /// ones (`exempt`). `Lower` lowers an arm on any other as `undefined`.
     ctors: std.DynamicBitSetUnmanaged = .{},
@@ -165,6 +169,11 @@ pub const Live = struct {
         return index < l.twins.bit_length and l.twins.isSet(index);
     }
 
+    /// Whether lifted piece `index` survived.
+    pub fn lift(l: *const Live, index: usize) bool {
+        return index < l.lifts.bit_length and l.lifts.isSet(index);
+    }
+
     pub fn derivedRow(l: *const Live, index: usize) bool {
         return index < l.derived.bit_length and l.derived.isSet(index);
     }
@@ -172,7 +181,7 @@ pub const Live = struct {
     /// Whether the module has anything left to write (§5, "a module with
     /// nothing reachable is not written at all").
     pub fn any(l: *const Live) bool {
-        return l.decls.count() != 0 or l.derived.count() != 0 or l.twins.count() != 0 or l.schemas.count() != 0;
+        return l.decls.count() != 0 or l.derived.count() != 0 or l.twins.count() != 0 or l.schemas.count() != 0 or l.lifts.count() != 0;
     }
 };
 
@@ -300,6 +309,16 @@ pub const Input = struct {
     schema_library: bool = false,
     /// Exports proved to be inert carriers by the sibling scanner.
     forwarding_foreigns: []const []const ForeignProof = &.{},
+    /// `browser-inline.md` §7: per lifted piece, what it reaches. A piece's
+    /// node is `.{ .module = its module, .kind = .lift, .index = i }`.
+    lift_targets: []const []const Target = &.{},
+    /// Instruction ranges whose edges are not followed: the value of a
+    /// program record's field the program site never evaluates.
+    cuts: []const Cut = &.{},
+    /// Roots that every walk keeps, whatever `extra_roots` is then: what a
+    /// program site needs that no instruction it reads names
+    /// (`browser-inline.md` §7).
+    pinned: []const Node = &.{},
 
     pub fn birOf(in: Input, m: Graph.Index) *const Bir {
         if (m.int() >= in.birs.len) return &Bir.empty;
@@ -325,6 +344,20 @@ pub const Input = struct {
     /// its interface, because `coreValue` takes the local path when the
     /// module being lowered IS that module and both paths name one
     /// declaration.
+    /// `coreDecl`, the value named by its text.
+    fn coreDeclNamed(in: Input, owner: InternPool.WellKnown, value: []const u8) ?Node {
+        const interner = in.interner orelse return null;
+        const symbol = interner.find(value) orelse return null;
+        const m = in.graph.lookup(.core, owner.symbol()) orelse return null;
+        const bir = in.birOf(m);
+        for (bir.decls, 0..) |d, i| {
+            if (!d.kind.isValue()) continue;
+            if (bir.symbol(d.name) != symbol) continue;
+            return .{ .module = m, .kind = .decl, .index = @intCast(i) };
+        }
+        return null;
+    }
+
     fn coreDecl(in: Input, owner: InternPool.WellKnown, value: InternPool.WellKnown) ?Node {
         const m = in.graph.lookup(.core, owner.symbol()) orelse return null;
         const bir = in.birOf(m);
@@ -385,6 +418,7 @@ pub const Input = struct {
     /// checked against the platform's `Program`) and the entry file.
     fn collectRoots(in: Input, scratch: Allocator, out: *std.ArrayList(Node)) Allocator.Error!void {
         try out.appendSlice(scratch, in.extra_roots);
+        try out.appendSlice(scratch, in.pinned);
         if (!in.library) {
             if (in.entry) |node| try out.append(scratch, node);
             return;
@@ -465,6 +499,7 @@ pub fn walk(scratch: Allocator, in: Input, edges: []const ModuleEdges) Allocator
             .decls = try .initEmpty(scratch, in.birOf(m).decls.len),
             .derived = try .initEmpty(scratch, in.dispatchOf(m).derived.len),
             .twins = try .initEmpty(scratch, in.birOf(m).decls.len),
+            .lifts = try .initEmpty(scratch, in.lift_targets.len),
             .schemas = try .initEmpty(scratch, in.schemaSlots(m) * SchemaGraph.Member.count),
             .ctors = try .initEmpty(scratch, in.birOf(m).ctors.len),
         };
@@ -481,7 +516,8 @@ pub fn walk(scratch: Allocator, in: Input, edges: []const ModuleEdges) Allocator
     }
     while (stack.pop()) |node| {
         const module = node.module;
-        for (edges[module.int()].targets(node)) |next| {
+        const out = if (node.kind == .lift) (if (node.index < in.lift_targets.len) in.lift_targets[node.index] else &.{}) else edges[module.int()].targets(node);
+        for (out) |next| {
             try follow(scratch, modules, edges, &waiting, &stack, module, next);
         }
         // A guard just reached — a constructor, or a body an `if
@@ -764,6 +800,7 @@ fn mark(modules: []Live, node: Node) bool {
         .twin => &live.twins,
         .schema => &live.schemas,
         .ctor => &live.ctors,
+        .lift => &live.lifts,
     };
     if (node.index >= set.bit_length) return false;
     if (set.isSet(node.index)) return false;
@@ -777,6 +814,10 @@ pub const Target = struct {
     node: Node,
     chain: u32 = 0,
 };
+
+/// An instruction range of a module, both ends included, whose edges are
+/// not followed (`Input.cuts`).
+pub const Cut = struct { module: Graph.Index, lo: u32, hi: u32 };
 
 /// One guarded arm a position is inside: the constructors its pattern
 /// names (`chain_ctors[start..end]`), and the chain of the arm around it.
@@ -819,6 +860,7 @@ pub const ModuleEdges = struct {
             .twin => .{ e.twin_at, e.twin_targets },
             .schema => .{ e.schema_at, e.schema_targets },
             .ctor => return &.{},
+            .lift => return &.{},
         };
         if (node.index + 1 >= at.len) return &.{};
         return list[at[node.index]..at[node.index + 1]];
@@ -842,6 +884,7 @@ pub const ModuleEdges = struct {
                     .twin => live.twin(guard.index),
                     .schema => guard.index < live.schemas.bit_length and live.schemas.isSet(guard.index),
                     .derived => live.derivedRow(guard.index),
+                    .lift => live.lift(guard.index),
                 };
                 if (!reached) return guard;
             }
@@ -880,6 +923,10 @@ pub const Builder = struct {
     /// `core/Schema`'s `Engine` and `Made` (`Input.schemaGuarded`), the core
     /// constructors that guard.
     schema_guarded: ?SchemaGuarded = null,
+    /// `core/Schema`'s `readValid`, which a validator run calls in place
+    /// of `read` (`SchemaValid`).
+    read_valid: ?Node = null,
+    valid_run: ?Node = null,
     /// The shared walk's output for one node, cleared and refilled per
     /// node: a caller-owned buffer, so the whole module's edges cost one
     /// allocation.
@@ -904,6 +951,8 @@ pub const Builder = struct {
             .list_cons = in.coreDecl(.List, .cons),
             .list_append = in.coreDecl(.List, .append),
             .schema_guarded = in.schemaGuarded(),
+            .read_valid = in.coreDeclNamed(.Schema, "readValid"),
+            .valid_run = in.coreDeclNamed(.Schema, "validRun"),
         };
     }
 
@@ -930,6 +979,8 @@ pub const Builder = struct {
         // constant — is JavaScript and not a reference (research 47), so
         // its instruction adds no edge and the sibling is not imported.
         const in_place = try b.jsInPlace(bir, m);
+        const sg_now = b.schemaGraph();
+        const valid: SchemaValid.Sites = if (b.in.interner) |it| try SchemaValid.sites(b.scratch, b.in.graph, b.in.interfaces, b.in.provenance, it, bir, m, if (sg_now) |*g| g else null, b.in.schema_library) else .{};
 
         const decl_at = try b.scratch.alloc(u32, bir.decls.len + 1);
         var decl_targets: std.ArrayList(Target) = .empty;
@@ -956,6 +1007,15 @@ pub const Builder = struct {
             // a word at a time.
             try decl_targets.ensureUnusedCapacity(b.scratch, b.stream.items.len);
             for (b.stream.items, b.at.items) |edge, position| {
+                if (position != Edges.no_position and b.cut(m, position)) continue;
+                // A validator run calls `readValid`, not `read` (`SchemaValid`).
+                if (position != Edges.no_position and SchemaValid.has(valid.callees, position)) {
+                    const runner = if (SchemaValid.has(valid.direct_callees, position)) b.valid_run else b.read_valid;
+                    if (runner) |rv| {
+                        try decl_targets.append(b.scratch, .{ .node = rv, .chain = guards.at(position) });
+                        continue;
+                    }
+                }
                 // A leg-1 row has no position. The `.top` instruction made
                 // with it is guarded where it stands, so the row adds an
                 // edge only when no instruction names its target.
@@ -991,7 +1051,7 @@ pub const Builder = struct {
             try guards.constructions(&decl_targets);
             try b.effectEdges(m, @intCast(i), &guards, &decl_targets, &twin_extra);
             try b.listEdges(m, bir, d, &decl_targets);
-            try b.memberUses(m, bir, d, &guards, &decl_targets);
+            try b.memberUses(m, bir, d, &guards, &decl_targets, valid);
         }
         decl_at[bir.decls.len] = @intCast(decl_targets.items.len);
 
@@ -1086,6 +1146,35 @@ pub const Builder = struct {
             else => {},
         };
         return marks;
+    }
+
+    /// Whether instruction `position` of module `m` is in one of `Input.cuts`.
+    fn cut(b: *const Builder, m: Graph.Index, position: u32) bool {
+        for (b.in.cuts) |c| if (c.module == m and position >= c.lo and position <= c.hi) return true;
+        return false;
+    }
+
+    /// What a lifted piece reaches (`browser-inline.md` §7): the edges of
+    /// declaration `decl` of `m` at instructions `lo` to `hi`, the
+    /// piece's own, unguarded — a guard only ever drops an edge, so this
+    /// keeps at least what the piece needs — and the declaration's
+    /// `core/List` edges, which no instruction names.
+    pub fn liftTargets(b: *Builder, m: Graph.Index, decl: u32, lo: u32, hi: u32) Allocator.Error![]const Target {
+        const bir = b.in.birOf(m);
+        const dispatch = b.in.dispatchOf(m);
+        var out: std.ArrayList(Target) = .empty;
+        b.stream.clearRetainingCapacity();
+        b.at.clearRetainingCapacity();
+        try Edges.declEdgesAt(&b.stream, &b.at, b.scratch, bir, dispatch, decl, null);
+        var nodes: std.ArrayList(Node) = .empty;
+        for (b.stream.items, b.at.items) |edge, position| {
+            if (position == Edges.no_position or position < lo or position > hi) continue;
+            nodes.clearRetainingCapacity();
+            try b.resolve(m, edge, &nodes);
+            for (nodes.items) |node| try out.append(b.scratch, .{ .node = node });
+        }
+        try b.listEdges(m, bir, bir.decls[decl], &out);
+        return out.items;
     }
 
     /// The `core/List` edges of declaration `d` that no instruction names
@@ -1184,7 +1273,7 @@ pub const Builder = struct {
     /// `S.parse` and `S.parseWith` the decoding wrappers, `S.print` and
     /// `S.printWith` the encoding ones — guarded where they stand, like any
     /// reference.
-    fn memberUses(b: *Builder, m: Graph.Index, bir: *const Bir, d: Bir.Decl, guards: *const Guards, out: *std.ArrayList(Target)) Allocator.Error!void {
+    fn memberUses(b: *Builder, m: Graph.Index, bir: *const Bir, d: Bir.Decl, guards: *const Guards, out: *std.ArrayList(Target), valid: SchemaValid.Sites) Allocator.Error!void {
         const start = @min(d.inst_start.int(), bir.insts.len);
         const end = @min(d.inst_end.int(), bir.insts.len);
         for (bir.insts.items(.tag)[start..end], bir.insts.items(.data)[start..end], start..) |tag, data, p| {
@@ -1201,6 +1290,12 @@ pub const Builder = struct {
                 const decl = b.in.provenance[owner.int()].schemaDecl(@backingInt(member.schema)) orelse continue;
                 break :blk .{ .{ .module = owner, .decl = decl.int() }, member.kind };
             } else continue;
+            // `S.schema ⊤` that a validator run calls directly reaches
+            // `S`'s validator workers alone (`SchemaValid`).
+            if (valid.refOfMember(@intCast(p))) |r| {
+                try out.append(b.scratch, .{ .node = schemaNode(r, .read_valid), .chain = guards.at(@intCast(p)) });
+                continue;
+            }
             const member: SchemaGraph.Member = switch (kind) {
                 .schema => .root,
                 .parse, .parse_with => .parse,

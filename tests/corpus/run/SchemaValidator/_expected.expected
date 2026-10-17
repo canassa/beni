@@ -1,0 +1,10 @@
+{"type": "set", "value": 3}: set 3, no issue
+{"type": "reset"}: reset, no issue
+{"type": "reset", "extra": 1}: reset, no issue
+{"type": "set"}: invalid, 1 issue
+{"type": "set", "value": "3"}: invalid, 1 issue
+{"type": "set", "value": 1.5}: invalid, 1 issue
+{"type": "other"}: invalid, 1 issue
+{"value": 3}: invalid, 1 issue
+[1, 2]: invalid, 1 issue
+null: invalid, 1 issue

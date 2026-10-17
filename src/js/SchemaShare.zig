@@ -209,15 +209,19 @@ fn count(scratch: Allocator, sg: *const SchemaGraph, live: *const Reach.Result, 
     }
 }
 
-/// Whether an object `JSON.parse` made answers a read of `key` it does not
-/// own: the names `Object.prototype` holds.
+/// The names a standard `Object.prototype` holds: a read of one finds it on
+/// any object, so every reading runner tests it as an own key. The one list:
+/// core's `Schema.prototypeKey` spells the same names, which a test below
+/// keeps equal.
+pub const prototype_keys = [_][]const u8{
+    "__proto__",            "__defineGetter__", "__defineSetter__", "__lookupGetter__",
+    "__lookupSetter__",     "constructor",      "hasOwnProperty",   "isPrototypeOf",
+    "propertyIsEnumerable", "toLocaleString",   "toString",         "valueOf",
+};
+
+/// Whether `key` is one of `prototype_keys`.
 pub fn isPrototypeKey(key: []const u8) bool {
-    const inherited = [_][]const u8{
-        "__proto__",            "__defineGetter__", "__defineSetter__", "__lookupGetter__",
-        "__lookupSetter__",     "constructor",      "hasOwnProperty",   "isPrototypeOf",
-        "propertyIsEnumerable", "toLocaleString",   "toString",         "valueOf",
-    };
-    for (inherited) |name| if (std.mem.eql(u8, name, key)) return true;
+    for (prototype_keys) |name| if (std.mem.eql(u8, name, key)) return true;
     return false;
 }
 
@@ -226,4 +230,26 @@ test "a key Object.prototype holds is read as an own key, and no other" {
     try std.testing.expect(isPrototypeKey("__proto__"));
     try std.testing.expect(!isPrototypeKey("user-id"));
     try std.testing.expect(!isPrototypeKey("toJSON"));
+}
+
+test "core's Schema.prototypeKey lists exactly prototype_keys" {
+    const core = @import("core_package");
+    const source = for (core.files) |f| {
+        if (std.mem.eql(u8, f.rel, "Schema.beni")) break f.source;
+    } else return error.NoSchemaModule;
+    const head = "\nprototypeKey k =\n";
+    const at = std.mem.indexOf(u8, source, head) orelse return error.NoPrototypeKey;
+    const body_start = at + head.len;
+    // The body ends at the first blank line.
+    const body_end = std.mem.indexOfPos(u8, source, body_start, "\n\n") orelse source.len;
+    var names: std.ArrayList([]const u8) = .empty;
+    defer names.deinit(std.testing.allocator);
+    var rest = source[body_start..body_end];
+    while (std.mem.indexOfScalar(u8, rest, '"')) |open| {
+        const close = std.mem.indexOfScalarPos(u8, rest, open + 1, '"') orelse return error.Unclosed;
+        try names.append(std.testing.allocator, rest[open + 1 .. close]);
+        rest = rest[close + 1 ..];
+    }
+    try std.testing.expectEqual(prototype_keys.len, names.items.len);
+    for (prototype_keys, names.items) |want, got| try std.testing.expectEqualStrings(want, got);
 }

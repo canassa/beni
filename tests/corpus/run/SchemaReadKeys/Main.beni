@@ -1,0 +1,64 @@
+-- `read` sees the keys ordinary JavaScript access sees (`schema.md` §5,
+-- *Host values*, amended 2026-10-17, the owner): a field inherited from a
+-- prototype, or a class's getter, is read; a key present with the value
+-- `undefined` is absent, so an optional field is `Missing` (decoding
+-- defaults, §11, are not built) and a required field is refused; a field
+-- named like a key `Object.prototype` has is never taken from the
+-- prototype; and a key a page set on `Object.prototype` is read through it
+-- by compiled and library runs alike (the last line, which pollutes it). The corpus builds this four ways, each with and
+-- without every root through the library, against this one golden.
+import Hosts
+import Node
+import Schema exposing (Missing, Present, Value)
+
+
+schema Point =
+    x : Int
+    y : Int optional
+
+
+schema Named =
+    toString : String
+
+
+point : String, Value → String
+point label v =
+    case Schema.read (Point.schema ⊤) v of
+        Ok p →
+            label ++ ": " ++ String.fromInt p.x ++ ", " ++ shown p.y
+
+        Err issues →
+            label ++ ": " ++ String.fromInt (List.length issues) ++ " issue"
+
+
+shown : Schema.Presence Int → String
+shown y =
+    case y of
+        Present n →
+            String.fromInt n
+
+        Missing →
+            "missing"
+
+
+named : String, Value → String
+named label v =
+    case Schema.read (Named.schema ⊤) v of
+        Ok n →
+            label ++ ": " ++ n.toString
+
+        Err issues →
+            label ++ ": " ++ String.fromInt (List.length issues) ++ " issue"
+
+
+main : Node.Program
+main =
+    Node.printLines
+        [ point "inherited y" (Hosts.inherited ⊤)
+        , point "getters" (Hosts.getters ⊤)
+        , point "undefined y" (Hosts.undefinedY ⊤)
+        , point "undefined x" (Hosts.undefinedX ⊤)
+        , named "inherited toString" (Hosts.plain ⊤)
+        , named "own toString" (Hosts.ownToString ⊤)
+        , point "polluted prototype" (Hosts.polluted ⊤)
+        ]

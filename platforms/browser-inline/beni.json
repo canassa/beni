@@ -1,0 +1,11 @@
+{
+  "platform": true,
+  "name": "browser-inline",
+  "platforms": ["html"],
+  "program": "Browser.Program",
+  "html": "index.html",
+  "lists": "in-place",
+  "markup": { "lowering": "inline", "module": "Inline" },
+  "zig": "zig/root.zig",
+  "reexports": ["Html", "Browser", "Cmd", "Sub", "Tea"]
+}

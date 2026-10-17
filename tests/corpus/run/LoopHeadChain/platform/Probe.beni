@@ -1,0 +1,15 @@
+--! A member chain bound once and read once, by the iterable of a loop:
+--! the release optimiser may not write the chain in the loop's head,
+--! whose own binding could take the name the chain starts from.
+
+import Js
+
+
+--| The sum of `r.items`, through a loop over them.
+pub probe : Int → Int
+probe x =
+    acc = Js.ref 0
+    r = Js.object [ ( "items", Js.array [ Js.from x, Js.from 1 ] ) ]
+    ys = Js.get r "items"
+    Js.each ys λg → Js.write acc (Js.read acc + Js.to g)
+    Js.read acc

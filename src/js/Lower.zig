@@ -55,6 +55,8 @@ const InternPool = @import("../InternPool.zig");
 const SourceStore = @import("../SourceStore.zig");
 const JsIr = @import("JsIr.zig");
 const Reach = @import("Reach.zig");
+const Lift = @import("Lift.zig");
+const SchemaValid = @import("SchemaValid.zig");
 const Fields = @import("Fields.zig");
 const DebugShape = @import("DebugShape.zig");
 const Edges = @import("../check/Edges.zig");
@@ -307,6 +309,9 @@ pub const Direct = struct {
     /// module.
     debug_values: []const []const bool = &.{},
     source_roots: []const Site = &.{},
+    /// `browser-inline.md` §7: every piece the build lifts, by the index
+    /// reachability numbers it with.
+    lifts: []const Lift.Piece = &.{},
 
     pub const Site = struct {
         module: u32,
@@ -342,6 +347,31 @@ pub const Direct = struct {
         sites: []const Site = &.{},
         view_capped: bool = false,
         root_group: u32 = std.math.maxInt(u32),
+        /// Version 1.14 (`Lowering.effects`): the subscription set, each of
+        /// its declarations' starts, each key's command and `init`'s.
+        subscriptions: beni_markup.Program.Subscriptions = .unknown,
+        starts: []const Start = &.{},
+        commands: []const beni_markup.Program.Command = &.{},
+        init_command: beni_markup.Program.Command = .unknown,
+    };
+
+    /// Version 1.14: a declaration's start, as `Writes.FunInfo` gives it.
+    pub const Start = struct {
+        kind: enum { lambda, top, other },
+        module: u32,
+        decl: u32,
+        inst: u32,
+        bound: []const u32,
+        /// `top` of another module: its row in that module's interface, or
+        /// none when it exports no such value.
+        value: u32 = std.math.maxInt(u32),
+        /// `lambda` of another module: the piece it is lifted as (`lifts`),
+        /// and the program's value of each of its captures, spelled; null
+        /// for one the program site cannot write.
+        lift: u32 = std.math.maxInt(u32),
+        captures: ?[]const []const u8 = &.{},
+        /// When `captures` is null: the capture that is not a literal, by name.
+        computed: []const u8 = "",
     };
 
     pub const Let = struct {
@@ -483,6 +513,8 @@ pub fn lower(
     try l.findRefs();
     try l.findInlines();
     try l.findPrograms();
+    // `schema.md` §6: the runs that compile to a validator.
+    l.valid_sites = try SchemaValid.sites(l.scratch, l.in.graph, l.in.interfaces, if (l.in.schemas) |sg| sg.provenance else &.{}, l.interner, l.bir, l.in.module, l.in.schemas, l.in.schema_library);
 
     // Declarations first: the import list is what lowering DISCOVERS (the
     // §9.1 reference edges are a byproduct of resolution, not a pass), so
@@ -862,6 +894,12 @@ pub const Lowerer = struct {
     /// module's surviving declarations, by call instruction, ascending
     /// (`findPrograms`; `boundary.md` §9.4.6, version 1.6).
     program_calls: []ProgramCall = &.{},
+    /// Version 1.14 (`Lowering.places`): the placement calls compiled as
+    /// their first argument alone, the program call they place, sorted.
+    placed_calls: []const u32 = &.{},
+    /// `schema.md` §6: the callees of the module's validator runs
+    /// (`SchemaValid`), which are `Schema.readValid`.
+    valid_sites: SchemaValid.Sites = .{},
     /// Per declaration, whether the program hook consumed it: a `view` or
     /// `update` a program record names and nothing else does, which is not
     /// emitted — the hook compiles what it needs of it where the program
@@ -1132,6 +1170,19 @@ pub const Lowerer = struct {
     pub fn numberNode(l: *Lowerer, bytes: []const u8, p: u32) !Node.Index {
         const offset, const len = try l.b.addString(bytes);
         return l.add(.number, p, offset, len);
+    }
+
+    /// A literal a lifted piece's capture is spelled as (`Writes.literalSpelling`).
+    fn rawNode(l: *Lowerer, spelled: []const u8, p: u32) !Node.Index {
+        if (std.mem.eql(u8, spelled, "null")) return l.nullNode(p);
+        if (spelled.len >= 2 and spelled[0] == '"') return l.stringNode(spelled[1 .. spelled.len - 1], p);
+        return l.numberNode(spelled, p);
+    }
+
+    /// The base symbol of a lifted piece's name (`browser-inline.md` §7).
+    fn liftBase(l: *Lowerer, module: Graph.Index, piece: Lift.Piece) !Symbol {
+        _ = module;
+        return l.interner.getOrPut(l.gpa, piece.name);
     }
 
     pub fn nullNode(l: *Lowerer, p: u32) !Node.Index {
@@ -1730,11 +1781,63 @@ pub const Lowerer = struct {
         }
     }
 
+    /// The pieces of declaration `index` a program site lifts that survived
+    /// (`browser-inline.md` §7), after the declaration: each
+    /// `<Module>$<declaration>$$lift$<n>`, its lambda lowered where the
+    /// declaration's code is, as a function of its captures when it has
+    /// any.
+    /// Whether declaration `index` lifts a piece that survived.
+    fn livePiece(l: *Lowerer, index: u32) bool {
+        const d = l.in.direct orelse return false;
+        for (d.lifts, 0..) |piece, gi| {
+            if (piece.module != l.in.module.int() or piece.decl != index or piece.in_place) continue;
+            const r = l.in.live orelse return true;
+            if (r.of(l.in.module).lift(gi)) return true;
+        }
+        return false;
+    }
+
+    fn liftPieces(l: *Lowerer, out: *StmtList, index: u32) !void {
+        const d = l.in.direct orelse return;
+        for (d.lifts, 0..) |piece, gi| {
+            if (piece.module != l.in.module.int() or piece.decl != index or piece.in_place) continue;
+            if (l.in.live) |r| if (!r.of(l.in.module).lift(gi)) continue;
+            try l.liftPiece(out, piece);
+        }
+    }
+
+    fn liftPiece(l: *Lowerer, out: *StmtList, piece: Lift.Piece) !void {
+        const d = l.bir.decls[piece.decl];
+        l.restartNames();
+        l.locals = l.bir.declLocals(d);
+        l.decl_index = piece.decl;
+        l.read_locals = null;
+        l.local_names = try l.scratch.alloc(JsIr.NameIndex, l.locals.len);
+        @memset(l.local_names, .none);
+        l.local_tag_base = 0;
+        l.local_tag_next = @intCast(l.locals.len);
+        l.variant = .direct;
+        const inst: Inst.Index = @fromBackingInt(piece.inst);
+        const p = l.pos(inst);
+        const n = try l.name(.{ .module = l.module_name.toOptional(), .base = try l.liftBase(l.in.module, piece), .tag = JsIr.Name.no_tag });
+        const outer = l.enterFunction(false);
+        defer l.leaveFunction(outer);
+        const params = try l.scratch.alloc(JsIr.NameIndex, piece.captures.len);
+        for (piece.captures, params) |local, *x| x.* = try l.localName(local);
+        var stmts: StmtList = .empty;
+        const value = try l.expr(&stmts, inst);
+        if (params.len == 0 and stmts.items.len == 0) return l.constDecl(out, n, value, p);
+        try stmts.append(l.scratch, try l.returnStmt(value, p));
+        if (params.len == 0) return l.constDecl(out, n, try l.call(try l.arrowOf(&.{}, stmts.items, p), &.{}, p), p);
+        try l.constDecl(out, n, try l.arrowOf(params, stmts.items, p), p);
+    }
+
     /// One declaration's statements, measured against the nesting budget.
     fn declarationPart(l: *Lowerer, index: u32) ![]const Node.Index {
         var part: StmtList = .empty;
         const nodes = l.b.nodes.len;
         try l.declaration(&part, index);
+        try l.liftPieces(&part, index);
         // Fewer nodes than this cannot be over either budget, and
         // measuring is a walk of every node: most declarations skip it.
         if (index < l.bir.decls.len and l.b.nodes.len - nodes >= JsIr.nesting.could_exceed) try l.refuseTooDeep(part.items, index);
@@ -1830,7 +1933,7 @@ pub const Lowerer = struct {
             // stays closed. `requireLive` is the proof, not this loop.
             if (root >= decls) {
                 if (!l.liveSchemaAny(@intCast(root))) continue;
-            } else if (!l.liveDecl(@intCast(root)) and !l.liveTwin(@intCast(root)) and !(l.bir.decls[root].kind == .schema and l.liveSchemaAny(@intCast(root)))) continue;
+            } else if (!l.liveDecl(@intCast(root)) and !l.liveTwin(@intCast(root)) and !l.livePiece(@intCast(root)) and !(l.bir.decls[root].kind == .schema and l.liveSchemaAny(@intCast(root)))) continue;
             if (state[root] != 0) continue;
             try stack.append(l.scratch, .{ .decl = @intCast(root), .next = 0, .tops = try l.siteTops(@intCast(root)) });
             state[root] = 1;
@@ -2239,6 +2342,13 @@ pub const Lowerer = struct {
                 try names.append(l.scratch, try l.twinName(l.module_name, l.bir.symbol(d.name)));
             }
         }
+        // The pieces it lifts for program sites that survived
+        // (`browser-inline.md` §7).
+        if (l.in.direct) |dr| for (dr.lifts, 0..) |piece, gi| {
+            if (piece.module != l.in.module.int() or piece.in_place) continue;
+            if (l.in.live) |r| if (!r.of(l.in.module).lift(gi)) continue;
+            try names.append(l.scratch, try l.name(.{ .module = l.module_name.toOptional(), .base = try l.liftBase(l.in.module, piece), .tag = JsIr.Name.no_tag }));
+        };
         // `core/List`'s core-private values the emitter calls from other
         // modules (`corePrivate`, `backend.md` §4): in no interface, so no
         // program names them, and exported when they survive — which is
@@ -3476,6 +3586,36 @@ pub const Lowerer = struct {
         return args[1];
     }
 
+    /// The argument of a call of core's `String.fromInt`, or null.
+    fn fromIntArgument(l: *Lowerer, inst: Inst.Index) ?Inst.Index {
+        if (l.bir.instTag(inst) != .call or l.rootsOf(inst).len != 0) return null;
+        const d = l.bir.instData(inst);
+        const callee: Inst.Index = @fromBackingInt(@intCast(d.lhs));
+        const cd = l.bir.instData(callee);
+        const base: Symbol = switch (l.bir.instTag(callee)) {
+            .top => blk: {
+                if (l.in.graph.modulePackage(l.in.module) != .core) return null;
+                if (l.module_name != InternPool.WellKnown.String.symbol()) return null;
+                if (cd.lhs >= l.bir.decls.len) return null;
+                break :blk l.bir.symbol(l.bir.decls[cd.lhs].name);
+            },
+            .ext_value => blk: {
+                const module: Graph.Index = @fromBackingInt(@intCast(cd.lhs));
+                if (module.int() >= l.in.interfaces.len) return null;
+                if (l.in.graph.modulePackage(module) != .core) return null;
+                if (l.in.graph.moduleName(module) != InternPool.WellKnown.String.symbol()) return null;
+                const iface = &l.in.interfaces[module.int()];
+                if (cd.rhs >= iface.values.len) return null;
+                break :blk iface.symbols[@backingInt(iface.values[cd.rhs].name)];
+            },
+            else => return null,
+        };
+        if (!std.mem.eql(u8, l.interner.slice(base), "fromInt")) return null;
+        const args = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index);
+        if (args.len != 1) return null;
+        return args[0];
+    }
+
     fn isListCons(l: *Lowerer, callee: Inst.Index) bool {
         const d = l.bir.instData(callee);
         const base: Symbol = switch (l.bir.instTag(callee)) {
@@ -4571,7 +4711,11 @@ pub const Lowerer = struct {
                 var holes: std.ArrayList(Inst.Index) = .empty;
                 for (parts) |part| {
                     if (l.bir.instTag(part) == .chunk) continue;
-                    try holes.append(l.scratch, part);
+                    // `${String.fromInt n}` is `${n}`: a template converts a
+                    // number to the text `String` gives it, and an `Int` is a
+                    // number (§4). Keyed on core's `String` and its `fromInt`,
+                    // as `consTail` is, never on the spelling.
+                    try holes.append(l.scratch, l.fromIntArgument(part) orelse part);
                 }
                 const values = try l.orderedExprs(out, holes.items, false);
                 var nodes: std.ArrayList(Node.Index) = .empty;
@@ -4964,6 +5108,8 @@ pub const Lowerer = struct {
     fn referenceName(l: *Lowerer, inst: Inst.Index) !Node.Index {
         const d = l.bir.instData(inst);
         const p = l.pos(inst);
+        if (l.valid_sites.callees.len != 0 and SchemaValid.has(l.valid_sites.callees, inst.int()))
+            return l.coreSchemaValue(if (SchemaValid.has(l.valid_sites.direct_callees, inst.int())) "validRun" else "readValid", p);
         return switch (l.bir.instTag(inst)) {
             .local => try l.ident(try l.localName(d.lhs), p),
             // A markup primitive is the markup runtime's export of its name
@@ -7767,6 +7913,11 @@ pub const Lowerer = struct {
         // §9.4.6, version 1.6): the constructor applied to the mount the
         // lowering compiles, and the record never evaluated.
         if (l.programCallAt(inst)) |pc| return l.programCall(out, inst, pc, callee_inst);
+        // `S.schema ⊤` a validator run calls directly: `S`'s validator
+        // worker (`SchemaValid`).
+        if (l.valid_sites.args.len != 0) if (l.valid_sites.refOfArg(inst.int())) |ref| return SchemaLower.validWorker(l, ref, p);
+        // Version 1.14: a placement the program's mount already made.
+        if (l.placed_calls.len != 0 and l.placedCallAt(inst)) return l.expr(out, arg_insts[0]);
 
         // A re-cons of a list a loop holds as an offset (§7's re-consing
         // rule, §8's *Scalar views*): the offset it was matched at, or the
@@ -11135,6 +11286,7 @@ pub const Lowerer = struct {
             }.less);
             l.program_calls = calls.items;
             try l.findConsumed();
+            if (lowering.places) try l.findPlaced();
         }
         if (lowering.placements.len != 0) try l.findPlacedTwice();
     }
@@ -11335,6 +11487,50 @@ pub const Lowerer = struct {
     /// declaration or interface row.
     const Placed = struct { module: u32, value: u32 };
 
+    /// Version 1.14 (`Lowering.places`): each call of a `first` placement
+    /// whose first argument is a program constructor's call and whose
+    /// second is a string literal. The hook is handed the literal
+    /// (`Program.placed`) and the placement call is compiled as the
+    /// program call alone.
+    fn findPlaced(l: *Lowerer) !void {
+        const tags = l.bir.insts.items(.tag);
+        const data = l.bir.insts.items(.data);
+        var placed: std.ArrayList(u32) = .empty;
+        for (l.bir.decls, 0..) |d, di| {
+            if (!d.kind.isValue() or !l.liveDecl(@intCast(di))) continue;
+            var at = d.inst_start.int();
+            while (at < d.inst_end.int()) : (at += 1) {
+                if (tags[at] != .call) continue;
+                const placement = l.placementOf(@fromBackingInt(@intCast(data[at].lhs))) orelse continue;
+                if (placement.places != .first) continue;
+                const args = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(data[at].rhs))), Inst.Index);
+                if (args.len != 2 or l.bir.instTag(args[1]) != .string) continue;
+                const pc = l.programCallAt(args[0]) orelse continue;
+                if (pc.refused or pc.placed != .unknown) continue;
+                pc.placed = .{ .at = l.bir.bytes(args[1]) };
+                try placed.append(l.scratch, @intCast(at));
+            }
+        }
+        l.placed_calls = placed.items;
+        // `main = Tea.sandbox { … }`: the entry file's `run` mounts it at
+        // `document.body`.
+        if (l.in.entry_decl) |entry| if (l.bir.decls[entry].body.unwrap()) |body| {
+            if (l.programCallAt(body)) |pc| if (!pc.refused and pc.placed == .unknown) {
+                pc.placed = .body;
+            };
+        };
+    }
+
+    /// The placement call at `inst` compiled as its first argument, if it
+    /// is one (`findPlaced`).
+    fn placedCallAt(l: *const Lowerer, inst: Inst.Index) bool {
+        return std.sort.binarySearch(u32, l.placed_calls, inst.int(), struct {
+            fn order(key: u32, x: u32) std.math.Order {
+                return std.math.order(key, x);
+            }
+        }.order) != null;
+    }
+
     /// `program_mounted_twice` (`browser-direct.md` §8.2): a top-level
     /// program value named twice among what `main`'s placements place —
     /// through `programs` lists, `mountAt`s and the top-level values of this
@@ -11490,7 +11686,9 @@ pub const Lowerer = struct {
     fn programCall(l: *Lowerer, out: *StmtList, inst: Inst.Index, pc: *ProgramCall, callee_inst: Inst.Index) !Node.Index {
         const p = l.pos(inst);
         if (pc.refused) return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
-        const callee = try l.expr(out, callee_inst);
+        // The constructor first, where it stands; a lowering that compiles
+        // the call as its mount (version 1.14) names it not at all.
+        const callee: ?Node.Index = if (l.mk != null and l.mk.?.lowering.constructs) null else try l.expr(out, callee_inst);
         const st = l.mk orelse return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
         const hook = st.lowering.program orelse {
             try l.report(.internal, inst, "The markup lowering `{s}` names program constructors and has no program hook.", .{st.lowering.name});
@@ -11510,6 +11708,7 @@ pub const Lowerer = struct {
             .view_branch = pc.record and view == .function and view_root == null and l.viewBranchOf(pc) != null,
             .document_branch = l.documentBranchOf(pc),
             .update = if (pc.record) update else .computed,
+            .placed = pc.placed,
         };
         // A `view` whose body is a branch evaluates its `let`s wherever the
         // values of its arms are: one that may have an effect is refused, as
@@ -11539,7 +11738,9 @@ pub const Lowerer = struct {
             error.OutOfMemory => return error.OutOfMemory,
             error.Reported => return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused),
         };
-        return l.call(callee, &.{@fromBackingInt(@intCast(@backingInt(mount)))}, p);
+        // Version 1.14: a platform whose `Program` is the mount itself.
+        const c = callee orelse return @fromBackingInt(@intCast(@backingInt(mount)));
+        return l.call(c, &.{@fromBackingInt(@intCast(@backingInt(mount)))}, p);
     }
 
     /// `cx.programInit`: the program's `init`, evaluated into `block`, as
@@ -11651,6 +11852,7 @@ pub const Lowerer = struct {
         } orelse @fromBackingInt(@intCast(pc.inst));
         try l.report(switch (code) {
             .view_not_compiled => .view_not_compiled,
+            .program_shape => .program_shape,
             else => .not_implemented,
         }, region, "{s}", .{message});
     }
@@ -11726,6 +11928,107 @@ pub const Lowerer = struct {
     }
 
     const star_key = [_]beni_markup.Program.Key{.{ .name = "*", .params = 1, .star = true }};
+
+    /// `cx.programSubscriptions` (version 1.14).
+    fn directSubscriptions(l: *Lowerer) beni_markup.Program.Subscriptions {
+        const pc = l.program_now orelse return .unknown;
+        const d = pc.direct orelse return .unknown;
+        return d.subscriptions;
+    }
+
+    /// `cx.programCommand` (version 1.14).
+    fn directCommand(l: *Lowerer, key: ?u32) beni_markup.Program.Command {
+        const pc = l.program_now orelse return .unknown;
+        const d = pc.direct orelse return .unknown;
+        const k = key orelse return d.init_command;
+        return if (k < d.commands.len) d.commands[k] else .unknown;
+    }
+
+    /// `cx.programSubscriptionStart` (version 1.14): declaration `i`'s start
+    /// applied to `send`. The start is a lambda of this module, lowered
+    /// where its declaration's other code is; what it captures from the
+    /// frame it was made in is refused, and so is a start of another
+    /// module, which the compiler cannot write here.
+    fn directSubscriptionStart(l: *Lowerer, block: beni_markup.Block, i: u32, send: Node.Index) Allocator.Error!?Node.Index {
+        const st = l.mk.?;
+        const p = st.pos;
+        const pc = l.program_now orelse return null;
+        const d = pc.direct orelse return null;
+        if (i >= d.starts.len) return null;
+        const start = d.starts[i];
+        const where = switch (d.subscriptions) {
+            .set => |set| set[i].where,
+            else => "",
+        };
+        const here = start.module == l.in.module.int();
+        // A top-level function: this module's, by its name, or another
+        // module's that its interface exports, imported as any reference to
+        // it is.
+        if (start.kind == .top and (here or start.value != std.math.maxInt(u32))) {
+            const f = if (here)
+                try l.ident(try l.topNameChoosing(start.decl, .no), p)
+            else
+                try l.ident(try l.externalNameChoosing(@fromBackingInt(@intCast(start.module)), start.value, .no), p);
+            return try l.call(f, &.{send}, p);
+        }
+        // A lambda of another module, which that module lifts
+        // (`browser-inline.md` §7): called with the values of its captures
+        // here, its value then handed `send`.
+        if (start.kind == .lambda and !here and start.lift != std.math.maxInt(u32)) {
+            const captures = start.captures orelse {
+                try l.programReport(.call, .not_implemented, try std.fmt.allocPrint(l.scratch,
+                    \\A limit of the compiler: this program's subscription at {s} starts with a function
+                    \\that captures `{s}`, a value computed when the page runs, and the program's mount
+                    \\can hand a lifted start only literals (`docs/design/browser-inline.md` §7; §5,
+                    \\class 4). Pass a literal for it where the subscription is declared.
+                , .{ where, if (start.computed.len != 0) start.computed else "a local" }));
+                return null;
+            };
+            const piece = l.in.direct.?.lifts[start.lift];
+            const module: Graph.Index = @fromBackingInt(@intCast(piece.module));
+            const base = try l.liftBase(module, piece);
+            try l.needName(.{ .module = module, .base = base.toOptional() });
+            var f = try l.ident(try l.name(.{ .module = l.in.graph.moduleName(module).toOptional(), .base = base, .tag = JsIr.Name.no_tag }), p);
+            if (captures.len != 0) {
+                const args = try l.scratch.alloc(Node.Index, captures.len);
+                for (captures, args) |spelled, *x| x.* = try l.rawNode(spelled, p);
+                f = try l.call(f, args, p);
+            }
+            return try l.call(f, &.{send}, p);
+        }
+        if (start.kind != .lambda or !here) {
+            const owner = if (start.module < l.in.graph.count()) l.text(l.in.graph.moduleName(@fromBackingInt(@intCast(start.module)))) else "?";
+            try l.programReport(.call, .not_implemented, try std.fmt.allocPrint(l.scratch,
+                \\A limit of the compiler: this program's subscription at {s} starts with {s} of the module
+                \\`{s}`. The compiler can call, from the program's mount,
+                \\a function written in place in the module that calls the program's constructor or a
+                \\top-level function that a module exports; it lowers one module at a time, so it cannot
+                \\write a closure of another module there (`docs/design/browser-inline.md` §5, class 4).
+                \\Until it can, write the start as a `pub` top-level function of its module.
+            , .{ where, if (start.kind == .top) "a top-level function the module does not export" else "a function made inside a function", owner }));
+            return null;
+        }
+        for (start.bound) |local| if (l.subtreeReadsLocal(@fromBackingInt(start.inst), local)) {
+            try l.programReport(.call, .not_implemented, try std.fmt.allocPrint(l.scratch,
+                \\A limit of the compiler: this program's subscription at {s} starts with a function that
+                \\reads a value of the function it is written in, which the compiler cannot write into the
+                \\program's mount (`docs/design/browser-inline.md` §5, class 4). Write the start with no
+                \\local of its own function, or as a top-level function's partial application.
+            , .{where}));
+            return null;
+        };
+        var stmts: StmtList = .empty;
+        const depth = l.case_depth;
+        l.case_depth = 0;
+        defer l.case_depth = depth;
+        const outer = l.enterFunction(false);
+        defer l.leaveFunction(outer);
+        const saved = try l.enterDecl(start.decl);
+        defer l.leaveDecl(saved);
+        const f = try l.expr(&stmts, @fromBackingInt(start.inst));
+        try st.blocks.items[@backingInt(block)].appendSlice(l.scratch, stmts.items);
+        return try l.call(f, &.{send}, p);
+    }
 
     fn directSteps(l: *Lowerer, key: u32) []const Direct.Step {
         const pc = l.program_now orelse return &.{};
@@ -14542,6 +14845,9 @@ const ProgramCall = struct {
     refused: bool = false,
     /// `cx.programInit` has evaluated `init`.
     init_used: bool = false,
+    /// Version 1.14: the element a placement around the call mounts it at
+    /// (`findPlaced`).
+    placed: beni_markup.Program.Placed = .unknown,
 };
 
 /// What the compiler keeps while it lowers one module's markup.
@@ -14971,6 +15277,19 @@ const markup_vtable: beni_markup.VTable = struct {
         return lowerer(impl).directLet(r, k);
     }
 
+    fn programSubscriptions(impl: *anyopaque) M.Program.Subscriptions {
+        return lowerer(impl).directSubscriptions();
+    }
+
+    fn programSubscriptionStart(impl: *anyopaque, into: M.Block, i: u32, send: M.Expr) E!M.Expr {
+        const n = try lowerer(impl).directSubscriptionStart(into, i, node(send)) orelse return error.Reported;
+        return expr(n);
+    }
+
+    fn programCommand(impl: *anyopaque, key: ?u32) M.Program.Command {
+        return lowerer(impl).directCommand(key);
+    }
+
     fn literal(impl: *anyopaque, which: M.Literal, bytes: []const u8) E!M.Expr {
         const l = lowerer(impl);
         const p = pos(l);
@@ -15166,6 +15485,9 @@ const markup_vtable: beni_markup.VTable = struct {
         .program_nested_enter = programNestedEnter,
         .program_view_statements = programViewStatements,
         .program_let = programLet,
+        .program_subscriptions = programSubscriptions,
+        .program_subscription_start = programSubscriptionStart,
+        .program_command = programCommand,
         .literal = literal,
         .template = template,
         .name = name,
@@ -15610,8 +15932,8 @@ test "a lambda is an n-ary function expression, of exactly its parameters" {
 
 test "string interpolation becomes a template literal" {
     try expectJs(
-        \\import { String$fromInt } from "./String.mjs";
-        \\const M$label = (n$1) => `n is ${String$fromInt(n$1)}!`;
+        // `String.fromInt` of a segment is the `Int` itself (§4).
+        \\const M$label = (n$1) => `n is ${n$1}!`;
         \\export { M$label };
         \\
     ,

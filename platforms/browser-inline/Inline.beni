@@ -1,0 +1,238 @@
+--! The `browser-inline` platform's runtime module, `Inline`
+--! (`docs/design/browser-inline.md`): the dispatch guard every entry into
+--! program code goes through, the queue of sends made while one runs,
+--! `run`, which mounts the page's program inside the guard, and `stop`, the
+--! page's unmount (`boundary.md` §9.4.5, amended 2026-10-17). Written in
+--! beni over core's `Js`, and the platform's runtime module (`boundary.md`
+--! §9.2, *A runtime module*): a page ships only what it reaches.
+
+import Cmd exposing (Cmd)
+import Js
+
+
+type alias V =
+    Js.Value
+
+
+-- ---- The dispatch guard -------------------------------------------------
+
+-- A throw escaped program code, or the page called `stop`: nothing of the
+-- program runs again.
+dead : Js.Ref Bool
+dead = Js.ref False
+
+
+-- A dispatch is running: a send made now waits for it.
+running : Js.Ref Bool
+running = Js.ref False
+
+
+-- The sends made while a dispatch ran, as function, argument pairs in the
+-- order they were made; null until the first.
+queue : Js.Ref V
+queue = Js.ref Js.null
+
+
+--| `(f, x)`: one entry into program code — a listener with its event, a
+--| command's body, `run`'s mount. A send made while another runs is
+--| queued and applied, in order, before that dispatch ends, never
+--| re-entrantly (`boundary.md` §9.8.4, as amended 2026-10-17); once the
+--| page has stopped it does nothing. There is no `catch`: a throw passes
+--| through to the host, and stops the page.
+pub send : V, V → ⊤
+send f x =
+    if Js.read dead then
+        ⊤
+    else if Js.read running then
+        if Js.isNull (Js.read queue) then
+            Js.write queue (Js.array [])
+        _ = Js.call (Js.read queue) "push" [ f, x ]
+        ⊤
+    else
+        Js.write running True
+        ok = Js.ref False
+        Js.finally
+            (λ⊤ →
+                _ = Js.apply f [ x ]
+                drain ⊤
+                Js.write ok True
+            )
+            λ⊤ →
+                Js.write running False
+                if Js.read ok then ⊤ else defect ⊤
+
+
+-- Apply every queued send, in the order they were made; one applied may
+-- send more, which apply after them, in this dispatch.
+drain : ⊤ → ⊤
+drain ⊤ =
+    if Js.isNull (Js.read queue) then
+        ⊤
+    else
+        q = Js.read queue
+        Js.write queue Js.null
+        applyFrom q 0
+        drain ⊤
+
+
+applyFrom : V, Int → ⊤
+applyFrom q i =
+    -- A send applied may stop the page (`stop`, a defect): nothing queued
+    -- behind it runs.
+    if i < Js.to (Js.get q "length") && not (Js.read dead) then
+        _ = Js.apply (Js.at q i) [ Js.at q (i + 1) ]
+        applyFrom q (i + 2)
+
+
+-- A throw ended a dispatch: the page stops, `dead` first, and drops what
+-- was queued. A development build shows the crash screen; a release build
+-- has no code for one, and the host reports the throw.
+defect : ⊤ → ⊤
+defect ⊤ =
+    wasDead = Js.read dead
+    Js.write dead True
+    Js.write queue Js.null
+    if Js.development ⊤ && not wasDead then
+        crashScreen ⊤
+
+
+-- An overlay above the page, which it leaves in place to inspect: the
+-- error's text arrives with the host's report of the throw, which reaches
+-- the window after the guard's `finally`.
+crashScreen : ⊤ → ⊤
+crashScreen ⊤ =
+    document = Js.global "document"
+    screen = Js.call document "createElement" [ Js.from "div" ]
+
+    _ =
+        Js.call screen "setAttribute"
+            [ Js.from "style"
+            , Js.from
+                "position:fixed;inset:0;z-index:2147483647;overflow:auto;margin:0;padding:24px;background:#fff;color:#a00;font:14px/1.5 monospace;white-space:pre-wrap"
+            ]
+
+    Js.set
+        screen
+        "textContent"
+        (Js.from
+            "This program has stopped.\n\nSomething it ran threw an exception, so its state can no longer be trusted and nothing more of it runs. The exception is below, and in the console with its stack.\n\n"
+        )
+
+    _ = Js.call (Js.get document "body") "appendChild" [ screen ]
+
+    report =
+        λevent →
+            error = Js.get event "error"
+            message : String
+            message =
+                Js.to
+                    (Js.apply (Js.global "String")
+                        [ if Js.isNullish error then Js.get event "message" else error ]
+                    )
+            shown : String
+            shown = Js.to (Js.get screen "textContent")
+            Js.set screen "textContent" (Js.from (shown ++ message))
+
+    Js.to
+        (Js.call (Js.global "window") "addEventListener"
+            [ Js.from "error", Js.from report, Js.from { once = True } ]
+        )
+
+
+-- ---- Mounting -----------------------------------------------------------
+
+--| `(program)`: the page's one program — the mount the lowering compiled,
+--| a function of the id of the element it mounts at — mounted inside one
+--| dispatch, so a throw while it mounts, a missing element included,
+--| stops the page as any defect does.
+pub run : V → ⊤
+run program = send program Js.undefined
+
+
+--| `(id)`: the element a program mounts at, the one `id` names or
+--| `document.body`. A development build marks it and says in prose what is
+--| wrong with one that is missing or already holds a program; a release
+--| build does neither, and a missing element fails inside the guard
+--| (`browser-inline.md` §6).
+pub root : V → V
+root id =
+    -- `document` is read where it is used: a binding of a host read is
+    -- kept by the release optimiser, never folded into its one use.
+    at =
+        if Js.isUndefined id then
+            Js.get (Js.global "document") "body"
+        else
+            Js.call (Js.global "document") "getElementById" [ id ]
+
+    if Js.development ⊤ then
+        if Js.isNull at || not (Js.isUndefined (Js.get at "$$root")) then
+            shown : String
+            shown = Js.to id
+            fault
+                "cannot mount at ${shown}: no element has that id, or a program is mounted there already"
+        Js.set at "$$root" (Js.from True)
+    at
+
+
+fault : String → ⊤
+fault message = Js.throw (Js.construct (Js.global "Error") [ Js.from message ])
+
+
+-- ---- Commands (`boundary.md` §9.8.4, amended 2026-10-17) ----------------
+
+--| `(cmd, dispatch)`: a command's bodies, in order, queued behind the
+--| dispatch that returned it — so each runs after its write pass, in the
+--| same dispatch — each message a body sends queued in turn and handed to
+--| `dispatch`, the program's.
+pub commands : Cmd V, V → ⊤
+commands cmd dispatch = List.foldl (Cmd.bodies cmd) ⊤ λbody _ →
+    send (Js.from λ_ → body λmsg → send dispatch (Js.from msg)) Js.null
+
+
+-- ---- The unmount (`boundary.md` §9.4.5, amended 2026-10-17) -------------
+
+-- What undoes the mount: the function the lowering wrote, which removes
+-- the program's root, its listeners and its timers, last added first.
+undo : Js.Ref V
+undo = Js.ref (Js.from nothing)
+
+
+--| Whether a dispatch is running now: an event a listener hears then fires
+--| inside it, synchronously, inside its guard. The contract: it answers for
+--| a page that has not stopped, and says nothing of one that has — a caller
+--| asks `stopped` first, as `Listen.on` does.
+pub busy : ⊤ → Bool
+busy ⊤ = Js.read running
+
+
+--| Whether the page has stopped.
+pub stopped : ⊤ → Bool
+stopped ⊤ = Js.read dead
+
+
+--| `(f)`: one piece the mount added registers what removes it; `stop`
+--| runs them once, the last registered first.
+pub own : V → ⊤
+own f =
+    before = Js.read undo
+    Js.write
+        undo
+        (Js.from λ⊤ →
+            _ = Js.apply f []
+            Js.to (Js.apply before [])
+        )
+
+
+--| The page's unmount: nothing of the program runs after it, and what the
+--| mount added to the page is taken out of it, once.
+pub stop : ⊤ → ⊤
+stop ⊤ =
+    Js.write dead True
+    Js.write queue Js.null
+    f = Js.read undo
+    Js.write undo (Js.from nothing)
+    Js.to (Js.apply f [])
+
+
+nothing : ⊤ → ⊤
+nothing ⊤ = ⊤

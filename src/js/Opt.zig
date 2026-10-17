@@ -519,6 +519,18 @@ const Opt = struct {
             if (t != .const_decl) continue;
             if (o.readOf(idx, "uses") != 1 or o.readOf(idx, "decls") != 1) continue;
             const value: Index = @fromBackingInt(@intCast(d.rhs));
+            // A function made once and used once: made where it is used
+            // (`backend.md` §9 item 1, amended 2026-10-17). Making one does
+            // nothing and reads nothing until it is called, so it moves past
+            // any statement; the use is in a later statement's own
+            // expressions, so it is still made once.
+            if (o.ir.tag(value) == .arrow) {
+                if (try o.findAnyUse(stmts[i + 1 ..], n)) |at| {
+                    o.drop(stmt);
+                    o.inlined[at.int()] = value.toOptional();
+                }
+                continue;
+            }
             // A property read that may have an effect — a `Js.get` of a
             // property some call may write — is evaluated where it stands:
             // folded into its use it would move past whatever that use's
@@ -587,7 +599,9 @@ const Opt = struct {
                 try o.exprUsesInto(@fromBackingInt(@intCast(d.rhs)), n);
             },
             .if_stmt, .switch_stmt => try o.exprUsesInto(@fromBackingInt(@intCast(d.lhs)), n),
-            .for_of => try o.exprUsesInto(o.ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.ForOf).iterable, n),
+            // Never into a loop's head (`ownUses`): none is recorded, so a
+            // copy with a use there is declined.
+            .for_of => {},
             .expr_stmt, .throw_stmt => try o.exprUsesInto(@fromBackingInt(@intCast(d.lhs)), n),
             else => {},
         }
@@ -695,6 +709,20 @@ const Opt = struct {
         return null;
     }
 
+    /// `findUse` for a value whose making does nothing and reads nothing (a
+    /// function): any statement may stand between, but the use must be in a
+    /// later statement's own expressions.
+    fn findAnyUse(o: *Opt, rest: []const Index, n: NameIndex) Allocator.Error!?Index {
+        for (rest, 0..) |stmt, seen| {
+            if (seen >= scan_limit) return null;
+            o.found = .none;
+            const own = try o.ownUses(stmt, n);
+            if (own == 1) return o.found.unwrap();
+            if (own != 0) return null;
+        }
+        return null;
+    }
+
     /// A `const` whose initialiser is an atom or a member chain: the only
     /// statement the scan walks past.
     fn isPureReadConst(o: *Opt, stmt: Index) bool {
@@ -716,7 +744,12 @@ const Opt = struct {
             .return_stmt => if (@as(Node.OptionalIndex, @fromBackingInt(@intCast(d.lhs))).unwrap()) |v| o.exprUses(v, n) else 0,
             .assign_stmt => (try o.exprUses(@fromBackingInt(@intCast(d.lhs)), n)) + (try o.exprUses(@fromBackingInt(@intCast(d.rhs)), n)),
             .if_stmt, .switch_stmt => o.exprUses(@fromBackingInt(@intCast(d.lhs)), n),
-            .for_of => o.exprUses(o.ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.ForOf).iterable, n),
+            // A use in a loop's iterable is never a fold's: the printer would
+            // write the value in the loop's head, where the loop's own binding
+            // is in scope, and `Rename`, which reads the IR as written, may
+            // give that binding a name the value reads. Counted as more than
+            // one, so every rule declines it.
+            .for_of => if (try o.exprUses(o.ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.ForOf).iterable, n) != 0) 2 else 0,
             .expr_stmt, .throw_stmt => o.exprUses(@fromBackingInt(@intCast(d.lhs)), n),
             else => 0,
         };

@@ -1,0 +1,60 @@
+-- A subscription's tagger must give one of the program's message
+-- constructors (docs/design/browser-inline.md §3): here it chooses one from
+-- what the value holds, so no constructor is known when the program is
+-- built, and the program is refused at its call by a language rule, class 3
+-- (§5): `program_shape`, whose text says no "yet".
+import Browser
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Push
+import Schema exposing (Value)
+import Sub exposing (Sub)
+import Tea
+
+
+type Box
+    = Box Value
+
+
+type Msg
+    = Pushed Box
+    | Tick
+
+
+init : ⊤ → {} × Cmd Msg
+init ⊤ = ( {}, Cmd.none )
+
+
+update : Msg, {} → {} × Cmd Msg
+update msg model =
+    case msg of
+        Pushed _ →
+            ( model, Cmd.none )
+
+        Tick →
+            ( model, Cmd.none )
+
+
+subscriptions : {} → Sub Msg
+subscriptions _ = Push.onPush choose
+
+
+choose : Value → Msg
+choose v =
+    case Schema.read Schema.int v of
+        Ok _ →
+            Tick
+
+        Err _ →
+            Pushed (Box v)
+
+
+view : {} → Html Msg
+view _ = <div />
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.element { init = init, update = update, view = view, subscriptions = subscriptions })
+        "root"

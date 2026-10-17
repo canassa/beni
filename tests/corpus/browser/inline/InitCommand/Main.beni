@@ -1,0 +1,68 @@
+-- Commands that cannot suspend run after the dispatch's write pass, in the
+-- same dispatch, through the guard's queue (boundary.md §9.8.4, as amended
+-- 2026-10-17). `init` batches the bodies that send `A` and `B`; `A`'s arm
+-- returns a body that sends `C`. Queued, the arms run A, B, C; re-entrant
+-- sends would run A, C, B. The text binding shows the last count. A push
+-- is one more dispatch, and `stop` takes the listener and the markup away.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Pushes
+import Schema exposing (Value)
+import Sub exposing (Sub)
+import Tea
+
+
+type alias Model =
+    count : Int
+
+
+type Msg
+    = A
+    | B
+    | C
+    | Pushed Value
+
+
+type Key
+    = Push
+
+
+init : ⊤ → Model × Cmd Msg
+init ⊤ =
+    ( { count = 0 }
+    , Cmd.batch [ Cmd.perform λsend → send A, Cmd.perform λsend → send B ]
+    )
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        A →
+            Debug.log "A" ⊤
+            ( { model | count = model.count + 1 }, Cmd.perform λsend → send C )
+
+        B →
+            Debug.log "B" ⊤
+            ( { model | count = model.count + 10 }, Cmd.none )
+
+        C →
+            Debug.log "C" ⊤
+            ( { model | count = model.count + 100 }, Cmd.none )
+
+        Pushed _ →
+            Debug.log "pushed" ⊤
+            ( { model | count = model.count + 1000 }, Cmd.none )
+
+
+view : Model → Html Msg
+view model = <p>{model.count}</p>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = init
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.on Push Pushes.pushes Pushed
+        }

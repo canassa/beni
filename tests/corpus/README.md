@@ -206,6 +206,13 @@ project) against it, one step per line, `#` for a comment:
                                 `n` (default 1) plain `Event`s of that
                                 name on the window, the document or the
                                 element, in one task
+    detail <window|document|selector> <name> <json>
+                                one `CustomEvent` of that name whose `detail`
+                                is the JSON value, as a host page pushes data
+                                to a program (`Push.onPush`'s `rr-push`)
+    stop                        the entry file's `stop` (`boundary.md`
+                                §9.4.5, amended 2026-10-17), the page's
+                                unmount; logs `(stopped)`
     url "<url>"                 `history.replaceState` to the URL, relative to
                                 the page's (`"?q=1#/active"`); nothing fires
     hash "<#fragment>"          the same, then one `popstate` and one
@@ -222,6 +229,9 @@ project) against it, one step per line, `#` for a comment:
                                 opened from a file, its address `file:`
     throws load                 after the steps that set the page up: the
                                 program must throw while it loads
+    element "<id>"              as a step before the program loads: a `<div>` of
+                                that id in the body, for a program `mountAt`
+                                places there
     store <local|session> "<key>" "<value>"
                                 `setItem` on that storage
     storage <local|session>     log `(localStorage: {…})`, its items by key
@@ -265,9 +275,10 @@ with nothing under it, then `-- load`: how a fixture starts a page at an
 address or with something stored. Every page starts with empty storage.
 
 **The page's clock is virtual.** The driver replaces `setTimeout`,
-`clearTimeout` and `Date.now` before the program loads: `Date.now()` is 0
-until an `advance` step moves it, and a timer fires only when an `advance`
-step reaches its time, so a debounce of 250 ms costs no wall-clock time and
+`clearTimeout`, `setInterval`, `clearInterval` and `Date.now` before the
+program loads: `Date.now()` is 0 until an `advance` step moves it, and a
+timer fires only when an `advance` step reaches its time — an interval at
+each of its times, as one timer that `timers` counts once — so a debounce of 250 ms costs no wall-clock time and
 a fixture about timing is deterministic in both DOMs. So are the page's
 frames: the driver replaces `requestAnimationFrame` and
 `cancelAnimationFrame` too, in Chrome as in happy-dom, and a callback runs
@@ -505,6 +516,16 @@ builds. A `browser/direct/` transcript leaves out comment nodes
 the program shows, and the two platforms put them differently. Their run hash lines are `dev`, `release`, `tea_dev`
 and `tea_release`.
 
+**The `inline` lowering's fixtures** (`docs/design/browser-inline.md`) are
+under `inline/` of four kinds, built with `--platform=browser-inline`, or for
+a project's own `platform/` layered on it: `emit/inline/` and
+`emit/release/inline/` application builds, their goldens in tea-inline's
+shape (the release file whole, so a byte of `core/Task`, `core/Dict` or a
+message object that creeps in shows); `build/bad/inline/` projects for what
+the lowering refuses, each class of `browser-inline.md` §5; and
+`browser/inline/` pages, built for that platform alone, development and
+release.
+
 **The page fuzzer** (`docs/design/browser-direct.md` §8.3 and its
 2026-10-09 amendment, `tests/browser/fuzz.mjs`) runs on every
 `browser/direct/` page without a `.tea-expected` — its `browser-tea` build
@@ -584,7 +605,9 @@ paired TodoMVC page 6 300M (measured 5 711M), the paired Sternhalma page 10 000M
 The paired Bike Wars page is granted 8 600M (measured 7 784M). TodoMVC's
 and Bike Wars' value fuzz retain the default budget (Bike Wars measured 4 225M). `browser/direct/ApiItems`
 is granted 5 260M (measured 4 780M; 2026-10-16, #227), for the four builds of a direct page. `ownership/EntryValueCommand`
-is granted 4 730M (measured 4 301M; 2026-10-16, delegated, #220), until the ownership dump stops re-checking core (#214). Outside the
+is granted 4 730M (measured 4 301M; 2026-10-16, delegated, #220), until the ownership dump stops re-checking core (#214). `browser/direct/ApiLogin`
+is granted 4 870M (measured 4 420M; 2026-10-17, delegated, #323), until the specialiser's analysis
+rounds cost less. Outside the
 corpus, the two `.wasm` tests of `tests/blackbox/wasm_test.zig` have a grant of their own,
 6 000M, granted by Cesar on 2026-10-15 (dashboard question `wasm-playground-q7`) (CLAUDE.md, *Every test has a budget*).
 

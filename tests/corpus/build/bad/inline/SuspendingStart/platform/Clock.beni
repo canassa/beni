@@ -1,0 +1,21 @@
+--! `Time.every` as `browser` writes it, a body that waits between ticks,
+--! given to `Sub.on`: a start must not suspend, so the checker refuses it
+--! (docs/design/browser-inline.md §3).
+
+import Sub exposing (Sub)
+import Task
+
+
+type Key
+    = Every
+
+
+pub every : msg → Sub msg
+every tag = Sub.on Every (λsend → tick send) λ_ → tag
+
+
+tick : (⊤ → ⊤) → (⊤ → ⊤)
+tick send =
+    Task.yieldNow ⊤
+    send ⊤
+    λ⊤ → ⊤

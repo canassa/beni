@@ -1,0 +1,20 @@
+-- element "root"
+-- load
+<body>
+  <div id="root">
+    <div></div>
+  </div>
+</body>
+-- listeners window
+(listeners: 1)
+(the DOM did not change)
+-- detail window rr-push 1
+(the DOM did not change)
+-- stop
+(stopped)
+<body>
+  <div id="root"></div>
+</body>
+-- listeners window
+(listeners: 0)
+(the DOM did not change)

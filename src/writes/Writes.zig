@@ -85,7 +85,92 @@ pub const Input = struct {
     /// Per module index: whether its `main` is a program the dump prints.
     targets: []const bool,
     work_cap: u64 = default_work,
+    /// `browser-inline.md` §3–§4: the platform values a program's
+    /// subscriptions and commands are read through, for a lowering that
+    /// compiles them away; null for every other build, whose results do
+    /// not move.
+    effects: ?Effects = null,
 };
+
+/// The values of a platform's `Sub` and `Cmd` the pass recognises by name
+/// (`browser-inline.md` §3–§4), each `(module, declaration)` or `none`.
+/// Under them the platform's other functions are walked like the
+/// program's own rather than taken as opaque.
+pub const Effects = struct {
+    sub_none: Ref = .{},
+    sub_batch: Ref = .{},
+    sub_map: Ref = .{},
+    sub_on: Ref = .{},
+    cmd_none: Ref = .{},
+    cmd_batch: Ref = .{},
+    cmd_perform: Ref = .{},
+
+    pub const Ref = struct {
+        m: u32 = none,
+        d: u32 = none,
+
+        fn is(r: Ref, m: u32, d: u32) bool {
+            return r.m == m and r.d == d;
+        }
+    };
+};
+
+/// What a key's command — or `init`'s — is (`browser-inline.md` §4).
+pub const Command = struct {
+    class: Class = .unknown,
+    /// For `runs`: every body, a function term. For `suspends`: where the
+    /// body that may suspend is, a lambda's instruction or a declaration's
+    /// first in `module`.
+    module: u32 = none,
+    inst: u32 = none,
+
+    pub const Class = enum { none, runs, suspends, unknown };
+};
+
+/// What a program's subscription set is (`browser-inline.md` §3).
+pub const Subscriptions = struct {
+    class: Class = .unknown,
+    decls: []const Declaration = &.{},
+    /// `no_key`: the declaration whose tagger resolves to no key.
+    bad: u32 = none,
+
+    pub const Class = enum {
+        /// Read: `decls`.
+        set,
+        /// The set reads the model.
+        model,
+        /// The pass could not read the value as a set of declarations.
+        unknown,
+        /// A declaration's tagger gives no constructor of the message.
+        no_key,
+        /// A declaration's tagger gives a constructor whose key splits on
+        /// the payload's own shape, or a field that is not the payload: a
+        /// limit of the compiler (`browser-inline.md` §5, class 4).
+        limit,
+    };
+};
+
+/// One `Sub.on` declaration of a set.
+pub const Declaration = struct {
+    /// The key, a term: two declarations with equal keys have equal terms.
+    key: u32,
+    /// The index of the first declaration of the set with the same key.
+    first: u32,
+    /// The start, a function term.
+    start: u32,
+    /// The constructor the tagger gives, and the key of `Program.keys` it is.
+    ctor: u32 = none,
+    key_index: u32 = none,
+    /// Per field of the constructor: `payload` or a literal term.
+    fields: []const u32 = &.{},
+    /// Where the start is: its lambda's instruction or its declaration's
+    /// first, in `module`.
+    module: u32 = none,
+    inst: u32 = none,
+};
+
+/// `Declaration.fields`: the value the start sends.
+pub const field_payload: u32 = none - 1;
 
 // ---------------------------------------------------------------------------
 // Interned word tables
@@ -317,6 +402,8 @@ pub const Key = struct {
     steps: []const KeyStep,
     writes: []const Write,
     caps: Caps,
+    /// `Input.effects` only: what the key's command is.
+    command: Command = .{},
 };
 
 pub const HoleKind = enum { child, attribute, each };
@@ -438,6 +525,14 @@ pub const Program = struct {
     /// The view's walk reached W: every hole reads ρ, and the dump says so.
     view_capped: bool = false,
     subscription_reads: []const u32 = &.{rho_path},
+    /// `Input.effects` only: the subscription set and `init`'s command.
+    subscriptions: Subscriptions = .{},
+    /// The record's `subscriptions` field, the instruction its value is in
+    /// `subscriptions_module`, or `none`: what a program site never
+    /// evaluates (`browser-inline.md` §7).
+    subscriptions_module: u32 = none,
+    subscriptions_inst: u32 = none,
+    init_command: Command = .{},
     /// The markup roots the view walk reached, in the order it met them
     /// (`Hole.site` indexes this; the dump sorts by position).
     sites: []const Site = &.{},
@@ -622,6 +717,15 @@ map_sites: std.ArrayList(MapSite) = .empty,
 /// Per term id: the number of the last `noteMu` walk that visited it.
 mu_seen: std.ArrayList(u32) = .empty,
 mu_walk: u32 = 0,
+/// `Input.effects`: the marker terms a subscription set, a declaration
+/// and a command are tuples headed by (`effectTerm`), made on first use.
+markers: [3]u32 = .{ none, none, none },
+/// `Input.effects`: the last value `direct` walked in a key, before the
+/// k-limit cut it (`evalKey`).
+uncut: u32 = none,
+/// `Input.effects`: while the subscription set is read, platform functions
+/// are walked as the program's own are (`browser-inline.md` §3).
+walk_platform: bool = false,
 
 /// `Maybe` and `Basics` constructors the rows build.
 ctor_just: u32 = none,
@@ -2288,6 +2392,10 @@ fn topRef(a: *Writes, m: u32, d: u32, g: u32) Error!u32 {
 /// walked again, so the holes of a markup constant are seen.
 fn topValue(a: *Writes, m: u32, d: u32, g: u32) Error!u32 {
     _ = g;
+    if (a.in.effects) |fx| {
+        if (fx.sub_none.is(m, d)) return a.effectTerm(.sub, &.{});
+        if (fx.cmd_none.is(m, d)) return a.effectTerm(.cmd, &.{});
+    }
     const id = a.fnId(m, d);
     if (a.ctx.mode != .view) {
         if (a.top_values[id] != none) return a.top_values[id];
@@ -2431,11 +2539,284 @@ fn funArity(a: *Writes, t: u32) u32 {
     };
 }
 
+// ---------------------------------------------------------------------------
+// Subscriptions and commands (`browser-inline.md` §3–§4)
+// ---------------------------------------------------------------------------
+//
+// Under `Input.effects` the platform's `Sub` and `Cmd` values are terms of
+// their own: a set is a tuple headed by the set marker whose parts are its
+// declarations, a declaration one headed by the declaration marker —
+// `key, start, tag`, then each function a `Sub.map` composed onto the tag —
+// and a command one headed by the command marker whose parts are its
+// bodies. A marker is a string literal no program can write (its second
+// half is not 0), so no other value is one of these.
+
+const Marker = enum(u2) { sub = 0, decl = 1, cmd = 2 };
+
+fn marker(a: *Writes, which: Marker) Error!u32 {
+    const i = @backingInt(which);
+    if (a.markers[i] == none) {
+        const names = [_][]const u8{ "sub", "decl", "cmd" };
+        a.markers[i] = try a.mkLit(lit_string, try a.internBytes(names[i]), 0xffff_ffff);
+    }
+    return a.markers[i];
+}
+
+fn effectTerm(a: *Writes, which: Marker, parts: []const u32) Error!u32 {
+    const all = try a.arena().alloc(u32, parts.len + 1);
+    all[0] = try a.marker(which);
+    @memcpy(all[1..], parts);
+    return a.mkTup(all);
+}
+
+/// The parts of an effect term of kind `which`, or null for any other term.
+fn effectParts(a: *const Writes, t: u32, which: Marker) ?[]const u32 {
+    if (a.termTag(t) != .tup or a.termLen(t) < 2) return null;
+    const m = a.markers[@backingInt(which)];
+    if (m == none or a.termWord(t, 1) != m) return null;
+    const start = a.terms.starts.items[t] + 2;
+    return a.terms.words.items[start .. start + a.termLen(t) - 2];
+}
+
+/// A list of effect terms of kind `which` joined into one, or null when
+/// the list is not a literal of them.
+fn effectConcat(a: *Writes, list: u32, which: Marker) Error!?u32 {
+    if (a.termTag(list) == .lst and a.lstElems(list) == 0 and a.termWord(list, 1) == none) return try a.effectTerm(which, &.{});
+    if (a.termTag(list) != .lst_lit) return null;
+    var parts: std.ArrayList(u32) = .empty;
+    var i: u32 = 1;
+    while (i < a.termLen(list)) : (i += 1) {
+        const ps = a.effectParts(a.termWord(list, i), which) orelse return null;
+        try parts.appendSlice(a.arena(), ps);
+    }
+    return try a.effectTerm(which, parts.items);
+}
+
+/// A call of one of `Input.effects`' functions, as its term; null for any
+/// other call.
+fn effectCall(a: *Writes, fx: Effects, m: u32, d: u32, args: []const u32) Error!?u32 {
+    if (fx.sub_on.is(m, d) and args.len == 3) return try a.effectTerm(.sub, &.{try a.effectTerm(.decl, args)});
+    if (fx.cmd_perform.is(m, d) and args.len == 1) return try a.effectTerm(.cmd, args);
+    if (fx.sub_batch.is(m, d) and args.len == 1) return try a.effectConcat(args[0], .sub) orelse try a.freshCall(args);
+    if (fx.cmd_batch.is(m, d) and args.len == 1) return try a.effectConcat(args[0], .cmd) orelse try a.freshCall(args);
+    if (fx.sub_map.is(m, d) and args.len == 2) {
+        // Copied: the term table grows, and moves, as the loop interns.
+        const decls = try a.arena().dupe(u32, a.effectParts(args[0], .sub) orelse return try a.freshCall(args));
+        const mapped = try a.arena().alloc(u32, decls.len);
+        for (decls, mapped) |x, *y| {
+            const ps = try a.arena().dupe(u32, a.effectParts(x, .decl) orelse return try a.freshCall(args));
+            const more = try a.arena().alloc(u32, ps.len + 1);
+            @memcpy(more[0..ps.len], ps);
+            more[ps.len] = args[1];
+            y.* = try a.effectTerm(.decl, more);
+        }
+        return try a.effectTerm(.sub, mapped);
+    }
+    return null;
+}
+
+/// What a command term is (`browser-inline.md` §4).
+/// What the command half of a `model × Cmd msg` value is: `commandIn` on
+/// each alternative's second component, every shared subterm visited once.
+fn commandOf(a: *Writes, t: u32) Allocator.Error!Command {
+    var memo: std.AutoHashMapUnmanaged(u64, Command) = .empty;
+    return a.commandIn(t, true, &memo);
+}
+
+fn commandIn(a: *Writes, t: u32, pair: bool, memo: *std.AutoHashMapUnmanaged(u64, Command)) Allocator.Error!Command {
+    const key = (@as(u64, t) << 1) | @intFromBool(pair);
+    if (memo.get(key)) |c| return c;
+    const c = try a.commandAt(t, pair, memo);
+    try memo.put(a.arena(), key, c);
+    return c;
+}
+
+fn commandAt(a: *Writes, t: u32, pair: bool, memo: *std.AutoHashMapUnmanaged(u64, Command)) Allocator.Error!Command {
+    if (a.termTag(t) == .alt) {
+        var out: Command = .{ .class = .none };
+        for (0..a.altLen(t)) |i| {
+            const c = try a.commandIn(a.altItem(t, @intCast(i)).term, pair, memo);
+            switch (c.class) {
+                .suspends => return c,
+                .unknown => out = c,
+                .runs => if (out.class == .none) {
+                    out = c;
+                },
+                .none => {},
+            }
+        }
+        return out;
+    }
+    if (pair) {
+        if (a.termTag(t) != .tup or a.termLen(t) < 3) return .{ .class = .unknown };
+        return a.commandIn(a.termWord(t, 2), false, memo);
+    }
+    const bodies = a.effectParts(t, .cmd) orelse return .{ .class = .unknown };
+    if (bodies.len == 0) return .{ .class = .none };
+    for (bodies) |body| {
+        if (a.termTag(body) != .fun) return .{ .class = .unknown };
+        const at = a.funSite(body);
+        if (a.funSuspends(body)) return .{ .class = .suspends, .module = at.m, .inst = at.inst };
+    }
+    return .{ .class = .runs };
+}
+
+/// Where a function term is: its lambda's or `let`'s instruction, or its
+/// declaration's first.
+fn funSite(a: *const Writes, t: u32) struct { m: u32, inst: u32 } {
+    const kind: FunKind = @fromBackingInt(a.termWord(t, 1));
+    const m = a.termWord(t, 2);
+    return switch (kind) {
+        .top => .{ .m = m, .inst = a.bir(m).decls[a.termWord(t, 3)].inst_start.int() },
+        .ctor => .{ .m = m, .inst = none },
+        .lambda, .letdef => .{ .m = m, .inst = a.termWord(t, 4) },
+    };
+}
+
+/// Whether calling the function term may suspend, by the checker's answer
+/// (`checker-v2.md` §26): `yes`, or `poly` — yes in the body that suspends.
+fn funSuspends(a: *const Writes, t: u32) bool {
+    const kind: FunKind = @fromBackingInt(a.termWord(t, 1));
+    const m = a.termWord(t, 2);
+    const dt = a.dispatchOf(m) orelse return true;
+    return switch (kind) {
+        .top => dt.effectDecl(a.termWord(t, 3)).own != .no,
+        .ctor => false,
+        .lambda, .letdef => dt.effectAt(@fromBackingInt(a.termWord(t, 4))).own != .no,
+    };
+}
+
+/// Whether a term is made of literals and constructors alone.
+fn isConstantTerm(a: *const Writes, t: u32) bool {
+    return switch (a.termTag(t)) {
+        .lit => true,
+        .con => for (2..a.termLen(t)) |k| {
+            if (!a.isConstantTerm(a.termWord(t, k))) break false;
+        } else true,
+        .tup => for (1..a.termLen(t)) |k| {
+            if (!a.isConstantTerm(a.termWord(t, k))) break false;
+        } else true,
+        else => false,
+    };
+}
+
+/// A function term, as a lowering emits one: a lambda's or a `let`'s
+/// instruction in declaration `d` of module `m`, with the locals of `d`
+/// it was made with a value of (its frame at that point); or a top-level
+/// function `d`.
+pub const FunInfo = struct {
+    kind: enum { lambda, top, other },
+    m: u32,
+    d: u32,
+    inst: u32,
+    /// The locals, numbered within `d`, the closure's frame holds.
+    bound: []const u32,
+};
+
+pub fn funInfo(a: *Writes, t: u32) Allocator.Error!FunInfo {
+    if (a.termTag(t) != .fun) return .{ .kind = .other, .m = none, .d = none, .inst = none, .bound = &.{} };
+    const kind: FunKind = @fromBackingInt(a.termWord(t, 1));
+    const m = a.termWord(t, 2);
+    const x = a.termWord(t, 3);
+    switch (kind) {
+        .top => return .{ .kind = .top, .m = m, .d = x, .inst = none, .bound = &.{} },
+        .lambda => {
+            var bound: std.ArrayList(u32) = .empty;
+            for (5..a.termLen(t)) |k| if (a.termWord(t, k) != none) try bound.append(a.arena(), @intCast(k - 5));
+            return .{ .kind = .lambda, .m = m, .d = x, .inst = a.termWord(t, 4), .bound = bound.items };
+        },
+        else => return .{ .kind = .other, .m = m, .d = x, .inst = none, .bound = &.{} },
+    }
+}
+
+/// The leaf of the key tree a message of constructor `c` reaches, its
+/// payload unknown (`browser-inline.md` §3): the key each of whose steps
+/// it satisfies — a step naming `c`, or a default step that no sibling
+/// naming `c` takes from it — every step on the message itself. `deeper`:
+/// the leaf `c` reaches splits again on the payload, which only the
+/// handler can tell.
+fn leafOf(keys: []const Key, c: u32) union(enum) { key: u32, deeper, none } {
+    for (keys, 0..) |k, ki| {
+        const ok = for (k.steps, 0..) |s, si| {
+            if (s.path != mu_path) break true;
+            if (s.ctor != none) {
+                if (s.ctor != c) break false;
+                continue;
+            }
+            // A default step: no sibling with the same steps before it
+            // names `c` here.
+            const named = for (keys) |other| {
+                if (other.steps.len <= si) continue;
+                if (!samePrefix(other.steps[0..si], k.steps[0..si])) continue;
+                if (other.steps[si].path == s.path and other.steps[si].ctor == c) break true;
+            } else false;
+            if (named) break false;
+        } else true;
+        if (!ok) continue;
+        // Matched on the message; a step past it splits on the payload.
+        for (k.steps) |s| if (s.path != mu_path) return .deeper;
+        return .{ .key = @intCast(ki) };
+    }
+    return .none;
+}
+
+fn samePrefix(x: []const KeyStep, y: []const KeyStep) bool {
+    if (x.len != y.len) return false;
+    for (x, y) |p, q| if (p.path != q.path or p.ctor != q.ctor) return false;
+    return true;
+}
+
+/// What a program's subscription value is (`browser-inline.md` §3).
+fn readSubscriptions(a: *Writes, result: u32, keys: []const Key) Error!Subscriptions {
+    if (result == none) return .{ .class = .unknown };
+    for (a.deps_t.get(try a.deps(result))) |p| if (a.rootOf(p) == rho_path) return .{ .class = .model };
+    // Copied: the term table grows, and moves, as the taggers are applied.
+    const decls = try a.arena().dupe(u32, a.effectParts(result, .sub) orelse return .{ .class = .unknown });
+    const out = try a.arena().alloc(Declaration, decls.len);
+    const payload = try a.mkSame(mu_path);
+    for (decls, out, 0..) |x, *o, i| {
+        const ps = try a.arena().dupe(u32, a.effectParts(x, .decl) orelse return .{ .class = .unknown });
+        if (ps.len < 3) return .{ .class = .unknown };
+        if (!a.isConstantTerm(ps[0]) or a.termTag(ps[1]) != .fun) return .{ .class = .unknown };
+        const at = a.funSite(ps[1]);
+        o.* = .{ .key = ps[0], .first = @intCast(i), .start = ps[1], .module = at.m, .inst = at.inst };
+        for (out[0..i], 0..) |before, j| if (before.key == ps[0]) {
+            o.first = @intCast(j);
+            break;
+        };
+        // The tagger, and each function a `map` composed onto it, applied
+        // to the value the start sends.
+        var v = a.apply(ps[2], &.{payload}, 0) catch |err| switch (err) {
+            error.WorkCap => return .{ .class = .unknown },
+            else => |e| return e,
+        };
+        for (ps[3..]) |f| v = a.apply(f, &.{v}, 0) catch |err| switch (err) {
+            error.WorkCap => return .{ .class = .unknown },
+            else => |e| return e,
+        };
+        if (a.termTag(v) != .con) return .{ .class = .no_key, .bad = @intCast(i), .decls = out[0 .. i + 1] };
+        const c = a.termWord(v, 1);
+        o.ctor = c;
+        switch (leafOf(keys, c)) {
+            .key => |ki| o.key_index = ki,
+            .deeper => return .{ .class = .limit, .bad = @intCast(i), .decls = out[0 .. i + 1] },
+            .none => {},
+        }
+        const fields = try a.arena().alloc(u32, a.termLen(v) - 2);
+        for (fields, 2..) |*fld, k| fld.* = if (a.termWord(v, k) == payload) field_payload else a.termWord(v, k);
+        o.fields = fields;
+        for (fields) |fld| if (fld != field_payload) return .{ .class = .limit, .bad = @intCast(i), .decls = out[0 .. i + 1] };
+        if (o.key_index == none) return .{ .class = .no_key, .bad = @intCast(i), .decls = out[0 .. i + 1] };
+    }
+    return .{ .class = .set, .decls = out };
+}
+
 /// A call of the top-level `(m, d)`: a core row, `Fresh` for a `foreign` or
 /// a platform function without one, the body inlined in `view` for the
 /// program's own functions, and otherwise its summary instantiated.
 fn callTop(a: *Writes, m: u32, d: u32, args: []const u32, site_m: u32, site: Inst.Index, g: u32) Error!u32 {
     const decl = a.bir(m).decls[d];
+    if (a.in.effects) |fx| if (try a.effectCall(fx, m, d, args)) |t| return t;
     if (a.in.packages[m] != .app) {
         // The rows are core's: a platform module of the same name is not `List`.
         if (a.in.packages[m] == .core) if (Core.row(a.in.module_names[m], a.declName(m, d))) |r| {
@@ -2457,7 +2838,10 @@ fn callTop(a: *Writes, m: u32, d: u32, args: []const u32, site_m: u32, site: Ins
                     .{ .module = none, .token = 0 };
                 try a.map_sites.append(a.gpa, at);
             }
-            return a.opaqueCall(args, m, site_m, site);
+            // While the subscription set is read (`Input.effects`), a platform
+            // function is walked as the program's own are: what a layer's
+            // `Push.onPush` declares is read through it (`browser-inline.md` §3).
+            if (!a.walk_platform) return a.opaqueCall(args, m, site_m, site);
         }
     }
     if (decl.kind == .foreign_value or !decl.kind.isValue()) return a.opaqueCall(args, m, site_m, site);
@@ -2612,6 +2996,10 @@ fn direct(a: *Writes, m: u32, d: u32, args: []const u32, g: u32) Error!u32 {
     const body = decl.body.unwrap() orelse return a.freshCall(args);
     var r = try a.eval(&f, body, g);
     r = try a.joinTry(&f, r);
+    // The value before the k-limit cuts it: what a key's command is read
+    // from (`browser-inline.md` §4), since a deep `case` in `update` would
+    // otherwise leave only `Fresh` of it.
+    if (a.in.effects != null and a.ctx.mode == .key) a.uncut = r;
     return a.capSize(r);
 }
 
@@ -4479,6 +4867,7 @@ fn analyseProgram(a: *Writes, m: u32, kind: ProgramKind, fields: ?Fields, view_f
                     error.WorkCap => break :blk try a.freshEmpty(),
                     else => |e| return e,
                 };
+                if (a.in.effects != null and kind == .element) prog.init_command = try a.commandOf(r);
                 if (kind == .element or kind == .document) r = try a.proj(r, .tuple, 0, 0);
                 break :blk r;
             };
@@ -4492,6 +4881,7 @@ fn analyseProgram(a: *Writes, m: u32, kind: ProgramKind, fields: ?Fields, view_f
                 error.WorkCap => break :blk try a.freshEmpty(),
                 else => |e| return e,
             };
+            if (a.in.effects != null and kind == .element) prog.init_command = try a.commandOf(r);
             if (kind == .element or kind == .document or kind == .application) r = try a.proj(r, .tuple, 0, 0);
             break :blk r;
         };
@@ -4511,14 +4901,19 @@ fn analyseProgram(a: *Writes, m: u32, kind: ProgramKind, fields: ?Fields, view_f
     }
     // Subscription values include the captures of their taggers.
     if (view_fields) |fs| if (fs.subscriptions) |si| {
+        prog.subscriptions_module = fs.m;
+        prog.subscriptions_inst = si.int();
         var frame = try a.newFrame(fs.m, fs.frame_decl, 0);
         a.ctx = .{ .mode = .closed };
+        a.walk_platform = a.in.effects != null;
+        defer a.walk_platform = false;
         const fun = try a.eval(&frame, si, 0);
         const result = a.applyDirect(fun, &.{try a.mkSame(rho_path)}, 0) catch |err| switch (err) {
             error.WorkCap => none,
             else => |e| return e,
         };
         if (result != none) prog.subscription_reads = try a.arena().dupe(u32, a.deps_t.get(try a.deps(result)));
+        if (a.in.effects != null) prog.subscriptions = try a.readSubscriptions(result, prog.keys);
     };
     // The view (§3.6).
     if (view_fields) |fs| if (fs.view) |vi| if (a.isFunctionField(fs.m, vi)) {
@@ -4583,19 +4978,22 @@ fn applyDirect(a: *Writes, fun: u32, args: []const u32, g: u32) Error!u32 {
     return a.apply(fun, args, g);
 }
 
-fn evalKey(a: *Writes, kind: ProgramKind, update_fun: u32, g: u32) Error!struct { writes: []Write, caps: Caps, split: u32 } {
+fn evalKey(a: *Writes, kind: ProgramKind, update_fun: u32, g: u32) Error!struct { writes: []Write, caps: Caps, split: u32, command: Command } {
     a.ctx = .{ .mode = .key };
     a.split_ctors.clearRetainingCapacity();
     a.inst_depth = 0;
     var ws: WsBuilder = .empty;
     defer ws.deinit(a.gpa);
+    var command: Command = .{};
     const msg = try a.mkSame(mu_path);
     const model = try a.mkSame(rho_path);
     const ok = blk: {
+        a.uncut = none;
         var r = a.applyDirect(update_fun, &.{ msg, model }, g) catch |err| switch (err) {
             error.WorkCap => break :blk false,
             else => |e| return e,
         };
+        if (a.in.effects != null and kind == .element) command = try a.commandOf(if (a.uncut != none) a.uncut else r);
         if (kind == .element or kind == .document or kind == .application) r = try a.proj(r, .tuple, 0, 0);
         r = try a.capSize(r);
         // A message placed in the model is a value (browser-direct.md §11).
@@ -4616,7 +5014,7 @@ fn evalKey(a: *Writes, kind: ProgramKind, update_fun: u32, g: u32) Error!struct 
     const caps = a.ctx.caps;
     const split = if (ok) a.ctx.split_path else none;
     a.ctx = .{ .mode = .closed };
-    return .{ .writes = try a.arena().dupe(Write, ws.items), .caps = caps, .split = split };
+    return .{ .writes = try a.arena().dupe(Write, ws.items), .caps = caps, .split = split, .command = command };
 }
 
 fn keyTree(a: *Writes, kind: ProgramKind, update_fun: u32, g: u32, path_steps: *std.ArrayList(KeyStep), keys: *std.ArrayList(Key), leaves: *u32) Error!void {
@@ -4648,10 +5046,10 @@ fn keyTree(a: *Writes, kind: ProgramKind, update_fun: u32, g: u32, path_steps: *
         }
         var caps = res.caps;
         caps.l = true;
-        try keys.append(a.arena(), .{ .steps = try a.arena().dupe(KeyStep, path_steps.items), .writes = res.writes, .caps = caps });
+        try keys.append(a.arena(), .{ .steps = try a.arena().dupe(KeyStep, path_steps.items), .writes = res.writes, .caps = caps, .command = res.command });
         return;
     }
-    try keys.append(a.arena(), .{ .steps = try a.arena().dupe(KeyStep, path_steps.items), .writes = res.writes, .caps = res.caps });
+    try keys.append(a.arena(), .{ .steps = try a.arena().dupe(KeyStep, path_steps.items), .writes = res.writes, .caps = res.caps, .command = res.command });
 }
 
 // ---------------------------------------------------------------------------
@@ -5308,4 +5706,44 @@ pub fn declNameOf(a: *const Writes, m: u32, d: u32) []const u8 {
 
 test {
     _ = Core;
+}
+
+/// A literal term as JavaScript spells it, or null for any other term: what
+/// a program site passes for a lifted piece's capture (`browser-inline.md`
+/// §7).
+pub fn literalSpelling(a: *Writes, t: u32, out: *std.ArrayList(u8)) Allocator.Error!bool {
+    if (a.termTag(t) != .lit) return false;
+    const kind = a.termWord(t, 1);
+    switch (kind) {
+        lit_int => {
+            const u = @as(u64, a.termWord(t, 2)) | (@as(u64, a.termWord(t, 3)) << 32);
+            const n: i64 = @bitCast(u);
+            try out.print(a.arena(), "{d}", .{n});
+        },
+        lit_string => {
+            if (a.termWord(t, 3) != 0) return false;
+            var buf: [256]u8 = undefined;
+            const words = a.bytes_t.get(a.termWord(t, 2));
+            if (words[0] > buf.len) return false;
+            const s = a.bytesOf(a.termWord(t, 2), &buf);
+            // Printable ASCII with nothing to escape; anything else is not
+            // spelled here.
+            for (s) |c| if (c < 0x20 or c > 0x7e or c == '"' or c == '\\') return false;
+            try out.append(a.arena(), '"');
+            try out.appendSlice(a.arena(), s);
+            try out.append(a.arena(), '"');
+        },
+        lit_unit => try out.appendSlice(a.arena(), "null"),
+        else => return false,
+    }
+    return true;
+}
+
+/// The value a closure term's frame held for local `local` of its
+/// declaration, or `none`.
+pub fn closureLocal(a: *const Writes, t: u32, local: u32) u32 {
+    if (a.termTag(t) != .fun) return none;
+    const k = 5 + @as(usize, local);
+    if (k >= a.termLen(t)) return none;
+    return a.termWord(t, k);
 }

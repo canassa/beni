@@ -103,6 +103,7 @@ const prelude = @import("../bir/prelude.zig");
 const beni_markup = @import("beni_markup");
 const Interface = @import("../resolve/Interface.zig");
 const Writes = @import("../writes/Writes.zig");
+const Lift = @import("Lift.zig");
 
 const Emit = @This();
 
@@ -350,6 +351,13 @@ pub fn run(
     // Which of `core/List`'s core-private values this build's core
     // declares: every module that would import one it lacks says so.
     if (e.graph().lookup(.core, InternPool.WellKnown.List.symbol())) |list| e.core_private = Lower.corePrivateDeclared(e.bir(list));
+    // The write-set pass, for a lowering that compiles programs whole
+    // (`boundary.md` §9.4.6, version 1.7), before reachability: the pieces
+    // it lifts are nodes of the walk (`browser-inline.md` §7).
+    if (options.platform.lowering) |name| if (findLowering(name)) |lw| if (lw.program != null) {
+        try e.runWrites();
+        try e.findLifts();
+    };
     try e.eliminate(entry);
     try e.shareValidators();
 
@@ -818,6 +826,16 @@ const Emitter = struct {
     /// every name, and the names its kept part mentions. Found by
     /// `checkMarkupRuntime` and `preciseRuntimeRoots`; scratch-owned.
     runtime_module: ?Graph.Index = null,
+    /// The write-set pass, between `runWrites` and `buildDirect`.
+    writes: ?*Writes = null,
+    writes_calls: []const Writes.Call = &.{},
+    writes_effects: ?Writes.Effects = null,
+    writes_birs: []const *const Bir = &.{},
+    /// `browser-inline.md` §7: every lifted piece of the build, and the
+    /// instruction ranges reachability does not follow.
+    lifts: []const Lift.Piece = &.{},
+    cuts: []const Reach.Cut = &.{},
+    lift_roots: []const Reach.Node = &.{},
     supplied: []const Lower.Markup.Supplied = &.{},
     program_names: []const []const u8 = &.{},
     program_uses: []const []const u8 = &.{},
@@ -860,6 +878,8 @@ const Emitter = struct {
     /// The host globals a hoisted hand-written file binds as written, which
     /// emitted code may not then write bare (`bareBlocked`).
     bare_blocked: []const []const u8 = &.{},
+    /// What specialisation took as its roots, by name: `pruneOptimised`'s.
+    spec_roots: []const Rename.Globals.Key = &.{},
     /// The markup runtime's exports the modules written import, in
     /// module order and with repeats: what `--release` cuts the runtime file
     /// to (§9, *Hand-written JavaScript under `--release`*). Scratch-owned.
@@ -1894,11 +1914,14 @@ const Emitter = struct {
         if (entry != null) {
             if (e.suppliedAs("run") != null) try names.append(e.scratch, "run");
             if (e.suppliedAs("start") != null and try e.startData() != null) try names.append(e.scratch, "start");
+            // The page's unmount (`boundary.md` §9.4.5, amended 2026-10-17):
+            // the page may call it whatever the program reached.
+            if (e.suppliedAs("stop") != null) try names.append(e.scratch, "stop");
         } else {
             // A build with no entry file (`--library`): the page's own
             // entry mounts the exported program, so the program runtime's
             // exports are written as the hand-written file's are, whole.
-            for ([_][]const u8{ "run", "start", "flush" }) |w| {
+            for ([_][]const u8{ "run", "start", "flush", "stop" }) |w| {
                 if (e.suppliedAs(w) != null) try names.append(e.scratch, w);
             }
         }
@@ -2455,7 +2478,10 @@ const Emitter = struct {
     /// (`write-sets.md` §2.5); and, in a development build, which
     /// declarations reach `Debug` (`browser-direct.md` §8.3). Serial, in
     /// module and instruction order: nothing here depends on `--jobs`.
-    fn buildDirect(e: *Emitter) !void {
+    /// The write-set pass over the whole program, run before reachability
+    /// so that the pieces a program site lifts (`browser-inline.md` §7) are
+    /// nodes of the walk; `buildDirect` reads what it found.
+    fn runWrites(e: *Emitter) !void {
         const n = e.graph().count();
         const a = e.scratch;
         const birs = try a.alloc(*const Bir, n);
@@ -2470,6 +2496,33 @@ const Emitter = struct {
             packages[i] = e.graph().modulePackage(m);
             targets[i] = false;
         }
+        // Version 1.14: the platform's `Sub` and `Cmd` values, by name.
+        var effects: ?Writes.Effects = null;
+        if (findLowering(e.options.platform.lowering.?).?.effects) |fx| {
+            var found: Writes.Effects = .{};
+            for (0..n) |i| {
+                if (packages[i] != .platform) continue;
+                const m: Graph.Index = @fromBackingInt(@intCast(i));
+                const ref = struct {
+                    fn of(em: *Emitter, mod: Graph.Index, name: []const u8) Writes.Effects.Ref {
+                        const d = em.moduleValue(mod, name) orelse return .{};
+                        return .{ .m = mod.int(), .d = d };
+                    }
+                }.of;
+                if (std.mem.eql(u8, names[i], fx.sub)) {
+                    found.sub_none = ref(e, m, "none");
+                    found.sub_batch = ref(e, m, "batch");
+                    found.sub_map = ref(e, m, "map");
+                    found.sub_on = ref(e, m, "on");
+                }
+                if (std.mem.eql(u8, names[i], fx.cmd)) {
+                    found.cmd_none = ref(e, m, "none");
+                    found.cmd_batch = ref(e, m, "batch");
+                    found.cmd_perform = ref(e, m, "perform");
+                }
+            }
+            effects = found;
+        }
         const w = try Writes.init(.{
             .gpa = e.gpa,
             .graph = e.graph(),
@@ -2480,9 +2533,85 @@ const Emitter = struct {
             .module_names = names,
             .packages = packages,
             .targets = targets,
+            .effects = effects,
         });
-        defer w.deinit();
-        const calls = try w.runCalls();
+        e.writes = w;
+        e.writes_calls = try w.runCalls();
+        e.writes_effects = effects;
+        e.writes_birs = birs;
+    }
+
+    /// `browser-inline.md` §7: the pieces program sites lift — every
+    /// subscription start that is a lambda of another module than its
+    /// program's — each once, in program and declaration order; and the
+    /// `subscriptions` fields no program site evaluates. Each piece is a
+    /// root of reachability.
+    fn findLifts(e: *Emitter) !void {
+        if (e.writes_effects == null) return;
+        const w = e.writes.?;
+        var pieces: std.ArrayList(Lift.Piece) = .empty;
+        var cuts: std.ArrayList(Reach.Cut) = .empty;
+        var roots: std.ArrayList(Reach.Node) = .empty;
+        for (e.writes_calls) |call| {
+            const prog = &call.program;
+            if (prog.subscriptions_inst != Writes.none) {
+                const b = e.writes_birs[prog.subscriptions_module];
+                try cuts.append(e.scratch, .{ .module = @fromBackingInt(@intCast(prog.subscriptions_module)), .lo = try Lift.low(b, e.scratch, prog.subscriptions_inst), .hi = prog.subscriptions_inst });
+            }
+            if (prog.subscriptions.class != .set) continue;
+            for (prog.subscriptions.decls) |dcl| {
+                const info = try w.funInfo(dcl.start);
+                // The constructor its handler stands for: the program site
+                // calls the handler with no message built, and the arm of
+                // `update` on that constructor must survive.
+                if (dcl.ctor != Writes.none) {
+                    const place = w.ctorPlace(dcl.ctor);
+                    try roots.append(e.scratch, .{ .module = @fromBackingInt(@intCast(place.module)), .kind = .ctor, .index = place.index });
+                }
+                // A top-level start is reached from the program site.
+                if (info.kind == .top) try roots.append(e.scratch, .{ .module = @fromBackingInt(@intCast(info.m)), .kind = .decl, .index = info.d });
+                if (info.kind != .lambda) continue;
+                // One piece per lambda; it is lowered in place only while every
+                // program that uses it is in the lambda's own module, and
+                // lifted and exported as soon as one is in another.
+                const seen = for (pieces.items) |*p| {
+                    if (p.module == info.m and p.inst == info.inst) {
+                        if (info.m != call.module) p.in_place = false;
+                        break true;
+                    }
+                } else false;
+                if (seen) continue;
+                const b = e.writes_birs[info.m];
+                var captures: std.ArrayList(u32) = .empty;
+                for (info.bound) |local| if (try Lift.readsLocal(b, e.scratch, info.inst, local)) try captures.append(e.scratch, local);
+                try roots.append(e.scratch, .{ .module = @fromBackingInt(@intCast(info.m)), .kind = .lift, .index = @intCast(pieces.items.len) });
+                try pieces.append(e.scratch, .{
+                    .module = info.m,
+                    .decl = info.d,
+                    .inst = info.inst,
+                    .lo = try Lift.low(b, e.scratch, info.inst),
+                    .ordinal = Lift.ordinal(b, info.d, info.inst),
+                    .name = try Lift.base(e.scratch, e.session.interner.slice(b.symbol(b.decls[info.d].name)), Lift.ordinal(b, info.d, info.inst)),
+                    .captures = captures.items,
+                    .in_place = info.m == call.module,
+                });
+            }
+        }
+        e.lifts = pieces.items;
+        e.cuts = cuts.items;
+        e.lift_roots = roots.items;
+    }
+
+    fn buildDirect(e: *Emitter) !void {
+        const a = e.scratch;
+        const w = e.writes.?;
+        defer {
+            w.deinit();
+            e.writes = null;
+        }
+        const calls = e.writes_calls;
+        const effects = e.writes_effects;
+        const birs = e.writes_birs;
         const programs = try a.alloc(Lower.Direct.Program, calls.len);
         var text: std.Io.Writer.Allocating = .init(a);
         for (calls, programs) |call, *out| {
@@ -2528,6 +2657,89 @@ const Emitter = struct {
                 } else false;
             }
             out.settles = settles;
+            // Version 1.14: the subscription set and the commands.
+            if (effects != null) {
+                const where = struct {
+                    fn of(em: *Emitter, al: std.mem.Allocator, module: u32, inst: u32) ![]const u8 {
+                        if (module == Writes.none or inst == Writes.none) return "";
+                        const mi: Graph.Index = @fromBackingInt(@intCast(module));
+                        const b = em.bir(mi);
+                        if (inst >= b.insts.len) return "";
+                        const file = em.graph().moduleFile(mi);
+                        const at = em.tokenPosition(file, b.insts.items(.main_token)[inst]);
+                        return std.fmt.allocPrint(al, "{s}:{d}:{d}", .{ std.fs.path.basename(em.session.store.path(file)), at.line, at.col });
+                    }
+                }.of;
+                const command = struct {
+                    fn of(em: *Emitter, al: std.mem.Allocator, c: Writes.Command) !beni_markup.Program.Command {
+                        return switch (c.class) {
+                            .none => .none,
+                            .runs => .runs,
+                            .suspends => .{ .suspends = try where(em, al, c.module, c.inst) },
+                            .unknown => .unknown,
+                        };
+                    }
+                }.of;
+                const commands = try a.alloc(beni_markup.Program.Command, keys.len);
+                for (commands, 0..) |*c, k| c.* = if (prog.recognised) try command(e, a, prog.keys[k].command) else .unknown;
+                out.commands = commands;
+                out.init_command = try command(e, a, prog.init_command);
+                const subs = prog.subscriptions;
+                switch (subs.class) {
+                    .model => out.subscriptions = .model,
+                    .unknown => out.subscriptions = .unknown,
+                    .no_key => out.subscriptions = .{ .no_key = try where(e, a, subs.decls[subs.bad].module, subs.decls[subs.bad].inst) },
+                    .limit => out.subscriptions = .{ .limit = try where(e, a, subs.decls[subs.bad].module, subs.decls[subs.bad].inst) },
+                    .set => {
+                        const set = try a.alloc(beni_markup.Program.Subscription, subs.decls.len);
+                        const starts = try a.alloc(Lower.Direct.Start, subs.decls.len);
+                        for (subs.decls, set, starts) |dcl, *s, *st| {
+                            s.* = .{ .handler = dcl.key_index, .fields = @intCast(dcl.fields.len), .first = dcl.first, .where = try where(e, a, dcl.module, dcl.inst) };
+                            const info = try w.funInfo(dcl.start);
+                            st.* = .{
+                                .kind = switch (info.kind) {
+                                    .lambda => .lambda,
+                                    .top => .top,
+                                    .other => .other,
+                                },
+                                .module = info.m,
+                                .decl = info.d,
+                                .inst = info.inst,
+                                .bound = try a.dupe(u32, info.bound),
+                            };
+                            // A lambda of another module: the piece it is
+                            // lifted as, and its captures' values here.
+                            if (info.kind == .lambda and info.m != call.module) {
+                                for (e.lifts, 0..) |pc, pi| if (pc.module == info.m and pc.inst == info.inst) {
+                                    st.lift = @intCast(pi);
+                                    const spelled = try a.alloc([]const u8, pc.captures.len);
+                                    for (pc.captures, spelled) |local, *sp| {
+                                        var text_: std.ArrayList(u8) = .empty;
+                                        if (!try w.literalSpelling(w.closureLocal(dcl.start, local), &text_)) {
+                                            st.captures = null;
+                                            const lb = e.writes_birs[pc.module];
+                                            const locals = lb.declLocals(lb.decls[pc.decl]);
+                                            if (local < locals.len and locals[local].name != .none) st.computed = try a.dupe(u8, e.session.interner.slice(lb.symbol(locals[local].name)));
+                                            break;
+                                        }
+                                        sp.* = try a.dupe(u8, text_.items);
+                                    } else st.captures = spelled;
+                                    break;
+                                };
+                            }
+                            if (info.kind == .top and info.m < e.session.resolution.provenance.len) {
+                                const prov = &e.session.resolution.provenance[info.m];
+                                for (prov.value_decl, 0..) |vd, vi| if (vd.int() == info.d) {
+                                    st.value = @intCast(vi);
+                                    break;
+                                };
+                            }
+                        }
+                        out.subscriptions = .{ .set = set };
+                        out.starts = starts;
+                    },
+                }
+            }
             out.view_capped = prog.view_capped;
             const sites = try a.alloc(Lower.Direct.Site, prog.sites.len);
             for (prog.sites, sites) |site_, *to| to.* = .{
@@ -2635,7 +2847,7 @@ const Emitter = struct {
                 }
             }
         }
-        e.direct = .{ .programs = programs, .source_roots = roots.items };
+        e.direct = .{ .programs = programs, .source_roots = roots.items, .lifts = e.lifts };
         if (!e.options.release) try e.debugReach();
     }
 
@@ -2922,7 +3134,7 @@ const Emitter = struct {
             b.* = e.bir(m);
             d.* = e.dispatchOf(m);
         }
-        const in: Reach.Input = .{
+        var in: Reach.Input = .{
             .graph = e.graph(),
             .store = &e.session.store,
             .birs = birs,
@@ -2939,7 +3151,16 @@ const Emitter = struct {
             .plans = e.session.checked.plans,
             .schema_library = e.options.schema_library,
             .forwarding_foreigns = e.forwarding_foreigns,
+            .cuts = e.cuts,
+            .pinned = e.lift_roots,
         };
+        // What each lifted piece reaches (`browser-inline.md` §7).
+        if (e.lifts.len != 0) {
+            var builder: Reach.Builder = .init(in, e.scratch);
+            const targets = try e.scratch.alloc([]const Reach.Target, e.lifts.len);
+            for (e.lifts, targets) |p, *t| t.* = try builder.liftTargets(@fromBackingInt(@intCast(p.module)), p.decl, p.lo, p.inst);
+            in.lift_targets = targets;
+        }
         e.schema_graph = .{
             .graph = e.graph(),
             .plans = e.session.checked.plans,
@@ -3377,6 +3598,7 @@ const Emitter = struct {
             // amended 2026-10-02).
             if (e.options.library and lowered_clean) try e.specialise(slots, todo.items, null, false);
             try e.pool.run(todo.items, context, Task.optimise, e.wanted(insts, insts_per_emitter));
+            if (one_scope) try e.pruneOptimised(slots, todo.items);
             // §9's *One scope-hoisted file under `--release`*: an
             // application whose every hand-written file can join one scope
             // is written as one file, and its names are numbered in that
@@ -3794,7 +4016,7 @@ const Emitter = struct {
         if (e.runtime_module) |module| {
             var names: std.ArrayList([]const u8) = .empty;
             try names.appendSlice(e.scratch, e.program_uses);
-            for ([_][]const u8{ "start", "flush" }) |w| {
+            for ([_][]const u8{ "start", "flush", "stop" }) |w| {
                 if (e.suppliedAs(w) != null) try names.append(e.scratch, w);
             }
             for (names.items) |n| {
@@ -3837,6 +4059,18 @@ const Emitter = struct {
         } else {
             if (run_id) |g| try escaping.append(e.scratch, g);
             if (main_id) |g| try escaping.append(e.scratch, g);
+        }
+        {
+            var root_ids: std.ArrayList(u32) = .empty;
+            try root_ids.appendSlice(e.scratch, escaping.items);
+            if (entry_call) |c| {
+                try root_ids.append(e.scratch, c.callee);
+                try root_ids.appendSlice(e.scratch, c.args);
+            }
+            var keys: std.ArrayList(Rename.Globals.Key) = .empty;
+            var it = ids.iterator();
+            while (it.next()) |kv| if (std.mem.indexOfScalar(u32, root_ids.items, kv.value_ptr.*) != null) try keys.append(e.scratch, kv.key_ptr.*);
+            e.spec_roots = keys.items;
         }
         var builtin: std.ArrayList(u32) = .empty;
         for (Spec.prototype_names) |n| if (props.get(n)) |id| try builtin.append(e.scratch, id);
@@ -3897,6 +4131,202 @@ const Emitter = struct {
         try e.refineBoundary(slots, todo, modules.items, &ids, declared_before, stats);
     }
 
+    /// §9, *Reachability after the optimiser*: in a
+    /// one-file build, a top-level function or inert value that only
+    /// bindings the per-module optimiser dropped mentioned goes as well.
+    /// Specialisation's reachability (`Spec.prune`) runs before the
+    /// optimiser, which drops an unread binding whose initialiser does
+    /// nothing — `const t = endpointOf(src)` of a context whose field
+    /// nothing reads — and with it the last mention of `endpointOf`. The
+    /// roots are specialisation's: what files the pass cannot see read or
+    /// call (`spec_roots`) and every top-level statement that is not such a
+    /// declaration; a name an `export` statement names is kept. The walk
+    /// reads what the printer writes: a dropped binding is skipped, and a
+    /// single use the plan substitutes is read as its value.
+    fn pruneOptimised(e: *Emitter, slots: []ModuleSlot, todo: []const u32) Allocator.Error!void {
+        var ids: std.AutoHashMapUnmanaged(Rename.Globals.Key, u32) = .empty;
+        const gids = try e.scratch.alloc([]u32, todo.len);
+        for (todo, gids) |i, *gid| {
+            gid.* = &.{};
+            const slot = &slots[i];
+            const lowered = &(slot.lowered orelse continue);
+            if (lowered.diagnostics.len != 0) continue;
+            const ir = &lowered.ir;
+            gid.* = try e.scratch.alloc(u32, ir.names.len);
+            for (gid.*, 0..) |*g, n| {
+                g.* = Spec.none;
+                if (ir.names[n].module == .none) continue;
+                const name = try e.poolName(slot, @fromBackingInt(@intCast(@as(u32, @intCast(n)))));
+                const gop = try ids.getOrPut(e.scratch, Rename.Globals.key(name));
+                if (!gop.found_existing) gop.value_ptr.* = ids.count() - 1;
+                g.* = gop.value_ptr.*;
+            }
+        }
+        const count = ids.count();
+        const Decl = struct { at: u32, stmt: JsIr.Node.Index };
+        const decl = try e.scratch.alloc(?Decl, count);
+        @memset(decl, null);
+        const many = try e.scratch.alloc(bool, count);
+        @memset(many, false);
+        const live = try e.scratch.alloc(bool, count);
+        @memset(live, false);
+        var work: std.ArrayList(u32) = .empty;
+        for (e.spec_roots) |key| if (ids.get(key)) |g| {
+            live[g] = true;
+            try work.append(e.scratch, g);
+        };
+        // The declarations that may go, and the statements that are roots.
+        var roots: std.ArrayList(Decl) = .empty;
+        for (todo, gids, 0..) |i, gid, at| {
+            const lowered = &(slots[i].lowered orelse continue);
+            if (lowered.diagnostics.len != 0) continue;
+            const ir = &lowered.ir;
+            const plan = &slots[i].plan;
+            for (ir.extraSlice(ir.body, JsIr.Node.Index)) |stmt| {
+                if (plan.isDropped(stmt)) continue;
+                const d = ir.data(stmt);
+                switch (ir.tag(stmt)) {
+                    .import_stmt => continue,
+                    .export_stmt => {
+                        for (ir.extraSlice(JsIr.inlineRange(d), JsIr.NameIndex)) |n| {
+                            const g = gid[n.int()];
+                            if (g != Spec.none and !live[g]) {
+                                live[g] = true;
+                                try work.append(e.scratch, g);
+                            }
+                        }
+                        continue;
+                    },
+                    .const_decl => {
+                        const n: JsIr.NameIndex = @fromBackingInt(@intCast(d.lhs));
+                        const g = if (n.unwrap()) |x| gid[x] else Spec.none;
+                        if (g != Spec.none and Spec.isInert(ir, @fromBackingInt(@intCast(d.rhs)))) {
+                            if (decl[g] != null) many[g] = true;
+                            decl[g] = .{ .at = @intCast(at), .stmt = stmt };
+                            continue;
+                        }
+                    },
+                    else => {},
+                }
+                try roots.append(e.scratch, .{ .at = @intCast(at), .stmt = stmt });
+            }
+        }
+        for (many, 0..) |m, g| if (m and !live[g]) {
+            live[g] = true;
+            try work.append(e.scratch, @intCast(g));
+        };
+        var stack: std.ArrayList(JsIr.Node.Index) = .empty;
+        for (roots.items) |r| try e.mentionsOf(slots, todo, gids, r.at, r.stmt, &stack, live, &work);
+        while (work.pop()) |g| {
+            const at = decl[g] orelse continue;
+            try e.mentionsOf(slots, todo, gids, at.at, at.stmt, &stack, live, &work);
+        }
+        const touched = try e.scratch.alloc(bool, todo.len);
+        @memset(touched, false);
+        for (decl, 0..) |maybe, g| {
+            const at = maybe orelse continue;
+            if (live[g]) continue;
+            const slot = &slots[todo[at.at]];
+            const i = at.stmt.int();
+            const words: []u32 = @constCast(slot.plan.dropped);
+            if (i / 32 >= words.len) continue;
+            words[i / 32] |= @as(u32, 1) << @intCast(i % 32);
+            touched[at.at] = true;
+        }
+        // The names each module still mentions, once per module that lost a
+        // declaration.
+        for (todo, touched) |i, t| if (t) {
+            slots[i].met = try Rename.collectGlobals(e.scratch, &slots[i].lowered.?.ir, &slots[i].plan);
+        };
+    }
+
+    /// `pruneOptimised`'s walk of one statement as the printer writes it:
+    /// every whole-program name it mentions, marked live and queued.
+    fn mentionsOf(
+        e: *Emitter,
+        slots: []ModuleSlot,
+        todo: []const u32,
+        gids: []const []u32,
+        at: u32,
+        stmt: JsIr.Node.Index,
+        stack: *std.ArrayList(JsIr.Node.Index),
+        live: []bool,
+        work: *std.ArrayList(u32),
+    ) Allocator.Error!void {
+        const slot = &slots[todo[at]];
+        const ir = &slot.lowered.?.ir;
+        const plan = &slot.plan;
+        const gid = gids[at];
+        const a = e.scratch;
+        stack.clearRetainingCapacity();
+        try stack.append(a, stmt);
+        while (stack.pop()) |node| {
+            const t = ir.tag(node);
+            const d = ir.data(node);
+            if (t.isStatement() and node != stmt and plan.isDropped(node)) continue;
+            switch (t) {
+                .ident => {
+                    if (plan.replacement(node)) |v| {
+                        try stack.append(a, v);
+                        continue;
+                    }
+                    const n: JsIr.NameIndex = @fromBackingInt(@intCast(d.lhs));
+                    if (n.unwrap()) |x| if (x < gid.len and gid[x] != Spec.none and !live[gid[x]]) {
+                        live[gid[x]] = true;
+                        try work.append(a, gid[x]);
+                    };
+                },
+                .arrow => {
+                    const f = ir.extraData(@fromBackingInt(@intCast(d.lhs)), JsIr.Func);
+                    for (ir.extraSlice(f.body(), JsIr.Node.Index)) |b| try stack.append(a, b);
+                },
+                .import_stmt, .export_stmt, .break_stmt, .continue_stmt => {},
+                .const_decl => try stack.append(a, @fromBackingInt(@intCast(d.rhs))),
+                .let_decl => if (@as(JsIr.Node.OptionalIndex, @fromBackingInt(@intCast(d.rhs))).unwrap()) |v| try stack.append(a, v),
+                .func_decl, .gen_decl => {
+                    const f = ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.Func);
+                    for (ir.extraSlice(f.body(), JsIr.Node.Index)) |b| try stack.append(a, b);
+                },
+                .assign_stmt => {
+                    try stack.append(a, @fromBackingInt(@intCast(d.lhs)));
+                    try stack.append(a, @fromBackingInt(@intCast(d.rhs)));
+                },
+                .return_stmt => if (@as(JsIr.Node.OptionalIndex, @fromBackingInt(@intCast(d.lhs))).unwrap()) |v| try stack.append(a, v),
+                .if_stmt => {
+                    try stack.append(a, @fromBackingInt(@intCast(d.lhs)));
+                    const branches = ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.If);
+                    for (ir.extraSlice(branches.thenBody(), JsIr.Node.Index)) |b| try stack.append(a, b);
+                    for (ir.extraSlice(branches.elseBody(), JsIr.Node.Index)) |b| try stack.append(a, b);
+                },
+                .while_true, .block_stmt, .switch_case => {
+                    if (t == .switch_case) if (@as(JsIr.Node.OptionalIndex, @fromBackingInt(@intCast(d.lhs))).unwrap()) |c| try stack.append(a, c);
+                    for (ir.extraSlice(ir.subRange(@fromBackingInt(@intCast(d.rhs))), JsIr.Node.Index)) |b| try stack.append(a, b);
+                },
+                .for_of => {
+                    const f = ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.ForOf);
+                    try stack.append(a, f.iterable);
+                    for (ir.extraSlice(f.body(), JsIr.Node.Index)) |b| try stack.append(a, b);
+                },
+                .switch_stmt => {
+                    try stack.append(a, @fromBackingInt(@intCast(d.lhs)));
+                    for (ir.extraSlice(ir.subRange(@fromBackingInt(@intCast(d.rhs))), JsIr.Node.Index)) |c| try stack.append(a, c);
+                },
+                .expr_stmt, .throw_stmt => try stack.append(a, @fromBackingInt(@intCast(d.lhs))),
+                .try_stmt => {
+                    const tr = ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.Try);
+                    for (ir.extraSlice(tr.body(), JsIr.Node.Index)) |b| try stack.append(a, b);
+                    for (ir.extraSlice(tr.finalBody(), JsIr.Node.Index)) |b| try stack.append(a, b);
+                    for (ir.extraSlice(tr.catchBody(), JsIr.Node.Index)) |b| try stack.append(a, b);
+                },
+                else => if (t.isStatement()) {
+                    // A statement this walk does not know: everything it
+                    // could mention is kept.
+                    @memset(live, true);
+                    return;
+                } else try ir.pushOperands(a, stack, node),
+            }
+        }
+    }
     /// Every whole-program name `ir` declares at its top level, or imports:
     /// set in `out`, by the ids `global` gives its names.
     fn topDeclared(ir: *const JsIr, global: []const u32, out: []bool) void {
@@ -4577,6 +5007,14 @@ const Emitter = struct {
             else
                 try out.print(scratch, "export{{{s} as flush}};", .{spelled});
         };
+        // The page's unmount (`boundary.md` §9.4.5, amended 2026-10-17),
+        // the runtime module's, exported as `flush` is.
+        if (e.suppliedAs("stop") != null) {
+            if (e.globals.lookup(try e.moduleName(e.runtime_module.?, "stop"))) |ordinal| {
+                var buf: [8]u8 = undefined;
+                try out.print(scratch, "export{{{s} as stop}};", .{Rename.spell(ordinal, &buf)});
+            }
+        }
         // One line, the pieces joined with no newline between them
         // (`appendJoined`), and a newline at the end of the file.
         if (out.items.len != 0 and out.items[out.items.len - 1] != '\n') try out.append(scratch, '\n');
@@ -4701,7 +5139,7 @@ const Emitter = struct {
         if (e.runtime_module) |module| {
             var names: std.ArrayList([]const u8) = .empty;
             try names.appendSlice(e.scratch, e.program_uses);
-            if (entry != null) for ([_][]const u8{ "run", "start", "flush" }) |w| {
+            if (entry != null) for ([_][]const u8{ "run", "start", "flush", "stop" }) |w| {
                 if (e.suppliedAs(w) != null) try names.append(e.scratch, w);
             };
             for (names.items) |n| {
@@ -5171,6 +5609,14 @@ const Emitter = struct {
                 try text.print(e.scratch, "export{{{s} as flush}}from\"./{s}\";\n", .{ spelled, module_path })
             else
                 try text.print(e.scratch, "export {{ {s} as flush }} from \"./{s}\";\n", .{ spelled, module_path });
+        };
+        // The page's unmount (`boundary.md` §9.4.5, amended 2026-10-17).
+        if (e.suppliedAs("stop")) |s| if (e.live.decl(module, s.decl)) {
+            const spelled = try e.moduleSpelling(module, "stop");
+            if (release)
+                try text.print(e.scratch, "export{{{s} as stop}}from\"./{s}\";\n", .{ spelled, module_path })
+            else
+                try text.print(e.scratch, "export {{ {s} as stop }} from \"./{s}\";\n", .{ spelled, module_path });
         };
         try e.produce(e.options.platform.entry, text.items, try e.manifestPath());
     }

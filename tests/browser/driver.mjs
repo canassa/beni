@@ -277,6 +277,16 @@ function prelude() {
   globalThis.clearTimeout = (id) => {
     clock.timers = clock.timers.filter((t) => t.id !== id);
   };
+  // An interval is a timer that is set again for its next time as it fires,
+  // under the same id, until it is cleared.
+  globalThis.setInterval = (fn, ms, ...args) => {
+    const id = clock.next++;
+    const asked = Number(ms);
+    const every = asked > 2147483647 ? 1 : asked > 0 ? asked : 0;
+    clock.timers.push({ id, due: clock.now + every, fn, args, every });
+    return id;
+  };
+  globalThis.clearInterval = globalThis.clearTimeout;
   Date.now = () => clock.now;
   // The page's frames are virtual too: a `requestAnimationFrame` callback
   // runs only when a `frame` step draws a frame, in both DOMs, so how many
@@ -568,7 +578,7 @@ function prelude() {
 async function load({ url, runtime }) {
   const record = globalThis.__beniHarness;
   try {
-    await import(url);
+    record.entry = await import(url);
   } catch (error) {
     // A page's module script that throws while it evaluates is reported
     // to the window's `error` listeners; so is this, which is also how the
@@ -604,6 +614,7 @@ function step(s) {
       if (t === null) break;
       clock.timers = clock.timers.filter((c) => c !== t);
       clock.now = t.due;
+      if (t.every !== undefined) clock.timers.push({ ...t, due: t.due + (t.every > 0 ? t.every : 1) });
       // A timer's callback runs as a task of its own: what it throws is
       // reported to the window's `error` listeners, as a host reports it,
       // and the clock goes on.
@@ -663,6 +674,15 @@ function step(s) {
   }
   if (s.command === "title") {
     globalThis.__beniHarness.log.push(`(title: ${JSON.stringify(document.title)})`);
+    return null;
+  }
+  // The page's unmount (`boundary.md` §9.4.5, amended 2026-10-17): the
+  // entry file's `stop` export, called once.
+  if (s.command === "stop") {
+    const stop = globalThis.__beniHarness.entry?.stop;
+    if (typeof stop !== "function") return "the entry file exports no `stop`";
+    stop();
+    globalThis.__beniHarness.log.push("(stopped)");
     return null;
   }
   if (s.command === "location") {
@@ -766,6 +786,13 @@ function step(s) {
     dispatchEvent(new HashChangeEvent("hashchange", { oldURL, newURL: location.href }));
     return null;
   }
+  // An element the program mounts at, put in the page before it loads.
+  if (s.command === "element") {
+    const at = document.createElement("div");
+    at.id = s.text;
+    document.body.append(at);
+    return null;
+  }
   if (s.command === "store") {
     (s.selector === "local" ? localStorage : sessionStorage).setItem(s.key, s.value);
     return null;
@@ -789,6 +816,14 @@ function step(s) {
       if (s.name === undefined || key.split("\u0000")[0] === s.name) n += set.size;
     }
     globalThis.__beniHarness.log.push(`(listeners: ${n})`);
+    return null;
+  }
+  // A `CustomEvent` whose `detail` is the step's JSON, as a host page pushes
+  // data to a program (the research adapter's `rr-push`).
+  if (s.command === "detail") {
+    const on = s.selector === "window" ? globalThis : s.selector === "document" ? document : document.querySelector(s.selector);
+    if (on === null) return `no element matches \`${s.selector}\``;
+    on.dispatchEvent(new CustomEvent(s.name, { detail: s.detail }));
     return null;
   }
   if (s.command === "event") {
@@ -1183,10 +1218,10 @@ if (stepsPath !== undefined) {
     if (line === "timers") return void steps.push({ line: written, where, command: "timers", throws });
     if (line === "frames") return void steps.push({ line: written, where, command: "frames", throws });
     if (line === "file" && !throws && steps.length !== 0) usage(`${where}: \`file\` must be the script's first step`);
-    if (line === "load" && (!throws || steps.some((s) => s.command !== "file" && s.command !== "url" && s.command !== "store"))) {
+    if (line === "load" && (!throws || steps.some((s) => s.command !== "file" && s.command !== "url" && s.command !== "store" && s.command !== "element"))) {
       usage(`${where}: \`load\` is written \`throws load\`, after the steps that set the page up`);
     }
-    if (["back", "forward", "location", "title", "file", "load"].includes(line)) {
+    if (["back", "forward", "location", "title", "file", "load", "stop"].includes(line)) {
       steps.push({ line: written, where, command: line, selector: null, throws });
       return;
     }
@@ -1210,6 +1245,9 @@ if (stepsPath !== undefined) {
       s.tasks = f[2] === "tasks";
     } else if (command === "frames") {
       usage(`${where}: \`frames\` takes nothing`);
+    } else if (command === "element") {
+      if (argument !== undefined || !/^"[A-Za-z][A-Za-z0-9-]*"$/.test(selector)) usage(`${where}: \`element\` takes one id as a JSON string`);
+      s.text = JSON.parse(selector);
     } else if (command === "url" || command === "hash") {
       try {
         s.text = JSON.parse(argument === undefined ? selector : "");
@@ -1233,6 +1271,16 @@ if (stepsPath !== undefined) {
         usage(`${where}: \`listeners\` takes \`window\` or \`document\` and at most an event name`);
       }
       s.name = argument;
+    } else if (command === "detail") {
+      const d = (argument ?? "").match(/^([a-z][a-z0-9-]*)\s+(.+)$/);
+      if (d === null) usage(`${where}: \`detail\` takes \`window\`, \`document\` or a selector, an event name and its detail as JSON`);
+      s.name = d[1];
+      try {
+        s.detail = JSON.parse(d[2]);
+      } catch (error) {
+        if (!(error instanceof SyntaxError)) throw error;
+        usage(`${where}: the detail of \`detail\` is one JSON value`);
+      }
     } else if (command === "event") {
       const e = (argument ?? "").match(/^([a-z]+)(?:\s+([1-9][0-9]*))?$/);
       if (e === null) {
@@ -1449,6 +1497,8 @@ async function happyDomPage(domPath) {
       await window.happyDOM.abort();
       globalThis.setTimeout = nodeTimers.setTimeout;
       globalThis.clearTimeout = nodeTimers.clearTimeout;
+      globalThis.setInterval = nodeTimers.setInterval;
+      globalThis.clearInterval = nodeTimers.clearInterval;
       // Every page shares Node's global object, and a browser gives each
       // page a fresh one: so every global the page's own code set there —
       // a `--fuzz` build's `__beniFuzzSend` — goes with it. A program that
@@ -1464,7 +1514,7 @@ async function happyDomPage(domPath) {
 }
 
 // Node's timers, which the prelude replaces with the page's virtual clock.
-const nodeTimers = { setTimeout: globalThis.setTimeout, clearTimeout: globalThis.clearTimeout };
+const nodeTimers = { setTimeout: globalThis.setTimeout, clearTimeout: globalThis.clearTimeout, setInterval: globalThis.setInterval, clearInterval: globalThis.clearInterval };
 
 // The names Node's global object has before any page: what a closing page
 // leaves (`happyDomPage`'s `close`).
@@ -1622,7 +1672,7 @@ async function runPage(entry, fiber) {
   // up: they run before the program loads, each a heading with nothing
   // under it.
   const setup = [];
-  while (script.length !== 0 && (script[0].command === "url" || script[0].command === "store") && !script[0].throws) setup.push(script.shift());
+  while (script.length !== 0 && (script[0].command === "url" || script[0].command === "store" || script[0].command === "element") && !script[0].throws) setup.push(script.shift());
   let setupFault = null;
   for (const s of setup) {
     transcript.push(`-- ${s.line}`);

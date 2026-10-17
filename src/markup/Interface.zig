@@ -36,8 +36,10 @@ const std = @import("std");
 /// a `view`'s `let`s (`programBranch`, `programBranchArm`,
 /// `programBranchEnter`, `programBranchValue`, `programShowFallback`,
 /// `programNestedEnter`, `programViewStatements`, `programLet`,
-/// `Program.view_lets`).
-pub const version: Version = .{ .major = 1, .minor = 13 };
+/// `Program.view_lets`), 1.14 the calls a lowering compiles subscriptions,
+/// commands and a placement away with (`Lowering.places`,
+/// `Program.placed`).
+pub const version: Version = .{ .major = 1, .minor = 14 };
 
 /// The newest version whose gated feature a tree can use. No minor version
 /// has gated one yet, so every tree requires 1.0 and every lowering of
@@ -98,12 +100,32 @@ pub const Lowering = struct {
     /// what `main`'s placements place (`program_mounted_twice`). Empty:
     /// none is refused.
     placements: []const Placement = &.{},
+    /// 1.14: the lowering mounts a program itself where a placement places
+    /// it at a constant element: a call of a `first` placement whose first
+    /// argument is a program constructor's call and whose second is a
+    /// string literal is compiled as that call alone, and the hook is handed
+    /// the element's id (`Program.placed`). False: placements run as
+    /// written.
+    places: bool = false,
+    /// 1.14: the program constructor's call is compiled as the mount the
+    /// hook returns alone, the constructor not called: for a platform whose
+    /// `Program` is the mount (its constructors' siblings the identity).
+    constructs: bool = false,
+    /// 1.14: the lowering compiles a program's subscriptions and commands
+    /// away (`browser-inline.md` §3–§4): the modules of the platform chain
+    /// whose `none`, `batch`, `map` and `on` (`sub`) and `none`, `batch`
+    /// and `perform` (`cmd`) the write-set pass reads them through, for
+    /// `Context.programSubscriptions` and `Context.programCommand`. Null:
+    /// neither is read.
+    effects: ?Effects = null,
     /// 1.6: set when the lowering has no run-time value of the markup type:
     /// a markup root that is not a program's `view` (`Program.view_root`)
     /// and every use of a markup primitive is `not_implemented`, with this
     /// text as the message, and the markup runtime is not held to the
     /// primitives (§9.4.5). Null: markup is a value, as before.
     no_markup_values: ?[]const u8 = null,
+
+    pub const Effects = struct { sub: []const u8, cmd: []const u8 };
 };
 
 /// 1.6: a value of a module of the platform chain, by the module's name and
@@ -164,11 +186,19 @@ pub const Program = struct {
     /// `Node.Index.none` for it, and `programViewEnter` binds `view`'s
     /// parameter and its `let`s with no root. `view_root` is null.
     view_branch: bool = false,
+    /// 1.14, `Lowering.places` only: where the program is known to mount —
+    /// at the element a placement written around this call names, the
+    /// placement itself compiled away; at `document.body`, when the call is
+    /// `main`'s whole body; or not known.
+    placed: Placed = .unknown,
     /// 1.12: the root value slot keeps complete helper/branch documents for body and title.
     document_branch: bool = false,
     /// What `update` is: `markup` and `function` alike are functions this
     /// module declares or the record writes; `other_module` or `computed`.
     update: Shape,
+
+    /// 1.14: where a program mounts (`placed`).
+    pub const Placed = union(enum) { unknown, body, at: []const u8 };
 
     pub const Shape = enum(u8) {
         /// A top-level function of this module or a lambda written in the
@@ -186,7 +216,8 @@ pub const Program = struct {
     /// Where `Context.programReport` points.
     pub const Part = enum(u8) { call, init, update, view, _ };
     /// What `Context.programReport` reports.
-    pub const Code = enum(u8) { not_implemented, view_not_compiled, _ };
+    /// `program_shape` (1.14): a refusal by a language rule, never "not yet".
+    pub const Code = enum(u8) { not_implemented, view_not_compiled, program_shape, _ };
 
     /// 1.7: one leaf message key of the program (`write-sets.md` §4.4),
     /// what `Context.programKeys` lists.
@@ -351,6 +382,51 @@ pub const Program = struct {
             /// Anything else: a markup value, `programBranchValue`.
             value,
         };
+    };
+
+    /// 1.14 (`Lowering.effects`): one `Sub.on` declaration of the program's
+    /// subscription set (`browser-inline.md` §3).
+    pub const Subscription = struct {
+        /// The key whose handler each value the start sends calls
+        /// (`programKeys`), with that value as each field of its
+        /// constructor (`fields` of them).
+        handler: u32,
+        fields: u32,
+        /// The first declaration of the set whose key is equal to this
+        /// one's: itself, or an earlier one whose start the two share.
+        first: u32,
+        /// Where the declaration's start is written, `Push.beni:23:12`.
+        where: []const u8,
+    };
+
+    /// 1.14: what `Context.programSubscriptions` says of the set.
+    pub const Subscriptions = union(enum) {
+        /// The declarations, in order.
+        set: []const Subscription,
+        /// The set reads the model.
+        model,
+        /// The pass could not read the value as a set of declarations.
+        unknown,
+        /// The declaration at this place has a tagger that gives no
+        /// constructor of the message type.
+        no_key: []const u8,
+        /// The declaration at this place has a tagger whose message the key
+        /// tree splits again on its payload, or that wraps the value: a
+        /// limit of the compiler.
+        limit: []const u8,
+    };
+
+    /// 1.14: what `Context.programCommand` says of a key's command, or of
+    /// `init`'s (`browser-inline.md` §4).
+    pub const Command = union(enum) {
+        /// `Cmd.none`: nothing to run.
+        none,
+        /// Bodies that cannot suspend.
+        runs,
+        /// A body that may suspend, written at this place.
+        suspends: []const u8,
+        /// The pass could not read it.
+        unknown,
     };
 
     /// 1.7: what a view event's handler value makes when its event fires
@@ -1279,6 +1355,26 @@ pub const Context = struct {
     pub fn programLet(cx: *Context, r: Root.Index, k: u32) Program.HoleFacts {
         return cx.vtable.program_let(cx.impl, r, k);
     }
+
+    /// 1.14 (`Lowering.effects`): what the program's subscription set is
+    /// (`browser-inline.md` §3).
+    pub fn programSubscriptions(cx: *Context) Program.Subscriptions {
+        return cx.vtable.program_subscriptions(cx.impl);
+    }
+
+    /// 1.14: declaration `i`'s start applied to `send`, evaluated into
+    /// `block`, returning what removes its listener; or `Reported` — a limit
+    /// of the compiler, reported at the program's call — when the start is
+    /// code this module cannot write (`browser-inline.md` §5, class 4).
+    pub fn programSubscriptionStart(cx: *Context, block: Block, i: u32, send: Expr) Error!Expr {
+        return cx.vtable.program_subscription_start(cx.impl, block, i, send);
+    }
+
+    /// 1.14: what key `key`'s command is, or `init`'s for null
+    /// (`browser-inline.md` §4).
+    pub fn programCommand(cx: *Context, key: ?u32) Program.Command {
+        return cx.vtable.program_command(cx.impl, key);
+    }
 };
 
 /// `JsIr` restricted to what a template needs. Assignment is a statement,
@@ -1473,6 +1569,9 @@ pub const VTable = struct {
     program_nested_enter: *const fn (impl: *anyopaque, r: Root.Index) Error!void,
     program_view_statements: *const fn (impl: *anyopaque, block: Block) Error!bool,
     program_let: *const fn (impl: *anyopaque, r: Root.Index, k: u32) Program.HoleFacts,
+    program_subscriptions: *const fn (impl: *anyopaque) Program.Subscriptions,
+    program_subscription_start: *const fn (impl: *anyopaque, block: Block, i: u32, send: Expr) Error!Expr,
+    program_command: *const fn (impl: *anyopaque, key: ?u32) Program.Command,
 
     literal: *const fn (impl: *anyopaque, which: Literal, text: []const u8) Error!Expr,
     template: *const fn (impl: *anyopaque, parts: []const TemplatePart) Error!Expr,

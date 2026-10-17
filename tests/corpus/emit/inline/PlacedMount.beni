@@ -1,0 +1,17 @@
+-- A development build of `browser-inline` keeps the mount fault
+-- (docs/design/browser-inline.md §6): the program's mount asks `Inline.root`
+-- for the element `Browser.mountAt` names, which marks it and says in prose
+-- what is wrong with one that is missing. The placement is compiled away:
+-- the mount names the element itself. `init` is evaluated, and the markup
+-- is written once, with what removes it registered for `stop`.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+view : {} → Html {}
+view _ = <main><h1>Hello</h1></main>
+
+
+main : Tea.Program
+main = Browser.mountAt (Tea.sandbox { init = λ⊤ → {}, update = λ_ m → m, view = view }) "app"

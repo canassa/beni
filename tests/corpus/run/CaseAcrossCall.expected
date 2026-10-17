@@ -1,0 +1,16 @@
+command: "move 1 2"
+command: "quit"
+command: "hello there"
+m3
+q
+hello there
+s
+m4
+l3###
+0
+4
+30
+not large
+large
+on
+flag off
