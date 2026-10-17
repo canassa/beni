@@ -140,8 +140,10 @@ program site calls them.
 - **What a piece is.** `<Module>$<declaration>$$lift$<n>`: the lambda, lowered in its own module
   where its declaration's other code is, as a function of the locals of that declaration it reads
   (its captures), whose value is the lambda; a piece with no captures is the lambda itself. `n` is
-  the lambda's place among the lambdas of its declaration, in source order: the name never names
-  an instruction, so it does not move when other code does (CLAUDE.md rule 5).
+  how many lambda instructions of its declaration come before it in `Bir`'s order, which writes an
+  expression's operands before it — post-order, so a lambda nested in another counts before the
+  one around it: the name never names an instruction index, so it does not move when other code
+  of the module does (CLAUDE.md rule 5).
 - **What the program site knows of it.** Its name and its captures, in order — never its body. The
   program module still lowers in parallel with the others. At the program site each capture is the
   value the pass found for it, which must be a literal (`Interval.every 1000` captures `1000`);

@@ -651,6 +651,7 @@ Same(ρ.todos[*]))`, which is `value p[*]` by §3.4's second row.
 | `Debug.log tag x` | `Same` of what `x` is: `⟦x⟧` itself | the sibling returns its argument (requirement, §5.4) |
 | `Debug.todo` | `Fresh(∅)` | never returns |
 | `Html.map`, `Cmd.map`, `Cmd.*`, `Sub.*`, `Task.*`, platform primitives | `Fresh(deps)` | not model values; `Cmd` is not analysed |
+| `Schema.*` (*added 2026-10-17*) | `Fresh(deps)` | a run's answer is a value the engine builds from its input, never a part of the model: `Fresh` is the coarsest write, so the row is sound, and walking the engine's bodies only cost work (the ownership checker keeps rows of its own for `Schema`, `ownership-checker.md` §30.10) |
 
 **How a function gets a row.** A row is an entry in the compiler's table keyed by the function's
 qualified name (*open choice O4*: a table in the compiler, `src/writes/Core.zig`, against an
