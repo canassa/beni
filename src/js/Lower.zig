@@ -11558,6 +11558,9 @@ pub const Lowerer = struct {
     fn programCall(l: *Lowerer, out: *StmtList, inst: Inst.Index, pc: *ProgramCall, callee_inst: Inst.Index) !Node.Index {
         const p = l.pos(inst);
         if (pc.refused) return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+        // The constructor first, where it stands; a lowering that compiles
+        // the call as its mount (version 1.14) names it not at all.
+        const callee: ?Node.Index = if (l.mk != null and l.mk.?.lowering.constructs) null else try l.expr(out, callee_inst);
         const st = l.mk orelse return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
         const hook = st.lowering.program orelse {
             try l.report(.internal, inst, "The markup lowering `{s}` names program constructors and has no program hook.", .{st.lowering.name});
@@ -11608,8 +11611,8 @@ pub const Lowerer = struct {
             error.Reported => return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused),
         };
         // Version 1.14: a platform whose `Program` is the mount itself.
-        if (st.lowering.constructs) return @fromBackingInt(@intCast(@backingInt(mount)));
-        return l.call(try l.expr(out, callee_inst), &.{@fromBackingInt(@intCast(@backingInt(mount)))}, p);
+        const c = callee orelse return @fromBackingInt(@intCast(@backingInt(mount)));
+        return l.call(c, &.{@fromBackingInt(@intCast(@backingInt(mount)))}, p);
     }
 
     /// `cx.programInit`: the program's `init`, evaluated into `block`, as
