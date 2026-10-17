@@ -427,4 +427,24 @@ def Summary.join (a b : Summary) : Summary := {
   guards := union a.guards b.guards
 }
 
+/-! ## The callback chain (`ownership-checker.md` §16.7, the `callbacks` limit) -/
+
+/-- The callback-chain depth of an atom: its binder's, zero for a literal. -/
+def atomChain (chain : List (Var × Nat)) : Atom → Nat
+  | .var x => (chain.lookup x).getD 0
+  | .field a _ => atomChain chain a
+  | .int _ => 0
+
+def atomsChain (chain : List (Var × Nat)) (atoms : List Atom) : Nat :=
+  (atoms.map (atomChain chain)).foldl max 0
+
+/-- The chain depth of a binder's value: one more than the arguments' when
+    the value is the result of a call of a function input (`callback`),
+    otherwise the deepest binder the value mentions. A call deeper than
+    `Config.callbackLimit` is the error `limit: callbacks` (§16.7, #271). -/
+def rhsChain (chain : List (Var × Nat)) (callback : Bool) (rhs : Expr) : Nat :=
+  match rhs with
+  | .app _ args => if callback then atomsChain chain args + 1 else atomsChain chain ((uses rhs).map fun u => .var u.1)
+  | _ => atomsChain chain ((uses rhs).map fun u => .var u.1)
+
 end Ownership

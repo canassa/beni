@@ -21,7 +21,7 @@ commands are specified in [BRIDGE.md](BRIDGE.md); `ownership ci` includes its bo
 and the oracle triage: 201 original divergences in six Zig defect clusters and
 2,157 Lean precision leads. Every original and old minimum has both interpreter
 traces in `evidence/bridge-triage/`; the persistent emitted runtime is not the judge.
-The oracle has 98 original and 99 sync verdict fixtures, generators v5 and v6, a bounded-exhaustive
+The oracle has 113 original and 99 sync verdict fixtures, generators v5 and v6, a bounded-exhaustive
 grammar plus 740 targeted programs, required negative controls (including `set-exclusive` and `once-live`),
 and a falsifier that fails when summary coverage is excessively vacuous.
 The sync models branch-local escapes, inductive model/container conditions,

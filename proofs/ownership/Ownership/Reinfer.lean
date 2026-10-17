@@ -17,6 +17,11 @@ namespace Ownership.Reinfer
 structure Context where
   declarations : List Decl
   config : Config
+  /-- The declaration's inputs (parameters, then captures) are the binders
+      below this number; a call of one of them is a callback call. -/
+  inputs : Nat := 0
+  /-- The callback-chain depth of each binder in scope, as `Checker.Context.chain`. -/
+  chain : List (Var × Nat) := []
   owned : List Origin := []
   escaped : List Origin := []
   recursiveSummary : Summary := {}
@@ -218,7 +223,11 @@ def inferExpr (fuel : Nat) (ctx : Context) (env : Env Abstract)
     | .atom a => abstractAtom env a
     | .letE v rhs rest =>
       let a ← inferExpr f ctx env rhs (union after (removeVars [v] (uses rest))) (site ++ [0])
-      inferExpr f ctx ((v, a) :: env) rest after (site ++ [1])
+      let callback := match rhs with
+        | .app (.var x) _ => x < ctx.inputs
+        | _ => false
+      let chain := (v, rhsChain ctx.chain callback rhs) :: ctx.chain
+      inferExpr f { ctx with chain } ((v, a) :: env) rest after (site ++ [1])
     | .prim op args => primitive ctx site op (← args.mapM (m := Except String) (abstractAtom env)) later
     | .entry .. | .resultCase .. | .chainCase .. => throw "limit: sum/recursive data in frozen per-call checker"
     | .branch c yes no =>
@@ -243,6 +252,9 @@ def inferExpr (fuel : Nat) (ctx : Context) (env : Env Abstract)
       let fn ← abstractAtom env callee
       let actuals ← args.mapM (m := Except String) (abstractAtom env)
       let .function once alternatives := fn | if fn == .bottom then return .bottom else throw "abstract call"
+      if let .var x := callee then
+        if x < ctx.inputs && atomsChain ctx.chain args + 1 > ctx.config.callbackLimit then
+          throw "limit: callbacks"
       demand ctx.config once later (actuals.flatMap Abstract.cells)
       let mut result := Abstract.bottom
       for (id, caps) in alternatives do
@@ -389,13 +401,13 @@ def inferFunction (fuel : Nat) (parent : Context) (id : Nat)
     let mut done_ := false
     for _ in List.range parent.config.rounds do
       if !done_ then
-        let ctx := { parent with owned := own, recursiveSummary := candidate, recursiveCaptures := es, recursiveParameters := ps }
+        let ctx := { parent with owned := own, recursiveSummary := candidate, recursiveCaptures := es, recursiveParameters := ps, inputs := ps.length + es.length, chain := [] }
         let (result, facts) ← (inferExpr (fuel - 1) ctx (bindArgs (ps ++ es)) d.body [] []).run {}
         let next := candidate.join (normalized { facts with result })
         if next == candidate then done_ := true else candidate := next
     if !done_ then throw s!"limit: recursive summary for {d.name} did not converge"
     -- Validation uses the final assignment, including every recursive demand.
-    let ctx := { parent with owned := own, recursiveSummary := candidate, recursiveCaptures := es, recursiveParameters := ps }
+    let ctx := { parent with owned := own, recursiveSummary := candidate, recursiveCaptures := es, recursiveParameters := ps, inputs := ps.length + es.length, chain := [] }
     let (result, facts) ← (inferExpr (fuel - 1) ctx (bindArgs (ps ++ es)) d.body [] []).run {}
     if candidate.join (normalized { facts with result }) != candidate then throw "summary validation failed"
     pure candidate
