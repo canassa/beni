@@ -7660,8 +7660,12 @@ only to test its tag and read its fields. The rule:
   list — a `return R′`, or the `switch` a `case` lowers to — where every argument is an atom (a
   literal or a name nothing assigns), `x` is mentioned nowhere but in `R`, and every mention of
   `x` in `R` is the object of a property read (`x.$`, `x.a.b`) or an operand of `===` or `!==`.
-  `R` holds no function, no loop, no `try` and no `continue`, is at most 96 nodes, and cannot run
-  off its end (the function's rule below), so a copy of it may stand where `f` returned.
+  `R` — one statement or several — holds no function, no loop, no `try` and no `continue`, is
+  at most 96 units of slice 8's size model (`nodeCount`, statements 4 each), and cannot run off
+  its end (the function's rule below, a `break` counting as a jump), so a copy of it may stand
+  where `f` returned. An unlabelled `break` of `R` that leaves `R` refuses the site
+  (`leavingBreak`): copied in place of a `return` inside a `switch` of `f`, it would leave that
+  `switch` instead. A labelled one names its target and is the same jump in every copy.
 - **The function**: a top-level `const f = (…) => {…}` of the program that nothing the pass cannot
   see names (`Input.escaping`), nothing assigns, whose every mention is the callee of such a site;
   some `return` of which gives a constructor (an object literal, a declared object, or a choice of
@@ -7686,8 +7690,9 @@ only to test its tag and read its fields. The rule:
   - a conditional, `&&` or `||` whose test is then a literal, or `===`/`!==` of two literals, is the
     branch it chooses, and the other branch is not written;
   - a declared object's `$` is its literal's, by slice 9's test for a tag (`tagValue`: no code
-    writes `$` on it), and the declared object or a primitive literal compared with a stable chain
-    (above) is `false`;
+    writes `$` on it); and `x === y` (`!==`) of a `P` that is a primitive literal or a declared
+    object, with `y` a stable chain (above, an object made in the site's function), is `false`
+    (`true`): neither can be that object;
   - an `if` the copy decides is the branch it takes, and a `switch` on a literal the case it
     takes, when that case holds no `break`; an unlabelled block of the rest is its statements,
     its declarations named afresh in each copy.
