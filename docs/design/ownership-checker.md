@@ -1084,10 +1084,21 @@ ways, which before were printed as errors of their own beside the limit's:
   takes the `limit` cause, as the call-site demands on its arguments already did.
 - **A condition the walk lowered at a limit** — a fixpoint's seeds (§20.4, §16.4 item 6), a value past
   `value-cells`, a class whose summary is the pessimistic one — is `cond_limit`, which fails as a lost condition
-  does; a demand that fails only through it takes the `limit` cause. An exact failure still wins.
+  does; a demand that fails only through it takes the `limit` cause. An exact failure still wins: it is sharing
+  the checker can see. A demand that fails through `cond_limit` and through an approximate cause too takes the
+  `limit` cause, on purpose: the build already fails on the limit, and once the limit is gone the condition is
+  computed and an approximate failure that remains is printed then.
+
+A function value's line of its own is never hidden by one that follows from a limit: a lambda handed to the
+limited callee and also stored where the walk loses sight of it is reported for the store, and a sight made
+under the limit does not count as a top-level function's report.
+
+A declaration whose walk reached a limit inside it (a fixpoint, `value-cells`) now has the pessimistic summary,
+as this section says of every limit; before, only `rounds` and the summary-size limits made it, and a caller saw
+a condition the callee lowered as a plain lost one, a second error.
 
 `check/bad/direct/OwnershipLimitPessimistic` and `OwnershipLimitValueCells` pin both: each build has the limit's
-error alone.
+error alone, and every error of its own besides.
 
 The bounds are set from the largest summaries measured, #220's dashboard at 1 024 widgets — one module of
 22 000 lines, its `step`, `pushed` and `update` the widest: 23 456 entries, 300 at one path and 87 764
