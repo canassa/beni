@@ -128,6 +128,11 @@ output with C's per-kind instance factory where a kind is used more than once.
 - **Immutable first, in place where proven.** tea-dirtybits (immutable, structural sharing) is
   within 10–25 % of tea-inline everywhere. An arm writes in place where the ownership checker
   accepts it and copies where it does not; a checker cap is an error, not a silent copy.
+  *Amended 2026-10-17 (the owner):* **no copy.** A record update the checker cannot prove safe in place
+  is a compile error, exactly as a shared list edit is; the program copies explicitly where it must
+  keep the old value. The checker, in-place lists and in-place records are the base language's, on
+  every platform, not this platform's. The checker has no limits: it judges any program by scaling
+  precisely, never by coarsening (#315, #286, #289, #293).
 - **The analyses are kept**: `write-sets.md`'s pass (90 of Conduit's 91 keys bounded), anchored
   read sets, the ownership checker. Every slice consumes them; none re-derives them.
 - **Compile time linear in N**, measured at N = 256 on every scenario from slice 1, so a quadratic
