@@ -207,7 +207,7 @@ theorem concrete_run :
     exist, the source is nonempty, and the view has one source. So the state
     fails the written-storage premise alone, not `LinksValid`. -/
 theorem pre_linksValid : LinksValid pre := by
-  refine ⟨?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_⟩
   · intro v s f member
     simp only [pre, List.mem_singleton, Prod.mk.injEq] at member
     obtain ⟨rfl, rfl, rfl⟩ := member
@@ -217,6 +217,10 @@ theorem pre_linksValid : LinksValid pre := by
     obtain ⟨rfl, rfl, rfl⟩ := member
     exact ⟨[.int 0], rfl, by simp⟩
   · decide
+  · intro v s f member
+    simp only [pre, List.mem_singleton, Prod.mk.injEq] at member
+    obtain ⟨rfl, rfl, rfl⟩ := member
+    exact ⟨[.int 0], rfl, rfl⟩
 
 /-- The written-storage premise fails: input 0 is written at its root, the
     link joins its array to input 1's array, and no row permits input 1. -/
@@ -300,5 +304,16 @@ theorem no_call_sound : ¬ CallSound entry.summary entry.inputs args args.length
   · rw [hrow] at h1
     cases h1
   · cases h2
+
+/-! ## The contents clause at the stale state
+
+The direct in-place run of `ViewCounterexample.staleMain` leaves its view
+stale (`ViewLinks.lean`, *A stale garbage view*). The falsifier's mirror of
+`LinksValid` reports exactly that, so the contents clause is false at the
+state a builder's `put` after `close` reaches; #284's hand-over refuses the
+program, and the clause depends on it. -/
+#guard match (InPlaceSemantics.eval 1000 [] none [] ViewCounterexample.staleMain).run { fuel := 1000 } with
+  | .ok (_, s) => Falsify.linksValidB s == some "link 1 of 0: the view is stale"
+  | .error _ => false
 
 end Ownership.LinkSummaryCounterexample

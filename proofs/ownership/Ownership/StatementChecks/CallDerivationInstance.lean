@@ -174,7 +174,7 @@ theorem invariant : Invariant vs hs env live aenv ({} : St).facts.escapes naming
       | capture l _ => simp at l
       | env m _ => simp at m
     · simp [env, List.lookup] at he
-  · refine ⟨?_, ?_, ?_⟩
+  · refine ⟨?_, ?_, ?_, ?_⟩
     · intro v s f member
       simp only [hs, List.mem_singleton, Prod.mk.injEq] at member
       obtain ⟨rfl, rfl, rfl⟩ := member
@@ -184,6 +184,10 @@ theorem invariant : Invariant vs hs env live aenv ({} : St).facts.escapes naming
       obtain ⟨rfl, rfl, rfl⟩ := member
       exact ⟨[.int 1, .int 2], rfl, by simp⟩
     · decide
+    · intro v s f member
+      simp only [hs, List.mem_singleton, Prod.mk.injEq] at member
+      obtain ⟨rfl, rfl, rfl⟩ := member
+      exact ⟨[.int 1, .int 2], rfl, rfl⟩
   · apply LinkClauses.linkNamed_of_closed
     intro v s f member o
     simp only [hs, List.mem_singleton, Prod.mk.injEq] at member

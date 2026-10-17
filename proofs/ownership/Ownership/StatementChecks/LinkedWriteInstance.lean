@@ -191,7 +191,7 @@ theorem invariant : Invariant vs hs env live aenv ({} : St).facts.escapes naming
       obtain ⟨rfl, rfl⟩ := arrayAt_flat_ref (integers := [4]) rfl hac
       exact namedTwo s2 s3 3 (by simp [naming_s2])
     · simp [env, List.lookup] at he
-  · refine ⟨?_, ?_, ?_⟩
+  · refine ⟨?_, ?_, ?_, ?_⟩
     · intro v s f member
       simp only [hs, List.mem_cons, Prod.mk.injEq, List.not_mem_nil, or_false] at member
       rcases member with ⟨rfl, rfl, rfl⟩ | ⟨rfl, rfl, rfl⟩ <;> decide
@@ -201,6 +201,11 @@ theorem invariant : Invariant vs hs env live aenv ({} : St).facts.escapes naming
       · exact ⟨[.int 1, .int 2], rfl, by simp⟩
       · exact ⟨[.int 3, .int 4], rfl, by simp⟩
     · decide
+    · intro v s f member
+      simp only [hs, List.mem_cons, Prod.mk.injEq, List.not_mem_nil, or_false] at member
+      rcases member with ⟨rfl, rfl, rfl⟩ | ⟨rfl, rfl, rfl⟩
+      · exact ⟨[.int 1, .int 2], rfl, rfl⟩
+      · exact ⟨[.int 3, .int 4], rfl, rfl⟩
   · apply LinkClauses.linkNamed_of_closed
     intro v s f member o
     simp only [hs, List.mem_cons, Prod.mk.injEq, List.not_mem_nil, or_false] at member
