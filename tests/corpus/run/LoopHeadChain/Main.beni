@@ -1,0 +1,10 @@
+-- `Probe.probe` reads its loop's iterable through a binding used once
+-- (`backend.md` §9 item 1). Both builds print 41; release once moved the
+-- binding's value into the loop's head, where the loop variable took the
+-- name it read, and threw a ReferenceError.
+import Node
+import Probe
+
+
+main : Node.Program
+main = Node.print (String.fromInt (Probe.probe 40))
