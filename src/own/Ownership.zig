@@ -8159,9 +8159,11 @@ const Walker = struct {
 
     /// A supply's provenance instantiated for the callback it is handed to.
     /// A cell the callee made and also returns keeps its fresh number, and
-    /// is the cell the result names (`own`, the callee's own depth); any
-    /// other new cell is one of the callback's depth (`deeper`). So a
-    /// callback that keeps it keeps the list the caller gets back (#281).
+    /// is the cell the result names: `own` is the context the callee's
+    /// result is instantiated in (depth 0 at a call written in the body,
+    /// `ctx.depth` for a callee instantiated inside another). Any other new
+    /// cell is one of the callback's depth (`deeper`). So a callback that
+    /// keeps it keeps the list the caller gets back (#281).
     fn supplyCells(w: *Walker, p: Prov, own: InstCtx, deeper: InstCtx) Allocator.Error!AV {
         if ((p.kind == .fresh or p.kind == .esc) and p.a != 0) return w.instProv(p, own);
         return w.instProv(p, deeper);
@@ -11176,10 +11178,12 @@ const Walker = struct {
                 const probe_approx = if (!sr.owned) sr.approx else (sr.probe != none or sr.probe2 != none or sr.more.len != 0) and more_approx and (sr.probe == none or w.probe_approx.items[sr.probe]) and (sr.probe2 == none or w.probe_approx.items[sr.probe2]);
                 const xc = try w.xsumOf(sr.cond, frame, params, none);
                 for (try w.expand(sr.av)) |e| {
-                    // A cell made here keeps the number the result gives it
-                    // (0 when the result does not hold it): a callback that
-                    // keeps it then keeps the list the result returns (#281).
+                    // A cell made here keeps the number the result gives it,
+                    // renumbered as the result's entries are (0 when the
+                    // result does not hold it): a callback that keeps it then
+                    // keeps the list the result returns (#281).
                     var prov = (try w.provOf(e.cell, frame, params, fresh)) orelse continue;
+                    if ((prov.kind == .fresh or prov.kind == .esc) and prov.a > 0) prov.a = renum[prov.a - 1];
                     if (sr.taken and prov.kind == .param) prov.taken = true;
                     const owned = owned_probe and prov.kind != .shared and prov.kind != .top and prov.kind != .esc and prov.kind != .env;
                     if (prov.kind == .cb and owned) {

@@ -132,3 +132,40 @@ kBefore f xs =
 
 pub writeFirst : ⊤ → (List Int × Int) × List Int
 writeFirst ⊤ = kBefore (λys → ( ys, 1 )) []
+
+
+-- Two made lists at one result path, the kept one made second
+-- (`pickSecond`), or both as elements of the returned list (`inList`): the
+-- supply's fresh number is renumbered as the result's is, so the caller
+-- that writes the returned list while it holds the kept result is
+-- rejected whichever list it gets.
+pickSecond : Bool, (List Int → List Int × Int) → (List Int × Int) × List Int
+pickSecond c f =
+    a = [ 0 ]
+    b = [ 1 ]
+    t = f b
+    ( t, if c then a else b )
+
+
+inList : (List Int → List Int × Int) → (List Int × Int) × List (List Int)
+inList f =
+    a = [ 0 ]
+    b = [ 1 ]
+    t = f b
+    ( t, [ a, b ] )
+
+
+pub secondKeep : Bool → (List Int × Int) × List Int
+secondKeep c =
+    ( kept, xs ) = pickSecond c λys → ( ys, 1 )
+    ( kept, List.push xs 9 )
+
+
+pub listKeep : ⊤ → (List Int × Int) × List (List Int)
+listKeep ⊤ =
+    ( kept, xss ) = inList λys → ( ys, 1 )
+    case xss of
+        [ _, b ] →
+            ( kept, [ List.push b 9 ] )
+        _ →
+            ( kept, xss )
