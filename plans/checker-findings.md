@@ -6104,3 +6104,17 @@ ten levels deep got no pending line. `tests/corpus/ownership/EvidenceDeep.beni`.
 
 **CK-250 fixed 2026-10-16** (#271; ownership-checker.md §16.7, the audit
 table): every evidence term is walked, each once, with no cap.
+
+## CK-252 — errors printed beside a limit that only follow from it (2026-10-17)
+
+Diagnostics, issues #272 and #233. A declaration that reaches a §16.7 limit is
+one error, and rejections that rest on the limit take the `limit` cause. Two
+kinds did not: what a call applied a pessimistic summary rejected for its
+function arguments (a `need`, a `pending` line), and a condition lowered at a
+limit (a fixpoint's seeds, a value past `value-cells`), whose rejections kept
+the `exclusive` cause. Each was printed as a second error beside the limit's.
+`tests/corpus/check/bad/direct/OwnershipLimitPessimistic.beni`,
+`OwnershipLimitValueCells.beni`.
+
+**CK-252 fixed 2026-10-17** (#272, #233; ownership-checker.md §16.7, dated
+amendment): both take the `limit` cause (`limit_callee`, `cond_limit`).
