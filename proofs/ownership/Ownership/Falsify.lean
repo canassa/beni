@@ -272,8 +272,12 @@ def invariantB (vs : ValueSemantics.State) (hs : InPlaceSemantics.State) (env : 
     requirement, and otherwise names it (old or new) by every origin of one
     base that every requirement mentions. `none`: no such naming. -/
 def rename (γ : FNaming) (heap : Heap) (reqs : List (Nat × List Origin)) (observed : List Nat)
-    (escapes : List Origin) : Except String FNaming := do
-  let arrays := (reqs.map Prod.fst ++ γ.map Prod.fst).eraseDups
+    (escapes : List Origin) (links : List (Nat × Nat × Bool) := []) : Except String FNaming := do
+  -- Sources before their views: a view is named by its source's new origins
+  -- (`LinkNamed`), so the arrays are visited in address order. A view that no
+  -- binding describes (a garbage view of a protected source) is named too:
+  -- the clause names every array of a protected component alike.
+  let arrays := ((reqs.map Prod.fst ++ γ.map Prod.fst ++ links.map (·.1)).eraseDups).mergeSort (· ≤ ·)
   let mut out : FNaming := []
   for c in arrays do
     if c ≥ heap.size then continue
@@ -281,6 +285,9 @@ def rename (γ : FNaming) (heap : Heap) (reqs : List (Nat × List Origin)) (obse
     let old := originsOf γ c
     let ok := fun (os : List Origin) => rs.all (fun r => os.any r.contains) &&
       (!observed.contains c || os.all (escapedB escapes))
+    if let some (_, s, _) := links.find? (·.1 == c) then
+      let viewed := originsOf out s
+      if !viewed.isEmpty && ok viewed then out := out ++ [(c, viewed)]; continue
     if ok old then out := out ++ [(c, old)]; continue
     let candidates := (rs.flatten ++ old).map Origin.base |>.eraseDups
     match candidates.find? (fun b => ok ((rs.flatten ++ old).filter (·.base == b))) with
@@ -335,6 +342,8 @@ structure Setup where
   keptObs : List Observation
   escapes : List Origin
   γ : FNaming
+  /-- The stored links: a view at the higher address, its source, `front`. -/
+  links : List (Nat × Nat × Bool) := []
 
 def coin (n : Nat) : Generator.Gen Bool := do pure ((← draw n) == 0)
 
@@ -357,11 +366,32 @@ def config (distinct : Bool := false) : Generator.Gen Setup := do
     for k in List.range n do
       xs := xs ++ [.ref (← if distinct then pure (10 + k % 2) else draw leaves)]
     heap := heap.push xs
-  -- Each array gets one origin; two arrays may share one.
+  -- A third of the configurations hold a link (#274): a view of a nonempty
+  -- leaf at the next address, `front` or back, and half of those a second
+  -- view of the first (a chain), when the first is nonempty. A view is named
+  -- by exactly its source's origins, as `LinkNamed` asks of a protected
+  -- component and as the checker's `.view` rule gives it.
+  let mut links : List (Nat × Nat × Bool) := []
+  let nonemptyLeaves := (List.range leaves).filter fun c => !(heap[c]?.getD []).isEmpty
+  if !nonemptyLeaves.isEmpty && (← coin 3) then
+    let s ← pick nonemptyLeaves 0
+    let front ← coin 2
+    let view := viewOf front (heap[s]?.getD [])
+    let c := heap.size
+    heap := heap.push view
+    links := links ++ [(c, s, front)]
+    if !view.isEmpty && (← coin 2) then
+      let front2 ← coin 2
+      heap := heap.push (viewOf front2 view)
+      links := links ++ [(c + 1, c, front2)]
+  -- Each array gets one origin; two arrays may share one. A view shares its
+  -- source's.
   let mut γ : FNaming := []
   for c in List.range heap.size do
     let shareWith ← draw (4 * heap.size)
     γ := γ ++ [(c, [.site [1000 + (if shareWith < heap.size && !distinct then shareWith else c)] 0])]
+  for (c, s, _) in links do
+    γ := γ.map fun (d, os) => if d == c then (d, originsOf γ s) else (d, os)
   let orig := fun (c : Nat) => originsOf γ c
   let extra : Generator.Gen (List Origin) := do
     if !distinct && (← coin 4) then pure (orig (← draw heap.size)) else pure []
@@ -382,9 +412,15 @@ def config (distinct : Bool := false) : Generator.Gen Setup := do
   let mut types : List (Var × Ty) := []
   let mut kept : List Value := []
   for x in List.range vars do
-    let kind ← draw 7
+    let kind ← draw (if links.isEmpty then 7 else 9)
     let (w, a, t) ← (show Generator.Gen (Value × Abstract × Ty) from match kind with
       | 0 => do pure (Value.int (Int.ofNat (← draw 3)), Abstract.scalar, Ty.int)
+      | 7 | 8 => do
+          -- A view, or its source, as the checker describes them: the view's
+          -- abstract carries its source's origins and a fresh site.
+          let (c, s, _) ← pick links (0, 0, true)
+          if kind == 8 then pure (.ref s, ← leafAbs s, tL)
+          else pure (.ref c, Abstract.list (orig c ++ [.site [3000 + x] 0]) .scalar (← coin 2), tL)
       | 1 => do let c ← leafFor x 0; pure (.ref c, ← leafAbs c, tL)
       | 2 => if nested == 0 then do let c ← leafFor x 0; pure (.ref c, ← leafAbs c, tL)
           else do let c := leaves + (← draw nested); pure (.ref c, ← nestedAbs c, tN)
@@ -423,7 +459,7 @@ def config (distinct : Bool := false) : Generator.Gen Setup := do
   let keptVars := env.filter fun (_, _, w) => kept.any (·.equal w)
   let escapes := (observed.flatMap orig ++ keptVars.flatMap fun (x, _) =>
     ((aenv.lookup x).map Abstract.cells).getD []).eraseDups
-  pure { heap, env, aenv, types, kept, escapes, γ,
+  pure { heap, env, aenv, types, kept, escapes, γ, links,
          keptObs := kept.map fun w => (snapshot heap depthFuel w).toOption.getD (.int 0) }
 
 /-- Atoms of a type in a configuration, record fields included. -/
@@ -447,8 +483,9 @@ def expr (types : List (Var × Ty)) (next : Nat) : Nat → Generator.Gen (Expr �
     let idx := Atom.int ((Int.ofNat (← draw 3)) - 1)
     let hasL := !ls.isEmpty
     let hasN := !ns.isEmpty
-    match ← draw 22 with
+    match ← draw 23 with
     | 0 => if hasL then pure (.prim .push [l, num], tL) else pure (.prim (.literal .int) [num], tL)
+    | 21 => if hasL then pure (.prim (.view (← coin 2)) [l], tL) else pure (.atom num, .int)
     | 1 => if hasL then pure (.prim .set [l, idx, num], tL) else pure (.atom num, .int)
     | 2 => if hasL then pure (.prim .at [l, idx, .int 0], .int) else pure (.atom num, .int)
     | 3 => if hasL then pure (.prim .length [l], .int) else pure (.atom num, .int)
@@ -539,10 +576,12 @@ def writeExpr (types : List (Var × Ty)) (next : Nat) : Generator.Gen (Expr × O
   let r ← pick rs 0
   let none' : Expr × Option Var := (.atom (.int 0), none)
   -- Only the writes whose operand type the configuration has.
-  let kinds := (if ls.isEmpty then [] else [0, 1]) ++ (if rs.isEmpty then [] else [2]) ++
+  let kinds := (if ls.isEmpty then [] else [0, 1, 8]) ++ (if rs.isEmpty then [] else [2]) ++
     (if ns.isEmpty then [] else [3, 4, 5, 6])
   match ← pick kinds 7 with
   | 0 => pure (if ls.isEmpty then none' else (.prim .push [v l, num], some l))
+  | 8 => pure (if ls.isEmpty then none' else
+      (.letE next (.prim (.view true) [v l]) (.prim .push [v next, num]), some l))
   | 1 => pure (if ls.isEmpty then none' else (.prim .set [v l, idx, num], some l))
   | 2 => do let f ← draw 2; pure (if rs.isEmpty then none' else (.prim .push [.field (v r) f, num], some r))
   | 3 => pure (if ns.isEmpty then none' else (.focus (v n) idx next (.prim .push [v next, num]), some n))
@@ -612,6 +651,9 @@ structure Tally where
   observational : Nat := 0
   naming : Nat := 0
   errorClause : Nat := 0
+  /-- Configurations whose pre-state holds a link, and accepted ones whose post-state does (#274). -/
+  withLinks : Nat := 0
+  postLinks : Nat := 0
   deriving Repr
 
 /-- The expression creates a closure of one of the declarations `ids`. -/
@@ -639,9 +681,9 @@ def tryOne (seed : Nat) (t : Tally) (checker : Ownership.Config := {}) : Tally �
   let nested := mentionsDecl [11, 12, 13] e || cfg.env.any fun (_, _, w) => match w with
     | .closure 11 _ => true
     | _ => false
-  let mut t := { t with tried := t.tried + 1, lowFuel := t.lowFuel + (if fuel < 5000 then 1 else 0), aliased := t.aliased + (if aliased then 1 else 0), nested := t.nested + (if nested then 1 else 0) }
+  let mut t := { t with tried := t.tried + 1, lowFuel := t.lowFuel + (if fuel < 5000 then 1 else 0), aliased := t.aliased + (if aliased then 1 else 0), nested := t.nested + (if nested then 1 else 0), withLinks := t.withLinks + (if cfg.links.isEmpty then 0 else 1) }
   let vs : ValueSemantics.State := { fuel, kept := cfg.keptObs.toArray }
-  let hs : InPlaceSemantics.State := { fuel, heap := cfg.heap, kept := cfg.kept.toArray }
+  let hs : InPlaceSemantics.State := { fuel, heap := cfg.heap, kept := cfg.kept.toArray, links := cfg.links }
   -- `covered` false: the statement does not speak about the sample; the
   -- checker must still refuse it (a live use it cannot resolve).
   let covered := (union (uses e) after).all fun (x, _) =>
@@ -675,7 +717,7 @@ def tryOne (seed : Nat) (t : Tally) (checker : Ownership.Config := {}) : Tally �
     | .error m, .ok _ => return ({ t with errorClause := t.errorClause + 1 }, some s!"value run fails ({m}), in-place run succeeds")
     | .ok _, .error m => return ({ t with observational := t.observational + 1 }, some s!"in-place run fails: {m}")
     | .ok (o, vs'), .ok (w, hs') =>
-      t := { t with valueOk := t.valueOk + 1, withWrite := t.withWrite + (if hs'.writes > 0 then 1 else 0) }
+      t := { t with valueOk := t.valueOk + 1, withWrite := t.withWrite + (if hs'.writes > 0 then 1 else 0), postLinks := t.postLinks + (if hs'.links.isEmpty then 0 else 1) }
       if !correspondsB hs'.heap o w then
         return ({ t with observational := t.observational + 1 }, some "results do not correspond")
       -- Observational part of the conclusion, on any naming.
@@ -694,7 +736,7 @@ def tryOne (seed : Nat) (t : Tally) (checker : Ownership.Config := {}) : Tally �
         | none => []
       let reqs := requirements hs'.heap r w false ++ liveReqs ++ bindingReqs
       let observed := hs'.kept.toList.flatMap (reachArrays hs'.heap depthFuel)
-      match rename cfg.γ hs'.heap reqs observed st'.facts.escapes with
+      match rename cfg.γ hs'.heap reqs observed st'.facts.escapes hs'.links with
       | .error why => return ({ t with naming := t.naming + 1 }, some s!"no naming found: {why}")
       | .ok γ' =>
         let full := (invariantB vs' hs' cfg.env after cfg.aenv st'.facts.escapes γ').orElse fun _ =>
@@ -715,7 +757,7 @@ def invariantCampaign (count seed : Nat) (limit : Nat := 5) (checker : Ownership
       if shown < limit then
         shown := shown + 1
         let ((cfg, e, after, _), _) := sample.run s
-        IO.println s!"FALSIFY invariant_preserved configuration {i} (state {s}): {why}\n  heap={repr cfg.heap}\n  env={repr (cfg.env.map fun (x, _, w) => (x, w))}\n  aenv={repr cfg.aenv}\n  kept={repr cfg.kept} escapes={repr cfg.escapes}\n  naming={repr cfg.γ}\n  expr={repr e}"
+        IO.println s!"FALSIFY invariant_preserved configuration {i} (state {s}): {why}\n  heap={repr cfg.heap}\n  links={repr cfg.links}\n  env={repr (cfg.env.map fun (x, _, w) => (x, w))}\n  aenv={repr cfg.aenv}\n  kept={repr cfg.kept} escapes={repr cfg.escapes}\n  naming={repr cfg.γ}\n  expr={repr e}"
   IO.println s!"invariant_preserved: {repr t}"
   pure t
 
