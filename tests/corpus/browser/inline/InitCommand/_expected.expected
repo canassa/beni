@@ -1,0 +1,21 @@
+-- load
+console.log: A: ⊤
+console.log: B: ⊤
+console.log: C: ⊤
+<body>
+  <p>"111"</p>
+</body>
+-- listeners window
+(listeners: 1)
+(the DOM did not change)
+-- detail window rr-push 1
+console.log: pushed: ⊤
+<body>
+  <p>"1111"</p>
+</body>
+-- stop
+(stopped)
+<body></body>
+-- listeners window
+(listeners: 0)
+(the DOM did not change)
