@@ -742,6 +742,16 @@ user =
 - **Host values.** Reading tests own keys only. Writing builds each object with no prototype, its
   keys in field order and a variant's discriminator first, so `__proto__` and `constructor` are
   ordinary keys both ways.
+  *(Amended 2026-10-17, the owner: `read`'s contract, and the library's with it.)* **Reading sees
+  the keys ordinary JavaScript access sees.** A key is present when reading it answers anything
+  but `undefined`, wherever the object holds it, its own or along its prototype chain; a key
+  present with the value `undefined` is absent. `Object.hasOwn` is kept for the names
+  `Object.prototype` has (`__proto__`, `constructor`, `toString`, …), so a prototype key never
+  shadows a field. It is the rule `parse` already followed, now `read`'s and the library's as well,
+  over one list of those names (the compiled workers'; the library asks `Object.prototype`
+  itself, which holds the same names). The owner's reasons: a class instance's getter is its
+  data, and Elm's decoders read through the prototype; `undefined` means absent throughout
+  JavaScript; and `parse` already accepts the trade for a polluted `Object.prototype`.
 - **A typed tagged value** is matched by the variants' projections in order; a value none of them
   takes (an `Injection` left out) is `InvalidSchema` at its path.
 - **Effects.** The builders are `foreign pure`; every function they keep — a mapping, an
@@ -1120,13 +1130,15 @@ each a reachability member of its own (`SchemaGraph.Member`):
 | `print` | `$$write` | typed | host, for `JSON.stringify` | — |
 | `decode` | `$$decode` | typed Encoded value | typed | a typed input's shape is not tested; a field is read by its name, its path segment is its key |
 | `encode` | `$$encode` | typed | typed Encoded value | as `print`, with a typed output: a record in canonical key order, `Present`/`NonNull`/`Null` kept |
-| `read` | `$$readValue` | host, from anywhere | typed | every key tested with `Object.hasOwn`; the array handed in is never kept |
+| `read` | `$$readValue` | host, from anywhere | typed | every key tested as `parse` tests it — present when its read is not `undefined`, `Object.hasOwn` for the names `Object.prototype` has (*amended 2026-10-17*: it was `Object.hasOwn` for every key); the array handed in is never kept |
 | `write` | `$$writeValue` | typed | host, returned to the program | objects made with no prototype, `__proto__` an ordinary key; NaN, an infinity and an unprintable `Value` are written |
 
 The parse and print workers cannot serve the other four. They trust what `JSON.parse` makes: an own
 key is a key whose read is not `undefined`, and a list of primitives may keep the parsed array. A
 `Value` the host hands to `read` breaks both, since it may inherit any key, own one that holds
-`undefined`, and still be written by the host. And they write what `JSON.stringify` takes, refusing
+`undefined`, and still be written by the host. *(Amended 2026-10-17: keys are now read alike, as the
+host-value amendment of §5 says; what still keeps `read` apart is the array, which the host may
+write after the run, and values `JSON.parse` never makes.)* And they write what `JSON.stringify` takes, refusing
 a non-finite `Float`, where `write`'s output is not JSON text. Every worker answers exactly what
 `run` answers on the same context, as the parse and print workers do (*The specialised path*), so
 the differential corpus holds each to the library. Core's own makers (`list`, `nullable`,
@@ -1560,7 +1572,9 @@ data rows are what Effect's examples do with `transformOptional`: "missing means
 The effective order is §2's: rename at the boundary, then presence and the null test, then the
 inner schema or conversion. A default enters at the layer of its trigger:
 
-1. **`missing`**: the external key, after `as`, is not an own property. Its default fires, and
+1. **`missing`**: the external key, after `as`, is absent — its read answers `undefined`, or, for a
+   name `Object.prototype` has, it is not an own property (*amended 2026-10-17*: it was "not an own
+   property" for every key). Its default fires, and
    the field is not read. The other spelling of a renamed key is still an unknown key, as §6's
    *renamed key* row says.
 2. **`null`**: the key is present and its value is JSON `null`. Its default fires.
