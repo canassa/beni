@@ -1,0 +1,34 @@
+--! The second widget: a note of its own, and what it shows of the first
+--! widget's state, which it reads and never writes.
+
+import Html exposing (Html)
+import W1
+
+
+pub type alias Model =
+    note : String
+
+
+pub init : ⊤ → Model
+init ⊤ = { note = "quiet" }
+
+
+pub type Msg
+    = Toggle
+
+
+pub update : Msg, Model → Model
+update msg model =
+    case msg of
+        Toggle →
+            { model | note = if model.note == "quiet" then "loud" else "quiet" }
+
+
+pub view : Model, W1.Model → Html Msg
+view model first =
+    <section data-role="w2">
+        <p>Note: {model.note}</p>
+        <p>Level: {first.level}</p>
+        <p>{if first.level > 3 then "high" else "low"}</p>
+        <button data-role="toggle" onClick={Toggle}>Toggle</button>
+    </section>

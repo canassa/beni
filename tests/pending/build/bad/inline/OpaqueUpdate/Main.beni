@@ -1,0 +1,36 @@
+-- CK-254: an `update` computed when the page runs is refused by a rule.
+-- `browser-inline` writes each key's arm into its handler, so it needs the
+-- arms of `update` when the program is built (docs/design/browser-inline.md
+-- §8.7). Here `update` is what `updates True` returns: an opaque `update`,
+-- refused at the record's `update` by a language rule, class 3 (§5):
+-- `program_shape`, whose text says no "yet".
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Inc
+
+
+type alias Model =
+    count : Int
+
+
+updates : Bool → (Msg, Model → Model)
+updates byOne =
+    if byOne then
+        λ_ model → { model | count = model.count + 1 }
+    else
+        λ_ model → { model | count = model.count + 2 }
+
+
+view : Model → Html Msg
+view model = <button onClick={Inc}>{model.count}</button>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → { count = 0 }, update = updates True, view = view })
+        "root"

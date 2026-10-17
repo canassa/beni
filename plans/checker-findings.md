@@ -6135,3 +6135,15 @@ function that fails or at the value that carried it, and asks for a function
 that returns a list it owns. A tagger's line says that `Cmd.task` sends what it
 returns (§23.5, amended), and a schema member is named as written
 (`NeedMessage.Fixed.parse`).
+
+## CK-254 — `browser-inline` does not compile holes and handlers yet (2026-10-17)
+
+**Class:** missing-lowering. **Status:** open, closed slice by slice by S1 (#297).
+
+S0 compiles one text binding in one module. S1 compiles events, every text and property
+hole, mixed text, controlled inputs and eager `when` in one module, then another module's
+`view` and `update` as lifted pieces, cross-module readers, positional lists of texts and
+the per-path write passes (`docs/design/browser-inline.md` §8). Its goldens and refusals
+are under `tests/pending/{emit/release,browser,build/bad}/inline/`, written before the
+slice from tea-inline's output and the brief's hand-written targets (`plans/inline-s1/`);
+each moves into `tests/corpus/` with the commit that passes it.

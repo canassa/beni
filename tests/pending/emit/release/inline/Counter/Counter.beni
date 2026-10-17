@@ -1,0 +1,43 @@
+-- CK-254: browser-inline writes another module's view and arms as pieces.
+-- `Main` maps `Counter.view` with a constructor (docs/design/browser-inline.md
+-- §8): `Counter` lowers its view's pieces — the static markup, one
+-- binding function per read set — and its `update`'s arms, each a function
+-- of the arm's variables and `update`'s other parameters; `Main`'s handlers
+-- call them and release fuses each piece used once into its listener. No
+-- `case`, no message, no context chain.
+--! A counter, as a module of its own: its model, its messages, its
+--! `update` and its `view`.
+
+import Html exposing (Html)
+
+
+pub type alias Model =
+    count : Int
+
+
+pub init : ⊤ → Model
+init ⊤ = { count = 3 }
+
+
+pub type Msg
+    = Inc
+    | Dec
+
+
+pub update : Msg, Model → Model
+update msg model =
+    case msg of
+        Inc →
+            { model | count = clamp (model.count + 1) 0 10 }
+
+        Dec →
+            { model | count = clamp (model.count - 1) 0 10 }
+
+
+pub view : Model → Html Msg
+view model =
+    <section data-role="counter">
+        <output>{model.count}</output>
+        <button data-role="inc" disabled={model.count ≥ 10} onClick={Inc}>+1</button>
+        <button data-role="dec" onClick={Dec}>-1</button>
+    </section>

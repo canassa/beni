@@ -1,0 +1,35 @@
+-- CK-254: markup the program holds as a value is refused by a rule.
+-- `browser-inline` numbers every element of the page when the program is
+-- built (docs/design/browser-inline.md §8.7): markup kept in the model
+-- cannot be numbered, and the platform has no renderer to hand it, so the
+-- hole that shows it and the markup itself are refused by a language rule,
+-- class 3 (§5): `program_shape`, whose text says no "yet".
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Noop
+
+
+type alias Model =
+    banner : Html Msg
+
+
+update : Msg, Model → Model
+update _ model = model
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        {model.banner}
+    </main>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → { banner = <p>Welcome</p> }, update = update, view = view })
+        "root"

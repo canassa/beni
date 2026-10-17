@@ -1,0 +1,17 @@
+--! What several widgets share, independent of any one of them.
+
+--| The whole number a text holds, when it lies between the limits.
+pub intIn : String, Int, Int → Maybe Int
+intIn typed low high =
+    case String.toInt typed of
+        Just number →
+            if number ≥ low && number ≤ high then Just number else Nothing
+
+        Nothing →
+            Nothing
+
+
+--| What a number input shows: the text the user typed while it holds no valid
+--| number, else the number.
+pub shown : Maybe String, Int → String
+shown typed number = Maybe.withDefault typed (String.fromInt number)

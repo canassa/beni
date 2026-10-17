@@ -1,0 +1,67 @@
+-- element "root"
+-- load
+<body>
+  <div id="root">
+    <div data-role="counter">
+      <output>"3"</output>
+      <p>"Count: 3 of 10"</p>
+      <button data-role="inc">"+1"</button>
+      <button data-role="dec">"-1"</button>
+      <button data-role="reset">"Reset"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=inc]
+<body>
+  <div id="root">
+    <div data-role="counter">
+      <output>"4"</output>
+      <p>"Count: 4 of 10"</p>
+      <button data-role="inc">"+1"</button>
+      <button data-role="dec">"-1"</button>
+      <button data-role="reset">"Reset"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=inc] 8
+(the step's task ended)
+<body>
+  <div id="root">
+    <div data-role="counter">
+      <output>"10"</output>
+      <p>"Count: 10 of 10"</p>
+      <button data-role="inc" disabled="">"+1"</button>
+      <button data-role="dec">"-1"</button>
+      <button data-role="reset">"Reset"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=inc]
+(the DOM did not change)
+-- click [data-role=dec]
+<body>
+  <div id="root">
+    <div data-role="counter">
+      <output>"9"</output>
+      <p>"Count: 9 of 10"</p>
+      <button data-role="inc">"+1"</button>
+      <button data-role="dec">"-1"</button>
+      <button data-role="reset">"Reset"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=reset]
+<body>
+  <div id="root">
+    <div data-role="counter">
+      <output>"0"</output>
+      <p>"Count: 0 of 10"</p>
+      <button data-role="inc">"+1"</button>
+      <button data-role="dec" disabled="">"-1"</button>
+      <button data-role="reset">"Reset"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=dec]
+(the DOM did not change)
+

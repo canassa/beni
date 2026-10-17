@@ -1,0 +1,45 @@
+--! A widget that keeps a list of texts, edited at its end only: one
+--! appended, the last removed, all cleared. What it shows reads the list
+--! whole: its length and its texts joined.
+
+import Html exposing (Html)
+
+
+pub type alias Model =
+    texts : List String
+
+
+pub init : ⊤ → Model
+init ⊤ = { texts = [ "first" ] }
+
+
+pub type Msg
+    = Add
+    | RemoveLast
+    | Clear
+
+
+pub update : Msg, Model → Model
+update msg model =
+    case msg of
+        Add →
+            { model
+                | texts = [ …model.texts, "text ${String.fromInt (List.length model.texts + 1)}" ]
+            }
+
+        RemoveLast →
+            { model | texts = List.pop model.texts }
+
+        Clear →
+            { model | texts = [] }
+
+
+pub view : Model → Html Msg
+view model =
+    <section data-role="texts">
+        <p>Count: {List.length model.texts}</p>
+        <p>{String.join model.texts ", "}</p>
+        <button data-role="add" onClick={Add}>Add</button>
+        <button data-role="removeLast" onClick={RemoveLast}>Remove last</button>
+        <button data-role="clear" onClick={Clear}>Clear</button>
+    </section>

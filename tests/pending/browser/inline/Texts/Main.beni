@@ -1,0 +1,36 @@
+-- CK-254: browser-inline runs a widget's list of texts, edited at its end.
+-- `emit/release/inline/Texts`'s page (docs/design/browser-inline.md §8):
+-- removing the last of no texts changes nothing.
+import Browser
+import Html exposing (Html)
+import Tea
+import Texts
+
+
+type alias Model =
+    t : Texts.Model
+
+
+type Msg
+    = TextsMsg Texts.Msg
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        TextsMsg sub →
+            { model | t = Texts.update sub model.t }
+
+
+view : Model → Html Msg
+view model =
+    <div data-role="app">
+        {Html.map (Texts.view model.t) TextsMsg}
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → { t = Texts.init ⊤ }, update = update, view = view })
+        "root"

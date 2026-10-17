@@ -1,0 +1,38 @@
+-- CK-254: browser-inline writes a widget's list of texts, edited at its end.
+-- `Texts` appends with `[ …xs, x ]`, removes the last text with `List.pop`
+-- and clears; what it shows reads the list whole, by `List.length` and
+-- `String.join` (docs/design/browser-inline.md §8). No `For`: a list's
+-- texts as rows are slice S2's.
+import Browser
+import Html exposing (Html)
+import Tea
+import Texts
+
+
+type alias Model =
+    t : Texts.Model
+
+
+type Msg
+    = TextsMsg Texts.Msg
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        TextsMsg sub →
+            { model | t = Texts.update sub model.t }
+
+
+view : Model → Html Msg
+view model =
+    <div data-role="app">
+        {Html.map (Texts.view model.t) TextsMsg}
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → { t = Texts.init ⊤ }, update = update, view = view })
+        "root"

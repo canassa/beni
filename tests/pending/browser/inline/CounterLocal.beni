@@ -1,0 +1,48 @@
+-- CK-254: browser-inline runs one module's events, holes and controls.
+-- `emit/release/inline/CounterLocal`'s page (docs/design/browser-inline.md
+-- §8): each click calls its key's handler, whose write pass writes the
+-- output, the mixed text and the two `disabled` properties; a click whose
+-- arm leaves the count where it was writes nothing, since each binding
+-- compares before it writes.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    count : Int
+
+
+type Msg
+    = Inc
+    | Dec
+    | Reset
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Inc →
+            { model | count = clamp (model.count + 1) 0 10 }
+
+        Dec →
+            { model | count = clamp (model.count - 1) 0 10 }
+
+        Reset →
+            { model | count = 0 }
+
+
+view : Model → Html Msg
+view model =
+    <div data-role="counter">
+        <output>{model.count}</output>
+        <p>Count: {model.count} of 10</p>
+        <button data-role="inc" disabled={model.count ≥ 10} onClick={Inc}>+1</button>
+        <button data-role="dec" disabled={model.count ≤ 0} onClick={Dec}>-1</button>
+        <button data-role="reset" onClick={Reset}>Reset</button>
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt (Tea.sandbox { init = λ⊤ → { count = 3 }, update = update, view = view }) "root"

@@ -1,0 +1,74 @@
+--! Personal log 442o: 2 fields (int+int), 3 messages.
+
+import Html exposing (Html)
+import Json
+import Schema exposing (Value)
+import Ui
+
+
+pub type alias Model =
+    beds : Int
+    pages : Int
+    pagesTyped : Maybe String
+
+
+pub init : ⊤ → Model
+init ⊤ = { beds = 18, pages = -3, pagesTyped = Nothing }
+
+
+pub type Msg
+    = AddBeds
+    | SetPages String
+    | ResetPages
+
+
+pub update : Msg, Model → Model
+update msg model =
+    case msg of
+        AddBeds →
+            { model | beds = clamp (model.beds + 3) (-5) 43 }
+
+        SetPages typed →
+            case Ui.intIn typed (-5) 20 of
+                Just parsed →
+                    { model | pages = parsed, pagesTyped = Nothing }
+
+                Nothing →
+                    { model | pagesTyped = Just typed }
+
+        ResetPages →
+            { model | pages = -3 }
+
+
+--| The state the host sent, or the model as it was when it sent none.
+pub replace : Value, Model → Model
+replace state model =
+    case Json.decodeValue state of
+        Ok new →
+            { beds = new.beds, pages = new.pages, pagesTyped = Nothing }
+
+        Err _ →
+            model
+
+
+pub view : Model → Html Msg
+view model =
+    <section data-key="w1" data-role="widget">
+        <h2>Personal log 442o</h2>
+        <footer>
+            <output>{model.beds}</output>
+            <button data-role="addBeds" onClick={AddBeds}>Up 3</button>
+        </footer>
+        <strong>Pages = {model.pages}</strong>
+        <input
+            type="number"
+            data-role="setPages"
+            value={Ui.shown model.pagesTyped model.pages}
+            onInput={SetPages}
+        />
+        <button data-role="resetPages" onClick={ResetPages}>Restore</button>
+        <header>
+            <small>Tag 442o</small>
+            <small>{if model.beds ≥ 1 then "Many" else "Low"}</small>
+        </header>
+    </section>
