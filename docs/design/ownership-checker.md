@@ -3195,6 +3195,16 @@ compiler's. Its excerpt is the renderer's. A run that reports one does not repor
 The trailing excerpt every other diagnostic gets is not printed: the message holds its places. A JSON diagnostic
 carries the same message.
 
+*Amended 2026-10-17 (issue #272):* a `need` line (§16.2, §30.9) is about a function value, not a list, and its
+message says so. Its sentence names the function value — the argument as written, "a lambda", or "a function
+value" when nothing names it — says that it must return a list it owns, and why that fails: the exact detail, or
+that the checker cannot show it does. Its places are the call that hands it on ("the function is handed on
+here") and, when the function that fails is known, where it is: the lambda or local function as written, or
+the call or value that carried it here ("the function here may return a list it does not own"). Its fix is in prose: have the function return a list it owns, a
+new one or a copy made with `List.copy`. Before, the message said that the function changes a list it is
+handed, put "the list is changed in place here" under the call, suggested a copy before the change, and named
+a lambda's own parameter `<function value>`.
+
 Example, a later read through another name (`build/bad/direct/OwnershipAlias`):
 
 ```
