@@ -290,7 +290,9 @@ one task are two passes. *Measured against tea-inline's microtask flush in S1's 
 `selected`) is called by the handler of every key one of its own element's events reaches, whatever
 the key writes, so the control shows the model after the user's edit even when the arm leaves the
 model as it was (`plans/direct-rewrite.md` §8, pay-per-use). `prop` compares with the DOM's live
-value, so an edit the model agrees with writes nothing.
+value, so an edit the model agrees with writes nothing. *Noted 2026-10-18:* the rule is per element, so an `<option selected={…}>` is not
+written back on its `<select>`'s event — the event is the select's, not the option's; a select shows
+the model through its own `value`.
 
 **An event** is `on(E[n], f, type)`: `f` is the key's handler when the handler value is a
 constructor with no fields, and otherwise a function of the event that reads the payload through
