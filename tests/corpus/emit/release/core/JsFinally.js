@@ -1,1 +1,1 @@
-import{a}from"./_core/String.mjs";let b=false;const c=a=>{b=true;try{for(let d of a)d()}finally{b=false}a.length=0},d=a=>{if(b)return null;b=true;try{return a()}finally{b=false}},e=c=>{let d;try{d=c.offsetWidth}finally{b=false}return`${a(d)}px`},f=(a,b)=>{try{return a()}finally{b()}};export{c,d,e,f};
+let a=false;const b=c=>{a=true;try{for(let d of c)d()}finally{a=false}c.length=0},c=b=>{if(a)return null;a=true;try{return b()}finally{a=false}},d=b=>{let c;try{c=b.offsetWidth}finally{a=false}return`${c}px`},e=(a,b)=>{try{return a()}finally{b()}};export{b,c,d,e};
