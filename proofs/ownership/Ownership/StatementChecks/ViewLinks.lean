@@ -11,13 +11,14 @@ fails `LinksValid`, so the same witness in allocation order follows, where
 `LinkNamed` alone excludes it. These proofs use definitions and do not use
 the unproved step theorem.
 
-*A stale garbage view.* A builder's `put` writes with `write`, not
-`writeLinked`. A builder closed into a list, viewed, and grown again with
-`put` leaves its view stale: the checker accepts the program (nothing live
-holds the view or the list), both runs print `[1, 2]`, and the final heap
-holds the view as `[]` where its source's suffix is `[2]`. So a view's
-contents are not a clause of the invariant; a protected view is never stale,
-because its cells include its source's and the demand on the source fails. -/
+*A stale garbage view, and why the checker refuses it.* A builder's `put`
+writes with `write`, not `writeLinked`. A builder closed into a list, viewed,
+and grown again with `put` leaves its view stale in the in-place run: both
+runs print `[1, 2]`, and the final heap holds the view as `[]` where its
+source's suffix is `[2]`. Since #284 the model's `close` hands the builder
+over, as the spec's `done` does (`backend.md` invariant 5), so the checker
+refuses this program: the builder is live after its hand-over. In an
+accepted program no `put` reaches a linked array. -/
 
 namespace Ownership.ViewCounterexample
 
@@ -468,7 +469,7 @@ theorem ordered_no_invariant (gamma : Naming) :
   have distinct : aliases (.site [] 0) (.site [] 1) = false := by decide
   exact h.separating (.site [] 0) (.site [] 1) distinct 0 sourceNamed yIn
 
-/-! ## A stale garbage view (`put` writes with `write`) -/
+/-! ## A stale garbage view (`put` writes with `write`; refused since #284) -/
 
 def staleMain : Expr :=
   .letE 0 (.prim (.builder .int) [])
@@ -480,13 +481,15 @@ def staleMain : Expr :=
 
 def staleProgram : Program := { main := staleMain }
 
-#guard (check staleProgram).isOk
+#guard match check staleProgram with
+  | .error message => message == "Dead: an old holder is live after the demand"
+  | .ok _ => false
 #guard match ValueSemantics.run staleProgram, InPlaceSemantics.run staleProgram with
   | .ok t, .ok t' => t.finalValue == .list [.int 1, .int 2] && t'.finalValue == t.finalValue
   | _, _ => false
--- If `put` is later switched to `writeLinked`, this guard fails on purpose:
--- the view is then refreshed, and the contents fact becomes expressible as
--- a clause of the invariant.
+-- The in-place run of the refused program, taken directly: the view stays
+-- stale. If `put` is later switched to `writeLinked`, this guard fails on
+-- purpose. The first guard fails if `close` stops handing the builder over.
 #guard match (InPlaceSemantics.eval 1000 [] none [] staleMain).run { fuel := 1000 } with
   | .ok (_, s) => s.links == [(1, 0, true)] && s.heap[1]? == some [] &&
       s.heap[0]? == some [.int 1, .int 2] && viewOf true [.int 1, .int 2] == [.int 2]

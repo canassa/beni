@@ -521,8 +521,14 @@ def primitive (ctx : Context) (site : List Nat) (op : Prim) (args : List Abstrac
   | .copy, [.list cs elem _] => do
     noteRead cs
     pure (.list [fresh] elem (ctx.config.has .copyExclusive))
-  | .close, [.list cs elem ex] => pure (.list cs elem ex)
-  | .close, [.list cs elem ex, .list ds old _] =>
+  | .close, [.list cs elem ex] => do
+    -- The hand-over (`done b n` is π₁ `RAW`, ownership-checker.md §6.5;
+    -- backend.md invariant 5): the builder is written once more, to become
+    -- a plain list, so no holder of it may be live afterwards (#284).
+    demand ctx.config cs later elem.cells
+    pure (.list cs elem ex)
+  | .close, [.list cs elem ex, .list ds old _] => do
+    demand ctx.config cs later (union elem.cells ds)
     -- A11: preserve every possible input alias, even if this execution's
     -- callback must allocate; no representation-based specialization here.
     if ctx.config.has .closeSource then pure (.list cs elem ex)

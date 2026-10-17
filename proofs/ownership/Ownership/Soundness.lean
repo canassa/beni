@@ -536,11 +536,14 @@ canonical names for the two sides exist only in a callee frame, where
 premise on written storage (R1). A component that nothing protects is
 unconstrained, which asks nothing of a view that is garbage.
 
-A view's contents (its source's suffix or prefix) are not a clause. The
-runtime refreshes every view at a `writeLinked`, but a builder's `put` writes
-with `write`, so the garbage view of a closed and viewed builder goes stale
-(`ViewLinks.lean`, *A stale garbage view*). A protected view is never stale:
-its cells include its source's, so the demand on the source fails. -/
+A view's contents (its source's suffix or prefix) are not a clause yet.
+Every program-level write reaches a linked array through `writeLinked`,
+which refreshes every view; a builder's `put` writes with `write`, but since
+#284 `close` hands the builder over, so no accepted program puts into a
+closed builder (`ViewLinks.lean`, *A stale garbage view*). The contents
+clause is therefore true on reachable states, and `PROOF-PLAN.md` schedules
+it with the proof of `LinksValid` after a linked write, where its
+preservation needs the same contents arithmetic. -/
 
 /-- Every stored link, at every reachable state: the view was allocated
     after its source, both exist, the source is nonempty (a view is made only
