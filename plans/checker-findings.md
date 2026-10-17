@@ -6070,3 +6070,16 @@ mean that a value of `a` holds no `List a`. With a recursive type
 
 **CK-248 fixed 2026-10-16** (#270; ownership-checker.md §30.9 rule 4, dated
 amendment): `mayHold` no longer takes that shortcut; `mayShare` keeps it.
+
+## CK-251 — a callee kept a callback's result, then wrote the list it handed that callback (2026-10-16)
+
+Ownership soundness, issue #281. §16.4's supply edge checked an actual that
+writes its supply, not one that keeps it in its result. `kParam f xs = t = f xs;
+( t, List.push xs 9 )` with `f = λys → ( ys, 1 )` was accepted, and in place
+`t.0` saw the push; so was a callee that hands on a list it made itself.
+`tests/corpus/ownership/CallbackKeeps.beni`.
+
+**CK-251 fixed 2026-10-16** (#281; ownership-checker.md §16.4, the keep edge):
+at the call, a borrowed supply of a parameter the callee writes rejects an actual
+that may keep it; in the callee, a callback's result holds what it was handed for
+a later write of a list made there.
