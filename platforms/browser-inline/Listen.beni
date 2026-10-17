@@ -2,8 +2,10 @@
 --! §9.8.5): what a platform layer builds its subscriptions on. A listener
 --! is a function of what it sends that adds the host's listener and
 --! returns what removes it; `Sub.on` declares one. Each event is read while
---! it is dispatched, so what it carried is not read late.
+--! it is dispatched, inside the dispatch guard, so what it carried is not
+--! read late and a reader that throws stops the page.
 
+import Inline
 import Js
 
 
@@ -13,6 +15,9 @@ import Js
 pub on : String, String, sync (Js.Value → a), sync (a → ⊤) → (⊤ → ⊤)
 on target name read send =
     host = Js.global target
-    handler = Js.from λevent → send (read event)
+    -- The read is program code: it runs inside the dispatch guard, so a
+    -- throw in it stops the page, and once the page has stopped it does
+    -- not run.
+    handler = Js.from λevent → Inline.send (Js.from λdispatched → send (read dispatched)) event
     _ = Js.call host "addEventListener" [ Js.from name, handler ]
     λ⊤ → Js.to (Js.call host "removeEventListener" [ Js.from name, handler ])
