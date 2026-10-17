@@ -121,7 +121,7 @@ const list_rows = [_]Entry{
 
 /// The modules every function of which is `Fresh` of its arguments, save
 /// the exceptions `bodied` lists.
-const fresh_modules = [_][]const u8{ "Dict", "Set", "Basics", "Int", "Float", "String", "Char", "Cmd", "Sub", "Task", "Js", "Html" };
+const fresh_modules = [_][]const u8{ "Dict", "Set", "Basics", "Int", "Float", "String", "Char", "Cmd", "Sub", "Task", "Js", "Html", "Schema" };
 
 /// Core functions summarised from their bodies although their module is in
 /// `fresh_modules`: `Basics.identity x = x` and `always`, by their bodies
