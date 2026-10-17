@@ -1,0 +1,1 @@
+[{"code":"unknown_import_name","severity":"error","span":{"file":"Main.beni","start":{"line":27,"col":19},"end":{"line":27,"col":29}},"title":"UNKNOWN IMPORT NAME","message":"`Sub` does not expose `listen`.\n\nCheck the spelling, or check that the declaration in `Sub` is marked `pub`."}]

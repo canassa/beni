@@ -1,0 +1,42 @@
+-- `browser-inline` compiles a subscription set that is the same for the
+-- page's life (docs/design/browser-inline.md §3): one that reads the model
+-- needs the subscription diff, slice S4, and is refused at the program's
+-- call, class 3 (§5).
+import Browser
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Push
+import Schema exposing (Value)
+import Sub exposing (Sub)
+import Tea
+
+
+type alias Model =
+    listening : Bool
+
+
+type Msg
+    = Pushed Value
+
+
+init : ⊤ → Model × Cmd Msg
+init ⊤ = ( { listening = True }, Cmd.none )
+
+
+update : Msg, Model → Model × Cmd Msg
+update _ model = ( model, Cmd.none )
+
+
+subscriptions : Model → Sub Msg
+subscriptions model = if model.listening then Push.onPush Pushed else Sub.none
+
+
+view : Model → Html Msg
+view _ = <div />
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.element { init = init, update = update, view = view, subscriptions = subscriptions })
+        "root"

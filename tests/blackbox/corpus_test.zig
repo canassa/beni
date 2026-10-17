@@ -614,6 +614,34 @@ fn fixturesOf(arena: std.mem.Allocator, cfg: *const Config, kind: Kind) ![]const
             fixture.release = true;
         }
     }
+    // `inline/`: built for `browser-inline`, whose `inline` lowering
+    // compiles a program whole with no task kernel (`browser-inline.md`) —
+    // `emit/inline/` and `emit/release/inline/` application builds, their
+    // goldens in tea-inline's shape, `build/bad/inline/` projects for what
+    // it refuses, `browser/inline/` pages.
+    if (kind == .emit) {
+        const inline_dir = try std.fs.path.join(arena, &.{ kind_dir, "inline" });
+        const start = fixtures.items.len;
+        try collect(arena, inline_dir, false, false, &fixtures, true);
+        for (fixtures.items[start..]) |*fixture| {
+            fixture.platform = "browser-inline";
+            fixture.app = true;
+        }
+        const release_inline = try std.fs.path.join(arena, &.{ kind_dir, "release", "inline" });
+        const release_start = fixtures.items.len;
+        try collect(arena, release_inline, false, false, &fixtures, true);
+        for (fixtures.items[release_start..]) |*fixture| {
+            fixture.platform = "browser-inline";
+            fixture.app = true;
+            fixture.release = true;
+        }
+    }
+    if (kind == .build_bad or kind == .browser) {
+        const inline_dir = try std.fs.path.join(arena, &.{ kind_dir, "inline" });
+        const start = fixtures.items.len;
+        try collect(arena, inline_dir, false, false, &fixtures, true);
+        for (fixtures.items[start..]) |*fixture| fixture.platform = "browser-inline";
+    }
     // `emit/release/tea/`: release applications built for `browser-tea`,
     // their golden `_main.mjs` whole — what a page of The Elm Architecture
     // ships once its program, `Tea` and the `browser` layer are one file
@@ -1212,7 +1240,7 @@ fn collect(arena: std.mem.Allocator, dir_path: []const u8, core: bool, required:
     const start = out.items.len;
     var it = dir.iterate();
     while (try it.next(io)) |entry| {
-        if (entry.kind == .directory and projects and !std.mem.eql(u8, entry.name, "core") and !std.mem.eql(u8, entry.name, "markup") and !std.mem.eql(u8, entry.name, "dom") and !std.mem.eql(u8, entry.name, "tea") and !std.mem.eql(u8, entry.name, "app") and !std.mem.eql(u8, entry.name, "split") and !std.mem.eql(u8, entry.name, "direct")) {
+        if (entry.kind == .directory and projects and !std.mem.eql(u8, entry.name, "core") and !std.mem.eql(u8, entry.name, "markup") and !std.mem.eql(u8, entry.name, "dom") and !std.mem.eql(u8, entry.name, "tea") and !std.mem.eql(u8, entry.name, "app") and !std.mem.eql(u8, entry.name, "split") and !std.mem.eql(u8, entry.name, "direct") and !std.mem.eql(u8, entry.name, "inline")) {
             try out.append(arena, .{ .dir = dir_path, .name = try arena.dupe(u8, entry.name), .core = core, .project = true });
             continue;
         }

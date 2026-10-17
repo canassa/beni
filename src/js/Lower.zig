@@ -342,6 +342,21 @@ pub const Direct = struct {
         sites: []const Site = &.{},
         view_capped: bool = false,
         root_group: u32 = std.math.maxInt(u32),
+        /// Version 1.14 (`Lowering.effects`): the subscription set, each of
+        /// its declarations' starts, each key's command and `init`'s.
+        subscriptions: beni_markup.Program.Subscriptions = .unknown,
+        starts: []const Start = &.{},
+        commands: []const beni_markup.Program.Command = &.{},
+        init_command: beni_markup.Program.Command = .unknown,
+    };
+
+    /// Version 1.14: a declaration's start, as `Writes.FunInfo` gives it.
+    pub const Start = struct {
+        kind: enum { lambda, top, other },
+        module: u32,
+        decl: u32,
+        inst: u32,
+        bound: []const u32,
     };
 
     pub const Let = struct {
@@ -862,6 +877,9 @@ pub const Lowerer = struct {
     /// module's surviving declarations, by call instruction, ascending
     /// (`findPrograms`; `boundary.md` §9.4.6, version 1.6).
     program_calls: []ProgramCall = &.{},
+    /// Version 1.14 (`Lowering.places`): the placement calls compiled as
+    /// their first argument alone, the program call they place, sorted.
+    placed_calls: []const u32 = &.{},
     /// Per declaration, whether the program hook consumed it: a `view` or
     /// `update` a program record names and nothing else does, which is not
     /// emitted — the hook compiles what it needs of it where the program
@@ -7767,6 +7785,8 @@ pub const Lowerer = struct {
         // §9.4.6, version 1.6): the constructor applied to the mount the
         // lowering compiles, and the record never evaluated.
         if (l.programCallAt(inst)) |pc| return l.programCall(out, inst, pc, callee_inst);
+        // Version 1.14: a placement the program's mount already made.
+        if (l.placed_calls.len != 0 and l.placedCallAt(inst)) return l.expr(out, arg_insts[0]);
 
         // A re-cons of a list a loop holds as an offset (§7's re-consing
         // rule, §8's *Scalar views*): the offset it was matched at, or the
@@ -11135,6 +11155,7 @@ pub const Lowerer = struct {
             }.less);
             l.program_calls = calls.items;
             try l.findConsumed();
+            if (lowering.places) try l.findPlaced();
         }
         if (lowering.placements.len != 0) try l.findPlacedTwice();
     }
@@ -11339,6 +11360,50 @@ pub const Lowerer = struct {
     /// program value named twice among what `main`'s placements place —
     /// through `programs` lists, `mountAt`s and the top-level values of this
     /// module that hold them — would be one state mounted twice.
+    /// Version 1.14 (`Lowering.places`): each call of a `first` placement
+    /// whose first argument is a program constructor's call and whose
+    /// second is a string literal. The hook is handed the literal
+    /// (`Program.placed`) and the placement call is compiled as the
+    /// program call alone.
+    fn findPlaced(l: *Lowerer) !void {
+        const tags = l.bir.insts.items(.tag);
+        const data = l.bir.insts.items(.data);
+        var placed: std.ArrayList(u32) = .empty;
+        for (l.bir.decls, 0..) |d, di| {
+            if (!d.kind.isValue() or !l.liveDecl(@intCast(di))) continue;
+            var at = d.inst_start.int();
+            while (at < d.inst_end.int()) : (at += 1) {
+                if (tags[at] != .call) continue;
+                const placement = l.placementOf(@fromBackingInt(@intCast(data[at].lhs))) orelse continue;
+                if (placement.places != .first) continue;
+                const args = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(data[at].rhs))), Inst.Index);
+                if (args.len != 2 or l.bir.instTag(args[1]) != .string) continue;
+                const pc = l.programCallAt(args[0]) orelse continue;
+                if (pc.refused or pc.placed != .unknown) continue;
+                pc.placed = .{ .at = l.bir.bytes(args[1]) };
+                try placed.append(l.scratch, @intCast(at));
+            }
+        }
+        l.placed_calls = placed.items;
+        // `main = Tea.sandbox { … }`: the entry file's `run` mounts it at
+        // `document.body`.
+        if (l.in.entry_decl) |entry| if (l.bir.decls[entry].body.unwrap()) |body| {
+            if (l.programCallAt(body)) |pc| if (!pc.refused and pc.placed == .unknown) {
+                pc.placed = .body;
+            };
+        };
+    }
+
+    /// The placement call at `inst` compiled as its first argument, if it
+    /// is one (`findPlaced`).
+    fn placedCallAt(l: *const Lowerer, inst: Inst.Index) bool {
+        return std.sort.binarySearch(u32, l.placed_calls, inst.int(), struct {
+            fn order(key: u32, x: u32) std.math.Order {
+                return std.math.order(key, x);
+            }
+        }.order) != null;
+    }
+
     fn findPlacedTwice(l: *Lowerer) !void {
         const entry = l.in.entry_decl orelse return;
         const body = l.bir.decls[entry].body.unwrap() orelse return;
@@ -11510,6 +11575,7 @@ pub const Lowerer = struct {
             .view_branch = pc.record and view == .function and view_root == null and l.viewBranchOf(pc) != null,
             .document_branch = l.documentBranchOf(pc),
             .update = if (pc.record) update else .computed,
+            .placed = pc.placed,
         };
         // A `view` whose body is a branch evaluates its `let`s wherever the
         // values of its arms are: one that may have an effect is refused, as
@@ -11726,6 +11792,72 @@ pub const Lowerer = struct {
     }
 
     const star_key = [_]beni_markup.Program.Key{.{ .name = "*", .params = 1, .star = true }};
+
+    /// `cx.programSubscriptions` (version 1.14).
+    fn directSubscriptions(l: *Lowerer) beni_markup.Program.Subscriptions {
+        const pc = l.program_now orelse return .unknown;
+        const d = pc.direct orelse return .unknown;
+        return d.subscriptions;
+    }
+
+    /// `cx.programCommand` (version 1.14).
+    fn directCommand(l: *Lowerer, key: ?u32) beni_markup.Program.Command {
+        const pc = l.program_now orelse return .unknown;
+        const d = pc.direct orelse return .unknown;
+        const k = key orelse return d.init_command;
+        return if (k < d.commands.len) d.commands[k] else .unknown;
+    }
+
+    /// `cx.programSubscriptionStart` (version 1.14): declaration `i`'s start
+    /// applied to `send`. The start is a lambda of this module, lowered
+    /// where its declaration's other code is; what it captures from the
+    /// frame it was made in is refused, and so is a start of another
+    /// module, which the compiler cannot write here.
+    fn directSubscriptionStart(l: *Lowerer, block: beni_markup.Block, i: u32, send: Node.Index) Allocator.Error!?Node.Index {
+        const st = l.mk.?;
+        const p = st.pos;
+        const pc = l.program_now orelse return null;
+        const d = pc.direct orelse return null;
+        if (i >= d.starts.len) return null;
+        const start = d.starts[i];
+        const where = switch (d.subscriptions) {
+            .set => |set| set[i].where,
+            else => "",
+        };
+        const here = start.module == l.in.module.int();
+        if (start.kind != .lambda or !here) {
+            const owner = if (start.module < l.in.graph.count()) l.text(l.in.graph.moduleName(@fromBackingInt(@intCast(start.module)))) else "?";
+            try l.programReport(.call, .not_implemented, try std.fmt.allocPrint(l.scratch,
+                \\A limit of the compiler: this program's subscription at {s} starts with code of the
+                \\module `{s}`, and the compiler can write into a program's mount only a function written
+                \\in place in the module that calls the program's constructor. It lowers one module at a
+                \\time, so it cannot write another module's code there or name its private values
+                \\(`docs/design/browser-inline.md` §5, class 4). What lifts it is writing another module's
+                \\closure into the mount, the same mechanism a widget module's `update` needs.
+            , .{ where, owner }));
+            return null;
+        }
+        for (start.bound) |local| if (l.subtreeReadsLocal(@fromBackingInt(start.inst), local)) {
+            try l.programReport(.call, .not_implemented, try std.fmt.allocPrint(l.scratch,
+                \\A limit of the compiler: this program's subscription at {s} starts with a function that
+                \\reads a value of the function it is written in, which the compiler cannot write into the
+                \\program's mount (`docs/design/browser-inline.md` §5, class 4). Write the start with no
+                \\local of its own function, or as a top-level function's partial application.
+            , .{where}));
+            return null;
+        };
+        var stmts: StmtList = .empty;
+        const depth = l.case_depth;
+        l.case_depth = 0;
+        defer l.case_depth = depth;
+        const outer = l.enterFunction(false);
+        defer l.leaveFunction(outer);
+        const saved = try l.enterDecl(start.decl);
+        defer l.leaveDecl(saved);
+        const f = try l.expr(&stmts, @fromBackingInt(start.inst));
+        try st.blocks.items[@backingInt(block)].appendSlice(l.scratch, stmts.items);
+        return try l.call(f, &.{send}, p);
+    }
 
     fn directSteps(l: *Lowerer, key: u32) []const Direct.Step {
         const pc = l.program_now orelse return &.{};
@@ -14542,6 +14674,9 @@ const ProgramCall = struct {
     refused: bool = false,
     /// `cx.programInit` has evaluated `init`.
     init_used: bool = false,
+    /// Version 1.14: the element a placement around the call mounts it at
+    /// (`findPlaced`).
+    placed: beni_markup.Program.Placed = .unknown,
 };
 
 /// What the compiler keeps while it lowers one module's markup.
@@ -14971,6 +15106,19 @@ const markup_vtable: beni_markup.VTable = struct {
         return lowerer(impl).directLet(r, k);
     }
 
+    fn programSubscriptions(impl: *anyopaque) M.Program.Subscriptions {
+        return lowerer(impl).directSubscriptions();
+    }
+
+    fn programSubscriptionStart(impl: *anyopaque, into: M.Block, i: u32, send: M.Expr) E!M.Expr {
+        const n = try lowerer(impl).directSubscriptionStart(into, i, node(send)) orelse return error.Reported;
+        return expr(n);
+    }
+
+    fn programCommand(impl: *anyopaque, key: ?u32) M.Program.Command {
+        return lowerer(impl).directCommand(key);
+    }
+
     fn literal(impl: *anyopaque, which: M.Literal, bytes: []const u8) E!M.Expr {
         const l = lowerer(impl);
         const p = pos(l);
@@ -15166,6 +15314,9 @@ const markup_vtable: beni_markup.VTable = struct {
         .program_nested_enter = programNestedEnter,
         .program_view_statements = programViewStatements,
         .program_let = programLet,
+        .program_subscriptions = programSubscriptions,
+        .program_subscription_start = programSubscriptionStart,
+        .program_command = programCommand,
         .literal = literal,
         .template = template,
         .name = name,

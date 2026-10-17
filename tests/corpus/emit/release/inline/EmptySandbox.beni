@@ -1,0 +1,13 @@
+-- `EmptyElement`'s page as a `Tea.sandbox` mounted at `document.body`: the
+-- same guard, `run`, `stop` and mount, with no `init` command to read and no
+-- subscription set (docs/design/browser-inline.md).
+import Html exposing (Html)
+import Tea
+
+
+view : {} → Html {}
+view _ = <div data-role="dashboard" />
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → {}, update = λ_ m → m, view = view }

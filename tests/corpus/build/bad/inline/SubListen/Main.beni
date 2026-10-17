@@ -1,0 +1,35 @@
+-- `browser-inline`'s `Sub` has no `listen`: a subscription whose body runs
+-- in a fiber needs the task kernel (docs/design/browser-inline.md §1). A
+-- program written with `Sub.listen` names a value the module does not have.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub exposing (Sub)
+import Tea
+
+
+type Msg
+    = Tick
+
+
+type Clock
+    = Clock
+
+
+init : ⊤ → {} × Cmd Msg
+init ⊤ = ( {}, Cmd.none )
+
+
+update : Msg, {} → {} × Cmd Msg
+update _ model = ( model, Cmd.none )
+
+
+subscriptions : {} → Sub Msg
+subscriptions _ = Sub.listen Clock (λsend → send ⊤) λ_ → Tick
+
+
+view : {} → Html Msg
+view _ = <div />
+
+
+main : Tea.Program
+main = Tea.element { init = init, update = update, view = view, subscriptions = subscriptions }

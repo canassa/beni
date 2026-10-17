@@ -1,0 +1,47 @@
+-- The research generators' push subscription, through their own platform
+-- layer (`Push.onPush`, unchanged). The analysis reads the set exactly —
+-- one declaration, key `Pushed`, its tagger `Pushed` — but its start is
+-- code of the layer's module, which the compiler cannot write into the
+-- program's mount: a limit of the compiler, class 4
+-- (docs/design/browser-inline.md §5), refused rather than run another way.
+import Browser
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Push
+import Schema exposing (Value)
+import Sub exposing (Sub)
+import Tea
+
+
+type Msg
+    = Pushed Value
+    | Tick
+
+
+init : ⊤ → {} × Cmd Msg
+init ⊤ = ( {}, Cmd.none )
+
+
+update : Msg, {} → {} × Cmd Msg
+update msg model =
+    case msg of
+        Pushed _ →
+            ( model, Cmd.none )
+
+        Tick →
+            ( model, Cmd.none )
+
+
+subscriptions : {} → Sub Msg
+subscriptions _ = Push.onPush Pushed
+
+
+view : {} → Html Msg
+view _ = <div />
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.element { init = init, update = update, view = view, subscriptions = subscriptions })
+        "root"

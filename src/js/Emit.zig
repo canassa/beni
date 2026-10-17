@@ -1894,11 +1894,14 @@ const Emitter = struct {
         if (entry != null) {
             if (e.suppliedAs("run") != null) try names.append(e.scratch, "run");
             if (e.suppliedAs("start") != null and try e.startData() != null) try names.append(e.scratch, "start");
+            // The page's unmount (`boundary.md` §9.4.5, amended 2026-10-17):
+            // the page may call it whatever the program reached.
+            if (e.suppliedAs("stop") != null) try names.append(e.scratch, "stop");
         } else {
             // A build with no entry file (`--library`): the page's own
             // entry mounts the exported program, so the program runtime's
             // exports are written as the hand-written file's are, whole.
-            for ([_][]const u8{ "run", "start", "flush" }) |w| {
+            for ([_][]const u8{ "run", "start", "flush", "stop" }) |w| {
                 if (e.suppliedAs(w) != null) try names.append(e.scratch, w);
             }
         }
@@ -2470,6 +2473,33 @@ const Emitter = struct {
             packages[i] = e.graph().modulePackage(m);
             targets[i] = false;
         }
+        // Version 1.14: the platform's `Sub` and `Cmd` values, by name.
+        var effects: ?Writes.Effects = null;
+        if (findLowering(e.options.platform.lowering.?).?.effects) |fx| {
+            var found: Writes.Effects = .{};
+            for (0..n) |i| {
+                if (packages[i] != .platform) continue;
+                const m: Graph.Index = @fromBackingInt(@intCast(i));
+                const ref = struct {
+                    fn of(em: *Emitter, mod: Graph.Index, name: []const u8) Writes.Effects.Ref {
+                        const d = em.moduleValue(mod, name) orelse return .{};
+                        return .{ .m = mod.int(), .d = d };
+                    }
+                }.of;
+                if (std.mem.eql(u8, names[i], fx.sub)) {
+                    found.sub_none = ref(e, m, "none");
+                    found.sub_batch = ref(e, m, "batch");
+                    found.sub_map = ref(e, m, "map");
+                    found.sub_on = ref(e, m, "on");
+                }
+                if (std.mem.eql(u8, names[i], fx.cmd)) {
+                    found.cmd_none = ref(e, m, "none");
+                    found.cmd_batch = ref(e, m, "batch");
+                    found.cmd_perform = ref(e, m, "perform");
+                }
+            }
+            effects = found;
+        }
         const w = try Writes.init(.{
             .gpa = e.gpa,
             .graph = e.graph(),
@@ -2480,6 +2510,7 @@ const Emitter = struct {
             .module_names = names,
             .packages = packages,
             .targets = targets,
+            .effects = effects,
         });
         defer w.deinit();
         const calls = try w.runCalls();
@@ -2528,6 +2559,61 @@ const Emitter = struct {
                 } else false;
             }
             out.settles = settles;
+            // Version 1.14: the subscription set and the commands.
+            if (effects != null) {
+                const where = struct {
+                    fn of(em: *Emitter, al: std.mem.Allocator, module: u32, inst: u32) ![]const u8 {
+                        if (module == Writes.none or inst == Writes.none) return "";
+                        const mi: Graph.Index = @fromBackingInt(@intCast(module));
+                        const b = em.bir(mi);
+                        if (inst >= b.insts.len) return "";
+                        const file = em.graph().moduleFile(mi);
+                        const at = em.tokenPosition(file, b.insts.items(.main_token)[inst]);
+                        return std.fmt.allocPrint(al, "{s}:{d}:{d}", .{ std.fs.path.basename(em.session.store.path(file)), at.line, at.col });
+                    }
+                }.of;
+                const command = struct {
+                    fn of(em: *Emitter, al: std.mem.Allocator, c: Writes.Command) !beni_markup.Program.Command {
+                        return switch (c.class) {
+                            .none => .none,
+                            .runs => .runs,
+                            .suspends => .{ .suspends = try where(em, al, c.module, c.inst) },
+                            .unknown => .unknown,
+                        };
+                    }
+                }.of;
+                const commands = try a.alloc(beni_markup.Program.Command, keys.len);
+                for (commands, 0..) |*c, k| c.* = if (prog.recognised) try command(e, a, prog.keys[k].command) else .unknown;
+                out.commands = commands;
+                out.init_command = try command(e, a, prog.init_command);
+                const subs = prog.subscriptions;
+                switch (subs.class) {
+                    .model => out.subscriptions = .model,
+                    .unknown => out.subscriptions = .unknown,
+                    .no_key => out.subscriptions = .{ .no_key = try where(e, a, subs.decls[subs.bad].module, subs.decls[subs.bad].inst) },
+                    .set => {
+                        const set = try a.alloc(beni_markup.Program.Subscription, subs.decls.len);
+                        const starts = try a.alloc(Lower.Direct.Start, subs.decls.len);
+                        for (subs.decls, set, starts) |dcl, *s, *st| {
+                            s.* = .{ .handler = dcl.key_index, .fields = @intCast(dcl.fields.len), .first = dcl.first, .where = try where(e, a, dcl.module, dcl.inst) };
+                            const info = try w.funInfo(dcl.start);
+                            st.* = .{
+                                .kind = switch (info.kind) {
+                                    .lambda => .lambda,
+                                    .top => .top,
+                                    .other => .other,
+                                },
+                                .module = info.m,
+                                .decl = info.d,
+                                .inst = info.inst,
+                                .bound = try a.dupe(u32, info.bound),
+                            };
+                        }
+                        out.subscriptions = .{ .set = set };
+                        out.starts = starts;
+                    },
+                }
+            }
             out.view_capped = prog.view_capped;
             const sites = try a.alloc(Lower.Direct.Site, prog.sites.len);
             for (prog.sites, sites) |site_, *to| to.* = .{
@@ -3794,7 +3880,7 @@ const Emitter = struct {
         if (e.runtime_module) |module| {
             var names: std.ArrayList([]const u8) = .empty;
             try names.appendSlice(e.scratch, e.program_uses);
-            for ([_][]const u8{ "start", "flush" }) |w| {
+            for ([_][]const u8{ "start", "flush", "stop" }) |w| {
                 if (e.suppliedAs(w) != null) try names.append(e.scratch, w);
             }
             for (names.items) |n| {
@@ -4577,6 +4663,14 @@ const Emitter = struct {
             else
                 try out.print(scratch, "export{{{s} as flush}};", .{spelled});
         };
+        // The page's unmount (`boundary.md` §9.4.5, amended 2026-10-17),
+        // the runtime module's, exported as `flush` is.
+        if (e.suppliedAs("stop") != null) {
+            if (e.globals.lookup(try e.moduleName(e.runtime_module.?, "stop"))) |ordinal| {
+                var buf: [8]u8 = undefined;
+                try out.print(scratch, "export{{{s} as stop}};", .{Rename.spell(ordinal, &buf)});
+            }
+        }
         // One line, the pieces joined with no newline between them
         // (`appendJoined`), and a newline at the end of the file.
         if (out.items.len != 0 and out.items[out.items.len - 1] != '\n') try out.append(scratch, '\n');
@@ -4701,7 +4795,7 @@ const Emitter = struct {
         if (e.runtime_module) |module| {
             var names: std.ArrayList([]const u8) = .empty;
             try names.appendSlice(e.scratch, e.program_uses);
-            if (entry != null) for ([_][]const u8{ "run", "start", "flush" }) |w| {
+            if (entry != null) for ([_][]const u8{ "run", "start", "flush", "stop" }) |w| {
                 if (e.suppliedAs(w) != null) try names.append(e.scratch, w);
             };
             for (names.items) |n| {
@@ -5171,6 +5265,14 @@ const Emitter = struct {
                 try text.print(e.scratch, "export{{{s} as flush}}from\"./{s}\";\n", .{ spelled, module_path })
             else
                 try text.print(e.scratch, "export {{ {s} as flush }} from \"./{s}\";\n", .{ spelled, module_path });
+        };
+        // The page's unmount (`boundary.md` §9.4.5, amended 2026-10-17).
+        if (e.suppliedAs("stop")) |s| if (e.live.decl(module, s.decl)) {
+            const spelled = try e.moduleSpelling(module, "stop");
+            if (release)
+                try text.print(e.scratch, "export{{{s} as stop}}from\"./{s}\";\n", .{ spelled, module_path })
+            else
+                try text.print(e.scratch, "export {{ {s} as stop }} from \"./{s}\";\n", .{ spelled, module_path });
         };
         try e.produce(e.options.platform.entry, text.items, try e.manifestPath());
     }

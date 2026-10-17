@@ -1,0 +1,18 @@
+--! Listeners on the window or the document (`docs/design/boundary.md`
+--! §9.8.5): what a platform layer builds its subscriptions on. A listener
+--! is a function of what it sends that adds the host's listener and
+--! returns what removes it; `Sub.on` declares one. Each event is read while
+--! it is dispatched, so what it carried is not read late.
+
+import Js
+
+
+--| Add a listener for every event named `name` on `target` (`"window"` or
+--| `"document"`) that calls `send (read event)` while the event is
+--| dispatched, and return what removes it.
+pub on : String, String, sync (Js.Value → a), sync (a → ⊤) → (⊤ → ⊤)
+on target name read send =
+    host = Js.global target
+    handler = Js.from λevent → send (read event)
+    _ = Js.call host "addEventListener" [ Js.from name, handler ]
+    λ⊤ → Js.to (Js.call host "removeEventListener" [ Js.from name, handler ])
