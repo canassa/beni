@@ -165,7 +165,8 @@ async function minimize(original, dir, outcome) {
             return {rejected:dumped};
           }
           if(dumped.status) throw Error(`candidate compiler failure: ${dumped.stderr}`);
-          if(!parseDump(dumped.stdout,[p]).get(p.module).every(d=>d.verdict==='accepted')) return {};
+          const reduced=parseDump(dumped.stdout,[p]).get(p.module);
+          if(!reduced.every(d=>d.verdict==='accepted') || (reduced.limits??[]).length) return {};
           return {runtime:await confirmation(p,dir)};
         })();
         if(reductionCache.size>=20000) reductionCache.delete(reductionCache.keys().next().value);
@@ -205,7 +206,11 @@ function parseDump(text, programs) {
     if (m) { current = byModule.get(m[1]); if (!current) throw Error(`unexpected module ${m[1]}`); continue; }
     m = line.match(/^  (\d+):(\d+) (.+?): (accepted|rejected|pending)(?:(?: |: ?)(.*))?$/);
     if (m && current) { current.push({ row:+m[1], col:+m[2], operation:m[3], verdict:m[4], detail:m[5] ?? '' }); continue; }
-    if (/^  (summary |value |demands )|^(total |cause |pending )/.test(line)) continue;
+    // A §16.7 limit at a declaration (`ownership_limit`): the module is refused
+    // there, not at a demand site. Kept beside the module's demands.
+    m = line.match(/^  limit (\S+): (\S+) (\d+), over (\d+)$/);
+    if (m && current) { (current.limits ??= []).push({ declaration:m[1], kind:m[2], at:+m[3], cap:+m[4] }); continue; }
+    if (/^  (summary |value |demands )|^(total |cause |pending |limits )/.test(line)) continue;
     throw Error(`unparsed ownership dump: ${line}`);
   }
   return byModule;
@@ -223,17 +228,29 @@ async function checkBatch(programs, n) {
   if (![0,1].includes(enforced.status)) throw Error(`unexpected enforcement exit ${enforced.status}: ${enforced.stderr}`);
   const diagnostics = JSON.parse(enforced.stderr || '[]');
   const errors = diagnostics.filter(d => d.severity === 'error');
-  const permitted = ['list_still_used','list_may_be_shared','top_level_list_changed','view_changes_model'];
+  const permitted = ['list_still_used','list_may_be_shared','top_level_list_changed','view_changes_model','ownership_limit'];
   if (errors.some(d => !permitted.includes(d.code))) {
     await writeFile(resolve(dir,'enforce-error.json'), JSON.stringify(enforced,null,2));
     throw Error(`unexpected enforcement diagnostics: ${dir}/enforce-error.json`);
   }
+  // A limit is one `ownership_limit` diagnostic per `limit` dump line of its
+  // module; it has no demand site, so it is matched by count, not by span.
+  const limitErrors = errors.filter(d => d.code === 'ownership_limit');
+  for (const p of programs) {
+    const dumped_ = (reports.get(p.module).limits ?? []).length;
+    const enforced_ = limitErrors.filter(d => basename(d.span.file,'.beni') === p.module).length;
+    if (dumped_ !== enforced_) {
+      await writeFile(resolve(dir,'enforcement-mismatch.json'), JSON.stringify({dumped,enforced},null,2));
+      throw Error(`dump/enforcement limit mismatch in ${p.module}: ${dir}`);
+    }
+  }
+  const siteErrors = errors.filter(d => d.code !== 'ownership_limit');
   const predicted = new Set(programs.flatMap(p=>reports.get(p.module).filter(d=>d.verdict !== 'accepted').map(d=>`${p.module}:${d.row}:${d.col}`)));
-  const actual = new Set(errors.map(d=>`${basename(d.span.file,'.beni')}:${d.span.start.line}:${d.span.start.col}`));
+  const actual = new Set(siteErrors.map(d=>`${basename(d.span.file,'.beni')}:${d.span.start.line}:${d.span.start.col}`));
   // The dump places a `++` demand at its operator, while the diagnostic's
   // span is the whole construction: a demand matches the diagnostic starting
   // at it, or else the smallest unmatched one whose span contains it.
-  const spans = new Map(errors.map(d=>[`${basename(d.span.file,'.beni')}:${d.span.start.line}:${d.span.start.col}`,d.span]));
+  const spans = new Map(siteErrors.map(d=>[`${basename(d.span.file,'.beni')}:${d.span.start.line}:${d.span.start.col}`,d.span]));
   const unmatched = new Set(actual), pending = [];
   for (const k of predicted) if (unmatched.has(k)) unmatched.delete(k); else pending.push(k);
   const before = (a, b) => a.line < b.line || (a.line === b.line && a.col <= b.col);
@@ -245,13 +262,13 @@ async function checkBatch(programs, n) {
         (spans.get(a).end.col - spans.get(a).start.col) - (spans.get(b).end.col - spans.get(b).start.col));
     if (covering.length) unmatched.delete(covering[0]); else uncovered++;
   }
-  if (uncovered || unmatched.size || (predicted.size === 0) !== (enforced.status === 0)) {
+  if (uncovered || unmatched.size || (predicted.size === 0 && limitErrors.length === 0) !== (enforced.status === 0)) {
     await writeFile(resolve(dir,'enforcement-mismatch.json'), JSON.stringify({dumped,enforced},null,2));
     throw Error(`dump/enforcement mismatch: ${dir}`);
   }
   await checkValues(programs,dir);
   for (const p of programs) {
-    const demands = reports.get(p.module), visited = new Set(p.record[6]), failed = p.record[7];
+    const demands = reports.get(p.module), limits = demands.limits ?? [], visited = new Set(p.record[6]), failed = p.record[7];
     const multiplicity=new Map();
     for(const m of p.translation.markers) multiplicity.set(m.key,(multiplicity.get(m.key)??0)+1);
     const groups=new Map();
@@ -279,14 +296,15 @@ async function checkBatch(programs, n) {
       else if(lean)total.sites.precision++;
       else {total.sites.lead++;siteLeads.push(site);}
     }
-    const zig = demands.every(d=>d.verdict === 'accepted'), lean = p.record[5];
+    const zig = demands.every(d=>d.verdict === 'accepted') && limits.length === 0, lean = p.record[5];
     const category = zig === lean ? 'agreements' : lean ? 'precision' : 'leads';
     total[category]++; bump(total.families[p.record[1]], category); bump(p.stream,category);
     if (category === 'precision') {
       const refused = demands.filter(d=>d.verdict !== 'accepted');
       for (const d of refused) bump(total.precisionPatterns, `${d.operation.split(' ')[0]}: ${d.detail.split(':')[0]}`);
-      // One pattern per program: its first refused demand's.
-      const first = `${refused[0].operation.split(' ')[0]}: ${refused[0].detail.split(':')[0]}`;
+      for (const l of limits) bump(total.precisionPatterns, `limit: ${l.kind}`);
+      // One pattern per program: its first refused demand's, or its first limit's.
+      const first = refused.length ? `${refused[0].operation.split(' ')[0]}: ${refused[0].detail.split(':')[0]}` : `limit: ${limits[0].kind}`;
       bump(total.precisionPrograms, first);
       (total.precisionExamples[first] ??= []).length < 5 && total.precisionExamples[first].push(p.record[2]);
     }
@@ -296,7 +314,7 @@ async function checkBatch(programs, n) {
       const originalRuntime = zig ? await confirmation(p,evidence) : {status:"blocked-by-other-refusals"};
       const reduction = !options['no-minimize'] && ["unconfirmed","confirmed"].includes(originalRuntime.status) ? await minimize(p,evidence,originalRuntime) : null;
       const runtime = reduction?.runtime ?? originalRuntime;
-      const report = { id:p.record[2], family:p.record[1], lean:p.record[8], leanSite:failed, siteLeads, programLead:category==='leads', demands, originalRuntime, runtime, reduction };
+      const report = { id:p.record[2], family:p.record[1], lean:p.record[8], leanSite:failed, siteLeads, programLead:category==='leads', demands, limits, originalRuntime, runtime, reduction };
       await writeFile(resolve(evidence,'evidence.json'),JSON.stringify({ ...report, record:p.record, declarations:p.ds },null,2));
       total.cases.push(report);
       console.log(`bridge lead ${p.record[2]}: ${runtime.status}`);

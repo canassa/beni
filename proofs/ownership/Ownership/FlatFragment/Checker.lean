@@ -353,7 +353,8 @@ namespace Ownership.FlatFragment.InferLet
 open Ownership.FlatFragment.CheckerExtraction
 
 /-- One actual let inference step first checks the live scope. It then
-runs the RHS and continuation with the exact contexts and sites in Checker.
+runs the RHS and continuation with the exact contexts and sites in Checker;
+the continuation's context records the binder's callback-chain depth.
 The first read of the checker facts leaves the checker state unchanged.
 -/
 theorem infer_let_succ_equation {ctx : Context} {binder : Var} {after : Live}
@@ -365,11 +366,15 @@ theorem infer_let_succ_equation {ctx : Context} {binder : Var} {after : Live}
       {updated with privateTransfer := match rhs with
         | .prim .privateRoot _ => privateToInit binder rest
         | _ => false}
+    let continued : Context :=
+      {updated with chain := (binder, rhsChain ctx.chain (match rhs with
+        | .app callee _ => ((abstractAtom aenv callee) matches .ok (.symbolic ..))
+        | _ => false) rhs) :: ctx.chain}
     (inferExpr (fuel + 1) ctx aenv (.letE binder rhs rest) after site).run before =
       (liveScope aenv after >>= fun _ =>
         ((inferExpr fuel rhsCtx aenv rhs
           (union after (removeVars [binder] (usesWith ctx.config rest))) (site ++ [0])) >>= fun value =>
-          inferExpr fuel updated ((binder, value) :: aenv) rest after (site ++ [1])).run before) := by
+          inferExpr fuel continued ((binder, value) :: aenv) rest after (site ++ [1])).run before) := by
   dsimp only
   rw [inferExpr]
   cases scope : liveScope aenv after with
@@ -400,10 +405,14 @@ theorem infer_let_success {ctx : Context} {aenv : Env Abstract} {binder : Var} {
         {updated with privateTransfer := match rhs with
           | .prim .privateRoot _ => privateToInit binder rest
           | _ => false}
+      let continued : Context :=
+        {updated with chain := (binder, rhsChain ctx.chain (match rhs with
+          | .app callee _ => ((abstractAtom aenv callee) matches .ok (.symbolic ..))
+          | _ => false) rhs) :: ctx.chain}
       (inferExpr childFuel rhsCtx aenv rhs
         (union after (removeVars [binder] (usesWith ctx.config rest))) (site ++ [0])).run before =
           .ok (value, middle) ∧
-      (inferExpr childFuel updated ((binder, value) :: aenv) rest after (site ++ [1])).run middle =
+      (inferExpr childFuel continued ((binder, value) :: aenv) rest after (site ++ [1])).run middle =
           .ok (result, next) := by
   cases inferenceFuel with
   | zero =>

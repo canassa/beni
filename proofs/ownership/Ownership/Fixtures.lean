@@ -706,6 +706,115 @@ def initializedGridSet : Program := {
     .letE 2 (.app (v 0) [.int 3,v 1]) <| .letE 3 (.closure 2 []) <|
     .letE 4 (.closure 3 []) (.app (v 3) [v 2,.int 1,v 4]) }
 
+
+/-! ## The keep edge and the `callbacks` limit (#291; `ownership-checker.md` §16.4, §16.7)
+
+Ports of `tests/corpus/ownership/CallbackKeeps.beni` (CK-251, issue #281) and
+`CallbackChain.beni` (CK-249, issue #271). Expected verdicts are the goldens'
+(`CallbackKeeps.browser-direct.ownership`, `CallbackChain.browser-direct.ownership`),
+except where the Zig checker's rule is approximate by the spec's own words
+and the two interpreters agree: `writeFirst` (§16.4, "a callee that writes
+`πᵢ` before the call and only reads it after" is refused too, approximately)
+and `dropFresh` (the Zig checker rejects `kFresh` itself, whatever its
+callback returns). The core's class facts, answered at the call site, make a
+kept callback result a holder of what the callee handed it, so no new rule
+is needed for the keep edge; the chain limit is `rhsChain`. The custom-type
+cases (`keepCtor`, `keepOne`) have no core syntax. -/
+
+private def pairTy : Ty := .record [.list .int, .int]
+private def keepFn : Ty := .fn [.list .int] pairTy
+private def listFn : Ty := .fn [.list .int] (.list .int)
+private def keepRes : Ty := .record [pairTy, .list .int]
+private def emptyList : Expr := .prim (.literal .int) []
+
+def keepDecls : List Decl := [
+  -- 0 kParam f xs = t = f xs; (t, push xs 9)
+  { name := "kParam", parameters := [keepFn, .list .int], result := keepRes,
+    body := .letE 2 (.app (v 0) [v 1]) (.letE 3 (push (v 1)) (.prim .record [v 2, v 3])) },
+  -- 1 keepL ys = (ys, 1)
+  { name := "keepL", parameters := [.list .int], result := pairTy, body := .prim .record [v 0, .int 1] },
+  -- 2 dropL _ = ([], 1)
+  { name := "dropL", parameters := [.list .int], result := pairTy,
+    body := .letE 1 emptyList (.prim .record [v 1, .int 1]) },
+  -- 3 kFresh f = xs = [1]; t = f xs; (t, push xs 9)
+  { name := "kFresh", parameters := [keepFn], result := keepRes,
+    body := .letE 1 (.prim (.literal .int) [.int 1]) (.letE 2 (.app (v 0) [v 1])
+      (.letE 3 (push (v 1)) (.prim .record [v 2, v 3]))) },
+  -- 4 wrap f = kParam f []
+  { name := "wrap", parameters := [keepFn], result := keepRes,
+    body := .letE 1 emptyList (.letE 2 (.closure 0 []) (.app (v 2) [v 0, v 1])) },
+  -- 5 keepThenHand f g xs = t = f xs; (t, g xs)
+  { name := "keepThenHand", parameters := [keepFn, listFn, .list .int], result := keepRes,
+    body := .letE 3 (.app (v 0) [v 2]) (.letE 4 (.app (v 1) [v 2]) (.prim .record [v 3, v 4])) },
+  -- 6 pushL ys = push ys 9
+  { name := "pushL", parameters := [.list .int], result := .list .int, body := push (v 0) },
+  -- 7 makeKeepReturn f = xs = [1]; t = f xs; (t, xs)
+  { name := "makeKeepReturn", parameters := [keepFn], result := keepRes,
+    body := .letE 1 (.prim (.literal .int) [.int 1]) (.letE 2 (.app (v 0) [v 1])
+      (.prim .record [v 2, v 1])) },
+  -- 8 kBefore f xs = ys = push xs 9; t = f ys; (t, ys)
+  { name := "kBefore", parameters := [keepFn, .list .int], result := keepRes,
+    body := .letE 2 (push (v 1)) (.letE 3 (.app (v 0) [v 2]) (.prim .record [v 3, v 2])) },
+  -- 9 id ys = ys
+  { name := "id", parameters := [.list .int], result := .list .int, body := .atom (v 0) },
+  -- 10 pushed4 g1 g2 g3 g4 xs = push (g4 (g3 (g2 (g1 xs)))) 1
+  { name := "pushed4", parameters := [listFn, listFn, listFn, listFn, .list .int], result := .list .int,
+    body := .letE 5 (.app (v 0) [v 4]) (.letE 6 (.app (v 1) [v 5]) (.letE 7 (.app (v 2) [v 6])
+      (.letE 8 (.app (v 3) [v 7]) (.prim .push [v 8, .int 1])))) },
+  -- 11 pushed5, one callback more
+  { name := "pushed5", parameters := [listFn, listFn, listFn, listFn, listFn, .list .int], result := .list .int,
+    body := .letE 6 (.app (v 0) [v 5]) (.letE 7 (.app (v 1) [v 6]) (.letE 8 (.app (v 2) [v 7])
+      (.letE 9 (.app (v 3) [v 8]) (.letE 10 (.app (v 4) [v 9]) (.prim .push [v 10, .int 1]))))) },
+  -- 12 returned4 g1 g2 g3 g4 xs = g4 (g3 (g2 (g1 xs)))
+  { name := "returned4", parameters := [listFn, listFn, listFn, listFn, .list .int], result := .list .int,
+    body := .letE 5 (.app (v 0) [v 4]) (.letE 6 (.app (v 1) [v 5]) (.letE 7 (.app (v 2) [v 6])
+      (.letE 8 (.app (v 3) [v 7]) (.atom (v 8))))) },
+  -- 13 returned5, one callback more
+  { name := "returned5", parameters := [listFn, listFn, listFn, listFn, listFn, .list .int], result := .list .int,
+    body := .letE 6 (.app (v 0) [v 5]) (.letE 7 (.app (v 1) [v 6]) (.letE 8 (.app (v 2) [v 7])
+      (.letE 9 (.app (v 3) [v 8]) (.letE 10 (.app (v 4) [v 9]) (.atom (v 10)))))) }]
+
+private def keepProgram (main : Expr) : Program := { declarations := keepDecls, main }
+
+/-- `kParam` with a callback that keeps (`1`) or drops (`2`) its argument. -/
+def keepParam (callback : Nat) : Program := keepProgram <|
+  .letE 0 (.closure callback []) <| .letE 1 emptyList <| .letE 2 (.closure 0 []) (.app (v 2) [v 0, v 1])
+def keepFresh (callback : Nat) : Program := keepProgram <|
+  .letE 0 (.closure callback []) <| .letE 1 (.closure 3 []) (.app (v 1) [v 0])
+def wrapKeep (callback : Nat) : Program := keepProgram <|
+  .letE 0 (.closure callback []) <| .letE 1 (.closure 4 []) (.app (v 1) [v 0])
+def handKeep (callback : Nat) : Program := keepProgram <|
+  .letE 0 (.closure callback []) <| .letE 1 (.closure 6 []) <| .letE 2 emptyList <|
+    .letE 3 (.closure 5 []) (.app (v 3) [v 0, v 1, v 2])
+/-- `(kept, xs) = makeKeepReturn keep; (kept, push xs 9)`. -/
+def returnKeep : Program := keepProgram <|
+  .letE 0 (.closure 1 []) <| .letE 1 (.closure 7 []) <| .letE 2 (.app (v 1) [v 0]) <|
+    .letE 3 (push (.field (v 2) 1)) (.prim .record [.field (v 2) 0, v 3])
+/-- `(_, xs) = makeKeepReturn keep; push xs 9`. -/
+def returnDrop : Program := keepProgram <|
+  .letE 0 (.closure 1 []) <| .letE 1 (.closure 7 []) <| .letE 2 (.app (v 1) [v 0]) (push (.field (v 2) 1))
+def writeFirst : Program := keepProgram <|
+  .letE 0 (.closure 1 []) <| .letE 1 emptyList <| .letE 2 (.closure 8 []) (.app (v 2) [v 0, v 1])
+/-- `( pushedN id … id xs, xs )` with four (`10`) or five (`11`) callbacks. -/
+def chainPushed (pushed : Nat) : Program := keepProgram <|
+  .letE 0 emptyList <| .letE 1 (.closure 9 []) <| .letE 2 (.closure pushed []) <|
+    .letE 3 (.app (v 2) ((List.replicate (if pushed == 11 then 5 else 4) (v 1)) ++ [v 0])) (.prim .record [v 3, v 0])
+/-- `r = returnedN id … id xs; ( push xs 1, r )` with four (`12`) or five (`13`) callbacks. -/
+def chainKept (returned : Nat) : Program := keepProgram <|
+  .letE 0 emptyList <| .letE 1 (.closure 9 []) <| .letE 2 (.closure returned []) <|
+    .letE 3 (.app (v 2) ((List.replicate (if returned == 13 then 5 else 4) (v 1)) ++ [v 0])) <|
+      .letE 4 (.prim .push [v 0, .int 1]) (.prim .record [v 4, v 3])
+
+-- The fifth callback is the `callbacks` limit, in both checkers; four are not.
+#guard match check (chainPushed 11) with | .error e => e == "limit: callbacks" | .ok _ => false
+#guard match check (chainKept 13) with | .error e => e == "limit: callbacks" | .ok _ => false
+#guard match Reinfer.check (chainPushed 11) with | .error e => e == "limit: callbacks" | .ok _ => false
+#guard match check (chainPushed 10) with | .error e => e != "limit: callbacks" | .ok _ => false
+#guard match check (chainKept 12) with | .error e => e != "limit: callbacks" | .ok _ => false
+-- Without the limit, the fifth callback is refused for the same reason as the fourth.
+#guard match check (chainPushed 11) { callbackLimit := 5 }, check (chainPushed 10) with
+  | .error e, .error e' => e == e' | _, _ => false
+
 structure Fixture where
   id : String
   program : Program
@@ -793,7 +902,17 @@ def all : List Fixture := [
   ⟨"a closure joined with a function input stays live",closureJoinedWithInput,false⟩,
   ⟨"a callee invokes a closure calling a captured once closure",nestedOnceThroughCallee,false⟩,
   ⟨"one list set into both slots, then map bump",setBothSlots,false⟩,
-  ⟨"a list captured beside a once closure, pushed, then the closure called",onceCapturedBeside,false⟩ ]
+  ⟨"a list captured beside a once closure, pushed, then the closure called",onceCapturedBeside,false⟩,
+  -- Appended 2026-10-17 (#291): the bridge's historical fixed prefix keeps indices 0–97.
+  ⟨"CK-251 keepParam",keepParam 1,false⟩, ⟨"CK-251 dropParam",keepParam 2,true⟩,
+  ⟨"CK-251 keepFresh",keepFresh 1,false⟩, ⟨"CK-251 dropFresh (Zig refuses kFresh itself)",keepFresh 2,true⟩,
+  ⟨"CK-251 wrapKeep",wrapKeep 1,false⟩, ⟨"CK-251 wrapDrop",wrapKeep 2,true⟩,
+  ⟨"CK-251 handKeep",handKeep 1,false⟩, ⟨"CK-251 handDrop",handKeep 2,true⟩,
+  ⟨"CK-251 returnKeep",returnKeep,false⟩, ⟨"CK-251 returnDrop",returnDrop,true⟩,
+  ⟨"CK-251 writeFirst (Zig refuses, approximately)",writeFirst,true⟩,
+  ⟨"CK-249 four",chainPushed 10,false⟩, ⟨"CK-249 five (the callbacks limit)",chainPushed 11,false⟩,
+  ⟨"CK-249 kept4",chainKept 12,false⟩, ⟨"CK-249 kept5 (the callbacks limit)",chainKept 13,false⟩
+]
 
 def run : IO Bool := do
   let mut ok := true

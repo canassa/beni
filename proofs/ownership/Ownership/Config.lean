@@ -163,6 +163,10 @@ structure Config where
   shapeOnly : Bool := false -- internal provenance pass; never used for acceptance
   inferenceFuel : Nat := 200
   rounds : Nat := 24
+  /-- The `callbacks` limit (`ownership-checker.md` §16.7, #271): a chain of
+      calls of function inputs, each handed the result of the one before,
+      deeper than this is the error `limit: callbacks`. -/
+  callbackLimit : Nat := 4
   deriving Repr, Inhabited
 
 def Config.has (c : Config) (m : Mutant) : Bool := c.mutant == some m
