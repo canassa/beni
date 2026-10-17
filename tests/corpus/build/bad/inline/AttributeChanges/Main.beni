@@ -1,0 +1,24 @@
+-- An attribute whose value changes is written through its DOM property
+-- (docs/design/browser-inline.md §8.2); `placeholder`'s is not one this
+-- platform writes, so a `placeholder` that reads the model is refused at
+-- its element as a limit of the compiler, class 1 (§5).
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Typed String
+
+
+view : { hint : String } → Html Msg
+view model = <input placeholder={model.hint} onInput={Typed} />
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox
+            { init = λ⊤ → { hint = "name" }, update = λ(Typed s) m → { m | hint = s }, view = view }
+        )
+        "root"

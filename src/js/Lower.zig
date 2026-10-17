@@ -12956,7 +12956,7 @@ pub const Lowerer = struct {
             // A call's callee may have statements of its own, as one
             // written in place may (version 1.9's `Callee.statements`).
             const callee = what == .call and (l.chainOfExpr(r, &.{}, true) orelse Chain{}).statements;
-            o.* = .{ .what = what, .dead = l.deadArm(b), .statements = callee or l.armStatements(b).len != 0 };
+            o.* = .{ .what = what, .dead = l.deadArm(b), .statements = callee or l.armStatements(b).len != 0, .eager = what == .markup and l.eagerArm(arms.value, what.markup) };
         }
         return .{ .arms = out, .debug = l.instReachesDebug(arms.value), .effect = l.mayHaveEffect(arms.value) };
     }
@@ -13380,6 +13380,53 @@ pub const Lowerer = struct {
         }
         try l.markupBindInputs(r, names);
         try l.inline_frames.append(l.scratch, .{ .node = .none, .chain = .{ .root = r }, .caller = l.declCtx(), .bound = true, .token = false });
+    }
+
+    /// `Program.Arm.eager` (version 1.15): whether markup root `r`, an arm
+    /// of the branch whose value is `value`, reads only locals bound outside
+    /// that value — no pattern variable of its `case`, no `let` of an arm —
+    /// so that its values can be evaluated whichever arm the value takes.
+    fn eagerArm(l: *Lowerer, value: Inst.Index, r: beni_markup.Root.Index) bool {
+        const st = l.mk orelse return false;
+        const root = st.built.tree.root(r);
+        if (root.inputs.len == 0) return true;
+        const decl = for (l.bir.decls) |d| {
+            if (value.int() >= d.inst_start.int() and value.int() < d.inst_end.int()) break d;
+        } else return false;
+        const locals = l.bir.declLocals(decl);
+        // The value's code is one range of instructions that ends at it
+        // (`Lift.low`), its patterns and `let`s included: a local whose
+        // binder is in that range is bound inside the branch.
+        const lo = Lift.low(l.bir, l.scratch, value.int()) catch return false;
+        for (0..root.inputs.len) |j| {
+            const local = st.built.values[root.inputs.start + j].capture;
+            if (local >= locals.len) return false;
+            const binder = locals[local].inst.int();
+            if (binder >= lo and binder <= value.int()) return false;
+        }
+        return true;
+    }
+
+    /// `cx.programBranchEager` (version 1.15): arm `k` of branch `node`,
+    /// an eager one, entered with its root's inputs read under the names
+    /// their locals have here — the hole's value is not evaluated — on the
+    /// arm's call path, as `directBranchEnter` extends it. The caller leaves
+    /// with `programInlineLeave`.
+    fn directBranchEager(l: *Lowerer, node: beni_markup.Node.Index, k: u32) Allocator.Error!void {
+        const st = l.mk.?;
+        const arms = try l.branchArms(node) orelse return;
+        if (k >= arms.bodies.len) return;
+        const what = l.armWhat(arms.results[k]);
+        if (what != .markup) return;
+        try l.inline_path.append(l.scratch, (@as(u64, l.in.module.int()) << 32) | st.built.node_tokens[@backingInt(node)]);
+        const root = st.built.tree.root(what.markup);
+        const names = try l.scratch.alloc(beni_markup.Name, root.inputs.len);
+        for (names, 0..) |*n, j| {
+            const local = st.built.values[root.inputs.start + j].capture;
+            n.* = @fromBackingInt(@intCast((try l.localName(local)).int()));
+        }
+        try l.markupBindInputs(what.markup, names);
+        try l.inline_frames.append(l.scratch, .{ .node = node, .chain = .{ .root = what.markup }, .caller = l.declCtx(), .bound = true, .token = true });
     }
 
     /// `cx.programShowFallback`: the markup root a `Show`'s fallback is,
@@ -15177,6 +15224,14 @@ const markup_vtable: beni_markup.VTable = struct {
         return lowerer(impl).directCalls(key, group);
     }
 
+    fn programGroupsOf(impl: *anyopaque, key: u32) ?[]const u32 {
+        const l = lowerer(impl);
+        const pc = l.program_now orelse return null;
+        const d = pc.direct orelse return null;
+        if (key >= d.key_groups.len) return null;
+        return d.key_groups[key];
+    }
+
     fn programUpdate(impl: *anyopaque, into: M.Block) E!?M.Expr {
         const n = try lowerer(impl).directUpdate(into) orelse return null;
         return expr(n);
@@ -15282,6 +15337,10 @@ const markup_vtable: beni_markup.VTable = struct {
 
     fn programNestedEnter(impl: *anyopaque, r: M.Root.Index) E!void {
         return lowerer(impl).directNestedEnter(r);
+    }
+
+    fn programBranchEager(impl: *anyopaque, n: M.Node.Index, k: u32) E!void {
+        return lowerer(impl).directBranchEager(n, k);
     }
 
     fn programViewStatements(impl: *anyopaque, into: M.Block) E!bool {
@@ -15467,6 +15526,7 @@ const markup_vtable: beni_markup.VTable = struct {
         .program_keys = programKeys,
         .program_hole = programHole,
         .program_calls = programCalls,
+        .program_groups_of = programGroupsOf,
         .row_template = rowTemplate,
         .template_plan = templatePlan,
         .template_holes = templateHoles,
@@ -15498,6 +15558,7 @@ const markup_vtable: beni_markup.VTable = struct {
         .program_branch_statements = programBranchStatements,
         .program_show_fallback = programShowFallback,
         .program_nested_enter = programNestedEnter,
+        .program_branch_eager = programBranchEager,
         .program_view_statements = programViewStatements,
         .program_let = programLet,
         .program_subscriptions = programSubscriptions,

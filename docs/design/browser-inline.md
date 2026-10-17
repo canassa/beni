@@ -357,7 +357,11 @@ the compiler"*, a language rule never says *"yet"*):
 | a key whose write set is `*` (`write-sets.md` §3.4), whose arm replaces the whole model with a value the pass cannot see into: *"… no binding of the page can be chosen for it … Write the fields the arm changes …"* — a declared `replace` (`plans/direct-rewrite.md` §6) is the other way out once it exists | 3 | the record's `update` | `StarNotReplace/` |
 | a keyed `For`: *"… does not compile keyed rows — a `For` with `keyed` — yet …"* | 1 | the `For` | `ResearchListWidget/` |
 | a key whose writes a cap of the write-set pass cut (`Program.Key.cap`): the depth limit `k` and the rounds of a recursive component until #286's folding replaces them; the leaf, alternative and size caps are lifted in S1 | 4 | the record's `update` | `CapFired/` |
-| a key that splits again inside another module (`deep_split`); an event argument or a piece capture the program site cannot write; a text hole beside an element; an attribute that changes and is not a DOM property; a `view` `let` read by several holes | 4 / 1 | the construct | — |
+| a key that splits again inside another module (`deep_split`); an event argument or a piece capture the program site cannot write; a `view` `let` read by several holes | 4 / 1 | the construct | — |
+| a text hole beside an element: *"… writes a text hole as its element's whole text, and this one stands beside an element; wrap the hole and the text around it in an element of their own …"* | 4 | the hole | `TextBesideElement/` |
+| an attribute that changes and is not a DOM property `prop` writes | 1 | the element | `AttributeChanges/` |
+| an event whose handler value is a message no key can be named for when the program is built: *"… so its message would need a dispatcher …"* | 4 | the element | `MessageValue/` |
+| an `if` or `case` in markup that is not an eager `when`: arms that are not one element and `<></>`, or a shown arm that reads what the branch binds | 1 | the hole | `WhenBinds/` |
 
 **An arm that reads its message whole** (D-e, `message_read_whole`) is not refused: that key's
 handler builds the message value from its fields, in that handler only, and hands it on.

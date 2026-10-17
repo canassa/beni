@@ -115,8 +115,6 @@ tests/pending/browser/direct/DefectInTurnRender.beni PageFailed
 # golden and refusal of the slice, written before the slice; each moves into
 # tests/corpus/ with the commit that passes it.
 tests/pending/browser/inline/Counter dev: exit=1 codes=not_implemented×2
-tests/pending/browser/inline/CounterLocal.beni dev: exit=1 codes=not_implemented×1
-tests/pending/browser/inline/FormLocal.beni dev: exit=1 codes=not_implemented×1
 tests/pending/browser/inline/Reader dev: exit=1 codes=not_implemented×3
 tests/pending/browser/inline/ResearchS2 dev: exit=1 codes=not_implemented×2
 tests/pending/browser/inline/ResearchS3 dev: exit=1 codes=not_implemented×2
@@ -128,9 +126,8 @@ tests/pending/build/bad/inline/OpaqueUpdate GoldenMismatch
 tests/pending/build/bad/inline/ResearchListWidget GoldenMismatch
 tests/pending/build/bad/inline/StarNotReplace GoldenMismatch
 tests/pending/emit/release/inline/Counter BuildFailed
-tests/pending/emit/release/inline/CounterLocal.beni BuildFailed
-tests/pending/emit/release/inline/FormLocal.beni BuildFailed
 tests/pending/emit/release/inline/Reader BuildFailed
 tests/pending/emit/release/inline/ResearchS2 BuildFailed
 tests/pending/emit/release/inline/ResearchS3 BuildFailed
 tests/pending/emit/release/inline/Texts BuildFailed
+tests/pending/emit/release/inline/EnumCycle.beni GoldenMismatch

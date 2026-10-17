@@ -1,12 +1,8 @@
--- CK-254: browser-inline compiles one module's events, holes and controls.
--- One module on browser-inline (docs/design/browser-inline.md §8): three
--- events, each calling its key's handler with no message made; a text hole
--- alone in its element, the same field in mixed text, and two `disabled`
--- properties — one group, since all four read `count`, so one binding
--- function, which each handler's write pass calls once, after the arm
--- writes the model in place of the `update` arm. The markup is one HTML
--- string with its attribute values unquoted and its closing run left out;
--- elements by document order, no message, no `case`.
+-- `emit/release/inline/CounterLocal`'s page (docs/design/browser-inline.md
+-- §8): each click calls its key's handler, whose write pass writes the
+-- output, the mixed text and the two `disabled` properties; a click whose
+-- arm leaves the count where it was writes nothing, since each binding
+-- compares before it writes.
 import Browser
 import Html exposing (Html)
 import Tea

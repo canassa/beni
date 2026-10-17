@@ -1,9 +1,13 @@
--- CK-254: browser-inline runs one module's controls and eager `when`.
--- `emit/release/inline/FormLocal`'s page (docs/design/browser-inline.md
--- §8): the `when` shows and hides its element, whose texts stay current
--- while hidden; the select and the number input show the model after each
--- of their events — a number out of range leaves the field showing what
--- was typed, which the model keeps, until a valid one replaces it.
+-- One module on browser-inline (docs/design/browser-inline.md §8): an
+-- `if` whose `else` is `<></>` is an eager `when` — its element is in the
+-- markup and its holes are bindings like the others, the element swapped
+-- with an empty text node while hidden; a `select` and a number input are
+-- controlled (`prop`), their own events' handlers writing them back even
+-- when the arm leaves the model as it was (the code field) or writes
+-- nothing (the locked field);
+-- `</li>` and the closing run are left out. Bindings are grouped by what
+-- they read: `muted`, `phase`, `pages`, and the input's `pages` and
+-- `pagesTyped`.
 import Browser
 import Html exposing (Html)
 import Tea
@@ -14,13 +18,16 @@ type alias Model =
     phase : String
     pages : Int
     pagesTyped : Maybe String
+    code : String
+    locked : String
 
 
 type Msg
     = SwitchMuted
     | PickPhase String
-    | RotatePhase
     | SetPages String
+    | SetCode String
+    | Locked String
 
 
 intIn : String, Int, Int → Maybe Int
@@ -46,20 +53,6 @@ update msg model =
         PickPhase chosen →
             { model | phase = chosen }
 
-        RotatePhase →
-            { model
-                | phase =
-                    case model.phase of
-                        "Basic" →
-                            "Standard"
-
-                        "Standard" →
-                            "Premium"
-
-                        _ →
-                            "Basic"
-            }
-
         SetPages typed →
             case intIn typed (-5) 20 of
                 Just parsed →
@@ -67,6 +60,12 @@ update msg model =
 
                 Nothing →
                     { model | pagesTyped = Just typed }
+
+        SetCode typed →
+            if String.length typed > 4 then model else { model | code = typed }
+
+        Locked _ →
+            model
 
 
 view : Model → Html Msg
@@ -86,13 +85,15 @@ view model =
             <option value="Standard">Standard</option>
             <option value="Premium">Premium</option>
         </select>
-        <button data-role="rotatePhase" onClick={RotatePhase}>{model.phase}</button>
+        <button data-role="phase">{model.phase}</button>
         <input
             type="number"
             data-role="setPages"
             value={shown model.pagesTyped model.pages}
             onInput={SetPages}
         />
+        <input data-role="code" value={model.code} onInput={SetCode} />
+        <input data-role="locked" value={model.locked} onInput={Locked} />
         <ul>
             <li>Pages: {model.pages}</li>
             <li>Static</li>
@@ -104,7 +105,15 @@ main : Tea.Program
 main =
     Browser.mountAt
         (Tea.sandbox
-            { init = λ⊤ → { muted = False, phase = "Standard", pages = 4, pagesTyped = Nothing }
+            { init =
+                λ⊤ →
+                    { muted = False
+                    , phase = "Standard"
+                    , pages = 4
+                    , pagesTyped = Nothing
+                    , code = "ab"
+                    , locked = "fixed"
+                    }
             , update = update
             , view = view
             }

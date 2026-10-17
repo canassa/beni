@@ -1,0 +1,32 @@
+-- An eager `when` evaluates its arm's holes whichever arm the branch takes
+-- (docs/design/browser-inline.md §8.2), so an arm that reads what the
+-- branch binds — `name`, a pattern variable of `Just` — cannot be one: a
+-- branch of that shape is a later slice's, refused at the hole as a limit
+-- of the compiler, class 1 (§5).
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    name : Maybe String
+
+
+view : Model → Html {}
+view model =
+    <main>
+        {case model.name of
+            Just name →
+                <p>{name}</p>
+
+            Nothing →
+                <></>
+        }
+    </main>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → { name = Nothing }, update = λ_ m → m, view = view })
+        "root"

@@ -38,8 +38,12 @@ const std = @import("std");
 /// `programNestedEnter`, `programViewStatements`, `programLet`,
 /// `Program.view_lets`), 1.14 the calls a lowering compiles subscriptions,
 /// commands and a placement away with (`Lowering.places`,
-/// `Program.placed`).
-pub const version: Version = .{ .major = 1, .minor = 14 };
+/// `Program.placed`), 1.15 the calls that write an `if` whose other arm is
+/// `<></>` eagerly (`Program.Arm.eager`, `programBranchEager`) and the
+/// groups of a key without the matrix (`programGroupsOf`;
+/// `browser-inline.md` §8.2) — the rest of 1.15 lands with the slices that
+/// use it (`boundary.md` §9.4.6).
+pub const version: Version = .{ .major = 1, .minor = 15 };
 
 /// The newest version whose gated feature a tree can use. No minor version
 /// has gated one yet, so every tree requires 1.0 and every lowering of
@@ -369,6 +373,11 @@ pub const Program = struct {
         /// The arm has `let`s its result does not need, which
         /// `programBranchEnter` with `made` evaluates.
         statements: bool = false,
+        /// 1.15: `what` is `markup` whose root reads no variable the
+        /// branch binds — no pattern variable, no `let` of the arm — so its
+        /// values can be evaluated whichever arm the value takes
+        /// (`programBranchEager`).
+        eager: bool = false,
 
         pub const What = union(enum) {
             /// Markup written in place: this root, whose values are
@@ -1133,6 +1142,14 @@ pub const Context = struct {
         return cx.vtable.program_calls(cx.impl, key, group);
     }
 
+    /// 1.15, inside `Lowering.program` only: the read sets key `key`'s
+    /// write set conflicts with, sorted — what `programCalls` answers one
+    /// pair at a time, without the groups × keys matrix; null when the pass
+    /// does not know the program, and every group is called.
+    pub fn programGroupsOf(cx: *Context, key: u32) ?[]const u32 {
+        return cx.vtable.program_groups_of(cx.impl, key);
+    }
+
     /// 1.7, inside `Lowering.program` only: the program's `update` as a
     /// function value, evaluated into `block`, when some key's arm calls it
     /// rather than being written in place (an `update` of another module,
@@ -1341,6 +1358,15 @@ pub const Context = struct {
         return cx.vtable.program_nested_enter(cx.impl, r);
     }
 
+    /// 1.15: enter arm `k` of branch `node`, an `Arm.eager` one, with
+    /// nothing of the hole's value evaluated: its markup root's inputs are
+    /// read under the names their locals have where the hole's root's
+    /// values are, and the facts (`programHole`) answer on the arm's call
+    /// path, as `programBranchEnter` does. Leave with `programInlineLeave`.
+    pub fn programBranchEager(cx: *Context, node: Node.Index, k: u32) Error!void {
+        return cx.vtable.program_branch_eager(cx.impl, node, k);
+    }
+
     /// 1.10, inside `programViewEnter` of a `view` with `view_lets`: the
     /// `let`s of its body nothing reads — statements, `_ =` — evaluated
     /// into `block`, where the page is made (§8.4); whether it has any.
@@ -1542,6 +1568,7 @@ pub const VTable = struct {
     program_keys: *const fn (impl: *anyopaque) []const Program.Key,
     program_hole: *const fn (impl: *anyopaque, hole: Program.HoleRef) Program.HoleFacts,
     program_calls: *const fn (impl: *anyopaque, key: u32, group: u32) bool,
+    program_groups_of: *const fn (impl: *anyopaque, key: u32) ?[]const u32,
     program_update: *const fn (impl: *anyopaque, block: Block) Error!?Expr,
     program_arm: *const fn (impl: *anyopaque, key: u32, block: Block, params: []const Name, model: Expr, update: ?Expr) Error!Expr,
     program_view_enter: *const fn (impl: *anyopaque, block: Block, model: Expr) Error!void,
@@ -1567,6 +1594,7 @@ pub const VTable = struct {
     program_branch_statements: *const fn (impl: *anyopaque, block: Block, node: Node.Index, k: u32) Error!void,
     program_show_fallback: *const fn (impl: *anyopaque, node: Node.Index) ?Root.Index,
     program_nested_enter: *const fn (impl: *anyopaque, r: Root.Index) Error!void,
+    program_branch_eager: *const fn (impl: *anyopaque, node: Node.Index, k: u32) Error!void,
     program_view_statements: *const fn (impl: *anyopaque, block: Block) Error!bool,
     program_let: *const fn (impl: *anyopaque, r: Root.Index, k: u32) Program.HoleFacts,
     program_subscriptions: *const fn (impl: *anyopaque) Program.Subscriptions,
