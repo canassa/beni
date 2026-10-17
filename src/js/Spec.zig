@@ -6366,6 +6366,10 @@ const Spec = struct {
             const rest = try s.arena.dupe(Index, list[at + 1 ..]);
             if (rest.len == 0) return false;
             if (!try s.plainStmts(cm, rest, false) or !allReturn(cm.ir, rest, 0)) return false;
+            // An unlabelled `break` of the rest that leaves it would, copied in
+            // place of a `return` inside a `switch` of `f`, leave that
+            // `switch` instead.
+            if (leavingBreak(cm.ir, rest, 0)) return false;
             var size: u32 = 0;
             for (rest) |r| size += try s.stmtSize(cm, @intCast(site.module), r);
             if (size > 96) return false;
@@ -10295,4 +10299,48 @@ fn chosenCase(ir: *const JsIr, stmt: Index) ?Spec.Decided {
     const items = ir.extraSlice(body, Index);
     if (holdsBreak(ir, items, 0) or !allReturn(ir, items, 0)) return null;
     return .{ .arm = body };
+}
+
+/// Whether `stmts` hold an unlabelled `break` that is not inside a `switch`
+/// of their own: one that leaves the statements for whatever encloses them.
+fn leavingBreak(ir: *const JsIr, stmts: []const Index, depth: u32) bool {
+    if (depth > 32) return true;
+    for (stmts) |st| {
+        const d = ir.data(st);
+        switch (ir.tag(st)) {
+            .break_stmt => if (@as(NameIndex, @fromBackingInt(@intCast(d.lhs))) == .none) return true,
+            .if_stmt => {
+                const b = ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.If);
+                if (leavingBreak(ir, ir.extraSlice(b.thenBody(), Index), depth + 1) or leavingBreak(ir, ir.extraSlice(b.elseBody(), Index), depth + 1)) return true;
+            },
+            .block_stmt => if (leavingBreak(ir, ir.extraSlice(ir.subRange(@fromBackingInt(@intCast(d.rhs))), Index), depth + 1)) return true,
+            // A `switch` of their own is what its unlabelled breaks leave.
+            else => {},
+        }
+    }
+    return false;
+}
+
+test "an unlabelled break that leaves a fused rest refuses the fusion" {
+    const gpa = testing.allocator;
+    var b: JsIr.Builder = .init(gpa);
+    defer b.deinit();
+    const label = try b.intern(.local(@fromBackingInt(@intCast(0))));
+    const leaving = try b.addNode(.{ .tag = .break_stmt, .pos = Node.no_pos, .data = .{ .lhs = @backingInt(NameIndex.none), .rhs = 0 } });
+    const labelled = try b.addNode(.{ .tag = .break_stmt, .pos = Node.no_pos, .data = .{ .lhs = label.int(), .rhs = 0 } });
+    const inner = try b.addRange(&.{leaving});
+    const block = try b.addNode(.{ .tag = .block_stmt, .pos = Node.no_pos, .data = .{ .lhs = @backingInt(NameIndex.none), .rhs = @backingInt(try b.addRecord(inner)) } });
+    const case_body = try b.addRange(&.{leaving});
+    const case = try b.addNode(.{ .tag = .switch_case, .pos = Node.no_pos, .data = .{ .lhs = @backingInt(Node.OptionalIndex.none), .rhs = @backingInt(try b.addRecord(case_body)) } });
+    const cases = try b.addRange(&.{case});
+    const disc = try b.addNode(.{ .tag = .true_lit, .pos = Node.no_pos, .data = .{ .lhs = 0, .rhs = 0 } });
+    const own_switch = try b.addNode(.{ .tag = .switch_stmt, .pos = Node.no_pos, .data = .{ .lhs = disc.int(), .rhs = @backingInt(try b.addRecord(cases)) } });
+    var ir = try b.toOwned(try b.addRange(&.{}));
+    defer ir.deinit(gpa);
+    // In a block of the rest: it leaves the rest.
+    try testing.expect(leavingBreak(&ir, &.{block}, 0));
+    // A labelled one names its target, which copying does not move.
+    try testing.expect(!leavingBreak(&ir, &.{labelled}, 0));
+    // Inside a `switch` of the rest: it leaves that `switch` only.
+    try testing.expect(!leavingBreak(&ir, &.{own_switch}, 0));
 }
