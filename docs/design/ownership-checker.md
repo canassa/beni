@@ -1076,6 +1076,18 @@ call-site demand it makes, a `⊤` it returns, `⊤limit` in a summary line, how
 follow from it.
 The dump prints `limit f: <name> <measure>, over <limit>` after the module's summary lines (`limit f: rounds,
 unsettled after 32` for a fixpoint).
+*Amended 2026-10-17 (#272, #233): what follows from a limit takes its cause.* "Rests on it" covers two more
+ways, which before were printed as errors of their own beside the limit's:
+
+- **A call applied a pessimistic summary** (a callee whose summary is past a limit): every line the call makes
+  for its function arguments — a `need`, a `pending` "keeps it" line, a borrowed supply a callback writes —
+  takes the `limit` cause, as the call-site demands on its arguments already did.
+- **A condition the walk lowered at a limit** — a fixpoint's seeds (§20.4, §16.4 item 6), a value past
+  `value-cells`, a class whose summary is the pessimistic one — is `cond_limit`, which fails as a lost condition
+  does; a demand that fails only through it takes the `limit` cause. An exact failure still wins.
+
+`check/bad/direct/OwnershipLimitPessimistic` and `OwnershipLimitValueCells` pin both: each build has the limit's
+error alone.
 
 The bounds are set from the largest summaries measured, #220's dashboard at 1 024 widgets — one module of
 22 000 lines, its `step`, `pushed` and `update` the widest: 23 456 entries, 300 at one path and 87 764
