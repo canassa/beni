@@ -388,8 +388,11 @@ certificate is the same test over containers.
 `view front` is a list pattern's spread binding: `rest` in `[ x, …rest ]`
 (`front`) or `init` in `[ …init, last ]`. An empty list gives a fresh `[]`. In
 the in-place interpreter a view is a heap array of its own whose contents are
-kept equal to its source's suffix or prefix at every write, in both directions
-(`State.links`); every reader is unchanged. This is the most aliased lowering: a
+kept equal to its source's suffix or prefix at every linked write
+(`writeLinked`), in both directions (`State.links`); every reader is unchanged.
+A builder's `put` writes with `write`, and since #284 `close` hands the builder
+over as the spec's `done` does, so in an accepted program no `put` reaches a
+linked array. This is the most aliased lowering: a
 push of the source is seen by a live `rest`, which the shipping runtime's
 fixed-length view would not show, and a write through the view is spliced into
 its source. The checker gives a view its source's cells plus a fresh site, the
