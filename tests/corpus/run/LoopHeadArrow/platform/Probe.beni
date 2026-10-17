@@ -1,0 +1,14 @@
+--! A function made once and read once, by the iterable of a loop: the
+--! release optimiser may not make it inside the loop's head, whose own
+--! binding could take the name the function reads.
+
+import Js
+
+
+--| 41 when `f` reads `x`: the one element of the array is `f`, called once.
+pub probe : Int → Int
+probe x =
+    acc = Js.ref 0
+    f = λ⊤ → x
+    Js.each (Js.array [ Js.from f ]) λg → Js.write acc (Js.read acc + Js.to (Js.apply g []))
+    Js.read acc

@@ -5190,6 +5190,13 @@ evaluated before its use there (`q=k(…);own(q)` → `own(k(…))`) is sound, b
 `emit/release/inline/PushAndTimer` and **+21** over twelve goldens (`direct/ListScripts` +19,
 `direct/TableSwap` +7), so it was not taken.
 
+*Amended 2026-10-17: never into a loop's head.* A use in a `for…of`'s iterable is no fold's, of
+either rule above: the printer writes the value in the loop's head, where the loop's own binding is
+already in scope, and `Rename` names scopes from the IR as written, so the binding may take a name
+the value reads — `for(let a of[()=>a])` and `for(let b of b)`, a `ReferenceError` in a release
+build where development answers. The single-use rule for member chains had the gap before the
+arrow rule did. `run/LoopHeadArrow`, `run/LoopHeadChain`.
+
 **Determinism.** The pass reads only `JsIr`, visits statements in emission order, and its output is
 a subset of its input with substitutions at fixed positions; no map is iterated and no counter is
 shared. **Cost:** two linear walks of each function body and no sort. **No fixpoint either**, as long

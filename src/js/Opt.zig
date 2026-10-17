@@ -599,7 +599,9 @@ const Opt = struct {
                 try o.exprUsesInto(@fromBackingInt(@intCast(d.rhs)), n);
             },
             .if_stmt, .switch_stmt => try o.exprUsesInto(@fromBackingInt(@intCast(d.lhs)), n),
-            .for_of => try o.exprUsesInto(o.ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.ForOf).iterable, n),
+            // Never into a loop's head (`ownUses`): none is recorded, so a
+            // copy with a use there is declined.
+            .for_of => {},
             .expr_stmt, .throw_stmt => try o.exprUsesInto(@fromBackingInt(@intCast(d.lhs)), n),
             else => {},
         }
@@ -742,7 +744,12 @@ const Opt = struct {
             .return_stmt => if (@as(Node.OptionalIndex, @fromBackingInt(@intCast(d.lhs))).unwrap()) |v| o.exprUses(v, n) else 0,
             .assign_stmt => (try o.exprUses(@fromBackingInt(@intCast(d.lhs)), n)) + (try o.exprUses(@fromBackingInt(@intCast(d.rhs)), n)),
             .if_stmt, .switch_stmt => o.exprUses(@fromBackingInt(@intCast(d.lhs)), n),
-            .for_of => o.exprUses(o.ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.ForOf).iterable, n),
+            // A use in a loop's iterable is never a fold's: the printer would
+            // write the value in the loop's head, where the loop's own binding
+            // is in scope, and `Rename`, which reads the IR as written, may
+            // give that binding a name the value reads. Counted as more than
+            // one, so every rule declines it.
+            .for_of => if (try o.exprUses(o.ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.ForOf).iterable, n) != 0) 2 else 0,
             .expr_stmt, .throw_stmt => o.exprUses(@fromBackingInt(@intCast(d.lhs)), n),
             else => 0,
         };
