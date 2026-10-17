@@ -1190,6 +1190,45 @@ level to the cut. Folding only merges places, so it adds aliasing and never remo
 on a folded path is checked against every level it stands for. Folding is what makes a recursive type's paths
 finite, and so is part of what bounds them, not a limit.
 
+*Amended 2026-10-17 (issue #286, the owner's decision (b)): a projection keeps the levels folding merged.*
+"A demand on a folded path is checked against every level it stands for" held only where nothing was taken
+apart. A value's folded entry `t#Node.1` holds the root's list and every level's below it; a pattern that took
+`l` out of `t` at `#Node.0` kept only the entries whose first step was `#Node.0`, and folding had left none
+there, so `l` held nothing and `case l of Node _ zs _ → List.push zs 1` was accepted `fresh` while `zs` was
+the `xs` the function returns. A projection along a constructor step `#C.i` of a recursive type `T` now also
+keeps every entry whose first step is a constructor step of `T`, approximately (the derivation *a place that
+stands for several*, cause `element`):
+
+- at its own path, when field `i` is a value of `T` (`Node Tree …`'s `#Node.0`);
+- at `⋆`, when `T` is further down (`List Rose`, `Maybe Tree`, a function's captures, a `foreign type`), where
+  the path to it is not written;
+- nowhere, when the field cannot hold a `T`, or holds one only through a type parameter (below).
+
+**Folding never goes through a type parameter.** A level folds onto the first step into `T` since the path last
+went through a field that holds `T` only through a parameter of the type: below `Dict`'s value field of a
+`Dict String (Dict String (List Int))` is another dictionary, not a level of this one, and merging it would ask
+every projection of a value to keep what may lie below it. Each inner value folds onto itself instead; the paths
+stay finite because the type is.
+
+The same commit fixes what a type may hold for mutually recursive types (§4.4). Whether a nominal type holds a
+cell is read off its definition, a type being read taken to hold nothing; `type B = B A` read while
+`type A = A B (List Int)` was saw `A` hold nothing and was remembered so, so `B` crossed and a `B` held no
+cell. Only the outermost type of such a cycle is remembered from that read now.
+
+`ownership/FoldLevels` and `ownership/MutualTypes` pin it: each push was accepted `fresh` before and is rejected
+now. The cost is one refusal of safe code, `FoldLevels.pushRoot`, which builds a fresh list at every level and
+edits the root's while reading a subtree: the levels share one place, so the root's list may be the subtree's.
+Telling the levels apart is the representatives' exclusivity of thesis §3.1, which is not built. The corpus,
+`bench/ownership-everywhere.mjs`, core and every platform refuse nothing new.
+
+*Not yet built: decision (a), folding only types that reach themselves.* Folding any type the path already
+entered — `Maybe` inside `Maybe` — is what keeps core's `Schema` finite today: a value cast through `Js.Value`
+and back is read at another type, and the paths of `unpack`, `collect` and `productOf` grow by one step per
+cast, `#Just.0#NonNull.0#Just.0…` and `.parent.parent…`. Folding only recursive types sends `Schema.run` and
+`descend` past the `entries` limit and four more of its functions past `value-cells`, so (a) waits for the cast
+marker of the next decision; until then `Maybe (List Int × Maybe (List Int))` folds its inner `Maybe` onto the
+outer one, and the hole of `pushInner` (accepted through a call, rejected inline) stays.
+
 ### 16.8 The library
 
 Thesis §6.5 as revised in round 5 keeps three kinds of trust apart, and slice 2 follows it:
