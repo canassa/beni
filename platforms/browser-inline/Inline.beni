@@ -156,12 +156,13 @@ run program = send program Js.undefined
 --| (`browser-inline.md` §6).
 pub root : V → V
 root id =
-    document = Js.global "document"
+    -- `document` is read where it is used: a binding of a host read is
+    -- kept by the release optimiser, never folded into its one use.
     at =
         if Js.isUndefined id then
-            Js.get document "body"
+            Js.get (Js.global "document") "body"
         else
-            Js.call document "getElementById" [ id ]
+            Js.call (Js.global "document") "getElementById" [ id ]
 
     if Js.development ⊤ then
         if Js.isNull at || not (Js.isUndefined (Js.get at "$$root")) then
