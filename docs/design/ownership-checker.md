@@ -1093,7 +1093,7 @@ A function value's line of its own is never hidden by one that follows from a li
 limited callee and also stored where the walk loses sight of it is reported for the store, and a sight made
 under the limit does not count as a top-level function's report.
 
-A declaration whose walk reached a limit inside it (a fixpoint, `value-cells`) now has the pessimistic summary,
+A declaration whose walk reached a limit inside it (a fixpoint, `value-cells`, `callbacks`) now has the pessimistic summary,
 as this section says of every limit; before, only `rounds` and the summary-size limits made it, and a caller saw
 a condition the callee lowered as a plain lost one, a second error. So a call of a declaration past a limit reports none of
 its own errors until the limit is gone: what it does to its arguments rests on the limit, as it always did for
