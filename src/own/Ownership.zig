@@ -1405,7 +1405,7 @@ fn testFoldAtEntry(initial_sc: XSum) !struct { initial: u32, result: u32 } {
     var store: TypeStore = .init(gpa);
     defer store.deinit();
     var w: Walker = .{ .o = &o, .m = 0, .bir = &bir, .decl = std.mem.zeroes(Bir.Decl), .decl_index = 0, .store = &store, .inst_type = &.{}, .local_type = &.{}, .a = arena.allocator(), .mode = .summary };
-    try w.conds.appendSlice(w.a, &.{ .{ .atoms = &.{} }, .{ .atoms = &.{} }, .{ .atoms = &.{} } });
+    try w.conds.appendSlice(w.a, &.{ .{ .atoms = &.{} }, .{ .atoms = &.{} }, .{ .atoms = &.{} }, .{ .atoms = &.{} } });
     const acc = Prov{ .kind = .param, .a = 1 };
     const condition: XSum = .{ .atoms = &.{.{ .kind = .spine, .a = acc }} };
     // A callback either transfers its accumulator or returns a new container
@@ -3702,9 +3702,26 @@ const WCond = struct {
 const cond_yes: u32 = 0;
 const cond_lost: u32 = 1;
 const cond_shared: u32 = 2;
+/// Lost because the walk reached a limit (§16.7): a fixpoint's seeds
+/// lowered, a value past `value-cells`, a class whose summary is the
+/// pessimistic one. It fails as `cond_lost` does, and a rejection that rests
+/// on it takes the `limit` cause, so it is no second error beside the
+/// limit's (#233).
+const cond_limit: u32 = 3;
 
-/// What relying on a condition came to (§18.4).
-const Rely = enum { ok, approx, exact };
+/// What relying on a condition came to (§18.4); `limit` for `cond_limit`.
+const Rely = enum {
+    ok,
+    approx,
+    limit,
+    exact,
+
+    /// The worse of two failures: exact, then a limit, then approximate.
+    fn worse(old: ?Rely, new: Rely) Rely {
+        const o = old orelse return new;
+        return if (@backingInt(new) > @backingInt(o)) new else o;
+    }
+};
 
 /// An atom relied on, and the frame that relied on it (§18.4).
 const Req = struct { frame: u32, atom: WAtom };
@@ -4188,7 +4205,7 @@ const Walker = struct {
         }
         try w.ctx_nodes.append(w.a, .{ .parent = none, .case_id = none, .arm = 0, .depth = 0 });
         try w.frames.append(w.a, .{ .parent = none, .pending_base = 0 });
-        try w.conds.appendSlice(w.a, &.{ .{}, .{ .no = 1 }, .{ .no = 2 } });
+        try w.conds.appendSlice(w.a, &.{ .{}, .{ .no = 1 }, .{ .no = 2 }, .{ .no = 1 } });
         w.params = w.bir.extraSlice(.{ .start = w.decl.params_start, .end = w.decl.params_end }, Inst.Index);
         try w.fn_state.appendNTimes(w.a, .{}, w.params.len);
         for (w.params, 0..) |p, i| {
@@ -4464,6 +4481,7 @@ const Walker = struct {
         if (x == y or y == cond_yes) return x;
         if (x == cond_yes) return y;
         if (x == cond_shared or y == cond_shared) return cond_shared;
+        if (x == cond_limit or y == cond_limit) return cond_limit;
         if (x == cond_lost or y == cond_lost) return cond_lost;
         const xs = w.conds.items[x].atoms;
         const ys = w.conds.items[y].atoms;
@@ -4691,6 +4709,7 @@ const Walker = struct {
     const SpineAcc = struct {
         shared: bool = false,
         lost: bool = false,
+        limit: bool = false,
         atoms: std.ArrayList(WAtom) = .empty,
 
         fn add(acc: *SpineAcc, w: *Walker, k: u32) Allocator.Error!void {
@@ -4698,6 +4717,7 @@ const Walker = struct {
                 cond_yes => {},
                 cond_shared => acc.shared = true,
                 cond_lost => acc.lost = true,
+                cond_limit => acc.limit = true,
                 else => try acc.atoms.appendSlice(w.a, w.conds.items[k].atoms),
             }
         }
@@ -4737,6 +4757,7 @@ const Walker = struct {
     /// `condAnd` folded over what `acc` gathered, with the atoms sorted once.
     fn condAndAll(w: *Walker, acc: *SpineAcc) Allocator.Error!u32 {
         if (acc.shared) return cond_shared;
+        if (acc.limit) return cond_limit;
         if (acc.lost) return cond_lost;
         if (acc.atoms.items.len == 0) return cond_yes;
         const all = acc.atoms.items;
@@ -4922,7 +4943,7 @@ const Walker = struct {
         // an error (§16.7).
         if (ex.len > deep_cap) {
             try w.o.hitLimit(.value_cells, @intCast(@min(ex.len, std.math.maxInt(u32))));
-            return cond_lost;
+            return cond_limit;
         }
         var k = cond_yes;
         for (ex) |e| k = try w.condAnd(k, try w.cellCond(e.cell));
@@ -4949,6 +4970,7 @@ const Walker = struct {
     /// `frame`, or it fails.
     fn rely(w: *Walker, k: u32, frame: u32) Allocator.Error!Rely {
         if (k == cond_lost) return .approx;
+        if (k == cond_limit) return .limit;
         if (k == cond_shared) return .exact;
         const atoms = w.conds.items[k].atoms;
         for (atoms) |t| if (!w.ownedBy(t, frame)) return .approx;
@@ -4981,7 +5003,7 @@ const Walker = struct {
     /// parameters are `params`; `self`'s own `excl` is left to
     /// instantiation.
     fn xsumOf(w: *Walker, k: u32, frame: u32, params: []const Inst.Index, self: u32) Allocator.Error!XSum {
-        if (k == cond_lost) return .{ .no = 1 };
+        if (k == cond_lost or k == cond_limit) return .{ .no = 1 };
         if (k == cond_shared) return .{ .no = 2 };
         const keep = w.o.keep.allocator();
         var out: std.ArrayList(XAtom) = .empty;
@@ -5062,7 +5084,7 @@ const Walker = struct {
         var k = cond_yes;
         for (classes) |cls| {
             const c = (try w.classSummary(cls)) orelse return cond_lost;
-            if (c.limit != .none) return cond_lost;
+            if (c.limit != .none) return cond_limit;
             for (c.res) |r| switch (r.prov.kind) {
                 .fresh, .esc => {},
                 .param => k = try w.condAnd(k, try w.takenSupply(j, r.prov, ctx)),
@@ -5108,7 +5130,7 @@ const Walker = struct {
         var k = cond_yes;
         for (classes) |cls| {
             const c = (try w.classSummary(cls)) orelse return cond_lost;
-            if (c.limit != .none) return cond_lost;
+            if (c.limit != .none) return cond_limit;
             for (c.res) |r| switch (r.prov.kind) {
                 .fresh => {},
                 .param => {
@@ -5139,7 +5161,7 @@ const Walker = struct {
         var k = cond_yes;
         for (classes) |cls| {
             const c = (try w.classSummary(cls)) orelse return cond_lost;
-            if (c.limit != .none) return cond_lost;
+            if (c.limit != .none) return cond_limit;
             for (c.res) |r| {
                 if (r.path != path) {
                     if (w.o.isPrefix(r.path, path)) return cond_lost;
@@ -7184,7 +7206,7 @@ const Walker = struct {
         // Never use an unfinished proof, and never lose it silently: the
         // declaration is an error (§16.7).
         try w.o.hitLimit(.fixpoint, round_cap);
-        for (fresh.items) |c| try w.lowerCond(c, cond_lost);
+        for (fresh.items) |c| try w.lowerCond(c, cond_limit);
     }
 
     /// Every cell of `av`, closures expanded, at `⋆`: what a value built
@@ -7349,7 +7371,7 @@ const Walker = struct {
                     const k = try w.instXSum(.{ .atoms = &.{x} }, .{ .inst = inst, .s = s, .avs = &.{ msg, model }, .closure = ci, .depth = 0 });
                     const r = try w.rely(k, w.frame);
                     if (r == .ok) continue;
-                    if (xfail == null or r == .exact) xfail = r;
+                    xfail = Rely.worse(xfail, r);
                 }
             }
             var found = false;
@@ -7359,9 +7381,7 @@ const Walker = struct {
                 found = true;
                 x.deep = x.deep or deep;
                 if (origin == .exact or (origin == .approx and x.origin == .limit)) x.origin = origin;
-                if (xfail) |r| if (x.xfail == null or r == .exact) {
-                    x.xfail = r;
-                };
+                if (xfail) |r| x.xfail = Rely.worse(x.xfail, r);
             }
             if (!found) try written.append(w.a, .{ .param = u.param, .path = u.path, .origin = origin, .xfail = xfail, .deep = deep });
         };
@@ -8013,7 +8033,7 @@ const Walker = struct {
             if (r == .ok) continue;
             const i = xreqParam(x) orelse continue;
             if (i >= args.len) continue;
-            if (xfail[i] == null or r == .exact) xfail[i] = r;
+            xfail[i] = Rely.worse(xfail[i], r);
         }
         // 3. W: the caller's side of a written parameter.
         for (s.uses) |u| {
@@ -8039,8 +8059,8 @@ const Walker = struct {
                 .element = false,
                 .accept = .param,
                 .holders = &.{},
-                .fixed = .{ .verdict = .{ .rejected = .exclusive }, .detail = try w.exclusiveText(args[i]) },
-                .prelim = .{ .cause = .exclusive, .detail = "", .approx = r == .approx },
+                .fixed = .{ .verdict = .{ .rejected = if (r == .limit) .limit else .exclusive }, .detail = try w.exclusiveText(args[i]) },
+                .prelim = .{ .cause = if (r == .limit) .limit else .exclusive, .detail = "", .approx = r != .exact },
             });
         }
         // 4. E, and what the summary keeps of a function value.
@@ -8539,7 +8559,7 @@ const Walker = struct {
         // facts; the lost seeds are the compiler's limit, an error (§16.7).
         if (!settled) {
             try w.o.hitLimit(.fixpoint, round_cap);
-            for (future.items) |c| try w.lowerSpine(c, cond_lost);
+            for (future.items) |c| try w.lowerSpine(c, cond_limit);
         }
         inner.effects = ctx.effects;
         return w.unionOf(&.{ shape, try w.instCbOnce(j, classes, inner) });
@@ -9375,7 +9395,7 @@ const Walker = struct {
                         var p = e.prov;
                         p.path = try w.o.concat(p.path, tail);
                         const scoped = try w.spineCond(try w.instProv(p, ictx));
-                        if (scoped != cond_lost and scoped != cond_shared) {
+                        if (scoped != cond_lost and scoped != cond_limit and scoped != cond_shared) {
                             const usable = for (w.conds.items[scoped].atoms) |atom| {
                                 if (!w.ownedBy(atom, w.frame)) break false;
                             } else true;
@@ -9386,8 +9406,8 @@ const Walker = struct {
                         .ok => {},
                         else => |r| if (bad[u.param] == null) {
                             bad[u.param] = try w.sharesText(callee.name, u.param, e, args);
-                            bad_approx[u.param] = r == .approx;
-                            bad_cause[u.param] = .exclusive;
+                            bad_approx[u.param] = r != .exact;
+                            bad_cause[u.param] = if (r == .limit) .limit else .exclusive;
                         },
                     };
                     // An owned supply of the callee's own parameter: the
@@ -9408,8 +9428,8 @@ const Walker = struct {
                 const k = xreqParam(x) orelse 0;
                 if (k >= c.params or bad[k] != null) continue;
                 bad[k] = try std.fmt.allocPrint(arena, "it needs what {s} supplies it not to share, and it may", .{callee.name});
-                bad_approx[k] = r == .approx;
-                bad_cause[k] = .exclusive;
+                bad_approx[k] = r != .exact;
+                bad_cause[k] = if (r == .limit) .limit else .exclusive;
             }
             // The callee edits what the callback returns (§16.2's need).
             var need_bad = false;
@@ -9957,7 +9977,7 @@ const Walker = struct {
                         if (e.prov.taken) switch (try w.rely(try w.instXSum(e.xc, ictx), w.frame)) {
                             .ok => {},
                             .exact => return false,
-                            .approx => if (!w.ro_exact) return false,
+                            .approx, .limit => if (!w.ro_exact) return false,
                         };
                         if (!try w.provOwned(e.prov, s, avs, ictx, j, depth, none)) return false;
                     }
@@ -10346,9 +10366,7 @@ const Walker = struct {
             const c = w.cells.items[base];
             if (base != e.cell and spec.kind != .probe) switch (try w.rely(try w.cellCond(e.cell), w.frame)) {
                 .ok => {},
-                else => |r| if (rec.xfail == null or r == .exact) {
-                    rec.xfail = r;
-                },
+                else => |r| rec.xfail = Rely.worse(rec.xfail, r),
             };
             // A taken element is one position, not the list's elements at large.
             if (base == e.cell and try w.o.representative(c.path)) rec.element = true;
@@ -10886,9 +10904,10 @@ const Walker = struct {
         }
         // §18.4: exclusive contents the write needs and may not have.
         if (rec.xfail) |r| {
-            d.verdict = .{ .rejected = .exclusive };
+            // What a limit lowered follows from the limit (#233).
+            d.verdict = .{ .rejected = if (r == .limit) .limit else .exclusive };
             d.detail = rec.xdetail;
-            d.approx = r == .approx;
+            d.approx = r != .exact;
             d.assumed = false;
             return d;
         }
