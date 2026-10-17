@@ -15,7 +15,7 @@
 //! mount node's children; what the mount added is undone by the one
 //! function it registers with `own`, which `stop` runs (`boundary.md`
 //! §9.4.5, amended 2026-10-17). Everything this lowering cannot compile
-//! exactly is a build error that names its class and the slice that adds it
+//! exactly is a build error that names its class and what to write instead
 //! (`browser-inline.md` §5) — never a fallback.
 
 const std = @import("std");
@@ -59,7 +59,8 @@ pub const lowering: m.Lowering = .{
 const no_markup_values =
     \\`browser-inline` has no markup value: markup is compiled only as a program's `view`,
     \\written in place (`docs/design/browser-inline.md` §5, class 1). Markup held, passed or
-    \\returned by a helper arrives with slice S1.
+    \\returned by a helper is not supported on browser-inline yet: write it in place in the
+    \\`view`, or build this program with `--platform=browser-tea`.
 ;
 
 fn module(cx: *m.Context, tree: *const m.Tree) m.Error!void {
@@ -73,13 +74,14 @@ fn root(cx: *m.Context, tree: *const m.Tree, index: m.Root.Index) m.Error!m.Expr
     return cx.notImplemented(tree.root(index).node, no_markup_values);
 }
 
-/// The class-1 refusal (`browser-inline.md` §5): a construct a later slice
-/// adds.
-fn later(cx: *m.Context, n: m.Node.Index, what: []const u8, slice: []const u8) m.Error {
+/// The class-1 refusal (`browser-inline.md` §5): a construct this platform
+/// does not compile yet, and what to write instead.
+fn later(cx: *m.Context, n: m.Node.Index, what: []const u8) m.Error {
     const message = std.fmt.allocPrint(cx.arena,
-        \\`browser-inline` does not compile {s} yet: not on this platform yet, it arrives with
-        \\slice {s} of `plans/direct-rewrite.md` §5 (`docs/design/browser-inline.md` §5, class 1).
-    , .{ what, slice }) catch return error.OutOfMemory;
+        \\`browser-inline` does not compile {s}: not supported on browser-inline yet
+        \\(`docs/design/browser-inline.md` §5, class 1). Write the `view` without it, or build this
+        \\program with `--platform=browser-tea`, which compiles it.
+    , .{what}) catch return error.OutOfMemory;
     return cx.notImplemented(n, message);
 }
 
@@ -95,15 +97,15 @@ fn program(cx: *m.Context, tree: *const m.Tree, p: *const m.Program) m.Error!m.E
         .markup => {},
         .function => return cx.programReport(.view, .not_implemented,
             \\`browser-inline` compiles a `view` whose body is markup written in place, and this
-            \\one's computes its markup, or has `let`s: not on this platform yet, a `view`'s `let`s
-            \\arrive with slice S3 and a branch with slice S4 of `plans/direct-rewrite.md` §5
-            \\(`docs/design/browser-inline.md` §5, class 1).
+            \\one's computes its markup, or has `let`s: not supported on browser-inline yet
+            \\(`docs/design/browser-inline.md` §5, class 1). Write the markup in place as the body of
+            \\`view`, or build this program with `--platform=browser-tea`.
         ),
         .other_module => return cx.programReport(.view, .not_implemented,
             \\`browser-inline` compiles a `view` declared in the module that calls the program's
-            \\constructor, and this one is another module's: not on this platform yet, it arrives
-            \\with slice S1 of `plans/direct-rewrite.md` §5 (`docs/design/browser-inline.md` §5,
-            \\class 1).
+            \\constructor, and this one is another module's: not supported on browser-inline yet
+            \\(`docs/design/browser-inline.md` §5, class 1). Declare `view` beside the program, or
+            \\build this program with `--platform=browser-tea`.
         ),
         else => return cx.programReport(.view, .view_not_compiled,
             \\This program's `view` is a value computed when the page runs, not a function whose
@@ -120,7 +122,7 @@ fn program(cx: *m.Context, tree: *const m.Tree, p: *const m.Program) m.Error!m.E
     return page.mount(r.node);
 }
 
-/// The view's one text binding (decision 3 of the slice): a text hole that
+/// The view's one text binding: a text hole that
 /// is its element's only child, the path to its element from the view's top
 /// element, child by child.
 const Binding = struct {
@@ -167,7 +169,7 @@ const Page = struct {
                 const e = tree.element(n);
                 const facts = tree.elementFacts(e.row);
                 const name = tree.string(facts.name);
-                if (facts.namespace != .html) return later(pg.cx, n, "an element of the SVG or MathML namespace", "S1");
+                if (facts.namespace != .html) return later(pg.cx, n, "an element of the SVG or MathML namespace");
                 if (parser.misnested(scope, name)) |why| return pg.cx.report(n, why);
                 if (scope.parent == null) pg.top += 1;
                 try pg.html.append(pg.a(), '<');
@@ -177,10 +179,10 @@ const Page = struct {
                 if (facts.void) return;
                 const inner = scope.enter(name);
                 const children = tree.childrenOf(e.children);
-                if (parser.content(name) != .normal and children.len != 0) return later(pg.cx, n, "the content of an element whose content the parser reads as text", "S1");
+                if (parser.content(name) != .normal and children.len != 0) return later(pg.cx, n, "the content of an element whose content the parser reads as text");
                 for (children, 0..) |child, i| {
                     if (tree.kind(child) == .hole) {
-                        if (children.len != 1) return later(pg.cx, child, "a hole beside other children of its element", "S1");
+                        if (children.len != 1) return later(pg.cx, child, "a hole beside other children of its element");
                         try pg.hole(child, path);
                         continue;
                     }
@@ -196,11 +198,11 @@ const Page = struct {
                 if (scope.parent == null) pg.top += 1;
                 try escapeText(pg.a(), &pg.html, tree.string(tree.text(n).text));
             },
-            .hole => return later(pg.cx, n, "a hole outside an element", "S1"),
-            .component => return later(pg.cx, n, "a component", "S1"),
-            .for_ => return later(pg.cx, n, "a `For`", "S2"),
-            .show => return later(pg.cx, n, "a `Show`", "S4"),
-            else => return later(pg.cx, n, "this markup", "S1"),
+            .hole => return later(pg.cx, n, "a hole outside an element"),
+            .component => return later(pg.cx, n, "a component"),
+            .for_ => return later(pg.cx, n, "a `For`"),
+            .show => return later(pg.cx, n, "a `Show`"),
+            else => return later(pg.cx, n, "this markup"),
         }
     }
 
@@ -211,14 +213,14 @@ const Page = struct {
         const h = pg.tree.hole(n);
         switch (h.kind) {
             .text_string, .text_number => {},
-            else => return later(pg.cx, n, "a hole that is not text of a `String` or a number", "S1"),
+            else => return later(pg.cx, n, "a hole that is not text of a `String` or a number"),
         }
         const facts = pg.cx.programHole(.{ .node = n });
         if (facts.bake) |text| {
             try escapeText(pg.a(), &pg.html, text);
             return;
         }
-        if (pg.binding != null) return later(pg.cx, n, "a second text binding", "S1");
+        if (pg.binding != null) return later(pg.cx, n, "a second text binding");
         pg.binding = .{ .node = n, .value = h.value, .path = path, .group = facts.group };
         try pg.html.append(pg.a(), ' ');
     }
@@ -229,16 +231,16 @@ const Page = struct {
         const tree = pg.tree;
         switch (it.kind) {
             .attribute => {},
-            .event => return later(pg.cx, n, "an event", "S1"),
-            else => return later(pg.cx, n, "an escape attribute", "S1"),
+            .event => return later(pg.cx, n, "an event"),
+            else => return later(pg.cx, n, "an escape attribute"),
         }
         if (it.attribute != .none) {
             const facts = tree.attributeFacts(it.attribute);
             if (facts.property != null or facts.raw or facts.classes or facts.styles or facts.stateful)
-                return later(pg.cx, n, "an attribute written through a property, raw HTML, or a class or style list", "S1");
+                return later(pg.cx, n, "an attribute written through a property, raw HTML, or a class or style list");
         }
-        if (it.url) return later(pg.cx, n, "an attribute that holds a URL", "S1");
-        if (it.value.kind != .constant) return later(pg.cx, n, "an attribute whose value is not a constant", "S1");
+        if (it.url) return later(pg.cx, n, "an attribute that holds a URL");
+        if (it.value.kind != .constant) return later(pg.cx, n, "an attribute whose value is not a constant");
         const name = tree.string(it.name);
         const c = it.value.constant;
         switch (c.kind) {
@@ -257,7 +259,7 @@ const Page = struct {
                 try pg.html.append(pg.a(), ' ');
                 try pg.html.appendSlice(pg.a(), name);
             },
-            else => return later(pg.cx, n, "this attribute's value", "S1"),
+            else => return later(pg.cx, n, "this attribute's value"),
         }
     }
 
@@ -269,7 +271,7 @@ const Page = struct {
     fn mount(pg: *Page, view_node: m.Node.Index) m.Error!m.Expr {
         const cx = pg.cx;
         const js = cx.js;
-        if (pg.top > 1) return later(cx, view_node, "a `view` of more than one top-level node", "S1");
+        if (pg.top > 1) return later(cx, view_node, "a `view` of more than one top-level node");
         const element_ = pg.p.constructor == 1;
         const keys = cx.programKeys();
 
@@ -280,9 +282,8 @@ const Page = struct {
                 .set => |s| subs = s,
                 .model => return cx.programReport(.call, .not_implemented,
                     \\This program's subscriptions depend on its model, and `browser-inline` compiles a
-                    \\set of subscriptions that is the same for the page's life: a set that changes needs
-                    \\the subscription diff, which arrives with slice S4 of `plans/direct-rewrite.md` §5
-                    \\(`docs/design/browser-inline.md` §3; §5, class 3). Write `subscriptions` so that
+                    \\set of subscriptions that is the same for the page's life: a set that changes is not
+                    \\supported on browser-inline yet (`docs/design/browser-inline.md` §3; §5, class 3). Write `subscriptions` so that
                     \\it does not read the model, and let `update` ignore what it does not need.
                 ),
                 .no_key => |where| return cx.programReport(.call, .not_implemented, try std.fmt.allocPrint(cx.arena,
@@ -307,9 +308,9 @@ const Page = struct {
             if (s.handler >= keys.len) return cx.programReport(.call, .not_implemented, "A limit of the compiler: a subscription's key has no handler.");
             if (s.fields > 1 or keys[s.handler].params != s.fields) return cx.programReport(.call, .not_implemented, try std.fmt.allocPrint(cx.arena,
                 \\`browser-inline` does not compile the subscription at {s} yet: its message's
-                \\constructor takes the value in more than one field. Not on this platform yet, it
-                \\arrives with slice S1 of `plans/direct-rewrite.md` §5 (`docs/design/browser-inline.md`
-                \\§5, class 1).
+                \\constructor takes the value in more than one field, which is not supported on
+                \\browser-inline yet (`docs/design/browser-inline.md` §5, class 1). Give the constructor
+                \\one field for the value.
             , .{s.where}));
             reached[s.handler] = true;
         }
@@ -446,8 +447,8 @@ const Page = struct {
             .runs => return true,
             .suspends => |where| return cx.programReport(if (key == null) .init else .update, .not_implemented, try std.fmt.allocPrint(cx.arena,
                 \\The command whose body is at {s} may suspend, and a body that suspends needs the task
-                \\kernel: not on this platform yet, it returns with slice S6 of
-                \\`plans/direct-rewrite.md` §5 (`docs/design/browser-inline.md` §4; §5, class 2).
+                \\kernel, which is not supported on browser-inline yet (`docs/design/browser-inline.md` §4;
+                \\§5, class 2).
                 \\Write the body so that it does not wait, or build this program with
                 \\`--platform=browser-tea`.
             , .{where})),
