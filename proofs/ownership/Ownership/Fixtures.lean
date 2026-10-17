@@ -820,8 +820,12 @@ def chainKept (returned : Nat) : Program := keepProgram <|
       .letE 4 (.prim .push [v 0, .int 1]) (.prim .record [v 4, v 3])
 
 /-- `( kept, xs ) = pickSecond c keep; ( kept, push xs 9 )`: the kept list is
-    whichever list the branch chose; refused with a keeping callback (`1`),
-    accepted with a dropping one (`2`). -/
+    always `b`; the branch chooses what the caller writes, `b` at `c = 0`
+    (`branch` takes its first arm at zero) and `a` otherwise. With a keeping
+    callback (`1`) the write of `b` is refused and the two runs differ; the
+    write of `a` is refused too, conservatively, because the core joins the
+    arms as the Zig checker does ("whichever list it gets"). A dropping
+    callback (`2`) is accepted. -/
 def secondKeep (callback : Nat) (c : Int) : Program := keepProgram <|
   .letE 0 (.closure callback []) <| .letE 1 (.atom (.int c)) <| .letE 2 (.closure 14 []) <|
     .letE 3 (.app (v 2) [v 1, v 0]) <| .letE 4 (push (.field (v 3) 1)) (.prim .record [.field (v 3) 0, v 4])
@@ -1055,7 +1059,9 @@ def all : List Fixture := [
   ⟨"§30.11 analogue: the shared root through apply",sharedThroughApply,false⟩,
   ⟨"§30.11 listOfFns (a local list; identified by both checkers)",listOfFns,true⟩,
   -- Appended 2026-10-17 (the review of PR #324, findings 1 and 2).
-  ⟨"CK-251 secondKeep",secondKeep 1 1,false⟩, ⟨"CK-251 secondDrop",secondKeep 2 1,true⟩,
+  ⟨"CK-251 secondKeep (c = 0: the kept list is written)",secondKeep 1 0,false⟩,
+  ⟨"CK-251 secondKeep (c = 1: the other list, refused conservatively)",secondKeep 1 1,false⟩,
+  ⟨"CK-251 secondDrop",secondKeep 2 0,true⟩,
   ⟨"CK-251 listKeep",listKeep 1,false⟩, ⟨"CK-251 listDrop",listKeep 2,true⟩,
   ⟨"CK-249 read-only chain of four",chainRead 12,true⟩,
   ⟨"CK-249 read-only chain of five (the callbacks limit)",chainRead 13,false⟩
