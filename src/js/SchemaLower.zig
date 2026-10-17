@@ -1507,15 +1507,15 @@ const Fn = struct {
         }
     }
 
-    /// Whether host object `v`'s own key `key` is read by testing what a
-    /// read of it answers against `undefined`: only an object `JSON.parse`
-    /// made (`parse`), whose objects inherit only `Object.prototype` and
-    /// hold no `undefined`, and only for a key `Object.prototype` does not
-    /// hold (§5, *Host values*). `read` takes a host value from anywhere,
-    /// which may inherit any key or own one that holds `undefined`, so it
-    /// tests each key with `Object.hasOwn`, as `fieldsFrom` does.
+    /// Whether host object `v`'s key `key` is present by what a read of it
+    /// answers: anything but `undefined`, wherever along its prototype
+    /// chain it is (§5, *Host values*, amended 2026-10-17). Every runner
+    /// that reads a host value — `parse`, `read` and its validator — tests a
+    /// key so, but a name `Object.prototype` has, which is tested with
+    /// `Object.hasOwn` so that the prototype never shadows a field; the one
+    /// list of those names is `isPrototypeKey`'s.
     fn readsByValue(w: *const Fn, key: []const u8) bool {
-        return w.op.json() and !isPrototypeKey(key);
+        return w.op.hostIn() and !isPrototypeKey(key);
     }
 
     /// `recordOf` on a host object at depth `d + offset`: the unknown keys

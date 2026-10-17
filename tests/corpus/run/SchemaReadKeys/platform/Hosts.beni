@@ -1,0 +1,48 @@
+--! Host values JSON cannot make: what `Schema.read` is handed from
+--! JavaScript code (`schema.md` §5, *Host values*, amended 2026-10-17).
+
+import Js
+import Schema exposing (Value)
+
+
+--| `{ x: 1 }` whose `y` it inherits from its prototype.
+pub inherited : ⊤ → Value
+inherited ⊤ =
+    proto = Js.object [ ( "y", Js.from 2 ) ]
+    child = Js.call (Js.global "Object") "create" [ proto ]
+    Js.set child "x" (Js.from 1)
+    Js.to child
+
+
+--| An instance whose `x` and `y` are getters of its class.
+pub getters : ⊤ → Value
+getters ⊤ =
+    proto = Js.object []
+    _ =
+        Js.call (Js.global "Object") "defineProperty"
+            [ proto, Js.from "x", Js.object [ ( "get", Js.from λ⊤ → 3 ) ] ]
+    _ =
+        Js.call (Js.global "Object") "defineProperty"
+            [ proto, Js.from "y", Js.object [ ( "get", Js.from λ⊤ → 4 ) ] ]
+    Js.to (Js.call (Js.global "Object") "create" [ proto ])
+
+
+--| `{ x: 5, y: undefined }`.
+pub undefinedY : ⊤ → Value
+undefinedY ⊤ = Js.to (Js.object [ ( "x", Js.from 5 ), ( "y", Js.undefined ) ])
+
+
+--| `{ x: undefined, y: 6 }`.
+pub undefinedX : ⊤ → Value
+undefinedX ⊤ = Js.to (Js.object [ ( "x", Js.undefined ), ( "y", Js.from 6 ) ])
+
+
+--| `{ toString: … }` that only inherits it: `toString` is
+--| `Object.prototype`'s.
+pub plain : ⊤ → Value
+plain ⊤ = Js.to (Js.object [])
+
+
+--| `{ toString: "own" }`.
+pub ownToString : ⊤ → Value
+ownToString ⊤ = Js.to (Js.object [ ( "toString", Js.from "own" ) ])
