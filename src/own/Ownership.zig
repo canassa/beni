@@ -8068,7 +8068,7 @@ const Walker = struct {
                 if (u.bits & (bit_e | bit_j) == 0) continue;
                 for (s.supply) |e| {
                     if (e.fun != j or e.k != u.param or !w.o.overlap(e.path, u.path)) continue;
-                    const cells = try w.instProv(e.prov, .{ .inst = inst, .s = s, .avs = avs, .depth = 1 });
+                    const cells = try w.supplyCells(e.prov, .{ .inst = inst, .s = s, .avs = avs, .depth = 0 }, .{ .inst = inst, .s = s, .avs = avs, .depth = 1 });
                     try w.escape(cells, w.point - 1);
                 }
             }
@@ -8084,11 +8084,11 @@ const Walker = struct {
     /// the caller's own function parameter is asked to return owned, which
     /// no function that keeps a borrowed supply does.
     fn callbackKeeps(w: *Walker, inst: Inst.Index, callee: Callee, s: *const Summary, args: []const Inst.Index, avs: []const AV, j: u32) Allocator.Error!void {
-        for (s.supply) |e| {
+        for (s.supply, 0..) |e, ei| {
             if (e.fun != j or e.owned or e.prov.kind != .param) continue;
             const written = for (s.uses) |u| {
                 if (u.param == e.prov.a and u.bits & bit_w != 0 and w.o.overlap(u.path, e.prov.path)) break true;
-            } else false;
+            } else try w.writtenByCallback(s, avs, e, ei);
             if (!written) continue;
             const actual = (try w.actualOf(s, avs, j)) orelse continue;
             if (w.fnParamOf(actual) orelse try w.slotOf(actual)) |jj| {
@@ -8097,9 +8097,6 @@ const Walker = struct {
             }
             const classes = try w.classesOf(actual);
             var keeps = classes.len == 0;
-            // The summary does not say that the write comes after the call,
-            // only that `πᵢ` is used after it: approximate.
-            const approx = true;
             for (classes) |cls| {
                 const c = (try w.classSummary(cls)) orelse {
                     keeps = true;
@@ -8116,7 +8113,7 @@ const Walker = struct {
                 };
             }
             if (!keeps) continue;
-            const why = try std.fmt.allocPrint(w.o.out.allocator(), "{s} writes what it hands this function ({s}) after the call, and the function's result may keep it", .{ callee.name, try w.o.provText(e.prov) });
+            const why = try std.fmt.allocPrint(w.o.out.allocator(), "{s} changes what it hands this function ({s}) after the call, itself or through another function, and the function's result may keep it", .{ callee.name, try w.o.provText(e.prov) });
             const arg = if (j < args.len) args[j] else inst;
             try w.demands.append(w.a, .{
                 .kind = .value,
@@ -8132,10 +8129,42 @@ const Walker = struct {
                 .accept = .callback_param,
                 .holders = &.{},
                 .fixed = .{ .verdict = .{ .rejected = .supply }, .detail = why },
-                .prelim = .{ .cause = .supply, .detail = why, .approx = approx },
+                // The summary does not say that the change comes after the
+                // call, only that `πᵢ` is used after it: approximate.
+                .prelim = .{ .cause = .supply, .detail = why, .approx = true },
             });
+            // One line per callback, as the supply edge reports.
             return;
         }
+    }
+
+    /// Whether the callee hands `πᵢ` of supply `e` (index `ei`) to another
+    /// callback too, whose actual writes it: a class that writes the part
+    /// supplied, one with no class, or the caller's own function parameter,
+    /// whose writes are decided outside (#281).
+    fn writtenByCallback(w: *Walker, s: *const Summary, avs: []const AV, e: SupplyEntry, ei: usize) Allocator.Error!bool {
+        for (s.supply, 0..) |x, xi| {
+            if (xi == ei or x.prov.kind != .param or x.prov.a != e.prov.a or !w.o.overlap(x.prov.path, e.prov.path)) continue;
+            const actual = (try w.actualOf(s, avs, x.fun)) orelse continue;
+            if (w.fnParamOf(actual) orelse try w.slotOf(actual)) |_| return true;
+            const classes = try w.classesOf(actual);
+            if (classes.len == 0) return true;
+            for (classes) |cls| {
+                const c = (try w.classSummary(cls)) orelse return true;
+                for (c.uses) |u| if (u.param == x.k and u.bits & bit_w != 0 and w.o.overlap(u.path, x.path)) return true;
+            }
+        }
+        return false;
+    }
+
+    /// A supply's provenance instantiated for the callback it is handed to.
+    /// A cell the callee made and also returns keeps its fresh number, and
+    /// is the cell the result names (`own`, the callee's own depth); any
+    /// other new cell is one of the callback's depth (`deeper`). So a
+    /// callback that keeps it keeps the list the caller gets back (#281).
+    fn supplyCells(w: *Walker, p: Prov, own: InstCtx, deeper: InstCtx) Allocator.Error!AV {
+        if ((p.kind == .fresh or p.kind == .esc) and p.a != 0) return w.instProv(p, own);
+        return w.instProv(p, deeper);
     }
 
     /// What a lambda escaped of the cells it captured, joined to Esc where
@@ -8484,7 +8513,7 @@ const Walker = struct {
                 var parts: std.ArrayList(AV) = .empty;
                 for (ctx.s.supply) |e| {
                     if (e.fun != j or e.k != k) continue;
-                    try parts.append(w.a, try w.under(try w.instProv(e.prov, deeper), e.path));
+                    try parts.append(w.a, try w.under(try w.supplyCells(e.prov, ctx, deeper), e.path));
                 }
                 pa.* = try w.unionOf(parts.items);
             }
@@ -8504,7 +8533,7 @@ const Walker = struct {
         var from: std.ArrayList(AV) = .empty;
         for (ctx.s.supply) |e| {
             if (e.fun != j) continue;
-            try from.append(w.a, try w.instProv(e.prov, .{ .inst = ctx.inst, .s = ctx.s, .avs = ctx.avs, .closure = ctx.closure, .depth = ctx.depth + 1, .effects = ctx.effects }));
+            try from.append(w.a, try w.supplyCells(e.prov, ctx, .{ .inst = ctx.inst, .s = ctx.s, .avs = ctx.avs, .closure = ctx.closure, .depth = ctx.depth + 1, .effects = ctx.effects }));
         }
         if (try w.actualOf(ctx.s, ctx.avs, j)) |actual| try from.append(w.a, actual);
         for (from.items) |av| for (try w.expand(av)) |e| {
@@ -10450,6 +10479,7 @@ const Walker = struct {
                         if (cc.kind == .param and cc.b == 0) continue;
                         if ((try w.reaches(handed, &.{.{ .path = eps, .cell = c.cell }})) == null) continue;
                         try holders.append(w.a, .{ .local = @intCast(l), .path = e.path, .approx = ec.b + 1 });
+                        break;
                     }
                 };
                 for (cells.items) |c| {
@@ -11146,8 +11176,10 @@ const Walker = struct {
                 const probe_approx = if (!sr.owned) sr.approx else (sr.probe != none or sr.probe2 != none or sr.more.len != 0) and more_approx and (sr.probe == none or w.probe_approx.items[sr.probe]) and (sr.probe2 == none or w.probe_approx.items[sr.probe2]);
                 const xc = try w.xsumOf(sr.cond, frame, params, none);
                 for (try w.expand(sr.av)) |e| {
-                    var prov = (try w.provOf(e.cell, frame, params, .{})) orelse continue;
-                    if (prov.kind == .fresh or prov.kind == .esc) prov.a = 0;
+                    // A cell made here keeps the number the result gives it
+                    // (0 when the result does not hold it): a callback that
+                    // keeps it then keeps the list the result returns (#281).
+                    var prov = (try w.provOf(e.cell, frame, params, fresh)) orelse continue;
                     if (sr.taken and prov.kind == .param) prov.taken = true;
                     const owned = owned_probe and prov.kind != .shared and prov.kind != .top and prov.kind != .esc and prov.kind != .env;
                     if (prov.kind == .cb and owned) {
