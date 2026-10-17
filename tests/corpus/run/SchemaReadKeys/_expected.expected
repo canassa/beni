@@ -4,3 +4,4 @@ undefined y: 5, missing
 undefined x: 1 issue
 inherited toString: 1 issue
 own toString: own
+polluted prototype: 9, 7

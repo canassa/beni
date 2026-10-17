@@ -46,3 +46,13 @@ plain ⊤ = Js.to (Js.object [])
 --| `{ toString: "own" }`.
 pub ownToString : ⊤ → Value
 ownToString ⊤ = Js.to (Js.object [ ( "toString", Js.from "own" ) ])
+
+
+--| `{ x: 9 }`, made after a `y` of 7 is set on `Object.prototype` itself:
+--| a page that polluted the prototype. Compiled and library runs read `y`
+--| alike, from one list of the names `Object.prototype` holds.
+pub polluted : ⊤ → Value
+polluted ⊤ =
+    proto = Js.get (Js.global "Object") "prototype"
+    Js.set proto "y" (Js.from 7)
+    Js.to (Js.object [ ( "x", Js.from 9 ) ])

@@ -56,6 +56,7 @@ pub const js = struct {
     pub const Spec = @import("js/Spec.zig");
     pub const Rename = @import("js/Rename.zig");
     pub const Minify = @import("js/Minify.zig");
+    pub const SchemaShare = @import("js/SchemaShare.zig");
 };
 pub const build = struct {
     pub const Command = @import("build/Command.zig");
