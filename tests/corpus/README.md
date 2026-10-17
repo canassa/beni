@@ -229,6 +229,9 @@ project) against it, one step per line, `#` for a comment:
                                 opened from a file, its address `file:`
     throws load                 after the steps that set the page up: the
                                 program must throw while it loads
+    element "<id>"              as a step before the program loads: a `<div>` of
+                                that id in the body, for a program `mountAt`
+                                places there
     store <local|session> "<key>" "<value>"
                                 `setItem` on that storage
     storage <local|session>     log `(localStorage: {…})`, its items by key

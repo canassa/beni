@@ -334,6 +334,7 @@ const Reader = struct {
             .derived => in.dispatchOf(m).derived.len,
             .ctor => bir.ctors.len,
             .schema => in.schemaSlots(m) * SchemaGraph.Member.count,
+            .lift => return null,
         };
         if (index >= bound and !(kind == .ctor and index == Reach.never_ctor)) return null;
         return .{ .at = .{ .module = m, .kind = kind, .index = index } };

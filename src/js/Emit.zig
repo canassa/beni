@@ -103,6 +103,7 @@ const prelude = @import("../bir/prelude.zig");
 const beni_markup = @import("beni_markup");
 const Interface = @import("../resolve/Interface.zig");
 const Writes = @import("../writes/Writes.zig");
+const Lift = @import("Lift.zig");
 
 const Emit = @This();
 
@@ -350,6 +351,13 @@ pub fn run(
     // Which of `core/List`'s core-private values this build's core
     // declares: every module that would import one it lacks says so.
     if (e.graph().lookup(.core, InternPool.WellKnown.List.symbol())) |list| e.core_private = Lower.corePrivateDeclared(e.bir(list));
+    // The write-set pass, for a lowering that compiles programs whole
+    // (`boundary.md` §9.4.6, version 1.7), before reachability: the pieces
+    // it lifts are nodes of the walk (`browser-inline.md` §7).
+    if (options.platform.lowering) |name| if (findLowering(name)) |lw| if (lw.program != null) {
+        try e.runWrites();
+        try e.findLifts();
+    };
     try e.eliminate(entry);
     try e.shareValidators();
 
@@ -818,6 +826,16 @@ const Emitter = struct {
     /// every name, and the names its kept part mentions. Found by
     /// `checkMarkupRuntime` and `preciseRuntimeRoots`; scratch-owned.
     runtime_module: ?Graph.Index = null,
+    /// The write-set pass, between `runWrites` and `buildDirect`.
+    writes: ?*Writes = null,
+    writes_calls: []const Writes.Call = &.{},
+    writes_effects: ?Writes.Effects = null,
+    writes_birs: []const *const Bir = &.{},
+    /// `browser-inline.md` §7: every lifted piece of the build, and the
+    /// instruction ranges reachability does not follow.
+    lifts: []const Lift.Piece = &.{},
+    cuts: []const Reach.Cut = &.{},
+    lift_roots: []const Reach.Node = &.{},
     supplied: []const Lower.Markup.Supplied = &.{},
     program_names: []const []const u8 = &.{},
     program_uses: []const []const u8 = &.{},
@@ -2458,7 +2476,10 @@ const Emitter = struct {
     /// (`write-sets.md` §2.5); and, in a development build, which
     /// declarations reach `Debug` (`browser-direct.md` §8.3). Serial, in
     /// module and instruction order: nothing here depends on `--jobs`.
-    fn buildDirect(e: *Emitter) !void {
+    /// The write-set pass over the whole program, run before reachability
+    /// so that the pieces a program site lifts (`browser-inline.md` §7) are
+    /// nodes of the walk; `buildDirect` reads what it found.
+    fn runWrites(e: *Emitter) !void {
         const n = e.graph().count();
         const a = e.scratch;
         const birs = try a.alloc(*const Bir, n);
@@ -2512,8 +2533,77 @@ const Emitter = struct {
             .targets = targets,
             .effects = effects,
         });
-        defer w.deinit();
-        const calls = try w.runCalls();
+        e.writes = w;
+        e.writes_calls = try w.runCalls();
+        e.writes_effects = effects;
+        e.writes_birs = birs;
+    }
+
+    /// `browser-inline.md` §7: the pieces program sites lift — every
+    /// subscription start that is a lambda of another module than its
+    /// program's — each once, in program and declaration order; and the
+    /// `subscriptions` fields no program site evaluates. Each piece is a
+    /// root of reachability.
+    fn findLifts(e: *Emitter) !void {
+        if (e.writes_effects == null) return;
+        const w = e.writes.?;
+        var pieces: std.ArrayList(Lift.Piece) = .empty;
+        var cuts: std.ArrayList(Reach.Cut) = .empty;
+        var roots: std.ArrayList(Reach.Node) = .empty;
+        for (e.writes_calls) |call| {
+            const prog = &call.program;
+            if (prog.subscriptions_inst != Writes.none) {
+                const b = e.writes_birs[prog.subscriptions_module];
+                try cuts.append(e.scratch, .{ .module = @fromBackingInt(@intCast(prog.subscriptions_module)), .lo = try Lift.low(b, e.scratch, prog.subscriptions_inst), .hi = prog.subscriptions_inst });
+            }
+            if (prog.subscriptions.class != .set) continue;
+            for (prog.subscriptions.decls) |dcl| {
+                const info = try w.funInfo(dcl.start);
+                // The constructor its handler stands for: the program site
+                // calls the handler with no message built, and the arm of
+                // `update` on that constructor must survive.
+                if (dcl.ctor != Writes.none) {
+                    const place = w.ctorPlace(dcl.ctor);
+                    try roots.append(e.scratch, .{ .module = @fromBackingInt(@intCast(place.module)), .kind = .ctor, .index = place.index });
+                }
+                // A top-level start is reached from the program site.
+                if (info.kind == .top) try roots.append(e.scratch, .{ .module = @fromBackingInt(@intCast(info.m)), .kind = .decl, .index = info.d });
+                if (info.kind != .lambda) continue;
+                const seen = for (pieces.items) |p| {
+                    if (p.module == info.m and p.inst == info.inst) break true;
+                } else false;
+                if (seen) continue;
+                const b = e.writes_birs[info.m];
+                var captures: std.ArrayList(u32) = .empty;
+                for (info.bound) |local| if (try Lift.readsLocal(b, e.scratch, info.inst, local)) try captures.append(e.scratch, local);
+                try roots.append(e.scratch, .{ .module = @fromBackingInt(@intCast(info.m)), .kind = .lift, .index = @intCast(pieces.items.len) });
+                try pieces.append(e.scratch, .{
+                    .module = info.m,
+                    .decl = info.d,
+                    .inst = info.inst,
+                    .lo = try Lift.low(b, e.scratch, info.inst),
+                    .ordinal = Lift.ordinal(b, info.d, info.inst),
+                    .name = try Lift.base(e.scratch, e.session.interner.slice(b.symbol(b.decls[info.d].name)), Lift.ordinal(b, info.d, info.inst)),
+                    .captures = captures.items,
+                    .in_place = info.m == call.module,
+                });
+            }
+        }
+        e.lifts = pieces.items;
+        e.cuts = cuts.items;
+        e.lift_roots = roots.items;
+    }
+
+    fn buildDirect(e: *Emitter) !void {
+        const a = e.scratch;
+        const w = e.writes.?;
+        defer {
+            w.deinit();
+            e.writes = null;
+        }
+        const calls = e.writes_calls;
+        const effects = e.writes_effects;
+        const birs = e.writes_birs;
         const programs = try a.alloc(Lower.Direct.Program, calls.len);
         var text: std.Io.Writer.Allocating = .init(a);
         for (calls, programs) |call, *out| {
@@ -2609,6 +2699,23 @@ const Emitter = struct {
                                 .inst = info.inst,
                                 .bound = try a.dupe(u32, info.bound),
                             };
+                            // A lambda of another module: the piece it is
+                            // lifted as, and its captures' values here.
+                            if (info.kind == .lambda and info.m != call.module) {
+                                for (e.lifts, 0..) |pc, pi| if (pc.module == info.m and pc.inst == info.inst) {
+                                    st.lift = @intCast(pi);
+                                    const spelled = try a.alloc([]const u8, pc.captures.len);
+                                    for (pc.captures, spelled) |local, *sp| {
+                                        var text_: std.ArrayList(u8) = .empty;
+                                        if (!try w.literalSpelling(w.closureLocal(dcl.start, local), &text_)) {
+                                            st.captures = null;
+                                            break;
+                                        }
+                                        sp.* = try a.dupe(u8, text_.items);
+                                    } else st.captures = spelled;
+                                    break;
+                                };
+                            }
                             if (info.kind == .top and info.m < e.session.resolution.provenance.len) {
                                 const prov = &e.session.resolution.provenance[info.m];
                                 for (prov.value_decl, 0..) |vd, vi| if (vd.int() == info.d) {
@@ -2729,7 +2836,7 @@ const Emitter = struct {
                 }
             }
         }
-        e.direct = .{ .programs = programs, .source_roots = roots.items };
+        e.direct = .{ .programs = programs, .source_roots = roots.items, .lifts = e.lifts };
         if (!e.options.release) try e.debugReach();
     }
 
@@ -3016,7 +3123,7 @@ const Emitter = struct {
             b.* = e.bir(m);
             d.* = e.dispatchOf(m);
         }
-        const in: Reach.Input = .{
+        var in: Reach.Input = .{
             .graph = e.graph(),
             .store = &e.session.store,
             .birs = birs,
@@ -3033,7 +3140,16 @@ const Emitter = struct {
             .plans = e.session.checked.plans,
             .schema_library = e.options.schema_library,
             .forwarding_foreigns = e.forwarding_foreigns,
+            .cuts = e.cuts,
+            .pinned = e.lift_roots,
         };
+        // What each lifted piece reaches (`browser-inline.md` §7).
+        if (e.lifts.len != 0) {
+            var builder: Reach.Builder = .init(in, e.scratch);
+            const targets = try e.scratch.alloc([]const Reach.Target, e.lifts.len);
+            for (e.lifts, targets) |p, *t| t.* = try builder.liftTargets(@fromBackingInt(@intCast(p.module)), p.decl, p.lo, p.inst);
+            in.lift_targets = targets;
+        }
         e.schema_graph = .{
             .graph = e.graph(),
             .plans = e.session.checked.plans,
