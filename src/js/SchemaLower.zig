@@ -85,7 +85,7 @@ pub fn memberOf(kind: Interface.SchemaMember.Kind) ?Member {
 }
 
 /// Every operation, in the order a declaration emits their workers.
-const all_ops = [_]Op{ .parse, .print, .decode, .encode, .read, .write };
+const all_ops = [_]Op{ .parse, .print, .decode, .encode, .read, .write, .valid };
 
 fn suffixOf(kind: Interface.SchemaMember.Kind) []const u8 {
     return switch (kind) {
@@ -513,9 +513,9 @@ const Gen = struct {
         // workers, the arguments, then an array of the other four
         // operations' workers, its trailing `null`s left out, or no array
         // when it would hold none.
-        var slots: [8]Node.Index = undefined;
+        var slots: [9]Node.Index = undefined;
         slots[0] = if (g.l.liveSchema(g.ref, .description)) try g.arrowOf(&.{}, try g.described(params)) else try g.lit(.null_lit);
-        const positions = [_]struct { Op, usize }{ .{ .parse, 1 }, .{ .print, 2 }, .{ .decode, 4 }, .{ .encode, 5 }, .{ .read, 6 }, .{ .write, 7 } };
+        const positions = [_]struct { Op, usize }{ .{ .parse, 1 }, .{ .print, 2 }, .{ .decode, 4 }, .{ .encode, 5 }, .{ .read, 6 }, .{ .write, 7 }, .{ .valid, 8 } };
         var used: usize = 4;
         for (positions) |pick| {
             const op, const at = pick;
@@ -1111,6 +1111,8 @@ const Fn = struct {
     /// `compiledFail(c, …at, code, message, input, written)`.
     fn fail(w: *Fn, at: At, code: Code, message: Node.Index, input: Node.Index, written: bool) !Node.Index {
         const g = w.g;
+        // A validator makes no issue: its failure is `c.fail` alone.
+        if (w.op == .valid) return w.failMark();
         const path = try w.pathArgs(at);
         return g.call(try g.core("compiledFail"), &.{
             try g.id(w.c),
@@ -1130,6 +1132,7 @@ const Fn = struct {
     /// §6, *Validators shared across schemas*).
     fn failText(w: *Fn, at: At, code: Code, message: []const u8, input: Node.Index, written: bool) !Node.Index {
         const g = w.g;
+        if (w.op == .valid) return w.failMark();
         if (!written) {
             const shared: ?SchemaShare.Helper = if (code == .depth_exceeded and std.mem.eql(u8, message, depth_message))
                 .deep
@@ -1164,6 +1167,8 @@ const Fn = struct {
 
     /// `c.issues.length`.
     fn issueCount(w: *Fn) !Node.Index {
+        // A validator's context gains no issue.
+        if (w.op == .valid) return w.g.num(0);
         return w.g.prop(try w.g.ctxField(w.c, "issues"), "length");
     }
 
@@ -2383,3 +2388,10 @@ fn isIdentity(plan: *const SchemaPlan, words: []const u32, params: usize) bool {
 const primitiveBuilder = SchemaGraph.primitiveBuilder;
 
 const isPrototypeKey = SchemaShare.isPrototypeKey;
+
+/// `<Module>$<Schema>$$readValid`, the root validator worker of `ref`, which
+/// a validator run whose schema is `S.schema ⊤` calls (`SchemaValid`).
+pub fn validWorker(l: *Lowerer, ref: SchemaGraph.Ref, p: u32) !Node.Index {
+    try l.requireLive(l.liveSchema(ref, .read_valid), "readValid");
+    return l.ident(try schemaName(l, ref, Op.valid.workerSuffix()), p);
+}

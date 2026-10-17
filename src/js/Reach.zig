@@ -105,6 +105,7 @@ const JsIntrinsic = @import("JsIntrinsic.zig");
 const Operator = @import("Operator.zig");
 const SchemaGraph = @import("SchemaGraph.zig");
 const SchemaPlan = @import("../check/SchemaPlan.zig");
+const SchemaValid = @import("SchemaValid.zig");
 
 const Reach = @This();
 
@@ -343,6 +344,20 @@ pub const Input = struct {
     /// its interface, because `coreValue` takes the local path when the
     /// module being lowered IS that module and both paths name one
     /// declaration.
+    /// `coreDecl`, the value named by its text.
+    fn coreDeclNamed(in: Input, owner: InternPool.WellKnown, value: []const u8) ?Node {
+        const interner = in.interner orelse return null;
+        const symbol = interner.find(value) orelse return null;
+        const m = in.graph.lookup(.core, owner.symbol()) orelse return null;
+        const bir = in.birOf(m);
+        for (bir.decls, 0..) |d, i| {
+            if (!d.kind.isValue()) continue;
+            if (bir.symbol(d.name) != symbol) continue;
+            return .{ .module = m, .kind = .decl, .index = @intCast(i) };
+        }
+        return null;
+    }
+
     fn coreDecl(in: Input, owner: InternPool.WellKnown, value: InternPool.WellKnown) ?Node {
         const m = in.graph.lookup(.core, owner.symbol()) orelse return null;
         const bir = in.birOf(m);
@@ -908,6 +923,10 @@ pub const Builder = struct {
     /// `core/Schema`'s `Engine` and `Made` (`Input.schemaGuarded`), the core
     /// constructors that guard.
     schema_guarded: ?SchemaGuarded = null,
+    /// `core/Schema`'s `readValid`, which a validator run calls in place
+    /// of `read` (`SchemaValid`).
+    read_valid: ?Node = null,
+    valid_run: ?Node = null,
     /// The shared walk's output for one node, cleared and refilled per
     /// node: a caller-owned buffer, so the whole module's edges cost one
     /// allocation.
@@ -932,6 +951,8 @@ pub const Builder = struct {
             .list_cons = in.coreDecl(.List, .cons),
             .list_append = in.coreDecl(.List, .append),
             .schema_guarded = in.schemaGuarded(),
+            .read_valid = in.coreDeclNamed(.Schema, "readValid"),
+            .valid_run = in.coreDeclNamed(.Schema, "validRun"),
         };
     }
 
@@ -958,6 +979,8 @@ pub const Builder = struct {
         // constant — is JavaScript and not a reference (research 47), so
         // its instruction adds no edge and the sibling is not imported.
         const in_place = try b.jsInPlace(bir, m);
+        const sg_now = b.schemaGraph();
+        const valid: SchemaValid.Sites = if (b.in.interner) |it| try SchemaValid.sites(b.scratch, b.in.graph, b.in.interfaces, b.in.provenance, it, bir, m, if (sg_now) |*g| g else null, b.in.schema_library) else .{};
 
         const decl_at = try b.scratch.alloc(u32, bir.decls.len + 1);
         var decl_targets: std.ArrayList(Target) = .empty;
@@ -985,6 +1008,14 @@ pub const Builder = struct {
             try decl_targets.ensureUnusedCapacity(b.scratch, b.stream.items.len);
             for (b.stream.items, b.at.items) |edge, position| {
                 if (position != Edges.no_position and b.cut(m, position)) continue;
+                // A validator run calls `readValid`, not `read` (`SchemaValid`).
+                if (position != Edges.no_position and SchemaValid.has(valid.callees, position)) {
+                    const runner = if (SchemaValid.has(valid.direct_callees, position)) b.valid_run else b.read_valid;
+                    if (runner) |rv| {
+                        try decl_targets.append(b.scratch, .{ .node = rv, .chain = guards.at(position) });
+                        continue;
+                    }
+                }
                 // A leg-1 row has no position. The `.top` instruction made
                 // with it is guarded where it stands, so the row adds an
                 // edge only when no instruction names its target.
@@ -1020,7 +1051,7 @@ pub const Builder = struct {
             try guards.constructions(&decl_targets);
             try b.effectEdges(m, @intCast(i), &guards, &decl_targets, &twin_extra);
             try b.listEdges(m, bir, d, &decl_targets);
-            try b.memberUses(m, bir, d, &guards, &decl_targets);
+            try b.memberUses(m, bir, d, &guards, &decl_targets, valid);
         }
         decl_at[bir.decls.len] = @intCast(decl_targets.items.len);
 
@@ -1242,7 +1273,7 @@ pub const Builder = struct {
     /// `S.parse` and `S.parseWith` the decoding wrappers, `S.print` and
     /// `S.printWith` the encoding ones — guarded where they stand, like any
     /// reference.
-    fn memberUses(b: *Builder, m: Graph.Index, bir: *const Bir, d: Bir.Decl, guards: *const Guards, out: *std.ArrayList(Target)) Allocator.Error!void {
+    fn memberUses(b: *Builder, m: Graph.Index, bir: *const Bir, d: Bir.Decl, guards: *const Guards, out: *std.ArrayList(Target), valid: SchemaValid.Sites) Allocator.Error!void {
         const start = @min(d.inst_start.int(), bir.insts.len);
         const end = @min(d.inst_end.int(), bir.insts.len);
         for (bir.insts.items(.tag)[start..end], bir.insts.items(.data)[start..end], start..) |tag, data, p| {
@@ -1259,6 +1290,12 @@ pub const Builder = struct {
                 const decl = b.in.provenance[owner.int()].schemaDecl(@backingInt(member.schema)) orelse continue;
                 break :blk .{ .{ .module = owner, .decl = decl.int() }, member.kind };
             } else continue;
+            // `S.schema ⊤` that a validator run calls directly reaches
+            // `S`'s validator workers alone (`SchemaValid`).
+            if (valid.refOfMember(@intCast(p))) |r| {
+                try out.append(b.scratch, .{ .node = schemaNode(r, .read_valid), .chain = guards.at(@intCast(p)) });
+                continue;
+            }
             const member: SchemaGraph.Member = switch (kind) {
                 .schema => .root,
                 .parse, .parse_with => .parse,

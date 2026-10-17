@@ -977,6 +977,12 @@ writeMode : Int
 writeMode = 3
 
 
+-- `read` as a validator (`schema.md` §6, *A run whose failure is never
+-- read is a validator*): a declaration's workers that make no issue.
+validMode : Int
+validMode = 4
+
+
 -- A compiled schema's worker of decoding operation `mode`, as `parserOf`
 -- makes its `parse` worker. Not `parserOf` with one more argument: that
 -- would cost every program that only parses and prints its inlined
@@ -3349,6 +3355,69 @@ readValueSlot s =
 
         Interpreted →
             interpretedSlot s
+
+
+-- A schema argument as a validator's worker: a compiled one's validator,
+-- and the library engine on the context for a dynamic one.
+readValidSlot : Schema e a → Js.Value
+readValidSlot s =
+    case (boxOf s).engine of
+        Compiled w →
+            parserIn w validMode
+
+        Interpreted →
+            interpretedSlot s
+
+
+-- `read` at a call whose `Err` payload nothing reads (`schema.md` §6, *A run
+-- whose failure is never read is a validator*): the compiler calls this in
+-- its place. A compiled schema runs its validator workers, which make no
+-- issue, and fails with none; a schema with a dynamic part — the library's
+-- to run, or a dynamic argument that may fail to be built — runs as `read`
+-- runs, which only a program that builds such a schema reaches.
+readValid : Schema e a, Value → Result (List Issue) a
+readValid s v =
+    case (boxOf s).engine of
+        Compiled w →
+            case firstDynamic w.args of
+                Just d →
+                    case (boxOf d).engine of
+                        Interpreted →
+                            read s v
+
+                        Compiled _ →
+                            validate w v
+
+                Nothing →
+                    validate w v
+
+        Interpreted →
+            read s v
+
+
+validate : Workers, Value → Result (List Issue) a
+validate w v = validRun (parserIn w validMode) v
+
+
+-- A validator worker run on a host value, its context `read`'s: what a run
+-- whose schema is `S.schema ⊤` of a nongeneric declaration calls with `S`'s
+-- validator, the schema value never made (`schema.md` §6).
+validRun : Js.Value, Value → Result (List Issue) a
+validRun worker v =
+    c = context defaultOptions Decoding encodedSide True typeSide False False
+    x = Js.apply worker [ toHost c, Js.from 0, atRoot, Js.null, Js.null, toHost v ]
+    if Js.same x c.fail then Err [] else Ok (fromHost x)
+
+
+-- The first schema argument of a compiled root's that has a dynamic part,
+-- as `interpretedIn` finds them.
+firstDynamic : Js.Value → Maybe (Schema Js.Value Js.Value)
+firstDynamic args =
+    if Js.isNull args then
+        Nothing
+    else
+        dynamic = interpretedIn args
+        if lengthOf dynamic == 0 then Nothing else Just (fromHost (Js.at dynamic 0))
 
 
 -- A schema argument as a `write` worker.
