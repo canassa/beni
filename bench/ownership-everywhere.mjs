@@ -90,11 +90,16 @@ const page = join(repo, "tests/platforms/page");
 const browser = join(corpus, "browser");
 const all = [
   ...programs("run/ (files and projects)", join(corpus, "run"), "node"),
-  ...programs("browser/ top level and OwnPlatform", browser, page, ["dom", "tea", "direct"]),
+  ...programs("browser/ top level and OwnPlatform", browser, page, ["dom", "tea", "direct", "inline"]),
   ...programs("browser/dom/", join(browser, "dom"), "browser"),
   ...programs("browser/tea/", join(browser, "tea"), "browser-tea"),
   ...programs("browser/direct/", join(browser, "direct"), "browser-direct"),
   ...programs("browser/direct/ on browser-tea", join(browser, "direct"), "browser-tea"),
+  // `browser-inline`'s pages and its application goldens; `build/bad/inline/`
+  // is left out, since its projects are refused on purpose.
+  ...programs("browser/inline/", join(browser, "inline"), "browser-inline"),
+  ...programs("emit/inline/, emit/release/inline/", join(corpus, "emit/inline"), "browser-inline"),
+  ...programs("emit/inline/, emit/release/inline/", join(corpus, "emit/release/inline"), "browser-inline"),
   ...["bike-wars", "conduit", "sternhalma"].map((n) => program("examples/", join(repo, "examples", n, "src"), "browser-tea")),
   ...["NoEditing", "NoRouting", "NoStorage", "Sandbox"].map((n) =>
     program("bench/ apps", join(repo, "bench/todomvc/apps/beni", `${n}.beni`), "browser-tea"),
@@ -166,7 +171,7 @@ if (!args["cost-only"]) {
   const modules = [];
   for (const [what, argv] of [
     ["core", ["core"]],
-    ...["node", "html", "browser", "browser-direct", "browser-tea"].map((p) => [p, [`--platform=${p}`, `platforms/${p}`]]),
+    ...["node", "html", "browser", "browser-direct", "browser-tea", "browser-inline"].map((p) => [p, [`--platform=${p}`, `platforms/${p}`]]),
   ]) {
     const r = await run(["dump", "--stage=ownership", "--ownership-totals", "--ownership-everywhere", ...argv]);
     const total = r.out.match(/^total (\d+): .* pending (\d+), rejected (\d+)$/m);
