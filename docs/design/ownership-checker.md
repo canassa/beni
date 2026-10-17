@@ -847,6 +847,9 @@ here, and with its own value's or call's cells for `covers`; a cell found at two
 the atoms are sorted once per entry. The fresh numbering sorts `(cell, path)` pairs. Every condition is the
 pairwise definition's — under runtime safety the two are compared for every result of up to 8 entries — and
 no verdict moved: the dashboard's reports at 16 to 256 widgets are byte for byte the pairwise ones.
+*Amended 2026-10-17 (issue #272):* the build option `-Downership-full-cross-check` compares the two for every
+result, whatever its width, in a safety build; it is slow, so the gates refuse it and the budget does not hold it
+(`-Dtest-budget=0`). The whole black-box suite passed it on 2026-10-17 with no difference.
 
 ### 16.4 Applying a summary at a call
 

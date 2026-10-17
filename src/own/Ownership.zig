@@ -4728,7 +4728,9 @@ const Walker = struct {
             },
         }
         const k = try w.condAndAll(&acc);
-        if (std.debug.runtime_safety and idx.av.len <= 8) {
+        // Values of eight entries or fewer in every safety build; every value
+        // with `-Downership-full-cross-check` (#272).
+        if (std.debug.runtime_safety and (idx.av.len <= 8 or @import("ownership_options").full_cross_check)) {
             const want = try w.spineAtPairwise(idx.av, target);
             if (!w.condSame(k, want)) std.debug.panic("ownership: the indexed spine condition differs from the pairwise one", .{});
         }
