@@ -330,9 +330,13 @@ pub const Direct = struct {
         edges: []const Hole = &.{},
         /// The number of distinct read sets.
         groups: u32,
-        /// `groups × keys`: whether key `k`'s write set conflicts with
-        /// read set `g`, at `g * keys.len + k`.
-        calls: []const bool,
+        /// Per key, the read sets its write set conflicts with, sorted,
+        /// each once: sparse, so a program costs the pairs that conflict and
+        /// never `groups × keys` (`plans/direct-rewrite.md` §3, compile
+        /// linear in N).
+        key_groups: []const []const u32,
+        /// Per read set: some key's write set conflicts with it.
+        written: []const bool,
         /// Version 1.8: each `For` of the view, sorted by module, then its
         /// token.
         lists: []const List = &.{},
@@ -353,6 +357,27 @@ pub const Direct = struct {
         starts: []const Start = &.{},
         commands: []const beni_markup.Program.Command = &.{},
         init_command: beni_markup.Program.Command = .unknown,
+
+        /// Whether key `k`'s write set conflicts with read set `g`.
+        pub fn calls(p: *const Program, g: u32, k: u32) bool {
+            if (k >= p.key_groups.len) return true;
+            return std.sort.binarySearch(u32, p.key_groups[k], g, struct {
+                fn order(x: u32, y: u32) std.math.Order {
+                    return std.math.order(x, y);
+                }
+            }.order) != null;
+        }
+
+        /// Per read set, the keys whose write sets conflict with it, in key
+        /// order: what a consumer that writes a matrix per hole reads.
+        pub fn groupKeys(p: *const Program, a: std.mem.Allocator) Allocator.Error![]const []const u32 {
+            const lists = try a.alloc(std.ArrayList(u32), p.groups);
+            @memset(lists, .empty);
+            for (p.key_groups, 0..) |gs, k| for (gs) |g| try lists[g].append(a, @intCast(k));
+            const out = try a.alloc([]const u32, p.groups);
+            for (out, lists) |*o, l| o.* = l.items;
+            return out;
+        }
     };
 
     /// Version 1.14: a declaration's start, as `Writes.FunInfo` gives it.
@@ -12058,6 +12083,7 @@ pub const Lowerer = struct {
         const pc = l.program_now orelse return l.object(&.{}, l.mk.?.pos);
         const d = pc.direct orelse return l.object(&.{}, l.mk.?.pos);
         const Entry = struct { key: []const u8, bits: []u8 };
+        const group_keys = try d.groupKeys(l.scratch);
         var entries: std.ArrayList(Entry) = .empty;
         var by_key: std.StringHashMapUnmanaged(u32) = .empty;
         for (0..d.holes.len + d.edges.len) |hi| {
@@ -12079,14 +12105,14 @@ pub const Lowerer = struct {
                     try entries.append(l.scratch, .{ .key = key, .bits = bits });
                 }
                 const entry = entries.items[gop.value_ptr.*];
-                for (entry.bits, 0..) |*bit, k| if (d.calls[h.group * d.keys.len + k]) {
-                    bit.* = '1';
+                if (h.group < group_keys.len) for (group_keys[h.group]) |k| {
+                    entry.bits[k] = '1';
                 };
             }
         }
         var props: std.ArrayList(Node.Index) = .empty;
         const root_bits = try l.scratch.alloc(u8, d.keys.len);
-        for (root_bits, 0..) |*bit, k| bit.* = if (d.calls[d.root_group * d.keys.len + k]) '1' else '0';
+        for (root_bits, 0..) |*bit, k| bit.* = if (d.calls(d.root_group, @intCast(k))) '1' else '0';
         try props.append(l.scratch, try l.templateArray(&.{ try l.stringNode("$root", l.mk.?.pos), try l.stringNode(root_bits, l.mk.?.pos) }));
         for (entries.items) |entry| try props.append(l.scratch, try l.templateArray(&.{ try l.stringNode(entry.key, l.mk.?.pos), try l.stringNode(entry.bits, l.mk.?.pos) }));
         for (l.in.direct.?.source_roots) |root_| {
@@ -12129,11 +12155,7 @@ pub const Lowerer = struct {
         const st = l.mk orelse return unknown;
         if (ref == .node and ref.node == .none) {
             if (d.root_group == std.math.maxInt(u32)) return unknown;
-            var static = true;
-            for (0..d.keys.len) |k| if (d.calls[d.root_group * d.keys.len + k]) {
-                static = false;
-            };
-            return .{ .group = d.root_group, .static = static, .bake = null };
+            return .{ .group = d.root_group, .static = !d.written[d.root_group], .bake = null };
         }
         const token = switch (ref) {
             .node => |n| st.built.node_tokens[@backingInt(n)],
@@ -12147,10 +12169,7 @@ pub const Lowerer = struct {
             for (d.edges) |*edge| if (edge.module == l.in.module.int() and edge.token == token and std.mem.eql(u64, edge.path, l.inline_path.items)) break :found edge;
             return unknown;
         } else l.directHoleAt(d, token) orelse return unknown;
-        var static = true;
-        for (0..d.keys.len) |k| {
-            if (d.calls[h.group * d.keys.len + k]) static = false;
-        }
+        const static = h.group < d.written.len and !d.written[h.group];
         return .{ .group = h.group, .static = static, .bake = if (static) h.bake else null, .where = h.where };
     }
 
@@ -12178,7 +12197,7 @@ pub const Lowerer = struct {
         const pc = l.program_now orelse return true;
         const d = pc.direct orelse return true;
         if (group >= d.groups or key >= d.keys.len) return true;
-        return d.calls[group * d.keys.len + key];
+        return d.calls(group, key);
     }
 
     /// `cx.programEdits`: key `key`'s edits of the `For` at node `n`, each
@@ -13934,11 +13953,7 @@ pub const Lowerer = struct {
         const path = l.inline_path.items;
         for (d.lets) |*x| {
             if (x.module != module or x.inst != inst.int() or !std.mem.eql(u64, x.path, path)) continue;
-            var static = true;
-            for (0..d.keys.len) |key| {
-                if (d.calls[x.group * d.keys.len + key]) static = false;
-            }
-            return .{ .group = x.group, .static = static, .bake = null };
+            return .{ .group = x.group, .static = x.group < d.written.len and !d.written[x.group], .bake = null };
         }
         return unknown;
     }

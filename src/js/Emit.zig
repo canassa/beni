@@ -456,6 +456,117 @@ pub fn checkContract(gpa: Allocator, scratch: Allocator, session: *Session, opti
 /// pass while it is alive. A row group is called at one row for a read
 /// bound to the row's own item, on every row otherwise (`write-sets.md`'s
 /// amendment *which `[*]` is a row's own*).
+/// A program's read sets, numbered in the order they are met: equal reads
+/// and equal bound depths are one group, found by a hash of both.
+const GroupNumbers = struct {
+    a: std.mem.Allocator,
+    reads: std.ArrayList([]const u32) = .empty,
+    by: std.StringHashMapUnmanaged(u32) = .empty,
+
+    fn of(g: *GroupNumbers, reads: []const u32, bounds: []const u8) !u32 {
+        // The key: the reads' count, the reads, then the bounds, so no two
+        // pairs spell one key.
+        const len: u32 = @intCast(reads.len);
+        const key = try std.mem.concat(g.a, u8, &.{ std.mem.asBytes(&len), std.mem.sliceAsBytes(reads), bounds });
+        const slot = try g.by.getOrPut(g.a, key);
+        if (!slot.found_existing) {
+            slot.value_ptr.* = @intCast(g.reads.items.len);
+            try g.reads.append(g.a, reads);
+        }
+        return slot.value_ptr.*;
+    }
+};
+
+/// Per key, the groups its write set conflicts with (`write-sets.md` §2.5),
+/// and per group whether any key's does — found from an index of the reads
+/// by their first step, so a key is checked against the groups that read
+/// under what it writes and not against every group: linear in the pairs
+/// that may conflict, where the matrix was `groups × keys`.
+fn sparseConflicts(a: std.mem.Allocator, w: *const Writes, groups: []const []const u32, key_writes: []const []const Writes.Write) !struct { key_groups: []const []const u32, written: []const bool } {
+    // Where a read can be met: under one first step from ρ, at ρ itself, or
+    // anywhere (a read of the host, of another root, or one whose first step
+    // is a position, which may coincide with any).
+    // The groups under each first step, by the step's path: a column of
+    // the pass's paths, each a bucket's number or `none`.
+    const bucket_of = try a.alloc(u32, w.pathCount());
+    @memset(bucket_of, Writes.none);
+    var under: std.ArrayList(std.ArrayList(u32)) = .empty;
+    var at_root: std.ArrayList(u32) = .empty;
+    var anywhere: std.ArrayList(u32) = .empty;
+    for (groups, 0..) |g, gi| {
+        const group: u32 = @intCast(gi);
+        for (g) |r| switch (readPlace(w, r)) {
+            .step => |s| {
+                if (bucket_of[s] == Writes.none) {
+                    bucket_of[s] = @intCast(under.items.len);
+                    try under.append(a, .empty);
+                }
+                try under.items[bucket_of[s]].append(a, group);
+            },
+            .root => try at_root.append(a, group),
+            .anywhere => try anywhere.append(a, group),
+        };
+    }
+    const key_groups = try a.alloc([]const u32, key_writes.len);
+    const written = try a.alloc(bool, groups.len);
+    @memset(written, false);
+    // Per group, the last key it was checked for: each pair once.
+    const seen = try a.alloc(u32, groups.len);
+    @memset(seen, std.math.maxInt(u32));
+    var found: std.ArrayList(u32) = .empty;
+    for (key_writes, key_groups, 0..) |kw, *out, ki| {
+        const k: u32 = @intCast(ki);
+        found.clearRetainingCapacity();
+        const check = struct {
+            fn group(ww: *const Writes, all: []const []const u32, ws: []const Writes.Write, gi: u32, key: u32, seen_: []u32, into: *std.ArrayList(u32), al: std.mem.Allocator) !void {
+                if (seen_[gi] == key) return;
+                seen_[gi] = key;
+                for (all[gi]) |r| if (ww.conflicts(r, ws)) return into.append(al, gi);
+            }
+        }.group;
+        for (anywhere.items) |gi| try check(w, groups, kw, gi, k, seen, &found, a);
+        for (kw) |wr| {
+            const place = writePlace(w, wr.path);
+            // A `value` write conflicts with a read of ρ whole, which it is
+            // under; a `node` write only with a read of its own length.
+            if (place == .root or wr.kind == .value) for (at_root.items) |gi| try check(w, groups, kw, gi, k, seen, &found, a);
+            switch (place) {
+                .step => |s| if (bucket_of[s] != Writes.none) for (under.items[bucket_of[s]].items) |gi| try check(w, groups, kw, gi, k, seen, &found, a),
+                // A `value` write of ρ, or one under a position: every group.
+                .root => if (wr.kind == .value) for (0..groups.len) |gi| try check(w, groups, kw, @intCast(gi), k, seen, &found, a),
+                .anywhere => for (0..groups.len) |gi| try check(w, groups, kw, @intCast(gi), k, seen, &found, a),
+            }
+        }
+        std.mem.sort(u32, found.items, {}, std.sort.asc(u32));
+        out.* = try a.dupe(u32, found.items);
+        for (found.items) |gi| written[gi] = true;
+    }
+    return .{ .key_groups = key_groups, .written = written };
+}
+
+const Place = union(enum) { step: u32, root, anywhere };
+
+/// Where read `r` is, for `sparseConflicts`: a tag read is where the path it
+/// reads the tag of is.
+fn readPlace(w: *const Writes, r: u32) Place {
+    const p = if (w.isTagRead(r)) w.pathParent(r) else r;
+    return writePlace(w, p);
+}
+
+/// The first step of path `p` from ρ, when it is a field, a component or a
+/// constructor — steps two paths share exactly when their first steps are
+/// one interned path — else ρ itself, or anywhere.
+fn writePlace(w: *const Writes, p: u32) Place {
+    if (w.rootOf(p) != Writes.rho_path) return .anywhere;
+    if (w.pathLen(p) == 0) return .root;
+    var first = p;
+    while (w.pathLen(first) > 1) first = w.pathParent(first);
+    return switch (w.pathKind(first)) {
+        .field, .tuple, .ctor => .{ .step = first },
+        else => .anywhere,
+    };
+}
+
 const DirectLists = struct {
     e: *Emitter,
     w: *Writes,
@@ -465,9 +576,8 @@ const DirectLists = struct {
     group_of: []const u32,
     /// Per hole of `prog`, in its order: what the lowering reads.
     holes: []Lower.Direct.Hole,
-    /// `groups × keys`, as `Lower.Direct.Program.calls`.
-    conflicts: []const bool,
-    keys: usize,
+    /// Per group: some key conflicts with it, as `Lower.Direct.Program.written`.
+    written: []const bool,
     out: std.ArrayList(Lower.Direct.List) = .empty,
     indices: std.ArrayList(Lower.Direct.IndexRecipe) = .empty,
     /// The pass's index symbol each of `indices` is.
@@ -492,8 +602,8 @@ const DirectLists = struct {
             var chain: std.ArrayList(u32) = .empty;
             var at: u32 = @intCast(li);
             while (at != none and chain.items.len <= 16) : (at = holes[at].list) try chain.insert(d.arena(), 0, at);
-            const per_key = try d.arena().alloc([]const Edit, d.keys);
-            const per_key_causes = try d.arena().alloc([]const []const ?[]const Lower.Direct.IndexStep, d.keys);
+            const per_key = try d.arena().alloc([]const Edit, d.key_writes.len);
+            const per_key_causes = try d.arena().alloc([]const []const ?[]const Lower.Direct.IndexStep, d.key_writes.len);
             for (per_key, per_key_causes, 0..) |*edits, *causes, k| {
                 edits.* = try d.editsOf(chain.items, k);
                 const out = try d.arena().alloc([]const ?[]const Lower.Direct.IndexStep, d.causes.items.len);
@@ -787,9 +897,7 @@ const DirectLists = struct {
 
     /// No key's write set conflicts with the hole's reads.
     fn static(d: *DirectLists, hi: u32) bool {
-        const g = d.group_of[hi];
-        for (0..d.keys) |k| if (d.conflicts[g * d.keys + k]) return false;
-        return true;
+        return !d.written[d.group_of[hi]];
     }
 };
 
@@ -2627,7 +2735,7 @@ const Emitter = struct {
         var text: std.Io.Writer.Allocating = .init(a);
         for (calls, programs) |call, *out| {
             const prog = &call.program;
-            out.* = .{ .module = call.module, .inst = call.inst, .keys = &.{}, .steps = &.{}, .holes = &.{}, .groups = 0, .calls = &.{} };
+            out.* = .{ .module = call.module, .inst = call.inst, .keys = &.{}, .steps = &.{}, .holes = &.{}, .groups = 0, .key_groups = &.{}, .written = &.{} };
             // The keys: the pass's leaves, or the one `*` key of a program
             // it does not recognise (`write-sets.md` §1.1).
             const star_writes = [_]Writes.Write{.{ .path = Writes.rho_path, .kind = .value }};
@@ -2766,9 +2874,9 @@ const Emitter = struct {
 
             // The holes, by read set: equal sets are one group — and, since
             // version 1.8, equal bound depths (a row's own read and the
-            // whole list's are two groups).
-            var groups: std.ArrayList([]const u32) = .empty;
-            var group_bounds: std.ArrayList([]const u8) = .empty;
+            // whole list's are two groups). Numbered by a hash of the set,
+            // so a hole costs one lookup and not a scan of every group.
+            var groups: GroupNumbers = .{ .a = a };
             // Producer entry sets participate in row edits as consumer facts,
             // while the public S0 dump continues to count only leaf holes.
             var consumers = prog.*;
@@ -2781,13 +2889,7 @@ const Emitter = struct {
             for (consumers.vholes, all_holes, group_of) |h, *o, *go| {
                 const reads: []const u32 = if (prog.view_capped) &rho else h.reads;
                 const bounds: []const u8 = if (prog.view_capped) &unbound else h.bound;
-                const group: u32 = for (groups.items, group_bounds.items, 0..) |g, gb, gi| {
-                    if (std.mem.eql(u32, g, reads) and std.mem.eql(u8, gb, bounds)) break @intCast(gi);
-                } else blk: {
-                    try groups.append(a, reads);
-                    try group_bounds.append(a, bounds);
-                    break :blk @intCast(groups.items.len - 1);
-                };
+                const group = try groups.of(reads, bounds);
                 go.* = group;
                 const file = e.graph().moduleFile(@fromBackingInt(@intCast(h.module)));
                 const at = e.tokenPosition(file, h.token);
@@ -2806,34 +2908,16 @@ const Emitter = struct {
             for (prog.vlets, lets) |h, *o| {
                 const reads: []const u32 = if (prog.view_capped) &rho else h.reads;
                 const bounds: []const u8 = if (prog.view_capped) &unbound else h.bound;
-                const group: u32 = for (groups.items, group_bounds.items, 0..) |g, gb, gi| {
-                    if (std.mem.eql(u32, g, reads) and std.mem.eql(u8, gb, bounds)) break @intCast(gi);
-                } else blk: {
-                    try groups.append(a, reads);
-                    try group_bounds.append(a, bounds);
-                    break :blk @intCast(groups.items.len - 1);
-                };
-                o.* = .{ .module = h.module, .inst = h.token, .path = try a.dupe(u64, h.path), .group = group };
+                o.* = .{ .module = h.module, .inst = h.token, .path = try a.dupe(u64, h.path), .group = try groups.of(reads, bounds) };
             }
             out.lets = lets;
             const entry_reads: []const u32 = if (prog.view_capped) &rho else prog.view_reads;
             const entry_bounds = try a.alloc(u8, entry_reads.len);
             @memset(entry_bounds, 0);
-            out.root_group = for (groups.items, group_bounds.items, 0..) |g, gb, gi| {
-                if (std.mem.eql(u32, g, entry_reads) and std.mem.eql(u8, gb, entry_bounds)) break @intCast(gi);
-            } else grp: {
-                try groups.append(a, entry_reads);
-                try group_bounds.append(a, entry_bounds);
-                break :grp @intCast(groups.items.len - 1);
-            };
-            const conflicts = try a.alloc(bool, groups.items.len * keys.len);
-            for (groups.items, 0..) |g, gi| for (key_writes, 0..) |kw, ki| {
-                conflicts[gi * keys.len + ki] = for (g) |r| {
-                    if (w.conflicts(r, kw)) break true;
-                } else false;
-            };
+            out.root_group = try groups.of(entry_reads, entry_bounds);
+            const conflicts = try sparseConflicts(a, w, groups.reads.items, key_writes);
             // Version 1.8: the lists, and K3's per-row texts.
-            var lists: DirectLists = .{ .e = e, .w = w, .prog = &consumers, .key_writes = key_writes, .group_of = group_of, .holes = all_holes, .conflicts = conflicts, .keys = keys.len };
+            var lists: DirectLists = .{ .e = e, .w = w, .prog = &consumers, .key_writes = key_writes, .group_of = group_of, .holes = all_holes, .written = conflicts.written };
             try lists.build();
             std.mem.sort(Lower.Direct.Hole, holes, {}, struct {
                 fn less(_: void, x: Lower.Direct.Hole, y: Lower.Direct.Hole) bool {
@@ -2841,8 +2925,9 @@ const Emitter = struct {
                 }
             }.less);
             out.holes = holes;
-            out.groups = @intCast(groups.items.len);
-            out.calls = conflicts;
+            out.groups = @intCast(groups.reads.items.len);
+            out.key_groups = conflicts.key_groups;
+            out.written = conflicts.written;
             out.lists = lists.out.items;
             out.indices = lists.indices.items;
         }
@@ -2887,7 +2972,14 @@ const Emitter = struct {
                 } else "producer not resolved by the view walk (for example markup stored in the model)";
                 site_.* = .{ .module = root_.module, .token = root_.token, .mode = if (reason.len == 0) "parameterised" else "fallback", .reason = reason };
             }
-            to.* = .{ .module = program_.module, .inst = program_.inst, .keys = program_.keys, .holes = program_.holes, .producer_edges = program_.edges, .groups = program_.groups, .conflicts = program_.calls, .sites = sites };
+            // The plan's record is the matrix, `groups × keys`: written from the
+            // sparse pairs for this one consumer, which asks for it.
+            const dense = try e.scratch.alloc(bool, @as(usize, program_.groups) * program_.keys.len);
+            @memset(dense, false);
+            for (program_.key_groups, 0..) |gs, k| for (gs) |g| {
+                dense[g * program_.keys.len + k] = true;
+            };
+            to.* = .{ .module = program_.module, .inst = program_.inst, .keys = program_.keys, .holes = program_.holes, .producer_edges = program_.edges, .groups = program_.groups, .conflicts = dense, .sites = sites };
         }
         const text = try std.json.Stringify.valueAlloc(e.gpa, .{ .format = @as(u32, 1), .unbound_values_fallback = "Each placement gates entry by its slot read mask; entered unbound values visit every dynamic group. Bound uses retain parameter substitution.", .programs = programs }, .{ .whitespace = .indent_2 });
         try e.produceOwned("_direct-plan.json", text, try e.manifestPath());

@@ -1008,6 +1008,11 @@ pub fn pathLen(a: *const Writes, p: u32) u32 {
     return a.path_len.items[p];
 }
 
+/// How many paths the pass has made: every path id is below it.
+pub fn pathCount(a: *const Writes) u32 {
+    return @intCast(a.path_len.items.len);
+}
+
 pub fn rootOf(a: *const Writes, p: u32) u32 {
     var q = p;
     while (a.pathParent(q) != none) q = a.pathParent(q);
