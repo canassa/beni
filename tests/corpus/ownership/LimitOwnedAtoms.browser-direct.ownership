@@ -1,7 +1,14 @@
 module LimitOwnedAtoms
+  55:7 call LimitOwnedAtoms.hand9 <lambda>: accepted fresh (LimitOwnedAtoms.hand9 writes π9)
+  55:7 call LimitOwnedAtoms.hand9 LimitOwnedAtoms.fresh: accepted fresh (LimitOwnedAtoms.hand9 writes π1)
+  55:7 value <lambda>: rejected limit: LimitOwnedAtoms.hand9 edits what it returns, which may be a list it does not own (approx)
+  55:7 value LimitOwnedAtoms.fresh: rejected limit: LimitOwnedAtoms.hand9 edits what it returns, which may be a list it does not own (approx)
   summary hand8: π1 R, π2 R, π3 R, π4 R, π5 R, π6 R, π7 R, π8 R, π9 R; res cb9{excl cb9}; π1 calls ≤1; π2 calls ≤1; π3 calls ≤1; π4 calls ≤1; π5 calls ≤1; π6 calls ≤1; π7 calls ≤1; π8 calls ≤1; π9 calls ≤1, supply 1 cb1 owned{excl cb1}, supply 2 cb2 owned{excl cb2}, supply 3 cb3 owned{excl cb3}, supply 4 cb4 owned{excl cb4}, supply 5 cb5 owned{excl cb5}, supply 6 cb6 owned{excl cb6}, supply 7 cb7 owned{excl cb7}, supply 8 cb8 owned{excl cb8}
   summary hand9: π1 RAEw, π10 RAEw, π2 RAEw, π3 RAEw, π4 RAEw, π5 RAEw, π6 RAEw, π7 RAEw, π8 RAEw, π9 RAEw; res ~⊤{lost}; π1 calls many, need owned, unseen; π2 calls many, need owned, unseen; π3 calls many, need owned, unseen; π4 calls many, need owned, unseen; π5 calls many, need owned, unseen; π6 calls many, need owned, unseen; π7 calls many, need owned, unseen; π8 calls many, need owned, unseen; π9 calls many, need owned, unseen; π10 calls many, need owned, unseen; limit owned-atoms 9
+  summary fresh: res fresh1
+  summary callsNine: π1 RAE; res .0 ~⊤limit{lost}, .1 π1; xreq sep π1 π1
   limit hand9: owned-atoms 9, over 8
-  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
-total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  demands 4: accepted 2 (fresh 2, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
+total 4: accepted 2 (fresh 2, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
 limits 1
+cause limit 2

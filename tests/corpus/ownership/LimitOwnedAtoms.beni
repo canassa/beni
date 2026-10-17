@@ -3,7 +3,9 @@
 -- hands its last callback the results of eight others, each owned only if
 -- that callback returns owned: eight atoms, within the limit. `hand9` needs
 -- nine, so it is the `owned-atoms` limit: one error at the declaration, and
--- its summary is the pessimistic one.
+-- its summary is the pessimistic one. `callsNine` hands it a function that
+-- returns the caller's own list, and each of its lines takes the `limit`
+-- cause (§16.7): the build reports the limit, not these.
 hand8 :
       (⊤ → List Int)
     , (⊤ → List Int)
@@ -42,3 +44,12 @@ hand9 :
     → List Int
 hand9 g0 g1 g2 g3 g4 g5 g6 g7 g8 h =
     h (g0 ⊤) (g1 ⊤) (g2 ⊤) (g3 ⊤) (g4 ⊤) (g5 ⊤) (g6 ⊤) (g7 ⊤) (g8 ⊤)
+
+
+fresh : ⊤ → List Int
+fresh ⊤ = [ 1 ]
+
+
+pub callsNine : List Int → List Int × List Int
+callsNine xs =
+    ( hand9 fresh fresh fresh fresh fresh fresh fresh fresh (λ⊤ → xs) λa _ _ _ _ _ _ _ _ → a, xs )
