@@ -3683,6 +3683,15 @@ const Spec = struct {
                 };
                 if (value) |v| {
                     if (inert(m.ir, v)) continue;
+                    // A call of a function that only makes its value, of
+                    // arguments that do nothing (`pureCall`): a field of a
+                    // kept context its scalar replacement left behind.
+                    if (top_of.len != 0 and m.ir.tag(v) == .call and node.int() < nodes and v.int() < s.pts.vals[m.index].len and found.isSet(node.int())) {
+                        const saved = s.cur_top;
+                        s.cur_top = top_of[node.int()];
+                        defer s.cur_top = saved;
+                        if (try s.pureCall(m, v, 0)) continue;
+                    }
                     if (top_of.len != 0 and m.ir.tag(v) == .member and node.int() < nodes and v.int() < s.pts.vals[m.index].len) {
                         // A binding no walk reached is in no top: kept.
                         const top = top_of[node.int()];
@@ -9862,7 +9871,34 @@ fn makesOnly(ir: *const JsIr, node: Index) bool {
     if (body.len == 0) return true;
     if (body.len != 1 or ir.tag(body[0]) != .return_stmt) return false;
     const value: Node.OptionalIndex = @fromBackingInt(@intCast(ir.data(body[0]).lhs));
-    return if (value.unwrap()) |e| inert(ir, e) else true;
+    return if (value.unwrap()) |e| inert(ir, e) or plainValue(ir, e, 0) else true;
+}
+
+/// An expression whose evaluation cannot throw, run code or read a property:
+/// names, literals, and `===`, `!==`, `!`, `typeof`, `&&`, `||` and a
+/// conditional of such — `endpointOf`'s `a === 0 ? 0 : 1`.
+fn plainValue(ir: *const JsIr, node: Index, depth: u32) bool {
+    if (depth > 32) return false;
+    const d = ir.data(node);
+    return switch (ir.tag(node)) {
+        .ident, .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit => true,
+        .unary => switch (@as(JsIr.UnaryOp, @fromBackingInt(@intCast(d.rhs)))) {
+            .not, .type_of => plainValue(ir, @fromBackingInt(@intCast(d.lhs)), depth + 1),
+            else => false,
+        },
+        .binary => switch (@as(JsIr.BinaryOp, @fromBackingInt(@intCast(d.rhs)))) {
+            .strict_eq, .strict_ne, .logical_and, .logical_or => blk: {
+                const b = ir.extraData(@fromBackingInt(@intCast(d.lhs)), JsIr.Binary);
+                break :blk plainValue(ir, b.left, depth + 1) and plainValue(ir, b.right, depth + 1);
+            },
+            else => false,
+        },
+        .cond => blk: {
+            const c = ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.Cond);
+            break :blk plainValue(ir, @fromBackingInt(@intCast(d.lhs)), depth + 1) and plainValue(ir, c.consequent, depth + 1) and plainValue(ir, c.alternate, depth + 1);
+        },
+        else => false,
+    };
 }
 
 /// `inert`, for the emitter's reachability after the optimiser.

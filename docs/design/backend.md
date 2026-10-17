@@ -7007,6 +7007,14 @@ fact 3 finds at the call:
   value nothing can tell that it was not made: `language.md` §6's order loses no effect, and no reachable code holds
   the object (rule 8). It goes like any other argument that does nothing: `start`'s unread
   `app.init ⊤`, and `Navigation.key ⊤`, whose result an application's `init` does not read.
+
+  *Amended 2026-10-17:* the returned value may also be a *plain value* (`plainValue`): names,
+  literals, `===`, `!==`, `!`, `typeof`, `&&`, `||` and conditionals of those — none of which can
+  throw, run code or read a property — so `endpointOf`'s `a === 0 ? 0 : 1` is such a function.
+  And a binding lowering kept for its initialiser is kept no more when that initialiser is such a
+  call (`releaseKeeps`): a field of a kept schema context, left by scalar replacement as
+  `const i = endpointOf(1)` that nothing reads, goes with its function
+  (`emit/release/inline/PushAndTimer`, 698 → 675 brotli).
 - **A function used once is written in with no size model** (`Spec.soleCalls`). Slice 8 writes a
   small function reached through a property at a call only when the body prints no longer than
   the call, which a record's lambda that makes a record never does (`{a:{}}` against `a.init()`).
