@@ -4905,9 +4905,10 @@ leaving the check's wall time within the noise of the compiler before SVG.
 
 ### 9.10 The `node` platform serves HTTP (2026-10-17)
 
-*Added 2026-10-17, for issue #331. Status: normative for the first slice, the basics. The owner's
-decisions 1 and 2 of #331 are recorded in (i) when they arrive; the API shape (decision 3) is this
-section's, open to the owner's veto on its PR.* The `node` platform gains one module,
+*Added 2026-10-17, for issue #331. Status: normative for the first slice, the basics. The owner
+took the three decisions of #331 on 2026-10-17 (dashboard `node-http-q1` to `q3`, recorded in
+(i)): a defect in a handler stops the process, the server lives in the `node` platform, and the
+API shape below is the contract.* The `node` platform gains one module,
 **`Http.Server`** (`platforms/node/Http/Server.beni`, its sibling `Server.js`). It wraps
 `node:http`'s server as `Io.readFile` wraps `fs.promises.readFile` (§4.1, `CLAUDE.md` rule 9):
 each failure Node documents is one constructor of a typed error, a cancelled fiber releases what
@@ -5095,10 +5096,12 @@ for this module. "Thrown again" means the error is a defect, and the process end
 | the response | any other throw | thrown again |
 | `close` | `ERR_SERVER_NOT_RUNNING` (closing a server never started) | cannot happen: `close` runs only on a bound server, and a second `close` is skipped in beni |
 
-**(f) A defect in a handler** is decision 1 of #331 (recorded in (i)). Until it is taken, the
-rule is today's: a throw in a handler's fiber leaves the scheduler's drain, Node reports it and
-the process exits 1 (§16.5 *A defect on Node*; §9.8.14 (k)). Every open connection is reset by
-the operating system.
+**(f) A defect in a handler stops the process** (decision 1 of #331, the owner, 2026-10-17:
+rule 9 does not change for a server). A throw in a handler's fiber leaves the scheduler's drain,
+Node reports it and the process exits 1 (§16.5 *A defect on Node*; §9.8.14 (k)). Every open
+connection is reset by the operating system, and a supervisor restarts the process. The other
+choice, a 500 for that request with the defect logged, needs a catch at the handler's boundary,
+which rule 9 forbids; it was offered and declined.
 
 **(g) Order and determinism.** One fiber runs at a time (§17.1 item 3). Requests are queued as
 each one completes, in that order, and the loop fiber starts one handler fiber per request in
@@ -5147,17 +5150,21 @@ page): the digest covers what a `run/` one covers — the output tree, the golde
 budget of 4 300 million instructions: a case costs two builds, two driver processes and two
 program processes, and no fixture sleeps for real.
 
-**(i) The owner's decisions.** *To be filled in on the dashboard's answers.* The PR's review
-(2026-10-17) found five gaps in (d) and (e); each is settled above with a probe or a stated crash.
+**(i) The owner's decisions**, taken on the dashboard on 2026-10-17 at 23:54 CEST. The PR's
+review (2026-10-17) found five gaps in (d) and (e); each is settled above with a probe or a
+stated crash.
 
-- Decision 1, a defect in a handler: pending (`node-http-q1`).
-- Decision 2, where the code lives: pending (`node-http-q2`).
-- Decision 3, the API shape: this section, (a)–(d). The choices a reviewer should see:
-  `method` is a `String` and not a union, since Node fixes the set and a program matches on
-  text; `path` is the raw target, parsed by core's `Url` when wanted; `headers` is a list of
-  pairs and not a `Dict`, so duplicates and order survive; `body` is text; an invalid
-  `Response` answers 500 with a line on standard error; a handler stops the server through
-  core's `Deferred`, not through a second API.
+- Decision 1, a defect in a handler (`node-http-q1`): **stop the process**. Rule 9 does not
+  change; (f) has the rule.
+- Decision 2, where the code lives (`node-http-q2`): **extend the `node` platform**.
+  `Http.Server` is `platforms/node/Http/Server.beni` with its sibling `Server.js`, beside `Io`;
+  one platform for command-line and server programs.
+- Decision 3, the API shape (`node-http-q3`): **accept the shape** of (a)–(d). The choices it
+  settles: `method` is a `String` and not a union, since Node fixes the set and a program matches
+  on text; `path` is the raw target, parsed by core's `Url` when wanted; `headers` is a list of
+  pairs and not a `Dict`, so duplicates and order survive; `body` is text; an invalid `Response`
+  answers 500 with a line on standard error; a handler stops the server through core's
+  `Deferred`, not through a second API.
 - Decision 4, the first slice: an HTTP server only, text bodies, as Jayson instructed on
   2026-10-17.
 
