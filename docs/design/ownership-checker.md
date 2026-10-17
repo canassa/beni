@@ -1114,6 +1114,19 @@ fixpoints inside a walk are under this rule too — the `fixpoint` row. Before, 
 and the model's exclusivity invariant (§28's dated amendment) reached its backstop in every application
 measured, because each round made a carried lambda anew (§28's dated amendment *the entry's fixpoints settle*).
 
+*Amended 2026-10-17 (issue #293): a conjunction of many conditions is gathered once, and the `conditions`
+limit holds while it grows.* A list literal of n list parameters stores n items, whose condition (§18.2's
+table) has an `excl` atom per item and a `sep` atom per pair. It was built one `condAnd` at a time, each
+copying and re-sorting every atom gathered so far: O(n⁴) time and memory, 12.6 billion instructions at
+n = 100, over 10 GB at n = 300, and the limit, checked on the finished summary, stopped nothing. Every
+conjunction over a loop — a stored list's items, a value's deep condition, two values' separation, a
+spine's, a taken element's, and the instantiated conditions of a callback's supplies — now gathers its
+atoms and sorts and deduplicates them once, as §16.3's read-off already did; the verdict is the same
+(`condAnd`'s order: shared, then a limit, then lost). A conjunction whose distinct atoms pass the
+`conditions` limit while it is gathered is that limit, at once, and keeps nothing more. At n = 100, 200
+and 300 `dump --platform=browser-direct` costs 1.6, 2.3 and 3.6 billion instructions, 1.5 of them the
+platform's own at n = 1 (it was 13.5, 203 and out of memory at 10 GB), with the same report; `ownership/ListOfParams` pins n = 100 under the budget it was three times over.
+
 *Amended 2026-10-16 (#271): every cap, loud or conservative.* A cap is **loud** when reaching it is an
 error (one `ownership_limit` at the declaration, its rejections given the `limit` cause), and
 **conservative** when the walk goes on with a rule that is sound for every program, at a cost in

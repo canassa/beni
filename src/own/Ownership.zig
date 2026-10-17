@@ -4595,11 +4595,11 @@ const Walker = struct {
             // A taken element is as exclusive as its container (§18.5).
             // (a split element: as its scrutinee, §18.4 item 4).
             .taken => if (w.instCol(?AV, w.split_scrut, x.b, null)) |scrut| blk: {
-                var k = cond_yes;
+                var acc: CondAcc = .{};
                 for (scrut) |e| if (e.path == eps) {
-                    k = try w.condAnd(k, try w.cellCond(e.cell));
+                    try acc.add(w, try w.cellCond(e.cell));
                 };
-                break :blk k;
+                break :blk try w.condAndAll(&acc);
             } else try w.atomCond(.{ .kind = .excl, .a = try w.containerOf(c) }),
         };
         w.cell_cond.items[c] = k;
@@ -4651,11 +4651,11 @@ const Walker = struct {
     }
 
     fn spineCond(w: *Walker, av: AV) Allocator.Error!u32 {
-        var k = cond_yes;
+        var acc: CondAcc = .{};
         for (av) |e| if (e.path == eps) {
-            k = try w.condAnd(k, try w.cellSpine(e.cell));
+            try acc.add(w, try w.cellSpine(e.cell));
         };
-        return k;
+        return w.condAndAll(&acc);
     }
 
     /// A returned container cannot also appear at another result position:
@@ -4745,7 +4745,7 @@ const Walker = struct {
     /// result with the cells made here too.
     fn spineAt(w: *Walker, idx: *const SpineIndex, target: Entry) Allocator.Error!u32 {
         if (std.sort.binarySearch(u32, idx.multi, target.cell, orderU32) != null) return cond_lost;
-        var acc: SpineAcc = .{};
+        var acc: CondAcc = .{};
         try acc.add(w, try w.cellSpine(target.cell));
         const c = w.cells.items[target.cell];
         switch (c.kind) {
@@ -4776,15 +4776,18 @@ const Walker = struct {
         return k;
     }
 
-    /// The conjunction `spineAt` builds: its verdict so far and its atoms,
-    /// sorted once at the end.
-    const SpineAcc = struct {
+    /// A conjunction of many conditions: its verdict so far and its atoms,
+    /// sorted and deduplicated once at the end (`condAndAll`). `condAnd`
+    /// folded over n conditions re-sorts every atom gathered so far at each
+    /// one, which a list literal of n list parameters made O(n⁴) in time and
+    /// memory (issue #293); `spineAt` met the same (§16.3's amendment).
+    const CondAcc = struct {
         shared: bool = false,
         lost: bool = false,
         limit: bool = false,
         atoms: std.ArrayList(WAtom) = .empty,
 
-        fn add(acc: *SpineAcc, w: *Walker, k: u32) Allocator.Error!void {
+        fn add(acc: *CondAcc, w: *Walker, k: u32) Allocator.Error!void {
             switch (k) {
                 cond_yes => {},
                 cond_shared => acc.shared = true,
@@ -4792,10 +4795,20 @@ const Walker = struct {
                 cond_limit => acc.limit = true,
                 else => try acc.atoms.appendSlice(w.a, w.conds.items[k].atoms),
             }
+            // Kept within the `conditions` limit as it grows (§16.7):
+            // duplicates folded, and past the limit nothing more is kept.
+            if (acc.atoms.items.len > 2 * condition_cap) {
+                acc.atoms.items.len = sortWAtoms(acc.atoms.items);
+                if (acc.atoms.items.len > condition_cap) {
+                    try w.o.hitLimit(.conditions, @intCast(acc.atoms.items.len));
+                    acc.limit = true;
+                    acc.atoms.clearRetainingCapacity();
+                }
+            }
         }
     };
 
-    fn spinePairs(w: *Walker, acc: *SpineAcc, others: AV, target: Entry) Allocator.Error!void {
+    fn spinePairs(w: *Walker, acc: *CondAcc, others: AV, target: Entry) Allocator.Error!void {
         const tc = w.cells.items[target.cell];
         const t_arrived = tc.kind == .param or tc.kind == .env or tc.kind == .cbres;
         for (others) |other| {
@@ -4826,13 +4839,8 @@ const Walker = struct {
         }
     }
 
-    /// `condAnd` folded over what `acc` gathered, with the atoms sorted once.
-    fn condAndAll(w: *Walker, acc: *SpineAcc) Allocator.Error!u32 {
-        if (acc.shared) return cond_shared;
-        if (acc.limit) return cond_limit;
-        if (acc.lost) return cond_lost;
-        if (acc.atoms.items.len == 0) return cond_yes;
-        const all = acc.atoms.items;
+    /// Sorts `all` and moves its distinct atoms to the front; their count.
+    fn sortWAtoms(all: []WAtom) usize {
         std.mem.sort(WAtom, all, {}, struct {
             fn less(_: void, p: WAtom, q: WAtom) bool {
                 return p.less(q);
@@ -4843,6 +4851,21 @@ const Walker = struct {
             if (m > 0 and std.meta.eql(all[m - 1], t)) continue;
             all[m] = t;
             m += 1;
+        }
+        return m;
+    }
+
+    /// `condAnd` folded over what `acc` gathered, with the atoms sorted once.
+    fn condAndAll(w: *Walker, acc: *CondAcc) Allocator.Error!u32 {
+        if (acc.shared) return cond_shared;
+        if (acc.limit) return cond_limit;
+        if (acc.lost) return cond_lost;
+        if (acc.atoms.items.len == 0) return cond_yes;
+        const all = acc.atoms.items;
+        const m = sortWAtoms(all);
+        if (m > condition_cap) {
+            try w.o.hitLimit(.conditions, @intCast(m));
+            return cond_limit;
         }
         return w.mkCond(all[0..m]);
     }
@@ -4889,14 +4912,14 @@ const Walker = struct {
     }
 
     fn sepSpineValues(w: *Walker, x: AV, y: AV) Allocator.Error!u32 {
-        var k = cond_yes;
+        var acc: CondAcc = .{};
         for (x) |e| {
             if (e.path != eps) continue;
             for (y) |f| if (f.path == eps) {
-                k = try w.condAnd(k, try w.sepSpines(e.cell, f.cell, e.approx == 0 and f.approx == 0));
+                try acc.add(w, try w.sepSpines(e.cell, f.cell, e.approx == 0 and f.approx == 0));
             };
         }
-        return k;
+        return w.condAndAll(&acc);
     }
 
     /// The element cell a taken cell stands for, at its path.
@@ -4978,16 +5001,16 @@ const Walker = struct {
     /// Whether two values share no cell.
     fn sepValues(w: *Walker, x: AV, y: AV) Allocator.Error!u32 {
         if (x.len == 0 or y.len == 0) return cond_yes;
-        var k = cond_yes;
+        var acc: CondAcc = .{};
         // Only the cells matter, and whether each is reached exactly: a
         // value holding one cell at many paths is compared once (§20.4).
         const ex = try w.cellsOf(try w.expand(x));
         const ey = try w.cellsOf(try w.expand(y));
         for (ex) |a| for (ey) |b| {
-            k = try w.condAnd(k, try w.sepCells(a.cell, b.cell, a.approx == 0 and b.approx == 0));
-            if (k == cond_shared) return k;
+            try acc.add(w, try w.sepCells(a.cell, b.cell, a.approx == 0 and b.approx == 0));
+            if (acc.shared) return cond_shared;
         };
-        return k;
+        return w.condAndAll(&acc);
     }
 
     /// `av`'s distinct cells, each at ε, exact when any entry reaches it exactly.
@@ -5022,25 +5045,25 @@ const Walker = struct {
             try w.o.hitLimit(.value_cells, @intCast(@min(ex.len, std.math.maxInt(u32))));
             return cond_limit;
         }
-        var k = cond_yes;
-        for (ex) |e| k = try w.condAnd(k, try w.cellCond(e.cell));
+        var acc: CondAcc = .{};
+        for (ex) |e| try acc.add(w, try w.cellCond(e.cell));
         for (ex, 0..) |e, i| for (ex[i + 1 ..]) |f| {
             if (w.o.isPrefix(e.path, f.path) or w.o.isPrefix(f.path, e.path)) continue;
-            k = try w.condAnd(k, try w.sepCells(e.cell, f.cell, e.approx == 0 and f.approx == 0));
+            try acc.add(w, try w.sepCells(e.cell, f.cell, e.approx == 0 and f.approx == 0));
         };
-        return k;
+        return w.condAndAll(&acc);
     }
 
     /// The condition of stored items, pairwise and against what the list
     /// already holds (§18.2's table).
     fn storedCond(w: *Walker, items: []const AV, elements: AV) Allocator.Error!u32 {
-        var k = cond_yes;
+        var acc: CondAcc = .{};
         for (items, 0..) |v, i| {
-            k = try w.condAnd(k, try w.deepCond(v));
-            k = try w.condAnd(k, try w.sepValues(v, elements));
-            for (items[i + 1 ..]) |u| k = try w.condAnd(k, try w.sepValues(v, u));
+            try acc.add(w, try w.deepCond(v));
+            try acc.add(w, try w.sepValues(v, elements));
+            for (items[i + 1 ..]) |u| try acc.add(w, try w.sepValues(v, u));
         }
-        return k;
+        return w.condAndAll(&acc);
     }
 
     /// Relying on a condition (§18.4): its atoms become requirements of
@@ -5126,7 +5149,7 @@ const Walker = struct {
         if (x.no == 2) return cond_shared;
         // The conjunction gathered and sorted once (§16.3's amendment): a
         // fold of `condAnd` re-sorts what it holds at every atom.
-        var acc: SpineAcc = .{};
+        var acc: CondAcc = .{};
         for (x.atoms) |t| {
             const c = switch (t.kind) {
                 .excl => try w.deepCond(try w.instProv(t.a, ctx)),
@@ -5158,32 +5181,32 @@ const Walker = struct {
         }
         const classes = try w.classesOf(actual);
         if (classes.len == 0) return cond_lost;
-        var k = cond_yes;
+        var acc: CondAcc = .{};
         for (classes) |cls| {
             const c = (try w.classSummary(cls)) orelse return cond_lost;
             if (c.limit != .none) return cond_limit;
             for (c.res) |r| switch (r.prov.kind) {
                 .fresh, .esc => {},
-                .param => k = try w.condAnd(k, try w.takenSupply(j, r.prov, ctx)),
+                .param => try acc.add(w, try w.takenSupply(j, r.prov, ctx)),
                 else => return cond_lost,
             };
         }
-        return k;
+        return w.condAndAll(&acc);
     }
 
     /// Whether what callee `ctx.s` supplies the actual for `π_j` at the
     /// class's parameter `p` is only ever an element taken destructively:
     /// a different one at every call, as exclusive as its container.
     fn takenSupply(w: *Walker, j: u32, p: Prov, ctx: InstCtx) Allocator.Error!u32 {
-        var k = cond_yes;
+        var acc: CondAcc = .{};
         var any = false;
         for (ctx.s.supply) |e| {
             if (e.fun != j or e.k != p.a or !w.o.overlap(e.path, p.path)) continue;
             if (!e.prov.taken) return cond_lost;
             any = true;
-            k = try w.condAnd(k, try w.instXSum(e.xc, ctx));
+            try acc.add(w, try w.instXSum(e.xc, ctx));
         }
-        return if (any) k else cond_lost;
+        return if (any) w.condAndAll(&acc) else cond_lost;
     }
 
     /// `keep cb_j c` at a call (the thesis's "keeps shape", §18.5): the
@@ -5195,16 +5218,16 @@ const Walker = struct {
         const actual = ctx.avs[j];
         if (w.fnParamOf(actual)) |jj| {
             if (w.frame != 0) return cond_lost;
-            var k = cond_yes;
+            var acc: CondAcc = .{};
             for (try w.instProv(container, ctx)) |e| {
                 if (e.path != eps) continue;
-                k = try w.condAnd(k, try w.atomCond(.{ .kind = .keep, .a = jj, .b = e.cell }));
+                try acc.add(w, try w.atomCond(.{ .kind = .keep, .a = jj, .b = e.cell }));
             }
-            return k;
+            return w.condAndAll(&acc);
         }
         const classes = try w.classesOf(actual);
         if (classes.len == 0) return cond_lost;
-        var k = cond_yes;
+        var acc: CondAcc = .{};
         for (classes) |cls| {
             const c = (try w.classSummary(cls)) orelse return cond_lost;
             if (c.limit != .none) return cond_limit;
@@ -5212,13 +5235,13 @@ const Walker = struct {
                 .fresh => {},
                 .param => {
                     if (r.path != r.prov.path) return cond_lost;
-                    k = try w.condAnd(k, try w.takenSupply(j, r.prov, ctx));
+                    try acc.add(w, try w.takenSupply(j, r.prov, ctx));
                 },
                 else => return cond_lost,
             };
         }
         // And exclusive inside: the result as the call instantiates it.
-        return w.condAnd(k, try w.deepCond(try w.instProv(.{ .kind = .cb, .a = j }, ctx)));
+        return w.condAnd(try w.condAndAll(&acc), try w.deepCond(try w.instProv(.{ .kind = .cb, .a = j }, ctx)));
     }
 
     /// Focus restores one selected container. Its contents need not be owned,
@@ -5227,15 +5250,15 @@ const Walker = struct {
         const actual = (try w.actualOf(ctx.s, ctx.avs, j)) orelse return cond_lost;
         if (w.fnParamOf(actual)) |jj| {
             if (w.frame != 0) return cond_lost;
-            var k = cond_yes;
+            var acc: CondAcc = .{};
             for (try w.instProv(container, ctx)) |e| if (e.path == eps) {
-                k = try w.condAnd(k, try w.atomCond(.{ .kind = .keep_spine, .a = jj, .b = e.cell, .path = path }));
+                try acc.add(w, try w.atomCond(.{ .kind = .keep_spine, .a = jj, .b = e.cell, .path = path }));
             };
-            return k;
+            return w.condAndAll(&acc);
         }
         const classes = try w.classesOf(actual);
         if (classes.len == 0) return cond_lost;
-        var k = cond_yes;
+        var acc: CondAcc = .{};
         for (classes) |cls| {
             const c = (try w.classSummary(cls)) orelse return cond_lost;
             if (c.limit != .none) return cond_limit;
@@ -5256,7 +5279,7 @@ const Walker = struct {
                             const tail = (try w.o.suffix(e.path, path)) orelse return cond_lost;
                             var p = e.prov;
                             p.path = try w.o.concat(p.path, tail);
-                            k = try w.condAnd(k, try w.spineCond(try w.instProv(p, ctx)));
+                            try acc.add(w, try w.spineCond(try w.instProv(p, ctx)));
                         }
                         if (!found) return cond_lost;
                     },
@@ -5267,7 +5290,7 @@ const Walker = struct {
             }
         }
         const cb = Prov{ .kind = .cb, .a = j, .path = path };
-        return w.condAnd(k, try w.spineCond(try w.instProv(cb, ctx)));
+        return w.condAnd(try w.condAndAll(&acc), try w.spineCond(try w.instProv(cb, ctx)));
     }
 
     // ---- uses, pending, escape -------------------------------------------
