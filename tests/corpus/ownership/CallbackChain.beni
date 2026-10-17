@@ -7,7 +7,7 @@
 -- demand on `xs` was dropped (`five`) or the result became an unknown
 -- value with no alias of `xs` (`kept5`), and both were accepted. Now the
 -- walk past four callbacks is the `callbacks` limit, an error at the
--- declaration, and the result is `⊤limit`.
+-- declaration, whose summary is then the pessimistic one.
 id : List Int → List Int
 id ys = ys
 
