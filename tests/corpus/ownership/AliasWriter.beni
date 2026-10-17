@@ -1,0 +1,57 @@
+-- ownership (§30.9 rule 9, issue #272): a top-level value that names a
+-- writing function is called as that function, through at most eight
+-- names. `one` calls `a1`, which names `writer`, so it writes `xs` and is
+-- rejected `later-use`. `eight` and `nine` are past the cap: each calls a
+-- function the checker cannot identify (§30.11), whose result is `⊤call`,
+-- and makes no line; the program is still refused, because `a1 = writer`
+-- hands the writing function out of sight (`pending`).
+writer : List Int → List Int
+writer xs = List.push xs 1
+
+
+a1 : List Int → List Int
+a1 = writer
+
+
+a2 : List Int → List Int
+a2 = a1
+
+
+a3 : List Int → List Int
+a3 = a2
+
+
+a4 : List Int → List Int
+a4 = a3
+
+
+a5 : List Int → List Int
+a5 = a4
+
+
+a6 : List Int → List Int
+a6 = a5
+
+
+a7 : List Int → List Int
+a7 = a6
+
+
+a8 : List Int → List Int
+a8 = a7
+
+
+a9 : List Int → List Int
+a9 = a8
+
+
+pub one : List Int → List Int × List Int
+one xs = ( a1 xs, xs )
+
+
+pub eight : List Int → List Int × List Int
+eight xs = ( a8 xs, xs )
+
+
+pub nine : List Int → List Int × List Int
+nine xs = ( a9 xs, xs )

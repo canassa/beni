@@ -1,0 +1,74 @@
+-- ownership (§30.9 rule 5, issue #272): a supply passed on is probed one
+-- cell at a time up to eight cells (`split_cap`), and whole past that. `w8`
+-- and `w9` hand `apply` a record of their list parameters and read the last
+-- one again after the call. With eight cells the record's `f0` is supplied
+-- owned and the callback that pushes onto it is accepted (`eight`); with
+-- nine the supply is probed whole, the read parameter makes all of it
+-- borrowed, and the same callback is rejected `supply` (`nine`): the
+-- fallback costs precision, never soundness.
+type alias R8 =
+    f0 : List Int
+    f1 : List Int
+    f2 : List Int
+    f3 : List Int
+    f4 : List Int
+    f5 : List Int
+    f6 : List Int
+    f7 : List Int
+
+
+type alias R9 =
+    f0 : List Int
+    f1 : List Int
+    f2 : List Int
+    f3 : List Int
+    f4 : List Int
+    f5 : List Int
+    f6 : List Int
+    f7 : List Int
+    f8 : List Int
+
+
+apply : (a → b), a → b
+apply f x = f x
+
+
+w8 :
+      (R8 → List Int)
+    , List Int
+    , List Int
+    , List Int
+    , List Int
+    , List Int
+    , List Int
+    , List Int
+    , List Int
+    → List Int × List Int
+w8 f a0 a1 a2 a3 a4 a5 a6 a7 =
+    ( apply f { f0 = a0, f1 = a1, f2 = a2, f3 = a3, f4 = a4, f5 = a5, f6 = a6, f7 = a7 }, a7 )
+
+
+w9 :
+      (R9 → List Int)
+    , List Int
+    , List Int
+    , List Int
+    , List Int
+    , List Int
+    , List Int
+    , List Int
+    , List Int
+    , List Int
+    → List Int × List Int
+w9 f a0 a1 a2 a3 a4 a5 a6 a7 a8 =
+    ( apply f { f0 = a0, f1 = a1, f2 = a2, f3 = a3, f4 = a4, f5 = a5, f6 = a6, f7 = a7, f8 = a8 }
+    , a8
+    )
+
+
+pub eight : ⊤ → List Int × List Int
+eight ⊤ = w8 (λx → List.push x.f0 1) [] [] [] [] [] [] [] []
+
+
+pub nine : ⊤ → List Int × List Int
+nine ⊤ = w9 (λx → List.push x.f0 1) [] [] [] [] [] [] [] [] []
