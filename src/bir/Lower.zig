@@ -6419,3 +6419,54 @@ test "stress: mutated corpus fixtures never panic and always lower in bounds" {
         };
     }
 }
+
+test "a lambda's code is one range of instructions that ends at it" {
+    // `Lift.low` (`browser-inline.md` §7): a lifted piece is the
+    // instructions `low(lambda)` to the lambda. Over a lambda holding a
+    // `let`, a `let_pattern` and a `case`, nothing of the declaration's
+    // other code falls in that range, and all of the lambda's is in it.
+    const Lift = @import("../js/Lift.zig");
+    var interner: InternPool.Local = try .init(testing.allocator);
+    defer interner.deinit(testing.allocator);
+    var r = try lowerSource(&interner,
+        \\pub f : Int → (Int → Int)
+        \\f n =
+        \\    k = n + 1
+        \\    g = λx →
+        \\        ( a, b ) = ( x, k )
+        \\        case a of
+        \\            0 →
+        \\                b
+        \\
+        \\            _ →
+        \\                a + b
+        \\
+        \\    λy → g y + k
+        \\
+    , .{});
+    defer r.deinit();
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    const d = r.bir.decls[0];
+    const root = d.body.unwrap().?.int();
+    var lambdas: std.ArrayList(u32) = .empty;
+    var at = d.inst_start.int();
+    while (at < d.inst_end.int()) : (at += 1) {
+        if (r.bir.instTag(@fromBackingInt(at)) == .lambda) try lambdas.append(arena, at);
+    }
+    try testing.expectEqual(@as(usize, 2), lambdas.items.len);
+    var saw_pattern = false;
+    for (lambdas.items) |lam| {
+        const lo = try Lift.low(&r.bir, arena, lam);
+        // All of the lambda's code is in the range …
+        for (try Lift.reach(&r.bir, arena, lam, null)) |i| try testing.expect(i >= lo and i <= lam);
+        // … and none of the rest of the declaration's.
+        for (try Lift.reach(&r.bir, arena, root, lam)) |i| try testing.expect(i < lo or i > lam);
+        var i = lo;
+        while (i <= lam) : (i += 1) {
+            if (r.bir.instTag(@fromBackingInt(i)) == .let_pattern) saw_pattern = true;
+        }
+    }
+    try testing.expect(saw_pattern);
+}

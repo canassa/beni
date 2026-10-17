@@ -62,6 +62,20 @@ pub fn low(bir: *const Bir, scratch: Allocator, inst: u32) Allocator.Error!u32 {
     return lo;
 }
 
+/// Every instruction of the code `root` is, but the code `skip` is (`null`:
+/// none skipped): the walk `low` takes, for a test of its claim.
+pub fn reach(bir: *const Bir, scratch: Allocator, root: u32, skip: ?u32) Allocator.Error![]const u32 {
+    var out: std.ArrayList(u32) = .empty;
+    var stack: std.ArrayList(Inst.Index) = .empty;
+    try stack.append(scratch, @fromBackingInt(root));
+    while (stack.pop()) |at| {
+        if (skip) |s| if (at.int() == s) continue;
+        try out.append(scratch, at.int());
+        try children(bir, scratch, at, &stack);
+    }
+    return out.items;
+}
+
 /// Whether the code `inst` is reads local `local` of its declaration.
 pub fn readsLocal(bir: *const Bir, scratch: Allocator, inst: u32, local: u32) Allocator.Error!bool {
     var stack: std.ArrayList(Inst.Index) = .empty;
