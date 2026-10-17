@@ -1011,6 +1011,30 @@ pub fn hasCtor(o: *Ownership, m: u32, i: u32) Allocator.Error!bool {
     return i < o.in.birs[m].ctors.len + bases[bases.len - 1];
 }
 
+/// How many fields constructor `i` of module `m` takes — a BIR
+/// constructor's arguments, a tagged schema variant's payload — or null
+/// when the module has no such constructor (`hasCtor`). A summary block
+/// naming field `k ≥` this is not one (§28.4).
+pub fn ctorArity(o: *Ownership, m: u32, i: u32) Allocator.Error!?u32 {
+    if (!try o.hasCtor(m, i)) return null;
+    const bir = o.in.birs[m];
+    if (i < bir.ctors.len) {
+        const c = bir.ctors[i];
+        return @intCast(bir.extraSlice(.{ .start = c.args_start, .end = c.args_end }, Inst.Index).len);
+    }
+    const bases = try o.schemaCtorBases(m);
+    const k = i - @as(u32, @intCast(bir.ctors.len));
+    for (bir.decls, 0..) |d, di| {
+        if (k < bases[di] or k >= bases[di + 1]) continue;
+        const count = (bases[di + 1] - bases[di]) / 2;
+        const variants = SchemaCtor.taggedVariants(bir, d) orelse return null;
+        const variant = (k - bases[di]) % count;
+        if (variant >= variants.len) return null;
+        return @intFromBool(SchemaCtor.variantPayload(bir, variants[variant]));
+    }
+    return null;
+}
+
 /// A tagged schema's constructor in its module's constructor index space
 /// (§28.4): after the BIR's own constructors, every tagged schema of the
 /// module in declaration order, each with its `Type` family's variants and
@@ -2841,7 +2865,7 @@ const Paths = struct {
 /// ε, the empty path. Its id is 0 once `Paths` has been seeded.
 pub const eps: u32 = 0;
 
-fn seedPaths(o: *Ownership) Allocator.Error!void {
+pub fn seedPaths(o: *Ownership) Allocator.Error!void {
     if (o.paths.parent.items.len != 0) return;
     const gpa = o.in.gpa;
     try o.paths.parent.append(gpa, none);

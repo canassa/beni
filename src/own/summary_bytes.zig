@@ -592,7 +592,8 @@ pub fn read(o: *Ownership, arena: Allocator, bytes: []const u8, m: u32) Error!Bl
                     const cm = try r.module();
                     const ci = try r.int();
                     const k = try r.int();
-                    if (!try o.hasCtor(cm, ci)) return error.Bad;
+                    const arity = (try o.ctorArity(cm, ci)) orelse return error.Bad;
+                    if (k >= arity) return error.Bad;
                     break :blk try o.ctorStep(try o.ctorId(cm, ci), k);
                 },
                 .elem, .env, .any, .markup_render, .markup_event, .schema_decoded, .schema_encoded => 0,
@@ -734,4 +735,81 @@ fn readSummary(r: *Reader, depth: u32) Error!Summary {
         .slots = slots,
         .klasses = klasses,
     });
+}
+
+test "a block naming a constructor field past the constructor's arity is refused" {
+    const gpa = std.testing.allocator;
+    const Bir = @import("../bir/Bir.zig");
+    // One module, `M`, whose one constructor takes two fields.
+    const extra = [_]u32{ 0, 0 };
+    var symbols = [_]Bir.Symbol{};
+    const ctors = [_]Bir.Ctor{.{ .name = .none, .name_token = 0, .decl = @fromBackingInt(@intCast(0)), .args_start = @fromBackingInt(@intCast(0)), .args_end = @fromBackingInt(@intCast(2)) }};
+    const bir: Bir = .{
+        .insts = (Bir.InstList{}).slice(),
+        .extra = &extra,
+        .string_bytes = "",
+        .symbols = &symbols,
+        .decls = &.{},
+        .ctors = &ctors,
+        .locals = &.{},
+        .refs = &.{},
+        .imports = &.{},
+        .exposed = &.{},
+        .interface = &.{},
+        .diagnostics = &.{},
+        .module_doc_start = 0,
+        .module_doc_end = 0,
+    };
+    const birs = [_]*const Bir{&bir};
+    const names = [_][]const u8{"M"};
+    const packages = [_]SourceStore.Package{.app};
+    var o = Ownership.init(.{
+        .gpa = gpa,
+        .graph = undefined,
+        .birs = &birs,
+        .provenance = &.{},
+        .dispatch = &.{},
+        .modules = &.{},
+        .types = undefined,
+        .interner = undefined,
+        .module_names = &names,
+        .packages = &packages,
+        .spans = &.{},
+        .positions = undefined,
+    });
+    defer o.deinit();
+    try o.seedPaths();
+    var arena: std.heap.ArenaAllocator = .init(gpa);
+    defer arena.deinit();
+    // A block of no rows and one path, `#C.k`.
+    const bytes = struct {
+        fn of(a: Allocator, k: u32) ![]u8 {
+            var out: std.ArrayList(u8) = .empty;
+            const int = struct {
+                fn f(al: Allocator, o2: *std.ArrayList(u8), v: u32) !void {
+                    var b: [4]u8 = undefined;
+                    std.mem.writeInt(u32, &b, v, .little);
+                    try o2.appendSlice(al, &b);
+                }
+            }.f;
+            try out.appendSlice(a, magic);
+            try int(a, &out, version);
+            try int(a, &out, 1);
+            try out.append(a, @backingInt(SourceStore.Package.app));
+            try int(a, &out, 1);
+            try out.append(a, 'M');
+            try int(a, &out, 0);
+            try int(a, &out, 1);
+            try out.append(a, 1);
+            try out.append(a, @backingInt(Ownership.StepKind.ctor));
+            try int(a, &out, 0);
+            try int(a, &out, 0);
+            try int(a, &out, k);
+            try int(a, &out, 0);
+            return out.items;
+        }
+    };
+    _ = try read(&o, arena.allocator(), try bytes.of(arena.allocator(), 1), 0);
+    try std.testing.expectError(error.Bad, read(&o, arena.allocator(), try bytes.of(arena.allocator(), 2), 0));
+    try std.testing.expectError(error.Bad, read(&o, arena.allocator(), try bytes.of(arena.allocator(), 64), 0));
 }
