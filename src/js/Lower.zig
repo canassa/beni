@@ -56,6 +56,7 @@ const SourceStore = @import("../SourceStore.zig");
 const JsIr = @import("JsIr.zig");
 const Reach = @import("Reach.zig");
 const Lift = @import("Lift.zig");
+const SchemaValid = @import("SchemaValid.zig");
 const Fields = @import("Fields.zig");
 const DebugShape = @import("DebugShape.zig");
 const Edges = @import("../check/Edges.zig");
@@ -510,6 +511,8 @@ pub fn lower(
     try l.findRefs();
     try l.findInlines();
     try l.findPrograms();
+    // `schema.md` §6: the runs that compile to a validator.
+    l.valid_sites = try SchemaValid.sites(l.scratch, l.in.graph, l.in.interfaces, if (l.in.schemas) |sg| sg.provenance else &.{}, l.interner, l.bir, l.in.module, l.in.schemas, l.in.schema_library);
 
     // Declarations first: the import list is what lowering DISCOVERS (the
     // §9.1 reference edges are a byproduct of resolution, not a pass), so
@@ -892,6 +895,9 @@ pub const Lowerer = struct {
     /// Version 1.14 (`Lowering.places`): the placement calls compiled as
     /// their first argument alone, the program call they place, sorted.
     placed_calls: []const u32 = &.{},
+    /// `schema.md` §6: the callees of the module's validator runs
+    /// (`SchemaValid`), which are `Schema.readValid`.
+    valid_sites: SchemaValid.Sites = .{},
     /// Per declaration, whether the program hook consumed it: a `view` or
     /// `update` a program record names and nothing else does, which is not
     /// emitted — the hook compiles what it needs of it where the program
@@ -5066,6 +5072,8 @@ pub const Lowerer = struct {
     fn referenceName(l: *Lowerer, inst: Inst.Index) !Node.Index {
         const d = l.bir.instData(inst);
         const p = l.pos(inst);
+        if (l.valid_sites.callees.len != 0 and SchemaValid.has(l.valid_sites.callees, inst.int()))
+            return l.coreSchemaValue(if (SchemaValid.has(l.valid_sites.direct_callees, inst.int())) "validRun" else "readValid", p);
         return switch (l.bir.instTag(inst)) {
             .local => try l.ident(try l.localName(d.lhs), p),
             // A markup primitive is the markup runtime's export of its name
@@ -7869,6 +7877,9 @@ pub const Lowerer = struct {
         // §9.4.6, version 1.6): the constructor applied to the mount the
         // lowering compiles, and the record never evaluated.
         if (l.programCallAt(inst)) |pc| return l.programCall(out, inst, pc, callee_inst);
+        // `S.schema ⊤` a validator run calls directly: `S`'s validator
+        // worker (`SchemaValid`).
+        if (l.valid_sites.args.len != 0) if (l.valid_sites.refOfArg(inst.int())) |ref| return SchemaLower.validWorker(l, ref, p);
         // Version 1.14: a placement the program's mount already made.
         if (l.placed_calls.len != 0 and l.placedCallAt(inst)) return l.expr(out, arg_insts[0]);
 

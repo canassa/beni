@@ -60,8 +60,11 @@ pub const Member = enum(u4) {
     encode = 7,
     read_value = 8,
     write_value = 9,
+    /// `read`'s validator workers (`schema.md` §6, *A run whose failure is
+    /// never read is a validator*).
+    read_valid = 10,
 
-    pub const count = 10;
+    pub const count = 11;
 
     /// The members a `pub schema` exports from a `--library` build: what
     /// another program can name. The other four worker sets are reached
@@ -77,6 +80,7 @@ pub const Member = enum(u4) {
             .encode => .encode,
             .read => .read_value,
             .write => .write_value,
+            .valid => .read_valid,
         };
     }
 
@@ -89,6 +93,7 @@ pub const Member = enum(u4) {
             .encode => .encode,
             .read_value => .read,
             .write_value => .write,
+            .read_valid => .valid,
             .description, .root, .parse, .print => null,
         };
     }
@@ -106,16 +111,18 @@ pub const Op = enum(u3) {
     encode = 3,
     read = 4,
     write = 5,
+    /// `read` as a validator: `read`'s ends, no issue made.
+    valid = 6,
 
     pub fn decoding(o: Op) bool {
         return switch (o) {
-            .parse, .decode, .read => true,
+            .parse, .decode, .read, .valid => true,
             .print, .encode, .write => false,
         };
     }
 
     pub fn hostIn(o: Op) bool {
-        return o == .parse or o == .read;
+        return o == .parse or o == .read or o == .valid;
     }
 
     pub fn hostOut(o: Op) bool {
@@ -136,6 +143,7 @@ pub const Op = enum(u3) {
             .encode => "encodeSlot",
             .read => "readValueSlot",
             .write => "writeValueSlot",
+            .valid => "readValidSlot",
         };
     }
 
@@ -148,6 +156,7 @@ pub const Op = enum(u3) {
             .encode => "encode",
             .read => "readValue",
             .write => "writeValue",
+            .valid => "readValid",
         };
     }
 };
@@ -173,6 +182,8 @@ pub const root_guards = [_]struct { Member, []const u8 }{
     .{ .read_value, "readValueSlot" },
     .{ .write_value, "writeWith" },
     .{ .write_value, "writeValueSlot" },
+    .{ .read_valid, "readValid" },
+    .{ .read_valid, "readValidSlot" },
 };
 
 /// A schema declaration of some module.
@@ -192,6 +203,8 @@ pub const compiled_values = [_][]const u8{
               "describedHost",   "describedTuple",    "describedConstructors",
     "describedMaybe",  "describedMaybeField", "derivedChar",     "derivedInt32",      "derivedNever",
     "hostWorker",
+    // `read` as a validator (schema.md §6).
+         "readValid",           "readValidSlot",   "validRun",
 };
 
 pub fn isCompiledValue(text: []const u8) bool {
@@ -247,7 +260,7 @@ pub fn coreNeeds(g: SchemaGraph, scratch: Allocator, r: Ref, member: Member, lib
             try out.append(scratch, if (member == .parse) "compiledParse" else "compiledPrint");
             if (params != 0) try out.append(scratch, if (member == .parse) "readSlot" else "writeSlot");
         },
-        .read, .write, .decode, .encode, .read_value, .write_value => {
+        .read, .write, .decode, .encode, .read_value, .write_value, .read_valid => {
             // Under `--schema-library` no worker is written.
             if (library) return;
             // A derived codec's `decode` and `encode` are its `read` and
@@ -264,7 +277,8 @@ pub fn coreNeeds(g: SchemaGraph, scratch: Allocator, r: Ref, member: Member, lib
             // helpers (`SchemaShare`), which are roots of their own when it
             // does.
             const failures = failureHelpers(plan, nodes.items, op);
-            if (failures.deep or failures.missing or failures.generic) try out.append(scratch, "compiledFail");
+            // A validator's failure branches make no issue.
+            if (op != .valid and (failures.deep or failures.missing or failures.generic)) try out.append(scratch, "compiledFail");
             // A generic declaration's root closes this operation's worker
             // over its arguments' slots, once this worker set survives.
             if (params != 0) try out.append(scratch, op.slot());
@@ -416,7 +430,7 @@ pub fn memberTargets(g: SchemaGraph, scratch: Allocator, r: Ref, member: Member,
             return;
         },
         .description => {},
-        .read, .write, .decode, .encode, .read_value, .write_value => if (library) return,
+        .read, .write, .decode, .encode, .read_value, .write_value, .read_valid => if (library) return,
     }
     if (g.hostAliased(r, member)) |aliased| {
         try out.append(scratch, .{ r, aliased });

@@ -1302,7 +1302,13 @@ and nothing of `core/Schema`'s issue makers ships for it.
   library path (`--schema-library`) runs every schema through the interpreter, which makes issues.
   The differential corpus is unchanged: a program that reads its `Err` keeps the issues, and the
   full comparison with them.
-- **Status.** Specified on 2026-10-17, not yet built: every compiled run still makes its issues.
+- **Status** *(2026-10-17)*. Built for `read`: a qualifying run calls the core-private
+  `Schema.readValid`, which runs the declaration's validator workers (`$$readValid`, the
+  reachability member `read_valid`) on `read`'s context and fails with an empty list; one whose
+  schema is `S.schema ⊤` of a nongeneric declaration calls the core-private `Schema.validRun` with
+  `S`'s validator worker, and makes no schema value. Not yet built for `parse` and `decode`, nor for
+  a schema that `Schema.list` or a primitive maker makes at the call, whose core workers keep their
+  issues.
 
 ## 7. Effects
 
