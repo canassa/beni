@@ -814,6 +814,93 @@ def chainKept (returned : Nat) : Program := keepProgram <|
 -- Without the limit, the fifth callback is refused for the same reason as the fourth.
 #guard match check (chainPushed 11) { callbackLimit := 5 }, check (chainPushed 10) with
   | .error e, .error e' => e == e' | _, _ => false
+/-! ## Function values in the open and unidentified callees (#305; `ownership-checker.md` §30.9, §30.11)
+
+Ports of the shapes of `tests/corpus/ownership/AliasWriter.beni` (§30.9 rule 9),
+`NeedLabels.beni` (rules 6, 7 and 11) and `UnknownCallee.beni` (§30.11) that the
+core can state. Expected verdicts are the goldens' where the Zig rule is exact;
+the core decides each by its precise rules: a closure bound to a variable is
+followed through any number of names (no cap of eight), a callback's class is
+answered at the call site (the shared root's cell is refused by the Unescaped
+test, exactly where Zig says `need`), and a function taken out of a local list
+of closures is identified (`listOfFns`: accepted by both checkers; Zig's
+`⊤call` is for a list of functions it was handed, which is the core's limit
+`function value below an input path`). The `Dict`, record-of-functions and
+platform shapes have no core syntax. -/
+
+private def thunk : Ty := .fn [.int] (.list .int)
+private def emptyList305 : Expr := .prim (.literal .int) []
+
+def writerDecl : Decl :=
+  { name := "writer", parameters := [.list .int], result := .list .int, body := push (v 0) }
+
+/-- `let a1 = writer; let a2 = a1; …; let an = a(n-1); k`, with `let 1` outermost. -/
+def aliasLets : Nat → Expr → Expr
+  | 0, k => k
+  | i + 1, k => aliasLets i (.letE (i + 1) (if i == 0 then .closure 0 [] else .atom (v i)) k)
+
+/-- `AliasWriter`: `xs = []; a1 = writer; …; r = an xs; ( r, xs )`. -/
+def aliasChain (n : Nat) : Program :=
+  { declarations := [writerDecl],
+    main := .letE 0 emptyList305 (aliasLets n (.letE 100 (.app (v n) [v 0]) (.prim .record [v 100, v 0]))) }
+
+/-- `NeedLabels`: `edit f = push (f 0) 1`. -/
+def editDecl : Decl :=
+  { name := "edit", parameters := [thunk], result := .list .int,
+    body := .letE 1 (.app (v 0) [.int 0]) (push (v 1)) }
+/-- `λ_ → shared`, the shared list captured. -/
+def retShared : Decl :=
+  { name := "retShared", parameters := [.int], captures := [.list .int], result := .list .int, body := .atom (v 1) }
+/-- `pick c xs = if c then xs else []`. -/
+def pickDecl : Decl :=
+  { name := "pick", parameters := [.int, .list .int], result := .list .int,
+    body := .letE 2 emptyList305 (.branch (v 0) (.atom (v 2)) (.atom (v 1))) }
+/-- `λ_ → pick c shared`, `c` and the shared list captured. -/
+def retPick : Decl :=
+  { name := "retPick", parameters := [.int], captures := [.int, .list .int], result := .list .int,
+    body := .letE 3 (.closure 2 []) (.app (v 3) [v 1, v 2]) }
+def retFresh : Decl :=
+  { name := "retFresh", parameters := [.int], result := .list .int, body := .prim (.literal .int) [.int 1, .int 2] }
+def needDecls : List Decl := [editDecl, retShared, pickDecl, retPick, retFresh]
+
+def exactShared : Program :=
+  { declarations := needDecls,
+    main := .letE 0 (.prim (.literal .int) [.int 1]) <| .letE 1 (.prim .shared [v 0]) <|
+      .letE 2 (.closure 1 [v 1]) <| .letE 3 (.closure 0 []) (.app (v 3) [v 2]) }
+def approxEntry (c : Int) : Program :=
+  { declarations := needDecls,
+    main := .letE 0 (.prim (.literal .int) [.int 1]) <| .letE 1 (.prim .shared [v 0]) <|
+      .letE 2 (.atom (.int c)) <| .letE 3 (.closure 3 [v 2, v 1]) <| .letE 4 (.closure 0 []) (.app (v 4) [v 3]) }
+def freshOnly : Program :=
+  { declarations := needDecls,
+    main := .letE 0 (.closure 4 []) <| .letE 1 (.closure 0 []) (.app (v 1) [v 0]) }
+
+/-- `UnknownCallee`: `apply g = g 0`; `make _ = [1, 2]`; `named = λ_ → shared`. -/
+def applyDecl : Decl :=
+  { name := "apply", parameters := [thunk], result := .list .int, body := .app (v 0) [.int 0] }
+def makeDecl : Decl :=
+  { name := "make", parameters := [.int], result := .list .int, body := .prim (.literal .int) [.int 1, .int 2] }
+def unknownDecls : List Decl := [applyDecl, makeDecl, retShared]
+def goodCall : Program :=
+  { declarations := unknownDecls,
+    main := .letE 0 (.closure 1 []) <| .letE 1 (.app (v 0) [.int 0]) (.prim .push [v 1, .int 3]) }
+def goodParam : Program :=
+  { declarations := unknownDecls,
+    main := .letE 0 (.closure 1 []) <| .letE 1 (.closure 0 []) <| .letE 2 (.app (v 1) [v 0]) (.prim .push [v 2, .int 3]) }
+def badNamed : Program :=
+  { declarations := unknownDecls,
+    main := .letE 0 (.prim (.literal .int) [.int 1]) <| .letE 1 (.prim .shared [v 0]) <|
+      .letE 2 (.closure 2 [v 1]) <| .letE 3 (.app (v 2) [.int 0]) (.prim .push [v 3, .int 3]) }
+def badParam : Program :=
+  { declarations := unknownDecls,
+    main := .letE 0 (.prim (.literal .int) [.int 1]) <| .letE 1 (.prim .shared [v 0]) <|
+      .letE 2 (.closure 2 [v 1]) <| .letE 3 (.closure 0 []) <| .letE 4 (.app (v 3) [v 2]) (.prim .push [v 4, .int 3]) }
+/-- A local list of closures, one taken out and called: identified by both checkers (Zig's `⊤call` is for a list it was handed, the core's limit). -/
+def listOfFns : Program :=
+  { declarations := unknownDecls,
+    main := .letE 0 (.closure 1 []) <| .letE 1 (.prim (.literal thunk) [v 0]) <|
+      .letE 2 (.prim .at [v 1, .int 0, v 0]) <| .letE 3 (.app (v 2) [.int 0]) (.prim .push [v 3, .int 3]) }
+
 
 structure Fixture where
   id : String
@@ -911,7 +998,15 @@ def all : List Fixture := [
   ⟨"CK-251 returnKeep",returnKeep,false⟩, ⟨"CK-251 returnDrop",returnDrop,true⟩,
   ⟨"CK-251 writeFirst (Zig refuses, approximately)",writeFirst,true⟩,
   ⟨"CK-249 four",chainPushed 10,false⟩, ⟨"CK-249 five (the callbacks limit)",chainPushed 11,false⟩,
-  ⟨"CK-249 kept4",chainKept 12,false⟩, ⟨"CK-249 kept5 (the callbacks limit)",chainKept 13,false⟩
+  ⟨"CK-249 kept4",chainKept 12,false⟩, ⟨"CK-249 kept5 (the callbacks limit)",chainKept 13,false⟩,
+  -- Appended 2026-10-17 (#305).
+  ⟨"§30.9 rule 9 alias one",aliasChain 1,false⟩, ⟨"§30.9 rule 9 alias seven",aliasChain 7,false⟩,
+  ⟨"§30.9 rule 9 alias eight (Zig: ⊤call, pending)",aliasChain 8,false⟩, ⟨"§30.9 rule 9 alias nine (Zig: ⊤call, pending)",aliasChain 9,false⟩,
+  ⟨"§30.9 need exactShared",exactShared,false⟩, ⟨"§30.9 need approxEntry taken",approxEntry 1,false⟩,
+  ⟨"§30.9 need approxEntry not taken",approxEntry 0,false⟩, ⟨"§30.9 need freshOnly",freshOnly,true⟩,
+  ⟨"§30.11 goodCall",goodCall,true⟩, ⟨"§30.11 goodParam",goodParam,true⟩,
+  ⟨"§30.11 badNamed",badNamed,false⟩, ⟨"§30.11 badParam",badParam,false⟩,
+  ⟨"§30.11 listOfFns (a local list; identified by both checkers)",listOfFns,true⟩
 ]
 
 def run : IO Bool := do
