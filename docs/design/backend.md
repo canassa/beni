@@ -903,6 +903,10 @@ no longer the spread `({ ...r, a: x })`:
   field's short name (§9, *Item 4, taken up*).
 - **No choice is made at a site.** A module reaches lowering only when the ownership pass accepted every
   demand in it, so every record update is lowered in place. There is no spread path to fall back to.
+- **Hoists** (*revised the same day*, `ownership-checker.md` §31.14). A later read of a written field is read
+  into a temporary before the write, at the placement the checker's table names, and a closure that captures a
+  field path reads it when it is made. The table is in the module's cache entry beside its summary block
+  (`ownership-checker.md` §31.10).
 - **A barrier.** A record update is a barrier to §9's optimiser, as a list demand is (*`--release`*, above).
   No read of a written field, or of anything that may alias the base, is moved across it. No single-use
   binding of such a read is inlined past it. It is never dropped as unused.

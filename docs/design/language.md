@@ -371,6 +371,13 @@ LetPattern  := '_' | lower_ident | '(' ')' | '(' LetPattern ')'  -- irrefutable 
 Param       := PatAtom, restricted to LetPattern's shapes        -- irrefutable (§7)
 ```
 
+*Amended 2026-10-17 (the owner; `ownership-checker.md` §31.15; specified, not built):* two rules change. The
+record update becomes `'{' UpdateBase '|' Field (',' Field)* '}'`, with `UpdateBase := lower_ident |
+qualified_lower Arg* | lower_ident Arg+ | '(' Expr ')'` (§6.3, amended). And `TypeAtom`'s extensible record
+takes no field as well: `'{' lower_ident '|' RecordTypeFields? '}'`, so `{ r | }` is any record. It unifies
+with every record type, closed or extensible, and with nothing else; `core/Record`'s `copy : { r | } → { r | }`
+is written with it.
+
 `Param` and `LetPattern` are the same restriction in two places, and it is **not purely
 syntactic**: the constructor line above is admitted by the grammar and settled by the checker,
 because "does `Box x` match every `Box`?" is a question about `Box`'s type. §7 states the rule, the
@@ -707,10 +714,18 @@ The promise and its reason are §11.12.
 
 *Amended 2026-10-17 (the owner; `ownership-checker.md` §31; specified, not built):* **a record update
 consumes its base.** `{ r | a = x }` writes `a` into `r`'s own object and answers that object, on every
-platform, in every module. An update the ownership checker cannot prove safe in place — a holder of `r` that
-reads `a`, or the whole record, afterwards, or a top-level `r` — is a compile error, never a copy. A program
-that keeps the old record copies it explicitly (`ownership-checker.md` §31.0, item 1). The new values are all
-evaluated before any field is written, so `{ r | a = r.b, b = r.a }` still swaps.
+platform, in every module. A later read of a field of `r` is still allowed, a written one included: the
+compiler reads it before the write (`ownership-checker.md` §31.14). A later use of the old `r` **whole** — stored,
+returned, compared, captured whole, bound to another name, the base of another update, or handed to a function
+that reads a written field — and an update of a top-level `r` are compile errors, never copies. A program that
+keeps the old record copies it explicitly: `{ Record.copy r | a = x }` (`ownership-checker.md` §31.15). The new
+values are all evaluated before any field is written, so `{ r | a = r.b, b = r.a }` still swaps.
+
+*Amended 2026-10-17 (the owner; `ownership-checker.md` §31.15; specified, not built):* **the base of an update
+is a name or a call.** "The update target is a plain name" above becomes: a name, an application whose head is a
+name or a qualified name and whose arguments are atoms (`{ Record.copy r | a = 1 }`, `{ defaults ⊤ | a = 1 }`),
+or a parenthesised expression. `{ r.a | … }` is still not allowed. A record literal still begins `name =`, so the
+two stay apart after one token.
 
 ### 6.4 Tuples
 
