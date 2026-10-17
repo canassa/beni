@@ -1,0 +1,42 @@
+-- The floor of `browser-inline` under `--release` (docs/design/browser-
+-- inline.md): an element with no subscription and no command is the dispatch
+-- guard, its queue, `run` and `stop`, and the mount — the markup written once
+-- at the root `mountAt` names, and what removes it. No message, no `case`, no
+-- `core/Task`, no `core/Dict`, no mount mark and no fault prose (§6): a
+-- missing root fails inside the guard. The whole file is the golden.
+import Browser
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub exposing (Sub)
+import Tea
+
+
+type alias Model =
+    {}
+
+
+type Msg
+    = Noop
+
+
+init : ⊤ → Model × Cmd Msg
+init ⊤ = ( {}, Cmd.none )
+
+
+update : Msg, Model → Model × Cmd Msg
+update _ model = ( model, Cmd.none )
+
+
+subscriptions : Model → Sub Msg
+subscriptions _ = Sub.none
+
+
+view : Model → Html Msg
+view _ = <div data-role="dashboard" />
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.element { init = init, update = update, view = view, subscriptions = subscriptions })
+        "root"

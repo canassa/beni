@@ -1,0 +1,33 @@
+-- A command whose body may suspend needs the task kernel, which
+-- `browser-inline` does not have yet (docs/design/browser-inline.md §4):
+-- refused at `init`, class 2 (§5), with the body's position.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub exposing (Sub)
+import Task
+import Tea
+
+
+type Msg
+    = Done
+
+
+init : ⊤ → {} × Cmd Msg
+init ⊤ =
+    ( {}
+    , Cmd.perform λsend →
+        Task.yieldNow ⊤
+        send Done
+    )
+
+
+update : Msg, {} → {} × Cmd Msg
+update _ model = ( model, Cmd.none )
+
+
+view : {} → Html Msg
+view _ = <div />
+
+
+main : Tea.Program
+main = Tea.element { init = init, update = update, view = view, subscriptions = λ_ → Sub.none }

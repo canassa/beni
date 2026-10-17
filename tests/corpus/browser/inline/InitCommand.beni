@@ -1,0 +1,44 @@
+-- A command that cannot suspend runs after the dispatch's write pass, in
+-- the same dispatch, through the guard's queue (boundary.md §9.8.4, as
+-- amended 2026-10-17): `init`'s body sends `Loaded`, whose handler writes the
+-- model and then the one text binding, all before the load step ends; the
+-- `Loaded` arm's own command sends `Counted`, which applies after it. `stop`
+-- then takes the page's markup out and leaves nothing listening.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub exposing (Sub)
+import Tea
+
+
+type alias Model =
+    count : Int
+
+
+type Msg
+    = Loaded Int
+    | Counted
+
+
+init : ⊤ → Model × Cmd Msg
+init ⊤ = ( { count = 0 }, Cmd.perform λsend → send (Loaded 5) )
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        Loaded n →
+            ( { model | count = n }, Cmd.perform λsend → send Counted )
+
+        Counted →
+            ( { model | count = model.count + 1 }, Cmd.none )
+
+
+view : Model → Html Msg
+view model =
+    <div data-role="dashboard">
+        <p>{model.count}</p>
+    </div>
+
+
+main : Tea.Program
+main = Tea.element { init = init, update = update, view = view, subscriptions = λ_ → Sub.none }

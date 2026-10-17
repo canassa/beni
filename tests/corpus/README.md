@@ -206,6 +206,13 @@ project) against it, one step per line, `#` for a comment:
                                 `n` (default 1) plain `Event`s of that
                                 name on the window, the document or the
                                 element, in one task
+    detail <window|document|selector> <name> <json>
+                                one `CustomEvent` of that name whose `detail`
+                                is the JSON value, as a host page pushes data
+                                to a program (`Push.onPush`'s `rr-push`)
+    stop                        the entry file's `stop` (`boundary.md`
+                                §9.4.5, amended 2026-10-17), the page's
+                                unmount; logs `(stopped)`
     url "<url>"                 `history.replaceState` to the URL, relative to
                                 the page's (`"?q=1#/active"`); nothing fires
     hash "<#fragment>"          the same, then one `popstate` and one
@@ -504,6 +511,16 @@ builds. A `browser/direct/` transcript leaves out comment nodes
 (`--no-comments`): where a platform keeps its place markers is not what
 the program shows, and the two platforms put them differently. Their run hash lines are `dev`, `release`, `tea_dev`
 and `tea_release`.
+
+**The `inline` lowering's fixtures** (`docs/design/browser-inline.md`) are
+under `inline/` of four kinds, built with `--platform=browser-inline`, or for
+a project's own `platform/` layered on it: `emit/inline/` and
+`emit/release/inline/` application builds, their goldens in tea-inline's
+shape (the release file whole, so a byte of `core/Task`, `core/Dict` or a
+message object that creeps in shows); `build/bad/inline/` projects for what
+the lowering refuses, each class of `browser-inline.md` §5; and
+`browser/inline/` pages, built for that platform alone, development and
+release.
 
 **The page fuzzer** (`docs/design/browser-direct.md` §8.3 and its
 2026-10-09 amendment, `tests/browser/fuzz.mjs`) runs on every

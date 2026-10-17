@@ -2190,6 +2190,24 @@ identity and analysis facts. `templateValue(node, expression, placement)` either
 the engine then emits backend.md's `_direct-plan.json` consumer plan. browser-direct.md and write-sets.md's amendment
 of the same date own selection and verification.
 
+**Version 1.14** (*amended 2026-10-17*, additive, gated on nothing; `browser-inline.md`): what a
+program lowering needs to compile a program's effects and its placement away.
+- `Lowering.places`: a call of a `first` placement whose first argument is a program constructor's
+  call and whose second a string literal is compiled as the program call alone, and the hook is
+  handed where the program mounts, `Program.placed`: at that element, at `document.body` when the
+  call is `main`'s whole body, or `unknown`.
+- `Lowering.effects` names the platform chain's `Sub` and `Cmd` modules. The write-set pass then
+  reads the subscription set and each key's command, and `init`'s, through their `none`, `batch`,
+  `map`, `on` and `perform`, walking the platform's other functions outside `view` as it walks the
+  program's own (`browser-inline.md` §3–§4). `programSubscriptions()` answers the set: its
+  declarations — each one's handler key, its fields, the first declaration of an equal key, and
+  where its start is written — or that it reads the model, that a tagger gives no key, or that the
+  pass could not read it. `programSubscriptionStart(block, i, send)` writes declaration `i`'s start
+  applied to `send` and returns what removes it, or reports a limit of the compiler for a start it
+  cannot write there. `programCommand(key)` (`null`: `init`'s) answers `none`, `runs`, `suspends`
+  with the body's place, or `unknown`, the suspension the checker's answer at the body.
+A lowering that sets neither sees what it saw.
+
 #### 9.4.7 Diagnostics
 
 `cx.report(node, message)` reports **`markup_restructured`**, an error, at the markup node's source

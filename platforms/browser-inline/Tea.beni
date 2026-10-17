@@ -1,0 +1,41 @@
+--! The Elm Architecture on `browser-inline` (`docs/design/browser-inline.md`):
+--! `browser-tea`'s `sandbox` and `element`, so one source builds on both.
+--! Here a program is compiled, not run: each constructor is a `foreign` the
+--! platform's `inline` lowering recognises where it is called
+--! (`boundary.md` §9.4.6, version 1.6), and the call is compiled as the
+--! constructor applied to the program's mount. The record is never a value.
+
+import Browser
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub exposing (Sub)
+
+
+--| What `main` is: `Browser.Program` under this platform's name.
+pub type alias Program =
+    Browser.Program
+
+
+--| A page with a model and no effects: `init ⊤`, called at mount, is the
+--| first model, and each message goes through `update`, whose model the
+--| page shows before the dispatch ends.
+pub foreign pure sandbox :
+      { init : sync (⊤ → model)
+      , update : sync (msg, model → model)
+      , view : sync (model → Html msg)
+      }
+    → Program
+
+
+--| A page with a model and effects: `init ⊤` is the first model and the
+--| work it asks for; each message goes through `update`, which returns the
+--| next model and the work that message asks for, run after the page shows
+--| the model; and `subscriptions` says what the program listens to, which
+--| on this platform may not depend on the model.
+pub foreign pure element :
+      { init : sync (⊤ → model × Cmd msg)
+      , update : sync (msg, model → model × Cmd msg)
+      , view : sync (model → Html msg)
+      , subscriptions : sync (model → Sub msg)
+      }
+    → Program

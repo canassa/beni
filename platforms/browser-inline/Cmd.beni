@@ -1,0 +1,53 @@
+--! Commands: the work an `update` asks for (`docs/design/boundary.md` §9.8,
+--! as amended 2026-10-17 for this platform). A command is data — it names
+--! work and does none. On `browser-inline` there is no task kernel: a body
+--! runs after the page shows the model, in the same dispatch, and one that
+--! may suspend is refused when the program is built
+--! (`docs/design/browser-inline.md` §4). The `inline` lowering reads a
+--! command where it is made, so `none` costs a page nothing.
+
+import Js
+
+
+--| How a body sends a message: it is applied once the body returns, in the
+--| same dispatch.
+pub type alias Send msg =
+    msg → ⊤
+
+
+--| The work an `update` asks for.
+pub type Cmd msg
+    = None
+    | Perform (Send msg → ⊤)
+    | Batch (List (Cmd msg))
+
+
+--| No work.
+pub none : Cmd msg
+none = None
+
+
+--| All of these commands, in order.
+pub batch : List (Cmd msg) → Cmd msg
+batch cmds = Batch cmds
+
+
+--| Run `body` after the page shows the model `update` returned, in the same
+--| dispatch: each message it sends is applied after it returns. A body that
+--| may suspend needs the task kernel, which this platform does not have yet.
+pub perform : (Send msg → ⊤) → Cmd msg
+perform body = Perform body
+
+
+--| Every body of a command, in order: what the runtime runs.
+pub bodies : Cmd msg → List (Send msg → ⊤)
+bodies cmd =
+    case cmd of
+        None →
+            []
+
+        Perform body →
+            [ body ]
+
+        Batch cmds →
+            List.concat (List.map cmds bodies)

@@ -1,0 +1,26 @@
+--! The page a program of `browser-inline` mounts on
+--! (`docs/design/browser-inline.md` §1): one program per page, at
+--! `document.body` unless `mountAt` names an element.
+
+import Js
+
+
+--| What `main` is: the page's one program and where it mounts. Only a
+--| program constructor of `Tea` makes one: the `inline` lowering compiles
+--| the program where the constructor is called.
+pub foreign type Program
+
+
+--| The same program, mounted at the element whose `id` is the string
+--| instead: its view goes after that element's children. The element must
+--| be in the page when the program starts.
+--|
+--|     main : Program
+--|     main =
+--|         Browser.mountAt (Tea.sandbox app) "root"
+pub mountAt : Program, String → Program
+mountAt page id =
+    -- A program is the mount the lowering compiled, a function of the
+    -- element's id. Where the id is a literal written at the program's call,
+    -- the lowering mounts there itself and this is not called.
+    Js.to (Js.from λ_ → Js.to (Js.apply (Js.from page) [ Js.from id ]))
