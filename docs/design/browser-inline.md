@@ -223,7 +223,10 @@ string that is concatenated with another keeps its own closing run.
 **Elements by document order.** An element some code refers to is `E[n]`, the `n`-th descendant of
 the unit's top element in document order (`top.querySelectorAll("*")`, read once at the mount, and
 only when some code refers to a descendant); the top element is the unit's node itself. There is
-no marker attribute and no walk.
+no marker attribute and no walk. *Amended 2026-10-17:* when code refers to one descendant only, it is
+reached by its path of `firstChild` and `childNodes[i]` from the top node, which costs less than
+the list; and a page whose one text write is its only use of `text` writes it in place, so `text`
+does not ship (S0's pinned 589 B for `PushAndTimer` holds: 583 B).
 
 **A binding** is one write guarded by a compare, through the runtime's four functions, which are
 beni over `Js` in `Inline.beni`:

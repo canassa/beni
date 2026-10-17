@@ -191,6 +191,8 @@ const Write = struct {
     },
     /// A `stateful` attribute: a control the user edits (§8.3).
     stateful: bool = false,
+    /// A text write whose value is a `String`, not a lone number.
+    string: bool = true,
 };
 
 /// One event of the page, on an element.
@@ -230,6 +232,10 @@ const Page = struct {
     model: m.Name = undefined,
     node: ?m.Name = null,
     elements: ?m.Name = null,
+    /// `elements` is the one element code refers to, not the list.
+    single: bool = false,
+    /// How many text writes the page has.
+    texts: u32 = 0,
     /// The handlers by key, named when something first calls one.
     handlers: []?m.Name = &.{},
     /// Per key, the functions of the stateful controls its events are on.
@@ -328,6 +334,8 @@ const Page = struct {
         var groups: std.ArrayList(u32) = .empty;
         var baked: std.ArrayList(u8) = .empty;
         var all_baked = true;
+        // Whether the text written is a `String` already: no lone number.
+        var string = true;
         for (children) |child| switch (tree.kind(child)) {
             .text => {
                 const s = tree.string(tree.text(child).text);
@@ -343,6 +351,7 @@ const Page = struct {
                 } else {
                     all_baked = false;
                     try parts.append(pg.a(), .{ .value = h.value });
+                    if (h.kind == .text_number) string = false;
                     try groups.append(pg.a(), facts.group);
                 }
             },
@@ -353,7 +362,7 @@ const Page = struct {
             try escapeText(pg.a(), &escaped, baked.items);
             return pg.a().dupe(Html, &.{.{ .kind = .text, .name = escaped.items }});
         }
-        try pg.writes.append(pg.a(), .{ .target = target, .ctx = ctx, .groups = try sorted(pg.a(), groups.items), .what = .{ .text = parts.items } });
+        try pg.writes.append(pg.a(), .{ .target = target, .ctx = ctx, .groups = try sorted(pg.a(), groups.items), .what = .{ .text = parts.items }, .string = string or parts.items.len > 1 });
         return &.{};
     }
 
@@ -550,10 +559,26 @@ const Page = struct {
             if (ev.target != null) break true;
         } else false;
         if (placed) {
-            pg.elements = try cx.fresh("elements");
-            try js.constant(body, pg.elements.?, try js.call(try js.member(try js.name(pg.node.?), "querySelectorAll"), &.{try js.string("*")}));
+            // One element referred to is reached by its path from the top
+            // node, which costs less than the list of all of them; more are
+            // read from the list (§8.2).
+            const only = pg.onlyTarget();
+            const path = if (only) |t| try pathOf(pg.a(), pg.top_nodes[0].children, t) else null;
+            if (path) |steps| {
+                pg.elements = try cx.fresh("element");
+                pg.single = true;
+                var e: m.Expr = try js.name(pg.node.?);
+                for (steps) |i| e = if (i == 0) try js.member(e, "firstChild") else try js.index(try js.member(e, "childNodes"), try js.number(try std.fmt.allocPrint(pg.a(), "{d}", .{i})));
+                try js.constant(body, pg.elements.?, e);
+            } else {
+                pg.elements = try cx.fresh("elements");
+                try js.constant(body, pg.elements.?, try js.call(try js.member(try js.name(pg.node.?), "querySelectorAll"), &.{try js.string("*")}));
+            }
         }
 
+        for (pg.writes.items) |w| if (w.what == .text) {
+            pg.texts += 1;
+        };
         // The binding functions, each written once and called once now.
         try pg.group();
         for (pg.functions.items) |*f| {
@@ -747,10 +772,25 @@ const Page = struct {
         }
     }
 
+    /// The one descendant the page's code refers to, when it is one.
+    fn onlyTarget(pg: *Page) ?u32 {
+        var only: ?u32 = null;
+        for (pg.writes.items) |w| if (w.target) |t| {
+            if (only != null and only.? != t) return null;
+            only = t;
+        };
+        for (pg.events.items) |ev| if (ev.target) |t| {
+            if (only != null and only.? != t) return null;
+            only = t;
+        };
+        return only;
+    }
+
     /// The element at `target`: the top node, or its descendant by place.
     fn ref(pg: *Page, target: ?u32) m.Error!m.Expr {
         const js = pg.cx.js;
         const t = target orelse return js.name(pg.node.?);
+        if (pg.single) return js.name(pg.elements.?);
         return js.index(try js.name(pg.elements.?), try js.number(try std.fmt.allocPrint(pg.a(), "{d}", .{t})));
     }
 
@@ -832,7 +872,21 @@ const Page = struct {
                             };
                             break :value try js.template(tp);
                         };
-                        try js.expression(blk, try js.call(try js.name(try cx.runtime("text")), &.{ node, value }));
+                        if (pg.texts == 1) {
+                            // The page's one text write is written where it
+                            // is, not as a call of `text`, which then does not
+                            // ship: a template is the value's `String`.
+                            // A lone hole's value is a name already; a template or a
+                            // number is evaluated once, into one.
+                            const shown = if (parts.len == 1 and w.string) value else shown: {
+                                const s = try cx.fresh("shown");
+                                try js.constant(blk, s, if (w.string) value else try js.template(&.{.{ .expr = value }}));
+                                break :shown try js.name(s);
+                            };
+                            const then = try js.block();
+                            try js.assign(then, try js.member(node, "textContent"), shown);
+                            try js.@"if"(blk, try js.binary(.strict_ne, try js.member(node, "textContent"), shown), then, null);
+                        } else try js.expression(blk, try js.call(try js.name(try cx.runtime("text")), &.{ node, value }));
                     },
                     .prop => |x| {
                         const value = try cx.value(x.value);
@@ -1185,4 +1239,32 @@ test "optional end tags and the closing run are left out" {
     out.clearRetainingCapacity();
     try serialise(a, &out, &.{.{ .kind = .element, .name = "a", .children = &.{p} }}, null, false);
     try t.expectEqualStrings("<a><p></p></a>", out.items);
+}
+
+/// The child indices from `nodes`, the top element's children, down to the
+/// element of place `target` among its descendants in document order.
+/// Null when two texts stand side by side on the way, which the parser
+/// makes one node.
+fn pathOf(a: std.mem.Allocator, nodes: []const Html, target: u32) !?[]const u32 {
+    var path: std.ArrayList(u32) = .empty;
+    var count: u32 = 0;
+    if (!try find(a, nodes, target, &count, &path)) return null;
+    var level = nodes;
+    for (path.items) |i| {
+        for (level[0..i], 0..) |n, j| if (n.kind == .text and j + 1 < level.len and level[j + 1].kind == .text) return null;
+        level = level[i].children;
+    }
+    return path.items;
+}
+
+fn find(a: std.mem.Allocator, nodes: []const Html, target: u32, count: *u32, path: *std.ArrayList(u32)) !bool {
+    for (nodes, 0..) |n, i| {
+        if (n.kind != .element) continue;
+        try path.append(a, @intCast(i));
+        if (count.* == target) return true;
+        count.* += 1;
+        if (try find(a, n.children, target, count, path)) return true;
+        _ = path.pop();
+    }
+    return false;
 }
