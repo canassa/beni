@@ -4729,7 +4729,7 @@ and their later additions. No cause is new: a record demand is rejected for the 
   no field set and means "the array is written", as before. A record W without its fields would make every later
   read of the caller's argument a conflict. That is a coarsening, and §31.1 refuses it.
 - **The caller's side** (§16.4 item 3): a call-site demand on `aᵢ`'s cells at `q`, checked by §31.4 with
-  `F = {f, g}`: Disjoint against the other arguments and against `aᵢ`'s other paths, and Dead field-sensitively.
+  `F = {f, g}`: Disjoint against the other arguments and against `aᵢ`'s other paths, and Dead per field (§31.4 item 5).
   It reaches the caller's own summary when the cell is its parameter. So `shift dx p = { p | x = p.x + dx }`
   writes `π2 W{x}`. In `run/Records`, `shift 3 origin` followed by `origin.x` would be hoisted at the caller, but
   the next `(shift 3 origin).x` hands `origin` whole to a callee that reads its written `x`, which is a whole use:
@@ -4741,7 +4741,7 @@ and their later additions. No cause is new: a record demand is rejected for the 
 - **Function values** (§16.5, §30.4): a lambda that writes its record parameter is a writing class like any
   other: checked where its calls are in sight and `pending` where it leaves sight. `{ handler = λr → { r | … } }`
   stored in a record is pending, and so an error.
-- **The summary block** (§28.4) gains the field set of each W and the path qualification of escapes. Its version
+- **The summary block** (§28.4) gains the field set of each W, and the cache entry the hoist table (§31.10). Its version
   moves when the rule lands. The interface firewall needs nothing new: a summary change is an interface change
   (§16.10, O2).
 
