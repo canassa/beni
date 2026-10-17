@@ -1,0 +1,8 @@
+module FoldTypeParameter
+  20:21 List.push ys: accepted param
+  30:15 call FoldTypeParameter.g xs: rejected later-use: xs is read again at 30:13 (FoldTypeParameter.g writes π1)
+  summary g: π1 RAW, π1[*] A; res [*] ~π1[*], fresh1 π1
+  summary caller: π1 RAW, π1[*] RA; res .0 ~fresh1 ~π1, .0[*] ~π1[*], .1 π1
+  demands 2: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+total 2: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+cause later-use 1

@@ -1,0 +1,30 @@
+-- ownership: folding stops at a type parameter (issue #286, §16.7). In a
+-- `Tree (Tree (List Int))` the inner trees are the outer tree's values,
+-- not its levels. Folded onto the outer tree's steps, `outer#Node.1#Node.1`
+-- was `outer#Node.1`, so `inner` held `xs` itself and the push named
+-- `xs#Node.1`, a tree step on a list: `g` read `π1#Node.1 RAW`. Each inner
+-- tree folds onto itself now: `g` writes `π1`, its parameter, and a caller
+-- that reads its list after is rejected.
+type Tree a
+    = Leaf
+    | Node (Tree a) a (Tree a)
+
+
+g : List Int → List Int
+g xs =
+    outer = Node Leaf (Node Leaf xs Leaf) Leaf
+    case outer of
+        Node _ inner _ →
+            case inner of
+                Node _ ys _ →
+                    List.push ys 1
+
+                Leaf →
+                    []
+
+        Leaf →
+            []
+
+
+pub caller : List Int → List Int × List Int
+caller xs = ( g xs, xs )
