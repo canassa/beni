@@ -4221,6 +4221,8 @@ const Emitter = struct {
             const at = decl[g] orelse continue;
             try e.mentionsOf(slots, todo, gids, at.at, at.stmt, &stack, live, &work);
         }
+        const touched = try e.scratch.alloc(bool, todo.len);
+        @memset(touched, false);
         for (decl, 0..) |maybe, g| {
             const at = maybe orelse continue;
             if (live[g]) continue;
@@ -4229,8 +4231,13 @@ const Emitter = struct {
             const words: []u32 = @constCast(slot.plan.dropped);
             if (i / 32 >= words.len) continue;
             words[i / 32] |= @as(u32, 1) << @intCast(i % 32);
-            slot.met = try Rename.collectGlobals(e.scratch, &slot.lowered.?.ir, &slot.plan);
+            touched[at.at] = true;
         }
+        // The names each module still mentions, once per module that lost a
+        // declaration.
+        for (todo, touched) |i, t| if (t) {
+            slots[i].met = try Rename.collectGlobals(e.scratch, &slots[i].lowered.?.ir, &slots[i].plan);
+        };
     }
 
     /// `pruneOptimised`'s walk of one statement as the printer writes it:

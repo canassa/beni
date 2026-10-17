@@ -40,7 +40,7 @@ build_test.test.--release writes a map only when asked, and asking changes no by
 build_test.test.--release writes a map only when asked, and asking changes no byte of the code #1 dcba63314bb5370e2c9f823dc119c00e57a0f8e3ffb2b3aa1e7d64c680d9b4f2
 build_test.test.Debug.todo compiles as anything and crashes with its message when reached #0 717b1f9a140435dd30fc71f5a2a91aa3f772e7c40a1025c5d54d9945777f88ff
 build_test.test.a --core-root core without a core-private List value the emitter calls is refused where a module needs it #0 696cde132e411ca93a74b4a7fe267bf54ab09eb5ac70f8861411f4f7f2221d2f
-build_test.test.a --library --release build keeps every core/Schema value it exports, even one called once #0 bcecf59ec81f7b42e2618fad06a57ea665f22203fc53f0a9586c6ede09feea6a
+build_test.test.a --library --release build keeps every core/Schema value it exports, even one called once #0 0558267948c2089779f005f85f2f9a83dd1b7c33629df306d8141f0e477df072
 build_test.test.a Debug call that reachability drops does not refuse the release build #0 01120bf841884cc7a9ce51eb80a6548036145c0c020bb39e6e00ccb51fd85f53
 build_test.test.a build with cross-module evidence is byte-identical at every --jobs #0 1f68093000c0fa215f3cf86cf213045c2c5e1f6803a34ab17ceb081c64b9a532
 build_test.test.a build with cross-module evidence is byte-identical at every --jobs #1 daf37a1fa19ec2fdcbb3d87937ddb72eb308d948166d1bd200fd0daf9a32bc1a
@@ -61,7 +61,7 @@ build_test.test.a rebuild into the same --out holds exactly a fresh build's file
 build_test.test.a release application is one file with no import or export; --library keeps every module and export #0 fdd5fb9449ff39a947ee2d3af3524a13715d475ce116a9e170eccf0bc3d2a807
 build_test.test.a release build compacts hand-written JavaScript and cuts it to what the program imports #0 889b26f427a15a8fb7f1aad8feb1d8d5580a6985ee808e60aa1b96cca73bfd39
 build_test.test.a saturated n-ary call emits a direct JavaScript call #0 2f6b2f02a23133274475ad6bacc645c9394b527014686e73aa24a056382eef5a
-build_test.test.a schema program's issues get short fields and integer tags under --release #0 1a2d28a48cfe65dfb7689253078d32ed788f218d994f6064917986c7819be63a
+build_test.test.a schema program's issues get short fields and integer tags under --release #0 3f4bfe12138980f51863ba7528dcbb6d44ce364b5ae3b937a99409ac1215cfb1
 build_test.test.a sibling export that is also an object key keeps its name and is aliased in a release application #0 1bd9d5013ea7fd832c7784f2f5d4694f3e6cbce4ee535a10443f0e7eb2285774
 build_test.test.a sibling may import a package, because the copy does not touch a bare specifier #0 79b813819cd2632c507eadd8f3d6abb1e8eea0b73c804ecfdb6fce1250c36c01
 build_test.test.a sibling that must keep its module and does something when evaluated keeps the multi-file layout #0 eaa80b883a6b94787eb313402473762f02e1aa928bc6368d907b2ea811a8e675
@@ -77,7 +77,7 @@ build_test.test.core List's loops read and write their arrays in place #0 ac690c
 build_test.test.every emitted file is .mjs, the hand-written ones included #0 66c1155bb161dd759c0a4cf040aa99612b67215103f9184ab071a9a8f1ba1ef4
 build_test.test.modules import each other through ESM, and the program runs #0 dc7592e35332fa28d85de59e679641a16dc231531459584a8ef745771186de59
 build_test.test.names several emit workers invent for one type agree, and the build is byte-identical at every --jobs #0 4b6e4be2b17a2073ad109b9ab8dd51297adfbafeeffe7ee82f8b8e0c811af282
-build_test.test.names several emit workers invent for one type agree, and the build is byte-identical at every --jobs #1 a9d36c39170a7a2c6af166b9287141943e5f936d3a34af770fbb448bbfaf1cb2
+build_test.test.names several emit workers invent for one type agree, and the build is byte-identical at every --jobs #1 117ed2e291b6b15fb49110257e989e7880e0b2d70a7d434f9e02d470e0de5f8f
 cache_test.test.a cache hit installs the published derived contexts and runs no fixpoint #0 080f4865249b5953a840ccc2ef9fde6d6908791fe3193c6a74c8941047e70a4a
 cache_test.test.a cached nullary method is rewritten to a call while record fields stay reads #0 006647c8d4d2a6faaf0b053f031a5c1692379935d5a2e32f8828b0a389659735
 cache_test.test.a constrained function constant rewritten as a block keeps its importer's cached calling convention #0 2bb3ea3e47d018ec58b1aed8794cdb0b5171984380823b5a74ded129742c9114
