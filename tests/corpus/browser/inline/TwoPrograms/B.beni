@@ -1,0 +1,16 @@
+-- A second program whose subscription's start is `A`'s lambda: lifted in
+-- `A` for this program, though `A`'s own program writes it in place.
+import A
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Tea
+
+
+pub program : Tea.Program
+program =
+    Tea.element
+        { init = λ⊤ → ( 0, Cmd.none )
+        , update = A.update
+        , view = λn → <p>{"B: ${String.fromInt n}"}</p>
+        , subscriptions = λ_ → A.subs
+        }

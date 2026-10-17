@@ -1,0 +1,46 @@
+-- The subscription both programs declare: its start is a lambda of this
+-- module, written in place for `A.program` and lifted for `B.program`.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Listen
+import Pushes
+import Schema exposing (Value)
+import Sub exposing (Sub)
+import Tea
+
+
+pub type Msg
+    = Pushed Value
+    | Other
+
+
+type Key
+    = Push
+
+
+pub subs : Sub Msg
+subs = Sub.on Push (Listen.on "window" "rr-push" Pushes.detail _) Pushed
+
+
+pub update : Msg, Int → Int × Cmd Msg
+update msg n =
+    case msg of
+        Pushed _ →
+            ( n + 1, Cmd.none )
+
+        Other →
+            ( n, Cmd.none )
+
+
+pub first : Bool
+first = False
+
+
+pub program : Tea.Program
+program =
+    Tea.element
+        { init = λ⊤ → ( 0, Cmd.none )
+        , update = update
+        , view = λn → <p>{"A: ${String.fromInt n}"}</p>
+        , subscriptions = λ_ → subs
+        }

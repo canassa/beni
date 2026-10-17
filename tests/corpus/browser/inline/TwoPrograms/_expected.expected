@@ -1,0 +1,11 @@
+-- load
+<body>
+  <p>"B: 0"</p>
+</body>
+-- listeners window
+(listeners: 1)
+(the DOM did not change)
+-- detail window rr-push 1
+<body>
+  <p>"B: 1"</p>
+</body>
