@@ -1,0 +1,73 @@
+-- A `case` fused across a call (`backend.md` §9, *Slice 9 across a call*)
+-- whose function returns a declared constructor, `Dot`: its tag is read
+-- from the declared object while copies are made into the same module.
+-- Both builds take the `Dot` arm; release once read the tag from a buffer
+-- the copy had moved and took `default`, printing `pbox: 0`.
+import Debug
+import Io
+import Node exposing (Program)
+
+
+type Shape
+    = Dot
+    | Line Int
+    | Box Int Int
+
+
+shape : Int → Shape
+shape n =
+    _ = Debug.log "shape" n
+    Io.sleep 1
+    m = n * 3
+    if m < 10 then
+        Dot
+    else if m < 100 then
+        Line m
+    else
+        Box m n
+
+
+area : Int → Int
+area n =
+    case shape n of
+        Dot →
+            Debug.log "dot" 0
+
+        Line k →
+            Debug.log "line" k
+
+        Box a b →
+            Debug.log "box" (a * b)
+
+
+pure : Int → Shape
+pure n =
+    k = Debug.log "pure" (n + 1)
+    if k < 10 then
+        Dot
+    else if k < 100 then
+        Line k
+    else
+        Box k n
+
+
+pareaOf : Int → Int
+pareaOf n =
+    case pure n of
+        Dot →
+            Debug.log "pdot" 0
+
+        Line k →
+            Debug.log "pline" k
+
+        Box a b →
+            Debug.log "pbox" (a * b)
+
+
+main : Program
+main = Io.run λ⊤ →
+    a = area 2
+    b = area 20
+    c = area 200
+    Node.printLines
+        [ String.fromInt (a + b + c), String.fromInt (pareaOf 3 + pareaOf 50 + pareaOf 300) ]
