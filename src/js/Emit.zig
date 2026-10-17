@@ -82,6 +82,7 @@ const Lower = @import("Lower.zig");
 const Dispatch = @import("../check/Dispatch.zig");
 const Convention = @import("../check/Convention.zig");
 const JsIr = @import("JsIr.zig");
+const Join = @import("Join.zig");
 const Opt = @import("Opt.zig");
 const Print = @import("Print.zig");
 const SourceMap = @import("SourceMap.zig");
@@ -4411,13 +4412,19 @@ const Emitter = struct {
             }
             if (!e.options.release) {
                 const names: Print.Names = .fromOverlay(&slot.overlay);
-                var marks: SourceMap.Marks = .init(scratch);
                 const mapped = slot.map_file.len != 0;
-                slot.text = try Print.print(e.gpa, scratch, &lowered.ir, names, .{
-                    .unobserved = lowered.unobserved,
-                    .marks = if (mapped) &marks else null,
-                    .footer = slot.map_footer,
-                });
+                // The module is printed in its pieces — the head, the units
+                // the walk kept, the tail — and joined (`backend.md` §9, *The
+                // join*): one walk's bytes, one `SourceMap.write`.
+                var context = try Print.Context.init(scratch, &lowered.ir, names, lowered.unobserved, mapped);
+                var pieces: std.ArrayList(Join.Piece) = .empty;
+                try pieces.ensureTotalCapacity(scratch, lowered.units.len + 2);
+                pieces.appendAssumeCapacity(try context.printRange(0, lowered.head_len));
+                for (lowered.units) |unit| pieces.appendAssumeCapacity(try context.printRange(unit.start, unit.end));
+                const body = context.bodyLen();
+                pieces.appendAssumeCapacity(try context.printRange(body - lowered.tail_len, body));
+                const joined = try Join.join(e.gpa, scratch, pieces.items, slot.map_footer);
+                slot.text = joined.text;
                 // §11: the map, from the bytes just printed and the marks
                 // the printer recorded on the way.
                 if (mapped) {
@@ -4428,8 +4435,8 @@ const Emitter = struct {
                         .source = store.bytes(file),
                         .line_starts = store.lineStarts(file),
                         .generated = slot.text.?,
-                        .mappings = marks.list.items,
-                        .names = marks.names.items,
+                        .mappings = joined.mappings,
+                        .names = context.names_out.items,
                         .name_text = names.forMap(),
                     });
                 }

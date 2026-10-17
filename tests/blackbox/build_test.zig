@@ -4993,6 +4993,82 @@ test "a declaration's compiler-made names do not depend on which declarations be
     try testing.expect(std.mem.indexOf(u8, second_one, "$p$1") != null);
 }
 
+test "a dropped declaration leaves the module's bytes exactly as a build that never wrote it" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // `backend.md` §9, *The embedded modules' printed text, in the pack*:
+    // a module's bytes are its survivor set's statements in the module's
+    // order — one concatenation of runs the lowering made, with no
+    // separator owned by a neighbour. A declaration the walk drops must
+    // leave no trace: no blank line, no renumbered tag, no moved import.
+    // `dies` keeps `gone` between two declarations `main` reaches and
+    // `plain` never writes it; the two `Main.mjs` files are one file.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("dies/Main.beni",
+        \\import Node exposing (Program)
+        \\
+        \\
+        \\first : Int × Int → Int
+        \\first ( a, b ) =
+        \\    a + b
+        \\
+        \\
+        \\gone : Int → Int
+        \\gone n =
+        \\    n * 1000
+        \\
+        \\
+        \\second : Int × Int → Int
+        \\second ( c, d ) =
+        \\    c * d
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.print (String.fromInt (first ( 1, 2 ) + second ( 3, 4 )))
+        \\
+    );
+    try w.write("plain/Main.beni",
+        \\import Node exposing (Program)
+        \\
+        \\
+        \\first : Int × Int → Int
+        \\first ( a, b ) =
+        \\    a + b
+        \\
+        \\
+        \\second : Int × Int → Int
+        \\second ( c, d ) =
+        \\    c * d
+        \\
+        \\
+        \\main : Program
+        \\main =
+        \\    Node.print (String.fromInt (first ( 1, 2 ) + second ( 3, 4 )))
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    try expectBuilt(try w.run(&.{ "build", "--platform=node", "--no-source-maps", "--root=dies", "--out=dies-out", "dies/Main.beni" }));
+    try expectBuilt(try w.run(&.{ "build", "--platform=node", "--no-source-maps", "--root=plain", "--out=plain-out", "plain/Main.beni" }));
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    const dies = try w.read("dies-out/Main.mjs");
+    const plain = try w.read("plain-out/Main.mjs");
+    // Dropped by name, its neighbours there with their tags, and the whole
+    // file — head, order, every byte — the file of a build that never
+    // wrote it.
+    try testing.expect(std.mem.indexOf(u8, dies, "gone") == null);
+    try testing.expect(std.mem.indexOf(u8, dies, "$p$1") != null);
+    try testing.expectEqualStrings(plain, dies);
+}
+
 /// The top-level statement of `text` that starts with `head`: its first
 /// line and every line after it that is indented or closes it.
 fn statementOf(text: []const u8, head: []const u8) ![]const u8 {

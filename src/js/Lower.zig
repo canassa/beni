@@ -132,6 +132,16 @@ pub const Result = struct {
     /// (`Lowerer.findRefs`), in the caller's scratch arena: the release
     /// optimiser folds no read of one, since a write elsewhere may move it.
     mutable: []const JsIr.NameIndex = &.{},
+    /// The module's head: `ir.body[0..head_len]` are its `import`
+    /// statements, which the join rebuilds rather than stores (`Unit`).
+    head_len: u32 = 0,
+    /// The module's tail: `ir.body[len-tail_len..]` is the `export`
+    /// statement, when the module has one, which the join rebuilds too.
+    tail_len: u32 = 0,
+    /// The module's units, in assembly order: their ranges cover
+    /// `ir.body[head_len..len-tail_len]` in order, with no gaps (`Unit`,
+    /// `backend.md` §9). In the caller's scratch arena.
+    units: []const Unit = &.{},
 
     pub fn deinit(r: *Result, gpa: Allocator) void {
         r.ir.deinit(gpa);
@@ -139,6 +149,20 @@ pub const Result = struct {
         gpa.free(r.diagnostics);
         r.* = undefined;
     }
+};
+
+/// One unit of assembly (`backend.md` §9, *The embedded modules' printed
+/// text, in the pack*): a run of `ir.body` statements that lowering made in
+/// one piece, which the join (`Join.join`) splices as one piece of text.
+///
+/// What a build's reachability kept is a set of units: `emissionOrder` leaves
+/// a dropped declaration's out of the body altogether, so the surviving units
+/// are already the build's own, in the module's order.
+pub const Unit = struct {
+    /// The run's first statement, an index into `ir.body`.
+    start: u32,
+    /// One past its last statement. A unit is never empty.
+    end: u32,
 };
 
 /// Re-exported so a caller can name `Dispatch.empty` without reaching past
@@ -603,9 +627,11 @@ pub fn lower(
     try l.beginMarkup();
     try l.markPieceDecls();
     var declarations: std.ArrayList(Node.Index) = .empty;
-    try l.declarations(&declarations);
+    var decl_units: std.ArrayList(Unit) = .empty;
+    try l.declarations(&declarations, &decl_units);
     try l.viewPieces();
-    try l.exports(&declarations);
+    var tail: std.ArrayList(Node.Index) = .empty;
+    try l.exports(&tail);
     // §9's derived functions and §9.1's primitive comparators, one pass
     // sorted by printed name text (§8.5), in front of the declarations
     // rather than behind them: a module-level constant whose initialiser is
@@ -621,14 +647,37 @@ pub fn lower(
     // all of them (`backend.md` §4, *A nullary constructor is one object*).
     const nullary = try l.nullaryDecls();
 
+    // The body is assembled one unit at a time (`Unit`): every class below
+    // is appended as the runs it was built in — each nullary constant,
+    // hoisted statement and synthesised value its own, each declaration its
+    // own part — and the ranges cover the whole body between the head and
+    // the tail, in order, with no gaps.
     var body: std.ArrayList(Node.Index) = .empty;
+    var units: std.ArrayList(Unit) = .empty;
+    const head_len: u32 = @intCast(import_statements.len);
     try body.appendSlice(scratch, import_statements);
-    try body.appendSlice(scratch, nullary);
+    for (nullary) |stmt| {
+        const at: u32 = @intCast(body.items.len);
+        try body.append(scratch, stmt);
+        try units.append(scratch, .{ .start = at, .end = @intCast(body.items.len) });
+    }
     // What the markup lowering hoisted: after the imports, before the first
     // declaration, in hoist order (`backend.md` §15.1).
-    if (l.mk) |st| try body.appendSlice(scratch, st.hoisted.items);
-    try body.appendSlice(scratch, synthesised);
+    if (l.mk) |st| for (st.hoisted.items) |stmt| {
+        const at: u32 = @intCast(body.items.len);
+        try body.append(scratch, stmt);
+        try units.append(scratch, .{ .start = at, .end = @intCast(body.items.len) });
+    };
+    for (synthesised) |stmt| {
+        const at: u32 = @intCast(body.items.len);
+        try body.append(scratch, stmt);
+        try units.append(scratch, .{ .start = at, .end = @intCast(body.items.len) });
+    }
+    const decl_base: u32 = @intCast(body.items.len);
     try body.appendSlice(scratch, declarations.items);
+    for (decl_units.items) |unit| try units.append(scratch, .{ .start = decl_base + unit.start, .end = decl_base + unit.end });
+    const tail_len: u32 = @intCast(tail.items.len);
+    try body.appendSlice(scratch, tail.items);
 
     const range = try b.addRange(body.items);
     const ir = try b.toOwned(range);
@@ -645,6 +694,9 @@ pub fn lower(
         .pure_discards = l.pure_discards.items,
         .unobserved = l.unobserved_arrows.items,
         .mutable = l.mutable_names.items,
+        .head_len = head_len,
+        .tail_len = tail_len,
+        .units = units.items,
     };
 }
 
@@ -1841,7 +1893,7 @@ pub const Lowerer = struct {
 
     // ---- Module structure -------------------------------------------------
 
-    fn declarations(l: *Lowerer, out: *StmtList) !void {
+    fn declarations(l: *Lowerer, out: *StmtList, units: *std.ArrayList(Unit)) !void {
         const order = try l.emissionOrder();
         // Every declaration is lowered where it stands, a function called
         // from one place (`findInlines`) too: whether its call takes it in
@@ -1851,7 +1903,7 @@ pub const Lowerer = struct {
         // takes nothing in has. Its statements are left out afterwards when
         // a call did take it in; what they referenced, the body written in
         // place references too.
-        const parts = try l.scratch.alloc([]const Node.Index, order.len);
+        const parts = try l.scratch.alloc(Part, order.len);
         for (order, parts) |index, *part| part.* = try l.declarationPart(index);
         // A declaration the program hook consumed that its code names after
         // all (`wanted`) is lowered now, in its place — and what it names in
@@ -1868,7 +1920,29 @@ pub const Lowerer = struct {
         }
         for (order, parts) |index, part| {
             if (index < l.inlined.len and l.inlined[index] and !l.name_used[index]) continue;
-            try out.appendSlice(l.scratch, part);
+            const at: u32 = @intCast(out.items.len);
+            try out.appendSlice(l.scratch, part.items);
+            if (part.items.len == 0) continue;
+            const end: u32 = @intCast(out.items.len);
+            // A declaration's statements are several units where the
+            // lowering drew a boundary: its direct body, its `$s` twin
+            // (`transparent-effects-proposal.md` §16.2), one able to
+            // survive without the other, and each piece a program site may
+            // leave or take (`browser-inline.md` §7), one statement each.
+            // `twin_at` and `lift_at` are offsets into the part; here the
+            // part sits at `at`.
+            var cursor = at;
+            if (part.twin_at) |split| {
+                const twin_at = at + split;
+                if (twin_at > cursor) try units.append(l.scratch, .{ .start = cursor, .end = twin_at });
+                cursor = twin_at;
+            }
+            if (part.lift_at) |split| {
+                const lift_at = at + split;
+                if (lift_at > cursor) try units.append(l.scratch, .{ .start = cursor, .end = lift_at });
+                var start = lift_at;
+                while (start < end) : (start += 1) try units.append(l.scratch, .{ .start = start, .end = start + 1 });
+            } else if (end > cursor) try units.append(l.scratch, .{ .start = cursor, .end = end });
         }
     }
 
@@ -1923,16 +1997,34 @@ pub const Lowerer = struct {
         try l.constDecl(out, n, try l.arrowOf(params, stmts.items, p), p);
     }
 
+    /// One declaration's statements: what `declaration` appended for it, and
+    /// where its twin and its lifted pieces begin, when it wrote any.
+    const Part = struct {
+        items: []const Node.Index,
+        /// The number of statements before the twin body (`$s`), for
+        /// `declarations`' units; null when there is no twin, and for a
+        /// schema, whose parts are its own.
+        twin_at: ?u32 = null,
+        /// The number of statements before the first lifted piece, null when
+        /// the declaration lifted none: `liftPiece` appends exactly one
+        /// statement per surviving piece (`browser-inline.md` §7), each a
+        /// unit of its own.
+        lift_at: ?u32 = null,
+    };
+
     /// One declaration's statements, measured against the nesting budget.
-    fn declarationPart(l: *Lowerer, index: u32) ![]const Node.Index {
+    fn declarationPart(l: *Lowerer, index: u32) !Part {
         var part: StmtList = .empty;
         const nodes = l.b.nodes.len;
-        try l.declaration(&part, index);
+        var twin_at: ?u32 = null;
+        try l.declaration(&part, index, &twin_at);
+        var lift_at: ?u32 = null;
+        if (l.livePiece(index)) lift_at = @intCast(part.items.len);
         try l.liftPieces(&part, index);
         // Fewer nodes than this cannot be over either budget, and
         // measuring is a walk of every node: most declarations skip it.
         if (index < l.bir.decls.len and l.b.nodes.len - nodes >= JsIr.nesting.could_exceed) try l.refuseTooDeep(part.items, index);
-        return part.items;
+        return .{ .items = part.items, .twin_at = twin_at, .lift_at = lift_at };
     }
 
     /// The one nesting `Lower` cannot take out (`backend.md` §4, *Emitted
@@ -2016,12 +2108,19 @@ pub const Lowerer = struct {
         // rather than by the input (`bench --wide` builds exactly that).
         var stack: std.ArrayList(Frame) = .empty;
         for (0..count) |root| {
-            // §5: the outer loop is restricted to the survivors, and it can
-            // reach nothing else — every edge it walks (a `top_value` ref,
-            // a site's `top` target, a `top` inside one's evidence) is also
-            // a §9 reachability edge, so the survivors come out in the same
-            // relative order they have today and the temporal dead zone
-            // stays closed. `requireLive` is the proof, not this loop.
+            // §5: the outer loop is restricted to the survivors, and from
+            // a survivor it can reach nothing else — every edge it walks (a
+            // `top_value` ref, a site's `top` target, a `top` inside one's
+            // evidence) is also a §9 reachability edge, so the temporal
+            // dead zone stays closed. This walk's order is NOT what a walk
+            // over every root filtered to survivors gives: a dropped
+            // declaration's subtree can visit a survivor the surviving walk
+            // reaches later (the emit cache's `DceSurvivorOrder` fixture,
+            // `backend.md` §9, *The embedded modules' printed text, in the
+            // pack*, and its amendment). Replaying this order means
+            // replaying THIS walk from stored edges — filtering one
+            // canonical sequence gives different bytes. `requireLive` is
+            // the proof, not this loop.
             if (root >= decls) {
                 if (!l.liveSchemaAny(@intCast(root))) continue;
             } else if (!l.liveDecl(@intCast(root)) and !l.liveTwin(@intCast(root)) and !l.livePiece(@intCast(root)) and !(l.bir.decls[root].kind == .schema and l.liveSchemaAny(@intCast(root)))) continue;
@@ -2156,7 +2255,7 @@ pub const Lowerer = struct {
         }
     }
 
-    fn declaration(l: *Lowerer, out: *StmtList, index: u32) !void {
+    fn declaration(l: *Lowerer, out: *StmtList, index: u32, twin_at: *?u32) !void {
         // A derived codec (`schema.md` §12.10): a virtual declaration.
         if (index >= l.bir.decls.len) return SchemaLower.declaration(l, out, index);
         const d = l.bir.decls[index];
@@ -2186,7 +2285,10 @@ pub const Lowerer = struct {
         // effects-proposal.md §16.2) — its suspendable one, each when it
         // survived elimination.
         if (l.liveDecl(index)) try l.declarationAs(out, index, .direct);
-        if (l.in.dispatch.effectDecl(index).twin and l.liveTwin(index)) try l.declarationAs(out, index, .twin);
+        if (l.in.dispatch.effectDecl(index).twin and l.liveTwin(index)) {
+            twin_at.* = @intCast(out.items.len);
+            try l.declarationAs(out, index, .twin);
+        }
     }
 
     fn declarationAs(l: *Lowerer, out: *StmtList, index: u32, variant: Variant) !void {

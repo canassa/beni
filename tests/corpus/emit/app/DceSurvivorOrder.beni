@@ -1,0 +1,33 @@
+-- emit/app: `emissionOrder` is the SURVIVING walk's order, not a canonical
+-- full walk filtered afterwards (`docs/design/backend.md` §9, the join's
+-- second step).
+--
+-- `dead` is dropped — nothing reaches it — and it stands FIRST, calling
+-- `zed`. A walk over every root would visit `zed` inside `dead`'s subtree,
+-- before `later`; filtering `dead` out afterwards would keep `zed` in that
+-- early place. The walk a build actually takes starts at surviving roots
+-- only, so `zed` is first reached where `main` names it — after `later` —
+-- and this golden is that order: `later`, `zed`, `dead` gone.
+--
+-- The emit cache rests on this (`backend.md` §9, *The embedded modules'
+-- printed text, in the pack*): a unit is spliced by position, so a row that
+-- replayed one canonical order filtered per build would put `zed` before
+-- `later` where the build lowers the other way around.
+import Node exposing (Program)
+import String
+
+
+dead : Int → Int
+dead n = zed (n + 1)
+
+
+later : Int → Int
+later n = n * 10
+
+
+zed : Int → Int
+zed n = n * 3
+
+
+main : Program
+main = Node.print (String.fromInt (later 1 + zed 2))
