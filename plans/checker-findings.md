@@ -6083,3 +6083,24 @@ writes its supply, not one that keeps it in its result. `kParam f xs = t = f xs;
 at the call, a borrowed supply of a parameter the callee writes rejects an actual
 that may keep it; in the callee, a callback's result holds what it was handed for
 a later write of a list made there.
+
+## CK-249 — a chain of more than four callbacks dropped a demand or an alias (2026-10-16)
+
+Ownership soundness, issue #271. Past `inst_depth` = 4 the walk stopped
+silently. A callee that writes what its fifth callback returns lost the
+call-site demand on the argument the chain returns (`callbackLoanDemands`,
+`returnedParamDemands`), and one that returns it gave a `⊤` with no alias of
+that argument (`instProv`), so `( List.push xs 1, chain5 id id id id id xs )`
+was accepted. `tests/corpus/ownership/CallbackChain.beni`.
+
+**CK-249 fixed 2026-10-16** (#271; ownership-checker.md §16.7): the
+`callbacks` limit, an error at the declaration, with `⊤limit` as the result.
+
+## CK-250 — a writing evidence function nested deeper than 8 terms went unreported (2026-10-16)
+
+Ownership soundness, issue #271. `evidenceTerm` stopped 8 terms deep, so a
+writing `compare` passed inside the evidence of `List.sort` on lists nested
+ten levels deep got no pending line. `tests/corpus/ownership/EvidenceDeep.beni`.
+
+**CK-250 fixed 2026-10-16** (#271; ownership-checker.md §16.7, the audit
+table): every evidence term is walked, each once, with no cap.
