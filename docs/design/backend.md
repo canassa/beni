@@ -891,6 +891,25 @@ it is read afterwards (thesis P7, *Why write sets provide it*).
 array, edited. The *Identity* bullets about a fresh array "on any other platform" are
 withdrawn.
 
+*Amended 2026-10-17 (the owner; `ownership-checker.md` §31; specified, not built):* **records are
+written in place on every platform too.** A record update consumes its base (`language.md` §6.3, amended).
+The paragraph above that keeps a record's identity as "unchanged" until C4 lands is withdrawn: C4 is
+superseded by `ownership-checker.md` §31. The table's *record* row keeps its literal, and a record update is
+no longer the spread `({ ...r, a: x })`:
+
+- **Lowering** (`ownership-checker.md` §31.10): the base into a temporary `b`, each new value into a
+  temporary in written order, then `b.a = t₁; …`, and the update's value is `b`. Every value is evaluated
+  before any field is written. A store keeps the object's hidden class, and under `--release` it uses the
+  field's short name (§9, *Item 4, taken up*).
+- **No choice is made at a site.** A module reaches lowering only when the ownership pass accepted every
+  demand in it, so every record update is lowered in place. There is no spread path to fall back to.
+- **A barrier.** A record update is a barrier to §9's optimiser, as a list demand is (*`--release`*, above).
+  No read of a written field, or of anything that may alias the base, is moved across it. No single-use
+  binding of such a read is inlined past it. It is never dropped as unused.
+- **Invariant 8 for records.** No runtime concludes "unchanged" from the identity of a value that may hold a
+  record (§15.5, amended the same day). A runtime may keep such a value, but it never reads it expecting the
+  contents it had.
+
 #### The representation: E1t
 
 *Superseded 2026-10-15 by *The representation: a plain array* (above), once S7 lands; kept as the record.*
@@ -9462,6 +9481,21 @@ test listed below either goes or is emitted only for a value that is not a list:
   amended the same day). A group whose read paths include one whose value is a list runs on every
   render of its root. A `let` such as `shown = top model.items` is one of these groups.
 
+*Amended 2026-10-17 (the owner; `ownership-checker.md` §31.11; specified, not built):* records are
+written in place on every platform, so the paragraph that follows holds only for values whose type holds no
+record and no list. Every identity test above also goes for a value whose type may hold a record, on
+`browser` and `browser-tea`:
+
+- a row's item test, when the item is a record;
+- `forKeyed`'s reuse of a row's key when its item is `===` the last one (a written record may have a new
+  key);
+- row inputs, component props, a `Show`'s value and its body's inputs;
+- holes;
+- a root's value groups whose read paths reach a record.
+
+`Rt.patch`'s `b === i.b` stays only for a block that holds no record. The cost is measured on research 29's
+harness, and it is recorded, not a bar: the target is `browser-inline`, whose groups follow write sets.
+
 The identity of a record, a tuple, a constructor, a closure, a markup block or a scalar still
 means "unchanged", and `Rt.patch`'s `b === i.b` stays. §4, *Every platform edits in place*, says
 why only a value that is itself a list loses it. A block that is `===` the last one was not
@@ -9649,7 +9683,9 @@ because an untouched value is the same object, and a row's inputs are worth comp
 development build and again under `--release`, where an optimiser would break it (W27):
 
 - **Shape**: `emit/` and `emit/release/` goldens of a record update, showing the spread
-  `({ ...r, a: x })` in both builds.
+  `({ ...r, a: x })` in both builds. *Amended 2026-10-17 (`ownership-checker.md` §31.10):* once records are
+  written in place, the goldens show the stores into the base instead, `b.a = t`. They still show that no
+  untouched field is rebuilt.
 - **Behaviour**: a test platform in the corpus, layered on `node`, declares `foreign refEq : a, a ->
   Bool` — a platform may, and only a platform may (rule 6) — so a `run/` fixture can assert
   `refEq model.rows (update (Select 3) model).rows` directly, and fails the moment a pass re-builds an
