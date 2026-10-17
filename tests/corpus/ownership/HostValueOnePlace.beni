@@ -26,3 +26,10 @@ replace state model =
 
         Err _ →
             model
+
+
+-- A caller that writes what `replace` returns while it still reads the
+-- model: `replace` may return the model itself (its `Err` arm), and naming
+-- the host value once keeps that alias, so the push is rejected.
+pub stale : Value, Model → List Item × Model
+stale state model = ( List.push (replace state model).items { id = 0, text = "" }, model )

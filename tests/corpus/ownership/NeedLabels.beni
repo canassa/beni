@@ -1,0 +1,35 @@
+-- ownership (§30.9 rule 11, issue #272): a `need` rejection is exact only
+-- when an exact provenance of what the function returns fails. `edit`
+-- writes what its callback returns. A callback that returns the top-level
+-- `shared` is rejected exactly (`exactShared`); one that may return it
+-- through an approximate entry, the joined arms of `pick`, approximately
+-- (`approxEntry`); and a function the checker cannot place, an element of
+-- a list of functions, approximately, with a sentence that says so
+-- (`approxElement`).
+shared : List Int
+shared = [ 1 ]
+
+
+edit : (⊤ → List Int) → List Int
+edit f = List.push (f ⊤) 1
+
+
+pick : Bool, List Int → List Int
+pick c xs = if c then xs else []
+
+
+pub exactShared : ⊤ → List Int
+exactShared ⊤ = edit λ⊤ → shared
+
+
+pub approxEntry : Bool → List Int
+approxEntry c = edit λ⊤ → pick c shared
+
+
+pub approxElement : List (⊤ → List Int) → List Int
+approxElement fs =
+    case fs of
+        [ f, …_ ] →
+            edit f
+        _ →
+            []

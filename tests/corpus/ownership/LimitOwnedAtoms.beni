@@ -1,0 +1,44 @@
+-- ownership (§16.7's `owned-atoms` limit, issue #272): the owned bits of
+-- a summary rest on at most eight distinct `returns owned` atoms. `hand8`
+-- hands its last callback the results of eight others, each owned only if
+-- that callback returns owned: eight atoms, within the limit. `hand9` needs
+-- nine, so it is the `owned-atoms` limit: one error at the declaration, and
+-- its summary is the pessimistic one.
+hand8 :
+      (⊤ → List Int)
+    , (⊤ → List Int)
+    , (⊤ → List Int)
+    , (⊤ → List Int)
+    , (⊤ → List Int)
+    , (⊤ → List Int)
+    , (⊤ → List Int)
+    , (⊤ → List Int)
+    , (List Int, List Int, List Int, List Int, List Int, List Int, List Int, List Int → List Int)
+    → List Int
+hand8 g0 g1 g2 g3 g4 g5 g6 g7 h = h (g0 ⊤) (g1 ⊤) (g2 ⊤) (g3 ⊤) (g4 ⊤) (g5 ⊤) (g6 ⊤) (g7 ⊤)
+
+
+hand9 :
+      (⊤ → List Int)
+    , (⊤ → List Int)
+    , (⊤ → List Int)
+    , (⊤ → List Int)
+    , (⊤ → List Int)
+    , (⊤ → List Int)
+    , (⊤ → List Int)
+    , (⊤ → List Int)
+    , (⊤ → List Int)
+    , (List Int
+       , List Int
+       , List Int
+       , List Int
+       , List Int
+       , List Int
+       , List Int
+       , List Int
+       , List Int
+       → List Int
+      )
+    → List Int
+hand9 g0 g1 g2 g3 g4 g5 g6 g7 g8 h =
+    h (g0 ⊤) (g1 ⊤) (g2 ⊤) (g3 ⊤) (g4 ⊤) (g5 ⊤) (g6 ⊤) (g7 ⊤) (g8 ⊤)
