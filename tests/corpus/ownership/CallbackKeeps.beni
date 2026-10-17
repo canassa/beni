@@ -75,3 +75,60 @@ wrapKeep ⊤ = wrap λys → ( ys, 1 )
 
 pub wrapDrop : ⊤ → (List Int × Int) × List Int
 wrapDrop ⊤ = wrap λ_ → ( [], 1 )
+
+
+-- The list is changed by a second callback (`keepThenHand`): rejected
+-- `supply` where the first callback keeps it, accepted where it drops it.
+-- The callee returns the list it made beside the kept result
+-- (`makeKeepReturn`): the supply keeps the list's fresh number, so the
+-- caller that pushes onto the returned list while it holds the kept result
+-- is rejected, and one that drops the kept result is not.
+keepThenHand :
+      (List Int → List Int × Int)
+    , (List Int → List Int)
+    , List Int
+    → (List Int × Int) × List Int
+keepThenHand f g xs =
+    t = f xs
+    ( t, g xs )
+
+
+makeKeepReturn : (List Int → List Int × Int) → (List Int × Int) × List Int
+makeKeepReturn f =
+    xs = [ 1 ]
+    t = f xs
+    ( t, xs )
+
+
+pub handKeep : ⊤ → (List Int × Int) × List Int
+handKeep ⊤ = keepThenHand (λys → ( ys, 1 )) (λys → List.push ys 9) []
+
+
+pub handDrop : ⊤ → (List Int × Int) × List Int
+handDrop ⊤ = keepThenHand (λ_ → ( [], 1 )) (λys → List.push ys 9) []
+
+
+pub returnKeep : ⊤ → (List Int × Int) × List Int
+returnKeep ⊤ =
+    ( kept, xs ) = makeKeepReturn λys → ( ys, 1 )
+    ( kept, List.push xs 9 )
+
+
+pub returnDrop : ⊤ → List Int
+returnDrop ⊤ =
+    ( _, xs ) = makeKeepReturn λys → ( ys, 1 )
+    List.push xs 9
+
+
+-- A callee that writes `xs` before handing it on and only reads it after
+-- is refused too (`writeFirst`): the summary says that `xs` is used after
+-- the call, not that the write is that use. A known over-rejection.
+kBefore : (List Int → List Int × Int), List Int → (List Int × Int) × List Int
+kBefore f xs =
+    ys = List.push xs 9
+    t = f ys
+    ( t, ys )
+
+
+pub writeFirst : ⊤ → (List Int × Int) × List Int
+writeFirst ⊤ = kBefore (λys → ( ys, 1 )) []
