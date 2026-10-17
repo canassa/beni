@@ -58,6 +58,10 @@ const TypeId = TypeStore.TypeId;
 const Ownership = @This();
 
 pub const none: u32 = std.math.maxInt(u32);
+/// An entry's derivation (`Entry.approx`) when no call put it there: a place
+/// that stands for more than one: a level of a recursive value, which
+/// folding merged with the levels below it (§16.7).
+pub const approx_place: u32 = std.math.maxInt(u32);
 
 /// k: the path cut (§4.1, thesis §3.1).
 pub const k_limit: u32 = 8;
@@ -588,6 +592,10 @@ keep: std.heap.ArenaAllocator,
 paths: Paths,
 /// Per `TypeId`, a column: null until computed.
 nominal: []?NominalFacts = &.{},
+/// The types whose `nominalFacts` are being computed, outermost first, and
+/// the lowest index of one of them a computation read while in progress.
+nominal_stack: std.ArrayList(u32) = .empty,
+nominal_low: usize = std.math.maxInt(usize),
 /// §30.9: the nominal types whose bodies `ownMayHold` is reading.
 holding: std.ArrayList(TypeId) = .empty,
 ctor_ids: std.AutoHashMapUnmanaged(u64, u32) = .empty,
@@ -619,6 +627,10 @@ step_ctor: std.ArrayList([2]u32) = .empty,
 schema_ctor_bases: []?[]const u32 = &.{},
 /// Per type `(module, declaration)`: whether it is recursive.
 recursive_types: std.AutoHashMapUnmanaged(u64, bool) = .empty,
+/// Per constructor step argument (`step_ctor`'s index): where a value of the
+/// step's own recursive type may sit below it (`levelOf`, §16.7's sound
+/// projection); `.unknown` until asked.
+level_of: std.ArrayList(Level) = .empty,
 /// Memos of path arithmetic, which the walk repeats (§18.11).
 concat_memo: std.AutoHashMapUnmanaged([2]u32, u32) = .empty,
 /// Per `(module, type variable)`: whether a value of the type may hold a cell.
@@ -665,6 +677,7 @@ pub fn deinit(o: *Ownership) void {
     o.keep.deinit();
     o.paths.deinit(o.in.gpa);
     o.in.gpa.free(o.nominal);
+    o.nominal_stack.deinit(o.in.gpa);
     o.holding.deinit(o.in.gpa);
     o.ctor_ids.deinit(o.in.gpa);
     o.ctor_type.deinit(o.in.gpa);
@@ -673,6 +686,7 @@ pub fn deinit(o: *Ownership) void {
     o.step_ctor.deinit(o.in.gpa);
     o.in.gpa.free(o.schema_ctor_bases);
     o.recursive_types.deinit(o.in.gpa);
+    o.level_of.deinit(o.in.gpa);
     o.concat_memo.deinit(o.in.gpa);
     o.tracked_memo.deinit(o.in.gpa);
     o.names_memo.deinit(o.in.gpa);
@@ -2885,11 +2899,11 @@ fn child(o: *Ownership, parent: u32, kind: StepKind, arg: u32) Allocator.Error!u
     // value of a type the path is already inside goes on from where the
     // path first entered that type, so `t#.3#.3` is `t#.3`'s twin and a
     // summary over a tree stays a few paths wide (§16.7).
-    if (kind == .ctor) if (o.foldAt(parent, arg)) |at| return o.rawChild(at, kind, arg);
+    if (kind == .ctor) if (try o.foldAt(parent, arg)) |at| return o.rawChild(at, kind, arg);
     return o.rawChild(parent, kind, arg);
 }
 
-fn foldAt(o: *Ownership, parent: u32, arg: u32) ?u32 {
+fn foldAt(o: *Ownership, parent: u32, arg: u32) Allocator.Error!?u32 {
     const ty = o.ctorType(o.stepCtor(arg)) orelse return null;
     var chain: [k_limit + 1]u32 = undefined;
     var n: usize = 0;
@@ -2898,16 +2912,24 @@ fn foldAt(o: *Ownership, parent: u32, arg: u32) ?u32 {
         chain[n] = at;
         n += 1;
     }
-    // Root first: `chain[n - 1]` is the first step.
+    // Root first: `chain[n - 1]` is the first step. A level folds onto the
+    // first step into the type since the path last went through a field
+    // that holds the type only through a type parameter (`Dict`'s values):
+    // below that is another value of the type, `Dict String (Dict …)`'s
+    // inner dictionaries, not a level of this one.
+    var first: ?u32 = null;
     var i = n;
     while (i > 0) {
         i -= 1;
         const node = chain[i];
         if (o.paths.kind.items[node] != .ctor) continue;
         const t = o.ctorType(o.stepCtor(o.paths.arg.items[node])) orelse continue;
-        if (t == ty) return o.paths.parent.items[node];
+        if (t != ty) continue;
+        if (try o.typeRecursive(ty) and try o.levelOf(o.paths.arg.items[node]) == .none) {
+            first = null;
+        } else if (first == null) first = node;
     }
-    return null;
+    return if (first) |node| o.paths.parent.items[node] else null;
 }
 
 /// Whether `p` names a representative place (thesis §3.1, §3.11): one that
@@ -3002,6 +3024,95 @@ fn pushHead(o: *Ownership, id: TypeId, out: *std.ArrayList(u64)) Allocator.Error
     if (id == .none or id.int() >= o.in.types.entries.len) return;
     const e = o.in.types.entries[id.int()];
     try out.append(o.in.gpa, (@as(u64, e.module.int()) << 32) | e.decl.int());
+}
+
+/// Where, below a constructor step `#C.i` of a recursive type `T`, a value
+/// of `T` may sit (§16.7, *Amended 2026-10-17: a projection keeps the levels
+/// folding merged*): nowhere, at the field itself (`Node Tree …`'s
+/// `#Node.0`), or somewhere further down (`List Tree`, `Maybe Tree`, a
+/// function's captures, a `foreign type`). A field that holds `T` only
+/// through a type parameter is nowhere: folding does not go through it.
+const Level = enum { unknown, none, here, below };
+
+fn levelOf(o: *Ownership, arg: u32) Allocator.Error!Level {
+    if (arg < o.level_of.items.len and o.level_of.items[arg] != .unknown) return o.level_of.items[arg];
+    const c = o.stepCtor(arg);
+    const field = o.stepField(arg);
+    const l: Level = blk: {
+        const t = o.ctorType(c) orelse break :blk .none;
+        if (!try o.typeRecursive(t)) break :blk .none;
+        const key = o.ctorKey(c);
+        const bir = o.in.birs[key.module];
+        if (key.index >= bir.ctors.len) break :blk .below;
+        const ct = bir.ctors[key.index];
+        const args = bir.extraSlice(.{ .start = ct.args_start, .end = ct.args_end }, Inst.Index);
+        if (field >= args.len) break :blk .below;
+        var seen: std.AutoHashMapUnmanaged(u64, void) = .empty;
+        defer seen.deinit(o.in.gpa);
+        break :blk try o.exprLevel(key.module, bir, args[field], t, &seen);
+    };
+    if (arg >= o.level_of.items.len) try o.level_of.appendNTimes(o.in.gpa, .unknown, arg + 1 - o.level_of.items.len);
+    o.level_of.items[arg] = l;
+    return l;
+}
+
+/// `levelOf` for a type written in module `m`'s declarations.
+fn exprLevel(o: *Ownership, m: u32, bir: *const Bir, inst: Inst.Index, t: u64, seen: *std.AutoHashMapUnmanaged(u64, void)) Allocator.Error!Level {
+    const tag = bir.instTag(inst);
+    const data = bir.instData(inst);
+    const graph_m: Graph.Index = @fromBackingInt(@intCast(m));
+    switch (tag) {
+        .type_unit => return .none,
+        // What a closure's captures hold is not written here. A type
+        // variable is no level: folding never goes through one (`foldAt`),
+        // and one of a body read below is an argument, looked at where it
+        // is written.
+        .type_fn => return .below,
+        .type_var => return .none,
+        .type_tuple => {
+            for (bir.extraSlice(Bir.inlineRange(data), Inst.Index)) |el| if (try o.exprLevel(m, bir, el, t, seen) != .none) return .below;
+            return .none;
+        },
+        .type_record => {
+            for (bir.extraSlice(Bir.inlineRange(data), Bir.Field)) |fl| if (try o.exprLevel(m, bir, fl.value, t, seen) != .none) return .below;
+            return .none;
+        },
+        .type_top, .ext_type, .schema_type_top, .ext_schema_type, .type_app => {
+            const id = if (tag == .type_app) blk: {
+                const head: Inst.Index = @fromBackingInt(@intCast(data.lhs));
+                break :blk o.in.types.headId(graph_m, bir.instTag(head), bir.instData(head));
+            } else o.in.types.headId(graph_m, tag, data);
+            if (id == .none or id.int() >= o.in.types.entries.len) return .below;
+            const e = o.in.types.entries[id.int()];
+            const key = (@as(u64, e.module.int()) << 32) | e.decl.int();
+            if (key == t) return .here;
+            if (tag == .type_app) {
+                for (bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.rhs))), Inst.Index)) |arg| {
+                    if (try o.exprLevel(m, bir, arg, t, seen) != .none) return .below;
+                }
+            }
+            if (id == o.in.types.well_known.list or o.isPrimitive(id)) return .none;
+            if (e.schema_endpoint) return .below;
+            switch (e.kind) {
+                .foreign => return if ((try o.nominalFacts(id)).own) .below else .none,
+                .alias, .adt => {},
+            }
+            const gop = try seen.getOrPut(o.in.gpa, key);
+            if (gop.found_existing) return .none;
+            const dm = e.module.int();
+            const dbir = o.in.birs[dm];
+            const d = dbir.decl(e.decl);
+            if (e.kind == .alias) {
+                const body = d.annotation.unwrap() orelse return .below;
+                return o.exprLevel(dm, dbir, body, t, seen);
+            }
+            for (dbir.declCtors(d)) |ct| for (dbir.extraSlice(.{ .start = ct.args_start, .end = ct.args_end }, Inst.Index)) |arg| {
+                if (try o.exprLevel(dm, dbir, arg, t, seen) != .none) return .below;
+            };
+            return .none;
+        },
+        else => return .below,
+    }
 }
 
 fn ctorType(o: *const Ownership, c: u32) ?u64 {
@@ -3243,10 +3354,29 @@ fn nominalFacts(o: *Ownership, id: TypeId) Allocator.Error!NominalFacts {
         o.nominal = try o.in.gpa.alloc(?NominalFacts, o.in.types.entries.len);
         @memset(o.nominal, null);
     }
-    if (o.nominal[id.int()]) |f| return f;
     // Optimistic while in progress: a type's own recursion adds nothing
-    // its other edges do not (the least fixpoint of "holds a cell").
-    o.nominal[id.int()] = .{};
+    // its other edges do not (the least fixpoint of "holds a cell"). What a
+    // type read that way says is the least fixpoint only for the outermost
+    // type of the cycle: `type B = B A` read inside `type A = A B (List
+    // Int)` saw `A` hold nothing, and is not remembered (it was before
+    // 2026-10-17, and `B` crossed).
+    if (std.mem.indexOfScalar(u32, o.nominal_stack.items, id.int())) |at| {
+        o.nominal_low = @min(o.nominal_low, at);
+        return .{};
+    }
+    if (o.nominal[id.int()]) |f| return f;
+    const at = o.nominal_stack.items.len;
+    try o.nominal_stack.append(o.in.gpa, id.int());
+    const outer_low = o.nominal_low;
+    o.nominal_low = std.math.maxInt(usize);
+    const facts = try o.nominalFactsOf(id);
+    _ = o.nominal_stack.pop();
+    if (o.nominal_low >= at) o.nominal[id.int()] = facts;
+    o.nominal_low = @min(outer_low, if (o.nominal_low >= at) std.math.maxInt(usize) else o.nominal_low);
+    return facts;
+}
+
+fn nominalFactsOf(o: *Ownership, id: TypeId) Allocator.Error!NominalFacts {
     const e = o.in.types.entries[id.int()];
     var facts: NominalFacts = .{};
     if (e.schema_endpoint) {
@@ -3287,7 +3417,6 @@ fn nominalFacts(o: *Ownership, id: TypeId) Allocator.Error!NominalFacts {
             }
         },
     }
-    o.nominal[id.int()] = facts;
     return facts;
 }
 
@@ -4443,6 +4572,12 @@ const Walker = struct {
 
     fn proj(w: *Walker, av: AV, s: Step, ty: ?Var) Allocator.Error!AV {
         if (ty) |v| if (!try w.trackedVar(v)) return &.{};
+        // §16.7: a step into a recursive type keeps what folding put at its
+        // levels below — at the same path when the field is a value of the
+        // type itself, anywhere when it is further down.
+        const level: Level = if (s.kind == .ctor) try w.o.levelOf(s.arg) else .none;
+        const t = if (level != .none) w.o.ctorType(w.o.stepCtor(s.arg)) else null;
+        const any = if (level == .below) try w.o.child(eps, .any, 0) else eps;
         var out: std.ArrayList(Entry) = .empty;
         for (av) |e| {
             if (e.path == eps) {
@@ -4452,8 +4587,13 @@ const Walker = struct {
             const first = w.o.firstStep(e.path).?;
             if (first.kind == .any) {
                 try out.append(w.a, e);
-            } else if (first.kind == s.kind and first.arg == s.arg) {
+                continue;
+            }
+            if (first.kind == s.kind and first.arg == s.arg) {
                 try out.append(w.a, .{ .path = try w.o.dropFirst(e.path), .cell = e.cell, .approx = e.approx });
+            }
+            if (t != null and first.kind == .ctor and w.o.ctorType(w.o.stepCtor(first.arg)) == t.?) {
+                try out.append(w.a, .{ .path = if (level == .here) e.path else any, .cell = e.cell, .approx = if (e.approx != 0) e.approx else approx_place });
             }
         }
         return w.norm(out.items);
@@ -4523,6 +4663,7 @@ const Walker = struct {
     /// `proj(av, s)` for a wide value, through an index by first step that
     /// is built once per value: the same answer, without the scan.
     fn projFirst(w: *Walker, av: AV, s: Step) Allocator.Error!AV {
+        if (s.kind == .ctor and try w.o.levelOf(s.arg) != .none) return w.proj(av, s, null);
         const key: [2]usize = .{ @intFromPtr(av.ptr), av.len };
         const gop = try w.wide.getOrPut(w.a, key);
         if (!gop.found_existing) {
@@ -10681,6 +10822,11 @@ const Walker = struct {
                 }
             }
         }
+        if (approx_hit == approx_place) {
+            rec.prelim = .{ .cause = .element, .detail = "another operand may hold it: one place of it stands for several, the levels of a recursive value" };
+            try w.demands.append(w.a, rec);
+            return;
+        }
         if (approx_hit != 0) {
             rec.via = w.token(@fromBackingInt(@intCast(approx_hit - 1)));
             const cp = w.pos(rec.via);
@@ -11046,7 +11192,9 @@ const Walker = struct {
             // pattern holds another position, apart when the scrutinee's
             // contents are exclusive.
             if (try w.splitSibling(rec, h)) continue;
-            const cause: Cause = if (h.approx != 0)
+            const cause: Cause = if (h.approx == approx_place)
+                .element
+            else if (h.approx != 0)
                 .call
             else if (h.local == rec.base_local and w.o.overlap(h.path, rec.base_path) and !w.o.hasStep(h.path, .env))
                 .later_use
