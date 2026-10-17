@@ -4545,19 +4545,20 @@ changed the rule (§31.14). The answers stand here; the questions they answered 
    closures, and the only sound lowering beside a refusal: a closure that held the record would see later writes.
    The report mode's count decides only whether an eager read is ever a cost worth a refusal instead.
 
-**Open, with a recommendation:**
+6. **Calls are read through the callee's summary** (the owner, 2026-10-17). A record handed to a function is
+   used at the paths the callee's summary reads (§16.4 item 1): a callee that reads only untouched fields is no use
+   of a written one, and one that reads a written field reads it in its own body, where no temporary of the caller
+   can stand in, so the update is refused. **The owner's condition:** a callee whose summary is capped or
+   conservative reads the record **whole**, and the update is refused, with the cause named in the error. §31.4
+   item 5 states the condition and its causes.
+7. **Aliases** (the owner, 2026-10-17). A local bound to the record **before** the update is a holder whose later
+   field reads are hoisted, as the base's are. A binding of the record made **after** the update, a container that
+   holds it, a whole capture, and a call result that may be it are whole uses (§31.14, soundness step 4).
+8. **`Record` is a prelude module, for qualified use only** (the owner, 2026-10-17), as `List`, `Debug` and the
+   others are (`language.md` §6.2). It exposes no unqualified name, so it takes no name from a program, and the
+   fix an error offers needs no import.
 
-6. **Whether `Record` is in the prelude.** `List.copy` needs no import, because `List` is a prelude module, and
-   the fix an error offers should be writable without an edit elsewhere in the file. *Recommendation:* `Record`
-   joins the prelude's modules for qualified use only, as `List`, `Debug` and the others are (the prelude,
-   `language.md` §6.2). It exposes no unqualified name, so it takes no name from a program.
-7. **A summary-precise "handed to a function".** Item 1's list says "passed to a function". This section reads it
-   at the paths the callee's summary reads (§16.4 item 1): a callee that reads only untouched fields is not a use
-   of a written one, and one that reads a written field reads it inside its own body, where no temporary of the
-   caller can stand in, so it is refused. *Recommendation:* keep this reading. It is the per-field rule applied
-   through a call, refuses every program the coarser reading would accept wrongly, and accepts `changed model
-   todos`-shaped helpers that read the other fields only. The owner may prefer the coarser reading, under which
-   any whole argument is refused; §31.13 counts both.
+No decision of this section is open.
 
 ### 31.1 The decision
 
@@ -4672,7 +4673,24 @@ At an `update` demand, each `c ∈ C` must satisfy, in §8.1's order:
      capture, and its use as the base of another update (which reads every field but its own, §7.1);
    - `u` is an argument of a call: the call reads it at the paths the callee's summary reads (§16.4 item 1). A
      read there of an untouched field is accepted; a read there of a written field, or a whole use, a keep or an
-     escape, is a whole use for the caller, since the read is in the callee's body (§31.0 item 7).
+     escape, is a whole use for the caller, since the read is in the callee's body (§31.0 item 6).
+     **A callee whose summary is capped or conservative reads the record whole** (the owner's condition, §31.0
+     item 6), and the update is refused. That is the case for:
+     - a callee with no summary: an unknown function value, a callee the walk cannot identify (§30.11), a
+       `foreign` without words (§24.5), a `Js` operation. The cause is `call` or `unknown`, and the detail names
+       the callee and says that the checker cannot see which fields it reads;
+     - a summary that reads the argument at `⊤` or at `⋆` (§6.1, §16.2), so that no field set can be read off it.
+       The cause is `call`, and the detail says the callee may read any field;
+     - a function-valued argument that the summary cannot follow (`seen` false, §16.2), when the record reaches
+       it: what the function reads is not known. The cause is `supply`, and the detail names the function value;
+     - a pessimistic summary, past one of §16.7's limits. The cause is `limit`, and the detail names the limit,
+       as §16.7 does.
+
+     A callee in a recursive group is read through the group's settled summary. §16.6 starts a group from the
+     bottom summary and judges no demand until the validation round, so no verdict rests on a summary still at
+     the fixpoint's start. A group that does not settle is past the `rounds` limit, and so falls under the last
+     case. Each of these lines is approximate, `record_may_be_shared` (§31.9): a limit of the checker, which
+     the message names, never a silent acceptance.
 
    So after `s = { r | a = 1 }`, reads of `r.a` and `r.b` are accepted, the first hoisted, and `( s, r )` is
    `later-use`. A local bound to a value inside the record, `x = r.a`, holds that value, not `r`'s object, and is
@@ -4942,7 +4960,7 @@ record updates in 267 of them. Bike Wars' source is counted three times, as its 
 | updates with a later read of a written field, hoisted by the lowering | 15 (14 accepted with nothing else to decide) |
 | programs with **a certain rejection**: a whole use after an update | **9** (12 updates; 7 distinct sources) |
 | programs with a possible rejection | 51 (204 lines, 54 of them call-site lines in `core/Schema`) |
-| … of which a whole record handed to a call (§31.0 item 7) | 85 lines in 11 files; with the certain ones, 16 files under the coarser reading |
+| … of which a whole record handed to a call (§31.0 item 6) | 85 lines in 11 files; with the certain ones, 16 files under the coarser reading |
 
 **What "certain" means.** A certain rejection is a whole use of the old record after an update, which the checker
 refuses whatever its summaries say: a store, a return, a binding, the base of another update, a whole capture, a
@@ -4968,7 +4986,7 @@ in a parameterless `main`. Most of those are refused, because `main` names the v
 | `run/ListPersistence` | versions of a record model kept in a `Dict` and stepped | `copy`, as its lists already are (§30.9) |
 
 `run/Records` (`shift 3 origin` again after `origin.x`) is not among them only because the script counts a whole
-record handed to a call as possible; under §31.0 item 7 it is refused too, and fixed with `copy` (§31.7).
+record handed to a call as possible; under §31.0 item 6 it is refused too, and fixed with `copy` (§31.7).
 
 **The first count, reclassified.** This section's first version counted 17 programs as certain under a
 per-record rule, which refused any later read of a written field. Ten of them were correct programs that such a
@@ -4984,7 +5002,7 @@ correct under value semantics, and the rule refuses them because the old record 
 or a restructuring.
 
 **A sample of the possible ones:**
-- the `core/Schema` engine's `Context` is refused under §31.0 item 7: `fieldsFrom` hands `c` whole to the next
+- the `core/Schema` engine's `Context` is refused under §31.0 item 6: `fieldsFrom` hands `c` whole to the next
   field's `descend`, whose `run` reads `c.src` (§31.16);
 - `browser/tea/QueuedListSnapshot`'s captured snapshot is a whole capture, the record twin of its list case;
 - TodoMVC's `List.map model.todos (λt → { t | completed = … })` followed by `changed model …`, whose summary
@@ -5068,7 +5086,7 @@ pub copy : { r | } → { r | }
   every field is π₁'s at that field. It writes nothing and is not a demand.
 - **Its body** is written over `Js`, as `List.copy`'s is (§3.4): `({ ...r })`. The spread copies the keys in their
   order, so the copy has the record's hidden class, and under `--release` the short names are already the keys.
-- **Where it is**: `Record` is a prelude module for qualified use (§31.0 item 6, recommended), so the fix an error
+- **Where it is**: `Record` is a prelude module for qualified use (§31.0 item 8), so the fix an error
   offers needs no import.
 
 **The language change.** `language.md` §6.3 says "the update target is a plain name". It becomes: **the base of an
