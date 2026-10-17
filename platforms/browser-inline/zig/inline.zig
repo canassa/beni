@@ -1158,9 +1158,21 @@ fn serialise(a: std.mem.Allocator, out: *std.ArrayList(u8), nodes: []const Html,
 }
 
 /// Whether element `name`'s end tag may be left out when `next` follows it
-/// (null: its parent ends), in `parent` (null: unknown): the HTML
-/// standard's optional end tags (§13.1.2.4), those whose rule needs no
-/// look at whitespace or comments.
+/// (null: its parent ends), in `parent` (null: unknown) — only where the
+/// HTML standard's tree builder (§13.2.6) closes the element there exactly
+/// as the end tag would:
+///
+/// - before a next sibling, the start tags that close it: an `<li>` an
+///   open `<li>`, a `<dt>` or `<dd>` either, an `<option>` or `<optgroup>`
+///   (or `<hr>`) an open `<option>`, a cell a cell, a row a row, a row group
+///   a row group, and the block elements whose start tag closes a `<p>` in
+///   button scope (not `<table>`, which does only outside quirks mode, nor
+///   `<form>`, which depends on the form pointer);
+/// - at its parent's end, only a parent whose end tag generates implied end
+///   tags (`impliesEnds`): any other end tag — `</span>`, `</label>`,
+///   `</em>`, a custom element's — meets the open `<p>`, `<li>` or `<dd>`,
+///   a special element, and is ignored, or runs the adoption agency for a
+///   formatting element, which builds the tree anew.
 fn optionalEnd(name: []const u8, next: ?Html, parent: ?[]const u8) bool {
     const eql = std.mem.eql;
     const nextIs = struct {
@@ -1171,26 +1183,40 @@ fn optionalEnd(name: []const u8, next: ?Html, parent: ?[]const u8) bool {
             return false;
         }
     }.f;
-    const ends = next == null;
+    const among = struct {
+        fn f(s: []const u8, names: []const []const u8) bool {
+            for (names) |x| if (std.mem.eql(u8, s, x)) return true;
+            return false;
+        }
+    }.f;
+    // At the parent's end: a parent known to close it.
+    const ends = next == null and if (parent) |p| impliesEnds(p) or
+        // A cell's end closes it, and a row's end closes a cell.
+        (among(name, &.{ "td", "th" }) and eql(u8, p, "tr")) or
+        (eql(u8, name, "tr") and among(p, &.{ "tbody", "thead", "tfoot" })) or
+        (among(name, &.{ "option", "optgroup" }) and eql(u8, p, "select")) or
+        (eql(u8, name, "option") and eql(u8, p, "optgroup")) else false;
     if (eql(u8, name, "li")) return ends or nextIs(next, &.{"li"});
     if (eql(u8, name, "dt")) return nextIs(next, &.{ "dt", "dd" });
     if (eql(u8, name, "dd")) return ends or nextIs(next, &.{ "dt", "dd" });
-    if (eql(u8, name, "rt") or eql(u8, name, "rp")) return ends or nextIs(next, &.{ "rt", "rp" });
     if (eql(u8, name, "option")) return ends or nextIs(next, &.{ "option", "optgroup", "hr" });
     if (eql(u8, name, "optgroup")) return ends or nextIs(next, &.{ "optgroup", "hr" });
     if (eql(u8, name, "td") or eql(u8, name, "th")) return ends or nextIs(next, &.{ "td", "th" });
     if (eql(u8, name, "tr")) return ends or nextIs(next, &.{"tr"});
     if (eql(u8, name, "thead")) return nextIs(next, &.{ "tbody", "tfoot" });
     if (eql(u8, name, "tbody")) return ends or nextIs(next, &.{ "tbody", "tfoot" });
-    if (eql(u8, name, "tfoot")) return ends;
-    if (eql(u8, name, "p")) {
-        if (nextIs(next, &.{ "address", "article", "aside", "blockquote", "details", "dialog", "div", "dl", "fieldset", "figcaption", "figure", "footer", "form", "h1", "h2", "h3", "h4", "h5", "h6", "header", "hgroup", "hr", "main", "menu", "nav", "ol", "p", "pre", "search", "section", "table", "ul" })) return true;
-        if (!ends) return false;
-        const p = parent orelse return false;
-        for ([_][]const u8{ "a", "audio", "del", "ins", "map", "noscript", "video" }) |x| if (eql(u8, x, p)) return false;
-        // A custom element's end does not close a `<p>`.
-        return std.mem.indexOfScalar(u8, p, '-') == null;
-    }
+    if (eql(u8, name, "p")) return ends or nextIs(next, &.{ "address", "article", "aside", "blockquote", "details", "dialog", "div", "dl", "fieldset", "figcaption", "figure", "footer", "h1", "h2", "h3", "h4", "h5", "h6", "header", "hgroup", "hr", "main", "menu", "nav", "ol", "p", "pre", "search", "section", "ul" });
+    return false;
+}
+
+/// Whether the end tag of `name` generates implied end tags (§13.2.6.4.7):
+/// it closes an open `<p>`, `<li>`, `<dd>`, `<dt>`, `<option>`,
+/// `<optgroup>`, `<rp>` or `<rt>` inside it.
+fn impliesEnds(name: []const u8) bool {
+    for ([_][]const u8{
+        "address", "article", "aside", "blockquote", "button", "center", "details", "dialog", "dir", "div", "dl", "fieldset", "figcaption", "figure", "footer", "header", "hgroup", "listing", "main", "menu", "nav", "ol", "pre", "search", "section", "summary", "ul",
+        "li",      "dd",      "dt",    "h1",         "h2",     "h3",     "h4",      "h5",     "h6",  "td",  "th", "caption",  "body",       "html",
+    }) |x| if (std.mem.eql(u8, x, name)) return true;
     return false;
 }
 
@@ -1267,4 +1293,44 @@ fn find(a: std.mem.Allocator, nodes: []const Html, target: u32, count: *u32, pat
         _ = path.pop();
     }
     return false;
+}
+
+test "an end tag is left out only where the parser closes the element there" {
+    // Each case's expectation is what the HTML standard's tree builder
+    // (§13.2.6) makes of the string: the parent's end tag closes an open
+    // `<p>`, `<li>`, `<dd>` only when it generates implied end tags, and a
+    // formatting or phrasing parent's does not, so the end tag stays.
+    const t = std.testing;
+    var arena: std.heap.ArenaAllocator = .init(t.allocator);
+    defer arena.deinit();
+    const a = arena.allocator();
+    const el = struct {
+        fn f(name: []const u8, children: []const Html) Html {
+            return .{ .kind = .element, .name = name, .children = children };
+        }
+    }.f;
+    const x: Html = .{ .kind = .text, .name = "x" };
+    const cases = [_]struct { tree: Html, html: []const u8 }{
+        .{ .tree = el("div", &.{el("p", &.{x})}), .html = "<div><p>x</div>" },
+        .{ .tree = el("button", &.{el("p", &.{x})}), .html = "<button><p>x</button>" },
+        .{ .tree = el("label", &.{el("p", &.{x})}), .html = "<label><p>x</p></label>" },
+        .{ .tree = el("em", &.{el("p", &.{x})}), .html = "<em><p>x</p></em>" },
+        .{ .tree = el("span", &.{el("li", &.{x})}), .html = "<span><li>x</li></span>" },
+        .{ .tree = el("output", &.{el("dd", &.{x})}), .html = "<output><dd>x</dd></output>" },
+        .{ .tree = el("x-y", &.{el("p", &.{x})}), .html = "<x-y><p>x</p></x-y>" },
+        .{ .tree = el("a", &.{el("p", &.{x})}), .html = "<a><p>x</p></a>" },
+        .{ .tree = el("ul", &.{ el("li", &.{x}), el("li", &.{x}) }), .html = "<ul><li>x<li>x</ul>" },
+        .{ .tree = el("dl", &.{ el("dt", &.{x}), el("dd", &.{x}) }), .html = "<dl><dt>x<dd>x</dl>" },
+        .{ .tree = el("section", &.{ el("p", &.{x}), el("div", &.{}) }), .html = "<section><p>x<div></div></section>" },
+        .{ .tree = el("div", &.{ el("p", &.{x}), el("span", &.{}) }), .html = "<div><p>x</p><span></span></div>" },
+        .{ .tree = el("div", &.{ el("p", &.{x}), el("table", &.{}) }), .html = "<div><p>x</p><table></table></div>" },
+        .{ .tree = el("select", &.{ el("option", &.{x}), el("option", &.{x}) }), .html = "<select><option>x<option>x</select>" },
+        .{ .tree = el("li", &.{el("p", &.{x})}), .html = "<li><p>x</li>" },
+        .{ .tree = el("h2", &.{el("span", &.{el("p", &.{x})})}), .html = "<h2><span><p>x</p></span></h2>" },
+    };
+    for (cases) |c| {
+        var out: std.ArrayList(u8) = .empty;
+        try serialise(a, &out, &.{c.tree}, null, false);
+        try t.expectEqualStrings(c.html, out.items);
+    }
 }

@@ -1,0 +1,64 @@
+-- element "root"
+-- load
+<body>
+  <div id="root">
+    <div>
+      <label>
+        <p>"0"</p>
+      </label>
+      <em>
+        <p>"note"</p>
+      </em>
+      <button data-role="inc">"+"</button>
+      <div>
+        <p>"Count: 0"</p>
+      </div>
+      <ul>
+        <li>"one"</li>
+        <li>"0"</li>
+      </ul>
+    </div>
+  </div>
+</body>
+-- click [data-role=inc]
+<body>
+  <div id="root">
+    <div>
+      <label>
+        <p>"1"</p>
+      </label>
+      <em>
+        <p>"note"</p>
+      </em>
+      <button data-role="inc">"+"</button>
+      <div>
+        <p>"Count: 1"</p>
+      </div>
+      <ul>
+        <li>"one"</li>
+        <li>"1"</li>
+      </ul>
+    </div>
+  </div>
+</body>
+-- click [data-role=inc]
+<body>
+  <div id="root">
+    <div>
+      <label>
+        <p>"2"</p>
+      </label>
+      <em>
+        <p>"note"</p>
+      </em>
+      <button data-role="inc">"+"</button>
+      <div>
+        <p>"Count: 2"</p>
+      </div>
+      <ul>
+        <li>"one"</li>
+        <li>"2"</li>
+      </ul>
+    </div>
+  </div>
+</body>

@@ -212,13 +212,24 @@ first, in one module; §8.4–§8.6 after.*
 mount once, with `insertAdjacentHTML`. It holds every element of the unit, the elements of an eager
 `when`'s arm included, every constant attribute and every text that never changes: a constant, or
 a hole `init` bakes (`write-sets.md` §9.1). Attribute values are left unquoted where HTML reads them
-back unquoted (no space, quote, `=`, `<`, `>` or backtick, and not empty), and the end tags HTML
-makes optional are left out where the next node or the parent's end closes them as the end tag
-would (`</li>`, `</option>`, `</p>` before an element that closes it or at the end of a parent other
-than `a`, `audio`, `del`, `ins`, `map`, `noscript` and `video`, `</td>`, `</th>`, `</tr>`, `</dt>`,
-`</dd>`, `</thead>`, `</tbody>`, `</optgroup>`, `</rt>`, `</rp>`); the run of end tags at the very end
-of a string parsed alone is left out too, which the parser closes at the end of its input. A
-string that is concatenated with another keeps its own closing run.
+back unquoted (no space, quote, `=`, `<`, `>` or backtick), and an empty value is the attribute's
+bare name. An end tag HTML makes optional is left out only where the standard's tree builder
+(§13.2.6) closes the element there exactly as the end tag would (*corrected 2026-10-17, the review
+of S1's first pull request*: the first text left `</p>` out at the end of almost any parent, and an
+`</em>` or a `</label>` does not close a `<p>`, so the parser rebuilt the tree):
+- before a next sibling whose start tag closes it: `</li>` before an `<li>`, `</dt>` and `</dd>`
+  before either, `</option>` before an `<option>`, an `<optgroup>` or an `<hr>`, `</optgroup>`
+  before an `<optgroup>` or an `<hr>`, a cell's before a cell, `</tr>` before a row, `</thead>`
+  and `</tbody>` before a row group, and `</p>` before the block elements whose start tag closes a
+  `<p>` in button scope — not `<table>`, which does only outside quirks mode, nor `<form>`;
+- at its parent's end only where the parent's end tag generates implied end tags (`div`, `section`,
+  `ul`, `li`, `dd`, `button`, `h1`–`h6`, `td` and the rest of the standard's list), or a `<select>`
+  or `<optgroup>` closes an `<option>`, a row a cell, a row group a row. A `<span>`, a `<label>`, a
+  formatting element and a custom element close none of them.
+
+The run of end tags at the very end of a string parsed alone is left out too, which the parser
+closes at the end of its input. A string that is concatenated with another keeps its own closing
+run.
 
 **Elements by document order.** An element some code refers to is `E[n]`, the `n`-th descendant of
 the unit's top element in document order (`top.querySelectorAll("*")`, read once at the mount, and
