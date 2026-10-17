@@ -196,9 +196,17 @@ undo : Js.Ref V
 undo = Js.ref (Js.from nothing)
 
 
---| `(f)`: what the mount registers as its undoing, once.
+--| `(f)`: one piece the mount added registers what removes it; `stop`
+--| runs them once, the last registered first.
 pub own : V → ⊤
-own f = Js.write undo f
+own f =
+    before = Js.read undo
+    Js.write
+        undo
+        (Js.from λ⊤ →
+            _ = Js.apply f []
+            Js.to (Js.apply before [])
+        )
 
 
 --| The page's unmount: nothing of the program runs after it, and what the
