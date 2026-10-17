@@ -192,3 +192,114 @@ reader xs =
         []
     , xs
     )
+
+
+-- A writing function handed to `rotateF` and also stored in a record that
+-- leaves the walk's sight has an error of its own, which the limit's must
+-- not hide: `storedAndHanded` (a lambda) and `storedFunction` (a top-level
+-- function) are each still reported where the function is stored.
+type alias Holder =
+    f : List Int → List Int
+
+
+pushOne : List Int → List Int
+pushOne ys = List.push ys 1
+
+
+pub storedAndHanded : List Int → List Int × Holder
+storedAndHanded xs =
+    g = λys → List.push ys 1
+    r =
+        rotateF
+            g
+            3
+            xs
+            []
+            []
+            []
+            []
+            []
+            []
+            []
+            []
+            []
+            []
+            []
+            []
+            []
+            []
+            []
+            []
+            []
+            []
+            []
+            []
+            []
+            []
+            []
+            []
+            []
+            []
+            []
+            []
+            []
+            []
+            []
+            []
+            []
+            []
+            []
+            []
+            []
+            []
+            []
+    ( r, { f = g } )
+
+
+pub storedFunction : List Int → List Int × Holder
+storedFunction xs =
+    r =
+        rotateF
+            pushOne
+            3
+            xs
+            []
+            []
+            []
+            []
+            []
+            []
+            []
+            []
+            []
+            []
+            []
+            []
+            []
+            []
+            []
+            []
+            []
+            []
+            []
+            []
+            []
+            []
+            []
+            []
+            []
+            []
+            []
+            []
+            []
+            []
+            []
+            []
+            []
+            []
+            []
+            []
+            []
+            []
+            []
+    ( r, { f = pushOne } )
