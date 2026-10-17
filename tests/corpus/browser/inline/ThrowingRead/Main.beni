@@ -1,0 +1,37 @@
+-- A listener's reader is program code, and runs inside the dispatch guard
+-- (docs/design/browser-inline.md §6): a throw in it is a defect that stops
+-- the page, and after that no listener code of the program runs — the
+-- second push reads nothing. A development build shows the crash screen;
+-- a release build only stops (`.release-expected`).
+import Broken
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Schema exposing (Value)
+import Sub exposing (Sub)
+import Tea
+
+
+type Msg
+    = Pushed Value
+
+
+type Key
+    = Push
+
+
+update : Msg, {} → {} × Cmd Msg
+update _ model = ( model, Cmd.none )
+
+
+view : {} → Html Msg
+view _ = <p>mounted</p>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( {}, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.on Push Broken.pushes Pushed
+        }
