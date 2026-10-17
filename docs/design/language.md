@@ -705,6 +705,13 @@ checked-form rewrite that keeps calls distinct from identity-preserving fields.
 untouched fields of `{ r | a = x }` are the very values `r` held, and no optimiser may break that.
 The promise and its reason are §11.12.
 
+*Amended 2026-10-17 (the owner; `ownership-checker.md` §31; specified, not built):* **a record update
+consumes its base.** `{ r | a = x }` writes `a` into `r`'s own object and answers that object, on every
+platform, in every module. An update the ownership checker cannot prove safe in place — a holder of `r` that
+reads `a`, or the whole record, afterwards, or a top-level `r` — is a compile error, never a copy. A program
+that keeps the old record copies it explicitly (`ownership-checker.md` §31.0, item 1). The new values are all
+evaluated before any field is written, so `{ r | a = r.b, b = r.a }` still swaps.
+
 ### 6.4 Tuples
 
 `(a, b)`, arity ≥ 2, unbounded. `t.0` is the first element, and chains like `t.0.1` follow §3's
@@ -2208,6 +2215,13 @@ to a list while a holder of it is read afterwards. What the change costs is meas
 day, under `browser-direct.md`'s condition C4 (`ownership-checker.md` §30.7, O6). Before that
 happens, this paragraph is amended for records first.
 
+*Amended 2026-10-17 (the owner; `ownership-checker.md` §31.11; specified, not built):* **records are
+written in place on every platform** (§6.3, amended), so every "is not `===`" test in this section treats as
+changed a value whose type may hold a record, as it treats a list: a record, a tuple, constructor or closure
+that may hold one, a row's item of record type, a prop, a `Show`'s value, and a root's value group whose read
+paths reach a record. The test stays only for a value whose type holds no record and no list: a scalar, a
+string, an all-nullary constructor. The paragraph above that keeps "the test on a record" is withdrawn.
+
 ### 11.12 Identity: an untouched field keeps its identity
 
 **A record update `{ r | a = x }` produces a record whose every field other than `a` is the very
@@ -2262,6 +2276,13 @@ No emitted comparison concludes "unchanged" from identity across such a write.**
   the old version again, and beni has no reference equality a program can call.
 - The third binds every runtime and lowering. `boundary.md` §9.4.4 and `backend.md` §15.5,
   amended the same day, take a list's identity out of every skip.
+
+*Amended 2026-10-17 (the owner; `ownership-checker.md` §31; specified, not built):* **records are written
+in place on every platform, not only under C4.** A record update consumes its base (§6.3, amended): the
+written record keeps its identity, and so does every value that holds it. The first bullet above now reads
+"lists and records", and the third binds every runtime for any value that may hold a record
+(`boundary.md` §9.4.4 and `backend.md` §15.5, amended the same day). The promise of this section's first
+paragraph is unchanged: an untouched field is still the very value it was.
 
 **A nullary constructor is one value** (*amended 2026-09-29*, research 39 §10.3): every use of a
 nullary constructor that a module writes is the same value, so `button "run" Run` gives its hole an

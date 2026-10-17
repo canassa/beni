@@ -1679,6 +1679,13 @@ the reason a loop is the runtime's is unchanged.)*
   then. A lowering's runtime keeps no list from one render to the next, and compares none by
   identity (`backend.md` §15.5, amended the same day). This binds every platform's lowering
   (`dom`, `ssr`, `direct`, a third party's) and every runtime module.
+- **Skip on a record's identity** (*added 2026-10-17*, the owner's decision that a record update
+  consumes its base on every platform, `ownership-checker.md` §31). The rule above holds for every
+  value whose type may hold a record: a record, and a tuple, constructor or closure that may hold
+  one. A record that is `===` the last one may have been written in place since then. A runtime may
+  keep such a value, but it concludes nothing from its identity and never reads it expecting the
+  contents it had (`backend.md` §15.5, amended the same day). A skip by `===` stays allowed only for
+  a value whose type holds no record and no list.
 
 #### 9.4.5 The runtime's well-known exports
 

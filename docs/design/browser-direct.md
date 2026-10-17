@@ -770,6 +770,10 @@ demand is in place. The "plain at run time; a trie is written through `set` as b
 below is withdrawn with the trie. The owned-path condition stays the rule for record
 assignment, under condition C4 (the last amendment of this document).
 
+*Amended 2026-10-17 (the owner):* it no longer does. Record assignment is the ownership checker's, on every
+platform (`ownership-checker.md` §31, which supersedes C4). The owned-path condition below decides no write.
+The first rule, that no group decides "unchanged" from the identity of an object on a written path, stands.
+
 The last slice of the model half (S7), specified here so that every earlier slice keeps it
 possible. The write set of key κ is also the list of assignments an in-place update would make:
 a `value` write at `p` is `m.a.b.c = v`, a `node` write is nothing — the object at `p` is kept.
@@ -3498,6 +3502,14 @@ fallback:
 
   Until then, S7 lowers lists in place and keeps the arm's record spreads. The width and depth
   criteria wait on C4. The rows and swap criteria do not.
+
+  *Superseded 2026-10-17 (the owner; #315, #322):* record assignment is no longer this platform's, and no
+  longer rests on §7.4's owned-path condition. `ownership-checker.md` §31 is its specification: every
+  record update consumes its base, on every platform, and the checker judges it like a list demand. One it
+  cannot prove safe is a compile error, never a spread. C4's three deliverables are §31.12's: the fixtures
+  for a stored `msg` payload, a captured `model.form` and a `For` item; the generated differential test;
+  and the stale-read sanitiser. Its "specification check of their own" is §31 itself. The width and depth
+  criteria wait on §31's lowering slice.
 - **C5 — the bridge's function-valued skip is removed and re-baselined.** Functions are normalised
   to `"<function>"` on both sides. The review measured translated programs going from 43 185 to
   77 837, with 102 new leads and none diverging. The six mutations become the bridge's opt-in
