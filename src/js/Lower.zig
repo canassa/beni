@@ -5353,6 +5353,10 @@ pub const Lowerer = struct {
         const p = l.pos(inst);
         if (l.valid_sites.callees.len != 0 and SchemaValid.has(l.valid_sites.callees, inst.int()))
             return l.coreSchemaValue(l.valid_sites.runner(inst.int()), p);
+        // A shape run calls the shared validator (`schema.md` §6, *A
+        // validator run is a shape that one shared validator reads*).
+        if (l.valid_sites.shape_callees.len != 0 and SchemaValid.has(l.valid_sites.shape_callees, inst.int()))
+            return l.coreSchemaValue(l.valid_sites.shapeRunner(inst.int()), p);
         return switch (l.bir.instTag(inst)) {
             .local => try l.ident(try l.localName(d.lhs), p),
             // A markup primitive is the markup runtime's export of its name
@@ -8159,6 +8163,8 @@ pub const Lowerer = struct {
         // `S.schema ⊤` a validator run calls directly: `S`'s validator
         // worker (`SchemaValid`).
         if (l.valid_sites.args.len != 0) if (l.valid_sites.refOfArg(inst.int())) |ref| return SchemaLower.validWorker(l, ref, p);
+        // `S.schema ⊤` a shape run reads: `S`'s shape.
+        if (l.valid_sites.shape_args.len != 0) if (l.valid_sites.shapeOfArg(inst.int())) |ref| return SchemaLower.shapeName(l, ref, p);
         // Version 1.14: a placement the program's mount already made.
         if (l.placed_calls.len != 0 and l.placedCallAt(inst)) return l.expr(out, arg_insts[0]);
 
@@ -8283,6 +8289,20 @@ pub const Lowerer = struct {
             args[0] = typed.descriptor;
             @memcpy(args[1..], values);
             return l.suspension(out, inst, try l.call(typed.callee, args, p));
+        };
+
+        // A `Json` shape run (`schema.md` §6, *A validator run is a shape
+        // that one shared validator reads*): `validShape` or `shapeParse`
+        // of its codec's shape. The reference itself has nothing to evaluate.
+        if (l.valid_sites.shape_json.len != 0) if (l.valid_sites.shapeCodecOfCall(inst.int())) |k| {
+            const written = try l.exprList(out, l.bir.subRange(@fromBackingInt(@intCast(d.rhs))));
+            l.region = inst;
+            const sg = l.in.schemas.?;
+            const args = try l.scratch.alloc(Node.Index, written.len + 1);
+            args[0] = try SchemaLower.shapeName(l, sg.codecTarget(l.in.module, k), p);
+            @memcpy(args[1..], written);
+            const runner = try l.coreSchemaValue(l.valid_sites.shapeRunner(callee_inst.int()), p);
+            return l.suspension(out, inst, try l.call(runner, args, p));
         };
 
         // A `Json` validator run (`schema.md` §6, *A run whose failure is

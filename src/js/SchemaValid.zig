@@ -15,6 +15,12 @@
 //! - `Json.decodeValue v` and `Json.decode text` whose evidence is a
 //!   nongeneric derived codec are one call of `Schema.validRun` or
 //!   `Schema.validParse` with the codec's validator worker.
+//!
+//! A run whose schema has a shape (`SchemaGraph.shapeable`) is a **shape
+//! run** instead (`schema.md` §6, *A validator run is a shape that one
+//! shared validator reads*): `S.schema ⊤` of a `read` or `parse`, or a
+//! `Json` run's codec, written as its shape, and the run `Schema.validShape`
+//! or `Schema.shapeParse` of it.
 
 const std = @import("std");
 const Allocator = std.mem.Allocator;
@@ -51,6 +57,38 @@ pub const Sites = struct {
     /// Their callees, `Json.decodeValue` and `Json.decode`, which are not
     /// called.
     json_callees: []const u32 = &.{},
+    /// The callees of the shape runs, which call `validShape`, and of
+    /// those the `parse` ones, which call `shapeParse`.
+    shape_callees: []const u32 = &.{},
+    shape_parses: []const u32 = &.{},
+    /// A `Schema` shape run's argument call `S.schema ⊤`, written as `S`'s
+    /// shape, and its member instruction, which reaches the shape alone.
+    shape_args: []const u32 = &.{},
+    shape_members: []const u32 = &.{},
+    shape_refs: []const SchemaGraph.Ref = &.{},
+    /// A `Json` shape run's call and its codec.
+    shape_json: []const u32 = &.{},
+    shape_codecs: []const u32 = &.{},
+
+    pub fn shapeOfArg(s: Sites, inst: u32) ?SchemaGraph.Ref {
+        for (s.shape_args, s.shape_refs) |a, r| if (a == inst) return r;
+        return null;
+    }
+
+    pub fn shapeOfMember(s: Sites, inst: u32) ?SchemaGraph.Ref {
+        for (s.shape_members, s.shape_refs) |x, r| if (x == inst) return r;
+        return null;
+    }
+
+    pub fn shapeCodecOfCall(s: Sites, inst: u32) ?u32 {
+        for (s.shape_json, s.shape_codecs) |x, k| if (x == inst) return k;
+        return null;
+    }
+
+    /// The core-private value the callee instruction of a shape run calls.
+    pub fn shapeRunner(s: Sites, inst: u32) []const u8 {
+        return if (has(s.shape_parses, inst)) "shapeParse" else "validShape";
+    }
 
     pub fn refOfArg(s: Sites, inst: u32) ?SchemaGraph.Ref {
         for (s.args, s.refs) |a, r| if (a == inst) return r;
@@ -83,7 +121,9 @@ pub const Sites = struct {
             eq(u32, a.parse_callees, b.parse_callees) and eq(u32, a.args, b.args) and
             eq(u32, a.members, b.members) and eq(u32, a.json_calls, b.json_calls) and
             eq(u32, a.json_codecs, b.json_codecs) and eq(u32, a.json_parses, b.json_parses) and
-            eq(u32, a.json_callees, b.json_callees);
+            eq(u32, a.json_callees, b.json_callees) and eq(u32, a.shape_callees, b.shape_callees) and
+            eq(u32, a.shape_parses, b.shape_parses) and eq(u32, a.shape_args, b.shape_args) and
+            eq(u32, a.shape_json, b.shape_json) and eq(u32, a.shape_codecs, b.shape_codecs);
     }
 
     /// The core-private value a `Json` validator run's call is.
@@ -117,6 +157,13 @@ pub fn sites(
     var json_codecs: std.ArrayList(u32) = .empty;
     var json_parses: std.ArrayList(u32) = .empty;
     var json_callees: std.ArrayList(u32) = .empty;
+    var shape_callees: std.ArrayList(u32) = .empty;
+    var shape_parses: std.ArrayList(u32) = .empty;
+    var shape_args: std.ArrayList(u32) = .empty;
+    var shape_members: std.ArrayList(u32) = .empty;
+    var shape_refs: std.ArrayList(SchemaGraph.Ref) = .empty;
+    var shape_json: std.ArrayList(u32) = .empty;
+    var shape_codecs: std.ArrayList(u32) = .empty;
     for (0..bir.insts.len) |i| {
         const inst: Inst.Index = @fromBackingInt(@intCast(i));
         const call = unreadRun(graph, interfaces, interner, bir, inst) orelse continue;
@@ -140,6 +187,13 @@ pub fn sites(
                 if (d.argsOfTerm(roots[0]).len != 0) continue;
                 const def = g.definition(module, g.codecTarget(module, k).decl) orelse continue;
                 if (def.params_end != def.params_start) continue;
+                if (try g.shapeable(scratch, g.codecTarget(module, k))) {
+                    try shape_callees.append(scratch, callee.int());
+                    if (run == .json_parse) try shape_parses.append(scratch, callee.int());
+                    try shape_json.append(scratch, call.int());
+                    try shape_codecs.append(scratch, k);
+                    continue;
+                }
                 try json_calls.append(scratch, call.int());
                 try json_codecs.append(scratch, k);
                 try json_callees.append(scratch, callee.int());
@@ -161,6 +215,14 @@ pub fn sites(
                     if (def.params_end != def.params_start) break :blk null;
                     break :blk .{ arg.int(), member.int(), ref };
                 };
+                if (direct_ref) |r| if (try sg.?.shapeable(scratch, r[2])) {
+                    try shape_callees.append(scratch, callee.int());
+                    if (run == .schema_parse) try shape_parses.append(scratch, callee.int());
+                    try shape_args.append(scratch, r[0]);
+                    try shape_members.append(scratch, r[1]);
+                    try shape_refs.append(scratch, r[2]);
+                    continue;
+                };
                 // A `parse` of any other schema keeps its issues.
                 if (run == .schema_parse and direct_ref == null) continue;
                 try callee_list.append(scratch, callee.int());
@@ -179,6 +241,8 @@ pub fn sites(
     std.mem.sort(u32, parses.items, {}, std.sort.asc(u32));
     std.mem.sort(u32, json_parses.items, {}, std.sort.asc(u32));
     std.mem.sort(u32, json_callees.items, {}, std.sort.asc(u32));
+    std.mem.sort(u32, shape_callees.items, {}, std.sort.asc(u32));
+    std.mem.sort(u32, shape_parses.items, {}, std.sort.asc(u32));
     return .{
         .callees = callee_list.items,
         .direct_callees = direct.items,
@@ -190,6 +254,13 @@ pub fn sites(
         .json_codecs = json_codecs.items,
         .json_parses = json_parses.items,
         .json_callees = json_callees.items,
+        .shape_callees = shape_callees.items,
+        .shape_parses = shape_parses.items,
+        .shape_args = shape_args.items,
+        .shape_members = shape_members.items,
+        .shape_refs = shape_refs.items,
+        .shape_json = shape_json.items,
+        .shape_codecs = shape_codecs.items,
     };
 }
 

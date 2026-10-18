@@ -929,6 +929,10 @@ pub const Builder = struct {
     valid_run: ?Node = null,
     /// `core/Schema`'s `validParse`, which a validator `parse` calls.
     valid_parse: ?Node = null,
+    /// `core/Schema`'s `validShape` and `shapeParse`, which a shape run
+    /// calls (`SchemaValid`).
+    valid_shape: ?Node = null,
+    shape_parse: ?Node = null,
     /// The shared walk's output for one node, cleared and refilled per
     /// node: a caller-owned buffer, so the whole module's edges cost one
     /// allocation.
@@ -955,6 +959,8 @@ pub const Builder = struct {
             .schema_guarded = in.schemaGuarded(),
             .read_valid = in.coreDeclNamed(.Schema, "readValid"),
             .valid_run = in.coreDeclNamed(.Schema, "validRun"),
+            .valid_shape = in.coreDeclNamed(.Schema, "validShape"),
+            .shape_parse = in.coreDeclNamed(.Schema, "shapeParse"),
             .valid_parse = in.coreDeclNamed(.Schema, "validParse"),
         };
     }
@@ -1019,6 +1025,22 @@ pub const Builder = struct {
                         continue;
                     }
                 }
+                // A shape run calls `validShape` or `shapeParse`, not its
+                // callee, and a `Json` one reads its codec's shape alone
+                // (`SchemaValid`).
+                if (position != Edges.no_position and SchemaValid.has(valid.shape_callees, position)) {
+                    const runner = if (SchemaValid.has(valid.shape_parses, position)) b.shape_parse else b.valid_shape;
+                    if (runner) |rv| {
+                        try decl_targets.append(b.scratch, .{ .node = rv, .chain = guards.at(position) });
+                        continue;
+                    }
+                }
+                if (edge == .codec and position != Edges.no_position) if (valid.shapeCodecOfCall(position)) |k| {
+                    if (k == edge.codec) {
+                        try decl_targets.append(b.scratch, .{ .node = schemaNode(.{ .module = m, .decl = @intCast(bir.decls.len + k) }, .shape), .chain = guards.at(position) });
+                        continue;
+                    }
+                };
                 if (position != Edges.no_position and SchemaValid.has(valid.json_callees, position)) continue;
                 // A `Json` validator run calls `validRun` or `validParse`
                 // with its codec's validator workers: its callee is not
@@ -1309,6 +1331,11 @@ pub const Builder = struct {
             // `S`'s validator workers alone (`SchemaValid`).
             if (valid.refOfMember(@intCast(p))) |r| {
                 try out.append(b.scratch, .{ .node = schemaNode(r, .read_valid), .chain = guards.at(@intCast(p)) });
+                continue;
+            }
+            // `S.schema ⊤` a shape run reads reaches `S`'s shape alone.
+            if (valid.shapeOfMember(@intCast(p))) |r| {
+                try out.append(b.scratch, .{ .node = schemaNode(r, .shape), .chain = guards.at(@intCast(p)) });
                 continue;
             }
             const member: SchemaGraph.Member = switch (kind) {
