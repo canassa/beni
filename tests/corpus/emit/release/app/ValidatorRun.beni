@@ -1,12 +1,11 @@
--- A `read` whose `Err` payload nothing reads is a shape run (`schema.md` §6,
--- *A validator run is a shape that one shared validator reads*): its
--- schema, `S.schema ⊤` of a nongeneric declaration with a shape, is the
--- constant `Event$$shape`, and the run calls the shared `Schema.validShape`
--- with it. It makes no issue, writes no message, builds no schema value and
--- ships no worker of `Event`. The messages the file still holds are
--- `Schema.parse Schema.value`'s, which reads its text into a `Value` and
--- whose schema is no declaration. `run/SchemaValidator` proves the answers;
--- `ValidatorWorker` is this program with a `via`, which has no shape.
+-- A `read` whose `Err` payload nothing reads is a validator (`schema.md`
+-- §6, *A run whose failure is never read is a validator*), and with its
+-- schema written `S.schema ⊤` of a nongeneric declaration the run calls the
+-- declaration's validator worker directly (`s` here): it makes no issue,
+-- writes no message and builds no schema value. The messages the file still
+-- holds are `Schema.parse Schema.value`'s, which reads its text into a
+-- `Value`: a `parse` is not compiled to a validator yet. `run/SchemaValidator`
+-- proves the answers.
 import Node
 import Schema exposing (Value)
 
