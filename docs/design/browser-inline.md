@@ -343,7 +343,9 @@ program site by name (option 2 of §7, extended to `update` and `view`).
   `case` splits — `CounterMsg` around `Counter.Msg` — is followed on the leaf's path all the same:
   the key is `Inc` under it, and its arm takes `Inc`'s fields (`browser/inline/ArmPiece/`,
   `emit/release/inline/ArmPiece/`). A key whose split inside another module is followed by a
-  further split in a function that branch's arm calls is `deep_split`, a limit of the compiler.
+  further split in a function that branch's arm calls (`deep_split`) has no piece for that
+  function: the arm calls it as written, handed the message the key's fields make (D-e, *Arms the
+  tracking does not specialise* below).
 - **View pieces**, of a `view` (or a function `view` calls through `Html.map`) of another module,
   on one call path: `<Module>$<declaration>$$bind$<n>$<k>`, one per binding function (§8.2's
   grouping), taking `E` — the root's top element's descendants, which the program site finds with
