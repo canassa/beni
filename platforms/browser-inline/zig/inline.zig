@@ -64,6 +64,7 @@ pub const lowering: m.Lowering = .{
         .{ .module = "Tea", .name = "element" },
     },
     .program = program,
+    .piece = piece,
     .placements = &.{
         .{ .module = "Browser", .name = "mountAt", .places = .first },
     },
@@ -151,6 +152,138 @@ fn program(cx: *m.Context, tree: *const m.Tree, p: *const m.Program) m.Error!m.E
     return page.mount(r.node);
 }
 
+// ---- Pieces (`browser-inline.md` §8.4) ------------------------------------
+
+/// What a piece's owner records for the program site: the facts of
+/// `m.PieceFacts.data`, in the request's arena.
+const PieceData = struct {
+    /// The root's static markup: its one top element.
+    top: Html,
+    /// The elements numbered below the top element.
+    count: u32,
+    binds: []const PieceBind,
+    /// The event-wiring piece's name, when the root has events.
+    wire: ?[]const u8,
+    handlers: []const PieceHandler,
+};
+
+const PieceBind = struct { name: []const u8, groups: []const u32 };
+
+/// A constructor the root's events send, and the binding functions writing
+/// a control one of its events is on.
+const PieceHandler = struct { ctor: m.Ctor, fields: u32, controls: []const u32 };
+
+const no_program: m.Program = .{ .constructor = 0, .record = true, .view = .markup, .view_root = null, .update = .computed };
+
+/// The piece hook: another module's program shows this root, the body of a
+/// function its `view` calls. Each binding function is a piece
+/// `(elements, argument)`, the events one piece `(elements, handler…)`
+/// that wires each to the handler of the constructor it sends, and the
+/// static markup and the read sets are the facts the program site writes
+/// the rest from.
+fn piece(cx: *m.Context, tree: *const m.Tree, req: *const m.PieceRequest) m.Error!void {
+    const js = cx.js;
+    var page: Page = .{ .cx = cx, .tree = tree, .p = &no_program, .index = req.root, .piece = true };
+    const pg = &page;
+    try pg.ctxs.append(cx.arena, .{ .parent = null, .node = .none, .arm = 0, .root = req.root });
+    const r = tree.root(req.root);
+    pg.top_nodes = try pg.markup(r.node, .{}, 0, true);
+    if (pg.top_nodes.len != 1 or pg.top_nodes[0].kind != .element) return limit(cx, r.node, "`browser-inline` writes another module's markup as pieces when it is one element, and this is not");
+    for (pg.writes.items) |w| if (w.target == null) return later(cx, r.node, "a binding of the top element of another module's markup");
+    for (pg.events.items) |ev| if (ev.target == null) return later(cx, ev.node, "an event on the top element of another module's markup");
+    pg.elements = try cx.fresh("elements");
+    // The root's function's parameters, each a parameter of every binding
+    // function after the elements.
+    const params_all = try cx.arena.alloc(m.Name, cx.pieceArity() + 1);
+    params_all[0] = pg.elements.?;
+    for (params_all[1..]) |*x| x.* = try cx.fresh("model");
+    pg.piece_args = params_all[1..];
+    try pg.group();
+    const a = req.arena;
+    const binds = try a.alloc(PieceBind, pg.functions.items.len);
+    for (pg.functions.items, binds, 0..) |*f, *b, j| {
+        const blk = try js.block();
+        try pg.writeFunction(blk, f);
+        const base = try std.fmt.allocPrint(a, "{s}$bind${d}${d}", .{ req.decl, req.ordinal, j });
+        try cx.pieceExport(base, try js.arrow(params_all, blk));
+        b.* = .{ .name = base, .groups = try a.dupe(u32, f.groups) };
+    }
+    // The events: one handler parameter per constructor, in the order of
+    // its first event.
+    var handlers: std.ArrayList(PieceHandler) = .empty;
+    var params: std.ArrayList(m.Name) = .empty;
+    var controls: std.ArrayList(std.ArrayList(u32)) = .empty;
+    const wire = try js.block();
+    for (pg.events.items) |ev| {
+        const facts = tree.eventFacts(ev.item.event);
+        const dom = tree.string(facts.dom_name);
+        const kind: ?[]const u8 = if (std.mem.eql(u8, dom, "click")) null else dom;
+        const v = switch (ev.item.value.kind) {
+            .dynamic => ev.item.value.dynamic.?,
+            else => return limit(cx, ev.node, "this event's handler is a message written as a literal, which `browser-inline` cannot route to a key"),
+        };
+        const payload_form = ev.item.form == .payload;
+        const sent = cx.pieceEventCtor(v, payload_form) orelse return limit(cx, ev.node, "`browser-inline` wires an event of another module's markup to a handler of the constructor it sends, and this event's handler value is not one constructor taking the event's payload or nothing");
+        const hi = for (handlers.items, 0..) |h, i| {
+            if (std.meta.eql(h.ctor, sent.ctor)) break i;
+        } else blk: {
+            try handlers.append(cx.arena, .{ .ctor = sent.ctor, .fields = sent.fields, .controls = &.{} });
+            try params.append(cx.arena, try cx.fresh("on"));
+            try controls.append(cx.arena, .empty);
+            break :blk handlers.items.len - 1;
+        };
+        // The binding functions of a control this event is on (§8.3).
+        for (pg.functions.items, 0..) |f, fi| for (f.writes.items) |wi| {
+            const w = pg.writes.items[wi];
+            if (!w.stateful or w.target != ev.target) continue;
+            if (std.mem.indexOfScalar(u32, controls.items[hi].items, @intCast(fi)) == null) try controls.items[hi].append(cx.arena, @intCast(fi));
+        };
+        const h = try js.name(params.items[hi]);
+        var listener = h;
+        if (payload_form) {
+            const e = try cx.fresh("event");
+            const blk = try js.block();
+            const payload = if (try cx.extractor(ev.index)) |extract| try js.call(extract, &.{try js.name(e)}) else try js.name(e);
+            try js.expression(blk, try js.call(h, &.{payload}));
+            listener = try js.arrow(&.{e}, blk);
+        }
+        const node = try pg.ref(ev.target);
+        if (!facts.prevent_default and !facts.stop_propagation) {
+            if (kind) |k| {
+                try js.expression(wire, try js.call(try js.name(try cx.runtime("on")), &.{ node, listener, try js.string(k) }));
+            } else try js.expression(wire, try js.call(try js.name(try cx.runtime("on")), &.{ node, listener }));
+            continue;
+        }
+        const evn = try cx.fresh("event");
+        const dom_blk = try js.block();
+        if (facts.prevent_default) try js.expression(dom_blk, try js.call(try js.member(try js.name(evn), "preventDefault"), &.{}));
+        if (facts.stop_propagation) try js.expression(dom_blk, try js.call(try js.member(try js.name(evn), "stopPropagation"), &.{}));
+        try js.expression(dom_blk, try js.call(try js.name(try cx.runtime("send")), &.{ listener, try js.name(evn) }));
+        try js.expression(wire, try js.call(try js.member(node, "addEventListener"), &.{ try js.string(kind orelse "click"), try js.arrow(&.{evn}, dom_blk) }));
+    }
+    var wire_name: ?[]const u8 = null;
+    if (handlers.items.len != 0) {
+        const base = try std.fmt.allocPrint(a, "{s}$on${d}", .{ req.decl, req.ordinal });
+        const all = try cx.arena.alloc(m.Name, params.items.len + 1);
+        all[0] = pg.elements.?;
+        @memcpy(all[1..], params.items);
+        try cx.pieceExport(base, try js.arrow(all, wire));
+        wire_name = base;
+    }
+    const out_handlers = try a.alloc(PieceHandler, handlers.items.len);
+    for (out_handlers, handlers.items, controls.items) |*o, h, c| o.* = .{ .ctor = h.ctor, .fields = h.fields, .controls = try a.dupe(u32, c.items) };
+    const data = try a.create(PieceData);
+    data.* = .{ .top = try copyHtml(a, pg.top_nodes[0]), .count = pg.count, .binds = binds, .wire = wire_name, .handlers = out_handlers };
+    req.facts.* = .{ .written = true, .data = data };
+}
+
+/// `n`, deep, in `a`: what outlives the owner's lowering.
+fn copyHtml(a: std.mem.Allocator, n: Html) std.mem.Allocator.Error!Html {
+    const children = try a.alloc(Html, n.children.len);
+    for (children, n.children) |*to, c| to.* = try copyHtml(a, c);
+    return .{ .kind = n.kind, .name = try a.dupe(u8, n.name), .attributes = try a.dupe(u8, n.attributes), .void = n.void, .children = children };
+}
+
 /// One node of the static markup, as `serialise` writes it.
 const Html = struct {
     kind: enum { element, text },
@@ -206,11 +339,24 @@ const Event = struct {
     index: u32,
 };
 
-/// One binding function: the writes of one set of read sets.
+/// One binding function: the writes of one set of read sets, or a piece's
+/// binding function called with its elements and argument.
 const Function = struct {
     groups: []const u32,
     writes: std.ArrayList(u32) = .empty,
     name: m.Name = undefined,
+    piece: ?struct { use: u32, bind: u32 } = null,
+};
+
+/// Another module's root the page shows as pieces: its hole, its top
+/// element's place, its facts, the name of its elements, and the index of
+/// the first of its binding functions among the page's.
+const PieceUse = struct {
+    node: m.Node.Index,
+    target: u32,
+    data: *const PieceData,
+    elements: m.Name = undefined,
+    first: u32 = 0,
 };
 
 /// One program's page, as the lowering builds it.
@@ -244,6 +390,11 @@ const Page = struct {
     by_group: std.AutoHashMapUnmanaged(u32, std.ArrayList(u32)) = .empty,
     stamp: []u32 = &.{},
     dispatch: ?m.Name = null,
+    /// The page is another module's root, written as pieces (`piece`).
+    piece: bool = false,
+    /// A piece's binding functions' parameters after the elements.
+    piece_args: []const m.Name = &.{},
+    pieces: std.ArrayList(PieceUse) = .empty,
 
     fn a(pg: *Page) std.mem.Allocator {
         return pg.cx.arena;
@@ -317,6 +468,10 @@ const Page = struct {
                 const h = tree.hole(child);
                 if (textHole(h.kind)) return limit(pg.cx, child, "`browser-inline` writes a text hole as its element's whole text, and this one stands beside an element; wrap the hole and the text around it in an element of their own");
                 if (h.kind != .html) return later(pg.cx, child, "a hole that is not text of a `String`, a `Char` or a number");
+                if (pg.cx.programPiece(child)) |piece_facts| {
+                    try out.append(pg.a(), try pg.pieceHole(child, piece_facts, ctx));
+                    continue;
+                }
                 try out.append(pg.a(), try pg.when(child, inner, ctx));
                 continue;
             }
@@ -363,6 +518,18 @@ const Page = struct {
         }
         try pg.writes.append(pg.a(), .{ .target = target, .ctx = ctx, .groups = try sorted(pg.a(), groups.items), .what = .{ .text = parts.items }, .string = string or parts.items.len > 1 });
         return &.{};
+    }
+
+    /// An `html` hole that is another module's root, written as pieces
+    /// (§8.4): its static markup in place, its elements numbered after its
+    /// top element's place.
+    fn pieceHole(pg: *Page, n: m.Node.Index, facts: *const m.PieceFacts, ctx: u32) m.Error!Html {
+        if (!facts.written) return error.Reported;
+        const data: *const PieceData = @ptrCast(@alignCast(facts.data.?));
+        if (ctx != 0) return later(pg.cx, n, "another module's markup inside an `if` or a `case` of the `view`");
+        try pg.pieces.append(pg.a(), .{ .node = n, .target = pg.count, .data = data });
+        pg.count += 1 + data.count;
+        return data.top;
     }
 
     /// An `html` hole among an element's children: an eager `when`
@@ -536,7 +703,7 @@ const Page = struct {
         const init = try cx.programInit(body);
         // The model, kept only when something reads it.
         pg.model = try cx.fresh("model");
-        const reads_model = pg.writes.items.len != 0 or pg.events.items.len != 0 or subs.len != 0 or runs;
+        const reads_model = pg.writes.items.len != 0 or pg.events.items.len != 0 or pg.pieces.items.len != 0 or subs.len != 0 or runs;
         if (reads_model) try js.let(body, pg.model, if (element_) try js.member(init, "a") else init);
         if (pg.top_nodes.len == 1) {
             cx.at(view_node);
@@ -554,7 +721,7 @@ const Page = struct {
             try js.expression(body, try js.call(try js.name(try cx.runtime("own")), &.{try js.arrow(&.{}, undo)}));
         }
         // The elements code refers to, by place.
-        const placed = for (pg.writes.items) |w| {
+        const placed = pg.pieces.items.len != 0 or for (pg.writes.items) |w| {
             if (w.target != null) break true;
         } else for (pg.events.items) |ev| {
             if (ev.target != null) break true;
@@ -577,8 +744,17 @@ const Page = struct {
             }
         }
 
+        // Each piece's elements, below its top element.
+        for (pg.pieces.items) |*u| {
+            u.elements = try cx.fresh("elements");
+            try js.constant(body, u.elements, try js.call(try js.member(try pg.ref(u.target), "querySelectorAll"), &.{try js.string("*")}));
+        }
         // The binding functions, each written once and called once now.
         try pg.group();
+        for (pg.pieces.items, 0..) |*u, ui| {
+            u.first = @intCast(pg.functions.items.len);
+            for (u.data.binds, 0..) |b, bi| try pg.functions.append(pg.a(), .{ .groups = b.groups, .piece = .{ .use = @intCast(ui), .bind = @intCast(bi) } });
+        }
         for (pg.functions.items) |*f| {
             const blk = try js.block();
             try pg.writeFunction(blk, f);
@@ -616,6 +792,19 @@ const Page = struct {
             refs[pl.key] += 1;
             only[pl.key] = @intCast(i);
             if (stateful_at.get(pg.events.items[i].target)) |fs| try pg.controls[pl.key].appendSlice(pg.a(), fs.items);
+        }
+        // Each piece's handlers, by the key the constructor reaches through
+        // the hole's maps.
+        const piece_keys = try pg.a().alloc([]m.Context.PieceKey, pg.pieces.items.len);
+        for (pg.pieces.items, piece_keys) |u, *ks| {
+            ks.* = try pg.a().alloc(m.Context.PieceKey, u.data.handlers.len);
+            for (u.data.handlers, ks.*) |h, *pk| {
+                pk.* = cx.programPieceKey(u.node, h.ctor) orelse return limit(cx, u.node, "an event of this other module's markup sends a message whose key `browser-inline` cannot name through the `Html.map`s around the call, each of which must be a constructor of one field");
+                const k = pk.key;
+                if (keys[k].fields != (if (pk.whole) 1 else h.fields)) return limit(cx, u.node, "an event of this other module's markup sends a message whose key's handler takes another number of fields");
+                refs[k] += 1;
+                for (h.controls) |c| try pg.controls[k].append(pg.a(), u.first + c);
+            }
         }
         for (refs, 0..) |r, k| if (r != 0 and element_) {
             if (try pg.command(@intCast(k))) runs = true;
@@ -705,6 +894,32 @@ const Page = struct {
                 try js.string(pl.kind orelse "click"),
                 try js.arrow(&.{ev}, dom),
             }));
+        }
+
+        // Each piece's events, wired to the handlers of their keys.
+        for (pg.pieces.items, piece_keys) |u, ks| {
+            const wire = u.data.wire orelse continue;
+            const args = try pg.a().alloc(m.Expr, ks.len + 1);
+            args[0] = try js.name(u.elements);
+            for (args[1..], ks, u.data.handlers) |*x, pk, h| {
+                const handler_ = try js.name(try pg.handler(pk.key));
+                if (!pk.whole) {
+                    x.* = handler_;
+                    continue;
+                }
+                // The key's handler takes the message below its leaf: made
+                // here, from the constructor's fields.
+                const fields = try pg.a().alloc(m.Name, h.fields);
+                const field_exprs = try pg.a().alloc(m.Expr, h.fields);
+                for (fields, field_exprs) |*f, *fe| {
+                    f.* = try cx.fresh("value");
+                    fe.* = try js.name(f.*);
+                }
+                const blk = try js.block();
+                try js.expression(blk, try js.call(handler_, &.{try cx.programPieceMessage(u.node, h.ctor, pk.key, field_exprs)}));
+                x.* = try js.arrow(fields, blk);
+            }
+            try js.expression(body, try js.call(try js.name(try cx.programPieceName(u.node, wire)), args));
         }
 
         // Each subscription started: the first declaration of each key
@@ -863,6 +1078,7 @@ const Page = struct {
 
     /// The one descendant the page's code refers to, when it is one.
     fn onlyTarget(pg: *Page) ?u32 {
+        if (pg.pieces.items.len != 0) return null;
         var only: ?u32 = null;
         for (pg.writes.items) |w| if (w.target) |t| {
             if (only != null and only.? != t) return null;
@@ -907,7 +1123,11 @@ const Page = struct {
         var chain: std.ArrayList(u32) = .empty;
         var at: ?u32 = ctx;
         while (at) |c| : (at = pg.ctxs.items[c].parent) try chain.insert(pg.a(), 0, c);
-        try pg.cx.programViewEnter(blk, try pg.cx.js.name(pg.model));
+        if (pg.piece) {
+            const args = try pg.a().alloc(m.Expr, pg.piece_args.len);
+            for (args, pg.piece_args) |*x, n| x.* = try pg.cx.js.name(n);
+            try pg.cx.pieceViewEnter(blk, args);
+        } else try pg.cx.programViewEnter(blk, try pg.cx.js.name(pg.model));
         for (chain.items[1..]) |c| {
             const x = pg.ctxs.items[c];
             try pg.cx.programBranchEager(x.node, x.arm);
@@ -925,6 +1145,18 @@ const Page = struct {
     fn writeFunction(pg: *Page, blk: m.Block, f: *const Function) m.Error!void {
         const cx = pg.cx;
         const js = cx.js;
+        if (f.piece) |at| {
+            const u = pg.pieces.items[at.use];
+            const arms = try pg.enter(blk, 0);
+            const args = try cx.programPieceArgs(blk, u.node);
+            const callee = try cx.programPieceName(u.node, u.data.binds[at.bind].name);
+            const all = try pg.a().alloc(m.Expr, args.len + 1);
+            all[0] = try js.name(u.elements);
+            @memcpy(all[1..], args);
+            try js.expression(blk, try js.call(try js.name(callee), all));
+            pg.leave(arms);
+            return;
+        }
         var done: std.ArrayList(u32) = .empty;
         for (f.writes.items) |first| {
             const ctx = pg.writes.items[first].ctx;

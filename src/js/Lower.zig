@@ -318,11 +318,39 @@ pub const Direct = struct {
     /// `browser-inline.md` §7: every piece the build lifts, by the index
     /// reachability numbers it with.
     lifts: []const Lift.Piece = &.{},
+    /// `browser-inline.md` §8.4: every markup root a program of another
+    /// module writes as pieces, in the order the pre-pass found them.
+    view_pieces: []const ViewPiece = &.{},
 
     pub const Site = struct {
         module: u32,
         token: u32,
         fallback: []const u8 = "",
+        /// The write-set pass's class for it: one call reaches it.
+        unique: bool = true,
+    };
+
+    /// A root of module `module` (its markup at `token`, the body of
+    /// declaration `decl`, interface row `value`) that program `program`
+    /// writes as pieces, its holes on call path `path`. The owner writes
+    /// `facts` with `arena` while it is lowered, before the program's
+    /// module is (`Emit`'s first wave), and the program site reads them.
+    pub const ViewPiece = struct {
+        program: u32,
+        module: u32,
+        token: u32,
+        decl: u32,
+        value: u32,
+        ordinal: u32,
+        path: []const u64,
+        /// No code but the program's site names the declaration: it is
+        /// written as its pieces alone.
+        consumed: bool,
+        /// Why the root cannot be written as pieces, for the program site
+        /// to report at its hole; null: it can.
+        refusal: ?[]const u8 = null,
+        facts: *beni_markup.PieceFacts,
+        arena: std.mem.Allocator,
     };
 
     pub const Program = struct {
@@ -560,8 +588,10 @@ pub fn lower(
     // The markup lowering's `module` runs before any root (`boundary.md`
     // §9.4.3), so what it hoists is known before the first declaration.
     try l.beginMarkup();
+    try l.markPieceDecls();
     var declarations: std.ArrayList(Node.Index) = .empty;
     try l.declarations(&declarations);
+    try l.viewPieces();
     try l.exports(&declarations);
     // §9's derived functions and §9.1's primitive comparators, one pass
     // sorted by printed name text (§8.5), in front of the declarations
@@ -950,6 +980,12 @@ pub const Lowerer = struct {
     /// Inside `cx.programViewEnter` (version 1.7): the `view` root whose
     /// inputs are bound, and the declaration context to return to.
     program_view: ?struct { root: ?beni_markup.Root.Index, saved: DeclCtx } = null,
+    /// Version 1.15: the view piece being written (`viewPieces`), and the
+    /// program it is written for.
+    piece_now: ?*const Direct.ViewPiece = null,
+    piece_pc: ProgramCall = undefined,
+    /// The pieces' names, exported.
+    piece_exports: std.ArrayList(JsIr.NameIndex) = .empty,
     /// Inside `cx.programInlineEnter` (version 1.9): the calls entered,
     /// innermost last, and their call path (`Direct.Hole.path`).
     inline_frames: std.ArrayList(InlineFrame) = .empty,
@@ -1022,6 +1058,9 @@ pub const Lowerer = struct {
     /// under `--release` (`findInlines`), and whether a call took it in.
     inline_candidate: []bool = &.{},
     inlined: []bool = &.{},
+    /// Per declaration: some code lowered names it (`topName`), so it is
+    /// emitted even when a call of it was written in place.
+    name_used: []bool = &.{},
     /// Per declaration: a candidate that calls itself, in tail position
     /// only, and so is written in place as its loop, where its call is in
     /// tail position of a function that is no loop.
@@ -1815,7 +1854,7 @@ pub const Lowerer = struct {
             }
         }
         for (order, parts) |index, part| {
-            if (index < l.inlined.len and l.inlined[index]) continue;
+            if (index < l.inlined.len and l.inlined[index] and !l.name_used[index]) continue;
             try out.appendSlice(l.scratch, part);
         }
     }
@@ -2371,6 +2410,8 @@ pub const Lowerer = struct {
             // A markup primitive is the markup runtime's, not this module's.
             if (d.kind == .vocab_markup) continue;
             if (d.kind == .value and d.body == .none) continue;
+            // A declaration written only as view pieces (version 1.15).
+            if (decl_index.int() < l.consumed.len and l.consumed[decl_index.int()]) continue;
             if (l.liveDecl(decl_index.int())) try names.append(l.scratch, try l.name(.{
                 .module = l.module_name.toOptional(),
                 .base = l.bir.symbol(d.name),
@@ -2381,6 +2422,8 @@ pub const Lowerer = struct {
                 try names.append(l.scratch, try l.twinName(l.module_name, l.bir.symbol(d.name)));
             }
         }
+        // Its view pieces (`browser-inline.md` §8.4).
+        try names.appendSlice(l.scratch, l.piece_exports.items);
         // The pieces it lifts for program sites that survived
         // (`browser-inline.md` §7).
         if (l.in.direct) |dr| for (dr.lifts, 0..) |piece, gi| {
@@ -4123,6 +4166,10 @@ pub const Lowerer = struct {
         // A declaration the program hook consumed, named after all — markup
         // on the value path calls it — is emitted (`declarations`).
         if (decl < l.wanted.len) l.wanted[decl] = true;
+        // A declaration written in place at its one call is still emitted
+        // when code names it: the same call lowered again — an arm of
+        // `update` a handler writes in place — that did not take it in.
+        if (decl < l.name_used.len) l.name_used[decl] = true;
         return l.name(.{
             .module = l.module_name.toOptional(),
             .base = base,
@@ -9341,6 +9388,8 @@ pub const Lowerer = struct {
         @memset(l.inline_candidate, false);
         l.inlined = try l.scratch.alloc(bool, decls.len);
         @memset(l.inlined, false);
+        l.name_used = try l.scratch.alloc(bool, decls.len);
+        @memset(l.name_used, false);
         if (!l.in.inline_once) return;
         const tags = l.bir.insts.items(.tag);
         const data = l.bir.insts.items(.data);
@@ -9750,7 +9799,8 @@ pub const Lowerer = struct {
         const body = l.bodyOf(index);
         const args = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(l.bir.instData(site).rhs))), Inst.Index);
         loop.ready = l.mayGoInPlace(params, body);
-        loop.label = try l.topName(index);
+        // The label is the declaration's name, not a use of it.
+        loop.label = try l.name(.{ .module = l.module_name.toOptional(), .base = l.bir.symbol(l.bir.decls[index].name), .tag = JsIr.Name.no_tag });
         // As `enterInline`: each argument lowered, and bound when it is not
         // an atom, before the next — kept when it may have an effect.
         const values = try l.scratch.alloc(Node.Index, args.len);
@@ -12509,6 +12559,288 @@ pub const Lowerer = struct {
         return result;
     }
 
+    // ---- View pieces (version 1.15) ----------------------------------------
+    //
+    // `browser-inline.md` §8.4: a root of this module that a program of
+    // another module shows — the body of a function its `view` calls — is
+    // written here as pieces by the lowering's `piece` hook, in the program's
+    // facts on the root's call path, and the program site, lowered after
+    // this module, reads what the hook recorded. The declaration itself is
+    // left out when nothing else names it (`ViewPiece.consumed`), as a
+    // program module's own `view` is.
+
+    /// The declarations this module writes only as pieces.
+    fn markPieceDecls(l: *Lowerer) Allocator.Error!void {
+        const d = l.in.direct orelse return;
+        for (d.view_pieces) |vp| {
+            if (vp.module != l.in.module.int() or !vp.consumed or vp.decl >= l.bir.decls.len) continue;
+            if (l.consumed.len == 0) {
+                l.consumed = try l.scratch.alloc(bool, l.bir.decls.len);
+                @memset(l.consumed, false);
+            }
+            if (l.wanted.len == 0) {
+                l.wanted = try l.scratch.alloc(bool, l.bir.decls.len);
+                @memset(l.wanted, false);
+            }
+            l.consumed[vp.decl] = true;
+        }
+    }
+
+    /// The root a view piece's declaration's body is, past its `let`s.
+    fn pieceRoot(l: *Lowerer, decl: u32) ?beni_markup.Root.Index {
+        const st = l.mk orelse return null;
+        var body = l.bodyOf(decl);
+        while (l.bir.instTag(body) == .let) body = @fromBackingInt(@intCast(l.bir.instData(body).rhs));
+        return st.built.rootAt(body.int());
+    }
+
+    /// Each view piece of this module, written by the lowering's hook.
+    fn viewPieces(l: *Lowerer) Allocator.Error!void {
+        const d = l.in.direct orelse return;
+        const st = l.mk orelse return;
+        const hook = st.lowering.piece orelse return;
+        for (d.view_pieces) |*vp| {
+            if (vp.module != l.in.module.int() or vp.refusal != null) continue;
+            if (!l.liveDecl(vp.decl)) continue;
+            // A second lowering of the module writes them again.
+            vp.facts.* = .{};
+            const root = l.pieceRoot(vp.decl) orelse continue;
+            l.piece_pc = .{ .inst = d.programs[vp.program].inst, .constructor = 0, .direct = &d.programs[vp.program] };
+            const saved_now = l.program_now;
+            l.program_now = &l.piece_pc;
+            defer l.program_now = saved_now;
+            l.piece_now = vp;
+            defer l.piece_now = null;
+            const saved_path = try l.scratch.dupe(u64, l.inline_path.items);
+            l.inline_path.clearRetainingCapacity();
+            try l.inline_path.appendSlice(l.scratch, vp.path);
+            defer {
+                l.inline_path.clearRetainingCapacity();
+                l.inline_path.appendSlice(l.scratch, saved_path) catch {};
+            }
+            const saved_pos = st.pos;
+            st.pos = l.pos(l.bodyOf(vp.decl));
+            defer st.pos = saved_pos;
+            const request: beni_markup.PieceRequest = .{
+                .root = root,
+                .decl = l.text(l.bir.symbol(l.bir.decls[vp.decl].name)),
+                .ordinal = vp.ordinal,
+                .facts = vp.facts,
+                .arena = vp.arena,
+            };
+            hook(&st.cx, &st.built.tree, &request) catch |err| switch (err) {
+                error.OutOfMemory => return error.OutOfMemory,
+                error.Reported => {},
+            };
+        }
+    }
+
+    /// `programViewEnter` for a view piece: its declaration's parameter
+    /// bound to `model`, its `let`s, and its root's inputs.
+    fn pieceViewEnter(l: *Lowerer, block: beni_markup.Block, args: []const Node.Index, vp: *const Direct.ViewPiece) Allocator.Error!void {
+        const st = l.mk.?;
+        const params = l.paramsOf(vp.decl);
+        if (params.len != args.len) return;
+        const index = l.pieceRoot(vp.decl) orelse return;
+        const saved = try l.enterDecl(vp.decl);
+        var stmts: StmtList = .empty;
+        for (params, args) |param, arg| try l.bindParam(&stmts, param, arg);
+        const lets = try l.viewLets(l.bodyOf(vp.decl));
+        {
+            const saved_skip = l.let_skip;
+            defer l.let_skip = saved_skip;
+            l.let_skip = lets.statements;
+            for (lets.groups) |g| try l.letBindings(&stmts, g);
+        }
+        try st.blocks.items[@backingInt(block)].appendSlice(l.scratch, stmts.items);
+        const root = st.built.tree.root(index);
+        const names = try l.scratch.alloc(beni_markup.Name, root.inputs.len);
+        for (names, 0..) |*n, k| {
+            const local = st.built.values[root.inputs.start + k].capture;
+            n.* = @fromBackingInt(@intCast((try l.localName(local)).int()));
+        }
+        try l.markupBindInputs(index, names);
+        l.program_view = .{ .root = index, .saved = saved };
+    }
+
+    /// `cx.pieceEventCtor`.
+    fn pieceEventCtor(l: *Lowerer, v: beni_markup.Value.Index, payload: bool) ?beni_markup.Context.PieceEvent {
+        const st = l.mk orelse return null;
+        const i = switch (st.built.values[@backingInt(v)]) {
+            .inst => |x| x,
+            else => return null,
+        };
+        const c = l.instCtor(i) orelse return null;
+        const arity = l.ctorArity(i);
+        if (arity != @intFromBool(payload)) return null;
+        const row = if (c.module == l.in.module.int()) l.ownCtorRow(c.index) else c.iface;
+        return .{ .ctor = .{ .module = c.module, .index = c.index, .iface = row }, .fields = arity };
+    }
+
+    /// A constructor reference as the steps name constructors: by index
+    /// for one of this module, by interface row for another's.
+    fn instCtor(l: *Lowerer, i: Inst.Index) ?Direct.Ctor {
+        const d = l.bir.instData(i);
+        return switch (l.bir.instTag(i)) {
+            .ctor => .{ .module = l.in.module.int(), .index = d.lhs, .iface = Direct.Ctor.none },
+            .ext_ctor => .{ .module = d.lhs, .index = Direct.Ctor.none, .iface = d.rhs },
+            else => null,
+        };
+    }
+
+    fn ctorEq(a: Direct.Ctor, b: Direct.Ctor) bool {
+        if (a.module != b.module) return false;
+        if (a.index != Direct.Ctor.none and b.index != Direct.Ctor.none) return a.index == b.index;
+        return a.iface != Direct.Ctor.none and a.iface == b.iface;
+    }
+
+    /// `cx.pieceExport`.
+    fn pieceExport(l: *Lowerer, base: []const u8, init: Node.Index) Allocator.Error!void {
+        const st = l.mk.?;
+        const sym = try l.interner.getOrPut(l.gpa, base);
+        const n = try l.name(.{ .module = l.module_name.toOptional(), .base = sym, .tag = JsIr.Name.no_tag });
+        try st.hoisted.append(l.scratch, try l.add(.const_decl, st.pos, @backingInt(n), init.int()));
+        try l.piece_exports.append(l.scratch, n);
+    }
+
+    /// The view piece an `html` hole of the program is: a call of another
+    /// module's function whose body is a root the pre-pass found.
+    fn holePiece(l: *Lowerer, node: beni_markup.Node.Index) ?struct { vp: *const Direct.ViewPiece, chain: Chain } {
+        const d = l.in.direct orelse return null;
+        const pc = l.program_now orelse return null;
+        const prog = pc.direct orelse return null;
+        if (l.piece_now != null) return null;
+        const chain = l.directChain(node) orelse return null;
+        const callee = chain.ext orelse return null;
+        const cd = l.bir.instData(callee);
+        for (d.view_pieces) |*vp| {
+            if (@intFromPtr(&d.programs[vp.program]) != @intFromPtr(prog)) continue;
+            if (vp.module == cd.lhs and vp.value == cd.rhs) return .{ .vp = vp, .chain = chain };
+        }
+        return null;
+    }
+
+    const unwritten_piece: beni_markup.PieceFacts = .{};
+
+    /// `cx.programPiece`: the facts, or the pre-pass's refusal reported at
+    /// the hole and facts that say the pieces were not written.
+    fn programPieceFacts(l: *Lowerer, node: beni_markup.Node.Index) Allocator.Error!?*const beni_markup.PieceFacts {
+        const found = l.holePiece(node) orelse return null;
+        if (found.vp.refusal) |why| {
+            try l.report(.not_implemented, l.holeInst(node), "{s}", .{why});
+            return &unwritten_piece;
+        }
+        return found.vp.facts;
+    }
+
+    /// The instruction a markup hole's value is.
+    fn holeInst(l: *Lowerer, node: beni_markup.Node.Index) Inst.Index {
+        const st = l.mk.?;
+        const h = st.built.tree.hole(node);
+        return switch (st.built.values[@backingInt(h.value)]) {
+            .inst => |i| i,
+            .call => |c| c.inst,
+            else => @fromBackingInt(@intCast(l.program_now.?.inst)),
+        };
+    }
+
+    /// `cx.programPieceName`.
+    fn programPieceName(l: *Lowerer, node: beni_markup.Node.Index, base: []const u8) Allocator.Error!JsIr.NameIndex {
+        const found = l.holePiece(node).?;
+        const m: Graph.Index = @fromBackingInt(@intCast(found.vp.module));
+        const sym = try l.interner.getOrPut(l.gpa, base);
+        try l.needName(.{ .module = m, .base = sym.toOptional() });
+        return l.name(.{ .module = l.in.graph.moduleName(m).toOptional(), .base = sym, .tag = JsIr.Name.no_tag });
+    }
+
+    /// `cx.programPieceArgs`: the call's arguments, in order, in the
+    /// `view`'s context.
+    fn programPieceArgs(l: *Lowerer, block: beni_markup.Block, node: beni_markup.Node.Index) Allocator.Error![]const beni_markup.Expr {
+        const st = l.mk.?;
+        const found = l.holePiece(node).?;
+        var stmts: StmtList = .empty;
+        const out = try l.scratch.alloc(beni_markup.Expr, found.chain.args.len);
+        for (out, found.chain.args) |*o, arg| {
+            var value = try l.expr(&stmts, arg);
+            if (!l.isAtom(value) and found.chain.args.len > 1) {
+                const n = try l.fresh(l.well.temp);
+                try l.constDecl(&stmts, n, value, l.pos(arg));
+                value = try l.ident(n, l.pos(arg));
+            }
+            o.* = @fromBackingInt(@intCast(value.int()));
+        }
+        try st.blocks.items[@backingInt(block)].appendSlice(l.scratch, stmts.items);
+        return out;
+    }
+
+    /// `cx.programPieceKey`: the key whose leaf is constructor `ctor` under
+    /// the hole's maps, each a constructor of one field.
+    fn programPieceKey(l: *Lowerer, node: beni_markup.Node.Index, ctor: beni_markup.Ctor) ?beni_markup.Context.PieceKey {
+        const layers = l.pieceLayers(node, ctor) orelse return null;
+        const leaf = layers.len - 1;
+        for (l.directKeys(), 0..) |_, k| {
+            const steps = l.directSteps(@intCast(k));
+            if (steps.len == 0) return null;
+            const fits = for (steps) |step| {
+                if (step.access.len > leaf) break false;
+                const leads = for (step.access, 0..) |a, depth| switch (a) {
+                    .ctor => |c| if (!ctorEq(c.ctor, layers[depth]) or c.field != 0) break false,
+                    else => break false,
+                } else true;
+                if (!leads) break false;
+                if (step.named and !ctorEq(step.ctor, layers[step.access.len])) break false;
+            } else true;
+            if (!fits) continue;
+            const last = steps[steps.len - 1];
+            if (!last.named) return null;
+            return .{ .key = @intCast(k), .whole = last.access.len < leaf };
+        }
+        return null;
+    }
+
+    /// The constructors a message of `ctor` from hole `node`'s markup is
+    /// made of, outermost first: each map's, then `ctor`.
+    fn pieceLayers(l: *Lowerer, node: beni_markup.Node.Index, ctor: beni_markup.Ctor) ?[]const Direct.Ctor {
+        const found = l.holePiece(node) orelse return null;
+        var layers: std.ArrayList(Direct.Ctor) = .empty;
+        for (found.chain.maps) |f| {
+            const shape = l.ctorShaped(f) orelse return null;
+            if (shape.args.len != 0) return null;
+            const c = l.instCtor(shape.ctor) orelse return null;
+            layers.append(l.scratch, c) catch return null;
+        }
+        layers.append(l.scratch, .{ .module = ctor.module, .index = ctor.index, .iface = ctor.iface }) catch return null;
+        return layers.items;
+    }
+
+    /// `cx.programPieceMessage`.
+    fn programPieceMessage(l: *Lowerer, node: beni_markup.Node.Index, ctor: beni_markup.Ctor, key: u32, fields: []const Node.Index) Allocator.Error!Node.Index {
+        const p = l.mk.?.pos;
+        const layers = l.pieceLayers(node, ctor) orelse return l.nullNode(p);
+        const steps = l.directSteps(key);
+        const below = steps[steps.len - 1].access.len + 1;
+        var k = layers.len - 1;
+        const rt = l.directCtor(layers[k]) orelse return l.nullNode(p);
+        var value = try l.ctorValue(rt[0], rt[1], fields, p);
+        while (k > below) {
+            k -= 1;
+            const wrap = l.directCtor(layers[k]) orelse return l.nullNode(p);
+            value = try l.ctorValue(wrap[0], wrap[1], &.{value}, p);
+        }
+        return value;
+    }
+
+    /// The interface row of this module's constructor `index`, by name.
+    fn ownCtorRow(l: *Lowerer, index: u32) u32 {
+        if (l.in.module.int() >= l.in.interfaces.len or index >= l.bir.ctors.len) return Direct.Ctor.none;
+        const iface = &l.in.interfaces[l.in.module.int()];
+        const want = l.text(l.bir.symbol(l.bir.ctors[index].name));
+        for (iface.ctors, 0..) |c, row| {
+            if (std.mem.eql(u8, l.text(iface.symbols[@backingInt(c.name)]), want)) return @intCast(row);
+        }
+        return Direct.Ctor.none;
+    }
+
     // ---- A key's arm from its fields (version 1.15) ----------------------
     //
     // `browser-inline.md` §8.4: a handler takes the key's leaf fields and no
@@ -13114,6 +13446,8 @@ pub const Lowerer = struct {
         refusal: beni_markup.Program.Callee.Refusal = .none,
         /// A component's callee, as the call names it (`Callee.debug`).
         callee: ?Inst.Index = null,
+        /// Version 1.15: the callee of another module (`other_module`).
+        ext: ?Inst.Index = null,
     };
 
     /// One call entered (`cx.programInlineEnter`): its chain, the context
@@ -13842,6 +14176,7 @@ pub const Lowerer = struct {
             .top => {},
             .ext_value => {
                 chain.refusal = .other_module;
+                chain.ext = callee;
                 return chain;
             },
             else => {
@@ -14268,6 +14603,7 @@ pub const Lowerer = struct {
     /// `view`'s context, and its root's inputs read under the names that
     /// binding gave them.
     fn directViewEnter(l: *Lowerer, block: beni_markup.Block, model: Node.Index) Allocator.Error!void {
+        if (l.piece_now) |vp| return l.pieceViewEnter(block, &.{model}, vp);
         const st = l.mk.?;
         const pc = l.program_now orelse return;
         const view, const root_index = l.programShape(pc.view);
@@ -15717,6 +16053,46 @@ const markup_vtable: beni_markup.VTable = struct {
         return lowerer(impl).directMessage(into, v, if (payload) |pl| node(pl) else null);
     }
 
+    fn pieceEventCtor(impl: *anyopaque, v: M.Value.Index, payload: bool) ?M.Context.PieceEvent {
+        return lowerer(impl).pieceEventCtor(v, payload);
+    }
+
+    fn pieceExport(impl: *anyopaque, base: []const u8, init: M.Expr) E!void {
+        return lowerer(impl).pieceExport(base, node(init));
+    }
+
+    fn programPiece(impl: *anyopaque, n: M.Node.Index) ?*const M.PieceFacts {
+        return lowerer(impl).programPieceFacts(n) catch &Lowerer.unwritten_piece;
+    }
+
+    fn programPieceName(impl: *anyopaque, n: M.Node.Index, base: []const u8) E!M.Name {
+        return @fromBackingInt(@intCast((try lowerer(impl).programPieceName(n, base)).int()));
+    }
+
+    fn programPieceArgs(impl: *anyopaque, into: M.Block, n: M.Node.Index) E![]const M.Expr {
+        return lowerer(impl).programPieceArgs(into, n);
+    }
+
+    fn pieceArity(impl: *anyopaque) u32 {
+        const l = lowerer(impl);
+        const vp = l.piece_now orelse return 0;
+        return @intCast(l.paramsOf(vp.decl).len);
+    }
+
+    fn pieceViewEnter(impl: *anyopaque, into: M.Block, args: []const M.Expr) E!void {
+        const l = lowerer(impl);
+        const vp = l.piece_now orelse return;
+        return l.pieceViewEnter(into, @ptrCast(args), vp);
+    }
+
+    fn programPieceKey(impl: *anyopaque, n: M.Node.Index, ctor: M.Ctor) ?M.Context.PieceKey {
+        return lowerer(impl).programPieceKey(n, ctor);
+    }
+
+    fn programPieceMessage(impl: *anyopaque, n: M.Node.Index, ctor: M.Ctor, key: u32, fields: []const M.Expr) E!M.Expr {
+        return expr(try lowerer(impl).programPieceMessage(n, ctor, key, @ptrCast(fields)));
+    }
+
     fn programMessageFields(impl: *anyopaque, into: M.Block, v: M.Value.Index, payload: ?M.Expr) E!M.Program.Message {
         const l = lowerer(impl);
         var stmts: StmtList = .empty;
@@ -16013,6 +16389,15 @@ const markup_vtable: beni_markup.VTable = struct {
         .program_view_leave = programViewLeave,
         .program_message = programMessage,
         .program_message_fields = programMessageFields,
+        .piece_event_ctor = pieceEventCtor,
+        .piece_export = pieceExport,
+        .program_piece = programPiece,
+        .program_piece_name = programPieceName,
+        .program_piece_args = programPieceArgs,
+        .piece_arity = pieceArity,
+        .piece_view_enter = pieceViewEnter,
+        .program_piece_key = programPieceKey,
+        .program_piece_message = programPieceMessage,
         .program_dispatch = programDispatch,
         .reaches_debug = reachesDebug,
         .program_list = programList,

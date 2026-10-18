@@ -2262,16 +2262,20 @@ one that first uses it; a lowering that targets 1.14 sees what it saw.
   amended 2026-10-17), each with the groups its writes reach; `programCallsAt(key, tail, group)`;
   and `programArmPaths(key, block, params, model, update, tails)`, which writes the arm with the
   model assigned and the lowering's block `tails[t]` placed at each tail `t`.
-- **Pieces.** `Lowering.piece`, a hook `piece(cx, tree, request)` run in the module that owns a
-  markup root another module's program uses, with `PieceRequest`: the root, the call path its facts
-  answer on, and the names of its HTML string and of each binding function with the holes it
-  writes. `Program.Callee.piece`: an `html` hole's callee is another module's root, written as
-  pieces. `programPiece(node)`: those pieces' facts at the program site — the HTML string's name;
-  per binding function its name, groups and whether it is static; per event its element (an
-  ordinal among the root's descendants, or the root itself), its DOM event and flags, the key its
-  message reaches through the maps around the call, and its argument: none, the payload through
-  the event's extractor, or constants spelled. Both read one record the pieces pre-pass makes
-  before any module is lowered, so the two sides agree.
+- **Pieces** (*as built 2026-10-18*). `Lowering.piece`, a hook `piece(cx, tree, request)` run in
+  the module that owns a markup root another module's program shows, with `PieceRequest`: the
+  root, its declaration's name and ordinal, and `facts` with the arena to write them in. Inside it
+  the program's facts answer on the root's call path; `pieceArity` and `pieceViewEnter(block,
+  args)` enter the root's function with its parameters bound; `pieceEventCtor(handler, payload)`
+  reads an event's handler value as a constructor and its fields; `pieceExport(base, init)`
+  writes an exported constant `<Module>$<base>`. `PieceFacts` is `written` and the lowering's
+  own record, opaque to the compiler. At the program site, `programPiece(node)` gives an `html`
+  hole's facts when the hole is another module's root (or reports why it cannot be, and facts not
+  written); `programPieceName(node, base)` imports a piece; `programPieceArgs(block, node)`
+  evaluates the call's arguments; `programPieceKey(node, ctor)` names the key a constructor of
+  the root's message reaches through the maps, and `programPieceMessage` makes the message below a
+  key whose leaf is a map's constructor. The owner is lowered before the program site
+  (`browser-inline.md` §8.4, amended 2026-10-18).
 
 #### 9.4.7 Diagnostics
 

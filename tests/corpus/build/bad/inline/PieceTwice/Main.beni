@@ -1,0 +1,38 @@
+-- `Counter.view` shown twice: `browser-inline` writes another module's
+-- markup as pieces for one place (docs/design/browser-inline.md §8.4), so
+-- the second place is a limit of the compiler, class 1 (§5), reported at
+-- the program's hole.
+import Browser
+import Counter
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    c : Counter.Model
+
+
+type Msg
+    = CounterMsg Counter.Msg
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        CounterMsg sub →
+            { model | c = Counter.update sub model.c }
+
+
+view : Model → Html Msg
+view model =
+    <div data-role="app">
+        {Html.map (Counter.view model.c) CounterMsg}
+        {Html.map (Counter.view model.c) CounterMsg}
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → { c = Counter.init ⊤ }, update = update, view = view })
+        "root"

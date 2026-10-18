@@ -1,0 +1,38 @@
+-- `Pages.view`'s button sends `Go 1`, a constructor applied to a constant.
+-- Another module's events are wired by that module's piece, which hands
+-- the handler a constructor's fields from the event alone
+-- (docs/design/browser-inline.md §8.4): a limit of the compiler, class 4
+-- (§5), reported at the event.
+import Browser
+import Html exposing (Html)
+import Pages
+import Tea
+
+
+type alias Model =
+    pages : Pages.Model
+
+
+type Msg
+    = PagesMsg Pages.Msg
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        PagesMsg sub →
+            { model | pages = Pages.update sub model.pages }
+
+
+view : Model → Html Msg
+view model =
+    <div>
+        {Html.map (Pages.view model.pages) PagesMsg}
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → { pages = Pages.init ⊤ }, update = update, view = view })
+        "root"
