@@ -11,7 +11,7 @@
 # machine (the first argument; by default the reactivity-research project's
 # Solid setup, where npm installed them), and their versions are checked
 # against the pins below. Run it by hand to move the pin, then update
-# `parse5_id` and `parse5_sha256` in tests/blackbox/browser.zig with what
+# `parser_id` and `parser_sha256` in tests/blackbox/browser.zig with what
 # it prints, run `zig build test-run-hashes` (every browser record changes)
 # and commit them together. The same packages give the same bytes.
 set -euo pipefail
@@ -52,5 +52,5 @@ node_modules/.bin/rolldown entry.mjs --format esm --minify --platform neutral --
   echo " */"
 } >"$here/parse5.mjs"
 
-echo "parse5_id: parse5-$PARSE5"
-echo "parse5_sha256: $(sha256sum "$here/parse5.mjs" | cut -d' ' -f1)"
+echo "parser_id: parse5-$PARSE5"
+echo "parser_sha256: $(sha256sum "$here/parse5.mjs" | cut -d' ' -f1)"
