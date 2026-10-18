@@ -184,9 +184,9 @@ program site calls them.
 *Amended 2026-10-17 (S1, #297):* the pieces are of three kinds, each named by its declaration and
 an ordinal as above: a lifted lambda, `<Module>$<declaration>$$lift$<n>`; an **arm piece**,
 `<Module>$<declaration>$$arm$<n>`, one branch of a `case` at which the key tree splits a message;
-and the **view pieces** of a markup root another module's program uses, its HTML string
-`<Module>$<declaration>$$html$<n>` and its binding functions `<Module>$<declaration>$$bind$<n>`
-(§8.4). The program site knows an arm piece by its name and parameters and a view piece by the
+and the **view pieces** of a markup root another module's program uses, its binding functions
+`<Module>$<declaration>$bind$<n>$<k>` and its event wiring `<Module>$<declaration>$on$<n>`
+(§8.4, amended 2026-10-18). The program site knows an arm piece by its name and parameters and a view piece by the
 facts `programPiece` gives (§8.4), never by its body.
 
 **Rejected: writing the other module's code at the program site** (option 1). It specialises code
@@ -344,24 +344,36 @@ program site by name (option 2 of §7, extended to `update` and `view`).
   `emit/release/inline/ArmPiece/`). A key whose split inside another module is followed by a
   further split in a function that branch's arm calls is `deep_split`, a limit of the compiler.
 - **View pieces**, of a `view` (or a function `view` calls through `Html.map`) of another module,
-  on one call path: `<Module>$<declaration>$$html$<n>`, the unit's HTML string (§8.2); and
-  `<Module>$<declaration>$$bind$<n>`, one per binding function (§8.2's grouping), taking `E`, then
-  the function's parameters. The events are not a piece: the program site wires each from
-  `programPiece`'s facts — the element's ordinal, the key the event's message reaches through the
-  `Html.map`s around the call, and its argument: none, the payload, or constants the program site
-  spells. An argument the program site cannot write is a limit of the compiler.
+  on one call path: `<Module>$<declaration>$bind$<n>$<k>`, one per binding function (§8.2's
+  grouping), taking `E` — the root's top element's descendants, which the program site finds with
+  one `querySelectorAll` — then the function's parameters; and `<Module>$<declaration>$on$<n>`,
+  taking `E` and one handler per constructor the root's events send, in the order of each's first
+  event, which wires every event of the root: the handler called with none, or with the payload
+  through the event's extractor. The program site passes each handler of the key the constructor
+  reaches through the `Html.map`s around the call, each a constructor of one field — the key's own
+  handler when its leaf is that constructor, or, when its leaf is a map's constructor, a function
+  that makes the message below the leaf from the constructor's fields and calls it. Any other
+  handler value is a limit of the compiler. The root's static markup is not a piece: the facts carry
+  it, and the program site writes it into its own HTML string, in its place.
 - **Names and numbers** are input-derived: a piece's `n` counts the pieces of its declaration
-  before it, in the order the pass meets them (CLAUDE.md rule 5). A piece's facts — its groups,
-  bakes, element ordinals and events — are computed once, serially, by the pieces pre-pass from the
-  write-set pass and the module's `Bir`, before any module is lowered, and both the owning module
-  (the `piece` hook, run there) and the program site (`programPiece`) read that one record, so
-  they agree by construction.
+  before it, in the order the pass meets them, and `k` its binding functions in document order
+  (CLAUDE.md rule 5). *Amended 2026-10-18 (as built):* the pieces pre-pass, serial and before any
+  module is lowered, finds the roots — each markup root of a module other than the program's on the
+  write-set pass's sites, its declaration, its call path, and whether anything but the program's
+  own markup functions names the declaration (if not, the declaration is written only as its
+  pieces) — and the **owning module's lowering** computes the facts (`Lowering.piece`): its
+  groups, bakes, element ordinals, static markup and events, with the program's write-set facts on
+  the root's call path. A module is lowered in a wave one past every module whose pieces it reads,
+  so a program site reads facts no worker is still writing; the waves are input-derived, and the
+  output is the same at every `--jobs`. A root a program shows at more than one place, or one not
+  exposed, is a limit of the compiler, reported at the program's hole.
 - **A cross-module reader** (D-c) — `W2.view` reading `W1.Model` — is a binding piece of `W2`
   whose groups `W1`'s keys reach: the handler of each such key calls it in its write pass, from the
   program site, by name. There is no registration at mount and no rule about which widget is above
   which.
 - **The first refusal S1 removes** is a `view` through `Html.map` whose markup is another
-  module's (§5, class 1 until then).
+  module's (§5, class 1 until then). *Removed 2026-10-18* (`browser/inline/Counter/`, `Reader/`,
+  `ResearchS2/`, `ResearchS3/`, `Texts/`).
 - **Handlers live at the program site**: the arm, the pass and the wiring of every key, whatever
   module its markup is in. *Measured against tea-inline's in-widget handlers at N = 256.*
 
@@ -402,6 +414,8 @@ the compiler"*, a language rule never says *"yet"*):
 | a key whose message reaches a function of another module that is not a `case` on it, or that splits it again inside (`deep_split`): *"… hands a message to a function of another module that `browser-inline` cannot write as one function per message …"* | 4 | the call | `ArmNotCase/` |
 | a message wrapped in a constructor of several fields, a field of which the arm binds: *"… wraps another in a constructor of more than one field, and a handler is handed only the inner message's fields …"* | 4 | the field's pattern | `ArmWideWrapper/` |
 | a message handed to a function a value holds: *"… a function held in a value, which `browser-inline` cannot follow to the arm a key takes …"* | 4 | the call | `ArmHeldFunction/` |
+| another module's markup shown at more than one place: *"… writes another module's markup as pieces for one place only …"* | 1 | the program's hole | `PieceTwice/` |
+| an event of another module's markup whose handler value is not one constructor taking the payload or nothing: *"… wires an event of another module's markup to a handler of the constructor it sends …"* | 4 | the event | `PieceEventArgs/` |
 | an event argument or a piece capture the program site cannot write; a `view` `let` read by several holes | 4 / 1 | the construct | — |
 | a text hole beside an element: *"… writes a text hole as its element's whole text, and this one stands beside an element; wrap the hole and the text around it in an element of their own …"* | 4 | the hole | `TextBesideElement/` |
 | an attribute that changes and is not a DOM property `prop` writes | 1 | the element | `AttributeChanges/` |

@@ -98,6 +98,14 @@ pub const Lowering = struct {
     /// the platform's `Program` of the mount. The record is not evaluated;
     /// what the lowering asks of it is (`Context.programInit`).
     program: ?*const fn (cx: *Context, tree: *const Tree, p: *const Program) Error!Expr = null,
+    /// 1.15: the piece hook (`browser-inline.md` §8.4). Runs in a module
+    /// whose markup root another module's program writes in place of a call
+    /// of the root's function: it writes the root's pieces with
+    /// `Context.pieceExport` and what the program site needs of them into
+    /// `request.facts`. The module is lowered before the program's, so the
+    /// program site reads the facts (`Context.programPiece`). Null: no
+    /// root is written as pieces.
+    piece: ?*const fn (cx: *Context, tree: *const Tree, request: *const PieceRequest) Error!void = null,
     /// 1.6: the values that place programs on a page, which a lowering
     /// lists when one program value mounted twice would share one state:
     /// the compiler refuses a top-level program value named twice among
@@ -169,6 +177,44 @@ pub const Placement = struct {
 /// (`write-sets.md` §1.1's shape). What the record holds is read through
 /// the context (`programInit`); the shapes say what the compiler could
 /// reach.
+/// 1.15: a root a program of another module writes as pieces
+/// (`Lowering.piece`).
+pub const PieceRequest = struct {
+    root: Root.Index,
+    /// The name of the declaration whose body the root is, which every piece's
+    /// name begins with: `view` gives `<Module>$view$bind$0`.
+    decl: []const u8,
+    /// The root's ordinal among its declaration's pieces.
+    ordinal: u32,
+    /// What the program site reads, written with `arena`, which outlives the
+    /// module's lowering.
+    facts: *PieceFacts,
+    arena: std.mem.Allocator,
+};
+
+/// 1.15: what a program site knows of another module's root it writes as
+/// pieces, from that module's lowering (`Lowering.piece`).
+pub const PieceFacts = struct {
+    /// The pieces were written; false when the owner refused the root, which
+    /// it reported.
+    written: bool = false,
+    /// The lowering's own record of the pieces — their names, the static
+    /// markup, the elements, the read sets of each binding function, the
+    /// constructors the events send — in `PieceRequest.arena`: what its
+    /// program site reads. The compiler never looks inside.
+    data: ?*const anyopaque = null,
+};
+
+/// 1.15: a constructor by its module, its index among that module's
+/// constructors and its row in that module's interface (`none` when the
+/// module does not export it).
+pub const Ctor = struct {
+    module: u32,
+    index: u32,
+    iface: u32,
+    pub const none: u32 = std.math.maxInt(u32);
+};
+
 pub const Program = struct {
     /// Which of `Lowering.programs` is called.
     constructor: u32,
@@ -1258,6 +1304,70 @@ pub const Context = struct {
         return cx.vtable.program_message(cx.impl, block, handler, payload);
     }
 
+    /// 1.15, inside `Lowering.piece` only, in `programViewEnter`: an
+    /// event's handler value as a constructor of the root's message and its
+    /// fields, when it is a constructor that takes the payload (`payload`) or
+    /// none; null for any other handler value.
+    pub fn pieceEventCtor(cx: *Context, handler: Value.Index, payload: bool) ?PieceEvent {
+        return cx.vtable.piece_event_ctor(cx.impl, handler, payload);
+    }
+
+    pub const PieceEvent = struct { ctor: Ctor, fields: u32 };
+
+    /// 1.15, inside `Lowering.piece` only: a top-level constant of the
+    /// module named `<Module>$<base>`, exported, of `value`.
+    pub fn pieceExport(cx: *Context, base: []const u8, init: Expr) Error!void {
+        return cx.vtable.piece_export(cx.impl, base, init);
+    }
+
+    /// 1.15, inside `Lowering.program` only: the facts of the pieces an
+    /// `html` hole is written as — a call of another module's root's
+    /// function, under maps of constructors — or null when it is not one.
+    pub fn programPiece(cx: *Context, node: Node.Index) ?*const PieceFacts {
+        return cx.vtable.program_piece(cx.impl, node);
+    }
+
+    /// 1.15: the piece `base` of hole `node`'s module, imported.
+    pub fn programPieceName(cx: *Context, node: Node.Index, base: []const u8) Error!Name {
+        return cx.vtable.program_piece_name(cx.impl, node, base);
+    }
+
+    /// 1.15, inside `programViewEnter`: the piece call's arguments, those
+    /// the root's function is called with, evaluated into `block`.
+    pub fn programPieceArgs(cx: *Context, block: Block, node: Node.Index) Error![]const Expr {
+        return cx.vtable.program_piece_args(cx.impl, block, node);
+    }
+
+    /// 1.15, inside `Lowering.piece` only: how many parameters the root's
+    /// function has, each an argument of every binding function.
+    pub fn pieceArity(cx: *Context) u32 {
+        return cx.vtable.piece_arity(cx.impl);
+    }
+
+    /// 1.15, inside `Lowering.piece` only: `programViewEnter` for the
+    /// root's function, its parameters bound to `args`. Leave with
+    /// `programViewLeave`.
+    pub fn pieceViewEnter(cx: *Context, block: Block, args: []const Expr) Error!void {
+        return cx.vtable.piece_view_enter(cx.impl, block, args);
+    }
+
+    /// 1.15: the key a message of constructor `ctor` reaches through the
+    /// maps around hole `node`, each a constructor of one field: one whose
+    /// leaf is `ctor`, or (`whole`) a constructor of a map around it, whose
+    /// handler takes the message below the leaf (`programPieceMessage`);
+    /// null when only a dispatcher could tell.
+    pub fn programPieceKey(cx: *Context, node: Node.Index, ctor: Ctor) ?PieceKey {
+        return cx.vtable.program_piece_key(cx.impl, node, ctor);
+    }
+
+    pub const PieceKey = struct { key: u32, whole: bool };
+
+    /// 1.15: for a `whole` piece key, the message of constructor `ctor`
+    /// applied to `fields`, under the maps below the key's leaf.
+    pub fn programPieceMessage(cx: *Context, node: Node.Index, ctor: Ctor, key: u32, fields: []const Expr) Error!Expr {
+        return cx.vtable.program_piece_message(cx.impl, node, ctor, key, fields);
+    }
+
     /// Version 1.15: `programMessage`, but a key is handed its leaf
     /// constructor's fields (`Program.Key.fields` of them) where a
     /// message of nested constructors reaches it — `CounterMsg Counter.Inc`
@@ -1653,6 +1763,15 @@ pub const VTable = struct {
     program_view_leave: *const fn (impl: *anyopaque) void,
     program_message: *const fn (impl: *anyopaque, block: Block, handler: Value.Index, payload: ?Expr) Error!Program.Message,
     program_message_fields: *const fn (impl: *anyopaque, block: Block, handler: Value.Index, payload: ?Expr) Error!Program.Message,
+    piece_event_ctor: *const fn (impl: *anyopaque, handler: Value.Index, payload: bool) ?Context.PieceEvent,
+    piece_export: *const fn (impl: *anyopaque, base: []const u8, value: Expr) Error!void,
+    program_piece: *const fn (impl: *anyopaque, node: Node.Index) ?*const PieceFacts,
+    program_piece_name: *const fn (impl: *anyopaque, node: Node.Index, base: []const u8) Error!Name,
+    program_piece_args: *const fn (impl: *anyopaque, block: Block, node: Node.Index) Error![]const Expr,
+    piece_arity: *const fn (impl: *anyopaque) u32,
+    piece_view_enter: *const fn (impl: *anyopaque, block: Block, args: []const Expr) Error!void,
+    program_piece_key: *const fn (impl: *anyopaque, node: Node.Index, ctor: Ctor) ?Context.PieceKey,
+    program_piece_message: *const fn (impl: *anyopaque, node: Node.Index, ctor: Ctor, key: u32, fields: []const Expr) Error!Expr,
     program_dispatch: *const fn (impl: *anyopaque, block: Block, msg: Expr, handlers: []const Name) Error!void,
     reaches_debug: *const fn (impl: *anyopaque, v: Value.Index) bool,
     program_list: *const fn (impl: *anyopaque, node: Node.Index) Program.ListFacts,

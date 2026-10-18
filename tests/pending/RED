@@ -114,19 +114,14 @@ tests/pending/browser/direct/DefectInTurnRender.beni PageFailed
 # key, across modules (docs/design/browser-inline.md §8, issue #297). Every
 # golden and refusal of the slice, written before the slice; each moves into
 # tests/corpus/ with the commit that passes it.
-tests/pending/browser/inline/Counter dev: exit=1 codes=not_implemented×2
-tests/pending/browser/inline/Reader dev: exit=1 codes=not_implemented×3
-tests/pending/browser/inline/ResearchS2 dev: exit=1 codes=not_implemented×2
-tests/pending/browser/inline/ResearchS3 dev: exit=1 codes=not_implemented×2
-tests/pending/browser/inline/Texts dev: exit=1 codes=not_implemented×2
 tests/pending/build/bad/inline/MapNotCtor GoldenMismatch
 tests/pending/build/bad/inline/MarkupValue GoldenMismatch
 tests/pending/build/bad/inline/ResearchListWidget GoldenMismatch
-tests/pending/emit/release/inline/Counter BuildFailed
-tests/pending/emit/release/inline/Reader BuildFailed
-tests/pending/emit/release/inline/ResearchS2 BuildFailed
-tests/pending/emit/release/inline/ResearchS3 BuildFailed
-tests/pending/emit/release/inline/Texts BuildFailed
+tests/pending/emit/release/inline/Counter exit=0 js-differs
+tests/pending/emit/release/inline/Reader exit=0 js-differs
+tests/pending/emit/release/inline/ResearchS2 exit=0 js-differs
+tests/pending/emit/release/inline/ResearchS3 exit=0 js-differs
+tests/pending/emit/release/inline/Texts exit=0 js-differs
 tests/pending/emit/release/inline/EnumCycle.beni exit=0 js-differs
 
 # CK-254 (2026-10-18, issue #286): a parameter's folded levels are not checked

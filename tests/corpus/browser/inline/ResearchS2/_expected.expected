@@ -152,4 +152,3 @@
 </body>
 -- detail window rr-push {"type": "serverSet", "widget": "w1", "state": {"beds": "x"}}
 (the DOM did not change)
-

@@ -1,0 +1,30 @@
+--! A pager whose buttons send a page number.
+
+import Html exposing (Html)
+
+
+pub type alias Model =
+    page : Int
+
+
+pub init : ⊤ → Model
+init ⊤ = { page = 1 }
+
+
+pub type Msg
+    = Go Int
+
+
+pub update : Msg, Model → Model
+update msg model =
+    case msg of
+        Go n →
+            { model | page = n }
+
+
+pub view : Model → Html Msg
+view model =
+    <nav>
+        <output>{model.page}</output>
+        <button onClick={Go 1}>First</button>
+    </nav>
