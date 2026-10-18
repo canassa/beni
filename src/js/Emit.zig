@@ -2623,6 +2623,8 @@ const Emitter = struct {
     /// so that the pieces a program site lifts (`browser-inline.md` §7) are
     /// nodes of the walk; `buildDirect` reads what it found.
     fn runWrites(e: *Emitter) !void {
+        const profile_token = e.session.profile.begin();
+        defer e.session.profile.end(0, profile_token, .writes, Profile.Event.no_file, 0);
         const n = e.graph().count();
         const a = e.scratch;
         const birs = try a.alloc(*const Bir, n);

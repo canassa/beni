@@ -153,7 +153,8 @@ pub const Phase = enum {
     write,
     render,
     /// The write-set pass (`write-sets.md` §6.2), once per run that asks
-    /// for it, after checking: its cost is a number beside `check`.
+    /// for it, after checking: its cost is a number beside `check`. A build
+    /// for a lowering that compiles programs whole runs it inside `emit`.
     writes,
     /// The ownership report (`ownership-checker.md` §9), once per run of
     /// `dump --stage=ownership`, after checking; and the enforcing pass of
