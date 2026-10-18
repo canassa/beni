@@ -1,0 +1,34 @@
+--! A widget of one button.
+
+import Html exposing (Html)
+
+
+pub type alias Model =
+    n : Int
+
+
+pub init : ⊤ → Model
+init ⊤ = { n = 0 }
+
+
+pub type Msg
+    = Bump
+    | Drop
+
+
+pub update : Msg, Model → Model
+update msg model =
+    case msg of
+        Bump →
+            { model | n = model.n + 1 }
+
+        Drop →
+            { model | n = model.n - 1 }
+
+
+pub view : Model → Html Msg
+view model =
+    <section>
+        <output>{model.n}</output>
+        <button data-role="bump" onClick={Bump}>+</button>
+    </section>

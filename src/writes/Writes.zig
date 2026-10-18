@@ -90,6 +90,10 @@ pub const Input = struct {
     /// compiles them away; null for every other build, whose results do
     /// not move.
     effects: ?Effects = null,
+    /// `write-sets.md`, *The caps* (the owner, 2026-10-17): the leaf cap
+    /// `L`, the alternative cap `A` and the size cap `S` do not apply, for
+    /// a platform whose lowering refuses a capped key; `k` and `I` stay.
+    lift_caps: bool = false,
 };
 
 /// The values of a platform's `Sub` and `Cmd` the pass recognises by name
@@ -1664,7 +1668,7 @@ fn mkAlt(a: *Writes, scrut: u32, keyed: bool, reads_in: u32, items_in: []const A
     }
     const items = flat.items;
     if (scrut == none and (reads == none or reads == 0) and items.len == 1 and items[0].gamma == 0) return items[0].term;
-    if (!keyed and items.len > cap_alt) {
+    if (!keyed and !a.in.lift_caps and items.len > cap_alt) {
         a.ctx.caps.a = true;
         var d: u32 = try a.altReadsOf(scrut, reads);
         for (items) |it| {
@@ -1818,7 +1822,7 @@ fn termSize(a: *Writes, t: u32, limit: u32) Allocator.Error!u32 {
 /// the root.
 fn capSize(a: *Writes, t0: u32) Error!u32 {
     const t = if (a.termDepth(t0) > k_limit) try a.cut(t0, 0) else t0;
-    if (try a.termSize(t, cap_size) > cap_size) {
+    if (!a.in.lift_caps and try a.termSize(t, cap_size) > cap_size) {
         a.ctx.caps.s = true;
         return a.mkFresh(try a.deps(t));
     }
@@ -5202,7 +5206,7 @@ fn keyTree(a: *Writes, kind: ProgramKind, update_fun: u32, g: u32, path_steps: *
         const sib = a.siblings(ctors[0]);
         const default = ctors.len < sib.count;
         const children: u32 = @as(u32, @intCast(ctors.len)) + @intFromBool(default);
-        if (leaves.* - 1 + children <= cap_leaves) {
+        if (a.in.lift_caps or leaves.* - 1 + children <= cap_leaves) {
             leaves.* = leaves.* - 1 + children;
             for (ctors) |c| {
                 const g2 = (try a.gammaAdd(g, &.{.{ .kind = .pos, .key = res.split, .val = c }})) orelse continue;

@@ -825,7 +825,12 @@ const Page = struct {
         for (pg.pieces.items, piece_keys) |u, *ks| {
             ks.* = try pg.a().alloc(m.Context.PieceKey, u.data.handlers.len);
             for (u.data.handlers, ks.*) |h, *pk| {
-                pk.* = cx.programPieceKey(u.node, h.ctor) orelse return limit(cx, u.node, "an event of this other module's markup sends a message whose key `browser-inline` cannot name through the `Html.map`s around the call, each of which must be a constructor of one field");
+                pk.* = cx.programPieceKey(u.node, h.ctor) orelse {
+                    // A key the pass cut or could not split names its own
+                    // cause before the maps are blamed.
+                    for (keys) |key| if (key.star or key.cap != .none) try pg.refuseKey(key);
+                    return limit(cx, u.node, "an event of this other module's markup sends a message whose key `browser-inline` cannot name through the `Html.map`s around the call, each of which must be a constructor of one field");
+                };
                 const k = pk.key;
                 if (keys[k].fields != (if (pk.whole) 1 else h.fields)) return limit(cx, u.node, "an event of this other module's markup sends a message whose key's handler takes another number of fields");
                 refs[k] += 1;

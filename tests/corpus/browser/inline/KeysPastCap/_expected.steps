@@ -1,0 +1,3 @@
+element "root"
+click [data-role=bump]
+click [data-role=last]

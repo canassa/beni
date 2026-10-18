@@ -1,0 +1,40 @@
+-- element "root"
+-- load
+<body>
+  <div id="root">
+    <div>
+      <section>
+        <output>"0"</output>
+        <button data-role="bump">"+"</button>
+      </section>
+      <p>"0"</p>
+      <button data-role="last">"last"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=bump]
+<body>
+  <div id="root">
+    <div>
+      <section>
+        <output>"1"</output>
+        <button data-role="bump">"+"</button>
+      </section>
+      <p>"0"</p>
+      <button data-role="last">"last"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=last]
+<body>
+  <div id="root">
+    <div>
+      <section>
+        <output>"1"</output>
+        <button data-role="bump">"+"</button>
+      </section>
+      <p>"257"</p>
+      <button data-role="last">"last"</button>
+    </div>
+  </div>
+</body>
