@@ -24,6 +24,8 @@ for any canonical input list, and the argument only matches the signature of
 
 namespace Ownership.CallDerivation
 
+open Ownership.FlatFragment.Fields
+
 open InPlaceSemantics HeapProof Soundness Ownership.FlatFragment.Support
   Ownership.FlatFragment.NamingFacts
 
@@ -164,45 +166,6 @@ theorem mem_otherPaths (args caps : List Abstract) (i j : Nat) (q p : Path) (a :
       | field _ => simp [ne, member]
       | element => simp [ne, member]
       | capture _ => simp [ne, member]
-
-/-- The cells-at-path fold: an origin in its result is in the accumulator
-    or in a cell list recorded at the path. -/
-theorem mem_cellsAt_fold (paths : List (Path × List Origin)) (p : Path) (acc : List Origin)
-    (o : Origin)
-    (member : o ∈ paths.foldl (fun cs (q, xs) => if p == q then union cs xs else cs) acc) :
-    o ∈ acc ∨ ∃ cs, (p, cs) ∈ paths ∧ o ∈ cs := by
-  induction paths generalizing acc with
-  | nil => exact Or.inl member
-  | cons entry paths ih =>
-    rcases entry with ⟨q, xs⟩
-    rw [List.foldl_cons] at member
-    rcases ih _ member with inAcc | ⟨cs, path, inCs⟩
-    · dsimp only at inAcc
-      by_cases same : (p == q) = true
-      · rw [if_pos same] at inAcc
-        rcases mem_union_cases acc xs o inAcc with old | new
-        · exact Or.inl old
-        · exact Or.inr ⟨xs, by rw [eq_of_beq same]; simp, new⟩
-      · rw [if_neg same] at inAcc
-        exact Or.inl inAcc
-    · exact Or.inr ⟨cs, List.mem_cons_of_mem _ path, inCs⟩
-
-theorem mem_cellsAt (a : Abstract) (p : Path) (o : Origin) (member : o ∈ a.cellsAt p) :
-    ∃ cs, (p, cs) ∈ a.paths ∧ o ∈ cs := by
-  unfold Abstract.cellsAt at member
-  rcases mem_cellsAt_fold a.paths p [] o member with none | found
-  · simp at none
-  · exact found
-
-/-- A field path of a record's component is a path of the record. -/
-theorem record_path_mem (xs : List Abstract) (i : Nat) (x : Abstract) (p : Path)
-    (cs : List Origin) (lookup : xs[i]? = some x) (path : (p, cs) ∈ x.paths) :
-    (.field i :: p, cs) ∈ (Abstract.record xs).paths := by
-  simp only [Abstract.paths]
-  refine List.mem_flatMap.mpr ⟨(⟨x, List.mem_of_getElem? lookup⟩, i), ?_,
-    List.mem_map.mpr ⟨(p, cs), path, rfl⟩⟩
-  rw [List.mk_mem_zipIdx_iff_getElem?]
-  simp [lookup]
 
 /-- An element path of a list's element abstract is a path of the list. -/
 theorem list_path_mem (cs : List Origin) (x : Abstract) (ex : Certificate) (p : Path)

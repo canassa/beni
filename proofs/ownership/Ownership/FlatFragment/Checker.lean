@@ -118,6 +118,77 @@ theorem except_bind_success {action : Except String α}
   | ok intermediate =>
     exact ⟨intermediate, rfl, by simpa [first] using run⟩
 
+/-- A successful `Except` map over a cons cell runs the head and the tail. -/
+theorem except_mapM_cons_success {α : Type} {β : Type} {f : α → Except String β} {head : α} {tail : List α}
+    {results : List β}
+    (run : (head :: tail).mapM f = .ok results) :
+    ∃ first rest, f head = .ok first ∧ tail.mapM f = .ok rest ∧ results = first :: rest := by
+  rw [List.mapM_cons] at run
+  obtain ⟨first, headRun, next⟩ := except_bind_success run
+  obtain ⟨rest, tailRun, returned⟩ := except_bind_success next
+  change Except.ok (first :: rest) = Except.ok results at returned
+  exact ⟨first, rest, headRun, tailRun, (Except.ok.inj returned).symm⟩
+
+theorem except_mapM_nil_success {α : Type} {β : Type} {f : α → Except String β} {results : List β}
+    (run : ([] : List α).mapM f = .ok results) : results = [] := by
+  rw [List.mapM_nil] at run
+  change Except.ok [] = Except.ok results at run
+  exact (Except.ok.inj run).symm
+
+theorem except_mapM_cons {α : Type} {β : Type} {f : α → Except String β} {head : α} {tail : List α}
+    {first : β} {rest : List β}
+    (headRun : f head = .ok first) (tailRun : tail.mapM f = .ok rest) :
+    (head :: tail).mapM f = .ok (first :: rest) := by
+  rw [List.mapM_cons]
+  simp [headRun, tailRun, bind, Except.bind, pure, Except.pure]
+
+/-- A successful map is pointwise successful, and conversely. -/
+theorem mapM_ok_fields {α β : Type} {f : α → Except String β} {xs : List α} {ys : List β}
+    (run : xs.mapM f = .ok ys) :
+    xs.length = ys.length ∧
+      ∀ (i : Nat) (x : α) (y : β), xs[i]? = some x → ys[i]? = some y → f x = .ok y := by
+  induction xs generalizing ys with
+  | nil =>
+    have := except_mapM_nil_success run
+    subst this
+    exact ⟨rfl, fun i x y h => by simp at h⟩
+  | cons x xs ih =>
+    obtain ⟨y, rest, headRun, tailRun, rfl⟩ := except_mapM_cons_success run
+    obtain ⟨len, fields⟩ := ih tailRun
+    refine ⟨by simp [len], ?_⟩
+    intro i x' y' at_x at_y
+    cases i with
+    | zero =>
+      simp at at_x at_y
+      subst at_x; subst at_y
+      exact headRun
+    | succ i => exact fields i x' y' (by simpa using at_x) (by simpa using at_y)
+
+theorem mapM_ok_of_fields {α β : Type} {f : α → Except String β} {xs : List α} {ys : List β}
+    (len : xs.length = ys.length)
+    (fields : ∀ (i : Nat) (x : α) (y : β), xs[i]? = some x → ys[i]? = some y → f x = .ok y) :
+    xs.mapM f = .ok ys := by
+  induction xs generalizing ys with
+  | nil =>
+    cases ys with
+    | nil => rfl
+    | cons _ _ => simp at len
+  | cons x xs ih =>
+    cases ys with
+    | nil => simp at len
+    | cons y ys =>
+      have headRun : f x = .ok y := fields 0 x y rfl rfl
+      have tailRun : xs.mapM f = .ok ys := ih (by simpa using len)
+        (fun i x' y' at_x at_y => fields (i + 1) x' y' (by simpa using at_x) (by simpa using at_y))
+      exact except_mapM_cons headRun tailRun
+
+/-- The exact typing equation of a primitive expression. -/
+theorem exprType_prim_success {args : List Atom} {op : Prim} {type : Ty} {self : Decl} {tenv : Env Ty} {declarations : List Decl}
+    (run : exprType declarations self tenv (.prim op args) = .ok type) :
+    ∃ types, args.mapM (atomType tenv) = .ok types ∧ primType op types = .ok type := by
+  change (args.mapM (atomType tenv) >>= fun types => primType op types) = .ok type at run
+  exact except_bind_success run
+
 /-- A successful checker bind exposes its real intermediate state. -/
 theorem checkM_bind_success {action : CheckM α} {next : α → CheckM β}
     (run : (action >>= next).run before = .ok (result, after)) :

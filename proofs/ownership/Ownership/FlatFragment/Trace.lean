@@ -16,6 +16,7 @@ open Ownership.FlatFragment.Atoms Ownership.FlatFragment.AtomInteger Ownership.F
 open Ownership.FlatFragment.Literal Ownership.FlatFragment.Length Ownership.FlatFragment.Shared Ownership.FlatFragment.Push Ownership.FlatFragment.Let
 open Ownership.FlatFragment.VariableFacts Ownership.FlatFragment.VariableRuntime Ownership.FlatFragment.VariablePreservation
 open Ownership.FlatFragment.AtomPreservation Ownership.FlatFragment.Env Ownership.FlatFragment.LiveSets Ownership.FlatFragment.Liveness Ownership.FlatFragment.AtomRuntime
+open Ownership.FlatFragment.Fields Ownership.FlatFragment.Observe Ownership.FlatFragment.AtomInference
 
 theorem heapAtomPost_heap (hs : State) (observations : List Observation) :
     (Ownership.FlatFragment.StateFrame.heapAtomPost hs observations).heap = hs.heap := by
@@ -27,6 +28,53 @@ theorem atomHeapPost_heap (hs : State) (observations : List Observation) :
   unfold Ownership.FlatFragment.AtomPreservation.heapAtomPost Ownership.FlatFragment.Observe.heapObserved
     Ownership.FlatFragment.AtomPreservation.heapTicked
   split <;> rfl
+
+/-- Both real evaluations of an atom expression succeed when their runtime
+bounds permit the tick, from the atom's two runs. -/
+theorem atom_runtime_success {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {escapes : List Origin} {gamma : Naming} {depth : Nat} {a : Atom} {o : Observation} {w : Value}
+    (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma)
+    (valueAtom : ValueSemantics.atom (valueEnv env) a = .ok o)
+    (heapAtom : InPlaceSemantics.atom (heapEnv env) a = .ok w)
+    (hasDepth : depth ≠ 0) (hasFuel : vs.fuel ≠ 0) :
+    (ValueSemantics.eval depth declarations none (valueEnv env) (.atom a)).run vs =
+      .ok (o, Ownership.FlatFragment.StateFrame.valueAtomPost vs) ∧
+    (InPlaceSemantics.eval depth declarations none (heapEnv env) (.atom a)).run hs =
+      .ok (w, Ownership.FlatFragment.StateFrame.heapAtomPost hs vs.kept.toList) ∧
+    FlatInvariant declarations (Ownership.FlatFragment.StateFrame.valueAtomPost vs)
+      (Ownership.FlatFragment.StateFrame.heapAtomPost hs vs.kept.toList) env live aenv tenv escapes gamma := by
+  obtain ⟨footprint, represented⟩ := inv.observers
+  have valueObservedRun := value_observeKept_run (Ownership.FlatFragment.StateFrame.valueTicked vs) represented
+  have heapObservedRun := heap_observeKept_run (Ownership.FlatFragment.StateFrame.heapTicked hs) represented
+  have heapFuel : hs.fuel ≠ 0 := by simpa only [← inv.fuel] using hasFuel
+  refine ⟨?_, ?_, Ownership.FlatFragment.StateFrame.tick_observer_post_invariant inv⟩
+  · rw [value_atom_eval_equation vs (valueEnv env) valueAtom]
+    simp [hasDepth, hasFuel, valueObservedRun, Ownership.FlatFragment.StateFrame.valueAtomPost,
+      Except.bind, Except.pure]
+  · rw [heap_atom_eval_equation hs (heapEnv env) heapAtom]
+    simp [hasDepth, heapFuel, heapObservedRun, Ownership.FlatFragment.StateFrame.heapAtomPost,
+      Except.bind, Except.pure]
+
+theorem atom_failure {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {escapes : List Origin} {gamma : Naming} {depth : Nat} {a : Atom} {o : Observation} {w : Value} {message : String}
+    (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma)
+    (valueAtom : ValueSemantics.atom (valueEnv env) a = .ok o)
+    (heapAtom : InPlaceSemantics.atom (heapEnv env) a = .ok w)
+    (failed : (ValueSemantics.eval depth declarations none (valueEnv env) (.atom a)).run vs =
+      .error message) :
+    ∃ actualMessage,
+      (InPlaceSemantics.eval depth declarations none (heapEnv env) (.atom a)).run hs =
+        .error actualMessage := by
+  by_cases noDepth : depth = 0
+  · exact ⟨"in-place execution exhausted depth", by
+      rw [heap_atom_eval_equation hs (heapEnv env) heapAtom]
+      simp [noDepth]⟩
+  · by_cases noFuel : vs.fuel = 0
+    · have heapFuel : hs.fuel = 0 := inv.fuel.symm.trans noFuel
+      exact ⟨"in-place execution exhausted fuel", by
+        rw [heap_atom_eval_equation hs (heapEnv env) heapAtom]
+        simp [noDepth, heapFuel]⟩
+    · have success := (atom_runtime_success inv valueAtom heapAtom noDepth noFuel).1
+      rw [success] at failed
+      contradiction
 
 /-- Generic preservation over the fragment. -/
 theorem flat_preserved {declarations : List Decl} {self : Decl} {e : Expr} (flat : FlatANF0 e) :
@@ -41,76 +89,45 @@ theorem flat_preserved {declarations : List Decl} {self : Decl} {e : Expr} (flat
     (inferExpr inferenceFuel ctx aenv e after site).run before = .ok (result, next) →
     Preserved declarations depth env vs hs e after aenv tenv next.facts.escapes result type := by
   induction flat with
-  | @atom a atomFlat =>
+  | @atom a =>
     intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
       depth ctx inv typed _ _ usesLive afterSub defaultConfig accepted
-    cases atomFlat with
-    | int integer =>
-      have atomTyped : atomType tenv (.int integer) = .ok type := typed
-      change Except.ok Ty.int = Except.ok type at atomTyped
-      cases Except.ok.inj atomTyped
-      obtain ⟨scalar, checkerState⟩ := infer_integer_success defaultConfig accepted
-      subst scalar
-      subst checkerState
-      constructor
-      · intro value vs' run
-        by_cases noDepth : depth = 0
-        · rw [value_integer_eval_equation] at run
-          simp [noDepth] at run
-        · by_cases noFuel : vs.fuel = 0
-          · rw [value_integer_eval_equation] at run
-            simp [noDepth, noFuel] at run
-          · obtain ⟨valueRun, heapRun, postInvariant⟩ :=
-              integer_atom_runtime_success (integer := integer) inv noDepth noFuel
-            rw [valueRun] at run
-            cases run
-            refine ⟨.int integer, Ownership.FlatFragment.AtomPreservation.heapAtomPost hs vs.kept.toList, gamma,
-              heapRun, Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub,
-              Nat.le_of_eq (congrArg Array.size (atomHeapPost_heap hs vs.kept.toList).symm),
-              integer_corresponds integer,
-              integer_described integer,
-              by simp [obsTyped], ⟨1, .int integer, [], .int, by simp [obsTyped]⟩⟩
-      · intro message failed
-        exact integer_atom_failure inv failed
-    | var key =>
-      have atomTyped : atomType tenv (.var key) = .ok type := typed
-      have typeRun : lookup tenv key = .ok type := by simpa only [atomType] using atomTyped
-      have declared := lookup_option_of_success typeRun
-      obtain ⟨abstractBinding, checkerState⟩ := infer_variable_lookup defaultConfig accepted
-      subst checkerState
-      obtain ⟨observation, actual, binding⟩ := runtime_binding_of_abstract inv abstractBinding
-      have use : (key, []) ∈ live := usesLive (key, []) (by simp [uses, usesArms, atomUses])
-      obtain ⟨_, _, ty', declared', _, _, observed, valueTyped⟩ :=
-        live_variable_result inv use binding abstractBinding
-      have sameType : ty' = type := Option.some.inj (declared'.symm.trans declared)
-      subst sameType
-      constructor
-      · intro value vs' run
-        by_cases noDepth : depth = 0
-        · rw [value_atom_eval_equation vs (valueEnv env) (variable_atoms_run binding).1] at run
-          simp [noDepth] at run
-        · by_cases noFuel : vs.fuel = 0
-          · rw [value_atom_eval_equation vs (valueEnv env) (variable_atoms_run binding).1] at run
-            simp [noDepth, noFuel] at run
-          · obtain ⟨valueRun, heapRun, postInvariant⟩ :=
-              variable_runtime_success inv binding noDepth noFuel
-            rw [valueRun] at run
-            cases run
-            have correct := variable_post_correspondence inv use binding abstractBinding
-            refine ⟨actual, Ownership.FlatFragment.StateFrame.heapAtomPost hs vs.kept.toList, gamma, heapRun,
-              Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub,
-              Nat.le_of_eq (congrArg Array.size (heapAtomPost_heap hs vs.kept.toList).symm), correct.1,
-              correct.2, observed, ?_⟩
-            rw [heapAtomPost_heap]
-            exact valueTyped
-      · intro message failed
-        exact variable_atom_failure inv binding failed
+    have atomTyped : atomType tenv a = .ok type := typed
+    have covered : ∀ use ∈ atomUses a, use ∈ live :=
+      fun use member => usesLive use (by simpa [uses, usesArms] using member)
+    obtain ⟨o, w, abs, valueAtom, heapAtom, abstractRun, paired, described, observed, valueTyped,
+      _, _, _⟩ := flat_atom_values inv atomTyped covered
+    obtain ⟨atomRun, checkerState⟩ := infer_atom_success defaultConfig accepted
+    subst checkerState
+    rw [abstractRun] at atomRun
+    cases Except.ok.inj atomRun
+    constructor
+    · intro value vs' run
+      by_cases noDepth : depth = 0
+      · rw [value_atom_eval_equation vs (valueEnv env) valueAtom] at run
+        simp [noDepth] at run
+      · by_cases noFuel : vs.fuel = 0
+        · rw [value_atom_eval_equation vs (valueEnv env) valueAtom] at run
+          simp [noDepth, noFuel] at run
+        · obtain ⟨valueRun, heapRun, postInvariant⟩ :=
+            atom_runtime_success inv valueAtom heapAtom noDepth noFuel
+          rw [valueRun] at run
+          cases run
+          refine ⟨w, Ownership.FlatFragment.StateFrame.heapAtomPost hs vs.kept.toList, gamma, heapRun,
+            Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub,
+            Nat.le_of_eq (congrArg Array.size (heapAtomPost_heap hs vs.kept.toList).symm), ?_, ?_,
+            observed, ?_⟩
+          · rw [heapAtomPost_heap]; exact paired
+          · rw [heapAtomPost_heap]; exact described
+          · rw [heapAtomPost_heap]; exact valueTyped
+    · intro message failed
+      exact atom_failure inv valueAtom heapAtom failed
   | @letE rhs rest v rhsFlat restFlat ihRhs ihRest =>
     intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
       depth ctx inv typed shadow boundKeys usesLive afterSub defaultConfig accepted
     exact let_preserved rhsFlat restFlat ihRhs ihRest inv typed shadow boundKeys usesLive afterSub
       defaultConfig accepted
-  | @literal args atomsFlat =>
+  | @literal args =>
     intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
       depth ctx inv typed _ _ usesLive afterSub defaultConfig accepted
     have covered : ∀ atom ∈ args, ∀ use ∈ atomUses atom, use ∈ live := by
@@ -119,7 +136,7 @@ theorem flat_preserved {declarations : List Decl} {self : Decl} {e : Expr} (flat
       simp only [uses, usesArms, atomsUses, List.mem_flatMap]
       exact ⟨atom, member, useMember⟩
     obtain ⟨_, _, _, success, failure⟩ :=
-      literal_preserved (depth := depth) inv atomsFlat typed covered defaultConfig accepted
+      literal_preserved (depth := depth) inv typed covered defaultConfig accepted
     constructor
     · intro value vs' run
       obtain ⟨actual, hs', gamma', heapRun, postInvariant, size, paired, described, observed, valueTyped⟩ :=
@@ -128,7 +145,7 @@ theorem flat_preserved {declarations : List Decl} {self : Decl} {e : Expr} (flat
         Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub, size, paired,
         described, observed, valueTyped⟩
     · exact failure
-  | @push receiver item receiverFlat itemFlat =>
+  | @push receiver item receiverFlat =>
     intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
       depth ctx inv typed _ _ usesLive afterSub defaultConfig accepted
     have coveredR : ∀ use ∈ atomUses receiver, use ∈ live := by
@@ -142,10 +159,10 @@ theorem flat_preserved {declarations : List Decl} {self : Decl} {e : Expr} (flat
       simp only [uses, usesArms, atomsUses, List.mem_flatMap]
       exact ⟨item, by simp, useMember⟩
     obtain ⟨_, _, _, success, failure⟩ :=
-      push_preserved (depth := depth) inv receiverFlat itemFlat typed coveredR coveredI afterSub
+      push_preserved (depth := depth) inv receiverFlat typed coveredR coveredI afterSub
         defaultConfig accepted
     exact ⟨success, failure⟩
-  | @length receiver receiverFlat =>
+  | @length receiver =>
     intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
       depth ctx inv typed _ _ usesLive afterSub defaultConfig accepted
     have covered : ∀ use ∈ atomUses receiver, use ∈ live := by
@@ -154,7 +171,7 @@ theorem flat_preserved {declarations : List Decl} {self : Decl} {e : Expr} (flat
       simp only [uses, usesArms, atomsUses, List.mem_flatMap]
       exact ⟨receiver, by simp, useMember⟩
     obtain ⟨_, _, _, success, failure⟩ :=
-      length_preserved (depth := depth) inv receiverFlat typed covered defaultConfig accepted
+      length_preserved (depth := depth) inv typed covered defaultConfig accepted
     constructor
     · intro value vs' run
       obtain ⟨actual, hs', gamma', heapRun, postInvariant, size, paired, described, observed, valueTyped⟩ :=
@@ -163,7 +180,7 @@ theorem flat_preserved {declarations : List Decl} {self : Decl} {e : Expr} (flat
         Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub, size, paired,
         described, observed, valueTyped⟩
     · exact failure
-  | @scalar op a b sop aFlat bFlat =>
+  | @scalar op a b sop =>
     intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
       depth ctx inv typed _ _ usesLive afterSub defaultConfig accepted
     have coveredA : ∀ use ∈ atomUses a, use ∈ live := by
@@ -179,7 +196,7 @@ theorem flat_preserved {declarations : List Decl} {self : Decl} {e : Expr} (flat
       simp only [atomsUses, List.mem_flatMap]
       exact ⟨b, by simp, useMember⟩
     obtain ⟨_, _, _, success, failure⟩ :=
-      Ownership.FlatFragment.Scalar.scalar_preserved (depth := depth) inv sop aFlat bFlat typed
+      Ownership.FlatFragment.Scalar.scalar_preserved (depth := depth) inv sop typed
         coveredA coveredB defaultConfig accepted
     constructor
     · intro value vs' run
@@ -189,7 +206,7 @@ theorem flat_preserved {declarations : List Decl} {self : Decl} {e : Expr} (flat
         Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub, size, paired,
         described, observed, valueTyped⟩
     · exact failure
-  | @shared value valueFlat =>
+  | @shared value =>
     intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
       depth ctx inv typed _ _ usesLive afterSub defaultConfig accepted
     have covered : ∀ use ∈ atomUses value, use ∈ live := by
@@ -198,11 +215,31 @@ theorem flat_preserved {declarations : List Decl} {self : Decl} {e : Expr} (flat
       simp only [uses, usesArms, atomsUses, List.mem_flatMap]
       exact ⟨value, by simp, useMember⟩
     obtain ⟨_, _, _, success, failure⟩ :=
-      shared_preserved (depth := depth) inv valueFlat typed covered defaultConfig accepted
+      shared_preserved (depth := depth) inv typed covered defaultConfig accepted
     constructor
     · intro value' vs' run
       obtain ⟨actual, hs', gamma', heapRun, postInvariant, size, paired, described, observed, valueTyped⟩ :=
         success value' vs' run
+      exact ⟨actual, hs', gamma', heapRun,
+        Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub, size, paired,
+        described, observed, valueTyped⟩
+    · exact failure
+
+  | @record args =>
+    intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
+      depth ctx inv typed _ _ usesLive afterSub defaultConfig accepted
+    have covered : ∀ atom ∈ args, ∀ use ∈ atomUses atom, use ∈ live := by
+      intro atom member use useMember
+      apply usesLive use
+      simp only [uses, usesArms, atomsUses, List.mem_flatMap]
+      exact ⟨atom, member, useMember⟩
+    obtain ⟨_, _, _, success, failure⟩ :=
+      Ownership.FlatFragment.Record.record_preserved (depth := depth) inv typed covered defaultConfig
+        accepted
+    constructor
+    · intro value vs' run
+      obtain ⟨actual, hs', gamma', heapRun, postInvariant, size, paired, described, observed, valueTyped⟩ :=
+        success value vs' run
       exact ⟨actual, hs', gamma', heapRun,
         Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub, size, paired,
         described, observed, valueTyped⟩
@@ -271,14 +308,9 @@ def every : Program := { main :=
   (.letE 5 (.prim .length [.var 4])
   (.atom (.var 5)))))))) }
 
-theorem every_flat : FlatANF0 every.main := by
-  refine .letE (.literal ?_) (.letE (.shared (.var 0)) (.letE (.atom (.int 7))
-    (.letE (.literal ?_) (.letE (.push (.var 3) (.var 2)) (.letE (.length (.var 4)) (.atom (.var 5)))))))
-  · intro a member; simp at member; subst member; exact .int 5
-  · intro a member; simp at member
-    rcases member with rfl | rfl
-    · exact .var 2
-    · exact .int 1
+theorem every_flat : FlatANF0 every.main :=
+  .letE .literal (.letE .shared (.letE .atom (.letE .literal
+    (.letE (.push (.var 3)) (.letE .length .atom)))))
 
 /-- The push target still live afterwards: rejected by the Dead test. -/
 def liveAlias : Program := { main :=
@@ -288,8 +320,7 @@ def liveAlias : Program := { main :=
   (.atom (.var 1))))) }
 
 theorem liveAlias_flat : FlatANF0 liveAlias.main :=
-  .letE (.literal (by intro a member; simp at member; subst member; exact .int 1))
-    (.letE (.push (.var 0) (.int 2)) (.letE (.length (.var 0)) (.atom (.var 1))))
+  .letE .literal (.letE (.push (.var 0)) (.letE .length .atom))
 
 /-- A push onto an observed array: rejected by the Unescaped test. -/
 def observed : Program := { main :=
@@ -299,8 +330,7 @@ def observed : Program := { main :=
   (.prim .length [.var 2])))) }
 
 theorem observed_flat : FlatANF0 observed.main :=
-  .letE (.literal (by intro a member; simp at member; subst member; exact .int 1))
-    (.letE (.shared (.var 0)) (.letE (.push (.var 0) (.int 2)) (.length (.var 2))))
+  .letE .literal (.letE .shared (.letE (.push (.var 0)) .length))
 
 /-- `[2]`, its length 1, `1 + 7`, `8 - 3`, `5 == 5`, `1 < 5`, and a push of
     the last result onto the list: the four integer primitives, accepted, one
@@ -315,10 +345,25 @@ def arith : Program := { main :=
   (.prim .push [.var 0, .var 5]))))))) }
 
 theorem arith_flat : FlatANF0 arith.main :=
-  .letE (.literal (by intro a member; simp at member; subst member; exact .int 2))
-    (.letE (.length (.var 0)) (.letE (.scalar .add (.var 1) (.int 7))
-      (.letE (.scalar .sub (.var 2) (.int 3)) (.letE (.scalar .eq (.var 3) (.int 5))
-        (.letE (.scalar .lt (.var 4) (.var 3)) (.push (.var 0) (.var 5)))))))
+  .letE .literal (.letE .length (.letE (.scalar .add) (.letE (.scalar .sub)
+    (.letE (.scalar .eq) (.letE (.scalar .lt) (.push (.var 0)))))))
+
+/-- `[1]`, `[2, 3]`, the record `{xs, 7, ys}`, the length of `r.0`, `r.1`
+    plus that length, `r.2` bound to a variable and a push of the sum onto it:
+    field atoms and a record, accepted, one in-place write, final value
+    `[2, 3, 8]`. -/
+def recordOps : Program := { main :=
+  (.letE 0 (.prim (.literal .int) [.int 1])
+  (.letE 1 (.prim (.literal .int) [.int 2, .int 3])
+  (.letE 2 (.prim .record [.var 0, .int 7, .var 1])
+  (.letE 3 (.prim .length [.field (.var 2) 0])
+  (.letE 4 (.prim .add [.field (.var 2) 1, .var 3])
+  (.letE 5 (.atom (.field (.var 2) 2))
+  (.prim .push [.var 5, .var 4]))))))) }
+
+theorem recordOps_flat : FlatANF0 recordOps.main :=
+  .letE .literal (.letE .literal (.letE .record (.letE .length
+    (.letE (.scalar .add) (.letE .atom (.push (.var 5)))))))
 
 set_option maxRecDepth 100000
 
@@ -349,5 +394,12 @@ set_option maxRecDepth 100000
       t.reads == [.int 1] && t.externalReads.isEmpty
   | _, _ => false
 #guard InPlaceSemantics.writeCount arith 100 == 1
+#guard (check recordOps).isOk
+#guard match ValueSemantics.run recordOps 100, InPlaceSemantics.run recordOps 100 with
+  | .ok t, .ok t' => t.reads == t'.reads && t.externalReads == t'.externalReads &&
+      t.finalValue == t'.finalValue && t.finalValue == .list [.int 2, .int 3, .int 8] &&
+      t.reads == [.int 1] && t.externalReads.isEmpty
+  | _, _ => false
+#guard InPlaceSemantics.writeCount recordOps 100 == 1
 
 end Ownership.FlatFragment.Preservation

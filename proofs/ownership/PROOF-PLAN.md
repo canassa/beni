@@ -400,7 +400,13 @@ As built (2026-10-18): `FlatANF0` also contains the integer primitives `add`, `s
 The case keeps all four flat-only clauses, `heapInts`, `types`, `abstractShapes` and `links = []`: its operands are integers, its result is a scalar, and neither runtime changes the heap, the links, the observers or the reads.
 `Scalar.scalar_preserved` (`Primitives.lean`) and `Static.scalar_static` (`Static.lean`) prove it; `flat_preserved`, `flat_static` and the live-set lemmas have the arm.
 The probe `arith` checks the four primitives at build time.
-Field atoms and records, which replace the `types` and `abstractShapes` clauses, are the next step of the order above.
+As built (2026-10-18, #165): `FlatANF0` admits every atom (an integer, a variable, or a variable under a field path) where it admitted an integer or a variable, except the push receiver, which stays a variable; and it contains the record constructor.
+`types` and `abstractShapes` are not replaced but widened: `FlatType`, `FlatAbstract` and `AllocatedFlatValue` get a record constructor, indexed field by field, so a binding holds an integer, an integer list, or a record of such values, nested. `heapInts` and `links = []` stay.
+`Fields.lean`, between `Reach` and `Frame`, holds the path lemmas: an atom's root variable and field path (`atomRoot`), the type at a path (`tyAt`), the evaluation of an atom from its root binding through `projectObs` and `projectVal` on both sides and `Abstract.atPath` in the checker, records in `Corresponds`, `obsTyped`, `ValueTyped` and `Describes` field by field, and the frame of a flat value by induction on its structure (`corresponds_flat_frame`, `describes_flat_frame`, `arrayAt_flat`).
+The invariant's `bindings` and `described` clauses at the live path `(x, p)` give an atom's correspondence and description directly; the let binder's live paths are typed field paths (`flat_uses_typed` replaces the empty-path lemma `FlatLive`); the heap frame's separation hypothesis speaks of every array at every path of a live projected value, which the literal case discharges by the heap bound and the push case by the Dead test through `inv.named` at the full path and the live cells (`live_path_apart`).
+A `shared` of a value deeper than `observationDepth` fails on both sides at the observer epilogue (`shared_deep_failure`); the first fragment never met this, because its values were shallow.
+`Record.record_preserved` (`Primitives.lean`) and the record arm of `flat_static` (`Static.lean`) prove the constructor; the probe `recordOps` checks a record of two lists and an integer, field reads and a push onto a field bound to a variable at build time.
+What stays out: writes through a field (a projected binding as the push receiver), lists of lists and nested literals (references in arrays, the `heapInts` clause), `branch` and the case expressions, and views (`links = []`).
 
 ## Complete case inventory
 
