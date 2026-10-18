@@ -5279,55 +5279,90 @@ the value reads — `for(let a of[()=>a])` and `for(let b of b)`, a `ReferenceEr
 build where development answers. The single-use rule for member chains had the gap before the
 arrow rule did. `run/LoopHeadArrow`, `run/LoopHeadChain`.
 
-*Amended 2026-10-18:* **a field read of a beni value is pure.** A `member` whose name carries
-`Name.field` — the only node `Lower.fieldMember` writes, for a field access, a record pattern, an
-accessor or a method read through a record (`JsIr.isFieldRead`) — reads a field of a value whose
-type is a beni record. Three facts make that read pure, and each has its reason:
+*Amended 2026-10-18:* **a field read of a beni value is effect-free, and it is not invariant.** A
+`member` whose name carries `Name.field` — the only node `Lower.fieldMember` writes, for a field
+access, a record pattern, an accessor or a method read through a record (`JsIr.isFieldRead`) —
+reads a field of a value whose type is a beni record. Two facts hold of that read, each with its
+reason, and one does not:
 
 - **It runs no code.** A beni record is an object literal the program made, a record update of
   one, or a value a privileged caller hands beni at a record type — a `foreign`'s result, a
-  `Js.to`, a schema's decoded output. None has a getter: the program's own objects are literals
-  with data properties only, and for the rest the caller answers for the type (`Js.to`'s
-  contract, `boundary.md` §4 and §4.1's recipe; `schema.md` §4: "arbitrary host objects, getters,
-  proxies … are not Beni Value"). A `Js.Value` is never read this way: `Js.get`, `Js.at`,
-  `Js.read` and `Js.global` write a `member` or an index read whose name has no field mark, and
-  they are `foreign impure`, so a binding of one is listed in `effect_keep` as well.
+  `Js.to`, a schema's decoded output. The program's own objects have data properties only; for the
+  rest the caller answers for the type (`Js.to`'s contract, `boundary.md` §4 and §4.1's recipe;
+  `schema.md` §5, *Traversal and failure rules*: "arbitrary host objects, getters, proxies … are
+  not Beni Value"). The consequence of breaking that contract is named: a getter behind a `Js.to`
+  at a record type runs later in a release build than in a development build, or not at all.
 - **It cannot throw.** The object is a record, never `null` or `undefined`: no beni type holds a
   record or nothing at one place without a constructor around it.
-- **Nothing changes what it answers.** No beni code writes a field of a record: a record update
-  makes a new object (§4's spread). Inside one declaration, a name the read rests on may be
-  reassigned — §8's loop parameters, a `Js.Ref` written as a `let` — so a read of a name that an
-  `assign_stmt` of the declaration targets, or of a `mutable` name, is not a pure value
-  (`run/ReleaseFieldReadsMove`). *For the in-place slices* (records, `ownership-checker.md`
-  §31.10; lists, §4 *Every platform edits in place*): a read hoisted before an in-place write is
-  listed in `effect_keep`, as their barrier paragraphs require, and then neither rule moves it.
+- **It is not invariant.** What it answers changes when its record, or anything aliasing it, is
+  written: a record written in place (#315, `ownership-checker.md` §31.10), a `Js.set` or
+  `Js.write` on a value that reached JavaScript, a `foreign` that writes. That no beni code writes
+  a field today is not an argument, and nothing here rests on it.
 
-So `Opt` takes a third kind of single use (`Opt.pureValue`): a `const` not listed in
-`effect_keep`, whose initialiser is built only of literals, names nothing reassigns, field reads
-of those, `!`, `typeof`, `===`, `!==`, `&&`, `||` and `?:` of those, and the arithmetic,
-comparison and bitwise operators, `-` and templates of operands that are surely primitives — a
-literal, a field read, or another operator's result. A field read is a primitive there because
-beni writes an operator only on a primitive type (`==` and `<` of anything else call `eq` and
-`compare`); a bare name is not, because a platform's lowering may hold a host value in one, whose
-`valueOf` would run. Such a value is written at its single use when the use is in a later
-statement's own expressions of the same list, **past any statement between** (`findAnyUse`, the
-arrow rule's scan): evaluated later, it does what it did — nothing — and answers what it would
-have. It is never written into a branch, a loop, a function or a loop's head, so it is still
-evaluated at most once, and only where its binding was going to be passed. A slot read of a
-tuple or a constructor (`.a`, `.$`) is just as pure, but its name carries no mark that tells it
-from a host property, so it keeps the atom-and-chain rule above. `Spec`'s `inert` takes the same
-field reads (`Spec.inertOf`): an unread top-level binding of one goes, an argument of one may be
-dropped with its parameter, and a binding lowering kept for one is kept no more. `soleCalls` asks
-without them: a place that holds a field read is not one that only holds the value it is
-(*A record field's lambda*, below).
+So a field read may be **dropped** when nothing reads it, and **duplicated**, but it may be
+**moved** only under **the ordering rule**: *a pending read crosses no statement that may write a
+field or a member — of its record or of an alias of it.* There is no alias analysis behind it: a
+statement may write when it holds an assignment, a call, a `new` or a `yield`, and any call that
+is not proven pure counts as a write. The reads that are not a beni field's — a list's
+`.length`, a `Js.read` of a cell, a platform's own members (the row state's `a.it`) — get no
+licence at all. A host getter behind such a member is not counted as a write: the platforms are
+trusted not to write beni values from one.
 
-The case that asked for it is the `browser-inline` binding body,
-`(a,c)=>{let d=c.u,e=c.u>11?"Plenty":"Some";l(a[3],`Cups = ${d}`);l(a[15],e)}`, where `d` had to
-cross the call that writes `e`'s slot before it. Measured (brotli 11, every `emit/release/`
-golden): −99 over seven, none larger (raw −262); every `Opt` change is in the `run/` and
-`browser/` outputs, whose run hashes move. Fixtures: `emit/release/ReleaseFieldReads` (a read
-past two calls, an `if` of a field read), `run/ReleaseFieldReadsMove` (a read of a loop's
-reassigned parameter stays: written at its use it prints 30, not 15).
+`Opt` takes a third kind of single use (`Opt.pureValue`): a `const` not listed in `effect_keep`,
+whose initialiser is built only of literals, names nothing reassigns, field reads of those, `!`,
+`typeof`, `===`, `!==`, `&&`, `||` and `?:` of those, and the arithmetic, comparison and bitwise
+operators, `-` and templates of operands that are surely primitives — a literal, a field read, or
+another operator's result. A field read is a primitive there because beni writes an operator only
+on a primitive type (`==` and `<` of anything else call `eq` and `compare`); a bare name is not,
+because a platform's lowering may hold a host value in one, whose `valueOf` would run. A name an
+earlier fold already wrote a value at is judged as that value (`Opt.inlined`): `n = Js.read c;
+three = n == 3` is `c.v === 3`, which reads an unmarked member and is not accepted. Such a value is
+written at its single use, in a later statement's own expressions of the same list, when:
+
+- **it reads no field** — a literal, a name nothing reassigns: past any statement (`findAnyUse`,
+  the arrow rule's scan), since it answers the same anywhere;
+- **it reads a field** — only past `const`s and `let`s whose initialisers call, construct and
+  yield nothing (`Opt.writeFree`), and only when nothing in the use's own statement that may
+  write is evaluated before the use (`Opt.cleanBefore`) — `l(a[3],`Cups = ${c.u}`)` takes it,
+  `f(bump(c), c.u)` does not.
+
+The atom-and-chain rule above keeps its scan, and a member chain it folds now passes
+`cleanBefore` too: before, its use's statement was not asked, so a chain of a program object that
+specialisation had stopped listing could be written after a call in the same statement that wrote
+it. It is never written into a branch, a loop, a function or a loop's head. A slot read of a tuple
+or a constructor (`.a`, `.$`) is as effect-free, but its name carries no mark that tells it from a
+host property, so it keeps the chain rule. `Spec`'s `inert` takes the same field reads
+(`Spec.inertOf`) where it only drops or keeps a value: an unread top-level binding of one goes, an
+argument of one may be dropped with its parameter, and a binding lowering kept for one is kept no
+more. Where it **moves** a value it asks without them: a top-level value made at its one read
+(`writeReads`), an argument made where the callee's body reads it (`inlineAt`), and an object
+literal's names read where `R` reads its fields. `soleCalls` asks without them as well: a place
+that holds a field read is not one that only holds the value it is (*A record field's lambda*,
+below).
+
+**`browser-inline`'s binding pieces** (`browser-inline.md` §8) run in the handler's write pass,
+after every write of the model, so the rule costs them no fold that is sound: a binding's own
+statements write no record. Their calls to the runtime still count as writes, so a read the
+platform binds before one call and uses after it stays bound; the platform writes each value at
+its write instead.
+
+The case that asked for the licence is the `browser-inline` binding body,
+`(a,c)=>{let d=c.u,e=c.u>11?"Plenty":"Some";l(a[3],`Cups = ${d}`);l(a[15],e)}`, where `d` waits
+for `e`'s binding to pass. The first build of this amendment let a pending read cross any
+statement, and the PR's review found it miscompiled: `n = Js.read c` folded into `three = n == 3`,
+and `three` then moved past the call that writes the cell, so release printed `not three` where
+development prints `three` — the reason the rule above is stated as the rule. Measured (brotli
+11, every `emit/release/` golden, against the build before it): −32 over three, raw −79;
+`app/SpecFieldNames` +1 (raw −20) and `tea/HttpSendTracked` raw +10 (brotli −1), whose
+`a=>new TextEncoder().encode(a.b).length` keeps `a.b` bound, as the rule says: the `new` is
+evaluated before the read. Fixtures: `emit/release/ReleaseFieldReads` (a read
+written at its use, an `if` of a field read), `run/ReleaseFieldReadsMove` (a read of a loop's
+reassigned parameter stays: written at its use it prints 30, not 15), `run/ReleaseReadAcrossWrite`
+(the review's case, a cell and a cell in a record field: red before the fix),
+`run/ReleaseLengthAfterPush` (`.length` before a `List.push`), and
+`browser/inline/OldValueAfterWrite` with `emit/release/inline/OldValueAfterWrite` (`update` reads
+`model.n`, writes it, keeps the old value; records are spread today, so the page is right either
+way and pins the shape #315 starts from).
 
 **Determinism.** The pass reads only `JsIr`, visits statements in emission order, and its output is
 a subset of its input with substitutions at fixed positions; no map is iterated and no counter is
@@ -7194,12 +7229,12 @@ fact 3 finds at the call:
   `r` stays whatever its call becomes: written at the call, the body would be in the output two
   times, raw bytes and brotli both larger (`emit/release/app/SpecRecordLambdaUpdate`, found by
   the PR's review). A field read (`ops.fn`) is not inert to this rule — `soleCalls` asks
-  `inertOf` without field reads, though §9 item 1 as amended 2026-10-18 counts them pure
-  elsewhere — and a key or a binding of one stays for the same reason (found by the PR's second
-  review). `dropKeys` keeps the key `{ step = ops.fn }` (`emit/release/app/SpecRecordLambdaField`),
-  and the lambda a top-level binding `picked = ops.fn` reads stays where it is
-  (`SpecRecordLambdaTop`; since 2026-10-18 the binding itself is written at its one use). A local
-  `f = ops.fn` that a key `{ step = f }` reads can go. But when a `return` that reads `f` once and first comes next,
+  `inertOf` without field reads, though §9 item 1 as amended 2026-10-18 counts them inert
+  where it only drops a value — and a key or a binding of one stays for the same reason (found by
+  the PR's second review). `dropKeys` keeps the key `{ step = ops.fn }`
+  (`emit/release/app/SpecRecordLambdaField`), and the pass keeps the top-level binding
+  `picked = ops.fn` (`SpecRecordLambdaTop`). A local `f = ops.fn` that a key `{ step = f }` reads
+  can go. But when a `return` that reads `f` once and first comes next,
   slice 9 writes `ops.fn` in place of `f` (*`const x = e; return R`*), and the key becomes
   `{ step = ops.fn }` (`SpecRecordLambdaLocal`). `Tea.document`'s `update = app.update` is a
   local binding of this kind that goes, because `init = app.init` is read before it. The rule

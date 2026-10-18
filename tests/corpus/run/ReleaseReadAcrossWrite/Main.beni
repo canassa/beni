@@ -1,0 +1,11 @@
+-- A read of a value a later call writes stays before that call under
+-- `--release` (`backend.md` §9 item 1, amended 2026-10-18): `n = Js.read c`
+-- is folded into `three = n == 3`, and `three` was then moved past the
+-- `bump` that writes the cell, so release printed `not three` where
+-- development prints `three`. A pending read crosses no call.
+import Cell
+import Node
+
+
+main : Node.Program
+main = Node.printLines [ Cell.stale ⊤, Cell.staleHeld ⊤ ]

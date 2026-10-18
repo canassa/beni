@@ -1,12 +1,10 @@
 -- emit: a top-level binding whose initialiser is a field read keeps the
 -- lambda it holds (`backend.md` §9, *Slice 8*, amended 2026-10-15, *A
 -- record field's lambda*). `app.step n` is the one call of the lambda,
--- but `picked = ops.fn` reads it through a field, and a place holding a
--- field read is not one that only holds the value it is (`soleCalls`), so
--- the lambda is not written at the call: there its body would be in the
--- output two times, and the call stays. Since 2026-10-18 the field read
--- is inert (§9, *A field read of a beni value is pure*), so `picked`
--- itself is written at its one use, the lambda still once.
+-- but `picked = ops.fn` is a top-level binding of a value that is not
+-- inert, so it stays, and the lambda with it. Written at the call, its
+-- body would be in the output two times: the size model is asked, and
+-- the call stays.
 import Node exposing (Program)
 
 
