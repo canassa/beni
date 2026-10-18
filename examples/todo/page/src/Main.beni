@@ -224,9 +224,12 @@ update msg model =
             ( model, delete id )
 
         Removed id (Ok ⊤) →
-            ( { model | todos = List.filter model.todos λt → t.id ≠ id, error = Nothing }
-            , Cmd.none
-            )
+            ( removed model id, Cmd.none )
+
+        -- A todo already gone — removed twice, or by another page — is the
+        -- end state the user asked for.
+        Removed id (Err (Http.BadStatus 404)) →
+            ( removed model id, Cmd.none )
 
         Removed _ (Err error) →
             ( { model | error = Just (failed error) }, Cmd.none )
@@ -258,6 +261,10 @@ update msg model =
 
         EditDone →
             commit model
+
+
+removed : Model, Int → Model
+removed model id = { model | todos = List.filter model.todos λt → t.id ≠ id, error = Nothing }
 
 
 -- Focus the element with this id once the render the update queued has
