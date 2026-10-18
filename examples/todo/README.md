@@ -78,6 +78,13 @@ method on a known path is 405 with an `allow` header.
   `POST /api/shutdown` is the clean stop until `node` has signals
   (canassa/beni#338).
 - **No command-line arguments.** The port is in `Config.beni` (canassa/beni#357).
+- **No merge of concurrent changes.** A change sends the whole todo as the page
+  saw it. Two changes to one todo in flight at the same time, or two pages on
+  one server, can lose the earlier change. A `PATCH` with the changed fields
+  only would keep it; the example stays small.
+- **No access control.** `POST /api/shutdown` stops the server for anyone who
+  can reach it. `Config.host` is `127.0.0.1`, so only this machine can. Keep it
+  so, or remove the route, before you expose the server.
 
 ## Tests
 
