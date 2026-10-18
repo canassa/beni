@@ -197,12 +197,14 @@ fn piece(cx: *m.Context, tree: *const m.Tree, req: *const m.PieceRequest) m.Erro
     // several read is a memo node, S3's (§8.2).
     for (0..r.lets.len) |k| if (cx.rootLetReaders(req.root, @intCast(k)) > 1) return limit(cx, r.node, "a `let` of this `view` is read by several holes, and `browser-inline` computes a `let` in the binding of the one hole that reads it (D-d); one several holes read is a memo node, which slice S3 brings");
     pg.elements = try cx.fresh("elements");
-    // The root's function's parameters, each a parameter of every binding
-    // function after the elements.
-    const params_all = try cx.arena.alloc(m.Name, cx.pieceArity() + 1);
+    pg.offset = try cx.fresh("at");
+    // The page's one table of elements and where the root's descendants
+    // start in it (§8.2), then the root's function's parameters.
+    const params_all = try cx.arena.alloc(m.Name, cx.pieceArity() + 2);
     params_all[0] = pg.elements.?;
-    for (params_all[1..]) |*x| x.* = try cx.fresh("model");
-    pg.piece_args = params_all[1..];
+    params_all[1] = pg.offset.?;
+    for (params_all[2..]) |*x| x.* = try cx.fresh("model");
+    pg.piece_args = params_all[2..];
     try pg.group();
     const a = req.arena;
     const binds = try a.alloc(PieceBind, pg.functions.items.len);
@@ -269,9 +271,10 @@ fn piece(cx: *m.Context, tree: *const m.Tree, req: *const m.PieceRequest) m.Erro
     var wire_name: ?[]const u8 = null;
     if (handlers.items.len != 0) {
         const base = try std.fmt.allocPrint(a, "{s}$$on${d}", .{ req.decl, req.ordinal });
-        const all = try cx.arena.alloc(m.Name, params.items.len + 1);
+        const all = try cx.arena.alloc(m.Name, params.items.len + 2);
         all[0] = pg.elements.?;
-        @memcpy(all[1..], params.items);
+        all[1] = pg.offset.?;
+        @memcpy(all[2..], params.items);
         try cx.pieceExport(base, try js.arrow(all, wire));
         wire_name = base;
     }
@@ -362,7 +365,6 @@ const PieceUse = struct {
     node: m.Node.Index,
     target: u32,
     data: *const PieceData,
-    elements: m.Name = undefined,
     first: u32 = 0,
 };
 
@@ -399,8 +401,11 @@ const Page = struct {
     dispatch: ?m.Name = null,
     /// The page is another module's root, written as pieces (`piece`).
     piece: bool = false,
-    /// A piece's binding functions' parameters after the elements.
+    /// A piece's binding functions' parameters after the elements and
+    /// the offset.
     piece_args: []const m.Name = &.{},
+    /// A piece: where its root's descendants start in the page's table.
+    offset: ?m.Name = null,
     pieces: std.ArrayList(PieceUse) = .empty,
 
     fn a(pg: *Page) std.mem.Allocator {
@@ -770,11 +775,8 @@ const Page = struct {
             }
         }
 
-        // Each piece's elements, below its top element.
-        for (pg.pieces.items) |*u| {
-            u.elements = try cx.fresh("elements");
-            try js.constant(body, u.elements, try js.call(try js.member(try pg.ref(u.target), "querySelectorAll"), &.{try js.string("*")}));
-        }
+        // Each piece reads the page's one table of elements (§8.2), its
+        // descendants from the place after its top element's.
         // The binding functions, each written once and called once now.
         try pg.group();
         for (pg.pieces.items, 0..) |*u, ui| {
@@ -930,9 +932,10 @@ const Page = struct {
         // Each piece's events, wired to the handlers of their keys.
         for (pg.pieces.items, piece_keys) |u, ks| {
             const wire = u.data.wire orelse continue;
-            const args = try pg.a().alloc(m.Expr, ks.len + 1);
-            args[0] = try js.name(u.elements);
-            for (args[1..], ks, u.data.handlers) |*x, pk, h| {
+            const args = try pg.a().alloc(m.Expr, ks.len + 2);
+            args[0] = try js.name(pg.elements.?);
+            args[1] = try js.number(try std.fmt.allocPrint(pg.a(), "{d}", .{u.target + 1}));
+            for (args[2..], ks, u.data.handlers) |*x, pk, h| {
                 const handler_ = try js.name(try pg.handler(pk.key));
                 if (!pk.whole) {
                     x.* = handler_;
@@ -1127,7 +1130,12 @@ const Page = struct {
         const js = pg.cx.js;
         const t = target orelse return js.name(pg.node.?);
         if (pg.single) return js.name(pg.elements.?);
-        return js.index(try js.name(pg.elements.?), try js.number(try std.fmt.allocPrint(pg.a(), "{d}", .{t})));
+        const n = try js.number(try std.fmt.allocPrint(pg.a(), "{d}", .{t}));
+        // A piece's element is the page's at its place past the offset:
+        // `E[n + o]`, the literal first, which release folds once the
+        // piece is written in place with its constant offset.
+        if (pg.offset) |o| return js.index(try js.name(pg.elements.?), try js.binary(.add, n, try js.name(o)));
+        return js.index(try js.name(pg.elements.?), n);
     }
 
     // ---- Binding functions --------------------------------------------
@@ -1213,11 +1221,12 @@ const Page = struct {
             const arms = try pg.enter(blk, 0);
             const args = try cx.programPieceArgs(blk, u.node);
             const callee = try cx.programPieceName(u.node, u.data.binds[at.bind].name);
-            const all = try pg.a().alloc(m.Expr, args.len + 1);
-            all[0] = try js.name(u.elements);
+            const all = try pg.a().alloc(m.Expr, args.len + 2);
+            all[0] = try js.name(pg.elements.?);
+            all[1] = try js.number(try std.fmt.allocPrint(pg.a(), "{d}", .{u.target + 1}));
             // Each argument a name, so release's single-use inlining writes
             // the piece, called only here, into this function.
-            for (all[1..], args) |*x, arg| {
+            for (all[2..], args) |*x, arg| {
                 const n = try cx.fresh("arg");
                 try js.constant(blk, n, arg);
                 x.* = try js.name(n);
