@@ -3629,6 +3629,76 @@ fn birTypeFacts(o: *Ownership, m: u32, bir: *const Bir, inst: Inst.Index, depth:
     }
 }
 
+/// §31.2: whether the value at `steps` holds records and nothing a list's
+/// facts read (`Walker.holdsOnlyRecords`), read off the declarations: the
+/// first step is a constructor's field, and each later one goes into the
+/// type the declaration writes there. A type parameter is the argument's,
+/// which is not read here, so a path that reaches one answers no.
+fn birHoldsOnlyRecords(o: *Ownership, path_steps: []const Step) Allocator.Error!bool {
+    std.debug.assert(path_steps[0].kind == .ctor);
+    const key = o.ctorKey(o.stepCtor(path_steps[0].arg));
+    if (key.module >= o.in.birs.len or key.index == none) return false;
+    var m = key.module;
+    var bir = o.in.birs[m];
+    if (key.index >= bir.ctors.len) return false;
+    const ctor = bir.ctors[key.index];
+    const first = bir.extraSlice(.{ .start = ctor.args_start, .end = ctor.args_end }, Inst.Index);
+    const fi = o.stepField(path_steps[0].arg);
+    if (fi >= first.len) return false;
+    var at = first[fi];
+    var depth: u32 = 0;
+    for (path_steps[1..], 1..) |s, si| {
+        // An alias written as a name: its body, in its module.
+        while (true) {
+            depth += 1;
+            if (depth > type_depth) return false;
+            const tag = bir.instTag(at);
+            if (tag != .type_top and tag != .ext_type) break;
+            const id = o.in.types.headId(@fromBackingInt(@intCast(m)), tag, bir.instData(at));
+            if (id == .none or id.int() >= o.in.types.entries.len) return false;
+            const e = o.in.types.entries[id.int()];
+            if (e.kind != .alias or e.schema_endpoint) break;
+            m = e.module.int();
+            bir = o.in.birs[m];
+            at = bir.decl(e.decl).annotation.unwrap() orelse return false;
+        }
+        const data = bir.instData(at);
+        switch (s.kind) {
+            .field => {
+                const fields = switch (bir.instTag(at)) {
+                    .type_record => bir.extraSlice(Bir.inlineRange(data), Bir.Field),
+                    .type_record_ext => bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.rhs))), Bir.Field),
+                    else => return false,
+                };
+                for (fields) |f| {
+                    if (@backingInt(bir.symbol(f.name)) == s.arg) {
+                        at = f.value;
+                        break;
+                    }
+                } else return false;
+            },
+            .tuple => {
+                if (bir.instTag(at) != .type_tuple) return false;
+                const els = bir.extraSlice(Bir.inlineRange(data), Inst.Index);
+                if (s.arg >= els.len) return false;
+                at = els[s.arg];
+            },
+            .elem => {
+                if (bir.instTag(at) != .type_app) return false;
+                const head: Inst.Index = @fromBackingInt(@intCast(data.lhs));
+                if (o.in.types.headId(@fromBackingInt(@intCast(m)), bir.instTag(head), bir.instData(head)) != o.in.types.well_known.list) return false;
+                const args = bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.rhs))), Inst.Index);
+                if (args.len != 1) return false;
+                at = args[0];
+            },
+            // Another constructor's field: its own declaration's.
+            .ctor => return o.birHoldsOnlyRecords(path_steps[si..]),
+            else => return false,
+        }
+    }
+    const f = try o.birTypeFacts(m, bir, at, 0);
+    return f.record and !f.own and !f.params;
+}
 fn joinFacts(a: NominalFacts, b: NominalFacts) NominalFacts {
     return .{ .own = a.own or b.own, .params = a.params or b.params, .list = a.list or b.list, .record = a.record or b.record };
 }
@@ -4555,6 +4625,9 @@ const Walker = struct {
     cell_spine: std.ArrayList(u32) = .empty,
     /// §31.2: the exception sets of `except` cells, each sorted, by index.
     exsets: std.ArrayList([]const u32) = .empty,
+    /// Interns `exsets` by content: each key is the bytes of the very slice
+    /// `exsets` holds, owned by the walk's arena `a`, so a key lives as long
+    /// as its set and is never freed apart from it.
     exset_map: std.StringHashMapUnmanaged(u32) = .empty,
     /// §18.4: every atom relied on.
     reqs: std.ArrayList(Req) = .empty,
@@ -4688,24 +4761,86 @@ const Walker = struct {
         return id;
     }
 
-    /// §31.2: whether `c` is a value's own cell that only §31.2's amendment
-    /// made: one at ε whose type, by the crossing rule before it, crossed —
-    /// a record that holds no list, function or JavaScript value. A cell
-    /// below a tracked root is what it was before, whatever its type.
+    /// §31.2: whether `c` stands only for what §31.2's amendment made a cell:
+    /// a value whose type holds records and, by the crossing rule before it,
+    /// nothing else — no list, function or JavaScript value. Read at the
+    /// cell's path from its root's type, so that a record object is a
+    /// list's nothing at ε and below alike: through a field, a tuple's
+    /// part, a list's element, and a constructor's field as its declaration
+    /// writes it (one that names a type parameter is a list's, since the
+    /// argument decides). A taken element is the element it was taken from.
     ///
     /// The type is one the cell's key decides, since `nonlist` is set once
     /// for the key: a parameter's pattern's, a site's or a call result's
-    /// instruction's, a capture's local's. A top-level value's cell is made at
-    /// the type of the read that names it, which a polymorphic value varies,
-    /// so it stays a list's.
+    /// instruction's, at the root; a capture's local's. A top-level value's
+    /// cell is made at the type of the read that names it, which a
+    /// polymorphic value varies, so it stays a list's.
     fn holdsOnlyRecords(w: *Walker, c: Cell) Allocator.Error!bool {
-        if (c.path != eps) return false;
-        const v = switch (c.kind) {
-            .param, .site, .result => c.ty.unwrap(),
-            .env => w.localType(c.a),
-            else => null,
-        } orelse return false;
-        return !try w.listTrackedVar(v);
+        if (c.kind == .taken) return w.cells.items[c.a].nonlist;
+        var from: usize = 0;
+        var v: Var = switch (c.kind) {
+            .param, .site, .result, .cbres => blk: {
+                // A type the cell was made with is its path's own: these
+                // roots' types are their keys'.
+                if (c.ty.unwrap()) |t| return try w.trackedVar(t) and !try w.listTrackedVar(t);
+                if (c.path == eps) return false;
+                // The nearest cell above it that was made with a type: a
+                // pattern's variable binds the cell at its path with its own.
+                var up = w.o.paths.parent.items[c.path];
+                while (true) {
+                    const key: [4]u32 = .{ @as(u32, @backingInt(c.kind)) | (@as(u32, @intFromBool(c.made)) << 8), c.a, c.b, up };
+                    if (w.cell_map.get(key)) |id| {
+                        if (w.cells.items[id].nonlist) return true;
+                        if (w.cells.items[id].ty.unwrap()) |t| {
+                            from = w.o.paths.depth.items[up];
+                            break :blk t;
+                        }
+                    }
+                    if (up == eps) break;
+                    up = w.o.paths.parent.items[up];
+                }
+                // A parameter's pattern, or a site's or a call's instruction,
+                // has its own type when its root cell was made without one.
+                if (c.kind != .cbres) if (w.instType(@fromBackingInt(c.a))) |t| break :blk t;
+                return false;
+            },
+            .env => w.localType(c.a) orelse return false,
+            .shared, .top, .closure, .func, .payload, .except, .taken => return false,
+        };
+        var buf: [k_limit + 1]Step = undefined;
+        const path_steps = w.o.steps(c.path, &buf);
+        for (path_steps[from..], from..) |s, si| {
+            // A constructor's field, and what is below it, as its declaration
+            // writes them (`birHoldsOnlyRecords`), whatever the root's type
+            // resolves to.
+            if (s.kind == .ctor) return w.o.birHoldsOnlyRecords(path_steps[si..]);
+            const st = switch (w.store.resolvedContent(v)) {
+                .structure => |x| x,
+                else => return false,
+            };
+            switch (s.kind) {
+                .field => v = w.fieldVar(v, s.arg) orelse return false,
+                .tuple => switch (st) {
+                    .tuple => |r| {
+                        const els = w.store.vars(r);
+                        if (s.arg >= els.len) return false;
+                        v = els[s.arg];
+                    },
+                    else => return false,
+                },
+                .elem => switch (st) {
+                    .app => |a| {
+                        if (a.type != w.o.in.types.well_known.list) return false;
+                        const args = w.store.vars(a.args);
+                        if (args.len != 1) return false;
+                        v = args[0];
+                    },
+                    else => return false,
+                },
+                else => return false,
+            }
+        }
+        return try w.trackedVar(v) and !try w.listTrackedVar(v);
     }
 
     fn token(w: *const Walker, inst: Inst.Index) u32 {
@@ -5324,7 +5459,7 @@ const Walker = struct {
         const cx = w.cells.items[x];
         if (x == y and w.inCoreDict()) switch (cx.kind) {
             .param, .env, .cbres => if (try w.o.dictTreePath(cx.path)) return w.cellSpine(x),
-            else => {},
+            .site, .result, .shared, .top, .closure, .func, .taken, .payload, .except => {},
         };
         return w.spineOfSep(try w.sepCells(x, y, exact));
     }
@@ -5361,7 +5496,7 @@ const Walker = struct {
         const x = w.cells.items[c];
         switch (x.kind) {
             .site, .top, .closure, .func => return c,
-            else => {},
+            .param, .result, .env, .shared, .cbres, .taken, .payload, .except => {},
         }
         var base = c;
         var set: std.ArrayList(u32) = .empty;
@@ -5383,6 +5518,18 @@ const Walker = struct {
             b = gop.value_ptr.*;
         }
         return w.cell(.{ .kind = .except, .a = base, .b = b, .ty = w.cells.items[base].ty });
+    }
+
+    /// The element an `except` cell with fields stands for when a list
+    /// pattern or a traversal takes it out (§18.5): the record cell it was
+    /// written over, when that is one a taken cell may stand for.
+    fn takeable(w: *Walker, c: u32) Allocator.Error!?u32 {
+        const x = w.cells.items[c];
+        return switch (x.kind) {
+            .param, .result, .env, .cbres => c,
+            .except => if (x.b == except_all) null else try w.takeable(x.a),
+            .site, .shared, .top, .closure, .func, .taken, .payload => null,
+        };
     }
 
     /// The cell a list's facts read for `c` (§31.2): an `except` cell with
@@ -5474,7 +5621,7 @@ const Walker = struct {
         // module never makes share (the trusted surface, §20.9).
         if (x == y and w.inCoreDict()) switch (cx.kind) {
             .param, .env, .cbres => if (try w.o.dictTreePath(cx.path)) return w.cellCond(x),
-            else => {},
+            .site, .result, .shared, .top, .closure, .func, .taken, .payload, .except => {},
         };
         if (x == y or (try w.covers(x, y)) != null or (try w.covers(y, x)) != null) {
             // Exact only when the text shows it: one place, not a list's
@@ -5604,7 +5751,7 @@ const Walker = struct {
             .env => frame != 0,
             .taken => w.atomCellIn(x.a, frame),
             .except => x.b != except_all and w.atomCellIn(x.a, frame),
-            else => false,
+            .site, .result, .shared, .top, .closure, .func, .payload => false,
         };
     }
 
@@ -5648,7 +5795,7 @@ const Walker = struct {
             .cbres => if (frame == 0) .{ .kind = .cb, .a = x.a, .path = x.path } else null,
             .env => if (frame != 0) .{ .kind = .env, .a = x.a, .path = x.path } else null,
             .taken, .except => if (try w.takenBase(c) == c) null else w.atomProv(try w.takenBase(c), frame, params),
-            else => null,
+            .site, .result, .shared, .top, .closure, .func, .payload => null,
         };
     }
 
@@ -5981,7 +6128,7 @@ const Walker = struct {
             const x = w.cells.items[cc];
             const symbolic = switch (x.kind) {
                 .param, .result, .env, .shared, .cbres, .taken, .payload => true,
-                else => false,
+                .site, .top, .closure, .func, .except => false,
             };
             var at = x.path;
             while (true) {
@@ -6007,7 +6154,7 @@ const Walker = struct {
             const x = w.cells.items[cc];
             const symbolic = switch (x.kind) {
                 .param, .result, .env, .shared, .cbres, .taken, .payload => true,
-                else => false,
+                .site, .top, .closure, .func, .except => false,
             };
             var path = x.path;
             while (true) {
@@ -6122,7 +6269,12 @@ const Walker = struct {
                             if (e.path != eps) continue;
                             switch (w.cells.items[e.cell].kind) {
                                 .param, .result, .env, .cbres => x.cell = try w.cell(.{ .kind = .taken, .a = e.cell, .b = item.int() }),
-                                else => {},
+                                // An update's object with fields is taken as the record it
+                                // was written over is (§31.2, as the whole base was).
+                                .except => if (try w.takeable(e.cell)) |t| {
+                                    x.cell = try w.cell(.{ .kind = .taken, .a = t, .b = item.int() });
+                                },
+                                .site, .shared, .top, .closure, .func, .taken, .payload => {},
                             }
                         }
                         w.split_list[item.int() - w.decl.inst_start.int()] = pat.int();
@@ -8375,11 +8527,11 @@ const Walker = struct {
                         switch (hc.kind) {
                             .closure => try out.append(w.a, .{ .closure = hc.a }),
                             .func => try out.append(w.a, .{ .func = .{ .m = hc.a, .d = hc.b } }),
-                            else => return &.{},
+                            .site, .param, .result, .env, .shared, .top, .cbres, .taken, .payload, .except => return &.{},
                         }
                     }
                 },
-                else => return &.{},
+                .site, .param, .result, .shared, .top, .cbres, .taken, .payload, .except => return &.{},
             }
         }
         return out.items;
@@ -9042,7 +9194,10 @@ const Walker = struct {
                     if (e.path != eps) continue;
                     switch (w.cells.items[e.cell].kind) {
                         .param, .result, .env, .cbres => x.cell = try w.cell(.{ .kind = .taken, .a = e.cell, .b = ctx.inst.int() }),
-                        else => {},
+                        .except => if (try w.takeable(e.cell)) |t| {
+                            x.cell = try w.cell(.{ .kind = .taken, .a = t, .b = ctx.inst.int() });
+                        },
+                        .site, .shared, .top, .closure, .func, .taken, .payload => {},
                     }
                 }
                 return w.norm(out);
@@ -9595,7 +9750,7 @@ const Walker = struct {
                     const held = w.local_av[c.a] orelse continue;
                     try w.sightAt(try w.projPath(held, c.path, null), why, tok, depth + 1);
                 },
-                else => {},
+                .site, .result, .shared, .top, .cbres, .taken, .payload, .except => {},
             }
         }
     }
@@ -10930,7 +11085,7 @@ const Walker = struct {
                 // assumed fresh cell of a callee with no summary, which may
                 // be any argument or a top-level list: not known to be new.
                 .result => if (c.b == 0) return false,
-                else => return false,
+                .param, .env, .shared, .top, .closure, .func, .cbres, .taken, .payload, .except => return false,
             }
             // Exact (above) and never handed to JavaScript (here), which
             // could store it anywhere, the base's array included.
@@ -11024,7 +11179,7 @@ const Walker = struct {
         }
         switch (o.kind) {
             .param, .result, .env, .shared, .cbres, .taken, .payload => {},
-            else => return null,
+            .site, .top, .closure, .func, .except => return null,
         }
         if (o.kind != i.kind or o.a != i.a or o.b != i.b) return null;
         // One place named twice (a definition's made cell, and the same value
@@ -11155,7 +11310,7 @@ const Walker = struct {
             const rank: Accept = switch (c.kind) {
                 .param => if (c.b == 1) .callback_param else .param,
                 .result, .cbres => .call,
-                else => .fresh,
+                .site, .env, .shared, .top, .closure, .func, .taken, .payload, .except => .fresh,
             };
             if (@backingInt(rank) > @backingInt(rec.accept)) rec.accept = rank;
             if (c.kind == .result and c.b == 0 and rec.assumed.len == 0) rec.assumed = try w.callName(@fromBackingInt(c.a));
@@ -11206,7 +11361,7 @@ const Walker = struct {
                     cause = .captured_edit;
                     detail = try std.fmt.allocPrint(out, "{s} is captured, and how often the closure runs is not known", .{w.localName(c.a)});
                 },
-                else => {},
+                .site, .param, .result, .closure, .func, .cbres, .taken, .except => {},
             }
             // A real escape names itself before §18.6's conservative one.
             const esc = try w.escapeBefore(e.cell);
@@ -11892,6 +12047,12 @@ const Walker = struct {
         // R: a use of a local whose value holds a parameter cell.
         for (w.uses.items) |u| {
             if (u.frame != frame) continue;
+            // §31.2: a closure's use of what it captured, when that is a
+            // record's object alone, is the record demand's: before §31.2
+            // such a value crossed, and no closure captured it.
+            if (u.via != none) if (w.cell_map.get(.{ @backingInt(CellKind.env), u.local, 0, u.path })) |ec| {
+                if (w.cells.items[ec].nonlist) continue;
+            };
             const held = w.local_av[u.local] orelse continue;
             for (held) |e| {
                 if (w.listFacing(e.cell) == null) continue;

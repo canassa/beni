@@ -4874,15 +4874,23 @@ verdict moves. In `src/own/Ownership.zig`:
 - **Crossing.** `tracked` treats every record as holding a cell, and a nominal type that reaches a record
   (`NominalFacts.record`) as not crossing. The old rule stays as `listTracked`.
 - **What lists read.** A cell is `nonlist` when it is a record literal's object, an `except` cell, or a
-  value's own cell at ε whose type crossed under the old rule (a record of numbers); a cell projected from
-  one inherits it. A list's facts read cells through `listFacing`, which drops `nonlist` cells and reads an
-  `except` cell with fields as the cell it was written over: demands' cells, a summary's uses, writes,
-  escapes, results and supplies, a carried lambda's bindings, condition atoms (`mkCond`), and a tagger's
-  `need`. A field split out of a closed update reaches a summary only when its type is `listTracked`. So a
-  summary gains only record facts its vocabulary already prints exactly: reads and aliases of record fields
-  below a tracked root (`π1.session R`, `res π1.session`), and record values inside lists and constructors
-  (`π2[*] R` for a `List Point`, `[*]#Leaf.0 π1#Leaf.0`); `ownership/Conduit`, `Prepend` and
-  `SchemaCtorBlock` move this way.
+  cell whose value, by its type, holds records and nothing a list's facts read (a record of numbers, a
+  `List Point`'s element, a constructor's record payload): tracked by §31.2's rule and crossing by the old
+  one. The type is read at the cell's own path, from the type it was made with or the nearest cell above
+  it made with one, through fields, tuples, list elements and constructors' fields as their declarations
+  write them, so a record object is filtered at ε and below alike; a type the cell's key does not decide
+  (a top-level value's, read at each use's own type) is never read, and the cell stays a list's. A list's
+  facts read cells through `listFacing`, which drops `nonlist` cells and reads an `except` cell with fields
+  as the cell it was written over: demands' cells, a summary's uses, writes, escapes, results and supplies,
+  a carried lambda's bindings, condition atoms (`mkCond`), a tagger's `need`, and a closure's use of a
+  capture of a record object. An escape of an `except` cell with fields is also one of the cell it was
+  written over. A field split out of a closed update reaches a summary only when its type is
+  `listTracked`. The switches over cell kinds on these paths name every kind, so a new kind is a compile
+  error rather than a default. So summaries move only where they named record objects: a read of a record
+  field below a tracked root through a closure's capture is gone with the capture's object, and a list of
+  records no longer names its elements' objects (`HostValueOnePlace`'s `π2.items[*] A`, Conduit's comments);
+  Conduit gains the callback results its record fields hold.
+
 - **Deferred to R2b and R2c**, with the record demand and `W{F}`: the record literal's stored-construction
   condition on its object (§31.4 item 6); record cells in summaries, which need the result's
   object-only provenance; and `Record.copy`'s fresh object at ε (§31.15), whose row stays "the copy holds
