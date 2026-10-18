@@ -2530,7 +2530,7 @@ const Emitter = struct {
             const m: Graph.Index = @fromBackingInt(@intCast(i));
             birs[i] = e.bir(m);
             names[i] = e.session.store.moduleName(e.graph().moduleFile(m));
-            packages[i] = e.graph().modulePackage(m);
+            packages[i] = Writes.passPackage(e.graph().modulePackage(m), e.session.store.isEmbedded(e.graph().moduleFile(m)));
             targets[i] = false;
         }
         const w = try Writes.init(.{
@@ -2641,7 +2641,7 @@ const Emitter = struct {
             const f = e.graph().moduleFile(m);
             birs[i] = e.bir(m);
             names[i] = e.session.store.moduleName(f);
-            packages[i] = e.graph().modulePackage(m);
+            packages[i] = Writes.passPackage(e.graph().modulePackage(m), e.session.store.isEmbedded(e.graph().moduleFile(m)));
             targets[i] = false;
         }
         // Version 1.14: the platform's `Sub` and `Cmd` values, by name.

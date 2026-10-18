@@ -1,0 +1,12 @@
+-- A `Tea.element` program whose `update`, `view` and subscription are in a
+-- module of the project's own platform layer (docs/design/browser-inline.md
+-- §8.3, amended 2026-10-19): each push counts one, through the pass's facts
+-- for the layer's code. Before, the layer was skipped and the count never
+-- moved in a release build.
+import Browser
+import Demo
+import Tea
+
+
+main : Tea.Program
+main = Browser.mountAt Demo.demo "root"

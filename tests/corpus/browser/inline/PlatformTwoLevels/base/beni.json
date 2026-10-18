@@ -1,0 +1,6 @@
+{
+  "platform": true,
+  "name": "base",
+  "platforms": ["browser-inline"],
+  "reexports": ["Browser", "Cmd", "Html", "Sub", "Tea"]
+}

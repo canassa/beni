@@ -70,6 +70,16 @@ pub const none: u32 = std.math.maxInt(u32);
 
 pub const Error = Allocator.Error || error{WorkCap};
 
+/// The package the pass reads a module as: a module of a project's own
+/// platform layer — a platform module read from the project, not embedded
+/// in the binary — is the program's own code, walked as an app module is:
+/// a program it defines gets its keys and holes like any other
+/// (`browser-inline.md` §8.3, amended 2026-10-19). The shipped platforms and
+/// core stay what they are.
+pub fn passPackage(package: SourceStore.Package, embedded: bool) SourceStore.Package {
+    return if (package == .platform and !embedded) .app else package;
+}
+
 pub const Input = struct {
     gpa: Allocator,
     graph: *const Graph,

@@ -1,0 +1,49 @@
+-- element "root"
+-- load
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="counter">
+        <output>"3"</output>
+        <button data-role="inc">"+1"</button>
+        <button data-role="dec">"-1"</button>
+      </section>
+    </div>
+  </div>
+</body>
+-- click [data-role=inc]
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="counter">
+        <output>"4"</output>
+        <button data-role="inc">"+1"</button>
+        <button data-role="dec">"-1"</button>
+      </section>
+    </div>
+  </div>
+</body>
+-- click [data-role=inc]
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="counter">
+        <output>"5"</output>
+        <button data-role="inc">"+1"</button>
+        <button data-role="dec">"-1"</button>
+      </section>
+    </div>
+  </div>
+</body>
+-- click [data-role=dec]
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="counter">
+        <output>"4"</output>
+        <button data-role="inc">"+1"</button>
+        <button data-role="dec">"-1"</button>
+      </section>
+    </div>
+  </div>
+</body>
