@@ -1,0 +1,37 @@
+-- An app program showing a widget whose `update` and `view` are in the
+-- project's own platform layer, through `Html.map` (docs/design/browser-inline.md
+-- §8.3, §8.4, amended 2026-10-19): its keys, arm pieces and view pieces come
+-- from the layer module as from an app module.
+import Browser
+import Counter
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    c : Counter.Model
+
+
+type Msg
+    = CounterMsg Counter.Msg
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        CounterMsg sub →
+            { model | c = Counter.update sub model.c }
+
+
+view : Model → Html Msg
+view model =
+    <div data-role="app">
+        {Html.map (Counter.view model.c) CounterMsg}
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → { c = Counter.init ⊤ }, update = update, view = view })
+        "root"

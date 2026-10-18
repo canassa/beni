@@ -465,7 +465,7 @@ fn dumpWrites(gpa: std.mem.Allocator, session: *Session, stdout: *Io.Writer, std
         const f = session.graph.moduleFile(m);
         birs[i] = session.artifacts.bir(f);
         names[i] = session.store.moduleName(f);
-        packages[i] = session.graph.modulePackage(m);
+        packages[i] = Writes.passPackage(session.graph.modulePackage(m), session.store.isEmbedded(f));
         const p = session.store.path(f);
         targets[i] = !session.store.isEmbedded(f) and (std.mem.eql(u8, p, target) or underDir(p, target));
         any = any or targets[i];

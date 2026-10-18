@@ -1,0 +1,13 @@
+-- A program whose `update` and `view` are in a module of the project's own
+-- platform layer, mounted from `Main` (docs/design/browser-inline.md §8.3,
+-- amended 2026-10-19): the write-set pass reads a layer module as the
+-- program's own code, so each key's pass calls the bindings its write
+-- reaches. Its model is an `Int`. Before, the pass skipped the layer and the
+-- handler called no binding: the count stayed at 0 in a release build.
+import Browser
+import Demo
+import Tea
+
+
+main : Tea.Program
+main = Browser.mountAt Demo.demo "root"

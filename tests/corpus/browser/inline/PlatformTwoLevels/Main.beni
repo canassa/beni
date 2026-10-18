@@ -1,0 +1,12 @@
+-- A program defined two layers down: `Demo` is in `base`, a platform the
+-- project's own platform layer is built on, itself on `browser-inline`
+-- (docs/design/browser-inline.md §8.3, amended 2026-10-19). The pass reads
+-- both layers' modules as the program's own code, so each key's pass calls
+-- the bindings its write reaches.
+import Browser
+import Demo
+import Tea
+
+
+main : Tea.Program
+main = Browser.mountAt Demo.demo "root"

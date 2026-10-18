@@ -1,0 +1,4 @@
+element "root"
+click [data-role=inc]
+click [data-role=inc]
+click [data-role=reset]

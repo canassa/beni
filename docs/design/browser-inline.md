@@ -318,9 +318,18 @@ one task are two passes. *Measured against tea-inline's microtask flush in S1's 
 *Amended 2026-10-18 (the owner): there is no coarse pass.* No key's pass calls every binding of
 the page: a `*` key reaches the lowering only for a model of one value, whose whole write is that
 value, and its pass is the groups the write-set pass found for it, as any key's
-(`browser/inline/SingleValueModel`). A program the pass does not know, a `*` key of any other
-kind and a binding whose group the pass did not find cannot reach the pass; the lowering asserts
-all three in a safe build, and none was reached by the corpus or by `./rr check` at every size.
+(`browser/inline/SingleValueModel`).
+
+*Amended 2026-10-19 (the review of #389):* the first text said a program the pass does not know
+cannot reach the pass, and one could: a program defined in a module of the project's own
+platform layer, which the pass skipped as not the app's. The pass now reads a layer module — a
+platform module read from the project, not embedded in the binary — as the program's own code
+(`Writes.passPackage`), so such a program has its keys, holes and groups like any other
+(`browser/inline/PlatformProgram`, `PlatformRecord`, `PlatformElement`, `PlatformWidget`,
+`PlatformReader`, `PlatformTwoLevels`). Whatever the pass still does not know is a limit of the
+compiler in every build mode, never a handler without its pass: a program it did not analyse
+(its keys, at `refuseKey`, and its pass, at `passOf`), and a hole it did not reach (`known`). The
+safe-build asserts that remain hold by construction, each with its argument at the assert.
 
 **Controlled inputs.** A binding of a `stateful` attribute (a control's `value`, `checked`,
 `selected`) is called by the handler of every key one of its own element's events reaches, whatever

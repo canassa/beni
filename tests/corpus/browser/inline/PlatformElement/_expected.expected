@@ -1,0 +1,37 @@
+-- element "root"
+-- load
+<body>
+  <div id="root">
+    <div data-role="pushes">
+      <output>"0"</output>
+      <button data-role="reset">"Reset"</button>
+    </div>
+  </div>
+</body>
+-- detail window rr-push 1
+<body>
+  <div id="root">
+    <div data-role="pushes">
+      <output>"1"</output>
+      <button data-role="reset">"Reset"</button>
+    </div>
+  </div>
+</body>
+-- detail window rr-push 2
+<body>
+  <div id="root">
+    <div data-role="pushes">
+      <output>"2"</output>
+      <button data-role="reset">"Reset"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=reset]
+<body>
+  <div id="root">
+    <div data-role="pushes">
+      <output>"0"</output>
+      <button data-role="reset">"Reset"</button>
+    </div>
+  </div>
+</body>

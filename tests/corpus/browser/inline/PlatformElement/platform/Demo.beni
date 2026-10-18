@@ -1,0 +1,44 @@
+--! A `Tea.element` program of the layer: each push the host sends counts
+--! one, and `Reset` clears the count.
+
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Push
+import Schema exposing (Value)
+import Sub exposing (Sub)
+import Tea
+
+
+type Msg
+    = Pushed Value
+    | Reset
+
+
+init : ⊤ → Int × Cmd Msg
+init ⊤ = ( 0, Cmd.none )
+
+
+update : Msg, Int → Int × Cmd Msg
+update msg n =
+    case msg of
+        Pushed _ →
+            ( n + 1, Cmd.none )
+
+        Reset →
+            ( 0, Cmd.none )
+
+
+subscriptions : Int → Sub Msg
+subscriptions _ = Push.onPush Pushed
+
+
+view : Int → Html Msg
+view n =
+    <div data-role="pushes">
+        <output>{n}</output>
+        <button data-role="reset" onClick={Reset}>Reset</button>
+    </div>
+
+
+pub demo : Tea.Program
+demo = Tea.element { init = init, update = update, view = view, subscriptions = subscriptions }
