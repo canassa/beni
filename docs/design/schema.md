@@ -1304,6 +1304,11 @@ and nothing of `core/Schema`'s issue makers ships for it.
   of a `case`, directly, and every arm of that `case` that can match an `Err` matches it as
   `Err _`. Any other use of the call's value — bound to a name, passed, returned, stored, matched
   with `Err e` or by a `?` — reads the payload, and that run keeps the issues and their prose.
+  *(Amended 2026-10-18, the owner's decision: a schema reader whose error the program discards is
+  a type test, not a decoder.)* The call is also unread as the first argument of core's
+  `Result.withDefault` or `Result.toMaybe`, whose bodies match `Err _` and read nothing else of
+  the error. The list is closed and names core functions only, because only their bodies are
+  known not to read it; a program's own function that discards the error is a use like any other.
 - **Only the program that reads pays.** The decision is the run's own, not the declaration's: a
   declaration whose runs are all validators ships no failure branch with prose; one with runs of
   both kinds ships both worker sets, each reached only from its own runs, so a program pays for
@@ -1317,6 +1322,25 @@ and nothing of `core/Schema`'s issue makers ships for it.
   library path (`--schema-library`) runs every schema through the interpreter, which makes issues.
   The differential corpus is unchanged: a program that reads its `Err` keeps the issues, and the
   full comparison with them.
+- **Which runs** *(amended 2026-10-18)*. Four, each at an unread call:
+  - `Schema.read s v`, as the status below says;
+  - `Schema.parse (S.schema ⊤) text` of a nongeneric declaration: the core-private
+    `Schema.validParse`, which is `JSON.parse` with only its `SyntaxError` caught (CLAUDE.md
+    rule 9), then `S`'s validator worker on `read`'s context. That worker holds for what
+    `JSON.parse` makes as for any host value; it never keeps the parsed array, which no program
+    can tell from keeping it. A `parse` of any other schema keeps its issues;
+  - `Json.decodeValue v` and `Json.decode text` whose evidence is a nongeneric derived codec of
+    the calling module (§12.10): one call of `Schema.validRun` or `Schema.validParse` with the
+    codec's validator worker, in place of `Json`'s function, so neither `Json` nor the codec's
+    value ships for the run. A generic codec's keeps its issues.
+  A `With` form takes options and is none of them. Each run calls the per-schema validator
+  worker above, so a program's validators cost what they cost before, and only runs that were no
+  validator before change. The forced library path makes none of these runs a validator but
+  `read`'s, through `readValid`, which runs the library.
+  Measured (brotli 11, release, 2026-10-18): `emit/release/inline/ErrorUnreadWidgets` 1 857 →
+  1 095, `emit/release/app/ValidatorParse` 1 275 → 575, and the research generator's
+  `unique-components` apps `n1-s1-lists=none`, `n1-s2`, `n1-s3` 2 260 → 1 625, 2 090 → 1 521,
+  2 417 → 1 778; `ValidatorRun`, `PushAndTimer`, `EmptyElement` and `EmptySandbox` do not move.
 - **Status** *(2026-10-17)*. Built for `read`: a qualifying run calls the core-private
   `Schema.readValid`, which runs the declaration's validator workers (`$$readValid`, the
   reachability member `read_valid`) on `read`'s context and fails with an empty list; one whose
