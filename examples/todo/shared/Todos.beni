@@ -1,0 +1,57 @@
+--! The one shape of a todo, shared by the server and the page: both
+--! programs list this directory in their `beni.json` `"paths"`, so the
+--! module is checked under `node` and under `browser-tea` and the JSON the
+--! server prints is the JSON the page parses, by construction.
+--!
+--! A `schema` declaration gives each shape its type (`Todo.Type`), its
+--! compiled `parse` and `print`, and a `schema ⊤` to compose with
+--! (`docs/design/schema.md` §2, §6). `Schema.list (Todo.schema ⊤)` is the
+--! list the API answers.
+
+import Schema exposing (Issue, Schema)
+
+
+--| A todo as the API sends it: `GET /api/todos` answers a list of these,
+--| `POST` and `PUT` answer one.
+pub schema Todo =
+    id : Int
+    title : String
+    done : Bool
+
+
+--| What a client sends to make or change a todo: everything but the id,
+--| which the server assigns.
+pub schema Draft =
+    title : String
+    done : Bool
+
+
+--| The list the API answers for `GET /api/todos`.
+pub list : Schema (List Todo.Encoded) (List Todo.Type)
+list = Schema.list (Todo.schema ⊤)
+
+
+--| The issues of a failed parse or print as one line each: the path, then
+--| the message. `core/Schema` has no formatter of its own yet
+--| (`schema.md` §14.4).
+pub describeIssues : List Issue → String
+describeIssues issues = String.join (List.map issues describeIssue) "\n"
+
+
+describeIssue : Issue → String
+describeIssue issue =
+    location = String.join (List.map issue.path segment) "."
+    if String.isEmpty location then
+        issue.message
+    else
+        "${location}: ${issue.message}"
+
+
+segment : Schema.PathSegment → String
+segment s =
+    case s of
+        Schema.Field name →
+            name
+
+        Schema.Index n →
+            String.fromInt n
