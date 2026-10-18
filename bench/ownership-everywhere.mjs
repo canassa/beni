@@ -21,7 +21,7 @@
 // About a minute on a quiet 16-core machine, most of it the cost table.
 
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
+import { cpSync, existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -73,8 +73,16 @@ function program(row, path, fallback) {
   const own = tea ? join(path, "platform-tea") : existsSync(join(path, "platform")) ? join(path, "platform") : null;
   // A page that drives a program kept outside the corpus names its sources
   // (`_expected.sources`, `tests/corpus/README.md`): that program is checked.
+  // A file of several directories is one program whose files are copied
+  // together, each at its path below its directory, as the corpus does.
   const named = join(path, "_expected.sources");
-  const dir = existsSync(named) ? join(repo, readFileSync(named, "utf8").trim()) : path;
+  const listed = existsSync(named) ? readFileSync(named, "utf8").split("\n").map((l) => l.trim()).filter(Boolean) : [];
+  let dir = path;
+  if (listed.length === 1) dir = join(repo, listed[0]);
+  else if (listed.length > 1) {
+    dir = mkdtempSync(join(scratch, "sources-"));
+    for (const l of listed) cpSync(join(repo, l), dir, { recursive: true });
+  }
   return { row, name, platform: own ?? fallback, paths: sources(dir), root: [`--root=${dir}`], dir };
 }
 
