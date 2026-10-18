@@ -2,8 +2,9 @@
 -- cannot read — `update` has no annotation, so the pass knows the model only
 -- from `init`, and `{ next | count = 0 }` updates a value it cannot see into —
 -- is lost precision, and the limit of the compiler names that record at its
--- span. With no annotation the key is every message of the program, never
--- `(any)` (docs/design/browser-inline.md §5, §8.7).
+-- span. The key is spelled as the program writes it, `Run`, the message's one
+-- constructor, which the key tree follows (`follow_single`), never `(any)`
+-- (docs/design/browser-inline.md §5, §8.7).
 import Browser
 import Html exposing (Html)
 import Tea

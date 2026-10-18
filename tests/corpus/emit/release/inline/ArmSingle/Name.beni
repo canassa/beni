@@ -1,0 +1,30 @@
+--! A widget of one message: the name typed.
+
+import Html exposing (Html)
+
+
+pub type alias Model =
+    name : String
+
+
+pub init : ⊤ → Model
+init ⊤ = { name = "" }
+
+
+pub type Msg
+    = SetName String
+
+
+pub update : Msg, Model → Model
+update msg model =
+    case msg of
+        SetName typed →
+            { model | name = typed }
+
+
+pub view : Model → Html Msg
+view model =
+    <section>
+        <input type="text" data-role="name" value={model.name} onInput={SetName} />
+        <output>{model.name}</output>
+    </section>

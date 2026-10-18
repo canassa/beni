@@ -1,0 +1,23 @@
+-- element "root"
+-- load
+<body>
+  <div id="root">
+    <div>
+      <section>
+        <input type="text" data-role="name" .value="">
+        <output></output>
+      </section>
+    </div>
+  </div>
+</body>
+-- input [data-role=name] "ada"
+<body>
+  <div id="root">
+    <div>
+      <section>
+        <input type="text" data-role="name" .value="ada">
+        <output>"ada"</output>
+      </section>
+    </div>
+  </div>
+</body>

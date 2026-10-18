@@ -94,6 +94,9 @@ pub const Input = struct {
     /// `L`, the alternative cap `A` and the size cap `S` do not apply, for
     /// a platform whose lowering refuses a capped key; `k` and `I` stay.
     lift_caps: bool = false,
+    /// A message part of a type of one constructor is split on, into its
+    /// one child, for a lowering whose handlers take a key's leaf fields.
+    follow_single: bool = false,
 };
 
 /// The values of a platform's `Sub` and `Cmd` the pass recognises by name
@@ -2044,7 +2047,16 @@ fn matchFacts(a: *Writes, f: *Frame, pat: Inst.Index, v: u32, g: u32, out: *Matc
                         out.ok = false;
                         return;
                     }
-                    if (a.siblings(c).count > 1 and a.factPath(p)) try out.facts.append(a.gpa, .{ .kind = .pos, .key = p, .val = c });
+                    // A constructor of a type of one: no test, and no fact —
+                    // but a key the program's handlers take the fields of
+                    // follows it (`follow_single`): the key tree splits there
+                    // into its one child, so the key's leaf is that
+                    // constructor (`browser-inline.md` §8.4).
+                    const single = a.siblings(c).count == 1;
+                    // A summary keeps the fact too: the key that instantiates it
+                    // splits where the path is the message's (`noteSplit`).
+                    const follow = single and a.in.follow_single;
+                    if ((!single or follow) and a.factPath(p)) try out.facts.append(a.gpa, .{ .kind = .pos, .key = p, .val = c });
                 },
                 .con => if (a.termWord(v, 1) != c) {
                     out.ok = false;

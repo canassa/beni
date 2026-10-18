@@ -1,0 +1,35 @@
+-- A widget whose message type has one constructor, `SetName`: no `case`
+-- tests it, and the key tree follows it all the same (write-sets.md,
+-- `follow_single`; docs/design/browser-inline.md §8.4), so the key is
+-- `NameMsg · SetName`, its handler takes the typed text and calls
+-- `Name`'s arm piece, with no message made.
+import Browser
+import Html exposing (Html)
+import Name
+import Tea
+
+
+type alias Model =
+    n : Name.Model
+
+
+type Msg
+    = NameMsg Name.Msg
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        NameMsg sub →
+            { model | n = Name.update sub model.n }
+
+
+view : Model → Html Msg
+view model = <div>{Html.map (Name.view model.n) NameMsg}</div>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → { n = Name.init ⊤ }, update = update, view = view })
+        "root"
