@@ -63,8 +63,12 @@ pub const Member = enum(u4) {
     /// `read`'s validator workers (`schema.md` §6, *A run whose failure is
     /// never read is a validator*).
     read_valid = 10,
+    /// The definition's shape, which a shape run hands the shared
+    /// validator (`schema.md` §6, *A validator run is a shape that one
+    /// shared validator reads*): only shape runs and other shapes reach it.
+    shape = 11,
 
-    pub const count = 11;
+    pub const count = 12;
 
     /// The members a `pub schema` exports from a `--library` build: what
     /// another program can name. The other four worker sets are reached
@@ -94,7 +98,7 @@ pub const Member = enum(u4) {
             .read_value => .read,
             .write_value => .write,
             .read_valid => .valid,
-            .description, .root, .parse, .print => null,
+            .description, .root, .parse, .print, .shape => null,
         };
     }
 };
@@ -205,6 +209,13 @@ pub const compiled_values = [_][]const u8{
     "hostWorker",
     // `read` as a validator (schema.md §6).
          "readValid",           "readValidSlot",   "validRun",          "validParse",
+    // A shape run's validator and the readers a shape names (schema.md §6,
+    // *A validator run is a shape that one shared validator reads*).
+    "validShape",      "shapeParse",          "shapeString",     "shapeBool",         "shapeInt",
+    "shapeFloat",      "shapeFinite",         "shapeNull",       "shapeValue",        "shapeChar",
+    "shapeInt32",      "shapeNever",          "shapeRecord",     "shapeList",         "shapeNullable",
+    "shapeMaybe",      "shapeJust",           "shapeLater",      "shapeTuple",        "shapeTagged",
+    "shapeCtors",
 };
 
 pub fn isCompiledValue(text: []const u8) bool {
@@ -249,6 +260,26 @@ pub fn coreNeeds(g: SchemaGraph, scratch: Allocator, r: Ref, member: Member, lib
                 .maybe => if (rhs(plan, n) & SchemaPlan.Maybe.field == 0) try out.append(scratch, "describedMaybe"),
                 .parameter, .reference, .check, .annotation, .codec_ref, .codec_value => {},
             };
+        },
+        // The readers the shape names, one per kind of node it holds.
+        .shape => {
+            if (library) return;
+            for (nodes.items) |n| if (shapeReader(plan, n)) |name| try out.append(scratch, name);
+            var refs: std.ArrayList(SchemaPlan.NodeIndex) = .empty;
+            for (nodes.items) |n| switch (tag(plan, n)) {
+                .reference, .codec_ref => try refs.append(scratch, n),
+                else => {},
+            };
+            for (refs.items) |n| {
+                const t = switch (tag(plan, n)) {
+                    .reference => g.target(r.module, @fromBackingInt(@intCast(lhs(plan, n)))) orelse continue,
+                    else => g.codecTarget(r.module, lhs(plan, n)),
+                };
+                if (try g.inCycle(scratch, r, t)) {
+                    try out.append(scratch, "shapeLater");
+                    break;
+                }
+            }
         },
         // The root wrappers: `S.parse`/`S.parseWith`, `S.print`/`S.printWith`.
         .parse, .print => {
@@ -430,7 +461,7 @@ pub fn memberTargets(g: SchemaGraph, scratch: Allocator, r: Ref, member: Member,
             return;
         },
         .description => {},
-        .read, .write, .decode, .encode, .read_value, .write_value, .read_valid => if (library) return,
+        .read, .write, .decode, .encode, .read_value, .write_value, .read_valid, .shape => if (library) return,
     }
     if (g.hostAliased(r, member)) |aliased| {
         try out.append(scratch, .{ r, aliased });
@@ -448,6 +479,99 @@ pub fn memberTargets(g: SchemaGraph, scratch: Allocator, r: Ref, member: Member,
         };
         try out.append(scratch, .{ t, member });
     }
+}
+
+/// Whether definition `r` has a shape (`schema.md` §6, *A validator run is
+/// a shape that one shared validator reads*): it takes no parameter, and
+/// every node it reaches, through references, is one a shape can hold —
+/// no `via`, no parameter, no module `codec`, and no reference with
+/// arguments or to a generic definition.
+pub fn shapeable(g: SchemaGraph, scratch: Allocator, r: Ref) Allocator.Error!bool {
+    var stack: std.ArrayList(Ref) = .empty;
+    var seen: std.ArrayList(Ref) = .empty;
+    try stack.append(scratch, r);
+    while (stack.pop()) |at| {
+        var done = false;
+        for (seen.items) |x| done = done or (x.module == at.module and x.decl == at.decl);
+        if (done) continue;
+        try seen.append(scratch, at);
+        const d = g.definition(at.module, at.decl) orelse return false;
+        if (d.params_end != d.params_start) return false;
+        const plan = g.planOf(at.module);
+        var nodes: std.ArrayList(SchemaPlan.NodeIndex) = .empty;
+        try subtree(plan, scratch, d.root, &nodes);
+        for (nodes.items) |n| switch (tag(plan, n)) {
+            .primitive, .list, .nullable, .record, .tagged, .tuple, .constructors, .maybe, .check, .annotation => {},
+            .reference => {
+                if (args(plan, n).len != 0) return false;
+                try stack.append(scratch, g.target(at.module, @fromBackingInt(@intCast(lhs(plan, n)))) orelse return false);
+            },
+            .codec_ref => {
+                if (args(plan, n).len != 0) return false;
+                try stack.append(scratch, g.codecTarget(at.module, lhs(plan, n)));
+            },
+            .conversion, .parameter, .codec_value => return false,
+        };
+    }
+    return true;
+}
+
+/// The `core/Schema` reader a node's shape names first, or null for a
+/// reference, a check or an annotation, which name none.
+pub fn shapeReader(plan: *const SchemaPlan, n: SchemaPlan.NodeIndex) ?[]const u8 {
+    return switch (tag(plan, n)) {
+        .primitive => switch (std.enums.fromInt(SchemaPlan.Primitive, lhs(plan, n)) orelse .value) {
+            .string => "shapeString",
+            .bool => "shapeBool",
+            .int => "shapeInt",
+            .float => "shapeFloat",
+            .finite_float => "shapeFinite",
+            .null => "shapeNull",
+            .value => "shapeValue",
+            .char => "shapeChar",
+            .int32 => "shapeInt32",
+            .never => "shapeNever",
+        },
+        .list => "shapeList",
+        .nullable => "shapeNullable",
+        .maybe => if (rhs(plan, n) & SchemaPlan.Maybe.reads_null != 0) "shapeJust" else "shapeMaybe",
+        .tuple => "shapeTuple",
+        .tagged => "shapeTagged",
+        .record => "shapeRecord",
+        .constructors => "shapeCtors",
+        .reference, .codec_ref, .check, .annotation, .conversion, .parameter, .codec_value => null,
+    };
+}
+
+/// Whether definition `t`, which `r` references, references `r` back,
+/// directly or through others: the two are then in one reference cycle,
+/// which cannot cross a module.
+pub fn inCycle(g: SchemaGraph, scratch: Allocator, r: Ref, t: Ref) Allocator.Error!bool {
+    if (t.module != r.module) return false;
+    const m = r.module;
+    const plan = g.planOf(m);
+    var stack: std.ArrayList(u32) = .empty;
+    var visited: std.ArrayList(u32) = .empty;
+    try stack.append(scratch, t.decl);
+    while (stack.pop()) |at| {
+        if (at == r.decl) return true;
+        var done = false;
+        for (visited.items) |v| done = done or v == at;
+        if (done) continue;
+        try visited.append(scratch, at);
+        const d = g.definition(m, at) orelse continue;
+        var nodes: std.ArrayList(SchemaPlan.NodeIndex) = .empty;
+        try subtree(plan, scratch, d.root, &nodes);
+        for (nodes.items) |n| {
+            const next = switch (tag(plan, n)) {
+                .reference => g.target(m, @fromBackingInt(@intCast(lhs(plan, n)))) orelse continue,
+                .codec_ref => g.codecTarget(m, lhs(plan, n)),
+                else => continue,
+            };
+            if (next.module == m) try stack.append(scratch, next.decl);
+        }
+    }
+    return false;
 }
 
 /// Whether the definition holds a `via`: its members then reach the

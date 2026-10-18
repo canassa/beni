@@ -3467,6 +3467,365 @@ validParse worker text =
             Err []
 
 
+-- ---- Shapes: the one validator every shape run shares ---------------------
+--
+-- `schema.md` §6, *A validator run is a shape that one shared validator
+-- reads*. A run whose error nothing reads, over a schema the compiler can
+-- write as a shape, calls `validShape` or `shapeParse` with the schema's
+-- shape in place of the schema. A shape names the reader of each of its
+-- nodes, so a build ships the readers of the kinds its shapes hold and no
+-- other. Each reader answers what the specialised `read` answers for the
+-- same node — the typed value, or `shapeFail` where `read` fails — and makes
+-- no issue.
+
+-- `read` of a shape at a call whose error nothing reads.
+validShape : Js.Value, Value → Result (List Issue) a
+validShape shape v =
+    x = shapeRun shape (toHost v) 0
+    if Js.same x shapeFail then Err [] else Ok (fromHost x)
+
+
+-- `parse` of a shape at a call whose error nothing reads: `JSON.parse`,
+-- only its `SyntaxError` caught, then the shape.
+shapeParse : Js.Value, String → Result (List Issue) a
+shapeParse shape text =
+    case
+        Js.catchIf
+            (λ⊤ → Ok (Js.call (Js.global "JSON") "parse" [ Js.from text ]))
+            (λthrown → Js.instanceOf thrown (Js.global "SyntaxError"))
+            λ_ → Err ⊤
+    of
+        Ok v →
+            validShape shape (fromHost v)
+
+        Err _ →
+            Err []
+
+
+-- What every reader answers where `read` fails: no value a reader makes or
+-- returns is this array.
+shapeFail : Js.Value
+shapeFail = Js.array []
+
+
+-- The default options' depth bound, which every shape run reads under.
+shapeMax : Int
+shapeMax = defaultOptions.maxDepth
+
+
+-- Shape `s` read on `x` at depth `depth`: a primitive's reader, or the
+-- reader an array names first.
+shapeRun : Js.Value, Js.Value, Int → Js.Value
+shapeRun s x depth =
+    if Js.typeIs s "function" then
+        Js.apply s [ x ]
+    else
+        Js.apply (Js.at s 0) [ s, x, Js.from depth ]
+
+
+shapeString : Js.Value → Js.Value
+shapeString x = if Js.typeIs x "string" then x else shapeFail
+
+
+shapeBool : Js.Value → Js.Value
+shapeBool x = if Js.typeIs x "boolean" then x else shapeFail
+
+
+-- `Number.isSafeInteger` and `Number.isFinite` answer false for anything
+-- that is not a number.
+shapeInt : Js.Value → Js.Value
+shapeInt x = if Js.to (Js.call (Js.global "Number") "isSafeInteger" [ x ]) then x else shapeFail
+
+
+shapeFloat : Js.Value → Js.Value
+shapeFloat x = if Js.typeIs x "number" then x else shapeFail
+
+
+shapeFinite : Js.Value → Js.Value
+shapeFinite x = if isFinite x then x else shapeFail
+
+
+shapeNull : Js.Value → Js.Value
+shapeNull x = if Js.isNull x then toHost Null else shapeFail
+
+
+shapeValue : Js.Value → Js.Value
+shapeValue x = x
+
+
+shapeChar : Js.Value → Js.Value
+shapeChar x =
+    if Js.typeIs x "string" && lengthOf (Js.call (Js.global "Array") "from" [ x ]) == 1 then
+        x
+    else
+        shapeFail
+
+
+shapeInt32 : Js.Value → Js.Value
+shapeInt32 x = if Js.typeIs x "number" && Js.bitOr (intOf x) 0 == intOf x then x else shapeFail
+
+
+shapeNever : Js.Value → Js.Value
+shapeNever _ = shapeFail
+
+
+-- Object `x`'s key `k`, read once, as every reading runner reads it
+-- (`present`): `undefined` when it is absent — and a name `prototypeKey`
+-- lists, which must be `x`'s own, is not read unless it is.
+shapeKey : Js.Value, String → Js.Value
+shapeKey x k =
+    if prototypeKey k then
+        if hasOwn x k then Js.get x k else Js.undefined
+    else
+        Js.get x k
+
+
+-- `[shapeRecord, make, entry₁, …]`: a record, its fields read in the
+-- declaration's order, each entry `[key, shape]`, `[key, shape, 1]`
+-- (optional) or `[key, shape, 2]` (a `Maybe` field), then `make` applied
+-- to their values in that order, which builds the record — or the variant
+-- whose payload it is.
+shapeRecord : Js.Value, Js.Value, Int → Js.Value
+shapeRecord s x depth =
+    if isObject x then
+        values = Js.array []
+        if shapeFields s 2 (lengthOf s) x depth values then
+            shapeFail
+        else
+            Js.call (Js.at s 1) "apply" [ Js.null, values ]
+    else
+        shapeFail
+
+
+-- The fields from the `i`th entry on, each read and pushed onto `values`.
+-- True when one fails.
+shapeFields : Js.Value, Int, Int, Js.Value, Int, Js.Value → Bool
+shapeFields s i n x depth values =
+    if i ≥ n then
+        False
+    else
+        y = shapeField (Js.at s i) x depth
+        if Js.same y shapeFail then
+            True
+        else
+            Js.to (Js.call values "push" [ y ])
+            shapeFields s (i + 1) n x depth values
+
+
+-- One field of a record at depth `depth`, present as `present` tests it
+-- and read once.
+shapeField : Js.Value, Js.Value, Int → Js.Value
+shapeField entry x depth =
+    k = stringOf (Js.at entry 0)
+    if prototypeKey k then
+        if hasOwn x k then shapePresent entry (Js.get x k) depth else shapeAbsent entry
+    else
+        v = Js.get x k
+        if Js.isUndefined v then shapeAbsent entry else shapePresent entry v depth
+
+
+-- A present field's value, read one level down.
+shapePresent : Js.Value, Js.Value, Int → Js.Value
+shapePresent entry v depth =
+    if depth ≥ shapeMax then
+        shapeFail
+    else
+        y = shapeRun (Js.at entry 1) v (depth + 1)
+        if lengthOf entry == 2 || intOf (Js.at entry 2) == 2 || Js.same y shapeFail then
+            y
+        else
+            toHost (Present y)
+
+
+-- An absent field: a required one fails, an optional one is `Missing` and
+-- a `Maybe` field `Nothing`.
+shapeAbsent : Js.Value → Js.Value
+shapeAbsent entry =
+    if lengthOf entry == 2 then
+        shapeFail
+    else if intOf (Js.at entry 2) == 2 then
+        toHost Nothing
+    else
+        toHost Missing
+
+
+-- `[shapeList, s]`: a fresh array, each element one level down.
+shapeList : Js.Value, Js.Value, Int → Js.Value
+shapeList s x depth =
+    if isArray x then
+        shapeListFrom (Js.at s 1) x 0 (lengthOf x) depth (Js.array [])
+    else
+        shapeFail
+
+
+shapeListFrom : Js.Value, Js.Value, Int, Int, Int, Js.Value → Js.Value
+shapeListFrom s x i n depth out =
+    if i ≥ n then
+        out
+    else if depth ≥ shapeMax then
+        shapeFail
+    else
+        y = shapeRun s (Js.at x i) (depth + 1)
+        if Js.same y shapeFail then
+            shapeFail
+        else
+            Js.to (Js.call out "push" [ y ])
+            shapeListFrom s x (i + 1) n depth out
+
+
+-- `[shapeNullable, s]`: `null` is `Null`, anything else `s`'s in `NonNull`.
+shapeNullable : Js.Value, Js.Value, Int → Js.Value
+shapeNullable s x depth =
+    if Js.isNull x then
+        toHost Null
+    else
+        y = shapeRun (Js.at s 1) x depth
+        if Js.same y shapeFail then shapeFail else toHost (NonNull y)
+
+
+-- `[shapeMaybe, s]`: `null` is `Nothing`, anything else `s`'s in `Just`.
+shapeMaybe : Js.Value, Js.Value, Int → Js.Value
+shapeMaybe s x depth = if Js.isNull x then toHost Nothing else shapeJust s x depth
+
+
+-- `[shapeJust, s]`: `s`'s answer in `Just`, `s` reading `null` itself.
+shapeJust : Js.Value, Js.Value, Int → Js.Value
+shapeJust s x depth =
+    y = shapeRun (Js.at s 1) x depth
+    if Js.same y shapeFail then shapeFail else toHost (Just y)
+
+
+-- `[shapeLater, f]`: the shape `f` answers, a definition in a reference
+-- cycle with the one that names it.
+shapeLater : Js.Value, Js.Value, Int → Js.Value
+shapeLater s x depth = shapeRun (Js.apply (Js.at s 1) []) x depth
+
+
+-- `[shapeTuple, s₁, …]`: an array of exactly that many, each element one
+-- level down, as §4's tuple; `⊤`'s `null` for none.
+shapeTuple : Js.Value, Js.Value, Int → Js.Value
+shapeTuple s x depth =
+    n = lengthOf s - 1
+    if not (isArray x) || lengthOf x ≠ n then
+        shapeFail
+    else if n == 0 then
+        Js.null
+    else
+        shapeTupleFrom s x 0 n depth (Js.object [])
+
+
+shapeTupleFrom : Js.Value, Js.Value, Int, Int, Int, Js.Value → Js.Value
+shapeTupleFrom s x i n depth out =
+    if i ≥ n then
+        out
+    else if depth ≥ shapeMax then
+        shapeFail
+    else
+        y = shapeRun (Js.at s (i + 1)) (Js.at x i) (depth + 1)
+        if Js.same y shapeFail then
+            shapeFail
+        else
+            Js.set out (slotOf i) y
+            shapeTupleFrom s x (i + 1) n depth out
+
+
+-- The name of a tuple's `i`th slot, as `backend.md` §4 spells it.
+slotOf : Int → String
+slotOf i =
+    if i < 26 then
+        stringOf (Js.call (Js.global "String") "fromCharCode" [ Js.from (97 + i) ])
+    else
+        "a${String.fromInt i}"
+
+
+-- `[shapeTagged, discriminator, tag₁, v₁, …]`: the discriminator read as a
+-- field is, then the variant whose tag it is: a nullary one's value, or the
+-- record shape of its payload, one level down, whose `make` builds the
+-- variant.
+shapeTagged : Js.Value, Js.Value, Int → Js.Value
+shapeTagged s x depth =
+    if isObject x then
+        i = shapeFind s (shapeKey x (stringOf (Js.at s 1))) 2 (lengthOf s)
+        if i < 0 then
+            shapeFail
+        else
+            v = Js.at s (i + 1)
+            if not (isArray v) then
+                v
+            else if depth ≥ shapeMax then
+                shapeFail
+            else
+                shapeRun v x (depth + 1)
+    else
+        shapeFail
+
+
+-- The position of the name `===` to `k` among `s`'s, every other element
+-- from `i` on; −1 when none is.
+shapeFind : Js.Value, Js.Value, Int, Int → Int
+shapeFind s k i n =
+    if i ≥ n then
+        -1
+    else if Js.same (Js.at s i) k then
+        i
+    else
+        shapeFind s k (i + 2) n
+
+
+-- `[shapeCtors, name₁, c₁, …]`: a custom type in Roc's form (§12.3). A
+-- nullary constructor is its name, and its `c` its value; one that takes
+-- arguments is an object of one key, its name, and its `c` `[make, s₁, …]`.
+shapeCtors : Js.Value, Js.Value, Int → Js.Value
+shapeCtors s x depth =
+    n = lengthOf s
+    if Js.typeIs x "string" then
+        i = shapeFind s x 1 n
+        if i < 0 || isArray (Js.at s (i + 1)) then shapeFail else Js.at s (i + 1)
+    else if isObject x then
+        keys = Js.call (Js.global "Object") "keys" [ x ]
+        if lengthOf keys ≠ 1 then
+            shapeFail
+        else
+            k = Js.at keys 0
+            i = shapeFind s k 1 n
+            if i < 0 || not (isArray (Js.at s (i + 1))) || depth ≥ shapeMax then
+                shapeFail
+            else
+                shapeArgs (Js.at s (i + 1)) (Js.get x (stringOf k)) depth
+    else
+        shapeFail
+
+
+-- A constructor's arguments, below its name at `depth + 1`: the one
+-- argument itself, or an array of exactly as many, one level further down.
+shapeArgs : Js.Value, Js.Value, Int → Js.Value
+shapeArgs c payload depth =
+    arity = lengthOf c - 1
+    if arity == 1 then
+        y = shapeRun (Js.at c 1) payload (depth + 1)
+        if Js.same y shapeFail then shapeFail else Js.apply (Js.at c 0) [ y ]
+    else if not (isArray payload) || lengthOf payload ≠ arity then
+        shapeFail
+    else
+        ys = shapeArgsFrom c payload 0 arity (depth + 1) (Js.array [])
+        if Js.same ys shapeFail then shapeFail else Js.call (Js.at c 0) "apply" [ Js.null, ys ]
+
+
+shapeArgsFrom : Js.Value, Js.Value, Int, Int, Int, Js.Value → Js.Value
+shapeArgsFrom c payload i n depth out =
+    if i ≥ n then
+        out
+    else if depth ≥ shapeMax then
+        shapeFail
+    else
+        y = shapeRun (Js.at c (i + 1)) (Js.at payload i) (depth + 1)
+        if Js.same y shapeFail then
+            shapeFail
+        else
+            Js.to (Js.call out "push" [ y ])
+            shapeArgsFrom c payload (i + 1) n depth out
+
+
 -- The first schema argument of a compiled root's that has a dynamic part,
 -- as `interpretedIn` finds them.
 firstDynamic : Js.Value → Maybe (Schema Js.Value Js.Value)

@@ -158,6 +158,10 @@ pub fn exports(l: *Lowerer, decl: u32, names: *std.ArrayList(NameIndex)) !void {
     if (l.liveSchema(ref, .description)) {
         try names.append(l.scratch, try schemaName(l, ref, "description"));
     }
+    // The shape, which another module's shape and shape runs name.
+    if (!l.in.schema_library and l.liveSchema(ref, .shape)) {
+        try names.append(l.scratch, try schemaName(l, ref, "shape"));
+    }
     // The workers too, which another module's workers call; the forced
     // library path writes none. Then the root wrappers.
     const workers = !l.in.schema_library;
@@ -208,6 +212,10 @@ pub fn declaration(l: *Lowerer, out: *Stmts, decl: u32) !void {
     if (l.liveSchema(ref, .description)) {
         l.restartNames();
         try g.description(out);
+    }
+    if (!l.in.schema_library and l.liveSchema(ref, .shape)) {
+        l.restartNames();
+        try g.constDecl(out, try g.own("shape"), try g.shapeOf(g.def.root));
     }
     // Each operation's worker set, and for `parse` and `print` the root
     // wrappers after it, in one naming scope.
@@ -858,6 +866,116 @@ const Gen = struct {
             g.p,
         ));
         return .{ inject, project };
+    }
+
+    // ---- The shape --------------------------------------------------------
+
+    /// Node `n`'s shape (`schema.md` §6, *A validator run is a shape that
+    /// one shared validator reads*): a primitive's reader, or an array whose
+    /// first element is the node's reader. Only a definition
+    /// `SchemaGraph.shapeable` accepts is written.
+    fn shapeOf(g: *Gen, n: PNode) Allocator.Error!Node.Index {
+        const plan = g.plan;
+        const child: PNode = @fromBackingInt(@intCast(SchemaGraph.lhs(plan, n)));
+        switch (SchemaGraph.tag(plan, n)) {
+            .primitive => return g.core(SchemaGraph.shapeReader(plan, n).?),
+            .list, .nullable, .maybe => return g.l.arrayNode(&.{ try g.core(SchemaGraph.shapeReader(plan, n).?), try g.shapeOf(child) }, g.p),
+            .check, .annotation => return g.shapeOf(child),
+            .record => return g.shapeRecord(n, null),
+            .tuple => {
+                var items: std.ArrayList(Node.Index) = .empty;
+                try items.append(g.l.scratch, try g.core("shapeTuple"));
+                for (SchemaGraph.elements(plan, n)) |e| try items.append(g.l.scratch, try g.shapeOf(@fromBackingInt(@intCast(e))));
+                return g.l.arrayNode(items.items, g.p);
+            },
+            .tagged => {
+                const info = g.variantsOf(n);
+                var items: std.ArrayList(Node.Index) = .empty;
+                try items.append(g.l.scratch, try g.core("shapeTagged"));
+                try items.append(g.l.scratch, try g.str(SchemaGraph.literal(plan, @fromBackingInt(@intCast(SchemaGraph.lhs(plan, n))))));
+                for (SchemaGraph.variants(plan, n), 0..) |vi, order| {
+                    if (vi >= plan.variants.len) continue;
+                    const v = plan.variants[vi];
+                    const name = SchemaGraph.symbol(plan, v.name);
+                    try items.append(g.l.scratch, try g.str(SchemaGraph.literal(plan, v.external)));
+                    if (v.payload.unwrap()) |payload| {
+                        try items.append(g.l.scratch, try g.shapeRecord(payload, .{ .info = info, .order = @intCast(order), .name = name }));
+                    } else {
+                        try items.append(g.l.scratch, try g.variantValue(info, @intCast(order), name, null));
+                    }
+                }
+                return g.l.arrayNode(items.items, g.p);
+            },
+            .constructors => {
+                var items: std.ArrayList(Node.Index) = .empty;
+                try items.append(g.l.scratch, try g.core("shapeCtors"));
+                for (SchemaGraph.ctors(plan, n)) |c| {
+                    const cc = (try g.codecCtor(n, c)) orelse continue;
+                    try items.append(g.l.scratch, try g.str(g.l.text(SchemaGraph.symbol(plan, plan.codec_ctors[c].name))));
+                    const arg_nodes = SchemaGraph.ctorArgs(plan, c);
+                    if (arg_nodes.len == 0) {
+                        try items.append(g.l.scratch, try g.l.codecCtorValue(cc, &.{}, g.p));
+                        continue;
+                    }
+                    var row: std.ArrayList(Node.Index) = .empty;
+                    const params = try g.l.scratch.alloc(NameIndex, arg_nodes.len);
+                    const ids = try g.l.scratch.alloc(Node.Index, arg_nodes.len);
+                    for (params, ids) |*param, *id_slot| {
+                        param.* = try g.fresh("$a");
+                        id_slot.* = try g.id(param.*);
+                    }
+                    try row.append(g.l.scratch, try g.arrowOf(params, try g.l.codecCtorValue(cc, ids, g.p)));
+                    for (arg_nodes) |a| try row.append(g.l.scratch, try g.shapeOf(@fromBackingInt(@intCast(a))));
+                    try items.append(g.l.scratch, try g.l.arrayNode(row.items, g.p));
+                }
+                return g.l.arrayNode(items.items, g.p);
+            },
+            .reference, .codec_ref => {
+                const t = if (SchemaGraph.tag(plan, n) == .reference)
+                    g.sg.target(g.ref.module, @fromBackingInt(@intCast(SchemaGraph.lhs(plan, n)))) orelse return g.lit(.undefined_lit)
+                else
+                    g.sg.codecTarget(g.ref.module, SchemaGraph.lhs(plan, n));
+                const named = try g.id(try schemaName(g.l, t, "shape"));
+                if (!try g.sg.inCycle(g.l.scratch, g.ref, t)) return named;
+                return g.l.arrayNode(&.{ try g.core("shapeLater"), try g.arrowOf(&.{}, named) }, g.p);
+            },
+            .conversion, .parameter, .codec_value => return g.lit(.undefined_lit),
+        }
+    }
+
+    /// A record's shape: `[shapeRecord, make, entry₁, …]`, the entries
+    /// `[key, shape]`, `[key, shape, 1]` when optional or `[key, shape, 2]`
+    /// for a `Maybe` field in the declaration's order, `make` the arrow
+    /// that builds the record from their values in that order — in its
+    /// variant's constructor, for a payload.
+    fn shapeRecord(g: *Gen, n: PNode, variant: ?struct { info: Variants, order: u32, name: Symbol }) Allocator.Error!Node.Index {
+        const plan = g.plan;
+        const fields = SchemaGraph.fields(plan, n);
+        const names = try g.l.scratch.alloc(Symbol, fields.len);
+        const params = try g.l.scratch.alloc(NameIndex, fields.len);
+        const ids = try g.l.scratch.alloc(Node.Index, fields.len);
+        for (fields, names, params, ids) |f, *name, *param, *id_slot| {
+            name.* = SchemaGraph.symbol(plan, f.name);
+            param.* = try g.fresh("$f");
+            id_slot.* = try g.id(param.*);
+        }
+        const built = try g.recordValue(names, ids);
+        const value = if (variant) |v| try g.variantValue(v.info, v.order, v.name, built) else built;
+        var items: std.ArrayList(Node.Index) = .empty;
+        try items.append(g.l.scratch, try g.core("shapeRecord"));
+        try items.append(g.l.scratch, try g.arrowOf(params, value));
+        for (fields) |f| {
+            var entry: std.ArrayList(Node.Index) = .empty;
+            try entry.append(g.l.scratch, try g.str(SchemaGraph.literal(plan, f.external)));
+            try entry.append(g.l.scratch, try g.shapeOf(f.child));
+            if (SchemaGraph.isMaybeField(plan, f)) {
+                try entry.append(g.l.scratch, try g.num(2));
+            } else if (f.optional) {
+                try entry.append(g.l.scratch, try g.num(1));
+            }
+            try items.append(g.l.scratch, try g.l.arrayNode(entry.items, g.p));
+        }
+        return g.l.arrayNode(items.items, g.p);
     }
 
     // ---- The directions ---------------------------------------------------
@@ -2431,6 +2549,13 @@ fn isIdentity(plan: *const SchemaPlan, words: []const u32, params: usize) bool {
 const primitiveBuilder = SchemaGraph.primitiveBuilder;
 
 const isPrototypeKey = SchemaShare.isPrototypeKey;
+
+/// `<Module>$<Schema>$$shape`, the shape of `ref` a shape run hands the
+/// shared validator (`SchemaValid`).
+pub fn shapeName(l: *Lowerer, ref: SchemaGraph.Ref, p: u32) !Node.Index {
+    try l.requireLive(l.liveSchema(ref, .shape), "a shape");
+    return l.ident(try schemaName(l, ref, "shape"), p);
+}
 
 /// `<Module>$<Schema>$$readValid`, the root validator worker of `ref`, which
 /// a validator run whose schema is `S.schema ⊤` calls (`SchemaValid`).
