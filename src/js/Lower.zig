@@ -16053,6 +16053,24 @@ const markup_vtable: beni_markup.VTable = struct {
         return lowerer(impl).directMessage(into, v, if (payload) |pl| node(pl) else null);
     }
 
+    fn rootLetReaders(impl: *anyopaque, r: M.Root.Index, k: u32) u32 {
+        const l = lowerer(impl);
+        const st = l.mk orelse return 0;
+        const root = st.built.tree.root(r);
+        if (k >= root.lets.len) return 0;
+        const local = st.built.values[root.lets.start + k].let_value.local;
+        var n: u32 = 0;
+        for (0..root.values.len) |vi| {
+            const i: Inst.Index = switch (st.built.values[root.values.start + vi]) {
+                .inst => |x| x,
+                .call => |c| c.inst,
+                else => continue,
+            };
+            if (l.subtreeReadsLocal(i, local)) n += 1;
+        }
+        return n;
+    }
+
     fn pieceEventCtor(impl: *anyopaque, v: M.Value.Index, payload: bool) ?M.Context.PieceEvent {
         return lowerer(impl).pieceEventCtor(v, payload);
     }
@@ -16390,6 +16408,7 @@ const markup_vtable: beni_markup.VTable = struct {
         .program_message = programMessage,
         .program_message_fields = programMessageFields,
         .piece_event_ctor = pieceEventCtor,
+        .root_let_readers = rootLetReaders,
         .piece_export = pieceExport,
         .program_piece = programPiece,
         .program_piece_name = programPieceName,

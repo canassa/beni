@@ -1,0 +1,40 @@
+-- A `let` of another module's `view`, read by its markup (D-d,
+-- docs/design/browser-inline.md §8.4): the piece's binding function
+-- evaluates it where its hole reads it, from the model it is handed, so
+-- the label follows the count.
+--! A counter whose view names what it shows.
+
+import Html exposing (Html)
+
+
+pub type alias Model =
+    count : Int
+
+
+pub init : ⊤ → Model
+init ⊤ = { count = 3 }
+
+
+pub type Msg
+    = Inc
+    | Dec
+
+
+pub update : Msg, Model → Model
+update msg model =
+    case msg of
+        Inc →
+            { model | count = clamp (model.count + 1) 0 10 }
+
+        Dec →
+            { model | count = clamp (model.count - 1) 0 10 }
+
+
+pub view : Model → Html Msg
+view model =
+    shown = if model.count ≥ 10 then "full" else String.fromInt model.count
+    <section data-role="counter">
+        <output>{shown}</output>
+        <button data-role="inc" disabled={model.count ≥ 10} onClick={Inc}>+1</button>
+        <button data-role="dec" onClick={Dec}>-1</button>
+    </section>
