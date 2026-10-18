@@ -4991,6 +4991,10 @@ handle stop request =
 server's accept loop in a child fiber of the caller (`Task.spawn`), and each request's handler
 runs in a fiber of a `Task.scope` that loop holds. So:
 
+- `listen` returns only once the loop's fiber has parked on its first wait, so from the moment
+  a program holds the `Server`, a cancellation of the owner, or its end, reaches the loop's
+  canceller: a program that returns right after `listen` serves nothing and ends, and never
+  leaves a bound socket keeping the process alive (`HttpServerOwnerEndsAtOnce`).
 - When the owning fiber ends, or is cancelled, the loop fiber is cancelled with it. The
   cancellation calls the loop's wait canceller, which **destroys every open connection and closes
   the listening socket at once**, then the scope cancels every handler fiber still running and
@@ -5047,10 +5051,11 @@ headers in order, then `content-length` as the byte length of the UTF-8 body, an
 response with the body. The headers go to `writeHead` as one flat array of names and values, so
 **a name given twice is written twice**, in order — two `set-cookie` headers arrive as two
 (measured); `setHeader`, which keeps one value per name, is not used. After `close`, a
-`connection` header of the program's is dropped and the platform's `connection: close` is written
-in its place ((b)): the graceful path cannot be undone by a handler. Node adds `date` and, where
-the program set none, its `connection` and `keep-alive` headers. For a `HEAD` request Node sends
-the headers and no body. The platform never streams: one response, one write.
+`connection` header of the program's, in any case, is dropped and the platform's
+`connection: close` is written in its place, on a 500 as on any response ((b)): the graceful path
+cannot be undone by a handler. Node adds `date` and, where the program set none, its `connection`
+and `keep-alive` headers, each after the program's (measured). For a `HEAD` request Node sends the
+headers and no body. The platform never streams: one response, one write.
 
 A `Response` the platform cannot write as it is, is **invalid**. Every check runs **before any
 header is set and before the first byte is sent**, so a fault leaves nothing behind, and no
@@ -5073,7 +5078,9 @@ integer from 200 to 999`. It is not a defect: the handler returned a value of th
 client gets a well-formed answer, and the server stays up. It is not silent either. The two
 headers belong to the transport because a wrong one hangs the client: a `content-length` under
 the body's length left the client waiting for the rest, and one over it broke the client's parser
-(measured). For 204, 205 and 304 the platform writes no `content-length`.
+(measured). For 204 and 304 the platform writes no `content-length`, and Node adds none; for 205
+it writes `content-length: 0`, because Node would otherwise send an empty chunked body
+(measured), which RFC 9110 allows and clients handle less well.
 
 **Why this path is not a defect, against decision 1.** (f) is for a throw the platform did not
 anticipate: an unknown error, whose effect on the process is unknown, so the process stops. An
@@ -5103,18 +5110,18 @@ for this module. "Thrown again" means the error is a defect, and the process end
 | `listen` | `error` event, `EMFILE` or `ENFILE` | `Err TooManyOpenFiles` |
 | `listen` | `ERR_SOCKET_BAD_PORT`, thrown synchronously | never reached: `Err InvalidPort` is answered in beni first |
 | `listen` | `ERR_SERVER_ALREADY_LISTEN` | cannot happen: each `listen` makes a new `http.Server` |
-| `listen` | any other `error` event | thrown again |
+| `listen` | any other `error` event | thrown again, whether or not a fiber still waits for the bind (`HttpServerCrashOnListenAfterCancel`) |
 | the server, once it listens | an `error` event, such as `EMFILE` on an accept | no listener is left on it: Node throws the event, a defect; `listen` has returned, so no one could be answered |
 | the body read | `req`'s `error` with `ECONNRESET` | the request is dropped |
 | the body read | `req`'s `error` with any other code | thrown again |
-| the server | `clientError` | left to Node: 400, 431 or 408, connection closed |
+| the server | `clientError` | left to Node's default handler: 400, 431 or 408 written while the socket is still writable, then the socket destroyed |
 | the server | `checkContinue` (`Expect: 100-continue`) | left to Node: `100 Continue`, then the request reaches the handler |
 | the server | `checkExpectation` (any other `Expect`) | left to Node: 417 |
 | the server | `connect` (a `CONNECT` request) | left to Node: the socket is destroyed |
 | the server | `upgrade` (an `Upgrade` header) | left to Node: an ordinary request, which reaches the handler |
 | the response | `ERR_INVALID_HTTP_TOKEN` or `ERR_INVALID_CHAR` from the two validators, a status Node refuses, a body on 204, 205 or 304 | an invalid response: 500 and a line on standard error |
 | the response | `res.destroyed` before the write | the write is dropped: the client is gone |
-| the response | the socket fails during the write (`ECONNRESET`, `EPIPE`) | `clientError`, left to Node: the socket is destroyed |
+| the response | the socket fails during the write (`ECONNRESET`, `EPIPE`) | `clientError`, the same default handler: nothing is writable, so the socket is destroyed |
 | the response | any other throw | thrown again |
 | `close` | `ERR_SERVER_NOT_RUNNING` (closing a server never started) | cannot happen: `close` runs only on a bound server, and a second `close` is skipped in beni |
 
@@ -5166,14 +5173,17 @@ by `node out/_main.mjs`; its transcript is the golden. The driver:
    absolute path becomes `<project>`, lines that start with `    at ` are dropped, and the
    `Node.js v…` line is dropped.
 
-**The first slice's fixtures**, one per row of (e): `HttpServerBasics`; `HttpServerListenErrors`
+**The first slice's fixtures**, covering every row of (e) but the four events Node answers by
+itself, which the probe behind (c) settled: `HttpServerBasics`; `HttpServerListenErrors`
 (`AddressInUse`, `AddressNotAvailable`, `HostNotFound`, and `InvalidPort` for 70000, -1 and
 65536 — `EACCES` has none, since a port under 1024 binds as root and on macOS);
 `HttpServerInvalidResponse` (status 1000 and 100, a body on 204 and on 205, a 204 with no body,
 a bad header name, a bad header value, `Content-Length` and `transfer-encoding` of the program's);
 `HttpServerDuplicateHeaders` (two `set-cookie`); `HttpServerBadClients` (a body cut short, bytes
-no parser accepts, a client gone before its answer); `HttpServerCloseFromHandler`;
-`HttpServerOwnerEnds`; `HttpServerCrashOnListen` and `HttpServerCrashOnRequest`.
+no parser accepts, a client gone before its answer); `HttpServerCloseFromHandler` (the
+program's `connection: keep-alive` replaced after `close`) and `HttpServerCloseThenInvalid` (the
+500 after `close` ends its connection too); `HttpServerOwnerEnds`; `HttpServerCrashOnListen` and
+`HttpServerCrashOnRequest`.
 
 Each build's verdict is recorded as a run hash (`run_hash.lineWith`, as `browser/` records its
 page): the digest covers what a `run/` one covers — the output tree, the golden, the Node version
@@ -5183,9 +5193,10 @@ program processes, and no fixture sleeps for real.
 
 **(i) The owner's decisions**, taken on the dashboard on 2026-10-17 at 23:54 CEST. The PR's
 review (2026-10-17) found five gaps in (d) and (e); each is settled above with a probe or a
-stated crash. Its second pass and the owner's two findings (2026-10-18) added the events Node
+stated crash. Its second pass and the owner's two findings (2026-10-17, 22:01 UTC) added the events Node
 answers by itself, duplicate headers, `connection` after `close`, 205, the size limit owed, and
-why an invalid response is not a defect; each is settled above.
+why an invalid response is not a defect; each is settled above. Its third pass (2026-10-18)
+added the 500 after `close`, 205's `content-length: 0`, and the wording of (e), (h) and (j).
 
 - Decision 1, a defect in a handler (`node-http-q1`): **stop the process**. Rule 9 does not
   change; (f) has the rule.
@@ -5204,8 +5215,8 @@ why an invalid response is not a defect; each is settled above.
 **(j) Not in this slice.** Each has an issue: streaming request and response bodies, and bodies
 as bytes (#335); a request body size limit (#336); cancelling a handler when its client leaves
 (#337); signals, so `SIGTERM` closes the server gracefully (#338); outbound HTTP on `node` (#339);
-TLS, HTTP/2, WebSocket and `upgrade`, `100-continue`, trailers, a Unix socket address and
-configuring Node's timeouts (#340). Raw `node:net`, routing, command-line arguments, environment
+TLS, HTTP/2, an API for WebSocket and `upgrade` and for `100-continue` (today Node answers both
+by itself, (c)), trailers, a Unix socket address and configuring Node's timeouts (#340). Raw `node:net`, routing, command-line arguments, environment
 variables and file writes are #331's later slices.
 
 ## Appendix — what is deliberately not done
