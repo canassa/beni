@@ -150,6 +150,41 @@ theorem list_mapOrigins_flat (f : Path → List Origin → List Origin) (roots :
     (Abstract.list roots element certificate).mapOrigins f [] = .list (f [] roots) element certificate := by
   rcases flat with rfl | rfl <;> simp [Abstract.mapOrigins]
 
+/-- The static facts of an integer primitive: an `Int` result described as a
+scalar, and no new escape. -/
+theorem scalar_static {aenv : Env Abstract} {tenv : Env Ty} {before next : St} {type : Ty} {after : Live} {site : List Nat} {result : Abstract} {inferenceFuel : Nat} {ctx : Context} {op : Prim} {a b : Atom} {self : Decl} {declarations : List Decl}
+    (static : FlatStatic aenv tenv) (sop : ScalarOp op) (flatA : FlatAtom a) (flatB : FlatAtom b)
+    (typed : exprType declarations self tenv (.prim op [a, b]) = .ok type)
+    (defaultConfig : ctx.config = {})
+    (accepted : (inferExpr inferenceFuel ctx aenv (.prim op [a, b]) after site).run before =
+      .ok (result, next)) :
+    FlatType type ∧ FlatAbstract type result ∧
+    (∀ origin, Escaped before.facts.escapes origin → Escaped next.facts.escapes origin) := by
+  obtain ⟨types, atomsTyped, primTyped⟩ := exprType_prim_success typed
+  obtain ⟨tyA, rest, aTyped, restTyped, shape⟩ := except_mapM_cons_success atomsTyped
+  obtain ⟨tyB, rest', bTyped, restTyped', shape'⟩ := except_mapM_cons_success restTyped
+  have restNil := except_mapM_nil_success restTyped'
+  subst shape
+  subst shape'
+  subst restNil
+  obtain ⟨aInt, bInt, typeInt⟩ := primType_scalar_success sop
+    (static_atom_type static flatA aTyped) (static_atom_type static flatB bTyped) primTyped
+  subst aInt
+  subst bInt
+  subst typeInt
+  have aRun := static_atom_scalar static flatA aTyped
+  have bRun := static_atom_scalar static flatB bTyped
+  have abstractAtoms : [a, b].mapM (m := Except String) (abstractAtom aenv) =
+      .ok [.scalar, .scalar] := except_mapM_cons aRun (except_mapM_cons bRun rfl)
+  obtain ⟨childFuel, _, _, run⟩ := infer_primitive_success defaultConfig abstractAtoms accepted
+  rw [primitive_scalar_run sop] at run
+  have equal := Except.ok.inj run
+  have first : Abstract.scalar = result := congrArg Prod.fst equal
+  have second : next = before := (congrArg Prod.snd equal).symm
+  refine ⟨.int, ?_, ?_⟩
+  · rw [← first]; exact .int
+  · rw [second]; exact fun _ escaped => escaped
+
 /-! ### The static theorem -/
 
 theorem flat_static {declarations : List Decl} {self : Decl} {e : Expr} (flat : FlatANF0 e) :
@@ -267,6 +302,10 @@ theorem flat_static {declarations : List Decl} {self : Decl} {e : Expr} (flat : 
     refine ⟨.int, ?_, ?_⟩
     · rw [← first]; exact .int
     · rw [second]; exact fun _ escaped => escaped
+  | @scalar op a b sop aFlat bFlat =>
+    intro aenv tenv before next type bound after site result inferenceFuel ctx
+      static typed _ _ defaultConfig accepted
+    exact scalar_static static sop aFlat bFlat typed defaultConfig accepted
   | @shared value valueFlat =>
     intro aenv tenv before next type bound after site result inferenceFuel ctx
       static typed _ _ defaultConfig accepted

@@ -163,6 +163,32 @@ theorem flat_preserved {declarations : List Decl} {self : Decl} {e : Expr} (flat
         Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub, size, paired,
         described, observed, valueTyped⟩
     · exact failure
+  | @scalar op a b sop aFlat bFlat =>
+    intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
+      depth ctx inv typed _ _ usesLive afterSub defaultConfig accepted
+    have coveredA : ∀ use ∈ atomUses a, use ∈ live := by
+      intro use useMember
+      apply usesLive use
+      rw [uses_scalar sop]
+      simp only [atomsUses, List.mem_flatMap]
+      exact ⟨a, by simp, useMember⟩
+    have coveredB : ∀ use ∈ atomUses b, use ∈ live := by
+      intro use useMember
+      apply usesLive use
+      rw [uses_scalar sop]
+      simp only [atomsUses, List.mem_flatMap]
+      exact ⟨b, by simp, useMember⟩
+    obtain ⟨_, _, _, success, failure⟩ :=
+      Ownership.FlatFragment.Scalar.scalar_preserved (depth := depth) inv sop aFlat bFlat typed
+        coveredA coveredB defaultConfig accepted
+    constructor
+    · intro value vs' run
+      obtain ⟨actual, hs', gamma', heapRun, postInvariant, size, paired, described, observed, valueTyped⟩ :=
+        success value vs' run
+      exact ⟨actual, hs', gamma', heapRun,
+        Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub, size, paired,
+        described, observed, valueTyped⟩
+    · exact failure
   | @shared value valueFlat =>
     intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
       depth ctx inv typed _ _ usesLive afterSub defaultConfig accepted
@@ -226,11 +252,13 @@ theorem accepted_flat_anf_traces_agree (p : Program) (a : Accepted) (ok : check 
 /-! ## The reviewer's probe programs (PR #267)
 
 Kernel proofs put each program in `FlatANF0`; the `#guard`s run the real
-checker and both interpreters at build time. `every` uses all six forms, is
-accepted, makes one in-place write, and both runs agree. `liveAlias` and
-`observed` are in the fragment and rejected (the Dead and the Unescaped
-test), and their two runs differ: the corollary's `check` hypothesis carries
-weight. -/
+checker and both interpreters at build time. `every` uses the six forms of
+PR #267, is accepted, makes one in-place write, and both runs agree.
+`liveAlias` and `observed` are in the fragment and rejected (the Dead and the
+Unescaped test), and their two runs differ: the corollary's `check`
+hypothesis carries weight. `arith` uses the four integer primitives on
+variables and literals before an in-place push; it is accepted and both runs
+agree. -/
 
 /-- `[5]`, an observer of it, `7`, `[7, 1]`, an in-place push onto it (its
     old binding 3 is dead and stale), a length read, and a variable result. -/
@@ -274,6 +302,24 @@ theorem observed_flat : FlatANF0 observed.main :=
   .letE (.literal (by intro a member; simp at member; subst member; exact .int 1))
     (.letE (.shared (.var 0)) (.letE (.push (.var 0) (.int 2)) (.length (.var 2))))
 
+/-- `[2]`, its length 1, `1 + 7`, `8 - 3`, `5 == 5`, `1 < 5`, and a push of
+    the last result onto the list: the four integer primitives, accepted, one
+    in-place write, final value `[2, 1]`. -/
+def arith : Program := { main :=
+  (.letE 0 (.prim (.literal .int) [.int 2])
+  (.letE 1 (.prim .length [.var 0])
+  (.letE 2 (.prim .add [.var 1, .int 7])
+  (.letE 3 (.prim .sub [.var 2, .int 3])
+  (.letE 4 (.prim .eq [.var 3, .int 5])
+  (.letE 5 (.prim .lt [.var 4, .var 3])
+  (.prim .push [.var 0, .var 5]))))))) }
+
+theorem arith_flat : FlatANF0 arith.main :=
+  .letE (.literal (by intro a member; simp at member; subst member; exact .int 2))
+    (.letE (.length (.var 0)) (.letE (.scalar .add (.var 1) (.int 7))
+      (.letE (.scalar .sub (.var 2) (.int 3)) (.letE (.scalar .eq (.var 3) (.int 5))
+        (.letE (.scalar .lt (.var 4) (.var 3)) (.push (.var 0) (.var 5)))))))
+
 set_option maxRecDepth 100000
 
 #guard (check every).isOk
@@ -296,5 +342,12 @@ set_option maxRecDepth 100000
   | .ok t, .ok t' => t.reads == t'.reads && t.finalValue == t'.finalValue &&
       t.externalReads != t'.externalReads
   | _, _ => false
+#guard (check arith).isOk
+#guard match ValueSemantics.run arith 100, InPlaceSemantics.run arith 100 with
+  | .ok t, .ok t' => t.reads == t'.reads && t.externalReads == t'.externalReads &&
+      t.finalValue == t'.finalValue && t.finalValue == .list [.int 2, .int 1] &&
+      t.reads == [.int 1] && t.externalReads.isEmpty
+  | _, _ => false
+#guard InPlaceSemantics.writeCount arith 100 == 1
 
 end Ownership.FlatFragment.Preservation

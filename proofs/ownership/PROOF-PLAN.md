@@ -395,6 +395,12 @@ Order: the #169 link clauses on `Invariant` first (its prerequisite #253 is done
 `invariant_preserved_fragment` in its planned form, the premises of `invariant_preserved` restricted to the fragment, stays open: `flat_preserved` proves the step under the stronger relation, and the trace corollary is proved from it.
 `Trace.lean` records the reviewer's probe programs as `#guard`s: `every` (all six forms, accepted, equal traces, one in-place write), `liveAlias` and `observed` (in the fragment, rejected, different traces).
 
+As built (2026-10-18): `FlatANF0` also contains the integer primitives `add`, `sub`, `eq` and `lt` on two integer atoms (`Support.ScalarOp`).
+The case keeps all four flat-only clauses: its operands are integers, its result is a scalar, and neither runtime changes the heap, the links, the observers or the reads.
+`Scalar.scalar_preserved` (`Primitives.lean`) and `Static.scalar_static` (`Static.lean`) prove it; `flat_preserved`, `flat_static` and the live-set lemmas have the arm.
+The probe `arith` checks the four primitives at build time.
+Field atoms and records, which replace the `types` and `abstractShapes` clauses, are the next step of the order above.
+
 ## Complete case inventory
 
 The baseline contains 12 expression constructors and 25 primitive constructors.

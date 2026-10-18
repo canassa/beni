@@ -20,6 +20,28 @@ inductive FlatAtom : Atom → Prop where
   | int (n : Int) : FlatAtom (.int n)
   | var (v : Var) : FlatAtom (.var v)
 
+/-- The integer primitives of the fragment: two integer operands, an integer
+result, no heap effect and no recorded read. -/
+inductive ScalarOp : Prim → Prop where
+  | add : ScalarOp .add
+  | sub : ScalarOp .sub
+  | eq : ScalarOp .eq
+  | lt : ScalarOp .lt
+
+/-- The integer both interpreters compute for an integer primitive. -/
+def scalarResult : Prim → Int → Int → Int
+  | .add, x, y => x + y
+  | .sub, x, y => x - y
+  | .eq, x, y => if x == y then 1 else 0
+  | .lt, x, y => if x < y then 1 else 0
+  | _, _, _ => 0
+
+/-- The checker returns a scalar for an integer primitive and changes nothing. -/
+theorem primitive_scalar_run {op : Prim} (sop : ScalarOp op) (ctx : Context) (site : List Nat)
+    (x y : Abstract) (later : List Origin) (before : St) :
+    (primitive ctx site op [x, y] later).run before = .ok (.scalar, before) := by
+  cases sop <;> (unfold primitive; rfl)
+
 /-- The planned expression fragment. Ordinary accepted typing fixes the
 literal elements and the push arguments to Int and List Int. -/
 inductive FlatANF0 : Expr → Prop where
@@ -29,6 +51,7 @@ inductive FlatANF0 : Expr → Prop where
   | push : FlatAtom receiver → FlatAtom item → FlatANF0 (.prim .push [receiver, item])
   | length : FlatAtom receiver → FlatANF0 (.prim .length [receiver])
   | shared : FlatAtom value → FlatANF0 (.prim .shared [value])
+  | scalar : ScalarOp op → FlatAtom a → FlatAtom b → FlatANF0 (.prim op [a, b])
 
 /-- The existing demand soundness theorem states the live and operand frame
 conditions. This lemma also retains the recorded-escape branch. -/
@@ -466,6 +489,15 @@ inductive FlatAbstract : Ty → Abstract → Prop where
   | listScalar (roots : List Origin) (certificate : Certificate) :
       FlatAbstract (.list .int) (.list roots .scalar certificate)
 
+/-- An integer primitive types only at two `Int` operands, and its result is `Int`. -/
+theorem primType_scalar_success {op : Prim} {tyA tyB type : Ty} (sop : Ownership.FlatFragment.Support.ScalarOp op)
+    (flatA : FlatType tyA) (flatB : FlatType tyB) (run : primType op [tyA, tyB] = .ok type) :
+    tyA = .int ∧ tyB = .int ∧ type = .int := by
+  cases sop <;> cases flatA <;> cases flatB <;> simp [primType] at run <;>
+    first
+    | (change Except.ok Ty.int = Except.ok type at run; cases Except.ok.inj run; exact ⟨rfl, rfl, rfl⟩)
+    | (cases run; exact ⟨rfl, rfl, rfl⟩)
+
 /-- Every allocated array stores integers. This permits any number of
 arrays and any number of aliases of each allocated array. -/
 def FlatHeap (heap : Heap) : Prop :=
@@ -855,10 +887,30 @@ theorem flatExpr_uses (flat : FlatANF0 expression) : FlatLive (uses expression) 
     simpa [uses, usesArms, atomsUses] using flatAtom_uses receiverFlat
   | shared valueFlat =>
     simpa [uses, usesArms, atomsUses] using flatAtom_uses valueFlat
+  | scalar sop aFlat bFlat =>
+    cases sop <;> (
+      apply flatAtoms_uses
+      intro atom member
+      simp only [List.mem_cons, List.not_mem_nil, or_false] at member
+      rcases member with rfl | rfl
+      · exact aFlat
+      · exact bFlat)
+
+/-- The uses of an integer primitive are its operands' uses. -/
+theorem uses_scalar {op : Prim} {a b : Atom} (sop : ScalarOp op) :
+    uses (.prim op [a, b]) = atomsUses [a, b] := by
+  cases sop <;> rfl
 
 theorem flatExpr_default_uses (flat : FlatANF0 expression) :
     usesWith ({} : Config) expression = uses expression := by
-  induction flat <;> simp_all [usesWith, uses, usesArms, Config.has]
+  induction flat with
+  | scalar sop _ _ => cases sop <;> simp [usesWith, uses, usesArms, Config.has]
+  | atom _ => simp_all [usesWith, uses, usesArms, Config.has]
+  | letE _ _ _ _ => simp_all [usesWith, uses, usesArms, Config.has]
+  | literal _ => simp_all [usesWith, uses, usesArms, Config.has]
+  | push _ _ => simp_all [usesWith, uses, usesArms, Config.has]
+  | length _ => simp_all [usesWith, uses, usesArms, Config.has]
+  | shared _ => simp_all [usesWith, uses, usesArms, Config.has]
 
 theorem flat_rhs_continuation
     (flat : FlatANF0 rest) (outer : FlatLive after) :
