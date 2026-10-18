@@ -881,7 +881,7 @@ const Gen = struct {
             .primitive => return g.core(SchemaGraph.shapeReader(plan, n).?),
             .list, .nullable, .maybe => return g.l.arrayNode(&.{ try g.core(SchemaGraph.shapeReader(plan, n).?), try g.shapeOf(child) }, g.p),
             .check, .annotation => return g.shapeOf(child),
-            .record => return g.shapeRecord(n),
+            .record => return g.shapeRecord(n, null),
             .tuple => {
                 var items: std.ArrayList(Node.Index) = .empty;
                 try items.append(g.l.scratch, try g.core("shapeTuple"));
@@ -899,11 +899,7 @@ const Gen = struct {
                     const name = SchemaGraph.symbol(plan, v.name);
                     try items.append(g.l.scratch, try g.str(SchemaGraph.literal(plan, v.external)));
                     if (v.payload.unwrap()) |payload| {
-                        // `[tag, record]`: `shapeTagged` makes `{$: tag, a: …}`,
-                        // a payload's variant being padded (`schemaCtorRep`).
-                        const rep = Lowerer.schemaCtorRep(.{ .order = @intCast(order), .count = 0, .arity = 1, .padded = info.padded, .name = name, .schema = g.schema, .module = g.ref.module, .ext = false, .owner = g.ref.decl });
-                        std.debug.assert(rep == .tagged and rep.tagged.fields == 1);
-                        try items.append(g.l.scratch, try g.l.arrayNode(&.{ try g.l.tagLiteral(rep, name, g.p), try g.shapeRecord(payload) }, g.p));
+                        try items.append(g.l.scratch, try g.shapeRecord(payload, .{ .info = info, .order = @intCast(order), .name = name }));
                     } else {
                         try items.append(g.l.scratch, try g.variantValue(info, @intCast(order), name, null));
                     }
@@ -947,23 +943,27 @@ const Gen = struct {
         }
     }
 
-    /// A record's shape: `[shapeRecord, fields, entry₁, …]`, the entries
+    /// A record's shape: `[shapeRecord, make, entry₁, …]`, the entries
     /// `[key, shape]`, `[key, shape, 1]` when optional or `[key, shape, 2]`
-    /// for a `Maybe` field in the declaration's order, and `fields` an
-    /// object of the record's field names in the canonical order of a record
-    /// literal, as `fieldProperty` writes them, each holding its entry's
-    /// place.
-    fn shapeRecord(g: *Gen, n: PNode) Allocator.Error!Node.Index {
+    /// for a `Maybe` field in the declaration's order, `make` the arrow
+    /// that builds the record from their values in that order — in its
+    /// variant's constructor, for a payload.
+    fn shapeRecord(g: *Gen, n: PNode, variant: ?struct { info: Variants, order: u32, name: Symbol }) Allocator.Error!Node.Index {
         const plan = g.plan;
         const fields = SchemaGraph.fields(plan, n);
         const names = try g.l.scratch.alloc(Symbol, fields.len);
-        for (fields, names) |f, *name| name.* = SchemaGraph.symbol(plan, f.name);
-        const order = try g.l.fieldOrder(names);
-        var properties: std.ArrayList(Node.Index) = .empty;
-        for (order) |i| try properties.append(g.l.scratch, try g.l.fieldProperty(names[i], try g.num(i), g.p));
+        const params = try g.l.scratch.alloc(NameIndex, fields.len);
+        const ids = try g.l.scratch.alloc(Node.Index, fields.len);
+        for (fields, names, params, ids) |f, *name, *param, *id_slot| {
+            name.* = SchemaGraph.symbol(plan, f.name);
+            param.* = try g.fresh("$f");
+            id_slot.* = try g.id(param.*);
+        }
+        const built = try g.recordValue(names, ids);
+        const value = if (variant) |v| try g.variantValue(v.info, v.order, v.name, built) else built;
         var items: std.ArrayList(Node.Index) = .empty;
         try items.append(g.l.scratch, try g.core(SchemaGraph.shapeReader(plan, n).?));
-        try items.append(g.l.scratch, try g.l.object(properties.items, g.p));
+        try items.append(g.l.scratch, try g.arrowOf(params, value));
         for (fields) |f| {
             var entry: std.ArrayList(Node.Index) = .empty;
             try entry.append(g.l.scratch, try g.str(SchemaGraph.literal(plan, f.external)));
