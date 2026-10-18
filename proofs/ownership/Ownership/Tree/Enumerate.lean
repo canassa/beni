@@ -1,4 +1,5 @@
 import Ownership.Tree.Fixtures
+import Ownership.Tree.Marker
 
 /-! # The tree enumerator
 
@@ -200,12 +201,25 @@ def holes : List (String × Config) :=
   [("master", master), ("no-marker", { marker := false }), ("no-level-sep", { levelSep := false }),
    ("no-approx", { approx := false })]
 
+/-- Every path a summary of a program writes, conditions or returns, cells
+    included, is canonical: `Marker.conflict_complete` covers it. -/
+def canonicalPaths (p : Program) : Bool :=
+  let cellOk : Cell → Bool
+    | .param _ q => Canon q
+    | .site _ => true
+  (({} : Config).checkProgram p).1.all fun (s, _) =>
+    s.writes.all (fun (_, q) => Canon q) &&
+    s.seps.all (fun ((_, a), (_, b)) => Canon a && Canon b) &&
+    s.result.all fun (q, c) => Canon q && cellOk c
+
 def run (depth nodes : Nat) : IO Bool := do
   let cs := cases depth nodes
   let mut ok := true
+  let mut exact : Nat := 0
   match count {} cs with
   | .error e => IO.println s!"tree FAILED: {e}"; return false
   | .ok r =>
+    exact := r.accepted
     IO.println s!"tree enumerate depth={depth} nodes={nodes}: {r.programs} programs, {r.accepted} accepted, {r.written} accepted show an in-place write, {r.disagree} disagree"
     if r.disagree != 0 then
       IO.println s!"tree FAILED: an accepted program disagrees: {r.firstDisagreement.getD ""}"
@@ -217,6 +231,14 @@ def run (depth nodes : Nat) : IO Bool := do
     match count {} (cs.filter (·.family == f)) with
     | .ok r => IO.println s!"  {f.name}: {r.programs} programs, {r.accepted} accepted, {r.written} write"
     | .error _ => pure ()
+  -- Every summary path is canonical, and the canonical form changes no
+  -- verdict (§16.7's amendment: the form loses nothing).
+  match cs.find? (fun c => !canonicalPaths c.program) with
+  | some c => IO.println s!"tree FAILED: a summary path is not canonical: {c.describe}"; ok := false
+  | none => IO.println "tree summaries: every path canonical"
+  match cs.find? (fun c => ({} : Config).accepts c.program != ({ canonical := false } : Config).accepts c.program) with
+  | some c => IO.println s!"tree FAILED: the canonical form changes a verdict: {c.describe}"; ok := false
+  | none => IO.println "tree canonical form: every verdict as in the expanded form"
   for (name, cfg) in holes do
     match count cfg cs with
     | .error e => IO.println s!"tree FAILED: {e}"; ok := false
@@ -225,12 +247,20 @@ def run (depth nodes : Nat) : IO Bool := do
       if r.disagree == 0 then
         IO.println s!"tree FAILED: hole {name} is not caught"
         ok := false
+  -- 5120ba491's overlap, a marker against any step: sound, and it must
+  -- accept no more than the exact rule.
+  match count { starOverlap := true } cs with
+  | .error e => IO.println s!"tree FAILED: {e}"; ok := false
+  | .ok r =>
+    IO.println s!"tree star-overlap: {r.accepted} accepted (exact: {exact}), {r.disagree} disagree"
+    if r.disagree != 0 || r.accepted > exact then
+      IO.println s!"tree FAILED: star overlap unsound or finer: {r.firstDisagreement.getD ""}"
+      ok := false
+  match cs.find? (fun c => ({ starOverlap := true } : Config).accepts c.program && !({} : Config).accepts c.program) with
+  | some c => IO.println s!"tree FAILED: star overlap accepts what the exact rule refuses: {c.describe}"; ok := false
+  | none => pure ()
   -- The fixtures, through the same checker the kernel checked.
-  let fx : List (String × Program × List Bool) :=
-    [("DeeperLevel (inner, pick, outer)", deeperLevel, [false, true, false]),
-     ("ParamHole (hole, shared)", paramHole, [true, false]),
-     ("Limit (deepShare)", limit, [false])]
-  for (name, p, want) in fx do
+  for (name, p, want) in expected do
     let got := ({} : Config).verdicts p
     IO.println s!"tree fixture {name}: {got.map fun b => if b then "accepted" else "rejected"}"
     if got != want then

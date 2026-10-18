@@ -171,11 +171,38 @@ def Config.checkE (c : Config) (sums : List Summary) :
     let pv := lookupA env p
     c.checkE sums ((a, c.proj pv .p0) :: (b, c.proj pv .p1) :: env) live body st
 
-/-- A declaration's summary and the demands that failed in it. -/
+/-- A path's pair steps and its tree segment. -/
+def splitPair : List Step → List Step × List Step
+  | [] => ([], [])
+  | s :: r =>
+    if s == .p0 || s == .p1 then let (a, b) := splitPair r; (s :: a, b) else ([], s :: r)
+
+/-- The canonical form (§16.7's amendment at 161f77eea): one fact written at
+    `P r` and at `P s⟨T⟩r` for both region steps `s`, where `P` is in no
+    region (here: pair steps only), is written once as `P⟨T⟩r`. A fact is a
+    path with what is stated there (`b`); the merged facts must state the
+    same. This fragment has one level of regions, so one pass reaches the
+    fixpoint. -/
+def canonForm {β : Type} [DecidableEq β] (fs : List (List Step × β)) : List (List Step × β) :=
+  let merged := fs.filterMap fun (p, b) =>
+    let (P, r) := splitPair p
+    if !r.contains .mark && fs.contains (P ++ [.n0, .mark] ++ r, b) &&
+        fs.contains (P ++ [.n2, .mark] ++ r, b) then some (P, r, b) else none
+  let gone := merged.flatMap fun (P, r, b) =>
+    [(P ++ r, b), (P ++ [.n0, .mark] ++ r, b), (P ++ [.n2, .mark] ++ r, b)]
+  fs.filter (fun f => !gone.contains f) ++ merged.map fun (P, r, b) => (P ++ .mark :: r, b)
+
+/-- A declaration's summary and the demands that failed in it. The writes and
+    the result's entries are written in the canonical form unless
+    `canonical := false`; the conditions are not (each names two paths, and
+    the amendment's form is for facts stated per path). -/
 def Config.checkDecl (c : Config) (sums : List Summary) (d : Decl) : Summary × List String :=
   let env := (List.range d.params.length).map fun j => (j, [([], Cell.param j [])])
   let (v, st) := c.checkE sums env [] d.body {}
-  ({ writes := st.writes, seps := st.seps, result := v }, st.errors)
+  let writes := if c.canonical then (canonForm (st.writes.map fun (j, p) => (p, j))).map fun (p, j) => (j, p)
+    else st.writes
+  let result := if c.canonical then canonForm v else v
+  ({ writes := writes, seps := st.seps, result := result }, st.errors)
 
 /-- Per declaration, in order, its summary and its failed demands; then the
     failed demands of the main expression. -/

@@ -142,12 +142,15 @@ theorem semF_complete {f : Nat} {p q c d : List Step} :
     Den p c → Den q d → (Pre c d ∨ Pre d c) → semF f p q = true :=
   semF_complete_aux _ f p q c d (Nat.le_refl _)
 
-/-- The canonical tree segments: the root, its list, a first subtree step,
-    and a region under its marker with at most one step after it. -/
+/-- The canonical tree segments: the root, its list, a first subtree step, a
+    region under its marker with at most one step after it, and the
+    canonical form's marker at the root (`⟨Tree⟩r`, every `Tree` at or below
+    the root, the root included). -/
 def tails : List (List Step) :=
   [[], [.n1], [.n0], [.n2], [.n0, .mark], [.n2, .mark],
    [.n0, .mark, .n0], [.n0, .mark, .n1], [.n0, .mark, .n2],
-   [.n2, .mark, .n0], [.n2, .mark, .n1], [.n2, .mark, .n2]]
+   [.n2, .mark, .n0], [.n2, .mark, .n1], [.n2, .mark, .n2],
+   [.mark], [.mark, .n0], [.mark, .n1], [.mark, .n2]]
 
 /-- A canonical path: pair steps, then a canonical tree segment. -/
 def Canon : List Step → Bool
@@ -159,18 +162,96 @@ theorem tails_conflict :
     ∀ p ∈ tails, ∀ q ∈ tails, semF 7 p q = true → ({} : Config).conflict p q = true := by
   decide +kernel
 
-theorem conflict_nil (q : List Step) : ({} : Config).conflict [] q = true := by
-  simp [Config.conflict, overlap]
+/-- Enough fuel gives one answer. -/
+theorem overlapF_congr : ∀ (n f g : Nat) (p q : List Step), p.length + q.length ≤ n →
+    p.length + q.length < f → p.length + q.length < g → overlapF f p q = overlapF g p q := by
+  intro n
+  induction n with
+  | zero =>
+    intro f g p q h hf hg
+    have hp : p = [] := List.eq_nil_of_length_eq_zero (by omega)
+    subst hp
+    cases f with
+    | zero => omega
+    | succ f => cases g with
+      | zero => omega
+      | succ g => simp [overlapF]
+  | succ n ih =>
+    intro f g p q h hf hg
+    cases f with
+    | zero => omega
+    | succ f =>
+    cases g with
+    | zero => omega
+    | succ g =>
+    cases p with
+    | nil => simp [overlapF]
+    | cons a p =>
+    cases q with
+    | nil => simp [overlapF]
+    | cons b q =>
+      simp only [List.length_cons] at h hf hg
+      simp only [overlapF]
+      rw [ih f g p q (by omega) (by omega) (by omega),
+        ih f g p (b :: q) (by simp; omega) (by simp; omega) (by simp; omega),
+        ih f g (a :: p) q (by simp; omega) (by simp; omega) (by simp; omega)]
 
-theorem approxHolds_pair {a : Step} (ha : a = .p0 ∨ a = .p1) (o i : List Step) :
-    approxHolds false (a :: o) (a :: i) = approxHolds false o i := by
-  rcases ha with h | h <;> subst h <;> rfl
+theorem holdsF_congr : ∀ (n f g : Nat) (b : Bool) (p q : List Step), p.length + q.length ≤ n →
+    p.length + q.length < f → p.length + q.length < g → holdsF f b p q = holdsF g b p q := by
+  intro n
+  induction n with
+  | zero =>
+    intro f g b p q h hf hg
+    have hp : p = [] := List.eq_nil_of_length_eq_zero (by omega)
+    subst hp
+    cases f with
+    | zero => omega
+    | succ f => cases g with
+      | zero => omega
+      | succ g => simp [holdsF]
+  | succ n ih =>
+    intro f g b p q h hf hg
+    cases f with
+    | zero => omega
+    | succ f =>
+    cases g with
+    | zero => omega
+    | succ g =>
+    cases p with
+    | nil => simp [holdsF]
+    | cons a p =>
+    cases q with
+    | nil => simp [holdsF]
+    | cons c q =>
+      simp only [List.length_cons] at h hf hg
+      simp only [holdsF]
+      rw [ih f g (a == .mark) p q (by omega) (by omega) (by omega),
+        ih f g false (a :: p) q (by simp; omega) (by simp; omega) (by simp; omega),
+        ih f g false p (c :: q) (by simp; omega) (by simp; omega) (by simp; omega)]
+
+theorem overlap_cons_same (a : Step) (p q : List Step) : overlap (a :: p) (a :: q) = overlap p q := by
+  unfold overlap
+  simp only [List.length_cons]
+  rw [show p.length + 1 + (q.length + 1) + 1 = (p.length + q.length + 2) + 1 by omega]
+  simp only [overlapF, beq_self_eq_true, if_true]
+  exact overlapF_congr _ _ _ p q (Nat.le_refl _) (by omega) (by omega)
+
+theorem holds_cons_pair {a : Step} (ha : a = .p0 ∨ a = .p1) (p q : List Step) :
+    holds (a :: p) (a :: q) = holds p q := by
+  unfold holds
+  simp only [List.length_cons]
+  rw [show p.length + 1 + (q.length + 1) + 1 = (p.length + q.length + 2) + 1 by omega]
+  have hm : (a == Step.mark) = false := by rcases ha with rfl | rfl <;> rfl
+  simp only [holdsF, beq_self_eq_true, if_true, hm]
+  exact holdsF_congr _ _ _ false p q (Nat.le_refl _) (by omega) (by omega)
+
+theorem conflict_nil (q : List Step) : ({} : Config).conflict [] q = true := by
+  simp [Config.conflict, overlap, overlapF]
 
 theorem conflict_pair {a : Step} (ha : a = .p0 ∨ a = .p1) (p q : List Step) :
     ({} : Config).conflict (a :: p) (a :: q) = ({} : Config).conflict p q := by
-  have h1 := approxHolds_pair ha p q
-  have h2 := approxHolds_pair ha q p
-  rcases ha with h | h <;> subst h <;> simp_all [Config.conflict, overlap]
+  simp only [Config.conflict, overlap_cons_same, holds_cons_pair ha]
+  rfl
 
 theorem semF_pair {a : Step} (ha : a = .p0 ∨ a = .p1) {p q : List Step} :
     (∀ f, semF f (a :: p) (a :: q) = true) → ∀ f, semF f p q = true := by
@@ -178,21 +259,61 @@ theorem semF_pair {a : Step} (ha : a = .p0 ∨ a = .p1) {p q : List Step} :
   have := h (f + 1)
   rcases ha with e | e <;> subst e <;> simpa [semF] using this
 
-theorem tails_head {s : Step} {r : List Step} : tails.contains (s :: r) = true → s ≠ .p0 ∧ s ≠ .p1 ∧ s ≠ .mark := by
-  intro h
-  simp [tails] at h
-  rcases h with h | h | h | h | h | h | h | h | h | h | h <;> (obtain ⟨rfl, rfl⟩ := h; simp)
-
 theorem tail_mem {s : Step} {r : List Step} : tails.contains (s :: r) = true → (s :: r) ∈ tails := by
   intro h; simpa using h
 
-/-- Distinct heads where neither is a marker: the search fails at once. -/
-theorem semF_heads {a b : Step} {p q : List Step} (ha : a ≠ .mark) (hb : b ≠ .mark) (hab : a ≠ b) :
-    semF 1 (a :: p) (b :: q) = false := by
-  have ha' : (a == Step.mark) = false := by cases a <;> simp_all
-  have hb' : (b == Step.mark) = false := by cases b <;> simp_all
-  have hab' : (a == b) = false := by simp [hab]
-  simp [semF, ha', hb', hab']
+theorem semF_symm : ∀ (f : Nat) (p q : List Step), semF f p q = semF f q p := by
+  intro f
+  induction f with
+  | zero => intro p q; simp [semF]
+  | succ f ih =>
+    intro p q
+    cases p with
+    | nil => cases q <;> simp [semF]
+    | cons a p =>
+    cases q with
+    | nil => simp [semF]
+    | cons b q =>
+      by_cases ha : a = .mark <;> by_cases hb : b = .mark
+      · subst ha; subst hb; simp only [semF, beq_self_eq_true, if_true]; rw [ih p, ih (.mark :: p)]; exact Bool.or_comm _ _
+      · subst ha
+        have hb' : (b == Step.mark) = false := by cases b <;> simp_all
+        simp only [semF, beq_self_eq_true, if_true, hb', Bool.false_eq_true, if_false]; rw [ih p, ih (.mark :: p)]
+      · subst hb
+        have ha' : (a == Step.mark) = false := by cases a <;> simp_all
+        simp only [semF, beq_self_eq_true, if_true, ha', Bool.false_eq_true, if_false]; rw [ih p, ih (a :: p)]
+      · have ha' : (a == Step.mark) = false := by cases a <;> simp_all
+        have hb' : (b == Step.mark) = false := by cases b <;> simp_all
+        simp only [semF, ha', hb', Bool.false_eq_true, if_false]; rw [ih p]; cases a <;> cases b <;> rfl
+
+theorem overlap_root_mark {x : Step} (hx : x ≠ .mark) (p : List Step) :
+    overlap (x :: p) [.mark] = true ∧ overlap [.mark] (x :: p) = true := by
+  have hx' : (x == Step.mark) = false := by cases x <;> simp_all
+  have hm : (Step.mark == x) = false := by cases x <;> simp_all
+  unfold overlap
+  simp only [List.length_cons, List.length_nil]
+  rw [show p.length + 1 + (0 + 1) + 1 = (p.length + 1 + 1) + 1 by omega,
+    show 0 + 1 + (p.length + 1) + 1 = (p.length + 1 + 1) + 1 by omega]
+  simp [overlapF, hx', hm]
+
+/-- A pair step against a canonical tree segment: the search fails, or the
+    segment is the root marker alone, which conflicts with everything. -/
+theorem pair_vs_tail {a : Step} (ha : a = .p0 ∨ a = .p1) (p : List Step) :
+    ∀ t ∈ tails, t ≠ [] → (∀ f, semF f (a :: p) t = true) →
+      ({} : Config).conflict (a :: p) t = true ∧ ({} : Config).conflict t (a :: p) = true := by
+  intro t ht hne hs
+  have ham : a ≠ .mark := by rcases ha with rfl | rfl <;> simp
+  by_cases hm : t = [.mark]
+  · subst hm
+    have h := overlap_root_mark ham p
+    simp only [Config.conflict, h.1, h.2]
+    exact ⟨rfl, rfl⟩
+  · exfalso
+    have h2 := hs 2
+    simp only [tails, List.mem_cons, List.not_mem_nil, or_false] at ht
+    rcases ha with rfl | rfl <;>
+    rcases ht with rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl | rfl <;>
+    simp_all [semF, isT]
 
 theorem conflict_of_semF : ∀ (p q : List Step), Canon p = true → Canon q = true →
     (∀ f, semF f p q = true) → ({} : Config).conflict p q = true := by
@@ -210,7 +331,7 @@ theorem conflict_of_semF : ∀ (p q : List Step), Canon p = true → Canon q = t
         simp only [Canon, h', Bool.false_eq_true, if_false] at hp
         exact tail_mem hp
     cases q with
-    | nil => simp [Config.conflict, overlap]
+    | nil => simp [Config.conflict, overlap, overlapF]
     | cons b q =>
       have hqb : (b = .p0 ∨ b = .p1) ∨ (b :: q) ∈ tails := by
         by_cases h : b = .p0 ∨ b = .p1
@@ -230,18 +351,11 @@ theorem conflict_of_semF : ∀ (p q : List Step), Canon p = true → Canon q = t
           have hq' : Canon q = true := by
             rcases ha with h | h <;> subst h <;> simpa [Canon] using hq
           exact ih q hp' hq' (semF_pair ha hs)
-        · have := semF_heads (p := p) (q := q) (by rcases ha with h | h <;> simp [h])
-            (by rcases hb with h | h <;> simp [h]) e
-          simp [hs 1] at this
-      · -- a pair step against a tree step
-        have hbt := tails_head (by simpa using hb)
-        have := semF_heads (a := a) (b := b) (p := p) (q := q) (by rcases ha with h | h <;> simp [h]) hbt.2.2
-          (by rcases ha with h | h <;> subst h <;> intro e <;> subst e <;> simp_all)
-        simp [hs 1] at this
-      · have hat := tails_head (by simpa using ha)
-        have := semF_heads (a := a) (b := b) (p := p) (q := q) hat.2.2 (by rcases hb with h | h <;> simp [h])
-          (by rcases hb with h | h <;> subst h <;> intro e <;> subst e <;> simp_all)
-        simp [hs 1] at this
+        · have h1 := hs 1
+          rcases ha with rfl | rfl <;> rcases hb with rfl | rfl <;> simp_all [semF]
+      · exact (pair_vs_tail ha p _ hb (by simp) hs).1
+      · have hs' : ∀ f, semF f (b :: q) (a :: p) = true := fun f => by rw [semF_symm]; exact hs f
+        exact (pair_vs_tail hb q _ ha (by simp) hs').2
       · exact tails_conflict _ ha _ hb (hs 7)
 
 /-- The spec's overlap and holding never miss a holder: on canonical paths,
@@ -351,6 +465,32 @@ theorem extend_sound : ∀ (p c : List Step) (s : Step), TreePos p = true → is
       have hxm : x ≠ .mark := by intro e; subst e; simp [isT] at hxT
       have hsm : s ≠ .mark := by intro e; subst e; simp [isCtor] at hs
       exact .step x hxm (den_mark_of hc' (.step s hsm .nil))
+
+/-- The fold stays canonical: extending a tree position by a constructor
+    step gives a canonical path, and by a subtree step a tree position. So
+    the paths `conflict_complete` covers are closed under the projections a
+    case makes (`Config.extendCell` along `#Node.i`). -/
+theorem extend_canon : ∀ (p : List Step) (s : Step), TreePos p = true → isCtor s = true →
+    Canon (extend p s) = true ∧ (isT s = true → TreePos (extend p s) = true) := by
+  intro p
+  induction p with
+  | nil => intro s _ hs; cases s <;> simp_all [isCtor, isT, extend, Canon, TreePos, tails, subtreeTails]
+  | cons x r ih =>
+    intro s hp hs
+    by_cases hx : x = .p0 ∨ x = .p1
+    · have hx' : (x == Step.p0 || x == Step.p1) = true := by rcases hx with rfl | rfl <;> rfl
+      have hr : TreePos r = true := by simpa [TreePos, hx'] using hp
+      have e : extend (x :: r) s = x :: extend r s := by
+        rcases hx with rfl | rfl <;> simp [extend, isT]
+      rw [e]
+      obtain ⟨h1, h2⟩ := ih s hr hs
+      exact ⟨by simpa [Canon, hx'] using h1, fun ht => by simpa [TreePos, hx'] using h2 ht⟩
+    · have hx' : (x == Step.p0 || x == Step.p1) = false := by
+        rcases x <;> simp_all
+      have ht : subtreeTails.contains (x :: r) = true := by simpa [TreePos, hx'] using hp
+      obtain ⟨hxT, _⟩ := subtree_shape ht
+      rw [extend_region hxT hs]
+      cases x <;> cases s <;> simp_all [isT, isCtor, Canon, TreePos, tails, subtreeTails]
 
 /-- `master`'s fold drops a place: the left subtree's list is not one of
     the paths `#Node.1` stands for. -/

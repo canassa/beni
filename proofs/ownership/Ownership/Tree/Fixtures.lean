@@ -99,6 +99,15 @@ theorem fixtures_typed :
     (typecheck holeMain).isOk ∧ (typecheck deepMain).isOk := by
   decide +kernel
 
+/-- The expected verdicts, one source for the kernel and the CLI. -/
+def expected : List (String × Program × List Bool) :=
+  [("DeeperLevel (inner, pick, outer)", deeperLevel, [false, true, false]),
+   ("ParamHole (hole, shared)", paramHole, [true, false]),
+   ("Limit (deepShare)", limit, [false])]
+
+theorem expected_verdicts : expected.all (fun (_, p, w) => ({} : Config).verdicts p == w) = true := by
+  decide +kernel
+
 /-! ## The verdicts with the marker -/
 
 /-- `inner` rejected, `pick` accepted, `outer` rejected. -/
