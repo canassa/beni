@@ -1,5 +1,7 @@
 module WordsBrowser
+  32:19 update model: accepted param
   32:37 List.push model.items: accepted param
+  37:15 update model: accepted param
   56:14 construction rows: accepted fresh
   66:14 construction rows: rejected call: cmd#Cmd.0[*]#Keyed.0[*]⋆ may hold it through the call at 65:11, and is read at 67:5 (approx)
   72:5 entry WordsBrowser.update model.items: accepted entry
@@ -8,5 +10,7 @@ module WordsBrowser
   summary keys: unused
   summary keysHeld: res .0#Cmd.0 fresh4{lost}, .0#Cmd.0[*]#Keyed.0 fresh3{lost}, .0#Cmd.0[*]#Keyed.0[*] fresh2{lost}, .0#Cmd.0[*]#Keyed.0[*]⋆ ~fresh1, .0#Cmd.0[*]#Keyed.2 λ, .0#Cmd.0[*]#KeyedNow.0 fresh6{lost}, .0#Cmd.0[*]#KeyedNow.0[*] fresh5{lost}, .0#Cmd.0[*]#KeyedNow.0[*]⋆ ~fresh1, .0#Cmd.0[*]#KeyedNow.2 λ
   demands 4: accepted 3 (fresh 1, call 0, param 1, callback-param 0, once 0, entry 1; assumed 0), pending 0, rejected 1
+  records 2: accepted 2 (hoisted 0), pending 0, rejected 0 (copy 0, restructure 0); eager reads 0
 total 4: accepted 3 (fresh 1, call 0, param 1, callback-param 0, once 0, entry 1; assumed 0), pending 0, rejected 1
+records 2: accepted 2 (hoisted 0), pending 0, rejected 0 (copy 0, restructure 0); eager reads 0
 cause call 1

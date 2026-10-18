@@ -204,7 +204,8 @@ pub fn run(session: *Session, cached: []const ?CacheEntry.Loaded) Allocator.Erro
             var j = i + 1;
             while (j < r.demands.len and sameCause(d, r.demands[j])) j += 1;
             defer i = j;
-            if (d.verdict == .accepted) continue;
+            // A record demand is reported, not enforced, until §31.9's codes land.
+            if (d.verdict == .accepted or d.record) continue;
             if (any_limit and d.verdict == .rejected and d.verdict.rejected == .limit) continue;
             var group: std.ArrayList(Ownership.Demand) = .empty;
             for (r.demands[i..j]) |x| {

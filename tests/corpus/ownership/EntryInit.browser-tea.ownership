@@ -1,7 +1,10 @@
 module EntryInit
+  47:13 update model: accepted param
   47:31 List.push model.todos: accepted param
   54:23 call EntryInit.resetTo model.todos: accepted param (EntryInit.resetTo writes π3.todos)
+  61:13 update model: accepted param
   61:31 List.push model.todos: accepted param
+  71:13 update model: accepted param
   71:31 List.push model.todos: accepted param
   87:11 entry EntryInit.updateTop model.todos: rejected top-level: EntryInit.initialModel is a top-level value
   91:19 entry EntryInit.updateAdd model.todos: rejected top-level: EntryInit.initialModel is a top-level value
@@ -16,6 +19,8 @@ module EntryInit
   summary updateAdd: π2 RA, π2.todos RAW, π2.todos[*] A; res .todos π2.todos, .todos[*] ~π2.todos[*], π2
   summary view: π1.todos R; res ⟨render⟩ fresh1{lost}
   demands 9: accepted 4 (fresh 0, call 0, param 4, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 5
+  records 3: accepted 3 (hoisted 0), pending 0, rejected 0 (copy 0, restructure 0); eager reads 0
 total 9: accepted 4 (fresh 0, call 0, param 4, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 5
+records 3: accepted 3 (hoisted 0), pending 0, rejected 0 (copy 0, restructure 0); eager reads 0
 cause top-level 3
 cause platform 2
