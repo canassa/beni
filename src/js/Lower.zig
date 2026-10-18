@@ -8140,6 +8140,27 @@ pub const Lowerer = struct {
         return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
     }
 
+    /// A `Json` call that is a shape run (`schema.md` §6, *A validator run
+    /// is a shape that one shared validator reads*), `validShape` or
+    /// `shapeParse` of its codec's shape, or a validator run, `validRun` or
+    /// `validParse` of its codec's validator worker; null for any other
+    /// call. The reference itself has nothing to evaluate.
+    noinline fn jsonValidatorCall(l: *Lowerer, out: *StmtList, inst: Inst.Index, callee_inst: Inst.Index, p: u32) !?Node.Index {
+        const d = l.bir.instData(inst);
+        const shape = l.valid_sites.shapeCodecOfCall(inst.int());
+        const k = shape orelse l.valid_sites.codecOfCall(inst.int()) orelse return null;
+        const written = try l.exprList(out, l.bir.subRange(@fromBackingInt(@intCast(d.rhs))));
+        l.region = inst;
+        const sg = l.in.schemas.?;
+        const args = try l.scratch.alloc(Node.Index, written.len + 1);
+        const ref = sg.codecTarget(l.in.module, k);
+        args[0] = if (shape != null) try SchemaLower.shapeName(l, ref, p) else try SchemaLower.validWorker(l, ref, p);
+        @memcpy(args[1..], written);
+        const runner_name = if (shape != null) l.valid_sites.shapeRunner(callee_inst.int()) else l.valid_sites.jsonRunner(inst.int());
+        const runner = try l.coreSchemaValue(runner_name, p);
+        return try l.suspension(out, inst, try l.call(runner, args, p));
+    }
+
     fn callExpr(l: *Lowerer, out: *StmtList, inst: Inst.Index) !Node.Index {
         // §7.2: a `call`'s callee is already in the Bir, so every site on
         // this instruction is an evidence ARGUMENT and they are numbered
@@ -8291,34 +8312,10 @@ pub const Lowerer = struct {
             return l.suspension(out, inst, try l.call(typed.callee, args, p));
         };
 
-        // A `Json` shape run (`schema.md` §6, *A validator run is a shape
-        // that one shared validator reads*): `validShape` or `shapeParse`
-        // of its codec's shape. The reference itself has nothing to evaluate.
-        if (l.valid_sites.shape_json.len != 0) if (l.valid_sites.shapeCodecOfCall(inst.int())) |k| {
-            const written = try l.exprList(out, l.bir.subRange(@fromBackingInt(@intCast(d.rhs))));
-            l.region = inst;
-            const sg = l.in.schemas.?;
-            const args = try l.scratch.alloc(Node.Index, written.len + 1);
-            args[0] = try SchemaLower.shapeName(l, sg.codecTarget(l.in.module, k), p);
-            @memcpy(args[1..], written);
-            const runner = try l.coreSchemaValue(l.valid_sites.shapeRunner(callee_inst.int()), p);
-            return l.suspension(out, inst, try l.call(runner, args, p));
-        };
-
-        // A `Json` validator run (`schema.md` §6, *A run whose failure is
-        // never read is a validator*): `validRun` or `validParse` of its
-        // codec's validator worker. The reference itself has nothing to
-        // evaluate.
-        if (l.valid_sites.json_calls.len != 0) if (l.valid_sites.codecOfCall(inst.int())) |k| {
-            const written = try l.exprList(out, l.bir.subRange(@fromBackingInt(@intCast(d.rhs))));
-            l.region = inst;
-            const sg = l.in.schemas.?;
-            const args = try l.scratch.alloc(Node.Index, written.len + 1);
-            args[0] = try SchemaLower.validWorker(l, sg.codecTarget(l.in.module, k), p);
-            @memcpy(args[1..], written);
-            const runner = try l.coreSchemaValue(l.valid_sites.jsonRunner(inst.int()), p);
-            return l.suspension(out, inst, try l.call(runner, args, p));
-        };
+        // A `Json` validator or shape run (`schema.md` §6): one call of the
+        // core runner. Out of line, so this recursive frame stays small.
+        if (l.valid_sites.shape_json.len != 0 or l.valid_sites.json_calls.len != 0)
+            if (try l.jsonValidatorCall(out, inst, callee_inst, p)) |node| return node;
 
         // A `Json` call whose evidence is a derived codec of this module is
         // the codec's own `parse` or `print` (`schema.md` §12.10): what a
