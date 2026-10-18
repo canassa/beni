@@ -1881,7 +1881,11 @@ const Spec = struct {
             try text.appendSlice(s.arena, spelled);
             template_len += 3 + printedLen(lit);
         }
-        if (text.items.len > 256) return .nonnull;
+        // The fold only shortens the node (below), and a literal this long is
+        // written again elsewhere only where it is read once
+        // (`substitutes`): the bound is on memory, not on bytes. It was 256,
+        // which kept a page's markup of several modules' strings a template.
+        if (text.items.len > 1 << 20) return .nonnull;
         var string_len: usize = 2 + text.items.len;
         for (text.items) |c| string_len += @intFromBool(c == '"' or c == '\\' or c < 0x20);
         if (string_len > template_len) return .nonnull;
