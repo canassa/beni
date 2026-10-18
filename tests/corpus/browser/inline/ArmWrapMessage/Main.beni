@@ -1,0 +1,59 @@
+-- `Main`'s arm keeps the message it hands on, `last = Just sub`: a
+-- constructor applied to it, which the arm builds from the key's fields
+-- where it is read (D-e, docs/design/browser-inline.md §8.4).
+import Browser
+import Counter
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    c : Counter.Model
+    last : Maybe Counter.Msg
+
+
+type Msg
+    = CounterMsg Counter.Msg
+
+
+step : Msg, Model → Model
+step msg model =
+    case msg of
+        CounterMsg sub →
+            { model | c = Counter.update sub model.c, last = Just sub }
+
+
+update : Msg, Model → Model
+update msg model = step msg model
+
+
+shown : Maybe Counter.Msg → String
+shown m =
+    case m of
+        Just Counter.Inc →
+            "inc"
+
+        Just Counter.Dec →
+            "dec"
+
+        Nothing →
+            "none"
+
+
+view : Model → Html Msg
+view model =
+    <div data-role="app">
+        <output>{model.c.count}</output>
+        <p>{shown model.last}</p>
+        <button data-role="inc" onClick={CounterMsg Counter.Inc}>+</button>
+        <button data-role="dec" onClick={CounterMsg Counter.Dec}>-</button>
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox
+            { init = λ⊤ → { c = Counter.init ⊤, last = Nothing }, update = update, view = view }
+        )
+        "root"

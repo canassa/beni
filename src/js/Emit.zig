@@ -2765,13 +2765,30 @@ const Emitter = struct {
     /// reachability: the program site calls it.
     fn findArmPieces(e: *Emitter, pieces: *std.ArrayList(Lift.Piece), roots: *std.ArrayList(Reach.Node)) !void {
         const w = e.writes.?;
+        // Each constructor a key steps on in a module other than its
+        // program's, once: sorted and deduplicated, so a constructor many
+        // keys share is looked for once.
+        var ctors: std.ArrayList(u32) = .empty;
         for (e.writes_calls) |call| {
             const prog = &call.program;
             if (!prog.recognised) continue;
             for (prog.keys) |k| for (k.steps) |s| {
                 if (s.ctor == Writes.none) continue;
+                if (w.ctorPlace(s.ctor).module == call.module) continue;
+                try ctors.append(e.scratch, s.ctor);
+            };
+        }
+        std.mem.sort(u32, ctors.items, {}, std.sort.asc(u32));
+        var unique: usize = 0;
+        for (ctors.items) |c| {
+            if (unique != 0 and ctors.items[unique - 1] == c) continue;
+            ctors.items[unique] = c;
+            unique += 1;
+        }
+        {
+            for (ctors.items[0..unique]) |sc| {
+                const s = .{ .ctor = sc };
                 const place = w.ctorPlace(s.ctor);
-                if (place.module == call.module) continue;
                 const b = e.writes_birs[place.module];
                 for (b.decls, 0..) |d, di| {
                     if (d.kind != .value or d.params < 1) continue;
@@ -2791,12 +2808,7 @@ const Emitter = struct {
                         const pd = b.instData(pattern);
                         const c = w.ctorOfInst(place.module, @fromBackingInt(@intCast(pd.lhs))) orelse continue;
                         if (c != s.ctor) continue;
-                        // Already listed: one piece per branch.
                         const branch_inst: u32 = b.instData(br).rhs;
-                        const known = for (pieces.items) |pc| {
-                            if (pc.arm != null and pc.module == place.module and pc.inst == branch_inst) break true;
-                        } else false;
-                        if (known) break;
                         // The branch's variables, then the other parameters.
                         var captures: std.ArrayList(u32) = .empty;
                         var fields: std.ArrayList(u32) = .empty;
@@ -2840,7 +2852,7 @@ const Emitter = struct {
                         break;
                     }
                 }
-            };
+            }
         }
     }
     fn buildDirect(e: *Emitter) !void {
@@ -3140,11 +3152,24 @@ const Emitter = struct {
                 }
             }
         }
-        e.direct = .{ .programs = programs, .source_roots = roots.items, .lifts = e.lifts };
+        e.direct = .{ .programs = programs, .source_roots = roots.items, .lifts = e.lifts, .arm_order = try armOrder(a, e.lifts) };
         // Only a lowering that writes pieces has them (`Lowering.piece`).
         const pieces = if (e.options.platform.lowering) |name| (if (findLowering(name)) |lw| lw.piece != null else false) else false;
         if (pieces) e.direct.?.view_pieces = try e.findViewPieces(programs, birs);
         if (!e.options.release) try e.debugReach();
+    }
+
+    /// The arm pieces among `lifts`, by index, sorted by their owner, the
+    /// function's interface row and the constructor (`Lower.armPiece`).
+    fn armOrder(a: Allocator, lifts: []const Lift.Piece) ![]const u32 {
+        var out: std.ArrayList(u32) = .empty;
+        for (lifts, 0..) |pc, i| if (pc.arm != null) try out.append(a, @intCast(i));
+        std.mem.sort(u32, out.items, lifts, struct {
+            fn less(ls: []const Lift.Piece, x: u32, y: u32) bool {
+                return Lower.Direct.armLess(ls[x], ls[y].module, ls[y].arm.?.value, ls[y].arm.?.ctor_module, ls[y].arm.?.ctor_index);
+            }
+        }.less);
+        return out.items;
     }
 
     /// `browser-inline.md` §8.4: each markup root of a module other than a
@@ -3155,81 +3180,168 @@ const Emitter = struct {
     fn findViewPieces(e: *Emitter, programs: []const Lower.Direct.Program, birs: []const *const Bir) ![]const Lower.Direct.ViewPiece {
         const a = e.scratch;
         var out: std.ArrayList(Lower.Direct.ViewPiece) = .empty;
-        for (programs, 0..) |prog, pi| for (prog.sites) |site_| {
-            if (site_.module == prog.module or site_.module >= birs.len) continue;
-            const b = birs[site_.module];
-            // The declaration whose body, past its `let`s, is the root.
-            const tokens = b.insts.items(.main_token);
-            const decl: u32 = for (b.decls, 0..) |d, di| {
-                if (d.kind != .value) continue;
-                var body = d.body.unwrap() orelse continue;
-                while (b.instTag(body) == .let) body = @fromBackingInt(b.instData(body).rhs);
-                if (b.instTag(body) == .markup and tokens[body.int()] == site_.token) break @intCast(di);
-            } else continue;
-            var value: u32 = Lower.Direct.Ctor.none;
-            if (site_.module < e.session.resolution.provenance.len) {
-                for (e.session.resolution.provenance[site_.module].value_decl, 0..) |vd, vi| if (vd.int() == decl) {
-                    value = @intCast(vi);
-                    break;
-                };
+        for (programs, 0..) |prog, pi| {
+            const first = out.items.len;
+            for (prog.sites) |site_| {
+                if (site_.module == prog.module or site_.module >= birs.len) continue;
+                const b = birs[site_.module];
+                // The declaration whose body, past its `let`s, is the root.
+                const tokens = b.insts.items(.main_token);
+                const decl: u32 = for (b.decls, 0..) |d, di| {
+                    if (d.kind != .value) continue;
+                    var body = d.body.unwrap() orelse continue;
+                    while (b.instTag(body) == .let) body = @fromBackingInt(b.instData(body).rhs);
+                    if (b.instTag(body) == .markup and tokens[body.int()] == site_.token) break @intCast(di);
+                } else continue;
+                var value: u32 = Lower.Direct.Ctor.none;
+                if (site_.module < e.session.resolution.provenance.len) {
+                    for (e.session.resolution.provenance[site_.module].value_decl, 0..) |vd, vi| if (vd.int() == decl) {
+                        value = @intCast(vi);
+                        break;
+                    };
+                }
+                // A function the module does not expose is no program site's
+                // call: its root is the module's to write, a markup value
+                // (`no_markup_values`).
+                if (value == Lower.Direct.Ctor.none) continue;
+                // The call path the root's holes are on: one, for a root one
+                // call reaches. The holes are sorted by module: the root's
+                // module's are one run.
+                var lo: usize = 0;
+                var hi: usize = prog.holes.len;
+                while (lo < hi) {
+                    const mid = (lo + hi) / 2;
+                    if (prog.holes[mid].module < site_.module) lo = mid + 1 else hi = mid;
+                }
+                var path: ?[]const u64 = null;
+                var paths: u32 = 0;
+                for (prog.holes[lo..]) |h| {
+                    if (h.module != site_.module) break;
+                    // The call into the root: the path up to its first entry
+                    // of the root's own module, a branch of its markup entered.
+                    const into = for (h.path, 0..) |entry, k| {
+                        if (entry >> 32 == site_.module) break h.path[0..k];
+                    } else h.path;
+                    if (path == null or !std.mem.eql(u64, path.?, into)) paths += 1;
+                    path = into;
+                }
+                const refusal: ?[]const u8 = if (!site_.unique or paths > 1)
+                    \\A limit of the compiler: this program shows another module's markup at more than one
+                    \\place, and `browser-inline` writes another module's markup as pieces for one place only
+                    \\(`docs/design/browser-inline.md` §8.4; §5, class 1). The program is valid: it builds
+                    \\with `--platform=browser-tea`.
+                else
+                    null;
+                const arena = try a.create(std.heap.ArenaAllocator);
+                arena.* = .init(e.gpa);
+                try e.piece_arenas.append(e.gpa, arena);
+                const facts = try a.create(beni_markup.PieceFacts);
+                facts.* = .{};
+                try out.append(a, .{
+                    .program = @intCast(pi),
+                    .module = site_.module,
+                    .token = site_.token,
+                    .decl = decl,
+                    .value = value,
+                    .ordinal = 0,
+                    .path = path orelse &.{},
+                    .consumed = false,
+                    .refusal = refusal,
+                    .facts = facts,
+                    .arena = arena.allocator(),
+                    .arena_state = arena,
+                });
             }
-            // The call path the root's holes are on: one, for a root one
-            // call reaches.
-            var path: ?[]const u64 = null;
-            var paths: u32 = 0;
-            for (prog.holes) |h| if (h.module == site_.module) {
-                // The call into the root: the path up to its first entry of
-                // the root's own module, a branch of its markup entered.
-                const into = for (h.path, 0..) |entry, k| {
-                    if (entry >> 32 == site_.module) break h.path[0..k];
-                } else h.path;
-                if (path == null or !std.mem.eql(u64, path.?, into)) paths += 1;
-                path = into;
-            };
-            const refusal: ?[]const u8 = if (!site_.unique or paths > 1)
-                \\A limit of the compiler: this program shows another module's markup at more than one
-                \\place, and `browser-inline` writes another module's markup as pieces for one place only
-                \\(`docs/design/browser-inline.md` §8.4; §5, class 1). The program is valid: it builds
-                \\with `--platform=browser-tea`.
-            else if (value == Lower.Direct.Ctor.none)
-                \\A limit of the compiler: `browser-inline` writes another module's markup as pieces only
-                \\from a function that module exposes (`docs/design/browser-inline.md` §8.4; §5, class 1).
-                \\The program is valid: it builds with `--platform=browser-tea`.
-            else
-                null;
-            var ordinal: u32 = 0;
-            for (out.items) |vp| {
-                if (vp.module == site_.module and vp.decl == decl) ordinal += 1;
+            // A refused root is consumed too: the program site reports why,
+            // and the build writes nothing.
+            try e.markConsumed(birs, prog, out.items[first..]);
+        }
+        // Each piece's ordinal among its declaration's, in the order found:
+        // its index among the pieces of its declaration, sorted stably.
+        const order = try a.alloc(u32, out.items.len);
+        for (order, 0..) |*o, i| o.* = @intCast(i);
+        std.mem.sort(u32, order, out.items, struct {
+            fn less(vps: []Lower.Direct.ViewPiece, x: u32, y: u32) bool {
+                const p = vps[x];
+                const q = vps[y];
+                if (p.module != q.module) return p.module < q.module;
+                if (p.decl != q.decl) return p.decl < q.decl;
+                return x < y;
             }
-            const arena = try a.create(std.heap.ArenaAllocator);
-            arena.* = .init(e.gpa);
-            try e.piece_arenas.append(e.gpa, arena);
-            const facts = try a.create(beni_markup.PieceFacts);
-            facts.* = .{};
-            try out.append(a, .{
-                .program = @intCast(pi),
-                .module = site_.module,
-                .token = site_.token,
-                .decl = decl,
-                .value = value,
-                .ordinal = ordinal,
-                .path = path orelse &.{},
-                // A refused root is consumed too: the program site reports why, and
-                // the build writes nothing.
-                .consumed = e.namedOnlyBySites(birs, prog, site_.module, decl, value),
-                .refusal = refusal,
-                .facts = facts,
-                .arena = arena.allocator(),
-            });
-        };
+        }.less);
+        for (order, 0..) |o, k| {
+            const prev = if (k == 0) null else out.items[order[k - 1]];
+            const same = if (prev) |p| p.module == out.items[o].module and p.decl == out.items[o].decl else false;
+            out.items[o].ordinal = if (same) out.items[order[k - 1]].ordinal + 1 else 0;
+        }
+        // Sorted by program, module and interface row, which a program site
+        // looks a piece up by (`Lower.holePiece`).
+        std.mem.sort(Lower.Direct.ViewPiece, out.items, {}, struct {
+            fn less(_: void, x: Lower.Direct.ViewPiece, y: Lower.Direct.ViewPiece) bool {
+                if (x.program != y.program) return x.program < y.program;
+                if (x.module != y.module) return x.module < y.module;
+                return x.value < y.value;
+            }
+        }.less);
         return out.items;
     }
 
-    /// Whether declaration `decl` (interface row `value`) of module `owner`
-    /// is named only inside declarations of program `prog`'s module whose
-    /// bodies hold the program's markup roots: what the program site writes
-    /// in place, so nothing evaluates the declaration itself.
-    fn namedOnlyBySites(e: *Emitter, birs: []const *const Bir, prog: Lower.Direct.Program, owner: u32, decl: u32, value: u32) bool {
+    /// Mark each of `pieces`, program `prog`'s, consumed when no code but
+    /// the program's markup functions names its declaration: what the
+    /// program site writes in place, so nothing evaluates the declaration
+    /// itself. One pass over every module's instructions, each reference
+    /// looked up among the pieces sorted by owner.
+    fn markConsumed(e: *Emitter, birs: []const *const Bir, prog: Lower.Direct.Program, pieces: []Lower.Direct.ViewPiece) !void {
+        if (pieces.len == 0) return;
+        const a = e.scratch;
+        // The pieces by (module, value) and by (module, decl).
+        const by_value = try a.alloc(u32, pieces.len);
+        const by_decl = try a.alloc(u32, pieces.len);
+        for (by_value, by_decl, 0..) |*x, *y, i| {
+            x.* = @intCast(i);
+            y.* = @intCast(i);
+        }
+        const Order = struct {
+            fn value(vps: []Lower.Direct.ViewPiece, x: u32, y: u32) bool {
+                if (vps[x].module != vps[y].module) return vps[x].module < vps[y].module;
+                return vps[x].value < vps[y].value;
+            }
+            fn decl(vps: []Lower.Direct.ViewPiece, x: u32, y: u32) bool {
+                if (vps[x].module != vps[y].module) return vps[x].module < vps[y].module;
+                return vps[x].decl < vps[y].decl;
+            }
+        };
+        std.mem.sort(u32, by_value, pieces, Order.value);
+        std.mem.sort(u32, by_decl, pieces, Order.decl);
+        const named_elsewhere = try a.alloc(bool, pieces.len);
+        @memset(named_elsewhere, false);
+        // The program's sites, sorted, for "is this declaration one the
+        // program writes in place".
+        const sites = try a.dupe(Lower.Direct.Site, prog.sites);
+        std.mem.sort(Lower.Direct.Site, sites, {}, struct {
+            fn less(_: void, x: Lower.Direct.Site, y: Lower.Direct.Site) bool {
+                if (x.module != y.module) return x.module < y.module;
+                return x.token < y.token;
+            }
+        }.less);
+        const lookup = struct {
+            fn f(vps: []Lower.Direct.ViewPiece, idx: []const u32, module: u32, key: u32, by_value_: bool) []const u32 {
+                var lo: usize = 0;
+                var hi: usize = idx.len;
+                while (lo < hi) {
+                    const mid = (lo + hi) / 2;
+                    const v = vps[idx[mid]];
+                    const k = if (by_value_) v.value else v.decl;
+                    if (v.module < module or (v.module == module and k < key)) lo = mid + 1 else hi = mid;
+                }
+                var end = lo;
+                while (end < idx.len) : (end += 1) {
+                    const v = vps[idx[end]];
+                    if (v.module != module or (if (by_value_) v.value else v.decl) != key) break;
+                }
+                return idx[lo..end];
+            }
+        }.f;
         for (birs, 0..) |b, mi| {
             const m: Graph.Index = @fromBackingInt(@intCast(mi));
             const tags = b.insts.items(.tag);
@@ -3237,29 +3349,37 @@ const Emitter = struct {
             const tokens = b.insts.items(.main_token);
             for (b.decls, 0..) |d, di| {
                 if (!e.live.decl(m, di)) continue;
-                const lo = d.inst_start.int();
-                const hi = d.inst_end.int();
-                const names = for (lo..hi) |i| {
-                    const here = switch (tags[i]) {
-                        .ext_value => data[i].lhs == owner and data[i].rhs == value,
-                        .top => mi == owner and data[i].lhs == decl,
-                        else => false,
+                // Whether this declaration holds one of the program's
+                // roots, decided the first time it names a piece.
+                var holder: ?bool = null;
+                for (d.inst_start.int()..d.inst_end.int()) |i| {
+                    const hits = switch (tags[i]) {
+                        .ext_value => lookup(pieces, by_value, data[i].lhs, data[i].rhs, true),
+                        .top => lookup(pieces, by_decl, @intCast(mi), data[i].lhs, false),
+                        else => continue,
                     };
-                    if (here) break true;
-                } else false;
-                if (!names) continue;
-                if (mi != prog.module) return false;
-                const site = for (lo..hi) |i| {
-                    if (tags[i] != .markup) continue;
-                    const known = for (prog.sites) |s| {
-                        if (s.module == mi and s.token == tokens[i]) break true;
-                    } else false;
-                    if (known) break true;
-                } else false;
-                if (!site) return false;
+                    if (hits.len == 0) continue;
+                    if (holder == null) {
+                        holder = mi == prog.module and for (d.inst_start.int()..d.inst_end.int()) |j| {
+                            if (tags[j] != .markup) continue;
+                            const want: Lower.Direct.Site = .{ .module = @intCast(mi), .token = tokens[j] };
+                            var lo: usize = 0;
+                            var hi: usize = sites.len;
+                            while (lo < hi) {
+                                const mid = (lo + hi) / 2;
+                                const s = sites[mid];
+                                if (s.module < want.module or (s.module == want.module and s.token < want.token)) lo = mid + 1 else hi = mid;
+                            }
+                            if (lo < sites.len and sites[lo].module == want.module and sites[lo].token == want.token) break true;
+                        } else false;
+                    }
+                    if (!holder.?) for (hits) |h| {
+                        named_elsewhere[h] = true;
+                    };
+                }
             }
         }
-        return true;
+        for (pieces, named_elsewhere) |*vp, named| vp.consumed = !named;
     }
 
     fn emitDirectPlan(e: *Emitter) !void {

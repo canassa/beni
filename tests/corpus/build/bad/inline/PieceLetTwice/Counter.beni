@@ -1,0 +1,41 @@
+-- A `let` of another module's `view` read by two holes: D-d substitutes a
+-- `let` one hole reads into that hole's binding; one several read is a memo
+-- node, S3's (docs/design/browser-inline.md §8.2), so a limit of the
+-- compiler until then, never computed twice in silence.
+--! A counter whose view shows one value twice.
+
+import Html exposing (Html)
+
+
+pub type alias Model =
+    count : Int
+
+
+pub init : ⊤ → Model
+init ⊤ = { count = 3 }
+
+
+pub type Msg
+    = Inc
+    | Dec
+
+
+pub update : Msg, Model → Model
+update msg model =
+    case msg of
+        Inc →
+            { model | count = clamp (model.count + 1) 0 10 }
+
+        Dec →
+            { model | count = clamp (model.count - 1) 0 10 }
+
+
+pub view : Model → Html Msg
+view model =
+    shown = String.fromInt model.count
+    <section data-role="counter">
+        <output>{shown}</output>
+        <p>{shown}</p>
+        <button data-role="inc" disabled={model.count ≥ 10} onClick={Inc}>+1</button>
+        <button data-role="dec" onClick={Dec}>-1</button>
+    </section>

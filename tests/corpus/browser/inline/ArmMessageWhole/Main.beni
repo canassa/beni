@@ -1,8 +1,7 @@
--- `Counter.update` is not a `case` on its message: it hands the message to
--- `bump`, so `Counter` has no arm piece for a key, and `Main`'s handler,
--- which takes `Inc`'s fields and no message, cannot call it
--- (docs/design/browser-inline.md §8.4, `deep_split`): a limit, class 4
--- (§5), reported at the call.
+-- `Counter.update`'s arms read the message whole, `name msg`, so `Counter`
+-- has no arm piece: the handler calls `Counter.update` with the message the
+-- key's fields make (D-e, docs/design/browser-inline.md §8.4), and the page
+-- shows the name it recorded.
 import Browser
 import Counter
 import Html exposing (Html)
@@ -32,6 +31,7 @@ view : Model → Html Msg
 view model =
     <div data-role="app">
         <output>{model.c.count}</output>
+        <p>{model.c.last}</p>
         <button data-role="inc" onClick={CounterMsg Counter.Inc}>+</button>
         <button data-role="dec" onClick={CounterMsg Counter.Dec}>-</button>
     </div>

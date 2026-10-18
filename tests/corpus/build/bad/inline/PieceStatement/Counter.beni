@@ -1,0 +1,41 @@
+-- A statement in another module's `view`, `_ = Debug.log …`: it runs each
+-- time the `view` does, and `browser-inline` writes that markup as binding
+-- functions run when what they read changes, so the statement has no place
+-- to run (docs/design/browser-inline.md §8.4). A limit of the compiler,
+-- class 1, reported at the statement, never left out.
+--! A counter whose view logs what it shows.
+
+import Html exposing (Html)
+
+
+pub type alias Model =
+    count : Int
+
+
+pub init : ⊤ → Model
+init ⊤ = { count = 3 }
+
+
+pub type Msg
+    = Inc
+    | Dec
+
+
+pub update : Msg, Model → Model
+update msg model =
+    case msg of
+        Inc →
+            { model | count = clamp (model.count + 1) 0 10 }
+
+        Dec →
+            { model | count = clamp (model.count - 1) 0 10 }
+
+
+pub view : Model → Html Msg
+view model =
+    _ = Debug.log "count" model.count
+    <section data-role="counter">
+        <output>{model.count}</output>
+        <button data-role="inc" disabled={model.count ≥ 10} onClick={Inc}>+1</button>
+        <button data-role="dec" onClick={Dec}>-1</button>
+    </section>

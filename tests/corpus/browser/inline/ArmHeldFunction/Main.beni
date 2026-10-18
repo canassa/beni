@@ -1,7 +1,7 @@
 -- `apply`, written in place, calls the function its parameter holds with
--- the message, and which function that is the arm cannot follow to a piece
--- of `Counter`'s (docs/design/browser-inline.md §8.4): a limit, class 4
--- (§5), reported at the call.
+-- the message. The arm cannot follow a function a value holds to a piece,
+-- so the call is the ordinary one, handed the message the key's fields
+-- make (D-e, docs/design/browser-inline.md §8.4).
 import Browser
 import Counter
 import Html exposing (Html)

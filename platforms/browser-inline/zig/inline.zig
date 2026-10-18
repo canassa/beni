@@ -195,7 +195,7 @@ fn piece(cx: *m.Context, tree: *const m.Tree, req: *const m.PieceRequest) m.Erro
     for (pg.events.items) |ev| if (ev.target == null) return later(cx, ev.node, "an event on the top element of another module's markup");
     // D-d: a `let` of the view read by one hole is that hole's value; one
     // several read is a memo node, S3's (§8.2).
-    for (0..r.lets.len) |k| if (cx.rootLetReaders(req.root, @intCast(k)) > 1) return limit(cx, r.node, "a `let` of this `view` is read by several holes, and `browser-inline` computes a `let` in the binding of the one hole that reads it until it has a memo of its own");
+    for (0..r.lets.len) |k| if (cx.rootLetReaders(req.root, @intCast(k)) > 1) return limit(cx, r.node, "a `let` of this `view` is read by several holes, and `browser-inline` computes a `let` in the binding of the one hole that reads it (D-d); one several holes read is a memo node, which slice S3 brings");
     pg.elements = try cx.fresh("elements");
     // The root's function's parameters, each a parameter of every binding
     // function after the elements.
@@ -228,7 +228,7 @@ fn piece(cx: *m.Context, tree: *const m.Tree, req: *const m.PieceRequest) m.Erro
             else => return limit(cx, ev.node, "this event's handler is a message written as a literal, which `browser-inline` cannot route to a key"),
         };
         const payload_form = ev.item.form == .payload;
-        const sent = cx.pieceEventCtor(v, payload_form) orelse return limit(cx, ev.node, "`browser-inline` wires an event of another module's markup to a handler of the constructor it sends, and this event's handler value is not one constructor taking the event's payload or nothing");
+        const sent = cx.pieceEventCtor(v, payload_form) orelse return limit(cx, ev.node, "`browser-inline` wires an event of another module's markup by the constructor alone, which takes the event's payload or nothing, and this event's handler value is a constructor applied to values, or not a constructor");
         const hi = for (handlers.items, 0..) |h, i| {
             if (std.meta.eql(h.ctor, sent.ctor)) break i;
         } else blk: {
@@ -475,7 +475,7 @@ const Page = struct {
                 const h = tree.hole(child);
                 if (textHole(h.kind)) return limit(pg.cx, child, "`browser-inline` writes a text hole as its element's whole text, and this one stands beside an element; wrap the hole and the text around it in an element of their own");
                 if (h.kind != .html) return later(pg.cx, child, "a hole that is not text of a `String`, a `Char` or a number");
-                if (pg.cx.programPiece(child)) |piece_facts| {
+                if (try pg.cx.programPiece(child)) |piece_facts| {
                     try out.append(pg.a(), try pg.pieceHole(child, piece_facts, ctx));
                     continue;
                 }
