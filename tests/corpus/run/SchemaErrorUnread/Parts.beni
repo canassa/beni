@@ -1,6 +1,0 @@
---! A schema another module's validator names: its validator worker is
---! this module's, imported where it is called.
-
-pub schema Point =
-    x : Int
-    y : Int
