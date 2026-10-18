@@ -10626,6 +10626,11 @@ fn unblocked(ir: *const JsIr, body: JsIr.SubRange) JsIr.SubRange {
 /// Whether `stmts`' only `return`s end the list: the last statement, or the
 /// last of each branch of an `if` or of an unlabelled block that is the
 /// last — no early `return` an inlined copy would have to keep.
+/// A branch with no `return` at all is accepted: control falls off its end,
+/// as it falls out of the call, to the statement after it. A function that
+/// may suspend never meets this: its call is never a statement of the
+/// suspendable form, which hands the call's value on to `Task$andThen`
+/// (`emit/release/SuspendTailStatement`).
 fn tailReturnsOnly(ir: *const JsIr, stmts: []const Index, depth: u32) bool {
     if (depth > 32) return false;
     for (stmts, 0..) |st, i| {
