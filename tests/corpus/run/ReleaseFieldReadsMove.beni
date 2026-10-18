@@ -1,0 +1,29 @@
+-- A field read written at its single use moves past nothing that rebinds
+-- the name it reads (`backend.md` §9 item 1, amended 2026-10-18). `loop`'s
+-- tail call is a `while` that assigns `r` its next record before it adds
+-- `v`, so `v = r.k` stays where it is under `--release`: written at its use,
+-- it would read the next record's `k` and print 30.
+import Node
+
+
+type alias Step =
+    n : Int
+    k : Int
+
+
+loop : Step, Int → Int
+loop r acc =
+    if r.n == 0 then
+        acc
+    else
+        v = r.k
+        next = { n = r.n - 1, k = r.k * 2 }
+        loop next (acc + v)
+
+
+pub run : Step → String
+run r = String.fromInt (loop r 0)
+
+
+main : Node.Program
+main = Node.printLines [ run { n = 4, k = 1 } ]

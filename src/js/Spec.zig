@@ -5312,9 +5312,9 @@ const Spec = struct {
                         // return R`), so a key of it may become a field
                         // read (`ops.fn`), which stays and keeps the
                         // function.
-                        .property => if (key.isSet(i) and inert(ir, @fromBackingInt(@intCast(d.rhs)))) holds.set(d.rhs),
-                        .const_decl => if (inert(ir, @fromBackingInt(@intCast(d.rhs)))) holds.set(d.rhs),
-                        .let_decl => if ((@as(Node.OptionalIndex, @fromBackingInt(@intCast(d.rhs)))).unwrap()) |v| if (inert(ir, v)) holds.set(v.int()),
+                        .property => if (key.isSet(i) and inertOf(ir, @fromBackingInt(@intCast(d.rhs)), false)) holds.set(d.rhs),
+                        .const_decl => if (inertOf(ir, @fromBackingInt(@intCast(d.rhs)), false)) holds.set(d.rhs),
+                        .let_decl => if ((@as(Node.OptionalIndex, @fromBackingInt(@intCast(d.rhs)))).unwrap()) |v| if (inertOf(ir, v, false)) holds.set(v.int()),
                         else => {},
                     }
                 }
@@ -10425,6 +10425,13 @@ pub fn isInert(ir: *const JsIr, root: Index) bool {
 }
 
 fn inert(ir: *const JsIr, root: Index) bool {
+    return inertOf(ir, root, true);
+}
+
+/// `inert`, with `field_reads` whether a beni field read counts as one.
+/// `soleCalls` asks without: a place holding a field read is not a place
+/// that only holds the value it is.
+fn inertOf(ir: *const JsIr, root: Index, comptime field_reads: bool) bool {
     var stack: [64]Index = undefined;
     var len: usize = 1;
     stack[0] = root;
@@ -10440,6 +10447,15 @@ fn inert(ir: *const JsIr, root: Index) bool {
             .property => {
                 if (len == stack.len) return false;
                 stack[len] = @fromBackingInt(@intCast(d.rhs));
+                len += 1;
+            },
+            // A beni record's field: no getter, no throw, and nothing
+            // changes it (`backend.md` §9, *A field read of a beni value
+            // is pure*).
+            .member => {
+                if (!field_reads or !ir.isFieldRead(node)) return false;
+                if (len == stack.len) return false;
+                stack[len] = @fromBackingInt(@intCast(d.lhs));
                 len += 1;
             },
             .object, .array, .template => for (ir.extraSlice(JsIr.inlineRange(d), Index)) |child| {

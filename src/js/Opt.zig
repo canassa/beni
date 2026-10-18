@@ -20,6 +20,9 @@
 //!     conditions, which `inlinable` and `findUse` below implement one for
 //!     one. The wider licence — any initialiser, use on the very next
 //!     statement — was measured and loses on `Dictionaries` (§9, table C).
+//!     A value made only of beni field reads, names and literals
+//!     (`pureValue`, §9 item 1 as amended 2026-10-18) moves past any
+//!     statement to its use, since it does nothing and nothing changes it.
 //!
 //! **Nothing here mutates the IR.** The pass produces a `Plan`: a bitset of
 //! statement nodes the printer must not print, and one replacement node per
@@ -536,7 +539,20 @@ const Opt = struct {
             // folded into its use it would move past whatever that use's
             // statement evaluates first. A name or a literal cannot change.
             const here = stmt.int();
-            if (o.kept[here / 32] & (@as(u32, 1) << @intCast(here % 32)) != 0 and o.ir.tag(value) == .member) continue;
+            const listed = o.kept[here / 32] & (@as(u32, 1) << @intCast(here % 32)) != 0;
+            if (listed and o.ir.tag(value) == .member) continue;
+            // A value made only of beni field reads, names and literals
+            // (`backend.md` §9 item 1, amended 2026-10-18): evaluating it
+            // does nothing, cannot throw, and answers the same wherever it
+            // stands, so it is written at its single use past any statement
+            // between.
+            if (!listed and o.pureValue(value, 0) != null) {
+                if (try o.findAnyUse(stmts[i + 1 ..], n)) |at| {
+                    o.drop(stmt);
+                    o.inlined[at.int()] = o.compress(value).toOptional();
+                }
+                continue;
+            }
             const base = o.chainBase(value) orelse continue;
             if (base.unwrap()) |b| {
                 if (b < o.assigned.len and o.stamp[b] == o.current and o.assigned[b]) continue;
@@ -721,6 +737,85 @@ const Opt = struct {
             if (own != 0) return null;
         }
         return null;
+    }
+
+    /// What `pureValue` knows of a value it accepts: whether it is surely a
+    /// primitive, which an operator may convert without running code.
+    const Shape = enum { primitive, any };
+
+    /// Whether evaluating `node` does nothing, cannot throw, and answers the
+    /// same at every point of the declaration (`backend.md` §9 item 1,
+    /// amended 2026-10-18), or null:
+    ///
+    ///   - a literal, and a name no `assign_stmt` of the declaration targets
+    ///     and no `Js.Ref` rebinds (`mutable`);
+    ///   - a read of a beni record's field (`JsIr.isFieldRead`) of such a
+    ///     value: a beni value has no getter and no beni code writes it;
+    ///   - `!`, `typeof`, `===`, `!==`, `&&`, `||` and `?:` of such, which
+    ///     convert nothing;
+    ///   - an arithmetic, comparison or bitwise operator, `-`, and a
+    ///     template, of such values that are surely primitives — a literal,
+    ///     a field read, or another operator's result — so no `valueOf` or
+    ///     `toString` runs. A field read is one there because beni writes an
+    ///     operator only on a primitive type (`==` and `<` of anything else
+    ///     call `eq` and `compare`, §4). A name is not: a platform's
+    ///     lowering may hold a host value in one.
+    ///
+    /// A member read that is not a field's — a tuple's or constructor's
+    /// slot, a tag, a host property — is not accepted; the atom and
+    /// member-chain rule still takes the bare chain.
+    fn pureValue(o: *Opt, node: Index, depth: u32) ?Shape {
+        if (depth > 64) return null;
+        const d = o.ir.data(node);
+        switch (o.ir.tag(node)) {
+            .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit => return .primitive,
+            .ident => {
+                const n: NameIndex = @fromBackingInt(@intCast(d.lhs));
+                if (n.unwrap()) |i| if (i < o.assigned.len and o.stamp[i] == o.current and o.assigned[i]) return null;
+                if (std.mem.indexOfScalar(NameIndex, o.mutable, n) != null) return null;
+                return .any;
+            },
+            .member => {
+                if (!o.ir.isFieldRead(node)) return null;
+                _ = o.pureValue(@fromBackingInt(@intCast(d.lhs)), depth + 1) orelse return null;
+                return .primitive;
+            },
+            .unary => {
+                const shape = o.pureValue(@fromBackingInt(@intCast(d.lhs)), depth + 1) orelse return null;
+                return switch (@as(JsIr.UnaryOp, @fromBackingInt(@intCast(d.rhs)))) {
+                    .not, .type_of => .primitive,
+                    .neg => if (shape == .primitive) .primitive else null,
+                    .yield => null,
+                };
+            },
+            .binary => {
+                const b = o.ir.extraData(@fromBackingInt(@intCast(d.lhs)), JsIr.Binary);
+                const left = o.pureValue(b.left, depth + 1) orelse return null;
+                const right = o.pureValue(b.right, depth + 1) orelse return null;
+                const both: Shape = if (left == .primitive and right == .primitive) .primitive else .any;
+                return switch (@as(JsIr.BinaryOp, @fromBackingInt(@intCast(d.rhs)))) {
+                    .strict_eq, .strict_ne => .primitive,
+                    .logical_and, .logical_or => both,
+                    .instance_of => null,
+                    else => if (both == .primitive) .primitive else null,
+                };
+            },
+            .cond => {
+                const c = o.ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.Cond);
+                _ = o.pureValue(@fromBackingInt(@intCast(d.lhs)), depth + 1) orelse return null;
+                const yes = o.pureValue(c.consequent, depth + 1) orelse return null;
+                const no = o.pureValue(c.alternate, depth + 1) orelse return null;
+                return if (yes == .primitive and no == .primitive) .primitive else .any;
+            },
+            .template => {
+                for (o.ir.extraSlice(JsIr.inlineRange(d), Index)) |part| {
+                    if (o.ir.tag(part) == .template_chunk) continue;
+                    if ((o.pureValue(part, depth + 1) orelse return null) != .primitive) return null;
+                }
+                return .primitive;
+            },
+            else => return null,
+        }
     }
 
     /// A `const` whose initialiser is an atom or a member chain: the only
