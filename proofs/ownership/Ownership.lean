@@ -1,4 +1,5 @@
 import Ownership.Question
+import Ownership.Tree
 import Ownership.Syntax
 import Ownership.Semantics
 import Ownership.Domain
