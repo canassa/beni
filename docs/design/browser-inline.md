@@ -372,6 +372,19 @@ program site by name (option 2 of §7, extended to `update` and `view`).
   so a program site reads facts no worker is still writing; the waves are input-derived, and the
   output is the same at every `--jobs`. A root a program shows at more than one place, or one not
   exposed, is a limit of the compiler, reported at the program's hole.
+- **A constraint on M4** (*added 2026-10-18, the review of #351*). Emit is not cached today, so
+  pieces and their facts are made again on every build. A future emit cache or resident daemon
+  must key a program module's output on the facts of every owner whose pieces it reads, and an
+  owner's pieces on the write-set facts of each program that reads them, on the root's call path
+  (`Lower`'s `piece_pc` and `inline_path`): both directions, since an owner's facts are computed
+  from its readers' write sets. The checker's interface firewall does not cover this: a body edit
+  that changes a piece moves no interface.
+- **Arms the tracking does not specialise** (*amended 2026-10-18, the review of #351*): a default
+  branch, bindings before the `case`, a function a value holds, another module's function with no
+  arm piece, a recursion, the message read whole or wrapped in a constructor. The arm is then the
+  ordinary code, with the message built from the key's fields where it is read (D-e), not a
+  refusal. Only a message wrapped in a constructor whose other fields the handler is not handed
+  is still a limit of the compiler (`ArmWideWrapper/`); `deep_split` is no longer a refusal.
 - **A cross-module reader** (D-c) — `W2.view` reading `W1.Model` — is a binding piece of `W2`
   whose groups `W1`'s keys reach: the handler of each such key calls it in its write pass, from the
   program site, by name. There is no registration at mount and no rule about which widget is above
@@ -416,12 +429,12 @@ the compiler"*, a language rule never says *"yet"*):
 | a `*` key (`write-sets.md` §3.4) of an exact inferred whole write of a model whose type is a record of more than one field — by `update`'s annotation, or else by the record literal `init` makes — without a declared `replace` (`plans/direct-rewrite.md` §6): *"Key `Restore` writes the whole model, a record of several fields, in one value, which hides which of its fields changed … Write the fields the arm changes …, or … a declared `replace` once the language has one"* (*decided 2026-10-17, the owner*; `StarUnannotated/` without the annotation). A `*` of lost precision — a cap cut the key, the pass marked the whole write an approximation, or neither the annotation nor `init` gives the model's type — is a limit of the compiler, class 4, reported at the first approximation in source order, which it quotes and says how many more there are (`StarOpaque/`: `f model`; `StarParameter/`: `g m`; `StarRecord/`: `{ next | count = 0 }`; `StarPrecision/`: the cap and its call); a model of one value (an `Int`, a record of one field) is written exactly and accepted, every binding called. A key is named as the program spells it, never `(any)` | 3 / 4 | the record's `update`; the approximation | `StarNotReplace/`, `StarUnannotated/`, `StarOpaque/`, `StarParameter/`, `StarRecord/`, `StarPrecision/` |
 | a keyed `For`: *"… does not compile keyed rows — a `For` with `keyed` — yet …"* | 1 | the `For` | `ResearchListWidget/` |
 | a key whose writes a cap of the write-set pass cut (`Program.Key.cap`): the depth limit `k` and the rounds of a recursive component until #286's folding replaces them; the leaf, alternative and size caps are lifted in S1 | 4 | the record's `update` | `CapFired/` |
-| a key whose message reaches a function of another module that is not a `case` on it, or that splits it again inside (`deep_split`): *"… hands a message to a function of another module that `browser-inline` cannot write as one function per message …"* | 4 | the call | `ArmNotCase/` |
 | a message wrapped in a constructor of several fields, a field of which the arm binds: *"… wraps another in a constructor of more than one field, and a handler is handed only the inner message's fields …"* | 4 | the field's pattern | `ArmWideWrapper/` |
-| a message handed to a function a value holds: *"… a function held in a value, which `browser-inline` cannot follow to the arm a key takes …"* | 4 | the call | `ArmHeldFunction/` |
 | another module's markup shown at more than one place: *"… writes another module's markup as pieces for one place only …"* | 1 | the program's hole | `PieceTwice/` |
 | an event of another module's markup whose handler value is not one constructor taking the payload or nothing: *"… wires an event of another module's markup to a handler of the constructor it sends …"* | 4 | the event | `PieceEventArgs/` |
-| an event argument or a piece capture the program site cannot write; a `view` `let` read by several holes | 4 / 1 | the construct | — |
+| a statement (`_ = …`) in another module's `view` | 1 | the statement | `PieceStatement/` |
+| a `let` of another module's `view` read by several holes (a memo node, S3's) | 4 | the root | `PieceLetTwice/` |
+| an event argument or a piece capture the program site cannot write | 4 / 1 | the construct | — |
 | a text hole beside an element: *"… writes a text hole as its element's whole text, and this one stands beside an element; wrap the hole and the text around it in an element of their own …"* | 4 | the hole | `TextBesideElement/` |
 | an attribute that changes and is not a DOM property `prop` writes | 1 | the element | `AttributeChanges/` |
 | an event whose handler value is a message no key can be named for when the program is built: *"… so its message would need a dispatcher …"* | 4 | the element | `MessageValue/` |

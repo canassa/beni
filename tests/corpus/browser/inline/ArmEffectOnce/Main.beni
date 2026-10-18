@@ -1,0 +1,50 @@
+-- A helper called once, `bump`, with an effect (`Debug.log`), inside an arm
+-- of another module's `update`: the arm piece writes it in place, and the
+-- function the piece's branch came from is emitted too (Lower's
+-- `name_used`). Each click logs `bump` once, in development and in
+-- release: the copies never both run (docs/design/browser-inline.md §8.4).
+-- A default branch, `_ →`, is the key `Lower`'s, which calls `W1.update`.
+import Browser
+import Html exposing (Html)
+import Tea
+import W1
+
+
+type alias Model =
+    w1 : W1.Model
+    n : Int
+
+
+type Msg
+    = W1Msg W1.Msg
+    | Other
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        W1Msg sub →
+            { model | w1 = W1.update sub model.w1 }
+
+        Other →
+            { model | n = model.n + 1 }
+
+
+view : Model → Html Msg
+view model =
+    <div data-role="app">
+        {Html.map (W1.view model.w1) W1Msg}
+        <button data-role="other" onClick={Other}>{model.n}</button>
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox
+            { init = λ⊤ → { w1 = W1.init ⊤, n = 0 }
+            , update = update
+            , view = view
+            }
+        )
+        "root"
