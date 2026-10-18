@@ -1,0 +1,46 @@
+-- element "root"
+-- load
+<body>
+  <div id="root">
+    <div data-role="single">
+      <output>"0"</output>
+      <p>"few"</p>
+      <button data-role="inc">"+1"</button>
+      <button data-role="reset">"Reset"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=inc]
+<body>
+  <div id="root">
+    <div data-role="single">
+      <output>"1"</output>
+      <p>"few"</p>
+      <button data-role="inc">"+1"</button>
+      <button data-role="reset">"Reset"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=inc] 3
+(the step's task ended)
+<body>
+  <div id="root">
+    <div data-role="single">
+      <output>"4"</output>
+      <p>"many"</p>
+      <button data-role="inc">"+1"</button>
+      <button data-role="reset">"Reset"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=reset]
+<body>
+  <div id="root">
+    <div data-role="single">
+      <output>"0"</output>
+      <p>"few"</p>
+      <button data-role="inc">"+1"</button>
+      <button data-role="reset">"Reset"</button>
+    </div>
+  </div>
+</body>

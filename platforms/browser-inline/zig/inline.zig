@@ -1462,7 +1462,7 @@ const Page = struct {
             result = try js.name(pair);
         }
         try js.assign(blk, try js.name(pg.model), if (element_) try js.member(result, "a") else result);
-        for (try pg.passOf(k, key.star)) |fi| try pg.callFunction(blk, fi);
+        for (try pg.passOf(k, key)) |fi| try pg.callFunction(blk, fi);
         if (element_) switch (cx.programCommand(k)) {
             .runs => try js.expression(blk, try js.call(try js.name(try cx.runtime("commands")), &.{ try js.member(result, "b"), try js.name(pg.dispatch.?) })),
             else => {},
@@ -1472,15 +1472,17 @@ const Page = struct {
     /// Key `k`'s write pass (§8.3): the binding functions the key's writes
     /// reach — from the groups the pass says they conflict with, each
     /// function found by its groups — and those of the controls its events
-    /// are on, each once, in document order. Every function for a `*` key,
-    /// or for a program the pass does not know.
-    fn passOf(pg: *Page, k: u32, star: bool) m.Error![]const u32 {
-        const groups = pg.cx.programGroupsOf(k);
-        if (star or groups == null) {
-            const all = try pg.a().alloc(u32, pg.functions.items.len);
-            for (all, 0..) |*x, i| x.* = @intCast(i);
-            return all;
-        }
+    /// are on, each once, in document order. There is no coarse pass: a `*`
+    /// key reaches here only for a model of one value (`refuseKey`), whose
+    /// whole write is that value, and the groups it reaches are the ones the
+    /// pass found for it like any other key's (`programGroupsOf`).
+    fn passOf(pg: *Page, k: u32, the: m.Program.Key) m.Error![]const u32 {
+        if (the.star) std.debug.assert(the.star_kind == .single_value);
+        // A program on this platform is always one the pass knows.
+        const groups = pg.cx.programGroupsOf(k) orelse {
+            if (std.debug.runtime_safety) unreachable;
+            return &.{};
+        };
         if (pg.by_group.count() == 0 and pg.functions.items.len != 0) {
             pg.stamp = try pg.a().alloc(u32, pg.functions.items.len);
             @memset(pg.stamp, std.math.maxInt(u32));
@@ -1500,9 +1502,9 @@ const Page = struct {
                 }
             }
         }.f;
-        for (groups.?) |g| if (pg.by_group.get(g)) |fs| try add(pg, fs.items, k, &out);
-        // A group the pass does not know is called by every key.
-        if (pg.by_group.get(std.math.maxInt(u32))) |fs| try add(pg, fs.items, k, &out);
+        for (groups) |g| if (pg.by_group.get(g)) |fs| try add(pg, fs.items, k, &out);
+        // Every binding's group is one the pass found (`group`).
+        std.debug.assert(pg.by_group.get(std.math.maxInt(u32)) == null);
         if (pg.controls.len != 0) try add(pg, pg.controls[k].items, k, &out);
         std.mem.sort(u32, out.items, {}, std.sort.asc(u32));
         return out.items;
