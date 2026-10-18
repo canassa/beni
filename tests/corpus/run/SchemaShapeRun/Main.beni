@@ -1,0 +1,391 @@
+-- A run whose error nothing reads is a shape run (`schema.md` §6, *A validator
+-- run is a shape that one shared validator reads*): it hands its schema's shape
+-- to the one shared validator, which must accept exactly what the specialised
+-- `read` accepts and build an equal value. Every input below is read twice, by
+-- a shape run (`case … Err _`, `Result.toMaybe`, `Result.withDefault`) and by a
+-- run that reads the error and so keeps the specialised path with its issues,
+-- and each line prints both answers. The corpus also builds this with every
+-- root through the library, where no run is a shape run: one golden, three
+-- paths.
+--
+-- The inputs are the hard cases: a field named like a key of
+-- `Object.prototype`, own and inherited; an inherited field; a key present as
+-- `undefined`; extra keys; NaN, an infinity, 1.5 and 2⁵³ where an `Int` or a
+-- finite `Float` is read; arrays and tuples of the wrong length; an unknown
+-- tag and a non-string one; custom types in each of their forms; a recursive
+-- schema at the depth bound and one past it; `Value`, `null`, `nullable` and
+-- `optional`; a record whose declaration lists its fields out of their
+-- canonical order, read through getters that log which keys the run read; and
+-- a declaration that names one declared after it, and one that names another
+-- module's.
+import Hosts
+import Int32 exposing (Int32)
+import Json
+import Node
+import Parts
+import Schema exposing (Value)
+
+
+schema Order =
+    zeta : Int
+    alpha : String as "the-alpha"
+    mid : FiniteFloat
+    note : String optional
+    count : Int nullable
+    toString : String optional
+    extra : Value
+    tree : Tree
+
+
+schema Tree tagged "kind" of
+    Leaf as "leaf"
+        value : Float
+    Branch as "branch"
+        value : Float
+        children : List Tree
+
+
+schema Event tagged "type" of
+    Set as "set"
+        value : Int
+    Move as "move"
+        dy : Int
+        dx : Int
+    Reset as "reset"
+
+
+schema Placed =
+    label : String
+    at : Parts.Point
+
+
+type Color
+    = Red
+    | Gray Int
+    | Rgb Int Int Int
+
+
+type alias Item =
+    pos : Int × Int
+    color : Color
+    label : Maybe String
+    tags : List (Maybe Char)
+    small : Int32
+    unit : ⊤
+
+
+-- ---- Orders -------------------------------------------------------------------
+
+orderShape : Value → String
+orderShape v =
+    case Schema.read (Order.schema ⊤) v of
+        Ok o →
+            Debug.toString o
+
+        Err _ →
+            "invalid"
+
+
+orderRead : Value → String
+orderRead v =
+    case Schema.read (Order.schema ⊤) v of
+        Ok o →
+            Debug.toString o
+
+        Err issues →
+            "invalid (${String.fromInt (List.length issues)})"
+
+
+order : String, Value → String
+order label v = "${label}: ${orderShape v} | ${orderRead v}"
+
+
+-- How deep a tree is: each line at the depth bound prints this, not the tree.
+depthOf : Tree.Type → Int
+depthOf t =
+    case t of
+        Tree.Leaf _ →
+            0
+
+        Tree.Branch b →
+            1 + List.foldl b.children 0 λc most → max (depthOf c) most
+
+
+orderDeep : Int → String
+orderDeep n =
+    v = Hosts.parse (orderText (deep n))
+    shape =
+        case Schema.read (Order.schema ⊤) v of
+            Ok o →
+                "${String.fromInt (depthOf o.tree)} deep"
+
+            Err _ →
+                "invalid"
+    read =
+        case Schema.read (Order.schema ⊤) v of
+            Ok o →
+                "${String.fromInt (depthOf o.tree)} deep"
+
+            Err issues →
+                "invalid (${String.fromInt (List.length issues)})"
+    "tree ${String.fromInt n} deep: ${shape} | ${read}"
+
+
+-- Through getters: the keys each run read, in order, up to its failure.
+orderReads : String, Value → String
+orderReads label v =
+    keys = [ "zeta", "the-alpha", "mid", "note", "count", "toString", "extra", "tree" ]
+    shape = orderShape (Hosts.logged v keys)
+    shapeReads = Hosts.reads ⊤
+    read = orderRead (Hosts.logged v keys)
+    readReads = Hosts.reads ⊤
+    "${label}: ${shape} [${shapeReads}] | ${read} [${readReads}]"
+
+
+-- ---- Events -------------------------------------------------------------------
+
+describe : Event.Type → String
+describe ev =
+    case ev of
+        Event.Set s →
+            "set ${String.fromInt s.value}"
+
+        Event.Move m →
+            "move ${String.fromInt m.dx} ${String.fromInt m.dy}"
+
+        Event.Reset →
+            "reset"
+
+
+eventShape : Value → String
+eventShape v =
+    case Result.toMaybe (Schema.read (Event.schema ⊤) v) of
+        Just found →
+            describe found
+
+        Nothing →
+            "invalid"
+
+
+eventRead : Value → String
+eventRead v =
+    case Schema.read (Event.schema ⊤) v of
+        Ok found →
+            describe found
+
+        Err issues →
+            "invalid (${String.fromInt (List.length issues)})"
+
+
+eventParse : String → String
+eventParse text =
+    case Schema.parse (Event.schema ⊤) text of
+        Ok found →
+            describe found
+
+        Err _ →
+            "invalid"
+
+
+eventParseRead : String → String
+eventParseRead text =
+    case Schema.parse (Event.schema ⊤) text of
+        Ok found →
+            describe found
+
+        Err issues →
+            "invalid (${String.fromInt (List.length issues)})"
+
+
+event : String, Value → String
+event label v = "${label}: ${eventShape v} | ${eventRead v}"
+
+
+eventText : String, String → String
+eventText label text = "${label}: ${eventParse text} | ${eventParseRead text}"
+
+
+-- ---- Across modules -----------------------------------------------------------
+
+placedShape : Value → String
+placedShape v =
+    case Schema.read (Placed.schema ⊤) v of
+        Ok p →
+            "${p.label} at ${String.fromInt p.at.x}, ${String.fromInt p.at.y}"
+
+        Err _ →
+            "invalid"
+
+
+placedRead : Value → String
+placedRead v =
+    case Schema.read (Placed.schema ⊤) v of
+        Ok p →
+            "${p.label} at ${String.fromInt p.at.x}, ${String.fromInt p.at.y}"
+
+        Err issues →
+            "invalid (${String.fromInt (List.length issues)})"
+
+
+placed : String, Value → String
+placed label v = "${label}: ${placedShape v} | ${placedRead v}"
+
+
+-- ---- Items, derived -------------------------------------------------------------
+
+none : Item
+none =
+    { pos = ( 0, 0 ), color = Red, label = Nothing, tags = [], small = Int32.fromInt 0, unit = ⊤ }
+
+
+itemText : Item → String
+itemText it = Debug.toString it
+
+
+itemShape : Value → String
+itemShape v =
+    found : Item
+    found = Result.withDefault (Json.decodeValue v) none
+    if found == none then "invalid" else itemText found
+
+
+itemRead : Value → String
+itemRead v =
+    case Json.decodeValue v of
+        Ok it →
+            itemText it
+
+        Err issues →
+            "invalid (${String.fromInt (List.length issues)})"
+
+
+itemDecode : String → String
+itemDecode text =
+    case Json.decode text of
+        Ok it →
+            itemText it
+
+        Err _ →
+            "invalid"
+
+
+itemDecodeRead : String → String
+itemDecodeRead text =
+    case Json.decode text of
+        Ok it →
+            itemText it
+
+        Err issues →
+            "invalid (${String.fromInt (List.length issues)})"
+
+
+item : String, Value → String
+item label v = "${label}: ${itemShape v} | ${itemRead v}"
+
+
+itemJson : String, String → String
+itemJson label text = "${label}: ${itemDecode text} | ${itemDecodeRead text}"
+
+
+-- ---- Inputs -------------------------------------------------------------------
+
+-- A tree `n` levels deep, as JSON text.
+deep : Int → String
+deep n =
+    String.repeat "{\"kind\":\"branch\",\"value\":1,\"children\":[" n
+        ++ "{\"kind\":\"leaf\",\"value\":2}"
+        ++ String.repeat "]}" n
+
+
+orderText : String → String
+orderText tree =
+    "{\"zeta\":1,\"the-alpha\":\"a\",\"mid\":2.5,\"count\":null,\"extra\":[1,{\"k\":true}],\"tree\":${tree}}"
+
+
+good : Value
+good =
+    Hosts.parse
+        (orderText
+            "{\"kind\":\"branch\",\"value\":0.5,\"children\":[{\"kind\":\"leaf\",\"value\":-1}]}"
+        )
+
+
+goodItem : Value
+goodItem =
+    Hosts.parse
+        "{\"pos\":[1,2],\"color\":{\"Rgb\":[1,2,3]},\"label\":\"l\",\"tags\":[\"x\",null,\"y\"],\"small\":7,\"unit\":[]}"
+
+
+main : Node.Program
+main =
+    Node.printLines
+        [ order "good" good
+        , order "own toString" (Hosts.with good "toString" (Hosts.parse "\"own\""))
+        , order "toString not a string" (Hosts.with good "toString" (Hosts.parse "1"))
+        , order "inherited fields" (Hosts.inheriting good)
+        , order "note undefined" (Hosts.with good "note" (Hosts.undefined ⊤))
+        , order "zeta undefined" (Hosts.with good "zeta" (Hosts.undefined ⊤))
+        , order
+            "extra keys"
+            (Hosts.with (Hosts.with good "more" (Hosts.parse "1")) "__proto__" (Hosts.parse "2"))
+        , order "zeta 1.5" (Hosts.with good "zeta" (Hosts.parse "1.5"))
+        , order "zeta 2^53" (Hosts.with good "zeta" (Hosts.parse "9007199254740992"))
+        , order "zeta NaN" (Hosts.with good "zeta" (Hosts.nan ⊤))
+        , order "mid NaN" (Hosts.with good "mid" (Hosts.nan ⊤))
+        , order "mid infinity" (Hosts.with good "mid" (Hosts.infinity ⊤))
+        , order
+            "tree value NaN"
+            (Hosts.with
+                good
+                "tree"
+                (Hosts.with (Hosts.parse "{\"kind\":\"leaf\"}") "value" (Hosts.nan ⊤))
+            )
+        , order "count 3" (Hosts.with good "count" (Hosts.parse "3"))
+        , order "count missing" (Hosts.with good "count" (Hosts.undefined ⊤))
+        , order "extra missing" (Hosts.with good "extra" (Hosts.undefined ⊤))
+        , order "extra null" (Hosts.with good "extra" (Hosts.parse "null"))
+        , order "an array" (Hosts.parse "[1]")
+        , order "null" (Hosts.parse "null")
+        , orderDeep 169
+        , orderDeep 170
+        , order
+            "children not a list"
+            (Hosts.parse (orderText "{\"kind\":\"branch\",\"value\":1,\"children\":{}}"))
+        , orderReads "getters, good" good
+        , orderReads "getters, mid bad" (Hosts.with good "mid" (Hosts.parse "\"x\""))
+        , orderReads "getters, alpha bad" (Hosts.with good "the-alpha" (Hosts.parse "1"))
+        , event "set" (Hosts.parse "{\"type\":\"set\",\"value\":3}")
+        , event "move" (Hosts.parse "{\"type\":\"move\",\"dx\":1,\"dy\":2,\"z\":0}")
+        , event "reset" (Hosts.parse "{\"type\":\"reset\",\"value\":1}")
+        , event "unknown tag" (Hosts.parse "{\"type\":\"other\"}")
+        , event "tag a number" (Hosts.parse "{\"type\":1}")
+        , event "tag inherited" (Hosts.inheriting (Hosts.parse "{\"type\":\"reset\"}"))
+        , event "tag toString" (Hosts.parse "{\"type\":\"toString\"}")
+        , event "no tag" (Hosts.parse "{\"value\":3}")
+        , event "set NaN" (Hosts.with (Hosts.parse "{\"type\":\"set\"}") "value" (Hosts.nan ⊤))
+        , eventText "parse set" "{\"type\":\"set\",\"value\":4}"
+        , eventText "parse not JSON" "{\"type\":"
+        , eventText "parse move 1.5" "{\"type\":\"move\",\"dx\":1.5,\"dy\":2}"
+        , placed "placed" (Hosts.parse "{\"label\":\"p\",\"at\":{\"x\":1,\"y\":2}}")
+        , placed "placed y 1.5" (Hosts.parse "{\"label\":\"p\",\"at\":{\"x\":1,\"y\":1.5}}")
+        , item "item" goodItem
+        , item "gray" (Hosts.with goodItem "color" (Hosts.parse "{\"Gray\":5}"))
+        , item "red" (Hosts.with goodItem "color" (Hosts.parse "\"Red\""))
+        , item "red with arguments" (Hosts.with goodItem "color" (Hosts.parse "{\"Red\":[]}"))
+        , item "gray without" (Hosts.with goodItem "color" (Hosts.parse "\"Gray\""))
+        , item "rgb two" (Hosts.with goodItem "color" (Hosts.parse "{\"Rgb\":[1,2]}"))
+        , item "two keys" (Hosts.with goodItem "color" (Hosts.parse "{\"Red\":1,\"Gray\":2}"))
+        , item "constructor key" (Hosts.with goodItem "color" (Hosts.parse "\"constructor\""))
+        , item "label missing" (Hosts.with goodItem "label" (Hosts.undefined ⊤))
+        , item "label null" (Hosts.with goodItem "label" (Hosts.parse "null"))
+        , item "pos three" (Hosts.with goodItem "pos" (Hosts.parse "[1,2,3]"))
+        , item "pos 1.5" (Hosts.with goodItem "pos" (Hosts.parse "[1.5,2]"))
+        , item "tag two characters" (Hosts.with goodItem "tags" (Hosts.parse "[\"xy\"]"))
+        , item "small 2^31" (Hosts.with goodItem "small" (Hosts.parse "2147483648"))
+        , item "unit one" (Hosts.with goodItem "unit" (Hosts.parse "[1]"))
+        , itemJson "decode" "{\"pos\":[3,4],\"color\":\"Red\",\"tags\":[],\"small\":-1,\"unit\":[]}"
+        , itemJson
+            "decode bad"
+            "{\"pos\":[3,4],\"color\":\"Blue\",\"tags\":[],\"small\":-1,\"unit\":[]}"
+        , itemJson "decode not JSON" "nope"
+        ]
