@@ -1,0 +1,21 @@
+module RecordUpdateEscapes
+  25:7 construction r.items: rejected escaped: it was given to JavaScript, or kept by a callee (approx)
+  31:7 construction r.items: rejected escaped: it was given to JavaScript, or kept by a callee (approx)
+  37:7 construction r.items: rejected escaped: it was given to JavaScript, or kept by a callee (approx)
+  46:15 construction r.items: rejected escaped: it was given to JavaScript, or kept by a callee (approx)
+  66:9 call RecordUpdateEscapes.openEsc <record>.items: rejected alias: xs holds it and is read at 67:7 (RecordUpdateEscapes.openEsc writes π1.items)
+  67:7 construction xs: rejected escaped: it was given to JavaScript, or kept by a callee (approx)
+  73:7 construction xs: rejected escaped: it was given to JavaScript, or kept by a callee (approx)
+  summary size: π1.items R
+  summary keep: π1 RAE; res .children ⊤{lost}, .finalizers ⊤{lost}, .observers ⊤{lost}, .outcome ⊤{lost}, .parent ⊤{lost}, .parked ⊤{lost}, .scope ⊤{lost}, .stack esc2{lost}, .stack⋆ ~esc1{excl π1} ~λ ~π1
+  summary openEsc: π1 RE, π1.items RAW; res π1.items
+  summary plain: π1 RE, π1.items RAW; res π1.items
+  summary viaCallee: π1 RE, π1.items RAW; res π1.items
+  summary inList: π1 R, π1[*] RE, π1[*].items RAW; res fresh1 π1[*].items{excl π1}; xreq excl π1
+  summary escHead: π1 R, π1[*] RE
+  summary caller: π1 RAEW; res π1
+  summary callerOfHead: π1 RAEW; res π1
+  demands 7: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 7
+total 7: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 7
+cause escaped 6
+cause alias 1

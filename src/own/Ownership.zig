@@ -4692,9 +4692,19 @@ const Walker = struct {
     /// made: one at ε whose type, by the crossing rule before it, crossed —
     /// a record that holds no list, function or JavaScript value. A cell
     /// below a tracked root is what it was before, whatever its type.
+    ///
+    /// The type is one the cell's key decides, since `nonlist` is set once
+    /// for the key: a parameter's pattern's, a site's or a call result's
+    /// instruction's, a capture's local's. A top-level value's cell is made at
+    /// the type of the read that names it, which a polymorphic value varies,
+    /// so it stays a list's.
     fn holdsOnlyRecords(w: *Walker, c: Cell) Allocator.Error!bool {
         if (c.path != eps) return false;
-        const v = c.ty.unwrap() orelse return false;
+        const v = switch (c.kind) {
+            .param, .site, .result => c.ty.unwrap(),
+            .env => w.localType(c.a),
+            else => null,
+        } orelse return false;
         return !try w.listTrackedVar(v);
     }
 
@@ -5414,9 +5424,15 @@ const Walker = struct {
 
     /// The element cell a taken cell stands for, at its path; and the record
     /// cell an `except` cell with fields was written over (`listView`).
-    fn takenBase(w: *Walker, c: u32) Allocator.Error!u32 {
-        const t = w.cells.items[c];
-        if (t.kind == .except) return if (t.b == except_all) c else t.a;
+    fn takenBase(w: *Walker, c_in: u32) Allocator.Error!u32 {
+        var c = c_in;
+        var t = w.cells.items[c];
+        // An `except` over a taken element is that element, taken.
+        if (t.kind == .except) {
+            if (t.b == except_all) return c;
+            c = t.a;
+            t = w.cells.items[c];
+        }
         if (t.kind != .taken) return c;
         if (t.path == eps) return t.a;
         var b = w.cells.items[t.a];
@@ -5936,6 +5952,10 @@ const Walker = struct {
     /// Join `c` to Esc at `at` (§4.3), in the list and in the index by cell
     /// that `escapedBefore` reads.
     fn noteEscape(w: *Walker, c: u32, at: u32, why: u32) Allocator.Error!void {
+        // §31.2: an `except` cell with fields escapes the record cell it was
+        // written over, which is what a list's facts look it up by.
+        const x = w.cells.items[c];
+        if (x.kind == .except and x.b != except_all) try w.noteEscape(x.a, at, why);
         const key = escKey(w.cells.items[c], w.cells.items[c].path);
         const head = try w.esc_heads.getOrPut(w.a, key);
         const previous = if (head.found_existing) head.value_ptr.* else none;
