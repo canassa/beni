@@ -1,9 +1,12 @@
 module RecordCopy
   17:19 construction copy.items: rejected alias: box.items holds it and is read at 17:38
   23:19 construction <call List.copy>: accepted call
+  27:15 update <call Record.copy>: rejected alias: box holds it and is read at 27:13 [copy]
   summary shallow: π1 R, π1.items RW
   summary deep: π1 R, π1.items R, π1.items[*] R
   summary again: π1 RA, π1.items A; res .0.items π1.items, .1 π1
   demands 2: accepted 1 (fresh 0, call 1, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+  records 1: accepted 0 (hoisted 0), pending 0, rejected 1 (copy 1, restructure 0); eager reads 0
 total 2: accepted 1 (fresh 0, call 1, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+records 1: accepted 0 (hoisted 0), pending 0, rejected 1 (copy 1, restructure 0); eager reads 0
 cause alias 1

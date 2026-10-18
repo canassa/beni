@@ -1,12 +1,16 @@
 module MaybeDefault
+  21:18 update model: accepted param
   21:36 List.push model.items: accepted param
+  26:14 update model: accepted param
   26:32 List.push model.items: accepted param
+  27:10 update edited: rejected captured-edit: edited is captured, and how often the closure runs is not known (approx) [copy]
   33:22 call MaybeDefault.handle model.items: accepted once
   38:58 call MaybeDefault.handle model.items: accepted once
   45:13 call MaybeDefault.handle model.items: accepted param (MaybeDefault.handle writes π1.items)
   53:44 call MaybeDefault.handle model.items: rejected later-use: model.items is read again at 54:30
   58:56 call MaybeDefault.handler model.items: rejected later-use: model.items is read again at 58:24 (MaybeDefault.handler writes π1.items)
   63:37 call MaybeDefault.handle model.items: rejected later-use: model.items is read again at 63:54
+  63:54 update model: accepted param
   68:46 List.push model.items: rejected later-use: model.items is read again at 68:73
   68:73 call MaybeDefault.handle model.items: rejected later-use: model.items is read again at 68:5
   72:65 call MaybeDefault.handle model.items: rejected later-use: model.items is read again at 72:19
@@ -21,5 +25,7 @@ module MaybeDefault
   summary editInMaybe: π1 RA, π1.items RAW, π1.items[*] A, π1.other A; res .items ~π1.items, .items[*] ~π1.items[*], .other ~π1.other, ~π1
   summary andThen: π2 RA, π2.items AW, π2.items[*] A, π2.other A; res .items ~π2.items, .items[*] ~π2.items[*], .other ~π2.other, ~π2
   demands 11: accepted 5 (fresh 0, call 0, param 3, callback-param 0, once 2, entry 0; assumed 0), pending 0, rejected 6
+  records 4: accepted 3 (hoisted 0), pending 0, rejected 1 (copy 1, restructure 0); eager reads 0
 total 11: accepted 5 (fresh 0, call 0, param 3, callback-param 0, once 2, entry 0; assumed 0), pending 0, rejected 6
+records 4: accepted 3 (hoisted 0), pending 0, rejected 1 (copy 1, restructure 0); eager reads 0
 cause later-use 6

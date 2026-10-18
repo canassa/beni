@@ -37,7 +37,9 @@ module FoldAccumulators
   summary sharedStart: π1 R, π1[*] A; res #Dict.0#Node.2 ~fresh1{lost} ~shared(FoldAccumulators.shared)#Dict.0#Node.2{lost}, #Dict.0#Node.2[*] ~fresh2{lost} ~π1[*]
   summary capturedAfter: π1 R, π1[*] A; res .readers ~fresh2{shared}, .readers[*]◇ ~fresh1{lost}, .readers[*]◇[*] ~π1[*], .values ~fresh1{lost}, .values[*] ~π1[*]
   demands 26: accepted 17 (fresh 9, call 0, param 1, callback-param 7, once 0, entry 0; assumed 0), pending 0, rejected 9
+  records 0: accepted 0 (hoisted 0), pending 0, rejected 0 (copy 0, restructure 0); eager reads 1
 total 26: accepted 17 (fresh 9, call 0, param 1, callback-param 7, once 0, entry 0; assumed 0), pending 0, rejected 9
+records 0: accepted 0 (hoisted 0), pending 0, rejected 0 (copy 0, restructure 0); eager reads 1
 cause escaped 2
 cause captured 1
 cause call 1

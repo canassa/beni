@@ -1,8 +1,12 @@
 module RecordUpdateEscapes
+  23:9 update r: accepted param
   25:7 construction r.items: rejected escaped: it was given to JavaScript, or kept by a callee (approx)
   31:7 construction r.items: rejected escaped: it was given to JavaScript, or kept by a callee (approx)
+  36:14 update r: accepted param
   37:7 construction r.items: rejected escaped: it was given to JavaScript, or kept by a callee (approx)
+  44:17 update r: accepted param
   46:15 construction r.items: rejected escaped: it was given to JavaScript, or kept by a callee (approx)
+  56:17 update r: accepted param
   66:9 call RecordUpdateEscapes.openEsc <record>.items: rejected alias: xs holds it and is read at 67:7 (RecordUpdateEscapes.openEsc writes π1.items)
   67:7 construction xs: rejected escaped: it was given to JavaScript, or kept by a callee (approx)
   73:7 construction xs: rejected escaped: it was given to JavaScript, or kept by a callee (approx)
@@ -16,6 +20,8 @@ module RecordUpdateEscapes
   summary caller: π1 RAEW; res π1
   summary callerOfHead: π1 RAEW; res π1
   demands 7: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 7
+  records 4: accepted 4 (hoisted 0), pending 0, rejected 0 (copy 0, restructure 0); eager reads 0
 total 7: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 7
+records 4: accepted 4 (hoisted 0), pending 0, rejected 0 (copy 0, restructure 0); eager reads 0
 cause escaped 6
 cause alias 1

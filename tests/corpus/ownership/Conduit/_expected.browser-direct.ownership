@@ -44,11 +44,29 @@ module Article
   summary link: π1.slug R, π2 RA, π2⟨events⟩ A; res ⟨events⟩⋆ ~π2⟨events⟩, ⟨render⟩ fresh1{lost}, ⟨render⟩⋆ ~π2
   demands 3: accepted 3 (fresh 3, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
 module ArticlePage
+  73:15 update model: accepted param
+  82:15 update model: accepted param
+  85:15 update model: accepted param
+  88:15 update model: accepted param
+  91:15 update model: accepted param
+  94:15 update model: accepted param
+  97:15 update model: accepted param
   97:47 ++ model.errors: accepted param
+  108:23 update model: accepted param
+  108:50 update article: accepted param
+  114:15 update model: accepted param
   114:47 ++ model.errors: accepted param
+  119:23 update model: accepted param
+  131:23 update model: accepted param
+  141:23 update model: accepted param
+  156:15 update model: accepted param
   156:68 ++ model.errors: accepted param
+  166:23 update model: accepted param
+  176:15 update model: accepted param
   176:47 ++ model.errors: accepted param
+  186:15 update model: accepted param
   186:47 ++ model.errors: accepted param
+  203:15 update model: accepted param
   summary init: res .0.errors fresh1, .1#Cmd.0 fresh3{lost}, .1#Cmd.0[*] ~fresh2{lost}
   summary update: π1 R, π1#CompletedDeleteArticle.0#Err.0 R, π1#CompletedDeleteArticle.0#Err.0#Rejected.0 R, π1#CompletedDeleteArticle.0#Err.0#Rejected.0[*] A, π1#CompletedDeleteComment.1#Err.0 R, π1#CompletedDeleteComment.1#Err.0#Rejected.0 R, π1#CompletedDeleteComment.1#Err.0#Rejected.0[*] A, π1#CompletedFavoriteChange.0#Err.0 R, π1#CompletedFavoriteChange.0#Err.0#Rejected.0 R, π1#CompletedFavoriteChange.0#Err.0#Rejected.0[*] A, π1#CompletedFavoriteChange.0#Ok.0 RA, π1#CompletedFollowChange.0#Err.0 R, π1#CompletedFollowChange.0#Err.0#Rejected.0 R, π1#CompletedFollowChange.0#Err.0#Rejected.0[*] A, π1#CompletedLoadArticle.0#Ok.0 RA, π1#CompletedLoadComments.0#Ok.0 RA, π1#CompletedPostComment.0#Err.0 R, π1#CompletedPostComment.0#Err.0#Rejected.0 R, π1#CompletedPostComment.0#Err.0#Rejected.0[*] A, π2 RA, π2.article RA, π2.article#Loaded.0.tags RA, π2.comments RA, π2.comments#Loaded.0.1 RA, π2.comments#Loaded.0.1[*] R, π2.errors RAW; res .0 π2, .0.article π2.article, .0.article#Loaded.0 π1#CompletedFavoriteChange.0#Ok.0 π1#CompletedLoadArticle.0#Ok.0, .0.article#Loaded.0.tags π2.article#Loaded.0.tags, .0.comments π2.comments, .0.comments#Loaded.0.1 fresh4{lost} π1#CompletedLoadComments.0#Ok.0 π2.comments#Loaded.0.1, .0.comments#Loaded.0.1[*] ~fresh5{lost}, .0.errors fresh1 π2.errors{excl π1#CompletedDeleteArticle.0#Err.0#Rejected.0, excl π1#CompletedDeleteComment.1#Err.0#Rejected.0, excl π1#CompletedFavoriteChange.0#Err.0#Rejected.0, excl π1#CompletedFollowChange.0#Err.0#Rejected.0, excl π1#CompletedPostComment.0#Err.0#Rejected.0, sep π1#CompletedDeleteArticle.0#Err.0#Rejected.0[*] π2.errors[*], sep π1#CompletedDeleteComment.1#Err.0#Rejected.0[*] π2.errors[*], sep π1#CompletedFavoriteChange.0#Err.0#Rejected.0[*] π2.errors[*], sep π1#CompletedFollowChange.0#Err.0#Rejected.0[*] π2.errors[*], sep π1#CompletedPostComment.0#Err.0#Rejected.0[*] π2.errors[*]}, .0.errors[*] ~fresh3 ~π1#CompletedDeleteArticle.0#Err.0#Rejected.0[*] ~π1#CompletedDeleteComment.1#Err.0#Rejected.0[*] ~π1#CompletedFavoriteChange.0#Err.0#Rejected.0[*] ~π1#CompletedFollowChange.0#Err.0#Rejected.0[*] ~π1#CompletedPostComment.0#Err.0#Rejected.0[*], .1#Cmd.0 fresh2 shared(Cmd.none)#Cmd.0
   summary toSession: π1.session R
@@ -59,6 +77,7 @@ module ArticlePage
   summary viewAddComment: res ⟨render⟩ fresh2{lost}, ⟨render⟩⋆ ~fresh1{lost}
   summary viewComment: res ⟨render⟩ fresh2{lost}, ⟨render⟩⋆ ~fresh1{lost}
   demands 5: accepted 5 (fresh 0, call 0, param 5, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 18: accepted 18 (hoisted 0), pending 0, rejected 0 (copy 0, restructure 0); eager reads 2
 module Author
   summary fromJson: unused
   summary profile: unused
@@ -80,6 +99,20 @@ module Comment
 module Deploy
   demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
 module Editor
+  86:15 update model: accepted param
+  89:33 update form: accepted callback-param (Editor.updateForm supplies it owned)
+  92:33 update form: accepted callback-param (Editor.updateForm supplies it owned)
+  95:33 update form: accepted callback-param (Editor.updateForm supplies it owned)
+  98:33 update form: accepted callback-param (Editor.updateForm supplies it owned)
+  105:15 update model: accepted param
+  112:15 update model: accepted param
+  115:15 update model: accepted param
+  125:15 update model: accepted param
+  135:15 update model: accepted param
+  198:17 update model: accepted param
+  201:17 update model: accepted param
+  204:17 update model: accepted param
+  207:17 update model: accepted param
   223:11 ++ title: accepted fresh
   summary initNew: res .0.status#EditingNew.0 fresh1, .1#Cmd.0 shared(Cmd.none)#Cmd.0
   summary initEdit: res .1#Cmd.0 fresh2{lost}, .1#Cmd.0[*] ~fresh1{lost}
@@ -94,7 +127,11 @@ module Editor
   summary viewAuthenticated: π2.status R, π2.status#Editing.1 RA, π2.status#EditingNew.0 RA; res ⟨render⟩ fresh2{lost}, ⟨render⟩⋆ ~fresh1{lost} ~shared(Page.loading)⟨render⟩ ~π2.status#Editing.1 ~π2.status#EditingNew.0
   summary viewForm: π2 RA; res ⟨render⟩ fresh1{lost}, ⟨render⟩⋆ ~π2
   demands 1: accepted 1 (fresh 1, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 14: accepted 14 (hoisted 0), pending 0, rejected 0 (copy 0, restructure 0); eager reads 0
 module Feed
+  50:21 update model: accepted param
+  59:21 update model: accepted param
+  64:21 update model: accepted param
   64:53 ++ model.errors: accepted param
   summary init: π3.articles RA, π3.total R; res #Model.0.articles π3.articles, #Model.0.errors fresh1
   summary update: π1 R, π1#CompletedFavorite.0#Err.0 R, π1#CompletedFavorite.0#Err.0#Rejected.0 R, π1#CompletedFavorite.0#Err.0#Rejected.0[*] A, π1#CompletedFavorite.0#Ok.0 RA, π2#Model.0 RA, π2#Model.0.articles RA, π2#Model.0.articles[*] A, π2#Model.0.errors RAW; res .0#Model.0 π2#Model.0, .0#Model.0.articles fresh3{lost} π2#Model.0.articles, .0#Model.0.articles[*] ~fresh4{lost} ~π1#CompletedFavorite.0#Ok.0 ~π2#Model.0.articles[*], .0#Model.0.errors fresh1 π2#Model.0.errors{excl π1#CompletedFavorite.0#Err.0#Rejected.0, sep π1#CompletedFavorite.0#Err.0#Rejected.0[*] π2#Model.0.errors[*]}, .0#Model.0.errors[*] ~fresh5 ~π1#CompletedFavorite.0#Err.0#Rejected.0[*], .1#Cmd.0 fresh2 shared(Cmd.none)#Cmd.0
@@ -104,8 +141,18 @@ module Feed
   summary viewPagination: π1 RA; res ⟨events⟩⋆ ~π1, ⟨render⟩ fresh2{lost}, ⟨render⟩⋆ ~fresh1 ~π1; π1 calls 0, unseen
   summary viewTabs: π1 RA, π1[*].2 A; res ⟨events⟩⋆ ~π1[*].2, ⟨render⟩ fresh1{lost}, ⟨render⟩⋆ ~π1
   demands 1: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 3: accepted 3 (hoisted 0), pending 0, rejected 0 (copy 0, restructure 0); eager reads 1
 module Home
+  74:15 update model: accepted param
+  77:15 update model: accepted param
+  80:15 update model: accepted param
+  83:15 update model: accepted param
+  86:15 update model: accepted param
+  89:15 update model: accepted param
+  92:15 update model: accepted param
   97:43 call Feed.update feed#Model.0.errors: accepted param (Feed.update writes π2#Model.0.errors)
+  98:23 update model: accepted param
+  118:15 update model: accepted param
   135:9 send <CompletedFeedLoad …>: accepted call
   228:16 ++ yours: accepted fresh
   summary init: res .1#Cmd.0 fresh6{lost}, .1#Cmd.0[*] ~fresh3{lost}, .1#Cmd.0[*]#Keyed.0 ~fresh2{lost}, .1#Cmd.0[*]#Keyed.0[*] ~fresh1{lost}, .1#Cmd.0[*]#Keyed.2 ~λ, .1#Cmd.0[*]#KeyedNow.0 ~fresh5{lost}, .1#Cmd.0[*]#KeyedNow.0[*] ~fresh4{lost}, .1#Cmd.0[*]#KeyedNow.2 ~λ
@@ -116,7 +163,15 @@ module Home
   summary viewTabs: res ⟨render⟩ fresh2{lost}, ⟨render⟩⋆ ~fresh1{lost}
   summary viewTags: π1 RA; res ⟨render⟩ fresh1{lost}, ⟨render⟩⋆ ~π1
   demands 3: accepted 3 (fresh 1, call 1, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 9: accepted 9 (hoisted 0), pending 0, rejected 0 (copy 0, restructure 0); eager reads 0
 module Login
+  52:23 update model: accepted param
+  59:23 update model: accepted param
+  62:33 update form: accepted callback-param (Login.updateForm supplies it owned)
+  65:33 update form: accepted callback-param (Login.updateForm supplies it owned)
+  68:15 update model: accepted param
+  72:15 update model: accepted param
+  83:32 update model: accepted param
   summary init: res .0.problems fresh1, .1#Cmd.0 shared(Cmd.none)#Cmd.0
   summary update: π1 R, π1#CompletedLogin.0#Err.0 R, π1#CompletedLogin.0#Err.0#Rejected.0 R, π2 RA, π2.form R, π2.problems RA; res .0 π2, .0.problems fresh2{lost} π2.problems, .0.problems[*] ~fresh1{lost}, .1#Cmd.0 fresh3{lost} shared(Cmd.none)#Cmd.0, .1#Cmd.0[*] ~fresh4{lost}
   summary updateForm: π1 R, π2.form R, π2.problems RA; res .0.problems π2.problems, .1#Cmd.0 shared(Cmd.none)#Cmd.0; π1 calls ≤1
@@ -125,6 +180,7 @@ module Login
   summary view: π1.form.email R, π1.form.password R, π1.problems RA; res .content⟨render⟩ fresh2{lost}, .content⟨render⟩⋆ ~fresh1{lost} ~π1.problems
   summary viewProblems: π1 RA; res ⟨render⟩ fresh1{lost}, ⟨render⟩⋆ ~π1
   demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 7: accepted 7 (hoisted 0), pending 0, rejected 0 (copy 0, restructure 0); eager reads 0
 module Main
   228:41 call Home.update home.feed#Loaded.0#Model.0.errors: accepted param (Home.update writes π2.feed#Loaded.0#Model.0.errors)
   231:60 call ProfilePage.update profile.errors: accepted param (ProfilePage.update writes π2.errors)
@@ -151,8 +207,19 @@ module Page
   summary slowThreshold: π1 RA; res #Cmd.0 fresh1{excl π1}, #Cmd.0[*]#Perform.0◇◇ ~π1; xreq sep π1 π1
   demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
 module ProfilePage
+  75:15 update model: accepted param
+  84:15 update model: accepted param
+  89:15 update model: accepted param
+  94:15 update model: accepted param
+  97:15 update model: accepted param
   97:47 ++ model.errors: accepted param
+  100:15 update model: accepted param
+  103:15 update model: accepted param
+  106:15 update model: accepted param
+  109:15 update model: accepted param
   114:43 call Feed.update feed#Model.0.errors: accepted param (Feed.update writes π2#Model.0.errors)
+  115:23 update model: accepted param
+  135:15 update model: accepted param
   164:9 send <CompletedFeedLoad …>: accepted call
   summary init: res .0.errors fresh1, .1#Cmd.0 fresh7{lost}, .1#Cmd.0[*] ~fresh2{lost}, .1#Cmd.0[*]#Keyed.0 ~fresh4{lost}, .1#Cmd.0[*]#Keyed.0[*] ~fresh3{lost}, .1#Cmd.0[*]#Keyed.2 ~λ, .1#Cmd.0[*]#KeyedNow.0 ~fresh6{lost}, .1#Cmd.0[*]#KeyedNow.0[*] ~fresh5{lost}, .1#Cmd.0[*]#KeyedNow.2 ~λ
   summary update: π1 R, π1#CompletedFeedLoad.1#Ok.0 RA, π1#CompletedFollowChange.0#Err.0 R, π1#CompletedFollowChange.0#Err.0#Rejected.0 R, π1#CompletedFollowChange.0#Err.0#Rejected.0[*] A, π1#GotFeedMsg.0 R, π1#GotFeedMsg.0#CompletedFavorite.0#Err.0 R, π1#GotFeedMsg.0#CompletedFavorite.0#Err.0#Rejected.0 R, π1#GotFeedMsg.0#CompletedFavorite.0#Err.0#Rejected.0[*] RA, π1#GotFeedMsg.0#CompletedFavorite.0#Ok.0 RA, π2 RA, π2.author R, π2.errors RAW, π2.feed RA, π2.feed#Loaded.0#Model.0 RA, π2.feed#Loaded.0#Model.0.articles RA, π2.feed#Loaded.0#Model.0.articles[*] RA, π2.feed#Loaded.0#Model.0.errors RAW; res .0 π2, .0.errors fresh1 π2.errors{excl π1#CompletedFollowChange.0#Err.0#Rejected.0, sep π1#CompletedFollowChange.0#Err.0#Rejected.0[*] π2.errors[*]}, .0.errors[*] ~fresh7 ~π1#CompletedFollowChange.0#Err.0#Rejected.0[*], .0.feed π2.feed, .0.feed#Loaded.0 π1#CompletedFeedLoad.1#Ok.0, .0.feed#Loaded.0#Model.0 π2.feed#Loaded.0#Model.0, .0.feed#Loaded.0#Model.0.articles ~fresh17{lost} ~π2.feed#Loaded.0#Model.0.articles, .0.feed#Loaded.0#Model.0.articles[*] ~fresh18{lost} ~π1#GotFeedMsg.0#CompletedFavorite.0#Ok.0 ~π2.feed#Loaded.0#Model.0.articles[*], .0.feed#Loaded.0#Model.0.errors ~fresh8 ~π2.feed#Loaded.0#Model.0.errors{excl π1#GotFeedMsg.0#CompletedFavorite.0#Err.0#Rejected.0, sep π1#GotFeedMsg.0#CompletedFavorite.0#Err.0#Rejected.0[*] π2.feed#Loaded.0#Model.0.errors[*]}, .0.feed#Loaded.0#Model.0.errors[*] ~fresh19 ~π1#GotFeedMsg.0#CompletedFavorite.0#Err.0#Rejected.0[*], .1#Cmd.0 fresh2{shared} shared(Cmd.none)#Cmd.0, .1#Cmd.0[*] ~fresh21{shared}, .1#Cmd.0[*]#After.0 ~fresh27{lost}, .1#Cmd.0[*]#After.0⋆ ~fresh26{shared} ~λ ~⊤{lost}, .1#Cmd.0[*]#Cancel.0 ~fresh24{lost}, .1#Cmd.0[*]#Cancel.0[*] ~esc15 ~fresh20{lost} ~shared(Cmd.none)#Cmd.0[*]#Cancel.0[*], .1#Cmd.0[*]#CancelAll.0 ~fresh25{lost}, .1#Cmd.0[*]#CancelAll.0[*] ~esc16 ~fresh20{lost} ~shared(Cmd.none)#Cmd.0[*]#CancelAll.0[*], .1#Cmd.0[*]#Keyed.0 fresh4{lost} ~fresh22{lost}, .1#Cmd.0[*]#Keyed.0[*] fresh3{lost} ~esc11 ~fresh20{lost} ~shared(Cmd.none)#Cmd.0[*]#Keyed.0[*], .1#Cmd.0[*]#Keyed.2 λ λ, .1#Cmd.0[*]#Keyed.2◇ ~esc12 ~shared(Cmd.none)#Cmd.0[*]#Keyed.2, .1#Cmd.0[*]#KeyedNow.0 fresh6{lost} ~fresh23{lost}, .1#Cmd.0[*]#KeyedNow.0[*] fresh5{lost} ~esc13 ~fresh20{lost} ~shared(Cmd.none)#Cmd.0[*]#KeyedNow.0[*], .1#Cmd.0[*]#KeyedNow.2 λ λ, .1#Cmd.0[*]#KeyedNow.2◇ ~esc14 ~shared(Cmd.none)#Cmd.0[*]#KeyedNow.2, .1#Cmd.0[*]#Now.0◇ ~esc10 ~shared(Cmd.none)#Cmd.0[*]#Now.0, .1#Cmd.0[*]#Perform.0◇ ~esc9 ~shared(Cmd.none)#Cmd.0[*]#Perform.0
@@ -162,7 +229,16 @@ module ProfilePage
   summary view: π1.author R, π1.errors RA, π1.feed R, π1.feed#Loaded.0#Model.0.articles RA, π1.feed#Loaded.0#Model.0.errors RA, π1.feedTab R; res .content⟨render⟩ fresh2{lost} shared(Page.loading)⟨render⟩, .content⟨render⟩⋆ ~fresh1{lost} ~shared(Page.loading)⟨render⟩ ~π1.errors ~π1.feed#Loaded.0#Model.0.articles ~π1.feed#Loaded.0#Model.0.errors
   summary viewProfile: π1.errors RA, π1.feed R, π1.feed#Loaded.0#Model.0.articles RA, π1.feed#Loaded.0#Model.0.errors RA, π1.feedTab R; res ⟨render⟩ fresh2{lost}, ⟨render⟩⋆ ~fresh1{lost} ~shared(Page.loading)⟨render⟩ ~π1.errors ~π1.feed#Loaded.0#Model.0.articles ~π1.feed#Loaded.0#Model.0.errors
   demands 3: accepted 3 (fresh 0, call 1, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 11: accepted 11 (hoisted 0), pending 0, rejected 0 (copy 0, restructure 0); eager reads 0
 module Register
+  57:23 update model: accepted param
+  69:23 update model: accepted param
+  72:33 update form: accepted callback-param (Register.updateForm supplies it owned)
+  75:33 update form: accepted callback-param (Register.updateForm supplies it owned)
+  78:33 update form: accepted callback-param (Register.updateForm supplies it owned)
+  81:15 update model: accepted param
+  85:15 update model: accepted param
+  95:32 update model: accepted param
   summary init: res .0.problems fresh1, .1#Cmd.0 shared(Cmd.none)#Cmd.0
   summary update: π1 R, π1#CompletedRegister.0#Err.0 R, π1#CompletedRegister.0#Err.0#Rejected.0 R, π2 RA, π2.form R, π2.problems RA; res .0 π2, .0.problems fresh2{lost} π2.problems, .0.problems[*] ~fresh1{lost}, .1#Cmd.0 fresh3{lost} shared(Cmd.none)#Cmd.0, .1#Cmd.0[*] ~fresh4{lost}
   summary updateForm: π1 R, π2.form R, π2.problems RA; res .0.problems π2.problems, .1#Cmd.0 shared(Cmd.none)#Cmd.0; π1 calls ≤1
@@ -170,12 +246,15 @@ module Register
   summary toSession: π1.session R
   summary view: π1.form.email R, π1.form.password R, π1.form.username R, π1.problems RA; res .content⟨render⟩ fresh1{lost}, .content⟨render⟩⋆ ~π1.problems
   demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 8: accepted 8 (hoisted 0), pending 0, rejected 0 (copy 0, restructure 0); eager reads 0
 module Route
+  49:33 update url: accepted param
   summary fromUrl: unused
   summary href: unused
   summary path: unused
   summary replaceUrl: π3 RA; res #Cmd.0 fresh1{excl π3}, #Cmd.0[*]#Perform.0◇ ~π3; π3 calls many, need owned, unseen
   demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 1: accepted 1 (hoisted 0), pending 0, rejected 0 (copy 0, restructure 0); eager reads 0
 module Session
   summary navKey: unused
   summary viewer: unused
@@ -183,6 +262,19 @@ module Session
   summary fromViewer: unused
   demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
 module Settings
+  100:15 update model: accepted param
+  103:15 update model: accepted param
+  110:31 update model: accepted param
+  115:31 update model: accepted param
+  121:33 update form: accepted callback-param (Settings.updateForm supplies it owned)
+  124:33 update form: accepted callback-param (Settings.updateForm supplies it owned)
+  127:33 update form: accepted callback-param (Settings.updateForm supplies it owned)
+  130:33 update form: accepted callback-param (Settings.updateForm supplies it owned)
+  133:33 update form: accepted callback-param (Settings.updateForm supplies it owned)
+  136:15 update model: accepted param
+  140:15 update model: accepted param
+  151:23 update model: accepted param
+  162:15 update model: accepted param
   203:14 ++ username: accepted fresh
   summary init: res .0.problems fresh1, .1#Cmd.0 fresh3{lost} shared(Cmd.none)#Cmd.0, .1#Cmd.0[*] ~fresh2{lost}
   summary load: res #Err.0#Failed.0#BadBody.0 fresh3{lost}, #Err.0#Failed.0#BadRequest.0 fresh1{lost}, #Err.0#Rejected.0 fresh2
@@ -194,4 +286,6 @@ module Settings
   summary view: π1.problems RA, π1.status R; res .content⟨render⟩ fresh2{lost}, .content⟨render⟩⋆ ~fresh1{lost} ~shared(Page.loading)⟨render⟩ ~π1.problems
   summary viewForm: res ⟨render⟩ fresh1{lost}
   demands 1: accepted 1 (fresh 1, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 13: accepted 13 (hoisted 0), pending 0, rejected 0 (copy 0, restructure 0); eager reads 0
 total 26: accepted 26 (fresh 7, call 2, param 13, callback-param 0, once 0, entry 4; assumed 0), pending 0, rejected 0
+records 84: accepted 84 (hoisted 0), pending 0, rejected 0 (copy 0, restructure 0); eager reads 3

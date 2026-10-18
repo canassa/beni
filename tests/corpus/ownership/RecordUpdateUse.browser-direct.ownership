@@ -1,14 +1,21 @@
 module RecordUpdateUse
   21:10 List.push xs: rejected alias: r.a holds it and is read at 22:10
+  22:10 update r: accepted fresh
   29:10 List.push xs: rejected alias: r.a holds it and is read at 30:7
+  30:7 update r: accepted fresh
   37:10 List.push xs: rejected alias: r.inner.a holds it and is read at 38:10
+  38:10 update r: accepted fresh
   46:10 List.push xs: rejected alias: r.a holds it and is read at 49:13
+  49:13 update r: accepted fresh
   59:10 List.push xs: accepted fresh
+  60:10 update r: accepted fresh
   summary pushThenUpdate: res .p fresh1, .q fresh1
   summary ofParam: π1 RAW, π1[*] RA; res .0.a π1, .1 π1, .1[*] ~π1[*]
   summary nested: res .p fresh1, .q fresh1
   summary inBranch: res .p fresh1 fresh2, .q fresh1
   summary replaced: res .p fresh2, .q fresh1
   demands 5: accepted 1 (fresh 1, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
+  records 5: accepted 5 (hoisted 0), pending 0, rejected 0 (copy 0, restructure 0); eager reads 0
 total 5: accepted 1 (fresh 1, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
+records 5: accepted 5 (hoisted 0), pending 0, rejected 0 (copy 0, restructure 0); eager reads 0
 cause alias 4

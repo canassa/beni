@@ -7,16 +7,19 @@ module Differential
   57:24 call Differential.addOne Differential.empty: rejected top-level: Differential.empty is a top-level value (Differential.addOne writes π1)
   63:5 List.update rows: accepted fresh
   63:5 List.update rows[*].a: rejected disjoint: another operand of the same operation reaches it (<lambda> writes what List.update supplies it)
+  63:29 update r: rejected exclusive: List.update hands its parameter 1 an element of rows, whose elements may share one list [copy]
   63:41 construction r.a: rejected exclusive: List.update hands its parameter 1 an element of rows, whose elements may share one list
   70:19 construction a.todos: accepted call
   85:13 construction s: rejected alias: kept holds it and is read at 86:14
   87:14 construction copied: accepted call
   92:16 List.update rows: accepted param
   92:16 List.update rows[*].tags: accepted param (<lambda> writes what List.update supplies it)
+  92:40 update r: accepted callback-param (List.update supplies it owned)
   92:55 construction r.tags: accepted callback-param (List.update supplies it owned)
   96:30 call Differential.t40 <literal>: accepted fresh (Differential.t40 writes π1)
   96:30 call Differential.t40 <literal>[*].tags: accepted fresh (Differential.t40 writes π1[*].tags)
   100:18 call List.map cards[*].tags: accepted param (<lambda> writes what List.map supplies it)
+  102:9 update c: accepted callback-param (List.map supplies it owned)
   102:24 construction c.tags: accepted callback-param (List.map supplies it owned)
   108:30 call Differential.t42 <literal>[*].tags: accepted fresh (Differential.t42 writes π1[*].tags)
   114:18 call Differential.t42 <literal>[*].tags: rejected exclusive: the callee needs the list's elements not to share, and they may (Differential.t42 writes π1[*].tags)
@@ -52,7 +55,9 @@ module Differential
   summary t57Repeated: unused
   summary t57RepeatedRows: unused
   demands 32: accepted 23 (fresh 8, call 2, param 9, callback-param 4, once 0, entry 0; assumed 0), pending 0, rejected 9
+  records 3: accepted 2 (hoisted 0), pending 0, rejected 1 (copy 1, restructure 0); eager reads 0
 total 32: accepted 23 (fresh 8, call 2, param 9, callback-param 4, once 0, entry 0; assumed 0), pending 0, rejected 9
+records 3: accepted 2 (hoisted 0), pending 0, rejected 1 (copy 1, restructure 0); eager reads 0
 cause top-level 2
 cause disjoint 2
 cause alias 1

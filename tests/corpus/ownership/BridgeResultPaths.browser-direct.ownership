@@ -55,7 +55,9 @@ module BridgeResultPaths
   summary readerFor: π1 RA; res λ, ◇ π1
   summary carriedCapture: res .0 fresh1, .1 ⊤call{lost}, .1⋆ ~fresh1 ~λ
   demands 34: accepted 18 (fresh 12, call 0, param 0, callback-param 6, once 0, entry 0; assumed 0), pending 1, rejected 15
+  records 0: accepted 0 (hoisted 0), pending 0, rejected 0 (copy 0, restructure 0); eager reads 4
 total 34: accepted 18 (fresh 12, call 0, param 0, callback-param 6, once 0, entry 0; assumed 0), pending 1, rejected 15
+records 0: accepted 0 (hoisted 0), pending 0, rejected 0 (copy 0, restructure 0); eager reads 4
 cause disjoint 2
 cause later-use 6
 cause alias 2
