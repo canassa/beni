@@ -7,6 +7,7 @@
 -- are records: a field named like a key of `Object.prototype`, own and inherited; an inherited field; a key present as `undefined`; extra keys; NaN, an infinity, 1.5 and 2⁵³ where an `Int` or a finite `Float` is read; `Value`, `null`, `nullable` and `optional`; a recursive union at the depth bound and one past it; and a record whose declaration lists its fields out of their canonical order, read through getters that log the keys each run read. `run/SchemaErrorUnreadShapes` reads them all through
 -- shapes, against the same answers.
 import Hosts
+import Json
 import Node
 import Schema exposing (Value)
 
@@ -28,6 +29,12 @@ schema Tree tagged "kind" of
     Branch as "branch"
         value : Float
         children : List Tree
+
+
+-- A derived record whose field is named like a key of `Object.prototype`.
+type alias Proto =
+    toString : Maybe String
+    label : String
 
 
 orderValid : Value → String
@@ -85,6 +92,15 @@ orderDeep n =
     "tree ${String.fromInt n} deep: ${valid} | ${read}"
 
 
+-- Through getters that answer a value once and `"flake"` after: each run
+-- must read each key once, a record holding a key named like
+-- `Object.prototype`'s (`toString`) included.
+orderFlaky : String, Value → String
+orderFlaky label v =
+    keys = [ "zeta", "the-alpha", "mid", "note", "count", "toString", "extra", "tree" ]
+    "${label}: ${orderValid (Hosts.flaky v keys)} | ${orderRead (Hosts.flaky v keys)}"
+
+
 -- Through getters: the keys each run read, in order, up to its failure.
 orderReads : String, Value → String
 orderReads label v =
@@ -114,6 +130,37 @@ good =
         (orderText
             "{\"kind\":\"branch\",\"value\":0.5,\"children\":[{\"kind\":\"leaf\",\"value\":-1}]}"
         )
+
+
+protoNone : Proto
+protoNone = { toString = Nothing, label = "none" }
+
+
+protoText : Proto → String
+protoText p =
+    shown = Maybe.withDefault p.toString "-"
+    "${p.label} ${shown}"
+
+
+protoValid : Value → String
+protoValid v = protoText (Result.withDefault (Json.decodeValue v) protoNone)
+
+
+protoRead : Value → String
+protoRead v =
+    case Json.decodeValue v of
+        Ok p →
+            protoText p
+
+        Err issues →
+            "invalid (${String.fromInt (List.length issues)})"
+
+
+-- Through getters that answer once and `"flake"` after.
+protoFlaky : String, Value → String
+protoFlaky label v =
+    keys = [ "toString", "label" ]
+    "${label}: ${protoValid (Hosts.flaky v keys)} | ${protoRead (Hosts.flaky v keys)}"
 
 
 main : Node.Program
@@ -151,7 +198,13 @@ main =
         , order
             "children not a list"
             (Hosts.parse (orderText "{\"kind\":\"branch\",\"value\":1,\"children\":{}}"))
+        , orderFlaky "flaky getters, good" good
+        , orderFlaky
+            "flaky getters, own toString"
+            (Hosts.with good "toString" (Hosts.parse "\"own\""))
         , orderReads "getters, good" good
         , orderReads "getters, mid bad" (Hosts.with good "mid" (Hosts.parse "\"x\""))
         , orderReads "getters, alpha bad" (Hosts.with good "the-alpha" (Hosts.parse "1"))
+        , protoFlaky "flaky proto" (Hosts.parse "{\"toString\":\"t\",\"label\":\"l\"}")
+        , protoFlaky "flaky proto, no toString" (Hosts.parse "{\"label\":\"l\"}")
         ]

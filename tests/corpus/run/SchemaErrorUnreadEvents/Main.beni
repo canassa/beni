@@ -131,6 +131,19 @@ kindRead v =
             "invalid (${String.fromInt (List.length issues)})"
 
 
+-- Through getters that answer once and `"flake"` after.
+kindFlaky : String, Value → String
+kindFlaky label v =
+    keys = [ "constructor", "valueOf" ]
+    "${label}: ${kindValid (Hosts.flaky v keys)} | ${kindRead (Hosts.flaky v keys)}"
+
+
+eventFlaky : String, Value → String
+eventFlaky label v =
+    keys = [ "type", "dy", "dx" ]
+    "${label}: ${eventValid (Hosts.flaky v keys)} | ${eventRead (Hosts.flaky v keys)}"
+
+
 kind : String, Value → String
 kind label v = "${label}: ${kindValid v} | ${kindRead v}"
 
@@ -154,6 +167,8 @@ main =
         , eventText "parse set" "{\"type\":\"set\",\"value\":4}"
         , eventText "parse not JSON" "{\"type\":"
         , eventText "parse move 1.5" "{\"type\":\"move\",\"dx\":1.5,\"dy\":2}"
+        , kindFlaky "flaky named" (Hosts.parse "{\"constructor\":\"named\",\"valueOf\":\"v\"}")
+        , eventFlaky "flaky move" (Hosts.parse "{\"type\":\"move\",\"dx\":1,\"dy\":2}")
         , kind "own constructor" (Hosts.parse "{\"constructor\":\"plain\"}")
         , kind "inherited constructor" (Hosts.parse "{}")
         , kind "own valueOf" (Hosts.parse "{\"constructor\":\"named\",\"valueOf\":\"v\"}")

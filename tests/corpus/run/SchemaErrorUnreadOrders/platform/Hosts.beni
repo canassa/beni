@@ -65,6 +65,36 @@ logged v keys =
     Js.to out
 
 
+--| An object whose keys are getters for those of `keys` that `v` owns,
+--| each answering `v`'s value the first time it is read and `"flake"` every
+--| time after: a run that reads a key twice sees the second answer, which no
+--| fold of the read log can hide.
+pub flaky : Value, List String → Value
+flaky v keys =
+    out = Js.object []
+    _ = List.map keys λk →
+        if not (Js.to (Js.call (Js.global "Object") "hasOwn" [ Js.from v, Js.from k ])) then
+            Js.undefined
+        else
+            count = Js.array []
+            Js.call (Js.global "Object") "defineProperty"
+                [ out
+                , Js.from k
+                , Js.object
+                    [ ( "get"
+                      , Js.from λ⊤ →
+                          _ = Js.call count "push" [ Js.from 1 ]
+                          if Js.same (Js.get count "length") (Js.from 1) then
+                              Js.get (Js.from v) k
+                          else
+                              Js.from "flake"
+                      )
+                    , ( "enumerable", Js.from True )
+                    ]
+                ]
+    Js.to out
+
+
 pub reads : ⊤ → String
 reads ⊤ =
     log = logOf ⊤
