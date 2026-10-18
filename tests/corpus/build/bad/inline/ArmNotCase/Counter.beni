@@ -1,0 +1,27 @@
+--! A counter whose `update` calls another function with its message.
+
+pub type alias Model =
+    count : Int
+
+
+pub init : ⊤ → Model
+init ⊤ = { count = 3 }
+
+
+pub type Msg
+    = Inc
+    | Dec
+
+
+pub update : Msg, Model → Model
+update msg model = bump msg model
+
+
+bump : Msg, Model → Model
+bump msg model =
+    case msg of
+        Inc →
+            { model | count = model.count + 1 }
+
+        Dec →
+            { model | count = model.count - 1 }

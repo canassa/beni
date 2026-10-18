@@ -1,0 +1,41 @@
+-- `CounterMsg` wraps `Counter`'s message beside an `Int`. A handler takes
+-- the fields of the key's leaf constructor, `Inc`'s, and no message, so
+-- the branch that binds the `Int` has nothing to read it from
+-- (docs/design/browser-inline.md §8.4): a limit, class 4 (§5), reported at
+-- the `case`.
+import Browser
+import Counter
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    c : Counter.Model
+    by : Int
+
+
+type Msg
+    = CounterMsg Int Counter.Msg
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        CounterMsg by sub →
+            { model | c = Counter.update sub model.c, by = by }
+
+
+view : Model → Html Msg
+view model =
+    <div data-role="app">
+        <output>{model.c.count}</output>
+        <button data-role="inc" onClick={CounterMsg 1 Counter.Inc}>+</button>
+        <button data-role="dec" onClick={CounterMsg 2 Counter.Dec}>-</button>
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → { c = Counter.init ⊤, by = 0 }, update = update, view = view })
+        "root"
