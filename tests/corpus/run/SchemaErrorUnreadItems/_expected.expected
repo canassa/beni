@@ -1,0 +1,24 @@
+placed: p at 1, 2 | p at 1, 2
+placed y 1.5: invalid | invalid (1)
+item: { color = Rgb 1 2 3, label = Just "l", pos = (1,2), small = 7, tags = [Just 'x',Nothing,Just 'y'], unit = ⊤ } | { color = Rgb 1 2 3, label = Just "l", pos = (1,2), small = 7, tags = [Just 'x',Nothing,Just 'y'], unit = ⊤ }
+gray: { color = Gray 5, label = Just "l", pos = (1,2), small = 7, tags = [Just 'x',Nothing,Just 'y'], unit = ⊤ } | { color = Gray 5, label = Just "l", pos = (1,2), small = 7, tags = [Just 'x',Nothing,Just 'y'], unit = ⊤ }
+red: { color = Red, label = Just "l", pos = (1,2), small = 7, tags = [Just 'x',Nothing,Just 'y'], unit = ⊤ } | { color = Red, label = Just "l", pos = (1,2), small = 7, tags = [Just 'x',Nothing,Just 'y'], unit = ⊤ }
+red with arguments: invalid | invalid (1)
+gray without: invalid | invalid (1)
+rgb two: invalid | invalid (1)
+two keys: invalid | invalid (1)
+constructor key: invalid | invalid (1)
+label missing: { color = Rgb 1 2 3, label = Nothing, pos = (1,2), small = 7, tags = [Just 'x',Nothing,Just 'y'], unit = ⊤ } | { color = Rgb 1 2 3, label = Nothing, pos = (1,2), small = 7, tags = [Just 'x',Nothing,Just 'y'], unit = ⊤ }
+label null: { color = Rgb 1 2 3, label = Nothing, pos = (1,2), small = 7, tags = [Just 'x',Nothing,Just 'y'], unit = ⊤ } | { color = Rgb 1 2 3, label = Nothing, pos = (1,2), small = 7, tags = [Just 'x',Nothing,Just 'y'], unit = ⊤ }
+pos three: invalid | invalid (1)
+pos 1.5: invalid | invalid (1)
+tag two characters: invalid | invalid (1)
+small 2^31: invalid | invalid (1)
+unit one: invalid | invalid (1)
+decode: { color = Red, label = Nothing, pos = (3,4), small = -1, tags = [], unit = ⊤ } | { color = Red, label = Nothing, pos = (3,4), small = -1, tags = [], unit = ⊤ }
+decode bad: invalid | invalid (1)
+decode not JSON: invalid | invalid (1)
+decode label absent: { color = Red, label = Nothing, pos = (3,4), small = -1, tags = [], unit = ⊤ } | { color = Red, label = Nothing, pos = (3,4), small = -1, tags = [], unit = ⊤ }
+decode label null: { color = Red, label = Nothing, pos = (3,4), small = -1, tags = [], unit = ⊤ } | { color = Red, label = Nothing, pos = (3,4), small = -1, tags = [], unit = ⊤ }
+decode duplicate key and __proto__: { color = Red, label = Nothing, pos = (3,4), small = 2, tags = [], unit = ⊤ } | { color = Red, label = Nothing, pos = (3,4), small = 2, tags = [], unit = ⊤ }
+decode duplicate key, last bad: invalid | invalid (1)

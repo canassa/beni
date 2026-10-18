@@ -1,0 +1,164 @@
+-- A run whose error nothing reads is a validator (`schema.md` §6, *A run whose
+-- failure is never read is a validator*), and in a program with fewer than
+-- `SchemaValid.shape_threshold` such runs it keeps its compiled worker (*How a
+-- program chooses between shapes and workers*). Every input below is read
+-- twice, by such a run and by one that reads its error, and each line prints
+-- both answers; the corpus also builds this through the library. Its inputs
+-- are tagged unions: an unknown tag and a non-string one, an inherited tag, a payload read through getters, `parse` of text that is not JSON, and a discriminator and a payload key named like keys of `Object.prototype`. `run/SchemaErrorUnreadShapes` reads them all through
+-- shapes, against the same answers.
+import Hosts
+import Node
+import Schema exposing (Value)
+
+
+schema Event tagged "type" of
+    Set as "set"
+        value : Int
+    Move as "move"
+        dy : Int
+        dx : Int
+    Reset as "reset"
+
+
+-- A union whose discriminator is a name `Object.prototype` holds, and a
+-- record whose key is one: each must be the value's own.
+schema Kind tagged "constructor" of
+    Plain as "plain"
+    Named as "named"
+        valueOf : String
+
+
+describe : Event.Type → String
+describe ev =
+    case ev of
+        Event.Set s →
+            "set ${String.fromInt s.value}"
+
+        Event.Move m →
+            "move ${String.fromInt m.dx} ${String.fromInt m.dy}"
+
+        Event.Reset →
+            "reset"
+
+
+eventValid : Value → String
+eventValid v =
+    case Result.toMaybe (Schema.read (Event.schema ⊤) v) of
+        Just found →
+            describe found
+
+        Nothing →
+            "invalid"
+
+
+eventRead : Value → String
+eventRead v =
+    case Schema.read (Event.schema ⊤) v of
+        Ok found →
+            describe found
+
+        Err issues →
+            "invalid (${String.fromInt (List.length issues)})"
+
+
+eventParse : String → String
+eventParse text =
+    case Schema.parse (Event.schema ⊤) text of
+        Ok found →
+            describe found
+
+        Err _ →
+            "invalid"
+
+
+eventParseRead : String → String
+eventParseRead text =
+    case Schema.parse (Event.schema ⊤) text of
+        Ok found →
+            describe found
+
+        Err issues →
+            "invalid (${String.fromInt (List.length issues)})"
+
+
+event : String, Value → String
+event label v = "${label}: ${eventValid v} | ${eventRead v}"
+
+
+-- Through getters: the keys each run read of a payload whose declaration
+-- lists its fields out of their canonical order.
+eventReads : String, Value → String
+eventReads label v =
+    keys = [ "type", "dy", "dx" ]
+    valid = eventValid (Hosts.logged v keys)
+    validReads = Hosts.reads ⊤
+    read = eventRead (Hosts.logged v keys)
+    readReads = Hosts.reads ⊤
+    "${label}: ${valid} [${validReads}] | ${read} [${readReads}]"
+
+
+eventText : String, String → String
+eventText label text = "${label}: ${eventParse text} | ${eventParseRead text}"
+
+
+kindText : Kind.Type → String
+kindText k =
+    case k of
+        Kind.Plain →
+            "plain"
+
+        Kind.Named n →
+            "named ${n.valueOf}"
+
+
+kindValid : Value → String
+kindValid v =
+    case Schema.read (Kind.schema ⊤) v of
+        Ok k →
+            kindText k
+
+        Err _ →
+            "invalid"
+
+
+kindRead : Value → String
+kindRead v =
+    case Schema.read (Kind.schema ⊤) v of
+        Ok k →
+            kindText k
+
+        Err issues →
+            "invalid (${String.fromInt (List.length issues)})"
+
+
+kind : String, Value → String
+kind label v = "${label}: ${kindValid v} | ${kindRead v}"
+
+
+main : Node.Program
+main =
+    Node.printLines
+        [ eventReads "getters, move" (Hosts.parse "{\"type\":\"move\",\"dx\":1,\"dy\":2}")
+        , eventReads
+            "getters, move dy bad"
+            (Hosts.parse "{\"type\":\"move\",\"dx\":1,\"dy\":\"2\"}")
+        , event "set" (Hosts.parse "{\"type\":\"set\",\"value\":3}")
+        , event "move" (Hosts.parse "{\"type\":\"move\",\"dx\":1,\"dy\":2,\"z\":0}")
+        , event "reset" (Hosts.parse "{\"type\":\"reset\",\"value\":1}")
+        , event "unknown tag" (Hosts.parse "{\"type\":\"other\"}")
+        , event "tag a number" (Hosts.parse "{\"type\":1}")
+        , event "tag inherited" (Hosts.inheriting (Hosts.parse "{\"type\":\"reset\"}"))
+        , event "tag toString" (Hosts.parse "{\"type\":\"toString\"}")
+        , event "no tag" (Hosts.parse "{\"value\":3}")
+        , event "set NaN" (Hosts.with (Hosts.parse "{\"type\":\"set\"}") "value" (Hosts.nan ⊤))
+        , eventText "parse set" "{\"type\":\"set\",\"value\":4}"
+        , eventText "parse not JSON" "{\"type\":"
+        , eventText "parse move 1.5" "{\"type\":\"move\",\"dx\":1.5,\"dy\":2}"
+        , kind "own constructor" (Hosts.parse "{\"constructor\":\"plain\"}")
+        , kind "inherited constructor" (Hosts.parse "{}")
+        , kind "own valueOf" (Hosts.parse "{\"constructor\":\"named\",\"valueOf\":\"v\"}")
+        , kind "inherited valueOf" (Hosts.parse "{\"constructor\":\"named\"}")
+        , kind
+            "inherited both"
+            (Hosts.inheriting (Hosts.parse "{\"constructor\":\"named\",\"valueOf\":\"v\"}"))
+        ]

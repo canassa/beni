@@ -1,6 +1,7 @@
--- `run/SchemaErrorUnread` with fifteen more shape runs (`Padding`), so that
--- every run takes its shape (`schema.md` §6, *How a program chooses between
--- shapes and workers*): one golden for the two lowerings. A run whose error
+-- `run/SchemaErrorUnreadOrders`, `…Events` and `…Items` in one program, with
+-- fifteen more shape runs (`Padding`), so that every run takes its shape
+-- (`schema.md` §6, *How a program chooses between shapes and workers*): the
+-- three, each under the threshold, read the same inputs through workers. A run whose error
 -- nothing reads is a validator (*A run whose failure is never read is a
 -- validator*): read, parse, `Json.decodeValue` and
 -- `Json.decode`, in a `case` whose `Err` arms are `Err _` or under
