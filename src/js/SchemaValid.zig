@@ -74,6 +74,18 @@ pub const Sites = struct {
         return if (has(s.direct_callees, callee)) "validRun" else "readValid";
     }
 
+    /// Whether two answers for one module name the same runs: what
+    /// `Lower` asserts of its own answer and reachability's, which read
+    /// the module's dispatch table from different places.
+    pub fn sameRuns(a: Sites, b: Sites) bool {
+        const eq = std.mem.eql;
+        return eq(u32, a.callees, b.callees) and eq(u32, a.direct_callees, b.direct_callees) and
+            eq(u32, a.parse_callees, b.parse_callees) and eq(u32, a.args, b.args) and
+            eq(u32, a.members, b.members) and eq(u32, a.json_calls, b.json_calls) and
+            eq(u32, a.json_codecs, b.json_codecs) and eq(u32, a.json_parses, b.json_parses) and
+            eq(u32, a.json_callees, b.json_callees);
+    }
+
     /// The core-private value a `Json` validator run's call is.
     pub fn jsonRunner(s: Sites, call: u32) []const u8 {
         return if (has(s.json_parses, call)) "validParse" else "validRun";

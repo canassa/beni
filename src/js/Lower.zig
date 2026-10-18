@@ -630,6 +630,13 @@ pub fn lower(
     try l.findPrograms();
     // `schema.md` §6: the runs that compile to a validator.
     l.valid_sites = try SchemaValid.sites(l.scratch, l.in.graph, l.in.interfaces, if (l.in.schemas) |sg| sg.provenance else &.{}, l.interner.global, l.bir, l.in.dispatch, l.in.module, l.in.schemas, l.in.schema_library);
+    // Reachability found the module's validator runs from its own dispatch
+    // table (`Reach.Result.dispatch`); the runs this lowering writes must be
+    // the ones it kept, or a `Json` run would name a worker set it dropped.
+    if (std.debug.runtime_safety) if (l.in.live) |r| if (l.in.module.int() < r.dispatch.len and r.dispatch[l.in.module.int()] != l.in.dispatch) {
+        const reached = try SchemaValid.sites(l.scratch, l.in.graph, l.in.interfaces, if (l.in.schemas) |sg| sg.provenance else &.{}, l.interner.global, l.bir, r.dispatch[l.in.module.int()], l.in.module, l.in.schemas, l.in.schema_library);
+        if (!reached.sameRuns(l.valid_sites)) std.debug.panic("SchemaValid: reachability and lowering found different validator runs in module {d}", .{l.in.module.int()});
+    };
 
     // Declarations first: the import list is what lowering DISCOVERS (the
     // §9.1 reference edges are a byproduct of resolution, not a pass), so
