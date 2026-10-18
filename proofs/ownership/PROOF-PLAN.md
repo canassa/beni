@@ -391,12 +391,13 @@ The modules form one import chain, because the audit rejects an equation lemma t
 `abstractShapes` (`FlatAbstract`: a scalar or a flat list with empty element cells) goes with the same step, because a record abstract has fields and a nested list has element cells;
 `links = []` goes with views, and it is where the #169 link invariant enters: the clause becomes the link clauses of `Invariant`.
 The case lemmas use these clauses (a flat reference has the footprint `[root]`), so the next fragment needs a more general relation and restates part of the case work.
-Order: the #169 link clauses on `Invariant` first (its prerequisite #253 is done), then field atoms, the scalar primitives, records, then `branch` and the case expressions, then views under the link clauses.
+Order: the #169 link clauses on `Invariant` first (its prerequisite #253 is done), then the scalar primitives, field atoms, records, then `branch` and the case expressions, then views under the link clauses.
+The scalar primitives moved ahead of field atoms on 2026-10-18 (PR #353): they keep all four flat-only clauses, so they need no change of the relation, while field atoms replace `types` and `abstractShapes`.
 `invariant_preserved_fragment` in its planned form, the premises of `invariant_preserved` restricted to the fragment, stays open: `flat_preserved` proves the step under the stronger relation, and the trace corollary is proved from it.
 `Trace.lean` records the reviewer's probe programs as `#guard`s: `every` (all six forms, accepted, equal traces, one in-place write), `liveAlias` and `observed` (in the fragment, rejected, different traces).
 
-As built (2026-10-18): `FlatANF0` also contains the integer primitives `add`, `sub`, `eq` and `lt` on two integer atoms (`Support.ScalarOp`).
-The case keeps all four flat-only clauses: its operands are integers, its result is a scalar, and neither runtime changes the heap, the links, the observers or the reads.
+As built (2026-10-18): `FlatANF0` also contains the integer primitives `add`, `sub`, `eq` and `lt` on two atoms, which typing fixes to `Int` (`Support.ScalarOp`).
+The case keeps all four flat-only clauses, `heapInts`, `types`, `abstractShapes` and `links = []`: its operands are integers, its result is a scalar, and neither runtime changes the heap, the links, the observers or the reads.
 `Scalar.scalar_preserved` (`Primitives.lean`) and `Static.scalar_static` (`Static.lean`) prove it; `flat_preserved`, `flat_static` and the live-set lemmas have the arm.
 The probe `arith` checks the four primitives at build time.
 Field atoms and records, which replace the `types` and `abstractShapes` clauses, are the next step of the order above.
