@@ -1,0 +1,5 @@
+-- `{ r | }` with a comment after its bar: the comment stays on the bar's
+-- line, and the brace closes at the column it opened.
+f : { r | -- any record
+    } → Int
+f x = 1

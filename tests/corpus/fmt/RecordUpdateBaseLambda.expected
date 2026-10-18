@@ -1,0 +1,7 @@
+-- An update's base may be a call whose last argument is a lambda
+-- (language.md §6.3, §12.3). The formatter drops the lambda's redundant
+-- parentheses, so the update must parse with the lambda written bare.
+withConfig f = { count = f 1 }
+
+
+c = { withConfig λx → x + 1 | count = 2 }

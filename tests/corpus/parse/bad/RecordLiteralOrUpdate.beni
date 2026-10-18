@@ -1,0 +1,10 @@
+-- A `{` whose first name is followed by neither the `=` of a record literal
+-- nor the `|` that ends an update's base (language.md §6.3) is one error,
+-- naming both readings, and nothing inside the braces is resolved: `name`
+-- is no naming error.
+lit value =
+    { name value = 2 }
+
+
+other a b =
+    { a b }

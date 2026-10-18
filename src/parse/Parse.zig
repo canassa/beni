@@ -3432,6 +3432,21 @@ fn parseRecord(p: *Parse) Allocator.Error!Index {
     if (p.atUpdateBase()) {
         p.context = .record_update;
         const base = try p.parseUpdateBase();
+        p.skipInvalid();
+        if (p.peek() != .pipe and !p.atCutMarker()) {
+            // `{ name value = 2 }`: a literal whose `=` is missing, or an
+            // update whose `|` is. Neither reading is the program, so the
+            // braces are one error and nothing inside them is resolved.
+            @branchHint(.cold);
+            var item = p.itemAt(.expected_token);
+            item.expected = .pipe;
+            item.context = .record;
+            item.construct = .record_or_update;
+            const node = try p.errorNode(.error_expr, item);
+            p.recover();
+            try p.expectCloser(.r_brace, open);
+            return node;
+        }
         _ = try p.expectToken(.pipe);
         const fields = try p.parseFields();
         try p.expectCloser(.r_brace, open);
@@ -3455,7 +3470,9 @@ fn atUpdateBase(p: *const Parse) bool {
         .lower_ident => switch (p.peekAt(1)) {
             .pipe => true,
             .dot_lower => !p.adjacent(p.tok_i + 1),
-            else => |tag| tag == .underscore or canStartAtom(tag),
+            // An argument, or a lambda as the last one (§12.3): the formatter
+            // writes `{ f (λx → x) | … }` without the parentheses.
+            else => |tag| tag == .underscore or tag == .lambda or tag == .backslash or canStartAtom(tag),
         },
         .qualified_lower, .l_paren => true,
         else => false,
