@@ -37,6 +37,11 @@ parse not JSON: invalid | invalid (1)
 parse move 1.5: invalid | invalid (1)
 placed: p at 1, 2 | p at 1, 2
 placed y 1.5: invalid | invalid (1)
+own constructor: plain | plain
+inherited constructor: invalid | invalid (1)
+own valueOf: named v | named v
+inherited valueOf: invalid | invalid (1)
+inherited both: invalid | invalid (1)
 item: { color = Rgb 1 2 3, label = Just "l", pos = (1,2), small = 7, tags = [Just 'x',Nothing,Just 'y'], unit = ⊤ } | { color = Rgb 1 2 3, label = Just "l", pos = (1,2), small = 7, tags = [Just 'x',Nothing,Just 'y'], unit = ⊤ }
 gray: { color = Gray 5, label = Just "l", pos = (1,2), small = 7, tags = [Just 'x',Nothing,Just 'y'], unit = ⊤ } | { color = Gray 5, label = Just "l", pos = (1,2), small = 7, tags = [Just 'x',Nothing,Just 'y'], unit = ⊤ }
 red: { color = Red, label = Just "l", pos = (1,2), small = 7, tags = [Just 'x',Nothing,Just 'y'], unit = ⊤ } | { color = Red, label = Just "l", pos = (1,2), small = 7, tags = [Just 'x',Nothing,Just 'y'], unit = ⊤ }
