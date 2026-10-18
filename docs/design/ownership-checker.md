@@ -5331,6 +5331,12 @@ pub copy : { r | } → { r | }
   every field is π₁'s at that field. It writes nothing and is not a demand.
 - **Its body** is written over `Js`, as `List.copy`'s is (§3.4): `({ ...r })`. The spread copies the keys in their
   order, so the copy has the record's hidden class, and under `--release` the short names are already the keys.
+
+  *Amended 2026-10-18 (the owner, #381):* the body is a one-line `foreign` sibling, `core/Record.js`'s
+  `export const copy = (r) => ({ ...r });`, not `Js`. Only a spread keeps the record's hidden class: on Node 24,
+  `%HaveSameMap(r, { ...r })` is true and `%HaveSameMap(r, Object.assign({}, r))` false, since V8 builds the second
+  from the empty object's map. `Js` has no spread, and `Object.assign` is all it can write. The `foreign` has no
+  ownership words: the asserted row above replaces its summary, as `List.length`'s does.
 - **Where it is**: `Record` is a prelude module for qualified use (§31.0 item 8), so the fix an error
   offers needs no import.
 
