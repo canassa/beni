@@ -307,6 +307,10 @@ pub const Input = struct {
     /// `--schema-library`: a schema's directions run its description
     /// through the library and call no worker.
     schema_library: bool = false,
+    /// Whether the program's shape runs take their shapes (`SchemaValid`,
+    /// `shape_threshold`), decided once for the whole program by `Emit`.
+    /// An embedded module's packed edges are made with it false.
+    schema_shapes: bool = false,
     /// Exports proved to be inert carriers by the sibling scanner.
     forwarding_foreigns: []const []const ForeignProof = &.{},
     /// `browser-inline.md` §7: per lifted piece, what it reaches. A piece's
@@ -989,7 +993,7 @@ pub const Builder = struct {
         // its instruction adds no edge and the sibling is not imported.
         const in_place = try b.jsInPlace(bir, m);
         const sg_now = b.schemaGraph();
-        const valid: SchemaValid.Sites = if (b.in.interner) |it| try SchemaValid.sites(b.scratch, b.in.graph, b.in.interfaces, b.in.provenance, it, bir, dispatch, m, if (sg_now) |*g| g else null, b.in.schema_library) else .{};
+        const valid: SchemaValid.Sites = if (b.in.interner) |it| try SchemaValid.sites(b.scratch, b.in.graph, b.in.interfaces, b.in.provenance, it, bir, dispatch, m, if (sg_now) |*g| g else null, b.in.schema_library, b.in.schema_shapes) else .{};
 
         const decl_at = try b.scratch.alloc(u32, bir.decls.len + 1);
         var decl_targets: std.ArrayList(Target) = .empty;

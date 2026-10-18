@@ -277,6 +277,10 @@ pub const Input = struct {
     /// `--schema-library`: every schema root runs through the library
     /// interpreter (`schema.md` §10, the forced library path).
     schema_library: bool = false,
+    /// Whether this module's shape runs take their shapes: the program's
+    /// choice (`Reach.Input.schema_shapes`), false for a module whose edges
+    /// came from the embedded pack.
+    schema_shapes: bool = false,
     /// Per `core_private_values`, whether the build's `core/List` declares
     /// it (`corePrivateDeclared`). The embedded core declares all five; a
     /// `--core-root` core that does not is refused where a module needs
@@ -629,12 +633,12 @@ pub fn lower(
     try l.findInlines();
     try l.findPrograms();
     // `schema.md` §6: the runs that compile to a validator.
-    l.valid_sites = try SchemaValid.sites(l.scratch, l.in.graph, l.in.interfaces, if (l.in.schemas) |sg| sg.provenance else &.{}, l.interner.global, l.bir, l.in.dispatch, l.in.module, l.in.schemas, l.in.schema_library);
+    l.valid_sites = try SchemaValid.sites(l.scratch, l.in.graph, l.in.interfaces, if (l.in.schemas) |sg| sg.provenance else &.{}, l.interner.global, l.bir, l.in.dispatch, l.in.module, l.in.schemas, l.in.schema_library, l.in.schema_shapes);
     // Reachability found the module's validator runs from its own dispatch
     // table (`Reach.Result.dispatch`); the runs this lowering writes must be
     // the ones it kept, or a `Json` run would name a worker set it dropped.
     if (std.debug.runtime_safety) if (l.in.live) |r| if (l.in.module.int() < r.dispatch.len and r.dispatch[l.in.module.int()] != l.in.dispatch) {
-        const reached = try SchemaValid.sites(l.scratch, l.in.graph, l.in.interfaces, if (l.in.schemas) |sg| sg.provenance else &.{}, l.interner.global, l.bir, r.dispatch[l.in.module.int()], l.in.module, l.in.schemas, l.in.schema_library);
+        const reached = try SchemaValid.sites(l.scratch, l.in.graph, l.in.interfaces, if (l.in.schemas) |sg| sg.provenance else &.{}, l.interner.global, l.bir, r.dispatch[l.in.module.int()], l.in.module, l.in.schemas, l.in.schema_library, l.in.schema_shapes);
         if (!reached.sameRuns(l.valid_sites)) std.debug.panic("SchemaValid: reachability and lowering found different validator runs in module {d}", .{l.in.module.int()});
     };
 

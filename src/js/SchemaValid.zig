@@ -135,6 +135,17 @@ pub const Sites = struct {
 /// What a run's callee is.
 const Run = enum { schema_read, schema_parse, json_read, json_parse };
 
+/// The program's count of shape runs at and above which every shape run
+/// takes its shape, and below which every one keeps its validator worker
+/// (`schema.md` §6, *How a program chooses between shapes and workers*).
+pub const shape_threshold = 19;
+
+/// The shape runs `sites` finds in one module with shapes on: what a
+/// program's count adds up, module by module.
+pub fn shapeRunCount(s: Sites) usize {
+    return s.shape_callees.len;
+}
+
 pub fn sites(
     scratch: Allocator,
     graph: *const Graph,
@@ -146,6 +157,9 @@ pub fn sites(
     module: Graph.Index,
     sg: ?*const SchemaGraph,
     library: bool,
+    /// Whether this program's shape runs take their shapes: false, and each
+    /// keeps the validator worker a run with no shape keeps.
+    shapes: bool,
 ) Allocator.Error!Sites {
     var callee_list: std.ArrayList(u32) = .empty;
     var direct: std.ArrayList(u32) = .empty;
@@ -187,7 +201,7 @@ pub fn sites(
                 if (d.argsOfTerm(roots[0]).len != 0) continue;
                 const def = g.definition(module, g.codecTarget(module, k).decl) orelse continue;
                 if (def.params_end != def.params_start) continue;
-                if (try g.shapeable(scratch, g.codecTarget(module, k))) {
+                if (shapes and try g.shapeable(scratch, g.codecTarget(module, k))) {
                     try shape_callees.append(scratch, callee.int());
                     if (run == .json_parse) try shape_parses.append(scratch, callee.int());
                     try shape_json.append(scratch, call.int());
@@ -215,7 +229,7 @@ pub fn sites(
                     if (def.params_end != def.params_start) break :blk null;
                     break :blk .{ arg.int(), member.int(), ref };
                 };
-                if (direct_ref) |r| if (try sg.?.shapeable(scratch, r[2])) {
+                if (direct_ref) |r| if (shapes and try sg.?.shapeable(scratch, r[2])) {
                     try shape_callees.append(scratch, callee.int());
                     if (run == .schema_parse) try shape_parses.append(scratch, callee.int());
                     try shape_args.append(scratch, r[0]);
