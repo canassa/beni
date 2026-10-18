@@ -109,3 +109,6 @@ tests/pending/browser/direct/TimeoutAroundRequest.beni PageFailed
 tests/pending/browser/direct/DefectInTurnRender.beni PageFailed
 
 
+# CK-254 (2026-10-18, issue #286): a parameter's folded levels are not checked
+# (`paramHole`, ownership-checker.md §16.7). Red until decision (d), `lvl`.
+tests/pending/ownership/ParamHole.beni exit=0 ownership-differs
