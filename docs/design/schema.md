@@ -1311,6 +1311,15 @@ and nothing of `core/Schema`'s issue makers ships for it.
   `Result.withDefault` or `Result.toMaybe`, whose bodies match `Err _` and read nothing else of
   the error. The list is closed and names core functions only, because only their bodies are
   known not to read it; a program's own function that discards the error is a use like any other.
+  *(Amended 2026-10-18, the owner.)* **This rule is a syntactic recogniser for three shapes**,
+  not an analysis. It takes a run only as the scrutinee of a `case` whose `Err` arms are all
+  `Err _`, as the first argument of `Result.withDefault`, or as the first argument of
+  `Result.toMaybe` (`SchemaValid`). Every other use keeps the issues, even where the error is
+  in fact never read. **The owed form** is the general analysis: a run is a validator wherever its
+  `Err` payload is dead. That adds the cases the recogniser misses, such as
+  `Result.toMaybe (Result.andThen run f)`, `Result.withDefault (Result.map run f) d`, a run
+  bound by a `let` and matched later, and a program's own function that matches `Err _`
+  (#376).
 - **Only the program that reads pays.** The decision is the run's own, not the declaration's: a
   declaration whose runs are all validators ships no failure branch with prose; one with runs of
   both kinds ships both worker sets, each reached only from its own runs, so a program pays for
