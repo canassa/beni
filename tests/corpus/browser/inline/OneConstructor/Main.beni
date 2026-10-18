@@ -1,0 +1,63 @@
+-- Messages of a type of one constructor, three ways (write-sets.md,
+-- `follow_single`; docs/design/browser-inline.md §8.4):
+--
+-- - `Bump.Msg` is `Bump`, of no fields: the key is `BumpMsg · Bump`, its
+--   handler takes nothing.
+-- - `Pick.Msg` is `Pick String`, and `Pick.update` matches a literal under
+--   it, `Pick "reset"`: the key tree still splits at that `case`, so typing
+--   `reset` clears the count and anything else adds one.
+-- - `Whole.Msg` is `Say String`, and `Whole.update` reads the message
+--   whole, handing it to `describe`: the arm is the ordinary code, the
+--   message built from the key's field (D-e).
+import Browser
+import Bump
+import Html exposing (Html)
+import Pick
+import Tea
+import Whole
+
+
+type alias Model =
+    b : Bump.Model
+    p : Pick.Model
+    w : Whole.Model
+
+
+type Msg
+    = BumpMsg Bump.Msg
+    | PickMsg Pick.Msg
+    | WholeMsg Whole.Msg
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        BumpMsg sub →
+            { model | b = Bump.update sub model.b }
+
+        PickMsg sub →
+            { model | p = Pick.update sub model.p }
+
+        WholeMsg sub →
+            { model | w = Whole.update sub model.w }
+
+
+view : Model → Html Msg
+view model =
+    <div>
+        {Html.map (Bump.view model.b) BumpMsg}
+        {Html.map (Pick.view model.p) PickMsg}
+        {Html.map (Whole.view model.w) WholeMsg}
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox
+            { init = λ⊤ → { b = Bump.init ⊤, p = Pick.init ⊤, w = Whole.init ⊤ }
+            , update = update
+            , view = view
+            }
+        )
+        "root"

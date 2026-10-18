@@ -1,0 +1,38 @@
+-- Another module's markup whose top element is a `<tr>`, placed in the
+-- program's `<tbody>` (docs/design/browser-inline.md §8.4): the page is one
+-- string, parsed whole, so the row stays in the table and the element table
+-- counts what the parser makes. A row placed outside a table is refused at
+-- the program's hole (#373's check, `markup_restructured`).
+import Browser
+import Grid
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    g : Grid.Model
+
+
+type Msg
+    = GridMsg Grid.Msg
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        GridMsg sub →
+            { model | g = Grid.update sub model.g }
+
+
+view : Model → Html Msg
+view model =
+    <table data-role="app">
+        <tbody>{Html.map (Grid.view model.g) GridMsg}</tbody>
+    </table>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → { g = Grid.init ⊤ }, update = update, view = view })
+        "root"

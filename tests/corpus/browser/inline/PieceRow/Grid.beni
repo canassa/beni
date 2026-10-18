@@ -1,0 +1,30 @@
+--! A count shown in a table.
+
+import Html exposing (Html)
+
+
+pub type alias Model =
+    n : Int
+
+
+pub init : ⊤ → Model
+init ⊤ = { n = 0 }
+
+
+pub type Msg
+    = Add
+
+
+pub update : Msg, Model → Model
+update msg model =
+    case msg of
+        Add →
+            { model | n = model.n + 1 }
+
+
+pub view : Model → Html Msg
+view model =
+    <tr data-role="row">
+        <td><output>{model.n}</output></td>
+        <td><button data-role="add" onClick={Add}>Add</button></td>
+    </tr>

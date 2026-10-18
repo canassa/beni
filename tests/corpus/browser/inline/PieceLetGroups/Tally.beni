@@ -1,0 +1,39 @@
+--! Two counts, and a view whose `let`s name what it shows.
+
+import Html exposing (Html)
+
+
+pub type alias Model =
+    cups : Int
+    coins : Int
+
+
+pub init : ⊤ → Model
+init ⊤ = { cups = 0, coins = 0 }
+
+
+pub type Msg
+    = AddCup
+    | AddCoin
+
+
+pub update : Msg, Model → Model
+update msg model =
+    case msg of
+        AddCup →
+            { model | cups = model.cups + 1 }
+
+        AddCoin →
+            { model | coins = model.coins + 1 }
+
+
+pub view : Model → Html Msg
+view model =
+    cups = Debug.log "cups" ("Cups: " ++ String.fromInt model.cups)
+    coins = Debug.log "coins" ("Coins: " ++ String.fromInt model.coins)
+    <section data-role="tally">
+        <p>{cups}</p>
+        <p>{coins}</p>
+        <button data-role="cup" onClick={AddCup}>Cup</button>
+        <button data-role="coin" onClick={AddCoin}>Coin</button>
+    </section>
