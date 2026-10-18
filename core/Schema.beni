@@ -3589,96 +3589,62 @@ shapeKey x k =
 -- to their values in that order, which builds the record — or the variant
 -- whose payload it is.
 shapeRecord : Js.Value, Js.Value, Int → Js.Value
-shapeRecord s x depth =
-    if isObject x then
-        values = Js.array []
-        if shapeFields s 2 (lengthOf s) x depth values then
+shapeRecord s x depth = if isObject x then shapeRecordFrom s 2 x depth (Js.array []) else shapeFail
+
+
+-- The entries from the `i`th on, each read once and pushed onto
+-- `values`, then the record; `shapeFail` at the first that fails. A key
+-- is present when its read is not `undefined`.
+shapeRecordFrom : Js.Value, Int, Js.Value, Int, Js.Value → Js.Value
+shapeRecordFrom s i x depth values =
+    if i ≥ lengthOf s then
+        Js.call (Js.at s 1) "apply" [ Js.null, values ]
+    else
+        entry = Js.at s i
+        v = Js.get x (stringOf (Js.at entry 0))
+        y = shapeEntry entry (not (Js.isUndefined v)) v depth
+        if Js.same y shapeFail then
             shapeFail
         else
-            Js.call (Js.at s 1) "apply" [ Js.null, values ]
-    else
-        shapeFail
+            Js.to (Js.call values "push" [ y ])
+            shapeRecordFrom s (i + 1) x depth values
 
 
 -- `[shapeRecordOwn, make, entry₁, …]`: a record one of whose keys is a name
--- `Object.prototype` holds, each key read as `present` reads it.
+-- `Object.prototype` holds, each key present as `present` tests it.
 shapeRecordOwn : Js.Value, Js.Value, Int → Js.Value
 shapeRecordOwn s x depth =
-    if isObject x then
-        values = Js.array []
-        if shapeFieldsOwn s 2 (lengthOf s) x depth values then
-            shapeFail
-        else
-            Js.call (Js.at s 1) "apply" [ Js.null, values ]
-    else
-        shapeFail
+    if isObject x then shapeRecordOwnFrom s 2 x depth (Js.array []) else shapeFail
 
 
-shapeFieldsOwn : Js.Value, Int, Int, Js.Value, Int, Js.Value → Bool
-shapeFieldsOwn s i n x depth values =
-    if i ≥ n then
-        False
+shapeRecordOwnFrom : Js.Value, Int, Js.Value, Int, Js.Value → Js.Value
+shapeRecordOwnFrom s i x depth values =
+    if i ≥ lengthOf s then
+        Js.call (Js.at s 1) "apply" [ Js.null, values ]
     else
         entry = Js.at s i
         k = stringOf (Js.at entry 0)
-        y =
-            if prototypeKey k then
-                if hasOwn x k then shapePresent entry (Js.get x k) depth else shapeAbsent entry
-            else
-                shapeField entry x depth
+        held = present x k
+        y = shapeEntry entry held (if held then Js.get x k else Js.undefined) depth
         if Js.same y shapeFail then
-            True
+            shapeFail
         else
             Js.to (Js.call values "push" [ y ])
-            shapeFieldsOwn s (i + 1) n x depth values
+            shapeRecordOwnFrom s (i + 1) x depth values
 
 
--- The fields from the `i`th entry on, each read and pushed onto `values`.
--- True when one fails.
-shapeFields : Js.Value, Int, Int, Js.Value, Int, Js.Value → Bool
-shapeFields s i n x depth values =
-    if i ≥ n then
-        False
-    else
-        y = shapeField (Js.at s i) x depth
-        if Js.same y shapeFail then
-            True
-        else
-            Js.to (Js.call values "push" [ y ])
-            shapeFields s (i + 1) n x depth values
-
-
--- One field of a record at depth `depth`, whose key is no name
--- `Object.prototype` holds: present when its one read is not `undefined`.
-shapeField : Js.Value, Js.Value, Int → Js.Value
-shapeField entry x depth =
-    v = Js.get x (stringOf (Js.at entry 0))
-    if Js.isUndefined v then shapeAbsent entry else shapePresent entry v depth
-
-
--- A present field's value, read one level down.
-shapePresent : Js.Value, Js.Value, Int → Js.Value
-shapePresent entry v depth =
-    if depth ≥ shapeMax then
+-- One field: absent, a required one fails, an optional one is `Missing` and
+-- a `Maybe` field `Nothing`; present, its value one level down.
+shapeEntry : Js.Value, Bool, Js.Value, Int → Js.Value
+shapeEntry entry held v depth =
+    flag = if lengthOf entry == 2 then 0 else intOf (Js.at entry 2)
+    if not held then
+        if flag == 0 then shapeFail else if flag == 2 then toHost Nothing else toHost Missing
+    else if depth ≥ shapeMax then
         shapeFail
     else
         y = shapeRun (Js.at entry 1) v (depth + 1)
-        if lengthOf entry == 2 || intOf (Js.at entry 2) == 2 || Js.same y shapeFail then
-            y
-        else
-            toHost (Present y)
-
-
--- An absent field: a required one fails, an optional one is `Missing` and
--- a `Maybe` field `Nothing`.
-shapeAbsent : Js.Value → Js.Value
-shapeAbsent entry =
-    if lengthOf entry == 2 then
-        shapeFail
-    else if intOf (Js.at entry 2) == 2 then
-        toHost Nothing
-    else
-        toHost Missing
+        if flag ≠ 1 || Js.same y shapeFail then y else toHost (Present y)
 
 
 -- `[shapeList, s]`: a fresh array, each element one level down.
