@@ -1361,6 +1361,106 @@ and nothing of `core/Schema`'s issue makers ships for it.
   `emit/release/inline/PushAndTimer` 670 → 628, `app/ValidatorRun` 685 → 655, before
   `backend.md` §9's *A short `switch` is its `if`s* took the tag's `switch`.
 
+**A validator run is a shape that one shared validator reads** *(added 2026-10-18, the owner's
+decision)*. A run whose error the program discards is a type test, not a decoder, so it need not
+be specialised code per schema. Where its schema can be written as a *shape* — a compact constant
+that says what to test and what to build — the run passes that shape to one core function,
+`Schema.validShape`, which every such run in the program shares. The per-schema cost is then the
+shape, and the validator's code is paid once, in the fixed cost. This is a second lowering for a
+different case, not a change to *The specialised path*: every run whose error is read is compiled
+as before, with its issues, and a validator run whose schema has no shape keeps the validator
+workers above. The reason is the research benchmark `unique-components` on `browser-inline`, where
+each widget's reader cost about 118 B brotli and the cap leaves about 15 B per widget for it.
+
+- **When it applies.** Two facts, both decided at the call from the program's text by
+  `SchemaValid`, before reachability and lowering, which both ask it:
+  - *The error is never read.* The call is the scrutinee of a `case` whose every arm that can
+    match an `Err` matches `Err _`, as above; or it is the first argument of core's
+    `Result.withDefault` or `Result.toMaybe`, whose bodies match `Err _` and read nothing else of
+    the result's error. Any other use reads the payload. The list is closed and names core
+    functions only, because only their bodies are known not to read it.
+  - *The run is one of four, over a schema with a shape.* `Schema.read (S.schema ⊤) v` and
+    `Schema.parse (S.schema ⊤) text`, `S` a nongeneric declaration; and core's
+    `Json.decodeValue v` and `Json.decode text`, whose evidence is a nongeneric derived codec of
+    the calling module (§12.10). A `With` form takes options and is none of them.
+  A schema has a shape when every node its definition reaches, through references, is a
+  primitive, `list`, `nullable`, record, tagged union, tuple, custom type (§12.3), `Maybe`
+  (§12.4), or a check or annotation, which reading passes through; and every reference names a
+  nongeneric definition. A `via` runs program code, whose order and effects are its own, and a
+  parameter or a module's `codec` is a schema value made at run time, so a schema that reaches one
+  has no shape. A run over such a schema keeps what *Which runs* above gives it: the schema's
+  validator worker, or its issues.
+- **The shape.** One module constant per definition, `M$S$$shape`, a reachability member of its
+  own (`SchemaGraph.Member.shape`) that only shape runs and other shapes reach. It holds strings,
+  small integers, arrays, nullary constructors' values, the arrows that build records and
+  constructors, and the names of `core/Schema`'s readers, one per kind of node, written in the
+  same order in every build, so that a hundred widgets' shapes are a hundred
+  near-repeats that brotli codes as back-references:
+  - a primitive is its reader: `shapeString`, `shapeBool`, `shapeInt`, `shapeFloat`,
+    `shapeFinite`, `shapeNull`, `shapeValue`, `shapeChar`, `shapeInt32`, `shapeNever`;
+  - every other node is an array whose first element is its reader;
+  - a record is `[shapeRecord, make, entry₁, …]`, its entries in the declaration's order:
+    `[key, shape]` for a required field, `[key, shape, 1]` for an optional one
+    (`Present`/`Missing`), `[key, shape, 2]` for a derived `Maybe` field. `make` is the arrow
+    that builds the record literal from the fields' values in that order, so the record's keys
+    are `--release`'s short names and in the canonical order, as any record literal's;
+  - `[shapeList, s]`, `[shapeNullable, s]`, `[shapeMaybe, s]` (`null` is `Nothing`),
+    `[shapeJust, s]` (the inner shape reads `null` itself), `[shapeTuple, s₁, s₂, …]`;
+  - `[shapeTagged, discriminator, tag₁, v₁, …]`, each `v` a nullary variant's value, or for a
+    variant with a payload its record's shape, whose `make` builds the variant;
+  - `[shapeCtors, name₁, c₁, …]`, each `c` a nullary constructor's value or `[make, s₁, …]`,
+    `make` the arrow that builds the constructor from its arguments;
+  - another definition is its constant's name; one in a reference cycle with this one is
+    `[shapeLater, () => M$T$$shape]`.
+  Values and arrows are made by the lowering that makes the specialised path's, so a typed value
+  has one representation on both paths.
+- **The validator's contract: what `read` accepts, and nothing about why not.** For every input,
+  `validShape` succeeds exactly when the specialised `read` of the same schema succeeds, with an
+  equal value, and fails otherwise with `Err []`. `validParse` is `JSON.parse`, with only its
+  `SyntaxError` caught (CLAUDE.md rule 9), then `validShape`. As *The specialised path* reads:
+  - a record, a tagged union and a constructor object are a `typeof` `"object"` that is not
+    `null` and not an array. A key is present when its read is not `undefined`, except for the
+    twelve names `Object.prototype` has, which must be own keys (`Object.hasOwn`). Unknown keys
+    are ignored, because the four runs take the default options;
+  - the depth bound is the default 512. A present field, a list or tuple element and a
+    constructor's argument are read one level down, and each fails when the level it is read
+    from is at the bound. A variant's payload is one level below its union, and a constructor's
+    argument array one more. Recursion through references is bounded by the depth, as on the
+    specialised path;
+  - an `Int` is `Number.isSafeInteger`, a finite `Float` `Number.isFinite`, a `Float` any number
+    (NaN and the infinities too), a `Char` one code point, an `Int32` a number `x` with
+    `(x | 0) === x`, `null` only `null`, a `Value` anything, and ⊥ nothing;
+  - a tag and a constructor's name match by `===` against the strings the shape holds, so a
+    non-string tag matches none;
+  - every list and tuple is built fresh, in input order, and a record has its fields in canonical
+    order. Of the input, only primitives and `Value`s are returned as they are.
+  Fields are read in the declaration's order and each key once, as the specialised path reads
+  them, so even a getter or a proxy the host hands in sees the same reads up to the first failure.
+  (The library engine reads a present key twice, to test it and to take it; the reads are the
+  same keys in the same order.) The validator makes no issue, builds no path and holds no
+  message.
+- **One golden, three paths.** A shape-run fixture reads each input twice, once in a shape run and
+  once in a run that reads the error, which keeps the specialised path and its issues. It prints
+  both answers against one hand-written `.expected`. The corpus also builds it with
+  `--schema-library`, under which `SchemaValid` makes no shape run and every run is the library's.
+  So one golden holds the shared validator, the specialised path and the interpreter to one answer.
+- **What `--release` keeps.** `validShape`, `validParse` and the readers are core values. Each
+  kind's reader is reached only from a shape that holds it, so a build ships the readers of the
+  kinds its shapes use and no other. A build with no shape run ships none of them, and a shape run
+  reaches no issue maker.
+- **Measured** *(2026-10-18, as built; brotli 11, release)*. The shared validator's readers cost
+  about 310–410 B once, so a program with one shape run grows: `emit/release/app/ValidatorRun`
+  634 → 1 044, `inline/PushAndTimer` 583 → 1 079. What a shape saves is the issue prose of a
+  run that did not read it, and a `Json` run that was no validator before:
+  `inline/ShapeWidgets` (three widgets) is 1 857 → 1 314, and the research generator's
+  `unique-components` apps that `browser-inline` builds today (`n1-s1-lists=none`, `n1-s2`, `n1-s3`) fall
+  2 260 → 1 861, 2 090 → 1 747 and 2 417 → 2 015. Against this section's validator workers, a
+  shape costs about what a worker costs: in a generated program of N four-field records, each
+  read by a validator run, each schema from the 17th to the 32nd adds about 34 B as a worker
+  and 36 B as a shape, so the shapes' fixed cost is never repaid there. Speed: a shape run of a mid-size record (eight
+  fields, a nested record, two lists, a tagged union) takes about six times as long as its
+  validator worker (4 M runs: 0.38 s against 2.4 s under Node 24).
+
 ## 7. Effects
 
 Effectful transformations are part of the intended design. Synchronous delivery
