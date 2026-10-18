@@ -214,6 +214,18 @@ event : String, Value → String
 event label v = "${label}: ${eventValid v} | ${eventRead v}"
 
 
+-- Through getters: the keys each run read of a payload whose declaration
+-- lists its fields out of their canonical order.
+eventReads : String, Value → String
+eventReads label v =
+    keys = [ "type", "dy", "dx" ]
+    valid = eventValid (Hosts.logged v keys)
+    validReads = Hosts.reads ⊤
+    read = eventRead (Hosts.logged v keys)
+    readReads = Hosts.reads ⊤
+    "${label}: ${valid} [${validReads}] | ${read} [${readReads}]"
+
+
 eventText : String, String → String
 eventText label text = "${label}: ${eventParse text} | ${eventParseRead text}"
 
@@ -410,6 +422,10 @@ main =
         , orderReads "getters, good" good
         , orderReads "getters, mid bad" (Hosts.with good "mid" (Hosts.parse "\"x\""))
         , orderReads "getters, alpha bad" (Hosts.with good "the-alpha" (Hosts.parse "1"))
+        , eventReads "getters, move" (Hosts.parse "{\"type\":\"move\",\"dx\":1,\"dy\":2}")
+        , eventReads
+            "getters, move dy bad"
+            (Hosts.parse "{\"type\":\"move\",\"dx\":1,\"dy\":\"2\"}")
         , event "set" (Hosts.parse "{\"type\":\"set\",\"value\":3}")
         , event "move" (Hosts.parse "{\"type\":\"move\",\"dx\":1,\"dy\":2,\"z\":0}")
         , event "reset" (Hosts.parse "{\"type\":\"reset\",\"value\":1}")

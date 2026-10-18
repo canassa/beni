@@ -3583,11 +3583,13 @@ shapeKey x k =
         Js.get x k
 
 
--- `[shapeRecord, make, entry₁, …]`: a record, its fields read in the
+-- `[shapeRecord, fields, entry₁, …]`: a record, its fields read in the
 -- declaration's order, each entry `[key, shape]`, `[key, shape, 1]`
--- (optional) or `[key, shape, 2]` (a `Maybe` field), then `make` applied
--- to their values in that order, which builds the record — or the variant
--- whose payload it is.
+-- (optional) or `[key, shape, 2]` (a `Maybe` field). `fields` is an object
+-- whose keys are the record's field names, as the build writes them, in the
+-- canonical order of a record literal, each holding its entry's place in
+-- the declaration's order: the record is made by setting each key in that
+-- order to its entry's value.
 shapeRecord : Js.Value, Js.Value, Int → Js.Value
 shapeRecord s x depth = if isObject x then shapeRecordFrom s 2 x depth (Js.array []) else shapeFail
 
@@ -3598,7 +3600,7 @@ shapeRecord s x depth = if isObject x then shapeRecordFrom s 2 x depth (Js.array
 shapeRecordFrom : Js.Value, Int, Js.Value, Int, Js.Value → Js.Value
 shapeRecordFrom s i x depth values =
     if i ≥ lengthOf s then
-        Js.call (Js.at s 1) "apply" [ Js.null, values ]
+        shapeMade (Js.at s 1) values
     else
         entry = Js.at s i
         v = Js.get x (stringOf (Js.at entry 0))
@@ -3620,7 +3622,7 @@ shapeRecordOwn s x depth =
 shapeRecordOwnFrom : Js.Value, Int, Js.Value, Int, Js.Value → Js.Value
 shapeRecordOwnFrom s i x depth values =
     if i ≥ lengthOf s then
-        Js.call (Js.at s 1) "apply" [ Js.null, values ]
+        shapeMade (Js.at s 1) values
     else
         entry = Js.at s i
         k = stringOf (Js.at entry 0)
@@ -3631,6 +3633,24 @@ shapeRecordOwnFrom s i x depth values =
         else
             Js.to (Js.call values "push" [ y ])
             shapeRecordOwnFrom s (i + 1) x depth values
+
+
+-- The record of `fields` (`shapeRecord`) whose values, by entry, are
+-- `values`.
+shapeMade : Js.Value, Js.Value → Js.Value
+shapeMade fs values =
+    names = Js.call (Js.global "Object") "keys" [ fs ]
+    shapeMadeFrom fs values names 0 (Js.object [])
+
+
+shapeMadeFrom : Js.Value, Js.Value, Js.Value, Int, Js.Value → Js.Value
+shapeMadeFrom fs values names i out =
+    if i ≥ lengthOf names then
+        out
+    else
+        name = stringOf (Js.at names i)
+        Js.set out name (Js.at values (intOf (Js.get fs name)))
+        shapeMadeFrom fs values names (i + 1) out
 
 
 -- One field: absent, a required one fails, an optional one is `Missing` and
@@ -3753,8 +3773,10 @@ shapeTaggedOwn s x depth =
 
 
 -- The variant whose tag, among every other element of `s` from the `i`th,
--- is `===` to `tag`: a nullary one's value, or its payload's record shape
--- one level down; `shapeFail` when none is.
+-- is `===` to `tag`: a nullary one's value, or for `[name, record]` the
+-- variant `name` of its payload, read one level down as `record` (a schema
+-- variant is always `{$: name, a: payload}`, `backend.md` §4); `shapeFail`
+-- when none is.
 shapeVariant : Js.Value, Js.Value, Js.Value, Int, Int → Js.Value
 shapeVariant s tag x depth i =
     if i ≥ lengthOf s then
@@ -3766,7 +3788,11 @@ shapeVariant s tag x depth i =
         else if depth ≥ shapeMax then
             shapeFail
         else
-            shapeRun v x (depth + 1)
+            payload = shapeRun (Js.at v 1) x (depth + 1)
+            if Js.same payload shapeFail then
+                shapeFail
+            else
+                Js.object [ ( "$", Js.at v 0 ), ( "a", payload ) ]
     else
         shapeVariant s tag x depth (i + 2)
 
