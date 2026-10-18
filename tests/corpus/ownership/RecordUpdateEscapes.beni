@@ -1,0 +1,73 @@
+-- ownership: an escape of an updated record is an escape of its base
+-- (`ownership-checker.md` §31.2, as built; the review of #388). `s = { r |
+-- n = 1 }` is `r`'s object with `n` written, so a closure a fiber keeps
+-- that reads `s` keeps `r.items`, and the edit of `r.items` after it is
+-- rejected `escaped`, as `plain`'s of the base itself is. The same holds
+-- when a callee keeps the update (`viaCallee`), and for an element taken
+-- out of a list (`inList`), whose escape a summary states on `π1[*]`
+-- (`escHead`), so a caller that hands it a list it edits after is rejected
+-- (`callerOfHead`).
+import Task exposing (Fiber)
+
+
+size : { r | items : List Int, n : Int } → Int
+size s = List.length s.items + s.n
+
+
+keep : { r | items : List Int, n : Int } → Fiber Int
+keep s = Task.spawn λ⊤ → size s
+
+
+pub openEsc : { r | items : List Int, n : Int } → List Int
+openEsc r =
+    s = { r | n = 1 }
+    _ = Task.spawn λ⊤ → size s
+    [ …r.items, 2 ]
+
+
+pub plain : { r | items : List Int, n : Int } → List Int
+plain r =
+    _ = Task.spawn λ⊤ → size r
+    [ …r.items, 2 ]
+
+
+pub viaCallee : { r | items : List Int, n : Int } → List Int
+viaCallee r =
+    _ = keep { r | n = 1 }
+    [ …r.items, 2 ]
+
+
+pub inList : List { r | items : List Int, n : Int } → List Int
+inList rs =
+    case rs of
+        [ r, …_ ] →
+            s = { r | n = 1 }
+            _ = Task.spawn λ⊤ → size s
+            [ …r.items, 2 ]
+
+        [] →
+            []
+
+
+pub escHead : List { r | items : List Int, n : Int } → Int
+escHead rs =
+    case rs of
+        [ r, …_ ] →
+            s = { r | n = 1 }
+            _ = Task.spawn λ⊤ → size s
+            0
+
+        [] →
+            0
+
+
+pub caller : List Int → List Int
+caller xs =
+    _ = openEsc { items = xs, n = 0 }
+    [ …xs, 9 ]
+
+
+pub callerOfHead : List Int → List Int
+callerOfHead xs =
+    _ = escHead [ { items = xs, n = 0 } ]
+    [ …xs, 1 ]
