@@ -1,0 +1,21 @@
+-- A list's length read before a push stays before it under `--release`
+-- (`backend.md` §9 item 1, amended 2026-10-18, *the ordering rule*):
+-- `.length` is not a field read, and `List.push` is a call, which no
+-- pending read crosses. Right today because `push` copies; the in-place
+-- slices (§4, *Every platform edits in place*) would make the moved read
+-- answer 4.
+import Node
+
+
+pub grow : List Int → String
+grow xs =
+    three = List.length xs == 3
+    ys = List.push xs 4
+    if three then
+        "three, then ${String.fromInt (List.length ys)}"
+    else
+        "not three"
+
+
+main : Node.Program
+main = Node.printLines [ grow [ 1, 2, 3 ] ]

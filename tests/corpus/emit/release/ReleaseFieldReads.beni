@@ -1,12 +1,13 @@
 -- emit/release: a value made only of beni field reads, names and literals
--- is written at its single use past any statement between (`backend.md` §9
--- item 1, amended 2026-10-18). A beni record has no getter and nothing
--- writes it, so reading it later reads the same and does nothing.
+-- is written at its single use when nothing between may write (`backend.md`
+-- §9 item 1, amended 2026-10-18). A field read has no effect, but a write
+-- of its record would change it.
 --
--- `label`'s `n = c.name` is read in the list, after two calls of `f`; it
--- moves past both, while `shout`, a call read twice, stays bound. `plenty`'s
--- two bindings are both written at their uses, the second an `if` of a
--- field read and literals. Before, each stayed a `let`.
+-- `plenty`'s two bindings are both written at their uses, the second an
+-- `if` of a field read and literals; before, each stayed a `let`. `label`'s
+-- `n = c.name` is read after two calls of `f`, and a field read crosses no
+-- call (the ordering rule: a call not proven pure may write the record),
+-- so it stays bound.
 import Node
 
 

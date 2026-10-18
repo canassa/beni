@@ -1,0 +1,45 @@
+-- `emit/release/inline/OldValueAfterWrite`'s page (`backend.md` §9 item 1,
+-- amended 2026-10-18, *the ordering rule*): `update` reads `model.n`, then
+-- writes `n` by a record update, then keeps the value it read in `was`.
+-- A field read may not move across a write of its record, so `was` shows
+-- the count before the click. Records are spread today, so the write is a
+-- new object and the page is right either way; it pins the shape for the
+-- in-place record writes of #315. The bindings read the model after the
+-- handler's writes are done, so the rule costs them nothing.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    n : Int
+    was : Int
+
+
+type Msg
+    = Inc
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Inc →
+            old = model.n
+            next = { model | n = model.n + 1 }
+            { next | was = old }
+
+
+view : Model → Html Msg
+view model =
+    <div data-role="old">
+        <output>{model.n}</output>
+        <p>Was: {model.was}</p>
+        <button data-role="inc" onClick={Inc}>+1</button>
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → { n = 0, was = 0 }, update = update, view = view })
+        "root"
