@@ -157,8 +157,10 @@ fn program(cx: *m.Context, tree: *const m.Tree, p: *const m.Program) m.Error!m.E
 /// What a piece's owner records for the program site: the facts of
 /// `m.PieceFacts.data`, in the request's arena.
 const PieceData = struct {
-    /// The root's static markup: its one top element.
-    top: Html,
+    /// The name of the piece that is the root's static markup, its end tags
+    /// all written, and its top element's name.
+    html: []const u8,
+    top: []const u8,
     /// The elements numbered below the top element.
     count: u32,
     binds: []const PieceBind,
@@ -204,7 +206,7 @@ fn piece(cx: *m.Context, tree: *const m.Tree, req: *const m.PieceRequest) m.Erro
     for (pg.functions.items, binds, 0..) |*f, *b, j| {
         const blk = try js.block();
         try pg.writeFunction(blk, f);
-        const base = try std.fmt.allocPrint(a, "{s}$bind${d}${d}", .{ req.decl, req.ordinal, j });
+        const base = try std.fmt.allocPrint(a, "{s}$$bind${d}${d}", .{ req.decl, req.ordinal, j });
         try cx.pieceExport(base, try js.arrow(params_all, blk));
         b.* = .{ .name = base, .groups = try a.dupe(u32, f.groups) };
     }
@@ -263,7 +265,7 @@ fn piece(cx: *m.Context, tree: *const m.Tree, req: *const m.PieceRequest) m.Erro
     }
     var wire_name: ?[]const u8 = null;
     if (handlers.items.len != 0) {
-        const base = try std.fmt.allocPrint(a, "{s}$on${d}", .{ req.decl, req.ordinal });
+        const base = try std.fmt.allocPrint(a, "{s}$$on${d}", .{ req.decl, req.ordinal });
         const all = try cx.arena.alloc(m.Name, params.items.len + 1);
         all[0] = pg.elements.?;
         @memcpy(all[1..], params.items);
@@ -273,20 +275,22 @@ fn piece(cx: *m.Context, tree: *const m.Tree, req: *const m.PieceRequest) m.Erro
     const out_handlers = try a.alloc(PieceHandler, handlers.items.len);
     for (out_handlers, handlers.items, controls.items) |*o, h, c| o.* = .{ .ctor = h.ctor, .fields = h.fields, .controls = try a.dupe(u32, c.items) };
     const data = try a.create(PieceData);
-    data.* = .{ .top = try copyHtml(a, pg.top_nodes[0]), .count = pg.count, .binds = binds, .wire = wire_name, .handlers = out_handlers };
+    // The static markup, a piece of its own: every end tag of the top
+    // element written, since the program site writes more after it.
+    var html: std.ArrayList(u8) = .empty;
+    try serialise(cx.arena, &html, pg.top_nodes, null, false);
+    const html_base = try std.fmt.allocPrint(a, "{s}$$html${d}", .{ req.decl, req.ordinal });
+    try cx.pieceExport(html_base, try js.string(html.items));
+    data.* = .{ .html = html_base, .top = try a.dupe(u8, pg.top_nodes[0].name), .count = pg.count, .binds = binds, .wire = wire_name, .handlers = out_handlers };
     req.facts.* = .{ .written = true, .data = data };
-}
-
-/// `n`, deep, in `a`: what outlives the owner's lowering.
-fn copyHtml(a: std.mem.Allocator, n: Html) std.mem.Allocator.Error!Html {
-    const children = try a.alloc(Html, n.children.len);
-    for (children, n.children) |*to, c| to.* = try copyHtml(a, c);
-    return .{ .kind = n.kind, .name = try a.dupe(u8, n.name), .attributes = try a.dupe(u8, n.attributes), .void = n.void, .children = children };
 }
 
 /// One node of the static markup, as `serialise` writes it.
 const Html = struct {
-    kind: enum { element, text },
+    /// `piece`: another module's root, its markup the piece `piece` of the
+    /// page names, written in its place; `name` is its top element's.
+    kind: enum { element, text, piece },
+    piece: u32 = 0,
     /// The element's name, or the text, escaped.
     name: []const u8,
     /// ` name=value…`, written.
@@ -520,6 +524,25 @@ const Page = struct {
         return &.{};
     }
 
+    /// The page's string, `html`, with each piece's mark replaced by that
+    /// piece's name: one string, or a template of the two.
+    fn htmlValue(pg: *Page, html: []const u8) m.Error!m.Expr {
+        const js = pg.cx.js;
+        if (std.mem.indexOfScalar(u8, html, 0) == null) return js.string(html);
+        var parts: std.ArrayList(m.TemplatePart) = .empty;
+        var rest = html;
+        while (std.mem.indexOfScalar(u8, rest, 0)) |open| {
+            if (open != 0) try parts.append(pg.a(), .{ .text = rest[0..open] });
+            const close = open + 1 + std.mem.indexOfScalar(u8, rest[open + 1 ..], 0).?;
+            const index = std.fmt.parseInt(u32, rest[open + 1 .. close], 10) catch unreachable;
+            const u = pg.pieces.items[index];
+            try parts.append(pg.a(), .{ .expr = try js.name(try pg.cx.programPieceName(u.node, u.data.html)) });
+            rest = rest[close + 1 ..];
+        }
+        if (rest.len != 0) try parts.append(pg.a(), .{ .text = rest });
+        return js.template(parts.items);
+    }
+
     /// An `html` hole that is another module's root, written as pieces
     /// (§8.4): its static markup in place, its elements numbered after its
     /// top element's place.
@@ -529,7 +552,7 @@ const Page = struct {
         if (ctx != 0) return later(pg.cx, n, "another module's markup inside an `if` or a `case` of the `view`");
         try pg.pieces.append(pg.a(), .{ .node = n, .target = pg.count, .data = data });
         pg.count += 1 + data.count;
-        return data.top;
+        return .{ .kind = .piece, .name = data.top, .piece = @intCast(pg.pieces.items.len - 1) };
     }
 
     /// An `html` hole among an element's children: an eager `when`
@@ -711,7 +734,7 @@ const Page = struct {
             // The whole string the parser reads: nothing is appended after
             // it, so the end of the input may close the last node's path.
             try serialise(pg.a(), &html, pg.top_nodes, null, true);
-            try js.expression(body, try js.call(try js.member(try js.name(at), "insertAdjacentHTML"), &.{ try js.string("beforeend"), try js.string(html.items) }));
+            try js.expression(body, try js.call(try js.member(try js.name(at), "insertAdjacentHTML"), &.{ try js.string("beforeend"), try pg.htmlValue(html.items) }));
             pg.node = try cx.fresh("node");
             try js.constant(body, pg.node.?, try js.member(try js.name(at), "lastChild"));
             // Each piece registers what removes it as it is added, so a mount
@@ -1467,6 +1490,9 @@ fn serialiseOpen(a: std.mem.Allocator, out: *std.ArrayList(u8), nodes: []const H
         const next: ?Html = if (i + 1 < nodes.len) nodes[i + 1] else null;
         switch (n.kind) {
             .text => try out.appendSlice(a, n.name),
+            // A mark the mount replaces with the piece's string: the piece
+            // writes every end tag of its own, so nothing of it is open.
+            .piece => try out.print(a, "\x00{d}\x00", .{n.piece}),
             .element => {
                 try out.append(a, '<');
                 try out.appendSlice(a, n.name);
