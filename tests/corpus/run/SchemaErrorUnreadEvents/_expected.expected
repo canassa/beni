@@ -12,6 +12,8 @@ set NaN: invalid | invalid (1)
 parse set: set 4 | set 4
 parse not JSON: invalid | invalid (1)
 parse move 1.5: invalid | invalid (1)
+flaky named: named v | named v
+flaky move: move 1 2 | move 1 2
 own constructor: plain | plain
 inherited constructor: invalid | invalid (1)
 own valueOf: named v | named v

@@ -20,6 +20,10 @@ null: invalid | invalid (1)
 tree 169 deep: 169 deep | 169 deep
 tree 170 deep: invalid | invalid (1)
 children not a list: invalid | invalid (1)
+flaky getters, good: { alpha = "a", count = Null, extra = <internals>, mid = 2.5, note = Missing, toString = Missing, tree = Branch { children = [Leaf { value = -1 }], value = 0.5 }, zeta = 1 } | { alpha = "a", count = Null, extra = <internals>, mid = 2.5, note = Missing, toString = Missing, tree = Branch { children = [Leaf { value = -1 }], value = 0.5 }, zeta = 1 }
+flaky getters, own toString: { alpha = "a", count = Null, extra = <internals>, mid = 2.5, note = Missing, toString = Present "own", tree = Branch { children = [Leaf { value = -1 }], value = 0.5 }, zeta = 1 } | { alpha = "a", count = Null, extra = <internals>, mid = 2.5, note = Missing, toString = Present "own", tree = Branch { children = [Leaf { value = -1 }], value = 0.5 }, zeta = 1 }
 getters, good: { alpha = "a", count = Null, extra = <internals>, mid = 2.5, note = Missing, toString = Missing, tree = Branch { children = [Leaf { value = -1 }], value = 0.5 }, zeta = 1 } [zeta,the-alpha,mid,count,extra,tree] | { alpha = "a", count = Null, extra = <internals>, mid = 2.5, note = Missing, toString = Missing, tree = Branch { children = [Leaf { value = -1 }], value = 0.5 }, zeta = 1 } [zeta,the-alpha,mid,count,extra,tree]
 getters, mid bad: invalid [zeta,the-alpha,mid] | invalid (1) [zeta,the-alpha,mid]
 getters, alpha bad: invalid [zeta,the-alpha] | invalid (1) [zeta,the-alpha]
+flaky proto: l t | l t
+flaky proto, no toString: l - | l -

@@ -104,6 +104,12 @@ itemDecodeRead text =
             "invalid (${String.fromInt (List.length issues)})"
 
 
+itemFlaky : String, Value → String
+itemFlaky label v =
+    keys = [ "pos", "color", "label", "tags", "small", "unit" ]
+    "${label}: ${itemValid (Hosts.flaky v keys)} | ${itemRead (Hosts.flaky v keys)}"
+
+
 item : String, Value → String
 item label v = "${label}: ${itemValid v} | ${itemRead v}"
 
@@ -123,6 +129,7 @@ main =
     Node.printLines
         [ placed "placed" (Hosts.parse "{\"label\":\"p\",\"at\":{\"x\":1,\"y\":2}}")
         , placed "placed y 1.5" (Hosts.parse "{\"label\":\"p\",\"at\":{\"x\":1,\"y\":1.5}}")
+        , itemFlaky "flaky item" goodItem
         , item "item" goodItem
         , item "gray" (Hosts.with goodItem "color" (Hosts.parse "{\"Gray\":5}"))
         , item "red" (Hosts.with goodItem "color" (Hosts.parse "\"Red\""))
