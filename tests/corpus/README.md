@@ -695,10 +695,15 @@ report, is granted 4 750M. `dump --stage=ownership` re-checks all of core from s
 case grew with derived codecs' engine code in `core/Schema`: 4 248M on master, 4 317M after, and
 the grant adds 10%. Remove it when the dump installs the checked core's summaries (#214).
 
-A project may also take its modules from outside the corpus: `_expected.sources` holds a
-repo-relative directory whose `.beni` files are the program, so several scripts can drive one
-application (`examples/conduit/src`). Its subdirectories are walked too, and the build is then
-given `--root=.`, so `Math/Vector2.beni` is the module `Math.Vector2` (`examples/bike-wars/src`).
+A project may also take its modules from outside the corpus: `_expected.sources` holds one
+repo-relative directory per line, whose `.beni` files together are the program, so several
+scripts can drive one application (`examples/conduit/src`), and a program whose modules live in
+two directories — one of them shared with another program through each manifest's `"paths"`,
+`examples/todo` — is one fixture (`run/TodoServer`, `browser/direct/TodoPage`). Every
+directory's subdirectories are walked too, each file copied at its relative path, and the build
+is then given `--root=.`, so `Math/Vector2.beni` is the module `Math.Vector2`
+(`examples/bike-wars/src`). The `ownership/` and `writes/` kinds hand the compiler one path, so
+there the file holds one line (issue #359).
 
 ## Golden discipline
 

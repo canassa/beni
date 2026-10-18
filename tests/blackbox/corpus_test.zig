@@ -2124,6 +2124,37 @@ const Case = struct {
         return sources;
     }
 
+    /// The repo-relative directories a project's `_expected.sources` lists,
+    /// one per line, blank lines skipped (`tests/corpus/README.md`).
+    fn sourceDirs(c: Case) ![]const []const u8 {
+        const listed = try Io.Dir.cwd().readFileAlloc(testing.io, try c.goldenPath("sources"), c.arena, .limited(4096));
+        var dirs: std.ArrayList([]const u8) = .empty;
+        var lines = std.mem.splitScalar(u8, listed, '\n');
+        while (lines.next()) |raw| {
+            const dir_path = std.mem.trim(u8, raw, " \t\r");
+            if (dir_path.len != 0) try dirs.append(c.arena, dir_path);
+        }
+        if (dirs.items.len == 0) {
+            detail("{s}: _expected.sources names no directory\n", .{c.fixture.name});
+            return error.NoSourceDirectory;
+        }
+        return dirs.items;
+    }
+
+    /// The one directory a check kind's project reads its modules from: its
+    /// own, or the single line of its `_expected.sources`. The `check`
+    /// kinds hand one path to the compiler, so a file with several lines —
+    /// which `run/` and `browser/` take — is refused here (issue #359).
+    fn oneSourceDir(c: Case) ![]const u8 {
+        if (!c.goldenExists("sources")) return c.fixturePath();
+        const dirs = try c.sourceDirs();
+        if (dirs.len != 1) {
+            detail("{s}: _expected.sources lists {d} directories, and this kind reads one\n", .{ c.fixture.name, dirs.len });
+            return error.SeveralSourceDirectories;
+        }
+        return dirs[0];
+    }
+
     /// Copy the fixture's modules into the world's project: the file, or
     /// every `.beni` directly in a project fixture. Returns their names,
     /// sorted, as a build takes them.
@@ -2131,33 +2162,37 @@ const Case = struct {
         var sources: std.ArrayList([]const u8) = .empty;
         if (c.fixture.project) {
             // A project may take its modules from elsewhere in the repository:
-            // `_expected.sources` holds that directory's repo-relative path, so
-            // several scripts can drive one program kept outside the corpus
-            // (`examples/conduit/src`; `tests/corpus/README.md`).
-            // Such a program may keep modules in subdirectories (an external
-            // port's `Math/Vector2.beni`, `examples/bike-wars/src`): they are
-            // copied at the same relative path, and `buildPaths` names the
-            // world the source root. A fixture's own directory is read flat,
-            // since its `platform/` holds `.beni` files that are not the
+            // `_expected.sources` holds one repo-relative directory per line,
+            // so several scripts can drive one program kept outside the corpus
+            // (`examples/conduit/src`; `tests/corpus/README.md`), and a
+            // program whose modules live in two directories — one shared with
+            // another program through each manifest's `"paths"`,
+            // `examples/todo` — is one fixture too. Such a program may keep
+            // modules in subdirectories (an external port's
+            // `Math/Vector2.beni`, `examples/bike-wars/src`): every line's
+            // files are copied at their relative path, and `buildPaths` names
+            // the world the source root, so two directories are one module
+            // tree, as the build sees them. A fixture's own directory is read
+            // flat, since its `platform/` holds `.beni` files that are not the
             // program's.
-            const external = c.goldenExists("sources");
-            const dir_path = if (external)
-                std.mem.trim(u8, try Io.Dir.cwd().readFileAlloc(testing.io, try c.goldenPath("sources"), c.arena, .limited(4096)), " \t\r\n")
-            else
-                try c.fixturePath();
-            var dir = try Io.Dir.cwd().openDir(testing.io, dir_path, .{ .iterate = true });
-            defer dir.close(testing.io);
-            if (external) {
-                var walker = try dir.walk(c.arena);
-                defer walker.deinit();
-                while (try walker.next(testing.io)) |entry| {
-                    if (entry.kind != .file or !std.mem.endsWith(u8, entry.basename, ".beni")) continue;
-                    const name = try c.arena.dupe(u8, entry.path);
-                    const path = try std.fs.path.join(c.arena, &.{ dir_path, name });
-                    try c.w.write(name, try Io.Dir.cwd().readFileAlloc(testing.io, path, c.arena, .limited(world.max_stream_bytes)));
-                    try sources.append(c.arena, name);
+            if (c.goldenExists("sources")) {
+                for (try c.sourceDirs()) |dir_path| {
+                    var dir = try Io.Dir.cwd().openDir(testing.io, dir_path, .{ .iterate = true });
+                    defer dir.close(testing.io);
+                    var walker = try dir.walk(c.arena);
+                    defer walker.deinit();
+                    while (try walker.next(testing.io)) |entry| {
+                        if (entry.kind != .file or !std.mem.endsWith(u8, entry.basename, ".beni")) continue;
+                        const name = try c.arena.dupe(u8, entry.path);
+                        const path = try std.fs.path.join(c.arena, &.{ dir_path, name });
+                        try c.w.write(name, try Io.Dir.cwd().readFileAlloc(testing.io, path, c.arena, .limited(world.max_stream_bytes)));
+                        try sources.append(c.arena, name);
+                    }
                 }
             } else {
+                const dir_path = try c.fixturePath();
+                var dir = try Io.Dir.cwd().openDir(testing.io, dir_path, .{ .iterate = true });
+                defer dir.close(testing.io);
                 var it = dir.iterate();
                 while (try it.next(testing.io)) |entry| {
                     if (entry.kind != .file or !std.mem.endsWith(u8, entry.name, ".beni")) continue;
@@ -2926,10 +2961,7 @@ const Case = struct {
     /// the entry protocol's verdicts are the build's platform's
     /// (ownership-checker.md §20.2, §20.10).
     fn ownershipReport(c: Case) !void {
-        const path = if (c.goldenExists("sources"))
-            std.mem.trim(u8, try Io.Dir.cwd().readFileAlloc(testing.io, try c.goldenPath("sources"), c.arena, .limited(4096)), " \t\r\n")
-        else
-            try c.fixturePath();
+        const path = try c.oneSourceDir();
         if (c.goldenExists("platform")) {
             const text = try Io.Dir.cwd().readFileAlloc(testing.io, try c.goldenPath("platform"), c.arena, .limited(4096));
             var names = std.mem.tokenizeAny(u8, text, " \t\r\n");
@@ -3025,10 +3057,7 @@ const Case = struct {
     /// bounded, a second assertion on the same output, so a regression in
     /// precision fails even when the golden is re-blessed.
     fn writeSets(c: Case) !void {
-        const path = if (c.goldenExists("sources"))
-            std.mem.trim(u8, try Io.Dir.cwd().readFileAlloc(testing.io, try c.goldenPath("sources"), c.arena, .limited(4096)), " \t\r\n")
-        else
-            try c.fixturePath();
+        const path = try c.oneSourceDir();
         const checked = try c.compiler(&.{ "check", "--platform=browser-tea", path });
         try expectExit(0, checked);
         if (!try c.warningsAccounted(checked.stderr)) {
