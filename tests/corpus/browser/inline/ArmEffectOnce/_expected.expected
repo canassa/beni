@@ -1,0 +1,72 @@
+-- element "root"
+-- load
+console.log: label: "L2"
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="w1">
+        <output>"L2"</output>
+        <button data-role="raise">"Raise"</button>
+        <button data-role="lower">"Lower"</button>
+      </section>
+      <button data-role="other">"0"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=raise]
+console.log: bump: 3
+console.log: label: "L3"
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="w1">
+        <output>"L3"</output>
+        <button data-role="raise">"Raise"</button>
+        <button data-role="lower">"Lower"</button>
+      </section>
+      <button data-role="other">"0"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=other]
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="w1">
+        <output>"L3"</output>
+        <button data-role="raise">"Raise"</button>
+        <button data-role="lower">"Lower"</button>
+      </section>
+      <button data-role="other">"1"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=lower]
+console.log: label: "L2"
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="w1">
+        <output>"L2"</output>
+        <button data-role="raise">"Raise"</button>
+        <button data-role="lower">"Lower"</button>
+      </section>
+      <button data-role="other">"1"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=raise]
+console.log: bump: 3
+console.log: label: "L3"
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="w1">
+        <output>"L3"</output>
+        <button data-role="raise">"Raise"</button>
+        <button data-role="lower">"Lower"</button>
+      </section>
+      <button data-role="other">"1"</button>
+    </div>
+  </div>
+</body>

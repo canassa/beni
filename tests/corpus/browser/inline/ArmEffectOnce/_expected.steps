@@ -1,0 +1,5 @@
+element "root"
+click [data-role=raise]
+click [data-role=other]
+click [data-role=lower]
+click [data-role=raise]

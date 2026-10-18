@@ -1,0 +1,41 @@
+import Html exposing (Html)
+
+
+pub type alias Model =
+    level : Int
+
+
+pub init : ⊤ → Model
+init ⊤ = { level = 2 }
+
+
+pub type Msg
+    = Raise
+    | Lower
+
+
+bump : Int, Int → Int
+bump n by = Debug.log "bump" (n + by)
+
+
+label : Int → String
+label n = Debug.log "label" ("L" ++ String.fromInt n)
+
+
+pub update : Msg, Model → Model
+update msg model =
+    case msg of
+        Raise →
+            { model | level = bump model.level 1 }
+
+        _ →
+            { model | level = model.level - 1 }
+
+
+pub view : Model → Html Msg
+view model =
+    <section data-role="w1">
+        <output>{label model.level}</output>
+        <button data-role="raise" onClick={Raise}>Raise</button>
+        <button data-role="lower" onClick={Lower}>Lower</button>
+    </section>
