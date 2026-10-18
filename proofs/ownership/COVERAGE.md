@@ -905,3 +905,15 @@ Against master's `beni` (64c1fa7b4), at bound 1 2: 1,722 of 7,667 declarations d
 marker: 1,256 that the oracle accepts are refused (writes of one level's list while another level is held, which master
 folds onto one path) and 466 that it refuses are accepted (the #379 and `paramHole` holes). The bridge is to be run against the
 compiler that builds the marker.
+
+*Amended 2026-10-19 (spec 161f77eea, exact overlap).* `overlap` and `holds` follow the exact rule: a marker overlaps
+a region step, or what its rest overlaps through the empty expansion; holding has the three approximate cases.
+`conflict_complete` is proved again under it, and `Canon` now includes the canonical form's root marker
+`⟨Tree⟩r`; `extend_canon` closes the fold over canonical tree positions, and the enumerator checks that every
+summary path is canonical and that writing summaries in the expanded form changes no verdict. The fixture
+verdicts, the counts above and the four holes are unchanged. The `⋆`-like overlap of 5120ba491, kept as
+`starOverlap`, is sound and here no coarser: 62,628 accepted, as with the exact rule, 0 disagree. On the paths these
+programs make a marker sits right after a first step both paths share, so it is never compared with a step the
+other path has not passed; the rules differ only at a root marker (`exact_finer_than_star`: `⟨Tree⟩#Node.0` does
+not hold `#Node.1`). `master` and `no-marker` catch the same 2,010: with master's fold the call-site condition
+finds no list below `#Node.0` (it was moved to `#Node.1`), so recording it changes nothing.

@@ -13,16 +13,19 @@ Proved here, with no `sorry`:
   of concrete paths they stand for of which one is a prefix of the other (a
   holder and what it holds).
 * `conflict_complete`: on canonical paths, the spec's overlap and holding
-  (`Config.conflict`, both rules as the amendment states them) are true
-  wherever such a pair exists. So a write is never taken to be apart from a
-  holder that holds it.
+  (`Config.conflict`: the exact overlap and the holding of 161f77eea) are
+  true wherever such a pair exists, the root marker of the canonical form
+  included. So a write is never taken to be apart from a holder that holds it.
+* `extend_canon`: the fold keeps a tree position canonical, so the paths a
+  case makes are among those `conflict_complete` covers.
 * `extend_sound`: the fold with the marker keeps every concrete path:
   extending a tree position by a constructor step stands for the extended
   concrete path.
 * `master_fold_unsound`: `master`'s fold does not; `#Node.0#Node.1` (the left
   subtree's list) is not among the paths of `#Node.1`.
 * `root_apart` and `sides_apart`: the root's list and every list of the left
-  subtree are two places, and so are the left and right subtrees' lists. -/
+  subtree are two places, and so are the left and right subtrees' lists.
+* `exact_finer_than_star`: where the exact overlap is finer than `⋆`. -/
 
 namespace Ownership.Tree
 
@@ -512,5 +515,18 @@ theorem sides_apart : ({} : Config).conflict [.n0, .mark, .n1] [.n2, .mark, .n1]
     them approximately. -/
 theorem subtree_holds : ({} : Config).conflict [.n0] [.n0, .mark, .n1] = true ∧
     ({} : Config).conflict [.n0, .mark, .n0] [.n0, .mark, .n1] = true := by decide
+
+/-- Where the exact overlap is finer than 5120ba491's `⋆`-like one: a root
+    marker `⟨Tree⟩#Node.0`, the left subtrees of every tree, does not overlap
+    or hold the root's own list `#Node.1`; under `⋆` it does. On the paths
+    the fragment's programs make the two rules agree (the enumerator's
+    `star-overlap` line), because a marker there sits right after a shared
+    first step and is compared with a step only where the other path has
+    passed it too. -/
+theorem exact_finer_than_star :
+    ({} : Config).conflict [.mark, .n0] [.n1] = false ∧
+    ({ starOverlap := true } : Config).conflict [.mark, .n0] [.n1] = true ∧
+    ({} : Config).conflict [.mark, .n1] [.n1] = true := by
+  decide
 
 end Ownership.Tree
