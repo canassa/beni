@@ -20,6 +20,8 @@ null: invalid | invalid (1)
 tree 169 deep: 169 deep | 169 deep
 tree 170 deep: invalid | invalid (1)
 children not a list: invalid | invalid (1)
+flaky getters, good: { alpha = "a", count = Null, extra = <internals>, mid = 2.5, note = Missing, toString = Missing, tree = Branch { children = [Leaf { value = -1 }], value = 0.5 }, zeta = 1 } | { alpha = "a", count = Null, extra = <internals>, mid = 2.5, note = Missing, toString = Missing, tree = Branch { children = [Leaf { value = -1 }], value = 0.5 }, zeta = 1 }
+flaky getters, own toString: { alpha = "a", count = Null, extra = <internals>, mid = 2.5, note = Missing, toString = Present "own", tree = Branch { children = [Leaf { value = -1 }], value = 0.5 }, zeta = 1 } | { alpha = "a", count = Null, extra = <internals>, mid = 2.5, note = Missing, toString = Present "own", tree = Branch { children = [Leaf { value = -1 }], value = 0.5 }, zeta = 1 }
 getters, good: { alpha = "a", count = Null, extra = <internals>, mid = 2.5, note = Missing, toString = Missing, tree = Branch { children = [Leaf { value = -1 }], value = 0.5 }, zeta = 1 } [zeta,the-alpha,mid,count,extra,tree] | { alpha = "a", count = Null, extra = <internals>, mid = 2.5, note = Missing, toString = Missing, tree = Branch { children = [Leaf { value = -1 }], value = 0.5 }, zeta = 1 } [zeta,the-alpha,mid,count,extra,tree]
 getters, mid bad: invalid [zeta,the-alpha,mid] | invalid (1) [zeta,the-alpha,mid]
 getters, alpha bad: invalid [zeta,the-alpha] | invalid (1) [zeta,the-alpha]
@@ -39,11 +41,16 @@ parse not JSON: invalid | invalid (1)
 parse move 1.5: invalid | invalid (1)
 placed: p at 1, 2 | p at 1, 2
 placed y 1.5: invalid | invalid (1)
+flaky named: named v | named v
+flaky move: move 1 2 | move 1 2
 own constructor: plain | plain
 inherited constructor: invalid | invalid (1)
 own valueOf: named v | named v
 inherited valueOf: invalid | invalid (1)
 inherited both: invalid | invalid (1)
+flaky proto: l t | l t
+flaky proto, no toString: l - | l -
+flaky item: { color = Rgb 1 2 3, label = Just "l", pos = (1,2), small = 7, tags = [Just 'x',Nothing,Just 'y'], unit = ⊤ } | { color = Rgb 1 2 3, label = Just "l", pos = (1,2), small = 7, tags = [Just 'x',Nothing,Just 'y'], unit = ⊤ }
 item: { color = Rgb 1 2 3, label = Just "l", pos = (1,2), small = 7, tags = [Just 'x',Nothing,Just 'y'], unit = ⊤ } | { color = Rgb 1 2 3, label = Just "l", pos = (1,2), small = 7, tags = [Just 'x',Nothing,Just 'y'], unit = ⊤ }
 gray: { color = Gray 5, label = Just "l", pos = (1,2), small = 7, tags = [Just 'x',Nothing,Just 'y'], unit = ⊤ } | { color = Gray 5, label = Just "l", pos = (1,2), small = 7, tags = [Just 'x',Nothing,Just 'y'], unit = ⊤ }
 red: { color = Red, label = Just "l", pos = (1,2), small = 7, tags = [Just 'x',Nothing,Just 'y'], unit = ⊤ } | { color = Red, label = Just "l", pos = (1,2), small = 7, tags = [Just 'x',Nothing,Just 'y'], unit = ⊤ }

@@ -3611,7 +3611,8 @@ shapeRecordFrom s i x depth values =
 
 
 -- `[shapeRecordOwn, make, entry₁, …]`: a record one of whose keys is a name
--- `Object.prototype` holds, each key present as `present` tests it.
+-- `Object.prototype` holds, each key present as `present` tests it and read
+-- once.
 shapeRecordOwn : Js.Value, Js.Value, Int → Js.Value
 shapeRecordOwn s x depth =
     if isObject x then shapeRecordOwnFrom s 2 x depth (Js.array []) else shapeFail
@@ -3624,8 +3625,17 @@ shapeRecordOwnFrom s i x depth values =
     else
         entry = Js.at s i
         k = stringOf (Js.at entry 0)
-        held = present x k
-        y = shapeEntry entry held (if held then Js.get x k else Js.undefined) depth
+        -- Each key read once, as the workers read it: a name `prototypeKey`
+        -- lists only when it is `x`'s own, any other with `undefined` absent.
+        y =
+            if prototypeKey k then
+                if hasOwn x k then
+                    shapeEntry entry True (Js.get x k) depth
+                else
+                    shapeEntry entry False Js.undefined depth
+            else
+                v = Js.get x k
+                shapeEntry entry (not (Js.isUndefined v)) v depth
         if Js.same y shapeFail then
             shapeFail
         else
