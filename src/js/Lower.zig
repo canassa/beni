@@ -13182,7 +13182,15 @@ pub const Lowerer = struct {
                         std.debug.assert(arm.fields.len + args.len - 1 == piece.captures.len);
                         const call_args = try l.scratch.alloc(Node.Index, piece.captures.len);
                         for (arm.fields, 0..) |f, i| call_args[i] = mt.fields[f];
-                        for (args[1..], call_args[arm.fields.len..]) |arg, *x| x.* = try l.expr(out, arg);
+                        // Each argument a name, so release's single-use
+                        // inlining writes the piece in place (`backend.md` §9).
+                        for (args[1..], call_args[arm.fields.len..]) |arg, *x| {
+                            x.* = try l.expr(out, arg);
+                            if (l.isAtom(x.*)) continue;
+                            const n = try l.fresh(l.well.temp);
+                            try l.constDecl(out, n, x.*, l.pos(arg));
+                            x.* = try l.ident(n, l.pos(arg));
+                        }
                         const m: Graph.Index = @fromBackingInt(@intCast(piece.module));
                         const base = try l.liftBase(m, piece);
                         try l.needName(.{ .module = m, .base = base.toOptional() });
