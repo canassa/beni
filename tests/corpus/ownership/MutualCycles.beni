@@ -6,7 +6,11 @@
 -- name all the others took 27 s to check, and twenty-eight that each name
 -- the next three 9 s. Each strongly connected group is solved once now.
 -- `f` pushes onto the list of its parameter, and `g` onto one reached
--- through the chain: both accepted, `param`.
+-- through the chain: both accepted, `param`. In the cycle `P`, `Q`, `S`, read
+-- in that order, only `S` names a list: `Q` sees it on the group's second
+-- pass and `P` on its third, so `third`, which pushes onto a list `P`
+-- holds while returning it, is rejected only if the group is read until
+-- nothing changes.
 type K0
     = K0
         (List Int)
@@ -349,6 +353,42 @@ type R26
 type R27
     = R27 (List Int) (Maybe R0) (Maybe R1) (Maybe R2)
     | REnd27
+
+
+type P
+    = P Q
+    | PEnd
+
+
+type Q
+    = Q S
+    | QEnd
+
+
+type S
+    = S (List Int) P
+    | SEnd
+
+
+pub third : List Int → List Int × List Int
+third xs =
+    t = P (Q (S xs PEnd))
+    case t of
+        P q →
+            case q of
+                Q s →
+                    case s of
+                        S zs _ →
+                            ( List.push zs 1, xs )
+
+                        SEnd →
+                            ( [], xs )
+
+                QEnd →
+                    ( [], xs )
+
+        PEnd →
+            ( [], xs )
 
 
 pub f : K0 → List Int
