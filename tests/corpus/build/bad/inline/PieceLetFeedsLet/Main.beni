@@ -1,0 +1,39 @@
+-- A `let` another `let` reads, the two read by different binding
+-- functions: `shown` feeds `line`; `shown` is read by the cups group's
+-- function and `line` by the function of cups and coins together. Each
+-- function evaluates what it reads, so `shown` would run twice in a pass
+-- that calls both, and log twice. That is a memo node, S3's, and a limit
+-- of the compiler until then (docs/design/browser-inline.md §8.2).
+import Browser
+import Html exposing (Html)
+import Tally
+import Tea
+
+
+type alias Model =
+    t : Tally.Model
+
+
+type Msg
+    = TallyMsg Tally.Msg
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        TallyMsg sub →
+            { model | t = Tally.update sub model.t }
+
+
+view : Model → Html Msg
+view model =
+    <div data-role="app">
+        {Html.map (Tally.view model.t) TallyMsg}
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → { t = Tally.init ⊤ }, update = update, view = view })
+        "root"

@@ -1,0 +1,1 @@
+[{"code":"markup_restructured","severity":"error","span":{"file":"Main.beni","start":{"line":31,"col":36},"end":{"line":31,"col":37}},"title":"MARKUP RESTRUCTURED","message":"the parser closes an open `<p>` before a block element, so the element would\nfollow the paragraph instead of being inside it"}]
