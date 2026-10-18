@@ -917,3 +917,6 @@ programs make a marker sits right after a first step both paths share, so it is 
 other path has not passed; the rules differ only at a root marker (`exact_finer_than_star`: `⟨Tree⟩#Node.0` does
 not hold `#Node.1`). `master` and `no-marker` catch the same 2,010: with master's fold the call-site condition
 finds no list below `#Node.0` (it was moved to `#Node.1`), so recording it changes nothing.
+At depth 3 (`ownership tree 3 3`, about 9 minutes, not in `ci`), where a third subtree step folds onto the marker
+already there: 574,620 programs, 278,468 accepted, 10,356 of them show a write, 0 disagree; every summary path
+canonical; the four holes catch the same 2,010, 2,010, 1,020 and 684; star overlap accepts 278,468, as exact.
