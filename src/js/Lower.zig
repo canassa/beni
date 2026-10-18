@@ -165,6 +165,20 @@ pub const Unit = struct {
     end: u32,
 };
 
+/// One top-level statement on its own: appended to the body, then recorded as
+/// a unit. The two must not drift apart — the units are the cover a cached
+/// build splices by (`Join.join`) — so they are written once, here.
+fn appendUnit(
+    body: *std.ArrayList(Node.Index),
+    units: *std.ArrayList(Unit),
+    scratch: Allocator,
+    stmt: Node.Index,
+) Allocator.Error!void {
+    const at: u32 = @intCast(body.items.len);
+    try body.append(scratch, stmt);
+    try units.append(scratch, .{ .start = at, .end = @intCast(body.items.len) });
+}
+
 /// Re-exported so a caller can name `Dispatch.empty` without reaching past
 /// the backend into the checker.
 pub const Dispatch = @import("../check/Dispatch.zig");
@@ -657,27 +671,36 @@ pub fn lower(
     const head_len: u32 = @intCast(import_statements.len);
     try body.appendSlice(scratch, import_statements);
     for (nullary) |stmt| {
-        const at: u32 = @intCast(body.items.len);
-        try body.append(scratch, stmt);
-        try units.append(scratch, .{ .start = at, .end = @intCast(body.items.len) });
+        try appendUnit(&body, &units, scratch, stmt);
     }
     // What the markup lowering hoisted: after the imports, before the first
     // declaration, in hoist order (`backend.md` §15.1).
     if (l.mk) |st| for (st.hoisted.items) |stmt| {
-        const at: u32 = @intCast(body.items.len);
-        try body.append(scratch, stmt);
-        try units.append(scratch, .{ .start = at, .end = @intCast(body.items.len) });
+        try appendUnit(&body, &units, scratch, stmt);
     };
     for (synthesised) |stmt| {
-        const at: u32 = @intCast(body.items.len);
-        try body.append(scratch, stmt);
-        try units.append(scratch, .{ .start = at, .end = @intCast(body.items.len) });
+        try appendUnit(&body, &units, scratch, stmt);
     }
     const decl_base: u32 = @intCast(body.items.len);
     try body.appendSlice(scratch, declarations.items);
     for (decl_units.items) |unit| try units.append(scratch, .{ .start = decl_base + unit.start, .end = decl_base + unit.end });
     const tail_len: u32 = @intCast(tail.items.len);
     try body.appendSlice(scratch, tail.items);
+
+    // The cover a cached build splices by: the units are contiguous,
+    // nonempty, and exactly `[head_len, len − tail_len)` — the tail is
+    // statements too, but never a unit. Compiled away outside a safety
+    // build; slice 3 splices by these positions, so drift is a bug the day
+    // the edit is written, not the day a program misbehaves.
+    if (std.debug.runtime_safety) {
+        var at = head_len;
+        for (units.items) |unit| {
+            std.debug.assert(unit.start == at);
+            std.debug.assert(unit.end > unit.start);
+            at = unit.end;
+        }
+        std.debug.assert(at == @as(u32, @intCast(body.items.len - tail_len)));
+    }
 
     const range = try b.addRange(body.items);
     const ir = try b.toOwned(range);
@@ -2019,8 +2042,19 @@ pub const Lowerer = struct {
         var twin_at: ?u32 = null;
         try l.declaration(&part, index, &twin_at);
         var lift_at: ?u32 = null;
-        if (l.livePiece(index)) lift_at = @intCast(part.items.len);
+        const direct_len: u32 = @intCast(part.items.len);
+        if (l.livePiece(index)) lift_at = direct_len;
         try l.liftPieces(&part, index);
+        // The units loop splits a declaration at `lift_at` and nowhere else,
+        // so when `livePiece` said no, `liftPieces` must have written
+        // nothing: anything else folds a surviving piece into the
+        // declaration's own unit — a wrong cover rather than a wrong
+        // statement (`browser-inline.md` §7). (The other direction — a live
+        // piece `liftPieces` skipped — puts `lift_at` past every statement,
+        // and the split is a no-op.) Compiled away outside a safety build.
+        if (std.debug.runtime_safety and lift_at == null) {
+            std.debug.assert(part.items.len == direct_len);
+        }
         // Fewer nodes than this cannot be over either budget, and
         // measuring is a walk of every node: most declarations skip it.
         if (index < l.bir.decls.len and l.b.nodes.len - nodes >= JsIr.nesting.could_exceed) try l.refuseTooDeep(part.items, index);
