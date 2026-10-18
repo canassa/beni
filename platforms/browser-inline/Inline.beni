@@ -278,6 +278,13 @@ when node hidden =
     ⊤
 
 
+--| `(node)`: the elements below `node` in document order, the table a
+--| piece of another module's markup refers to its elements by
+--| (`browser-inline.md` §8.4).
+pub part : V → V
+part node = Js.call node "querySelectorAll" [ Js.from "*" ]
+
+
 --| `(node, f, kind)`: a listener of event `kind`, `click` when not given,
 --| whose event enters the dispatch guard with `f`.
 pub on : V, V, V → ⊤
