@@ -16274,6 +16274,23 @@ const markup_vtable: beni_markup.VTable = struct {
         return n;
     }
 
+    fn valueReadsLet(impl: *anyopaque, r: M.Root.Index, k: u32, v: M.Value.Index) bool {
+        const l = lowerer(impl);
+        const st = l.mk orelse return true;
+        const root = st.built.tree.root(r);
+        if (k >= root.lets.len) return false;
+        const local = st.built.values[root.lets.start + k].let_value.local;
+        const i: Inst.Index = switch (st.built.values[@backingInt(v)]) {
+            .inst => |x| x,
+            .call => |c| c.inst,
+            .let_value => |lv| lv.inst,
+            // A value the compiler does not know the instruction of: it may
+            // read anything.
+            else => return true,
+        };
+        return l.subtreeReadsLocal(i, local);
+    }
+
     fn pieceEventCtor(impl: *anyopaque, v: M.Value.Index, payload: bool) ?M.Context.PieceEvent {
         return lowerer(impl).pieceEventCtor(v, payload);
     }
@@ -16612,6 +16629,7 @@ const markup_vtable: beni_markup.VTable = struct {
         .program_message_fields = programMessageFields,
         .piece_event_ctor = pieceEventCtor,
         .root_let_readers = rootLetReaders,
+        .value_reads_let = valueReadsLet,
         .piece_export = pieceExport,
         .program_piece = programPiece,
         .program_piece_name = programPieceName,

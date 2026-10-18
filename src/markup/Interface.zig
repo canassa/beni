@@ -1320,6 +1320,12 @@ pub const Context = struct {
         return cx.vtable.root_let_readers(cx.impl, r, k);
     }
 
+    /// 1.15: whether value `v` of root `r` — a hole's, an attribute's, or
+    /// another `let`'s — reads the root's `k`-th `let`.
+    pub fn valueReadsLet(cx: *Context, r: Root.Index, k: u32, v: Value.Index) bool {
+        return cx.vtable.value_reads_let(cx.impl, r, k, v);
+    }
+
     /// 1.15, inside `Lowering.piece` only: a top-level constant of the
     /// module named `<Module>$<base>`, exported, of `value`.
     pub fn pieceExport(cx: *Context, base: []const u8, init: Expr) Error!void {
@@ -1771,6 +1777,7 @@ pub const VTable = struct {
     program_message_fields: *const fn (impl: *anyopaque, block: Block, handler: Value.Index, payload: ?Expr) Error!Program.Message,
     piece_event_ctor: *const fn (impl: *anyopaque, handler: Value.Index, payload: bool) ?Context.PieceEvent,
     root_let_readers: *const fn (impl: *anyopaque, r: Root.Index, k: u32) u32,
+    value_reads_let: *const fn (impl: *anyopaque, r: Root.Index, k: u32, v: Value.Index) bool,
     piece_export: *const fn (impl: *anyopaque, base: []const u8, value: Expr) Error!void,
     program_piece: *const fn (impl: *anyopaque, node: Node.Index) Error!?*const PieceFacts,
     program_piece_name: *const fn (impl: *anyopaque, node: Node.Index, base: []const u8) Error!Name,

@@ -291,6 +291,13 @@ beni over `Js` in `Inline.beni`:
   nothing then.
 - **A `view` `let`** read by one hole is that hole's value, substituted (D-d); one read by several
   holes is a memo node, S3's, and refused as a limit of the compiler until then.
+  *As built 2026-10-18 (S1, #351 and its correction):* the `let` is evaluated in the binding function
+  of the hole that reads it, from the model that function is handed, and in no other: a function
+  evaluates the `let`s its writes' values and its `when`s' branch values read, through any `let` they
+  read in turn. A release build does not drop a `let` a function evaluates and never reads — the
+  release optimiser keeps a binding whose value reads a field, which it cannot prove pure — so
+  #351's first text, which evaluated every `let` in every binding function and counted on release
+  to drop the unread ones, was wrong.
 
 S0's one text binding — a text node marked by a space in the markup, its `data` written when it
 differs from a slot — is a `text` binding like the others from S1: one shape, the same as

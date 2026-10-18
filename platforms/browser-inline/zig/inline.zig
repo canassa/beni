@@ -1172,15 +1172,34 @@ const Page = struct {
     }
 
     /// Root `r`'s `let`s evaluated into `blk` and read under their names.
-    fn bindLets(pg: *Page, blk: m.Block, r: m.Root.Index) m.Error!void {
+    /// Root `r`'s `let`s that `values` read, directly or through a later
+    /// `let`, evaluated into `blk` and read under their names (D-d).
+    fn bindLets(pg: *Page, blk: m.Block, r: m.Root.Index, values: []const m.Value.Index) m.Error!void {
         const cx = pg.cx;
         const lets = pg.tree.root(r).lets;
-        for (0..lets.len) |k| {
-            const lv = lets.at(@intCast(k));
+        if (lets.len == 0) return;
+        const needed = try pg.a().alloc(bool, lets.len);
+        @memset(needed, false);
+        var k = lets.len;
+        while (k > 0) {
+            k -= 1;
+            for (values) |v| if (cx.valueReadsLet(r, @intCast(k), v)) {
+                needed[k] = true;
+                break;
+            };
+            if (needed[k]) continue;
+            for (k + 1..lets.len) |j| if (needed[j] and cx.valueReadsLet(r, @intCast(k), lets.at(@intCast(j)))) {
+                needed[k] = true;
+                break;
+            };
+        }
+        for (0..lets.len) |kk| {
+            if (!needed[kk]) continue;
+            const lv = lets.at(@intCast(kk));
             try cx.rootValues(blk, r, &.{lv});
             const n = try cx.fresh("let");
             try cx.js.constant(blk, n, try cx.value(lv));
-            try cx.bindLet(r, @intCast(k), n);
+            try cx.bindLet(r, @intCast(kk), n);
         }
     }
 
@@ -1213,12 +1232,10 @@ const Page = struct {
             if (std.mem.indexOfScalar(u32, done.items, ctx) != null) continue;
             try done.append(pg.a(), ctx);
             const arms = try pg.enter(blk, ctx);
-            // The `let`s of the view's body its root takes (`Root.lets`, D-d):
-            // each evaluated here, in source order, where the function's
-            // holes read it; a release build drops one nothing here reads.
-            try pg.bindLets(blk, pg.ctxs.items[0].root);
-            if (ctx != 0) try pg.bindLets(blk, pg.ctxs.items[ctx].root);
             var values: std.ArrayList(m.Value.Index) = .empty;
+            // What the function reads besides its writes' values: each
+            // `when`'s branch value, which picks its arm.
+            var reads: std.ArrayList(m.Value.Index) = .empty;
             for (f.writes.items) |wi| {
                 const w = pg.writes.items[wi];
                 if (w.ctx != ctx) continue;
@@ -1228,9 +1245,15 @@ const Page = struct {
                         else => {},
                     },
                     .prop => |x| try values.append(pg.a(), x.value),
-                    .when => {},
+                    .when => |x| try reads.append(pg.a(), pg.tree.hole(x.node).value),
                 }
             }
+            try reads.appendSlice(pg.a(), values.items);
+            // The `let`s of the view's body its root takes (`Root.lets`, D-d):
+            // each the function reads evaluated here, in source order, and
+            // no other.
+            try pg.bindLets(blk, pg.ctxs.items[0].root, reads.items);
+            if (ctx != 0) try pg.bindLets(blk, pg.ctxs.items[ctx].root, reads.items);
             try cx.rootValues(blk, pg.ctxs.items[ctx].root, values.items);
             for (f.writes.items) |wi| {
                 const w = pg.writes.items[wi];
