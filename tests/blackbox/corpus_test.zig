@@ -2176,6 +2176,9 @@ const Case = struct {
             // flat, since its `platform/` holds `.beni` files that are not the
             // program's.
             if (c.goldenExists("sources")) {
+                // Two listed directories that hold one relative name would
+                // write one file over the other: refused, loudly (rule 5).
+                var seen: std.StringHashMapUnmanaged(void) = .empty;
                 for (try c.sourceDirs()) |dir_path| {
                     var dir = try Io.Dir.cwd().openDir(testing.io, dir_path, .{ .iterate = true });
                     defer dir.close(testing.io);
@@ -2184,6 +2187,10 @@ const Case = struct {
                     while (try walker.next(testing.io)) |entry| {
                         if (entry.kind != .file or !std.mem.endsWith(u8, entry.basename, ".beni")) continue;
                         const name = try c.arena.dupe(u8, entry.path);
+                        if ((try seen.getOrPut(c.arena, name)).found_existing) {
+                            detail("{s}: {s} is in two of the directories _expected.sources lists\n", .{ c.fixture.name, name });
+                            return error.DuplicateSourceName;
+                        }
                         const path = try std.fs.path.join(c.arena, &.{ dir_path, name });
                         try c.w.write(name, try Io.Dir.cwd().readFileAlloc(testing.io, path, c.arena, .limited(world.max_stream_bytes)));
                         try sources.append(c.arena, name);

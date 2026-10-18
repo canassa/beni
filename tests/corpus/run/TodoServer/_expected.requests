@@ -6,6 +6,9 @@
 {"method": "POST", "path": "/api/todos", "headers": {"content-type": "application/json"}, "body": "{\"title\":\"write beni\",\"done\":false}"}
 {"method": "GET", "path": "/api/todos"}
 {"method": "PUT", "path": "/api/todos/1", "headers": {"content-type": "application/json"}, "body": "{\"title\":\"buy oat milk\",\"done\":true}"}
+# An id spelled with a leading zero is the same id: `String.toInt` reads
+# `[+-]?digits`; `1e2` is no id, below.
+{"method": "PUT", "path": "/api/todos/01", "headers": {"content-type": "application/json"}, "body": "{\"title\":\"buy oat milk\",\"done\":true}"}
 {"method": "DELETE", "path": "/api/todos/2"}
 {"method": "GET", "path": "/api/todos"}
 # A body that is not a draft: a missing field, and text that is not JSON.
@@ -15,6 +18,7 @@
 {"method": "PUT", "path": "/api/todos/9", "headers": {"content-type": "application/json"}, "body": "{\"title\":\"x\",\"done\":false}"}
 {"method": "DELETE", "path": "/api/todos/9"}
 {"method": "DELETE", "path": "/api/todos/abc"}
+{"method": "DELETE", "path": "/api/todos/1e2"}
 {"method": "PATCH", "path": "/api/todos"}
 {"method": "GET", "path": "/api/todos/1"}
 {"method": "GET", "path": "/api/nothing"}
