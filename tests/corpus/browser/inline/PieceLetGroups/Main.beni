@@ -1,0 +1,39 @@
+-- Each `let` of another module's `view` is evaluated in the one binding
+-- function that reads it, and in no other (D-d, docs/design/browser-inline.md
+-- §8.2, as built 2026-10-18): `cups` is read by the cups group's function
+-- and `coins` by the coins group's, so a click that writes `cups` logs
+-- `cups` alone. The first text evaluated every `let` in every function,
+-- and the release build kept both, since each may log.
+import Browser
+import Html exposing (Html)
+import Tally
+import Tea
+
+
+type alias Model =
+    t : Tally.Model
+
+
+type Msg
+    = TallyMsg Tally.Msg
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        TallyMsg sub →
+            { model | t = Tally.update sub model.t }
+
+
+view : Model → Html Msg
+view model =
+    <div data-role="app">
+        {Html.map (Tally.view model.t) TallyMsg}
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → { t = Tally.init ⊤ }, update = update, view = view })
+        "root"

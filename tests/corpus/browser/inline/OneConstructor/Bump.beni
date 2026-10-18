@@ -1,0 +1,30 @@
+--! A counter of one message, of no fields.
+
+import Html exposing (Html)
+
+
+pub type alias Model =
+    n : Int
+
+
+pub init : ⊤ → Model
+init ⊤ = { n = 0 }
+
+
+pub type Msg
+    = Bump
+
+
+pub update : Msg, Model → Model
+update msg model =
+    case msg of
+        Bump →
+            { model | n = model.n + 1 }
+
+
+pub view : Model → Html Msg
+view model =
+    <section>
+        <button data-role="bump" onClick={Bump}>Bump</button>
+        <output data-role="bumped">{model.n}</output>
+    </section>

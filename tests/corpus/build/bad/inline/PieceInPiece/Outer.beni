@@ -1,0 +1,30 @@
+--! A widget that shows another module's widget inside its own markup.
+
+import Html exposing (Html)
+import Inner
+
+
+pub type alias Model =
+    inner : Inner.Model
+
+
+pub init : ⊤ → Model
+init ⊤ = { inner = Inner.init ⊤ }
+
+
+pub type Msg
+    = InnerMsg Inner.Msg
+
+
+pub update : Msg, Model → Model
+update msg model =
+    case msg of
+        InnerMsg sub →
+            { model | inner = Inner.update sub model.inner }
+
+
+pub view : Model → Html Msg
+view model =
+    <section data-role="outer">
+        {Html.map (Inner.view model.inner) InnerMsg}
+    </section>

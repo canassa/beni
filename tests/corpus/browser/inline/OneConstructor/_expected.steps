@@ -1,0 +1,7 @@
+element "root"
+click [data-role=bump]
+click [data-role=bump]
+input [data-role=pick] "ada"
+input [data-role=pick] "bob"
+input [data-role=pick] "reset"
+input [data-role=say] "hi"

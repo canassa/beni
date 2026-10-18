@@ -1,0 +1,134 @@
+-- element "root"
+-- load
+<body>
+  <div id="root">
+    <div>
+      <section>
+        <button data-role="bump">"Bump"</button>
+        <output data-role="bumped">"0"</output>
+      </section>
+      <section>
+        <input type="text" data-role="pick" .value="">
+        <output data-role="picked">"0"</output>
+      </section>
+      <section>
+        <input type="text" data-role="say" .value="">
+        <output data-role="said"></output>
+      </section>
+    </div>
+  </div>
+</body>
+-- click [data-role=bump]
+<body>
+  <div id="root">
+    <div>
+      <section>
+        <button data-role="bump">"Bump"</button>
+        <output data-role="bumped">"1"</output>
+      </section>
+      <section>
+        <input type="text" data-role="pick" .value="">
+        <output data-role="picked">"0"</output>
+      </section>
+      <section>
+        <input type="text" data-role="say" .value="">
+        <output data-role="said"></output>
+      </section>
+    </div>
+  </div>
+</body>
+-- click [data-role=bump]
+<body>
+  <div id="root">
+    <div>
+      <section>
+        <button data-role="bump">"Bump"</button>
+        <output data-role="bumped">"2"</output>
+      </section>
+      <section>
+        <input type="text" data-role="pick" .value="">
+        <output data-role="picked">"0"</output>
+      </section>
+      <section>
+        <input type="text" data-role="say" .value="">
+        <output data-role="said"></output>
+      </section>
+    </div>
+  </div>
+</body>
+-- input [data-role=pick] "ada"
+<body>
+  <div id="root">
+    <div>
+      <section>
+        <button data-role="bump">"Bump"</button>
+        <output data-role="bumped">"2"</output>
+      </section>
+      <section>
+        <input type="text" data-role="pick" .value="ada">
+        <output data-role="picked">"1"</output>
+      </section>
+      <section>
+        <input type="text" data-role="say" .value="">
+        <output data-role="said"></output>
+      </section>
+    </div>
+  </div>
+</body>
+-- input [data-role=pick] "bob"
+<body>
+  <div id="root">
+    <div>
+      <section>
+        <button data-role="bump">"Bump"</button>
+        <output data-role="bumped">"2"</output>
+      </section>
+      <section>
+        <input type="text" data-role="pick" .value="bob">
+        <output data-role="picked">"2"</output>
+      </section>
+      <section>
+        <input type="text" data-role="say" .value="">
+        <output data-role="said"></output>
+      </section>
+    </div>
+  </div>
+</body>
+-- input [data-role=pick] "reset"
+<body>
+  <div id="root">
+    <div>
+      <section>
+        <button data-role="bump">"Bump"</button>
+        <output data-role="bumped">"2"</output>
+      </section>
+      <section>
+        <input type="text" data-role="pick" .value="reset">
+        <output data-role="picked">"0"</output>
+      </section>
+      <section>
+        <input type="text" data-role="say" .value="">
+        <output data-role="said"></output>
+      </section>
+    </div>
+  </div>
+</body>
+-- input [data-role=say] "hi"
+<body>
+  <div id="root">
+    <div>
+      <section>
+        <button data-role="bump">"Bump"</button>
+        <output data-role="bumped">"2"</output>
+      </section>
+      <section>
+        <input type="text" data-role="pick" .value="reset">
+        <output data-role="picked">"0"</output>
+      </section>
+      <section>
+        <input type="text" data-role="say" .value="hi">
+        <output data-role="said">"said hi"</output>
+      </section>
+    </div>
+  </div>
+</body>

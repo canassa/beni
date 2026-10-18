@@ -1,0 +1,44 @@
+-- element "root"
+-- load
+console.log: cups: "Cups: 0"
+console.log: coins: "Coins: 0"
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="tally">
+        <p>"Cups: 0"</p>
+        <p>"Coins: 0"</p>
+        <button data-role="cup">"Cup"</button>
+        <button data-role="coin">"Coin"</button>
+      </section>
+    </div>
+  </div>
+</body>
+-- click [data-role=cup]
+console.log: cups: "Cups: 1"
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="tally">
+        <p>"Cups: 1"</p>
+        <p>"Coins: 0"</p>
+        <button data-role="cup">"Cup"</button>
+        <button data-role="coin">"Coin"</button>
+      </section>
+    </div>
+  </div>
+</body>
+-- click [data-role=coin]
+console.log: coins: "Coins: 1"
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="tally">
+        <p>"Cups: 1"</p>
+        <p>"Coins: 1"</p>
+        <button data-role="cup">"Cup"</button>
+        <button data-role="coin">"Coin"</button>
+      </section>
+    </div>
+  </div>
+</body>

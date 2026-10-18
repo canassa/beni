@@ -1,0 +1,35 @@
+--! The last thing said, described by a function the message is handed to
+--! whole.
+
+import Html exposing (Html)
+
+
+pub type alias Model =
+    last : String
+
+
+pub init : ⊤ → Model
+init ⊤ = { last = "" }
+
+
+pub type Msg
+    = Say String
+
+
+describe : Msg → String
+describe msg =
+    case msg of
+        Say s →
+            "said " ++ s
+
+
+pub update : Msg, Model → Model
+update msg model = { model | last = describe msg }
+
+
+pub view : Model → Html Msg
+view model =
+    <section>
+        <input type="text" data-role="say" onInput={Say} />
+        <output data-role="said">{model.last}</output>
+    </section>

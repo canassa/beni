@@ -1,0 +1,38 @@
+-- Another module's markup whose top element is a `<table>`, its rows and
+-- cells below (docs/design/browser-inline.md §8.4): the piece's string is
+-- written whole, every implied element (`tbody`) written out, so the
+-- element table counts what the parser makes.
+import Browser
+import Grid
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    g : Grid.Model
+
+
+type Msg
+    = GridMsg Grid.Msg
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        GridMsg sub →
+            { model | g = Grid.update sub model.g }
+
+
+view : Model → Html Msg
+view model =
+    <div data-role="app">
+        {Html.map (Grid.view model.g) GridMsg}
+        <span data-role="after">after</span>
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → { g = Grid.init ⊤ }, update = update, view = view })
+        "root"

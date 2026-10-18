@@ -1,0 +1,52 @@
+-- element "root"
+-- load
+<body>
+  <div id="root">
+    <table data-role="app">
+      <tbody>
+        <tr data-role="row">
+          <td>
+            <output>"0"</output>
+          </td>
+          <td>
+            <button data-role="add">"Add"</button>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</body>
+-- click [data-role=add]
+<body>
+  <div id="root">
+    <table data-role="app">
+      <tbody>
+        <tr data-role="row">
+          <td>
+            <output>"1"</output>
+          </td>
+          <td>
+            <button data-role="add">"Add"</button>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</body>
+-- click [data-role=add]
+<body>
+  <div id="root">
+    <table data-role="app">
+      <tbody>
+        <tr data-role="row">
+          <td>
+            <output>"2"</output>
+          </td>
+          <td>
+            <button data-role="add">"Add"</button>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</body>
