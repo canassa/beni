@@ -1,0 +1,43 @@
+-- `Counter.update`'s second branch is `_ →`: the key `Dec` is its
+-- default step, whose handler takes the message whole and calls
+-- `Counter.update` with it, as before arm pieces (docs/design/browser-inline.md
+-- §8.4); `Inc` takes its arm piece. The clamp holds the count at 10 and 0.
+import Browser
+import Counter
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    c : Counter.Model
+
+
+type Msg
+    = CounterMsg Counter.Msg
+
+
+step : Msg, Model → Model
+step msg model =
+    case msg of
+        CounterMsg sub →
+            { model | c = Counter.update sub model.c }
+
+
+update : Msg, Model → Model
+update msg model = step msg model
+
+
+view : Model → Html Msg
+view model =
+    <div data-role="app">
+        <output>{model.c.count}</output>
+        <button data-role="inc" onClick={CounterMsg Counter.Inc}>+</button>
+        <button data-role="dec" onClick={CounterMsg Counter.Dec}>-</button>
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → { c = Counter.init ⊤ }, update = update, view = view })
+        "root"

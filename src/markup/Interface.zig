@@ -1329,7 +1329,7 @@ pub const Context = struct {
     /// 1.15, inside `Lowering.program` only: the facts of the pieces an
     /// `html` hole is written as — a call of another module's root's
     /// function, under maps of constructors — or null when it is not one.
-    pub fn programPiece(cx: *Context, node: Node.Index) ?*const PieceFacts {
+    pub fn programPiece(cx: *Context, node: Node.Index) Error!?*const PieceFacts {
         return cx.vtable.program_piece(cx.impl, node);
     }
 
@@ -1772,7 +1772,7 @@ pub const VTable = struct {
     piece_event_ctor: *const fn (impl: *anyopaque, handler: Value.Index, payload: bool) ?Context.PieceEvent,
     root_let_readers: *const fn (impl: *anyopaque, r: Root.Index, k: u32) u32,
     piece_export: *const fn (impl: *anyopaque, base: []const u8, value: Expr) Error!void,
-    program_piece: *const fn (impl: *anyopaque, node: Node.Index) ?*const PieceFacts,
+    program_piece: *const fn (impl: *anyopaque, node: Node.Index) Error!?*const PieceFacts,
     program_piece_name: *const fn (impl: *anyopaque, node: Node.Index, base: []const u8) Error!Name,
     program_piece_args: *const fn (impl: *anyopaque, block: Block, node: Node.Index) Error![]const Expr,
     piece_arity: *const fn (impl: *anyopaque) u32,

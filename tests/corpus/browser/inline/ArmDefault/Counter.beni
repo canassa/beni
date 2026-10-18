@@ -1,0 +1,24 @@
+--! A counter, as a module of its own: its model, its messages and its
+--! `update`.
+
+pub type alias Model =
+    count : Int
+
+
+pub init : ⊤ → Model
+init ⊤ = { count = 3 }
+
+
+pub type Msg
+    = Inc
+    | Dec
+
+
+pub update : Msg, Model → Model
+update msg model =
+    case msg of
+        Inc →
+            { model | count = clamp (model.count + 1) 0 10 }
+
+        _ →
+            { model | count = clamp (model.count - 1) 0 10 }

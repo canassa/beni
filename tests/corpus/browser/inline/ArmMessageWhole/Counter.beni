@@ -1,0 +1,32 @@
+pub type alias Model =
+    count : Int
+    last : String
+
+
+pub init : ⊤ → Model
+init ⊤ = { count = 3, last = "" }
+
+
+pub type Msg
+    = Inc
+    | Dec
+
+
+name : Msg → String
+name m =
+    case m of
+        Inc →
+            "inc"
+
+        Dec →
+            "dec"
+
+
+pub update : Msg, Model → Model
+update msg model =
+    case msg of
+        Inc →
+            { model | count = model.count + 1, last = name msg }
+
+        Dec →
+            { model | count = model.count - 1, last = name msg }
