@@ -1314,6 +1314,12 @@ pub const Context = struct {
 
     pub const PieceEvent = struct { ctor: Ctor, fields: u32 };
 
+    /// 1.15: how many of root `r`'s values read its `k`-th `let`
+    /// (`Root.lets`), the other `let`s aside.
+    pub fn rootLetReaders(cx: *Context, r: Root.Index, k: u32) u32 {
+        return cx.vtable.root_let_readers(cx.impl, r, k);
+    }
+
     /// 1.15, inside `Lowering.piece` only: a top-level constant of the
     /// module named `<Module>$<base>`, exported, of `value`.
     pub fn pieceExport(cx: *Context, base: []const u8, init: Expr) Error!void {
@@ -1764,6 +1770,7 @@ pub const VTable = struct {
     program_message: *const fn (impl: *anyopaque, block: Block, handler: Value.Index, payload: ?Expr) Error!Program.Message,
     program_message_fields: *const fn (impl: *anyopaque, block: Block, handler: Value.Index, payload: ?Expr) Error!Program.Message,
     piece_event_ctor: *const fn (impl: *anyopaque, handler: Value.Index, payload: bool) ?Context.PieceEvent,
+    root_let_readers: *const fn (impl: *anyopaque, r: Root.Index, k: u32) u32,
     piece_export: *const fn (impl: *anyopaque, base: []const u8, value: Expr) Error!void,
     program_piece: *const fn (impl: *anyopaque, node: Node.Index) ?*const PieceFacts,
     program_piece_name: *const fn (impl: *anyopaque, node: Node.Index, base: []const u8) Error!Name,

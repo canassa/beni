@@ -193,6 +193,9 @@ fn piece(cx: *m.Context, tree: *const m.Tree, req: *const m.PieceRequest) m.Erro
     if (pg.top_nodes.len != 1 or pg.top_nodes[0].kind != .element) return limit(cx, r.node, "`browser-inline` writes another module's markup as pieces when it is one element, and this is not");
     for (pg.writes.items) |w| if (w.target == null) return later(cx, r.node, "a binding of the top element of another module's markup");
     for (pg.events.items) |ev| if (ev.target == null) return later(cx, ev.node, "an event on the top element of another module's markup");
+    // D-d: a `let` of the view read by one hole is that hole's value; one
+    // several read is a memo node, S3's (§8.2).
+    for (0..r.lets.len) |k| if (cx.rootLetReaders(req.root, @intCast(k)) > 1) return limit(cx, r.node, "a `let` of this `view` is read by several holes, and `browser-inline` computes a `let` in the binding of the one hole that reads it until it has a memo of its own");
     pg.elements = try cx.fresh("elements");
     // The root's function's parameters, each a parameter of every binding
     // function after the elements.
@@ -1163,6 +1166,19 @@ const Page = struct {
         pg.cx.programViewLeave();
     }
 
+    /// Root `r`'s `let`s evaluated into `blk` and read under their names.
+    fn bindLets(pg: *Page, blk: m.Block, r: m.Root.Index) m.Error!void {
+        const cx = pg.cx;
+        const lets = pg.tree.root(r).lets;
+        for (0..lets.len) |k| {
+            const lv = lets.at(@intCast(k));
+            try cx.rootValues(blk, r, &.{lv});
+            const n = try cx.fresh("let");
+            try cx.js.constant(blk, n, try cx.value(lv));
+            try cx.bindLet(r, @intCast(k), n);
+        }
+    }
+
     /// A binding function's body: per context its writes are in, the
     /// context entered, its values evaluated and each write made.
     fn writeFunction(pg: *Page, blk: m.Block, f: *const Function) m.Error!void {
@@ -1186,6 +1202,11 @@ const Page = struct {
             if (std.mem.indexOfScalar(u32, done.items, ctx) != null) continue;
             try done.append(pg.a(), ctx);
             const arms = try pg.enter(blk, ctx);
+            // The `let`s of the view's body its root takes (`Root.lets`, D-d):
+            // each evaluated here, in source order, where the function's
+            // holes read it; a release build drops one nothing here reads.
+            try pg.bindLets(blk, pg.ctxs.items[0].root);
+            if (ctx != 0) try pg.bindLets(blk, pg.ctxs.items[ctx].root);
             var values: std.ArrayList(m.Value.Index) = .empty;
             for (f.writes.items) |wi| {
                 const w = pg.writes.items[wi];
