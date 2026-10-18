@@ -1,0 +1,121 @@
+--! The page's built files, read from `Config.pageDir` with `Io.readFile`
+--! and served with the `content-type` of their extension. `/` is
+--! `index.html`, the page shell `beni build` wrote.
+--!
+--! A build's output is text — `.html`, `.mjs`, `.mjs.map` — and
+--! `Io.readFile` reads text, so this is enough for a beni page. A file
+--! that is not text (an image, a font) cannot be served until the server
+--! has bodies as bytes (canassa/beni#335): its extension is not in the
+--! table, and it is 404.
+--!
+--! A path segment is accepted only when it is made of letters, digits,
+--! `.`, `_` and `-`, and does not begin with `.`: so `..` never reaches the
+--! file system, and neither does a hidden file.
+
+import Config
+import Http.Server as Server exposing (Response)
+import Io
+
+
+--| Answer `GET` or `HEAD` for the file at these path segments.
+pub serve : String, List String → Response
+serve method segments =
+    if method ≠ "GET" && method ≠ "HEAD" then
+        { status = 405
+        , headers = [ ( "content-type", "text/plain; charset=utf-8" ), ( "allow", "GET, HEAD" ) ]
+        , body = "method not allowed"
+        }
+    else
+        case fileOf segments of
+            Nothing →
+                Server.text 404 "no such file"
+
+            Just ( path, mime ) →
+                read path mime
+
+
+-- The file a path names, relative to the page's directory, and its type.
+fileOf : List String → Maybe (String × String)
+fileOf segments =
+    case segments of
+        [] →
+            Just ( "index.html", "text/html; charset=utf-8" )
+
+        _ →
+            if List.all segments safe then
+                Maybe.map (mimeOf (last segments)) λmime → ( String.join segments "/", mime )
+            else
+                Nothing
+
+
+safe : String → Bool
+safe segment =
+    not (String.isEmpty segment)
+        && not (String.startsWith segment ".")
+        && String.all segment λc → Char.isAlphaNum c || c == '.' || c == '_' || c == '-'
+
+
+last : List String → String
+last segments =
+    case segments of
+        [ …_, name ] →
+            name
+
+        [] →
+            ""
+
+
+-- The `content-type` of a file name, by its extension. Only text: see
+-- the module comment.
+mimeOf : String → Maybe String
+mimeOf name =
+    if String.endsWith name ".html" then
+        Just "text/html; charset=utf-8"
+    else if String.endsWith name ".mjs" || String.endsWith name ".js" then
+        Just "text/javascript; charset=utf-8"
+    else if String.endsWith name ".map" || String.endsWith name ".json" then
+        Just "application/json; charset=utf-8"
+    else if String.endsWith name ".css" then
+        Just "text/css; charset=utf-8"
+    else if String.endsWith name ".svg" then
+        Just "image/svg+xml"
+    else if String.endsWith name ".txt" then
+        Just "text/plain; charset=utf-8"
+    else
+        Nothing
+
+
+-- Each failure `Io.readFile` names is one answer. A missing page is the
+-- common one: the page was not built yet.
+read : String, String → Response
+read path mime =
+    case Io.readFile "${Config.pageDir}/${path}" of
+        Ok body →
+            { status = 200, headers = [ ( "content-type", mime ) ], body = body }
+
+        Err Io.NotFound →
+            Server.text 404 "no such file: build the page first (see the README)"
+
+        Err Io.IsADirectory →
+            Server.text 404 "no such file"
+
+        Err Io.NotADirectory →
+            Server.text 404 "no such file"
+
+        Err Io.PermissionDenied →
+            Server.text 403 "the server may not read that file"
+
+        Err Io.TooManyOpenFiles →
+            Server.text 503 "too many open files"
+
+        Err Io.TooLarge →
+            Server.text 500 "the file is too large to serve"
+
+        Err Io.SymlinkLoop →
+            Server.text 500 "the path loops"
+
+        Err Io.NameTooLong →
+            Server.text 414 "the path is too long"
+
+        Err Io.InvalidPath →
+            Server.text 400 "the path is not a file name"

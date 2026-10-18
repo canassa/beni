@@ -1,0 +1,451 @@
+--! A TodoMVC page in beni, on `browser-tea`, over the todo server's API:
+--! every change is a request, and the page shows what the server answered.
+--! The page is `tests/corpus/browser/direct/TodoMVC.beni` with the API in
+--! the place of `localStorage`: the same markup (todomvc.com's), the same
+--! keys, the same edit field.
+--!
+--! Each request is a `Cmd.task` over `Http.request`, whose answer is a
+--! message (`boundary.md` §9.8.12): `GET /api/todos` at start, `POST` for
+--! a new todo, `PUT` for a change, `DELETE` for a removal. A failed request puts
+--! its reason under the list, and the list stays as the server last
+--! answered it. The JSON shapes are `Todos`, the module the server shares.
+
+import Browser.Navigation
+import Cmd exposing (Cmd)
+import Dom
+import Html exposing (Html)
+import Http
+import Tea
+import Todos exposing (Draft, Todo)
+import Url exposing (Url)
+
+
+type Filter
+    = All
+    | Active
+    | Completed
+
+
+type alias Editing =
+    id : Int
+    draft : String
+
+
+type alias Model =
+    todos : List Todo.Type
+    loaded : Bool
+    draft : String
+    filter : Filter
+    editing : Maybe Editing
+    error : Maybe String
+
+
+type Msg
+    = Loaded (Result Http.Error (List Todo.Type))
+    | Typed String
+    | KeyDown Html.Event
+    | Added (Result Http.Error Todo.Type)
+    | Toggle Todo.Type
+    | ToggleAll Bool
+    | Changed (Result Http.Error Todo.Type)
+    | Destroy Int
+    | Removed Int (Result Http.Error ⊤)
+    | ClearCompleted
+    | UrlChanged Url
+    | StartEdit Int String
+    | EditTyped String
+    | EditKey Html.Event
+    | EditDone
+
+
+-- ---- The API -----------------------------------------------------------------
+
+api : String
+api = "/api/todos"
+
+
+fetchAll : Cmd Msg
+fetchAll = Cmd.task (λ⊤ → send "GET" api Http.emptyBody (Http.expectSchema Todos.list)) Loaded
+
+
+create : String → Cmd Msg
+create title =
+    Cmd.task (λ⊤ → send "POST" api (body { title = title, done = False }) (expectTodo ⊤)) Added
+
+
+save : Todo.Type → Cmd Msg
+save todo =
+    Cmd.task
+        (λ⊤ → send "PUT" (at todo.id) (body { title = todo.title, done = todo.done }) (expectTodo ⊤)
+        )
+        Changed
+
+
+delete : Int → Cmd Msg
+delete id = Cmd.task (λ⊤ → send "DELETE" (at id) Http.emptyBody Http.expectWhatever) (Removed id _)
+
+
+at : Int → String
+at id = "${api}/${String.fromInt id}"
+
+
+body : Draft.Type → Http.Body
+body draft = Http.jsonBody (Draft.schema ⊤) draft
+
+
+-- Built where each request is made, inside the command's lambda, so the
+-- ownership checker follows the decoder (`ownership-checker.md` §24.9).
+expectTodo : ⊤ → Http.Expect Http.Error Todo.Type
+expectTodo ⊤ = Http.expectSchema (Todo.schema ⊤)
+
+
+-- One request, waited for in the command's own fiber (`Cmd.task`): the
+-- direct form, so the ownership checker follows the answer's decoder to
+-- the message (`ownership-checker.md` §24.9); `Http.send`'s tagger is not
+-- followed, and a payload holding a list is refused on `browser-direct`.
+send : String, String, Http.Body, Http.Expect Http.Error a → Result Http.Error a
+send method url requestBody expect =
+    Http.request
+        { method = method
+        , headers = []
+        , url = url
+        , body = requestBody
+        , expect = expect
+        , timeout = Nothing
+        , tracker = Nothing
+        }
+
+
+-- What the page says of a failed request.
+failed : Http.Error → String
+failed error =
+    case error of
+        Http.BadUrl url →
+            "the address ${url} is not valid"
+
+        Http.BadRequest _ →
+            "the request could not be sent"
+
+        Http.Timeout →
+            "the server did not answer in time"
+
+        Http.NetworkError →
+            "the server cannot be reached"
+
+        Http.BadStatus status →
+            "the server answered ${String.fromInt status}"
+
+        Http.BadBody issues →
+            "the server's answer is not a todo:\n" ++ Todos.describeIssues issues
+
+
+-- ---- The filter, from the address --------------------------------------------
+
+filterOf : Maybe Url → Filter
+filterOf url =
+    case Maybe.andThen url λu → u.fragment of
+        Just "/active" →
+            Active
+
+        Just "/completed" →
+            Completed
+
+        _ →
+            All
+
+
+-- ---- The program --------------------------------------------------------------
+
+init : ⊤ → Model × Cmd Msg
+init ⊤ =
+    ( { todos = []
+      , loaded = False
+      , draft = ""
+      , filter = filterOf (Browser.Navigation.currentUrl ⊤)
+      , editing = Nothing
+      , error = Nothing
+      }
+    , Cmd.batch [ fetchAll, Cmd.afterRender (focus "new-todo" _) ]
+    )
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        Loaded (Ok todos) →
+            ( { model | todos = todos, loaded = True, error = Nothing }, Cmd.none )
+
+        Loaded (Err error) →
+            ( { model | loaded = True, error = Just (failed error) }, Cmd.none )
+
+        Typed text →
+            ( { model | draft = text }, Cmd.none )
+
+        KeyDown event →
+            if Html.key event == "Enter" then
+                Html.preventDefault event
+
+                title = String.trim model.draft
+                if String.isEmpty title then
+                    ( model, Cmd.none )
+                else
+                    ( { model | draft = "" }, create title )
+            else
+                ( model, Cmd.none )
+
+        Added (Ok todo) →
+            ( { model | todos = [ …model.todos, todo ], error = Nothing }, Cmd.none )
+
+        Added (Err error) →
+            ( { model | error = Just (failed error) }, Cmd.none )
+
+        Toggle todo →
+            ( model, save { todo | done = not todo.done } )
+
+        ToggleAll done →
+            ( model
+            , Cmd.batch
+                (List.map (List.filter model.todos λt → t.done ≠ done) λt → save { t | done = done }
+                )
+            )
+
+        Changed (Ok todo) →
+            ( { model
+                | todos = List.map model.todos λt → if t.id == todo.id then todo else t
+                , error = Nothing
+              }
+            , Cmd.none
+            )
+
+        Changed (Err error) →
+            ( { model | error = Just (failed error) }, Cmd.none )
+
+        Destroy id →
+            ( model, delete id )
+
+        Removed id (Ok ⊤) →
+            ( { model | todos = List.filter model.todos λt → t.id ≠ id, error = Nothing }
+            , Cmd.none
+            )
+
+        Removed _ (Err error) →
+            ( { model | error = Just (failed error) }, Cmd.none )
+
+        ClearCompleted →
+            ( model, Cmd.batch (List.map (List.filter model.todos λt → t.done) λt → delete t.id) )
+
+        UrlChanged url →
+            ( { model | filter = filterOf (Just url) }, Cmd.none )
+
+        StartEdit id title →
+            ( { model | editing = Just { id = id, draft = title } }
+            , Cmd.afterRender (focus "edit" _)
+            )
+
+        EditTyped text →
+            ( { model | editing = Maybe.map model.editing λed → { ed | draft = text } }, Cmd.none )
+
+        EditKey event →
+            case Html.key event of
+                "Enter" →
+                    commit model
+
+                "Escape" →
+                    ( { model | editing = Nothing }, Cmd.none )
+
+                _ →
+                    ( model, Cmd.none )
+
+        EditDone →
+            commit model
+
+
+-- Focus the element with this id once the render the update queued has
+-- run: the new-todo field at load, and the edit field, which the update
+-- that opens it renders.
+focus : String, Cmd.Send Msg → ⊤
+focus id _ =
+    case Dom.focus id of
+        _ →
+            ⊤
+
+
+-- Enter and leaving the field both save; the second of the two, when Enter
+-- has already closed the field, finds nothing open and does nothing. An
+-- empty title deletes the todo, as todomvc.com says.
+commit : Model → Model × Cmd Msg
+commit model =
+    case model.editing of
+        Nothing →
+            ( model, Cmd.none )
+
+        Just ed →
+            title = String.trim ed.draft
+            closed = { model | editing = Nothing }
+            if String.isEmpty title then
+                ( closed, delete ed.id )
+            else
+                case List.filter model.todos λt → t.id == ed.id of
+                    [ todo, …_ ] →
+                        ( closed, save { todo | title = title } )
+
+                    [] →
+                        ( closed, Cmd.none )
+
+
+visible : Filter, Todo.Type → Bool
+visible filter todo =
+    case filter of
+        All →
+            True
+
+        Active →
+            not todo.done
+
+        Completed →
+            todo.done
+
+
+-- The draft of the todo being edited, when it is this one.
+editingDraft : Maybe Editing, Int → Maybe String
+editingDraft editing id =
+    case editing of
+        Just ed →
+            if ed.id == id then Just ed.draft else Nothing
+
+        Nothing →
+            Nothing
+
+
+isEditing : Maybe Editing, Int → Bool
+isEditing editing id =
+    case editingDraft editing id of
+        Just _ →
+            True
+
+        Nothing →
+            False
+
+
+editor : Maybe String → Html Msg
+editor editing =
+    case editing of
+        Just draft →
+            <input
+                id="edit"
+                class="edit"
+                value={draft}
+                onInput={EditTyped}
+                onKeyDown={EditKey}
+                onBlur={λ_ → EditDone}
+            />
+
+        Nothing →
+            <></>
+
+
+notice : Model → Html Msg
+notice model =
+    case model.error of
+        Just text →
+            <p class="error" id="error">{text}</p>
+
+        Nothing →
+            if model.loaded then
+                <></>
+            else
+                <p class="loading" id="loading">Loading…</p>
+
+
+view : Model → Html Msg
+view model =
+    left = List.length (List.filter model.todos λt → not t.done)
+    <section class="todoapp">
+        <header class="header">
+            <h1>todos</h1>
+            <input
+                id="new-todo"
+                class="new-todo"
+                placeholder="What needs to be done?"
+                autofocus
+                value={model.draft}
+                onInput={Typed}
+                onKeyDown={KeyDown}
+            />
+        </header>
+        {notice model}
+        <section class="main" hidden={List.isEmpty model.todos}>
+            <input
+                id="toggle-all"
+                class="toggle-all"
+                type="checkbox"
+                checked={left == 0 && not (List.isEmpty model.todos)}
+                onCheck={ToggleAll}
+            />
+            <label for="toggle-all">Mark all as complete</label>
+            <ul class="todo-list">
+                <For each={List.filter model.todos (visible model.filter _)} keyed={.id}>
+                    {λtodo →
+                        <li
+                            class={[ ( "completed", todo.done )
+                                   , ( "editing", isEditing model.editing todo.id )
+                                   ]
+                                  }
+                        >
+                            <div class="view">
+                                <input
+                                    class="toggle"
+                                    type="checkbox"
+                                    checked={todo.done}
+                                    onCheck={λ_ → Toggle todo}
+                                />
+                                <label onDblClick={StartEdit todo.id todo.title}>
+                                    {todo.title}
+                                </label>
+                                <button class="destroy" onClick={Destroy todo.id} />
+                            </div>
+                            {editor (editingDraft model.editing todo.id)}
+                        </li>
+                    }
+                </For>
+            </ul>
+        </section>
+        <footer class="footer" hidden={List.isEmpty model.todos}>
+            <span class="todo-count">
+                <strong>{String.fromInt left}</strong>{if left == 1 then
+                                                          " item left"
+                                                       else
+                                                          " items left"
+                                                      }
+            </span>
+            <ul class="filters">
+                <li><a href="#/" class={[ ( "selected", model.filter == All ) ]}>All</a></li>
+                <li>
+                    <a href="#/active" class={[ ( "selected", model.filter == Active ) ]}>Active</a>
+                </li>
+                <li>
+                    <a href="#/completed" class={[ ( "selected", model.filter == Completed ) ]}>
+                        Completed
+                    </a>
+                </li>
+            </ul>
+            <button
+                id="clear-completed"
+                class="clear-completed"
+                hidden={left == List.length model.todos}
+                onClick={ClearCompleted}
+            >
+                Clear completed
+            </button>
+        </footer>
+    </section>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = init
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Browser.Navigation.onUrlChange UrlChanged
+        }
