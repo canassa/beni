@@ -64,6 +64,14 @@ schema Placed =
     at : Parts.Point
 
 
+-- A union whose discriminator is a name `Object.prototype` holds, and a
+-- record whose key is one: each must be the value's own.
+schema Kind tagged "constructor" of
+    Plain as "plain"
+    Named as "named"
+        valueOf : String
+
+
 type Color
     = Red
     | Gray Int
@@ -208,6 +216,42 @@ event label v = "${label}: ${eventValid v} | ${eventRead v}"
 
 eventText : String, String → String
 eventText label text = "${label}: ${eventParse text} | ${eventParseRead text}"
+
+
+-- ---- Keys named like `Object.prototype`'s -------------------------------------
+
+kindText : Kind.Type → String
+kindText k =
+    case k of
+        Kind.Plain →
+            "plain"
+
+        Kind.Named n →
+            "named ${n.valueOf}"
+
+
+kindValid : Value → String
+kindValid v =
+    case Schema.read (Kind.schema ⊤) v of
+        Ok k →
+            kindText k
+
+        Err _ →
+            "invalid"
+
+
+kindRead : Value → String
+kindRead v =
+    case Schema.read (Kind.schema ⊤) v of
+        Ok k →
+            kindText k
+
+        Err issues →
+            "invalid (${String.fromInt (List.length issues)})"
+
+
+kind : String, Value → String
+kind label v = "${label}: ${kindValid v} | ${kindRead v}"
 
 
 -- ---- Across modules -----------------------------------------------------------
@@ -380,6 +424,13 @@ main =
         , eventText "parse move 1.5" "{\"type\":\"move\",\"dx\":1.5,\"dy\":2}"
         , placed "placed" (Hosts.parse "{\"label\":\"p\",\"at\":{\"x\":1,\"y\":2}}")
         , placed "placed y 1.5" (Hosts.parse "{\"label\":\"p\",\"at\":{\"x\":1,\"y\":1.5}}")
+        , kind "own constructor" (Hosts.parse "{\"constructor\":\"plain\"}")
+        , kind "inherited constructor" (Hosts.parse "{}")
+        , kind "own valueOf" (Hosts.parse "{\"constructor\":\"named\",\"valueOf\":\"v\"}")
+        , kind "inherited valueOf" (Hosts.parse "{\"constructor\":\"named\"}")
+        , kind
+            "inherited both"
+            (Hosts.inheriting (Hosts.parse "{\"constructor\":\"named\",\"valueOf\":\"v\"}"))
         , item "item" goodItem
         , item "gray" (Hosts.with goodItem "color" (Hosts.parse "{\"Gray\":5}"))
         , item "red" (Hosts.with goodItem "color" (Hosts.parse "\"Red\""))

@@ -3571,7 +3571,10 @@ shapeNever _ = shapeFail
 
 -- Object `x`'s key `k`, read once, as every reading runner reads it
 -- (`present`): `undefined` when it is absent — and a name `prototypeKey`
--- lists, which must be `x`'s own, is not read unless it is.
+-- lists, which must be `x`'s own, is not read unless it is. Only the
+-- `…Own` readers ask: the compiler gives a record or a union one of them
+-- exactly when one of its keys is such a name, so a program none of whose
+-- keys is ships no list of names.
 shapeKey : Js.Value, String → Js.Value
 shapeKey x k =
     if prototypeKey k then
@@ -3597,6 +3600,39 @@ shapeRecord s x depth =
         shapeFail
 
 
+-- `[shapeRecordOwn, make, entry₁, …]`: a record one of whose keys is a name
+-- `Object.prototype` holds, each key read as `present` reads it.
+shapeRecordOwn : Js.Value, Js.Value, Int → Js.Value
+shapeRecordOwn s x depth =
+    if isObject x then
+        values = Js.array []
+        if shapeFieldsOwn s 2 (lengthOf s) x depth values then
+            shapeFail
+        else
+            Js.call (Js.at s 1) "apply" [ Js.null, values ]
+    else
+        shapeFail
+
+
+shapeFieldsOwn : Js.Value, Int, Int, Js.Value, Int, Js.Value → Bool
+shapeFieldsOwn s i n x depth values =
+    if i ≥ n then
+        False
+    else
+        entry = Js.at s i
+        k = stringOf (Js.at entry 0)
+        y =
+            if prototypeKey k then
+                if hasOwn x k then shapePresent entry (Js.get x k) depth else shapeAbsent entry
+            else
+                shapeField entry x depth
+        if Js.same y shapeFail then
+            True
+        else
+            Js.to (Js.call values "push" [ y ])
+            shapeFieldsOwn s (i + 1) n x depth values
+
+
 -- The fields from the `i`th entry on, each read and pushed onto `values`.
 -- True when one fails.
 shapeFields : Js.Value, Int, Int, Js.Value, Int, Js.Value → Bool
@@ -3612,16 +3648,12 @@ shapeFields s i n x depth values =
             shapeFields s (i + 1) n x depth values
 
 
--- One field of a record at depth `depth`, present as `present` tests it
--- and read once.
+-- One field of a record at depth `depth`, whose key is no name
+-- `Object.prototype` holds: present when its one read is not `undefined`.
 shapeField : Js.Value, Js.Value, Int → Js.Value
 shapeField entry x depth =
-    k = stringOf (Js.at entry 0)
-    if prototypeKey k then
-        if hasOwn x k then shapePresent entry (Js.get x k) depth else shapeAbsent entry
-    else
-        v = Js.get x k
-        if Js.isUndefined v then shapeAbsent entry else shapePresent entry v depth
+    v = Js.get x (stringOf (Js.at entry 0))
+    if Js.isUndefined v then shapeAbsent entry else shapePresent entry v depth
 
 
 -- A present field's value, read one level down.
@@ -3744,20 +3776,31 @@ slotOf i =
 -- variant.
 shapeTagged : Js.Value, Js.Value, Int → Js.Value
 shapeTagged s x depth =
-    if isObject x then
-        i = shapeFind s (shapeKey x (stringOf (Js.at s 1))) 2 (lengthOf s)
-        if i < 0 then
+    if isObject x then shapeVariant s (Js.get x (stringOf (Js.at s 1))) x depth else shapeFail
+
+
+-- `[shapeTaggedOwn, discriminator, …]`: a union whose discriminator is a
+-- name `Object.prototype` holds, read as `present` reads it.
+shapeTaggedOwn : Js.Value, Js.Value, Int → Js.Value
+shapeTaggedOwn s x depth =
+    if isObject x then shapeVariant s (shapeKey x (stringOf (Js.at s 1))) x depth else shapeFail
+
+
+-- The variant whose tag is `tag`: a nullary one's value, or its payload's
+-- record shape one level down.
+shapeVariant : Js.Value, Js.Value, Js.Value, Int → Js.Value
+shapeVariant s tag x depth =
+    i = shapeFind s tag 2 (lengthOf s)
+    if i < 0 then
+        shapeFail
+    else
+        v = Js.at s (i + 1)
+        if not (isArray v) then
+            v
+        else if depth ≥ shapeMax then
             shapeFail
         else
-            v = Js.at s (i + 1)
-            if not (isArray v) then
-                v
-            else if depth ≥ shapeMax then
-                shapeFail
-            else
-                shapeRun v x (depth + 1)
-    else
-        shapeFail
+            shapeRun v x (depth + 1)
 
 
 -- The position of the name `===` to `k` among `s`'s, every other element

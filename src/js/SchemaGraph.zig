@@ -215,7 +215,7 @@ pub const compiled_values = [_][]const u8{
     "shapeFloat",      "shapeFinite",         "shapeNull",       "shapeValue",        "shapeChar",
     "shapeInt32",      "shapeNever",          "shapeRecord",     "shapeList",         "shapeNullable",
     "shapeMaybe",      "shapeJust",           "shapeLater",      "shapeTuple",        "shapeTagged",
-    "shapeCtors",
+    "shapeCtors",      "shapeRecordOwn",      "shapeTaggedOwn",
 };
 
 pub fn isCompiledValue(text: []const u8) bool {
@@ -517,7 +517,10 @@ pub fn shapeable(g: SchemaGraph, scratch: Allocator, r: Ref) Allocator.Error!boo
 }
 
 /// The `core/Schema` reader a node's shape names first, or null for a
-/// reference, a check or an annotation, which name none.
+/// reference, a check or an annotation, which name none. A record with a
+/// key, or a union with a discriminator, that is a name `Object.prototype`
+/// holds takes the reader that tests it as an own key, decided here from
+/// the key's text as the workers decide it (`SchemaShare.isPrototypeKey`).
 pub fn shapeReader(plan: *const SchemaPlan, n: SchemaPlan.NodeIndex) ?[]const u8 {
     return switch (tag(plan, n)) {
         .primitive => switch (std.enums.fromInt(SchemaPlan.Primitive, lhs(plan, n)) orelse .value) {
@@ -536,8 +539,10 @@ pub fn shapeReader(plan: *const SchemaPlan, n: SchemaPlan.NodeIndex) ?[]const u8
         .nullable => "shapeNullable",
         .maybe => if (rhs(plan, n) & SchemaPlan.Maybe.reads_null != 0) "shapeJust" else "shapeMaybe",
         .tuple => "shapeTuple",
-        .tagged => "shapeTagged",
-        .record => "shapeRecord",
+        .tagged => if (SchemaShare.isPrototypeKey(literal(plan, @fromBackingInt(@intCast(lhs(plan, n)))))) "shapeTaggedOwn" else "shapeTagged",
+        .record => for (fields(plan, n)) |f| {
+            if (SchemaShare.isPrototypeKey(literal(plan, f.external))) break "shapeRecordOwn";
+        } else "shapeRecord",
         .constructors => "shapeCtors",
         .reference, .codec_ref, .check, .annotation, .conversion, .parameter, .codec_value => null,
     };

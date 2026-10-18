@@ -891,7 +891,7 @@ const Gen = struct {
             .tagged => {
                 const info = g.variantsOf(n);
                 var items: std.ArrayList(Node.Index) = .empty;
-                try items.append(g.l.scratch, try g.core("shapeTagged"));
+                try items.append(g.l.scratch, try g.core(SchemaGraph.shapeReader(plan, n).?));
                 try items.append(g.l.scratch, try g.str(SchemaGraph.literal(plan, @fromBackingInt(@intCast(SchemaGraph.lhs(plan, n))))));
                 for (SchemaGraph.variants(plan, n), 0..) |vi, order| {
                     if (vi >= plan.variants.len) continue;
@@ -962,7 +962,7 @@ const Gen = struct {
         const built = try g.recordValue(names, ids);
         const value = if (variant) |v| try g.variantValue(v.info, v.order, v.name, built) else built;
         var items: std.ArrayList(Node.Index) = .empty;
-        try items.append(g.l.scratch, try g.core("shapeRecord"));
+        try items.append(g.l.scratch, try g.core(SchemaGraph.shapeReader(plan, n).?));
         try items.append(g.l.scratch, try g.arrowOf(params, value));
         for (fields) |f| {
             var entry: std.ArrayList(Node.Index) = .empty;
