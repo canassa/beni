@@ -2214,6 +2214,12 @@ tails: they are as many as the arms the key's arm is written with, which the con
 (`browser-inline.md` §8.7); `k` and the round cap `I` stay until #286's precise folding replaces
 them, and a key they cut is refused there as a limit of the compiler.
 
+*Amended 2026-10-18 (the owner, S1):* for the same platforms, a pattern of a constructor of a type of
+one constructor gives its positive fact too (`Input.follow_single`), though it tests nothing: in a
+summary and in a key alike, so the key tree splits on a message part of such a type into its one
+child. A key's leaf is then that constructor — `W2Msg · WriteVenue`, not `W2Msg` — and its
+handler takes the constructor's fields, as for any other leaf. The number of keys does not change.
+
 ### *Amended 2026-10-18 (`browser-inline`'s S1, the owner's split of `*` keys):* an approximate write is marked
 
 A write the pass makes because it could not see into a value — `value p` for a `Fresh` term (an

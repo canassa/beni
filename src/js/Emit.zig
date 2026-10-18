@@ -2681,6 +2681,7 @@ const Emitter = struct {
             // `browser-inline` refuses a capped key, so the caps that only
             // bound precision are lifted for it (`write-sets.md`, *The caps*).
             .lift_caps = if (e.options.platform.lowering) |name| (if (findLowering(name)) |lw| lw.arm_fields else false) else false,
+            .follow_single = if (e.options.platform.lowering) |name| (if (findLowering(name)) |lw| lw.arm_fields else false) else false,
         });
         e.writes = w;
         e.writes_calls = try w.runCalls();

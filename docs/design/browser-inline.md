@@ -349,7 +349,9 @@ program site by name (option 2 of §7, extended to `update` and `view`).
   (`emit/release/core/InlineOnce.beni`). A constructor of a type of one constructor, which no
   `case` splits — `CounterMsg` around `Counter.Msg` — is followed on the leaf's path all the same:
   the key is `Inc` under it, and its arm takes `Inc`'s fields (`browser/inline/ArmPiece/`,
-  `emit/release/inline/ArmPiece/`). A key whose split inside another module is followed by a
+  `emit/release/inline/ArmPiece/`). A message of a type of one constructor is followed to it in
+  the same way (`write-sets.md`, *amended 2026-10-18*): its key's leaf is the constructor, and the
+  handler takes its fields (`browser/inline/ArmSingle/`). A key whose split inside another module is followed by a
   further split in a function that branch's arm calls (`deep_split`) has no piece for that
   function: the arm calls it as written, handed the message the key's fields make (D-e, *Arms the
   tracking does not specialise* below).
