@@ -598,6 +598,8 @@ nominal: []?NominalFacts = &.{},
 nominal_order: []u32 = &.{},
 nominal_link: []u32 = &.{},
 nominal_on: []bool = &.{},
+/// Whether `solveNominal` is solving a group (its assertion).
+nominal_solving: bool = false,
 /// §30.9: the nominal types whose bodies `ownMayHold` is reading.
 holding: std.ArrayList(TypeId) = .empty,
 ctor_ids: std.AutoHashMapUnmanaged(u64, u32) = .empty,
@@ -3359,6 +3361,10 @@ fn nominalFacts(o: *Ownership, id: TypeId) Allocator.Error!NominalFacts {
         @memset(o.nominal, null);
     }
     if (o.nominal[id.int()]) |f| return f;
+    // A group being solved reads only types solved before it and its own
+    // members, which start from nothing: never one `solveNominal` would
+    // have to walk again, over the columns the walk in progress is using.
+    if (std.debug.runtime_safety) std.debug.assert(!o.nominal_solving);
     try o.solveNominal(id);
     return o.nominal[id.int()].?;
 }
@@ -3443,6 +3449,11 @@ fn solveNominal(o: *Ownership, root: TypeId) Allocator.Error!void {
             o.nominal_on[x] = false;
             o.nominal[x] = .{};
         }
+        // A member reads the others as they stand: one whose list is
+        // reached only through a member read after it is seen on a later
+        // pass (`ownership/MutualCycles`'s three-type cycle).
+        o.nominal_solving = true;
+        defer o.nominal_solving = false;
         var changed = true;
         while (changed) {
             changed = false;
@@ -3459,7 +3470,9 @@ fn solveNominal(o: *Ownership, root: TypeId) Allocator.Error!void {
     }
 }
 
-/// The nominal types `birTypeFacts` may read for type `id`'s definition.
+/// The nominal types `birTypeFacts` may read for type `id`'s definition: a
+/// superset of them, or a group is solved before a type it reads. Edit it
+/// with `nominalFactsOf` and `birTypeFacts`, case by case.
 fn nominalEdges(o: *Ownership, id: TypeId, out: *std.ArrayList(u32)) Allocator.Error!void {
     if (id == .none or id.int() >= o.in.types.entries.len) return;
     const e = o.in.types.entries[id.int()];
@@ -3474,6 +3487,8 @@ fn nominalEdges(o: *Ownership, id: TypeId, out: *std.ArrayList(u32)) Allocator.E
     for (bir.declCtors(d)) |c| for (bir.extraSlice(.{ .start = c.args_start, .end = c.args_end }, Inst.Index)) |arg| try o.exprEdges(m, bir, arg, out);
 }
 
+/// `nominalEdges` for a type written in module `m`: every head
+/// `birTypeFacts` may read for it, edited together with it.
 fn exprEdges(o: *Ownership, m: u32, bir: *const Bir, inst: Inst.Index, out: *std.ArrayList(u32)) Allocator.Error!void {
     const tag = bir.instTag(inst);
     const data = bir.instData(inst);
@@ -3542,6 +3557,9 @@ fn nominalFactsOf(o: *Ownership, id: TypeId) Allocator.Error!NominalFacts {
     return facts;
 }
 
+/// What a type written in module `m` holds. Every nominal type it reads
+/// must be an edge of `nominalEdges`/`exprEdges` (`solveNominal`): edit
+/// them together, case by case.
 fn birTypeFacts(o: *Ownership, m: u32, bir: *const Bir, inst: Inst.Index, depth: u32) Allocator.Error!NominalFacts {
     if (depth > type_depth) return .{ .own = true, .list = true };
     const tag = bir.instTag(inst);
