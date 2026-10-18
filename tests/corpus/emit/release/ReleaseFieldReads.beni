@@ -1,0 +1,34 @@
+-- emit/release: a value made only of beni field reads, names and literals
+-- is written at its single use past any statement between (`backend.md` §9
+-- item 1, amended 2026-10-18). A beni record has no getter and nothing
+-- writes it, so reading it later reads the same and does nothing.
+--
+-- `label`'s `n = c.name` is read in the list, after two calls of `f`; it
+-- moves past both, while `shout`, a call read twice, stays bound. `plenty`'s
+-- two bindings are both written at their uses, the second an `if` of a
+-- field read and literals. Before, each stayed a `let`.
+import Node
+
+
+type alias Cups =
+    cups : Int
+    name : String
+
+
+pub label : (String → String), Cups → List String
+label f c =
+    n = c.name
+    shout = f "x"
+    louder = f shout
+    [ louder, n, shout ]
+
+
+pub plenty : Cups → List String
+plenty c =
+    a = c.cups
+    b = if c.cups > 11 then "Plenty" else "Some"
+    [ "Cups = ${String.fromInt a}", b ]
+
+
+main : Node.Program
+main = Node.printLines (plenty { cups = 12, name = "x" })
