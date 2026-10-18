@@ -14,9 +14,10 @@
 -- finite `Float` is read; arrays and tuples of the wrong length; an unknown
 -- tag and a non-string one; custom types in each of their forms; a recursive
 -- schema at the depth bound and one past it; `Value`, `null`, `nullable` and
--- `optional`; a record whose declaration lists its fields out of their
--- canonical order, read through getters that log which keys the run read; and
--- a declaration that names one declared after it, and one that names another
+-- `optional`; a derived `Maybe` field absent and `null`; JSON text with a
+-- duplicate key and a `__proto__` key; a record whose declaration lists its
+-- fields out of their canonical order, read through getters that log which
+-- keys the run read; and a declaration that names one declared after it, and one that names another
 -- module's.
 import Hosts
 import Int32 exposing (Int32)
@@ -388,4 +389,16 @@ main =
             "decode bad"
             "{\"pos\":[3,4],\"color\":\"Blue\",\"tags\":[],\"small\":-1,\"unit\":[]}"
         , itemJson "decode not JSON" "nope"
+        , itemJson
+            "decode label absent"
+            "{\"pos\":[3,4],\"color\":\"Red\",\"tags\":[],\"small\":-1,\"unit\":[]}"
+        , itemJson
+            "decode label null"
+            "{\"pos\":[3,4],\"color\":\"Red\",\"label\":null,\"tags\":[],\"small\":-1,\"unit\":[]}"
+        , itemJson
+            "decode duplicate key and __proto__"
+            "{\"pos\":[3,4],\"color\":\"Red\",\"small\":-1,\"small\":2,\"tags\":[],\"unit\":[],\"__proto__\":{\"label\":\"x\"}}"
+        , itemJson
+            "decode duplicate key, last bad"
+            "{\"pos\":[3,4],\"color\":\"Red\",\"small\":2,\"small\":1.5,\"tags\":[],\"unit\":[]}"
         ]
