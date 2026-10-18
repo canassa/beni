@@ -3444,6 +3444,25 @@ validRun worker v =
     if Js.same x c.fail then Err [] else Ok (fromHost x)
 
 
+-- `parse` at a call whose `Err` payload nothing reads, its schema `S.schema ⊤`
+-- of a nongeneric declaration (`schema.md` §6): `JSON.parse`, only its
+-- `SyntaxError` caught, then `S`'s validator worker on `read`'s context,
+-- which holds for what `JSON.parse` makes as for any host value.
+validParse : Js.Value, String → Result (List Issue) a
+validParse worker text =
+    case
+        Js.catchIf
+            (λ⊤ → Ok (Js.call (Js.global "JSON") "parse" [ Js.from text ]))
+            (λthrown → Js.instanceOf thrown (Js.global "SyntaxError"))
+            λ_ → Err ⊤
+    of
+        Ok v →
+            validRun worker (fromHost v)
+
+        Err _ →
+            Err []
+
+
 -- The first schema argument of a compiled root's that has a dynamic part,
 -- as `interpretedIn` finds them.
 firstDynamic : Js.Value → Maybe (Schema Js.Value Js.Value)
