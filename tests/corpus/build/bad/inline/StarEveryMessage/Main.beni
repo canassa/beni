@@ -1,0 +1,53 @@
+-- A `*` key of lost precision in a program whose `update` never looks at its
+-- message, and writes the whole model with a function the model holds: the
+-- key tree has one key of no steps, which stands for every message of a type
+-- of two constructors, and the limit of the compiler says so in words, never
+-- `(any)` (docs/design/browser-inline.md §5, §8.7).
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Step
+    = Step (Model → Model)
+
+
+type alias Model =
+    count : Int
+    label : String
+    step : Step
+
+
+type Msg
+    = Up
+    | Down
+
+
+update : Msg, Model → Model
+update _ model =
+    case model.step of
+        Step f →
+            f model
+
+
+view : Model → Html Msg
+view model =
+    <div>
+        <output>{model.count}</output>
+        <p>{model.label}</p>
+        <button data-role="up" onClick={Up}>+</button>
+        <button data-role="down" onClick={Down}>-</button>
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox
+            { init =
+                λ⊤ → { count = 0, label = "start", step = Step λm → { m | count = m.count + 1 } }
+            , update = update
+            , view = view
+            }
+        )
+        "root"
