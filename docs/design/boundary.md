@@ -4994,7 +4994,10 @@ runs in a fiber of a `Task.scope` that loop holds. So:
 - `listen` returns only once the loop's fiber has parked on its first wait, so from the moment
   a program holds the `Server`, a cancellation of the owner, or its end, reaches the loop's
   canceller: a program that returns right after `listen` serves nothing and ends, and never
-  leaves a bound socket keeping the process alive (`HttpServerOwnerEndsAtOnce`).
+  leaves a bound socket keeping the process alive (`HttpServerOwnerEndsAtOnce`). A cancellation
+  that arrives between the bind's answer and the owner's next run is latched, as every
+  interrupt to a ready fiber is (`transparent-effects-proposal.md` §16.4), and delivered at that
+  wait, after the loop's fiber — queued first — has parked: no gap is left.
 - When the owning fiber ends, or is cancelled, the loop fiber is cancelled with it. The
   cancellation calls the loop's wait canceller, which **destroys every open connection and closes
   the listening socket at once**, then the scope cancels every handler fiber still running and
