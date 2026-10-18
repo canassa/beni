@@ -1,1 +1,1 @@
-const a={$:"Nothing",a:null},b=a=>a*2+1,c=a=>{let b=a*3;return b*(b+4)-7+1},d=a=>a+100,e=b=>{let c=b>2?{$:"Just",a:b*10}:a,f;if(c.$==="Just")f=c.a;else f=0;return d(f)},f=a=>b(a+3)-1,g=a=>[f(a),c(a),e(a),e(1)];export{f,g};
+const a={$:"Nothing",a:null},b=a=>a*2+1,c=a=>{let b=a*3;return b*(b+4)-7+1},d=a=>a+100,e=b=>{let c=b>2?{$:"Just",a:b*10}:a,f;if(c.$==="Just")f=c.a;else f=0;return d(f)},f=a=>a*2+1,g=a=>b(a+3)-1,h=a=>[g(a),c(a),e(a),e(1),f(a+5)+1];export{g,h};

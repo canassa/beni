@@ -62,9 +62,31 @@ fused n =
         )
 
 
+-- `plus` is `twice`'s argument, both called once (f (g x)). Release writes
+-- `plus` into the argument, a place the index records as an expression's;
+-- `twice` stays a call, since an argument that is not a name is moved into
+-- a copy only when nothing else may read it, and a call is never moved.
+plus : Int → Int
+plus x = x + 5
+
+
+twice : Int → Int
+twice y =
+    z = y * 2
+    z + 1
+
+
+nested : Int → Int
+nested n =
+    r = twice (plus n)
+    r + 1
+
+
 chain : Int → Int
 chain n = outer n
 
 
 main : Program
-main = Node.printLines (List.map [ chain 4, shifted 2, fused 5, fused 1 ] String.fromInt)
+main =
+    Node.printLines
+        (List.map [ chain 4, shifted 2, fused 5, fused 1, nested 3 ] String.fromInt)
