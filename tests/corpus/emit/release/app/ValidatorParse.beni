@@ -1,0 +1,50 @@
+-- A `parse` and a `Json.decode` whose error nothing reads are validators
+-- (`schema.md` §6, *A run whose failure is never read is a validator*):
+-- `Schema.parse (Event.schema ⊤)` in a `case` with `Err _`, and
+-- `Json.decode` under `Result.toMaybe`, each one call of the core-private
+-- `Schema.validParse` with the schema's validator worker — `JSON.parse`, its
+-- `SyntaxError` alone caught, then the worker. No issue is made, no message
+-- is written, and neither `Json` nor a schema value ships for them.
+-- `run/SchemaErrorUnread` proves the answers.
+import Json
+import Node
+import Schema
+
+
+schema Event tagged "type" of
+    Set as "set"
+        value : Int
+    Reset as "reset"
+
+
+type alias Point =
+    x : Int
+    y : Int
+
+
+classify : String → String
+classify text =
+    case Schema.parse (Event.schema ⊤) text of
+        Ok (Event.Set event) →
+            "set " ++ String.fromInt event.value
+
+        Ok Event.Reset →
+            "reset"
+
+        Err _ →
+            "invalid"
+
+
+point : String → String
+point text =
+    case Result.toMaybe (Json.decode text) of
+        Just p →
+            String.fromInt (p.x + p.y)
+
+        Nothing →
+            "invalid"
+
+
+main : Node.Program
+main =
+    Node.printLines [ classify "{\"type\": \"set\", \"value\": 3}", point "{\"x\": 1, \"y\": 2}" ]
