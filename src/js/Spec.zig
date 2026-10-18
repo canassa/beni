@@ -571,13 +571,16 @@ const Mod = struct {
     /// Bumped by every change to what a walk of the module meets: a node
     /// rewritten, a list or the body replaced, a name made global.
     version: u32 = 0,
-    /// `Spec.namedIn`'s answers for every whole-program id at once — the
-    /// first name of it a walk of the module meets, or `none` — as of
-    /// `occ_version` (`none`: never built, or thrown away).
     /// Per node: its place as the index last walked it (`Spec.placeIndexed`),
     /// and the walk that wrote it.
     place_at: std.ArrayList(Spec.PlaceEntry) = .empty,
-    place_walk: std.ArrayList(u32) = .empty,
+    place_walk: std.ArrayList(u64) = .empty,
+    /// Per top-level statement: the module's `version` when the index last
+    /// walked it, or `none`.
+    place_top: std.ArrayList(u32) = .empty,
+    /// `Spec.namedIn`'s answers for every whole-program id at once — the
+    /// first name of it a walk of the module meets, or `none` — as of
+    /// `occ_version` (`none`: never built, or thrown away).
     occ: []u32 = &.{},
     occ_version: u32 = none,
     /// The `Spec.rewrite_epoch` of the rewrite `occ` was built in, or 0.
@@ -757,7 +760,7 @@ const Spec = struct {
     /// Counts the rewrites, from 1 (`Mod.occ_rewrite`).
     rewrite_epoch: u32 = 0,
     /// The place index's walk counter (`indexWalk`).
-    place_walks: u32 = 0,
+    place_walks: u64 = 0,
     /// What `rewrite` saw that the next round's facts would spend, which
     /// the round's own facts could not (`again`): the reads of a
     /// whole-program name `substitutes` refused, by the count `reads` took
@@ -5643,9 +5646,10 @@ const Spec = struct {
     fn inlineOnce(s: *Spec) Allocator.Error!bool {
         if (s.in.fresh == .none) return false;
         // The index holds within this pass only: other passes move nodes.
-        for (s.mods) |*m| for (m.place_at.items) |*e| {
-            e.top = none_index;
-        };
+        for (s.mods) |*m| {
+            for (m.place_at.items) |*e| e.top = none_index;
+            @memset(m.place_top.items, none);
+        }
         var any = false;
         var left: u32 = max_inlines;
         while (left > 0) : (left -= 1) {
@@ -6215,6 +6219,9 @@ const Spec = struct {
         const x = a orelse return b == null;
         const y = b orelse return false;
         if (x.kind != y.kind) return false;
+        // An expression's place carries its kind alone: `placeExpr` answers
+        // `.{ .kind = .expr }`, and nothing reads more of it (`inlineAt`
+        // writes the call in place by its node).
         if (x.kind == .expr) return true;
         return x.stmt == y.stmt and x.owner == y.owner and x.tail == y.tail and x.top_level == y.top_level;
     }
@@ -6223,16 +6230,28 @@ const Spec = struct {
     fn placeIndexed(s: *Spec, m: *Mod, site: CallSite) Allocator.Error!?Place {
         const found = blk: {
             if (s.placeHint(m, site)) |p| break :blk p;
+            // Walked already, and unchanged since: the walk the search makes
+            // met the call nowhere (past `max_depth`), so neither does it.
+            const top = site.top.int();
+            if (top < m.place_top.items.len and m.place_top.items[top] == m.version) break :blk null;
             try s.indexWalk(m, site.top, false);
             if (s.placeHint(m, site)) |p| break :blk p;
-            // A node no walk reaches (past `max_depth`): the search's answer.
-            break :blk try s.placeOf(m, site);
+            break :blk null;
         };
         if (std.debug.runtime_safety) std.debug.assert(samePlace(try s.placeOf(m, site), found));
         return found;
     }
 
     /// The index's place of `site.call`, when it still holds.
+    ///
+    /// The invariant: within one `inlineOnce`, a node keeps the place the
+    /// walk recorded unless `inlineAt` moves it, and the only nodes it
+    /// moves are the arguments it substitutes into the body it writes,
+    /// which `unindex` forgets first. Every other edit is to a statement
+    /// list — a statement replaced by the copy, the list stored again at
+    /// its owner — so a statement place is checked against its list here,
+    /// and an expression place, whose node did not move, holds as it is.
+    /// New nodes, the copy's own, have no place until a walk gives one.
     fn placeHint(s: *Spec, m: *Mod, site: CallSite) ?Place {
         _ = s;
         const at = site.call.int();
@@ -6250,6 +6269,12 @@ const Spec = struct {
             else => null,
         };
         if (root != site.call) return null;
+        if (std.debug.runtime_safety) std.debug.assert(switch (ir.tag(p.stmt)) {
+            .expr_stmt => p.kind == .stmt,
+            .return_stmt => p.kind == .ret,
+            .const_decl, .let_decl => p.kind == .decl,
+            else => false,
+        });
         const o = p.owner orelse return if (p.stmt == site.top) p else null;
         const list = listAt(m, o);
         if (std.mem.indexOfScalar(Index, list, p.stmt) == null) return null;
@@ -6268,8 +6293,10 @@ const Spec = struct {
             try m.place_walk.resize(s.arena, m.ir.nodes.len);
             @memset(m.place_walk.items[old..], 0);
         }
-        s.place_walks +%= 1;
-        if (s.place_walks == 0) s.place_walks = 1;
+        // 64 bits: no build makes 2⁶⁴ walks, so a mark never meets a stale one.
+        s.place_walks += 1;
+        while (m.place_top.items.len <= top.int()) try m.place_top.append(s.arena, none);
+        if (!clear) m.place_top.items[top.int()] = m.version;
         var w: IndexWalk = .{ .s = s, .m = m, .top = top, .clear = clear };
         try w.among(null, &.{top}, false, true, 0);
     }

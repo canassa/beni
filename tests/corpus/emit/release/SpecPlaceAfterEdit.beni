@@ -1,9 +1,10 @@
 -- emit: the place index of release's single-use inlining (#352) stays right
 -- after an edit (backend.md §9, *A function called once is written where it
 -- is called*): a copied body bringing a call that is itself written in
--- place, an inline that moves a later call of the same list, and a fuse and
--- an inline in one statement. A guard: the walk the index replaces gives
--- the same output (`run/SpecPlaceAfterEdit` runs it).
+-- place, an inline that moves a later call of the same list, a fuse and an
+-- inline in one statement, and a call that is another's argument. A guard:
+-- the walk the index replaces gives the same output
+-- (`run/SpecPlaceAfterEdit` runs it).
 -- `outer`'s body calls `inner`, each called from one place, so release
 -- writes `inner` into `outer` and `outer` into `chain`: the copied body
 -- brings a call that is itself written in place.
@@ -61,9 +62,29 @@ fused n =
         )
 
 
+-- `plus` is `twice`'s argument, both called once (f (g x)). Release writes
+-- `plus` into the argument, a place the index records as an expression's;
+-- `twice` stays a call, since an argument that is not a name is moved into
+-- a copy only when nothing else may read it, and a call is never moved.
+plus : Int → Int
+plus x = x + 5
+
+
+twice : Int → Int
+twice y =
+    z = y * 2
+    z + 1
+
+
+nested : Int → Int
+nested n =
+    r = twice (plus n)
+    r + 1
+
+
 pub chain : Int → Int
 chain n = outer n
 
 
 pub all : Int → List Int
-all n = [ chain n, shifted n, fused n, fused 1 ]
+all n = [ chain n, shifted n, fused n, fused 1, nested n ]
