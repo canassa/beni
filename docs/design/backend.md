@@ -2669,8 +2669,9 @@ of them is a new mechanism:
   order they have today", i.e. in the order a walk over every root filtered to survivors gives.
   The two orders differ — a dropped declaration's subtree can visit a survivor the surviving walk
   reaches later — and the difference is a byte contract the emit cache rests on: see the
-  amendment under *The embedded modules' printed text, in the pack*, and
-  `tests/corpus/emit/app/DceSurvivorOrder.beni`.
+  amendment under *The embedded modules' printed text, in the pack*, and the pair
+  `tests/corpus/emit/app/DceSurvivorOrder.beni` (a declaration dropped) with
+  `tests/corpus/emit/DceSurvivorOrderAllLive.beni` (the same declarations, none dropped).
   *Amended 2026-09-25:* "the dispatch sites" includes the bodies of
   the derived rows of this module they name (`Edges.termsEdges` through rows). A constant that
   calls a derived function runs its body, so a value that body names is a dependency: without the
@@ -4965,10 +4966,11 @@ root only when the root survived in some form (`liveDecl`, `liveTwin`, `livePiec
 dropped declaration's subtree; it is first visited where a surviving declaration reaches it,
 which can be later. In `tests/corpus/emit/app/DceSurvivorOrder.beni`, `dead` stands first and
 calls `zed`, `main` names `later` then `zed`, and `dead` is dropped: a walk over every root
-emits `zed` inside `dead`'s subtree, before `later` — the same three declarations with nothing
-dropped emit `zed, dead, later` — and filtering `dead` out afterwards would keep `zed` before
-`later`, while the walk a build lowers with emits `later, zed, main`, which is the fixture's
-golden. **The maker therefore cannot record one canonical order and trust filtering**: it
+emits `zed` inside `dead`'s subtree, before `later`, while the walk a build lowers with emits
+`later, zed, main`, which is the fixture's golden — and filtering `dead` out of the full walk
+afterwards would keep `zed` first. The contrast fixture,
+`tests/corpus/emit/DceSurvivorOrderAllLive.beni` (the same declarations, every one `pub`, so a
+`--library` build drops none), is that full walk's golden, `zed, dead, later`. **The maker therefore cannot record one canonical order and trust filtering**: it
 records, with each unit, the unit's outgoing edges — its `refs` and site `tops` as canonical
 positions, all of them the module's own check — and the join replays the restricted walk over
 them: the same walk, the same order, a few integers per unit, never a filter of one sequence.
@@ -5014,7 +5016,9 @@ byte" means — and they pin the shapes this section names in as many words:
 the arrows run's one sort over arrows, `$$steps` helpers and comparator constants, and a head
 ordered by the ask walk rather than by the layout, and
 `tests/corpus/emit/app/DceSurvivorOrder.js` is the amendment's counterexample: the surviving
-walk's order, where filtering the full walk would put `zed` first. Two smaller tests pin what
+walk's order, where filtering the full walk would put `zed` first — and
+`tests/corpus/emit/DceSurvivorOrderAllLive.js` is the full walk's own order, `zed, dead,
+later`, the pair together pinning that the build replays one walk and filters nothing. Two smaller tests pin what
 reuse rests on: a slice-1 test drops a middle declaration and compares a neighbour's bytes, tags
 included, and the maker's self-check above splits and joins before any build reads a row. The
 acceptance is the

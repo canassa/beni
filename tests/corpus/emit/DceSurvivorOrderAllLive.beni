@@ -1,0 +1,17 @@
+-- emit: the SAME declarations as `app/DceSurvivorOrder.beni` with nothing
+-- dropped — a `--library` build roots every `pub` value, so this golden is
+-- the full walk's order, `zed, dead, later` (`docs/design/backend.md` §9,
+-- the join's second step). Filtering `dead` out of that sequence would keep
+-- `zed` before `later`; the app fixture's golden shows the build emits
+-- `later` first. The pair makes the amendment executable: the order is the
+-- SURVIVING walk's own, replayed, never a full sequence filtered.
+pub dead : Int → Int
+dead n = zed (n + 1)
+
+
+pub later : Int → Int
+later n = n * 10
+
+
+pub zed : Int → Int
+zed n = n * 3
