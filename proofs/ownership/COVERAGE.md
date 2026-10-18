@@ -874,3 +874,34 @@ coverage is confined to the Lean model, since entry/private-root programs remain
 explicit shipping-bridge skips. The zero-confirmed count covers the translated
 common subset, not initialization transfer. The historical fixed-stream pin has
 independent source/verdict/order/removal controls in the bridge CI self-test.
+
+## The level marker `⟨T⟩` — 2026-10-18 (#379)
+
+`Ownership/Tree/` models §16.7's amendment "the level marker `⟨T⟩` replaces (d)" (spec text at 5120ba491). Kernel-checked,
+no `sorry`: `Marker.conflict_complete` (on canonical paths the amendment's overlap and holding miss no concrete
+holder: whenever a concrete path one stands for is a prefix of one the other stands for, they conflict),
+`Marker.extend_sound` (the fold keeps every concrete path), `Marker.master_fold_unsound` (master's fold does not),
+`root_apart`, `sides_apart`, `subtree_holds`. The checker's soundness as a whole is not proved; the product is the evidence.
+
+Fixture verdicts, each by `decide +kernel` in `Tree/Fixtures.lean`:
+
+| Program | Expected | Oracle |
+|---|---|---|
+| `DeeperLevel.inner` | rejected | rejected: `l` (`π1#Node.0`) holds `zs` (`π1#Node.0⟨Tree⟩#Node.1`) |
+| `DeeperLevel.pick` | — | accepted |
+| `DeeperLevel.outer` | rejected | rejected: `l` holds the list `pick` returns |
+| `ParamHole.hole` | accepted | accepted, on condition `sep π1#Node.1 π1#Node.0` |
+| `ParamHole.shared` | refused | refused at its call: `xs` is at `#Node.1` and at `#Node.0⟨Tree⟩#Node.1` |
+| `deepShare` (the known limit) | refused | refused, also when the two lists are distinct (`deepDistinct_refused`) |
+
+Under master (`marker := false, levelSep := false`) every declaration of the first two modules is accepted and a call of
+`inner`, `outer` or `shared` makes the interpreters disagree. The marker alone (`levelSep := false`) leaves `shared`'s
+hole; the condition alone (`marker := false`) leaves `inner`'s: master's fold moves the left subtree's list to `#Node.1`,
+so nothing lies below `#Node.0` for the condition to compare — (d) as first written cannot be built, as the amendment says.
+
+`ownership tree 2 3`: 127,484 programs, 62,628 accepted, 9,396 of them show an in-place write, 0 disagree. Holes caught
+(accepted programs that disagree): master 2,010, no-marker 2,010, no-level-sep 1,020, no-approx 684.
+Against master's `beni` (64c1fa7b4), at bound 1 2: 1,722 of 7,667 declarations diverge, as expected without the
+marker: 1,256 that the oracle accepts are refused (writes of one level's list while another level is held, which master
+folds onto one path) and 466 that it refuses are accepted (the #379 and `paramHole` holes). The bridge is to be run against the
+compiler that builds the marker.
