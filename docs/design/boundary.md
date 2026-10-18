@@ -5050,8 +5050,8 @@ reaches the handler with that header (`upgrade`). Node's timeouts keep their def
 (`headersTimeout` 60 s, `requestTimeout` 300 s, `keepAliveTimeout` 5 s).
 
 **(d) A response.** When the handler returns, the platform writes the status, the program's
-headers in order, then `content-length` as the byte length of the UTF-8 body, and ends the
-response with the body. The headers go to `writeHead` as one flat array of names and values, so
+headers in order, then `content-length` as the byte length of the UTF-8 body (except on 204, 205
+and 304, below), and ends the response with the body. The headers go to `writeHead` as one flat array of names and values, so
 **a name given twice is written twice**, in order — two `set-cookie` headers arrive as two
 (measured); `setHeader`, which keeps one value per name, is not used. After `close`, a
 `connection` header of the program's, in any case, is dropped and the platform's
@@ -5203,8 +5203,14 @@ rows of (e):
   during a 16 MiB write, the socket's error left to Node); `HttpServerCloseFromHandler` (the
   program's `connection: keep-alive` replaced after `close`) and `HttpServerCloseThenInvalid`
   (the 500 after `close` ends its connection too).
+- the response's last row, any other throw: no fixture. The write has no injection point the
+  preload offers: `writeHead` and `end` on a live response throw for nothing a program can
+  cause, and the preload fails the host's operations, not Node's own functions.
 - the lifetime, (b): `HttpServerOwnerEnds` and `HttpServerOwnerEndsAtOnce`.
-- the basics, (a) and (c): `HttpServerBasics`.
+- the basics, (a) and (c): `HttpServerBasics` (a `GET`, a `POST` with its body, the query kept
+  in `path`, a `HEAD` answered with the headers and no body, `header` looked up in another case
+  than the one sent); `HttpServerDuplicateHeaders` (a request header given twice reaches the
+  handler as two, in order).
 
 Each build's verdict is recorded as a run hash (`run_hash.lineWith`, as `browser/` records its
 page): the digest covers what a `run/` one covers — the output tree, the golden, the Node version
@@ -5212,7 +5218,8 @@ page): the digest covers what a `run/` one covers — the output tree, the golde
 budget of 4 300 million instructions: a case costs two builds, two driver processes and two
 program processes, and no fixture sleeps for real.
 
-**(i) The owner's decisions**, taken on the dashboard on 2026-10-17 at 23:54 CEST. The PR's
+**(i) The owner's three decisions**, taken on the dashboard on 2026-10-17 at 23:54 CEST, and the
+slice's scope, which is Jayson's instruction. The PR's
 review (2026-10-17) found five gaps in (d) and (e); each is settled above with a probe or a
 stated crash. Its second pass and the owner's two findings (2026-10-18, 00:01 CEST) added the events Node
 answers by itself, duplicate headers, `connection` after `close`, 205, the size limit owed, and
