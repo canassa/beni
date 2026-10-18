@@ -2918,33 +2918,22 @@ const Emitter = struct {
             @memset(entry_bounds, 0);
             out.root_group = try groups.of(entry_reads, entry_bounds);
             const conflicts = try sparseConflicts(a, w, groups.reads.items, key_writes);
-            // Version 1.15: which `*` each `*` key is. The model is a record of
-            // several fields when the program reads or writes two first steps
-            // from ρ; a cap cut a key to ρ when its caps say so.
-            {
-                // A column of the pass's paths: each first step met, counted once.
-                const met = try a.alloc(bool, w.pathCount());
-                @memset(met, false);
-                var fields: u32 = 0;
-                for (groups.reads.items) |g| for (g) |r| switch (readPlace(w, r)) {
-                    .step => |s| if (!met[s] and w.pathKind(s) == .field) {
-                        met[s] = true;
-                        fields += 1;
-                    },
-                    else => {},
-                };
-                for (key_writes) |kw| for (kw) |wr| switch (writePlace(w, wr.path)) {
-                    .step => |s| if (!met[s] and w.pathKind(s) == .field) {
-                        met[s] = true;
-                        fields += 1;
-                    },
-                    else => {},
-                };
-                for (keys, 0..) |*key, ki| {
-                    if (!key.star) continue;
-                    const capped = !prog.recognised or prog.keys[ki].caps.any();
-                    key.star_kind = if (capped) .precision else if (fields > 1) .whole_record else .single_value;
+            // Version 1.15: which `*` each `*` key is (`browser-inline.md` §5,
+            // the owner, 2026-10-17). A model that is not a record of several
+            // fields, by its type, is one value, written whole and exactly.
+            // Of a record: a key whose write of the whole model the pass
+            // marked an approximation (`Writes.Write.lost`), or cut by a cap,
+            // lost precision; any other is an exact inferred whole write.
+            for (keys, 0..) |*key, ki| {
+                if (!key.star) continue;
+                if (prog.recognised and prog.model_fields <= 1) {
+                    key.star_kind = .single_value;
+                    continue;
                 }
+                const approximate = !prog.recognised or prog.keys[ki].caps.any() or for (prog.keys[ki].writes) |wr| {
+                    if (wr.path == Writes.rho_path and wr.kind == .value and wr.lost) break true;
+                } else false;
+                key.star_kind = if (approximate) .precision else .whole_record;
             }
             // Version 1.8: the lists, and K3's per-row texts.
             var lists: DirectLists = .{ .e = e, .w = w, .prog = &consumers, .key_writes = key_writes, .group_of = group_of, .holes = all_holes, .written = conflicts.written };

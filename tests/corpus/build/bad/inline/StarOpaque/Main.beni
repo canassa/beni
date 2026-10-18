@@ -1,0 +1,42 @@
+-- A `*` key whose whole-model write is the result of a function the pass
+-- cannot see into is lost precision, a limit of the compiler, never the
+-- language rule (docs/design/browser-inline.md §5, the owner, 2026-10-17):
+-- `Run f` applies the function its message carries to the model, and the
+-- write-set pass marks the result an approximation (`write-sets.md`,
+-- amended 2026-10-18), so the key is refused at the record's `update`,
+-- class 4, though the model is a record of two fields.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    count : Int
+    label : String
+
+
+type Msg
+    = Run (Model → Model)
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Run f →
+            f model
+
+
+view : Model → Html Msg
+view model =
+    <div>
+        <output>{model.count}</output>
+        <p>{model.label}</p>
+        <button data-role="run" onClick={Run λm → { m | count = m.count + 1 }}>+1</button>
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → { count = 0, label = "start" }, update = update, view = view })
+        "root"

@@ -2213,3 +2213,15 @@ tails: they are as many as the arms the key's arm is written with, which the con
 (§6.1) are lifted for a program built for a platform whose lowering refuses a capped key
 (`browser-inline.md` §8.7); `k` and the round cap `I` stay until #286's precise folding replaces
 them, and a key they cut is refused there as a limit of the compiler.
+
+### *Amended 2026-10-18 (`browser-inline`'s S1, the owner's split of `*` keys):* an approximate write is marked
+
+A write the pass makes because it could not see into a value — `value p` for a `Fresh` term (an
+opaque call's result), for an application through a function-valued parameter, or for a record
+whose type at `p` it could not read — is marked **lost** (`Write.lost`). A `value p` the pass knows
+exactly — another path's `Same`, a literal, a constructor, a record of another base — is not. Two
+writes at one path join with `or`. Nothing printed moves, and no write set changes but for the
+bit. A consumer reads it to tell a `*` key of lost precision (a limit of the compiler) from an
+exact write of the whole model (`browser-inline.md` §5). The program also records how many
+fields its model's type has (`Program.model_fields`, 0 for a model that is not a record), which
+tells a model of one value from a record of several.

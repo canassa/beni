@@ -101,10 +101,13 @@ collection** (#294). The messages keep the split between an idiom to write inste
 to be global, and a cap of the compiler.
 
 *Amended 2026-10-17 (the owner): a `*` key is one of three.* A `*` that comes from lost precision —
-a cap of the write-set pass cut the key to the whole model — is a limit of the compiler, class 4, to
-be closed. An inferred write of the whole model when it is a record of more than one field, with
-no declared `replace`, is the language rule, class 3: the rule forbids a write that hides which
-fields changed. A model that is a single value hides nothing: it is written exactly, and accepted.
+a cap of the write-set pass cut the key, or the pass wrote the whole model as an approximation: an
+opaque call's result, an application through a parameter, a record of a type it could not read
+(`write-sets.md`, amended 2026-10-18, `Write.lost`) — is a limit of the compiler, class 4, to be
+closed. Only an exact inferred write of the whole model, when its type is a record of more than
+one field, with no declared `replace`, is the language rule, class 3: the rule forbids a write
+that hides which fields changed. A model that is a single value — not a record of several fields,
+by its type — hides nothing: it is written exactly, and accepted.
 (`Program.Key.star_kind`, `boundary.md` §9.4.6 1.15; §8.7.)
 
 1. **Not compiled yet** (a compiler limit) — a construct a later slice of
@@ -379,7 +382,7 @@ the compiler"*, a language rule never says *"yet"*):
 | an `update` computed when the page runs: *"… cannot write each message's arm into the handler of its key: a handler is the arm itself, with no message made … Name a function of the program's modules as `update`, or write a lambda whose body chooses the arm."* | 3 | the record's `update` | `OpaqueUpdate/` |
 | an `Html.map` whose function is not a constructor: *"… which key each of those messages reaches cannot be known when the program is built … Map with a constructor … and decide in `update` what the message means."* | 3 | the map's hole | `MapNotCtor/` |
 | markup held as a value — in the model, a record, a list — at the hole that shows it and at the markup itself: *"… its elements cannot be numbered when the program is built … Keep in the model the data the markup shows, and write the markup in `view` or in a function `view` calls."* | 3 | each | `MarkupValue/` |
-| a `*` key (`write-sets.md` §3.4) of an inferred whole write of a record of more than one field — two or more fields the program reads or writes — without a declared `replace` (`plans/direct-rewrite.md` §6): *"… writes the whole model, a record of several fields, with a value the compiler cannot see into, which hides which of its fields changed … Write the fields the arm changes …"* (*decided 2026-10-17, the owner*). A `*` of lost precision — a cap cut the key to the model — is a limit of the compiler, class 4; a model of one value (an `Int`) is written exactly and accepted, every binding called | 3 | the record's `update` | `StarNotReplace/` |
+| a `*` key (`write-sets.md` §3.4) of an inferred whole write of a record of more than one field — two or more fields the program reads or writes — without a declared `replace` (`plans/direct-rewrite.md` §6): *"… writes the whole model, a record of several fields, with a value the compiler cannot see into, which hides which of its fields changed … Write the fields the arm changes …"* (*decided 2026-10-17, the owner*). A `*` of lost precision — a cap cut the key, or the pass marked the whole write an approximation (`StarPrecision/`, `StarOpaque/`) — is a limit of the compiler, class 4; a model of one value (an `Int`, a record of one field) is written exactly and accepted, every binding called | 3 | the record's `update` | `StarNotReplace/` |
 | a keyed `For`: *"… does not compile keyed rows — a `For` with `keyed` — yet …"* | 1 | the `For` | `ResearchListWidget/` |
 | a key whose writes a cap of the write-set pass cut (`Program.Key.cap`): the depth limit `k` and the rounds of a recursive component until #286's folding replaces them; the leaf, alternative and size caps are lifted in S1 | 4 | the record's `update` | `CapFired/` |
 | a key that splits again inside another module (`deep_split`); an event argument or a piece capture the program site cannot write; a `view` `let` read by several holes | 4 / 1 | the construct | — |

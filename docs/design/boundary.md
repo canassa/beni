@@ -2237,8 +2237,10 @@ one that first uses it; a lowering that targets 1.14 sees what it saw.
   `message_read_whole`, `deep_split`, `cap` — says what keeps the key's arm from being written of
   pieces, or (`message_read_whole`) that the handler builds the message; `Program.Key.cap` names
   the cap of the write-set pass that cut the key's writes. `Program.Key.star_kind` says which of
-  three a `*` key is: lost precision (a cap cut it to the model), an inferred whole write of a
-  record of several fields, or a model of one value written exactly (`browser-inline.md` §5).
+  three a `*` key is: lost precision (a cap cut it, or the pass marked its whole write an
+  approximation, `write-sets.md` amended 2026-10-18), an exact inferred whole write of a model
+  whose type is a record of several fields, or a model of one value written exactly
+  (`browser-inline.md` §5).
 - **Groups, sparse.** `programGroupsOf(key)`: the groups the key's writes reach, sorted — what
   `programCalls` answers one pair at a time, without the groups × keys matrix.
 - **Per-path passes.** `programArmTails(key)`: the tails of the key's arm (`write-sets.md`,

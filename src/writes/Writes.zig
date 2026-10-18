@@ -358,6 +358,11 @@ pub const Write = struct {
     edit: Edit = .none,
     s1: u32 = none,
     s2: u32 = none,
+    /// The write is the pass's approximation (write-sets.md, amended
+    /// 2026-10-18): a value it could not see into — an opaque call's
+    /// result, an application through a parameter, a record of a type it
+    /// could not read — and not one it knows exactly. Joined by `or`.
+    lost: bool = false,
 };
 
 // ---------------------------------------------------------------------------
@@ -539,6 +544,11 @@ pub const Program = struct {
     carriers: Carriers = .{},
     /// The message type's constructor count, or 0 when unknown.
     msg_ctors: u32 = 0,
+    /// The model's record fields, by its type; 0 when the model is not a
+    /// record, or its type is not known. What tells a model of one value
+    /// from a record of several (`browser-inline.md` §5, the owner,
+    /// 2026-10-17).
+    model_fields: u32 = 0,
     /// The top-level declaration `update` names, or `none` for an `update`
     /// that is not one: where the checker's scheme of it is, which the
     /// fuzzer's message type is read from (`dump --stage=writes
@@ -3592,7 +3602,7 @@ fn wsGet(a: *const Writes, id: u32, out: *WsBuilder, gpa: Allocator) Allocator.E
     const words = a.wsets.get(id);
     var i: usize = 0;
     while (i < words.len) : (i += 5) {
-        try out.append(gpa, .{ .path = words[i], .kind = @fromBackingInt(words[i + 1]), .edit = @fromBackingInt(words[i + 2]), .s1 = words[i + 3], .s2 = words[i + 4] });
+        try out.append(gpa, .{ .path = words[i], .kind = @fromBackingInt(words[i + 1] & 0xff), .lost = words[i + 1] >> 8 != 0, .edit = @fromBackingInt(words[i + 2]), .s1 = words[i + 3], .s2 = words[i + 4] });
     }
 }
 
@@ -3609,6 +3619,7 @@ fn wsAdd(a: *Writes, ws: *WsBuilder, w: Write) Allocator.Error!void {
     for (ws.items) |*e| {
         if (e.path != w.path) continue;
         if (w.kind == .value) e.kind = .value;
+        if (w.lost) e.lost = true;
         if (e.edit != w.edit) {
             const j = joinEdit(e.edit, w.edit);
             if (j != e.edit) {
@@ -3634,12 +3645,17 @@ fn wsIntern(a: *Writes, ws: []Write) Allocator.Error!u32 {
     }.less);
     const mark = a.scratch.items.len;
     defer a.scratch.shrinkRetainingCapacity(mark);
-    for (ws) |w| try a.scratch.appendSlice(a.gpa, &.{ w.path, @backingInt(w.kind), @backingInt(w.edit), w.s1, w.s2 });
+    for (ws) |w| try a.scratch.appendSlice(a.gpa, &.{ w.path, @backingInt(w.kind) | @as(u32, @intFromBool(w.lost)) << 8, @backingInt(w.edit), w.s1, w.s2 });
     return a.wsets.intern(a.gpa, a.scratch.items[mark..]);
 }
 
 fn value(p: u32) Write {
     return .{ .path = p, .kind = .value };
+}
+
+/// `value p`, an approximation (`Write.lost`).
+fn lost(p: u32) Write {
+    return .{ .path = p, .kind = .value, .lost = true };
 }
 
 /// The write set of placing `t` at `p` under `g`, memoised on `(t, p, Γ)`
@@ -3689,7 +3705,7 @@ fn diffInto(a: *Writes, t: u32, p: u32, g: u32, ws: *WsBuilder) Error!void {
                 if (base != none) return a.wsAdd(ws, value(p));
                 if (rest >= 2) {
                     // B2/N7: every other field of the type at `p` is Fresh.
-                    extra_fields = (try a.fieldsAt(p)) orelse return a.wsAdd(ws, value(p));
+                    extra_fields = (try a.fieldsAt(p)) orelse return a.wsAdd(ws, lost(p));
                 }
             }
             try a.wsAdd(ws, .{ .path = p, .kind = .node });
@@ -3747,6 +3763,8 @@ fn diffInto(a: *Writes, t: u32, p: u32, g: u32, ws: *WsBuilder) Error!void {
             try a.wsAdd(ws, .{ .path = p, .kind = .value, .edit = .replaced });
         },
         .lst_lit => try a.wsAdd(ws, .{ .path = p, .kind = .value, .edit = .replaced }),
+        // What the pass could not see into is an approximation.
+        .fresh, .app => try a.wsAdd(ws, lost(p)),
         .alt => {
             for (0..a.altLen(t)) |i| {
                 const it = a.altItem(t, @intCast(i));
@@ -4903,6 +4921,7 @@ fn analyseProgram(a: *Writes, m: u32, kind: ProgramKind, fields: ?Fields, view_f
         defer path_steps.deinit(a.gpa);
         try a.keyTree(kind, update_fun, 0, &path_steps, &keys, &leaves);
         prog.keys = keys.items;
+        prog.model_fields = if (try a.fieldsAt(rho_path)) |model_fields| @intCast(model_fields.len) else 0;
     }
     // Subscription values include the captures of their taggers.
     if (view_fields) |fs| if (fs.subscriptions) |si| {
