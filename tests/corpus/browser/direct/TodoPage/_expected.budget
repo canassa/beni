@@ -1,0 +1,6 @@
+8900 Owner-delegated grant (2026-10-18; CLAUDE.md, *Every test has a budget*).
+Cause: an application page is four builds in one case (browser-direct and browser-tea, dev and
+release), each over `Http`, two `schema` declarations and TodoMVC's view, plus two Node runs of the
+page; the todo example (#356) is the whole application, not the smallest input for one branch.
+Size: 8 091M on the x86-64 Linux reference with Node running the pages; the limit adds 10%.
+Remove when the case fits 4 300M without this file (issue #361).
