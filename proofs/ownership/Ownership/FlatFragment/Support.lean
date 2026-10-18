@@ -20,8 +20,8 @@ inductive FlatAtom : Atom → Prop where
   | int (n : Int) : FlatAtom (.int n)
   | var (v : Var) : FlatAtom (.var v)
 
-/-- The integer primitives of the fragment: two integer operands, an integer
-result, no heap effect and no recorded read. -/
+/-- The integer primitives of the fragment: two atoms, which typing fixes to
+`Int`, an integer result, no heap effect and no recorded read. -/
 inductive ScalarOp : Prim → Prop where
   | add : ScalarOp .add
   | sub : ScalarOp .sub
