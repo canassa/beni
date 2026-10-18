@@ -1242,7 +1242,9 @@ Telling the levels apart is the representatives' exclusivity of thesis §3.1, wh
   alike). Relating the two cells is sound but refuses `browser-direct`'s own `Tea.want`: `Dict.update` relies on the
   dictionary's values being exclusive, and a subtree that may be any level holds every value. The caller must
   instead discharge that the levels are pairwise distinct, which is the representatives' exclusivity above; the hole
-  closes with it.
+  closes with it. The hole is called **`paramHole`** below. It is CK-254, and the red fixture
+  `tests/pending/ownership/ParamHole.beni` tracks it: `shared` hands `hole` a tree that holds one list at two
+  levels, and both are accepted today.
 
 *Not yet built: decision (a), folding only types that reach themselves.* Folding any type the path already
 entered — `Maybe` inside `Maybe` — is what keeps core's `Schema` finite today: a value cast through `Js.Value`
@@ -1270,7 +1272,9 @@ amendment does for a field that is the type itself ("here").
 - *Soundness.* Folding merges places: the environments of a closure and of every closure it captured share one
   place, so every cell any of them captured is held at `◇q`, and a demand on one of them sees every holder of
   any. A projection along `◇` keeps the folded entries, so nothing merged is dropped when a closure's
-  environment is taken apart (`instProv`'s `◇x.q`, `expandInto`). The fold only adds aliasing.
+  environment is taken apart (`instProv`'s `◇x.q`, `expandInto`). Folding `◇p◇q` into `◇q` also merges every
+  place at `p`, the steps between the two `◇`s, into the place at `◇q`; that too is only more aliasing. The fold
+  only adds aliasing, so it stays sound.
 - *Finite.* A path holds at most one `◇`. `mk n xs = if n == 0 then λx → x + List.length xs else (g = mk (n -
   1) xs; λx → g x)`, whose summary is `res ◇ π2, ◇◇ π2, …` cut at eight today, is `res ◇ π2`.
 - *Delta: none.* The bench is unchanged, browser-inline's pages, goldens and modules included; in
@@ -1299,12 +1303,22 @@ is no cast, since the concrete caller casts):
   overlaps every path. Two cells that differ only by a trailing marker are one array (`covers`, the spine index).
   A path with a marker overlaps any path that differs at the marker (`overlapSteps`), so liveness never misses a
   use through a cast. The folded levels behave as §16.7's do for a recursive type.
+- *A gap in the head.* The marker names a head, not a type: `Maybe String` and `Maybe (List Int)` share the
+  head `Maybe`. Nothing rules out a cast made at one and read at the other. `Js.to` is `returned Value → a`,
+  unchecked, and "the caller answers for the type" (`core/Js.beni:45–47`); the checker reads it as any `returned`
+  foreign, the result being the argument's cells at their own paths (`wordsRow`,
+  `src/own/Ownership.zig:2464–2467`), and `src/own/` has no cast marker and no rule for `Js.to`. So a marker of
+  the head alone would call such a read exact. The marker would need the type's arguments too, or a read whose
+  arguments differ would go to `⋆`. This is part of the finding; the design is not chosen.
 - *Finite.* A path holds at most two markers of one type. `unpack` becomes `π1⟨as ×2⟩.0, π1⟨as ×2⟩⟨as ×2⟩.0, …`,
-  `collect` `π1⟨as Step⟩.parent, π1⟨as Step⟩⟨as Step⟩.parent`.
+  `collect` `π1⟨as Step⟩.parent, π1⟨as Step⟩⟨as Step⟩.parent`. The bound is combinatorial, not small: two
+  markers per type, and every ordering of the types a value is cast through (the delta below).
 - *Delta: a finding, not a design.* Core's `Schema` refuses itself: core's demands go from 116, none rejected,
   to 1 035, 481 rejected and 29 pending, every one in `Schema`. They follow from three `value-cells` limits
   (§16.7): `ctorArgs` 390, `fieldsFrom` 590 and `printWith` 450 cells, over 256, whose pessimistic summaries
-  write every parameter of `run`, `descend`, `elementsFrom` and their group. The cause is the cells the marker
+  write every parameter of `run`, `descend`, `elementsFrom` and their group. These three are not the "four more
+  functions past `value-cells`" of (a) below and of §16.7's earlier text: those were measured without a marker,
+  folding only types that reach themselves. They are two experiments. The cause is the cells the marker
   makes, not the `⋆`s: trusting an unmarked or mismatched entry instead of putting it at `⋆` (unsound, measured
   only to find the cause) changes no count. Each cast of a symbolic cell names a new cell, and `Context.fail`
   is read through `Maybe`, `Nullable` and `Presence` in every order, so `π1.fail⟨as Nullable⟩#NonNull.0⟨as
@@ -1321,18 +1335,29 @@ is no cast, since the concrete caller casts):
 another argument than its own, so `wrap n x = if n == 0 then Leaf x else Wrap (wrap (n - 1) [ x ])` returns a
 value whose list is `n` levels of `List` deep: `res #Leaf.0[*][*]…`, cut at eight today, with no cast and no
 closure. A recursive type is *irregular* when one of its own occurrences in its definition applies it to
-anything but its parameters in order; below a constructor field of such a type whose declared type is one of its
-type variables, the path is `⋆`.
+anything but its parameters in order; below a constructor field of such a type whose declared type *mentions*
+one of its type variables, the path is `⋆` from the first step at which the variable is reached. The field need
+not be the variable itself: `type T a = Leaf (Maybe a) | Wrap (T (List a))` gives `#Leaf.0#Just.0[*][*]…`
+through a `Maybe`, so the rule must fire on `Leaf (Maybe a)` too.
+- *A group of types.* Irregularity may come through mutual recursion: `type T a = W (U (List a))` and `type U a
+  = V (T a)` apply neither type to anything but its parameters in its own definition, yet `T a` reaches `T (List
+  a)`. So the rule is read over a strongly connected group of the types definitions name, not one type: a group
+  is irregular when an occurrence of any member, in any member's definition, applies it to anything but its
+  parameters in order, and every member's fields that mention a type variable then fold to `⋆`. The groups are
+  the ones the checker already solves once per cycle, in Tarjan's order (`solveNominal`,
+  `src/own/Ownership.zig:3382`, behind `nominalFacts`, 3357; "Mutually recursive types are solved once per cycle"
+  above).
 - *Soundness.* `⋆` stands for every place at or below it and overlaps every path; it only merges.
 - *Finite.* `wrap` is `res #Leaf.0 π2, #Leaf.0⋆ π2`.
 - *Delta: none*, on the bench and in `tests/corpus/ownership/`: no golden changes. Only irregular types pay, and
-  the corpus has none but the probe.
+  the corpus has none but the probe. So there is no evidence of soundness beyond the argument: when F3 is built,
+  `Leaf (Maybe a)` and the mutual pair `T`/`U` each need a fixture beside `wrap`'s.
 
-**Removing `k`.** With F1, F3 and a cast marker the owner accepts, `k` goes: every path buffer
-(`[k_limit + 1]Step`, about twenty) becomes a slice, the depth column widens, and the summary block's path
-length is a `u32`. The `writeRead`/`deep` hole is then rejected `disjoint`, as its depth-seven twin is. Whether
-core settles within the existing rounds cannot be measured until F2 is decided: with F2 as measured it does
-not get that far.
+**(c) Removing `k`.** Issue #286's (c) is this step, with F1, F2 and F3 as its fold points. With F1, F3 and a
+cast marker the owner accepts, `k` goes: every path buffer (`[k_limit + 1]Step`, about twenty) becomes a slice,
+the depth column widens, and the summary block's path length is a `u32`. The `writeRead`/`deep` hole is then
+rejected `disjoint`, as its depth-seven twin is. Whether core settles within the existing rounds cannot be
+measured until F2 is decided: with F2 as measured it does not get that far.
 
 **(a) Fold only types that reach themselves.** Measured on 2026-10-17 without a cast marker: `Schema.run` and
 `descend` pass the `entries` limit (302 670 and 319 438) and four functions pass `value-cells`. It needs F2;
@@ -1345,18 +1370,28 @@ one of its levels and above it.
 - *Made* by a construction of a recursive constructor: `Node l xs r` has `lvl` when `l` and `r` have it, `xs`'s
   cells are separate from every level of `l` and `r` (`sep`), and `l` and `r` are separate; a literal leaf has it;
   a callee's fresh result has the `lvl` its summary publishes.
+- *Kept, or lowered, by a write.* `lvl` is a condition of §18.2, so its rule holds: a cell's condition is one
+  that "a write in place only ever lowers", and a construction's is the base's "lowered by each item stored".
+  A `Dict.insert` that places a list already held at one level at a second level lowers `lvl` of its result:
+  the new item is not `sep` from the level that holds it. No later write can raise `lvl` again, so a value
+  that once had it and was then written keeps it only if the write's own `sep` holds.
 - *Relied on* where a holder reaches the written list only through a folded level (`approx_place`) while the
   demand reached it at one exact level: the holder is another level, so with `lvl` it is not this list, and the
   demand does not count it. `FoldLevels.pushRoot` is accepted. At a parameter, the reliance is recorded as `xreq
   lvl πᵢ.q` (§18.4), which every caller discharges.
-- *It closes the parameter hole.* `covers` relates `param(t, #Node.0)` to `param(t, #Node.1)` (the fold point
-  below a recursive step, the patch measured for #341), and the relation fails only `lvl`. `paramHole` is then
-  rejected unless its caller shows the levels distinct. `Tea.want`, which the relation alone refuses, should be
-  accepted once `Dict.insert` and `Dict.update` publish `lvl` of their result, since their bodies build a
-  dictionary level by level; that is the prediction to measure first when (d) is built.
+- *How it would close `paramHole`.* `covers` relates `param(t, #Node.0)` to `param(t, #Node.1)` (the fold
+  point below a recursive step, the patch measured for #341), and the relation fails only `lvl`. `paramHole` is
+  then rejected unless its caller shows the levels distinct: `ParamHole.shared` is refused at its call. Until
+  (d) is built the hole stays open on `master`, and `tests/pending/ownership/ParamHole.beni` stays red. Its
+  golden holds the sound verdict the relation alone gives, the push rejected `element`; (d) re-blesses it.
+  `Tea.want`, which the relation alone refuses, is *predicted* to be accepted once `Dict.insert` and
+  `Dict.update` publish `lvl` of their result, since their bodies build a dictionary level by level. That is not
+  measured; it is the first thing to measure when (d) is built. If they cannot publish it, (d) is still sound but
+  refuses `Tea.want`, and that is a finding before (d) lands.
 - *Size.* A new atom kind threaded through the condition columns, the read-off (`xres`), instantiation and the
-  summary block (version 16); the two reliance sites; the `covers` relation; and a §26.7 row or a Lean model of
-  it. About 600 lines and a dozen fixtures, larger than a fix; the owner's go-ahead is needed before it is built.
+  summary block (which will be version 16; `src/own/summary_bytes.zig` is at 15); the two reliance sites; the
+  `covers` relation; and a §26.7 row or a Lean model of it. About 600 lines and a dozen fixtures, larger than a
+  fix; the owner's go-ahead is needed before it is built.
 
 **(e) The one permanent refusal: level-dependent sharing.** `alt n a b = Node (alt (n - 1) b a) a Leaf` puts
 `a` at every other level and `b` between: the levels are not pairwise distinct, so `lvl` fails, though the
@@ -1382,9 +1417,9 @@ It is pinned by a `build/bad/direct` project and an ownership fixture, and `lang
 limit in §6.8, *Lists*, beside where `Record.copy` is described once #327's text reaches it: the one place an
 author must copy a list that is never shared at the same time, and why.
 
-**Order.** F1 and F3 can land now, each with its fixture (`Clo`'s `mk`, `Poly`'s `wrap`), and change no
-verdict. F2 waits for the owner's decision above, then (a) and the removal of `k`; (d) waits for its go-ahead,
-then (e).
+**Order.** F1 and F3 can land now, each with its fixtures (`Clo`'s `mk`; `Poly`'s `wrap`, `Leaf (Maybe a)` and
+the mutual pair), and change no verdict. F2 waits for the owner's decision above, then (a) and (c), the removal
+of `k`; (d) waits for its go-ahead, then (e).
 
 ### 16.8 The library
 
