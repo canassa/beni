@@ -228,19 +228,25 @@ bare name. An end tag HTML makes optional is left out only where the standard's 
 of S1's first pull request*: the first text left `</p>` out at the end of almost any parent, and an
 `</em>` or a `</label>` does not close a `<p>`, so the parser rebuilt the tree):
 - before a next sibling whose start tag closes it: `</li>` before an `<li>`, `</dt>` and `</dd>`
-  before either, `</option>` before an `<option>`, an `<optgroup>` or an `<hr>`, `</optgroup>`
-  before an `<optgroup>` or an `<hr>`, a cell's before a cell, `</tr>` before a row, `</thead>`
+  before either, a cell's before a cell, `</tr>` before a row, `</thead>`
   and `</tbody>` before a row group, and `</p>` before the block elements whose start tag closes a
   `<p>` in button scope — not `<table>`, which does only outside quirks mode, nor `<form>`;
 - at its parent's end only where the parent's end tag generates implied end tags (`div`, `section`,
-  `ul`, `li`, `dd`, `button`, `h1`–`h6`, `td` and the rest of the standard's list), or a `<select>`
-  or `<optgroup>` closes an `<option>`, a row a cell, a row group a row. A `<span>`, a `<label>`, a
+  `ul`, `li`, `dd`, `button`, `h1`–`h6`, `td` and the rest of the standard's list), or a row closes
+  a cell, a row group a row. A `<span>`, a `<label>`, a
   formatting element and a custom element close none of them.
 - but never before a sibling when its own last child is an element other than a `<p>` whose end
   tag was left out (*corrected 2026-10-18, the second review*): that child is still open, and an
   `<li>`, `<dt>` or `<dd>` start tag stops its search for an open one at a special element, so
   `<ul><li><dd>x<li>y` puts the second `<li>` inside the `<dd>`; the element then keeps its end tag,
   `<ul><li><dd>x</li><li>y`.
+- and never inside a `<select>`, the select's own end tag included (*corrected 2026-10-18, the
+  review of #350*): the standard reworked `select` parsing for the customizable `<select>`, and the
+  rules for `</option>` and `</optgroup>` were the old "in select" mode's. The rules here follow
+  the standard as parse5 7.3.0 implements it, the parser the gates check pages with; with every
+  end tag written in a select, the rework changes nothing (`browser/inline/SelectEndTags`, in parse5
+  and in Chrome). An `<hr>` inside an `<optgroup>` is refused as markup the parser rebuilds: the
+  parser closes the group before it (`build/bad/inline/OptgroupRule`).
 
 The run of end tags at the very end of a string parsed alone is left out too, which the parser
 closes at the end of its input. A string that is concatenated with another keeps its own closing

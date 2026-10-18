@@ -1,0 +1,51 @@
+-- Inside a `<select>`, `browser-inline` writes every end tag
+-- (docs/design/browser-inline.md §8.2): the standard's parsing of `select`
+-- has changed for the customizable `select`, and the rules that left an
+-- `<option>`'s or an `<optgroup>`'s end tag out before a sibling or at its
+-- parent's end were the old revision's. Options in a group, a rule between
+-- groups, an option before a rule and one at the select's end: each keeps
+-- its place. The gates build the inserted markup's tree with parse5, the
+-- standard's parser (an `<hr>` inside an `<optgroup>` is refused:
+-- `build/bad/inline/OptgroupRule`).
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    a : Int
+
+
+type Msg
+    = Inc
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Inc →
+            { model | a = model.a + 1 }
+
+
+view : Model → Html Msg
+view model =
+    <div>
+        <select>
+            <optgroup>
+                <option>a</option>
+                <option>b</option>
+            </optgroup>
+            <hr />
+            <option>c</option>
+            <hr />
+            <optgroup>
+                <option>d</option>
+            </optgroup>
+            <option>{String.fromInt model.a}</option>
+        </select>
+        <button data-role="inc" onClick={Inc}>{model.a}</button>
+    </div>
+
+
+main : Tea.Program
+main = Browser.mountAt (Tea.sandbox { init = λ⊤ → { a = 0 }, update = update, view = view }) "root"

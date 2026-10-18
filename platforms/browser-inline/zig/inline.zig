@@ -540,6 +540,8 @@ const Page = struct {
         if (pg.top_nodes.len == 1) {
             cx.at(view_node);
             var html: std.ArrayList(u8) = .empty;
+            // The whole string the parser reads: nothing is appended after
+            // it, so the end of the input may close the last node's path.
             try serialise(pg.a(), &html, pg.top_nodes, null, true);
             try js.expression(body, try js.call(try js.member(try js.name(at), "insertAdjacentHTML"), &.{ try js.string("beforeend"), try js.string(html.items) }));
             pg.node = try cx.fresh("node");
@@ -1189,8 +1191,11 @@ fn escapeAttribute(a: std.mem.Allocator, out: *std.ArrayList(u8), text: []const 
 /// as the end tag would: an optional one (`optionalEnd`), and any at the
 /// very end of the string (`at_end`), which the parser closes at the end of
 /// its input.
+/// `at_end`: `nodes` end the whole string the parser reads — every end
+/// tag of the last node's path is left out, which only the end of the input
+/// closes as the end tags would, so the caller never appends to it.
 fn serialise(a: std.mem.Allocator, out: *std.ArrayList(u8), nodes: []const Html, parent: ?[]const u8, at_end: bool) !void {
-    _ = try serialiseOpen(a, out, nodes, parent, at_end);
+    _ = try serialiseOpen(a, out, nodes, parent, at_end, false);
 }
 
 /// `serialise`, and whether the last node is an element other than a `<p>`
@@ -1199,7 +1204,9 @@ fn serialise(a: std.mem.Allocator, out: *std.ArrayList(u8), nodes: []const Html,
 /// `<dd>`, a special element — so the parent then keeps its own end tag
 /// before a sibling (`<ul><li><dd>x</li><li>`; the review of S1's first
 /// pull request).
-fn serialiseOpen(a: std.mem.Allocator, out: *std.ArrayList(u8), nodes: []const Html, parent: ?[]const u8, at_end: bool) !bool {
+/// `in_select`: `nodes` are inside a `<select>`, where every end tag is
+/// written, the select's own included (`optionalEnd`).
+fn serialiseOpen(a: std.mem.Allocator, out: *std.ArrayList(u8), nodes: []const Html, parent: ?[]const u8, at_end: bool, in_select: bool) !bool {
     var open = false;
     for (nodes, 0..) |n, i| {
         open = false;
@@ -1212,9 +1219,10 @@ fn serialiseOpen(a: std.mem.Allocator, out: *std.ArrayList(u8), nodes: []const H
                 try out.appendSlice(a, n.attributes);
                 try out.append(a, '>');
                 if (n.void) continue;
-                const last = next == null and at_end;
-                const child_open = try serialiseOpen(a, out, n.children, n.name, last);
-                if (last or (optionalEnd(n.name, next, parent) and (next == null or !child_open))) {
+                const select = in_select or std.mem.eql(u8, n.name, "select");
+                const last = next == null and at_end and !select;
+                const child_open = try serialiseOpen(a, out, n.children, n.name, last, select);
+                if (!select and (last or (optionalEnd(n.name, next, parent) and (next == null or !child_open)))) {
                     open = !std.mem.eql(u8, n.name, "p");
                     continue;
                 }
@@ -1233,9 +1241,8 @@ fn serialiseOpen(a: std.mem.Allocator, out: *std.ArrayList(u8), nodes: []const H
 /// as the end tag would:
 ///
 /// - before a next sibling, the start tags that close it: an `<li>` an
-///   open `<li>`, a `<dt>` or `<dd>` either, an `<option>` or `<optgroup>`
-///   (or `<hr>`) an open `<option>`, a cell a cell, a row a row, a row group
-///   a row group, and the block elements whose start tag closes a `<p>` in
+///   open `<li>`, a `<dt>` or `<dd>` either, a cell a cell, a row a row, a
+///   row group a row group, and the block elements whose start tag closes a `<p>` in
 ///   button scope (not `<table>`, which does only outside quirks mode, nor
 ///   `<form>`, which depends on the form pointer);
 /// - at its parent's end, only a parent whose end tag generates implied end
@@ -1243,6 +1250,15 @@ fn serialiseOpen(a: std.mem.Allocator, out: *std.ArrayList(u8), nodes: []const H
 ///   `</em>`, a custom element's — meets the open `<p>`, `<li>` or `<dd>`,
 ///   a special element, and is ignored, or runs the adoption agency for a
 ///   formatting element, which builds the tree anew.
+///
+/// The rules follow the HTML Living Standard's tree construction as parse5
+/// 7.3.0 implements it (`tests/browser/parse5.mjs`), the parser the gates
+/// check every page with: the standard before its rework of `select`
+/// parsing for the customizable `<select>`, which replaced the "in select"
+/// insertion mode. Nothing here depends on that mode: inside a `<select>`
+/// every end tag is written (`serialiseOpen`'s `in_select`), so an
+/// `<option>`, an `<optgroup>` and whatever they hold close where the tree
+/// says under either revision (`browser/inline/SelectEndTags`).
 fn optionalEnd(name: []const u8, next: ?Html, parent: ?[]const u8) bool {
     const eql = std.mem.eql;
     const nextIs = struct {
@@ -1263,14 +1279,10 @@ fn optionalEnd(name: []const u8, next: ?Html, parent: ?[]const u8) bool {
     const ends = next == null and if (parent) |p| impliesEnds(p) or
         // A cell's end closes it, and a row's end closes a cell.
         (among(name, &.{ "td", "th" }) and eql(u8, p, "tr")) or
-        (eql(u8, name, "tr") and among(p, &.{ "tbody", "thead", "tfoot" })) or
-        (among(name, &.{ "option", "optgroup" }) and eql(u8, p, "select")) or
-        (eql(u8, name, "option") and eql(u8, p, "optgroup")) else false;
+        (eql(u8, name, "tr") and among(p, &.{ "tbody", "thead", "tfoot" })) else false;
     if (eql(u8, name, "li")) return ends or nextIs(next, &.{"li"});
     if (eql(u8, name, "dt")) return nextIs(next, &.{ "dt", "dd" });
     if (eql(u8, name, "dd")) return ends or nextIs(next, &.{ "dt", "dd" });
-    if (eql(u8, name, "option")) return ends or nextIs(next, &.{ "option", "optgroup", "hr" });
-    if (eql(u8, name, "optgroup")) return ends or nextIs(next, &.{ "optgroup", "hr" });
     if (eql(u8, name, "td") or eql(u8, name, "th")) return ends or nextIs(next, &.{ "td", "th" });
     if (eql(u8, name, "tr")) return ends or nextIs(next, &.{"tr"});
     if (eql(u8, name, "thead")) return nextIs(next, &.{ "tbody", "tfoot" });
@@ -1280,8 +1292,8 @@ fn optionalEnd(name: []const u8, next: ?Html, parent: ?[]const u8) bool {
 }
 
 /// Whether the end tag of `name` generates implied end tags (§13.2.6.4.7):
-/// it closes an open `<p>`, `<li>`, `<dd>`, `<dt>`, `<option>`,
-/// `<optgroup>`, `<rp>` or `<rt>` inside it.
+/// it closes an open `<p>`, `<li>`, `<dd>`, `<dt>`, `<rp>` or `<rt>` inside it
+/// (and an `<option>` or `<optgroup>`, whose end tags are always written).
 fn impliesEnds(name: []const u8) bool {
     for ([_][]const u8{
         "address", "article", "aside", "blockquote", "button", "center", "details", "dialog", "dir", "div", "dl", "fieldset", "figcaption", "figure", "footer", "header", "hgroup", "listing", "main", "menu", "nav", "ol", "pre", "search", "section", "summary", "ul",
@@ -1394,7 +1406,8 @@ test "an end tag is left out only where the parser closes the element there" {
         .{ .tree = el("section", &.{ el("p", &.{x}), el("div", &.{}) }), .html = "<section><p>x<div></div></section>" },
         .{ .tree = el("div", &.{ el("p", &.{x}), el("span", &.{}) }), .html = "<div><p>x</p><span></span></div>" },
         .{ .tree = el("div", &.{ el("p", &.{x}), el("table", &.{}) }), .html = "<div><p>x</p><table></table></div>" },
-        .{ .tree = el("select", &.{ el("option", &.{x}), el("option", &.{x}) }), .html = "<select><option>x<option>x</select>" },
+        // Inside a `<select>` every end tag is written.
+        .{ .tree = el("select", &.{ el("option", &.{x}), el("option", &.{x}) }), .html = "<select><option>x</option><option>x</option></select>" },
         .{ .tree = el("li", &.{el("p", &.{x})}), .html = "<li><p>x</li>" },
         .{ .tree = el("h2", &.{el("span", &.{el("p", &.{x})})}), .html = "<h2><span><p>x</p></span></h2>" },
         // An `<li>` or a `<dt>` stops its search for an open one at a `<dd>`

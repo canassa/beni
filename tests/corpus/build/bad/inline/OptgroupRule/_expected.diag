@@ -1,0 +1,1 @@
+[{"code":"markup_restructured","severity":"error","span":{"file":"Main.beni","start":{"line":19,"col":14},"end":{"line":19,"col":16}},"title":"MARKUP RESTRUCTURED","message":"the parser closes an `<optgroup>` before an `<hr>`, so the rule would follow the\ngroup instead of being inside it"}]
