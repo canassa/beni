@@ -23,6 +23,8 @@ children not a list: invalid | invalid (1)
 getters, good: { alpha = "a", count = Null, extra = <internals>, mid = 2.5, note = Missing, toString = Missing, tree = Branch { children = [Leaf { value = -1 }], value = 0.5 }, zeta = 1 } [zeta,the-alpha,mid,count,extra,tree] | { alpha = "a", count = Null, extra = <internals>, mid = 2.5, note = Missing, toString = Missing, tree = Branch { children = [Leaf { value = -1 }], value = 0.5 }, zeta = 1 } [zeta,the-alpha,mid,count,extra,tree]
 getters, mid bad: invalid [zeta,the-alpha,mid] | invalid (1) [zeta,the-alpha,mid]
 getters, alpha bad: invalid [zeta,the-alpha] | invalid (1) [zeta,the-alpha]
+getters, move: move 1 2 [type,dy,dx] | move 1 2 [type,dy,dx]
+getters, move dy bad: invalid [type,dy] | invalid (1) [type,dy]
 set: set 3 | set 3
 move: move 1 2 | move 1 2
 reset: reset | reset
