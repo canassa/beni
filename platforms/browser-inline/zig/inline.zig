@@ -1196,7 +1196,13 @@ const Page = struct {
             const callee = try cx.programPieceName(u.node, u.data.binds[at.bind].name);
             const all = try pg.a().alloc(m.Expr, args.len + 1);
             all[0] = try js.name(u.elements);
-            @memcpy(all[1..], args);
+            // Each argument a name, so release's single-use inlining writes
+            // the piece, called only here, into this function.
+            for (all[1..], args) |*x, arg| {
+                const n = try cx.fresh("arg");
+                try js.constant(blk, n, arg);
+                x.* = try js.name(n);
+            }
             try js.expression(blk, try js.call(try js.name(callee), all));
             pg.leave(arms);
             return;
