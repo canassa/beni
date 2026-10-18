@@ -47,6 +47,17 @@
 < keep-alive: timeout=5
 <
 < {"id":1,"title":"buy oat milk","done":true}
+> PUT /api/todos/01
+> content-type: application/json
+>
+> {"title":"buy oat milk","done":true}
+< 200
+< content-type: application/json; charset=utf-8
+< content-length: 43
+< connection: keep-alive
+< keep-alive: timeout=5
+<
+< {"id":1,"title":"buy oat milk","done":true}
 > DELETE /api/todos/2
 < 204
 < connection: keep-alive
@@ -103,6 +114,14 @@
 <
 < no such todo
 > DELETE /api/todos/abc
+< 404
+< content-type: text/plain; charset=utf-8
+< content-length: 12
+< connection: keep-alive
+< keep-alive: timeout=5
+<
+< no such todo
+> DELETE /api/todos/1e2
 < 404
 < content-type: text/plain; charset=utf-8
 < content-length: 12
