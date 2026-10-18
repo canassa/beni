@@ -1283,6 +1283,11 @@ amendment does for a field that is the type itself ("here").
   browser-inline's generated handlers pick up refusals — does not show: a closure's demand is on the cells its
   environment holds, and the merged place holds the same cells. A capture of a capture written while the outer
   closure lives is still rejected `captured`.
+- *Built 2026-10-18* (`child`'s `firstEnv`, `proj`'s `◇` case; `ownership/Clo`). The fold is taken before the
+  cut, so a `◇` never spends a step of `k`. Measured again on `master` (`b75e844cb`): the bench is unchanged,
+  and fifteen goldens of `tests/corpus/ownership/` change, each in summary lines only (`◇◇` merged into `◇`),
+  as the patch measured. A wide value's index by first step (`projFirst`) answers a `◇` step through `proj`,
+  as it does a step into a recursive type, so that the folded entries are kept there too.
 
 **F2. A cast marker that records the type it was read at.** Today `Js.from` and `Js.to` are `returned`: the
 answer is the argument's cells at their own paths, so a value cast to `Js.Value` and back is read at its new

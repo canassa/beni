@@ -4,9 +4,9 @@ module EntryValueCommand
   100:5 entry EntryValueCommand.values model.items: accepted entry
   110:5 entry EntryValueCommand.closure model.items: rejected escaped: at some message the runtime keeps it: a command or a subscription holds it, or update escapes it (§20.4) (approx)
   summary joined: π1 R
-  summary values: π2 RA, π2.items RAW, π2.items[*] A; res .0 π2, .0.items π2.items, .0.items[*] ~π2.items[*], .1#Cmd.0 fresh1 shared(Cmd.none)#Cmd.0, .1#Cmd.0[*]#Now.0 λ, .1#Cmd.0[*]#Perform.0 λ, .1#Cmd.0[*]#Perform.0◇◇.headers ~fresh2
+  summary values: π2 RA, π2.items RAW, π2.items[*] A; res .0 π2, .0.items π2.items, .0.items[*] ~π2.items[*], .1#Cmd.0 fresh1 shared(Cmd.none)#Cmd.0, .1#Cmd.0[*]#Now.0 λ, .1#Cmd.0[*]#Perform.0 λ, .1#Cmd.0[*]#Perform.0◇.headers ~fresh2
   summary ignored: unused
-  summary closure: π2 RA, π2.items RAW, π2.items[*] A; res .0 π2, .0.items π2.items, .0.items[*] ~π2.items[*], .1#Cmd.0 fresh1{excl π2.items} shared(Cmd.none)#Cmd.0, .1#Cmd.0[*]#Perform.0◇◇ π2.items
+  summary closure: π2 RA, π2.items RAW, π2.items[*] A; res .0 π2, .0.items π2.items, .0.items[*] ~π2.items[*], .1#Cmd.0 fresh1{excl π2.items} shared(Cmd.none)#Cmd.0, .1#Cmd.0[*]#Perform.0◇ π2.items
   summary view: π1.items R; res ⟨render⟩ fresh1{lost}
   demands 4: accepted 3 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 1; assumed 0), pending 0, rejected 1
 total 4: accepted 3 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 1; assumed 0), pending 0, rejected 1

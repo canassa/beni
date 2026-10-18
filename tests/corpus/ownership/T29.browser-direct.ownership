@@ -2,7 +2,7 @@ module T29
   46:33 List.set model.todos: accepted param
   58:5 entry T29.update model.todos: rejected escaped: at some message the runtime keeps it: a command or a subscription holds it, or update escapes it (§20.4) (approx)
   summary encode: π1 R
-  summary update: π2.todos RAW, π2.todos[*] RA; res .0.todos fresh1{lost} π2.todos, .0.todos[*] ~fresh2{lost} ~π2.todos[*], .1#Cmd.0 fresh4{lost} shared(Cmd.none)#Cmd.0, .1#Cmd.0[*] ~fresh3{lost}, .1#Cmd.0[*]#Now.0 ~λ, .1#Cmd.0[*]#Perform.0 ~λ, .1#Cmd.0[*]#Perform.0◇◇ ~fresh1{lost}, .1#Cmd.0[*]#Perform.0◇◇[*] ~fresh2{lost} ~π2.todos[*]
+  summary update: π2.todos RAW, π2.todos[*] RA; res .0.todos fresh1{lost} π2.todos, .0.todos[*] ~fresh2{lost} ~π2.todos[*], .1#Cmd.0 fresh4{lost} shared(Cmd.none)#Cmd.0, .1#Cmd.0[*] ~fresh3{lost}, .1#Cmd.0[*]#Now.0 ~λ, .1#Cmd.0[*]#Perform.0 ~λ, .1#Cmd.0[*]#Perform.0◇ ~fresh1{lost}, .1#Cmd.0[*]#Perform.0◇[*] ~fresh2{lost} ~π2.todos[*]
   summary view: res ⟨render⟩ fresh1{lost}
   demands 2: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
 total 2: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1

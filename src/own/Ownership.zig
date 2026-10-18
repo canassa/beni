@@ -2898,15 +2898,31 @@ pub fn seedPaths(o: *Ownership) Allocator.Error!void {
 
 fn child(o: *Ownership, parent: u32, kind: StepKind, arg: u32) Allocator.Error!u32 {
     std.debug.assert(o.paths.parent.items.len != 0);
+    if (parent != eps and o.paths.kind.items[parent] == .any) return parent;
+    // F1 (§16.7): a function type is taken to be recursive, so a closure's
+    // environment folds at its `◇`: a `◇` on a path that has one already
+    // goes on from the first, and `◇p◇q` is `◇q`. The environments of a
+    // closure and of every closure it captured share one place, which only
+    // adds aliasing.
+    if (kind == .env) if (o.firstEnv(parent)) |at| return at;
     // The cut: a path never grows past k steps; a `⋆` absorbs what is below it.
     if (o.paths.depth.items[parent] >= k_limit) return parent;
-    if (parent != eps and o.paths.kind.items[parent] == .any) return parent;
     // A recursive type is folded (thesis §3.1): a constructor step into a
     // value of a type the path is already inside goes on from where the
     // path first entered that type, so `t#.3#.3` is `t#.3`'s twin and a
     // summary over a tree stays a few paths wide (§16.7).
     if (kind == .ctor) if (try o.foldAt(parent, arg)) |at| return o.rawChild(at, kind, arg);
     return o.rawChild(parent, kind, arg);
+}
+
+/// `p` up to and including its first `◇` step, when it has one (F1).
+fn firstEnv(o: *const Ownership, p: u32) ?u32 {
+    var found: ?u32 = null;
+    var at = p;
+    while (at != eps and at != none) : (at = o.paths.parent.items[at]) {
+        if (o.paths.kind.items[at] == .env) found = at;
+    }
+    return found;
 }
 
 fn foldAt(o: *Ownership, parent: u32, arg: u32) Allocator.Error!?u32 {
@@ -4715,8 +4731,14 @@ const Walker = struct {
         // §16.7: a step into a recursive type keeps what folding put at its
         // levels below — at the same path when the field is a value of the
         // type itself, anywhere when it is further down.
-        const level: Level = if (s.kind == .ctor) try w.o.levelOf(s.arg) else .none;
-        const t = if (level != .none) w.o.ctorType(w.o.stepCtor(s.arg)) else null;
+        // F1: a step along `◇` keeps what folding put there from the
+        // environments of the closures this one captured, at its own path.
+        const level: Level = switch (s.kind) {
+            .ctor => try w.o.levelOf(s.arg),
+            .env => .here,
+            else => .none,
+        };
+        const t = if (level != .none and s.kind == .ctor) w.o.ctorType(w.o.stepCtor(s.arg)) else null;
         const any = if (level == .below) try w.o.child(eps, .any, 0) else eps;
         var out: std.ArrayList(Entry) = .empty;
         for (av) |e| {
@@ -4732,7 +4754,11 @@ const Walker = struct {
             if (first.kind == s.kind and first.arg == s.arg) {
                 try out.append(w.a, .{ .path = try w.o.dropFirst(e.path), .cell = e.cell, .approx = e.approx });
             }
-            if (t != null and first.kind == .ctor and w.o.ctorType(w.o.stepCtor(first.arg)) == t.?) {
+            const folded = if (s.kind == .env)
+                first.kind == .env
+            else
+                t != null and first.kind == .ctor and w.o.ctorType(w.o.stepCtor(first.arg)) == t.?;
+            if (folded) {
                 try out.append(w.a, .{ .path = if (level == .here) e.path else any, .cell = e.cell, .approx = if (e.approx != 0) e.approx else approx_place });
             }
         }
@@ -4803,7 +4829,7 @@ const Walker = struct {
     /// `proj(av, s)` for a wide value, through an index by first step that
     /// is built once per value: the same answer, without the scan.
     fn projFirst(w: *Walker, av: AV, s: Step) Allocator.Error!AV {
-        if (s.kind == .ctor and try w.o.levelOf(s.arg) != .none) return w.proj(av, s, null);
+        if (s.kind == .env or (s.kind == .ctor and try w.o.levelOf(s.arg) != .none)) return w.proj(av, s, null);
         const key: [2]usize = .{ @intFromPtr(av.ptr), av.len };
         const gop = try w.wide.getOrPut(w.a, key);
         if (!gop.found_existing) {
