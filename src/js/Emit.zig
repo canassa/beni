@@ -94,6 +94,7 @@ const Profile = @import("../Profile.zig");
 const Reach = @import("Reach.zig");
 const EdgePack = @import("EdgePack.zig");
 const SchemaGraph = @import("SchemaGraph.zig");
+const SchemaValid = @import("SchemaValid.zig");
 const SchemaShare = @import("SchemaShare.zig");
 const Spec = @import("Spec.zig");
 const Sibling = @import("Sibling.zig");
@@ -969,6 +970,9 @@ const Emitter = struct {
     /// *Incrementality (M4) and chunking (§10)*).
     reach: Reach.Input = undefined,
     edges: []const Reach.ModuleEdges = &.{},
+    /// Per module, whether its edge list was read from the embedded pack,
+    /// which is made with no shape run (`Reach.Input.schema_shapes`).
+    edges_read: []const bool = &.{},
     forwarding_foreigns: [][]Reach.ForeignProof = &.{},
     /// `--release` of an application that does not reach `Debug`: what
     /// JavaScript sees, closed before lowering (§9, *Item 4, taken up*).
@@ -3737,6 +3741,21 @@ const Emitter = struct {
             }
             if (row.* == null) built_insts += b.insts.len;
         }
+        // Shapes or workers, for the whole program (`schema.md` §6, *How a
+        // program chooses between shapes and workers*): the count of shape
+        // runs over the modules whose edges are built here, in module order,
+        // serially, before any edge list is made, so it is input-derived
+        // (CLAUDE.md rule 5).
+        if (!e.options.schema_library) {
+            var runs: usize = 0;
+            for (rows, birs, 0..) |row, b, i| {
+                if (row != null) continue;
+                const m: Graph.Index = @fromBackingInt(@intCast(@as(u32, @intCast(i))));
+                const s = try SchemaValid.sites(e.scratch, e.graph(), in.interfaces, in.provenance, &e.session.interner, b, tables[i], m, &e.schema_graph.?, false, true);
+                runs += SchemaValid.shapeRunCount(s);
+            }
+            in.schema_shapes = runs >= SchemaValid.shape_threshold;
+        }
         // Every module's edges on the workers, each into its own slot and
         // its worker's `edges` arena — read from its row, or built — then
         // the walk here.
@@ -3752,6 +3771,7 @@ const Emitter = struct {
         e.session.profile.addCounter(.edge_lists_embedded, from_pack);
         e.reach = in;
         e.edges = edges;
+        e.edges_read = read;
         e.live = try Reach.walk(e.scratch, in, edges);
         e.session.profile.addCounter(.reach_walks, 1);
     }
@@ -4389,6 +4409,7 @@ const Emitter = struct {
                 .boundary = if (e.boundary) |*b| b else null,
                 .schemas = if (e.schema_graph) |*g| g else null,
                 .schema_library = e.options.schema_library,
+                .schema_shapes = e.reach.schema_shapes and m.int() < e.edges_read.len and !e.edges_read[m.int()],
                 .core_private = e.core_private,
                 .debug = if (e.debug_context) |*cx| cx else null,
             });
