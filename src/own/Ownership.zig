@@ -1614,6 +1614,8 @@ test "a condition lowered at a limit is never read as one that holds" {
     try std.testing.expect(!w.condSame(cond_yes, cond_limit));
     try std.testing.expect(!w.condSame(cond_limit, cond_lost));
     try std.testing.expect(w.condSame(cond_limit, cond_limit));
+    // Two arrived cells for the atom (`mkCond` reads each through `listFacing`).
+    try w.cells.appendSlice(w.a, &.{ .{ .kind = .param, .a = 0 }, .{ .kind = .param, .a = 1 } });
     const sep = try w.sepCond(0, 1);
     try std.testing.expect(!w.condSame(cond_limit, sep));
     try std.testing.expect(!w.condSame(sep, cond_limit));
@@ -3367,6 +3369,9 @@ const NominalFacts = struct {
     /// §23.4: a `List` is reachable in the body without going through a
     /// type parameter, a function or a `foreign type` other than `List`.
     list: bool = false,
+    /// §31.2: a record is reachable in the body without going through a
+    /// type parameter, so a value of the type carries a record cell.
+    record: bool = false,
 };
 
 fn isPrimitive(o: *const Ownership, id: TypeId) bool {
@@ -3566,6 +3571,7 @@ fn nominalFactsOf(o: *Ownership, id: TypeId) Allocator.Error!NominalFacts {
                         facts.own = facts.own or f.own;
                         facts.params = facts.params or f.params;
                         facts.list = facts.list or f.list;
+                        facts.record = facts.record or f.record;
                     }
                 }
                 if (ctors.len == 1) {
@@ -3594,24 +3600,26 @@ fn birTypeFacts(o: *Ownership, m: u32, bir: *const Bir, inst: Inst.Index, depth:
             for (bir.extraSlice(Bir.inlineRange(data), Inst.Index)) |el| f = joinFacts(f, try o.birTypeFacts(m, bir, el, depth + 1));
             return f;
         },
+        // §31.2: a record is a cell, so a nominal type that reaches one does
+        // not cross; the empty record has no field to write.
         .type_record => {
-            var f: NominalFacts = .{};
+            var f: NominalFacts = .{ .record = data.lhs != data.rhs };
             for (bir.extraSlice(Bir.inlineRange(data), Bir.Field)) |fl| f = joinFacts(f, try o.birTypeFacts(m, bir, fl.value, depth + 1));
             return f;
         },
         .type_record_ext => {
-            var f: NominalFacts = .{ .params = true };
+            var f: NominalFacts = .{ .params = true, .record = true };
             for (bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.rhs))), Bir.Field)) |fl| f = joinFacts(f, try o.birTypeFacts(m, bir, fl.value, depth + 1));
             return f;
         },
         .type_top, .ext_type, .schema_type_top, .ext_schema_type => {
             const nf = try o.nominalFacts(o.in.types.headId(graph_m, tag, data));
-            return .{ .own = nf.own, .list = nf.list };
+            return .{ .own = nf.own, .list = nf.list, .record = nf.record };
         },
         .type_app => {
             const head: Inst.Index = @fromBackingInt(@intCast(data.lhs));
             const nf = try o.nominalFacts(o.in.types.headId(graph_m, bir.instTag(head), bir.instData(head)));
-            var f: NominalFacts = .{ .own = nf.own, .list = nf.list };
+            var f: NominalFacts = .{ .own = nf.own, .list = nf.list, .record = nf.record };
             if (nf.params) for (bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.rhs))), Inst.Index)) |arg| {
                 f = joinFacts(f, try o.birTypeFacts(m, bir, arg, depth + 1));
             };
@@ -3622,7 +3630,7 @@ fn birTypeFacts(o: *Ownership, m: u32, bir: *const Bir, inst: Inst.Index, depth:
 }
 
 fn joinFacts(a: NominalFacts, b: NominalFacts) NominalFacts {
-    return .{ .own = a.own or b.own, .params = a.params or b.params, .list = a.list or b.list };
+    return .{ .own = a.own or b.own, .params = a.params or b.params, .list = a.list or b.list, .record = a.record or b.record };
 }
 
 /// §23.4: whether a value of this type may hold a list that beni code can
@@ -3659,6 +3667,17 @@ fn holdsList(o: *Ownership, store: *TypeStore, v: Var, depth: u32) Allocator.Err
 
 /// Whether a value of this type may hold a cell (§4.4: it does not cross).
 fn tracked(o: *Ownership, store: *TypeStore, v: Var, depth: u32) Allocator.Error!bool {
+    return o.trackedIn(store, v, depth, true);
+}
+
+/// Whether a value of this type may hold a cell that is not a record's
+/// object: what crossed before §31.2's amendment, and what a list's facts
+/// still read (`Cell.nonlist`) until the record demand reaches them.
+fn listTracked(o: *Ownership, store: *TypeStore, v: Var, depth: u32) Allocator.Error!bool {
+    return o.trackedIn(store, v, depth, false);
+}
+
+fn trackedIn(o: *Ownership, store: *TypeStore, v: Var, depth: u32, records: bool) Allocator.Error!bool {
     if (depth > type_depth) return true;
     switch (store.resolvedContent(v)) {
         .flex, .rigid, .err => return true,
@@ -3667,18 +3686,21 @@ fn tracked(o: *Ownership, store: *TypeStore, v: Var, depth: u32) Allocator.Error
             .unit, .empty_record => return false,
             .func => return true,
             .tuple => |r| {
-                for (store.vars(r)) |el| if (try o.tracked(store, el, depth + 1)) return true;
+                for (store.vars(r)) |el| if (try o.trackedIn(store, el, depth + 1, records)) return true;
                 return false;
             },
+            // §31.2: a record is written in place, so a value of the type
+            // carries its cell, whatever its fields are.
             .record => |r| {
-                for (store.fields(r.fields)) |f| if (try o.tracked(store, f.value, depth + 1)) return true;
-                return o.tracked(store, r.ext, depth + 1);
+                if (records) return true;
+                for (store.fields(r.fields)) |f| if (try o.trackedIn(store, f.value, depth + 1, records)) return true;
+                return o.trackedIn(store, r.ext, depth + 1, records);
             },
             .app => |a| {
                 if (a.type == o.in.types.well_known.list) return true;
                 const nf = try o.nominalFacts(a.type);
-                if (nf.own) return true;
-                if (nf.params) for (store.vars(a.args)) |arg| if (try o.tracked(store, arg, depth + 1)) return true;
+                if (nf.own or (records and nf.record)) return true;
+                if (nf.params) for (store.vars(a.args)) |arg| if (try o.trackedIn(store, arg, depth + 1, records)) return true;
                 return false;
             },
         },
@@ -4020,7 +4042,15 @@ fn birMayShare(o: *Ownership, store: *TypeStore, m: u32, bir: *const Bir, inst: 
 
 const Mode = enum { summary, report };
 
-const CellKind = enum(u8) { site, param, result, env, shared, top, closure, func, cbres, taken, payload };
+/// `except`: §31.2's `(ε, c ∖ F)`, the record object `c` after an update
+/// that wrote the fields `F` — the same object, whose projection at a field
+/// of `F` is no longer `c`'s. With `F` every field (`except_all`), the
+/// object alone: what a closed record's update leaves at ε beside its other
+/// fields, each split out.
+const CellKind = enum(u8) { site, param, result, env, shared, top, closure, func, cbres, taken, payload, except };
+
+/// An exception set of every field (§31.2).
+const except_all: u32 = std.math.maxInt(u32);
 
 const Cell = struct {
     kind: CellKind,
@@ -4028,12 +4058,14 @@ const Cell = struct {
     /// instruction; env: the captured local; shared: the module; closure:
     /// its index; func: the module; cbres: the function parameter's index;
     /// taken: the element cell it was taken from (§18.5); payload: the
-    /// program constructor's call (§20.5).
+    /// program constructor's call (§20.5); except: the record cell it is
+    /// written over (§31.2).
     a: u32,
     /// shared/func: the declaration; param: 1 for a lambda's or local
     /// function's parameter, 0 for the declaration's own; result: 0 for a
     /// call with no summary (§6.1), else the callee's fresh number; cbres:
-    /// the call's instruction; taken: the instruction that took it.
+    /// the call's instruction; taken: the instruction that took it; except:
+    /// the exception set, `except_all` or an index into `Walker.exsets`.
     b: u32 = 0,
     /// taken: the path below the element.
     path: u32 = eps,
@@ -4042,6 +4074,12 @@ const Cell = struct {
     /// elements, when it has any, are cells of their own — not one cell
     /// that stands for everything below, as a value with no summary is.
     made: bool = false,
+    /// §31.2: a record's object and nothing a list's facts read — a record
+    /// literal's object, an update's (`except`), or a cell whose value, by
+    /// its type, holds no cell but records' (`listTracked`). Not part of
+    /// the cell's key: it is set when the cell is first made, and a cell
+    /// projected from one inherits it.
+    nonlist: bool = false,
 };
 
 /// §18.2: an atom of a condition in the walk's vocabulary — cells that
@@ -4515,6 +4553,9 @@ const Walker = struct {
     conds: std.ArrayList(WCond) = .empty,
     cell_cond: std.ArrayList(u32) = .empty,
     cell_spine: std.ArrayList(u32) = .empty,
+    /// §31.2: the exception sets of `except` cells, each sorted, by index.
+    exsets: std.ArrayList([]const u32) = .empty,
+    exset_map: std.StringHashMapUnmanaged(u32) = .empty,
     /// §18.4: every atom relied on.
     reqs: std.ArrayList(Req) = .empty,
     /// Per call of a function parameter: its arguments, so that a cell made
@@ -4639,10 +4680,22 @@ const Walker = struct {
         if (gop.found_existing) return gop.value_ptr.*;
         const id: u32 = @intCast(w.cells.items.len);
         gop.value_ptr.* = id;
-        try w.cells.append(w.a, c);
+        var made = c;
+        made.nonlist = c.nonlist or c.kind == .except or w.isRecordCell(c) or try w.holdsOnlyRecords(c);
+        try w.cells.append(w.a, made);
         try w.cell_cond.append(w.a, none);
         try w.cell_spine.append(w.a, none);
         return id;
+    }
+
+    /// §31.2: whether `c` is a value's own cell that only §31.2's amendment
+    /// made: one at ε whose type, by the crossing rule before it, crossed —
+    /// a record that holds no list, function or JavaScript value. A cell
+    /// below a tracked root is what it was before, whatever its type.
+    fn holdsOnlyRecords(w: *Walker, c: Cell) Allocator.Error!bool {
+        if (c.path != eps) return false;
+        const v = c.ty.unwrap() orelse return false;
+        return !try w.listTrackedVar(v);
     }
 
     fn token(w: *const Walker, inst: Inst.Index) u32 {
@@ -4714,6 +4767,12 @@ const Walker = struct {
         switch (x.kind) {
             .site, .closure, .func => return null,
             .top => return c,
+            // §31.2: a field the update wrote is no longer the base's.
+            .except => {
+                if (x.b == except_all) return null;
+                if (s.kind == .field and std.mem.indexOfScalar(u32, w.exsets.items[x.b], s.arg) != null) return null;
+                return w.projCell(x.a, s, ty);
+            },
             // What a definition made holds nothing its summary does not name.
             .shared => if (x.made) return null else {
                 var y = x;
@@ -4856,10 +4915,42 @@ const Walker = struct {
 
     // ---- exclusive contents (§18.2–§18.4) ---------------------------------
 
-    fn mkCond(w: *Walker, atoms: []const WAtom) Allocator.Error!u32 {
+    fn mkCond(w: *Walker, atoms_in: []const WAtom) Allocator.Error!u32 {
+        // §31.2: an atom over a record's object says nothing of a list until
+        // the record demand reads it (§31.4 item 6); one over an `except`
+        // cell is over the record cell it was written over.
+        var atoms = atoms_in;
+        for (atoms_in, 0..) |t, i| {
+            if (try w.atomFacing(t)) |f| if (std.meta.eql(f, t)) continue;
+            var kept: std.ArrayList(WAtom) = .empty;
+            try kept.appendSlice(w.a, atoms_in[0..i]);
+            for (atoms_in[i..]) |u| if (try w.atomFacing(u)) |f| try kept.append(w.a, f);
+            kept.items.len = sortWAtoms(kept.items);
+            atoms = kept.items;
+            break;
+        }
         if (atoms.len == 0) return cond_yes;
         try w.conds.append(w.a, .{ .atoms = atoms });
         return @intCast(w.conds.items.len - 1);
+    }
+
+    /// An atom as a list's facts read it (`listFacing`), or null when it is
+    /// over a record's object alone, or over a value whose type, by the
+    /// crossing rule before §31.2, holds no cell.
+    fn atomFacing(w: *Walker, t: WAtom) Allocator.Error!?WAtom {
+        var out = t;
+        switch (t.kind) {
+            // `a` is a function parameter's index, not a cell.
+            .keep, .keep_spine => out.b = (try w.atomCell(t.b)) orelse return null,
+            .excl, .spine => out.a = (try w.atomCell(t.a)) orelse return null,
+            .sep, .sep_spine => {
+                const a = (try w.atomCell(t.a)) orelse return null;
+                const b = (try w.atomCell(t.b)) orelse return null;
+                out.a = @min(a, b);
+                out.b = @max(a, b);
+            },
+        }
+        return out;
     }
 
     fn atomCond(w: *Walker, t: WAtom) Allocator.Error!u32 {
@@ -4916,6 +5007,9 @@ const Walker = struct {
                 root.ty = .none;
                 break :blk try w.cellCond(try w.cell(root));
             } else cond_lost,
+            // §31.2: the record cell it was written over; the object alone
+            // is no list's.
+            .except => if (x.b == except_all) cond_yes else try w.cellCond(x.a),
             .param, .env, .cbres => try w.atomCond(.{ .kind = .excl, .a = c }),
             // A taken element is as exclusive as its container (§18.5).
             // (a split element: as its scrutinee, §18.4 item 4).
@@ -4960,6 +5054,7 @@ const Walker = struct {
             } else cond_lost,
             .param, .env, .cbres => try w.atomCond(.{ .kind = .spine, .a = c }),
             .taken => try w.cellSpine(try w.takenBase(c)),
+            .except => if (x.b == except_all) cond_yes else try w.cellSpine(x.a),
         };
         w.cell_spine.items[c] = k;
         return k;
@@ -5037,7 +5132,8 @@ const Walker = struct {
         for (av) |e| {
             const c = w.cells.items[e.cell];
             switch (c.kind) {
-                .taken, .top, .payload => try idx.odd.append(w.a, e),
+                // Compared with every cell, as `spineAt` does (§31.2).
+                .taken, .top, .payload, .except => try idx.odd.append(w.a, e),
                 .param, .env => try idx.arrived.append(w.a, e),
                 .cbres => {
                     try idx.arrived.append(w.a, e);
@@ -5075,7 +5171,7 @@ const Walker = struct {
         const c = w.cells.items[target.cell];
         switch (c.kind) {
             .closure, .func => {},
-            .taken, .top, .payload => try w.spinePairs(&acc, idx.av, target),
+            .taken, .top, .payload, .except => try w.spinePairs(&acc, idx.av, target),
             .shared => {
                 try w.spinePairs(&acc, idx.odd.items, target);
                 if (idx.family.get(.{ @backingInt(c.kind), c.a, c.b })) |f| try w.spinePairs(&acc, f.items, target);
@@ -5247,9 +5343,80 @@ const Walker = struct {
         return w.condAndAll(&acc);
     }
 
-    /// The element cell a taken cell stands for, at its path.
+    /// §31.2: the cell `(ε, c ∖ F)` for the record cell `c` after an update
+    /// that wrote `fields`: one exception set, the union of `c`'s own and
+    /// `fields`, over the record cell the first update wrote. A site's
+    /// object projects nothing, so its update is the site itself.
+    fn exceptCell(w: *Walker, c: u32, fields: []const u32, all: bool) Allocator.Error!u32 {
+        const x = w.cells.items[c];
+        switch (x.kind) {
+            .site, .top, .closure, .func => return c,
+            else => {},
+        }
+        var base = c;
+        var set: std.ArrayList(u32) = .empty;
+        var every = all;
+        if (x.kind == .except) {
+            base = x.a;
+            if (x.b == except_all) every = true else try set.appendSlice(w.a, w.exsets.items[x.b]);
+        }
+        var b: u32 = except_all;
+        if (!every) {
+            for (fields) |f| if (std.mem.indexOfScalar(u32, set.items, f) == null) try set.append(w.a, f);
+            std.mem.sort(u32, set.items, {}, std.sort.asc(u32));
+            const key = std.mem.sliceAsBytes(set.items);
+            const gop = try w.exset_map.getOrPut(w.a, key);
+            if (!gop.found_existing) {
+                gop.value_ptr.* = @intCast(w.exsets.items.len);
+                try w.exsets.append(w.a, set.items);
+            }
+            b = gop.value_ptr.*;
+        }
+        return w.cell(.{ .kind = .except, .a = base, .b = b, .ty = w.cells.items[base].ty });
+    }
+
+    /// The cell a list's facts read for `c` (§31.2): an `except` cell with
+    /// fields is the record cell it was written over, as the update's whole
+    /// base was before; a record's object alone, and a cell whose value
+    /// holds only records, are none.
+    fn listFacing(w: *const Walker, c: u32) ?u32 {
+        const x = w.cells.items[c];
+        if (x.kind == .except) return if (x.b == except_all) null else w.listFacing(x.a);
+        if (x.kind == .taken and w.listFacing(x.a) == null) return null;
+        return if (x.nonlist) null else c;
+    }
+
+    fn atomCell(w: *Walker, c_in: u32) Allocator.Error!?u32 {
+        const c = w.listFacing(c_in) orelse return null;
+        if (w.cells.items[c].ty.unwrap()) |v| if (!try w.listTrackedVar(v)) return null;
+        return c;
+    }
+
+    /// A value as a summary reads it until record cells reach summaries
+    /// (§31.7): each cell as `listFacing` reads it, and none where it reads
+    /// none.
+    fn listView(w: *Walker, av: AV) Allocator.Error!AV {
+        for (av) |e| {
+            if (w.listFacing(e.cell) != e.cell) break;
+        } else return av;
+        var out: std.ArrayList(Entry) = .empty;
+        for (av) |e| {
+            const c = w.listFacing(e.cell) orelse continue;
+            try out.append(w.a, .{ .path = e.path, .cell = c, .approx = e.approx });
+        }
+        return w.norm(out.items);
+    }
+
+    /// Whether a site is a record literal's object (§31.2).
+    fn isRecordCell(w: *Walker, x: Cell) bool {
+        return x.kind == .site and w.bir.instTag(@fromBackingInt(x.a)) == .record;
+    }
+
+    /// The element cell a taken cell stands for, at its path; and the record
+    /// cell an `except` cell with fields was written over (`listView`).
     fn takenBase(w: *Walker, c: u32) Allocator.Error!u32 {
         const t = w.cells.items[c];
+        if (t.kind == .except) return if (t.b == except_all) c else t.a;
         if (t.kind != .taken) return c;
         if (t.path == eps) return t.a;
         var b = w.cells.items[t.a];
@@ -5420,6 +5587,7 @@ const Walker = struct {
             .cbres => frame == 0,
             .env => frame != 0,
             .taken => w.atomCellIn(x.a, frame),
+            .except => x.b != except_all and w.atomCellIn(x.a, frame),
             else => false,
         };
     }
@@ -5463,7 +5631,7 @@ const Walker = struct {
             .param => if (w.paramIndex(x, frame, params)) |i| .{ .kind = .param, .a = i, .path = x.path } else null,
             .cbres => if (frame == 0) .{ .kind = .cb, .a = x.a, .path = x.path } else null,
             .env => if (frame != 0) .{ .kind = .env, .a = x.a, .path = x.path } else null,
-            .taken => w.atomProv(try w.takenBase(c), frame, params),
+            .taken, .except => if (try w.takenBase(c) == c) null else w.atomProv(try w.takenBase(c), frame, params),
             else => null,
         };
     }
@@ -6268,8 +6436,19 @@ const Walker = struct {
                 const avs = try w.evalOperands(insts, false);
                 w.popPending(avs.len);
                 try w.consume(insts, w.token(inst));
-                var parts = try w.a.alloc(AV, avs.len);
-                for (fields, avs, 0..) |f, av, i| parts[i] = try w.shift(av, .{ .kind = .field, .arg = @backingInt(b.symbol(f.name)) });
+                // §31.2: the literal's object is a cell of its own, `site(ι)`.
+                // Its fields being a stored construction's (§18.2), each
+                // exclusive and pairwise apart, is the record demand's condition
+                // (§31.4 item 6); a list's reads the fields themselves.
+                var parts = try w.a.alloc(AV, avs.len + 1);
+                parts[0] = try w.single(.{ .kind = .site, .a = inst.int(), .ty = w.instTypeOpt(inst) });
+                // A field of a crossing type holds no cell (§4.4), whatever
+                // its value's abstract value says — a `Js.to` answers `⊤` at
+                // any type — now that the record around it is tracked.
+                for (fields, avs, 0..) |f, av, i| {
+                    const crossing = if (w.instType(f.value)) |v| !try w.trackedVar(v) else false;
+                    parts[i + 1] = if (crossing) &.{} else try w.shift(av, .{ .kind = .field, .arg = @backingInt(b.symbol(f.name)) });
+                }
                 const out = try w.unionOf(parts);
                 if (inst.int() != w.entry_arg) try w.sight(out, .{ .pending = "it is stored in a record" }, w.token(inst));
                 return out;
@@ -6582,6 +6761,16 @@ const Walker = struct {
         return t;
     }
 
+    /// `listTracked`, remembered per type as `trackedVar` is.
+    fn listTrackedVar(w: *Walker, v: Var) Allocator.Error!bool {
+        const root, _ = w.store.resolved(v);
+        const key = (@as(u64, w.m) << 32) | @backingInt(root) | (@as(u64, 1) << 63);
+        if (w.o.tracked_memo.get(key)) |t| return t;
+        const t = try w.o.listTracked(w.store, v, 0);
+        try w.o.tracked_memo.put(w.o.in.gpa, key, t);
+        return t;
+    }
+
     fn instTypeOpt(w: *const Walker, inst: Inst.Index) Var.Optional {
         return if (w.instType(inst)) |v| v.toOptional() else .none;
     }
@@ -6604,7 +6793,7 @@ const Walker = struct {
         if (ty) |v| if (!try w.trackedVar(v)) return &.{};
         const bound = w.local_av[l] != null;
         if (w.early[l] == 1) w.early[l] = 2;
-        if (bound and w.local_frame[l] == w.frame) return w.projPath(w.local_av[l].?, path, ty);
+        if (bound and w.local_frame[l] == w.frame) return w.typeFilter(try w.projPath(w.local_av[l].?, path, ty), ty);
         // Not bound yet in the declaration's own frame: nothing is known.
         if (w.frame == 0) return &.{};
         // A capture, recorded in every frame between the local's and this
@@ -6618,6 +6807,77 @@ const Walker = struct {
             if (!bound) break;
         }
         return w.single(.{ .kind = .env, .a = l, .path = path, .ty = if (ty) |v| v.toOptional() else .none });
+    }
+
+    /// `av` read at type `ty`: a `⊤` at a path whose type crosses (§4.4) is
+    /// no cell. A `Js.to` answers `⊤` at any type, and a local bound at a
+    /// type variable keeps what it answered; inside a record that crossed
+    /// before §31.2 nothing read it.
+    /// Only record, tuple and list steps are followed; any other keeps the
+    /// entry.
+    fn typeFilter(w: *Walker, av: AV, ty: ?Var) Allocator.Error!AV {
+        const t = ty orelse return av;
+        var out: ?std.ArrayList(Entry) = null;
+        for (av, 0..) |e, i| {
+            const crossing = e.path != eps and w.cells.items[e.cell].kind == .top and try w.crossesAt(t, e.path);
+            if (crossing and out == null) {
+                out = .empty;
+                try out.?.appendSlice(w.a, av[0..i]);
+            }
+            if (!crossing) if (out) |*o| try o.append(w.a, e);
+        }
+        return if (out) |o| o.items else av;
+    }
+
+    /// Whether the value at `path` below a value of type `t` crosses.
+    fn crossesAt(w: *Walker, t: Var, path: u32) Allocator.Error!bool {
+        var v = t;
+        var buf: [k_limit + 1]Step = undefined;
+        for (w.o.steps(path, &buf)) |s| {
+            const st = switch (w.store.resolvedContent(v)) {
+                .structure => |x| x,
+                else => return false,
+            };
+            switch (s.kind) {
+                .field => v = w.fieldVar(v, s.arg) orelse return false,
+                .tuple => switch (st) {
+                    .tuple => |r| {
+                        const els = w.store.vars(r);
+                        if (s.arg >= els.len) return false;
+                        v = els[s.arg];
+                    },
+                    else => return false,
+                },
+                .elem => switch (st) {
+                    .app => |a| {
+                        if (a.type != w.o.in.types.well_known.list) return false;
+                        const args = w.store.vars(a.args);
+                        if (args.len != 1) return false;
+                        v = args[0];
+                    },
+                    else => return false,
+                },
+                else => return false,
+            }
+        }
+        return !try w.trackedVar(v);
+    }
+
+    /// The type of field `name` of a record type, through its extensions.
+    fn fieldVar(w: *Walker, v_in: Var, name: u32) ?Var {
+        var v = v_in;
+        while (true) {
+            switch (w.store.resolvedContent(v)) {
+                .structure => |st| switch (st) {
+                    .record => |r| {
+                        for (w.store.fields(r.fields)) |f| if (@backingInt(f.name) == name) return f.value;
+                        v = r.ext;
+                    },
+                    else => return null,
+                },
+                else => return null,
+            }
+        }
     }
 
     fn evalRecordUpdate(w: *Walker, inst: Inst.Index) Allocator.Error!AV {
@@ -6636,13 +6896,17 @@ const Walker = struct {
         w.point += 1;
         try w.useOperand(base_inst, w.token(inst), names);
         for (insts) |x| try w.useOperand(x, w.token(inst), &.{});
-        // The base without the updated fields; a symbolic entry is split
-        // into its record type's other fields when the type is closed.
+        // §31.3: the result is the base's object, written — `(ε, c ∖ F)` for
+        // each record cell `c` at ε. A symbolic entry is split into its
+        // record type's other fields when the type is closed, and the object
+        // stays beside them, alone (`except_all`); an open type's keeps
+        // every field it did not write, through its exception set.
         var out: std.ArrayList(Entry) = .empty;
         const all_fields = w.recordFields(w.instType(base_inst));
         for (base) |e| {
             const k = w.cells.items[e.cell].kind;
             if (e.path == eps and k != .top and k != .site and k != .closure and k != .func) {
+                try out.append(w.a, .{ .path = eps, .cell = try w.exceptCell(e.cell, names, all_fields != null), .approx = e.approx });
                 if (all_fields) |fs| {
                     for (fs) |fl| {
                         if (std.mem.indexOfScalar(u32, names, @backingInt(fl.name)) != null) continue;
@@ -6654,7 +6918,7 @@ const Walker = struct {
                     }
                     continue;
                 }
-                try out.append(w.a, e);
+                // An open type: its fields are reached through the exception set.
                 continue;
             }
             if (w.o.firstStep(e.path)) |first| {
@@ -9047,7 +9311,9 @@ const Walker = struct {
     /// on no cell gives nothing up and is no line.
     fn callSiteDemandDeep(w: *Walker, inst: Inst.Index, op: []const u8, args: []const Inst.Index, avs: []const AV, callee_av: AV, i: u32, q: u32, note: []const u8, origin: Origin, xfail: ?Rely, deep: bool) Allocator.Error!void {
         const at = try w.projPath(avs[i], q, null);
-        const base = if (deep) try w.flat(at) else at;
+        // §31.2: a send gives up its payload's record objects to the record
+        // demand; a list's reads the rest (`listView`).
+        const base = if (deep) try w.listView(try w.flat(at)) else at;
         if (deep and base.len == 0) return;
         var others: std.ArrayList(AV) = .empty;
         try others.append(w.a, callee_av);
@@ -9458,7 +9724,7 @@ const Walker = struct {
             var cbinds: std.ArrayList(Carried.Bind) = .empty;
             for (cl.binds) |b| {
                 var provs: std.ArrayList(ResEntry) = .empty;
-                for (try w.expand(b.av)) |e| {
+                for (try w.listView(try w.expand(b.av))) |e| {
                     const kind = w.cells.items[e.cell].kind;
                     if (kind == .closure or kind == .func) return null;
                     var prov = (try w.provOf(e.cell, 0, params, fresh)) orelse return null;
@@ -9483,7 +9749,7 @@ const Walker = struct {
         for (cl.captures) |cap| {
             const held = w.local_av[cap.local] orelse continue;
             var provs: std.ArrayList(ResEntry) = .empty;
-            for (try w.expand(try w.projPath(held, cap.path, null))) |e| {
+            for (try w.listView(try w.expand(try w.projPath(held, cap.path, null)))) |e| {
                 const kind = w.cells.items[e.cell].kind;
                 if (kind == .closure or kind == .func) return null;
                 var prov = (try w.provOf(e.cell, 0, params, fresh)) orelse return null;
@@ -9653,7 +9919,10 @@ const Walker = struct {
                 // still read them, which a probe here cannot see.
                 var own: std.ArrayList(Entry) = .empty;
                 var captured: std.ArrayList(Entry) = .empty;
-                for (try w.instProv(e.prov, ictx)) |x| {
+                for (try w.instProv(e.prov, ictx)) |x_in| {
+                    // §31.2: a record's object is supplied to the record
+                    // demand, not to a list's (§31.5).
+                    const x = Entry{ .path = x_in.path, .cell = w.listFacing(x_in.cell) orelse continue, .approx = x_in.approx };
                     const xc = w.cells.items[x.cell];
                     const of_decl = w.frame != 0 and xc.kind == .env and xc.a < w.local_frame.len and w.local_frame[xc.a] == 0 and w.local_av[xc.a] != null;
                     try (if (of_decl) &captured else &own).append(w.a, x);
@@ -9693,7 +9962,7 @@ const Walker = struct {
         var ff = facts;
         if (w.instType(args[j])) |ft| switch (w.store.resolvedContent(ft)) {
             .structure => |st| if (st == .func) {
-                ff.need = ff.need and try w.o.tracked(w.store, st.func.result, 0);
+                ff.need = ff.need and try w.o.listTracked(w.store, st.func.result, 0);
             },
             else => {},
         };
@@ -10722,6 +10991,17 @@ const Walker = struct {
         if (outer == inner) return eps;
         const o = w.cells.items[outer];
         const i = w.cells.items[inner];
+        // §31.2: the record object written over `o.a`, and the fields it did
+        // not write.
+        if (o.kind == .except) {
+            if (inner == o.a) return eps;
+            if (o.b == except_all) return null;
+            const rest = (try w.covers(o.a, inner)) orelse return null;
+            if (w.o.firstStep(rest)) |first| {
+                if (first.kind == .field and std.mem.indexOfScalar(u32, w.exsets.items[o.b], first.arg) != null) return null;
+            }
+            return rest;
+        }
         switch (o.kind) {
             .param, .result, .env, .shared, .cbres, .taken, .payload => {},
             else => return null,
@@ -10793,7 +11073,10 @@ const Walker = struct {
         // The base's cells: at ε, and every `⋆` entry that may be the base.
         var cells: std.ArrayList(Entry) = .empty;
         const any = try w.o.child(eps, .any, 0);
-        for (spec.base) |e| {
+        for (spec.base) |e_in| {
+            // §31.2: a record's object is no list's; the record demand of
+            // §31.3 is the one that reads it.
+            const e = Entry{ .path = e_in.path, .cell = w.listFacing(e_in.cell) orelse continue, .approx = e_in.approx };
             const k = w.cells.items[e.cell].kind;
             if ((k == .closure and !spec.closures) or k == .func) continue;
             if (e.path == eps) {
@@ -11591,6 +11874,7 @@ const Walker = struct {
             if (u.frame != frame) continue;
             const held = w.local_av[u.local] orelse continue;
             for (held) |e| {
+                if (w.listFacing(e.cell) == null) continue;
                 const c = w.cells.items[try w.takenBase(e.cell)];
                 const pi = w.paramIndex(c, frame, params) orelse continue;
                 if (u.except.len != 0 and u.path == eps) {
@@ -11601,7 +11885,7 @@ const Walker = struct {
                         // replaces (§5's split, §16.4 item 1).
                         for (fields) |fl| {
                             if (std.mem.indexOfScalar(u32, u.except, @backingInt(fl.name)) != null) continue;
-                            if (!try w.trackedVar(fl.value)) continue;
+                            if (!try w.listTrackedVar(fl.value)) continue;
                             try uses.append(keep, .{ .param = pi, .path = try w.o.child(c.path, .field, @backingInt(fl.name)), .bits = bit_r });
                         }
                         continue;
@@ -11635,11 +11919,12 @@ const Walker = struct {
         }
         // E: a parameter cell in Esc.
         for (w.escaped.items) |x| {
+            if (w.listFacing(x.cell) == null) continue;
             const c = w.cells.items[try w.takenBase(x.cell)];
             if (w.paramIndex(c, frame, params)) |pi| try uses.append(keep, .{ .param = pi, .path = c.path, .bits = if (x.why != 0) bit_j else bit_e });
         }
         // A and the result.
-        const expanded = try w.expand(result);
+        const expanded = try w.listView(try w.expand(result));
         // The cells made here, each with the result paths it is at: the
         // pairs `(cell, key)` sorted, one run per cell, so the read-off
         // stays near-linear in the result (§16.3). A cell's runs keep the
@@ -11763,7 +12048,7 @@ const Walker = struct {
                 const owned_probe = sr.owned and more_ok and (sr.probe == none or w.probe_ok.items[sr.probe]) and (sr.probe2 == none or w.probe_ok.items[sr.probe2]);
                 const probe_approx = if (!sr.owned) sr.approx else (sr.probe != none or sr.probe2 != none or sr.more.len != 0) and more_approx and (sr.probe == none or w.probe_approx.items[sr.probe]) and (sr.probe2 == none or w.probe_approx.items[sr.probe2]);
                 const xc = try w.xsumOf(sr.cond, frame, params, none);
-                for (try w.expand(sr.av)) |e| {
+                for (try w.listView(try w.expand(sr.av))) |e| {
                     // A cell made here keeps the number the result gives it,
                     // renumbered as the result's entries are (0 when the
                     // result does not hold it): a callback that keeps it then
@@ -11848,6 +12133,9 @@ const Walker = struct {
                 if (p.kind == .param) p.taken = true;
                 return p;
             },
+            // §31.2: the record cell it was written over; the object alone
+            // reaches no summary until §31.7's.
+            .except => return if (c.b == except_all) null else try w.provOf(c.a, frame, params, fresh),
             .closure, .func => return null,
         }
     }
