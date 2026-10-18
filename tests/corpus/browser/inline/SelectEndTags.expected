@@ -1,0 +1,64 @@
+-- element "root"
+-- load
+<body>
+  <div id="root">
+    <div>
+      <select .value="a">
+        <optgroup>
+          <option>"a"</option>
+          <option>"b"</option>
+        </optgroup>
+        <hr>
+        <option>"c"</option>
+        <hr>
+        <optgroup>
+          <option>"d"</option>
+        </optgroup>
+        <option>"0"</option>
+      </select>
+      <button data-role="inc">"0"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=inc]
+<body>
+  <div id="root">
+    <div>
+      <select .value="a">
+        <optgroup>
+          <option>"a"</option>
+          <option>"b"</option>
+        </optgroup>
+        <hr>
+        <option>"c"</option>
+        <hr>
+        <optgroup>
+          <option>"d"</option>
+        </optgroup>
+        <option>"1"</option>
+      </select>
+      <button data-role="inc">"1"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=inc]
+<body>
+  <div id="root">
+    <div>
+      <select .value="a">
+        <optgroup>
+          <option>"a"</option>
+          <option>"b"</option>
+        </optgroup>
+        <hr>
+        <option>"c"</option>
+        <hr>
+        <optgroup>
+          <option>"d"</option>
+        </optgroup>
+        <option>"2"</option>
+      </select>
+      <button data-role="inc">"2"</button>
+    </div>
+  </div>
+</body>

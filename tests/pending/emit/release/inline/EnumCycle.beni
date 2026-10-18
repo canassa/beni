@@ -1,0 +1,45 @@
+-- CK-255: an enum cycle in an arm is a chain of conditionals in release.
+-- A `case` on literals whose arms are expressions (docs/design/browser-inline.md
+-- §8.8): release writes the choice as `t === "Draft" ? … : …`, assigned where
+-- the record update reads it, as tea-inline does, and not as a `switch` in a
+-- labelled block.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    tone : String
+
+
+type Msg
+    = Rotate
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Rotate →
+            { model
+                | tone =
+                    case model.tone of
+                        "Draft" →
+                            "Review"
+
+                        "Review" →
+                            "Final"
+
+                        _ →
+                            "Draft"
+            }
+
+
+view : Model → Html Msg
+view model = <button data-role="rotate" onClick={Rotate}>{model.tone}</button>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → { tone = "Draft" }, update = update, view = view })
+        "root"

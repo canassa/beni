@@ -1,0 +1,25 @@
+-- An `<hr>` inside an `<optgroup>`: the HTML parser closes the group before
+-- the rule (parse5 7.3.0, the revision `browser-inline.md` §8.2 follows),
+-- so the page would not have the tree the markup says. Refused as markup
+-- the parser rebuilds (`markup_restructured`, boundary.md §9.4.7).
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Inc
+
+
+view : Int → Html Msg
+view n =
+    <select>
+        <optgroup>
+            <option>a</option>
+            <hr />
+        </optgroup>
+    </select>
+
+
+main : Tea.Program
+main = Browser.mountAt (Tea.sandbox { init = λ⊤ → 0, update = λ_ n → n, view = view }) "root"

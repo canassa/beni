@@ -236,3 +236,53 @@ stop ⊤ =
 
 nothing : ⊤ → ⊤
 nothing ⊤ = ⊤
+
+
+-- ---- Bindings (`browser-inline.md` §8.2) --------------------------------
+
+--| `(node, shown)`: a text binding — the node's text, written when it
+--| differs from what the node shows. `shown` is a string: the lowering
+--| writes a number as one (`browser-inline.md` §8.2).
+pub text : V, V → ⊤
+text node shown =
+    if not (Js.same (Js.get node "textContent") shown) then
+        Js.set node "textContent" shown
+
+
+--| `(node, value, key)`: a property binding — the DOM property `key`, a
+--| control's `value` when `key` is not given, written when it differs
+--| from the node's live one, so a control the user edited shows the model.
+pub prop : V, V, V → ⊤
+prop node value key =
+    name = if Js.isUndefined key then Js.from "value" else key
+    if not (Js.same (Js.get node name) value) then
+        Js.set node name value
+
+
+--| `(node, hidden)`: an eager `when` — the node in the page, or, while
+--| `hidden` is true, the empty text node it keeps in its place. The
+--| lowering hands it the number of the arm the branch takes, or its
+--| negation, as `hidden`: the shown arm is the one it is false for.
+pub when : V, Bool → ⊤
+when node hidden =
+    held = Js.get node "$a"
+    anchor =
+        if Js.isUndefined held then
+            made = Js.construct (Js.global "Text") []
+            Js.set node "$a" made
+            made
+        else
+            held
+    -- `replaceWith` on a node out of the page does nothing.
+    _ = Js.call (if hidden then node else anchor) "replaceWith" [ if hidden then anchor else node ]
+    ⊤
+
+
+--| `(node, f, kind)`: a listener of event `kind`, `click` when not given,
+--| whose event enters the dispatch guard with `f`.
+pub on : V, V, V → ⊤
+on node f kind =
+    _ =
+        Js.call node "addEventListener"
+            [ if Js.isUndefined kind then Js.from "click" else kind, Js.from λevent → send f event ]
+    ⊤

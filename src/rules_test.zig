@@ -56,6 +56,7 @@ const allowlist = [_]Allowed{
     .{ .path = "check/Render.zig", .needle = "var seen: std.AutoHashMapUnmanaged(Var, void)", .why = "the error path: one message's variables" },
     .{ .path = "check/Render.zig", .needle = "var by_name: std.AutoHashMapUnmanaged(Symbol, TypeStore.TypeId)", .why = "the error path: one message's type names" },
     .{ .path = "check/Producers.zig", .needle = "var seen: std.AutoHashMapUnmanaged(u32, void)", .why = "the error path: the producers one message names" },
+    .{ .path = "writes/Writes.zig", .needle = "at: std.AutoHashMapUnmanaged(u32, u32) = .empty,", .why = "a write set being built, path to its write: builders nest as `diff` recurses, each with its own map, so one column of the path table cannot hold them" },
     .{ .path = "bir/Lower.zig", .needle = "values: Symbol.Map(NameEntry)", .why = lowering_names },
     .{ .path = "bir/Lower.zig", .needle = "ctor_names: Symbol.Map(NameEntry)", .why = lowering_names },
     .{ .path = "bir/Lower.zig", .needle = "types: Symbol.Map(NameEntry)", .why = lowering_names },

@@ -1,0 +1,347 @@
+-- element "root"
+-- load
+<body>
+  <div id="root">
+    <div data-role="dashboard">
+      <section data-key="w1" data-role="widget">
+        <h2>"Depot notebook 6vm4"</h2>
+        <button data-role="growBeds">"5 more"</button>
+        <div>
+          <button data-role="setBedsTo8">"Set to 8"</button>
+          <button data-role="cutBeds">"Remove 5"</button>
+        </div>
+        <div>
+          <span>"13 beds"</span>
+          <small>"Desk 6vm4"</small>
+        </div>
+        <button data-role="switchMuted">"Switch muted"</button>
+        ""
+        <button data-role="restoreCoins">"Restore"</button>
+        <button data-role="setCoinsToMinus5">"Set to -5"</button>
+        <button data-role="commitMutedAndBeds">"Apply"</button>
+        <span>"changed"</span>
+        <fieldset>
+          <p>"Use the blue form for refunds."</p>
+          <select data-role="pickPhase" .value="Standard">
+            <option value="Basic">"Basic"</option>
+            <option value="Standard">"Standard"</option>
+            <option value="Premium">"Premium"</option>
+            <option value="Custom">"Custom"</option>
+          </select>
+          ""
+        </fieldset>
+      </section>
+    </div>
+  </div>
+</body>
+-- click [data-role=growBeds]
+<body>
+  <div id="root">
+    <div data-role="dashboard">
+      <section data-key="w1" data-role="widget">
+        <h2>"Depot notebook 6vm4"</h2>
+        <button data-role="growBeds">"5 more"</button>
+        <div>
+          <button data-role="setBedsTo8">"Set to 8"</button>
+          <button data-role="cutBeds">"Remove 5"</button>
+        </div>
+        <div>
+          <span>"18 beds"</span>
+          <small>"Desk 6vm4"</small>
+        </div>
+        <button data-role="switchMuted">"Switch muted"</button>
+        ""
+        <button data-role="restoreCoins">"Restore"</button>
+        <button data-role="setCoinsToMinus5">"Set to -5"</button>
+        <button data-role="commitMutedAndBeds">"Apply"</button>
+        <span>"changed"</span>
+        <fieldset>
+          <p>"Use the blue form for refunds."</p>
+          <select data-role="pickPhase" .value="Standard">
+            <option value="Basic">"Basic"</option>
+            <option value="Standard">"Standard"</option>
+            <option value="Premium">"Premium"</option>
+            <option value="Custom">"Custom"</option>
+          </select>
+          ""
+        </fieldset>
+      </section>
+    </div>
+  </div>
+</body>
+-- click [data-role=cutBeds] 4
+(the step's task ended)
+<body>
+  <div id="root">
+    <div data-role="dashboard">
+      <section data-key="w1" data-role="widget">
+        <h2>"Depot notebook 6vm4"</h2>
+        <button data-role="growBeds">"5 more"</button>
+        <div>
+          <button data-role="setBedsTo8">"Set to 8"</button>
+          <button data-role="cutBeds" disabled="">"Remove 5"</button>
+        </div>
+        <div>
+          <span>"1 beds"</span>
+          <small>"Desk 6vm4"</small>
+        </div>
+        <button data-role="switchMuted">"Switch muted"</button>
+        ""
+        <button data-role="restoreCoins">"Restore"</button>
+        <button data-role="setCoinsToMinus5">"Set to -5"</button>
+        <button data-role="commitMutedAndBeds">"Apply"</button>
+        <span>"changed"</span>
+        <fieldset>
+          <p>"Use the blue form for refunds."</p>
+          <select data-role="pickPhase" .value="Standard">
+            <option value="Basic">"Basic"</option>
+            <option value="Standard">"Standard"</option>
+            <option value="Premium">"Premium"</option>
+            <option value="Custom">"Custom"</option>
+          </select>
+          ""
+        </fieldset>
+      </section>
+    </div>
+  </div>
+</body>
+-- click [data-role=switchMuted]
+<body>
+  <div id="root">
+    <div data-role="dashboard">
+      <section data-key="w1" data-role="widget">
+        <h2>"Depot notebook 6vm4"</h2>
+        <button data-role="growBeds">"5 more"</button>
+        <div>
+          <button data-role="setBedsTo8">"Set to 8"</button>
+          <button data-role="cutBeds" disabled="">"Remove 5"</button>
+        </div>
+        <div>
+          <span>"1 beds"</span>
+          <small>"Desk 6vm4"</small>
+        </div>
+        <button data-role="switchMuted">"Switch muted"</button>
+        <div>
+          <p>"Muted: done"</p>
+          <strong>"Coins = -5"</strong>
+        </div>
+        <button data-role="restoreCoins">"Restore"</button>
+        <button data-role="setCoinsToMinus5">"Set to -5"</button>
+        <button data-role="commitMutedAndBeds">"Apply"</button>
+        <span>"changed"</span>
+        <fieldset>
+          <p>"Use the blue form for refunds."</p>
+          <select data-role="pickPhase" .value="Standard">
+            <option value="Basic">"Basic"</option>
+            <option value="Standard">"Standard"</option>
+            <option value="Premium">"Premium"</option>
+            <option value="Custom">"Custom"</option>
+          </select>
+          ""
+        </fieldset>
+      </section>
+    </div>
+  </div>
+</body>
+-- input [data-role=pickPhase] "Basic"
+<body>
+  <div id="root">
+    <div data-role="dashboard">
+      <section data-key="w1" data-role="widget">
+        <h2>"Depot notebook 6vm4"</h2>
+        <button data-role="growBeds">"5 more"</button>
+        <div>
+          <button data-role="setBedsTo8">"Set to 8"</button>
+          <button data-role="cutBeds" disabled="">"Remove 5"</button>
+        </div>
+        <div>
+          <span>"1 beds"</span>
+          <small>"Desk 6vm4"</small>
+        </div>
+        <button data-role="switchMuted">"Switch muted"</button>
+        <div>
+          <p>"Muted: done"</p>
+          <strong>"Coins = -5"</strong>
+        </div>
+        <button data-role="restoreCoins">"Restore"</button>
+        <button data-role="setCoinsToMinus5">"Set to -5"</button>
+        <button data-role="commitMutedAndBeds">"Apply"</button>
+        <span>"changed"</span>
+        <fieldset>
+          <p>"Use the blue form for refunds."</p>
+          <select data-role="pickPhase" .value="Basic">
+            <option value="Basic">"Basic"</option>
+            <option value="Standard">"Standard"</option>
+            <option value="Premium">"Premium"</option>
+            <option value="Custom">"Custom"</option>
+          </select>
+          <div>
+            <p>"Phase: Basic"</p>
+            <p>"Plus one: -4"</p>
+            <p>"Numbers are refreshed every morning."</p>
+          </div>
+        </fieldset>
+      </section>
+    </div>
+  </div>
+</body>
+-- click [data-role=restoreCoins]
+(the DOM did not change)
+-- click [data-role=commitMutedAndBeds]
+<body>
+  <div id="root">
+    <div data-role="dashboard">
+      <section data-key="w1" data-role="widget">
+        <h2>"Depot notebook 6vm4"</h2>
+        <button data-role="growBeds">"5 more"</button>
+        <div>
+          <button data-role="setBedsTo8">"Set to 8"</button>
+          <button data-role="cutBeds">"Remove 5"</button>
+        </div>
+        <div>
+          <span>"6 beds"</span>
+          <small>"Desk 6vm4"</small>
+        </div>
+        <button data-role="switchMuted">"Switch muted"</button>
+        ""
+        <button data-role="restoreCoins">"Restore"</button>
+        <button data-role="setCoinsToMinus5">"Set to -5"</button>
+        <button data-role="commitMutedAndBeds">"Apply"</button>
+        <span>"changed"</span>
+        <fieldset>
+          <p>"Use the blue form for refunds."</p>
+          <select data-role="pickPhase" .value="Basic">
+            <option value="Basic">"Basic"</option>
+            <option value="Standard">"Standard"</option>
+            <option value="Premium">"Premium"</option>
+            <option value="Custom">"Custom"</option>
+          </select>
+          <div>
+            <p>"Phase: Basic"</p>
+            <p>"Plus one: -4"</p>
+            <p>"Numbers are refreshed every morning."</p>
+          </div>
+        </fieldset>
+      </section>
+    </div>
+  </div>
+</body>
+-- click [data-role=setBedsTo8]
+<body>
+  <div id="root">
+    <div data-role="dashboard">
+      <section data-key="w1" data-role="widget">
+        <h2>"Depot notebook 6vm4"</h2>
+        <button data-role="growBeds">"5 more"</button>
+        <div>
+          <button data-role="setBedsTo8">"Set to 8"</button>
+          <button data-role="cutBeds">"Remove 5"</button>
+        </div>
+        <div>
+          <span>"8 beds"</span>
+          <small>"Desk 6vm4"</small>
+        </div>
+        <button data-role="switchMuted">"Switch muted"</button>
+        ""
+        <button data-role="restoreCoins">"Restore"</button>
+        <button data-role="setCoinsToMinus5">"Set to -5"</button>
+        <button data-role="commitMutedAndBeds">"Apply"</button>
+        <span>"changed"</span>
+        <fieldset>
+          <p>"Use the blue form for refunds."</p>
+          <select data-role="pickPhase" .value="Basic">
+            <option value="Basic">"Basic"</option>
+            <option value="Standard">"Standard"</option>
+            <option value="Premium">"Premium"</option>
+            <option value="Custom">"Custom"</option>
+          </select>
+          <div>
+            <p>"Phase: Basic"</p>
+            <p>"Plus one: -4"</p>
+            <p>"Numbers are refreshed every morning."</p>
+          </div>
+        </fieldset>
+      </section>
+    </div>
+  </div>
+</body>
+-- detail window rr-push {"type": "serverSet", "widget": "w1", "state": {"beds": 2, "muted": true, "phase": "Premium", "coins": 7}}
+<body>
+  <div id="root">
+    <div data-role="dashboard">
+      <section data-key="w1" data-role="widget">
+        <h2>"Depot notebook 6vm4"</h2>
+        <button data-role="growBeds">"5 more"</button>
+        <div>
+          <button data-role="setBedsTo8">"Set to 8"</button>
+          <button data-role="cutBeds">"Remove 5"</button>
+        </div>
+        <div>
+          <span>"2 beds"</span>
+          <small>"Desk 6vm4"</small>
+        </div>
+        <button data-role="switchMuted">"Switch muted"</button>
+        <div>
+          <p>"Muted: done"</p>
+          <strong>"Coins = 7"</strong>
+        </div>
+        <button data-role="restoreCoins">"Restore"</button>
+        <button data-role="setCoinsToMinus5">"Set to -5"</button>
+        <button data-role="commitMutedAndBeds">"Apply"</button>
+        <span>"changed"</span>
+        <fieldset>
+          <p>"Use the blue form for refunds."</p>
+          <select data-role="pickPhase" .value="Premium">
+            <option value="Basic">"Basic"</option>
+            <option value="Standard">"Standard"</option>
+            <option value="Premium">"Premium"</option>
+            <option value="Custom">"Custom"</option>
+          </select>
+          ""
+        </fieldset>
+      </section>
+    </div>
+  </div>
+</body>
+-- detail window rr-push {"type": "snapshot", "state": {"widgets": {"w1": {"beds": 40, "muted": false, "phase": "Basic", "coins": 1}}}}
+<body>
+  <div id="root">
+    <div data-role="dashboard">
+      <section data-key="w1" data-role="widget">
+        <h2>"Depot notebook 6vm4"</h2>
+        <button data-role="growBeds">"5 more"</button>
+        <div>
+          <button data-role="setBedsTo8">"Set to 8"</button>
+          <button data-role="cutBeds">"Remove 5"</button>
+        </div>
+        <div>
+          <span>"40 beds"</span>
+          <small>"Desk 6vm4"</small>
+        </div>
+        <button data-role="switchMuted">"Switch muted"</button>
+        ""
+        <button data-role="restoreCoins">"Restore"</button>
+        <button data-role="setCoinsToMinus5">"Set to -5"</button>
+        <button data-role="commitMutedAndBeds">"Apply"</button>
+        <span>"changed"</span>
+        <fieldset>
+          <p>"Use the blue form for refunds."</p>
+          <select data-role="pickPhase" .value="Basic">
+            <option value="Basic">"Basic"</option>
+            <option value="Standard">"Standard"</option>
+            <option value="Premium">"Premium"</option>
+            <option value="Custom">"Custom"</option>
+          </select>
+          <div>
+            <p>"Phase: Basic"</p>
+            <p>"Plus one: 2"</p>
+            <p>"Numbers are refreshed every morning."</p>
+          </div>
+        </fieldset>
+      </section>
+    </div>
+  </div>
+</body>
+-- detail window rr-push {"type": "notify", "widget": "w1", "item": 3}
+(the DOM did not change)
+

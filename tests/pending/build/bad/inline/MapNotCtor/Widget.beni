@@ -1,0 +1,11 @@
+--! A widget in a module of its own.
+
+import Html exposing (Html)
+
+
+pub type Msg
+    = Inc
+
+
+pub view : Int → Html Msg
+view count = <button data-role="inc" onClick={Inc}>{count}</button>

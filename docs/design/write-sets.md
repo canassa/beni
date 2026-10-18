@@ -2174,3 +2174,79 @@ leaf still selects its original handler and parameter convention. Defaults
 retain source priority and the final fallback is unchanged. Update bodies
 that have no constructor-specialised arm may be shared across handlers;
 the consumer matrix and expected group visits are independent of that choice.
+
+### *Amended 2026-10-17 (`browser-inline`'s S1, #297):* split sites and per-path write sets
+
+Two new outputs of the pass, for a consumer that writes each key's arm in place and writes
+another module's code as pieces (`browser-inline.md` §8.4–§8.5). Nothing printed moves, and no
+key's write set changes: both are refinements a consumer may read, of facts the pass already
+computes.
+
+**Split sites.** Every `case` at which §4.4's key tree splits μ is recorded with its module, its
+declaration and its instruction, and per branch the key steps under it: the branch whose pattern
+names constructor `C` holds every leaf below `· C`, and a default branch every leaf of the default
+child. A leaf's **path of split sites** is the chain of branches its steps were taken at, from
+`update` down. What a consumer may rely on: each leaf is under exactly one branch of each site on
+its path, and the branch's pattern variables bound to `Same(μ.s.C#j)` are, at the leaf, the
+leaf constructor's fields or what holds them — so a branch whose arm is written as a function of
+its pattern variables (an *arm piece*) is called, for a leaf, with the leaf's fields, or with the
+message the key's fields rebuild when the arm reads it whole (`message_read_whole`). A leaf whose
+path has two sites in functions of one module other than the program's, the second reached from the
+first branch's arm, is marked `deep_split`: no arm piece of the first can be written without the
+sub-message.
+
+**Per-path write sets.** §3.4 reads a key's write set off `diff` of `update`'s result, and an `if`
+or a `case` whose arms are not one value makes that result an `Alt` of its arms' values (§3.3),
+which `diff` joins. The pass now also keeps, per key, each alternative **before** the join, by its
+**tail**: the instruction of the arm result it came from, in a function of the program module that
+the key's arm reaches by calls the consumer writes in place — through any depth of such calls, an
+`Alt` of an arm's own `Alt`s being its alternatives' tails. A call of another module's function is
+one tail, its whole result. Each tail's write set is `diff` of that alternative alone; the key's
+write set is the join of its tails', as before. What a consumer may rely on: on every run of the
+key's arm, the value returned is the value of exactly one tail, and what that run writes is in that
+tail's set — so a write pass placed at each tail, of the groups that tail's set conflicts with, is
+sound (§1.2), and is exact where the tails' sets differ. The `cap_alt` cap does not apply to the
+tails: they are as many as the arms the key's arm is written with, which the consumer writes anyway
+(`browser-inline.md` §8.5).
+
+**The caps** (the owner, 2026-10-17): the leaf cap `L`, the alternative cap `A` and the size cap `S`
+(§6.1) are lifted for a program built for a platform whose lowering refuses a capped key
+(`browser-inline.md` §8.7); `k` and the round cap `I` stay until #286's precise folding replaces
+them, and a key they cut is refused there as a limit of the compiler.
+
+### *Amended 2026-10-18 (`browser-inline`'s S1, the owner's split of `*` keys):* an approximate write is marked
+
+A write the pass makes because it could not see into a value — `value p` for a `Fresh` term (an
+opaque call's result), for an application through a function-valued parameter, or for a record
+whose type at `p` it could not read — is marked **lost** (`Write.lost`). A `value p` the pass knows
+exactly — another path's `Same`, a literal, a constructor, a record of another base — is not. Two
+writes at one path join with `or`. Nothing printed moves, and no write set changes but for the
+bit. A consumer reads it to tell a `*` key of lost precision (a limit of the compiler) from an
+exact write of the whole model (`browser-inline.md` §5). The program also records how many
+fields its model's type has (`Program.model_fields`, 0 for a model that is not a record), which
+tells a model of one value from a record of several.
+
+*Amended again 2026-10-18 (the owner: the message is what the author acts on).* `Write.lost` is
+not a bit but the term the pass could not see into, and every term records the instruction being
+evaluated when it was first made (`term_origin`): an application's result is recorded at the call
+of the parameter, `g m`, and not where the summary is used. Two lost writes at one path keep the
+first in source order and count the others (`Write.more`), so a consumer names the place, quotes
+it, and says how many more there are. `Program.model_fields` is read from `update`'s annotation,
+or else from what `init` makes — a record literal of every field, a literal, a constructor — and
+is `none` when neither says, which a consumer refuses as a limit rather than guess.
+
+*Corrected 2026-10-18 (the review of #350).* Every place the pass gives up precision marks the
+write lost, not two of them: a path the depth limit cuts (`extend` past k, below a record, a
+constructor, a record's other fields or a list's element), a constructor of fields placed where the
+facts do not know which constructor `p` holds, and `Same` of `p` itself through `[*]` or `[?]`,
+which the pass cannot tell is the value already there. A constructor of no fields, another path's
+`Same`, a literal, a function value and an index guard's `Bool` are whole writes it knows exactly,
+and the term tags are each named, so a new one is decided where it is added. None of the newly
+marked places can be the model's own write of a record of several fields — the depth limit cuts
+below the model, a constructor at the model is a model of one value, and the model's path has no
+`[*]` — so no `*` key's kind moves; the writes dump marks each lost write `≈`
+(`writes/ApproxConstructor`, `writes/ApproxDepth`). Two lost writes at one path keep the set of
+every term joined (`Write.lost_set`, interned, sorted by id), the first in source order naming
+it, a lower term id first among terms one instruction made, and the "N more" counts the other
+places the set's terms were made at, each once (`Writes.lostMore`). A write set being built finds a
+path's write by a map, not a scan.

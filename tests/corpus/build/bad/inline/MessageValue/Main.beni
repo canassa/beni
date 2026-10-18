@@ -1,0 +1,38 @@
+-- A listener calls its key's handler with no message made
+-- (docs/design/browser-inline.md §8.3): a handler value the model holds is
+-- a message no key can be named for when the program is built, refused at
+-- its element as a limit of the compiler (§8.7; §5, class 4).
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Up
+    | Down
+
+
+type alias Model =
+    next : Msg
+    count : Int
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Up →
+            { model | count = model.count + 1, next = Down }
+
+        Down →
+            { model | count = model.count - 1, next = Up }
+
+
+view : Model → Html Msg
+view model = <button onClick={model.next}>{model.count}</button>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → { next = Up, count = 0 }, update = update, view = view })
+        "root"

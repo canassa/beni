@@ -1,0 +1,41 @@
+-- A `*` key whose whole-model write is a record of a type the write-set pass
+-- cannot read — `update` has no annotation, so the pass knows the model only
+-- from `init`, and `{ next | count = 0 }` updates a value it cannot see into —
+-- is lost precision, and the limit of the compiler names that record at its
+-- span. With no annotation the key is every message of the program, never
+-- `(any)` (docs/design/browser-inline.md §5, §8.7).
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    count : Int
+    label : String
+
+
+type Msg
+    = Run (Model → Model)
+
+
+update msg model =
+    case msg of
+        Run f →
+            next = f model
+            { next | count = 0 }
+
+
+view : Model → Html Msg
+view model =
+    <div>
+        <output>{model.count}</output>
+        <p>{model.label}</p>
+        <button data-role="run" onClick={Run λm → { m | count = m.count + 1 }}>+1</button>
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → { count = 0, label = "start" }, update = update, view = view })
+        "root"

@@ -119,6 +119,8 @@ pub fn misnested(scope: Scope, child: []const u8) ?[]const u8 {
             return "a row holds only cells; the parser moves anything else out of the table";
         if (std.mem.eql(u8, parent, "colgroup") and !among(child, &.{ "col", "template" }))
             return "a column group holds only columns";
+        if (std.mem.eql(u8, parent, "optgroup") and std.mem.eql(u8, child, "hr"))
+            return "the parser closes an `<optgroup>` before an `<hr>`, so the rule would follow the group instead of being inside it";
         if (among(child, &.{ "li", "dt", "dd", "option", "optgroup" }) and std.mem.eql(u8, parent, child))
             return "the parser closes the open element of the same name before it opens this one";
     }

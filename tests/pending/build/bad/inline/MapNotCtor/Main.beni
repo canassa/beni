@@ -1,0 +1,47 @@
+-- CK-255: an `Html.map` whose function is not a constructor is refused.
+-- Which key a message of the mapped markup reaches is decided when the
+-- program is built (docs/design/browser-inline.md §8.7): here the map's
+-- function chooses the constructor at run time, so the program is refused
+-- at the map by a language rule, class 3 (§5): `program_shape`.
+import Browser
+import Html exposing (Html)
+import Tea
+import Widget
+
+
+type Msg
+    = Up Widget.Msg
+    | Down Widget.Msg
+
+
+type alias Model =
+    count : Int
+    up : Bool
+
+
+tagged : Bool, Widget.Msg → Msg
+tagged up msg = if up then Up msg else Down msg
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Up _ →
+            { model | count = model.count + 1 }
+
+        Down _ →
+            { model | count = model.count - 1 }
+
+
+view : Model → Html Msg
+view model =
+    <div>
+        {Html.map (Widget.view model.count) (tagged model.up _)}
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → { count = 0, up = True }, update = update, view = view })
+        "root"

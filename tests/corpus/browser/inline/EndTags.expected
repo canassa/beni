@@ -1,0 +1,100 @@
+-- element "root"
+-- load
+<body>
+  <div id="root">
+    <div>
+      <label>
+        <p>"0"</p>
+      </label>
+      <em>
+        <p>"note"</p>
+      </em>
+      <button data-role="inc">"+"</button>
+      <div>
+        <p>"Count: 0"</p>
+      </div>
+      <ul>
+        <li>"one"</li>
+        <li>"0"</li>
+      </ul>
+      <ul>
+        <li>
+          <dd>"x"</dd>
+        </li>
+        <li>"0"</li>
+      </ul>
+      <dl>
+        <dd>
+          <li>"x"</li>
+        </dd>
+        <dt>"0"</dt>
+      </dl>
+    </div>
+  </div>
+</body>
+-- click [data-role=inc]
+<body>
+  <div id="root">
+    <div>
+      <label>
+        <p>"1"</p>
+      </label>
+      <em>
+        <p>"note"</p>
+      </em>
+      <button data-role="inc">"+"</button>
+      <div>
+        <p>"Count: 1"</p>
+      </div>
+      <ul>
+        <li>"one"</li>
+        <li>"1"</li>
+      </ul>
+      <ul>
+        <li>
+          <dd>"x"</dd>
+        </li>
+        <li>"1"</li>
+      </ul>
+      <dl>
+        <dd>
+          <li>"x"</li>
+        </dd>
+        <dt>"1"</dt>
+      </dl>
+    </div>
+  </div>
+</body>
+-- click [data-role=inc]
+<body>
+  <div id="root">
+    <div>
+      <label>
+        <p>"2"</p>
+      </label>
+      <em>
+        <p>"note"</p>
+      </em>
+      <button data-role="inc">"+"</button>
+      <div>
+        <p>"Count: 2"</p>
+      </div>
+      <ul>
+        <li>"one"</li>
+        <li>"2"</li>
+      </ul>
+      <ul>
+        <li>
+          <dd>"x"</dd>
+        </li>
+        <li>"2"</li>
+      </ul>
+      <dl>
+        <dd>
+          <li>"x"</li>
+        </dd>
+        <dt>"2"</dt>
+      </dl>
+    </div>
+  </div>
+</body>

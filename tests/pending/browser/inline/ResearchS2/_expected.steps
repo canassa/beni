@@ -1,0 +1,10 @@
+element "root"
+click [data-role=addBeds]
+input [data-role=setPages] "12"
+input [data-role=setPages] "99"
+click [data-role=resetPages]
+detail window rr-push {"type": "serverSet", "widget": "w1", "state": {"beds": 1, "pages": 5}}
+detail window rr-push {"type": "serverSet", "widget": "w2", "state": {"beds": 2, "pages": 6}}
+detail window rr-push {"type": "tick"}
+detail window rr-push {"type": "snapshot", "state": {"widgets": {"w1": {"beds": 30, "pages": 0}}}}
+detail window rr-push {"type": "serverSet", "widget": "w1", "state": {"beds": "x"}}

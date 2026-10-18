@@ -13,12 +13,12 @@ program ListRows.main : Tea.sandbox
   key Join                                        indexed    node ρ; value ρ.rows ⟨append⟩
   key Front                                       indexed    node ρ; value ρ.rows ⟨prepend⟩
   key Trim                                        structural node ρ; value ρ.rows ⟨removeSome⟩
-  key Rest                                        indexed    node ρ; value ρ.rows ⟨replaced⟩
+  key Rest                                        indexed    node ρ; value ρ.rows ⟨replaced⟩ ≈
   key Into                                        indexed    node ρ; value ρ.rows ⟨insert i⟩
   key Out                                         indexed    node ρ; value ρ.rows ⟨removeAt i⟩
   key Order                                       structural node ρ; value ρ.rows ⟨permute⟩
-  key First                                       exact      node ρ; value ρ.first
-  key Count                                       exact      node ρ; value ρ.total
+  key First                                       exact      node ρ; value ρ.first ≈
+  key Count                                       exact      node ρ; value ρ.total ≈
   keys 17: bounded 17 (100%), exact 3, indexed 9, structural 5, * 0; capped 0
   hole ListRows.beni:119:10                       dynamic    reads ρ.rows
   hole ListRows.beni:119:53                       static-key reads ρ.rows[*].id

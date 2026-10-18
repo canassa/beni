@@ -1,0 +1,134 @@
+-- `emit/release/inline/FormLocal`'s page (docs/design/browser-inline.md
+-- §8): the `when` shows and hides its element, whose texts stay current
+-- while hidden; the select and the number input show the model after each
+-- of their events — a number out of range leaves the field showing what
+-- was typed, which the model keeps, until a valid one replaces it; a code
+-- longer than four characters, which `update` ignores, is replaced by the
+-- model's, written back by the input's own handler; and an input whose key
+-- writes nothing shows the model's text again after every edit.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    muted : Bool
+    phase : String
+    pages : Int
+    pagesTyped : Maybe String
+    code : String
+    locked : String
+
+
+type Msg
+    = SwitchMuted
+    | PickPhase String
+    | RotatePhase
+    | SetPages String
+    | SetCode String
+    | Locked String
+
+
+intIn : String, Int, Int → Maybe Int
+intIn typed low high =
+    case String.toInt typed of
+        Just number →
+            if number ≥ low && number ≤ high then Just number else Nothing
+
+        Nothing →
+            Nothing
+
+
+shown : Maybe String, Int → String
+shown typed number = Maybe.withDefault typed (String.fromInt number)
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        SwitchMuted →
+            { model | muted = not model.muted }
+
+        PickPhase chosen →
+            { model | phase = chosen }
+
+        RotatePhase →
+            { model
+                | phase =
+                    case model.phase of
+                        "Basic" →
+                            "Standard"
+
+                        "Standard" →
+                            "Premium"
+
+                        _ →
+                            "Basic"
+            }
+
+        SetPages typed →
+            case intIn typed (-5) 20 of
+                Just parsed →
+                    { model | pages = parsed, pagesTyped = Nothing }
+
+                Nothing →
+                    { model | pagesTyped = Just typed }
+
+        SetCode typed →
+            if String.length typed > 4 then model else { model | code = typed }
+
+        Locked _ →
+            model
+
+
+view : Model → Html Msg
+view model =
+    <section data-role="form">
+        <button data-role="switchMuted" onClick={SwitchMuted}>Switch muted</button>
+        {if model.muted then
+            <div>
+                <p>Muted: {if model.muted then "done" else "pending"}</p>
+                <strong>Pages = {model.pages}</strong>
+            </div>
+         else
+            <></>
+        }
+        <select data-role="pickPhase" value={model.phase} onInput={PickPhase}>
+            <option value="Basic">Basic</option>
+            <option value="Standard">Standard</option>
+            <option value="Premium">Premium</option>
+        </select>
+        <button data-role="rotatePhase" onClick={RotatePhase}>{model.phase}</button>
+        <input
+            type="number"
+            data-role="setPages"
+            value={shown model.pagesTyped model.pages}
+            onInput={SetPages}
+        />
+        <input data-role="code" value={model.code} onInput={SetCode} />
+        <input data-role="locked" value={model.locked} onInput={Locked} />
+        <ul>
+            <li>Pages: {model.pages}</li>
+            <li>Static</li>
+        </ul>
+    </section>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox
+            { init =
+                λ⊤ →
+                    { muted = False
+                    , phase = "Standard"
+                    , pages = 4
+                    , pagesTyped = Nothing
+                    , code = "ab"
+                    , locked = "fixed"
+                    }
+            , update = update
+            , view = view
+            }
+        )
+        "root"

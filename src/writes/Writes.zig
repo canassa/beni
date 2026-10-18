@@ -278,6 +278,8 @@ pub const PathKind = enum(u32) {
 };
 
 pub const rho_path: u32 = 0;
+/// `term_origin` of a term made where no instruction was being evaluated.
+pub const no_origin: u64 = std.math.maxInt(u64);
 pub const mu_path: u32 = 1;
 
 // Index symbols (§2.3): words `[kind, a, b, c]`.
@@ -358,6 +360,16 @@ pub const Write = struct {
     edit: Edit = .none,
     s1: u32 = none,
     s2: u32 = none,
+    /// The write is the pass's approximation (write-sets.md, amended
+    /// 2026-10-18): a value it could not see into — an opaque call's
+    /// result, an application through a parameter, a record of a type it
+    /// could not read — and not one it knows exactly: the term it could not
+    /// see into, whose `term_origin` names where it was made, or `none`.
+    /// Joined keeping the first in source order, the lower term id first
+    /// among terms one instruction made; `lost_set` is every such term
+    /// joined, interned and sorted by id (`lostMore` counts their places).
+    lost: u32 = none,
+    lost_set: u32 = none,
 };
 
 // ---------------------------------------------------------------------------
@@ -539,6 +551,14 @@ pub const Program = struct {
     carriers: Carriers = .{},
     /// The message type's constructor count, or 0 when unknown.
     msg_ctors: u32 = 0,
+    /// The name of the message type's one constructor, when it has one: what a
+    /// key of no steps, `(any)` in the dump, is to the program's author.
+    msg_only: []const u8 = "",
+    /// The model's record fields, by its type; 0 when the model is not a
+    /// record, `none` when its type is not known. What tells a model of one value
+    /// from a record of several (`browser-inline.md` §5, the owner,
+    /// 2026-10-17).
+    model_fields: u32 = 0,
     /// The top-level declaration `update` names, or `none` for an `update`
     /// that is not one: where the checker's scheme of it is, which the
     /// fuzzer's message type is read from (`dump --stage=writes
@@ -653,7 +673,15 @@ deps_t: Table = .{},
 terms: Table = .{},
 term_depth: std.ArrayList(u8) = .empty,
 term_deps: std.ArrayList(u32) = .empty,
+/// Per term: the instruction being evaluated when it was first made,
+/// `module << 32 | inst`, or `no_origin` — where an approximation came
+/// from, for a diagnostic that names it (`Write.lost`).
+term_origin: std.ArrayList(u64) = .empty,
+/// The instruction `eval` is in, as `term_origin` spells it.
+cur_origin: u64 = no_origin,
 wsets: Table = .{},
+/// `Write.lost_set`s: sorted term ids.
+lost_sets: Table = .{},
 bytes: std.ArrayList(u8) = .empty,
 bytes_t: Table = .{},
 scratch: std.ArrayList(u32) = .empty,
@@ -805,7 +833,9 @@ pub fn deinit(a: *Writes) void {
     a.terms.deinit(gpa);
     a.term_depth.deinit(gpa);
     a.term_deps.deinit(gpa);
+    a.term_origin.deinit(gpa);
     a.wsets.deinit(gpa);
+    a.lost_sets.deinit(gpa);
     a.bytes.deinit(gpa);
     a.bytes_t.deinit(gpa);
     a.scratch.deinit(gpa);
@@ -1006,6 +1036,11 @@ pub fn pathB(a: *const Writes, p: u32) u32 {
 
 pub fn pathLen(a: *const Writes, p: u32) u32 {
     return a.path_len.items[p];
+}
+
+/// How many paths the pass has made: every path id is below it.
+pub fn pathCount(a: *const Writes) u32 {
+    return @intCast(a.path_len.items.len);
 }
 
 pub fn rootOf(a: *const Writes, p: u32) u32 {
@@ -1362,6 +1397,7 @@ fn finish(a: *Writes, mark: usize, depth: u32) Error!u32 {
     if (id == before) {
         try a.term_depth.append(a.gpa, @intCast(@min(depth, 255)));
         try a.term_deps.append(a.gpa, none);
+        try a.term_origin.append(a.gpa, a.cur_origin);
     }
     return id;
 }
@@ -2136,6 +2172,9 @@ fn parseInt(text: []const u8) ?i64 {
 
 fn eval(a: *Writes, f: *Frame, inst: Inst.Index, g: u32) Error!u32 {
     try a.tick();
+    const saved_origin = a.cur_origin;
+    a.cur_origin = (@as(u64, f.m) << 32) | inst.int();
+    defer a.cur_origin = saved_origin;
     const b = a.bir(f.m);
     const data = b.instData(inst);
     switch (b.instTag(inst)) {
@@ -3251,6 +3290,11 @@ fn substNode(a: *Writes, sub: *const Subst, t: u32) Error!u32 {
             const n = a.termLen(t) - 2;
             const args = try a.arena().alloc(u32, n);
             for (args, 0..) |*p, i| p.* = try a.subst(sub, a.termWord(t, 2 + i));
+            // What the application makes was made at the call of the
+            // parameter, `g m`, and not where the summary is used.
+            const saved = a.cur_origin;
+            a.cur_origin = a.term_origin.items[t];
+            defer a.cur_origin = saved;
             return a.apply(fun, args, sub.g);
         },
         .fun => {
@@ -3581,14 +3625,65 @@ fn collectLeaves(a: *Writes, t: u32, g: u32, out: *std.ArrayList(AltItem)) Alloc
 // diff (§3.4)
 // ---------------------------------------------------------------------------
 
-const WsBuilder = std.ArrayList(Write);
+/// A write set being built: its writes, one per path, and where each
+/// path's is, so a join finds it in constant time (compile linear in the
+/// set, `plans/direct-rewrite.md` §3).
+const WsBuilder = struct {
+    items: std.ArrayList(Write) = .empty,
+    at: std.AutoHashMapUnmanaged(u32, u32) = .empty,
 
-fn wsGet(a: *const Writes, id: u32, out: *WsBuilder, gpa: Allocator) Allocator.Error!void {
+    const empty: WsBuilder = .{};
+
+    fn deinit(b: *WsBuilder, gpa: Allocator) void {
+        b.items.deinit(gpa);
+        b.at.deinit(gpa);
+    }
+
+    /// Add `w`, whose path has no write yet.
+    fn append(b: *WsBuilder, gpa: Allocator, w: Write) Allocator.Error!void {
+        try b.at.put(gpa, w.path, @intCast(b.items.items.len));
+        try b.items.append(gpa, w);
+    }
+
+    fn clearRetainingCapacity(b: *WsBuilder) void {
+        b.items.clearRetainingCapacity();
+        b.at.clearRetainingCapacity();
+    }
+};
+
+fn wsGet(a: *const Writes, id: u32, out: *std.ArrayList(Write), gpa: Allocator) Allocator.Error!void {
     const words = a.wsets.get(id);
     var i: usize = 0;
-    while (i < words.len) : (i += 5) {
-        try out.append(gpa, .{ .path = words[i], .kind = @fromBackingInt(words[i + 1]), .edit = @fromBackingInt(words[i + 2]), .s1 = words[i + 3], .s2 = words[i + 4] });
+    while (i < words.len) : (i += 7) {
+        try out.append(gpa, .{ .path = words[i], .kind = @fromBackingInt(words[i + 1]), .edit = @fromBackingInt(words[i + 2]), .s1 = words[i + 3], .s2 = words[i + 4], .lost = words[i + 5], .lost_set = words[i + 6] });
     }
+}
+
+/// How many places other than `w.lost`'s the terms of `w.lost_set` were
+/// made at: the "N more" of a diagnostic.
+pub fn lostMore(a: *const Writes, w: Write) u32 {
+    if (w.lost_set == none) return 0;
+    const set = a.lost_sets.get(w.lost_set);
+    var n: u32 = 0;
+    for (set, 0..) |x, i| {
+        const o = a.term_origin.items[x];
+        if (o == a.term_origin.items[w.lost]) continue;
+        // Each place once: the first term of the set made there.
+        const seen = for (set[0..i]) |y| {
+            if (a.term_origin.items[y] == o) break true;
+        } else false;
+        if (!seen) n += 1;
+    }
+    return n;
+}
+
+/// Whether lost term `x` names the write before `y`: the earlier in
+/// source order, the lower id among terms one instruction made.
+fn lostBefore(a: *const Writes, x: u32, y: u32) bool {
+    const ox = a.term_origin.items[x];
+    const oy = a.term_origin.items[y];
+    if (ox != oy) return ox < oy;
+    return x < y;
 }
 
 fn joinEdit(x: Edit, y: Edit) Edit {
@@ -3601,9 +3696,20 @@ fn joinEdit(x: Edit, y: Edit) Edit {
 
 /// Add `w` to `ws`, joining a write already at its path (§2.4).
 fn wsAdd(a: *Writes, ws: *WsBuilder, w: Write) Allocator.Error!void {
-    for (ws.items) |*e| {
-        if (e.path != w.path) continue;
+    if (ws.at.get(w.path)) |i| {
+        const e = &ws.items.items[i];
         if (w.kind == .value) e.kind = .value;
+        if (w.lost != none) {
+            if (e.lost == none) {
+                e.lost = w.lost;
+                e.lost_set = w.lost_set;
+            } else if (e.lost_set != w.lost_set) {
+                // The union of the two sets: the first names it, every other
+                // place is counted (`lostMore`).
+                e.lost_set = try a.lostUnion(e.lost_set, w.lost_set);
+                if (a.lostBefore(w.lost, e.lost)) e.lost = w.lost;
+            }
+        }
         if (e.edit != w.edit) {
             const j = joinEdit(e.edit, w.edit);
             if (j != e.edit) {
@@ -3621,6 +3727,35 @@ fn wsAdd(a: *Writes, ws: *WsBuilder, w: Write) Allocator.Error!void {
     try ws.append(a.gpa, w);
 }
 
+/// The union of two `lost_sets`, interned.
+fn lostUnion(a: *Writes, x: u32, y: u32) Allocator.Error!u32 {
+    const mark = a.scratch.items.len;
+    defer a.scratch.shrinkRetainingCapacity(mark);
+    const xs = a.lost_sets.get(x);
+    const ys = a.lost_sets.get(y);
+    var i: usize = 0;
+    var j: usize = 0;
+    while (i < xs.len or j < ys.len) {
+        var v: u32 = undefined;
+        if (j >= ys.len or (i < xs.len and xs[i] < ys[j])) {
+            v = xs[i];
+            i += 1;
+        } else if (i >= xs.len or ys[j] < xs[i]) {
+            v = ys[j];
+            j += 1;
+        } else {
+            v = xs[i];
+            i += 1;
+            j += 1;
+        }
+        try a.scratch.append(a.gpa, v);
+    }
+    // `get` reads the table the intern may grow: copied first.
+    const words = try a.gpa.dupe(u32, a.scratch.items[mark..]);
+    defer a.gpa.free(words);
+    return a.lost_sets.intern(a.gpa, words);
+}
+
 fn wsIntern(a: *Writes, ws: []Write) Allocator.Error!u32 {
     std.mem.sort(Write, ws, {}, struct {
         fn less(_: void, x: Write, y: Write) bool {
@@ -3629,12 +3764,26 @@ fn wsIntern(a: *Writes, ws: []Write) Allocator.Error!u32 {
     }.less);
     const mark = a.scratch.items.len;
     defer a.scratch.shrinkRetainingCapacity(mark);
-    for (ws) |w| try a.scratch.appendSlice(a.gpa, &.{ w.path, @backingInt(w.kind), @backingInt(w.edit), w.s1, w.s2 });
+    for (ws) |w| try a.scratch.appendSlice(a.gpa, &.{ w.path, @backingInt(w.kind), @backingInt(w.edit), w.s1, w.s2, w.lost, w.lost_set });
     return a.wsets.intern(a.gpa, a.scratch.items[mark..]);
 }
 
 fn value(p: u32) Write {
     return .{ .path = p, .kind = .value };
+}
+
+/// `value p`, an approximation of term `t` (`Write.lost`).
+fn lost(a: *Writes, p: u32, t: u32) Allocator.Error!Write {
+    return .{ .path = p, .kind = .value, .lost = t, .lost_set = try a.lost_sets.intern(a.gpa, &.{t}) };
+}
+
+/// Where term `t` was first made: a module and an instruction of it, or
+/// null for a term no instruction made.
+pub fn termOrigin(a: *const Writes, t: u32) ?struct { module: u32, inst: u32 } {
+    if (t >= a.term_origin.items.len) return null;
+    const o = a.term_origin.items[t];
+    if (o == no_origin) return null;
+    return .{ .module = @intCast(o >> 32), .inst = @truncate(o) };
 }
 
 /// The write set of placing `t` at `p` under `g`, memoised on `(t, p, Γ)`
@@ -3646,7 +3795,7 @@ fn diff(a: *Writes, t: u32, p: u32, g: u32) Error!u32 {
     var ws: WsBuilder = .empty;
     defer ws.deinit(a.gpa);
     try a.diffInto(t, p, g, &ws);
-    const id = try a.wsIntern(ws.items);
+    const id = try a.wsIntern(ws.items.items);
     try a.diff_memo.put(a.gpa, .{ .term = t, .path = p, .gamma = g }, id);
     return id;
 }
@@ -3657,12 +3806,12 @@ fn diffChild(a: *Writes, t: u32, p: u32, kind: PathKind, x: u32, y: u32, g: u32,
     // from the `Con` row, which has written `node p` under `Γ ⊢ tag(p) = C`.
     if (std.debug.runtime_safety and kind == .ctor) {
         if (!a.knowsTag(g, p, x)) std.debug.panic("writes: a descent below {d} through a constructor whose tag is not known", .{p});
-        for (ws.items) |w| {
-            if (w.path == p and w.kind == .node) break;
-        } else std.debug.panic("writes: a descent below {d} through a constructor with no `node` written there", .{p});
+        const i = ws.at.get(p);
+        if (i == null or ws.items.items[i.?].kind != .node) std.debug.panic("writes: a descent below {d} through a constructor with no `node` written there", .{p});
     }
-    const q = (try a.extend(p, kind, x, y)) orelse return a.wsAdd(ws, value(p));
-    var sub: WsBuilder = .empty;
+    // Past the depth limit the cap cut it (`extend`): an approximation.
+    const q = (try a.extend(p, kind, x, y)) orelse return a.wsAdd(ws, try a.lost(p, t));
+    var sub: std.ArrayList(Write) = .empty;
     defer sub.deinit(a.gpa);
     try a.wsGet(try a.diff(t, q, g), &sub, a.gpa);
     for (sub.items) |w| try a.wsAdd(ws, w);
@@ -3673,7 +3822,10 @@ fn diffInto(a: *Writes, t: u32, p: u32, g: u32, ws: *WsBuilder) Error!void {
         .same => {
             const q = a.termWord(t, 1);
             if (q == p and !a.hasStarOrUnknown(q)) return;
-            try a.wsAdd(ws, value(p));
+            // The value a `[*]` or `[?]` path names is one the pass cannot
+            // tell is the one already there: an approximation. Another
+            // path's value moved here is a whole write, exactly.
+            try a.wsAdd(ws, if (q == p) try a.lost(p, t) else value(p));
         },
         .rec => {
             const base = a.termWord(t, 1);
@@ -3684,7 +3836,7 @@ fn diffInto(a: *Writes, t: u32, p: u32, g: u32, ws: *WsBuilder) Error!void {
                 if (base != none) return a.wsAdd(ws, value(p));
                 if (rest >= 2) {
                     // B2/N7: every other field of the type at `p` is Fresh.
-                    extra_fields = (try a.fieldsAt(p)) orelse return a.wsAdd(ws, value(p));
+                    extra_fields = (try a.fieldsAt(p)) orelse return a.wsAdd(ws, try a.lost(p, t));
                 }
             }
             try a.wsAdd(ws, .{ .path = p, .kind = .node });
@@ -3696,7 +3848,7 @@ fn diffInto(a: *Writes, t: u32, p: u32, g: u32, ws: *WsBuilder) Error!void {
                         named = true;
                     };
                     if (named) continue;
-                    const q = (try a.extend(p, .field, fld, 0)) orelse return a.wsAdd(ws, value(p));
+                    const q = (try a.extend(p, .field, fld, 0)) orelse return a.wsAdd(ws, try a.lost(p, t));
                     try a.wsAdd(ws, value(q));
                 }
             }
@@ -3704,7 +3856,10 @@ fn diffInto(a: *Writes, t: u32, p: u32, g: u32, ws: *WsBuilder) Error!void {
         .con => {
             const c = a.termWord(t, 1);
             const n = a.termLen(t) - 2;
-            if (n == 0 or !a.knowsTag(g, p, c)) return a.wsAdd(ws, value(p));
+            // A constructor of no fields is a whole write, exactly; one whose
+            // tag the facts do not know at `p` is the pass's approximation.
+            if (n == 0) return a.wsAdd(ws, value(p));
+            if (!a.knowsTag(g, p, c)) return a.wsAdd(ws, try a.lost(p, t));
             try a.wsAdd(ws, .{ .path = p, .kind = .node });
             for (0..n) |i| try a.diffChild(a.termWord(t, @intCast(2 + i)), p, .ctor, c, @intCast(i), g, ws);
         },
@@ -3723,10 +3878,10 @@ fn diffInto(a: *Writes, t: u32, p: u32, g: u32, ws: *WsBuilder) Error!void {
                     // N2: the element's result diffed against its own root,
                     // and every write rebased to `p[κ]`.
                     const at: u32 = (if (e.index == sym_star) try a.extend(p, .star, 0, 0) else try a.extend(p, .index, e.index, 0)) orelse {
-                        try a.wsAdd(ws, value(p));
+                        try a.wsAdd(ws, try a.lost(p, t));
                         continue;
                     };
-                    var sub: WsBuilder = .empty;
+                    var sub: std.ArrayList(Write) = .empty;
                     defer sub.deinit(a.gpa);
                     try a.wsGet(try a.diff(e.term, e.eps, g), &sub, a.gpa);
                     for (sub.items) |w| {
@@ -3742,35 +3897,38 @@ fn diffInto(a: *Writes, t: u32, p: u32, g: u32, ws: *WsBuilder) Error!void {
             try a.wsAdd(ws, .{ .path = p, .kind = .value, .edit = .replaced });
         },
         .lst_lit => try a.wsAdd(ws, .{ .path = p, .kind = .value, .edit = .replaced }),
+        // What the pass could not see into is an approximation.
+        .fresh, .app => try a.wsAdd(ws, try a.lost(p, t)),
         .alt => {
             for (0..a.altLen(t)) |i| {
                 const it = a.altItem(t, @intCast(i));
                 const g2 = (try a.gammaJoin(g, it.gamma)) orelse continue;
-                var sub: WsBuilder = .empty;
+                var sub: std.ArrayList(Write) = .empty;
                 defer sub.deinit(a.gpa);
                 try a.wsGet(try a.diff(it.term, p, g2), &sub, a.gpa);
                 for (sub.items) |w| try a.wsAdd(ws, w);
             }
         },
-        else => try a.wsAdd(ws, value(p)),
+        // A literal, a function and an index guard's `Bool` are values the
+        // pass knows: a whole write, exactly. Every tag is named, so a new
+        // one is decided here.
+        .lit, .fun, .ixeq => try a.wsAdd(ws, value(p)),
     }
 }
 
 /// The prefix closure (§2.4): `node` at every proper prefix.
 fn closure(a: *Writes, ws: *WsBuilder) Allocator.Error!void {
+    ws.at.clearRetainingCapacity();
+    for (ws.items.items, 0..) |w, j| try ws.at.put(a.gpa, w.path, @intCast(j));
     var i: usize = 0;
-    while (i < ws.items.len) : (i += 1) {
-        var child = ws.items[i].path;
+    while (i < ws.items.items.len) : (i += 1) {
+        var child = ws.items.items[i].path;
         var q = a.pathParent(child);
         while (q != none) : ({
             child = q;
             q = a.pathParent(q);
         }) {
-            var found = false;
-            for (ws.items) |w| if (w.path == q) {
-                found = true;
-            };
-            if (found) continue;
+            if (ws.at.contains(q)) continue;
             // A `node` the closure adds above a constructor step would claim
             // a tag kept that no `Con` row proved (write-sets.md, amended
             // 2026-10-09: tag reads, item 3).
@@ -4846,7 +5004,11 @@ fn analyseProgram(a: *Writes, m: u32, kind: ProgramKind, fields: ?Fields, view_f
                         a.model_type = .{ .m = t.m, .inst = ps[1].int(), .env = &.{} };
                         // The message type's constructors, for `(any)`.
                         switch (try a.tyResolve(.{ .m = t.m, .inst = ps[0].int(), .env = &.{} })) {
-                            .nominal => |n| prog.msg_ctors = @intCast(a.bir(n.m).declCtors(a.bir(n.m).decls[n.d]).len),
+                            .nominal => |n| {
+                                const ctors = a.bir(n.m).declCtors(a.bir(n.m).decls[n.d]);
+                                prog.msg_ctors = @intCast(ctors.len);
+                                if (ctors.len == 1) prog.msg_only = a.in.interner.slice(a.bir(n.m).symbol(ctors[0].name));
+                            },
                             else => {},
                         }
                     }
@@ -4898,6 +5060,17 @@ fn analyseProgram(a: *Writes, m: u32, kind: ProgramKind, fields: ?Fields, view_f
         defer path_steps.deinit(a.gpa);
         try a.keyTree(kind, update_fun, 0, &path_steps, &keys, &leaves);
         prog.keys = keys.items;
+        // The model's fields: by `update`'s annotation, or else by what
+        // `init` makes — a record literal of every field, a literal, a
+        // constructor — and unknown when neither says (an error, never a
+        // guess: `browser-inline.md` §5).
+        prog.model_fields = if (a.model_type != null)
+            (if (try a.fieldsAt(rho_path)) |model_fields| @intCast(model_fields.len) else 0)
+        else switch (a.termTag(init_model)) {
+            .rec => if (a.termWord(init_model, 1) == none and a.termWord(init_model, 2) == 0) (a.termLen(init_model) - 3) / 2 else none,
+            .lit, .con => 0,
+            else => none,
+        };
     }
     // Subscription values include the captures of their taggers.
     if (view_fields) |fs| if (fs.subscriptions) |si| {
@@ -5002,7 +5175,7 @@ fn evalKey(a: *Writes, kind: ProgramKind, update_fun: u32, g: u32) Error!struct 
             error.WorkCap => break :blk false,
             else => |e| return e,
         };
-        try a.wsGet(id, &ws, a.gpa);
+        try a.wsGet(id, &ws.items, a.gpa);
         break :blk true;
     };
     if (!ok) {
@@ -5014,7 +5187,7 @@ fn evalKey(a: *Writes, kind: ProgramKind, update_fun: u32, g: u32) Error!struct 
     const caps = a.ctx.caps;
     const split = if (ok) a.ctx.split_path else none;
     a.ctx = .{ .mode = .closed };
-    return .{ .writes = try a.arena().dupe(Write, ws.items), .caps = caps, .split = split, .command = command };
+    return .{ .writes = try a.arena().dupe(Write, ws.items.items), .caps = caps, .split = split, .command = command };
 }
 
 fn keyTree(a: *Writes, kind: ProgramKind, update_fun: u32, g: u32, path_steps: *std.ArrayList(KeyStep), keys: *std.ArrayList(Key), leaves: *u32) Error!void {

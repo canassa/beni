@@ -1,0 +1,155 @@
+-- element "root"
+-- load
+<body>
+  <div id="root">
+    <div data-role="dashboard">
+      <section data-key="w1" data-role="widget">
+        <h2>"Personal log 442o"</h2>
+        <footer>
+          <output>"18"</output>
+          <button data-role="addBeds">"Up 3"</button>
+        </footer>
+        <strong>"Pages = -3"</strong>
+        <input type="number" data-role="setPages" .value="-3">
+        <button data-role="resetPages">"Restore"</button>
+        <header>
+          <small>"Tag 442o"</small>
+          <small>"Many"</small>
+        </header>
+      </section>
+    </div>
+  </div>
+</body>
+-- click [data-role=addBeds]
+<body>
+  <div id="root">
+    <div data-role="dashboard">
+      <section data-key="w1" data-role="widget">
+        <h2>"Personal log 442o"</h2>
+        <footer>
+          <output>"21"</output>
+          <button data-role="addBeds">"Up 3"</button>
+        </footer>
+        <strong>"Pages = -3"</strong>
+        <input type="number" data-role="setPages" .value="-3">
+        <button data-role="resetPages">"Restore"</button>
+        <header>
+          <small>"Tag 442o"</small>
+          <small>"Many"</small>
+        </header>
+      </section>
+    </div>
+  </div>
+</body>
+-- input [data-role=setPages] "12"
+<body>
+  <div id="root">
+    <div data-role="dashboard">
+      <section data-key="w1" data-role="widget">
+        <h2>"Personal log 442o"</h2>
+        <footer>
+          <output>"21"</output>
+          <button data-role="addBeds">"Up 3"</button>
+        </footer>
+        <strong>"Pages = 12"</strong>
+        <input type="number" data-role="setPages" .value="12">
+        <button data-role="resetPages">"Restore"</button>
+        <header>
+          <small>"Tag 442o"</small>
+          <small>"Many"</small>
+        </header>
+      </section>
+    </div>
+  </div>
+</body>
+-- input [data-role=setPages] "99"
+<body>
+  <div id="root">
+    <div data-role="dashboard">
+      <section data-key="w1" data-role="widget">
+        <h2>"Personal log 442o"</h2>
+        <footer>
+          <output>"21"</output>
+          <button data-role="addBeds">"Up 3"</button>
+        </footer>
+        <strong>"Pages = 12"</strong>
+        <input type="number" data-role="setPages" .value="99">
+        <button data-role="resetPages">"Restore"</button>
+        <header>
+          <small>"Tag 442o"</small>
+          <small>"Many"</small>
+        </header>
+      </section>
+    </div>
+  </div>
+</body>
+-- click [data-role=resetPages]
+<body>
+  <div id="root">
+    <div data-role="dashboard">
+      <section data-key="w1" data-role="widget">
+        <h2>"Personal log 442o"</h2>
+        <footer>
+          <output>"21"</output>
+          <button data-role="addBeds">"Up 3"</button>
+        </footer>
+        <strong>"Pages = -3"</strong>
+        <input type="number" data-role="setPages" .value="99">
+        <button data-role="resetPages">"Restore"</button>
+        <header>
+          <small>"Tag 442o"</small>
+          <small>"Many"</small>
+        </header>
+      </section>
+    </div>
+  </div>
+</body>
+-- detail window rr-push {"type": "serverSet", "widget": "w1", "state": {"beds": 1, "pages": 5}}
+<body>
+  <div id="root">
+    <div data-role="dashboard">
+      <section data-key="w1" data-role="widget">
+        <h2>"Personal log 442o"</h2>
+        <footer>
+          <output>"1"</output>
+          <button data-role="addBeds">"Up 3"</button>
+        </footer>
+        <strong>"Pages = 5"</strong>
+        <input type="number" data-role="setPages" .value="5">
+        <button data-role="resetPages">"Restore"</button>
+        <header>
+          <small>"Tag 442o"</small>
+          <small>"Many"</small>
+        </header>
+      </section>
+    </div>
+  </div>
+</body>
+-- detail window rr-push {"type": "serverSet", "widget": "w2", "state": {"beds": 2, "pages": 6}}
+(the DOM did not change)
+-- detail window rr-push {"type": "tick"}
+(the DOM did not change)
+-- detail window rr-push {"type": "snapshot", "state": {"widgets": {"w1": {"beds": 30, "pages": 0}}}}
+<body>
+  <div id="root">
+    <div data-role="dashboard">
+      <section data-key="w1" data-role="widget">
+        <h2>"Personal log 442o"</h2>
+        <footer>
+          <output>"30"</output>
+          <button data-role="addBeds">"Up 3"</button>
+        </footer>
+        <strong>"Pages = 0"</strong>
+        <input type="number" data-role="setPages" .value="0">
+        <button data-role="resetPages">"Restore"</button>
+        <header>
+          <small>"Tag 442o"</small>
+          <small>"Many"</small>
+        </header>
+      </section>
+    </div>
+  </div>
+</body>
+-- detail window rr-push {"type": "serverSet", "widget": "w1", "state": {"beds": "x"}}
+(the DOM did not change)
+

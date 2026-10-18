@@ -1,0 +1,50 @@
+-- One module on browser-inline (docs/design/browser-inline.md §8): three
+-- events, each calling its key's handler with no message made; a text hole
+-- alone in its element, the same field in mixed text, and two `disabled`
+-- properties — one group, since all four read `count`, so one binding
+-- function, which each handler's write pass calls once, after the arm
+-- writes the model in place of the `update` arm. The markup is one HTML
+-- string with its attribute values unquoted and its closing run left out;
+-- elements by document order, no message, no `case`.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    count : Int
+
+
+type Msg
+    = Inc
+    | Dec
+    | Reset
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Inc →
+            { model | count = clamp (model.count + 1) 0 10 }
+
+        Dec →
+            { model | count = clamp (model.count - 1) 0 10 }
+
+        Reset →
+            { model | count = 0 }
+
+
+view : Model → Html Msg
+view model =
+    <div data-role="counter">
+        <output>{model.count}</output>
+        <p>Count: {model.count} of 10</p>
+        <button data-role="inc" disabled={model.count ≥ 10} onClick={Inc}>+1</button>
+        <button data-role="dec" disabled={model.count ≤ 0} onClick={Dec}>-1</button>
+        <button data-role="reset" onClick={Reset}>Reset</button>
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt (Tea.sandbox { init = λ⊤ → { count = 3 }, update = update, view = view }) "root"

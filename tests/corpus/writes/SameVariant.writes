@@ -3,7 +3,7 @@ program SameVariant.main : Tea.sandbox
   init
     literal ρ
   key Edit                                        exact      node ρ; node ρ.status; node ρ.status.Loaded#0; value ρ.status.Loaded#0.title
-  key Wrap                                        exact      node ρ; node ρ.box; value ρ.box.Box#0
+  key Wrap                                        exact      node ρ; node ρ.box; value ρ.box.Box#0 ≈
   key Settle                                      exact      node ρ; node ρ.phase; value ρ.phase.Saved#0
   key Fail                                        exact      node ρ; value ρ.status
   keys 4: bounded 4 (100%), exact 4, indexed 0, structural 0, * 0; capped 0

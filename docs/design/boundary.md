@@ -2218,6 +2218,51 @@ program lowering needs to compile a program's effects and its placement away.
   with the body's place, or `unknown`, the suspension the checker's answer at the body.
 A lowering that sets neither sees what it saw.
 
+**Version 1.15** (*amended 2026-10-17*, additive, gated on nothing; `browser-inline.md` §8): what a
+program lowering needs to write each key's arm and another module's markup in place of a message
+and a renderer. It lands across the pull requests of `browser-inline`'s S1, each member with the
+one that first uses it; a lowering that targets 1.14 sees what it saw.
+- **Eager branches.** `Program.Arm.eager`: the arm is markup written in place that reads no
+  variable the branch binds and no `let` of the arm, so its values can be evaluated whichever arm
+  the value takes. `programBranchEager(block, node, k)` enters arm `k` of branch `node` so: its
+  markup root's inputs are read under the names their locals have at the hole, nothing of the
+  hole's value is evaluated, and the facts (`programHole`) answer on the arm's call path, as
+  `programBranchEnter` does. Leave with `programInlineLeave`.
+- **A language rule at a node.** `programShape(node, message)` reports `program_shape` at a markup
+  node, as `programReport(.., .program_shape, ..)` does at a part of the program's call.
+- **Keys.** `Program.Key.fields`: the leaf constructor's arity for every key whose last step names
+  a constructor, however deep — the parameters of a handler called with the leaf's fields and no
+  message; `params` keeps its 1.7 meaning (one, the message, for a nested key), which
+  `browser-direct`'s dispatcher reads. `Program.Key.refusal` — `none`, `opaque_update`,
+  `message_read_whole`, `deep_split`, `cap` — says what keeps the key's arm from being written of
+  pieces, or (`message_read_whole`) that the handler builds the message; `Program.Key.cap` names
+  the cap of the write-set pass that cut the key's writes. `Program.Key.star_kind` says which of
+  three a `*` key is: lost precision (a cap cut it, or the pass marked its whole write an
+  approximation, `write-sets.md` amended 2026-10-18), an exact inferred whole write of a model
+  whose type is a record of several fields, or a model of one value written exactly
+  (`browser-inline.md` §5). `Program.Key.lost`, for a `*` key of lost precision, is where the pass
+  lost it — the first approximation in source order, its kind (an opaque call, a call of a
+  function-valued parameter, of a function a local holds, a record of a type it cannot read), its
+  place and text and how many more — and `programReportAt(site, code, message)` reports there, in
+  whichever module holds it. `Program.Key.spelled` is the key as the program spells it, its
+  constructors, never `(any)`; `Program.Key.cap` names the first cap that cut the key.
+- **Groups, sparse.** `programGroupsOf(key)`: the groups the key's writes reach, sorted — what
+  `programCalls` answers one pair at a time, without the groups × keys matrix.
+- **Per-path passes.** `programArmTails(key)`: the tails of the key's arm (`write-sets.md`,
+  amended 2026-10-17), each with the groups its writes reach; `programCallsAt(key, tail, group)`;
+  and `programArmPaths(key, block, params, model, update, tails)`, which writes the arm with the
+  model assigned and the lowering's block `tails[t]` placed at each tail `t`.
+- **Pieces.** `Lowering.piece`, a hook `piece(cx, tree, request)` run in the module that owns a
+  markup root another module's program uses, with `PieceRequest`: the root, the call path its facts
+  answer on, and the names of its HTML string and of each binding function with the holes it
+  writes. `Program.Callee.piece`: an `html` hole's callee is another module's root, written as
+  pieces. `programPiece(node)`: those pieces' facts at the program site — the HTML string's name;
+  per binding function its name, groups and whether it is static; per event its element (an
+  ordinal among the root's descendants, or the root itself), its DOM event and flags, the key its
+  message reaches through the maps around the call, and its argument: none, the payload through
+  the event's extractor, or constants spelled. Both read one record the pieces pre-pass makes
+  before any module is lowered, so the two sides agree.
+
 #### 9.4.7 Diagnostics
 
 `cx.report(node, message)` reports **`markup_restructured`**, an error, at the markup node's source

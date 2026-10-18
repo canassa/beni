@@ -2,9 +2,9 @@ program StatsCarriers.main : Tea.sandbox
   model StatsCarriers.Model
   init
     literal ρ
-  key Child                                       exact      node ρ; value ρ.pokes
+  key Child                                       exact      node ρ; value ρ.pokes ≈
   key Tagged                                      exact      ∅
-  key Ping                                        exact      node ρ; value ρ.last
+  key Ping                                        exact      node ρ; value ρ.last ≈
   key Pong                                        exact      node ρ; value ρ.last
   keys 4: bounded 4 (100%), exact 4, indexed 0, structural 0, * 0; capped 0
   hole StatsCarriers.beni:59:12                   dynamic    reads ρ.pokes

@@ -3,7 +3,7 @@ program BaseRules.main : Tea.sandbox
   init
     literal ρ
   key Stay                                        exact      ∅
-  key Bump                                        exact      node ρ; value ρ.count
+  key Bump                                        exact      node ρ; value ρ.count ≈
   key Deep                                        exact      node ρ; node ρ.inner; value ρ.inner.a
   key Reset                                       exact      node ρ; value ρ.label
   key Swap                                        exact      node ρ; value ρ.inner

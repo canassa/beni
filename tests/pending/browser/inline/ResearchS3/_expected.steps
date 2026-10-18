@@ -1,0 +1,11 @@
+element "root"
+click [data-role=growBeds]
+click [data-role=cutBeds] 4
+click [data-role=switchMuted]
+input [data-role=pickPhase] "Basic"
+click [data-role=restoreCoins]
+click [data-role=commitMutedAndBeds]
+click [data-role=setBedsTo8]
+detail window rr-push {"type": "serverSet", "widget": "w1", "state": {"beds": 2, "muted": true, "phase": "Premium", "coins": 7}}
+detail window rr-push {"type": "snapshot", "state": {"widgets": {"w1": {"beds": 40, "muted": false, "phase": "Basic", "coins": 1}}}}
+detail window rr-push {"type": "notify", "widget": "w1", "item": 3}

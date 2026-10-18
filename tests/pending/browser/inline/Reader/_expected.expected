@@ -1,0 +1,93 @@
+-- element "root"
+-- load
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="w1">
+        <output>"2"</output>
+        <button data-role="raise">"Raise"</button>
+        <button data-role="lower">"Lower"</button>
+      </section>
+      <section data-role="w2">
+        <p>"Note: quiet"</p>
+        <p>"Level: 2"</p>
+        <p>"low"</p>
+        <button data-role="toggle">"Toggle"</button>
+      </section>
+    </div>
+  </div>
+</body>
+-- click [data-role=raise]
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="w1">
+        <output>"3"</output>
+        <button data-role="raise">"Raise"</button>
+        <button data-role="lower">"Lower"</button>
+      </section>
+      <section data-role="w2">
+        <p>"Note: quiet"</p>
+        <p>"Level: 3"</p>
+        <p>"low"</p>
+        <button data-role="toggle">"Toggle"</button>
+      </section>
+    </div>
+  </div>
+</body>
+-- click [data-role=raise]
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="w1">
+        <output>"4"</output>
+        <button data-role="raise">"Raise"</button>
+        <button data-role="lower">"Lower"</button>
+      </section>
+      <section data-role="w2">
+        <p>"Note: quiet"</p>
+        <p>"Level: 4"</p>
+        <p>"high"</p>
+        <button data-role="toggle">"Toggle"</button>
+      </section>
+    </div>
+  </div>
+</body>
+-- click [data-role=toggle]
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="w1">
+        <output>"4"</output>
+        <button data-role="raise">"Raise"</button>
+        <button data-role="lower">"Lower"</button>
+      </section>
+      <section data-role="w2">
+        <p>"Note: loud"</p>
+        <p>"Level: 4"</p>
+        <p>"high"</p>
+        <button data-role="toggle">"Toggle"</button>
+      </section>
+    </div>
+  </div>
+</body>
+-- click [data-role=lower] 2
+(the step's task ended)
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="w1">
+        <output>"2"</output>
+        <button data-role="raise">"Raise"</button>
+        <button data-role="lower">"Lower"</button>
+      </section>
+      <section data-role="w2">
+        <p>"Note: loud"</p>
+        <p>"Level: 2"</p>
+        <p>"low"</p>
+        <button data-role="toggle">"Toggle"</button>
+      </section>
+    </div>
+  </div>
+</body>
+

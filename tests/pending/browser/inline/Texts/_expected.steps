@@ -1,0 +1,7 @@
+element "root"
+click [data-role=add]
+click [data-role=add] 2
+click [data-role=removeLast]
+click [data-role=clear]
+click [data-role=removeLast]
+click [data-role=add]

@@ -685,6 +685,15 @@ effects away makes the program module's output depend on the **names and capture
 other modules lift for it — never on their bodies — and makes the lifting module's output
 depend on which of its lambdas the write-set pass names. Checking and interfaces are untouched;
 a cache of lowered output must key a module on that list as well.
+*Amended again 2026-10-17 (`browser-inline.md` §8.4, S1):* the pieces are arm pieces and view
+pieces too, and a piece's code depends on **whole-program facts** — which pieces the pieces pre-pass
+names, each binding function's holes and groups, which holes `init` bakes, the element ordinals —
+none of which is a function of one module's source and its imports' interfaces. So the key of a
+module's lowered output is its check key plus the hash of the pre-pass's record of every piece the
+module lifts and every piece its program sites call (names, parameters, groups, bakes, ordinals,
+events), and nothing less. No emitted byte is cached today (`src/cache/Key.zig`, `OptionBits`), so
+the rule binds the first cache of lowered output, and the checking cache is untouched: the pre-pass
+reads checked `Bir`s and writes nothing a check reads.
 
 **What static dispatch did to this layer, and it is the sharpest measured cost of adopting it.** An
 interface is the *inferred* scheme of each `pub` declaration (§3.1, "Top-level annotations are

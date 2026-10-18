@@ -1,0 +1,22 @@
+-- `browser-inline` writes a text hole as its element's whole text
+-- (docs/design/browser-inline.md §8.2): one beside an element has no node
+-- of its own to write, and is refused at the hole as a limit of the
+-- compiler (§8.7; §5, class 4), naming the wrapper to write.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+view : { count : Int } → Html {}
+view model =
+    <p>
+        Count: {model.count}
+        <strong>now</strong>
+    </p>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → { count = 1 }, update = λ_ m → m, view = view })
+        "root"

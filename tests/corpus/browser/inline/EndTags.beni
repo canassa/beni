@@ -1,0 +1,51 @@
+-- Where `browser-inline` leaves an end tag out (docs/design/browser-inline.md
+-- §8.2): only where the parser closes the element there as the end tag
+-- would. A `<p>` at the end of a `<label>` or an `<em>` keeps its `</p>`:
+-- those end tags do not close a `<p>`, so a string without it makes the
+-- parser rebuild the `<em>` around what follows, the click lands on another
+-- element and the text binding writes over it. A `<p>` at the end of a
+-- `<div>`, and the `<li>`s of a list, need none; an `<li>` whose last child is
+-- a `<dd>` it left open keeps its `</li>` before the next `<li>`, and a `<dd>`
+-- holding an open `<li>` its `</dd>` before a `<dt>`: those start tags stop
+-- their search for an open one at the inner element. happy-dom closes the
+-- elements either way, so the gates build the inserted markup's tree with
+-- parse5, the standard's parser (`tests/browser/parse5.mjs`), and the page
+-- shows the fault there as Chrome (`zig build test-browser`) does.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    a : Int
+
+
+type Msg
+    = Inc
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Inc →
+            { model | a = model.a + 1 }
+
+
+view : Model → Html Msg
+view model =
+    <div>
+        <label><p>{model.a}</p></label>
+        <em><p>note</p></em>
+        <button data-role="inc" onClick={Inc}>+</button>
+        <div><p>Count: {model.a}</p></div>
+        <ul>
+            <li>one</li>
+            <li>{model.a}</li>
+        </ul>
+        <ul><li><dd>x</dd></li><li>{model.a}</li></ul>
+        <dl><dd><li>x</li></dd><dt>{model.a}</dt></dl>
+    </div>
+
+
+main : Tea.Program
+main = Browser.mountAt (Tea.sandbox { init = λ⊤ → { a = 0 }, update = update, view = view }) "root"

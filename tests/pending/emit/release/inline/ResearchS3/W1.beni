@@ -1,0 +1,113 @@
+--! Depot notebook 6vm4: 4 fields (int+bool+enum+int), 8 messages.
+
+import Html exposing (Html)
+import Json
+import Schema exposing (Value)
+
+
+pub type alias Model =
+    beds : Int
+    muted : Bool
+    phase : String
+    coins : Int
+
+
+pub init : ⊤ → Model
+init ⊤ = { beds = 13, muted = False, phase = "Standard", coins = -5 }
+
+
+pub type Msg
+    = GrowBeds
+    | SetBedsTo8
+    | CutBeds
+    | SwitchMuted
+    | PickPhase String
+    | RestoreCoins
+    | SetCoinsToMinus5
+    | CommitMutedAndBeds
+
+
+pub update : Msg, Model → Model
+update msg model =
+    case msg of
+        GrowBeds →
+            { model | beds = clamp (model.beds + 5) 1 46 }
+
+        SetBedsTo8 →
+            { model | beds = 8 }
+
+        CutBeds →
+            { model | beds = clamp (model.beds - 5) 1 46 }
+
+        SwitchMuted →
+            { model | muted = not model.muted }
+
+        PickPhase chosen →
+            { model | phase = chosen }
+
+        RestoreCoins →
+            { model | coins = -5 }
+
+        SetCoinsToMinus5 →
+            { model | coins = -5 }
+
+        CommitMutedAndBeds →
+            { model | muted = False, beds = clamp (model.beds + 5) 1 46 }
+
+
+--| The state the host sent, or the model as it was when it sent none.
+pub replace : Value, Model → Model
+replace state model = Result.withDefault (Json.decodeValue state) model
+
+
+pub view : Model → Html Msg
+view model =
+    <section data-key="w1" data-role="widget">
+        <h2>Depot notebook 6vm4</h2>
+        <button data-role="growBeds" onClick={GrowBeds}>5 more</button>
+        <div>
+            <button data-role="setBedsTo8" onClick={SetBedsTo8}>Set to 8</button>
+            <button
+                data-role="cutBeds"
+                disabled={model.beds ≤ 1}
+                onClick={CutBeds}
+            >
+                Remove 5
+            </button>
+        </div>
+        <div>
+            <span>{model.beds} beds</span>
+            <small>Desk 6vm4</small>
+        </div>
+        <button data-role="switchMuted" onClick={SwitchMuted}>Switch muted</button>
+        {if model.muted then
+            <div>
+                <p>Muted: {if model.muted then "done" else "pending"}</p>
+                <strong>Coins = {model.coins}</strong>
+            </div>
+         else
+            <></>
+        }
+        <button data-role="restoreCoins" onClick={RestoreCoins}>Restore</button>
+        <button data-role="setCoinsToMinus5" onClick={SetCoinsToMinus5}>Set to -5</button>
+        <button data-role="commitMutedAndBeds" onClick={CommitMutedAndBeds}>Apply</button>
+        <span>{if model.phase ≠ "Custom" then "changed" else "as planned"}</span>
+        <fieldset>
+            <p>Use the blue form for refunds.</p>
+            <select data-role="pickPhase" value={model.phase} onInput={PickPhase}>
+                <option value="Basic">Basic</option>
+                <option value="Standard">Standard</option>
+                <option value="Premium">Premium</option>
+                <option value="Custom">Custom</option>
+            </select>
+            {if model.phase == "Basic" then
+                <div>
+                    <p>Phase: {model.phase}</p>
+                    <p>Plus one: {model.coins + 1}</p>
+                    <p>Numbers are refreshed every morning.</p>
+                </div>
+             else
+                <></>
+            }
+        </fieldset>
+    </section>

@@ -1,0 +1,20 @@
+-- emit: a function that may suspend is never written in place of a call
+-- statement (backend.md §9, *A body whose returns all end it, at a call
+-- statement*). `wait`'s body is an `if` with no `else` whose `then` may
+-- suspend, and `run` calls it once, as a statement: the call of a function
+-- that may suspend is never a statement of the suspendable form, whose
+-- rest of the function is handed to `Task$andThen` with the call's value,
+-- so the rule never meets it and `wait` stays a function of its own.
+import Io
+
+
+wait : Int → ⊤
+wait n =
+    if n > 0 then
+        Io.sleep n
+
+
+pub run : Int → Int
+run n =
+    wait n
+    n + 1

@@ -7704,6 +7704,31 @@ makes was built and matched. Measured (release, brotli 11, each golden the chang
 `tea/HttpSendTracked` 6 860 → 6 787, `HttpSendUntracked` 4 867 → 4 834; 17 goldens moved, −207 in
 all, `direct/TableSwap` +8 and `MapKind` +4 the largest growths.
 
+
+**A body whose returns all end it, at a call statement** (*amended 2026-10-18*, the review of
+`browser-inline`'s S1). A function of `⊤` written in beni with an `if` and no `else` — the runtime's
+`text`, `if not (same …) then set …` — is lowered as `if (c) { …; return null } else { return null }`:
+two valued `return`s, which no form above takes at a call statement, so a helper called once
+stayed a call. Now, at a call statement, a body whose every `return` ends it — the last statement,
+or the last of each branch of an `if`, or of an unlabelled block, that is the last — is written in
+place with each such `return v` written as `v`, a statement, or as nothing when `v` is inert: the
+call's value was never read, and control leaves the body there either way. An early `return`, or
+one inside a loop, a `switch` or a `try`, keeps the call. A branch with no `return` is accepted too: control
+falls off its end to the statement after the call, as it would have returned there. A function
+that may suspend never meets the rule: its call is never a statement of the suspendable form, which
+hands its value to `Task$andThen` (`emit/release/SuspendTailStatement`). Measured (release, brotli 11, every golden
+it moved): `inline/CounterLocal` 529 → 523, `inline/FormLocal` 1 020 → 1 017,
+`inline/PushAndTimer` 583 (the helper fused; it was 598 without `browser-inline`'s former special
+case), `tea/HttpSendTracked` 6 784 → 6 771, `tea/HttpSendUntracked` 4 829 → 4 818,
+`direct/ListScripts` 4 117 → 4 144 and `direct/TableSwap` 2 799 → 2 811. *Corrected 2026-10-18 (the
+review of #350):* those two grow after brotli only. Their raw bytes shrink, 11 222 → 11 136 and
+6 968 → 6 946, so the copy itself, `if`s included, is smaller than the call and the function
+it replaces. The growth is compression context: the copied body (ListScripts' swap, 10 to 13
+statements; TableSwap's, 28) leaves the runtime's run of similar code, where it compressed
+against its neighbours, and every later top-level name shifts by one letter. One attempt at a
+cost model that sees it, at most five statements copied, left ListScripts at 4 116 and TableSwap
+at 2 799 but undid HttpSendTracked's and HttpSendUntracked's gains (6 783, 4 830): a statement count
+does not predict brotli, so the rule stays as it is.
 **Slice 9 across a call: a `case` on what a function returns** (*added 2026-10-17*, the owner's
 decision for `browser-inline`'s first slice: a case of a known constructor fused across a call,
 general, in this pass, for every platform). Slice 9 folds a constructor made by a *small* function.

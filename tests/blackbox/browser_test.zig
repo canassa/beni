@@ -297,7 +297,7 @@ test "a page recorded in one checkout is not loaded again in a checkout at anoth
     var checkout = try World.init(testing.allocator, testing.io);
     defer checkout.deinit();
     const arena = w.arena.allocator();
-    for ([_][]const u8{ browser.driver_path, browser.fuzz_path, browser.dom_path }) |path| {
+    for ([_][]const u8{ browser.driver_path, browser.fuzz_path, browser.dom_path, browser.parser_path }) |path| {
         try checkout.symlink(try Io.Dir.cwd().realPathFileAlloc(testing.io, path, arena), path);
     }
     var platform = try Io.Dir.cwd().openDir(testing.io, browser.platform_path, .{ .iterate = true });

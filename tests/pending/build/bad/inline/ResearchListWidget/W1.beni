@@ -1,0 +1,157 @@
+--! Studio planner o97g: 4 fields (int+enum+int+list), 9 messages.
+
+import Html exposing (Html)
+import Json
+import Schema exposing (Value)
+
+
+pub type alias FilesItem =
+    id : Int
+    text : String
+
+
+pub type alias Model =
+    sheets : Int
+    tone : String
+    laps : Int
+    files : List FilesItem
+
+
+pub init : ⊤ → Model
+init ⊤ =
+    { sheets = 11
+    , tone = "Review"
+    , laps = 12
+    , files =
+        [ { id = 1, text = "Water the printer" }
+        , { id = 2, text = "Fix the plants" }
+        , { id = 3, text = "Review the budget" }
+        ]
+    }
+
+
+pub type Msg
+    = BoostSheets
+    | RestoreSheets
+    | RotateTone
+    | SetLapsTo4
+    | ShrinkLaps
+    | ZeroLaps
+    | RemoveFromFiles Int
+    | QuickAddFiles
+    | ClearFiles
+
+
+nextFilesId : List FilesItem → Int
+nextFilesId items = 1 + List.foldl items 0 λitem highest → max item.id highest
+
+
+pub update : Msg, Model → Model
+update msg model =
+    case msg of
+        BoostSheets →
+            { model | sheets = clamp (model.sheets + 3) 0 51 }
+
+        RestoreSheets →
+            { model | sheets = 11 }
+
+        RotateTone →
+            next1 =
+                case model.tone of
+                    "Draft" →
+                        "Review"
+
+                    "Review" →
+                        "Final"
+
+                    _ →
+                        "Draft"
+            { model | tone = next1 }
+
+        SetLapsTo4 →
+            { model | laps = 4 }
+
+        ShrinkLaps →
+            { model | laps = clamp (model.laps - 2) (-10) 40 }
+
+        ZeroLaps →
+            { model | laps = 12 }
+
+        RemoveFromFiles id →
+            { model | files = List.filter model.files λitem → item.id ≠ id }
+
+        QuickAddFiles →
+            { model
+                | files = [ …model.files, { id = nextFilesId model.files, text = "Reminder" } ]
+            }
+
+        ClearFiles →
+            { model | files = [] }
+
+
+--| The state the host sent, or the model as it was when it sent none.
+pub replace : Value, Model → Model
+replace state model =
+    case Json.decodeValue state of
+        Ok new →
+            { sheets = new.sheets, tone = new.tone, laps = new.laps, files = List.copy new.files }
+
+        Err _ →
+            model
+
+
+pub view : Model → Html Msg
+view model =
+    <section data-key="w1" data-role="widget">
+        <h2>Studio planner o97g</h2>
+        <fieldset>
+            <footer>
+                <p>Sheets: {model.sheets}</p>
+                <button data-role="boostSheets" onClick={BoostSheets}>Add 3</button>
+                <button data-role="restoreSheets" onClick={RestoreSheets}>Start over</button>
+                <small>Code o97g</small>
+            </footer>
+        </fieldset>
+        <button data-role="rotateTone" onClick={RotateTone}>Tone: {model.tone}</button>
+        <strong>{model.tone}</strong>
+        <div>
+            <small>{if model.sheets > 3 then "Plenty" else "Some"}</small>
+            <button data-role="setLapsTo4" onClick={SetLapsTo4}>= 4</button>
+        </div>
+        <button data-role="shrinkLaps" onClick={ShrinkLaps}>-2</button>
+        <div>
+            <output>{model.laps}</output>
+            {if model.sheets ≥ 9 then
+                <div>
+                    <button data-role="zeroLaps" onClick={ZeroLaps}>Reset</button>
+                    <button data-role="quickAddFiles" onClick={QuickAddFiles}>+ Reminder</button>
+                </div>
+             else
+                <></>
+            }
+            <button data-role="clearFiles" onClick={ClearFiles}>Clear all</button>
+            {if model.tone == "Final" then
+                <section>
+                    <ol>
+                        <For each={model.files} keyed={.id}>
+                            {λitem →
+                                <li data-key={String.fromInt item.id} data-role="filesItem">
+                                    <span>{item.text}</span>
+                                    <button
+                                        data-role="removeFromFiles"
+                                        onClick={RemoveFromFiles item.id}
+                                    >
+                                        Delete
+                                    </button>
+                                </li>
+                            }
+                        </For>
+                    </ol>
+                    <small>Total: {List.length model.files}</small>
+                    <p>Everything here updates as soon as you act.</p>
+                </section>
+             else
+                <></>
+            }
+        </div>
+    </section>

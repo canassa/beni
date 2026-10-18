@@ -2,8 +2,8 @@ program StatsConstructors.main : Tea.sandbox
   model StatsConstructors.Model
   init
     literal ρ
-  key Child · Inc                                 exact      node ρ; value ρ.child
-  key Child · Dec                                 exact      node ρ; value ρ.child
+  key Child · Inc                                 exact      node ρ; value ρ.child ≈
+  key Child · Dec                                 exact      node ρ; value ρ.child ≈
   key Child · Set                                 exact      node ρ; value ρ.child
   key Loaded · Ok                                 exact      node ρ; value ρ.n
   key Loaded · Err                                exact      ∅

@@ -2983,6 +2983,8 @@ pub const LateItem = struct {
     file: SourceStore.Index,
     /// Token index into `file`'s token list.
     token: u32,
+    /// The span's last token, when it covers more than `token`.
+    end_token: ?u32 = null,
     message: []const u8,
     /// Where to report INSTEAD of `file`'s token, for a fault whose text is
     /// not in a beni source file. `file` and `token` are ignored when this
@@ -3065,6 +3067,8 @@ pub fn renderLate(session: *Session, items: []const LateItem, stderr: *Io.Writer
     for (items, rendered[0..items.len]) |item, *slot| {
         const start, const end = if (item.at) |at|
             .{ at.start, at.end }
+        else if (item.end_token) |last|
+            .{ session.tokenSpan(item.file, item.token)[0], session.tokenSpan(item.file, last)[1] }
         else
             session.tokenSpan(item.file, item.token);
         late_messages.appendAssumeCapacity(try wrap.reflow(gpa, item.message));

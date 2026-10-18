@@ -38,8 +38,12 @@ const std = @import("std");
 /// `programNestedEnter`, `programViewStatements`, `programLet`,
 /// `Program.view_lets`), 1.14 the calls a lowering compiles subscriptions,
 /// commands and a placement away with (`Lowering.places`,
-/// `Program.placed`).
-pub const version: Version = .{ .major = 1, .minor = 14 };
+/// `Program.placed`), 1.15 the calls that write an `if` whose other arm is
+/// `<></>` eagerly (`Program.Arm.eager`, `programBranchEager`) and the
+/// groups of a key without the matrix (`programGroupsOf`;
+/// `browser-inline.md` §8.2) — the rest of 1.15 lands with the slices that
+/// use it (`boundary.md` §9.4.6).
+pub const version: Version = .{ .major = 1, .minor = 15 };
 
 /// The newest version whose gated feature a tree can use. No minor version
 /// has gated one yet, so every tree requires 1.0 and every lowering of
@@ -233,6 +237,49 @@ pub const Program = struct {
         /// re-runs every group of the page (`browser-direct.md` §4.1,
         /// `patchAll`).
         star: bool,
+        /// 1.15: when `star`, which of the three kinds of `*` it is (the
+        /// owner, 2026-10-17; `browser-inline.md` §5, §8.7).
+        star_kind: StarKind = .none,
+        /// 1.15: for a `*` key of lost precision, where the pass lost it: the
+        /// first approximation in source order, and how many more.
+        lost: ?Lost = null,
+        /// 1.15: the key as the program spells it — its constructors, `Run`,
+        /// `GotPage Typed` — where `name` may say `(any)`.
+        spelled: []const u8 = "",
+        /// 1.15: the first cap of the write-set pass that cut the key's writes.
+        cap: Cap = .none,
+
+        pub const Cap = enum(u8) { none, depth, alternatives, instantiation, rounds, size, work, leaves, _ };
+
+        pub const Lost = struct {
+            /// `local`: a call of a function a local holds — a pattern
+            /// variable, a `let` — which the compiler knows only as a value.
+            kind: enum(u8) { call, parameter, record, local, _ },
+            /// Where it is, `Main.beni:27:13`, and its source text when that
+            /// is one short line (`f model`), else empty.
+            where: []const u8,
+            text: []const u8,
+            more: u32,
+            /// What `Context.programReportAt` reports at.
+            site: u32,
+        };
+
+        pub const StarKind = enum(u8) {
+            none,
+            /// Lost precision, a limit of the compiler: a cap of the write-set
+            /// pass cut the key, the pass marked its whole write an
+            /// approximation (`Lost`), or neither `update`'s annotation nor
+            /// `init` says what the model's type is.
+            precision,
+            /// An exact inferred write of the whole model whose type is a
+            /// record of more than one field — by `update`'s annotation or by
+            /// the record literal `init` makes: it hides which fields changed.
+            whole_record,
+            /// The model is one value — its type is no record of several
+            /// fields — written exactly.
+            single_value,
+            _,
+        };
     };
 
     /// 1.7: what `Context.programHole` says of one hole of the program's
@@ -369,6 +416,11 @@ pub const Program = struct {
         /// The arm has `let`s its result does not need, which
         /// `programBranchEnter` with `made` evaluates.
         statements: bool = false,
+        /// 1.15: `what` is `markup` whose root reads no variable the
+        /// branch binds — no pattern variable, no `let` of the arm — so its
+        /// values can be evaluated whichever arm the value takes
+        /// (`programBranchEager`).
+        eager: bool = false,
 
         pub const What = union(enum) {
             /// Markup written in place: this root, whose values are
@@ -1080,6 +1132,12 @@ pub const Context = struct {
         return cx.vtable.program_report(cx.impl, part, code, message);
     }
 
+    /// 1.15, inside `Lowering.program` only: report `code` at a site the
+    /// pass names (`Program.Key.Lost.site`), in whichever module holds it.
+    pub fn programReportAt(cx: *Context, site: u32, code: Program.Code, message: []const u8) error{ OutOfMemory, Reported } {
+        return cx.vtable.program_report_at(cx.impl, site, code, message);
+    }
+
     /// 1.7, inside `Lowering.program` only: the program's leaf message
     /// keys (`write-sets.md` §4.4), in the order `beni dump --stage=writes`
     /// prints them — a key's named children before its default one. A
@@ -1131,6 +1189,14 @@ pub const Context = struct {
     /// reads): whether that key's handler must call the group.
     pub fn programCalls(cx: *Context, key: u32, group: u32) bool {
         return cx.vtable.program_calls(cx.impl, key, group);
+    }
+
+    /// 1.15, inside `Lowering.program` only: the read sets key `key`'s
+    /// write set conflicts with, sorted — what `programCalls` answers one
+    /// pair at a time, without the groups × keys matrix; null when the pass
+    /// does not know the program, and every group is called.
+    pub fn programGroupsOf(cx: *Context, key: u32) ?[]const u32 {
+        return cx.vtable.program_groups_of(cx.impl, key);
     }
 
     /// 1.7, inside `Lowering.program` only: the program's `update` as a
@@ -1341,6 +1407,15 @@ pub const Context = struct {
         return cx.vtable.program_nested_enter(cx.impl, r);
     }
 
+    /// 1.15: enter arm `k` of branch `node`, an `Arm.eager` one, with
+    /// nothing of the hole's value evaluated: its markup root's inputs are
+    /// read under the names their locals have where the hole's root's
+    /// values are, and the facts (`programHole`) answer on the arm's call
+    /// path, as `programBranchEnter` does. Leave with `programInlineLeave`.
+    pub fn programBranchEager(cx: *Context, node: Node.Index, k: u32) Error!void {
+        return cx.vtable.program_branch_eager(cx.impl, node, k);
+    }
+
     /// 1.10, inside `programViewEnter` of a `view` with `view_lets`: the
     /// `let`s of its body nothing reads — statements, `_ =` — evaluated
     /// into `block`, where the page is made (§8.4); whether it has any.
@@ -1539,9 +1614,11 @@ pub const VTable = struct {
     program_settles: *const fn (impl: *anyopaque, key: u32) bool,
     program_init: *const fn (impl: *anyopaque, block: Block) Error!Expr,
     program_report: *const fn (impl: *anyopaque, at: Program.Part, code: Program.Code, message: []const u8) error{ OutOfMemory, Reported },
+    program_report_at: *const fn (impl: *anyopaque, site: u32, code: Program.Code, message: []const u8) error{ OutOfMemory, Reported },
     program_keys: *const fn (impl: *anyopaque) []const Program.Key,
     program_hole: *const fn (impl: *anyopaque, hole: Program.HoleRef) Program.HoleFacts,
     program_calls: *const fn (impl: *anyopaque, key: u32, group: u32) bool,
+    program_groups_of: *const fn (impl: *anyopaque, key: u32) ?[]const u32,
     program_update: *const fn (impl: *anyopaque, block: Block) Error!?Expr,
     program_arm: *const fn (impl: *anyopaque, key: u32, block: Block, params: []const Name, model: Expr, update: ?Expr) Error!Expr,
     program_view_enter: *const fn (impl: *anyopaque, block: Block, model: Expr) Error!void,
@@ -1567,6 +1644,7 @@ pub const VTable = struct {
     program_branch_statements: *const fn (impl: *anyopaque, block: Block, node: Node.Index, k: u32) Error!void,
     program_show_fallback: *const fn (impl: *anyopaque, node: Node.Index) ?Root.Index,
     program_nested_enter: *const fn (impl: *anyopaque, r: Root.Index) Error!void,
+    program_branch_eager: *const fn (impl: *anyopaque, node: Node.Index, k: u32) Error!void,
     program_view_statements: *const fn (impl: *anyopaque, block: Block) Error!bool,
     program_let: *const fn (impl: *anyopaque, r: Root.Index, k: u32) Program.HoleFacts,
     program_subscriptions: *const fn (impl: *anyopaque) Program.Subscriptions,

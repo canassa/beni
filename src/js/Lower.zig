@@ -89,6 +89,12 @@ pub const Item = struct {
     /// Where to report instead of `region`'s token: a markup node's own
     /// token, for what a markup lowering reports (`boundary.md` §9.4.7).
     token: ?u32 = null,
+    /// The last token the span covers, when it is more than `region`'s or
+    /// `token`'s one: a field's whole value.
+    end_token: ?u32 = null,
+    /// The module whose instruction `region` is, when not the module being
+    /// lowered: a site of another module the write-set pass names.
+    region_module: ?Graph.Index = null,
     /// Owned by the caller's allocator.
     message: []const u8,
 };
@@ -330,9 +336,13 @@ pub const Direct = struct {
         edges: []const Hole = &.{},
         /// The number of distinct read sets.
         groups: u32,
-        /// `groups × keys`: whether key `k`'s write set conflicts with
-        /// read set `g`, at `g * keys.len + k`.
-        calls: []const bool,
+        /// Per key, the read sets its write set conflicts with, sorted,
+        /// each once: sparse, so a program costs the pairs that conflict and
+        /// never `groups × keys` (`plans/direct-rewrite.md` §3, compile
+        /// linear in N).
+        key_groups: []const []const u32,
+        /// Per read set: some key's write set conflicts with it.
+        written: []const bool,
         /// Version 1.8: each `For` of the view, sorted by module, then its
         /// token.
         lists: []const List = &.{},
@@ -353,6 +363,30 @@ pub const Direct = struct {
         starts: []const Start = &.{},
         commands: []const beni_markup.Program.Command = &.{},
         init_command: beni_markup.Program.Command = .unknown,
+        /// Version 1.15: the places a key's precision was lost
+        /// (`Program.Key.Lost.site`), each a module and an instruction of it.
+        lost_sites: []const LostSite = &.{},
+
+        /// Whether key `k`'s write set conflicts with read set `g`.
+        pub fn calls(p: *const Program, g: u32, k: u32) bool {
+            if (k >= p.key_groups.len) return true;
+            return std.sort.binarySearch(u32, p.key_groups[k], g, struct {
+                fn order(x: u32, y: u32) std.math.Order {
+                    return std.math.order(x, y);
+                }
+            }.order) != null;
+        }
+
+        /// Per read set, the keys whose write sets conflict with it, in key
+        /// order: what a consumer that writes a matrix per hole reads.
+        pub fn groupKeys(p: *const Program, a: std.mem.Allocator) Allocator.Error![]const []const u32 {
+            const lists = try a.alloc(std.ArrayList(u32), p.groups);
+            @memset(lists, .empty);
+            for (p.key_groups, 0..) |gs, k| for (gs) |g| try lists[g].append(a, @intCast(k));
+            const out = try a.alloc([]const u32, p.groups);
+            for (out, lists) |*o, l| o.* = l.items;
+            return out;
+        }
     };
 
     /// Version 1.14: a declaration's start, as `Writes.FunInfo` gives it.
@@ -373,6 +407,8 @@ pub const Direct = struct {
         /// When `captures` is null: the capture that is not a literal, by name.
         computed: []const u8 = "",
     };
+
+    pub const LostSite = struct { module: u32, inst: u32 };
 
     pub const Let = struct {
         module: u32,
@@ -11855,6 +11891,30 @@ pub const Lowerer = struct {
             .program_shape => .program_shape,
             else => .not_implemented,
         }, region, "{s}", .{message});
+        // A field's value is reported whole, `updates True` and not
+        // `updates`: its code is one range of instructions, ending at it
+        // (`Lift.low`), whose last token is the span's end.
+        if (part == .call or region.int() == pc.inst) return;
+        const lo = try Lift.low(l.bir, l.scratch, region.int());
+        const tokens = l.bir.insts.items(.main_token);
+        var last = tokens[region.int()];
+        for (lo..region.int() + 1) |i| last = @max(last, tokens[i]);
+        if (last != tokens[region.int()]) l.diagnostics.items[l.diagnostics.items.len - 1].end_token = last;
+    }
+
+    /// `cx.programReportAt` (version 1.15): `code` at a site the pass named,
+    /// its whole expression.
+    fn programReportAt(l: *Lowerer, site: u32, code: beni_markup.Program.Code, message: []const u8) Allocator.Error!void {
+        const pc = l.program_now orelse return;
+        const d = pc.direct orelse return;
+        if (site >= d.lost_sites.len) return l.programReport(.update, code, message);
+        const s = d.lost_sites[site];
+        try l.report(switch (code) {
+            .view_not_compiled => .view_not_compiled,
+            .program_shape => .program_shape,
+            else => .not_implemented,
+        }, @fromBackingInt(s.inst), "{s}", .{message});
+        l.diagnostics.items[l.diagnostics.items.len - 1].region_module = @fromBackingInt(@intCast(s.module));
     }
 
     // ---- The program hook, version 1.7 (browser-direct.md §4, §5) ---------
@@ -12058,6 +12118,7 @@ pub const Lowerer = struct {
         const pc = l.program_now orelse return l.object(&.{}, l.mk.?.pos);
         const d = pc.direct orelse return l.object(&.{}, l.mk.?.pos);
         const Entry = struct { key: []const u8, bits: []u8 };
+        const group_keys = try d.groupKeys(l.scratch);
         var entries: std.ArrayList(Entry) = .empty;
         var by_key: std.StringHashMapUnmanaged(u32) = .empty;
         for (0..d.holes.len + d.edges.len) |hi| {
@@ -12079,14 +12140,14 @@ pub const Lowerer = struct {
                     try entries.append(l.scratch, .{ .key = key, .bits = bits });
                 }
                 const entry = entries.items[gop.value_ptr.*];
-                for (entry.bits, 0..) |*bit, k| if (d.calls[h.group * d.keys.len + k]) {
-                    bit.* = '1';
+                if (h.group < group_keys.len) for (group_keys[h.group]) |k| {
+                    entry.bits[k] = '1';
                 };
             }
         }
         var props: std.ArrayList(Node.Index) = .empty;
         const root_bits = try l.scratch.alloc(u8, d.keys.len);
-        for (root_bits, 0..) |*bit, k| bit.* = if (d.calls[d.root_group * d.keys.len + k]) '1' else '0';
+        for (root_bits, 0..) |*bit, k| bit.* = if (d.calls(d.root_group, @intCast(k))) '1' else '0';
         try props.append(l.scratch, try l.templateArray(&.{ try l.stringNode("$root", l.mk.?.pos), try l.stringNode(root_bits, l.mk.?.pos) }));
         for (entries.items) |entry| try props.append(l.scratch, try l.templateArray(&.{ try l.stringNode(entry.key, l.mk.?.pos), try l.stringNode(entry.bits, l.mk.?.pos) }));
         for (l.in.direct.?.source_roots) |root_| {
@@ -12129,11 +12190,7 @@ pub const Lowerer = struct {
         const st = l.mk orelse return unknown;
         if (ref == .node and ref.node == .none) {
             if (d.root_group == std.math.maxInt(u32)) return unknown;
-            var static = true;
-            for (0..d.keys.len) |k| if (d.calls[d.root_group * d.keys.len + k]) {
-                static = false;
-            };
-            return .{ .group = d.root_group, .static = static, .bake = null };
+            return .{ .group = d.root_group, .static = !d.written[d.root_group], .bake = null };
         }
         const token = switch (ref) {
             .node => |n| st.built.node_tokens[@backingInt(n)],
@@ -12147,10 +12204,7 @@ pub const Lowerer = struct {
             for (d.edges) |*edge| if (edge.module == l.in.module.int() and edge.token == token and std.mem.eql(u64, edge.path, l.inline_path.items)) break :found edge;
             return unknown;
         } else l.directHoleAt(d, token) orelse return unknown;
-        var static = true;
-        for (0..d.keys.len) |k| {
-            if (d.calls[h.group * d.keys.len + k]) static = false;
-        }
+        const static = h.group < d.written.len and !d.written[h.group];
         return .{ .group = h.group, .static = static, .bake = if (static) h.bake else null, .where = h.where };
     }
 
@@ -12178,7 +12232,7 @@ pub const Lowerer = struct {
         const pc = l.program_now orelse return true;
         const d = pc.direct orelse return true;
         if (group >= d.groups or key >= d.keys.len) return true;
-        return d.calls[group * d.keys.len + key];
+        return d.calls(group, key);
     }
 
     /// `cx.programEdits`: key `key`'s edits of the `For` at node `n`, each
@@ -12937,7 +12991,7 @@ pub const Lowerer = struct {
             // A call's callee may have statements of its own, as one
             // written in place may (version 1.9's `Callee.statements`).
             const callee = what == .call and (l.chainOfExpr(r, &.{}, true) orelse Chain{}).statements;
-            o.* = .{ .what = what, .dead = l.deadArm(b), .statements = callee or l.armStatements(b).len != 0 };
+            o.* = .{ .what = what, .dead = l.deadArm(b), .statements = callee or l.armStatements(b).len != 0, .eager = what == .markup and l.eagerArm(arms.value, what.markup) };
         }
         return .{ .arms = out, .debug = l.instReachesDebug(arms.value), .effect = l.mayHaveEffect(arms.value) };
     }
@@ -13361,6 +13415,53 @@ pub const Lowerer = struct {
         }
         try l.markupBindInputs(r, names);
         try l.inline_frames.append(l.scratch, .{ .node = .none, .chain = .{ .root = r }, .caller = l.declCtx(), .bound = true, .token = false });
+    }
+
+    /// `Program.Arm.eager` (version 1.15): whether markup root `r`, an arm
+    /// of the branch whose value is `value`, reads only locals bound outside
+    /// that value — no pattern variable of its `case`, no `let` of an arm —
+    /// so that its values can be evaluated whichever arm the value takes.
+    fn eagerArm(l: *Lowerer, value: Inst.Index, r: beni_markup.Root.Index) bool {
+        const st = l.mk orelse return false;
+        const root = st.built.tree.root(r);
+        if (root.inputs.len == 0) return true;
+        const decl = for (l.bir.decls) |d| {
+            if (value.int() >= d.inst_start.int() and value.int() < d.inst_end.int()) break d;
+        } else return false;
+        const locals = l.bir.declLocals(decl);
+        // The value's code is one range of instructions that ends at it
+        // (`Lift.low`), its patterns and `let`s included: a local whose
+        // binder is in that range is bound inside the branch.
+        const lo = Lift.low(l.bir, l.scratch, value.int()) catch return false;
+        for (0..root.inputs.len) |j| {
+            const local = st.built.values[root.inputs.start + j].capture;
+            if (local >= locals.len) return false;
+            const binder = locals[local].inst.int();
+            if (binder >= lo and binder <= value.int()) return false;
+        }
+        return true;
+    }
+
+    /// `cx.programBranchEager` (version 1.15): arm `k` of branch `node`,
+    /// an eager one, entered with its root's inputs read under the names
+    /// their locals have here — the hole's value is not evaluated — on the
+    /// arm's call path, as `directBranchEnter` extends it. The caller leaves
+    /// with `programInlineLeave`.
+    fn directBranchEager(l: *Lowerer, node: beni_markup.Node.Index, k: u32) Allocator.Error!void {
+        const st = l.mk.?;
+        const arms = try l.branchArms(node) orelse return;
+        if (k >= arms.bodies.len) return;
+        const what = l.armWhat(arms.results[k]);
+        if (what != .markup) return;
+        try l.inline_path.append(l.scratch, (@as(u64, l.in.module.int()) << 32) | st.built.node_tokens[@backingInt(node)]);
+        const root = st.built.tree.root(what.markup);
+        const names = try l.scratch.alloc(beni_markup.Name, root.inputs.len);
+        for (names, 0..) |*n, j| {
+            const local = st.built.values[root.inputs.start + j].capture;
+            n.* = @fromBackingInt(@intCast((try l.localName(local)).int()));
+        }
+        try l.markupBindInputs(what.markup, names);
+        try l.inline_frames.append(l.scratch, .{ .node = node, .chain = .{ .root = what.markup }, .caller = l.declCtx(), .bound = true, .token = true });
     }
 
     /// `cx.programShowFallback`: the markup root a `Show`'s fallback is,
@@ -13934,11 +14035,7 @@ pub const Lowerer = struct {
         const path = l.inline_path.items;
         for (d.lets) |*x| {
             if (x.module != module or x.inst != inst.int() or !std.mem.eql(u64, x.path, path)) continue;
-            var static = true;
-            for (0..d.keys.len) |key| {
-                if (d.calls[x.group * d.keys.len + key]) static = false;
-            }
-            return .{ .group = x.group, .static = static, .bake = null };
+            return .{ .group = x.group, .static = x.group < d.written.len and !d.written[x.group], .bake = null };
         }
         return unknown;
     }
@@ -15114,6 +15211,11 @@ const markup_vtable: beni_markup.VTable = struct {
         return error.Reported;
     }
 
+    fn programReportAt(impl: *anyopaque, site: u32, code: M.Program.Code, message: []const u8) error{ OutOfMemory, Reported } {
+        try lowerer(impl).programReportAt(site, code, message);
+        return error.Reported;
+    }
+
     fn programKeys(impl: *anyopaque) []const M.Program.Key {
         return lowerer(impl).directKeys();
     }
@@ -15160,6 +15262,14 @@ const markup_vtable: beni_markup.VTable = struct {
 
     fn programCalls(impl: *anyopaque, key: u32, group: u32) bool {
         return lowerer(impl).directCalls(key, group);
+    }
+
+    fn programGroupsOf(impl: *anyopaque, key: u32) ?[]const u32 {
+        const l = lowerer(impl);
+        const pc = l.program_now orelse return null;
+        const d = pc.direct orelse return null;
+        if (key >= d.key_groups.len) return null;
+        return d.key_groups[key];
     }
 
     fn programUpdate(impl: *anyopaque, into: M.Block) E!?M.Expr {
@@ -15267,6 +15377,10 @@ const markup_vtable: beni_markup.VTable = struct {
 
     fn programNestedEnter(impl: *anyopaque, r: M.Root.Index) E!void {
         return lowerer(impl).directNestedEnter(r);
+    }
+
+    fn programBranchEager(impl: *anyopaque, n: M.Node.Index, k: u32) E!void {
+        return lowerer(impl).directBranchEager(n, k);
     }
 
     fn programViewStatements(impl: *anyopaque, into: M.Block) E!bool {
@@ -15449,9 +15563,11 @@ const markup_vtable: beni_markup.VTable = struct {
         .program_field = programField,
         .program_settles = programSettles,
         .program_report = programReport,
+        .program_report_at = programReportAt,
         .program_keys = programKeys,
         .program_hole = programHole,
         .program_calls = programCalls,
+        .program_groups_of = programGroupsOf,
         .row_template = rowTemplate,
         .template_plan = templatePlan,
         .template_holes = templateHoles,
@@ -15483,6 +15599,7 @@ const markup_vtable: beni_markup.VTable = struct {
         .program_branch_statements = programBranchStatements,
         .program_show_fallback = programShowFallback,
         .program_nested_enter = programNestedEnter,
+        .program_branch_eager = programBranchEager,
         .program_view_statements = programViewStatements,
         .program_let = programLet,
         .program_subscriptions = programSubscriptions,

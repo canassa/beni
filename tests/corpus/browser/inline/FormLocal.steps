@@ -1,0 +1,10 @@
+element "root"
+click [data-role=switchMuted]
+input [data-role=pickPhase] "Premium"
+click [data-role=rotatePhase]
+input [data-role=setPages] "12"
+input [data-role=setPages] "99"
+input [data-role=setPages] "-3"
+click [data-role=switchMuted]
+type [data-role=code] "cde"
+input [data-role=locked] "changed"

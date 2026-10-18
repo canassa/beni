@@ -1,0 +1,46 @@
+-- `StarNotReplace` with no annotation on `update`: the model's type is then
+-- read from what `init` makes, a record literal of two fields, and the key
+-- is refused by the same language rule (docs/design/browser-inline.md §5,
+-- §8.7), never accepted as a model of one value. Where neither the
+-- annotation nor `init` says, the key is a limit of the compiler.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    count : Int
+    label : String
+
+
+type Msg
+    = Inc
+    | Restore Model
+
+
+update msg model =
+    case msg of
+        Inc →
+            { model | count = model.count + 1 }
+
+        Restore saved →
+            saved
+
+
+view : Model → Html Msg
+view model =
+    <div>
+        <output>{model.count}</output>
+        <p>{model.label}</p>
+        <button data-role="inc" onClick={Inc}>+1</button>
+        <button data-role="restore" onClick={Restore { count = 0, label = "saved" }}>
+            Restore
+        </button>
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → { count = 0, label = "start" }, update = update, view = view })
+        "root"

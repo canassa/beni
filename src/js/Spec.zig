@@ -6327,13 +6327,16 @@ const Spec = struct {
 
         const place = try s.placeOf(cm, site) orelse return false;
         const single = body.len == 1 and scan.final_return and scan.valued and scan.returns == 1;
-        const Form = enum { expr, ret, stmt, decl };
+        const Form = enum { expr, ret, stmt, decl, tail_stmt };
         const form: Form = if (single) .expr else switch (place.kind) {
             .expr => return false,
             .ret => .ret,
             .stmt => blk: {
                 if (scan.returns == 0 or (scan.returns == 1 and scan.final_return)) break :blk .stmt;
                 if (place.tail and !scan.valued) break :blk .ret;
+                // A body whose `return`s all end it, at a call statement:
+                // each is its value as a statement, or nothing (`copyTail`).
+                if (tailReturnsOnly(fm.ir, body, 0)) break :blk .tail_stmt;
                 return false;
             },
             .decl => if (scan.returns == 1 and scan.final_return and scan.valued) .decl else return false,
@@ -6343,8 +6346,8 @@ const Spec = struct {
         // A call the optimiser drops — a discarded pure call, or a binding
         // nothing reads whose initialiser may not do anything — would come
         // back as the body's statements: written as the call it is.
-        if (form == .stmt or form == .ret or form == .decl) if (cm.tables) |t| {
-            if (form == .stmt and std.mem.indexOfScalar(Index, t.discards.items, place.stmt) != null) return false;
+        if (form == .stmt or form == .tail_stmt or form == .ret or form == .decl) if (cm.tables) |t| {
+            if ((form == .stmt or form == .tail_stmt) and std.mem.indexOfScalar(Index, t.discards.items, place.stmt) != null) return false;
             if (form == .decl and std.mem.indexOfScalar(Index, t.keep.items, place.stmt) == null and
                 !try s.nameRead(cm, site.top, @fromBackingInt(@intCast(cm.ir.data(place.stmt).lhs)))) return false;
         };
@@ -6408,6 +6411,12 @@ const Spec = struct {
                 var out: std.ArrayList(u32) = .empty;
                 try out.appendSlice(s.arena, bindings.items);
                 for (body) |stmt| try out.append(s.arena, (try c.stmt(stmt, 0)).int());
+                try s.splice(cm, place, out.items, false);
+            },
+            .tail_stmt => {
+                var out: std.ArrayList(u32) = .empty;
+                try out.appendSlice(s.arena, bindings.items);
+                try out.appendSlice(s.arena, try copyTail(&c, cm, body, 0));
                 try s.splice(cm, place, out.items, false);
             },
             .stmt => {
@@ -10613,4 +10622,106 @@ fn unblocked(ir: *const JsIr, body: JsIr.SubRange) JsIr.SubRange {
         range = ir.subRange(@fromBackingInt(@intCast(ir.data(items[0]).rhs)));
     }
     return range;
+}
+/// Whether `stmts`' only `return`s end the list: the last statement, or the
+/// last of each branch of an `if` or of an unlabelled block that is the
+/// last — no early `return` an inlined copy would have to keep.
+/// A branch with no `return` at all is accepted: control falls off its end,
+/// as it falls out of the call, to the statement after it. A function that
+/// may suspend never meets this: its call is never a statement of the
+/// suspendable form, which hands the call's value on to `Task$andThen`
+/// (`emit/release/SuspendTailStatement`).
+fn tailReturnsOnly(ir: *const JsIr, stmts: []const Index, depth: u32) bool {
+    if (depth > 32) return false;
+    for (stmts, 0..) |st, i| {
+        const last = i + 1 == stmts.len;
+        const d = ir.data(st);
+        switch (ir.tag(st)) {
+            .return_stmt => if (!last) return false,
+            .if_stmt => {
+                const b = ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.If);
+                const t = ir.extraSlice(b.thenBody(), Index);
+                const e = ir.extraSlice(b.elseBody(), Index);
+                if (last) {
+                    if (!tailReturnsOnly(ir, t, depth + 1) or !tailReturnsOnly(ir, e, depth + 1)) return false;
+                } else if (holdsReturn(ir, t, depth + 1) or holdsReturn(ir, e, depth + 1)) return false;
+            },
+            .block_stmt => {
+                const inner = ir.extraSlice(ir.subRange(@fromBackingInt(@intCast(d.rhs))), Index);
+                const labelled = @as(NameIndex, @fromBackingInt(@intCast(d.lhs))) != .none;
+                if (last and !labelled) {
+                    if (!tailReturnsOnly(ir, inner, depth + 1)) return false;
+                } else if (holdsReturn(ir, inner, depth + 1)) return false;
+            },
+            else => if (holdsReturn(ir, &.{st}, depth + 1)) return false,
+        }
+    }
+    return true;
+}
+
+/// Whether a `return` of the function is among `stmts`, a nested
+/// function's aside.
+fn holdsReturn(ir: *const JsIr, stmts: []const Index, depth: u32) bool {
+    if (depth > 32) return true;
+    for (stmts) |st| {
+        const d = ir.data(st);
+        switch (ir.tag(st)) {
+            .return_stmt => return true,
+            .if_stmt => {
+                const b = ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.If);
+                if (holdsReturn(ir, ir.extraSlice(b.thenBody(), Index), depth + 1) or holdsReturn(ir, ir.extraSlice(b.elseBody(), Index), depth + 1)) return true;
+            },
+            .block_stmt => if (holdsReturn(ir, ir.extraSlice(ir.subRange(@fromBackingInt(@intCast(d.rhs))), Index), depth + 1)) return true,
+            .expr_stmt, .const_decl, .let_decl, .assign_stmt, .throw_stmt => {},
+            // A loop, a `switch`, a `try`: not looked into.
+            else => return true,
+        }
+    }
+    return false;
+}
+
+/// `stmts` copied by `c` into `m` as a call statement that ends its
+/// function: each `return v` at the list's end is `v` as a statement, or
+/// nothing when `v` is inert (`tailReturnsOnly` holds of `stmts`). The
+/// value was never read, and the function ends there either way.
+fn copyTail(c: anytype, m: *Mod, stmts: []const Index, depth: u32) Allocator.Error![]const u32 {
+    const s = c.s;
+    const ir = c.src.ir;
+    var out: std.ArrayList(u32) = .empty;
+    for (stmts, 0..) |st, i| {
+        const d = ir.data(st);
+        if (i + 1 != stmts.len) {
+            try out.append(s.arena, (try c.stmt(st, depth)).int());
+            continue;
+        }
+        switch (ir.tag(st)) {
+            .return_stmt => if (@as(Node.OptionalIndex, @fromBackingInt(@intCast(d.lhs))).unwrap()) |v| if (!inert(ir, v)) {
+                const e = try c.expr(v, depth);
+                try out.append(s.arena, (try m.addNode(s.gpa, .expr_stmt, Node.no_pos, e.int(), 0)).int());
+            },
+            .if_stmt => {
+                const b = ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.If);
+                const cond = try c.expr(@fromBackingInt(@intCast(d.lhs)), depth);
+                const t = try copyTail(c, m, ir.extraSlice(b.thenBody(), Index), depth + 1);
+                const e = try copyTail(c, m, ir.extraSlice(b.elseBody(), Index), depth + 1);
+                if (t.len == 0 and e.len == 0) {
+                    if (!inert(m.ir, cond)) try out.append(s.arena, (try m.addNode(s.gpa, .expr_stmt, Node.no_pos, cond.int(), 0)).int());
+                    continue;
+                }
+                const ts = try m.append(s.gpa, t);
+                const te = ts + @as(u32, @intCast(t.len));
+                const es = try m.append(s.gpa, e);
+                const ee = es + @as(u32, @intCast(e.len));
+                const branches = try m.append(s.gpa, &.{ ts, te, es, ee });
+                try out.append(s.arena, (try m.addNode(s.gpa, .if_stmt, ir.pos(st), cond.int(), branches)).int());
+            },
+            .block_stmt => if (@as(NameIndex, @fromBackingInt(@intCast(d.lhs))) == .none) {
+                const inner = try copyTail(c, m, ir.extraSlice(ir.subRange(@fromBackingInt(@intCast(d.rhs))), Index), depth + 1);
+                const at = try m.append(s.gpa, inner);
+                try out.append(s.arena, (try m.addNode(s.gpa, .block_stmt, ir.pos(st), @backingInt(NameIndex.none), try m.append(s.gpa, &.{ at, at + @as(u32, @intCast(inner.len)) }))).int());
+            } else try out.append(s.arena, (try c.stmt(st, depth)).int()),
+            else => try out.append(s.arena, (try c.stmt(st, depth)).int()),
+        }
+    }
+    return out.items;
 }

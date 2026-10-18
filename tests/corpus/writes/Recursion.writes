@@ -2,7 +2,7 @@ program Recursion.main : Tea.sandbox
   model Recursion.Model
   init
     literal ρ
-  key Repeat                                      exact      node ρ; value ρ.count
+  key Repeat                                      exact      node ρ; value ρ.count ≈
   key Build                                       indexed    node ρ; value ρ.items ⟨replaced⟩
   keys 2: bounded 2 (100%), exact 1, indexed 1, structural 0, * 0; capped 0
   hole Recursion.beni:52:12                       literal    reads ρ.label

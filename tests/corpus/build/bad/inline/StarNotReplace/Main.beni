@@ -1,0 +1,50 @@
+-- `Restore`'s arm returns the model its message carries: its write set is
+-- the whole model, `*` (write-sets.md §3.4), so no binding can be chosen
+-- for it, and `browser-inline` never re-checks the whole page
+-- (docs/design/browser-inline.md §8.7). Refused at the record's `update` by
+-- a language rule, class 3 (§5): `program_shape` — the model is a record of
+-- two fields, so a whole write hides which of them changed (the owner,
+-- 2026-10-17). A model of one value is written whole: S0's `TwoPrograms` and
+-- `StopThrowingDisposer`, whose model is an `Int`, are accepted.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    count : Int
+    label : String
+
+
+type Msg
+    = Inc
+    | Restore Model
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Inc →
+            { model | count = model.count + 1 }
+
+        Restore saved →
+            saved
+
+
+view : Model → Html Msg
+view model =
+    <div>
+        <output>{model.count}</output>
+        <p>{model.label}</p>
+        <button data-role="inc" onClick={Inc}>+1</button>
+        <button data-role="restore" onClick={Restore { count = 0, label = "saved" }}>
+            Restore
+        </button>
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → { count = 0, label = "start" }, update = update, view = view })
+        "root"

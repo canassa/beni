@@ -1200,7 +1200,7 @@ const options = {};
 const positional = [];
 const pages = [];
 for (const arg of process.argv.slice(2)) {
-  const m = arg.match(/^--(dom|chrome|steps)=(.+)$/);
+  const m = arg.match(/^--(dom|chrome|steps|parser)=(.+)$/);
   const p = arg.match(/^--(page|fiber-page|fuzz)=(.+)@(.+)$/);
   if (m) options[m[1]] = m[2];
   else if (arg === "--no-comments") comments = false;
@@ -1211,6 +1211,7 @@ for (const arg of process.argv.slice(2)) {
 if (pages.length === 0 && (positional.length < 1 || positional.length > 2)) usage("expected an entry file and at most one steps file");
 if (pages.length !== 0 && positional.length !== 0) usage("--page takes the place of the entry and steps files");
 if ((options.dom === undefined) === (options.chrome === undefined)) usage("give exactly one of --dom and --chrome");
+if (options.parser !== undefined && options.dom === undefined) usage("--parser goes with --dom: Chrome parses as the standard does");
 if (pages.length === 0) pages.push({ entry: positional[0], report: null, fiber: false });
 const stepsPath = pages[0].report === null ? positional[1] : options.steps;
 
@@ -1482,6 +1483,7 @@ async function happyDomPage(domPath) {
   for (const method of ["addEventListener", "removeEventListener", "dispatchEvent"]) {
     globalThis[method] = window[method].bind(window);
   }
+  if (options.parser !== undefined) await standardParsing(options.parser);
   prelude();
   // What escapes to Node rather than to the page's `error` event — a
   // microtask that threw — is an uncaught exception of the page all the
@@ -1758,4 +1760,42 @@ async function runFuzz(specPath) {
     return { run: page.run, mouse: page.mouse, close: page.close, url: entryUrl };
   };
   return fuzz(JSON.parse(readFileSync(specPath, "utf8")), { open, load, step, released, settle, drain, serialise });
+}
+
+// `--parser=<parse5.mjs>`: under happy-dom, the tree an `insertAdjacentHTML`
+// string makes is the one the HTML standard's parser makes (§13.2.9's
+// fragment parsing, by parse5, the algorithm as the standard writes it),
+// built node by node into the page. happy-dom's own parser closes elements
+// the standard leaves open — a `<p>` at an `</em>`'s end — so a string that a
+// browser reads differently from what its compiler meant would pass under
+// it: `browser-inline` leaves end tags out of its markup
+// (docs/design/browser-inline.md §8.2), and the page then shows the tree a
+// browser builds. Chrome needs none of this.
+async function standardParsing(parserPath) {
+  const { parseFragment, defaultTreeAdapter } = await import(pathToFileURL(resolve(parserPath)).href);
+  const html = "http://www.w3.org/1999/xhtml";
+  const build = (doc, node) => {
+    if (node.nodeName === "#text") return doc.createTextNode(node.value);
+    if (node.nodeName === "#comment") return doc.createComment(node.data);
+    const el = doc.createElementNS(node.namespaceURI, node.tagName);
+    for (const a of node.attrs) el.setAttribute(a.prefix ? `${a.prefix}:${a.name}` : a.name, a.value);
+    const into = node.tagName === "template" && node.namespaceURI === html ? el.content : el;
+    for (const c of (node.tagName === "template" ? node.content : node).childNodes) into.appendChild(build(doc, c));
+    return el;
+  };
+  const proto = globalThis.Element.prototype;
+  const own = proto.insertAdjacentHTML;
+  proto.insertAdjacentHTML = function (position, text) {
+    const where = String(position).toLowerCase();
+    const context = where === "beforeend" || where === "afterbegin" ? this : this.parentNode;
+    if (context === null || context.nodeType !== 1) return own.call(this, position, text);
+    const ctx = defaultTreeAdapter.createElement(context.localName, context.namespaceURI ?? html, []);
+    const frag = this.ownerDocument.createDocumentFragment();
+    for (const c of parseFragment(ctx, String(text)).childNodes) frag.appendChild(build(this.ownerDocument, c));
+    if (where === "beforeend") this.appendChild(frag);
+    else if (where === "afterbegin") this.insertBefore(frag, this.firstChild);
+    else if (where === "beforebegin") this.parentNode.insertBefore(frag, this);
+    else if (where === "afterend") this.parentNode.insertBefore(frag, this.nextSibling);
+    else return own.call(this, position, text);
+  };
 }

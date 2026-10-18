@@ -1,0 +1,89 @@
+-- element "root"
+-- load
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="texts">
+        <p>"Count: 1"</p>
+        <p>"first"</p>
+        <button data-role="add">"Add"</button>
+        <button data-role="removeLast">"Remove last"</button>
+        <button data-role="clear">"Clear"</button>
+      </section>
+    </div>
+  </div>
+</body>
+-- click [data-role=add]
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="texts">
+        <p>"Count: 2"</p>
+        <p>"first, text 2"</p>
+        <button data-role="add">"Add"</button>
+        <button data-role="removeLast">"Remove last"</button>
+        <button data-role="clear">"Clear"</button>
+      </section>
+    </div>
+  </div>
+</body>
+-- click [data-role=add] 2
+(the step's task ended)
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="texts">
+        <p>"Count: 4"</p>
+        <p>"first, text 2, text 3, text 4"</p>
+        <button data-role="add">"Add"</button>
+        <button data-role="removeLast">"Remove last"</button>
+        <button data-role="clear">"Clear"</button>
+      </section>
+    </div>
+  </div>
+</body>
+-- click [data-role=removeLast]
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="texts">
+        <p>"Count: 3"</p>
+        <p>"first, text 2, text 3"</p>
+        <button data-role="add">"Add"</button>
+        <button data-role="removeLast">"Remove last"</button>
+        <button data-role="clear">"Clear"</button>
+      </section>
+    </div>
+  </div>
+</body>
+-- click [data-role=clear]
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="texts">
+        <p>"Count: 0"</p>
+        <p></p>
+        <button data-role="add">"Add"</button>
+        <button data-role="removeLast">"Remove last"</button>
+        <button data-role="clear">"Clear"</button>
+      </section>
+    </div>
+  </div>
+</body>
+-- click [data-role=removeLast]
+(the DOM did not change)
+-- click [data-role=add]
+<body>
+  <div id="root">
+    <div data-role="app">
+      <section data-role="texts">
+        <p>"Count: 1"</p>
+        <p>"text 1"</p>
+        <button data-role="add">"Add"</button>
+        <button data-role="removeLast">"Remove last"</button>
+        <button data-role="clear">"Clear"</button>
+      </section>
+    </div>
+  </div>
+</body>
+
