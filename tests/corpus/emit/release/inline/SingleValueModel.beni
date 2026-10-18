@@ -1,0 +1,36 @@
+-- emit/release/inline: a model of one value, an `Int`, written whole by
+-- each arm; each handler's pass calls the groups the write-set pass found
+-- for that write by name (docs/design/browser-inline.md §8.3), here both.
+-- The page is `browser/inline/SingleValueModel`.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Inc
+    | Reset
+
+
+update : Msg, Int → Int
+update msg n =
+    case msg of
+        Inc →
+            n + 1
+
+        Reset →
+            0
+
+
+view : Int → Html Msg
+view n =
+    <div data-role="single">
+        <output>{n}</output>
+        <p>{if n > 2 then "many" else "few"}</p>
+        <button data-role="inc" onClick={Inc}>+1</button>
+        <button data-role="reset" onClick={Reset}>Reset</button>
+    </div>
+
+
+main : Tea.Program
+main = Browser.mountAt (Tea.sandbox { init = λ⊤ → 0, update = update, view = view }) "root"
