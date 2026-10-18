@@ -1,0 +1,69 @@
+-- emit: the place index of release's single-use inlining (#352) stays right
+-- after an edit (backend.md §9, *A function called once is written where it
+-- is called*): a copied body bringing a call that is itself written in
+-- place, an inline that moves a later call of the same list, and a fuse and
+-- an inline in one statement. A guard: the walk the index replaces gives
+-- the same output (`run/SpecPlaceAfterEdit` runs it).
+-- `outer`'s body calls `inner`, each called from one place, so release
+-- writes `inner` into `outer` and `outer` into `chain`: the copied body
+-- brings a call that is itself written in place.
+inner : Int → Int
+inner y = y * 2 + 1
+
+
+outer : Int → Int
+outer x = inner (x + 3) - 1
+
+
+-- `spread`'s body is several statements, written at `shifted`'s first
+-- binding, which moves `tail`'s call, the next statement, along the list.
+spread : Int → Int
+spread x =
+    a = x * 3
+    b = a + 4
+    a * b
+
+
+tail : Int → Int
+tail v = v - 7
+
+
+shifted : Int → Int
+shifted n =
+    first = spread n
+    second = tail first
+    second + 1
+
+
+-- `pick` makes a `Maybe` a `case` at its call reads, which release fuses,
+-- and `wrap`, called once, is written in the same statement.
+pick : Int → Maybe Int
+pick n =
+    if n > 2 then
+        Just (n * 10)
+    else
+        Nothing
+
+
+wrap : Int → Int
+wrap v = v + 100
+
+
+fused : Int → Int
+fused n =
+    wrap
+        (case pick n of
+            Just v →
+                v
+
+            Nothing →
+                0
+        )
+
+
+pub chain : Int → Int
+chain n = outer n
+
+
+pub all : Int → List Int
+all n = [ chain n, shifted n, fused n, fused 1 ]

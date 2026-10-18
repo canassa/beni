@@ -574,6 +574,10 @@ const Mod = struct {
     /// `Spec.namedIn`'s answers for every whole-program id at once — the
     /// first name of it a walk of the module meets, or `none` — as of
     /// `occ_version` (`none`: never built, or thrown away).
+    /// Per node: its place as the index last walked it (`Spec.placeIndexed`),
+    /// and the walk that wrote it.
+    place_at: std.ArrayList(Spec.PlaceEntry) = .empty,
+    place_walk: std.ArrayList(u32) = .empty,
     occ: []u32 = &.{},
     occ_version: u32 = none,
     /// The `Spec.rewrite_epoch` of the rewrite `occ` was built in, or 0.
@@ -752,6 +756,8 @@ const Spec = struct {
     only_fewer: bool = false,
     /// Counts the rewrites, from 1 (`Mod.occ_rewrite`).
     rewrite_epoch: u32 = 0,
+    /// The place index's walk counter (`indexWalk`).
+    place_walks: u32 = 0,
     /// What `rewrite` saw that the next round's facts would spend, which
     /// the round's own facts could not (`again`): the reads of a
     /// whole-program name `substitutes` refused, by the count `reads` took
@@ -5636,6 +5642,10 @@ const Spec = struct {
     /// the facts, whose per-node tables it does not grow. True when any was.
     fn inlineOnce(s: *Spec) Allocator.Error!bool {
         if (s.in.fresh == .none) return false;
+        // The index holds within this pass only: other passes move nodes.
+        for (s.mods) |*m| for (m.place_at.items) |*e| {
+            e.top = none_index;
+        };
         var any = false;
         var left: u32 = max_inlines;
         while (left > 0) : (left -= 1) {
@@ -6181,6 +6191,207 @@ const Spec = struct {
         top_level: bool = false,
     };
 
+    // ---- The place index (#352) ---------------------------------------------
+    //
+    // `placeOf` walks a call's whole top-level statement from its start, and
+    // slice 5 asks it once per function it writes in place: a module whose
+    // one top-level statement holds every call — a page's mount — is walked
+    // once per call it holds, quadratic in the program. The index walks a
+    // top-level statement once, as `placeAmong` does, and keeps each node's
+    // place. A lookup takes it only while it still holds — the statement
+    // still in its list with the call its whole expression, or an
+    // expression's node no copy has moved (`unindex`) — and otherwise walks.
+
+    /// One node's place as of the walk that indexed its top-level statement.
+    const PlaceEntry = struct {
+        top: Index,
+        place: Place,
+        /// The statement's list is a function's body: `tail` is read off the
+        /// list as it is at the lookup.
+        fn_body: bool,
+    };
+
+    fn samePlace(a: ?Place, b: ?Place) bool {
+        const x = a orelse return b == null;
+        const y = b orelse return false;
+        if (x.kind != y.kind) return false;
+        if (x.kind == .expr) return true;
+        return x.stmt == y.stmt and x.owner == y.owner and x.tail == y.tail and x.top_level == y.top_level;
+    }
+
+    /// `placeOf` through the index: the place the walk finds.
+    fn placeIndexed(s: *Spec, m: *Mod, site: CallSite) Allocator.Error!?Place {
+        const found = blk: {
+            if (s.placeHint(m, site)) |p| break :blk p;
+            try s.indexWalk(m, site.top, false);
+            if (s.placeHint(m, site)) |p| break :blk p;
+            // A node no walk reaches (past `max_depth`): the search's answer.
+            break :blk try s.placeOf(m, site);
+        };
+        if (std.debug.runtime_safety) std.debug.assert(samePlace(try s.placeOf(m, site), found));
+        return found;
+    }
+
+    /// The index's place of `site.call`, when it still holds.
+    fn placeHint(s: *Spec, m: *Mod, site: CallSite) ?Place {
+        _ = s;
+        const at = site.call.int();
+        if (at >= m.place_at.items.len or m.place_at.items[at].top == none_index) return null;
+        const e = m.place_at.items[at];
+        if (e.top != site.top) return null;
+        var p = e.place;
+        if (p.kind == .expr) return p;
+        const ir = m.ir;
+        const d = ir.data(p.stmt);
+        const root: ?Index = switch (ir.tag(p.stmt)) {
+            .expr_stmt, .const_decl => @fromBackingInt(@intCast(if (ir.tag(p.stmt) == .expr_stmt) d.lhs else d.rhs)),
+            .return_stmt => @as(Node.OptionalIndex, @fromBackingInt(@intCast(d.lhs))).unwrap(),
+            .let_decl => @as(Node.OptionalIndex, @fromBackingInt(@intCast(d.rhs))).unwrap(),
+            else => null,
+        };
+        if (root != site.call) return null;
+        const o = p.owner orelse return if (p.stmt == site.top) p else null;
+        const list = listAt(m, o);
+        if (std.mem.indexOfScalar(Index, list, p.stmt) == null) return null;
+        p.tail = e.fn_body and list[list.len - 1] == p.stmt;
+        return p;
+    }
+
+    /// Walk top-level statement `top` as `placeAmong` does: record each
+    /// node's place, the first the walk meets, or (`clear`) forget the
+    /// places of every node of `top` — any node in place of `top`.
+    fn indexWalk(s: *Spec, m: *Mod, top: Index, clear: bool) Allocator.Error!void {
+        if (m.place_at.items.len < m.ir.nodes.len) {
+            const old = m.place_at.items.len;
+            try m.place_at.resize(s.arena, m.ir.nodes.len);
+            for (m.place_at.items[old..]) |*e| e.top = none_index;
+            try m.place_walk.resize(s.arena, m.ir.nodes.len);
+            @memset(m.place_walk.items[old..], 0);
+        }
+        s.place_walks +%= 1;
+        if (s.place_walks == 0) s.place_walks = 1;
+        var w: IndexWalk = .{ .s = s, .m = m, .top = top, .clear = clear };
+        try w.among(null, &.{top}, false, true, 0);
+    }
+
+    /// Forget the places of the nodes below `root`, an argument a copy moves
+    /// whole into the body it writes in place.
+    fn unindex(s: *Spec, m: *Mod, root: Index) Allocator.Error!void {
+        if (m.place_at.items.len == 0) return;
+        var w: IndexWalk = .{ .s = s, .m = m, .top = none_index, .clear = true };
+        try w.expr(root, 0);
+    }
+
+    const none_index: Index = @fromBackingInt(std.math.maxInt(u32));
+
+    const IndexWalk = struct {
+        s: *Spec,
+        m: *Mod,
+        top: Index,
+        clear: bool,
+
+        fn note(w: *IndexWalk, node: Index, place: Place, fn_body: bool) void {
+            const at = node.int();
+            if (at >= w.m.place_at.items.len) return;
+            if (w.clear) {
+                w.m.place_at.items[at].top = none_index;
+                return;
+            }
+            if (w.m.place_walk.items[at] == w.s.place_walks) return;
+            w.m.place_walk.items[at] = w.s.place_walks;
+            w.m.place_at.items[at] = .{ .top = w.top, .place = place, .fn_body = fn_body };
+        }
+
+        fn among(w: *IndexWalk, owner: ?u32, list: []const Index, fn_body: bool, top_level: bool, depth: u32) Allocator.Error!void {
+            if (depth > max_depth) return;
+            const ir = w.m.ir;
+            for (list, 0..) |stmt, i| {
+                const d = ir.data(stmt);
+                const root: ?Index = switch (ir.tag(stmt)) {
+                    .expr_stmt, .const_decl => @fromBackingInt(@intCast(if (ir.tag(stmt) == .expr_stmt) d.lhs else d.rhs)),
+                    .return_stmt => @as(Node.OptionalIndex, @fromBackingInt(@intCast(d.lhs))).unwrap(),
+                    .let_decl => @as(Node.OptionalIndex, @fromBackingInt(@intCast(d.rhs))).unwrap(),
+                    else => null,
+                };
+                if (root) |r| w.note(r, .{
+                    .kind = switch (ir.tag(stmt)) {
+                        .expr_stmt => .stmt,
+                        .return_stmt => .ret,
+                        else => .decl,
+                    },
+                    .stmt = stmt,
+                    .owner = owner,
+                    .tail = fn_body and i + 1 == list.len,
+                    .top_level = top_level,
+                }, fn_body);
+                try w.in(stmt, depth + 1);
+            }
+        }
+
+        fn in(w: *IndexWalk, stmt: Index, depth: u32) Allocator.Error!void {
+            const ir = w.m.ir;
+            const d = ir.data(stmt);
+            switch (ir.tag(stmt)) {
+                .func_decl, .gen_decl => {
+                    const at = d.rhs;
+                    try w.among(at + 2, ir.extraSlice(ir.extraData(@fromBackingInt(@intCast(at)), JsIr.Func).body(), Index), true, false, depth);
+                },
+                .if_stmt => {
+                    try w.expr(@fromBackingInt(@intCast(d.lhs)), depth);
+                    const b = ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.If);
+                    try w.among(d.rhs, ir.extraSlice(b.thenBody(), Index), false, false, depth);
+                    try w.among(d.rhs + 2, ir.extraSlice(b.elseBody(), Index), false, false, depth);
+                },
+                .while_true, .block_stmt => try w.among(d.rhs, ir.extraSlice(ir.subRange(@fromBackingInt(@intCast(d.rhs))), Index), false, false, depth),
+                .for_of => {
+                    const loop = ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.ForOf);
+                    try w.expr(loop.iterable, depth);
+                    try w.among(d.rhs + 1, ir.extraSlice(loop.body(), Index), false, false, depth);
+                },
+                .switch_stmt => {
+                    try w.expr(@fromBackingInt(@intCast(d.lhs)), depth);
+                    for (ir.extraSlice(ir.subRange(@fromBackingInt(@intCast(d.rhs))), Index)) |c| {
+                        const cd = ir.data(c);
+                        if (@as(Node.OptionalIndex, @fromBackingInt(@intCast(cd.lhs))).unwrap()) |t| try w.expr(t, depth);
+                        try w.among(cd.rhs, ir.extraSlice(ir.subRange(@fromBackingInt(@intCast(cd.rhs))), Index), false, false, depth);
+                    }
+                },
+                .const_decl => try w.expr(@fromBackingInt(@intCast(d.rhs)), depth),
+                .let_decl, .return_stmt => {
+                    const v = @as(Node.OptionalIndex, @fromBackingInt(@intCast(if (ir.tag(stmt) == .let_decl) d.rhs else d.lhs))).unwrap() orelse return;
+                    try w.expr(v, depth);
+                },
+                .assign_stmt => {
+                    try w.expr(@fromBackingInt(@intCast(d.lhs)), depth);
+                    try w.expr(@fromBackingInt(@intCast(d.rhs)), depth);
+                },
+                .expr_stmt, .throw_stmt => try w.expr(@fromBackingInt(@intCast(d.lhs)), depth),
+                .try_stmt => {
+                    const t = ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.Try);
+                    try w.among(d.rhs, ir.extraSlice(t.body(), Index), false, false, depth);
+                    try w.among(d.rhs + 2, ir.extraSlice(t.finalBody(), Index), false, false, depth);
+                    try w.among(d.rhs + 4, ir.extraSlice(t.catchBody(), Index), false, false, depth);
+                },
+                else => {},
+            }
+        }
+
+        fn expr(w: *IndexWalk, root: Index, depth: u32) Allocator.Error!void {
+            var stack = try w.s.takeStack();
+            defer w.s.giveStack(&stack);
+            try JsIr.pushOperand(w.s.arena, &stack, root);
+            while (JsIr.popOperand(&stack)) |node| {
+                w.note(node, .{ .kind = .expr }, false);
+                if (w.m.ir.tag(node) == .arrow) {
+                    const at = w.m.ir.data(node).lhs;
+                    try w.among(at + 2, w.m.ir.extraSlice(w.m.ir.extraData(@fromBackingInt(@intCast(at)), JsIr.Func).body(), Index), true, false, depth + 1);
+                    continue;
+                }
+                try w.m.ir.pushOperands(w.s.arena, &stack, node);
+            }
+        }
+    };
+
     fn placeOf(s: *Spec, m: *Mod, site: CallSite) Allocator.Error!?Place {
         if (try s.placeAmong(m, null, &.{site.top}, false, true, site.call, 0)) |p| return p;
         return null;
@@ -6325,7 +6536,7 @@ const Spec = struct {
             if (!try s.immutableNames(cm, a, site.top, assigned)) return false;
         }
 
-        const place = try s.placeOf(cm, site) orelse return false;
+        const place = try s.placeIndexed(cm, site) orelse return false;
         const single = body.len == 1 and scan.final_return and scan.valued and scan.returns == 1;
         const Form = enum { expr, ret, stmt, decl, tail_stmt };
         const form: Form = if (single) .expr else switch (place.kind) {
@@ -6368,6 +6579,9 @@ const Spec = struct {
             try outer.append(s.arena, .{ .from = p.from, .to = to.int() });
         }
         s.noteCopy(decl.module, s.globalOfDecl(decl));
+        // Each argument moves, whole, into the copy: its nodes' places are
+        // no longer the index's.
+        for (args) |a| try s.unindex(cm, a);
 
         var c: Copy = .{
             .s = s,
