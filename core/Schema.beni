@@ -3742,24 +3742,24 @@ slotOf i =
 -- variant.
 shapeTagged : Js.Value, Js.Value, Int → Js.Value
 shapeTagged s x depth =
-    if isObject x then shapeVariant s (Js.get x (stringOf (Js.at s 1))) x depth else shapeFail
+    if isObject x then shapeVariant s (Js.get x (stringOf (Js.at s 1))) x depth 2 else shapeFail
 
 
 -- `[shapeTaggedOwn, discriminator, …]`: a union whose discriminator is a
 -- name `Object.prototype` holds, read as `present` reads it.
 shapeTaggedOwn : Js.Value, Js.Value, Int → Js.Value
 shapeTaggedOwn s x depth =
-    if isObject x then shapeVariant s (shapeKey x (stringOf (Js.at s 1))) x depth else shapeFail
+    if isObject x then shapeVariant s (shapeKey x (stringOf (Js.at s 1))) x depth 2 else shapeFail
 
 
--- The variant whose tag is `tag`: a nullary one's value, or its payload's
--- record shape one level down.
-shapeVariant : Js.Value, Js.Value, Js.Value, Int → Js.Value
-shapeVariant s tag x depth =
-    i = shapeFind s tag 2 (lengthOf s)
-    if i < 0 then
+-- The variant whose tag, among every other element of `s` from the `i`th,
+-- is `===` to `tag`: a nullary one's value, or its payload's record shape
+-- one level down; `shapeFail` when none is.
+shapeVariant : Js.Value, Js.Value, Js.Value, Int, Int → Js.Value
+shapeVariant s tag x depth i =
+    if i ≥ lengthOf s then
         shapeFail
-    else
+    else if Js.same (Js.at s i) tag then
         v = Js.at s (i + 1)
         if not (isArray v) then
             v
@@ -3767,6 +3767,8 @@ shapeVariant s tag x depth =
             shapeFail
         else
             shapeRun v x (depth + 1)
+    else
+        shapeVariant s tag x depth (i + 2)
 
 
 -- The position of the name `===` to `k` among `s`'s, every other element
