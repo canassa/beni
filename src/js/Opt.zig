@@ -20,6 +20,10 @@
 //!     conditions, which `inlinable` and `findUse` below implement one for
 //!     one. The wider licence — any initialiser, use on the very next
 //!     statement — was measured and loses on `Dictionaries` (§9, table C).
+//!     A value made only of beni field reads, names and literals
+//!     (`pureValue`, §9 item 1 as amended 2026-10-18) moves to its use past
+//!     statements that may write nothing: a field read does nothing, but a
+//!     write of its record would change it (the ordering rule).
 //!
 //! **Nothing here mutates the IR.** The pass produces a `Plan`: a bitset of
 //! statement nodes the printer must not print, and one replacement node per
@@ -241,6 +245,10 @@ const Opt = struct {
     /// as the use site. One slot rather than a returned pair, because the
     /// count and the node are wanted at different depths of the same walk.
     found: Node.OptionalIndex = .none,
+    /// The statement `findUse` found its use in.
+    found_in: Index = undefined,
+    /// Whether the value `pureValue` last accepted reads a field.
+    reads_field: bool = false,
     /// `copy`'s use sites, found by `ownUsesInto`.
     found_all: std.ArrayList(Index) = .empty,
 
@@ -536,15 +544,38 @@ const Opt = struct {
             // folded into its use it would move past whatever that use's
             // statement evaluates first. A name or a literal cannot change.
             const here = stmt.int();
-            if (o.kept[here / 32] & (@as(u32, 1) << @intCast(here % 32)) != 0 and o.ir.tag(value) == .member) continue;
+            const listed = o.kept[here / 32] & (@as(u32, 1) << @intCast(here % 32)) != 0;
+            if (listed and o.ir.tag(value) == .member) continue;
+            // A value made only of beni field reads, names and literals
+            // (`backend.md` §9 item 1, amended 2026-10-18). It does nothing
+            // and cannot throw, but a write of the record it reads would
+            // change its answer, so it moves only past statements that
+            // can write nothing (`findUseAcross`). One that reads no field
+            // — a literal, a name nothing reassigns — answers the same
+            // anywhere, and moves past any statement.
+            if (!listed) {
+                o.reads_field = false;
+                if (o.pureValue(value, 0) != null) {
+                    const found = if (o.reads_field) try o.findUseAcross(stmts[i + 1 ..], n) else try o.findAnyUse(stmts[i + 1 ..], n);
+                    if (found) |at| {
+                        o.drop(stmt);
+                        o.inlined[at.int()] = o.compress(value).toOptional();
+                    }
+                    continue;
+                }
+            }
             const base = o.chainBase(value) orelse continue;
             if (base.unwrap()) |b| {
                 if (b < o.assigned.len and o.stamp[b] == o.current and o.assigned[b]) continue;
                 if (std.mem.indexOfScalar(NameIndex, o.mutable, base) != null) continue;
             }
             const at = try o.findUse(stmts[i + 1 ..], n) orelse continue;
+            // A member chain is a read some call may change: in its use's
+            // statement nothing that may write is evaluated before it.
+            const target = o.compress(value);
+            if (o.ir.tag(target) == .member and !o.cleanBefore(o.found_in, at)) continue;
             o.drop(stmt);
-            o.inlined[at.int()] = o.compress(value).toOptional();
+            o.inlined[at.int()] = target.toOptional();
         }
     }
 
@@ -702,7 +733,10 @@ const Opt = struct {
             if (seen >= scan_limit) return null;
             o.found = .none;
             const own = try o.ownUses(stmt, n);
-            if (own == 1) return o.found.unwrap();
+            if (own == 1) {
+                o.found_in = stmt;
+                return o.found.unwrap();
+            }
             if (own != 0) return null;
             if (!o.isPureReadConst(stmt)) return null;
         }
@@ -717,10 +751,200 @@ const Opt = struct {
             if (seen >= scan_limit) return null;
             o.found = .none;
             const own = try o.ownUses(stmt, n);
-            if (own == 1) return o.found.unwrap();
+            if (own == 1) {
+                o.found_in = stmt;
+                return o.found.unwrap();
+            }
             if (own != 0) return null;
         }
         return null;
+    }
+
+    /// `findUse` for a value that reads a field (`pureValue`): the owner's
+    /// ordering rule (`backend.md` §9 item 1, amended 2026-10-18). A field
+    /// read is effect-free but not invariant: a write of its record, or of
+    /// anything aliasing it, changes what it answers. So it moves past a
+    /// statement only when that statement can write nothing (`writeFree`),
+    /// and in its use's statement only when nothing that may write is
+    /// evaluated before it (`cleanBefore`). Any call or `new` is taken as a
+    /// write: nothing here proves a callee writes no record.
+    fn findUseAcross(o: *Opt, rest: []const Index, n: NameIndex) Allocator.Error!?Index {
+        for (rest, 0..) |stmt, seen| {
+            if (seen >= scan_limit) return null;
+            o.found = .none;
+            const own = try o.ownUses(stmt, n);
+            if (own == 1) {
+                const at = o.found.unwrap() orelse return null;
+                return if (o.cleanBefore(stmt, at)) at else null;
+            }
+            if (own != 0) return null;
+            if (!o.writeFree(stmt)) return null;
+        }
+        return null;
+    }
+
+    /// A `const` or `let` whose initialiser calls nothing, constructs
+    /// nothing and yields nothing (a function it makes runs nowhere here):
+    /// a statement that can write no record. Every other statement — an
+    /// assignment, a call standing alone, a branch or a loop — may.
+    fn writeFree(o: *Opt, stmt: Index) bool {
+        const d = o.ir.data(stmt);
+        const init: Index = switch (o.ir.tag(stmt)) {
+            .const_decl => @fromBackingInt(@intCast(d.rhs)),
+            .let_decl => @as(Node.OptionalIndex, @fromBackingInt(@intCast(d.rhs))).unwrap() orelse return true,
+            else => return false,
+        };
+        return o.mayWriteIn(init, null, 0) == .clean;
+    }
+
+    const Before = enum { clean, dirty, found_clean, found_dirty };
+
+    /// Whether `site` is reached in statement `stmt`'s own expressions, in
+    /// evaluation order, before anything that may write.
+    fn cleanBefore(o: *Opt, stmt: Index, site: Index) bool {
+        const d = o.ir.data(stmt);
+        var roots: [2]Index = undefined;
+        const own: []const Index = switch (o.ir.tag(stmt)) {
+            .const_decl => blk: {
+                roots[0] = @fromBackingInt(@intCast(d.rhs));
+                break :blk roots[0..1];
+            },
+            .let_decl, .return_stmt => blk: {
+                const raw = if (o.ir.tag(stmt) == .let_decl) d.rhs else d.lhs;
+                roots[0] = @as(Node.OptionalIndex, @fromBackingInt(@intCast(raw))).unwrap() orelse return false;
+                break :blk roots[0..1];
+            },
+            .assign_stmt => blk: {
+                roots[0] = @fromBackingInt(@intCast(d.lhs));
+                roots[1] = @fromBackingInt(@intCast(d.rhs));
+                break :blk roots[0..2];
+            },
+            .if_stmt, .switch_stmt, .expr_stmt, .throw_stmt => blk: {
+                roots[0] = @fromBackingInt(@intCast(d.lhs));
+                break :blk roots[0..1];
+            },
+            else => return false,
+        };
+        for (own) |root| switch (o.mayWriteIn(root, site, 0)) {
+            .clean => {},
+            .found_clean => return true,
+            .dirty, .found_dirty => return false,
+        };
+        return false;
+    }
+
+    /// Walk `node` in evaluation order: whether `site` is met (when given),
+    /// and whether a call, a `new` or a `yield` is evaluated before it — or
+    /// anywhere, when it is not met. An `arrow`'s body runs elsewhere. Too
+    /// deep counts as a write, so the fold is declined.
+    fn mayWriteIn(o: *Opt, node: Index, site: ?Index, depth: u32) Before {
+        if (site) |u| if (node == u) return .found_clean;
+        if (depth > 128) return .dirty;
+        const tag = o.ir.tag(node);
+        if (tag == .arrow) return .clean;
+        var dirty = false;
+        var kids: std.ArrayList(Index) = .empty;
+        o.ir.pushOperands(o.arena, &kids, node) catch return .dirty;
+        // `pushOperands` pushes in reverse, so the last is evaluated first.
+        var k = kids.items.len;
+        while (k > 0) {
+            k -= 1;
+            switch (o.mayWriteIn(kids.items[k], site, depth + 1)) {
+                .clean => {},
+                .dirty => dirty = true,
+                .found_clean => return if (dirty) .found_dirty else .found_clean,
+                .found_dirty => return .found_dirty,
+            }
+        }
+        const writes = switch (tag) {
+            .call, .new_call => true,
+            .unary => @as(JsIr.UnaryOp, @fromBackingInt(@intCast(o.ir.data(node).rhs))) == .yield,
+            else => false,
+        };
+        return if (dirty or writes) .dirty else .clean;
+    }
+
+    /// What `pureValue` knows of a value it accepts: whether it is surely a
+    /// primitive, which an operator may convert without running code.
+    const Shape = enum { primitive, any };
+
+    /// Whether evaluating `node` does nothing, cannot throw, and answers the
+    /// same at every point of the declaration (`backend.md` §9 item 1,
+    /// amended 2026-10-18), or null:
+    ///
+    ///   - a literal, and a name no `assign_stmt` of the declaration targets
+    ///     and no `Js.Ref` rebinds (`mutable`);
+    ///   - a read of a beni record's field (`JsIr.isFieldRead`) of such a
+    ///     value: a beni value has no getter and no beni code writes it;
+    ///   - `!`, `typeof`, `===`, `!==`, `&&`, `||` and `?:` of such, which
+    ///     convert nothing;
+    ///   - an arithmetic, comparison or bitwise operator, `-`, and a
+    ///     template, of such values that are surely primitives — a literal,
+    ///     a field read, or another operator's result — so no `valueOf` or
+    ///     `toString` runs. A field read is one there because beni writes an
+    ///     operator only on a primitive type (`==` and `<` of anything else
+    ///     call `eq` and `compare`, §4). A name is not: a platform's
+    ///     lowering may hold a host value in one.
+    ///
+    /// A member read that is not a field's — a tuple's or constructor's
+    /// slot, a tag, a host property — is not accepted; the atom and
+    /// member-chain rule still takes the bare chain.
+    fn pureValue(o: *Opt, node: Index, depth: u32) ?Shape {
+        if (depth > 64) return null;
+        const d = o.ir.data(node);
+        switch (o.ir.tag(node)) {
+            .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit => return .primitive,
+            .ident => {
+                // A name an earlier fold already wrote a value at is that
+                // value: `n = c.v; three = n == 3` judges `c.v == 3`.
+                if (o.inlined[node.int()].unwrap()) |v| return o.pureValue(v, depth + 1);
+                const n: NameIndex = @fromBackingInt(@intCast(d.lhs));
+                if (n.unwrap()) |i| if (i < o.assigned.len and o.stamp[i] == o.current and o.assigned[i]) return null;
+                if (std.mem.indexOfScalar(NameIndex, o.mutable, n) != null) return null;
+                return .any;
+            },
+            .member => {
+                if (!o.ir.isFieldRead(node)) return null;
+                _ = o.pureValue(@fromBackingInt(@intCast(d.lhs)), depth + 1) orelse return null;
+                o.reads_field = true;
+                return .primitive;
+            },
+            .unary => {
+                const shape = o.pureValue(@fromBackingInt(@intCast(d.lhs)), depth + 1) orelse return null;
+                return switch (@as(JsIr.UnaryOp, @fromBackingInt(@intCast(d.rhs)))) {
+                    .not, .type_of => .primitive,
+                    .neg => if (shape == .primitive) .primitive else null,
+                    .yield => null,
+                };
+            },
+            .binary => {
+                const b = o.ir.extraData(@fromBackingInt(@intCast(d.lhs)), JsIr.Binary);
+                const left = o.pureValue(b.left, depth + 1) orelse return null;
+                const right = o.pureValue(b.right, depth + 1) orelse return null;
+                const both: Shape = if (left == .primitive and right == .primitive) .primitive else .any;
+                return switch (@as(JsIr.BinaryOp, @fromBackingInt(@intCast(d.rhs)))) {
+                    .strict_eq, .strict_ne => .primitive,
+                    .logical_and, .logical_or => both,
+                    .instance_of => null,
+                    else => if (both == .primitive) .primitive else null,
+                };
+            },
+            .cond => {
+                const c = o.ir.extraData(@fromBackingInt(@intCast(d.rhs)), JsIr.Cond);
+                _ = o.pureValue(@fromBackingInt(@intCast(d.lhs)), depth + 1) orelse return null;
+                const yes = o.pureValue(c.consequent, depth + 1) orelse return null;
+                const no = o.pureValue(c.alternate, depth + 1) orelse return null;
+                return if (yes == .primitive and no == .primitive) .primitive else .any;
+            },
+            .template => {
+                for (o.ir.extraSlice(JsIr.inlineRange(d), Index)) |part| {
+                    if (o.ir.tag(part) == .template_chunk) continue;
+                    if ((o.pureValue(part, depth + 1) orelse return null) != .primitive) return null;
+                }
+                return .primitive;
+            },
+            else => return null,
+        }
     }
 
     /// A `const` whose initialiser is an atom or a member chain: the only

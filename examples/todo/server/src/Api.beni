@@ -1,0 +1,141 @@
+--! The JSON API, over the todos kept in memory.
+--!
+--!     GET    /api/todos        200, the list
+--!     POST   /api/todos        a `Draft` body: 201, the new todo
+--!     PUT    /api/todos/<id>   a `Draft` body: 200, the changed todo; 404
+--!     DELETE /api/todos/<id>   204; 404
+--!
+--! A body that is not a `Draft` is 400 with the schema's issues, one per
+--! line. Another method on a known path is 405 with `allow`. Another path
+--! under `/api/` is 404. The todos live in a `Ref`, which every handler
+--! fiber shares: `Ref.modify` runs its function from the read to the write
+--! with no other fiber in between (`core/Ref`), so no update is lost.
+
+import Http.Server as Server exposing (Response)
+import Ref exposing (Ref)
+import Schema exposing (Issue)
+import Todos exposing (Draft, Todo)
+
+
+--| What the server keeps: the todos, newest last, and the next id.
+pub type alias Store =
+    todos : List Todo.Type
+    nextId : Int
+
+
+pub empty : Store
+empty = { todos = [], nextId = 1 }
+
+
+--| Answer a request under `/api/`: its method, the segments after `api`,
+--| and its body.
+pub handle : Ref Store, String, List String, String → Response
+handle store method segments body =
+    case segments of
+        [ "todos" ] →
+            case method of
+                "GET" →
+                    list store
+
+                "POST" →
+                    add store body
+
+                _ →
+                    methodNotAllowed "GET, POST"
+
+        [ "todos", id ] →
+            case String.toInt id of
+                Nothing →
+                    Server.text 404 "no such todo"
+
+                Just n →
+                    case method of
+                        "PUT" →
+                            change store n body
+
+                        "DELETE" →
+                            remove store n
+
+                        _ →
+                            methodNotAllowed "PUT, DELETE"
+
+        _ →
+            Server.text 404 "no such route"
+
+
+list : Ref Store → Response
+list store = json 200 (Schema.print Todos.list (Ref.get store).todos)
+
+
+add : Ref Store, String → Response
+add store body =
+    case Draft.parse body of
+        Err issues →
+            badRequest issues
+
+        Ok draft →
+            todo = Ref.modify store λs →
+                made = { id = s.nextId, title = draft.title, done = draft.done }
+                ( made, { todos = [ …s.todos, made ], nextId = s.nextId + 1 } )
+            json 201 (Todo.print todo)
+
+
+change : Ref Store, Int, String → Response
+change store id body =
+    case Draft.parse body of
+        Err issues →
+            badRequest issues
+
+        Ok draft →
+            changed = { id = id, title = draft.title, done = draft.done }
+            found = Ref.modify store λs →
+                if List.any s.todos λt → t.id == id then
+                    ( True
+                    , { s | todos = List.map s.todos λt → if t.id == id then changed else t }
+                    )
+                else
+                    ( False, s )
+            if found then
+                json 200 (Todo.print changed)
+            else
+                Server.text 404 "no such todo"
+
+
+remove : Ref Store, Int → Response
+remove store id =
+    found = Ref.modify store λs →
+        if List.any s.todos λt → t.id == id then
+            ( True, { s | todos = List.filter s.todos λt → t.id ≠ id } )
+        else
+            ( False, s )
+    if found then
+        { status = 204, headers = [], body = "" }
+    else
+        Server.text 404 "no such todo"
+
+
+-- A JSON answer. A todo holds an `Int`, a `String` and a `Bool`, so its
+-- print cannot fail; the type says it may, and the branch says what then.
+json : Int, Result (List Issue) String → Response
+json status printed =
+    case printed of
+        Ok body →
+            { status = status
+            , headers = [ ( "content-type", "application/json; charset=utf-8" ) ]
+            , body = body
+            }
+
+        Err issues →
+            Server.text 500 ("cannot print the answer:\n" ++ Todos.describeIssues issues)
+
+
+badRequest : List Issue → Response
+badRequest issues = Server.text 400 ("the body is not a todo:\n" ++ Todos.describeIssues issues)
+
+
+methodNotAllowed : String → Response
+methodNotAllowed allow =
+    { status = 405
+    , headers = [ ( "content-type", "text/plain; charset=utf-8" ), ( "allow", allow ) ]
+    , body = "method not allowed"
+    }

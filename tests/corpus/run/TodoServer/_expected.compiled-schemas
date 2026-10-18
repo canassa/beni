@@ -1,0 +1,1 @@
+Every schema the server builds is fixed at compile time: the two declarations of the shared `Todos` module and `Schema.list` of one, printed and parsed through compiled workers (schema.md §6, *A statically known schema runs compiled*).

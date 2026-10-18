@@ -646,6 +646,17 @@ pub inline fn name(ir: *const JsIr, index: NameIndex) Name {
     return ir.names[index.int()];
 }
 
+/// Whether `node` reads a beni record's field: a `member` whose name carries
+/// `Name.field`, which only `Lower.fieldMember` writes, on a value whose type
+/// is a record. Such a read runs no getter and cannot throw, and no beni code
+/// can change what it answers (`backend.md` §9, *A field read of a beni value
+/// is pure*). Says nothing about the object the read is made of.
+pub fn isFieldRead(ir: *const JsIr, node: Node.Index) bool {
+    if (ir.tag(node) != .member) return false;
+    const n: NameIndex = @fromBackingInt(@intCast(ir.data(node).rhs));
+    return n != .none and ir.name(n).isField();
+}
+
 /// Replace one row of the name column, which this IR owns. For a pass that
 /// re-interns a name's symbols into another pool, with the same text: the
 /// emitter moves a module's whole-program names from the module's overlay

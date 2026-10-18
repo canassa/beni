@@ -1,0 +1,46 @@
+--! A platform module over core's `Js`: a cell a loop writes, read before
+--! and after the write.
+
+import Js
+
+
+bump : Js.Ref Int, Int → ⊤
+bump c k =
+    if k == 0 then
+        ⊤
+    else
+        Js.write c (Js.read c + 1)
+        bump c (k - 1)
+
+
+--| A read of the cell, compared, then written twice: the comparison was
+--| made before the writes.
+pub stale : ⊤ → String
+stale _ =
+    c = Js.ref 3
+    bump c 0
+    n = Js.read c
+    three = n == 3
+    bump c 2
+    if three then
+        "three"
+    else
+        "not three"
+
+
+type alias Holder =
+    cell : Js.Ref Int
+
+
+--| The same, through a cell a record field holds.
+pub staleHeld : ⊤ → String
+staleHeld _ =
+    h = { cell = Js.ref 3 }
+    bump h.cell 0
+    n = Js.read h.cell
+    three = n == 3
+    bump h.cell 2
+    if three then
+        "three"
+    else
+        "not three"

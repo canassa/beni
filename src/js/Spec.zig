@@ -5312,9 +5312,9 @@ const Spec = struct {
                         // return R`), so a key of it may become a field
                         // read (`ops.fn`), which stays and keeps the
                         // function.
-                        .property => if (key.isSet(i) and inert(ir, @fromBackingInt(@intCast(d.rhs)))) holds.set(d.rhs),
-                        .const_decl => if (inert(ir, @fromBackingInt(@intCast(d.rhs)))) holds.set(d.rhs),
-                        .let_decl => if ((@as(Node.OptionalIndex, @fromBackingInt(@intCast(d.rhs)))).unwrap()) |v| if (inert(ir, v)) holds.set(v.int()),
+                        .property => if (key.isSet(i) and inertOf(ir, @fromBackingInt(@intCast(d.rhs)), false)) holds.set(d.rhs),
+                        .const_decl => if (inertOf(ir, @fromBackingInt(@intCast(d.rhs)), false)) holds.set(d.rhs),
+                        .let_decl => if ((@as(Node.OptionalIndex, @fromBackingInt(@intCast(d.rhs)))).unwrap()) |v| if (inertOf(ir, v, false)) holds.set(v.int()),
                         else => {},
                     }
                 }
@@ -5484,8 +5484,11 @@ const Spec = struct {
                 if (decl.module != mi or decl.stmt != stmt) continue;
                 const at = sites[g] orelse continue;
                 if (at.module != mi or at.top <= ti) continue;
+                // Made later, so a field read would cross what runs between:
+                // only a value that reads nothing moves (§9 item 1, amended
+                // 2026-10-18, *the ordering rule*).
                 const value: Index = @fromBackingInt(@intCast(m.ir.data(stmt).rhs));
-                if (!inert(m.ir, value)) continue;
+                if (!inertOf(m.ir, value, false)) continue;
                 // A name the value reads as it is made holds the same value
                 // when it is made later: nothing assigns it.
                 if (!try s.immutableNames(m, value, stmt, assigned)) continue;
@@ -6559,7 +6562,7 @@ const Spec = struct {
         // once, as it was made once before the body.
         for (args, 0..) |a, i| {
             if (try s.atomArgument(cm, a, site.top, assigned)) continue;
-            if (!inert(cm.ir, a) or scan.reads[i] > 1 or scan.repeated[i] or scan.assigns[i]) return false;
+            if (!inertOf(cm.ir, a, false) or scan.reads[i] > 1 or scan.repeated[i] or scan.assigns[i]) return false;
             if (!try s.immutableNames(cm, a, site.top, assigned)) return false;
         }
 
@@ -7091,7 +7094,7 @@ const Spec = struct {
         }
         // An object literal's names are read where `R` reads its fields,
         // later than the `return`: none may be assigned in between.
-        const known = (ir.tag(p) == .object and inert(ir, p) and try s.immutableNames(m, p, cont.top, cont.assigned)) or
+        const known = (ir.tag(p) == .object and inertOf(ir, p, false) and try s.immutableNames(m, p, cont.top, cont.assigned)) or
             (ir.tag(p) == .ident and ir.name(@fromBackingInt(@intCast(ir.data(p).lhs))).module != .none) or
             switch (ir.tag(p)) {
                 .number, .string, .true_lit, .false_lit, .null_lit, .undefined_lit => true,
@@ -10425,6 +10428,19 @@ pub fn isInert(ir: *const JsIr, root: Index) bool {
 }
 
 fn inert(ir: *const JsIr, root: Index) bool {
+    return inertOf(ir, root, true);
+}
+
+/// `inert`, with `field_reads` whether a beni field read counts as one. A
+/// field read is effect-free, so whatever only drops or keeps a value asks
+/// with it. Whatever MOVES a value later asks without (`backend.md` §9
+/// item 1, amended 2026-10-18, *the ordering rule*): a top-level value made
+/// at its read (`writeReads`), an argument made where the body reads it
+/// (`inlineAt`), an object literal's names read where `R` reads them —
+/// each would cross code that may write the record. `soleCalls` asks
+/// without too: a place holding a field read is not a place that only
+/// holds the value it is.
+fn inertOf(ir: *const JsIr, root: Index, comptime field_reads: bool) bool {
     var stack: [64]Index = undefined;
     var len: usize = 1;
     stack[0] = root;
@@ -10440,6 +10456,15 @@ fn inert(ir: *const JsIr, root: Index) bool {
             .property => {
                 if (len == stack.len) return false;
                 stack[len] = @fromBackingInt(@intCast(d.rhs));
+                len += 1;
+            },
+            // A beni record's field: no getter, no throw, and nothing
+            // changes it (`backend.md` §9, *A field read of a beni value
+            // is pure*).
+            .member => {
+                if (!field_reads or !ir.isFieldRead(node)) return false;
+                if (len == stack.len) return false;
+                stack[len] = @fromBackingInt(@intCast(d.lhs));
                 len += 1;
             },
             .object, .array, .template => for (ir.extraSlice(JsIr.inlineRange(d), Index)) |child| {

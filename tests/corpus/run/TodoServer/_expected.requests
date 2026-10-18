@@ -1,0 +1,34 @@
+# The API: an empty list, two todos added, one changed, one deleted, the list
+# after each; what a bad body, an unknown id, a wrong method and an unknown
+# route answer; and the page's files, which this case does not hold.
+{"method": "GET", "path": "/api/todos"}
+{"method": "POST", "path": "/api/todos", "headers": {"content-type": "application/json"}, "body": "{\"title\":\"buy milk\",\"done\":false}"}
+{"method": "POST", "path": "/api/todos", "headers": {"content-type": "application/json"}, "body": "{\"title\":\"write beni\",\"done\":false}"}
+{"method": "GET", "path": "/api/todos"}
+{"method": "PUT", "path": "/api/todos/1", "headers": {"content-type": "application/json"}, "body": "{\"title\":\"buy oat milk\",\"done\":true}"}
+# An id spelled with a leading zero is the same id: `String.toInt` reads
+# `[+-]?digits`; `1e2` is no id, below.
+{"method": "PUT", "path": "/api/todos/01", "headers": {"content-type": "application/json"}, "body": "{\"title\":\"buy oat milk\",\"done\":true}"}
+{"method": "DELETE", "path": "/api/todos/2"}
+{"method": "GET", "path": "/api/todos"}
+# A body that is not a draft: a missing field, and text that is not JSON.
+{"method": "POST", "path": "/api/todos", "headers": {"content-type": "application/json"}, "body": "{\"title\":\"no done\"}"}
+{"method": "POST", "path": "/api/todos", "headers": {"content-type": "application/json"}, "body": "not json"}
+# An id nothing has, an id that is not a number, and wrong methods.
+{"method": "PUT", "path": "/api/todos/9", "headers": {"content-type": "application/json"}, "body": "{\"title\":\"x\",\"done\":false}"}
+{"method": "DELETE", "path": "/api/todos/9"}
+{"method": "DELETE", "path": "/api/todos/abc"}
+{"method": "DELETE", "path": "/api/todos/1e2"}
+{"method": "PATCH", "path": "/api/todos"}
+{"method": "GET", "path": "/api/todos/1"}
+{"method": "GET", "path": "/api/nothing"}
+{"method": "GET", "path": "/api/shutdown"}
+# The page's files: this case holds no page build, and a path with `..` or a
+# hidden name never reaches the file system.
+{"method": "GET", "path": "/"}
+{"method": "GET", "path": "/_main.mjs"}
+{"method": "GET", "path": "/../secret.txt"}
+{"method": "GET", "path": "/.beni-cache/x.json"}
+{"method": "GET", "path": "/logo.png"}
+{"method": "POST", "path": "/index.html"}
+{"method": "POST", "path": "/api/shutdown"}

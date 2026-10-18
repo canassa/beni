@@ -1,0 +1,31 @@
+-- element "root"
+-- load
+<body>
+  <div id="root">
+    <div data-role="old">
+      <output>"0"</output>
+      <p>"Was: 0"</p>
+      <button data-role="inc">"+1"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=inc]
+<body>
+  <div id="root">
+    <div data-role="old">
+      <output>"1"</output>
+      <p>"Was: 0"</p>
+      <button data-role="inc">"+1"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=inc]
+<body>
+  <div id="root">
+    <div data-role="old">
+      <output>"2"</output>
+      <p>"Was: 1"</p>
+      <button data-role="inc">"+1"</button>
+    </div>
+  </div>
+</body>

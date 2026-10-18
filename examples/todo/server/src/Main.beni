@@ -1,0 +1,79 @@
+--! A todo server in beni, on the `node` platform (`boundary.md` §9.10):
+--! the JSON API of `Api` under `/api/`, and the page's built files from
+--! `Files` everywhere else. The todos live in memory and do not survive a
+--! restart.
+--!
+--! `POST /api/shutdown` closes the server gracefully, and the program ends
+--! when the last response is written. It exists because the `node`
+--! platform has no signals yet (canassa/beni#338): until it does, Ctrl-C
+--! kills the process with its connections open, and a test needs a clean
+--! stop. The program prints its one line when it stops: a `node` program
+--! writes standard output only through the `Program` it ends with
+--! (canassa/beni#358).
+
+import Api
+import Config
+import Deferred exposing (Deferred)
+import Files
+import Http.Server as Server exposing (Request, Response, Server)
+import Io
+import Node exposing (Program)
+import Ref exposing (Ref)
+import Route
+
+
+main : Program
+main = Io.run λ⊤ →
+    self = Deferred.make ⊤
+    store = Ref.make Api.empty
+    case Server.listen { host = Config.host, port = Config.port } (handle self store _) of
+        Err error →
+            Node.exitWith (cannotListen error) 1
+
+        Ok server →
+            _ = Deferred.complete self server
+            Server.wait server
+            Node.print "todo server stopped"
+
+
+handle : Deferred Server, Ref Api.Store, Request → Response
+handle self store request =
+    case Route.segments request.path of
+        [ "api", "shutdown" ] →
+            if request.method == "POST" then
+                Server.close (Deferred.wait self)
+                Server.text 200 "stopping"
+            else
+                { status = 405
+                , headers = [ ( "content-type", "text/plain; charset=utf-8" ), ( "allow", "POST" ) ]
+                , body = "method not allowed"
+                }
+
+        [ "api", …rest ] →
+            Api.handle store request.method rest request.body
+
+        rest →
+            Files.serve request.method rest
+
+
+cannotListen : Server.ListenError → String
+cannotListen error =
+    at = "${Config.host}:${String.fromInt Config.port}"
+    case error of
+        Server.AddressInUse →
+            "cannot listen on ${at}: the address is in use"
+
+        Server.PermissionDenied →
+            "cannot listen on ${at}: permission denied"
+
+        Server.AddressNotAvailable →
+            "cannot listen on ${at}: no interface has that address"
+
+        Server.HostNotFound →
+            "cannot listen on ${at}: the host is not found"
+
+        Server.TooManyOpenFiles →
+            "cannot listen on ${at}: too many open files"
+
+        Server.InvalidPort →
+            "cannot listen on ${at}: the port is not from 0 to 65535"

@@ -1,0 +1,226 @@
+> GET /api/todos
+< 200
+< content-type: application/json; charset=utf-8
+< content-length: 2
+< connection: keep-alive
+< keep-alive: timeout=5
+<
+< []
+> POST /api/todos
+> content-type: application/json
+>
+> {"title":"buy milk","done":false}
+< 201
+< content-type: application/json; charset=utf-8
+< content-length: 40
+< connection: keep-alive
+< keep-alive: timeout=5
+<
+< {"id":1,"title":"buy milk","done":false}
+> POST /api/todos
+> content-type: application/json
+>
+> {"title":"write beni","done":false}
+< 201
+< content-type: application/json; charset=utf-8
+< content-length: 42
+< connection: keep-alive
+< keep-alive: timeout=5
+<
+< {"id":2,"title":"write beni","done":false}
+> GET /api/todos
+< 200
+< content-type: application/json; charset=utf-8
+< content-length: 85
+< connection: keep-alive
+< keep-alive: timeout=5
+<
+< [{"id":1,"title":"buy milk","done":false},{"id":2,"title":"write beni","done":false}]
+> PUT /api/todos/1
+> content-type: application/json
+>
+> {"title":"buy oat milk","done":true}
+< 200
+< content-type: application/json; charset=utf-8
+< content-length: 43
+< connection: keep-alive
+< keep-alive: timeout=5
+<
+< {"id":1,"title":"buy oat milk","done":true}
+> PUT /api/todos/01
+> content-type: application/json
+>
+> {"title":"buy oat milk","done":true}
+< 200
+< content-type: application/json; charset=utf-8
+< content-length: 43
+< connection: keep-alive
+< keep-alive: timeout=5
+<
+< {"id":1,"title":"buy oat milk","done":true}
+> DELETE /api/todos/2
+< 204
+< connection: keep-alive
+< keep-alive: timeout=5
+> GET /api/todos
+< 200
+< content-type: application/json; charset=utf-8
+< content-length: 45
+< connection: keep-alive
+< keep-alive: timeout=5
+<
+< [{"id":1,"title":"buy oat milk","done":true}]
+> POST /api/todos
+> content-type: application/json
+>
+> {"title":"no done"}
+< 400
+< content-type: text/plain; charset=utf-8
+< content-length: 48
+< connection: keep-alive
+< keep-alive: timeout=5
+<
+< the body is not a todo:
+< done: missing key "done"
+> POST /api/todos
+> content-type: application/json
+>
+> not json
+< 400
+< content-type: text/plain; charset=utf-8
+< content-length: 88
+< connection: keep-alive
+< keep-alive: timeout=5
+<
+< the body is not a todo:
+< invalid JSON: Unexpected token 'o', "not json" is not valid JSON
+> PUT /api/todos/9
+> content-type: application/json
+>
+> {"title":"x","done":false}
+< 404
+< content-type: text/plain; charset=utf-8
+< content-length: 12
+< connection: keep-alive
+< keep-alive: timeout=5
+<
+< no such todo
+> DELETE /api/todos/9
+< 404
+< content-type: text/plain; charset=utf-8
+< content-length: 12
+< connection: keep-alive
+< keep-alive: timeout=5
+<
+< no such todo
+> DELETE /api/todos/abc
+< 404
+< content-type: text/plain; charset=utf-8
+< content-length: 12
+< connection: keep-alive
+< keep-alive: timeout=5
+<
+< no such todo
+> DELETE /api/todos/1e2
+< 404
+< content-type: text/plain; charset=utf-8
+< content-length: 12
+< connection: keep-alive
+< keep-alive: timeout=5
+<
+< no such todo
+> PATCH /api/todos
+< 405
+< content-type: text/plain; charset=utf-8
+< allow: GET, POST
+< content-length: 18
+< connection: keep-alive
+< keep-alive: timeout=5
+<
+< method not allowed
+> GET /api/todos/1
+< 405
+< content-type: text/plain; charset=utf-8
+< allow: PUT, DELETE
+< content-length: 18
+< connection: keep-alive
+< keep-alive: timeout=5
+<
+< method not allowed
+> GET /api/nothing
+< 404
+< content-type: text/plain; charset=utf-8
+< content-length: 13
+< connection: keep-alive
+< keep-alive: timeout=5
+<
+< no such route
+> GET /api/shutdown
+< 405
+< content-type: text/plain; charset=utf-8
+< allow: POST
+< content-length: 18
+< connection: keep-alive
+< keep-alive: timeout=5
+<
+< method not allowed
+> GET /
+< 404
+< content-type: text/plain; charset=utf-8
+< content-length: 51
+< connection: keep-alive
+< keep-alive: timeout=5
+<
+< no such file: build the page first (see the README)
+> GET /_main.mjs
+< 404
+< content-type: text/plain; charset=utf-8
+< content-length: 51
+< connection: keep-alive
+< keep-alive: timeout=5
+<
+< no such file: build the page first (see the README)
+> GET /../secret.txt
+< 404
+< content-type: text/plain; charset=utf-8
+< content-length: 12
+< connection: keep-alive
+< keep-alive: timeout=5
+<
+< no such file
+> GET /.beni-cache/x.json
+< 404
+< content-type: text/plain; charset=utf-8
+< content-length: 12
+< connection: keep-alive
+< keep-alive: timeout=5
+<
+< no such file
+> GET /logo.png
+< 404
+< content-type: text/plain; charset=utf-8
+< content-length: 12
+< connection: keep-alive
+< keep-alive: timeout=5
+<
+< no such file
+> POST /index.html
+< 405
+< content-type: text/plain; charset=utf-8
+< allow: GET, HEAD
+< content-length: 18
+< connection: keep-alive
+< keep-alive: timeout=5
+<
+< method not allowed
+> POST /api/shutdown
+< 200
+< content-type: text/plain; charset=utf-8
+< connection: close
+< content-length: 8
+<
+< stopping
+--- stdout ---
+todo server stopped
+--- stderr ---
+--- exit 0 ---
