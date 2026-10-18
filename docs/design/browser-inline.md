@@ -184,8 +184,9 @@ program site calls them.
 *Amended 2026-10-17 (S1, #297):* the pieces are of three kinds, each named by its declaration and
 an ordinal as above: a lifted lambda, `<Module>$<declaration>$$lift$<n>`; an **arm piece**,
 `<Module>$<declaration>$$arm$<n>`, one branch of a `case` at which the key tree splits a message;
-and the **view pieces** of a markup root another module's program uses, its binding functions
-`<Module>$<declaration>$bind$<n>$<k>` and its event wiring `<Module>$<declaration>$on$<n>`
+and the **view pieces** of a markup root another module's program uses, its HTML string
+`<Module>$<declaration>$$html$<n>`, its binding functions
+`<Module>$<declaration>$$bind$<n>$<k>` and its event wiring `<Module>$<declaration>$$on$<n>`
 (§8.4, amended 2026-10-18). The program site knows an arm piece by its name and parameters and a view piece by the
 facts `programPiece` gives (§8.4), never by its body.
 
@@ -344,17 +345,21 @@ program site by name (option 2 of §7, extended to `update` and `view`).
   `emit/release/inline/ArmPiece/`). A key whose split inside another module is followed by a
   further split in a function that branch's arm calls is `deep_split`, a limit of the compiler.
 - **View pieces**, of a `view` (or a function `view` calls through `Html.map`) of another module,
-  on one call path: `<Module>$<declaration>$bind$<n>$<k>`, one per binding function (§8.2's
+  on one call path: `<Module>$<declaration>$$bind$<n>$<k>`, one per binding function (§8.2's
   grouping), taking `E` — the root's top element's descendants, which the program site finds with
-  one `querySelectorAll` — then the function's parameters; and `<Module>$<declaration>$on$<n>`,
+  one `querySelectorAll` — then the function's parameters; and `<Module>$<declaration>$$on$<n>`,
   taking `E` and one handler per constructor the root's events send, in the order of each's first
   event, which wires every event of the root: the handler called with none, or with the payload
   through the event's extractor. The program site passes each handler of the key the constructor
   reaches through the `Html.map`s around the call, each a constructor of one field — the key's own
   handler when its leaf is that constructor, or, when its leaf is a map's constructor, a function
   that makes the message below the leaf from the constructor's fields and calls it. Any other
-  handler value is a limit of the compiler. The root's static markup is not a piece: the facts carry
-  it, and the program site writes it into its own HTML string, in its place.
+  handler value is a limit of the compiler. The root's static markup is the piece
+  `<Module>$<declaration>$$html$<n>`, a string with every end tag of its top element written, since
+  the program site's string goes on after it; the program site writes it into its own string as a
+  template, `<div>${W1$view$$html$0}</div>`, and the release optimiser folds the template, the
+  constant being used once, into one string. An element before it keeps its end tag, since the
+  program site does not read the piece's string, and nothing in the piece is left open.
 - **Names and numbers** are input-derived: a piece's `n` counts the pieces of its declaration
   before it, in the order the pass meets them, and `k` its binding functions in document order
   (CLAUDE.md rule 5). *Amended 2026-10-18 (as built):* the pieces pre-pass, serial and before any
@@ -362,7 +367,7 @@ program site by name (option 2 of §7, extended to `update` and `view`).
   write-set pass's sites, its declaration, its call path, and whether anything but the program's
   own markup functions names the declaration (if not, the declaration is written only as its
   pieces) — and the **owning module's lowering** computes the facts (`Lowering.piece`): its
-  groups, bakes, element ordinals, static markup and events, with the program's write-set facts on
+  groups, bakes, element ordinals and events, and exports the static markup, with the program's write-set facts on
   the root's call path. A module is lowered in a wave one past every module whose pieces it reads,
   so a program site reads facts no worker is still writing; the waves are input-derived, and the
   output is the same at every `--jobs`. A root a program shows at more than one place, or one not
