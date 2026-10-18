@@ -5075,8 +5075,8 @@ header is set and before the first byte is sent**, so a fault leaves nothing beh
 The sibling catches exactly those two codes, from those two calls, and nothing else; the
 `ERR_HTTP_INVALID_HEADER_VALUE` of `validateHeaderValue` cannot happen with a `String`, and
 `ERR_HTTP_HEADERS_SENT` cannot happen with one write. **An invalid response is answered with
-`500`, an empty body and no header of the program's**, and the sibling writes one line to
-standard error: `beni: Http.Server: the response to GET /x is invalid: status 1000 is not an
+`500`, `content-length: 0`, an empty body and no header of the program's**, and the sibling
+writes one line to standard error: `beni: Http.Server: the response to GET /x is invalid: status 1000 is not an
 integer from 200 to 999`. It is not a defect: the handler returned a value of the right type, the
 client gets a well-formed answer, and the server stays up. It is not silent either. The two
 headers belong to the transport because a wrong one hangs the client: a `content-length` under
@@ -5122,7 +5122,7 @@ for this module. "Thrown again" means the error is a defect, and the process end
 | the server | `checkExpectation` (any other `Expect`) | left to Node: 417 |
 | the server | `connect` (a `CONNECT` request) | left to Node: the socket is destroyed |
 | the server | `upgrade` (an `Upgrade` header) | left to Node: an ordinary request, which reaches the handler |
-| the response | `ERR_INVALID_HTTP_TOKEN` or `ERR_INVALID_CHAR` from the two validators, a status Node refuses, a body on 204, 205 or 304 | an invalid response: 500 and a line on standard error |
+| the response | `ERR_INVALID_HTTP_TOKEN` or `ERR_INVALID_CHAR` from the two validators, a status outside 200 to 999, a body on 204, 205 or 304, a `content-length` or `transfer-encoding` of the program's | an invalid response: 500 and a line on standard error |
 | the response | `res.destroyed` before the write | the write is dropped: the client is gone |
 | the response | the socket fails during the write (`ECONNRESET`, `EPIPE`) | `clientError`, the same default handler: nothing is writable, so the socket is destroyed |
 | the response | any other throw | thrown again |
@@ -5166,9 +5166,13 @@ by `node out/_main.mjs`; its transcript is the golden. The driver:
    `(closed by the server)`. A step `{"cut": {...request..., "declared": 10}}` sends the headers
    with that `content-length`, the body given, then resets the connection. A step
    `{"signal": "SIGTERM"}` sends the signal. A step `{"fault": "listen:EPROTO"}` or
-   `{"fault": "request:EIO"}`, first in a script, makes the preload fail the next `listen`, or
-   the next request's read, with that code: the one way to force an error the platform does not
-   name, which §4.1's testable form asks a `run/` scenario to do and assert the crash.
+   `{"fault": "request:EIO"}` or `{"fault": "server:EMFILE"}`, first in a script, makes the
+   preload fail the next `listen` (a list of codes, `listen:EMFILE,ENFILE`, fails the next
+   `listen`s in turn), the next request's read, or the server once it listens, with that code,
+   shaped as Node shapes the error: the one way to force an error the platform does not name,
+   which §4.1's testable form asks a `run/` scenario to do and assert the crash, and the one way
+   to reach a code the test host cannot produce. A `{a*20000}` inside a `raw` step's bytes is
+   that many of the character, and the transcript keeps the placeholder.
 3. After the last step, waits up to 5 s for the program to exit, then prints `--- stdout ---`,
    `--- stderr ---` and `--- exit <code> ---` (or `--- exit signal <name> ---`, or
    `--- exit killed: still running after the last step ---` after a SIGKILL). Standard error is
@@ -5176,17 +5180,31 @@ by `node out/_main.mjs`; its transcript is the golden. The driver:
    absolute path becomes `<project>`, lines that start with `    at ` are dropped, and the
    `Node.js v…` line is dropped.
 
-**The first slice's fixtures**, covering every row of (e) but the four events Node answers by
-itself, which the probe behind (c) settled: `HttpServerBasics`; `HttpServerListenErrors`
-(`AddressInUse`, `AddressNotAvailable`, `HostNotFound`, and `InvalidPort` for 70000, -1 and
-65536 — `EACCES` has none, since a port under 1024 binds as root and on macOS);
-`HttpServerInvalidResponse` (status 1000 and 100, a body on 204 and on 205, a 204 with no body,
-a bad header name, a bad header value, `Content-Length` and `transfer-encoding` of the program's);
-`HttpServerDuplicateHeaders` (two `set-cookie`); `HttpServerBadClients` (a body cut short, bytes
-no parser accepts, a client gone before its answer); `HttpServerCloseFromHandler` (the
-program's `connection: keep-alive` replaced after `close`) and `HttpServerCloseThenInvalid` (the
-500 after `close` ends its connection too); `HttpServerOwnerEnds`; `HttpServerCrashOnListen` and
-`HttpServerCrashOnRequest`.
+**The first slice's fixtures**, the one list every fixture this section names is on, by the
+rows of (e):
+
+- `listen`: `HttpServerListenErrors` (`AddressInUse`, `AddressNotAvailable` by `EADDRNOTAVAIL`,
+  `HostNotFound` by `ENOTFOUND`, `InvalidPort` for 70000, -1 and 65536, all produced by the
+  host); `HttpServerListenInjected` (`TooManyOpenFiles` by `EMFILE` and `ENFILE`,
+  `AddressNotAvailable` by `EAFNOSUPPORT`, `HostNotFound` by `EAI_AGAIN` and `EAI_FAIL`, each
+  injected, since no test host produces them on demand); `HttpServerCrashOnListen` and
+  `HttpServerCrashOnListenAfterCancel` (`EPROTO`, injected, with and without a fiber still
+  waiting for the bind). `EACCES` has no fixture: a port under 1024 binds as root and on macOS.
+- the server once it listens: `HttpServerCrashOnAccept` (`EMFILE`, injected on the server).
+- the body read: `HttpServerBadClients` (a body cut short) and `HttpServerCrashOnRequest`
+  (`EIO`, injected).
+- the server's `clientError`: `HttpServerBadClients` (bytes no parser accepts, 400; a header
+  block over `maxHeaderSize`, 431). 408 has no fixture: it needs `requestTimeout`, 300 s.
+- the four events Node answers by itself: no fixture; the probe behind (c) settled them.
+- the response: `HttpServerInvalidResponse` (status 1000 and 100, a body on 204 and on 205, a
+  204 with no body, a 205 with no body, a bad header name, a bad header value, `Content-Length`
+  and `transfer-encoding` of the program's); `HttpServerDuplicateHeaders` (two `set-cookie`);
+  `HttpServerBadClients` (a client gone before its answer, the write dropped; a client gone
+  during a 16 MiB write, the socket's error left to Node); `HttpServerCloseFromHandler` (the
+  program's `connection: keep-alive` replaced after `close`) and `HttpServerCloseThenInvalid`
+  (the 500 after `close` ends its connection too).
+- the lifetime, (b): `HttpServerOwnerEnds` and `HttpServerOwnerEndsAtOnce`.
+- the basics, (a) and (c): `HttpServerBasics`.
 
 Each build's verdict is recorded as a run hash (`run_hash.lineWith`, as `browser/` records its
 page): the digest covers what a `run/` one covers — the output tree, the golden, the Node version
@@ -5196,10 +5214,11 @@ program processes, and no fixture sleeps for real.
 
 **(i) The owner's decisions**, taken on the dashboard on 2026-10-17 at 23:54 CEST. The PR's
 review (2026-10-17) found five gaps in (d) and (e); each is settled above with a probe or a
-stated crash. Its second pass and the owner's two findings (2026-10-17, 22:01 UTC) added the events Node
+stated crash. Its second pass and the owner's two findings (2026-10-18, 00:01 CEST) added the events Node
 answers by itself, duplicate headers, `connection` after `close`, 205, the size limit owed, and
 why an invalid response is not a defect; each is settled above. Its third pass (2026-10-18)
-added the 500 after `close`, 205's `content-length: 0`, and the wording of (e), (h) and (j).
+added the 500 after `close`, 205's `content-length: 0`, and the wording of (e), (h) and (j); its
+fourth made (h) the one list of fixtures, with the rows that have none and why.
 
 - Decision 1, a defect in a handler (`node-http-q1`): **stop the process**. Rule 9 does not
   change; (f) has the rule.
