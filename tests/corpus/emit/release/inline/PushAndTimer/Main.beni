@@ -3,7 +3,7 @@
 -- (`Push.onPush`, `Interval.every`, unchanged but for the platform name):
 -- each start is lifted in its own module and called from the mount, the
 -- push decoded in its arm by a `read` whose `Err` payload nothing reads —
--- a validator (`schema.md` §6) — and the one text binding written in the
+-- a shape run (`schema.md` §6) — and the one text binding written in the
 -- dispatch's write pass. No message, no `core/Task`, no `core/Dict`.
 import Browser
 import Cmd exposing (Cmd)

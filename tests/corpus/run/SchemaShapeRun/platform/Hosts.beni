@@ -1,0 +1,84 @@
+--! Host values JSON cannot make, for the shape runs' fixture (`schema.md`
+--! §6, *A validator run is a shape that one shared validator reads*): what
+--! `Schema.read` and `Json.decodeValue` are handed from JavaScript code.
+
+import Js
+import Schema exposing (Value)
+
+
+--| `JSON.parse` of the text.
+pub parse : String → Value
+parse text = Js.to (Js.call (Js.global "JSON") "parse" [ Js.from text ])
+
+
+--| A copy of object `v` with key `k` set to `x`.
+pub with : Value, String, Value → Value
+with v k x =
+    copy = Js.call (Js.global "Object") "assign" [ Js.object [], Js.from v ]
+    Js.set copy k (Js.from x)
+    Js.to copy
+
+
+--| `NaN`, `Infinity` and `undefined` as host values.
+pub nan : ⊤ → Value
+nan ⊤ = Js.to (Js.get (Js.global "Number") "NaN")
+
+
+pub infinity : ⊤ → Value
+infinity ⊤ = Js.to (Js.get (Js.global "Number") "POSITIVE_INFINITY")
+
+
+pub undefined : ⊤ → Value
+undefined ⊤ = Js.to Js.undefined
+
+
+--| An object with no own key that inherits every key of `proto`.
+pub inheriting : Value → Value
+inheriting proto = Js.to (Js.call (Js.global "Object") "create" [ Js.from proto ])
+
+
+--| An object whose keys are getters for those of `keys` that `v` owns,
+--| each answering `v`'s value and logging its name; `reads` answers the
+--| keys logged since the last call, in order, a key read twice in a row
+--| once: the library engine reads a field's key twice, to test it and to
+--| take it, where the compiled paths read it once.
+pub logged : Value, List String → Value
+logged v keys =
+    log = logOf ⊤
+    out = Js.object []
+    _ = List.map keys λk →
+        if not (Js.to (Js.call (Js.global "Object") "hasOwn" [ Js.from v, Js.from k ])) then
+            Js.undefined
+        else
+            Js.call (Js.global "Object") "defineProperty"
+                [ out
+                , Js.from k
+                , Js.object
+                    [ ( "get"
+                      , Js.from λ⊤ →
+                          _ = Js.call log "push" [ Js.from k ]
+                          Js.get (Js.from v) k
+                      )
+                    , ( "enumerable", Js.from True )
+                    ]
+                ]
+    Js.to out
+
+
+pub reads : ⊤ → String
+reads ⊤ =
+    log = logOf ⊤
+    kept = Js.call log "filter" [ Js.from λk i → i == 0 || not (Js.same k (Js.at log (i - 1))) ]
+    text = Js.to (Js.call kept "join" [ Js.from "," ])
+    Js.set log "length" (Js.from 0)
+    text
+
+
+logOf : ⊤ → Js.Value
+logOf ⊤ =
+    g = Js.global "globalThis"
+    if Js.isUndefined (Js.get g "__shapeReads") then
+        Js.set g "__shapeReads" (Js.array [])
+        Js.get g "__shapeReads"
+    else
+        Js.get g "__shapeReads"

@@ -1,0 +1,6 @@
+--! A schema another module's shape names: its shape is this module's
+--! constant, imported where it is read.
+
+pub schema Point =
+    x : Int
+    y : Int

@@ -1,0 +1,46 @@
+-- A `read` whose `Err` payload nothing reads, over a schema with no shape
+-- (`schema.md` §6, *A validator run is a shape that one shared validator
+-- reads*): `via` runs program code, so the run keeps the declaration's
+-- validator worker (§6, *A run whose failure is never read is a validator*),
+-- called directly as `S.schema ⊤` of a nongeneric declaration is: it makes
+-- no issue, writes no message and builds no schema value. `ValidatorRun` is
+-- this program without the `via`, a shape run.
+import Node
+import Schema exposing (Value)
+
+
+schema Event tagged "type" of
+    Set as "set"
+        value : Int via doubled
+    Reset as "reset"
+
+
+doubled : Schema.Conversion Int Int
+doubled = Schema.conversion (λn → Ok (n * 2)) λn → Ok (n // 2)
+
+
+classify : Value → String
+classify v =
+    case Schema.read (Event.schema ⊤) v of
+        Ok (Event.Set event) →
+            "set " ++ String.fromInt event.value
+
+        Ok Event.Reset →
+            "reset"
+
+        Err _ →
+            "invalid"
+
+
+line : String → String
+line text =
+    case Schema.parse Schema.value text of
+        Ok v →
+            classify v
+
+        Err _ →
+            "not JSON"
+
+
+main : Node.Program
+main = Node.print (line "{\"type\": \"set\", \"value\": 3}")

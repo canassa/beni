@@ -1,0 +1,57 @@
+good: { alpha = "a", count = Null, extra = <internals>, mid = 2.5, note = Missing, toString = Missing, tree = Branch { children = [Leaf { value = -1 }], value = 0.5 }, zeta = 1 } | { alpha = "a", count = Null, extra = <internals>, mid = 2.5, note = Missing, toString = Missing, tree = Branch { children = [Leaf { value = -1 }], value = 0.5 }, zeta = 1 }
+own toString: { alpha = "a", count = Null, extra = <internals>, mid = 2.5, note = Missing, toString = Present "own", tree = Branch { children = [Leaf { value = -1 }], value = 0.5 }, zeta = 1 } | { alpha = "a", count = Null, extra = <internals>, mid = 2.5, note = Missing, toString = Present "own", tree = Branch { children = [Leaf { value = -1 }], value = 0.5 }, zeta = 1 }
+toString not a string: invalid | invalid (1)
+inherited fields: { alpha = "a", count = Null, extra = <internals>, mid = 2.5, note = Missing, toString = Missing, tree = Branch { children = [Leaf { value = -1 }], value = 0.5 }, zeta = 1 } | { alpha = "a", count = Null, extra = <internals>, mid = 2.5, note = Missing, toString = Missing, tree = Branch { children = [Leaf { value = -1 }], value = 0.5 }, zeta = 1 }
+note undefined: { alpha = "a", count = Null, extra = <internals>, mid = 2.5, note = Missing, toString = Missing, tree = Branch { children = [Leaf { value = -1 }], value = 0.5 }, zeta = 1 } | { alpha = "a", count = Null, extra = <internals>, mid = 2.5, note = Missing, toString = Missing, tree = Branch { children = [Leaf { value = -1 }], value = 0.5 }, zeta = 1 }
+zeta undefined: invalid | invalid (1)
+extra keys: { alpha = "a", count = Null, extra = <internals>, mid = 2.5, note = Missing, toString = Missing, tree = Branch { children = [Leaf { value = -1 }], value = 0.5 }, zeta = 1 } | { alpha = "a", count = Null, extra = <internals>, mid = 2.5, note = Missing, toString = Missing, tree = Branch { children = [Leaf { value = -1 }], value = 0.5 }, zeta = 1 }
+zeta 1.5: invalid | invalid (1)
+zeta 2^53: invalid | invalid (1)
+zeta NaN: invalid | invalid (1)
+mid NaN: invalid | invalid (1)
+mid infinity: invalid | invalid (1)
+tree value NaN: { alpha = "a", count = Null, extra = <internals>, mid = 2.5, note = Missing, toString = Missing, tree = Leaf { value = NaN }, zeta = 1 } | { alpha = "a", count = Null, extra = <internals>, mid = 2.5, note = Missing, toString = Missing, tree = Leaf { value = NaN }, zeta = 1 }
+count 3: { alpha = "a", count = NonNull 3, extra = <internals>, mid = 2.5, note = Missing, toString = Missing, tree = Branch { children = [Leaf { value = -1 }], value = 0.5 }, zeta = 1 } | { alpha = "a", count = NonNull 3, extra = <internals>, mid = 2.5, note = Missing, toString = Missing, tree = Branch { children = [Leaf { value = -1 }], value = 0.5 }, zeta = 1 }
+count missing: invalid | invalid (1)
+extra missing: invalid | invalid (1)
+extra null: { alpha = "a", count = Null, extra = <internals>, mid = 2.5, note = Missing, toString = Missing, tree = Branch { children = [Leaf { value = -1 }], value = 0.5 }, zeta = 1 } | { alpha = "a", count = Null, extra = <internals>, mid = 2.5, note = Missing, toString = Missing, tree = Branch { children = [Leaf { value = -1 }], value = 0.5 }, zeta = 1 }
+an array: invalid | invalid (1)
+null: invalid | invalid (1)
+tree 169 deep: 169 deep | 169 deep
+tree 170 deep: invalid | invalid (1)
+children not a list: invalid | invalid (1)
+getters, good: { alpha = "a", count = Null, extra = <internals>, mid = 2.5, note = Missing, toString = Missing, tree = Branch { children = [Leaf { value = -1 }], value = 0.5 }, zeta = 1 } [zeta,the-alpha,mid,count,extra,tree] | { alpha = "a", count = Null, extra = <internals>, mid = 2.5, note = Missing, toString = Missing, tree = Branch { children = [Leaf { value = -1 }], value = 0.5 }, zeta = 1 } [zeta,the-alpha,mid,count,extra,tree]
+getters, mid bad: invalid [zeta,the-alpha,mid] | invalid (1) [zeta,the-alpha,mid]
+getters, alpha bad: invalid [zeta,the-alpha] | invalid (1) [zeta,the-alpha]
+set: set 3 | set 3
+move: move 1 2 | move 1 2
+reset: reset | reset
+unknown tag: invalid | invalid (1)
+tag a number: invalid | invalid (1)
+tag inherited: reset | reset
+tag toString: invalid | invalid (1)
+no tag: invalid | invalid (1)
+set NaN: invalid | invalid (1)
+parse set: set 4 | set 4
+parse not JSON: invalid | invalid (1)
+parse move 1.5: invalid | invalid (1)
+placed: p at 1, 2 | p at 1, 2
+placed y 1.5: invalid | invalid (1)
+item: { color = Rgb 1 2 3, label = Just "l", pos = (1,2), small = 7, tags = [Just 'x',Nothing,Just 'y'], unit = ⊤ } | { color = Rgb 1 2 3, label = Just "l", pos = (1,2), small = 7, tags = [Just 'x',Nothing,Just 'y'], unit = ⊤ }
+gray: { color = Gray 5, label = Just "l", pos = (1,2), small = 7, tags = [Just 'x',Nothing,Just 'y'], unit = ⊤ } | { color = Gray 5, label = Just "l", pos = (1,2), small = 7, tags = [Just 'x',Nothing,Just 'y'], unit = ⊤ }
+red: { color = Red, label = Just "l", pos = (1,2), small = 7, tags = [Just 'x',Nothing,Just 'y'], unit = ⊤ } | { color = Red, label = Just "l", pos = (1,2), small = 7, tags = [Just 'x',Nothing,Just 'y'], unit = ⊤ }
+red with arguments: invalid | invalid (1)
+gray without: invalid | invalid (1)
+rgb two: invalid | invalid (1)
+two keys: invalid | invalid (1)
+constructor key: invalid | invalid (1)
+label missing: { color = Rgb 1 2 3, label = Nothing, pos = (1,2), small = 7, tags = [Just 'x',Nothing,Just 'y'], unit = ⊤ } | { color = Rgb 1 2 3, label = Nothing, pos = (1,2), small = 7, tags = [Just 'x',Nothing,Just 'y'], unit = ⊤ }
+label null: { color = Rgb 1 2 3, label = Nothing, pos = (1,2), small = 7, tags = [Just 'x',Nothing,Just 'y'], unit = ⊤ } | { color = Rgb 1 2 3, label = Nothing, pos = (1,2), small = 7, tags = [Just 'x',Nothing,Just 'y'], unit = ⊤ }
+pos three: invalid | invalid (1)
+pos 1.5: invalid | invalid (1)
+tag two characters: invalid | invalid (1)
+small 2^31: invalid | invalid (1)
+unit one: invalid | invalid (1)
+decode: { color = Red, label = Nothing, pos = (3,4), small = -1, tags = [], unit = ⊤ } | { color = Red, label = Nothing, pos = (3,4), small = -1, tags = [], unit = ⊤ }
+decode bad: invalid | invalid (1)
+decode not JSON: invalid | invalid (1)
