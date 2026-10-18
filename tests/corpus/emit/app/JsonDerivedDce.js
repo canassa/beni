@@ -71,7 +71,8 @@ const JsonDerivedDce$title = (text$1) => {
     const entry$2 = $t$1.a;
     return Basics$append(entry$2.title, String$fromInt(entry$2.rank));
   } else {
-    return "";
+    const issues$3 = $t$1.a;
+    return String$fromInt(issues$3.length);
   }
 };
 const JsonDerivedDce$main = Node$printLines([JsonDerivedDce$title("{\"title\":\"t\",\"rank\":1}")]);

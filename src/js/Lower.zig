@@ -629,7 +629,14 @@ pub fn lower(
     try l.findInlines();
     try l.findPrograms();
     // `schema.md` §6: the runs that compile to a validator.
-    l.valid_sites = try SchemaValid.sites(l.scratch, l.in.graph, l.in.interfaces, if (l.in.schemas) |sg| sg.provenance else &.{}, l.interner, l.bir, l.in.module, l.in.schemas, l.in.schema_library);
+    l.valid_sites = try SchemaValid.sites(l.scratch, l.in.graph, l.in.interfaces, if (l.in.schemas) |sg| sg.provenance else &.{}, l.interner.global, l.bir, l.in.dispatch, l.in.module, l.in.schemas, l.in.schema_library);
+    // Reachability found the module's validator runs from its own dispatch
+    // table (`Reach.Result.dispatch`); the runs this lowering writes must be
+    // the ones it kept, or a `Json` run would name a worker set it dropped.
+    if (std.debug.runtime_safety) if (l.in.live) |r| if (l.in.module.int() < r.dispatch.len and r.dispatch[l.in.module.int()] != l.in.dispatch) {
+        const reached = try SchemaValid.sites(l.scratch, l.in.graph, l.in.interfaces, if (l.in.schemas) |sg| sg.provenance else &.{}, l.interner.global, l.bir, r.dispatch[l.in.module.int()], l.in.module, l.in.schemas, l.in.schema_library);
+        if (!reached.sameRuns(l.valid_sites)) std.debug.panic("SchemaValid: reachability and lowering found different validator runs in module {d}", .{l.in.module.int()});
+    };
 
     // Declarations first: the import list is what lowering DISCOVERS (the
     // §9.1 reference edges are a byproduct of resolution, not a pass), so
@@ -5345,7 +5352,7 @@ pub const Lowerer = struct {
         const d = l.bir.instData(inst);
         const p = l.pos(inst);
         if (l.valid_sites.callees.len != 0 and SchemaValid.has(l.valid_sites.callees, inst.int()))
-            return l.coreSchemaValue(if (SchemaValid.has(l.valid_sites.direct_callees, inst.int())) "validRun" else "readValid", p);
+            return l.coreSchemaValue(l.valid_sites.runner(inst.int()), p);
         return switch (l.bir.instTag(inst)) {
             .local => try l.ident(try l.localName(d.lhs), p),
             // A markup primitive is the markup runtime's export of its name
@@ -8276,6 +8283,21 @@ pub const Lowerer = struct {
             args[0] = typed.descriptor;
             @memcpy(args[1..], values);
             return l.suspension(out, inst, try l.call(typed.callee, args, p));
+        };
+
+        // A `Json` validator run (`schema.md` §6, *A run whose failure is
+        // never read is a validator*): `validRun` or `validParse` of its
+        // codec's validator worker. The reference itself has nothing to
+        // evaluate.
+        if (l.valid_sites.json_calls.len != 0) if (l.valid_sites.codecOfCall(inst.int())) |k| {
+            const written = try l.exprList(out, l.bir.subRange(@fromBackingInt(@intCast(d.rhs))));
+            l.region = inst;
+            const sg = l.in.schemas.?;
+            const args = try l.scratch.alloc(Node.Index, written.len + 1);
+            args[0] = try SchemaLower.validWorker(l, sg.codecTarget(l.in.module, k), p);
+            @memcpy(args[1..], written);
+            const runner = try l.coreSchemaValue(l.valid_sites.jsonRunner(inst.int()), p);
+            return l.suspension(out, inst, try l.call(runner, args, p));
         };
 
         // A `Json` call whose evidence is a derived codec of this module is

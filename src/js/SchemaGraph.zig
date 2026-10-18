@@ -204,7 +204,7 @@ pub const compiled_values = [_][]const u8{
     "describedMaybe",  "describedMaybeField", "derivedChar",     "derivedInt32",      "derivedNever",
     "hostWorker",
     // `read` as a validator (schema.md §6).
-         "readValid",           "readValidSlot",   "validRun",
+         "readValid",           "readValidSlot",   "validRun",          "validParse",
 };
 
 pub fn isCompiledValue(text: []const u8) bool {

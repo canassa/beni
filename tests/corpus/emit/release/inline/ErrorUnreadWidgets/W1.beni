@@ -1,0 +1,23 @@
+--! A counter whose state the host may replace.
+
+import Json
+import Schema exposing (Value)
+
+
+pub type alias Model =
+    sheets : Int
+    tone : String
+
+
+pub init : ⊤ → Model
+init ⊤ = { sheets = 11, tone = "Review" }
+
+
+pub replace : Value, Model → Model
+replace state model =
+    case Json.decodeValue state of
+        Ok new →
+            { sheets = new.sheets, tone = new.tone }
+
+        Err _ →
+            model

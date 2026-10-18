@@ -4,7 +4,10 @@
 --   - `title` decodes an `Entry`: its definition is a decoding worker that
 --     checks each field in place — no description, no `core/Schema`
 --     builder, no interpreter — and the call of `Json.decode` is the
---     definition's own `parse`, as a declaration's `S.parse` is.
+--     definition's own `parse`, as a declaration's `S.parse` is. Its
+--     error is read: a run whose error nothing reads would be a validator
+--     (`schema.md` §6, *A run whose failure is never read is a
+--     validator*).
 --   - Nothing prints, so `Entry`'s encoding worker is gone.
 --   - `unused` decodes another record and nothing calls it: it and its
 --     definition are gone entire.
@@ -24,8 +27,8 @@ title text =
         Ok entry →
             entry.title ++ String.fromInt entry.rank
 
-        Err _ →
-            ""
+        Err issues →
+            String.fromInt (List.length issues)
 
 
 unused : String → Result (List Issue) { other : Bool }

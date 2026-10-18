@@ -927,6 +927,8 @@ pub const Builder = struct {
     /// of `read` (`SchemaValid`).
     read_valid: ?Node = null,
     valid_run: ?Node = null,
+    /// `core/Schema`'s `validParse`, which a validator `parse` calls.
+    valid_parse: ?Node = null,
     /// The shared walk's output for one node, cleared and refilled per
     /// node: a caller-owned buffer, so the whole module's edges cost one
     /// allocation.
@@ -953,6 +955,7 @@ pub const Builder = struct {
             .schema_guarded = in.schemaGuarded(),
             .read_valid = in.coreDeclNamed(.Schema, "readValid"),
             .valid_run = in.coreDeclNamed(.Schema, "validRun"),
+            .valid_parse = in.coreDeclNamed(.Schema, "validParse"),
         };
     }
 
@@ -980,7 +983,7 @@ pub const Builder = struct {
         // its instruction adds no edge and the sibling is not imported.
         const in_place = try b.jsInPlace(bir, m);
         const sg_now = b.schemaGraph();
-        const valid: SchemaValid.Sites = if (b.in.interner) |it| try SchemaValid.sites(b.scratch, b.in.graph, b.in.interfaces, b.in.provenance, it, bir, m, if (sg_now) |*g| g else null, b.in.schema_library) else .{};
+        const valid: SchemaValid.Sites = if (b.in.interner) |it| try SchemaValid.sites(b.scratch, b.in.graph, b.in.interfaces, b.in.provenance, it, bir, dispatch, m, if (sg_now) |*g| g else null, b.in.schema_library) else .{};
 
         const decl_at = try b.scratch.alloc(u32, bir.decls.len + 1);
         var decl_targets: std.ArrayList(Target) = .empty;
@@ -1010,12 +1013,24 @@ pub const Builder = struct {
                 if (position != Edges.no_position and b.cut(m, position)) continue;
                 // A validator run calls `readValid`, not `read` (`SchemaValid`).
                 if (position != Edges.no_position and SchemaValid.has(valid.callees, position)) {
-                    const runner = if (SchemaValid.has(valid.direct_callees, position)) b.valid_run else b.read_valid;
+                    const runner = if (SchemaValid.has(valid.parse_callees, position)) b.valid_parse else if (SchemaValid.has(valid.direct_callees, position)) b.valid_run else b.read_valid;
                     if (runner) |rv| {
                         try decl_targets.append(b.scratch, .{ .node = rv, .chain = guards.at(position) });
                         continue;
                     }
                 }
+                if (position != Edges.no_position and SchemaValid.has(valid.json_callees, position)) continue;
+                // A `Json` validator run calls `validRun` or `validParse`
+                // with its codec's validator workers: its callee is not
+                // called and its codec's value is not made.
+                if (position != Edges.no_position) if (valid.codecOfCall(position)) |k| {
+                    if (edge == .codec and k == edge.codec) {
+                        try decl_targets.append(b.scratch, .{ .node = schemaNode(.{ .module = m, .decl = @intCast(bir.decls.len + k) }, .read_valid), .chain = guards.at(position) });
+                        const runner = if (SchemaValid.has(valid.json_parses, position)) b.valid_parse else b.valid_run;
+                        if (runner) |rv| try decl_targets.append(b.scratch, .{ .node = rv, .chain = guards.at(position) });
+                        continue;
+                    }
+                };
                 // A leg-1 row has no position. The `.top` instruction made
                 // with it is guarded where it stands, so the row adds an
                 // edge only when no instruction names its target.
