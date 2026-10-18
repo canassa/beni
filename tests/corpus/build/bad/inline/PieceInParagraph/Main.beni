@@ -1,0 +1,40 @@
+-- `Counter.view`'s `<div>` placed inside a `<p>` of the program's markup
+-- (#373): the parser closes the paragraph before the `div`, and turns the
+-- stray `</p>` into an empty paragraph of its own, which shifts the element
+-- table. The program site checks the piece's markup in the scope it places
+-- it in, as it checks its own, and reports `markup_restructured`
+-- (docs/design/browser-inline.md §8.4).
+import Browser
+import Counter
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    c : Counter.Model
+
+
+type Msg
+    = CounterMsg Counter.Msg
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        CounterMsg sub →
+            { model | c = Counter.update sub model.c }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <p data-role="para">before {Html.map (Counter.view model.c) CounterMsg}</p>
+        <span data-role="after">after</span>
+    </main>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → { c = Counter.init ⊤ }, update = update, view = view })
+        "root"

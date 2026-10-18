@@ -2667,6 +2667,8 @@ const Emitter = struct {
             }
             effects = found;
         }
+        // A lowering whose handlers take a key's leaf fields (`Lowering.arm_fields`).
+        const arm_fields = if (e.options.platform.lowering) |name| (if (findLowering(name)) |lw| lw.arm_fields else false) else false;
         const w = try Writes.init(.{
             .gpa = e.gpa,
             .graph = e.graph(),
@@ -2679,9 +2681,11 @@ const Emitter = struct {
             .targets = targets,
             .effects = effects,
             // `browser-inline` refuses a capped key, so the caps that only
-            // bound precision are lifted for it (`write-sets.md`, *The caps*).
-            .lift_caps = if (e.options.platform.lowering) |name| (if (findLowering(name)) |lw| lw.arm_fields else false) else false,
-            .follow_single = if (e.options.platform.lowering) |name| (if (findLowering(name)) |lw| lw.arm_fields else false) else false,
+            // bound precision are lifted for it (`write-sets.md`, *The caps*);
+            // its handlers take a key's leaf fields, so a message of one
+            // constructor is followed to its arm. Both are the one fact.
+            .lift_caps = arm_fields,
+            .follow_single = arm_fields,
         });
         e.writes = w;
         e.writes_calls = try w.runCalls();

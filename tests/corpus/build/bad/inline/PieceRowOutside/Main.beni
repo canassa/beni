@@ -1,0 +1,35 @@
+-- Another module's markup whose top element is a `<tr>`, placed in a
+-- `<div>` of the program's (#373): the parser drops a row outside a table,
+-- which would shift the element table. The program site checks the piece's
+-- markup where it places it (`markup_restructured`,
+-- docs/design/browser-inline.md §8.4).
+import Browser
+import Grid
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    g : Grid.Model
+
+
+type Msg
+    = GridMsg Grid.Msg
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        GridMsg sub →
+            { model | g = Grid.update sub model.g }
+
+
+view : Model → Html Msg
+view model = <div data-role="app">{Html.map (Grid.view model.g) GridMsg}</div>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → { g = Grid.init ⊤ }, update = update, view = view })
+        "root"

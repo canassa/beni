@@ -171,6 +171,10 @@ const PieceData = struct {
     handlers: []const PieceHandler,
     /// The root's function's parameter count.
     arity: u32,
+    /// The static markup as a tree, which the program site checks again in
+    /// the scope it places the piece in: the parser rebuilds markup by
+    /// what is open around it, across the boundary of the piece (#373).
+    nodes: []const Html,
 };
 
 const PieceBind = struct { name: []const u8, groups: []const u32 };
@@ -208,6 +212,7 @@ fn piece(cx: *m.Context, tree: *const m.Tree, req: *const m.PieceRequest) m.Erro
     for (params_all[1..]) |*x| x.* = try cx.fresh("model");
     pg.piece_args = params_all[1..];
     try pg.group();
+    try pg.letsOnce();
     const a = req.arena;
     const binds = try a.alloc(PieceBind, pg.functions.items.len);
     for (pg.functions.items, binds, 0..) |*f, *b, j| {
@@ -288,8 +293,36 @@ fn piece(cx: *m.Context, tree: *const m.Tree, req: *const m.PieceRequest) m.Erro
     try serialise(cx.arena, &html, pg.top_nodes, null, false);
     const html_base = try std.fmt.allocPrint(a, "{s}$$html${d}", .{ req.decl, req.ordinal });
     try cx.pieceExport(html_base, try js.string(html.items));
-    data.* = .{ .html = html_base, .top = try a.dupe(u8, pg.top_nodes[0].name), .count = pg.count, .arity = cx.pieceArity(), .binds = binds, .wire = wire_name, .handlers = out_handlers };
+    data.* = .{ .html = html_base, .top = try a.dupe(u8, pg.top_nodes[0].name), .nodes = try copyHtml(a, pg.top_nodes), .count = pg.count, .arity = cx.pieceArity(), .binds = binds, .wire = wire_name, .handlers = out_handlers };
     req.facts.* = .{ .written = true, .data = data };
+}
+
+/// A deep copy of `nodes` into `a`, which outlives the lowering that made
+/// them.
+fn copyHtml(a: std.mem.Allocator, nodes: []const Html) std.mem.Allocator.Error![]const Html {
+    const out = try a.alloc(Html, nodes.len);
+    for (out, nodes) |*o, x| {
+        o.* = x;
+        o.name = try a.dupe(u8, x.name);
+        o.attributes = try a.dupe(u8, x.attributes);
+        o.children = try copyHtml(a, x.children);
+    }
+    return out;
+}
+
+/// Why the parser would rebuild `nodes` written in `scope`, or null: the
+/// same rules the walk applies to a unit's own markup (`element`).
+fn rebuilt(scope: parser.Scope, nodes: []const Html) ?[]const u8 {
+    for (nodes) |x| switch (x.kind) {
+        .text => if (parser.movesText(scope.parent)) return "the parser moves text written here out of the table",
+        .element => {
+            if (parser.misplaced(scope, x.name, false)) |why| return why;
+            if (parser.misnested(scope, x.name)) |why| return why;
+            if (!x.void) if (rebuilt(scope.enter(x.name), x.children)) |why| return why;
+        },
+        .piece => {},
+    };
+    return null;
 }
 
 /// One node of the static markup, as `serialise` writes it.
@@ -480,7 +513,7 @@ const Page = struct {
                 if (textHole(h.kind)) return limit(pg.cx, child, "`browser-inline` writes a text hole as its element's whole text, and this one stands beside an element; wrap the hole and the text around it in an element of their own");
                 if (h.kind != .html) return later(pg.cx, child, "a hole that is not text of a `String`, a `Char` or a number");
                 if (try pg.cx.programPiece(child)) |piece_facts| {
-                    try out.append(pg.a(), try pg.pieceHole(child, piece_facts, ctx));
+                    try out.append(pg.a(), try pg.pieceHole(child, piece_facts, ctx, inner));
                     continue;
                 }
                 try out.append(pg.a(), try pg.when(child, inner, ctx));
@@ -553,9 +586,12 @@ const Page = struct {
     /// An `html` hole that is another module's root, written as pieces
     /// (§8.4): its static markup in place, its elements numbered after its
     /// top element's place.
-    fn pieceHole(pg: *Page, n: m.Node.Index, facts: *const m.PieceFacts, ctx: u32) m.Error!Html {
+    fn pieceHole(pg: *Page, n: m.Node.Index, facts: *const m.PieceFacts, ctx: u32, scope: parser.Scope) m.Error!Html {
         if (!facts.written) return error.Reported;
         const data: *const PieceData = @ptrCast(@alignCast(facts.data.?));
+        // The piece's markup was checked where its own module wrote it, at a
+        // root; the parser reads it where it stands in this page (#373).
+        if (rebuilt(scope, data.nodes)) |why| return pg.cx.report(n, why);
         if (ctx != 0) return later(pg.cx, n, "another module's markup inside an `if` or a `case` of the `view`");
         try pg.pieces.append(pg.a(), .{ .node = n, .target = pg.count, .data = data });
         pg.count += 1 + data.count;
@@ -781,6 +817,7 @@ const Page = struct {
         }
         // The binding functions, each written once and called once now.
         try pg.group();
+        try pg.letsOnce();
         for (pg.pieces.items, 0..) |*u, ui| {
             u.first = @intCast(pg.functions.items.len);
             for (u.data.binds, 0..) |b, bi| try pg.functions.append(pg.a(), .{ .groups = b.groups, .piece = .{ .use = @intCast(ui), .bind = @intCast(bi) } });
@@ -1190,7 +1227,6 @@ const Page = struct {
         pg.cx.programViewLeave();
     }
 
-    /// Root `r`'s `let`s evaluated into `blk` and read under their names.
     /// A call of binding function `fi` into `blk`: of no arguments, or for a
     /// piece's, its table and the root's function's arguments, evaluated in
     /// the `view` as the model is now.
@@ -1203,6 +1239,8 @@ const Page = struct {
         const inner = try js.block();
         const arms = try pg.enter(inner, 0);
         const args = try cx.programPieceArgs(inner, u.node);
+        // The wrapper takes the table and the root's function's parameters.
+        std.debug.assert(args.len == u.data.arity);
         const all = try pg.a().alloc(m.Expr, args.len + 1);
         all[0] = try js.name(u.elements);
         @memcpy(all[1..], args);
@@ -1216,7 +1254,22 @@ const Page = struct {
     fn bindLets(pg: *Page, blk: m.Block, r: m.Root.Index, values: []const m.Value.Index) m.Error!void {
         const cx = pg.cx;
         const lets = pg.tree.root(r).lets;
-        if (lets.len == 0) return;
+        const needed = try pg.neededLets(r, values);
+        for (0..lets.len) |kk| {
+            if (!needed[kk]) continue;
+            const lv = lets.at(@intCast(kk));
+            try cx.rootValues(blk, r, &.{lv});
+            const n = try cx.fresh("let");
+            try cx.js.constant(blk, n, try cx.value(lv));
+            try cx.bindLet(r, @intCast(kk), n);
+        }
+    }
+
+    /// Which of root `r`'s `let`s `values` read, directly or through a
+    /// later `let`.
+    fn neededLets(pg: *Page, r: m.Root.Index, values: []const m.Value.Index) m.Error![]bool {
+        const cx = pg.cx;
+        const lets = pg.tree.root(r).lets;
         const needed = try pg.a().alloc(bool, lets.len);
         @memset(needed, false);
         var k = lets.len;
@@ -1232,13 +1285,57 @@ const Page = struct {
                 break;
             };
         }
-        for (0..lets.len) |kk| {
-            if (!needed[kk]) continue;
-            const lv = lets.at(@intCast(kk));
-            try cx.rootValues(blk, r, &.{lv});
-            const n = try cx.fresh("let");
-            try cx.js.constant(blk, n, try cx.value(lv));
-            try cx.bindLet(r, @intCast(kk), n);
+        return needed;
+    }
+
+    /// What binding function `f` reads in context `ctx`: each `when`'s
+    /// branch value, which picks its arm, then its writes' values, which
+    /// are appended to `values` too.
+    fn functionReads(pg: *Page, f: *const Function, ctx: u32, values: *std.ArrayList(m.Value.Index)) m.Error![]const m.Value.Index {
+        var reads: std.ArrayList(m.Value.Index) = .empty;
+        for (f.writes.items) |wi| {
+            const w = pg.writes.items[wi];
+            if (w.ctx != ctx) continue;
+            switch (w.what) {
+                .text => |parts| for (parts) |part| switch (part) {
+                    .value => |v| try values.append(pg.a(), v),
+                    else => {},
+                },
+                .prop => |x| try values.append(pg.a(), x.value),
+                .when => |x| try reads.append(pg.a(), pg.tree.hole(x.node).value),
+            }
+        }
+        try reads.appendSlice(pg.a(), values.items);
+        return reads.items;
+    }
+
+    /// D-d, as built: a `let` is evaluated in each binding function that
+    /// reads it, directly or through another `let`, so one that two
+    /// functions read would run twice in a pass that calls both — a
+    /// `Debug.log` in it would log twice. That is a memo node, S3's (§8.2).
+    fn letsOnce(pg: *Page) m.Error!void {
+        var seen: std.AutoHashMapUnmanaged(u64, u32) = .empty;
+        for (pg.functions.items, 0..) |*f, fi| {
+            if (f.piece != null) continue;
+            var done: std.ArrayList(u32) = .empty;
+            for (f.writes.items) |first| {
+                const ctx = pg.writes.items[first].ctx;
+                if (std.mem.indexOfScalar(u32, done.items, ctx) != null) continue;
+                try done.append(pg.a(), ctx);
+                var values: std.ArrayList(m.Value.Index) = .empty;
+                const reads = try pg.functionReads(f, ctx, &values);
+                const roots = [_]m.Root.Index{ pg.ctxs.items[0].root, pg.ctxs.items[ctx].root };
+                for (roots[0..if (ctx != 0) 2 else 1]) |r| {
+                    const needed = try pg.neededLets(r, reads);
+                    for (needed, 0..) |yes, k| {
+                        if (!yes) continue;
+                        const key = (@as(u64, @backingInt(r)) << 32) | k;
+                        const gop = try seen.getOrPut(pg.a(), key);
+                        if (gop.found_existing and gop.value_ptr.* != fi) return limit(pg.cx, pg.tree.root(r).node, "a `let` of this `view` is read by several binding functions, directly or through another `let`, and `browser-inline` computes a `let` in each function that reads it (D-d); one several read is a memo node, which slice S3 brings");
+                        gop.value_ptr.* = @intCast(fi);
+                    }
+                }
+            }
         }
     }
 
@@ -1247,24 +1344,8 @@ const Page = struct {
     fn writeFunction(pg: *Page, blk: m.Block, f: *const Function) m.Error!void {
         const cx = pg.cx;
         const js = cx.js;
-        if (f.piece) |at| {
-            const u = pg.pieces.items[at.use];
-            const arms = try pg.enter(blk, 0);
-            const args = try cx.programPieceArgs(blk, u.node);
-            const callee = try cx.programPieceName(u.node, u.data.binds[at.bind].name);
-            const all = try pg.a().alloc(m.Expr, args.len + 1);
-            all[0] = try js.name(u.elements);
-            // Each argument a name, so release's single-use inlining writes
-            // the piece, called only here, into this function.
-            for (all[1..], args) |*x, arg| {
-                const n = try cx.fresh("arg");
-                try js.constant(blk, n, arg);
-                x.* = try js.name(n);
-            }
-            try js.expression(blk, try js.call(try js.name(callee), all));
-            pg.leave(arms);
-            return;
-        }
+        // A piece's binding is the program site's wrapper's call (`page`).
+        std.debug.assert(f.piece == null);
         var done: std.ArrayList(u32) = .empty;
         for (f.writes.items) |first| {
             const ctx = pg.writes.items[first].ctx;
@@ -1272,27 +1353,15 @@ const Page = struct {
             try done.append(pg.a(), ctx);
             const arms = try pg.enter(blk, ctx);
             var values: std.ArrayList(m.Value.Index) = .empty;
-            // What the function reads besides its writes' values: each
-            // `when`'s branch value, which picks its arm.
-            var reads: std.ArrayList(m.Value.Index) = .empty;
-            for (f.writes.items) |wi| {
-                const w = pg.writes.items[wi];
-                if (w.ctx != ctx) continue;
-                switch (w.what) {
-                    .text => |parts| for (parts) |part| switch (part) {
-                        .value => |v| try values.append(pg.a(), v),
-                        else => {},
-                    },
-                    .prop => |x| try values.append(pg.a(), x.value),
-                    .when => |x| try reads.append(pg.a(), pg.tree.hole(x.node).value),
-                }
-            }
-            try reads.appendSlice(pg.a(), values.items);
+            const reads = try pg.functionReads(f, ctx, &values);
             // The `let`s of the view's body its root takes (`Root.lets`, D-d):
             // each the function reads evaluated here, in source order, and
-            // no other.
-            try pg.bindLets(blk, pg.ctxs.items[0].root, reads.items);
-            if (ctx != 0) try pg.bindLets(blk, pg.ctxs.items[ctx].root, reads.items);
+            // no other (`letsOnce`: no other function reads it).
+            // An arm's root is never the view's own, so their `let`s, bound per
+            // root and ordinal, never alias.
+            if (ctx != 0) std.debug.assert(pg.ctxs.items[ctx].root != pg.ctxs.items[0].root);
+            try pg.bindLets(blk, pg.ctxs.items[0].root, reads);
+            if (ctx != 0) try pg.bindLets(blk, pg.ctxs.items[ctx].root, reads);
             try cx.rootValues(blk, pg.ctxs.items[ctx].root, values.items);
             for (f.writes.items) |wi| {
                 const w = pg.writes.items[wi];

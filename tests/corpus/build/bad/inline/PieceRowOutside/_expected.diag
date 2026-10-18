@@ -1,0 +1,1 @@
+[{"code":"markup_restructured","severity":"error","span":{"file":"Main.beni","start":{"line":28,"col":35},"end":{"line":28,"col":36}},"title":"MARKUP RESTRUCTURED","message":"the parser drops a table part written outside the table structure it belongs in"}]
