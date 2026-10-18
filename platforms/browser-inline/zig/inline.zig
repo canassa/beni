@@ -1141,7 +1141,19 @@ fn escapeAttribute(a: std.mem.Allocator, out: *std.ArrayList(u8), text: []const 
 /// very end of the string (`at_end`), which the parser closes at the end of
 /// its input.
 fn serialise(a: std.mem.Allocator, out: *std.ArrayList(u8), nodes: []const Html, parent: ?[]const u8, at_end: bool) !void {
+    _ = try serialiseOpen(a, out, nodes, parent, at_end);
+}
+
+/// `serialise`, and whether the last node is an element other than a `<p>`
+/// whose end tag it left out: that element is still open, and a start tag
+/// that would close the parent stops at it — an `<li>` stops its search at a
+/// `<dd>`, a special element — so the parent then keeps its own end tag
+/// before a sibling (`<ul><li><dd>x</li><li>`; the review of S1's first
+/// pull request).
+fn serialiseOpen(a: std.mem.Allocator, out: *std.ArrayList(u8), nodes: []const Html, parent: ?[]const u8, at_end: bool) !bool {
+    var open = false;
     for (nodes, 0..) |n, i| {
+        open = false;
         const next: ?Html = if (i + 1 < nodes.len) nodes[i + 1] else null;
         switch (n.kind) {
             .text => try out.appendSlice(a, n.name),
@@ -1152,14 +1164,18 @@ fn serialise(a: std.mem.Allocator, out: *std.ArrayList(u8), nodes: []const Html,
                 try out.append(a, '>');
                 if (n.void) continue;
                 const last = next == null and at_end;
-                try serialise(a, out, n.children, n.name, last);
-                if (last or optionalEnd(n.name, next, parent)) continue;
+                const child_open = try serialiseOpen(a, out, n.children, n.name, last);
+                if (last or (optionalEnd(n.name, next, parent) and (next == null or !child_open))) {
+                    open = !std.mem.eql(u8, n.name, "p");
+                    continue;
+                }
                 try out.appendSlice(a, "</");
                 try out.appendSlice(a, n.name);
                 try out.append(a, '>');
             },
         }
     }
+    return open;
 }
 
 /// Whether element `name`'s end tag may be left out when `next` follows it
@@ -1332,6 +1348,10 @@ test "an end tag is left out only where the parser closes the element there" {
         .{ .tree = el("select", &.{ el("option", &.{x}), el("option", &.{x}) }), .html = "<select><option>x<option>x</select>" },
         .{ .tree = el("li", &.{el("p", &.{x})}), .html = "<li><p>x</li>" },
         .{ .tree = el("h2", &.{el("span", &.{el("p", &.{x})})}), .html = "<h2><span><p>x</p></span></h2>" },
+        // An `<li>` or a `<dt>` stops its search for an open one at a `<dd>`
+        // or an `<li>` still open: the parent keeps its end tag there.
+        .{ .tree = el("ul", &.{ el("li", &.{el("dd", &.{x})}), el("li", &.{x}) }), .html = "<ul><li><dd>x</li><li>x</ul>" },
+        .{ .tree = el("dl", &.{ el("dd", &.{el("li", &.{x})}), el("dt", &.{x}) }), .html = "<dl><dd><li>x</dd><dt>x</dt></dl>" },
     };
     for (cases) |c| {
         var out: std.ArrayList(u8) = .empty;

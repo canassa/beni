@@ -236,6 +236,11 @@ of S1's first pull request*: the first text left `</p>` out at the end of almost
   `ul`, `li`, `dd`, `button`, `h1`–`h6`, `td` and the rest of the standard's list), or a `<select>`
   or `<optgroup>` closes an `<option>`, a row a cell, a row group a row. A `<span>`, a `<label>`, a
   formatting element and a custom element close none of them.
+- but never before a sibling when its own last child is an element other than a `<p>` whose end
+  tag was left out (*corrected 2026-10-18, the second review*): that child is still open, and an
+  `<li>`, `<dt>` or `<dd>` start tag stops its search for an open one at a special element, so
+  `<ul><li><dd>x<li>y` puts the second `<li>` inside the `<dd>`; the element then keeps its end tag,
+  `<ul><li><dd>x</li><li>y`.
 
 The run of end tags at the very end of a string parsed alone is left out too, which the parser
 closes at the end of its input. A string that is concatenated with another keeps its own closing
