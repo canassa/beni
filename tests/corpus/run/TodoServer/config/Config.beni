@@ -1,0 +1,15 @@
+--! The todo server's settings for its corpus case: port 0, so the operating
+--! system picks one and the port never reaches the transcript
+--! (`boundary.md` §9.10 (h)), and a page directory the case does not hold,
+--! so `GET /` is the answer a server gives before the page is built.
+
+pub host : String
+host = "127.0.0.1"
+
+
+pub port : Int
+port = 0
+
+
+pub pageDir : String
+pageDir = "page/out"
