@@ -1252,6 +1252,140 @@ cast, `#Just.0#NonNull.0#Just.0…` and `.parent.parent…`. Folding only recurs
 marker of the next decision; until then `Maybe (List Int × Maybe (List Int))` folds its inner `Maybe` onto the
 outer one, and the hole of `pushInner` (accepted through a call, rejected inline) stays.
 
+*Amended 2026-10-18 (issue #286, the owner's go-ahead): the design pass for the path cut.* This is a design and
+a record of measurements; nothing in it is built. The path cut `k` (§4.1) is silent (the table above): it merges
+two places at the cut, so a write of one is not seen at the other (`writeRead`/`deep`, a nine-step path cut at
+eight). Removing it needs every source of unbounded paths to have a fold point, and each fold point must keep
+summaries finite and stay sound. Four sources were found (the investigation of 2026-10-17 and the reviews of
+#341): recursive types, which fold today; closures that capture closures; casts through `Js.Value`; and
+polymorphic recursion over a nested datatype. Each fold point below gives its soundness argument and its own
+rejection delta, measured separately on `master` (`2cabeed03`) with an experiment patch that was not committed,
+over `bench/ownership-everywhere.mjs` (873 programs, every platform's modules and core, browser-inline's pages,
+goldens and modules included) and the verdict lines of `tests/corpus/ownership/`.
+
+**F1. Closures fold at their environment step.** A function type is taken to be recursive: a `◇` step on a
+path that already has one goes on from where the first entered, so `◇p◇q` is `◇q`, and a projection along `◇`
+keeps every entry whose first step is `◇` at its own path, approximately (`approx_place`), as §16.7's
+amendment does for a field that is the type itself ("here").
+- *Soundness.* Folding merges places: the environments of a closure and of every closure it captured share one
+  place, so every cell any of them captured is held at `◇q`, and a demand on one of them sees every holder of
+  any. A projection along `◇` keeps the folded entries, so nothing merged is dropped when a closure's
+  environment is taken apart (`instProv`'s `◇x.q`, `expandInto`). The fold only adds aliasing.
+- *Finite.* A path holds at most one `◇`. `mk n xs = if n == 0 then λx → x + List.length xs else (g = mk (n -
+  1) xs; λx → g x)`, whose summary is `res ◇ π2, ◇◇ π2, …` cut at eight today, is `res ◇ π2`.
+- *Delta: none.* The bench is unchanged, browser-inline's pages, goldens and modules included; in
+  `tests/corpus/ownership/` fifteen goldens change, only in summary lines (`◇◇…` merged), and no verdict line.
+  The owner's concern — that closures capturing closures become one place, so higher-order code and
+  browser-inline's generated handlers pick up refusals — does not show: a closure's demand is on the cells its
+  environment holds, and the merged place holds the same cells. A capture of a capture written while the outer
+  closure lives is still rejected `captured`.
+
+**F2. A cast marker that records the type it was read at.** Today `Js.from` and `Js.to` are `returned`: the
+answer is the argument's cells at their own paths, so a value cast to `Js.Value` and back is read at its new
+type by the old type's paths. Projected again across a recursive call, those paths grow without bound —
+`Schema.unpack`'s `π1.0.0.0…`, `collect`'s `π1.parent.parent…`, `run`'s `π1.fail#Just.0#NonNull.0…` — and
+only today's folding of every type seen twice and the cut keep them finite. The marker: a step `⟨as T⟩`, `T`
+the head of a type (a named type, a tuple of n, a record, a function). At a call whose parameter is returned at
+another type, read off the call's own types (`instRes`, `arg_types`, `result_ty`; a type variable on either side
+is no cast, since the concrete caller casts):
+- into an opaque type (`Js.Value`, any `foreign type` but `List`), the value's entries below its root are put
+  under `⟨as T⟩`, `T` the type it was made at; its cells at its root stay (a cast is the same array);
+- out of an opaque type into `T`, an entry under `⟨as T⟩` loses the marker and is exact; one under another
+  type's marker, or one no cast marked, is at `⋆` (it is read at a type it was not made at); a symbolic cell
+  `param(x, q)` becomes `param(x, q⟨as T⟩)`, so what is read below it is read in `T`'s steps;
+- a second `⟨as T⟩` on a path folds onto the first as the deeper level `⟨as T⟩⟨as T⟩`, which a projection keeps
+  wherever it goes until a read at `T` takes the marker off.
+- *Soundness.* Exactness is kept only where the type read at is the type made at; everything else is `⋆`, which
+  overlaps every path. Two cells that differ only by a trailing marker are one array (`covers`, the spine index).
+  A path with a marker overlaps any path that differs at the marker (`overlapSteps`), so liveness never misses a
+  use through a cast. The folded levels behave as §16.7's do for a recursive type.
+- *Finite.* A path holds at most two markers of one type. `unpack` becomes `π1⟨as ×2⟩.0, π1⟨as ×2⟩⟨as ×2⟩.0, …`,
+  `collect` `π1⟨as Step⟩.parent, π1⟨as Step⟩⟨as Step⟩.parent`.
+- *Delta: a finding, not a design.* Core's `Schema` refuses itself: core's demands go from 116, none rejected,
+  to 1 035, 481 rejected and 29 pending, every one in `Schema`. They follow from three `value-cells` limits
+  (§16.7): `ctorArgs` 390, `fieldsFrom` 590 and `printWith` 450 cells, over 256, whose pessimistic summaries
+  write every parameter of `run`, `descend`, `elementsFrom` and their group. The cause is the cells the marker
+  makes, not the `⋆`s: trusting an unmarked or mismatched entry instead of putting it at `⋆` (unsound, measured
+  only to find the cause) changes no count. Each cast of a symbolic cell names a new cell, and `Context.fail`
+  is read through `Maybe`, `Nullable` and `Presence` in every order, so `π1.fail⟨as Nullable⟩#NonNull.0⟨as
+  Maybe⟩⟨as Maybe⟩#Just.0` and its permutations are distinct cells: the per-type fold bounds each type to two
+  markers, and the orderings of the types still multiply. The coarser marker, every cast at `⋆` (2026-10-17),
+  refused safe programs too: twelve more rejections among the schema fixtures and five more programs
+  (`browser/direct/ApiItems` on two platforms, BikeWars on two, `examples/bike-wars`), all `~need`. **The owner
+  decides** between bounding the cells a cast makes — every marker after the first folding onto it, whatever its
+  type, which keeps `Schema`'s own round trips (`Step` to `Js.Value` and back) exact only at the first level —
+  and raising `value-cells` (which the bounds paragraph above sets from measured summaries, and which a pairwise
+  condition makes quadratic). Neither is measured yet.
+
+**F3. A type variable of a nested datatype is a fold point.** `type T a = Leaf a | Wrap (T (List a))` recurs at
+another argument than its own, so `wrap n x = if n == 0 then Leaf x else Wrap (wrap (n - 1) [ x ])` returns a
+value whose list is `n` levels of `List` deep: `res #Leaf.0[*][*]…`, cut at eight today, with no cast and no
+closure. A recursive type is *irregular* when one of its own occurrences in its definition applies it to
+anything but its parameters in order; below a constructor field of such a type whose declared type is one of its
+type variables, the path is `⋆`.
+- *Soundness.* `⋆` stands for every place at or below it and overlaps every path; it only merges.
+- *Finite.* `wrap` is `res #Leaf.0 π2, #Leaf.0⋆ π2`.
+- *Delta: none*, on the bench and in `tests/corpus/ownership/`: no golden changes. Only irregular types pay, and
+  the corpus has none but the probe.
+
+**Removing `k`.** With F1, F3 and a cast marker the owner accepts, `k` goes: every path buffer
+(`[k_limit + 1]Step`, about twenty) becomes a slice, the depth column widens, and the summary block's path
+length is a `u32`. The `writeRead`/`deep` hole is then rejected `disjoint`, as its depth-seven twin is. Whether
+core settles within the existing rounds cannot be measured until F2 is decided: with F2 as measured it does
+not get that far.
+
+**(a) Fold only types that reach themselves.** Measured on 2026-10-17 without a cast marker: `Schema.run` and
+`descend` pass the `entries` limit (302 670 and 319 438) and four functions pass `value-cells`. It needs F2;
+until then `Nest.pushInner` stays accepted through a call. Its soundness is §16.7's first amendment: a type that
+does not reach itself has no levels, so two of its steps on a path are two places.
+
+**(d) The levels of a recursive value are pairwise distinct.** Thesis §3.1's representatives' exclusivity, as a
+condition atom of §18.2: `lvl c` holds when no list is reachable at two levels of the recursive value `c`, or at
+one of its levels and above it.
+- *Made* by a construction of a recursive constructor: `Node l xs r` has `lvl` when `l` and `r` have it, `xs`'s
+  cells are separate from every level of `l` and `r` (`sep`), and `l` and `r` are separate; a literal leaf has it;
+  a callee's fresh result has the `lvl` its summary publishes.
+- *Relied on* where a holder reaches the written list only through a folded level (`approx_place`) while the
+  demand reached it at one exact level: the holder is another level, so with `lvl` it is not this list, and the
+  demand does not count it. `FoldLevels.pushRoot` is accepted. At a parameter, the reliance is recorded as `xreq
+  lvl πᵢ.q` (§18.4), which every caller discharges.
+- *It closes the parameter hole.* `covers` relates `param(t, #Node.0)` to `param(t, #Node.1)` (the fold point
+  below a recursive step, the patch measured for #341), and the relation fails only `lvl`. `paramHole` is then
+  rejected unless its caller shows the levels distinct. `Tea.want`, which the relation alone refuses, should be
+  accepted once `Dict.insert` and `Dict.update` publish `lvl` of their result, since their bodies build a
+  dictionary level by level; that is the prediction to measure first when (d) is built.
+- *Size.* A new atom kind threaded through the condition columns, the read-off (`xres`), instantiation and the
+  summary block (version 16); the two reliance sites; the `covers` relation; and a §26.7 row or a Lean model of
+  it. About 600 lines and a dozen fixtures, larger than a fix; the owner's go-ahead is needed before it is built.
+
+**(e) The one permanent refusal: level-dependent sharing.** `alt n a b = Node (alt (n - 1) b a) a Leaf` puts
+`a` at every other level and `b` between: the levels are not pairwise distinct, so `lvl` fails, though the
+program is safe whenever it writes one level and reads another that does not hold the same list. No finite set
+of abstract levels separates every period of alternation, so a sound checker refuses it. With (d) built, it is
+the one place the strict rule refuses safe code for good. Its error, a cause `level` of its own:
+
+```
+-- LIST MAY BE SHARED -------------------------------------------- Alt.beni:20:23
+
+`List.push` changes `xs`, a list of one level of `t`, and the checker cannot tell
+the levels of a recursive value apart: it keeps one place for all of them, and
+`t` may hold `xs` at another level too.
+
+To be safe, copy the list at the level that shares it:
+
+    Node (alt (n - 1) b a) (List.copy a) Leaf
+
+For a record field, the copy is `Record.copy` (§31.15), which lands with #315.
+```
+
+It is pinned by a `build/bad/direct` project and an ownership fixture, and `language.md` gains it as a language
+limit in §6.8, *Lists*, beside where `Record.copy` is described once #327's text reaches it: the one place an
+author must copy a list that is never shared at the same time, and why.
+
+**Order.** F1 and F3 can land now, each with its fixture (`Clo`'s `mk`, `Poly`'s `wrap`), and change no
+verdict. F2 waits for the owner's decision above, then (a) and the removal of `k`; (d) waits for its go-ahead,
+then (e).
+
 ### 16.8 The library
 
 Thesis §6.5 as revised in round 5 keeps three kinds of trust apart, and slice 2 follows it:
