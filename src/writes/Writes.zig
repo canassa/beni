@@ -278,6 +278,8 @@ pub const PathKind = enum(u32) {
 };
 
 pub const rho_path: u32 = 0;
+/// `term_origin` of a term made where no instruction was being evaluated.
+pub const no_origin: u64 = std.math.maxInt(u64);
 pub const mu_path: u32 = 1;
 
 // Index symbols (§2.3): words `[kind, a, b, c]`.
@@ -361,8 +363,11 @@ pub const Write = struct {
     /// The write is the pass's approximation (write-sets.md, amended
     /// 2026-10-18): a value it could not see into — an opaque call's
     /// result, an application through a parameter, a record of a type it
-    /// could not read — and not one it knows exactly. Joined by `or`.
-    lost: bool = false,
+    /// could not read — and not one it knows exactly: the term it could not
+    /// see into, whose `term_origin` names where it was made, or `none`.
+    /// Joined keeping the first in source order; `more` counts the others.
+    lost: u32 = none,
+    more: u32 = 0,
 };
 
 // ---------------------------------------------------------------------------
@@ -544,8 +549,11 @@ pub const Program = struct {
     carriers: Carriers = .{},
     /// The message type's constructor count, or 0 when unknown.
     msg_ctors: u32 = 0,
+    /// The name of the message type's one constructor, when it has one: what a
+    /// key of no steps, `(any)` in the dump, is to the program's author.
+    msg_only: []const u8 = "",
     /// The model's record fields, by its type; 0 when the model is not a
-    /// record, or its type is not known. What tells a model of one value
+    /// record, `none` when its type is not known. What tells a model of one value
     /// from a record of several (`browser-inline.md` §5, the owner,
     /// 2026-10-17).
     model_fields: u32 = 0,
@@ -663,6 +671,12 @@ deps_t: Table = .{},
 terms: Table = .{},
 term_depth: std.ArrayList(u8) = .empty,
 term_deps: std.ArrayList(u32) = .empty,
+/// Per term: the instruction being evaluated when it was first made,
+/// `module << 32 | inst`, or `no_origin` — where an approximation came
+/// from, for a diagnostic that names it (`Write.lost`).
+term_origin: std.ArrayList(u64) = .empty,
+/// The instruction `eval` is in, as `term_origin` spells it.
+cur_origin: u64 = no_origin,
 wsets: Table = .{},
 bytes: std.ArrayList(u8) = .empty,
 bytes_t: Table = .{},
@@ -815,6 +829,7 @@ pub fn deinit(a: *Writes) void {
     a.terms.deinit(gpa);
     a.term_depth.deinit(gpa);
     a.term_deps.deinit(gpa);
+    a.term_origin.deinit(gpa);
     a.wsets.deinit(gpa);
     a.bytes.deinit(gpa);
     a.bytes_t.deinit(gpa);
@@ -1377,6 +1392,7 @@ fn finish(a: *Writes, mark: usize, depth: u32) Error!u32 {
     if (id == before) {
         try a.term_depth.append(a.gpa, @intCast(@min(depth, 255)));
         try a.term_deps.append(a.gpa, none);
+        try a.term_origin.append(a.gpa, a.cur_origin);
     }
     return id;
 }
@@ -2151,6 +2167,9 @@ fn parseInt(text: []const u8) ?i64 {
 
 fn eval(a: *Writes, f: *Frame, inst: Inst.Index, g: u32) Error!u32 {
     try a.tick();
+    const saved_origin = a.cur_origin;
+    a.cur_origin = (@as(u64, f.m) << 32) | inst.int();
+    defer a.cur_origin = saved_origin;
     const b = a.bir(f.m);
     const data = b.instData(inst);
     switch (b.instTag(inst)) {
@@ -3266,6 +3285,11 @@ fn substNode(a: *Writes, sub: *const Subst, t: u32) Error!u32 {
             const n = a.termLen(t) - 2;
             const args = try a.arena().alloc(u32, n);
             for (args, 0..) |*p, i| p.* = try a.subst(sub, a.termWord(t, 2 + i));
+            // What the application makes was made at the call of the
+            // parameter, `g m`, and not where the summary is used.
+            const saved = a.cur_origin;
+            a.cur_origin = a.term_origin.items[t];
+            defer a.cur_origin = saved;
             return a.apply(fun, args, sub.g);
         },
         .fun => {
@@ -3601,8 +3625,8 @@ const WsBuilder = std.ArrayList(Write);
 fn wsGet(a: *const Writes, id: u32, out: *WsBuilder, gpa: Allocator) Allocator.Error!void {
     const words = a.wsets.get(id);
     var i: usize = 0;
-    while (i < words.len) : (i += 5) {
-        try out.append(gpa, .{ .path = words[i], .kind = @fromBackingInt(words[i + 1] & 0xff), .lost = words[i + 1] >> 8 != 0, .edit = @fromBackingInt(words[i + 2]), .s1 = words[i + 3], .s2 = words[i + 4] });
+    while (i < words.len) : (i += 7) {
+        try out.append(gpa, .{ .path = words[i], .kind = @fromBackingInt(words[i + 1]), .edit = @fromBackingInt(words[i + 2]), .s1 = words[i + 3], .s2 = words[i + 4], .lost = words[i + 5], .more = words[i + 6] });
     }
 }
 
@@ -3619,7 +3643,16 @@ fn wsAdd(a: *Writes, ws: *WsBuilder, w: Write) Allocator.Error!void {
     for (ws.items) |*e| {
         if (e.path != w.path) continue;
         if (w.kind == .value) e.kind = .value;
-        if (w.lost) e.lost = true;
+        if (w.lost != none) {
+            if (e.lost == none) {
+                e.lost = w.lost;
+                e.more = w.more;
+            } else if (e.lost != w.lost) {
+                // The first in source order names it; the other is counted.
+                if (a.originBefore(w.lost, e.lost)) e.lost = w.lost;
+                e.more += 1 + w.more;
+            }
+        }
         if (e.edit != w.edit) {
             const j = joinEdit(e.edit, w.edit);
             if (j != e.edit) {
@@ -3645,7 +3678,7 @@ fn wsIntern(a: *Writes, ws: []Write) Allocator.Error!u32 {
     }.less);
     const mark = a.scratch.items.len;
     defer a.scratch.shrinkRetainingCapacity(mark);
-    for (ws) |w| try a.scratch.appendSlice(a.gpa, &.{ w.path, @backingInt(w.kind) | @as(u32, @intFromBool(w.lost)) << 8, @backingInt(w.edit), w.s1, w.s2 });
+    for (ws) |w| try a.scratch.appendSlice(a.gpa, &.{ w.path, @backingInt(w.kind), @backingInt(w.edit), w.s1, w.s2, w.lost, w.more });
     return a.wsets.intern(a.gpa, a.scratch.items[mark..]);
 }
 
@@ -3653,9 +3686,22 @@ fn value(p: u32) Write {
     return .{ .path = p, .kind = .value };
 }
 
-/// `value p`, an approximation (`Write.lost`).
-fn lost(p: u32) Write {
-    return .{ .path = p, .kind = .value, .lost = true };
+/// `value p`, an approximation of term `t` (`Write.lost`).
+fn lost(p: u32, t: u32) Write {
+    return .{ .path = p, .kind = .value, .lost = t };
+}
+
+fn originBefore(a: *const Writes, x: u32, y: u32) bool {
+    return a.term_origin.items[x] < a.term_origin.items[y];
+}
+
+/// Where term `t` was first made: a module and an instruction of it, or
+/// null for a term no instruction made.
+pub fn termOrigin(a: *const Writes, t: u32) ?struct { module: u32, inst: u32 } {
+    if (t >= a.term_origin.items.len) return null;
+    const o = a.term_origin.items[t];
+    if (o == no_origin) return null;
+    return .{ .module = @intCast(o >> 32), .inst = @truncate(o) };
 }
 
 /// The write set of placing `t` at `p` under `g`, memoised on `(t, p, Γ)`
@@ -3705,7 +3751,7 @@ fn diffInto(a: *Writes, t: u32, p: u32, g: u32, ws: *WsBuilder) Error!void {
                 if (base != none) return a.wsAdd(ws, value(p));
                 if (rest >= 2) {
                     // B2/N7: every other field of the type at `p` is Fresh.
-                    extra_fields = (try a.fieldsAt(p)) orelse return a.wsAdd(ws, lost(p));
+                    extra_fields = (try a.fieldsAt(p)) orelse return a.wsAdd(ws, lost(p, t));
                 }
             }
             try a.wsAdd(ws, .{ .path = p, .kind = .node });
@@ -3764,7 +3810,7 @@ fn diffInto(a: *Writes, t: u32, p: u32, g: u32, ws: *WsBuilder) Error!void {
         },
         .lst_lit => try a.wsAdd(ws, .{ .path = p, .kind = .value, .edit = .replaced }),
         // What the pass could not see into is an approximation.
-        .fresh, .app => try a.wsAdd(ws, lost(p)),
+        .fresh, .app => try a.wsAdd(ws, lost(p, t)),
         .alt => {
             for (0..a.altLen(t)) |i| {
                 const it = a.altItem(t, @intCast(i));
@@ -4869,7 +4915,11 @@ fn analyseProgram(a: *Writes, m: u32, kind: ProgramKind, fields: ?Fields, view_f
                         a.model_type = .{ .m = t.m, .inst = ps[1].int(), .env = &.{} };
                         // The message type's constructors, for `(any)`.
                         switch (try a.tyResolve(.{ .m = t.m, .inst = ps[0].int(), .env = &.{} })) {
-                            .nominal => |n| prog.msg_ctors = @intCast(a.bir(n.m).declCtors(a.bir(n.m).decls[n.d]).len),
+                            .nominal => |n| {
+                                const ctors = a.bir(n.m).declCtors(a.bir(n.m).decls[n.d]);
+                                prog.msg_ctors = @intCast(ctors.len);
+                                if (ctors.len == 1) prog.msg_only = a.in.interner.slice(a.bir(n.m).symbol(ctors[0].name));
+                            },
                             else => {},
                         }
                     }
@@ -4921,7 +4971,17 @@ fn analyseProgram(a: *Writes, m: u32, kind: ProgramKind, fields: ?Fields, view_f
         defer path_steps.deinit(a.gpa);
         try a.keyTree(kind, update_fun, 0, &path_steps, &keys, &leaves);
         prog.keys = keys.items;
-        prog.model_fields = if (try a.fieldsAt(rho_path)) |model_fields| @intCast(model_fields.len) else 0;
+        // The model's fields: by `update`'s annotation, or else by what
+        // `init` makes — a record literal of every field, a literal, a
+        // constructor — and unknown when neither says (an error, never a
+        // guess: `browser-inline.md` §5).
+        prog.model_fields = if (a.model_type != null)
+            (if (try a.fieldsAt(rho_path)) |model_fields| @intCast(model_fields.len) else 0)
+        else switch (a.termTag(init_model)) {
+            .rec => if (a.termWord(init_model, 1) == none and a.termWord(init_model, 2) == 0) (a.termLen(init_model) - 3) / 2 else none,
+            .lit, .con => 0,
+            else => none,
+        };
     }
     // Subscription values include the captures of their taggers.
     if (view_fields) |fs| if (fs.subscriptions) |si| {

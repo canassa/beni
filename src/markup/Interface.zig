@@ -240,17 +240,43 @@ pub const Program = struct {
         /// 1.15: when `star`, which of the three kinds of `*` it is (the
         /// owner, 2026-10-17; `browser-inline.md` §5, §8.7).
         star_kind: StarKind = .none,
+        /// 1.15: for a `*` key of lost precision, where the pass lost it: the
+        /// first approximation in source order, and how many more.
+        lost: ?Lost = null,
+        /// 1.15: the key as the program spells it — its constructors, `Run`,
+        /// `GotPage Typed` — where `name` may say `(any)`.
+        spelled: []const u8 = "",
+        /// 1.15: the first cap of the write-set pass that cut the key's writes.
+        cap: Cap = .none,
+
+        pub const Cap = enum(u8) { none, depth, alternatives, instantiation, rounds, size, work, leaves, _ };
+
+        pub const Lost = struct {
+            /// `local`: a call of a function a local holds — a pattern
+            /// variable, a `let` — which the compiler knows only as a value.
+            kind: enum(u8) { call, parameter, record, local, _ },
+            /// Where it is, `Main.beni:27:13`, and its source text when that
+            /// is one short line (`f model`), else empty.
+            where: []const u8,
+            text: []const u8,
+            more: u32,
+            /// What `Context.programReportAt` reports at.
+            site: u32,
+        };
 
         pub const StarKind = enum(u8) {
             none,
-            /// A cap of the write-set pass cut the key's writes to `ρ`: lost
-            /// precision, a limit of the compiler.
+            /// Lost precision, a limit of the compiler: a cap of the write-set
+            /// pass cut the key, the pass marked its whole write an
+            /// approximation (`Lost`), or neither `update`'s annotation nor
+            /// `init` says what the model's type is.
             precision,
-            /// An inferred write of the whole model, a record of more than one
-            /// field the program reads or writes: it hides which fields changed.
+            /// An exact inferred write of the whole model whose type is a
+            /// record of more than one field — by `update`'s annotation or by
+            /// the record literal `init` makes: it hides which fields changed.
             whole_record,
-            /// The model is one value — no record of several fields — written
-            /// exactly.
+            /// The model is one value — its type is no record of several
+            /// fields — written exactly.
             single_value,
             _,
         };
@@ -1106,6 +1132,12 @@ pub const Context = struct {
         return cx.vtable.program_report(cx.impl, part, code, message);
     }
 
+    /// 1.15, inside `Lowering.program` only: report `code` at a site the
+    /// pass names (`Program.Key.Lost.site`), in whichever module holds it.
+    pub fn programReportAt(cx: *Context, site: u32, code: Program.Code, message: []const u8) error{ OutOfMemory, Reported } {
+        return cx.vtable.program_report_at(cx.impl, site, code, message);
+    }
+
     /// 1.7, inside `Lowering.program` only: the program's leaf message
     /// keys (`write-sets.md` §4.4), in the order `beni dump --stage=writes`
     /// prints them — a key's named children before its default one. A
@@ -1582,6 +1614,7 @@ pub const VTable = struct {
     program_settles: *const fn (impl: *anyopaque, key: u32) bool,
     program_init: *const fn (impl: *anyopaque, block: Block) Error!Expr,
     program_report: *const fn (impl: *anyopaque, at: Program.Part, code: Program.Code, message: []const u8) error{ OutOfMemory, Reported },
+    program_report_at: *const fn (impl: *anyopaque, site: u32, code: Program.Code, message: []const u8) error{ OutOfMemory, Reported },
     program_keys: *const fn (impl: *anyopaque) []const Program.Key,
     program_hole: *const fn (impl: *anyopaque, hole: Program.HoleRef) Program.HoleFacts,
     program_calls: *const fn (impl: *anyopaque, key: u32, group: u32) bool,

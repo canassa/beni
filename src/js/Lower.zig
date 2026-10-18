@@ -92,6 +92,9 @@ pub const Item = struct {
     /// The last token the span covers, when it is more than `region`'s or
     /// `token`'s one: a field's whole value.
     end_token: ?u32 = null,
+    /// The module whose instruction `region` is, when not the module being
+    /// lowered: a site of another module the write-set pass names.
+    region_module: ?Graph.Index = null,
     /// Owned by the caller's allocator.
     message: []const u8,
 };
@@ -360,6 +363,9 @@ pub const Direct = struct {
         starts: []const Start = &.{},
         commands: []const beni_markup.Program.Command = &.{},
         init_command: beni_markup.Program.Command = .unknown,
+        /// Version 1.15: the places a key's precision was lost
+        /// (`Program.Key.Lost.site`), each a module and an instruction of it.
+        lost_sites: []const LostSite = &.{},
 
         /// Whether key `k`'s write set conflicts with read set `g`.
         pub fn calls(p: *const Program, g: u32, k: u32) bool {
@@ -401,6 +407,8 @@ pub const Direct = struct {
         /// When `captures` is null: the capture that is not a literal, by name.
         computed: []const u8 = "",
     };
+
+    pub const LostSite = struct { module: u32, inst: u32 };
 
     pub const Let = struct {
         module: u32,
@@ -11894,6 +11902,21 @@ pub const Lowerer = struct {
         if (last != tokens[region.int()]) l.diagnostics.items[l.diagnostics.items.len - 1].end_token = last;
     }
 
+    /// `cx.programReportAt` (version 1.15): `code` at a site the pass named,
+    /// its whole expression.
+    fn programReportAt(l: *Lowerer, site: u32, code: beni_markup.Program.Code, message: []const u8) Allocator.Error!void {
+        const pc = l.program_now orelse return;
+        const d = pc.direct orelse return;
+        if (site >= d.lost_sites.len) return l.programReport(.update, code, message);
+        const s = d.lost_sites[site];
+        try l.report(switch (code) {
+            .view_not_compiled => .view_not_compiled,
+            .program_shape => .program_shape,
+            else => .not_implemented,
+        }, @fromBackingInt(s.inst), "{s}", .{message});
+        l.diagnostics.items[l.diagnostics.items.len - 1].region_module = @fromBackingInt(@intCast(s.module));
+    }
+
     // ---- The program hook, version 1.7 (browser-direct.md §4, §5) ---------
     //
     // A program lowering compiles each message key's arm of `update` and
@@ -15188,6 +15211,11 @@ const markup_vtable: beni_markup.VTable = struct {
         return error.Reported;
     }
 
+    fn programReportAt(impl: *anyopaque, site: u32, code: M.Program.Code, message: []const u8) error{ OutOfMemory, Reported } {
+        try lowerer(impl).programReportAt(site, code, message);
+        return error.Reported;
+    }
+
     fn programKeys(impl: *anyopaque) []const M.Program.Key {
         return lowerer(impl).directKeys();
     }
@@ -15535,6 +15563,7 @@ const markup_vtable: beni_markup.VTable = struct {
         .program_field = programField,
         .program_settles = programSettles,
         .program_report = programReport,
+        .program_report_at = programReportAt,
         .program_keys = programKeys,
         .program_hole = programHole,
         .program_calls = programCalls,

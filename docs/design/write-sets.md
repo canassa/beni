@@ -2225,3 +2225,12 @@ bit. A consumer reads it to tell a `*` key of lost precision (a limit of the com
 exact write of the whole model (`browser-inline.md` §5). The program also records how many
 fields its model's type has (`Program.model_fields`, 0 for a model that is not a record), which
 tells a model of one value from a record of several.
+
+*Amended again 2026-10-18 (the owner: the message is what the author acts on).* `Write.lost` is
+not a bit but the term the pass could not see into, and every term records the instruction being
+evaluated when it was first made (`term_origin`): an application's result is recorded at the call
+of the parameter, `g m`, and not where the summary is used. Two lost writes at one path keep the
+first in source order and count the others (`Write.more`), so a consumer names the place, quotes
+it, and says how many more there are. `Program.model_fields` is read from `update`'s annotation,
+or else from what `init` makes — a record literal of every field, a literal, a constructor — and
+is `none` when neither says, which a consumer refuses as a limit rather than guess.

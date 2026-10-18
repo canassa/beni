@@ -2240,7 +2240,12 @@ one that first uses it; a lowering that targets 1.14 sees what it saw.
   three a `*` key is: lost precision (a cap cut it, or the pass marked its whole write an
   approximation, `write-sets.md` amended 2026-10-18), an exact inferred whole write of a model
   whose type is a record of several fields, or a model of one value written exactly
-  (`browser-inline.md` §5).
+  (`browser-inline.md` §5). `Program.Key.lost`, for a `*` key of lost precision, is where the pass
+  lost it — the first approximation in source order, its kind (an opaque call, a call of a
+  function-valued parameter, of a function a local holds, a record of a type it cannot read), its
+  place and text and how many more — and `programReportAt(site, code, message)` reports there, in
+  whichever module holds it. `Program.Key.spelled` is the key as the program spells it, its
+  constructors, never `(any)`; `Program.Key.cap` names the first cap that cut the key.
 - **Groups, sparse.** `programGroupsOf(key)`: the groups the key's writes reach, sorted — what
   `programCalls` answers one pair at a time, without the groups × keys matrix.
 - **Per-path passes.** `programArmTails(key)`: the tails of the key's arm (`write-sets.md`,

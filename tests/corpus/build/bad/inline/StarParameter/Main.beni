@@ -1,0 +1,44 @@
+-- A `*` key whose whole-model write is a call of a function-valued
+-- parameter is lost precision, and the limit of the compiler names that call,
+-- `g m` in `apply`, at its span (docs/design/browser-inline.md §5, §8.7; the
+-- owner, 2026-10-18: the message is what the author acts on). The key is
+-- named as written, `Run`.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    count : Int
+    label : String
+
+
+type Msg
+    = Run (Model → Model)
+
+
+apply : (Model → Model), Model → Model
+apply g m = g m
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Run f →
+            apply f model
+
+
+view : Model → Html Msg
+view model =
+    <div>
+        <output>{model.count}</output>
+        <p>{model.label}</p>
+        <button data-role="run" onClick={Run λm → { m | count = m.count + 1 }}>+1</button>
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → { count = 0, label = "start" }, update = update, view = view })
+        "root"

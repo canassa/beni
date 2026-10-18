@@ -737,24 +737,73 @@ const Page = struct {
             \\of the program's modules as `update`, or write a lambda whose body chooses the arm.
         );
         if (!key.star) return;
+        // The key as the program spells it: `Run`. A key of no steps whose
+        // message type the pass does not know (an `update` with no
+        // annotation) is the program's one key, never `(any)`.
+        const spelled = if (key.spelled.len != 0) key.spelled else key.name;
+        const name = if (std.mem.eql(u8, spelled, "(any)"))
+            "every message of the program"
+        else
+            try std.fmt.allocPrint(cx.arena, "key `{s}`", .{spelled});
         switch (key.star_kind) {
+            // It opens the sentence: `Key …`, `Every message …`.
             .whole_record => return cx.programReport(.update, .program_shape, try std.fmt.allocPrint(cx.arena,
-                \\Key `{s}` writes the whole model, a record of several fields, with a value the compiler
-                \\cannot see into, which hides which of its fields changed, so no binding of the page can
-                \\be chosen for it: `browser-inline` writes only the bindings a key's writes reach, and
-                \\never checks the whole page again (`docs/design/browser-inline.md` §8.7; §5, class 3).
-                \\Write the fields the arm changes, as a record update of the model —
-                \\`{{ model | field = … }}` — so that its writes name them.
-            , .{key.name})),
-            .precision => return cx.programReport(.update, .not_implemented, try std.fmt.allocPrint(cx.arena,
-                \\A limit of the compiler: the write-set pass lost track of what key `{s}` writes and says
-                \\it writes the whole model, so it cannot say which bindings those writes reach
-                \\(`docs/design/browser-inline.md` §8.7; §5, class 4). The program is valid: it builds
-                \\with `--platform=browser-tea`.
-            , .{key.name})),
+                \\{s} writes the whole model, a record of several fields, in one value, which hides
+                \\which of its fields changed, so no binding of the page can be chosen for it:
+                \\`browser-inline` writes only the bindings a key's writes reach, and never checks the
+                \\whole page again (`docs/design/browser-inline.md` §8.7; §5, class 3). Write the fields
+                \\the arm changes, as a record update of the model — `{{ model | field = … }}` — or, for
+                \\a replacement of the whole model, a declared `replace` once the language has one.
+            , .{try capital(cx.arena, name)})),
+            .precision => {
+                const lost = key.lost orelse return cx.programReport(.update, .not_implemented, try std.fmt.allocPrint(cx.arena,
+                    \\A limit of the compiler: the write-set pass lost track of what {s} writes{s}, and
+                    \\says it writes the whole model, so it cannot tell which of the model's fields change
+                    \\(`docs/design/browser-inline.md` §8.7; §5, class 4). The program is valid: it builds
+                    \\with `--platform=browser-tea`.
+                , .{ name, capOf(key.cap) }));
+                const what = if (lost.text.len != 0) try std.fmt.allocPrint(cx.arena, "`{s}`", .{lost.text}) else try std.fmt.allocPrint(cx.arena, "the expression at {s}", .{lost.where});
+                // The function called, as the text spells it: its first word.
+                const callee = lost.text[0 .. std.mem.indexOfAny(u8, lost.text, " (") orelse lost.text.len];
+                const why = switch (lost.kind) {
+                    .parameter => try std.fmt.allocPrint(cx.arena, "a call of `{s}`, a function-valued parameter, which the compiler cannot see through", .{callee}),
+                    .local => try std.fmt.allocPrint(cx.arena, "a call of `{s}`, a function a pattern or a `let` binds, which the compiler knows only as a value", .{callee}),
+                    .record => "a record of a type the compiler cannot read",
+                    else => "a call whose result the compiler cannot see into",
+                };
+                if (key.cap != .none) return cx.programReportAt(lost.site, .not_implemented, try std.fmt.allocPrint(cx.arena,
+                    \\A limit of the compiler: the write-set pass stopped following what {s} writes at
+                    \\{s}{s}, so it cannot tell which of the model's fields change
+                    \\(`docs/design/browser-inline.md` §8.7; §5, class 4). Write the arm with less nesting, or
+                    \\build this program with `--platform=browser-tea`, where the program is valid.
+                , .{ name, what, capOf(key.cap) }));
+                const more = if (lost.more == 0) "" else try std.fmt.allocPrint(cx.arena, " (and {d} more place{s})", .{ lost.more, if (lost.more == 1) "" else "s" });
+                return cx.programReportAt(lost.site, .not_implemented, try std.fmt.allocPrint(cx.arena,
+                    \\A limit of the compiler: {s} writes the whole model with {s}{s}, {s}, so the
+                    \\compiler cannot tell which of the model's fields change (`docs/design/browser-inline.md`
+                    \\§8.7; §5, class 4). Write each change in `update` itself — a message per change, each
+                    \\writing its fields — and the bindings it reaches follow. The program is valid: it
+                    \\builds with `--platform=browser-tea`.
+                , .{ name, what, more, why }));
+            },
             // A model of one value: its one write is the model, exactly.
             else => {},
         }
+    }
+
+    /// The cap of the write-set pass that cut a key's writes, in words, for
+    /// a diagnostic: empty when none did.
+    fn capOf(cap: m.Program.Key.Cap) []const u8 {
+        return switch (cap) {
+            .depth => " past the write-set pass's depth limit of 8 steps below the model",
+            .alternatives => " past the write-set pass's limit of 16 alternatives",
+            .instantiation => " where calls of functions nest past the write-set pass's limit of 8",
+            .rounds => " where a recursive function needs more rounds than the write-set pass's 4",
+            .size => " past the write-set pass's term size limit",
+            .work => " past the write-set pass's work limit",
+            .leaves => " past the write-set pass's 256 message keys",
+            else => "",
+        };
     }
 
     /// Key `k`'s handler's name, made the first time it is asked for.
@@ -1358,4 +1407,11 @@ test "an end tag is left out only where the parser closes the element there" {
         try serialise(a, &out, &.{c.tree}, null, false);
         try t.expectEqualStrings(c.html, out.items);
     }
+}
+
+/// `s` with its first letter upper case, to open a sentence.
+fn capital(a: std.mem.Allocator, s: []const u8) ![]const u8 {
+    const out = try a.dupe(u8, s);
+    if (out.len != 0) out[0] = std.ascii.toUpper(out[0]);
+    return out;
 }
