@@ -1780,6 +1780,7 @@ fn hitLimit(o: *Ownership, why: Limit, at: u32) Allocator.Error!void {
 
 fn assertedRow(o: *Ownership, m: u32, d: u32) Allocator.Error!?Summary {
     if (o.in.packages[m] == .core and std.mem.eql(u8, o.in.module_names[m], "Schema")) return o.schemaRunRow(m, d);
+    if (o.in.packages[m] == .core and std.mem.eql(u8, o.in.module_names[m], "Record")) return o.recordRow(m, d);
     if (o.in.packages[m] != .core or !std.mem.eql(u8, o.in.module_names[m], "List")) return null;
     const bir = o.in.birs[m];
     const name = o.in.interner.slice(bir.symbol(bir.decls[d].name));
@@ -1872,6 +1873,25 @@ fn assertedRow(o: *Ownership, m: u32, d: u32) Allocator.Error!?Summary {
         .res = res,
         .supply = supply,
         .funs = funs,
+        .asserted = true,
+    });
+}
+
+/// `core/Record`'s row (§31.15): `copy r` reads `r` and aliases its
+/// fields into the copy — π₁ `RA`, and every field the result has is π₁'s
+/// at that field. It writes nothing and is not a demand.
+fn recordRow(o: *Ownership, m: u32, d: u32) Allocator.Error!?Summary {
+    const bir = o.in.birs[m];
+    const name = o.in.interner.slice(bir.symbol(bir.decls[d].name));
+    if (!std.mem.eql(u8, name, "copy")) return null;
+    const keep = o.keep.allocator();
+    // A record has no cell of its own yet (§26.8 question 2): what the
+    // copy holds is what π₁ holds, at the same paths.
+    const res = try keep.dupe(ResEntry, &.{.{ .path = eps, .prov = .{ .kind = .param, .a = 0, .path = eps } }});
+    return try o.normalize(.{
+        .params = bir.decls[d].params,
+        .uses = try keep.dupe(UseEntry, &.{.{ .param = 0, .path = eps, .bits = bit_r | bit_a }}),
+        .res = res,
         .asserted = true,
     });
 }

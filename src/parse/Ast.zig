@@ -944,7 +944,7 @@ pub const full = struct {
 
     pub const RecordUpdate = struct {
         brace: TokenIndex,
-        base: TokenIndex,
+        base: Node.Index,
         fields: []const Node.Index,
     };
 
@@ -1362,7 +1362,7 @@ pub fn fullRecordUpdate(tree: *const Ast, node: Node.Index) full.RecordUpdate {
     const data = tree.nodeData(node);
     return .{
         .brace = tree.nodeMainToken(node),
-        .base = data.lhs,
+        .base = @fromBackingInt(@intCast(data.lhs)),
         .fields = tree.extraSlice(tree.rangeAt(data.rhs), Node.Index),
     };
 }

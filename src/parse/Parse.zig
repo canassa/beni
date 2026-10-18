@@ -2081,7 +2081,9 @@ fn parseTypeAtom(p: *Parse) Allocator.Error!Index {
             if (p.peek() == .lower_ident and p.peekAt(1) == .pipe) {
                 const base = p.next();
                 _ = p.next();
-                const fields = try p.parseRecordTypeFields();
+                // `{ r | }`, any record (language.md §3, amended
+                // 2026-10-17): an extension with no field.
+                const fields = if (p.peek() == .r_brace) try p.listToRange(&.{}) else try p.parseRecordTypeFields();
                 try p.expectCloser(.r_brace, open);
                 const extra = try p.addExtra(fields);
                 return p.addNode(.{ .tag = .type_record_ext, .main_token = open, .data = .{ .lhs = base, .rhs = @backingInt(extra) } });
@@ -3427,18 +3429,49 @@ fn parseRecord(p: *Parse) Allocator.Error!Index {
         _ = p.next();
         return p.rangeNode(.record, open, try p.listToRange(&.{}));
     }
-    if (p.peek() == .lower_ident and p.peekAt(1) == .pipe) {
+    if (p.atUpdateBase()) {
         p.context = .record_update;
-        const base = p.next();
-        _ = p.next();
+        const base = try p.parseUpdateBase();
+        _ = try p.expectToken(.pipe);
         const fields = try p.parseFields();
         try p.expectCloser(.r_brace, open);
         const extra = try p.addExtra(fields);
-        return p.addNode(.{ .tag = .record_update, .main_token = open, .data = .{ .lhs = base, .rhs = @backingInt(extra) } });
+        return p.addNode(.{ .tag = .record_update, .main_token = open, .data = .{ .lhs = @backingInt(base), .rhs = @backingInt(extra) } });
     }
     const fields = try p.parseFields();
     try p.expectCloser(.r_brace, open);
     return p.rangeNode(.record, open, fields);
+}
+
+/// Whether a `{` starts an update rather than a record literal
+/// (language.md §3, §6.3 as amended 2026-10-17; `ownership-checker.md`
+/// §31.15). A literal begins `lower_ident '='`, so one token after the name
+/// tells them apart: a `|` or the start of an argument makes the name an
+/// update's base, and so does a qualified name or a `(`, which no literal
+/// begins with. A name with a field access after it (`{ r.a | … }`) is not
+/// a base, and takes the literal's path to its error.
+fn atUpdateBase(p: *const Parse) bool {
+    return switch (p.peek()) {
+        .lower_ident => switch (p.peekAt(1)) {
+            .pipe => true,
+            .dot_lower => !p.adjacent(p.tok_i + 1),
+            else => |tag| tag == .underscore or canStartAtom(tag),
+        },
+        .qualified_lower, .l_paren => true,
+        else => false,
+    };
+}
+
+/// UpdateBase := lower_ident | qualified_lower Arg* | lower_ident Arg+ | '(' Expr ')'
+///
+/// The head is a name, never a field access, and its arguments are atoms,
+/// as an application's are (`parseArgs`): `{ Record.copy r | f = v }` and
+/// `{ defaults ⊤ | f = v }` read as written. Any other expression is
+/// written in parentheses, `{ (pick model) | f = v }`.
+fn parseUpdateBase(p: *Parse) Allocator.Error!Index {
+    if (p.peek() == .l_paren) return p.parseAtom(false);
+    const head = try p.leaf(.ident, p.next());
+    return p.parseArgs(head);
 }
 
 /// Field := lower_ident '=' Expr, comma separated, at least one.
@@ -4545,7 +4578,7 @@ fn checkNode(tree: *const Ast, n: Index, token_count: usize, comment_count: usiz
         },
         .record_update => {
             const r = tree.fullRecordUpdate(n);
-            try testing.expect(r.base < token_count);
+            try checkIndex(tree, r.base);
             try checkIndices(tree, r.fields);
         },
         .type_paren, .type_sync, .type_own, .record_type_field, .interp, .negate, .spread, .paren, .field, .field_access, .tuple_index, .question, .let_annotation, .stmt, .pat_paren, .pat_spread, .schema_paren, .schema_as, .schema_via => try checkIndex(tree, tree.operand(n)),

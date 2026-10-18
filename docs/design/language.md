@@ -314,7 +314,7 @@ TypeAtom    := lower_ident                                       -- type variabl
              | '(' TypeApp (',' TypeApp)+ ')'                    -- tuple, arity ≥ 2, no '->' inside
              | '{' '}'                                           -- empty record
              | '{' RecordTypeFields '}'
-             | '{' lower_ident '|' RecordTypeFields '}'          -- extensible record
+             | '{' lower_ident '|' RecordTypeFields? '}'         -- extensible record; no field: any record
              | 'sync' '(' Type ')'                               -- a top-level signature only, §5.4
 Owned       := OwnWord* Product                                  -- a parameter or result of a top-level signature, core and platforms only, §5.4
 OwnWord     := 'unused' | 'borrowed' | 'aliased' | 'returned' | 'escaped' | 'consumed'
@@ -348,10 +348,11 @@ Atom        := literal                                           -- int float ch
              | '(' operator ')'                                  -- operator as function
              | '[' ']' | '[' ListItem (',' ListItem)* ']'        -- list (§6.8)
              | '{' '}' | '{' Field (',' Field)* '}'              -- record
-             | '{' lower_ident '|' Field (',' Field)* '}'        -- record update
+             | '{' UpdateBase '|' Field (',' Field)* '}'         -- record update
              | Atom dot_lower                                    -- field access, no space
              | Atom dot_index                                    -- tuple access, no space
 Field       := lower_ident '=' Expr
+UpdateBase  := lower_ident | qualified_lower Arg* | lower_ident Arg+ | '(' Expr ')'   -- §6.3
 ListItem    := Expr | '...' Expr                                 -- a spread, any number (§6.8)
 
 Pattern     := PatCtor ('as' lower_ident)?                       -- `as` binds loosest
@@ -371,7 +372,8 @@ LetPattern  := '_' | lower_ident | '(' ')' | '(' LetPattern ')'  -- irrefutable 
 Param       := PatAtom, restricted to LetPattern's shapes        -- irrefutable (§7)
 ```
 
-*Amended 2026-10-17 (the owner; `ownership-checker.md` §31.15; specified, not built):* two rules change. The
+*Amended 2026-10-17 (the owner; `ownership-checker.md` §31.15; built 2026-10-18, issue #315, and written into
+the grammar above):* two rules change. The
 record update becomes `'{' UpdateBase '|' Field (',' Field)* '}'`, with `UpdateBase := lower_ident |
 qualified_lower Arg* | lower_ident Arg+ | '(' Expr ')'` (§6.3, amended). And `TypeAtom`'s extensible record
 takes no field as well: `'{' lower_ident '|' RecordTypeFields? '}'`, so `{ r | }` is any record. It unifies
@@ -721,11 +723,12 @@ that reads a written field — and an update of a top-level `r` are compile erro
 keeps the old record copies it explicitly: `{ Record.copy r | a = x }` (`ownership-checker.md` §31.15). The new
 values are all evaluated before any field is written, so `{ r | a = r.b, b = r.a }` still swaps.
 
-*Amended 2026-10-17 (the owner; `ownership-checker.md` §31.15; specified, not built):* **the base of an update
+*Amended 2026-10-17 (the owner; `ownership-checker.md` §31.15; built 2026-10-18, issue #315):* **the base of an update
 is a name or a call.** "The update target is a plain name" above becomes: a name, an application whose head is a
 name or a qualified name and whose arguments are atoms (`{ Record.copy r | a = 1 }`, `{ defaults ⊤ | a = 1 }`),
 or a parenthesised expression. `{ r.a | … }` is still not allowed. A record literal still begins `name =`, so the
-two stay apart after one token.
+two stay apart after one token. The formatter keeps the base as written, and `Record` (Appendix A) is the
+prelude module whose `copy` such a base usually calls.
 
 ### 6.4 Tuples
 
@@ -3320,6 +3323,11 @@ types only so that a stale use is `never_spelling_removed` rather than `unbound_
 everyone writes but the home of three prelude values, which is why they keep a prelude row: an
 edge to either exists only in a module that writes `Int.` or `Float.` (the conditional prelude edge,
 static-dispatch-spike.md §5.1).
+
+*Amended 2026-10-17 (the owner; `ownership-checker.md` §31.0 item 8, §31.15; built 2026-10-18, issue #315):*
+`Record` joins the module aliases, for qualified use only. It exposes no type, constructor or value, so it takes
+no name from a program, and `Record.copy`, the fix an ownership error offers (§6.3), needs no import. Like `Int`
+and `Float`, it has an edge only in a module that writes `Record.`.
 
 Lowering resolves each to `import_value(Basics, name)` / `import_ctor(Maybe, Just)` etc., the same
 form an explicit `import Basics exposing (max)` would produce, so nothing downstream knows the

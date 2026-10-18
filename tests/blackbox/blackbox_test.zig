@@ -2975,6 +2975,7 @@ test "dump --stage=bir shows a pipeline as pipe-first saturated calls and an ope
         \\  prelude Debug
         \\  prelude Int
         \\  prelude Float
+        \\  prelude Record
         \\
     , r.stdout);
     try testing.expectEqualStrings("", r.stderr);
@@ -6669,6 +6670,7 @@ test "partial schema strings produce BIR error nodes instead of panicking" {
         \\  prelude Debug
         \\  prelude Int
         \\  prelude Float
+        \\  prelude Record
         \\
     , field.stdout);
     try testing.expectEqualStrings(
@@ -6691,6 +6693,7 @@ test "partial schema strings produce BIR error nodes instead of panicking" {
         \\  prelude Debug
         \\  prelude Int
         \\  prelude Float
+        \\  prelude Record
         \\
     , tag.stdout);
     try testing.expectEqualStrings(
@@ -6711,6 +6714,7 @@ test "partial schema strings produce BIR error nodes instead of panicking" {
         \\  prelude Debug
         \\  prelude Int
         \\  prelude Float
+        \\  prelude Record
         \\
     , discriminator.stdout);
     try testing.expectEqualDeep(@as([]const diagnostic.Diagnostic, &.{

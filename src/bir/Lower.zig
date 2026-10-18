@@ -2449,7 +2449,7 @@ fn lowerExpr(l: *Lower, node: NodeIndex) Allocator.Error!Index {
         },
         .record_update => {
             const upd = l.tree.fullRecordUpdate(node);
-            const base = try l.resolveValue(upd.base);
+            const base = try l.lowerExpr(upd.base);
             const range = try l.addRangeRecord(try l.lowerFields(upd.fields));
             return l.addInstAt(main_token, .record_update, base.int(), @backingInt(range));
         },
@@ -5742,6 +5742,7 @@ test "every resolution form: local, top, ctor, import_value, import_ctor, qualif
         \\  prelude Debug
         \\  prelude Int
         \\  prelude Float
+        \\  prelude Record
         \\
     , &.{});
 }
@@ -6081,6 +6082,7 @@ test "foreign declarations are rejected without --core and accepted with it" {
         \\  prelude Debug
         \\  prelude Int
         \\  prelude Float
+        \\  prelude Record
         \\
     , &.{});
 }
@@ -6199,6 +6201,7 @@ test "the interface skeleton lists every pub declaration and nothing private" {
         \\  prelude Debug
         \\  prelude Int
         \\  prelude Float
+        \\  prelude Record
         \\
     , &.{});
 }
@@ -6309,6 +6312,7 @@ test "an empty file lowers to an empty module with the prelude rows" {
         \\  prelude Debug
         \\  prelude Int
         \\  prelude Float
+        \\  prelude Record
         \\
     , &.{});
 }

@@ -1,0 +1,19 @@
+--! Records as values: the one thing a record needs that its syntax does not
+--! give, a copy (`docs/design/ownership-checker.md` §31.15).
+--!
+--! A record update writes its base's own object (`language.md` §6.3): after
+--! `s = { r | a = 1 }`, `r` and `s` are one record, and a later use of `r`
+--! whole is a compile error. A program that keeps the old record copies it
+--! first, `{ Record.copy r | a = 1 }`, and changes the copy.
+--!
+--! `Record` is in the prelude for qualified use only: `Record.copy` needs no
+--! import, and the module takes no unqualified name from a program.
+
+--| A shallow, fresh copy of a record: the same fields, holding the very
+--| same values (`language.md` §11.12), in an object nobody else holds. A
+--| change to the copy is never seen through the original, nor the other way
+--| round, which is what a version kept on purpose — an undo history, a
+--| snapshot — wants.
+--|
+--| The fields are not copied: a record of lists copies the record only.
+pub foreign pure copy : { r | } → { r | }

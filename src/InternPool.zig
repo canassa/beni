@@ -184,6 +184,7 @@ pub const WellKnown = enum(u32) {
     String,
     Char,
     Debug,
+    Record,
     Schema,
     // Operator functions, in the order of the language.md §6.5 table.
     add,

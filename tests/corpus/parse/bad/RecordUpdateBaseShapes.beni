@@ -1,0 +1,13 @@
+-- An update's base is a name, a call or a parenthesised expression
+-- (language.md §6.3): a field access is not one, a call with no `|` after
+-- it is no update, and an update changes at least one field.
+access model =
+    { model.form | name = "n" }
+
+
+noBar defaults =
+    { defaults ⊤ }
+
+
+noField model =
+    { model | }
