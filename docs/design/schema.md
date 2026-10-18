@@ -1400,7 +1400,9 @@ each widget's reader cost about 118 B brotli and the cap leaves about 15 B per w
   near-repeats that brotli codes as back-references:
   - a primitive is its reader: `shapeString`, `shapeBool`, `shapeInt`, `shapeFloat`,
     `shapeFinite`, `shapeNull`, `shapeValue`, `shapeChar`, `shapeInt32`, `shapeNever`;
-  - every other node is an array whose first element is its reader;
+  - every other node is an array whose first element is its reader. A record one of whose keys,
+    or a union whose discriminator, is a name `Object.prototype` holds names `shapeRecordOwn` or
+    `shapeTaggedOwn`, which test that key as an own key; the others read their keys plain;
   - a record is `[shapeRecord, make, entry₁, …]`, its entries in the declaration's order:
     `[key, shape]` for a required field, `[key, shape, 1]` for an optional one
     (`Present`/`Missing`), `[key, shape, 2]` for a derived `Maybe` field. `make` is the arrow
@@ -1461,7 +1463,9 @@ each widget's reader cost about 118 B brotli and the cap leaves about 15 B per w
   read by a validator run, each schema from the 17th to the 32nd adds about 34 B as a worker
   and 36 B as a shape, so the shapes' fixed cost is never repaid there. Speed: a shape run of a mid-size record (eight
   fields, a nested record, two lists, a tagged union) takes about six times as long as its
-  validator worker (4 M runs: 0.38 s against 2.4 s under Node 24).
+  validator worker (4 M runs: 0.38 s against 2.4 s under Node 24). *(Re-measured 2026-10-18 with
+  the leaner readers below, as CPU time on a loaded machine: 0.73 s against 4.3 s, 5.8×; the
+  #384 review measured 4.2–5.2× under load. This is the one place the figure is kept.)*
 
 **How a program chooses between shapes and workers** *(added 2026-10-18, the owner's decision)*.
 A shape run (above) and a run that keeps its validator worker accept the same inputs and build the
@@ -1469,7 +1473,7 @@ same values, so the choice changes only bytes and speed. The shapes' readers are
 paid once, and a shape is cheaper than a worker only once enough runs share them. The compiler
 chooses **per program, by one rule**: it counts the program's *shape runs*, the runs whose error
 is unread (§6, *A run whose failure is never read is a validator*) and whose schema has a shape,
-and compares the count with a threshold **T = 19**. At T or more, every shape run takes its
+and compares the count with a threshold **T = 4**. At T or more, every shape run takes its
 shape. Below T, every one keeps its validator worker, exactly as a run whose schema has no shape
 does. The rule is never an estimate of bytes.
 
@@ -1481,39 +1485,51 @@ does. The rule is never an estimate of bytes.
   does not count. Under `--schema-library` the count is 0. The choice therefore depends on the
   sources alone, never on threads or timing (CLAUDE.md rule 5): `Reach.Input.schema_shapes` for
   every edge list, and each module's `Lower.Input.schema_shapes`, carry the one answer.
-- **T was measured once** (2026-10-18, brotli 11, release). The table gives the total bytes of
-  each build with its runs kept as workers (W) and taken as shapes (S):
+- **T was measured** *(2026-10-18, brotli 11, release; re-measured the same day after the leaner
+  readers below, which moved it from 19 to 4)*. The table gives each build's total bytes with
+  its runs kept as workers (W) and taken as shapes (S):
 
   | runs | generated, derived records (W / S) | generated, declared records (W / S) | `unique-components`, seeds 1 / 2 / 3, S − W |
   |---|---|---|---|
-  | 1 | 626 / 945 | 630 / 940 | — |
-  | 2 | 767 / 1 051 | 765 / 1 053 | +219 / +237 / +226 (n = 1) |
-  | 5 | 1 005 / 1 184 | 1 016 / 1 192 | +178 / +172 / +178 (n = 4) |
-  | 7 | — | — | +130 / +133 / +116 (n = 6) |
-  | 10 | 1 362 / 1 387 | 1 349 / 1 407 | — |
-  | 11 | — | — | +99 / +46 / +48 (n = 10) |
-  | 12 | 1 481 / 1 464 | 1 442 / 1 503 | — |
-  | 13 | — | — | +28 / +14 / +22 (n = 12) |
-  | 15 | — | — | +11 / −24 / −44 (n = 14) |
-  | 16 | 1 700 / 1 634 | 1 617 / 1 689 | — |
-  | 17 | — | — | −48 / −60 / +26 (n = 16) |
-  | 19 | — | — | −47 / −30 / −50 (n = 18) |
-  | 21 | — | — | −60 / −66 / −111 (n = 20) |
-  | 25 | — | — | −118 / −104 / −29 (n = 24) |
-  | 32 | 2 446 / 2 209 | 2 226 / 2 322 | — |
-  | 33 | — | — | −333 / −412 / −369 (n = 32) |
-  | 65 | — | — | −1 486 / −1 667 / −1 467 (n = 64) |
+  | 1 | 626 / 793 | 630 / 793 | — |
+  | 2 | 767 / 912 | 765 / 912 | +25 / +42 / +29 (n = 1) |
+  | 3 | 854 / 961 | 863 / 963 | +14 / +36 / +36 (n = 2) |
+  | 4 | 932 / 998 | 939 / 1 008 | −6 / −8 / −5 (n = 3) |
+  | 5 | 1 005 / 1 046 | 1 016 / 1 058 | −9 / −20 / −25 (n = 4) |
+  | 6 | 1 146 / 1 080 | 1 155 / 1 104 | −25 / −49 / −46 (n = 5) |
+  | 7 | — | — | −45 / −61 / −64 (n = 6) |
+  | 8 | 1 228 / 1 170 | 1 248 / 1 189 | — |
+  | 9 | — | — | −93 / −102 / −133 (n = 8) |
+  | 16 | 1 700 / 1 501 | 1 617 / 1 549 | — |
+  | 32 | 2 446 / 2 064 | 2 226 / 2 185 | — |
 
   The generated programs are N four-field records, each read once by a run that uses its value:
   derived records read their fields in alphabetical order, declared ones in an order that
-  repeats across records, which brotli codes better, so declared workers never lose. A
-  `unique-components` app of n widgets (`--lists none`) holds n + 1 shape runs, one per widget
-  and Main's. Shapes win there for every seed from n = 18, so T = 19. S0's `PushAndTimer`, one
-  run, keeps its worker and its 583 B, under the bar of 589.
-- **Fixtures.** `emit/release/app/ShapeThresholdBelow` (18 runs) keeps its workers and
-  `ShapeThresholdAt` (19) takes its shapes. `run/SchemaErrorUnread` (under T) and
-  `run/SchemaErrorUnreadShapes` (the same program with fifteen more runs, over T) print one golden,
-  so the differential inputs pass through both lowerings, each also through the library.
+  repeats across records. A `unique-components` app of n widgets (`--lists none`) holds n + 1
+  shape runs, one per widget and Main's. Shapes win there for every seed from n = 3, so T = 4;
+  the generated programs cross at 6, so a program of four or five such records pays 41 to 69 B
+  for its shapes. S0's `PushAndTimer`, one run, keeps its worker and its 583 B, under the bar of
+  589. *(The first measurement, before the leaner readers, put the crossover at 19 runs: 19
+  in the research app, 12 in the generated derived records, and never in the declared ones.)*
+- **The leaner readers that moved T** *(2026-10-18)*, each measured on a one-run program (P1),
+  a program of every kind with two runs (P2) and one with 32 (P32), shapes forced, brotli:
+  - a key named like one of the twelve that `Object.prototype` holds is found at compile time,
+    as the workers find it, and its record or union takes `shapeRecordOwn` or
+    `shapeTaggedOwn`; every other shape reads its keys plain, so a program with no such key
+    ships no list of names: P1 1 044 → 895, P2 1 766 → 1 623, P32 2 324 → 2 210;
+  - a record read by one loop and one entry reader, not five functions: 895 → 894,
+    1 623 → 1 611, 2 210 → 2 209;
+  - a union's variant found in the loop that reads it: 894 → 853, 1 611 → 1 599,
+    2 209 → 2 189;
+  - *measured and refused*: a record built from a table of its field names' places in place of
+    the `make` arrow. It saved 23 B at P32 but cost 33 at P1 and 26 at P2, and in the research
+    app it lost at every size measured (n = 1 to 8, by 15 to 26 B a seed), which would have put
+    T at 6.
+- **Fixtures.** `emit/release/app/ShapeThresholdBelow` (3 runs) keeps its workers and
+  `ShapeThresholdAt` (4) takes its shapes. `run/SchemaErrorUnreadOrders`, `…Events` and `…Items`
+  (each under T) and `run/SchemaErrorUnreadShapes` (the three in one program, over T) print one
+  set of answers, so the differential inputs pass through both lowerings, each also through the
+  library.
 
 ## 7. Effects
 

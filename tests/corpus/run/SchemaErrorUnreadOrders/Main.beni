@@ -1,0 +1,157 @@
+-- A run whose error nothing reads is a validator (`schema.md` §6, *A run whose
+-- failure is never read is a validator*), and in a program with fewer than
+-- `SchemaValid.shape_threshold` such runs it keeps its compiled worker (*How a
+-- program chooses between shapes and workers*). Every input below is read
+-- twice, by such a run and by one that reads its error, and each line prints
+-- both answers; the corpus also builds this through the library. Its inputs
+-- are records: a field named like a key of `Object.prototype`, own and inherited; an inherited field; a key present as `undefined`; extra keys; NaN, an infinity, 1.5 and 2⁵³ where an `Int` or a finite `Float` is read; `Value`, `null`, `nullable` and `optional`; a recursive union at the depth bound and one past it; and a record whose declaration lists its fields out of their canonical order, read through getters that log the keys each run read. `run/SchemaErrorUnreadShapes` reads them all through
+-- shapes, against the same answers.
+import Hosts
+import Node
+import Schema exposing (Value)
+
+
+schema Order =
+    zeta : Int
+    alpha : String as "the-alpha"
+    mid : FiniteFloat
+    note : String optional
+    count : Int nullable
+    toString : String optional
+    extra : Value
+    tree : Tree
+
+
+schema Tree tagged "kind" of
+    Leaf as "leaf"
+        value : Float
+    Branch as "branch"
+        value : Float
+        children : List Tree
+
+
+orderValid : Value → String
+orderValid v =
+    case Schema.read (Order.schema ⊤) v of
+        Ok o →
+            Debug.toString o
+
+        Err _ →
+            "invalid"
+
+
+orderRead : Value → String
+orderRead v =
+    case Schema.read (Order.schema ⊤) v of
+        Ok o →
+            Debug.toString o
+
+        Err issues →
+            "invalid (${String.fromInt (List.length issues)})"
+
+
+order : String, Value → String
+order label v = "${label}: ${orderValid v} | ${orderRead v}"
+
+
+-- How deep a tree is: each line at the depth bound prints this, not the tree.
+depthOf : Tree.Type → Int
+depthOf t =
+    case t of
+        Tree.Leaf _ →
+            0
+
+        Tree.Branch b →
+            1 + List.foldl b.children 0 λc most → max (depthOf c) most
+
+
+orderDeep : Int → String
+orderDeep n =
+    v = Hosts.parse (orderText (deep n))
+    valid =
+        case Schema.read (Order.schema ⊤) v of
+            Ok o →
+                "${String.fromInt (depthOf o.tree)} deep"
+
+            Err _ →
+                "invalid"
+    read =
+        case Schema.read (Order.schema ⊤) v of
+            Ok o →
+                "${String.fromInt (depthOf o.tree)} deep"
+
+            Err issues →
+                "invalid (${String.fromInt (List.length issues)})"
+    "tree ${String.fromInt n} deep: ${valid} | ${read}"
+
+
+-- Through getters: the keys each run read, in order, up to its failure.
+orderReads : String, Value → String
+orderReads label v =
+    keys = [ "zeta", "the-alpha", "mid", "note", "count", "toString", "extra", "tree" ]
+    valid = orderValid (Hosts.logged v keys)
+    validReads = Hosts.reads ⊤
+    read = orderRead (Hosts.logged v keys)
+    readReads = Hosts.reads ⊤
+    "${label}: ${valid} [${validReads}] | ${read} [${readReads}]"
+
+
+deep : Int → String
+deep n =
+    String.repeat "{\"kind\":\"branch\",\"value\":1,\"children\":[" n
+        ++ "{\"kind\":\"leaf\",\"value\":2}"
+        ++ String.repeat "]}" n
+
+
+orderText : String → String
+orderText tree =
+    "{\"zeta\":1,\"the-alpha\":\"a\",\"mid\":2.5,\"count\":null,\"extra\":[1,{\"k\":true}],\"tree\":${tree}}"
+
+
+good : Value
+good =
+    Hosts.parse
+        (orderText
+            "{\"kind\":\"branch\",\"value\":0.5,\"children\":[{\"kind\":\"leaf\",\"value\":-1}]}"
+        )
+
+
+main : Node.Program
+main =
+    Node.printLines
+        [ order "good" good
+        , order "own toString" (Hosts.with good "toString" (Hosts.parse "\"own\""))
+        , order "toString not a string" (Hosts.with good "toString" (Hosts.parse "1"))
+        , order "inherited fields" (Hosts.inheriting good)
+        , order "note undefined" (Hosts.with good "note" (Hosts.undefined ⊤))
+        , order "zeta undefined" (Hosts.with good "zeta" (Hosts.undefined ⊤))
+        , order
+            "extra keys"
+            (Hosts.with (Hosts.with good "more" (Hosts.parse "1")) "__proto__" (Hosts.parse "2"))
+        , order "zeta 1.5" (Hosts.with good "zeta" (Hosts.parse "1.5"))
+        , order "zeta 2^53" (Hosts.with good "zeta" (Hosts.parse "9007199254740992"))
+        , order "zeta NaN" (Hosts.with good "zeta" (Hosts.nan ⊤))
+        , order "mid NaN" (Hosts.with good "mid" (Hosts.nan ⊤))
+        , order "mid infinity" (Hosts.with good "mid" (Hosts.infinity ⊤))
+        , order
+            "tree value NaN"
+            (Hosts.with
+                good
+                "tree"
+                (Hosts.with (Hosts.parse "{\"kind\":\"leaf\"}") "value" (Hosts.nan ⊤))
+            )
+        , order "count 3" (Hosts.with good "count" (Hosts.parse "3"))
+        , order "count missing" (Hosts.with good "count" (Hosts.undefined ⊤))
+        , order "extra missing" (Hosts.with good "extra" (Hosts.undefined ⊤))
+        , order "extra null" (Hosts.with good "extra" (Hosts.parse "null"))
+        , order "an array" (Hosts.parse "[1]")
+        , order "null" (Hosts.parse "null")
+        , orderDeep 169
+        , orderDeep 170
+        , order
+            "children not a list"
+            (Hosts.parse (orderText "{\"kind\":\"branch\",\"value\":1,\"children\":{}}"))
+        , orderReads "getters, good" good
+        , orderReads "getters, mid bad" (Hosts.with good "mid" (Hosts.parse "\"x\""))
+        , orderReads "getters, alpha bad" (Hosts.with good "the-alpha" (Hosts.parse "1"))
+        ]

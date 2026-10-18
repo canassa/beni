@@ -5,7 +5,7 @@
 -- `Schema.validParse` with the schema's validator worker — `JSON.parse`, its
 -- `SyntaxError` alone caught, then the worker. No issue is made, no message
 -- is written, and neither `Json` nor a schema value ships for them.
--- `run/SchemaErrorUnread` proves the answers.
+-- `run/SchemaErrorUnreadEvents` proves the answers.
 import Json
 import Node
 import Schema

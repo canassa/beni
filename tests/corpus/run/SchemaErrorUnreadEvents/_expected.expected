@@ -1,0 +1,19 @@
+getters, move: move 1 2 [type,dy,dx] | move 1 2 [type,dy,dx]
+getters, move dy bad: invalid [type,dy] | invalid (1) [type,dy]
+set: set 3 | set 3
+move: move 1 2 | move 1 2
+reset: reset | reset
+unknown tag: invalid | invalid (1)
+tag a number: invalid | invalid (1)
+tag inherited: reset | reset
+tag toString: invalid | invalid (1)
+no tag: invalid | invalid (1)
+set NaN: invalid | invalid (1)
+parse set: set 4 | set 4
+parse not JSON: invalid | invalid (1)
+parse move 1.5: invalid | invalid (1)
+own constructor: plain | plain
+inherited constructor: invalid | invalid (1)
+own valueOf: named v | named v
+inherited valueOf: invalid | invalid (1)
+inherited both: invalid | invalid (1)
