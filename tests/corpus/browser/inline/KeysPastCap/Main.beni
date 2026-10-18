@@ -1,0 +1,1066 @@
+-- A message of 257 constructors, one of them another module's messages:
+-- the key tree's first split has 257 children, past the write-set pass's
+-- cap of 256 leaves, which `browser-inline` lifts (write-sets.md, *The
+-- caps*; docs/design/browser-inline.md §8.7). Capped, the program had one
+-- key of no steps, which the piece's event could not reach through
+-- `Html.map`. Every key is split now, and the button counts.
+import Browser
+import Html exposing (Html)
+import Tea
+import W
+
+
+type alias Model =
+    w : W.Model
+    k : Int
+
+
+type Msg
+    = WMsg W.Msg
+    | S2
+    | S3
+    | S4
+    | S5
+    | S6
+    | S7
+    | S8
+    | S9
+    | S10
+    | S11
+    | S12
+    | S13
+    | S14
+    | S15
+    | S16
+    | S17
+    | S18
+    | S19
+    | S20
+    | S21
+    | S22
+    | S23
+    | S24
+    | S25
+    | S26
+    | S27
+    | S28
+    | S29
+    | S30
+    | S31
+    | S32
+    | S33
+    | S34
+    | S35
+    | S36
+    | S37
+    | S38
+    | S39
+    | S40
+    | S41
+    | S42
+    | S43
+    | S44
+    | S45
+    | S46
+    | S47
+    | S48
+    | S49
+    | S50
+    | S51
+    | S52
+    | S53
+    | S54
+    | S55
+    | S56
+    | S57
+    | S58
+    | S59
+    | S60
+    | S61
+    | S62
+    | S63
+    | S64
+    | S65
+    | S66
+    | S67
+    | S68
+    | S69
+    | S70
+    | S71
+    | S72
+    | S73
+    | S74
+    | S75
+    | S76
+    | S77
+    | S78
+    | S79
+    | S80
+    | S81
+    | S82
+    | S83
+    | S84
+    | S85
+    | S86
+    | S87
+    | S88
+    | S89
+    | S90
+    | S91
+    | S92
+    | S93
+    | S94
+    | S95
+    | S96
+    | S97
+    | S98
+    | S99
+    | S100
+    | S101
+    | S102
+    | S103
+    | S104
+    | S105
+    | S106
+    | S107
+    | S108
+    | S109
+    | S110
+    | S111
+    | S112
+    | S113
+    | S114
+    | S115
+    | S116
+    | S117
+    | S118
+    | S119
+    | S120
+    | S121
+    | S122
+    | S123
+    | S124
+    | S125
+    | S126
+    | S127
+    | S128
+    | S129
+    | S130
+    | S131
+    | S132
+    | S133
+    | S134
+    | S135
+    | S136
+    | S137
+    | S138
+    | S139
+    | S140
+    | S141
+    | S142
+    | S143
+    | S144
+    | S145
+    | S146
+    | S147
+    | S148
+    | S149
+    | S150
+    | S151
+    | S152
+    | S153
+    | S154
+    | S155
+    | S156
+    | S157
+    | S158
+    | S159
+    | S160
+    | S161
+    | S162
+    | S163
+    | S164
+    | S165
+    | S166
+    | S167
+    | S168
+    | S169
+    | S170
+    | S171
+    | S172
+    | S173
+    | S174
+    | S175
+    | S176
+    | S177
+    | S178
+    | S179
+    | S180
+    | S181
+    | S182
+    | S183
+    | S184
+    | S185
+    | S186
+    | S187
+    | S188
+    | S189
+    | S190
+    | S191
+    | S192
+    | S193
+    | S194
+    | S195
+    | S196
+    | S197
+    | S198
+    | S199
+    | S200
+    | S201
+    | S202
+    | S203
+    | S204
+    | S205
+    | S206
+    | S207
+    | S208
+    | S209
+    | S210
+    | S211
+    | S212
+    | S213
+    | S214
+    | S215
+    | S216
+    | S217
+    | S218
+    | S219
+    | S220
+    | S221
+    | S222
+    | S223
+    | S224
+    | S225
+    | S226
+    | S227
+    | S228
+    | S229
+    | S230
+    | S231
+    | S232
+    | S233
+    | S234
+    | S235
+    | S236
+    | S237
+    | S238
+    | S239
+    | S240
+    | S241
+    | S242
+    | S243
+    | S244
+    | S245
+    | S246
+    | S247
+    | S248
+    | S249
+    | S250
+    | S251
+    | S252
+    | S253
+    | S254
+    | S255
+    | S256
+    | S257
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        WMsg sub →
+            { model | w = W.update sub model.w }
+
+        S2 →
+            { model | k = 2 }
+
+        S3 →
+            { model | k = 3 }
+
+        S4 →
+            { model | k = 4 }
+
+        S5 →
+            { model | k = 5 }
+
+        S6 →
+            { model | k = 6 }
+
+        S7 →
+            { model | k = 7 }
+
+        S8 →
+            { model | k = 8 }
+
+        S9 →
+            { model | k = 9 }
+
+        S10 →
+            { model | k = 10 }
+
+        S11 →
+            { model | k = 11 }
+
+        S12 →
+            { model | k = 12 }
+
+        S13 →
+            { model | k = 13 }
+
+        S14 →
+            { model | k = 14 }
+
+        S15 →
+            { model | k = 15 }
+
+        S16 →
+            { model | k = 16 }
+
+        S17 →
+            { model | k = 17 }
+
+        S18 →
+            { model | k = 18 }
+
+        S19 →
+            { model | k = 19 }
+
+        S20 →
+            { model | k = 20 }
+
+        S21 →
+            { model | k = 21 }
+
+        S22 →
+            { model | k = 22 }
+
+        S23 →
+            { model | k = 23 }
+
+        S24 →
+            { model | k = 24 }
+
+        S25 →
+            { model | k = 25 }
+
+        S26 →
+            { model | k = 26 }
+
+        S27 →
+            { model | k = 27 }
+
+        S28 →
+            { model | k = 28 }
+
+        S29 →
+            { model | k = 29 }
+
+        S30 →
+            { model | k = 30 }
+
+        S31 →
+            { model | k = 31 }
+
+        S32 →
+            { model | k = 32 }
+
+        S33 →
+            { model | k = 33 }
+
+        S34 →
+            { model | k = 34 }
+
+        S35 →
+            { model | k = 35 }
+
+        S36 →
+            { model | k = 36 }
+
+        S37 →
+            { model | k = 37 }
+
+        S38 →
+            { model | k = 38 }
+
+        S39 →
+            { model | k = 39 }
+
+        S40 →
+            { model | k = 40 }
+
+        S41 →
+            { model | k = 41 }
+
+        S42 →
+            { model | k = 42 }
+
+        S43 →
+            { model | k = 43 }
+
+        S44 →
+            { model | k = 44 }
+
+        S45 →
+            { model | k = 45 }
+
+        S46 →
+            { model | k = 46 }
+
+        S47 →
+            { model | k = 47 }
+
+        S48 →
+            { model | k = 48 }
+
+        S49 →
+            { model | k = 49 }
+
+        S50 →
+            { model | k = 50 }
+
+        S51 →
+            { model | k = 51 }
+
+        S52 →
+            { model | k = 52 }
+
+        S53 →
+            { model | k = 53 }
+
+        S54 →
+            { model | k = 54 }
+
+        S55 →
+            { model | k = 55 }
+
+        S56 →
+            { model | k = 56 }
+
+        S57 →
+            { model | k = 57 }
+
+        S58 →
+            { model | k = 58 }
+
+        S59 →
+            { model | k = 59 }
+
+        S60 →
+            { model | k = 60 }
+
+        S61 →
+            { model | k = 61 }
+
+        S62 →
+            { model | k = 62 }
+
+        S63 →
+            { model | k = 63 }
+
+        S64 →
+            { model | k = 64 }
+
+        S65 →
+            { model | k = 65 }
+
+        S66 →
+            { model | k = 66 }
+
+        S67 →
+            { model | k = 67 }
+
+        S68 →
+            { model | k = 68 }
+
+        S69 →
+            { model | k = 69 }
+
+        S70 →
+            { model | k = 70 }
+
+        S71 →
+            { model | k = 71 }
+
+        S72 →
+            { model | k = 72 }
+
+        S73 →
+            { model | k = 73 }
+
+        S74 →
+            { model | k = 74 }
+
+        S75 →
+            { model | k = 75 }
+
+        S76 →
+            { model | k = 76 }
+
+        S77 →
+            { model | k = 77 }
+
+        S78 →
+            { model | k = 78 }
+
+        S79 →
+            { model | k = 79 }
+
+        S80 →
+            { model | k = 80 }
+
+        S81 →
+            { model | k = 81 }
+
+        S82 →
+            { model | k = 82 }
+
+        S83 →
+            { model | k = 83 }
+
+        S84 →
+            { model | k = 84 }
+
+        S85 →
+            { model | k = 85 }
+
+        S86 →
+            { model | k = 86 }
+
+        S87 →
+            { model | k = 87 }
+
+        S88 →
+            { model | k = 88 }
+
+        S89 →
+            { model | k = 89 }
+
+        S90 →
+            { model | k = 90 }
+
+        S91 →
+            { model | k = 91 }
+
+        S92 →
+            { model | k = 92 }
+
+        S93 →
+            { model | k = 93 }
+
+        S94 →
+            { model | k = 94 }
+
+        S95 →
+            { model | k = 95 }
+
+        S96 →
+            { model | k = 96 }
+
+        S97 →
+            { model | k = 97 }
+
+        S98 →
+            { model | k = 98 }
+
+        S99 →
+            { model | k = 99 }
+
+        S100 →
+            { model | k = 100 }
+
+        S101 →
+            { model | k = 101 }
+
+        S102 →
+            { model | k = 102 }
+
+        S103 →
+            { model | k = 103 }
+
+        S104 →
+            { model | k = 104 }
+
+        S105 →
+            { model | k = 105 }
+
+        S106 →
+            { model | k = 106 }
+
+        S107 →
+            { model | k = 107 }
+
+        S108 →
+            { model | k = 108 }
+
+        S109 →
+            { model | k = 109 }
+
+        S110 →
+            { model | k = 110 }
+
+        S111 →
+            { model | k = 111 }
+
+        S112 →
+            { model | k = 112 }
+
+        S113 →
+            { model | k = 113 }
+
+        S114 →
+            { model | k = 114 }
+
+        S115 →
+            { model | k = 115 }
+
+        S116 →
+            { model | k = 116 }
+
+        S117 →
+            { model | k = 117 }
+
+        S118 →
+            { model | k = 118 }
+
+        S119 →
+            { model | k = 119 }
+
+        S120 →
+            { model | k = 120 }
+
+        S121 →
+            { model | k = 121 }
+
+        S122 →
+            { model | k = 122 }
+
+        S123 →
+            { model | k = 123 }
+
+        S124 →
+            { model | k = 124 }
+
+        S125 →
+            { model | k = 125 }
+
+        S126 →
+            { model | k = 126 }
+
+        S127 →
+            { model | k = 127 }
+
+        S128 →
+            { model | k = 128 }
+
+        S129 →
+            { model | k = 129 }
+
+        S130 →
+            { model | k = 130 }
+
+        S131 →
+            { model | k = 131 }
+
+        S132 →
+            { model | k = 132 }
+
+        S133 →
+            { model | k = 133 }
+
+        S134 →
+            { model | k = 134 }
+
+        S135 →
+            { model | k = 135 }
+
+        S136 →
+            { model | k = 136 }
+
+        S137 →
+            { model | k = 137 }
+
+        S138 →
+            { model | k = 138 }
+
+        S139 →
+            { model | k = 139 }
+
+        S140 →
+            { model | k = 140 }
+
+        S141 →
+            { model | k = 141 }
+
+        S142 →
+            { model | k = 142 }
+
+        S143 →
+            { model | k = 143 }
+
+        S144 →
+            { model | k = 144 }
+
+        S145 →
+            { model | k = 145 }
+
+        S146 →
+            { model | k = 146 }
+
+        S147 →
+            { model | k = 147 }
+
+        S148 →
+            { model | k = 148 }
+
+        S149 →
+            { model | k = 149 }
+
+        S150 →
+            { model | k = 150 }
+
+        S151 →
+            { model | k = 151 }
+
+        S152 →
+            { model | k = 152 }
+
+        S153 →
+            { model | k = 153 }
+
+        S154 →
+            { model | k = 154 }
+
+        S155 →
+            { model | k = 155 }
+
+        S156 →
+            { model | k = 156 }
+
+        S157 →
+            { model | k = 157 }
+
+        S158 →
+            { model | k = 158 }
+
+        S159 →
+            { model | k = 159 }
+
+        S160 →
+            { model | k = 160 }
+
+        S161 →
+            { model | k = 161 }
+
+        S162 →
+            { model | k = 162 }
+
+        S163 →
+            { model | k = 163 }
+
+        S164 →
+            { model | k = 164 }
+
+        S165 →
+            { model | k = 165 }
+
+        S166 →
+            { model | k = 166 }
+
+        S167 →
+            { model | k = 167 }
+
+        S168 →
+            { model | k = 168 }
+
+        S169 →
+            { model | k = 169 }
+
+        S170 →
+            { model | k = 170 }
+
+        S171 →
+            { model | k = 171 }
+
+        S172 →
+            { model | k = 172 }
+
+        S173 →
+            { model | k = 173 }
+
+        S174 →
+            { model | k = 174 }
+
+        S175 →
+            { model | k = 175 }
+
+        S176 →
+            { model | k = 176 }
+
+        S177 →
+            { model | k = 177 }
+
+        S178 →
+            { model | k = 178 }
+
+        S179 →
+            { model | k = 179 }
+
+        S180 →
+            { model | k = 180 }
+
+        S181 →
+            { model | k = 181 }
+
+        S182 →
+            { model | k = 182 }
+
+        S183 →
+            { model | k = 183 }
+
+        S184 →
+            { model | k = 184 }
+
+        S185 →
+            { model | k = 185 }
+
+        S186 →
+            { model | k = 186 }
+
+        S187 →
+            { model | k = 187 }
+
+        S188 →
+            { model | k = 188 }
+
+        S189 →
+            { model | k = 189 }
+
+        S190 →
+            { model | k = 190 }
+
+        S191 →
+            { model | k = 191 }
+
+        S192 →
+            { model | k = 192 }
+
+        S193 →
+            { model | k = 193 }
+
+        S194 →
+            { model | k = 194 }
+
+        S195 →
+            { model | k = 195 }
+
+        S196 →
+            { model | k = 196 }
+
+        S197 →
+            { model | k = 197 }
+
+        S198 →
+            { model | k = 198 }
+
+        S199 →
+            { model | k = 199 }
+
+        S200 →
+            { model | k = 200 }
+
+        S201 →
+            { model | k = 201 }
+
+        S202 →
+            { model | k = 202 }
+
+        S203 →
+            { model | k = 203 }
+
+        S204 →
+            { model | k = 204 }
+
+        S205 →
+            { model | k = 205 }
+
+        S206 →
+            { model | k = 206 }
+
+        S207 →
+            { model | k = 207 }
+
+        S208 →
+            { model | k = 208 }
+
+        S209 →
+            { model | k = 209 }
+
+        S210 →
+            { model | k = 210 }
+
+        S211 →
+            { model | k = 211 }
+
+        S212 →
+            { model | k = 212 }
+
+        S213 →
+            { model | k = 213 }
+
+        S214 →
+            { model | k = 214 }
+
+        S215 →
+            { model | k = 215 }
+
+        S216 →
+            { model | k = 216 }
+
+        S217 →
+            { model | k = 217 }
+
+        S218 →
+            { model | k = 218 }
+
+        S219 →
+            { model | k = 219 }
+
+        S220 →
+            { model | k = 220 }
+
+        S221 →
+            { model | k = 221 }
+
+        S222 →
+            { model | k = 222 }
+
+        S223 →
+            { model | k = 223 }
+
+        S224 →
+            { model | k = 224 }
+
+        S225 →
+            { model | k = 225 }
+
+        S226 →
+            { model | k = 226 }
+
+        S227 →
+            { model | k = 227 }
+
+        S228 →
+            { model | k = 228 }
+
+        S229 →
+            { model | k = 229 }
+
+        S230 →
+            { model | k = 230 }
+
+        S231 →
+            { model | k = 231 }
+
+        S232 →
+            { model | k = 232 }
+
+        S233 →
+            { model | k = 233 }
+
+        S234 →
+            { model | k = 234 }
+
+        S235 →
+            { model | k = 235 }
+
+        S236 →
+            { model | k = 236 }
+
+        S237 →
+            { model | k = 237 }
+
+        S238 →
+            { model | k = 238 }
+
+        S239 →
+            { model | k = 239 }
+
+        S240 →
+            { model | k = 240 }
+
+        S241 →
+            { model | k = 241 }
+
+        S242 →
+            { model | k = 242 }
+
+        S243 →
+            { model | k = 243 }
+
+        S244 →
+            { model | k = 244 }
+
+        S245 →
+            { model | k = 245 }
+
+        S246 →
+            { model | k = 246 }
+
+        S247 →
+            { model | k = 247 }
+
+        S248 →
+            { model | k = 248 }
+
+        S249 →
+            { model | k = 249 }
+
+        S250 →
+            { model | k = 250 }
+
+        S251 →
+            { model | k = 251 }
+
+        S252 →
+            { model | k = 252 }
+
+        S253 →
+            { model | k = 253 }
+
+        S254 →
+            { model | k = 254 }
+
+        S255 →
+            { model | k = 255 }
+
+        S256 →
+            { model | k = 256 }
+
+        S257 →
+            { model | k = 257 }
+
+
+view : Model → Html Msg
+view model =
+    <div>
+        {Html.map (W.view model.w) WMsg}
+        <p>{model.k}</p>
+        <button data-role="last" onClick={S257}>last</button>
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → { w = W.init ⊤, k = 0 }, update = update, view = view })
+        "root"
