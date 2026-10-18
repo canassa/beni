@@ -6159,3 +6159,18 @@ lists of every level: `case t of Node l ys _ → ( List.push ys 1, l )` is accep
 the push through the subtree it gets back. The same body over a tree built
 inline is rejected. `tests/pending/ownership/ParamHole.beni`, red; open until
 ownership-checker.md §16.7's decision (d), `lvl`, is built.
+
+## CK-256 — a level reached through a fold is taken for the root's level (2026-10-18)
+
+Ownership soundness, issue #379, found while designing ownership-checker.md
+§16.7's decision (d). Folding makes `#Node.0#Node.1` the path `#Node.1`, so a
+parameter's symbolic cell for level 1's list, reached through the left subtree
+`l`, is `param(t, #Node.1)`: the cell of the root's own list. `case t of Node l
+_ _ → case l of Node _ zs _ → ( List.push zs 1, l )` is accepted `param`, and the
+subtree it returns holds the list it pushed, with no sharing in the input at
+all. Through a call it is the same: `pick` returns `( zs, l )` and its caller's
+push is accepted. The two summaries are those of `ParamHole`'s `hole`, which
+writes the root's list, so (d)'s `lvl` as designed would accept both: the
+positions a fold reached must stay apart from the root's, in cells and in
+summary provenance. `tests/pending/ownership/DeeperLevel.beni`, red; a design
+for the owner (#286).
