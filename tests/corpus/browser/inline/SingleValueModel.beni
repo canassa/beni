@@ -1,0 +1,38 @@
+-- A model of one value, an `Int`, which each arm writes whole (a `*` key of
+-- one value, `write-sets.md` §3.4; docs/design/browser-inline.md §8.3): its
+-- whole write is the model, and its pass calls the groups the write-set
+-- pass found for that write, by name, as any other key's — both bindings
+-- here, since both read the model. There is no path that calls every
+-- binding of the page.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Inc
+    | Reset
+
+
+update : Msg, Int → Int
+update msg n =
+    case msg of
+        Inc →
+            n + 1
+
+        Reset →
+            0
+
+
+view : Int → Html Msg
+view n =
+    <div data-role="single">
+        <output>{n}</output>
+        <p>{if n > 2 then "many" else "few"}</p>
+        <button data-role="inc" onClick={Inc}>+1</button>
+        <button data-role="reset" onClick={Reset}>Reset</button>
+    </div>
+
+
+main : Tea.Program
+main = Browser.mountAt (Tea.sandbox { init = λ⊤ → 0, update = update, view = view }) "root"
