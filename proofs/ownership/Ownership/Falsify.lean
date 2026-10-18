@@ -229,6 +229,12 @@ def linkNamedB (hs : InPlaceSemantics.State) (env : Bindings) (live : Live) (γ 
       component.all fun d =>
         (originsOf γ v).all (originsOf γ d).contains && (originsOf γ d).all (originsOf γ v).contains
 
+def linkNamedMessage : String := "a protected linked array is named apart from its component"
+
+/-- A failure one of the two link checks reported. -/
+def linkFailure (why : String) : Bool :=
+  why == linkNamedMessage || why.startsWith "link " || why == "a view has two sources"
+
 /-- `Invariant` as a test, for a finite naming: `none` when it holds. -/
 def invariantB (vs : ValueSemantics.State) (hs : InPlaceSemantics.State) (env : Bindings)
     (live : Live) (aenv : Env Abstract) (escapes : List Origin) (γ : FNaming) (naming := true) : Option String := Id.run do
@@ -261,7 +267,7 @@ def invariantB (vs : ValueSemantics.State) (hs : InPlaceSemantics.State) (env : 
             return some s!"binding {x}: array {c} at {repr q} not named"
   if naming && !separatingB γ then return some "naming not separating"
   if let some why := linksValidB hs then return some why
-  if naming && !linkNamedB hs env live γ then return some "a protected linked array is named apart from its component"
+  if naming && !linkNamedB hs env live γ then return some linkNamedMessage
   pure none
 
 /-! ## Constructing the naming after a step -/
@@ -593,11 +599,32 @@ def writeExpr (types : List (Var × Ty)) (next : Nat) : Generator.Gen (Expr × O
   | _ => pure (if ns.isEmpty then none' else
       (.letE next (.closure 0 []) (.letE (next + 1) (.closure 2 []) (.app (v next) [v n, v (next + 1)])), some n))
 
+/-- One generated sample: the configuration, the expression, the live set
+    after it, and what the generator did on purpose. -/
+structure Sampled where
+  cfg : Setup
+  e : Expr
+  after : Live
+  /-- Another variable is bound to the written value. -/
+  aliased : Bool := false
+  /-- A view of a component that nothing protects is named apart from its
+      source: legal, `LinkNamed` asks nothing of it (#274). -/
+  apart : Bool := false
+  /-- A view of a component a live path protects is named apart from its
+      source: the invariant must refuse the pre-state (#274). -/
+  misnamed : Bool := false
+
+/-- A root origin added to a list abstract. -/
+def addRoot (a : Abstract) (o : Origin) : Abstract :=
+  match a with
+  | .list roots elem ex => .list (roots ++ [o]) elem ex
+  | a => a
+
 /-- One sample: a configuration, an expression and the continuation's uses.
     Two thirds are write-heavy (each variable its own arrays, one write to a
     variable the continuation does not use); a sixth of all drop one
     variable from the abstract environment (`covered` false). -/
-def sample : Generator.Gen (Setup × Expr × Live × Bool) := do
+def sample : Generator.Gen Sampled := do
   let writes := (← draw 3) != 0
   let cfg ← config writes
   let (e, target) ← if writes then writeExpr cfg.types 100
@@ -629,7 +656,41 @@ def sample : Generator.Gen (Setup × Expr × Live × Bool) := do
   let drop ← coin 6
   let which ← draw cfg.aenv.length
   let cfg := if drop && !cfg.aenv.isEmpty then { cfg with aenv := cfg.aenv.eraseIdx which } else cfg
-  pure (cfg, e, after2, aliased)
+  -- `Protected` is tested in both directions (#274). A view of a link
+  -- component that nothing protects is named apart from its source: legal,
+  -- and a `Protected` that reaches too far refuses it. A quarter of the views
+  -- a live path protects are named apart too, and `tryOne` expects the
+  -- invariant to refuse exactly that: a `Protected` that does not reach far
+  -- enough lets it pass. Views an observer reaches keep their names: an
+  -- unescaped fresh origin would fail the observer clause first. Every
+  -- variable bound to a renamed view gets the new origin in its abstract, so
+  -- that only `LinkNamed` can tell the two cases apart.
+  -- Protection is computed here on purpose, not by `protectedArrays`: the
+  -- generator must not share the check's definition, or a wrong one passes.
+  let live := union (uses e) after2
+  let liveCells := cfg.env.flatMap fun (x, _, w) =>
+    (live.filter (·.1 == x)).flatMap fun (_, p) => match projectVal w p with
+      | some w' => reachArrays cfg.heap depthFuel w'
+      | none => []
+  let observedCells := cfg.kept.flatMap (reachArrays cfg.heap depthFuel)
+  let protectedCells := liveCells ++ observedCells
+  let mut γ := cfg.γ
+  let mut aenv := cfg.aenv
+  let mut apart := false
+  let mut misnamed := false
+  for (c, _, _) in cfg.links do
+    let component := linkComponent cfg.links c
+    if component.any observedCells.contains then continue
+    let isProtected := component.any protectedCells.contains
+    let rename ← if isProtected then coin 4 else pure true
+    if !rename then continue
+    let fresh : Origin := .site [2000 + c] 0
+    γ := γ.map fun (d, os) => if d == c then (d, [fresh]) else (d, os)
+    aenv := aenv.map fun (x, a) => match cfg.env.lookup x with
+      | some (_, .ref d) => if d == c then (x, addRoot a fresh) else (x, a)
+      | _ => (x, a)
+    if isProtected then misnamed := true else apart := true
+  pure { cfg := { cfg with γ, aenv }, e, after := after2, aliased, apart, misnamed }
 
 def program : Program := { declarations := decls, main := .atom (.int 0) }
 
@@ -654,6 +715,14 @@ structure Tally where
   /-- Configurations whose pre-state holds a link, and accepted ones whose post-state does (#274). -/
   withLinks : Nat := 0
   postLinks : Nat := 0
+  /-- Post-states with a link whose view or source differs from the pre-state: the step wrote a linked array. -/
+  postLinksWritten : Nat := 0
+  /-- Pre-states with a view of an unprotected component named apart (legal, must stay clean),
+      and pre-states with a protected view named apart that the invariant refused (expected). -/
+  linkApart : Nat := 0
+  linkMisnamed : Nat := 0
+  /-- Failures a link clause reported, counted beside `observational` or `naming`. -/
+  linkClause : Nat := 0
   deriving Repr
 
 /-- The expression creates a closure of one of the declarations `ids`. -/
@@ -674,14 +743,14 @@ def writeOps : Expr → Bool
 
 /-- One configuration: `none` if fine or vacuous, otherwise what failed. -/
 def tryOne (seed : Nat) (t : Tally) (checker : Ownership.Config := {}) : Tally × Option String := Id.run do
-  let ((cfg, e, after, aliased), _) := sample.run seed
+  let ({ cfg, e, after, aliased, apart, misnamed }, _) := sample.run seed
   -- A quarter of the samples run with fuel 1–8: the error clause (both runs
   -- fail, or neither) is exercised, not only the success clause.
   let fuel := if seed % 4 == 0 then 1 + (seed / 4) % 8 else 5000
   let nested := mentionsDecl [11, 12, 13] e || cfg.env.any fun (_, _, w) => match w with
     | .closure 11 _ => true
     | _ => false
-  let mut t := { t with tried := t.tried + 1, lowFuel := t.lowFuel + (if fuel < 5000 then 1 else 0), aliased := t.aliased + (if aliased then 1 else 0), nested := t.nested + (if nested then 1 else 0), withLinks := t.withLinks + (if cfg.links.isEmpty then 0 else 1) }
+  let mut t := { t with tried := t.tried + 1, lowFuel := t.lowFuel + (if fuel < 5000 then 1 else 0), aliased := t.aliased + (if aliased then 1 else 0), nested := t.nested + (if nested then 1 else 0), withLinks := t.withLinks + (if cfg.links.isEmpty then 0 else 1), linkApart := t.linkApart + (if apart then 1 else 0) }
   let vs : ValueSemantics.State := { fuel, kept := cfg.keptObs.toArray }
   let hs : InPlaceSemantics.State := { fuel, heap := cfg.heap, kept := cfg.kept.toArray, links := cfg.links }
   -- `covered` false: the statement does not speak about the sample; the
@@ -698,7 +767,12 @@ def tryOne (seed : Nat) (t : Tally) (checker : Ownership.Config := {}) : Tally �
     -- A closure described as another declaration is meant to fail here.
     if (why.splitOn "not one of").length > 1 then
       return ({ t with closureMislabeled := t.closureMislabeled + 1 }, none)
+    -- A protected view named apart is meant to fail here, and only here.
+    if misnamed && why == linkNamedMessage then
+      return ({ t with linkMisnamed := t.linkMisnamed + 1 }, none)
     return ({ t with hypothesisFalse := t.hypothesisFalse + 1 }, some s!"hypothesis does not hold by construction: {why}")
+  if misnamed then
+    return ({ t with hypothesisFalse := t.hypothesisFalse + 1 }, some "a protected view named apart from its source passed the invariant: Protected does not reach it")
   let typed := typedB decls cfg.heap cfg.env cfg.types e
   if !typed then
     return ({ t with hypothesisFalse := t.hypothesisFalse + 1 }, some s!"hypothesis does not hold by construction: ill-typed ({repr (exprType decls (mainDecl e) cfg.types e)})")
@@ -717,12 +791,14 @@ def tryOne (seed : Nat) (t : Tally) (checker : Ownership.Config := {}) : Tally �
     | .error m, .ok _ => return ({ t with errorClause := t.errorClause + 1 }, some s!"value run fails ({m}), in-place run succeeds")
     | .ok _, .error m => return ({ t with observational := t.observational + 1 }, some s!"in-place run fails: {m}")
     | .ok (o, vs'), .ok (w, hs') =>
-      t := { t with valueOk := t.valueOk + 1, withWrite := t.withWrite + (if hs'.writes > 0 then 1 else 0), postLinks := t.postLinks + (if hs'.links.isEmpty then 0 else 1) }
+      let linkedWritten := hs'.links.any fun (v, s, _) =>
+        (v < hs.heap.size && hs.heap[v]? != hs'.heap[v]?) || hs.heap[s]? != hs'.heap[s]?
+      t := { t with valueOk := t.valueOk + 1, withWrite := t.withWrite + (if hs'.writes > 0 then 1 else 0), postLinks := t.postLinks + (if hs'.links.isEmpty then 0 else 1), postLinksWritten := t.postLinksWritten + (if linkedWritten then 1 else 0) }
       if !correspondsB hs'.heap o w then
         return ({ t with observational := t.observational + 1 }, some "results do not correspond")
       -- Observational part of the conclusion, on any naming.
       if let some why := invariantB vs' hs' cfg.env after cfg.aenv [] [] (naming := false) then
-        return ({ t with observational := t.observational + 1 }, some why)
+        return ({ t with observational := t.observational + 1, linkClause := t.linkClause + (if linkFailure why then 1 else 0) }, some why)
       if !honestB decls r then
         return ({ t with naming := t.naming + 1 }, some "the result describes a closure as not once that the checker would create once")
       -- Naming part: construct γ'.
@@ -742,7 +818,7 @@ def tryOne (seed : Nat) (t : Tally) (checker : Ownership.Config := {}) : Tally �
         let full := (invariantB vs' hs' cfg.env after cfg.aenv st'.facts.escapes γ').orElse fun _ =>
           describesB γ' hs'.heap r w
         match full with
-        | some why => return ({ t with naming := t.naming + 1 }, some s!"constructed naming fails: {why}")
+        | some why => return ({ t with naming := t.naming + 1, linkClause := t.linkClause + (if linkFailure why then 1 else 0) }, some s!"constructed naming fails: {why}")
         | none => return (t, none)
 
 /-- Run `count` configurations; print each failure with its configuration. -/
@@ -756,8 +832,8 @@ def invariantCampaign (count seed : Nat) (limit : Nat := 5) (checker : Ownership
     if let some why := bad then
       if shown < limit then
         shown := shown + 1
-        let ((cfg, e, after, _), _) := sample.run s
-        IO.println s!"FALSIFY invariant_preserved configuration {i} (state {s}): {why}\n  heap={repr cfg.heap}\n  links={repr cfg.links}\n  env={repr (cfg.env.map fun (x, _, w) => (x, w))}\n  aenv={repr cfg.aenv}\n  kept={repr cfg.kept} escapes={repr cfg.escapes}\n  naming={repr cfg.γ}\n  expr={repr e}"
+        let ({ cfg, e, after, .. }, _) := sample.run s
+        IO.println s!"FALSIFY invariant_preserved configuration {i} (state {s}): {why}\n  heap={repr cfg.heap}\n  links={repr cfg.links}\n  env={repr (cfg.env.map fun (x, _, w) => (x, w))}\n  aenv={repr cfg.aenv}\n  kept={repr cfg.kept} escapes={repr cfg.escapes}\n  naming={repr cfg.γ}\n  after={repr after}\n  expr={repr e}"
   IO.println s!"invariant_preserved: {repr t}"
   pure t
 
