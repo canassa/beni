@@ -2759,13 +2759,13 @@ fieldsFrom c fs i n depth path v values out =
                 -- record runs, and V8 inlines neither helper into it once a
                 -- program runs the engine several ways
                 -- (`plans/core-in-beni.md`, the schema engine).
-                held =
-                    if prototypeKey inName then
-                        Js.to (Js.call (Js.global "Object") "hasOwn" [ v, Js.from inName ])
-                    else
-                        not (Js.isUndefined (Js.get v inName))
+                -- Each key read once, as the compiled paths read it (#368).
+                own = prototypeKey inName
+                ownHeld = own && Js.to (Js.call (Js.global "Object") "hasOwn" [ v, Js.from inName ])
+                got = if own && not ownHeld then Js.undefined else Js.get v inName
+                held = if own then ownHeld else not (Js.isUndefined got)
                 if held then
-                    descend c f depth here (Js.get v inName)
+                    descend c f depth here got
                 else if f.lenient then
                     toHost Nothing
                 else if f.optional then
@@ -2845,10 +2845,13 @@ variantOf c discriminator vs path v =
             failed (failAt c path WrongShape "expected an object" v False)
         else
             here = step path (Js.from discriminator) (Js.from discriminator)
-            if not (present v discriminator) then
+            -- The discriminator read once, as the compiled paths read it (#368).
+            own = prototypeKey discriminator
+            ownHeld = own && hasOwn v discriminator
+            tag = if own && not ownHeld then Js.undefined else Js.get v discriminator
+            if not (if own then ownHeld else not (Js.isUndefined tag)) then
                 failed (failAt c here MissingKey "missing key \"${discriminator}\"" v False)
             else
-                tag = Js.get v discriminator
                 found =
                     if isType tag "string" then
                         withTag vs (stringOf tag) 0 (lengthOf vs)

@@ -39,9 +39,8 @@ inheriting proto = Js.to (Js.call (Js.global "Object") "create" [ Js.from proto 
 
 --| An object whose keys are getters for those of `keys` that `v` owns,
 --| each answering `v`'s value and logging its name; `reads` answers the
---| keys logged since the last call, in order, a key read twice in a row
---| once: the library engine reads a field's key twice, to test it and to
---| take it, where the compiled paths read it once (issue #368).
+--| keys logged since the last call, in order: every path reads a key once
+--| (issue #368), so the log is not folded.
 pub logged : Value, List String → Value
 logged v keys =
     log = logOf ⊤
@@ -98,8 +97,7 @@ flaky v keys =
 pub reads : ⊤ → String
 reads ⊤ =
     log = logOf ⊤
-    kept = Js.call log "filter" [ Js.from λk i → i == 0 || not (Js.same k (Js.at log (i - 1))) ]
-    text = Js.to (Js.call kept "join" [ Js.from "," ])
+    text = Js.to (Js.call log "join" [ Js.from "," ])
     Js.set log "length" (Js.from 0)
     text
 
