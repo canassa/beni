@@ -486,7 +486,9 @@ main =
             "children not a list"
             (Hosts.parse (orderText "{\"kind\":\"branch\",\"value\":1,\"children\":{}}"))
         , orderFlaky "flaky getters, good" good
-        , orderFlaky "flaky getters, own toString" (Hosts.with good "toString" (Hosts.parse "\"own\""))
+        , orderFlaky
+            "flaky getters, own toString"
+            (Hosts.with good "toString" (Hosts.parse "\"own\""))
         , orderReads "getters, good" good
         , orderReads "getters, mid bad" (Hosts.with good "mid" (Hosts.parse "\"x\""))
         , orderReads "getters, alpha bad" (Hosts.with good "the-alpha" (Hosts.parse "1"))
