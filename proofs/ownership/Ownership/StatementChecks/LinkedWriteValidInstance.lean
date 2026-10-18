@@ -6,7 +6,10 @@ the review of PR #314 (note 2): the two-component state of `LinkedWriteInstance`
 view whose source is dead), and a chain `xs ← rest ← tl` written through the
 inner view `tl`, so the splice climbs two levels and the refresh comes back
 down. For the chain, the theorem's conclusion is compared with the real
-post-state, and `shorten_breaks` shows the non-shortening hypothesis is needed.
+post-state. `shorten_breaks` shows that a plain `set!` of a linked source makes
+a view stale (why `linksValid_set` forbids a linked target); `short_breaks`
+shows that the theorem's non-shortening hypothesis is needed: a shortening
+`writeLinked` refreshes the views and empties a source, failing `sources`.
 This module follows `LinkedWriteValid` in the import chain because it uses its
 theorem; `LinkedWriteInstance` precedes it. -/
 
@@ -78,15 +81,31 @@ theorem chain_valid_after : LinksValid chainPost :=
     outer link agrees with the computed heap. -/
 theorem chain_outer_contents : chainPost.heap[1]? = some (viewOf true [.int 1, .int 2, .int 3, .int 9]) := rfl
 
-/-- The non-shortening hypothesis is needed: a write that shortens a source
-    of a view leaves a state that `LinksValid` refuses. `xs` written to `[1]`
-    through a plain `set!` makes `rest` (`[2, 3]`) stale. -/
+/-- A plain `set!` of a linked source leaves a state that `LinksValid`
+    refuses: `xs` written to `[1]` makes `rest` (`[2, 3]`) stale. That is why
+    `linksValid_set` forbids a linked target; it is not the theorem's
+    non-shortening hypothesis, which `short_breaks` is for. -/
 theorem shorten_breaks : ¬ LinksValid { chainPre with heap := #[[.int 1], [.int 2, .int 3], [.int 3]] } := by
   intro h
   obtain ⟨source, hs, hv⟩ := h.contents 1 0 true (by simp [chainPre])
   simp at hs
   subst hs
   simp [viewOf] at hv
+
+/-- The state a shortening linked write of the chain's root reaches: the
+    refresh rewrites both views, and the inner source `rest` becomes `[]`. -/
+def shortPost : State := { chainPre with heap := #[[.int 1], [], []] }
+
+theorem short_run : (writeLinked 0 [.int 1]).run chainPre = .ok (.ref 0, shortPost) := by cbv
+
+/-- The non-shortening hypothesis of `linksValid_after_writeLinked` is needed:
+    the shortening linked write succeeds, and its post-state fails `sources`
+    (the view `tl` has the empty `rest` as its source). -/
+theorem short_breaks : ¬ LinksValid shortPost := by
+  intro h
+  obtain ⟨source, lookup, nonempty⟩ := h.sources 2 1 true (by simp [shortPost, chainPre])
+  simp [shortPost] at lookup
+  exact nonempty lookup
 
 
 end Ownership.LinkedWriteValidInstance

@@ -278,7 +278,7 @@ The write diagnostics count actual runtime write events.
 | `StatementChecks/CallDerivationInstance.lean` | the derivation applied at a reachable call with a link: the call-site invariant and the real `applyCall` run |
 | `LinkedWriteStep.lean` | the naming clause after a demand-guarded linked write, with the same naming, and the live cells below a live use's path |
 | `LinkedWriteValid.lean` | the validity clauses, contents included, after a linked write that does not shorten the written array: the splice, the refresh and the forest order of the links |
-| `StatementChecks/LinkedWriteValidInstance.lean` | the validity theorem at two reachable states, one a chain of two views written through the inner one, and the need for the non-shortening hypothesis |
+| `StatementChecks/LinkedWriteValidInstance.lean` | the validity theorem at two reachable states, one a chain of two views written through the inner one; a shortening linked write that fails `sources` (the non-shortening hypothesis is needed), and a plain `set!` of a linked source that makes a view stale |
 | `StatementChecks/LinkedWriteInstance.lean` | the step lemma applied at a reachable state with two link components, with a conclusion that is not vacuous |
 | `Soundness.lean` | the bridge to concrete heaps and the soundness statements |
 | `Falsify.lean` | executes the unproved statements on concrete configurations (`ownership falsify`) |
