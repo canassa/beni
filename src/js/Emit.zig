@@ -3008,7 +3008,7 @@ const Emitter = struct {
                     },
                     .where = try std.fmt.allocPrint(a, "{s}:{d}:{d}", .{ std.fs.path.basename(e.session.store.path(file)), at.line, at.col }),
                     .text = src_text,
-                    .more = lw.more,
+                    .more = w.lostMore(lw),
                     .site = @intCast(lost_sites.items.len),
                 };
                 try lost_sites.append(a, .{ .module = origin.module, .inst = origin.inst });

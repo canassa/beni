@@ -2,7 +2,7 @@ program StatsSites.main : Tea.sandbox
   model StatsSites.Model
   init
     literal ρ
-  key Bump                                        exact      node ρ; value ρ.count
+  key Bump                                        exact      node ρ; value ρ.count ≈
   key Retitle                                     exact      node ρ; value ρ.title
   keys 2: bounded 2 (100%), exact 2, indexed 0, structural 0, * 0; capped 0
   hole StatsSites.beni:39:17                      dynamic    reads ρ.count

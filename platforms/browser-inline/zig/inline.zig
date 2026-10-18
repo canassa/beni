@@ -738,6 +738,19 @@ const Page = struct {
             \\with no message made (`docs/design/browser-inline.md` §8.7; §5, class 3). Name a function
             \\of the program's modules as `update`, or write a lambda whose body chooses the arm.
         );
+        // A key the depth limit or the rounds of a recursive function cut
+        // (`Program.Key.cap`): what it writes below the cut is not known
+        // (§8.7, class 4) until the pass folds paths precisely (#286).
+        if (!key.star and (key.cap == .depth or key.cap == .rounds)) {
+            const spelled_ = if (key.spelled.len != 0) key.spelled else key.name;
+            const where = if (key.cap == .depth) "at its depth limit, 8 steps below the model" else "where a recursive function needs more than the pass's 4 rounds";
+            const fix = if (key.cap == .depth) "a model nested less deeply builds here" else "a function that recurses over a smaller structure builds here";
+            return cx.programReport(.update, .not_implemented, try std.fmt.allocPrint(cx.arena,
+                \\A limit of the compiler: the write-set pass cut what key `{s}` writes {s}, so it cannot
+                \\say which bindings those writes reach (`docs/design/browser-inline.md` §8.7; §5, class 4).
+                \\The program is valid: it builds with `--platform=browser-tea`, and {s}.
+            , .{ spelled_, where, fix }));
+        }
         if (!key.star) return;
         // The key as the program spells it: `Run`. A key of no steps whose
         // message type the pass does not know (an `update` with no

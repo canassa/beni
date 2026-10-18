@@ -119,7 +119,6 @@ tests/pending/browser/inline/Reader dev: exit=1 codes=not_implemented×3
 tests/pending/browser/inline/ResearchS2 dev: exit=1 codes=not_implemented×2
 tests/pending/browser/inline/ResearchS3 dev: exit=1 codes=not_implemented×2
 tests/pending/browser/inline/Texts dev: exit=1 codes=not_implemented×2
-tests/pending/build/bad/inline/CapFired BuildDidNotFail
 tests/pending/build/bad/inline/MapNotCtor GoldenMismatch
 tests/pending/build/bad/inline/MarkupValue GoldenMismatch
 tests/pending/build/bad/inline/ResearchListWidget GoldenMismatch

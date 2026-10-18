@@ -3,7 +3,7 @@ program TagThroughParameter.main : Tea.sandbox
   init
     literal ρ
   key Stop                                        exact      node ρ; node ρ.left; value ρ.left.Just#0
-  key Tick                                        exact      node ρ; node ρ.right; node ρ.right.Just#0; value ρ.right.Just#0.Running#0
+  key Tick                                        exact      node ρ; node ρ.right; node ρ.right.Just#0; value ρ.right.Just#0.Running#0 ≈
   keys 2: bounded 2 (100%), exact 2, indexed 0, structural 0, * 0; capped 0
   hole TagThroughParameter.beni:67:12             dynamic    reads tag ρ.left; tag ρ.left.Just#0
   hole TagThroughParameter.beni:68:12             static     reads tag ρ.right; tag ρ.right.Just#0

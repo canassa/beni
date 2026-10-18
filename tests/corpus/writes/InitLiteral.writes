@@ -2,7 +2,7 @@ program InitLiteral.main : Tea.element
   model InitLiteral.Model
   init
     literal ρ
-  key (any)                                       exact      node ρ; value ρ.hits
+  key (any)                                       exact      node ρ; value ρ.hits ≈
   keys 1: bounded 1 (100%), exact 1, indexed 0, structural 0, * 0; capped 0
   hole InitLiteral.beni:36:13                     literal    reads ρ.title
   hole InitLiteral.beni:37:12                     literal    reads ρ.note

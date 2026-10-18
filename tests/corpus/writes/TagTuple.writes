@@ -3,7 +3,7 @@ program TagTuple.main : Tea.sandbox
   init
     literal ρ
   key Rename                                      exact      node ρ; value ρ.name
-  key Tick                                        exact      node ρ; node ρ.page; value ρ.page.Ready#0
+  key Tick                                        exact      node ρ; node ρ.page; value ρ.page.Ready#0 ≈
   keys 2: bounded 2 (100%), exact 2, indexed 0, structural 0, * 0; capped 0
   hole TagTuple.beni:49:13                        dynamic    reads ρ.name; tag ρ.page
   hole TagTuple.beni:61:13                        static     reads tag ρ.page

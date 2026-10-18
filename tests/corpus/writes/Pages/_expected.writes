@@ -6,7 +6,7 @@ program Main.main : Tea.sandbox
   key GotHomeMsg · GotFeedMsg · Dismiss           indexed    node ρ; node ρ.HomePage#0; node ρ.HomePage#0.feed; node ρ.HomePage#0.feed.Model#0; value ρ.HomePage#0.feed.Model#0.errors ⟨clear⟩
   key GotHomeMsg · GotFeedMsg · Like              structural node ρ; node ρ.HomePage#0; node ρ.HomePage#0.feed; node ρ.HomePage#0.feed.Model#0; node ρ.HomePage#0.feed.Model#0.items ⟨kept⟩; node ρ.HomePage#0.feed.Model#0.items[*]; value ρ.HomePage#0.feed.Model#0.items[*].liked
   key GotHomeMsg · GotFeedMsg · Failed            indexed    node ρ; node ρ.HomePage#0; node ρ.HomePage#0.feed; node ρ.HomePage#0.feed.Model#0; value ρ.HomePage#0.feed.Model#0.errors ⟨append⟩
-  key Reset                                       *          value ρ
+  key Reset                                       *          value ρ ≈
   keys 5: bounded 4 (80%), exact 1, indexed 2, structural 1, * 1; capped 0
   hole Feed.beni:55:10                            dynamic    reads ρ.HomePage#0.feed.Model#0.items
   hole Feed.beni:56:23                            static-key reads ρ.HomePage#0.feed.Model#0.items[*].slug

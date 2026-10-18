@@ -2234,3 +2234,19 @@ first in source order and count the others (`Write.more`), so a consumer names t
 it, and says how many more there are. `Program.model_fields` is read from `update`'s annotation,
 or else from what `init` makes — a record literal of every field, a literal, a constructor — and
 is `none` when neither says, which a consumer refuses as a limit rather than guess.
+
+*Corrected 2026-10-18 (the review of #350).* Every place the pass gives up precision marks the
+write lost, not two of them: a path the depth limit cuts (`extend` past k, below a record, a
+constructor, a record's other fields or a list's element), a constructor of fields placed where the
+facts do not know which constructor `p` holds, and `Same` of `p` itself through `[*]` or `[?]`,
+which the pass cannot tell is the value already there. A constructor of no fields, another path's
+`Same`, a literal, a function value and an index guard's `Bool` are whole writes it knows exactly,
+and the term tags are each named, so a new one is decided where it is added. None of the newly
+marked places can be the model's own write of a record of several fields — the depth limit cuts
+below the model, a constructor at the model is a model of one value, and the model's path has no
+`[*]` — so no `*` key's kind moves; the writes dump marks each lost write `≈`
+(`writes/ApproxConstructor`, `writes/ApproxDepth`). Two lost writes at one path keep the set of
+every term joined (`Write.lost_set`, interned, sorted by id), the first in source order naming
+it, a lower term id first among terms one instruction made, and the "N more" counts the other
+places the set's terms were made at, each once (`Writes.lostMore`). A write set being built finds a
+path's write by a map, not a scan.

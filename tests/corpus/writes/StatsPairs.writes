@@ -2,8 +2,8 @@ program StatsPairs.main : Tea.sandbox
   model StatsPairs.Model
   init
     literal ρ
-  key Inc                                         exact      node ρ; value ρ.count
-  key Rename                                      exact      node ρ; value ρ.count; value ρ.name
+  key Inc                                         exact      node ρ; value ρ.count ≈
+  key Rename                                      exact      node ρ; value ρ.count ≈; value ρ.name
   key Clear                                       exact      node ρ; value ρ.count
   keys 3: bounded 3 (100%), exact 3, indexed 0, structural 0, * 0; capped 0
   hole StatsPairs.beni:41:17                      dynamic    reads ρ.count

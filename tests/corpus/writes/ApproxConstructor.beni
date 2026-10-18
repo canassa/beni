@@ -1,0 +1,55 @@
+-- writes: a constructor placed where the facts do not know which
+-- constructor the model holds (`write-sets.md`, amended 2026-10-18).
+-- `Start` writes `Running 0` at `ρ.state`: the pass cannot descend into a
+-- field of a constructor whose earlier tag it does not know, so the write
+-- is `value ρ.state`, its approximation (`≈`). `Stop` writes `Idle`, a
+-- constructor of no fields: a whole write, exactly.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type State
+    = Idle
+    | Running Int
+
+
+type alias Model =
+    state : State
+    clicks : Int
+
+
+type Msg
+    = Start
+    | Stop
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Start →
+            { model | state = Running 0 }
+
+        Stop →
+            { model | state = Idle }
+
+
+label : State → String
+label state =
+    case state of
+        Idle →
+            "idle"
+
+        Running n →
+            String.fromInt n
+
+
+view : Model → Html Msg
+view model = <button onClick={Start}>{label model.state}</button>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → { state = Idle, clicks = 0 }, update = update, view = view })
+        "root"

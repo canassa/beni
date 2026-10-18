@@ -2,7 +2,7 @@ program ChoiceParameter.main : Tea.sandbox
   model { … }
   init
     literal ρ
-  key Switch                                      exact      node ρ; value ρ.open
+  key Switch                                      exact      node ρ; value ρ.open ≈
   key Quiet                                       exact      ∅
   keys 2: bounded 2 (100%), exact 2, indexed 0, structural 0, * 0; capped 0
   hole ChoiceParameter.beni:23:17                 dynamic    reads tag ρ.open

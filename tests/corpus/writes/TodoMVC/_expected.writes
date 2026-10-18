@@ -4,8 +4,8 @@ program NoEditing.main : Tea.element
     literal ρ.draft
   key NotSaved                                    exact      ∅
   key Typed                                       exact      node ρ; value ρ.draft
-  key KeyDown                                     indexed    node ρ; value ρ.draft; value ρ.nextId; value ρ.todos ⟨append⟩
-  key Toggle                                      structural node ρ; node ρ.todos ⟨kept⟩; node ρ.todos[*]; value ρ.todos[*].completed
+  key KeyDown                                     indexed    node ρ; value ρ.draft; value ρ.nextId ≈; value ρ.todos ⟨append⟩
+  key Toggle                                      structural node ρ; node ρ.todos ⟨kept⟩; node ρ.todos[*]; value ρ.todos[*].completed ≈
   key ToggleAll                                   structural node ρ; node ρ.todos ⟨kept⟩; node ρ.todos[*]; value ρ.todos[*].completed
   key Destroy                                     structural node ρ; value ρ.todos ⟨removeSome⟩
   key ClearCompleted                              structural node ρ; value ρ.todos ⟨removeSome⟩
@@ -43,16 +43,16 @@ program NoRouting.main : Tea.element
     literal ρ.draft; ρ.editing; ρ.filter
   key NotSaved                                    exact      ∅
   key Typed                                       exact      node ρ; value ρ.draft
-  key KeyDown                                     indexed    node ρ; value ρ.draft; value ρ.nextId; value ρ.todos ⟨append⟩
-  key Toggle                                      structural node ρ; node ρ.todos ⟨kept⟩; node ρ.todos[*]; value ρ.todos[*].completed
+  key KeyDown                                     indexed    node ρ; value ρ.draft; value ρ.nextId ≈; value ρ.todos ⟨append⟩
+  key Toggle                                      structural node ρ; node ρ.todos ⟨kept⟩; node ρ.todos[*]; value ρ.todos[*].completed ≈
   key ToggleAll                                   structural node ρ; node ρ.todos ⟨kept⟩; node ρ.todos[*]; value ρ.todos[*].completed
   key Destroy                                     structural node ρ; value ρ.todos ⟨removeSome⟩
   key ClearCompleted                              structural node ρ; value ρ.todos ⟨removeSome⟩
   key SetFilter                                   exact      node ρ; value ρ.filter
-  key StartEdit                                   exact      node ρ; value ρ.editing
+  key StartEdit                                   exact      node ρ; value ρ.editing ≈
   key EditTyped                                   exact      node ρ; value ρ.editing; node ρ.editing.Just#0; value ρ.editing.Just#0.draft
-  key EditKey                                     structural node ρ; value ρ.editing; value ρ.todos ⟨removeSome⟩; node ρ.todos[*]; value ρ.todos[*].title
-  key EditDone                                    structural node ρ; value ρ.editing; value ρ.todos ⟨removeSome⟩; node ρ.todos[*]; value ρ.todos[*].title
+  key EditKey                                     structural node ρ; value ρ.editing; value ρ.todos ⟨removeSome⟩; node ρ.todos[*]; value ρ.todos[*].title ≈
+  key EditDone                                    structural node ρ; value ρ.editing; value ρ.todos ⟨removeSome⟩; node ρ.todos[*]; value ρ.todos[*].title ≈
   keys 12: bounded 12 (100%), exact 5, indexed 1, structural 6, * 0; capped 0
   hole NoRouting.beni:242:17                      dynamic    reads ρ.editing.Just#0.draft
   hole NoRouting.beni:263:17                      dynamic    reads ρ.draft
@@ -88,17 +88,17 @@ program NoStorage.main : Tea.element
   init
     literal ρ.draft; ρ.editing; ρ.nextId; ρ.todos
   key Typed                                       exact      node ρ; value ρ.draft
-  key KeyDown                                     indexed    node ρ; value ρ.draft; value ρ.nextId; value ρ.todos ⟨append⟩
-  key Toggle                                      structural node ρ; node ρ.todos ⟨kept⟩; node ρ.todos[*]; value ρ.todos[*].completed
+  key KeyDown                                     indexed    node ρ; value ρ.draft; value ρ.nextId ≈; value ρ.todos ⟨append⟩
+  key Toggle                                      structural node ρ; node ρ.todos ⟨kept⟩; node ρ.todos[*]; value ρ.todos[*].completed ≈
   key ToggleAll                                   structural node ρ; node ρ.todos ⟨kept⟩; node ρ.todos[*]; value ρ.todos[*].completed
   key Destroy                                     structural node ρ; value ρ.todos ⟨removeSome⟩
   key ClearCompleted                              structural node ρ; value ρ.todos ⟨removeSome⟩
   key UrlChanged · Just                           exact      node ρ; value ρ.filter
   key UrlChanged · _                              exact      node ρ; value ρ.filter
-  key StartEdit                                   exact      node ρ; value ρ.editing
+  key StartEdit                                   exact      node ρ; value ρ.editing ≈
   key EditTyped                                   exact      node ρ; value ρ.editing; node ρ.editing.Just#0; value ρ.editing.Just#0.draft
-  key EditKey                                     structural node ρ; value ρ.editing; value ρ.todos ⟨removeSome⟩; node ρ.todos[*]; value ρ.todos[*].title
-  key EditDone                                    structural node ρ; value ρ.editing; value ρ.todos ⟨removeSome⟩; node ρ.todos[*]; value ρ.todos[*].title
+  key EditKey                                     structural node ρ; value ρ.editing; value ρ.todos ⟨removeSome⟩; node ρ.todos[*]; value ρ.todos[*].title ≈
+  key EditDone                                    structural node ρ; value ρ.editing; value ρ.todos ⟨removeSome⟩; node ρ.todos[*]; value ρ.todos[*].title ≈
   keys 12: bounded 12 (100%), exact 5, indexed 1, structural 6, * 0; capped 0
   hole NoStorage.beni:219:17                      dynamic    reads ρ.editing.Just#0.draft
   hole NoStorage.beni:240:17                      dynamic    reads ρ.draft
@@ -134,16 +134,16 @@ program Sandbox.main : Tea.sandbox
   init
     literal ρ
   key Typed                                       exact      node ρ; value ρ.draft
-  key KeyDown                                     indexed    node ρ; value ρ.draft; value ρ.nextId; value ρ.todos ⟨append⟩
-  key Toggle                                      structural node ρ; node ρ.todos ⟨kept⟩; node ρ.todos[*]; value ρ.todos[*].completed
+  key KeyDown                                     indexed    node ρ; value ρ.draft; value ρ.nextId ≈; value ρ.todos ⟨append⟩
+  key Toggle                                      structural node ρ; node ρ.todos ⟨kept⟩; node ρ.todos[*]; value ρ.todos[*].completed ≈
   key ToggleAll                                   structural node ρ; node ρ.todos ⟨kept⟩; node ρ.todos[*]; value ρ.todos[*].completed
   key Destroy                                     structural node ρ; value ρ.todos ⟨removeSome⟩
   key ClearCompleted                              structural node ρ; value ρ.todos ⟨removeSome⟩
   key SetFilter                                   exact      node ρ; value ρ.filter
-  key StartEdit                                   exact      node ρ; value ρ.editing
+  key StartEdit                                   exact      node ρ; value ρ.editing ≈
   key EditTyped                                   exact      node ρ; value ρ.editing; node ρ.editing.Just#0; value ρ.editing.Just#0.draft
-  key EditKey                                     structural node ρ; value ρ.editing; value ρ.todos ⟨removeSome⟩; node ρ.todos[*]; value ρ.todos[*].title
-  key EditDone                                    structural node ρ; value ρ.editing; value ρ.todos ⟨removeSome⟩; node ρ.todos[*]; value ρ.todos[*].title
+  key EditKey                                     structural node ρ; value ρ.editing; value ρ.todos ⟨removeSome⟩; node ρ.todos[*]; value ρ.todos[*].title ≈
+  key EditDone                                    structural node ρ; value ρ.editing; value ρ.todos ⟨removeSome⟩; node ρ.todos[*]; value ρ.todos[*].title ≈
   keys 11: bounded 11 (100%), exact 4, indexed 1, structural 6, * 0; capped 0
   hole Sandbox.beni:186:17                        dynamic    reads ρ.editing.Just#0.draft
   hole Sandbox.beni:207:17                        dynamic    reads ρ.draft

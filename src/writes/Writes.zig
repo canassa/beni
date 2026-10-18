@@ -365,9 +365,11 @@ pub const Write = struct {
     /// result, an application through a parameter, a record of a type it
     /// could not read — and not one it knows exactly: the term it could not
     /// see into, whose `term_origin` names where it was made, or `none`.
-    /// Joined keeping the first in source order; `more` counts the others.
+    /// Joined keeping the first in source order, the lower term id first
+    /// among terms one instruction made; `lost_set` is every such term
+    /// joined, interned and sorted by id (`lostMore` counts their places).
     lost: u32 = none,
-    more: u32 = 0,
+    lost_set: u32 = none,
 };
 
 // ---------------------------------------------------------------------------
@@ -678,6 +680,8 @@ term_origin: std.ArrayList(u64) = .empty,
 /// The instruction `eval` is in, as `term_origin` spells it.
 cur_origin: u64 = no_origin,
 wsets: Table = .{},
+/// `Write.lost_set`s: sorted term ids.
+lost_sets: Table = .{},
 bytes: std.ArrayList(u8) = .empty,
 bytes_t: Table = .{},
 scratch: std.ArrayList(u32) = .empty,
@@ -831,6 +835,7 @@ pub fn deinit(a: *Writes) void {
     a.term_deps.deinit(gpa);
     a.term_origin.deinit(gpa);
     a.wsets.deinit(gpa);
+    a.lost_sets.deinit(gpa);
     a.bytes.deinit(gpa);
     a.bytes_t.deinit(gpa);
     a.scratch.deinit(gpa);
@@ -3620,14 +3625,65 @@ fn collectLeaves(a: *Writes, t: u32, g: u32, out: *std.ArrayList(AltItem)) Alloc
 // diff (§3.4)
 // ---------------------------------------------------------------------------
 
-const WsBuilder = std.ArrayList(Write);
+/// A write set being built: its writes, one per path, and where each
+/// path's is, so a join finds it in constant time (compile linear in the
+/// set, `plans/direct-rewrite.md` §3).
+const WsBuilder = struct {
+    items: std.ArrayList(Write) = .empty,
+    at: std.AutoHashMapUnmanaged(u32, u32) = .empty,
 
-fn wsGet(a: *const Writes, id: u32, out: *WsBuilder, gpa: Allocator) Allocator.Error!void {
+    const empty: WsBuilder = .{};
+
+    fn deinit(b: *WsBuilder, gpa: Allocator) void {
+        b.items.deinit(gpa);
+        b.at.deinit(gpa);
+    }
+
+    /// Add `w`, whose path has no write yet.
+    fn append(b: *WsBuilder, gpa: Allocator, w: Write) Allocator.Error!void {
+        try b.at.put(gpa, w.path, @intCast(b.items.items.len));
+        try b.items.append(gpa, w);
+    }
+
+    fn clearRetainingCapacity(b: *WsBuilder) void {
+        b.items.clearRetainingCapacity();
+        b.at.clearRetainingCapacity();
+    }
+};
+
+fn wsGet(a: *const Writes, id: u32, out: *std.ArrayList(Write), gpa: Allocator) Allocator.Error!void {
     const words = a.wsets.get(id);
     var i: usize = 0;
     while (i < words.len) : (i += 7) {
-        try out.append(gpa, .{ .path = words[i], .kind = @fromBackingInt(words[i + 1]), .edit = @fromBackingInt(words[i + 2]), .s1 = words[i + 3], .s2 = words[i + 4], .lost = words[i + 5], .more = words[i + 6] });
+        try out.append(gpa, .{ .path = words[i], .kind = @fromBackingInt(words[i + 1]), .edit = @fromBackingInt(words[i + 2]), .s1 = words[i + 3], .s2 = words[i + 4], .lost = words[i + 5], .lost_set = words[i + 6] });
     }
+}
+
+/// How many places other than `w.lost`'s the terms of `w.lost_set` were
+/// made at: the "N more" of a diagnostic.
+pub fn lostMore(a: *const Writes, w: Write) u32 {
+    if (w.lost_set == none) return 0;
+    const set = a.lost_sets.get(w.lost_set);
+    var n: u32 = 0;
+    for (set, 0..) |x, i| {
+        const o = a.term_origin.items[x];
+        if (o == a.term_origin.items[w.lost]) continue;
+        // Each place once: the first term of the set made there.
+        const seen = for (set[0..i]) |y| {
+            if (a.term_origin.items[y] == o) break true;
+        } else false;
+        if (!seen) n += 1;
+    }
+    return n;
+}
+
+/// Whether lost term `x` names the write before `y`: the earlier in
+/// source order, the lower id among terms one instruction made.
+fn lostBefore(a: *const Writes, x: u32, y: u32) bool {
+    const ox = a.term_origin.items[x];
+    const oy = a.term_origin.items[y];
+    if (ox != oy) return ox < oy;
+    return x < y;
 }
 
 fn joinEdit(x: Edit, y: Edit) Edit {
@@ -3640,17 +3696,18 @@ fn joinEdit(x: Edit, y: Edit) Edit {
 
 /// Add `w` to `ws`, joining a write already at its path (§2.4).
 fn wsAdd(a: *Writes, ws: *WsBuilder, w: Write) Allocator.Error!void {
-    for (ws.items) |*e| {
-        if (e.path != w.path) continue;
+    if (ws.at.get(w.path)) |i| {
+        const e = &ws.items.items[i];
         if (w.kind == .value) e.kind = .value;
         if (w.lost != none) {
             if (e.lost == none) {
                 e.lost = w.lost;
-                e.more = w.more;
-            } else if (e.lost != w.lost) {
-                // The first in source order names it; the other is counted.
-                if (a.originBefore(w.lost, e.lost)) e.lost = w.lost;
-                e.more += 1 + w.more;
+                e.lost_set = w.lost_set;
+            } else if (e.lost_set != w.lost_set) {
+                // The union of the two sets: the first names it, every other
+                // place is counted (`lostMore`).
+                e.lost_set = try a.lostUnion(e.lost_set, w.lost_set);
+                if (a.lostBefore(w.lost, e.lost)) e.lost = w.lost;
             }
         }
         if (e.edit != w.edit) {
@@ -3670,6 +3727,35 @@ fn wsAdd(a: *Writes, ws: *WsBuilder, w: Write) Allocator.Error!void {
     try ws.append(a.gpa, w);
 }
 
+/// The union of two `lost_sets`, interned.
+fn lostUnion(a: *Writes, x: u32, y: u32) Allocator.Error!u32 {
+    const mark = a.scratch.items.len;
+    defer a.scratch.shrinkRetainingCapacity(mark);
+    const xs = a.lost_sets.get(x);
+    const ys = a.lost_sets.get(y);
+    var i: usize = 0;
+    var j: usize = 0;
+    while (i < xs.len or j < ys.len) {
+        var v: u32 = undefined;
+        if (j >= ys.len or (i < xs.len and xs[i] < ys[j])) {
+            v = xs[i];
+            i += 1;
+        } else if (i >= xs.len or ys[j] < xs[i]) {
+            v = ys[j];
+            j += 1;
+        } else {
+            v = xs[i];
+            i += 1;
+            j += 1;
+        }
+        try a.scratch.append(a.gpa, v);
+    }
+    // `get` reads the table the intern may grow: copied first.
+    const words = try a.gpa.dupe(u32, a.scratch.items[mark..]);
+    defer a.gpa.free(words);
+    return a.lost_sets.intern(a.gpa, words);
+}
+
 fn wsIntern(a: *Writes, ws: []Write) Allocator.Error!u32 {
     std.mem.sort(Write, ws, {}, struct {
         fn less(_: void, x: Write, y: Write) bool {
@@ -3678,7 +3764,7 @@ fn wsIntern(a: *Writes, ws: []Write) Allocator.Error!u32 {
     }.less);
     const mark = a.scratch.items.len;
     defer a.scratch.shrinkRetainingCapacity(mark);
-    for (ws) |w| try a.scratch.appendSlice(a.gpa, &.{ w.path, @backingInt(w.kind), @backingInt(w.edit), w.s1, w.s2, w.lost, w.more });
+    for (ws) |w| try a.scratch.appendSlice(a.gpa, &.{ w.path, @backingInt(w.kind), @backingInt(w.edit), w.s1, w.s2, w.lost, w.lost_set });
     return a.wsets.intern(a.gpa, a.scratch.items[mark..]);
 }
 
@@ -3687,12 +3773,8 @@ fn value(p: u32) Write {
 }
 
 /// `value p`, an approximation of term `t` (`Write.lost`).
-fn lost(p: u32, t: u32) Write {
-    return .{ .path = p, .kind = .value, .lost = t };
-}
-
-fn originBefore(a: *const Writes, x: u32, y: u32) bool {
-    return a.term_origin.items[x] < a.term_origin.items[y];
+fn lost(a: *Writes, p: u32, t: u32) Allocator.Error!Write {
+    return .{ .path = p, .kind = .value, .lost = t, .lost_set = try a.lost_sets.intern(a.gpa, &.{t}) };
 }
 
 /// Where term `t` was first made: a module and an instruction of it, or
@@ -3713,7 +3795,7 @@ fn diff(a: *Writes, t: u32, p: u32, g: u32) Error!u32 {
     var ws: WsBuilder = .empty;
     defer ws.deinit(a.gpa);
     try a.diffInto(t, p, g, &ws);
-    const id = try a.wsIntern(ws.items);
+    const id = try a.wsIntern(ws.items.items);
     try a.diff_memo.put(a.gpa, .{ .term = t, .path = p, .gamma = g }, id);
     return id;
 }
@@ -3724,12 +3806,12 @@ fn diffChild(a: *Writes, t: u32, p: u32, kind: PathKind, x: u32, y: u32, g: u32,
     // from the `Con` row, which has written `node p` under `Γ ⊢ tag(p) = C`.
     if (std.debug.runtime_safety and kind == .ctor) {
         if (!a.knowsTag(g, p, x)) std.debug.panic("writes: a descent below {d} through a constructor whose tag is not known", .{p});
-        for (ws.items) |w| {
-            if (w.path == p and w.kind == .node) break;
-        } else std.debug.panic("writes: a descent below {d} through a constructor with no `node` written there", .{p});
+        const i = ws.at.get(p);
+        if (i == null or ws.items.items[i.?].kind != .node) std.debug.panic("writes: a descent below {d} through a constructor with no `node` written there", .{p});
     }
-    const q = (try a.extend(p, kind, x, y)) orelse return a.wsAdd(ws, value(p));
-    var sub: WsBuilder = .empty;
+    // Past the depth limit the cap cut it (`extend`): an approximation.
+    const q = (try a.extend(p, kind, x, y)) orelse return a.wsAdd(ws, try a.lost(p, t));
+    var sub: std.ArrayList(Write) = .empty;
     defer sub.deinit(a.gpa);
     try a.wsGet(try a.diff(t, q, g), &sub, a.gpa);
     for (sub.items) |w| try a.wsAdd(ws, w);
@@ -3740,7 +3822,10 @@ fn diffInto(a: *Writes, t: u32, p: u32, g: u32, ws: *WsBuilder) Error!void {
         .same => {
             const q = a.termWord(t, 1);
             if (q == p and !a.hasStarOrUnknown(q)) return;
-            try a.wsAdd(ws, value(p));
+            // The value a `[*]` or `[?]` path names is one the pass cannot
+            // tell is the one already there: an approximation. Another
+            // path's value moved here is a whole write, exactly.
+            try a.wsAdd(ws, if (q == p) try a.lost(p, t) else value(p));
         },
         .rec => {
             const base = a.termWord(t, 1);
@@ -3751,7 +3836,7 @@ fn diffInto(a: *Writes, t: u32, p: u32, g: u32, ws: *WsBuilder) Error!void {
                 if (base != none) return a.wsAdd(ws, value(p));
                 if (rest >= 2) {
                     // B2/N7: every other field of the type at `p` is Fresh.
-                    extra_fields = (try a.fieldsAt(p)) orelse return a.wsAdd(ws, lost(p, t));
+                    extra_fields = (try a.fieldsAt(p)) orelse return a.wsAdd(ws, try a.lost(p, t));
                 }
             }
             try a.wsAdd(ws, .{ .path = p, .kind = .node });
@@ -3763,7 +3848,7 @@ fn diffInto(a: *Writes, t: u32, p: u32, g: u32, ws: *WsBuilder) Error!void {
                         named = true;
                     };
                     if (named) continue;
-                    const q = (try a.extend(p, .field, fld, 0)) orelse return a.wsAdd(ws, value(p));
+                    const q = (try a.extend(p, .field, fld, 0)) orelse return a.wsAdd(ws, try a.lost(p, t));
                     try a.wsAdd(ws, value(q));
                 }
             }
@@ -3771,7 +3856,10 @@ fn diffInto(a: *Writes, t: u32, p: u32, g: u32, ws: *WsBuilder) Error!void {
         .con => {
             const c = a.termWord(t, 1);
             const n = a.termLen(t) - 2;
-            if (n == 0 or !a.knowsTag(g, p, c)) return a.wsAdd(ws, value(p));
+            // A constructor of no fields is a whole write, exactly; one whose
+            // tag the facts do not know at `p` is the pass's approximation.
+            if (n == 0) return a.wsAdd(ws, value(p));
+            if (!a.knowsTag(g, p, c)) return a.wsAdd(ws, try a.lost(p, t));
             try a.wsAdd(ws, .{ .path = p, .kind = .node });
             for (0..n) |i| try a.diffChild(a.termWord(t, @intCast(2 + i)), p, .ctor, c, @intCast(i), g, ws);
         },
@@ -3790,10 +3878,10 @@ fn diffInto(a: *Writes, t: u32, p: u32, g: u32, ws: *WsBuilder) Error!void {
                     // N2: the element's result diffed against its own root,
                     // and every write rebased to `p[κ]`.
                     const at: u32 = (if (e.index == sym_star) try a.extend(p, .star, 0, 0) else try a.extend(p, .index, e.index, 0)) orelse {
-                        try a.wsAdd(ws, value(p));
+                        try a.wsAdd(ws, try a.lost(p, t));
                         continue;
                     };
-                    var sub: WsBuilder = .empty;
+                    var sub: std.ArrayList(Write) = .empty;
                     defer sub.deinit(a.gpa);
                     try a.wsGet(try a.diff(e.term, e.eps, g), &sub, a.gpa);
                     for (sub.items) |w| {
@@ -3810,36 +3898,37 @@ fn diffInto(a: *Writes, t: u32, p: u32, g: u32, ws: *WsBuilder) Error!void {
         },
         .lst_lit => try a.wsAdd(ws, .{ .path = p, .kind = .value, .edit = .replaced }),
         // What the pass could not see into is an approximation.
-        .fresh, .app => try a.wsAdd(ws, lost(p, t)),
+        .fresh, .app => try a.wsAdd(ws, try a.lost(p, t)),
         .alt => {
             for (0..a.altLen(t)) |i| {
                 const it = a.altItem(t, @intCast(i));
                 const g2 = (try a.gammaJoin(g, it.gamma)) orelse continue;
-                var sub: WsBuilder = .empty;
+                var sub: std.ArrayList(Write) = .empty;
                 defer sub.deinit(a.gpa);
                 try a.wsGet(try a.diff(it.term, p, g2), &sub, a.gpa);
                 for (sub.items) |w| try a.wsAdd(ws, w);
             }
         },
-        else => try a.wsAdd(ws, value(p)),
+        // A literal, a function and an index guard's `Bool` are values the
+        // pass knows: a whole write, exactly. Every tag is named, so a new
+        // one is decided here.
+        .lit, .fun, .ixeq => try a.wsAdd(ws, value(p)),
     }
 }
 
 /// The prefix closure (§2.4): `node` at every proper prefix.
 fn closure(a: *Writes, ws: *WsBuilder) Allocator.Error!void {
+    ws.at.clearRetainingCapacity();
+    for (ws.items.items, 0..) |w, j| try ws.at.put(a.gpa, w.path, @intCast(j));
     var i: usize = 0;
-    while (i < ws.items.len) : (i += 1) {
-        var child = ws.items[i].path;
+    while (i < ws.items.items.len) : (i += 1) {
+        var child = ws.items.items[i].path;
         var q = a.pathParent(child);
         while (q != none) : ({
             child = q;
             q = a.pathParent(q);
         }) {
-            var found = false;
-            for (ws.items) |w| if (w.path == q) {
-                found = true;
-            };
-            if (found) continue;
+            if (ws.at.contains(q)) continue;
             // A `node` the closure adds above a constructor step would claim
             // a tag kept that no `Con` row proved (write-sets.md, amended
             // 2026-10-09: tag reads, item 3).
@@ -5086,7 +5175,7 @@ fn evalKey(a: *Writes, kind: ProgramKind, update_fun: u32, g: u32) Error!struct 
             error.WorkCap => break :blk false,
             else => |e| return e,
         };
-        try a.wsGet(id, &ws, a.gpa);
+        try a.wsGet(id, &ws.items, a.gpa);
         break :blk true;
     };
     if (!ok) {
@@ -5098,7 +5187,7 @@ fn evalKey(a: *Writes, kind: ProgramKind, update_fun: u32, g: u32) Error!struct 
     const caps = a.ctx.caps;
     const split = if (ok) a.ctx.split_path else none;
     a.ctx = .{ .mode = .closed };
-    return .{ .writes = try a.arena().dupe(Write, ws.items), .caps = caps, .split = split, .command = command };
+    return .{ .writes = try a.arena().dupe(Write, ws.items.items), .caps = caps, .split = split, .command = command };
 }
 
 fn keyTree(a: *Writes, kind: ProgramKind, update_fun: u32, g: u32, path_steps: *std.ArrayList(KeyStep), keys: *std.ArrayList(Key), leaves: *u32) Error!void {

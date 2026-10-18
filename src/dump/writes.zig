@@ -395,6 +395,9 @@ fn writeSet(w: *std.Io.Writer, gpa: Allocator, a: *Writes, ws: []const Writes.Wr
         try w.writeAll(if (wr.kind == .node) "node " else "value ");
         try a.writePath(w, wr.path);
         try a.writeEdit(w, wr);
+        // The pass's approximation (`Write.lost`): a value it could not see
+        // into or a path a cap cut, not one it knows exactly.
+        if (wr.lost != Writes.none) try w.writeAll(" ≈");
     }
 }
 

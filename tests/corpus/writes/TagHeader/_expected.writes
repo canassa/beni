@@ -3,7 +3,7 @@ program Navigate.main : Tea.sandbox
   init
     literal ρ
   key Typed                                       exact      node ρ; node ρ.Editor#0; value ρ.Editor#0.title
-  key Go                                          *          value ρ
+  key Go                                          *          value ρ ≈
   keys 2: bounded 1 (50%), exact 1, indexed 0, structural 0, * 1; capped 0
   hole Shared.beni:66:14                          dynamic    reads tag ρ; ρ.Home#0.session; ρ.Home#0.session.LoggedIn#0; ρ.Editor#0.session; ρ.Editor#0.session.LoggedIn#0
   hole Shared.beni:67:13                          dynamic    reads tag ρ; ρ.Editor#0.title
@@ -21,7 +21,7 @@ program SignIn.main : Tea.sandbox
   init
     literal ρ
   key Typed                                       exact      node ρ; node ρ.Editor#0; value ρ.Editor#0.title
-  key SignedIn                                    exact      node ρ; node ρ.Home#0; value ρ.Home#0.session; node ρ.Editor#0; value ρ.Editor#0.session
+  key SignedIn                                    exact      node ρ; node ρ.Home#0; value ρ.Home#0.session ≈; node ρ.Editor#0; value ρ.Editor#0.session ≈
   keys 2: bounded 2 (100%), exact 2, indexed 0, structural 0, * 0; capped 0
   hole Shared.beni:66:14                          dynamic    reads tag ρ; ρ.Home#0.session; ρ.Home#0.session.LoggedIn#0; ρ.Editor#0.session; ρ.Editor#0.session.LoggedIn#0
   hole Shared.beni:67:13                          dynamic    reads tag ρ; ρ.Editor#0.title
