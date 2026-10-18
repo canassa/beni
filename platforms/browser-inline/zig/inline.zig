@@ -55,6 +55,8 @@ pub const lowering: m.Lowering = .{
         .{ .name = "prop", .arity = 3 },
         .{ .name = "when", .arity = 2 },
         .{ .name = "on", .arity = 3 },
+        // `(node)`: a piece root's table of elements (§8.4).
+        .{ .name = "part", .arity = 1 },
     },
     .module = module,
     .root = root,
@@ -167,6 +169,8 @@ const PieceData = struct {
     /// The event-wiring piece's name, when the root has events.
     wire: ?[]const u8,
     handlers: []const PieceHandler,
+    /// The root's function's parameter count.
+    arity: u32,
 };
 
 const PieceBind = struct { name: []const u8, groups: []const u32 };
@@ -284,7 +288,7 @@ fn piece(cx: *m.Context, tree: *const m.Tree, req: *const m.PieceRequest) m.Erro
     try serialise(cx.arena, &html, pg.top_nodes, null, false);
     const html_base = try std.fmt.allocPrint(a, "{s}$$html${d}", .{ req.decl, req.ordinal });
     try cx.pieceExport(html_base, try js.string(html.items));
-    data.* = .{ .html = html_base, .top = try a.dupe(u8, pg.top_nodes[0].name), .count = pg.count, .binds = binds, .wire = wire_name, .handlers = out_handlers };
+    data.* = .{ .html = html_base, .top = try a.dupe(u8, pg.top_nodes[0].name), .count = pg.count, .arity = cx.pieceArity(), .binds = binds, .wire = wire_name, .handlers = out_handlers };
     req.facts.* = .{ .written = true, .data = data };
 }
 
@@ -773,7 +777,7 @@ const Page = struct {
         // Each piece's elements, below its top element.
         for (pg.pieces.items) |*u| {
             u.elements = try cx.fresh("elements");
-            try js.constant(body, u.elements, try js.call(try js.member(try pg.ref(u.target), "querySelectorAll"), &.{try js.string("*")}));
+            try js.constant(body, u.elements, try js.call(try js.name(try cx.runtime("part")), &.{try pg.ref(u.target)}));
         }
         // The binding functions, each written once and called once now.
         try pg.group();
@@ -783,11 +787,26 @@ const Page = struct {
         }
         for (pg.functions.items) |*f| {
             const blk = try js.block();
-            try pg.writeFunction(blk, f);
             f.name = try cx.fresh("bind");
+            if (f.piece) |pat| {
+                // A piece's binding: the table and the root's function's
+                // arguments are its wrapper's parameters, which release names
+                // alike in every piece's wrapper, as tea-inline's widget
+                // functions' `(E, s)`; the piece is written into it.
+                const u = pg.pieces.items[pat.use];
+                const params = try pg.a().alloc(m.Name, u.data.arity + 1);
+                for (params) |*x| x.* = try cx.fresh("p");
+                const callee = try cx.programPieceName(u.node, u.data.binds[pat.bind].name);
+                const args = try pg.a().alloc(m.Expr, params.len);
+                for (args, params) |*x, n| x.* = try js.name(n);
+                try js.expression(blk, try js.call(try js.name(callee), args));
+                try js.constant(body, f.name, try js.arrow(params, blk));
+                continue;
+            }
+            try pg.writeFunction(blk, f);
             try js.constant(body, f.name, try js.arrow(&.{}, blk));
         }
-        for (pg.functions.items) |f| try js.expression(body, try js.call(try js.name(f.name), &.{}));
+        for (0..pg.functions.items.len) |fi| try pg.callFunction(body, @intCast(fi));
 
         // Each event's listener, planned now and wired after the handlers
         // it calls: which key it reaches decides what a stateful control's
@@ -1172,6 +1191,26 @@ const Page = struct {
     }
 
     /// Root `r`'s `let`s evaluated into `blk` and read under their names.
+    /// A call of binding function `fi` into `blk`: of no arguments, or for a
+    /// piece's, its table and the root's function's arguments, evaluated in
+    /// the `view` as the model is now.
+    fn callFunction(pg: *Page, blk: m.Block, fi: u32) m.Error!void {
+        const cx = pg.cx;
+        const js = cx.js;
+        const f = pg.functions.items[fi];
+        const at = f.piece orelse return js.expression(blk, try js.call(try js.name(f.name), &.{}));
+        const u = pg.pieces.items[at.use];
+        const inner = try js.block();
+        const arms = try pg.enter(inner, 0);
+        const args = try cx.programPieceArgs(inner, u.node);
+        const all = try pg.a().alloc(m.Expr, args.len + 1);
+        all[0] = try js.name(u.elements);
+        @memcpy(all[1..], args);
+        try js.expression(inner, try js.call(try js.name(f.name), all));
+        pg.leave(arms);
+        try js.nested(blk, inner);
+    }
+
     /// Root `r`'s `let`s that `values` read, directly or through a later
     /// `let`, evaluated into `blk` and read under their names (D-d).
     fn bindLets(pg: *Page, blk: m.Block, r: m.Root.Index, values: []const m.Value.Index) m.Error!void {
@@ -1354,7 +1393,7 @@ const Page = struct {
             result = try js.name(pair);
         }
         try js.assign(blk, try js.name(pg.model), if (element_) try js.member(result, "a") else result);
-        for (try pg.passOf(k, key.star)) |fi| try js.expression(blk, try js.call(try js.name(pg.functions.items[fi].name), &.{}));
+        for (try pg.passOf(k, key.star)) |fi| try pg.callFunction(blk, fi);
         if (element_) switch (cx.programCommand(k)) {
             .runs => try js.expression(blk, try js.call(try js.name(try cx.runtime("commands")), &.{ try js.member(result, "b"), try js.name(pg.dispatch.?) })),
             else => {},
