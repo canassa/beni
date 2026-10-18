@@ -1,4 +1,4 @@
--- CK-254: an enum cycle in an arm is a chain of conditionals in release.
+-- CK-255: an enum cycle in an arm is a chain of conditionals in release.
 -- A `case` on literals whose arms are expressions (docs/design/browser-inline.md
 -- §8.8): release writes the choice as `t === "Draft" ? … : …`, assigned where
 -- the record update reads it, as tea-inline does, and not as a `switch` in a

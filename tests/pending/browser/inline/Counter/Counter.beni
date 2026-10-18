@@ -1,4 +1,4 @@
--- CK-254: browser-inline runs another module's view and arms as pieces.
+-- CK-255: browser-inline runs another module's view and arms as pieces.
 -- `emit/release/inline/Counter`'s page (docs/design/browser-inline.md §8).
 --! A counter, as a module of its own: its model, its messages, its
 --! `update` and its `view`.

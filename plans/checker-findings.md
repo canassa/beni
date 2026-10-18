@@ -6136,7 +6136,7 @@ that returns a list it owns. A tagger's line says that `Cmd.task` sends what it
 returns (§23.5, amended), and a schema member is named as written
 (`NeedMessage.Fixed.parse`).
 
-## CK-254 — `browser-inline` does not compile holes and handlers yet (2026-10-17)
+## CK-255 — `browser-inline` does not compile holes and handlers yet (2026-10-17)
 
 **Class:** missing-lowering. **Status:** open, closed slice by slice by S1 (#297).
 
@@ -6147,3 +6147,15 @@ the per-path write passes (`docs/design/browser-inline.md` §8). Its goldens and
 are under `tests/pending/{emit/release,browser,build/bad}/inline/`, written before the
 slice from tea-inline's output and the brief's hand-written targets (`plans/inline-s1/`);
 each moves into `tests/corpus/` with the commit that passes it.
+
+## CK-254 — a parameter's folded levels are not checked (2026-10-18)
+
+Ownership soundness, issue #286 (`paramHole`, found in the review of #341). A
+demand on a folded path is checked against every level it stands for only in a
+value the body builds. A parameter's symbolic cells compare paths step by step,
+so `param(t, #Node.0)`, the left subtree, does not cover `param(t, #Node.1)`, the
+lists of every level: `case t of Node l ys _ → ( List.push ys 1, l )` is accepted
+`param`, and a caller that hands it a tree holding one list at two levels sees
+the push through the subtree it gets back. The same body over a tree built
+inline is rejected. `tests/pending/ownership/ParamHole.beni`, red; open until
+ownership-checker.md §16.7's decision (d), `lvl`, is built.

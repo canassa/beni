@@ -1,4 +1,4 @@
--- CK-254: browser-inline writes another module's view and arms as pieces.
+-- CK-255: browser-inline writes another module's view and arms as pieces.
 -- `Main` maps `Counter.view` with a constructor (docs/design/browser-inline.md
 -- §8): `Counter` lowers its view's pieces — the static markup, one
 -- binding function per read set — and its `update`'s arms, each a function

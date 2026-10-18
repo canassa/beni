@@ -1,4 +1,4 @@
--- CK-254: browser-inline runs a widget's list of texts, edited at its end.
+-- CK-255: browser-inline runs a widget's list of texts, edited at its end.
 -- `emit/release/inline/Texts`'s page (docs/design/browser-inline.md §8):
 -- removing the last of no texts changes nothing.
 import Browser

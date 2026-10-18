@@ -1,4 +1,4 @@
--- CK-254: unique-components n1-s2 compiles to its hand-written target.
+-- CK-255: unique-components n1-s2 compiles to its hand-written target.
 -- The research generator's program, seed 2, one widget, flattened to one
 -- directory (`Widget.W1` is `W1`): a number input through `Ui`'s helpers,
 -- the host's `serverSet` and `snapshot` through `Push`

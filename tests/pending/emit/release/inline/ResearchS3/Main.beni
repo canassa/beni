@@ -1,4 +1,4 @@
--- CK-254: unique-components n1-s3 compiles in tea-inline's shape.
+-- CK-255: unique-components n1-s3 compiles in tea-inline's shape.
 -- The research generator's program, seed 3, one widget, flattened to one
 -- directory: a `select`, a toggled `Bool` read by two eager `when`s, and
 -- the host's `serverSet`, `snapshot` and `notify` through `Push`

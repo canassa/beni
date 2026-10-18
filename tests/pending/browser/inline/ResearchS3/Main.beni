@@ -1,4 +1,4 @@
--- CK-254: unique-components n1-s3 runs on browser-inline.
+-- CK-255: unique-components n1-s3 runs on browser-inline.
 -- `emit/release/inline/ResearchS3`'s page (docs/design/browser-inline.md
 -- §8): the two `when`s, the select, the host's pushes.
 --! The dashboard: 1 widget, each written by its own module (`Widget.W*`), in The Elm

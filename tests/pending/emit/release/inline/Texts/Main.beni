@@ -1,4 +1,4 @@
--- CK-254: browser-inline writes a widget's list of texts, edited at its end.
+-- CK-255: browser-inline writes a widget's list of texts, edited at its end.
 -- `Texts` appends with `[ …xs, x ]`, removes the last text with `List.pop`
 -- and clears; what it shows reads the list whole, by `List.length` and
 -- `String.join` (docs/design/browser-inline.md §8). No `For`: a list's

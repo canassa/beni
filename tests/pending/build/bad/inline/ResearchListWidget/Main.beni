@@ -1,4 +1,4 @@
--- CK-254: a keyed `For` is a limit of the compiler until keyed rows land.
+-- CK-255: a keyed `For` is a limit of the compiler until keyed rows land.
 -- unique-components n1-s1, the research generator's program, seed 1, one
 -- widget, flattened to one directory: its files list is a `For` keyed by
 -- id (docs/design/browser-inline.md §8.6), refused at the `For` as a limit

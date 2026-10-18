@@ -1,4 +1,4 @@
--- CK-254: a key whose writes the write-set pass capped is refused.
+-- CK-255: a key whose writes the write-set pass capped is refused.
 -- `Deep` writes a field ten steps below the model, and the write-set pass
 -- cuts a path at eight (write-sets.md §2.2), so it cannot say which
 -- bindings the write reaches below the cut (docs/design/browser-inline.md

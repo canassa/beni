@@ -1,4 +1,4 @@
--- CK-254: a writer's handlers call another module's reader statically.
+-- CK-255: a writer's handlers call another module's reader statically.
 -- `W2.view` reads `W1.Model` (docs/design/browser-inline.md §8, D-c): each
 -- key of `W1` whose writes conflict with what `W2`'s binding reads calls
 -- that binding piece from its handler, once, after `W1`'s own: no

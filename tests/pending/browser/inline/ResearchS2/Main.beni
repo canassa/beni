@@ -1,4 +1,4 @@
--- CK-254: unique-components n1-s2 runs on browser-inline.
+-- CK-255: unique-components n1-s2 runs on browser-inline.
 -- `emit/release/inline/ResearchS2`'s page: the number input refuses a
 -- value out of range and keeps showing it, the host's pushes for this
 -- widget and for another, a tick, a snapshot and a state that does not

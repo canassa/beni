@@ -1,4 +1,4 @@
--- CK-254: an `Html.map` whose function is not a constructor is refused.
+-- CK-255: an `Html.map` whose function is not a constructor is refused.
 -- Which key a message of the mapped markup reaches is decided when the
 -- program is built (docs/design/browser-inline.md §8.7): here the map's
 -- function chooses the constructor at run time, so the program is refused

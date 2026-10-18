@@ -1,4 +1,4 @@
--- CK-254: markup the program holds as a value is refused by a rule.
+-- CK-255: markup the program holds as a value is refused by a rule.
 -- `browser-inline` numbers every element of the page when the program is
 -- built (docs/design/browser-inline.md §8.7): markup kept in the model
 -- cannot be numbered, and the platform has no renderer to hand it, so the

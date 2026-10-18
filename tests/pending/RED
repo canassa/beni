@@ -110,7 +110,7 @@ tests/pending/browser/direct/DefectInTurnRender.beni PageFailed
 
 
 
-# CK-254 (2026-10-17): browser-inline's slice S1 — holes and handlers inlined per
+# CK-255 (2026-10-17): browser-inline's slice S1 — holes and handlers inlined per
 # key, across modules (docs/design/browser-inline.md §8, issue #297). Every
 # golden and refusal of the slice, written before the slice; each moves into
 # tests/corpus/ with the commit that passes it.
@@ -128,3 +128,7 @@ tests/pending/emit/release/inline/ResearchS2 BuildFailed
 tests/pending/emit/release/inline/ResearchS3 BuildFailed
 tests/pending/emit/release/inline/Texts BuildFailed
 tests/pending/emit/release/inline/EnumCycle.beni exit=0 js-differs
+
+# CK-254 (2026-10-18, issue #286): a parameter's folded levels are not checked
+# (`paramHole`, ownership-checker.md §16.7). Red until decision (d), `lvl`.
+tests/pending/ownership/ParamHole.beni exit=0 ownership-differs

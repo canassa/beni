@@ -1,4 +1,4 @@
--- CK-254: a writer's handlers keep another module's reader current.
+-- CK-255: a writer's handlers keep another module's reader current.
 -- `emit/release/inline/Reader`'s page (docs/design/browser-inline.md §8).
 import Browser
 import Html exposing (Html)
