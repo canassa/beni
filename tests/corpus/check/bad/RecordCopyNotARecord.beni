@@ -1,0 +1,10 @@
+-- `{ r | }` is any record and nothing else (language.md §3): `Record.copy`
+-- takes a record, closed or extensible, and refuses a number and a list.
+widen : { r | x : Int } → Int
+widen p = (Record.copy p).x
+
+
+number = Record.copy 3
+
+
+list = Record.copy [ 1 ]

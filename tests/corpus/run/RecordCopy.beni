@@ -1,0 +1,57 @@
+-- `Record.copy` and the bases an update may have (language.md §6.3,
+-- ownership-checker.md §31.15). A copy is a new object with the same
+-- fields: changing the copy leaves the original as it was, and a field the
+-- copy does not change is the original's very value (§11.12). A call is an
+-- update's base, qualified (`Record.copy r`) or local (`fresh ⊤`), and any
+-- other expression is one in parentheses. `{ r | }` types a helper over any
+-- record, closed or extensible.
+import Node exposing (Program)
+import String
+
+
+type alias Point =
+    x : Int
+    y : Int
+    tags : List String
+
+
+fresh : ⊤ → Point
+fresh ⊤ = { x = 0, y = 0, tags = [ "origin" ] }
+
+
+twice : { r | }, { r | } → { r | } × { r | }
+twice a b = ( Record.copy a, Record.copy b )
+
+
+moved : { r | x : Int } → { r | x : Int }
+moved p = { Record.copy p | x = p.x + 10 }
+
+
+pick : Bool, Point, Point → Point
+pick first p q = if first then p else q
+
+
+show : Point → String
+show p =
+    tags = String.join p.tags ","
+    "(${String.fromInt p.x}, ${String.fromInt p.y}, ${tags})"
+
+
+main : Program
+main =
+    origin = fresh ⊤
+
+    kept = { Record.copy origin | x = 1 }
+    started = { fresh ⊤ | y = 2 }
+    chosen = { (pick False (fresh ⊤) (Record.copy started)) | x = 3 }
+    ( left, right ) = twice origin started
+    Node.printLines
+        [ show origin
+        , show kept
+        , show started
+        , show chosen
+        , show left
+        , show right
+        , show (moved origin)
+        , show origin
+        ]

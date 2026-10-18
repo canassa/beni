@@ -111,3 +111,4 @@ imports
   prelude Debug
   prelude Int
   prelude Float
+  prelude Record

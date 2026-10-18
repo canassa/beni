@@ -1,0 +1,19 @@
+-- An update's base is kept as written (language.md §6.3): a call, a
+-- qualified call and a parenthesised base, on one line when it fits and
+-- with the fields under the base when it does not; and `{ r | }`, any
+-- record, keeps its bar.
+copy : { r | } → { r | }
+copy r = r
+
+
+short model = { Record.copy model | count = 1 }
+
+
+long model =
+    { Record.copy model.someVeryLongFieldName.anotherLongFieldName
+        | count = 1
+        , name = "a long name"
+    }
+
+
+paren pick model = { (pick model) | count = 1 }

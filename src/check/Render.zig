@@ -656,7 +656,9 @@ fn writeRecord(
         try w.print("{s} : ", .{cx.interner.slice(f.name)});
         try write(w, cx, namer, f.value, .top, depth + 1);
     }
-    try w.writeAll(" }");
+    // `{ r | }`, any record (language.md §3): the bar's space is the one
+    // before the brace.
+    try w.writeAll(if (collected.items.len == 0) "}" else " }");
 }
 
 // ---------------------------------------------------------------------------

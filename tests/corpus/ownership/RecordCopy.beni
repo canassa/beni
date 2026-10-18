@@ -1,0 +1,27 @@
+-- ownership: `Record.copy`'s asserted row (`ownership-checker.md` §31.15).
+-- The copy is shallow: its fields are the original's, so a list inside the
+-- copy is the original's list. `shallow` extends the copy's `items` while
+-- `box.items` is read after: rejected, `alias`, exact:
+-- `box.items` holds it. `deep` copies the list as well and is accepted,
+-- `call`. `again` returns the copy with its original: the row says the copy
+-- holds what the original holds at every field, so both of the pair's
+-- lists are `box`'s.
+type alias Box =
+    items : List Int
+    count : Int
+
+
+pub shallow : Box → Int
+shallow box =
+    copy = Record.copy box
+    List.length [ …copy.items, 1 ] + List.length box.items
+
+
+pub deep : Box → Int
+deep box =
+    copy = Record.copy box
+    List.length [ …List.copy copy.items, 1 ] + List.length box.items
+
+
+pub again : Box → Box × Box
+again box = ( { Record.copy box | count = 1 }, box )

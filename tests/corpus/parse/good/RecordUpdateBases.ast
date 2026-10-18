@@ -1,0 +1,86 @@
+(module
+  (annotation copy
+    (type_fn
+      (type_record_ext r)
+      (type_record_ext r)))
+  (definition copy
+    (pat_var r)
+    (ident r))
+  (definition named
+    (pat_var model)
+    (record_update model
+      (field count
+        (int 1))))
+  (definition qualifiedCall
+    (pat_var model)
+    (record_update
+      (apply
+        (ident Record.copy)
+        (ident model))
+      (field count
+        (int 1))))
+  (definition qualifiedValue
+    (record_update Schema.defaultOptions
+      (field maxDepth
+        (int 4))))
+  (definition localCall
+    (pat_var defaults)
+    (record_update
+      (apply
+        (ident defaults)
+        (unit))
+      (field count
+        (int 1))
+      (field name
+        (string
+          (chunk "n")))))
+  (definition atomArguments
+    (pat_var pick)
+    (pat_var model)
+    (record_update
+      (apply
+        (ident pick)
+        (field_access .form
+          (ident model))
+        (paren
+          (apply
+            (ctor Just)
+            (int 1)))
+        (list
+          (int 2)))
+      (field name
+        (string
+          (chunk "n")))))
+  (definition placeholder
+    (pat_var f)
+    (record_update
+      (apply
+        (ident f)
+        (placeholder))
+      (field name
+        (string
+          (chunk "n")))))
+  (definition parenthesised
+    (pat_var pick)
+    (pat_var model)
+    (record_update
+      (paren
+        (apply
+          (ident pick)
+          (ident model)))
+      (field count
+        (int 1))))
+  (definition nestedBase
+    (pat_var model)
+    (record_update
+      (paren
+        (record_update model
+          (field count
+            (int 1))))
+      (field count
+        (int 2))))
+  (definition literal
+    (pat_var count)
+    (record
+      (field count
+        (ident count)))))

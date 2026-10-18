@@ -1,0 +1,4 @@
+-- `Record` is a prelude module for qualified use only (ownership-checker.md
+-- §31.0 item 8): `Record.copy` needs no import, and `copy` alone names
+-- nothing, so a program's own `copy` never collides with it.
+unqualified r = copy r

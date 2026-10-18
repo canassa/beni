@@ -282,7 +282,11 @@ const Dumper = struct {
             .record_update => {
                 const r = tree.fullRecordUpdate(n);
                 try d.openTag(tag, main);
-                try d.w.print(" {s}", .{d.text(r.base)});
+                // A name base prints inline, as it did when it was the only
+                // base; a call or a parenthesised one is a child (§31.15).
+                if (tree.nodeTag(r.base) == .ident) {
+                    try d.w.print(" {s}", .{d.text(tree.nodeMainToken(r.base))});
+                } else try d.child(r.base, inner);
                 try d.children(r.fields, inner);
             },
             .where_constraint => {

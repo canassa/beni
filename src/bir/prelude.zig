@@ -26,13 +26,15 @@ pub fn wellKnown(symbol: Symbol) ?WellKnown {
     return if (i < WellKnown.count) @fromBackingInt(@intCast(i)) else null;
 }
 
-/// True for the nine module aliases usable in qualified names. `Int` and
+/// True for the ten module aliases usable in qualified names. `Int` and
 /// `Float` are modules here and types of `Basics` (`typeModule`): the
 /// modules hold `Int.mod`, `Int.rem` and `Float.log` and declare no type
 /// (language.md §12.4, amended 2026-10-01).
+/// `Record` is a module for qualified use and exposes no name, so it
+/// takes none from a program (`ownership-checker.md` §31.0 item 8).
 pub fn isModule(w: WellKnown) bool {
     return switch (w) {
-        .Basics, .List, .Maybe, .Result, .String, .Char, .Debug, .Int, .Float => true,
+        .Basics, .List, .Maybe, .Result, .String, .Char, .Debug, .Int, .Float, .Record => true,
         else => false,
     };
 }
@@ -157,10 +159,10 @@ pub fn removedName(old: []const u8) ?Removed {
 
 /// The prelude modules in Appendix A's order, for the import table's
 /// prelude rows.
-pub const modules = [_]WellKnown{ .Basics, .List, .Maybe, .Result, .String, .Char, .Debug, .Int, .Float };
+pub const modules = [_]WellKnown{ .Basics, .List, .Maybe, .Result, .String, .Char, .Debug, .Int, .Float, .Record };
 
 test "every prelude name has exactly the namespaces Appendix A gives it" {
-    // Counts from Appendix A: 9 modules, 10 types, 9 constructors, 33 values.
+    // Counts from Appendix A: 10 modules, 10 types, 9 constructors, 33 values.
     var n_modules: u32 = 0;
     var n_types: u32 = 0;
     var n_ctors: u32 = 0;
@@ -175,7 +177,7 @@ test "every prelude name has exactly the namespaces Appendix A gives it" {
         // functions and `main` are neither.
         try std.testing.expect(!(ctorModule(w) != null and valueModule(w) != null));
     }
-    try std.testing.expectEqual(@as(u32, 9), n_modules);
+    try std.testing.expectEqual(@as(u32, 10), n_modules);
     try std.testing.expectEqual(@as(u32, 10), n_types);
     try std.testing.expectEqual(@as(u32, 9), n_ctors);
     try std.testing.expectEqual(@as(u32, 33), n_values);

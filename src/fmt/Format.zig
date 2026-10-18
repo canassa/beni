@@ -154,6 +154,9 @@ const markup_text = @import("../markup/text.zig");
 const prelude = @import("../bir/prelude.zig");
 const Node = Ast.Node;
 const Index = Node.Index;
+/// The base of `{ r | … }`: a type variable's token in a type, an update's
+/// base expression in an expression (language.md §6.3).
+const Base = union(enum) { token: TokenIndex, node: Index };
 const TokenIndex = Ast.TokenIndex;
 
 /// Lines are at most this many bytes wide when a construct has a choice.
@@ -1760,16 +1763,27 @@ const Measurer = struct {
     }
 
     /// `{ r | a = 1 }`: like a collection with the base and its bar in front.
-    fn extension(m: *Measurer, n: Index, base: TokenIndex, fields: []const Index) Error!void {
+    /// The base is a type variable's token, or an update's base expression
+    /// (a name, a call, a parenthesised expression; language.md §6.3). A
+    /// type with no field, `{ r | }`, is the base and its bar.
+    fn extension(m: *Measurer, n: Index, base: Base, fields: []const Index) Error!void {
         const open = m.tree.nodeMainToken(n);
+        const base_first, const base_last, const base_width = switch (base) {
+            .token => |t| .{ t, t, m.tokenWidth(t) },
+            .node => |b| blk: {
+                try m.measure(b);
+                break :blk .{ m.first(b), m.last(b), m.w(b) };
+            },
+        };
         var sum: u32 = 0;
         for (fields) |f| {
             try m.measure(f);
             sum +|= m.w(f);
         }
-        const last_tok = if (fields.len == 0) base + 2 else m.last(fields[fields.len - 1]) + 1;
-        const broken = m.tok_lines[base] != m.tok_lines[open] or m.brokenBetween(base, fields, last_tok);
-        const width = if (broken) no_fit else m.tokenWidth(base) +| sum +| (2 * @as(u32, @intCast(fields.len)) + 5);
+        const last_tok = if (fields.len == 0) base_last + 2 else m.last(fields[fields.len - 1]) + 1;
+        const broken = m.tok_lines[base_first] != m.tok_lines[open] or m.brokenBetween(base_last, fields, last_tok);
+        const bar: u32 = if (fields.len == 0) 1 else 0;
+        const width = if (broken) no_fit else base_width +| sum +| bar +| (2 * @as(u32, @intCast(fields.len)) + 5);
         m.set(n, width, open, last_tok);
     }
 
@@ -1959,11 +1973,11 @@ const Measurer = struct {
             },
             .type_record_ext => {
                 const r = tree.fullTypeRecordExt(n);
-                try m.extension(n, r.base, r.fields);
+                try m.extension(n, .{ .token = r.base }, r.fields);
             },
             .record_update => {
                 const r = tree.fullRecordUpdate(n);
-                try m.extension(n, r.base, r.fields);
+                try m.extension(n, .{ .node = r.base }, r.fields);
             },
             .record_type_field, .field => {
                 const value = tree.operand(n);
@@ -3684,24 +3698,40 @@ const Printer = struct {
     /// field under it after `|` / `,`, indented 4 from the line the brace
     /// is on (elm-format indents from the line, and the corpus is written
     /// that way: `, { cache` / `    | field`), the brace closing at its
-    /// own column.
-    fn extension(p: *Printer, n: Index, base: TokenIndex, fields: []const Index, comptime kind: Kind) Error!void {
+    /// own column. The base is kept as written (language.md §6.3), and a
+    /// type with no field is `{ r | }`.
+    fn extension(p: *Printer, n: Index, base: Base, fields: []const Index, comptime kind: Kind) Error!void {
         const open = p.tree.nodeMainToken(n);
         const one_line = p.fits(n);
         const col = p.curCol();
         const inner = p.lineIndent() + indent_step;
         try p.tok(open);
         try p.space();
-        try p.tok(base);
+        const bar = switch (base) {
+            .token => |t| blk: {
+                try p.tok(t);
+                break :blk t + 1;
+            },
+            .node => |b| blk: {
+                try p.expr(b, inner);
+                break :blk p.last(b) + 1;
+            },
+        };
+        if (fields.len == 0) {
+            try p.space();
+            try p.tok(bar);
+            try p.space();
+            return p.tok(bar + 1);
+        }
         for (fields, 0..) |f, i| {
             if (!one_line) p.newline(inner) else if (i == 0) try p.space();
-            try p.tok(if (i == 0) base + 1 else p.last(fields[i - 1]) + 1); // `|` or `,`
+            try p.tok(if (i == 0) bar else p.last(fields[i - 1]) + 1); // `|` or `,`
             try p.space();
             try p.node(f, kind, if (one_line) col else inner);
             if (i + 1 < fields.len) try p.trailing(p.last(f) + 1); // the comma's comment, hoisted
         }
         if (one_line) try p.space() else p.newline(col);
-        try p.tok(if (fields.len == 0) base + 2 else p.last(fields[fields.len - 1]) + 1);
+        try p.tok(p.last(fields[fields.len - 1]) + 1);
     }
 
     /// `(x)`, closing on its own line when the inside is vertical.
@@ -3778,7 +3808,7 @@ const Printer = struct {
             .record => try p.collection(n, tree.children(n), .field, indent),
             .record_update => {
                 const r = tree.fullRecordUpdate(n);
-                try p.extension(n, r.base, r.fields, .field);
+                try p.extension(n, .{ .node = r.base }, r.fields, .field);
             },
             .apply => {
                 const a = tree.fullApply(n);
@@ -4524,7 +4554,7 @@ const Printer = struct {
             .type_record => try p.collection(n, tree.children(n), .type_field, indent),
             .type_record_ext => {
                 const r = tree.fullTypeRecordExt(n);
-                try p.extension(n, r.base, r.fields, .type_field);
+                try p.extension(n, .{ .token = r.base }, r.fields, .type_field);
             },
             else => return error.SyntaxErrors,
         }
