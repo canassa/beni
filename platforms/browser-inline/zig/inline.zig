@@ -1380,10 +1380,21 @@ const Page = struct {
             if (ctx != 0) std.debug.assert(pg.ctxs.items[ctx].root != pg.ctxs.items[0].root);
             try pg.bindLets(blk, pg.ctxs.items[0].root, reads);
             if (ctx != 0) try pg.bindLets(blk, pg.ctxs.items[ctx].root, reads);
-            try cx.rootValues(blk, pg.ctxs.items[ctx].root, values.items);
+            // Each write's values evaluated just before it, in document
+            // order, so a value is written where it is made.
             for (f.writes.items) |wi| {
                 const w = pg.writes.items[wi];
                 if (w.ctx != ctx) continue;
+                var own: std.ArrayList(m.Value.Index) = .empty;
+                switch (w.what) {
+                    .text => |parts| for (parts) |part| switch (part) {
+                        .value => |v| try own.append(pg.a(), v),
+                        else => {},
+                    },
+                    .prop => |x| try own.append(pg.a(), x.value),
+                    .when => {},
+                }
+                try cx.rootValues(blk, pg.ctxs.items[ctx].root, own.items);
                 const node = try pg.ref(w.target);
                 switch (w.what) {
                     .text => |parts| {
