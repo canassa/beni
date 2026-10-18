@@ -338,7 +338,10 @@ program site by name (option 2 of §7, extended to `update` and `view`).
   written at the program site with that call replaced by the arm piece of the key's next step,
   applied to the key's fields — the leaf constructor's, `Program.Key.fields` — and its other
   arguments, each a name, so release's single-use inlining fuses the piece
-  (`emit/release/core/InlineOnce.beni`). A key whose split inside another module is followed by a
+  (`emit/release/core/InlineOnce.beni`). A constructor of a type of one constructor, which no
+  `case` splits — `CounterMsg` around `Counter.Msg` — is followed on the leaf's path all the same:
+  the key is `Inc` under it, and its arm takes `Inc`'s fields (`browser/inline/ArmPiece/`,
+  `emit/release/inline/ArmPiece/`). A key whose split inside another module is followed by a
   further split in a function that branch's arm calls is `deep_split`, a limit of the compiler.
 - **View pieces**, of a `view` (or a function `view` calls through `Html.map`) of another module,
   on one call path: `<Module>$<declaration>$$html$<n>`, the unit's HTML string (§8.2); and
@@ -396,7 +399,10 @@ the compiler"*, a language rule never says *"yet"*):
 | a `*` key (`write-sets.md` §3.4) of an exact inferred whole write of a model whose type is a record of more than one field — by `update`'s annotation, or else by the record literal `init` makes — without a declared `replace` (`plans/direct-rewrite.md` §6): *"Key `Restore` writes the whole model, a record of several fields, in one value, which hides which of its fields changed … Write the fields the arm changes …, or … a declared `replace` once the language has one"* (*decided 2026-10-17, the owner*; `StarUnannotated/` without the annotation). A `*` of lost precision — a cap cut the key, the pass marked the whole write an approximation, or neither the annotation nor `init` gives the model's type — is a limit of the compiler, class 4, reported at the first approximation in source order, which it quotes and says how many more there are (`StarOpaque/`: `f model`; `StarParameter/`: `g m`; `StarRecord/`: `{ next | count = 0 }`; `StarPrecision/`: the cap and its call); a model of one value (an `Int`, a record of one field) is written exactly and accepted, every binding called. A key is named as the program spells it, never `(any)` | 3 / 4 | the record's `update`; the approximation | `StarNotReplace/`, `StarUnannotated/`, `StarOpaque/`, `StarParameter/`, `StarRecord/`, `StarPrecision/` |
 | a keyed `For`: *"… does not compile keyed rows — a `For` with `keyed` — yet …"* | 1 | the `For` | `ResearchListWidget/` |
 | a key whose writes a cap of the write-set pass cut (`Program.Key.cap`): the depth limit `k` and the rounds of a recursive component until #286's folding replaces them; the leaf, alternative and size caps are lifted in S1 | 4 | the record's `update` | `CapFired/` |
-| a key that splits again inside another module (`deep_split`); an event argument or a piece capture the program site cannot write; a `view` `let` read by several holes | 4 / 1 | the construct | — |
+| a key whose message reaches a function of another module that is not a `case` on it, or that splits it again inside (`deep_split`): *"… hands a message to a function of another module that `browser-inline` cannot write as one function per message …"* | 4 | the call | `ArmNotCase/` |
+| a message wrapped in a constructor of several fields, a field of which the arm binds: *"… wraps another in a constructor of more than one field, and a handler is handed only the inner message's fields …"* | 4 | the field's pattern | `ArmWideWrapper/` |
+| a message handed to a function a value holds: *"… a function held in a value, which `browser-inline` cannot follow to the arm a key takes …"* | 4 | the call | `ArmHeldFunction/` |
+| an event argument or a piece capture the program site cannot write; a `view` `let` read by several holes | 4 / 1 | the construct | — |
 | a text hole beside an element: *"… writes a text hole as its element's whole text, and this one stands beside an element; wrap the hole and the text around it in an element of their own …"* | 4 | the hole | `TextBesideElement/` |
 | an attribute that changes and is not a DOM property `prop` writes | 1 | the element | `AttributeChanges/` |
 | an event whose handler value is a message no key can be named for when the program is built: *"… so its message would need a dispatcher …"* | 4 | the element | `MessageValue/` |

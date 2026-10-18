@@ -1,0 +1,43 @@
+-- `apply`, written in place, calls the function its parameter holds with
+-- the message, and which function that is the arm cannot follow to a piece
+-- of `Counter`'s (docs/design/browser-inline.md §8.4): a limit, class 4
+-- (§5), reported at the call.
+import Browser
+import Counter
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    c : Counter.Model
+
+
+type Msg
+    = CounterMsg Counter.Msg
+
+
+apply : (Counter.Msg, Counter.Model → Counter.Model), Counter.Msg, Counter.Model → Counter.Model
+apply f sub c = f sub c
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        CounterMsg sub →
+            { model | c = apply Counter.update sub model.c }
+
+
+view : Model → Html Msg
+view model =
+    <div data-role="app">
+        <output>{model.c.count}</output>
+        <button data-role="inc" onClick={CounterMsg Counter.Inc}>+</button>
+        <button data-role="dec" onClick={CounterMsg Counter.Dec}>-</button>
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → { c = Counter.init ⊤ }, update = update, view = view })
+        "root"

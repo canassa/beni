@@ -69,6 +69,7 @@ pub const lowering: m.Lowering = .{
     },
     .places = true,
     .constructs = true,
+    .arm_fields = true,
     .effects = .{ .sub = "Sub", .cmd = "Cmd" },
     .no_markup_values = no_markup_values,
 };
@@ -506,7 +507,7 @@ const Page = struct {
         }
         for (subs) |s| {
             if (s.handler >= keys.len) return cx.programReport(.call, .not_implemented, "A limit of the compiler: a subscription's key has no handler.");
-            if (s.fields > 1 or keys[s.handler].params != s.fields) return cx.programReport(.call, .not_implemented, try std.fmt.allocPrint(cx.arena,
+            if (s.fields > 1 or keys[s.handler].fields != s.fields) return cx.programReport(.call, .not_implemented, try std.fmt.allocPrint(cx.arena,
                 \\A limit of the compiler: `browser-inline` does not compile the subscription at {s} yet:
                 \\its message's constructor takes the value in more than one field
                 \\(`docs/design/browser-inline.md` §5, class 1). Give the constructor one field for the
@@ -620,6 +621,14 @@ const Page = struct {
             if (try pg.command(@intCast(k))) runs = true;
         };
         if (runs) {
+            // The dispatcher hands a handler the message's fields as `params`
+            // reads them; a handler of a deeper key takes its leaf's.
+            for (keys) |key| if (key.fields != key.params) return cx.programReport(.call, .not_implemented,
+                \\A limit of the compiler: this program's commands send messages, which reach their handlers
+                \\through a dispatcher, and `browser-inline`'s dispatcher does not yet hand a key of a
+                \\message inside another its leaf's fields (`docs/design/browser-inline.md` §4, §8.4; §5,
+                \\class 1). Build this program with `--platform=browser-tea`.
+            );
             for (0..keys.len) |k| {
                 refs[k] += 1;
                 if (element_) _ = try pg.command(@intCast(k));
@@ -640,7 +649,7 @@ const Page = struct {
         for (keys, 0..) |key, k| {
             if (refs[k] == 0) continue;
             try pg.refuseKey(key);
-            const params = try pg.a().alloc(m.Name, key.params);
+            const params = try pg.a().alloc(m.Name, key.fields);
             for (params) |*x| x.* = try cx.fresh("value");
             if (refs[k] == 1) if (only[k]) |i| {
                 // Written in its one event's listener, its fields bound to
@@ -1008,7 +1017,7 @@ const Page = struct {
             } else payload = try js.name(e);
         }
         const arms = try pg.enter(blk, ev.ctx);
-        const message = try cx.programMessage(blk, v, payload);
+        const message = try cx.programMessageFields(blk, v, payload);
         pg.leave(arms);
         return switch (message) {
             .key => |kc| .{ .node = ev.node, .target = ev.target, .blk = blk, .event = event, .key = kc.key, .args = kc.args, .kind = kind, .flags = facts },
@@ -1027,7 +1036,7 @@ const Page = struct {
         const element_ = pg.p.constructor == 1;
         const incoming = try cx.fresh("before");
         try js.constant(blk, incoming, try js.name(pg.model));
-        const next = try cx.programArm(k, blk, params, try js.name(incoming), update);
+        const next = try cx.programArmFields(k, blk, params, try js.name(incoming), update);
         var result = next;
         if (element_) {
             const pair = try cx.fresh("result");

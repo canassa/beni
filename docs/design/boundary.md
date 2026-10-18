@@ -2246,6 +2246,16 @@ one that first uses it; a lowering that targets 1.14 sees what it saw.
   place and text and how many more — and `programReportAt(site, code, message)` reports there, in
   whichever module holds it. `Program.Key.spelled` is the key as the program spells it, its
   constructors, never `(any)`; `Program.Key.cap` names the first cap that cut the key.
+- **Arms from fields.** `Lowering.arm_fields`: the lowering's handlers take each key's leaf
+  fields. `programMessageFields(block, handler, payload)` is `programMessage` handing a key those
+  fields, through constructors of one constructor's type that no `case` splits as well as through
+  the steps (`CounterMsg Counter.Inc` gives the `Inc` key none). `programArmFields(key, block,
+  fields, model, update)` writes the key's arm from them: `update` in place whatever its shape
+  (its body is never copied whole, only the branches the key takes), a local that would hold the
+  message or a part of it followed by how far along the leaf's path it is, a function of the
+  module that hands it on written in place, a call of another module's function that module's arm
+  piece (`browser-inline.md` §8.4), and a read of a part whole built there (D-e). What it cannot
+  follow is a limit of the compiler, reported once at the expression it stopped at.
 - **Groups, sparse.** `programGroupsOf(key)`: the groups the key's writes reach, sorted — what
   `programCalls` answers one pair at a time, without the groups × keys matrix.
 - **Per-path passes.** `programArmTails(key)`: the tails of the key's arm (`write-sets.md`,

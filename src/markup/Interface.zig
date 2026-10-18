@@ -115,6 +115,11 @@ pub const Lowering = struct {
     /// hook returns alone, the constructor not called: for a platform whose
     /// `Program` is the mount (its constructors' siblings the identity).
     constructs: bool = false,
+    /// 1.15: the lowering's handlers take a key's leaf fields
+    /// (`Program.Key.fields`) and write its arm with `Context.programArmFields`,
+    /// which writes only the branches the key takes: `update` is written in
+    /// place whatever its shape, and its body is never copied whole.
+    arm_fields: bool = false,
     /// 1.14: the lowering compiles a program's subscriptions and commands
     /// away (`browser-inline.md` §3–§4): the modules of the platform chain
     /// whose `none`, `batch`, `map` and `on` (`sub`) and `none`, `batch`
@@ -239,6 +244,10 @@ pub const Program = struct {
         star: bool,
         /// 1.15: when `star`, which of the three kinds of `*` it is (the
         /// owner, 2026-10-17; `browser-inline.md` §5, §8.7).
+        /// 1.15: the leaf constructor's arity for a key whose last step names
+        /// one, however deep, else one (the message part itself): what a
+        /// handler written from its fields takes (`programArmFields`).
+        fields: u32 = 1,
         star_kind: StarKind = .none,
         /// 1.15: for a `*` key of lost precision, where the pass lost it: the
         /// first approximation in source order, and how many more.
@@ -1217,6 +1226,16 @@ pub const Context = struct {
         return cx.vtable.program_arm(cx.impl, key, block, params, model, update);
     }
 
+    /// 1.15, inside `Lowering.program` only: key `key`'s arm written from its
+    /// leaf fields (`Program.Key.fields` of them) and no message — `update`'s
+    /// body in place, a `case` on the message taking the key's branch, a
+    /// function of the program's module in place, another module's by its arm
+    /// piece (`browser-inline.md` §8.4) — into `block`; returns `update`'s
+    /// result, or `Reported` with a limit of the compiler.
+    pub fn programArmFields(cx: *Context, key: u32, block: Block, fields: []const Name, model: Expr, update: ?Expr) Error!Expr {
+        return cx.vtable.program_arm_fields(cx.impl, key, block, fields, model, update);
+    }
+
     /// 1.7, inside `Lowering.program` only: from here until
     /// `programViewLeave`, the `view` root's inputs are what `view` makes
     /// of `model` — its parameter bound to it, into `block` — so that
@@ -1237,6 +1256,14 @@ pub const Context = struct {
     /// (`browser-direct.md` §4.2, Q1), or else the message value.
     pub fn programMessage(cx: *Context, block: Block, handler: Value.Index, payload: ?Expr) Error!Program.Message {
         return cx.vtable.program_message(cx.impl, block, handler, payload);
+    }
+
+    /// Version 1.15: `programMessage`, but a key is handed its leaf
+    /// constructor's fields (`Program.Key.fields` of them) where a
+    /// message of nested constructors reaches it — `CounterMsg Counter.Inc`
+    /// gives the `Inc` key no arguments — rather than the message whole.
+    pub fn programMessageFields(cx: *Context, block: Block, handler: Value.Index, payload: ?Expr) Error!Program.Message {
+        return cx.vtable.program_message_fields(cx.impl, block, handler, payload);
     }
 
     /// 1.7, inside `Lowering.program` only: the dispatcher's body
@@ -1621,9 +1648,11 @@ pub const VTable = struct {
     program_groups_of: *const fn (impl: *anyopaque, key: u32) ?[]const u32,
     program_update: *const fn (impl: *anyopaque, block: Block) Error!?Expr,
     program_arm: *const fn (impl: *anyopaque, key: u32, block: Block, params: []const Name, model: Expr, update: ?Expr) Error!Expr,
+    program_arm_fields: *const fn (impl: *anyopaque, key: u32, block: Block, fields: []const Name, model: Expr, update: ?Expr) Error!Expr,
     program_view_enter: *const fn (impl: *anyopaque, block: Block, model: Expr) Error!void,
     program_view_leave: *const fn (impl: *anyopaque) void,
     program_message: *const fn (impl: *anyopaque, block: Block, handler: Value.Index, payload: ?Expr) Error!Program.Message,
+    program_message_fields: *const fn (impl: *anyopaque, block: Block, handler: Value.Index, payload: ?Expr) Error!Program.Message,
     program_dispatch: *const fn (impl: *anyopaque, block: Block, msg: Expr, handlers: []const Name) Error!void,
     reaches_debug: *const fn (impl: *anyopaque, v: Value.Index) bool,
     program_list: *const fn (impl: *anyopaque, node: Node.Index) Program.ListFacts,

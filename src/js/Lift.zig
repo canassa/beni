@@ -28,7 +28,31 @@ pub const Piece = struct {
     /// The locals of `decl`, numbered within it, that the lambda reads and
     /// its frame held a value of when it was made, in order: its captures.
     captures: []const u32,
+    /// An arm piece (`browser-inline.md` §8.4): one branch of a `case` at
+    /// which the key tree splits a message, lowered as a function of the
+    /// branch's pattern variables, then its function's other parameters —
+    /// `captures` in that order — whose value is the branch's. `inst` is the
+    /// branch's body.
+    arm: ?Arm = null,
+
+    pub const Arm = struct {
+        /// The constructor the branch names: its module and its index among
+        /// that module's `Bir.ctors`.
+        ctor_module: u32,
+        ctor_index: u32,
+        /// The function's row in its module's interface, which the program
+        /// site's reference to it names.
+        value: u32,
+        /// Which of the constructor's fields the piece takes, in order: those
+        /// its pattern binds to a variable.
+        fields: []const u32,
+    };
 };
+
+/// The base of an arm piece's name, `<declaration>$$arm$<branch>`.
+pub fn armBase(scratch: Allocator, decl_name: []const u8, branch: u32) Allocator.Error![]const u8 {
+    return std.fmt.allocPrint(scratch, "{s}$$arm${d}", .{ decl_name, branch });
+}
 
 /// The base of a piece's name, `<declaration>$$lift$<ordinal>`: `$` is in
 /// no beni name, so no declaration can be called that.

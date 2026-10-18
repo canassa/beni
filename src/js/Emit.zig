@@ -2744,11 +2744,100 @@ const Emitter = struct {
                 });
             }
         }
+        try e.findArmPieces(&pieces, &roots);
         e.lifts = pieces.items;
         e.cuts = cuts.items;
         e.lift_roots = roots.items;
     }
 
+    /// `browser-inline.md` §8.4: the arm pieces every program's keys need —
+    /// one per branch of a `case` at which a key splits its message inside
+    /// a function of a module other than the program's, the function's
+    /// first parameter the message and its body that `case`. Each is a
+    /// branch of a named constructor, found by the constructor of the key's
+    /// step; the program site calls it in place of the function. Lowered by
+    /// the module that declares it, after its declaration, and a root of
+    /// reachability: the program site calls it.
+    fn findArmPieces(e: *Emitter, pieces: *std.ArrayList(Lift.Piece), roots: *std.ArrayList(Reach.Node)) !void {
+        const w = e.writes.?;
+        for (e.writes_calls) |call| {
+            const prog = &call.program;
+            if (!prog.recognised) continue;
+            for (prog.keys) |k| for (k.steps) |s| {
+                if (s.ctor == Writes.none) continue;
+                const place = w.ctorPlace(s.ctor);
+                if (place.module == call.module) continue;
+                const b = e.writes_birs[place.module];
+                for (b.decls, 0..) |d, di| {
+                    if (d.kind != .value or d.params < 1) continue;
+                    const params = b.extraSlice(.{ .start = d.params_start, .end = d.params_end }, Bir.Inst.Index);
+                    if (params.len != d.params) continue;
+                    const body = d.body.unwrap() orelse continue;
+                    if (b.instTag(params[0]) != .pat_var or b.instTag(body) != .case) continue;
+                    const msg_local = b.instData(params[0]).lhs;
+                    const cd = b.instData(body);
+                    const scrutinee: Bir.Inst.Index = @fromBackingInt(@intCast(cd.lhs));
+                    if (b.instTag(scrutinee) != .local or b.instData(scrutinee).lhs != msg_local) continue;
+                    const branches = b.extraSlice(b.subRange(@fromBackingInt(@intCast(cd.rhs))), Bir.Inst.Index);
+                    for (branches, 0..) |br, bi| {
+                        if (b.instTag(br) != .branch) continue;
+                        const pattern: Bir.Inst.Index = @fromBackingInt(@intCast(b.instData(br).lhs));
+                        if (b.instTag(pattern) != .pat_ctor) continue;
+                        const pd = b.instData(pattern);
+                        const c = w.ctorOfInst(place.module, @fromBackingInt(@intCast(pd.lhs))) orelse continue;
+                        if (c != s.ctor) continue;
+                        // Already listed: one piece per branch.
+                        const branch_inst: u32 = b.instData(br).rhs;
+                        const known = for (pieces.items) |pc| {
+                            if (pc.arm != null and pc.module == place.module and pc.inst == branch_inst) break true;
+                        } else false;
+                        if (known) break;
+                        // The branch's variables, then the other parameters.
+                        var captures: std.ArrayList(u32) = .empty;
+                        var fields: std.ArrayList(u32) = .empty;
+                        const subs = b.extraSlice(b.subRange(@fromBackingInt(@intCast(pd.rhs))), Bir.Inst.Index);
+                        const plain = for (subs, 0..) |sub, fi| switch (b.instTag(sub)) {
+                            .pat_var => {
+                                try captures.append(e.scratch, b.instData(sub).lhs);
+                                try fields.append(e.scratch, @intCast(fi));
+                            },
+                            .pat_wild, .pat_unit => {},
+                            else => break false,
+                        } else true;
+                        if (!plain) break;
+                        const others = for (params[1..]) |pp| {
+                            if (b.instTag(pp) != .pat_var) break false;
+                            try captures.append(e.scratch, b.instData(pp).lhs);
+                        } else true;
+                        if (!others) break;
+                        // A branch that reads the message whole needs it: the program
+                        // site builds it there (D-e), and no piece takes its place.
+                        if (try Lift.readsLocal(b, e.scratch, branch_inst, msg_local)) break;
+                        var value: u32 = Lower.Direct.Ctor.none;
+                        if (place.module < e.session.resolution.provenance.len) {
+                            for (e.session.resolution.provenance[place.module].value_decl, 0..) |vd, vi| if (vd.int() == di) {
+                                value = @intCast(vi);
+                                break;
+                            };
+                        }
+                        if (value == Lower.Direct.Ctor.none) break;
+                        try roots.append(e.scratch, .{ .module = @fromBackingInt(@intCast(place.module)), .kind = .lift, .index = @intCast(pieces.items.len) });
+                        try pieces.append(e.scratch, .{
+                            .module = place.module,
+                            .decl = @intCast(di),
+                            .inst = branch_inst,
+                            .lo = try Lift.low(b, e.scratch, branch_inst),
+                            .ordinal = @intCast(bi),
+                            .name = try Lift.armBase(e.scratch, e.session.interner.slice(b.symbol(d.name)), @intCast(bi)),
+                            .captures = captures.items,
+                            .arm = .{ .ctor_module = place.module, .ctor_index = place.index, .value = value, .fields = fields.items },
+                        });
+                        break;
+                    }
+                }
+            };
+        }
+    }
     fn buildDirect(e: *Emitter) !void {
         const a = e.scratch;
         const w = e.writes.?;
@@ -2957,6 +3046,10 @@ const Emitter = struct {
             var lost_sites: std.ArrayList(Lower.Direct.LostSite) = .empty;
             for (keys, 0..) |*key, ki| {
                 key.spelled = if (prog.recognised and prog.keys[ki].steps.len == 0 and prog.msg_only.len != 0) try a.dupe(u8, prog.msg_only) else key.name;
+                if (prog.recognised and prog.keys[ki].steps.len != 0) {
+                    const last = prog.keys[ki].steps[prog.keys[ki].steps.len - 1];
+                    key.fields = if (last.ctor != Writes.none) w.ctorArity(last.ctor) else 1;
+                }
                 if (prog.recognised) {
                     const c = prog.keys[ki].caps;
                     key.cap = if (c.k) .depth else if (c.a) .alternatives else if (c.d) .instantiation else if (c.i) .rounds else if (c.s) .size else if (c.w) .work else if (c.l) .leaves else .none;

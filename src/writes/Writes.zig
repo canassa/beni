@@ -989,6 +989,11 @@ fn valueTarget(a: *const Writes, m: u32, inst: Inst.Index) ?struct { m: u32, d: 
     }
 }
 
+/// The constructor a `ctor` or `ext_ctor` instruction of module `m` names.
+pub fn ctorOfInst(a: *const Writes, m: u32, inst: Inst.Index) ?u32 {
+    return a.ctorTarget(m, inst);
+}
+
 fn ctorTarget(a: *const Writes, m: u32, inst: Inst.Index) ?u32 {
     const b = a.bir(m);
     const data = b.instData(inst);

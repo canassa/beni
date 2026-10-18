@@ -1,0 +1,46 @@
+-- An arm of another module's `update`, as a piece of its own
+-- (docs/design/browser-inline.md §8.4): `Main`'s handler for
+-- `CounterMsg Counter.Inc` takes `Inc`'s fields, none; `step`, written in
+-- place, takes its `CounterMsg` branch, and its call of `Counter.update`
+-- is `Counter`'s arm piece for `Inc`, handed the model. `CounterMsg` is a
+-- type of one constructor, which no `case` splits: the key's one step is
+-- `Inc`, under it. The clamp holds the count at 10.
+import Browser
+import Counter
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    c : Counter.Model
+
+
+type Msg
+    = CounterMsg Counter.Msg
+
+
+step : Msg, Model → Model
+step msg model =
+    case msg of
+        CounterMsg sub →
+            { model | c = Counter.update sub model.c }
+
+
+update : Msg, Model → Model
+update msg model = step msg model
+
+
+view : Model → Html Msg
+view model =
+    <div data-role="app">
+        <output>{model.c.count}</output>
+        <button data-role="inc" onClick={CounterMsg Counter.Inc}>+</button>
+        <button data-role="dec" onClick={CounterMsg Counter.Dec}>-</button>
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → { c = Counter.init ⊤ }, update = update, view = view })
+        "root"

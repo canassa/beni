@@ -960,6 +960,9 @@ pub const Lowerer = struct {
     /// `programBranchValue`), what its arms' bodies and results are
     /// lowered as instead (`exprValue`).
     arm_override: ?*const ArmOverride = null,
+    /// `cx.programArmFields` (version 1.15): while a key's arm is written
+    /// from its fields, the locals that hold the message or a part of it.
+    msg_track: ?*MsgTrack = null,
     /// The `let`s that lowering leaves out: an arm's statements, outside
     /// the mount of its markup.
     let_skip: []const Inst.Index = &.{},
@@ -4725,6 +4728,7 @@ pub const Lowerer = struct {
         l.region = inst;
         if (l.deadArm(inst)) return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
         if (l.arm_override) |ov| if (try l.overriddenArm(out, ov, inst)) |node_| return node_;
+        if (l.msg_track) |mt| if (try l.trackedExpr(out, mt, inst)) |node_| return node_;
         switch (l.bir.instTag(inst)) {
             .int, .float => return l.numberNode(l.bir.bytes(inst), p),
             .char => {
@@ -11356,7 +11360,7 @@ pub const Lowerer = struct {
             if (std.mem.eql(u8, field_name, "onUrlRequest")) pc.on_url_request = field.value;
             if (std.mem.eql(u8, field_name, "onUrlChange")) pc.on_url_change = field.value;
         }
-        pc.update_inline = l.in.direct != null and l.updateInlinable(pc.update, if (pc.direct) |d| d.keys.len > 1 else false);
+        pc.update_inline = l.in.direct != null and l.updateInlinable(pc.update, if (pc.direct) |d| d.keys.len > 1 and !(if (l.in.markup) |mk| mk.lowering.arm_fields else false) else false);
         return pc;
     }
 
@@ -12505,6 +12509,324 @@ pub const Lowerer = struct {
         return result;
     }
 
+    // ---- A key's arm from its fields (version 1.15) ----------------------
+    //
+    // `browser-inline.md` §8.4: a handler takes the key's leaf fields and no
+    // message. The arm is `update`'s body written in place, and the message
+    // never exists: a local that would hold it, or a part of it, is tracked
+    // by how many of the key's steps it has passed. A `case` on one takes the
+    // branch the key's step names; a call of a function of this module that
+    // hands one on is written in place; a call of another module's function
+    // is that module's arm piece for the key's last step, handed the fields;
+    // a read of one whole builds that part of the message there (D-e).
+
+    const MsgTrack = struct {
+        steps: []const Direct.Step,
+        /// The key's last step: its `access` is the path from the message
+        /// to the leaf constructor whose fields the handler takes, and every
+        /// other step splits a prefix of it.
+        leaf: Direct.Step,
+        fields: []const Node.Index,
+        /// `(declaration, local, depth)`: the local of that declaration
+        /// holds the message's part at the leaf path's first `depth`
+        /// accesses — 0 the message, `leaf.access.len` the leaf's value.
+        held: std.ArrayList([3]u32) = .empty,
+        /// The functions being written in place, against recursion.
+        open: std.ArrayList(u32) = .empty,
+        /// What stopped it, a refusal's text, and the expression of
+        /// `update`'s that it stopped at.
+        failed: ?[]const u8 = null,
+        failed_at: Inst.Index = undefined,
+    };
+
+    /// `cx.programArmFields`: key `key`'s arm, `update`'s result, written
+    /// from its fields `fields` and the old model `model`; null, with a
+    /// refusal reported, when the arm is not one this can write.
+    fn directArmFields(l: *Lowerer, key: u32, block: beni_markup.Block, fields: []const JsIr.NameIndex, model: Node.Index, update: ?Node.Index) Allocator.Error!?Node.Index {
+        // A key of no steps — a message type `update` does not split — takes
+        // the message itself, its one field: the arm as `programArm` writes it.
+        if (l.directSteps(key).len == 0) return try l.directArm(key, block, fields, model, update);
+        // An `update` of another module, for a key of one step: called with
+        // the message its fields make, as before 1.15.
+        if (l.program_now) |pc0| if (!pc0.update_inline and l.directSteps(key).len == 1 and l.directSteps(key)[0].access.len == 0) return try l.directArm(key, block, fields, model, update);
+        const st = l.mk.?;
+        const p = st.pos;
+        const pc = l.program_now orelse return null;
+        const function = (if (pc.update_inline) l.fieldFunction(pc, pc.update) else null) orelse {
+            try l.programReport(.update, .not_implemented,
+                \\A limit of the compiler: `browser-inline` writes each key's arm from `update`'s body, and
+                \\this program's `update` is another module's function, whose body this module cannot write
+                \\(`docs/design/browser-inline.md` §8.4; §5, class 4). Write `update` in the module that
+                \\calls the program's constructor, calling the other module's, or build this program with
+                \\`--platform=browser-tea`.
+            );
+            return null;
+        };
+        if (function.params.len != 2 or l.bir.instTag(function.params[0]) != .pat_var) {
+            try l.programReport(.update, .not_implemented, "A limit of the compiler: `browser-inline` writes a key's arm from an `update` of two parameters whose first is a name.");
+            return null;
+        }
+        var stmts: StmtList = .empty;
+        const depth = l.case_depth;
+        l.case_depth = 0;
+        defer l.case_depth = depth;
+        const outer = l.enterFunction(false);
+        defer l.leaveFunction(outer);
+        const nodes = try l.scratch.alloc(Node.Index, fields.len);
+        for (nodes, fields) |*n, f| n.* = try l.ident(f, p);
+        const steps = l.directSteps(key);
+        const leaf = steps[steps.len - 1];
+        for (steps) |s| {
+            const prefix = s.access.len <= leaf.access.len and for (s.access, leaf.access[0..s.access.len]) |a, b| {
+                if (!std.meta.eql(a, b)) break false;
+            } else true;
+            if (!prefix) {
+                try l.programReport(.update, .not_implemented,
+                    \\A limit of the compiler: this program's `update` splits one message at two places side by
+                    \\side, and `browser-inline` hands a handler one constructor's fields
+                    \\(`docs/design/browser-inline.md` §8.4; §5, class 4). The program is valid: it builds with
+                    \\`--platform=browser-tea`.
+                );
+                return null;
+            }
+        }
+        var mt: MsgTrack = .{ .steps = steps, .leaf = leaf, .fields = nodes };
+        const saved = try l.enterDecl(function.decl);
+        defer l.leaveDecl(saved);
+        try l.bindParam(&stmts, function.params[1], model);
+        try mt.held.append(l.scratch, .{ function.decl, l.bir.instData(function.params[0]).lhs, 0 });
+        const was = l.msg_track;
+        l.msg_track = &mt;
+        defer l.msg_track = was;
+        const value = try l.expr(&stmts, function.body);
+        if (mt.failed) |why| {
+            // Every key whose arm reaches the expression stops there: one
+            // diagnostic for it.
+            for (l.diagnostics.items) |dg| {
+                if (dg.module == l.in.module and dg.region == mt.failed_at and std.mem.eql(u8, dg.message, why)) return null;
+            }
+            try l.report(.not_implemented, mt.failed_at, "{s}", .{why});
+            return null;
+        }
+        try st.blocks.items[@backingInt(block)].appendSlice(l.scratch, stmts.items);
+        return value;
+    }
+
+    /// The depth local `local` of the current declaration holds, if any.
+    fn heldDepth(l: *const Lowerer, mt: *const MsgTrack, local: u32) ?u32 {
+        const decl = l.decl_index orelse return null;
+        for (mt.held.items) |h| if (h[0] == decl and h[1] == local) return h[2];
+        return null;
+    }
+
+    /// The tracked local instruction `inst` reads, and its depth.
+    fn heldRead(l: *const Lowerer, mt: *const MsgTrack, inst: Inst.Index) ?u32 {
+        if (l.bir.instTag(inst) != .local) return null;
+        return l.heldDepth(mt, l.bir.instData(inst).lhs);
+    }
+
+    fn trackFail(l: *Lowerer, mt: *MsgTrack, inst: Inst.Index, comptime fmt: []const u8, args: anytype) Allocator.Error!Node.Index {
+        if (mt.failed == null) {
+            mt.failed = try std.fmt.allocPrint(l.scratch, fmt, args);
+            mt.failed_at = inst;
+        }
+        return l.nullNode(l.pos(inst));
+    }
+
+    /// The message's part from step `depth` on, built from the fields: what
+    /// a branch that reads it whole is handed (D-e).
+    fn heldValue(l: *Lowerer, mt: *MsgTrack, depth: u32, p: u32) Allocator.Error!?Node.Index {
+        const path = mt.leaf.access;
+        if (depth == path.len) {
+            if (!mt.leaf.named) return if (mt.fields.len == 1) mt.fields[0] else null;
+            const rt = l.directCtor(mt.leaf.ctor) orelse return null;
+            return try l.ctorValue(rt[0], rt[1], mt.fields, p);
+        }
+        const c = switch (path[depth]) {
+            .ctor => |c| c,
+            else => return null,
+        };
+        if (l.directArity(c.ctor) != 1) return null;
+        const rt = l.directCtor(c.ctor) orelse return null;
+        const inner = (try l.heldValue(mt, depth + 1, p)) orelse return null;
+        return try l.ctorValue(rt[0], rt[1], &.{inner}, p);
+    }
+
+    /// The number of fields constructor `c` has; null when not known.
+    fn directArity(l: *Lowerer, c: Direct.Ctor) ?u32 {
+        if (c.module == l.in.module.int()) {
+            if (c.index >= l.bir.ctors.len) return null;
+            const ct = l.bir.ctors[c.index];
+            return Bir.SubRange.len(.{ .start = ct.args_start, .end = ct.args_end });
+        }
+        if (c.iface == Direct.Ctor.none or c.module >= l.in.interfaces.len) return null;
+        const iface = &l.in.interfaces[c.module];
+        if (c.iface >= iface.ctors.len) return null;
+        return iface.ctors[c.iface].arity;
+    }
+
+    fn trackedExpr(l: *Lowerer, out: *StmtList, mt: *MsgTrack, inst: Inst.Index) Allocator.Error!?Node.Index {
+        const p = l.pos(inst);
+        const d = l.bir.instData(inst);
+        switch (l.bir.instTag(inst)) {
+            .local => {
+                const depth = l.heldDepth(mt, d.lhs) orelse return null;
+                return (try l.heldValue(mt, depth, p)) orelse try l.trackFail(mt, inst,
+                    \\A limit of the compiler: an arm of this program reads its message, or a part of it, whole,
+                    \\and `browser-inline` builds that part from the key's fields only through constructors of
+                    \\one field each (`docs/design/browser-inline.md` §8.4, D-e; §5, class 4). The program is
+                    \\valid: it builds with `--platform=browser-tea`.
+                , .{});
+            },
+            .case => {
+                const scrutinee: Inst.Index = @fromBackingInt(@intCast(d.lhs));
+                const depth = l.heldRead(mt, scrutinee) orelse return null;
+                const path = mt.leaf.access;
+                const leaf = depth == path.len;
+                // The constructor this part has, and the field the leaf path
+                // goes on through; at the leaf, none when its step is a
+                // default one, whose branch is the catch-all.
+                const want: ?Direct.Ctor, const next_field: ?u32 = if (leaf)
+                    .{ if (mt.leaf.named) mt.leaf.ctor else null, null }
+                else switch (path[depth]) {
+                    .ctor => |c| .{ c.ctor, c.field },
+                    else => return try l.trackFail(mt, inst,
+                        \\A limit of the compiler: this program's `update` splits a message through a tuple or a
+                        \\record, and `browser-inline` follows a key's steps only through constructors
+                        \\(`docs/design/browser-inline.md` §8.4; §5, class 4). The program is valid: it builds
+                        \\with `--platform=browser-tea`.
+                    , .{}),
+                };
+                for (l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index)) |branch| {
+                    if (l.bir.instTag(branch) != .branch) continue;
+                    const bd = l.bir.instData(branch);
+                    const pattern: Inst.Index = @fromBackingInt(@intCast(bd.lhs));
+                    const body: Inst.Index = @fromBackingInt(@intCast(bd.rhs));
+                    switch (l.bir.instTag(pattern)) {
+                        .pat_ctor => {
+                            const ctor = want orelse continue;
+                            const pd = l.bir.instData(pattern);
+                            if (!l.sameCtor(@fromBackingInt(@intCast(pd.lhs)), ctor)) continue;
+                            const subs = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(pd.rhs))), Inst.Index);
+                            for (subs, 0..) |sub, i| switch (l.bir.instTag(sub)) {
+                                .pat_var => {
+                                    const local = l.bir.instData(sub).lhs;
+                                    if (leaf) {
+                                        if (i >= mt.fields.len) return try l.trackFail(mt, inst, "A limit of the compiler: a key's arm binds more fields than its constructor has.", .{});
+                                        try l.bindParam(out, sub, mt.fields[i]);
+                                    } else if (i == next_field.?) {
+                                        try mt.held.append(l.scratch, .{ l.decl_index.?, local, depth + 1 });
+                                    } else return try l.trackFail(mt, sub,
+                                        \\A limit of the compiler: this program's message wraps another in a constructor of more
+                                        \\than one field, and a handler is handed only the inner message's fields
+                                        \\(`docs/design/browser-inline.md` §8.4; §5, class 4). The program is valid: it builds
+                                        \\with `--platform=browser-tea`.
+                                    , .{});
+                                },
+                                .pat_wild, .pat_unit => {},
+                                else => return try l.trackFail(mt, inst,
+                                    \\A limit of the compiler: a branch of this program's `update` matches the fields of a
+                                    \\message's constructor against patterns, and `browser-inline` binds a key's fields only
+                                    \\to variables (`docs/design/browser-inline.md` §8.4; §5, class 4). The program is valid:
+                                    \\it builds with `--platform=browser-tea`.
+                                , .{}),
+                            };
+                            return try l.expr(out, body);
+                        },
+                        .pat_wild => return try l.expr(out, body),
+                        .pat_var => {
+                            try mt.held.append(l.scratch, .{ l.decl_index.?, l.bir.instData(pattern).lhs, depth });
+                            return try l.expr(out, body);
+                        },
+                        else => return try l.trackFail(mt, inst,
+                            \\A limit of the compiler: this program's `update` matches its message against a pattern
+                            \\`browser-inline` does not split a key on (`docs/design/browser-inline.md` §8.4; §5,
+                            \\class 4). The program is valid: it builds with `--platform=browser-tea`.
+                        , .{}),
+                    }
+                }
+                return try l.trackFail(mt, inst, "A limit of the compiler: no branch of this `case` takes the key's message.", .{});
+            },
+            .call => {
+                const callee: Inst.Index = @fromBackingInt(@intCast(d.lhs));
+                const args = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index);
+                var held: ?u32 = null;
+                var at: usize = 0;
+                for (args, 0..) |arg, i| if (l.heldRead(mt, arg)) |depth| {
+                    if (held != null) return try l.trackFail(mt, inst, "A limit of the compiler: a call hands the message on twice.", .{});
+                    held = depth;
+                    at = i;
+                };
+                const depth = held orelse return null;
+                switch (l.bir.instTag(callee)) {
+                    .top => {
+                        // A function of this module: written in place.
+                        const decl = l.bir.instData(callee).lhs;
+                        if (std.mem.indexOfScalar(u32, mt.open.items, decl) != null) return try l.trackFail(mt, inst,
+                            \\A limit of the compiler: a function of this program's `update` hands the message to
+                            \\itself, and `browser-inline` writes a key's arm in place, which a recursion does not end
+                            \\(`docs/design/browser-inline.md` §8.4; §5, class 4). The program is valid: it builds with
+                            \\`--platform=browser-tea`.
+                        , .{});
+                        const params = l.paramsOf(decl);
+                        if (params.len != args.len or l.bir.instTag(params[at]) != .pat_var) return try l.trackFail(mt, inst, "A limit of the compiler: a function of `update` takes its message in a pattern.", .{});
+                        // The other arguments, in the caller's scope.
+                        const values = try l.scratch.alloc(?Node.Index, args.len);
+                        for (args, values, 0..) |arg, *v, i| v.* = if (i == at) null else try l.expr(out, arg);
+                        try mt.open.append(l.scratch, decl);
+                        defer _ = mt.open.pop();
+                        const saved = try l.enterDecl(decl);
+                        defer l.leaveDecl(saved);
+                        for (params, values, 0..) |param, v, i| {
+                            if (i == at) {
+                                try mt.held.append(l.scratch, .{ decl, l.bir.instData(param).lhs, depth });
+                            } else try l.bindParam(out, param, v.?);
+                        }
+                        return try l.expr(out, l.bodyOf(decl));
+                    },
+                    .ext_value => {
+                        // Another module's: its arm piece for the key's last
+                        // step, handed the fields the piece takes, then the
+                        // other arguments.
+                        const module = l.bir.instData(callee).lhs;
+                        const row = l.bir.instData(callee).rhs;
+                        const deep = depth != mt.leaf.access.len;
+                        const step = mt.leaf;
+                        const pieces = if (l.in.direct) |dr| dr.lifts else &.{};
+                        const found = if (deep or at != 0 or !step.named) null else for (pieces) |pc| {
+                            const arm = pc.arm orelse continue;
+                            if (pc.module == module and arm.value == row and arm.ctor_module == step.ctor.module and arm.ctor_index == step.ctor.index) break pc;
+                        } else null;
+                        const piece = found orelse return try l.trackFail(mt, inst,
+                            \\A limit of the compiler: this program hands a message to a function of another module that
+                            \\`browser-inline` cannot write as one function per message: one that is not a `case` on its
+                            \\message, or that splits it again inside (`docs/design/browser-inline.md` §8.4, `deep_split`;
+                            \\§5, class 4). The program is valid: it builds with `--platform=browser-tea`.
+                        , .{});
+                        const call_args = try l.scratch.alloc(Node.Index, piece.captures.len);
+                        const arm = piece.arm.?;
+                        for (arm.fields, 0..) |f, i| {
+                            if (f >= mt.fields.len) return try l.trackFail(mt, inst, "A limit of the compiler: an arm piece takes more fields than its key has.", .{});
+                            call_args[i] = mt.fields[f];
+                        }
+                        if (arm.fields.len + args.len - 1 != call_args.len) return try l.trackFail(mt, inst, "A limit of the compiler: an arm piece takes other parameters than its call has.", .{});
+                        for (args[1..], call_args[arm.fields.len..]) |arg, *x| x.* = try l.expr(out, arg);
+                        const m: Graph.Index = @fromBackingInt(@intCast(piece.module));
+                        const base = try l.liftBase(m, piece);
+                        try l.needName(.{ .module = m, .base = base.toOptional() });
+                        const f = try l.ident(try l.name(.{ .module = l.in.graph.moduleName(m).toOptional(), .base = base, .tag = JsIr.Name.no_tag }), p);
+                        return try l.call(f, call_args, p);
+                    },
+                    else => return try l.trackFail(mt, inst,
+                        \\A limit of the compiler: this program hands its message to a function held in a value,
+                        \\which `browser-inline` cannot follow to the arm a key takes (`docs/design/browser-inline.md`
+                        \\§8.4; §5, class 4). The program is valid: it builds with `--platform=browser-tea`.
+                    , .{}),
+                }
+            },
+            else => return null,
+        }
+    }
     /// Bind a parameter pattern to a value: a variable reads a name the
     /// value already is under that name, and anything else is bound.
     fn bindParam(l: *Lowerer, out: *StmtList, pattern: Inst.Index, value: Node.Index) Allocator.Error!void {
@@ -14123,6 +14445,103 @@ pub const Lowerer = struct {
         return l.directMessageValue(stmts, inst, payload);
     }
 
+    /// `cx.programMessageFields` (version 1.15): `directMessageInto`, the
+    /// key a message of nested constructors reaches handed its leaf
+    /// constructor's fields (`Program.Key.fields`), not the message.
+    fn directMessageFields(l: *Lowerer, stmts: *StmtList, v: beni_markup.Value.Index, payload: ?Node.Index) Allocator.Error!beni_markup.Program.Message {
+        const st = l.mk.?;
+        const p = st.pos;
+        const inst: ?Inst.Index = switch (st.built.values[@backingInt(v)]) {
+            .inst => |i| i,
+            else => null,
+        };
+        const i = inst orelse return l.directMessageValue(stmts, inst, payload);
+        const composed: Composed = if (l.inline_frames.items.len != 0)
+            try l.composeMaps(stmts, try l.innerMessage(stmts, i, payload, l.inline_frames.items.len))
+        else
+            (try l.ctorLayers(stmts, i, payload)) orelse return l.directMessageInto(stmts, v, payload);
+        switch (composed) {
+            .layers => |layers| if (l.keyOfLayers(layers)) |found| {
+                const steps = l.directSteps(found.key);
+                const args: []const Node.Index = if (steps.len == 0)
+                    &.{try l.composedValue(composed, p)}
+                else blk: {
+                    const leaf = steps[steps.len - 1].access.len;
+                    if (leaf >= layers.len) break :blk &.{try l.composedValue(composed, p)};
+                    if (!steps[steps.len - 1].named) break :blk &.{try l.composedValue(.{ .layers = layers[leaf..] }, p)};
+                    const fields = try l.scratch.dupe(Node.Index, layers[leaf].fields);
+                    if (layers[leaf].at) |at| fields[at] = try l.composedValue(.{ .layers = layers[leaf + 1 ..] }, p);
+                    break :blk fields;
+                };
+                const out = try l.scratch.alloc(beni_markup.Expr, args.len);
+                for (out, args) |*o, x| o.* = @fromBackingInt(@intCast(x.int()));
+                return .{ .key = .{ .key = found.key, .args = out } };
+            },
+            .value => {},
+        }
+        return .{ .value = @fromBackingInt(@intCast((try l.composedValue(composed, p)).int())) };
+    }
+
+    /// A handler value of constructors applied — `CounterMsg Counter.Inc`,
+    /// `SetPages` given the payload — as layers, the outermost first, each
+    /// argument evaluated and bound unless it is an atom; null for any other.
+    fn ctorLayers(l: *Lowerer, stmts: *StmtList, i: Inst.Index, payload: ?Node.Index) Allocator.Error!?Composed {
+        var layers: std.ArrayList(Layer) = .empty;
+        var at = i;
+        var pl = payload;
+        while (true) {
+            switch (l.bir.instTag(at)) {
+                .ctor, .ext_ctor => {
+                    const arity = l.ctorArity(at);
+                    const fields = try l.scratch.alloc(Node.Index, arity);
+                    if (pl) |x| {
+                        if (arity != 1) return null;
+                        fields[0] = x;
+                        pl = null;
+                    } else if (arity != 0) return null;
+                    try layers.append(l.scratch, .{ .ctor = at, .fields = fields, .at = null });
+                    return .{ .layers = layers.items };
+                },
+                .call => {
+                    const d = l.bir.instData(at);
+                    const callee: Inst.Index = @fromBackingInt(@intCast(d.lhs));
+                    if (l.bir.instTag(callee) != .ctor and l.bir.instTag(callee) != .ext_ctor) return null;
+                    const args = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index);
+                    if (args.len != l.ctorArity(callee)) return null;
+                    // The argument that is itself a constructor, if one is.
+                    var inner: ?usize = null;
+                    for (args, 0..) |arg, ai| switch (l.bir.instTag(arg)) {
+                        .ctor, .ext_ctor => inner = ai,
+                        .call => {
+                            const c: Inst.Index = @fromBackingInt(@intCast(l.bir.instData(arg).lhs));
+                            if (l.bir.instTag(c) == .ctor or l.bir.instTag(c) == .ext_ctor) inner = ai;
+                        },
+                        else => {},
+                    };
+                    if (inner == null and pl != null) return null;
+                    const fields = try l.scratch.alloc(Node.Index, args.len);
+                    for (args, fields, 0..) |arg, *f, ai| {
+                        if (inner != null and ai == inner.?) {
+                            f.* = try l.nullNode(l.pos(arg));
+                            continue;
+                        }
+                        f.* = try l.expr(stmts, arg);
+                        if (l.isAtom(f.*)) continue;
+                        const n = try l.fresh(l.well.temp);
+                        try l.constDecl(stmts, n, f.*, l.pos(arg));
+                        f.* = try l.ident(n, l.pos(arg));
+                    }
+                    try layers.append(l.scratch, .{ .ctor = callee, .fields = fields, .at = if (inner) |x| @intCast(x) else null });
+                    if (inner) |x| {
+                        at = args[x];
+                        continue;
+                    }
+                    return .{ .layers = layers.items };
+                },
+                else => return null,
+            }
+        }
+    }
     /// The arguments a key's handler takes for constructor `ref` applied to
     /// `fields`: the fields, or the message they make.
     fn messageArgs(l: *Lowerer, found: KeyOfCtor, ref: Inst.Index, fields: []const Node.Index, p: u32) Allocator.Error![]const beni_markup.Expr {
@@ -15281,6 +15700,11 @@ const markup_vtable: beni_markup.VTable = struct {
         return expr(try lowerer(impl).directArm(key, into, @ptrCast(params), node(model), if (update) |u| node(u) else null));
     }
 
+    fn programArmFields(impl: *anyopaque, key: u32, into: M.Block, fields: []const M.Name, model: M.Expr, update: ?M.Expr) E!M.Expr {
+        const v = try lowerer(impl).directArmFields(key, into, @ptrCast(fields), node(model), if (update) |u| node(u) else null);
+        return if (v) |x| expr(x) else error.Reported;
+    }
+
     fn programViewEnter(impl: *anyopaque, into: M.Block, model: M.Expr) E!void {
         return lowerer(impl).directViewEnter(into, node(model));
     }
@@ -15291,6 +15715,14 @@ const markup_vtable: beni_markup.VTable = struct {
 
     fn programMessage(impl: *anyopaque, into: M.Block, v: M.Value.Index, payload: ?M.Expr) E!M.Program.Message {
         return lowerer(impl).directMessage(into, v, if (payload) |pl| node(pl) else null);
+    }
+
+    fn programMessageFields(impl: *anyopaque, into: M.Block, v: M.Value.Index, payload: ?M.Expr) E!M.Program.Message {
+        const l = lowerer(impl);
+        var stmts: StmtList = .empty;
+        const message = try l.directMessageFields(&stmts, v, if (payload) |pl| node(pl) else null);
+        try l.mk.?.blocks.items[@backingInt(into)].appendSlice(l.scratch, stmts.items);
+        return message;
     }
 
     fn programDispatch(impl: *anyopaque, into: M.Block, msg: M.Expr, handlers: []const M.Name) E!void {
@@ -15576,9 +16008,11 @@ const markup_vtable: beni_markup.VTable = struct {
         .template_value = templateValue,
         .program_update = programUpdate,
         .program_arm = programArm,
+        .program_arm_fields = programArmFields,
         .program_view_enter = programViewEnter,
         .program_view_leave = programViewLeave,
         .program_message = programMessage,
+        .program_message_fields = programMessageFields,
         .program_dispatch = programDispatch,
         .reaches_debug = reachesDebug,
         .program_list = programList,
