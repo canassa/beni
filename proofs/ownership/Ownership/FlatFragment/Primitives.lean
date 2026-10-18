@@ -1,6 +1,6 @@
 import Ownership.FlatFragment.Frame
 
-/-! The first flat fragment: the literal, length, shared, and push expression cases. -/
+/-! The first flat fragment: the literal, length, integer primitive, shared, and push expression cases. -/
 
 /-! integer literal expression case under the generic flat relation.
 The actual accepted inference run supplies the abstract result and the
@@ -475,6 +475,161 @@ theorem length_preserved {declarations : List Decl} {vs : ValueSemantics.State} 
         contradiction
 
 end Ownership.FlatFragment.Length
+
+/-! integer primitive case under the generic flat relation.
+Both operands are live integer atoms. Both runtimes compute the same integer.
+The checker returns a scalar and records nothing. The heap, the observers,
+the reads and the naming stay unchanged.
+-/
+
+namespace Ownership.FlatFragment.Scalar
+
+open InPlaceSemantics HeapProof Soundness Ownership.FlatFragment.State Ownership.FlatFragment.StateFrame
+open Ownership.FlatFragment.Observe Ownership.FlatFragment.Runtime Ownership.FlatFragment.HeapPreservation
+open Ownership.FlatFragment.Atoms Ownership.FlatFragment.AtomInteger Ownership.FlatFragment.PrimitiveInference Ownership.FlatFragment.PrimitiveRuntime
+open Ownership.FlatFragment.Literal Ownership.FlatFragment.Support Ownership.FlatFragment.Length
+open Ownership.FlatFragment
+
+theorem value_scalar_run {op : Prim} (sop : ScalarOp op) (s : ValueSemantics.State) (x y : Int) :
+    (ValueSemantics.prim op [.int x, .int y]).run s = .ok (.int (scalarResult op x y), s) := by
+  cases sop <;> rfl
+
+theorem heap_scalar_run {op : Prim} (sop : ScalarOp op) (s : State) (x y : Int) :
+    (prim op [.int x, .int y]).run s = .ok (.int (scalarResult op x y), s) := by
+  cases sop <;> rfl
+
+/-- The typing equation of an integer primitive: both operands and the result are `Int`. -/
+theorem exprType_scalar_success {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {gamma : Naming} {op : Prim} {a b : Atom} {self : Decl} {type : Ty} {escapes : List Origin}
+    (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma)
+    (sop : ScalarOp op) (flatA : FlatAtom a) (flatB : FlatAtom b)
+    (typed : exprType declarations self tenv (.prim op [a, b]) = .ok type) :
+    atomType tenv a = .ok .int ∧ atomType tenv b = .ok .int ∧ type = .int := by
+  obtain ⟨types, atomsTyped, primTyped⟩ := exprType_prim_success typed
+  obtain ⟨tyA, rest, aTyped, restTyped, shape⟩ := except_mapM_cons_success atomsTyped
+  obtain ⟨tyB, rest', bTyped, restTyped', shape'⟩ := except_mapM_cons_success restTyped
+  have restNil := except_mapM_nil_success restTyped'
+  subst shape
+  subst shape'
+  subst restNil
+  obtain ⟨aInt, bInt, typeInt⟩ := primType_scalar_success sop
+    (flat_atom_type inv flatA aTyped) (flat_atom_type inv flatB bTyped) primTyped
+  subst aInt
+  subst bInt
+  exact ⟨aTyped, bTyped, typeInt⟩
+
+theorem scalar_runtime_success {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {gamma : Naming} {depth : Nat} {op : Prim} {a b : Atom} {x y : Int} {escapes : List Origin}
+    (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma)
+    (sop : ScalarOp op)
+    (valueA : ValueSemantics.atom (valueEnv env) a = .ok (.int x))
+    (heapA : InPlaceSemantics.atom (heapEnv env) a = .ok (.int x))
+    (valueB : ValueSemantics.atom (valueEnv env) b = .ok (.int y))
+    (heapB : InPlaceSemantics.atom (heapEnv env) b = .ok (.int y))
+    (hasDepth : depth ≠ 0) (hasFuel : vs.fuel ≠ 0) :
+    (ValueSemantics.eval depth declarations none (valueEnv env) (.prim op [a, b])).run vs =
+      .ok (.int (scalarResult op x y), AtomPreservation.valueAtomPost vs) ∧
+    (InPlaceSemantics.eval depth declarations none (heapEnv env) (.prim op [a, b])).run hs =
+      .ok (.int (scalarResult op x y),
+        AtomPreservation.heapAtomPost hs vs.kept.toList) := by
+  obtain ⟨footprint, represented⟩ := inv.observers
+  have valueObservedRun := value_observeKept_run ({vs with fuel := vs.fuel - 1}) represented
+  have heapObservedRun := heap_observeKept_run ({hs with fuel := hs.fuel - 1}) represented
+  have heapFuel : hs.fuel ≠ 0 := by simpa only [← inv.fuel] using hasFuel
+  have valueAtoms : [a, b].mapM (m := Except String) (ValueSemantics.atom (valueEnv env)) =
+      .ok [.int x, .int y] := except_mapM_cons valueA (except_mapM_cons valueB rfl)
+  have heapAtoms : [a, b].mapM (m := Except String) (InPlaceSemantics.atom (heapEnv env)) =
+      .ok [.int x, .int y] := except_mapM_cons heapA (except_mapM_cons heapB rfl)
+  constructor
+  · rw [value_primitive_eval_equation vs (valueEnv env) valueAtoms]
+    simp [hasDepth, hasFuel, valueTicked, AtomPreservation.valueAtomPost,
+      AtomPreservation.valueTicked, value_scalar_run sop, valueObservedRun,
+      Except.bind, Except.pure, bind, pure]
+  · rw [heap_primitive_eval_equation hs (heapEnv env) heapAtoms]
+    simp [hasDepth, heapFuel, heapTicked, AtomPreservation.heapAtomPost,
+      AtomPreservation.heapTicked,
+      heap_scalar_run sop {hs with fuel := hs.fuel - 1} x y, heapObservedRun,
+      Except.bind, Except.pure, bind, pure]
+
+theorem scalar_preserved {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {gamma : Naming} {depth : Nat} {inferenceFuel : Nat} {ctx : Context} {after : Live} {site : List Nat} {before : St} {next : St} {result : Abstract} {op : Prim} {a b : Atom} {self : Decl} {type : Ty}
+    (inv : FlatInvariant declarations vs hs env live aenv tenv before.facts.escapes gamma)
+    (sop : ScalarOp op) (flatA : FlatAtom a) (flatB : FlatAtom b)
+    (typed : exprType declarations self tenv (.prim op [a, b]) = .ok type)
+    (coveredA : ∀ use ∈ atomUses a, use ∈ live)
+    (coveredB : ∀ use ∈ atomUses b, use ∈ live)
+    (defaultConfig : ctx.config = {})
+    (accepted : (inferExpr inferenceFuel ctx aenv (.prim op [a, b]) after site).run before =
+      .ok (result, next)) :
+    type = .int ∧ next.facts.escapes = before.facts.escapes ∧ result = .scalar ∧
+    (∀ value vs',
+      (ValueSemantics.eval depth declarations none (valueEnv env)
+        (.prim op [a, b])).run vs = .ok (value, vs') →
+      ∃ actual hs' gamma',
+        (InPlaceSemantics.eval depth declarations none (heapEnv env)
+          (.prim op [a, b])).run hs = .ok (actual, hs') ∧
+        FlatInvariant declarations vs' hs' env live aenv tenv next.facts.escapes gamma' ∧
+        hs.heap.size ≤ hs'.heap.size ∧
+        Corresponds hs'.heap value actual ∧ Describes gamma' hs'.heap result actual ∧
+        obsTyped declarations value type = true ∧ ValueTyped declarations hs'.heap actual type) ∧
+    (∀ message,
+      (ValueSemantics.eval depth declarations none (valueEnv env)
+        (.prim op [a, b])).run vs = .error message →
+      ∃ actualMessage,
+        (InPlaceSemantics.eval depth declarations none (heapEnv env)
+          (.prim op [a, b])).run hs = .error actualMessage) := by
+  obtain ⟨aTyped, bTyped, intType⟩ := exprType_scalar_success inv sop flatA flatB typed
+  subst intType
+  obtain ⟨x, valueA, heapA, abstractA⟩ := flat_atom_integer inv flatA aTyped coveredA
+  obtain ⟨y, valueB, heapB, abstractB⟩ := flat_atom_integer inv flatB bTyped coveredB
+  have abstractAtoms : [a, b].mapM (m := Except String) (abstractAtom aenv) =
+      .ok [.scalar, .scalar] := except_mapM_cons abstractA (except_mapM_cons abstractB rfl)
+  obtain ⟨childFuel, _, _, run⟩ := infer_primitive_success defaultConfig abstractAtoms accepted
+  rw [primitive_scalar_run sop] at run
+  have equal := Except.ok.inj run
+  have resultScalar : result = .scalar := (congrArg Prod.fst equal).symm
+  have nextState : next = before := (congrArg Prod.snd equal).symm
+  have nextEscapes : next.facts.escapes = before.facts.escapes := by rw [nextState]
+  refine ⟨rfl, nextEscapes, resultScalar, ?_, ?_⟩
+  · intro value vs' run
+    have valueAtoms : [a, b].mapM (m := Except String) (ValueSemantics.atom (valueEnv env)) =
+        .ok [.int x, .int y] := except_mapM_cons valueA (except_mapM_cons valueB rfl)
+    by_cases noDepth : depth = 0
+    · rw [value_primitive_eval_equation vs (valueEnv env) valueAtoms] at run
+      simp [noDepth] at run
+    · by_cases noFuel : vs.fuel = 0
+      · rw [value_primitive_eval_equation vs (valueEnv env) valueAtoms] at run
+        simp [noDepth, noFuel] at run
+      · obtain ⟨valueRun, heapRun⟩ :=
+          scalar_runtime_success inv sop valueA heapA valueB heapB noDepth noFuel
+        rw [valueRun] at run
+        cases run
+        refine ⟨.int (scalarResult op x y),
+          AtomPreservation.heapAtomPost hs vs.kept.toList, gamma,
+          heapRun, ?_, ?_, AtomPreservation.integer_corresponds _, ?_,
+          by simp [obsTyped], ⟨1, .int (scalarResult op x y), [], .int, by simp [obsTyped]⟩⟩
+        · rw [nextEscapes]; exact AtomPreservation.integer_atom_post_invariant inv
+        · exact Nat.le_of_eq (by
+            unfold AtomPreservation.heapAtomPost
+              AtomPreservation.heapTicked
+            rw [heapObserved_heap])
+        · rw [resultScalar]; exact AtomPreservation.integer_described _
+  · intro message failed
+    have valueAtoms : [a, b].mapM (m := Except String) (ValueSemantics.atom (valueEnv env)) =
+        .ok [.int x, .int y] := except_mapM_cons valueA (except_mapM_cons valueB rfl)
+    have heapAtoms : [a, b].mapM (m := Except String) (InPlaceSemantics.atom (heapEnv env)) =
+        .ok [.int x, .int y] := except_mapM_cons heapA (except_mapM_cons heapB rfl)
+    by_cases noDepth : depth = 0
+    · exact ⟨"in-place execution exhausted depth", by
+        rw [heap_primitive_eval_equation hs (heapEnv env) heapAtoms]
+        simp [noDepth]⟩
+    · by_cases noFuel : vs.fuel = 0
+      · have heapFuel : hs.fuel = 0 := inv.fuel.symm.trans noFuel
+        exact ⟨"in-place execution exhausted fuel", by
+          rw [heap_primitive_eval_equation hs (heapEnv env) heapAtoms]
+          simp [noDepth, heapFuel]⟩
+      · have success := (scalar_runtime_success inv sop valueA heapA valueB heapB noDepth noFuel).1
+        rw [success] at failed
+        contradiction
+
+end Ownership.FlatFragment.Scalar
 
 /-! shared expression case under the generic flat relation.
 The checker records the value's cells as escapes and marks the result shared.
