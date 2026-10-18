@@ -1421,6 +1421,76 @@ author must copy a list that is never shared at the same time, and why.
 the mutual pair), and change no verdict. F2 waits for the owner's decision above, then (a) and (c), the removal
 of `k`; (d) waits for its go-ahead, then (e).
 
+*Amended 2026-10-18 (issue #379, CK-256; the owner's decision): the level marker `⟨T⟩` replaces (d).* (d) cannot
+be built as written above. Folding sent `#Node.0#Node.1`, a list of the left subtree, to `#Node.1`, the root's own
+list, so a parameter's symbolic cell for a deeper level's list *was* the cell of level 0's list:
+`case t of Node l _ _ → case l of Node _ zs _ → ( List.push zs 1, l )` was accepted `param` while `l`, returned,
+holds `zs`, and its summary is `ParamHole`'s `hole`'s, which writes the root's list. No condition on the levels can
+tell the two apart once they are one cell (`tests/pending/ownership/DeeperLevel`). The fold now keeps a level it
+reached apart from the level it started at, with a step of its own:
+
+- **What `⟨T⟩` stands for.** `T` is a recursive type. A path `Q⟨T⟩r` names the places `r` of *every value of type
+  `T` at or below the position `Q`*, within the region of `T` that holds `Q` (the region ends at a field that holds
+  `T` only through a type parameter: #341's rule, *Folding never goes through a type parameter*). At or below:
+  when the value at `Q` is a `T` it is one of them; when it is not (a `List Rose`, a `Maybe Tree`, a closure) only
+  the `T`s inside it are. So `t#Node.0⟨Tree⟩#Node.1` is every list of `t`'s left subtree, its root's included, and
+  `t#Node.1` is `t`'s own list and nothing else: a path with no marker names one place at each level it writes.
+- **The fold.** A constructor step `s` of `T` added to a path that is already inside a region of `T` goes on from
+  the region's first step, under the marker: the region's first step into `T` is the step `s₀` at the position `P`,
+  and the result is `P s₀ ⟨T⟩ s`; when the region has its marker already (`… M⟨T⟩ …`), it is `M⟨T⟩ s`. So
+  `#Node.0#Node.1` is `#Node.0⟨Tree⟩#Node.1`, `#Node.0#Node.0#Node.2` is `#Node.0⟨Tree⟩#Node.2`,
+  `#Node.0⟨Tree⟩#Node.0#Node.1` is `#Node.0⟨Tree⟩#Node.1`, and `Rose`'s `#Rose.1[*]#Rose.0` is
+  `#Rose.1⟨Rose⟩#Rose.0`: the steps between the region's first step and the folded one (`[*]`, `#Just.0`, a tuple's)
+  are inside the marker. A `⟨T⟩` added inside a region folds onto it the same way (onto `P s₀ ⟨T⟩`, or onto the
+  marker already there); added anywhere else it is a step of its own, which a summary's paths and `concat` make
+  (`π1⟨Tree⟩#Node.1`: every list of the tree). The fold takes place before the cut, like F1's, and a region holds at
+  most one marker, so the paths stay finite: the level a region starts at, its first step, then one marker.
+  Different first steps are different regions, so the left and the right subtree are two places: `#Node.0⟨Tree⟩#Node.1`
+  and `#Node.2⟨Tree⟩#Node.1` do not overlap.
+- **Overlap.** At an index where one path has `⟨T⟩` and the other has any step, the two overlap, as with `⋆`: the
+  marker may stand for any steps of its region. Two markers of one type at one index are compared on. So
+  `#Node.1` and `#Node.0⟨Tree⟩#Node.1` are two places (they differ at index 0, before any marker), and
+  `#Node.0` and `#Node.0⟨Tree⟩#Node.1` are a holder and what it holds. The rule is conservative where a region's
+  first step leads to a field that cannot hold `T` beside one that can (`C (List Int × T)`'s `#C.0.0` overlaps
+  `#C.0⟨T⟩…`), since the path does not say which component the marker went through.
+- **Holding a symbolic cell** (`covers`). `param(x, O)` holds `param(x, I)` exactly when `O` is a prefix of `I`, as
+  before: `param(t, #Node.0)` holds `param(t, #Node.0⟨Tree⟩#Node.1)`. It holds it *approximately* (a place that
+  stands for several, `approx_place`, cause `element`) when they first differ at an index where `I` has a marker
+  and `O` has another step, or where both have passed the same marker and `O`'s step is a constructor step of `T`
+  whose field can hold `T` (`#Node.0⟨Tree⟩#Node.0`, the left subtrees below, holds some of
+  `#Node.0⟨Tree⟩#Node.1`). What lies between is `⋆`.
+- **Projection.** Along a step `s`, an entry whose first step is `s` is kept at the rest of its path, as before. An
+  entry whose first step is a marker `⟨T⟩r` stands for values at or below the root: it is kept whole,
+  approximately, when the field `s` reaches may hold a `T` (a constructor step of `T` whose field can hold `T`, or
+  any step that is not a constructor step of `T`); and when `r` begins with `s`, it is also kept at the rest of `r`,
+  approximately (the value at the root is one of the `T`s). Every other entry is dropped. In particular an entry
+  whose first step is *another* constructor step of `T` is dropped: it is another field of the same level, and #341's
+  rule, which kept those entries because the levels shared their paths, is withdrawn with the reason it had. A
+  symbolic cell is projected to the cell at the folded path (`param(t, #Node.0)` along `#Node.1` is
+  `param(t, #Node.0⟨Tree⟩#Node.1)`).
+- **With `[*]` and `◇`.** `⟨T⟩` is the region's marker and nothing else: a `[*]` or `◇` step after it is a step of
+  the places it names (`#Rose.1⟨Rose⟩#Rose.1[*]`, the kids lists' elements, deeper than the root), and one before it
+  is part of where the region is (`π1[*]#Node.1` stays exact, an element's own list). A function field is a level
+  below (`levelOf`'s `below`), so a closure that captures a `T` starts no region of its own: F1 folds its `◇`, and a
+  `T` reached under it folds as any other. The two folds are independent: a path holds at most one `◇` and one marker
+  per region of a recursive type.
+- **Representatives.** A path names a place that stands for several when it holds `[*]` or a marker; every other
+  path is one place, a level's own field included (`#Node.1` is exact now, where #341 took every step into a recursive
+  type for a representative).
+- **Exclusivity, and what it does not say.** A value's deep condition (§18.2) has `sep` between the cells at every
+  two of its paths that neither holds nor overlaps the other, so `excl π1` of a tree now includes
+  `sep π1#Node.1 π1#Node.0⟨Tree⟩#Node.1`: level 0 shares no list with the left subtree. That is what (d)'s `lvl`
+  was to state between levels, and it is checked where `excl` is, by the call-site demand that already compares an
+  argument's other paths (`disjoint`): `ParamHole.shared`'s tree holds `xs` at `#Node.1` and at
+  `#Node.0⟨Tree⟩#Node.1`, so `hole`'s write of `π1#Node.1` is refused there, and `hole` itself stays accepted. **What
+  no condition states is sharing among the levels inside one region.** A marked cell stands for every list of its
+  region, as `π1[*]` stands for every element; a write of one of them while another is held is a write of the one
+  cell, refused approximately (`element`), however distinct the two are: in
+  `case t of Node (Node _ a (Node _ b _)) _ _ → ( List.push a 1, b )`, `a` and `b` are both
+  `t#Node.0⟨Tree⟩#Node.1`. Telling those apart would need a place per level, and the levels of a recursive value are
+  unbounded, so a finite summary cannot name them; `master` refused the same programs, since all of a tree's lists
+  were one cell there. This is (e)'s limit, wider than (e) says: (e) is the case where the sharing is real.
+
 ### 16.8 The library
 
 Thesis §6.5 as revised in round 5 keeps three kinds of trust apart, and slice 2 follows it:
