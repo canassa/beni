@@ -1,0 +1,42 @@
+-- ownership: a record is a cell (`ownership-checker.md` §31.2). A record
+-- literal's object is `site(ι)`, and a record type no longer crosses: a
+-- record of numbers carries a cell. The record cells are the record
+-- demand's (§31.3) and reach summaries with §31.7; no list's fact reads
+-- them, so `distance` still uses nothing a list can be, and `literal`
+-- writes the list it put in a record, accepted `fresh`, as before.
+--
+-- An update's result is its base's object, written: `(ε, c ∖ F)`. For a
+-- closed type its other fields are split out as before (`closed`); for an
+-- open one the exception set says the written field is no longer the
+-- base's, so `open`'s write of `s.items` writes only the new list, accepted
+-- `fresh`, where the whole base kept before would hold `r.items` too.
+type alias Point =
+    x : Int
+    y : Int
+
+
+type alias Box =
+    items : List Int
+    count : Int
+
+
+pub distance : Point → Int
+distance p = p.x + p.y
+
+
+pub literal : List Int → Int
+literal xs =
+    box = { items = [ 1 ], count = 0 }
+    List.length [ …box.items, 2 ] + List.length xs
+
+
+pub closed : Box → Int
+closed b =
+    s = { b | items = [] }
+    List.length [ …s.items, 1 ] + List.length b.items
+
+
+pub open : { r | items : List Int } → Int
+open r =
+    s = { r | items = [] }
+    List.length [ …s.items, 1 ] + List.length r.items

@@ -4856,6 +4856,38 @@ record. The code today:
   no `List`, no function and no `foreign type` but the primitives. `Int32`, `String`, `Bool` and the other
   primitives still cross. More values are tracked as a result, and the cost is measured, not capped (§31.12).
 
+*As built (2026-10-18, slice R2a of #315):* the cells, with the record demand still to come (R2b), so no list
+verdict moves. In `src/own/Ownership.zig`:
+
+- **`site(ι)`.** A record literal's value has its object at ε, a site cell that projects nothing; its fields
+  are entries of their own, as before. A field whose type crosses holds no entry, whatever its value's
+  abstract value says (a `Js.to` answers `⊤` at any type), and a read of a local at a type filters out a
+  `⊤` at a crossing path (`typeFilter`) — both invisible while the record around them crossed.
+- **`c ∖ F`** is a cell kind, `except`: the record cell `c` and an interned, sorted field set, or every
+  field. Its projection at a field of `F` is nothing, at any other field `c`'s; two updates in turn make one
+  cell over the first base with the union of the sets. An update's result is `except(c, F)` for each record
+  cell `c` at ε of the base. For a closed type the other fields are still split out, and the object is
+  `except(c, all)`. For an open type the exception set replaces the whole base entry the result kept before,
+  so `{ r | items = [] }`'s `items` no longer holds `r.items`. This is the one place list precision moves:
+  `ownership/RecordCells`'s `open` is accepted where the whole base made it `alias`. No other program of the
+  corpus changes.
+- **Crossing.** `tracked` treats every record as holding a cell, and a nominal type that reaches a record
+  (`NominalFacts.record`) as not crossing. The old rule stays as `listTracked`.
+- **What lists read.** A cell is `nonlist` when it is a record literal's object, an `except` cell, or a
+  value's own cell at ε whose type crossed under the old rule (a record of numbers); a cell projected from
+  one inherits it. A list's facts read cells through `listFacing`, which drops `nonlist` cells and reads an
+  `except` cell with fields as the cell it was written over: demands' cells, a summary's uses, writes,
+  escapes, results and supplies, a carried lambda's bindings, condition atoms (`mkCond`), and a tagger's
+  `need`. A field split out of a closed update reaches a summary only when its type is `listTracked`. So a
+  summary gains only record facts its vocabulary already prints exactly: reads and aliases of record fields
+  below a tracked root (`π1.session R`, `res π1.session`), and record values inside lists and constructors
+  (`π2[*] R` for a `List Point`, `[*]#Leaf.0 π1#Leaf.0`); `ownership/Conduit`, `Prepend` and
+  `SchemaCtorBlock` move this way.
+- **Deferred to R2b and R2c**, with the record demand and `W{F}`: the record literal's stored-construction
+  condition on its object (§31.4 item 6); record cells in summaries, which need the result's
+  object-only provenance; and `Record.copy`'s fresh object at ε (§31.15), whose row stays "the copy holds
+  what π₁ holds".
+
 ### 31.3 The demand
 
 **A record update `{ r | f₁ = v₁, …, fₙ = vₙ }` is a demand** (§3) of a new kind, `update`. Its **base** is `r`:

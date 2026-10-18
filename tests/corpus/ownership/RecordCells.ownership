@@ -1,0 +1,10 @@
+module RecordCells
+  30:19 construction box.items: accepted fresh
+  36:19 construction s.items: accepted fresh
+  42:19 construction s.items: accepted fresh
+  summary distance: unused
+  summary literal: π1 R
+  summary closed: π1.items R
+  summary open: π1 R, π1.items R
+  demands 3: accepted 3 (fresh 3, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 3: accepted 3 (fresh 3, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
