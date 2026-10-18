@@ -238,7 +238,10 @@ pub const Context = struct {
     map_names: []u32 = &.{},
     /// The module's map names, first-use order — `Marks.names` in `print`,
     /// one list here. A piece's newly numbered names append while the piece
-    /// is printed, so the order is the module's.
+    /// is printed, so the order is the module's. **Sequential only**: each
+    /// piece is handed the header by value and copies its own view back when
+    /// done (`printRange`), over buffers both parts share in the arena — two
+    /// pieces printing at once would each copy back over the other.
     names_out: std.ArrayList(InternPool.Symbol) = .empty,
 
     pub fn init(arena: Allocator, ir: *const JsIr, names: Names, unobserved: []const Index, record_marks: bool) Allocator.Error!Context {
@@ -269,7 +272,8 @@ pub const Context = struct {
         // A piece's marks accumulator is handed the module's names list, by
         // header, because `mapName` appends to the accumulator it is given:
         // the piece puts what it numbers where `print` puts what it numbers,
-        // and the header is copied back below.
+        // and the header is copied back below — sequential only, see
+        // `names_out`.
         marks.names = c.names_out;
         var p: Printer = .{
             .joiner = .init(c.arena, c.arena),
