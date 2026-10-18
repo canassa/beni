@@ -3718,9 +3718,12 @@ const Printer = struct {
             },
         };
         if (fields.len == 0) {
+            // A comment after the bar stays on its line, and the brace then
+            // closes at its own column.
             try p.space();
             try p.tok(bar);
-            try p.space();
+            try p.trailing(bar);
+            if (one_line) try p.space() else p.newline(col);
             return p.tok(bar + 1);
         }
         for (fields, 0..) |f, i| {

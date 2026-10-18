@@ -137,6 +137,10 @@ pub const Construct = enum {
     adjacent_markup,
     /// A closing tag after markup that has ended: no element is open.
     stray_closing_tag,
+    /// For `expected_token`: a `{` whose name was followed by neither the
+    /// `=` of a record literal nor the `|` that ends an update's base
+    /// (language.md §6.3).
+    record_or_update,
     /// For `unclosed_delimiter`: the hole's element closed before its `}`,
     /// whose closing tag the head range quotes.
     closing_tag_in_hole,
@@ -214,6 +218,7 @@ fn constructText(c: Construct) []const u8 {
         .constraint => "a `where` constraint like `k.compare : k, k → Order`",
         .float_pattern => "a pattern",
         .expose_all => "a name to expose",
+        .record_or_update => "`=` or `|`",
         .dash_tag, .negated_markup => "an expression",
         .attribute_name, .vocabulary_name => "a name",
         .attribute_value => "a string or `{`",
@@ -296,6 +301,12 @@ pub fn message(item: Item, source: []const u8, line_starts: []const u32, w: *std
                     \\
                     \\    exposing ({s}, …)
                 , .{ head, head, head });
+            } else if (item.construct == .record_or_update) {
+                try w.print(
+                    \\I was parsing a record and ran into `{s}`, but I was expecting `=` after the
+                    \\first field name (a record, `{{ name = value }}`) or `|` after the base (an
+                    \\update, `{{ base | name = value }}`).
+                , .{text});
             } else if (at_eof) {
                 try w.print("I got to the end of the file while parsing {s}. I was expecting `{s}` next.", .{ contextText(item.context), tokenText(item.expected) });
             } else if (item.layout) {

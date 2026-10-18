@@ -352,7 +352,7 @@ Atom        := literal                                           -- int float ch
              | Atom dot_lower                                    -- field access, no space
              | Atom dot_index                                    -- tuple access, no space
 Field       := lower_ident '=' Expr
-UpdateBase  := lower_ident | qualified_lower Arg* | lower_ident Arg+ | '(' Expr ')'   -- §6.3
+UpdateBase  := lower_ident | qualified_lower Arg* TrailingLambda? | lower_ident (Arg+ TrailingLambda? | TrailingLambda) | '(' Expr ')'   -- §6.3, §12.3
 ListItem    := Expr | '...' Expr                                 -- a spread, any number (§6.8)
 
 Pattern     := PatCtor ('as' lower_ident)?                       -- `as` binds loosest

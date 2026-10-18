@@ -1,8 +1,9 @@
 -- The base of a record update is a name, a call whose head is a name or a
--- qualified name and whose arguments are atoms, or a parenthesised
--- expression (language.md §6.3, ownership-checker.md §31.15); a record
--- literal still begins `name =`. And `{ r | }` is any record, an extensible
--- record type with no field (language.md §3).
+-- qualified name and whose arguments are atoms, the last of which may be a
+-- lambda (language.md §12.3), or a parenthesised expression (language.md
+-- §6.3, ownership-checker.md §31.15); a record literal still begins `name
+-- =`. And `{ r | }` is any record, an extensible record type with no field
+-- (language.md §3).
 copy : { r | } → { r | }
 copy r = r
 
@@ -32,3 +33,6 @@ nestedBase model = { ({ model | count = 1 }) | count = 2 }
 
 
 literal count = { count = count }
+
+
+trailingLambda withConfig = { withConfig λx → x + 1 | count = 2 }

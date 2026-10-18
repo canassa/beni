@@ -83,4 +83,16 @@
     (pat_var count)
     (record
       (field count
-        (ident count)))))
+        (ident count))))
+  (definition trailingLambda
+    (pat_var withConfig)
+    (record_update
+      (apply
+        (ident withConfig)
+        (lambda
+          (pat_var x)
+          (add
+            (ident x)
+            (int 1))))
+      (field count
+        (int 2)))))
