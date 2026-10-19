@@ -1,8 +1,0 @@
--- load
-<body>
-  <button>"6"</button>
-</body>
--- click button
-<body>
-  <button>"7"</button>
-</body>

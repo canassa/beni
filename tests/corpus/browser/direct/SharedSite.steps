@@ -1,6 +1,0 @@
-# Each card's button bumps its own count.
-click #two-bump
-click #four-bump
-click #one-bump
-# The title two calls read.
-click #rename

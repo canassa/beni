@@ -1,6 +1,0 @@
-import Html exposing (Html)
-
-
-pub optional : Bool, Bool, Int → Maybe (Html msg)
-optional shown text n =
-    if shown then Just (if text then Html.text (String.fromInt n) else <b>{n}</b>) else Nothing

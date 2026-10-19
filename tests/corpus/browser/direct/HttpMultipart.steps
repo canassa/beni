@@ -1,3 +1,0 @@
-click #send
-respond 1 200 "stored"
-click #typed

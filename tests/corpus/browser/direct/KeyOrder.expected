@@ -1,8 +1,0 @@
--- load
-<body>
-  <main>
-    <p>"zeta, alpha, spot 120, spot 210"</p>
-  </main>
-</body>
--- advance 10
-(the DOM did not change)

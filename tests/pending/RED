@@ -103,10 +103,9 @@
 # promoted. ApiItems' twin, four builds in one case like HttpJson (#184),
 # measures 4 780M, over the test budget, and was deleted: browser/tea/ApiItems
 # runs the page and ownership/SchemaAnswers pins its list of a declaration.
-tests/pending/browser/direct/ReentrantSend.beni GoldenMismatch
-tests/pending/browser/direct/TimeoutAroundRequest.beni PageFailed
-# Direct executes an unused view statement at mount, not on every message (documented S4 oracle boundary).
-tests/pending/browser/direct/DefectInTurnRender.beni PageFailed
+# Retired 2026-10-19 (#423) with browser-direct: ReentrantSend, TimeoutAroundRequest
+# and DefectInTurnRender differed from browser-tea only for reasons of that platform;
+# their browser/tea/ originals stay green in the corpus.
 
 
 

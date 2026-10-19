@@ -1,8 +1,0 @@
--- load
-<body>
-  <button id="tick">"4"</button>
-</body>
--- click #tick
-<body>
-  <button id="tick">"5"</button>
-</body>

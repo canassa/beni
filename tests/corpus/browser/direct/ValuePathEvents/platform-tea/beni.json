@@ -1,7 +1,0 @@
-{
-  "platform": true,
-  "name": "stop",
-  "platforms": ["browser-tea"],
-  "reexports": ["Html", "Browser", "Tea"],
-  "markup": { "vocabulary": "Stop", "type": "Html.Html" }
-}

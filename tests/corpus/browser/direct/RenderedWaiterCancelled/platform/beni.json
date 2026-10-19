@@ -1,1 +1,0 @@
-{ "platform": true, "name": "guarded", "platforms": ["browser-direct"], "reexports": ["Tea", "Html", "Cmd", "Sub", "Dom", "Log"] }

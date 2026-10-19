@@ -1,6 +1,0 @@
-{
-  "platform": true,
-  "name": "base",
-  "platforms": ["browser-tea"],
-  "reexports": ["Tea", "Html", "Cmd", "Sub", "Browser"]
-}

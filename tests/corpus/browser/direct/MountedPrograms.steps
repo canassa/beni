@@ -1,5 +1,0 @@
-# Each program applies its own message and renders alone.
-click #up
-click #rename
-click #poke
-click #up
