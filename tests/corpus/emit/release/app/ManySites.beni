@@ -1,0 +1,86 @@
+-- The release optimiser deletes a record field no read reaches, but only
+-- while it can name every record literal a variable may hold: past
+-- `Spec.Pts.max_sites` literals it assumes every field is read. `pick`'s
+-- parameter holds sixty distinct literals here, and only `keep` is read, so
+-- `unused` and `spare` must be gone from every one of them.
+import Node
+
+
+type alias Row =
+    keep : Int
+    unused : String
+    spare : Int
+
+
+pick : Row → Int
+pick r = r.keep
+
+
+main : Node.Program
+main =
+    Node.printLines
+        [ String.fromInt
+            (List.sum
+                [ pick { keep = 0, unused = "u0", spare = 0 }
+                , pick { keep = 1, unused = "u1", spare = 7 }
+                , pick { keep = 2, unused = "u2", spare = 14 }
+                , pick { keep = 3, unused = "u3", spare = 21 }
+                , pick { keep = 4, unused = "u4", spare = 28 }
+                , pick { keep = 5, unused = "u5", spare = 35 }
+                , pick { keep = 6, unused = "u6", spare = 42 }
+                , pick { keep = 7, unused = "u7", spare = 49 }
+                , pick { keep = 8, unused = "u8", spare = 56 }
+                , pick { keep = 9, unused = "u9", spare = 63 }
+                , pick { keep = 10, unused = "u10", spare = 70 }
+                , pick { keep = 11, unused = "u11", spare = 77 }
+                , pick { keep = 12, unused = "u12", spare = 84 }
+                , pick { keep = 13, unused = "u13", spare = 91 }
+                , pick { keep = 14, unused = "u14", spare = 98 }
+                , pick { keep = 15, unused = "u15", spare = 105 }
+                , pick { keep = 16, unused = "u16", spare = 112 }
+                , pick { keep = 17, unused = "u17", spare = 119 }
+                , pick { keep = 18, unused = "u18", spare = 126 }
+                , pick { keep = 19, unused = "u19", spare = 133 }
+                , pick { keep = 20, unused = "u20", spare = 140 }
+                , pick { keep = 21, unused = "u21", spare = 147 }
+                , pick { keep = 22, unused = "u22", spare = 154 }
+                , pick { keep = 23, unused = "u23", spare = 161 }
+                , pick { keep = 24, unused = "u24", spare = 168 }
+                , pick { keep = 25, unused = "u25", spare = 175 }
+                , pick { keep = 26, unused = "u26", spare = 182 }
+                , pick { keep = 27, unused = "u27", spare = 189 }
+                , pick { keep = 28, unused = "u28", spare = 196 }
+                , pick { keep = 29, unused = "u29", spare = 203 }
+                , pick { keep = 30, unused = "u30", spare = 210 }
+                , pick { keep = 31, unused = "u31", spare = 217 }
+                , pick { keep = 32, unused = "u32", spare = 224 }
+                , pick { keep = 33, unused = "u33", spare = 231 }
+                , pick { keep = 34, unused = "u34", spare = 238 }
+                , pick { keep = 35, unused = "u35", spare = 245 }
+                , pick { keep = 36, unused = "u36", spare = 252 }
+                , pick { keep = 37, unused = "u37", spare = 259 }
+                , pick { keep = 38, unused = "u38", spare = 266 }
+                , pick { keep = 39, unused = "u39", spare = 273 }
+                , pick { keep = 40, unused = "u40", spare = 280 }
+                , pick { keep = 41, unused = "u41", spare = 287 }
+                , pick { keep = 42, unused = "u42", spare = 294 }
+                , pick { keep = 43, unused = "u43", spare = 301 }
+                , pick { keep = 44, unused = "u44", spare = 308 }
+                , pick { keep = 45, unused = "u45", spare = 315 }
+                , pick { keep = 46, unused = "u46", spare = 322 }
+                , pick { keep = 47, unused = "u47", spare = 329 }
+                , pick { keep = 48, unused = "u48", spare = 336 }
+                , pick { keep = 49, unused = "u49", spare = 343 }
+                , pick { keep = 50, unused = "u50", spare = 350 }
+                , pick { keep = 51, unused = "u51", spare = 357 }
+                , pick { keep = 52, unused = "u52", spare = 364 }
+                , pick { keep = 53, unused = "u53", spare = 371 }
+                , pick { keep = 54, unused = "u54", spare = 378 }
+                , pick { keep = 55, unused = "u55", spare = 385 }
+                , pick { keep = 56, unused = "u56", spare = 392 }
+                , pick { keep = 57, unused = "u57", spare = 399 }
+                , pick { keep = 58, unused = "u58", spare = 406 }
+                , pick { keep = 59, unused = "u59", spare = 413 }
+                ]
+            )
+        ]
