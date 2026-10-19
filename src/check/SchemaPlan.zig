@@ -195,7 +195,7 @@ pub const Primitive = enum(u8) {
     finite_float,
     null,
     value,
-    /// A derived codec's (`schema.md` §12.10): one character, a 32-bit
+    /// A derived codec's (`schema.md` §12.10): one scalar value, a 32-bit
     /// integer, and `⊥`, which reads nothing.
     char,
     int32,

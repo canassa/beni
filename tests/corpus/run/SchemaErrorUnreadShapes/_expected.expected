@@ -64,6 +64,9 @@ label null: { color = Rgb 1 2 3, label = Nothing, pos = (1,2), small = 7, tags =
 pos three: invalid | invalid (1)
 pos 1.5: invalid | invalid (1)
 tag two characters: invalid | invalid (1)
+tag lone high: invalid | invalid (1)
+tag lone low: invalid | invalid (1)
+tag one pair: { color = Rgb 1 2 3, label = Just "l", pos = (1,2), small = 7, tags = [Just '𐀀'], unit = ⊤ } | { color = Rgb 1 2 3, label = Just "l", pos = (1,2), small = 7, tags = [Just '𐀀'], unit = ⊤ }
 small 2^31: invalid | invalid (1)
 unit one: invalid | invalid (1)
 decode: { color = Red, label = Nothing, pos = (3,4), small = -1, tags = [], unit = ⊤ } | { color = Red, label = Nothing, pos = (3,4), small = -1, tags = [], unit = ⊤ }

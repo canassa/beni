@@ -2,7 +2,7 @@
 -- §12.10), each read from JSON and written back, at the root and as a
 -- record's field: `Int` a safe integer, so one past 2⁵³ is refused both
 -- ways; `Float` any number, whose NaN or infinity JSON cannot print;
--- `Bool`; `String`; `Char` a string of exactly one character, an astral
+-- `Bool`; `String`; `Char` a string of exactly one scalar value, an astral
 -- one included; `⊤` the empty array; `Value` the host value unread;
 -- `Int32` a 32-bit integer; and `⊥`, which reads nothing. The corpus
 -- builds this program twice more with `--schema-library`, which runs the

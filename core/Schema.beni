@@ -190,7 +190,7 @@ pub type Shape
 
 
 --| The primitive schemas. `CharKind`, `Int32Kind` and `NeverKind` are a
---| derived schema's (`schema.md` §12.10): a string of one character, a
+--| derived schema's (`schema.md` §12.10): a string of one scalar value, a
 --| 32-bit integer, and nothing at all.
 pub type PrimitiveKind
     = StringKind
@@ -892,7 +892,7 @@ describedMaybeField name n mode =
     toHost f
 
 
--- A string of exactly one character.
+-- A string of one scalar value.
 derivedChar : Schema Char Char
 derivedChar = primitive CharKind
 
@@ -2548,7 +2548,7 @@ prim c p depth path v =
         CharKind →
             if not (isType v "string") then
                 failAt c path WrongShape "expected a string" v False
-            else if lengthOf (Js.call (Js.global "Array") "from" [ v ]) == 1 then
+            else if oneScalar v then
                 v
             else
                 failAt c path InvalidValue "expected one character" v False
@@ -3576,9 +3576,24 @@ shapeValue : Js.Value → Js.Value
 shapeValue x = x
 
 
+-- A host string of one Unicode scalar value. `Array.from` is the wrong
+-- test. It counts code points, and a lone surrogate is one code point
+-- and not a scalar value (schema.md §12.10). `codePointAt` of a half is
+-- that half. A scalar above U+FFFF occupies two UTF-16 units, so the
+-- string length is 2 for that scalar and 1 for every other.
+oneScalar : Js.Value → Bool
+oneScalar v =
+    n = lengthOf v
+    if n == 0 || n > 2 then
+        False
+    else
+        cp = intOf (Js.call v "codePointAt" [ Js.from 0 ])
+        (cp < 0xD800 || cp > 0xDFFF) && n == (if cp > 0xFFFF then 2 else 1)
+
+
 shapeChar : Js.Value → Js.Value
 shapeChar x =
-    if Js.typeIs x "string" && lengthOf (Js.call (Js.global "Array") "from" [ x ]) == 1 then
+    if Js.typeIs x "string" && oneScalar x then
         x
     else
         shapeFail

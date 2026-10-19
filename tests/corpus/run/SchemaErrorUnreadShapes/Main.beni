@@ -607,6 +607,9 @@ main =
         , item "pos three" (Hosts.with goodItem "pos" (Hosts.parse "[1,2,3]"))
         , item "pos 1.5" (Hosts.with goodItem "pos" (Hosts.parse "[1.5,2]"))
         , item "tag two characters" (Hosts.with goodItem "tags" (Hosts.parse "[\"xy\"]"))
+        , item "tag lone high" (Hosts.with goodItem "tags" (Hosts.parse "[\"\\ud800\"]"))
+        , item "tag lone low" (Hosts.with goodItem "tags" (Hosts.parse "[\"\\udc00\"]"))
+        , item "tag one pair" (Hosts.with goodItem "tags" (Hosts.parse "[\"\\ud800\\udc00\"]"))
         , item "small 2^31" (Hosts.with goodItem "small" (Hosts.parse "2147483648"))
         , item "unit one" (Hosts.with goodItem "unit" (Hosts.parse "[1]"))
         , itemJson "decode" "{\"pos\":[3,4],\"color\":\"Red\",\"tags\":[],\"small\":-1,\"unit\":[]}"

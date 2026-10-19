@@ -1,0 +1,20 @@
+bmp read=Ok 97 valid=Ok 97
+nul read=Ok 0 valid=Ok 0
+maxbmp read=Ok 65535 valid=Ok 65535
+emoji read=Ok 128512 valid=Ok 128512
+pair read=Ok 65536 valid=Ok 65536
+max read=Ok 1114111 valid=Ok 1114111
+high read=Err InvalidValue expected one character valid=invalid
+high-end read=Err InvalidValue expected one character valid=invalid
+low read=Err InvalidValue expected one character valid=invalid
+low-end read=Err InvalidValue expected one character valid=invalid
+empty read=Err InvalidValue expected one character valid=invalid
+two read=Err InvalidValue expected one character valid=invalid
+two-high read=Err InvalidValue expected one character valid=invalid
+low-high read=Err InvalidValue expected one character valid=invalid
+high-bmp read=Err InvalidValue expected one character valid=invalid
+pair-extra read=Err InvalidValue expected one character valid=invalid
+grapheme read=Err InvalidValue expected one character valid=invalid
+number read=Err WrongShape expected a string valid=invalid
+null read=Err WrongShape expected a string valid=invalid
+bool read=Err WrongShape expected a string valid=invalid

@@ -1587,7 +1587,7 @@ const Fn = struct {
             // A derived codec's (schema.md §12.10), as `prim` reads them.
             .char => try w.checks(out, &.{
                 .{ .cond = try g.bin(.strict_ne, typeof_x, try g.str("string")), .code = .wrong_shape, .message = "expected a string" },
-                .{ .cond = try g.bin(.strict_ne, try g.prop(try g.globalCall("Array", "from", &.{try g.id(x)}), "length"), try g.num(1)), .code = .invalid_value, .message = "expected one character" },
+                .{ .cond = try g.not(try g.call(try g.core("oneScalar"), &.{try g.id(x)})), .code = .invalid_value, .message = "expected one character" },
             }, x, at, target, try g.id(x)),
             .int32 => try w.checks(out, &.{
                 .{ .cond = try g.bin(.strict_ne, typeof_x, try g.str("number")), .code = .wrong_shape, .message = "expected a number" },

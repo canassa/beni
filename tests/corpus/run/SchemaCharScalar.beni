@@ -1,0 +1,106 @@
+-- A `Char` is one Unicode scalar value (schema.md §12.10). A lone
+-- surrogate is a code point and not a scalar value, so JSON that holds
+-- only one half is `InvalidValue`. A surrogate pair that is one astral
+-- scalar is one `Char`. `accept` discards the error, so it is a
+-- validator. `read` keeps the issue. One unread call site stays under
+-- the shape threshold, so the validator is the worker. The corpus also
+-- builds this with `--schema-library`.
+import Char
+import Json
+import Node
+import Schema exposing (Issue, IssueCode)
+
+
+read : String → String
+read text =
+    case Json.decode text of
+        Ok c →
+            "Ok " ++ String.fromInt (Char.toCode c)
+
+        Err issues →
+            case issues of
+                [] →
+                    "Err empty"
+
+                [ first, …_ ] →
+                    "Err " ++ code first.code ++ " " ++ first.message
+
+
+accept : String → String
+accept text =
+    case Json.decode text of
+        Ok c →
+            "Ok " ++ String.fromInt (Char.toCode c)
+
+        Err _ →
+            "invalid"
+
+
+line : String, String → String
+line label text = label ++ " read=" ++ read text ++ " valid=" ++ accept text
+
+
+code : IssueCode → String
+code c =
+    case c of
+        Schema.WrongShape →
+            "WrongShape"
+
+        Schema.MissingKey →
+            "MissingKey"
+
+        Schema.UnknownKey →
+            "UnknownKey"
+
+        Schema.UnknownTag →
+            "UnknownTag"
+
+        Schema.InvalidValue →
+            "InvalidValue"
+
+        Schema.DepthExceeded →
+            "DepthExceeded"
+
+        Schema.InvalidOptions →
+            "InvalidOptions"
+
+        Schema.ConversionFailed →
+            "ConversionFailed"
+
+        Schema.CheckFailed →
+            "CheckFailed"
+
+        Schema.ParseFailed →
+            "ParseFailed"
+
+        Schema.PrintFailed →
+            "PrintFailed"
+
+        Schema.InvalidSchema →
+            "InvalidSchema"
+
+
+main : Node.Program
+main =
+    Node.printLines
+        [ line "bmp" "\"a\""
+        , line "nul" "\"\\u0000\""
+        , line "maxbmp" "\"\\uffff\""
+        , line "emoji" "\"\\ud83d\\ude00\""
+        , line "pair" "\"\\ud800\\udc00\""
+        , line "max" "\"\\udbff\\udfff\""
+        , line "high" "\"\\ud800\""
+        , line "high-end" "\"\\udbff\""
+        , line "low" "\"\\udc00\""
+        , line "low-end" "\"\\udfff\""
+        , line "empty" "\"\""
+        , line "two" "\"ab\""
+        , line "two-high" "\"\\ud800\\ud801\""
+        , line "low-high" "\"\\udc00\\ud800\""
+        , line "high-bmp" "\"\\ud800a\""
+        , line "pair-extra" "\"\\ud800\\udc00x\""
+        , line "grapheme" "\"e\\u0301\""
+        , line "number" "7"
+        , line "null" "null"
+        , line "bool" "true"
+        ]
