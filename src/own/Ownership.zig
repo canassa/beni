@@ -506,7 +506,10 @@ pub const XSum = struct {
     }
 };
 
-pub const ResEntry = struct { path: u32, prov: Prov, approx: bool = false, xc: XSum = .{}, sc: XSum = .{} };
+/// `grown`: §16.7's mark, in memory while a group is solved; the summary
+/// block does not carry it (a settled summary is instantiated only outside
+/// its group, where the mark is cleared).
+pub const ResEntry = struct { path: u32, prov: Prov, approx: bool = false, xc: XSum = .{}, sc: XSum = .{}, grown: bool = false };
 
 pub const SupplyEntry = struct {
     fun: u32,
@@ -1635,7 +1638,7 @@ fn summaryDeepEql(o: *Ownership, x_in: Summary, y_in: Summary) Allocator.Error!b
 }
 
 fn resEql(a: ResEntry, b: ResEntry) bool {
-    return a.path == b.path and a.prov.eql(b.prov) and a.approx == b.approx and a.xc.eql(b.xc) and a.sc.eql(b.sc);
+    return a.path == b.path and a.prov.eql(b.prov) and a.approx == b.approx and a.xc.eql(b.xc) and a.sc.eql(b.sc) and a.grown == b.grown;
 }
 
 /// The module's top-level declarations as strongly connected groups by
@@ -1847,7 +1850,7 @@ pub fn cloneSummary(o: *Ownership, s: *const Summary) Allocator.Error!*const Sum
         }
     }.f;
     const res = try keep.alloc(ResEntry, s.res.len);
-    for (res, s.res) |*d, r| d.* = .{ .path = r.path, .prov = r.prov, .approx = r.approx, .xc = try xsum(keep, r.xc), .sc = try xsum(keep, r.sc) };
+    for (res, s.res) |*d, r| d.* = .{ .path = r.path, .prov = r.prov, .approx = r.approx, .xc = try xsum(keep, r.xc), .sc = try xsum(keep, r.sc), .grown = r.grown };
     const supply = try keep.alloc(SupplyEntry, s.supply.len);
     for (supply, s.supply) |*d, e| {
         d.* = e;
@@ -2173,6 +2176,7 @@ fn sortedRes(keep: Allocator, entries: []const ResEntry) Allocator.Error![]const
     for (res) |r| {
         if (nr > 0 and res[nr - 1].path == r.path and res[nr - 1].prov.eql(r.prov)) {
             res[nr - 1].approx = res[nr - 1].approx or r.approx;
+            res[nr - 1].grown = res[nr - 1].grown or r.grown;
             res[nr - 1].xc = try xsumAnd(keep, res[nr - 1].xc, r.xc);
             res[nr - 1].sc = try xsumAnd(keep, res[nr - 1].sc, r.sc);
             continue;
@@ -2325,7 +2329,7 @@ fn canonicalOf(o: *Ownership, s: Summary) Allocator.Error!?Summary {
             e.path = p;
         }
         fn same(x: ResEntry, y: ResEntry) bool {
-            return x.prov.eql(y.prov) and x.approx == y.approx and x.xc.eql(y.xc) and x.sc.eql(y.sc);
+            return x.prov.eql(y.prov) and x.approx == y.approx and x.xc.eql(y.xc) and x.sc.eql(y.sc) and x.grown == y.grown;
         }
         fn subsumes(y: ResEntry, x: ResEntry) bool {
             return same(y, x);
@@ -2345,7 +2349,7 @@ fn canonicalOf(o: *Ownership, s: Summary) Allocator.Error!?Summary {
             e.prov.path = p;
         }
         fn same(x: ResEntry, y: ResEntry) bool {
-            return x.prov.taken == y.prov.taken and x.approx == y.approx and x.xc.eql(y.xc) and x.sc.eql(y.sc);
+            return x.prov.taken == y.prov.taken and x.approx == y.approx and x.xc.eql(y.xc) and x.sc.eql(y.sc) and x.grown == y.grown;
         }
         fn subsumes(y: ResEntry, x: ResEntry) bool {
             return same(y, x);
@@ -5406,6 +5410,10 @@ const Entry = struct {
     /// 0 when exact; else 1 + the instruction of the call whose
     /// conservative aliasing or identity promise put the entry here (§8.4).
     approx: u32 = 0,
+    /// §16.7 (F3, the owner's choice (a)): the path went below a variable
+    /// that a call inside the group being solved grew; a later such
+    /// composition goes to `⋆`.
+    grown: bool = false,
 };
 
 const AV = []const Entry;
@@ -5756,6 +5764,9 @@ const Callee = struct {
     closure: u32 = none,
     /// A member of the recursive group being solved (§16.6).
     merge_fresh: bool = false,
+    /// §16.7: the declared types of a member's parameters, when the call is
+    /// inside the group being solved; empty otherwise.
+    poly: []const ?Var = &.{},
 };
 
 const Walker = struct {
@@ -5864,6 +5875,9 @@ const Walker = struct {
     /// The uses of the summary whose call-site demands `applySummary` is
     /// making (§16.7): the callee's other places of a written argument.
     call_uses: []const UseEntry = &.{},
+    /// The closures of the local groups being solved (§18.7), for §16.7's
+    /// polymorphic-recursion fold.
+    solving_locals: std.ArrayList(u32) = .empty,
     /// §18.4 item 4: per list-pattern element, its pattern — the scope of
     /// the split's taken cells.
     split_list: []u32 = &.{},
@@ -6109,7 +6123,11 @@ const Walker = struct {
         var n: usize = 1;
         for (items[1..]) |e| {
             const last = items[n - 1];
-            if (last.path == e.path and last.cell == e.cell) continue;
+            if (last.path == e.path and last.cell == e.cell) {
+                // §16.7: one entry per place and cell; a mark on either is kept.
+                items[n - 1].grown = last.grown or e.grown;
+                continue;
+            }
             items[n] = e;
             n += 1;
         }
@@ -6124,7 +6142,7 @@ const Walker = struct {
 
     fn shift(w: *Walker, av: AV, s: Step) Allocator.Error!AV {
         const out = try w.a.alloc(Entry, av.len);
-        for (av, out) |e, *x| x.* = .{ .path = try w.o.prepend(s, e.path), .cell = e.cell, .approx = e.approx };
+        for (av, out) |e, *x| x.* = .{ .path = try w.o.prepend(s, e.path), .cell = e.cell, .approx = e.approx, .grown = e.grown };
         try w.foldedBeside(av, out);
         return w.norm(out);
     }
@@ -6175,13 +6193,13 @@ const Walker = struct {
     fn under(w: *Walker, av: AV, p: u32) Allocator.Error!AV {
         if (p == eps) return av;
         const out = try w.a.alloc(Entry, av.len);
-        for (av, out) |e, *x| x.* = .{ .path = try w.o.concat(p, e.path), .cell = e.cell, .approx = e.approx };
+        for (av, out) |e, *x| x.* = .{ .path = try w.o.concat(p, e.path), .cell = e.cell, .approx = e.approx, .grown = e.grown };
         return w.norm(out);
     }
 
     fn approxAll(w: *Walker, av: AV, inst: Inst.Index) Allocator.Error!AV {
         const out = try w.a.alloc(Entry, av.len);
-        for (av, out) |e, *x| x.* = .{ .path = e.path, .cell = e.cell, .approx = if (e.approx != 0) e.approx else inst.int() + 1 };
+        for (av, out) |e, *x| x.* = .{ .path = e.path, .cell = e.cell, .approx = if (e.approx != 0) e.approx else inst.int() + 1, .grown = e.grown };
         return out;
     }
 
@@ -6230,7 +6248,7 @@ const Walker = struct {
         var out: std.ArrayList(Entry) = .empty;
         for (av) |e| {
             if (e.path == eps) {
-                if (try w.projCell(e.cell, s, ty)) |c| try out.append(w.a, .{ .path = eps, .cell = c, .approx = e.approx });
+                if (try w.projCell(e.cell, s, ty)) |c| try out.append(w.a, .{ .path = eps, .cell = c, .approx = e.approx, .grown = e.grown });
                 continue;
             }
             const first = w.o.firstStep(e.path).?;
@@ -6239,10 +6257,10 @@ const Walker = struct {
                 continue;
             }
             if (first.kind == s.kind and first.arg == s.arg) {
-                try out.append(w.a, .{ .path = try w.o.dropFirst(e.path), .cell = e.cell, .approx = e.approx });
+                try out.append(w.a, .{ .path = try w.o.dropFirst(e.path), .cell = e.cell, .approx = e.approx, .grown = e.grown });
             }
             if (unmarked) |t| if (first.kind == .ctor and w.o.ctorType(w.o.stepCtor(first.arg)) == t) {
-                try out.append(w.a, .{ .path = if (here) e.path else any, .cell = e.cell, .approx = if (e.approx != 0) e.approx else approx_place });
+                try out.append(w.a, .{ .path = if (here) e.path else any, .cell = e.cell, .approx = if (e.approx != 0) e.approx else approx_place, .grown = e.grown });
                 continue;
             };
             if (first.kind == s.kind and first.arg == s.arg) continue;
@@ -6273,11 +6291,11 @@ const Walker = struct {
             // F1's marker is always `.maybe`: below an `◇` may be a closure.
             const kind: MarkerKind = if (t == fn_type) .maybe else if (level == .here) .at else if (level == .below) .below else .maybe;
             const kept = try w.o.concat(try w.o.child(eps, .level, try w.o.markerId(t, kind)), r);
-            try out.append(w.a, .{ .path = kept, .cell = e.cell, .approx = ap });
+            try out.append(w.a, .{ .path = kept, .cell = e.cell, .approx = ap, .grown = e.grown });
         }
         if (!w.o.markerEmpty(first.arg)) return;
         if (w.o.firstStep(r)) |rs| if (rs.kind == s.kind and rs.arg == s.arg) {
-            try out.append(w.a, .{ .path = try w.o.dropFirst(r), .cell = e.cell, .approx = ap });
+            try out.append(w.a, .{ .path = try w.o.dropFirst(r), .cell = e.cell, .approx = ap, .grown = e.grown });
         };
     }
 
@@ -6291,13 +6309,13 @@ const Walker = struct {
         if (w.o.markerEmpty(arg)) try out.append(w.a, e);
         // Where the root may not be a `T`, a place inside it may be one, at
         // a path the entry does not show.
-        if (w.o.markerAny(arg)) try out.append(w.a, .{ .path = try w.o.child(eps, .any, 0), .cell = e.cell, .approx = ap });
+        if (w.o.markerAny(arg)) try out.append(w.a, .{ .path = try w.o.child(eps, .any, 0), .cell = e.cell, .approx = ap, .grown = e.grown });
         var buf: [k_limit + 1]Step = undefined;
         const st = w.o.steps(e.path, &buf);
         for (st, 0..) |x, i| if (x.kind == .level and w.o.markerType(x.arg) == w.o.markerType(arg)) {
             var at: u32 = eps;
             for (st[i + 1 ..]) |y| at = try w.o.child(at, y.kind, y.arg);
-            try out.append(w.a, .{ .path = at, .cell = e.cell, .approx = e.approx });
+            try out.append(w.a, .{ .path = at, .cell = e.cell, .approx = e.approx, .grown = e.grown });
             break;
         };
     }
@@ -6370,7 +6388,7 @@ const Walker = struct {
         for (av) |e| {
             const path = try w.o.concat(prefix, e.path);
             const ap = if (approx != 0) approx else e.approx;
-            try out.append(w.a, .{ .path = path, .cell = e.cell, .approx = ap });
+            try out.append(w.a, .{ .path = path, .cell = e.cell, .approx = ap, .grown = e.grown });
             if (frames) |fr| try fr.append(w.a, frame);
             const c = w.cells.items[e.cell];
             if (c.kind != .closure) continue;
@@ -6441,14 +6459,14 @@ const Walker = struct {
                 }
                 const g = try idx.by.getOrPut(w.a, .{ @backingInt(first.kind), first.arg });
                 if (!g.found_existing) g.value_ptr.* = .empty;
-                try g.value_ptr.append(w.a, .{ .path = try w.o.dropFirst(e.path), .cell = e.cell, .approx = e.approx });
+                try g.value_ptr.append(w.a, .{ .path = try w.o.dropFirst(e.path), .cell = e.cell, .approx = e.approx, .grown = e.grown });
             }
             gop.value_ptr.* = idx;
         }
         const idx = gop.value_ptr;
         var out: std.ArrayList(Entry) = .empty;
         for (idx.roots.items) |e| {
-            if (try w.projCell(e.cell, s, null)) |c| try out.append(w.a, .{ .path = eps, .cell = c, .approx = e.approx });
+            if (try w.projCell(e.cell, s, null)) |c| try out.append(w.a, .{ .path = eps, .cell = c, .approx = e.approx, .grown = e.grown });
         }
         try out.appendSlice(w.a, idx.any.items);
         if (idx.by.get(.{ @backingInt(s.kind), s.arg })) |list| try out.appendSlice(w.a, list.items);
@@ -6964,7 +6982,7 @@ const Walker = struct {
         var out: std.ArrayList(Entry) = .empty;
         for (av) |e| {
             const c = w.listFacing(e.cell) orelse continue;
-            try out.append(w.a, .{ .path = e.path, .cell = c, .approx = e.approx });
+            try out.append(w.a, .{ .path = e.path, .cell = c, .approx = e.approx, .grown = e.grown });
         }
         return w.norm(out.items);
     }
@@ -7077,7 +7095,7 @@ const Walker = struct {
     fn cellsOf(w: *Walker, av: AV) Allocator.Error!AV {
         if (av.len <= 1) return av;
         const out = try w.a.alloc(Entry, av.len);
-        for (av, out) |e, *o| o.* = .{ .path = eps, .cell = e.cell, .approx = e.approx };
+        for (av, out) |e, *o| o.* = .{ .path = eps, .cell = e.cell, .approx = e.approx, .grown = e.grown };
         std.mem.sort(Entry, out, {}, struct {
             fn less(_: void, p: Entry, q: Entry) bool {
                 if (p.cell != q.cell) return p.cell < q.cell;
@@ -7880,6 +7898,315 @@ const Walker = struct {
         return w.o.in.interner.slice(b.symbol(b.decls[t.d].name));
     }
 
+    // ---- polymorphic recursion (§16.7, F3 as amended) ---------------------
+
+    /// A type at a place: the store's, or as a definition writes it, its
+    /// parameters standing for `env`.
+    const TyRef = union(enum) {
+        store: Var,
+        def: struct { m: u32, inst: Inst.Index, env: []const TyRef },
+    };
+
+    const TyShape = union(enum) {
+        variable,
+        other,
+        app: struct { id: TypeId, args: []const TyRef },
+        tuple: []const TyRef,
+        record: struct { names: []const u32, types: []const TyRef, ext: ?TyRef },
+        func: []const TyRef,
+    };
+
+    fn tyShape(w: *Walker, r: TyRef) Allocator.Error!TyShape {
+        switch (r) {
+            .store => |v| return switch (w.store.resolvedContent(v)) {
+                .flex, .rigid => .variable,
+                .err => .other,
+                .alias => |al| w.tyShape(.{ .store = al.actual }),
+                .structure => |sc| switch (sc) {
+                    .unit, .empty_record => .other,
+                    .func => |f| blk: {
+                        const ps = w.store.vars(f.params);
+                        const all = try w.a.alloc(TyRef, ps.len + 1);
+                        for (ps, all[0..ps.len]) |p, *x| x.* = .{ .store = p };
+                        all[ps.len] = .{ .store = f.result };
+                        break :blk .{ .func = all };
+                    },
+                    .app => |ap| blk: {
+                        const vs = w.store.vars(ap.args);
+                        const args = try w.a.alloc(TyRef, vs.len);
+                        for (vs, args) |x, *y| y.* = .{ .store = x };
+                        break :blk .{ .app = .{ .id = ap.type, .args = args } };
+                    },
+                    .tuple => |t| blk: {
+                        const vs = w.store.vars(t);
+                        const els = try w.a.alloc(TyRef, vs.len);
+                        for (vs, els) |x, *y| y.* = .{ .store = x };
+                        break :blk .{ .tuple = els };
+                    },
+                    .record => |rec| blk: {
+                        const fs = w.store.fields(rec.fields);
+                        const names = try w.a.alloc(u32, fs.len);
+                        const types = try w.a.alloc(TyRef, fs.len);
+                        for (fs, names, types) |f, *n, *t| {
+                            n.* = @backingInt(f.name);
+                            t.* = .{ .store = f.value };
+                        }
+                        break :blk .{ .record = .{ .names = names, .types = types, .ext = .{ .store = rec.ext } } };
+                    },
+                },
+            },
+            .def => |d| {
+                const bir = w.o.in.birs[d.m];
+                const tag = bir.instTag(d.inst);
+                const data = bir.instData(d.inst);
+                const graph_m: Graph.Index = @fromBackingInt(@intCast(d.m));
+                switch (tag) {
+                    .type_var => {
+                        const info: Bir.TypeVarInfo = @bitCast(data.rhs);
+                        if (info.param == Bir.TypeVarInfo.param_none or info.param >= d.env.len) return .variable;
+                        return w.tyShape(d.env[info.param]);
+                    },
+                    .type_tuple => {
+                        const xs = bir.extraSlice(Bir.inlineRange(data), Inst.Index);
+                        const els = try w.a.alloc(TyRef, xs.len);
+                        for (xs, els) |x, *y| y.* = .{ .def = .{ .m = d.m, .inst = x, .env = d.env } };
+                        return .{ .tuple = els };
+                    },
+                    .type_record, .type_record_ext => {
+                        const fs = if (tag == .type_record) bir.extraSlice(Bir.inlineRange(data), Bir.Field) else bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.rhs))), Bir.Field);
+                        const names = try w.a.alloc(u32, fs.len);
+                        const types = try w.a.alloc(TyRef, fs.len);
+                        for (fs, names, types) |f, *n, *t| {
+                            n.* = @backingInt(bir.symbol(f.name));
+                            t.* = .{ .def = .{ .m = d.m, .inst = f.value, .env = d.env } };
+                        }
+                        const ext: ?TyRef = if (tag == .type_record_ext) .{ .def = .{ .m = d.m, .inst = @fromBackingInt(@intCast(data.lhs)), .env = d.env } } else null;
+                        return .{ .record = .{ .names = names, .types = types, .ext = ext } };
+                    },
+                    .type_fn => {
+                        const ps = bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.lhs))), Inst.Index);
+                        const all = try w.a.alloc(TyRef, ps.len + 1);
+                        for (ps, all[0..ps.len]) |p, *x| x.* = .{ .def = .{ .m = d.m, .inst = p, .env = d.env } };
+                        all[ps.len] = .{ .def = .{ .m = d.m, .inst = @fromBackingInt(@intCast(data.rhs)), .env = d.env } };
+                        return .{ .func = all };
+                    },
+                    .type_top, .ext_type, .type_app => {
+                        const id = if (tag == .type_app) blk: {
+                            const head: Inst.Index = @fromBackingInt(@intCast(data.lhs));
+                            break :blk w.o.in.types.headId(graph_m, bir.instTag(head), bir.instData(head));
+                        } else w.o.in.types.headId(graph_m, tag, data);
+                        if (id == .none or id.int() >= w.o.in.types.entries.len) return .other;
+                        const xs: []const Inst.Index = if (tag == .type_app) bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.rhs))), Inst.Index) else &.{};
+                        const args = try w.a.alloc(TyRef, xs.len);
+                        for (xs, args) |x, *y| y.* = .{ .def = .{ .m = d.m, .inst = x, .env = d.env } };
+                        return .{ .app = .{ .id = id, .args = args } };
+                    },
+                    else => return .other,
+                }
+            },
+        }
+    }
+
+    /// The type of field `field` of constructor `c` of the applied type `app`,
+    /// an alias expanded; null when `c` is not one of its constructors.
+    fn ctorFieldTy(w: *Walker, id: TypeId, args: []const TyRef, c: u32, field: u32) Allocator.Error!?TyRef {
+        const e = w.o.in.types.entries[id.int()];
+        const dm = e.module.int();
+        const dbir = w.o.in.birs[dm];
+        const d = dbir.decl(e.decl);
+        if (e.kind == .alias) {
+            const body = d.annotation.unwrap() orelse return null;
+            return switch (try w.tyShape(.{ .def = .{ .m = dm, .inst = body, .env = args } })) {
+                .app => |ap| w.ctorFieldTy(ap.id, ap.args, c, field),
+                else => null,
+            };
+        }
+        if (e.kind != .adt) return null;
+        const key = w.o.ctorKey(c);
+        if (key.module != dm) return null;
+        const start = d.ctors_start;
+        if (key.index < start or key.index >= d.ctors_end) return null;
+        const ct = dbir.ctors[key.index];
+        const fs = dbir.extraSlice(.{ .start = ct.args_start, .end = ct.args_end }, Inst.Index);
+        if (field >= fs.len) return null;
+        return .{ .def = .{ .m = dm, .inst = fs[field], .env = args } };
+    }
+
+    /// Whether `a` instantiates a variable of `g` at a structure anywhere in
+    /// the type: the argument's type is the declared one's, grown.
+    fn grownIn(w: *Walker, g: TyRef, a: TyRef, depth: u32) Allocator.Error!bool {
+        if (depth > 64) return true;
+        const sg = try w.tyShape(g);
+        const sa = try w.tyShape(a);
+        switch (sg) {
+            .variable => return switch (sa) {
+                .variable, .other => false,
+                else => true,
+            },
+            .other => return false,
+            .app => |x| {
+                const y = switch (sa) {
+                    .app => |y| y,
+                    else => return false,
+                };
+                if (x.args.len != y.args.len) return false;
+                for (x.args, y.args) |p, q| if (try w.grownIn(p, q, depth + 1)) return true;
+                return false;
+            },
+            .tuple => |x| {
+                const y = switch (sa) {
+                    .tuple => |y| y,
+                    else => return false,
+                };
+                if (x.len != y.len) return false;
+                for (x, y) |p, q| if (try w.grownIn(p, q, depth + 1)) return true;
+                return false;
+            },
+            .func => |x| {
+                const y = switch (sa) {
+                    .func => |y| y,
+                    else => return false,
+                };
+                if (x.len != y.len) return false;
+                for (x, y) |p, q| if (try w.grownIn(p, q, depth + 1)) return true;
+                return false;
+            },
+            .record => |x| {
+                const y = switch (sa) {
+                    .record => |y| y,
+                    else => return false,
+                };
+                for (x.names, x.types) |n, t| for (y.names, y.types) |m, u| if (n == m and try w.grownIn(t, u, depth + 1)) return true;
+                if (x.ext) |xe| if (y.ext) |ye| return w.grownIn(xe, ye, depth + 1);
+                return false;
+            },
+        }
+    }
+
+    /// §16.7 (F3, the owner's choice (a)): the boundary of `p`, an entry's
+    /// path in an argument of declared type `g` and type `a` at a call inside
+    /// the group being solved: how many of its steps are above the first
+    /// variable `a` instantiates at a structure, or null when none is.
+    fn polyBound(w: *Walker, p: u32, g0: TyRef, a0: TyRef) Allocator.Error!?usize {
+        var buf: [k_limit + 1]Step = undefined;
+        const st = w.o.steps(p, &buf);
+        var g = g0;
+        var a = a0;
+        for (st, 0..) |s, k| {
+            const sg = try w.tyShape(g);
+            const sa = try w.tyShape(a);
+            switch (sg) {
+                .variable => switch (sa) {
+                    .variable, .other => return null,
+                    else => return k,
+                },
+                .app => |x| if (x.id != w.o.in.types.well_known.list and w.o.in.types.entries[x.id.int()].kind == .foreign and try w.grownIn(g, a, 0)) return k,
+                else => {},
+            }
+            const next: ?[2]TyRef = switch (s.kind) {
+                .ctor => blk: {
+                    const x = switch (sg) {
+                        .app => |x| x,
+                        else => break :blk null,
+                    };
+                    const y = switch (sa) {
+                        .app => |y| y,
+                        else => break :blk null,
+                    };
+                    const c = w.o.stepCtor(s.arg);
+                    const f = w.o.stepField(s.arg);
+                    const gn = (try w.ctorFieldTy(x.id, x.args, c, f)) orelse break :blk null;
+                    const an = (try w.ctorFieldTy(y.id, y.args, c, f)) orelse break :blk null;
+                    break :blk .{ gn, an };
+                },
+                .field => blk: {
+                    const x = switch (sg) {
+                        .record => |x| x,
+                        else => break :blk null,
+                    };
+                    const y = switch (sa) {
+                        .record => |y| y,
+                        else => break :blk null,
+                    };
+                    const gi = std.mem.indexOfScalar(u32, x.names, s.arg) orelse break :blk null;
+                    const ai = std.mem.indexOfScalar(u32, y.names, s.arg) orelse break :blk null;
+                    break :blk .{ x.types[gi], y.types[ai] };
+                },
+                .tuple => blk: {
+                    const x = switch (sg) {
+                        .tuple => |x| x,
+                        else => break :blk null,
+                    };
+                    const y = switch (sa) {
+                        .tuple => |y| y,
+                        else => break :blk null,
+                    };
+                    if (s.arg >= x.len or s.arg >= y.len) break :blk null;
+                    break :blk .{ x[s.arg], y[s.arg] };
+                },
+                .elem => blk: {
+                    const x = switch (sg) {
+                        .app => |x| x,
+                        else => break :blk null,
+                    };
+                    const y = switch (sa) {
+                        .app => |y| y,
+                        else => break :blk null,
+                    };
+                    if (x.args.len != 1 or y.args.len != 1) break :blk null;
+                    break :blk .{ x.args[0], y.args[0] };
+                },
+                // What a closure captured is not written in its type: below
+                // its `◇`, a grown type is a grown place.
+                .env => {
+                    if (sg == .func and try w.grownIn(g, a, 0)) return k + 1;
+                    return null;
+                },
+                else => null,
+            };
+            const n = next orelse return null;
+            g = n[0];
+            a = n[1];
+        }
+        return null;
+    }
+
+    /// `p`'s first `k` steps followed by `⋆`.
+    fn cutAt(w: *Walker, p: u32, k: usize) Allocator.Error!u32 {
+        var buf: [k_limit + 1]Step = undefined;
+        const st = w.o.steps(p, &buf);
+        var at: u32 = eps;
+        for (st[0..@min(k, st.len)]) |x| at = try w.o.child(at, x.kind, x.arg);
+        return w.o.child(at, .any, 0);
+    }
+
+    /// The declared types of a callee's parameters, for the fold: a top-level
+    /// member of the group being solved, in this module.
+    fn memberParamTypes(w: *Walker, t: Target) Allocator.Error![]const ?Var {
+        if (t.m != w.m or !w.o.isComputing(t.m, t.d)) return &.{};
+        const d = w.bir.decls[t.d];
+        const km = &w.o.in.modules[t.m];
+        const lt = km.local_type[d.locals_start..d.locals_end];
+        const ps = w.bir.extraSlice(.{ .start = d.params_start, .end = d.params_end }, Inst.Index);
+        const out = try w.a.alloc(?Var, ps.len);
+        for (ps, out) |p, *x| x.* = switch (w.bir.instTag(p)) {
+            .pat_var => if (w.bir.instData(p).lhs < lt.len) lt[w.bir.instData(p).lhs].unwrap() else null,
+            .pat_as => if (w.bir.instData(p).rhs < lt.len) lt[w.bir.instData(p).rhs].unwrap() else null,
+            else => null,
+        };
+        return out;
+    }
+
+    /// The declared types of a local function's parameters, for the fold,
+    /// when its group is being solved (§18.7).
+    fn localParamTypes(w: *Walker, ci: u32) Allocator.Error![]const ?Var {
+        if (std.mem.indexOfScalar(u32, w.solving_locals.items, ci) == null) return &.{};
+        const ps = w.closures.items[ci].params;
+        const out = try w.a.alloc(?Var, ps.len);
+        for (ps, out) |p, *x| x.* = w.patternType(p);
+        return out;
+    }
+
     fn qualified(w: *Walker, t: Target) Allocator.Error![]const u8 {
         const key = (@as(u64, t.m) << 32) | t.d;
         if (w.o.names_memo.get(key)) |n| return n;
@@ -8114,7 +8441,7 @@ const Walker = struct {
                 if (!try w.isTracked(inst)) return &.{};
                 const any = try w.o.child(eps, .any, 0);
                 const out = try w.a.alloc(Entry, s.len);
-                for (s, out) |e, *x| x.* = .{ .path = any, .cell = e.cell, .approx = e.approx };
+                for (s, out) |e, *x| x.* = .{ .path = any, .cell = e.cell, .approx = e.approx, .grown = e.grown };
                 return w.norm(out);
             },
             .markup => {
@@ -8580,7 +8907,7 @@ const Walker = struct {
             if (!try w.trackedVar(fl.value)) continue;
             const s: Step = .{ .kind = .field, .arg = @backingInt(fl.name) };
             if (try w.projCell(e.cell, s, fl.value)) |c| {
-                try out.append(w.a, .{ .path = try w.o.child(eps, .field, s.arg), .cell = c, .approx = e.approx });
+                try out.append(w.a, .{ .path = try w.o.child(eps, .field, s.arg), .cell = c, .approx = e.approx, .grown = e.grown });
             }
         }
     }
@@ -8637,14 +8964,14 @@ const Walker = struct {
         for (base) |e| {
             const k = w.cells.items[e.cell].kind;
             if (e.path == eps and k != .top and k != .site and k != .closure and k != .func) {
-                try out.append(w.a, .{ .path = eps, .cell = try w.exceptCell(e.cell, names, all_fields != null), .approx = e.approx });
+                try out.append(w.a, .{ .path = eps, .cell = try w.exceptCell(e.cell, names, all_fields != null), .approx = e.approx, .grown = e.grown });
                 if (all_fields) |fs| {
                     for (fs) |fl| {
                         if (std.mem.indexOfScalar(u32, names, @backingInt(fl.name)) != null) continue;
                         if (!try w.trackedVar(fl.value)) continue;
                         const s: Step = .{ .kind = .field, .arg = @backingInt(fl.name) };
                         if (try w.projCell(e.cell, s, fl.value)) |c| {
-                            try out.append(w.a, .{ .path = try w.o.child(eps, .field, s.arg), .cell = c, .approx = e.approx });
+                            try out.append(w.a, .{ .path = try w.o.child(eps, .field, s.arg), .cell = c, .approx = e.approx, .grown = e.grown });
                         }
                     }
                     continue;
@@ -8870,6 +9197,9 @@ const Walker = struct {
     /// walk that validates the classes is the one that stays.
     fn walkGroup(w: *Walker, items: []const Inst.Index, group: []const [2]u32) Allocator.Error!void {
         const b = w.bir;
+        const solving = w.solving_locals.items.len;
+        for (group) |g| try w.solving_locals.append(w.a, g[1]);
+        defer w.solving_locals.shrinkRetainingCapacity(solving);
         var gi0: usize = 0;
         for (items) |item| {
             if (b.instTag(item) != .let_def) continue;
@@ -9163,12 +9493,12 @@ const Walker = struct {
                 .closure => |ci| if (w.closures.items[ci].class) |cls| {
                     try w.closures.items[ci].consumed.append(w.a, .{ .kind = .local });
                     try w.escapeCaptures(ci, w.point);
-                    const out = try w.applySummary(inst, .{ .sum = cls, .name = "<lambda>", .op = "call <lambda>", .closure = ci }, args, f, callee);
+                    const out = try w.applySummary(inst, .{ .sum = cls, .name = "<lambda>", .op = "call <lambda>", .closure = ci, .poly = try w.localParamTypes(ci) }, args, f, callee);
                     if (cls.once) try w.onceCall(ci, f, w.token(inst));
                     return out;
                 },
                 .func => |t| if (try w.o.ensureSummary(t.m, t.d)) |s| {
-                    return w.applySummary(inst, .{ .sum = s, .name = try w.qualified(t), .op = try w.callOp(t), .merge_fresh = w.o.isComputing(t.m, t.d) }, args, f, callee);
+                    return w.applySummary(inst, .{ .sum = s, .name = try w.qualified(t), .op = try w.callOp(t), .merge_fresh = w.o.isComputing(t.m, t.d), .poly = try w.memberParamTypes(t) }, args, f, callee);
                 },
                 // §23.2: a send gives up every cell of its payload.
                 .send => return w.applySummary(inst, .{ .sum = &send_class, .name = "send", .op = "send" }, args, f, callee),
@@ -9284,7 +9614,7 @@ const Walker = struct {
             const c = w.cells.items[e.cell];
             if (c.kind == .top and c.a == 2) continue;
             if (w.o.firstStep(e.path)) |st| if (st.kind == .schema_encoded) {
-                if (marked) try kept.append(w.a, .{ .path = any, .cell = e.cell, .approx = e.approx });
+                if (marked) try kept.append(w.a, .{ .path = any, .cell = e.cell, .approx = e.approx, .grown = e.grown });
                 continue;
             };
             try kept.append(w.a, e);
@@ -9504,7 +9834,7 @@ const Walker = struct {
             const saved = w.maybe_join;
             defer w.maybe_join = saved;
             if (try w.isMaybeJoin(t, args)) w.maybe_join = try w.openMaybeJoin(inst);
-            return w.applySummary(inst, .{ .sum = s, .name = try w.qualified(t), .op = try w.callOp(t), .merge_fresh = w.o.isComputing(t.m, t.d) }, args, &.{}, null);
+            return w.applySummary(inst, .{ .sum = s, .name = try w.qualified(t), .op = try w.callOp(t), .merge_fresh = w.o.isComputing(t.m, t.d), .poly = try w.memberParamTypes(t) }, args, &.{}, null);
         }
         if (w.escapes(t)) return w.escapeCall(inst, args, try w.qualified(t));
         return w.conservative(inst, args, &.{}, null, try w.qualified(t), w.o.in.birs[t.m].decls[t.d].kind == .foreign_value, .unknown);
@@ -9686,7 +10016,7 @@ const Walker = struct {
         for (try w.expand(av)) |e| {
             const k = w.cells.items[e.cell].kind;
             if (k == .closure or k == .func) continue;
-            try out.append(w.a, .{ .path = any, .cell = e.cell, .approx = inst.int() + 1 });
+            try out.append(w.a, .{ .path = any, .cell = e.cell, .approx = inst.int() + 1, .grown = e.grown });
         }
         return w.norm(out.items);
     }
@@ -10258,7 +10588,7 @@ const Walker = struct {
                 const c = w.cells.items[e.cell];
                 if (c.kind == .closure or c.kind == .func) continue;
                 if (ty) |r| if (c.ty.unwrap()) |ct| if (!try w.o.mayHold(w.store, r, ct, 0)) continue;
-                try out.append(w.a, .{ .path = any, .cell = e.cell, .approx = inst.int() + 1 });
+                try out.append(w.a, .{ .path = any, .cell = e.cell, .approx = inst.int() + 1, .grown = e.grown });
             }
         }
         return w.norm(out.items);
@@ -10436,7 +10766,7 @@ const Walker = struct {
             if (c.kind == .env and c.a < w.local_frame.len and w.local_frame[c.a] == 0) if (w.local_av[c.a]) |held| {
                 changed = true;
                 for (try w.projPath(held, c.path, null)) |h| {
-                    try out.append(w.a, .{ .path = try w.o.concat(e.path, h.path), .cell = h.cell, .approx = if (e.approx != 0) e.approx else h.approx });
+                    try out.append(w.a, .{ .path = try w.o.concat(e.path, h.path), .cell = h.cell, .approx = if (e.approx != 0) e.approx else h.approx, .grown = e.grown or h.grown });
                 }
                 continue;
             };
@@ -10669,7 +10999,7 @@ const Walker = struct {
         if (ty) |v| if (!try w.trackedVar(v)) return &.{};
         const arg_types = try w.a.alloc(?Var, args.len);
         for (args, arg_types) |arg, *t| t.* = w.instType(arg);
-        const res = try w.instRes(s, .{ .inst = inst, .s = s, .avs = avs, .closure = callee.closure, .depth = 0, .merge_fresh = callee.merge_fresh, .arg_types = arg_types, .result_ty = ty, .take = s.asserted });
+        const res = try w.instRes(s, .{ .inst = inst, .s = s, .avs = avs, .closure = callee.closure, .depth = 0, .merge_fresh = callee.merge_fresh, .arg_types = arg_types, .result_ty = ty, .take = s.asserted, .group = callee.poly.len != 0, .poly = callee.poly });
         // An approximate entry may name an argument the result's type
         // cannot be (§6.1's type filter, thesis §3.8): a `Js` coercion's
         // result is never its argument at another type.
@@ -10887,6 +11217,11 @@ const Walker = struct {
         /// taken (§18.5). Anywhere else a supply or result that names one
         /// instantiates to the element itself.
         take: bool = false,
+        /// §16.7 (F3, choice (a)): the callee is a member of the group being
+        /// solved, whose summary entries' marks ride, and its declared
+        /// parameter types.
+        group: bool = false,
+        poly: []const ?Var = &.{},
     };
 
     /// `s.res` instantiated at the call (§16.4 item 6).
@@ -10919,6 +11254,7 @@ const Walker = struct {
         // `several` below reads neighbours: `normalize` sorts `res` by path.
         if (std.debug.runtime_safety and s.res.len > 1) for (s.res[1..], 0..) |r, i| std.debug.assert(s.res[i].path <= r.path);
         var out: std.ArrayList(Entry) = .empty;
+        const grown = try w.grownArgs(ctx);
         for (s.res, 0..) |r, i| {
             // `res` is sorted by path: another entry at this path is a neighbour.
             const several = (i > 0 and s.res[i - 1].path == r.path) or (i + 1 < s.res.len and s.res[i + 1].path == r.path);
@@ -10948,7 +11284,7 @@ const Walker = struct {
             if (ctx.conds and r.prov.kind == .param) for (cells) |e| if (e.path == eps) {
                 try w.lowerSpine(e.cell, try w.instXSum(r.sc, ctx));
             };
-            var av = try w.under(cells, r.path);
+            var av = try w.composeRes(r, cells, ctx, grown);
             if (several or r.approx) av = try w.approxAll(av, ctx.inst);
             try out.appendSlice(w.a, av);
         }
@@ -10957,7 +11293,7 @@ const Walker = struct {
         for (s.objs) |r| {
             const cells = try w.instProv(r.prov, ctx);
             const own = try w.a.alloc(Entry, cells.len);
-            for (cells, own) |e, *x| x.* = .{ .path = e.path, .cell = try w.nonlistOf(e.cell), .approx = e.approx };
+            for (cells, own) |e, *x| x.* = .{ .path = e.path, .cell = try w.nonlistOf(e.cell), .approx = e.approx, .grown = e.grown };
             // No list's fact may read what `objs` names.
             if (std.debug.runtime_safety) for (own) |x| std.debug.assert(w.listFacing(x.cell) == null);
             var av = try w.under(own, r.path);
@@ -10965,6 +11301,48 @@ const Walker = struct {
             try out.appendSlice(w.a, av);
         }
         return w.norm(out.items);
+    }
+
+    /// `cells`, what summary entry `r` names at the call, placed under its
+    /// path (§16.4), with §16.7's composed-path fold (F3, the owner's choice
+    /// (a)): below a variable the call grows, the first composition is exact
+    /// and marked, and a later one goes to `⋆`.
+    fn composeRes(w: *Walker, r: ResEntry, cells: AV, ctx: InstCtx, grown: []const ?[2]Var) Allocator.Error!AV {
+        const rg = ctx.group and r.grown;
+        const grown_arg: ?[2]Var = if (r.prov.kind == .param and r.prov.a < grown.len) grown[r.prov.a] else null;
+        const out = try w.a.alloc(Entry, cells.len);
+        const pd = w.o.paths.depth.items[r.prov.path];
+        for (cells, out) |e, *x| {
+            x.* = .{ .path = try w.o.concat(r.path, e.path), .cell = e.cell, .approx = e.approx, .grown = e.grown or rg };
+            const ga = grown_arg orelse continue;
+            if (e.path == eps) continue;
+            const full = try w.o.concat(r.prov.path, e.path);
+            const b = (try w.polyBound(full, .{ .store = ga[0] }, .{ .store = ga[1] })) orelse continue;
+            const rel = if (b > pd) b - pd else 0;
+            if (w.o.paths.depth.items[e.path] <= rel) continue;
+            if (e.grown or rg) {
+                x.path = try w.o.concat(r.path, try w.cutAt(e.path, rel));
+                if (x.approx == 0) x.approx = approx_place;
+            }
+            x.grown = true;
+        }
+        return w.norm(out);
+    }
+
+    /// Per argument of a call inside the group being solved, its declared
+    /// type and its type at the call when the call grows a variable of the
+    /// first at a structure (§16.7, F3 as amended); decided once per call.
+    fn grownArgs(w: *Walker, ctx: InstCtx) Allocator.Error![]const ?[2]Var {
+        if (ctx.poly.len == 0) return &.{};
+        const out = try w.a.alloc(?[2]Var, ctx.poly.len);
+        for (out, ctx.poly, 0..) |*x, gt, i| {
+            x.* = null;
+            const g = gt orelse continue;
+            if (i >= ctx.arg_types.len) continue;
+            const a = ctx.arg_types[i] orelse continue;
+            if (try w.grownIn(.{ .store = g }, .{ .store = a }, 0)) x.* = .{ g, a };
+        }
+        return out;
     }
 
     fn instProv(w: *Walker, p: Prov, ctx: InstCtx) Allocator.Error!AV {
@@ -11270,7 +11648,7 @@ const Walker = struct {
         for (from.items) |av| for (try w.expand(av)) |e| {
             const c = w.cells.items[e.cell];
             if (c.kind == .closure or c.kind == .func) continue;
-            try out.append(w.a, .{ .path = any, .cell = e.cell, .approx = ctx.inst.int() + 1 });
+            try out.append(w.a, .{ .path = any, .cell = e.cell, .approx = ctx.inst.int() + 1, .grown = e.grown });
         };
         return w.norm(out.items);
     }
@@ -11344,7 +11722,7 @@ const Walker = struct {
                     if ((try w.covers(e.cell, b.cell)) != null) break true;
                 } else false;
                 if (same and try w.reliesApart(e.cell)) continue;
-                try there.append(w.a, .{ .path = e.path, .cell = e.cell, .approx = if (e.approx != 0) e.approx else approx_place });
+                try there.append(w.a, .{ .path = e.path, .cell = e.cell, .approx = if (e.approx != 0) e.approx else approx_place, .grown = e.grown });
             }
             try others.append(w.a, there.items);
         }
@@ -11507,7 +11885,7 @@ const Walker = struct {
             // A send value is the runtime's function, never a list, and it
             // holds nothing of the program's (§23.3, §30.9).
             if (w.isSend(w.cells.items[e.cell])) continue;
-            try base.append(w.a, .{ .path = eps, .cell = e.cell, .approx = e.approx });
+            try base.append(w.a, .{ .path = eps, .cell = e.cell, .approx = e.approx, .grown = e.grown });
         }
         return w.norm(base.items);
     }
@@ -11523,7 +11901,7 @@ const Walker = struct {
             const k = w.cells.items[e.cell].kind;
             if (k == .closure or k == .func) continue;
             if (w.isSend(w.cells.items[e.cell])) continue;
-            try base.append(w.a, .{ .path = eps, .cell = e.cell, .approx = e.approx });
+            try base.append(w.a, .{ .path = eps, .cell = e.cell, .approx = e.approx, .grown = e.grown });
         }
         try w.demandOn(.{
             .kind = .probe,
@@ -11854,7 +12232,7 @@ const Walker = struct {
                     if (kind == .closure or kind == .func) return null;
                     var prov = (try w.provOf(e.cell, 0, params, fresh)) orelse return null;
                     prov.taken = false;
-                    try provs.append(ckeep, .{ .path = e.path, .prov = prov, .approx = e.approx != 0 });
+                    try provs.append(ckeep, .{ .path = e.path, .prov = prov, .approx = e.approx != 0, .grown = e.grown });
                 }
                 try cbinds.append(ckeep, .{ .local = b.local, .path = b.path, .provs = provs.items });
             }
@@ -11879,7 +12257,7 @@ const Walker = struct {
                 if (kind == .closure or kind == .func) return null;
                 var prov = (try w.provOf(e.cell, 0, params, fresh)) orelse return null;
                 prov.taken = false;
-                try provs.append(keep, .{ .path = e.path, .prov = prov, .approx = e.approx != 0 });
+                try provs.append(keep, .{ .path = e.path, .prov = prov, .approx = e.approx != 0, .grown = e.grown });
             }
             try binds.append(keep, .{ .local = cap.local, .path = cap.path, .provs = provs.items });
         }
@@ -12044,7 +12422,7 @@ const Walker = struct {
                 if (e.fun != j) continue;
                 const raw = try w.instProv(e.prov, ictx);
                 const cells = try w.a.alloc(Entry, raw.len);
-                for (raw, cells) |x, *y| y.* = .{ .path = x.path, .cell = try w.nonlistOf(x.cell), .approx = x.approx };
+                for (raw, cells) |x, *y| y.* = .{ .path = x.path, .cell = try w.nonlistOf(x.cell), .approx = x.approx, .grown = x.grown };
                 const from: u32 = if (e.prov.kind == .param) e.prov.a else none;
                 var others: std.ArrayList(AV) = .empty;
                 for (avs, 0..) |x, i| if (i != j and i != from) try others.append(w.a, x);
@@ -12067,10 +12445,10 @@ const Walker = struct {
                     const facing = w.listFacing(x_in.cell) orelse {
                         const rc = w.cells.items[x_in.cell];
                         if (w.frame != 0 and rc.kind == .env and rc.a < w.local_frame.len and w.local_frame[rc.a] == 0 and w.local_av[rc.a] != null) rcaptured = true;
-                        try rcells.append(w.a, .{ .path = x_in.path, .cell = x_in.cell, .approx = x_in.approx });
+                        try rcells.append(w.a, .{ .path = x_in.path, .cell = x_in.cell, .approx = x_in.approx, .grown = x_in.grown });
                         continue;
                     };
-                    const x = Entry{ .path = x_in.path, .cell = facing, .approx = x_in.approx };
+                    const x = Entry{ .path = x_in.path, .cell = facing, .approx = x_in.approx, .grown = x_in.grown };
                     const xc = w.cells.items[x.cell];
                     const of_decl = w.frame != 0 and xc.kind == .env and xc.a < w.local_frame.len and w.local_frame[xc.a] == 0 and w.local_av[xc.a] != null;
                     try (if (of_decl) &captured else &own).append(w.a, x);
@@ -13103,7 +13481,7 @@ const Walker = struct {
             const k = w.cells.items[e.cell].kind;
             if (k == .closure or k == .func) continue;
             if (w.isSend(w.cells.items[e.cell])) continue;
-            try base.append(w.a, .{ .path = eps, .cell = e.cell, .approx = e.approx });
+            try base.append(w.a, .{ .path = eps, .cell = e.cell, .approx = e.approx, .grown = e.grown });
         }
         try w.demandOn(.{
             .kind = .probe,
@@ -13484,7 +13862,7 @@ const Walker = struct {
             for (cells) |c| {
                 const cv = (try w.coversAt(e.cell, c.cell)) orelse
                     (if (try w.splitBase(c.cell, none)) |b| (try w.coversAt(e.cell, b)) orelse continue else continue);
-                const hit: Entry = .{ .path = try w.o.concat(e.path, cv.rest), .cell = c.cell, .approx = if (e.approx != 0) e.approx else if (c.approx != 0) c.approx else if (cv.approx) approx_place else 0 };
+                const hit: Entry = .{ .path = try w.o.concat(e.path, cv.rest), .cell = c.cell, .approx = if (e.approx != 0) e.approx else if (c.approx != 0) c.approx else if (cv.approx) approx_place else 0, .grown = e.grown or c.grown };
                 if (hit.approx == 0) return hit;
                 if (found == null or hit.approx < found.?.approx) found = hit;
             }
@@ -13532,7 +13910,7 @@ const Walker = struct {
         for (spec.base) |e_in| {
             // §31.2: a record's object is no list's; the record demand of
             // §31.3 is the one that reads it.
-            const e = Entry{ .path = e_in.path, .cell = (if (spec.fields != null) w.recordObject(e_in.cell) else w.listFacing(e_in.cell)) orelse continue, .approx = e_in.approx };
+            const e = Entry{ .path = e_in.path, .cell = (if (spec.fields != null) w.recordObject(e_in.cell) else w.listFacing(e_in.cell)) orelse continue, .approx = e_in.approx, .grown = e_in.grown };
             const k = w.cells.items[e.cell].kind;
             if ((k == .closure and !spec.closures) or k == .func) continue;
             if (e.path == eps) {
@@ -14619,7 +14997,7 @@ const Walker = struct {
             if (frame == 0 and !w.recursive and w.cells.items[e.cell].kind == .closure and !w.o.hasStep(e.path, .env)) {
                 if (try w.carried(w.cells.items[e.cell].a, params, fresh)) |k| {
                     try klasses.append(keep, k);
-                    try res.append(keep, .{ .path = e.path, .prov = .{ .kind = .klass, .a = @intCast(klasses.items.len - 1) }, .approx = e.approx != 0 });
+                    try res.append(keep, .{ .path = e.path, .prov = .{ .kind = .klass, .a = @intCast(klasses.items.len - 1) }, .approx = e.approx != 0, .grown = e.grown });
                 }
                 continue;
             }
@@ -14633,7 +15011,7 @@ const Walker = struct {
             // instantiation.
             const xc = try w.xsumOf(try w.cellCond(e.cell), frame, params, if (own and w.cells.items[e.cell].kind != .taken) e.cell else none);
             const sc = try w.xsumOf(try w.spineAt(&spines, e), frame, params, if (own and w.cells.items[e.cell].kind != .taken) e.cell else none);
-            try res.append(keep, .{ .path = e.path, .prov = prov, .approx = e.approx != 0, .xc = xc, .sc = sc });
+            try res.append(keep, .{ .path = e.path, .prov = prov, .approx = e.approx != 0, .xc = xc, .sc = sc, .grown = e.grown });
         }
         // §31.7: what the result holds of records, apart from `res`, which
         // every list's fact reads.
