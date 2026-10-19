@@ -1,0 +1,75 @@
+-- ownership: the composed-path fold of polymorphic recursion (issue #286;
+-- ownership-checker.md §16.7, F3 as amended, the owner's choice (a)), on the
+-- review of #429.
+-- `wm` places `x` once in its result, `wm2` twice. The path cut merged the
+-- levels and called `wm`'s `π2` shared, so `once`, which writes the list it
+-- took back out, was refused; it is accepted `param`, and its callers that
+-- read `xs` after it are refused. Where `x` is there twice (`twice`,
+-- `twiceDeep`, `twiceDeepFresh`) the write is refused.
+type M a
+    = MLeaf a
+    | MWrap (M (Maybe (List a)))
+
+
+wm : Int, a → M a
+wm n x =
+    if n == 0 then
+        MLeaf x
+    else
+        MWrap (wm (n - 1) (Just [ x ]))
+
+
+wm2 : Int, a → M a
+wm2 n x =
+    if n == 0 then
+        MLeaf x
+    else
+        MWrap (wm2 (n - 1) (Just [ x, x ]))
+
+
+pub once : List Int → Int
+once xs =
+    case wm 1 xs of
+        MWrap (MLeaf (Just [ ys ])) →
+            List.length (List.push ys 1)
+
+        _ →
+            0
+
+
+pub twice : List Int → Int
+twice xs =
+    case wm2 1 xs of
+        MWrap (MLeaf (Just [ ys, zs ])) →
+            List.length (List.push ys 1) + List.length zs
+
+        _ →
+            0
+
+
+pub twiceDeep : List Int → Int
+twiceDeep xs =
+    case wm2 2 xs of
+        MWrap (MWrap (MLeaf (Just [ Just [ a, _ ], Just [ _, b ] ]))) →
+            List.length (List.push a 1) + List.length b
+
+        _ →
+            0
+
+
+pub twiceDeepFresh : Int → Int
+twiceDeepFresh n =
+    case wm2 2 (List.repeat n 0) of
+        MWrap (MWrap (MLeaf (Just [ Just [ a, _ ], Just [ _, b ] ]))) →
+            List.length (List.push a 1) + List.length b
+
+        _ →
+            0
+
+
+pub callOnce : List Int → Int
+callOnce xs = once xs + List.length xs
+
+
+pub callOnceKeep : List Int → Int × List Int
+callOnceKeep xs = ( once xs, xs )

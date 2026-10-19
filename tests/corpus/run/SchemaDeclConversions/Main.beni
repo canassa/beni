@@ -103,10 +103,15 @@ main =
             )
             showOrder
         , Show.result (Order.print order) λs → s
-        , Show.result (Order.print { order | second = -1, counts = [ -2 ] }) λs → s
+        , Show.result (Order.print { Record.copy order | second = -1, counts = [ -2 ] }) λs → s
         , Show.result
             (Order.printWith all
-                { order | second = -1, maybe = Schema.NonNull (-3), counts = [ 1, -2 ], wide = 2 }
+                { Record.copy order
+                    | second = -1
+                    , maybe = Schema.NonNull (-3)
+                    , counts = [ 1, -2 ]
+                    , wide = 2
+                }
             )
             λs → s
         ]

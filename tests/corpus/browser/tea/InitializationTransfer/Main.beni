@@ -1,0 +1,20 @@
+-- A private list is consumed once by a module initializer. The destination
+-- stays shared; this program only reads it. No application copy is needed.
+import Html exposing (Html)
+import Tea
+
+
+seed : List Int
+seed = List.range 1 2
+
+
+extended : List Int
+extended = seed ++ [ 3 ]
+
+
+view : Int → Html Int
+view n = <button onClick={n + 1}>{String.fromInt (List.sum extended + n)}</button>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → 0, update = λn _ → n, view = view }

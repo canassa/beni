@@ -324,7 +324,9 @@ pub setOccupant : Int, Maybe PlayerId, Board → Board
 setOccupant index occupant board =
     case List.get board.cells index of
         Just cell →
-            { board | cells = List.set board.cells index { cell | occupant = occupant } }
+            { board
+                | cells = List.set board.cells index { Record.copy cell | occupant = occupant }
+            }
 
         Nothing →
             board

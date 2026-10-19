@@ -139,6 +139,7 @@ fn sessionOptions(common: Cli.Common) Session.Options {
         .roundtrip_dispatch = common.roundtrip_dispatch,
         .roundtrip_frontend = common.roundtrip_frontend,
         .ownership_everywhere = common.ownership_everywhere,
+        .ownership_records_lost = common.ownership_records_lost,
     };
 }
 

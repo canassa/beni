@@ -83,7 +83,7 @@ parsed text =
 pub printedWith : List Int → Int
 printedWith xs =
     n =
-        case Schema.printWith (Schema.list Schema.int) Schema.defaultOptions xs of
+        case Schema.printWith (Schema.list Schema.int) (Schema.defaultOptions ⊤) xs of
             Ok t →
                 String.length t
 
@@ -95,7 +95,7 @@ printedWith xs =
 
 pub printedWithLate : List Int → Int
 printedWithLate xs =
-    text = Schema.printWith (Schema.list Schema.int) Schema.defaultOptions xs
+    text = Schema.printWith (Schema.list Schema.int) (Schema.defaultOptions ⊤) xs
     ys = [ …xs, 1 ]
     case text of
         Ok t →
@@ -107,7 +107,7 @@ printedWithLate xs =
 
 pub parsedWith : String → Int
 parsedWith text =
-    case Schema.parseWith (Schema.list Schema.int) Schema.defaultOptions text of
+    case Schema.parseWith (Schema.list Schema.int) (Schema.defaultOptions ⊤) text of
         Ok xs →
             List.length [ …xs, 1 ]
 

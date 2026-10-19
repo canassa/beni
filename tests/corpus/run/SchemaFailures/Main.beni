@@ -130,7 +130,7 @@ first = { errors = Schema.FirstError, unknownKeys = Reject, maxDepth = 512, repo
 
 
 reported : Schema.Options
-reported = { all | reportInput = True }
+reported = { Record.copy all | reportInput = True }
 
 
 issues : Result (List Issue) a → String
@@ -147,7 +147,7 @@ main =
         [ "-- AllErrors, then FirstError, on one input"
         , issues (Schema.parseWith mixed all bad)
         , issues (Schema.parseWith mixed first bad)
-        , issues (Schema.parseWith mixed { first | unknownKeys = Schema.Ignore } bad)
+        , issues (Schema.parseWith mixed { Record.copy first | unknownKeys = Schema.Ignore } bad)
         , issues (Schema.parseWith mixed reported bad)
         , issues (Schema.parseWith box all "{\"items\":[1,\"two\",3.5,4]}")
         , issues (Schema.parseWith box first "{\"items\":[1,\"two\",3.5,4]}")

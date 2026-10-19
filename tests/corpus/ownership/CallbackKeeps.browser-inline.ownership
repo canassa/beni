@@ -1,0 +1,56 @@
+module CallbackKeeps
+  26:10 List.push xs: accepted param
+  32:10 List.push xs: accepted param
+  38:10 List.push xs: accepted param
+  45:10 List.push xs: rejected call: t may hold it through the call at 44:9, and is read at 45:5 (approx)
+  49:10 call CallbackKeeps.kParam <literal>: accepted fresh (CallbackKeeps.kParam writes π2)
+  53:15 call CallbackKeeps.kParam <literal>: accepted fresh (CallbackKeeps.kParam writes π2)
+  53:23 value <lambda>: rejected supply: CallbackKeeps.kParam changes what it hands this function (π2) after the call, itself or through another function, and the function's result may keep it (approx)
+  57:15 call CallbackKeeps.kParam <literal>: accepted fresh (CallbackKeeps.kParam writes π2)
+  61:14 call CallbackKeeps.kTree <literal>: accepted fresh (CallbackKeeps.kTree writes π2)
+  61:20 value Node: rejected supply: CallbackKeeps.kTree changes what it hands this function (π2) after the call, itself or through another function, and the function's result may keep it (approx)
+  65:13 call CallbackKeeps.kOne <literal>: accepted fresh (CallbackKeeps.kOne writes π2)
+  65:18 value One: rejected supply: CallbackKeeps.kOne changes what it hands this function (π2) after the call, itself or through another function, and the function's result may keep it (approx)
+  73:14 value <lambda>: rejected need: CallbackKeeps.wrap edits what it returns, which may be a list it does not own
+  104:14 call CallbackKeeps.keepThenHand <literal>: accepted fresh (<lambda> writes what CallbackKeeps.keepThenHand supplies it)
+  104:28 value <lambda>: rejected supply: CallbackKeeps.keepThenHand changes what it hands this function (π3) after the call, itself or through another function, and the function's result may keep it (approx)
+  104:52 List.push ys: accepted callback-param (CallbackKeeps.keepThenHand supplies it owned)
+  108:14 call CallbackKeeps.keepThenHand <literal>: accepted fresh (<lambda> writes what CallbackKeeps.keepThenHand supplies it)
+  108:51 List.push ys: accepted callback-param (CallbackKeeps.keepThenHand supplies it owned)
+  114:13 List.push xs: rejected alias: kept.0 holds it and is read at 114:5
+  120:5 List.push xs: accepted call
+  128:10 List.push xs: accepted param
+  134:16 call CallbackKeeps.kBefore <literal>: accepted fresh (CallbackKeeps.kBefore writes π2)
+  134:25 value <lambda>: rejected supply: CallbackKeeps.kBefore changes what it hands this function (π2) after the call, itself or through another function, and the function's result may keep it (approx)
+  161:13 List.push xs: rejected alias: kept.0 holds it and is read at 161:5
+  169:23 List.push b: rejected alias: kept.0 holds it and is read at 169:13
+  summary kParam: π1 R, π2 RAW, π2[*] A; res .0 cb1{excl cb1}, .1 π2, .1[*] ~π2[*]; π1 calls ≤1, supply 1 π2 borrowed{excl π2}
+  summary kTree: π1 R, π2 RAW, π2[*] A, π3 RA; res .0 cb1{excl cb1}r{excl cb1}, .1 π2{excl π3, sep π2[*] π3}r{excl π3, sep π2[*] π3}, .1[*] ~π2[*] ~π3; π1 calls ≤1, supply 1 π2 borrowed{excl π2}r{excl π2}
+  summary kOne: π1 R, π2 RAW, π2[*] A, π3 RA; res .0 cb1{excl cb1}r{excl cb1}, .1 π2{excl π3, sep π2[*] π3}r{excl π3, sep π2[*] π3}, .1[*] ~π2[*] ~π3; π1 calls ≤1, supply 1 π2 borrowed{excl π2}r{excl π2}
+  summary kFresh: π1 R; res .0 cb1{excl cb1}, .1 fresh1; π1 calls ≤1, supply 1 fresh1 borrowed
+  summary wrap: π1 R; res .0 cb1{excl cb1}r{excl cb1}, .1 fresh1; π1 calls ≤1, need owned, supply 1 fresh1 borrowed
+  summary keepParam: res .0.0 fresh1, .1 fresh1
+  summary dropParam: res .0.0 fresh2, .1 fresh1
+  summary keepCtor: res .0#Node.0 fresh1, .1 fresh1
+  summary keepOne: res .0#One.0 fresh1, .1 fresh1, .1[*]#One.0 ~fresh2
+  summary keepFresh: res .0.0 fresh1, .1 fresh1
+  summary wrapKeep: res .0.0 fresh1, .1 fresh1
+  summary wrapDrop: res .0.0 fresh2, .1 fresh1
+  summary keepThenHand: π1 R, π2 R, π3 R; res .0 cb1{excl cb1}, .1 cb2{excl cb2}; π1 calls ≤1, supply 1 π3 borrowed{excl π3}; π2 calls ≤1, supply 1 π3 owned{excl π3}
+  summary makeKeepReturn: π1 R; res .0 cb1{excl cb1}, .1 fresh1; π1 calls ≤1, supply 1 fresh1 borrowed
+  summary handKeep: res .0.0 fresh1, .1 fresh1
+  summary handDrop: res .0.0 fresh2, .1 fresh1
+  summary returnKeep: res .0.0 fresh1, .1 fresh1, .1[*] ~fresh2
+  summary returnDrop: res [*] ~fresh2, fresh1
+  summary kBefore: π1 R, π2 RAW, π2[*] RA; res .0 cb1{excl cb1}, .1 π2, .1[*] ~π2[*]; π1 calls ≤1, supply 1 π2 borrowed{excl π2}r{excl π2[*]}, supply 1[*] π2[*] borrowed{excl π2}r{excl π2[*]}
+  summary writeFirst: res .0.0 fresh1, .1 fresh1
+  summary pickSecond: π2 R; res .0 cb2{excl cb2}, .1 fresh1; π2 calls ≤1, supply 1 fresh1 borrowed
+  summary inList: π1 R; res .0 cb1{excl cb1}, .1 fresh2, .1[*] fresh1; π1 calls ≤1, supply 1 fresh1 borrowed
+  summary secondKeep: res .0.0 fresh1, .1 fresh1, .1[*] ~fresh2
+  summary listKeep: res .0.0 fresh1, .1 fresh2, .1[*] fresh fresh1, .1[*][*] ~fresh
+  demands 25: accepted 15 (fresh 8, call 1, param 4, callback-param 2, once 0, entry 0; assumed 0), pending 0, rejected 10
+total 25: accepted 15 (fresh 8, call 1, param 4, callback-param 2, once 0, entry 0; assumed 0), pending 0, rejected 10
+cause alias 3
+cause call 1
+cause supply 5
+cause need 1

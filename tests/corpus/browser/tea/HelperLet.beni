@@ -1,0 +1,28 @@
+-- A helper written in place whose markup reads its own `let` (S3's rule;
+-- docs/design/browser-direct.md's S4 amendment, item 4: a helper's `let`s
+-- are evaluated with the values that read them): the hole shows the `let`'s
+-- value at mount, and again after a message writes what it reads.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Inc
+
+
+card : Int → Html Msg
+card n =
+    doubled = n * 2
+    <b>{String.fromInt doubled}</b>
+
+
+view : Int → Html Msg
+view n =
+    <main>
+        <button id="inc" onClick={Inc}>inc</button>
+        {card n}
+    </main>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → 1, update = λ_ m → m + 1, view = view }

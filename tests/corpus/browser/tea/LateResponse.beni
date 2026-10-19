@@ -1,0 +1,93 @@
+-- A message for an arm no longer shown (docs/design/browser-direct.md
+-- §4.1, *every step runs under its branch's liveness*), as a sandbox: a
+-- late answer for the home page arrives once the page is the article, and
+-- a rename for the selected item arrives once the `Show` that showed it has
+-- closed. Each key writes inside a variant the model no longer holds, so
+-- its arm does nothing, and the handler reads nothing of the arm it would
+-- have written: no `TypeError`, and nothing on the page changes. The same
+-- messages while their arms are shown write them.
+import Html exposing (Html)
+import Tea
+
+
+type alias Home =
+    loaded : Int
+
+
+type Page
+    = HomePage Home
+    | ArticlePage String
+
+
+type alias Item =
+    name : String
+
+
+type alias Model =
+    page : Page
+    selected : Maybe Item
+
+
+type Msg
+    = Loaded Int
+    | GoArticle
+    | GoHome
+    | Rename
+    | Unselect
+    | Select
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Loaded n →
+            case model.page of
+                HomePage h →
+                    { model | page = HomePage { h | loaded = n } }
+
+                ArticlePage _ →
+                    model
+
+        GoArticle →
+            { model | page = ArticlePage "article" }
+
+        GoHome →
+            { model | page = HomePage { loaded = 0 } }
+
+        Rename →
+            { model | selected = Maybe.map model.selected λi → { i | name = i.name ++ "!" } }
+
+        Unselect →
+            { model | selected = Nothing }
+
+        Select →
+            { model | selected = Just { name = "item" } }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="loaded" onClick={Loaded 7}>loaded</button>
+        <button id="article" onClick={GoArticle}>article</button>
+        <button id="home" onClick={GoHome}>home</button>
+        <button id="rename" onClick={Rename}>rename</button>
+        <button id="unselect" onClick={Unselect}>unselect</button>
+        <button id="select" onClick={Select}>select</button>
+        {case model.page of
+            HomePage h →
+                <p id="home-page">{String.fromInt h.loaded}</p>
+
+            ArticlePage title →
+                <p id="article-page">{title}</p>
+        }
+        <Show when={model.selected} keyed={.name}>{λi → <b>{i.name}</b>}</Show>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.sandbox
+        { init = λ⊤ → { page = HomePage { loaded = 0 }, selected = Just { name = "item" } }
+        , update = update
+        , view = view
+        }

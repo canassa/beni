@@ -1,0 +1,32 @@
+-- `list_may_be_shared`, a limit of the checker (ownership-checker.md §28.5–
+-- §28.6; thesis §8.4, *a path-insensitive join*): `orFallback rows` answers
+-- `rows` itself when it is not empty and a new list when it is, and the
+-- checker joins the two answers, so `[ …picked, 9 ]` may add to the end of
+-- `rows`, which is read afterwards. The message says it is a limit, not
+-- proof, names the call and the read, and writes the copy that makes it
+-- safe.
+import Html exposing (Html)
+import Tea
+
+
+orFallback : List Int → List Int
+orFallback ys =
+    if List.isEmpty ys then
+        [ 0 ]
+    else
+        ys
+
+
+shown : List Int → Int
+shown rows =
+    picked = orFallback rows
+    more = [ …picked, 9 ]
+    List.length more + List.length rows
+
+
+view : Int → Html Int
+view n = <p>{String.fromInt n}</p>
+
+
+main : Tea.Program
+main = Tea.sandbox { init = λ⊤ → shown [ 1, 2 ], update = λ_ m → m, view = view }

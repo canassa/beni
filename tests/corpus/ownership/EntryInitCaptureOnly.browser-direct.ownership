@@ -1,14 +1,17 @@
 module EntryInitCaptureOnly
   9:5 entry <update> model.items: accepted entry
-  11:31 update model: pending: its base is what a callee hands a callback, and that supply is not yet read for records (§31.5)
+  9:5 update entry <update> model: accepted entry
+  11:31 update model: accepted callback-param (decided at its calls)
   11:49 List.push model.items: accepted callback-param (decided at its calls)
   18:5 entry <update> model.items: accepted entry
-  20:31 update model: pending: its base is what a callee hands a callback, and that supply is not yet read for records (§31.5)
+  18:5 update entry <update> model: accepted entry
+  20:31 update model: accepted callback-param (decided at its calls)
   20:49 List.push model.items: accepted callback-param (decided at its calls)
   32:5 entry <update> model.items: accepted entry
-  34:31 update model: pending: its base is what a callee hands a callback, and that supply is not yet read for records (§31.5)
+  32:5 update entry <update> model: accepted entry
+  34:31 update model: accepted callback-param (decided at its calls)
   34:49 List.push model.items: accepted callback-param (decided at its calls)
   demands 6: accepted 6 (fresh 0, call 0, param 0, callback-param 3, once 0, entry 3; assumed 0), pending 0, rejected 0
-  records 3: accepted 0, pending 3, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
+  records 6: accepted 6, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
 total 6: accepted 6 (fresh 0, call 0, param 0, callback-param 3, once 0, entry 3; assumed 0), pending 0, rejected 0
-records 3: accepted 0, pending 3, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
+records 6: accepted 6, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0

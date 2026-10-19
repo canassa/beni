@@ -1,0 +1,7 @@
+-- See Main.beni: a component that logs, its children written between its
+-- tags, so its call is on the value path.
+import Html exposing (Html)
+
+
+pub view : { n : Int, children : Html msg } → Html msg
+view props = <section><h2>{Debug.log "component" props.n}</h2>{props.children}</section>

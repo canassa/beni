@@ -1,0 +1,30 @@
+-- load
+<body>
+  <main>
+    <svg:svg id="canvas" viewBox="0 0 100 100">
+      <svg:g id="dot">
+        <svg:circle id="circle" cx="50" cy="50" r="5"></svg:circle>
+      </svg:g>
+    </svg:svg>
+  </main>
+</body>
+-- click #circle
+<body>
+  <main>
+    <svg:svg id="canvas" viewBox="0 0 100 100">
+      <svg:g id="dot">
+        <svg:circle id="circle" cx="50" cy="50" r="10"></svg:circle>
+      </svg:g>
+    </svg:svg>
+  </main>
+</body>
+-- click #circle
+<body>
+  <main>
+    <svg:svg id="canvas" viewBox="0 0 100 100">
+      <svg:g id="dot">
+        <svg:circle id="circle" cx="50" cy="50" r="15"></svg:circle>
+      </svg:g>
+    </svg:svg>
+  </main>
+</body>

@@ -12,15 +12,6 @@ namespace Ownership.FlatFragment.AtomInteger
 open InPlaceSemantics HeapProof Soundness Ownership.FlatFragment.State Ownership.FlatFragment.Support
 open Ownership.FlatFragment.VariableFacts Ownership.FlatFragment.Env Ownership.FlatFragment.HeapPreservation
 
-theorem lookup_option_of_success {α : Type} [Inhabited α] {env : Env α} {key : Var} {value : α}
-    (run : lookup env key = .ok value) :
-    env.lookup key = some value := by
-  cases found : env.lookup key with
-  | none => simp [lookup, found] at run
-  | some actual =>
-    have equal : actual = value := by simpa [lookup, found] using run
-    exact congrArg some equal
-
 theorem observation_integer_of_type
     (typed : obsTyped declarations observation .int = true) :
     ∃ integer : Int, observation = .int integer := by
@@ -29,43 +20,6 @@ theorem observation_integer_of_type
   | record values => simp [obsTyped] at typed
   | list values => simp [obsTyped] at typed
   | closure id captures => simp [obsTyped] at typed
-
-theorem flat_atom_integer {atom : Atom}
-    (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma)
-    (flat : FlatAtom atom)
-    (typed : atomType tenv atom = .ok .int)
-    (covered : ∀ use ∈ atomUses atom, use ∈ live) :
-    ∃ integer : Int,
-      ValueSemantics.atom (valueEnv env) atom = .ok (.int integer) ∧
-      InPlaceSemantics.atom (heapEnv env) atom = .ok (.int integer) ∧
-      abstractAtom aenv atom = .ok .scalar := by
-  cases flat with
-  | int integer => exact ⟨integer, rfl, rfl, rfl⟩
-  | var key =>
-    have typeRun : lookup tenv key = .ok .int := by simpa only [atomType] using typed
-    have declared := lookup_option_of_success typeRun
-    obtain ⟨pair, binding⟩ := lookup_exists_of_same_keys env tenv inv.typeKeys declared
-    rcases pair with ⟨observation, actual⟩
-    obtain ⟨abstract, abstractBinding⟩ :=
-      lookup_exists_of_same_keys aenv env inv.abstractKeys.symm binding
-    have shape := inv.abstractShapes key .int abstract declared abstractBinding
-    cases shape
-    obtain ⟨type, actualDeclared, observationTyped, actualTyped⟩ :=
-      inv.bindingsTyped key observation actual binding
-    have sameType : type = .int := Option.some.inj (actualDeclared.symm.trans declared)
-    subst type
-    obtain ⟨integer, observationEq⟩ := observation_integer_of_type observationTyped
-    subst observation
-    have use : (key, []) ∈ live := covered (key, []) (by simp [atomUses])
-    have paired := (live_variable_result inv use binding abstractBinding).1
-    cases allocated_shape_of_typed FlatType.int actualTyped with
-    | int actualInteger =>
-      have observed := paired 1 (by simp [Observation.depth])
-      have equal : actualInteger = integer := by simpa [snapshot, pure, Except.pure] using observed
-      subst actualInteger
-      obtain ⟨valueAtom, heapAtom⟩ := variable_atoms_run binding
-      refine ⟨integer, valueAtom, heapAtom, ?_⟩
-      simp [abstractAtom, lookup, abstractBinding]
 
 end Ownership.FlatFragment.AtomInteger
 

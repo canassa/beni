@@ -1,0 +1,56 @@
+-- ownership: the composed-path fold of polymorphic recursion (issue #286;
+-- ownership-checker.md §16.7, F3 as amended, the owner's choice (a)), on the
+-- review of #429.
+-- Two lists through a tuple that grows: what the fold puts at one place is
+-- judged as two (`{sep π2 π3}`), and the writes stay refused.
+type T a
+    = Leaf a
+    | Wrap (T (a × a))
+
+
+w : Int, a, a → T a
+w n x y =
+    if n == 0 then
+        Leaf x
+    else
+        Wrap (w (n - 1) ( x, y ) ( y, y ))
+
+
+wrX : T (List Int) → Int
+wrX t =
+    case t of
+        Wrap (Wrap (Wrap (Leaf ( ( ( _, a ), ( b, _ ) ), _ )))) →
+            List.length (List.push a 1) + List.length b
+
+        _ →
+            0
+
+
+pub viaX : Int → Int
+viaX n = wrX (w 3 (List.repeat n 0) (List.repeat n 1))
+
+
+pub local : Int → Int
+local n =
+    case w 3 (List.repeat n 0) (List.repeat n 1) of
+        Wrap (Wrap (Wrap (Leaf ( ( ( _, a ), ( b, _ ) ), _ )))) →
+            List.length (List.push a 1) + List.length b
+
+        _ →
+            0
+
+
+pub st : Int → Int
+st n =
+    case w 3 (List.repeat n 0) (List.repeat n 1) of
+        Wrap (Wrap (Wrap (Leaf ( p, _ )))) →
+            case p of
+                ( ( _, a ), _ ) →
+                    List.length (List.push a 1) + count p
+
+        _ →
+            0
+
+
+count : ((List Int × List Int) × (List Int × List Int)) → Int
+count ( _, ( b, _ ) ) = List.length b

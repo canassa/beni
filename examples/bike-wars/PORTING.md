@@ -105,7 +105,7 @@ These capabilities come from beni's platform, not from a port:
    - The operators: `→`, `≠`, `≤`, `≥`, `▷`, `…`.
    - Tuple types are written `Vec2 × Vec2`.
    - `\x ->` becomes `λx →`.
-   - Main's `\_ -> init` becomes `λ⊤ → init`: `init` is a function of `⊤` on
+   - Main's `\_ -> init` becomes `init`: `init` is a function of `⊤` on
      every platform (§9.8.16).
 7. **Blocks instead of `let … in` (§12.2).** Doc comments become `--|`, and
    `breakLines`' elm-verify-examples text is kept verbatim in its doc comment.
@@ -149,6 +149,15 @@ These capabilities come from beni's platform, not from a port:
     - `Browser.Events.onAnimationFrameDelta` keeps its name.
     - `Cmd` and `Sub` are imported (`Cmd exposing (Cmd)`, `Sub exposing (Sub)`).
     - `modBy 10 ticksLeft` is `Int.mod ticksLeft 10` (§12.4).
+12. **A record update writes its record (`ownership-checker.md` §31).**
+    - `initBikes`, `initModel` and `init` are functions of `⊤`, so each game
+      starts from new records: `{ initModel ⊤ | status = Running }`, and Main's
+      `init = init`. As values they were one record that the first update would
+      change (§31.16).
+    - `handleInput` and `stepGame` hand `Bike.shoot` and `Bike.update` a copy
+      of the red bike, `{ current = Record.copy red, … }`. Each call writes its
+      `current` bike, and the green bike's call reads the red one as `other`
+      as it was before red's call (§31.15).
 
 ## What differs on the page
 

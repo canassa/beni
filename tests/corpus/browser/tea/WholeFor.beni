@@ -1,0 +1,69 @@
+-- A whole `For` on the value path (browser-direct.md's S4 amendment, item
+-- 1): one whose row is not one element written in place — an `if` around
+-- it — and one with a `fallback` are planned by `dom` as markup of their
+-- own, rows and all, and placed through a value slot. Rows are added and
+-- removed, the list emptied (the fallback shows) and filled again, and a
+-- field the first list's rows read beside their item (`n`) changes.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Add
+    | Remove Int
+    | Clear
+    | Bump
+
+
+type alias Model =
+    items : List Int
+    n : Int
+    next : Int
+
+
+update : Msg, Model → Model
+update msg m =
+    case msg of
+        Add →
+            { m | items = List.push m.items m.next, next = m.next + 1 }
+
+        Remove i →
+            { m | items = List.filter m.items λx → x ≠ i }
+
+        Clear →
+            { m | items = [] }
+
+        Bump →
+            { m | n = m.n + 1 }
+
+
+view : Model → Html Msg
+view m =
+    <main>
+        <button id="add" onClick={Add}>add</button>
+        <button id="clear" onClick={Clear}>clear</button>
+        <button id="bump" onClick={Bump}>bump {m.n}</button>
+        <ul id="branch">
+            <For each={m.items} keyed={λi → i}>
+                {λi →
+                    if Int.mod i 2 == 0 then
+                        <li class="even">{i} at {m.n}</li>
+                    else
+                        <li class="odd">
+                            <button id="odd${String.fromInt i}" onClick={Remove i}>{i}</button>
+                        </li>
+                }
+            </For>
+        </ul>
+        <ol id="fallback">
+            <For each={m.items} keyed={False} fallback={<li>empty</li>}>
+                {λi → <li><button id="del${String.fromInt i}" onClick={Remove i}>{i}</button></li>}
+            </For>
+        </ol>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.sandbox
+        { init = λ⊤ → { items = [ 1, 2, 3 ], n = 0, next = 4 }, update = update, view = view }

@@ -1,0 +1,61 @@
+-- ownership: CK-260, a record a view event hands `update` is written in
+-- place (issue #315; `ownership-checker.md` §31.6, §31.8). `Saved form`
+-- stores the form a view event hands `update`, and `Rename` later writes
+-- the stored form in place: it is `model.saved`, and also `model.form`, the
+-- record the view's handler built `Saved` from and still holds, so in place
+-- the next click would hand `update` the renamed form. `Edit t` writes the
+-- payload itself in its arm. Both are rejected at the entry, `payload`,
+-- approximately: the record a view event carries is borrowed (§23.6). The
+-- model's own object is the runtime's, and its write is accepted.
+import Browser
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Tea
+
+
+type alias Form =
+    name : String
+    count : Int
+
+
+type alias Model =
+    form : Form
+    saved : Form
+
+
+type Msg
+    = Saved Form
+    | Rename String
+    | Edit Form
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Saved form →
+            { model | saved = form }
+
+        Rename n →
+            saved = model.saved
+            { model | saved = { saved | name = n } }
+
+        Edit t →
+            { model | form = { t | count = t.count + 1 } }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button onClick={Saved model.form}>save</button>
+        <button onClick={Rename "x"}>rename</button>
+        <button onClick={Edit model.form}>edit</button>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.sandbox
+        { init = λ⊤ → { form = { name = "", count = 0 }, saved = { name = "", count = 0 } }
+        , update = update
+        , view = view
+        }

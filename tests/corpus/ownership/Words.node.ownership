@@ -25,8 +25,8 @@ module Words
   summary printedWith: π1 RW
   summary printedWithLate: π1 RW
   summary parsedWith: unused
-  summary printing: π1 RW; res fresh1{lost}
-  summary rendered: res [*] fresh1{lost}, fresh2{lost}
+  summary printing: π1 RW; res fresh1{lost}r{lost}
+  summary rendered: res [*] fresh1{lost}r{lost}, fresh2{lost}r{lost}
   demands 17: accepted 14 (fresh 4, call 7, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
 total 17: accepted 14 (fresh 4, call 7, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
 cause later-use 1

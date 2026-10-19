@@ -6,7 +6,7 @@ module DirectCapture
   62:27 List.push xs: rejected once: it may run more than once: g is captured, and how often the closure runs is not known (approx)
   70:27 List.push xs: rejected once: it may run more than once: g is captured, and how often the closure runs is not known (approx)
   summary inner: π1 RA; res ◇⟨◇⟩◇ π1
-  summary wrap: π1 RA; res λ, ◇ π1; π1 calls 0, unseen
+  summary wrap: π1 RA; res λr{lost}, ◇ π1; π1 calls 0, unseen
   summary reads: π1 R
   summary writesLive: π1 RW, π1[*] R
   summary writesAfter: π1 RW, π1[*] R

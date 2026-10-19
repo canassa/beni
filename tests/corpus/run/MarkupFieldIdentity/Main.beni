@@ -4,7 +4,10 @@
 -- while `selected` is a new value, and a record update of a record update
 -- keeps the fields neither touched. It is what makes a markup lowering's
 -- reference check per hole and per row input correct, and the release
--- build, whose optimiser could break it, runs this too.
+-- build, whose optimiser could break it, runs this too. `select` writes the
+-- model it is handed, and `model` and `next` are read after, so each call
+-- hands it a copy (`ownership-checker.md` §31.15): a copy is shallow, and
+-- keeps every field's identity.
 import Identity
 import Node
 
@@ -35,9 +38,9 @@ main : Node.Program
 main =
     model = { rows = [ { id = 1 }, { id = 2 } ], selected = 0, title = "t" }
 
-    next = select model 3
+    next = select (Record.copy model) 3
 
-    later = rename (select next 4) "u"
+    later = rename (select (Record.copy next) 4) "u"
     Node.printLines
         [ show (Identity.refEq model.rows next.rows)
         , show (Identity.refEq model.title next.title)

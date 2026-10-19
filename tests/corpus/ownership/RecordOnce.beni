@@ -1,0 +1,46 @@
+-- ownership: a write of a captured record makes its lambda once
+-- (`ownership-checker.md` §31.4 item 4, §18.8). `bump p _` writes `p`
+-- through its callee. Handed to `Maybe.map`, which calls it at most once,
+-- the write is accepted `once` (`viaMaybe`); handed to `List.map`, which may
+-- call it many times, it is rejected `once` (`viaList`). After the lambda
+-- is made, a read of a field it writes is a whole use, since the write
+-- happens at a call the lowering cannot place before the read (`readsWritten`,
+-- rejected); a read of a field it does not write is untouched
+-- (`readsOther`, accepted). A read in a later argument of the call the
+-- lambda is handed to runs before the lambda can, and is a whole use too
+-- (`readAfter`, rejected `later-use`: an over-refusal, #416).
+type alias P =
+    x : Int
+    y : Int
+
+
+bump : P, Int → P
+bump p n = { p | x = p.x + n }
+
+
+pub viaMaybe : Maybe Int, P → Maybe P
+viaMaybe m p = Maybe.map m (bump p _)
+
+
+pub viaList : List Int, P → List P
+viaList ns p = List.map ns (bump p _)
+
+
+pub readsWritten : Maybe Int, P → Maybe P × Int
+readsWritten m p =
+    f = bump p _
+    ( Maybe.map m f, p.x )
+
+
+pub readsOther : Maybe Int, P → Maybe P × Int
+readsOther m p =
+    f = bump p _
+    ( Maybe.map m f, p.y )
+
+
+apply : (Int → P), Int → P
+apply g n = g n
+
+
+pub readAfter : P → P
+readAfter p = apply (bump p _) p.x

@@ -1,0 +1,16 @@
+-- A returned closure retains the list the next fold step writes.
+import Tea
+
+
+main : Tea.Program
+main =
+    Tea.sandbox
+        { init =
+            λ⊤ →
+                List.foldr [ 1, 2 ] { values = [], readers = [] } λx acc →
+                    grown = [ …acc.values, x ]
+                    reader = λ⊤ → List.length grown
+                    { values = grown, readers = [ …acc.readers, reader ] }
+        , update = λ_ model → model
+        , view = λmodel → <p>{List.length model.values}</p>
+        }

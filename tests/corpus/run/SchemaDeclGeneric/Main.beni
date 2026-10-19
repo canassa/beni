@@ -106,7 +106,11 @@ main =
         , Show.result (Page.parse (Schema.flip counted) "not even JSON") λp →
             String.join p.items ","
         , Show.result
-            (Page.parseWith Schema.int { all | maxDepth = -1 } "{\"items\":[],\"total\":0}")
+            (Page.parseWith
+                Schema.int
+                { Record.copy all | maxDepth = -1 }
+                "{\"items\":[],\"total\":0}"
+            )
             ints
         , Show.result (Page.print (Schema.flip counted) { items = [], total = 0 }) λs → s
         , Show.result (Tagged.parse Schema.int (Schema.tagged "unused" []) "{\"first\":1}") λt →

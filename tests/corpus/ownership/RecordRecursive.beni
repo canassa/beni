@@ -1,0 +1,101 @@
+-- ownership: what a recursive group returns of a record of numbers
+-- (`ownership-checker.md` §16.6, §31.7). The group's rounds join their
+-- summaries, the records the result holds (`objs`) with them: `idloop`,
+-- `evenR` and `oddR` return their parameter, so `c1` and `c2` update the
+-- answer while the argument is still read (rejected `alias`), and `c3`
+-- updates a top-level value through it (`top-level`). `rec1` returns a
+-- record it made at its last step or its parameter; `ident` is the same as
+-- `idloop` without the recursion.
+type alias P =
+    x : Int
+    y : Int
+
+
+idloop : Int, P → P
+idloop n p =
+    if n == 0 then
+        p
+    else
+        idloop (n - 1) p
+
+
+evenR : Int, P → P
+evenR n p =
+    if n == 0 then
+        p
+    else
+        oddR (n - 1) p
+
+
+oddR : Int, P → P
+oddR n p =
+    if n == 0 then
+        p
+    else
+        evenR (n - 1) p
+
+
+rec1 : Int, P → P
+rec1 n p =
+    if n == 0 then
+        p
+    else
+        rec1 (n - 1) { x = 0, y = 0 }
+
+
+ident : P → P
+ident p = p
+
+
+top : P
+top = { x = 0, y = 0 }
+
+
+pub c1 : ⊤ → P × P
+c1 ⊤ =
+    r = { x = 0, y = 0 }
+    q = idloop 0 r
+    ( { q | x = 5 }, r )
+
+
+pub c2 : ⊤ → P × P
+c2 ⊤ =
+    r = { x = 0, y = 0 }
+    q = evenR 2 r
+    ( { q | x = 5 }, r )
+
+
+pub c3 : ⊤ → P
+c3 ⊤ =
+    q = idloop 0 top
+    { q | x = 5 }
+
+
+pub k1 : ⊤ → P × P
+k1 ⊤ =
+    r = { x = 1, y = 1 }
+    q = idloop 0 r
+    ( { r | x = 5 }, q )
+
+
+pub k3 : ⊤ → P × P
+k3 ⊤ =
+    r = { x = 1, y = 1 }
+    q = ident r
+    ( { r | x = 5 }, q )
+
+
+pub l1 : ⊤ → P × P
+l1 ⊤ =
+    r = { x = 1, y = 1 }
+    q = rec1 0 r
+    ( { r | x = 5 }, q )
+
+
+-- `tick` hands its callback a record it makes, and hands the callback on
+-- to itself: the record a member of the group made keeps its number at the
+-- group's own call, so the rounds settle and `tick` reaches no limit.
+pub tick : Int, (P → ⊤) → ⊤
+tick n f =
+    f { x = n, y = 0 }
+    if n == 0 then ⊤ else tick (n - 1) f

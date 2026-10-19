@@ -1,0 +1,14 @@
+module RecordSameCall
+  18:9 update b: accepted param
+  24:9 update p: accepted param
+  31:5 update r: rejected disjoint: another operand of the same operation reaches it (RecordSameCall.f writes it) [copy]
+  37:5 update r: rejected disjoint: another operand of the same operation reaches it (RecordSameCall.h writes it) [copy]
+  summary g: π1 R; res π1
+  summary f: π1.x R, π2 W{x}, π2.x R
+  summary h: π1 W{x}, π1.x R, π2.x R
+  summary nested: unused
+  summary twice: unused
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 4: accepted 2, pending 0, rejected 2 (copy 2, restructure 0); hoisted 0, eager reads 0
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 4: accepted 2, pending 0, rejected 2 (copy 2, restructure 0); hoisted 0, eager reads 0

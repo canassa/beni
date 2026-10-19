@@ -1,0 +1,57 @@
+-- Nested tags in message records and tuples follow their actual access path.
+import Cmd
+import Html exposing (Html)
+import Sub
+import Tea
+
+
+type Msg
+    = Record { choice : Maybe Int }
+    | Pair (Maybe Int × Bool)
+
+
+type alias Model =
+    record : Int
+    pair : Int
+    other : Int
+
+
+update : Msg, Model → Model × Cmd.Cmd Msg
+update msg model =
+    case msg of
+        Record r →
+            case r.choice of
+                Just n →
+                    ( { model | record = n }, Cmd.none )
+
+                Nothing →
+                    ( { model | other = 1 }, Cmd.none )
+
+        Pair ( choice, _ ) →
+            case choice of
+                Just n →
+                    ( { model | pair = n }, Cmd.none )
+
+                Nothing →
+                    ( { model | other = 2 }, Cmd.none )
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="record" onClick={Record { choice = Just 7 }}>record</button>
+        <button id="pair" onClick={Pair ( Just 9, True )}>pair</button>
+        <p id="record-value">{model.record}</p>
+        <p id="pair-value">{model.pair}</p>
+        <p id="other-value">{model.other}</p>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( { record = 0, pair = 0, other = 0 }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

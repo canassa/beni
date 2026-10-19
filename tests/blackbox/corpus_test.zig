@@ -488,6 +488,37 @@ fn fixtureGoldenPath(arena: std.mem.Allocator, fixture: Fixture, ext: []const u8
     return std.fmt.allocPrint(arena, "{s}/{s}.{s}", .{ fixture.dir, stem, ext });
 }
 
+/// Whether the platform chain `spelling` names edits lists in place
+/// (`boundary.md` §5.2, `ownership-checker.md` §28.2): its first `"lists"`,
+/// depth first down the chain, as the compiler's `Chain.inPlace` reads it.
+/// The whole-program lowerings are the platforms that say so. A platform
+/// that ships with the compiler is read from `platforms/<name>/`, the
+/// manifest it embeds; any other spelling is a directory, relative to the
+/// working directory (the repository root).
+fn chainInPlace(arena: std.mem.Allocator, spelling: []const u8) !bool {
+    return (try chainLists(arena, spelling, null, 0)) orelse false;
+}
+
+fn chainLists(arena: std.mem.Allocator, spelling: []const u8, from: ?[]const u8, depth: u32) !?bool {
+    // The compiler's own limit on a chain is far below this; a cycle the
+    // compiler would refuse must not hang the harness.
+    if (depth > 32) return error.PlatformChainTooDeep;
+    const shipped = try std.fs.path.join(arena, &.{ "platforms", spelling });
+    const embedded = std.mem.indexOfScalar(u8, spelling, '/') == null and
+        if (Io.Dir.cwd().statFile(testing.io, try std.fs.path.join(arena, &.{ shipped, "beni.json" }), .{})) |_| true else |_| false;
+    const root = if (embedded) shipped else if (from) |f| try std.fs.path.join(arena, &.{ f, spelling }) else spelling;
+    const bytes = try Io.Dir.cwd().readFileAlloc(testing.io, try std.fs.path.join(arena, &.{ root, "beni.json" }), arena, .limited(64 * 1024));
+    const manifest = try std.json.parseFromSliceLeaky(struct {
+        lists: ?[]const u8 = null,
+        platforms: []const []const u8 = &.{},
+    }, arena, bytes, .{ .ignore_unknown_fields = true });
+    if (manifest.lists) |l| return std.mem.eql(u8, l, "in-place");
+    for (manifest.platforms) |dep| {
+        if (try chainLists(arena, dep, root, depth + 1)) |found| return found;
+    }
+    return null;
+}
+
 /// Whether `text` is in the path of any fixture of any kind under the root.
 fn anyFixtureMatches(arena: std.mem.Allocator, cfg: *const Config, text: []const u8) !bool {
     for (std.enums.values(Kind)) |kind| {
@@ -592,6 +623,21 @@ fn fixturesOf(arena: std.mem.Allocator, cfg: *const Config, kind: Kind) ![]const
         const start = fixtures.items.len;
         try collect(arena, tea_dir, false, false, &fixtures, true);
         for (fixtures.items[start..]) |*fixture| fixture.platform = "browser-tea";
+        // A page that carries a `.fuzz-run-hash` opts into a value-fuzz
+        // case of its own (`Fixture.values`): its development build
+        // against its release build, both with `--fuzz`, messages as
+        // values. The page case keeps its own fuzz of view events.
+        const end = fixtures.items.len;
+        if (cfg.mode == .strict) for (start..end) |i| {
+            const record = try fixtureGoldenPath(arena, fixtures.items[i], "fuzz-" ++ run_hash.ext);
+            Io.Dir.cwd().access(testing.io, record, .{}) catch |err| switch (err) {
+                error.FileNotFound => continue,
+                else => return err,
+            };
+            var values = fixtures.items[i];
+            values.values = true;
+            try fixtures.append(arena, values);
+        };
     }
     // `direct/`: built for `browser-direct`, whose `direct` lowering
     // compiles a program whole (`browser-direct.md` §12.3) — `emit/direct/`
@@ -637,7 +683,7 @@ fn fixturesOf(arena: std.mem.Allocator, cfg: *const Config, kind: Kind) ![]const
             fixture.release = true;
         }
     }
-    if (kind == .build_bad or kind == .browser) {
+    if (kind == .build_bad or kind == .check_bad or kind == .browser) {
         const inline_dir = try std.fs.path.join(arena, &.{ kind_dir, "inline" });
         const start = fixtures.items.len;
         try collect(arena, inline_dir, false, false, &fixtures, true);
@@ -663,6 +709,19 @@ fn fixturesOf(arena: std.mem.Allocator, cfg: *const Config, kind: Kind) ![]const
         const start = fixtures.items.len;
         try collect(arena, direct_dir, false, false, &fixtures, true);
         for (fixtures.items[start..]) |*fixture| fixture.platform = "browser-direct";
+    }
+    // `build/bad/everywhere/`: projects built for `browser-tea` with the
+    // hidden `--ownership-everywhere` (`ownership-checker.md` §30.7), so the
+    // ownership checker enforces on a platform that edits no list in place:
+    // its refusals, apart from any whole-program lowering's (§28.10).
+    if (kind == .build_bad) {
+        const everywhere_dir = try std.fs.path.join(arena, &.{ kind_dir, "everywhere" });
+        const start = fixtures.items.len;
+        try collect(arena, everywhere_dir, false, false, &fixtures, true);
+        for (fixtures.items[start..]) |*fixture| {
+            fixture.platform = "browser-tea";
+            fixture.everywhere = true;
+        }
     }
     if (kind == .browser) {
         const direct_dir = try std.fs.path.join(arena, &.{ kind_dir, "direct" });
@@ -696,6 +755,34 @@ fn fixturesOf(arena: std.mem.Allocator, cfg: *const Config, kind: Kind) ![]const
             fixture.app = true;
             fixture.release = true;
         }
+    }
+    // An ownership fixture beside a `.platform` file is a case per platform
+    // it names (`Fixture.token`), each budgeted on its own: every dump
+    // re-checks core from source (`ownership-checker.md` §16.9), so a
+    // fixture's cost grows with the platforms it is read on.
+    if (kind == .ownership) {
+        var expanded: std.ArrayList(Fixture) = .empty;
+        for (fixtures.items) |fixture| {
+            const text = Io.Dir.cwd().readFileAlloc(testing.io, try fixtureGoldenPath(arena, fixture, "platform"), arena, .limited(4096)) catch |err| switch (err) {
+                error.FileNotFound => {
+                    try expanded.append(arena, fixture);
+                    continue;
+                },
+                else => return err,
+            };
+            var names = std.mem.tokenizeAny(u8, text, " \t\r\n");
+            var any = false;
+            while (names.next()) |name| {
+                any = true;
+                var one = fixture;
+                one.token = name;
+                one.label = try std.fmt.allocPrint(arena, " [{s}]", .{name});
+                try expanded.append(arena, one);
+            }
+            // An empty `.platform` is one case, which reports it.
+            if (!any) try expanded.append(arena, fixture);
+        }
+        return expanded.items;
     }
     return fixtures.items;
 }
@@ -756,13 +843,16 @@ const Walker = struct {
             // fixture costs.
             const spent_start = meter.read();
             const timed: ?[2]std.Io.Timestamp = if (world.timing.enabled()) .{ world.timing.now(), world.timing.threadCpu() } else null;
-            world.timing.current_fixture = path;
+            // Keyed by case, not by fixture: a page's value fuzz and an ownership
+            // fixture's token cases each have a record of their own.
+            const case_name = try std.fmt.allocPrint(arena, "{s}{s}", .{ path, fixture.suffix() });
+            world.timing.current_fixture = case_name;
             defer {
                 world.timing.current_fixture = "";
                 if (timed) |t| world.timing.write(.{ .fixture = .{
                     .@"test" = world.timing.current_test,
                     .kind = @tagName(wk.kind),
-                    .path = path,
+                    .path = case_name,
                     .wall_us = world.timing.sinceUs(t[0]),
                     .thread_cpu_us = world.timing.durationUs(t[1].durationTo(world.timing.threadCpu())),
                     .spent = if (world.timing.budget_unit == .instructions) meter.read() -% spent_start else 0,
@@ -1206,17 +1296,27 @@ const Fixture = struct {
     /// §12.3). A difference the design specifies is the fixture's
     /// `.tea-expected`, which the `browser-tea` builds read instead.
     differential: bool = false,
-    /// A `browser/direct/` page's second case: its page fuzz alone, with
+    /// A `browser/direct/` page's second case, or a `browser/tea/` page's
+    /// when it carries a `.fuzz-run-hash`: its page fuzz alone, with
     /// messages as values (`browser-direct.md` §8.3, amended for S2). The
     /// two `--fuzz` builds, the message types dump and the fuzz are a case
     /// of their own, budgeted on their own, so that no page's value fuzz
     /// waits for the sweep; the first case builds and runs the pages.
     values: bool = false,
+    /// Under `build/bad/everywhere/`: built with the hidden
+    /// `--ownership-everywhere`, so the ownership checker enforces on a
+    /// platform that edits no list in place (`ownership-checker.md` §30.7).
+    everywhere: bool = false,
+    /// An ownership fixture's case for one token of its `.platform` file,
+    /// which alone it checks and dumps; null for a fixture without one.
+    token: ?[]const u8 = null,
+    /// What a report adds after the path for a token's case: ` [<token>]`.
+    label: []const u8 = "",
 
     /// What a report names the case by after its path: which of a page's
-    /// two cases failed.
+    /// two cases failed, or which platform an ownership case read.
     fn suffix(fixture: Fixture) []const u8 {
-        return if (fixture.values) " [value fuzz]" else "";
+        return if (fixture.values) " [value fuzz]" else fixture.label;
     }
 
     /// Whether `text` is in the fixture's repo-relative path, the path
@@ -1241,7 +1341,7 @@ fn collect(arena: std.mem.Allocator, dir_path: []const u8, core: bool, required:
     const start = out.items.len;
     var it = dir.iterate();
     while (try it.next(io)) |entry| {
-        if (entry.kind == .directory and projects and !std.mem.eql(u8, entry.name, "core") and !std.mem.eql(u8, entry.name, "markup") and !std.mem.eql(u8, entry.name, "dom") and !std.mem.eql(u8, entry.name, "tea") and !std.mem.eql(u8, entry.name, "app") and !std.mem.eql(u8, entry.name, "split") and !std.mem.eql(u8, entry.name, "direct") and !std.mem.eql(u8, entry.name, "inline")) {
+        if (entry.kind == .directory and projects and !std.mem.eql(u8, entry.name, "core") and !std.mem.eql(u8, entry.name, "markup") and !std.mem.eql(u8, entry.name, "dom") and !std.mem.eql(u8, entry.name, "tea") and !std.mem.eql(u8, entry.name, "app") and !std.mem.eql(u8, entry.name, "split") and !std.mem.eql(u8, entry.name, "direct") and !std.mem.eql(u8, entry.name, "inline") and !std.mem.eql(u8, entry.name, "everywhere")) {
             try out.append(arena, .{ .dir = dir_path, .name = try arena.dupe(u8, entry.name), .core = core, .project = true });
             continue;
         }
@@ -1298,7 +1398,12 @@ const Case = struct {
         // Rule (d)'s record: the signature `tests/pending/RED` holds for this
         // fixture, so a change cannot drift it from "red for the bug" to "red
         // for a typo" unseen.
-        const recorded = c.cfg.redSignature(repo_path);
+        // An ownership case for one platform token is recorded as
+        // `<path>#<token>` when its line differs from the fixture's.
+        const recorded = if (c.fixture.token) |token|
+            c.cfg.redSignature(try std.fmt.allocPrint(c.arena, "{s}#{s}", .{ repo_path, token })) orelse c.cfg.redSignature(repo_path)
+        else
+            c.cfg.redSignature(repo_path);
 
         reason_len = 0;
         class_len = 0;
@@ -1758,10 +1863,21 @@ const Case = struct {
                 try std.fmt.allocPrint(c.arena, "--platform={s}", .{name})
             else
                 "--platform=node",
-            "--out=out",
         });
+        if (c.fixture.everywhere) try args.append(c.arena, "--ownership-everywhere");
+        // The command, its diagnostics and its platform: what every other
+        // build of the fixture below shares.
+        const head_len = args.items.len;
+        try args.append(c.arena, "--out=out");
         if (c.kind.isRelease()) try args.append(c.arena, "--release");
         try args.appendSlice(c.arena, sources.items);
+        // Whether the build enforces the ownership checker: its platform's
+        // chain edits lists in place (`ownership-checker.md` §28.2), as the
+        // whole-program lowerings' do, or `--ownership-everywhere` says so.
+        const enforcing = c.fixture.everywhere or if (has_platform)
+            try chainInPlace(c.arena, try std.fs.path.join(c.arena, &.{ dir_path, "platform" }))
+        else
+            try chainInPlace(c.arena, c.fixture.platform orelse "node");
 
         // The fourth assertion, and it is `build/bad-release/`'s alone: the
         // same sources, same platform, no `--release`, must build clean.
@@ -1769,7 +1885,7 @@ const Case = struct {
         // claim to be about the flag.
         if (c.kind.isRelease()) {
             var dev: std.ArrayList([]const u8) = .empty;
-            try dev.appendSlice(c.arena, args.items[0..3]);
+            try dev.appendSlice(c.arena, args.items[0..head_len]);
             try dev.append(c.arena, "--out=dev");
             try dev.appendSlice(c.arena, sources.items);
             const ok = try w.runWith(try c.argv(dev.items), .{ .raw_diagnostics = true, .timeout_ms = c.cfg.timeout_ms });
@@ -1801,11 +1917,12 @@ const Case = struct {
         }
         try c.expectGolden("diag", built.stderr);
 
-        // `ownership-checker.md` §28.10: a `browser-direct` fixture whose
-        // golden holds only the ownership checker's codes fails because
-        // lists are edited in place there; on `browser-tea`, where nothing
-        // is, the same project must build with no diagnostic at all.
-        if (c.fixture.platform) |name| if (std.mem.eql(u8, name, "browser-direct") and ownershipOnly(built.stderr)) {
+        // `ownership-checker.md` §28.10: an enforcing fixture whose golden
+        // holds only the ownership checker's codes fails because lists are
+        // edited in place there (or `--ownership-everywhere` says they
+        // are); on `browser-tea` without the flag, where nothing is, the
+        // same project must build with no diagnostic at all.
+        if (enforcing and ownershipOnly(built.stderr)) {
             var tea: std.ArrayList([]const u8) = .empty;
             try tea.appendSlice(c.arena, &.{ "build", "--diagnostics=json", "--platform=browser-tea", "--out=tea" });
             try tea.appendSlice(c.arena, sources.items);
@@ -1817,21 +1934,25 @@ const Case = struct {
                 );
                 return error.TeaBuildFailed;
             }
-        };
+        }
 
-        // A `browser-direct` refusal is the lowering's, met while modules
-        // are lowered; under `--release` the build must stop there too, with
-        // the same report, and never go on to spell a runtime nothing
-        // rooted (it panicked doing so for a refused `Tea.element`).
-        if (!c.kind.isRelease() and std.mem.indexOf(u8, dir_path, "/bad/direct/") != null) {
+        // An enforcing build's refusal is a whole-program lowering's, met
+        // while modules are lowered, or the ownership checker's; under
+        // `--release` the build must stop there too, with the same report,
+        // and never go on to spell a runtime nothing rooted (it panicked
+        // doing so for a refused `Tea.element` on `browser-direct`).
+        // `--allow-debug`, as `run/`'s release pass has it: a fixture that
+        // reaches `Debug` is refused for that first under `--release`, which
+        // is `build/bad-release/`'s claim and not this one.
+        if (!c.kind.isRelease() and enforcing) {
             var rel: std.ArrayList([]const u8) = .empty;
-            try rel.appendSlice(c.arena, args.items[0..3]);
-            try rel.appendSlice(c.arena, &.{ "--out=out", "--release" });
+            try rel.appendSlice(c.arena, args.items[0..head_len]);
+            try rel.appendSlice(c.arena, &.{ "--out=out", "--release", "--allow-debug" });
             try rel.appendSlice(c.arena, sources.items);
             const r = try w.runWith(try c.argv(rel.items), .{ .raw_diagnostics = true, .timeout_ms = c.cfg.timeout_ms });
             if (r.exit_code != 1 or !std.mem.eql(u8, r.stderr, built.stderr) or w.exists("out")) {
                 detail(
-                    "{s}: under --release a browser-direct refusal must be the same refusal, nothing written; it exited {d}\n--- stderr ---\n{s}\n",
+                    "{s}: under --release an enforcing build's refusal must be the same refusal, nothing written; it exited {d}\n--- stderr ---\n{s}\n",
                     .{ c.fixture.name, r.exit_code, r.stderr },
                 );
                 return error.ReleaseRefusalDiffers;
@@ -2507,7 +2628,8 @@ const Case = struct {
     /// `browser-tea` and `browser-direct` builds, in the page's value-fuzz
     /// case (`Fixture.values`) and unless the fixture says the two differ
     /// (a `.tea-expected`); a `browser/tea/` page's development and release
-    /// builds, which must behave alike (backend.md §9).
+    /// builds, which must behave alike (backend.md §9) — in its page case,
+    /// and with messages as values in its value-fuzz case when it has one.
     ///
     /// Messages go as values only between two `--fuzz` builds
     /// (browser-direct.md §8.3, amended 2026-10-09): such a build keeps
@@ -2531,7 +2653,10 @@ const Case = struct {
             sides = .{ &.{tea_arg}, &.{platform_arg} };
         } else {
             const platform = c.fixture.platform orelse return null;
-            if (!std.mem.eql(u8, platform, "browser-tea") or pages[0] == null or pages[1] == null) return null;
+            if (!std.mem.eql(u8, platform, "browser-tea")) return null;
+            // A page case fuzzes the two pages it built; a value-fuzz case
+            // (a page with a `.fuzz-run-hash`) built none and builds its pair.
+            if (!c.fixture.values and (pages[0] == null or pages[1] == null)) return null;
             pair = .{ .a = pageOut(.dev), .b = pageOut(.release), .label_a = "development", .label_b = "release" };
             // The fixture's own platform: `platform/` when it has one.
             sides = .{ &.{platform_arg}, &.{ platform_arg, "--release", "--allow-debug" } };
@@ -2540,13 +2665,14 @@ const Case = struct {
         // Messages as values cost a page two more builds and a dump
         // (browser-direct.md §8.3, amended for S1): the gates send them on
         // every `browser/direct/` pair, as §8.3 requires from S1, and a
-        // `browser/tea/` pair only in `zig build fuzz`'s sweep.
+        // `browser/tea/` pair in its value-fuzz case, when the page has
+        // one, and in `zig build fuzz`'s sweep.
         const sweep = c.cfg.fuzz_seeds != null or c.cfg.fuzz_steps != null;
-        if (!c.fixture.differential and !sweep) return pair;
+        if (!c.fixture.differential and !c.fixture.values and !sweep) return pair;
         const flag = try fuzzFlag(c);
         // Without the flag a `browser/tea/` pair is the page case's own two
         // builds; a value-fuzz case built no pages, so it builds its pair.
-        if (!flag and !c.fixture.differential) return pair;
+        if (!flag and !c.fixture.differential and !c.fixture.values) return pair;
         for (sides, [_][]const u8{ "fuzz-a", "fuzz-b" }) |side, out| {
             var args: std.ArrayList([]const u8) = .empty;
             try args.appendSlice(c.arena, &.{"build"});
@@ -2595,7 +2721,7 @@ const Case = struct {
         return pair;
     }
 
-    /// A `browser/direct/` page's value-fuzz case (`Fixture.values`): the
+    /// A page's value-fuzz case (`Fixture.values`): the
     /// pair `fuzzPair` builds, fuzzed in one Node process, its record in
     /// the page's `.fuzz-run-hash` — a file of its own, since the page case
     /// writes `.run-hash` beside this one, in parallel.
@@ -2982,7 +3108,9 @@ const Case = struct {
     /// A fixture beside a `.platform` file is checked and dumped under each
     /// platform it names, one golden per platform (`X.browser-direct.ownership`):
     /// the entry protocol's verdicts are the build's platform's
-    /// (ownership-checker.md §20.2, §20.10).
+    /// (ownership-checker.md §20.2, §20.10). A token `<platform>+everywhere`
+    /// is that platform with the hidden `--ownership-everywhere` (§30.7),
+    /// its golden `X.<platform>+everywhere.ownership`.
     fn ownershipReport(c: Case) !void {
         const path = try c.oneSourceDir();
         if (c.goldenExists("platform")) {
@@ -2990,18 +3118,26 @@ const Case = struct {
             var names = std.mem.tokenizeAny(u8, text, " \t\r\n");
             var any = false;
             while (names.next()) |name| {
+                if (c.fixture.token) |only| if (!std.mem.eql(u8, name, only)) continue;
                 any = true;
-                const flag = try std.fmt.allocPrint(c.arena, "--platform={s}", .{name});
-                const checked = try c.compiler(&.{ "check", "--diagnostics=json", flag, path });
-                const r = try c.compiler(&.{ "dump", "--stage=ownership", flag, path });
+                // `<platform>+everywhere`: that platform with the hidden
+                // `--ownership-everywhere` (`ownership-checker.md` §30.7),
+                // which enforces as an in-place chain does.
+                const everywhere_suffix = "+everywhere";
+                const everywhere = std.mem.endsWith(u8, name, everywhere_suffix);
+                const platform = if (everywhere) name[0 .. name.len - everywhere_suffix.len] else name;
+                const flag = try std.fmt.allocPrint(c.arena, "--platform={s}", .{platform});
+                const flags: []const []const u8 = if (everywhere) &.{ flag, "--ownership-everywhere" } else &.{flag};
+                const checked = try c.compiler(try std.mem.concat(c.arena, []const u8, &.{ &.{ "check", "--diagnostics=json" }, flags, &.{path} }));
+                const r = try c.compiler(try std.mem.concat(c.arena, []const u8, &.{ &.{ "dump", "--stage=ownership" }, flags, &.{path} }));
                 try expectExit(0, r);
-                try c.ownershipCached(flag, path, checked);
+                try c.ownershipCached(flags, path, checked);
                 // `ownership-checker.md` §28.10, the dump against the build:
                 // on a platform that edits lists in place `check` fails
                 // exactly when the report has a rejected or pending list line,
                 // with the ownership checker's codes and no others, and
                 // elsewhere it is silent whatever the report says.
-                const enforces = std.mem.eql(u8, name, "browser-direct");
+                const enforces = everywhere or try chainInPlace(c.arena, platform);
                 // A limit the checker reached is an error too (§16.7).
                 const refused = enforces and (listRefusal(r.stdout) or std.mem.indexOf(u8, r.stdout, "\n  limit ") != null);
                 if (refused) {
@@ -3040,15 +3176,18 @@ const Case = struct {
     /// entry and its summary block (`ownership-checker.md` §28.4), the second
     /// installs them. Each must agree with the `--no-cache` check, exit code
     /// and diagnostics. The `.cached` file holds why the fixture needs it.
-    fn ownershipCached(c: Case, flag: []const u8, path: []const u8, checked: world.Result) !void {
+    fn ownershipCached(c: Case, flags: []const []const u8, path: []const u8, checked: world.Result) !void {
         if (!c.goldenExists("cached")) return;
         const project = try c.w.projectPath();
-        const name = std.fs.path.basename(flag);
+        // The platform flag's last part, and `+everywhere` after it with
+        // `--ownership-everywhere`: one directory per `.platform` token.
+        const name = try std.fmt.allocPrint(c.arena, "{s}{s}", .{ std.fs.path.basename(flags[0]), if (flags.len > 1) "+everywhere" else "" });
         const dir = try std.fmt.allocPrint(c.arena, "--cache-dir={s}/ownership-cache-{s}", .{ project, name });
         const trace = try std.fmt.allocPrint(c.arena, "ownership-trace-{s}.json", .{name});
         const profile = try std.fmt.allocPrint(c.arena, "--self-profile={s}/{s}", .{ project, trace });
         for ([_][]const u8{ "writes", "reads" }) |pass| {
-            const r = try c.w.runWith(&.{ "check", "--diagnostics=json", flag, dir, profile, path }, .{ .raw_diagnostics = true, .cwd = .inherit, .timeout_ms = c.cfg.timeout_ms });
+            const cmd = try std.mem.concat(c.arena, []const u8, &.{ &.{ "check", "--diagnostics=json" }, flags, &.{ dir, profile, path } });
+            const r = try c.w.runWith(cmd, .{ .raw_diagnostics = true, .cwd = .inherit, .timeout_ms = c.cfg.timeout_ms });
             if (r.exit_code != checked.exit_code or !std.mem.eql(u8, r.stderr, checked.stderr)) {
                 detail("{s}: the check that {s} the cache disagrees with --no-cache (exit {d}, not {d})\n--- stderr ---\n{s}\n", .{ c.fixture.name, pass, r.exit_code, checked.exit_code, r.stderr });
                 return error.CachedCheckDisagrees;

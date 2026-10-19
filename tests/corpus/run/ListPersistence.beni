@@ -23,7 +23,9 @@
 -- holder still reads: since ownership holds on every platform
 -- (`ownership-checker.md` §30), each write here takes an explicit
 -- `List.copy` of the old version first, and the version the copy came
--- from is checked again as it was. A prepend copies by itself (§25.2).
+-- from is checked again as it was. A prepend copies by itself (§25.2). The
+-- model is a record kept the same way, so each `model…` function changes a
+-- `Record.copy` of the version it is handed (§31.15).
 -- `check/bad/direct/ListPersistenceShared` is the same write without the
 -- copy, refused.
 --
@@ -74,28 +76,32 @@ empty = { start = 0, len = 0, items = Dict.empty }
 
 
 modelPush : Model, Int → Model
-modelPush m x = { m | len = m.len + 1, items = Dict.insert m.items (m.start + m.len) x }
+modelPush m x = { Record.copy m | len = m.len + 1, items = Dict.insert m.items (m.start + m.len) x }
 
 
 modelPrepend : Model, Int → Model
 modelPrepend m x =
-    { m | start = m.start - 1, len = m.len + 1, items = Dict.insert m.items (m.start - 1) x }
+    { Record.copy m
+        | start = m.start - 1
+        , len = m.len + 1
+        , items = Dict.insert m.items (m.start - 1) x
+    }
 
 
 modelDrop : Model, Int → Model
 modelDrop m k =
     d = min m.len (max 0 k)
-    { m | start = m.start + d, len = m.len - d }
+    { Record.copy m | start = m.start + d, len = m.len - d }
 
 
 modelPop : Model → Model
-modelPop m = { m | len = max 0 (m.len - 1) }
+modelPop m = { Record.copy m | len = max 0 (m.len - 1) }
 
 
 modelSet : Model, Int, Int → Model
 modelSet m i x =
     if 0 ≤ i && i < m.len then
-        { m | items = Dict.insert m.items (m.start + i) x }
+        { Record.copy m | items = Dict.insert m.items (m.start + i) x }
     else
         m
 

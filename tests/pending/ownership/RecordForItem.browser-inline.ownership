@@ -1,0 +1,9 @@
+module RecordForItem
+  27:15 update row: accepted param
+  41:5 entry RecordForItem.view model.rows[*]: rejected read-only: the runtime hands view the model to read only (§20.3) [copy]
+  summary relabel: π1 RW{label}; res π1
+  summary view: π1.rows RA, π1.rows[*] RW{label}; res ⟨render⟩ fresh1{lost}, ⟨render⟩⋆ ~π1.rows
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 2: accepted 1 (hoisted 0), pending 0, rejected 1 (copy 1, restructure 0); eager reads 0
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 2: accepted 1 (hoisted 0), pending 0, rejected 1 (copy 1, restructure 0); eager reads 0

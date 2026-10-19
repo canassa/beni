@@ -22,8 +22,8 @@ type alias Model =
     right : Int
 
 
-init : Model
-init = { left = 0, right = 0 }
+init : ⊤ → Model
+init ⊤ = { left = 0, right = 0 }
 
 
 update : Msg, Model → Model
@@ -69,4 +69,4 @@ runTask msgs loop =
 main : Node.Program
 main =
     Node.printLines
-        (List.foldl tasks { model = init, renders = [ Ssr.render (view init) ] } runTask).renders
+        (List.foldl tasks { model = init ⊤, renders = [ Ssr.render (view (init ⊤)) ] } runTask).renders

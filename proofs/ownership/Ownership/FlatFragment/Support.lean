@@ -16,10 +16,6 @@ namespace Ownership.FlatFragment.Support
 
 open InPlaceSemantics HeapProof Soundness
 
-inductive FlatAtom : Atom → Prop where
-  | int (n : Int) : FlatAtom (.int n)
-  | var (v : Var) : FlatAtom (.var v)
-
 /-- The integer primitives of the fragment: two atoms, which typing fixes to
 `Int`, an integer result, no heap effect and no recorded read. -/
 inductive ScalarOp : Prim → Prop where
@@ -42,16 +38,29 @@ theorem primitive_scalar_run {op : Prim} (sop : ScalarOp op) (ctx : Context) (si
     (primitive ctx site op [x, y] later).run before = .ok (.scalar, before) := by
   cases sop <;> (unfold primitive; rfl)
 
-/-- The planned expression fragment. Ordinary accepted typing fixes the
-literal elements and the push arguments to Int and List Int. -/
+/-- The expression fragment. Every operand is any atom; accepted typing fixes
+each to an integer, a variable or a variable under a field path, the literal
+elements and the push item to `Int`, the length and push receivers to
+`List Int`. The push receiver may be a field path: a write through a field is
+in the fragment. -/
 inductive FlatANF0 : Expr → Prop where
-  | atom : FlatAtom a → FlatANF0 (.atom a)
+  | atom : FlatANF0 (.atom a)
   | letE : FlatANF0 rhs → FlatANF0 rest → FlatANF0 (.letE v rhs rest)
-  | literal : (∀ a ∈ args, FlatAtom a) → FlatANF0 (.prim (.literal .int) args)
-  | push : FlatAtom receiver → FlatAtom item → FlatANF0 (.prim .push [receiver, item])
-  | length : FlatAtom receiver → FlatANF0 (.prim .length [receiver])
-  | shared : FlatAtom value → FlatANF0 (.prim .shared [value])
-  | scalar : ScalarOp op → FlatAtom a → FlatAtom b → FlatANF0 (.prim op [a, b])
+  | literal : FlatANF0 (.prim (.literal .int) args)
+  | push : FlatANF0 (.prim .push [receiver, item])
+  | length : FlatANF0 (.prim .length [receiver])
+  | shared : FlatANF0 (.prim .shared [value])
+  | scalar : ScalarOp op → FlatANF0 (.prim op [a, b])
+  | record : FlatANF0 (.prim .record args)
+
+theorem lookup_option_of_success {α : Type} [Inhabited α] {env : Env α} {key : Var} {value : α}
+    (run : lookup env key = .ok value) :
+    env.lookup key = some value := by
+  cases found : env.lookup key with
+  | none => simp [lookup, found] at run
+  | some actual =>
+    have equal : actual = value := by simpa [lookup, found] using run
+    exact congrArg some equal
 
 /-- The existing demand soundness theorem states the live and operand frame
 conditions. This lemma also retains the recorded-escape branch. -/
@@ -474,20 +483,26 @@ namespace Ownership.FlatFragment.State
 
 open InPlaceSemantics HeapProof Soundness
 
-/-- These are the only binding types in the first flat fragment. -/
+/-- The binding types of the flat fragment: integers, integer lists and
+records of them, nested. -/
 inductive FlatType : Ty → Prop where
   | int : FlatType .int
   | listInt : FlatType (.list .int)
+  | record (ts : List Ty) : (∀ t ∈ ts, FlatType t) → FlatType (.record ts)
 
 /-- List descriptions retain bottom or scalar elements. Dead aliases keep
 their old element description after a write. The relation does not require
-uniqueness of a root or prohibit sharing between runtime bindings. -/
+uniqueness of a root or prohibit sharing between runtime bindings. A record
+is described field by field. -/
 inductive FlatAbstract : Ty → Abstract → Prop where
   | int : FlatAbstract .int .scalar
   | listBottom (roots : List Origin) (certificate : Certificate) :
       FlatAbstract (.list .int) (.list roots .bottom certificate)
   | listScalar (roots : List Origin) (certificate : Certificate) :
       FlatAbstract (.list .int) (.list roots .scalar certificate)
+  | record (ts : List Ty) (as : List Abstract) : ts.length = as.length →
+      (∀ (i : Nat) (t : Ty) (a : Abstract), ts[i]? = some t → as[i]? = some a → FlatAbstract t a) →
+      FlatAbstract (.record ts) (.record as)
 
 /-- An integer primitive types only at two `Int` operands, and its result is `Int`. -/
 theorem primType_scalar_success {op : Prim} {tyA tyB type : Ty} (sop : Ownership.FlatFragment.Support.ScalarOp op)
@@ -839,83 +854,378 @@ result or final agreement premise enters these bookkeeping lemmas. -/
 
 namespace Ownership.FlatFragment.Liveness
 
-open Ownership.FlatFragment.Support Ownership.FlatFragment.NamingFacts
-
-def FlatLive (live : Live) : Prop :=
-  ∀ name path, (name, path) ∈ live → path = []
-
-theorem flatLive_union (first : FlatLive left) (second : FlatLive right) :
-    FlatLive (union left right) := by
-  intro name path member
-  rcases mem_union_cases left right (name, path) member with old | added
-  · exact first name path old
-  · exact second name path added
-
-theorem flatLive_removeVars (names : List Var) (flat : FlatLive live) :
-    FlatLive (removeVars names live) := by
-  intro name path member
-  exact flat name path (List.mem_filter.mp member).1
-
-theorem flatAtom_uses (flat : FlatAtom atom) : FlatLive (atomUses atom) := by
-  cases flat with
-  | int => simp [FlatLive, atomUses]
-  | var boundName =>
-    intro name path member
-    have fields : name = boundName ∧ path = [] := by simpa [atomUses] using member
-    exact fields.2
-
-theorem flatAtoms_uses (flat : ∀ atom ∈ atoms, FlatAtom atom) :
-    FlatLive (atomsUses atoms) := by
-  intro name path member
-  obtain ⟨atom, present, use⟩ := List.mem_flatMap.mp member
-  exact flatAtom_uses (flat atom present) name path use
-
-theorem flatExpr_uses (flat : FlatANF0 expression) : FlatLive (uses expression) := by
-  induction flat with
-  | atom atomFlat => simpa [uses, usesArms] using flatAtom_uses atomFlat
-  | letE rhsFlat restFlat rhsIH restIH =>
-    simpa only [uses, usesArms] using flatLive_union rhsIH (flatLive_removeVars _ restIH)
-  | literal atomsFlat => simpa [uses, usesArms] using flatAtoms_uses atomsFlat
-  | push receiverFlat itemFlat =>
-    apply flatAtoms_uses
-    intro atom member
-    simp only [List.mem_cons, List.not_mem_nil, or_false] at member
-    rcases member with rfl | rfl
-    · exact receiverFlat
-    · exact itemFlat
-  | length receiverFlat =>
-    simpa [uses, usesArms, atomsUses] using flatAtom_uses receiverFlat
-  | shared valueFlat =>
-    simpa [uses, usesArms, atomsUses] using flatAtom_uses valueFlat
-  | scalar sop aFlat bFlat =>
-    cases sop <;> (
-      apply flatAtoms_uses
-      intro atom member
-      simp only [List.mem_cons, List.not_mem_nil, or_false] at member
-      rcases member with rfl | rfl
-      · exact aFlat
-      · exact bFlat)
+open Ownership.FlatFragment.Support
 
 /-- The uses of an integer primitive are its operands' uses. -/
 theorem uses_scalar {op : Prim} {a b : Atom} (sop : ScalarOp op) :
     uses (.prim op [a, b]) = atomsUses [a, b] := by
   cases sop <;> rfl
 
+theorem uses_record (args : List Atom) : uses (.prim .record args) = atomsUses args := rfl
+
 theorem flatExpr_default_uses (flat : FlatANF0 expression) :
     usesWith ({} : Config) expression = uses expression := by
   induction flat with
-  | scalar sop _ _ => cases sop <;> simp [usesWith, uses, usesArms, Config.has]
-  | atom _ => simp_all [usesWith, uses, usesArms, Config.has]
+  | scalar sop => cases sop <;> simp [usesWith, uses, usesArms, Config.has]
+  | atom => simp_all [usesWith, uses, usesArms, Config.has]
   | letE _ _ _ _ => simp_all [usesWith, uses, usesArms, Config.has]
-  | literal _ => simp_all [usesWith, uses, usesArms, Config.has]
-  | push _ _ => simp_all [usesWith, uses, usesArms, Config.has]
-  | length _ => simp_all [usesWith, uses, usesArms, Config.has]
-  | shared _ => simp_all [usesWith, uses, usesArms, Config.has]
-
-theorem flat_rhs_continuation
-    (flat : FlatANF0 rest) (outer : FlatLive after) :
-    FlatLive (union after (removeVars [binder] (usesWith ({} : Config) rest))) := by
-  rw [flatExpr_default_uses flat]
-  exact flatLive_union outer (flatLive_removeVars _ (flatExpr_uses flat))
+  | literal => simp_all [usesWith, uses, usesArms, Config.has]
+  | push => simp_all [usesWith, uses, usesArms, Config.has]
+  | length => simp_all [usesWith, uses, usesArms, Config.has]
+  | shared => simp_all [usesWith, uses, usesArms, Config.has]
+  | record => simp_all [usesWith, uses, usesArms, Config.has]
 
 end Ownership.FlatFragment.Liveness
+
+/-! paths through records: the variable and field path an atom reads, the type
+at a field path, and the runtime and checker evaluation of an atom from its
+root binding. No theorem below uses a pinned soundness obligation. -/
+
+namespace Ownership.FlatFragment.Fields
+
+open InPlaceSemantics HeapProof Soundness Ownership.FlatFragment.Support Ownership.FlatFragment.State
+
+/-! ### Paths -/
+
+/-- The variable and the field path an atom reads; an integer reads none. -/
+def atomRoot : Atom → Option (Var × Path)
+  | .int _ => none
+  | .var v => some (v, [])
+  | .field a i => (atomRoot a).map fun (v, p) => (v, p ++ [.field i])
+
+/-- The type at a field path. -/
+def tyAt : Ty → Path → Option Ty
+  | t, [] => some t
+  | .record ts, .field i :: rest => match ts[i]? with
+    | some t => tyAt t rest
+    | none => none
+  | _, _ => none
+
+theorem atomRoot_field {a : Atom} {i : Nat} {k : Var} {p : Path}
+    (root : atomRoot (.field a i) = some (k, p)) :
+    ∃ p0, atomRoot a = some (k, p0) ∧ p = p0 ++ [.field i] := by
+  simp only [atomRoot, Option.map_eq_some_iff] at root
+  obtain ⟨⟨v', p'⟩, inner, equal⟩ := root
+  simp only [Prod.mk.injEq] at equal
+  obtain ⟨rfl, rfl⟩ := equal
+  exact ⟨p', inner, rfl⟩
+
+theorem atomUses_of_root {a : Atom} {v : Var} {p : Path} (root : atomRoot a = some (v, p)) :
+    atomUses a = [(v, p)] := by
+  induction a generalizing v p with
+  | int n => simp [atomRoot] at root
+  | var x =>
+    simp [atomRoot] at root
+    obtain ⟨rfl, rfl⟩ := root
+    rfl
+  | field a i ih =>
+    obtain ⟨p0, inner, rfl⟩ := atomRoot_field root
+    simp [atomUses, ih inner]
+
+theorem atomType_field {tenv : Env Ty} {a : Atom} {i : Nat} {ty : Ty}
+    (typed : atomType tenv (.field a i) = .ok ty) :
+    ∃ fs, atomType tenv a = .ok (.record fs) ∧ fs[i]? = some ty := by
+  unfold atomType at typed
+  cases h : atomType tenv a with
+  | error m => rw [h] at typed; simp [Bind.bind, Except.bind] at typed
+  | ok t =>
+    cases t <;> simp [h] at typed
+    rename_i fs
+    refine ⟨fs, rfl, ?_⟩
+    cases h' : fs[i]? with
+    | none => simp [h', Option.toExcept] at typed
+    | some u =>
+      simp [h', Option.toExcept] at typed
+      exact congrArg some typed
+
+/-- A typed atom without a root is an integer literal. -/
+theorem atom_int_of_root_none {tenv : Env Ty} {a : Atom} {ty : Ty}
+    (typed : atomType tenv a = .ok ty) (root : atomRoot a = none) :
+    ∃ n, a = .int n ∧ ty = .int := by
+  induction a generalizing ty with
+  | int n =>
+    change Except.ok Ty.int = Except.ok ty at typed
+    cases Except.ok.inj typed
+    exact ⟨n, rfl, rfl⟩
+  | var v => simp [atomRoot] at root
+  | field a i ih =>
+    simp only [atomRoot, Option.map_eq_none_iff] at root
+    obtain ⟨fs, inner, _⟩ := atomType_field typed
+    obtain ⟨n, _, bad⟩ := ih inner root
+    cases bad
+
+theorem tyAt_snoc {t u : Ty} {p : Path} {fs : List Ty} {i : Nat}
+    (at_p : tyAt t p = some (.record fs)) (field : fs[i]? = some u) :
+    tyAt t (p ++ [.field i]) = some u := by
+  induction p generalizing t with
+  | nil =>
+    simp [tyAt] at at_p
+    subst at_p
+    simp [tyAt, field]
+  | cons step rest ih =>
+    cases step <;> cases t <;> simp [tyAt] at at_p ⊢
+    rename_i i' ts
+    cases h : ts[i']? with
+    | none => simp [h] at at_p
+    | some t' =>
+      simp [h] at at_p
+      exact ih at_p
+
+theorem tyAt_snoc_inv {t u : Ty} {p : Path} {i : Nat}
+    (at_snoc : tyAt t (p ++ [.field i]) = some u) :
+    ∃ fs, tyAt t p = some (.record fs) ∧ fs[i]? = some u := by
+  induction p generalizing t with
+  | nil =>
+    cases t <;> simp [tyAt] at at_snoc
+    rename_i ts
+    cases h : ts[i]? with
+    | none => simp [h] at at_snoc
+    | some t' =>
+      simp [h] at at_snoc
+      subst at_snoc
+      exact ⟨ts, rfl, h⟩
+  | cons step rest ih =>
+    cases step <;> cases t <;> simp [tyAt] at at_snoc ⊢
+    rename_i i' ts
+    cases h : ts[i']? with
+    | none => simp [h] at at_snoc
+    | some t' =>
+      simp [h] at at_snoc
+      exact ih at_snoc
+
+/-- Typing an atom with a root: the variable's type has the atom's type at the path. -/
+theorem atom_type_of_root {tenv : Env Ty} {a : Atom} {ty : Ty} {k : Var} {p : Path}
+    (typed : atomType tenv a = .ok ty) (root : atomRoot a = some (k, p)) :
+    ∃ tk, tenv.lookup k = some tk ∧ tyAt tk p = some ty := by
+  induction a generalizing ty k p with
+  | int n => simp [atomRoot] at root
+  | var v =>
+    simp [atomRoot] at root
+    obtain ⟨rfl, rfl⟩ := root
+    have typeRun : lookup tenv v = .ok ty := by simpa only [atomType] using typed
+    exact ⟨ty, lookup_option_of_success typeRun, rfl⟩
+  | field a i ih =>
+    obtain ⟨p0, inner, rfl⟩ := atomRoot_field root
+    obtain ⟨fs, innerTyped, field⟩ := atomType_field typed
+    obtain ⟨tk, declared, at_p0⟩ := ih innerTyped inner
+    exact ⟨tk, declared, tyAt_snoc at_p0 field⟩
+
+/-! ### Projections -/
+
+theorem projectObs_snoc_inv {o o' : Observation} {p : Path} {i : Nat}
+    (projected : projectObs o (p ++ [.field i]) = some o') :
+    ∃ os, projectObs o p = some (.record os) ∧ os[i]? = some o' := by
+  induction p generalizing o with
+  | nil =>
+    cases o <;> simp [projectObs] at projected
+    rename_i os
+    cases h : os[i]? with
+    | none => simp [h] at projected
+    | some x =>
+      simp [h] at projected
+      subst projected
+      exact ⟨os, rfl, h⟩
+  | cons step rest ih =>
+    cases step <;> cases o <;> simp [projectObs] at projected ⊢
+    rename_i i' os
+    cases h : os[i']? with
+    | none => simp [h] at projected
+    | some x =>
+      simp [h] at projected
+      exact ih projected
+
+theorem projectVal_snoc_inv {w w' : Value} {p : Path} {i : Nat}
+    (projected : projectVal w (p ++ [.field i]) = some w') :
+    ∃ ws, projectVal w p = some (.record ws) ∧ ws[i]? = some w' := by
+  induction p generalizing w with
+  | nil =>
+    cases w <;> simp [projectVal] at projected
+    rename_i ws
+    cases h : ws[i]? with
+    | none => simp [h] at projected
+    | some x =>
+      simp [h] at projected
+      subst projected
+      exact ⟨ws, rfl, h⟩
+  | cons step rest ih =>
+    cases step <;> cases w <;> simp [projectVal] at projected ⊢
+    rename_i i' ws
+    cases h : ws[i']? with
+    | none => simp [h] at projected
+    | some x =>
+      simp [h] at projected
+      exact ih projected
+
+theorem projectObs_snoc {o o' : Observation} {os : List Observation} {p : Path} {i : Nat}
+    (projected : projectObs o p = some (.record os)) (field : os[i]? = some o') :
+    projectObs o (p ++ [.field i]) = some o' := by
+  induction p generalizing o with
+  | nil =>
+    simp [projectObs] at projected
+    subst projected
+    simp [projectObs, field]
+  | cons step rest ih =>
+    cases step <;> cases o <;> simp [projectObs] at projected ⊢
+    rename_i i' os'
+    cases h : os'[i']? with
+    | none => simp [h] at projected
+    | some x =>
+      simp [h] at projected
+      exact ih projected
+
+theorem projectVal_snoc {w w' : Value} {ws : List Value} {p : Path} {i : Nat}
+    (projected : projectVal w p = some (.record ws)) (field : ws[i]? = some w') :
+    projectVal w (p ++ [.field i]) = some w' := by
+  induction p generalizing w with
+  | nil =>
+    simp [projectVal] at projected
+    subst projected
+    simp [projectVal, field]
+  | cons step rest ih =>
+    cases step <;> cases w <;> simp [projectVal] at projected ⊢
+    rename_i i' ws'
+    cases h : ws'[i']? with
+    | none => simp [h] at projected
+    | some x =>
+      simp [h] at projected
+      exact ih projected
+
+/-! ### Atom evaluation by root and path -/
+
+theorem lookup_ok_of_option {α : Type} [Inhabited α] {env : Env α} {key : Var} {value : α}
+    (found : env.lookup key = some value) : lookup env key = .ok value := by
+  simp [lookup, found]
+
+theorem value_atom_of_root {renv : Env Observation} {a : Atom} {k : Var} {p : Path}
+    {o o' : Observation}
+    (root : atomRoot a = some (k, p)) (found : renv.lookup k = some o)
+    (projected : projectObs o p = some o') :
+    ValueSemantics.atom renv a = .ok o' := by
+  induction a generalizing k p o' with
+  | int n => simp [atomRoot] at root
+  | var v =>
+    simp [atomRoot] at root
+    obtain ⟨rfl, rfl⟩ := root
+    simp [projectObs] at projected
+    subst projected
+    simp [ValueSemantics.atom, lookup, found]
+  | field a i ih =>
+    obtain ⟨p0, inner, rfl⟩ := atomRoot_field root
+    obtain ⟨os, innerProjected, at_i⟩ := projectObs_snoc_inv projected
+    have run := ih inner found innerProjected
+    simp [ValueSemantics.atom, run, at_i, Option.toExcept]
+
+theorem heap_atom_of_root {renv : Env Value} {a : Atom} {k : Var} {p : Path} {w w' : Value}
+    (root : atomRoot a = some (k, p)) (found : renv.lookup k = some w)
+    (projected : projectVal w p = some w') :
+    InPlaceSemantics.atom renv a = .ok w' := by
+  induction a generalizing k p w' with
+  | int n => simp [atomRoot] at root
+  | var v =>
+    simp [atomRoot] at root
+    obtain ⟨rfl, rfl⟩ := root
+    simp [projectVal] at projected
+    subst projected
+    simp [InPlaceSemantics.atom, lookup, found]
+  | field a i ih =>
+    obtain ⟨p0, inner, rfl⟩ := atomRoot_field root
+    obtain ⟨ws, innerProjected, at_i⟩ := projectVal_snoc_inv projected
+    have run := ih inner found innerProjected
+    simp [InPlaceSemantics.atom, run, at_i, Option.toExcept]
+
+theorem flatType_tyAt {tk ty : Ty} {p : Path} (flat : FlatType tk) (at_p : tyAt tk p = some ty) :
+    FlatType ty := by
+  induction p generalizing tk with
+  | nil =>
+    simp [tyAt] at at_p
+    subst at_p
+    exact flat
+  | cons step rest ih =>
+    cases step <;> cases tk <;> simp [tyAt] at at_p
+    rename_i i' ts
+    cases h : ts[i']? with
+    | none => simp [h] at at_p
+    | some t' =>
+      simp [h] at at_p
+      cases flat with
+      | record _ fields => exact ih (fields t' (List.mem_of_getElem? h)) at_p
+
+theorem flatAbstract_record {ts : List Ty} {a : Abstract} (shape : FlatAbstract (.record ts) a) :
+    ∃ as, a = .record as ∧ ts.length = as.length ∧
+      ∀ (i : Nat) (t : Ty) (a' : Abstract), ts[i]? = some t → as[i]? = some a' → FlatAbstract t a' := by
+  cases shape with
+  | record _ as len fields => exact ⟨as, rfl, len, fields⟩
+
+theorem index_of_same_length {α β : Type} {xs : List α} {ys : List β} {i : Nat} {x : α}
+    (len : xs.length = ys.length) (at_i : xs[i]? = some x) :
+    ∃ y, ys[i]? = some y := by
+  have lt : i < ys.length := len ▸ (List.getElem?_eq_some_iff.mp at_i).1
+  exact ⟨ys[i], List.getElem?_eq_getElem lt⟩
+
+theorem flatAbstract_record_field {ts : List Ty} {as : List Abstract} {i : Nat} {t : Ty}
+    (len : ts.length = as.length)
+    (fields : ∀ (i : Nat) (t : Ty) (a : Abstract), ts[i]? = some t → as[i]? = some a → FlatAbstract t a)
+    (at_i : ts[i]? = some t) :
+    ∃ a', as[i]? = some a' ∧ FlatAbstract t a' := by
+  obtain ⟨a', as_i⟩ := index_of_same_length len at_i
+  exact ⟨a', as_i, fields i t a' at_i as_i⟩
+
+theorem atPath_snoc_of_tyAt {tk ty : Ty} {a : Abstract} {p : Path} {i : Nat}
+    (shape : FlatAbstract tk a) (at_p : tyAt tk (p ++ [.field i]) = some ty) :
+    a.atPath (p ++ [.field i]) = (a.atPath p).atPath [.field i] := by
+  induction p generalizing tk a with
+  | nil => simp [Abstract.atPath]
+  | cons step rest ih =>
+    cases step <;> cases tk <;> simp [tyAt] at at_p
+    rename_i i' ts
+    cases h : ts[i']? with
+    | none => simp [h] at at_p
+    | some t' =>
+      simp [h] at at_p
+      obtain ⟨as, rfl, len, fields⟩ := flatAbstract_record shape
+      obtain ⟨a', at_i, shape'⟩ := flatAbstract_record_field len fields h
+      simp only [List.cons_append, Abstract.atPath, at_i, Option.getD_some]
+      exact ih shape' at_p
+
+theorem flatAbstract_atPath {tk ty : Ty} {a : Abstract} {p : Path}
+    (shape : FlatAbstract tk a) (at_p : tyAt tk p = some ty) : FlatAbstract ty (a.atPath p) := by
+  induction p generalizing tk a with
+  | nil =>
+    simp [tyAt] at at_p
+    subst at_p
+    simpa [Abstract.atPath] using shape
+  | cons step rest ih =>
+    cases step <;> cases tk <;> simp [tyAt] at at_p
+    rename_i i' ts
+    cases h : ts[i']? with
+    | none => simp [h] at at_p
+    | some t' =>
+      simp [h] at at_p
+      obtain ⟨as, rfl, len, fields⟩ := flatAbstract_record shape
+      obtain ⟨a', at_i, shape'⟩ := flatAbstract_record_field len fields h
+      simp only [Abstract.atPath, at_i, Option.getD_some]
+      exact ih shape' at_p
+
+theorem abstractAtom_of_root {aenv : Env Abstract} {a : Atom} {k : Var} {p : Path}
+    {a0 : Abstract} {tk ty : Ty}
+    (root : atomRoot a = some (k, p)) (found : aenv.lookup k = some a0)
+    (shape : FlatAbstract tk a0) (at_p : tyAt tk p = some ty) :
+    abstractAtom aenv a = .ok (a0.atPath p) := by
+  induction a generalizing k p ty with
+  | int n => simp [atomRoot] at root
+  | var v =>
+    simp [atomRoot] at root
+    obtain ⟨rfl, rfl⟩ := root
+    simp [abstractAtom, lookup, found, Abstract.atPath]
+  | field a i ih =>
+    obtain ⟨p0, inner, rfl⟩ := atomRoot_field root
+    obtain ⟨fs, at_p0, at_i⟩ := tyAt_snoc_inv at_p
+    have run := ih inner found at_p0
+    have shape0 := flatAbstract_atPath shape at_p0
+    obtain ⟨as, eq, len, fields⟩ := flatAbstract_record shape0
+    obtain ⟨a', as_i, _⟩ := flatAbstract_record_field len fields at_i
+    rw [atPath_snoc_of_tyAt shape at_p, eq]
+    rw [eq] at run
+    simp [abstractAtom, run, as_i, Option.toExcept, Abstract.atPath]
+
+end Ownership.FlatFragment.Fields

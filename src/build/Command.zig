@@ -132,6 +132,7 @@ pub fn run(gpa: Allocator, io: Io, stdout: *Io.Writer, stderr: *Io.Writer, optio
         .release = build.release,
         .allow_debug = build.allow_debug,
         .schema_library = build.schema_library,
+        .schema_shapes = build.schema_shapes,
         .fuzz = build.fuzz,
         .source_maps = build.source_maps,
     }) catch |err| switch (err) {

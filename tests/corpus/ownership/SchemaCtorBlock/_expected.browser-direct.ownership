@@ -1,11 +1,11 @@
 module Main
   29:51 call Trees.grow <call>#Branch.0.children: accepted fresh (Trees.grow writes π1#Branch.0.children)
   summary count: π1 R, π1#Branch.0.children R
-  summary view: res ⟨render⟩ fresh1{lost}
+  summary view: res ⟨render⟩ fresh1{lost}r{lost}
   demands 1: accepted 1 (fresh 1, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
 module Trees
   32:13 List.push r.children: accepted param
   summary children: π1 R, π1#Branch.0.children RA; res fresh1 π1#Branch.0.children
-  summary grow: π1 R, π1#Branch.0.children RAW, π1#Branch.0.children[*] A; res [*] ~π1#Branch.0.children[*], fresh1 π1#Branch.0.children
+  summary grow: π1 R, π1#Branch.0.children RAW, π1#Branch.0.children[*] A, π1#Leaf.0 R; res [*] ~π1#Branch.0.children[*], [*]#Leaf.0 ~fresh501◦ π1#Leaf.0, fresh1r{excl π1#Leaf.0} π1#Branch.0.children
   demands 1: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
 total 2: accepted 2 (fresh 1, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0

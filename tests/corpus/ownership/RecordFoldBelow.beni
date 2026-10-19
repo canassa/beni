@@ -1,0 +1,75 @@
+-- ownership: what a fold's callback returns of records below its answer
+-- (`ownership-checker.md` §31.5). `List.foldl` hands the callback what it
+-- returned before, so every record object the answer holds must be one the
+-- caller owns, not only the answer's own. `tupleFold`'s step returns its
+-- update twice, at `.0` and inside `.1`; `histFold`'s holds `cur` in `hist`
+-- too: the next step writes the object `hist` keeps, rejected `supply`.
+-- `wrapFold`'s step returns its update below a new record, owned:
+-- accepted; so does `rewrap`'s, the record it was handed at `.a`.
+-- `twinFold`'s returns its update at `.a` and `.b`: rejected.
+type alias D =
+    tag : String
+    count : Int
+
+
+type alias Acc =
+    cur : D
+    hist : List D
+
+
+type alias W =
+    a : D
+
+
+bumpKeep : Int, Acc → Acc
+bumpKeep n acc =
+    c = acc.cur
+    r = { c | count = c.count + n }
+    { acc | cur = r, hist = List.push acc.hist r }
+
+
+pub histFold : List Int, D → Acc
+histFold ns d = List.foldl ns { cur = d, hist = [] } λn a → bumpKeep n a
+
+
+step : Int, D × List D → D × List D
+step n ( d, hist ) =
+    r = { d | count = d.count + n }
+    ( r, List.push hist r )
+
+
+pub tupleFold : List Int, D → D × List D
+tupleFold ns d = List.foldl ns ( d, [] ) λn t → step n t
+
+
+wrapped : Int, W → W
+wrapped n w =
+    x = w.a
+    { a = { x | count = x.count + n } }
+
+
+pub wrapFold : List Int, W → W
+wrapFold ns w = List.foldl ns w λn v → wrapped n v
+
+
+type alias Two =
+    a : D
+    b : D
+
+
+bump : Int, D → D
+bump n d = { d | count = d.count + n }
+
+
+pub rewrap : List Int, W → W
+rewrap ns w = List.foldl ns w λn v → { a = bump n v.a }
+
+
+twin : Int, Two → Two
+twin n v =
+    r = bump n v.a
+    { a = r, b = r }
+
+
+pub twinFold : List Int, Two → Two
+twinFold ns t = List.foldl ns t λn v → twin n v

@@ -1,0 +1,57 @@
+-- An arm's `let` that only its markup reads is computed once per choice
+-- of the arm (§5.4, §5.5; S4's amendment, item 4, as built): with the
+-- branch's value, whose read set holds the arm's, so a message that writes
+-- what it reads computes it once — however many of the arm's holes read
+-- it — and one that writes nothing the branch reads computes it not at
+-- all. It used to be computed again by every group of the arm that read it.
+import Html exposing (Html)
+import Tea
+
+
+type Msg
+    = Add
+    | Tick
+    | Toggle
+
+
+type alias Model =
+    items : List Int
+    ticks : Int
+    open : Bool
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Add →
+            { model | items = [ …model.items, List.length model.items ] }
+
+        Tick →
+            { model | ticks = model.ticks + 1 }
+
+        Toggle →
+            { model | open = not model.open }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="add" onClick={Add}>add</button>
+        <button id="tick" onClick={Tick}>tick {model.ticks}</button>
+        <button id="toggle" onClick={Toggle}>toggle</button>
+        {if model.open then
+            total = Debug.log "total" (List.sum model.items)
+            <p><b>{total}</b><i>{total + 1}</i></p>
+         else
+            <p>closed</p>
+        }
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.sandbox
+        { init = λ⊤ → { items = [ 1, 2 ], ticks = 0, open = True }
+        , update = update
+        , view = view
+        }

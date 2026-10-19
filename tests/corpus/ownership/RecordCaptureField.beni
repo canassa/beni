@@ -1,0 +1,58 @@
+-- ownership: a command's closure that captures a field path of the model
+-- reads it when it is made (`ownership-checker.md` §31.6): `Save` keeps the
+-- form's name, a string, and not the form, so `Type`'s later write of
+-- `model.form` at the entry is accepted, and the capture is one eager read.
+-- `RecordCapture` is the same program with a command that keeps the model
+-- whole.
+import Browser
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+
+
+type alias Form =
+    name : String
+    count : Int
+
+
+type alias Model =
+    form : Form
+    total : Int
+
+
+type Msg
+    = Save
+    | Type String
+    | Saved String
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        Save →
+            ( model, Cmd.perform λsend → send (Saved model.form.name) )
+
+        Type n →
+            form = model.form
+            ( { model | form = { form | name = n } }, Cmd.none )
+
+        Saved _ →
+            ( model, Cmd.none )
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button onClick={Save}>save</button>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( { form = { name = "", count = 0 }, total = 0 }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

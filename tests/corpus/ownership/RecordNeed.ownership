@@ -1,0 +1,18 @@
+module RecordNeed
+  29:5 update q: accepted call
+  35:5 update q: accepted call
+  39:8 update <lambda>: rejected need: RecordNeed.mod writes a record that <lambda> returns, and it may return one it does not own [copy]
+  43:10 update <lambda>: rejected need: RecordNeed.mod writes a record that <lambda> returns, and it may return one it does not own [copy]
+  47:10 update <lambda>: rejected need: RecordNeed.modQ writes a record that <lambda> returns, and it may return one it does not own [copy]
+  51:8 update <lambda>: rejected need: RecordNeed.modQ writes a record that <lambda> returns, and it may return one it does not own [copy]
+  summary mod: π1 R; res cb1◦r{excl cb1}; π1 calls ≤1, need owned record
+  summary modQ: π1 R; res .s cb1.s{excl cb1.s}, cb1◦r{excl cb1}; π1 calls ≤1, need owned record
+  summary c4: res shared(RecordNeed.top)◦
+  summary c5: π1 R; res .0 π1◦, .1 π1
+  summary h1: π1 RA, π1.s A; res .0 π1◦, .0.s π1.s, .1 π1
+  summary h2: res .s shared(RecordNeed.topQ).s shared(RecordNeed.topQ).s, shared(RecordNeed.topQ)◦
+  summary fresh: res fresh501◦
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 6: accepted 2, pending 0, rejected 4 (copy 4, restructure 0); hoisted 0, eager reads 0
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 6: accepted 2, pending 0, rejected 4 (copy 4, restructure 0); hoisted 0, eager reads 0

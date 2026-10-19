@@ -1,7 +1,10 @@
 --! A record handed to the host by `leak`, which the walk reaches before
 --! `update`, whose record update spreads it. Neither has an argument until
 --! `demo`'s calls are walked, so both bodies are walked again in the same
---! later sweep: `leak`'s first, where the record escapes.
+--! later sweep: `leak`'s first, where the record escapes. The update writes
+--! a top-level record the host holds, which `ownership-checker.md` §31.4 refuses
+--! (reported, until R4; then this is a refusal and `SpecializeEscapeThenCopy`
+--! the program that passes).
 
 import Js
 

@@ -1,0 +1,3 @@
+-- browser-tea already installs the scheduler's host turn.
+pub install : ⊤ → ⊤
+install ⊤ = ⊤

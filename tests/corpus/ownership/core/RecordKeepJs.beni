@@ -1,0 +1,104 @@
+-- ownership (core): a record a callee keeps after it writes it
+-- (`ownership-checker.md` §31.4 item 2, §31.5). `keepAfter` writes its
+-- record, then hands the host the record it made: the record's object is
+-- kept, whole. `twice`'s second call writes what the first kept, rejected
+-- `escaped`; so is the fold's, at each step after the first (`folded`,
+-- `foldedField`, whose callback also hands the host a field). `keepInner`
+-- hands the host a field that is a record; `List.foldl` keeps it through
+-- its callback, so `afterInner`'s write of it is rejected `escaped` too, and
+-- `afterCount`'s, whose field holds no list: an object kept alone.
+-- `keepScope`, the Tea drivers' shape, keeps a field that is no record, and
+-- the fold's write stays accepted.
+import Js
+
+
+type alias D =
+    scope : Js.Value
+    count : Int
+
+
+type alias O =
+    inner : D
+    n : Int
+
+
+keepAfter : Int, D → D
+keepAfter n d =
+    r = { d | count = d.count + n }
+    Js.set (Js.global "globalThis") "all" (Js.from r)
+    r
+
+
+keepBoth : Int, D → D
+keepBoth n d =
+    Js.set (Js.global "globalThis") "scope" d.scope
+    r = { d | count = d.count + n }
+    Js.set (Js.global "globalThis") "all" (Js.from r)
+    r
+
+
+keepScope : Int, D → D
+keepScope n d =
+    Js.set (Js.global "globalThis") "scope" d.scope
+    { d | count = d.count + n }
+
+
+pub twice : D → D
+twice d =
+    x = keepAfter 1 d
+    keepAfter 2 x
+
+
+pub folded : List Int, D → D
+folded ns d = List.foldl ns d λn x → keepAfter n x
+
+
+pub foldedField : List Int, D → D
+foldedField ns d = List.foldl ns d λn x → keepBoth n x
+
+
+pub scoped : List Int, D → D
+scoped ns d = List.foldl ns d λn x → keepScope n x
+
+
+keepInner : Int, O → O
+keepInner k o =
+    Js.set (Js.global "globalThis") "inner" (Js.from o.inner)
+    { o | n = o.n + k }
+
+
+foldInner : List Int, O → O
+foldInner ns o = List.foldl ns o λk x → keepInner k x
+
+
+pub afterInner : O → D
+afterInner o =
+    r = foldInner [ 1 ] o
+    i = r.inner
+    { i | count = 1 }
+
+
+type alias P =
+    count : Int
+
+
+type alias Q =
+    inner : P
+    n : Int
+
+
+keepCount : Int, Q → Q
+keepCount k q =
+    Js.set (Js.global "globalThis") "inner" (Js.from q.inner)
+    { q | n = q.n + k }
+
+
+foldCount : List Int, Q → Q
+foldCount ns q = List.foldl ns q λk x → keepCount k x
+
+
+pub afterCount : Q → P
+afterCount q =
+    r = foldCount [ 1 ] q
+    i = r.inner
+    { i | count = 1 }

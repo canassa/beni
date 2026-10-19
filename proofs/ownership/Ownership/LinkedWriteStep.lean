@@ -17,6 +17,7 @@ proof needs no contents of the written component. `LinksValid` under
 
 namespace Ownership.LinkedWriteStep
 
+open Ownership.FlatFragment.Fields
 open InPlaceSemantics HeapProof Soundness LinkedWriteFrame Ownership.FlatFragment.Support
   Ownership.FlatFragment.NamingFacts Ownership.CallDerivation
 

@@ -1,0 +1,12 @@
+module RecordFieldSets
+  11:5 update q: accepted call
+  16:9 update p: accepted param (RecordFieldSets.modOpen writes it) [hoisted 1]
+  22:9 update p: accepted param
+  23:5 update q: accepted param (RecordFieldSets.modOpen writes it)
+  summary modOpen: π1 R, π2 R; res cb1{excl cb1}r{excl cb1}; π1 calls ≤1, need owned record, supply 1 π2 owned{excl π2}r{excl π2}
+  summary readsOpen: π1 RW{}, π1.x R, π1.y R
+  summary bothOpen: π1 RAW{}; res π1
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 4: accepted 4, pending 0, rejected 0 (copy 0, restructure 0); hoisted 1, eager reads 0
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 4: accepted 4, pending 0, rejected 0 (copy 0, restructure 0); hoisted 1, eager reads 0

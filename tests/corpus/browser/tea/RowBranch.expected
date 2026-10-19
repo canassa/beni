@@ -1,0 +1,85 @@
+-- load
+<body>
+  <main>
+    <button id="rename">"rename"</button>
+    <button id="reverse">"reverse"</button>
+    <ul>
+      <li>
+        <span>"one"</span>
+        <button id="toggle-1">"edit"</button>
+      </li>
+      <li>
+        <span>"two"</span>
+        <button id="toggle-2">"edit"</button>
+      </li>
+    </ul>
+  </main>
+</body>
+-- click #toggle-1
+<body>
+  <main>
+    <button id="rename">"rename"</button>
+    <button id="reverse">"reverse"</button>
+    <ul>
+      <li>
+        <strong>"one"</strong>
+        <button id="toggle-1">"edit"</button>
+      </li>
+      <li>
+        <span>"two"</span>
+        <button id="toggle-2">"edit"</button>
+      </li>
+    </ul>
+  </main>
+</body>
+-- click #rename
+<body>
+  <main>
+    <button id="rename">"rename"</button>
+    <button id="reverse">"reverse"</button>
+    <ul>
+      <li>
+        <strong>"one!"</strong>
+        <button id="toggle-1">"edit"</button>
+      </li>
+      <li>
+        <span>"two!"</span>
+        <button id="toggle-2">"edit"</button>
+      </li>
+    </ul>
+  </main>
+</body>
+-- click #reverse
+<body>
+  <main>
+    <button id="rename">"rename"</button>
+    <button id="reverse">"reverse"</button>
+    <ul>
+      <li>
+        <span>"two!"</span>
+        <button id="toggle-2">"edit"</button>
+      </li>
+      <li>
+        <strong>"one!"</strong>
+        <button id="toggle-1">"edit"</button>
+      </li>
+    </ul>
+  </main>
+</body>
+-- click #toggle-1
+<body>
+  <main>
+    <button id="rename">"rename"</button>
+    <button id="reverse">"reverse"</button>
+    <ul>
+      <li>
+        <span>"two!"</span>
+        <button id="toggle-2">"edit"</button>
+      </li>
+      <li>
+        <span>"one!"</span>
+        <button id="toggle-1">"edit"</button>
+      </li>
+    </ul>
+  </main>
+</body>

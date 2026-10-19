@@ -208,14 +208,14 @@ main =
         , Show.result
             (Schema.parseWith
                 message
-                { defaultOptions | unknownKeys = Reject }
+                { defaultOptions ⊤ | unknownKeys = Reject }
                 "{\"kind\":\"ping\",\"extra\":1}"
             )
             showMessage
         , Show.result
             (Schema.parseWith
                 message
-                { defaultOptions | unknownKeys = Reject }
+                { defaultOptions ⊤ | unknownKeys = Reject }
                 "{\"extra\":1,\"kind\":\"text\",\"value\":\"a\"}"
             )
             showMessage
@@ -254,5 +254,5 @@ main =
         ]
 
 
-defaultOptions : Schema.Options
-defaultOptions = Schema.defaultOptions
+defaultOptions : ⊤ → Schema.Options
+defaultOptions ⊤ = Schema.defaultOptions ⊤

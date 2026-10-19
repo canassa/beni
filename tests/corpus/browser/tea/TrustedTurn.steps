@@ -1,0 +1,6 @@
+# A user's click: both handlers, each writing, before the later listener.
+press #go
+# Page script's click: the same two writes, in the step's task.
+click #go 1
+# Three of them in one task: six messages, six writes.
+click #go 3

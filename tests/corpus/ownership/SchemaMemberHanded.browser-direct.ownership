@@ -6,14 +6,14 @@ module SchemaMemberHanded
   93:13 List.push s.text: accepted call
   102:13 List.push r.children: accepted fresh
   111:13 List.push r.children: rejected top-level: SchemaMemberHanded.forest is a top-level value
-  summary apply: π1 R, π2 R; res cb1{excl cb1}; π1 calls ≤1, supply 1 π2 owned{excl π2}
-  summary handed: res [*] ~fresh2{lost}, [*]⋆ ~shared(SchemaMemberHanded.kept) ~shared(SchemaMemberHanded.kept)⋆, fresh1{lost}, ⋆ ~shared(SchemaMemberHanded.kept) ~shared(SchemaMemberHanded.kept)⋆
-  summary bound: res [*] ~fresh2{lost}, [*]⋆ ~shared(SchemaMemberHanded.kept) ~shared(SchemaMemberHanded.kept)⋆, fresh1{lost}, ⋆ ~shared(SchemaMemberHanded.kept) ~shared(SchemaMemberHanded.kept)⋆
-  summary chained: res [*] ~fresh2{lost}, [*]⋆ ~shared(SchemaMemberHanded.kept) ~shared(SchemaMemberHanded.kept)⋆, fresh1{lost}, ⋆ ~shared(SchemaMemberHanded.kept) ~shared(SchemaMemberHanded.kept)⋆
-  summary direct: res [*] ~fresh2{lost}, [*]⋆ ~shared(SchemaMemberHanded.kept) ~shared(SchemaMemberHanded.kept)⋆, fresh1{lost}, ⋆ ~shared(SchemaMemberHanded.kept) ~shared(SchemaMemberHanded.kept)⋆
-  summary built: res [*] ~fresh2{lost}, fresh1{lost}
-  summary grown: res fresh1
-  summary grownShared: res fresh1 shared(SchemaMemberHanded.forest)
+  summary apply: π1 R, π2 R; res cb1{excl cb1}r{excl cb1}; π1 calls ≤1, supply 1 π2 owned{excl π2}r{excl π2}
+  summary handed: res [*] ~fresh2{lost}r{lost}, [*]⋆ ~shared(SchemaMemberHanded.kept) ~shared(SchemaMemberHanded.kept)⋆, fresh1{lost}, ⋆ ~shared(SchemaMemberHanded.kept) ~shared(SchemaMemberHanded.kept)⋆
+  summary bound: res [*] ~fresh2{lost}r{lost}, [*]⋆ ~shared(SchemaMemberHanded.kept) ~shared(SchemaMemberHanded.kept)⋆, fresh1{lost}, ⋆ ~shared(SchemaMemberHanded.kept) ~shared(SchemaMemberHanded.kept)⋆
+  summary chained: res [*] ~fresh2{lost}r{lost}, [*]⋆ ~shared(SchemaMemberHanded.kept) ~shared(SchemaMemberHanded.kept)⋆, fresh1{lost}, ⋆ ~shared(SchemaMemberHanded.kept) ~shared(SchemaMemberHanded.kept)⋆
+  summary direct: res [*] ~fresh2{lost}r{lost}, [*]⋆ ~shared(SchemaMemberHanded.kept) ~shared(SchemaMemberHanded.kept)⋆, fresh1{lost}, ⋆ ~shared(SchemaMemberHanded.kept) ~shared(SchemaMemberHanded.kept)⋆
+  summary built: res [*] ~fresh2{lost}r{lost}, fresh1{lost}
+  summary grown: res [*]#Leaf.0 ~fresh501◦, fresh1
+  summary grownShared: res [*]#Leaf.0 shared(SchemaMemberHanded.forest)[*]#Leaf.0 ~fresh501◦, fresh1 shared(SchemaMemberHanded.forest)
   demands 7: accepted 2 (fresh 1, call 1, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 5
 total 7: accepted 2 (fresh 1, call 1, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 5
 cause top-level 5

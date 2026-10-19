@@ -1,0 +1,73 @@
+-- ownership (§28.6, amended for issue #272): a `need` line is about a
+-- function value, so its message says that the function must return a list
+-- it owns, points at the call that hands it on and, where it is known, at
+-- the function that fails, and asks for a function that returns a list it
+-- owns. It names the function value as the call writes it: a lambda written
+-- there (`inline`), a local name (`named`), a record's field (`field`), a
+-- schema's member (`member`, approximate: the checker cannot place what a
+-- member handed on returns, so it cannot show that it is owned). A
+-- lambda a callee returns that calls a function the checker cannot place
+-- (`carried`) is blamed on that call, not on JavaScript. Before, each said
+-- that the function changes a list it is handed, put "the list is changed
+-- in place here" under the call, and asked for a copy before the change.
+import Schema exposing (Conversion)
+
+
+shared : List Int
+shared = [ 1, 2 ]
+
+
+words : List String
+words = [ "a" ]
+
+
+fixed : Conversion String (List String)
+fixed = Schema.conversion (λ_ → Ok words) λws → Ok (String.join ws " ")
+
+
+schema Fixed =
+    text : String via fixed
+
+
+editParse : (String → Result (List Schema.Issue) Fixed.Type), String → List String
+editParse f s =
+    case f s of
+        Ok v →
+            List.push v.text "x"
+
+        Err _ →
+            []
+
+
+edit : (⊤ → List Int) → List Int
+edit f = List.push (f ⊤) 3
+
+
+later : (⊤ → List Int) → (⊤ → List Int)
+later f =
+    g = λ⊤ → f ⊤
+    λ⊤ → g ⊤
+
+
+pub inline : ⊤ → List Int
+inline ⊤ = edit λ⊤ → shared
+
+
+pub named : ⊤ → List Int
+named ⊤ =
+    give = λ⊤ → shared
+    edit give
+
+
+pub field : ⊤ → List Int
+field ⊤ =
+    r = { load = λ⊤ → shared }
+    edit r.load
+
+
+pub carried : ⊤ → List Int
+carried ⊤ = List.push ((later λ⊤ → [ 4 ]) ⊤) 5
+
+
+pub member : String → List String
+member s = editParse Fixed.parse s

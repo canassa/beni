@@ -1,0 +1,37 @@
+-- ownership: a call's own uses of its arguments are the callee's, and no
+-- later use (`ownership-checker.md` §31.7). `f (g r) r`: `g`, nested, is a
+-- point of its own before `f`, which writes `r` while `g`'s answer, `r`
+-- itself, waits as its first argument — rejected. `h` writes `π1{x}` and
+-- reads `π2.x`: handed one record twice, the call is refused `disjoint`,
+-- since `h` cannot know its parameters alias.
+type alias P =
+    x : Int
+    y : Int
+
+
+g : P → P
+g p = p
+
+
+f : P, P → Int
+f a b =
+    c = { b | x = 1 }
+    a.x + c.x
+
+
+h : P, P → Int
+h p q =
+    s = { p | x = 1 }
+    s.x + q.x
+
+
+pub nested : ⊤ → Int
+nested ⊤ =
+    r = { x = 0, y = 0 }
+    f (g r) r
+
+
+pub twice : ⊤ → Int
+twice ⊤ =
+    r = { x = 0, y = 0 }
+    h r r

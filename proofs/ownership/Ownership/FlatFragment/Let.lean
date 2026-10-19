@@ -17,7 +17,7 @@ open Ownership.FlatFragment.Observe Ownership.FlatFragment.Runtime Ownership.Fla
 open Ownership.FlatFragment.Atoms Ownership.FlatFragment.AtomInteger Ownership.FlatFragment.CheckerExtraction Ownership.FlatFragment.InferLet
 open Ownership.FlatFragment.Literal Ownership.FlatFragment.Length Ownership.FlatFragment.LiveSets Ownership.FlatFragment.Liveness Ownership.FlatFragment.Scope
 open Ownership.FlatFragment.HeapFrame Ownership.FlatFragment.Support Ownership.FlatFragment.NamingFacts Ownership.FlatFragment.VariableFacts
-open Ownership.FlatFragment.Static
+open Ownership.FlatFragment.Static Ownership.FlatFragment.Fields
 
 /-! ### The contract of one preserved expression -/
 
@@ -57,7 +57,7 @@ theorem observed_invariant {declarations : List Decl} {vs : ValueSemantics.State
     (by rw [valueObserved_fuel, heapObserved_fuel]; exact inv.fuel)
 
 /-- Binding the right-hand side's result. The new live set uses the binder
-only at the empty path; every other use was live after the right-hand side. -/
+at typed field paths; every other use was live after the right-hand side. -/
 theorem flatInvariant_bind {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {live' : Live} {aenv : Env Abstract} {tenv : Env Ty} {gamma : Naming} {escapes : List Origin} {v : Var} {x : Observation} {w : Value} {a : Abstract} {ty : Ty}
     (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma)
     (fresh : v ∉ env.map Prod.fst)
@@ -66,7 +66,7 @@ theorem flatInvariant_bind {declarations : List Decl} {vs : ValueSemantics.State
     (observed : obsTyped declarations x ty = true)
     (valueTyped : ValueTyped declarations hs.heap w ty)
     (liveSub : ∀ use ∈ live', use.1 = v ∨ use ∈ live)
-    (liveFlat : ∀ p, (v, p) ∈ live' → p = []) :
+    (liveTyped : ∀ p, (v, p) ∈ live' → ∃ t, tyAt ty p = some t) :
     FlatInvariant declarations vs hs ((v, x, w) :: env) live' ((v, a) :: aenv) ((v, ty) :: tenv)
       escapes gamma := by
   have shape := allocated_shape_of_typed flatType valueTyped
@@ -98,11 +98,12 @@ theorem flatInvariant_bind {declarations : List Decl} {vs : ValueSemantics.State
   · intro key p use o w' binding
     by_cases same : key = v
     · subst same
-      have pathNil := liveFlat p use
-      subst pathNil
+      obtain ⟨t, at_p⟩ := liveTyped p use
       rw [lookup_cons_same] at binding
       cases Option.some.inj binding
-      exact ⟨x, w, rfl, rfl, paired⟩
+      obtain ⟨w', valuePath, _⟩ := projectVal_of_tyAt shape at_p
+      obtain ⟨x', obsPath, _⟩ := projectObs_of_tyAt observed at_p
+      exact ⟨x', w', obsPath, valuePath, corresponds_project paired valuePath obsPath⟩
     · rw [lookup_cons_other _ _ _ same] at binding
       rcases liveSub _ use with equal | old
       · exact absurd equal same
@@ -110,13 +111,11 @@ theorem flatInvariant_bind {declarations : List Decl} {vs : ValueSemantics.State
   · intro key p use o w' a' w'' binding abstractBinding valuePath
     by_cases same : key = v
     · subst same
-      have pathNil := liveFlat p use
-      subst pathNil
+      obtain ⟨t, at_p⟩ := liveTyped p use
       rw [lookup_cons_same] at binding abstractBinding
       cases Option.some.inj binding
       cases Option.some.inj abstractBinding
-      cases Option.some.inj valuePath
-      simpa only [Abstract.atPath] using described
+      exact describes_project flatAbstract at_p described valuePath
     · rw [lookup_cons_other _ _ _ same] at binding abstractBinding
       rcases liveSub _ use with equal | old
       · exact absurd equal same
@@ -127,18 +126,7 @@ theorem flatInvariant_bind {declarations : List Decl} {vs : ValueSemantics.State
       rw [lookup_cons_same] at binding abstractBinding
       cases Option.some.inj binding
       cases Option.some.inj abstractBinding
-      cases shape with
-      | int integer => cases located
-      | list root allocated =>
-        have lookupRoot : hs.heap[root]? = some hs.heap[root] := by simp [allocated]
-        obtain ⟨integers, payload⟩ :=
-          integers_of_flat_values hs.heap[root] (inv.heapInts root _ lookupRoot)
-        rw [payload] at lookupRoot
-        obtain ⟨pathNil, sameRoot⟩ := arrayAt_flat_ref lookupRoot located
-        subst pathNil
-        rw [sameRoot]
-        have covered := described.1.1 [] root (.here _)
-        simpa only [namesAt] using covered
+      exact named_cellsAt_of_covers shape flatAbstract inv.heapInts described.1.1 located
     · rw [lookup_cons_other _ _ _ same] at binding abstractBinding
       exact inv.named key o w' a' binding abstractBinding q c immutable located
   · intro key ty' declared
@@ -418,10 +406,13 @@ theorem let_preserved {declarations : List Decl} {v : Var} {rhs : Expr} {rest : 
     by_cases same : use.1 = v
     · exact Or.inl same
     · exact Or.inr (continuation_old_live v (uses rest) after same member)
-  have restLiveFlat : ∀ p, (v, p) ∈ union (uses rest) after → p = [] := by
+  have restLiveTyped : ∀ p, (v, p) ∈ union (uses rest) after → ∃ t, tyAt rhsType p = some t := by
     intro p member
     rcases mem_union_cases _ _ (v, p) member with inner | outer
-    · exact flatExpr_uses flatRest v p inner
+    · obtain ⟨tk, t, declared, at_p⟩ := flat_uses_typed flatRest _ _ restTyped v p inner
+      rw [lookup_cons_same] at declared
+      cases Option.some.inj declared
+      exact ⟨t, at_p⟩
     · exact absurd rfl (noUse (v, p) outer)
   have restUsesLive : ∀ use ∈ uses rest, use ∈ union (uses rest) after :=
     fun use member => union_left _ _ use member
@@ -455,7 +446,7 @@ theorem let_preserved {declarations : List Decl} {v : Var} {rhs : Expr} {rest : 
           obtain ⟨w, hs1, gamma1, rhsHeapRun, inv1, size1, paired1, described1, observed1, typed1⟩ :=
             rhsPreserved.success x s1 rhsValue
           have inv1' := flatInvariant_bind inv1 fresh paired1 described1 rhsFlatType rhsFlatAbstract
-            observed1 typed1 restLiveSub restLiveFlat
+            observed1 typed1 restLiveSub restLiveTyped
           have restPreserved := ihRest s1 hs1 ((v, x, w) :: env) (union (uses rest) after)
             ((v, a) :: aenv) ((v, rhsType) :: tenv) middle next gamma1 type (v :: bound) after
             (site ++ [1]) result childFuel (depth - 1) _ inv1' restTyped restShadow
@@ -510,7 +501,7 @@ theorem let_preserved {declarations : List Decl} {v : Var} {rhs : Expr} {rest : 
           obtain ⟨w, hs1, gamma1, rhsHeapRun, inv1, _, paired1, described1, observed1, typed1⟩ :=
             rhsPreserved.success x s1 rhsValue
           have inv1' := flatInvariant_bind inv1 fresh paired1 described1 rhsFlatType rhsFlatAbstract
-            observed1 typed1 restLiveSub restLiveFlat
+            observed1 typed1 restLiveSub restLiveTyped
           have restPreserved := ihRest s1 hs1 ((v, x, w) :: env) (union (uses rest) after)
             ((v, a) :: aenv) ((v, rhsType) :: tenv) middle next gamma1 type (v :: bound) after
             (site ++ [1]) result childFuel (depth - 1) _ inv1' restTyped restShadow

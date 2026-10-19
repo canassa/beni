@@ -602,6 +602,83 @@ test "a --fuzz build of a browser-direct page registers its dispatcher, in devel
     try testing.expect(std.mem.indexOf(u8, shipped, "$dispatch") == null);
 }
 
+test "a --fuzz build of a browser-tea page installs the fuzz hook and keeps string tags and unbuilt arms in release" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // The platform-independent half of `--fuzz`'s contract (the page
+    // fuzzer, `tests/browser/fuzz.mjs`): the hidden flag is accepted with
+    // and without `--release`, both builds install the hook the fuzzer
+    // sends messages through, and the release build keeps the message
+    // type's string tags, which the fuzzer's values are written in, and
+    // the arm of `Unbuilt`, which nothing builds but the fuzzer sends. A
+    // build without the flag ships none of this.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    try w.write("Main.beni",
+        \\import Html exposing (Html)
+        \\import Tea
+        \\
+        \\
+        \\type Msg
+        \\    = Inc
+        \\    | Unbuilt Int
+        \\
+        \\
+        \\update : Msg, Int → Int
+        \\update msg n =
+        \\    case msg of
+        \\        Inc →
+        \\            n + 1
+        \\
+        \\        Unbuilt k →
+        \\            k
+        \\
+        \\
+        \\view : Int → Html Msg
+        \\view n = <button onClick={Inc}>{String.fromInt n}</button>
+        \\
+        \\
+        \\main : Tea.Program
+        \\main = Tea.sandbox { init = λ⊤ → 0, update = update, view = view }
+        \\
+    );
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const fuzz = try w.runWith(&.{ "build", "--platform=browser-tea", "--fuzz", "--out=fuzz", "Main.beni" }, .{ .raw_diagnostics = true });
+    const fuzz_r = try w.runWith(&.{ "build", "--platform=browser-tea", "--fuzz", "--release", "--out=fuzz-rel", "Main.beni" }, .{ .raw_diagnostics = true });
+    const plain = try w.runWith(&.{ "build", "--platform=browser-tea", "--out=plain", "Main.beni" }, .{ .raw_diagnostics = true });
+    const plain_r = try w.runWith(&.{ "build", "--platform=browser-tea", "--release", "--out=plain-rel", "Main.beni" }, .{ .raw_diagnostics = true });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try expectBuilt(fuzz);
+    try expectBuilt(fuzz_r);
+    try expectBuilt(plain);
+    try expectBuilt(plain_r);
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY SIDE EFFECTS                     │
+    // └─────────────────────────────────────────┘
+    try testing.expect(std.mem.indexOf(u8, try w.read("fuzz/Main.mjs"), "fuzzInstall") != null);
+    try testing.expect(std.mem.indexOf(u8, try w.read("plain/Main.mjs"), "fuzzInstall") == null);
+    const released = try w.read("fuzz-rel/_main.mjs");
+    try testing.expect(std.mem.indexOf(u8, released, "__beniFuzz") != null);
+    try testing.expect(std.mem.indexOf(u8, released, "\"Inc\"") != null);
+    const shipped = try w.read("plain-rel/_main.mjs");
+    try testing.expect(std.mem.indexOf(u8, shipped, "__beniFuzz") == null);
+    try testing.expect(std.mem.indexOf(u8, shipped, "\"Inc\"") == null);
+    // `update` keeps both arms: the test of `Inc` and, after it, the
+    // `Unbuilt` arm that returns the payload (`… === "Inc" ? n + 1 : msg.a`).
+    const test_at = std.mem.indexOf(u8, released, "===\"Inc\"?") orelse return error.NoIncTest;
+    const rest = released[test_at..];
+    const arm_end = std.mem.indexOfAny(u8, rest, ",;") orelse rest.len;
+    try testing.expect(std.mem.indexOfScalar(u8, rest[0..arm_end], ':') != null);
+}
+
 test "a view formatted renders the page the view rendered" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
@@ -5844,17 +5921,17 @@ test "a page builds the same under --release with the edge lists the binary carr
     try expectSameWithBuiltEdges(&w, "--platform=browser-tea", "page", &.{ "--release", "Main.beni" });
 }
 
-test "a browser-direct page builds the same with the edge lists the binary carries as with lists it builds" {
+test "a browser-inline page builds the same with the edge lists the binary carries as with lists it builds" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
-    // The rows of the `browser-direct` chain, whose lowering compiles each
-    // program whole: `browser/direct/AfterRenderFocus` reaches its runtime
-    // module, `Direct` and the platform's commands.
+    // The rows of the `browser-inline` chain, whose lowering compiles each
+    // program whole with no task kernel: `browser/inline/FormLocal` reaches
+    // its runtime module, `Inline` and the platform's `Tea`.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     try w.copyTreeInto("core", "mycore", "_");
-    try copyFixture(&w, "tests/corpus/browser/direct/AfterRenderFocus.beni", "Main.beni");
+    try copyFixture(&w, "tests/corpus/browser/inline/FormLocal.beni", "Main.beni");
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
@@ -5862,7 +5939,7 @@ test "a browser-direct page builds the same with the edge lists the binary carri
     // ┌─────────────────────────────────────────┐
     // │ VERIFY OUTPUT                           │
     // └─────────────────────────────────────────┘
-    try expectSameWithBuiltEdges(&w, "--platform=browser-direct", "page", &.{"Main.beni"});
+    try expectSameWithBuiltEdges(&w, "--platform=browser-inline", "page", &.{"Main.beni"});
 }
 
 /// One fixture of the corpus, copied into the project at `to`.

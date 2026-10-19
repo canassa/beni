@@ -1,0 +1,5 @@
+# The first row's button removes the first row; its row's handler still
+# runs, with 10.
+click ul>li:nth-child(1)>button
+# Again: now the row of 20.
+click ul>li:nth-child(1)>button

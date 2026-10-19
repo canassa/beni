@@ -1,0 +1,9 @@
+import Html exposing (Html)
+
+
+inner : String, Int → Html msg
+inner label n = <p title={label}>{n}</p>
+
+
+pub outer : String, Int → Html msg
+outer label n = <section>{inner label n}</section>

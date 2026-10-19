@@ -1,0 +1,6 @@
+-- a focus callback returns an earlier written capture.
+-- Confirmed by the in-place interpreter; see proofs/ownership/BRIDGE-RESULTS.md.
+pub run ⊤ =
+    xs = [ 1 ]
+    grown = List.push xs 2
+    List.update [ [ 0 ] ] 0 λ_ → xs

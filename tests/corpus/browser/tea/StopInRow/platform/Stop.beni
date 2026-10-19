@@ -1,0 +1,27 @@
+--! A test vocabulary for a row's handler that stops propagation
+--! (browser-direct.md §4.2): `html`'s has no event whose declaration says
+--! `stopPropagation`, so this one names any element and any attribute and
+--! declares `click` three ways — plain, stopping propagation and preventing
+--! the default. `platform-tea/` holds the same module, layered on
+--! `browser-tea`, so the page is built on both platforms.
+
+import Html exposing (Html)
+
+
+--| The event object a handler is handed.
+pub foreign type Event
+
+
+pub element "*"
+
+
+pub attribute "*" : String
+
+
+pub event "onClick" delegated : Event
+
+
+pub event "onClickStop" name "click" delegated stopPropagation : Event
+
+
+pub event "onClickPrevent" name "click" delegated preventDefault : Event

@@ -1393,6 +1393,135 @@ through a `Maybe`, so the rule must fire on `Leaf (Maybe a)` too.
 - *Delta: none*, on the bench and in `tests/corpus/ownership/`: no golden changes. Only irregular types pay, and
   the corpus has none but the probe. So there is no evidence of soundness beyond the argument: when F3 is built,
   `Leaf (Maybe a)` and the mutual pair `T`/`U` each need a fixture beside `wrap`'s.
+- *Amended 2026-10-19 (the owner's option 2): F3 is replaced by a fold at a polymorphic-recursive call.* The rule
+  above is read off types, and types are not where the growth is: `g : Int, a → (Int → Int)`, `g n x = if n == 0
+  then λk → k + List.length [ x ] else g (n - 1) [ x ]` has no nested datatype and grows `res ◇[*][*]…`, and
+  `type U a = ULeaf (Int → Int) | UWrap (U (List a))` grows under a field that mentions no type variable. What
+  every one of them has is a call, inside the recursive group being solved, that instantiates a type variable of
+  the callee at a type that is not a variable: `a` at `List a`. That call is the fold point.
+  - *The rule.* At a call of a member of the recursive group being solved — a top-level group (§16.6), or a block's
+    local functions (§18.7), whose annotated members may recur at other types too — each argument's declared
+    parameter type, the member's own (its rigid variables, as its body was checked), is walked beside the
+    argument's type at the call along every entry's path. Where the declared type is a variable and the argument's
+    type there is not, the entry's path from the step after that position on is `⋆`: the entry stands for every
+    place below the variable's value. A step under `◇` into a function type, or into a `foreign type`'s
+    arguments, where the declared type and the argument's differ at a variable, is a place below the variable too,
+    since what is there is not written in the type; there the rest is `⋆` from that step. Every other path stays
+    exact: what the declared type writes above the variable, and everything of an argument whose type is the
+    declared one.
+  - *Soundness.* `⋆` stands for every place at or below it and overlaps every path; the fold only merges places
+    of one argument, as F1's and a recursive type's do, and it changes nothing a call outside the group sees, since
+    those instantiate the settled summary.
+  - *Finite.* A path a group member's summary names is a path of its declared types: through a call inside the
+    group it can grow only below a variable the call instantiates at a structure, and there it is `⋆`. `g` is
+    `res ◇ π2, ◇⋆ π2`; `wrap` is `res #Leaf.0 π2, #Leaf.0⋆ π2`; `U`'s `uwrap` is `res #ULeaf.0◇ π2,
+    #ULeaf.0◇⋆ π2`.
+  - *What it costs.* An argument whose type at a group-internal call instantiates a variable at a structure loses
+    the paths below that variable, and only in the group's own fixpoint: a function that recurs at `List a` on a
+    list of lists keeps its lists' elements at `⋆`.
+  - Fixtures: `ownership/PolyRec` (`g`, `wrap`, `Leaf (Maybe a)`, the mutual pair `T`/`U`, `uwrap`) and
+    `ownership/LocalPolyRec` (`g` as an annotated `let` function).
+- *Amended 2026-10-19 (the owner's choice (a)): the fold is on the composed path, not on the argument.* The fold at
+  the call above loses a verdict master gives, and a build error that never goes away is a precision loss. Measured:
+  `wrap`, `mwrap`, `pwrap` and `uwrap` lose every result condition (`{lost}` for `{excl π2}`), and `pushArg xs =
+  case wrap 1 xs of Wrap (Leaf ys) → case ys of [ zs ] → List.push zs 1` is refused `exclusive` where master accepts
+  it `param`. Keeping the argument's first step exact does not help. The recursive call's argument is always `[ x ]`,
+  `{ε fresh, [*] π2}`, and the growth is not in it but in instantiation (§16.4), which puts the callee's summary
+  path in front of the argument's (`instRes`: `⟨T⟩⁺#Leaf.0[*]` and `[*]` make `⟨T⟩⁺#Leaf.0[*][*]`). A fold of
+  the argument makes the base case's entry and the deeper levels' end in one suffix. A constructor step then puts
+  them at one path, one cell at two places that may both hold it, which is honestly `lost`.
+  - *The rule.* Arguments are not folded. At a call of a member of the group being solved, top-level (§16.6) or
+    local (§18.7), each argument entry `(q, c)` has a *boundary* `b`: the number of steps of `q` above the first
+    variable of the member's declared parameter type that the call instantiates at a structure (the walk of the
+    rule above). The entry is *below* when `q` has more than `b` steps. Instantiating a summary entry `r` at path
+    `P` whose provenance is parameter `i` at `p` composes `P` with the rest of `q` after `p`, whose boundary is
+    `b − |p|` (at least 0):
+    - when `r` and the argument entry are both unmarked, the composed entry is `P ++ rest`, exact as before,
+      and it is *marked* when the entry is below;
+    - when either is marked and the entry is below, the composed entry is `P ++ rest[0 .. b − |p|] ++ ⋆`,
+      approximate (`approx_place`), and marked.
+    The mark rides on every entry made from a marked entry: a projection, a placement (`shift`, `under`), a join
+    of branches, a binding, a call. It reaches the summary as a mark on the result entry. A callee's marks ride
+    only at a call inside the group being solved: an instantiation outside it clears the callee's marks, since
+    only a group's own fixpoint composes its summary with itself. The caller's own marks, on what it passes,
+    ride through any call, a function outside the group included (`ownership/PolyRecThrough`). So the first
+    composition of an entry below a grown variable stays exact, and every later one is `⋆`.
+  - *Why a mark, and not the result type.* Walking the member's declared result type along `P` cannot tell
+    whether `P` already went below a grown variable. Under a marker the level is unknown: in `T a`, the places
+    `⟨T⟩⁺#Leaf.0` are `T (List a)`'s, `T (List (List a))`'s, and so on. So `⟨T⟩⁺#Leaf.0[*]` is a typed place
+    (level 1's `a`) and the composition of one too. The mark records what the type cannot. It is kept in memory
+    while a group is solved and is not written to the summary block: a settled summary is instantiated only
+    outside its group, where the mark is cleared, so the block's format does not change. A mark that a
+    transformation dropped costs termination, not soundness: the entry grows one composition more per round. So
+    each fixture checks that no summary path reaches the cut.
+  - *Soundness.* An exact composition is today's instantiation. A `⋆` stands for every place at or below it and
+    only merges. The places this keeps apart are the ones master kept apart: the base case's `π2` at
+    `#Leaf.0[*]`, which a constructor step places at `⟨T⟩⁺#Leaf.0[*]`, and the deeper levels' at
+    `⟨T⟩⁺#Leaf.0[*]⋆`. That pair is now a container and what it may hold, a prefix step by step, so a deep
+    condition takes it for one place (`nested`), and a fold that put the two at one path (`foldedBeside`) does
+    not arise. *Why `nested` may take it for one place.* Values are acyclic: a cell is never held both at a place
+    and strictly below it in one value, so when one cell is at `X` and at `X⋆`, one run holds it at `X`, or the
+    two describe different runs. `⋆` also stands for `X` itself. Either way it is one list at one place, never
+    two places in one value. For two different cells at `X` and `X⋆`, `nested`'s rule is §18.2's container and
+    contents, unchanged.
+  - *Finite.* An entry's path takes at most one exact composition below a grown variable. The next adds `⋆`,
+    after which `child` absorbs every step, and the steps above the variable (`rest[0 .. b − |p|]`) walk the
+    finite type graph, where 1–3 of the bound argument fold them. `wrap` is `res #Leaf.0 π2, ⟨T⟩⁺#Leaf.0 fresh,
+    ⟨T⟩⁺#Leaf.0[*] π2 fresh, ⟨T⟩⁺#Leaf.0[*]⋆ π2 fresh`; `g` is `res ◇ π2 fresh, ◇[*] π2 fresh, ◇[*]⋆ π2
+    fresh`; `PolyRecThrough`'s `wrap2` is `wrap`'s.
+  - *What it still costs.* Below a grown variable, a value's places past the first composition are one place:
+    two lists that a program puts at the second and third level of `List (List (List a))` inside one nested
+    value are separated only by their cells. The differential measurement against master with `k` counts every
+    verdict and condition that differs, in each direction, before this is built beyond a spike.
+  - *Amended 2026-10-19 (the reviews of #429): every route of the growth, and the pairs the fold merges.* As
+    first built, the fold fired only at a direct call of a member with a variable as its declared parameter. The
+    growth has other routes, and the path cut still bounded each of them:
+    - a function outside the group that calls back into it: `apply (g (n - 1) _) [ x ]`;
+    - a let-bound lambda: `k = λy → g (n - 1) y`, then `k [ x ]`. A let-bound lambda is generalised, so the call
+      inside it grows nothing, and the call `k [ x ]` grows `k`'s own variable;
+    - continuation-passing: `h (n - 1) [ x ] (λt → f (Wrap t))` grows what `h` hands its callback, its supply;
+    - a destructured parameter: `wt n ( x, k )`.
+    So the rule holds at every instantiation, not at the call alone.
+    - *The mark is a pair:* "marked", and a *pending boundary*. At a call inside the group that grows a
+      variable, a symbolic cell (a parameter, a capture, a callback's result) that reaches the variable without
+      passing below it has places that are below it, which a later instantiation supplies. Its entry takes the
+      boundary, how many more steps of that cell are above the variable. A summary entry that carries a pending
+      boundary composes, wherever it is instantiated, as at the grown call. The pending boundary takes a step
+      off along a projection.
+    - *Where the boundary is read:*
+      - the call's own types: the member's declared parameter types, a destructured parameter's from the
+        declaration's own type, and the types of the arguments;
+      - a closure's parameters' types, at a call of the closure while a recursive group is being solved, since
+        a let-bound lambda may grow its own variable;
+      - otherwise, the summary entry's pending boundary.
+      The composition is the same for a result (`instRes`) and for a supply, both a callback's parameter
+      (`instCbOnce`) and a lambda's (`fromLambda`). Supply entries carry the mark as result entries do.
+    - *A callee's marks ride everywhere*, and a group clears its members' marks when it settles. Only a group's
+      own fixpoint composes its summaries with themselves. A settled summary carries none, so nothing leaks into
+      a caller outside the group, and a summary made in this run equals one read back from the summary block.
+    - *Merged pairs.* A cut can put two places at one path: `( x, y )` and `( y, y )` grown through a tuple put
+      two lists at `⋆`. As first built, the instantiation then lost what the deep condition said of the pair.
+      The pairs the fold merges are judged as `shift` judges a fold's, by `foldedBeside`'s rule: one cell at
+      both is one list at two places, two cells are `sep`. So no condition becomes weaker than what the
+      unfolded composition would give. `ownership/PolyRecTuples` keeps `{sep π2 π3}`.
+    - *Why `nested` may take one cell at `X` and at `X⋆` for one place* (asked of an abstract cell that stands
+      for many lists, one per level). The pair is skipped only for the condition "the list at `X` is the list
+      below `X`". For a run-time list that is impossible, since values are acyclic, whichever run-time lists
+      the cell stands for. Two of them at `X` and below `X` are two lists, which no sharing condition concerns.
+      Sharing inside the `⋆` region, one list at two places below `X`, is what the merged-pair rule above
+      states when the fold makes it. `ownership/PolyRecLevels` writes a list the recursion made while the list
+      that holds it is read, refused.
+    - *Measured.* Every probe of the reviews is finite, and no summary path reaches the cut. Verdicts against
+      master: every verdict of the corpus, the bench and core is the same. In the probes, three lines differ:
+      - `cwrap`'s `cus` and `freshC` (`ownership/PolyRecShared`) put one list at both fields of `B`. The cut
+        accepted writing one while the other is read, and the fold refuses it. That is a master defect this
+        fixes.
+      - `once` (`ownership/PolyRecTwice`) writes the one list `wm` placed. The cut merged its levels into
+        `{shared}` and refused it; it is accepted `param`, and its callers that read the list after it are
+        refused. Where the list is placed twice (`wm2`), the write is refused on both.
+      - Rows the cut invented and that name no list are gone: a write of `π1[*]` of a `List Int`.
+      Conditions: where master has `{shared}` from levels the cut merged, the fold has `{lost}` or the condition
+      of the one placement (`{excl π2}`). Where it has `{sep π2 π3}`, the fold keeps it.
 
 **(c) Removing `k`.** Issue #286's (c) is this step, with F1, F2 and F3 as its fold points. With F1, F3 and a
 cast marker the owner accepts, `k` goes: every path buffer (`[k_limit + 1]Step`, about twenty) becomes a slice,
@@ -1670,7 +1799,8 @@ reached apart from the level it started at, with a step of its own:
 *Amended 2026-10-19 (issue #286): the bound argument — why four sources of growth, and no fifth.* Removing the
 path cut `k` (c) is sound only if every path the checker builds is bounded without it. The paragraph above
 names four sources of unbounded paths. This one argues there is no fifth, and gives each source its fold. It is a
-design text; the polymorphic-recursion entry is pending the owner, and `k` stays until it is decided.
+design text recording the owner's composed-path decision and the remaining proof obligations. `k` stays:
+casts through records and tuples still have no fold (F2), and #447's soundness correction is open.
 
 *Where a path grows.* A path is built only by `child`, one step at a time, and a step is added in three ways:
 a projection or a construction mirrors one step of the value (a field, a tuple slot, a constructor field, a
@@ -1690,16 +1820,19 @@ infinite. That gives the four sources, and only four:
 1. **A cycle: a recursive type.** Folded by the level marker `⟨T⟩` (the amendments above): a constructor step
    into a type a path is already inside goes under that region's marker, and a marker asked for where there is
    one folds onto it. A path holds at most one marker per region, and there are finitely many types, so the walk
-   between markers is acyclic and bounded by the type graph. Issue #379 (`#Node.0#Node.1` folded onto
-   `#Node.1`, so a deeper level's list was the root's) is closed by the marker. `ownership/DeeperLevel` pins it.
+   between markers is acyclic and bounded by the type graph. A region ends at a constructor field that
+   reaches the type only through a type parameter (`regionOf`, for example a `Dict` value). Passing that
+   boundary walks the finite type argument term; nested `Dict` arguments are not a recursive region. An
+   unbounded family of such terms can arise only through the polymorphic instantiation in 4. Issue #379
+   (`#Node.0#Node.1` folded onto `#Node.1`, so a deeper level's list was the root's) is closed by the marker. `ownership/DeeperLevel` pins it.
    Two exemptions keep the merged fold, each bounded by the same count: core `Dict`'s tree until #294, and a
    type that does not reach itself until F2.
 2. **A step the type does not write: a closure's environment.** F1, built: a function type is a recursive type of
    its own whose region step is `◇`, so `◇p◇q` is `◇⟨◇⟩◇q` and a path holds one `◇` and at most one closure
    marker after it (the F1 amendments, `ownership/Clo`, `ClosureLevels`, `SiblingEnvs`, `DirectCapture`).
 3. **A walk read at another type: a cast.** F2, the cast marker `⟨as T⟩`. *Corrected 2026-10-19:* this source
-   has no fold yet. Until F2 lands, a constructor of a type that a path enters twice, with no recursion, was
-   cast and read again, and it folds onto where it first entered, with no marker. That bounds a cast that
+   has no fold for record or tuple casts yet. Until F2 lands, a constructor of a type that a path enters
+   twice, with no recursion, was cast and read again, and it folds onto where it first entered, with no marker. That bounds a cast that
    re-reads a *named type* by the number of types. A cast that re-reads a *record* or a *tuple* is not bounded.
    A field or tuple step carries no type in the path, so the fold cannot see the second entry. Core's
    `Schema` grows that way:
@@ -1711,52 +1844,55 @@ infinite. That gives the four sources, and only four:
    The owner decided F2 on 2026-10-18: option (iii), the check made to scale (not `value-cells` raised), with a
    marker that records the full type, not the head. Its measurement goes to the owner before it is built.
 4. **An infinite graph: polymorphic recursion.** Instantiation composes paths. Outside a recursive group this is
-   finite by induction on the call graph: a callee's summary is settled before any caller instantiates it
-   (§16.9), its paths are finite, and a caller's argument paths are finite. So their concatenation is too, and a
-   recursive type in it folds as in 1. Inside a group, the fixpoint instantiates the group's own summaries
-   repeatedly. When every call in the group instantiates each type variable of its callee at a variable
-   (monomorphic recursion, the common case), an argument's type is the parameter's, the composed path walks the
-   same finite graph, and 1–3 bound it. When a call instantiates a variable at a structure (`a` at `List a`),
+   bounded by induction over the recursive groups of the call graph and the acyclic module graph
+   (§16.9): a callee's summary, including an imported one, is settled before a caller instantiates it. Each
+   concatenation walks a finite composed type. The bound depends on the program, not a universal constant:
+   a chain that adds a `List` at every call adds a step per link. A recursive type in the composition folds
+   as in 1. Inside a group, the fixpoint instantiates the group's own summaries repeatedly. Without a substitution that places a group type variable inside a structure containing a
+   group variable (monomorphic recursion, the common case), variable renamings, including cycles of
+   variables, walk the same finite graph, and 1–3 bound it. A substitution such as `a` at `List a`, including
+   one reached through a cycle of group variables, can instead grow the graph:
    the types along the composed path are drawn from an infinite family (`List a`, `List (List a)`, …), and no
    fold of 1–3 sees a repeated region. `wrap n x = if n == 0 then Leaf x else Wrap (wrap (n - 1) [ x ])` returns
-   `#Leaf.0[*][*]…`, and `g` (a closure, no nested datatype) returns `◇[*][*]…`. *Decided and built
-   (2026-10-19):* the owner chose the second design below, the fold on the composed path. It was built with
-   #429, which folds every route of the growth, and #447 corrected `nested` for prefixes that stand for several
-   places (F3's amendments above). The two designs as they were put to the owner:
-   - *The fold at the call* (option 2 of the F3 amendment, the WIP of #286): at a call inside the group being
-     solved, an argument's places below a variable the call instantiates at a structure go to `⋆` (or keep their
-     first step and go to `⋆` below it). Finite, sound (`⋆` only merges), and every bench verdict unchanged. But
-     it loses a verdict master gives: `wrap`, `mwrap`, `pwrap` and `uwrap` lose every result condition (`{lost}`
-     for `{excl π2}`). `pushArg xs = case wrap 1 xs of Wrap (Leaf ys) → case ys of [ zs ] → List.push zs 1` is
-     refused `exclusive` (approximate), where master accepts it `param`. The cause: the base case's entry
-     (`#Leaf.0⋆`) and the deeper levels' (`⟨T⟩⁺#Leaf.0⋆`) end in one suffix, and a constructor step folds them
-     onto one path, one cell at two places that may both hold it. Master keeps them apart only because the
-     number of `[*]`s follows the number of levels, up to the cut, which a path cannot express once the depth is
-     unbounded. Keeping the first step exact does not help: the argument is always `[x]`, and the growth is in
-     the composition, not in the argument.
-   - *A fold on the composed path* (sketched, neither specified nor measured): the steps an argument contributes
-     below the variable stay exact the first time a summary entry passes through such a call, and go to `⋆`
-     once the entry's path already holds such steps. Then the base case's entry is `⟨T⟩⁺#Leaf.0[*]` (exact) and
-     the deeper ones `⟨T⟩⁺#Leaf.0[*]⋆`. After the constructor step that pair is a prefix, and `nested` takes it
-     for one place, soundly since values are acyclic: a cell is never held at a place and strictly below it at
-     once, so one cell at both is one place. Its open problem is knowing which suffix of a summary path came
-     from a grown call. That needs the callee's result type walked through markers, whose depth under `⟨T⟩⁺` is
-     unknown, or a mark on summary entries, which is a summary-format change.
+   `#Leaf.0[*][*]…`, and `g` (a closure, no nested datatype) returns `◇[*][*]…`. *Decided
+   (2026-10-19):* the owner chose the fold on the composed path (the amendment above, *the owner's choice
+   (a)*). #429 implements it on every route of growth. The soundness correction to `nested` in #447 remains
+   open; neither that correction nor removal of `k` is claimed here.
+   - *The rejected fold at the call* (the earlier F3 amendment, *a fold at a polymorphic-recursive call*):
+     an argument's places below a variable the call instantiates at a structure go to `⋆` (or keep their
+     first step and go to `⋆` below it). Finite and sound (`⋆` only merges), but it loses a verdict master
+     gives: `wrap`, `mwrap`, `pwrap` and `uwrap` lose every result condition (`{lost}` for `{excl π2}`).
+     `pushArg xs = case wrap 1 xs of Wrap (Leaf ys) → case ys of [ zs ] → List.push zs 1` is refused
+     `exclusive` (approximate), where master accepts it `param`. The base case's entry (`#Leaf.0⋆`) and
+     the deeper levels' (`⟨T⟩⁺#Leaf.0⋆`) end in one suffix, and a constructor step folds them onto one
+     path, one cell at two places that may both hold it. Keeping the first step exact recovers nothing:
+     the argument is always `[x]`, and growth is in composition, not in the argument.
+   - *The adopted fold on the composed path:* argument paths stay exact. Summary entries record whether
+     they have already crossed a growing call; the first composition below its type-variable boundary stays
+     exact and records the crossing, and a later one folds the growing suffix to `⋆` (the rule and all
+     routes in the amendment above). This supplies the information the earlier sketch lacked; it is no
+     longer an unmeasured alternative awaiting the owner. A concrete place cannot hold a cell and hold
+     that same cell strictly below itself, by acyclicity. A prefix containing a representative step names
+     several places, so that argument alone does not justify treating its entries as one place: #447
+     tracks the required soundness correction.
 
 *Why no fifth.* Every step is one of: a typed step (bounded by 1 on a finite type graph); a root-only slot; `◇`
-(2); a step after a cast (3, unbounded for records and tuples until F2); or a `⋆`, which ends growth. The type graph is finite except through instantiation
-inside a recursive group at a structure (4), since outside a group instantiation is settled bottom-up, and the
+(2); a step after a cast (3, unbounded for records and tuples until F2); or a `⋆`, which ends growth. The type
+graph is finite except through instantiation inside a recursive group at a structure (4), since outside a group instantiation is settled bottom-up, and the
 types a module names are finite. Symbolic cells (`param(x, q)`, `env`, `cbres`) carry paths built by the same
-`child`, so the same argument bounds them. A spine condition (§18.2) names cells, not new paths. A fifth source
-would need a step that is neither typed, root-only, environment, nor cast, or an infinite type family that does
+`child`, so the same argument bounds them. Hand-authored primitive summaries (§16.8) contain finite
+authored paths; instantiating their rows uses the same composition and folds, and adds no new source of growth.
+A spine condition (§20.4) names cells, not new paths. A fifth source would need a step that is neither typed, root-only, environment, nor cast, or an infinite type family that does
 not come from instantiation inside a group. The checker has no such step (`StepKind` lists them all), and the
 type checker gives no other way to make one.
 
 *What else `k` holds up.* Besides the cut in `childRaw`, `k_limit` sizes the path buffers (`[k_limit + 1]Step`,
 about twenty) and guards `markupEvents`'s walk of a type term. That walk is bounded by the term's size, a finite
-type, so the guard goes with `k`. The order of (c): F1 has landed, and 4 (#429, #447). 3 waits for F2. Then
-`k` goes: the cut, the buffers (as a stack room that spills, not a limit), and the summary block's one-byte path
-length.
+type, so the guard goes with `k`. The order of (c): F1 has landed; 4 has #429 and awaits #447's soundness
+correction; 3 waits for F2 and its measurement to the owner. Then `k` goes: the cut, the buffers (as stack room
+that spills, not a limit), and the summary block's one-byte path length and `n_steps > k_limit` check. A larger
+program can have a larger finite type and path; neither storage nor serialization may impose the old
+constant-length bound.
 
 ### 16.8 The library
 
@@ -3005,7 +3141,7 @@ names the fixture that pins each (§24.6).
 | `Js.catchIf` | `once returned` body, `once` test, `once returned` handler | `try { return body() } catch (e) { if (!test(e)) throw e; return handler(e) }`: each called at most once, the answer the body's or the handler's |
 | `String.join`, `String.fromList` | `borrowed List …` | `Array.prototype.join` on the list's array or its `$plain()`, which keeps nothing |
 | `String.split`, `words`, `lines`, `toList`, `indexes` | `→ fresh exclusive List …` | `split`, `Array.from`, `filter` and a `Js.array` the body fills make a new array of strings or numbers, which no cell is held twice in |
-| `Schema.print`, `printWith` | `borrowed Schema e a, aliased a → fresh Result …` | the engine reads the value and `JSON.stringify` reads what it made; an issue it answers may hold the value it was handed (`Issue.input`). Re-read 2026-10-15: a compiled schema's encoding worker (`schema.md` §6, *A statically known schema runs compiled*) reads the value and builds the host object the same way, and its issues hold the value as the engine's do |
+| `Schema.print`, `printWith` | `borrowed Schema e a, aliased a → fresh Result …` | the engine reads the value and `JSON.stringify` reads what it made; an issue it answers may hold the value it was handed (`Issue.input`). Re-read 2026-10-15: a compiled schema's encoding worker (`schema.md` §6, *A statically known schema runs compiled*) reads the value and builds the host object the same way, and its issues hold the value as the engine's do. Re-read 2026-10-19: `print` builds its options with `defaultOptions ⊤`, a new record per call (§31.16), which reads neither argument |
 | `Schema.parse`, `parseWith` | `borrowed Schema e a, String → unknown Result …` | `JSON.parse` makes new values, but the answer holds what the schema's own mapping, injection and conversion functions return, which may be anything (thesis §6.5). Re-read 2026-10-15: a compiled schema's decoding worker also returns its conversions' answers, so the answer is still unknown |
 | `Debug.toString` | `borrowed a → String` | `toStringAs` walks the value; the set of objects being printed holds each only while it is printed |
 | `Debug.log` | `String, returned a → a` | prints `toStringAs` of the value — a string, so the console keeps no reference to the value — and returns the value |
@@ -3927,6 +4063,27 @@ of the module's source and its imports' blocks; the determinism test runs `check
 - **Determinism**: `blackbox_test.zig`'s ownership errors at `--jobs=1` and `--jobs=8`, twice each.
 - **The checked core**: its refusal is a core or platform module with an error, which the maker already refuses
   with the diagnostics; core and `browser-direct`'s chain have no rejected line to refuse today.
+
+*Amended 2026-10-19 (issue #423, the retirement of `browser-direct`):* the harness no longer names
+`browser-direct`. **Whether a build enforces is the chain's**: its first `"lists"` down the chain (§28.2), read
+from the shipped manifests under `platforms/` or a test platform's own, or the hidden `--ownership-everywhere`
+(§30.7). The whole-program lowerings, `browser-direct` and `browser-inline`, are the platforms whose chains say
+`"in-place"`. Hence:
+
+- **The dump against the build** holds for every `.platform` token whose chain enforces. A token
+  `<platform>+everywhere` is that platform with `--ownership-everywhere`, its golden
+  `X.<platform>+everywhere.ownership`; `browser-tea+everywhere` is the enforcing build of a program written for
+  `browser-tea` (`ownership/LaterUseEnforced`).
+- **`build/bad/everywhere/`** projects are built for `browser-tea` with `--ownership-everywhere`: the checker's
+  refusals, apart from any lowering's. **`check/bad/inline/`** fixtures are checked with
+  `--platform=browser-inline`, as `check/bad/direct/`'s are with `browser-direct`.
+- **The `browser-tea` cross-build** of the first bullet is made for every enforcing `build/bad/` project whose
+  golden holds only the codes of §28.6: under `build/bad/direct/`, `build/bad/inline/` or a project's own
+  `platform/` on an in-place chain, and under `build/bad/everywhere/`, where it is the same build without the
+  flag.
+- **The release refusal**: every enforcing `build/bad/` project is built again with `--release --allow-debug`
+  and must be refused with the same diagnostics and nothing written. `--allow-debug` is there because `Debug`'s
+  own refusal is `build/bad-release/`'s claim.
 
 ### 28.11 Open questions
 
@@ -5284,6 +5441,15 @@ At an `update` demand, each `c ∈ C` must satisfy, in §8.1's order:
 4. **Captured** is not a condition of its own. A write of a captured record inside a lambda makes the lambda
    **once** (§18.8): its creation is a demand on the capture, at the written fields, and each call of it a
    demand on the closure. `captured-edit` stays for a capture the walk cannot place in a closure.
+   *Specified 2026-10-19 (R2d of #315).* The captures a lambda's body writes (`env_writes`) include its record
+   writes, each with the fields it writes, so the lambda is once by a record write as by a list's. Its creation
+   is a record demand on the capture, in the enclosing body, at the written fields: Known, Unescaped and
+   Disjoint as at any update, and Dead per field (item 5) with one difference — a read of a written field
+   after the creation is a whole use, not a hoist, because the write happens at a call of the closure, which
+   the lowering cannot place before the read; a read of an untouched field stays untouched. Each call of the
+   closure is §18.8's demand on its own cell, and handing it to a callee is accepted where the callee calls it
+   at most once (`seen`, `calls ≤1`); `Maybe.map (handleInput model _)` is such a call. The write inside the
+   lambda is then accepted `once`, or rejected with the creation demand's cause, or `once`.
 5. **Dead, per field** (*revised the same day*, §31.14): no pending operand holds `c` (`held-operand`), and no
    local holder of `c` is used **whole** after the demand, in a compatible branch (§7.2). A holder `h` that holds
    `c` at path `q` and is used after the demand at `u`:
@@ -5323,6 +5489,104 @@ At an `update` demand, each `c ∈ C` must satisfy, in §8.1's order:
    handed by a destructive read (`List.map rows (λr → { r | done = True })`, `List.update`, `Dict.update`) relies
    on its container's exclusivity: no record object at two positions. Since a record has a cell, `[ r, r ]` now
    fails exactly, and a list of records built by `List.repeat n r` fails as `[ cell, cell ]` does (T59).
+   *Specified 2026-10-19 (R2e of #315; proposed the same day, the parallel domain chosen by the owner).* A
+   list's conditions (§18.2) read no record object: `mkCond` drops an atom over one (§31.2). Records get a
+   condition of their own, beside a list's, in the same lattice and with the same operations, kept in a
+   second table so that no list's condition, cap or verdict reads it:
+   - **Atoms.** `rexcl c`: no record object is reachable from two positions of `c`, nor at two paths of one
+     position; `rsep c d`: `c` and `d` share no record object. As a list's, they name arrivals only —
+     parameters, captures, callback results — never a cell the body makes.
+   - **A cell's record condition** starts by its kind, as `cellCond` does: an arrival is `rexcl` of itself; a
+     site holds; a call's result is its summary entry's record condition, instantiated; ⊤, a payload, a
+     result no summary made fail approximately; a taken element is its container's.
+   - **A value's deep record condition** is the conjunction of its cells' record conditions and of `rsep`
+     between its record objects at every two paths neither of which is a prefix of the other. It is built
+     without pairing every two cells: one object at two such paths is the same cell twice, which a sort finds
+     (it fails exactly); an atom is needed only between two distinct arrivals. So it has **no cap** (the
+     owner forbids one): its size is bounded by the program, and a value of many fresh records costs a sort.
+   - **Where it is computed**: where §18.2 computes a list's — a literal `[ v₁, …, vₙ ]` is every item's deep
+     record condition and `rsep` between every two items (`[ r, r ]` fails exactly); a construction is the
+     base's lowered by what it stores, a later spread of a variable failing approximately; a call through a
+     summary is its `res` or `objs` entry's record condition, instantiated; a conservative call fails
+     approximately.
+   - **Where it is relied on** (§18.4): where a callback writes a record a destructive read hands it, as
+     item 6's opening says, and on a callee's `rxreq`. Relying on one that fails is a rejection, cause
+     `exclusive`, exact when it failed exactly; relying on one that holds records its atoms as `rxreq` of the
+     frame's summary, which every caller discharges, as `xreq` is (§18.3).
+   - **In a summary** (§18.3, format v18): each `res`, `objs` and supply entry carries its record condition
+     `rxc` beside `xc`, and the summary its `rxreq`. A row core asserts states its record conditions by the
+     same reasoning as its list ones, about where each element comes from: its `rxc` is the twin of its `xc`
+     (`excl` → `rexcl`, `sep` → `rsep`, `keep` → a record keep, the callback putting back the record it
+     was handed or one it made; a spine has none).
+   A list's verdicts read none of it, so none moves, and the 57 pending `List.map rows λr → { r | … }` lines
+   are decided.
+
+   *As built (2026-10-19, R2e of #315).* As specified, with three things the specification left open.
+   - **Only a place that may hold a record is one.** A record condition reads the cells whose type may be
+     or hold a record (`holdsRecord`): a record, a type variable, and anything the checker cannot see into
+     — a `foreign type` such as `Js.Value` or a program, a declaration that holds a list, a function or a
+     foreign type — may. Two records that share a `List Int` share no record, and `{ a = xs, b = xs }`
+     stored once holds. *Revised the same day (#421's review):* the first build took a `foreign type` to
+     hold no record, so core's lists, built on `Js.Value`, and the model at the entry (whose cells have
+     the program's type) stated record conditions that held outright, and lists holding a record twice
+     were accepted (`ownership/RecordContentsBuilt`, `RecordContentsCore`, `RecordContentsReturned`).
+   - **The model at the entry** keeps its record condition as an invariant, as it keeps a list's (§20.4):
+     its cells, and the record cells `update` wrote objects over, start holding, the rounds lower them by
+     what `update` stores, and `update`'s `rxreq` is discharged on its record lines
+     (`ownership/RecordContentsEntry`, `RecordContentsTwice`).
+   - **A caller's failed `rxreq`** is reported on the record demand the call makes of that argument, or on
+     a record line of its own, cause `exclusive`.
+   - **No list verdict reads a record condition**, and `zig build test-records-lost` shows it mechanically:
+     every corpus program is checked again with every record condition failing (`--ownership-records-lost`,
+     hidden and test-only), and its list lines must be the same, byte for byte. The one place the two
+     tables met, the entry's rounds (§20.4), now settles them apart: a record table that does not settle
+     is lowered to the limit alone, and only a list table that does not settle makes the declaration an
+     error. The record table does settle: a record condition only gains atoms, over the walk's cells, which
+     a round makes no more of once the list table has settled.
+   - **A `keep`** (`rkeepShape`) rests on what the callee hands its callback being taken (`rtakenSupply`
+     refuses a supply that is not), which is #419's surface too: until #419's fix, a split element pushed
+     back onto its own list is accepted for records as for lists (CK-264, `tests/pending`).
+   - **A `foreign`'s `exclusive` word** speaks of its list's lists, so the record twin of a words row's
+     made result fails approximately unless it is the row's argument.
+   A summary line prints a record condition after the list one, `r{…}`, nothing when it holds outright.
+   Over the 1 092 programs of the comparison, no list line moves against master, and the 64 pending item 6
+   lines are all decided: each callback now relies on its list's records, as `rxreq` of its declaration.
+   The record lines go from 2 861 accepted, 70 pending and 95 rejected to 2 859, 6 and 156. The 63
+   `exclusive` lines, all approximate, are where those `rxreq`s are discharged on a list whose record
+   condition fails: `Schema`'s decoders and printers (13: their issues are a `foreign`'s, `{lost}` as a
+   list's are), and 48 at the entry of TodoMVC-, Bike Wars- and keyed-row-shaped programs, whose `update`
+   passes its rows through a core row that loses the condition as it loses a list's (`List.append`,
+   `List.filter`, `swapAt`, …; #420), or stores a row the model already holds (KeyedEnds' `CopyLast`), and
+   2 in KeyedEnds' callbacks over `swapAt`'s answer.
+   Master accepted those without asking. The record domain costs core's whole walk about 100 million
+   instructions; a cheaper hash for the checker's memos pays for it, and the two tests that walk core count
+   4 203 and 4 218 million.
+
+   *Compared (2026-10-19); the owner chose the parallel domain.* The alternative is one lattice whose atoms carry a domain:
+   `excl`/`sep` over list cells and over record objects in one condition, `mkCond` tagging a record atom
+   instead of dropping it, a list's demand reading the list atoms, a record's reading both.
+   - *Soundness.* A list's demand may ignore a record atom: two positions that share a record object but no
+     list are written apart by a list write, which touches no record object. So both designs are sound for
+     lists. But a condition *fails* whole (exactly or approximately), and `[ r, r ]` fails on its record atom;
+     one lattice therefore needs a failure per domain too, or a list's reliance on that container fails where
+     it holds today. With the failure tagged, the one lattice is two conditions sharing their holding atoms.
+   - *Lines and sites.* One lattice touches §18.2–§18.4's sites once, but every operation on a condition —
+     its meet, `xsumOf`, instantiation, `rely`, `xreq` — learns the domain, in code every list verdict runs
+     through. The parallel domain leaves that code as it is and adds a record twin at each site: more lines,
+     none of them on a list's path.
+   - *Summary format.* One lattice: a domain bit on an atom and a failure per domain, in the fields a summary
+     has (smaller). Parallel: `rxc` beside `xc` on `res`, `objs` and supply entries, and `rxreq` (larger).
+     Either is v18.
+   - *Risk to list verdicts.* One lattice: real. A record atom joins a list's conditions, counts toward
+     `condition_cap` (§16.7) and so can move a list summary to a limit, and a mistake in the domain filter
+     moves list lines. Parallel: none by construction; a list's conditions never see a record atom, and the
+     comparison over the corpus has nothing to show.
+   - *Cost per walk.* About equal: one table of larger conditions, or two tables. Record conditions are few
+     outside programs with lists of records.
+
+   **Recommended: the parallel domain.** Both are sound, and the one lattice is smaller in the summary, but
+   it puts records into the code and the caps every list verdict depends on. The parallel domain keeps the
+   list analysis untouched, which is what every record slice so far has held to (no list line moves).
 
 The verdicts are §8.2's (`fresh`, `call`, `param`, `callback-param`, `once`, `entry`), and the causes are §8.3's
 and their later additions. No cause is new: a record demand is rejected for the reasons a list demand is.
@@ -5407,6 +5671,49 @@ and their later additions. No cause is new: a record demand is rejected for the 
   exact.
 - **The model's exclusivity invariant** (§28's dated amendment) covers record cells as it covers list cells. An
   arm that stores one record at two model paths refutes it.
+
+*As built (2026-10-19, slice R2c of #315), §31.7 and this section.* A summary carries a record's facts in
+bits no list's fact reads: `bit_f`, the write, with its field set (`W{f, g}`; `W{}` read back from a block
+that cannot say which); `bit_q`, a read of a record's field, printed `R`; and `bit_k`, the escape of a
+record's object, printed `E`. What the result holds of records — a record's object alone (`◦`), or a record of
+numbers whole — is `objs`, kept apart from `res`, so that no list's fact sees it; instantiated, its cells are
+copies that no list's fact reads and that escape with the cells they copy. A call applies the callee's `bit_f`
+as a call-site `update` demand on the argument's objects at the path, with the fields written (§16.4 item 3);
+the callee's own reads at the call are its body's, not a later use. A parameter's write is `accepted param`
+in the body and decided at each call; a call's answer is `call`, decided by the callee's `objs`. At the entry,
+each path `update` writes is an `update entry …` line: its object escapes where a command, a subscription or
+`update` keeps it (only the object, so that no list below it moves), and a message's record a view event
+builds is `payload` (the view's record objects reach the record lines only). A callback's write of a record
+its callee supplies needs the supply owned (`supply`), and a closure that writes only a record is decided by
+its consumers, `pending` where it leaves sight, as a list's write is. `{ Record.copy r | … }` gives the copy a
+new object, its fields split from `r`'s when the record type is closed. A base no provenance names is
+`pending`. A callback's write of a record a destructive read hands it (`List.map rows λr → { r | … }`) writes
+the callee's parameter's elements, and so the caller's argument, at the call (`π1[*] W{F}`); it relies on the
+list holding no record at two positions (§31.4 item 6), which a list's conditions cannot say (they read no
+record object), so the callback's line is `pending` until that is built. Over the 1 071 programs of the
+comparison (master after #393), 276 have record updates: 2 832 demands (1 775 in bodies, 666 at calls, 391 at
+entries), 2 577 accepted, 66 pending — 57 of them §31.4 item 6, 4 stored in a record, 3 returned, 1 out of
+sight, 1 with no provenance — and 189 rejected, in 51 programs: 75 `top-level`, 36 `later-use`, 22 `payload`,
+10 `captured-edit`, 9 `alias`, 9 `unknown`, 9 `escaped`, 7 `element`, 5 `call`, 3 `disjoint`, 2
+`held-operand` and 2 `supply`; 12 lines with hoists and 296 eager reads. No list line moves against master.
+CK-260 and CK-261 are green (`ownership/RecordPayload`, `RecordCapture`, `RecordCaptureField`). Left: a `For`
+row callback's write of its item is `pending`, for a list and a record alike, so CK-262 stays red (#402);
+records' exclusive contents (§31.4 item 6); a captured record's write making its closure once (§31.4 item 4,
+the 10 `captured-edit` lines); a summary that reads an update's base whole, which refuses the TodoMVCs'
+`changed model (List.map model.todos …)` (#405); and a base use under a marker (#404). The summary block is
+version 17.
+
+*Revised 2026-10-19 (R2d of #315, from its review).* A callee's `bit_k` is an escape at the call: the record
+objects at the path escape, alone, after the callee's writes, so `twice d = keep 2 (keep 1 d)`, whose `keep`
+writes its record and then hands it to JavaScript, refuses the second write (`escaped`). A callback's keep of
+a record it is handed escapes that record's objects through the callee's supplies, list and record ones: a
+`bit_k`, or a list's `E`, at the path it keeps, whole; a field kept keeps the field's objects and not the
+record's (`ownership/core/RecordKeepJs`). And a callback's write of the answer an earlier call of it returned
+(a fold's accumulator) reads two of that answer's objects: its own, at ε, and the one at the path the write
+writes. Each must be the caller's — one it made, or one the callee supplied it owned — not kept at its own
+path or above it, and at no other path of the answer. A record held below the one written is not written, so
+what the host keeps of a driver's state (its fibers, its scope) does not refuse the state's update, while
+`( r, List.push hist r )` refuses the next step's write of `r` (`ownership/RecordFoldBelow`).
 
 ### 31.9 The errors
 
@@ -5609,6 +5916,23 @@ keeps nothing across renders.
 
 ### 31.13 Measured (2026-10-17): a static approximation, not the checker
 
+**The checker's count (2026-10-19, R2c of #315), which replaces the approximation below.** Over the same set,
+1 071 programs now, 276 have record updates and the checker makes 2 832 record demands: 1 775 updates in
+bodies, 666 call-site lines (§31.7) and 391 entry lines (§31.8). 189 are rejected, in 51 programs, and 66 are
+`pending`, 57 of them because records' exclusive contents are not built (§31.8's *As built*):
+
+| Rejected | Lines | Where | Fix |
+|---|---|---|---|
+| `top-level` | 75 | a top-level base in a function, or in a `main` that names it twice: `run/Schema*`'s `defaultOptions`, `note`, `person` and `sample` (and more `run/` programs), Bike Wars' `initModel` and `initBikes` at the entry, `run/ListPersistence`'s `empty` (19) | `restructure` (§31.16: `Schema.defaultOptions ⊤`; `initModel ⊤`) |
+| `later-use`, `alias`, `held-operand` | 47 | `core/Schema`'s `Context` handed whole to the next `run` (13), the seven TodoMVCs' `changed model (List.map model.todos …)` (14, an over-refusal, #405), Bike Wars, `run/ListPersistence`, `run/Records`, `run/MarkupFieldIdentity`, `TypedKeys` ×2, `PrettyPrinter` (`bench/corpus`), `browser/direct/RecordUpdateCompare` | `copy` |
+| `payload` | 22 | the three Conduit pages and `examples/conduit` (P6: the entry does not tell `update`'s arms apart), `StoredBranchPlacement` | — (the list's rule, §23.6) |
+| `captured-edit` | 10 | Bike Wars' `handleInput` writes a captured model (§31.4 item 4, not built), `run/ListPersistence` | — |
+| `unknown`, `escaped` | 18 | a record from JavaScript (`core/Schema.beni:1231`'s `{ last \| … }`, `browser-direct`'s `Tea.beni` at `Tea.commands` and `Tea.subscriptions`, `run/ReleaseFieldsAcrossJs`) or from a schema the checker does not follow (`run/SchemaDepth`, 5); Conduit's `ChangedUrl` address, kept by the runtime (7); both `Tea.beni` platforms' `perform` state, kept by `List.foldl` | `copy` (R3) |
+| `element`, `call`, `disjoint`, `supply` | 17 | the TodoMVCs' edit of one todo, Sternhalma's `board.cells[*]`, `KeyedEnds`, `run/ListPersistence`'s `walk`, `BranchReturn`'s entry, the `List.foldl` accumulator of both `Tea.beni` platforms | — |
+
+The approximation's 9 certain programs are all among them, as are `run/Records` and `core/Schema`'s contexts,
+which it counted as possible.
+
 **Why an approximation.** The checker gives a record no cell (§31.2), so it cannot count record rejections. A
 faithful count needs the checker change of §31.12's first slice, and this slice changes no `src/`. The numbers
 below are therefore a **conservative syntactic approximation**, labelled as one. A script walks every module's
@@ -5794,3 +6118,34 @@ Every site of `core/` and the platforms that §31's measurement or reading found
 
 `core/` and every platform must hold no rejected or pending record line when beni is built (§28.7). Every row is
 checked by the report-mode slice before enforcement.
+
+*As built (2026-10-19, slice R3 of #315), the table and §31.13's programs.* `Schema.defaultOptions` is
+`⊤ → Options`; core's readers and a compiled schema's root wrappers call it (`defaultOptions()`, one record
+per run), and the bound it holds is named once, `defaultMaxDepth`, which `shapeMax` reads. The engine's child
+contexts — `hostEnds`, `belowBackward` and `run`'s `NConverted`, `NFlipped` and `NProjected` — are
+`{ Record.copy c | … }`, and `:1231`'s `{ last | … }`, a record read back from the engine's array, is a
+copy: `core/` holds no rejected record line. The programs, each with the fix its line named and no checker
+change: PrettyPrinter's `Concat` and `Group` (a copy, and `{ flat | mode = Break }`), and its `fits`, which
+only looks and so copies; both TypedKeys, which update in the arms that need it; Bike Wars' `initBikes`,
+`initModel` and `init` as functions of `⊤`, and a copy of the red bike for `Bike.shoot` and `Bike.update`;
+Sternhalma's `setOccupant`; `KeyedInPlace`'s and `KeyedInPlaceMap`'s `rows ⊤`; `BranchReturn`'s page and
+`home` as two records, an alias the rule refuses (one record at two model paths, §31.8) rather than sharing
+anything observes; `run/ListPersistence`'s model functions; NotesApp's `editNote`, whose callback is handed a
+note the history keeps; Conduit's Editor and Settings saves, whose commands kept the model's form (`escaped`,
+§31.6), though a command's fiber starts in the microtask drain (`core/Task.beni`), before further input, so
+no save could read a later form; `run/Records`, `run/MarkupFieldIdentity`, `run/TeaLoop`, and the `run/`
+programs whose top-level test value an update used (`Record.copy`). `run/ReleaseFieldsAcrossJs`' test
+platform declares its `origin` `fresh`, which its sibling makes, and needs no copy. Three copies that only
+answered an over-refusal were taken back (rule 10): Conduit's `Route.fromUrl` (#412), `run/SchemaDepth`'s
+issues (#413), and `run/SpecializeEscapeThenSpread`, which keeps its escaped record reaching a spread, a
+refusal from R4 on, beside `run/SpecializeEscapeThenCopy`, the program that passes. Every `run/`, `browser/`
+and `emit/` golden prints what it did; the emit goldens change only by `Schema$defaultOptions()`. Over the
+1 083 programs, 105 record lines stay rejected, none of them a program's to fix: the TodoMVCs'
+`changed model (List.map model.todos …)` and their edit of one todo (#405, 19), `KeyedEnds`' callback that
+reads `List.length rows` (a read at ε, the same summary limit, 4), Conduit's Editor `status` at the entry,
+one form at two variants of one field (#410, 28), its `ChangedUrl` address (#412, 7), Conduit's and
+`StoredBranchPlacement`'s `payload` (P6, 29), `run/SchemaDepth`'s issues (#413, 5), Bike Wars'
+`handleInput model _` (§31.4 item 4, 6), `run/SpecializeEscapeThenSpread` (1), and the two `Tea.beni`
+platforms (6): `Direct.beni`'s state read back from JavaScript (`Tea.commands (Js.to self)`) and `perform`'s
+`List.foldl` accumulator, whose record supply the checker does not yet follow through the callback's loans.
+Those wait for the checker (R2d) or a decision on the driver's state; none was rewritten to pass.

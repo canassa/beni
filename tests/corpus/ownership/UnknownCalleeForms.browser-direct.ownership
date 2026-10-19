@@ -9,13 +9,13 @@ module UnknownCalleeForms
   83:13 List.push xs: accepted fresh
   90:13 List.push xs: rejected top-level: UnknownCalleeForms.shared is a top-level value
   summary items: res shared(UnknownCalleeForms.shared)
-  summary grab: π1 RAw; res [*] ~⊤call{lost}, [*]⋆ ~π1, ⊤call{lost}, ⋆ ~π1
-  summary dispatched: res [*] ~⊤call{lost}, ⊤call{lost}
+  summary grab: π1 RAw; res [*] ~⊤call{lost}r{lost}, [*]⋆ ~π1, ⊤call{lost}r{lost}, ⋆ ~π1
+  summary dispatched: res [*] ~⊤call{lost}r{lost}, ⊤call{lost}r{lost}
   summary resolved: res [*] ~shared(UnknownCalleeForms.shared)[*], shared(UnknownCalleeForms.shared)
-  summary twoShared: res [*] ~⊤call{lost}, ⊤call{lost}
-  summary twoFresh: res [*] ~⊤call{lost}, ⊤call{lost}
-  summary mk: res .load λ
-  summary fresh: res .load λ
+  summary twoShared: res [*] ~⊤call{lost}r{lost}, ⊤call{lost}r{lost}
+  summary twoFresh: res [*] ~⊤call{lost}r{lost}, ⊤call{lost}r{lost}
+  summary mk: res .load λr{lost}, fresh501◦
+  summary fresh: res .load λr{lost}, fresh501◦
   summary callReceiver: res [*] ~shared(UnknownCalleeForms.shared)[*], shared(UnknownCalleeForms.shared)
   summary callReceiverFresh: res [*] ~fresh2, fresh1
   summary boxFresh: res fresh1

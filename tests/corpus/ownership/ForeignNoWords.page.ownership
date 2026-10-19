@@ -2,8 +2,8 @@ module ForeignNoWords
   16:14 construction kids: rejected escaped: it was given to JavaScript, or kept by a callee (approx)
   24:16 construction names: rejected escaped: a function value that Page.onInput hands to JavaScript captured it, and JavaScript is taken to keep it (§18.6) (approx)
   32:16 construction parts: accepted fresh
-  summary children: res ⊤{lost}
-  summary handled: π1 RJ; res ⊤{lost}; π1 calls many, unseen
+  summary children: res ⊤{lost}r{lost}
+  summary handled: π1 RJ; res ⊤{lost}r{lost}; π1 calls many, unseen
   summary joined: unused
   demands 3: accepted 1 (fresh 1, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
 total 3: accepted 1 (fresh 1, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2

@@ -1,0 +1,51 @@
+-- ownership: a record accumulator through `List.foldl`'s callback
+-- (`ownership-checker.md` §31.5), the Tea drivers' `perform`. The callback
+-- returns the state it is handed, written or not, so what `List.foldl`
+-- hands it at each step is what it returned before: owned when the first
+-- state is, a loan of it (§29). `perform` writes its state parameter, which
+-- its callers decide (`runs`, a fresh state, accepted; `again`, which reads
+-- the state after, rejected `later-use`). `keeps` returns a top-level
+-- record from the callback, which is not owned: rejected `supply`.
+type alias State =
+    count : Int
+    last : String
+
+
+type Item
+    = Add Int
+    | Name String
+    | Skip
+
+
+item : Item, State → State
+item it state =
+    case it of
+        Add n →
+            { state | count = state.count + n }
+
+        Name s →
+            { state | last = s }
+
+        Skip →
+            state
+
+
+pub perform : List Item, State → State
+perform items state = List.foldl items state λit s → item it s
+
+
+pub runs : List Item → State
+runs items = perform items { count = 0, last = "" }
+
+
+pub again : List Item, State → State × Int
+again items state = ( perform items state, state.count )
+
+
+start : State
+start = { count = 0, last = "" }
+
+
+pub keeps : List Item → State
+keeps items = List.foldl items { count = 0, last = "" } λit s →
+    if it == Skip then start else item it s

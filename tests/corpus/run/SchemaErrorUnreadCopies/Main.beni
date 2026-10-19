@@ -1,0 +1,88 @@
+-- A shape run copies what it read into a record of its own (`schema.md` §6, *A
+-- validator run is a shape that one shared validator reads*): the host writing
+-- the object after the run does not change the record, and keys the schema
+-- does not name are not carried into it, so `==` at a type variable finds two
+-- records equal that were read from objects with different extra keys. Every
+-- line prints a run that discards its error and one that reads it. This
+-- program has fewer than `SchemaValid.shape_threshold` such runs, so they keep
+-- their compiled workers; `run/SchemaErrorUnreadShapes` reads the same inputs
+-- through shapes, against the same answers.
+import Hosts
+import Node
+import Schema exposing (Value)
+
+
+schema Pair =
+    count : Int
+    label : String as "the-label"
+
+
+pairText : Pair.Type → String
+pairText p = "${String.fromInt p.count} ${p.label}"
+
+
+-- The host writes the object after the run.
+mutation : String
+mutation =
+    v = Hosts.parse "{\"count\":1,\"the-label\":\"one\"}"
+    valid = Result.toMaybe (Schema.read (Pair.schema ⊤) v)
+    read = Schema.read (Pair.schema ⊤) v
+    Hosts.set v "count" (Hosts.parse "99")
+    Hosts.set v "the-label" (Hosts.parse "\"changed\"")
+    shown =
+        case valid of
+            Just p →
+                pairText p
+
+            Nothing →
+                "invalid"
+    readShown =
+        case read of
+            Ok p →
+                pairText p
+
+            Err issues →
+                "invalid (${String.fromInt (List.length issues)})"
+    "host writes after the run: ${shown} | ${readShown}"
+
+
+-- `==` at a type variable.
+sameAt : a, a → Bool
+    where a.eq : a, a → Bool
+sameAt x y = x == y
+
+
+-- A run that reads its error, keeping its issues: the specialised path.
+readKept : Value → Maybe Pair.Type
+readKept v =
+    case Schema.read (Pair.schema ⊤) v of
+        Ok p →
+            Just p
+
+        Err issues →
+            if List.isEmpty issues then Nothing else Nothing
+
+
+extraKeys : String
+extraKeys =
+    plain = Hosts.parse "{\"count\":2,\"the-label\":\"two\"}"
+    extra = Hosts.with (Hosts.with plain "more" (Hosts.parse "1")) "label" (Hosts.parse "\"x\"")
+    valid =
+        if
+            sameAt
+                (Result.toMaybe (Schema.read (Pair.schema ⊤) plain))
+                (Result.toMaybe (Schema.read (Pair.schema ⊤) extra))
+        then
+            "equal"
+        else
+            "unequal"
+    read =
+        if sameAt (readKept plain) (readKept extra) then
+            "equal"
+        else
+            "unequal"
+    "extra keys, == at a type variable: ${valid} | ${read}"
+
+
+main : Node.Program
+main = Node.printLines [ mutation, extraKeys ]

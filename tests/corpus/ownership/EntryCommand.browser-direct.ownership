@@ -1,15 +1,17 @@
 module EntryCommand
-  31:15 update model: pending: its base is a parameter, and the summary that states the write for callers is not built yet (§31.7)
+  31:15 update model: accepted param
   31:33 List.push model.items: accepted param
-  41:15 update model: pending: its base is a parameter, and the summary that states the write for callers is not built yet (§31.7)
+  41:15 update model: accepted param
   41:33 List.push model.items: accepted param
   58:5 entry EntryCommand.captures model.items: rejected escaped: at some message the runtime keeps it: a command or a subscription holds it, or update escapes it (§20.4) (approx)
+  58:5 update entry EntryCommand.captures model: accepted entry
   68:5 entry EntryCommand.counts model.items: accepted entry
-  summary captures: π2 RA, π2.items RAW, π2.items[*] A; res .0 π2, .0.items π2.items, .0.items[*] ~π2.items[*], .1#Cmd.0 fresh1{excl π2.items} shared(Cmd.none)#Cmd.0, .1#Cmd.0[*]#Perform.0◇⟨◇⟩◇ π2.items
-  summary counts: π2 RA, π2.items RAW, π2.items[*] A; res .0 π2, .0.items π2.items, .0.items[*] ~π2.items[*], .1#Cmd.0 fresh1 shared(Cmd.none)#Cmd.0
-  summary view: π1.items R; res ⟨render⟩ fresh1{lost}
+  68:5 update entry EntryCommand.counts model: accepted entry
+  summary captures: π2 RAW{items}, π2.items RAW, π2.items[*] A; res .0 π2 π2◦, .0.items π2.items, .0.items[*] ~π2.items[*], .1#Cmd.0 fresh1{excl π2.items} shared(Cmd.none)#Cmd.0, .1#Cmd.0[*]#Perform.0◇⟨◇⟩◇ π2.items
+  summary counts: π2 RAW{items}, π2.items RAW, π2.items[*] A; res .0 π2 π2◦, .0.items π2.items, .0.items[*] ~π2.items[*], .1#Cmd.0 fresh1 shared(Cmd.none)#Cmd.0
+  summary view: π1.items R; res ⟨render⟩ fresh1{lost}r{lost}
   demands 4: accepted 3 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 1; assumed 0), pending 0, rejected 1
-  records 2: accepted 0, pending 2, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 1
+  records 4: accepted 4, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 1
 total 4: accepted 3 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 1; assumed 0), pending 0, rejected 1
-records 2: accepted 0, pending 2, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 1
+records 4: accepted 4, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 1
 cause escaped 1
