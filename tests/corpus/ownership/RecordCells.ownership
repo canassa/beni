@@ -1,14 +1,14 @@
 module RecordCells
   30:19 construction box.items: accepted fresh
-  35:9 update b: pending: its base is a parameter, and the summary that states the write for callers is not built yet (§31.7) [hoisted 1]
+  35:9 update b: accepted param [hoisted 1]
   36:19 construction s.items: accepted fresh
-  41:9 update r: pending: its base is a parameter, and the summary that states the write for callers is not built yet (§31.7) [hoisted 1]
+  41:9 update r: accepted param [hoisted 1]
   42:19 construction s.items: accepted fresh
-  summary distance: unused
+  summary distance: π1.x R, π1.y R
   summary literal: π1 R
-  summary closed: π1.items R
-  summary open: π1 R, π1.items R
+  summary closed: π1 W{items}, π1.items R
+  summary open: π1 RW{items}, π1.items R
   demands 3: accepted 3 (fresh 3, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
-  records 2: accepted 0, pending 2, rejected 0 (copy 0, restructure 0); hoisted 2, eager reads 0
+  records 2: accepted 2, pending 0, rejected 0 (copy 0, restructure 0); hoisted 2, eager reads 0
 total 3: accepted 3 (fresh 3, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
-records 2: accepted 0, pending 2, rejected 0 (copy 0, restructure 0); hoisted 2, eager reads 0
+records 2: accepted 2, pending 0, rejected 0 (copy 0, restructure 0); hoisted 2, eager reads 0

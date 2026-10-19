@@ -1,0 +1,21 @@
+module RecordCallbackEntry
+  35:15 update f: accepted param
+  39:14 update m: accepted param
+  49:15 update model: accepted param [hoisted 1]
+  49:32 update model.form: rejected later-use: model.form is read again at 49:76 (RecordCallbackEntry.setName writes it) [copy]
+  52:15 update model: rejected later-use: model is read again at 52:73 (RecordCallbackEntry.onForm writes it) [copy]
+  52:15 update model.form: rejected later-use: model.form is read again at 52:73 (RecordCallbackEntry.onForm writes it) [copy]
+  52:28 update f: accepted callback-param (RecordCallbackEntry.onForm supplies it owned)
+  56:15 update model: accepted param (RecordCallbackEntry.onForm writes it)
+  56:15 update model.form: rejected alias: old holds it and is read at 56:63 (RecordCallbackEntry.onForm writes it) [copy]
+  56:23 update _: accepted callback-param (RecordCallbackEntry.onForm supplies it owned)
+  74:5 update entry RecordCallbackEntry.update model: rejected escaped: at some message the runtime keeps it: a command or a subscription holds it, or update escapes it (§20.4) (approx) [copy]
+  74:5 update entry RecordCallbackEntry.update model.form: rejected escaped: at some message the runtime keeps it: a command or a subscription holds it, or update escapes it (§20.4) (approx) [copy]
+  summary setName: π2 W{name}; res π2◦
+  summary onForm: π1 R, π2 W{form}, π2.form R; res .form cb1, π2◦; π1 calls ≤1, supply 1 π2.form owned
+  summary update: π1 R, π2 RW{form}, π2.form RW{name}; res .0 π2 π2◦, .0.form π2.form◦, .1#Cmd.0 fresh1 shared(Cmd.none)#Cmd.0, .1#Cmd.0[*]#Now.0 λ λ λ, .1#Cmd.0[*]#Perform.0 λ λ λ, .1#Cmd.0[*]#Perform.0◇ π2 π2.form
+  summary view: res ⟨render⟩ fresh1{lost}
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 12: accepted 6, pending 0, rejected 6 (copy 6, restructure 0); hoisted 1, eager reads 1
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 12: accepted 6, pending 0, rejected 6 (copy 6, restructure 0); hoisted 1, eager reads 1

@@ -1,0 +1,47 @@
+-- ownership: record updates through a recursive type, whose summaries name
+-- levels by a marker (`ownership-checker.md` §31.7). `relabel` writes every
+-- node (`π1⟨Tree⟩#Tree.0 W{kids, label}`), and its own update, which
+-- replaces both of `Node`'s fields, reads none of them, so the kids'
+-- write by `List.map` before it is accepted. `deepest` keeps the root apart
+-- from the levels below it. `keep` and `keepDeep` use the tree after the
+-- write: `later-use`; `fresh` writes a tree it built. `deepest`'s call
+-- `deepest k` is refused `alias` through the base use of `n`, which reads
+-- only `label`: the marker hides the field it reaches the levels by (#404).
+type Tree
+    = Tree Node
+
+
+type alias Node =
+    label : String
+    kids : List Tree
+
+
+relabel : Tree → Tree
+relabel tree =
+    case tree of
+        Tree n →
+            Tree { n | label = "x", kids = List.map n.kids relabel }
+
+
+deepest : Tree → Tree
+deepest tree =
+    case tree of
+        Tree n →
+            case n.kids of
+                [ k ] →
+                    Tree { n | kids = [ deepest k ] }
+
+                _ →
+                    Tree { n | label = "leaf" }
+
+
+pub keep : Tree → Tree × Tree
+keep t = ( relabel t, t )
+
+
+pub keepDeep : Tree → Tree × Tree
+keepDeep t = ( deepest t, t )
+
+
+pub fresh : ⊤ → Tree
+fresh ⊤ = deepest (Tree { label = "a", kids = [ Tree { label = "b", kids = [] } ] })

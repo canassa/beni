@@ -2,25 +2,27 @@ module CallerSide
   17:15 construction xs: accepted param
   21:12 call CallerSide.addOne <call CallerSide.addOne>: accepted param (CallerSide.addOne writes π1)
   21:20 call CallerSide.addOne xs: accepted param (CallerSide.addOne writes π1)
-  25:11 update p: pending: its base is a parameter, and the summary that states the write for callers is not built yet (§31.7)
+  25:11 update p: accepted param
   25:23 construction p.a: accepted param
   30:10 call CallerSide.addOne xs: rejected later-use: xs is read again at 31:22 (CallerSide.addOne writes π1)
   35:13 call CallerSide.addOne <call CallerSide.addOne>: accepted fresh (CallerSide.addOne writes π1)
   35:21 call CallerSide.addOne <literal>: accepted fresh (CallerSide.addOne writes π1)
   39:29 call CallerSide.twice xs: rejected later-use: xs is read again at 39:41 (CallerSide.twice writes π1)
   43:11 call CallerSide.pushA <record>.a: rejected disjoint: another operand of the same operation reaches it (CallerSide.pushA writes π1.a)
+  43:11 update <record>: accepted fresh (CallerSide.pushA writes it)
   47:11 call CallerSide.pushA <record>.a: accepted fresh (CallerSide.pushA writes π1.a)
+  47:11 update <record>: accepted fresh (CallerSide.pushA writes it)
   summary addOne: π1 RAW; res π1
   summary twice: π1 RAW; res π1
-  summary pushA: π1.a RAW, π1.b RA; res .a π1.a, .b π1.b
+  summary pushA: π1 W{a}, π1.a RAW, π1.b RA; res .a π1.a, .b π1.b, π1◦
   summary reads: π1 RW
   summary chained: res fresh1
   summary twiceRead: π1 RW
-  summary twin: π1 RAW; res .a π1, .b π1
-  summary apart: res .a fresh1, .b fresh2
+  summary twin: π1 RAW; res .a π1, .b π1, fresh501◦
+  summary apart: res .a fresh1, .b fresh2, fresh501◦
   demands 10: accepted 7 (fresh 3, call 0, param 4, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
-  records 1: accepted 0, pending 1, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
+  records 3: accepted 3, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
 total 10: accepted 7 (fresh 3, call 0, param 4, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
-records 1: accepted 0, pending 1, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
+records 3: accepted 3, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
 cause disjoint 1
 cause later-use 2

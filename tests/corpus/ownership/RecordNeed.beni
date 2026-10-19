@@ -1,0 +1,55 @@
+-- ownership: a record taken from what a function parameter returns, and
+-- written (`ownership-checker.md` §31.5, §16.2's `need`). `mod` and `modQ`
+-- write the answer of `f`, so they state `need owned` for records, and each
+-- caller hands a function whose answer is checked: a top-level record
+-- (`c4`, `h2`) is refused, and so is a parameter read after (`c5`, `h1`);
+-- `fresh` returns a new record, accepted. `Q` holds a list beside its
+-- numbers, `P` none.
+type alias P =
+    x : Int
+    y : Int
+
+
+type alias Q =
+    x : Int
+    s : List Int
+
+
+top : P
+top = { x = 0, y = 0 }
+
+
+topQ : Q
+topQ = { x = 0, s = [] }
+
+
+mod : (⊤ → P) → P
+mod f =
+    q = f ⊤
+    { q | x = 1 }
+
+
+modQ : (⊤ → Q) → Q
+modQ f =
+    q = f ⊤
+    { q | x = 1 }
+
+
+pub c4 : ⊤ → P
+c4 ⊤ = mod λ⊤ → top
+
+
+pub c5 : P → P × P
+c5 r = ( mod λ⊤ → r, r )
+
+
+pub h1 : Q → Q × Q
+h1 r = ( modQ λ⊤ → r, r )
+
+
+pub h2 : ⊤ → Q
+h2 ⊤ = modQ λ⊤ → topQ
+
+
+pub fresh : ⊤ → P
+fresh ⊤ = mod λ⊤ → { x = 0, y = 0 }

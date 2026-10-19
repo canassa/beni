@@ -2,21 +2,21 @@ module Toplevel
   26:15 construction Toplevel.seed: rejected top-level: Toplevel.seed is a top-level value
   30:14 update Toplevel.initialModel: rejected top-level: Toplevel.initialModel is a top-level value [restructure]
   30:41 construction Toplevel.initialModel.todos: rejected top-level: Toplevel.seed is a top-level value
-  40:5 update model: pending: nothing yet names where its base's object comes from: a summary's results do not carry a record's object until §31.7's
+  40:5 update model: accepted call
   40:25 construction model.todos: accepted call
   44:19 ++ <literal>: accepted fresh
   51:31 construction xs: rejected element: d#Dict.0#Node.2 holds it and is read at 51:13 (approx)
   58:15 call Toplevel.bump Dict.empty#Dict.0#Node.2: accepted fresh (Toplevel.bump writes π1#Dict.0#Node.2)
   summary addSeed: res shared(Toplevel.seed)
-  summary addModel: res .todos shared(Toplevel.seed)
-  summary init: res .todos fresh1
-  summary addFresh: res .todos fresh1
+  summary addModel: res .todos shared(Toplevel.seed), shared(Toplevel.initialModel)◦
+  summary init: res .todos fresh1, fresh501◦
+  summary addFresh: res .todos fresh1, fresh501◦
   summary reading: res fresh1
   summary bump: π1#Dict.0 R, π1#Dict.0#Node.1 RA, π1#Dict.0#Node.2 RAW, π1#Dict.0#Node.3 RA, π1#Dict.0#Node.4 RA; res #Dict.0#Node.1 ~π1#Dict.0#Node.1, #Dict.0#Node.2 ~fresh1{lost} ~π1#Dict.0#Node.2{lost}, #Dict.0#Node.3 ~π1#Dict.0#Node.3{lost} ~π1#Dict.0#Node.4{lost}, #Dict.0#Node.4 ~π1#Dict.0#Node.3{lost} ~π1#Dict.0#Node.4{lost}
   summary fromEmpty: res #Dict.0#Node.2 ~fresh1{lost}
   demands 6: accepted 3 (fresh 2, call 1, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
-  records 2: accepted 0, pending 1, rejected 1 (copy 0, restructure 1); hoisted 0, eager reads 0
+  records 2: accepted 1, pending 0, rejected 1 (copy 0, restructure 1); hoisted 0, eager reads 0
 total 6: accepted 3 (fresh 2, call 1, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
-records 2: accepted 0, pending 1, rejected 1 (copy 0, restructure 1); hoisted 0, eager reads 0
+records 2: accepted 1, pending 0, rejected 1 (copy 0, restructure 1); hoisted 0, eager reads 0
 cause top-level 2
 cause element 1

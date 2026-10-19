@@ -1,31 +1,33 @@
 module OwnedSend
-  56:15 update model: pending: its base is a parameter, and the summary that states the write for callers is not built yet (§31.7)
-  59:15 update model: pending: its base is a parameter, and the summary that states the write for callers is not built yet (§31.7)
+  56:15 update model: accepted param
+  59:15 update model: accepted param
   59:46 List.push more: accepted param
-  62:15 update model: pending: its base is a parameter, and the summary that states the write for callers is not built yet (§31.7)
+  62:15 update model: accepted param
   62:32 List.push model.rows: accepted param
-  68:15 update model: pending: its base is a parameter, and the summary that states the write for callers is not built yet (§31.7)
+  68:15 update model: accepted param
   74:5 send <Loaded …>: accepted call
   80:5 send <Loaded …>: rejected alias: rows holds it and is read at 81:18
   88:22 value Loaded: rejected need: Cmd.task sends what it returns, and it returns what Cmd.task hands it, which may be a list the sender still holds (§23.5)
   91:42 send <Loaded …>: rejected later-use: model.rows is read again at 91:13
-  94:15 update model: pending: its base is a parameter, and the summary that states the write for callers is not built yet (§31.7)
+  94:15 update model: accepted param
   94:32 List.push model.rows: accepted param
   115:5 entry OwnedSend.loads model.rows: accepted entry
   115:5 entry OwnedSend.loads msg#Grow.0: accepted entry
+  115:5 update entry OwnedSend.loads model: accepted entry
   119:32 value Loaded: rejected need: Sub.listen sends what it returns, and it returns what Sub.listen hands it, which may be a list the sender still holds (§23.5)
   119:57 send <call List.range>: accepted call
   125:5 entry OwnedSend.shares model.rows: rejected escaped: at some message the runtime keeps it: a command or a subscription holds it, or update escapes it (§20.4) (approx)
-  summary loads: π1 R, π1#Grow.0 RW, π1#Loaded.0 RA, π2 RA, π2.rows RAW, π2.rows[*] A; res .0 π2, .0.rows π1#Loaded.0 π2.rows, .0.rows[*] ~π2.rows[*], .1#Cmd.0 fresh1 shared(Cmd.none)#Cmd.0
+  125:5 update entry OwnedSend.shares model: accepted entry
+  summary loads: π1 R, π1#Grow.0 RW, π1#Loaded.0 RA, π2 RAW{rows, total}, π2.rows RAW, π2.rows[*] A; res .0 π2 π2◦, .0.rows π1#Loaded.0 π2.rows, .0.rows[*] ~π2.rows[*], .1#Cmd.0 fresh1 shared(Cmd.none)#Cmd.0
   summary fresh: res #Cmd.0 fresh1, #Cmd.0[*]#Now.0 λ, #Cmd.0[*]#Perform.0 λ
   summary reused: res #Cmd.0 fresh1, #Cmd.0[*]#Now.0 λ, #Cmd.0[*]#Perform.0 λ
-  summary shares: π1 R, π2 RA, π2.rows RAS, π2.rows[*] A; res .0 π2, .0.rows π2.rows, .0.rows[*] ~π2.rows[*], .1#Cmd.0 fresh1{excl π2.rows} shared(Cmd.none)#Cmd.0, .1#Cmd.0[*]#Perform.0◇ π2.rows, .1#Cmd.0[*]#Perform.0◇⟨◇⟩◇ ~π2.rows
+  summary shares: π1 R, π2 RAW{rows}, π2.rows RAS, π2.rows[*] A; res .0 π2 π2◦, .0.rows π2.rows, .0.rows[*] ~π2.rows[*], .1#Cmd.0 fresh1{excl π2.rows} shared(Cmd.none)#Cmd.0, .1#Cmd.0[*]#Perform.0◇ π2.rows, .1#Cmd.0[*]#Perform.0◇⟨◇⟩◇ ~π2.rows
   summary view: π1.total R; res ⟨render⟩ fresh1{lost}
-  summary initial: res .rows fresh1
+  summary initial: res .rows fresh1, fresh501◦
   demands 12: accepted 7 (fresh 0, call 2, param 3, callback-param 0, once 0, entry 2; assumed 0), pending 0, rejected 5
-  records 5: accepted 0, pending 5, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 2
+  records 7: accepted 7, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 2
 total 12: accepted 7 (fresh 0, call 2, param 3, callback-param 0, once 0, entry 2; assumed 0), pending 0, rejected 5
-records 5: accepted 0, pending 5, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 2
+records 7: accepted 7, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 2
 cause escaped 1
 cause later-use 1
 cause alias 1

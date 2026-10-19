@@ -1,15 +1,15 @@
 module RecordField
-  16:15 update model: pending: its base is a parameter, and the summary that states the write for callers is not built yet (§31.7)
+  16:15 update model: accepted param
   16:33 List.push model.items: accepted param
-  21:12 update model: pending: its base is a parameter, and the summary that states the write for callers is not built yet (§31.7)
+  21:12 update model: accepted param
   21:32 construction model.items: accepted param
-  22:5 update next: pending: its base is a parameter, and the summary that states the write for callers is not built yet (§31.7)
+  22:5 update next: accepted param
   26:23 construction model.items: rejected later-use: model.items is read again at 26:19
-  summary add: π1.items RAW, π1.items[*] A; res .items π1.items, .items[*] ~π1.items[*]
-  summary rename: π1.items RAW, π1.name R; res .items π1.items
+  summary add: π1 W{items}, π1.items RAW, π1.items[*] A; res .items π1.items, .items[*] ~π1.items[*], π1◦
+  summary rename: π1 W{items, name}, π1.items RAW, π1.name R; res .items π1.items, π1◦
   summary keepOld: π1.items RAW; res .0 π1.items, .1 π1.items
   demands 3: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
-  records 3: accepted 0, pending 3, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
+  records 3: accepted 3, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
 total 3: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
-records 3: accepted 0, pending 3, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
+records 3: accepted 3, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
 cause later-use 1

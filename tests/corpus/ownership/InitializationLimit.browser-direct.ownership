@@ -43,7 +43,7 @@ module InitializationLimit
   101:5 call InitializationLimit.rotate <expression>: accepted fresh (InitializationLimit.rotate writes π1)
   101:5 call InitializationLimit.rotate <literal>: accepted fresh (InitializationLimit.rotate writes π2)
   146:8 List.push InitializationLimit.seed: rejected limit: it came from a callee whose summary is past the checker's limits (approx)
-  summary rotate: π1 RAEw, π10 RAEw, π11 RAEw, π12 RAEw, π13 RAEw, π14 RAEw, π15 RAEw, π16 RAEw, π17 RAEw, π18 RAEw, π19 RAEw, π2 RAEw, π20 RAEw, π21 RAEw, π22 RAEw, π23 RAEw, π24 RAEw, π25 RAEw, π26 RAEw, π27 RAEw, π28 RAEw, π29 RAEw, π3 RAEw, π30 RAEw, π31 RAEw, π32 RAEw, π33 RAEw, π34 RAEw, π35 RAEw, π36 RAEw, π37 RAEw, π38 RAEw, π39 RAEw, π4 RAEw, π40 RAEw, π41 RAEw, π5 RAEw, π6 RAEw, π7 RAEw, π8 RAEw, π9 RAEw; res ~⊤{lost}; limit rounds 32
+  summary rotate: π1 RAEwW{}, π10 RAEwW{}, π11 RAEwW{}, π12 RAEwW{}, π13 RAEwW{}, π14 RAEwW{}, π15 RAEwW{}, π16 RAEwW{}, π17 RAEwW{}, π18 RAEwW{}, π19 RAEwW{}, π2 RAEwW{}, π20 RAEwW{}, π21 RAEwW{}, π22 RAEwW{}, π23 RAEwW{}, π24 RAEwW{}, π25 RAEwW{}, π26 RAEwW{}, π27 RAEwW{}, π28 RAEwW{}, π29 RAEwW{}, π3 RAEwW{}, π30 RAEwW{}, π31 RAEwW{}, π32 RAEwW{}, π33 RAEwW{}, π34 RAEwW{}, π35 RAEwW{}, π36 RAEwW{}, π37 RAEwW{}, π38 RAEwW{}, π39 RAEwW{}, π4 RAEwW{}, π40 RAEwW{}, π41 RAEwW{}, π5 RAEwW{}, π6 RAEwW{}, π7 RAEwW{}, π8 RAEwW{}, π9 RAEwW{}; res ~⊤{lost}; limit rounds 32
   limit rotate: rounds, unsettled after 32
   demands 44: accepted 43 (fresh 3, call 0, param 40, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
 total 44: accepted 43 (fresh 3, call 0, param 40, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1

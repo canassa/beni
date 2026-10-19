@@ -1,12 +1,11 @@
--- CK-261: a closure a command keeps captures a record (issue #315;
--- `ownership-checker.md` §31.6). `Save`'s command captures the field path
--- `model.form`, which it reads when it is made (§31.6), so it keeps the
--- form's value and not the record: `Type`'s later write of `model.form` is
--- accepted at the entry, and the capture is one eager read. `Snapshot`'s
--- command captures `model` whole, so the model record escapes, and
--- `Bump`'s write of it is rejected `escaped`, approximately. Red until R2c
--- reads a record update's `W{F}` off `update`'s summary at the entry
--- (§31.7, §31.8); today every update line is the body's `accepted param`.
+-- ownership: CK-261, a closure a command keeps captures a record (issue
+-- #315; `ownership-checker.md` §31.6, §31.8). `Snapshot`'s command captures
+-- `model` whole, so the model's record escapes, and the entry rejects
+-- update's write of it `escaped`, approximately. The form escapes with it:
+-- the model the command keeps holds it, so `Type`'s write of `model.form`
+-- is `escaped` too, although `Save`'s command captures only the field path
+-- `model.form.name`, which it reads when it is made (one eager read).
+-- `RecordCaptureField` is the program without `Snapshot`.
 import Browser
 import Cmd exposing (Cmd)
 import Html exposing (Html)

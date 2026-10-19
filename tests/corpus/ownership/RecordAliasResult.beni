@@ -1,0 +1,29 @@
+-- ownership: one record object at two paths of a result is one object
+-- (`ownership-checker.md` §31.7): `pair` returns `( r, r )`, so its summary
+-- numbers the object once, and `firstOnly`'s update of one half while it
+-- returns the other is rejected `alias`. `split` returns two records.
+type alias P =
+    x : Int
+    y : Int
+
+
+pair : ⊤ → P × P
+pair ⊤ =
+    r = { x = 0, y = 0 }
+    ( r, r )
+
+
+split : ⊤ → P × P
+split ⊤ = ( { x = 0, y = 0 }, { x = 0, y = 0 } )
+
+
+pub firstOnly : ⊤ → P × P
+firstOnly ⊤ =
+    ( a, b ) = pair ⊤
+    ( { a | x = 1 }, b )
+
+
+pub apart : ⊤ → P × P
+apart ⊤ =
+    ( a, b ) = split ⊤
+    ( { a | x = 1 }, b )

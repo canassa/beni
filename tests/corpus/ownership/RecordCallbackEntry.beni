@@ -1,0 +1,79 @@
+-- ownership: a program whose record is written through a callback
+-- (`ownership-checker.md` §31.5, §31.8). `onForm g m` hands `g` its model's
+-- own form, so a callback that writes it writes the caller's `model.form`
+-- at the call. `Rename` keeps the old form in a command (`old`): in place,
+-- `Saved old` would carry the new name, so the call is refused. `Type`
+-- writes the form directly, and `Bump` through a lambda, each while a
+-- command reads the model after.
+import Browser
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Tea
+
+
+type alias Form =
+    name : String
+    count : Int
+
+
+type alias Model =
+    form : Form
+    total : Int
+
+
+type Msg
+    = Save
+    | Type String
+    | Bump String
+    | Rename String
+    | Saved Form
+    | SavedM Model
+
+
+setName : String, Form → Form
+setName n f = { f | name = n }
+
+
+onForm : (Form → Form), Model → Model
+onForm g m = { m | form = g m.form }
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        Save →
+            ( model, Cmd.none )
+
+        Type n →
+            ( { model | form = setName n model.form }, Cmd.perform λsend → send (Saved model.form) )
+
+        Bump n →
+            ( onForm (λf → { f | name = n }) model, Cmd.perform λsend → send (SavedM model) )
+
+        Rename n →
+            old = model.form
+            ( onForm (setName n _) model, Cmd.perform λsend → send (Saved old) )
+
+        Saved _ →
+            ( model, Cmd.none )
+
+        SavedM _ →
+            ( model, Cmd.none )
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button onClick={Save}>save</button>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( { form = { name = "", count = 0 }, total = 0 }, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

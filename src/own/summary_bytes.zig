@@ -78,7 +78,12 @@ pub const magic = "BENIOWN\x00";
 /// 15 writes a constructor step's field as a u32, so a field past 63 is
 /// named exactly (issue #289; it was a byte, and a field past 63 refused).
 /// 16 adds the level marker `⟨T⟩`, a step naming its type (§16.7, #379).
-pub const version: u32 = 16;
+/// 17 carries a record's facts (§31.7, #315): two bytes of bits — `W{F}`
+/// with its fields by name, a field read and an object's escape — a
+/// provenance's object flag (`◦`), and the records a result holds
+/// (`objs`), after `res`; what callbacks are handed of records (`rsupply`),
+/// after `supply`; and a function parameter's record `need`, bit 3 of its byte.
+pub const version: u32 = 17;
 
 pub const Error = error{Bad} || Allocator.Error;
 
@@ -192,13 +197,17 @@ pub fn write(o: *Ownership, gpa: Allocator, rows: []const Row) Allocator.Error![
         }
 
         fn summary(c: *@This(), s: *const Summary) Allocator.Error!void {
-            for (s.uses) |u| try c.path(u.path);
+            for (s.uses) |u| {
+                try c.path(u.path);
+                for (u.fields) |f| if (!(try c.seen_string.getOrPut(c.arena, f)).found_existing) try c.strings.append(c.arena, f);
+            }
             for (s.res) |r| try c.res(r);
-            for (s.supply) |e| {
+            for (s.objs) |r| try c.res(r);
+            for ([_][]const SupplyEntry{ s.supply, s.rsupply }) |entries| for (entries) |e| {
                 try c.path(e.path);
                 try c.prov(e.prov);
                 try c.xsum(e.xc);
-            }
+            };
             for (s.xreq) |a| {
                 try c.prov(a.a);
                 try c.prov(a.b);
@@ -331,13 +340,15 @@ const ProvKey = struct {
     b: u32,
     path: u32,
     taken: bool,
+    obj: bool,
 
     fn less(x: ProvKey, y: ProvKey) bool {
         if (x.kind != y.kind) return x.kind < y.kind;
         if (x.a != y.a) return x.a < y.a;
         if (x.b != y.b) return x.b < y.b;
         if (x.path != y.path) return x.path < y.path;
-        return @intFromBool(x.taken) < @intFromBool(y.taken);
+        if (x.taken != y.taken) return @intFromBool(x.taken) < @intFromBool(y.taken);
+        return @intFromBool(x.obj) < @intFromBool(y.obj);
     }
 };
 
@@ -348,6 +359,7 @@ fn provKey(w: *const Writer, p: Prov) ProvKey {
         .b = p.b,
         .path = w.path_index.get(p.path).?,
         .taken = p.taken,
+        .obj = p.obj,
     };
 }
 
@@ -357,7 +369,8 @@ fn writeProv(w: *Writer, p: Prov) Allocator.Error!void {
     try w.int(k.a);
     try w.int(k.b);
     try w.int(k.path);
-    try w.byte(@intFromBool(k.taken));
+    // §31.7: bit 1, the record object alone.
+    try w.byte(@as(u8, @intFromBool(k.taken)) | @as(u8, @intFromBool(k.obj)) << 1);
 }
 
 fn atomLess(w: *const Writer, x: XAtom, y: XAtom) bool {
@@ -382,6 +395,31 @@ fn writeAtoms(w: *Writer, arena: Allocator, atoms: []const XAtom) Allocator.Erro
 fn writeXSum(w: *Writer, arena: Allocator, x: XSum) Allocator.Error!void {
     try w.byte(x.no);
     try writeAtoms(w, arena, x.atoms);
+}
+
+fn writeSupply(w: *Writer, arena: Allocator, items: []const SupplyEntry) Allocator.Error!void {
+    const supply = try arena.dupe(SupplyEntry, items);
+    const SupCx = struct {
+        w: *const Writer,
+        fn less(cx: @This(), x: SupplyEntry, y: SupplyEntry) bool {
+            if (x.fun != y.fun) return x.fun < y.fun;
+            if (x.k != y.k) return x.k < y.k;
+            const px = cx.w.path_index.get(x.path).?;
+            const py = cx.w.path_index.get(y.path).?;
+            if (px != py) return px < py;
+            return provKey(cx.w, x.prov).less(provKey(cx.w, y.prov));
+        }
+    };
+    std.mem.sort(SupplyEntry, supply, SupCx{ .w = w }, SupCx.less);
+    try w.int(@intCast(supply.len));
+    for (supply) |e| {
+        try w.int(e.fun);
+        try w.int(e.k);
+        try w.int(w.path_index.get(e.path).?);
+        try writeProv(w, e.prov);
+        try w.byte(@as(u8, @intFromBool(e.owned)) | @as(u8, @intFromBool(e.approx)) << 1);
+        try writeXSum(w, arena, e.xc);
+    }
 }
 
 fn writeRes(w: *Writer, arena: Allocator, items: []const ResEntry, sort: bool) Allocator.Error!void {
@@ -427,33 +465,23 @@ fn writeSummary(w: *Writer, arena: Allocator, s: *const Summary) Allocator.Error
     for (uses) |u| {
         try w.int(u.param);
         try w.int(w.path_index.get(u.path).?);
-        try w.byte(u.bits);
+        // §31.7: two bytes of bits, and a record write's fields, by name.
+        try w.byte(@truncate(u.bits));
+        try w.byte(@truncate(u.bits >> 8));
+        try w.int(@intCast(u.fields.len));
+        const fields = try arena.alloc(u32, u.fields.len);
+        for (u.fields, fields) |f, *x| x.* = w.string_index.get(f).?;
+        std.mem.sort(u32, fields, {}, std.sort.asc(u32));
+        for (fields) |f| try w.int(f);
     }
 
     try writeRes(w, arena, s.res, true);
+    // §31.7: the records the result holds, after it.
+    try writeRes(w, arena, s.objs, true);
 
-    const supply = try arena.dupe(SupplyEntry, s.supply);
-    const SupCx = struct {
-        w: *const Writer,
-        fn less(cx: @This(), x: SupplyEntry, y: SupplyEntry) bool {
-            if (x.fun != y.fun) return x.fun < y.fun;
-            if (x.k != y.k) return x.k < y.k;
-            const px = cx.w.path_index.get(x.path).?;
-            const py = cx.w.path_index.get(y.path).?;
-            if (px != py) return px < py;
-            return provKey(cx.w, x.prov).less(provKey(cx.w, y.prov));
-        }
-    };
-    std.mem.sort(SupplyEntry, supply, SupCx{ .w = w }, SupCx.less);
-    try w.int(@intCast(supply.len));
-    for (supply) |e| {
-        try w.int(e.fun);
-        try w.int(e.k);
-        try w.int(w.path_index.get(e.path).?);
-        try writeProv(w, e.prov);
-        try w.byte(@as(u8, @intFromBool(e.owned)) | @as(u8, @intFromBool(e.approx)) << 1);
-        try writeXSum(w, arena, e.xc);
-    }
+    try writeSupply(w, arena, s.supply);
+    // §31.5: what the callbacks are handed of records, after it.
+    try writeSupply(w, arena, s.rsupply);
 
     const funs = try arena.dupe(FunFacts, s.funs);
     std.mem.sort(FunFacts, funs, {}, struct {
@@ -465,7 +493,7 @@ fn writeSummary(w: *Writer, arena: Allocator, s: *const Summary) Allocator.Error
     for (funs) |f| {
         try w.int(f.param);
         try w.byte(@backingInt(f.calls));
-        try w.byte(@as(u8, @intFromBool(f.need)) | @as(u8, @intFromBool(f.seen)) << 1 | @as(u8, @intFromBool(f.sends)) << 2);
+        try w.byte(@as(u8, @intFromBool(f.need)) | @as(u8, @intFromBool(f.seen)) << 1 | @as(u8, @intFromBool(f.sends)) << 2 | @as(u8, @intFromBool(f.rneed)) << 3);
         try w.int(f.send);
     }
 
@@ -648,14 +676,16 @@ fn readProv(r: *Reader) Error!Prov {
     const a_raw = try r.int();
     const b = try r.int();
     const path = try r.path();
-    const taken = try r.bool_();
+    const flags = try r.byte();
+    if (flags > 3) return error.Bad;
+    const taken = flags & 1 != 0;
     const a = if (kind == .shared) blk: {
         if (a_raw >= r.modules.len) return error.Bad;
         const sm = r.modules[a_raw];
         if (b >= r.o.in.birs[sm].decls.len) return error.Bad;
         break :blk sm;
     } else a_raw;
-    return .{ .kind = kind, .a = a, .b = b, .path = path, .taken = taken };
+    return .{ .kind = kind, .a = a, .b = b, .path = path, .taken = taken, .obj = flags & 2 != 0 };
 }
 
 fn readAtoms(r: *Reader) Error![]const XAtom {
@@ -674,6 +704,20 @@ fn readXSum(r: *Reader) Error!XSum {
     const no = try r.byte();
     if (no > 2) return error.Bad;
     return .{ .no = no, .atoms = try readAtoms(r) };
+}
+
+fn readSupply(r: *Reader) Error![]const SupplyEntry {
+    const supply = try r.arena.alloc(SupplyEntry, try r.count(12 + 14 + 1 + 5));
+    for (supply) |*e| {
+        const fun = try r.int();
+        const k = try r.int();
+        const path = try r.path();
+        const prov = try readProv(r);
+        const bits = try r.byte();
+        if (bits > 3) return error.Bad;
+        e.* = .{ .fun = fun, .k = k, .path = path, .prov = prov, .owned = bits & 1 != 0, .approx = bits & 2 != 0, .xc = try readXSum(r) };
+    }
+    return supply;
 }
 
 fn readRes(r: *Reader) Error![]const ResEntry {
@@ -699,29 +743,36 @@ fn readSummary(r: *Reader, depth: u32) Error!Summary {
     // Bit 2 was a coarsened summary's, before §16.7 deleted coarsening.
     if (flags > 15 or flags & 2 != 0) return error.Bad;
 
-    const uses = try r.arena.alloc(UseEntry, try r.count(9));
-    for (uses) |*u| u.* = .{ .param = try r.int(), .path = try r.path(), .bits = try r.byte() };
+    const uses = try r.arena.alloc(UseEntry, try r.count(14));
+    for (uses) |*u| {
+        const param = try r.int();
+        const path = try r.path();
+        const lo = try r.byte();
+        const hi = try r.byte();
+        const fields = try r.arena.alloc(u32, try r.count(4));
+        for (fields) |*f| {
+            const i = try r.int();
+            if (i >= r.strings.len) return error.Bad;
+            f.* = r.strings[i];
+        }
+        // Interned in this session's order, as the summary's own are.
+        std.mem.sort(u32, fields, {}, std.sort.asc(u32));
+        u.* = .{ .param = param, .path = path, .bits = @as(u16, lo) | @as(u16, hi) << 8, .fields = fields };
+    }
 
     const res = try readRes(r);
+    const objs = try readRes(r);
 
-    const supply = try r.arena.alloc(SupplyEntry, try r.count(12 + 14 + 1 + 5));
-    for (supply) |*e| {
-        const fun = try r.int();
-        const k = try r.int();
-        const path = try r.path();
-        const prov = try readProv(r);
-        const bits = try r.byte();
-        if (bits > 3) return error.Bad;
-        e.* = .{ .fun = fun, .k = k, .path = path, .prov = prov, .owned = bits & 1 != 0, .approx = bits & 2 != 0, .xc = try readXSum(r) };
-    }
+    const supply = try readSupply(r);
+    const rsupply = try readSupply(r);
 
     const funs = try r.arena.alloc(FunFacts, try r.count(10));
     for (funs) |*f| {
         const param = try r.int();
         const calls = try r.enumOf(Ownership.Calls);
         const bits = try r.byte();
-        if (bits > 7) return error.Bad;
-        f.* = .{ .param = param, .calls = calls, .need = bits & 1 != 0, .seen = bits & 2 != 0, .sends = bits & 4 != 0, .send = try r.int() };
+        if (bits > 15) return error.Bad;
+        f.* = .{ .param = param, .calls = calls, .need = bits & 1 != 0, .seen = bits & 2 != 0, .sends = bits & 4 != 0, .rneed = bits & 8 != 0, .send = try r.int() };
     }
 
     const xreq = try readAtoms(r);
@@ -744,7 +795,9 @@ fn readSummary(r: *Reader, depth: u32) Error!Summary {
         .params = params,
         .uses = uses,
         .res = res,
+        .objs = objs,
         .supply = supply,
+        .rsupply = rsupply,
         .funs = funs,
         .limit = limit,
         .limit_at = limit_at,

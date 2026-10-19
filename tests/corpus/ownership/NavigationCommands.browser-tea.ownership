@@ -1,19 +1,21 @@
 module NavigationCommands
-  50:15 update model: pending: its base is a parameter, and the summary that states the write for callers is not built yet (§31.7)
+  50:15 update model: accepted param
   50:34 List.push model.visits: accepted param
-  63:15 update model: pending: its base is a parameter, and the summary that states the write for callers is not built yet (§31.7)
+  63:15 update model: accepted param
   63:34 List.push model.visits: accepted param
   83:5 entry NavigationCommands.commands model.visits: rejected platform: the platform's runtime keeps the model it hands update, and skips by identity; the direct row would accept it (§20.2)
+  83:5 update entry NavigationCommands.commands model: rejected platform: the platform's runtime keeps the model it hands update, and skips by identity; the direct row would accept it (§20.2)
   95:5 entry NavigationCommands.bodies model.visits: rejected escaped: at some message the runtime keeps it: a command or a subscription holds it, or update escapes it (§20.4) (approx)
+  95:5 update entry NavigationCommands.bodies model: rejected escaped: at some message the runtime keeps it: a command or a subscription holds it, or update escapes it (§20.4) (approx) [copy]
   summary keyOf: π1.key R
-  summary commands: π2 RA, π2.key R, π2.visits RAW, π2.visits[*] A; res .0 π2, .0.visits π2.visits, .0.visits[*] ~π2.visits[*], .1#Cmd.0 fresh1 shared(Cmd.none)#Cmd.0
-  summary bodies: π2 RA, π2.visits RAW, π2.visits[*] A; res .0 π2, .0.visits π2.visits, .0.visits[*] ~π2.visits[*], .1#Cmd.0 fresh1{excl π2} shared(Cmd.none)#Cmd.0, .1#Cmd.0[*]#Perform.0◇⟨◇⟩◇ π2
+  summary commands: π1 R, π1#Clicked.0#Internal.0.host R, π1#Clicked.0#Internal.0.path R, π1#Clicked.0#Internal.0.port_ R, π1#Clicked.0#Internal.0.protocol R, π2 RAW{visits}, π2.key R, π2.visits RAW, π2.visits[*] A; res .0 π2 π2◦, .0.visits π2.visits, .0.visits[*] ~π2.visits[*], .1#Cmd.0 fresh1 shared(Cmd.none)#Cmd.0
+  summary bodies: π1 R, π1#Clicked.0#Internal.0 R, π2 RAW{visits}, π2.visits RAW, π2.visits[*] A; res .0 π2 π2◦, .0.visits π2.visits, .0.visits[*] ~π2.visits[*], .1#Cmd.0 fresh1{excl π2} shared(Cmd.none)#Cmd.0, .1#Cmd.0[*]#Perform.0◇⟨◇⟩◇ π1#Clicked.0#Internal.0 π2
   summary refusedOrNot: unused
-  summary view: π1.visits R; res .body⟨render⟩ fresh1{lost}
-  summary start: res .0.visits fresh1, .1#Cmd.0 shared(Cmd.none)#Cmd.0
+  summary view: π1.visits R; res .body⟨render⟩ fresh1{lost}, fresh501◦
+  summary start: res .0 fresh501◦, .0.visits fresh1, .1#Cmd.0 shared(Cmd.none)#Cmd.0
   demands 4: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
-  records 2: accepted 0, pending 2, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
+  records 4: accepted 2, pending 0, rejected 2 (copy 1, restructure 0); hoisted 0, eager reads 0
 total 4: accepted 2 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 2
-records 2: accepted 0, pending 2, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
+records 4: accepted 2, pending 0, rejected 2 (copy 1, restructure 0); hoisted 0, eager reads 0
 cause escaped 1
 cause platform 1

@@ -2,9 +2,9 @@ module MapAcrossTypes
   30:42 ++ <call List.map>: accepted call
   36:42 ++ <call List.map>: accepted call
   50:13 ++ <call List.map>: accepted call
-  summary toObstacle: unused
-  summary obstacles: π1 R
-  summary moved: π1 R
-  summary unwrapped: π1 R
+  summary toObstacle: π1.center R, π1.size R; res fresh501◦
+  summary obstacles: π1 R, π2 R
+  summary moved: π1 R, π1[*] R, π2 R
+  summary unwrapped: π1 R, π1[*]#Wrapped.0 R, π2 R
   demands 3: accepted 3 (fresh 0, call 3, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
 total 3: accepted 3 (fresh 0, call 3, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
