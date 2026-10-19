@@ -1344,6 +1344,10 @@ const Fn = struct {
 
     /// The three path arguments of a helper or a child worker.
     fn pathArgs(w: *Fn, at: At) ![3]Node.Index {
+        // A validator makes no issue, so no path is read: its children and
+        // conversions are handed none (`schema.md` §6, *A run whose failure is
+        // never read is a validator*).
+        if (w.op == .valid) return .{ try w.g.lit(.null_lit), try w.g.lit(.null_lit), try w.g.lit(.null_lit) };
         const parent = switch (at.parent) {
             .path => |n| try w.g.id(n),
             .own => try w.g.call(try w.g.core("pathAt"), &.{ try w.g.id(w.ps.pp), try w.g.id(w.ps.pk), try w.g.id(w.ps.pn) }),
@@ -1354,6 +1358,8 @@ const Fn = struct {
     /// `const here = pathAt(p, k, n)`, when a child is read through a worker
     /// or a conversion on the success path: once, rather than per child.
     fn hereFor(w: *Fn, out: *Stmts) !void {
+        // A validator builds no path (`pathArgs`).
+        if (w.op == .valid) return;
         const g = w.g;
         const here = try g.local("$here");
         try g.constDecl(out, here, try g.call(try g.core("pathAt"), &.{ try g.id(w.ps.pp), try g.id(w.ps.pk), try g.id(w.ps.pn) }));
@@ -2567,13 +2573,17 @@ const Fn = struct {
             const wrong_length = try g.bin(.strict_ne, try g.prop(try g.id(payload), "length"), try g.num(@intCast(args.len)));
             try g.ifElse(out, try g.bin(.logical_or, not_array, wrong_length), wrong.items, &.{});
         }
-        // The arguments' own path, below the constructor's name.
-        const here = try g.fresh("$at");
-        const path = try w.pathArgs(at);
-        try g.constDecl(out, here, try g.call(try g.core("pathAt"), &path));
+        // The arguments' own path, below the constructor's name; a
+        // validator builds none (`pathArgs`).
+        const parent: At.Parent = if (w.op == .valid) .own else parent: {
+            const here = try g.fresh("$at");
+            const path = try w.pathArgs(at);
+            try g.constDecl(out, here, try g.call(try g.core("pathAt"), &path));
+            break :parent .{ .path = here };
+        };
         const items = try g.l.scratch.alloc(Node.Index, args.len);
         for (items, 0..) |*item, i| item.* = if (decoding) try g.indexOf(try g.id(payload), try g.num(@intCast(i))) else typed[i];
-        const values = try w.elementsInto(out, args, items, .{ .path = here }, 1);
+        const values = try w.elementsInto(out, args, items, parent, 1);
         try w.failIfGrew(out, values.before);
         var ids: std.ArrayList(Node.Index) = .empty;
         for (values.names) |v| try ids.append(g.l.scratch, try g.id(v));
