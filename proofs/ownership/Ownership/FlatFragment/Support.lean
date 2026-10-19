@@ -40,9 +40,10 @@ theorem primitive_scalar_run {op : Prim} (sop : ScalarOp op) (ctx : Context) (si
 
 /-- The expression fragment. Every operand is any atom; accepted typing fixes
 each to an integer, a variable or a variable under a field path, the literal
-elements and the push item to `Int`, the length and push receivers to
-`List Int`. The push receiver may be a field path: a write through a field is
-in the fragment. -/
+elements, the push item and the branch condition to `Int`, the length and
+push receivers to `List Int`. The push receiver may be a field path: a write
+through a field is in the fragment. A `branch` runs one of two fragment
+expressions on an integer condition. -/
 inductive FlatANF0 : Expr → Prop where
   | atom : FlatANF0 (.atom a)
   | letE : FlatANF0 rhs → FlatANF0 rest → FlatANF0 (.letE v rhs rest)
@@ -52,6 +53,7 @@ inductive FlatANF0 : Expr → Prop where
   | shared : FlatANF0 (.prim .shared [value])
   | scalar : ScalarOp op → FlatANF0 (.prim op [a, b])
   | record : FlatANF0 (.prim .record args)
+  | branch : FlatANF0 yes → FlatANF0 no → FlatANF0 (.branch c yes no)
 
 theorem lookup_option_of_success {α : Type} [Inhabited α] {env : Env α} {key : Var} {value : α}
     (run : lookup env key = .ok value) :
@@ -874,6 +876,7 @@ theorem flatExpr_default_uses (flat : FlatANF0 expression) :
   | length => simp_all [usesWith, uses, usesArms, Config.has]
   | shared => simp_all [usesWith, uses, usesArms, Config.has]
   | record => simp_all [usesWith, uses, usesArms, Config.has]
+  | branch _ _ _ _ => simp_all [usesWith, uses, usesArms, Config.has]
 
 end Ownership.FlatFragment.Liveness
 

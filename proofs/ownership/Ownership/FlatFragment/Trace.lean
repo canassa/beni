@@ -1,4 +1,4 @@
-import Ownership.FlatFragment.Let
+import Ownership.FlatFragment.Branch
 
 /-! The first flat fragment: the structural induction and the public trace corollary. -/
 
@@ -17,6 +17,7 @@ open Ownership.FlatFragment.Literal Ownership.FlatFragment.Length Ownership.Flat
 open Ownership.FlatFragment.VariableFacts Ownership.FlatFragment.VariableRuntime Ownership.FlatFragment.VariablePreservation
 open Ownership.FlatFragment.AtomPreservation Ownership.FlatFragment.Env Ownership.FlatFragment.LiveSets Ownership.FlatFragment.Liveness Ownership.FlatFragment.AtomRuntime
 open Ownership.FlatFragment.Fields Ownership.FlatFragment.Observe Ownership.FlatFragment.AtomInference
+open Ownership.FlatFragment.Branch
 
 theorem heapAtomPost_heap (hs : State) (observations : List Observation) :
     (Ownership.FlatFragment.StateFrame.heapAtomPost hs observations).heap = hs.heap := by
@@ -126,6 +127,11 @@ theorem flat_preserved {declarations : List Decl} {self : Decl} {e : Expr} (flat
     intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
       depth ctx inv typed shadow boundKeys usesLive afterSub defaultConfig accepted
     exact let_preserved rhsFlat restFlat ihRhs ihRest inv typed shadow boundKeys usesLive afterSub
+      defaultConfig accepted
+  | @branch yes no c yesFlat noFlat ihYes ihNo =>
+    intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
+      depth ctx inv typed shadow boundKeys usesLive afterSub defaultConfig accepted
+    exact branch_preserved yesFlat noFlat ihYes ihNo inv typed shadow boundKeys usesLive afterSub
       defaultConfig accepted
   | @literal args =>
     intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
@@ -298,6 +304,9 @@ variables and literals before an in-place push; it is accepted and both runs
 agree. `fieldWrite` pushes through a field path two levels down while the
 record stays live at another field; it is accepted and both runs agree.
 `fieldWriteLive` keeps the written field live and is rejected (the Dead
+test), and its two runs differ. `branchOps` pushes onto the result of a
+branch between two lists; it is accepted and both runs agree. `branchAlias`
+keeps one of the two lists live after that push and is rejected (the Dead
 test), and its two runs differ. -/
 
 /-- `[5]`, an observer of it, `7`, `[7, 1]`, an in-place push onto it (its
@@ -396,6 +405,36 @@ def fieldWriteLive : Program := { main :=
 theorem fieldWriteLive_flat : FlatANF0 fieldWriteLive.main :=
   .letE .literal (.letE .literal (.letE .record (.letE .record (.letE .push .record))))
 
+/-- `[1]`, `[2]`, the length of the first, a branch on it between the two
+    lists (the length is 1, so the second), and a push onto the branch's
+    result: accepted, one in-place write, final value `[2, 9]`. The checker's
+    result of the branch names both lists; the demand of the push covers
+    both. -/
+def branchOps : Program := { main :=
+  (.letE 0 (.prim (.literal .int) [.int 1])
+  (.letE 1 (.prim (.literal .int) [.int 2])
+  (.letE 2 (.prim .length [.var 0])
+  (.letE 3 (.branch (.var 2) (.atom (.var 0)) (.atom (.var 1)))
+  (.prim .push [.var 3, .int 9]))))) }
+
+theorem branchOps_flat : FlatANF0 branchOps.main :=
+  .letE .literal (.letE .literal (.letE .length (.letE (.branch .atom .atom) .push)))
+
+/-- The same push with the second list still live afterwards: rejected by
+    the Dead test, because the branch's result names both lists; the two
+    runs differ. -/
+def branchAlias : Program := { main :=
+  (.letE 0 (.prim (.literal .int) [.int 1])
+  (.letE 1 (.prim (.literal .int) [.int 2])
+  (.letE 2 (.prim .length [.var 0])
+  (.letE 3 (.branch (.var 2) (.atom (.var 0)) (.atom (.var 1)))
+  (.letE 4 (.prim .push [.var 3, .int 9])
+  (.prim .length [.var 1])))))) }
+
+theorem branchAlias_flat : FlatANF0 branchAlias.main :=
+  .letE .literal (.letE .literal (.letE .length (.letE (.branch .atom .atom)
+    (.letE .push .length))))
+
 set_option maxRecDepth 100000
 
 #guard (check every).isOk
@@ -440,6 +479,20 @@ set_option maxRecDepth 100000
       t.reads.isEmpty && t.externalReads.isEmpty
   | _, _ => false
 #guard InPlaceSemantics.writeCount fieldWrite 100 == 1
+#guard (check branchOps).isOk
+#guard match ValueSemantics.run branchOps 100, InPlaceSemantics.run branchOps 100 with
+  | .ok t, .ok t' => t.reads == t'.reads && t.externalReads == t'.externalReads &&
+      t.finalValue == t'.finalValue && t.finalValue == .list [.int 2, .int 9] &&
+      t.reads == [.int 1] && t.externalReads.isEmpty
+  | _, _ => false
+#guard InPlaceSemantics.writeCount branchOps 100 == 1
+#guard match check branchAlias with
+  | .error message => message == "Dead: an old holder is live after the demand"
+  | .ok _ => false
+#guard match ValueSemantics.run branchAlias 100, InPlaceSemantics.run branchAlias 100 with
+  | .ok t, .ok t' => t.reads == [.int 1, .int 1] && t'.reads == [.int 1, .int 2] &&
+      t.finalValue == .int 1 && t'.finalValue == .int 2
+  | _, _ => false
 #guard match check fieldWriteLive with
   | .error message => message == "Dead: an old holder is live after the demand"
   | .ok _ => false

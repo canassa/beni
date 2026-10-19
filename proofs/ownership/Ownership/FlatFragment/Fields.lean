@@ -1224,6 +1224,246 @@ theorem live_path_below {declarations : List Decl} {vs : ValueSemantics.State} {
   obtain ⟨t, _, allocated'⟩ := allocated_project allocated projected
   exact (arrayAt_flat allocated' inv.heapInts located).1
 
+/-! ### Branches: type equality, the join of two flat abstracts, more escapes -/
+
+/-! ### The join's equations -/
+
+theorem join_scalar : Abstract.scalar.join .scalar = .scalar := by simp [Abstract.join]
+theorem join_bottom_bottom : Abstract.bottom.join .bottom = .bottom := by simp [Abstract.join]
+theorem join_bottom_scalar : Abstract.bottom.join .scalar = .scalar := by simp [Abstract.join]
+theorem join_scalar_bottom : Abstract.scalar.join .bottom = .scalar := by simp [Abstract.join]
+theorem join_list (cs ds : List Origin) (x y : Abstract) (ex ey : Certificate) :
+    (Abstract.list cs x ex).join (.list ds y ey) = .list (union cs ds) (x.join y) (ex.meet ey) := by
+  simp [Abstract.join]
+theorem join_record (xs ys : List Abstract) :
+    (Abstract.record xs).join (.record ys) = .record ((xs.attach.zip ys).map fun (x, y) => x.val.join y) := by
+  simp [Abstract.join]
+
+theorem ty_equal_int (equal : (ty == Ty.int) = true) : ty = .int := by
+  cases ty <;> simp [BEq.beq, Ty.equal] at equal ⊢
+
+theorem int_equal_ty (equal : (Ty.int == ty) = true) : ty = .int := by
+  cases ty <;> simp [BEq.beq, Ty.equal] at equal ⊢
+
+/-! ### Type equality on flat types -/
+
+theorem ty_equal_flat {t b : Ty} (flat : FlatType t) (equal : Ty.equal t b = true) : t = b := by
+  induction flat generalizing b with
+  | int => cases b <;> simp [Ty.equal] at equal ⊢
+  | listInt =>
+    cases b with
+    | list e => cases e <;> simp [Ty.equal] at equal ⊢
+    | _ => simp [Ty.equal] at equal
+  | record ts _ ih =>
+    cases b with
+    | record ys =>
+      rw [Ty.equal] at equal
+      simp only [Bool.and_eq_true, beq_iff_eq, List.all_eq_true] at equal
+      obtain ⟨len, all⟩ := equal
+      congr 1
+      apply List.ext_getElem?
+      intro i
+      cases ts_i : ts[i]? with
+      | none =>
+        rw [List.getElem?_eq_none_iff] at ts_i
+        exact (List.getElem?_eq_none_iff.mpr (by omega)).symm
+      | some x =>
+        cases ys_i : ys[i]? with
+        | none =>
+          rw [List.getElem?_eq_none_iff] at ys_i
+          have lt := (List.getElem?_eq_some_iff.mp ts_i).1
+          omega
+        | some y =>
+          have mem : (⟨x, List.mem_of_getElem? ts_i⟩, y) ∈ ts.attach.zip ys := by
+            apply List.mem_of_getElem? (i := i)
+            rw [List.getElem?_zip_eq_some]
+            exact ⟨by simp [List.getElem?_attach, ts_i], ys_i⟩
+          rw [ih x (List.mem_of_getElem? ts_i) (all _ mem)]
+    | _ => simp [Ty.equal] at equal
+
+/-! ### The join of two flat abstracts -/
+
+theorem record_join_length (as bs : List Abstract) (len : as.length = bs.length) :
+    ((as.attach.zip bs).map fun (x, y) => x.val.join y).length = as.length := by
+  simp [len]
+
+theorem record_join_index {as bs : List Abstract} {i : Nat} {a b : Abstract}
+    (as_i : as[i]? = some a) (bs_i : bs[i]? = some b) :
+    ((as.attach.zip bs).map fun (x, y) => x.val.join y)[i]? = some (a.join b) := by
+  rw [List.getElem?_map]
+  have zipped : (as.attach.zip bs)[i]? = some (⟨a, List.mem_of_getElem? as_i⟩, b) := by
+    rw [List.getElem?_zip_eq_some]
+    exact ⟨by simp [List.getElem?_attach, as_i], bs_i⟩
+  rw [zipped]
+  rfl
+
+theorem record_join_index_inv {as bs : List Abstract} {i : Nat} {j : Abstract}
+    (at_i : ((as.attach.zip bs).map fun (x, y) => x.val.join y)[i]? = some j) :
+    ∃ a b, as[i]? = some a ∧ bs[i]? = some b ∧ j = a.join b := by
+  rw [List.getElem?_map] at at_i
+  cases zipped : (as.attach.zip bs)[i]? with
+  | none => rw [zipped] at at_i; simp at at_i
+  | some pair =>
+    rcases pair with ⟨x, y⟩
+    rw [zipped] at at_i
+    rw [List.getElem?_zip_eq_some] at zipped
+    obtain ⟨attach_i, bs_i⟩ := zipped
+    have as_i : as[i]? = some x.val := by
+      obtain ⟨lt, at_attach⟩ := List.getElem?_eq_some_iff.mp attach_i
+      rw [List.getElem_attach] at at_attach
+      have value : x.val = as[i]'(by simpa using lt) := (congrArg Subtype.val at_attach).symm
+      rw [List.getElem?_eq_getElem (by simpa using lt), value]
+    exact ⟨x.val, y, as_i, bs_i, (Option.some.inj at_i).symm⟩
+
+theorem flatAbstract_join {t : Ty} {a b : Abstract} (shapeA : FlatAbstract t a) (shapeB : FlatAbstract t b) :
+    FlatAbstract t (a.join b) := by
+  induction shapeA generalizing b with
+  | int => cases shapeB; rw [join_scalar]; exact .int
+  | listBottom roots certificate =>
+    cases shapeB with
+    | listBottom roots' certificate' => rw [join_list, join_bottom_bottom]; exact .listBottom _ _
+    | listScalar roots' certificate' => rw [join_list, join_bottom_scalar]; exact .listScalar _ _
+  | listScalar roots certificate =>
+    cases shapeB with
+    | listBottom roots' certificate' => rw [join_list, join_scalar_bottom]; exact .listScalar _ _
+    | listScalar roots' certificate' => rw [join_list, join_scalar]; exact .listScalar _ _
+  | record ts as len _ ih =>
+    cases shapeB with
+    | record _ bs len' fieldsB =>
+      rw [join_record]
+      refine .record ts _ (by rw [record_join_length as bs (len.symm.trans len')]; exact len) ?_
+      intro i t j ts_i at_i
+      obtain ⟨x, y, as_i, bs_i, rfl⟩ := record_join_index_inv at_i
+      exact ih i t x ts_i as_i (fieldsB i t y ts_i bs_i)
+
+/-! ### A join describes what either side describes -/
+
+theorem describes_join {gamma : Naming} {heap : Heap} {t : Ty} {w : Value} {a b : Abstract}
+    (allocated : AllocatedFlatValue heap w t) (flatHeap : FlatHeap heap)
+    (shapeA : FlatAbstract t a) (shapeB : FlatAbstract t b)
+    (side : Describes gamma heap a w ∨ Describes gamma heap b w) :
+    Describes gamma heap (a.join b) w := by
+  induction allocated generalizing a b with
+  | int n =>
+    cases shapeA; cases shapeB
+    rw [join_scalar]
+    exact integer_described n
+  | list root lt =>
+    have lookupRoot : heap[root]? = some heap[root] := by simp [lt]
+    obtain ⟨integers, payload⟩ := integers_of_flat_values heap[root] (flatHeap root _ lookupRoot)
+    rw [payload] at lookupRoot
+    have names : ∀ cs ds, (∃ e ex, a = .list cs e ex) → (∃ e ex, b = .list ds e ex) →
+        named gamma (union cs ds) root := by
+      intro cs ds ⟨e, ex, ha⟩ ⟨e', ex', hb⟩
+      rcases side with described | described
+      · subst ha
+        have found := described.1.1 [] root (.here _)
+        rw [list_root_names] at found
+        obtain ⟨origin, member, address⟩ := named_union_nil found
+        exact ⟨origin, mem_union _ _ origin (Or.inl member), address⟩
+      · subst hb
+        have found := described.1.1 [] root (.here _)
+        rw [list_root_names] at found
+        obtain ⟨origin, member, address⟩ := named_union_nil found
+        exact ⟨origin, mem_union _ _ origin (Or.inr member), address⟩
+    cases shapeA with
+    | listBottom cs ex =>
+      cases shapeB with
+      | listBottom ds ex' => rw [join_list]; exact allocated_list_described lookupRoot (names cs ds ⟨_, _, rfl⟩ ⟨_, _, rfl⟩)
+      | listScalar ds ex' => rw [join_list]; exact allocated_list_described lookupRoot (names cs ds ⟨_, _, rfl⟩ ⟨_, _, rfl⟩)
+    | listScalar cs ex =>
+      cases shapeB with
+      | listBottom ds ex' => rw [join_list]; exact allocated_list_described lookupRoot (names cs ds ⟨_, _, rfl⟩ ⟨_, _, rfl⟩)
+      | listScalar ds ex' => rw [join_list]; exact allocated_list_described lookupRoot (names cs ds ⟨_, _, rfl⟩ ⟨_, _, rfl⟩)
+  | record ws ts len _ ih =>
+    cases shapeA with
+    | record _ as lenA fieldsA =>
+      cases shapeB with
+      | record _ bs lenB fieldsB =>
+        rw [join_record]
+        refine describes_record_of_fields (by rw [record_join_length as bs (lenA.symm.trans lenB)]; omega) ?_
+        intro i j w' at_i ws_i
+        obtain ⟨x, y, as_i, bs_i, rfl⟩ := record_join_index_inv at_i
+        obtain ⟨t', ts_i⟩ := index_of_same_length len ws_i
+        refine ih i w' t' ws_i ts_i (fieldsA i t' x ts_i as_i) (fieldsB i t' y ts_i bs_i) ?_
+        rcases side with described | described
+        · exact Or.inl (describes_field described as_i ws_i)
+        · exact Or.inr (describes_field described bs_i ws_i)
+
+/-! ### More escapes -/
+
+theorem escaped_subset {escapes escapes' : List Origin} {origin : Origin}
+    (sub : ∀ o ∈ escapes, o ∈ escapes') (escaped : Escaped escapes origin) :
+    Escaped escapes' origin := by
+  rcases escaped with shared | overlap
+  · exact Or.inl shared
+  · right
+    obtain ⟨x, xMember, inner⟩ := List.any_eq_true.mp overlap
+    obtain ⟨y, yMember, same⟩ := List.any_eq_true.mp inner
+    obtain ⟨witness, witnessMember, rfl⟩ := List.mem_map.mp yMember
+    refine List.any_eq_true.mpr ⟨x, xMember, List.any_eq_true.mpr ⟨witness.base, ?_, same⟩⟩
+    exact List.mem_map.mpr ⟨witness, sub witness witnessMember, rfl⟩
+
+theorem flatInvariant_more_escapes {declarations : List Decl} {vs : ValueSemantics.State} {hs : State} {env : List (Var × Observation × Value)} {live : Live} {aenv : Env Abstract} {tenv : Env Ty} {gamma : Naming} {escapes escapes' : List Origin}
+    (inv : FlatInvariant declarations vs hs env live aenv tenv escapes gamma)
+    (more : ∀ origin, Escaped escapes origin → Escaped escapes' origin) :
+    FlatInvariant declarations vs hs env live aenv tenv escapes' gamma :=
+  { inv with
+    toInvariant := { inv.toInvariant with
+      keptEscaped := fun k member c reaches g named => more g (inv.keptEscaped k member c reaches g named) } }
+
+theorem join_escapes (left right : Summary) :
+    (left.join right).escapes = union left.escapes right.escapes := rfl
+
+/-! ### Typing, shadows and uses of a branch -/
+
+theorem exprType_branch_success {declarations : List Decl} {self : Decl} {tenv : Env Ty} {c : Atom} {yes no : Expr} {type : Ty}
+    (typed : exprType declarations self tenv (.branch c yes no) = .ok type) :
+    atomType tenv c = .ok .int ∧ exprType declarations self tenv yes = .ok type ∧
+      ∃ b, exprType declarations self tenv no = .ok b ∧ Ty.equal type b = true := by
+  rw [exprType] at typed
+  cases condition : atomType tenv c with
+  | error problem => rw [condition] at typed; simp [Bind.bind, Except.bind] at typed
+  | ok ct =>
+    rw [condition] at typed
+    simp only [Bind.bind, Except.bind] at typed
+    by_cases nonInt : (ct != Ty.int) = true
+    · rw [if_pos nonInt] at typed; cases typed
+    · rw [if_neg nonInt] at typed
+      have isInt : (ct == Ty.int) = true := by
+        cases equal : (ct == Ty.int) <;> simp [bne, equal] at nonInt ⊢
+      have ctInt : ct = .int := ty_equal_int isInt
+      subst ctInt
+      cases yesType : exprType declarations self tenv yes with
+      | error problem => rw [yesType] at typed; simp [pure, Except.pure] at typed
+      | ok a =>
+        rw [yesType] at typed
+        cases noType : exprType declarations self tenv no with
+        | error problem => rw [noType] at typed; simp [pure, Except.pure] at typed
+        | ok b =>
+          rw [noType] at typed
+          simp only [pure, Except.pure] at typed
+          by_cases same : (a == b) = true
+          · rw [if_pos same] at typed
+            cases Except.ok.inj typed
+            exact ⟨rfl, rfl, b, rfl, same⟩
+          · rw [if_neg same] at typed; cases typed
+
+theorem shadowFree_branch_success {bound : List Var} {c : Atom} {yes no : Expr}
+    (shadow : shadowFree bound (.branch c yes no) = .ok ()) :
+    shadowFree bound yes = .ok () ∧ shadowFree bound no = .ok () := by
+  rw [shadowFree] at shadow
+  cases yesShadow : shadowFree bound yes with
+  | error problem => rw [yesShadow] at shadow; simp [Bind.bind, Except.bind] at shadow
+  | ok unit =>
+    cases unit
+    rw [yesShadow] at shadow
+    simp only [Bind.bind, Except.bind] at shadow
+    exact ⟨rfl, shadow⟩
+
+theorem uses_branch (c : Atom) (yes no : Expr) :
+    uses (.branch c yes no) = union (atomUses c) (union (uses yes) (uses no)) := rfl
+
 /-! ### The uses of a typed expression are typed paths -/
 
 theorem atom_use_typed {tenv : Env Ty} {a : Atom} {ty : Ty} {x : Var} {p : Path}
@@ -1296,5 +1536,14 @@ theorem flat_uses_typed {declarations : List Decl} {self : Decl} {e : Expr} (fla
     intro tenv ty typed x p use
     obtain ⟨types, atomsTyped, _⟩ := exprType_prim_success typed
     exact atoms_use_typed atomsTyped use
+  | @branch yes no c _ _ ihYes ihNo =>
+    intro tenv ty typed x p use
+    obtain ⟨condTyped, yesTyped, b, noTyped, _⟩ := exprType_branch_success typed
+    rw [uses_branch] at use
+    rcases mem_union_cases _ _ (x, p) use with cond | arms
+    · exact atom_use_typed condTyped cond
+    · rcases mem_union_cases _ _ (x, p) arms with inYes | inNo
+      · exact ihYes tenv ty yesTyped x p inYes
+      · exact ihNo tenv b noTyped x p inNo
 
 end Ownership.FlatFragment.Fields
