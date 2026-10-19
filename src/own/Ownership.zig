@@ -6289,17 +6289,35 @@ const Walker = struct {
         const ap = if (e.approx != 0) e.approx else approx_place;
         // The root's own places, as the expansion that is empty reads them.
         if (w.o.markerEmpty(arg)) try out.append(w.a, e);
-        // Where the root may not be a `T`, a place inside it may be one, at
-        // a path the entry does not show.
-        if (w.o.markerAny(arg)) try out.append(w.a, .{ .path = try w.o.child(eps, .any, 0), .cell = e.cell, .approx = ap });
         var buf: [k_limit + 1]Step = undefined;
         const st = w.o.steps(e.path, &buf);
+        // Where the root may not be a `T`, a place inside it may be one, at
+        // a path the entry does not show: only a path that enters a `T`, or
+        // whose steps stand for places it does not name, can be inside one.
+        // An entry above every `T` below the root (a record's list field
+        // beside the field that holds the `T`s) is in none of them.
+        if (w.o.markerAny(arg) and w.mayHideT(st, w.o.markerType(arg))) try out.append(w.a, .{ .path = try w.o.child(eps, .any, 0), .cell = e.cell, .approx = ap });
         for (st, 0..) |x, i| if (x.kind == .level and w.o.markerType(x.arg) == w.o.markerType(arg)) {
             var at: u32 = eps;
             for (st[i + 1 ..]) |y| at = try w.o.child(at, y.kind, y.arg);
             try out.append(w.a, .{ .path = at, .cell = e.cell, .approx = e.approx });
             break;
         };
+    }
+
+    /// Whether a path below a value's root may lead into a `T` below the
+    /// root (`alongMarker`): a step into `T` (`◇` for a function type), or
+    /// a step that stands for places it does not name — `⋆`, any marker,
+    /// whose levels may pass through a `T` — or a path at the cut.
+    fn mayHideT(w: *Walker, st: []const Step, t: u64) bool {
+        if (st.len >= k_limit) return true;
+        for (st) |x| switch (x.kind) {
+            .any, .level => return true,
+            .ctor => if (t != fn_type and w.o.ctorType(w.o.stepCtor(x.arg)) == t) return true,
+            .env => if (t == fn_type) return true,
+            else => {},
+        };
+        return false;
     }
 
     /// Every entry of `av` with closures expanded into what they capture,
