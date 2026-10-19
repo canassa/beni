@@ -243,6 +243,10 @@ pub const Context = struct {
     /// done (`printRange`), over buffers both parts share in the arena — two
     /// pieces printing at once would each copy back over the other.
     names_out: std.ArrayList(InternPool.Symbol) = .empty,
+    /// `Marks.src` in `print`: the identity of each of `names_out`, in the
+    /// same order, kept so a caller that stores the piece (`core_pack`) can
+    /// answer what name a mapping refers to, tags and module part included.
+    names_src: std.ArrayList(u32) = .empty,
 
     pub fn init(arena: Allocator, ir: *const JsIr, names: Names, unobserved: []const Index, record_marks: bool) Allocator.Error!Context {
         const spellings = try arena.alloc(?Spelling, ir.names.len);
@@ -275,6 +279,7 @@ pub const Context = struct {
         // and the header is copied back below — sequential only, see
         // `names_out`.
         marks.names = c.names_out;
+        marks.src = c.names_src;
         var p: Printer = .{
             .joiner = .init(c.arena, c.arena),
             .ir = c.ir,
@@ -287,6 +292,7 @@ pub const Context = struct {
         };
         try walk(&p, c.ir, false, from, to);
         c.names_out = marks.names;
+        c.names_src = marks.src;
         c.map_names = p.map_names;
         const text = try p.joiner.blit();
         return .{ .text = text, .mappings = if (p.marks != null) marks.list.items else &.{} };
@@ -542,6 +548,7 @@ const Printer = struct {
         if (slot.* == SourceMap.Mapping.no_name) {
             slot.* = @intCast(marks.names.items.len);
             try marks.names.append(marks.allocator, n.base);
+            try marks.src.append(marks.allocator, index.int());
         }
         return slot.*;
     }
