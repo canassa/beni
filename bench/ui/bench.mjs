@@ -28,7 +28,7 @@ const pick = (all, key, list) => (list === null ? all : list.split(",").map((n) 
 // A beni subject whose build `build.mjs` could not make holds `.skipped`,
 // the compiler's reason: it is skipped, said so, and never measured.
 const skipped = (s) => (s.dir !== undefined && existsSync(join(root, "out", s.dir, ".skipped")) ? readFileSync(join(root, "out", s.dir, ".skipped"), "utf8") : null);
-const subjects = pick(allSubjects, "name", arg("subjects", "beni,beni-release,beni-direct,beni-direct-release,solid2,solid1,p2,p3,vanillajs")).filter((s) => {
+const subjects = pick(allSubjects, "name", arg("subjects", "beni,beni-release,solid2,solid1,p2,p3,vanillajs")).filter((s) => {
   const why = skipped(s);
   if (why !== null) console.log(`skipped ${s.name}: ${why}`);
   return why === null;

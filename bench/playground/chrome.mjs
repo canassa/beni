@@ -142,7 +142,7 @@ const firstBuildAt = Math.round(await first.evaluate("performance.now()"));
 await first.close();
 
 // TodoMVC: opened from a link, then edited `runs` times.
-const todo = await open(await linkTo("browser-direct", todomvc));
+const todo = await open(await linkTo("browser-tea", todomvc));
 const todomvcRuns = [await todo.until(builtMs)];
 for (let i = 1; i < runs; i += 1) {
   await todo.evaluate(`document.getElementById("status").textContent = ""`);
