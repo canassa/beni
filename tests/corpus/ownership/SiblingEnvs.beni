@@ -1,0 +1,91 @@
+-- ownership: two closures' environments inside a third's (the review of #403;
+-- ownership-checker.md §16.7, F1). F1 folds every inner environment onto one
+-- marked place, `◇⟨◇⟩◇`, so what two sibling closures captured lands at one
+-- path, where a deep condition cannot see the two apart. Their pair is judged
+-- where the expansion merges it, as the deep condition judged it before: one
+-- list captured by both is `{shared}` (`mkH`, `mkP`, `mkR`, `mkU`), two lists
+-- are `sep` (`mkS`), and two parts of one tree are `sep` of their paths (`mkT`).
+type Tree
+    = Leaf
+    | Node Tree (List Int) Tree
+
+
+type Two
+    = Two (⊤ → Int) (⊤ → Int)
+
+
+size : Tree → Int
+size t =
+    case t of
+        Leaf →
+            0
+
+        Node l xs r →
+            size l + List.length xs + size r
+
+
+pub mkH : List Int → List (⊤ → Int)
+mkH xs =
+    g1 = λ⊤ → List.length xs
+    g2 = λ⊤ → List.length xs + 1
+    s = { a = g1, c = g2 }
+    f = λ⊤ → s.a ⊤ + s.c ⊤
+    [ f ]
+
+
+pub mkP : List Int → List (⊤ → Int)
+mkP xs =
+    g1 = λ⊤ → List.length xs
+    g2 = λ⊤ → List.length xs + 1
+    s = ( g1, g2 )
+    f =
+        λ⊤ →
+            case s of
+                ( a, c ) →
+                    a ⊤ + c ⊤
+    [ f ]
+
+
+pub mkR : List Int → List (⊤ → Int)
+mkR xs =
+    g1 = λ⊤ → List.length xs
+    g2 = λ⊤ → List.length xs + 1
+    r = { r = { a = g1, c = g2 } }
+    f = λ⊤ → r.r.a ⊤ + r.r.c ⊤
+    [ f ]
+
+
+pub mkU : List Int → List (⊤ → Int)
+mkU xs =
+    g1 = λ⊤ → List.length xs
+    g2 = λ⊤ → List.length xs + 1
+    u = Two g1 g2
+    f =
+        λ⊤ →
+            case u of
+                Two a c →
+                    a ⊤ + c ⊤
+    [ f ]
+
+
+pub mkS : List Int, List Int → List (⊤ → Int)
+mkS xs ys =
+    g1 = λ⊤ → List.length xs
+    g2 = λ⊤ → List.length ys
+    s = { a = g1, c = g2 }
+    f = λ⊤ → s.a ⊤ + s.c ⊤
+    [ f ]
+
+
+pub mkT : Tree → List (⊤ → Int)
+mkT t =
+    case t of
+        Node l xs _ →
+            g1 = λ⊤ → size l
+            g2 = λ⊤ → List.length xs
+            s = { a = g1, c = g2 }
+            f = λ⊤ → s.a ⊤ + s.c ⊤
+            [ f ]
+
+        Leaf →
+            []
