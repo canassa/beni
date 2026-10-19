@@ -1162,7 +1162,7 @@ fn crossCheckSummaries(o: *Ownership, sh: *Ownership, m: u32) Allocator.Error!vo
         const c = x.sum;
         const e = y.sum;
         if (c.limit != .none or e.limit != .none) continue;
-        var bits: std.StringHashMapUnmanaged(u8) = .empty;
+        var bits: std.StringHashMapUnmanaged(u16) = .empty;
         for (c.uses) |u| {
             places.clearRetainingCapacity();
             try o.expandedPlaces(u.path, true, &places);
