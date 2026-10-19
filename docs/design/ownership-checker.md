@@ -2534,6 +2534,20 @@ and nothing of `f`'s value: it is no use and no loss of sight. What the runtime 
 `need` (§16.2): `Cmd.task work tag` sends `tag (work ⊤)` from a body, so its `tag` needs to return owned, and the
 tagger a program hands it is checked there (§23.5).
 
+*Amended 2026-10-19 (#426): `browser-inline`'s send positions.* `browser-inline` builds its commands and
+subscriptions over no `Hosted`: its runtime hands the bodies their sends from `Cmd` and `Sub` themselves, so
+those are its asserted rows. Before, it had none, and a send's demand was never made: `SendInPayload` and
+`NestedLambdaSend` built on the platform that edits lists in place.
+
+| Function (`browser-inline`) | Row |
+|---|---|
+| `Cmd.perform body` | `job`'s: π₁ `calls many`, `sends π1` |
+| `Sub.on k start tag` | `tap`'s one parameter along, past the key: π₂ `calls many`, `sends π1`; π₃ `calls many`, `need owned`, supplied **borrowed** — two declarations of one key share one listener, and each value goes through both taggers (`Sub.on`'s documentation) |
+| `Sub.map sub tag` | `mapTap`'s: π₂ as `tap`'s tagger, borrowed |
+
+`Listen.on`, which a start forwards its send to, has no row yet: a start written as a top-level function that
+hands its send to it is rejected as a limit (`approx`), where a lambda of a platform layer is not reported on.
+
 ### 23.4 What is checked where
 
 A function value handed to a send position is checked where it is handed:

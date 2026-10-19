@@ -1,0 +1,57 @@
+-- #426: on browser-inline a subscription's tagger is supplied borrowed, as
+-- `tap`'s is (ownership-checker.md §23.3): `Sub.on` shares one listener per
+-- key and passes each value through every tagger of it, so `Got` returning
+-- what it is handed, which `update` edits in place, is rejected; and the
+-- start, handed a send, sends a list a top-level value holds. Before,
+-- `Sub.on` had no row and the program built.
+import Browser
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub exposing (Sub)
+import Tea
+
+
+type Key
+    = Clicks
+
+
+type Msg
+    = Got (List Int)
+
+
+update : Msg, List Int → List Int × Cmd Msg
+update msg model =
+    case msg of
+        Got xs →
+            ( List.push xs 9, Cmd.none )
+
+
+shared : List Int
+shared = [ 1, 2, 3 ]
+
+
+start : (List Int → ⊤) → (⊤ → ⊤)
+start send =
+    send shared
+    λ⊤ → ⊤
+
+
+subscriptions : List Int → Sub Msg
+subscriptions _ = Sub.on Clicks start Got
+
+
+view : List Int → Html Msg
+view model = <p>{String.fromInt (List.length model)}</p>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.element
+            { init = λ⊤ → ( [], Cmd.none )
+            , update = update
+            , view = view
+            , subscriptions = subscriptions
+            }
+        )
+        "root"
