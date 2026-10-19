@@ -6295,13 +6295,23 @@ const Walker = struct {
         // a path the entry does not show: only a path that enters a `T`, or
         // whose steps stand for places it does not name, can be inside one.
         // An entry above every `T` below the root (a record's list field
-        // beside the field that holds the `T`s) is in none of them.
-        if (w.o.markerAny(arg) and w.mayHideT(st, w.o.markerType(arg))) try out.append(w.a, .{ .path = try w.o.child(eps, .any, 0), .cell = e.cell, .approx = ap });
+        // beside the field that holds the `T`s) is in none of them, unless
+        // its cell stands for what is below it, which no entry shows.
+        if (w.o.markerAny(arg) and (w.mayHideT(st, w.o.markerType(arg)) or w.standsBelow(e.cell))) try out.append(w.a, .{ .path = try w.o.child(eps, .any, 0), .cell = e.cell, .approx = ap });
         for (st, 0..) |x, i| if (x.kind == .level and w.o.markerType(x.arg) == w.o.markerType(arg)) {
             var at: u32 = eps;
             for (st[i + 1 ..]) |y| at = try w.o.child(at, y.kind, y.arg);
             try out.append(w.a, .{ .path = at, .cell = e.cell, .approx = e.approx });
             break;
+        };
+    }
+
+    /// Whether a cell stands for a value whose places below it no entry
+    /// shows: one a later instantiation supplies, or one written over.
+    fn standsBelow(w: *Walker, c: u32) bool {
+        return switch (w.cells.items[c].kind) {
+            .param, .env, .cbres, .taken, .except, .shared, .top => true,
+            else => false,
         };
     }
 
