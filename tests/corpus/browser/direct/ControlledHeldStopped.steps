@@ -1,4 +1,0 @@
-# The click that throws: the box stays as the click left it.
-throws click #box
-# The task the box was held for: the page has stopped.
-advance 0

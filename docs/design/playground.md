@@ -641,3 +641,11 @@ deploys it: the site build of issue #127 runs the step and copies the directory 
 **Later.** One instance kept alive between compiles, with the on-disk caches of
 `fast-compiler.md` §8 in its memory file system, makes a compile after an edit incremental. It is
 not part of either pull request.
+
+*Amended 2026-10-19 (issue #423, the retirement of `browser-direct`):* the page's platforms are
+`browser-tea` (a page), `browser-inline` (a page compiled whole, new) and `node` (a program that
+prints). The samples that drew in the frame moved with their files to
+`playground/samples/browser-tea/`, and `zig build playground` writes TodoMVC there. A shared link
+naming `browser-direct` opens on the default platform, as any link naming a platform the page does
+not offer does. `zig build test-playground` builds `browser/tea/` pages for `browser-tea` and
+`browser/inline/` pages for `browser-inline`, and TodoMVC for `browser-tea`.

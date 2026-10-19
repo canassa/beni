@@ -1,7 +1,0 @@
--- a recursive result aliases a retained capture across calls.
--- Confirmed by the in-place interpreter; see proofs/ownership/BRIDGE-RESULTS.md.
-pub run ⊤ =
-    xs = [ 0 ]
-    loop n = if n == 0 then xs else List.push (loop (n - 1)) n
-    first = loop 1
-    loop 1

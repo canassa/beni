@@ -4,8 +4,8 @@
 //
 //   node build.mjs <platform>
 //
-// beni-tea/build.mjs and beni-direct/build.mjs are the same file, one per
-// entry because the benchmark wants each entry self-contained: keep them equal.
+// One file per entry, because the benchmark wants each entry
+// self-contained.
 
 import { spawnSync } from "node:child_process";
 import { rmSync } from "node:fs";

@@ -1,7 +1,0 @@
-# The first row's arm switches; the second's does not.
-click #toggle-1
-# Every row's arm patched.
-click #rename
-# Positional rows patched whole: each shows its new item's arm.
-click #reverse
-click #toggle-1

@@ -1,6 +1,0 @@
-module InitializationRecursive
-  7:25 List.push InitializationRecursive.seed: rejected top-level: InitializationRecursive.seed is a top-level value
-  summary dest: res shared(InitializationRecursive.seed)
-  demands 1: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
-total 1: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
-cause top-level 1

@@ -1,9 +1,0 @@
--- `run/ListSpreadPatterns`'s expression forms without their copies: `xs`
--- spread at the front of a longer list, appended to itself and then read
--- again. Lists are edited in place, so each spread that writes would
--- change `xs` for its later readers (`ownership-checker.md` §30); the
--- checker refuses them, and `run/ListSpreadPatterns` copies `xs` first.
-pub spreads : ⊤ → List (List Int)
-spreads ⊤ =
-    xs = [ 1, 2, 3 ]
-    [ [ …xs, 4 ], [ …xs, …xs ], xs ]

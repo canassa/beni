@@ -1,6 +1,6 @@
 // The mount of a static page, timed from a real click, untraced
-// (docs/design/browser-direct.md §12.2, §14 slice S0): `browser-tea` and
-// `browser-direct`, development and `--release`, against the vanilla page
+// (docs/design/browser-direct.md §12.2, §14 slice S0): `browser-tea`,
+// development and `--release`, against the vanilla page
 // that writes the same HTML through a `template` and appends it. One
 // source per page, generated here; nothing on it changes after the mount.
 //
@@ -53,8 +53,6 @@ const source = (markup) =>
 const builds = [
   { name: "beni", platform: "browser-tea", release: false, runtime: "_platform/_browser/Rt.mjs", run: "Rt$run" },
   { name: "beni-release", platform: "browser-tea", release: true },
-  { name: "beni-direct", platform: "browser-direct", release: false, runtime: "_platform/Direct.mjs", run: "Direct$run" },
-  { name: "beni-direct-release", platform: "browser-direct", release: true },
 ];
 const wantedSubjects = arg("subjects", [...builds.map((b) => b.name), "vanillajs"].join(",")).split(",");
 

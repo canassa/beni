@@ -1,7 +1,0 @@
-module InitializationInferredEvidence
-  9:53 List.pop xs: accepted param
-  12:8 call InitializationInferredEvidence.checkedPop InitializationInferredEvidence.seed: rejected top-level: InitializationInferredEvidence.seed is a top-level value (InitializationInferredEvidence.checkedPop writes π1)
-  summary checkedPop: π1 RAW, π1[*] RA; res [*] π1[*], π1
-  demands 2: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
-total 2: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
-cause top-level 1

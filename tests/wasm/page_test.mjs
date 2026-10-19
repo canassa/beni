@@ -142,7 +142,7 @@ if (mode === "positions") {
   });
 } else if (mode === "share") {
   const sources = ["", "main = 1\n", "-- → ⊤ ≠ ▷ … 😀\nx = \"😀\"\n", "x".repeat(100_000), Array.from({ length: 2_000 }, (_, i) => `v${i} = ${i}`).join("\n")];
-  for (const platform of ["browser-direct", "node"]) {
+  for (const platform of ["browser-tea", "node"]) {
     for (const source of sources) {
       const back = await decode(`#${await encode(platform, source)}`);
       check(back !== null && back.platform === platform && back.source === source, `${platform} ${JSON.stringify(source.slice(0, 40))} round trip`);
@@ -160,8 +160,8 @@ if (mode === "positions") {
   // when it holds text, so a link made before the pane opens as it did.
   const styles = ["body { color: #111; }\n", "/* → 😀 */ a::after { content: \"⊤\"; }\n", "p{}".repeat(50_000)];
   for (const css of styles) {
-    const back = await decode(`#${await encode("browser-direct", "main = 1\n", css)}`);
-    check(back !== null && back.source === "main = 1\n" && back.css === css && back.platform === "browser-direct", `CSS ${JSON.stringify(css.slice(0, 40))} round trip`);
+    const back = await decode(`#${await encode("browser-tea", "main = 1\n", css)}`);
+    check(back !== null && back.source === "main = 1\n" && back.css === css && back.platform === "browser-tea", `CSS ${JSON.stringify(css.slice(0, 40))} round trip`);
   }
   const plain = await encode("node", "main = 1\n");
   check(plain === (await encode("node", "main = 1\n", "")) && !plain.includes("css="), `a link with an empty CSS pane has no css (${plain})`);
@@ -307,18 +307,18 @@ if (mode === "positions") {
     check(!/@import/i.test(text), `${sample.name}: its CSS imports no style sheet`);
     for (const [, url] of text.matchAll(/url\(\s*['"]?([^'")\s]*)/gi)) check(url.startsWith("data:"), `${sample.name}: url(${url.slice(0, 40)}…) is a data: URL`);
   }
-  check(samples.filter((s) => s.platform === "browser-direct").every((s) => s.css !== undefined), "every sample that draws in the frame has a CSS file");
+  check(samples.filter((s) => s.platform === "browser-tea").every((s) => s.css !== undefined), "every sample that draws in the frame has a CSS file");
   // TodoMVC's look is todomvc-app-css 2.4.3's `index.css`, unmodified
   // between the two markers: the SHA-256 of the file in the package's
   // tarball (`samples/LICENSES.txt` names the tarball and its SHA-512).
-  const todomvc = readFileSync("playground/samples/browser-direct/TodoMVC.css", "utf8");
+  const todomvc = readFileSync("playground/samples/browser-tea/TodoMVC.css", "utf8");
   const start = "/* ==== todomvc-app-css 2.4.3, index.css, unmodified ==== */\n";
   const end = "/* ==== end of todomvc-app-css 2.4.3 ==== */\n";
   const upstream = todomvc.includes(start) && todomvc.includes(end) ? todomvc.slice(todomvc.indexOf(start) + start.length, todomvc.indexOf(end)) : "";
   const sum = createHash("sha256").update(upstream).digest("hex");
   check(sum === "c7dd5d13d38d0c85b746c0859b837f212754486779e0a9076d092396dfae7746", `TodoMVC.css holds todomvc-app-css 2.4.3's index.css unmodified (SHA-256 ${sum})`);
   const notices = readFileSync("playground/samples/LICENSES.txt", "utf8");
-  check(notices.includes("== browser-direct/TodoMVC.css: todomvc-app-css 2.4.3 (CC-BY-4.0)"), "samples/LICENSES.txt names TodoMVC.css's source and licence");
+  check(notices.includes("== browser-tea/TodoMVC.css: todomvc-app-css 2.4.3 (CC-BY-4.0)"), "samples/LICENSES.txt names TodoMVC.css's source and licence");
   check(notices.includes("Copyright (c) Sindre Sorhus") && notices.includes("Attribution 4.0 International Public License"), "samples/LICENSES.txt holds the credit and the licence's text");
   checkLicenceLink("samples/LICENSES.txt");
 } else if (mode === "tabs") {

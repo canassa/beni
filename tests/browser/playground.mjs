@@ -387,7 +387,7 @@ check(await wrong.evaluate(`!document.getElementById("editor").hidden && documen
 
 // beni's grammar in the editor: the Elm mode with beni's tokens (§4.2).
 const notation = "-- every token of beni's own\nimport Html exposing (Html)\n\n\npub schema Person =\n    name : String\n\n\nf : Int, Int → Int × Int\nf a b = ( a, b )\n\n\nview : ⊤ → Html msg\nview _ = <p class=\"x\">{\"a ≠ b ≤ c ≥ d ▷ e ◁ f … g ← h λ ⊥\"}</p>\n";
-const highlighted = await pageWith("browser-direct", notation);
+const highlighted = await pageWith("browser-tea", notation);
 await highlighted.until(`document.querySelector(".cm-editor") !== null && document.querySelector(".cm-content")?.textContent.includes("schema")`, 20_000);
 for (const piece of ["→", "×", "⊤", "pub", "schema", "<p", "class"]) {
   check(await highlighted.evaluate(`[...document.querySelectorAll("#editor .cm-line span")].some((s) => s.textContent === ${JSON.stringify(piece)} && s.className !== "")`), `the editor highlights ${piece}`);
@@ -396,8 +396,8 @@ for (const piece of ["→", "×", "⊤", "pub", "schema", "<p", "class"]) {
 // The CSS pane (§4.6). A program with an empty pane: its frame has no style
 // sheet. An edit in the pane restyles the running program, `</style>` and
 // all, and does not restart it; an edit of the source does.
-const counter = await (await fetch(`${origin}/samples/browser-direct/Counter.beni`)).text();
-const bare = await pageWith("browser-direct", counter);
+const counter = await (await fetch(`${origin}/samples/browser-tea/Counter.beni`)).text();
+const bare = await pageWith("browser-tea", counter);
 check((await bare.until(built)) !== null && (await bare.until(loaded, 10_000)) !== null, `a counter with no CSS builds and loads (${await bare.evaluate(status)})`);
 check((await bare.until(`document.querySelectorAll("button").length === 2 && ${unstyled}`, 10_000, true)) !== null, "an empty CSS pane gives the frame no style sheet");
 check((await bare.evaluate(cssText)) === "", "a link with no CSS opens an empty CSS pane");
@@ -435,11 +435,11 @@ const styled = await open(styledLink);
 check((await styled.until(built)) !== null, `a link with CSS builds (${await styled.evaluate(status)})`);
 check((await styled.evaluate(editorText)) === (await bare.evaluate(editorText)), "the link opens the source");
 check((await styled.evaluate(cssText)) === edge, `the link opens the CSS (${JSON.stringify(await styled.evaluate(cssText))})`);
-check((await styled.evaluate(`document.getElementById("platform").value`)) === "browser-direct", "the link opens the platform");
+check((await styled.evaluate(`document.getElementById("platform").value`)) === "browser-tea", "the link opens the platform");
 check((await styled.until(`document.querySelector("main") !== null && getComputedStyle(document.querySelector("main")).outlineColor === "rgb(1, 2, 3)"`, 10_000, true)) !== null, "the link's CSS reaches the frame");
 // No list of allowed style sheets (§4.6): the frame loads an `@import` from
 // another origin as it is.
-const imported = await pageWith("browser-direct", counter, `@import url("${elsewhereOrigin}/imported.css");\n`);
+const imported = await pageWith("browser-tea", counter, `@import url("${elsewhereOrigin}/imported.css");\n`);
 check((await imported.until(built)) !== null, `a CSS with an @import builds (${await imported.evaluate(status)})`);
 check((await imported.until(`getComputedStyle(document.documentElement).backgroundColor === "rgb(4, 5, 6)"`, 10_000, true)) !== null, "an @import from another origin applies in the frame");
 

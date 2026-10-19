@@ -1,1 +1,0 @@
-6700 Conduit differential value fuzz builds both platforms and runs the fuzzer. Measured 6,088-6,089M x86-64 Linux reference instructions on 2026-10-15 (PR #98); this grant adds 10%. The owner re-granted it on 2026-10-15, replacing the grant sized from CPU time on a host without an instruction counter. Remove when the application builds fit the global budget.
