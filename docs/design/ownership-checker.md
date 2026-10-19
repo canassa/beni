@@ -1421,6 +1421,58 @@ through a `Maybe`, so the rule must fire on `Leaf (Maybe a)` too.
     list of lists keeps its lists' elements at `⋆`.
   - Fixtures: `ownership/PolyRec` (`g`, `wrap`, `Leaf (Maybe a)`, the mutual pair `T`/`U`, `uwrap`) and
     `ownership/LocalPolyRec` (`g` as an annotated `let` function).
+- *Amended 2026-10-19 (the owner's choice (a)): the fold is on the composed path, not on the argument.* The fold at
+  the call above loses a verdict master gives, and a build error that never goes away is a precision loss. Measured:
+  `wrap`, `mwrap`, `pwrap` and `uwrap` lose every result condition (`{lost}` for `{excl π2}`), and `pushArg xs =
+  case wrap 1 xs of Wrap (Leaf ys) → case ys of [ zs ] → List.push zs 1` is refused `exclusive` where master accepts
+  it `param`. Keeping the argument's first step exact does not help. The recursive call's argument is always `[ x ]`,
+  `{ε fresh, [*] π2}`, and the growth is not in it but in instantiation (§16.4), which puts the callee's summary
+  path in front of the argument's (`instRes`: `⟨T⟩⁺#Leaf.0[*]` and `[*]` make `⟨T⟩⁺#Leaf.0[*][*]`). A fold of
+  the argument makes the base case's entry and the deeper levels' end in one suffix. A constructor step then puts
+  them at one path, one cell at two places that may both hold it, which is honestly `lost`.
+  - *The rule.* Arguments are not folded. At a call of a member of the group being solved, top-level (§16.6) or
+    local (§18.7), each argument entry `(q, c)` has a *boundary* `b`: the number of steps of `q` above the first
+    variable of the member's declared parameter type that the call instantiates at a structure (the walk of the
+    rule above). The entry is *below* when `q` has more than `b` steps. Instantiating a summary entry `r` at path
+    `P` whose provenance is parameter `i` at `p` composes `P` with the rest of `q` after `p`, whose boundary is
+    `b − |p|` (at least 0):
+    - when `r` and the argument entry are both unmarked, the composed entry is `P ++ rest`, exact as before,
+      and it is *marked* when the entry is below;
+    - when either is marked and the entry is below, the composed entry is `P ++ rest[0 .. b − |p|] ++ ⋆`,
+      approximate (`approx_place`), and marked.
+    The mark rides on every entry made from a marked entry: a projection, a placement (`shift`, `under`), a join
+    of branches, a binding, a call. It reaches the summary as a mark on the result entry. A callee's marks ride
+    only at a call inside the group being solved: an instantiation outside it clears the callee's marks, since
+    only a group's own fixpoint composes its summary with itself. The caller's own marks, on what it passes,
+    ride through any call, a function outside the group included (`ownership/PolyRecThrough`). So the first
+    composition of an entry below a grown variable stays exact, and every later one is `⋆`.
+  - *Why a mark, and not the result type.* Walking the member's declared result type along `P` cannot tell
+    whether `P` already went below a grown variable. Under a marker the level is unknown: in `T a`, the places
+    `⟨T⟩⁺#Leaf.0` are `T (List a)`'s, `T (List (List a))`'s, and so on. So `⟨T⟩⁺#Leaf.0[*]` is a typed place
+    (level 1's `a`) and the composition of one too. The mark records what the type cannot. It is kept in memory
+    while a group is solved and is not written to the summary block: a settled summary is instantiated only
+    outside its group, where the mark is cleared, so the block's format does not change. A mark that a
+    transformation dropped costs termination, not soundness: the entry grows one composition more per round. So
+    each fixture checks that no summary path reaches the cut.
+  - *Soundness.* An exact composition is today's instantiation. A `⋆` stands for every place at or below it and
+    only merges. The places this keeps apart are the ones master kept apart: the base case's `π2` at
+    `#Leaf.0[*]`, which a constructor step places at `⟨T⟩⁺#Leaf.0[*]`, and the deeper levels' at
+    `⟨T⟩⁺#Leaf.0[*]⋆`. That pair is now a container and what it may hold, a prefix step by step, so a deep
+    condition takes it for one place (`nested`), and a fold that put the two at one path (`foldedBeside`) does
+    not arise. *Why `nested` may take it for one place.* Values are acyclic: a cell is never held both at a place
+    and strictly below it in one value, so when one cell is at `X` and at `X⋆`, one run holds it at `X`, or the
+    two describe different runs. `⋆` also stands for `X` itself. Either way it is one list at one place, never
+    two places in one value. For two different cells at `X` and `X⋆`, `nested`'s rule is §18.2's container and
+    contents, unchanged.
+  - *Finite.* An entry's path takes at most one exact composition below a grown variable. The next adds `⋆`,
+    after which `child` absorbs every step, and the steps above the variable (`rest[0 .. b − |p|]`) walk the
+    finite type graph, where 1–3 of the bound argument fold them. `wrap` is `res #Leaf.0 π2, ⟨T⟩⁺#Leaf.0 fresh,
+    ⟨T⟩⁺#Leaf.0[*] π2 fresh, ⟨T⟩⁺#Leaf.0[*]⋆ π2 fresh`; `g` is `res ◇ π2 fresh, ◇[*] π2 fresh, ◇[*]⋆ π2
+    fresh`; `PolyRecThrough`'s `wrap2` is `wrap`'s.
+  - *What it still costs.* Below a grown variable, a value's places past the first composition are one place:
+    two lists that a program puts at the second and third level of `List (List (List a))` inside one nested
+    value are separated only by their cells. The differential measurement against master with `k` counts every
+    verdict and condition that differs, in each direction, before this is built beyond a spike.
 
 **(c) Removing `k`.** Issue #286's (c) is this step, with F1, F2 and F3 as its fold points. With F1, F3 and a
 cast marker the owner accepts, `k` goes: every path buffer (`[k_limit + 1]Step`, about twenty) becomes a slice,
