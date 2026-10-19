@@ -101,8 +101,6 @@ const all = [
   ...programs("browser/ top level and OwnPlatform", browser, page, ["dom", "tea", "direct", "inline"]),
   ...programs("browser/dom/", join(browser, "dom"), "browser"),
   ...programs("browser/tea/", join(browser, "tea"), "browser-tea"),
-  ...programs("browser/direct/", join(browser, "direct"), "browser-direct"),
-  ...programs("browser/direct/ on browser-tea", join(browser, "direct"), "browser-tea"),
   // `browser-inline`'s pages and its application goldens; `build/bad/inline/`
   // is left out, since its projects are refused on purpose.
   ...programs("browser/inline/", join(browser, "inline"), "browser-inline"),
@@ -116,7 +114,6 @@ const all = [
     program("bench/ apps", join(repo, "bench/ui/apps", n), "browser-tea"),
   ),
   program("bench/ apps", join(repo, "bench/jfb/frameworks/keyed/beni-tea/src"), "browser-tea"),
-  program("bench/ apps", join(repo, "bench/jfb/frameworks/keyed/beni-direct/src"), "browser-direct"),
   program("bench/corpus", join(repo, "bench/corpus"), "node"),
 ];
 
@@ -179,7 +176,7 @@ if (!args["cost-only"]) {
   const modules = [];
   for (const [what, argv] of [
     ["core", ["core"]],
-    ...["node", "html", "browser", "browser-direct", "browser-tea", "browser-inline"].map((p) => [p, [`--platform=${p}`, `platforms/${p}`]]),
+    ...["node", "html", "browser", "browser-tea", "browser-inline"].map((p) => [p, [`--platform=${p}`, `platforms/${p}`]]),
   ]) {
     const r = await run(["dump", "--stage=ownership", "--ownership-totals", "--ownership-everywhere", ...argv]);
     const total = r.out.match(/^total (\d+): .* pending (\d+), rejected (\d+)$/m);
@@ -199,11 +196,8 @@ if (!args["cost-only"]) {
     console.log(`| \`${row}\` | ${platforms} | ${ps.length} | **${n((p) => p.rejected)}** | ${n((p) => p.crashed)} | ${n((p) => p.other?.length)} |`);
   }
   const rejected = all.filter((p) => p.rejected);
-  // §30.2 counts `browser/direct/`'s sources once: their second platform is
-  // a row of the table, not more programs.
-  const once = all.filter((p) => !p.row.endsWith(" on browser-tea"));
-  const n = (f) => once.filter(f).length;
-  console.log(`\n**${n((p) => p.rejected)} of ${once.length} programs rejected; ${n((p) => p.crashed)} crashed.**\n`);
+  const n = (f) => all.filter(f).length;
+  console.log(`\n**${n((p) => p.rejected)} of ${all.length} programs rejected; ${n((p) => p.crashed)} crashed.**\n`);
 
   console.log("| Module set | Demands | Pending | Rejected |");
   console.log("|---|---:|---:|---:|");
@@ -249,7 +243,6 @@ if (!args["no-cost"]) {
   };
   const cases = [
     ["Conduit", "browser-tea", "examples/conduit/src", true],
-    ["Conduit", "browser-direct", "examples/conduit/src", false],
     ["Bike Wars", "browser-tea", "examples/bike-wars/src", true],
     ["`bench/corpus`", "node", "bench/corpus", true],
   ];
@@ -259,7 +252,7 @@ if (!args["no-cost"]) {
   for (const [name, platform, path, both] of cases) {
     const base = ["check", "--jobs=1", "--no-cache", `--platform=${platform}`, path];
     const without = both ? best(base) : NaN;
-    // On `browser-direct` the pass already runs: "as today", no flag.
+    // On an in-place platform the pass already runs: "as today", no flag.
     const withPass = best(both ? [...base.slice(0, 1), "--ownership-everywhere", ...base.slice(1)] : base);
     const change = both ? `+${Math.round((withPass / without - 1) * 100)} %` : "—";
     console.log(`| ${name} | ${platform}${both ? "" : ", as today"} | ${both ? `${without.toFixed(0)} ms` : "—"} | ${withPass.toFixed(0)} ms | ${change} |`);
