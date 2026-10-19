@@ -6,7 +6,9 @@
 -- is made, a read of a field it writes is a whole use, since the write
 -- happens at a call the lowering cannot place before the read (`readsWritten`,
 -- rejected); a read of a field it does not write is untouched
--- (`readsOther`, accepted).
+-- (`readsOther`, accepted). A read in a later argument of the call the
+-- lambda is handed to runs before the lambda can, and is a whole use too
+-- (`readAfter`, rejected `later-use`: an over-refusal, #416).
 type alias P =
     x : Int
     y : Int
@@ -34,3 +36,11 @@ pub readsOther : Maybe Int, P → Maybe P × Int
 readsOther m p =
     f = bump p _
     ( Maybe.map m f, p.y )
+
+
+apply : (Int → P), Int → P
+apply g n = g n
+
+
+pub readAfter : P → P
+readAfter p = apply (bump p _) p.x
