@@ -1283,6 +1283,22 @@ amendment does for a field that is the type itself ("here").
   browser-inline's generated handlers pick up refusals — does not show: a closure's demand is on the cells its
   environment holds, and the merged place holds the same cells. A capture of a capture written while the outer
   closure lives is still rejected `captured`.
+- *Amended 2026-10-19 (the review of #378): F1 folds under the level marker.* `◇p◇q` → `◇q` is unsound as
+  written above, and "the fold only adds aliasing" was not the argument: a fold can also *remove a containment*.
+  Folded, the inner environment's `◇q` is a prefix, step by step, of the outer environment's other places, so the
+  inner `◇`'s cells read as the container of the outer `.b`, and a deep condition, which does not separate a
+  container from what it holds, never compared them: `g = λ⊤ → List.length xs; s = { a = g, b = xs }` and a
+  closure over `s` hold `xs` twice, and `[ f ]` was `{excl π1}` where it is `{shared}` (`ownership/EnvPrefix`).
+  The same fold lost that `◇.g` holds what `g` captured, and kept an exact entry at the rest of `◇q` that stood
+  for `◇p◇q`. So a function type is taken for a recursive type of its own, whose one region step is `◇`: a `◇` on
+  a path that has one already goes under the marker of that region, `◇p◇q` is `◇⟨◇⟩◇q` (the places `q` of the
+  environment of every closure at or below the first environment), and everything the marker's text above says
+  applies — overlap and holding through the marker, projection keeping a marked entry whole, a marker's place a
+  representative. The marker stands where the value is not a closure (an environment), so its expansion begins
+  with any step and is never empty. The fold now keeps a mark wherever it merged places, and the soundness
+  argument is the marker's: a place the fold merged is one the marker stands for, so containment through it is
+  approximate, never lost, and no pair a deep condition must compare is taken for a container and its contents.
+  *Finite*: a path holds one `◇` and at most one closure marker after it. `mk`'s summary is `res ◇ π2, ◇⟨◇⟩◇ π2`.
 
 **F2. A cast marker that records the type it was read at.** Today `Js.from` and `Js.to` are `returned`: the
 answer is the argument's cells at their own paths, so a value cast to `Js.Value` and back is read at its new
