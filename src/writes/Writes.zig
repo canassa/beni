@@ -70,16 +70,6 @@ pub const none: u32 = std.math.maxInt(u32);
 
 pub const Error = Allocator.Error || error{WorkCap};
 
-/// The package the pass reads a module as: a module of a project's own
-/// platform layer — a platform module read from the project, not embedded
-/// in the binary — is the program's own code, walked as an app module is:
-/// a program it defines gets its keys and holes like any other
-/// (`browser-inline.md` §8.3, amended 2026-10-19). The shipped platforms and
-/// core stay what they are.
-pub fn passPackage(package: SourceStore.Package, embedded: bool) SourceStore.Package {
-    return if (package == .platform and !embedded) .app else package;
-}
-
 pub const Input = struct {
     gpa: Allocator,
     graph: *const Graph,
@@ -92,6 +82,12 @@ pub const Input = struct {
     /// Per module index.
     module_names: []const []const u8,
     packages: []const SourceStore.Package,
+    /// Per module index: whether it is the program's own code, walked as
+    /// an app module is — an app module, or a module of a project's
+    /// platform layer above the one that owns the lowering
+    /// (`browser-inline.md` §8.3, amended 2026-10-19). Empty: the app
+    /// modules alone. Program recognition still reads `packages`.
+    own: []const bool = &.{},
     /// Per module index: whether its `main` is a program the dump prints.
     targets: []const bool,
     work_cap: u64 = default_work,
@@ -2469,7 +2465,7 @@ fn topValue(a: *Writes, m: u32, d: u32, g: u32) Error!u32 {
     const id = a.fnId(m, d);
     if (a.ctx.mode != .view) {
         if (a.top_values[id] != none) return a.top_values[id];
-    } else if (a.in.packages[m] != .app) {
+    } else if (!a.isOwn(m)) {
         if (a.top_values[id] != none) return a.top_values[id];
     }
     const body = a.bir(m).decls[d].body.unwrap() orelse return a.freshEmpty();
@@ -2477,7 +2473,7 @@ fn topValue(a: *Writes, m: u32, d: u32, g: u32) Error!u32 {
     if (std.mem.indexOfScalar(u64, a.active.items, key) != null) return a.freshEmpty();
     try a.active.append(a.gpa, key);
     defer _ = a.active.pop();
-    if (a.ctx.mode == .view and a.in.packages[m] == .app) {
+    if (a.ctx.mode == .view and a.isOwn(m)) {
         var f = try a.newFrame(m, d, 0);
         return a.eval(&f, body, 0);
     }
@@ -2887,7 +2883,7 @@ fn readSubscriptions(a: *Writes, result: u32, keys: []const Key) Error!Subscript
 fn callTop(a: *Writes, m: u32, d: u32, args: []const u32, site_m: u32, site: Inst.Index, g: u32) Error!u32 {
     const decl = a.bir(m).decls[d];
     if (a.in.effects) |fx| if (try a.effectCall(fx, m, d, args)) |t| return t;
-    if (a.in.packages[m] != .app) {
+    if (!a.isOwn(m)) {
         // The rows are core's: a platform module of the same name is not `List`.
         if (a.in.packages[m] == .core) if (Core.row(a.in.module_names[m], a.declName(m, d))) |r| {
             // Markup a `List` function's callback builds is a list's element.
@@ -2902,7 +2898,7 @@ fn callTop(a: *Writes, m: u32, d: u32, args: []const u32, site_m: u32, site: Ins
             if (a.ctx.mode == .view and args.len == 2 and std.mem.eql(u8, a.in.module_names[m], "Html") and
                 std.mem.eql(u8, a.declName(m, d), "map") and !a.ctorShape(args[1]))
             {
-                const at: MapSite = if (a.in.packages[site_m] == .app and site.int() < a.bir(site_m).insts.len)
+                const at: MapSite = if (a.isOwn(site_m) and site.int() < a.bir(site_m).insts.len)
                     .{ .module = site_m, .token = a.bir(site_m).insts.items(.main_token)[site.int()] }
                 else
                     .{ .module = none, .token = 0 };
@@ -2917,7 +2913,7 @@ fn callTop(a: *Writes, m: u32, d: u32, args: []const u32, site_m: u32, site: Ins
     if (decl.kind == .foreign_value or !decl.kind.isValue()) return a.opaqueCall(args, m, site_m, site);
     if (decl.params == 0) return a.apply(try a.topValue(m, d, g), args, g);
     if (args.len != decl.params) return a.opaqueCall(args, m, site_m, site);
-    if (a.ctx.mode == .view and a.in.packages[m] == .app) return a.direct(m, d, args, g);
+    if (a.ctx.mode == .view and a.isOwn(m)) return a.direct(m, d, args, g);
     const s = try a.summary(m, d);
     return a.instantiate(s, a.fnId(m, d), args, g);
 }
@@ -2929,7 +2925,7 @@ fn opaqueCall(a: *Writes, args: []const u32, m: u32, site_m: u32, site: Inst.Ind
     const dispatch = a.dispatchOf(site_m) orelse {
         // Checked app call sites must have a dispatch table. Missing host
         // metadata is conservatively volatile, never assumed pure.
-        std.debug.assert(a.in.packages[site_m] != .app);
+        std.debug.assert(!a.isOwn(site_m));
         const host = try a.mkPath(none, .omega, 0, 0);
         return a.withReadControl(result, try a.depsOfPath(host));
     };
@@ -4139,7 +4135,7 @@ fn evalMarkup(a: *Writes, f: *Frame, inst: Inst.Index, g: u32) Error!u32 {
     const root: Bir.ExtraIndex = @fromBackingInt(b.instData(inst).lhs);
     const saved = a.cur_site;
     defer a.cur_site = saved;
-    if (a.ctx.mode == .view and a.in.packages[f.m] == .app) try a.visitSite(f, b.insts.items(.main_token)[inst.int()]);
+    if (a.ctx.mode == .view and a.isOwn(f.m)) try a.visitSite(f, b.insts.items(.main_token)[inst.int()]);
     var d: u32 = 0;
     try a.walkMarkup(f, root, g, &d, null);
     return a.mkFresh(d);
@@ -4465,7 +4461,7 @@ fn isPathExpr(a: *Writes, m: u32, inst: Inst.Index) bool {
 }
 
 fn recordEdge(a: *Writes, f: *Frame, token: u32, t: u32) Error!void {
-    if (a.ctx.mode != .view or a.in.packages[f.m] != .app) return;
+    if (a.ctx.mode != .view or !a.isOwn(f.m)) return;
     const gop = try a.vedge_index.getOrPut(a.gpa, .{ .module = f.m, .token = token, .path = a.ctx.call_path });
     if (!gop.found_existing) {
         gop.value_ptr.* = @intCast(a.vedges.items.len);
@@ -4482,7 +4478,7 @@ fn recordEdge(a: *Writes, f: *Frame, token: u32, t: u32) Error!void {
 
 fn recordHole(a: *Writes, f: *Frame, token: u32, kind: HoleKind, inst: Inst.Index, t: u32, alone: bool) Error!void {
     if (a.ctx.mode != .view) return;
-    if (a.in.packages[f.m] != .app) return;
+    if (!a.isOwn(f.m)) return;
     const gop = try a.hole_index.getOrPut(a.gpa, .{ .module = f.m, .token = token });
     if (!gop.found_existing) {
         gop.value_ptr.* = @intCast(a.holes.items.len);
@@ -4502,7 +4498,7 @@ fn recordHole(a: *Writes, f: *Frame, token: u32, kind: HoleKind, inst: Inst.Inde
 /// `inst`: its reads, once per call path, as a hole's are (`Program.vlets`).
 fn recordLet(a: *Writes, f: *Frame, inst: Inst.Index, t: u32) Error!void {
     if (a.ctx.mode != .view) return;
-    if (a.in.packages[f.m] != .app) return;
+    if (!a.isOwn(f.m)) return;
     const gop = try a.vlet_index.getOrPut(a.gpa, .{ .module = f.m, .token = inst.int(), .path = a.ctx.call_path });
     if (!gop.found_existing) {
         gop.value_ptr.* = @intCast(a.vlets.items.len);
@@ -4582,7 +4578,7 @@ fn extendPath(a: *Writes, from: u32, m: u32, token: u32) Allocator.Error!u32 {
 /// is exactly a model path) — in the holes and the holes per call path.
 fn noteEach(a: *Writes, f: *Frame, token: u32, form: Form, t: u32) Error!void {
     if (a.ctx.mode != .view) return;
-    if (a.in.packages[f.m] != .app) return;
+    if (!a.isOwn(f.m)) return;
     var p: u32 = none;
     if (a.termTag(t) == .same) {
         var reads: std.ArrayList(u32) = .empty;
@@ -4915,12 +4911,18 @@ pub const Call = struct { module: u32, inst: u32, program: Program };
 /// analysed as a program of its own: what a markup lowering that compiles
 /// programs whole consumes (`browser-direct.md` §11.1). Unlike `run`, it
 /// does not start from `main`, so a program a function builds is found too.
+/// Whether module `m` is the program's own code (`Input.own`).
+fn isOwn(a: *const Writes, m: u32) bool {
+    if (a.in.own.len != 0) return a.in.own[m];
+    return a.in.packages[m] == .app;
+}
+
 pub fn runCalls(a: *Writes) Allocator.Error![]const Call {
     var calls: std.ArrayList(Call) = .empty;
     const n = a.in.graph.count();
     for (0..n) |mi| {
         const m: u32 = @intCast(mi);
-        if (a.in.packages[m] != .app) continue;
+        if (!a.isOwn(m)) continue;
         const b = a.bir(m);
         const tags = b.insts.items(.tag);
         const data = b.insts.items(.data);

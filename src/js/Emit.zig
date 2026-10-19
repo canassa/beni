@@ -2530,7 +2530,7 @@ const Emitter = struct {
             const m: Graph.Index = @fromBackingInt(@intCast(i));
             birs[i] = e.bir(m);
             names[i] = e.session.store.moduleName(e.graph().moduleFile(m));
-            packages[i] = Writes.passPackage(e.graph().modulePackage(m), e.session.store.isEmbedded(e.graph().moduleFile(m)));
+            packages[i] = e.graph().modulePackage(m);
             targets[i] = false;
         }
         const w = try Writes.init(.{
@@ -2542,6 +2542,7 @@ const Emitter = struct {
             .interner = &e.session.interner,
             .module_names = names,
             .packages = packages,
+            .own = try e.ownCode(a, names),
             .targets = targets,
         });
         defer w.deinit();
@@ -2627,6 +2628,52 @@ const Emitter = struct {
     /// The write-set pass over the whole program, run before reachability
     /// so that the pieces a program site lifts (`browser-inline.md` §7) are
     /// nodes of the walk; `buildDirect` reads what it found.
+    /// Per module: whether the write-set pass reads it as the program's own
+    /// code (`Writes.Input.own`): an app module, or a module of a platform
+    /// layer that is not the platform — not the layer that owns the
+    /// lowering, nor one that declares a program constructor or placement
+    /// the lowering names, nor anything those layers depend on. That is a
+    /// project's own layers above the platform, whether the platform is
+    /// read from the binary or from a directory (`browser-inline.md` §8.3,
+    /// amended 2026-10-19).
+    fn ownCode(e: *Emitter, a: std.mem.Allocator, names: []const []const u8) ![]bool {
+        const n = e.graph().count();
+        const own = try a.alloc(bool, n);
+        const layers = e.options.platform.file_layers;
+        const chain = e.session.options.chain;
+        var platform: u64 = 0;
+        if (chain) |c| {
+            if (c.firstMarkup("lowering")) |lw| platform |= c.layers[lw.layer].sees;
+            if (findLowering(e.options.platform.lowering orelse "")) |lowering| {
+                for (0..n) |i| {
+                    const m: Graph.Index = @fromBackingInt(@intCast(i));
+                    if (e.graph().modulePackage(m) != .platform) continue;
+                    const f = e.graph().moduleFile(m).int();
+                    if (f >= layers.len) continue;
+                    const named = for (lowering.programs) |p| {
+                        if (std.mem.eql(u8, p.module, names[i])) break true;
+                    } else for (lowering.placements) |p| {
+                        if (std.mem.eql(u8, p.module, names[i])) break true;
+                    } else false;
+                    if (named) platform |= c.layers[layers[f]].sees;
+                }
+            }
+        }
+        for (own, 0..) |*o, i| {
+            const m: Graph.Index = @fromBackingInt(@intCast(i));
+            o.* = switch (e.graph().modulePackage(m)) {
+                .app => true,
+                .core => false,
+                .platform => blk: {
+                    const f = e.graph().moduleFile(m).int();
+                    if (chain == null or f >= layers.len) break :blk false;
+                    break :blk (platform & (@as(u64, 1) << @intCast(layers[f]))) == 0;
+                },
+            };
+        }
+        return own;
+    }
+
     fn runWrites(e: *Emitter) !void {
         const profile_token = e.session.profile.begin();
         defer e.session.profile.end(0, profile_token, .writes, Profile.Event.no_file, 0);
@@ -2641,7 +2688,7 @@ const Emitter = struct {
             const f = e.graph().moduleFile(m);
             birs[i] = e.bir(m);
             names[i] = e.session.store.moduleName(f);
-            packages[i] = Writes.passPackage(e.graph().modulePackage(m), e.session.store.isEmbedded(e.graph().moduleFile(m)));
+            packages[i] = e.graph().modulePackage(m);
             targets[i] = false;
         }
         // Version 1.14: the platform's `Sub` and `Cmd` values, by name.
@@ -2682,6 +2729,7 @@ const Emitter = struct {
             .interner = &e.session.interner,
             .module_names = names,
             .packages = packages,
+            .own = try e.ownCode(a, names),
             .targets = targets,
             .effects = effects,
             // `browser-inline` refuses a capped key, so the caps that only
