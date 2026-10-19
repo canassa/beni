@@ -1405,21 +1405,34 @@ each widget's reader cost about 118 B brotli and the cap leaves about 15 B per w
   - every other node is an array whose first element is its reader. A record one of whose keys,
     or a union whose discriminator, is a name `Object.prototype` holds names `shapeRecordOwn` or
     `shapeTaggedOwn`, which test that key as an own key; the others read their keys plain;
-  - a record is `[shapeRecord, make, entry₁, …]`, its entries in the declaration's order:
+  - a record is `[shapeRecord, order, entry₁, …]` *(amended 2026-10-19, the owner's decision; it
+    was `[shapeRecord, make, entry₁, …]`, entries in the declaration's order, `make` the arrow
+    that built the record)*. The entries are in the canonical order of a record literal's keys:
     `[key, shape]` for a required field, `[key, shape, 1]` for an optional one
-    (`Present`/`Missing`), `[key, shape, 2]` for a derived `Maybe` field. `make` is the arrow
-    that builds the record literal from the fields' values in that order, so the record's keys
-    are `--release`'s short names and in the canonical order, as any record literal's;
+    (`Present`/`Missing`), `[key, shape, 2]` for a derived `Maybe` field, and
+    `[key, shape, flag, name]` when the field's name is not its key (`as "…"`), `flag` then `0`
+    for a required field. `order` is `0` when the declaration lists the fields in that order,
+    and otherwise an array of the entries' places in the declaration's order, which is the order
+    the reader reads them in. The reader then **copies** what it read into a fresh object, one
+    generic loop setting each entry's name in the canonical order, so the record has a record
+    literal's keys and key order. The host object is never kept: a getter is read once, the host
+    can write its object afterwards without changing the beni value, keys the schema does not
+    name and keys only inherited are not carried over, and a write into the record (#315) lands
+    in beni's own object. A record's field names are therefore its source names in every build
+    (`boundary.md` §4, *Types a shape reads keep their names*);
   - `[shapeList, s]`, `[shapeNullable, s]`, `[shapeMaybe, s]` (`null` is `Nothing`),
     `[shapeJust, s]` (the inner shape reads `null` itself), `[shapeTuple, s₁, s₂, …]`;
-  - `[shapeTagged, discriminator, tag₁, v₁, …]`, each `v` a nullary variant's value, or for a
-    variant with a payload its record's shape, whose `make` builds the variant;
+  - `[shapeTagged, discriminator, tag₁, v₁, …]`, each `v` a nullary variant's value, or
+    `[name, record]` for a variant with a payload: the reader makes `{$: name, a: payload}`, the
+    padded representation every schema variant with a payload has (`backend.md` §4), from the
+    payload `record` reads;
   - `[shapeCtors, name₁, c₁, …]`, each `c` a nullary constructor's value or `[make, s₁, …]`,
     `make` the arrow that builds the constructor from its arguments;
   - another definition is its constant's name; one in a reference cycle with this one is
     `[shapeLater, () => M$T$$shape]`.
   Values and arrows are made by the lowering that makes the specialised path's, so a typed value
-  has one representation on both paths.
+  has one representation on both paths. *(Amended 2026-10-19:)* the measured cost of keeping the
+  names, and of the copy, is in *How a program chooses between shapes and workers*, below.
 - **The validator's contract: what `read` accepts, and nothing about why not.** For every input,
   `validShape` succeeds exactly when the specialised `read` of the same schema succeeds, with an
   equal value, and fails otherwise with `Err []`. `validParse` is `JSON.parse`, with only its
