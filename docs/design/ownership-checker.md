@@ -1461,7 +1461,11 @@ reached apart from the level it started at, with a step of its own:
   (*a region step*: when the value at `Q` is a `T`, a constructor step of `T` whose field can hold a `T`; when it
   is not, any step); and, when the value at `Q` is a `T`, when `r` overlaps `q` from `k` (the expansion that is
   empty: `Q` itself is one of the `T`s). Otherwise they do not. Two markers of one type at one index are compared
-  on. So `#Node.1` and `#Node.0⟨Tree⟩#Node.1` are two places, `#Node.0` and `#Node.0⟨Tree⟩#Node.1` are a holder
+  on, both read as standing at a `T`, whatever their kinds: there the rule is coarser than exact, on purpose
+  (the empty expansion is let through where `below` or `⁺` would refuse it). A marker that, while it expands, meets a
+  marker of its type on the other path either goes on through all that one stands for, or ends inside it and lets
+  that one take the rest (`expand`): `⟨Tree⟩#Node.0` overlaps `#Node.0⟨Tree⟩#Node.2`, a subtree two levels down. So `#Node.1` and
+  `#Node.0⟨Tree⟩#Node.1` are two places, `#Node.0` and `#Node.0⟨Tree⟩#Node.1` are a holder
   and what it holds; `⟨Tree⟩#Node.1` overlaps `#Node.1` (the root's list is one of every tree's lists) and every
   path into a subtree, and for `type T = N (List Int) (List Int) T`, `⟨T⟩#N.0` does not overlap `#N.1`. Where the region's first
   step leads to a value with fields that cannot hold `T` beside ones that can (`C (List Int × T)`'s `#C.0`), the
@@ -1478,7 +1482,9 @@ reached apart from the level it started at, with a step of its own:
     rest after the marker holds `I` from `k`;
   - both passed the same marker just before `k`, and `O[k]` is a constructor step of `T` whose field can hold a
     `T` (`#Node.0⟨Tree⟩#Node.0`, the left subtrees below, holds some of `#Node.0⟨Tree⟩#Node.1`).
-  Otherwise it does not hold it.
+  Otherwise it does not hold it. An exact prefix stays exact through a marker both share: `P⟨T⟩r₁` holds
+  `P⟨T⟩r₁r₂` with no approximation of its own, on purpose; that each stands for several places is said where it
+  matters, by `representative()` and the entries' own `approx`, not by the holding.
 - **The canonical form.** A fact written at `P r`, where `P` is a position whose value is a `T` and is in no region
   of `T`, and at `P s⟨T⟩r` for *every* region step `s` of `T` at `P`, is one fact about every `T` at or below `P`,
   `P` included, and is written once as `P⟨T⟩r`. A fact written at every region but not at the root (or a different
@@ -1500,6 +1506,16 @@ reached apart from the level it started at, with a step of its own:
   and each site's verdict — the worst of its lines, accepted, pending or rejected, since one canonical write may be
   several expanded lines — must be the same, or the build panics. A rejection's cause may differ: the expanded
   form sees two places where the canonical one sees one written under a marker (`disjoint` against `exclusive`).
+  The summaries are compared too, declaration by declaration, by text since the two runs number their paths
+  apart: each canonical entry is written out as its member places (and as itself, a marker a projection made
+  being one the expanded run writes as it is), and every use bit, result entry and supply the expanded run states
+  must be among them, and a supply owned in the canonical run must be owned in the expanded one. The same build
+  also checks the matcher against concrete places: for each recursive type with no parameter in a reported module,
+  every concrete path to seven steps is folded and every pair compared with the concrete relation (a prefix either
+  way overlaps; a prefix holds), and so is every place of `⟨T⟩r` and `⟨T⟩⁺r`, written out (`checkMatch`;
+  `ownership/MarkerTypes` holds `Tree`, `Rose`, `N (List Int) (List Int) N` and `C (List Int × C)`). It found that a
+  marker meeting a marker of its type at another index must be able to go on through all the second stands for
+  (`ownership/MarkerAcross`, a write accepted while a deeper subtree that holds its lists was returned).
 - **What a call instantiates.** A callee's cell `πᵢ.p` is the caller's argument projected along `p` (§16.4): the
   entries whose paths overlap `p` under the rule above, each at the rest of its path or kept whole, approximately,
   under a marker (*Projection*, below). The Lean oracle (#386) matches every entry whose path conflicts with `p`,
@@ -1576,22 +1592,34 @@ reached apart from the level it started at, with a step of its own:
   `value-cells`, F2's finding again, so this amendment does not touch them.
 - **core `Dict`'s tree keeps the merged fold, until #294** (the dictionary on a `Map`, which removes the tree),
   and with it #341's projection rule (a step into the tree keeps the entries of its other fields, at their own
-  path or at `⋆`), and its paths are representatives. Why #379's hole cannot occur there: the hole is a write of
-  a list reached through a subtree, at a level the fold merged with the root's, while that subtree, or a value
-  that holds it, is read afterwards. In `core/Dict` no function writes a key or a value (they are `k` and `v`,
-  which no writer applies to); a value is written only by a callback the module hands it to (`mapTree`'s and the
-  folds' `func`, `filter`'s and `partition`'s through `foldlTree`, `focus`'s `alter`), as a call-site demand on
-  the dictionary at `#Dict.0#Node.2`, the one place of every value, which the caller outside the module cannot
-  split, since it cannot name a level. Inside, each such function binds one node's value at level 0 and hands it
-  to the callback while it holds only that node's subtrees, which by §20.9's obligation (no function places one
-  value at two positions of a tree) do not hold it; it hands a subtree's values over only by passing the subtree
-  on, after which it does not read it (`foldlTree right (func key value (foldlTree left acc func)) func`;
-  `mapTree` reads `left` before `func` and `right` after, neither holding `value`). `focus` is the asserted
-  destructive read of §20.8. So the obligation §20.9 lists gains a clause the audit above checks: **no function
-  of `core/Dict` writes, or hands a callback, a value reached through a subtree that it reads afterwards.**
-  Under the marker, the tree's levels came apart and `browser-direct`'s `Tea.want` was refused, `approximately`:
-  rebalancing moves a value from one region to another, so `Dict.insert`'s result held one input cell at two
-  result paths.
+  path or at `⋆`), and its paths are representatives (`representative()` is true for every path through the
+  tree, so a demand or a holder there stays approximate). Why #379's hole cannot occur there: the hole is a
+  write of a list at one exact level, which the fold merged with another, while a holder of the other level is
+  read afterwards. In `core/Dict` no function writes a key or a value (they are `k` and `v`, which no writer
+  applies to); a value is written only by a callback the module hands it to, as a call-site demand on the
+  dictionary at `#Dict.0#Node.2`, the one place of every value, which a caller outside the module cannot split,
+  since it cannot name a level. Inside, what keeps a write from being seen at another position is §20.9's
+  one-position obligation — no function of `core/Dict` places one value at two positions of a tree — read for
+  callbacks: **no function of `core/Dict` hands a callback, or writes, a value that a position it reads afterwards
+  holds.** A traversal meets it because a position read later is another position. The audit, function by
+  function:
+  - `mapTree` binds one node's `value`, reads `left` before `func` and `right` after, neither of which holds it;
+    `foldlTree`/`foldrTree` hand `value` to `func` and then read the other subtree, which does not hold it.
+  - `filter` and `partition` go through `foldlTree`: `isGood key value`, then `insert dict key value`. The value
+    is then in the input tree and in the result, which is a result's provenance like any other (`res` names `π1`'s
+    values), checked at the caller, and no position the traversal reads later holds it.
+  - `union` is `foldl t1` inserting into `t2`, `diff` is `foldl t2` removing from `t1` (no value reaches a
+    callback), and `merge` makes `toList leftDict`, then `foldl rightDict` and `List.foldl` hand `lValue`, `rValue`
+    and the leftovers to the caller's callbacks, each once, from a list position or a tree position no later read
+    holds: the callbacks' writes are supplies of `π1`'s and `π2`'s values, call-site demands at the caller.
+  - `focus` is the asserted destructive read of §20.8.
+
+  The exemption protects precision as much as safety: under the marker, the tree's levels came apart and
+  `browser-direct`'s `Tea.want` was refused, approximately, because rebalancing moves a value from one region to
+  another, so `Dict.insert`'s result held one input cell at two result paths. #294 is its only exit, and its work
+  list includes: delete `dictTree`, the `unmarked` branch of `Walker.proj` and the other-places exception in
+  `callSiteDemandDeep`, and remove the obligation's clause above. `ownership/DictValueWritten` pins the
+  exemption: a dictionary's value written while the dictionary is still read is refused.
 
 ### 16.8 The library
 
@@ -2193,8 +2221,8 @@ What the checker takes on trust, each item privileged code whose error is a corr
 - `traverseAt`'s obligation, met by `foldlFrom`, `foldrFrom`, `mapHelp`, `indexedMapHelp` and `filterMapHelp`,
   the only functions that call it, core-private and audited (§19 item 3);
 - `Dict.focus`'s destructive read, and `core/Dict`'s obligation that no function places one value at two
-  positions of a tree (§20.8); *amended 2026-10-18 (§16.7's level marker, until #294):* and that no function of
-  `core/Dict` writes, or hands a callback, a value reached through a subtree that it reads afterwards;
+  positions of a tree (§20.8); *amended 2026-10-18 (§16.7's level marker, until #294):* read for callbacks:
+  no function of `core/Dict` hands a callback, or writes, a value that a position it reads afterwards holds;
 - the entry rows (§20.2): the template rows are what browser-tea and browser do today; the direct row is what
   browser-direct must meet — P1's hand-over, and P2–P4 and P7, which the checker does not see — before slice 5
   writes a list in place (thesis §7, *The obligation a future slice must meet*).

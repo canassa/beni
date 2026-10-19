@@ -1,0 +1,6 @@
+module DictValueWritten
+  14:15 List.push xs: rejected element: d#Dict.0#Node.2 holds it and is read at 14:31 (approx)
+  summary written: π1#Dict.0 R, π1#Dict.0#Node.1 R, π1#Dict.0#Node.2 RAW, π1#Dict.0#Node.2[*] A, π1#Dict.0#Node.3 R, π1#Dict.0#Node.4 R; res .0 fresh1 π1#Dict.0#Node.2, .0[*] ~π1#Dict.0#Node.2[*]
+  demands 1: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+total 1: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+cause element 1

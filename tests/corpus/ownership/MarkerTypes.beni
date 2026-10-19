@@ -1,0 +1,54 @@
+-- ownership: the types the level marker's check runs over (ownership-checker.md
+-- §16.7, *Overlap* and *Holding a symbolic cell*). Under
+-- `-Downership-full-cross-check`, every concrete path from a value of each of
+-- these types, to seven steps, is folded and compared pair by pair with the
+-- concrete relation, and so is every place a canonical `⟨T⟩r` or `⟨T⟩⁺r`
+-- stands for: a tree with two subtrees, a rose tree through a list, a type
+-- with two lists beside its own level, and one whose level sits in a tuple.
+type Tree
+    = Leaf
+    | Node Tree (List Int) Tree
+
+
+type Rose
+    = Rose (List Int) (List Rose)
+
+
+type N
+    = N (List Int) (List Int) N
+    | NEnd
+
+
+type C
+    = C (List Int × C)
+    | CEnd
+
+
+pub sizes : Tree, Rose, N, C → Int
+sizes t r n c =
+    case ( t, r ) of
+        ( Node _ xs _, Rose ys _ ) →
+            List.length xs + List.length ys + width n + depth c
+
+        _ →
+            0
+
+
+width : N → Int
+width n =
+    case n of
+        N a b rest →
+            List.length a + List.length b + width rest
+
+        NEnd →
+            0
+
+
+depth : C → Int
+depth c =
+    case c of
+        C ( xs, rest ) →
+            List.length xs + depth rest
+
+        CEnd →
+            0

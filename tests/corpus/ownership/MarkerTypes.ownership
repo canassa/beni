@@ -1,0 +1,6 @@
+module MarkerTypes
+  summary sizes: π1 R, π1#Node.1 R, π2 R, π2#Rose.0 R, π3 R, π3⟨N⟩#N.0 R, π3⟨N⟩#N.1 R, π3⟨N⟩#N.2 R, π4 R, π4⟨C⟩#C.0.0 R, π4⟨C⟩#C.0.1 R
+  summary width: π1 R, π1⟨N⟩#N.0 R, π1⟨N⟩#N.1 R, π1⟨N⟩#N.2 R
+  summary depth: π1 R, π1⟨C⟩#C.0.0 R, π1⟨C⟩#C.0.1 R
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0

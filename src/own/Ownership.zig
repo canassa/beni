@@ -829,6 +829,8 @@ pub fn run(o: *Ownership, targets: []const u32) Allocator.Error![]const ModuleRe
         defer shadow.deinit();
         const expanded = try shadow.run(targets);
         for (reports, expanded) |a, b| try crossCheck(o.in.gpa, a, b);
+        for (targets) |m| if (m < o.slots.len) try o.crossCheckSummaries(&shadow, m);
+        for (targets) |m| try o.checkMatch(m);
     }
     return reports;
 }
@@ -838,6 +840,11 @@ pub fn run(o: *Ownership, targets: []const u32) Allocator.Error![]const ModuleRe
 /// the expanded one). The causes are kept for the message; they may
 /// differ, one form seeing two places where the other sees one.
 const SiteVerdict = struct { worst: u8 = 0, causes: u64 = 0 };
+
+comptime {
+    // `SiteVerdict.causes` has a bit per cause.
+    std.debug.assert(@typeInfo(Cause).@"enum".field_names.len <= 64);
+}
 
 fn siteVerdicts(gpa: Allocator, r: ModuleReport) Allocator.Error!std.AutoArrayHashMapUnmanaged([3]u64, SiteVerdict) {
     var out: std.AutoArrayHashMapUnmanaged([3]u64, SiteVerdict) = .empty;
@@ -851,11 +858,257 @@ fn siteVerdicts(gpa: Allocator, r: ModuleReport) Allocator.Error!std.AutoArrayHa
             .pending => v.worst = @max(v.worst, 1),
             .rejected => |c| {
                 v.worst = 2;
-                v.causes |= @as(u64, 1) << @as(u6, @intCast(@as(u32, @backingInt(c)) % 64));
+                v.causes |= @as(u64, 1) << @as(u6, @intCast(@backingInt(c)));
             },
         }
     }
     return out;
+}
+
+/// §16.7: a check of the marker's overlap and holding against concrete
+/// places, run with the cross-check. For each recursive type with no type
+/// parameter in a module the run reports on, every concrete path from a value
+/// of it to `diff_depth` steps is folded (`child`) and compared, pair by pair,
+/// with the concrete relation: a prefix either way must overlap, and a prefix
+/// must hold. Each place a canonical `⟨T⟩r` or `⟨T⟩⁺r` stands for, written out
+/// concretely, is compared so too. A miss panics.
+fn checkMatch(o: *Ownership, m: u32) Allocator.Error!void {
+    // The program's own types: core's and the platforms' are many and wide,
+    // and the corpus's fixtures name the shapes the check is for.
+    if (m >= o.in.packages.len or o.in.packages[m] != .app) return;
+    const bir = o.in.birs[m];
+    for (bir.decls, 0..) |decl, di| {
+        if (decl.kind != .type or decl.type_params_start != decl.type_params_end) continue;
+        const ty = (@as(u64, m) << 32) | di;
+        if (!try o.typeRecursive(ty) or try o.dictTree(ty)) continue;
+        var arena: std.heap.ArenaAllocator = .init(o.in.gpa);
+        defer arena.deinit();
+        const a = arena.allocator();
+        var places: std.ArrayList(Concrete) = .empty;
+        try o.concretePlaces(a, m, ty, &.{}, true, &places);
+        for (places.items) |x| for (places.items) |y| {
+            const px = try o.foldSteps(x.steps);
+            const py = try o.foldSteps(y.steps);
+            if (prefixOf(x.steps, y.steps) or prefixOf(y.steps, x.steps)) {
+                if (!o.overlap(px, py)) o.matchMiss("overlap", px, py);
+            }
+            if (prefixOf(x.steps, y.steps) and !o.startsWith(py, px) and px != py and !o.levelHoldsPaths(px, py)) o.matchMiss("hold", px, py);
+        };
+        // The canonical places: `⟨T⟩r` is `r` at every `T` at or below the
+        // root; `⟨T⟩⁺r` at every one strictly below.
+        for (places.items) |r| {
+            if (r.steps.len == 0 or r.levels != 0) continue;
+            for ([_]MarkerKind{ .at, .under }) |kind| {
+                var canon = try o.rawChild(eps, .level, try o.markerId(ty, kind));
+                for (r.steps) |s| canon = try o.child(canon, s.kind, s.arg);
+                for (places.items) |t| {
+                    if (!t.at_t or (kind == .under and t.steps.len == 0)) continue;
+                    const c = try std.mem.concat(a, Step, &.{ t.steps, r.steps });
+                    for (places.items) |y| {
+                        const py = try o.foldSteps(y.steps);
+                        if ((prefixOf(c, y.steps) or prefixOf(y.steps, c)) and !o.overlap(canon, py)) o.matchMiss("canonical overlap", canon, py);
+                        if (prefixOf(y.steps, c) and !o.startsWith(canon, py) and canon != py and !o.levelHoldsPaths(py, canon)) o.matchMiss("canonical hold", py, canon);
+                        if (prefixOf(c, y.steps) and !o.startsWith(py, canon) and canon != py and !o.levelHoldsPaths(canon, py)) o.matchMiss("canonical held", canon, py);
+                    }
+                }
+            }
+        }
+    }
+}
+
+const diff_depth = 7;
+/// The most concrete places one type's check enumerates: the check is a
+/// test, and its pairs are quadratic in them.
+const diff_places = 600;
+
+/// A concrete path from a value of the type checked: its steps, whether the
+/// value it reaches is one of that type, and how many of its steps went into
+/// one (0: within the root's own level).
+const Concrete = struct { steps: []const Step, at_t: bool, levels: u32 };
+
+fn prefixOf(p: []const Step, q: []const Step) bool {
+    if (p.len > q.len) return false;
+    for (p, q[0..p.len]) |x, y| if (x.kind != y.kind or x.arg != y.arg) return false;
+    return true;
+}
+
+fn foldSteps(o: *Ownership, ss: []const Step) Allocator.Error!u32 {
+    var at: u32 = eps;
+    for (ss) |s| at = try o.child(at, s.kind, s.arg);
+    return at;
+}
+
+fn matchMiss(o: *Ownership, what: []const u8, p: u32, q: u32) noreturn {
+    std.debug.print("ownership marker check: {s} missed for `{s}` and `{s}`\n", .{ what, o.pathText(p) catch "", o.pathText(q) catch "" });
+    @panic("ownership: the level marker's match misses a concrete relation (ownership-checker.md §16.7)");
+}
+
+/// Every concrete path from a value of type `ty` to `diff_depth` steps,
+/// through constructors, records, tuples and lists, into `out`.
+fn concretePlaces(o: *Ownership, a: Allocator, m: u32, ty: u64, prefix: []const Step, at_t: bool, out: *std.ArrayList(Concrete)) Allocator.Error!void {
+    _ = m;
+    try o.concreteAt(a, ty, prefix, .{ .nominal = ty }, 0, at_t, out);
+}
+
+const TyAt = union(enum) { nominal: u64, expr: struct { m: u32, inst: Inst.Index } };
+
+fn concreteAt(o: *Ownership, a: Allocator, ty: u64, prefix: []const Step, at: TyAt, levels: u32, at_t: bool, out: *std.ArrayList(Concrete)) Allocator.Error!void {
+    if (out.items.len >= diff_places) return;
+    try out.append(a, .{ .steps = prefix, .at_t = at_t, .levels = levels });
+    if (prefix.len >= diff_depth) return;
+    switch (at) {
+        .nominal => |key| {
+            const nm: u32 = @intCast(key >> 32);
+            const nd: u32 = @truncate(key);
+            const bir = o.in.birs[nm];
+            const decl = bir.decls[nd];
+            if (decl.kind == .type_alias) {
+                const body = decl.annotation.unwrap() orelse return;
+                return o.concreteExpr(a, ty, prefix, nm, body, levels, out);
+            }
+            if (decl.kind != .type) return;
+            for (bir.declCtors(decl), decl.ctors_start..) |ct, ci| {
+                const args = bir.extraSlice(.{ .start = ct.args_start, .end = ct.args_end }, Inst.Index);
+                for (args, 0..) |arg, k| {
+                    const s: Step = .{ .kind = .ctor, .arg = try o.ctorStep(try o.ctorId(nm, @intCast(ci)), @intCast(k)) };
+                    const next = try std.mem.concat(a, Step, &.{ prefix, &.{s} });
+                    try o.concreteExpr(a, ty, next, nm, arg, levels + @intFromBool(key == ty and prefix.len > 0), out);
+                }
+            }
+        },
+        .expr => |e| try o.concreteExpr(a, ty, prefix, e.m, e.inst, levels, out),
+    }
+}
+
+fn concreteExpr(o: *Ownership, a: Allocator, ty: u64, prefix: []const Step, m: u32, inst: Inst.Index, levels: u32, out: *std.ArrayList(Concrete)) Allocator.Error!void {
+    const bir = o.in.birs[m];
+    const tag = bir.instTag(inst);
+    const data = bir.instData(inst);
+    const graph_m: Graph.Index = @fromBackingInt(@intCast(m));
+    switch (tag) {
+        .type_tuple => {
+            try out.append(a, .{ .steps = prefix, .at_t = false, .levels = levels });
+            if (prefix.len >= diff_depth) return;
+            for (bir.extraSlice(Bir.inlineRange(data), Inst.Index), 0..) |el, i| {
+                try o.concreteExpr(a, ty, try std.mem.concat(a, Step, &.{ prefix, &.{.{ .kind = .tuple, .arg = @intCast(i) }} }), m, el, levels, out);
+            }
+        },
+        .type_record => {
+            try out.append(a, .{ .steps = prefix, .at_t = false, .levels = levels });
+            if (prefix.len >= diff_depth) return;
+            for (bir.extraSlice(Bir.inlineRange(data), Bir.Field)) |fl| {
+                const sym = @backingInt(bir.symbol(fl.name));
+                try o.concreteExpr(a, ty, try std.mem.concat(a, Step, &.{ prefix, &.{.{ .kind = .field, .arg = sym }} }), m, fl.value, levels, out);
+            }
+        },
+        .type_top, .ext_type, .type_app => {
+            const id = if (tag == .type_app) blk: {
+                const head: Inst.Index = @fromBackingInt(@intCast(data.lhs));
+                break :blk o.in.types.headId(graph_m, bir.instTag(head), bir.instData(head));
+            } else o.in.types.headId(graph_m, tag, data);
+            if (id == .none or id.int() >= o.in.types.entries.len) return out.append(a, .{ .steps = prefix, .at_t = false, .levels = levels });
+            if (id == o.in.types.well_known.list) {
+                try out.append(a, .{ .steps = prefix, .at_t = false, .levels = levels });
+                if (prefix.len >= diff_depth or tag != .type_app) return;
+                const args = bir.extraSlice(bir.subRange(@fromBackingInt(@intCast(data.rhs))), Inst.Index);
+                if (args.len != 1) return;
+                return o.concreteExpr(a, ty, try std.mem.concat(a, Step, &.{ prefix, &.{.{ .kind = .elem, .arg = 0 }} }), m, args[0], levels, out);
+            }
+            const e = o.in.types.entries[id.int()];
+            const key = (@as(u64, e.module.int()) << 32) | e.decl.int();
+            // Only the type checked and types with no parameters are walked
+            // into: a parameter's argument is not followed.
+            const nd = o.in.birs[e.module.int()].decls[e.decl.int()];
+            if (e.kind == .foreign or (key != ty and nd.type_params_start != nd.type_params_end)) return out.append(a, .{ .steps = prefix, .at_t = false, .levels = levels });
+            return o.concreteAt(a, ty, prefix, .{ .nominal = key }, levels, key == ty, out);
+        },
+        else => try out.append(a, .{ .steps = prefix, .at_t = false, .levels = levels }),
+    }
+}
+
+/// §16.7: every place a path stands for, with each canonical marker in it
+/// written out as its member places (`memberPaths`), innermost first.
+fn expandedPlaces(o: *Ownership, p: u32, typed: bool, out: *std.ArrayList(u32)) Allocator.Error!void {
+    // The path itself too: a marker at a place in no region is also what a
+    // projection or a call makes, which the expanded run writes as it is.
+    try out.append(o.in.gpa, p);
+    const d = (try o.canonicalPlaces(p)) orelse return;
+    var members: std.ArrayList(u32) = .empty;
+    defer members.deinit(o.in.gpa);
+    try o.memberPaths(d, d.kind, typed, &members);
+    for (members.items) |q| try o.expandedPlaces(q, typed, out);
+}
+
+/// §16.7's cross-check of summaries: every fact the expanded run states is
+/// one the canonical run states too, written out (`expandedPlaces`), and an
+/// owned supply of the canonical run is owned in the expanded one. By text,
+/// since the two runs number their paths apart.
+fn crossCheckSummaries(o: *Ownership, sh: *Ownership, m: u32) Allocator.Error!void {
+    const gpa = o.in.gpa;
+    const a = o.out.allocator();
+    const so = o.slots[m] orelse return;
+    const ss = sh.slots[m] orelse return;
+    var places: std.ArrayList(u32) = .empty;
+    defer places.deinit(gpa);
+    var provs: std.ArrayList(u32) = .empty;
+    defer provs.deinit(gpa);
+    for (so, ss, 0..) |x, y, d| {
+        if (x.state != .done or y.state != .done) continue;
+        const c = x.sum;
+        const e = y.sum;
+        if (c.limit != .none or e.limit != .none) continue;
+        var bits: std.StringHashMapUnmanaged(u8) = .empty;
+        for (c.uses) |u| {
+            places.clearRetainingCapacity();
+            try o.expandedPlaces(u.path, true, &places);
+            for (places.items) |p| {
+                const g = try bits.getOrPut(a, try std.fmt.allocPrint(a, "{d}{s}", .{ u.param, try o.pathText(p) }));
+                if (!g.found_existing) g.value_ptr.* = 0;
+                g.value_ptr.* |= u.bits;
+            }
+        }
+        for (e.uses) |u| {
+            const k = try std.fmt.allocPrint(a, "{d}{s}", .{ u.param, try sh.pathText(u.path) });
+            const have = bits.get(k) orelse 0;
+            if (u.bits & ~have != 0) return crossFail(o, m, @intCast(d), k);
+        }
+        var res: std.StringHashMapUnmanaged(void) = .empty;
+        for (c.res) |r| {
+            places.clearRetainingCapacity();
+            try o.expandedPlaces(r.path, false, &places);
+            provs.clearRetainingCapacity();
+            try o.expandedPlaces(r.prov.path, false, &provs);
+            for (places.items) |p| for (provs.items) |q| {
+                var pv = r.prov;
+                pv.path = q;
+                try res.put(a, try std.fmt.allocPrint(a, "{s} {s}", .{ try o.pathText(p), try o.provText(pv) }), {});
+            };
+        }
+        for (e.res) |r| {
+            const k = try std.fmt.allocPrint(a, "{s} {s}", .{ try sh.pathText(r.path), try sh.provText(r.prov) });
+            if (!res.contains(k)) return crossFail(o, m, @intCast(d), k);
+        }
+        var sup: std.StringHashMapUnmanaged(bool) = .empty;
+        for (c.supply) |r| {
+            places.clearRetainingCapacity();
+            try o.expandedPlaces(r.path, false, &places);
+            for (places.items) |p| {
+                const g = try sup.getOrPut(a, try std.fmt.allocPrint(a, "{d} {d} {s} {s}", .{ r.fun, r.k, try o.pathText(p), try o.provText(r.prov) }));
+                g.value_ptr.* = if (g.found_existing) g.value_ptr.* or r.owned else r.owned;
+            }
+        }
+        for (e.supply) |r| {
+            const k = try std.fmt.allocPrint(a, "{d} {d} {s} {s}", .{ r.fun, r.k, try sh.pathText(r.path), try sh.provText(r.prov) });
+            const owned = sup.get(k) orelse return crossFail(o, m, @intCast(d), k);
+            if (owned and !r.owned) return crossFail(o, m, @intCast(d), k);
+        }
+    }
+}
+
+fn crossFail(o: *Ownership, m: u32, d: u32, what: []const u8) noreturn {
+    const bir = o.in.birs[m];
+    std.debug.print("ownership cross-check: {s}.{s}: the expanded summary states `{s}`, which the canonical one does not\n", .{ o.in.module_names[m], o.in.interner.slice(bir.symbol(bir.decls[d].name)), what });
+    @panic("ownership: the canonical form and the expanded one disagree on a summary (ownership-checker.md §16.7)");
 }
 
 fn crossCheck(gpa: Allocator, a: ModuleReport, b: ModuleReport) Allocator.Error!void {
@@ -3476,6 +3729,9 @@ fn regionOf(o: *Ownership, parent: u32, ty: u64) Allocator.Error!?Region {
 }
 
 /// The marker of a region: the one it has, or one under its first step.
+/// A marker asked for where the region has one already folds onto that one,
+/// whatever kind was asked for: the places it stands for only grow, which is
+/// sound for every fact, if coarser (`child`'s `.level` case).
 fn markerOf(o: *Ownership, r: Region, ty: u64) Allocator.Error!u32 {
     return switch (r) {
         .marker => |m| m,
@@ -3866,7 +4122,9 @@ fn expand(o: *const Ownership, kind: MarkerKind, m: u32, r: []const u32, other: 
         .level => {
             if (o.markerType(o.paths.arg.items[y]) != o.markerType(o.paths.arg.items[m])) return true;
             const ky = o.markerKind(o.paths.arg.items[y]);
-            return if (left) o.match(r, other[1..], mode) or o.expand(ky, y, other[1..], r, mode, false) else o.match(other[1..], r, mode) or o.expand(ky, y, other[1..], r, mode, true);
+            // `m` goes on through all `y` stands for (it then stands where a
+            // `T` may or may not be), or `y` takes what is left of `m`.
+            return o.expand(.maybe, m, r, other[1..], mode, left) or o.expand(ky, y, other[1..], r, mode, !left);
         },
         else => {},
     }
@@ -3882,6 +4140,8 @@ fn regionStepKind(o: *const Ownership, kind: MarkerKind, t: u64, step: u32) ?Mar
     if (is_t) {
         const strict = kind == .at or kind == .under;
         if (!o.paths.holds.items[step]) return if (strict) null else .maybe;
+        // `level_of` is filled for this step: `rawChild` asked `levelOf`
+        // for every constructor step when it computed `holds`.
         return if (o.level_of.items[o.paths.arg.items[step]] == .here) .at else .below;
     }
     return if (kind == .at or kind == .under) null else .maybe;
@@ -6503,6 +6763,9 @@ const Walker = struct {
     fn nested(w: *Walker, e: Entry, f: Entry) Allocator.Error!bool {
         if (w.o.startsWith(e.path, f.path) or w.o.startsWith(f.path, e.path)) return true;
         if (!w.o.overlap(e.path, f.path)) return false;
+        // Both exact: the value holds the cell at two places, which is
+        // sharing (`EnvPrefix`). One approximate: a copy of the other entry
+        // at a place it may stand for, one place.
         if (e.cell == f.cell) return e.approx != 0 or f.approx != 0;
         return (try w.covers(e.cell, f.cell)) != null or (try w.covers(f.cell, e.cell)) != null;
     }
