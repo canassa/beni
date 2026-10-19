@@ -5256,6 +5256,32 @@ At an `update` demand, each `c ∈ C` must satisfy, in §8.1's order:
    §18.2–§18.4 that compute and rely on conditions, each twice; the 57 pending `List.map rows λr → { r | … }`
    lines are then decided.
 
+   *Compared (2026-10-19), for the owner's choice.* The alternative is one lattice whose atoms carry a domain:
+   `excl`/`sep` over list cells and over record objects in one condition, `mkCond` tagging a record atom
+   instead of dropping it, a list's demand reading the list atoms, a record's reading both.
+   - *Soundness.* A list's demand may ignore a record atom: two positions that share a record object but no
+     list are written apart by a list write, which touches no record object. So both designs are sound for
+     lists. But a condition *fails* whole (exactly or approximately), and `[ r, r ]` fails on its record atom;
+     one lattice therefore needs a failure per domain too, or a list's reliance on that container fails where
+     it holds today. With the failure tagged, the one lattice is two conditions sharing their holding atoms.
+   - *Lines and sites.* One lattice touches §18.2–§18.4's sites once, but every operation on a condition —
+     its meet, `xsumOf`, instantiation, `rely`, `xreq` — learns the domain, in code every list verdict runs
+     through. The parallel domain leaves that code as it is and adds a record twin at each site: more lines,
+     none of them on a list's path.
+   - *Summary format.* One lattice: a domain bit on an atom and a failure per domain, in the fields a summary
+     has (smaller). Parallel: `rxc` beside `xc` on `res`, `objs` and supply entries, and `rxreq` (larger).
+     Either is v18.
+   - *Risk to list verdicts.* One lattice: real. A record atom joins a list's conditions, counts toward
+     `condition_cap` (§16.7) and so can move a list summary to a limit, and a mistake in the domain filter
+     moves list lines. Parallel: none by construction; a list's conditions never see a record atom, and the
+     comparison over the corpus has nothing to show.
+   - *Cost per walk.* About equal: one table of larger conditions, or two tables. Record conditions are few
+     outside programs with lists of records.
+
+   **Recommended: the parallel domain.** Both are sound, and the one lattice is smaller in the summary, but
+   it puts records into the code and the caps every list verdict depends on. The parallel domain keeps the
+   list analysis untouched, which is what every record slice so far has held to (no list line moves).
+
 The verdicts are §8.2's (`fresh`, `call`, `param`, `callback-param`, `once`, `entry`), and the causes are §8.3's
 and their later additions. No cause is new: a record demand is rejected for the reasons a list demand is.
 
