@@ -635,7 +635,7 @@ step_ctor: std.ArrayList([2]u32) = .empty,
 /// (`schemaCtorBases`), in `keep`.
 schema_ctor_bases: []?[]const u32 = &.{},
 /// Per type `(module, declaration)`: whether it is recursive.
-recursive_types: std.AutoHashMapUnmanaged(u64, bool) = .empty,
+recursive_types: std.HashMapUnmanaged(u64, bool, WordsKey(0), std.hash_map.default_max_load_percentage) = .empty,
 /// Per constructor step argument (`step_ctor`'s index): where a value of the
 /// step's own recursive type may sit below it (`levelOf`, §16.7's sound
 /// projection); `.unknown` until asked.
@@ -647,9 +647,9 @@ marker_types: std.ArrayList(u64) = .empty,
 marker_kind: std.ArrayList(MarkerKind) = .empty,
 marker_ids: std.AutoHashMapUnmanaged(struct { u64, MarkerKind }, u32) = .empty,
 /// Per recursive type: its region steps (`regionSteps`).
-region_steps: std.AutoHashMapUnmanaged(u64, []const u32) = .empty,
+region_steps: std.AutoHashMapUnmanaged([2]u64, []const u32) = .empty,
 /// Per canonical place `(P, T, r, kind)`: the places it stands for.
-member_paths: std.AutoHashMapUnmanaged([4]u64, []const u32) = .empty,
+member_paths: std.AutoHashMapUnmanaged([5]u64, []const u32) = .empty,
 /// `child`'s answers, by `(parent, kind, arg)`.
 child_memo: std.HashMapUnmanaged([3]u32, u32, StepKey, std.hash_map.default_max_load_percentage) = .empty,
 /// Per path: `canonicalSplit`'s and `canonicalPlaces`'s answers, as an
@@ -1836,7 +1836,13 @@ fn normalizeRaw(o: *Ownership, s: Summary) Allocator.Error!Summary {
 /// when the summary has no such set. Innermost marker first; the caller
 /// normalizes again, and asks again, until nothing changes.
 fn canonicalOf(o: *Ownership, s: Summary) Allocator.Error!?Summary {
+    // A use's bits written for more places only add reads and writes, so the
+    // regions a use counts are the type's as written. A result's and a
+    // supply's entries carry guarantees — its conditions, an owned supply —
+    // which a place the summary never stated must not get: they count every
+    // region a fold may take.
     const uses = try o.canonicalList(UseEntry, s.uses, struct {
+        const typed = true;
         fn key(e: UseEntry) [4]u32 {
             return .{ e.param, 0, 0, 0 };
         }
@@ -1854,6 +1860,7 @@ fn canonicalOf(o: *Ownership, s: Summary) Allocator.Error!?Summary {
         }
     });
     const res = try o.canonicalList(ResEntry, s.res, struct {
+        const typed = false;
         fn key(_: ResEntry) [4]u32 {
             return .{ 0, 0, 0, 0 };
         }
@@ -1873,6 +1880,7 @@ fn canonicalOf(o: *Ownership, s: Summary) Allocator.Error!?Summary {
     // A result path's provenances, the places of a parameter it may hold:
     // one canonical place for the root and every region.
     const res_prov = try o.canonicalList(ResEntry, res orelse s.res, struct {
+        const typed = false;
         fn key(e: ResEntry) [4]u32 {
             return .{ e.path, @backingInt(e.prov.kind), e.prov.a, e.prov.b };
         }
@@ -1890,6 +1898,7 @@ fn canonicalOf(o: *Ownership, s: Summary) Allocator.Error!?Summary {
         }
     });
     const supply = try o.canonicalList(SupplyEntry, s.supply, struct {
+        const typed = false;
         fn key(e: SupplyEntry) [4]u32 {
             return .{ e.fun, e.k, 0, 0 };
         }
@@ -1978,7 +1987,7 @@ fn canonicalList(o: *Ownership, comptime E: type, items_in: []const E, comptime 
         const k = F.key(items[grp.start]);
         const d = (try o.canonicalSplit(F.path(items[grp.start]))) orelse continue;
         targets.clearRetainingCapacity();
-        try o.memberPaths(d, .at, &targets);
+        try o.memberPaths(d, .at, F.typed, &targets);
         // `targets[0]` is the root's place, the others the regions'.
         var with_root = true;
         const all = for (targets.items, 0..) |t, ti| {
@@ -2017,7 +2026,7 @@ fn canonicalList(o: *Ownership, comptime E: type, items_in: []const E, comptime 
         const k = F.key(items[grp.start]);
         const d = (try o.canonicalPlaces(F.path(items[grp.start]))) orelse continue;
         targets.clearRetainingCapacity();
-        try o.memberPaths(d, d.kind, &targets);
+        try o.memberPaths(d, d.kind, F.typed, &targets);
         for (targets.items) |t| {
             const other = Find.find(items, order.items, k, t) orelse continue;
             if (dropped[other.start]) continue;
@@ -2055,12 +2064,12 @@ const CanonicalSplit = struct { at: u32, ty: u64, rest: u32, kind: MarkerKind = 
 
 /// The places `P⟨T⟩r` is written for: `P r`, and `P s⟨T⟩r` for each
 /// region step `s`; `P⟨T⟩⁺r` (`kind` `under`) the regions' only.
-fn memberPaths(o: *Ownership, d: CanonicalSplit, kind: MarkerKind, out: *std.ArrayList(u32)) Allocator.Error!void {
-    const key: [4]u64 = .{ d.at, d.ty, d.rest, @backingInt(kind) };
+fn memberPaths(o: *Ownership, d: CanonicalSplit, kind: MarkerKind, typed: bool, out: *std.ArrayList(u32)) Allocator.Error!void {
+    const key: [5]u64 = .{ d.at, d.ty, d.rest, @backingInt(kind), @intFromBool(typed) };
     if (o.member_paths.get(key)) |m| return out.appendSlice(o.in.gpa, m);
     const start = out.items.len;
     if (kind == .at) try out.append(o.in.gpa, try o.concat(d.at, d.rest));
-    for (try o.regionSteps(d.ty)) |step| {
+    for (try o.regionSteps(d.ty, typed)) |step| {
         const into = try o.child(d.at, .ctor, step);
         const marker = try o.child(into, .level, try o.markerId(d.ty, if (try o.levelOf(step) == .here) .at else .below));
         try out.append(o.in.gpa, try o.concat(marker, d.rest));
@@ -2143,8 +2152,11 @@ fn canonicalSplitRaw(o: *Ownership, p: u32) Allocator.Error!?CanonicalSplit {
 
 /// The region steps of a recursive type: every constructor field that can
 /// hold a value of the type, as a constructor step.
-fn regionSteps(o: *Ownership, ty: u64) Allocator.Error![]const u32 {
-    if (o.region_steps.get(ty)) |r| return r;
+/// `typed`: counted from the type as written (`typedLevel`); else every
+/// field `levelOf` takes for one, a closure's and a `foreign type`'s too.
+fn regionSteps(o: *Ownership, ty: u64, typed: bool) Allocator.Error![]const u32 {
+    const key: [2]u64 = .{ ty, @intFromBool(typed) };
+    if (o.region_steps.get(key)) |r| return r;
     var out: std.ArrayList(u32) = .empty;
     const m: u32 = @intCast(ty >> 32);
     const d: u32 = @truncate(ty);
@@ -2154,10 +2166,11 @@ fn regionSteps(o: *Ownership, ty: u64) Allocator.Error![]const u32 {
         const n = bir.extraSlice(.{ .start = ct.args_start, .end = ct.args_end }, Inst.Index).len;
         for (0..n) |k| {
             const step = try o.ctorStep(try o.ctorId(m, @intCast(ci)), @intCast(k));
-            if (try o.typedLevel(m, bir, ct, k, ty) != .none) try out.append(o.keep.allocator(), step);
+            const level = if (typed) try o.typedLevel(m, bir, ct, k, ty) else try o.levelOf(step);
+            if (level != .none) try out.append(o.keep.allocator(), step);
         }
     }
-    try o.region_steps.put(o.in.gpa, ty, out.items);
+    try o.region_steps.put(o.in.gpa, key, out.items);
     return out.items;
 }
 
@@ -3327,6 +3340,29 @@ const Paths = struct {
         p.map.deinit(gpa);
     }
 };
+
+/// A key of `n` words (`n` 0: one `u64`) hashed by multiplication: the
+/// walk's cell table and type memos, looked up on every cell and step.
+fn WordsKey(comptime n: usize) type {
+    const K = if (n == 0) u64 else [n]u32;
+    return struct {
+        pub fn hash(_: @This(), k: K) u64 {
+            var h: u64 = 0x9E3779B97F4A7C15;
+            if (n == 0) {
+                h ^= k *% 0xC2B2AE3D27D4EB4F;
+            } else for (k) |x| {
+                h = (h ^ x) *% 0xC2B2AE3D27D4EB4F;
+                h ^= h >> 31;
+            }
+            h ^= h >> 29;
+            h *%= 0x165667B19E3779F9;
+            return h ^ (h >> 32);
+        }
+        pub fn eql(_: @This(), a: K, b: K) bool {
+            return std.meta.eql(a, b);
+        }
+    };
+}
 
 /// A path step `(parent, kind, arg)` as a hash key: three words mixed by
 /// multiplication, which the path trie looks up on every step it takes.
@@ -5195,7 +5231,7 @@ const Walker = struct {
 
     point: u32 = 0,
     cells: std.ArrayList(Cell) = .empty,
-    cell_map: std.AutoHashMapUnmanaged([4]u32, u32) = .empty,
+    cell_map: std.HashMapUnmanaged([4]u32, u32, WordsKey(4), std.hash_map.default_max_load_percentage) = .empty,
     /// §20.4, amended 2026-10-16 (#229): a lambda a callee's result carries
     /// is one closure per place it is made — the call, the callee's summary,
     /// the lambda, the callback depth and the entry's namespace — whatever
