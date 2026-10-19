@@ -81,7 +81,8 @@ pub const magic = "BENIOWN\x00";
 /// 17 carries a record's facts (§31.7, #315): two bytes of bits — `W{F}`
 /// with its fields by name, a field read and an object's escape — a
 /// provenance's object flag (`◦`), and the records a result holds
-/// (`objs`), after `res`.
+/// (`objs`), after `res`; what callbacks are handed of records (`rsupply`),
+/// after `supply`; and a function parameter's record `need`, bit 3 of its byte.
 pub const version: u32 = 17;
 
 pub const Error = error{Bad} || Allocator.Error;
