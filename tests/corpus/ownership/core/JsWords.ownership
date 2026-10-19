@@ -24,8 +24,8 @@ module JsWords
   summary identity: π1 RW
   summary holds: π1 RW
   summary calls: π1 RW, π2 RE
-  summary heldByArray: π1 RAW; res fresh2{lost}, ⋆ ~fresh1{lost} ~π1
-  summary heldByObject: π1 RAW; res fresh2{lost}, ⋆ ~fresh1{lost} ~π1
+  summary heldByArray: π1 RAW; res fresh2{lost}r{lost}, ⋆ ~fresh1{lost}r{lost} ~π1
+  summary heldByObject: π1 RAW; res fresh2{lost}r{lost}, ⋆ ~fresh1{lost}r{lost} ~π1
   summary eachMany: π1 RW, π2 RE
   summary thrown: unused
   summary throws: unused

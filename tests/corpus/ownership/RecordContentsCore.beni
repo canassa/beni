@@ -1,0 +1,96 @@
+-- ownership: lists that hold one record at two positions, built by core
+-- (`ownership-checker.md` §31.4 item 6, #421 review). Core builds its lists
+-- on `Js.Value`, which may hold a record, so what `List.map`, `indexedMap`,
+-- `filterMap`, `concatMap`, `initialize`, `take`, `drop`, `sortBy`,
+-- `Dict.values`, `List.foldl`, `List.unzip` and `List.update` answer keeps
+-- the condition its callbacks and arguments give it: a callback that
+-- returns one record every time, or a list that holds it twice, makes every
+-- write of `flip` (and `flipO`, `writeInner`) rejected `exclusive`.
+import Dict exposing (Dict)
+
+
+type alias Row =
+    id : Int
+    done : Bool
+
+
+type alias Outer =
+    inner : Row
+    n : Int
+
+
+flip : List Row → List Row
+flip rows = List.map rows λr → { r | done = not r.done }
+
+
+c1 : Row → List Row
+c1 t = flip (List.map [ 1, 2 ] λ_ → t)
+
+
+c2 : Row → List Row
+c2 t = flip (List.indexedMap [ 1, 2 ] λ_ _ → t)
+
+
+c3 : Row → List Row
+c3 t = flip (List.filterMap [ 1, 2 ] λ_ → Just t)
+
+
+c4 : Row → List Row
+c4 t = flip (List.concatMap [ 1, 2 ] λ_ → [ t ])
+
+
+c5 : Row → List Row
+c5 t = flip (List.initialize 2 λ_ → t)
+
+
+c6 : Row → List Row
+c6 t = flip (List.take [ t, t ] 2)
+
+
+c7 : Row → List Row
+c7 t = flip (List.drop [ t, t, t ] 1)
+
+
+c8 : Row → List Row
+c8 t = flip (List.sortBy [ t, t ] λr → r.id)
+
+
+c9 : Row → List Row
+c9 t = flip (Dict.values (Dict.insert (Dict.insert Dict.empty 1 t) 2 t))
+
+
+c10 : Row → List Row
+c10 t = flip (List.foldl [ 1, 2 ] [] λ_ acc → List.push acc t)
+
+
+c11 : Row → Dict Int Row
+c11 t = Dict.update (Dict.insert (Dict.insert Dict.empty 1 t) 2 t) 1 λm →
+    Maybe.map m λr → { r | done = not r.done }
+
+
+c12 : Row → List Row
+c12 t = List.update [ t, t ] 0 λr → { r | done = not r.done }
+
+
+c13 : Row → List Row
+c13 t = flip (List.unzip [ ( t, 1 ), ( t, 2 ) ]).0
+
+
+c14 : Row → List Row
+c14 t = flip (List.map [ ( t, 1 ), ( t, 2 ) ] λp → p.0)
+
+
+flipO : List Outer → List Outer
+flipO os = List.map os λo → { o | inner = { id = o.inner.id, done = not o.inner.done } }
+
+
+c15 : Row → List Outer
+c15 t = flipO [ { inner = t, n = 1 }, { inner = t, n = 2 } ]
+
+
+writeInner : List Outer → List Outer
+writeInner os = List.map os λo → { o | n = o.n + 1 }
+
+
+c16 : Outer → List Outer
+c16 o = writeInner (List.repeat o 2)
