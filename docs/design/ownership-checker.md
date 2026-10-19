@@ -1563,6 +1563,11 @@ reached apart from the level it started at, with a step of its own:
   before the step that makes it stand for several, and the demand relies on that (§18.4): `viaLeft` records
   `xreq excl π1#Node.0`, and a caller whose subtree holds one list at two levels is refused there. Any other cell
   there is one list at two places. core `Dict`'s tree, under its exemption, is not compared so.
+  The argument's *other paths* (§16.4 item 3, `disjoint`) are operands only where the callee uses them: a path
+  under none of its uses, or under one that only reads a place above it (a read of a node is not a read of what
+  is below it), it never reaches, so a list there is not another operand. Before the marker every level's list was
+  at one path, and a tree that shares its root's list with an unused subtree was accepted by not seeing it; it
+  stays accepted, by seeing that the callee does not look (the bridge's `run` family).
 - **A write under a marker.** A callee that writes a place under a marker writes the lists of every place the
   marker stands for, one by one, and they are distinct lists only if the argument is exclusive where the marker's
   region begins: the call-site demand relies on the argument's deep condition at the path before the marker. A

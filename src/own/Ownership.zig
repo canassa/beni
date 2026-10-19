@@ -10569,7 +10569,27 @@ const Walker = struct {
         // The entries that do overlap `q`: what the callee's other places
         // can reach that `rest` does not.
         var over: std.ArrayList(Entry) = .empty;
-        for (avs[i]) |e| if (!w.o.overlap(e.path, q)) try rest.append(w.a, e) else try over.append(w.a, e);
+        for (avs[i]) |e| {
+            if (w.o.overlap(e.path, q)) {
+                try over.append(w.a, e);
+                continue;
+            }
+            // Another path of the argument is an operand only where the callee
+            // uses it: a place it never reads, keeps or writes it cannot see
+            // the write at (§16.7; a call with no summary's uses keeps every
+            // path, as before).
+            if (w.call_uses.len > 0) {
+                const used = for (w.call_uses) |u| {
+                    if (u.param != i or noUse(u.bits) or !w.o.overlap(u.path, e.path)) continue;
+                    // A read of a place above `e` reads that place, not what is
+                    // below it: only a use that keeps, returns or writes it
+                    // reaches `e` from above.
+                    if (u.bits & ~bit_r != 0 or !w.o.isPrefix(u.path, e.path) or u.path == e.path) break true;
+                } else false;
+                if (!used) continue;
+            }
+            try rest.append(w.a, e);
+        }
         try others.append(w.a, rest.items);
         // §16.7: the callee's other places of this argument, which it took
         // for places apart from `q`. One that is the written cell here is a

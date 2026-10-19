@@ -1,0 +1,42 @@
+-- ownership: a call's other operands are the paths the callee uses
+-- (ownership-checker.md §16.7, *A callee's places*). `f` pushes its root's
+-- list and returns its left subtree; `run` hands it a tree whose right
+-- subtree holds the same list. `f` never looks at the right subtree, so the
+-- list there is not another operand of the call, and in place nothing `run`
+-- returns sees the push: accepted. `keepAll` returns the whole tree, which
+-- does look, and its call is refused.
+type Tree
+    = Leaf
+    | Node Tree (List Int) Tree
+
+
+f : Tree → List Int × Tree
+f t =
+    case t of
+        Node l xs _ →
+            ( List.push xs 1, l )
+
+        Leaf →
+            ( [], Leaf )
+
+
+keepAll : Tree → List Int × Tree
+keepAll t =
+    case t of
+        Node _ xs _ →
+            ( List.push xs 1, t )
+
+        Leaf →
+            ( [], Leaf )
+
+
+pub run : ⊤ → List Int × Tree
+run ⊤ =
+    xs = [ 1 ]
+    f (Node Leaf xs (Node Leaf xs Leaf))
+
+
+pub runAll : ⊤ → List Int × Tree
+runAll ⊤ =
+    xs = [ 1 ]
+    keepAll (Node Leaf xs (Node Leaf xs Leaf))
