@@ -1,0 +1,27 @@
+-- `view_not_compiled`: a program constructor used as a value, not called
+-- with its record, makes a program whose `view` is known only at run time,
+-- so `browser-inline` refuses the use itself. Ported from
+-- `build/bad/direct/`, whose `Browser.programs` `browser-inline` does not
+-- have: the constructor is handed to a function that calls it. `view`'s
+-- markup is refused too, as markup no program compiles as its `view`
+-- (docs/design/browser-inline.md §5, class 1).
+import Html exposing (Html)
+import Tea
+
+
+type alias Sandbox =
+    init : ⊤ → {}
+    update : {}, {} → {}
+    view : {} → Html {}
+
+
+view : {} → Html {}
+view _ = <p>one of many</p>
+
+
+make : (Sandbox → Tea.Program) → Tea.Program
+make build = build { init = λ⊤ → {}, update = λ_ m → m, view = view }
+
+
+main : Tea.Program
+main = make Tea.sandbox
