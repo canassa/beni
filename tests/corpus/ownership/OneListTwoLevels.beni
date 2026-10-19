@@ -1,0 +1,107 @@
+-- ownership: one list at a place a representative path stands for and below
+-- another of its places (ownership-checker.md §16.7, `nested`; the Lean
+-- oracle's `[ em, [ em ] ]`, #386). A prefix through `[*]` or a marker names
+-- several places, so one cell at `X` and at a place below `X` may be one list
+-- at two places, neither holding the other. `viaParam` hands `wr` a tree whose
+-- level-1 list `ee` is also inside its level-2 list; `wr` writes the level-1
+-- list and returns what it found below the level-2 one, which is `ee`: the
+-- call was accepted `fresh`, and is refused. `throughWrap` (the oracle's
+-- `f` on the list taken back out of `wrap 1 [ em, [ em ] ]`), `direct`,
+-- `viaPush` and `viaConcat` were refused already, by the element condition of
+-- the list that holds both.
+type T a
+    = Leaf a
+    | Wrap (T (List a))
+
+
+wrap : Int, a → T a
+wrap n x =
+    if n == 0 then
+        Leaf x
+    else
+        Wrap (wrap (n - 1) [ x ])
+
+
+f : List (List (List Int)) → List (List Int) × List Int
+f ys =
+    case ys of
+        [ a, b ] →
+            case b of
+                [ c ] →
+                    ( List.push a [], c )
+
+                _ →
+                    ( [], [] )
+
+        _ →
+            ( [], [] )
+
+
+pub direct : ⊤ → List (List Int) × List Int
+direct ⊤ =
+    em = []
+    f [ em, [ em ] ]
+
+
+pub throughWrap : ⊤ → List (List Int) × List Int
+throughWrap ⊤ =
+    em = []
+    case wrap 1 [ em, [ em ] ] of
+        Wrap (Leaf ys) →
+            case ys of
+                [ zs ] →
+                    f zs
+
+                _ →
+                    ( [], [] )
+
+        _ →
+            ( [], [] )
+
+
+pub viaPush : ⊤ → List (List Int) × List Int
+viaPush ⊤ =
+    em = []
+    f (List.push [ em ] [ em ])
+
+
+h : List (List (List Int)) → List (List Int) × List Int
+h ys =
+    case ys of
+        [ a, b ] →
+            ( List.push a [], List.concat b )
+
+        _ →
+            ( [], [] )
+
+
+pub viaConcat : ⊤ → List (List Int) × List Int
+viaConcat ⊤ =
+    em = []
+    h [ em, [ em ] ]
+
+
+type R a
+    = RN (List a) (R (List a))
+    | RL
+
+
+wr : R Int → List (List Int) × List Int
+wr t =
+    case t of
+        RN _ (RN a (RN b _)) →
+            case b of
+                [ [ c ] ] →
+                    ( List.push a [], c )
+
+                _ →
+                    ( [], [] )
+
+        _ →
+            ( [], [] )
+
+
+pub viaParam : ⊤ → List (List Int) × List Int
+viaParam ⊤ =
+    ee = []
+    wr (RN [] (RN ee (RN [ [ ee ] ] RL)))

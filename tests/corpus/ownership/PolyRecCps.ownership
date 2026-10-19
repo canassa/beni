@@ -2,8 +2,8 @@ module PolyRecCps
   29:13 call PolyRecCps.cps xs: rejected disjoint: another operand of the same operation reaches it (<lambda> writes what PolyRecCps.cps supplies it)
   29:13 call PolyRecCps.cps xs[*]: rejected disjoint: another operand of the same operation reaches it (<lambda> writes what PolyRecCps.cps supplies it)
   32:26 List.push ys: rejected exclusive: it needs what PolyRecCps.cps supplies it not to share, and it may (approx)
-  summary h: π2 R, π3 R; π3 calls many, supply 1#Leaf.0 π2 owned{excl π2}, supply 1⟨T⟩⁺#Leaf.0 fresh owned{lost}, supply 1⟨T⟩⁺#Leaf.0[*] fresh owned{lost}, supply 1⟨T⟩⁺#Leaf.0[*] π2 owned{lost}, supply 1⟨T⟩⁺#Leaf.0[*]⋆ fresh owned{lost}, supply 1⟨T⟩⁺#Leaf.0[*]⋆ π2 owned{lost}
-  summary cps: π2 R, π3 R; res cb3{excl cb3}; π3 calls many, supply 1#Leaf.0 π2 owned{excl π2}, supply 1⟨T⟩⁺#Leaf.0 fresh owned{lost}, supply 1⟨T⟩⁺#Leaf.0[*] fresh owned{lost}, supply 1⟨T⟩⁺#Leaf.0[*] π2 owned{lost}, supply 1⟨T⟩⁺#Leaf.0[*]⋆ fresh owned{lost}, supply 1⟨T⟩⁺#Leaf.0[*]⋆ π2 owned{lost}
+  summary h: π2 R, π3 R; π3 calls many, supply 1#Leaf.0 π2 owned{excl π2}, supply 1⟨T⟩⁺#Leaf.0 fresh owned{shared}, supply 1⟨T⟩⁺#Leaf.0[*] fresh owned{shared}, supply 1⟨T⟩⁺#Leaf.0[*] π2 owned{shared}, supply 1⟨T⟩⁺#Leaf.0[*]⋆ fresh owned{shared}, supply 1⟨T⟩⁺#Leaf.0[*]⋆ π2 owned{shared}
+  summary cps: π2 R, π3 R; res cb3{excl cb3}; π3 calls many, supply 1#Leaf.0 π2 owned{excl π2}, supply 1⟨T⟩⁺#Leaf.0 fresh owned{shared}, supply 1⟨T⟩⁺#Leaf.0[*] fresh owned{shared}, supply 1⟨T⟩⁺#Leaf.0[*] π2 owned{shared}, supply 1⟨T⟩⁺#Leaf.0[*]⋆ fresh owned{shared}, supply 1⟨T⟩⁺#Leaf.0[*]⋆ π2 owned{shared}
   summary useCps: π1 RW, π1[*] W
   summary g2: π2 RA; res ◇ π2, ◇⟨◇⟩◇ fresh1{excl π2} ~fresh2{excl π2}, ◇⟨◇⟩◇[*] ~fresh1{excl π2} ~fresh2{excl π2} π2, ◇⟨◇⟩◇[*]⋆ ~fresh1{excl π2} ~fresh2{excl π2} ~π2
   summary local: π2 RA; res #Leaf.0 π2, ⟨T⟩⁺#Leaf.0 ~fresh1{excl π2} ~fresh2{excl π2} ~fresh3{excl π2}, ⟨T⟩⁺#Leaf.0[*] ~fresh1{excl π2} ~fresh2{excl π2} ~π2, ⟨T⟩⁺#Leaf.0[*]⋆ ~fresh1{excl π2} ~π2

@@ -7212,7 +7212,19 @@ const Walker = struct {
     /// approximate entry: a projection keeps a marked entry whole and at the
     /// rest of its path).
     fn nested(w: *Walker, e: Entry, f: Entry) Allocator.Error!bool {
-        if (w.o.startsWith(e.path, f.path) or w.o.startsWith(f.path, e.path)) return true;
+        // A container and what it holds. Two cells there are two lists. One
+        // cell at both is one list at one place when the prefix names one
+        // place, since values are acyclic. A prefix through `[*]`, a marker
+        // or `⋆` stands for several places, and one list may be at one of
+        // them and below another (`[ em, [ em ] ]`): two exact entries of
+        // one cell there are two places, unless one entry is only a copy of
+        // the other at a place it may stand for (an approximate entry).
+        const prefix: ?u32 = if (w.o.startsWith(e.path, f.path)) f.path else if (w.o.startsWith(f.path, e.path)) e.path else null;
+        if (prefix) |x| {
+            if (e.cell != f.cell) return true;
+            if (!try w.o.representative(x) and !w.o.paths.any.items[x]) return true;
+            return e.approx != 0 or f.approx != 0;
+        }
         if (!w.o.overlap(e.path, f.path)) return false;
         // Both exact: the value holds the cell at two places, which is
         // sharing (`EnvPrefix`). One approximate: a copy of the other entry

@@ -1459,7 +1459,8 @@ through a `Maybe`, so the rule must fire on `Leaf (Maybe a)` too.
     `#Leaf.0[*]`, which a constructor step places at `⟨T⟩⁺#Leaf.0[*]`, and the deeper levels' at
     `⟨T⟩⁺#Leaf.0[*]⋆`. That pair is now a container and what it may hold, a prefix step by step, so a deep
     condition takes it for one place (`nested`), and a fold that put the two at one path (`foldedBeside`) does
-    not arise. *Why `nested` may take it for one place.* Values are acyclic: a cell is never held both at a place
+    not arise. *Why `nested` may take it for one place* (corrected below: it holds for an `X` that names one
+    place, not through `[*]` or a marker). Values are acyclic: a cell is never held both at a place
     and strictly below it in one value, so when one cell is at `X` and at `X⋆`, one run holds it at `X`, or the
     two describe different runs. `⋆` also stands for `X` itself. Either way it is one list at one place, never
     two places in one value. For two different cells at `X` and `X⋆`, `nested`'s rule is §18.2's container and
@@ -1505,7 +1506,7 @@ through a `Maybe`, so the rule must fire on `Leaf (Maybe a)` too.
       both is one list at two places, two cells are `sep`. So no condition becomes weaker than what the
       unfolded composition would give. `ownership/PolyRecTuples` keeps `{sep π2 π3}`.
     - *Why `nested` may take one cell at `X` and at `X⋆` for one place* (asked of an abstract cell that stands
-      for many lists, one per level). The pair is skipped only for the condition "the list at `X` is the list
+      for many lists, one per level; corrected by the next amendment). The pair is skipped only for the condition "the list at `X` is the list
       below `X`". For a run-time list that is impossible, since values are acyclic, whichever run-time lists
       the cell stands for. Two of them at `X` and below `X` are two lists, which no sharing condition concerns.
       Sharing inside the `⋆` region, one list at two places below `X`, is what the merged-pair rule above
@@ -1522,6 +1523,27 @@ through a `Maybe`, so the rule must fire on `Leaf (Maybe a)` too.
       - Rows the cut invented and that name no list are gone: a write of `π1[*]` of a `List Int`.
       Conditions: where master has `{shared}` from levels the cut merged, the fold has `{lost}` or the condition
       of the one placement (`{excl π2}`). Where it has `{sep π2 π3}`, the fold keeps it.
+  - *Amended 2026-10-19 (the Lean oracle, #386): the acyclicity argument holds only where `X` names one place.*
+    The argument above says one cell at `X` and at a place below `X` is one list at one place, since values are
+    acyclic. That is true when `X` names one place (fields and constructor steps only). It is false when `X`
+    holds `[*]` or a marker, which stand for several places. In `[ em, [ em ] ]` the one list `em` is at `[0]`,
+    a place of `[*]`, and at `[1][0]`, below another place of `[*]`. Neither place holds the other. A list used
+    at two types, a let-generalised `em = []`, makes this reachable in beni. Most such programs were refused
+    anyway, by the element condition of the list that holds both, which says whether its elements share
+    (`f [ em, [ em ] ]`, the oracle's `f` on the list taken back out of `wrap 1 [ em, [ em ] ]`, `List.push`,
+    `List.concat`). Across the levels of a recursive type there is no such list. `wr (RN [] (RN ee (RN [ [ ee ] ]
+    RL)))` writes the level-1 list `ee` while it returns what it found below the level-2 one, which is `ee`, and it
+    was accepted `fresh` on master, before and after #429. So `nested` takes a prefix pair for a container and
+    its contents in two cases only:
+    - the two entries' cells differ (two lists; one list under two cells is the same cell wherever a call
+      instantiates them, and is judged there);
+    - or the prefix names one place.
+    One cell under a prefix through `[*]`, a marker or `⋆` is two places, as two overlapping paths are, unless
+    one entry is approximate, a copy of the other at a place it may stand for. That case is what keeps `wrap`'s
+    `π2` at `⟨T⟩⁺#Leaf.0[*]` and `~π2` at `⟨T⟩⁺#Leaf.0[*]⋆` one place. `ownership/OneListTwoLevels` pins
+    `viaParam`, refused, and the cases that were refused already. Against master: every verdict of the corpus,
+    the bench, core and the platforms is the same. Two summaries change, `PolyRecCps`'s `h` and `cps`, from
+    `{lost}` to `{shared}` for the one cell the recursion makes at a level and below it.
 
 **(c) Removing `k`.** Issue #286's (c) is this step, with F1, F2 and F3 as its fold points. With F1, F3 and a
 cast marker the owner accepts, `k` goes: every path buffer (`[k_limit + 1]Step`, about twenty) becomes a slice,
