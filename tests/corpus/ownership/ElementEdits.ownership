@@ -1,28 +1,31 @@
 module ElementEdits
   20:19 List.update groups: accepted param
   20:19 List.update groups[*].kids: accepted param (<lambda> writes what List.update supplies it)
-  20:45 update g: accepted callback-param (List.update supplies it owned)
+  20:19 update groups[*]: accepted param (List.update writes it)
+  20:45 update g: pending: List.update hands its parameter 1 a position of a list, and whether the list holds one record at two positions is not yet checked (§31.4 item 6)
   20:58 List.push g.kids: accepted callback-param (List.update supplies it owned)
   24:15 call List.map rows[*]: accepted param (<lambda> writes what List.map supplies it)
   24:36 construction r: accepted callback-param (List.map supplies it owned)
   30:12 call ElementEdits.tagAll <literal>[*]: accepted fresh (ElementEdits.tagAll writes π1[*])
   31:18 call ElementEdits.addKid groups: accepted fresh (ElementEdits.addKid writes π1)
   31:18 call ElementEdits.addKid groups[*].kids: accepted fresh (ElementEdits.addKid writes π1[*].kids)
+  31:18 update groups[*]: accepted fresh (ElementEdits.addKid writes it)
   36:13 call List.map rows[*]: rejected later-use: rows[*] is read again at 37:25 (<lambda> writes what List.map supplies it)
   36:34 construction r: accepted callback-param (List.map supplies it owned)
   44:18 call ElementEdits.addKid groups: rejected exclusive: the callee needs the list's elements not to share, and they may (ElementEdits.addKid writes π1)
   44:18 call ElementEdits.addKid groups[*].kids: accepted fresh (ElementEdits.addKid writes π1[*].kids)
+  44:18 update groups[*]: accepted fresh (ElementEdits.addKid writes it)
   51:13 call ElementEdits.tagAll rows[*]: rejected alias: first holds it and is read at 52:25 (ElementEdits.tagAll writes π1[*])
-  summary addKid: π1 RAW, π1[*] RA, π1[*].kids AW, π1[*].kids[*] A; res [*] ~π1[*] ~π1[*]◦, [*].kids ~π1[*].kids, [*].kids[*] ~π1[*].kids[*], π1{excl π1[*].kids}; xreq excl π1
+  summary addKid: π1 RAW, π1[*] RAW{kids}, π1[*].kids AW, π1[*].kids[*] A; res [*] ~π1[*] ~π1[*]◦, [*].kids ~π1[*].kids, [*].kids[*] ~π1[*].kids[*], π1{excl π1[*].kids}; xreq excl π1
   summary tagAll: π1 R, π1[*] AW; res [*] ~fresh2{excl π1} ~π1[*], fresh1{excl π1}; xreq excl π1
   summary distinct: unused
   summary readAfter: π1 R, π1[*] RW; xreq excl π1
   summary repeated: unused
   summary heldOutside: unused
   demands 13: accepted 10 (fresh 4, call 0, param 3, callback-param 3, once 0, entry 0; assumed 0), pending 0, rejected 3
-  records 1: accepted 1, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
+  records 4: accepted 3, pending 1, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
 total 13: accepted 10 (fresh 4, call 0, param 3, callback-param 3, once 0, entry 0; assumed 0), pending 0, rejected 3
-records 1: accepted 1, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
+records 4: accepted 3, pending 1, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
 cause later-use 1
 cause alias 1
 cause exclusive 1

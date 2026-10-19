@@ -5378,6 +5378,9 @@ const Consumption = struct {
     /// lambda writes (§31.5), which only a record demand reads.
     rbad: []const ?[]const u8 = &.{},
     rbad_approx: []const bool = &.{},
+    rbad_cause: []const Cause = &.{},
+    /// supply: per parameter, why a record write there is not yet decided.
+    rpending: []const ?[]const u8 = &.{},
     /// The summary or callee that decided it, for the note.
     name: []const u8 = "",
     /// pending: why.
@@ -11966,15 +11969,35 @@ const Walker = struct {
             @memset(rbad, null);
             const rbad_approx = try w.a.alloc(bool, c.params);
             @memset(rbad_approx, false);
+            const rbad_cause = try w.a.alloc(Cause, c.params);
+            const rpending = try w.a.alloc(?[]const u8, c.params);
+            @memset(rpending, null);
+            @memset(rbad_cause, .supply);
             for (c.uses) |u| {
                 if (u.bits & bit_f == 0 or u.param >= c.params or rbad[u.param] != null) continue;
                 for (s.supply) |e| {
                     if (e.fun != j or e.k != u.param or !w.o.overlap(e.path, u.path)) continue;
                     const written = (try w.o.suffix(e.path, u.path)) orelse eps;
-                    if (e.owned and try w.provOwned(e.prov, s, avs, ictx, none, 0, written)) continue;
-                    rbad[u.param] = try std.fmt.allocPrint(arena, "{s} supplies its parameter {d} borrowed ({s})", .{ callee.name, u.param + 1, try w.o.provText(e.prov) });
-                    rbad_approx[u.param] = !e.owned and e.approx;
-                    break;
+                    if (!e.owned or !try w.provOwned(e.prov, s, avs, ictx, none, 0, written)) {
+                        rbad[u.param] = try std.fmt.allocPrint(arena, "{s} supplies its parameter {d} borrowed ({s})", .{ callee.name, u.param + 1, try w.o.provText(e.prov) });
+                        rbad_approx[u.param] = !e.owned and e.approx;
+                        break;
+                    }
+                    // §31.4 item 6: a record a destructive read hands out is
+                    // its container's position, so the container's contents
+                    // must be exclusive: no record object at two positions.
+                    // A list's conditions read no record object (`mkCond`),
+                    // so they cannot say it: not yet a verdict.
+                    if (e.prov.taken) {
+                        rpending[u.param] = try std.fmt.allocPrint(arena, "{s} hands its parameter {d} a position of a list, and whether the list holds one record at two positions is not yet checked (§31.4 item 6)", .{ callee.name, u.param + 1 });
+                    }
+                    // An owned supply of the callee's own parameter: the
+                    // caller's argument is written, at the call (§31.7).
+                    if (e.prov.kind == .param and e.prov.a < args.len) {
+                        var path = e.prov.path;
+                        if (try w.o.suffix(e.path, u.path)) |rest| path = try w.o.concat(path, rest);
+                        try w.callSiteRecordDemand(inst, args, avs, if (callee.closure != none) try w.single(.{ .kind = .closure, .a = callee.closure }) else &.{}, e.prov.a, path, u.fields, if (s.limit != .none or c.limit != .none) .limit else .exact);
+                    }
                 }
             }
             for (c.uses) |u| {
@@ -12090,7 +12113,7 @@ const Walker = struct {
                     .prelim = .{ .cause = bad_cause[0], .detail = why, .approx = bad_approx[0] },
                 }),
                 .closure => |ci| {
-                    try w.closures.items[ci].consumed.append(w.a, .{ .kind = .supply, .bad = bad, .bad_approx = bad_approx, .bad_cause = bad_cause, .rbad = rbad, .rbad_approx = rbad_approx, .name = callee.name });
+                    try w.closures.items[ci].consumed.append(w.a, .{ .kind = .supply, .bad = bad, .bad_approx = bad_approx, .bad_cause = bad_cause, .rbad = rbad, .rbad_approx = rbad_approx, .rbad_cause = rbad_cause, .rpending = rpending, .name = callee.name });
                     if (need_bad) try w.needLine(tok, need_name, try w.needWhy(callee.name, ff.sends), try w.ownedButApprox(c, s, avs, ictx, j), false, cls);
                 },
                 .func => {
@@ -13771,11 +13794,23 @@ const Walker = struct {
             },
             .supply => if (d.record) {
                 if (x[1] < c.rbad.len) if (c.rbad[x[1]]) |why| {
-                    if (rank >= 3) continue;
-                    rank = 3;
-                    d.verdict = .{ .rejected = .supply };
+                    const cause: Cause = if (x[1] < c.rbad_cause.len) c.rbad_cause[x[1]] else .supply;
+                    const r: u8 = if (cause == .limit) 2 else 3;
+                    if (rank >= r) continue;
+                    rank = r;
+                    d.verdict = .{ .rejected = cause };
                     d.detail = why;
                     d.approx = c.rbad_approx[x[1]];
+                    d.note = "";
+                    d.assumed = false;
+                    continue;
+                };
+                if (x[1] < c.rpending.len) if (c.rpending[x[1]]) |why| {
+                    if (rank >= 4) continue;
+                    rank = 4;
+                    d.verdict = .pending;
+                    d.detail = why;
+                    d.approx = false;
                     d.note = "";
                     d.assumed = false;
                     continue;

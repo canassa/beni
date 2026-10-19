@@ -1,0 +1,29 @@
+-- ownership: a callback that writes the record a destructive read hands it
+-- relies on its container's contents being exclusive (`ownership-checker.md`
+-- §31.4 item 6, §18.4): no record object at two positions. `twice` maps a
+-- list that holds one record twice, rejected `exclusive`; `distinct` maps one
+-- of two literals, accepted. `mark` maps its parameter's records, which
+-- writes them at its callers: `π1[*] W{done}`, and `marked`'s call of it is
+-- accepted, its list fresh.
+type alias Task =
+    name : String
+    done : Bool
+
+
+pub twice : ⊤ → List Task
+twice ⊤ =
+    t = { name = "a", done = False }
+    List.map [ t, t ] λx → { x | done = True }
+
+
+pub distinct : ⊤ → List Task
+distinct ⊤ = List.map [ { name = "a", done = False }, { name = "b", done = False } ] λx →
+    { x | done = True }
+
+
+pub mark : List Task → List Task
+mark tasks = List.map tasks λx → { x | done = True }
+
+
+pub marked : ⊤ → List Task
+marked ⊤ = mark [ { name = "a", done = False } ]

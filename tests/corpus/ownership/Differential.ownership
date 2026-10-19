@@ -7,22 +7,28 @@ module Differential
   57:24 call Differential.addOne Differential.empty: rejected top-level: Differential.empty is a top-level value (Differential.addOne writes π1)
   63:5 List.update rows: accepted fresh
   63:5 List.update rows[*].a: rejected disjoint: another operand of the same operation reaches it (<lambda> writes what List.update supplies it)
-  63:29 update r: accepted callback-param (List.update supplies it owned)
+  63:5 update rows[*]: accepted fresh (List.update writes it)
+  63:29 update r: pending: List.update hands its parameter 1 a position of a list, and whether the list holds one record at two positions is not yet checked (§31.4 item 6)
   63:41 construction r.a: rejected exclusive: List.update hands its parameter 1 an element of rows, whose elements may share one list
   70:19 construction a.todos: accepted call
   85:13 construction s: rejected alias: kept holds it and is read at 86:14
   87:14 construction copied: accepted call
   92:16 List.update rows: accepted param
   92:16 List.update rows[*].tags: accepted param (<lambda> writes what List.update supplies it)
-  92:40 update r: accepted callback-param (List.update supplies it owned)
+  92:16 update rows[*]: accepted param (List.update writes it)
+  92:40 update r: pending: List.update hands its parameter 1 a position of a list, and whether the list holds one record at two positions is not yet checked (§31.4 item 6)
   92:55 construction r.tags: accepted callback-param (List.update supplies it owned)
   96:30 call Differential.t40 <literal>: accepted fresh (Differential.t40 writes π1)
   96:30 call Differential.t40 <literal>[*].tags: accepted fresh (Differential.t40 writes π1[*].tags)
+  96:30 update <literal>[*]: accepted fresh (Differential.t40 writes it)
   100:18 call List.map cards[*].tags: accepted param (<lambda> writes what List.map supplies it)
-  102:9 update c: accepted callback-param (List.map supplies it owned)
+  100:18 update cards[*]: accepted param (List.map writes it)
+  102:9 update c: pending: List.map hands its parameter 1 a position of a list, and whether the list holds one record at two positions is not yet checked (§31.4 item 6)
   102:24 construction c.tags: accepted callback-param (List.map supplies it owned)
   108:30 call Differential.t42 <literal>[*].tags: accepted fresh (Differential.t42 writes π1[*].tags)
+  108:30 update <literal>[*]: accepted fresh (Differential.t42 writes it)
   114:18 call Differential.t42 <literal>[*].tags: rejected exclusive: the callee needs the list's elements not to share, and they may (Differential.t42 writes π1[*].tags)
+  114:18 update <literal>[*]: accepted fresh (Differential.t42 writes it)
   120:15 construction all: accepted param
   127:15 construction all: accepted param
   132:14 List.update rows: accepted param
@@ -43,9 +49,9 @@ module Differential
   summary t14: unused
   summary t33: π1 R, π1[*] R
   summary t33Pushed: π1 RW, π1[*] R
-  summary t40: π1 RAW, π1[*] RA, π1[*].tags AW; res [*] ~π1[*] ~π1[*]◦, [*].tags ~π1[*].tags, π1{excl π1[*].tags}; xreq excl π1
+  summary t40: π1 RAW, π1[*] RAW{tags}, π1[*].tags AW; res [*] ~π1[*] ~π1[*]◦, [*].tags ~π1[*].tags, π1{excl π1[*].tags}; xreq excl π1
   summary t40Distinct: unused
-  summary t42: π1 R, π1[*] A, π1[*].tags AW; res [*] ~fresh2{excl π1} ~π1[*] ~π1[*]◦, [*].tags ~π1[*].tags, fresh1{excl π1}; xreq excl π1
+  summary t42: π1 R, π1[*] AW{tags}, π1[*].tags AW; res [*] ~fresh2{excl π1} ~π1[*] ~π1[*]◦, [*].tags ~π1[*].tags, fresh1{excl π1}; xreq excl π1
   summary t42Distinct: unused
   summary t42Repeated: unused
   summary t52: π1 RW, π1[*] R
@@ -55,9 +61,9 @@ module Differential
   summary t57Repeated: unused
   summary t57RepeatedRows: unused
   demands 32: accepted 23 (fresh 8, call 2, param 9, callback-param 4, once 0, entry 0; assumed 0), pending 0, rejected 9
-  records 3: accepted 3, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
+  records 9: accepted 6, pending 3, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
 total 32: accepted 23 (fresh 8, call 2, param 9, callback-param 4, once 0, entry 0; assumed 0), pending 0, rejected 9
-records 3: accepted 3, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
+records 9: accepted 6, pending 3, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
 cause top-level 2
 cause disjoint 2
 cause alias 1
