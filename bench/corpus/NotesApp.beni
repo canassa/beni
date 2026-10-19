@@ -189,11 +189,13 @@ bumpId : Model → Model
 bumpId model = { model | nextId = model.nextId + 1 }
 
 
+-- The note is the model's, and the history keeps earlier models
+-- (`pushHistory`), so `f` changes a copy of it.
 editNote : Model, Int, (Note → Note) → Model
 editNote model id f =
     case Dict.get model.notes id of
         Just note →
-            edited = f note
+            edited = f (Record.copy note)
             { model | notes = Dict.insert model.notes id { edited | updatedAt = model.now } }
 
         Nothing →

@@ -107,8 +107,11 @@ update msg model =
                 ( Loaded form, Just cred ) →
                     case validate form of
                         [] →
+                            -- The form stays the model's, and may be typed in
+                            -- while the save runs: the command sends a copy.
+                            sent = Record.copy form
                             ( { model | problems = [] }
-                            , Cmd.task (λ⊤ → save cred form) CompletedSave
+                            , Cmd.task (λ⊤ → save cred sent) CompletedSave
                             )
 
                         problems →

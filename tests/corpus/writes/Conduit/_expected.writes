@@ -176,16 +176,16 @@ program Main.main : Tea.application
   hole Author.beni:125:62                         dynamic    reads tag ρ.Home#0.feed.Loaded#0.Model#0.articles[*].author; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].author.IsViewer#0; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].author.IsFollowing#0; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].author.IsNotFollowing#0; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].author; tag ρ.Article#0.article.Loaded#0.author; ρ.Article#0.article.Loaded#0.author.IsViewer#0.username; ρ.Article#0.article.Loaded#0.author.IsFollowing#0.username; ρ.Article#0.article.Loaded#0.author.IsNotFollowing#0.username
   hole Author.beni:139:17                         dynamic    reads ρ.Profile#1.author.Loaded#0.IsFollowing#0.username; ρ.Article#0.article.Loaded#0.author.IsFollowing#0.username
   hole Author.beni:145:17                         dynamic    reads ρ.Profile#1.author.Loaded#0.IsNotFollowing#0.username; ρ.Article#0.article.Loaded#0.author.IsNotFollowing#0.username
-  hole Editor.beni:269:21                         dynamic    reads tag ρ; tag ρ.Editor#0; tag ρ.Editor#1.session; ρ.Editor#1.session.LoggedIn#1.cred; tag ρ.Editor#1.status; ρ.Editor#1.status.Saving#1; ρ.Editor#1.status.Saving#1.body; ρ.Editor#1.status.Saving#1.description; ρ.Editor#1.status.Saving#1.tags; ρ.Editor#1.status.Saving#1.title; ρ.Editor#1.status.Editing#1; ρ.Editor#1.status.Editing#1[*].InvalidEntry#1; ρ.Editor#1.status.Editing#1[*].ServerError#0; ρ.Editor#1.status.Editing#2; ρ.Editor#1.status.Editing#2.body; ρ.Editor#1.status.Editing#2.description; ρ.Editor#1.status.Editing#2.tags; ρ.Editor#1.status.Editing#2.title; ρ.Editor#1.status.EditingNew#0; ρ.Editor#1.status.EditingNew#0[*].InvalidEntry#1; ρ.Editor#1.status.EditingNew#0[*].ServerError#0; ρ.Editor#1.status.EditingNew#1; ρ.Editor#1.status.EditingNew#1.body; ρ.Editor#1.status.EditingNew#1.description; ρ.Editor#1.status.EditingNew#1.tags; ρ.Editor#1.status.EditingNew#1.title; ρ.Editor#1.status.Creating#0; ρ.Editor#1.status.Creating#0.body; ρ.Editor#1.status.Creating#0.description; ρ.Editor#1.status.Creating#0.tags; ρ.Editor#1.status.Creating#0.title
-  hole Editor.beni:301:14                         dynamic    reads tag ρ; tag ρ.Editor#0; tag ρ.Editor#1.status; ρ.Editor#1.status.Editing#1; ρ.Editor#1.status.EditingNew#0
-  hole Editor.beni:304:25                         dynamic    reads tag ρ; tag ρ.Editor#0; tag ρ.Editor#1.status; tag ρ.Editor#1.status.Editing#1[*]; ρ.Editor#1.status.Editing#1[*].InvalidEntry#1; ρ.Editor#1.status.Editing#1[*].ServerError#0; tag ρ.Editor#1.status.EditingNew#0[*]; ρ.Editor#1.status.EditingNew#0[*].InvalidEntry#1; ρ.Editor#1.status.EditingNew#0[*].ServerError#0
-  hole Editor.beni:316:23                         dynamic    reads tag ρ; tag ρ.Editor#0; tag ρ.Editor#1.status
-  hole Editor.beni:322:25                         dynamic    reads tag ρ; tag ρ.Editor#0; tag ρ.Editor#1.status; ρ.Editor#1.status.Saving#1.title; ρ.Editor#1.status.Editing#2.title; ρ.Editor#1.status.EditingNew#1.title; ρ.Editor#1.status.Creating#0.title
-  hole Editor.beni:331:25                         dynamic    reads tag ρ; tag ρ.Editor#0; tag ρ.Editor#1.status; ρ.Editor#1.status.Saving#1.description; ρ.Editor#1.status.Editing#2.description; ρ.Editor#1.status.EditingNew#1.description; ρ.Editor#1.status.Creating#0.description
-  hole Editor.beni:339:25                         static     reads ∅
-  hole Editor.beni:341:25                         dynamic    reads tag ρ; tag ρ.Editor#0; tag ρ.Editor#1.status; ρ.Editor#1.status.Saving#1.body; ρ.Editor#1.status.Editing#2.body; ρ.Editor#1.status.EditingNew#1.body; ρ.Editor#1.status.Creating#0.body
-  hole Editor.beni:350:25                         dynamic    reads tag ρ; tag ρ.Editor#0; tag ρ.Editor#1.status; ρ.Editor#1.status.Saving#1.tags; ρ.Editor#1.status.Editing#2.tags; ρ.Editor#1.status.EditingNew#1.tags; ρ.Editor#1.status.Creating#0.tags
-  hole Editor.beni:354:70                         dynamic    reads tag ρ; tag ρ.Editor#0; tag ρ.Editor#1.status
+  hole Editor.beni:275:21                         dynamic    reads tag ρ; tag ρ.Editor#0; tag ρ.Editor#1.session; ρ.Editor#1.session.LoggedIn#1.cred; tag ρ.Editor#1.status; ρ.Editor#1.status.Saving#1; ρ.Editor#1.status.Saving#1.body; ρ.Editor#1.status.Saving#1.description; ρ.Editor#1.status.Saving#1.tags; ρ.Editor#1.status.Saving#1.title; ρ.Editor#1.status.Editing#1; ρ.Editor#1.status.Editing#1[*].InvalidEntry#1; ρ.Editor#1.status.Editing#1[*].ServerError#0; ρ.Editor#1.status.Editing#2; ρ.Editor#1.status.Editing#2.body; ρ.Editor#1.status.Editing#2.description; ρ.Editor#1.status.Editing#2.tags; ρ.Editor#1.status.Editing#2.title; ρ.Editor#1.status.EditingNew#0; ρ.Editor#1.status.EditingNew#0[*].InvalidEntry#1; ρ.Editor#1.status.EditingNew#0[*].ServerError#0; ρ.Editor#1.status.EditingNew#1; ρ.Editor#1.status.EditingNew#1.body; ρ.Editor#1.status.EditingNew#1.description; ρ.Editor#1.status.EditingNew#1.tags; ρ.Editor#1.status.EditingNew#1.title; ρ.Editor#1.status.Creating#0; ρ.Editor#1.status.Creating#0.body; ρ.Editor#1.status.Creating#0.description; ρ.Editor#1.status.Creating#0.tags; ρ.Editor#1.status.Creating#0.title
+  hole Editor.beni:307:14                         dynamic    reads tag ρ; tag ρ.Editor#0; tag ρ.Editor#1.status; ρ.Editor#1.status.Editing#1; ρ.Editor#1.status.EditingNew#0
+  hole Editor.beni:310:25                         dynamic    reads tag ρ; tag ρ.Editor#0; tag ρ.Editor#1.status; tag ρ.Editor#1.status.Editing#1[*]; ρ.Editor#1.status.Editing#1[*].InvalidEntry#1; ρ.Editor#1.status.Editing#1[*].ServerError#0; tag ρ.Editor#1.status.EditingNew#0[*]; ρ.Editor#1.status.EditingNew#0[*].InvalidEntry#1; ρ.Editor#1.status.EditingNew#0[*].ServerError#0
+  hole Editor.beni:322:23                         dynamic    reads tag ρ; tag ρ.Editor#0; tag ρ.Editor#1.status
+  hole Editor.beni:328:25                         dynamic    reads tag ρ; tag ρ.Editor#0; tag ρ.Editor#1.status; ρ.Editor#1.status.Saving#1.title; ρ.Editor#1.status.Editing#2.title; ρ.Editor#1.status.EditingNew#1.title; ρ.Editor#1.status.Creating#0.title
+  hole Editor.beni:337:25                         dynamic    reads tag ρ; tag ρ.Editor#0; tag ρ.Editor#1.status; ρ.Editor#1.status.Saving#1.description; ρ.Editor#1.status.Editing#2.description; ρ.Editor#1.status.EditingNew#1.description; ρ.Editor#1.status.Creating#0.description
+  hole Editor.beni:345:25                         static     reads ∅
+  hole Editor.beni:347:25                         dynamic    reads tag ρ; tag ρ.Editor#0; tag ρ.Editor#1.status; ρ.Editor#1.status.Saving#1.body; ρ.Editor#1.status.Editing#2.body; ρ.Editor#1.status.EditingNew#1.body; ρ.Editor#1.status.Creating#0.body
+  hole Editor.beni:356:25                         dynamic    reads tag ρ; tag ρ.Editor#0; tag ρ.Editor#1.status; ρ.Editor#1.status.Saving#1.tags; ρ.Editor#1.status.Editing#2.tags; ρ.Editor#1.status.EditingNew#1.tags; ρ.Editor#1.status.Creating#0.tags
+  hole Editor.beni:360:70                         dynamic    reads tag ρ; tag ρ.Editor#0; tag ρ.Editor#1.status
   hole Feed.beni:76:9                             dynamic    reads ρ.Home#0.feed.Loaded#0.Model#0.errors; ρ.Home#0.feed.Loaded#0.Model#0.errors[*]; ρ.Profile#1.feed.Loaded#0.Model#0.errors; ρ.Profile#1.feed.Loaded#0.Model#0.errors[*]
   hole Feed.beni:77:9                             dynamic    reads tag ρ; tag ρ.Home#0.feed; ρ.Home#0.feed.Loaded#0.Model#0.articles; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].author.IsViewer#0; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].author.IsFollowing#0; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].author.IsNotFollowing#0; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].createdAt; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].description; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].favoritesCount; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].slug; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].tags; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].tags[*]; ρ.Home#0.feed.Loaded#0.Model#0.articles[*].title; tag ρ.Home#0.feed.Loaded#0.Model#0.session; ρ.Home#0.feed.Loaded#0.Model#0.session.LoggedIn#1; ρ.Home#0.feed.Loaded#0.Model#0.session.LoggedIn#1.cred; tag ρ.Profile#1.author; tag ρ.Profile#1.feed; ρ.Profile#1.feed.Loaded#0.Model#0.articles; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].author; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].author.IsViewer#0; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].author.IsFollowing#0; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].author.IsNotFollowing#0; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].createdAt; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].description; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].favoritesCount; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].slug; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].tags; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].tags[*]; ρ.Profile#1.feed.Loaded#0.Model#0.articles[*].title; tag ρ.Profile#1.feed.Loaded#0.Model#0.session; ρ.Profile#1.feed.Loaded#0.Model#0.session.LoggedIn#1; ρ.Profile#1.feed.Loaded#0.Model#0.session.LoggedIn#1.cred
   hole Feed.beni:81:18                            dynamic    reads ρ.Home#0.feed.Loaded#0.Model#0.articles; ρ.Profile#1.feed.Loaded#0.Model#0.articles
@@ -258,15 +258,15 @@ program Main.main : Tea.application
   hole Register.beni:168:37                       dynamic    reads ρ.Register#0.form.username
   hole Register.beni:177:37                       dynamic    reads ρ.Register#0.form.email
   hole Register.beni:187:37                       dynamic    reads ρ.Register#0.form.password
-  hole Settings.beni:222:30                       dynamic    reads ρ.Settings#0.problems
-  hole Settings.beni:225:41                       dynamic    reads tag ρ.Settings#0.problems[*]; ρ.Settings#0.problems[*].InvalidEntry#1; ρ.Settings#0.problems[*].ServerError#0
-  hole Settings.beni:236:25                       dynamic    reads tag ρ; tag ρ.Settings#0.session; ρ.Settings#0.session.LoggedIn#1; ρ.Settings#0.session.LoggedIn#1.cred; tag ρ.Settings#0.status; ρ.Settings#0.status.Loaded#0; ρ.Settings#0.status.Loaded#0.avatar; ρ.Settings#0.status.Loaded#0.bio; ρ.Settings#0.status.Loaded#0.email; ρ.Settings#0.status.Loaded#0.password; ρ.Settings#0.status.Loaded#0.username
-  hole Settings.beni:270:21                       dynamic    reads ρ.Settings#0.status.Loaded#0.avatar
-  hole Settings.beni:279:21                       dynamic    reads ρ.Settings#0.status.Loaded#0.username
-  hole Settings.beni:287:21                       static     reads ∅
-  hole Settings.beni:289:21                       dynamic    reads ρ.Settings#0.status.Loaded#0.bio
-  hole Settings.beni:298:21                       dynamic    reads ρ.Settings#0.status.Loaded#0.email
-  hole Settings.beni:308:21                       dynamic    reads ρ.Settings#0.status.Loaded#0.password
+  hole Settings.beni:225:30                       dynamic    reads ρ.Settings#0.problems
+  hole Settings.beni:228:41                       dynamic    reads tag ρ.Settings#0.problems[*]; ρ.Settings#0.problems[*].InvalidEntry#1; ρ.Settings#0.problems[*].ServerError#0
+  hole Settings.beni:239:25                       dynamic    reads tag ρ; tag ρ.Settings#0.session; ρ.Settings#0.session.LoggedIn#1; ρ.Settings#0.session.LoggedIn#1.cred; tag ρ.Settings#0.status; ρ.Settings#0.status.Loaded#0; ρ.Settings#0.status.Loaded#0.avatar; ρ.Settings#0.status.Loaded#0.bio; ρ.Settings#0.status.Loaded#0.email; ρ.Settings#0.status.Loaded#0.password; ρ.Settings#0.status.Loaded#0.username
+  hole Settings.beni:273:21                       dynamic    reads ρ.Settings#0.status.Loaded#0.avatar
+  hole Settings.beni:282:21                       dynamic    reads ρ.Settings#0.status.Loaded#0.username
+  hole Settings.beni:290:21                       static     reads ∅
+  hole Settings.beni:292:21                       dynamic    reads ρ.Settings#0.status.Loaded#0.bio
+  hole Settings.beni:301:21                       dynamic    reads ρ.Settings#0.status.Loaded#0.email
+  hole Settings.beni:311:21                       dynamic    reads ρ.Settings#0.status.Loaded#0.password
   holes 146: static 13, literal 6, static-key 0, dynamic 127
   site Article.beni:232:17                        instanced
   site Article.beni:241:5                         unique
@@ -294,12 +294,12 @@ program Main.main : Tea.application
   site Author.beni:134:13                         unique
   site Author.beni:137:13                         shared     3 calls
   site Author.beni:143:13                         shared     3 calls
-  site Editor.beni:259:17                         unique
-  site Editor.beni:265:5                          shared     2 calls
-  site Editor.beni:271:29                         unique
+  site Editor.beni:265:17                         unique
+  site Editor.beni:271:5                          shared     2 calls
   site Editor.beni:277:29                         unique
-  site Editor.beni:299:5                          shared     8 calls
-  site Editor.beni:303:21                         instanced
+  site Editor.beni:283:29                         unique
+  site Editor.beni:305:5                          shared     8 calls
+  site Editor.beni:309:21                         instanced
   site Feed.beni:75:5                             shared     2 calls
   site Feed.beni:78:13                            unique
   site Feed.beni:80:13                            shared     2 calls
@@ -342,11 +342,11 @@ program Main.main : Tea.application
   site ProfilePage.beni:264:29                    unique
   site Register.beni:139:9                        unique
   site Register.beni:150:37                       instanced
-  site Settings.beni:216:9                        unique
-  site Settings.beni:224:37                       instanced
-  site Settings.beni:241:33                       unique
-  site Settings.beni:252:41                       unique
-  site Settings.beni:263:5                        unique
+  site Settings.beni:219:9                        unique
+  site Settings.beni:227:37                       instanced
+  site Settings.beni:244:33                       unique
+  site Settings.beni:255:41                       unique
+  site Settings.beni:266:5                        unique
   sites 79: unique 38, shared 18, instanced 23, value 0
   markup_value_roots 0 (0% of 79 sites)
   carriers yes: commands
@@ -355,7 +355,7 @@ program Main.main : Tea.application
   list Article.beni:242:10                        positional ChangedUrl *; GotArticleMsg · CompletedLoadArticle · Ok derived; GotArticleMsg · CompletedLoadArticle · Err derived; GotArticleMsg · CompletedFavoriteChange · Ok derived; GotArticleMsg · PassedSlowLoadThreshold derived
   list Article.beni:249:10                        positional ChangedUrl *; GotHomeMsg · CompletedFeedLoad · Ok derived; GotHomeMsg · CompletedFeedLoad · Err derived; GotHomeMsg · GotFeedMsg · CompletedFavorite · Ok derived; GotHomeMsg · PassedSlowLoadThreshold derived; GotProfileMsg · CompletedFeedLoad#1 · Ok derived; GotProfileMsg · CompletedFeedLoad#1 · Err derived; GotProfileMsg · GotFeedMsg · CompletedFavorite · Ok derived; GotProfileMsg · PassedSlowLoadThreshold derived; GotArticleMsg · CompletedLoadArticle · Ok derived; GotArticleMsg · CompletedLoadArticle · Err derived; GotArticleMsg · CompletedFavoriteChange · Ok derived; GotArticleMsg · PassedSlowLoadThreshold derived
   list ArticlePage.beni:323:18                    reconciler ChangedUrl *; GotArticleMsg · CompletedLoadComments · Ok value ρ.Article#0.comments; GotArticleMsg · CompletedLoadComments · Err value ρ.Article#0.comments; GotArticleMsg · PassedSlowLoadThreshold value ρ.Article#0.comments
-  list Editor.beni:301:14                         positional ChangedUrl *; GotEditorMsg · ClickedSave derived; GotEditorMsg · CompletedCreate · Err derived; GotEditorMsg · CompletedEdit · Err derived; GotEditorMsg · CompletedArticleLoad#1 · Err derived; GotEditorMsg · CompletedArticleLoad#1 · Ok derived; GotEditorMsg · PassedSlowLoadThreshold derived
+  list Editor.beni:307:14                         positional ChangedUrl *; GotEditorMsg · ClickedSave derived; GotEditorMsg · CompletedCreate · Err derived; GotEditorMsg · CompletedEdit · Err derived; GotEditorMsg · CompletedArticleLoad#1 · Err derived; GotEditorMsg · CompletedArticleLoad#1 · Ok derived; GotEditorMsg · PassedSlowLoadThreshold derived
   list Feed.beni:81:18                            reconciler ChangedUrl *; GotHomeMsg · CompletedFeedLoad · Ok derived; GotHomeMsg · CompletedFeedLoad · Err derived; GotHomeMsg · GotFeedMsg · CompletedFavorite · Ok derived; GotHomeMsg · PassedSlowLoadThreshold derived; GotProfileMsg · CompletedFeedLoad#1 · Ok derived; GotProfileMsg · CompletedFeedLoad#1 · Err derived; GotProfileMsg · GotFeedMsg · CompletedFavorite · Ok derived; GotProfileMsg · PassedSlowLoadThreshold derived
   list Feed.beni:130:14                           positional ChangedUrl *; GotHomeMsg · CompletedFeedLoad · Ok derived; GotHomeMsg · CompletedFeedLoad · Err derived; GotHomeMsg · PassedSlowLoadThreshold derived; GotProfileMsg · CompletedFeedLoad#1 · Ok derived; GotProfileMsg · CompletedFeedLoad#1 · Err derived; GotProfileMsg · PassedSlowLoadThreshold derived
   list Feed.beni:158:14                           positional ChangedUrl *; GotHomeMsg · ClickedTag derived; GotHomeMsg · ClickedTab derived; GotHomeMsg · CompletedFeedLoad · Ok derived; GotHomeMsg · CompletedFeedLoad · Err derived; GotHomeMsg · PassedSlowLoadThreshold derived; GotProfileMsg · ClickedTab derived; GotProfileMsg · CompletedFollowChange · Ok derived; GotProfileMsg · CompletedAuthorLoad#1 · Ok derived; GotProfileMsg · CompletedAuthorLoad#1 · Err derived; GotProfileMsg · CompletedFeedLoad#1 · Ok derived; GotProfileMsg · CompletedFeedLoad#1 · Err derived; GotProfileMsg · PassedSlowLoadThreshold derived
@@ -363,6 +363,6 @@ program Main.main : Tea.application
   list Login.beni:153:10                          positional ChangedUrl *; GotLoginMsg · SubmittedForm ⟨replaced⟩; GotLoginMsg · CompletedLogin · Err ⟨value⟩
   list Page.beni:102:14                           positional ChangedUrl *; GotHomeMsg · CompletedFeedLoad · Ok derived; GotHomeMsg · CompletedFeedLoad · Err derived; GotHomeMsg · GotFeedMsg · ClickedDismissErrors derived; GotHomeMsg · GotFeedMsg · CompletedFavorite · Err derived; GotHomeMsg · PassedSlowLoadThreshold derived; GotProfileMsg · ClickedDismissErrors derived; GotProfileMsg · CompletedFollowChange · Err derived; GotProfileMsg · CompletedFeedLoad#1 · Ok derived; GotProfileMsg · CompletedFeedLoad#1 · Err derived; GotProfileMsg · GotFeedMsg · ClickedDismissErrors derived; GotProfileMsg · GotFeedMsg · CompletedFavorite · Err derived; GotProfileMsg · PassedSlowLoadThreshold derived; GotArticleMsg · ClickedDismissErrors derived; GotArticleMsg · CompletedFavoriteChange · Err derived; GotArticleMsg · CompletedFollowChange · Err derived; GotArticleMsg · CompletedPostComment · Err derived; GotArticleMsg · CompletedDeleteComment#1 · Err derived; GotArticleMsg · CompletedDeleteArticle · Err derived
   list Register.beni:148:30                       positional ChangedUrl *; GotRegisterMsg · SubmittedForm ⟨replaced⟩; GotRegisterMsg · CompletedRegister · Err ⟨value⟩
-  list Settings.beni:222:30                       positional ChangedUrl *; GotSettingsMsg · SubmittedForm ⟨replaced⟩; GotSettingsMsg · CompletedSave · Err ⟨value⟩
+  list Settings.beni:225:30                       positional ChangedUrl *; GotSettingsMsg · SubmittedForm ⟨replaced⟩; GotSettingsMsg · CompletedSave · Err ⟨value⟩
   reconciler 2 of 2 lists
   patchAll ChangedUrl
