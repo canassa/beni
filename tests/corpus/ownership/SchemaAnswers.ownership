@@ -13,8 +13,8 @@ module SchemaAnswers
   185:13 List.push vs: accepted param
   196:15 List.push xs: accepted call
   summary declared: res [*] ~fresh2{lost}, fresh1{lost}
-  summary composed: res [*] ~fresh2{lost} ~fresh4◦, [*].tags ~fresh3, fresh1{lost}
-  summary generic: res [*] ~fresh2{lost} ~fresh4◦, [*].tags ~fresh3, fresh1{lost}
+  summary composed: res [*] ~fresh2{lost} ~fresh501◦, [*].tags ~fresh3, fresh1{lost}
+  summary generic: res [*] ~fresh2{lost} ~fresh501◦, [*].tags ~fresh3, fresh1{lost}
   summary built: res [*] ~fresh2{lost}, fresh1{lost}
   summary topLevel: res [*] ~fresh2{lost}, [*]⋆ ~shared(SchemaAnswers.kept) ~shared(SchemaAnswers.kept)⋆, fresh1{lost}, ⋆ ~shared(SchemaAnswers.kept) ~shared(SchemaAnswers.kept)⋆
   summary captured: π1 RAw, π1⋆ RAw; res .0 fresh1{lost}, .0[*] ~fresh2{lost}, .0[*]⋆ ~π1 ~π1⋆, .0⋆ ~π1 ~π1⋆, .1 π1

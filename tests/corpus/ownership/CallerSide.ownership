@@ -18,8 +18,8 @@ module CallerSide
   summary reads: π1 RW
   summary chained: res fresh1
   summary twiceRead: π1 RW
-  summary twin: π1 RAW; res .a π1, .b π1, fresh1◦
-  summary apart: res .a fresh1, .b fresh2, fresh3◦
+  summary twin: π1 RAW; res .a π1, .b π1, fresh501◦
+  summary apart: res .a fresh1, .b fresh2, fresh501◦
   demands 10: accepted 7 (fresh 3, call 0, param 4, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
   records 3: accepted 3, pending 0, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
 total 10: accepted 7 (fresh 3, call 0, param 4, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3

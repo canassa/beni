@@ -6,8 +6,8 @@ module Main
   summary apply: π1 R, π2 R; res cb1{excl cb1}; π1 calls ≤1, supply 1 π2 owned{excl π2}
   summary handed: res [*] ~fresh2{lost}, [*]⋆ ~shared(Schemas.kept) ~shared(Schemas.kept)⋆, fresh1{lost}, ⋆ ~shared(Schemas.kept) ~shared(Schemas.kept)⋆
   summary chained: res [*] ~fresh2{lost}, [*]⋆ ~shared(Schemas.kept) ~shared(Schemas.kept)⋆, fresh1{lost}, ⋆ ~shared(Schemas.kept) ~shared(Schemas.kept)⋆
-  summary grownShared: res [*]#Leaf.0 shared(Schemas.forest)[*]#Leaf.0 ~fresh2◦, fresh1 shared(Schemas.forest)
-  summary grownFresh: res [*]#Leaf.0 ~fresh2◦, fresh1
+  summary grownShared: res [*]#Leaf.0 shared(Schemas.forest)[*]#Leaf.0 ~fresh501◦, fresh1 shared(Schemas.forest)
+  summary grownFresh: res [*]#Leaf.0 ~fresh501◦, fresh1
   summary view: res ⟨render⟩ fresh1{lost}
   demands 4: accepted 1 (fresh 1, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
 module Schemas

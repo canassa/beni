@@ -25,29 +25,29 @@ module BridgeReturnedParameter
   136:5 call BridgeReturnedParameter.pushFirst rows[*]: accepted fresh (a returned item is transferred to a later written callback result)
   summary pushReturned: π1 R, π2 R; res [*] ~cb2[*]{excl cb2[*]}, cb2{excl cb2}; π2 calls ≤1, need owned, supply 1 π1 owned{excl π1}
   summary identity: π1 RA; res π1
-  summary returnsParameter: res .grown fresh1, .old fresh1, fresh2◦
+  summary returnsParameter: res .grown fresh1, .old fresh1, fresh501◦
   summary returnsParameterDead: res fresh1
-  summary returnsFresh: res .grown fresh2, .grown[*] ~fresh3, .old fresh1, fresh4◦
+  summary returnsFresh: res .grown fresh2, .grown[*] ~fresh3, .old fresh1, fresh501◦
   summary pushField: π1 R, π2 R; res [*] ~cb2[*]{excl cb2[*]}, cb2{excl cb2}; π2 calls ≤1, need owned, supply 1 π1 owned{excl π1}
-  summary returnsField: res .grown fresh1, .old fresh1, fresh2◦
-  summary returnsOtherField: res .grown fresh1, .old fresh2, fresh3◦
+  summary returnsField: res .grown fresh1, .old fresh1, fresh501◦
+  summary returnsOtherField: res .grown fresh1, .old fresh2, fresh501◦
   summary chain: π1 R, π2 R, π3 R; res cb3{excl cb3}; π2 calls ≤1, supply 1 π1 owned{excl π1}; π3 calls ≤1, supply 1 cb2 owned{excl cb2}
-  summary nestedCallbacks: res .grown fresh1, .old fresh1, fresh2◦
+  summary nestedCallbacks: res .grown fresh1, .old fresh1, fresh501◦
   summary nestedCallbacksDead: res fresh1
   summary chain3: π1 R, π2 R, π3 R, π4 R; res cb4{excl cb4}; π2 calls ≤1, supply 1 π1 owned{excl π1}; π3 calls ≤1, supply 1 cb2 owned{excl cb2}; π4 calls ≤1, supply 1 cb3 owned{excl cb3}
-  summary deeperChain: res .grown fresh1, .old fresh1, fresh2◦
+  summary deeperChain: res .grown fresh1, .old fresh1, fresh501◦
   summary deeperChainDead: res fresh1
   summary wrap: π1 R, π2 R; res [*] ~cb2[*]{excl cb2[*]}, cb2{excl cb2}; π2 calls ≤1, need owned, supply 1 π1 owned{excl π1}
-  summary passedOn: res .grown fresh1, .old fresh1, fresh2◦
+  summary passedOn: res .grown fresh1, .old fresh1, fresh501◦
   summary pushBoxed: π1 R, π2 R; res [*] ~cb2#Box.0[*]{excl cb2#Box.0[*]}, cb2#Box.0{excl cb2#Box.0}; π2 calls ≤1, need owned, supply 1 π1 owned{excl π1}
-  summary tagger: res .grown fresh1, .old fresh1, fresh2◦
+  summary tagger: res .grown fresh1, .old fresh1, fresh501◦
   summary pushFolded: π1 R, π2 RAw, π2[*] A, π3 R; res [*] ~cb3[*]{excl cb3[*]} ~π2[*], ~cb3{excl cb3} ~π2; π3 calls many, need owned, supply 1 π1[*] owned taken{excl π1}, supply 2 cb3 owned{excl cb3}, supply 2 π2 owned{excl π2}
-  summary foldReturnsAccumulator: res .grown ~fresh1, .old fresh1, fresh2◦
+  summary foldReturnsAccumulator: res .grown ~fresh1, .old fresh1, fresh501◦
   summary foldReturnsAccumulatorDead: res ~fresh1
   summary pushFirst: π1 R, π2 R; res [*] ~cb2[*]{excl cb2, sep cb2 cb2} ~fresh{excl cb2, sep cb2 cb2}, fresh1 ~cb2{excl cb2, sep cb2 cb2} ~fresh{excl cb2, sep cb2 cb2}; π2 calls many, need owned, supply 1 π1[*] owned taken{excl π1}; xreq excl cb2, sep cb2 cb2
-  summary mapReturnsElement: res .grown ~fresh1 ~fresh3, .grown[*] ~fresh3, .old fresh2, .old[*] fresh1, fresh4◦
+  summary mapReturnsElement: res .grown ~fresh1 ~fresh3, .grown[*] ~fresh3, .old fresh2, .old[*] fresh1, fresh501◦
   summary mapReturnsElementDead: res [*] ~fresh2, ~fresh1 ~fresh2
-  summary mapReturnsFresh: res .grown ~fresh3 ~fresh4, .grown[*] ~fresh3 ~fresh5, .old fresh2, .old[*] fresh1, fresh6◦
+  summary mapReturnsFresh: res .grown ~fresh3 ~fresh4, .grown[*] ~fresh3 ~fresh5, .old fresh2, .old[*] fresh1, fresh501◦
   demands 24: accepted 15 (fresh 6, call 4, param 1, callback-param 4, once 0, entry 0; assumed 0), pending 0, rejected 9
 total 24: accepted 15 (fresh 6, call 4, param 1, callback-param 4, once 0, entry 0; assumed 0), pending 0, rejected 9
 cause later-use 8

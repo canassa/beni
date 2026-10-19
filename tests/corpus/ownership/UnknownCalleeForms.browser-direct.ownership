@@ -14,8 +14,8 @@ module UnknownCalleeForms
   summary resolved: res [*] ~shared(UnknownCalleeForms.shared)[*], shared(UnknownCalleeForms.shared)
   summary twoShared: res [*] ~⊤call{lost}, ⊤call{lost}
   summary twoFresh: res [*] ~⊤call{lost}, ⊤call{lost}
-  summary mk: res .load λ, fresh1◦
-  summary fresh: res .load λ, fresh1◦
+  summary mk: res .load λ, fresh501◦
+  summary fresh: res .load λ, fresh501◦
   summary callReceiver: res [*] ~shared(UnknownCalleeForms.shared)[*], shared(UnknownCalleeForms.shared)
   summary callReceiverFresh: res [*] ~fresh2, fresh1
   summary boxFresh: res fresh1

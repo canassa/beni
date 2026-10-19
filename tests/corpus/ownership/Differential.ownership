@@ -41,11 +41,11 @@ module Differential
   154:18 call Differential.t57 <literal>: rejected exclusive: the callee needs the list's elements not to share, and they may (Differential.t57 writes π1)
   154:18 call Differential.t57 <literal>[*][*]: accepted fresh (Differential.t57 writes π1[*][*])
   summary addOne: π1 RAW; res π1
-  summary init: res .todos fresh1, fresh2◦
+  summary init: res .todos fresh1, fresh501◦
   summary t1: π1 RAW, π1[*] A; res [*] ~π1[*], ~π1
   summary t2: π1 RW
   summary t3: res .0 shared(Differential.empty), .1 shared(Differential.empty)
-  summary t10: π1 RAW; res [*] fresh2◦, [*].a π1, [*].b π1, fresh1{shared}
+  summary t10: π1 RAW; res [*] fresh501◦, [*].a π1, [*].b π1, fresh1{shared}
   summary t14: unused
   summary t33: π1 R, π1[*] R
   summary t33Pushed: π1 RW, π1[*] R

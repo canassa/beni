@@ -8,14 +8,15 @@ module RecordRecursive
   summary idloop: π2 R; res π2
   summary evenR: π2 R; res π2
   summary oddR: π2 R; res π2
-  summary rec1: π2 R; res fresh1◦ π2
+  summary rec1: π2 R; res fresh501◦ fresh502◦ π2
   summary ident: π1 R; res π1
-  summary c1: res .0 fresh1◦, .1 fresh2◦
-  summary c2: res .0 fresh1◦, .1 fresh2◦
+  summary c1: res .0 fresh501◦, .1 fresh501◦
+  summary c2: res .0 fresh501◦, .1 fresh501◦
   summary c3: res shared(RecordRecursive.top)◦
-  summary k1: res .0 fresh1◦, .1 fresh2◦
-  summary k3: res .0 fresh1◦, .1 fresh2◦
-  summary l1: res .0 fresh1◦, .1 fresh2◦
+  summary k1: res .0 fresh501◦, .1 fresh501◦
+  summary k3: res .0 fresh501◦, .1 fresh501◦
+  summary l1: res .0 fresh501◦, .1 fresh501◦ fresh502◦ fresh503◦
+  summary tick: π2 R; π2 calls many, supply 1 fresh501◦ owned
   demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
   records 6: accepted 0, pending 0, rejected 6 (copy 5, restructure 1); hoisted 0, eager reads 0
 total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0

@@ -15,7 +15,7 @@ module RecordTree
   summary deepest: π1 R, π1#Tree.0 W{kids, label}, π1⟨Tree⟩#Tree.0.kids RA, π1⟨Tree⟩#Tree.0.kids[*] R, π1⟨Tree⟩⁺#Tree.0 RW{kids, label}; res #Tree.0 π1#Tree.0◦, #Tree.0.kids fresh1 fresh2{excl π1#Tree.0.kids} π1#Tree.0.kids, #Tree.0⟨Tree⟩#Tree.0 π1#Tree.0⟨Tree⟩#Tree.0◦, ⟨Tree⟩⁺#Tree.0.kids ~fresh1{excl π1#Tree.0.kids} ~π1⟨Tree⟩⁺#Tree.0.kids{excl π1#Tree.0.kids}
   summary keep: π1 RA, π1#Tree.0.kids R, π1⟨Tree⟩#Tree.0 RW{kids, label}; res .0#Tree.0 π1#Tree.0◦, .0#Tree.0.kids fresh1, .0#Tree.0.kids[*] ~fresh2, .0#Tree.0⟨Tree⟩#Tree.0 ~π1#Tree.0⟨Tree⟩#Tree.0◦, .0⟨Tree⟩⁺#Tree.0.kids ~fresh3, .0⟨Tree⟩⁺#Tree.0.kids[*] ~fresh4, .1 π1
   summary keepDeep: π1 RA, π1#Tree.0 RW{kids, label}, π1#Tree.0.kids A, π1⟨Tree⟩#Tree.0.kids R, π1⟨Tree⟩#Tree.0.kids[*] R, π1⟨Tree⟩⁺#Tree.0 RW{kids, label}, π1⟨Tree⟩⁺#Tree.0.kids A; res .0#Tree.0 π1#Tree.0◦, .0#Tree.0.kids ~fresh1{excl π1#Tree.0.kids} ~fresh2{excl π1#Tree.0.kids} ~π1#Tree.0.kids, .0#Tree.0⟨Tree⟩#Tree.0 π1#Tree.0⟨Tree⟩#Tree.0◦, .0⟨Tree⟩⁺#Tree.0.kids ~fresh1{excl π1#Tree.0.kids} ~π1⟨Tree⟩⁺#Tree.0.kids{excl π1#Tree.0.kids}, .1 π1
-  summary fresh: res #Tree.0 fresh4◦, #Tree.0.kids ~fresh2 ~fresh3, #Tree.0⟨Tree⟩#Tree.0 fresh5◦, ⟨Tree⟩⁺#Tree.0.kids ~fresh1 ~fresh3
+  summary fresh: res #Tree.0 fresh501◦, #Tree.0.kids ~fresh2 ~fresh3, #Tree.0⟨Tree⟩#Tree.0 fresh502◦, ⟨Tree⟩⁺#Tree.0.kids ~fresh1 ~fresh3
   demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
   records 12: accepted 6, pending 1, rejected 5 (copy 5, restructure 0); hoisted 0, eager reads 0
 total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0

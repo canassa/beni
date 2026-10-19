@@ -1,0 +1,23 @@
+-- ownership: a write whose fields the checker cannot name is a write of
+-- every field (`ownership-checker.md` §31.7). `modOpen` writes what `f`
+-- returns; handed `λr → r`, `f` returns the record `modOpen` gave it, a
+-- loan, so the caller's argument is written at the call, every field of it
+-- (`W{}`). `readsOpen`, over an open row, reads `y` after the call: a
+-- written field, hoisted, not untouched. `bothOpen` writes `x` itself and
+-- lends the record on: every field together with `x` is every field.
+modOpen : ({ r | x : Int } → { r | x : Int }), { r | x : Int } → { r | x : Int }
+modOpen f p =
+    q = f p
+    { q | x = 1 }
+
+
+pub readsOpen : { r | x : Int, y : Int } → Int
+readsOpen p =
+    q = modOpen (λr → r) p
+    q.x + p.y
+
+
+pub bothOpen : { r | x : Int, y : Int } → { r | x : Int, y : Int }
+bothOpen p =
+    q = { p | x = 0 }
+    modOpen (λr → r) q

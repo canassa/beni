@@ -15,13 +15,13 @@ module RecordSupply
   summary both: π1 R, π2 R; res .0 cb1, .1 π2; π1 calls ≤1, supply 1 π2 borrowed
   summary keepIt: π1 R; res λ, ◇ π1
   summary mapBoth: π1 R, π2 R; res [*] ~cb1{excl cb1} ~fresh2{excl cb1, sep cb1 cb1}, fresh1{excl cb1, sep cb1 cb1}; π1 calls many, supply 1 π2[*] owned taken
-  summary e1: res .1 fresh1◦
-  summary e2: res .1 fresh1◦
-  summary e3: res .1 fresh1◦
-  summary e4: res .0 fresh1◦
-  summary e5: res .0 fresh2, .0[*] ~fresh3, .1 fresh1, .1[*] fresh4◦
+  summary e1: res .1 fresh501◦
+  summary e2: res .1 fresh501◦
+  summary e3: res .1 fresh501◦
+  summary e4: res .0 fresh501◦
+  summary e5: res .0 fresh2, .0[*] ~fresh3, .1 fresh1, .1[*] fresh501◦
   summary e6: π1 RW{x, y}
-  summary e7: res .1 fresh1◦
+  summary e7: res .1 fresh501◦
   demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
   records 10: accepted 3, pending 1, rejected 6 (copy 6, restructure 0); hoisted 0, eager reads 0
 total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0

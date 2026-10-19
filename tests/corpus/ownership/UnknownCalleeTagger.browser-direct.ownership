@@ -5,7 +5,7 @@ module UnknownCalleeTagger
   73:5 entry UnknownCalleeTagger.update msg#Got.0: accepted entry
   summary fetch: π1 RA, π2 RA; res #Cmd.0 fresh1{excl π1, excl π2}, #Cmd.0[*]#Perform.0◇ ~π2, #Cmd.0[*]#Perform.0◇◇ ~π1; π2 calls many, need owned, unseen, supply 1 cb(π1.load) owned{excl cb(π1.load)}; π1.load calls many, unseen
   summary stored: res #Cmd.0 fresh1
-  summary update: π1 R, π1#Got.0 RAW, π1#Got.0[*] A, π2 RA; res .0 π1#Got.0 π2, .0[*] ~π1#Got.0[*], .1#Cmd.0 fresh1 shared(Cmd.none)#Cmd.0, .1#Cmd.0[*]#Perform.0◇◇ ~fresh2◦
+  summary update: π1 R, π1#Got.0 RAW, π1#Got.0[*] A, π2 RA; res .0 π1#Got.0 π2, .0[*] ~π1#Got.0[*], .1#Cmd.0 fresh1 shared(Cmd.none)#Cmd.0, .1#Cmd.0[*]#Perform.0◇◇ ~fresh501◦ ~fresh502◦
   summary view: π1 R; res ⟨render⟩ fresh1{lost}
   demands 4: accepted 2 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 1; assumed 0), pending 0, rejected 2
 total 4: accepted 2 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 1; assumed 0), pending 0, rejected 2

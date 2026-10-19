@@ -9,8 +9,8 @@ module Toplevel
   58:15 call Toplevel.bump Dict.empty#Dict.0#Node.2: accepted fresh (Toplevel.bump writes π1#Dict.0#Node.2)
   summary addSeed: res shared(Toplevel.seed)
   summary addModel: res .todos shared(Toplevel.seed), shared(Toplevel.initialModel)◦
-  summary init: res .todos fresh1, fresh2◦
-  summary addFresh: res .todos fresh1, fresh2◦
+  summary init: res .todos fresh1, fresh501◦
+  summary addFresh: res .todos fresh1, fresh501◦
   summary reading: res fresh1
   summary bump: π1#Dict.0 R, π1#Dict.0#Node.1 RA, π1#Dict.0#Node.2 RAW, π1#Dict.0#Node.3 RA, π1#Dict.0#Node.4 RA; res #Dict.0#Node.1 ~π1#Dict.0#Node.1, #Dict.0#Node.2 ~fresh1{lost} ~π1#Dict.0#Node.2{lost}, #Dict.0#Node.3 ~π1#Dict.0#Node.3{lost} ~π1#Dict.0#Node.4{lost}, #Dict.0#Node.4 ~π1#Dict.0#Node.3{lost} ~π1#Dict.0#Node.4{lost}
   summary fromEmpty: res #Dict.0#Node.2 ~fresh1{lost}

@@ -1,7 +1,7 @@
 module HostValueOnePlace
   35:23 List.push <expression>: rejected alias: model.items holds it and is read at 35:21
-  summary replace: π1 R, π2 RA; res .items fresh1{lost}, .items[*] fresh3◦, fresh2◦ π2
-  summary stale: π1 R, π2 RA, π2.items AW; res .0 fresh1{lost} π2.items, .0[*] ~fresh2{lost} ~fresh3◦ ~π2.items[*], .1 π2
+  summary replace: π1 R, π2 RA; res .items fresh1{lost}, .items[*] fresh502◦, fresh501◦ π2
+  summary stale: π1 R, π2 RA, π2.items AW; res .0 fresh1{lost} π2.items, .0[*] fresh501◦ ~fresh2{lost} ~fresh502◦ ~π2.items[*], .1 π2
   demands 1: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
 total 1: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
 cause alias 1

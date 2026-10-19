@@ -90,3 +90,12 @@ l1 ⊤ =
     r = { x = 1, y = 1 }
     q = rec1 0 r
     ( { r | x = 5 }, q )
+
+
+-- `tick` hands its callback a record it makes, and hands the callback on
+-- to itself: the record a member of the group made keeps its number at the
+-- group's own call, so the rounds settle and `tick` reaches no limit.
+pub tick : Int, (P → ⊤) → ⊤
+tick n f =
+    f { x = n, y = 0 }
+    if n == 0 then ⊤ else tick (n - 1) f

@@ -2,7 +2,7 @@ module MapAcrossTypes
   30:42 ++ <call List.map>: accepted call
   36:42 ++ <call List.map>: accepted call
   50:13 ++ <call List.map>: accepted call
-  summary toObstacle: π1.center R, π1.size R; res fresh1◦
+  summary toObstacle: π1.center R, π1.size R; res fresh501◦
   summary obstacles: π1 R, π2 R
   summary moved: π1 R, π1[*] R, π2 R
   summary unwrapped: π1 R, π1[*]#Wrapped.0 R, π2 R

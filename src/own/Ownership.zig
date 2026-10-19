@@ -414,8 +414,8 @@ pub const UseEntry = struct {
     path: u32,
     bits: u16,
     /// With `bit_f`: the fields a record update writes at the path, sorted
-    /// (§31.7). Empty with `bit_f` read back from a block that cannot carry
-    /// them: every field.
+    /// (§31.7). Empty is every field (`unionFields`): a write a block could
+    /// not name, an open type's, a callback's loan.
     fields: []const u32 = &.{},
 };
 
@@ -2126,10 +2126,21 @@ test "a summary past a limit says which and what it measured" {
     try std.testing.expectEqual(Over{ .limit = .conditions, .at = condition_cap + 1 }, overLimit(.{ .params = 1, .res = &one }).?);
 }
 
-/// Sorted and merged.
-/// Two sorted field sets, merged and sorted.
+/// §31.7: the fresh number of record object `cell` in a summary, the next
+/// one when it has none yet.
+fn objNumber(a: Allocator, numbers: *std.ArrayList([2]u32), next: *u32, cell: u32) Allocator.Error!u32 {
+    for (numbers.items) |cn| if (cn[0] == cell) return cn[1];
+    next.* += 1;
+    try numbers.append(a, .{ cell, next.* });
+    return next.*;
+}
+
+/// Two written-field sets (§31.7), merged and sorted. The empty set is
+/// every field — a write names at least one, so it never means none: a
+/// write a block could not name, an open type's `allFields`, a callback's
+/// loan. It absorbs: every field together with `a` is every field.
 fn unionFields(a: Allocator, x: []const u32, y: []const u32) Allocator.Error![]const u32 {
-    if (x.len == 0) return y;
+    if (x.len == 0 or y.len == 0) return &.{};
     var out: std.ArrayList(u32) = .empty;
     var i: usize = 0;
     var j: usize = 0;
@@ -2216,9 +2227,14 @@ fn normalizeRaw(o: *Ownership, s: Summary) Allocator.Error!Summary {
     for (uses) |u| {
         if (u.bits == 0) continue;
         if (nu > 0 and uses[nu - 1].param == u.param and uses[nu - 1].path == u.path) {
+            // §31.7: the fields two record writes write, together; a use
+            // without `bit_f` names none and leaves the other's.
+            const was = uses[nu - 1].bits & bit_f != 0;
+            const is = u.bits & bit_f != 0;
+            if (was and is) {
+                uses[nu - 1].fields = try unionFields(keep, uses[nu - 1].fields, u.fields);
+            } else if (is) uses[nu - 1].fields = u.fields;
             uses[nu - 1].bits |= u.bits;
-            // §31.7: the fields two record writes write, together.
-            if (u.fields.len != 0) uses[nu - 1].fields = try unionFields(keep, uses[nu - 1].fields, u.fields);
             continue;
         }
         uses[nu] = u;
@@ -2620,7 +2636,10 @@ fn pessimistic(o: *Ownership, s: Summary, why: Limit, at: u32) Allocator.Error!S
     try o.hitLimit(why, at);
     const keep = o.keep.allocator();
     const uses = try keep.alloc(UseEntry, s.params);
-    for (uses, 0..) |*u, i| u.* = .{ .param = @intCast(i), .path = eps, .bits = bit_r | bit_a | bit_e | bit_w };
+    // §31.7: and every record of every parameter written, every field of it
+    // (`bit_f`, the empty field set); a call applies it where the argument
+    // is a record.
+    for (uses, 0..) |*u, i| u.* = .{ .param = @intCast(i), .path = eps, .bits = bit_r | bit_a | bit_e | bit_w | bit_f };
     const res = try keep.dupe(ResEntry, &.{.{ .path = eps, .prov = .{ .kind = .top, .a = 0 }, .approx = true, .xc = .{ .no = 1 } }});
     const funs = try keep.alloc(FunFacts, s.funs.len);
     for (funs, s.funs) |*f, g| f.* = .{ .param = g.param, .calls = .many, .need = true, .rneed = true, .seen = false };
@@ -10480,9 +10499,16 @@ const Walker = struct {
         }
         // 3b. §31.7: a record the callee writes is an `update` demand at the
         // call, on the argument's record objects at the path, with the
-        // fields it writes; reported, not enforced (R4).
+        // fields it writes; reported, not enforced (R4). An asserted row
+        // never states `bit_f`: a `foreign`'s words are a list's, and a
+        // record update is the one write of a record (`language.md` §6.3),
+        // which only beni code makes (a sibling's rule, `boundary.md` §4, is a
+        // list's); core's rows write lists, and `Record.copy` reads. A pessimistic
+        // summary writes every record of every parameter, applied where the
+        // argument is one.
         for (s.uses) |u| {
             if (u.bits & bit_f == 0 or u.param >= args.len) continue;
+            if (s.limit != .none and !w.isRecordType(w.instType(args[u.param]))) continue;
             try w.callSiteRecordDemand(inst, args, avs, callee_av, u.param, u.path, u.fields, if (s.limit != .none) .limit else .exact);
         }
         // 3. W: the caller's side of a written parameter.
@@ -10695,6 +10721,11 @@ const Walker = struct {
     }
 
     const callback_ns_stride: u32 = 1000;
+    /// §31.7: where a summary's record objects are numbered from, below
+    /// `callback_ns_stride`, above the lists' fresh numbers a summary uses.
+    /// One that met a list's number would only wrap the list's result cell
+    /// in its object alone (`instProv`), which no list's fact reads.
+    const obj_fresh_base: u32 = 500;
 
     const InstCtx = struct {
         inst: Inst.Index,
@@ -10731,11 +10762,25 @@ const Walker = struct {
     };
 
     /// `s.res` instantiated at the call (§16.4 item 6).
+    /// §31.7: the number record object `cell` takes in this summary
+    /// (`objNumber`). §16.6: an object a member of this recursive group made
+    /// keeps the number the member gave it, at a call of it, so that the
+    /// group's rounds settle; two objects that number may make one are
+    /// one, which refuses more and never less.
+    fn objectNumber(w: *Walker, numbers: *std.ArrayList([2]u32), next: *u32, c: u32) Allocator.Error!u32 {
+        const x = w.cells.items[c];
+        if (w.recursive and x.kind == .result and x.b >= obj_fresh_base and x.b < callback_ns_stride) return x.b;
+        return objNumber(w.a, numbers, next, c);
+    }
+
     /// §31.7: cell `c` as a cell no list's fact reads: itself when it is
     /// one, else its copy with `nonlist`, which the cell key tells apart
     /// and which escapes with it (`escKey` does not read the flag).
     fn nonlistOf(w: *Walker, c: u32) Allocator.Error!u32 {
         const x = w.cells.items[c];
+        // An updated record's cell faces its base's lists (`listFacing`):
+        // its object alone.
+        if (x.kind == .except) return if (w.listFacing(c) == null) c else w.exceptCell(c, &.{}, true);
         if (x.nonlist) return c;
         var y = x;
         y.nonlist = true;
@@ -10785,6 +10830,8 @@ const Walker = struct {
             const cells = try w.instProv(r.prov, ctx);
             const own = try w.a.alloc(Entry, cells.len);
             for (cells, own) |e, *x| x.* = .{ .path = e.path, .cell = try w.nonlistOf(e.cell), .approx = e.approx };
+            // No list's fact may read what `objs` names.
+            if (std.debug.runtime_safety) for (own) |x| std.debug.assert(w.listFacing(x.cell) == null);
             var av = try w.under(own, r.path);
             if (r.approx) av = try w.approxAll(av, ctx.inst);
             try out.appendSlice(w.a, av);
@@ -11269,8 +11316,8 @@ const Walker = struct {
     }
 
     /// Every field the records of `av` may have, for a write that names none:
-    /// the fields of a closed record type at ε, else no field, which makes
-    /// every later field use a whole use.
+    /// the fields of a closed record type at ε, else the empty set, which is
+    /// every field (`unionFields`, `recordUse`).
     fn allFields(w: *Walker, av: AV) Allocator.Error![]const u32 {
         for (av) |e| if (e.path == eps) if (w.cells.items[e.cell].ty.unwrap()) |v| if (w.recordFields(v)) |fs| {
             const out = try w.a.alloc(u32, fs.len);
@@ -12084,6 +12131,9 @@ const Walker = struct {
             for (c.uses) |u| {
                 if (u.bits & bit_f == 0 or u.param >= c.params or rbad[u.param] != null) continue;
                 var found = false;
+                // The first borrowed supply refuses the parameter; a call-site
+                // demand an owned one before it raised stays, which refuses
+                // more, never less.
                 supplies: for ([_][]const SupplyEntry{ s.supply, s.rsupply }) |entries| for (entries) |e| {
                     if (e.fun != j or e.k != u.param or !w.o.overlap(e.path, u.path)) continue;
                     found = true;
@@ -12109,7 +12159,9 @@ const Walker = struct {
                         rpending[u.param] = try std.fmt.allocPrint(arena, "{s} hands its parameter {d} a position of a list, and whether the list holds one record at two positions is not yet checked (§31.4 item 6)", .{ callee.name, u.param + 1 });
                     }
                     // An owned supply of the callee's own parameter: the
-                    // caller's argument is written, at the call (§31.7).
+                    // caller's argument is written, at the call (§31.7). A taken
+                    // supply's path is the element's, `π1[*]`, the position it
+                    // hands out: the demand is on the caller's elements.
                     if (e.prov.kind == .param and e.prov.a < args.len) {
                         var path = e.prov.path;
                         if (try w.o.suffix(e.path, u.path)) |rest| path = try w.o.concat(path, rest);
@@ -12776,14 +12828,18 @@ const Walker = struct {
     /// supplied owned (a loan, `recordLoanDemands`).
     fn returnsOwnedRecord(w: *Walker, c: *const Summary, s: *const Summary, avs: []const AV, ictx: InstCtx, j: u32, depth: u32) Allocator.Error!bool {
         if (c.limit != .none or s.limit != .none) return false;
-        for (c.objs) |r| {
+        // A record that may hold lists — an open row, a type parameter — is
+        // named whole in `res`, its object with it: the answer's own, at ε.
+        var at_root: std.ArrayList(ResEntry) = .empty;
+        for (c.res) |r| if (r.path == eps) try at_root.append(w.a, r);
+        for ([_][]const ResEntry{ c.objs, at_root.items }) |entries| for (entries) |r| {
             switch (r.prov.kind) {
                 .fresh => {},
                 .param => {
                     // Kept, the record is not the caller's to write.
                     for (c.uses) |u| if (u.param == r.prov.a and u.bits & (bit_e | bit_j | bit_k) != 0 and w.o.overlap(u.path, r.prov.path)) return false;
                     var found = false;
-                    for ([_][]const SupplyEntry{ s.supply, s.rsupply }) |entries| for (entries) |e| {
+                    for ([_][]const SupplyEntry{ s.supply, s.rsupply }) |sup| for (sup) |e| {
                         if (e.fun != j or e.k != r.prov.a or !w.o.overlap(e.path, r.prov.path)) continue;
                         found = true;
                         if (!e.owned) return false;
@@ -12798,7 +12854,7 @@ const Walker = struct {
             }
             // One record at two of the result's paths is not owned.
             for (c.objs) |x| if (x.path != r.path and x.prov.eql(r.prov)) return false;
-        }
+        };
         return true;
     }
 
@@ -12832,7 +12888,10 @@ const Walker = struct {
     fn recordLoanDemands(w: *Walker, inst: Inst.Index, callee: Callee, args: []const Inst.Index, avs: []const AV, c: *const Summary, j: u32, depth: u32) Allocator.Error!void {
         if (depth >= inst_depth) return w.o.hitLimit(.callbacks, depth + 1);
         const s = callee.sum;
-        for (c.objs) |r| {
+        // As `returnsOwnedRecord` reads them: `objs`, and `res` at ε.
+        var at_root: std.ArrayList(ResEntry) = .empty;
+        for (c.res) |r| if (r.path == eps) try at_root.append(w.a, r);
+        for ([_][]const ResEntry{ c.objs, at_root.items }) |answers| for (answers) |r| {
             if (r.prov.kind != .param) continue;
             for ([_][]const SupplyEntry{ s.supply, s.rsupply }) |entries| for (entries) |e| {
                 if (e.fun != j or e.k != r.prov.a or !w.o.overlap(e.path, r.prov.path)) continue;
@@ -12851,7 +12910,7 @@ const Walker = struct {
                     else => {},
                 }
             };
-        }
+        };
     }
 
     /// §31.5: a callee writes what a function value returns, and the value
@@ -13912,8 +13971,13 @@ const Walker = struct {
                 if (u.record_read and rec.fields == null) continue;
                 // §31.7: a callee's write at a call is ordered against its own
                 // reads in its own body, by its own demand; at the call they
-                // are one point, and not a later use.
-                if (rec.kind == .callsite and rec.fields != null and u.point == rec.point and u.call != 0) continue;
+                // are one point, and not a later use. Only this call's own
+                // uses: the same point and the same token. A nested call, as
+                // `g r` in `f (g r) r`, is a point of its own, before. Two
+                // arguments that hold one record are the call's Disjoint
+                // (`others`), which the callee cannot order: it does not
+                // know its parameters alias.
+                if (rec.kind == .callsite and rec.fields != null and u.point == rec.point and u.call != 0 and u.token == rec.token) continue;
                 if (rec.fields) |fs| switch (w.recordUse(u, h.path, fs)) {
                     .none => continue,
                     // §31.14: a read of a written field, which the lowering
@@ -14415,30 +14479,25 @@ const Walker = struct {
         // every list's fact reads.
         var objs: std.ArrayList(ResEntry) = .empty;
         // §31.7: the result's record objects, which no list's fact reads:
-        // a record literal's or a call's object, numbered after the lists'
-        // fresh cells, by the paths it is at; an update's or a parameter's,
-        // as the provenance of the record it was written over.
+        // a record literal's or a call's object, numbered from a base of its
+        // own (`obj_fresh_base`), one number per object in the order the walk
+        // first meets it, so that one object at two paths, `( r, r )`, is
+        // one; an update's or a parameter's, as the provenance of the record
+        // it was written over. The supplies' records share the numbering. Not
+        // after `renum`, whose largest number moves while a recursive group's
+        // rounds settle: there one object took a new number each round, and
+        // the join never settled.
+        var obj_next: u32 = obj_fresh_base;
+        // (cell, number): a few per declaration.
+        var obj_numbers: std.ArrayList([2]u32) = .empty;
         {
-            var next: u32 = 0;
-            for (renum) |n| next = @max(next, n);
-            // (path, number): one object per path, a few per result.
-            var numbered: std.ArrayList([2]u32) = .empty;
             for (try w.expand(result)) |e| {
                 if (w.listFacing(e.cell) != null) continue;
                 const x = w.cells.items[e.cell];
                 const base_cell = if (x.kind == .except) x.a else e.cell;
                 const bx = w.cells.items[base_cell];
                 var prov: Prov = switch (bx.kind) {
-                    .site, .result => blk: {
-                        const number = for (numbered.items) |pn| {
-                            if (pn[0] == e.path) break pn[1];
-                        } else n: {
-                            next += 1;
-                            try numbered.append(w.a, .{ e.path, next });
-                            break :n next;
-                        };
-                        break :blk .{ .kind = if (try w.isEscaped(base_cell)) .esc else .fresh, .a = number };
-                    },
+                    .site, .result => .{ .kind = if (try w.isEscaped(base_cell)) .esc else .fresh, .a = try w.objectNumber(&obj_numbers, &obj_next, base_cell) },
                     .closure, .func => continue,
                     .param, .env, .shared, .top, .cbres, .taken, .payload, .except => (try w.provOf(base_cell, frame, params, fresh)) orelse continue,
                 };
@@ -14534,8 +14593,10 @@ const Walker = struct {
                         .closure, .func => continue,
                         else => {},
                     }
-                    var prov = (try w.provOf(base_cell, frame, params, fresh)) orelse continue;
-                    if ((prov.kind == .fresh or prov.kind == .esc) and prov.a > 0) prov.a = renum[prov.a - 1];
+                    var prov: Prov = switch (bx.kind) {
+                        .site, .result => .{ .kind = if (try w.isEscaped(base_cell)) .esc else .fresh, .a = try w.objectNumber(&obj_numbers, &obj_next, base_cell) },
+                        else => (try w.provOf(base_cell, frame, params, fresh)) orelse continue,
+                    };
                     if (sr.taken and prov.kind == .param) prov.taken = true;
                     prov.obj = x.kind == .except or bx.kind == .site or bx.kind == .result;
                     const owned = rowned_probe and prov.kind != .shared and prov.kind != .top and prov.kind != .esc and prov.kind != .env;
