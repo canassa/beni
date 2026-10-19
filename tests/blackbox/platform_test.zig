@@ -938,24 +938,24 @@ test "a project layer over a shipped platform named by its directory builds as o
     try testing.expectEqualStrings(over_shipped, over_dir);
 }
 
-test "browser-direct named by its directory keeps a program's keys apart" {
+test "browser-inline named by its directory keeps a program's keys apart" {
     // ┌─────────────────────────────────────────┐
     // │ PREPARE                                 │
     // └─────────────────────────────────────────┘
     // The review of #390: with every platform module read from disk taken
     // for the program's own code, `browser-direct` by directory found no
-    // program, and the keys' handlers merged.
+    // program, and the keys' handlers merged. `FormLocal` has six keys.
     var w = try World.init(testing.allocator, testing.io);
     defer w.deinit();
     const arena = w.arena.allocator();
-    const src = try std.Io.Dir.cwd().readFileAlloc(testing.io, "tests/corpus/browser/direct/ControlledEdits.beni", arena, .limited(1 << 20));
+    const src = try std.Io.Dir.cwd().readFileAlloc(testing.io, "tests/corpus/browser/inline/FormLocal.beni", arena, .limited(1 << 20));
     try w.write("Main.beni", src);
-    const dir = try shippedDir(arena, "browser-direct");
+    const dir = try shippedDir(arena, "browser-inline");
 
     // ┌─────────────────────────────────────────┐
     // │ EXECUTE                                 │
     // └─────────────────────────────────────────┘
-    const by_name = try arena.dupe(u8, try releaseMain(&w, &.{ "--platform=browser-direct", "Main.beni" }));
+    const by_name = try arena.dupe(u8, try releaseMain(&w, &.{ "--platform=browser-inline", "Main.beni" }));
     const by_dir = try releaseMain(&w, &.{ try std.fmt.allocPrint(arena, "--platform={s}", .{dir}), "Main.beni" });
 
     // ┌─────────────────────────────────────────┐
