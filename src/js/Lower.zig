@@ -58,6 +58,7 @@ const Reach = @import("Reach.zig");
 const Lift = @import("Lift.zig");
 const SchemaValid = @import("SchemaValid.zig");
 const Fields = @import("Fields.zig");
+const Funnel = @import("Funnel.zig");
 const DebugShape = @import("DebugShape.zig");
 const Edges = @import("../check/Edges.zig");
 const U32Set = @import("../u32_set.zig").U32Set;
@@ -132,6 +133,11 @@ pub const Result = struct {
     /// (`Lowerer.findRefs`), in the caller's scratch arena: the release
     /// optimiser folds no read of one, since a write elsewhere may move it.
     mutable: []const JsIr.NameIndex = &.{},
+    /// The module's primitive comparators (`Lowerer.needs`), bit `i` the
+    /// comparator `i` of `EmitPack.Selector.Synth.primitive` — the three
+    /// constants a build's evidence set selects, which the module's row
+    /// flags carry (`EmitPack.Flags`, `backend.md` §9, *The funnel*).
+    comparators: u8 = 0,
     /// The module's head: `ir.body[0..head_len]` are its `import`
     /// statements, which the join rebuilds rather than stores (`Unit`).
     head_len: u32 = 0,
@@ -163,6 +169,11 @@ pub const Unit = struct {
     start: u32,
     /// One past its last statement. A unit is never empty.
     end: u32,
+    /// The unit's funnel record (`Funnel.UnitRecord`), when the caller set
+    /// `Input.record`: what this unit was built from, and what a join checks
+    /// a build's answers against (`backend.md` §9, *The funnel*). The maker
+    /// reads it; every other caller leaves it be.
+    record: u32 = Funnel.no_record,
 };
 
 /// One top-level statement on its own: appended to the body, then recorded as
@@ -173,10 +184,11 @@ fn appendUnit(
     units: *std.ArrayList(Unit),
     scratch: Allocator,
     stmt: Node.Index,
+    record: u32,
 ) Allocator.Error!void {
     const at: u32 = @intCast(body.items.len);
     try body.append(scratch, stmt);
-    try units.append(scratch, .{ .start = at, .end = @intCast(body.items.len) });
+    try units.append(scratch, .{ .start = at, .end = @intCast(body.items.len), .record = record });
 }
 
 /// Re-exported so a caller can name `Dispatch.empty` without reaching past
@@ -292,6 +304,13 @@ pub const Input = struct {
     /// reads the argument's type*). Null: every such use is the plain
     /// call, which reads the value by representation.
     debug: ?*const DebugShape.Context = null,
+    /// The funnel's record, when the caller wants one (`backend.md` §9,
+    /// *The funnel*): lowering answers every question from the build as it
+    /// always does and also hands each answer to the recorder, keyed to the
+    /// unit it was asked while building. The pack maker is the only caller
+    /// that sets it; every other lowering leaves it null and pays one null
+    /// check per answer.
+    record: ?*Funnel.Recorder = null,
 };
 
 /// `core/List`'s core-private values the emitter calls from other modules
@@ -595,7 +614,7 @@ pub fn lower(
     scratch: Allocator,
     interner: *InternPool.Overlay,
     input: Input,
-) Allocator.Error!Result {
+) (Allocator.Error || Funnel.Recorder.Error)!Result {
     var b: JsIr.Builder = .init(gpa);
     // `toOwned` hands the columns over and leaves the lists empty, so this
     // frees the name-dedup table and, on the failure path, everything else.
@@ -626,19 +645,23 @@ pub fn lower(
     };
     defer l.diagnostics.deinit(gpa);
     errdefer for (l.diagnostics.items) |d| gpa.free(d.message);
+    // The record's range bookkeeping is only sound while its arrays never
+    // move: one reservation, before the first ask (`Funnel.Recorder`).
+    if (input.record) |record| try record.reserve(scratch, input.bir.insts.len);
     try l.readTable();
     try l.findDeadArms();
     try l.findUnobserved();
     try l.findRefs();
     try l.findInlines();
     try l.findPrograms();
+    l.directHasPieces();
     // `schema.md` §6: the runs that compile to a validator.
-    l.valid_sites = try SchemaValid.sites(l.scratch, l.in.graph, l.in.interfaces, if (l.in.schemas) |sg| sg.provenance else &.{}, l.interner.global, l.bir, l.in.dispatch, l.in.module, l.in.schemas, l.in.schema_library, l.in.schema_shapes);
+    l.valid_sites = try SchemaValid.sites(l.scratch, l.in.graph, l.in.interfaces, if (l.in.schemas) |sg| sg.provenance else &.{}, l.interner.global, l.bir, l.in.dispatch, l.in.module, l.in.schemas, l.schemaLibrary(), l.in.schema_shapes);
     // Reachability found the module's validator runs from its own dispatch
     // table (`Reach.Result.dispatch`); the runs this lowering writes must be
     // the ones it kept, or a `Json` run would name a worker set it dropped.
     if (std.debug.runtime_safety) if (l.in.live) |r| if (l.in.module.int() < r.dispatch.len and r.dispatch[l.in.module.int()] != l.in.dispatch) {
-        const reached = try SchemaValid.sites(l.scratch, l.in.graph, l.in.interfaces, if (l.in.schemas) |sg| sg.provenance else &.{}, l.interner.global, l.bir, r.dispatch[l.in.module.int()], l.in.module, l.in.schemas, l.in.schema_library, l.in.schema_shapes);
+        const reached = try SchemaValid.sites(l.scratch, l.in.graph, l.in.interfaces, if (l.in.schemas) |sg| sg.provenance else &.{}, l.interner.global, l.bir, r.dispatch[l.in.module.int()], l.in.module, l.in.schemas, l.schemaLibrary(), l.in.schema_shapes);
         if (!reached.sameRuns(l.valid_sites)) std.debug.panic("SchemaValid: reachability and lowering found different validator runs in module {d}", .{l.in.module.int()});
     };
 
@@ -665,36 +688,43 @@ pub fn lower(
     // `emissionOrder` exists for). It runs AFTER the declaration walk
     // because a primitive comparator is DISCOVERED, and BEFORE
     // `importStatements` because a derived body can name another module's.
-    const synthesised = try l.synthesisedValues();
+    var synth_records: std.ArrayList(u32) = .empty;
+    const synthesised = try l.synthesisedValues(&synth_records);
     const import_statements = try l.importStatements();
     // The nullary constructors' constants, after every body and every
     // synthesised value that could name one has been built, and in front of
     // all of them (`backend.md` §4, *A nullary constructor is one object*).
-    const nullary = try l.nullaryDecls();
+    var nullary_records: std.ArrayList(u32) = .empty;
+    const nullary = try l.nullaryDecls(&nullary_records);
 
     // The body is assembled one unit at a time (`Unit`): every class below
     // is appended as the runs it was built in — each nullary constant,
     // hoisted statement and synthesised value its own, each declaration its
     // own part — and the ranges cover the whole body between the head and
-    // the tail, in order, with no gaps.
+    // the tail, in order, with no gaps. Each unit carries the funnel record
+    // of the run it is (`Unit.record`), so a cached build knows what to
+    // check before it takes it (`backend.md` §9, *The funnel*). The
+    // markup lowering's hoisted statements carry none: a module that
+    // hoists anything is refused by the maker (`Input.uses_markup`), so
+    // there is no row for them to be wrong in.
     var body: std.ArrayList(Node.Index) = .empty;
     var units: std.ArrayList(Unit) = .empty;
     const head_len: u32 = @intCast(import_statements.len);
     try body.appendSlice(scratch, import_statements);
-    for (nullary) |stmt| {
-        try appendUnit(&body, &units, scratch, stmt);
+    for (nullary, 0..) |stmt, i| {
+        try appendUnit(&body, &units, scratch, stmt, nullary_records.items[i]);
     }
     // What the markup lowering hoisted: after the imports, before the first
     // declaration, in hoist order (`backend.md` §15.1).
     if (l.mk) |st| for (st.hoisted.items) |stmt| {
-        try appendUnit(&body, &units, scratch, stmt);
+        try appendUnit(&body, &units, scratch, stmt, Funnel.no_record);
     };
-    for (synthesised) |stmt| {
-        try appendUnit(&body, &units, scratch, stmt);
+    for (synthesised, 0..) |stmt, i| {
+        try appendUnit(&body, &units, scratch, stmt, synth_records.items[i]);
     }
     const decl_base: u32 = @intCast(body.items.len);
     try body.appendSlice(scratch, declarations.items);
-    for (decl_units.items) |unit| try units.append(scratch, .{ .start = decl_base + unit.start, .end = decl_base + unit.end });
+    for (decl_units.items) |unit| try units.append(scratch, .{ .start = decl_base + unit.start, .end = decl_base + unit.end, .record = unit.record });
     const tail_len: u32 = @intCast(tail.items.len);
     try body.appendSlice(scratch, tail.items);
 
@@ -720,6 +750,9 @@ pub fn lower(
         .ir = ir,
         .diagnostics = diagnostics,
         .uses_runtime = l.needs.deep or l.needs.list_eq or l.needs.list_compare,
+        .comparators = (@as(u8, @intFromBool(l.needs.eq_prim))) |
+            (@as(u8, @intFromBool(l.needs.compare_prim)) << 1) |
+            (@as(u8, @intFromBool(l.needs.compare_char)) << 2),
         .uses_markup_runtime = l.markup_imports.items.len != 0,
         .markup_exports = l.markup_exports.items,
         .markup_module_uses = l.markup_module_uses.items,
@@ -1059,6 +1092,12 @@ pub const Lowerer = struct {
     /// module's surviving declarations, by call instruction, ascending
     /// (`findPrograms`; `boundary.md` §9.4.6, version 1.6).
     program_calls: []ProgramCall = &.{},
+    /// Whether the build's direct handle carries anything of THIS module
+    /// (`directHasPieces`): the pieces it lifts from it. `Lower` answers the
+    /// funnel's `.direct` with it wherever a whole-declaration unit could
+    /// depend on the handle, and the pack maker's handle is null, so its
+    /// rows carry `false` (`backend.md` §9, *The funnel*).
+    direct_pieces: bool = false,
     /// Version 1.14 (`Lowering.places`): the placement calls compiled as
     /// their first argument alone, the program call they place, sorted.
     placed_calls: []const u32 = &.{},
@@ -1589,16 +1628,27 @@ pub const Lowerer = struct {
     // under-elimination is only bytes.
 
     pub fn liveDecl(l: *Lowerer, index: u32) bool {
-        const r = l.in.live orelse return true;
-        return r.decl(l.in.module, index);
+        const r = l.in.live orelse {
+            l.askSelf(.decl, true, 0, index);
+            return true;
+        };
+        const answer = r.decl(l.in.module, index);
+        l.askSelf(.decl, answer, 0, index);
+        return answer;
     }
 
     // ---- Schemas (`schema.md` §6; `SchemaLower` writes the declarations) --
 
     /// Whether member `member` of schema declaration `ref` survived.
-    pub fn liveSchema(l: *const Lowerer, ref: SchemaGraph.Ref, which: SchemaGraph.Member) bool {
-        const r = l.in.live orelse return true;
-        return r.schema(ref.module, ref.decl, which);
+    pub fn liveSchema(l: *Lowerer, ref: SchemaGraph.Ref, which: SchemaGraph.Member) bool {
+        const index = ref.decl * SchemaGraph.Member.count + @backingInt(which);
+        const r = l.in.live orelse {
+            l.ask(.{ .question = .schema, .module = ref.module.int(), .index = index, .answer = true });
+            return true;
+        };
+        const answer = r.schema(ref.module, ref.decl, which);
+        l.ask(.{ .question = .schema, .module = ref.module.int(), .index = index, .answer = answer });
+        return answer;
     }
 
     /// Whether anything of schema declaration `decl` of this module
@@ -1668,6 +1718,7 @@ pub const Lowerer = struct {
         const rep, const tag, const module, const index = (try l.coreCtorByText(owner, ctor, p)) orelse return l.nullNode(p);
         if (args.len == 0 and rep == .tagged) {
             const key: NullaryKey = .{ .ext = true, .module = module.int(), .ctor = index };
+            l.askNullary(key);
             const slot = try l.nullary.getOrPut(l.scratch, key);
             if (!slot.found_existing) {
                 const path = l.text(l.in.graph.moduleName(module));
@@ -1724,6 +1775,7 @@ pub const Lowerer = struct {
     /// every use of it shares, as `nullaryConstant` names it.
     pub fn codecCtorValue(l: *Lowerer, cc: CodecCtor, args: []const Node.Index, p: u32) !Node.Index {
         if (args.len == 0 and cc.rep == .tagged) {
+            l.askNullary(cc.key);
             const slot = try l.nullary.getOrPut(l.scratch, cc.key);
             if (!slot.found_existing) {
                 const base = if (cc.key.ext) blk: {
@@ -1851,8 +1903,17 @@ pub const Lowerer = struct {
                 if (@backingInt(ref) < l.bir.insts.len) {
                     const rd = l.bir.instData(ref);
                     switch (l.bir.instTag(ref)) {
-                        .ctor => if (!r.ctor(l.in.module, rd.lhs)) return true,
-                        .ext_ctor => if (!r.extCtor(@fromBackingInt(@intCast(rd.lhs)), rd.rhs)) return true,
+                        .ctor => {
+                            const alive = r.ctor(l.in.module, rd.lhs);
+                            l.askSelf(.ctor, alive, 0, rd.lhs);
+                            if (!alive) return true;
+                        },
+                        .ext_ctor => {
+                            const module: Graph.Index = @fromBackingInt(@intCast(rd.lhs));
+                            const alive = r.extCtor(module, rd.rhs);
+                            l.ask(.{ .question = .ctor, .module = module.int(), .index = rd.rhs, .answer = alive });
+                            if (!alive) return true;
+                        },
                         else => {},
                     }
                 }
@@ -1876,7 +1937,12 @@ pub const Lowerer = struct {
     fn probeDroppedArm(l: *Lowerer, inst: Inst.Index) ?Inst.Index {
         const probe = JsIntrinsic.probeCall(l.in.graph, l.in.interfaces, l.bir, inst, l.interner) orelse return null;
         const taken = l.suspendsHere(l.in.dispatch.effectAt(probe).body);
-        return JsIntrinsic.armOf(l.in.graph, l.in.interfaces, l.bir, inst, l.interner, !taken);
+        const dropped = JsIntrinsic.armOf(l.in.graph, l.in.interfaces, l.bir, inst, l.interner, !taken) orelse return null;
+        // The same question `deadArm` asks, of the same body: the arm the
+        // probe drops is an arm no value takes in this variant, and
+        // `probe_dead` indexes it by its body (`findDeadArms`).
+        l.askSelf(.probe, true, @intCast(@backingInt(l.variant)), l.bir.instData(dropped).rhs);
+        return dropped;
     }
 
     /// The body of the arm an `if Js.development` takes in this build, when
@@ -1884,6 +1950,7 @@ pub const Lowerer = struct {
     /// *`Js.development` is the build's mode*): the `case` is written as
     /// that body alone, with no test, and the dropped arm not at all.
     fn developmentArm(l: *Lowerer, inst: Inst.Index) ?Inst.Index {
+        l.askSelf(.development, l.in.development, 0, 0);
         const dropped = JsIntrinsic.droppedArm(l.in.graph, l.in.interfaces, l.bir, inst, l.interner, !l.in.development) orelse
             l.probeDroppedArm(inst) orelse return null;
         const branches = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(l.bir.instData(inst).rhs))), Inst.Index);
@@ -1899,18 +1966,28 @@ pub const Lowerer = struct {
     }
 
     /// Whether `inst` is the body of an arm no value takes.
-    fn deadArm(l: *const Lowerer, inst: Inst.Index) bool {
+    fn deadArm(l: *Lowerer, inst: Inst.Index) bool {
         const i = @backingInt(inst);
-        if (i < l.dead_arms.bit_length and l.dead_arms.isSet(i)) return true;
-        const probe = &l.probe_dead[@backingInt(l.variant)];
-        return i < probe.bit_length and probe.isSet(i);
+        const dead = i < l.dead_arms.bit_length and l.dead_arms.isSet(i);
+        l.askSelf(.arm_dead, dead, 0, i);
+        if (dead) return true;
+        const variant: u8 = @intCast(@backingInt(l.variant));
+        const probe = &l.probe_dead[variant];
+        const dropped = i < probe.bit_length and probe.isSet(i);
+        l.askSelf(.probe, dropped, variant, i);
+        return dropped;
     }
 
     /// Whether a declaration's suspendable body survived (§16.2).
     fn liveTwin(l: *Lowerer, index: u32) bool {
         // No survivor set (a unit test): no suspendable body is asked for.
-        const r = l.in.live orelse return false;
-        return r.twin(l.in.module, index);
+        const r = l.in.live orelse {
+            l.askSelf(.twin, false, 0, index);
+            return false;
+        };
+        const answer = r.twin(l.in.module, index);
+        l.askSelf(.twin, answer, 0, index);
+        return answer;
     }
 
     /// `<base>$s`, the base of a declaration's suspendable body
@@ -1970,9 +2047,141 @@ pub const Lowerer = struct {
         return block.twin();
     }
 
+    /// Whether the build's direct handle carries anything of THIS module:
+    /// the pieces it lifts from its declarations, in place or not
+    /// (`browser-inline.md` §7). Runs once, before the units are built
+    /// (`lower`), because every declaration's unit answers `.direct` with
+    /// it.
+    ///
+    /// The maker's handle is null, so its rows answer `false`: a build whose
+    /// answer is also `false` (a node build; a browser build the analysis
+    /// found nothing to lift from this module) reuses the declaration's
+    /// whole unit, and a build that lifts anything of it lowers the
+    /// declaration itself (`backend.md` §9, *The funnel*).
+    fn directHasPieces(l: *Lowerer) void {
+        const d = l.in.direct orelse return;
+        for (d.lifts) |piece| {
+            if (piece.module == l.in.module.int()) {
+                l.direct_pieces = true;
+                return;
+            }
+        }
+        for (d.view_pieces) |piece| {
+            if (piece.module == l.in.module.int()) {
+                l.direct_pieces = true;
+                return;
+            }
+        }
+    }
+
+    // ---- The funnel ---------------------------------------------------------
+    //
+    // `backend.md` §9, *The funnel, and why reuse is honest*: every fact a
+    // unit's bytes depend on is read through here, so a build that HAS a
+    // module cached can prove it would print the same bytes, and the pack
+    // maker can record what each unit read (`Funnel.Recorder`). Every
+    // helper answers from the build first and asks second — the funnel
+    // never changes an answer, and a build with no recorder behaves exactly
+    // as it did.
+
+    /// The declaration this build's entry calls, `Input.entry_decl`
+    /// (`boundary.md` §5.2): null for every module that is not the entry's.
+    /// A module-fixed read of the build.
+    fn entryDecl(l: *Lowerer) ?u32 {
+        l.askSelf(.entry, l.in.entry_decl != null, 0, 0);
+        return l.in.entry_decl;
+    }
+
+    /// `Input.schema_library`, `--schema-library`: every schema root runs
+    /// through the library interpreter (`schema.md` §10). A module-fixed
+    /// read of the build.
+    pub fn schemaLibrary(l: *Lowerer) bool {
+        l.askSelf(.schema_library, l.in.schema_library, 0, 0);
+        return l.in.schema_library;
+    }
+
+    /// Opens a unit's record; `Funnel.no_record` when nobody is recording.
+    fn recBegin(l: *Lowerer, selector: Funnel.Selector) !u32 {
+        const r = l.in.record orelse return Funnel.no_record;
+        return r.begin(l.scratch, selector);
+    }
+
+    /// Closes the unit `record`; `decl`, for a declaration's unit, is the
+    /// declaration whose edges the record then carries.
+    fn recEnd(l: *Lowerer, record: u32, decl: ?u32) !void {
+        if (record == Funnel.no_record) return;
+        const r = l.in.record.?;
+        try r.end(record);
+        if (decl) |d| r.units.items[record].edges = try l.declEdges(d);
+    }
+
+    /// One answered question about one of THIS module's sets.
+    fn askSelf(l: *Lowerer, question: Funnel.Fact.Question, answer: bool, where: u8, index: u32) void {
+        l.ask(.{
+            .question = question,
+            .where = where,
+            .module = l.in.module.int(),
+            .index = index,
+            .answer = answer,
+        });
+    }
+
+    /// One answered question, about another module's set or the build's.
+    fn ask(l: *Lowerer, fact: Funnel.Fact) void {
+        const r = l.in.record orelse return;
+        r.ask(fact);
+    }
+
+    /// One runtime export (`_core/_derived.mjs`) the open unit reached.
+    fn askRuntime(l: *Lowerer, bit: u8) void {
+        const r = l.in.record orelse return;
+        r.orRuntime(bit);
+    }
+
+    /// The edges a join replays for one of declaration `decl`'s units
+    /// (`emissionOrder`'s walk): the `top_value` references it follows, in
+    /// reference order, then every site top. A unit is one segment of a
+    /// declaration, so replaying from a canonical sequence is not the same
+    /// walk (`DceSurvivorOrder`); each segment carries the walk's own
+    /// edges, and the walk from them is the same one the build would take
+    /// (issue #328 owns making `emissionOrder` canonical).
+    fn declEdges(l: *Lowerer, decl: u32) ![]const u32 {
+        var out: std.ArrayList(u32) = .empty;
+        if (decl < l.bir.decls.len) {
+            const d = l.bir.decls[decl];
+            for (l.bir.refs[d.refs_start..d.refs_end]) |ref| {
+                if (ref.kind != .top_value) continue;
+                try out.append(l.scratch, ref.a);
+            }
+        }
+        try out.appendSlice(l.scratch, try l.siteTops(decl));
+        return out.items;
+    }
+
+    /// One nullary constant the code being built reached: asking IS what
+    /// builds the constant, so the answer is true at every ask and the
+    /// question separates the constants — the flags distinguish `type`
+    /// constructors from `schema` ones, which can share a name
+    /// (`nullaryConstant`).
+    fn askNullary(l: *Lowerer, key: NullaryKey) void {
+        l.ask(.{
+            .question = .nullary,
+            .where = @as(u8, @intFromBool(key.ext)) |
+                (@as(u8, @intFromBool(key.schema != std.math.maxInt(u32))) << 1),
+            .module = key.module,
+            .index = key.ctor,
+            .answer = true,
+        });
+    }
+
     fn liveDerived(l: *Lowerer, index: u32) bool {
-        const r = l.in.live orelse return true;
-        return r.derivedRow(l.in.module, index);
+        const r = l.in.live orelse {
+            l.askSelf(.derived, true, 0, index);
+            return true;
+        };
+        const answer = r.derivedRow(l.in.module, index);
+        l.askSelf(.derived, answer, 0, index);
+        return answer;
     }
 
     /// The wall. Compiled away outside a safety build (`runtime_safety` is
@@ -2021,7 +2230,12 @@ pub const Lowerer = struct {
         while (again) {
             again = false;
             for (order, parts) |index, *part| {
-                if (index >= l.wanted.len or !l.wanted[index] or !l.consumed[index]) continue;
+                const wanted = index < l.wanted.len and l.wanted[index];
+                l.askSelf(.wanted, wanted, 0, index);
+                if (!wanted) continue;
+                const consumed = l.consumed[index];
+                l.askSelf(.consumed, consumed, 0, index);
+                if (!consumed) continue;
                 l.consumed[index] = false;
                 part.* = try l.declarationPart(index);
                 again = true;
@@ -2039,19 +2253,34 @@ pub const Lowerer = struct {
             // survive without the other, and each piece a program site may
             // leave or take (`browser-inline.md` §7), one statement each.
             // `twin_at` and `lift_at` are offsets into the part; here the
-            // part sits at `at`.
+            // part sits at `at`. Each unit carries the record of the run it
+            // is (`Part.records`), which is what a join checks its own
+            // answers against.
             var cursor = at;
             if (part.twin_at) |split| {
                 const twin_at = at + split;
-                if (twin_at > cursor) try units.append(l.scratch, .{ .start = cursor, .end = twin_at });
+                if (twin_at > cursor) try units.append(l.scratch, .{ .start = cursor, .end = twin_at, .record = part.records.direct });
                 cursor = twin_at;
             }
             if (part.lift_at) |split| {
                 const lift_at = at + split;
-                if (lift_at > cursor) try units.append(l.scratch, .{ .start = cursor, .end = lift_at });
+                if (lift_at > cursor) try units.append(l.scratch, .{
+                    .start = cursor,
+                    .end = lift_at,
+                    .record = if (part.twin_at != null) part.records.twin else part.records.direct,
+                });
                 var start = lift_at;
-                while (start < end) : (start += 1) try units.append(l.scratch, .{ .start = start, .end = start + 1 });
-            } else if (end > cursor) try units.append(l.scratch, .{ .start = cursor, .end = end });
+                var piece: u32 = 0;
+                while (start < end) : (start += 1) {
+                    std.debug.assert(piece < part.records.pieces.len);
+                    try units.append(l.scratch, .{ .start = start, .end = start + 1, .record = part.records.pieces[piece] });
+                    piece += 1;
+                }
+            } else if (end > cursor) try units.append(l.scratch, .{
+                .start = cursor,
+                .end = end,
+                .record = if (part.twin_at != null) part.records.twin else part.records.direct,
+            });
         }
     }
 
@@ -2065,18 +2294,24 @@ pub const Lowerer = struct {
         const d = l.in.direct orelse return false;
         for (d.lifts, 0..) |piece, gi| {
             if (piece.module != l.in.module.int() or piece.decl != index or piece.in_place) continue;
-            const r = l.in.live orelse return true;
-            if (r.of(l.in.module).lift(gi)) return true;
+            const answer = if (l.in.live) |r| r.of(l.in.module).lift(gi) else true;
+            l.askSelf(.lift, answer, 0, @intCast(gi));
+            if (answer) return true;
         }
         return false;
     }
 
-    fn liftPieces(l: *Lowerer, out: *StmtList, index: u32) !void {
+    fn liftPieces(l: *Lowerer, out: *StmtList, index: u32, records: *std.ArrayList(u32)) !void {
         const d = l.in.direct orelse return;
         for (d.lifts, 0..) |piece, gi| {
             if (piece.module != l.in.module.int() or piece.decl != index or piece.in_place) continue;
-            if (l.in.live) |r| if (!r.of(l.in.module).lift(gi)) continue;
+            const answer = if (l.in.live) |r| r.of(l.in.module).lift(gi) else true;
+            l.askSelf(.lift, answer, 0, @intCast(gi));
+            if (!answer) continue;
+            const record = try l.recBegin(Funnel.Selector.declarationPart(index, Funnel.Selector.part_lift + @as(u32, @intCast(gi))));
             try l.liftPiece(out, piece);
+            try l.recEnd(record, index);
+            try records.append(l.scratch, record);
         }
     }
 
@@ -2119,6 +2354,18 @@ pub const Lowerer = struct {
         /// statement per surviving piece (`browser-inline.md` §7), each a
         /// unit of its own.
         lift_at: ?u32 = null,
+        /// Each run's funnel record, in the order `declarations` cuts the
+        /// units: the direct body's, the twin's, then one per surviving
+        /// lifted piece. `Funnel.no_record` when nobody is recording — the
+        /// run's own record when the run is empty is then simply never a
+        /// unit's.
+        records: Records = .{},
+
+        const Records = struct {
+            direct: u32 = Funnel.no_record,
+            twin: u32 = Funnel.no_record,
+            pieces: []const u32 = &.{},
+        };
     };
 
     /// One declaration's statements, measured against the nesting budget.
@@ -2126,11 +2373,14 @@ pub const Lowerer = struct {
         var part: StmtList = .empty;
         const nodes = l.b.nodes.len;
         var twin_at: ?u32 = null;
-        try l.declaration(&part, index, &twin_at);
+        var records: Part.Records = .{};
+        try l.declaration(&part, index, &twin_at, &records);
         var lift_at: ?u32 = null;
         const direct_len: u32 = @intCast(part.items.len);
         if (l.livePiece(index)) lift_at = direct_len;
-        try l.liftPieces(&part, index);
+        var pieces: std.ArrayList(u32) = .empty;
+        try l.liftPieces(&part, index, &pieces);
+        records.pieces = pieces.items;
         // The units loop splits a declaration at `lift_at` and nowhere else,
         // so when `livePiece` said no, `liftPieces` must have written
         // nothing: anything else folds a surviving piece into the
@@ -2144,7 +2394,7 @@ pub const Lowerer = struct {
         // Fewer nodes than this cannot be over either budget, and
         // measuring is a walk of every node: most declarations skip it.
         if (index < l.bir.decls.len and l.b.nodes.len - nodes >= JsIr.nesting.could_exceed) try l.refuseTooDeep(part.items, index);
-        return .{ .items = part.items, .twin_at = twin_at, .lift_at = lift_at };
+        return .{ .items = part.items, .twin_at = twin_at, .lift_at = lift_at, .records = records };
     }
 
     /// The one nesting `Lower` cannot take out (`backend.md` §4, *Emitted
@@ -2375,9 +2625,14 @@ pub const Lowerer = struct {
         }
     }
 
-    fn declaration(l: *Lowerer, out: *StmtList, index: u32, twin_at: *?u32) !void {
+    fn declaration(l: *Lowerer, out: *StmtList, index: u32, twin_at: *?u32, records: *Part.Records) !void {
         // A derived codec (`schema.md` §12.10): a virtual declaration.
-        if (index >= l.bir.decls.len) return SchemaLower.declaration(l, out, index);
+        if (index >= l.bir.decls.len) {
+            records.direct = try l.recBegin(Funnel.Selector.schemaPart(index, Funnel.Selector.direct));
+            try SchemaLower.declaration(l, out, index);
+            try l.recEnd(records.direct, null);
+            return;
+        }
         const d = l.bir.decls[index];
         switch (d.kind) {
             .value => {},
@@ -2387,7 +2642,12 @@ pub const Lowerer = struct {
             .type, .type_alias, .foreign_type => return,
             // Its `via`s, description and directions, each as it survived
             // (`schema.md` §6).
-            .schema => return SchemaLower.declaration(l, out, index),
+            .schema => {
+                records.direct = try l.recBegin(Funnel.Selector.schemaPart(index, Funnel.Selector.direct));
+                try SchemaLower.declaration(l, out, index);
+                try l.recEnd(records.direct, null);
+                return;
+            },
             // A vocabulary declaration is data for the checker and the
             // markup lowering, and has no value of its own to emit.
             .vocab_element, .vocab_attribute, .vocab_event, .vocab_markup => return,
@@ -2397,18 +2657,39 @@ pub const Lowerer = struct {
             .annotation_only => return,
         }
         if (d.body == .none) return;
+        // The direct record opens before the consumed check, so the unit
+        // the check drops carries the answer: a build whose program hook
+        // consumed this declaration must not take the recorded body
+        // (`backend.md` §9, *The funnel*, `.consumed`).
+        records.direct = try l.recBegin(Funnel.Selector.declarationPart(index, Funnel.Selector.direct));
+        // The handle's content for this module steers whether the
+        // declaration has pieces of its own (`livePiece`, `liftPieces`), so
+        // the record carries its answer (`directHasPieces`).
+        l.askSelf(.direct, l.direct_pieces, 0, 0);
         // A `view` or `update` only a program record names: the program
         // hook compiled what it needs of it where the program is called
         // (`boundary.md` §9.4.6, version 1.6).
-        if (index < l.consumed.len and l.consumed[index]) return;
+        const consumed = index < l.consumed.len and l.consumed[index];
+        l.askSelf(.consumed, consumed, 0, index);
+        if (consumed) {
+            try l.recEnd(records.direct, index);
+            return;
+        }
         // Its direct body, then — a declaration with two (transparent-
         // effects-proposal.md §16.2) — its suspendable one, each when it
         // survived elimination.
         if (l.liveDecl(index)) try l.declarationAs(out, index, .direct);
+        try l.recEnd(records.direct, index);
+        // The twin's record opens even when no twin is written: the part's
+        // second segment is the twin's seat either way, and a record no
+        // unit reaches is dropped by the maker.
+        records.twin = try l.recBegin(Funnel.Selector.declarationPart(index, Funnel.Selector.twin));
+        l.askSelf(.direct, l.direct_pieces, 0, 0);
         if (l.in.dispatch.effectDecl(index).twin and l.liveTwin(index)) {
             twin_at.* = @intCast(out.items.len);
             try l.declarationAs(out, index, .twin);
         }
+        try l.recEnd(records.twin, index);
     }
 
     fn declarationAs(l: *Lowerer, out: *StmtList, index: u32, variant: Variant) !void {
@@ -2628,7 +2909,7 @@ pub const Lowerer = struct {
             if (!l.liveDerived(@intCast(index))) continue;
             try names.append(l.scratch, try l.synthesisedName(try l.derivedBase(row.kind, row.shape)));
         }
-        if (l.in.entry_decl) |index| {
+        if (l.entryDecl()) |index| {
             if (index < l.bir.decls.len and !l.bir.decls[index].is_pub and l.liveDecl(index)) {
                 try names.append(l.scratch, try l.topName(index));
             }
@@ -2806,6 +3087,12 @@ pub const Lowerer = struct {
     }
 
     pub fn needName(l: *Lowerer, entry: Needed) !void {
+        // The ask is recorded at the CALL, not at the deduplicated list:
+        // a unit's record must carry every name its text reads, even one
+        // another unit asked for first (`Funnel.Recorder.askNeed`).
+        if (l.in.record) |r| {
+            r.askNeed(.{ .module = entry.module.int(), .value = entry.value, .base = entry.base });
+        }
         for (l.needed.items) |existing| {
             if (existing.module == entry.module and existing.value == entry.value and existing.base == entry.base) return;
         }
@@ -4653,6 +4940,7 @@ pub const Lowerer = struct {
             .ctor => .{ .ext = false, .module = 0, .ctor = d.lhs },
             else => .{ .ext = true, .module = d.lhs, .ctor = d.rhs },
         };
+        l.askNullary(key);
         const slot = try l.nullary.getOrPut(l.scratch, key);
         if (slot.found_existing) return slot.value_ptr.name;
         const base = if (key.ext) blk: {
@@ -4673,6 +4961,7 @@ pub const Lowerer = struct {
     /// name, or a schema's and a `type`'s, are two constants.
     pub fn schemaNullary(l: *Lowerer, info: SchemaCtor.Info, rep: CtorRep) !JsIr.NameIndex {
         const key: NullaryKey = .{ .ext = info.ext, .module = info.module.int(), .ctor = info.order, .schema = info.owner };
+        l.askNullary(key);
         const slot = try l.nullary.getOrPut(l.scratch, key);
         if (slot.found_existing) return slot.value_ptr.name;
         const base = if (info.ext) blk: {
@@ -4691,19 +4980,35 @@ pub const Lowerer = struct {
     /// order is the source's and not the order of discovery (CLAUDE.md
     /// rule 5). Each is an object literal of strings and `null`s, so it
     /// reads nothing and may go first.
-    fn nullaryDecls(l: *Lowerer) ![]const Node.Index {
+    fn nullaryDecls(l: *Lowerer, records: *std.ArrayList(u32)) ![]const Node.Index {
+        const keys = l.nullary.keys();
         const values = l.nullary.values();
+        const Sorted = struct {
+            key: NullaryKey,
+            value: Nullary,
+        };
         const Sorter = struct {
-            fn before(_: void, a: Nullary, b: Nullary) bool {
-                return std.mem.lessThan(u8, a.base, b.base);
+            fn before(_: void, a: Sorted, b: Sorted) bool {
+                return std.mem.lessThan(u8, a.value.base, b.value.base);
             }
         };
-        const sorted = try l.scratch.dupe(Nullary, values);
-        std.mem.sort(Nullary, sorted, {}, Sorter.before);
+        const sorted = try l.scratch.alloc(Sorted, values.len);
+        for (keys, values, sorted) |key, value, *slot| slot.* = .{ .key = key, .value = value };
+        std.mem.sort(Sorted, sorted, {}, Sorter.before);
         const out = try l.scratch.alloc(Node.Index, sorted.len);
         for (sorted, out) |c, *slot| {
-            const value = try l.ctorValue(c.rep, c.tag, &.{}, Node.no_pos);
-            slot.* = try l.add(.const_decl, Node.no_pos, @backingInt(c.name), value.int());
+            const flags: u8 = (if (c.key.ext) @as(u8, Funnel.Selector.nullary_ext) else 0) |
+                (if (c.key.schema != std.math.maxInt(u32)) @as(u8, Funnel.Selector.nullary_schema) else 0);
+            const record = try l.recBegin(.{
+                .kind = .nullary,
+                .flags = flags,
+                .a = c.key.module,
+                .b = c.key.ctor,
+            });
+            const value = try l.ctorValue(c.value.rep, c.value.tag, &.{}, Node.no_pos);
+            slot.* = try l.add(.const_decl, Node.no_pos, @backingInt(c.value.name), value.int());
+            try l.recEnd(record, null);
+            try records.append(l.scratch, record);
         }
         return out;
     }
@@ -4764,11 +5069,15 @@ pub const Lowerer = struct {
         // would give this module an import `core/List` does not export, and
         // the program would fail to load: refused here instead.
         // Once per module and value: a list pattern asks for three of them.
-        if (corePrivateSlot(function.symbol())) |slot| if (!l.in.core_private[slot]) {
-            if (l.core_private_reported[slot]) return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
-            l.core_private_reported[slot] = true;
-            return l.missingCoreValue(p, "List", l.interner.slice(function.symbol()), "that module does not declare it");
-        };
+        if (corePrivateSlot(function.symbol())) |slot| {
+            const declared = l.in.core_private[slot];
+            l.askSelf(.core_private, declared, @intCast(slot), 0);
+            if (!declared) {
+                if (l.core_private_reported[slot]) return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused);
+                l.core_private_reported[slot] = true;
+                return l.missingCoreValue(p, "List", l.interner.slice(function.symbol()), "that module does not declare it");
+            }
+        }
         const entry: Needed = .{ .module = module, .base = function.symbol().toOptional() };
         try l.needName(entry);
         return l.ident(try l.neededName(entry), p);
@@ -5389,7 +5698,10 @@ pub const Lowerer = struct {
         if (l.jsIntrinsicOf(inst)) |which| switch (which) {
             .null => return l.nullNode(p),
             .undefined => return l.add(.undefined_lit, p, Node.Data.unused, Node.Data.unused),
-            .development => return l.add(if (l.in.development) .true_lit else .false_lit, p, Node.Data.unused, Node.Data.unused),
+            .development => {
+                l.askSelf(.development, l.in.development, 0, 0);
+                return l.add(if (l.in.development) .true_lit else .false_lit, p, Node.Data.unused, Node.Data.unused);
+            },
             // A function passed as a value is the sibling's (`core/Js.js`).
             else => {},
         };
@@ -5432,14 +5744,23 @@ pub const Lowerer = struct {
         const p = l.pos(inst);
         if (l.valid_sites.callees.len != 0 and SchemaValid.has(l.valid_sites.callees, inst.int())) {
             // A direct run's callee is its call's, which `callExpr` lowers
-            // whole (`directValidatorCall`).
+            // whole (`directValidatorCall`). Reached here, the run is the
+            // library's — what a build answering `--schema-library` yes
+            // lowers every `S.schema ⊤` read as — so the unit carries the
+            // answer (`EmitPack.Question.schema_library`).
+            l.askSelf(.schema_library, l.in.schema_library, 0, 0);
             std.debug.assert(!SchemaValid.has(l.valid_sites.direct_callees, inst.int()));
             return l.coreSchemaValue("readValid", p);
         }
         // A shape run calls the shared validator (`schema.md` §6, *A
         // validator run is a shape that one shared validator reads*).
-        if (l.valid_sites.shape_callees.len != 0 and SchemaValid.has(l.valid_sites.shape_callees, inst.int()))
+        if (l.valid_sites.shape_callees.len != 0 and SchemaValid.has(l.valid_sites.shape_callees, inst.int())) {
+            // `shape_callees` is filled only outside the library
+            // (`SchemaValid.sites`), so the unit carries the answer
+            // (`EmitPack.Question.schema_library`).
+            l.askSelf(.schema_library, l.in.schema_library, 0, 0);
             return l.coreSchemaValue(l.valid_sites.shapeRunner(inst.int()), p);
+        }
         return switch (l.bir.instTag(inst)) {
             .local => try l.ident(try l.localName(d.lhs), p),
             // A markup primitive is the markup runtime's export of its name
@@ -5970,14 +6291,17 @@ pub const Lowerer = struct {
         switch (prim) {
             .strict_eq => {
                 l.needs.eq_prim = true;
+                l.askSelf(.primitive, true, 0, 0);
                 return l.ident(try l.primName(0, "eq$prim"), p);
             },
             .num_compare => {
                 l.needs.compare_prim = true;
+                l.askSelf(.primitive, true, 1, 0);
                 return l.ident(try l.primName(1, "compare$prim"), p);
             },
             .char_compare => {
                 l.needs.compare_char = true;
+                l.askSelf(.primitive, true, 2, 0);
                 return l.ident(try l.primName(2, "compare$char"), p);
             },
             .string_compare => return l.stringCompare(p),
@@ -6023,6 +6347,10 @@ pub const Lowerer = struct {
     const Synth = struct {
         base: []const u8,
         node: Node.Index,
+        /// The funnel record of the run the statement was built in
+        /// (`Funnel.UnitRecord`): whatever was asked while `derivedArrow`
+        /// built it, which is what the maker's unit list carries.
+        record: u32 = Funnel.no_record,
 
         fn before(_: void, a: Synth, b: Synth) bool {
             return std.mem.lessThan(u8, a.base, b.base);
@@ -6036,7 +6364,7 @@ pub const Lowerer = struct {
     /// another is resolved when it is called — and the `$order` tables are
     /// the one exception, being object literals the `compare` that indexes
     /// them reads.
-    fn synthesisedValues(l: *Lowerer) ![]const Node.Index {
+    fn synthesisedValues(l: *Lowerer, records: *std.ArrayList(u32)) ![]const Node.Index {
         var tables: std.ArrayList(Synth) = .empty;
         var list: std.ArrayList(Synth) = .empty;
         // The derived functions FIRST, before the comparators are built:
@@ -6057,36 +6385,56 @@ pub const Lowerer = struct {
             const base = try l.derivedBase(row.kind, row.shape);
             l.derived_row = @intCast(index);
             l.restartNames();
-            const made = (try l.derivedArrow(row, base, l.isLeaf(@intCast(index)))) orelse continue;
+            const made = (try l.derivedArrow(@intCast(index), row, base, l.isLeaf(@intCast(index)))) orelse continue;
             const bound = try l.synthesisedName(base);
             try list.append(l.scratch, .{
                 .base = base,
                 .node = try l.add(.const_decl, Node.no_pos, @backingInt(bound), made.arrow.int()),
+                .record = made.arrow_record,
             });
-            if (made.steps) |steps| try list.append(l.scratch, .{ .base = try l.stepsBase(base), .node = steps });
+            if (made.steps) |steps| try list.append(l.scratch, .{ .base = try l.stepsBase(base), .node = steps, .record = made.steps_record });
             // The `$order` table of §9.4 goes in the OTHER run, and only
             // after its function was written: it is a plain object literal
             // and not an arrow, so unlike every function here it has to
             // precede the `compare` that indexes it (§8.5).
-            if (try l.orderTable(row)) |table| try tables.append(l.scratch, table);
+            const table_record = try l.recBegin(Funnel.Selector.synthesisedValue(.order, @intCast(index)));
+            const table = try l.orderTable(row);
+            try l.recEnd(table_record, null);
+            if (table) |t| {
+                var entry = t;
+                entry.record = table_record;
+                try tables.append(l.scratch, entry);
+            }
         }
         if (l.needs.compare_char) {
             l.restartNames();
-            try list.append(l.scratch, .{ .base = "compare$char", .node = try l.compareCharDecl() });
+            const record = try l.recBegin(Funnel.Selector.synthesisedValue(.primitive, 2));
+            try list.append(l.scratch, .{ .base = "compare$char", .node = try l.compareCharDecl(), .record = record });
+            try l.recEnd(record, null);
         }
         if (l.needs.compare_prim) {
             l.restartNames();
-            try list.append(l.scratch, .{ .base = "compare$prim", .node = try l.comparePrimDecl() });
+            const record = try l.recBegin(Funnel.Selector.synthesisedValue(.primitive, 1));
+            try list.append(l.scratch, .{ .base = "compare$prim", .node = try l.comparePrimDecl(), .record = record });
+            try l.recEnd(record, null);
         }
         if (l.needs.eq_prim) {
             l.restartNames();
-            try list.append(l.scratch, .{ .base = "eq$prim", .node = try l.eqPrimDecl() });
+            const record = try l.recBegin(Funnel.Selector.synthesisedValue(.primitive, 0));
+            try list.append(l.scratch, .{ .base = "eq$prim", .node = try l.eqPrimDecl(), .record = record });
+            try l.recEnd(record, null);
         }
         std.mem.sort(Synth, tables.items, {}, Synth.before);
         std.mem.sort(Synth, list.items, {}, Synth.before);
         const out = try l.scratch.alloc(Node.Index, tables.items.len + list.items.len);
-        for (tables.items, out[0..tables.items.len]) |synth, *slot| slot.* = synth.node;
-        for (list.items, out[tables.items.len..]) |synth, *slot| slot.* = synth.node;
+        for (tables.items, out[0..tables.items.len]) |synth, *slot| {
+            slot.* = synth.node;
+            try records.append(l.scratch, synth.record);
+        }
+        for (list.items, out[tables.items.len..]) |synth, *slot| {
+            slot.* = synth.node;
+            try records.append(l.scratch, synth.record);
+        }
         return out;
     }
 
@@ -6240,14 +6588,24 @@ pub const Lowerer = struct {
     /// position becomes: `eq` conjoins its positions, `compare` is
     /// LEXICOGRAPHIC and therefore a statement sequence with an early
     /// return (§9.2, §9.3).
-    fn derivedArrow(l: *Lowerer, row: Dispatch.Derived, base: []const u8, leaf: bool) !?DerivedPair {
+    fn derivedArrow(l: *Lowerer, row_index: u32, row: Dispatch.Derived, base: []const u8, leaf: bool) !?DerivedPair {
         const outer = l.derived_body;
         defer l.derived_body = outer;
+        // The arrow's record closes before the steps' build opens: the two
+        // are separate units, a join may take either alone, and a fact the
+        // steps' build asks is not the arrow's (`backend.md` §9, *The unit
+        // list*).
+        const arrow_record = try l.recBegin(Funnel.Selector.synthesisedValue(.arrow, row_index));
         // A leaf (`leafRows`) is lowered with no body state at all, which is
         // exactly as a function that cannot recurse needs.
         if (leaf) {
             l.derived_body = null;
-            return .{ .arrow = (try l.derivedForm(row)) orelse return null, .steps = null };
+            const arrow = (try l.derivedForm(row)) orelse {
+                try l.recEnd(arrow_record, null);
+                return null;
+            };
+            try l.recEnd(arrow_record, null);
+            return .{ .arrow = arrow, .steps = null, .arrow_record = arrow_record };
         }
         // A frame's size grows with its parameters, which a caller also
         // pushes, and with its positions, one `const $o$<i>` each in a
@@ -6270,19 +6628,40 @@ pub const Lowerer = struct {
         };
         body.weight_text = try std.fmt.allocPrint(l.scratch, "{d}", .{body.weight});
         l.derived_body = &body;
-        const arrow = (try l.derivedForm(row)) orelse return null;
+        const arrow = (try l.derivedForm(row)) orelse {
+            try l.recEnd(arrow_record, null);
+            return null;
+        };
         // A body that passed no depth is a leaf: it is what it always was,
         // byte for byte, and has no twin.
-        if (!body.passes) return .{ .arrow = arrow, .steps = null };
+        if (!body.passes) {
+            try l.recEnd(arrow_record, null);
+            return .{ .arrow = arrow, .steps = null, .arrow_record = arrow_record };
+        }
         // Every depth-taking call in tail position makes a
         // FORWARDER — no prologue, no steps (`forwardTail`).
         if (body.depth_calls == body.tail_calls) {
             body.mode = .forward;
-            return .{ .arrow = (try l.derivedForm(row)) orelse return null, .steps = null };
+            const forward = (try l.derivedForm(row)) orelse {
+                try l.recEnd(arrow_record, null);
+                return null;
+            };
+            try l.recEnd(arrow_record, null);
+            return .{ .arrow = forward, .steps = null, .arrow_record = arrow_record };
         }
         body.mode = .steps;
-        const steps = (try l.derivedForm(row)) orelse return null;
-        return .{ .arrow = arrow, .steps = steps };
+        // The arrow's prologue hands the tail to its `$$steps` twin, so the
+        // fact belongs to the arrow's record as much as to the helper's.
+        l.askSelf(.steps, true, 0, row_index);
+        try l.recEnd(arrow_record, null);
+        const steps_record = try l.recBegin(Funnel.Selector.synthesisedValue(.steps, row_index));
+        l.askSelf(.steps, true, 0, row_index);
+        const steps = (try l.derivedForm(row)) orelse {
+            try l.recEnd(steps_record, null);
+            return null;
+        };
+        try l.recEnd(steps_record, null);
+        return .{ .arrow = arrow, .steps = steps, .arrow_record = arrow_record, .steps_record = steps_record };
     }
 
     const DerivedPair = struct {
@@ -6290,6 +6669,10 @@ pub const Lowerer = struct {
         arrow: Node.Index,
         /// Its `function* <base>$$steps`, when it has one.
         steps: ?Node.Index,
+        /// The funnel records of the two builds (`Funnel.UnitRecord`), in
+        /// the maker's unit list. `Funnel.no_record` when nobody records.
+        arrow_record: u32 = Funnel.no_record,
+        steps_record: u32 = Funnel.no_record,
     };
 
     /// `<base>$$steps`: the generator twin's base. The double separator is
@@ -6308,7 +6691,7 @@ pub const Lowerer = struct {
         switch (body.mode) {
             .direct => {
                 if (!body.passes) return l.arrowOf(params, stmts, p);
-                l.needs.deep = true;
+                l.needRuntime(.deep);
                 // if ($d > limit) return _derived$deep(M$<base>$$steps(params…), $d);
                 // Past `steps_positional` the evidence goes to the steps as one
                 // array (`derivedForm`).
@@ -6491,7 +6874,7 @@ pub const Lowerer = struct {
         @memcpy(all[1..], args[0 .. args.len - 1]);
         const request_range = try l.b.addRange(all);
         const request = try l.add(.array, p, @backingInt(request_range.start), @backingInt(request_range.end));
-        l.needs.deep = true;
+        l.needRuntime(.deep);
         const handoff = try l.call(try l.deepName(p), &.{ request, try l.ident(body.depth, p) }, p);
         const over = try l.binary(.gt, try l.ident(body.depth, p), try l.numberNode(derived_depth_limit, p), p);
         return l.condOf(over, handoff, value, p);
@@ -7421,12 +7804,29 @@ pub const Lowerer = struct {
     /// (`importStatements`) under `_derived$<name>`: `_derived` is no module
     /// name (a module segment is an upper identifier), so the local name
     /// collides with nothing, and `--release` renames it like any other.
-    fn runtimeValue(l: *Lowerer, which: Runtime, p: u32) !Node.Index {
+    /// One runtime export (`_core/_derived.mjs`) the code being built
+    /// reaches: the module flag the import list is read from, and the bit
+    /// the open unit's record carries — never inferred from the flag, so a
+    /// join that takes this unit also takes its import.
+    fn needRuntime(l: *Lowerer, which: Runtime) void {
         switch (which) {
-            .deep => l.needs.deep = true,
-            .listEq => l.needs.list_eq = true,
-            .listCompare => l.needs.list_compare = true,
+            .deep => {
+                l.needs.deep = true;
+                l.askRuntime(Funnel.runtime_deep);
+            },
+            .listEq => {
+                l.needs.list_eq = true;
+                l.askRuntime(Funnel.runtime_list_eq);
+            },
+            .listCompare => {
+                l.needs.list_compare = true;
+                l.askRuntime(Funnel.runtime_list_compare);
+            },
         }
+    }
+
+    fn runtimeValue(l: *Lowerer, which: Runtime, p: u32) !Node.Index {
+        l.needRuntime(which);
         return l.ident(try l.runtimeLocal(which), p);
     }
 
@@ -8177,6 +8577,7 @@ pub const Lowerer = struct {
     const DebugTyped = struct { callee: Node.Index, descriptor: Node.Index, arity: u32 };
 
     fn debugTyped(l: *Lowerer, inst: Inst.Index, p: u32) !?DebugTyped {
+        l.askSelf(.debug, l.in.debug != null, 0, 0);
         const cx = l.in.debug orelse return null;
         if (l.bir.instTag(inst) != .ext_value) return null;
         const site = l.in.dispatch.debugAt(inst) orelse return null;
@@ -8229,6 +8630,10 @@ pub const Lowerer = struct {
     /// validator worker where it stands (`validatorRun`); null for any other
     /// call. The reference itself has nothing to evaluate.
     noinline fn jsonValidatorCall(l: *Lowerer, out: *StmtList, inst: Inst.Index, callee_inst: Inst.Index, p: u32) !?Node.Index {
+        // Both runner sets are empty under `--schema-library` and the call
+        // lowers as an ordinary one, so the unit carries the answer
+        // (`EmitPack.Question.schema_library`).
+        l.askSelf(.schema_library, l.in.schema_library, 0, 0);
         const d = l.bir.instData(inst);
         const shape = l.valid_sites.shapeCodecOfCall(inst.int());
         const k = shape orelse l.valid_sites.codecOfCall(inst.int()) orelse return null;
@@ -8371,6 +8776,12 @@ pub const Lowerer = struct {
         }
         const arg_insts = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(d.rhs))), Inst.Index);
 
+        // The build's markup state, which steers whether this call is a
+        // program constructor's, the placements beside it, and every
+        // markup root: one answer for the module, read here because a
+        // build whose module does have one lowers this unit itself
+        // (`backend.md` §9, *The funnel*; `EmitPack.Question.markup`).
+        l.askSelf(.markup, l.mk != null, 0, 0);
         // A program constructor's call is the program hook's (`boundary.md`
         // §9.4.6, version 1.6): the constructor applied to the mount the
         // lowering compiles, and the record never evaluated.
@@ -8385,9 +8796,20 @@ pub const Lowerer = struct {
             return l.directValidatorCall(out, inst, callee_inst, arg_insts, p);
         // `S.schema ⊤` a validator run calls directly: `S`'s validator
         // worker (`SchemaValid`).
-        if (l.valid_sites.args.len != 0) if (l.valid_sites.refOfArg(inst.int())) |ref| return SchemaLower.validWorker(l, ref, p);
+        if (l.valid_sites.args.len != 0) if (l.valid_sites.refOfArg(inst.int())) |ref| {
+            // `args` is empty under `--schema-library` (`SchemaValid.sites`),
+            // so only a build that answers no takes this road: the unit
+            // carries the answer (`EmitPack.Question.schema_library`).
+            l.askSelf(.schema_library, l.in.schema_library, 0, 0);
+            return SchemaLower.validWorker(l, ref, p);
+        };
         // `S.schema ⊤` a shape run reads: `S`'s shape.
-        if (l.valid_sites.shape_args.len != 0) if (l.valid_sites.shapeOfArg(inst.int())) |ref| return SchemaLower.shapeName(l, ref, p);
+        if (l.valid_sites.shape_args.len != 0) if (l.valid_sites.shapeOfArg(inst.int())) |ref| {
+            // `shape_args` likewise holds only outside `--schema-library`
+            // (`SchemaValid.sites`), so the unit carries the answer.
+            l.askSelf(.schema_library, l.in.schema_library, 0, 0);
+            return SchemaLower.shapeName(l, ref, p);
+        };
         // Version 1.14: a placement the program's mount already made.
         if (l.placed_calls.len != 0 and l.placedCallAt(inst)) return l.expr(out, arg_insts[0]);
 
@@ -9168,7 +9590,10 @@ pub const Lowerer = struct {
                 try out.append(l.scratch, try l.add(.assign_stmt, p, target.int(), v[1].int()));
                 break :blk l.nullNode(p);
             },
-            W.development => l.add(if (l.in.development) .true_lit else .false_lit, p, Node.Data.unused, Node.Data.unused),
+            W.development => blk: {
+                l.askSelf(.development, l.in.development, 0, 0);
+                break :blk l.add(if (l.in.development) .true_lit else .false_lit, p, Node.Data.unused, Node.Data.unused);
+            },
             // Answered at the call, before it gets here (`callExpr`).
             W.maySuspend => l.add(.true_lit, p, Node.Data.unused, Node.Data.unused),
             // Answered at the call, from its site (`callExpr`).
@@ -9636,7 +10061,7 @@ pub const Lowerer = struct {
         for (l.bir.interface) |decl_index| {
             if (decl_index.int() < decls.len) dispatched[decl_index.int()] = true;
         }
-        if (l.in.entry_decl) |index| if (index < decls.len) {
+        if (l.entryDecl()) |index| if (index < decls.len) {
             dispatched[index] = true;
         };
         // And `core/Schema`'s core-private values, which the specialised
@@ -9724,7 +10149,7 @@ pub const Lowerer = struct {
             },
             else => {},
         };
-        if (l.in.entry_decl) |index| if (index < decls.len) {
+        if (l.entryDecl()) |index| if (index < decls.len) {
             named[index] = true;
         };
         for (decls, 0..) |d, i| {
@@ -9797,7 +10222,7 @@ pub const Lowerer = struct {
             },
             else => {},
         };
-        if (l.in.entry_decl) |index| if (index < decls.len) {
+        if (l.entryDecl()) |index| if (index < decls.len) {
             named[index] = true;
         };
         // `core/List`'s core-private values: the emitter calls them from
@@ -11870,7 +12295,7 @@ pub const Lowerer = struct {
             if (pc.record and pc.record_decl != pc.decl) {
                 const args = l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(data[pc.inst].rhs))), Inst.Index);
                 const d = decls[pc.record_decl];
-                const is_entry = if (l.in.entry_decl) |entry| entry == pc.record_decl else false;
+                const is_entry = if (l.entryDecl()) |entry| entry == pc.record_decl else false;
                 if (args.len == 1 and !d.is_pub and !is_entry) {
                     candidate[pc.record_decl] = true;
                     field_refs.set(args[0].int());
@@ -11886,7 +12311,7 @@ pub const Lowerer = struct {
                 if (index >= decls.len) continue;
                 const d = decls[index];
                 if (d.kind != .value or d.params == 0 or d.is_pub) continue;
-                if (l.in.entry_decl) |entry| if (entry == index) continue;
+                if (l.entryDecl()) |entry| if (entry == index) continue;
                 candidate[index] = true;
                 field_refs.set(f.int());
                 any = true;
@@ -11926,7 +12351,7 @@ pub const Lowerer = struct {
             @memset(helper, false);
             for (decls, 0..) |d, di| {
                 if (candidate[di] or !l.liveDecl(@intCast(di)) or d.kind != .value or d.params == 0 or d.is_pub) continue;
-                if (l.in.entry_decl) |entry| if (entry == di) continue;
+                if (l.entryDecl()) |entry| if (entry == di) continue;
                 var body = l.bodyOf(@intCast(di));
                 while (l.bir.instTag(body) == .let) body = @fromBackingInt(@intCast(l.bir.instData(body).rhs));
                 if (l.bir.instTag(body) == .markup) helper[di] = true;
@@ -11994,7 +12419,7 @@ pub const Lowerer = struct {
         l.placed_calls = placed.items;
         // `main = Tea.sandbox { … }`: the entry file's `run` mounts it at
         // `document.body`.
-        if (l.in.entry_decl) |entry| if (l.bir.decls[entry].body.unwrap()) |body| {
+        if (l.entryDecl()) |entry| if (l.bir.decls[entry].body.unwrap()) |body| {
             if (l.programCallAt(body)) |pc| if (!pc.refused and pc.placed == .unknown) {
                 pc.placed = .body;
             };
@@ -12016,7 +12441,7 @@ pub const Lowerer = struct {
     /// through `programs` lists, `mountAt`s and the top-level values of this
     /// module that hold them — would be one state mounted twice.
     fn findPlacedTwice(l: *Lowerer) !void {
-        const entry = l.in.entry_decl orelse return;
+        const entry = l.entryDecl() orelse return;
         const body = l.bir.decls[entry].body.unwrap() orelse return;
         var seen: std.ArrayList(Placed) = .empty;
         try l.placedIn(body, &seen, 0);
