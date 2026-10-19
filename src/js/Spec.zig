@@ -8657,21 +8657,35 @@ const Pts = struct {
 
     /// Every property of every object `obj` may be, read.
     fn readAll(p: *Pts, obj: Val) Allocator.Error!Val {
+        return p.readAllWith(obj, true);
+    }
+
+    /// A spread observes every field but copies each field separately. Keep
+    /// the same reads and dependencies without forming their unused union.
+    fn markAllRead(p: *Pts, obj: Val) Allocator.Error!void {
+        _ = try p.readAllWith(obj, false);
+    }
+
+    fn readAllWith(p: *Pts, obj: Val, comptime collect: bool) Allocator.Error!Val {
         var out: Val = if (obj.top or obj.prim) Val.top_val else .{};
         for (obj.sites) |site| {
             try p.seeSite(site);
             try p.seeProps(site);
             const st = &p.sites.items[site];
             if (st.kind == .func or st.escaped) {
-                out = try p.unionOf(out, Val.top_val);
+                if (collect) out = try p.unionOf(out, Val.top_val);
                 continue;
             }
             if (!st.all_read) {
                 st.all_read = true;
                 p.changed = true;
             }
-            for (p.sites.items[site].props.items) |pr| out = try p.unionOf(out, try p.view(pr.vals));
-            out = try p.unionOf(out, try p.view(p.sites.items[site].any));
+            for (p.sites.items[site].props.items) |pr| {
+                const value = try p.view(pr.vals);
+                if (collect) out = try p.unionOf(out, value);
+            }
+            const any = try p.view(p.sites.items[site].any);
+            if (collect) out = try p.unionOf(out, any);
         }
         return out;
     }
@@ -9695,7 +9709,7 @@ const Pts = struct {
                         // `{...x}` copies what `x` holds, reading all of it.
                         else => {
                             const from = vals[cd.lhs];
-                            _ = try p.readAll(from);
+                            try p.markAllRead(from);
                             if (from.top or from.prim) try p.writeAnyOne(site, Val.top_val);
                             for (from.sites) |other| {
                                 try p.seeSite(other);
@@ -11075,4 +11089,117 @@ fn copyTail(c: anytype, m: *Mod, stmts: []const Index, depth: u32) Allocator.Err
         }
     }
     return out.items;
+}
+
+// A record update is an object spread in JsIr. Its fields must be read and
+// copied separately; constructing a union of all their values, then throwing
+// it away, retained fresh temporary sets on every evaluation of the spread.
+test "object spreads do not retain an unused aggregate of their fields" {
+    const gpa = testing.allocator;
+    var b: JsIr.Builder = .init(gpa);
+    defer b.deinit();
+    const source = try b.addNode(.{ .tag = .true_lit, .pos = Node.no_pos, .data = .{ .lhs = 0, .rhs = 0 } });
+    const spread = try b.addNode(.{ .tag = .spread_property, .pos = Node.no_pos, .data = .{ .lhs = source.int(), .rhs = 0 } });
+    const fields = try b.addRange(&.{spread});
+    const target = try b.addNode(.{ .tag = .object, .pos = Node.no_pos, .data = .{ .lhs = @backingInt(fields.start), .rhs = @backingInt(fields.end) } });
+    var payloads: [16]Index = undefined;
+    for (&payloads) |*node| node.* = try b.addNode(.{ .tag = .array, .pos = Node.no_pos, .data = .{ .lhs = 0, .rhs = 0 } });
+    var ir = try b.toOwned(try b.addRange(&.{}));
+    defer ir.deinit(gpa);
+    var arena_state: std.heap.ArenaAllocator = .init(gpa);
+    defer arena_state.deinit();
+    var s = try Spec.init(gpa, arena_state.allocator(), .{ .modules = &.{.{ .ir = &ir, .global = &.{} }}, .globals = 0, .escaping = &.{} });
+    s.pts = .init(&s);
+    defer s.pts.deinit();
+    const p = &s.pts;
+    try p.reset();
+    const src = try p.siteOf(0, source, .object);
+    for (payloads, 0..) |node, i| {
+        const site = try p.siteOf(0, node, .array);
+        const field = (try p.prop(src, @intCast(i))).vals;
+        try p.addSite(field, site);
+    }
+    p.vals[0][source.int()] = .{ .sites = p.ones[src..][0..1] };
+    const copied = try p.combine(0, target);
+    const dst = copied.sites[0];
+    var storage: [8192]u8 = undefined;
+    var bounded: std.heap.FixedBufferAllocator = .init(&storage);
+    p.tmp.deinit();
+    p.tmp = .init(bounded.allocator());
+    for (0..512) |_| _ = try p.combine(0, target);
+    try testing.expect(p.sites.items[src].all_read);
+    for (payloads, 0..) |node, i| {
+        const field = p.findProp(dst, @intCast(i)).?;
+        try testing.expectEqualSlices(u32, &.{p.siteAt(0, node).?}, (try p.view(field.vals)).sites);
+    }
+}
+
+// Marking a spread must register exactly the reads that collecting all its
+// values registers, including .any and escaped/function-site status. Later
+// writes and newly discovered properties must wake the same constraint.
+test "object spread marking preserves all read dependencies and flags" {
+    var arena_state: std.heap.ArenaAllocator = .init(testing.allocator);
+    defer arena_state.deinit();
+    const arena = arena_state.allocator();
+    var collecting = try emptySpec(testing.allocator, arena);
+    var marking = try emptySpec(testing.allocator, arena);
+    collecting.pts = .init(&collecting);
+    marking.pts = .init(&marking);
+    defer collecting.pts.deinit();
+    defer marking.pts.deinit();
+    const ps = [_]*Pts{ &collecting.pts, &marking.pts };
+    for (ps) |p| {
+        for ([_]Pts.SiteKind{ .object, .array, .func, .object }) |kind| {
+            const any = try p.newVar();
+            try p.sites.append(arena, .{ .kind = kind, .module = 0, .node = @fromBackingInt(@intCast(0)), .any = any });
+        }
+        p.sites.items[3].escaped = true;
+        for (0..4) |i| {
+            const site: u32 = @intCast(i);
+            for (0..2) |j| {
+                const field = (try p.prop(site, @intCast(j))).vals;
+                p.vars.items[field].sites = try arena.dupe(u32, &.{@intCast(2 * i + j + 10)});
+                p.vars.items[field].prim = j == 0;
+            }
+            p.vars.items[p.sites.items[i].any].nul = true;
+        }
+        p.waiting = try arena.alloc(u64, 1);
+        p.waiting[0] = 0;
+        p.walk = 1;
+        p.cur = 17;
+        p.changed = false;
+    }
+    const obj: Pts.Val = .{ .sites = &.{ 0, 1, 2, 3 }, .top = true, .prim = true };
+    const all = try ps[0].readAll(obj);
+    try ps[1].markAllRead(obj);
+    try testing.expect(all.top and all.prim and all.nul and all.undef);
+    try testing.expectEqualSlices(u32, &.{ 10, 11, 12, 13 }, all.sites);
+    for (ps[0].sites.items, ps[1].sites.items, 0..) |a, b, i| {
+        try testing.expectEqual(i < 2, a.all_read);
+        try testing.expectEqual(a.all_read, b.all_read);
+        try testing.expectEqual(a.deps, b.deps);
+        try testing.expectEqual(a.seen, b.seen);
+        try testing.expectEqual(a.prop_deps, b.prop_deps);
+        try testing.expectEqual(a.prop_seen, b.prop_seen);
+    }
+    for (ps[0].vars.items, ps[1].vars.items) |a, b| {
+        try testing.expectEqual(a.deps, b.deps);
+        try testing.expectEqual(a.seen, b.seen);
+    }
+    try testing.expectEqualSlices(Pts.Dep, ps[0].deps.items, ps[1].deps.items);
+    try testing.expectEqual(ps[0].changed, ps[1].changed);
+    for (ps) |p| {
+        p.varChanged(p.sites.items[0].any);
+        try testing.expectEqual(@as(u32, 1), p.waiting_count);
+        try testing.expectEqual(@as(u64, 1) << 17, p.waiting[0]);
+        p.waiting[0] = 0;
+        p.waiting_count = 0;
+        _ = try p.prop(1, 99);
+        try testing.expectEqual(@as(u32, 1), p.waiting_count);
+        p.waiting[0] = 0;
+        p.waiting_count = 0;
+        p.siteChanged(2);
+        try testing.expectEqual(@as(u32, 1), p.waiting_count);
+        try testing.expectEqual(@as(u64, 1) << 17, p.waiting[0]);
+    }
 }

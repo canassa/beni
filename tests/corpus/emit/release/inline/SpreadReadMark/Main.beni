@@ -1,0 +1,243 @@
+-- Record spreads read each field without building a discarded union of all values.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Child =
+    a : Int
+    b : Int
+    c : Int
+    d : Int
+
+
+type ChildMsg
+    = Add
+    | Subtract
+
+
+type alias Model =
+    w1 : Child
+    w2 : Child
+    w3 : Child
+    w4 : Child
+    w5 : Child
+    w6 : Child
+    w7 : Child
+    w8 : Child
+    w9 : Child
+    w10 : Child
+    w11 : Child
+    w12 : Child
+    w13 : Child
+    w14 : Child
+    w15 : Child
+    w16 : Child
+    w17 : Child
+    w18 : Child
+    w19 : Child
+    w20 : Child
+    w21 : Child
+    w22 : Child
+    w23 : Child
+    w24 : Child
+
+
+type Msg
+    = W1 ChildMsg
+    | W2 ChildMsg
+    | W3 ChildMsg
+    | W4 ChildMsg
+    | W5 ChildMsg
+    | W6 ChildMsg
+    | W7 ChildMsg
+    | W8 ChildMsg
+    | W9 ChildMsg
+    | W10 ChildMsg
+    | W11 ChildMsg
+    | W12 ChildMsg
+    | W13 ChildMsg
+    | W14 ChildMsg
+    | W15 ChildMsg
+    | W16 ChildMsg
+    | W17 ChildMsg
+    | W18 ChildMsg
+    | W19 ChildMsg
+    | W20 ChildMsg
+    | W21 ChildMsg
+    | W22 ChildMsg
+    | W23 ChildMsg
+    | W24 ChildMsg
+
+
+init : ⊤ → Model
+init ⊤ =
+    { w1 = { a = 0, b = 1, c = 2, d = 3 }
+    , w2 = { a = 0, b = 1, c = 2, d = 3 }
+    , w3 = { a = 0, b = 1, c = 2, d = 3 }
+    , w4 = { a = 0, b = 1, c = 2, d = 3 }
+    , w5 = { a = 0, b = 1, c = 2, d = 3 }
+    , w6 = { a = 0, b = 1, c = 2, d = 3 }
+    , w7 = { a = 0, b = 1, c = 2, d = 3 }
+    , w8 = { a = 0, b = 1, c = 2, d = 3 }
+    , w9 = { a = 0, b = 1, c = 2, d = 3 }
+    , w10 = { a = 0, b = 1, c = 2, d = 3 }
+    , w11 = { a = 0, b = 1, c = 2, d = 3 }
+    , w12 = { a = 0, b = 1, c = 2, d = 3 }
+    , w13 = { a = 0, b = 1, c = 2, d = 3 }
+    , w14 = { a = 0, b = 1, c = 2, d = 3 }
+    , w15 = { a = 0, b = 1, c = 2, d = 3 }
+    , w16 = { a = 0, b = 1, c = 2, d = 3 }
+    , w17 = { a = 0, b = 1, c = 2, d = 3 }
+    , w18 = { a = 0, b = 1, c = 2, d = 3 }
+    , w19 = { a = 0, b = 1, c = 2, d = 3 }
+    , w20 = { a = 0, b = 1, c = 2, d = 3 }
+    , w21 = { a = 0, b = 1, c = 2, d = 3 }
+    , w22 = { a = 0, b = 1, c = 2, d = 3 }
+    , w23 = { a = 0, b = 1, c = 2, d = 3 }
+    , w24 = { a = 0, b = 1, c = 2, d = 3 }
+    }
+
+
+updateChild : ChildMsg, Child → Child
+updateChild msg child =
+    case msg of
+        Add →
+            { child | a = child.a + 1 }
+        Subtract →
+            { child | b = child.b - 1 }
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        W1 childMsg →
+            { model | w1 = updateChild childMsg model.w1 }
+        W2 childMsg →
+            { model | w2 = updateChild childMsg model.w2 }
+        W3 childMsg →
+            { model | w3 = updateChild childMsg model.w3 }
+        W4 childMsg →
+            { model | w4 = updateChild childMsg model.w4 }
+        W5 childMsg →
+            { model | w5 = updateChild childMsg model.w5 }
+        W6 childMsg →
+            { model | w6 = updateChild childMsg model.w6 }
+        W7 childMsg →
+            { model | w7 = updateChild childMsg model.w7 }
+        W8 childMsg →
+            { model | w8 = updateChild childMsg model.w8 }
+        W9 childMsg →
+            { model | w9 = updateChild childMsg model.w9 }
+        W10 childMsg →
+            { model | w10 = updateChild childMsg model.w10 }
+        W11 childMsg →
+            { model | w11 = updateChild childMsg model.w11 }
+        W12 childMsg →
+            { model | w12 = updateChild childMsg model.w12 }
+        W13 childMsg →
+            { model | w13 = updateChild childMsg model.w13 }
+        W14 childMsg →
+            { model | w14 = updateChild childMsg model.w14 }
+        W15 childMsg →
+            { model | w15 = updateChild childMsg model.w15 }
+        W16 childMsg →
+            { model | w16 = updateChild childMsg model.w16 }
+        W17 childMsg →
+            { model | w17 = updateChild childMsg model.w17 }
+        W18 childMsg →
+            { model | w18 = updateChild childMsg model.w18 }
+        W19 childMsg →
+            { model | w19 = updateChild childMsg model.w19 }
+        W20 childMsg →
+            { model | w20 = updateChild childMsg model.w20 }
+        W21 childMsg →
+            { model | w21 = updateChild childMsg model.w21 }
+        W22 childMsg →
+            { model | w22 = updateChild childMsg model.w22 }
+        W23 childMsg →
+            { model | w23 = updateChild childMsg model.w23 }
+        W24 childMsg →
+            { model | w24 = updateChild childMsg model.w24 }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <section>
+            <p>{model.w1.a}</p><button onClick={W1 Add}>Add</button><button onClick={W1 Subtract}>Subtract</button>
+        </section>
+        <section>
+            <p>{model.w2.a}</p><button onClick={W2 Add}>Add</button><button onClick={W2 Subtract}>Subtract</button>
+        </section>
+        <section>
+            <p>{model.w3.a}</p><button onClick={W3 Add}>Add</button><button onClick={W3 Subtract}>Subtract</button>
+        </section>
+        <section>
+            <p>{model.w4.a}</p><button onClick={W4 Add}>Add</button><button onClick={W4 Subtract}>Subtract</button>
+        </section>
+        <section>
+            <p>{model.w5.a}</p><button onClick={W5 Add}>Add</button><button onClick={W5 Subtract}>Subtract</button>
+        </section>
+        <section>
+            <p>{model.w6.a}</p><button onClick={W6 Add}>Add</button><button onClick={W6 Subtract}>Subtract</button>
+        </section>
+        <section>
+            <p>{model.w7.a}</p><button onClick={W7 Add}>Add</button><button onClick={W7 Subtract}>Subtract</button>
+        </section>
+        <section>
+            <p>{model.w8.a}</p><button onClick={W8 Add}>Add</button><button onClick={W8 Subtract}>Subtract</button>
+        </section>
+        <section>
+            <p>{model.w9.a}</p><button onClick={W9 Add}>Add</button><button onClick={W9 Subtract}>Subtract</button>
+        </section>
+        <section>
+            <p>{model.w10.a}</p><button onClick={W10 Add}>Add</button><button onClick={W10 Subtract}>Subtract</button>
+        </section>
+        <section>
+            <p>{model.w11.a}</p><button onClick={W11 Add}>Add</button><button onClick={W11 Subtract}>Subtract</button>
+        </section>
+        <section>
+            <p>{model.w12.a}</p><button onClick={W12 Add}>Add</button><button onClick={W12 Subtract}>Subtract</button>
+        </section>
+        <section>
+            <p>{model.w13.a}</p><button onClick={W13 Add}>Add</button><button onClick={W13 Subtract}>Subtract</button>
+        </section>
+        <section>
+            <p>{model.w14.a}</p><button onClick={W14 Add}>Add</button><button onClick={W14 Subtract}>Subtract</button>
+        </section>
+        <section>
+            <p>{model.w15.a}</p><button onClick={W15 Add}>Add</button><button onClick={W15 Subtract}>Subtract</button>
+        </section>
+        <section>
+            <p>{model.w16.a}</p><button onClick={W16 Add}>Add</button><button onClick={W16 Subtract}>Subtract</button>
+        </section>
+        <section>
+            <p>{model.w17.a}</p><button onClick={W17 Add}>Add</button><button onClick={W17 Subtract}>Subtract</button>
+        </section>
+        <section>
+            <p>{model.w18.a}</p><button onClick={W18 Add}>Add</button><button onClick={W18 Subtract}>Subtract</button>
+        </section>
+        <section>
+            <p>{model.w19.a}</p><button onClick={W19 Add}>Add</button><button onClick={W19 Subtract}>Subtract</button>
+        </section>
+        <section>
+            <p>{model.w20.a}</p><button onClick={W20 Add}>Add</button><button onClick={W20 Subtract}>Subtract</button>
+        </section>
+        <section>
+            <p>{model.w21.a}</p><button onClick={W21 Add}>Add</button><button onClick={W21 Subtract}>Subtract</button>
+        </section>
+        <section>
+            <p>{model.w22.a}</p><button onClick={W22 Add}>Add</button><button onClick={W22 Subtract}>Subtract</button>
+        </section>
+        <section>
+            <p>{model.w23.a}</p><button onClick={W23 Add}>Add</button><button onClick={W23 Subtract}>Subtract</button>
+        </section>
+        <section>
+            <p>{model.w24.a}</p><button onClick={W24 Add}>Add</button><button onClick={W24 Subtract}>Subtract</button>
+        </section>
+    </main>
+
+
+main : Tea.Program
+main = Browser.mountAt (Tea.sandbox { init = init, update = update, view = view }) "root"
