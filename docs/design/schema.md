@@ -1389,6 +1389,14 @@ and nothing of `core/Schema`'s issue makers ships for it.
     lowering made.
   - *What stays shared.* `validContext` and `validJson` return nothing a worker builds, so
     sharing them costs no precision. `readValid`, a dynamic schema's run, keeps `validRun`.
+  - *Measured* (brotli 11, release). `emit/release/app/ValidatorRunsApart` 1 360 → 1 234;
+    the 22-widget dashboard of the diagnosis 2 874 → 2 436. `unique-components` (`--lists none`,
+    `browser-inline`) at one widget 1 745 / 1 634 / 1 884 → 1 642 / 1 543 / 1 778 for seeds 1–3,
+    every size below T 78 to 175 B smaller, and the shape sizes (64, 256) unchanged: the fit
+    2 422 + 273.9 B/widget → 2 328 + 274.4. `app/ValidatorParse` 575 → 509, `inline/ErrorUnreadWidgets`
+    1 087 → 986. `app/ShapeThresholdBelow` 1 053 → 1 124: 24 runs whose `Ok` and `Err` are
+    `True` and `False` each pay for a context of their own, about 3 B a run. `EmptyElement`,
+    `EmptySandbox` and `PushAndTimer` do not move.
   - *Fixtures.* `emit/release/app/ValidatorRunsApart` (22 `Json` runs under
     `Result.withDefault`, each record's unread field gone), and `run/SchemaValidatorOrder`
     (evaluation order and answers of all four runs under both consumers, in every build).
