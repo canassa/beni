@@ -154,12 +154,17 @@ main =
         , printed (Json.encode sample)
         , printed
             (Json.encode
-                { sample | nick = Just "k", deep = Nothing, seen = Present 4, nulled = Null }
+                { Record.copy sample
+                    | nick = Just "k"
+                    , deep = Nothing
+                    , seen = Present 4
+                    , nulled = Null
+                }
             )
-        , printed (Json.encode { sample | deep = Just (Just 9) })
+        , printed (Json.encode { Record.copy sample | deep = Just (Just 9) })
         , printed
             (Json.encodeWith strict
-                { sample
+                { Record.copy sample
                     | inner = { label = "x", count = 9007199254740992 }
                     , scores = [ Just 9007199254740992 ]
                 }

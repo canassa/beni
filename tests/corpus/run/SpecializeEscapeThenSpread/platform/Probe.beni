@@ -1,7 +1,9 @@
 --! A record handed to the host by `leak`, which the walk reaches before
 --! `update`, whose record update spreads it. Neither has an argument until
 --! `demo`'s calls are walked, so both bodies are walked again in the same
---! later sweep: `leak`'s first, where the record escapes.
+--! later sweep: `leak`'s first, where the record escapes. `base` is a
+--! top-level value, so `update` is handed a copy of it, which keeps the key
+--! the host added (`ownership-checker.md` §31.15).
 
 import Js
 
@@ -27,5 +29,5 @@ pub demo : ⊤ → List String
 demo ⊤ =
     leak base
     Js.set (Js.get (Js.global "globalThis") "leaked") "extra" (Js.from "added")
-    u = update base
+    u = update (Record.copy base)
     [ u.a, u.b, Js.to (Js.get (Js.from u) "extra") ]

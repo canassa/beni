@@ -62,20 +62,19 @@ restart key name = Cmd.keyed key Cmd.Restart (work name _)
 update : Msg, Model → Model × Cmd Msg
 update msg model =
     n = model.count + 1
-    next = { model | count = n }
     local key name = Cmd.keyed key Cmd.Restart (work name _)
     case msg of
         ByAlpha →
-            ( next, restart (Alpha.Key 1) "alpha ${String.fromInt n}" )
+            ( { model | count = n }, restart (Alpha.Key 1) "alpha ${String.fromInt n}" )
 
         ByBeta →
-            ( next, restart (Beta.Key 1) "beta ${String.fromInt n}" )
+            ( { model | count = n }, restart (Beta.Key 1) "beta ${String.fromInt n}" )
 
         ByUser →
-            ( next, local userId "user ${String.fromInt n}" )
+            ( { model | count = n }, local userId "user ${String.fromInt n}" )
 
         ByPost →
-            ( next, local postId "post ${String.fromInt n}" )
+            ( { model | count = n }, local postId "post ${String.fromInt n}" )
 
         Heard tagger name →
             ( { model | heard = model.heard ++ [ "${tagger} heard ${name}" ] }, Cmd.none )

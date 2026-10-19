@@ -33,7 +33,7 @@ describe s = "${s.kind} ${String.fromInt s.size} ${s.mode}"
 
 main : Node.Program
 main =
-    loud = { small | mode = "loud" }
+    loud = { Record.copy small | mode = "loud" }
     Node.printLines
         ([ describe (shape 2), describe small, describe loud, Debug.toString small ]
             ++ Probe.demo ⊤

@@ -255,5 +255,5 @@ main =
                 "${b} ${String.fromInt a}"
         , "${counter.name} ${String.fromInt (counter.step 1)}"
         , String.fromInt (wideSum wide)
-        , String.fromInt (wideSum { wide | f60 = 0 })
+        , String.fromInt (wideSum { Record.copy wide | f60 = 0 })
         ]

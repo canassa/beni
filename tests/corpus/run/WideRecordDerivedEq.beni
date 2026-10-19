@@ -313,15 +313,15 @@ r =
 main : Program
 main =
     Node.printLines
-        [ if r == { r | f300 = 300 } then
+        [ if r == { Record.copy r | f300 = 300 } then
             "equal"
           else
             "different"
-        , if r == { r | f300 = 0 } then
+        , if r == { Record.copy r | f300 = 0 } then
             "equal"
           else
             "different"
-        , if Basics.eq r { r | f1 = 0 } then
+        , if Basics.eq r { Record.copy r | f1 = 0 } then
             "equal"
           else
             "different"

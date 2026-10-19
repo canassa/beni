@@ -143,7 +143,7 @@ main =
         , printed (Json.encode ⊤)
         , printed (Json.encode (Int32.fromInt 5))
         , printed (Json.encode sample)
-        , printed (Json.encode { sample | float = 0 / 0 })
+        , printed (Json.encode { Record.copy sample | float = 0 / 0 })
         ]
 
 

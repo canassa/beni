@@ -10,7 +10,7 @@ import Tea
 main : Tea.Program
 main =
     Tea.document
-        { init = λ⊤ → init
+        { init = init
         , update = update
         , view =
             λmodel →

@@ -50,8 +50,8 @@ pub type Msg
     | KeyDown (Maybe Key)
 
 
-pub initBikes : Bikes
-initBikes =
+pub initBikes : ⊤ → Bikes
+initBikes ⊤ =
     { red =
         Bike.initBike
             { left = Character "a", right = Character "d", up = Character "w" }
@@ -68,17 +68,17 @@ initBikes =
     }
 
 
-pub initModel : Model
-initModel =
-    { bikes = initBikes
+pub initModel : ⊤ → Model
+initModel ⊤ =
+    { bikes = initBikes ⊤
     , status = NewGame
     , explosions = []
     }
 
 
-pub init : Model × Cmd Msg
-init =
-    ( initModel
+pub init : ⊤ → Model × Cmd Msg
+init ⊤ =
+    ( initModel ⊤
     , Cmd.none
     )
 
@@ -133,7 +133,7 @@ handleInput model key =
     case model.status of
         Running →
             { red, green } = model.bikes
-            ( redUpdated, redShot ) = Bike.shoot key { current = red, other = green }
+            ( redUpdated, redShot ) = Bike.shoot key { current = Record.copy red, other = green }
             ( greenUpdated, greenShot ) = Bike.shoot key { current = green, other = red }
             shots =
                 [ redShot, greenShot ]
@@ -145,7 +145,7 @@ handleInput model key =
 
         _ →
             if key == Spacebar then
-                { initModel | status = Running }
+                { initModel ⊤ | status = Running }
             else
                 model
 
@@ -156,7 +156,7 @@ stepGame ({ bikes } as model) diff =
         model.explosions
             ▷ Explosion.update
     ( ( nextRed, expRed ), ( nextGreen, expGreen ) ) =
-        ( Bike.update diff explosions { current = bikes.red, other = bikes.green }
+        ( Bike.update diff explosions { current = Record.copy bikes.red, other = bikes.green }
         , Bike.update diff explosions { current = bikes.green, other = bikes.red }
         )
     nextExplosions = List.append (List.filterMap [ expRed, expGreen ] identity) explosions
