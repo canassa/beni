@@ -5241,22 +5241,38 @@ At an `update` demand, each `c ∈ C` must satisfy, in §8.1's order:
    handed by a destructive read (`List.map rows (λr → { r | done = True })`, `List.update`, `Dict.update`) relies
    on its container's exclusivity: no record object at two positions. Since a record has a cell, `[ r, r ]` now
    fails exactly, and a list of records built by `List.repeat n r` fails as `[ cell, cell ]` does (T59).
-   *Proposed 2026-10-19 (R2d of #315), for review before it is built.* A list's conditions (§18.2) read no
-   record object: `mkCond` drops an atom over one (§31.2). So records get a condition of their own, beside a
-   list's and in the same lattice: every cell has a *record condition* that holds on atoms, fails exactly or
-   fails approximately. Its atoms are a list's, over record objects: `rexcl c` (no record object reachable from
-   two positions of `c`, nor at two paths of one position) and `rsep c d` (`c` and `d` share no record object).
-   It is computed where a list's is (§18.2's table): a literal `[ v₁, …, vₙ ]` is every item's deep record
-   condition and `rsep` between every two items' objects (`[ r, r ]` fails exactly); a construction is the
-   base's lowered by what it stores; a call through a summary is its `res` or `objs` entry's record condition,
-   instantiated; a conservative call, `⊤`, `List.repeat` of one record, fails as §18.2 says of lists. It is
-   relied on (§18.4) where a callback writes a record a destructive read hands it, and stated for callers as
-   `rxreq`. A list's verdicts read none of it, so none moves. It costs a second condition per cell, a record
-   condition per `res`, `objs` and supply entry and an `rxreq` in a summary (format v18), and the lines of
-   §18.2–§18.4 that compute and rely on conditions, each twice; the 57 pending `List.map rows λr → { r | … }`
-   lines are then decided.
+   *Specified 2026-10-19 (R2e of #315; proposed the same day, the parallel domain chosen by the owner).* A
+   list's conditions (§18.2) read no record object: `mkCond` drops an atom over one (§31.2). Records get a
+   condition of their own, beside a list's, in the same lattice and with the same operations, kept in a
+   second table so that no list's condition, cap or verdict reads it:
+   - **Atoms.** `rexcl c`: no record object is reachable from two positions of `c`, nor at two paths of one
+     position; `rsep c d`: `c` and `d` share no record object. As a list's, they name arrivals only —
+     parameters, captures, callback results — never a cell the body makes.
+   - **A cell's record condition** starts by its kind, as `cellCond` does: an arrival is `rexcl` of itself; a
+     site holds; a call's result is its summary entry's record condition, instantiated; ⊤, a payload, a
+     result no summary made fail approximately; a taken element is its container's.
+   - **A value's deep record condition** is the conjunction of its cells' record conditions and of `rsep`
+     between its record objects at every two paths neither of which is a prefix of the other. It is built
+     without pairing every two cells: one object at two such paths is the same cell twice, which a sort finds
+     (it fails exactly); an atom is needed only between two distinct arrivals. So it has **no cap** (the
+     owner forbids one): its size is bounded by the program, and a value of many fresh records costs a sort.
+   - **Where it is computed**: where §18.2 computes a list's — a literal `[ v₁, …, vₙ ]` is every item's deep
+     record condition and `rsep` between every two items (`[ r, r ]` fails exactly); a construction is the
+     base's lowered by what it stores, a later spread of a variable failing approximately; a call through a
+     summary is its `res` or `objs` entry's record condition, instantiated; a conservative call fails
+     approximately.
+   - **Where it is relied on** (§18.4): where a callback writes a record a destructive read hands it, as
+     item 6's opening says, and on a callee's `rxreq`. Relying on one that fails is a rejection, cause
+     `exclusive`, exact when it failed exactly; relying on one that holds records its atoms as `rxreq` of the
+     frame's summary, which every caller discharges, as `xreq` is (§18.3).
+   - **In a summary** (§18.3, format v18): each `res`, `objs` and supply entry carries its record condition
+     `rxc` beside `xc`, and the summary its `rxreq`. A row core asserts states its record conditions by the
+     same reasoning as its list ones, about where each element comes from: its `rxc` is the twin of its `xc`
+     (`excl` → `rexcl`, `sep` → `rsep`; a spine has none).
+   A list's verdicts read none of it, so none moves, and the 57 pending `List.map rows λr → { r | … }` lines
+   are decided.
 
-   *Compared (2026-10-19), for the owner's choice.* The alternative is one lattice whose atoms carry a domain:
+   *Compared (2026-10-19); the owner chose the parallel domain.* The alternative is one lattice whose atoms carry a domain:
    `excl`/`sep` over list cells and over record objects in one condition, `mkCond` tagging a record atom
    instead of dropping it, a list's demand reading the list atoms, a record's reading both.
    - *Soundness.* A list's demand may ignore a record atom: two positions that share a record object but no
