@@ -83,7 +83,10 @@ pub const magic = "BENIOWN\x00";
 /// provenance's object flag (`◦`), and the records a result holds
 /// (`objs`), after `res`; what callbacks are handed of records (`rsupply`),
 /// after `supply`; and a function parameter's record `need`, bit 3 of its byte.
-pub const version: u32 = 17;
+/// 18 carries records' exclusive contents (§31.4 item 6): a record
+/// condition `rxc` after each `res`, `objs` and supply entry's list ones, and
+/// the summary's `rxreq` after its `xreq`.
+pub const version: u32 = 18;
 
 pub const Error = error{Bad} || Allocator.Error;
 
