@@ -715,7 +715,7 @@ nominal_on: []bool = &.{},
 nominal_solving: bool = false,
 /// §30.9: the nominal types whose bodies `ownMayHold` is reading.
 holding: std.ArrayList(TypeId) = .empty,
-ctor_ids: std.AutoHashMapUnmanaged(u64, u32) = .empty,
+ctor_ids: std.HashMapUnmanaged(u64, u32, WordsKey(0), std.hash_map.default_max_load_percentage) = .empty,
 /// Per module: the summary of each declaration, allocated on first use.
 slots: []?[]Slot = &.{},
 groups: []?Groups = &.{},
@@ -736,7 +736,7 @@ ctor_key: std.ArrayList(u64) = .empty,
 /// field)` pair, so any field of any constructor is a step of its own
 /// (issue #289; before, the step was `c * 64 + i`, and field 64 named field
 /// 0 of the next constructor).
-ctor_steps: std.AutoHashMapUnmanaged([2]u32, u32) = .empty,
+ctor_steps: std.HashMapUnmanaged([2]u32, u32, WordsKey(2), std.hash_map.default_max_load_percentage) = .empty,
 /// Per constructor step: its constructor id and its field.
 step_ctor: std.ArrayList([2]u32) = .empty,
 /// Per module: where each declaration's schema constructors start
@@ -766,11 +766,11 @@ split_of: std.ArrayList(u32) = .empty,
 places_of: std.ArrayList(u32) = .empty,
 canon_splits: std.ArrayList(CanonicalSplit) = .empty,
 /// Memos of path arithmetic, which the walk repeats (§18.11).
-concat_memo: std.AutoHashMapUnmanaged([2]u32, u32) = .empty,
+concat_memo: std.HashMapUnmanaged([2]u32, u32, WordsKey(2), std.hash_map.default_max_load_percentage) = .empty,
 /// Per `(module, type variable)`: whether a value of the type may hold a cell.
-tracked_memo: std.AutoHashMapUnmanaged(u64, bool) = .empty,
+tracked_memo: std.HashMapUnmanaged(u64, bool, WordsKey(0), std.hash_map.default_max_load_percentage) = .empty,
 /// Per `(module, declaration)`: its qualified name.
-names_memo: std.AutoHashMapUnmanaged(u64, []const u8) = .empty,
+names_memo: std.HashMapUnmanaged(u64, []const u8, WordsKey(0), std.hash_map.default_max_load_percentage) = .empty,
 /// §30.10: per `(module, schema declaration)`, what its own conversions and
 /// the declarations it names put in its slots (`schemaTaint`); `null` while
 /// it is being derived.
