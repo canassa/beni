@@ -1,0 +1,78 @@
+-- load
+<body>
+  <main>
+    <p id="outer-log">""</p>
+    <ul>
+      <li id="row1">
+        <div id="slot1">
+          <section>
+            <p id="inner-log">""</p>
+            <ol>
+              <li>
+                <button id="pick-a">"a"</button>
+              </li>
+              <li>
+                <button id="pick-b">"b"</button>
+              </li>
+            </ol>
+          </section>
+        </div>
+      </li>
+      <li id="row2">
+        <div id="slot2"></div>
+      </li>
+    </ul>
+  </main>
+</body>
+-- click #pick-b
+<body>
+  <main>
+    <p id="outer-log">" outer row 1"</p>
+    <ul>
+      <li id="row1">
+        <div id="slot1">
+          <section>
+            <p id="inner-log">" inner b"</p>
+            <ol>
+              <li>
+                <button id="pick-a">"a"</button>
+              </li>
+              <li>
+                <button id="pick-b">"b"</button>
+              </li>
+            </ol>
+          </section>
+        </div>
+      </li>
+      <li id="row2">
+        <div id="slot2"></div>
+      </li>
+    </ul>
+  </main>
+</body>
+-- click #row2
+<body>
+  <main>
+    <p id="outer-log">" outer row 1 outer row 2"</p>
+    <ul>
+      <li id="row1">
+        <div id="slot1">
+          <section>
+            <p id="inner-log">" inner b"</p>
+            <ol>
+              <li>
+                <button id="pick-a">"a"</button>
+              </li>
+              <li>
+                <button id="pick-b">"b"</button>
+              </li>
+            </ol>
+          </section>
+        </div>
+      </li>
+      <li id="row2">
+        <div id="slot2"></div>
+      </li>
+    </ul>
+  </main>
+</body>

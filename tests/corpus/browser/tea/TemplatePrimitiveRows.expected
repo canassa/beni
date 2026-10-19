@@ -1,0 +1,48 @@
+-- load
+<body>
+  <main>
+    <button id="grow">"grow"</button>
+    <button id="swap">"swap"</button>
+    <button id="quiet">"quiet"</button>
+    "1"
+    "2"
+  </main>
+</body>
+-- click #quiet
+(the DOM did not change)
+-- click #grow
+<body>
+  <main>
+    <button id="grow">"grow"</button>
+    <button id="swap">"swap"</button>
+    <button id="quiet">"quiet"</button>
+    "1"
+    "2"
+    "3"
+  </main>
+</body>
+-- click #swap
+<body>
+  <main>
+    <button id="grow">"grow"</button>
+    <button id="swap">"swap"</button>
+    <button id="quiet">"quiet"</button>
+    "2"
+    "1"
+    "3"
+  </main>
+</body>
+-- click #grow
+<body>
+  <main>
+    <button id="grow">"grow"</button>
+    <button id="swap">"swap"</button>
+    <button id="quiet">"quiet"</button>
+    "2"
+    "1"
+    "3"
+    "4"
+  </main>
+</body>
+-- click #quiet
+(the DOM did not change)

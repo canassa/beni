@@ -83,7 +83,10 @@ pub const magic = "BENIOWN\x00";
 /// provenance's object flag (`◦`), and the records a result holds
 /// (`objs`), after `res`; what callbacks are handed of records (`rsupply`),
 /// after `supply`; and a function parameter's record `need`, bit 3 of its byte.
-pub const version: u32 = 17;
+/// 18 carries records' exclusive contents (§31.4 item 6): a record
+/// condition `rxc` after each `res`, `objs` and supply entry's list ones, and
+/// the summary's `rxreq` after its `xreq`.
+pub const version: u32 = 18;
 
 pub const Error = error{Bad} || Allocator.Error;
 
@@ -194,6 +197,7 @@ pub fn write(o: *Ownership, gpa: Allocator, rows: []const Row) Allocator.Error![
             try c.prov(r.prov);
             try c.xsum(r.xc);
             try c.xsum(r.sc);
+            try c.xsum(r.rxc);
         }
 
         fn summary(c: *@This(), s: *const Summary) Allocator.Error!void {
@@ -207,11 +211,12 @@ pub fn write(o: *Ownership, gpa: Allocator, rows: []const Row) Allocator.Error![
                 try c.path(e.path);
                 try c.prov(e.prov);
                 try c.xsum(e.xc);
+                try c.xsum(e.rxc);
             };
-            for (s.xreq) |a| {
+            for ([_][]const XAtom{ s.xreq, s.rxreq }) |atoms| for (atoms) |a| {
                 try c.prov(a.a);
                 try c.prov(a.b);
-            }
+            };
             for (s.slots) |sl| try c.path(sl[1]);
             for (s.klasses) |k| {
                 try c.summary(k.sum);
@@ -419,6 +424,7 @@ fn writeSupply(w: *Writer, arena: Allocator, items: []const SupplyEntry) Allocat
         try writeProv(w, e.prov);
         try w.byte(@as(u8, @intFromBool(e.owned)) | @as(u8, @intFromBool(e.approx)) << 1);
         try writeXSum(w, arena, e.xc);
+        try writeXSum(w, arena, e.rxc);
     }
 }
 
@@ -443,6 +449,7 @@ fn writeRes(w: *Writer, arena: Allocator, items: []const ResEntry, sort: bool) A
         try w.byte(@intFromBool(r.approx));
         try writeXSum(w, arena, r.xc);
         try writeXSum(w, arena, r.sc);
+        try writeXSum(w, arena, r.rxc);
     }
 }
 
@@ -498,6 +505,7 @@ fn writeSummary(w: *Writer, arena: Allocator, s: *const Summary) Allocator.Error
     }
 
     try writeAtoms(w, arena, s.xreq);
+    try writeAtoms(w, arena, s.rxreq);
 
     try w.int(@intCast(s.slots.len));
     for (s.slots) |sl| {
@@ -715,7 +723,7 @@ fn readSupply(r: *Reader) Error![]const SupplyEntry {
         const prov = try readProv(r);
         const bits = try r.byte();
         if (bits > 3) return error.Bad;
-        e.* = .{ .fun = fun, .k = k, .path = path, .prov = prov, .owned = bits & 1 != 0, .approx = bits & 2 != 0, .xc = try readXSum(r) };
+        e.* = .{ .fun = fun, .k = k, .path = path, .prov = prov, .owned = bits & 1 != 0, .approx = bits & 2 != 0, .xc = try readXSum(r), .rxc = try readXSum(r) };
     }
     return supply;
 }
@@ -727,7 +735,7 @@ fn readRes(r: *Reader) Error![]const ResEntry {
         const path = try r.path();
         const prov = try readProv(r);
         const approx = try r.bool_();
-        e.* = .{ .path = path, .prov = prov, .approx = approx, .xc = try readXSum(r), .sc = try readXSum(r) };
+        e.* = .{ .path = path, .prov = prov, .approx = approx, .xc = try readXSum(r), .sc = try readXSum(r), .rxc = try readXSum(r) };
     }
     return out;
 }
@@ -776,6 +784,7 @@ fn readSummary(r: *Reader, depth: u32) Error!Summary {
     }
 
     const xreq = try readAtoms(r);
+    const rxreq = try readAtoms(r);
 
     const slots = try r.arena.alloc([2]u32, try r.count(8));
     for (slots) |*sl| sl.* = .{ try r.int(), try r.path() };
@@ -805,6 +814,7 @@ fn readSummary(r: *Reader, depth: u32) Error!Summary {
         .once = flags & 4 != 0,
         .words = flags & 8 != 0,
         .xreq = xreq,
+        .rxreq = rxreq,
         .slots = slots,
         .klasses = klasses,
     });

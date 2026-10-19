@@ -1,0 +1,80 @@
+-- `Html.map` over a function that is not a constructor (browser-direct.md
+-- §9.1, as amended for S3): the listener makes the child's message, applies
+-- the function and hands the result to the program's dispatcher (§4.4) — the
+-- program has a carrier. Beside it, a map over a constructor applied through
+-- a placeholder (`Tagged 3 _`), composed at compile time, and maps nested
+-- two deep, innermost first (Elm's order).
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type Inner
+    = Ping
+    | Pong Int
+
+
+type Msg
+    = Wrapped Inner
+    | Tagged Int Inner
+    | Outer Msg
+
+
+type alias Model =
+    log : String
+
+
+describe : Inner → String
+describe inner =
+    case inner of
+        Ping →
+            "ping"
+
+        Pong n →
+            "pong ${String.fromInt n}"
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Wrapped inner →
+            { model | log = "${model.log} wrapped ${describe inner}" }
+
+        Tagged n inner →
+            { model | log = "${model.log} tagged ${String.fromInt n} ${describe inner}" }
+
+        Outer inner →
+            update inner { model | log = "${model.log} outer" }
+
+
+-- A function, not a constructor's shape: the map applies it at the event.
+rewrap : Inner → Msg
+rewrap inner =
+    case inner of
+        Ping →
+            Wrapped (Pong 1)
+
+        _ →
+            Wrapped inner
+
+
+buttons : String → Html Inner
+buttons name =
+    <span>
+        <button id="${name}-ping" onClick={Ping}>ping</button>
+        <button id="${name}-pong" onClick={Pong 7}>pong</button>
+    </span>
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <p id="log">{model.log}</p>
+        {Html.map (buttons "lambda") rewrap}
+        {Html.map (buttons "tagged") (Tagged 3 _)}
+        {Html.map (Html.map (buttons "nested") Wrapped) Outer}
+    </main>
+
+
+main : Browser.Program
+main = Tea.sandbox { init = λ⊤ → { log = "" }, update = update, view = view }

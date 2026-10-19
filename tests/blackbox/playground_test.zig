@@ -8,11 +8,11 @@
 //!   - the page's own samples, `playground/samples/<platform>/*.beni`;
 //!   - `tests/corpus/run/*.beni`: built for `node` as the page builds, with
 //!     the cache and source maps, and with `--release` (the printing sample);
-//!   - `tests/corpus/browser/direct/*.beni`: built for `browser-direct` the
-//!     same three ways (the platform of the page, `playground.md` §1);
+//!   - `tests/corpus/browser/tea/*.beni` and `tests/corpus/browser/inline/*.beni`:
+//!     built for `browser-tea` and `browser-inline` the same three ways;
 //!   - `tests/corpus/check/bad/*.beni`: checked, for the diagnostics, in
 //!     both renderers (the page reads the JSON);
-//!   - `bench/todomvc/apps/beni/*.beni`: built for `browser-direct` as the
+//!   - `bench/todomvc/apps/beni/*.beni`: built for `browser-tea` as the
 //!     page builds and with `--release`, and the two dumps the page shows.
 //!
 //! Each command runs with the native threaded compiler too, on a copy of the
@@ -38,11 +38,15 @@ const parts = 8;
 const Kind = enum {
     /// Built for `node`, in both modes.
     print,
-    /// Built for `browser-direct`, in both modes.
+    /// Built for `browser-direct`, in both modes: the page's own samples.
     page,
+    /// Built for `browser-tea`, in both modes.
+    page_tea,
+    /// Built for `browser-inline`, in both modes.
+    page_inline,
     /// Checked.
     diagnostics,
-    /// Built for `browser-direct` in both modes, and dumped.
+    /// Built for `browser-tea` in both modes, and dumped.
     todomvc,
 };
 
@@ -50,7 +54,8 @@ const directories = [_]struct { path: []const u8, kind: Kind }{
     .{ .path = "playground/samples/browser-direct", .kind = .page },
     .{ .path = "playground/samples/node", .kind = .print },
     .{ .path = "tests/corpus/run", .kind = .print },
-    .{ .path = "tests/corpus/browser/direct", .kind = .page },
+    .{ .path = "tests/corpus/browser/tea", .kind = .page_tea },
+    .{ .path = "tests/corpus/browser/inline", .kind = .page_inline },
     .{ .path = "tests/corpus/check/bad", .kind = .diagnostics },
     .{ .path = "bench/todomvc/apps/beni", .kind = .todomvc },
 };
@@ -98,15 +103,25 @@ fn commands(arena: std.mem.Allocator, kind: Kind, name: []const u8) ![]const []c
             &.{ "build", "--platform=browser-direct", "--out=out-maps" },
             &.{ "build", "--platform=browser-direct", "--release", "--allow-debug", "--out=out-release" },
         },
+        .page_tea => &.{
+            &.{ "build", "--platform=browser-tea", "--no-cache", "--no-source-maps", "--diagnostics=json" },
+            &.{ "build", "--platform=browser-tea", "--out=out-maps" },
+            &.{ "build", "--platform=browser-tea", "--release", "--allow-debug", "--out=out-release" },
+        },
+        .page_inline => &.{
+            &.{ "build", "--platform=browser-inline", "--no-cache", "--no-source-maps", "--diagnostics=json" },
+            &.{ "build", "--platform=browser-inline", "--out=out-maps" },
+            &.{ "build", "--platform=browser-inline", "--release", "--allow-debug", "--out=out-release" },
+        },
         .diagnostics => &.{
             &.{"check"},
             &.{ "check", "--diagnostics=json" },
         },
         .todomvc => &.{
-            &.{ "build", "--platform=browser-direct", "--no-cache", "--no-source-maps", "--diagnostics=json" },
-            &.{ "build", "--platform=browser-direct", "--release", "--out=out-release" },
-            &.{ "dump", "--stage=types", "--platform=browser-direct", "--diagnostics=json" },
-            &.{ "dump", "--stage=ownership", "--platform=browser-direct", "--diagnostics=json" },
+            &.{ "build", "--platform=browser-tea", "--no-cache", "--no-source-maps", "--diagnostics=json" },
+            &.{ "build", "--platform=browser-tea", "--release", "--out=out-release" },
+            &.{ "dump", "--stage=types", "--platform=browser-tea", "--diagnostics=json" },
+            &.{ "dump", "--stage=ownership", "--platform=browser-tea", "--diagnostics=json" },
         },
     };
     const out = try arena.alloc([]const []const u8, lists.len);
@@ -172,11 +187,11 @@ test "the shipped compiler takes the points-to fixpoint in the native compiler's
     // program came near the cap. The word is 64 bits on every target now,
     // and the sweep count is the native one (`fast-compiler.md` §10).
     const swept = [_][]const u8{
-        "tests/corpus/browser/direct/KeySubscription.beni",
-        "tests/corpus/browser/direct/LinkGuard.beni",
-        "tests/corpus/browser/direct/LinkOutsideMount.beni",
-        "tests/corpus/browser/direct/ListenerOrder.beni",
-        "tests/corpus/browser/direct/NavigateErrors.beni",
+        "tests/corpus/browser/tea/KeySubscription.beni",
+        "tests/corpus/browser/tea/LinkGuard.beni",
+        "tests/corpus/browser/tea/LinkOutsideMount.beni",
+        "tests/corpus/browser/tea/ListenerOrder.beni",
+        "tests/corpus/browser/tea/NavigateErrors.beni",
         "bench/todomvc/apps/beni/Sandbox.beni",
     };
     for (swept) |path| {
@@ -189,7 +204,7 @@ test "the shipped compiler takes the points-to fixpoint in the native compiler's
         // ┌─────────────────────────────────────┐
         // │ EXECUTE                             │
         // └─────────────────────────────────────┘
-        const built = try wasm.expectSameIgnoring(&w, &.{ "build", "--release", "--allow-debug", "--platform=browser-direct", "--no-cache", "--self-profile=profile.json", name }, other, &.{"profile.json"});
+        const built = try wasm.expectSameIgnoring(&w, &.{ "build", "--release", "--allow-debug", "--platform=browser-tea", "--no-cache", "--self-profile=profile.json", name }, other, &.{"profile.json"});
 
         // ┌─────────────────────────────────────┐
         // │ VERIFY SIDE EFFECTS                 │

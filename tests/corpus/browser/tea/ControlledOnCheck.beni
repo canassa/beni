@@ -1,0 +1,31 @@
+-- Checkbox activation reaches onCheck before controlled reconciliation.
+import Cmd
+import Html exposing (Html)
+import Sub
+import Tea
+
+
+type Msg
+    = Checked Bool
+
+
+update : Msg, Bool → Bool × Cmd.Cmd Msg
+update (Checked checked) _ = ( checked, Cmd.none )
+
+
+view : Bool → Html Msg
+view checked =
+    <main>
+        <input id="box" type="checkbox" checked={checked} onCheck={Checked} />
+        <p>{if checked then "on" else "off"}</p>
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( False, Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

@@ -7,10 +7,10 @@ module RecordOnce
   46:22 update p: rejected later-use: p is read again at 46:33 [copy]
   summary bump: π1 W{x}, π1.x R; res π1◦
   summary viaMaybe: π2 RW{x}; res #Just.0 π2◦
-  summary viaList: π1 R, π2 RW{x}; res [*] ~fresh2 ~π2◦, fresh1
+  summary viaList: π1 R, π2 RW{x}; res [*] ~fresh2r{lost} ~π2◦, fresh1r{lost}
   summary readsWritten: π2 RW{x}, π2.x R; res .0#Just.0 π2◦
   summary readsOther: π2 RW{x}, π2.y R; res .0#Just.0 π2◦
-  summary apply: π1 R; res cb1; π1 calls ≤1
+  summary apply: π1 R; res cb1r{excl cb1}; π1 calls ≤1
   summary readAfter: π1 RW{x}, π1.x R; res π1◦
   demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
   records 6: accepted 3, pending 0, rejected 3 (copy 3, restructure 0); hoisted 0, eager reads 0

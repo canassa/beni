@@ -1,0 +1,24 @@
+-- ownership: the composed-path fold of polymorphic recursion (issue #286;
+-- ownership-checker.md §16.7, F3 as amended, the owner's choice (a)), on the
+-- review of #429.
+-- A destructured parameter (`( x, k )`, `{ v }`) takes its declared type from
+-- the declaration's own, so `wt` and `wrec` stop at `[*]⋆`.
+type T a
+    = Leaf a
+    | Wrap (T (List a))
+
+
+wt : Int, (a × Int) → T a
+wt n ( x, k ) =
+    if n == 0 then
+        Leaf x
+    else
+        Wrap (wt (n - 1) ( [ x ], k ))
+
+
+wrec : Int, { v : a } → T a
+wrec n { v } =
+    if n == 0 then
+        Leaf v
+    else
+        Wrap (wrec (n - 1) { v = [ v ] })

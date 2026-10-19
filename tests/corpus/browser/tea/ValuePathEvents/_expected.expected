@@ -1,0 +1,140 @@
+-- load
+<body>
+  <main>
+    <div id="outer">
+      <button id="inner">"inner"</button>
+      <!---->
+      <span id="vstop">
+        <button id="vstop-in">"in"</button>
+      </span>
+      <!---->
+    </div>
+    <div id="dstop">
+      <button id="below">"below"</button>
+    </div>
+    <section id="box">
+      <button id="child">"child"</button>
+    </section>
+    <p id="log">""</p>
+  </main>
+</body>
+-- click #inner
+<body>
+  <main>
+    <div id="outer">
+      <button id="inner">"inner"</button>
+      <!---->
+      <span id="vstop">
+        <button id="vstop-in">"in"</button>
+      </span>
+      <!---->
+    </div>
+    <div id="dstop">
+      <button id="below">"below"</button>
+    </div>
+    <section id="box">
+      <button id="child">"child"</button>
+    </section>
+    <p id="log">"inner, outer, main"</p>
+  </main>
+</body>
+-- click #vstop-in
+<body>
+  <main>
+    <div id="outer">
+      <button id="inner">"inner"</button>
+      <!---->
+      <span id="vstop">
+        <button id="vstop-in">"in"</button>
+      </span>
+      <!---->
+    </div>
+    <div id="dstop">
+      <button id="below">"below"</button>
+    </div>
+    <section id="box">
+      <button id="child">"child"</button>
+    </section>
+    <p id="log">"inner, outer, main, value stopper, value stopper"</p>
+  </main>
+</body>
+-- click #vstop
+<body>
+  <main>
+    <div id="outer">
+      <button id="inner">"inner"</button>
+      <!---->
+      <span id="vstop">
+        <button id="vstop-in">"in"</button>
+      </span>
+      <!---->
+    </div>
+    <div id="dstop">
+      <button id="below">"below"</button>
+    </div>
+    <section id="box">
+      <button id="child">"child"</button>
+    </section>
+    <p id="log">"inner, outer, main, value stopper, value stopper, value stopper"</p>
+  </main>
+</body>
+-- click #below
+<body>
+  <main>
+    <div id="outer">
+      <button id="inner">"inner"</button>
+      <!---->
+      <span id="vstop">
+        <button id="vstop-in">"in"</button>
+      </span>
+      <!---->
+    </div>
+    <div id="dstop">
+      <button id="below">"below"</button>
+    </div>
+    <section id="box">
+      <button id="child">"child"</button>
+    </section>
+    <p id="log">"inner, outer, main, value stopper, value stopper, value stopper, below, direct stopper"</p>
+  </main>
+</body>
+-- click #child
+<body>
+  <main>
+    <div id="outer">
+      <button id="inner">"inner"</button>
+      <!---->
+      <span id="vstop">
+        <button id="vstop-in">"in"</button>
+      </span>
+      <!---->
+    </div>
+    <div id="dstop">
+      <button id="below">"below"</button>
+    </div>
+    <section id="box">
+      <button id="child">"child"</button>
+    </section>
+    <p id="log">"inner, outer, main, value stopper, value stopper, value stopper, below, direct stopper, child, box, main"</p>
+  </main>
+</body>
+-- click #box
+<body>
+  <main>
+    <div id="outer">
+      <button id="inner">"inner"</button>
+      <!---->
+      <span id="vstop">
+        <button id="vstop-in">"in"</button>
+      </span>
+      <!---->
+    </div>
+    <div id="dstop">
+      <button id="below">"below"</button>
+    </div>
+    <section id="box">
+      <button id="child">"child"</button>
+    </section>
+    <p id="log">"inner, outer, main, value stopper, value stopper, value stopper, below, direct stopper, child, box, main, box, main"</p>
+  </main>
+</body>

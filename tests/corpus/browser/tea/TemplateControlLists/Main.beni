@@ -1,0 +1,57 @@
+-- A formal first receives a literal, then a model path. A chosen list
+-- changes collection identity without losing the choice read.
+import Helpers
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    pick : Bool
+    n : Int
+    left : List Int
+    right : List Int
+
+
+type Msg
+    = Switch
+    | Inc
+    | Left
+    | Right
+    | Quiet
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Switch →
+            { model | pick = not model.pick }
+        Inc →
+            { model | n = model.n + 1 }
+        Left →
+            { model | left = List.set model.left 0 7 }
+        Right →
+            { model | right = List.set model.right 0 9 }
+        Quiet →
+            model
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <button id="switch" onClick={Switch}>switch</button>
+        <button id="inc" onClick={Inc}>inc</button>
+        <button id="left" onClick={Left}>left</button>
+        <button id="right" onClick={Right}>right</button>
+        <button id="quiet" onClick={Quiet}>quiet</button>
+        {Helpers.picked model.pick model.n}
+        {Helpers.rows (if model.pick then model.left else model.right)}
+    </main>
+
+
+main : Tea.Program
+main =
+    Tea.sandbox
+        { init = λ⊤ → { pick = True, n = 4, left = [ 1, 2 ], right = [ 3, 4 ] }
+        , update = update
+        , view = view
+        }

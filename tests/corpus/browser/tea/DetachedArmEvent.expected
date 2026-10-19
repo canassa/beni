@@ -1,0 +1,36 @@
+-- load
+<body>
+  <main>
+    <p id="log">""</p>
+    <button id="reopen">"reopen"</button>
+    <section>
+      <button id="close">"close"</button>
+    </section>
+  </main>
+</body>
+-- click #close
+<body>
+  <main>
+    <p id="log">" closed clicked ada"</p>
+    <button id="reopen">"reopen"</button>
+    <p>"closed"</p>
+  </main>
+</body>
+-- click #reopen
+<body>
+  <main>
+    <p id="log">" closed clicked ada"</p>
+    <button id="reopen">"reopen"</button>
+    <section>
+      <button id="close">"close"</button>
+    </section>
+  </main>
+</body>
+-- click #close
+<body>
+  <main>
+    <p id="log">" closed clicked ada closed clicked grace"</p>
+    <button id="reopen">"reopen"</button>
+    <p>"closed"</p>
+  </main>
+</body>
