@@ -144,8 +144,11 @@ save cred status =
         Editing slug _ form →
             case validate form of
                 [] →
+                    -- The form stays the model's, and may be typed in while
+                    -- the save runs: the command sends a copy.
+                    sent = Record.copy form
                     ( Saving slug form
-                    , Cmd.task (λ⊤ → Article.update cred slug (fields form)) CompletedEdit
+                    , Cmd.task (λ⊤ → Article.update cred slug (fields sent)) CompletedEdit
                     )
 
                 problems →
@@ -154,8 +157,11 @@ save cred status =
         EditingNew _ form →
             case validate form of
                 [] →
+                    -- The form stays the model's, and may be typed in while
+                    -- the save runs: the command sends a copy.
+                    sent = Record.copy form
                     ( Creating form
-                    , Cmd.task (λ⊤ → Article.create cred (fields form)) CompletedCreate
+                    , Cmd.task (λ⊤ → Article.create cred (fields sent)) CompletedCreate
                     )
 
                 problems →

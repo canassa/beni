@@ -5764,10 +5764,15 @@ its `fits`, which only looks and so copies; both TypedKeys, which update in the 
 `BranchReturn`'s page and `home` as two records; `run/ListPersistence`'s model functions; `run/Records`,
 `run/MarkupFieldIdentity`, `run/TeaLoop`, and the `run/` programs whose top-level test value an update
 used (`Record.copy`). Every `run/`, `browser/` and `emit/` golden prints what it did; the emit goldens change
-only by `Schema$defaultOptions()`. Over the 1 071 programs, 57 record lines stay rejected: the TodoMVCs'
-`changed model (List.map model.todos …)` (#405), `KeyedEnds`' callback that reads `List.length rows` (a read
-at ε, the same summary limit), Bike Wars' `handleInput model _` and Conduit's and `StoredBranchPlacement`'s
-`payload` (§31.4 item 4 and P6, the checker's), and the two `Tea.beni` platforms: `Direct.beni`'s state read
-back from JavaScript (`Tea.commands (Js.to self)`) and `perform`'s `List.foldl` accumulator, whose record
-supply the checker does not yet follow through the callback's loans. Those wait for the checker (R2d) or a
-decision on the driver's state; none was rewritten to pass.
+only by `Schema$defaultOptions()`. With R2c's review fixed (record supplies, a record `need`, a recursive
+group's `objs`), the checker showed three more: NotesApp's `editNote` hands its callback a note the history
+keeps, KeyedInPlaceMap's rows came from a top-level list, and Conduit's Editor and Settings saves kept the
+model's form in a command that runs later; each now copies. Over the 1 082 programs, 92 record lines stay
+rejected, none of them a program's to fix: the TodoMVCs' `changed model (List.map model.todos …)` and their
+edit of one todo (#405, 19), `KeyedEnds`' callback that reads `List.length rows` (a read at ε, the same
+summary limit, 4), Conduit's Editor `status` at the entry, one form at two variants of one field (#410, 28),
+Conduit's and `StoredBranchPlacement`'s `payload` (P6, 29), Bike Wars' `handleInput model _` (§31.4 item 4,
+6), and the two `Tea.beni` platforms (6): `Direct.beni`'s state read back from JavaScript
+(`Tea.commands (Js.to self)`) and `perform`'s `List.foldl` accumulator, whose record supply the checker does
+not yet follow through the callback's loans. Those wait for the checker (R2d) or a decision on the driver's
+state; none was rewritten to pass.
