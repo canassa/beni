@@ -5458,6 +5458,9 @@ const Use = struct {
     /// reads one by one (`record_read` uses of their own); no use of the
     /// record whole to a record demand.
     destructure: bool = false,
+    /// §31.4 item 5: an update's base use that replaces every field of a
+    /// closed record type, and so reads none of them.
+    reads_none: bool = false,
 };
 
 const Holder = struct {
@@ -5798,6 +5801,8 @@ const Walker = struct {
     use_call_at: u32 = eps,
     /// The use being recorded is a record pattern's scrutinee (`Use.destructure`).
     use_destructure: bool = false,
+    /// The use being recorded reads no field (`Use.reads_none`).
+    use_reads_none: bool = false,
     /// §31.6: captures of a record's field path read when a lambda is made.
     eager_reads: u32 = 0,
     eager_seen: std.AutoHashMapUnmanaged([3]u32, void) = .empty,
@@ -7301,7 +7306,7 @@ const Walker = struct {
         // read it again (§18.8, §23.7).
         if (l >= w.local_frame.len) return;
         if (w.local_frame[l] != w.frame and (w.local_av[l] == null or !w.inFrameOf(w.local_frame[l]))) return;
-        try w.uses.append(w.a, .{ .local = l, .path = path, .except = except, .point = w.point, .frame = w.frame, .ctx = w.ctx, .token = tok, .at = w.use_at, .call = w.use_call, .call_at = w.use_call_at, .destructure = w.use_destructure });
+        try w.uses.append(w.a, .{ .local = l, .path = path, .except = except, .point = w.point, .frame = w.frame, .ctx = w.ctx, .token = tok, .at = w.use_at, .call = w.use_call, .call_at = w.use_call_at, .destructure = w.use_destructure, .reads_none = w.use_reads_none });
     }
 
     /// The first token of a variable path: its root local's.
@@ -8431,7 +8436,13 @@ const Walker = struct {
         const names = try w.a.alloc(u32, fields.len);
         for (fields, names) |f, *n| n.* = @backingInt(b.symbol(f.name));
         w.point += 1;
+        // §31.4 item 5: a base whose every field is replaced is read at none,
+        // whatever stands below it — a marker's levels included.
+        w.use_reads_none = if (w.recordFields(w.instType(base_inst))) |fs| for (fs) |fl| {
+            if (std.mem.indexOfScalar(u32, names, @backingInt(fl.name)) == null) break false;
+        } else true else false;
         try w.useOperand(base_inst, w.token(inst), names);
+        w.use_reads_none = false;
         for (insts) |x| try w.useOperand(x, w.token(inst), &.{});
         // §31.3: the update is a demand on its base's object, after every
         // new value, in every walk: a summary reads its write off (§31.7);
@@ -13876,7 +13887,7 @@ const Walker = struct {
     /// written one it is the lowering's read of the old value, unless a
     /// callee makes it in its own body, where no temporary stands in.
     fn recordUse(w: *const Walker, u: Use, q: u32, fields: []const u32) RecordUse {
-        if (u.destructure) return .none;
+        if (u.destructure or u.reads_none) return .none;
         if (comptime record_mutation == .hoist_whole) {
             if (w.o.isPrefix(u.path, q)) return .hoist;
         }
