@@ -1,6 +1,6 @@
 module Clo
-  32:7 List.push xs: rejected captured: f, a closure holding it, is used at 32:23
-  38:7 List.push ys: accepted param
+  34:7 List.push xs: rejected captured: f, a closure holding it, is used at 34:23
+  40:7 List.push ys: accepted param
   summary mk: π2 RA; res ◇ π2, ◇⟨◇⟩◇ π2
   summary wrapped: π1 RA; res λ, ◇⟨◇⟩◇ π1
   summary late: π1 RAW, π1[*] A; res .0 π1, .0[*] ~π1[*]
