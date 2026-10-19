@@ -1,0 +1,15 @@
+module PolyRecTuples
+  23:26 List.push a: accepted param
+  30:10 call PolyRecTuples.wrX <call PolyRecTuples.w>⟨T⟩⁺#Leaf.0.0.0.1: rejected call: another operand may be it, through the call at 30:20 (PolyRecTuples.wrX writes π1⟨T⟩⁺#Leaf.0.0.0.1) (approx)
+  37:26 List.push a: rejected call: b⋆ may hold it through the call at 35:15, and is read at 37:43 (approx)
+  49:34 List.push a: rejected element: p holds it and is read at 49:51 (approx)
+  summary w: π2 RA, π3 RA; res #Leaf.0 π2{sep π2 π3}, ⟨T⟩⁺#Leaf.0.0 π2{sep π2 π3}, ⟨T⟩⁺#Leaf.0.0⋆ ~π2{sep π2 π3} ~π3{lost}, ⟨T⟩⁺#Leaf.0.1 π3{lost}, ⟨T⟩⁺#Leaf.0.1⋆ ~π3{lost}
+  summary wrX: π1 R, π1⟨T⟩⁺#Leaf.0.0.0.1 RW, π1⟨T⟩⁺#Leaf.0.0.1.0 R
+  summary viaX: unused
+  summary local: unused
+  summary st: unused
+  summary count: π1.1.0 R
+  demands 4: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+total 4: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+cause element 1
+cause call 2

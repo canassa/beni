@@ -1,0 +1,8 @@
+module PolyRecKinds
+  summary wf: π2 RA; res #Leaf.0 π2, ⟨T⟩⁺#Leaf.0◇ π2
+  summary wd: π2 RA; res #DLeaf.0 π2, ⟨D⟩⁺#DLeaf.0#Dict.0#Node.2 π2, ⟨D⟩⁺#DLeaf.0#Dict.0#Node.2⋆ ~π2
+  summary wm: π2 RA; res #MLeaf.0 π2, ⟨M⟩⁺#MLeaf.0#Just.0 fresh1{excl π2} ~fresh2{excl π2}, ⟨M⟩⁺#MLeaf.0#Just.0[*] π2, ⟨M⟩⁺#MLeaf.0#Just.0[*]⋆ ~fresh1{excl π2} ~fresh2{excl π2} ~π2
+  summary wr: π2 RA; res #RLeaf.0 π2, #RWrap.0⟨R⟩#RLeaf.0 fresh501◦ fresh502◦, #RWrap.0⟨R⟩#RLeaf.0.v[*] fresh501◦ fresh502◦, #RWrap.0⟨R⟩#RLeaf.0.v[*]⋆ ~fresh501◦ ~fresh502◦, ⟨R⟩⁺#RLeaf.0.v fresh1{excl π2} ~fresh2{excl π2}, ⟨R⟩⁺#RLeaf.0.v[*] π2, ⟨R⟩⁺#RLeaf.0.v[*]⋆ ~fresh1{excl π2} ~fresh2{excl π2} ~π2
+  summary wu: π2 RA, π3 RA; res #ULeaf.0 π2{sep π2 π3}, ⟨U⟩⁺#ULeaf.0.0 fresh1{excl π2} ~fresh4{shared}, ⟨U⟩⁺#ULeaf.0.0[*] π2{sep π2 π3}, ⟨U⟩⁺#ULeaf.0.0[*]⋆ ~fresh1{excl π2} ~fresh2{excl π3} ~fresh3{excl π2, excl π3} ~fresh4{shared} ~π2{sep π2 π3} ~π3{sep π2 π3}, ⟨U⟩⁺#ULeaf.0.1 fresh2{excl π3} ~fresh4{shared}, ⟨U⟩⁺#ULeaf.0.1[*] π3{sep π2 π3}, ⟨U⟩⁺#ULeaf.0.1[*]⋆ ~fresh1{excl π2} ~fresh2{excl π3} ~fresh3{excl π2, excl π3} ~fresh4{shared} ~π2{sep π2 π3} ~π3{sep π2 π3}
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0

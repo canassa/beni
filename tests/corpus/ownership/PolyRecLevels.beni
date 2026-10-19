@@ -1,0 +1,88 @@
+-- ownership: the composed-path fold of polymorphic recursion (issue #286;
+-- ownership-checker.md §16.7, F3 as amended, the owner's choice (a)), on the
+-- review of #429.
+-- Lists the recursion makes at a place and below it: `innerLive` and
+-- `innerLive2` write an inner one while the outer one is read, refused;
+-- `deepParam` writes the argument itself.
+type T a
+    = Leaf a
+    | Wrap (T (List a))
+
+
+wrap : Int, a → T a
+wrap n x =
+    if n == 0 then
+        Leaf x
+    else
+        Wrap (wrap (n - 1) [ x ])
+
+
+pub innerLive : List Int → Int
+innerLive xs =
+    case wrap 3 xs of
+        Wrap (Wrap (Wrap (Leaf p))) →
+            case p of
+                [ q ] →
+                    case q of
+                        [ r ] →
+                            List.length (List.push r []) + List.length p
+
+                        _ →
+                            0
+
+                _ →
+                    0
+
+        _ →
+            0
+
+
+pub innerLive2 : List Int → Int
+innerLive2 xs =
+    case wrap 3 xs of
+        Wrap (Wrap (Wrap (Leaf p))) →
+            case p of
+                [ q ] →
+                    List.length (List.push q []) + List.length p
+
+                _ →
+                    0
+
+        _ →
+            0
+
+
+pub deepParam : List Int → Int
+deepParam xs =
+    t = wrap 3 xs
+    case t of
+        Wrap (Wrap (Wrap (Leaf p))) →
+            case p of
+                [ q ] →
+                    case q of
+                        [ r ] →
+                            case r of
+                                [ s ] →
+                                    List.length (List.push s 1) + count t
+
+                                _ →
+                                    0
+
+                        _ →
+                            0
+
+                _ →
+                    0
+
+        _ →
+            0
+
+
+count : T a → Int
+count t =
+    case t of
+        Leaf _ →
+            1
+
+        Wrap u →
+            1 + count u
