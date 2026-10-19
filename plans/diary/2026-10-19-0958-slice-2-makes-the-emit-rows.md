@@ -29,16 +29,16 @@
   row for one the maker refuses; and the exact post-lowering markup net fails the maker with the
   module named, since the check cannot recompute a refusal the static scan missed.
 - Evidence, one locked job: `diff -r` of master-today against the branch on `run/Dictionaries`,
-  `browser/tea/ApiItems` and `bench/corpus` — 16, 43 and 59 files byte for byte, source maps
-  included; the `emit/` goldens unchanged; 0 of the 2610 corpus programs ran under Node for want
-  of a run hash; medians of 5 (`perf stat -e instructions:u`): dict 155.30M → 155.83M (+0.34%),
-  apiitems 502.66M → 507.29M (+0.92%), corpus 407.69M → 410.93M (+0.80%).
-- The pack: 3 958 080 → 6 399 846 bytes — 126 `emit` rows over 63 keys (56 modules plus seven
+  `browser/tea/ApiItems` and `bench/corpus` — 16, 43 and 62 files byte for byte, source maps
+  included; the `emit/` goldens unchanged; no program ran under Node for want of a run hash;
+  medians of 5 (`perf stat -e instructions:u`) against `acccea6a3`: dict 158.81M → 159.34M
+  (+0.33%), apiitems 531.97M → 536.51M (+0.85%), corpus 421.97M → 425.21M (+0.77%).
+- The pack: 4 182 851 → 6 672 561 bytes — 128 `emit` rows over 64 keys (57 modules plus seven
   extra chain instances: `Html` five times, `Dom`/`Hosted`/`Browser.Events` twice) resolving to
-  53 distinct payloads of 2 438 238 bytes (pairs, instances and the four unit-less modules share),
-  plus 3 528 of row table; the maker's run is 1–2 s, its compile 8–13 s. No embedded module is
+  53 distinct payloads of 2 486 126 bytes (pairs, instances and the five unit-less modules share),
+  plus 3 584 of row table; the maker's run is 1 s, its compile 9 s. No embedded module is
   refused, and no row is empty.
-- `zig build gates` green on the final tree (237/237 steps); the *As built* note is in
+- `zig build gates` green on the final tree (239/239 steps); the *As built* note is in
   `backend.md` §9, after slice 1's.
 
 **What I learned**
