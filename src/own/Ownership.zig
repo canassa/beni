@@ -8726,6 +8726,11 @@ const Walker = struct {
         w.closures.items[ci].env_escapes = try env_escapes.toOwnedSlice(w.a);
         // §18.8: the captures its own body writes make it once; a record's
         // write of a capture too, with the fields it writes (§31.4 item 4).
+        // One capture written twice — a list's write and a record's at one
+        // path, or two records' writes with different fields — is two
+        // entries and so two creation demands, each checked on its own and
+        // each a probe (`decideOnce`: a list's write reads the list's, a
+        // record's both): redundant, never weaker, so they are not merged.
         var env_writes: std.ArrayList(Capture) = .empty;
         for (w.demands.items[demands_from..]) |rec| {
             if (rec.kind == .probe or rec.kind == .value or rec.frame != id) continue;
@@ -11466,6 +11471,9 @@ const Walker = struct {
 
     /// `onceDemandDeep` with a record write's fields: a record demand.
     fn onceDemandFields(w: *Walker, kind: DemandKind, tok: u32, base: AV, base_ref: ?Capture, ci: u32, deep: bool, fields: ?[]const u32) Allocator.Error!u32 {
+        // `deep` is a send's, which gives up a list's cells (§23.2); no record
+        // demand is one, so a capture written with fields is never deep.
+        std.debug.assert(!(deep and fields != null));
         const idx: u32 = @intCast(w.probe_ok.items.len);
         try w.probe_ok.append(w.a, false);
         try w.probe_record.append(w.a, fields != null);
