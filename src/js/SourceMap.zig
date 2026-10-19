@@ -44,6 +44,12 @@ pub const Marks = struct {
     /// The map's `names`, in first-use order. The printer numbers them by
     /// its own name column, so two locals both written `x` are two entries.
     names: std.ArrayList(InternPool.Symbol) = .empty,
+    /// The identity behind each of `names`, in the same order: a
+    /// `JsIr.NameIndex` as an integer, module part and tag included, which
+    /// `names` alone loses (it holds the base's spelling). The pack maker
+    /// reads it (`js/EmitPack.zig`); a build's own `SourceMap.write` has no
+    /// use for it, so nothing else fills it.
+    src: std.ArrayList(u32) = .empty,
     allocator: Allocator,
 
     pub fn init(allocator: Allocator) Marks {

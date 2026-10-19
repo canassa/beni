@@ -1408,15 +1408,16 @@ const DebugInfo = enum {
 ///
 /// **One maker for every compiler, run once per compiler.** The maker is
 /// built once, ReleaseSafe on the self-hosted backend — every safety check
-/// fires while it checks core — and the pack it writes depends on the core,
-/// the platforms and the id, never on the maker's own mode: every key is
-/// computed with `id`, and a check's result does not depend on the code
-/// generator that compiled the checker (§10). The maker carries no platform:
-/// each one the compiler carries is staged in a directory of its own and
-/// handed to it on the command line (`platformDirectory`). Each run is well
-/// under a second; the maker's compile is what an edit under `src/` adds to
-/// the path of every compiler, which is why its root reaches the checker and
-/// the reachability edge builder, and nothing after them.
+/// fires while it checks, lowers and prints core — and the pack it writes
+/// depends on the core, the platforms and the id, never on the maker's own
+/// mode: every key is computed with `id`, and a check's result does not
+/// depend on the code generator that compiled the checker (§10). The maker
+/// carries no platform: each one the compiler carries is staged in a
+/// directory of its own and handed to it on the command line
+/// (`platformDirectory`). Its runs lower, print and split every embedded
+/// module and check the split by joining it back
+/// (`src/core_pack_main.zig`), so the maker's compile and its runs are what
+/// an edit under `src/` adds to the path of every compiler.
 fn corePack(b: *std.Build, core: Core, sources: []const PlatformSource, id: BuildId) *std.Build.Module {
     const run = b.addRunArtifact(corePackMaker(b));
     run.setName(b.fmt("check {s} for a compiler", .{if (core.extra == null) core.dir else "variant core"}));
