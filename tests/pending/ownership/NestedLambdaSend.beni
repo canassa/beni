@@ -1,0 +1,61 @@
+-- CK-263: on browser-inline the send's demand is lost (#426); golden: the browser-direct verdict.
+-- ownership (§30.9): a call of the declaration's function parameter inside
+-- a lambda nested in another is the outer lambda's call, made wherever that
+-- one is handed on (§18.9), with the probes of every lambda on the way.
+-- `search` is `DebouncedSearch`'s shape: it sends from a lambda inside a
+-- lambda, so the checker sees what is sent — a new list, so handing
+-- `search q _` to a send position is accepted. Before, the inner lambda
+-- was handed on inside the outer one, where the call was dropped and the
+-- send lost from sight, and the program was rejected `supply`,
+-- approximately. `leak` sends the top-level `shared` from the same depth,
+-- and is rejected where it is handed to the send position.
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Sub
+import Task
+import Tea
+
+
+type Msg
+    = Go String
+    | Got String (List String)
+
+
+shared : List String
+shared = [ "x" ]
+
+
+search : String, Cmd.Send Msg → ⊤
+search q send = Task.bracket (λ⊤ → ⊤) (λ_ _ → ⊤) λ_ →
+    Task.uninterruptible λ⊤ → send (Got q [ q ++ "!" ])
+
+
+leak : String, Cmd.Send Msg → ⊤
+leak q send = Task.bracket (λ⊤ → ⊤) (λ_ _ → ⊤) λ_ → Task.uninterruptible λ⊤ → send (Got q shared)
+
+
+update : Msg, List String → List String × Cmd Msg
+update msg model =
+    case msg of
+        Go "leak" →
+            ( model, Cmd.perform (leak "leak" _) )
+
+        Go q →
+            ( model, Cmd.perform (search q _) )
+
+        Got _ hits →
+            ( List.push hits "seen", Cmd.none )
+
+
+view : List String → Html Msg
+view model = <button onClick={Go "a"}>{String.fromInt (List.length model)}</button>
+
+
+main : Tea.Program
+main =
+    Tea.element
+        { init = λ⊤ → ( [], Cmd.none )
+        , update = update
+        , view = view
+        , subscriptions = λ_ → Sub.none
+        }

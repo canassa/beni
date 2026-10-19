@@ -1,0 +1,17 @@
+module EntryInvariantCommandShared
+  25:20 construction kids: accepted param
+  27:19 call List.map kids[*]#Tree.0: accepted param (<lambda> writes what List.map supplies it)
+  27:19 call List.map kids[*]⟨Tree⟩⁺#Tree.0: accepted param (<lambda> writes what List.map supplies it)
+  27:42 call EntryInvariantCommandShared.grow child#Tree.0: accepted callback-param (List.map supplies it owned)
+  27:42 call EntryInvariantCommandShared.grow child⟨Tree⟩⁺#Tree.0: accepted callback-param (List.map supplies it owned)
+  40:15 call EntryInvariantCommandShared.grow tree#Tree.0: accepted param (EntryInvariantCommandShared.grow writes π1#Tree.0)
+  40:15 call EntryInvariantCommandShared.grow tree⟨Tree⟩⁺#Tree.0: accepted param (EntryInvariantCommandShared.grow writes π1⟨Tree⟩⁺#Tree.0)
+  51:5 entry EntryInvariantCommandShared.update model#Tree.0: rejected exclusive: the callee needs the list's elements not to share, and they may
+  51:5 entry EntryInvariantCommandShared.update model⟨Tree⟩⁺#Tree.0: rejected exclusive: the callee needs the list's elements not to share, and they may
+  summary grow: π1#Tree.0 RAW, π1⟨Tree⟩⁺#Tree.0 AW; res #Tree.0 fresh2{excl π1#Tree.0} π1#Tree.0, #Tree.0[*] ~fresh3{excl π1#Tree.0}, ⟨Tree⟩⁺#Tree.0 fresh1 ~fresh4{excl π1#Tree.0⟨Tree⟩#Tree.0} ~π1⟨Tree⟩⁺#Tree.0, ⟨Tree⟩⁺#Tree.0[*] ~fresh4{excl π1#Tree.0⟨Tree⟩#Tree.0}; xreq excl π1#Tree.0
+  summary shared: res #Tree.0 fresh2{shared}, ⟨Tree⟩⁺#Tree.0 fresh1
+  summary update: π2#Tree.0 RAW, π2⟨Tree⟩⁺#Tree.0 RAW; res .0#Tree.0 fresh6{shared} ~fresh2{excl π2#Tree.0} ~π2#Tree.0, .0#Tree.0[*] ~fresh3{excl π2#Tree.0}, .0⟨Tree⟩⁺#Tree.0 fresh5 ~fresh1 ~fresh4{excl π2#Tree.0⟨Tree⟩#Tree.0} ~π2⟨Tree⟩⁺#Tree.0, .0⟨Tree⟩⁺#Tree.0[*] ~fresh4{excl π2#Tree.0⟨Tree⟩#Tree.0}, .1#Perform.0 λ; xreq excl π2
+  summary view: res ⟨render⟩ fresh1{lost}
+  demands 9: accepted 7 (fresh 0, call 0, param 5, callback-param 2, once 0, entry 0; assumed 0), pending 0, rejected 2
+total 9: accepted 7 (fresh 0, call 0, param 5, callback-param 2, once 0, entry 0; assumed 0), pending 0, rejected 2
+cause exclusive 2
