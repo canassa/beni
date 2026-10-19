@@ -112,6 +112,11 @@ jobs:
       - name: zig build test test-blackbox fmt-check beni-fmt-check
         run: nix develop --command zig build test test-blackbox fmt-check beni-fmt-check -Dtest-budget=0
 
+      # schema.md §6: T must still be the crossover of the dashboard-shaped
+      # programs (`tests/shape-threshold`). Not a gate locally; about 5 s.
+      - name: zig build test-shape-threshold
+        run: nix develop --command zig build test-shape-threshold
+
       # Only a push to master saves, also when a test fails, so every pull
       # request starts from master's newest build. A pull request's run
       # writes no cache entry, and its scope is its own: it cannot change

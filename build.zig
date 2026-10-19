@@ -729,6 +729,17 @@ pub fn build(b: *std.Build) void {
     mutations.has_side_effects = true;
     mutations_step.dependOn(&mutations.step);
 
+    // `schema.md` §6, *How a program chooses between shapes and workers*:
+    // dashboard-shaped programs built with every validator run as a worker
+    // and as a shape, failing when T has stopped being their crossover. Not
+    // a gate (a dozen builds of up to 25 modules); CI's `tests` job runs it.
+    const threshold_step = b.step("test-shape-threshold", "Build dashboard-shaped programs with workers and with shapes and check that SchemaValid.shape_threshold is still their crossover; not a gate");
+    const threshold = b.addSystemCommand(&.{ "node", "tests/shape-threshold/check.mjs" });
+    threshold.addArtifactArg(exe);
+    _ = threshold.addOutputDirectoryArg("shape-threshold");
+    threshold.has_side_effects = true;
+    threshold_step.dependOn(&threshold.step);
+
     const perf_step = b.step("test-pending-perf", "Time the pending performance scenarios on a ReleaseFast compiler");
     perf_step.dependOn(&bb.run(pending_test, .{ .root = "tests/pending", .mode = "pending", .scenarios = "perf", .exe = .fast, .budget = false }).step);
 

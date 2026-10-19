@@ -318,6 +318,14 @@ pub const Build = struct {
     /// (`schema.md` §10). It changes no answer — that is what the corpus
     /// asserts — and no user has a reason to reach for it.
     schema_library: bool = false,
+    /// `--schema-shapes=always|never` — **hidden**, for `--allow-debug`'s
+    /// reason: every validator run with a shape takes it, or none does,
+    /// whatever the program's count of them against
+    /// `SchemaValid.shape_threshold` (`schema.md` §6, *How a program chooses
+    /// between shapes and workers*). `zig build test-shape-threshold` builds
+    /// a program both ways to check that T is still the crossover. Null: the
+    /// count decides.
+    schema_shapes: ?bool = null,
     /// `--fuzz` — **hidden**, for `--allow-debug`'s reason: a test-only
     /// build for differential fuzzing (`browser-direct.md` §8.3's contract),
     /// on every platform and with `--release`: every constructor is kept
@@ -775,6 +783,7 @@ const BuildSpecific = struct {
     library: bool = false,
     allow_debug: bool = false,
     schema_library: bool = false,
+    schema_shapes: ?bool = null,
     fuzz: bool = false,
     watch: bool = false,
     poll_interval_ms: ?u32 = null,
@@ -814,6 +823,15 @@ const BuildSpecific = struct {
             // The fourth hidden flag (see `Build.schema_library`).
             if (value != null) return noValue(name);
             self.schema_library = true;
+            self.consumed = true;
+        } else if (std.mem.eql(u8, name, "--schema-shapes")) {
+            // A hidden flag (see `Build.schema_shapes`).
+            const v = value orelse return needsValue(name, "always|never");
+            if (std.mem.eql(u8, v, "always")) {
+                self.schema_shapes = true;
+            } else if (std.mem.eql(u8, v, "never")) {
+                self.schema_shapes = false;
+            } else return needsValue(name, "always|never");
             self.consumed = true;
         } else if (std.mem.eql(u8, name, "--fuzz")) {
             // The fifth hidden flag (see `Build.fuzz`).
@@ -879,6 +897,7 @@ fn finishBuild(gpa: Allocator, s: *Scanner(BuildSpecific), defaults: Defaults, c
         .release = s.specific.release,
         .allow_debug = s.specific.allow_debug,
         .schema_library = s.specific.schema_library,
+        .schema_shapes = s.specific.schema_shapes,
         .fuzz = s.specific.fuzz,
         .source_maps = s.specific.source_maps orelse !s.specific.release,
         .watch = s.specific.watch,

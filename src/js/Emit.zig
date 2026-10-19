@@ -270,6 +270,9 @@ pub const Options = struct {
     /// the library interpreter, and no worker is written — the forced
     /// library path of `schema.md` §10, which changes no answer.
     schema_library: bool = false,
+    /// `--schema-shapes`: shapes for every validator run with one (true),
+    /// or for none (false), whatever the count; null, the count decides.
+    schema_shapes: ?bool = null,
     /// `--fuzz`, the hidden test-only flag (`src/Cli.zig`;
     /// `browser-direct.md` §8.3): a program lowering makes each mounted
     /// program's messages reachable as values from outside the page
@@ -3831,7 +3834,7 @@ const Emitter = struct {
                 const s = try SchemaValid.sites(e.scratch, e.graph(), in.interfaces, in.provenance, &e.session.interner, b, tables[i], m, &e.schema_graph.?, false, true);
                 runs += SchemaValid.shapeRunCount(s);
             }
-            in.schema_shapes = runs >= SchemaValid.shape_threshold;
+            in.schema_shapes = e.options.schema_shapes orelse (runs >= SchemaValid.shape_threshold);
         }
         // Every module's edges on the workers, each into its own slot and
         // its worker's `edges` arena — read from its row, or built — then
