@@ -1374,10 +1374,85 @@ pub const Lowerer = struct {
 
     pub fn member(l: *Lowerer, target: Node.Index, field: Symbol, p: u32) !Node.Index {
         const n = try l.name(.{ .module = .none, .base = field, .tag = JsIr.Name.no_tag });
+        if (field == l.well.tag) if (try l.tagOfChoice(target, n, p)) |chosen| return chosen;
         return l.add(.member, p, target.int(), @backingInt(n));
     }
 
+    /// `(t ? {$: A, …} : {$: B, …}).$` is `t ? A : B` when nothing else
+    /// either object holds does anything: a `case` on a validator run's
+    /// `Result`, written where the run stands (`validatorResult`), tests
+    /// the run's answer and builds no `Result`.
+    fn tagOfChoice(l: *Lowerer, target: Node.Index, key: JsIr.NameIndex, p: u32) !?Node.Index {
+        if (l.b.tagOf(target) != .cond) return null;
+        const d = l.b.dataOf(target);
+        const consequent: Node.Index = @fromBackingInt(l.b.extra.items[d.rhs]);
+        const alternate: Node.Index = @fromBackingInt(l.b.extra.items[d.rhs + 1]);
+        const a = l.quietProperty(consequent, key) orelse return null;
+        const b = l.quietProperty(alternate, key) orelse return null;
+        return try l.condOf(@fromBackingInt(d.lhs), a, b, p);
+    }
+
+    /// Property `key` of object literal `object` when every value it holds
+    /// is an atom or `[]`, so leaving the object unbuilt changes nothing.
+    fn quietProperty(l: *Lowerer, object_: Node.Index, key: JsIr.NameIndex) ?Node.Index {
+        if (l.b.tagOf(object_) != .object) return null;
+        const d = l.b.dataOf(object_);
+        var found: ?Node.Index = null;
+        for (l.b.extra.items[d.lhs..d.rhs]) |word| {
+            const prop: Node.Index = @fromBackingInt(word);
+            if (l.b.tagOf(prop) != .property) return null;
+            const value: Node.Index = @fromBackingInt(l.b.dataOf(prop).rhs);
+            const empty = l.b.tagOf(value) == .array and l.b.dataOf(value).lhs == l.b.dataOf(value).rhs;
+            if (!empty and !l.isAtom(value)) return null;
+            if (l.b.dataOf(prop).lhs == @backingInt(key)) found = value;
+        }
+        return found;
+    }
+
+    /// `(t ? A : B) === C` of three literals, `t` a strict comparison, is
+    /// `t` or its negation when exactly one of `A`, `B` is `C`: what
+    /// `tagOfChoice` leaves of a `case`'s tag test.
+    fn choiceEquals(l: *Lowerer, left: Node.Index, right: Node.Index, p: u32) !?Node.Index {
+        if (l.b.tagOf(left) != .cond) return null;
+        const d = l.b.dataOf(left);
+        const t: Node.Index = @fromBackingInt(d.lhs);
+        if (l.b.tagOf(t) != .binary) return null;
+        const t_op: JsIr.BinaryOp = @fromBackingInt(@intCast(l.b.dataOf(t).rhs));
+        const negated: JsIr.BinaryOp = switch (t_op) {
+            .strict_eq => .strict_ne,
+            .strict_ne => .strict_eq,
+            else => return null,
+        };
+        const a = l.sameLiteral(@fromBackingInt(l.b.extra.items[d.rhs]), right) orelse return null;
+        const b = l.sameLiteral(@fromBackingInt(l.b.extra.items[d.rhs + 1]), right) orelse return null;
+        if (a == b) return null;
+        if (a) return t;
+        const pair_index = l.b.dataOf(t).lhs;
+        const record = try l.b.addRecord(JsIr.Binary{
+            .left = @fromBackingInt(l.b.extra.items[pair_index]),
+            .right = @fromBackingInt(l.b.extra.items[pair_index + 1]),
+        });
+        return try l.add(.binary, p, @backingInt(record), @backingInt(negated));
+    }
+
+    /// Whether two string literals, or two integer literals, are the same
+    /// value; null for anything else.
+    fn sameLiteral(l: *Lowerer, a: Node.Index, b: Node.Index) ?bool {
+        const tag = l.b.tagOf(a);
+        if (tag != l.b.tagOf(b) or (tag != .string and tag != .number)) return null;
+        const da = l.b.dataOf(a);
+        const db = l.b.dataOf(b);
+        const bytes = l.b.string_bytes.items;
+        const x = bytes[da.lhs..][0..da.rhs];
+        const y = bytes[db.lhs..][0..db.rhs];
+        if (tag == .string) return std.mem.eql(u8, x, y);
+        const m = std.fmt.parseInt(u32, x, 10) catch return null;
+        const n = std.fmt.parseInt(u32, y, 10) catch return null;
+        return m == n;
+    }
+
     pub fn binary(l: *Lowerer, op: JsIr.BinaryOp, left: Node.Index, right: Node.Index, p: u32) !Node.Index {
+        if (op == .strict_eq) if (try l.choiceEquals(left, right, p)) |folded| return folded;
         const record = try l.b.addRecord(JsIr.Binary{ .left = left, .right = right });
         return l.add(.binary, p, @backingInt(record), @backingInt(op));
     }
@@ -5355,8 +5430,12 @@ pub const Lowerer = struct {
     fn referenceName(l: *Lowerer, inst: Inst.Index) !Node.Index {
         const d = l.bir.instData(inst);
         const p = l.pos(inst);
-        if (l.valid_sites.callees.len != 0 and SchemaValid.has(l.valid_sites.callees, inst.int()))
-            return l.coreSchemaValue(l.valid_sites.runner(inst.int()), p);
+        if (l.valid_sites.callees.len != 0 and SchemaValid.has(l.valid_sites.callees, inst.int())) {
+            // A direct run's callee is its call's, which `callExpr` lowers
+            // whole (`directValidatorCall`).
+            std.debug.assert(!SchemaValid.has(l.valid_sites.direct_callees, inst.int()));
+            return l.coreSchemaValue("readValid", p);
+        }
         // A shape run calls the shared validator (`schema.md` §6, *A
         // validator run is a shape that one shared validator reads*).
         if (l.valid_sites.shape_callees.len != 0 and SchemaValid.has(l.valid_sites.shape_callees, inst.int()))
@@ -8146,8 +8225,8 @@ pub const Lowerer = struct {
 
     /// A `Json` call that is a shape run (`schema.md` §6, *A validator run
     /// is a shape that one shared validator reads*), `validShape` or
-    /// `shapeParse` of its codec's shape, or a validator run, `validRun` or
-    /// `validParse` of its codec's validator worker; null for any other
+    /// `shapeParse` of its codec's shape, or a validator run, its codec's
+    /// validator worker where it stands (`validatorRun`); null for any other
     /// call. The reference itself has nothing to evaluate.
     noinline fn jsonValidatorCall(l: *Lowerer, out: *StmtList, inst: Inst.Index, callee_inst: Inst.Index, p: u32) !?Node.Index {
         const d = l.bir.instData(inst);
@@ -8156,13 +8235,124 @@ pub const Lowerer = struct {
         const written = try l.exprList(out, l.bir.subRange(@fromBackingInt(@intCast(d.rhs))));
         l.region = inst;
         const sg = l.in.schemas.?;
-        const args = try l.scratch.alloc(Node.Index, written.len + 1);
         const ref = sg.codecTarget(l.in.module, k);
-        args[0] = if (shape != null) try SchemaLower.shapeName(l, ref, p) else try SchemaLower.validWorker(l, ref, p);
+        if (shape == null) {
+            std.debug.assert(written.len == 1);
+            const ran = try l.validatorRun(out, try SchemaLower.validWorker(l, ref, p), written[0], SchemaValid.has(l.valid_sites.json_parses, inst.int()), p);
+            return try l.validatorResult(ran, p);
+        }
+        const args = try l.scratch.alloc(Node.Index, written.len + 1);
+        args[0] = try SchemaLower.shapeName(l, ref, p);
         @memcpy(args[1..], written);
-        const runner_name = if (shape != null) l.valid_sites.shapeRunner(callee_inst.int()) else l.valid_sites.jsonRunner(inst.int());
-        const runner = try l.coreSchemaValue(runner_name, p);
+        const runner = try l.coreSchemaValue(l.valid_sites.shapeRunner(callee_inst.int()), p);
         return try l.suspension(out, inst, try l.call(runner, args, p));
+    }
+
+    /// A `Schema` validator run whose schema is `S.schema ⊤` of a
+    /// nongeneric declaration: `S`'s validator worker called where the
+    /// run stands (`directValidatorCall`).
+    noinline fn directValidatorCall(l: *Lowerer, out: *StmtList, inst: Inst.Index, callee_inst: Inst.Index, arg_insts: []const Inst.Index, p: u32) !Node.Index {
+        return l.validatorResult(try l.directValidatorRun(out, inst, callee_inst, arg_insts, p), p);
+    }
+
+    fn directValidatorRun(l: *Lowerer, out: *StmtList, inst: Inst.Index, callee_inst: Inst.Index, arg_insts: []const Inst.Index, p: u32) !ValidatorRan {
+        std.debug.assert(arg_insts.len == 2);
+        const ref = l.valid_sites.refOfArg(arg_insts[0].int()).?;
+        // `S.schema ⊤` has nothing to evaluate.
+        const value = try l.expr(out, arg_insts[1]);
+        l.region = inst;
+        return l.validatorRun(out, try SchemaLower.validWorker(l, ref, p), value, SchemaValid.has(l.valid_sites.parse_callees, callee_inst.int()), p);
+    }
+
+    /// `Result.withDefault run d` or `Result.toMaybe run` of a direct or
+    /// `Json` validator run: the run where it stands and the call's answer
+    /// beside it, `x === c.fail ? d : x` or `… ? Nothing : Just x`, the
+    /// call never made. `d` is evaluated after the run, as the call's
+    /// arguments are.
+    noinline fn validatorConsumer(l: *Lowerer, out: *StmtList, inst: Inst.Index, arg_insts: []const Inst.Index, p: u32) !Node.Index {
+        const run_inst = arg_insts[0];
+        const run_data = l.bir.instData(run_inst);
+        const run_callee: Inst.Index = @fromBackingInt(@intCast(run_data.lhs));
+        const ran = if (SchemaValid.has(l.valid_sites.direct_callees, run_callee.int()))
+            try l.directValidatorRun(out, run_inst, run_callee, l.bir.extraSlice(l.bir.subRange(@fromBackingInt(@intCast(run_data.rhs))), Inst.Index), p)
+        else blk: {
+            const k = l.valid_sites.codecOfCall(run_inst.int()).?;
+            const written = try l.exprList(out, l.bir.subRange(@fromBackingInt(@intCast(run_data.rhs))));
+            std.debug.assert(written.len == 1);
+            l.region = run_inst;
+            const ref = l.in.schemas.?.codecTarget(l.in.module, k);
+            break :blk try l.validatorRun(out, try SchemaLower.validWorker(l, ref, p), written[0], SchemaValid.has(l.valid_sites.json_parses, run_inst.int()), p);
+        };
+        if (SchemaValid.has(l.valid_sites.defaults, inst.int())) {
+            std.debug.assert(arg_insts.len == 2);
+            const default = try l.bindSubject(out, try l.expr(out, arg_insts[1]), p);
+            l.region = inst;
+            return l.condOf(try l.validatorFailed(ran, p), default, try l.ident(ran.x, p), p);
+        }
+        std.debug.assert(arg_insts.len == 1);
+        l.region = inst;
+        return l.condOf(
+            try l.validatorFailed(ran, p),
+            try l.coreCtorApplied("Maybe", "Nothing", &.{}, p),
+            try l.coreCtorApplied("Maybe", "Just", &.{try l.ident(ran.x, p)}, p),
+            p,
+        );
+    }
+
+    /// A validator run's context and answer, each a `const`.
+    const ValidatorRan = struct { c: JsIr.NameIndex, x: JsIr.NameIndex };
+
+    /// `x === c.fail`.
+    fn validatorFailed(l: *Lowerer, ran: ValidatorRan, p: u32) !Node.Index {
+        const fail = try l.interner.getOrPut(l.gpa, "fail");
+        return l.binary(.strict_eq, try l.ident(ran.x, p), try l.fieldMember(try l.ident(ran.c, p), fail, p), p);
+    }
+
+    /// `x === c.fail ? Err [] : Ok x`.
+    fn validatorResult(l: *Lowerer, ran: ValidatorRan, p: u32) !Node.Index {
+        const empty = try l.b.addRange(&.{});
+        const issues = try l.add(.array, p, @backingInt(empty.start), @backingInt(empty.end));
+        return l.condOf(
+            try l.validatorFailed(ran, p),
+            try l.coreCtorApplied("Result", "Err", &.{issues}, p),
+            try l.coreCtorApplied("Result", "Ok", &.{try l.ident(ran.x, p)}, p),
+            p,
+        );
+    }
+
+    /// A direct validator run where it stands (`schema.md` §6, *A validator
+    /// run calls its worker where it stands*): a context of its own, so a
+    /// fail mark of its own, the worker called on the value (a `parse`'s
+    /// text read by `validJson` first), and the `Result` built here.
+    ///
+    ///     const c = validContext()
+    ///     const j = validJson(c, text)                    // a `parse`
+    ///     const x = W(c, 0, null, null, null, value)      // `j === c.fail ? j : W(…, j)`
+    ///     x === c.fail ? Err [] : Ok x
+    ///
+    /// No shared runner holds what every worker returns, so what one run
+    /// builds is seen flowing to that run's own reader alone.
+    fn validatorRun(l: *Lowerer, out: *StmtList, worker: Node.Index, value: Node.Index, parse: bool, p: u32) !ValidatorRan {
+        const c = try l.fresh(l.well.temp);
+        try l.constDecl(out, c, try l.call(try l.coreSchemaValue("validContext", p), &.{}, p), p);
+        const fail = try l.interner.getOrPut(l.gpa, "fail");
+        var input = value;
+        var parsed: ?JsIr.NameIndex = null;
+        if (parse) {
+            const j = try l.fresh(l.well.temp);
+            try l.constDecl(out, j, try l.call(try l.coreSchemaValue("validJson", p), &.{ try l.ident(c, p), value }, p), p);
+            input = try l.ident(j, p);
+            parsed = j;
+        }
+        const null_ = try l.nullNode(p);
+        var ran = try l.call(worker, &.{ try l.ident(c, p), try l.intNode(0, p), null_, null_, null_, input }, p);
+        if (parsed) |j| {
+            const unparsed = try l.binary(.strict_eq, try l.ident(j, p), try l.fieldMember(try l.ident(c, p), fail, p), p);
+            ran = try l.condOf(unparsed, try l.ident(j, p), ran, p);
+        }
+        const x = try l.fresh(l.well.temp);
+        try l.constDecl(out, x, ran, p);
+        return .{ .c = c, .x = x };
     }
 
     fn callExpr(l: *Lowerer, out: *StmtList, inst: Inst.Index) !Node.Index {
@@ -8185,6 +8375,14 @@ pub const Lowerer = struct {
         // §9.4.6, version 1.6): the constructor applied to the mount the
         // lowering compiles, and the record never evaluated.
         if (l.programCallAt(inst)) |pc| return l.programCall(out, inst, pc, callee_inst);
+        // A direct validator run calls its worker where it stands, and a
+        // `Result.withDefault` or `Result.toMaybe` of one is written
+        // beside it.
+        if (l.valid_sites.defaults.len != 0 or l.valid_sites.maybes.len != 0)
+            if (SchemaValid.has(l.valid_sites.defaults, inst.int()) or SchemaValid.has(l.valid_sites.maybes, inst.int()))
+                return l.validatorConsumer(out, inst, arg_insts, p);
+        if (l.valid_sites.direct_callees.len != 0 and SchemaValid.has(l.valid_sites.direct_callees, callee_inst.int()))
+            return l.directValidatorCall(out, inst, callee_inst, arg_insts, p);
         // `S.schema ⊤` a validator run calls directly: `S`'s validator
         // worker (`SchemaValid`).
         if (l.valid_sites.args.len != 0) if (l.valid_sites.refOfArg(inst.int())) |ref| return SchemaLower.validWorker(l, ref, p);

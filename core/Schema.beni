@@ -3450,9 +3450,8 @@ validate : Workers, Value → Result (List Issue) a
 validate w v = validRun (parserIn w validMode) v
 
 
--- A validator worker run on a host value, its context `read`'s: what a run
--- whose schema is `S.schema ⊤` of a nongeneric declaration calls with `S`'s
--- validator, the schema value never made (`schema.md` §6).
+-- A validator worker run on a host value, its context `read`'s: what
+-- `readValid` runs for a compiled schema with no dynamic part.
 validRun : Js.Value, Value → Result (List Issue) a
 validRun worker v =
     c = context (defaultOptions ⊤) Decoding encodedSide True typeSide False False
@@ -3460,16 +3459,24 @@ validRun worker v =
     if Js.same x c.fail then Err [] else Ok (fromHost x)
 
 
--- `parse` at a call whose `Err` payload nothing reads, its schema `S.schema ⊤`
--- of a nongeneric declaration (`schema.md` §6): `JSON.parse`, only its
--- `SyntaxError` caught, then `S`'s validator worker on `read`'s context,
--- which holds for what `JSON.parse` makes as for any host value. That
--- context's `json` is False where `parse`'s is True, which no decoding run
--- can tell: `json` is read only together with `dh`, a host output, by the
--- `Float` and `Value` tests of what `print` may write, and a decoding
--- context's `dh` is False (`prim`).
-validParse : Js.Value, String → Result (List Issue) a
-validParse worker text =
+-- The context a validator run whose schema is `S.schema ⊤` of a nongeneric
+-- declaration makes where it stands (`schema.md` §6, *A validator run calls
+-- its worker where it stands*): `read`'s, so its fail mark is its own. The
+-- run calls `S`'s validator worker with it and builds its `Result` itself,
+-- so no shared runner holds what every worker returns.
+validContext : ⊤ → Context
+validContext ⊤ = context (defaultOptions ⊤) Decoding encodedSide True typeSide False False
+
+
+-- `parse` at such a run: `JSON.parse` of the text, only its `SyntaxError`
+-- caught, and the run's fail mark for one. `S`'s worker then runs on what
+-- `JSON.parse` makes, which holds for it as for any host value. The context
+-- is `read`'s, whose `json` is False where `parse`'s is True, which no
+-- decoding run can tell: `json` is read only together with `dh`, a host
+-- output, by the `Float` and `Value` tests of what `print` may write, and a
+-- decoding context's `dh` is False (`prim`).
+validJson : Context, String → Js.Value
+validJson c text =
     case
         Js.catchIf
             (λ⊤ → Ok (Js.call (Js.global "JSON") "parse" [ Js.from text ]))
@@ -3477,10 +3484,10 @@ validParse worker text =
             λ_ → Err ⊤
     of
         Ok v →
-            validRun worker (fromHost v)
+            v
 
         Err _ →
-            Err []
+            c.fail
 
 
 -- ---- Shapes: the one validator every shape run shares ---------------------

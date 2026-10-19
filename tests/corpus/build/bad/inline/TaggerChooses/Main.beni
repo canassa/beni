@@ -7,13 +7,12 @@ import Browser
 import Cmd exposing (Cmd)
 import Html exposing (Html)
 import Push
-import Schema exposing (Value)
 import Sub exposing (Sub)
 import Tea
 
 
 type Box
-    = Box Value
+    = Box Int
 
 
 type Msg
@@ -39,14 +38,12 @@ subscriptions : {} → Sub Msg
 subscriptions _ = Push.onPush choose
 
 
-choose : Value → Msg
+choose : Int → Msg
 choose v =
-    case Schema.read Schema.int v of
-        Ok _ →
-            Tick
-
-        Err _ →
-            Pushed (Box v)
+    if v > 0 then
+        Tick
+    else
+        Pushed (Box v)
 
 
 view : {} → Html Msg

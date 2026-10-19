@@ -4,17 +4,18 @@
 //! that can match an `Err` matches it as `Err _`, or the first argument of
 //! core's `Result.withDefault` or `Result.toMaybe`. Decided from the
 //! program's text alone, so reachability and lowering, which both ask,
-//! answer the same. Such a run calls a core-private runner in place of its
-//! own:
-//! - `Schema.read s v` calls `Schema.readValid`, or `Schema.validRun` with
-//!   `S`'s validator worker when `s` is `S.schema ⊤` of a nongeneric
-//!   declaration;
-//! - `Schema.parse (S.schema ⊤) text` of a nongeneric `S` calls
-//!   `Schema.validParse` with `S`'s validator worker; any other `parse`
-//!   keeps its issues;
+//! answer the same. Such a run is lowered in place of its own call:
+//! - `Schema.read s v` calls `Schema.readValid`, or, when `s` is
+//!   `S.schema ⊤` of a nongeneric declaration, is a **direct** run, which
+//!   calls `S`'s validator worker where it stands, with a context of its
+//!   own from `Schema.validContext` (`schema.md` §6, *A validator run calls
+//!   its worker where it stands*);
+//! - `Schema.parse (S.schema ⊤) text` of a nongeneric `S` is a direct run
+//!   whose text `Schema.validJson` reads first; any other `parse` keeps its
+//!   issues;
 //! - `Json.decodeValue v` and `Json.decode text` whose evidence is a
-//!   nongeneric derived codec are one call of `Schema.validRun` or
-//!   `Schema.validParse` with the codec's validator worker.
+//!   nongeneric derived codec are direct runs of the codec's validator
+//!   worker.
 //!
 //! A run whose schema has a shape (`SchemaGraph.shapeable`) is a **shape
 //! run** instead (`schema.md` §6, *A validator run is a shape that one
@@ -38,8 +39,8 @@ pub const Sites = struct {
     /// The callees of the `Schema.read` and direct `Schema.parse` runs.
     callees: []const u32 = &.{},
     /// Of those, the ones whose schema is `S.schema ⊤` of a nongeneric
-    /// declaration, which call `validRun` (a `read`) or `validParse` (a
-    /// `parse`) with `S`'s validator worker and reach no root value of
+    /// declaration, which call `S`'s validator worker where they stand (a
+    /// `parse` reading its text with `validJson`) and reach no root value of
     /// `S`; their argument calls and member instructions, with the
     /// declarations, in `args`, `members` and `refs`.
     direct_callees: []const u32 = &.{},
@@ -48,9 +49,17 @@ pub const Sites = struct {
     args: []const u32 = &.{},
     members: []const u32 = &.{},
     refs: []const SchemaGraph.Ref = &.{},
-    /// A `Json` validator run's call, written as one call of `validRun` or
-    /// `validParse`, its codec's index in this module's plan, and of those
-    /// calls the `decode` ones, which parse.
+    /// The calls of `Result.withDefault` and `Result.toMaybe` whose first
+    /// argument is a direct run or a `Json` validator run, written with the
+    /// run where it stands and never called, and their callees, which
+    /// reach nothing (`schema.md` §6, *A validator run calls its worker
+    /// where it stands*).
+    defaults: []const u32 = &.{},
+    maybes: []const u32 = &.{},
+    consumer_callees: []const u32 = &.{},
+    /// A `Json` validator run's call, written as a direct run of its
+    /// codec's validator worker, its codec's index in this module's plan,
+    /// and of those calls the `decode` ones, which parse.
     json_calls: []const u32 = &.{},
     json_codecs: []const u32 = &.{},
     json_parses: []const u32 = &.{},
@@ -106,12 +115,6 @@ pub const Sites = struct {
         return null;
     }
 
-    /// The core-private value the callee of validator run `inst` calls.
-    pub fn runner(s: Sites, callee: u32) []const u8 {
-        if (has(s.parse_callees, callee)) return "validParse";
-        return if (has(s.direct_callees, callee)) "validRun" else "readValid";
-    }
-
     /// Whether two answers for one module name the same runs: what
     /// `Lower` asserts of its own answer and reachability's, which read
     /// the module's dispatch table from different places.
@@ -123,12 +126,9 @@ pub const Sites = struct {
             eq(u32, a.json_codecs, b.json_codecs) and eq(u32, a.json_parses, b.json_parses) and
             eq(u32, a.json_callees, b.json_callees) and eq(u32, a.shape_callees, b.shape_callees) and
             eq(u32, a.shape_parses, b.shape_parses) and eq(u32, a.shape_args, b.shape_args) and
-            eq(u32, a.shape_json, b.shape_json) and eq(u32, a.shape_codecs, b.shape_codecs);
-    }
-
-    /// The core-private value a `Json` validator run's call is.
-    pub fn jsonRunner(s: Sites, call: u32) []const u8 {
-        return if (has(s.json_parses, call)) "validParse" else "validRun";
+            eq(u32, a.shape_json, b.shape_json) and eq(u32, a.shape_codecs, b.shape_codecs) and
+            eq(u32, a.defaults, b.defaults) and eq(u32, a.maybes, b.maybes) and
+            eq(u32, a.consumer_callees, b.consumer_callees);
     }
 };
 
@@ -178,6 +178,9 @@ pub fn sites(
     var shape_refs: std.ArrayList(SchemaGraph.Ref) = .empty;
     var shape_json: std.ArrayList(u32) = .empty;
     var shape_codecs: std.ArrayList(u32) = .empty;
+    var defaults: std.ArrayList(u32) = .empty;
+    var maybes: std.ArrayList(u32) = .empty;
+    var consumer_callees: std.ArrayList(u32) = .empty;
     for (0..bir.insts.len) |i| {
         const inst: Inst.Index = @fromBackingInt(@intCast(i));
         const call = unreadRun(graph, interfaces, interner, bir, inst) orelse continue;
@@ -212,6 +215,7 @@ pub fn sites(
                 try json_codecs.append(scratch, k);
                 try json_callees.append(scratch, callee.int());
                 if (run == .json_parse) try json_parses.append(scratch, call.int());
+                try consumer(graph, interfaces, interner, bir, scratch, inst, &defaults, &maybes, &consumer_callees);
             },
             .schema_read, .schema_parse => {
                 // The schema `S.schema ⊤` of a nongeneric declaration, read
@@ -246,6 +250,7 @@ pub fn sites(
                     try args.append(scratch, r[0]);
                     try members.append(scratch, r[1]);
                     try refs.append(scratch, r[2]);
+                    try consumer(graph, interfaces, interner, bir, scratch, inst, &defaults, &maybes, &consumer_callees);
                 }
             },
         }
@@ -257,7 +262,11 @@ pub fn sites(
     std.mem.sort(u32, json_callees.items, {}, std.sort.asc(u32));
     std.mem.sort(u32, shape_callees.items, {}, std.sort.asc(u32));
     std.mem.sort(u32, shape_parses.items, {}, std.sort.asc(u32));
+    std.mem.sort(u32, consumer_callees.items, {}, std.sort.asc(u32));
     return .{
+        .defaults = defaults.items,
+        .maybes = maybes.items,
+        .consumer_callees = consumer_callees.items,
         .callees = callee_list.items,
         .direct_callees = direct.items,
         .parse_callees = parses.items,
@@ -276,6 +285,30 @@ pub fn sites(
         .shape_json = shape_json.items,
         .shape_codecs = shape_codecs.items,
     };
+}
+
+/// Records `inst`, the instruction whose run is unread, when it is a call
+/// of `Result.withDefault` or `Result.toMaybe`: the run is written where
+/// it stands, with the call's answer, and the call is never made.
+fn consumer(
+    graph: *const Graph,
+    interfaces: []const Interface,
+    interner: *const InternPool.Global,
+    bir: *const Bir,
+    scratch: Allocator,
+    inst: Inst.Index,
+    defaults: *std.ArrayList(u32),
+    maybes: *std.ArrayList(u32),
+    callees: *std.ArrayList(u32),
+) Allocator.Error!void {
+    if (bir.instTag(inst) != .call) return;
+    const callee: Inst.Index = @fromBackingInt(@intCast(bir.instData(inst).lhs));
+    if (isCoreValue(graph, interfaces, interner, bir, callee, "Result", "withDefault")) {
+        try defaults.append(scratch, inst.int());
+    } else if (isCoreValue(graph, interfaces, interner, bir, callee, "Result", "toMaybe")) {
+        try maybes.append(scratch, inst.int());
+    } else return;
+    try callees.append(scratch, callee.int());
 }
 
 /// The declaration a `schema` member instruction names, `S.schema`.

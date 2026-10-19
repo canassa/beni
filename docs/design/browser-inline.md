@@ -332,6 +332,19 @@ beni over `Js` in `Inline.beni`:
   An argument is evaluated once per call site, before that helper's body; sibling calls keep separate
   bindings. Only invocation-local temporaries cross the preparation and write phases. Functions whose
   work is all proven pure and total keep their existing eager code.
+  *Corrected 2026-10-19 (the owner, #466):* a helper argument used by an event handler is part
+  of the handler binding, as in the source: its message is built during view evaluation and lives
+  on the node until the binding reruns. Bound arguments share that lifetime, are refreshed by a
+  relevant selected binding evaluation, and are released on arm exit or teardown. This is ordinary
+  handler binding, not a memo exception. Its complete read set includes argument fields used only
+  by handlers; updating one refreshes the binding even when no text changes. Every helper call
+  occurrence has its own binding. An argument proven pure and total may instead be recomputed at
+  dispatch when observably equivalent; an effectful or possibly throwing argument is retained
+  from binding evaluation and never rerun by dispatch. Successful preparation publishes the new
+  binding with its selected writes; a failed preparation publishes neither. An inactive arm has
+  no active handler, including no `preventDefault` or `stopPropagation` effect from a host's
+  programmatic event on a retained detached node. Hidden updates keep no stale argument binding;
+  reentry evaluates current-model arguments freshly. Ownership guarantees are unchanged.
 
 S0's one text binding — a text node marked by a space in the markup, its `data` written when it
 differs from a slot — is a `text` binding like the others from S1: one shape, the same as

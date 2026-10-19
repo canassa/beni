@@ -930,9 +930,12 @@ pub const Builder = struct {
     /// `core/Schema`'s `readValid`, which a validator run calls in place
     /// of `read` (`SchemaValid`).
     read_valid: ?Node = null,
-    valid_run: ?Node = null,
-    /// `core/Schema`'s `validParse`, which a validator `parse` calls.
-    valid_parse: ?Node = null,
+    /// `core/Schema`'s `validContext`, which a direct validator run
+    /// calls where it stands, and `validJson`, which a direct validator
+    /// `parse` calls too (`schema.md` §6, *A validator run calls its
+    /// worker where it stands*).
+    valid_context: ?Node = null,
+    valid_json: ?Node = null,
     /// `core/Schema`'s `validShape` and `shapeParse`, which a shape run
     /// calls (`SchemaValid`).
     valid_shape: ?Node = null,
@@ -962,11 +965,18 @@ pub const Builder = struct {
             .list_append = in.coreDecl(.List, .append),
             .schema_guarded = in.schemaGuarded(),
             .read_valid = in.coreDeclNamed(.Schema, "readValid"),
-            .valid_run = in.coreDeclNamed(.Schema, "validRun"),
+            .valid_context = in.coreDeclNamed(.Schema, "validContext"),
             .valid_shape = in.coreDeclNamed(.Schema, "validShape"),
             .shape_parse = in.coreDeclNamed(.Schema, "shapeParse"),
-            .valid_parse = in.coreDeclNamed(.Schema, "validParse"),
+            .valid_json = in.coreDeclNamed(.Schema, "validJson"),
         };
+    }
+
+    /// A direct validator run's edges: `validContext`, and `validJson`
+    /// for a `parse`.
+    fn directRun(b: *Builder, targets: *std.ArrayList(Target), context: Node, parse: bool, chain: u32) Allocator.Error!void {
+        try targets.append(b.scratch, .{ .node = context, .chain = chain });
+        if (parse) if (b.valid_json) |j| try targets.append(b.scratch, .{ .node = j, .chain = chain });
     }
 
     /// Every edge out of every node of one module. Writes nothing outside
@@ -1021,10 +1031,16 @@ pub const Builder = struct {
             try decl_targets.ensureUnusedCapacity(b.scratch, b.stream.items.len);
             for (b.stream.items, b.at.items) |edge, position| {
                 if (position != Edges.no_position and b.cut(m, position)) continue;
-                // A validator run calls `readValid`, not `read` (`SchemaValid`).
+                // A validator run calls `readValid`, not `read`, and a
+                // direct one makes its context with `validContext` and,
+                // a `parse`, reads its text with `validJson` (`SchemaValid`).
                 if (position != Edges.no_position and SchemaValid.has(valid.callees, position)) {
-                    const runner = if (SchemaValid.has(valid.parse_callees, position)) b.valid_parse else if (SchemaValid.has(valid.direct_callees, position)) b.valid_run else b.read_valid;
-                    if (runner) |rv| {
+                    if (SchemaValid.has(valid.direct_callees, position)) {
+                        if (b.valid_context) |rv| {
+                            try b.directRun(&decl_targets, rv, SchemaValid.has(valid.parse_callees, position), guards.at(position));
+                            continue;
+                        }
+                    } else if (b.read_valid) |rv| {
                         try decl_targets.append(b.scratch, .{ .node = rv, .chain = guards.at(position) });
                         continue;
                     }
@@ -1046,14 +1062,16 @@ pub const Builder = struct {
                     }
                 };
                 if (position != Edges.no_position and SchemaValid.has(valid.json_callees, position)) continue;
-                // A `Json` validator run calls `validRun` or `validParse`
-                // with its codec's validator workers: its callee is not
-                // called and its codec's value is not made.
+                // A `Result.withDefault` or `Result.toMaybe` of a validator
+                // run is written beside the run and never called.
+                if (position != Edges.no_position and SchemaValid.has(valid.consumer_callees, position)) continue;
+                // A `Json` validator run calls its codec's validator worker
+                // where it stands: its callee is not called and its codec's
+                // value is not made.
                 if (position != Edges.no_position) if (valid.codecOfCall(position)) |k| {
                     if (edge == .codec and k == edge.codec) {
                         try decl_targets.append(b.scratch, .{ .node = schemaNode(.{ .module = m, .decl = @intCast(bir.decls.len + k) }, .read_valid), .chain = guards.at(position) });
-                        const runner = if (SchemaValid.has(valid.json_parses, position)) b.valid_parse else b.valid_run;
-                        if (runner) |rv| try decl_targets.append(b.scratch, .{ .node = rv, .chain = guards.at(position) });
+                        if (b.valid_context) |rv| try b.directRun(&decl_targets, rv, SchemaValid.has(valid.json_parses, position), guards.at(position));
                         continue;
                     }
                 };

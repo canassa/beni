@@ -7,7 +7,6 @@
 
 import Js
 import Listen
-import Schema exposing (Value)
 import Sub exposing (Sub)
 
 
@@ -17,9 +16,9 @@ type Key
 
 --| Every event the host pushes, as the host value it sent, for as long as
 --| the subscription is in the program's set.
-pub onPush : (Value → msg) → Sub msg
+pub onPush : (Int → msg) → Sub msg
 onPush tag = Sub.on Pushed (Listen.on "window" "rr-push" detail _) tag
 
 
-detail : Js.Value → Value
+detail : Js.Value → Int
 detail event = Js.to (Js.get event "detail")

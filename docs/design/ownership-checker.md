@@ -1796,6 +1796,104 @@ reached apart from the level it started at, with a step of its own:
   `callSiteDemandDeep`, and remove the obligation's clause above. `ownership/DictValueWritten` pins the
   exemption: a dictionary's value written while the dictionary is still read is refused.
 
+*Amended 2026-10-19 (issue #286): the bound argument — why four sources of growth, and no fifth.* Removing the
+path cut `k` (c) is sound only if every path the checker builds is bounded without it. The paragraph above
+names four sources of unbounded paths. This one argues there is no fifth, and gives each source its fold. It is a
+design text recording the owner's composed-path decision and the remaining proof obligations. `k` stays:
+casts through records and tuples still have no fold (F2), and #447's soundness correction is open.
+
+*Where a path grows.* A path is built only by `child`, one step at a time, and a step is added in three ways:
+a projection or a construction mirrors one step of the value (a field, a tuple slot, a constructor field, a
+list's elements, a closure's environment, a markup or schema slot); `shift` places a value one step down; and
+instantiation at a call (§16.4) puts a callee's summary path in front of an argument's path. A `⋆` absorbs every
+step after it (`childRaw`), so a path with `⋆` grows no further. The markup and schema slots are added only at a
+value's root (`⟨render⟩` over `ε` or `⋆`, events at `⋆`, `⟨decoded⟩`/`⟨encoded⟩` at the root), so each adds at
+most one step and none chains.
+
+*A path walks a type.* Every other step is a step into the type of the value at the place it leaves: a field of a
+record type, a slot of a tuple, a field of a constructor, the element of a `List`. So a path is a walk in the type
+graph, from the root's type, with two exceptions where the step is not read off the type: a closure's `◇`, whose
+captures a function type does not write, and a cast through `Js.Value`, after which the path is read at a type
+it was not made at. A walk is finite unless it goes round a cycle of the graph, or the graph it walks is
+infinite. That gives the four sources, and only four:
+
+1. **A cycle: a recursive type.** Folded by the level marker `⟨T⟩` (the amendments above): a constructor step
+   into a type a path is already inside goes under that region's marker, and a marker asked for where there is
+   one folds onto it. A path holds at most one marker per region, and there are finitely many types, so the walk
+   between markers is acyclic and bounded by the type graph. A region ends at a constructor field that
+   reaches the type only through a type parameter (`regionOf`, for example a `Dict` value). Passing that
+   boundary walks the finite type argument term; nested `Dict` arguments are not a recursive region. An
+   unbounded family of such terms can arise only through the polymorphic instantiation in 4. Issue #379
+   (`#Node.0#Node.1` folded onto `#Node.1`, so a deeper level's list was the root's) is closed by the marker. `ownership/DeeperLevel` pins it.
+   Two exemptions keep the merged fold, each bounded by the same count: core `Dict`'s tree until #294, and a
+   type that does not reach itself until F2.
+2. **A step the type does not write: a closure's environment.** F1, built: a function type is a recursive type of
+   its own whose region step is `◇`, so `◇p◇q` is `◇⟨◇⟩◇q` and a path holds one `◇` and at most one closure
+   marker after it (the F1 amendments, `ownership/Clo`, `ClosureLevels`, `SiblingEnvs`, `DirectCapture`).
+3. **A walk read at another type: a cast.** F2, the cast marker `⟨as T⟩`. *Corrected 2026-10-19:* this source
+   has no fold for record or tuple casts yet. Until F2 lands, a constructor of a type that a path enters
+   twice, with no recursion, was cast and read again, and it folds onto where it first entered, with no marker. That bounds a cast that
+   re-reads a *named type* by the number of types. A cast that re-reads a *record* or a *tuple* is not bounded.
+   A field or tuple step carries no type in the path, so the fold cannot see the second entry. Core's
+   `Schema` grows that way:
+   - `collect`: `π1.parent.parent…`;
+   - `unpack`: `π1.0.0.0…`;
+   - `productOf`: `res .0.0.0…`.
+   On `master` the cut holds them at eight steps. Without it they never settle, and the `rounds` limit makes
+   them pessimistic (measured 2026-10-19 with `k` removed). So casts are F2's, and `k` cannot go before F2.
+   The owner decided F2 on 2026-10-18: option (iii), the check made to scale (not `value-cells` raised), with a
+   marker that records the full type, not the head. Its measurement goes to the owner before it is built.
+4. **An infinite graph: polymorphic recursion.** Instantiation composes paths. Outside a recursive group this is
+   bounded by induction over the recursive groups of the call graph and the acyclic module graph
+   (§16.9): a callee's summary, including an imported one, is settled before a caller instantiates it. Each
+   concatenation walks a finite composed type. The bound depends on the program, not a universal constant:
+   a chain that adds a `List` at every call adds a step per link. A recursive type in the composition folds
+   as in 1. Inside a group, the fixpoint instantiates the group's own summaries repeatedly. Without a substitution that places a group type variable inside a structure containing a
+   group variable (monomorphic recursion, the common case), variable renamings, including cycles of
+   variables, walk the same finite graph, and 1–3 bound it. A substitution such as `a` at `List a`, including
+   one reached through a cycle of group variables, can instead grow the graph:
+   the types along the composed path are drawn from an infinite family (`List a`, `List (List a)`, …), and no
+   fold of 1–3 sees a repeated region. `wrap n x = if n == 0 then Leaf x else Wrap (wrap (n - 1) [ x ])` returns
+   `#Leaf.0[*][*]…`, and `g` (a closure, no nested datatype) returns `◇[*][*]…`. *Decided
+   (2026-10-19):* the owner chose the fold on the composed path (the amendment above, *the owner's choice
+   (a)*). #429 implements it on every route of growth. The soundness correction to `nested` in #447 remains
+   open; neither that correction nor removal of `k` is claimed here.
+   - *The rejected fold at the call* (the earlier F3 amendment, *a fold at a polymorphic-recursive call*):
+     an argument's places below a variable the call instantiates at a structure go to `⋆` (or keep their
+     first step and go to `⋆` below it). Finite and sound (`⋆` only merges), but it loses a verdict master
+     gives: `wrap`, `mwrap`, `pwrap` and `uwrap` lose every result condition (`{lost}` for `{excl π2}`).
+     `pushArg xs = case wrap 1 xs of Wrap (Leaf ys) → case ys of [ zs ] → List.push zs 1` is refused
+     `exclusive` (approximate), where master accepts it `param`. The base case's entry (`#Leaf.0⋆`) and
+     the deeper levels' (`⟨T⟩⁺#Leaf.0⋆`) end in one suffix, and a constructor step folds them onto one
+     path, one cell at two places that may both hold it. Keeping the first step exact recovers nothing:
+     the argument is always `[x]`, and growth is in composition, not in the argument.
+   - *The adopted fold on the composed path:* argument paths stay exact. Summary entries record whether
+     they have already crossed a growing call; the first composition below its type-variable boundary stays
+     exact and records the crossing, and a later one folds the growing suffix to `⋆` (the rule and all
+     routes in the amendment above). This supplies the information the earlier sketch lacked; it is no
+     longer an unmeasured alternative awaiting the owner. A concrete place cannot hold a cell and hold
+     that same cell strictly below itself, by acyclicity. A prefix containing a representative step names
+     several places, so that argument alone does not justify treating its entries as one place: #447
+     tracks the required soundness correction.
+
+*Why no fifth.* Every step is one of: a typed step (bounded by 1 on a finite type graph); a root-only slot; `◇`
+(2); a step after a cast (3, unbounded for records and tuples until F2); or a `⋆`, which ends growth. The type
+graph is finite except through instantiation inside a recursive group at a structure (4), since outside a group instantiation is settled bottom-up, and the
+types a module names are finite. Symbolic cells (`param(x, q)`, `env`, `cbres`) carry paths built by the same
+`child`, so the same argument bounds them. Hand-authored primitive summaries (§16.8) contain finite
+authored paths; instantiating their rows uses the same composition and folds, and adds no new source of growth.
+A spine condition (§20.4) names cells, not new paths. A fifth source would need a step that is neither typed, root-only, environment, nor cast, or an infinite type family that does
+not come from instantiation inside a group. The checker has no such step (`StepKind` lists them all), and the
+type checker gives no other way to make one.
+
+*What else `k` holds up.* Besides the cut in `childRaw`, `k_limit` sizes the path buffers (`[k_limit + 1]Step`,
+about twenty) and guards `markupEvents`'s walk of a type term. That walk is bounded by the term's size, a finite
+type, so the guard goes with `k`. The order of (c): F1 has landed; 4 has #429 and awaits #447's soundness
+correction; 3 waits for F2 and its measurement to the owner. Then `k` goes: the cut, the buffers (as stack room
+that spills, not a limit), and the summary block's one-byte path length and `n_steps > k_limit` check. A larger
+program can have a larger finite type and path; neither storage nor serialization may impose the old
+constant-length bound.
+
 ### 16.8 The library
 
 Thesis §6.5 as revised in round 5 keeps three kinds of trust apart, and slice 2 follows it:
@@ -2662,6 +2760,20 @@ otherwise fire on every command). `Js.maySuspend f` (`backend.md` §4) reads the
 and nothing of `f`'s value: it is no use and no loss of sight. What the runtime sends a tagger's result to is a
 `need` (§16.2): `Cmd.task work tag` sends `tag (work ⊤)` from a body, so its `tag` needs to return owned, and the
 tagger a program hands it is checked there (§23.5).
+
+*Amended 2026-10-19 (#426): `browser-inline`'s send positions.* `browser-inline` builds its commands and
+subscriptions over no `Hosted`: its runtime hands the bodies their sends from `Cmd` and `Sub` themselves, so
+those are its asserted rows. Before, it had none, and a send's demand was never made: `SendInPayload` and
+`NestedLambdaSend` built on the platform that edits lists in place.
+
+| Function (`browser-inline`) | Row |
+|---|---|
+| `Cmd.perform body` | `job`'s: π₁ `calls many`, `sends π1` |
+| `Sub.on k start tag` | `tap`'s one parameter along, past the key: π₂ `calls many`, `sends π1`; π₃ `calls many`, `need owned`, supplied **borrowed** — two declarations of one key share one listener, and each value goes through both taggers (`Sub.on`'s documentation) |
+| `Sub.map sub tag` | `mapTap`'s: π₂ as `tap`'s tagger, borrowed |
+
+`Listen.on`, which a start forwards its send to, has no row yet: a start written as a top-level function that
+hands its send to it is rejected as a limit (`approx`), where a lambda of a platform layer is not reported on.
 
 ### 23.4 What is checked where
 

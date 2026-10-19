@@ -1,0 +1,42 @@
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    value : Int
+    picked : Int
+
+
+type Msg
+    = Pick Int
+    | Bump
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        Pick n →
+            { model | picked = Debug.log "update" n }
+        Bump →
+            { model | value = model.value + 1 }
+
+
+helper : Int → Html Msg
+helper n = <button data-role="pick" onClick={Pick n}>{n}</button>
+
+
+view : Model → Html Msg
+view model =
+    <div>
+        {helper (Debug.log "argument" model.value)}
+        <p>{model.picked}</p>
+        <button data-role="bump" onClick={Bump}>Bump</button>
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → { value = 3, picked = 0 }, update = update, view = view })
+        "root"

@@ -264,7 +264,8 @@ fn piece(cx: *m.Context, tree: *const m.Tree, req: *const m.PieceRequest) m.Erro
             listener = try js.arrow(&.{e}, blk);
         }
         const node = try pg.ref(ev.target);
-        if (!facts.prevent_default and !facts.stop_propagation) {
+        const active = if (pg.inArm(ev.ctx)) try js.member(node, "isConnected") else null;
+        if (active == null and !facts.prevent_default and !facts.stop_propagation) {
             if (kind) |k| {
                 try js.expression(wire, try js.call(try js.name(try cx.runtime("on")), &.{ node, listener, try js.string(k) }));
             } else try js.expression(wire, try js.call(try js.name(try cx.runtime("on")), &.{ node, listener }));
@@ -272,6 +273,11 @@ fn piece(cx: *m.Context, tree: *const m.Tree, req: *const m.PieceRequest) m.Erro
         }
         const evn = try cx.fresh("event");
         const dom_blk = try js.block();
+        if (active) |active_test| {
+            const inactive = try js.block();
+            try js.@"return"(inactive, null);
+            try js.@"if"(dom_blk, try js.unary(.not, active_test), inactive, null);
+        }
         if (facts.prevent_default) try js.expression(dom_blk, try js.call(try js.member(try js.name(evn), "preventDefault"), &.{}));
         if (facts.stop_propagation) try js.expression(dom_blk, try js.call(try js.member(try js.name(evn), "stopPropagation"), &.{}));
         try js.expression(dom_blk, try js.call(try js.name(try cx.runtime("send")), &.{ listener, try js.name(evn) }));
@@ -377,6 +383,7 @@ const Write = struct {
         /// Hidden while the branch at `node` takes another arm than `shown`.
         /// `arms`: how many arms the branch has.
         when: struct { node: m.Node.Index, shown: u32, arms: u32 = 2 },
+        event: u32,
     },
     /// A `stateful` attribute: a control the user edits (§8.3).
     stateful: bool = false,
@@ -392,6 +399,7 @@ const Event = struct {
     item: m.Item,
     /// Its index in `Tree.items`.
     index: u32,
+    captures: []const u32 = &.{},
 };
 
 /// One binding function: the writes of one set of read sets, or a piece's
@@ -649,7 +657,8 @@ const Page = struct {
         };
         if (callee.maps != 0) return later(cx, n, "a function returning markup under `Html.map` in the program's own module");
         if (callee.statements) return later(cx, n, "a function returning markup whose body has `let`s that no hole reads");
-        try pg.ctxs.append(pg.a(), .{ .parent = ctx, .node = n, .arm = 0, .root = r, .kind = .call });
+        const call_group = cx.programHole(.{ .node = n }).group;
+        try pg.ctxs.append(pg.a(), .{ .parent = ctx, .node = n, .arm = 0, .root = r, .group = call_group, .kind = .call });
         const inner: u32 = @intCast(pg.ctxs.items.len - 1);
         try cx.programInlineEnter(null, n, null, false);
         defer cx.programInlineLeave();
@@ -705,7 +714,25 @@ const Page = struct {
         switch (it.kind) {
             .attribute => {},
             .event => {
-                try pg.events.append(pg.a(), .{ .node = n, .target = target, .ctx = ctx, .item = it, .index = index });
+                var captures: std.ArrayList(u32) = .empty;
+                var groups: std.ArrayList(u32) = .empty;
+                // Piece listeners already use their constructor directly and
+                // never reenter helper arguments at dispatch.
+                var at: ?u32 = if (pg.piece) null else ctx;
+                while (at) |c| : (at = pg.ctxs.items[c].parent) {
+                    const call_ctx = pg.ctxs.items[c];
+                    if (call_ctx.kind != .call) continue;
+                    const call = tree.hole(call_ctx.node).call orelse continue;
+                    const total = for (0..call.args.len) |i| {
+                        if (!cx.valuePureTotal(call.args.at(@intCast(i)))) break false;
+                    } else true;
+                    if (total) continue;
+                    try captures.append(pg.a(), c);
+                    try groups.append(pg.a(), call_ctx.group.?);
+                }
+                const ei: u32 = @intCast(pg.events.items.len);
+                try pg.events.append(pg.a(), .{ .node = n, .target = target, .ctx = ctx, .item = it, .index = index, .captures = captures.items });
+                if (captures.items.len != 0) try pg.writes.append(pg.a(), .{ .target = target, .ctx = ctx, .groups = try sorted(pg.a(), groups.items), .what = .{ .event = ei } });
                 return;
             },
             else => return later(cx, n, "an escape attribute"),
@@ -875,6 +902,16 @@ const Page = struct {
             u.elements = try cx.fresh("elements");
             try js.constant(body, u.elements, try js.call(try js.name(try cx.runtime("part")), &.{try pg.ref(u.target)}));
         }
+        // Handler-bound arguments share the handler's lifetime. Release
+        // them even when a host keeps a node after the program is stopped.
+        const release_bindings = try js.block();
+        var retains = false;
+        for (pg.events.items) |ev| if (ev.captures.len != 0) {
+            retains = true;
+            try js.assign(release_bindings, try pg.eventBindingFor(ev), try js.literal(.undefined));
+        };
+        if (retains) try js.expression(body, try js.call(try js.name(try cx.runtime("own")), &.{try js.arrow(&.{}, release_bindings)}));
+
         // The binding functions, each written once and called once now.
         try pg.guardGroups();
         try pg.group();
@@ -1026,9 +1063,10 @@ const Page = struct {
 
         // Each event wired. A listener with neither flag is the runtime's
         // `on`, the event's name left out for a click.
-        for (plans.items, listeners) |pl, f| {
+        for (plans.items, listeners, pg.events.items) |pl, f, evinfo| {
             const node = try pg.ref(pl.target);
-            if (!pl.flags.prevent_default and !pl.flags.stop_propagation) {
+            const active = if (evinfo.captures.len != 0) try pg.eventBindingFor(evinfo) else if (pg.inArm(evinfo.ctx)) try js.member(node, "isConnected") else null;
+            if (active == null and !pl.flags.prevent_default and !pl.flags.stop_propagation) {
                 if (pl.kind) |k| {
                     try js.expression(body, try js.call(try js.name(try cx.runtime("on")), &.{ node, f, try js.string(k) }));
                 } else try js.expression(body, try js.call(try js.name(try cx.runtime("on")), &.{ node, f }));
@@ -1036,6 +1074,11 @@ const Page = struct {
             }
             const ev = try cx.fresh("event");
             const dom = try js.block();
+            if (active) |active_test| {
+                const inactive = try js.block();
+                try js.@"return"(inactive, null);
+                try js.@"if"(dom, try js.unary(.not, active_test), inactive, null);
+            }
             if (pl.flags.prevent_default) try js.expression(dom, try js.call(try js.member(try js.name(ev), "preventDefault"), &.{}));
             if (pl.flags.stop_propagation) try js.expression(dom, try js.call(try js.member(try js.name(ev), "stopPropagation"), &.{}));
             try js.expression(dom, try js.call(try js.name(try cx.runtime("send")), &.{ f, try js.name(ev) }));
@@ -1259,6 +1302,39 @@ const Page = struct {
 
     // ---- Binding functions --------------------------------------------
 
+    fn inArm(pg: *Page, ctx: u32) bool {
+        var at: ?u32 = ctx;
+        while (at) |c| : (at = pg.ctxs.items[c].parent) {
+            if (pg.ctxs.items[c].kind == .arm and pg.ctxs.items[c].parent != null) return true;
+        }
+        return false;
+    }
+
+    fn within(pg: *Page, ctx: u32, ancestor: u32) bool {
+        var at: ?u32 = ctx;
+        while (at) |c| : (at = pg.ctxs.items[c].parent) if (c == ancestor) return true;
+        return false;
+    }
+
+    fn eventBindingFor(pg: *Page, ev: Event) m.Error!m.Expr {
+        return pg.cx.js.member(try pg.ref(ev.target), try std.fmt.allocPrint(pg.a(), "$h{d}", .{ev.index}));
+    }
+
+    fn eventBinding(pg: *Page, ei: u32) m.Error!m.Expr {
+        return pg.eventBindingFor(pg.events.items[ei]);
+    }
+
+    fn capturedArguments(pg: *Page, ei: u32, calls: []const CallArgs) m.Error!m.Expr {
+        var args: std.ArrayList(m.Expr) = .empty;
+        for (pg.events.items[ei].captures) |ctx| {
+            const values = for (calls) |call| {
+                if (call.ctx == ctx) break call.args;
+            } else unreachable;
+            try args.appendSlice(pg.a(), values);
+        }
+        return pg.cx.js.array(args.items);
+    }
+
     fn writeReads(pg: *Page, w: Write, out: *std.ArrayList(m.Value.Index)) m.Error!void {
         switch (w.what) {
             .text => |parts| for (parts) |part| switch (part) {
@@ -1267,6 +1343,7 @@ const Page = struct {
             },
             .prop => |x| try out.append(pg.a(), x.value),
             .when => |x| try out.append(pg.a(), pg.tree.hole(x.node).value),
+            .event => {},
         }
     }
 
@@ -1320,6 +1397,15 @@ const Page = struct {
                 }
             }
         }
+        for (pg.events.items) |ev| for (ev.captures) |capture| {
+            var groups: std.ArrayList(u32) = .empty;
+            try groups.append(pg.a(), pg.ctxs.items[capture].group.?);
+            for (pg.writes.items) |w| if (pg.within(w.ctx, capture)) try groups.appendSlice(pg.a(), w.groups);
+            const all = try sorted(pg.a(), groups.items);
+            for (pg.writes.items) |*w| if (pg.within(w.ctx, capture)) {
+                w.groups = all;
+            };
+        };
         for (pg.writes.items) |*w| {
             var at: ?u32 = w.ctx;
             var selector_group: ?u32 = null;
@@ -1337,6 +1423,7 @@ const Page = struct {
         if (f.writes.items.len == 0) return false;
         const first = pg.writes.items[f.writes.items[0]].ctx;
         for (f.writes.items) |wi| {
+            if (pg.writes.items[wi].what == .event) return true;
             var at: ?u32 = pg.writes.items[wi].ctx;
             while (at) |c| : (at = pg.ctxs.items[c].parent) {
                 if (pg.guarded_ctx[c]) return true;
@@ -1399,7 +1486,7 @@ const Page = struct {
                             const vs = try pg.a().alloc(m.Value.Index, call.args.len);
                             for (vs, 0..) |*v, i| {
                                 v.* = call.args.at(@intCast(i));
-                                unsafe = unsafe or !pg.cx.valueSafe(v.*);
+                                unsafe = unsafe or !pg.cx.valuePureTotal(v.*);
                             }
                             try pg.cx.rootValues(blk, pg.ctxs.items[x.parent.?].root, vs);
                         }
@@ -1513,6 +1600,7 @@ const Page = struct {
                     else => {},
                 },
                 .prop => |x| try values.append(pg.a(), x.value),
+                .event => {},
                 .when => |x| try reads.append(pg.a(), pg.tree.hole(x.node).value),
             }
         }
@@ -1592,6 +1680,7 @@ const Page = struct {
         writes: []?PreparedWrite,
         branches: std.ArrayList(PreparedBranch) = .empty,
         reads: std.ArrayList(m.Value.Index) = .empty,
+        call_args: std.ArrayList(CallArgs) = .empty,
 
         fn temporary(p: *Preparation, hint: []const u8) m.Error!m.Name {
             const n = try p.pg.cx.fresh(hint);
@@ -1644,6 +1733,7 @@ const Page = struct {
                                 try cx.rootValues(into, r, args);
                             }
                             const args = try cx.programInlineArgs(into, child.node);
+                            try p.call_args.append(pg.a(), .{ .ctx = @intCast(ci), .args = args });
                             try cx.programInlineEnter(into, child.node, args, false);
                             defer cx.programInlineLeave();
                             try p.context(@intCast(ci), into, selected);
@@ -1676,6 +1766,7 @@ const Page = struct {
                         try cx.rootValues(into, r, &.{x.value});
                         break :value try cx.value(x.value);
                     },
+                    .event => |ei| try pg.capturedArguments(ei, p.call_args.items),
                     .when => |x| value: {
                         const taken = try p.branch(into, ctx, x.node);
                         break :value if (x.arms > 2)
@@ -1729,6 +1820,15 @@ const Page = struct {
             const into = if (ready.selected != null) try js.block() else blk;
             const node = try pg.ref(w.target);
             switch (w.what) {
+                .event => |ei| {
+                    try js.assign(into, try pg.eventBinding(ei), ready.value);
+                    if (ready.selected) |n| {
+                        const cleared = try js.block();
+                        try js.assign(cleared, try pg.eventBinding(ei), try js.literal(.undefined));
+                        try js.@"if"(blk, try js.name(n), into, cleared);
+                        continue;
+                    }
+                },
                 .text => try js.expression(into, try js.call(try js.name(try cx.runtime("text")), &.{ node, ready.value })),
                 .prop => |x| if (x.key) |key| {
                     try js.expression(into, try js.call(try js.name(try cx.runtime("prop")), &.{ node, ready.value, try js.string(key) }));
@@ -1772,7 +1872,8 @@ const Page = struct {
             // operator) is evaluated before the function's first write, so a
             // throw leaves the page as it was (§8.2, *Evaluation order*); each
             // other value is evaluated just before its write, where release
-            // writes it in place.
+            // writes it in place. `prepares` handles unproven totality
+            // before this legacy valueSafe path is used.
             var unsafe: std.ArrayList(m.Value.Index) = .empty;
             for (values.items) |v| if (!cx.valueSafe(v)) try unsafe.append(pg.a(), v);
             try cx.rootValues(blk, pg.ctxs.items[ctx].root, unsafe.items);
@@ -1800,11 +1901,12 @@ const Page = struct {
                         else => {},
                     },
                     .prop => |x| if (cx.valueSafe(x.value)) try own.append(pg.a(), x.value),
-                    .when => {},
+                    .when, .event => {},
                 }
                 try cx.rootValues(blk, pg.ctxs.items[ctx].root, own.items);
                 const node = try pg.ref(w.target);
                 switch (w.what) {
+                    .event => unreachable,
                     .text => |parts| {
                         const value = if (parts.len == 1 and parts[0] == .value)
                             try cx.value(parts[0].value)
@@ -1882,7 +1984,20 @@ const Page = struct {
                 payload = try js.name(p);
             } else payload = try js.name(e);
         }
-        const arms = try pg.enter(blk, ev.ctx, null);
+        var saved: std.ArrayList(CallArgs) = .empty;
+        if (ev.captures.len != 0) {
+            var offset: u32 = 0;
+            for (ev.captures) |c| {
+                const call = tree.hole(pg.ctxs.items[c].node).call.?;
+                const args = try pg.a().alloc(m.Expr, call.args.len);
+                for (args) |*arg| {
+                    arg.* = try js.index(try pg.eventBindingFor(ev), try js.number(try std.fmt.allocPrint(pg.a(), "{d}", .{offset})));
+                    offset += 1;
+                }
+                try saved.append(pg.a(), .{ .ctx = c, .args = args });
+            }
+        }
+        const arms = try pg.enter(blk, ev.ctx, if (ev.captures.len == 0) null else &saved);
         const message = try cx.programMessageFields(blk, v, payload);
         pg.leave(arms);
         return switch (message) {
