@@ -3644,9 +3644,33 @@ const HostedRow = enum {
     /// `runJob`, `callJob`: π₂ is a send the runtime forwards to a body whose
     /// sends were checked where it was made (`job`'s row).
     forward,
+    /// `browser-inline`'s `Sub.on k start tag`: π₂ is handed a send of a raw
+    /// value, and π₃ tags each value it sends, supplied borrowed — `tap`'s
+    /// row one parameter along, past the key (#426).
+    sub_keyed,
+
+    /// The parameters whose facts the row asserts in place of the body's.
+    fn owns(row: HostedRow, param: u32) bool {
+        return switch (row) {
+            .sub_keyed => param == 1 or param == 2,
+            else => param <= 1,
+        };
+    }
 };
 
 fn hostedRow(o: *const Ownership, m: u32, d: u32) ?HostedRow {
+    // `browser-inline`'s commands and subscriptions (#426): `Cmd.perform`
+    // hands its body a send as `job` does, `Sub.on` its start one as `tap`
+    // does, and `Sub.map` tags what a tagger made, as `mapTap`.
+    if (m < o.in.platform_names.len and std.mem.eql(u8, o.in.platform_names[m], "browser-inline")) {
+        const ib = o.in.birs[m];
+        const iname = o.in.interner.slice(ib.symbol(ib.decls[d].name));
+        const imod = o.in.module_names[m];
+        if (std.mem.eql(u8, imod, "Cmd") and std.mem.eql(u8, iname, "perform")) return .body;
+        if (std.mem.eql(u8, imod, "Sub") and std.mem.eql(u8, iname, "on")) return .sub_keyed;
+        if (std.mem.eql(u8, imod, "Sub") and std.mem.eql(u8, iname, "map")) return .map_borrowed;
+        return null;
+    }
     if (m >= o.in.platform_names.len or !std.mem.eql(u8, o.in.platform_names[m], "browser")) return null;
     if (!std.mem.eql(u8, o.in.module_names[m], "Hosted")) return null;
     const bir = o.in.birs[m];
@@ -3671,8 +3695,8 @@ fn assertHosted(o: *Ownership, s: Summary, row: HostedRow) Allocator.Error!Summa
     // type`, no function, with no facts to keep — checked where it was made.
     var funs: std.ArrayList(FunFacts) = .empty;
     var supply: std.ArrayList(SupplyEntry) = .empty;
-    for (s.funs) |f| if (f.param > 1) try funs.append(keep, f);
-    for (s.supply) |e| if (e.fun > 1) try supply.append(keep, e);
+    for (s.funs) |f| if (!row.owns(f.param)) try funs.append(keep, f);
+    for (s.supply) |e| if (!row.owns(e.fun)) try supply.append(keep, e);
     const fresh: Prov = .{ .kind = .fresh };
     switch (row) {
         .body => try funs.append(keep, .{ .param = 0, .calls = .many, .send = 0 }),
@@ -3684,6 +3708,11 @@ fn assertHosted(o: *Ownership, s: Summary, row: HostedRow) Allocator.Error!Summa
         .map_owned, .map_borrowed => {
             try funs.append(keep, .{ .param = 1, .calls = .many, .need = true, .sends = true });
             try supply.append(keep, .{ .fun = 1, .k = 0, .path = eps, .prov = fresh, .owned = row == .map_owned });
+        },
+        .sub_keyed => {
+            try funs.append(keep, .{ .param = 1, .calls = .many, .send = 0 });
+            try funs.append(keep, .{ .param = 2, .calls = .many, .need = true, .sends = true });
+            try supply.append(keep, .{ .fun = 2, .k = 0, .path = eps, .prov = fresh, .owned = false });
         },
         // The job calls it; what it is handed was checked at the job's send
         // position, so the row supplies it nothing.
