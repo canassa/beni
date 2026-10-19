@@ -122,6 +122,8 @@ layout w column items acc =
                         acc
 
                 Concat left right →
+                    -- One item becomes two: the first is a copy, and the
+                    -- second, the item's last use, changes the item itself.
                     layout
                         w
                         column

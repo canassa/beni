@@ -1,0 +1,11 @@
+-- `SpecializeEscapeThenSpread` as a program that keeps its records'
+-- guarantees (`ownership-checker.md` §31.15): `update` is handed a copy of
+-- the record the host holds, which `Record.copy` makes by a spread, so the
+-- key the host added reaches the update's base; the update writes the copy,
+-- not the record the host keeps. Both builds print that key.
+import Node
+import Probe
+
+
+main : Node.Program
+main = Node.printLines (Probe.demo ⊤)

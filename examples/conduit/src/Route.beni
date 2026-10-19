@@ -46,7 +46,7 @@ pub fromUrl : Url → Maybe Route
 fromUrl url =
     rest = String.dropLeft url.path (String.length Deploy.basePath)
     if String.startsWith url.path Deploy.basePath && (rest == "" || String.startsWith rest "/") then
-        Url.Parser.parse parser { Record.copy url | path = rest }
+        Url.Parser.parse parser { url | path = rest }
     else
         Nothing
 

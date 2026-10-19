@@ -246,13 +246,19 @@ pub maxDepthCeiling : Int
 maxDepthCeiling = 1024
 
 
+-- The default options' depth bound, named once: `defaultOptions` makes a
+-- new record at each call, and `shapeMax` reads the bound, not one.
+defaultMaxDepth : Int
+defaultMaxDepth = 512
+
+
 --| Effect's defaults: stop at the first failure, ignore unknown keys, and
 --| leave the failing input out of an issue. `maxDepth` is 512.
 pub defaultOptions : ⊤ → Options
 defaultOptions ⊤ =
     { errors = FirstError
     , unknownKeys = Ignore
-    , maxDepth = 512
+    , maxDepth = defaultMaxDepth
     , reportInput = False
     }
 
@@ -3520,7 +3526,7 @@ shapeFail = Js.array []
 
 -- The default options' depth bound, which every shape run reads under.
 shapeMax : Int
-shapeMax = (defaultOptions ⊤).maxDepth
+shapeMax = defaultMaxDepth
 
 
 -- Shape `s` read on `x` at depth `depth`: a primitive's reader, or the

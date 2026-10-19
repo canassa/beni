@@ -24,8 +24,8 @@ pub type Shape
 pub foreign pure describe : Point → String
 
 
---| The sibling builds `{ label, x }`.
-pub foreign pure origin : ⊤ → Point
+--| The sibling builds `{ label, x }`, a new object at each call: `fresh`.
+pub foreign pure origin : ⊤ → fresh Point
 
 
 --| The sibling switches on `s.$`, a tag spelled `"Circle"` or `"Square"`.
