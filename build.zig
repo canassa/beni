@@ -23,8 +23,9 @@
 //!   zig build test-blackbox-<file>   one black-box test file (`--list-steps`)
 //! `gates` refuses the two filters: a gate runs everything. It also refuses
 //! `-Doptimize` and `--release`, the options below that change the
-//! budget's count, and `-Downership-full-cross-check` (every ownership spine
-//! condition cross-checked against the pairwise one: slow).
+//! budget's count, `-Downership-full-cross-check` (every ownership spine
+//! condition cross-checked against the pairwise one: slow), and
+//! `-Downership-record-mutation` (the checker broken on purpose).
 //!
 //! Every test of the gates' binaries, and every corpus case, is held to a
 //! budget (`tests/test_runner.zig`): one that retires more than 4 300
@@ -248,7 +249,7 @@ pub fn build(b: *std.Build) void {
     // way on purpose, which `test-record-mutations` runs against the record
     // fixtures and which must fail at least one. Hidden from usage; never
     // given to the gates.
-    const own_record_mutation = b.option([]const u8, "ownership-record-mutation", "Test-only: break the record demand one way (hoist-whole, no-held-operand, no-disjoint)") orelse "none";
+    const own_record_mutation = b.option([]const u8, "ownership-record-mutation", "Test-only: break the record demand one way (hoist-whole, no-held-operand, no-disjoint, call-as-hoist); `gates` refuses it") orelse "none";
     own_opts.addOption([]const u8, "record_mutation", own_record_mutation);
     ownership_options = own_opts.createModule();
     // The budget of one test or corpus case (`tests/test_runner.zig`), on
@@ -1252,6 +1253,8 @@ fn gatesRefusal(b: *std.Build, filtered: bool, optimize: std.lang.Optimize, host
     }
     // A slower compiler, which the budget was not set for.
     if (b.user_input_options.contains("ownership-full-cross-check")) return "`gates` holds every test to the budget on the reference build: drop -Downership-full-cross-check, or give it to `test-blackbox` or a `test-blackbox-<file>` step";
+    // A checker broken on purpose (§31.12's mutation controls).
+    if (b.user_input_options.contains("ownership-record-mutation")) return "`gates` holds every test to the budget on the reference build: drop -Downership-record-mutation, which breaks the ownership checker on purpose; `zig build test-record-mutations` runs it";
     // `-Doptimize` and `--release=`, which never reaches the options.
     if (optimize != .debug) return "`gates` holds every test to the budget on the reference build: drop -Doptimize and --release, or give them to `test`, `test-blackbox` or a `test-blackbox-<file>` step";
     if (host.cannot_count) |why| return b.fmt("`gates` cannot check the test budget here: {s}. Run the gates on an x86-64 Linux host that can count it (CLAUDE.md, *Every test has a budget*); `zig build test test-blackbox fmt-check beni-fmt-check` runs the same tests here, with no budget", .{why});

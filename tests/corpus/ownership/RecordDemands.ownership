@@ -20,6 +20,9 @@ module RecordDemands
   162:9 update p: pending: it is handed at 163:11 to a callee whose summary does not yet say which of a record's fields it reads (§31.7)
   175:13 update RecordDemands.originAlias: pending: nothing yet names where its base's object comes from: a summary's results do not carry a record's object until §31.7's
   181:5 update answer: pending: its base is what a call returns, and the summary that names a record's object is not built yet (§31.7)
+  209:9 update r: pending: its base is a parameter, and the summary that states the write for callers is not built yet (§31.7) [hoisted 1]
+  215:9 update r: pending: its base is a parameter, and the summary that states the write for callers is not built yet (§31.7) [hoisted 1]
+  226:9 update r: accepted fresh [hoisted 1]
   summary untouched: π1.tags R
   summary hoisted: π1.tags R
   summary whole: π1 RA, π1.tags RA; res .0.tags π1.tags, .1 π1
@@ -40,7 +43,11 @@ module RecordDemands
   summary getY: π1.y R
   summary throughCalleeY: π1.tags R, π1.y R
   summary viaCallback: π1 R, π2 R; res .tags cb1.tags{excl cb1.tags}; π1 calls ≤1, supply 1 π2 owned{excl π2}
+  summary countItems: π1.items R
+  summary nestedCallee: π1.a.b.items R
+  summary nestedList: π1.a.b.items R
+  summary joined: unused
   demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
-  records 21: accepted 0, pending 12, rejected 9 (copy 8, restructure 1); hoisted 5, eager reads 2
+  records 24: accepted 1, pending 14, rejected 9 (copy 8, restructure 1); hoisted 8, eager reads 2
 total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
-records 21: accepted 0, pending 12, rejected 9 (copy 8, restructure 1); hoisted 5, eager reads 2
+records 24: accepted 1, pending 14, rejected 9 (copy 8, restructure 1); hoisted 8, eager reads 2

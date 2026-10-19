@@ -179,3 +179,49 @@ pub viaCallback : (Point → Point), Point → Point
 viaCallback f p =
     answer = f p
     { answer | x = 1 }
+
+
+type alias Inner =
+    items : List String
+    n : Int
+
+
+type alias Mid =
+    b : Inner
+
+
+type alias Outer =
+    a : Mid
+    z : Int
+
+
+-- A path below a written field, handed to a callee: the caller reads
+-- `r.a`, the written field, so that step is a hoist, and below it the
+-- callee reads the old `a`'s own object, which the update does not write.
+-- `countItems` takes `r.a.b` and reads its `.items`; `List.length` takes
+-- `r.a.b.items` itself.
+countItems : Inner → Int
+countItems i = List.length i.items
+
+
+pub nestedCallee : Outer → Int
+nestedCallee r =
+    q = { r | a = { b = { items = [], n = 0 } } }
+    q.z + countItems r.a.b
+
+
+pub nestedList : Outer → Int
+nestedList r =
+    q = { r | a = { b = { items = [], n = 0 } } }
+    q.z + List.length r.a.b.items
+
+
+-- One hoist per read, however many holders reach it: `r` holds either
+-- literal's object, and `r.x` is read once.
+pub joined : Bool → Int
+joined c =
+    a = { x = 0, y = 0, tags = [] }
+    b = { x = 1, y = 1, tags = [] }
+    r = if c then a else b
+    q = { r | x = 1 }
+    q.x + r.x

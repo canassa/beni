@@ -69,15 +69,25 @@ pub const k_limit: u32 = 8;
 const type_depth: u32 = 16;
 const debug_own = false;
 /// §31.12's mutation controls (`zig build test-record-mutations`): the record
-/// demand broken one way on purpose, chosen at build time; `none` in every
-/// build but that step's.
-const record_mutation: enum { none, hoist_whole, no_held_operand, no_disjoint } = blk: {
+/// demand broken one way on purpose, chosen at build time. `none` in every
+/// build but that step's: one `ownership_options` module is imported by
+/// every build of the compiler (self-hosted, LLVM, wasm), the option defaults
+/// to `none`, `gates` refuses it, a value it does not name is a compile error,
+/// and the unit test below fails a `zig build test` given one.
+const record_mutation: enum { none, hoist_whole, no_held_operand, no_disjoint, call_as_hoist } = blk: {
     const m = @import("ownership_options").record_mutation;
+    if (std.mem.eql(u8, m, "none")) break :blk .none;
     if (std.mem.eql(u8, m, "hoist-whole")) break :blk .hoist_whole;
     if (std.mem.eql(u8, m, "no-held-operand")) break :blk .no_held_operand;
     if (std.mem.eql(u8, m, "no-disjoint")) break :blk .no_disjoint;
-    break :blk .none;
+    if (std.mem.eql(u8, m, "call-as-hoist")) break :blk .call_as_hoist;
+    @compileError("-Downership-record-mutation: unknown mutation '" ++ m ++ "'");
 };
+
+test "the record demand is not mutated outside its mutation controls" {
+    try std.testing.expectEqual(.none, record_mutation);
+}
+
 /// §30.9: a supply of at most this many cells is probed cell by cell.
 const split_cap: usize = 8;
 /// §16.7: the most entries a summary may hold at one path — `res`'s
@@ -838,7 +848,8 @@ fn dedupe(items: []Demand) Allocator.Error![]const Demand {
     for (items) |d| {
         if (n > 0) {
             const p = items[n - 1];
-            if (p.position.line == d.position.line and p.position.col == d.position.col and
+            // `.record` too: a list writer may be named `update` as well.
+            if (p.record == d.record and p.position.line == d.position.line and p.position.col == d.position.col and
                 std.mem.eql(u8, p.op, d.op) and std.mem.eql(u8, p.base, d.base) and
                 std.meta.eql(p.verdict, d.verdict) and std.mem.eql(u8, p.detail, d.detail)) continue;
         }
@@ -4822,7 +4833,10 @@ const Walker = struct {
     }
 
     fn cell(w: *Walker, c: Cell) Allocator.Error!u32 {
-        const key: [4]u32 = .{ @as(u32, @backingInt(c.kind)) | (@as(u32, @intFromBool(c.made)) << 8), c.a, c.b, c.path };
+        // `nonlist` is in the key: a record object a definition names on
+        // purpose (a top-level record's, `Record.copy`'s) is never the cell
+        // a summary's result made at the same place, whichever comes first.
+        const key: [4]u32 = .{ @as(u32, @backingInt(c.kind)) | (@as(u32, @intFromBool(c.made)) << 8) | (@as(u32, @intFromBool(c.nonlist)) << 9), c.a, c.b, c.path };
         const gop = try w.cell_map.getOrPut(w.a, key);
         if (gop.found_existing) return gop.value_ptr.*;
         const id: u32 = @intCast(w.cells.items.len);
@@ -12036,6 +12050,9 @@ const Walker = struct {
         }
         // Each holder's first later use in a compatible branch.
         var pending_use: ?Use = null;
+        // §31.14: the hoists, one per use, whatever number of the uses'
+        // holders reach it (a local holding the object at two paths).
+        var hoisted: std.ArrayList(u32) = .empty;
         var best: ?struct { cause: Cause, holder: Holder, use: Use } = null;
         for (rec.holders) |h| {
             var first: ?Use = null;
@@ -12054,7 +12071,7 @@ const Walker = struct {
                     // §31.14: a read of a written field, which the lowering
                     // reads before the write.
                     .hoist => {
-                        d.hoists += 1;
+                        try hoisted.append(w.a, ui);
                         continue;
                     },
                     .pending => {
@@ -12094,6 +12111,10 @@ const Walker = struct {
                 if (!(better_kind or (same_kind and (u.point < bst.use.point or (u.point == bst.use.point and w.holderBefore(h, bst.holder)))))) continue;
             }
             best = .{ .cause = cause, .holder = h, .use = u };
+        }
+        std.mem.sort(u32, hoisted.items, {}, std.sort.asc(u32));
+        for (hoisted.items, 0..) |ui, i| {
+            if (i == 0 or hoisted.items[i - 1] != ui) d.hoists += 1;
         }
         if (best) |bst| {
             const up = w.pos(bst.use.token);
@@ -12330,7 +12351,10 @@ const Walker = struct {
         // part of the argument's path: `List.length r.items` reads `r.items`
         // here, a read its evaluation recorded (`recordRead`), and hands the
         // callee the list.
-        if (u.call != 0) return if (w.o.paths.depth.items[u.call_at] <= sq.len) .whole else .none;
+        if (u.call != 0) {
+            if (comptime record_mutation == .call_as_hoist) return .hoist;
+            return if (w.o.paths.depth.items[u.call_at] <= sq.len) .whole else .none;
+        }
         // A consumer's use of a field path is the read its evaluation
         // recorded (`recordRead`): one hoist, counted once.
         return if (u.record_read) .hoist else .none;
