@@ -1,0 +1,18 @@
+module RecordFold
+  24:13 update state: accepted param
+  27:13 update state: accepted param
+  34:23 update state: accepted param (List.foldl writes it)
+  34:54 update s: accepted callback-param (List.foldl supplies it owned)
+  38:14 update <record>: accepted fresh (RecordFold.perform writes it)
+  42:23 update state: accepted param (RecordFold.perform writes it) [hoisted 1]
+  50:15 update <record>: accepted fresh (List.foldl writes it)
+  51:35 update s: rejected supply: List.foldl supplies its parameter 2 borrowed (cb3) [copy]
+  summary item: π2 RW{count, last}, π2.count R; res π2 π2◦
+  summary perform: π1 R, π2 RW{count, last}; res ~π2 ~π2◦
+  summary runs: π1 R; res ~fresh501◦
+  summary again: π1 R, π2 RW{count, last}, π2.count R; res .0 ~π2 ~π2◦
+  summary keeps: π1 R; res ~fresh501◦ ~shared(RecordFold.start) ~shared(RecordFold.start)◦
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 8: accepted 7, pending 0, rejected 1 (copy 1, restructure 0); hoisted 1, eager reads 0
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 8: accepted 7, pending 0, rejected 1 (copy 1, restructure 0); hoisted 1, eager reads 0
