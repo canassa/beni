@@ -1393,6 +1393,34 @@ through a `Maybe`, so the rule must fire on `Leaf (Maybe a)` too.
 - *Delta: none*, on the bench and in `tests/corpus/ownership/`: no golden changes. Only irregular types pay, and
   the corpus has none but the probe. So there is no evidence of soundness beyond the argument: when F3 is built,
   `Leaf (Maybe a)` and the mutual pair `T`/`U` each need a fixture beside `wrap`'s.
+- *Amended 2026-10-19 (the owner's option 2): F3 is replaced by a fold at a polymorphic-recursive call.* The rule
+  above is read off types, and types are not where the growth is: `g : Int, a → (Int → Int)`, `g n x = if n == 0
+  then λk → k + List.length [ x ] else g (n - 1) [ x ]` has no nested datatype and grows `res ◇[*][*]…`, and
+  `type U a = ULeaf (Int → Int) | UWrap (U (List a))` grows under a field that mentions no type variable. What
+  every one of them has is a call, inside the recursive group being solved, that instantiates a type variable of
+  the callee at a type that is not a variable: `a` at `List a`. That call is the fold point.
+  - *The rule.* At a call of a member of the recursive group being solved — a top-level group (§16.6), or a block's
+    local functions (§18.7), whose annotated members may recur at other types too — each argument's declared
+    parameter type, the member's own (its rigid variables, as its body was checked), is walked beside the
+    argument's type at the call along every entry's path. Where the declared type is a variable and the argument's
+    type there is not, the entry's path from the step after that position on is `⋆`: the entry stands for every
+    place below the variable's value. A step under `◇` into a function type, or into a `foreign type`'s
+    arguments, where the declared type and the argument's differ at a variable, is a place below the variable too,
+    since what is there is not written in the type; there the rest is `⋆` from that step. Every other path stays
+    exact: what the declared type writes above the variable, and everything of an argument whose type is the
+    declared one.
+  - *Soundness.* `⋆` stands for every place at or below it and overlaps every path; the fold only merges places
+    of one argument, as F1's and a recursive type's do, and it changes nothing a call outside the group sees, since
+    those instantiate the settled summary.
+  - *Finite.* A path a group member's summary names is a path of its declared types: through a call inside the
+    group it can grow only below a variable the call instantiates at a structure, and there it is `⋆`. `g` is
+    `res ◇ π2, ◇⋆ π2`; `wrap` is `res #Leaf.0 π2, #Leaf.0⋆ π2`; `U`'s `uwrap` is `res #ULeaf.0◇ π2,
+    #ULeaf.0◇⋆ π2`.
+  - *What it costs.* An argument whose type at a group-internal call instantiates a variable at a structure loses
+    the paths below that variable, and only in the group's own fixpoint: a function that recurs at `List a` on a
+    list of lists keeps its lists' elements at `⋆`.
+  - Fixtures: `ownership/PolyRec` (`g`, `wrap`, `Leaf (Maybe a)`, the mutual pair `T`/`U`, `uwrap`) and
+    `ownership/LocalPolyRec` (`g` as an annotated `let` function).
 
 **(c) Removing `k`.** Issue #286's (c) is this step, with F1, F2 and F3 as its fold points. With F1, F3 and a
 cast marker the owner accepts, `k` goes: every path buffer (`[k_limit + 1]Step`, about twenty) becomes a slice,
