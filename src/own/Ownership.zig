@@ -68,6 +68,16 @@ pub const k_limit: u32 = 8;
 /// Depth of a walk over a type before it answers conservatively.
 const type_depth: u32 = 16;
 const debug_own = false;
+/// §31.12's mutation controls (`zig build test-record-mutations`): the record
+/// demand broken one way on purpose, chosen at build time; `none` in every
+/// build but that step's.
+const record_mutation: enum { none, hoist_whole, no_held_operand, no_disjoint } = blk: {
+    const m = @import("ownership_options").record_mutation;
+    if (std.mem.eql(u8, m, "hoist-whole")) break :blk .hoist_whole;
+    if (std.mem.eql(u8, m, "no-held-operand")) break :blk .no_held_operand;
+    if (std.mem.eql(u8, m, "no-disjoint")) break :blk .no_disjoint;
+    break :blk .none;
+};
 /// §30.9: a supply of at most this many cells is probed cell by cell.
 const split_cap: usize = 8;
 /// §16.7: the most entries a summary may hold at one path — `res`'s
@@ -4382,6 +4392,10 @@ const Use = struct {
     /// With `call`: the argument's own variable path, which the caller
     /// reads before the call; the rest of `path` the callee reads.
     call_at: u32 = eps,
+    /// §31.14: the evaluation of a field path, which reads it whether or
+    /// not a consumer uses the value: what a record demand's hoists are made
+    /// of. No list's fact reads it.
+    record_read: bool = false,
 };
 
 const Holder = struct {
@@ -4716,6 +4730,7 @@ const Walker = struct {
     use_call_at: u32 = eps,
     /// §31.6: captures of a record's field path read when a lambda is made.
     eager_reads: u32 = 0,
+    eager_seen: std.AutoHashMapUnmanaged([3]u32, void) = .empty,
 
     // ---- setup -------------------------------------------------------------
 
@@ -6060,6 +6075,14 @@ const Walker = struct {
         }
     }
 
+    /// §31.14: a field path read where it is evaluated, for the record
+    /// demand's per-field liveness.
+    fn recordRead(w: *Walker, r: Capture, tok: u32) Allocator.Error!void {
+        if (r.local >= w.local_frame.len) return;
+        if (w.local_frame[r.local] != w.frame and (w.local_av[r.local] == null or !w.inFrameOf(w.local_frame[r.local]))) return;
+        try w.uses.append(w.a, .{ .local = r.local, .path = r.path, .point = w.point, .frame = w.frame, .ctx = w.ctx, .token = tok, .record_read = true });
+    }
+
     fn useAt(w: *Walker, l: u32, path: u32, tok: u32, except: []const u32) Allocator.Error!void {
         // A local of this frame, or one this frame captured from an
         // enclosing one: a closure that gave up what it captured must not
@@ -6599,7 +6622,10 @@ const Walker = struct {
         switch (b.instTag(inst)) {
             .local => return w.evalLocal(data.lhs, eps, inst),
             .field_access, .tuple_index => {
-                if (try w.refPath(inst)) |r| return w.evalLocal(r.local, r.path, inst);
+                if (try w.refPath(inst)) |r| {
+                    if (w.mode == .report) try w.recordRead(r, w.token(inst));
+                    return w.evalLocal(r.local, r.path, inst);
+                }
                 const target = try w.eval(@fromBackingInt(@intCast(data.lhs)));
                 const s: Step = if (b.instTag(inst) == .field_access)
                     .{ .kind = .field, .arg = @backingInt(b.symbol(@fromBackingInt(@intCast(data.rhs)))) }
@@ -7020,6 +7046,15 @@ const Walker = struct {
     /// enclosing frame is a capture (§5, §7.3).
     fn evalLocal(w: *Walker, l: u32, path: u32, inst: Inst.Index) Allocator.Error!AV {
         if (l >= w.local_av.len) return &.{};
+        // §31.6: a lambda's read of a record's field path that it captured,
+        // which it reads when it is made; report mode counts them, once per
+        // lambda, local and path, whatever the field's type.
+        if (w.mode == .report and w.frame != 0 and l < w.local_frame.len and w.local_frame[l] != w.frame) {
+            if (w.o.firstStep(path)) |first| if (first.kind == .field) {
+                const g = try w.eager_seen.getOrPut(w.a, .{ w.frame, l, path });
+                if (!g.found_existing) w.eager_reads += 1;
+            };
+        }
         const ty = w.instType(inst);
         if (ty) |v| if (!try w.trackedVar(v)) return &.{};
         const bound = w.local_av[l] != null;
@@ -7235,15 +7270,6 @@ const Walker = struct {
             if (cap.local < w.local_frame.len and w.local_frame[cap.local] == id and w.local_av[cap.local] != null) continue;
             try caps.append(w.a, cap);
         }
-        // §31.6: a capture of a record's field path is read when the
-        // closure is made; report mode counts them, once per (local, path).
-        if (w.mode == .report) for (caps.items, 0..) |cap, k| {
-            const first = w.o.firstStep(cap.path) orelse continue;
-            if (first.kind != .field) continue;
-            for (caps.items[0..k]) |prev| {
-                if (prev.local == cap.local and prev.path == cap.path) break;
-            } else w.eager_reads += 1;
-        };
         w.closures.items[ci].captures = try caps.toOwnedSlice(w.a);
         var env_escapes: std.ArrayList(Capture) = .empty;
         for (w.escaped.items[escapes_from..]) |x| {
@@ -7749,7 +7775,21 @@ const Walker = struct {
             };
             try out.append(w.a, .{ .path = r.path, .cell = try w.cell(c), .approx = if (r.approx) inst.int() + 1 else 0 });
         }
+        // §31.2: a top-level record's object, which no summary names until
+        // §31.7's: the record demand's, a list's nothing (§31.4 item 2).
+        if (w.isRecordType(w.instType(inst))) {
+            try out.append(w.a, .{ .path = eps, .cell = try w.cell(.{ .kind = .shared, .a = t.m, .b = t.d, .made = true, .nonlist = true, .ty = w.instTypeOpt(inst) }) });
+        }
         return w.norm(out.items);
+    }
+
+    /// Whether `ty` is a record type, closed or open.
+    fn isRecordType(w: *Walker, ty: ?Var) bool {
+        const v = ty orelse return false;
+        return switch (w.store.resolvedContent(v)) {
+            .structure => |s| s == .record,
+            else => false,
+        };
     }
 
     /// §30.10: a run's answer, settled. Where the slot it read held
@@ -11516,6 +11556,7 @@ const Walker = struct {
         // Disjoint: another operand of the demand reaches the cell.
         var approx_hit: u32 = 0;
         for (spec.others) |av| {
+            if (comptime record_mutation == .no_disjoint) if (spec.fields != null) break;
             const hit = (try w.reaches(av, cells.items)) orelse continue;
             if (hit.approx != 0) {
                 if (approx_hit == 0 or hit.approx < approx_hit) approx_hit = hit.approx;
@@ -11561,6 +11602,7 @@ const Walker = struct {
         // A temporary already evaluated for an enclosing consumer holds it.
         const base_pending = w.frames.items[w.frame].pending_base;
         for (w.pending.items[base_pending..]) |p| {
+            if (comptime record_mutation == .no_held_operand) if (spec.fields != null) break;
             if (p.frame != w.frame or p.is_ref) continue;
             const phit = (try w.reaches(p.av, cells.items)) orelse continue;
             // Waiting for a call with a summary, it holds the cell only
@@ -11913,6 +11955,7 @@ const Walker = struct {
                 if (u.local != h.local or u.frame != rec.frame or u.point <= rec.point) continue;
                 if (rec.creation_ci != none and u.via == rec.creation_ci) continue;
                 if (!w.compatible(u.ctx, rec.ctx)) continue;
+                if (u.record_read and rec.fields == null) continue;
                 if (rec.fields) |fs| switch (w.recordUse(u, h.path, fs)) {
                     .none => continue,
                     // §31.14: a read of a written field, which the lowering
@@ -12147,6 +12190,9 @@ const Walker = struct {
     /// written one it is the lowering's read of the old value, unless a
     /// callee makes it in its own body, where no temporary stands in.
     fn recordUse(w: *const Walker, u: Use, q: u32, fields: []const u32) RecordUse {
+        if (comptime record_mutation == .hoist_whole) {
+            if (w.o.isPrefix(u.path, q)) return .hoist;
+        }
         if (w.o.isPrefix(u.path, q)) {
             if (u.except.len != 0) {
                 var bu: [k_limit + 1]Step = undefined;
@@ -12170,8 +12216,9 @@ const Walker = struct {
         if (std.mem.indexOfScalar(u32, fields, next.arg) == null) return .none;
         // The step into the written field is the caller's own read when it is
         // part of the argument's path: `List.length r.items` reads `r.items`
-        // here and hands the callee the list.
-        if (u.call != 0 and w.o.paths.depth.items[u.call_at] <= sq.len) return .whole;
+        // here, a read its evaluation recorded (`recordRead`), and hands the
+        // callee the list.
+        if (u.call != 0) return if (w.o.paths.depth.items[u.call_at] <= sq.len) .whole else .none;
         return .hoist;
     }
 
@@ -12207,6 +12254,7 @@ const Walker = struct {
         // R: a use of a local whose value holds a parameter cell.
         for (w.uses.items) |u| {
             if (u.frame != frame) continue;
+            if (u.record_read) continue;
             // §31.2: a closure's use of what it captured, when that is a
             // record's object alone, is the record demand's: before §31.2
             // such a value crossed, and no closure captured it.

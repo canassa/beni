@@ -6174,3 +6174,29 @@ writes the root's list, so (d)'s `lvl` as designed would accept both: the
 positions a fold reached must stay apart from the root's, in cells and in
 summary provenance. `tests/pending/ownership/DeeperLevel.beni`, red; a design
 for the owner (#286).
+
+## CK-260 — a record a view event hands `update` is written in place (2026-10-19)
+
+Ownership, issue #315 (`ownership-checker.md` §31.6, §31.8), report mode. A
+record update's demand is judged in its body (R2b), where a parameter's write is
+the caller's question; at the entry the runtime is the caller, and it needs the
+update's `W{F}` in `update`'s summary (R2c, §31.7). Until then `Edit t → { model
+| form = { t | … } }` and `Rename`'s write of a stored payload are `accepted
+param`, where they are `payload`, approximately.
+`tests/pending/ownership/RecordPayload.beni`, red until R2c.
+
+## CK-261 — a closure a command keeps captures a record (2026-10-19)
+
+Ownership, issue #315 (`ownership-checker.md` §31.6), report mode. A command's
+closure that captures the model whole escapes the model's record, and a later
+write of it is `escaped` at the entry; one that captures the field path
+`model.form` reads it when it is made and escapes nothing. The entry reads both
+off `update`'s summary (R2c). `tests/pending/ownership/RecordCapture.beni`, red
+until R2c.
+
+## CK-262 — `view` writes a `For` row's item (2026-10-19)
+
+Ownership, issue #315 (`ownership-checker.md` §31.8), report mode. `view` is
+handed the model to read only; a row's item is the model's record, and a write
+of it through a callee is `read-only`, exactly, once the callee's `W{F}` is in
+its summary (R2c). `tests/pending/ownership/RecordForItem.beni`, red until R2c.

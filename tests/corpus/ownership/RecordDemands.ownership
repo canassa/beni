@@ -1,0 +1,29 @@
+module RecordDemands
+  55:9 update p: accepted param
+  61:9 update p: accepted param [hoisted 1]
+  66:13 update p: rejected later-use: p is read again at 66:11 [copy]
+  72:9 update p: rejected alias: old holds it and is read at 73:5 [copy]
+  78:12 update model: rejected later-use: model is read again at 79:29 [copy]
+  79:29 update model: accepted param
+  85:5 update model: accepted param
+  85:22 update form: accepted param
+  89:16 update item: rejected later-use: item is read again at 89:34 [copy]
+  89:34 update item: rejected held-operand: the value at 89:16, evaluated before it, holds it until its consumer runs [copy]
+  93:13 update link: rejected disjoint: another operand of the same operation reaches it [copy]
+  97:11 update RecordDemands.origin: rejected top-level: RecordDemands.origin is a top-level value [restructure]
+  103:5 update p: rejected escaped: it was given to JavaScript, or kept by a callee (approx) [copy]
+  summary untouched: π1.tags R
+  summary hoisted: π1.tags R
+  summary whole: π1 RA, π1.tags RA; res .0.tags π1.tags, .1 π1
+  summary bound: π1 RA, π1.tags R; res π1
+  summary rebased: π1.heard RA; res .heard fresh1 π1.heard
+  summary nested: π1.form R, π1.heard RA; res .heard π1.heard
+  summary twice: π1.tags RA; res [*].tags π1.tags, fresh1{shared}
+  summary loop: unused
+  summary moved: res .tags shared(RecordDemands.origin).tags
+  summary kept: π1 RE, π1.tags RA; res .tags π1.tags
+  summary originX: unused
+  demands 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+  records 13: accepted 5 (hoisted 1), pending 0, rejected 8 (copy 7, restructure 1); eager reads 0
+total 0: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 0
+records 13: accepted 5 (hoisted 1), pending 0, rejected 8 (copy 7, restructure 1); eager reads 0

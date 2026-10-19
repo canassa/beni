@@ -5201,6 +5201,32 @@ keeps nothing across renders.
    beside the rejections a count of the accepted demands that carry hoists (`hoisted`), and of the eager reads of
    captured field paths (§31.6). The `total` line sums them per class, so the cost of the departure from value
    semantics is a number per program, and §31.0 item 5 is decided on it.
+
+   *As built (2026-10-19, slice R2b of #315), the demand in a body.* Every `record_update` is an
+   `update` line in `dump --stage=ownership`, in report mode only: no diagnostic (`Enforce` skips record
+   lines), no `W` in a summary and no requirement stated for callers (§31.7, R2c). Its cells are the
+   record objects at ε of the base, an `except` cell read as the object it was written over. Known,
+   Unescaped (a top-level record's object is a `shared` cell of its own), Disjoint against the new values,
+   held-operand and Dead run as for a list. Dead is per field (`recordUse`): a later use at or above a
+   holder's path is a whole use, but an update's base use of a field it replaces; a use below it
+   through a field the update did not write is none; through a written one it is a hoist, unless a
+   callee makes it in its own body, which is a whole use. Each evaluation of a field path is a use of its
+   own (`Use.record_read`) that only a record demand reads, so that a read of a number field is a hoist
+   like any other; the step into a written field is the caller's own read when it is part of the
+   argument's path (`List.length r.items`). A call with no summary reads the record whole, `call`. A
+   rejection's line ends in its fix class, `[copy]` or `[restructure]` (a top-level base), an accepted one
+   with hoists in `[hoisted n]`, and each module and the run end in a `records` line: demands, accepted
+   and hoisted, pending, rejected by fix, and the eager reads of captured field paths (§31.6), counted
+   once per lambda, local and path. The mutation controls are `-Downership-record-mutation=` (hidden),
+   run by `zig build test-record-mutations` outside the gates: `hoist-whole`, `no-held-operand` and
+   `no-disjoint`, each caught by `ownership/RecordDemands` (and `RecordCopy`); the control of a hoist's
+   placement waits for the hoist table (R5). Left to R2c, with `W{F}` in summaries: a write through a
+   callee, the entry's checks (§31.8; #315's three cases are `tests/pending/ownership/Record*`,
+   CK-260–262), a callback's supply of a record (§31.5), records' exclusive contents (§31.4 item 6), and
+   a captured record's write making its closure once (§31.4 item 4; reported `captured-edit` until then).
+   Over the 1 042 programs of the comparison, 270 have record updates: 1 739 demands, 1 688 accepted (9
+   with hoists), 51 rejected — 40 `top-level`, 5 `later-use`, 2 `held-operand`, 2 `element` and 2
+   `unknown`, approximately — with 296 eager reads; no list line moves.
 2. **Enforcement**: §31.9's codes; the corpus rewritten only where the rule still refuses (§31.0 item 4); `core/`
    and the platforms clean (§31.16).
 3. **The lowering** (§31.10, §31.14): the stores and the hoists, with the identity skips removed (§31.11).
