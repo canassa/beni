@@ -1,0 +1,864 @@
+-- #464: a wide record of children, each updated by its own function in its own
+-- arm of `update`: every arm spreads `model`, so the release optimiser's
+-- points-to analysis copies every field of every model site into every arm's
+-- result. Before the field summaries, each spread was one constraint re-walking
+-- every source site and property on every change, which made this build grow
+-- past the gates' instruction budget; the summary makes it one edge per
+-- property. The golden was written by the compiler before the change.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Child =
+    a : Int
+    b : Int
+    c : Int
+    d : Int
+
+
+type ChildMsg
+    = Add
+    | Subtract
+
+
+type alias Model =
+    w1 : Child
+    w2 : Child
+    w3 : Child
+    w4 : Child
+    w5 : Child
+    w6 : Child
+    w7 : Child
+    w8 : Child
+    w9 : Child
+    w10 : Child
+    w11 : Child
+    w12 : Child
+    w13 : Child
+    w14 : Child
+    w15 : Child
+    w16 : Child
+    w17 : Child
+    w18 : Child
+    w19 : Child
+    w20 : Child
+    w21 : Child
+    w22 : Child
+    w23 : Child
+    w24 : Child
+    w25 : Child
+    w26 : Child
+    w27 : Child
+    w28 : Child
+    w29 : Child
+    w30 : Child
+    w31 : Child
+    w32 : Child
+    w33 : Child
+    w34 : Child
+    w35 : Child
+    w36 : Child
+    w37 : Child
+    w38 : Child
+    w39 : Child
+    w40 : Child
+    w41 : Child
+    w42 : Child
+    w43 : Child
+    w44 : Child
+    w45 : Child
+    w46 : Child
+    w47 : Child
+    w48 : Child
+
+
+type Msg
+    = W1 ChildMsg
+    | W2 ChildMsg
+    | W3 ChildMsg
+    | W4 ChildMsg
+    | W5 ChildMsg
+    | W6 ChildMsg
+    | W7 ChildMsg
+    | W8 ChildMsg
+    | W9 ChildMsg
+    | W10 ChildMsg
+    | W11 ChildMsg
+    | W12 ChildMsg
+    | W13 ChildMsg
+    | W14 ChildMsg
+    | W15 ChildMsg
+    | W16 ChildMsg
+    | W17 ChildMsg
+    | W18 ChildMsg
+    | W19 ChildMsg
+    | W20 ChildMsg
+    | W21 ChildMsg
+    | W22 ChildMsg
+    | W23 ChildMsg
+    | W24 ChildMsg
+    | W25 ChildMsg
+    | W26 ChildMsg
+    | W27 ChildMsg
+    | W28 ChildMsg
+    | W29 ChildMsg
+    | W30 ChildMsg
+    | W31 ChildMsg
+    | W32 ChildMsg
+    | W33 ChildMsg
+    | W34 ChildMsg
+    | W35 ChildMsg
+    | W36 ChildMsg
+    | W37 ChildMsg
+    | W38 ChildMsg
+    | W39 ChildMsg
+    | W40 ChildMsg
+    | W41 ChildMsg
+    | W42 ChildMsg
+    | W43 ChildMsg
+    | W44 ChildMsg
+    | W45 ChildMsg
+    | W46 ChildMsg
+    | W47 ChildMsg
+    | W48 ChildMsg
+
+
+init : ⊤ → Model
+init ⊤ =
+    { w1 = { a = 0, b = 1, c = 2, d = 3 }
+    , w2 = { a = 0, b = 1, c = 2, d = 3 }
+    , w3 = { a = 0, b = 1, c = 2, d = 3 }
+    , w4 = { a = 0, b = 1, c = 2, d = 3 }
+    , w5 = { a = 0, b = 1, c = 2, d = 3 }
+    , w6 = { a = 0, b = 1, c = 2, d = 3 }
+    , w7 = { a = 0, b = 1, c = 2, d = 3 }
+    , w8 = { a = 0, b = 1, c = 2, d = 3 }
+    , w9 = { a = 0, b = 1, c = 2, d = 3 }
+    , w10 = { a = 0, b = 1, c = 2, d = 3 }
+    , w11 = { a = 0, b = 1, c = 2, d = 3 }
+    , w12 = { a = 0, b = 1, c = 2, d = 3 }
+    , w13 = { a = 0, b = 1, c = 2, d = 3 }
+    , w14 = { a = 0, b = 1, c = 2, d = 3 }
+    , w15 = { a = 0, b = 1, c = 2, d = 3 }
+    , w16 = { a = 0, b = 1, c = 2, d = 3 }
+    , w17 = { a = 0, b = 1, c = 2, d = 3 }
+    , w18 = { a = 0, b = 1, c = 2, d = 3 }
+    , w19 = { a = 0, b = 1, c = 2, d = 3 }
+    , w20 = { a = 0, b = 1, c = 2, d = 3 }
+    , w21 = { a = 0, b = 1, c = 2, d = 3 }
+    , w22 = { a = 0, b = 1, c = 2, d = 3 }
+    , w23 = { a = 0, b = 1, c = 2, d = 3 }
+    , w24 = { a = 0, b = 1, c = 2, d = 3 }
+    , w25 = { a = 0, b = 1, c = 2, d = 3 }
+    , w26 = { a = 0, b = 1, c = 2, d = 3 }
+    , w27 = { a = 0, b = 1, c = 2, d = 3 }
+    , w28 = { a = 0, b = 1, c = 2, d = 3 }
+    , w29 = { a = 0, b = 1, c = 2, d = 3 }
+    , w30 = { a = 0, b = 1, c = 2, d = 3 }
+    , w31 = { a = 0, b = 1, c = 2, d = 3 }
+    , w32 = { a = 0, b = 1, c = 2, d = 3 }
+    , w33 = { a = 0, b = 1, c = 2, d = 3 }
+    , w34 = { a = 0, b = 1, c = 2, d = 3 }
+    , w35 = { a = 0, b = 1, c = 2, d = 3 }
+    , w36 = { a = 0, b = 1, c = 2, d = 3 }
+    , w37 = { a = 0, b = 1, c = 2, d = 3 }
+    , w38 = { a = 0, b = 1, c = 2, d = 3 }
+    , w39 = { a = 0, b = 1, c = 2, d = 3 }
+    , w40 = { a = 0, b = 1, c = 2, d = 3 }
+    , w41 = { a = 0, b = 1, c = 2, d = 3 }
+    , w42 = { a = 0, b = 1, c = 2, d = 3 }
+    , w43 = { a = 0, b = 1, c = 2, d = 3 }
+    , w44 = { a = 0, b = 1, c = 2, d = 3 }
+    , w45 = { a = 0, b = 1, c = 2, d = 3 }
+    , w46 = { a = 0, b = 1, c = 2, d = 3 }
+    , w47 = { a = 0, b = 1, c = 2, d = 3 }
+    , w48 = { a = 0, b = 1, c = 2, d = 3 }
+    }
+
+
+update1 : ChildMsg, Child → Child
+update1 msg child =
+    case msg of
+        Add →
+            { child | a = child.a + 1 }
+        Subtract →
+            { child | b = child.b - 1 }
+
+
+update2 : ChildMsg, Child → Child
+update2 msg child =
+    case msg of
+        Add →
+            { child | a = child.a + 2 }
+        Subtract →
+            { child | b = child.b - 2 }
+
+
+update3 : ChildMsg, Child → Child
+update3 msg child =
+    case msg of
+        Add →
+            { child | a = child.a + 3 }
+        Subtract →
+            { child | b = child.b - 3 }
+
+
+update4 : ChildMsg, Child → Child
+update4 msg child =
+    case msg of
+        Add →
+            { child | a = child.a + 4 }
+        Subtract →
+            { child | b = child.b - 4 }
+
+
+update5 : ChildMsg, Child → Child
+update5 msg child =
+    case msg of
+        Add →
+            { child | a = child.a + 5 }
+        Subtract →
+            { child | b = child.b - 5 }
+
+
+update6 : ChildMsg, Child → Child
+update6 msg child =
+    case msg of
+        Add →
+            { child | a = child.a + 6 }
+        Subtract →
+            { child | b = child.b - 6 }
+
+
+update7 : ChildMsg, Child → Child
+update7 msg child =
+    case msg of
+        Add →
+            { child | a = child.a + 7 }
+        Subtract →
+            { child | b = child.b - 7 }
+
+
+update8 : ChildMsg, Child → Child
+update8 msg child =
+    case msg of
+        Add →
+            { child | a = child.a + 8 }
+        Subtract →
+            { child | b = child.b - 8 }
+
+
+update9 : ChildMsg, Child → Child
+update9 msg child =
+    case msg of
+        Add →
+            { child | a = child.a + 9 }
+        Subtract →
+            { child | b = child.b - 9 }
+
+
+update10 : ChildMsg, Child → Child
+update10 msg child =
+    case msg of
+        Add →
+            { child | a = child.a + 10 }
+        Subtract →
+            { child | b = child.b - 10 }
+
+
+update11 : ChildMsg, Child → Child
+update11 msg child =
+    case msg of
+        Add →
+            { child | a = child.a + 11 }
+        Subtract →
+            { child | b = child.b - 11 }
+
+
+update12 : ChildMsg, Child → Child
+update12 msg child =
+    case msg of
+        Add →
+            { child | a = child.a + 12 }
+        Subtract →
+            { child | b = child.b - 12 }
+
+
+update13 : ChildMsg, Child → Child
+update13 msg child =
+    case msg of
+        Add →
+            { child | a = child.a + 13 }
+        Subtract →
+            { child | b = child.b - 13 }
+
+
+update14 : ChildMsg, Child → Child
+update14 msg child =
+    case msg of
+        Add →
+            { child | a = child.a + 14 }
+        Subtract →
+            { child | b = child.b - 14 }
+
+
+update15 : ChildMsg, Child → Child
+update15 msg child =
+    case msg of
+        Add →
+            { child | a = child.a + 15 }
+        Subtract →
+            { child | b = child.b - 15 }
+
+
+update16 : ChildMsg, Child → Child
+update16 msg child =
+    case msg of
+        Add →
+            { child | a = child.a + 16 }
+        Subtract →
+            { child | b = child.b - 16 }
+
+
+update17 : ChildMsg, Child → Child
+update17 msg child =
+    case msg of
+        Add →
+            { child | a = child.a + 17 }
+        Subtract →
+            { child | b = child.b - 17 }
+
+
+update18 : ChildMsg, Child → Child
+update18 msg child =
+    case msg of
+        Add →
+            { child | a = child.a + 18 }
+        Subtract →
+            { child | b = child.b - 18 }
+
+
+update19 : ChildMsg, Child → Child
+update19 msg child =
+    case msg of
+        Add →
+            { child | a = child.a + 19 }
+        Subtract →
+            { child | b = child.b - 19 }
+
+
+update20 : ChildMsg, Child → Child
+update20 msg child =
+    case msg of
+        Add →
+            { child | a = child.a + 20 }
+        Subtract →
+            { child | b = child.b - 20 }
+
+
+update21 : ChildMsg, Child → Child
+update21 msg child =
+    case msg of
+        Add →
+            { child | a = child.a + 21 }
+        Subtract →
+            { child | b = child.b - 21 }
+
+
+update22 : ChildMsg, Child → Child
+update22 msg child =
+    case msg of
+        Add →
+            { child | a = child.a + 22 }
+        Subtract →
+            { child | b = child.b - 22 }
+
+
+update23 : ChildMsg, Child → Child
+update23 msg child =
+    case msg of
+        Add →
+            { child | a = child.a + 23 }
+        Subtract →
+            { child | b = child.b - 23 }
+
+
+update24 : ChildMsg, Child → Child
+update24 msg child =
+    case msg of
+        Add →
+            { child | a = child.a + 24 }
+        Subtract →
+            { child | b = child.b - 24 }
+
+
+update25 : ChildMsg, Child → Child
+update25 msg child =
+    case msg of
+        Add →
+            { child | a = child.a + 25 }
+        Subtract →
+            { child | b = child.b - 25 }
+
+
+update26 : ChildMsg, Child → Child
+update26 msg child =
+    case msg of
+        Add →
+            { child | a = child.a + 26 }
+        Subtract →
+            { child | b = child.b - 26 }
+
+
+update27 : ChildMsg, Child → Child
+update27 msg child =
+    case msg of
+        Add →
+            { child | a = child.a + 27 }
+        Subtract →
+            { child | b = child.b - 27 }
+
+
+update28 : ChildMsg, Child → Child
+update28 msg child =
+    case msg of
+        Add →
+            { child | a = child.a + 28 }
+        Subtract →
+            { child | b = child.b - 28 }
+
+
+update29 : ChildMsg, Child → Child
+update29 msg child =
+    case msg of
+        Add →
+            { child | a = child.a + 29 }
+        Subtract →
+            { child | b = child.b - 29 }
+
+
+update30 : ChildMsg, Child → Child
+update30 msg child =
+    case msg of
+        Add →
+            { child | a = child.a + 30 }
+        Subtract →
+            { child | b = child.b - 30 }
+
+
+update31 : ChildMsg, Child → Child
+update31 msg child =
+    case msg of
+        Add →
+            { child | a = child.a + 31 }
+        Subtract →
+            { child | b = child.b - 31 }
+
+
+update32 : ChildMsg, Child → Child
+update32 msg child =
+    case msg of
+        Add →
+            { child | a = child.a + 32 }
+        Subtract →
+            { child | b = child.b - 32 }
+
+
+update33 : ChildMsg, Child → Child
+update33 msg child =
+    case msg of
+        Add →
+            { child | a = child.a + 33 }
+        Subtract →
+            { child | b = child.b - 33 }
+
+
+update34 : ChildMsg, Child → Child
+update34 msg child =
+    case msg of
+        Add →
+            { child | a = child.a + 34 }
+        Subtract →
+            { child | b = child.b - 34 }
+
+
+update35 : ChildMsg, Child → Child
+update35 msg child =
+    case msg of
+        Add →
+            { child | a = child.a + 35 }
+        Subtract →
+            { child | b = child.b - 35 }
+
+
+update36 : ChildMsg, Child → Child
+update36 msg child =
+    case msg of
+        Add →
+            { child | a = child.a + 36 }
+        Subtract →
+            { child | b = child.b - 36 }
+
+
+update37 : ChildMsg, Child → Child
+update37 msg child =
+    case msg of
+        Add →
+            { child | a = child.a + 37 }
+        Subtract →
+            { child | b = child.b - 37 }
+
+
+update38 : ChildMsg, Child → Child
+update38 msg child =
+    case msg of
+        Add →
+            { child | a = child.a + 38 }
+        Subtract →
+            { child | b = child.b - 38 }
+
+
+update39 : ChildMsg, Child → Child
+update39 msg child =
+    case msg of
+        Add →
+            { child | a = child.a + 39 }
+        Subtract →
+            { child | b = child.b - 39 }
+
+
+update40 : ChildMsg, Child → Child
+update40 msg child =
+    case msg of
+        Add →
+            { child | a = child.a + 40 }
+        Subtract →
+            { child | b = child.b - 40 }
+
+
+update41 : ChildMsg, Child → Child
+update41 msg child =
+    case msg of
+        Add →
+            { child | a = child.a + 41 }
+        Subtract →
+            { child | b = child.b - 41 }
+
+
+update42 : ChildMsg, Child → Child
+update42 msg child =
+    case msg of
+        Add →
+            { child | a = child.a + 42 }
+        Subtract →
+            { child | b = child.b - 42 }
+
+
+update43 : ChildMsg, Child → Child
+update43 msg child =
+    case msg of
+        Add →
+            { child | a = child.a + 43 }
+        Subtract →
+            { child | b = child.b - 43 }
+
+
+update44 : ChildMsg, Child → Child
+update44 msg child =
+    case msg of
+        Add →
+            { child | a = child.a + 44 }
+        Subtract →
+            { child | b = child.b - 44 }
+
+
+update45 : ChildMsg, Child → Child
+update45 msg child =
+    case msg of
+        Add →
+            { child | a = child.a + 45 }
+        Subtract →
+            { child | b = child.b - 45 }
+
+
+update46 : ChildMsg, Child → Child
+update46 msg child =
+    case msg of
+        Add →
+            { child | a = child.a + 46 }
+        Subtract →
+            { child | b = child.b - 46 }
+
+
+update47 : ChildMsg, Child → Child
+update47 msg child =
+    case msg of
+        Add →
+            { child | a = child.a + 47 }
+        Subtract →
+            { child | b = child.b - 47 }
+
+
+update48 : ChildMsg, Child → Child
+update48 msg child =
+    case msg of
+        Add →
+            { child | a = child.a + 48 }
+        Subtract →
+            { child | b = child.b - 48 }
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        W1 childMsg →
+            { model | w1 = update1 childMsg model.w1 }
+        W2 childMsg →
+            { model | w2 = update2 childMsg model.w2 }
+        W3 childMsg →
+            { model | w3 = update3 childMsg model.w3 }
+        W4 childMsg →
+            { model | w4 = update4 childMsg model.w4 }
+        W5 childMsg →
+            { model | w5 = update5 childMsg model.w5 }
+        W6 childMsg →
+            { model | w6 = update6 childMsg model.w6 }
+        W7 childMsg →
+            { model | w7 = update7 childMsg model.w7 }
+        W8 childMsg →
+            { model | w8 = update8 childMsg model.w8 }
+        W9 childMsg →
+            { model | w9 = update9 childMsg model.w9 }
+        W10 childMsg →
+            { model | w10 = update10 childMsg model.w10 }
+        W11 childMsg →
+            { model | w11 = update11 childMsg model.w11 }
+        W12 childMsg →
+            { model | w12 = update12 childMsg model.w12 }
+        W13 childMsg →
+            { model | w13 = update13 childMsg model.w13 }
+        W14 childMsg →
+            { model | w14 = update14 childMsg model.w14 }
+        W15 childMsg →
+            { model | w15 = update15 childMsg model.w15 }
+        W16 childMsg →
+            { model | w16 = update16 childMsg model.w16 }
+        W17 childMsg →
+            { model | w17 = update17 childMsg model.w17 }
+        W18 childMsg →
+            { model | w18 = update18 childMsg model.w18 }
+        W19 childMsg →
+            { model | w19 = update19 childMsg model.w19 }
+        W20 childMsg →
+            { model | w20 = update20 childMsg model.w20 }
+        W21 childMsg →
+            { model | w21 = update21 childMsg model.w21 }
+        W22 childMsg →
+            { model | w22 = update22 childMsg model.w22 }
+        W23 childMsg →
+            { model | w23 = update23 childMsg model.w23 }
+        W24 childMsg →
+            { model | w24 = update24 childMsg model.w24 }
+        W25 childMsg →
+            { model | w25 = update25 childMsg model.w25 }
+        W26 childMsg →
+            { model | w26 = update26 childMsg model.w26 }
+        W27 childMsg →
+            { model | w27 = update27 childMsg model.w27 }
+        W28 childMsg →
+            { model | w28 = update28 childMsg model.w28 }
+        W29 childMsg →
+            { model | w29 = update29 childMsg model.w29 }
+        W30 childMsg →
+            { model | w30 = update30 childMsg model.w30 }
+        W31 childMsg →
+            { model | w31 = update31 childMsg model.w31 }
+        W32 childMsg →
+            { model | w32 = update32 childMsg model.w32 }
+        W33 childMsg →
+            { model | w33 = update33 childMsg model.w33 }
+        W34 childMsg →
+            { model | w34 = update34 childMsg model.w34 }
+        W35 childMsg →
+            { model | w35 = update35 childMsg model.w35 }
+        W36 childMsg →
+            { model | w36 = update36 childMsg model.w36 }
+        W37 childMsg →
+            { model | w37 = update37 childMsg model.w37 }
+        W38 childMsg →
+            { model | w38 = update38 childMsg model.w38 }
+        W39 childMsg →
+            { model | w39 = update39 childMsg model.w39 }
+        W40 childMsg →
+            { model | w40 = update40 childMsg model.w40 }
+        W41 childMsg →
+            { model | w41 = update41 childMsg model.w41 }
+        W42 childMsg →
+            { model | w42 = update42 childMsg model.w42 }
+        W43 childMsg →
+            { model | w43 = update43 childMsg model.w43 }
+        W44 childMsg →
+            { model | w44 = update44 childMsg model.w44 }
+        W45 childMsg →
+            { model | w45 = update45 childMsg model.w45 }
+        W46 childMsg →
+            { model | w46 = update46 childMsg model.w46 }
+        W47 childMsg →
+            { model | w47 = update47 childMsg model.w47 }
+        W48 childMsg →
+            { model | w48 = update48 childMsg model.w48 }
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        <section>
+            <p>{model.w1.a}</p><button onClick={W1 Add}>Add</button><button onClick={W1 Subtract}>Subtract</button>
+        </section>
+        <section>
+            <p>{model.w2.a}</p><button onClick={W2 Add}>Add</button><button onClick={W2 Subtract}>Subtract</button>
+        </section>
+        <section>
+            <p>{model.w3.a}</p><button onClick={W3 Add}>Add</button><button onClick={W3 Subtract}>Subtract</button>
+        </section>
+        <section>
+            <p>{model.w4.a}</p><button onClick={W4 Add}>Add</button><button onClick={W4 Subtract}>Subtract</button>
+        </section>
+        <section>
+            <p>{model.w5.a}</p><button onClick={W5 Add}>Add</button><button onClick={W5 Subtract}>Subtract</button>
+        </section>
+        <section>
+            <p>{model.w6.a}</p><button onClick={W6 Add}>Add</button><button onClick={W6 Subtract}>Subtract</button>
+        </section>
+        <section>
+            <p>{model.w7.a}</p><button onClick={W7 Add}>Add</button><button onClick={W7 Subtract}>Subtract</button>
+        </section>
+        <section>
+            <p>{model.w8.a}</p><button onClick={W8 Add}>Add</button><button onClick={W8 Subtract}>Subtract</button>
+        </section>
+        <section>
+            <p>{model.w9.a}</p><button onClick={W9 Add}>Add</button><button onClick={W9 Subtract}>Subtract</button>
+        </section>
+        <section>
+            <p>{model.w10.a}</p><button onClick={W10 Add}>Add</button><button onClick={W10 Subtract}>Subtract</button>
+        </section>
+        <section>
+            <p>{model.w11.a}</p><button onClick={W11 Add}>Add</button><button onClick={W11 Subtract}>Subtract</button>
+        </section>
+        <section>
+            <p>{model.w12.a}</p><button onClick={W12 Add}>Add</button><button onClick={W12 Subtract}>Subtract</button>
+        </section>
+        <section>
+            <p>{model.w13.a}</p><button onClick={W13 Add}>Add</button><button onClick={W13 Subtract}>Subtract</button>
+        </section>
+        <section>
+            <p>{model.w14.a}</p><button onClick={W14 Add}>Add</button><button onClick={W14 Subtract}>Subtract</button>
+        </section>
+        <section>
+            <p>{model.w15.a}</p><button onClick={W15 Add}>Add</button><button onClick={W15 Subtract}>Subtract</button>
+        </section>
+        <section>
+            <p>{model.w16.a}</p><button onClick={W16 Add}>Add</button><button onClick={W16 Subtract}>Subtract</button>
+        </section>
+        <section>
+            <p>{model.w17.a}</p><button onClick={W17 Add}>Add</button><button onClick={W17 Subtract}>Subtract</button>
+        </section>
+        <section>
+            <p>{model.w18.a}</p><button onClick={W18 Add}>Add</button><button onClick={W18 Subtract}>Subtract</button>
+        </section>
+        <section>
+            <p>{model.w19.a}</p><button onClick={W19 Add}>Add</button><button onClick={W19 Subtract}>Subtract</button>
+        </section>
+        <section>
+            <p>{model.w20.a}</p><button onClick={W20 Add}>Add</button><button onClick={W20 Subtract}>Subtract</button>
+        </section>
+        <section>
+            <p>{model.w21.a}</p><button onClick={W21 Add}>Add</button><button onClick={W21 Subtract}>Subtract</button>
+        </section>
+        <section>
+            <p>{model.w22.a}</p><button onClick={W22 Add}>Add</button><button onClick={W22 Subtract}>Subtract</button>
+        </section>
+        <section>
+            <p>{model.w23.a}</p><button onClick={W23 Add}>Add</button><button onClick={W23 Subtract}>Subtract</button>
+        </section>
+        <section>
+            <p>{model.w24.a}</p><button onClick={W24 Add}>Add</button><button onClick={W24 Subtract}>Subtract</button>
+        </section>
+        <section>
+            <p>{model.w25.a}</p><button onClick={W25 Add}>Add</button><button onClick={W25 Subtract}>Subtract</button>
+        </section>
+        <section>
+            <p>{model.w26.a}</p><button onClick={W26 Add}>Add</button><button onClick={W26 Subtract}>Subtract</button>
+        </section>
+        <section>
+            <p>{model.w27.a}</p><button onClick={W27 Add}>Add</button><button onClick={W27 Subtract}>Subtract</button>
+        </section>
+        <section>
+            <p>{model.w28.a}</p><button onClick={W28 Add}>Add</button><button onClick={W28 Subtract}>Subtract</button>
+        </section>
+        <section>
+            <p>{model.w29.a}</p><button onClick={W29 Add}>Add</button><button onClick={W29 Subtract}>Subtract</button>
+        </section>
+        <section>
+            <p>{model.w30.a}</p><button onClick={W30 Add}>Add</button><button onClick={W30 Subtract}>Subtract</button>
+        </section>
+        <section>
+            <p>{model.w31.a}</p><button onClick={W31 Add}>Add</button><button onClick={W31 Subtract}>Subtract</button>
+        </section>
+        <section>
+            <p>{model.w32.a}</p><button onClick={W32 Add}>Add</button><button onClick={W32 Subtract}>Subtract</button>
+        </section>
+        <section>
+            <p>{model.w33.a}</p><button onClick={W33 Add}>Add</button><button onClick={W33 Subtract}>Subtract</button>
+        </section>
+        <section>
+            <p>{model.w34.a}</p><button onClick={W34 Add}>Add</button><button onClick={W34 Subtract}>Subtract</button>
+        </section>
+        <section>
+            <p>{model.w35.a}</p><button onClick={W35 Add}>Add</button><button onClick={W35 Subtract}>Subtract</button>
+        </section>
+        <section>
+            <p>{model.w36.a}</p><button onClick={W36 Add}>Add</button><button onClick={W36 Subtract}>Subtract</button>
+        </section>
+        <section>
+            <p>{model.w37.a}</p><button onClick={W37 Add}>Add</button><button onClick={W37 Subtract}>Subtract</button>
+        </section>
+        <section>
+            <p>{model.w38.a}</p><button onClick={W38 Add}>Add</button><button onClick={W38 Subtract}>Subtract</button>
+        </section>
+        <section>
+            <p>{model.w39.a}</p><button onClick={W39 Add}>Add</button><button onClick={W39 Subtract}>Subtract</button>
+        </section>
+        <section>
+            <p>{model.w40.a}</p><button onClick={W40 Add}>Add</button><button onClick={W40 Subtract}>Subtract</button>
+        </section>
+        <section>
+            <p>{model.w41.a}</p><button onClick={W41 Add}>Add</button><button onClick={W41 Subtract}>Subtract</button>
+        </section>
+        <section>
+            <p>{model.w42.a}</p><button onClick={W42 Add}>Add</button><button onClick={W42 Subtract}>Subtract</button>
+        </section>
+        <section>
+            <p>{model.w43.a}</p><button onClick={W43 Add}>Add</button><button onClick={W43 Subtract}>Subtract</button>
+        </section>
+        <section>
+            <p>{model.w44.a}</p><button onClick={W44 Add}>Add</button><button onClick={W44 Subtract}>Subtract</button>
+        </section>
+        <section>
+            <p>{model.w45.a}</p><button onClick={W45 Add}>Add</button><button onClick={W45 Subtract}>Subtract</button>
+        </section>
+        <section>
+            <p>{model.w46.a}</p><button onClick={W46 Add}>Add</button><button onClick={W46 Subtract}>Subtract</button>
+        </section>
+        <section>
+            <p>{model.w47.a}</p><button onClick={W47 Add}>Add</button><button onClick={W47 Subtract}>Subtract</button>
+        </section>
+        <section>
+            <p>{model.w48.a}</p><button onClick={W48 Add}>Add</button><button onClick={W48 Subtract}>Subtract</button>
+        </section>
+    </main>
+
+
+main : Tea.Program
+main = Browser.mountAt (Tea.sandbox { init = init, update = update, view = view }) "root"
