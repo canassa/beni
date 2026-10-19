@@ -73,7 +73,7 @@ showOdd o =
 
 
 all : Schema.Options
-all = { defaultOptions | errors = AllErrors }
+all = { defaultOptions ⊤ | errors = AllErrors }
 
 
 main : Node.Program
@@ -93,7 +93,7 @@ main =
         , Show.result
             (Schema.parseWith
                 plain
-                { defaultOptions | unknownKeys = Reject }
+                { defaultOptions ⊤ | unknownKeys = Reject }
                 "{\"a\":1,\"__proto__\":{\"polluted\":true}}"
             )
             λp → String.fromInt p.a
@@ -108,5 +108,5 @@ main =
         ]
 
 
-defaultOptions : Schema.Options
-defaultOptions = Schema.defaultOptions
+defaultOptions : ⊤ → Schema.Options
+defaultOptions ⊤ = Schema.defaultOptions ⊤

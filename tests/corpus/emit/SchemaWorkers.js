@@ -105,7 +105,7 @@ const SchemaWorkers$Page$$read$1 = (c, d, p, k, n, v, $s0) => {
   return $out$13;
 };
 const SchemaWorkers$Page$$parseWith = ($s0, $o, $t) => Schema$compiledParse($o, [$s0], ($c$17, $d$18, $p$19, $k$20, $n$21, $v$22) => SchemaWorkers$Page$$read($c$17, $d$18, $p$19, $k$20, $n$21, $v$22, Schema$readSlot($s0)), $t);
-const SchemaWorkers$Page$$parse = ($s0, $t) => SchemaWorkers$Page$$parseWith($s0, Schema$defaultOptions, $t);
+const SchemaWorkers$Page$$parse = ($s0, $t) => SchemaWorkers$Page$$parseWith($s0, Schema$defaultOptions(), $t);
 const SchemaWorkers$Page$$write = (c, d, p, k, n, v, $s0) => {
   const $here = Schema$pathAt(p, k, n);
   const $before$1 = c.issues.length;
@@ -174,7 +174,7 @@ const SchemaWorkers$Page$$write$1 = (c, d, p, k, n, v, $s0) => {
   return $out$13;
 };
 const SchemaWorkers$Page$$printWith = ($s0, $o, $t) => Schema$compiledPrint($o, [$s0], ($c$17, $d$18, $p$19, $k$20, $n$21, $v$22) => SchemaWorkers$Page$$write($c$17, $d$18, $p$19, $k$20, $n$21, $v$22, Schema$writeSlot($s0)), $t);
-const SchemaWorkers$Page$$print = ($s0, $t) => SchemaWorkers$Page$$printWith($s0, Schema$defaultOptions, $t);
+const SchemaWorkers$Page$$print = ($s0, $t) => SchemaWorkers$Page$$printWith($s0, Schema$defaultOptions(), $t);
 const SchemaWorkers$Page$$schema = ($s0) => Schema$declared(() => SchemaWorkers$Page$$description(Schema$describedOf($s0)), (($w$1) => ($c$2, $d$3, $p$4, $k$5, $n$6, $v$7) => SchemaWorkers$Page$$read($c$2, $d$3, $p$4, $k$5, $n$6, $v$7, $w$1))(Schema$readSlot($s0)), (($w$8) => ($c$9, $d$10, $p$11, $k$12, $n$13, $v$14) => SchemaWorkers$Page$$write($c$9, $d$10, $p$11, $k$12, $n$13, $v$14, $w$8))(Schema$writeSlot($s0)), [$s0], null);
 const SchemaWorkers$Box$$via$0 = SchemaWorkers$decimalInt;
 const SchemaWorkers$Box$$description = Schema$describedRecord([Schema$describedField("count", "count", false, Schema$describedConverted(Schema$describedOf(Schema$string), SchemaWorkers$Box$$via$0)), Schema$describedField("raw", "raw", false, Schema$describedOf(Schema$value))], ($p$1) => ({ count: $p$1.a.b, raw: $p$1.b }), ($r$2) => ({ a: { a: null, b: $r$2.count }, b: $r$2.raw }));
@@ -235,7 +235,7 @@ const SchemaWorkers$Box$$read = (c, d, p, k, n, v) => {
   return { count: $f$5, raw: $f$8 };
 };
 const SchemaWorkers$Box$$parseWith = ($o, $t) => Schema$compiledParse($o, null, SchemaWorkers$Box$$read, $t);
-const SchemaWorkers$Box$$parse = ($t) => SchemaWorkers$Box$$parseWith(Schema$defaultOptions, $t);
+const SchemaWorkers$Box$$parse = ($t) => SchemaWorkers$Box$$parseWith(Schema$defaultOptions(), $t);
 const SchemaWorkers$Box$$write = (c, d, p, k, n, v) => {
   const $here = Schema$pathAt(p, k, n);
   const $before$1 = c.issues.length;
@@ -284,7 +284,7 @@ const SchemaWorkers$Box$$write = (c, d, p, k, n, v) => {
   return $o$10;
 };
 const SchemaWorkers$Box$$printWith = ($o, $t) => Schema$compiledPrint($o, null, SchemaWorkers$Box$$write, $t);
-const SchemaWorkers$Box$$print = ($t) => SchemaWorkers$Box$$printWith(Schema$defaultOptions, $t);
+const SchemaWorkers$Box$$print = ($t) => SchemaWorkers$Box$$printWith(Schema$defaultOptions(), $t);
 const SchemaWorkers$Box$$declared = Schema$declared(() => SchemaWorkers$Box$$description, SchemaWorkers$Box$$read, SchemaWorkers$Box$$write, null, null);
 const SchemaWorkers$Box$$schema = ($u$1) => SchemaWorkers$Box$$declared;
 const SchemaWorkers$Pages$$description = Schema$describedRecord([Schema$describedField("boxes", "boxes", false, SchemaWorkers$Page$$description(SchemaWorkers$Box$$description))], ($p$1) => ({ boxes: $p$1.b }), ($r$2) => ({ a: null, b: $r$2.boxes }));
@@ -325,7 +325,7 @@ const SchemaWorkers$Pages$$read = (c, d, p, k, n, v) => {
   return { boxes: $f$5 };
 };
 const SchemaWorkers$Pages$$parseWith = ($o, $t) => Schema$compiledParse($o, null, SchemaWorkers$Pages$$read, $t);
-const SchemaWorkers$Pages$$parse = ($t) => SchemaWorkers$Pages$$parseWith(Schema$defaultOptions, $t);
+const SchemaWorkers$Pages$$parse = ($t) => SchemaWorkers$Pages$$parseWith(Schema$defaultOptions(), $t);
 const SchemaWorkers$Pages$$write = (c, d, p, k, n, v) => {
   const $here = Schema$pathAt(p, k, n);
   const $before$1 = c.issues.length;
@@ -348,7 +348,7 @@ const SchemaWorkers$Pages$$write = (c, d, p, k, n, v) => {
   return $o$5;
 };
 const SchemaWorkers$Pages$$printWith = ($o, $t) => Schema$compiledPrint($o, null, SchemaWorkers$Pages$$write, $t);
-const SchemaWorkers$Pages$$print = ($t) => SchemaWorkers$Pages$$printWith(Schema$defaultOptions, $t);
+const SchemaWorkers$Pages$$print = ($t) => SchemaWorkers$Pages$$printWith(Schema$defaultOptions(), $t);
 const SchemaWorkers$Pages$$declared = Schema$declared(() => SchemaWorkers$Pages$$description, SchemaWorkers$Pages$$read, SchemaWorkers$Pages$$write, null, null);
 const SchemaWorkers$Pages$$schema = ($u$1) => SchemaWorkers$Pages$$declared;
 const SchemaWorkers$main = Node$printLines([]);

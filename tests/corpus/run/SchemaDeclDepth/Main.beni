@@ -55,11 +55,11 @@ count c n =
 
 
 bound : Int → Schema.Options
-bound d = { defaultOptions | maxDepth = d }
+bound d = { defaultOptions ⊤ | maxDepth = d }
 
 
-defaultOptions : Schema.Options
-defaultOptions = Schema.defaultOptions
+defaultOptions : ⊤ → Schema.Options
+defaultOptions ⊤ = Schema.defaultOptions ⊤
 
 
 -- The path a failure names is n links long: shown by its length.

@@ -248,8 +248,8 @@ maxDepthCeiling = 1024
 
 --| Effect's defaults: stop at the first failure, ignore unknown keys, and
 --| leave the failing input out of an issue. `maxDepth` is 512.
-pub defaultOptions : Options
-defaultOptions =
+pub defaultOptions : ⊤ → Options
+defaultOptions ⊤ =
     { errors = FirstError
     , unknownKeys = Ignore
     , maxDepth = 512
@@ -1056,7 +1056,8 @@ hostWorker inner =
 -- and `encode` becomes `write` (`NHost`). The issues are the same array,
 -- so a failure below is the caller's `c.fail`.
 hostEnds : Context → Context
-hostEnds c = { c | sh = c.sh || c.src == encodedSide, dh = c.dh || c.dst == encodedSide }
+hostEnds c =
+    { Record.copy c | sh = c.sh || c.src == encodedSide, dh = c.dh || c.dst == encodedSide }
 
 
 -- `prim`, in either direction: the context says which.
@@ -1228,7 +1229,7 @@ key fs external =
                 fieldsBox
                     (appended
                         (Js.call b.fields "slice" [ Js.from 0, Js.from (n - 1) ])
-                        (toHost { last | key = external, renamed = True })
+                        (toHost { Record.copy last | key = external, renamed = True })
                     )
                     b.problem
 
@@ -2155,17 +2156,23 @@ run c n depth path active v =
                 if Js.same b c.fail then
                     c.fail
                 else
-                    run (if c.cv then c else { c | cv = True }) source depth path active b
+                    run
+                        (if c.cv then c else { Record.copy c | cv = True })
+                        source
+                        depth
+                        path
+                        active
+                        b
             else if c.src == typeSide then
                 v
             else
                 run c source depth path active v
 
         NFlipped inner →
-            run { c | src = 1 - c.src, dst = 1 - c.dst } inner depth path active v
+            run { Record.copy c | src = 1 - c.src, dst = 1 - c.dst } inner depth path active v
 
         NProjected side inner →
-            run { c | src = side, dst = side } inner depth path active v
+            run { Record.copy c | src = side, dst = side } inner depth path active v
 
         NRef cell →
             if isActive cell active then
@@ -2997,7 +3004,7 @@ runRoot s o dir src sh dst dh v =
 
 --| An Encoded value converted to the Type.
 pub decode : Schema e a, e → Result (List Issue) a
-decode schema input = decodeWith schema defaultOptions input
+decode schema input = decodeWith schema (defaultOptions ⊤) input
 
 
 --| `decode` with options.
@@ -3022,7 +3029,7 @@ decodeWith s o v =
 
 --| A Type value converted to the Encoded.
 pub encode : Schema e a, a → Result (List Issue) e
-encode schema input = encodeWith schema defaultOptions input
+encode schema input = encodeWith schema (defaultOptions ⊤) input
 
 
 --| `encode` with options.
@@ -3047,7 +3054,7 @@ encodeWith s o v =
 
 --| A host value read as the Encoded endpoint's external form, to the Type.
 pub read : Schema e a, Value → Result (List Issue) a
-read schema input = readWith schema defaultOptions input
+read schema input = readWith schema (defaultOptions ⊤) input
 
 
 --| `read` with options.
@@ -3072,7 +3079,7 @@ readWith s o v =
 
 --| A Type value written as the Encoded endpoint's external form.
 pub write : Schema e a, a → Result (List Issue) Value
-write schema input = writeWith schema defaultOptions input
+write schema input = writeWith schema (defaultOptions ⊤) input
 
 
 --| `write` with options.
@@ -3097,7 +3104,7 @@ writeWith s o v =
 
 --| JSON text read to the Type.
 pub parse : Schema e a, String → Result (List Issue) a
-parse schema text = parseWith schema defaultOptions text
+parse schema text = parseWith schema (defaultOptions ⊤) text
 
 
 --| `parse` with options. `JSON.parse` reports malformed text by throwing a
@@ -3131,7 +3138,7 @@ parseWith s o text =
 
 --| A Type value printed as JSON text.
 pub print : borrowed Schema e a, aliased a → fresh Result (List Issue) String
-print schema input = printWith schema defaultOptions input
+print schema input = printWith schema (defaultOptions ⊤) input
 
 
 --| `print` with options.
@@ -3442,7 +3449,7 @@ validate w v = validRun (parserIn w validMode) v
 -- validator, the schema value never made (`schema.md` §6).
 validRun : Js.Value, Value → Result (List Issue) a
 validRun worker v =
-    c = context defaultOptions Decoding encodedSide True typeSide False False
+    c = context (defaultOptions ⊤) Decoding encodedSide True typeSide False False
     x = Js.apply worker [ toHost c, Js.from 0, atRoot, Js.null, Js.null, toHost v ]
     if Js.same x c.fail then Err [] else Ok (fromHost x)
 
@@ -3513,7 +3520,7 @@ shapeFail = Js.array []
 
 -- The default options' depth bound, which every shape run reads under.
 shapeMax : Int
-shapeMax = defaultOptions.maxDepth
+shapeMax = (defaultOptions ⊤).maxDepth
 
 
 -- Shape `s` read on `x` at depth `depth`: a primitive's reader, or the
@@ -4084,7 +4091,7 @@ belowBackward c =
     if c.cv then
         c
     else
-        { c | cv = True }
+        { Record.copy c | cv = True }
 
 
 -- Whether a `Value` prints as JSON within the depth left: `printable`'s

@@ -246,10 +246,12 @@ main =
     Node.printLines
         [ "-- decode"
         , Show.result (Schema.decode noteSchema encoded) showNote
-        , Show.result (Schema.decode noteSchema { encoded | proto = 9007199254740992 }) showNote
+        , Show.result
+            (Schema.decode noteSchema { Record.copy encoded | proto = 9007199254740992 })
+            showNote
         , Show.result
             (Schema.decode noteSchema
-                { encoded
+                { Record.copy encoded
                     | id = 9007199254740992
                     , exact = 1 / 0
                     , count = "x"
@@ -259,7 +261,7 @@ main =
             showNote
         , Show.result
             (Schema.decodeWith noteSchema all
-                { encoded
+                { Record.copy encoded
                     | id = 9007199254740992
                     , exact = 1 / 0
                     , count = "x"
@@ -271,11 +273,17 @@ main =
         , Show.result (Schema.decodeWith noteSchema (depth (-1)) encoded) showNote
         , "-- encode"
         , Show.result (Schema.encode noteSchema note) showEncodedNote
-        , Show.result (Schema.encode noteSchema { note | proto = 9007199254740992 }) showEncodedNote
-        , Show.value (Schema.write noteSchema { note | proto = 9007199254740992 })
+        , Show.result
+            (Schema.encode noteSchema { Record.copy note | proto = 9007199254740992 })
+            showEncodedNote
+        , Show.value (Schema.write noteSchema { Record.copy note | proto = 9007199254740992 })
         , Show.result
             (Schema.encodeWith noteSchema all
-                { note | score = 0 / 0, count = -1, parts = [ { n = 9007199254740992 } ] }
+                { Record.copy note
+                    | score = 0 / 0
+                    , count = -1
+                    , parts = [ { n = 9007199254740992 } ]
+                }
             )
             showEncodedNote
         , "-- read"
@@ -294,12 +302,16 @@ main =
         , Show.result (Schema.readWith noteSchema (depth 1) (Show.host hostNote)) showNote
         , "-- write"
         , Show.value (Schema.write noteSchema note)
-        , Show.value (Schema.write noteSchema { note | tag = Present "x", by = Null })
-        , Show.value (Schema.write noteSchema { note | score = 0 / 0 })
-        , Show.result (Schema.print noteSchema { note | score = 0 / 0 }) λs → s
-        , Show.value (Schema.write noteSchema { note | extra = Show.host "1e999" })
-        , Show.result (Schema.print noteSchema { note | extra = Show.host "1e999" }) λs → s
-        , Show.value (Schema.writeWith noteSchema all { note | id = 9007199254740992, count = -2 })
+        , Show.value (Schema.write noteSchema { Record.copy note | tag = Present "x", by = Null })
+        , Show.value (Schema.write noteSchema { Record.copy note | score = 0 / 0 })
+        , Show.result (Schema.print noteSchema { Record.copy note | score = 0 / 0 }) λs → s
+        , Show.value (Schema.write noteSchema { Record.copy note | extra = Show.host "1e999" })
+        , Show.result (Schema.print noteSchema { Record.copy note | extra = Show.host "1e999" }) λs →
+            s
+        , Show.value
+            (Schema.writeWith noteSchema all
+                { Record.copy note | id = 9007199254740992, count = -2 }
+            )
         , "-- tagged"
         , Show.result
             (Schema.decode (Shape.schema ⊤) (Shape.Encoded.Circle { radius = 2 }))
