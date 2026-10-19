@@ -78,7 +78,11 @@ pub const magic = "BENIOWN\x00";
 /// 15 writes a constructor step's field as a u32, so a field past 63 is
 /// named exactly (issue #289; it was a byte, and a field past 63 refused).
 /// 16 adds the level marker `⟨T⟩`, a step naming its type (§16.7, #379).
-pub const version: u32 = 16;
+/// 17 carries a record's facts (§31.7, #315): two bytes of bits — `W{F}`
+/// with its fields by name, a field read and an object's escape — a
+/// provenance's object flag (`◦`), and the records a result holds
+/// (`objs`), after `res`.
+pub const version: u32 = 17;
 
 pub const Error = error{Bad} || Allocator.Error;
 
