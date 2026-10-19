@@ -1,0 +1,89 @@
+-- ownership: the composed-path fold of polymorphic recursion (issue #286;
+-- ownership-checker.md §16.7, F3 as amended, the owner's choice (a)), on the
+-- review of #429.
+-- A constructor with a grown and an ungrown recursive field (`Wrap (T (List
+-- a)) (T a)`).
+type T a
+    = Leaf a
+    | Wrap (T (List a)) (T a)
+
+
+w : Int, a → T a
+w n x =
+    if n == 0 then
+        Leaf x
+    else
+        Wrap (w (n - 1) [ x ]) (w (n - 1) x)
+
+
+pub br : Int → Int
+br n =
+    case w 2 (List.repeat n 0) of
+        Wrap (Wrap (Leaf [ y1 ]) (Leaf y2)) _ →
+            List.length (List.push y1 []) + List.length y2
+
+        _ →
+            0
+
+
+pub br2 : Int → Int
+br2 n =
+    case w 2 (List.repeat n 0) of
+        Wrap (Wrap (Leaf [ y1 ]) _) _ →
+            List.length (List.push y1 [])
+
+        _ →
+            0
+
+
+pub br3 : Int → Int
+br3 n =
+    case w 2 (List.repeat n 0) of
+        Wrap (Wrap _ (Leaf y2)) _ →
+            List.length (List.push y2 [])
+
+        _ →
+            0
+
+
+type S a
+    = SLeaf a
+    | SWrap (S (List a))
+
+
+sw : Int, a → S a
+sw n x =
+    if n == 0 then
+        SLeaf x
+    else
+        case sw (n - 1) [ x ] of
+            SLeaf ys →
+                SWrap (SLeaf (List.push ys x))
+
+            other →
+                SWrap other
+
+
+ww : Int, a → S a
+ww n x =
+    if n == 0 then
+        SLeaf x
+    else
+        case ww (n - 1) [ x, x ] of
+            SWrap (SLeaf ys) →
+                case ys of
+                    [ zs ] →
+                        SWrap (SWrap (SLeaf [ List.push zs x ]))
+
+                    _ →
+                        SWrap (SWrap (SLeaf ys))
+
+            other →
+                SWrap other
+
+
+pub useWw : List Int → Int
+useWw xs =
+    case ww 2 xs of
+        _ →
+            List.length xs

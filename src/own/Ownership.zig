@@ -506,10 +506,40 @@ pub const XSum = struct {
     }
 };
 
-/// `grown`: §16.7's mark, in memory while a group is solved; the summary
-/// block does not carry it (a settled summary is instantiated only outside
-/// its group, where the mark is cleared).
-pub const ResEntry = struct { path: u32, prov: Prov, approx: bool = false, xc: XSum = .{}, sc: XSum = .{}, grown: bool = false };
+/// §16.7's mark (F3, the owner's choice (a)), in memory while a group is
+/// solved: bit 0, the entry's path went below a variable that a call inside
+/// a recursive group grew at a structure; above it, 1 + a *pending*
+/// boundary, for a symbolic cell at such a variable: its places below that
+/// many steps are below the variable. A group clears its members' marks
+/// when it settles, so no settled summary carries one and the summary block
+/// does not.
+pub const Grown = u8;
+fn gMarked(g: Grown) bool {
+    return g & 1 != 0;
+}
+fn gPending(g: Grown) ?usize {
+    const x = g >> 1;
+    return if (x == 0) null else x - 1;
+}
+fn gMake(marked: bool, pending: ?usize) Grown {
+    const x: u8 = if (pending) |b| @intCast(@min(b, 126) + 1) else 0;
+    return (x << 1) | @intFromBool(marked);
+}
+/// Two marks on one entry: marked when either is, the nearer boundary.
+fn gJoin(a: Grown, b: Grown) Grown {
+    const pa = gPending(a);
+    const pb = gPending(b);
+    const pend: ?usize = if (pa) |x| (if (pb) |y| @min(x, y) else x) else pb;
+    return gMake(gMarked(a) or gMarked(b), pend);
+}
+/// A symbolic cell's mark one step further down: the boundary is a step
+/// nearer, and a cell already below stays below.
+fn gStep(g: Grown) Grown {
+    const pend = gPending(g) orelse return g;
+    return gMake(gMarked(g), if (pend > 0) pend - 1 else 0);
+}
+
+pub const ResEntry = struct { path: u32, prov: Prov, approx: bool = false, xc: XSum = .{}, sc: XSum = .{}, grown: Grown = 0 };
 
 pub const SupplyEntry = struct {
     fun: u32,
@@ -522,6 +552,8 @@ pub const SupplyEntry = struct {
     approx: bool = false,
     /// The condition of what is supplied (§18.3).
     xc: XSum = .{},
+    /// §16.7's mark, as on `ResEntry`.
+    grown: Grown = 0,
 };
 
 pub const Calls = enum(u8) { zero, once, many };
@@ -1615,7 +1647,7 @@ fn summaryDeepEql(o: *Ownership, x_in: Summary, y_in: Summary) Allocator.Error!b
     for (x.objs, y.objs) |a, b| if (!resEql(a, b)) return false;
     for (x.supply, y.supply) |a, b| {
         if (a.fun != b.fun or a.k != b.k or a.path != b.path or !a.prov.eql(b.prov) or a.owned != b.owned or
-            a.approx != b.approx or !a.xc.eql(b.xc)) return false;
+            a.approx != b.approx or !a.xc.eql(b.xc) or a.grown != b.grown) return false;
     }
     if (x.rsupply.len != y.rsupply.len) return false;
     for (x.rsupply, y.rsupply) |a, b| {
@@ -1730,6 +1762,7 @@ fn computeGroup(o: *Ownership, m: u32, d: u32) Allocator.Error!void {
             if (o.isDictFocus(m, x)) slots[x].sum = try o.assertDictFocus(slots[x].sum);
             slots[x].sum = try o.schemaMakerRow(m, x, slots[x].sum);
             if (o.hostedRow(m, x)) |row| slots[x].sum = try o.assertHosted(slots[x].sum, row);
+            slots[x].sum = try o.clearMarks(slots[x].sum);
             slots[x].state = .done;
         }
         return;
@@ -1771,8 +1804,31 @@ fn computeGroup(o: *Ownership, m: u32, d: u32) Allocator.Error!void {
     }
     for (members.items) |x| {
         slots[x].sum = try o.schemaMakerRow(m, x, slots[x].sum);
+        slots[x].sum = try o.clearMarks(slots[x].sum);
         slots[x].state = .done;
     }
+}
+
+/// §16.7 (F3, the owner's choice (a)): a settled summary carries no mark.
+/// Only a group's own fixpoint composes its summaries with themselves, so
+/// the marks end with it, and a summary made here equals one read back
+/// from the summary block, which does not carry them.
+fn clearMarks(o: *Ownership, s: Summary) Allocator.Error!Summary {
+    const any = for (s.res) |r| {
+        if (r.grown != 0) break true;
+    } else for (s.supply) |e| {
+        if (e.grown != 0) break true;
+    } else false;
+    if (!any) return s;
+    const keep = o.keep.allocator();
+    const res = try keep.dupe(ResEntry, s.res);
+    for (res) |*r| r.grown = 0;
+    const supply = try keep.dupe(SupplyEntry, s.supply);
+    for (supply) |*e| e.grown = 0;
+    var t = s;
+    t.res = res;
+    t.supply = supply;
+    return o.normalize(t);
 }
 
 /// Whether every parameter of the function `d` and its result cross
@@ -1890,7 +1946,7 @@ fn summaryEql(x: Summary, y: Summary) bool {
     for (x.res, y.res) |a, b| if (!resEql(a, b)) return false;
     if (x.objs.len != y.objs.len) return false;
     for (x.objs, y.objs) |a, b| if (!resEql(a, b)) return false;
-    for (x.supply, y.supply) |a, b| if (a.fun != b.fun or a.k != b.k or a.path != b.path or !a.prov.eql(b.prov) or a.owned != b.owned or a.approx != b.approx or !a.xc.eql(b.xc)) return false;
+    for (x.supply, y.supply) |a, b| if (a.fun != b.fun or a.k != b.k or a.path != b.path or !a.prov.eql(b.prov) or a.owned != b.owned or a.approx != b.approx or !a.xc.eql(b.xc) or a.grown != b.grown) return false;
     if (x.rsupply.len != y.rsupply.len) return false;
     for (x.rsupply, y.rsupply) |a, b| if (a.fun != b.fun or a.k != b.k or a.path != b.path or !a.prov.eql(b.prov) or a.owned != b.owned or a.approx != b.approx or !a.xc.eql(b.xc)) return false;
     for (x.funs, y.funs) |a, b| if (!std.meta.eql(a, b)) return false;
@@ -2176,7 +2232,7 @@ fn sortedRes(keep: Allocator, entries: []const ResEntry) Allocator.Error![]const
     for (res) |r| {
         if (nr > 0 and res[nr - 1].path == r.path and res[nr - 1].prov.eql(r.prov)) {
             res[nr - 1].approx = res[nr - 1].approx or r.approx;
-            res[nr - 1].grown = res[nr - 1].grown or r.grown;
+            res[nr - 1].grown = gJoin(res[nr - 1].grown, r.grown);
             res[nr - 1].xc = try xsumAnd(keep, res[nr - 1].xc, r.xc);
             res[nr - 1].sc = try xsumAnd(keep, res[nr - 1].sc, r.sc);
             continue;
@@ -2209,6 +2265,7 @@ fn sortedSupply(keep: Allocator, entries: []const SupplyEntry) Allocator.Error![
                 p.owned = p.owned and e.owned;
                 p.approx = !p.owned and !exact;
                 p.xc = try xsumAnd(keep, p.xc, e.xc);
+                p.grown = gJoin(p.grown, e.grown);
                 continue;
             }
         }
@@ -2367,7 +2424,7 @@ fn canonicalOf(o: *Ownership, s: Summary) Allocator.Error!?Summary {
             e.path = p;
         }
         fn same(x: SupplyEntry, y: SupplyEntry) bool {
-            return x.prov.eql(y.prov) and x.owned == y.owned and x.approx == y.approx and x.xc.eql(y.xc);
+            return x.prov.eql(y.prov) and x.owned == y.owned and x.approx == y.approx and x.xc.eql(y.xc) and x.grown == y.grown;
         }
         fn subsumes(y: SupplyEntry, x: SupplyEntry) bool {
             return same(y, x);
@@ -5413,7 +5470,7 @@ const Entry = struct {
     /// §16.7 (F3, the owner's choice (a)): the path went below a variable
     /// that a call inside the group being solved grew; a later such
     /// composition goes to `⋆`.
-    grown: bool = false,
+    grown: Grown = 0,
 };
 
 const AV = []const Entry;
@@ -5877,7 +5934,11 @@ const Walker = struct {
     call_uses: []const UseEntry = &.{},
     /// The closures of the local groups being solved (§18.7), for §16.7's
     /// polymorphic-recursion fold.
-    solving_locals: std.ArrayList(u32) = .empty,
+    solving_locals: std.ArrayList([2]u32) = .empty,
+    /// The call `applySummary` is making, when its callee is a member of a
+    /// group being solved: its declared parameter types and the arguments'
+    /// types (§16.7, F3 as amended).
+    call_poly: ?struct { inst: Inst.Index, s: *const Summary, poly: []const ?Var, arg_types: []const ?Var } = null,
     /// §18.4 item 4: per list-pattern element, its pattern — the scope of
     /// the split's taken cells.
     split_list: []u32 = &.{},
@@ -6125,7 +6186,7 @@ const Walker = struct {
             const last = items[n - 1];
             if (last.path == e.path and last.cell == e.cell) {
                 // §16.7: one entry per place and cell; a mark on either is kept.
-                items[n - 1].grown = last.grown or e.grown;
+                items[n - 1].grown = gJoin(last.grown, e.grown);
                 continue;
             }
             items[n] = e;
@@ -6160,6 +6221,13 @@ const Walker = struct {
             if (w.o.paths.depth.items[x.path] != w.o.paths.depth.items[b.path] + 1) break true;
         } else false;
         if (!folded) return;
+        return w.foldedPairs(before, after);
+    }
+
+    /// `foldedBeside`'s pairs: two entries `after` puts at one marked
+    /// path from two paths `before`, as a fold of instantiation does too
+    /// (§16.7, F3 as amended).
+    fn foldedPairs(w: *Walker, before: AV, after: []const Entry) Allocator.Error!void {
         for (after, 0..) |e, i| {
             if (!w.o.paths.any.items[e.path]) continue;
             for (after[i + 1 ..], i + 1..) |f, j| {
@@ -6248,7 +6316,7 @@ const Walker = struct {
         var out: std.ArrayList(Entry) = .empty;
         for (av) |e| {
             if (e.path == eps) {
-                if (try w.projCell(e.cell, s, ty)) |c| try out.append(w.a, .{ .path = eps, .cell = c, .approx = e.approx, .grown = e.grown });
+                if (try w.projCell(e.cell, s, ty)) |c| try out.append(w.a, .{ .path = eps, .cell = c, .approx = e.approx, .grown = gStep(e.grown) });
                 continue;
             }
             const first = w.o.firstStep(e.path).?;
@@ -6466,7 +6534,7 @@ const Walker = struct {
         const idx = gop.value_ptr;
         var out: std.ArrayList(Entry) = .empty;
         for (idx.roots.items) |e| {
-            if (try w.projCell(e.cell, s, null)) |c| try out.append(w.a, .{ .path = eps, .cell = c, .approx = e.approx, .grown = e.grown });
+            if (try w.projCell(e.cell, s, null)) |c| try out.append(w.a, .{ .path = eps, .cell = c, .approx = e.approx, .grown = gStep(e.grown) });
         }
         try out.appendSlice(w.a, idx.any.items);
         if (idx.by.get(.{ @backingInt(s.kind), s.arg })) |list| try out.appendSlice(w.a, list.items);
@@ -6982,7 +7050,7 @@ const Walker = struct {
         var out: std.ArrayList(Entry) = .empty;
         for (av) |e| {
             const c = w.listFacing(e.cell) orelse continue;
-            try out.append(w.a, .{ .path = e.path, .cell = c, .approx = e.approx, .grown = e.grown });
+            try out.append(w.a, .{ .path = e.path, .cell = c, .approx = e.approx, .grown = gStep(e.grown) });
         }
         return w.norm(out.items);
     }
@@ -8162,12 +8230,19 @@ const Walker = struct {
                     if (sg == .func and try w.grownIn(g, a, 0)) return k + 1;
                     return null;
                 },
+                // A step that stands for places it does not name: where the
+                // types differ, what is below may be below the variable.
+                .any, .level => return if (try w.grownIn(g, a, 0)) k else null,
                 else => null,
             };
             const n = next orelse return null;
             g = n[0];
             a = n[1];
         }
+        // The path ends at the variable: what is below it is below.
+        const sg = try w.tyShape(g);
+        const sa = try w.tyShape(a);
+        if (sg == .variable and sa != .variable and sa != .other) return st.len;
         return null;
     }
 
@@ -8194,16 +8269,31 @@ const Walker = struct {
             .pat_as => if (w.bir.instData(p).rhs < lt.len) lt[w.bir.instData(p).rhs].unwrap() else null,
             else => null,
         };
+        // A destructured parameter: the declaration's own type's, the rigid
+        // reading its body was checked against. Groups never span modules
+        // (the module graph is acyclic), so `t.m` is this walker's module and
+        // its store is `w.store`.
+        for (out, 0..) |*x, i| if (x.* == null) {
+            x.* = if (t.d < km.decl_display.len) (if (km.decl_display[t.d].unwrap()) |ft| funcParam(w.store, ft, @intCast(i)) else null) else null;
+        };
         return out;
     }
 
     /// The declared types of a local function's parameters, for the fold,
     /// when its group is being solved (§18.7).
     fn localParamTypes(w: *Walker, ci: u32) Allocator.Error![]const ?Var {
-        if (std.mem.indexOfScalar(u32, w.solving_locals.items, ci) == null) return &.{};
+        // A member of a local group being solved; or, while any recursive
+        // group is, a closure a body calls: a let-bound lambda is
+        // generalised, so a call of it may grow its own variable
+        // (`k = λy → g (n - 1) y`, then `k [ x ]`) where the call inside it
+        // grows nothing.
+        const local = for (w.solving_locals.items) |g| {
+            if (g[1] == ci) break g[0];
+        } else if (w.recursive or w.solving_locals.items.len != 0) none else return &.{};
         const ps = w.closures.items[ci].params;
         const out = try w.a.alloc(?Var, ps.len);
-        for (ps, out) |p, *x| x.* = w.patternType(p);
+        // A destructured parameter: the function's own type's.
+        for (ps, out, 0..) |p, *x, i| x.* = w.patternType(p) orelse if (local == none) null else if (w.localType(local)) |ft| funcParam(w.store, ft, @intCast(i)) else null;
         return out;
     }
 
@@ -8907,7 +8997,7 @@ const Walker = struct {
             if (!try w.trackedVar(fl.value)) continue;
             const s: Step = .{ .kind = .field, .arg = @backingInt(fl.name) };
             if (try w.projCell(e.cell, s, fl.value)) |c| {
-                try out.append(w.a, .{ .path = try w.o.child(eps, .field, s.arg), .cell = c, .approx = e.approx, .grown = e.grown });
+                try out.append(w.a, .{ .path = try w.o.child(eps, .field, s.arg), .cell = c, .approx = e.approx, .grown = gStep(e.grown) });
             }
         }
     }
@@ -8971,7 +9061,7 @@ const Walker = struct {
                         if (!try w.trackedVar(fl.value)) continue;
                         const s: Step = .{ .kind = .field, .arg = @backingInt(fl.name) };
                         if (try w.projCell(e.cell, s, fl.value)) |c| {
-                            try out.append(w.a, .{ .path = try w.o.child(eps, .field, s.arg), .cell = c, .approx = e.approx, .grown = e.grown });
+                            try out.append(w.a, .{ .path = try w.o.child(eps, .field, s.arg), .cell = c, .approx = e.approx, .grown = gStep(e.grown) });
                         }
                     }
                     continue;
@@ -9198,7 +9288,7 @@ const Walker = struct {
     fn walkGroup(w: *Walker, items: []const Inst.Index, group: []const [2]u32) Allocator.Error!void {
         const b = w.bir;
         const solving = w.solving_locals.items.len;
-        for (group) |g| try w.solving_locals.append(w.a, g[1]);
+        for (group) |g| try w.solving_locals.append(w.a, g);
         defer w.solving_locals.shrinkRetainingCapacity(solving);
         var gi0: usize = 0;
         for (items) |item| {
@@ -10766,7 +10856,7 @@ const Walker = struct {
             if (c.kind == .env and c.a < w.local_frame.len and w.local_frame[c.a] == 0) if (w.local_av[c.a]) |held| {
                 changed = true;
                 for (try w.projPath(held, c.path, null)) |h| {
-                    try out.append(w.a, .{ .path = try w.o.concat(e.path, h.path), .cell = h.cell, .approx = if (e.approx != 0) e.approx else h.approx, .grown = e.grown or h.grown });
+                    try out.append(w.a, .{ .path = try w.o.concat(e.path, h.path), .cell = h.cell, .approx = if (e.approx != 0) e.approx else h.approx, .grown = gJoin(e.grown, h.grown) });
                 }
                 continue;
             };
@@ -10791,7 +10881,7 @@ const Walker = struct {
                         if (!sp.owned) owned.* = false;
                         if (sp.prov.taken) taken.* = true;
                         if (sp.prov.kind == .param) try from.append(w.a, sp.prov.a);
-                        const at = try w.under(try w.instProv(sp.prov, ctx), sp.path);
+                        const at = try w.composeSupply(sp, try w.instProv(sp.prov, ctx), ctx);
                         try parts.append(w.a, try w.projPath(at, c.path, null));
                     }
                 } else if (lp[1] < ctx.avs.len) {
@@ -10831,6 +10921,16 @@ const Walker = struct {
     /// §16.4: a call whose callee has a summary.
     fn applySummary(w: *Walker, inst: Inst.Index, callee: Callee, args: []const Inst.Index, callee_av: AV, callee_inst: ?CalleeRef) Allocator.Error!AV {
         const s = callee.sum;
+        // §16.7 (F3, the owner's choice (a)): what the fold reads of this
+        // call wherever its summary is instantiated, a callback's supply
+        // included.
+        const saved_poly = w.call_poly;
+        defer w.call_poly = saved_poly;
+        if (callee.poly.len != 0) {
+            const ats = try w.a.alloc(?Var, args.len);
+            for (args, ats) |arg, *t| t.* = w.instType(arg);
+            w.call_poly = .{ .inst = inst, .s = s, .poly = callee.poly, .arg_types = ats };
+        } else w.call_poly = null;
         // §23.4: a lambda written at a send position: its parameter there
         // is a send, known before its body is walked.
         for (s.funs) |f| {
@@ -10999,7 +11099,7 @@ const Walker = struct {
         if (ty) |v| if (!try w.trackedVar(v)) return &.{};
         const arg_types = try w.a.alloc(?Var, args.len);
         for (args, arg_types) |arg, *t| t.* = w.instType(arg);
-        const res = try w.instRes(s, .{ .inst = inst, .s = s, .avs = avs, .closure = callee.closure, .depth = 0, .merge_fresh = callee.merge_fresh, .arg_types = arg_types, .result_ty = ty, .take = s.asserted, .group = callee.poly.len != 0, .poly = callee.poly });
+        const res = try w.instRes(s, .{ .inst = inst, .s = s, .avs = avs, .closure = callee.closure, .depth = 0, .merge_fresh = callee.merge_fresh, .arg_types = arg_types, .result_ty = ty, .take = s.asserted, .poly = callee.poly });
         // An approximate entry may name an argument the result's type
         // cannot be (§6.1's type filter, thesis §3.8): a `Js` coercion's
         // result is never its argument at another type.
@@ -11217,10 +11317,8 @@ const Walker = struct {
         /// taken (§18.5). Anywhere else a supply or result that names one
         /// instantiates to the element itself.
         take: bool = false,
-        /// §16.7 (F3, choice (a)): the callee is a member of the group being
-        /// solved, whose summary entries' marks ride, and its declared
-        /// parameter types.
-        group: bool = false,
+        /// §16.7 (F3, choice (a)): the callee's declared parameter types, when
+        /// it is a member of the group being solved.
         poly: []const ?Var = &.{},
     };
 
@@ -11255,6 +11353,8 @@ const Walker = struct {
         if (std.debug.runtime_safety and s.res.len > 1) for (s.res[1..], 0..) |r, i| std.debug.assert(s.res[i].path <= r.path);
         var out: std.ArrayList(Entry) = .empty;
         const grown = try w.grownArgs(ctx);
+        var before: std.ArrayList(Entry) = .empty;
+        var cut = false;
         for (s.res, 0..) |r, i| {
             // `res` is sorted by path: another entry at this path is a neighbour.
             const several = (i > 0 and s.res[i - 1].path == r.path) or (i + 1 < s.res.len and s.res[i + 1].path == r.path);
@@ -11284,10 +11384,18 @@ const Walker = struct {
             if (ctx.conds and r.prov.kind == .param) for (cells) |e| if (e.path == eps) {
                 try w.lowerSpine(e.cell, try w.instXSum(r.sc, ctx));
             };
-            var av = try w.composeRes(r, cells, ctx, grown);
-            if (several or r.approx) av = try w.approxAll(av, ctx.inst);
+            const from = before.items.len;
+            var av: AV = try w.composeRes(r, cells, grown, &before, &cut);
+            if (several or r.approx) {
+                av = try w.approxAll(av, ctx.inst);
+                for (before.items[from..]) |*b| if (b.approx == 0) {
+                    b.approx = ctx.inst.int() + 1;
+                };
+            }
             try out.appendSlice(w.a, av);
         }
+        // §16.7: places the fold put at one path are judged as two.
+        if (cut) try w.foldedPairs(before.items, out.items);
         // §31.7: the records the result holds, whose cells no list's fact
         // reads (an object alone, a record of numbers).
         for (s.objs) |r| {
@@ -11305,27 +11413,62 @@ const Walker = struct {
 
     /// `cells`, what summary entry `r` names at the call, placed under its
     /// path (§16.4), with §16.7's composed-path fold (F3, the owner's choice
-    /// (a)): below a variable the call grows, the first composition is exact
-    /// and marked, and a later one goes to `⋆`.
-    fn composeRes(w: *Walker, r: ResEntry, cells: AV, ctx: InstCtx, grown: []const ?[2]Var) Allocator.Error!AV {
-        const rg = ctx.group and r.grown;
+    /// (a)). Below a variable a call inside the group grows — known from the
+    /// call's types, or from the pending boundary on `r` that a symbolic
+    /// cell left at such a call — the first composition is exact and marked,
+    /// and a later one goes to `⋆`. A symbolic cell at the variable takes
+    /// the boundary with it. Appends to `before` each entry uncut, in order,
+    /// and sets `cut` when one was cut; the result is not normalized.
+    fn composeRes(w: *Walker, r: ResEntry, cells: AV, grown: []const ?[2]Var, before: *std.ArrayList(Entry), cut: *bool) Allocator.Error![]Entry {
         const grown_arg: ?[2]Var = if (r.prov.kind == .param and r.prov.a < grown.len) grown[r.prov.a] else null;
         const out = try w.a.alloc(Entry, cells.len);
         const pd = w.o.paths.depth.items[r.prov.path];
         for (cells, out) |e, *x| {
-            x.* = .{ .path = try w.o.concat(r.path, e.path), .cell = e.cell, .approx = e.approx, .grown = e.grown or rg };
-            const ga = grown_arg orelse continue;
-            if (e.path == eps) continue;
-            const full = try w.o.concat(r.prov.path, e.path);
-            const b = (try w.polyBound(full, .{ .store = ga[0] }, .{ .store = ga[1] })) orelse continue;
-            const rel = if (b > pd) b - pd else 0;
-            if (w.o.paths.depth.items[e.path] <= rel) continue;
-            if (e.grown or rg) {
+            const path = try w.o.concat(r.path, e.path);
+            const marked = gMarked(e.grown) or gMarked(r.grown);
+            x.* = .{ .path = path, .cell = e.cell, .approx = e.approx, .grown = gMake(marked, gPending(e.grown)) };
+            try before.append(w.a, x.*);
+            const rel: usize = blk: {
+                if (grown_arg) |ga| {
+                    const full = try w.o.concat(r.prov.path, e.path);
+                    if (try w.polyBound(full, .{ .store = ga[0] }, .{ .store = ga[1] })) |b| break :blk if (b > pd) b - pd else 0;
+                }
+                break :blk gPending(r.grown) orelse continue;
+            };
+            const d = w.o.paths.depth.items[e.path];
+            if (d <= rel) {
+                // At or above the variable: a symbolic cell there stands for
+                // places below it, which a later instantiation composes.
+                if (w.composedLater(e.cell)) x.grown = gJoin(x.grown, gMake(false, rel - d));
+                continue;
+            }
+            if (marked) {
                 x.path = try w.o.concat(r.path, try w.cutAt(e.path, rel));
                 if (x.approx == 0) x.approx = approx_place;
+                cut.* = true;
             }
-            x.grown = true;
+            x.grown |= 1;
         }
+        return out;
+    }
+
+    /// Whether a cell stands for a value a later instantiation supplies,
+    /// whose places below it are composed then (§16.7, F3 as amended).
+    fn composedLater(w: *Walker, c: u32) bool {
+        return switch (w.cells.items[c].kind) {
+            .param, .env, .cbres, .taken, .except => true,
+            else => false,
+        };
+    }
+
+    /// A supply's cells as a callback's parameter holds them: `sp.path`
+    /// composed with what the provenance names (§16.4), folded as a
+    /// result's are (§16.7, F3 as amended).
+    fn composeSupply(w: *Walker, sp: SupplyEntry, cells: AV, ctx: InstCtx) Allocator.Error!AV {
+        var before: std.ArrayList(Entry) = .empty;
+        var cut = false;
+        const out = try w.composeRes(.{ .path = sp.path, .prov = sp.prov, .grown = sp.grown }, cells, try w.grownArgs(ctx), &before, &cut);
+        if (cut) try w.foldedPairs(before.items, out);
         return w.norm(out);
     }
 
@@ -11333,13 +11476,19 @@ const Walker = struct {
     /// type and its type at the call when the call grows a variable of the
     /// first at a structure (§16.7, F3 as amended); decided once per call.
     fn grownArgs(w: *Walker, ctx: InstCtx) Allocator.Error![]const ?[2]Var {
-        if (ctx.poly.len == 0) return &.{};
-        const out = try w.a.alloc(?[2]Var, ctx.poly.len);
-        for (out, ctx.poly, 0..) |*x, gt, i| {
+        var poly = ctx.poly;
+        var arg_types = ctx.arg_types;
+        if (poly.len == 0) if (w.call_poly) |cp| if (cp.inst == ctx.inst and cp.s == ctx.s) {
+            poly = cp.poly;
+            arg_types = cp.arg_types;
+        };
+        if (poly.len == 0) return &.{};
+        const out = try w.a.alloc(?[2]Var, poly.len);
+        for (out, poly, 0..) |*x, gt, i| {
             x.* = null;
             const g = gt orelse continue;
-            if (i >= ctx.arg_types.len) continue;
-            const a = ctx.arg_types[i] orelse continue;
+            if (i >= arg_types.len) continue;
+            const a = arg_types[i] orelse continue;
             if (try w.grownIn(.{ .store = g }, .{ .store = a }, 0)) x.* = .{ g, a };
         }
         return out;
@@ -11354,7 +11503,7 @@ const Walker = struct {
             var out: std.ArrayList(Entry) = .empty;
             for (try w.instProv(q, ctx)) |e| {
                 if (e.path != eps) continue;
-                try out.append(w.a, .{ .path = eps, .cell = try w.exceptCell(e.cell, &.{}, true), .approx = e.approx });
+                try out.append(w.a, .{ .path = eps, .cell = try w.exceptCell(e.cell, &.{}, true), .approx = e.approx, .grown = e.grown });
             }
             return w.norm(out.items);
         }
@@ -11622,7 +11771,7 @@ const Walker = struct {
                 var parts: std.ArrayList(AV) = .empty;
                 for (ctx.s.supply) |e| {
                     if (e.fun != j or e.k != k) continue;
-                    try parts.append(w.a, try w.under(try w.supplyCells(e.prov, ctx, deeper), e.path));
+                    try parts.append(w.a, try w.composeSupply(e, try w.supplyCells(e.prov, ctx, deeper), ctx));
                 }
                 pa.* = try w.unionOf(parts.items);
             }
@@ -13862,7 +14011,7 @@ const Walker = struct {
             for (cells) |c| {
                 const cv = (try w.coversAt(e.cell, c.cell)) orelse
                     (if (try w.splitBase(c.cell, none)) |b| (try w.coversAt(e.cell, b)) orelse continue else continue);
-                const hit: Entry = .{ .path = try w.o.concat(e.path, cv.rest), .cell = c.cell, .approx = if (e.approx != 0) e.approx else if (c.approx != 0) c.approx else if (cv.approx) approx_place else 0, .grown = e.grown or c.grown };
+                const hit: Entry = .{ .path = try w.o.concat(e.path, cv.rest), .cell = c.cell, .approx = if (e.approx != 0) e.approx else if (c.approx != 0) c.approx else if (cv.approx) approx_place else 0, .grown = gJoin(e.grown, c.grown) };
                 if (hit.approx == 0) return hit;
                 if (found == null or hit.approx < found.?.approx) found = hit;
             }
@@ -15115,7 +15264,7 @@ const Walker = struct {
                         .top, .esc, .env => true,
                         else => probe_approx or e.approx != 0,
                     };
-                    try supply.append(keep, .{ .fun = sr.fun, .k = sr.k, .path = try w.o.concat(sr.path, e.path), .prov = prov, .owned = owned, .approx = approx, .xc = xc });
+                    try supply.append(keep, .{ .fun = sr.fun, .k = sr.k, .path = try w.o.concat(sr.path, e.path), .prov = prov, .owned = owned, .approx = approx, .xc = xc, .grown = e.grown });
                 }
                 // §31.5: the records it supplies, which no list's fact reads:
                 // as `objs` names a result's, by the provenance of the record

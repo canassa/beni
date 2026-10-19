@@ -1,0 +1,16 @@
+module PolyRecMutual
+  33:34 List.push q: rejected call: xs may hold it through the call at 29:10, and is read at 33:51 (approx)
+  63:42 List.push a: rejected call: b⋆ may hold it through the call at 57:10, and is read at 63:59 (approx)
+  84:42 List.push a: rejected call: b⋆ may hold it through the call at 77:9, and is read at 84:59 (approx)
+  114:42 List.push a: rejected call: b⋆ may hold it through the call at 106:9, and is read at 114:59 (approx)
+  summary f1: π2 RA; res #Leaf.0 π2, ⟨T⟩⁺#Leaf.0 fresh1{excl π2} ~fresh2{excl π2}, ⟨T⟩⁺#Leaf.0[*] ~fresh1{excl π2} ~fresh2{excl π2} π2, ⟨T⟩⁺#Leaf.0[*]⋆ ~fresh1{excl π2} ~fresh2{excl π2} ~π2
+  summary g1: π2 RA; res #Leaf.0 π2, ⟨T⟩⁺#Leaf.0 ~fresh1{excl π2}, ⟨T⟩⁺#Leaf.0[*] ~fresh1{excl π2} ~π2, ⟨T⟩⁺#Leaf.0[*]⋆ ~fresh1{excl π2} ~π2
+  summary mut: π1 Rw; xreq excl π1
+  summary two: π2 RA, π3 RA; res #Leaf2.0 π2, #Leaf2.1 π3, ⟨T2⟩⁺#Leaf2.0 fresh1{excl π2} ~fresh3{excl π2, excl π3}, ⟨T2⟩⁺#Leaf2.0[*] ~fresh1{excl π2} ~fresh3{excl π2, excl π3} π2, ⟨T2⟩⁺#Leaf2.0[*]⋆ ~fresh1{excl π2} ~fresh3{excl π2, excl π3} ~π2, ⟨T2⟩⁺#Leaf2.1 fresh2{excl π3} ~fresh3{excl π2, excl π3}, ⟨T2⟩⁺#Leaf2.1[*] ~fresh2{excl π3} ~fresh3{excl π2, excl π3} π3, ⟨T2⟩⁺#Leaf2.1[*]⋆ ~fresh2{excl π3} ~fresh3{excl π2, excl π3} ~π3
+  summary twoShare: π1 Rw, π1[*] Rw; xreq excl π1
+  summary twoFresh: unused
+  summary swap: π2 RA, π3 RA; res #Leaf2.0 π2{sep π2 π3}, #Leaf2.1 π3{sep π2 π3}, ⟨T2⟩⁺#Leaf2.0 fresh1{excl π3, sep π2 π3} ~fresh3{excl π2, excl π3, sep π2 π3}, ⟨T2⟩⁺#Leaf2.0[*] ~fresh2{excl π2, sep π2 π3} ~fresh3{excl π2, excl π3, sep π2 π3} π3{sep π2 π3}, ⟨T2⟩⁺#Leaf2.0[*]⋆ ~fresh1{excl π3, sep π2 π3} ~fresh2{excl π2, sep π2 π3} ~fresh3{excl π2, excl π3, sep π2 π3} ~π2{sep π2 π3} ~π3{sep π2 π3}, ⟨T2⟩⁺#Leaf2.1 fresh2{excl π2, sep π2 π3} ~fresh3{excl π2, excl π3, sep π2 π3}, ⟨T2⟩⁺#Leaf2.1[*] ~fresh1{excl π3, sep π2 π3} ~fresh3{excl π2, excl π3, sep π2 π3} π2{sep π2 π3}, ⟨T2⟩⁺#Leaf2.1[*]⋆ ~fresh1{excl π3, sep π2 π3} ~fresh2{excl π2, sep π2 π3} ~fresh3{excl π2, excl π3, sep π2 π3} ~π2{sep π2 π3} ~π3{sep π2 π3}
+  summary swapShare: unused
+  demands 4: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
+total 4: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 4
+cause call 4

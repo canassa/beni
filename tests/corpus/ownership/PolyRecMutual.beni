@@ -1,0 +1,123 @@
+-- ownership: the composed-path fold of polymorphic recursion (issue #286;
+-- ownership-checker.md §16.7, F3 as amended, the owner's choice (a)), on the
+-- review of #429.
+-- A mutual pair whose growth is on one edge only (`f1` grows, `g1` does
+-- not): the steps above the variable do not repeat.
+type T a
+    = Leaf a
+    | Wrap (T (List a))
+
+
+f1 : Int, a → T a
+f1 n x =
+    if n == 0 then
+        Leaf x
+    else
+        Wrap (g1 (n - 1) [ x ])
+
+
+g1 : Int, a → T a
+g1 n x =
+    if n == 0 then
+        Leaf x
+    else
+        f1 (n - 1) (x)
+
+
+pub mut : List Int → Int
+mut xs =
+    case f1 2 xs of
+        Wrap (Leaf p) →
+            case p of
+                [ q ] →
+                    List.length (List.push q 1) + List.length xs
+
+                _ →
+                    0
+
+        _ →
+            0
+
+
+type T2 a b
+    = Leaf2 a b
+    | Wrap2 (T2 (List a) (List b))
+
+
+two : Int, a, b → T2 a b
+two n x y =
+    if n == 0 then
+        Leaf2 x y
+    else
+        Wrap2 (two (n - 1) [ x ] [ y ])
+
+
+pub twoShare : List Int → Int
+twoShare xs =
+    case two 2 xs xs of
+        Wrap2 (Wrap2 (Leaf2 p q)) →
+            case p of
+                [ [ a ] ] →
+                    case q of
+                        [ [ b ] ] →
+                            List.length (List.push a 1) + List.length b
+
+                        _ →
+                            0
+
+                _ →
+                    0
+
+        _ →
+            0
+
+
+pub twoFresh : Int → Int
+twoFresh n =
+    l = List.repeat n 0
+    case two 2 l l of
+        Wrap2 (Wrap2 (Leaf2 p q)) →
+            case p of
+                [ [ a ] ] →
+                    case q of
+                        [ [ b ] ] →
+                            List.length (List.push a 1) + List.length b
+
+                        _ →
+                            0
+
+                _ →
+                    0
+
+        _ →
+            0
+
+
+swap : Int, a, a → T2 a a
+swap n x y =
+    if n == 0 then
+        Leaf2 x y
+    else
+        Wrap2 (swap (n - 1) [ y ] [ x ])
+
+
+pub swapShare : Int → Int
+swapShare n =
+    l = List.repeat n 0
+    m = List.repeat n 1
+    case swap 3 l m of
+        Wrap2 (Wrap2 (Wrap2 (Leaf2 p q))) →
+            case p of
+                [ [ [ a ] ] ] →
+                    case q of
+                        [ [ [ b ] ] ] →
+                            List.length (List.push a 1) + List.length b + List.length m
+
+                        _ →
+                            0
+
+                _ →
+                    0
+
+        _ →
+            0
