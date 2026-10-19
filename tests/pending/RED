@@ -123,3 +123,10 @@ tests/pending/emit/release/inline/ResearchS2 exit=0 js-differs
 tests/pending/emit/release/inline/ResearchS3 exit=0 js-differs
 tests/pending/emit/release/inline/Texts exit=0 js-differs
 tests/pending/emit/release/inline/EnumCycle.beni exit=0 js-differs
+
+# CK-260, CK-261, CK-262 (2026-10-19, issue #315): the three record demands of
+# #315 checked at the entry (ownership-checker.md §31.6, §31.8). Red until R2c
+# reads a record update's W{F} off a summary.
+tests/pending/ownership/RecordCapture.beni exit=0 browser-direct.ownership-differs
+tests/pending/ownership/RecordForItem.beni exit=0 browser-direct.ownership-differs
+tests/pending/ownership/RecordPayload.beni exit=0 browser-direct.ownership-differs

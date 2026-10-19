@@ -61,6 +61,57 @@ const Counts = struct {
     }
 };
 
+/// §31.12: the record demands, apart from the lists' counts: how many were
+/// accepted, and of those how many the lowering's hoists accept; how many
+/// were rejected or pending, by fix; and the eager reads of captured field
+/// paths (§31.6).
+const RecordCounts = struct {
+    demands: u32 = 0,
+    accepted: u32 = 0,
+    hoisted: u32 = 0,
+    pending: u32 = 0,
+    rejected: u32 = 0,
+    copy: u32 = 0,
+    restructure: u32 = 0,
+    eager: u32 = 0,
+
+    fn add(c: *RecordCounts, d: Ownership.Demand) void {
+        c.demands += 1;
+        switch (d.verdict) {
+            .accepted => {
+                c.accepted += 1;
+                if (d.hoists > 0) c.hoisted += 1;
+            },
+            .pending => {
+                c.pending += 1;
+                if (d.hoists > 0) c.hoisted += 1;
+            },
+            .rejected => c.rejected += 1,
+        }
+        switch (d.fix) {
+            .none => {},
+            .copy => c.copy += 1,
+            .restructure => c.restructure += 1,
+        }
+    }
+
+    fn merge(c: *RecordCounts, o: RecordCounts) void {
+        c.demands += o.demands;
+        c.accepted += o.accepted;
+        c.hoisted += o.hoisted;
+        c.pending += o.pending;
+        c.rejected += o.rejected;
+        c.copy += o.copy;
+        c.restructure += o.restructure;
+        c.eager += o.eager;
+    }
+
+    fn write(c: RecordCounts, w: *std.Io.Writer, label: []const u8) Error!void {
+        if (c.demands == 0 and c.eager == 0) return;
+        try w.print("{s} {d}: accepted {d}, pending {d}, rejected {d} (copy {d}, restructure {d}); hoisted {d}, eager reads {d}\n", .{ label, c.demands, c.accepted, c.pending, c.rejected, c.copy, c.restructure, c.hoisted, c.eager });
+    }
+};
+
 fn acceptText(a: Ownership.Accept) []const u8 {
     return switch (a) {
         .fresh => "fresh",
@@ -74,6 +125,7 @@ fn acceptText(a: Ownership.Accept) []const u8 {
 
 pub fn write(w: *std.Io.Writer, reports: []const Ownership.ModuleReport, module_names: []const []const u8, options: Options) Error!void {
     var total: Counts = .{};
+    var records: RecordCounts = .{};
     var limits: usize = 0;
     for (reports) |r| {
         if (!options.totals_only) try w.print("module {s}", .{module_names[r.module]});
@@ -83,8 +135,9 @@ pub fn write(w: *std.Io.Writer, reports: []const Ownership.ModuleReport, module_
         }
         if (!options.totals_only) try w.writeByte('\n');
         var counts: Counts = .{};
+        var rc: RecordCounts = .{ .eager = r.eager_reads };
         for (r.demands) |d| {
-            counts.add(d);
+            if (d.record) rc.add(d) else counts.add(d);
             if (options.totals_only) continue;
             try w.print("  {d}:{d} {s} {s}: ", .{ d.position.line, d.position.col, d.op, d.base });
             switch (d.verdict) {
@@ -95,6 +148,8 @@ pub fn write(w: *std.Io.Writer, reports: []const Ownership.ModuleReport, module_
             if (d.verdict != .accepted and d.detail.len != 0) try w.print(": {s}", .{d.detail});
             if (d.note.len != 0) try w.print(" ({s})", .{d.note});
             if (d.verdict == .rejected and d.approx) try w.writeAll(" (approx)");
+            if (d.fix != .none) try w.print(" [{s}]", .{d.fix.text()});
+            if (d.hoists > 0) try w.print(" [hoisted {d}]", .{d.hoists});
             try w.writeByte('\n');
         }
         if (!options.totals_only) {
@@ -104,11 +159,14 @@ pub fn write(w: *std.Io.Writer, reports: []const Ownership.ModuleReport, module_
                 else => try w.print("  limit {s}: {s} {d}, over {d}\n", .{ h.name, h.limit.text(), h.at, h.limit.cap() }),
             };
             try counts.write(w, "  demands");
+            try rc.write(w, "  records");
         }
         total.merge(counts);
+        records.merge(rc);
         limits += r.limits.len;
     }
     try total.write(w, "total");
+    try records.write(w, "records");
     if (limits != 0) try w.print("limits {d}\n", .{limits});
     for (total.rejected, 0..) |n, i| {
         if (n == 0) continue;

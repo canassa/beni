@@ -204,7 +204,8 @@ pub fn run(session: *Session, cached: []const ?CacheEntry.Loaded) Allocator.Erro
             var j = i + 1;
             while (j < r.demands.len and sameCause(d, r.demands[j])) j += 1;
             defer i = j;
-            if (d.verdict == .accepted) continue;
+            // A record demand is reported, not enforced, until §31.9's codes land.
+            if (d.verdict == .accepted or d.record) continue;
             if (any_limit and d.verdict == .rejected and d.verdict.rejected == .limit) continue;
             var group: std.ArrayList(Ownership.Demand) = .empty;
             for (r.demands[i..j]) |x| {
@@ -242,7 +243,8 @@ pub fn run(session: *Session, cached: []const ?CacheEntry.Loaded) Allocator.Erro
 /// Two lines of one root cause (§28.5): the same place, verdict, cause and
 /// reason.
 fn sameCause(a: Ownership.Demand, b: Ownership.Demand) bool {
-    return a.position.line == b.position.line and a.position.col == b.position.col and
+    // `.record` too: a list writer may be named `update` as well.
+    return a.record == b.record and a.position.line == b.position.line and a.position.col == b.position.col and
         std.mem.eql(u8, a.op, b.op) and std.meta.eql(a.verdict, b.verdict) and a.approx == b.approx and
         std.mem.eql(u8, a.detail, b.detail);
 }

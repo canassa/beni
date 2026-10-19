@@ -1,0 +1,227 @@
+-- ownership: a record update is a demand on its base's object, checked in
+-- report mode (`ownership-checker.md` §31.3, §31.4). Each line names its fix
+-- class (§31.12): `copy` where `{ Record.copy r | … }` answers it,
+-- `restructure` where the base is a top-level value.
+--
+-- Dead, per field (§31.4 item 5): `untouched` reads a field the update did
+-- not write, and `hoisted` reads a written one, which the lowering reads
+-- first; both are accepted. `whole` returns the old record beside the new,
+-- `bound` names it before the update and returns that name, and `rebased`
+-- updates the old record again (`browser/tea/TypedKeys`'s shape): each is a
+-- use of the record whole, rejected. `nested` writes a field of a field:
+-- the outer update's base use reads every field but the one it replaces,
+-- so both are accepted.
+--
+-- Held operand: `twice` writes `item` again while the first result waits
+-- in the list (`bench/corpus/PrettyPrinter.beni`'s shape). Disjoint: `loop`
+-- stores the record in its own field, through a constructor. A top-level
+-- base is `top-level` when the value is read elsewhere too (`originX`), and
+-- a record a fiber's closure keeps is `escaped`.
+import Task
+
+
+type alias Point =
+    x : Int
+    y : Int
+    tags : List String
+
+
+type alias Link =
+    label : String
+    next : Maybe Node
+
+
+type Node
+    = Node Link
+
+
+type alias Form =
+    name : String
+    count : Int
+
+
+type alias Model =
+    form : Form
+    count : Int
+    heard : List String
+
+
+origin : Point
+origin = { x = 0, y = 0, tags = [] }
+
+
+pub untouched : Point → Int
+untouched p =
+    q = { p | x = 1 }
+    q.x + p.y
+
+
+pub hoisted : Point → Int
+hoisted p =
+    q = { p | x = 1 }
+    q.x + p.x
+
+
+pub whole : Point → Point × Point
+whole p = ( { p | x = 1 }, p )
+
+
+pub bound : Point → Point
+bound p =
+    old = p
+    _ = { p | x = 1 }
+    old
+
+
+pub rebased : Model, Int → Model
+rebased model n =
+    next = { model | count = n }
+    if n > 0 then next else { model | heard = [] }
+
+
+pub nested : Model, String → Model
+nested model n =
+    form = model.form
+    { model | form = { form | name = n } }
+
+
+pub twice : Point → List Point
+twice item = [ { item | x = 1 }, { item | x = 2 } ]
+
+
+pub loop : Link → Link
+loop link = { link | next = Just (Node link) }
+
+
+pub moved : ⊤ → Point
+moved ⊤ = { origin | x = 1 }
+
+
+pub kept : Point → Point
+kept p =
+    _ = Task.spawn λ⊤ → p
+    { p | x = 1 }
+
+
+pub originX : ⊤ → Int
+originX ⊤ = origin.x
+
+
+-- A closure made after the update reads a written field when it is made
+-- (§31.6), so the read is a hoist — a number's and a list's alike.
+pub closureAfter : Point → Int
+closureAfter p =
+    q = { p | x = 1 }
+    g = λ⊤ → p.x
+    q.x + g ⊤
+
+
+pub closureAfterList : Point → Int
+closureAfterList p =
+    q = { p | tags = [] }
+    g = λ⊤ → List.length p.tags
+    List.length q.tags + g ⊤
+
+
+-- One read, one hoist: `p.x` in a tuple is read once.
+pub readOnce : Point → Point × Int
+readOnce p =
+    q = { p | x = 1 }
+    ( q, p.x )
+
+
+-- A record pattern reads the old record field by field.
+pub destructure : Point → Int
+destructure p =
+    q = { p | x = 1 }
+    { x } = p
+    q.x + x
+
+
+-- A callee that reads the written field in its own body reads the old
+-- value where no temporary stands in: the record is used whole (§31.4
+-- item 5).
+getX : Point → Int
+getX r = r.x
+
+
+pub throughCallee : Point → Int
+throughCallee p =
+    q = { p | x = 1 }
+    q.x + getX p
+
+
+-- Handed to a callee whose summary does not yet say which of a record's
+-- fields it reads (§31.7): pending, not a verdict.
+getY : Point → Int
+getY r = r.y
+
+
+pub throughCalleeY : Point → Int
+throughCalleeY p =
+    q = { p | x = 1 }
+    q.x + getY p
+
+
+-- A base no cell names is not yet a verdict either: `originAlias` is read
+-- once, at initialisation, so it is handed over — but what it holds is
+-- `origin`, and no summary's result names a record's object until §31.7's.
+-- A callback's answer may be its own argument.
+originAlias : Point
+originAlias = origin
+
+
+pub fromAlias : Point
+fromAlias = { originAlias | x = 1 }
+
+
+pub viaCallback : (Point → Point), Point → Point
+viaCallback f p =
+    answer = f p
+    { answer | x = 1 }
+
+
+type alias Inner =
+    items : List String
+    n : Int
+
+
+type alias Mid =
+    b : Inner
+
+
+type alias Outer =
+    a : Mid
+    z : Int
+
+
+-- A path below a written field, handed to a callee: the caller reads
+-- `r.a`, the written field, so that step is a hoist, and below it the
+-- callee reads the old `a`'s own object, which the update does not write.
+-- `countItems` takes `r.a.b` and reads its `.items`; `List.length` takes
+-- `r.a.b.items` itself.
+countItems : Inner → Int
+countItems i = List.length i.items
+
+
+pub nestedCallee : Outer → Int
+nestedCallee r =
+    q = { r | a = { b = { items = [], n = 0 } } }
+    q.z + countItems r.a.b
+
+
+pub nestedList : Outer → Int
+nestedList r =
+    q = { r | a = { b = { items = [], n = 0 } } }
+    q.z + List.length r.a.b.items
+
+
+-- One hoist per read, however many holders reach it: `r` holds either
+-- literal's object, and `r.x` is read once.
+pub joined : Bool → Int
+joined c =
+    a = { x = 0, y = 0, tags = [] }
+    b = { x = 1, y = 1, tags = [] }
+    r = if c then a else b
+    q = { r | x = 1 }
+    q.x + r.x

@@ -1,0 +1,35 @@
+--! The first widget: a number the user moves.
+
+import Html exposing (Html)
+
+
+pub type alias Model =
+    level : Int
+
+
+pub init : ⊤ → Model
+init ⊤ = { level = 2 }
+
+
+pub type Msg
+    = Raise
+    | Lower
+
+
+pub update : Msg, Model → Model
+update msg model =
+    case msg of
+        Raise →
+            { model | level = model.level + 1 }
+
+        Lower →
+            { model | level = model.level - 1 }
+
+
+pub view : Model → Html Msg
+view model =
+    <section data-role="w1">
+        <output>{model.level}</output>
+        <button data-role="raise" onClick={Raise}>Raise</button>
+        <button data-role="lower" onClick={Lower}>Lower</button>
+    </section>

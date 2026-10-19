@@ -1,0 +1,6 @@
+{
+  "platform": true,
+  "name": "rr",
+  "platforms": ["../base-tea"],
+  "reexports": ["Browser", "Cmd", "Html", "Sub", "Tea", "Demo"]
+}

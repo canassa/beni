@@ -444,6 +444,15 @@ const Page = struct {
         return pg.cx.arena;
     }
 
+    /// A hole's facts, refused when the write-set pass did not reach the
+    /// hole: its group would be unknown, and no key's pass could name it.
+    /// No pass calls every binding (`browser-inline.md` §8.3, amended
+    /// 2026-10-19), so this is a limit of the compiler in every build.
+    fn known(pg: *Page, n: m.Node.Index, facts: m.Program.HoleFacts) m.Error!m.Program.HoleFacts {
+        if (facts.group != std.math.maxInt(u32)) return facts;
+        return limit(pg.cx, n, "the write-set pass did not reach this hole on the `view`'s call path, so `browser-inline` cannot say which messages change it; write it in the program's own `view`, or a function the `view` calls directly");
+    }
+
     // ---- The walk: markup, writes and events ---------------------------
 
     /// The markup of node `n` of context `ctx`, in `scope`, refusing what
@@ -542,7 +551,7 @@ const Page = struct {
             },
             else => {
                 const h = tree.hole(child);
-                const facts = pg.cx.programHole(.{ .node = child });
+                const facts = try pg.known(child, pg.cx.programHole(.{ .node = child }));
                 if (facts.bake) |b| {
                     try parts.append(pg.a(), .{ .text = b });
                     try baked.appendSlice(pg.a(), b);
@@ -623,7 +632,7 @@ const Page = struct {
         const s = shown orelse return later(cx, n, not_when);
         const arm = br.arms[s];
         if (!arm.eager or arm.statements) return later(cx, n, "an `if` or a `case` in markup whose shown arm reads a variable the branch binds, or has `let`s,");
-        const facts = cx.programHole(.{ .node = n });
+        const facts = try pg.known(n, cx.programHole(.{ .node = n }));
         const armRoot = arm.what.markup;
         try pg.ctxs.append(pg.a(), .{ .parent = ctx, .node = n, .arm = s, .root = armRoot });
         const inner: u32 = @intCast(pg.ctxs.items.len - 1);
@@ -671,7 +680,7 @@ const Page = struct {
             else => return later(cx, n, "this attribute's value"),
         }
         const v = it.value.dynamic.?;
-        const facts = cx.programHole(.{ .item = index });
+        const facts = try pg.known(n, cx.programHole(.{ .item = index }));
         if (facts.bake) |b| if (!stateful and property == null) {
             return writeValue(pg.a(), out, name, b);
         };
@@ -1113,7 +1122,16 @@ const Page = struct {
                 , .{ name, what, more, why }));
             },
             // A model of one value: its one write is the model, exactly.
-            else => {},
+            .single_value => {},
+            // A key the write-set pass never made: the program is one it did
+            // not analyse. Never passed on, so no handler is written without
+            // its pass (`browser-inline.md` §8.3, amended 2026-10-19).
+            .none, _ => return cx.programReport(.update, .not_implemented,
+                \\A limit of the compiler: the write-set pass did not analyse this program, so
+                \\`browser-inline` cannot say which bindings a message reaches
+                \\(`docs/design/browser-inline.md` §8.3; §5, class 4). The program is valid: it builds
+                \\with `--platform=browser-tea`.
+            ),
         }
     }
 
@@ -1462,7 +1480,7 @@ const Page = struct {
             result = try js.name(pair);
         }
         try js.assign(blk, try js.name(pg.model), if (element_) try js.member(result, "a") else result);
-        for (try pg.passOf(k, key.star)) |fi| try pg.callFunction(blk, fi);
+        for (try pg.passOf(k, key)) |fi| try pg.callFunction(blk, fi);
         if (element_) switch (cx.programCommand(k)) {
             .runs => try js.expression(blk, try js.call(try js.name(try cx.runtime("commands")), &.{ try js.member(result, "b"), try js.name(pg.dispatch.?) })),
             else => {},
@@ -1472,15 +1490,23 @@ const Page = struct {
     /// Key `k`'s write pass (§8.3): the binding functions the key's writes
     /// reach — from the groups the pass says they conflict with, each
     /// function found by its groups — and those of the controls its events
-    /// are on, each once, in document order. Every function for a `*` key,
-    /// or for a program the pass does not know.
-    fn passOf(pg: *Page, k: u32, star: bool) m.Error![]const u32 {
-        const groups = pg.cx.programGroupsOf(k);
-        if (star or groups == null) {
-            const all = try pg.a().alloc(u32, pg.functions.items.len);
-            for (all, 0..) |*x, i| x.* = @intCast(i);
-            return all;
-        }
+    /// are on, each once, in document order. There is no coarse pass: a `*`
+    /// key reaches here only for a model of one value (`refuseKey`), whose
+    /// whole write is that value, and the groups it reaches are the ones the
+    /// pass found for it like any other key's (`programGroupsOf`).
+    fn passOf(pg: *Page, k: u32, the: m.Program.Key) m.Error![]const u32 {
+        // By construction: `refuseKey` ran for this key before its handler,
+        // and refuses every `*` key but one of a model of one value.
+        if (the.star) std.debug.assert(the.star_kind == .single_value);
+        // Null only for a program the pass did not analyse, whose keys
+        // `refuseKey` refused (`.none`); refused here too, so no build mode
+        // writes a handler without its pass.
+        const groups = pg.cx.programGroupsOf(k) orelse return pg.cx.programReport(.update, .not_implemented,
+            \\A limit of the compiler: the write-set pass did not analyse this program, so
+            \\`browser-inline` cannot say which bindings a message reaches
+            \\(`docs/design/browser-inline.md` §8.3; §5, class 4). The program is valid: it builds
+            \\with `--platform=browser-tea`.
+        );
         if (pg.by_group.count() == 0 and pg.functions.items.len != 0) {
             pg.stamp = try pg.a().alloc(u32, pg.functions.items.len);
             @memset(pg.stamp, std.math.maxInt(u32));
@@ -1500,9 +1526,11 @@ const Page = struct {
                 }
             }
         }.f;
-        for (groups.?) |g| if (pg.by_group.get(g)) |fs| try add(pg, fs.items, k, &out);
-        // A group the pass does not know is called by every key.
-        if (pg.by_group.get(std.math.maxInt(u32))) |fs| try add(pg, fs.items, k, &out);
+        for (groups) |g| if (pg.by_group.get(g)) |fs| try add(pg, fs.items, k, &out);
+        // By construction: every write's group passed `known`, and a
+        // piece's binds were made by its owner's lowering, which refused the
+        // same way, so no function is in the unknown bucket.
+        std.debug.assert(pg.by_group.get(std.math.maxInt(u32)) == null);
         if (pg.controls.len != 0) try add(pg, pg.controls[k].items, k, &out);
         std.mem.sort(u32, out.items, {}, std.sort.asc(u32));
         return out.items;

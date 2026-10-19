@@ -1,0 +1,4 @@
+element "root"
+detail window rr-push 1
+detail window rr-push 2
+click [data-role=reset]

@@ -1,0 +1,10 @@
+-- `PlatformProgram` with a record model: a key writes `count` and its pass
+-- calls the count's binding, not the label's (docs/design/browser-inline.md
+-- §8.3, amended 2026-10-19).
+import Browser
+import Demo
+import Tea
+
+
+main : Tea.Program
+main = Browser.mountAt Demo.demo "root"

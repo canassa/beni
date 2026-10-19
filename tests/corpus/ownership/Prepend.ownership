@@ -3,6 +3,7 @@ module Prepend
   40:13 call Prepend.recurse <construction>: accepted param (Prepend.recurse writes π1)
   40:23 construction acc: accepted param
   47:32 call Prepend.recurse <literal>: accepted fresh (Prepend.recurse writes π1)
+  52:39 update q: pending: its base is what a callee hands a callback, and that supply is not yet read for records (§31.5)
   65:15 construction s: rejected later-use: s is read again at 66:25
   71:18 construction s: rejected later-use: s is read again at 72:25
   78:15 construction top: rejected call: s may hold it through the call at 77:16, and is read at 79:25 (approx)
@@ -18,6 +19,8 @@ module Prepend
   summary grownAfter: π2 Rw
   summary grownDead: π2 RAw; res fresh1{excl π2} ~π2
   demands 8: accepted 5 (fresh 2, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+  records 1: accepted 0, pending 1, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
 total 8: accepted 5 (fresh 2, call 0, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 3
+records 1: accepted 0, pending 1, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
 cause later-use 2
 cause call 1

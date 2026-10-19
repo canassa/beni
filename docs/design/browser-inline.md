@@ -315,6 +315,26 @@ binding functions of the page whose groups the key's writes reach (`programCalls
 document order; then the key's command (§4). There is no scheduler and no microtask: two events in
 one task are two passes. *Measured against tea-inline's microtask flush in S1's report.*
 
+*Amended 2026-10-18 (the owner): there is no coarse pass.* No key's pass calls every binding of
+the page: a `*` key reaches the lowering only for a model of one value, whose whole write is that
+value, and its pass is the groups the write-set pass found for it, as any key's
+(`browser/inline/SingleValueModel`).
+
+*Amended 2026-10-19 (the review of #389):* the first text said a program the pass does not know
+cannot reach the pass, and one could: a program defined in a module of the project's own
+platform layer, which the pass skipped as not the app's. The pass now reads a module of a layer above
+the platform as the program's own code (`Writes.Input.own`, `Emit.ownCode`), decided by the
+layer's role and not by where it is read from: the platform is the layer that owns the lowering,
+every layer declaring a program constructor or placement the lowering names, and all they depend
+on; every other layer is the project's. A shipped platform named by its directory is still the
+platform (`platform_test`'s by-directory cases, red against the first fix, which went by
+embedded-ness). So such a program has its keys, holes and groups like any other
+(`browser/inline/PlatformProgram`, `PlatformRecord`, `PlatformElement`, `PlatformWidget`,
+`PlatformReader`, `PlatformTwoLevels`). Whatever the pass still does not know is a limit of the
+compiler in every build mode, never a handler without its pass: a program it did not analyse
+(its keys, at `refuseKey`, and its pass, at `passOf`), and a hole it did not reach (`known`). The
+safe-build asserts that remain hold by construction, each with its argument at the assert.
+
 **Controlled inputs.** A binding of a `stateful` attribute (a control's `value`, `checked`,
 `selected`) is called by the handler of every key one of its own element's events reaches, whatever
 the key writes, so the control shows the model after the user's edit even when the arm leaves the
@@ -437,7 +457,7 @@ the compiler"*, a language rule never says *"yet"*):
 | an `update` computed when the page runs: *"… cannot write each message's arm into the handler of its key: a handler is the arm itself, with no message made … Name a function of the program's modules as `update`, or write a lambda whose body chooses the arm."* | 3 | the record's `update` | `OpaqueUpdate/` |
 | an `Html.map` whose function is not a constructor: *"… which key each of those messages reaches cannot be known when the program is built … Map with a constructor … and decide in `update` what the message means."* | 3 | the map's hole | `MapNotCtor/` |
 | markup held as a value — in the model, a record, a list — at the hole that shows it and at the markup itself: *"… its elements cannot be numbered when the program is built … Keep in the model the data the markup shows, and write the markup in `view` or in a function `view` calls."* | 3 | each | `MarkupValue/` |
-| a `*` key (`write-sets.md` §3.4) of an exact inferred whole write of a model whose type is a record of more than one field — by `update`'s annotation, or else by the record literal `init` makes — without a declared `replace` (`plans/direct-rewrite.md` §6): *"Key `Restore` writes the whole model, a record of several fields, in one value, which hides which of its fields changed … Write the fields the arm changes …, or … a declared `replace` once the language has one"* (*decided 2026-10-17, the owner*; `StarUnannotated/` without the annotation). A `*` of lost precision — a cap cut the key, the pass marked the whole write an approximation, or neither the annotation nor `init` gives the model's type — is a limit of the compiler, class 4, reported at the first approximation in source order, which it quotes and says how many more there are (`StarOpaque/`: `f model`; `StarParameter/`: `g m`; `StarRecord/`: `{ next | count = 0 }`; `StarPrecision/`: the cap and its call); a model of one value (an `Int`, a record of one field) is written exactly and accepted, every binding called. A key is named as the program spells it, never `(any)` | 3 / 4 | the record's `update`; the approximation | `StarNotReplace/`, `StarUnannotated/`, `StarOpaque/`, `StarParameter/`, `StarRecord/`, `StarPrecision/` |
+| a `*` key (`write-sets.md` §3.4) of an exact inferred whole write of a model whose type is a record of more than one field — by `update`'s annotation, or else by the record literal `init` makes — without a declared `replace` (`plans/direct-rewrite.md` §6): *"Key `Restore` writes the whole model, a record of several fields, in one value, which hides which of its fields changed … Write the fields the arm changes …, or … a declared `replace` once the language has one"* (*decided 2026-10-17, the owner*; `StarUnannotated/` without the annotation). A `*` of lost precision — a cap cut the key, the pass marked the whole write an approximation, or neither the annotation nor `init` gives the model's type — is a limit of the compiler, class 4, reported at the first approximation in source order, which it quotes and says how many more there are (`StarOpaque/`: `f model`; `StarParameter/`: `g m`; `StarRecord/`: `{ next | count = 0 }`; `StarPrecision/`: the cap and its call); a model of one value (an `Int`, a record of one field) is written exactly and accepted, its pass the groups the write-set pass found for that whole write (*amended 2026-10-18, the owner*: no pass calls every binding of the page, and the lowering asserts it; `SingleValueModel`). A key is named as the program spells it, never `(any)` | 3 / 4 | the record's `update`; the approximation | `StarNotReplace/`, `StarUnannotated/`, `StarOpaque/`, `StarParameter/`, `StarRecord/`, `StarPrecision/` |
 | a keyed `For`: *"… does not compile keyed rows — a `For` with `keyed` — yet …"* | 1 | the `For` | `ResearchListWidget/` |
 | a key whose writes a cap of the write-set pass cut (`Program.Key.cap`): the depth limit `k` and the rounds of a recursive component until #286's folding replaces them; the leaf, alternative and size caps are lifted in S1 | 4 | the record's `update` | `CapFired/` |
 | a message wrapped in a constructor of several fields, a field of which the arm binds: *"… wraps another in a constructor of more than one field, and a handler is handed only the inner message's fields …"* | 4 | the field's pattern | `ArmWideWrapper/` |

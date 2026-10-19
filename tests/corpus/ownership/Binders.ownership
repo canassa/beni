@@ -10,6 +10,7 @@ module Binders
   78:18 construction acc: accepted callback-param (decided at its calls)
   79:18 call <lambda> xs: rejected later-use: xs is read again at 79:29 (<lambda> writes π1)
   84:18 List.push xs: rejected later-use: xs is read again at 85:25
+  90:12 update model: pending: its base is a parameter, and the summary that states the write for callers is not built yet (§31.7) [hoisted 1]
   90:30 List.push model.items: rejected later-use: model.items is read again at 91:30
   97:24 List.push xs: rejected later-use: xs is read again at 97:42
   103:18 List.push xs: accepted param
@@ -26,6 +27,8 @@ module Binders
   summary bind: π2 RW
   summary distinct: π1 RW, π2 R
   demands 14: accepted 4 (fresh 0, call 0, param 2, callback-param 2, once 0, entry 0; assumed 0), pending 0, rejected 10
+  records 1: accepted 0, pending 1, rejected 0 (copy 0, restructure 0); hoisted 1, eager reads 0
 total 14: accepted 4 (fresh 0, call 0, param 2, callback-param 2, once 0, entry 0; assumed 0), pending 0, rejected 10
+records 1: accepted 0, pending 1, rejected 0 (copy 0, restructure 0); hoisted 1, eager reads 0
 cause later-use 6
 cause alias 4

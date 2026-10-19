@@ -1,7 +1,15 @@
 module EntryPayload
+  40:13 update model: pending: its base is a parameter, and the summary that states the write for callers is not built yet (§31.7)
+  43:13 update model: pending: its base is a parameter, and the summary that states the write for callers is not built yet (§31.7)
   43:32 List.push model.pinned: accepted param
+  49:13 update model: pending: its base is a parameter, and the summary that states the write for callers is not built yet (§31.7)
+  56:15 update model: pending: its base is a parameter, and the summary that states the write for callers is not built yet (§31.7)
+  59:15 update model: pending: its base is a parameter, and the summary that states the write for callers is not built yet (§31.7)
   59:32 List.push model.rows: accepted param
+  69:15 update model: pending: its base is a parameter, and the summary that states the write for callers is not built yet (§31.7)
   69:46 List.push rows: accepted param
+  79:15 update model: pending: its base is a parameter, and the summary that states the write for callers is not built yet (§31.7)
+  82:15 update model: pending: its base is a parameter, and the summary that states the write for callers is not built yet (§31.7)
   82:32 List.push model.rows: accepted param
   110:10 entry EntryPayload.pins model.pinned: rejected payload: a message a view event builds may hold it — a list of the model, or one a handler keeps from one dispatch to the next — and the check does not tell update's arms apart (§20.5, §23.6, P6) (approx)
   115:5 entry EntryPayload.stores model.rows: accepted entry
@@ -15,5 +23,7 @@ module EntryPayload
   summary plain: π1.total R; res ⟨render⟩ fresh1{lost}
   summary initial: res .pinned fresh2, .rows fresh1
   demands 8: accepted 7 (fresh 0, call 0, param 4, callback-param 0, once 0, entry 3; assumed 0), pending 0, rejected 1
+  records 8: accepted 0, pending 8, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
 total 8: accepted 7 (fresh 0, call 0, param 4, callback-param 0, once 0, entry 3; assumed 0), pending 0, rejected 1
+records 8: accepted 0, pending 8, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
 cause payload 1

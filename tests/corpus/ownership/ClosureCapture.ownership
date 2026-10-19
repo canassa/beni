@@ -1,10 +1,13 @@
 module ClosureCapture
   18:12 construction xs: rejected captured: g, a closure holding it, is used at 19:5
+  25:5 update model: pending: its base is a parameter, and the summary that states the write for callers is not built yet (§31.7)
   25:24 construction model.rows: accepted param
   29:21 construction acc: pending: it is returned
   summary t7: π1 RW
   summary perPath: π1.rows RAW; res .rows π1.rows
   summary pusher: π1 RAW; res ◇ π1
   demands 3: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 1, rejected 1
+  records 1: accepted 0, pending 1, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 1
 total 3: accepted 1 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 0; assumed 0), pending 1, rejected 1
+records 1: accepted 0, pending 1, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 1
 cause captured 1

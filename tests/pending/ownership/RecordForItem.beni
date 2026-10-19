@@ -1,0 +1,45 @@
+-- CK-262: `view` writes a `For` row's item (issue #315; `ownership-checker.md`
+-- §31.8). The runtime hands `view` the model to read only, and a row's item
+-- is the model's own record: `label` writes it through `relabel`, which in
+-- place would change `model.rows`. Rejected `read-only`, exactly. Red until
+-- R2c reads `relabel`'s `W{F}` off its summary and `view`'s entry checks it
+-- (§31.7, §31.8); today the update in `relabel` is only its body's
+-- `accepted param`.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Row =
+    id : Int
+    label : String
+
+
+type alias Model =
+    rows : List Row
+
+
+type Msg
+    = Noop
+
+
+relabel : Row → Row
+relabel row = { row | label = "seen" }
+
+
+view : Model → Html Msg
+view model =
+    <ul>
+        <For each={model.rows} keyed={.id}>
+            {λrow → <li>{(relabel row).label}</li>}
+        </For>
+    </ul>
+
+
+main : Tea.Program
+main =
+    Tea.sandbox
+        { init = λ⊤ → { rows = [ { id = 1, label = "a" } ] }
+        , update = λ_ model → model
+        , view = view
+        }

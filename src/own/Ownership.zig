@@ -68,6 +68,26 @@ pub const k_limit: u32 = 8;
 /// Depth of a walk over a type before it answers conservatively.
 const type_depth: u32 = 16;
 const debug_own = false;
+/// §31.12's mutation controls (`zig build test-record-mutations`): the record
+/// demand broken one way on purpose, chosen at build time. `none` in every
+/// build but that step's: one `ownership_options` module is imported by
+/// every build of the compiler (self-hosted, LLVM, wasm), the option defaults
+/// to `none`, `gates` refuses it, a value it does not name is a compile error,
+/// and the unit test below fails a `zig build test` given one.
+const record_mutation: enum { none, hoist_whole, no_held_operand, no_disjoint, call_as_hoist } = blk: {
+    const m = @import("ownership_options").record_mutation;
+    if (std.mem.eql(u8, m, "none")) break :blk .none;
+    if (std.mem.eql(u8, m, "hoist-whole")) break :blk .hoist_whole;
+    if (std.mem.eql(u8, m, "no-held-operand")) break :blk .no_held_operand;
+    if (std.mem.eql(u8, m, "no-disjoint")) break :blk .no_disjoint;
+    if (std.mem.eql(u8, m, "call-as-hoist")) break :blk .call_as_hoist;
+    @compileError("-Downership-record-mutation: unknown mutation '" ++ m ++ "'");
+};
+
+test "the record demand is not mutated outside its mutation controls" {
+    try std.testing.expectEqual(.none, record_mutation);
+}
+
 /// §30.9: a supply of at most this many cells is probed cell by cell.
 const split_cap: usize = 8;
 /// §16.7: the most entries a summary may hold at one path — `res`'s
@@ -310,6 +330,27 @@ pub const Demand = struct {
     /// `top-level`: the top-level value, `(module, declaration, 1 when the
     /// list is the value itself)`.
     top: ?[3]u32 = null,
+    /// §31.3: a record update's demand, reported and never enforced until
+    /// §31.9's codes land (#315, R4).
+    record: bool = false,
+    /// §31.12: what a record rejection's fix is: `copy` or `restructure`.
+    fix: Fix = .none,
+    /// §31.14: an accepted record demand's later reads of a written field,
+    /// which the lowering reads first.
+    hoists: u32 = 0,
+};
+
+/// §31.12: the fix a record rejection takes.
+pub const Fix = enum {
+    none,
+    /// `{ Record.copy r | … }`: a whole use the copy answers.
+    copy,
+    /// A top-level base made a function, or the program reordered.
+    restructure,
+
+    pub fn text(f: Fix) []const u8 {
+        return @tagName(f);
+    }
 };
 
 /// One summary line (§16.11).
@@ -322,6 +363,9 @@ pub const ModuleReport = struct {
     summaries: []const SummaryLine = &.{},
     /// §16.7: the checker's limits its declarations reached, each an error.
     limits: []const LimitLine = &.{},
+    /// §31.6: the captures of a record's field path its lambdas read when
+    /// they are made, counted for report mode (§31.12).
+    eager_reads: u32 = 0,
 };
 
 /// A limit a declaration of the module reached (§16.7): the declaration's
@@ -577,6 +621,8 @@ const Slot = struct {
     /// last read off, which ran against the final assumptions (§16.6's
     /// validation walk), so the report need not walk the body again.
     lines: ?[]const Demand = null,
+    /// With `lines`: the walk's eager reads of captured field paths (§31.6).
+    eager_reads: u32 = 0,
     /// Read back through its block once another module asked for it (§28.3).
     sealed: bool = false,
 };
@@ -763,12 +809,14 @@ pub fn run(o: *Ownership, targets: []const u32) Allocator.Error![]const ModuleRe
         // Every summary first (§16.9): a report walk reads them all.
         for (bir.decls, 0..) |_, di| _ = try o.ensureSummary(m, @intCast(di));
         var demands: std.ArrayList(Demand) = .empty;
+        var eager: u32 = 0;
         const slots = try o.slotsOf(m);
         for (bir.decls, 0..) |d, di| {
             if (d.kind != .value) continue;
             const body = d.body.unwrap() orelse continue;
             if (slots[di].lines) |ls| {
                 try demands.appendSlice(arena, ls);
+                eager += slots[di].eager_reads;
                 continue;
             }
             var scratch: std.heap.ArenaAllocator = .init(o.in.gpa);
@@ -780,7 +828,9 @@ pub fn run(o: *Ownership, targets: []const u32) Allocator.Error![]const ModuleRe
             var w = o.walker(m, @intCast(di), scratch.allocator(), .report);
             try w.walkDecl(body);
             try w.resolve(&demands);
+            eager += w.eager_reads;
         }
+        r.eager_reads = eager;
         // Source order: by position, which is a function of the text.
         std.mem.sort(Demand, demands.items, {}, struct {
             fn less(_: void, x: Demand, y: Demand) bool {
@@ -1139,7 +1189,8 @@ fn dedupe(items: []Demand) Allocator.Error![]const Demand {
     for (items) |d| {
         if (n > 0) {
             const p = items[n - 1];
-            if (p.position.line == d.position.line and p.position.col == d.position.col and
+            // `.record` too: a list writer may be named `update` as well.
+            if (p.record == d.record and p.position.line == d.position.line and p.position.col == d.position.col and
                 std.mem.eql(u8, p.op, d.op) and std.mem.eql(u8, p.base, d.base) and
                 std.meta.eql(p.verdict, d.verdict) and std.mem.eql(u8, p.detail, d.detail)) continue;
         }
@@ -1707,7 +1758,10 @@ fn walkSummary(o: *Ownership, m: u32, d: u32, recursive: bool) Allocator.Error!S
     try w.walkDecl(w.decl.body.unwrap().?);
     var lines: std.ArrayList(Demand) = .empty;
     try w.resolve(&lines);
-    if (report) o.slots[m].?[d].lines = try lines.toOwnedSlice(o.out.allocator());
+    if (report) {
+        o.slots[m].?[d].lines = try lines.toOwnedSlice(o.out.allocator());
+        o.slots[m].?[d].eager_reads = w.eager_reads;
+    }
     const s = try w.readOff();
     // A limit the walk reached (a fixpoint, `value-cells`) makes the summary
     // the pessimistic one, as §16.7 says, so that what its callers reject
@@ -5279,6 +5333,24 @@ const Use = struct {
     via: u32 = none,
     /// §28.6: the variable path read, as written, when the use is one.
     at: [2]u32 = .{ none, none },
+    /// §31.4 item 5: a read a call makes in the callee's body — 1 through
+    /// its summary, 2 by a call with no summary (§6.1) — where no temporary
+    /// of the caller can stand in for a written field.
+    call: u8 = 0,
+    /// With `call`: the argument's own variable path, which the caller
+    /// reads before the call; the rest of `path` the callee reads.
+    call_at: u32 = eps,
+    /// §31.14: the evaluation of a field path, which reads it whether or
+    /// not a consumer uses the value: what a record demand's hoists are made
+    /// of. No list's fact reads it.
+    record_read: bool = false,
+    /// §31.7, until R2c: the argument of a call whose summary does not yet
+    /// say which of a record's fields it reads.
+    summary_arg: bool = false,
+    /// §31.4 item 5: the scrutinee of a record pattern, whose fields it
+    /// reads one by one (`record_read` uses of their own); no use of the
+    /// record whole to a record demand.
+    destructure: bool = false,
 };
 
 const Holder = struct {
@@ -5339,6 +5411,8 @@ const DemandRec = struct {
     base_span: [2]u32 = .{ none, none },
     top: ?[3]u32 = null,
     via: u32 = none,
+    /// §31.3: a record update's demand, and the fields it writes.
+    fields: ?[]const u32 = null,
 };
 
 /// §20.2: what a platform's runtime does with the model it hands `update`.
@@ -5380,6 +5454,9 @@ const Frame = struct {
     /// §26.2: what the `?`s of this frame return from it — each `Err`
     /// payload, under `Err` — joined into the frame's result.
     early: std.ArrayList(Entry) = .empty,
+    /// §31.6: the field paths of outer locals this frame's body reads,
+    /// which the closure reads when it is made.
+    eager: std.ArrayList(Capture) = .empty,
 };
 
 const PatSite = struct { list: Inst.Index, index: u32, spread: bool, scrut: AV = &.{} };
@@ -5609,6 +5686,14 @@ const Walker = struct {
     inst_span: [][2]u32 = &.{},
     /// The variable path a use being recorded reads, as written.
     use_at: [2]u32 = .{ none, none },
+    /// What `Use.call` the next uses take (§31.4 item 5).
+    use_call: u8 = 0,
+    use_call_at: u32 = eps,
+    /// The use being recorded is a record pattern's scrutinee (`Use.destructure`).
+    use_destructure: bool = false,
+    /// §31.6: captures of a record's field path read when a lambda is made.
+    eager_reads: u32 = 0,
+    eager_seen: std.AutoHashMapUnmanaged([3]u32, void) = .empty,
 
     // ---- setup -------------------------------------------------------------
 
@@ -5688,7 +5773,10 @@ const Walker = struct {
     }
 
     fn cell(w: *Walker, c: Cell) Allocator.Error!u32 {
-        const key: [4]u32 = .{ @as(u32, @backingInt(c.kind)) | (@as(u32, @intFromBool(c.made)) << 8), c.a, c.b, c.path };
+        // `nonlist` is in the key: a record object a definition names on
+        // purpose (a top-level record's, `Record.copy`'s) is never the cell
+        // a summary's result made at the same place, whichever comes first.
+        const key: [4]u32 = .{ @as(u32, @backingInt(c.kind)) | (@as(u32, @intFromBool(c.made)) << 8) | (@as(u32, @intFromBool(c.nonlist)) << 9), c.a, c.b, c.path };
         const gop = try w.cell_map.getOrPut(w.a, key);
         if (gop.found_existing) return gop.value_ptr.*;
         const id: u32 = @intCast(w.cells.items.len);
@@ -6578,6 +6666,13 @@ const Walker = struct {
     /// fields is the record cell it was written over, as the update's whole
     /// base was before; a record's object alone, and a cell whose value
     /// holds only records, are none.
+    /// The record object a record demand reads for `c` (§31.3): an `except`
+    /// cell is the object it was written over.
+    fn recordObject(w: *const Walker, c: u32) ?u32 {
+        const x = w.cells.items[c];
+        return if (x.kind == .except) x.a else c;
+    }
+
     fn listFacing(w: *const Walker, c: u32) ?u32 {
         const x = w.cells.items[c];
         if (x.kind == .except) return if (x.b == except_all) null else w.listFacing(x.a);
@@ -6785,12 +6880,17 @@ const Walker = struct {
     /// Relying on a condition (§18.4): its atoms become requirements of
     /// `frame`, or it fails.
     fn rely(w: *Walker, k: u32, frame: u32) Allocator.Error!Rely {
+        return w.relyAs(k, frame, true);
+    }
+
+    /// `rely`, the requirements kept only when `keep`.
+    fn relyAs(w: *Walker, k: u32, frame: u32, keep: bool) Allocator.Error!Rely {
         if (k == cond_lost) return .approx;
         if (k == cond_limit) return .limit;
         if (k == cond_shared) return .exact;
         const atoms = w.conds.items[k].atoms;
         for (atoms) |t| if (!w.ownedBy(t, frame)) return .approx;
-        for (atoms) |t| try w.reqs.append(w.a, .{ .frame = frame, .atom = t });
+        if (keep) for (atoms) |t| try w.reqs.append(w.a, .{ .frame = frame, .atom = t });
         return .ok;
     }
 
@@ -7033,6 +7133,24 @@ const Walker = struct {
     }
 
     /// Record the uses a consumer makes of its operands, at a new point.
+    /// `consume` of `value` matched by `pat`: when `pat` is a record pattern
+    /// and `value` a variable path, a record demand reads the fields it
+    /// binds, each a field read of its own (§31.4 item 5); a list's use is the
+    /// whole value's, as before.
+    fn consumeDestructured(w: *Walker, value: Inst.Index, pat: Inst.Index, tok: u32) Allocator.Error!void {
+        const r = (try w.refPath(value)) orelse return w.consume(&.{value}, tok);
+        if (w.bir.instTag(pat) != .pat_record or w.mode != .report) return w.consume(&.{value}, tok);
+        w.use_destructure = true;
+        try w.consume(&.{value}, tok);
+        w.use_destructure = false;
+        const b = w.bir;
+        for (b.extraSlice(Bir.inlineRange(b.instData(pat)), u32)) |l| {
+            const name = b.locals[w.decl.locals_start + l].name;
+            const sym = if (name.unwrap()) |s| @backingInt(b.symbols[s]) else continue;
+            try w.recordRead(.{ .local = r.local, .path = try w.o.child(r.path, .field, sym) }, tok);
+        }
+    }
+
     fn consume(w: *Walker, operands: []const Inst.Index, tok: u32) Allocator.Error!void {
         w.point += 1;
         for (operands) |op| try w.useOperand(op, tok, &.{});
@@ -7062,13 +7180,21 @@ const Walker = struct {
         }
     }
 
+    /// §31.14: a field path read where it is evaluated, for the record
+    /// demand's per-field liveness.
+    fn recordRead(w: *Walker, r: Capture, tok: u32) Allocator.Error!void {
+        if (r.local >= w.local_frame.len) return;
+        if (w.local_frame[r.local] != w.frame and (w.local_av[r.local] == null or !w.inFrameOf(w.local_frame[r.local]))) return;
+        try w.uses.append(w.a, .{ .local = r.local, .path = r.path, .point = w.point, .frame = w.frame, .ctx = w.ctx, .token = tok, .record_read = true });
+    }
+
     fn useAt(w: *Walker, l: u32, path: u32, tok: u32, except: []const u32) Allocator.Error!void {
         // A local of this frame, or one this frame captured from an
         // enclosing one: a closure that gave up what it captured must not
         // read it again (§18.8, §23.7).
         if (l >= w.local_frame.len) return;
         if (w.local_frame[l] != w.frame and (w.local_av[l] == null or !w.inFrameOf(w.local_frame[l]))) return;
-        try w.uses.append(w.a, .{ .local = l, .path = path, .except = except, .point = w.point, .frame = w.frame, .ctx = w.ctx, .token = tok, .at = w.use_at });
+        try w.uses.append(w.a, .{ .local = l, .path = path, .except = except, .point = w.point, .frame = w.frame, .ctx = w.ctx, .token = tok, .at = w.use_at, .call = w.use_call, .call_at = w.use_call_at, .destructure = w.use_destructure });
     }
 
     /// The first token of a variable path: its root local's.
@@ -7601,7 +7727,10 @@ const Walker = struct {
         switch (b.instTag(inst)) {
             .local => return w.evalLocal(data.lhs, eps, inst),
             .field_access, .tuple_index => {
-                if (try w.refPath(inst)) |r| return w.evalLocal(r.local, r.path, inst);
+                if (try w.refPath(inst)) |r| {
+                    if (w.mode == .report) try w.recordRead(r, w.token(inst));
+                    return w.evalLocal(r.local, r.path, inst);
+                }
                 const target = try w.eval(@fromBackingInt(@intCast(data.lhs)));
                 const s: Step = if (b.instTag(inst) == .field_access)
                     .{ .kind = .field, .arg = @backingInt(b.symbol(@fromBackingInt(@intCast(data.rhs)))) }
@@ -8022,6 +8151,16 @@ const Walker = struct {
     /// enclosing frame is a capture (§5, §7.3).
     fn evalLocal(w: *Walker, l: u32, path: u32, inst: Inst.Index) Allocator.Error!AV {
         if (l >= w.local_av.len) return &.{};
+        // §31.6: a lambda's read of a record's field path that it captured,
+        // which it reads when it is made; report mode counts them, once per
+        // lambda, local and path, whatever the field's type.
+        if (w.mode == .report and w.frame != 0 and l < w.local_frame.len and w.local_frame[l] != w.frame) {
+            if (w.o.firstStep(path)) |first| if (first.kind == .field) {
+                const g = try w.eager_seen.getOrPut(w.a, .{ w.frame, l, path });
+                if (!g.found_existing) w.eager_reads += 1;
+                try w.frames.items[w.frame].eager.append(w.a, .{ .local = l, .path = path });
+            };
+        }
         const ty = w.instType(inst);
         if (ty) |v| if (!try w.trackedVar(v)) return &.{};
         const bound = w.local_av[l] != null;
@@ -8113,6 +8252,21 @@ const Walker = struct {
         }
     }
 
+    /// Whether `inst` calls `core/Record.copy`, the fix §31.12 names. Its
+    /// row aliases π₁ at ε (`recordRow`), which is right for the fields the
+    /// copy shares and wrong for its object, which is new and held by
+    /// nobody (§31.15). Until a summary's results name a record's object
+    /// (§31.7), an update whose base is the copy itself demands that new
+    /// object.
+    fn isRecordCopyCall(w: *const Walker, inst: Inst.Index) bool {
+        const b = w.bir;
+        if (b.instTag(inst) != .call) return false;
+        const t = w.valueTarget(@fromBackingInt(@intCast(b.instData(inst).lhs))) orelse return false;
+        if (w.o.in.packages[t.m] != .core or !std.mem.eql(u8, w.o.in.module_names[t.m], "Record")) return false;
+        const cb = w.o.in.birs[t.m];
+        return std.mem.eql(u8, w.o.in.interner.slice(cb.symbol(cb.decls[t.d].name)), "copy");
+    }
+
     fn evalRecordUpdate(w: *Walker, inst: Inst.Index) Allocator.Error!AV {
         const b = w.bir;
         const data = b.instData(inst);
@@ -8129,6 +8283,26 @@ const Walker = struct {
         w.point += 1;
         try w.useOperand(base_inst, w.token(inst), names);
         for (insts) |x| try w.useOperand(x, w.token(inst), &.{});
+        // §31.3: the update is a demand on its base's object, after every
+        // new value. Report mode only: it prints, and nothing enforces it
+        // yet (R4), nor does a summary read it off (§31.7).
+        if (w.mode == .report) {
+            const written = try w.a.dupe(u32, names);
+            std.mem.sort(u32, written, {}, std.sort.asc(u32));
+            const ref = try w.refPath(base_inst);
+            try w.demandOn(.{
+                .kind = .report,
+                .token = w.token(inst),
+                .op = "update",
+                .base_text = try w.baseText(base_inst),
+                .base_ref = if (ref) |r| .{ .local = r.local, .path = r.path } else null,
+                .base_ty = w.instType(base_inst),
+                .base = if (w.isRecordCopyCall(base_inst)) try w.single(.{ .kind = .site, .a = base_inst.int(), .made = true, .nonlist = true, .ty = w.instTypeOpt(base_inst) }) else base,
+                .others = avs,
+                .base_inst = base_inst,
+                .fields = written,
+            });
+        }
         // §31.3: the result is the base's object, written — `(ε, c ∖ F)` for
         // each record cell `c` at ε. A symbolic entry is split into its
         // record type's other fields when the type is closed, and the object
@@ -8229,7 +8403,7 @@ const Walker = struct {
         // §18.8: the captures its own body writes make it once.
         var env_writes: std.ArrayList(Capture) = .empty;
         for (w.demands.items[demands_from..]) |rec| {
-            if (rec.kind == .probe or rec.kind == .value or rec.frame != id) continue;
+            if (rec.kind == .probe or rec.kind == .value or rec.frame != id or rec.fields != null) continue;
             for (rec.cells) |e| {
                 const c = w.cells.items[try w.takenBase(e.cell)];
                 if (c.kind != .env) continue;
@@ -8251,6 +8425,13 @@ const Walker = struct {
             w.point += 1;
             const value = try w.single(.{ .kind = .closure, .a = ci });
             try w.useCaptures(value, w.token(body));
+            // §31.6: its reads of outer field paths happen here, where it is
+            // made: reads of the version the creation sees.
+            for (w.frames.items[id].eager.items) |cap| {
+                if (cap.local < w.local_frame.len and w.local_frame[cap.local] == w.frame) {
+                    try w.uses.append(w.a, .{ .local = cap.local, .path = cap.path, .point = w.point, .frame = w.frame, .ctx = w.ctx, .token = w.token(body), .record_read = true });
+                } else if (w.frame != 0) try w.frames.items[w.frame].eager.append(w.a, cap);
+            }
             if (cls.once) try w.onceCreation(ci, w.token(body));
         }
         return w.single(.{ .kind = .closure, .a = ci });
@@ -8333,7 +8514,7 @@ const Walker = struct {
                 .let_pattern => {
                     const value: Inst.Index = @fromBackingInt(@intCast(idata.rhs));
                     const av = try w.eval(value);
-                    try w.consume(&.{value}, w.token(item));
+                    try w.consumeDestructured(value, @fromBackingInt(@intCast(idata.lhs)), w.token(item));
                     try w.bindPattern(@fromBackingInt(@intCast(idata.lhs)), av);
                 },
                 .let_stmt => {
@@ -8551,8 +8732,10 @@ const Walker = struct {
         const data = b.instData(inst);
         const scrutinee: Inst.Index = @fromBackingInt(@intCast(data.lhs));
         const s = try w.eval(scrutinee);
-        try w.consume(&.{scrutinee}, w.token(inst));
         const branches = b.extraSlice(b.subRange(@fromBackingInt(@intCast(data.rhs))), Inst.Index);
+        // One arm of a record pattern reads the scrutinee field by field.
+        const one_pattern: ?Inst.Index = if (branches.len == 1) @fromBackingInt(@intCast(b.instData(branches[0]).lhs)) else null;
+        if (one_pattern) |p| try w.consumeDestructured(scrutinee, p, w.token(inst)) else try w.consume(&.{scrutinee}, w.token(inst));
         const case_id = w.cases;
         w.cases += 1;
         const saved = w.ctx;
@@ -8722,7 +8905,21 @@ const Walker = struct {
             };
             try out.append(w.a, .{ .path = r.path, .cell = try w.cell(c), .approx = if (r.approx) inst.int() + 1 else 0 });
         }
+        // §31.2: a top-level record's object, which no summary names until
+        // §31.7's: the record demand's, a list's nothing (§31.4 item 2).
+        if (w.isRecordType(w.instType(inst))) {
+            try out.append(w.a, .{ .path = eps, .cell = try w.cell(.{ .kind = .shared, .a = t.m, .b = t.d, .made = true, .nonlist = true, .ty = w.instTypeOpt(inst) }) });
+        }
         return w.norm(out.items);
+    }
+
+    /// Whether `ty` is a record type, closed or open.
+    fn isRecordType(w: *Walker, ty: ?Var) bool {
+        const v = ty orelse return false;
+        return switch (w.store.resolvedContent(v)) {
+            .structure => |s| s == .record,
+            else => false,
+        };
     }
 
     /// §30.10: a run's answer, settled. Where the slot it read held
@@ -9615,7 +9812,16 @@ const Walker = struct {
     fn conservativeAV(w: *Walker, inst: Inst.Index, args: []const Inst.Index, avs: []const AV, callee_av: AV, callee: ?CalleeRef, name: []const u8, foreign: bool, result: CallResult) Allocator.Error!AV {
         w.point += 1;
         const tok = w.token(inst);
-        for (args) |x| try w.useOperand(x, tok, &.{});
+        // A call with no summary reads its arguments whole (§31.4 item 5):
+        // an argument's own path is the caller's read, the rest the call's.
+        w.use_call = 2;
+        defer w.use_call = 0;
+        defer w.use_call_at = eps;
+        for (args) |x| {
+            w.use_call_at = if (try w.refPath(x)) |r| r.path else eps;
+            try w.useOperand(x, tok, &.{});
+        }
+        w.use_call_at = eps;
         if (callee) |c| try w.useCallee(c, tok);
         try w.useTemporaries(args, avs, tok);
         if (callee) |c| try w.useTemporaries(&.{c.inst}, &.{callee_av}, tok);
@@ -9650,7 +9856,15 @@ const Walker = struct {
     fn escapeCall(w: *Walker, inst: Inst.Index, args: []const Inst.Index, name: []const u8) Allocator.Error!AV {
         const avs = try w.evalOperands(args, false);
         w.popPending(avs.len);
-        try w.consume(args, w.token(inst));
+        w.use_call = 2;
+        defer w.use_call = 0;
+        defer w.use_call_at = eps;
+        w.point += 1;
+        for (args) |x| {
+            w.use_call_at = if (try w.refPath(x)) |r| r.path else eps;
+            try w.useOperand(x, w.token(inst), &.{});
+        }
+        w.use_call_at = eps;
         try w.useTemporaries(args, avs, w.token(inst));
         for (avs) |av| {
             try w.sight(av, .{ .no_summary = name }, w.token(inst));
@@ -9912,6 +10126,14 @@ const Walker = struct {
                 if (w.joinArm(inst, i)) |arm| w.ctx = arm;
                 w.use_at = .{ w.rootToken(arg), w.token(arg) };
                 defer w.use_at = .{ none, none };
+                // The callee reads the argument in its own body (§31.4 item 5).
+                w.use_call = 1;
+                defer w.use_call = 0;
+                w.use_call_at = r.path;
+                defer w.use_call_at = eps;
+                // Which fields of a record it reads, its summary does not say
+                // yet (§31.7): a record demand that it may see is pending.
+                if (w.mode == .report and !s.asserted) try w.uses.append(w.a, .{ .local = r.local, .path = r.path, .point = w.point, .frame = w.frame, .ctx = w.ctx, .token = tok, .call = 1, .call_at = r.path, .record_read = true, .summary_arg = true });
                 for (s.uses) |u| {
                     if (u.param != pi or noUse(u.bits)) continue;
                     try w.useAt(r.local, try w.o.concat(r.path, u.path), tok, &.{});
@@ -12414,6 +12636,9 @@ const Walker = struct {
         deep: bool = false,
         /// §28.6: the base's instruction, when the source writes it.
         base_inst: ?Inst.Index = null,
+        /// §31.3: a record update's demand on its base's object, and the
+        /// fields it writes.
+        fields: ?[]const u32 = null,
     };
 
     fn demandOn(w: *Walker, spec: DemandSpec) Allocator.Error!void {
@@ -12424,7 +12649,7 @@ const Walker = struct {
         for (spec.base) |e_in| {
             // §31.2: a record's object is no list's; the record demand of
             // §31.3 is the one that reads it.
-            const e = Entry{ .path = e_in.path, .cell = w.listFacing(e_in.cell) orelse continue, .approx = e_in.approx };
+            const e = Entry{ .path = e_in.path, .cell = (if (spec.fields != null) w.recordObject(e_in.cell) else w.listFacing(e_in.cell)) orelse continue, .approx = e_in.approx };
             const k = w.cells.items[e.cell].kind;
             if ((k == .closure and !spec.closures) or k == .func) continue;
             if (e.path == eps) {
@@ -12456,6 +12681,7 @@ const Walker = struct {
             .origin = spec.origin,
             .entry = spec.entry,
             .deep = spec.deep,
+            .fields = spec.fields,
         };
         if (w.mode == .report) {
             rec.span = w.span;
@@ -12474,7 +12700,9 @@ const Walker = struct {
             // (§18.5); writing it relies on its container being exclusive.
             const base = try w.takenBase(e.cell);
             const c = w.cells.items[base];
-            if (base != e.cell and spec.kind != .probe) switch (try w.rely(try w.cellCond(e.cell), w.frame)) {
+            // A record demand relies on its container without stating it: what a
+            // summary requires of its callers for records is §31.7's (R2c).
+            if (base != e.cell and spec.kind != .probe) switch (try w.relyAs(try w.cellCond(e.cell), w.frame, spec.fields == null)) {
                 .ok => {},
                 else => |r| rec.xfail = Rely.worse(rec.xfail, r),
             };
@@ -12512,7 +12740,7 @@ const Walker = struct {
                     detail = "a schema answered it whose conversion returns one list at two places, so two parts of the answer may be one list";
                 } else {
                     cause = .unknown;
-                    detail = "the list came from JavaScript";
+                    detail = if (spec.fields != null) "the record came from JavaScript" else "the list came from JavaScript";
                 },
                 .shared => {
                     cause = .top_level;
@@ -12528,7 +12756,9 @@ const Walker = struct {
                 },
                 // A write of a capture: the closure is once, and its creation
                 // and calls decide the write (§18.8).
-                .env => if (spec.kind != .probe and w.frameClosure(w.frame) != null) {
+                // A record's capture is not yet read as making the closure once
+                // (§31.4 item 4; #315, R4): a limit, so far.
+                .env => if (spec.kind != .probe and spec.fields == null and w.frameClosure(w.frame) != null) {
                     rec.once_ci = w.frameClosure(w.frame).?;
                 } else {
                     cause = .captured_edit;
@@ -12583,6 +12813,7 @@ const Walker = struct {
         // Disjoint: another operand of the demand reaches the cell.
         var approx_hit: u32 = 0;
         for (spec.others) |av| {
+            if (comptime record_mutation == .no_disjoint) if (spec.fields != null) break;
             const hit = (try w.reaches(av, cells.items)) orelse continue;
             if (hit.approx != 0) {
                 if (approx_hit == 0 or hit.approx < approx_hit) approx_hit = hit.approx;
@@ -12628,6 +12859,7 @@ const Walker = struct {
         // A temporary already evaluated for an enclosing consumer holds it.
         const base_pending = w.frames.items[w.frame].pending_base;
         for (w.pending.items[base_pending..]) |p| {
+            if (comptime record_mutation == .no_held_operand) if (spec.fields != null) break;
             if (p.frame != w.frame or p.is_ref) continue;
             const phit = (try w.reaches(p.av, cells.items)) orelse continue;
             // Waiting for a call with a summary, it holds the cell only
@@ -12901,6 +13133,29 @@ const Walker = struct {
 
     fn resolveOne(w: *Walker, rec: DemandRec) Allocator.Error!Demand {
         var d = try w.resolveRaw(rec);
+        // §31.12: a record rejection's fix — a top-level base is made a
+        // function, anything else copies.
+        if (d.record and d.verdict == .rejected) d.fix = if (d.verdict.rejected == .top_level) .restructure else .copy;
+        // §31.7, until R2c: an acceptance a caller or a callee decides, which
+        // no summary carries for records yet, is not yet a verdict. Nor is a
+        // base with no cell at all: a summary's results do not yet name a
+        // record's object (`Prov.obj`), so a value a call or a top-level
+        // definition returns may be one that something else still holds —
+        // `defaultOptions = Schema.defaultOptions`, or a callback's answer
+        // that is its own argument.
+        if (d.record and d.verdict == .accepted and (d.verdict.accepted == .param or d.verdict.accepted == .callback_param or
+            d.verdict.accepted == .call or rec.cells.len == 0))
+        {
+            d.verdict = .pending;
+            d.detail = switch (rec.accept) {
+                .param => "its base is a parameter, and the summary that states the write for callers is not built yet (§31.7)",
+                .callback_param => "its base is what a callee hands a callback, and that supply is not yet read for records (§31.5)",
+                .call => "its base is what a call returns, and the summary that names a record's object is not built yet (§31.7)",
+                else => "nothing yet names where its base's object comes from: a summary's results do not carry a record's object until §31.7's",
+            };
+            d.note = "";
+        }
+        if (d.verdict == .rejected) d.hoists = 0;
         if (d.verdict == .rejected) switch (rec.origin) {
             .exact => {},
             // A write only a pessimistic summary claims (§16.7).
@@ -12946,6 +13201,7 @@ const Walker = struct {
             .base_span = rec.base_span,
             .top = rec.top,
             .via_token = rec.via,
+            .record = rec.fields != null,
         };
         if (rec.accept == .call and rec.assumed.len > 0) {
             d.assumed = true;
@@ -12966,16 +13222,37 @@ const Walker = struct {
             return d;
         }
         // Each holder's first later use in a compatible branch.
+        var pending_use: ?Use = null;
+        // §31.14: the hoists, one per use, whatever number of the uses'
+        // holders reach it (a local holding the object at two paths).
+        var hoisted: std.ArrayList(u32) = .empty;
         var best: ?struct { cause: Cause, holder: Holder, use: Use } = null;
         for (rec.holders) |h| {
             var first: ?Use = null;
             const range = if (h.local < w.use_start.len - 1) w.use_order[w.use_start[h.local]..w.use_start[h.local + 1]] else &[_]u32{};
             for (range) |ui| {
                 const u = w.uses.items[ui];
-                if (u.local != h.local or u.frame != rec.frame or u.point <= rec.point) continue;
+                // A field read is recorded where it is evaluated, at no point of
+                // its own: one at the demand's point comes after the demand, whose
+                // own operands were read before it.
+                if (u.local != h.local or u.frame != rec.frame or u.point < rec.point or (u.point == rec.point and !u.record_read)) continue;
                 if (rec.creation_ci != none and u.via == rec.creation_ci) continue;
                 if (!w.compatible(u.ctx, rec.ctx)) continue;
-                if (!w.useOverlaps(u, h.path)) continue;
+                if (u.record_read and rec.fields == null) continue;
+                if (rec.fields) |fs| switch (w.recordUse(u, h.path, fs)) {
+                    .none => continue,
+                    // §31.14: a read of a written field, which the lowering
+                    // reads before the write.
+                    .hoist => {
+                        try hoisted.append(w.a, ui);
+                        continue;
+                    },
+                    .pending => {
+                        pending_use = u;
+                        continue;
+                    },
+                    .whole => {},
+                } else if (!w.useOverlaps(u, h.path)) continue;
                 if (first == null or u.point < first.?.point) first = u;
             }
             const u = first orelse continue;
@@ -12983,9 +13260,11 @@ const Walker = struct {
             // pattern holds another position, apart when the scrutinee's
             // contents are exclusive.
             if (try w.splitSibling(rec, h)) continue;
+            // §31.4 item 5: a call with no summary reads the record whole,
+            // which is a limit of the checker.
             const cause: Cause = if (h.approx == approx_place)
                 .element
-            else if (h.approx != 0)
+            else if (h.approx != 0 or (rec.fields != null and u.call == 2))
                 .call
             else if (h.local == rec.base_local and w.o.overlap(h.path, rec.base_path) and !w.o.hasStep(h.path, .env))
                 .later_use
@@ -13006,6 +13285,10 @@ const Walker = struct {
             }
             best = .{ .cause = cause, .holder = h, .use = u };
         }
+        std.mem.sort(u32, hoisted.items, {}, std.sort.asc(u32));
+        for (hoisted.items, 0..) |ui, i| {
+            if (i == 0 or hoisted.items[i - 1] != ui) d.hoists += 1;
+        }
         if (best) |bst| {
             const up = w.pos(bst.use.token);
             var buf: std.Io.Writer.Allocating = .init(out);
@@ -13016,11 +13299,16 @@ const Walker = struct {
             d.holder = try out.dupe(u8, buf.written());
             d.keep_token = w.localToken(bst.holder.local);
             d.read_span = if (bst.use.at[0] != none) bst.use.at else .{ bst.use.token, bst.use.token };
-            if (bst.cause == .call) d.via_token = w.token(@fromBackingInt(@intCast(bst.holder.approx - 1)));
+            // §31.4 item 5: a record handed whole to a call with no summary is
+            // held through no call: the read is the call's own.
+            const whole_call = bst.cause == .call and bst.holder.approx == 0;
+            if (bst.cause == .call) d.via_token = if (whole_call) bst.use.token else w.token(@fromBackingInt(@intCast(bst.holder.approx - 1)));
             switch (bst.cause) {
                 .later_use => wr.print(" is read again at {d}:{d}", .{ up.line, up.col }) catch return error.OutOfMemory,
                 .captured => wr.print(", a closure holding it, is used at {d}:{d}", .{ up.line, up.col }) catch return error.OutOfMemory,
-                .call => {
+                .call => if (whole_call) {
+                    wr.print(" is handed whole at {d}:{d} to a call the checker cannot see into, which may read any field", .{ up.line, up.col }) catch return error.OutOfMemory;
+                } else {
                     const call_inst: Inst.Index = @fromBackingInt(@intCast(bst.holder.approx - 1));
                     const cp = w.pos(w.token(call_inst));
                     wr.print(" may hold it through the call at {d}:{d}, and is read at {d}:{d}", .{ cp.line, cp.col, up.line, up.col }) catch return error.OutOfMemory;
@@ -13030,6 +13318,14 @@ const Walker = struct {
             d.verdict = .{ .rejected = bst.cause };
             d.detail = try buf.toOwnedSlice();
             d.approx = bst.cause.approximate();
+            d.assumed = false;
+            return d;
+        }
+        // §31.7, until R2c: a callee may read a written field in its body.
+        if (pending_use) |u| {
+            const up = w.pos(u.token);
+            d.verdict = .pending;
+            d.detail = try std.fmt.allocPrint(out, "it is handed at {d}:{d} to a callee whose summary does not yet say which of a record's fields it reads (§31.7)", .{ up.line, up.col });
             d.assumed = false;
             return d;
         }
@@ -13188,6 +13484,55 @@ const Walker = struct {
         return a.approx < b.approx;
     }
 
+    const RecordUse = enum { none, hoist, whole, pending };
+
+    /// §31.4 item 5: what a later use `u` of a holder that holds the record
+    /// object at `q` is to an update writing `fields`. A use at or above
+    /// `q` uses the record whole — but an update's base use, which reads
+    /// every field but its own, of a field it replaces. A use below `q`
+    /// through a field the update did not write is untouched; through a
+    /// written one it is the lowering's read of the old value, unless a
+    /// callee makes it in its own body, where no temporary stands in.
+    fn recordUse(w: *const Walker, u: Use, q: u32, fields: []const u32) RecordUse {
+        if (u.summary_arg) return if (w.o.isPrefix(u.path, q)) .pending else .none;
+        if (u.destructure) return .none;
+        if (comptime record_mutation == .hoist_whole) {
+            if (w.o.isPrefix(u.path, q)) return .hoist;
+        }
+        if (w.o.isPrefix(u.path, q)) {
+            if (u.except.len != 0) {
+                var bu: [k_limit + 1]Step = undefined;
+                var bq: [k_limit + 1]Step = undefined;
+                const su = w.o.steps(u.path, &bu);
+                const sq = w.o.steps(q, &bq);
+                if (sq.len > su.len) {
+                    const next = sq[su.len];
+                    if (next.kind == .field and std.mem.indexOfScalar(u32, u.except, next.arg) != null) return .none;
+                }
+            }
+            return .whole;
+        }
+        if (!w.o.isPrefix(q, u.path)) return .none;
+        var bu: [k_limit + 1]Step = undefined;
+        var bq: [k_limit + 1]Step = undefined;
+        const su = w.o.steps(u.path, &bu);
+        const sq = w.o.steps(q, &bq);
+        const next = su[sq.len];
+        if (next.kind != .field) return .whole;
+        if (std.mem.indexOfScalar(u32, fields, next.arg) == null) return .none;
+        // The step into the written field is the caller's own read when it is
+        // part of the argument's path: `List.length r.items` reads `r.items`
+        // here, a read its evaluation recorded (`recordRead`), and hands the
+        // callee the list.
+        if (u.call != 0) {
+            if (comptime record_mutation == .call_as_hoist) return .hoist;
+            return if (w.o.paths.depth.items[u.call_at] <= sq.len) .whole else .none;
+        }
+        // A consumer's use of a field path is the read its evaluation
+        // recorded (`recordRead`): one hoist, counted once.
+        return if (u.record_read) .hoist else .none;
+    }
+
     fn useOverlaps(w: *const Walker, u: Use, path: u32) bool {
         if (u.except.len != 0 and u.path == eps) {
             const first = w.o.firstStep(path) orelse return true;
@@ -13220,6 +13565,7 @@ const Walker = struct {
         // R: a use of a local whose value holds a parameter cell.
         for (w.uses.items) |u| {
             if (u.frame != frame) continue;
+            if (u.record_read) continue;
             // §31.2: a closure's use of what it captured, when that is a
             // record's object alone, is the record demand's: before §31.2
             // such a value crossed, and no closure captured it.
@@ -13253,7 +13599,8 @@ const Walker = struct {
         // W: a demand's cells, in this frame or, through a capture, inside
         // a lambda of it.
         for (w.demands.items) |rec| {
-            if (rec.kind == .probe or rec.kind == .value) continue;
+            // A record demand's W, with its fields, is §31.7's (R2c).
+            if (rec.kind == .probe or rec.kind == .value or rec.fields != null) continue;
             for (rec.cells) |e| {
                 const c = w.cells.items[try w.takenBase(e.cell)];
                 const deep: u8 = if (rec.deep) bit_d else 0;
@@ -13379,7 +13726,7 @@ const Walker = struct {
                 var need = st.need;
                 var edit = st.need_edit;
                 for (w.demands.items) |rec| {
-                    if (rec.kind == .probe or rec.kind == .value) continue;
+                    if (rec.kind == .probe or rec.kind == .value or rec.fields != null) continue;
                     for (rec.cells) |e| {
                         // A taken element stands for the cell it was taken
                         // from (§18.5), which may be what πⱼ returned.

@@ -1,5 +1,7 @@
 module HttpAnswerEdited
+  76:15 update model: pending: its base is a parameter, and the summary that states the write for callers is not built yet (§31.7)
   76:33 List.push answer: accepted param
+  79:15 update model: pending: its base is a parameter, and the summary that states the write for callers is not built yet (§31.7)
   79:34 List.push model.errors: accepted param
   92:5 entry HttpAnswerEdited.update model.errors: accepted entry
   92:5 entry HttpAnswerEdited.update msg#Fetched.0#Ok.0: accepted entry
@@ -9,4 +11,6 @@ module HttpAnswerEdited
   summary update: π1 R, π1#Fetched.0#Ok.0 RAW, π1#Fetched.0#Ok.0[*] A, π2 RA, π2.errors RAW, π2.errors[*] A, π2.words RA; res .0 π2, .0.errors π2.errors, .0.errors[*] ~π2.errors[*], .0.words π1#Fetched.0#Ok.0 π2.words, .0.words[*] ~π1#Fetched.0#Ok.0[*], .1#Cmd.0 fresh1 shared(Cmd.none)#Cmd.0
   summary view: π1.words R; res ⟨render⟩ fresh1{lost}
   demands 4: accepted 4 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 2; assumed 0), pending 0, rejected 0
+  records 2: accepted 0, pending 2, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0
 total 4: accepted 4 (fresh 0, call 0, param 2, callback-param 0, once 0, entry 2; assumed 0), pending 0, rejected 0
+records 2: accepted 0, pending 2, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 0

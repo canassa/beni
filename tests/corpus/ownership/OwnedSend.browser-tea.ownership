@@ -1,10 +1,15 @@
 module OwnedSend
+  56:15 update model: pending: its base is a parameter, and the summary that states the write for callers is not built yet (§31.7)
+  59:15 update model: pending: its base is a parameter, and the summary that states the write for callers is not built yet (§31.7)
   59:46 List.push more: accepted param
+  62:15 update model: pending: its base is a parameter, and the summary that states the write for callers is not built yet (§31.7)
   62:32 List.push model.rows: accepted param
+  68:15 update model: pending: its base is a parameter, and the summary that states the write for callers is not built yet (§31.7)
   74:5 send <Loaded …>: accepted call
   80:5 send <Loaded …>: rejected alias: rows holds it and is read at 81:18
   88:22 value Loaded: rejected need: Cmd.task sends what it returns, and it returns what Cmd.task hands it, which may be a list the sender still holds (§23.5)
   91:42 send <Loaded …>: rejected later-use: model.rows is read again at 91:13
+  94:15 update model: pending: its base is a parameter, and the summary that states the write for callers is not built yet (§31.7)
   94:32 List.push model.rows: accepted param
   115:5 entry OwnedSend.loads model.rows: rejected platform: the platform's runtime keeps the model it hands update, and skips by identity; the direct row would accept it (§20.2)
   115:5 entry OwnedSend.loads msg#Grow.0: rejected platform: the platform's runtime keeps the model it hands update, and skips by identity; the direct row would accept it (§20.2)
@@ -18,7 +23,9 @@ module OwnedSend
   summary view: π1.total R; res ⟨render⟩ fresh1{lost}
   summary initial: res .rows fresh1
   demands 12: accepted 5 (fresh 0, call 2, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 7
+  records 5: accepted 0, pending 5, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 2
 total 12: accepted 5 (fresh 0, call 2, param 3, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 7
+records 5: accepted 0, pending 5, rejected 0 (copy 0, restructure 0); hoisted 0, eager reads 2
 cause escaped 1
 cause later-use 1
 cause alias 1

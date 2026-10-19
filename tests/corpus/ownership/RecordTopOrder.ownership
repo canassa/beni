@@ -1,0 +1,13 @@
+module RecordTopOrder
+  17:11 update RecordTopOrder.origin: rejected top-level: RecordTopOrder.origin is a top-level value [restructure]
+  21:14 construction RecordTopOrder.origin.tags: rejected top-level: RecordTopOrder.origin is a top-level value
+  29:12 update RecordTopOrder.origin: rejected top-level: RecordTopOrder.origin is a top-level value [restructure]
+  summary moved: res .tags shared(RecordTopOrder.origin).tags
+  summary tagged: res shared(RecordTopOrder.origin).tags
+  summary whole: res .tags shared(RecordTopOrder.origin).tags
+  summary kept: res .0.tags fresh1
+  demands 1: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+  records 2: accepted 0, pending 0, rejected 2 (copy 0, restructure 2); hoisted 0, eager reads 0
+total 1: accepted 0 (fresh 0, call 0, param 0, callback-param 0, once 0, entry 0; assumed 0), pending 0, rejected 1
+records 2: accepted 0, pending 0, rejected 2 (copy 0, restructure 2); hoisted 0, eager reads 0
+cause top-level 1

@@ -101,3 +101,7 @@ test "gates refuses binaries built for another CPU" {
 test "gates refuses binaries built in another mode" {
     try expectRefused("--release=fast", "drop -Doptimize and --release");
 }
+
+test "gates refuses an ownership checker broken on purpose" {
+    try expectRefused("-Downership-record-mutation=hoist-whole", "drop -Downership-record-mutation");
+}
