@@ -1,12 +1,18 @@
-# Handler bindings need an owner decision
+## 2026-10-19 16:09 UTC — Handler binding decisions and S1 validation
 
 Continuing #295 management through native Codex agents on the Mac and SSH edits on dagon. Lean remains paused.
 
-## Merged
+## What I did
+
+This entry began at 16:09 UTC and records the same continuing management session, including later timestamped GitHub activity. It is a new, unpublished diary entry; no prior master entry is edited.
+
+### Merged
 
 #465 merged the validator call-site work as a23c066ca after reference-host full gates, CI, and GitHub review. Original #454 and intermediate #461 are closed. #460 previously merged the send demands; #462 merged the corrected bound argument. #463 recorded the earlier owner approvals. #449's clean retirement successor is staged against the new master and queued for combined hashes, gates and pending checks.
 
 ## Owner question: helper arguments captured by events (#466)
+
+This recommendation is superseded by the corrected owner approval below; it is retained to record the decision history.
 
 The helper-call probe is red before any implementation: `helper (Debug.log "argument" model.value)` binds `n`, renders a button with `onClick={Pick n}`, and displays `n`. Current #436 head a719f4266 logs the argument at rendering and again before each click's `update`. Both development and release do this. Ordinary eager-call/closure behavior reads the existing binding at dispatch rather than executing the argument expression again. Exact source and transcripts are preserved under `/home/canassa/.cache/beni-codex-helper-review/`; #466 records the defect and the assigned implementer.
 
@@ -36,10 +42,14 @@ The owner requires complete refresh dependencies, including arguments read only 
 
 #436 now has green combined hashes/gates at fe17728a7 and a fresh GitHub review request. Its #466 coverage includes effect timing, handler-only refresh, separate call occurrences, inactive detached-node modifiers, throw-before-publish, and a real private partial primitive exposed only in an isolated test core. Both required scenario measurements remain unverified, so #436 stays held. #470 tracks a separate pre-existing direct event-message timing defect; it is not claimed fixed.
 
-#469 merged at b19b91643 after root validation, green GitHub checks, full reference-host hashes/gates/LLVM gates, and answered review notes. It reuses containing immutable union slices and allocates dependency records in their fixpoint arena. No output hashes changed. Exact-flags ReleaseFast N64 was intentionally stopped at4,237,740KiB/31.655s; this is not a completed measurement or proof of eventual failure, and #464 remains open. The continuation experiment is isolated and tests exact dependency-reader word storage without changing facts, scheduling or limits.
+#469 merged at b19b91643 after root validation, green GitHub checks, full reference-host hashes/gates/LLVM gates, and answered review notes. It reuses containing immutable union slices and allocates dependency records in their fixpoint arena. No output hashes changed. Exact-flags ReleaseFast N64 was intentionally stopped at 4,237,740 KiB/31.655s; this is not a completed measurement or proof of eventual failure, and #464 remains open. The continuation experiment is isolated and tests exact dependency-reader word storage without changing facts, scheduling or limits.
 
-The #456 full R3 comparison completed5,536 units:10 intended alias-family changes,6 preservation regressions,4 rejection-cause changes. DictFocus and SplitCap regressions fail the owner's bar; R3's unchanged-budget core costs also fail. Later isolated experiments restore SplitCap but not DictFocus. A proposed endpoint-correlation representation refinement is written for review, not implemented or production-approved. No trusted-Dict exemption was implemented. Exact-master verification of a newly reduced nested tuple/Dict alias program is assigned separately.
+The #456 full R3 comparison completed 5,536 units: 10 intended alias-family changes, 6 preservation regressions, 4 rejection-cause changes. DictFocus and SplitCap regressions fail the owner's bar; R3's unchanged-budget core costs also fail. Later isolated experiments restore SplitCap but not DictFocus. A proposed endpoint-correlation representation refinement is written for review, not implemented or production-approved. No trusted-Dict exemption was implemented. Exact-master verification of a newly reduced nested tuple/Dict alias program is assigned separately.
 
-#468 is the clean retirement successor to #449. Its original validation is green; GitHub review identified remaining live benchmark selectors/readers and documentation cleanup. Those findings are assigned to the implementer before merge. #467 records the already authorized threshold25-to29 follow-up, queued after the review cleanup.
+#468 is the clean retirement successor to #449. Its original validation is green; GitHub review identified remaining live benchmark selectors/readers and documentation cleanup. Those findings are assigned to the implementer before merge. #467 records the already authorized threshold 25 to 29 follow-up, queued after the review cleanup.
 
 The owner correctly observed an idle period: two agents had completed and no build/test processes remained on dagon. Root resumed their next assignments and continued manager validation; a prior running-status report was stale. No owner approval is currently needed for these routine tasks. Any substantive ownership representation change will return to the owner before implementation.
+
+## What I learned
+
+Handler arguments belong to the source handler binding; dispatch must preserve their evaluation timing, and document connectedness is not selected-arm activity. Compiler fact-storage fixes can reduce allocation without resolving the measured scaling blocker. A finished agent needs an explicit next assignment: status reports must reflect live work, and partial measurements or partial corpus results cannot establish the frozen bars.
