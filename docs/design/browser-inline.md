@@ -322,9 +322,13 @@ value, and its pass is the groups the write-set pass found for it, as any key's
 
 *Amended 2026-10-19 (the review of #389):* the first text said a program the pass does not know
 cannot reach the pass, and one could: a program defined in a module of the project's own
-platform layer, which the pass skipped as not the app's. The pass now reads a layer module — a
-platform module read from the project, not embedded in the binary — as the program's own code
-(`Writes.passPackage`), so such a program has its keys, holes and groups like any other
+platform layer, which the pass skipped as not the app's. The pass now reads a module of a layer above
+the platform as the program's own code (`Writes.Input.own`, `Emit.ownCode`), decided by the
+layer's role and not by where it is read from: the platform is the layer that owns the lowering,
+every layer declaring a program constructor or placement the lowering names, and all they depend
+on; every other layer is the project's. A shipped platform named by its directory is still the
+platform (`platform_test`'s by-directory cases, red against the first fix, which went by
+embedded-ness). So such a program has its keys, holes and groups like any other
 (`browser/inline/PlatformProgram`, `PlatformRecord`, `PlatformElement`, `PlatformWidget`,
 `PlatformReader`, `PlatformTwoLevels`). Whatever the pass still does not know is a limit of the
 compiler in every build mode, never a handler without its pass: a program it did not analyse

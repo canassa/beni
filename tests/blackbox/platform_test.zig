@@ -864,3 +864,102 @@ test "a vocabulary that names no module of the chain leaves markup with no vocab
             "platform or the platforms it depends on (`docs/design/boundary.md` §9.2).",
     }, checked.diagnostics[0]);
 }
+
+/// The bytes of `out/_main.mjs` of a release build of `args` in `w`.
+fn releaseMain(w: *World, args: []const []const u8) ![]const u8 {
+    const arena = w.arena.allocator();
+    var all: std.ArrayList([]const u8) = .empty;
+    try all.appendSlice(arena, &.{ "build", "--release", "--no-source-maps", "--out=out" });
+    try all.appendSlice(arena, args);
+    const built = try w.run(all.items);
+    try testing.expectEqual(@as(usize, 0), built.diagnostics.len);
+    try testing.expectEqual(@as(u8, 0), built.exit_code);
+    return w.read("out/_main.mjs");
+}
+
+/// A shipped platform's directory in this checkout, absolute.
+fn shippedDir(arena: std.mem.Allocator, name: []const u8) ![]const u8 {
+    const rel = try std.fmt.allocPrint(arena, "platforms/{s}", .{name});
+    return std.Io.Dir.cwd().realPathFileAlloc(testing.io, rel, arena);
+}
+
+test "a shipped platform named by its directory builds a program as it does by its name" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // browser-inline.md §8.3, amended 2026-10-19 (the review of #390): the
+    // write-set pass reads as the program's own code only the layers above
+    // the platform, decided by layer role and not by where a layer is read
+    // from, so the platform read from a directory keeps its programs.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const arena = w.arena.allocator();
+    const src = try std.Io.Dir.cwd().readFileAlloc(testing.io, "tests/corpus/browser/inline/CounterLocal.beni", arena, .limited(1 << 20));
+    try w.write("Main.beni", src);
+    const dir = try shippedDir(arena, "browser-inline");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const by_name = try arena.dupe(u8, try releaseMain(&w, &.{ "--platform=browser-inline", "Main.beni" }));
+    const by_dir = try releaseMain(&w, &.{ try std.fmt.allocPrint(arena, "--platform={s}", .{dir}), "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqualStrings(by_name, by_dir);
+}
+
+test "a project layer over a shipped platform named by its directory builds as over the shipped one" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // The layer is the program's own code either way; the base below it is
+    // the platform either way (browser-inline.md §8.3, amended 2026-10-19).
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const arena = w.arena.allocator();
+    try w.copyTree("tests/corpus/browser/inline/PlatformRecord", "_expected.");
+    const dir = try shippedDir(arena, "browser-inline");
+    const manifest = try w.read("platform/beni.json");
+    const named = try std.mem.replaceOwned(u8, arena, manifest, "\"browser-inline\"", try std.fmt.allocPrint(arena, "\"{s}\"", .{dir}));
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const over_shipped = try arena.dupe(u8, try releaseMain(&w, &.{ "--platform=platform", "Main.beni" }));
+    try w.write("platform/beni.json", named);
+    const over_dir = try releaseMain(&w, &.{ "--platform=platform", "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expect(!std.mem.eql(u8, manifest, named));
+    try testing.expectEqualStrings(over_shipped, over_dir);
+}
+
+test "browser-direct named by its directory keeps a program's keys apart" {
+    // ┌─────────────────────────────────────────┐
+    // │ PREPARE                                 │
+    // └─────────────────────────────────────────┘
+    // The review of #390: with every platform module read from disk taken
+    // for the program's own code, `browser-direct` by directory found no
+    // program, and the keys' handlers merged.
+    var w = try World.init(testing.allocator, testing.io);
+    defer w.deinit();
+    const arena = w.arena.allocator();
+    const src = try std.Io.Dir.cwd().readFileAlloc(testing.io, "tests/corpus/browser/direct/ControlledEdits.beni", arena, .limited(1 << 20));
+    try w.write("Main.beni", src);
+    const dir = try shippedDir(arena, "browser-direct");
+
+    // ┌─────────────────────────────────────────┐
+    // │ EXECUTE                                 │
+    // └─────────────────────────────────────────┘
+    const by_name = try arena.dupe(u8, try releaseMain(&w, &.{ "--platform=browser-direct", "Main.beni" }));
+    const by_dir = try releaseMain(&w, &.{ try std.fmt.allocPrint(arena, "--platform={s}", .{dir}), "Main.beni" });
+
+    // ┌─────────────────────────────────────────┐
+    // │ VERIFY OUTPUT                           │
+    // └─────────────────────────────────────────┘
+    try testing.expectEqualStrings(by_name, by_dir);
+}
