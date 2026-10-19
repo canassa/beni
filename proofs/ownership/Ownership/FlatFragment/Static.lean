@@ -14,6 +14,7 @@ namespace Ownership.FlatFragment.Static
 
 open InPlaceSemantics Soundness Ownership.FlatFragment.State Ownership.FlatFragment.Support Ownership.FlatFragment.Atoms
 open Ownership.FlatFragment.CheckerExtraction Ownership.FlatFragment.InferLet Ownership.FlatFragment.Liveness Ownership.FlatFragment.Scope
+open Ownership.FlatFragment.InferBranch Ownership.FlatFragment.Shared
 open Ownership.FlatFragment.VariableFacts Ownership.FlatFragment.AtomInteger Ownership.FlatFragment.PrimitiveInference
 open Ownership.FlatFragment.Literal Ownership.FlatFragment.Length Ownership.FlatFragment.Shared Ownership.FlatFragment.Push Ownership.FlatFragment.AtomInference
 open Ownership.FlatFragment.Fields Ownership.FlatFragment.Record
@@ -243,6 +244,25 @@ theorem flat_static {declarations : List Decl} {self : Decl} {e : Expr} (flat : 
         (site ++ [1]) result childFuel _ (static.bind v rhsFlatType rhsFlatAbstract)
         restTyped restShadow restBoundKeys (by exact defaultConfig) restRun
     exact ⟨restFlatType, restFlatAbstract, fun origin escaped => restMono origin (rhsMono origin escaped)⟩
+  | @branch yes no c _ _ ihYes ihNo =>
+    intro aenv tenv before next type bound after site result inferenceFuel ctx
+      static typed shadow boundKeys defaultConfig accepted
+    obtain ⟨_, yesTyped, b', noTyped, equalTypes⟩ := exprType_branch_success typed
+    obtain ⟨yesShadow, noShadow⟩ := shadowFree_branch_success shadow
+    obtain ⟨childFuel, a, middle, b, last, _, _, _, yesRun, noRun, resultEq, nextEq⟩ :=
+      infer_branch_success defaultConfig accepted
+    obtain ⟨flatType, yesShape, yesMono⟩ :=
+      ihYes aenv tenv before middle type bound after (site ++ [0]) a childFuel _
+        static yesTyped yesShadow boundKeys (by exact defaultConfig) yesRun
+    have sameType : type = b' := ty_equal_flat flatType equalTypes
+    subst sameType
+    obtain ⟨_, noShape, _⟩ :=
+      ihNo aenv tenv {middle with facts := before.facts} last type bound after (site ++ [1]) b
+        childFuel _ static noTyped noShadow boundKeys (by exact defaultConfig) noRun
+    refine ⟨flatType, by rw [resultEq]; exact flatAbstract_join yesShape noShape, ?_⟩
+    intro origin escaped
+    rw [nextEq, join_escapes]
+    exact escaped_mono _ (yesMono origin escaped)
   | @literal args =>
     intro aenv tenv before next type bound after site result inferenceFuel ctx
       static typed _ _ defaultConfig accepted

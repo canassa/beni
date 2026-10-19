@@ -279,10 +279,7 @@ open InPlaceSemantics HeapProof Soundness Ownership.FlatFragment.State Ownership
 open Ownership.FlatFragment.Observe Ownership.FlatFragment.Runtime Ownership.FlatFragment.HeapPreservation
 open Ownership.FlatFragment.Atoms Ownership.FlatFragment.AtomInteger Ownership.FlatFragment.PrimitiveInference Ownership.FlatFragment.PrimitiveRuntime
 open Ownership.FlatFragment.Literal Ownership.FlatFragment.Support Ownership.FlatFragment.Fields
-open Ownership.FlatFragment.CheckerExtraction
-
-theorem modifyFacts_run (f : Summary → Summary) (before : St) :
-    (modifyFacts f).run before = .ok ((), {before with facts := f before.facts}) := rfl
+open Ownership.FlatFragment.CheckerExtraction Ownership.FlatFragment.InferBranch
 
 theorem primitive_length_run (ctx : Context) (site : List Nat) (a : Abstract)
     (later : List Origin) (before : St) :

@@ -502,6 +502,98 @@ theorem infer_let_success {ctx : Context} {aenv : Env Abstract} {binder : Var} {
 
 end Ownership.FlatFragment.InferLet
 
+/-! extraction of the actual default branch inference execution.
+No theorem uses a pinned soundness obligation.
+
+The checker reads its facts, infers the first arm, restores the facts,
+infers the second arm from the first arm's state with the restored facts,
+and records the join of both arms' facts and results. -/
+
+namespace Ownership.FlatFragment.InferBranch
+
+open Ownership.FlatFragment.CheckerExtraction
+
+theorem modifyFacts_run (f : Summary → Summary) (before : St) :
+    (modifyFacts f).run before = .ok ((), {before with facts := f before.facts}) := rfl
+
+theorem infer_branch_succ_equation {ctx : Context} {aenv : Env Abstract} {c : Atom} {yes no : Expr} {after : Live} {site : List Nat} {before : St} {fuel : Nat}
+    (defaultConfig : ctx.config = {}) :
+    let updated : Context := {ctx with escaped := union ctx.escaped before.facts.escapes}
+    (inferExpr (fuel + 1) ctx aenv (.branch c yes no) after site).run before =
+      (liveScope aenv after >>= fun _ => abstractAtom aenv c >>= fun _ =>
+        ((inferExpr fuel updated aenv yes after (site ++ [0])) >>= fun a =>
+          getFacts >>= fun left => modifyFacts (fun _ => before.facts) >>= fun _ =>
+          inferExpr fuel updated aenv no after (site ++ [1]) >>= fun b =>
+          getFacts >>= fun right => modifyFacts (fun _ => left.join right) >>= fun _ =>
+          pure (a.join b)).run before) := by
+  dsimp only
+  rw [inferExpr]
+  cases scope : liveScope aenv after with
+  | error problem =>
+    simp [bridgeObserve, defaultConfig, Config.has, getFacts, scope,
+      StateT.run, StateT.bind, StateT.map, StateT.get, StateT.lift, Except.bind, Except.pure, StateT.pure, bind, pure, get, getThe, MonadStateOf.get, MonadStateOf.set, liftM, monadLift, MonadLift.monadLift, throw, throwThe, MonadExceptOf.throw]
+  | ok unit =>
+    cases unit
+    cases atomRun : abstractAtom aenv c with
+    | error problem =>
+      simp [bridgeObserve, defaultConfig, Config.has, getFacts, scope, atomRun,
+        StateT.run, StateT.bind, StateT.map, StateT.get, StateT.lift, Except.bind, Except.pure, StateT.pure, bind, pure, get, getThe, MonadStateOf.get, MonadStateOf.set, liftM, monadLift, MonadLift.monadLift, throw, throwThe, MonadExceptOf.throw]
+    | ok ca =>
+      simp [bridgeObserve, defaultConfig, Config.has, getFacts, modifyFacts, scope, atomRun,
+        StateT.run, StateT.bind, StateT.map, StateT.get, StateT.lift, Except.bind, Except.pure, StateT.pure, bind, pure, get, getThe, MonadStateOf.get, MonadStateOf.set, liftM, monadLift, MonadLift.monadLift, throw, throwThe, modify, modifyGet, MonadStateOf.modifyGet]
+
+theorem infer_branch_success {ctx : Context} {aenv : Env Abstract} {c : Atom} {yes no : Expr} {after : Live} {site : List Nat} {before next : St} {result : Abstract} {inferenceFuel : Nat}
+    (defaultConfig : ctx.config = {})
+    (accepted : (inferExpr inferenceFuel ctx aenv (.branch c yes no) after site).run before =
+      .ok (result, next)) :
+    ∃ (childFuel : Nat) (a : Abstract) (middle : St) (b : Abstract) (last : St),
+      inferenceFuel = childFuel + 1 ∧ liveScope aenv after = .ok () ∧
+      (∃ ca, abstractAtom aenv c = .ok ca) ∧
+      let updated : Context := {ctx with escaped := union ctx.escaped before.facts.escapes}
+      (inferExpr childFuel updated aenv yes after (site ++ [0])).run before = .ok (a, middle) ∧
+      (inferExpr childFuel updated aenv no after (site ++ [1])).run
+        {middle with facts := before.facts} = .ok (b, last) ∧
+      result = a.join b ∧ next = {last with facts := middle.facts.join last.facts} := by
+  cases inferenceFuel with
+  | zero =>
+    rw [inferExpr] at accepted
+    simp [bridgeObserve, defaultConfig, StateT.run,
+      StateT.bind, StateT.lift, Except.bind, Except.pure, StateT.pure, bind, pure, get, getThe, MonadStateOf.get, MonadStateOf.set, liftM, monadLift, MonadLift.monadLift, throw, throwThe, MonadExceptOf.throw] at accepted
+  | succ childFuel =>
+    rw [infer_branch_succ_equation defaultConfig] at accepted
+    obtain ⟨finished, scope, rest⟩ := except_bind_success accepted
+    cases finished
+    obtain ⟨ca, atomRun, rest⟩ := except_bind_success rest
+    obtain ⟨a, middle, yesRun, rest⟩ := checkM_bind_success rest
+    obtain ⟨left, middle', leftRun, rest⟩ := checkM_bind_success rest
+    have leftEq : left = middle.facts ∧ middle = middle' := by
+      have := Except.ok.inj leftRun
+      exact ⟨(congrArg Prod.fst this).symm, congrArg Prod.snd this⟩
+    obtain ⟨rfl, rfl⟩ := leftEq
+    obtain ⟨finished, restored, restoredRun, rest⟩ := checkM_bind_success rest
+    cases finished
+    rw [modifyFacts_run] at restoredRun
+    have restoredEq : restored = {middle with facts := before.facts} :=
+      (congrArg Prod.snd (Except.ok.inj restoredRun)).symm
+    subst restoredEq
+    obtain ⟨b, last, noRun, rest⟩ := checkM_bind_success rest
+    obtain ⟨right, last', rightRun, rest⟩ := checkM_bind_success rest
+    have rightEq : right = last.facts ∧ last = last' := by
+      have := Except.ok.inj rightRun
+      exact ⟨(congrArg Prod.fst this).symm, congrArg Prod.snd this⟩
+    obtain ⟨rfl, rfl⟩ := rightEq
+    obtain ⟨finished, joined, joinedRun, rest⟩ := checkM_bind_success rest
+    cases finished
+    rw [modifyFacts_run] at joinedRun
+    have joinedEq : joined = {last with facts := middle.facts.join last.facts} :=
+      (congrArg Prod.snd (Except.ok.inj joinedRun)).symm
+    subst joinedEq
+    have final := Except.ok.inj rest
+    exact ⟨childFuel, a, middle, b, last, rfl, scope, ⟨ca, atomRun⟩, yesRun, noRun,
+      (congrArg Prod.fst final).symm, (congrArg Prod.snd final).symm⟩
+
+end Ownership.FlatFragment.InferBranch
+
 /-! scope facts from the actual successful checker scope test.
 Shadow freshness and prefix key alignment exclude the let binder from the
 outer continuation. This derives the branch premise used by let extraction.

@@ -16,12 +16,6 @@ open Ownership.FlatFragment.VariableFacts Ownership.FlatFragment.Env Ownership.F
 open Ownership.FlatFragment.AtomInteger Ownership.FlatFragment.IntegerCorrespondence Ownership.FlatFragment.NamingFacts
 open Ownership.FlatFragment.Runtime Ownership.FlatFragment.CheckerExtraction Ownership.FlatFragment.Fields
 
-theorem ty_equal_int (equal : (ty == Ty.int) = true) : ty = .int := by
-  cases ty <;> simp [BEq.beq, Ty.equal] at equal ⊢
-
-theorem int_equal_ty (equal : (Ty.int == ty) = true) : ty = .int := by
-  cases ty <;> simp [BEq.beq, Ty.equal] at equal ⊢
-
 /-- Integer literal typing forces every operand type to `Int`. -/
 theorem primType_literal_int_success {types : List Ty} {type : Ty}
     (run : primType (.literal .int) types = .ok type) :
