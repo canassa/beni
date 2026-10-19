@@ -49,8 +49,7 @@ process.on("exit", () => rmSync(scratch, { recursive: true, force: true }));
 const corpus = join(repo, "tests/corpus");
 const isDir = (p) => statSync(p).isDirectory();
 
-/// The `.beni` files of a project, its own platforms (`platform/`,
-/// `platform-tea/`) left out.
+/// The `.beni` files of a project, its own platform (`platform/`) left out.
 function sources(dir, top = true) {
   const out = [];
   for (const e of readdirSync(dir, { withFileTypes: true })) {
@@ -64,13 +63,11 @@ function sources(dir, top = true) {
 
 /// One program: a file, or a project directory checked from its root. A
 /// project with a platform of its own is checked on it, as the corpus
-/// builds it: `platform-tea/` when the row is `browser-tea` and the project
-/// has one, else `platform/`; `fallback` when it has neither.
+/// builds it: `platform/` when present, otherwise `fallback`.
 function program(row, path, fallback) {
   const name = relative(repo, path);
   if (!isDir(path)) return { row, name, platform: fallback, paths: [path], root: [] };
-  const tea = fallback === "browser-tea" && existsSync(join(path, "platform-tea"));
-  const own = tea ? join(path, "platform-tea") : existsSync(join(path, "platform")) ? join(path, "platform") : null;
+  const own = existsSync(join(path, "platform")) ? join(path, "platform") : null;
   // A page that drives a program kept outside the corpus names its sources
   // (`_expected.sources`, `tests/corpus/README.md`): that program is checked.
   // A file of several directories is one program whose files are copied
@@ -98,7 +95,7 @@ const page = join(repo, "tests/platforms/page");
 const browser = join(corpus, "browser");
 const all = [
   ...programs("run/ (files and projects)", join(corpus, "run"), "node"),
-  ...programs("browser/ top level and OwnPlatform", browser, page, ["dom", "tea", "direct", "inline"]),
+  ...programs("browser/ top level and OwnPlatform", browser, page, ["dom", "tea", "inline"]),
   ...programs("browser/dom/", join(browser, "dom"), "browser"),
   ...programs("browser/tea/", join(browser, "tea"), "browser-tea"),
   // `browser-inline`'s pages and its application goldens; `build/bad/inline/`

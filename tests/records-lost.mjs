@@ -19,8 +19,7 @@ const corpus = join(repo, "tests/corpus");
 const isDir = (p) => statSync(p).isDirectory();
 function program(path, fallback) {
   if (!isDir(path)) return { name: relative(repo, path), platform: fallback, paths: [path], root: [] };
-  const tea = fallback === "browser-tea" && existsSync(join(path, "platform-tea"));
-  const own = tea ? join(path, "platform-tea") : existsSync(join(path, "platform")) ? join(path, "platform") : null;
+  const own = existsSync(join(path, "platform")) ? join(path, "platform") : null;
   const named = join(path, "_expected.sources");
   const dir = existsSync(named) ? join(repo, readFileSync(named, "utf8").trim()) : path;
   return { name: relative(repo, path), platform: own ?? fallback, paths: [dir], root: [`--root=${dir}`] };
@@ -47,14 +46,13 @@ const browser = join(corpus, "browser");
 const all = [
   ...programs(join(corpus, "run"), "node"),
   ...ownership(),
-  ...programs(browser, join(repo, "tests/platforms/page"), ["dom", "tea", "direct", "inline"]),
+  ...programs(browser, join(repo, "tests/platforms/page"), ["dom", "tea", "inline"]),
   ...programs(join(browser, "dom"), "browser"),
   ...programs(join(browser, "tea"), "browser-tea"),
-  ...programs(join(browser, "direct"), "browser-direct"),
   ...programs(join(browser, "inline"), "browser-inline"),
   ...["bike-wars", "conduit", "sternhalma"].map((n) => program(join(repo, "examples", n, "src"), "browser-tea")),
   { name: "core", platform: null, paths: ["core"], root: [] },
-  ...["node", "html", "browser", "browser-direct", "browser-tea", "browser-inline"].map((p) => ({ name: `platforms/${p}`, platform: p, paths: [`platforms/${p}`], root: [] })),
+  ...["node", "html", "browser", "browser-tea", "browser-inline"].map((p) => ({ name: `platforms/${p}`, platform: p, paths: [`platforms/${p}`], root: [] })),
 ];
 const run = (argv) =>
   new Promise((done) => {

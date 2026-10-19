@@ -717,7 +717,10 @@ and 5 600M (#435); `browser/tea/TodoPage` 4 404M and its value fuzz 4 685M, gran
 `browser/direct/` case went with its page: `HttpJson`, `HttpJsonBody`, `ApiItems`,
 `ApiLogin`, `TodoMVC`, the paired Conduit, Sternhalma, TodoPage and Bike Wars pages and their
 value fuzz, and `ownership/Conduit [browser-direct]`. The grants above that name a
-`browser/tea/` case stand.
+`browser/tea/` case stand. The active grant files now name only the three tea Conduit
+pages (12 000M each; their value fuzz 11 300M each), tea Sternhalma (5 200M;
+value fuzz 5 600M), and tea TodoPage (4 850M; value fuzz 5 150M), matching
+`CLAUDE.md`'s current list. Earlier paired-page figures above are historical grants.
 
 A project may also take its modules from outside the corpus: `_expected.sources` holds one
 repo-relative directory per line, whose `.beni` files together are the program, so several

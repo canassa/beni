@@ -79,7 +79,7 @@ try {
       const golden =
         a.expected === null
           ? null
-          : [p === "tea" && `${goldenBase}.tea-chrome-expected`, p === "tea" && `${goldenBase}.tea-release-expected`, p === "tea" && `${goldenBase}.tea-expected`, `${goldenBase}.chrome-expected`, `${goldenBase}.release-expected`, `${goldenBase}.expected`].find((f) => f && existsSync(join(repo, f)));
+          : [`${goldenBase}.chrome-expected`, `${goldenBase}.release-expected`, `${goldenBase}.expected`].find((f) => f && existsSync(join(repo, f)));
       const r = spawnSync("node", [driver, `--chrome=${endpoint}`, join(out, "_main.mjs"), join(repo, steps)], {
         cwd: repo,
         env: { ...process.env, COVERAGE_OUT: join(out, "coverage.json") },
