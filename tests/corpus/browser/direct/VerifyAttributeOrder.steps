@@ -1,5 +1,0 @@
-# Classes, styles and a title written in another order than a mount writes them.
-click #next
-# The user closes the details; the next message checks the page.
-click #s
-click #next

@@ -1,4 +1,4 @@
--- 22 validator runs, below `SchemaValid.shape_threshold` (25), so each keeps
+-- 22 validator runs, below `SchemaValid.shape_threshold`, so each keeps
 -- its codec's validator worker, and each is written where it stands
 -- (`schema.md` §6, *A validator run calls its worker where it stands*): its
 -- own context, its worker called, and `Result.withDefault`'s answer beside

@@ -1,6 +1,6 @@
 --! A TodoMVC page in beni, on `browser-tea`, over the todo server's API:
 --! every change is a request, and the page shows what the server answered.
---! The page is `tests/corpus/browser/direct/TodoMVC.beni` with the API in
+--! The page is `tests/corpus/browser/tea/TodoMVC.beni` with the API in
 --! the place of `localStorage`: the same markup (todomvc.com's), the same
 --! keys, the same edit field.
 --!
@@ -102,7 +102,7 @@ expectTodo ⊤ = Http.expectSchema (Todo.schema ⊤)
 -- One request, waited for in the command's own fiber (`Cmd.task`): the
 -- direct form, so the ownership checker follows the answer's decoder to
 -- the message (`ownership-checker.md` §24.9); `Http.send`'s tagger is not
--- followed, and a payload holding a list is refused on `browser-direct`.
+-- followed, and a payload holding a list is refused where lists are edited in place.
 send : String, String, Http.Body, Http.Expect Http.Error a → Result Http.Error a
 send method url requestBody expect =
     Http.request

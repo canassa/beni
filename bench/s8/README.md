@@ -2,6 +2,10 @@
 
 Research 100; see PROTOCOL.md for the sample plan fixed before timing.
 
+This is an archived campaign. Its scripts, including `bench/conduit/measure.mjs`,
+reproduce the frozen revision below; they are not current-platform benchmarks.
+The retained browser-direct results and instrumentation describe that revision.
+
 The measurement host is azathoth, its main checkout pulled to master
 6c327a9f17050941bc170f9e888160795ca471f5. Only measurement harness files are
 changed. Compiler, core, platform and app sources stay at that revision.

@@ -27,7 +27,6 @@ const walk = (dir) =>
 const subjects = [
   ["beni, development", walk(join(root, "out/beni-dev"))],
   ["beni, --release", walk(join(root, "out/beni-rel"))],
-  ["beni-direct, --release", walk(join(root, "out/beni-direct-rel"))],
   ["Solid 2.0.0-rc.9", [join(root, "out/solid2/bench.js")]],
   ["Solid 1.9.15", [join(root, "out/solid1/main.js")]],
   ["P2 (hand-written)", [join(root, "apps/p2/bench.js")]],

@@ -1526,7 +1526,7 @@ same values, so the choice changes only bytes and speed. The shapes' readers are
 paid once, and a shape is cheaper than a worker only once enough runs share them. The compiler
 chooses **per program, by one rule**: it counts the program's *shape runs*, the runs whose error
 is unread (§6, *A run whose failure is never read is a validator*) and whose schema has a shape,
-and compares the count with a threshold **T = 25**. At T or more, every shape run takes its
+and compares the count with a threshold **T = 29**. At T or more, every shape run takes its
 shape. Below T, every one keeps its validator worker, exactly as a run whose schema has no shape
 does. The rule is never an estimate of bytes.
 
@@ -1538,7 +1538,12 @@ does. The rule is never an estimate of bytes.
   does not count. Under `--schema-library` the count is 0. The choice therefore depends on the
   sources alone, never on threads or timing (CLAUDE.md rule 5): `Reach.Input.schema_shapes` for
   every edge list, and each module's `Lower.Input.schema_shapes`, carry the one answer.
-- **T is 25** *(2026-10-19, the owner's decision, measured after the copy above; brotli 11,
+- **T is 29** *(2026-10-19, the owner's authorized follow-up after #465)*. Calling validator
+  workers at their run sites changes the crossover; the cutoff moves from 25 to 29.
+  The boundary fixtures below pin that choice. The crossover measurement script remains
+  held for #430; this change does not claim a fresh crossover measurement.
+- **T was 25** *(2026-10-19, the owner's earlier decision, superseded by 29 above; measured
+  after the copy above and before call-site workers; brotli 11,
   release)*. Copying by kept names made each shape cheaper per run and the shape path dearer
   once: the copy reader and the pinned names are a fixed overhead, which the large programs
   repay (the n = 64 and 256 rows) and the small ones would not. The per-program choice keeps
@@ -1609,8 +1614,8 @@ does. The rule is never an estimate of bytes.
     the `make` arrow. It saved 23 B at P32 but cost 33 at P1 and 26 at P2, and in the research
     app it lost at every size measured (n = 1 to 8, by 15 to 26 B a seed), which would have put
     T at 6.
-- **Fixtures.** `emit/release/app/ShapeThresholdBelow` (24 runs) keeps its workers and
-  `ShapeThresholdAt` (25) takes its shapes. `run/SchemaErrorUnreadOrders`, `…Events`, `…Items`
+- **Fixtures.** `emit/release/app/ShapeThresholdBelow` (28 runs) keeps its workers and
+  `ShapeThresholdAt` (29) takes its shapes. `run/SchemaErrorUnreadOrders`, `…Events`, `…Items`
   and `…Copies` (each under T) and `run/SchemaErrorUnreadShapes` (the four in one program, over
   T) print one set of answers, so the differential inputs pass through both lowerings, each also
   through the library. `tests/shape-threshold/check.mjs` builds a fixed set of programs both

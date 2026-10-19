@@ -388,12 +388,10 @@ estimate — with the reason, a removal condition and an issue that tracks bring
 grant the count has fallen below is lowered the same way. This covers corpus cases only: an
 ordinary test is still shrunk, and a case that got slower because of a defect is a defect to fix,
 not a grant to raise (rule 10).
-Conduit's page cases (2026-10-08, paired direct runs extended 2026-10-14, re-granted from
-Linux instruction counts 2026-10-15), its direct value fuzz (2026-10-14), `browser/direct/HttpJson`
-and `HttpJsonBody` (2026-10-14, compiler defect #105), and the paired TodoMVC/Sternhalma pages plus
-Sternhalma's separate value fuzz (2026-10-15), and the paired Bike Wars page
-(2026-10-15, 8 600M; its value fuzz keeps the default), and `browser/direct/ApiItems` (2026-10-16,
-5 260M, #227) are the only corpus grants. Outside the
+The corpus grants are `browser/tea/`'s (re-sized or added when `browser-direct` was retired,
+2026-10-19, #423): Conduit's three pages (12 000M, 2026-10-08) and their value fuzz (11 300M,
+#433); Sternhalma's page and value fuzz (5 200M and 5 600M, #435); and TodoPage's page and value
+fuzz (4 850M and 5 150M, #361). Every `browser/direct/` grant went with its page. Outside the
 corpus, the two tests of `tests/blackbox/wasm_test.zig` that run the `.wasm` have 6 000M
 (`wasm_budget_millions`): a fixed cost of Node and the self-hosted wasm32 build that no smaller
 input reduces. Jayson Reis decided it on 2026-10-15 (dashboard `wasm-playground-q5`), with

@@ -1,5 +1,5 @@
 -- `run/SchemaErrorUnreadOrders`, `…Events`, `…Items` and `…Copies` in one
--- program, with fifteen more shape runs (`Padding`), so that every run takes its
+-- program, with nineteen more shape runs (`Padding`), so that every run takes its
 -- shape (`schema.md` §6, *How a program chooses between shapes and workers*):
 -- the four, each under the threshold, read the same inputs through workers. A run whose error
 -- nothing reads is a validator (*A run whose failure is never read is a

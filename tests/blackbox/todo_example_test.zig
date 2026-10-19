@@ -1,7 +1,7 @@
 //! The todo example (`examples/todo`, issue #356): a `node` server and a
 //! `browser-tea` page, both beni, over one shared module. The corpus proves
 //! each program alone — `run/TodoServer` drives the API, and
-//! `browser/direct/TodoPage` drives the page against scripted answers —
+//! `browser/tea/TodoPage` drives the page against scripted answers —
 //! and neither case holds the page's build. This file proves the part only
 //! the two together can: the server built from the example's own manifest
 //! serves the page `beni build` wrote, with the `content-type` of each

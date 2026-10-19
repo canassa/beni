@@ -1,7 +1,0 @@
-click #go
-click #go
-throws click #boom
-timers
-advance 300
-timers
-advance 1000

@@ -1,8 +1,0 @@
-# A → B → A, each switch writing the count A's `let` reads.
-click #b
-click #a
-click #b
-# On B: one item, and the `if` flips with the row's arrival.
-click #add
-click #add
-click #a

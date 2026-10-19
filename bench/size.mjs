@@ -459,12 +459,7 @@ const helloBody = '<main><h1 class="title">Hello</h1><p>A static page.</p></main
 const pages = [
   { name: "browser", platform: "browser", imports: pageImports, main: "Browser.program { init = λ⊤ → {}, update = λ_ m → m, view = view }" },
   { name: "browser-tea", platform: "browser-tea", imports: teaImports, main: "Tea.sandbox { init = λ⊤ → {}, update = λ_ m → m, view = view }" },
-  // `browser-direct` (docs/design/browser-direct.md §12.2, §13's kill
-  // criterion 2): the same source as `browser-tea`'s, and a static page on
-  // both, whose `view` is one string the direct page writes once.
-  { name: "browser-direct", platform: "browser-direct", imports: teaImports, main: "Tea.sandbox { init = λ⊤ → {}, update = λ_ m → m, view = view }" },
   { name: "browser-tea hello", platform: "browser-tea", imports: teaImports, main: "Tea.sandbox { init = λ⊤ → {}, update = λ_ m → m, view = view }", body: helloBody },
-  { name: "browser-direct hello", platform: "browser-direct", imports: teaImports, main: "Tea.sandbox { init = λ⊤ → {}, update = λ_ m → m, view = view }", body: helloBody },
   {
     name: "browser-tea element",
     platform: "browser-tea",

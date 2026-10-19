@@ -1,5 +1,0 @@
-click #signin
-respond 1 200 "{\"access_token\":\"t0k3n\"}" Content-Type: "application/json"
-respond 2 200 "ada" Content-Type: "text/plain"
-click #signin
-respond 3 401 "{\"error\":\"bad credentials\"}" Content-Type: "application/json"

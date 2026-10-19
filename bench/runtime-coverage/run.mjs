@@ -1,8 +1,8 @@
-// Research 103's coverage runs: every real app's corpus script on both
-// browser platforms' `--release` builds, in headless Chrome, with V8's
+// Research 103's coverage runs: every real app's corpus script on
+// browser-tea's `--release` builds, in headless Chrome, with V8's
 // precise block coverage (`Profiler.startPreciseCoverage`, `detailed: true`).
 //
-//   node bench/runtime-coverage/run.mjs [--apps=ConduitEditor,…] [--platforms=tea,direct]
+//   node bench/runtime-coverage/run.mjs [--apps=ConduitEditor,…] [--platforms=tea]
 //
 // BENI selects the compiler (default zig-out/bin/beni); CHROME the browser
 // (default google-chrome-stable). Output: zig-out/runtime-coverage/<app>-<p>/
@@ -28,7 +28,7 @@ const chrome = process.env.CHROME ?? "google-chrome-stable";
 const arg = (name, fallback) => process.argv.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3) ?? fallback;
 
 // app → [sources, steps, golden dir]
-const corpus = "tests/corpus/browser/direct";
+const corpus = "tests/corpus/browser/tea";
 export const apps = {
   ConduitEditor: { src: "examples/conduit/src", dir: `${corpus}/ConduitEditor` },
   ConduitReader: { src: "examples/conduit/src", dir: `${corpus}/ConduitReader` },
@@ -41,7 +41,8 @@ export const apps = {
 };
 
 const pick = arg("apps", Object.keys(apps).join(",")).split(",");
-const platforms = arg("platforms", "tea,direct").split(",");
+const platforms = arg("platforms", "tea").split(",");
+if (platforms.some((p) => p !== "tea")) throw new Error("runtime coverage supports browser-tea");
 
 // The patched driver.
 const driverSrc = readFileSync(join(repo, "tests/browser/driver.mjs"), "utf8");
@@ -78,9 +79,8 @@ try {
       const golden =
         a.expected === null
           ? null
-          : [p === "tea" && `${goldenBase}.tea-chrome-expected`, p === "tea" && `${goldenBase}.tea-release-expected`, p === "tea" && `${goldenBase}.tea-expected`, `${goldenBase}.chrome-expected`, `${goldenBase}.release-expected`, `${goldenBase}.expected`].find((f) => f && existsSync(join(repo, f)));
-      // Every page here is a `browser/direct/` page: its transcript leaves comments out.
-      const r = spawnSync("node", [driver, `--chrome=${endpoint}`, "--no-comments", join(out, "_main.mjs"), join(repo, steps)], {
+          : [`${goldenBase}.chrome-expected`, `${goldenBase}.release-expected`, `${goldenBase}.expected`].find((f) => f && existsSync(join(repo, f)));
+      const r = spawnSync("node", [driver, `--chrome=${endpoint}`, join(out, "_main.mjs"), join(repo, steps)], {
         cwd: repo,
         env: { ...process.env, COVERAGE_OUT: join(out, "coverage.json") },
         encoding: "utf8",

@@ -1,3 +1,0 @@
-# Every group runs; only the one whose value changed writes.
-click #inc
-input #in "typed"

@@ -1,5 +1,0 @@
-# Every value shown: each cloner parses its template.
-click #flip
-# Every value hidden, then shown again: each cloner clones what it parsed.
-click #flip
-click #flip

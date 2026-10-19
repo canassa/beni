@@ -1,9 +1,0 @@
--- a fold borrows an input as its next written accumulator.
--- Confirmed by the in-place interpreter; see proofs/ownership/BRIDGE-RESULTS.md.
-step item acc = if List.length acc == 0 then item else List.push acc 9
-
-
-pub run ⊤ =
-    xs = [ 1 ]
-    rows = [ xs, [ 2 ], xs ]
-    List.foldl rows [] step

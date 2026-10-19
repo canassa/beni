@@ -208,8 +208,8 @@ const Kind = enum {
             .check_good, .check_bad, .check_args, .check_depth, .dispatch, .writes, .ownership => .check,
             .build_bad, .build_bad_release, .emit => .build,
             .run => switch (pass) {
-                .dev, .dev_library, .dev_fiber, .tea_dev => .run_dev,
-                .release, .release_library, .tea_release => .run_release,
+                .dev, .dev_library, .dev_fiber => .run_dev,
+                .release, .release_library => .run_release,
             },
             .browser => .browser,
         };
@@ -221,10 +221,8 @@ const Kind = enum {
 /// A fixture that declares a `schema` gets two more: each build again with
 /// `--schema-library`, every schema root forced through the library
 /// interpreter, against the same golden (`schema.md` §10's differential
-/// corpus). A `browser/direct/` page gets two more as well: both builds
-/// again for `browser-tea`, against the same golden (`browser-direct.md`
-/// §12.3, the two platforms each other's oracle).
-const RunPass = enum { dev, release, dev_library, release_library, dev_fiber, tea_dev, tea_release };
+/// corpus).
+const RunPass = enum { dev, release, dev_library, release_library, dev_fiber };
 
 test "corpus: parse/good" {
     try walk(.parse_good);
@@ -639,28 +637,6 @@ fn fixturesOf(arena: std.mem.Allocator, cfg: *const Config, kind: Kind) ![]const
             try fixtures.append(arena, values);
         };
     }
-    // `direct/`: built for `browser-direct`, whose `direct` lowering
-    // compiles a program whole (`browser-direct.md` §12.3) — `emit/direct/`
-    // and `emit/release/direct/` application builds for its shapes,
-    // `build/bad/direct/` projects for what it refuses,
-    // `browser/direct/` pages built for both platforms against one golden.
-    if (kind == .emit) {
-        const direct_dir = try std.fs.path.join(arena, &.{ kind_dir, "direct" });
-        const start = fixtures.items.len;
-        try collect(arena, direct_dir, false, false, &fixtures, true);
-        for (fixtures.items[start..]) |*fixture| {
-            fixture.platform = "browser-direct";
-            fixture.app = true;
-        }
-        const release_direct = try std.fs.path.join(arena, &.{ kind_dir, "release", "direct" });
-        const release_start = fixtures.items.len;
-        try collect(arena, release_direct, false, false, &fixtures, true);
-        for (fixtures.items[release_start..]) |*fixture| {
-            fixture.platform = "browser-direct";
-            fixture.app = true;
-            fixture.release = true;
-        }
-    }
     // `inline/`: built for `browser-inline`, whose `inline` lowering
     // compiles a program whole with no task kernel (`browser-inline.md`) —
     // `emit/inline/` and `emit/release/inline/` application builds, their
@@ -704,12 +680,6 @@ fn fixturesOf(arena: std.mem.Allocator, cfg: *const Config, kind: Kind) ![]const
             fixture.release = true;
         }
     }
-    if (kind == .build_bad or kind == .check_bad) {
-        const direct_dir = try std.fs.path.join(arena, &.{ kind_dir, "direct" });
-        const start = fixtures.items.len;
-        try collect(arena, direct_dir, false, false, &fixtures, true);
-        for (fixtures.items[start..]) |*fixture| fixture.platform = "browser-direct";
-    }
     // `build/bad/everywhere/`: projects built for `browser-tea` with the
     // hidden `--ownership-everywhere` (`ownership-checker.md` §30.7), so the
     // ownership checker enforces on a platform that edits no list in place:
@@ -722,24 +692,6 @@ fn fixturesOf(arena: std.mem.Allocator, cfg: *const Config, kind: Kind) ![]const
             fixture.platform = "browser-tea";
             fixture.everywhere = true;
         }
-    }
-    if (kind == .browser) {
-        const direct_dir = try std.fs.path.join(arena, &.{ kind_dir, "direct" });
-        const start = fixtures.items.len;
-        try collect(arena, direct_dir, false, false, &fixtures, true);
-        for (fixtures.items[start..]) |*fixture| {
-            fixture.platform = "browser-direct";
-            fixture.differential = true;
-        }
-        // Each page's value fuzz, a case of its own (`Fixture.values`). A
-        // pending page is red for its transcript, one `RED` line, so it
-        // has no second case.
-        const end = fixtures.items.len;
-        if (cfg.mode == .strict) for (start..end) |i| {
-            var values = fixtures.items[i];
-            values.values = true;
-            try fixtures.append(arena, values);
-        };
     }
     // `emit/release/split/`: release applications built for `browser`,
     // whose markup runtime is a beni module and a hand-written file together
@@ -1291,13 +1243,8 @@ const Fixture = struct {
     /// `browser-tea` under `browser/tea/` and `emit/release/tea/`, the same
     /// lowering beneath The Elm Architecture.
     platform: ?[]const u8 = null,
-    /// Under `browser/direct/`: built for `browser-direct` and again for
-    /// `browser-tea`, both pages against one golden (`browser-direct.md`
-    /// §12.3). A difference the design specifies is the fixture's
-    /// `.tea-expected`, which the `browser-tea` builds read instead.
-    differential: bool = false,
-    /// A `browser/direct/` page's second case, or a `browser/tea/` page's
-    /// when it carries a `.fuzz-run-hash`: its page fuzz alone, with
+    /// A `browser/tea/` page's second case, when it carries a
+    /// `.fuzz-run-hash`: its page fuzz alone, with
     /// messages as values (`browser-direct.md` §8.3, amended for S2). The
     /// two `--fuzz` builds, the message types dump and the fuzz are a case
     /// of their own, budgeted on their own, so that no page's value fuzz
@@ -1341,7 +1288,7 @@ fn collect(arena: std.mem.Allocator, dir_path: []const u8, core: bool, required:
     const start = out.items.len;
     var it = dir.iterate();
     while (try it.next(io)) |entry| {
-        if (entry.kind == .directory and projects and !std.mem.eql(u8, entry.name, "core") and !std.mem.eql(u8, entry.name, "markup") and !std.mem.eql(u8, entry.name, "dom") and !std.mem.eql(u8, entry.name, "tea") and !std.mem.eql(u8, entry.name, "app") and !std.mem.eql(u8, entry.name, "split") and !std.mem.eql(u8, entry.name, "direct") and !std.mem.eql(u8, entry.name, "inline") and !std.mem.eql(u8, entry.name, "everywhere")) {
+        if (entry.kind == .directory and projects and !std.mem.eql(u8, entry.name, "core") and !std.mem.eql(u8, entry.name, "markup") and !std.mem.eql(u8, entry.name, "dom") and !std.mem.eql(u8, entry.name, "tea") and !std.mem.eql(u8, entry.name, "app") and !std.mem.eql(u8, entry.name, "split") and !std.mem.eql(u8, entry.name, "inline") and !std.mem.eql(u8, entry.name, "everywhere")) {
             try out.append(arena, .{ .dir = dir_path, .name = try arena.dupe(u8, entry.name), .core = core, .project = true });
             continue;
         }
@@ -1472,7 +1419,7 @@ const Case = struct {
         const has_codes = c.goldenExists("codes");
         const ext = c.kind.golden() orelse return if (has_codes) "a `.codes` golden on a kind that runs no `check`" else null;
         // An ownership fixture beside a `.platform` file has one golden per
-        // platform it names (`X.browser-direct.ownership`), read where it runs.
+        // platform it names (`X.browser-inline.ownership`), read where it runs.
         const has_golden = c.goldenExists(ext) or (c.kind == .ownership and c.goldenExists("platform"));
         if (has_codes and !c.kind.takesCodes()) return "a `.codes` golden on a kind whose golden is not a diagnostic list";
         if (has_codes and has_golden) return "both a `.diag` and a `.codes`: keep one";
@@ -2383,11 +2330,6 @@ const Case = struct {
             try browser.writePlatform(c.arena, c.w, h);
             break :blk "--platform=" ++ browser.platform_dir;
         };
-        // A `browser/direct/` project's `browser-tea` builds: on its
-        // `platform-tea/` when it has one — the same vocabulary layered on
-        // `browser-tea`, as `platform/` layers it on `browser-direct` — so a
-        // page needing a vocabulary of its own is built both ways.
-        const tea_arg = if (platform and hasDir(try c.fixturePath(), "platform-tea")) "--platform=platform-tea" else "--platform=browser-tea";
         const sources = try c.writeSources();
 
         // The steps, copied into the project under the name the driver
@@ -2401,32 +2343,28 @@ const Case = struct {
         if (steps) |bytes| try c.w.write(steps_name, bytes);
         const script: Script = .{ .name = if (steps != null) steps_name else null, .bytes = steps orelse "" };
 
-        if (c.fixture.values) return c.valueFuzz(h, script, sources, platform_arg, tea_arg);
+        if (c.fixture.values) return c.valueFuzz(h, script, sources, platform_arg);
 
         const record_path = try c.goldenPath(run_hash.ext);
         const recording = c.cfg.run_hashes == .record;
         const record = if (recording) "" else try run_hash.read(c.arena, testing.io, record_path);
-        // A line per page, and the sixth the page fuzzer's (`fuzzPages`).
-        var verified: [6]?[]const u8 = @splat(null);
+        // A line per page, and the fourth the page fuzzer's (`fuzzPages`).
+        var verified: [4]?[]const u8 = @splat(null);
         var first_error: ?anyerror = null;
         // Both builds first, then every page that must run in one Node
         // process (`browser.driveAll`), then each page's verdict.
         // A failure is reported in the order a page at a time would meet
         // it: a release build that fails waits for the development page.
         // The third page is the development build again with its listener
-        // subscriptions in fibers (`fiberPlan`), when it has any; a
-        // `browser/direct/` page has two more, both builds for
-        // `browser-tea` (`Fixture.differential`).
-        var pages: [5]?PagePlan = @splat(null);
+        // subscriptions in fibers (`fiberPlan`), when it has any.
+        var pages: [3]?PagePlan = @splat(null);
         var release_error: ?anyerror = null;
-        const passes = [_]RunPass{ .dev, .release, .tea_dev, .tea_release };
-        const slots = [_]usize{ 0, 1, 3, 4 };
+        const passes = [_]RunPass{ .dev, .release };
+        const slots = [_]usize{ 0, 1 };
         for (passes, slots) |pass, slot| {
-            const tea = pass == .tea_dev or pass == .tea_release;
-            if (tea and !c.fixture.differential) continue;
-            const release = pass == .release or pass == .tea_release;
+            const release = pass == .release;
             var args: std.ArrayList([]const u8) = .empty;
-            try args.appendSlice(c.arena, &.{ "build", if (tea) tea_arg else platform_arg });
+            try args.appendSlice(c.arena, &.{ "build", platform_arg });
             if (c.cfg.mode == .pending) try args.append(c.arena, "--diagnostics=json");
             if (release) try args.appendSlice(c.arena, &.{ "--release", "--allow-debug" });
             try args.append(c.arena, try std.fmt.allocPrint(c.arena, "--out={s}", .{pageOut(pass)}));
@@ -2444,23 +2382,22 @@ const Case = struct {
         }
         if (pages[0]) |dev| pages[2] = try c.fiberPlan(dev, h, script, record);
         if (pages[0] != null) try c.checkCompiledSchemas(pageOut(.dev));
-        if (pages[3] != null) try c.checkCompiledSchemas(pageOut(.tea_dev));
         // The page fuzzer (browser-direct.md §8.3): the fixture's two builds
         // replayed against each other on random sequences, in the same Node
         // process, after the pages.
-        const fuzz_plan: ?FuzzPlan = if (try c.fuzzPair(pages, script, sources, platform_arg, tea_arg)) |pair| try c.fuzzPlan(pair, h, record) else null;
+        const fuzz_plan: ?FuzzPlan = if (try c.fuzzPair(pages, script, sources, platform_arg)) |pair| try c.fuzzPlan(pair, h, record) else null;
         var entries: std.ArrayList(browser.Entry) = .empty;
         for (pages) |plan| if (plan) |p| if (!p.skip) try entries.append(c.arena, .{ .path = p.entry, .fiber = p.pass == .dev_fiber });
         if (fuzz_plan) |f| if (!f.skip) try entries.append(c.arena, .{ .path = FuzzPlan.spec, .fuzz = true });
         var shown: browser.Pages = .{ .run = undefined, .pages = &.{} };
         if (entries.items.len != 0) {
-            shown = browser.driveAll(c.w, h, chrome_endpoint, entries.items, script.name, c.cfg.timeout_ms, !c.fixture.differential) catch |err| {
+            shown = browser.driveAll(c.w, h, chrome_endpoint, entries.items, script.name, c.cfg.timeout_ms) catch |err| {
                 detail("{s}: cannot run the pages ({t}); is node on PATH?\n", .{ c.fixture.name, err });
                 return err;
             };
         }
         var next: usize = 0;
-        for (pages, verified[0..5]) |plan, *line| {
+        for (pages, verified[0..3]) |plan, *line| {
             const p = plan orelse continue;
             if (p.checked) RunCounts.add(if (p.skip) &run_counts.skipped else &run_counts.stale);
             if (p.skip) continue;
@@ -2476,7 +2413,7 @@ const Case = struct {
         if (release_error) |err| return err;
         if (fuzz_plan) |f| {
             if (f.checked) RunCounts.add(if (f.skip) &run_counts.skipped else &run_counts.stale);
-            verified[5] = if (f.skip) f.line else c.fuzzVerdict(f, shown.run, shown.pages[next]) catch |err| blk: {
+            verified[3] = if (f.skip) f.line else c.fuzzVerdict(f, shown.run, shown.pages[next]) catch |err| blk: {
                 if (!recording) return err;
                 RunCounts.add(&run_counts.refused);
                 if (first_error == null) first_error = err;
@@ -2500,8 +2437,6 @@ const Case = struct {
     fn pageOut(pass: RunPass) []const u8 {
         return switch (pass) {
             .release => "release",
-            .tea_dev => "out-tea",
-            .tea_release => "release-tea",
             else => "out",
         };
     }
@@ -2523,9 +2458,7 @@ const Case = struct {
 
     /// One build of a `browser/` fixture. The golden is `.expected`, or the
     /// build's own `.release-expected`, or under Chrome the fixture's
-    /// `.chrome-expected` when it has one (a `browser-tea` build reads its
-    /// `.tea-chrome-expected` first, where the two platforms differ in
-    /// Chrome by design). The page is skipped when
+    /// `.chrome-expected` when it has one. The page is skipped when
     /// `record` lists this build.
     fn pagePlan(c: Case, pass: RunPass, args: []const []const u8, h: browser.Harness, script: Script, record: []const u8) !PagePlan {
         const pass_name = @tagName(pass);
@@ -2541,31 +2474,18 @@ const Case = struct {
             return error.GoodFixtureHasDiagnostics;
         }
         const chrome = c.cfg.chrome != null;
-        const tea = pass == .tea_dev or pass == .tea_release;
-        const golden = if (chrome and tea and c.goldenExists("tea-chrome-expected"))
-            "tea-chrome-expected"
-        else if (chrome and c.goldenExists("chrome-expected"))
+        const golden = if (chrome and c.goldenExists("chrome-expected"))
             "chrome-expected"
-        else if (pass == .tea_release and c.goldenExists("tea-release-expected"))
-            "tea-release-expected"
-        else if (tea and c.goldenExists("tea-expected"))
-            "tea-expected"
-        else if ((pass == .release or pass == .tea_release) and c.goldenExists("release-expected"))
+        else if (pass == .release and c.goldenExists("release-expected"))
             "release-expected"
         else
             "expected";
         // `expected` is the development build's golden: a release build
         // that disagrees with it is the finding, so only a build's own
-        // golden is blessed by it. A `browser-tea` build of a
-        // `browser/direct/` page is the other platform's: it blesses none,
-        // since a difference between the two is the finding.
-        const bless = c.bless and !tea and (std.mem.eql(u8, golden, "chrome-expected") or
+        // golden is blessed by it.
+        const bless = c.bless and (std.mem.eql(u8, golden, "chrome-expected") or
             (!chrome and (pass == .dev or !std.mem.eql(u8, golden, "expected"))));
         const out = pageOut(pass);
-        if (!tea and c.goldenExists("plan")) {
-            const plan = try c.w.read(try std.fmt.allocPrint(c.arena, "{s}/_direct-plan.json", .{out}));
-            try c.expectGoldenMaybeBless("plan", plan, c.bless and pass == .dev);
-        }
         return c.checkedPlan(.{
             .pass = pass,
             .golden = golden,
@@ -2624,55 +2544,39 @@ const Case = struct {
     }
 
     /// The two builds the page fuzzer replays against each other
-    /// (browser-direct.md §8.3), or null: a `browser/direct/` page's
-    /// `browser-tea` and `browser-direct` builds, in the page's value-fuzz
-    /// case (`Fixture.values`) and unless the fixture says the two differ
-    /// (a `.tea-expected`); a `browser/tea/` page's development and release
-    /// builds, which must behave alike (backend.md §9) — in its page case,
-    /// and with messages as values in its value-fuzz case when it has one.
+    /// (browser-direct.md §8.3), or null: a `browser/tea/` page's
+    /// development and release builds, which must behave alike (backend.md
+    /// §9) — in its page case, and with messages as values in its
+    /// value-fuzz case when it has one.
     ///
     /// Messages go as values only between two `--fuzz` builds
     /// (browser-direct.md §8.3, amended 2026-10-09): such a build keeps
     /// every constructor of the message type and takes the development
-    /// representation, in release too, and a direct one has a dispatcher.
-    /// So when the compiler has the flag, the pair is two more builds made
-    /// with it, and the message types are dumped; until then it is two
-    /// development builds, and the fuzz is view and host events.
-    fn fuzzPair(c: Case, pages: [5]?PagePlan, script: Script, sources: []const []const u8, platform_arg: []const u8, tea_arg: []const u8) !?browser.Fuzz {
-        var pair: browser.Fuzz = undefined;
-        // What each side is built with.
-        var sides: [2][]const []const u8 = undefined;
-        if (c.fixture.differential) {
-            // The page case builds and runs the pages; the fuzz is the
-            // value-fuzz case's, budgeted on its own.
-            if (!c.fixture.values or c.goldenExists("tea-expected")) return null;
-            // The two platforms' crash screens are the same (amended
-            // 2026-10-09, S0); a `Debug.log` in a view prints when its
-            // group runs, which differs between them (§8.4).
-            pair = .{ .a = pageOut(.tea_dev), .b = pageOut(.dev), .label_a = "browser-tea", .label_b = "browser-direct", .crash = .same, .ignore = &.{"^console\\.log: "} };
-            sides = .{ &.{tea_arg}, &.{platform_arg} };
-        } else {
-            const platform = c.fixture.platform orelse return null;
-            if (!std.mem.eql(u8, platform, "browser-tea")) return null;
-            // A page case fuzzes the two pages it built; a value-fuzz case
-            // (a page with a `.fuzz-run-hash`) built none and builds its pair.
-            if (!c.fixture.values and (pages[0] == null or pages[1] == null)) return null;
-            pair = .{ .a = pageOut(.dev), .b = pageOut(.release), .label_a = "development", .label_b = "release" };
-            // The fixture's own platform: `platform/` when it has one.
-            sides = .{ &.{platform_arg}, &.{ platform_arg, "--release", "--allow-debug" } };
-        }
+    /// representation, in release too. So when the compiler has the flag,
+    /// the pair is two more builds made with it, and the message types are
+    /// dumped; until then it is two development builds, and the fuzz is
+    /// view and host events.
+    fn fuzzPair(c: Case, pages: [3]?PagePlan, script: Script, sources: []const []const u8, platform_arg: []const u8) !?browser.Fuzz {
+        const platform = c.fixture.platform orelse return null;
+        if (!std.mem.eql(u8, platform, "browser-tea")) return null;
+        // A page case fuzzes the two pages it built; a value-fuzz case
+        // (a page with a `.fuzz-run-hash`) built none and builds its pair.
+        if (!c.fixture.values and (pages[0] == null or pages[1] == null)) return null;
+        var pair: browser.Fuzz = .{ .a = pageOut(.dev), .b = pageOut(.release), .label_a = "development", .label_b = "release" };
+        // What each side is built with: the fixture's own platform,
+        // `platform/` when it has one.
+        const sides = [2][]const []const u8{ &.{platform_arg}, &.{ platform_arg, "--release", "--allow-debug" } };
         pair.script = script.name;
         // Messages as values cost a page two more builds and a dump
         // (browser-direct.md §8.3, amended for S1): the gates send them on
-        // every `browser/direct/` pair, as §8.3 requires from S1, and a
-        // `browser/tea/` pair in its value-fuzz case, when the page has
+        // a `browser/tea/` pair in its value-fuzz case, when the page has
         // one, and in `zig build fuzz`'s sweep.
         const sweep = c.cfg.fuzz_seeds != null or c.cfg.fuzz_steps != null;
-        if (!c.fixture.differential and !c.fixture.values and !sweep) return pair;
+        if (!c.fixture.values and !sweep) return pair;
         const flag = try fuzzFlag(c);
         // Without the flag a `browser/tea/` pair is the page case's own two
         // builds; a value-fuzz case built no pages, so it builds its pair.
-        if (!flag and !c.fixture.differential and !c.fixture.values) return pair;
+        if (!flag and !c.fixture.values) return pair;
         for (sides, [_][]const u8{ "fuzz-a", "fuzz-b" }) |side, out| {
             var args: std.ArrayList([]const u8) = .empty;
             try args.appendSlice(c.arena, &.{"build"});
@@ -2693,7 +2597,7 @@ const Case = struct {
         var dump: std.ArrayList([]const u8) = .empty;
         // One path: a project's directory, whose modules import each other,
         // or the one file.
-        try dump.appendSlice(c.arena, &.{ "dump", "--stage=writes", "--msg-types", if (c.fixture.differential) tea_arg else platform_arg });
+        try dump.appendSlice(c.arena, &.{ "dump", "--stage=writes", "--msg-types", platform_arg });
         // A project with a platform of its own and one module names it:
         // `.` would take the platform's files for the project's.
         // Any other project's modules are dumped from a directory holding
@@ -2725,11 +2629,11 @@ const Case = struct {
     /// pair `fuzzPair` builds, fuzzed in one Node process, its record in
     /// the page's `.fuzz-run-hash` — a file of its own, since the page case
     /// writes `.run-hash` beside this one, in parallel.
-    fn valueFuzz(c: Case, h: browser.Harness, script: Script, sources: []const []const u8, platform_arg: []const u8, tea_arg: []const u8) !void {
+    fn valueFuzz(c: Case, h: browser.Harness, script: Script, sources: []const []const u8, platform_arg: []const u8) !void {
         const record_path = try c.goldenPath("fuzz-" ++ run_hash.ext);
         const recording = c.cfg.run_hashes == .record;
         const record = if (recording) "" else try run_hash.read(c.arena, testing.io, record_path);
-        const pair = try c.fuzzPair(@splat(null), script, sources, platform_arg, tea_arg) orelse {
+        const pair = try c.fuzzPair(@splat(null), script, sources, platform_arg) orelse {
             if (recording) try run_hash.write(testing.io, record_path, null);
             return;
         };
@@ -2740,7 +2644,7 @@ const Case = struct {
         const sweep = c.cfg.fuzz_seeds != null or c.cfg.fuzz_steps != null;
         const timeout_ms = if (sweep) c.cfg.timeout_ms * 10 else c.cfg.timeout_ms;
         const line = if (plan.skip) plan.line else blk: {
-            const shown = browser.driveAll(c.w, h, chrome_endpoint, &.{.{ .path = FuzzPlan.spec, .fuzz = true }}, script.name, timeout_ms, !c.fixture.differential) catch |err| {
+            const shown = browser.driveAll(c.w, h, chrome_endpoint, &.{.{ .path = FuzzPlan.spec, .fuzz = true }}, script.name, timeout_ms) catch |err| {
                 detail("{s}: cannot run the page fuzzer ({t}); is node on PATH?\n", .{ c.fixture.name, err });
                 return err;
             };
@@ -3106,7 +3010,7 @@ const Case = struct {
     /// 0 whatever it rejects.
     ///
     /// A fixture beside a `.platform` file is checked and dumped under each
-    /// platform it names, one golden per platform (`X.browser-direct.ownership`):
+    /// platform it names, one golden per platform (`X.browser-inline.ownership`):
     /// the entry protocol's verdicts are the build's platform's
     /// (ownership-checker.md §20.2, §20.10). A token `<platform>+everywhere`
     /// is that platform with the hidden `--ownership-everywhere` (§30.7),

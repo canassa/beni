@@ -1,7 +1,0 @@
-input .new-todo "first"
-key .new-todo Enter
-input .new-todo "second"
-key .new-todo Enter
-click .todo-list>li:nth-child(1)>div>input
-click .toggle-all
-click .clear-completed
