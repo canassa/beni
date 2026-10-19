@@ -1,5 +1,13 @@
 # Conduit output size
 
+**Archived campaign.** The recorded baseline in `results/manifest.json` used revision
+`d10749f70a2060230c99cd196d70c15c2666eb9b`. These scripts and archived results compare
+that historical tea/direct implementation; they are not live benchmark selectors for
+current master. Reproduction needs the compiler, core, platforms, application sources,
+fixtures and browser driver from that frozen revision (including its direct-only driver
+flags), with the retained campaign scripts. The direct paths below are intentional
+historical inputs. Do not substitute current platforms and reinterpret the measured data.
+
 Research 102's measurements: where the bytes of Conduit's `--release` bundle
 come from, what Terser would still take out, and executable prototypes of the
 savings. No compiler, core, platform or application source changes; the
