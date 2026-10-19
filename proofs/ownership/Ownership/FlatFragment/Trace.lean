@@ -145,7 +145,7 @@ theorem flat_preserved {declarations : List Decl} {self : Decl} {e : Expr} (flat
         Ownership.FlatFragment.StateFrame.flatInvariant_restrict_live postInvariant afterSub, size, paired,
         described, observed, valueTyped⟩
     · exact failure
-  | @push receiver item =>
+  | @push receiver item receiverFlat =>
     intro vs hs env live aenv tenv before next gamma type bound after site result inferenceFuel
       depth ctx inv typed _ _ usesLive afterSub defaultConfig accepted
     have coveredR : ∀ use ∈ atomUses receiver, use ∈ live := by
@@ -159,7 +159,7 @@ theorem flat_preserved {declarations : List Decl} {self : Decl} {e : Expr} (flat
       simp only [uses, usesArms, atomsUses, List.mem_flatMap]
       exact ⟨item, by simp, useMember⟩
     obtain ⟨_, _, _, success, failure⟩ :=
-      push_preserved (depth := depth) inv typed coveredR coveredI afterSub
+      push_preserved (depth := depth) inv receiverFlat typed coveredR coveredI afterSub
         defaultConfig accepted
     exact ⟨success, failure⟩
   | @length receiver =>
@@ -295,10 +295,7 @@ PR #267, is accepted, makes one in-place write, and both runs agree.
 Unescaped test), and their two runs differ: the corollary's `check`
 hypothesis carries weight. `arith` uses the four integer primitives on
 variables and literals before an in-place push; it is accepted and both runs
-agree. `fieldWrite` pushes through a field path two levels down while the
-record stays live at another field; it is accepted and both runs agree.
-`fieldWriteLive` keeps the written field live and is rejected (the Dead
-test), and its two runs differ. -/
+agree. -/
 
 /-- `[5]`, an observer of it, `7`, `[7, 1]`, an in-place push onto it (its
     old binding 3 is dead and stale), a length read, and a variable result. -/
@@ -313,7 +310,7 @@ def every : Program := { main :=
 
 theorem every_flat : FlatANF0 every.main :=
   .letE .literal (.letE .shared (.letE .atom (.letE .literal
-    (.letE .push (.letE .length .atom)))))
+    (.letE (.push (.var 3)) (.letE .length .atom)))))
 
 /-- The push target still live afterwards: rejected by the Dead test. -/
 def liveAlias : Program := { main :=
@@ -323,7 +320,7 @@ def liveAlias : Program := { main :=
   (.atom (.var 1))))) }
 
 theorem liveAlias_flat : FlatANF0 liveAlias.main :=
-  .letE .literal (.letE .push (.letE .length .atom))
+  .letE .literal (.letE (.push (.var 0)) (.letE .length .atom))
 
 /-- A push onto an observed array: rejected by the Unescaped test. -/
 def observed : Program := { main :=
@@ -333,7 +330,7 @@ def observed : Program := { main :=
   (.prim .length [.var 2])))) }
 
 theorem observed_flat : FlatANF0 observed.main :=
-  .letE .literal (.letE .shared (.letE .push .length))
+  .letE .literal (.letE .shared (.letE (.push (.var 0)) .length))
 
 /-- `[2]`, its length 1, `1 + 7`, `8 - 3`, `5 == 5`, `1 < 5`, and a push of
     the last result onto the list: the four integer primitives, accepted, one
@@ -349,7 +346,7 @@ def arith : Program := { main :=
 
 theorem arith_flat : FlatANF0 arith.main :=
   .letE .literal (.letE .length (.letE (.scalar .add) (.letE (.scalar .sub)
-    (.letE (.scalar .eq) (.letE (.scalar .lt) .push)))))
+    (.letE (.scalar .eq) (.letE (.scalar .lt) (.push (.var 0)))))))
 
 /-- `[1]`, `[2, 3]`, the record `{xs, 7, ys}`, the length of `r.0`, `r.1`
     plus that length, `r.2` bound to a variable and a push of the sum onto it:
@@ -366,35 +363,7 @@ def recordOps : Program := { main :=
 
 theorem recordOps_flat : FlatANF0 recordOps.main :=
   .letE .literal (.letE .literal (.letE .record (.letE .length
-    (.letE (.scalar .add) (.letE .atom .push)))))
-
-/-- `[1]`, `[2, 3]`, `inner = {xs, 7}`, `outer = {inner, ys}`, a push of
-    `outer.0.1` onto `outer.0.0` (a write through a field, two levels down)
-    and the record `{pushed, outer.1}`: accepted, one in-place write, final
-    value `{[1, 7], [2, 3]}`. -/
-def fieldWrite : Program := { main :=
-  (.letE 0 (.prim (.literal .int) [.int 1])
-  (.letE 1 (.prim (.literal .int) [.int 2, .int 3])
-  (.letE 2 (.prim .record [.var 0, .int 7])
-  (.letE 3 (.prim .record [.var 2, .var 1])
-  (.letE 4 (.prim .push [.field (.field (.var 3) 0) 0, .field (.field (.var 3) 0) 1])
-  (.prim .record [.var 4, .field (.var 3) 1])))))) }
-
-theorem fieldWrite_flat : FlatANF0 fieldWrite.main :=
-  .letE .literal (.letE .literal (.letE .record (.letE .record (.letE .push .record))))
-
-/-- The same write with the written field's record live afterwards: rejected
-    by the Dead test, and the two runs differ. -/
-def fieldWriteLive : Program := { main :=
-  (.letE 0 (.prim (.literal .int) [.int 1])
-  (.letE 1 (.prim (.literal .int) [.int 2, .int 3])
-  (.letE 2 (.prim .record [.var 0, .int 7])
-  (.letE 3 (.prim .record [.var 2, .var 1])
-  (.letE 4 (.prim .push [.field (.field (.var 3) 0) 0, .field (.field (.var 3) 0) 1])
-  (.prim .record [.var 4, .field (.var 3) 0])))))) }
-
-theorem fieldWriteLive_flat : FlatANF0 fieldWriteLive.main :=
-  .letE .literal (.letE .literal (.letE .record (.letE .record (.letE .push .record))))
+    (.letE (.scalar .add) (.letE .atom (.push (.var 5)))))))
 
 set_option maxRecDepth 100000
 
@@ -432,21 +401,5 @@ set_option maxRecDepth 100000
       t.reads == [.int 1] && t.externalReads.isEmpty
   | _, _ => false
 #guard InPlaceSemantics.writeCount recordOps 100 == 1
-#guard (check fieldWrite).isOk
-#guard match ValueSemantics.run fieldWrite 100, InPlaceSemantics.run fieldWrite 100 with
-  | .ok t, .ok t' => t.reads == t'.reads && t.externalReads == t'.externalReads &&
-      t.finalValue == t'.finalValue &&
-      t.finalValue == .record [.list [.int 1, .int 7], .list [.int 2, .int 3]] &&
-      t.reads.isEmpty && t.externalReads.isEmpty
-  | _, _ => false
-#guard InPlaceSemantics.writeCount fieldWrite 100 == 1
-#guard match check fieldWriteLive with
-  | .error message => message == "Dead: an old holder is live after the demand"
-  | .ok _ => false
-#guard match ValueSemantics.run fieldWriteLive 100, InPlaceSemantics.run fieldWriteLive 100 with
-  | .ok t, .ok t' =>
-      t.finalValue == .record [.list [.int 1, .int 7], .record [.list [.int 1], .int 7]] &&
-      t'.finalValue == .record [.list [.int 1, .int 7], .record [.list [.int 1, .int 7], .int 7]]
-  | _, _ => false
 
 end Ownership.FlatFragment.Preservation

@@ -12763,6 +12763,26 @@ pub const Lowerer = struct {
 
     /// The declarations this module writes only as pieces.
     fn markPieceDecls(l: *Lowerer) Allocator.Error!void {
+        // Under a lowering that has no markup value, a function whose body
+        // is markup is written only where a program's markup calls it, in
+        // place (`browser-inline.md` §8.4, *A view helper*, 2026-10-19): left
+        // out unless code names it after all (`wanted`, then refused as a
+        // markup value, as before).
+        if (l.in.markup) |mk| if (mk.lowering.no_markup_values != null) for (l.bir.decls, 0..) |dc, i| {
+            if (dc.kind != .value or dc.params == 0) continue;
+            var body = dc.body.unwrap() orelse continue;
+            while (l.bir.instTag(body) == .let) body = @fromBackingInt(@intCast(l.bir.instData(body).rhs));
+            if (l.bir.instTag(body) != .markup) continue;
+            if (l.consumed.len == 0) {
+                l.consumed = try l.scratch.alloc(bool, l.bir.decls.len);
+                @memset(l.consumed, false);
+            }
+            if (l.wanted.len == 0) {
+                l.wanted = try l.scratch.alloc(bool, l.bir.decls.len);
+                @memset(l.wanted, false);
+            }
+            l.consumed[i] = true;
+        };
         const d = l.in.direct orelse return;
         for (d.view_pieces) |vp| {
             if (vp.module != l.in.module.int() or !vp.consumed or vp.decl >= l.bir.decls.len) continue;
@@ -13530,6 +13550,8 @@ pub const Lowerer = struct {
             const d = l.bir.instData(at);
             switch (l.bir.instTag(at)) {
                 .local, .int, .float, .char, .string => {},
+                // A branch's markup arm: choosing the arm evaluates nothing of it.
+                .markup => {},
                 .field_access, .tuple_index, .case, .interp => l.instChildren(at, &stack) catch return false,
                 .call => {
                     if (l.operatorOf(@fromBackingInt(@intCast(d.lhs))) == null) return false;

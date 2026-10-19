@@ -1,0 +1,65 @@
+-- element "root"
+-- load
+<body>
+  <div id="root">
+    <div data-role="helpers">
+      <dl>
+        <dt>"cups"</dt>
+        <dd>"0"</dd>
+        <dt>"coins"</dt>
+        <dd>"0"</dd>
+      </dl>
+      <p data-role="note">"few"</p>
+      <button data-role="cup">"Cup"</button>
+      <button data-role="coin">"Coin"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=cup]
+<body>
+  <div id="root">
+    <div data-role="helpers">
+      <dl>
+        <dt>"cups"</dt>
+        <dd>"1"</dd>
+        <dt>"coins"</dt>
+        <dd>"0"</dd>
+      </dl>
+      <p data-role="note">"few"</p>
+      <button data-role="cup">"Cup"</button>
+      <button data-role="coin">"Coin"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=coin]
+<body>
+  <div id="root">
+    <div data-role="helpers">
+      <dl>
+        <dt>"cups"</dt>
+        <dd>"1"</dd>
+        <dt>"coins"</dt>
+        <dd>"1"</dd>
+      </dl>
+      <p data-role="note">"few"</p>
+      <button data-role="cup">"Cup"</button>
+      <button data-role="coin">"Coin"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=cup]
+<body>
+  <div id="root">
+    <div data-role="helpers">
+      <dl>
+        <dt>"cups"</dt>
+        <dd>"2"</dd>
+        <dt>"coins"</dt>
+        <dd>"1"</dd>
+      </dl>
+      <p data-role="note">"plenty"</p>
+      <button data-role="cup">"Cup"</button>
+      <button data-role="coin">"Coin"</button>
+    </div>
+  </div>
+</body>

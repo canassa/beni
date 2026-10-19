@@ -120,6 +120,14 @@ by its type — hides nothing: it is written exactly, and accepted.
    `<></>` is S1's, an eager `when` (§8.2), and no longer S4's, which keeps a branch of any other
    shape and `Show`; a `view`'s `let` read by one hole is S1's, substituted into the hole, and one
    read by several holes stays S3's.
+   *Amended 2026-10-19 (the owner: both are S1's, for big-component; S4 is lifetime only):*
+   markup **held in data or chosen at run time** — a markup value stored in the model or a
+   record, passed to a function that decides where it goes, returned by a function whose body the
+   compiler cannot see — stays class 1. Two shapes of static structure move into S1: a **view
+   helper** of the program's own module, a function whose body is markup, called from the `view`
+   in a hole (`{part1 model}`), written in place in a context of its own (§8.4); and a **`case`
+   in markup** whose arms are each one element or `<></>`, written as eager `when`s, one per
+   element arm (§8.2).
 2. **Needs the task kernel** (a compiler limit) — a command whose body may suspend: *"A limit of
    the compiler: … needs the task kernel, which `browser-inline` does not have yet"*, with the
    body's position. The kernel returns behind reachability in S6.
@@ -284,6 +292,13 @@ beni over `Js` in `Inline.beni`:
   arm reads no variable the branch binds (`Program.Arm.eager`): the arm's element is in the markup
   and its holes are bindings like any other, evaluated whichever arm the value takes; `when` hides it
   while the value takes the other arm. A branch of any other shape is S4's (§5, class 1).
+  *Amended 2026-10-19 (the owner): a `case` in markup.* A hole whose value is a `case` (or an `if`
+  of `else if`s) of any number of arms, each one element written in place or `<></>`, each element
+  arm eager, is one eager `when` per element arm: every arm's element is in the markup, in
+  document order, and each `when` shows its element while the value takes that arm and hides it
+  otherwise. The value is evaluated once per pass for all of them (`programBranchArm`). An arm that
+  reads a variable its pattern binds, or that is not one element or `<></>`, stays class 1
+  (`browser/inline/CaseInMarkup`, `emit/release/inline/CaseInMarkup`).
 - **Groups.** Bindings are grouped by read set, `programHole`'s `group`: one binding *function* per
   distinct set of groups among the bindings of a unit — a mixed text whose holes read two sets is in
   both — in document order of its first binding. A `when`'s group is its hole's, which is the read set
@@ -429,6 +444,17 @@ program site by name (option 2 of §7, extended to `update` and `view`).
   whose groups `W1`'s keys reach: the handler of each such key calls it in its write pass, from the
   program site, by name. There is no registration at mount and no rule about which widget is above
   which.
+- **A view helper** (*added 2026-10-19, the owner*: the same-module case of a piece). A hole of the
+  program's `view` or of a piece's root, or of markup written in place under them, whose value
+  calls a function of the same module whose body is markup (`Program.Callee`, refusal `none`, under no
+  `Html.map`, with no `let`s) is that function's markup written in place: its elements are the
+  page's, in document order, its holes have the facts of the call's path (`programInlineEnter`),
+  and each binding that reads them enters the call with its arguments evaluated in the enclosing
+  context. A helper's fragment's children are spliced where the hole is. It is lifted as a piece
+  is, in its own module — the program's, or the piece's owner (`browser/inline/ViewHelper`,
+  `emit/release/inline/ViewHelper`; big-component's `part1 model`). A function that calls itself,
+  one under `Html.map`, one with `let`s, and markup held in data or chosen at run time stay class 1
+  (`build/bad/inline/MarkupInModel`).
 - **The first refusal S1 removes** is a `view` through `Html.map` whose markup is another
   module's (§5, class 1 until then). *Removed 2026-10-18* (`browser/inline/Counter/`, `Reader/`,
   `ResearchS2/`, `ResearchS3/`, `Texts/`).

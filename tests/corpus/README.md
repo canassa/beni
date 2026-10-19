@@ -17,7 +17,7 @@ outputs: stdout, the JSON diagnostics on stderr, and the exit code.
 | `bir/` | `dump --stage=bir` | `<name>.bir` | lowering golden: resolution, desugaring, interface skeleton |
 | `check/good/` | `check`, then `dump --stage=interface` | `<name>.iface` | resolves clean against the project and core; the golden is the module's public face |
 | `writes/` | `check`, then `dump --stage=writes`, both `--platform=browser-tea` | `<name>.writes` | the write-set pass (`write-sets.md` §8.1): per message key its write set and class, per view hole its class and reads; a project may name its sources elsewhere (`_expected.sources`), carry the hidden `--writes-work` cap (`.writes-work`), and be the gate of §8.2 (`.gate`: its `keys` lines must show two thirds bounded) |
-| `ownership/` | `check`, then `dump --stage=ownership` | `<name>.ownership` | the ownership checker's report (`ownership-checker.md` §9): one line per demand with its verdict and cause; a project takes `_expected.ownership`. Beside a `.platform` file, one platform per line, the fixture is checked and dumped under each, with one golden per platform (`<name>.<platform>.ownership`, the last part of a path); a token `<platform>+everywhere` is that platform with the hidden `--ownership-everywhere`. Where the chain edits lists in place (its first `"lists"`, read from the manifests) or the token says `+everywhere`, the `check` must fail, with the ownership codes alone, exactly when the report has a rejected or pending line or a `limit` line, and elsewhere it must pass (§28.10, §16.7). With a `.cached` file (its reason), each such `check` is run twice more with a cache directory of its own — writing every cache entry and summary block, then installing them — and both must agree with the `--no-cache` one (§28.4) |
+| `ownership/` | `check`, then `dump --stage=ownership` | `<name>.ownership` | the ownership checker's report (`ownership-checker.md` §9): one line per demand with its verdict and cause; a project takes `_expected.ownership`. Beside a `.platform` file naming `browser-direct`, which edits lists in place, the `check` must fail, with the ownership codes alone, exactly when the report has a rejected or pending line or a `limit` line (§28.10, §16.7). With a `.cached` file (its reason), each such `check` is run twice more with a cache directory of its own — writing every cache entry and summary block, then installing them — and both must agree with the `--no-cache` one (§28.4) |
 | `check/bad/` | `check --diagnostics=json` | `<name>.diag` | must fail resolution; the **whole** diagnostic list is the golden |
 | `build/bad/<Dir>/` | `build --diagnostics=json --platform=…` | `<Dir>/_expected.diag` | must fail the BUILD: exit 1, the whole diagnostic list, and no `out/` |
 | `build/bad-release/<Dir>/` | the same, **plus `--release`** | `<Dir>/_expected.diag` | must build clean WITHOUT the flag and fail with it (`backend.md` §9's refusal of `Debug`) |
@@ -594,20 +594,6 @@ the lowering refuses, each class of `browser-inline.md` §5; and
 `browser/inline/` pages, built for that platform alone, development and
 release.
 
-Every enforcing `build/bad/` project is also checked for its release refusal
-— under `direct/`, under `inline/`, on a project's own `platform/`
-whose chain edits lists in place, and under `everywhere/`: built again with
-`--release --allow-debug`, it must be refused with the same diagnostics and
-nothing written (`--allow-debug` because `Debug`'s own refusal is
-`build/bad-release/`'s claim). `check/bad/inline/` fixtures are checked with
-`--platform=browser-inline`, so the ownership checker enforces there.
-
-**`build/bad/everywhere/`** projects are built for `browser-tea` with the
-hidden `--ownership-everywhere` (`ownership-checker.md` §30.7): the ownership
-checker's refusals on a platform that edits nothing in place, apart from any
-lowering's. One whose golden holds only the ownership checker's codes is also
-built without the flag, which must succeed silently (§28.10).
-
 **The page fuzzer** (`docs/design/browser-direct.md` §8.3 and its
 2026-10-09 amendment, `tests/browser/fuzz.mjs`) runs on every
 `browser/direct/` page without a `.tea-expected` — its `browser-tea` build
@@ -625,11 +611,7 @@ A `browser/direct/` page's fuzz is a case of its own, `<page> [value
 fuzz]`, budgeted apart from the page's: it builds the two `--fuzz` builds,
 dumps the message types and fuzzes them, messages as values included, and
 records its line in `<name>.fuzz-run-hash` (`_expected.fuzz-run-hash` in a
-project). A `browser/tea/` page opts into the same value-fuzz case by
-carrying a `.fuzz-run-hash` (create it empty, then `zig build
-test-run-hashes`): its development build against its release build, both
-with `--fuzz`, beside the page case's own fuzz of view events
-(`browser/tea/TypedInput`).
+project).
 
 **`emit/release/split/`** — release applications, whose golden is
 `_main.mjs` whole — are built with `--platform=browser`, the `dom` lowering

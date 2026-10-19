@@ -1,0 +1,56 @@
+-- element "root"
+-- load
+<body>
+  <div id="root">
+    <div data-role="status">
+      ""
+      ""
+      ""
+      <button data-role="next">"Next"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=next]
+<body>
+  <div id="root">
+    <div data-role="status">
+      <p data-role="loading">"Loading"</p>
+      ""
+      ""
+      <button data-role="next">"Next"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=next]
+<body>
+  <div id="root">
+    <div data-role="status">
+      ""
+      <p data-role="done">"Done"</p>
+      ""
+      <button data-role="next">"Next"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=next]
+<body>
+  <div id="root">
+    <div data-role="status">
+      ""
+      ""
+      <strong data-role="failed">"Failed"</strong>
+      <button data-role="next">"Next"</button>
+    </div>
+  </div>
+</body>
+-- click [data-role=next]
+<body>
+  <div id="root">
+    <div data-role="status">
+      ""
+      ""
+      ""
+      <button data-role="next">"Next"</button>
+    </div>
+  </div>
+</body>

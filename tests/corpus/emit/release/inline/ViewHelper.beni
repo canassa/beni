@@ -1,0 +1,58 @@
+-- emit/release/inline: the page is `browser/inline/ViewHelper`.
+import Browser
+import Html exposing (Html)
+import Tea
+
+
+type alias Model =
+    cups : Int
+    coins : Int
+
+
+type Msg
+    = AddCup
+    | AddCoin
+
+
+update : Msg, Model → Model
+update msg model =
+    case msg of
+        AddCup →
+            { model | cups = model.cups + 1 }
+
+        AddCoin →
+            { model | coins = model.coins + 1 }
+
+
+counts : String, Int → Html Msg
+counts label n =
+    <>
+        <dt>{label}</dt>
+        <dd>{n}</dd>
+    </>
+
+
+note : Model → Html Msg
+note model =
+    total = model.cups + model.coins
+    <p data-role="note">{if total > 2 then "plenty" else "few"}</p>
+
+
+view : Model → Html Msg
+view model =
+    <div data-role="helpers">
+        <dl>
+            {counts "cups" model.cups}
+            {counts "coins" model.coins}
+        </dl>
+        {note model}
+        <button data-role="cup" onClick={AddCup}>Cup</button>
+        <button data-role="coin" onClick={AddCoin}>Coin</button>
+    </div>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.sandbox { init = λ⊤ → { cups = 0, coins = 0 }, update = update, view = view })
+        "root"
