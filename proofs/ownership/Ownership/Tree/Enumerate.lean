@@ -62,13 +62,13 @@ def body (t : Var) (w h : Place) (write : Bool) (n : Nat) : Expr :=
       if write then .letE n (.push wv 1) (.pair n hv) else .pair wv hv
 
 inductive Family where
-  | direct | pick | wrap | inline | two
+  | direct | pick | wrap | inline | two | levels
   deriving DecidableEq, Repr, Inhabited
 
-def Family.all : List Family := [.direct, .pick, .wrap, .inline, .two]
+def Family.all : List Family := [.direct, .pick, .wrap, .inline, .two, .levels]
 
 def Family.name : Family → String
-  | .direct => "direct" | .pick => "pick" | .wrap => "wrap" | .inline => "inline" | .two => "two"
+  | .direct => "direct" | .pick => "pick" | .wrap => "wrap" | .inline => "inline" | .two => "two" | .levels => "levels"
 
 /-- Tree shapes. -/
 inductive Shape where
@@ -154,13 +154,25 @@ def program (f : Family) (w h : Place) (sh : Shape) (ps : List Pick) (keepA : Bo
         body := descend dflt2 0 w.1 w.2 10 fun wv n => .letE n (.push wv 1) (.pair n 1) }
     -- `h` chooses the kept list: `a` when its run is empty, else `b`
     { decls := [tw], main := some (prelude bs (finish (.call 0 [tv, if h.1.isEmpty then 100 else 101]))) }
+  | .levels =>
+    -- two writes, of `w` and of `h` (a list place too), in a declaration a
+    -- caller hands its left subtree (#393's review, `viaLeft`)
+    let d : Decl :=
+      { name := "two", params := [.tree], result := .pair .list .list,
+        body := descend dflt2 0 w.1 w.2 10 fun wv n => descend dflt2 0 h.1 h.2 n fun hv n =>
+          .letE n (.push wv 1) (.letE (n + 1) (.push hv 2) (.pair n (n + 1))) }
+    let vl : Decl :=
+      { name := "viaLeft", params := [.tree], result := .pair .list .list,
+        body := .caseTree 0 10 11 12 dflt2 (.call 0 [10]) }
+    { decls := [d, vl], main := some (prelude bs (finish (.call 1 [tv]))) }
 
 def cases (depth nodes : Nat) : List Case :=
   let ws := places depth true
   let hs := places depth false ++ places depth true
   let trees := (shapes nodes).flatMap fun sh => (picks sh.size).map (sh, ·)
   Family.all.flatMap fun f =>
-    let pairs := if f == .two then ws.flatMap fun w => [(w, ([], true)), (w, ([false], true))]
+    let pairs := if f == .levels then ws.flatMap fun w => ws.map (w, ·)
+      else if f == .two then ws.flatMap fun w => [(w, ([], true)), (w, ([false], true))]
       else ws.flatMap fun w => hs.map (w, ·)
     pairs.flatMap fun (w, h) => trees.flatMap fun (sh, ps) => [false, true].map fun keepA =>
       { family := f, w := w, h := h, shape := sh, picks := ps, keepA := keepA, program := program f w h sh ps keepA }

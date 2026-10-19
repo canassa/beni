@@ -99,15 +99,6 @@ theorem fixtures_typed :
     (typecheck holeMain).isOk ∧ (typecheck deepMain).isOk := by
   decide +kernel
 
-/-- The expected verdicts, one source for the kernel and the CLI. -/
-def expected : List (String × Program × List Bool) :=
-  [("DeeperLevel (inner, pick, outer)", deeperLevel, [false, true, false]),
-   ("ParamHole (hole, shared)", paramHole, [true, false]),
-   ("Limit (deepShare)", limit, [false])]
-
-theorem expected_verdicts : expected.all (fun (_, p, w) => ({} : Config).verdicts p == w) = true := by
-  decide +kernel
-
 /-! ## The verdicts with the marker -/
 
 /-- `inner` rejected, `pick` accepted, `outer` rejected. -/
@@ -131,6 +122,49 @@ theorem deepShare_refused : ({} : Config).verdicts limit = [false] := by
 /-- `hole` on a tree whose levels hold distinct lists is accepted, and the two
     interpreters agree. -/
 theorem holeMain_accepted : ({} : Config).accepts holeMain = true ∧ agree holeMain = true := by
+  decide +kernel
+
+/-! ## Two levels written, a subtree passed (#393's review)
+
+`two` writes the root's list and the left child's, two exact places of its
+parameter, and records their separation; `viaLeft` hands it its left
+subtree, where both places are `#Node.0⟨Tree⟩#Node.1`. The condition is
+then between one cell and itself, and the call is refused. `demo` builds a
+tree whose left subtree holds `xs` at two levels: by value it is
+`( [0, 1], [0, 2] )`, in place `( [0, 1, 2], [0, 1, 2] )`. -/
+
+def twoLevelsDecl : Decl :=
+  { name := "two", params := [.tree], result := .pair .list .list,
+    body := .caseTree 0 10 11 12 dflt2 (.caseTree 10 13 14 15 dflt2
+      (.letE 16 (.push 11 1) (.letE 17 (.push 14 2) (.pair 16 17)))) }
+
+def viaLeft : Decl :=
+  { name := "viaLeft", params := [.tree], result := .pair .list .list,
+    body := .caseTree 0 10 11 12 dflt2 (.call 0 [10]) }
+
+/-- `demo = viaLeft (Node (Node (Node Leaf xs Leaf) xs Leaf) [] Leaf)`. -/
+def viaLeftMain : Program :=
+  { decls := [twoLevelsDecl, viaLeft],
+    main := some (.letE 100 (.lit 0) (.letE 102 .leaf (.letE 103 (.node 102 100 102)
+      (.letE 104 (.node 103 100 102) (.letE 105 .nil (.letE 106 (.node 104 105 102)
+        (.call 1 [106]))))))) }
+
+/-- `two` accepted on condition that its two places are apart; `viaLeft`
+    refused at its call, which finds them one cell. -/
+theorem viaLeft_verdicts : ({} : Config).verdicts viaLeftMain = [true, false] ∧
+    ((({} : Config).checkProgram viaLeftMain).1.head?.map (·.1.seps)) =
+      some [((0, [.n1]), (0, [.n0, .mark, .n1]))] := by
+  decide +kernel
+
+/-- The program is unsafe: the interpreters disagree, as #393's review says. -/
+theorem viaLeft_disagrees :
+    (runValue viaLeftMain).toOption = some (.pair (.list [0, 1]) (.list [0, 2])) ∧
+    (runInPlace viaLeftMain).toOption = some (.pair (.list [0, 1, 2]) (.list [0, 1, 2])) := by
+  decide +kernel
+
+/-- Without the level condition it is accepted and disagrees. -/
+theorem viaLeft_noLevelSep : ({ levelSep := false } : Config).accepts viaLeftMain = true ∧
+    agree viaLeftMain = false := by
   decide +kernel
 
 /-! ## The holes are real -/
@@ -177,6 +211,16 @@ def deepDistinct : Program :=
         (.letE 105 (.node 104 101 102) (.call 0 [105]))))))) }
 
 theorem deepDistinct_refused : ({} : Config).accepts deepDistinct = false ∧ agree deepDistinct = true := by
+  decide +kernel
+
+/-- The expected verdicts, one source for the kernel and the CLI. -/
+def expected : List (String × Program × List Bool) :=
+  [("DeeperLevel (inner, pick, outer)", deeperLevel, [false, true, false]),
+   ("ParamHole (hole, shared)", paramHole, [true, false]),
+   ("Limit (deepShare)", limit, [false]),
+   ("ViaLeft (two, viaLeft)", viaLeftMain, [true, false])]
+
+theorem expected_verdicts : expected.all (fun (_, p, w) => ({} : Config).verdicts p == w) = true := by
   decide +kernel
 
 end Ownership.Tree.Fixtures

@@ -920,3 +920,12 @@ finds no list below `#Node.0` (it was moved to `#Node.1`), so recording it chang
 At depth 3 (`ownership tree 3 3`, about 9 minutes, not in `ci`), where a third subtree step folds onto the marker
 already there: 574,620 programs, 278,468 accepted, 10,356 of them show a write, 0 disagree; every summary path
 canonical; the four holes catch the same 2,010, 2,010, 1,020 and 684; star overlap accepts 278,468, as exact.
+
+*Amended 2026-10-19 (#393's review: two levels written, a subtree passed).* `Fixtures.viaLeftMain` is the review's
+`two`/`viaLeft`/`demo`: `two` is accepted on condition `sep π1#Node.1 π1#Node.0⟨Tree⟩#Node.1`, and `viaLeft`'s call
+is refused, since both of `two`'s places instantiate to the one cell `π1#Node.0⟨Tree⟩#Node.1` of its parameter
+(`viaLeft_verdicts`); by value `demo` is `( [0, 1], [0, 2] )`, in place `( [0, 1, 2], [0, 1, 2] )`
+(`viaLeft_disagrees`); without the level condition the call is accepted (`viaLeft_noLevelSep`). The product did not
+have the shape: every declaration wrote one list. The family `levels` adds it, two written list places and a caller that
+passes its left subtree: 15,386 programs at depth 2, none accepted, since every list of the subtree is one cell there
+(the known limit of one region), and `no-level-sep` catches 36 more disagreements among them (1,056 in all).
