@@ -1,0 +1,109 @@
+-- Selected case-arm events work in a detached mount, locally and as pieces.
+-- Switching retained arm 1 to 2 clears the old binding and creates a fresh one.
+import Browser
+import Cmd exposing (Cmd)
+import Html exposing (Html)
+import Probe
+import Sub exposing (Sub)
+import Tea
+import Widget
+
+
+type alias Model =
+    status : Int
+    value : Int
+    picked : Int
+    ready : Bool
+
+
+type Msg
+    = Local Int
+    | Child Widget.Msg
+    | Retained Int
+    | Host Int
+
+
+type Key
+    = ProbeKey
+
+
+update : Msg, Model → Model × Cmd Msg
+update msg model =
+    case msg of
+        Local n →
+            ( { model | picked = Debug.log "local" n }, Cmd.none )
+        Child Widget.Clicked →
+            ( { model | picked = Debug.log "piece" 100 }, Cmd.none )
+        Retained n →
+            ( { model | picked = Debug.log "retained" n }, Cmd.none )
+        Host _ →
+            ( if model.ready then
+                { model | status = 2, value = model.value + 1 }
+              else
+                { model | ready = True }
+            , Cmd.none
+            )
+
+
+local : Int → Html Msg
+local n = <button data-role="local" onClickGuard={Local n}>{n}</button>
+
+
+first : Int → Html Msg
+first n = <button data-role="retainedone" onClickGuard={Retained n}>{n}</button>
+
+
+second : Int → Html Msg
+second n = <button data-role="retainedtwo" onClickGuard={Retained n}>{n}</button>
+
+
+twin : Int, Int → Html Msg
+twin shown n =
+    <section>{if shown == 0 then <button onClickGuard={Local n}>Twin</button> else <></>}</section>
+
+
+view : Model → Html Msg
+view model =
+    <main>
+        {if model.ready then
+            <section>
+                {case model.status of
+                    1 →
+                        <section>{local 7}</section>
+                    2 →
+                        <p>Other local arm</p>
+                    _ →
+                        <></>
+                }
+                {case model.status of
+                    1 →
+                        <section>{first (Debug.log "first-bound" model.value)}</section>
+                    2 →
+                        <section>{second (Debug.log "second-bound" (model.value + 100))}</section>
+                    _ →
+                        <></>
+                }
+            </section>
+         else
+            <></>
+        }
+        {Html.map (Widget.view model.status) Child}
+        <section data-role="twinone">{twin 0 11}</section>
+        <section data-role="twintwo">{twin 1 22}</section>
+    </main>
+
+
+main : Tea.Program
+main =
+    Browser.mountAt
+        (Tea.element
+            { init =
+                λ⊤ →
+                    Probe.detach ⊤
+                    ( { status = 1, value = 3, picked = 0, ready = False }, Cmd.none )
+            , update = update
+            , view = view
+            , subscriptions = λ_ → Sub.on ProbeKey Probe.start Host
+            }
+        )
+        "root"

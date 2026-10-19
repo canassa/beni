@@ -1,0 +1,116 @@
+-- Detach the acquired mount root during init, before its markup is mounted.
+import Html exposing (Html)
+import Js
+
+
+pub foreign type Event
+
+
+pub element "*"
+
+
+pub attribute "*" : String
+
+
+pub event "onClick" delegated : Event
+
+
+pub event "onClickGuard" name "click" delegated preventDefault stopPropagation : Event
+
+
+pub detach : ⊤ → ⊤
+detach ⊤ =
+    root = Js.call (Js.global "document") "getElementById" [ Js.from "root" ]
+    Js.set (Js.global "window") "detachedRoot" root
+    insert = Js.get root "insertAdjacentHTML"
+    Js.set
+        root
+        "insertAdjacentHTML"
+        (Js.from λposition html →
+            _ = Js.call insert "call" [ root, position, html ]
+            Js.set
+                (Js.global "window")
+                "savedLocal"
+                (Js.call root "querySelector" [ Js.from "[data-role=local]" ])
+            Js.set
+                (Js.global "window")
+                "savedPiece"
+                (Js.call root "querySelector" [ Js.from "[data-role=piece]" ])
+            Js.set
+                (Js.global "window")
+                "savedRetained"
+                (Js.call root "querySelector" [ Js.from "[data-role=retainedone]" ])
+            Js.set
+                (Js.global "window")
+                "savedTwinOne"
+                (Js.call root "querySelector" [ Js.from "[data-role=twinone] button" ])
+            Js.set
+                (Js.global "window")
+                "savedTwinTwo"
+                (Js.call root "querySelector" [ Js.from "[data-role=twintwo] button" ])
+            ⊤
+        )
+    afterstop = Js.from λ_ →
+        report "local" (Js.get (Js.global "window") "savedLocal")
+        report "piece" (Js.get (Js.global "window") "savedPiece")
+        report "piece-current" (Js.get (Js.global "window") "savedCurrentPiece")
+        report "old-binding" (Js.get (Js.global "window") "savedRetained")
+        report "new-binding" (Js.get (Js.global "window") "savedCurrent")
+        report "shown-sibling" (Js.get (Js.global "window") "savedTwinOne")
+        report "hidden-sibling" (Js.get (Js.global "window") "savedTwinTwo")
+    _ = Js.call (Js.global "window") "addEventListener" [ Js.from "afterstop", afterstop ]
+    _ = Js.call root "remove" []
+    ⊤
+
+
+click : Js.Value → ⊤
+click node =
+    event =
+        Js.construct (Js.global "MouseEvent")
+            [ Js.from "click", Js.from { bubbles = True, cancelable = True } ]
+    _ = Js.call node "dispatchEvent" [ event ]
+    ⊤
+
+
+pub start : sync (Int → ⊤) → (⊤ → ⊤)
+start send =
+    window = Js.global "window"
+    root = Js.get window "detachedRoot"
+    local = Js.get window "savedLocal"
+    piece = Js.get window "savedPiece"
+    retained = Js.get window "savedRetained"
+    twinOne = Js.get window "savedTwinOne"
+    twinTwo = Js.get window "savedTwinTwo"
+    old = Js.from λ_ →
+        click local
+        click piece
+        click retained
+        click twinOne
+        click twinTwo
+    next = Js.from λ_ → send 1
+    current = Js.from λ_ →
+        node = Js.call root "querySelector" [ Js.from "[data-role=retainedtwo]" ]
+        Js.set window "savedCurrent" node
+        Js.set
+            window
+            "savedCurrentPiece"
+            (Js.call root "querySelector" [ Js.from "[data-role=piece-next]" ])
+        click node
+    _ = Js.call window "addEventListener" [ Js.from "old", old ]
+    _ = Js.call window "addEventListener" [ Js.from "next", next ]
+    _ = Js.call window "addEventListener" [ Js.from "current", current ]
+    λ⊤ →
+        _ = Js.call window "removeEventListener" [ Js.from "old", old ]
+        _ = Js.call window "removeEventListener" [ Js.from "next", next ]
+        _ = Js.call window "removeEventListener" [ Js.from "current", current ]
+        ⊤
+
+
+report : String, Js.Value → ⊤
+report label node =
+    event =
+        Js.construct (Js.global "MouseEvent")
+            [ Js.from "click", Js.from { bubbles = True, cancelable = True } ]
+    _ = Js.call node "dispatchEvent" [ event ]
+    _ = Js.call (Js.global "console") "log" [ Js.from label, Js.get event "defaultPrevented" ]
+    ⊤

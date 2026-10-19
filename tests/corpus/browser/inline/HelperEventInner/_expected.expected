@@ -1,0 +1,125 @@
+-- element "root"
+-- load
+console.log: outside: 3
+<body>
+  <div id="root">
+    <main>
+      <section data-role="outside">
+        <section>""</section>
+      </section>
+      ""
+    </main>
+  </div>
+</body>
+-- event window fire
+console.log: outside false
+console.log: inside false
+(the DOM did not change)
+-- event window bump
+console.log: outside: 4
+(the DOM did not change)
+-- event window fire
+console.log: outside false
+console.log: inside false
+(the DOM did not change)
+-- event window shown
+console.log: outside: 4
+<body>
+  <div id="root">
+    <main>
+      <section data-role="outside">
+        <section>
+          <button>"Pick"</button>
+        </section>
+      </section>
+      ""
+    </main>
+  </div>
+</body>
+-- event window fire
+console.log: picked: 4
+console.log: outside true
+console.log: inside false
+(the DOM did not change)
+-- event window outer
+console.log: outside: 4
+console.log: inside: 104
+<body>
+  <div id="root">
+    <main>
+      <section data-role="outside">
+        <section>
+          <button>"Pick"</button>
+        </section>
+      </section>
+      <section data-role="inside">
+        <section>
+          <button>"Pick"</button>
+        </section>
+      </section>
+    </main>
+  </div>
+</body>
+-- event window fire
+console.log: picked: 4
+console.log: outside true
+console.log: picked: 104
+console.log: inside true
+(the DOM did not change)
+-- event window shown
+console.log: outside: 4
+console.log: inside: 104
+<body>
+  <div id="root">
+    <main>
+      <section data-role="outside">
+        <section>""</section>
+      </section>
+      <section data-role="inside">
+        <section>""</section>
+      </section>
+    </main>
+  </div>
+</body>
+-- event window fire
+console.log: outside false
+console.log: inside false
+(the DOM did not change)
+-- event window bump
+console.log: outside: 5
+console.log: inside: 105
+(the DOM did not change)
+-- event window shown
+console.log: outside: 5
+console.log: inside: 105
+<body>
+  <div id="root">
+    <main>
+      <section data-role="outside">
+        <section>
+          <button>"Pick"</button>
+        </section>
+      </section>
+      <section data-role="inside">
+        <section>
+          <button>"Pick"</button>
+        </section>
+      </section>
+    </main>
+  </div>
+</body>
+-- event window fire
+console.log: picked: 5
+console.log: outside true
+console.log: picked: 105
+console.log: inside true
+(the DOM did not change)
+-- stop
+(stopped)
+<body>
+  <div id="root"></div>
+</body>
+-- event window fire
+console.log: outside false
+console.log: inside false
+(the DOM did not change)

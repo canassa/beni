@@ -46,6 +46,8 @@ pub const lowering: m.Lowering = .{
         .{ .name = "root", .arity = 1 },
         // `(⊤)`: the page's unmount (`boundary.md` §9.4.5).
         .{ .name = "stop", .arity = 1 },
+        // Modifier effects must also be inert on host-retained stopped nodes.
+        .{ .name = "stopped", .arity = 1 },
         // `(cmd, dispatch)`: a command's bodies, queued on the guard to run
         // after the dispatch's write pass (`boundary.md` §9.8.4, as amended
         // 2026-10-17), each message one sends handed to `dispatch`.
@@ -264,7 +266,7 @@ fn piece(cx: *m.Context, tree: *const m.Tree, req: *const m.PieceRequest) m.Erro
             listener = try js.arrow(&.{e}, blk);
         }
         const node = try pg.ref(ev.target);
-        const active = if (pg.inArm(ev.ctx)) try js.member(node, "isConnected") else null;
+        const active = try pg.armActivity(ev.ctx);
         if (active == null and !facts.prevent_default and !facts.stop_propagation) {
             if (kind) |k| {
                 try js.expression(wire, try js.call(try js.name(try cx.runtime("on")), &.{ node, listener, try js.string(k) }));
@@ -273,6 +275,11 @@ fn piece(cx: *m.Context, tree: *const m.Tree, req: *const m.PieceRequest) m.Erro
         }
         const evn = try cx.fresh("event");
         const dom_blk = try js.block();
+        if (facts.prevent_default or facts.stop_propagation) {
+            const stopped = try js.block();
+            try js.@"return"(stopped, null);
+            try js.@"if"(dom_blk, try js.call(try js.name(try cx.runtime("stopped")), &.{}), stopped, null);
+        }
         if (active) |active_test| {
             const inactive = try js.block();
             try js.@"return"(inactive, null);
@@ -904,6 +911,7 @@ const Page = struct {
         }
         // Handler-bound arguments share the handler's lifetime. Release
         // them even when a host keeps a node after the program is stopped.
+        // Register only after the element/part table constants above exist.
         const release_bindings = try js.block();
         var retains = false;
         for (pg.events.items) |ev| if (ev.captures.len != 0) {
@@ -1065,7 +1073,7 @@ const Page = struct {
         // `on`, the event's name left out for a click.
         for (plans.items, listeners, pg.events.items) |pl, f, evinfo| {
             const node = try pg.ref(pl.target);
-            const active = if (evinfo.captures.len != 0) try pg.eventBindingFor(evinfo) else if (pg.inArm(evinfo.ctx)) try js.member(node, "isConnected") else null;
+            const active = if (evinfo.captures.len != 0) try pg.eventBindingFor(evinfo) else try pg.armActivity(evinfo.ctx);
             if (active == null and !pl.flags.prevent_default and !pl.flags.stop_propagation) {
                 if (pl.kind) |k| {
                     try js.expression(body, try js.call(try js.name(try cx.runtime("on")), &.{ node, f, try js.string(k) }));
@@ -1074,6 +1082,11 @@ const Page = struct {
             }
             const ev = try cx.fresh("event");
             const dom = try js.block();
+            if (pl.flags.prevent_default or pl.flags.stop_propagation) {
+                const stopped = try js.block();
+                try js.@"return"(stopped, null);
+                try js.@"if"(dom, try js.call(try js.name(try cx.runtime("stopped")), &.{}), stopped, null);
+            }
             if (active) |active_test| {
                 const inactive = try js.block();
                 try js.@"return"(inactive, null);
@@ -1302,12 +1315,31 @@ const Page = struct {
 
     // ---- Binding functions --------------------------------------------
 
-    fn inArm(pg: *Page, ctx: u32) bool {
+    /// A helper call is not an arm; context zero is the view itself.
+    /// Every actual enclosing arm has a when write and its own anchor.
+    /// The anchor is in place exactly while that arm is hidden, even in
+    /// a detached mount. Require all enclosing arms to be selected.
+    fn armActivity(pg: *Page, ctx: u32) m.Error!?m.Expr {
+        const js = pg.cx.js;
+        var active: ?m.Expr = null;
         var at: ?u32 = ctx;
         while (at) |c| : (at = pg.ctxs.items[c].parent) {
-            if (pg.ctxs.items[c].kind == .arm and pg.ctxs.items[c].parent != null) return true;
+            const context = pg.ctxs.items[c];
+            if (context.kind != .arm or context.parent == null) continue;
+            // Markup indices repeat across helper calls; the parent context
+            // identifies the source occurrence whose anchor this arm uses.
+            const target = for (pg.writes.items) |w| {
+                if (w.what != .when) continue;
+                const arm = w.what.when;
+                if (w.ctx == context.parent.? and arm.node == context.node and arm.shown == context.arm) break w.target;
+            } else unreachable;
+            const anchor = try js.member(try pg.ref(target), "$a");
+            const selected = try js.unary(.not, try js.member(anchor, "parentNode"));
+            // Outermost first: a hidden guarded parent may never have
+            // initialized an inner arm's anchor.
+            active = if (active) |inner| try js.binary(.logical_and, selected, inner) else selected;
         }
-        return false;
+        return active;
     }
 
     fn within(pg: *Page, ctx: u32, ancestor: u32) bool {
@@ -1372,6 +1404,9 @@ const Page = struct {
             for (reads.items) |v| if (!pg.cx.valuePureTotal(v)) {
                 pg.unsafe_ctx[w.ctx] = true;
             };
+            // A retained event binding exists only in its selected arm,
+            // including an arm inside the helper that supplied its values.
+            if (w.what == .event) pg.unsafe_ctx[w.ctx] = true;
             try pg.unsafeLets(w.ctx, reads.items);
         }
         for (pg.ctxs.items, 0..) |c, ci| {

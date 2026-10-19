@@ -1,0 +1,63 @@
+import Html exposing (Html)
+import Js
+
+
+pub foreign type Event
+
+
+pub element "*"
+
+
+pub attribute "*" : String
+
+
+pub event "onClick" delegated : Event
+
+
+pub event "onClickGuard" name "click" delegated preventDefault stopPropagation : Event
+
+
+pub install : ⊤ → ⊤
+install ⊤ =
+    window = Js.global "window"
+    root = Js.call (Js.global "document") "getElementById" [ Js.from "root" ]
+    insert = Js.get root "insertAdjacentHTML"
+    Js.set
+        root
+        "insertAdjacentHTML"
+        (Js.from λposition html →
+            _ = Js.call insert "call" [ root, position, html ]
+            outside = Js.call root "querySelector" [ Js.from "[data-role=outside] button" ]
+            inside = Js.call root "querySelector" [ Js.from "[data-role=inside] button" ]
+            fire = Js.from λ_ →
+                click "outside" outside
+                click "inside" inside
+            _ = Js.call window "addEventListener" [ Js.from "fire", fire ]
+            ⊤
+        )
+
+
+click : String, Js.Value → ⊤
+click label node =
+    event =
+        Js.construct (Js.global "MouseEvent")
+            [ Js.from "click", Js.from { bubbles = True, cancelable = True } ]
+    _ = Js.call node "dispatchEvent" [ event ]
+    _ = Js.call (Js.global "console") "log" [ Js.from label, Js.get event "defaultPrevented" ]
+    ⊤
+
+
+pub start : sync (Int → ⊤) → (⊤ → ⊤)
+start send =
+    window = Js.global "window"
+    bump = Js.from λ_ → send 1
+    shown = Js.from λ_ → send 2
+    outer = Js.from λ_ → send 3
+    _ = Js.call window "addEventListener" [ Js.from "bump", bump ]
+    _ = Js.call window "addEventListener" [ Js.from "shown", shown ]
+    _ = Js.call window "addEventListener" [ Js.from "outer", outer ]
+    λ⊤ →
+        _ = Js.call window "removeEventListener" [ Js.from "bump", bump ]
+        _ = Js.call window "removeEventListener" [ Js.from "shown", shown ]
+        _ = Js.call window "removeEventListener" [ Js.from "outer", outer ]
+        ⊤
