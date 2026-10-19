@@ -2,7 +2,7 @@ module RandomGenerate
   37:22 value Rolled: rejected need: Random.generate sends what it returns, and it returns what Random.generate hands it, which may be a list the sender still holds (§23.5)
   40:15 List.push more: accepted param
   49:5 entry RandomGenerate.update msg#Rolled.0: accepted entry
-  summary update: π1 R, π1#Rolled.0 RAW, π1#Rolled.0[*] A, π2 RA; res .0 π1#Rolled.0 π2, .0[*] ~π1#Rolled.0[*], .1#Cmd.0 fresh1 shared(Cmd.none)#Cmd.0, .1#Cmd.0[*]#Perform.0◇◇#Generator.0◇ ~shared(RandomGenerate.shared)
+  summary update: π1 R, π1#Rolled.0 RAW, π1#Rolled.0[*] A, π2 RA; res .0 π1#Rolled.0 π2, .0[*] ~π1#Rolled.0[*], .1#Cmd.0 fresh1 shared(Cmd.none)#Cmd.0, .1#Cmd.0[*]#Perform.0◇⟨◇⟩◇ ~shared(RandomGenerate.shared)
   summary view: π1 R; res ⟨render⟩ fresh1{lost}
   demands 3: accepted 2 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 1; assumed 0), pending 0, rejected 1
 total 3: accepted 2 (fresh 0, call 0, param 1, callback-param 0, once 0, entry 1; assumed 0), pending 0, rejected 1

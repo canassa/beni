@@ -1299,6 +1299,11 @@ amendment does for a field that is the type itself ("here").
   argument is the marker's: a place the fold merged is one the marker stands for, so containment through it is
   approximate, never lost, and no pair a deep condition must compare is taken for a container and its contents.
   *Finite*: a path holds one `◇` and at most one closure marker after it. `mk`'s summary is `res ◇ π2, ◇⟨◇⟩◇ π2`.
+  *Built 2026-10-19.* The bench is unchanged; in `tests/corpus/ownership/` sixteen goldens change, in summary lines
+  only (`◇◇` and `◇.a◇` become `◇⟨◇⟩◇`). `ownership/Clo` pins `mk`, `EnvPrefix` stays `{shared}`, and
+  `ownership/ClosureLevels` pins a capture written while a closure that holds it is held through a record field,
+  through a closure in a closure in a record, and through a call. The summary block's marker step names no
+  module for this type. Core's check costs 3 324M instructions, less than before F1.
 
 **F2. A cast marker that records the type it was read at.** Today `Js.from` and `Js.to` are `returned`: the
 answer is the argument's cells at their own paths, so a value cast to `Js.Value` and back is read at its new

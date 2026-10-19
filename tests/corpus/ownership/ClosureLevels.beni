@@ -1,0 +1,38 @@
+-- ownership: a closure's capture written while the closure is held, through
+-- a record field (`inRecord`), a closure inside a closure inside a record
+-- (`nested`) and a closure handed to a call (`through`), each refused
+-- `captured` (the review of #378; ownership-checker.md §16.7, F1 under the
+-- level marker). The fold of `◇.p◇` under the marker keeps that the outer
+-- environment holds what the inner one captured.
+type alias Holder =
+    run : ⊤ → Int
+    n : Int
+
+
+pub inRecord : List Int → Int
+inRecord xs =
+    g = λ⊤ → List.length xs
+    h = { run = g, n = 0 }
+    ys = List.push xs 1
+    h.run ⊤ + List.length ys
+
+
+pub nested : List Int → Int
+nested xs =
+    g = λ⊤ → List.length xs
+    f = λ⊤ → g ⊤
+    s = { p = f, q = 1 }
+    ys = List.push xs 1
+    s.p ⊤ + List.length ys
+
+
+apply : (⊤ → Int) → Int
+apply k = k ⊤
+
+
+pub through : List Int → Int
+through xs =
+    g = λ⊤ → List.length xs
+    f = λ⊤ → g ⊤ + 1
+    ys = List.push xs 1
+    apply f + List.length ys

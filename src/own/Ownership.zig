@@ -3737,6 +3737,13 @@ fn childRaw(o: *Ownership, parent: u32, kind: StepKind, arg: u32) Allocator.Erro
             return o.rawChild(try o.markerOf(r, ty), kind, arg);
         },
         .level => if (try o.regionOf(parent, o.markerType(arg))) |r| return o.markerOf(r, o.markerType(arg)),
+        // F1 (§16.7, as amended): a function type is a recursive type whose one
+        // region step is `◇`, so a closure's environment inside another's
+        // goes under the marker of the first: `◇p◇q` is `◇⟨◇⟩◇q`.
+        .env => {
+            std.debug.assert(arg == 0);
+            if (try o.regionOf(parent, fn_type)) |r| return o.rawChild(try o.markerOf(r, fn_type), kind, arg);
+        },
         else => {},
     }
     return o.rawChild(parent, kind, arg);
@@ -3776,6 +3783,9 @@ fn regionOf(o: *Ownership, parent: u32, ty: u64) Allocator.Error!?Region {
             .level => if (o.markerType(o.paths.arg.items[node]) == ty) {
                 region = .{ .marker = node };
             },
+            .env => if (ty == fn_type and region == null) {
+                region = .{ .first = node };
+            },
             else => {},
         }
     }
@@ -3789,9 +3799,13 @@ fn regionOf(o: *Ownership, parent: u32, ty: u64) Allocator.Error!?Region {
 fn markerOf(o: *Ownership, r: Region, ty: u64) Allocator.Error!u32 {
     return switch (r) {
         .marker => |m| m,
-        .first => |f| o.rawChild(f, .level, try o.markerId(ty, if (try o.levelOf(o.paths.arg.items[f]) == .below) .below else .at)),
+        // An environment is not a closure: the closures are further down.
+        .first => |f| o.rawChild(f, .level, try o.markerId(ty, if (ty == fn_type or try o.levelOf(o.paths.arg.items[f]) == .below) .below else .at)),
     };
 }
+
+/// F1's recursive type: every function type, whose one region step is `◇`.
+pub const fn_type: u64 = std.math.maxInt(u64);
 
 /// Where a marker stands (§16.7): where the value is a `T`, where it is
 /// not (a field whose `T`s are further down), or where a projection took
@@ -4190,6 +4204,12 @@ fn expand(o: *const Ownership, kind: MarkerKind, m: u32, r: []const u32, other: 
 /// expansion may begin with it: any step where the value may not be a `T`;
 /// where it is, a constructor step of `T` whose field can hold a `T`.
 fn regionStepKind(o: *const Ownership, kind: MarkerKind, t: u64, step: u32) ?MarkerKind {
+    // A closure's environment: its `◇` is the region step, and below it are
+    // the captures, not a closure.
+    if (t == fn_type) {
+        if (o.paths.kind.items[step] == .env) return .below;
+        return if (kind == .at or kind == .under) null else .maybe;
+    }
     const is_t = o.paths.kind.items[step] == .ctor and o.ctorType(o.stepCtor(o.paths.arg.items[step])) == t;
     if (is_t) {
         const strict = kind == .at or kind == .under;
@@ -4292,6 +4312,10 @@ fn writePath(o: *const Ownership, w: *std.Io.Writer, p: u32) std.Io.Writer.Error
         .elem => try w.writeAll("[*]"),
         .level => {
             const t = o.markerType(s.arg);
+            if (t == fn_type) {
+                try w.writeAll("⟨◇⟩");
+                continue;
+            }
             const m: u32 = @intCast(t >> 32);
             const d: u32 = @truncate(t);
             const name = if (m < o.in.birs.len and d < o.in.birs[m].decls.len) o.in.interner.slice(o.in.birs[m].symbol(o.in.birs[m].decls[d].name)) else "";
@@ -6054,8 +6078,8 @@ const Walker = struct {
         // Kept whole when the step may lead into the region, under a marker
         // that says where the step went: to a `T`, to a field whose `T`s
         // are further down, or, for any other step, to either.
-        const t_step = s.kind == .ctor and w.o.ctorType(w.o.stepCtor(s.arg)) == t;
-        const level: Level = if (t_step) try w.o.levelOf(s.arg) else .none;
+        const t_step = if (t == fn_type) s.kind == .env else s.kind == .ctor and w.o.ctorType(w.o.stepCtor(s.arg)) == t;
+        const level: Level = if (!t_step) .none else if (t == fn_type) .below else try w.o.levelOf(s.arg);
         if (w.o.markerAny(first.arg) or level != .none) {
             const kind: MarkerKind = if (level == .here) .at else if (level == .below) .below else .maybe;
             const kept = try w.o.concat(try w.o.child(eps, .level, try w.o.markerId(t, kind)), r);
@@ -12845,7 +12869,7 @@ const Walker = struct {
             }
         }
         if (approx_hit == approx_place) {
-            rec.prelim = .{ .cause = .element, .detail = "another operand may hold it: one place of it stands for several, the levels of a recursive value" };
+            rec.prelim = .{ .cause = .element, .detail = "another operand may hold it: one place of it stands for several: the levels of a recursive value, or the environments of closures inside closures" };
             try w.demands.append(w.a, rec);
             return;
         }

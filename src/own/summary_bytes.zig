@@ -162,7 +162,7 @@ pub fn write(o: *Ownership, gpa: Allocator, rows: []const Row) Allocator.Error![
             for (c.o.steps(p, &buf)) |s| switch (s.kind) {
                 .field => if (!(try c.seen_string.getOrPut(c.arena, s.arg)).found_existing) try c.strings.append(c.arena, s.arg),
                 .ctor => try c.module(c.o.ctorKey(c.o.stepCtor(s.arg)).module),
-                .level => try c.module(@intCast(c.o.markerType(s.arg) >> 32)),
+                .level => if (c.o.markerType(s.arg) != Ownership.fn_type) try c.module(@intCast(c.o.markerType(s.arg) >> 32)),
                 else => {},
             };
         }
@@ -307,7 +307,8 @@ fn pathKey(o: *Ownership, arena: Allocator, w: *Writer, p: u32) Allocator.Error!
             },
             .level => {
                 const t = o.markerType(st.arg);
-                try appendInt(arena, &out, w.module_index.get(@intCast(t >> 32)).?);
+                // F1's marker of every function type names no module.
+                try appendInt(arena, &out, if (t == Ownership.fn_type) std.math.maxInt(u32) else w.module_index.get(@intCast(t >> 32)).?);
                 try appendInt(arena, &out, @truncate(t));
                 try out.append(arena, @backingInt(o.markerKind(st.arg)));
             },
@@ -606,10 +607,13 @@ pub fn read(o: *Ownership, arena: Allocator, bytes: []const u8, m: u32) Error!Bl
                     break :blk try o.ctorStep(try o.ctorId(cm, ci), k);
                 },
                 .level => blk: {
-                    const tm = try r.module();
+                    const mi = try r.int();
                     const td = try r.int();
-                    if (td >= o.in.birs[tm].decls.len) return error.Bad;
                     const where = std.enums.fromInt(Ownership.MarkerKind, try r.byte()) orelse return error.Bad;
+                    if (mi == std.math.maxInt(u32)) break :blk try o.markerId(Ownership.fn_type, where);
+                    if (mi >= r.modules.len) return error.Bad;
+                    const tm = r.modules[mi];
+                    if (td >= o.in.birs[tm].decls.len) return error.Bad;
                     break :blk try o.markerId((@as(u64, tm) << 32) | td, where);
                 },
                 .elem, .env, .any, .markup_render, .markup_event, .schema_decoded, .schema_encoded => 0,
